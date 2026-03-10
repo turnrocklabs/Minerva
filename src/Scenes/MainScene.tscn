@@ -122,6 +122,7 @@ visible = false
 script = ExtResource("4_0j15c")
 
 [node name="Panel" type="Panel" parent="ManyNewFilesDialogWindow" unique_id=2143420511]
+visible = false
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -442,6 +443,7 @@ split_offset = -100
 
 [node name="LeftPane" type="VBoxContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2" unique_id=377986147]
 unique_name_in_owner = true
+clip_contents = true
 custom_minimum_size = Vector2(540, 0)
 layout_mode = 2
 size_flags_horizontal = 3

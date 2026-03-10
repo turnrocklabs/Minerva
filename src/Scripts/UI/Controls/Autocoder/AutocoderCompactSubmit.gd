@@ -18,7 +18,6 @@ enum AutocoderMode {
 @onready var _prompt_text_edit: TextEdit = %PromptTextEdit
 @onready var _model_option_button: OptionButton = %ModelOptionButton
 
-@onready var _auto_review_check_box: CheckBox = %AutoReviewCheckBox
 @onready var _require_permission_check_box: CheckBox = %RequirePermissionCheckBox
 
 @onready var _artifact_button: Button = %ArtifactButton
@@ -103,9 +102,6 @@ func _update_review_agents_visibility():
 	if _review_agents_container:
 		_review_agents_container.visible = show_agents
 	
-	# Also show/hide auto-review checkbox (only relevant in Coder mode)
-	if _auto_review_check_box:
-		_auto_review_check_box.visible = current_mode == AutocoderMode.CODER
 
 
 func _on_session_selected(index: int):
@@ -128,7 +124,6 @@ func _on_submit_pressed():
 	var prompt = _prompt_text_edit.text.strip_edges() if _prompt_text_edit else ""
 	var model = _get_selected_model_id()
 	var options = {
-		"auto_review": _auto_review_check_box.button_pressed if _auto_review_check_box else false,
 		"require_permission": _require_permission_check_box.button_pressed if _require_permission_check_box else false,
 		"artifact_uri": selected_artifact_uri,
 		"session_id": selected_session_id,
@@ -280,7 +275,7 @@ func _rebuild_review_agents_ui():
 		
 		# Style the checkbox
 		checkbox.add_theme_color_override("font_color", Color(0.85, 0.85, 0.9))
-		checkbox.add_theme_font_size_override("font_size", 12)
+		checkbox.add_theme_font_size_override("font_size", 18)
 		
 		_review_agents_list.add_child(checkbox)
 

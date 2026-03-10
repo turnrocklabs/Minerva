@@ -169,6 +169,15 @@ layout_mode = 2
 focus_mode = 0
 mouse_filter = 1
 
+[node name="LinkButton" type="MenuButton" parent="PanelContainer/VBoxContainer/TopControls"]
+unique_name_in_owner = true
+layout_mode = 2
+focus_mode = 0
+mouse_filter = 1
+tooltip_text = "Link this note to specific chats"
+text = "All"
+flat = true
+
 [node name="Title" type="LineEdit" parent="PanelContainer/VBoxContainer/TopControls"]
 unique_name_in_owner = true
 layout_mode = 2

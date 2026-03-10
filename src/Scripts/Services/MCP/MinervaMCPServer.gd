@@ -24,6 +24,9 @@ const SERVER_NAME: String = "minerva"
 var _session_iterative_attempts: int = 0
 var _session_attempts_reset_time: int = 0
 
+## Tool sets filtering: empty = all sets enabled (backward compatible)
+var _enabled_tool_sets: Array = []
+
 
 func _init(manager = null) -> void:
 	mcp_manager = manager
@@ -37,6 +40,11 @@ func _init(manager = null) -> void:
 		_register_kanban_tools()
 		_register_pcb_tools()
 		_register_video_editor_tools()
+		_register_utility_tools()
+		_register_agent_tools()
+		_register_trigger_tools()
+		_register_autocoder_tools()
+		_register_meta_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -123,6 +131,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _send_message(arguments)
 		"minerva_get_chat_history":
 			return _get_chat_history(arguments)
+		"minerva_list_chats":
+			return _list_chats(arguments)
 		"minerva_close_chat":
 			return _close_chat(arguments)
 
@@ -139,6 +149,12 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _disable_notes(arguments)
 		"minerva_delete_note":
 			return _delete_note(arguments)
+		"minerva_get_note":
+			return _get_note(arguments)
+		"minerva_update_note":
+			return _update_note(arguments)
+		"minerva_link_note_to_chat":
+			return _link_note_to_chat(arguments)
 
 		# Editor tools
 		"minerva_create_text_editor":
@@ -316,17 +332,90 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_video_list_recordings":
 			return _video_list_recordings(arguments)
 
+		# Utility tools
+		"minerva_clock":
+			return _clock(arguments)
+
+		# Agent registry tools
+		"minerva_list_agents":
+			return _list_agents(arguments)
+		"minerva_create_agent":
+			return _create_agent(arguments)
+		"minerva_update_agent":
+			return _update_agent(arguments)
+		"minerva_delete_agent":
+			return _delete_agent(arguments)
+		"minerva_spawn_agent":
+			return _spawn_agent(arguments)
+
+		# Trigger tools
+		"minerva_list_triggers":
+			return _list_triggers(arguments)
+		"minerva_create_trigger":
+			return _create_trigger(arguments)
+		"minerva_update_trigger":
+			return _update_trigger(arguments)
+		"minerva_delete_trigger":
+			return _delete_trigger(arguments)
+		"minerva_fire_trigger":
+			return _fire_trigger_mcp(arguments)
+		"minerva_get_batch_status":
+			return _get_batch_status(arguments)
+
+		# Autocoder tools
+		"minerva_autocoder_plan":
+			return await _autocoder_plan(arguments)
+		"minerva_autocoder_generate":
+			return await _autocoder_generate(arguments)
+		"minerva_autocoder_status":
+			return await _autocoder_status(arguments)
+		"minerva_autocoder_review":
+			return await _autocoder_review(arguments)
+		"minerva_autocoder_approve":
+			return await _autocoder_approve(arguments)
+		"minerva_autocoder_answer_question":
+			return await _autocoder_answer_question(arguments)
+		"minerva_autocoder_create_review_agent":
+			return await _autocoder_create_review_agent(arguments)
+		"minerva_autocoder_list_review_agents":
+			return await _autocoder_list_review_agents(arguments)
+		"minerva_autocoder_update_review_agent":
+			return await _autocoder_update_review_agent(arguments)
+		"minerva_autocoder_delete_review_agent":
+			return await _autocoder_delete_review_agent(arguments)
+		"minerva_autocoder_list_sessions":
+			return await _autocoder_list_sessions(arguments)
+		"minerva_autocoder_download":
+			return await _autocoder_download(arguments)
+		"minerva_autocoder_create_review_preset":
+			return await _autocoder_create_review_preset(arguments)
+		"minerva_autocoder_list_review_presets":
+			return await _autocoder_list_review_presets(arguments)
+		"minerva_autocoder_update_review_preset":
+			return await _autocoder_update_review_preset(arguments)
+		"minerva_autocoder_delete_review_preset":
+			return await _autocoder_delete_review_preset(arguments)
+
+		# Meta tools (tool set management)
+		"minerva_list_tool_sets":
+			return _list_tool_sets(arguments)
+		"minerva_enable_tool_sets":
+			return _enable_tool_sets(arguments)
+		"minerva_disable_tool_sets":
+			return _disable_tool_sets(arguments)
+
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
 
 #region Tool Registration
 
-func _register_tool(name: String, description: String, input_schema: Dictionary) -> void:
+func _register_tool(name: String, description: String, input_schema: Dictionary, p_tool_set: String = "") -> void:
 	var tool = MCPToolDefinitionScript.new()
 	tool.name = name
 	tool.description = description
 	tool.input_schema = input_schema
 	tool.server_name = SERVER_NAME
+	tool.tool_set = p_tool_set
 	mcp_manager.tool_registry[name] = tool
 
 
@@ -348,7 +437,7 @@ func _register_chat_tools() -> void:
 			},
 			"required": ["name"]
 		}
-	)
+	, "chat")
 
 	_register_tool("minerva_set_system_prompt",
 		"Set the system prompt for a specific chat.",
@@ -366,7 +455,7 @@ func _register_chat_tools() -> void:
 			},
 			"required": ["chat_id", "prompt"]
 		}
-	)
+	, "chat")
 
 	_register_tool("minerva_set_agent_mode",
 		"Configure agent mode settings for a chat. When enabled, the chat can use MCP tools.",
@@ -397,7 +486,7 @@ func _register_chat_tools() -> void:
 			},
 			"required": ["chat_id", "enabled"]
 		}
-	)
+	, "chat")
 
 	_register_tool("minerva_send_message",
 		"Send a message to a chat. Returns immediately (fire and forget). Use minerva_get_chat_history to check for the response later.",
@@ -415,7 +504,7 @@ func _register_chat_tools() -> void:
 			},
 			"required": ["chat_id", "message"]
 		}
-	)
+	, "chat")
 
 	_register_tool("minerva_get_chat_history",
 		"Get the message history for a chat.",
@@ -429,7 +518,16 @@ func _register_chat_tools() -> void:
 			},
 			"required": ["chat_id"]
 		}
-	)
+	, "chat")
+
+	_register_tool("minerva_list_chats",
+		"List all open chat tabs with their IDs, names, message counts, and agent info.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "chat")
 
 	_register_tool("minerva_close_chat",
 		"Close a chat tab.",
@@ -443,7 +541,7 @@ func _register_chat_tools() -> void:
 			},
 			"required": ["chat_id"]
 		}
-	)
+	, "chat")
 
 
 func _register_notes_tools() -> void:
@@ -467,7 +565,7 @@ func _register_notes_tools() -> void:
 			},
 			"required": ["title", "content"]
 		}
-	)
+	, "notes")
 
 	_register_tool("minerva_create_note_tab",
 		"Create a new notes tab.",
@@ -481,7 +579,7 @@ func _register_notes_tools() -> void:
 			},
 			"required": ["name"]
 		}
-	)
+	, "notes")
 
 	_register_tool("minerva_list_notes",
 		"List all notes in a tab or all tabs.",
@@ -495,7 +593,7 @@ func _register_notes_tools() -> void:
 			},
 			"required": []
 		}
-	)
+	, "notes")
 
 	_register_tool("minerva_enable_notes",
 		"Enable all notes in a tab (makes them active for LLM context).",
@@ -509,7 +607,7 @@ func _register_notes_tools() -> void:
 			},
 			"required": ["tab"]
 		}
-	)
+	, "notes")
 
 	_register_tool("minerva_disable_notes",
 		"Disable all notes in a tab (excludes them from LLM context).",
@@ -523,7 +621,7 @@ func _register_notes_tools() -> void:
 			},
 			"required": ["tab"]
 		}
-	)
+	, "notes")
 
 	_register_tool("minerva_delete_note",
 		"Delete a note by its ID.",
@@ -537,7 +635,65 @@ func _register_notes_tools() -> void:
 			},
 			"required": ["note_id"]
 		}
-	)
+	, "notes")
+
+	_register_tool("minerva_get_note",
+		"Get a note's full content by its ID. Returns title, content, tab, and enabled status.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to read"
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
+	_register_tool("minerva_update_note",
+		"Update a note's content and/or title in-place by its ID.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to update"
+				},
+				"content": {
+					"type": "string",
+					"description": "New content for the note. If omitted, content is unchanged."
+				},
+				"title": {
+					"type": "string",
+					"description": "New title for the note. If omitted, title is unchanged."
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
+	_register_tool("minerva_link_note_to_chat",
+		"Link or unlink a note to a specific chat. Linked notes only appear in that chat's prompts. Unlinking makes the note global (visible to all chats).",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to link/unlink"
+				},
+				"chat_id": {
+					"type": "string",
+					"description": "HistoryId of the chat to link to. If omitted, unlinks from all chats (makes global)."
+				},
+				"unlink": {
+					"type": "boolean",
+					"description": "If true, removes the link to the specified chat_id instead of adding it. Defaults to false."
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
 
 
 func _register_editor_tools() -> void:
@@ -561,7 +717,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["name"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_create_graphics_editor",
 		"Create a new graphics editor tab for image editing.",
@@ -579,7 +735,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["name"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_get_editor_content",
 		"Get the content of a text editor.",
@@ -593,7 +749,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_update_editor",
 		"Update the content of a text editor.",
@@ -611,7 +767,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name", "content"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_save_editor",
 		"Save the editor content to a file.",
@@ -629,7 +785,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_close_editor",
 		"Close an editor tab.",
@@ -647,7 +803,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_list_editors",
 		"List all open editor tabs (text, graphics, and spreadsheet editors).",
@@ -656,7 +812,7 @@ func _register_editor_tools() -> void:
 			"properties": {},
 			"required": []
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_rename_editor",
 		"Rename an editor tab (text, graphics, or spreadsheet).",
@@ -674,7 +830,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name", "new_name"]
 		}
-	)
+	, "editor")
 
 	# Graphics editor AI tools
 	_register_tool("minerva_graphics_get_capabilities",
@@ -689,7 +845,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_graphics_generate",
 		"Generate or edit an image using AI (fire-and-forget, returns immediately). NOTE: If you need to SEE the result or ITERATE based on quality, use minerva_graphics_generate_iterative instead - it blocks until the image is visible. This tool is only for when you don't need to evaluate the output.",
@@ -751,7 +907,7 @@ func _register_editor_tools() -> void:
 			},
 			"required": ["editor_name", "model", "action", "prompt"]
 		}
-	)
+	, "editor")
 
 	_register_tool("minerva_graphics_generate_iterative",
 		"Generate an image with iterative refinement. This tool BLOCKS until the image is fully generated and visible, then returns. After it returns, the new image is visible and you can evaluate it immediately. Use for iterative refinement where you need to see each result before deciding to continue.",
@@ -814,7 +970,7 @@ func _register_editor_tools() -> void:
 			"required": ["editor_name", "model", "action", "prompt", "criteria"]
 			# Note: iteration is tracked SERVER-SIDE. Do not pass iteration parameter.
 		}
-	)
+	, "editor")
 
 
 func _register_spreadsheet_tools() -> void:
@@ -838,7 +994,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_get_spreadsheet_data",
 		"Get the data from a spreadsheet in various formats. Returns data_starts_at_row (1-based) to show where content begins.",
@@ -865,7 +1021,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_update_spreadsheet_data",
 		"Update cells in a spreadsheet. Can update individual cells or load entire CSV content.",
@@ -895,7 +1051,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_add_spreadsheet_row",
 		"Add a new row to the spreadsheet with optional values.",
@@ -918,7 +1074,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_add_spreadsheet_column",
 		"Add a new column to the spreadsheet with optional header.",
@@ -945,7 +1101,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_delete_spreadsheet_row",
 		"Delete a row from the spreadsheet. All rows below shift up. This action can be undone.",
@@ -963,7 +1119,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "row"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_delete_spreadsheet_column",
 		"Delete a column from the spreadsheet. All columns to the right shift left. This action can be undone.",
@@ -981,7 +1137,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "column"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_insert_spreadsheet_row",
 		"Insert an empty row at a specific position. All rows at and below shift down.",
@@ -999,7 +1155,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "at_row"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_insert_spreadsheet_column",
 		"Insert an empty column at a specific position. All columns at and to the right shift right.",
@@ -1017,7 +1173,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "at_column"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_format_cells",
 		"Apply formatting to cells or a range of cells.",
@@ -1065,7 +1221,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "range"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_set_row_height",
 		"Set the height of one or more spreadsheet rows. Use to make wrapped text visible.",
@@ -1097,7 +1253,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "rows"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_set_column_width",
 		"Set the width of one or more spreadsheet columns. Use to make content fully visible.",
@@ -1129,7 +1285,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "columns"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_set_cell_formula",
 		"Set a formula in a specific cell.",
@@ -1151,7 +1307,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "cell", "formula"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_create_chart",
 		"Create a chart from spreadsheet data.",
@@ -1191,7 +1347,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "x_range", "series"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_get_chart_image",
 		"Export a chart as a base64-encoded PNG image for LLM viewing.",
@@ -1217,7 +1373,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_list_charts",
 		"List all charts in a spreadsheet editor.",
@@ -1231,7 +1387,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_update_chart",
 		"Update an existing chart's properties. Use this when data ranges change or to modify chart appearance.",
@@ -1303,7 +1459,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_delete_chart",
 		"Delete a chart from a spreadsheet editor.",
@@ -1325,7 +1481,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_refresh_charts",
 		"Refresh all charts in a spreadsheet to reflect current data. Call this after updating spreadsheet data.",
@@ -1339,7 +1495,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_link_spreadsheet_to_note",
 		"Create a linked note from a spreadsheet. The note displays the spreadsheet as a markdown table. Editing the note opens the spreadsheet editor. Changes sync bidirectionally.",
@@ -1361,7 +1517,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_export_to_nudge",
 		"Export spreadsheet data to the Nudge MCP hint system for quick LLM retrieval.",
@@ -1392,7 +1548,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "component", "key"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_undo_spreadsheet",
 		"Undo the last action in a spreadsheet editor. Returns information about what was undone.",
@@ -1410,7 +1566,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_redo_spreadsheet",
 		"Redo a previously undone action in a spreadsheet editor.",
@@ -1428,7 +1584,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_get_spreadsheet_history",
 		"Get the undo/redo history status of a spreadsheet editor.",
@@ -1442,7 +1598,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_fill_down",
 		"Fill down formulas/values from a source row to target rows. Copies the content from the source row and adjusts relative cell references (e.g., A1 becomes A2, A3, etc.). Absolute references ($A$1) are preserved. This is equivalent to Excel's Ctrl+D fill down feature.",
@@ -1470,7 +1626,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name", "source_row", "target_rows"]
 		}
-	)
+	, "spreadsheet")
 
 	_register_tool("minerva_recalculate",
 		"Recalculate all formulas in a spreadsheet. Use this after bulk operations or when cross-sheet references need refreshing.",
@@ -1484,7 +1640,7 @@ func _register_spreadsheet_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "spreadsheet")
 
 #endregion
 
@@ -1689,6 +1845,22 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 	}
 
 
+func _list_chats(_args: Dictionary) -> Dictionary:
+	var result: Array[Dictionary] = []
+	for history in SingletonObject.ChatList:
+		var entry: Dictionary = {
+			"chat_id": history.HistoryId,
+			"name": history.HistoryName,
+			"message_count": history.HistoryItemList.size(),
+			"is_agent": history.IsAgentChat,
+		}
+		if history.IsAgentChat:
+			entry["agent_definition_id"] = history.AgentDefinitionId
+			entry["max_tool_rounds"] = history.MaxToolCallRounds
+		result.append(entry)
+	return {"success": true, "chats": result, "count": result.size()}
+
+
 func _close_chat(args: Dictionary) -> Dictionary:
 	var chat_id: String = args.get("chat_id", "")
 
@@ -1858,6 +2030,101 @@ func _delete_note(args: Dictionary) -> Dictionary:
 	note.queue_free()
 
 	return {"success": true, "message": "Note deleted"}
+
+
+func _get_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	# Get content from the backing controls
+	var content_text: String = ""
+	var controls_container = note.get_controls_container()
+	if controls_container is NoteTextControls:
+		content_text = controls_container.content
+
+	# Find which tab this note is in
+	var tab_name: String = ""
+	var notes_container = SingletonObject.notes_container
+	if notes_container:
+		for i in notes_container.get_tab_count():
+			var notes = notes_container.get_notes(i)
+			for n in notes:
+				if n.uuid == note_id:
+					tab_name = notes_container.get_tab_title(i)
+					break
+			if not tab_name.is_empty():
+				break
+
+	return {
+		"success": true,
+		"note_id": note_id,
+		"title": note.title,
+		"content": content_text,
+		"tab": tab_name,
+		"enabled": note.enabled,
+		"type": Note.Type.keys()[note.type] if note.type < Note.Type.size() else "UNKNOWN"
+	}
+
+func _update_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	var updated_fields: Array[String] = []
+
+	if args.has("title"):
+		note.title = args["title"]
+		updated_fields.append("title")
+
+	if args.has("content"):
+		var controls_container = note.get_controls_container()
+		if controls_container is NoteTextControls:
+			controls_container.content = args["content"]
+			updated_fields.append("content")
+		else:
+			return {"error": "Note is not a text note, cannot update content", "success": false}
+
+	return {
+		"success": true,
+		"note_id": note_id,
+		"updated": updated_fields
+	}
+
+
+func _link_note_to_chat(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+	var chat_id: String = args.get("chat_id", "")
+	var do_unlink: bool = args.get("unlink", false)
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	if chat_id.is_empty():
+		note.linked_chat_ids.clear()
+		return {"success": true, "message": "Note unlinked from all chats (now global)"}
+
+	if do_unlink:
+		note.linked_chat_ids.erase(chat_id)
+		return {"success": true, "message": "Note unlinked from chat %s" % chat_id}
+	else:
+		if chat_id not in note.linked_chat_ids:
+			note.linked_chat_ids.append(chat_id)
+		return {"success": true, "message": "Note linked to chat %s" % chat_id}
 
 #endregion
 
@@ -2365,7 +2632,7 @@ func _register_kanban_tools() -> void:
 			},
 			"required": ["board_name", "title", "description"]
 		}
-	)
+	, "kanban")
 
 	_register_tool("minerva_kanban_list_boards",
 		"List all open Kanban boards (editor tabs of type KANBAN).",
@@ -2374,7 +2641,7 @@ func _register_kanban_tools() -> void:
 			"properties": {},
 			"required": []
 		}
-	)
+	, "kanban")
 
 	_register_tool("minerva_kanban_get_tasks",
 		"Get all tasks from a Kanban board, optionally filtered by status.",
@@ -2393,7 +2660,7 @@ func _register_kanban_tools() -> void:
 			},
 			"required": ["board_name"]
 		}
-	)
+	, "kanban")
 
 	_register_tool("minerva_kanban_update_task",
 		"Update an existing task on a Kanban board.",
@@ -2423,7 +2690,7 @@ func _register_kanban_tools() -> void:
 			},
 			"required": ["board_name", "task_id"]
 		}
-	)
+	, "kanban")
 
 	_register_tool("minerva_kanban_move_task",
 		"Move a task to a different status column on the Kanban board.",
@@ -2446,7 +2713,7 @@ func _register_kanban_tools() -> void:
 			},
 			"required": ["board_name", "task_id", "new_status"]
 		}
-	)
+	, "kanban")
 
 	_register_tool("minerva_kanban_delete_task",
 		"Delete a task from a Kanban board.",
@@ -2464,7 +2731,7 @@ func _register_kanban_tools() -> void:
 			},
 			"required": ["board_name", "task_id"]
 		}
-	)
+	, "kanban")
 
 #endregion
 
@@ -4194,7 +4461,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_get_components",
 		"Get all components from a PCB editor with their positions and connections.",
@@ -4208,7 +4475,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_set_board_size",
 		"Set the PCB board dimensions.",
@@ -4230,7 +4497,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "width", "height"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_describe_component",
 		"Get detailed spatial context for a component including nearby components, connections, and region.",
@@ -4248,7 +4515,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "component_id"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_spatial_query",
 		"Query components based on spatial relationships (e.g., 'what components are near U3?').",
@@ -4274,7 +4541,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_get_nets",
 		"Get all electrical nets (connections) from a PCB.",
@@ -4288,7 +4555,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_get_pin_position",
 		"Get the world position and info for a specific pin on a component. Useful for calculating waypoints or verifying pin locations before creating route hints.",
@@ -4310,7 +4577,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "component_id", "pin"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_add_component",
 		"Add a new component to the PCB. NOTE: Component dimensions are estimated defaults based on footprint type. For accurate sizing from KiCAD libraries, run pcb-architect's footprint-geometry command and then call minerva_pcb_import_footprint_geometry to update components with real dimensions.",
@@ -4348,7 +4615,20 @@ func _register_pcb_tools() -> void:
 				},
 				"pin_count": {
 					"type": "integer",
-					"description": "Number of pins for HEADER/CONNECTOR (single row) or IC_DIP/MODULE (dual row, must be even)"
+					"description": "Number of pins. Works for all footprint types. HEADER/CONNECTOR = single row, IC_DIP/MODULE = dual row (even), others use generic layout via pad_type/pad_spacing/row_spacing."
+				},
+				"pad_type": {
+					"type": "string",
+					"enum": ["smd", "tht"],
+					"description": "Pad type for placeholder geometry (default: tht). Used when pin_count is set on non-specialised footprint types."
+				},
+				"pad_spacing": {
+					"type": "number",
+					"description": "Centre-to-centre pad spacing in mm (default: 2.54). Used with generic pin layout."
+				},
+				"row_spacing": {
+					"type": "number",
+					"description": "Row-to-row spacing for dual-row layouts in mm (default: 7.62). Used with generic pin layout."
 				},
 				"width": {
 					"type": "number",
@@ -4370,7 +4650,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "footprint", "x", "y"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_move_component",
 		"Move a component to an absolute position.",
@@ -4396,7 +4676,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "component_id", "x", "y"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_move_relative",
 		"Move a component using natural language direction (e.g., 'down a bit', 'closer to U3').",
@@ -4418,7 +4698,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "component_id", "direction"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_rotate_component",
 		"Rotate a component. Positive degrees rotate counter-clockwise (CCW), negative rotate clockwise (CW).",
@@ -4440,7 +4720,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "component_id", "degrees"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_delete_component",
 		"Delete a component from the PCB.",
@@ -4458,7 +4738,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "component_id"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_connect_net",
 		"Connect component pins to a net (creates net if it doesn't exist).",
@@ -4487,7 +4767,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "net_name", "pins"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_export_csv",
 		"Export PCB component placement as CSV.",
@@ -4501,7 +4781,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_export_yaml",
 		"Export PCB as YAML (compatible with pcb-architect).",
@@ -4515,7 +4795,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_import_csv",
 		"Import component placement from CSV.",
@@ -4533,7 +4813,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "csv_content"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_import_footprint_geometry",
 		"IMPORTANT: Call this after adding components to get accurate dimensions from KiCAD footprint libraries. Without this, components use estimated sizes that may not match actual footprints. Run 'pcb-architect footprint-geometry board.yaml -o geometry.json' to generate the input data. Updates component pads with accurate shapes, sizes, drill holes, and body dimensions. Can also correct positions if YAML used different coordinate conventions (use position_is_center and/or invert_y flags).",
@@ -4588,7 +4868,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "geometry"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_import_trace_geometry",
 		"Import routed traces and vias from pcb-architect's trace-geometry command output. Clears existing traces and imports new ones. Trace segments are automatically connected into polylines.",
@@ -4636,7 +4916,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "trace_data"]
 		}
-	)
+	, "pcb")
 
 	# Annotation tools
 	_register_tool("minerva_pcb_add_annotation",
@@ -4683,7 +4963,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "type", "positions"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_list_annotations",
 		"List all annotations on a PCB, optionally filtered by author.",
@@ -4701,7 +4981,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_remove_annotation",
 		"Remove a specific annotation by ID.",
@@ -4719,7 +4999,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "annotation_id"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_clear_annotations",
 		"Clear annotations from the PCB, optionally filtered by author.",
@@ -4737,7 +5017,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	# Route hint tools
 	_register_tool("minerva_pcb_add_route_hint",
@@ -4792,7 +5072,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "hint_type"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_list_route_hints",
 		"List all routing hints on a PCB, optionally filtered by author.",
@@ -4810,7 +5090,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_remove_route_hint",
 		"Remove a specific routing hint by ID.",
@@ -4828,7 +5108,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name", "hint_id"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_clear_route_hints",
 		"Clear routing hints from the PCB, optionally filtered by author.",
@@ -4846,7 +5126,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_interpret_route_hints",
 		"Interpret freeform annotations (arrows, polylines, text) as routing hints. Returns structured route hints inferred from annotation positions and text patterns.",
@@ -4860,7 +5140,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_get_image",
 		"Export a PCB view as a base64-encoded PNG image for LLM viewing.",
@@ -4898,7 +5178,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_create_note",
 		"Create a note from a PCB editor. The note displays the PCB as an image preview. Clicking Edit restores the full PCB state (components, nets, annotations, route hints).",
@@ -4920,7 +5200,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 	_register_tool("minerva_pcb_get_change_journal",
 		"Get the change journal for a PCB editor. Returns an append-only log of forward actions (moves, rotations, deletions, etc.) with timestamps.",
@@ -4942,7 +5222,7 @@ func _register_pcb_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "pcb")
 
 #endregion
 
@@ -5192,10 +5472,10 @@ func _pcb_get_pin_position(args: Dictionary) -> Dictionary:
 	# Build available pins list for self-correction on error
 	var available_pins: Array = []
 	for pin_name in comp.pins:
-		var _symbolic_name: String = comp.get_pin_name(str(pin_name))
+		var pin_sym_name: String = comp.get_pin_name(str(pin_name))
 		var entry := {"pin": str(pin_name)}
-		if not _symbolic_name.is_empty():
-			entry["name"] = _symbolic_name
+		if not pin_sym_name.is_empty():
+			entry["name"] = pin_sym_name
 		available_pins.append(entry)
 
 	if not comp.pins.has(pin):
@@ -5268,7 +5548,11 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 	var pin_names: Array = args.get("pin_names", [])
 
 	if pin_count > 0:
-		# Custom pin count specified
+		# Custom pin count specified — specialised methods for HEADER/DIP/MODULE,
+		# generic layout for everything else (SWITCH, RESISTOR, LED, etc.)
+		var pad_type: String = args.get("pad_type", "tht")
+		var pad_spacing: float = args.get("pad_spacing", 2.54)
+		var row_sp: float = args.get("row_spacing", 7.62)
 		match footprint_idx:
 			PCBComponentScript.FootprintType.HEADER, PCBComponentScript.FootprintType.CONNECTOR:
 				comp.setup_header_pins(pin_count, pin_names)
@@ -5278,7 +5562,7 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 				# MODULE uses wider row spacing and body extends beyond pins
 				comp.setup_module_pins(pin_count)
 			_:
-				comp.setup_standard_pins()
+				comp.setup_generic_pins(pin_count, pad_type, pad_spacing, row_sp)
 	else:
 		comp.setup_standard_pins()
 
@@ -6521,7 +6805,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["name", "recording_path"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_add_cut",
 		"Cut out a time region from the video. The cut region will be excluded from the final export.",
@@ -6543,7 +6827,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["editor_name", "start_ms", "end_ms"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_add_speed_region",
 		"Speed up a time region in the video (fast-forward effect).",
@@ -6569,7 +6853,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["editor_name", "start_ms", "end_ms"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_remove_edit",
 		"Remove a cut or speed edit by segment index, reverting it to normal playback.",
@@ -6587,7 +6871,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["editor_name", "segment_index"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_set_pip_position",
 		"Set the Picture-in-Picture webcam overlay position at a specific time. Creates a keyframe for smooth transitions.",
@@ -6613,7 +6897,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["editor_name", "time_ms", "x", "y"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_set_crop_position",
 		"Set the vertical (9:16) crop region center position at a specific time. Creates a keyframe for the crop window.",
@@ -6635,7 +6919,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["editor_name", "time_ms", "x"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_get_state",
 		"Get the current edit state of a video editor, including segments, keyframes, and duration.",
@@ -6649,7 +6933,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["editor_name"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_export",
 		"Export the video to MP4 file. Requires ffmpeg to be installed.",
@@ -6672,7 +6956,7 @@ func _register_video_editor_tools() -> void:
 			},
 			"required": ["editor_name", "output_path"]
 		}
-	)
+	, "video")
 
 	_register_tool("minerva_video_list_recordings",
 		"List all available video recordings with their metadata.",
@@ -6680,7 +6964,7 @@ func _register_video_editor_tools() -> void:
 			"type": "object",
 			"properties": {},
 		}
-	)
+	, "video")
 
 
 ## Find a video editor by tab name
@@ -6839,5 +7123,1584 @@ func _video_list_recordings(_args: Dictionary) -> Dictionary:
 		"recordings": recordings,
 		"count": recordings.size()
 	}
+
+#endregion
+
+
+#region Utility Tools
+
+func _register_utility_tools() -> void:
+	_register_tool("minerva_clock",
+		"Get a Unix timestamp. Three modes: (1) No arguments = current time. (2) delta_seconds = relative to now (negative for past, e.g. -300 for 5 minutes ago). (3) year/month/day/hour/minute/second = absolute date/time conversion.",
+		{
+			"type": "object",
+			"properties": {
+				"delta_seconds": {
+					"type": "integer",
+					"description": "Offset from current time in seconds. Negative for past (e.g. -300 = 5 minutes ago), positive for future (e.g. 3600 = 1 hour from now)."
+				},
+				"year": {
+					"type": "integer",
+					"description": "Year (e.g. 2026). Use year/month/day for absolute time conversion."
+				},
+				"month": {
+					"type": "integer",
+					"description": "Month (1-12)"
+				},
+				"day": {
+					"type": "integer",
+					"description": "Day of month (1-31)"
+				},
+				"hour": {
+					"type": "integer",
+					"description": "Hour (0-23), default 0"
+				},
+				"minute": {
+					"type": "integer",
+					"description": "Minute (0-59), default 0"
+				},
+				"second": {
+					"type": "integer",
+					"description": "Second (0-59), default 0"
+				}
+			},
+			"required": []
+		}
+	, "utility")
+
+
+func _clock(arguments: Dictionary) -> Dictionary:
+	var unix_now := int(Time.get_unix_time_from_system())
+
+	# Mode 1: delta_seconds — relative to now
+	if arguments.has("delta_seconds"):
+		var delta := int(arguments.get("delta_seconds", 0))
+		var target_ts := unix_now + delta
+		var delta_dt := Time.get_datetime_dict_from_unix_time(target_ts)
+		return {
+			"success": true,
+			"unix_timestamp": target_ts,
+			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [delta_dt.year, delta_dt.month, delta_dt.day, delta_dt.hour, delta_dt.minute, delta_dt.second],
+			"timezone": "UTC",
+			"now_unix": unix_now,
+			"delta_seconds": delta
+		}
+
+	# Mode 2: absolute date/time
+	if arguments.has("year"):
+		var abs_dt := {
+			"year": int(arguments.get("year", 1970)),
+			"month": int(arguments.get("month", 1)),
+			"day": int(arguments.get("day", 1)),
+			"hour": int(arguments.get("hour", 0)),
+			"minute": int(arguments.get("minute", 0)),
+			"second": int(arguments.get("second", 0)),
+		}
+		var unix_ts := Time.get_unix_time_from_datetime_dict(abs_dt)
+		return {
+			"success": true,
+			"unix_timestamp": int(unix_ts),
+			"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [abs_dt.year, abs_dt.month, abs_dt.day, abs_dt.hour, abs_dt.minute, abs_dt.second],
+			"timezone": "UTC"
+		}
+
+	# Mode 3: no arguments — current local time
+	var dt := Time.get_datetime_dict_from_system(false)
+	var tz := Time.get_time_zone_from_system()
+	var tz_name: String = tz.get("name", "Local")
+	return {
+		"success": true,
+		"unix_timestamp": unix_now,
+		"datetime": "%04d-%02d-%02dT%02d:%02d:%02d" % [dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second],
+		"timezone": tz_name
+	}
+
+#endregion
+
+
+#region Agent Registry Tool Registration and Implementations
+
+func _register_agent_tools() -> void:
+	_register_tool("minerva_list_agents",
+		"List all agent definitions in the registry.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "agents")
+
+	_register_tool("minerva_create_agent",
+		"Create a new agent definition in the registry. Returns the agent ID. Provider enum IDs: HUMAN=0, NEMOTRON_NANO=1, DEVSTRAL_SMALL=2, GPT_NANO=3, GPT_STANDARD=4, GPT_DEEP=5, GEMINI_FLASH=7, GEMINI_PRO=8, CLAUDE_HAIKU=10, CLAUDE_SONNET=11, CLAUDE_OPUS=12, TURNROCK=13, CLAUDE_CODE_SONNET=18, CLAUDE_CODE_OPUS=19. For TURNROCK provider, also set core_service_id and core_action_name. For OpenRouter models use their dynamic ID (>=1000).",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the agent"
+				},
+				"system_prompt": {
+					"type": "string",
+					"description": "System prompt that defines the agent's behavior"
+				},
+				"provider_enum_id": {
+					"type": "integer",
+					"description": "Provider model enum ID (see tool description for values)"
+				},
+				"core_service_id": {
+					"type": "string",
+					"description": "Core/TurnRock service ID (e.g. 'model-chat'). Required when provider_enum_id=13 (TURNROCK)."
+				},
+				"core_action_name": {
+					"type": "string",
+					"description": "Core/TurnRock action/model name (e.g. 'glm-4.7-flash:latest'). Required when provider_enum_id=13 (TURNROCK)."
+				},
+				"temperature": {
+					"type": "number",
+					"description": "Temperature (0.0-2.0). Default 1.0"
+				},
+				"top_p": {
+					"type": "number",
+					"description": "Top-p sampling (0.0-1.0). Default 1.0"
+				},
+				"frequency_penalty": {
+					"type": "number",
+					"description": "Frequency penalty (-2.0 to 2.0). Default 0.0"
+				},
+				"presence_penalty": {
+					"type": "number",
+					"description": "Presence penalty (-2.0 to 2.0). Default 0.0"
+				},
+				"max_tool_call_rounds": {
+					"type": "integer",
+					"description": "Max agentic tool call rounds. Default 10"
+				},
+				"enabled_tools": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Allowlist of MCP tool names. Empty = all tools enabled."
+				},
+				"memory_tab_name": {
+					"type": "string",
+					"description": "Project-scoped notes tab name for agent memory. Created and locked to the agent on spawn."
+				},
+				"drawer_tab_name": {
+					"type": "string",
+					"description": "App-scoped drawer notes tab name for agent memory. Created and locked to the agent on spawn."
+				}
+			},
+			"required": ["name", "system_prompt", "provider_enum_id"]
+		}
+	, "agents")
+
+	_register_tool("minerva_update_agent",
+		"Update an existing agent definition. Only the provided fields are changed; omitted fields keep their current values.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent to update"
+				},
+				"name": {
+					"type": "string",
+					"description": "New display name"
+				},
+				"system_prompt": {
+					"type": "string",
+					"description": "New system prompt"
+				},
+				"provider_enum_id": {
+					"type": "integer",
+					"description": "New provider model enum ID"
+				},
+				"core_service_id": {
+					"type": "string",
+					"description": "New Core/TurnRock service ID"
+				},
+				"core_action_name": {
+					"type": "string",
+					"description": "New Core/TurnRock action/model name"
+				},
+				"temperature": {
+					"type": "number",
+					"description": "New temperature"
+				},
+				"top_p": {
+					"type": "number",
+					"description": "New top-p"
+				},
+				"frequency_penalty": {
+					"type": "number",
+					"description": "New frequency penalty"
+				},
+				"presence_penalty": {
+					"type": "number",
+					"description": "New presence penalty"
+				},
+				"max_tool_call_rounds": {
+					"type": "integer",
+					"description": "New max tool call rounds"
+				},
+				"enabled_tools": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "New tool allowlist"
+				},
+				"memory_tab_name": {
+					"type": "string",
+					"description": "New project-scoped memory tab name"
+				},
+				"drawer_tab_name": {
+					"type": "string",
+					"description": "New app-scoped drawer memory tab name"
+				}
+			},
+			"required": ["agent_id"]
+		}
+	, "agents")
+
+	_register_tool("minerva_delete_agent",
+		"Delete an agent definition from the registry.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent to delete"
+				}
+			},
+			"required": ["agent_id"]
+		}
+	, "agents")
+
+	_register_tool("minerva_spawn_agent",
+		"Spawn a new chat from a registered agent definition. Creates a fully configured agent chat and optionally sends an initial message.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent definition to spawn. Use either agent_id or agent_name."
+				},
+				"agent_name": {
+					"type": "string",
+					"description": "Name of the agent definition to spawn. Used if agent_id is not provided."
+				},
+				"initial_message": {
+					"type": "string",
+					"description": "Optional message to send immediately after spawning."
+				}
+			},
+			"required": []
+		}
+	, "agents")
+
+
+func _list_agents(_args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var result: Array = []
+	for agent in registry.agents:
+		result.append({
+			"id": agent.id,
+			"name": agent.name,
+			"provider_enum_id": agent.provider_enum_id,
+			"core_service_id": agent.core_service_id,
+			"core_action_name": agent.core_action_name,
+			"memory_tab_name": agent.memory_tab_name,
+			"drawer_tab_name": agent.drawer_tab_name,
+			"max_tool_call_rounds": agent.max_tool_call_rounds,
+			"enabled_tools_count": agent.enabled_tools.size(),
+		})
+
+	return {
+		"success": true,
+		"agents": result,
+		"count": result.size()
+	}
+
+
+func _create_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_name: String = args.get("name", "")
+	if agent_name.is_empty():
+		return {"error": "name is required", "success": false}
+
+	var agent = AgentDefinition.new()
+	agent.name = agent_name
+	agent.system_prompt = args.get("system_prompt", "")
+	agent.provider_enum_id = int(args.get("provider_enum_id", 0))
+	agent.core_service_id = args.get("core_service_id", "")
+	agent.core_action_name = args.get("core_action_name", "")
+	agent.temperature = float(args.get("temperature", 1.0))
+	agent.top_p = float(args.get("top_p", 1.0))
+	agent.frequency_penalty = float(args.get("frequency_penalty", 0.0))
+	agent.presence_penalty = float(args.get("presence_penalty", 0.0))
+	agent.max_tool_call_rounds = int(args.get("max_tool_call_rounds", 10))
+	agent.memory_tab_name = args.get("memory_tab_name", "")
+	agent.drawer_tab_name = args.get("drawer_tab_name", "")
+
+	var tools: Array = args.get("enabled_tools", [])
+	for t in tools:
+		agent.enabled_tools.append(str(t))
+
+	registry.add_agent(agent)
+
+	return {
+		"success": true,
+		"agent_id": agent.id,
+		"name": agent.name
+	}
+
+
+func _update_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+
+	var agent = registry.get_agent(agent_id)
+	if not agent:
+		return {"error": "Agent not found: %s" % agent_id, "success": false}
+
+	if args.has("name"):
+		agent.name = args["name"]
+	if args.has("system_prompt"):
+		agent.system_prompt = args["system_prompt"]
+	if args.has("provider_enum_id"):
+		agent.provider_enum_id = int(args["provider_enum_id"])
+	if args.has("core_service_id"):
+		agent.core_service_id = args["core_service_id"]
+	if args.has("core_action_name"):
+		agent.core_action_name = args["core_action_name"]
+	if args.has("temperature"):
+		agent.temperature = float(args["temperature"])
+	if args.has("top_p"):
+		agent.top_p = float(args["top_p"])
+	if args.has("frequency_penalty"):
+		agent.frequency_penalty = float(args["frequency_penalty"])
+	if args.has("presence_penalty"):
+		agent.presence_penalty = float(args["presence_penalty"])
+	if args.has("max_tool_call_rounds"):
+		agent.max_tool_call_rounds = int(args["max_tool_call_rounds"])
+	if args.has("memory_tab_name"):
+		agent.memory_tab_name = args["memory_tab_name"]
+	if args.has("drawer_tab_name"):
+		agent.drawer_tab_name = args["drawer_tab_name"]
+	if args.has("enabled_tools"):
+		agent.enabled_tools.clear()
+		for t in args["enabled_tools"]:
+			agent.enabled_tools.append(str(t))
+
+	registry.update_agent(agent_id, agent)
+
+	return {
+		"success": true,
+		"agent_id": agent_id,
+		"message": "Agent updated"
+	}
+
+
+func _delete_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+
+	var agent = registry.get_agent(agent_id)
+	if not agent:
+		return {"error": "Agent not found: %s" % agent_id, "success": false}
+
+	registry.remove_agent(agent_id)
+
+	return {
+		"success": true,
+		"message": "Agent '%s' deleted" % agent.name
+	}
+
+
+func _spawn_agent(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.agent_registry
+	if not registry:
+		return {"error": "Agent registry not available", "success": false}
+
+	var agent_def: AgentDefinition = null
+
+	var agent_id: String = args.get("agent_id", "")
+	var agent_name: String = args.get("agent_name", "")
+
+	if not agent_id.is_empty():
+		agent_def = registry.get_agent(agent_id)
+	elif not agent_name.is_empty():
+		agent_def = registry.get_agent_by_name(agent_name)
+
+	if not agent_def:
+		return {"error": "Agent not found (id='%s', name='%s')" % [agent_id, agent_name], "success": false}
+
+	var initial_message: String = args.get("initial_message", "")
+
+	var history = AgentSpawner.spawn_agent(agent_def, initial_message)
+	if not history:
+		return {"error": "Failed to spawn agent '%s'" % agent_def.name, "success": false}
+
+	return {
+		"success": true,
+		"chat_id": history.HistoryId,
+		"agent_name": agent_def.name,
+		"agent_id": agent_def.id
+	}
+
+#endregion
+
+
+#region Trigger Tool Registration and Implementations
+
+func _register_trigger_tools() -> void:
+	_register_tool("minerva_list_triggers",
+		"List all trigger definitions. Shows id, name, agent, type, enabled status, batch params count, and chain target.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "triggers")
+
+	_register_tool("minerva_create_trigger",
+		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the trigger"
+				},
+				"agent_id": {
+					"type": "string",
+					"description": "ID of the agent definition to run when triggered"
+				},
+				"trigger_type": {
+					"type": "integer",
+					"description": "0=TIMER, 1=EVENT. Default 0"
+				},
+				"interval_seconds": {
+					"type": "number",
+					"description": "Timer interval in seconds (min 5). Default 300"
+				},
+				"event_type": {
+					"type": "integer",
+					"description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED. Default 0"
+				},
+				"action_type": {
+					"type": "integer",
+					"description": "0=SPAWN_NEW, 1=MESSAGE_EXISTING. Default 0"
+				},
+				"initial_message": {
+					"type": "string",
+					"description": "Message template. Vars: {param}, {batch_index}, {batch_total}, {agent_name}, {last_response}, {history_name}"
+				},
+				"batch_params": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "List of parameter values for batch execution. Empty = single fire."
+				},
+				"batch_label": {
+					"type": "string",
+					"description": "Optional UI label for batch params (e.g. 'Ticker Symbols')"
+				},
+				"chain_trigger_id": {
+					"type": "string",
+					"description": "Trigger ID to fire after this trigger (or batch) completes"
+				},
+				"watched_agent_ids": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "For CHAT_COMPLETED events: only fire when these agent IDs complete (empty = all)"
+				},
+				"enabled": {
+					"type": "boolean",
+					"description": "Whether the trigger is active. Default false"
+				}
+			},
+			"required": ["name", "agent_id"]
+		}
+	, "triggers")
+
+	_register_tool("minerva_update_trigger",
+		"Update an existing trigger definition. Only provided fields are changed.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to update"
+				},
+				"name": { "type": "string", "description": "New display name" },
+				"agent_id": { "type": "string", "description": "New agent definition ID" },
+				"trigger_type": { "type": "integer", "description": "0=TIMER, 1=EVENT" },
+				"interval_seconds": { "type": "number", "description": "Timer interval" },
+				"event_type": { "type": "integer", "description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED" },
+				"action_type": { "type": "integer", "description": "0=SPAWN_NEW, 1=MESSAGE_EXISTING" },
+				"initial_message": { "type": "string", "description": "Message template" },
+				"batch_params": { "type": "array", "items": {"type": "string"}, "description": "Batch parameter list" },
+				"batch_label": { "type": "string", "description": "UI label for batch params" },
+				"chain_trigger_id": { "type": "string", "description": "Chain target trigger ID" },
+				"watched_agent_ids": { "type": "array", "items": {"type": "string"}, "description": "Agent filter for CHAT_COMPLETED" },
+				"enabled": { "type": "boolean", "description": "Active state" }
+			},
+			"required": ["trigger_id"]
+		}
+	, "triggers")
+
+	_register_tool("minerva_delete_trigger",
+		"Delete a trigger definition by ID.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to delete"
+				}
+			},
+			"required": ["trigger_id"]
+		}
+	, "triggers")
+
+	_register_tool("minerva_fire_trigger",
+		"Manually fire a trigger immediately, bypassing timer/event conditions. Works even if the trigger is disabled.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to fire"
+				}
+			},
+			"required": ["trigger_id"]
+		}
+	, "triggers")
+
+	_register_tool("minerva_get_batch_status",
+		"Check the progress of an active batch execution for a trigger.",
+		{
+			"type": "object",
+			"properties": {
+				"trigger_id": {
+					"type": "string",
+					"description": "ID of the trigger to check batch status for"
+				}
+			},
+			"required": ["trigger_id"]
+		}
+	, "triggers")
+
+
+func _list_triggers(_args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var result: Array[Dictionary] = []
+	var registry = SingletonObject.agent_registry
+	for trig in tm.triggers:
+		var agent_name := ""
+		if registry:
+			var agent_def = registry.get_agent(trig.agent_id)
+			if agent_def:
+				agent_name = agent_def.name
+		var entry: Dictionary = {
+			"id": trig.id,
+			"name": trig.name,
+			"agent_id": trig.agent_id,
+			"agent_name": agent_name,
+			"trigger_type": trig.trigger_type,
+			"enabled": trig.enabled,
+			"action_type": trig.action_type,
+			"initial_message": trig.initial_message,
+		}
+		if trig.trigger_type == TriggerDefinition.TriggerType.TIMER:
+			entry["interval_seconds"] = trig.interval_seconds
+		else:
+			entry["event_type"] = trig.event_type
+			entry["watched_agent_ids"] = trig.watched_agent_ids
+		if not trig.batch_params.is_empty():
+			entry["batch_params"] = trig.batch_params
+			entry["batch_label"] = trig.batch_label
+		if not trig.chain_trigger_id.is_empty():
+			entry["chain_trigger_id"] = trig.chain_trigger_id
+		result.append(entry)
+
+	return {"success": true, "triggers": result, "count": result.size()}
+
+
+func _create_trigger(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trig_name: String = args.get("name", "")
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+
+	var trig = TriggerDefinition.new()
+	trig.name = trig_name
+	trig.agent_id = agent_id
+	trig.trigger_type = int(args.get("trigger_type", TriggerDefinition.TriggerType.TIMER))
+	trig.interval_seconds = float(args.get("interval_seconds", 300.0))
+	trig.event_type = int(args.get("event_type", TriggerDefinition.EventType.NOTE_CREATED))
+	trig.action_type = int(args.get("action_type", TriggerDefinition.ActionType.SPAWN_NEW))
+	trig.initial_message = args.get("initial_message", "")
+	trig.batch_label = args.get("batch_label", "")
+	trig.chain_trigger_id = args.get("chain_trigger_id", "")
+	trig.enabled = args.get("enabled", false)
+
+	var bp: Array = args.get("batch_params", [])
+	for p in bp:
+		trig.batch_params.append(str(p))
+
+	var wids: Array = args.get("watched_agent_ids", [])
+	for wid in wids:
+		trig.watched_agent_ids.append(str(wid))
+
+	tm.add_trigger(trig)
+
+	return {
+		"success": true,
+		"trigger_id": trig.id,
+		"name": trig.name
+	}
+
+
+func _update_trigger(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var existing = tm.get_trigger(trigger_id)
+	if not existing:
+		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+
+	# Clone into a new TriggerDefinition with same ID
+	var trig = TriggerDefinition.new(trigger_id)
+	trig.name = args.get("name", existing.name)
+	trig.agent_id = args.get("agent_id", existing.agent_id)
+	trig.trigger_type = int(args.get("trigger_type", existing.trigger_type))
+	trig.interval_seconds = float(args.get("interval_seconds", existing.interval_seconds))
+	trig.event_type = int(args.get("event_type", existing.event_type))
+	trig.action_type = int(args.get("action_type", existing.action_type))
+	trig.initial_message = args.get("initial_message", existing.initial_message)
+	trig.batch_label = args.get("batch_label", existing.batch_label)
+	trig.chain_trigger_id = args.get("chain_trigger_id", existing.chain_trigger_id)
+	trig.enabled = args.get("enabled", existing.enabled)
+
+	if args.has("batch_params"):
+		var bp: Array = args["batch_params"]
+		for p in bp:
+			trig.batch_params.append(str(p))
+	else:
+		trig.batch_params = existing.batch_params.duplicate()
+
+	if args.has("watched_agent_ids"):
+		var wids: Array = args["watched_agent_ids"]
+		for wid in wids:
+			trig.watched_agent_ids.append(str(wid))
+	else:
+		trig.watched_agent_ids = existing.watched_agent_ids.duplicate()
+
+	tm.update_trigger(trigger_id, trig)
+
+	return {"success": true, "trigger_id": trigger_id}
+
+
+func _delete_trigger(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var existing = tm.get_trigger(trigger_id)
+	if not existing:
+		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+
+	tm.remove_trigger(trigger_id)
+	return {"success": true, "trigger_id": trigger_id}
+
+
+func _fire_trigger_mcp(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var trig = tm.get_trigger(trigger_id)
+	if not trig:
+		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+
+	tm._fire_trigger(trigger_id, {}, {}, true)  # force=true bypasses enabled check for manual fire
+
+	var is_batch = not trig.batch_params.is_empty()
+	return {
+		"success": true,
+		"trigger_id": trigger_id,
+		"is_batch": is_batch,
+		"batch_size": trig.batch_params.size() if is_batch else 0,
+		"message": "Trigger fired" + (" (batch of %d)" % trig.batch_params.size() if is_batch else "")
+	}
+
+
+func _get_batch_status(args: Dictionary) -> Dictionary:
+	var tm = SingletonObject.trigger_manager
+	if not tm:
+		return {"error": "Trigger manager not available", "success": false}
+
+	var trigger_id: String = args.get("trigger_id", "")
+	if trigger_id.is_empty():
+		return {"error": "trigger_id is required", "success": false}
+
+	var status = tm.get_batch_status(trigger_id)
+	status["success"] = true
+	return status
+
+#endregion
+
+
+#region Meta Tools (Tool Set Management)
+
+func _register_meta_tools() -> void:
+	_register_tool("minerva_list_tool_sets",
+		"List all available tool sets with their tool counts and enabled status. Tool sets group related tools (e.g., 'autocoder', 'spreadsheet', 'chat'). Use this to discover what sets are available before enabling/disabling them.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "meta")
+
+	_register_tool("minerva_enable_tool_sets",
+		"Enable specific tool sets for this session. Only tools from enabled sets (plus meta tools) will be available. Pass an empty array to re-enable all sets.",
+		{
+			"type": "object",
+			"properties": {
+				"sets": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "List of tool set names to enable (e.g., ['autocoder', 'chat']). Pass empty array to enable all sets."
+				}
+			},
+			"required": ["sets"]
+		}
+	, "meta")
+
+	_register_tool("minerva_disable_tool_sets",
+		"Disable specific tool sets for this session. Disabled sets' tools will not appear in tools/list and cannot be called.",
+		{
+			"type": "object",
+			"properties": {
+				"sets": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "List of tool set names to disable (e.g., ['pcb', 'video'])"
+				}
+			},
+			"required": ["sets"]
+		}
+	, "meta")
+
+
+func _list_tool_sets(_args: Dictionary) -> Dictionary:
+	var sets: Dictionary = {}
+	for tool_name in mcp_manager.tool_registry:
+		var tool = mcp_manager.tool_registry[tool_name]
+		if tool.server_name == SERVER_NAME and not tool.tool_set.is_empty():
+			sets[tool.tool_set] = sets.get(tool.tool_set, 0) + 1
+
+	var enabled_info: Array = _enabled_tool_sets.duplicate()
+	return {
+		"success": true,
+		"tool_sets": sets,
+		"enabled_sets": enabled_info,
+		"all_enabled": _enabled_tool_sets.is_empty(),
+		"message": "All sets enabled" if _enabled_tool_sets.is_empty() else "Filtered to: %s" % str(_enabled_tool_sets)
+	}
+
+
+func _enable_tool_sets(args: Dictionary) -> Dictionary:
+	var sets: Array = args.get("sets", [])
+	if sets.is_empty():
+		# Empty array = enable all (clear filter)
+		_enabled_tool_sets = []
+		return {"success": true, "enabled_sets": [], "all_enabled": true, "message": "All tool sets enabled"}
+
+	_enabled_tool_sets = sets.duplicate()
+	return {
+		"success": true,
+		"enabled_sets": _enabled_tool_sets.duplicate(),
+		"all_enabled": false,
+		"message": "Enabled tool sets: %s (meta tools always available)" % str(sets)
+	}
+
+
+func _disable_tool_sets(args: Dictionary) -> Dictionary:
+	var sets_to_disable: Array = args.get("sets", [])
+	if sets_to_disable.is_empty():
+		return {"error": "sets array required and must not be empty", "success": false}
+
+	# If currently all-enabled, populate with all known sets minus the disabled ones
+	if _enabled_tool_sets.is_empty():
+		var all_sets: Dictionary = {}
+		for tool_name in mcp_manager.tool_registry:
+			var tool = mcp_manager.tool_registry[tool_name]
+			if tool.server_name == SERVER_NAME and not tool.tool_set.is_empty() and tool.tool_set != "meta":
+				all_sets[tool.tool_set] = true
+		_enabled_tool_sets = []
+		for set_name in all_sets:
+			if set_name not in sets_to_disable:
+				_enabled_tool_sets.append(set_name)
+	else:
+		# Remove specified sets from enabled list
+		for set_name in sets_to_disable:
+			var idx = _enabled_tool_sets.find(set_name)
+			if idx >= 0:
+				_enabled_tool_sets.remove_at(idx)
+
+	return {
+		"success": true,
+		"enabled_sets": _enabled_tool_sets.duplicate(),
+		"disabled": sets_to_disable,
+		"message": "Disabled tool sets: %s" % str(sets_to_disable)
+	}
+
+#endregion
+
+
+#region Autocoder Tools
+
+func _register_autocoder_tools() -> void:
+	_register_tool("minerva_autocoder_plan",
+		"Create or continue a planning session with the AutoCoder. Returns a plan with tasks and optionally questions that need answers before generation can proceed. Use minerva_autocoder_answer_question to respond to any questions.",
+		{
+			"type": "object",
+			"properties": {
+				"prompt": {
+					"type": "string",
+					"description": "The planning prompt describing what you want to build or modify"
+				},
+				"session_id": {
+					"type": "string",
+					"description": "Optional session ID to continue an existing planning session"
+				},
+				"input_archive_uri": {
+					"type": "string",
+					"description": "Optional URI of an input archive to use as the starting point"
+				},
+				"model": {
+					"type": "string",
+					"description": "Optional model override for planning"
+				},
+				"modify_request": {
+					"type": "string",
+					"description": "Optional modification request to refine an existing plan"
+				}
+			},
+			"required": ["prompt"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_generate",
+		"Start code generation with the AutoCoder. Can create a new session or continue from an existing plan. Returns a session ID for tracking progress. Use minerva_autocoder_status to poll for completion.",
+		{
+			"type": "object",
+			"properties": {
+				"prompt": {
+					"type": "string",
+					"description": "The generation prompt describing what to build"
+				},
+				"session_id": {
+					"type": "string",
+					"description": "Optional session ID to continue from (e.g., from a planning session)"
+				},
+				"input_archive_uri": {
+					"type": "string",
+					"description": "Optional URI of an input archive to build upon"
+				},
+				"model": {
+					"type": "string",
+					"description": "Optional model override for generation"
+				},
+				"use_plan_tasks": {
+					"type": "boolean",
+					"description": "Whether to use tasks from the planning phase (default: false)"
+				},
+				"review_agent_ids": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Optional list of review agent IDs to run after generation. If any are provided, review runs automatically."
+				}
+			},
+			"required": ["prompt"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_status",
+		"Get the current status of an AutoCoder session including generation progress, artifacts, and any available outputs.",
+		{
+			"type": "object",
+			"properties": {
+				"session_id": {
+					"type": "string",
+					"description": "The session ID to check status for"
+				}
+			},
+			"required": ["session_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_review",
+		"Request a review of the generated code in an AutoCoder session. Can use custom prompts, specific models, and optionally auto-fix issues found.",
+		{
+			"type": "object",
+			"properties": {
+				"session_id": {
+					"type": "string",
+					"description": "The session ID to review"
+				},
+				"custom_prompt": {
+					"type": "string",
+					"description": "Optional custom review prompt"
+				},
+				"models": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Optional list of model names to use for review"
+				},
+				"auto_fix": {
+					"type": "boolean",
+					"description": "Whether to automatically fix issues found during review (default: false)"
+				}
+			},
+			"required": ["session_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_approve",
+		"Approve the generated output of an AutoCoder session, marking it as accepted.",
+		{
+			"type": "object",
+			"properties": {
+				"session_id": {
+					"type": "string",
+					"description": "The session ID to approve"
+				}
+			},
+			"required": ["session_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_answer_question",
+		"Answer a question raised during AutoCoder planning. Questions may arise when the planner needs clarification. Pass an empty answer to let the AutoCoder decide.",
+		{
+			"type": "object",
+			"properties": {
+				"session_id": {
+					"type": "string",
+					"description": "The planning session ID"
+				},
+				"question_id": {
+					"type": "string",
+					"description": "The ID of the question to answer"
+				},
+				"answer": {
+					"type": "string",
+					"description": "Your answer to the question. Empty string means 'let AutoCoder decide'."
+				}
+			},
+			"required": ["session_id", "question_id", "answer"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_create_review_agent",
+		"Create a new review agent that can be used to automatically review generated code.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the review agent"
+				},
+				"prompt": {
+					"type": "string",
+					"description": "The review prompt/instructions for this agent"
+				},
+				"setup_commands": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Optional shell commands to run before review (e.g., install dependencies)"
+				},
+				"model": {
+					"type": "string",
+					"description": "Optional model override for this review agent"
+				},
+				"tools_enabled": {
+					"type": "boolean",
+					"description": "Whether this agent can use tools during review (default: false)"
+				}
+			},
+			"required": ["name", "prompt"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_list_review_agents",
+		"List all configured review agents.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_update_review_agent",
+		"Update an existing review agent. Only the provided fields are changed; omitted fields keep their current values.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {"type": "string", "description": "ID of the review agent to update"},
+				"name": {"type": "string", "description": "New display name (optional)"},
+				"prompt": {"type": "string", "description": "New review prompt/instructions (optional)"},
+				"setup_commands": {"type": "array", "items": {"type": "string"}, "description": "New setup commands (optional)"},
+				"model": {"type": "string", "description": "New model override (optional)"},
+				"tools_enabled": {"type": "boolean", "description": "Whether agent can use tools (optional)"}
+			},
+			"required": ["agent_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_delete_review_agent",
+		"Delete a review agent from the registry.",
+		{
+			"type": "object",
+			"properties": {
+				"agent_id": {"type": "string", "description": "ID of the review agent to delete"}
+			},
+			"required": ["agent_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_list_sessions",
+		"List AutoCoder sessions, optionally filtered by status.",
+		{
+			"type": "object",
+			"properties": {
+				"status_filter": {
+					"type": "string",
+					"description": "Optional status to filter by (e.g., 'completed', 'in_progress', 'planning')"
+				}
+			},
+			"required": []
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_download",
+		"Download an artifact from an AutoCoder session. Returns the file content as base64-encoded data. If no artifact_uri is provided, downloads the latest archive from the specified session.",
+		{
+			"type": "object",
+			"properties": {
+				"session_id": {
+					"type": "string",
+					"description": "The session ID to download from (used to find latest artifact if no URI given)"
+				},
+				"artifact_uri": {
+					"type": "string",
+					"description": "Optional specific artifact URI to download. If omitted, downloads the latest archive from the session."
+				}
+			},
+			"required": []
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_create_review_preset",
+		"Create a named preset grouping review agent IDs for quick reuse during job submission.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the preset (e.g. 'Godot Review Suite')"
+				},
+				"agent_ids": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "List of review agent IDs to include in this preset"
+				}
+			},
+			"required": ["name", "agent_ids"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_list_review_presets",
+		"List all review agent presets.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_update_review_preset",
+		"Update an existing review agent preset. Only the provided fields are changed.",
+		{
+			"type": "object",
+			"properties": {
+				"preset_id": {
+					"type": "string",
+					"description": "ID of the preset to update"
+				},
+				"name": {
+					"type": "string",
+					"description": "New display name (optional)"
+				},
+				"agent_ids": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "New list of agent IDs (optional)"
+				}
+			},
+			"required": ["preset_id"]
+		}
+	, "autocoder")
+
+	_register_tool("minerva_autocoder_delete_review_preset",
+		"Delete a review agent preset.",
+		{
+			"type": "object",
+			"properties": {
+				"preset_id": {
+					"type": "string",
+					"description": "ID of the preset to delete"
+				}
+			},
+			"required": ["preset_id"]
+		}
+	, "autocoder")
+
+#endregion
+
+
+#region Autocoder Tool Handlers
+
+func _get_autocoder_adapter():
+	var mgr = SingletonObject.autocoder_manager
+	if not mgr:
+		return null
+	return mgr.autocoder_adapter
+
+
+func _get_artifact_adapter():
+	var mgr = SingletonObject.autocoder_manager
+	if not mgr:
+		return null
+	return mgr.artifact_registry_adapter
+
+
+func _autocoder_plan(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var prompt: String = args.get("prompt", "")
+	if prompt.is_empty():
+		return {"error": "prompt is required", "success": false}
+
+	var session_id: String = args.get("session_id", "")
+	var input_archive_uri: String = args.get("input_archive_uri", "")
+	var model: String = args.get("model", "")
+	var modify_request: String = args.get("modify_request", "")
+
+	var result = await adapter.plan(prompt, session_id, input_archive_uri, model, modify_request)
+	if not result:
+		return {"error": "Planning request failed", "success": false}
+
+	# Sync UI to track this session (same as if user clicked "Start Planning")
+	if result.session_id and not result.session_id.is_empty():
+		var mgr = SingletonObject.autocoder_manager
+		if mgr and mgr.submit_job_manager:
+			mgr.submit_job_manager.setup_mcp_session(
+				result.session_id, prompt,
+				AutocoderSubmitJobManager.AutocoderMode.PLAN,
+				input_archive_uri
+			)
+
+	var response: Dictionary = {
+		"success": true,
+		"session_id": result.session_id,
+		"status": result.status,
+		"message": result.message,
+		"tasks": [],
+		"questions": []
+	}
+
+	if result.tasks:
+		for task in result.tasks:
+			response["tasks"].append(task if task is Dictionary else str(task))
+
+	if result.questions:
+		for q in result.questions:
+			response["questions"].append(q if q is Dictionary else str(q))
+
+	if result.notification_topics:
+		response["notification_topics"] = []
+		for t in result.notification_topics:
+			response["notification_topics"].append(str(t))
+
+	return response
+
+
+func _autocoder_generate(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var prompt: String = args.get("prompt", "")
+	if prompt.is_empty():
+		return {"error": "prompt is required", "success": false}
+
+	var session_id: String = args.get("session_id", "")
+	var input_archive_uri: String = args.get("input_archive_uri", "")
+	var model: String = args.get("model", "")
+	var use_plan_tasks: bool = args.get("use_plan_tasks", false)
+	var review_agent_ids: Array = args.get("review_agent_ids", [])
+	var auto_review: bool = not review_agent_ids.is_empty()
+
+	var result = await adapter.generate(
+		prompt, session_id, input_archive_uri, false,
+		model, review_agent_ids, use_plan_tasks, [], auto_review
+	)
+	if not result:
+		return {"error": "Generation request failed", "success": false}
+
+	# Sync UI to track this session (same as if user clicked "Generate Code")
+	if result.session_id and not result.session_id.is_empty():
+		var mgr = SingletonObject.autocoder_manager
+		if mgr and mgr.submit_job_manager:
+			mgr.submit_job_manager.setup_mcp_session(
+				result.session_id, prompt,
+				AutocoderSubmitJobManager.AutocoderMode.CODER,
+				input_archive_uri
+			)
+
+	return {
+		"success": true,
+		"session_id": result.session_id,
+		"status": result.status,
+		"message": result.message,
+		"user_id": result.user_id,
+		"iteration": result.iteration
+	}
+
+
+func _autocoder_status(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var session_id: String = args.get("session_id", "")
+	if session_id.is_empty():
+		return {"error": "session_id is required", "success": false}
+
+	var info = await adapter.get_session_info(session_id)
+	if not info or info.is_empty():
+		return {"error": "Session not found or status unavailable", "success": false}
+
+	# Merge cached artifact URIs from the manager
+	var mgr = SingletonObject.autocoder_manager
+	if mgr:
+		if mgr._latest_archive_by_session.has(session_id):
+			info["latest_archive_uri"] = mgr._latest_archive_by_session[session_id]
+		if mgr._latest_patch_by_session.has(session_id):
+			info["latest_patch_uri"] = mgr._latest_patch_by_session[session_id]
+
+		# Include buffered notification events for MCP polling
+		var events = mgr.get_session_events(session_id)
+		if not events.is_empty():
+			info["recent_events"] = events.slice(maxi(0, events.size() - 20))
+			# Walk backwards to find the latest iteration status from real-time notifications
+			for i in range(events.size() - 1, -1, -1):
+				if events[i]["type"] == "iteration":
+					info["latest_notification_status"] = events[i]["payload"].get("status", "")
+					break
+
+	info["success"] = true
+	return info
+
+
+func _autocoder_review(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var session_id: String = args.get("session_id", "")
+	if session_id.is_empty():
+		return {"error": "session_id is required", "success": false}
+
+	var user_id: String = Core.client.client_id
+	var custom_prompt: String = args.get("custom_prompt", "")
+	var models: Array = args.get("models", [])
+	var auto_fix: bool = args.get("auto_fix", false)
+
+	var ok = await adapter.request_review(user_id, session_id, custom_prompt, models, auto_fix)
+	if not ok:
+		return {"error": "Review request failed", "success": false}
+
+	return {"success": true, "session_id": session_id, "message": "Review requested"}
+
+
+func _autocoder_approve(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var session_id: String = args.get("session_id", "")
+	if session_id.is_empty():
+		return {"error": "session_id is required", "success": false}
+
+	var user_id: String = Core.client.client_id
+	var ok = await adapter.approve(user_id, session_id)
+	if not ok:
+		return {"error": "Approve request failed", "success": false}
+
+	return {"success": true, "session_id": session_id, "message": "Session approved"}
+
+
+func _autocoder_answer_question(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var session_id: String = args.get("session_id", "")
+	if session_id.is_empty():
+		return {"error": "session_id is required", "success": false}
+
+	var question_id: String = args.get("question_id", "")
+	if question_id.is_empty():
+		return {"error": "question_id is required", "success": false}
+
+	var answer: String = args.get("answer", "")
+
+	var ok = await adapter.answer_question(session_id, question_id, answer)
+	if not ok:
+		return {"error": "Failed to submit answer", "success": false}
+
+	return {"success": true, "session_id": session_id, "question_id": question_id, "message": "Answer submitted"}
+
+
+func _autocoder_create_review_agent(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var agent_name: String = args.get("name", "")
+	if agent_name.is_empty():
+		return {"error": "name is required", "success": false}
+
+	var prompt: String = args.get("prompt", "")
+	if prompt.is_empty():
+		return {"error": "prompt is required", "success": false}
+
+	var setup_commands: Array = args.get("setup_commands", [])
+	var model: String = args.get("model", "")
+	var tools_enabled: bool = args.get("tools_enabled", false)
+
+	var agent_id = await adapter.create_review_agent(agent_name, prompt, setup_commands, model, tools_enabled)
+	if not agent_id or (agent_id is String and agent_id.is_empty()):
+		return {"error": "Failed to create review agent", "success": false}
+
+	return {"success": true, "agent_id": agent_id, "message": "Review agent created"}
+
+
+func _autocoder_list_review_agents(_args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var agents = await adapter.list_review_agents()
+	return {"success": true, "agents": agents, "count": agents.size()}
+
+
+func _autocoder_update_review_agent(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+	var name: String = args.get("name", "")
+	var prompt: String = args.get("prompt", "")
+	var setup_commands = args.get("setup_commands", null)
+	var model: String = args.get("model", "")
+	var tools_enabled = args.get("tools_enabled", null)
+	var ok = await adapter.update_review_agent(agent_id, name, prompt, setup_commands, model, tools_enabled)
+	if not ok:
+		return {"error": "Failed to update review agent", "success": false}
+	return {"success": true, "agent_id": agent_id, "message": "Review agent updated"}
+
+
+func _autocoder_delete_review_agent(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var agent_id: String = args.get("agent_id", "")
+	if agent_id.is_empty():
+		return {"error": "agent_id is required", "success": false}
+	var ok = await adapter.delete_review_agent(agent_id)
+	if not ok:
+		return {"error": "Failed to delete review agent", "success": false}
+	return {"success": true, "agent_id": agent_id, "message": "Review agent deleted"}
+
+
+func _autocoder_list_sessions(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+
+	var status_filter: String = args.get("status_filter", "")
+	var sessions = await adapter.list_sessions(status_filter)
+	return {"success": true, "sessions": sessions, "count": sessions.size()}
+
+
+func _autocoder_download(args: Dictionary) -> Dictionary:
+	var artifact_adapter = _get_artifact_adapter()
+	if not artifact_adapter:
+		return {"error": "Artifact registry not connected", "success": false}
+
+	var artifact_uri: String = args.get("artifact_uri", "")
+	var session_id: String = args.get("session_id", "")
+
+	# If no URI given, try to resolve from session's latest archive
+	if artifact_uri.is_empty():
+		if session_id.is_empty():
+			return {"error": "Either session_id or artifact_uri is required", "success": false}
+
+		var mgr = SingletonObject.autocoder_manager
+		if mgr and mgr._latest_archive_by_session.has(session_id):
+			artifact_uri = mgr._latest_archive_by_session[session_id]
+		else:
+			# Try getting it from session info
+			var adapter = _get_autocoder_adapter()
+			if adapter:
+				var info = await adapter.get_session_info(session_id)
+				if info and info.has("archive_uri"):
+					artifact_uri = info["archive_uri"]
+				elif info and info.has("output_archive_uri"):
+					artifact_uri = info["output_archive_uri"]
+
+		if artifact_uri.is_empty():
+			return {"error": "No artifact URI found for session %s" % session_id, "success": false}
+
+	var result = await artifact_adapter._download_binary(artifact_uri)
+	if not result or result.is_empty():
+		return {"error": "Binary download failed for artifact: %s" % artifact_uri, "success": false}
+
+	var filename: String = result.get("filename", "")
+	var buffer: PackedByteArray = result.get("buffer", PackedByteArray())
+
+	if buffer.is_empty() or filename.is_empty():
+		return {"error": "Empty artifact data for: %s" % artifact_uri, "success": false}
+
+	# Save to disk
+	var artifacts_dir := "user://autocoder_artifacts"
+	var dir := DirAccess.open("user://")
+	if dir and not dir.dir_exists("autocoder_artifacts"):
+		dir.make_dir_recursive("autocoder_artifacts")
+
+	var save_path := "%s/%s" % [artifacts_dir, filename]
+	var file := FileAccess.open(save_path, FileAccess.WRITE)
+	if not file:
+		var err := FileAccess.get_open_error()
+		return {"error": "Failed to save artifact to disk: %s" % error_string(err), "success": false}
+	file.store_buffer(buffer)
+	file.close()
+
+	var global_path := ProjectSettings.globalize_path(save_path)
+
+	return {
+		"success": true,
+		"filename": filename,
+		"size": buffer.size(),
+		"artifact_uri": artifact_uri,
+		"path": global_path
+	}
+
+
+func _autocoder_create_review_preset(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var preset_name: String = args.get("name", "")
+	if preset_name.is_empty():
+		return {"error": "name is required", "success": false}
+	var agent_ids: Array = args.get("agent_ids", [])
+	if agent_ids.is_empty():
+		return {"error": "agent_ids is required and must be non-empty", "success": false}
+	var preset_id = await adapter.create_review_preset(preset_name, agent_ids)
+	if not preset_id or (preset_id is String and preset_id.is_empty()):
+		return {"error": "Failed to create review preset", "success": false}
+	return {"success": true, "preset_id": preset_id, "message": "Review preset created"}
+
+
+func _autocoder_list_review_presets(_args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var presets = await adapter.list_review_presets()
+	return {"success": true, "presets": presets, "count": presets.size()}
+
+
+func _autocoder_update_review_preset(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var preset_id: String = args.get("preset_id", "")
+	if preset_id.is_empty():
+		return {"error": "preset_id is required", "success": false}
+	var preset_name: String = args.get("name", "")
+	var agent_ids: Array = args.get("agent_ids", [])
+	var ok = await adapter.update_review_preset(preset_id, preset_name, agent_ids)
+	if not ok:
+		return {"error": "Failed to update review preset", "success": false}
+	return {"success": true, "preset_id": preset_id, "message": "Review preset updated"}
+
+
+func _autocoder_delete_review_preset(args: Dictionary) -> Dictionary:
+	var adapter = _get_autocoder_adapter()
+	if not adapter:
+		return {"error": "AutoCoder not connected", "success": false}
+	var preset_id: String = args.get("preset_id", "")
+	if preset_id.is_empty():
+		return {"error": "preset_id is required", "success": false}
+	var ok = await adapter.delete_review_preset(preset_id)
+	if not ok:
+		return {"error": "Failed to delete review preset", "success": false}
+	return {"success": true, "preset_id": preset_id, "message": "Review preset deleted"}
 
 #endregion

@@ -1,6 +1,6 @@
 [gd_scene load_steps=3 format=3 uid="uid://c6y5w1xg4nxt4"]
 
-[ext_resource type="Script" uid="uid://b0cfd6j8d6tup" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionRow.gd" id="1_55j5b"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/Autocoder/AutocoderActionRow.gd" id="1_55j5b"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_action_row"]
 bg_color = Color(0.1, 0.11, 0.13, 1)
@@ -36,7 +36,7 @@ theme_override_constants/separation = 8
 
 [node name="Icon" type="Label" parent="MarginContainer/VBoxContainer/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "▶"
 
 [node name="SummaryLabel" type="Label" parent="MarginContainer/VBoxContainer/Header"]
@@ -44,14 +44,14 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.9, 0.9, 0.92, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Action summary"
 
 [node name="StatusLabel" type="RichTextLabel" parent="MarginContainer/VBoxContainer/Header"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(100, 0)
 layout_mode = 2
-theme_override_font_sizes/normal_font_size = 12
+theme_override_font_sizes/normal_font_size = 18
 bbcode_enabled = true
 text = "status"
 fit_content = true
@@ -61,5 +61,5 @@ scroll_active = false
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.5, 0.5, 0.55, 1)
-theme_override_font_sizes/font_size = 11
+theme_override_font_sizes/font_size = 16
 text = ""

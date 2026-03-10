@@ -41,14 +41,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="MainPanel/MainMargin/MainContent/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 21
 text = "⚡"
 
 [node name="Title" type="Label" parent="MainPanel/MainMargin/MainContent/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.8, 0.8, 0.85, 1)
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20
 text = "Activity Stream"
 
 [node name="ScrollContainer" type="ScrollContainer" parent="MainPanel/MainMargin/MainContent"]
@@ -67,7 +67,7 @@ theme_override_constants/separation = 6
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_colors/font_color = Color(0.45, 0.45, 0.5, 1)
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 18
 text = "No activity yet. Submit a job to see actions here."
 horizontal_alignment = 1
 autowrap_mode = 2

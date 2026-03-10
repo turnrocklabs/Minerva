@@ -98,10 +98,10 @@ func _update_display() -> void:
 		result_section.hide()
 	else:
 		result_section.show()
-		# Try to parse as JSON for pretty printing
-		var parsed = JSON.parse_string(result)
-		if parsed != null:
-			result_content.text = JSON.stringify(parsed, "  ")
+		# Try to parse as JSON for pretty printing (use instance to avoid console errors on invalid JSON)
+		var json := JSON.new()
+		if json.parse(result) == OK:
+			result_content.text = JSON.stringify(json.data, "  ")
 		else:
 			result_content.text = result
 

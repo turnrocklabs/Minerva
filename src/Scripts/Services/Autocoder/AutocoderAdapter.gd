@@ -1,6 +1,8 @@
 class_name AutocoderAdapter
 extends BaseServiceAdapter
 
+signal review_agents_changed
+signal review_presets_changed
 
 class GenerationOutput extends RefCounted:
 	var session_id: String
@@ -47,7 +49,7 @@ class GenerationOutput extends RefCounted:
 #     "topic": "autocoder/generate"
 # }
 
-func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: bool = false, model: String = "", review_agent_ids: Array = [], use_plan_tasks: bool = false, plan_task_ids: Array = [], auto_review: bool = false) -> GenerationOutput:
+func generate(prompt: String, session_id: String = "", input_archive_uri: String = "", require_permission: bool = false, model: String = "", review_agent_ids: Array = [], use_plan_tasks: bool = false, plan_task_ids: Array = [], auto_review: bool = false, review_model: String = "", task_model_overrides: Dictionary = {}) -> GenerationOutput:
 	if not Core.client._connected:
 		SingletonObject.create_toast_notification("Can't start autocoder. Core not connected")
 		return null
@@ -77,7 +79,13 @@ func generate(prompt: String, session_id: String = "", input_archive_uri: String
 		data["use_plan_tasks"] = true
 		if not plan_task_ids.is_empty():
 			data["plan_task_ids"] = plan_task_ids
-	
+
+	if not review_model.is_empty():
+		data["review_model"] = review_model
+
+	if not task_model_overrides.is_empty():
+		data["task_model_overrides"] = task_model_overrides
+
 	# Use longer timeout for code generation (can take several minutes)
 	var msg = await Core.send_message(service, action, data).with_timeout(600.0).receive()
 
@@ -272,6 +280,44 @@ func approve(user_id: String, session_id: String) -> bool:
 
 	if success:
 		SingletonObject.create_toast_notification(message if not message.is_empty() else "Session approved successfully", ToastNotification.Type.SUCCESS)
+
+	return success
+
+
+## Request a revision for a session (user wants changes)
+## @param user_id: The user ID
+## @param session_id: The session to request revision for
+## @param feedback: Description of what needs to change
+func request_revision(user_id: String, session_id: String, feedback: String) -> bool:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't request revision. Core not connected")
+		return false
+
+	var action := get_action("autocoder/request-revision")
+
+	var data := {
+		"user_id": user_id,
+		"session_id": session_id,
+		"feedback": feedback,
+		"requester_id": user_id
+	}
+
+	var msg = await Core.send_message(service, action, data).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Revision Error", "No response from server")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to request revision")
+		SingletonObject.ErrorDisplay("Revision Error", error_msg)
+		return false
+
+	var success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	var message = safe_extract(msg, ["params", "result", "message"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+
+	if success:
+		SingletonObject.create_toast_notification(message if not message.is_empty() else "Revision requested successfully", ToastNotification.Type.SUCCESS)
 
 	return success
 
@@ -508,7 +554,10 @@ func create_review_agent(name: String, prompt: String, setup_commands: Array = [
 		SingletonObject.ErrorDisplay("Review Agent Create Error", error_msg)
 		return ""
 
-	return safe_extract(msg, ["params", "result", "agent_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	var agent_id = safe_extract(msg, ["params", "result", "agent_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	if not agent_id.is_empty():
+		review_agents_changed.emit()
+	return agent_id
 
 
 ## List all review agents for the current user
@@ -607,18 +656,27 @@ func update_review_agent(agent_id: String, name: String = "", prompt: String = "
 	if tools_enabled != null:
 		data["tools_enabled"] = tools_enabled
 
+	print("[ReviewAgent Update] Sending data: %s" % str(data))
 	var msg = await Core.send_message(service, action, data).receive()
+	print("[ReviewAgent Update] Response: %s" % str(msg))
 
 	if not msg:
 		SingletonObject.ErrorDisplay("Review Agent Update Error", "No response from server")
 		return false
 
 	if msg.get("cmd") == "error":
-		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to update review agent")
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "")
+		if error_msg.is_empty():
+			error_msg = str(msg.get("params", {}))
 		SingletonObject.ErrorDisplay("Review Agent Update Error", error_msg)
 		return false
 
-	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	var success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if not success:
+		SingletonObject.ErrorDisplay("Review Agent Update Error", "Server returned success=false. Response: %s" % str(msg.get("params", {})))
+	else:
+		review_agents_changed.emit()
+	return success
 
 
 ## Delete a review agent by ID
@@ -643,7 +701,10 @@ func delete_review_agent(agent_id: String) -> bool:
 		SingletonObject.ErrorDisplay("Review Agent Delete Error", error_msg)
 		return false
 
-	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	var del_success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if del_success:
+		review_agents_changed.emit()
+	return del_success
 
 
 ## Update a review agent's order (execution priority)
@@ -674,6 +735,138 @@ func update_review_agent_order(agent_id: String, order: int) -> bool:
 		return false
 
 	return safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+
+
+## Create a review agent preset (named group of agent IDs)
+func create_review_preset(name: String, agent_ids: Array) -> String:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't create review preset. Core not connected")
+		return ""
+
+	var action := get_action("autocoder/review-preset/create")
+	if not action:
+		push_warning("Create review preset action not found")
+		return ""
+
+	var data := {
+		"name": name,
+		"agent_ids": agent_ids
+	}
+
+	var msg = await Core.send_message(service, action, data).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset Create Error", "No response from server")
+		return ""
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to create review preset")
+		SingletonObject.ErrorDisplay("Review Preset Create Error", error_msg)
+		return ""
+
+	var preset_id = safe_extract(msg, ["params", "result", "preset_id"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_STRING], "")
+	if not preset_id.is_empty():
+		review_presets_changed.emit()
+	return preset_id
+
+
+## List all review agent presets
+func list_review_presets() -> Array[Dictionary]:
+	var presets: Array[Dictionary] = []
+
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't list review presets. Core not connected")
+		return presets
+
+	var action := get_action("autocoder/review-preset/list")
+	if not action:
+		push_warning("List review presets action not found")
+		return presets
+
+	var msg = await Core.send_message(service, action, {}).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset List Error", "No response from server")
+		return presets
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to list review presets")
+		SingletonObject.ErrorDisplay("Review Preset List Error", error_msg)
+		return presets
+
+	var result_presets = safe_extract(msg, ["params", "result", "presets"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], [])
+
+	for preset_data in result_presets:
+		if preset_data is Dictionary:
+			presets.append(preset_data)
+
+	return presets
+
+
+## Update a review agent preset
+func update_review_preset(preset_id: String, name: String = "", agent_ids: Array = []) -> bool:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't update review preset. Core not connected")
+		return false
+
+	var action := get_action("autocoder/review-preset/update")
+	if not action:
+		push_warning("Update review preset action not found")
+		return false
+
+	var data := {
+		"preset_id": preset_id
+	}
+
+	if not name.is_empty():
+		data["name"] = name
+
+	if not agent_ids.is_empty():
+		data["agent_ids"] = agent_ids
+
+	var msg = await Core.send_message(service, action, data).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset Update Error", "No response from server")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to update review preset")
+		SingletonObject.ErrorDisplay("Review Preset Update Error", error_msg)
+		return false
+
+	var success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if success:
+		review_presets_changed.emit()
+	return success
+
+
+## Delete a review agent preset
+func delete_review_preset(preset_id: String) -> bool:
+	if not Core.client._connected:
+		SingletonObject.create_toast_notification("Can't delete review preset. Core not connected")
+		return false
+
+	var action := get_action("autocoder/review-preset/delete")
+	if not action:
+		push_warning("Delete review preset action not found")
+		return false
+
+	var msg = await Core.send_message(service, action, {"preset_id": preset_id}).receive()
+
+	if not msg:
+		SingletonObject.ErrorDisplay("Review Preset Delete Error", "No response from server")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to delete review preset")
+		SingletonObject.ErrorDisplay("Review Preset Delete Error", error_msg)
+		return false
+
+	var del_success = safe_extract(msg, ["params", "result", "success"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_BOOL], false)
+	if del_success:
+		review_presets_changed.emit()
+	return del_success
 
 
 ## Generate a development plan from prompt (planning mode)
@@ -854,6 +1047,41 @@ func answer_question(session_id: String, question_id: String, answer: String) ->
 	return true
 
 
+## Inject additional context into a planning session
+## @param session_id: The session ID to inject context into
+## @param content: The context text to inject
+## @param context_type: "text" (user-typed) or "notes" (from notes panel)
+func inject_context(session_id: String, content: String, context_type: String = "text") -> bool:
+	if not Core.client._connected:
+		push_warning("Can't inject context - Core not connected")
+		return false
+
+	var action := get_action("autocoder/inject-context")
+	if not action:
+		push_warning("[AutocoderAdapter] inject-context action not available")
+		return false
+
+	var data := {
+		"session_id": session_id,
+		"content": content,
+		"context_type": context_type
+	}
+
+	# Use longer timeout — may trigger a re-plan
+	var msg = await Core.send_message(service, action, data).with_timeout(120.0).receive()
+
+	if not msg:
+		push_warning("No response when injecting context - may have timed out")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to inject context")
+		push_warning("Inject context error: %s" % error_msg)
+		return false
+
+	return true
+
+
 func get_session_info(session_id: String) -> Dictionary:
 	"""Get session metadata including prompt, plan, questions, and name"""
 	if not Core.client._connected:
@@ -952,6 +1180,91 @@ func delete_all_sessions() -> Dictionary:
 		"deleted_count": deleted_count,
 		"message": message
 	}
+
+
+## Save user-selected models to backend (persisted in Agent Memory)
+## @param models: Array of {id: "provider/model", name: "Display Name"}
+func save_user_models(models: Array) -> bool:
+	if not Core.client._connected:
+		push_warning("Can't save user models. Core not connected")
+		return false
+
+	var action := get_action("autocoder/user-models/save")
+	if not action:
+		push_warning("Save user models action not found")
+		return false
+
+	var msg = await Core.send_message(service, action, {"models": models}).receive()
+
+	if not msg:
+		push_warning("No response when saving user models")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to save user models")
+		push_warning("Save user models error: %s" % error_msg)
+		return false
+
+	return true
+
+
+## Get user-saved models from backend
+## Returns array of {id, name} dictionaries
+func get_user_models() -> Array[Dictionary]:
+	var models: Array[Dictionary] = []
+
+	if not Core.client._connected:
+		push_warning("Can't get user models. Core not connected")
+		return models
+
+	var action := get_action("autocoder/user-models/get")
+	if not action:
+		push_warning("Get user models action not found")
+		return models
+
+	var msg = await Core.send_message(service, action, {}).receive()
+
+	if not msg:
+		push_warning("No response when getting user models")
+		return models
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to get user models")
+		push_warning("Get user models error: %s" % error_msg)
+		return models
+
+	var result_models = safe_extract(msg, ["params", "result", "models"], [TYPE_DICTIONARY, TYPE_DICTIONARY, TYPE_ARRAY], [])
+
+	for model_data in result_models:
+		if model_data is Dictionary:
+			models.append(model_data)
+
+	return models
+
+
+## Clear all user-saved models from backend
+func clear_user_models() -> bool:
+	if not Core.client._connected:
+		push_warning("Can't clear user models. Core not connected")
+		return false
+
+	var action := get_action("autocoder/user-models/clear")
+	if not action:
+		push_warning("Clear user models action not found")
+		return false
+
+	var msg = await Core.send_message(service, action, {}).receive()
+
+	if not msg:
+		push_warning("No response when clearing user models")
+		return false
+
+	if msg.get("cmd") == "error":
+		var error_msg = safe_extract(msg, ["params", "error"], [TYPE_DICTIONARY, TYPE_STRING], "Failed to clear user models")
+		push_warning("Clear user models error: %s" % error_msg)
+		return false
+
+	return true
 
 
 func _delete_local_kanban_file(session_id: String) -> void:

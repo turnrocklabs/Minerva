@@ -78,6 +78,14 @@ var AgentSummarizeThreshold: int = 0:
 var AgentModeEnabled: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); AgentModeEnabled = value
 
+## Whether this chat was spawned by the agent trigger system
+var IsAgentChat: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); IsAgentChat = value
+
+## The AgentDefinition.id that spawned this chat (empty if manual)
+var AgentDefinitionId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); AgentDefinitionId = value
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
@@ -104,6 +112,8 @@ static var SERIALIZER_FIELDS = [
 	"AgentContextHardLimit",
 	"AgentSummarizeThreshold",
 	"AgentModeEnabled",
+	"IsAgentChat",
+	"AgentDefinitionId",
 ]
 
 
@@ -222,6 +232,8 @@ func Serialize() -> Dictionary:
 		"AgentContextHardLimit": AgentContextHardLimit,
 		"AgentSummarizeThreshold": AgentSummarizeThreshold,
 		"AgentModeEnabled": AgentModeEnabled,
+		"IsAgentChat": IsAgentChat,
+		"AgentDefinitionId": AgentDefinitionId,
 	}
 	return save_dict
 
@@ -298,5 +310,9 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgentSummarizeThreshold = int(data.get("AgentSummarizeThreshold", 0))
 	if data.has("AgentModeEnabled"):
 		history.AgentModeEnabled = data.get("AgentModeEnabled", false)
+	if data.has("IsAgentChat"):
+		history.IsAgentChat = data.get("IsAgentChat", false)
+	if data.has("AgentDefinitionId"):
+		history.AgentDefinitionId = data.get("AgentDefinitionId", "")
 
 	return history

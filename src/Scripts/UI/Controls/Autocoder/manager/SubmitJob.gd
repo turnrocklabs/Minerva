@@ -4,14 +4,12 @@ extends VBoxContainer
 @onready var _artifact_browser_popup: PersistentWindow = %ArtifactBrowserPopup
 @onready var _artifact_browser: ArtifactBrowser = %ArtifactBrowser
 
-@warning_ignore("unused_variable")
-#@onready var _input_resources_container: Container = %InputResourcesCard
-@onready var _clear_resources_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ClearInputResourcesButton
+@onready var _clear_resources_button: Button = %ClearInputResourcesButton
 @onready var _attach_folder_button: Button = %AttachFolderButton
 @onready var _set_source_folder_button: Button = %SetSourceFolderButton
-@onready var _download_latest_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/DownloadLatestButton
-@onready var _extract_latest_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/ExtractLatestButton
-@onready var _download_patch_button: Button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/ResourceRow/DownloadPatchButton
+@onready var _download_latest_button: Button = %DownloadLatestButton
+@onready var _extract_latest_button: Button = %ExtractLatestButton
+@onready var _download_patch_button: Button = %DownloadPatchButton
 
 @onready var _selected_artifact_name_label: Label = %SelectedArtifactNameLabel
 @onready var _selected_artifact_uri_label: Label = %SelectedArtifactURILabel
@@ -19,27 +17,59 @@ extends VBoxContainer
 @onready var _prompt_text_edit: TextEdit = %PromptTextEdit
 
 @onready var _model_option_button: OptionButton = %ModelOptionButton
+@onready var _clear_text_button: Button = %ClearTextButton
+@onready var _microphone_button: Button = %MicrophoneButton
+@onready var _stop_button: Button = %StopButton
 
-@onready var _auto_review_check_box: CheckBox = %AutoReviewCheckBox
+@onready var _resource_popup: PersistentWindow = %ResourcePopup
+@onready var _resource_button: Button = %ResourceButton
+@onready var _phase_model_settings_button: Button = %PhaseModelSettingsButton
+@onready var _phase_model_popup: PersistentWindow = %PhaseModelPopup
+@onready var _review_agents_button: Button = %ReviewAgentsButton
+@onready var _review_agents_popup: PersistentWindow = %ReviewAgentsPopup
+@onready var _plan_model_option: OptionButton = %PlanModelOption
+@onready var _generate_model_option: OptionButton = %GenerateModelOption
+@onready var _review_model_option: OptionButton = %ReviewModelOption
+
+@onready var _auto_generate_check_box: CheckBox = %AutoGenerateCheckBox
+
 @onready var _require_permission_check_box: CheckBox = %RequirePermissionCheckBox
-@onready var _review_agents_panel: PanelContainer = %ReviewAgentsCard
+@onready var _browse_models_button: Button = %BrowseModelsButton
+@onready var _clear_user_models_button: Button = %ClearUserModelsButton
+@onready var _model_management_status_label: Label = %ModelManagementStatusLabel
 @onready var _review_agents_refresh_button: Button = %ReviewAgentsRefreshButton
-@onready var _review_agents_list: ItemList = %ReviewAgentsList
+@onready var _agent_checkbox_list: VBoxContainer = %AgentCheckboxList
 @onready var _review_agents_empty_label: Label = %ReviewAgentsEmptyLabel
 @onready var _review_agents_clear_button: Button = %ReviewAgentsClearButton
+@onready var _select_all_button: Button = %SelectAllButton
+@onready var _preset_option_button: OptionButton = %PresetOptionButton
+@onready var _save_preset_button: Button = %SavePresetButton
 
 @onready var _session_option_button: OptionButton = %SessionOptionButton
 @onready var _new_session_check_box: CheckBox = %NewSessionCheckBox
 @onready var _continue_session_check_box: CheckBox = %ContinueSessionCheckBox
-@onready var _mode_option_button: OptionButton = %ModeOptionButton
 
+@onready var _submit_job_button: Button = %SubmitJobButton
+@onready var _select_package_button: Button = %SelectPackageButton
+
+## Keep AutocoderMode as static const for MCP backward compatibility
 enum AutocoderMode {
 	PLAN = 0,
 	CODER = 1,
 	REVIEW = 2
 }
 
-var current_mode: AutocoderMode = AutocoderMode.CODER
+enum JobState {
+	IDLE,
+	PLANNING,
+	AWAITING_QUESTIONS,
+	GENERATING,
+	AWAITING_USER,
+	ERROR
+}
+
+var _job_state: JobState = JobState.IDLE
+var _auto_promote_session_id: String = ""
 
 @onready var _session_history_container: Container = %SessionHistoryContainer
 
@@ -77,6 +107,16 @@ var _source_dir_by_session: Dictionary = {}  # session_id -> source dir
 const SOURCE_DIR_SECTION = "AutocoderSourceDirs"
 var _submitted_questions: Dictionary = {}  # question_id -> true
 
+# User-selected custom models from OpenRouter browse
+var _user_selected_models: Array = []  # [{id, name}, ...]
+
+# Planning action buttons (Add Context / Inject Notes)
+var _planning_actions_row: HBoxContainer = null
+var _add_context_button: Button = null
+var _inject_notes_button: Button = null
+var _context_popup: Window = null
+var _context_text_edit: TextEdit = null
+
 
 func _ready() -> void:
 	SingletonObject.load_config_file()
@@ -92,18 +132,17 @@ func _ready() -> void:
 	_populate_models([])
 	_populate_review_agents([])
 	
-	# Connect action stream question answers
+	# Connect action stream question answers and approval actions
 	if _action_stream:
 		_action_stream.question_answered.connect(_on_question_answered)
-	
-	# Connect mode selector
-	if _mode_option_button:
-		_mode_option_button.item_selected.connect(_on_mode_selected)
-		_mode_option_button.select(AutocoderMode.PLAN)  # Default to Plan mode
-		current_mode = AutocoderMode.PLAN
-	
-	# Update review agents visibility based on mode (not auto-review checkbox)
-	_update_review_agents_for_mode()
+		_action_stream.approval_action.connect(_on_approval_action)
+		_action_stream.approval_extract.connect(_on_approval_extract)
+
+	# Initialize job state
+	_set_job_state(JobState.IDLE)
+
+	# Create planning action buttons (Add Context / Inject Notes)
+	_create_planning_actions_row()
 
 	# Note: Session loading and model loading are now handled by AutocoderManager
 	# calling _refresh_session_history() and _refresh_models() after the autocoder_adapter is ready.
@@ -112,9 +151,28 @@ func _ready() -> void:
 	# Review agents can still be loaded on demand
 	_refresh_review_agents.call_deferred()
 
-	_auto_review_check_box.toggled.connect(_on_auto_review_toggled)
+	if _phase_model_settings_button:
+		_phase_model_settings_button.pressed.connect(_on_phase_model_settings_pressed)
+	if _browse_models_button:
+		_browse_models_button.pressed.connect(_on_browse_models_pressed)
+	if _clear_user_models_button:
+		_clear_user_models_button.pressed.connect(_on_clear_user_models_pressed)
+	if _review_agents_button:
+		_review_agents_button.pressed.connect(_on_review_agents_button_pressed)
+	if _resource_button and _resource_popup:
+		_resource_button.pressed.connect(func(): _resource_popup.popup_centered())
+
+	_clear_text_button.pressed.connect(_on_clear_text_button_pressed)
+	_microphone_button.pressed.connect(_on_microphone_button_pressed)
+	_stop_button.pressed.connect(_on_stop_button_pressed)
 	_review_agents_refresh_button.pressed.connect(_on_review_agents_refresh_pressed)
 	_review_agents_clear_button.pressed.connect(_on_review_agents_clear_pressed)
+	_select_all_button.pressed.connect(_on_select_all_pressed)
+	_preset_option_button.item_selected.connect(_on_preset_selected)
+	_save_preset_button.pressed.connect(_on_save_preset_pressed)
+
+	# Load presets after adapter is ready
+	_refresh_presets.call_deferred()
 
 	if _attach_folder_button and not _attach_folder_button.pressed.is_connected(_on_attach_folder_button_pressed):
 		_attach_folder_button.pressed.connect(_on_attach_folder_button_pressed)
@@ -138,12 +196,85 @@ func _ready() -> void:
 			_refresh_models()
 	)
 
+	# Connections moved from .tscn to code for reparenting resilience
+	if _select_package_button and not _select_package_button.pressed.is_connected(_on_select_package_button_pressed):
+		_select_package_button.pressed.connect(_on_select_package_button_pressed)
+	if _clear_resources_button and not _clear_resources_button.pressed.is_connected(_on_clear_input_resources_button_pressed):
+		_clear_resources_button.pressed.connect(_on_clear_input_resources_button_pressed)
+	if _submit_job_button and not _submit_job_button.pressed.is_connected(_on_submit_job_button_pressed):
+		_submit_job_button.pressed.connect(_on_submit_job_button_pressed)
+	if _continue_session_check_box and not _continue_session_check_box.toggled.is_connected(_on_continue_session_check_box_toggled):
+		_continue_session_check_box.toggled.connect(_on_continue_session_check_box_toggled)
+
 	if _new_session_check_box and not _new_session_check_box.toggled.is_connected(_on_new_session_toggled):
 		_new_session_check_box.toggled.connect(_on_new_session_toggled)
 	if _session_option_button and not _session_option_button.item_selected.is_connected(_on_session_option_selected):
 		_session_option_button.item_selected.connect(_on_session_option_selected)
 
 
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ENTER and event.ctrl_pressed:
+			if _submit_job_button and not _submit_job_button.disabled:
+				get_viewport().set_input_as_handled()
+				_on_submit_job_button_pressed()
+
+
+
+
+## Programmatic entry point for MCP-initiated sessions.
+## Syncs the UI to track a session started externally, so it behaves
+## identically to one started from the Submit button.
+func setup_mcp_session(session_id: String, prompt: String, mode: AutocoderMode, input_archive_uri: String = "") -> void:
+	if session_id.is_empty():
+		return
+
+	# Clear action stream and show prompt
+	if _action_stream:
+		_action_stream.clear()
+	if _action_stream and not prompt.is_empty():
+		_action_stream.add_message("📝 Prompt:\n\n" + prompt, "user")
+
+	# Map AutocoderMode to JobState for the unified UI
+	match mode:
+		AutocoderMode.PLAN:
+			_set_job_state(JobState.PLANNING)
+		AutocoderMode.CODER:
+			_set_job_state(JobState.GENERATING)
+		AutocoderMode.REVIEW:
+			_set_job_state(JobState.GENERATING)
+
+	# Fill prompt field
+	if _prompt_text_edit:
+		_prompt_text_edit.text = prompt
+
+	# Set input archive if provided
+	if not input_archive_uri.is_empty():
+		var ArtifactClass = load("res://Scripts/Services/ArtifactRegistry/Artifact.gd")
+		if ArtifactClass:
+			var artifact = ArtifactClass.new()
+			artifact.artifact_uri = input_archive_uri
+			artifact.filename = input_archive_uri.get_file()
+			selected_artifact = artifact
+
+	# Store session for auto-promote tracking
+	_auto_promote_session_id = session_id
+
+	# Ensure session appears in dropdown and is selected
+	_ensure_session_option(session_id, "processing")
+	_select_session_in_dropdown(session_id)
+
+	# Switch to "Continue Session" mode so the dropdown is active
+	if _continue_session_check_box:
+		_continue_session_check_box.button_pressed = true
+		_session_option_button.disabled = false
+
+	# Start full monitoring (kanban board + all topic subscriptions)
+	var user_id = Core.client.client_id
+	if SingletonObject.autocoder_manager:
+		SingletonObject.autocoder_manager.monitor_session(user_id, session_id)
+
+	print("[SubmitJob] MCP session synced to UI: %s (mode=%d)" % [session_id, mode])
 
 
 func _refresh_session_history():
@@ -186,6 +317,10 @@ func _refresh_models() -> void:
 	var models = await SingletonObject.autocoder_manager.autocoder_adapter.list_generation_models()
 	print("[SubmitJob] Received %d models from adapter" % models.size())
 	_populate_models(models)
+	_populate_phase_model_dropdowns()
+
+	# Update user model count status
+	_update_user_model_status()
 
 
 func _refresh_review_agents() -> void:
@@ -194,9 +329,15 @@ func _refresh_review_agents() -> void:
 		return
 
 	_review_agents_refresh_button.disabled = true
-	_review_agents_list.clear()
-	_review_agents_list.add_item("Loading review agents...")
-	_review_agents_list.set_item_disabled(0, true)
+	# Clear existing checkboxes
+	for child in _agent_checkbox_list.get_children():
+		child.queue_free()
+
+	var loading_label = Label.new()
+	loading_label.text = "Loading review agents..."
+	loading_label.add_theme_font_size_override("font_size", 17)
+	loading_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55, 1))
+	_agent_checkbox_list.add_child(loading_label)
 
 	var agents = await SingletonObject.autocoder_manager.autocoder_adapter.list_review_agents()
 	_populate_review_agents(agents)
@@ -241,15 +382,98 @@ func _populate_models(models: Array[Dictionary]) -> void:
 	_model_option_button.disabled = false
 
 
+func _on_phase_model_settings_pressed() -> void:
+	if _phase_model_popup:
+		_phase_model_popup.popup_centered()
+
+
+func _on_review_agents_button_pressed() -> void:
+	if _review_agents_popup:
+		_review_agents_popup.popup_centered()
+
+
+func _populate_phase_model_dropdowns() -> void:
+	"""Populate phase model dropdowns mirroring the main model dropdown, with '(Use Default)' as first item"""
+	for option_button in [_plan_model_option, _generate_model_option, _review_model_option]:
+		if not option_button:
+			continue
+		var previous_id = ""
+		if option_button.item_count > 0 and option_button.selected >= 0:
+			var meta = option_button.get_item_metadata(option_button.selected)
+			if meta != null:
+				previous_id = str(meta)
+
+		option_button.clear()
+		option_button.add_item("(Use Default)")
+		option_button.set_item_metadata(0, "")
+
+		# Copy items from main model dropdown (skip the "Auto (server default)" entry)
+		var selected_index = 0
+		for i in range(1, _model_option_button.item_count):
+			var label = _model_option_button.get_item_text(i)
+			var model_id = str(_model_option_button.get_item_metadata(i))
+			var index = option_button.item_count
+			option_button.add_item(label)
+			option_button.set_item_metadata(index, model_id)
+			if model_id == previous_id and not previous_id.is_empty():
+				selected_index = index
+
+		option_button.select(selected_index)
+
+
+func _get_phase_models() -> Dictionary:
+	"""Returns {planning: String, generation: String, review: String} where empty string means 'use default'"""
+	var result = {"planning": "", "generation": "", "review": ""}
+
+	if _plan_model_option and _plan_model_option.selected >= 0:
+		var meta = _plan_model_option.get_item_metadata(_plan_model_option.selected)
+		if meta != null:
+			result["planning"] = str(meta)
+
+	if _generate_model_option and _generate_model_option.selected >= 0:
+		var meta = _generate_model_option.get_item_metadata(_generate_model_option.selected)
+		if meta != null:
+			result["generation"] = str(meta)
+
+	if _review_model_option and _review_model_option.selected >= 0:
+		var meta = _review_model_option.get_item_metadata(_review_model_option.selected)
+		if meta != null:
+			result["review"] = str(meta)
+
+	return result
+
+
+func _restore_phase_models_from_session(session_info: Dictionary) -> void:
+	"""Restore per-phase model dropdown selections from session metadata"""
+	var planning_model = str(session_info.get("planning_model", ""))
+	var generation_model = str(session_info.get("generation_model", ""))
+	var review_model = str(session_info.get("review_model", ""))
+
+	_select_phase_model_by_id(_plan_model_option, planning_model)
+	_select_phase_model_by_id(_generate_model_option, generation_model)
+	_select_phase_model_by_id(_review_model_option, review_model)
+
+
+func _select_phase_model_by_id(option_button: OptionButton, model_id: String) -> void:
+	"""Select a model in a phase dropdown by its metadata ID"""
+	if not option_button or model_id.is_empty():
+		return
+	for i in range(option_button.item_count):
+		var meta = option_button.get_item_metadata(i)
+		if meta != null and str(meta) == model_id:
+			option_button.select(i)
+			return
+
+
 func _populate_review_agents(agents: Array[Dictionary]) -> void:
-	_review_agents_list.clear()
+	# Clear existing checkboxes
+	for child in _agent_checkbox_list.get_children():
+		child.queue_free()
 	_review_agents_empty_label.visible = false
 
 	if agents.is_empty():
 		_review_agents_empty_label.visible = true
 		return
-
-	_review_agents_list.select_mode = ItemList.SELECT_MULTI
 
 	var sorted_agents = agents.duplicate()
 	sorted_agents.sort_custom(
@@ -270,50 +494,50 @@ func _populate_review_agents(agents: Array[Dictionary]) -> void:
 		var name_ = str(agent.get("name", "Unnamed Agent"))
 		var model = str(agent.get("model", ""))
 		var tools_enabled = bool(agent.get("tools_enabled", false))
-		var tools_tag = " 🛠" if tools_enabled else ""
-		var label = "🔍 %s%s" % [name_, tools_tag]
+		var tools_tag = " \U0001F6E0" if tools_enabled else ""
+		var label = "%s%s" % [name_, tools_tag]
 		if not model.is_empty():
 			label = "%s (%s)" % [label, model]
 
-		var index = _review_agents_list.item_count
-		_review_agents_list.add_item(label)
-		_review_agents_list.set_item_metadata(index, agent_id)
+		var cb = CheckBox.new()
+		cb.text = label
+		cb.add_theme_font_size_override("font_size", 17)
+		cb.set_meta("agent_id", agent_id)
+		_agent_checkbox_list.add_child(cb)
 
 
-func _set_review_agents_enabled(enabled: bool) -> void:
-	_review_agents_panel.visible = enabled
-
-
-func _on_mode_selected(index: int) -> void:
-	current_mode = index as AutocoderMode
-	_update_review_agents_for_mode()
-	_update_submit_button_text()
-
-
-func _update_review_agents_for_mode() -> void:
-	# Show review agents for Coder and Review modes, hide for Plan
-	var show_agents = current_mode != AutocoderMode.PLAN
-	_review_agents_panel.visible = show_agents
-	
-	# Also show/hide auto-review checkbox (only relevant in Coder mode)
-	if _auto_review_check_box:
-		_auto_review_check_box.visible = current_mode == AutocoderMode.CODER
-
-
-func _update_submit_button_text() -> void:
-	var submit_button = $VSplitContainer/TopSection/ScrollContainer/MainMargin/MainVBox/MainInputCard/CardMargin/CardContent/SubmitJobButton
-	if not submit_button:
+func _set_job_state(new_state: JobState) -> void:
+	_job_state = new_state
+	if not _submit_job_button:
 		return
-	
-	var is_new_session = _new_session_check_box.button_pressed
-	
-	match current_mode:
-		AutocoderMode.PLAN:
-			submit_button.text = "Start Planning" if is_new_session else "Continue Planning"
-		AutocoderMode.CODER:
-			submit_button.text = "Generate Code" if is_new_session else "Continue Coding"
-		AutocoderMode.REVIEW:
-			submit_button.text = "Run Review"
+
+	var is_continue = _continue_session_check_box.button_pressed
+
+	match _job_state:
+		JobState.IDLE:
+			_submit_job_button.tooltip_text = "Continue Session" if is_continue else "Start Job"
+			_submit_job_button.disabled = false
+		JobState.PLANNING:
+			_submit_job_button.tooltip_text = "Planning..."
+			_submit_job_button.disabled = true
+		JobState.AWAITING_QUESTIONS:
+			_submit_job_button.tooltip_text = "Awaiting Answers..."
+			_submit_job_button.disabled = true
+		JobState.GENERATING:
+			_submit_job_button.tooltip_text = "Generating..."
+			_submit_job_button.disabled = true
+		JobState.AWAITING_USER:
+			_submit_job_button.tooltip_text = "Awaiting Approval"
+			_submit_job_button.disabled = true
+		JobState.ERROR:
+			_submit_job_button.tooltip_text = "Retry"
+			_submit_job_button.disabled = false
+
+	# Show/hide planning action buttons
+	if _planning_actions_row:
+		_planning_actions_row.visible = (
+			_job_state == JobState.PLANNING or _job_state == JobState.AWAITING_QUESTIONS
+		)
 
 
 func _get_selected_model_id() -> String:
@@ -332,10 +556,9 @@ func _get_selected_model_id() -> String:
 
 func _get_selected_review_agent_ids() -> Array[String]:
 	var ids: Array[String] = []
-	for index in _review_agents_list.get_selected_items():
-		var meta = _review_agents_list.get_item_metadata(index)
-		if meta != null:
-			var agent_id = str(meta)
+	for child in _agent_checkbox_list.get_children():
+		if child is CheckBox and child.button_pressed:
+			var agent_id = str(child.get_meta("agent_id", ""))
 			if not agent_id.is_empty():
 				ids.append(agent_id)
 	return ids
@@ -495,7 +718,10 @@ func _load_session_history_to_action_stream(session_id: String) -> void:
 	
 	print("[SubmitJob] session_info keys: %s" % str(session_info.keys()))
 	print("[SubmitJob] session_info.plan type: %s" % typeof(session_info.get("plan", {})))
-	
+
+	# Restore per-phase model selections from session metadata
+	_restore_phase_models_from_session(session_info)
+
 	# Only clear action stream if this is a fresh load (not continuing an active session)
 	# Don't clear if we're just loading history to view - preserve existing content
 	var is_continuing = _continue_session_check_box and _continue_session_check_box.button_pressed
@@ -614,6 +840,16 @@ func _load_session_history_to_action_stream(session_id: String) -> void:
 						preview += "\n" + (content.substr(0, 150) + "..." if content.length() > 150 else content)
 					_action_stream.add_message(preview, "response")
 	
+	# Show approval card if session is awaiting user action
+	var status_lower = str(session_status).to_lower()
+	if status_lower in ["awaiting_user", "in_review"] and iterations is Array and iterations.size() > 0:
+		var last_iter = iterations[iterations.size() - 1]
+		if last_iter is Dictionary:
+			var iter_status = str(last_iter.get("status", "")).to_lower()
+			if iter_status == "awaiting_user" or status_lower == "awaiting_user":
+				print("[SubmitJob] Session is awaiting user - showing approval card")
+				add_approval_card(session_id, last_iter)
+
 	print("[SubmitJob] Loaded session history: backend_tasks=%d, backend_questions=%d, kanban_tasks=%d, llm_events=%d" % [tasks.size(), questions.size(), kanban_task_count, llm_events.size() if llm_events is Array else 0])
 
 
@@ -920,12 +1156,12 @@ func _on_continue_session_check_box_pressed() -> void:
 
 func _on_continue_session_check_box_toggled(toggled_on: bool) -> void:
 	_session_option_button.disabled = not toggled_on or _session_option_button.item_count <= 1
-	_update_submit_button_text()
+	_set_job_state(_job_state)
 
 
 func _on_new_session_toggled(_toggled_on: bool) -> void:
 	_session_option_button.disabled = not _continue_session_check_box.button_pressed or _session_option_button.item_count <= 1
-	_update_submit_button_text()
+	_set_job_state(_job_state)
 
 
 func _on_session_option_selected(_index: int) -> void:
@@ -941,20 +1177,121 @@ func _on_session_option_selected(_index: int) -> void:
 	_update_download_latest_button()
 
 
-func _on_auto_review_toggled(toggled_on: bool) -> void:
-	# In Coder mode, auto-review controls whether agents are selected automatically
-	# But review agents panel visibility is controlled by mode, not this checkbox
-	if current_mode == AutocoderMode.CODER and toggled_on and _review_agents_list.item_count == 0:
-		_refresh_review_agents()
-
-
 func _on_review_agents_refresh_pressed() -> void:
 	_refresh_review_agents()
 
 
 func _on_review_agents_clear_pressed() -> void:
-	for index in _review_agents_list.get_selected_items():
-		_review_agents_list.deselect(index)
+	for child in _agent_checkbox_list.get_children():
+		if child is CheckBox:
+			child.button_pressed = false
+	# Reset preset selector to "no preset"
+	if _preset_option_button.item_count > 0:
+		_preset_option_button.select(0)
+
+
+func _on_select_all_pressed() -> void:
+	for child in _agent_checkbox_list.get_children():
+		if child is CheckBox:
+			child.button_pressed = true
+
+
+## Cached preset data: Array of { preset_id, name, agent_ids }
+var _cached_presets: Array[Dictionary] = []
+
+
+func _refresh_presets() -> void:
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		_populate_presets([])
+		return
+	var presets = await SingletonObject.autocoder_manager.autocoder_adapter.list_review_presets()
+	_populate_presets(presets)
+
+
+func _populate_presets(presets: Array[Dictionary]) -> void:
+	_cached_presets.clear()
+	_preset_option_button.clear()
+	_preset_option_button.add_item("No Preset")
+	_preset_option_button.set_item_metadata(0, "")
+
+	for preset in presets:
+		if not (preset is Dictionary):
+			continue
+		var preset_id = str(preset.get("preset_id", ""))
+		if preset_id.is_empty():
+			continue
+		var preset_name = str(preset.get("name", "Unnamed Preset"))
+		var agent_ids = preset.get("agent_ids", [])
+		var count = agent_ids.size() if agent_ids is Array else 0
+		var label = "%s (%d agents)" % [preset_name, count]
+		var index = _preset_option_button.item_count
+		_preset_option_button.add_item(label)
+		_preset_option_button.set_item_metadata(index, preset_id)
+		_cached_presets.append(preset)
+
+	_preset_option_button.select(0)
+
+
+func _on_preset_selected(index: int) -> void:
+	if index <= 0:
+		return  # "No Preset" selected — don't change checkboxes
+
+	var preset_id = str(_preset_option_button.get_item_metadata(index))
+	if preset_id.is_empty():
+		return
+
+	# Find the preset in cache
+	var target_ids: Array = []
+	for preset in _cached_presets:
+		if str(preset.get("preset_id", "")) == preset_id:
+			target_ids = preset.get("agent_ids", [])
+			break
+
+	if target_ids.is_empty():
+		return
+
+	# Uncheck all, then check matching agents
+	for child in _agent_checkbox_list.get_children():
+		if child is CheckBox:
+			var agent_id = str(child.get_meta("agent_id", ""))
+			child.button_pressed = agent_id in target_ids
+
+
+func _on_save_preset_pressed() -> void:
+	var selected_ids = _get_selected_review_agent_ids()
+	if selected_ids.is_empty():
+		SingletonObject.create_toast_notification("Select at least one agent first", ToastNotification.Type.WARNING)
+		return
+
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		SingletonObject.create_toast_notification("AutoCoder not connected", ToastNotification.Type.ERROR)
+		return
+
+	# Use a simple input dialog via LineEdit popup
+	var dialog = AcceptDialog.new()
+	dialog.title = "Save Preset"
+	dialog.dialog_text = "Enter a name for this preset:"
+	var line_edit = LineEdit.new()
+	line_edit.placeholder_text = "e.g. Godot Review Suite"
+	dialog.add_child(line_edit)
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(350, 120))
+
+	await dialog.confirmed
+
+	var preset_name = line_edit.text.strip_edges()
+	dialog.queue_free()
+
+	if preset_name.is_empty():
+		SingletonObject.create_toast_notification("Preset name cannot be empty", ToastNotification.Type.WARNING)
+		return
+
+	var preset_id = await SingletonObject.autocoder_manager.autocoder_adapter.create_review_preset(preset_name, selected_ids)
+	if not preset_id.is_empty():
+		SingletonObject.create_toast_notification("Preset '%s' saved" % preset_name, ToastNotification.Type.SUCCESS)
+		_refresh_presets()
+	else:
+		SingletonObject.create_toast_notification("Failed to save preset", ToastNotification.Type.ERROR)
 
 
 func _on_submit_job_button_pressed() -> void:
@@ -963,173 +1300,122 @@ func _on_submit_job_button_pressed() -> void:
 		return
 
 	var session_id = ""
-	if _continue_session_check_box.button_pressed:
+	var is_continue = _continue_session_check_box.button_pressed
+
+	if is_continue:
 		session_id = _get_selected_session_id()
 		if session_id.is_empty():
 			SingletonObject.ErrorDisplay("Continue Session", "Select a session to continue.")
 			return
-	else:
-		# Step 1: Clean workspace before starting new generation (skip for planning mode)
-		if current_mode != AutocoderMode.PLAN:
-			SingletonObject.create_toast_notification("Preparing workspace...", ToastNotification.Type.INFO)
 
-			var cleanup_success = await SingletonObject.autocoder_manager.autocoder_adapter.cleanup(true)
-
-			if not cleanup_success:
-				SingletonObject.ErrorDisplay("Cleanup Failed", "Failed to clean workspace. Cannot start generation.")
-				return
-
-	# Step 2: Check for concurrent requests on same session
+	# Check for concurrent requests on same session
 	if not session_id.is_empty() and _processing_sessions.get(session_id, false):
 		SingletonObject.create_toast_notification(
 			"Session is already processing a request. Please wait.",
 			ToastNotification.Type.WARNING
 		)
 		return
-	
+
 	# Mark session as processing
 	if not session_id.is_empty():
 		_processing_sessions[session_id] = true
-	
-	# Step 3: Pre-create session ID and subscribe BEFORE sending generate request
-	# This ensures we don't miss any notifications
-	var user_id = Core.client.client_id
 
-	# We need to wait for the session_id from the response, so we'll subscribe after
-	# but we'll pre-open the log viewer to prepare for monitoring
-	var starting_message = "Starting planning..." if current_mode == AutocoderMode.PLAN else "Starting code generation..."
-	SingletonObject.create_toast_notification(starting_message, ToastNotification.Type.INFO)
-	
+	var user_id = Core.client.client_id
+	var model_id = _get_selected_model_id()
+	var phase_models = _get_phase_models()
+	var prompt_with_notes = _build_prompt_with_notes()
+
+	# Disable injected notes now that their content is captured
+	_disable_injected_notes()
+
+	# Resolve per-phase models (non-empty override wins, else fall back to main dropdown)
+	var planning_model = phase_models["planning"] if not phase_models["planning"].is_empty() else model_id
+
 	# Disable prompt while processing
 	_set_prompt_enabled(false)
 
-	# Step 4: Start generation or planning based on mode
-	var model_id = _get_selected_model_id()
-	var require_permission = _require_permission_check_box.button_pressed
-	# Always get selected review agents if any are selected (user intent)
-	var review_agent_ids: Array = _get_selected_review_agent_ids()
-	# Run reviews if auto_review is checked OR agents are explicitly selected OR in review mode
-	var auto_review = _auto_review_check_box.button_pressed or not review_agent_ids.is_empty() or current_mode == AutocoderMode.REVIEW
-	
-	print("[SubmitJob] auto_review=%s, review_agent_ids=%s" % [auto_review, review_agent_ids])
-	
-	var output: Variant = null
-	
-	match current_mode:
-		AutocoderMode.PLAN:
-			# Planning mode - add progress indicator
-			var planning_action_id = "planning_%d" % Time.get_ticks_msec()
-			add_tool_call("🤖 AI Planning", "Generating development plan and breaking down tasks...", planning_action_id)
-			
-			# Get current Kanban board state for synchronization
-			var kanban_board = _get_kanban_board_for_session(session_id)
-			var kanban_state = {}
-			var kanban_hash = ""
-			
-			if kanban_board and kanban_board.task_store:
-				kanban_state = kanban_board.task_store.serialize()
-				kanban_hash = kanban_board.task_store.calculate_hash()
-				print("[SubmitJob] Sending Kanban state with %d tasks, hash: %s" % [kanban_board.task_store.get_all_tasks().size(), kanban_hash.substr(0, 8)])
-			
-			var planning_output = await SingletonObject.autocoder_manager.autocoder_adapter.plan(
-				_prompt_text_edit.text,
-				session_id,
-				selected_artifact.artifact_uri if selected_artifact else "",
-				model_id,
-				"",  # modify_request - empty for new planning
-				kanban_state,
-				kanban_hash
-			)
-			if planning_output:
-				var task_count = planning_output.tasks.size()
-				print("[SubmitJob] Planning completed with %d tasks" % task_count)
-				
-				# Update progress indicator as complete
-				if task_count > 0:
-					update_tool_call(planning_action_id, "completed", "Plan generated with %d tasks" % task_count)
-				else:
-					# Tasks will come via notification topic, initial response may be empty
-					update_tool_call(planning_action_id, "completed", "Planning in progress - tasks will appear shortly...")
-				
-				output = {
-					"session_id": planning_output.session_id,
-					"message": planning_output.message,
-					"notification_topics": planning_output.notification_topics,
-					"status": planning_output.status,
-					"user_id": planning_output.user_id,
-					"iteration": 0.0,
-					"tasks": planning_output.tasks,
-					"questions": planning_output.questions
-				}
-			else:
-				# Update progress indicator as failed
-				update_tool_call(planning_action_id, "failed", "Planning failed - check logs for details")
-		AutocoderMode.CODER:
-			# Code generation mode
-			# CRITICAL: Set up handlers BEFORE calling generate so we can receive
-			# planning notifications (task status updates) during the long-running call
-			if not session_id.is_empty():
-				print("[SubmitJob] Setting up session monitoring BEFORE generate call...")
-				# This sets up ALL handlers (planning, actions, LLM traffic, etc.)
-				SingletonObject.autocoder_manager.monitor_session(user_id, session_id)
-				# Also ensure kanban board exists
-				_get_or_create_kanban_board(session_id)
-			
-			output = await SingletonObject.autocoder_manager.autocoder_adapter.generate(
-				_prompt_text_edit.text,
-				session_id,
-				selected_artifact.artifact_uri if selected_artifact else "",
-				require_permission,
-				model_id,
-				review_agent_ids,
-				not session_id.is_empty(),  # use_plan_tasks when continuing a session
-				[],
-				auto_review
-			)
-		AutocoderMode.REVIEW:
-			# Review mode - use generate but with review flag
-			output = await SingletonObject.autocoder_manager.autocoder_adapter.generate(
-				_prompt_text_edit.text,
-				session_id,
-				selected_artifact.artifact_uri if selected_artifact else "",
-				require_permission,
-				model_id,
-				review_agent_ids,
-				false,
-				[],
-				auto_review
-			)
+	# If continuing a session that already has a plan, skip planning and go straight to generate
+	if is_continue and not session_id.is_empty():
+		var session_status = await _get_session_status(session_id)
+		# Sessions that completed planning or are awaiting_user can skip to generate
+		if session_status in ["planning_complete", "awaiting_user", "complete", "completed"]:
+			print("[SubmitJob] Session already planned, skipping to generation...")
+			_auto_promote_session_id = session_id
+			_auto_promote_generate(session_id, model_id)
+			return
 
-	if not output:
-		# Release processing flag on error
+	# Start planning phase
+	_set_job_state(JobState.PLANNING)
+	SingletonObject.create_toast_notification("Starting planning...", ToastNotification.Type.INFO)
+
+	var planning_action_id = "planning_%d" % Time.get_ticks_msec()
+	add_tool_call("🤖 AI Planning", "Generating development plan and breaking down tasks...", planning_action_id)
+
+	# Get current Kanban board state for synchronization
+	var kanban_board = _get_kanban_board_for_session(session_id)
+	var kanban_state = {}
+	var kanban_hash = ""
+
+	if kanban_board and kanban_board.task_store:
+		kanban_state = kanban_board.task_store.serialize()
+		kanban_hash = kanban_board.task_store.calculate_hash()
+		print("[SubmitJob] Sending Kanban state with %d tasks, hash: %s" % [kanban_board.task_store.get_all_tasks().size(), kanban_hash.substr(0, 8)])
+
+	var planning_output = await SingletonObject.autocoder_manager.autocoder_adapter.plan(
+		prompt_with_notes,
+		session_id,
+		selected_artifact.artifact_uri if selected_artifact else "",
+		planning_model,
+		"",  # modify_request
+		kanban_state,
+		kanban_hash
+	)
+
+	if not planning_output:
+		update_tool_call(planning_action_id, "failed", "Planning failed - check logs for details")
 		if not session_id.is_empty():
 			_processing_sessions[session_id] = false
-			print("[SubmitJob] Released processing lock after error for session: %s" % session_id)
-		# Re-enable prompt input even on error (so user can retry)
 		_set_prompt_enabled(true)
+		_set_job_state(JobState.ERROR)
 		return
+
+	var task_count = planning_output.tasks.size()
+	print("[SubmitJob] Planning response received with %d tasks" % task_count)
+
+	if task_count > 0:
+		update_tool_call(planning_action_id, "completed", "Plan generated with %d tasks" % task_count)
+	else:
+		update_tool_call(planning_action_id, "completed", "Planning in progress - tasks will appear shortly...")
+
+	var output = {
+		"session_id": planning_output.session_id,
+		"message": planning_output.message,
+		"notification_topics": planning_output.notification_topics,
+		"status": planning_output.status,
+		"user_id": planning_output.user_id,
+		"iteration": 0.0,
+		"tasks": planning_output.tasks,
+		"questions": planning_output.questions
+	}
 
 	SingletonObject.create_toast_notification(output.message, ToastNotification.Type.SUCCESS)
 
-	# Determine effective session_id - when continuing a session, prefer the ORIGINAL session_id
-	# to keep the kanban board consistent. The backend may return a different session_id.
 	var effective_session_id = session_id if not session_id.is_empty() else output.session_id
-	
+	_auto_promote_session_id = effective_session_id
+
 	if not session_id.is_empty() and output.session_id != session_id:
 		print("[SubmitJob] WARNING: Backend returned different session_id. Original: %s, Returned: %s" % [session_id, output.session_id])
-		print("[SubmitJob] Using original session_id for tracking: %s" % session_id)
-	
-	# Step 4: Handle planning mode - populate kanban board
-	if current_mode == AutocoderMode.PLAN and output.has("tasks"):
+
+	# Handle planning results (kanban board)
+	if output.has("tasks"):
 		_handle_planning_results(output)
-	
-	# Step 5: Save source directory association if we have one
+
+	# Save source directory association if we have one
 	if not _pending_source_dir.is_empty():
 		_save_source_dir_for_session(effective_session_id, _pending_source_dir)
-		_pending_source_dir = ""  # Clear for next submission
-	
-	# Ensure session is monitored (may already be set up for CODER mode)
-	# monitor_session checks _monitoring_sessions to avoid duplicates
+		_pending_source_dir = ""
+
+	# Ensure session is monitored
 	if not SingletonObject.autocoder_manager._monitoring_sessions.has(effective_session_id):
 		SingletonObject.autocoder_manager.monitor_session(
 			output.user_id,
@@ -1137,21 +1423,93 @@ func _on_submit_job_button_pressed() -> void:
 			output.notification_topics
 		)
 
-	# Step 7: Refresh session dropdown to show the new session
+	# Refresh session dropdown
 	await _refresh_session_history()
-	
-	# Step 8: Select this session in the dropdown (without reloading history - we just started it)
 	_ensure_session_option(effective_session_id, output.status)
 	_select_session_in_dropdown(effective_session_id)
-	
-	# Release processing flag
+
+	# Release processing flag (planning phase done, generate will re-acquire)
 	if not effective_session_id.is_empty():
 		_processing_sessions[effective_session_id] = false
-		print("[SubmitJob] Released processing lock for session: %s" % effective_session_id)
-	
-	# Re-enable prompt input after job completes (for follow-up prompts)
+
+	# Do NOT reset state to IDLE here - wait for on_planning_turn_complete() to auto-promote
+	# The prompt stays disabled until generation completes
+
+
+## Auto-promote: start code generation after planning completes
+func _auto_promote_generate(session_id: String, model_id: String = "") -> void:
+	_set_job_state(JobState.GENERATING)
+
+	if model_id.is_empty():
+		model_id = _get_selected_model_id()
+
+	# Resolve per-phase models
+	var phase_models = _get_phase_models()
+	var generation_model = phase_models["generation"] if not phase_models["generation"].is_empty() else model_id
+	var review_model = phase_models["review"]  # Empty string means use default on backend
+
+	# Collect per-task model overrides from kanban board
+	var task_overrides: Dictionary = {}
+	var kanban_board = _get_kanban_board_for_session(session_id)
+	if kanban_board and kanban_board.task_store:
+		for task in kanban_board.task_store.get_all_tasks():
+			if not task.assigned_model.is_empty():
+				task_overrides[task.id] = task.assigned_model
+
+	var review_agent_ids: Array = _get_selected_review_agent_ids()
+	var auto_review = not review_agent_ids.is_empty()
+	var require_permission = _require_permission_check_box.button_pressed
+	var user_id = Core.client.client_id
+
+	print("[SubmitJob] Auto-promote: generating for session %s (model=%s, review_model=%s, task_overrides=%d, auto_review=%s, agents=%s)" % [session_id, generation_model, review_model, task_overrides.size(), auto_review, review_agent_ids])
+
+	# Clean workspace before generation
+	SingletonObject.create_toast_notification("Preparing workspace...", ToastNotification.Type.INFO)
+	var cleanup_success = await SingletonObject.autocoder_manager.autocoder_adapter.cleanup(true)
+	if not cleanup_success:
+		SingletonObject.ErrorDisplay("Cleanup Failed", "Failed to clean workspace. Cannot start generation.")
+		_set_job_state(JobState.ERROR)
+		_set_prompt_enabled(true)
+		return
+
+	# Set up monitoring BEFORE generate call
+	if not session_id.is_empty():
+		SingletonObject.autocoder_manager.monitor_session(user_id, session_id)
+		_get_or_create_kanban_board(session_id)
+
+	# Mark session as processing
+	_processing_sessions[session_id] = true
+
+	var output = await SingletonObject.autocoder_manager.autocoder_adapter.generate(
+		"",  # No additional prompt - plan tasks are the instructions
+		session_id,
+		selected_artifact.artifact_uri if selected_artifact else "",
+		require_permission,
+		generation_model,
+		review_agent_ids,
+		true,  # use_plan_tasks = true
+		[],
+		auto_review,
+		review_model,
+		task_overrides
+	)
+
+	# Release processing flag
+	_processing_sessions[session_id] = false
+
+	if not output:
+		_set_job_state(JobState.ERROR)
+		_set_prompt_enabled(true)
+		return
+
+	SingletonObject.create_toast_notification(output.message, ToastNotification.Type.SUCCESS)
+
+	# Re-enable prompt and clear text
 	_set_prompt_enabled(true)
-	_prompt_text_edit.text = ""  # Clear the prompt for next input
+	_prompt_text_edit.text = ""
+
+	# State will transition to AWAITING_USER or ERROR via _handle_iteration_notification
+	# For now, remain in GENERATING until notified
 
 
 # Action Stream helpers
@@ -1193,6 +1551,100 @@ func add_iteration_message(_session_id: String, payload: Dictionary) -> void:
 	if not patch_uri.is_empty():
 		lines.append("Patch: %s" % patch_uri)
 	_action_stream.add_message("\n".join(lines), "system")
+
+func add_approval_card(session_id: String, payload: Dictionary) -> void:
+	"""Add an approval card to the action stream for awaiting_user sessions"""
+	if not _action_stream:
+		return
+	var archive_uri = str(payload.get("output_archive_uri", ""))
+	if archive_uri.is_empty():
+		archive_uri = str(payload.get("archive_uri", ""))
+	var patch_uri = str(payload.get("patch_uri", ""))
+	var review_summary = str(payload.get("ai_review_summary", ""))
+	if review_summary.is_empty():
+		review_summary = str(payload.get("summary", ""))
+	var file_count = int(payload.get("files_changed_count", payload.get("file_count", 0)))
+
+	# Extract individual review results
+	var review_results: Array = []
+	var review_result = payload.get("review_result", {})
+	if review_result is Dictionary:
+		var reviews = review_result.get("reviews", [])
+		if reviews is Array:
+			review_results = reviews
+
+	# Store archive/patch URIs for download buttons
+	if not archive_uri.is_empty():
+		set_latest_archive_uri(session_id, archive_uri)
+	if not patch_uri.is_empty():
+		set_latest_patch_uri(session_id, patch_uri)
+
+	_action_stream.add_approval_card(session_id, archive_uri, patch_uri, review_summary, file_count, review_results)
+
+
+func _on_approval_action(session_id: String, action: String, feedback: String) -> void:
+	"""Handle approve/reject from approval card"""
+	var autocoder_manager = SingletonObject.autocoder_manager
+	if not autocoder_manager or not autocoder_manager.autocoder_adapter:
+		SingletonObject.create_toast_notification("Autocoder not connected", ToastNotification.Type.WARNING)
+		return
+
+	var user_id = Core.client.client_id
+	var success := false
+
+	match action:
+		"approve":
+			success = await autocoder_manager.autocoder_adapter.approve(user_id, session_id)
+			if success:
+				SingletonObject.create_toast_notification("Session approved", ToastNotification.Type.SUCCESS)
+				_set_job_state(JobState.IDLE)
+				_set_prompt_enabled(true)
+			else:
+				SingletonObject.create_toast_notification("Failed to approve session", ToastNotification.Type.WARNING)
+		"reject":
+			success = await autocoder_manager.autocoder_adapter.request_revision(user_id, session_id, feedback)
+			if success:
+				SingletonObject.create_toast_notification("Revision requested", ToastNotification.Type.SUCCESS)
+				_set_job_state(JobState.GENERATING)
+			else:
+				SingletonObject.create_toast_notification("Failed to request revision", ToastNotification.Type.WARNING)
+
+
+func _on_approval_extract(session_id: String) -> void:
+	"""Handle extract request from approval card"""
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.artifact_registry_adapter:
+		SingletonObject.ErrorDisplay("Can't extract", "Please connect to core first!")
+		return
+
+	var archive_uri = _latest_archive_by_session.get(session_id, "")
+	if archive_uri.is_empty():
+		SingletonObject.create_toast_notification("No artifact available for this session", ToastNotification.Type.WARNING)
+		return
+
+	_restore_source_dir_for_session(session_id)
+	var source_dir = _source_dir_by_session.get(session_id, "")
+
+	if not source_dir.is_empty():
+		# Source folder already set - extract directly
+		await SingletonObject.autocoder_manager.artifact_registry_adapter.download_and_extract(archive_uri, source_dir)
+	else:
+		# Show directory picker
+		var dialog := FileDialog.new()
+		dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+		dialog.title = "Select folder to extract generated code"
+		dialog.access = FileDialog.ACCESS_FILESYSTEM
+		add_child(dialog)
+		dialog.popup_centered_ratio(0.6)
+
+		var selected_dir = await dialog.dir_selected
+		dialog.queue_free()
+
+		if selected_dir.is_empty():
+			return
+
+		_save_source_dir_for_session(session_id, selected_dir)
+		await SingletonObject.autocoder_manager.artifact_registry_adapter.download_and_extract(archive_uri, selected_dir)
+
 
 func add_llm_progress(content: String) -> void:
 	"""Route LLM traffic to action stream for visibility"""
@@ -1344,46 +1796,79 @@ func clear_action_stream() -> void:
 
 func on_planning_turn_complete(session_id: String, planning_status: String) -> void:
 	"""Called when a planning turn completes (from AutocoderManager)"""
-	print("[SubmitJob] Planning turn complete for session %s (status: %s)" % [session_id, planning_status])
-	
+	print("[SubmitJob] Planning turn complete for session %s (status: %s, job_state: %d)" % [session_id, planning_status, _job_state])
+
 	# Stop LLM progress animations
 	if _action_stream:
 		_action_stream.stop_llm_progress()
 	_submitted_questions.clear()
-	
-	# Re-enable prompt for follow-up questions or modifications
-	_set_prompt_enabled(true)
-	
+
 	match planning_status:
 		"complete":
-			# Add planning complete message DIRECTLY to action stream (don't reload history)
-			if _action_stream:
-				_action_stream.add_message("✓ Planning Complete\n\nPlan ready - switch to Coder mode to implement", "system")
-			
-			SingletonObject.create_toast_notification(
-				"✓ Planning complete! You can now:\n• Modify the plan\n• Add more tasks\n• Switch to Coder mode to implement",
-				ToastNotification.Type.SUCCESS
-			)
-			# Auto-switch to Coder mode for the same session (user can add prompt and run)
-			if current_mode == AutocoderMode.PLAN:
-				if _mode_option_button:
-					_mode_option_button.select(AutocoderMode.CODER)
-					_on_mode_selected(AutocoderMode.CODER)
-				# Use _select_session_in_dropdown instead of _auto_select_session
-				# to avoid reloading history and causing incorrect ordering
-				_select_session_in_dropdown(session_id)
-				SingletonObject.create_toast_notification(
-					"Coder mode ready - add instructions and click Generate Code",
-					ToastNotification.Type.INFO
-				)
+			# Auto-promote: if we were planning or awaiting questions, auto-start generation
+			if _job_state == JobState.PLANNING or _job_state == JobState.AWAITING_QUESTIONS:
+				if _auto_generate_check_box.button_pressed:
+					if _action_stream:
+						_action_stream.add_message("✓ Planning Complete — auto-starting generation...", "system")
+
+					SingletonObject.create_toast_notification(
+						"Planning complete — starting code generation...",
+						ToastNotification.Type.SUCCESS
+					)
+
+					var model_id = _get_selected_model_id()
+					var promote_session_id = session_id if not session_id.is_empty() else _auto_promote_session_id
+					_auto_promote_generate(promote_session_id, model_id)
+				else:
+					# Auto-generate off — pause so user can review tasks / set per-task models
+					if _action_stream:
+						_action_stream.add_message("✓ Planning Complete\n\nReview tasks and click Start Generation when ready.", "system")
+					SingletonObject.create_toast_notification(
+						"Planning complete — review tasks, then start generation.",
+						ToastNotification.Type.SUCCESS
+					)
+					_set_job_state(JobState.IDLE)
+					_set_prompt_enabled(true)
+					# Override button text to clarify the next action
+					if _submit_job_button:
+						_submit_job_button.tooltip_text = "Start Generation"
+			else:
+				# Planning completed outside of auto-promote flow (e.g. resumed session)
+				if _action_stream:
+					_action_stream.add_message("✓ Planning Complete\n\nClick Start Job to generate code", "system")
+				_set_job_state(JobState.IDLE)
+				_set_prompt_enabled(true)
+
 		"awaiting_answers":
+			_set_job_state(JobState.AWAITING_QUESTIONS)
+			_set_prompt_enabled(true)
 			SingletonObject.create_toast_notification(
-				"⏸ Planning paused - answer questions to continue",
+				"Planning paused — answer questions to continue",
 				ToastNotification.Type.INFO
 			)
-	
-	# Update button text
-	_update_submit_button_text()
+
+func on_planning_error(session_id: String, error_msg: String) -> void:
+	"""Called when planning fails (e.g. LLM timeout). Resets UI so user isn't stuck."""
+	print("[SubmitJob] Planning error for session %s: %s" % [session_id, error_msg])
+
+	# Stop LLM progress animations
+	if _action_stream:
+		_action_stream.stop_llm_progress()
+		_action_stream.add_message("Planning failed: %s" % error_msg, "error")
+
+	# Release processing flag
+	if not session_id.is_empty():
+		_processing_sessions[session_id] = false
+
+	# Re-enable controls
+	_set_prompt_enabled(true)
+	_set_job_state(JobState.ERROR)
+
+	SingletonObject.create_toast_notification(
+		"Planning failed: %s" % error_msg.substr(0, 100),
+		ToastNotification.Type.WARNING
+	)
+
 
 func _set_prompt_enabled(enabled: bool) -> void:
 	"""Enable or disable the prompt input"""
@@ -1393,6 +1878,234 @@ func _set_prompt_enabled(enabled: bool) -> void:
 			_prompt_text_edit.placeholder_text = "Enter additional instructions, modifications, or questions..."
 		else:
 			_prompt_text_edit.placeholder_text = "Processing..."
+
+# ============================================================================
+# Clear / Voice Input / Stop
+# ============================================================================
+
+func _on_clear_text_button_pressed() -> void:
+	_prompt_text_edit.text = ""
+
+
+func _on_microphone_button_pressed() -> void:
+	if SingletonObject.AtT._StartConverting() != OK:
+		return
+	SingletonObject.AtT.FieldForFilling = _prompt_text_edit
+	SingletonObject.AtT.btn = _microphone_button
+	_microphone_button.modulate = Color(Color.LIME_GREEN)
+	SingletonObject.AtT.btnStop = _stop_button
+
+
+func _on_stop_button_pressed() -> void:
+	# Stop any active voice transcription
+	SingletonObject.AtT._StopConverting()
+
+	# Stop any active autocoder job
+	if _job_state == JobState.PLANNING or _job_state == JobState.GENERATING:
+		if _action_stream:
+			_action_stream.stop_llm_progress()
+			_action_stream.add_message("Stopped by user.", "system")
+		SingletonObject.create_toast_notification("Job stopped", ToastNotification.Type.INFO)
+		_set_job_state(JobState.IDLE)
+		_set_prompt_enabled(true)
+
+
+# ============================================================================
+# Planning Action Buttons (Add Context / Inject Notes)
+# ============================================================================
+
+func _create_planning_actions_row() -> void:
+	"""Create the planning action buttons row and add it to the action stream"""
+	if not _action_stream:
+		return
+
+	_planning_actions_row = HBoxContainer.new()
+	_planning_actions_row.visible = false
+	_planning_actions_row.add_theme_constant_override("separation", 8)
+
+	_add_context_button = Button.new()
+	_add_context_button.text = "Add Context"
+	_add_context_button.flat = true
+	_add_context_button.add_theme_font_size_override("font_size", 16)
+	_add_context_button.add_theme_color_override("font_color", Color(0.5, 0.75, 1.0, 1.0))
+	_add_context_button.pressed.connect(_on_add_context_pressed)
+	_planning_actions_row.add_child(_add_context_button)
+
+	_inject_notes_button = Button.new()
+	_inject_notes_button.text = "Inject Notes"
+	_inject_notes_button.flat = true
+	_inject_notes_button.add_theme_font_size_override("font_size", 16)
+	_inject_notes_button.add_theme_color_override("font_color", Color(0.5, 0.75, 1.0, 1.0))
+	_inject_notes_button.pressed.connect(_on_inject_notes_pressed)
+	_planning_actions_row.add_child(_inject_notes_button)
+
+	# Add to top of action stream's actions list
+	if _action_stream._actions_list:
+		_action_stream._actions_list.add_child(_planning_actions_row)
+		_action_stream._actions_list.move_child(_planning_actions_row, 0)
+
+
+func _on_add_context_pressed() -> void:
+	"""Open a popup for the user to type additional context"""
+	var session_id = _auto_promote_session_id
+	if session_id.is_empty():
+		session_id = _get_selected_session_id()
+	if session_id.is_empty():
+		SingletonObject.create_toast_notification("No active planning session", ToastNotification.Type.WARNING)
+		return
+
+	# Create popup window
+	if _context_popup and is_instance_valid(_context_popup):
+		_context_popup.queue_free()
+
+	_context_popup = Window.new()
+	_context_popup.title = "Add Context to Planning"
+	_context_popup.size = Vector2i(500, 350)
+	_context_popup.unresizable = false
+	_context_popup.close_requested.connect(func(): _context_popup.hide())
+
+	var margin = MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_context_popup.add_child(margin)
+
+	var vbox = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	var label = Label.new()
+	label.text = "Enter additional context or instructions:"
+	label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(label)
+
+	_context_text_edit = TextEdit.new()
+	_context_text_edit.placeholder_text = "e.g., This should be a Godot 4 project using GDScript, not a web page..."
+	_context_text_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_context_text_edit.add_theme_font_size_override("font_size", 15)
+	vbox.add_child(_context_text_edit)
+
+	var button_row = HBoxContainer.new()
+	button_row.alignment = BoxContainer.ALIGNMENT_END
+	button_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(button_row)
+
+	var cancel_button = Button.new()
+	cancel_button.text = "Cancel"
+	cancel_button.pressed.connect(func(): _context_popup.hide())
+	button_row.add_child(cancel_button)
+
+	var send_button = Button.new()
+	send_button.text = "Send"
+	send_button.pressed.connect(_on_context_send_pressed.bind(session_id))
+	button_row.add_child(send_button)
+
+	add_child(_context_popup)
+	_context_popup.popup_centered()
+	_context_text_edit.grab_focus()
+
+
+func _on_context_send_pressed(session_id: String) -> void:
+	"""Send the typed context to the backend"""
+	if not _context_text_edit or _context_text_edit.text.strip_edges().is_empty():
+		SingletonObject.create_toast_notification("Please enter some context", ToastNotification.Type.WARNING)
+		return
+
+	var content = _context_text_edit.text.strip_edges()
+	_context_popup.hide()
+
+	var autocoder_manager = SingletonObject.autocoder_manager
+	if not autocoder_manager or not autocoder_manager.autocoder_adapter:
+		SingletonObject.create_toast_notification("Autocoder not connected", ToastNotification.Type.WARNING)
+		return
+
+	if _action_stream:
+		_action_stream.add_message("Context added:\n\n%s" % content, "user")
+
+	SingletonObject.create_toast_notification("Injecting context...", ToastNotification.Type.INFO)
+	var success = await autocoder_manager.autocoder_adapter.inject_context(session_id, content, "text")
+
+	if success:
+		SingletonObject.create_toast_notification("Context injected successfully", ToastNotification.Type.SUCCESS)
+	else:
+		SingletonObject.create_toast_notification("Failed to inject context", ToastNotification.Type.WARNING)
+
+
+func _on_inject_notes_pressed() -> void:
+	"""Inject enabled notes into the planning session"""
+	var session_id = _auto_promote_session_id
+	if session_id.is_empty():
+		session_id = _get_selected_session_id()
+	if session_id.is_empty():
+		SingletonObject.create_toast_notification("No active planning session", ToastNotification.Type.WARNING)
+		return
+
+	var notes_text = _collect_enabled_notes_text()
+	if notes_text.is_empty():
+		SingletonObject.create_toast_notification("No enabled notes to inject", ToastNotification.Type.WARNING)
+		return
+
+	var autocoder_manager = SingletonObject.autocoder_manager
+	if not autocoder_manager or not autocoder_manager.autocoder_adapter:
+		SingletonObject.create_toast_notification("Autocoder not connected", ToastNotification.Type.WARNING)
+		return
+
+	if _action_stream:
+		_action_stream.add_message("Notes injected into planning session", "user")
+
+	SingletonObject.create_toast_notification("Injecting notes...", ToastNotification.Type.INFO)
+	var success = await autocoder_manager.autocoder_adapter.inject_context(session_id, notes_text, "notes")
+
+	if success:
+		SingletonObject.create_toast_notification("Notes injected successfully", ToastNotification.Type.SUCCESS)
+	else:
+		SingletonObject.create_toast_notification("Failed to inject notes", ToastNotification.Type.WARNING)
+
+
+# ============================================================================
+# Notes Injection
+# ============================================================================
+
+func _collect_enabled_notes_text() -> String:
+	"""Collect text content from all enabled text notes across both containers"""
+	var blocks: Array[String] = []
+
+	for container in [SingletonObject.notes_container, SingletonObject.drawer_notes_container]:
+		if not container:
+			continue
+		for tab_idx in range(container.get_tab_count()):
+			var notes = container.get_notes(tab_idx)
+			for note in notes:
+				if note.enabled and note.type == Note.Type.TEXT:
+					var controls = note.get_controls_container()
+					if controls is NoteTextControls and not controls.content.strip_edges().is_empty():
+						blocks.append("### %s\n%s" % [note.title, controls.content])
+
+	return "\n\n".join(blocks)
+
+
+func _build_prompt_with_notes() -> String:
+	"""Build the final prompt by injecting enabled notes before the user prompt"""
+	var notes_text = _collect_enabled_notes_text()
+	var prompt = _prompt_text_edit.text
+
+	if notes_text.is_empty():
+		return prompt
+
+	return "### Reference Notes ###\n%s\n### End Reference Notes ###\n\n%s" % [notes_text, prompt]
+
+
+func _disable_injected_notes() -> void:
+	"""Turn off note inject switches after content has been captured into the prompt"""
+	for container in [SingletonObject.notes_container, SingletonObject.drawer_notes_container]:
+		if not container:
+			continue
+		for i in container.get_tab_count():
+			container.disable_notes(i)
+	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
+	SingletonObject.detached_note_proxies.clear()
+
 
 # ============================================================================
 # Planning Mode Handlers
@@ -1454,14 +2167,22 @@ func _get_or_create_kanban_board(session_id: String) -> Editor:
 	if not SingletonObject.editor_pane:
 		return null
 	
+	# Collect available models for per-task override menus
+	var models_for_kanban: Array[Dictionary] = []
+	for i in range(1, _model_option_button.item_count):
+		var mid = str(_model_option_button.get_item_metadata(i))
+		if not mid.is_empty():
+			models_for_kanban.append({"id": mid, "name": _model_option_button.get_item_text(i)})
+
 	# Try to find existing kanban board for this session
 	for editor in SingletonObject.editor_pane.get_open_editors():
 		if editor.type == Editor.Type.KANBAN:
 			var kanban = editor.kanban_board
 			if kanban and kanban.get_meta("session_id", "") == session_id:
+				kanban.available_models = models_for_kanban
 				print("[SubmitJob] Found existing kanban board for session: %s" % session_id)
 				return editor
-	
+
 	# Create new kanban board
 	print("[SubmitJob] Creating new kanban board for session: %s" % session_id)
 	var kanban_editor: Editor = SingletonObject.editor_pane.add(
@@ -1469,9 +2190,10 @@ func _get_or_create_kanban_board(session_id: String) -> Editor:
 		null,
 		"Planning: %s" % session_id.substr(0, 12)
 	)
-	
+
 	if kanban_editor and kanban_editor.kanban_board:
 		var kanban = kanban_editor.kanban_board
+		kanban.available_models = models_for_kanban
 		kanban.set_meta("session_id", session_id)
 		kanban.set_meta("user_id", Core.client.client_id)
 		
@@ -1517,9 +2239,11 @@ func _populate_kanban_from_plan(tasks: Array, task_store) -> void:  # task_store
 		var status_map = {
 			"plan": AutocoderTaskClass.TaskStatus.PLAN,
 			"in_progress": AutocoderTaskClass.TaskStatus.IN_PROGRESS,
-			"review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
+			"in_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
 			"ai_review": AutocoderTaskClass.TaskStatus.AI_REVIEW,
 			"human_review": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
+			"awaiting_user": AutocoderTaskClass.TaskStatus.HUMAN_REVIEW,
 			"done": AutocoderTaskClass.TaskStatus.DONE,
 			"complete": AutocoderTaskClass.TaskStatus.DONE
 		}
@@ -1633,3 +2357,220 @@ func _handle_planning_questions(questions: Array, session_id: String) -> void:
 			"Planning has %d required question(s) - please answer them" % unanswered_required.size(),
 			ToastNotification.Type.INFO
 		)
+
+
+# =============================================================================
+# OpenRouter Model Management
+# =============================================================================
+
+func _update_user_model_status() -> void:
+	if not _model_management_status_label:
+		return
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		_model_management_status_label.text = ""
+		return
+	var user_models = await SingletonObject.autocoder_manager.autocoder_adapter.get_user_models()
+	_user_selected_models = []
+	for m in user_models:
+		if m is Dictionary:
+			_user_selected_models.append(m)
+	if _user_selected_models.size() > 0:
+		_model_management_status_label.text = "%d custom model(s) saved" % _user_selected_models.size()
+	else:
+		_model_management_status_label.text = ""
+
+
+func _on_browse_models_pressed() -> void:
+	var api_key: String = SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENROUTER)
+	if api_key.strip_edges().is_empty():
+		SingletonObject.ErrorDisplay("No API Key", "Set your OpenRouter API key in Preferences > API Keys first.")
+		return
+	_show_model_browse_dialog(api_key)
+
+
+func _on_clear_user_models_pressed() -> void:
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		return
+	_clear_user_models_button.disabled = true
+	var success = await SingletonObject.autocoder_manager.autocoder_adapter.clear_user_models()
+	_clear_user_models_button.disabled = false
+	if success:
+		_user_selected_models.clear()
+		SingletonObject.create_toast_notification("Custom models cleared")
+		_refresh_models()
+	else:
+		SingletonObject.create_toast_notification("Failed to clear custom models", ToastNotification.Type.ERROR)
+
+
+func _show_model_browse_dialog(api_key: String) -> void:
+	var win := Window.new()
+	win.title = "Browse OpenRouter Models"
+	var scale: float = get_tree().root.content_scale_factor
+	win.content_scale_factor = scale
+	win.size = Vector2i(Vector2(620, 560) * scale)
+	win.close_requested.connect(func(): win.queue_free())
+
+	var margin := MarginContainer.new()
+	margin.anchors_preset = Control.PRESET_FULL_RECT
+	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	win.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	margin.add_child(vbox)
+
+	# Search bar
+	var search_hbox := HBoxContainer.new()
+	var search_edit := LineEdit.new()
+	search_edit.placeholder_text = "Search models..."
+	search_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	search_hbox.add_child(search_edit)
+	var refresh_btn := Button.new()
+	refresh_btn.text = "Refresh"
+	search_hbox.add_child(refresh_btn)
+	vbox.add_child(search_hbox)
+
+	# Model list
+	var item_list := ItemList.new()
+	item_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	item_list.allow_reselect = true
+	vbox.add_child(item_list)
+
+	# Details label
+	var details_label := Label.new()
+	details_label.text = "Select a model to see details."
+	details_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details_label.custom_minimum_size.y = 48
+	vbox.add_child(details_label)
+
+	# Status label
+	var status_label := Label.new()
+	status_label.text = "Loading models..."
+	status_label.modulate.a = 0.6
+	vbox.add_child(status_label)
+
+	# Buttons
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	btn_hbox.add_theme_constant_override("separation", 8)
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Close"
+	cancel_btn.pressed.connect(func(): win.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	var add_btn := Button.new()
+	add_btn.text = "Add Selected"
+	add_btn.disabled = true
+	btn_hbox.add_child(add_btn)
+	vbox.add_child(btn_hbox)
+
+	add_child(win)
+	win.popup_centered()
+
+	# Store fetched models
+	var all_models: Array = []
+	var models_added_this_session: Array = []
+
+	# Filter function
+	var _filter_list := func(search_text: String):
+		item_list.clear()
+		var query := search_text.strip_edges().to_lower()
+		for i in range(all_models.size()):
+			var m: Dictionary = all_models[i]
+			var name_: String = m.get("display_name", "")
+			var id_: String = m.get("api_model_id", "")
+			if query.is_empty() or query in name_.to_lower() or query in id_.to_lower():
+				var cost_str := "$%.2f/$%.2f" % [m.get("input_token_cost", 0.0), m.get("output_token_cost", 0.0)]
+				item_list.add_item("%s  %s" % [name_, cost_str])
+				item_list.set_item_metadata(item_list.get_item_count() - 1, i)
+
+	# Selection handler
+	item_list.item_selected.connect(func(idx: int):
+		var model_idx: int = item_list.get_item_metadata(idx)
+		var m: Dictionary = all_models[model_idx]
+		details_label.text = "%s\nID: %s\nCost: $%.2f in / $%.2f out per M tokens" % [
+			m.get("display_name", ""),
+			m.get("api_model_id", ""),
+			m.get("input_token_cost", 0.0),
+			m.get("output_token_cost", 0.0),
+		]
+		if m.get("context_length", 0) > 0:
+			details_label.text += "\nContext: %dk" % (m["context_length"] / 1000)
+		add_btn.disabled = false
+	)
+
+	# Add button handler — supports multi-add without closing
+	add_btn.pressed.connect(func():
+		var selected := item_list.get_selected_items()
+		if selected.is_empty():
+			return
+		var model_idx: int = item_list.get_item_metadata(selected[0])
+		var m: Dictionary = all_models[model_idx]
+		var model_id: String = m.get("api_model_id", "")
+		var model_name: String = m.get("display_name", model_id)
+
+		# Check if already in user models
+		for um in _user_selected_models:
+			if um.get("id") == model_id:
+				status_label.text = "Model already added: %s" % model_name
+				return
+
+		# Check if already added this session
+		for am in models_added_this_session:
+			if am.get("id") == model_id:
+				status_label.text = "Model already added: %s" % model_name
+				return
+
+		models_added_this_session.append({"id": model_id, "name": model_name})
+		status_label.text = "Added: %s (%d new this session)" % [model_name, models_added_this_session.size()]
+	)
+
+	# On window close, save all newly added models
+	win.tree_exiting.connect(func():
+		if models_added_this_session.is_empty():
+			return
+		# Merge with existing user models
+		var merged: Array = _user_selected_models.duplicate()
+		var existing_ids: Dictionary = {}
+		for um in merged:
+			existing_ids[um.get("id", "")] = true
+		for am in models_added_this_session:
+			if not existing_ids.has(am.get("id", "")):
+				merged.append(am)
+		_user_selected_models = merged
+		_save_user_models()
+	)
+
+	# Search filter
+	search_edit.text_changed.connect(func(text: String): _filter_list.call(text))
+
+	# Fetch models
+	refresh_btn.pressed.connect(func(): _fetch_openrouter_models(api_key, status_label, add_btn, all_models, _filter_list, search_edit))
+	_fetch_openrouter_models(api_key, status_label, add_btn, all_models, _filter_list, search_edit)
+
+
+func _save_user_models() -> void:
+	if not SingletonObject.autocoder_manager or not SingletonObject.autocoder_manager.autocoder_adapter:
+		return
+	var success = await SingletonObject.autocoder_manager.autocoder_adapter.save_user_models(_user_selected_models)
+	if success:
+		SingletonObject.create_toast_notification("%d custom model(s) saved" % _user_selected_models.size())
+		_refresh_models()
+	else:
+		SingletonObject.create_toast_notification("Failed to save custom models", ToastNotification.Type.ERROR)
+
+
+func _fetch_openrouter_models(api_key: String, status_label: Label, add_btn: Button, all_models: Array, filter_fn: Callable, search_edit: LineEdit) -> void:
+	status_label.text = "Loading models..."
+	add_btn.disabled = true
+	var fetched = await SingletonObject.openrouter_model_manager.fetch_api_models(api_key)
+	all_models.clear()
+	all_models.append_array(fetched)
+	if all_models.is_empty():
+		status_label.text = "No models found or API error."
+	else:
+		status_label.text = "%d models available" % all_models.size()
+		filter_fn.call(search_edit.text)

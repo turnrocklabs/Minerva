@@ -18,7 +18,7 @@ var _connections: Array = []  # Array of MinervaMCPHttpConnection
 var _sessions: Dictionary = {}  # session_id -> {created_at, last_activity}
 var _is_running: bool = false
 var _port: int = DEFAULT_PORT
-var _processing_connections: bool = false
+var _inflight_connections: Dictionary = {}  # conn -> true (handling) / false (done)
 
 # Reference to the MCP manager and minerva server
 var _mcp_manager = null
@@ -71,6 +71,7 @@ func stop_server() -> void:
 	for conn in _connections:
 		conn.close()
 	_connections.clear()
+	_inflight_connections.clear()
 	_sessions.clear()
 
 	if _tcp_server:
@@ -103,17 +104,18 @@ func _accept_new_connections() -> void:
 
 
 func _process_connections() -> void:
-	# Guard against re-entrancy: async tool calls (e.g. pcb_get_image) use await,
-	# which yields to the event loop. _process() runs again during the yield and
-	# would re-enter this function, processing/removing the same connection twice.
-	if _processing_connections:
-		return
-	_processing_connections = true
-
 	var to_remove: Array[int] = []
 
 	for i in range(_connections.size()):
 		var conn = _connections[i]
+
+		# Skip connections being handled asynchronously
+		if _inflight_connections.has(conn):
+			if not _inflight_connections[conn]:
+				# Handler finished — mark for cleanup
+				_inflight_connections.erase(conn)
+				to_remove.append(i)
+			continue
 
 		# Check for timeout or disconnection
 		if conn.is_timed_out(CONNECTION_TIMEOUT) or not conn.is_peer_connected():
@@ -132,16 +134,14 @@ func _process_connections() -> void:
 			continue
 
 		if conn.state == MinervaMCPHttpConnectionScript.ConnectionState.COMPLETE:
-			# Process the request and send response
-			await _handle_request(conn, request)
-			conn.close()
-			to_remove.append(i)
+			# Fire-and-forget: handle asynchronously without blocking the loop.
+			# This allows other connections to be processed while a tool executes.
+			_inflight_connections[conn] = true
+			_handle_connection_async(conn, request)
 
 	# Remove processed connections (in reverse to maintain indices)
 	for i in range(to_remove.size() - 1, -1, -1):
 		_connections.remove_at(to_remove[i])
-
-	_processing_connections = false
 
 
 func _cleanup_stale_sessions() -> void:
@@ -155,6 +155,15 @@ func _cleanup_stale_sessions() -> void:
 
 	for session_id in to_remove:
 		_sessions.erase(session_id)
+
+
+## Handle a connection's request asynchronously and clean up when done.
+## Called fire-and-forget from _process_connections so other connections aren't blocked.
+func _handle_connection_async(conn, request: Dictionary) -> void:
+	await _handle_request(conn, request)
+	conn.close()
+	# Signal to _process_connections that this connection is done
+	_inflight_connections[conn] = false
 
 
 func _handle_request(conn, request: Dictionary) -> void:
@@ -224,7 +233,8 @@ func _handle_initialize(conn, params: Dictionary, request_id) -> void:
 	_sessions[new_session_id] = {
 		"created_at": Time.get_unix_time_from_system(),
 		"last_activity": Time.get_unix_time_from_system(),
-		"client_info": params.get("clientInfo", {})
+		"client_info": params.get("clientInfo", {}),
+		"enabled_sets": []  # empty = all sets enabled (backward compatible)
 	}
 
 	client_connected.emit(new_session_id)
@@ -253,6 +263,11 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 	if _sessions.has(session_id):
 		_sessions[session_id].last_activity = Time.get_unix_time_from_system()
 
+	# Resolve enabled sets: use global from minerva_server
+	var enabled_sets: Array = []
+	if _mcp_manager and _mcp_manager.minerva_server:
+		enabled_sets = _mcp_manager.minerva_server._enabled_tool_sets
+
 	# Get all minerva tools from the registry
 	var tools: Array[Dictionary] = []
 
@@ -261,6 +276,11 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 			var tool = _mcp_manager.tool_registry[tool_name]
 			# Only include minerva tools (not external MCP server tools)
 			if tool.server_name == "minerva":
+				# Apply tool set filtering
+				if not enabled_sets.is_empty():
+					# When filtering is active, only include tools from enabled sets or "meta" set
+					if tool.tool_set != "meta" and tool.tool_set not in enabled_sets:
+						continue
 				tools.append({
 					"name": tool.name,
 					"description": tool.description,
@@ -290,6 +310,18 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 	if not tool_name.begins_with("minerva_"):
 		_send_jsonrpc_error(conn, request_id, -32602, "Unknown tool: %s" % tool_name)
 		return
+
+	# Enforce tool set filtering
+	if _mcp_manager and _mcp_manager.minerva_server:
+		var enabled_sets: Array = _mcp_manager.minerva_server._enabled_tool_sets
+		if not enabled_sets.is_empty():
+			# Check if this tool's set is enabled
+			if _mcp_manager.tool_registry.has(tool_name):
+				var tool_def = _mcp_manager.tool_registry[tool_name]
+				if tool_def.tool_set != "meta" and tool_def.tool_set not in enabled_sets:
+					_send_jsonrpc_error(conn, request_id, -32602,
+						"Tool set '%s' is not enabled for this session. Use minerva_enable_tool_sets to enable it." % tool_def.tool_set)
+					return
 
 	# Execute the tool
 	if not _mcp_manager or not _mcp_manager.minerva_server:

@@ -4,14 +4,14 @@ extends Control
 signal task_clicked(task: AutocoderTask)
 signal task_move_requested(task: AutocoderTask, new_status: AutocoderTask.TaskStatus)
 signal task_created_from_note(task: AutocoderTask, note: Note)
+signal model_override_changed(task_id: String, model: String)
+
+## Available models for per-task model overrides (set by SubmitJob)
+var available_models: Array[Dictionary] = []
 
 const TASK_CARD_SCENE = preload("res://Scripts/UI/Controls/Autocoder/AutocoderTaskCard.tscn")
 
 var task_store: AutocoderTaskStore
-#@warning_ignore("unused_variable")
-#@onready var _scroll_container: ScrollContainer = %ScrollContainer
-#@warning_ignore("unused_variable")
-#@onready var _columns_container: HBoxContainer = %ColumnsContainer
 @onready var _plan_column: VBoxContainer = %PlanColumn
 @onready var _plan_list: AutocoderKanbanDropZone = %PlanList
 @onready var _in_progress_column: VBoxContainer = %InProgressColumn
@@ -206,13 +206,9 @@ func _add_tasks_to_column(column: Control, tasks: Array[AutocoderTask]):
 	for task in tasks:
 		var card = TASK_CARD_SCENE.instantiate()
 		column.add_child(card)
+		card.available_models = available_models
 		card.setup(task)
-		card.task_clicked.connect(_on_task_card_clicked)
-		card.task_move_requested.connect(_on_task_move_requested)
-		card.task_edit_requested.connect(_on_task_edit_requested)
-		card.task_delete_requested.connect(_on_task_delete_requested)
-		card.note_dropped_on_card.connect(_on_note_dropped_on_card)
-		card.note_link_removed.connect(_on_note_link_removed)
+		_connect_card_signals(card)
 
 func _get_column_for_status(status: AutocoderTask.TaskStatus) -> AutocoderKanbanDropZone:
 	match status:
@@ -254,18 +250,30 @@ func _update_column_count(column: VBoxContainer, list: Control, _label_text: Str
 					if count_label:
 						count_label.text = "(%d)" % list.get_child_count()
 
+func _connect_card_signals(card: AutocoderTaskCard) -> void:
+	card.task_clicked.connect(_on_task_card_clicked)
+	card.task_move_requested.connect(_on_task_move_requested)
+	card.task_edit_requested.connect(_on_task_edit_requested)
+	card.task_delete_requested.connect(_on_task_delete_requested)
+	card.note_dropped_on_card.connect(_on_note_dropped_on_card)
+	card.note_link_removed.connect(_on_note_link_removed)
+	card.model_override_changed.connect(_on_card_model_override_changed)
+
+
+func _on_card_model_override_changed(task_id: String, model: String) -> void:
+	if task_store:
+		task_store.update_task(task_id, {"assigned_model": model})
+	model_override_changed.emit(task_id, model)
+
+
 func _on_task_added(task: AutocoderTask):
 	var column = _get_column_for_status(task.status)
 	if column:
 		var card = TASK_CARD_SCENE.instantiate()
 		column.add_child(card)
+		card.available_models = available_models
 		card.setup(task)
-		card.task_clicked.connect(_on_task_card_clicked)
-		card.task_move_requested.connect(_on_task_move_requested)
-		card.task_edit_requested.connect(_on_task_edit_requested)
-		card.task_delete_requested.connect(_on_task_delete_requested)
-		card.note_dropped_on_card.connect(_on_note_dropped_on_card)
-		card.note_link_removed.connect(_on_note_link_removed)
+		_connect_card_signals(card)
 		_update_column_counts()
 
 func _on_task_updated(task: AutocoderTask):
@@ -293,13 +301,9 @@ func _on_task_moved(task: AutocoderTask, old_status: AutocoderTask.TaskStatus, n
 	if new_column:
 		var card = TASK_CARD_SCENE.instantiate()
 		new_column.add_child(card)
+		card.available_models = available_models
 		card.setup(task)
-		card.task_clicked.connect(_on_task_card_clicked)
-		card.task_move_requested.connect(_on_task_move_requested)
-		card.task_edit_requested.connect(_on_task_edit_requested)
-		card.task_delete_requested.connect(_on_task_delete_requested)
-		card.note_dropped_on_card.connect(_on_note_dropped_on_card)
-		card.note_link_removed.connect(_on_note_link_removed)
+		_connect_card_signals(card)
 	
 	_update_column_counts()
 

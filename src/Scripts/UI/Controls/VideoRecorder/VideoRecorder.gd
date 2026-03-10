@@ -202,7 +202,8 @@ func stop_recording() -> void:
 
 	# Calculate final duration
 	var elapsed_us := _get_elapsed_us()
-	data.duration_ms = int(elapsed_us / 1000.0)
+	@warning_ignore("integer_division")
+	data.duration_ms = elapsed_us / 1000
 
 	# Stop audio
 	_stop_audio()

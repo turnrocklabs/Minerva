@@ -53,14 +53,14 @@ layout_mode = 2
 
 [node name="Icon" type="Label" parent="MainMargin/SessionsCard/CardMargin/CardContent/Header"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 18
+theme_override_font_sizes/font_size = 27
 text = "📋"
 
 [node name="Title" type="Label" parent="MainMargin/SessionsCard/CardMargin/CardContent/Header"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_colors/font_color = Color(0.95, 0.95, 0.97, 1)
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 24
 text = "Sessions"
 
 [node name="RefreshButton" type="Button" parent="MainMargin/SessionsCard/CardMargin/CardContent/Header"]
@@ -76,4 +76,4 @@ text = "🗑️ Delete All"
 [node name="SessionsTree" type="Tree" parent="MainMargin/SessionsCard/CardMargin/CardContent"]
 layout_mode = 2
 size_flags_vertical = 3
-theme_override_font_sizes/font_size = 13
+theme_override_font_sizes/font_size = 20

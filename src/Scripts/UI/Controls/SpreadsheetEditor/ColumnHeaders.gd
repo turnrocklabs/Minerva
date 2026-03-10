@@ -141,18 +141,17 @@ func _gui_input(event: InputEvent) -> void:
 
 
 func _handle_mouse_button(event: InputEventMouseButton) -> void:
+	var x := event.position.x + scroll_offset_x
+
 	if event.button_index == MOUSE_BUTTON_RIGHT:
 		if event.pressed:
-			var x_ := event.position.x + scroll_offset_x
-			var col := _get_col_at_x(x_)
+			var col := _get_col_at_x(x)
 			if col >= 0:
 				column_context_menu_requested.emit(col, get_screen_position() + event.position)
 		return
 
 	if event.button_index != MOUSE_BUTTON_LEFT:
 		return
-
-	var x := event.position.x + scroll_offset_x
 
 	if event.pressed:
 		# Check if double-clicking on resize handle (auto-fit)

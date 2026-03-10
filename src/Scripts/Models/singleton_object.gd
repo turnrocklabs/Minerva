@@ -450,6 +450,19 @@ func is_mcp_http_server_running() -> bool:
 
 #endregion MCP
 
+#region Agent System
+var agent_registry: AgentRegistry = null
+var trigger_manager: TriggerManager = null
+
+func _init_agent_system() -> void:
+	agent_registry = AgentRegistry.new()
+	agent_registry.load_config()
+	trigger_manager = TriggerManager.new()
+	trigger_manager.name = "TriggerManager"
+	add_child(trigger_manager)
+	print("[SingletonObject] Agent system initialized (%d agents)" % agent_registry.agents.size())
+#endregion Agent System
+
 #region Image Generation Settings
 
 ## Maximum iterations allowed for iterative image generation in agentic mode
@@ -579,6 +592,10 @@ func set_model_num_gpu(model_name: String, num_gpu: int) -> void:
 #region Chats
 @warning_ignore("unused_signal")
 signal chat_completed(response: BotResponse)
+## Emitted when an agent chat fully completes (all tool rounds done).
+## Unlike chat_completed which fires per-response, this fires once when the agent is truly finished.
+@warning_ignore("unused_signal")
+signal agent_chat_finished(history_id: String, agent_definition_id: String)
 var current_message: MessageMarkdown = null
 
 var ChatList: Array[ChatHistory]
@@ -698,7 +715,7 @@ func _ready():
 	
 	var mic_selected = get_microphone()
 	if mic_selected:
-		set_microphone(mic_selected)
+		call_deferred("set_microphone", mic_selected)
 	
 	set_output_device(get_output_device())
 	
@@ -713,6 +730,9 @@ func _ready():
 	# Initialize MCP manager (connects to Nudge, etc.)
 	# Defer to avoid add_child errors during scene tree setup
 	initialize_mcp.call_deferred()
+
+	# Initialize agent system (registry + trigger manager)
+	_init_agent_system()
 
 
 ## Recursively release all textures in a node tree to prevent RID leaks on exit
