@@ -378,7 +378,8 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 	if request_id != _current_binary_request_id and SingletonObject.verbose_logging:
 		var json_str = JSON.stringify(data)
 		print("📥 Received text message length: %s bytes" % json_str.length())
-
+		
+		print(json_str)
 		for i in range(0, json_str.length(), _max_chunk_length):
 			var chunk: =  json_str.substr(i, _max_chunk_length)
 			printraw(chunk)
@@ -915,6 +916,13 @@ func send_media_selective_edit_request(editing_params: Dictionary, images_dir: A
 	# Merge the provided editing_params into the 'data' dictionary
 	var data_payload: Dictionary = (message["params"] as Dictionary)["data"] as Dictionary
 	data_payload = merge_dictionaries(data_payload, editing_params)
+
+	# ComfyUI LoadImageMask requires channel in ['alpha','red','green','blue']. Never send empty.
+	var channel: String = data_payload.get("mask_channel", "")
+	if channel.is_empty():
+		channel = "alpha"
+	data_payload["mask_channel"] = channel
+	data_payload["channel"] = channel
 
 	# Attach both the base image and the mask image to the files array
 	data_payload["files"] = images_dir

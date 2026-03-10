@@ -68,6 +68,8 @@
 [ext_resource type="Script" uid="uid://c2v2rhkx3y5c3" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DiagramShapeTool.gd" id="52_diagramshapetool"]
 [ext_resource type="Script" uid="uid://i42iepci3p3i" path="res://Scripts/UI/Controls/GraphicsEditor/tools/ConnectorTool.gd" id="53_connectortool"]
 [ext_resource type="Texture2D" uid="uid://cslxkfwa26tgw" path="res://assets/generated/upload.svg" id="65_dqxga"]
+[ext_resource type="Texture2D" uid="uid://2b1dd4agce6d" path="res://assets/placeholder_image.tres" id="65_jmkn5"]
+[ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="66_bkqel"]
 [ext_resource type="Texture2D" uid="uid://cdkdfrvw4guyi" path="res://assets/icons/graphics_editor/3_image_workflow_icon_24_3.png" id="68_4jqk7"]
 
 [sub_resource type="Gradient" id="Gradient_spfkh"]
@@ -129,9 +131,6 @@ anti_aliasing = false
 
 [sub_resource type="ViewportTexture" id="ViewportTexture_v7532"]
 viewport_path = NodePath("PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport")
-
-[sub_resource type="PlaceholderTexture2D" id="PlaceholderTexture2D_dqxga"]
-size = Vector2(64, 36)
 
 [node name="GraphicsEditorV2" type="PanelContainer" unique_id=1919594253]
 texture_filter = 1
@@ -1131,6 +1130,7 @@ theme_override_constants/margin_bottom = 7
 
 [node name="MessageWindow" type="Window" parent="." unique_id=786217184]
 unique_name_in_owner = true
+oversampling_override = 1.0
 initial_position = 2
 size = Vector2i(700, 300)
 visible = false
@@ -1615,123 +1615,123 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="HBoxContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1926991873]
+[node name="ImageContainer1" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1926991873]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=1969426166]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1" unique_id=1969426166]
 layout_mode = 2
 text = "image1:"
 
-[node name="Image1TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=1988037462]
+[node name="Image1TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1" unique_id=1988037462]
 unique_name_in_owner = true
 layout_mode = 2
-texture = SubResource("PlaceholderTexture2D_dqxga")
+texture = ExtResource("65_jmkn5")
 
-[node name="LoadImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=396395683 groups=["imagesButtons"]]
+[node name="LoadImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1" unique_id=396395683 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Load an image from disc to send to the bacnkend"
 disabled = true
 icon = ExtResource("65_dqxga")
 
-[node name="PickImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=234667611 groups=["imagesButtons"]]
+[node name="PickImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1" unique_id=234667611 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Pick Layer"
 icon = ExtResource("33_3qddm")
 
-[node name="PoseEditorImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=957384129 groups=["imagesButtons"]]
+[node name="PoseEditorImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1" unique_id=957384129 groups=["imagesButtons"]]
 unique_name_in_owner = true
 visible = false
 layout_mode = 2
 disabled = true
 text = "Pose Editor"
 
-[node name="SendImage1Button" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer" unique_id=533936362 groups=["imagesButtons"]]
-unique_name_in_owner = true
+[node name="ClearImage1Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1" unique_id=837997453]
 layout_mode = 2
 size_flags_horizontal = 10
-disabled = true
+icon = ExtResource("66_bkqel")
 
-[node name="HBoxContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1507174597]
+[node name="ImageContainer2" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1507174597]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=1158218172]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2" unique_id=1158218172]
 layout_mode = 2
 text = "image2:"
 
-[node name="Image2TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=476746461]
+[node name="Image2TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2" unique_id=476746461]
 unique_name_in_owner = true
 layout_mode = 2
-texture = SubResource("PlaceholderTexture2D_dqxga")
+texture = ExtResource("65_jmkn5")
 
-[node name="LoadImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=544103938 groups=["imagesButtons"]]
+[node name="LoadImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2" unique_id=544103938 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Load an image from disc to send to the bacnkend"
 disabled = true
 icon = ExtResource("65_dqxga")
 
-[node name="PickImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=1580744727 groups=["imagesButtons"]]
+[node name="PickImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2" unique_id=1580744727 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Pick Layer"
 icon = ExtResource("33_3qddm")
 
-[node name="PoseEditorImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=1931334715 groups=["imagesButtons"]]
+[node name="PoseEditorImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2" unique_id=1931334715 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Pose Editor"
 
-[node name="SendImage2sButton" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2" unique_id=1739815191 groups=["imagesButtons"]]
-unique_name_in_owner = true
+[node name="ClearImage2Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2" unique_id=1905627776]
 layout_mode = 2
 size_flags_horizontal = 10
-disabled = true
+icon = ExtResource("66_bkqel")
 
-[node name="HBoxContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1255312703]
+[node name="ImageContainer3" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer" unique_id=1255312703]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 6
 
-[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=112070070]
+[node name="Label" type="Label" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3" unique_id=112070070]
 layout_mode = 2
 text = "image3:"
 
-[node name="Image3TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=673109877]
+[node name="Image3TextureRect" type="TextureRect" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3" unique_id=673109877]
 unique_name_in_owner = true
 layout_mode = 2
-texture = SubResource("PlaceholderTexture2D_dqxga")
+texture = ExtResource("65_jmkn5")
 
-[node name="LoadImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=54493846 groups=["imagesButtons"]]
+[node name="LoadImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3" unique_id=54493846 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Load an image from disc to send to the bacnkend"
 disabled = true
 icon = ExtResource("65_dqxga")
 
-[node name="PickImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=1936420298 groups=["imagesButtons"]]
+[node name="PickImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3" unique_id=1936420298 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Pick Layer"
 icon = ExtResource("33_3qddm")
 
-[node name="PoseEditorImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=1610955811 groups=["imagesButtons"]]
+[node name="PoseEditorImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3" unique_id=1610955811 groups=["imagesButtons"]]
 unique_name_in_owner = true
 layout_mode = 2
 disabled = true
 text = "Pose Editor"
 
-[node name="SendImage3Button" type="CheckButton" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3" unique_id=144773080 groups=["imagesButtons"]]
-unique_name_in_owner = true
+[node name="ClearImage3Button" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3" unique_id=987399505]
 layout_mode = 2
 size_flags_horizontal = 10
-disabled = true
+icon = ExtResource("66_bkqel")
 
 [node name="AdvancedSettingsButtonContainer" type="HBoxContainer" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer" unique_id=584676662]
 layout_mode = 2
@@ -1969,15 +1969,18 @@ icon = ExtResource("68_4jqk7")
 [connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/HBoxContainer2/3DPoseControllerButton" to="." method="_on_d_pose_controller_button_toggled"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewportContainer/UpdateButton" to="." method="_on_update_button_pressed"]
 [connection signal="item_selected" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/WorkflowContainer/WorkflowOptionButton" to="." method="_on_workflow_option_button_item_selected"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer/LoadImage1Button" to="." method="_on_load_image_1_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer/PickImage1Button" to="." method="_on_pick_image_1_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer/PoseEditorImage1Button" to="." method="_on_pose_editor_image_1_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2/LoadImage2Button" to="." method="_on_load_image_2_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2/PickImage2Button" to="." method="_on_pick_image_2_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer2/PoseEditorImage2Button" to="." method="_on_pose_editor_image_2_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3/LoadImage3Button" to="." method="_on_load_image_3_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3/PickImage3Button" to="." method="_on_pick_image_3_button_pressed"]
-[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/HBoxContainer3/PoseEditorImage3Button" to="." method="_on_pose_editor_image_3_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1/LoadImage1Button" to="." method="_on_load_image_1_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1/PickImage1Button" to="." method="_on_pick_image_1_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1/PoseEditorImage1Button" to="." method="_on_pose_editor_image_1_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer1/ClearImage1Button" to="." method="_on_clear_image_1_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2/LoadImage2Button" to="." method="_on_load_image_2_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2/PickImage2Button" to="." method="_on_pick_image_2_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2/PoseEditorImage2Button" to="." method="_on_pose_editor_image_2_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer2/ClearImage2Button" to="." method="_on_clear_image_2_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3/LoadImage3Button" to="." method="_on_load_image_3_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3/PickImage3Button" to="." method="_on_pick_image_3_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3/PoseEditorImage3Button" to="." method="_on_pose_editor_image_3_button_pressed"]
+[connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/ImagesContainer/ImageContainer3/ClearImage3Button" to="." method="_on_clear_image_3_button_pressed"]
 [connection signal="toggled" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsButtonContainer/AdvancedSettingsCheckButton" to="." method="_on_advanced_settings_check_button_toggled"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/AdvancedSettingsContainer/NegativeTextEdit/NegativePromptMicButton" to="." method="_on_negative_prompt_mic_button_pressed"]
 [connection signal="pressed" from="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/HBoxContainer3/SendPromptButton" to="." method="_on_send_prompt_button_pressed"]
