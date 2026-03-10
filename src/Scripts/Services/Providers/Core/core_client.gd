@@ -343,7 +343,7 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 		if !_text.is_empty() and not _text.to_lower().contains("ComfyUI".to_lower()) :
 			var toast: = ToastNotification.create(ToastNotification.Type.INFO, _text)
 			SingletonObject.main_scene.add_child(toast)
-	elif cmd == "response" and entity_type == "core":
+	elif cmd == "response":
 		request_id = data.get("params", {}).get("request_id", "") # Explicitly type
 		
 		# Check if this is a discovery response
@@ -593,13 +593,13 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("  ℹ️ Binary header topic=%s not handled, ignoring." % hdr_topic)
 					return
 
-				# If we receive a NEW_MESSAGE for a different request_id,
-				# we should reset and start tracking this new one.
-				if _current_binary_request_id != req_id:
-					if SingletonObject.verbose_logging:
-						print("  ℹ️ New binary stream detected for request_id=%s. Resetting previous state." % req_id)
-					_reset_binary_transfer_state()
-					_current_binary_request_id = req_id
+				# Always reset binary state before starting a new transfer.
+				# Previous state may be stale if the text completion response
+				# was missed (e.g. entity_type mismatch) or never sent.
+				if SingletonObject.verbose_logging:
+					print("  ℹ️ New binary stream for request_id=%s. Resetting previous state." % req_id)
+				_reset_binary_transfer_state()
+				_current_binary_request_id = req_id
 
 				_binary_expected_files = num_files
 				_binary_files_completed = 0
@@ -822,9 +822,11 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				else:
 					push_error("FileAccess error: %s" % FileAccess.get_open_error())
 					push_error("   ❌ Could not save file %s" % out_path)
-				# Do NOT reset state here: multi-file responses (e.g. 2-image compose) send
-				# one FILE_END per file. Reset only when we get the final text "response"
-				# or a NEW_MESSAGE for another request (handled in _handle_message and NEW_MESSAGE).
+				# For multi-file responses, each file gets its own FILE_END.
+				# Reset state once all expected files have been received.
+				if _binary_files_completed == _binary_expected_files:
+					binary_transfer_complete.emit(_current_binary_request_id)
+					_reset_binary_transfer_state()
 			else:
 				if SingletonObject.verbose_logging:
 					print("   ⚠️ FILE_END for unknown file index %s" % file_index)
@@ -976,6 +978,22 @@ func send_media_flex_request(params: Dictionary, images: Array = []) -> String:
 			data_payload["files"] = files_array
 
 	(message["params"] as Dictionary)["data"] = data_payload
+
+	# DEBUG: Log the flex request details for diagnosing 3-image compose bug
+	print("[FlexRequest] request_id=%s" % request_id)
+	print("[FlexRequest] use_empty_latent=%s use_empty_image1=%s use_empty_image2=%s use_empty_image3=%s" % [
+		str(data_payload.get("use_empty_latent", "MISSING")),
+		str(data_payload.get("use_empty_image1", "MISSING")),
+		str(data_payload.get("use_empty_image2", "MISSING")),
+		str(data_payload.get("use_empty_image3", "MISSING"))
+	])
+	var files_info: Array = data_payload.get("files", [])
+	print("[FlexRequest] files count=%d" % files_info.size())
+	for i in files_info.size():
+		var f: Dictionary = files_info[i]
+		print("[FlexRequest]   file[%d] role=%s filename=%s data_len=%d" % [
+			i, f.get("role", "?"), f.get("filename", "?"), f.get("data", "").length()
+		])
 
 	_current_binary_request_id = request_id
 	send_message_to_core(message)
