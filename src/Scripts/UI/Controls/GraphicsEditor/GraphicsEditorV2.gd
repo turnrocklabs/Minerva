@@ -113,17 +113,14 @@ signal selection_changed()
 @onready var load_image_1_button: Button = %LoadImage1Button
 @onready var pick_image_1_button: Button = %PickImage1Button
 @onready var pose_editor_image_1_button: Button = %PoseEditorImage1Button
-@onready var send_image_1_button: CheckButton = %SendImage1Button
 @onready var image_2_texture_rect: TextureRect = %Image2TextureRect
 @onready var load_image_2_button: Button = %LoadImage2Button
 @onready var pick_image_2_button: Button = %PickImage2Button
 @onready var pose_editor_image_2_button: Button = %PoseEditorImage2Button
-@onready var send_image_2_button: CheckButton = %SendImage2sButton
 @onready var image_3_texture_rect: TextureRect = %Image3TextureRect
 @onready var load_image_3_button: Button = %LoadImage3Button
 @onready var pick_image_3_button: Button = %PickImage3Button
 @onready var pose_editor_image_3_button: Button = %PoseEditorImage3Button
-@onready var send_image_3_button: CheckButton = %SendImage3Button
 
 @onready var mask_color_option_button: OptionButton = %MaskColorOptionButton
 @onready var color_picker_button: ColorPickerButton = %ColorPickerButton
@@ -745,12 +742,8 @@ func _ready() -> void:
 	
 	workflow_option_button.select(0)
 	_on_workflow_option_button_item_selected(0)  # Initialize current_workflow to match the selection
-
+	
 	response_layout_toggle()
-
-	# Send-image toggles: enable only when the corresponding texture rect has a texture
-	_update_send_image_buttons_enabled()
-
 	# Edit button handles both single-image edit and mask (selective) edit; mask button is hidden
 	send_mask_edit_button.visible = false
 	edit_img_button.tooltip_text = "Edit image (Image 1). If Image 2 is enabled, sends image + mask for selective editing."
@@ -993,19 +986,23 @@ func _on_layer_card_clicked(button_index: int, layer_card: LayerCard):
 				match add_image_destination:
 					"image1_texture":
 						image1_image = layer_image
+						image1_layer_type = layer_card.layer.type
 						image_1_texture_rect.texture = ImageTexture.create_from_image(layer_image)
 						image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
 					"image2_texture":
 						image2_image = layer_image
+						image2_layer_type = layer_card.layer.type
+						if layer_card.layer.type == LayerV2.Type.MASK:
+							image2_mask_color_name = layer_card.layer.mask_color_name if not layer_card.layer.mask_color_name.is_empty() else "red"
 						image_2_texture_rect.texture = ImageTexture.create_from_image(layer_image)
 						image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
 					"image3_texture":
 						image3_image = layer_image
+						image3_layer_type = layer_card.layer.type
 						image_3_texture_rect.texture = ImageTexture.create_from_image(layer_image)
 						image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
 				# Clear destination and close popup
 				add_image_destination = ""
-				_update_send_image_buttons_enabled()
 				layer_cards_popup_panel.hide()
 				return
 			else:
@@ -1576,6 +1573,8 @@ func _on_add_image_button_pressed() -> void:
 var add_image_destination: = ""
 var add_image_fd: FileDialog = null
 func image_file_dialog(destination :String) -> void:
+	if add_image_fd and add_image_fd.visible:
+		return
 	if add_image_fd == null:
 		add_image_fd = FileDialog.new()
 		add_image_fd.file_mode = FileDialog.FILE_MODE_OPEN_FILE
@@ -1592,22 +1591,19 @@ func image_file_dialog(destination :String) -> void:
 		#"image3_button":
 			#add_image_destination = "image3_texture" # this is for adding the image to image3
 	add_image_destination = destination
-	add_image_fd.file_selected.connect(_on_file_selected)
+	if !add_image_fd.files_selected.is_connected(_on_file_selected):
+		add_image_fd.file_selected.connect(_on_file_selected)
 	add_child(add_image_fd)
 	add_image_fd.popup_centered()
 
 var image1_image: Image
 var image2_image: Image
 var image3_image: Image
+var image1_layer_type: LayerV2.Type = LayerV2.Type.IMAGE
+var image2_layer_type: LayerV2.Type = LayerV2.Type.IMAGE
+var image2_mask_color_name: String = "red"
+var image3_layer_type: LayerV2.Type = LayerV2.Type.IMAGE
 
-## Update send-image CheckButtons: enable only when the corresponding texture rect has a texture set.
-func _update_send_image_buttons_enabled() -> void:
-	if send_image_1_button:
-		send_image_1_button.disabled = (image_1_texture_rect.texture == null or image1_image == null or image1_image.is_empty())
-	if send_image_2_button:
-		send_image_2_button.disabled = (image_2_texture_rect.texture == null or image2_image == null or image2_image.is_empty())
-	if send_image_3_button:
-		send_image_3_button.disabled = (image_3_texture_rect.texture == null or image3_image == null or image3_image.is_empty())
 
 func _on_file_selected(fp: String) -> void:
 	var image: = Image.load_from_file(fp)
@@ -1621,21 +1617,19 @@ func _on_file_selected(fp: String) -> void:
 			image1_image = image
 			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image2_texture":
 			image2_image = image
 			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image3_texture":
 			image3_image = image
 			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 	
 	add_image_destination = ""
 	add_image_fd.file_selected.disconnect(_on_file_selected)
 	add_image_fd.queue_free()
+	add_image_fd = null
 
 
 func _on_layers_container_mouse_exited() -> void:
@@ -2256,48 +2250,78 @@ enum AI_REQUEST {
 }
 var ai_request_type: AI_REQUEST = AI_REQUEST.EDIT_IMAGE
 
-## Edit button: single-image edit or mask (selective) edit based on texture rects and send toggles.
-## - Image 1 enabled only → send single-image edit.
-## - Image 1 + Image 2 enabled → send selective edit (image + mask).
+## Edit button: context-aware routing based on image slots and layer types.
+## - Image 1 only → single-image edit.
+## - Image 1 + mask layer in Image 2 → mask (selective) edit via generate_mask_bytes().
+## - Image 1 + image layer in Image 2 → 2-image compose (Qwen 2511 Flex only).
+## - Image 1 + Image 2 + Image 3 (all image layers) → 3-image compose (Qwen 2511 Flex only).
 func _on_edit_from_texture_rects_pressed() -> void:
 	if current_workflow == Workflow.Z_TURBO:
-		display_message("Workflow", "Edit is not available for Z-Turbo. Use Qwen or Qwen 2511 Flex.")
 		return
 	if image1_image == null or image1_image.is_empty():
-		display_message("Image Required", "Load or pick an image into Image 1 slot first (Load from file or Pick from layer).")
-		return
-	if not send_image_1_button.button_pressed:
-		display_message("Include Image", "Enable the Image 1 toggle (check button) next to the texture to include it in the edit request.")
 		return
 	var params: Dictionary = get_params_image_gen()
 	if params.is_empty():
-		display_message("Prompt", "Enter a positive prompt for image editing.")
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.WARNING, "Enter a positive prompt for image editing.")
+		SingletonObject.main_scene.add_child(toast)
 		return
 	var image_for_export: Image = image1_image.duplicate()
 	if image_for_export.get_format() != Image.FORMAT_RGBA8:
 		image_for_export.convert(Image.FORMAT_RGBA8)
 	var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
 	if image_buffer.is_empty():
-		display_message("Error", "Failed to convert Image 1 to PNG buffer.")
+		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.ERROR, "Failed to convert Image 1 to PNG buffer.")
+		SingletonObject.main_scene.add_child(toast)
 		return
 	if !seed_line_edit.text.is_empty():
 		params["seed"] = seed_line_edit.text
 
-	var use_mask: bool = send_image_2_button.button_pressed and image2_image != null and not image2_image.is_empty()
-	if use_mask:
-		# Mask (selective) edit: image 1 + image 2 as mask
+	var has_image2: bool = image2_image != null and not image_2_texture_rect.texture is PlaceholderTexture2D
+	var has_image3: bool = image3_image != null and not image_3_texture_rect.texture is PlaceholderTexture2D
+	var image2_is_mask: bool = has_image2 and image2_layer_type == LayerV2.Type.MASK
+
+	if has_image2 and not image2_is_mask and current_workflow == Workflow.QWEN_2511_FLEX:
+		# Compose mode: image2 is an image layer on Qwen 2511 Flex
 		var img2_for_export: Image = image2_image.duplicate()
 		if img2_for_export.get_format() != Image.FORMAT_RGBA8:
 			img2_for_export.convert(Image.FORMAT_RGBA8)
-		var mask_buffer: PackedByteArray = img2_for_export.save_png_to_buffer()
+		var images: Array = [
+			{"buffer": image_for_export.save_png_to_buffer(), "role": "image1", "filename": "image1.png"},
+			{"buffer": img2_for_export.save_png_to_buffer(), "role": "image2", "filename": "image2.png"}
+		]
+		if has_image3:
+			# 3-image compose
+			var img3_for_export: Image = image3_image.duplicate()
+			if img3_for_export.get_format() != Image.FORMAT_RGBA8:
+				img3_for_export.convert(Image.FORMAT_RGBA8)
+			images.append({"buffer": img3_for_export.save_png_to_buffer(), "role": "image3", "filename": "image3.png"})
+			var switches: Dictionary = _build_flex_switches("compose_3")
+			for key in switches:
+				params[key] = switches[key]
+			var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 3-image composition...")
+			SingletonObject.main_scene.add_child(toast)
+		else:
+			# 2-image compose
+			var switches: Dictionary = _build_flex_switches("compose_2")
+			for key in switches:
+				params[key] = switches[key]
+			var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2-image composition...")
+			SingletonObject.main_scene.add_child(toast)
+		_current_image_gen_request_id = MediaGen.send_media_flex_request(params, images)
+	elif has_image2 and image2_is_mask:
+		# Mask (selective) edit: process mask through generate_mask_bytes()
+		var img2_for_export: Image = image2_image.duplicate()
+		if img2_for_export.get_format() != Image.FORMAT_RGBA8:
+			img2_for_export.convert(Image.FORMAT_RGBA8)
+		var mask_buffer: PackedByteArray = MediaGen.generate_mask_bytes(img2_for_export, Color.WHITE, image2_mask_color_name)
 		if mask_buffer.is_empty():
-			display_message("Error", "Failed to convert Image 2 to PNG buffer for mask.")
+			display_message("Error", "Failed to generate mask from Image 2.")
 			return
 		var images_dir: Array = [
 			{"filename": "image1.png", "role": "image", "data": Marshalls.raw_to_base64(image_buffer), "content_type": "image/png"},
 			{"filename": "mask.png", "role": "mask", "data": Marshalls.raw_to_base64(mask_buffer), "content_type": "image/png"}
 		]
-		params["mask_channel"] = ""
+		params["mask_channel"] = image2_mask_color_name
 		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending image and mask for selective editing...")
 		SingletonObject.main_scene.add_child(toast)
 		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(params, images_dir)
@@ -2307,6 +2331,56 @@ func _on_edit_from_texture_rects_pressed() -> void:
 		SingletonObject.main_scene.add_child(toast)
 		_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, "image1.png")
 	image_gen_window.hide()
+	prompt_text_edit.text = ""
+
+## 3-image compose (Qwen 2511 Flex): build request from Image 1, Image 2, Image 3 texture rects, same as regular Qwen edit flow.
+func _on_three_image_compose_from_texture_rects_pressed() -> void:
+	if current_workflow != Workflow.QWEN_2511_FLEX:
+		return
+	var has_img1: bool = image1_image != null and not image1_image.is_empty() and not image_1_texture_rect.texture is PlaceholderTexture2D
+	var has_img2: bool = image2_image != null and not image2_image.is_empty() and not image_2_texture_rect.texture is PlaceholderTexture2D
+	var has_img3: bool = image3_image != null and not image3_image.is_empty() and not image_3_texture_rect.texture is PlaceholderTexture2D
+	if not (has_img1 and has_img2 and has_img3):
+		_reset_edit_ui_buttons()
+		display_message("Image slots", "Fill Image 1, Image 2, and Image 3 slots for 3-image composition.")
+		return
+	var params: Dictionary = get_params_image_gen()
+	if params.is_empty():
+		_reset_edit_ui_buttons()
+		display_message("Prompt", "Enter a positive prompt for 3-image composition.")
+		return
+	if !seed_line_edit.text.is_empty():
+		params["seed"] = seed_line_edit.text
+	var switches: Dictionary = _build_flex_switches("compose_3_with_pose")
+	for key in switches:
+		params[key] = switches[key]
+	# Export same way as Qwen edit: duplicate, RGBA8, save_png_to_buffer
+	var img1_export: Image = image1_image.duplicate()
+	if img1_export.get_format() != Image.FORMAT_RGBA8:
+		img1_export.convert(Image.FORMAT_RGBA8)
+	var img2_export: Image = image2_image.duplicate()
+	if img2_export.get_format() != Image.FORMAT_RGBA8:
+		img2_export.convert(Image.FORMAT_RGBA8)
+	var img3_export: Image = image3_image.duplicate()
+	if img3_export.get_format() != Image.FORMAT_RGBA8:
+		img3_export.convert(Image.FORMAT_RGBA8)
+	var buf1: PackedByteArray = img1_export.save_png_to_buffer()
+	var buf2: PackedByteArray = img2_export.save_png_to_buffer()
+	var buf3: PackedByteArray = img3_export.save_png_to_buffer()
+	if buf1.is_empty() or buf2.is_empty() or buf3.is_empty():
+		_reset_edit_ui_buttons()
+		display_message("Error", "Failed to convert one or more images to PNG.")
+		return
+	var images: Array = [
+		{"buffer": buf1, "role": "image1", "filename": "image1.png"},
+		{"buffer": buf2, "role": "image2", "filename": "image2.png"},
+		{"buffer": buf3, "role": "image3", "filename": "image3.png"}
+	]
+	var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 3-image composition...")
+	SingletonObject.main_scene.add_child(toast)
+	_current_image_gen_request_id = MediaGen.send_media_flex_request(params, images)
+	image_gen_window.hide()
+	layer_cards_popup_panel.hide()
 	prompt_text_edit.text = ""
 
 # Commented out: previous behavior opened the layer panel to choose a layer, then Send to AI sent the request.
@@ -2358,109 +2432,13 @@ func _on_edit_button_pressed() -> void:
 
 
 func _on_edit_img_button_pressed() -> void:
-	if ai_request_type == AI_REQUEST.EDIT_IMAGE:
-		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
-			_reset_edit_ui_buttons()
-			if current_workflow == Workflow.Z_TURBO:
-				display_message("Workflow", "Edit is not available for Z-Turbo. Use Qwen or Qwen 2511 Flex.")
-			else:
-				display_message("Selection", "Select at least one image layer in the layer list, then click Send.")
-			return
-		
-		# This was handling compose_3_with_pose, but user wants that on a different button
-		# Removed the 3-image compose code from here - now handled by _on_three_image_workflow_button_pressed
-		
-		var layer_to_send: LayerV2 = selected_layers[0]
-		# Get the image from the active layer
-		if layer_to_send == null:
-			_reset_edit_ui_buttons()
-			display_message("Error", "Selected layer is invalid.")
-			return
-		var image_to_edit: Image = layer_to_send.image
-		var image_filename: String = layer_to_send.name + ".png" # Use layer name as filename
-		# Convert Image to PackedByteArray (PNG format)
-		# The image must be converted to RGBA8 for PNG export if it's not already.
-		# Duplicate to avoid modifying the original layer image directly during conversion.
-		var image_for_export: Image = image_to_edit.duplicate()
-		if image_for_export.get_format() != Image.FORMAT_RGBA8:
-			image_for_export.convert(Image.FORMAT_RGBA8)
-		
-		var image_buffer: PackedByteArray = image_for_export.save_png_to_buffer()
-		
-		if image_buffer.is_empty():
-			display_message("Error", "Failed to convert active layer image to PNG buffer.")
-			_reset_edit_ui_buttons()
-			return
-		
-		var params: Dictionary = get_params_image_gen()
-		if params.is_empty():
-			_reset_edit_ui_buttons()
-			display_message("Prompt", "Enter a positive prompt for image generation.")
-			return
-		
-		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending image edit request...")
-		SingletonObject.main_scene.add_child(toast)
-		
-		if !seed_line_edit.text.is_empty():
-			params["seed"] = seed_line_edit.text
-		
-		_current_image_gen_request_id = MediaGen.send_media_edit_request(params, image_buffer, image_filename)
-		
-		image_gen_window.hide()
-		layer_cards_popup_panel.hide()
-		prompt_text_edit.text = ""
+	if ai_request_type == AI_REQUEST.EDIT_IMAGE or ai_request_type == AI_REQUEST.MASK_EDIT:
+		_on_edit_from_texture_rects_pressed()
+		return
 	elif ai_request_type == AI_REQUEST.THREE_IMAGE_COMPOSE:
-		# Handle 3-image composition (2 layers + pose editor)
-		var has_second: bool = selected_layers.size() >= 2 or (selected_layers.size() >= 1 and selected_mask_layers.size() >= 1)
-		if not has_second:
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Selection", "Select 2 layers (image+image or image+mask) for 3-image composition.")
-			return
-		
-		var layer1: LayerV2 = selected_layers[0]
-		var layer2: LayerV2 = selected_layers[1] if selected_layers.size() >= 2 else selected_mask_layers[0]
-		
-		if layer1.type != LayerV2.Type.IMAGE:
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Selection", "First layer must be an image layer.")
-			return
-		
-		if layer2.type != LayerV2.Type.IMAGE and layer2.type != LayerV2.Type.MASK:
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Selection", "Second layer must be an image or mask layer.")
-			return
-		
-		# Get generation params
-		var params: Dictionary = get_params_image_gen()
-		if params.is_empty():
-			three_image_workflow_button.modulate = Color.WHITE
-			three_image_workflow_button.disabled = false
-			send_prompt_button.disabled = false
-			display_message("Prompt", "Enter a positive prompt for 3-image composition.")
-			return
-		
-		if !seed_line_edit.text.is_empty():
-			params["seed"] = seed_line_edit.text
-		
-		var toast: ToastNotification = ToastNotification.create(ToastNotification.Type.INFO, "Sending 2 layers + pose composition...")
-		SingletonObject.main_scene.add_child(toast)
-		
-		# Call the 3-image workflow function
-		var result: Dictionary = request_flex_compose_three_with_pose(params, layer1.name, layer2.name)
-		
-		if not result.get("success", false):
-			display_message("Compose Error", result.get("error", "3-image composition failed."))
-			return
-		
-		image_gen_window.hide()
-		layer_cards_popup_panel.hide()
-		prompt_text_edit.text = ""
+		# 3-image compose: images come from Image 1, Image 2, Image 3 texture rects (same as Qwen edit flow)
+		_on_three_image_compose_from_texture_rects_pressed()
+		return
 	elif ai_request_type == AI_REQUEST.MASK_EDIT:
 		if selected_layers.size() < 1 or current_workflow == Workflow.Z_TURBO:
 			if current_workflow == Workflow.Z_TURBO:
@@ -2557,12 +2535,15 @@ func _on_edit_img_button_pressed() -> void:
 		SingletonObject.main_scene.add_child(toast)
 		
 		var selective_editing_params: Dictionary = get_params_image_gen()
+		if mask_color_channel.is_empty():
+			mask_color_channel = "alpha"
 		selective_editing_params["mask_channel"] = mask_color_channel
 		_current_image_gen_request_id = MediaGen.send_media_selective_edit_request(selective_editing_params, images_dir)
 		image_gen_window.hide()
 		layer_cards_popup_panel.hide()
 		prompt_text_edit.text = ""
 
+ 
 func _on_advanced_settings_check_button_toggled(toggled_on: bool) -> void:
 	advanced_settings_container.visible = toggled_on
 
@@ -2706,17 +2687,14 @@ func _on_pose_editor_panel_pose_rendered(image: Image) -> void:
 			image1_image = image
 			image_1_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_1_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image2_texture":
 			image2_image = image
 			image_2_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_2_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 		"image3_texture":
 			image3_image = image
 			image_3_texture_rect.texture = ImageTexture.create_from_image(image)
 			image_3_texture_rect.texture.set_size_override(Vector2i(64, 36))
-			_update_send_image_buttons_enabled()
 
 #endregion LayersCards Masks PopUp panel
 
@@ -2860,7 +2838,7 @@ func check_ai_buttons_toggle() -> void:
 			edit_img_button.tooltip_text = _edit_img_base_tooltip
 		if send_mask_edit_button:
 			send_mask_edit_button.disabled = true
-	
+
 
 var draw_render_view: = false
 func _on_draw_rect(rect: Rect2) -> void:
@@ -2878,6 +2856,7 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 			denoise_spin_box.value = 1.0
 			edit_img_button.disabled = true
 			send_mask_edit_button.disabled = true
+			%ImagesContainer.hide()
 		1:  # Qwen
 			current_workflow = Workflow.QWEN
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN]
@@ -2885,7 +2864,15 @@ func _on_workflow_option_button_item_selected(index: int) -> void:
 			denoise_spin_box.value = 1.0
 			edit_img_button.disabled = false
 			send_mask_edit_button.disabled = false
+			%ImagesContainer.show() 
+			%ImageContainer2.show() 
+			%ImageContainer3.hide()
+			%ImageContainer1.show()
 		2:  # Qwen 2511 Flex
+			%ImagesContainer.show() 
+			%ImageContainer2.show() 
+			%ImageContainer3.show()
+			%ImageContainer1.show()
 			current_workflow = Workflow.QWEN_2511_FLEX
 			steps_spin_box.value = WORKFLOW_DEFAULT_STEPS[Workflow.QWEN_2511_FLEX]
 			cfg_spin_box.value = 1.0
@@ -2924,10 +2911,6 @@ func toggle_enable_ai_fields(enable: bool = true) -> void:
 	else:
 		for button: Button in get_tree().get_nodes_in_group("imagesButtons"):
 			button.disabled = false
-	#if _3d_pose_controller_button.button_pressed:
-		#workflow_option_button.select(2)
-	#workflow_option_button.disabled = _3d_pose_controller_button.button_pressed
-	#three_image_workflow_button.disabled = !_3d_pose_controller_button.button_pressed
 
 
 func disable_ai_features(error: int) -> void:
@@ -2957,10 +2940,7 @@ func _on_center_view_button_pressed() -> void:
 ## Position the drawing area at the top-left of the viewport
 func _position_view_top_left() -> void:
 	var viewport_size = input_area_camera.get_viewport().size
-	# Camera2D centers on its position, so offset to put content at top-left
-	# Account for zoom: at zoom 0.5, we see 2x the area, so offset needs adjustment
 	var zoom_factor = input_area_camera.zoom.x
-	# Offset camera so origin (0,0) appears at top-left with some padding
 	var padding = Vector2(20, 20)
 	input_area_camera.offset = Vector2.ZERO
 	input_area_camera.position = (Vector2(viewport_size) / 2.0) / zoom_factor - padding
@@ -3290,7 +3270,7 @@ func _on_prompt_history_button_pressed() -> void:
 		hist_window.queue_free()
 	)
 	
-	hist_window.popup()
+	hist_window.popup_centered()
 
 
 func get_gen_ai_history() -> String:
@@ -3392,17 +3372,11 @@ func _on_d_pose_controller_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_three_image_workflow_button_pressed() -> void:
-	# 3-Image Compose: Requires qwen_2511_flex workflow to be selected
-	# Prerequisites: Qwen 2511 Flex workflow selected, pose editor enabled, 2 layers selected
+	# 3-Image Compose: Qwen 2511 Flex, images from Image 1, Image 2, Image 3 texture rects (same as Qwen edit flow)
 	if current_workflow != Workflow.QWEN_2511_FLEX:
 		display_message("Workflow", "3-image composition requires Qwen 2511 Flex workflow. Select it from the workflow dropdown.")
 		return
 	
-	if not d_pose_controlller_enabled or not pose_editor_panel or not pose_editor_panel.pose_texture:
-		display_message("Pose Editor", "Enable pose editor and ensure it has a texture for 3-image composition.")
-		return
-	
-	# Open the layer selection panel (same pattern as edit button)
 	three_image_workflow_button.modulate = Color.LIME_GREEN
 	send_prompt_button.disabled = true
 	edit_img_button.disabled = true
@@ -3421,7 +3395,7 @@ func _on_three_image_workflow_button_pressed() -> void:
 			if layer_cards_popup_panel.get_child_count() > 0:
 				layer_cards_popup_panel.show()
 				layer_cards_popup_panel.borderless = false
-				ai_action_label.text = "Pick 2 layers (image + image or image + mask). Pose editor will be used as 3rd image."
+				ai_action_label.text = "Fill Image 1, Image 2, and Image 3 slots above, then click Send to compose."
 				%TopOfLayersContainer.show()
 				send_action_button.disabled = false
 				send_action_button.show()
@@ -3433,7 +3407,6 @@ func _on_three_image_workflow_button_pressed() -> void:
 			send_action_button.disabled = true
 			send_action_button.hide()
 			
-			# Re-enable buttons when toggling popup closed
 			three_image_workflow_button.modulate = Color.WHITE
 			three_image_workflow_button.disabled = false
 			send_prompt_button.disabled = false
@@ -3442,12 +3415,6 @@ func _on_three_image_workflow_button_pressed() -> void:
 	else:
 		ai_request_type = AI_REQUEST.THREE_IMAGE_COMPOSE
 		send_action_button.pressed.emit()
-	
-	# Open the layer selection panel (same pattern as edit button)
-	three_image_workflow_button.modulate = Color.LIME_GREEN
-	send_prompt_button.disabled = true
-	edit_img_button.disabled = true
-	send_mask_edit_button.disabled = true
 
 
 func _on_load_image_1_button_pressed() -> void:
@@ -3490,3 +3457,22 @@ func _on_pick_image_2_button_pressed() -> void:
 func _on_pick_image_3_button_pressed() -> void:
 	add_image_destination = "image3_texture"
 	_show_layer_cards_popup_below_toggle()
+
+static var placeholder_image_text = preload("res://assets/placeholder_image.tres")
+func _on_clear_image_2_button_pressed() -> void:
+	image2_image = null
+	image2_layer_type = LayerV2.Type.IMAGE
+	image2_mask_color_name = "red"
+	image_2_texture_rect.texture = placeholder_image_text
+
+
+func _on_clear_image_3_button_pressed() -> void:
+	image3_image = null
+	image3_layer_type = LayerV2.Type.IMAGE
+	image_3_texture_rect.texture = placeholder_image_text
+
+
+func _on_clear_image_1_button_pressed() -> void:
+	image1_image = null
+	image1_layer_type = LayerV2.Type.IMAGE
+	image_1_texture_rect.texture = placeholder_image_text

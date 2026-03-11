@@ -751,7 +751,7 @@ func _ready():
 	
 	var mic_selected = get_microphone()
 	if mic_selected:
-		set_microphone(mic_selected)
+		call_deferred("set_microphone", mic_selected)
 
 	set_output_device(get_output_device())
 	

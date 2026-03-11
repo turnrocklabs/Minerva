@@ -82,7 +82,8 @@ func close_connection() -> void:
 	# the request still doesnt cancel and times out after some period of time
 	print("core: cancel auth request")
 	
-	http_request.cancel_request()
+	if http_request:
+		http_request.cancel_request()
 	
 	Core.client.close_connection("User disconnected")
 
@@ -521,7 +522,7 @@ class AwaitMessage extends RefCounted:
 	var topic: String
 	var cmd: String
 	var request_id: String
-	var timeout: float = 150.0 # Default timeout in seconds
+	var timeout: float = 10000.0 # Default timeout in seconds
 
 	var client: CoreClient # Reference to the WebSocket client
 

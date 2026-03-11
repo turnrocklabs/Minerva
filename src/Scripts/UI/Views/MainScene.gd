@@ -268,9 +268,9 @@ The server runs on port 9315 by default."""
 	config_text.custom_minimum_size = Vector2(0, 80)
 	config_text.text = """{
   "mcpServers": {
-    "minerva": {
-      "type": "http",
-      "url": "http://localhost:9315/mcp"
+	"minerva": {
+	  "type": "http",
+	  "url": "http://localhost:9315/mcp"
     }
   }
 }"""
