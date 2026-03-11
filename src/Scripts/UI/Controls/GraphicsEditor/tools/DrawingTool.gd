@@ -212,6 +212,11 @@ func _start_stroke(event: InputEvent) -> void:
 	# Initialize GPU renderer if enabled
 	_using_gpu = use_gpu_acceleration and _init_gpu_renderer()
 
+	# Note: no stamp here — Godot's rendering pipeline defers texture updates to
+	# the draw pass, so a stamp here would never be visible before the first motion
+	# event.  Instead, _add_stroke_point recovers the press position by drawing
+	# a continuous line from here to the first motion position.
+
 func _update_stroke_buffer_for_expansion(offset: Vector2) -> void:
 	# Called when layer expands during a stroke to resize stroke buffer and update backup
 	if not _stroke_buffer or not _layer_backup:
@@ -255,28 +260,25 @@ func _add_stroke_point(event: InputEvent) -> void:
 		_smoothed_pressure = p
 		_last_pressure = p
 		
-		# Expand & localize before optional "touchdown" stamp
+		# Expand & localize before drawing
 		var _radius := get_actual_brush_radius(_smoothed_pressure)
 		var _bounds_point := get_bounds_point_for_expansion(pos, _radius)
 		var _offset := editor.active_layer.expand_to_point(_bounds_point)
 		editor.active_layer.position -= _offset
 		event = editor.active_layer.localize_input(event)
 		pos = event.position
-		
-		# Optional: stamp once at touchdown using the true first pressure
-		_draw_brush_stamp(
-			editor.active_layer.image,
-			pos,
-			brush_color,
-			brush_size * (p if _use_pressure else 1.0)
-		)
-		# Always update on first point of stroke
+
+		# Draw a continuous line from press position to first motion position
+		# so the beginning of the stroke isn't lost.
+		var effective_p := p if _use_pressure else 1.0
+		_draw_continuous_line(_last_drawing_position, pos, effective_p, effective_p)
+
 		_update_visual_preview()
 		_last_preview_msec = Time.get_ticks_msec()
 		editor.queue_redraw()
-		
+
 		_last_drawing_position = pos
-		_single_click = false   # Important: clear this flag to prevent double stamping
+		_single_click = false
 		return
 	
 	# Subsequent motion: smooth only if we're actually using pressure
