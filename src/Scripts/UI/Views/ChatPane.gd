@@ -32,7 +32,7 @@ var _tts_player: AudioStreamPlayer
 
 ## Voice gateway client for always-listening mode (wake word + VAD + state machine)
 var _voice_gateway: Node = null
-var _engagement_label: Label = null
+var _engagement_indicator: Button = null
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
@@ -2005,17 +2005,31 @@ func _ready():
 	_tts_player.finished.connect(_on_tts_playback_finished)
 
 	# Engagement indicator label (next to mic button)
-	_engagement_label = Label.new()
-	_engagement_label.text = "STANDBY"
-	_engagement_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-	_engagement_label.add_theme_font_size_override("font_size", 11)
-	# Place in the top bar: tcChats → VBoxContainer2 → VSplitContainer → VBoxContainer3 → VBoxContainer2/HBoxContainer
-	# Navigate: self.parent(VBoxContainer2).parent(VSplitContainer).parent(VBoxContainer3) → find btnNewChat's parent
-	var vbox3: Node = get_parent().get_parent().get_parent()  # VBoxContainer3
+	# Engagement indicator: small colored circle button (non-clickable) with tooltip
+	_engagement_indicator = Button.new()
+	_engagement_indicator.text = ""
+	_engagement_indicator.custom_minimum_size = Vector2(14, 14)
+	_engagement_indicator.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_engagement_indicator.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_engagement_indicator.flat = true
+	_engagement_indicator.disabled = true
+	_engagement_indicator.mouse_filter = Control.MOUSE_FILTER_PASS  # allow hover
+	_engagement_indicator.tooltip_text = "Voice: STANDBY"
+	# Style: grey circle
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.4, 0.4, 0.4)
+	style.corner_radius_top_left = 7
+	style.corner_radius_top_right = 7
+	style.corner_radius_bottom_left = 7
+	style.corner_radius_bottom_right = 7
+	_engagement_indicator.add_theme_stylebox_override("normal", style)
+	_engagement_indicator.add_theme_stylebox_override("disabled", style)
+	# Place in top bar next to btnNewChat
+	var vbox3: Node = get_parent().get_parent().get_parent()
 	if vbox3:
 		var btn_new: Node = vbox3.find_child("btnNewChat", true, false)
 		if btn_new and btn_new.get_parent():
-			btn_new.get_parent().add_child(_engagement_label)
+			btn_new.get_parent().add_child(_engagement_indicator)
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -2520,12 +2534,16 @@ func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -
 
 ## Voice gateway: engagement state changed
 func _on_engagement_changed(state: String) -> void:
-	if _engagement_label:
-		_engagement_label.text = state
-		if state == "ENGAGED":
-			_engagement_label.add_theme_color_override("font_color", Color(0.2, 0.9, 0.2))
-		else:
-			_engagement_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	if _engagement_indicator:
+		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("normal") as StyleBoxFlat
+		if style:
+			if state == "ENGAGED":
+				style.bg_color = Color(0.2, 0.85, 0.2)
+			else:
+				style.bg_color = Color(0.4, 0.4, 0.4)
+			_engagement_indicator.add_theme_stylebox_override("normal", style)
+			_engagement_indicator.add_theme_stylebox_override("disabled", style)
+		_engagement_indicator.tooltip_text = "Voice: %s" % state
 
 
 ## Voice gateway: VAD-endpointed audio ready for STT
