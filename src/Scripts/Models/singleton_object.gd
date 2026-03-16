@@ -480,12 +480,26 @@ func get_voice_client() -> VoiceServiceClient:
 
 #region Docker
 const DockerManagerScript = preload("res://Scripts/Services/Docker/DockerManager.gd")
+const ContainerDefinitionScript = preload("res://Scripts/Services/Docker/ContainerDefinition.gd")
 var docker_manager: RefCounted = null
 
 func get_docker_manager() -> RefCounted:
 	if not docker_manager:
 		docker_manager = DockerManagerScript.new()
+		_register_builtin_containers()
 	return docker_manager
+
+func _register_builtin_containers() -> void:
+	# Voice Gateway — wake word + VAD processing
+	var voice_gw: Resource = ContainerDefinitionScript.new()
+	voice_gw.display_name = "Voice Gateway"
+	voice_gw.image_name = "minerva-voice-gateway"
+	voice_gw.dockerfile_path = OS.get_executable_path().get_base_dir().path_join("Containers/voice-gateway/Dockerfile")
+	voice_gw.build_context = OS.get_executable_path().get_base_dir().path_join("Containers/voice-gateway")
+	voice_gw.ports = {8090: 8080}
+	voice_gw.health_endpoint = "http://localhost:8090/health"
+	voice_gw.gpu_optional = true
+	docker_manager.register(voice_gw)
 #endregion Docker
 
 #region Agent System
