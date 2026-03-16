@@ -2011,7 +2011,8 @@ func _ready():
 	_engagement_indicator.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_engagement_indicator.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_engagement_indicator.mouse_filter = Control.MOUSE_FILTER_STOP
-	_engagement_indicator.tooltip_text = "Voice: STANDBY"
+	_engagement_indicator.tooltip_text = "Voice: OFF (click to enable always-listening)"
+	_engagement_indicator.gui_input.connect(_on_engagement_indicator_clicked)
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.4, 0.4, 0.4)
 	style.set_corner_radius_all(6)
@@ -2026,6 +2027,11 @@ func _ready():
 		var btn_new: Node = vbox3.find_child("btnNewChat", true, false)
 		if btn_new and btn_new.get_parent():
 			btn_new.get_parent().add_child(_engagement_indicator)
+
+	# Auto-start voice gateway if always_listening was previously enabled
+	var cfg := SingletonObject.get_voice_config()
+	if cfg.always_listening:
+		call_deferred("start_voice_gateway")
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -2528,6 +2534,20 @@ func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -
 		_: stream.format = AudioStreamWAV.FORMAT_16_BITS
 
 
+## Toggle always-listening mode on indicator click
+func _on_engagement_indicator_clicked(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		var cfg := SingletonObject.get_voice_config()
+		if cfg.always_listening:
+			cfg.always_listening = false
+			cfg.save()
+			stop_voice_gateway()
+		else:
+			cfg.always_listening = true
+			cfg.save()
+			start_voice_gateway()
+
+
 ## Voice gateway: engagement state changed
 func _on_engagement_changed(state: String) -> void:
 	if _engagement_indicator:
@@ -2572,8 +2592,9 @@ func _on_tts_playback_finished() -> void:
 
 ## Start the voice gateway (called when always-listening is enabled)
 func start_voice_gateway() -> void:
-	if _voice_gateway and not _voice_gateway._connected:
+	if _voice_gateway:
 		_voice_gateway.start()
+		_update_indicator_for_listening(true)
 		print("[ChatPane] Voice gateway started")
 
 
@@ -2581,7 +2602,25 @@ func start_voice_gateway() -> void:
 func stop_voice_gateway() -> void:
 	if _voice_gateway:
 		_voice_gateway.stop()
+		_update_indicator_for_listening(false)
 		print("[ChatPane] Voice gateway stopped")
+
+
+func _update_indicator_for_listening(active: bool) -> void:
+	if not _engagement_indicator:
+		return
+	if active:
+		_engagement_indicator.tooltip_text = "Voice: STANDBY (click to disable)"
+		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("panel") as StyleBoxFlat
+		if style:
+			style.bg_color = Color(0.4, 0.4, 0.4)
+			_engagement_indicator.add_theme_stylebox_override("panel", style)
+	else:
+		_engagement_indicator.tooltip_text = "Voice: OFF (click to enable always-listening)"
+		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("panel") as StyleBoxFlat
+		if style:
+			style.bg_color = Color(0.25, 0.25, 0.25)
+			_engagement_indicator.add_theme_stylebox_override("panel", style)
 
 
 func _on_child_order_changed():
