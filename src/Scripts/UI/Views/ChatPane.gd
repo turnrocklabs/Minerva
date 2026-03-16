@@ -2009,9 +2009,14 @@ func _ready():
 	_engagement_label.text = "STANDBY"
 	_engagement_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	_engagement_label.add_theme_font_size_override("font_size", 11)
-	# Place near top controls (next to chat button) to avoid bottom overflow
-	if _chat_button and _chat_button.get_parent():
-		_chat_button.get_parent().add_child(_engagement_label)
+	# Place in the top bar (next to new chat / clone buttons)
+	var top_hbox: HBoxContainer = get_parent().find_child("VBoxContainer2", true, false)
+	if top_hbox:
+		var hbox_child: HBoxContainer = top_hbox.find_child("HBoxContainer", false, false)
+		if hbox_child:
+			hbox_child.add_child(_engagement_label)
+		else:
+			top_hbox.add_child(_engagement_label)
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
