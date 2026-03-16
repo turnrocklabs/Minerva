@@ -3042,6 +3042,8 @@ var _containers_tab: VBoxContainer
 var _docker_status_label: Label
 var _container_cards_vbox: VBoxContainer
 var _docker_recheck_btn: Button
+var _build_poll_timer: Timer
+var _build_log_label: Label
 
 func _create_containers_tab() -> void:
 	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
@@ -3100,6 +3102,20 @@ func _create_containers_tab() -> void:
 	_container_cards_vbox = VBoxContainer.new()
 	_container_cards_vbox.add_theme_constant_override("separation", 12)
 	vbox.add_child(_container_cards_vbox)
+
+	# Build log area (shown during builds)
+	_build_log_label = Label.new()
+	_build_log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_build_log_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	_build_log_label.add_theme_font_size_override("font_size", 11)
+	_build_log_label.visible = false
+	vbox.add_child(_build_log_label)
+
+	# Poll timer for build progress (1s interval)
+	_build_poll_timer = Timer.new()
+	_build_poll_timer.wait_time = 1.0
+	_build_poll_timer.timeout.connect(_on_build_poll)
+	_containers_tab.add_child(_build_poll_timer)
 
 	tab_container.add_child(_containers_tab)
 
@@ -3236,6 +3252,12 @@ func _on_build_pressed(definition: Resource) -> void:
 	var manager: RefCounted = SingletonObject.get_docker_manager()
 	if manager.build_image(definition):
 		_rebuild_container_cards()
+		# Start polling for build progress
+		if _build_log_label:
+			_build_log_label.text = "Building %s..." % definition.display_name
+			_build_log_label.visible = true
+		if _build_poll_timer:
+			_build_poll_timer.start()
 
 
 func _on_toggle_pressed(definition: Resource) -> void:
@@ -3245,5 +3267,28 @@ func _on_toggle_pressed(definition: Resource) -> void:
 	else:
 		manager.start_container(definition)
 	_rebuild_container_cards()
+
+func _on_build_poll() -> void:
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	var any_building := false
+
+	for def in manager.get_definitions():
+		if manager.get_state(def) == "building":
+			any_building = true
+			var still_going: bool = manager.poll_build(def)
+			if not still_going:
+				# Build finished — refresh cards and show result
+				_rebuild_container_cards()
+				if _build_log_label:
+					var state: String = manager.get_state(def)
+					if state == "error":
+						_build_log_label.text = "Build failed for %s. Check log." % def.display_name
+						_build_log_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+					else:
+						_build_log_label.text = "Build complete: %s" % def.display_name
+						_build_log_label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.2))
+
+	if not any_building and _build_poll_timer:
+		_build_poll_timer.stop()
 
 #endregion Containers Tab

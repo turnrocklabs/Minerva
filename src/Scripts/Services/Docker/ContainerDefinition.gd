@@ -27,7 +27,7 @@ extends Resource
 ## Environment variables to pass to container
 @export var environment: Dictionary = {}
 
-## Container name prefix (auto-prefixed with "minerva-")
+## Container name (same as image name by default)
 var container_name: String:
 	get:
-		return "minerva-%s" % image_name
+		return image_name
