@@ -87,6 +87,18 @@ void Terminal::_bind_methods()
 
     // OSC sequences
     ADD_SIGNAL(MethodInfo("title_changed", PropertyInfo(Variant::STRING, "title")));
+
+    // Signal emitted when libghostty-vt terminal state changes (for cell-grid rendering)
+    ADD_SIGNAL(MethodInfo("vt_state_changed"));
+
+    // Cell-grid access methods (powered by libghostty-vt)
+    ClassDB::bind_method(D_METHOD("get_cell", "col", "row"), &Terminal::get_cell);
+    ClassDB::bind_method(D_METHOD("get_cursor"), &Terminal::get_cursor);
+    ClassDB::bind_method(D_METHOD("get_plain_text"), &Terminal::get_plain_text);
+    ClassDB::bind_method(D_METHOD("scroll_viewport", "lines"), &Terminal::scroll_viewport);
+
+    // Key encoding (powered by ghostty key encoder)
+    ClassDB::bind_method(D_METHOD("encode_key", "ghostty_key", "action", "mods", "utf8_text"), &Terminal::encode_key);
 }
 
 bool Terminal::_process_sequence(const String &seq)
@@ -639,6 +651,12 @@ bool Terminal::start(int width, int height)
     // Parent process
     UtilityFunctions::print("[Terminal C++] forkpty succeeded, child PID: ", _child_pid, ", master_fd: ", _master_fd);
 
+    // Create libghostty-vt terminal state machine
+    _vt_terminal = minerva_vt_new((uint16_t)width, (uint16_t)height);
+    if (!_vt_terminal) {
+        UtilityFunctions::push_error("[Terminal C++] Failed to create minerva-vt terminal");
+    }
+
     struct termios term_settings;
     tcgetattr(_master_fd, &term_settings);
     
@@ -667,6 +685,12 @@ bool Terminal::start(int width, int height)
         while (_running) {
             ssize_t bytes_read = read(_master_fd, buffer, sizeof(buffer));
             if (bytes_read > 0) {
+                // Feed raw bytes to libghostty-vt terminal state machine
+                if (_vt_terminal) {
+                    minerva_vt_write(_vt_terminal, (const uint8_t*)buffer, (size_t)bytes_read);
+                    call_deferred("emit_signal", "vt_state_changed");
+                }
+                // Also run legacy signal-based parser (kept for backward compat)
                 _process_input(String::utf8((const char*)buffer, bytes_read));
             } else if (bytes_read == -1) {
                 if (errno != EAGAIN && errno != EWOULDBLOCK) {
@@ -709,6 +733,12 @@ void Terminal::stop()
         close(_slave_fd);
         _slave_fd = -1;
     }
+
+    // Free libghostty-vt terminal state
+    if (_vt_terminal) {
+        minerva_vt_free(_vt_terminal);
+        _vt_terminal = nullptr;
+    }
 }
 
 bool Terminal::resize(int width, int height)
@@ -729,6 +759,12 @@ bool Terminal::resize(int width, int height)
 
     _width = width;
     _height = height;
+
+    // Resize libghostty-vt terminal state
+    if (_vt_terminal) {
+        minerva_vt_resize(_vt_terminal, (uint16_t)width, (uint16_t)height);
+    }
+
     return true;
 }
 
@@ -739,6 +775,107 @@ bool Terminal::write_input(const String &input)
 
     CharString data = input.utf8();
     ssize_t written = write(_master_fd, data.ptr(), data.length());
-    
+
     return written == data.length();
+}
+
+// -- Cell-grid access (powered by libghostty-vt) --------------------------
+
+Dictionary Terminal::get_cell(int col, int row) const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+
+    MinervaCellInfo info;
+    if (!minerva_vt_get_cell(_vt_terminal, (uint16_t)col, (uint16_t)row, &info)) {
+        return result;
+    }
+
+    result["codepoint"] = (int)info.codepoint;
+    result["wide"] = (int)info.wide;
+    result["has_style"] = info.has_style;
+    result["bold"] = info.bold;
+    result["italic"] = info.italic;
+    result["faint"] = info.faint;
+    result["strikethrough"] = info.strikethrough;
+    result["inverse"] = info.inverse;
+    result["blink"] = info.blink;
+    result["overline"] = info.overline;
+    result["invisible"] = info.invisible;
+    result["underline"] = (int)info.underline;
+
+    // Foreground color
+    if (info.fg.type == MINERVA_COLOR_RGB) {
+        result["fg"] = Color(info.fg.r / 255.0f, info.fg.g / 255.0f, info.fg.b / 255.0f);
+    } else if (info.fg.type == MINERVA_COLOR_PALETTE) {
+        result["fg_palette"] = (int)info.fg.palette_index;
+    }
+
+    // Background color
+    if (info.bg.type == MINERVA_COLOR_RGB) {
+        result["bg"] = Color(info.bg.r / 255.0f, info.bg.g / 255.0f, info.bg.b / 255.0f);
+    } else if (info.bg.type == MINERVA_COLOR_PALETTE) {
+        result["bg_palette"] = (int)info.bg.palette_index;
+    }
+
+    return result;
+}
+
+Dictionary Terminal::get_cursor() const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+
+    MinervaCursorInfo info;
+    minerva_vt_get_cursor(_vt_terminal, &info);
+
+    result["x"] = (int)info.x;
+    result["y"] = (int)info.y;
+    result["visible"] = info.visible;
+    result["style"] = (int)info.style;
+
+    return result;
+}
+
+String Terminal::get_plain_text() const {
+    if (!_vt_terminal) return String();
+
+    char* str = minerva_vt_plain_string(_vt_terminal);
+    if (!str) return String();
+
+    String result = String::utf8(str);
+    minerva_vt_free_string(str);
+    return result;
+}
+
+void Terminal::scroll_viewport(int lines) {
+    if (!_vt_terminal) return;
+    minerva_vt_scroll_viewport(_vt_terminal, (int32_t)lines);
+}
+
+PackedByteArray Terminal::encode_key(int ghostty_key, int action, int mods, const String &utf8_text) const {
+    PackedByteArray result;
+    if (!_vt_terminal) return result;
+
+    // Convert UTF-8 text
+    CharString utf8 = utf8_text.utf8();
+    const uint8_t *utf8_ptr = utf8_text.is_empty() ? nullptr : (const uint8_t *)utf8.ptr();
+    size_t utf8_len = utf8_text.is_empty() ? 0 : (size_t)utf8.length();
+
+    uint8_t buf[128];
+    size_t written = minerva_vt_encode_key(
+        _vt_terminal,
+        ghostty_key,
+        action,
+        (uint16_t)mods,
+        utf8_ptr,
+        utf8_len,
+        buf,
+        sizeof(buf)
+    );
+
+    if (written > 0) {
+        result.resize((int)written);
+        memcpy(result.ptrw(), buf, written);
+    }
+
+    return result;
 }

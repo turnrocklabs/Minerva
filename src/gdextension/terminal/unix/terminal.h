@@ -3,6 +3,8 @@
 
 #include <common/terminal_interface.h>
 #include <godot_cpp/classes/node.hpp>
+#include <godot_cpp/variant/packed_byte_array.hpp>
+#include <minerva_vt.h>
 #include <thread>
 #include <atomic>
 #include <vector>
@@ -39,13 +41,16 @@ private:
     int _slave_fd;      // Slave file descriptor
     pid_t _child_pid;   // Child process ID
     struct termios _old_term;  // Original terminal settings
-    
+
     std::atomic<bool> _command_running{false};
     std::atomic<bool> _running{false};
     std::thread _output_thread;
-    
+
     bool _in_escape = false;
     String _escape_buffer;
+
+    // libghostty-vt terminal state
+    MinervaTerminal _vt_terminal = nullptr;
 
     bool _process_sequence(const String &seq);
     bool _handle_erase_sequence(const String& seq);
@@ -57,7 +62,7 @@ private:
     bool _handle_cursor_sequence(const String& seq);
     void _process_input(const String &input);
     void _strip_delimiter(String &text, bool buffer_end = false);
-    
+
     static constexpr std::array<std::pair<const char *, const char *>, 11> ANSI_SEQUENCES{{
         // https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797#erase-functions
         {"[J", "seq_erase_in_display"},
@@ -88,6 +93,15 @@ public:
     void stop() override;
     bool write_input(const String &input) override;
     bool is_running() const override { return _running; }
+
+    // Cell-grid access methods (powered by libghostty-vt)
+    Dictionary get_cell(int col, int row) const;
+    Dictionary get_cursor() const;
+    String get_plain_text() const;
+    void scroll_viewport(int lines);
+
+    // Key encoding (powered by ghostty key encoder)
+    PackedByteArray encode_key(int ghostty_key, int action, int mods, const String &utf8_text) const;
 };
 
 }

@@ -1,0 +1,18 @@
+.{
+    .name = .minerva_vt,
+    .version = "0.1.0",
+    .fingerprint = 0xd1b32a9949b02de1,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        // uucode for grapheme break tables (same version as ghostty v1.3.1)
+        .uucode = .{
+            .url = "https://deps.files.ghostty.org/uucode-0.2.0-ZZjBPqZVVABQepOqZHR7vV_NcaN-wats0IB6o-Exj6m9.tar.gz",
+            .hash = "uucode-0.2.0-ZZjBPqZVVABQepOqZHR7vV_NcaN-wats0IB6o-Exj6m9",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

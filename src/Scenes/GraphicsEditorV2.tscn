@@ -68,7 +68,7 @@
 [ext_resource type="Script" uid="uid://c2v2rhkx3y5c3" path="res://Scripts/UI/Controls/GraphicsEditor/tools/DiagramShapeTool.gd" id="52_diagramshapetool"]
 [ext_resource type="Script" uid="uid://i42iepci3p3i" path="res://Scripts/UI/Controls/GraphicsEditor/tools/ConnectorTool.gd" id="53_connectortool"]
 [ext_resource type="Texture2D" uid="uid://cslxkfwa26tgw" path="res://assets/generated/upload.svg" id="65_dqxga"]
-[ext_resource type="Texture2D" uid="uid://2b1dd4agce6d" path="res://assets/placeholder_image.tres" id="65_jmkn5"]
+[ext_resource type="Texture2D" path="res://assets/placeholder_image.tres" id="65_jmkn5"]
 [ext_resource type="Texture2D" uid="uid://bdlg1pitubimy" path="res://assets/icons/close.svg" id="66_bkqel"]
 [ext_resource type="Texture2D" uid="uid://cdkdfrvw4guyi" path="res://assets/icons/graphics_editor/3_image_workflow_icon_24_3.png" id="68_4jqk7"]
 

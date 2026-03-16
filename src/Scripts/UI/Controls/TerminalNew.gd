@@ -14,25 +14,25 @@ var _output_label_nodes: Array[TextLayer]
 var terminal = null
 var _terminal_available: bool = false
 
-
 var _viewport_start: int = 0
-var _cursor_pos: Vector2i = Vector2i(1, 1):
-	set(value):
-		_cursor_pos = value
-		cursor_layer.pos = _cursor_pos
-		cursor_layer.queue_redraw()
 
-var cursor_visible: bool = false
+var cursor_visible: bool = true
 
 var text_layer: TextLayer
 var cursor_layer: CursorLayer
 
+# Terminal dimensions in cells
+var _cols: int = 80
+var _rows: int = 24
+
 # TODO: use this in subclasses
-var font: Font = preload("res://assets/fonts/CascadiaCode/CascadiaCode.ttf")
+var font: Font = preload("res://assets/fonts/CascadiaCode/CascadiaMono.ttf")
 var font_size: int = ThemeDB.fallback_font_size
 var line_height: float
 var char_width: float
 
+# Default palette colors for resolving palette indices
+var _palette: Array[Color] = []
 
 
 ## Creates new terminal instance
@@ -44,6 +44,32 @@ func _update_font_metrics():
 	var char_metrics = font.get_char_size("M".unicode_at(0), font_size)
 	line_height = font.get_height(font_size)
 	char_width = char_metrics.x
+
+func _recalc_terminal_size():
+	## cols: from TextLayer width (actual drawable area, excludes check buttons/margins)
+	## rows: from _output_container height (visible viewport, not scrolled content)
+	var draw_width: float = text_layer.size.x if text_layer else _output_container.size.x
+	var view_height: float = _output_container.size.y
+	_cols = maxi(1, int(draw_width / char_width))
+	_rows = maxi(1, int(view_height / line_height))
+
+func _init_palette():
+	# Standard 16 colors
+	_palette = [
+		Color(0, 0, 0),        Color(0.8, 0, 0),      Color(0, 0.8, 0),      Color(0.8, 0.8, 0),
+		Color(0, 0, 0.8),      Color(0.8, 0, 0.8),    Color(0, 0.8, 0.8),    Color(0.8, 0.8, 0.8),
+		Color(0.5, 0.5, 0.5),  Color(1, 0, 0),        Color(0, 1, 0),        Color(1, 1, 0),
+		Color(0, 0, 1),        Color(1, 0, 1),         Color(0, 1, 1),        Color(1, 1, 1),
+	]
+	# 216 color cube (6x6x6)
+	for r in range(6):
+		for g in range(6):
+			for b in range(6):
+				_palette.append(Color(r * 51 / 255.0, g * 51 / 255.0, b * 51 / 255.0))
+	# 24 grayscale shades
+	for i in range(24):
+		var v: float = (i * 10 + 8) / 255.0
+		_palette.append(Color(v, v, v))
 
 func _ready():
 	# Check if Terminal GDExtension is available
@@ -62,75 +88,39 @@ func _ready():
 	)
 
 	_update_font_metrics()
-
-	var scrollbar: VScrollBar = _output_container.get_v_scroll_bar()
-
-
-	scrollbar.scrolling.connect(
-		func():
-			var lines_amount: = floorf(snappedf(scrollbar.value, line_height) / line_height) + 1
-			var new_value: = snappedf(scrollbar.value, line_height) + lines_amount
-			scrollbar.set_value_no_signal(new_value)
-			
-			_viewport_start = int(lines_amount) - 1
-	)
-
-	scrollbar.changed.connect(
-		func():
-			scrollbar.value = int((_cursor_pos.x-1) * line_height)
-			
-			var lines_amount: = floorf(snappedf(scrollbar.value, line_height) / line_height) + 1
-			_viewport_start = int(lines_amount) - 1
-	)
+	_init_palette()
 
 	_create_output_container()
 
+	# Connect to libghostty-vt state change signal for cell-grid rendering
+	if terminal.has_signal("vt_state_changed"):
+		terminal.vt_state_changed.connect(_on_vt_state_changed)
+		print("[Terminal] vt_state_changed signal connected — using libghostty-vt cell-grid rendering")
+	else:
+		push_warning("[Terminal] vt_state_changed signal NOT found — libghostty-vt not available")
+
+	# Keep legacy output signal for shell prompt marker detection
 	terminal.output_received.connect(_on_output_received)
 
-	terminal.seq_cursor_home.connect(_set_cursor_position.bind(1, 1))
-	terminal.seq_cursor_position.connect(_set_cursor_position)
-
-	terminal.seq_erase_character.connect(
-		func(_count: int):
-			pass # print("Delete %s characters at %s" % [count, _cursor_pos])
-	)
-
-	terminal.seq_erase_from_cursor_to_end_of_line.connect(
-		func():
-			text_layer.erase(_cursor_pos.x, _cursor_pos.y)
-	)
-
-	terminal.seq_erase_entire_screen.connect(
-		func(): text_layer.erase_screen()
-	)
-	
-	terminal.seq_set_cursor_visible.connect(
-		func(enabled: bool):
-			cursor_layer.visible = enabled
-	)
-
+	# Shell prompt markers
 	terminal.on_shell_prompt_start.connect(
 		func():
-			_create_check_button((_cursor_pos.x -1))
+			var cursor = terminal.get_cursor()
+			_create_check_button(cursor.get("y", 0))
 	)
-
 	terminal.on_shell_prompt_end.connect(
 		func():
-			_create_check_button((_cursor_pos.x -1))
+			var cursor = terminal.get_cursor()
+			_create_check_button(cursor.get("y", 0))
 	)
-
-	terminal.seq_set_foreground_color.connect(_set_color)
-	terminal.seq_set_background_color.connect(_set_background_color)
-	terminal.seq_reset_graphics.connect(_reset_graphics)
-
-	# terminal.title_changed.connect(DisplayServer.window_set_title)
 
 	await get_tree().process_frame
 
-	var cols = int(size.x / char_width)
-	var rows = int(size.y / line_height)
-	print("[Terminal] Starting with size: %d cols x %d rows" % [cols, rows])
-	var started = terminal.start(cols, rows)
+	_recalc_terminal_size()
+	print("[Terminal] Container size: %s, self size: %s, cw=%.2f, lh=%.2f" % [_output_container.size, size, char_width, line_height])
+	print("[Terminal] Starting with size: %d cols x %d rows" % [_cols, _rows])
+	print("[Terminal] Font: %s" % font.resource_path)
+	var started = terminal.start(_cols, _rows)
 	if not started:
 		push_error("[Terminal] Failed to start terminal - forkpty may have failed")
 	else:
@@ -138,8 +128,26 @@ func _ready():
 
 	resized.connect(
 		func():
-			terminal.resize(int(size.x / char_width), int(size.y / line_height))
+			_recalc_terminal_size()
+			terminal.resize(_cols, _rows)
+			text_layer.queue_redraw()
+			cursor_layer.queue_redraw()
 	)
+
+
+func _on_vt_state_changed() -> void:
+	text_layer.queue_redraw()
+	cursor_layer.queue_redraw()
+
+
+func _on_output_received(_text: String, _type: int) -> void:
+	# Legacy signal handler — kept only for shell prompt detection on Windows
+	var matches: = WINDOWS_CWD_REGEX.search_all(_text)
+	if not matches.is_empty():
+		for match_ in matches:
+			var cursor = terminal.get_cursor()
+			_create_check_button(cursor.get("y", 0))
+
 
 func _create_output_container() -> void:
 	var hbox: = HBoxContainer.new()
@@ -150,15 +158,13 @@ func _create_output_container() -> void:
 
 	text_layer = TextLayer.new()
 	text_layer.terminal = self
-	
+
 	cursor_layer = CursorLayer.new()
 	cursor_layer.terminal = self
 
-	
 	text_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cursor_layer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	
 	text_layer.add_child(cursor_layer)
 
 	hbox.add_child(_check_buttons_container)
@@ -168,310 +174,294 @@ func _create_output_container() -> void:
 
 	_output_label_nodes.append(text_layer)
 
-func _create_check_button(row: float) -> void:
+
+func _create_check_button(row: int) -> void:
 	var btn = CheckButton.new()
 	btn.set_meta("row", row)
-
 	btn.toggled.connect(_on_check_button_toggled.bind(btn))
-
 	btn.position.y = row * line_height
 	_check_buttons_container.add_child(btn)
 
 
 func _on_check_button_toggled(_toggled_on: bool, _btn: CheckButton):
-	# See Editor._on_check_button_toggled for comment about detached notes
 	pass
-	# var item: MemoryItem
-
-	# if not btn.has_meta("memory_item"):
-	# 	item = MemoryItem.new()
-	# 	item.Title = "Terminal Note"
-		
-	# 	# content will be every line from this check buttons row to next check button
-	# 	# if theres no next check button, got untill the end
-
-	# 	item.Content = ""
-
-	# 	var last: CheckButton
-
-	# 	for i in range(_check_buttons_container.get_child_count()-1, -1, -1):
-	# 		var ch = _check_buttons_container.get_child(i)
-	# 		if ch is CheckButton:
-	# 			# break when we reach btn that was toggled
-	# 			if ch == btn:
-	# 				break
-				
-	# 			last = ch
-
-	# 	var last_line: int
-
-	# 	# if this IS the last check button go until the end
-	# 	if not last or btn == last:
-	# 		last_line = text_layer.content.size()
-	# 	else:
-	# 		last_line = last.get_meta("row")+1
-		
-	# 	for i in range(btn.get_meta("row"), last_line):
-	# 		item.Content += "\n"
-	# 		for line_part in text_layer.content[i]:
-	# 			if line_part is String:
-	# 				item.Content += line_part
-
-	# 	item.toggled.connect(
-	# 		(func(on: bool, button: CheckButton):
-	# 			button.button_pressed = on).bind(btn)
-	# 	)
-
-	# 	btn.set_meta("memory_item", item)
-	# 	SingletonObject.DetachedNotes.append(item)
-	# else:
-	# 	item = btn.get_meta("memory_item")
-	# 	var present = SingletonObject.DetachedNotes.any(func(item_: MemoryItem): return item_ == item)
-
-	# 	if not present:
-	# 		SingletonObject.DetachedNotes.append(item)
-
-	# item.Enabled = toggled_on
 
 
-func _on_output_received(text: String, type: int) -> void:
-	var matches: = WINDOWS_CWD_REGEX.search_all(text)
-
-	# check if last check button is toggled on and update the content
-
-	var ch: CheckButton
-
-	if _check_buttons_container.get_child_count() > 0:
-		ch = _check_buttons_container.get_child(_check_buttons_container.get_child_count()-1)
-
-	# FIXME: if theres a prompt in text, some content of next command will end up in here
-	if ch and ch.button_pressed:
-		(ch.get_meta("memory_item") as MemoryItem).Content += text
+func resolve_color(cell: Dictionary, key: String, default_color: Color) -> Color:
+	## Resolve a cell color — handles RGB, palette, and default.
+	if cell.has(key):
+		return cell[key]
+	var palette_key = key + "_palette"
+	if cell.has(palette_key):
+		var idx: int = cell[palette_key]
+		if idx >= 0 and idx < _palette.size():
+			return _palette[idx]
+	return default_color
 
 
-	
-	if not matches.is_empty():
-		for match_ in matches:
-			_create_check_button((_cursor_pos.x + text.count("\n", match_.get_start(), match_.get_end()) -1))
-		
+# region input
 
-	# Terminal.Type.TEXT = 0 (from GDExtension)
-	if type == 0:  # TERMINAL_TYPE_TEXT
+# Ghostty key constants (must match GhosttyKey / MinervaKey enum in event.h / minerva_vt.h)
+# Values are sequential enum indices starting from 0.
+const GK_UNIDENTIFIED := 0
+# Writing System Keys (1-50)
+const GK_BACKQUOTE := 1
+const GK_BACKSLASH := 2
+const GK_BRACKET_LEFT := 3
+const GK_BRACKET_RIGHT := 4
+const GK_COMMA := 5
+const GK_DIGIT_0 := 6
+const GK_DIGIT_1 := 7
+const GK_DIGIT_2 := 8
+const GK_DIGIT_3 := 9
+const GK_DIGIT_4 := 10
+const GK_DIGIT_5 := 11
+const GK_DIGIT_6 := 12
+const GK_DIGIT_7 := 13
+const GK_DIGIT_8 := 14
+const GK_DIGIT_9 := 15
+const GK_EQUAL := 16
+# 17=INTL_BACKSLASH, 18=INTL_RO, 19=INTL_YEN
+const GK_A := 20
+const GK_B := 21
+const GK_C := 22
+const GK_D := 23
+const GK_E := 24
+const GK_F := 25
+const GK_G := 26
+const GK_H := 27
+const GK_I := 28
+const GK_J := 29
+const GK_K := 30
+const GK_L := 31
+const GK_M := 32
+const GK_N := 33
+const GK_O := 34
+const GK_P := 35
+const GK_Q := 36
+const GK_R := 37
+const GK_S := 38
+const GK_T := 39
+const GK_U := 40
+const GK_V := 41
+const GK_W := 42
+const GK_X := 43
+const GK_Y := 44
+const GK_Z := 45
+const GK_MINUS := 46
+const GK_PERIOD := 47
+const GK_QUOTE := 48
+const GK_SEMICOLON := 49
+const GK_SLASH := 50
+# Functional Keys (51-67)
+# 51=ALT_LEFT, 52=ALT_RIGHT
+const GK_BACKSPACE := 53
+# 54=CAPS_LOCK, 55=CONTEXT_MENU, 56=CONTROL_LEFT, 57=CONTROL_RIGHT
+const GK_ENTER := 58
+# 59=META_LEFT, 60=META_RIGHT, 61=SHIFT_LEFT, 62=SHIFT_RIGHT
+const GK_SPACE := 63
+const GK_TAB := 64
+# 65=CONVERT, 66=KANA_MODE, 67=NON_CONVERT
+# Control Pad (68-74)
+const GK_DELETE := 68
+const GK_END := 69
+# 70=HELP
+const GK_HOME := 71
+const GK_INSERT := 72
+const GK_PAGE_DOWN := 73
+const GK_PAGE_UP := 74
+# Arrow Pad (75-78)
+const GK_ARROW_DOWN := 75
+const GK_ARROW_LEFT := 76
+const GK_ARROW_RIGHT := 77
+const GK_ARROW_UP := 78
+# Numpad (79-119) — skipped
+# Function Keys (120+)
+const GK_ESCAPE := 120
+const GK_F1 := 121
+const GK_F2 := 122
+const GK_F3 := 123
+const GK_F4 := 124
+const GK_F5 := 125
+const GK_F6 := 126
+const GK_F7 := 127
+const GK_F8 := 128
+const GK_F9 := 129
+const GK_F10 := 130
+const GK_F11 := 131
+const GK_F12 := 132
 
-		# TODO: buffer the text, split by \n \b or smth
-		for i in text.length():
-			var char_: = text[i]
+# Ghostty key action constants
+const GK_ACTION_PRESS := 1
+const GK_ACTION_REPEAT := 2
 
-			if char_ == "\r":
-				_cursor_pos = Vector2i(_cursor_pos.x, 1)
-				
-				continue
+# Ghostty modifier bitmask constants
+const GK_MODS_SHIFT := (1 << 0)
+const GK_MODS_CTRL := (1 << 1)
+const GK_MODS_ALT := (1 << 2)
+const GK_MODS_SUPER := (1 << 3)
 
-			elif char_ == "\n":
-				# if we're on linux also move to the beginning of the line
-				if OS.get_name() == "Linux":
-					_cursor_pos = Vector2i(_cursor_pos.x, 1)
+## Map Godot KEY_* constants to ghostty key codes.
+## Only keys that produce terminal output are mapped here.
+var _godot_to_ghostty: Dictionary = {
+	KEY_QUOTELEFT: GK_BACKQUOTE,
+	KEY_BACKSLASH: GK_BACKSLASH,
+	KEY_BRACKETLEFT: GK_BRACKET_LEFT,
+	KEY_BRACKETRIGHT: GK_BRACKET_RIGHT,
+	KEY_COMMA: GK_COMMA,
+	KEY_0: GK_DIGIT_0, KEY_1: GK_DIGIT_1, KEY_2: GK_DIGIT_2, KEY_3: GK_DIGIT_3,
+	KEY_4: GK_DIGIT_4, KEY_5: GK_DIGIT_5, KEY_6: GK_DIGIT_6, KEY_7: GK_DIGIT_7,
+	KEY_8: GK_DIGIT_8, KEY_9: GK_DIGIT_9,
+	KEY_EQUAL: GK_EQUAL,
+	KEY_A: GK_A, KEY_B: GK_B, KEY_C: GK_C, KEY_D: GK_D,
+	KEY_E: GK_E, KEY_F: GK_F, KEY_G: GK_G, KEY_H: GK_H,
+	KEY_I: GK_I, KEY_J: GK_J, KEY_K: GK_K, KEY_L: GK_L,
+	KEY_M: GK_M, KEY_N: GK_N, KEY_O: GK_O, KEY_P: GK_P,
+	KEY_Q: GK_Q, KEY_R: GK_R, KEY_S: GK_S, KEY_T: GK_T,
+	KEY_U: GK_U, KEY_V: GK_V, KEY_W: GK_W, KEY_X: GK_X,
+	KEY_Y: GK_Y, KEY_Z: GK_Z,
+	KEY_MINUS: GK_MINUS,
+	KEY_PERIOD: GK_PERIOD,
+	KEY_APOSTROPHE: GK_QUOTE,
+	KEY_SEMICOLON: GK_SEMICOLON,
+	KEY_SLASH: GK_SLASH,
+	KEY_BACKSPACE: GK_BACKSPACE,
+	KEY_ENTER: GK_ENTER,
+	KEY_SPACE: GK_SPACE,
+	KEY_TAB: GK_TAB,
+	KEY_DELETE: GK_DELETE,
+	KEY_END: GK_END,
+	KEY_HOME: GK_HOME,
+	KEY_INSERT: GK_INSERT,
+	KEY_PAGEDOWN: GK_PAGE_DOWN,
+	KEY_PAGEUP: GK_PAGE_UP,
+	KEY_DOWN: GK_ARROW_DOWN,
+	KEY_LEFT: GK_ARROW_LEFT,
+	KEY_RIGHT: GK_ARROW_RIGHT,
+	KEY_UP: GK_ARROW_UP,
+	KEY_ESCAPE: GK_ESCAPE,
+	KEY_F1: GK_F1, KEY_F2: GK_F2, KEY_F3: GK_F3, KEY_F4: GK_F4,
+	KEY_F5: GK_F5, KEY_F6: GK_F6, KEY_F7: GK_F7, KEY_F8: GK_F8,
+	KEY_F9: GK_F9, KEY_F10: GK_F10, KEY_F11: GK_F11, KEY_F12: GK_F12,
+}
 
-				_cursor_pos = Vector2i(_cursor_pos.x+1, _cursor_pos.y)
-				continue
-			
-			elif char_ == "\b":
-				_cursor_pos.y -= 1
-				_cursor_pos = _cursor_pos
-				continue
-			
-			text_layer.add_text(char_, _cursor_pos)
-
-			_cursor_pos.y += char_.length()
-			_cursor_pos = _cursor_pos
-
-		if not matches.is_empty():
-			text_layer.queue_redraw()
-
-
-# region cursor
-
-
-func _set_cursor_position(row: int, column: int) -> void:
-	_cursor_pos = Vector2i(row + _viewport_start, column)
-
-	pass # print("Set cursor position to %s..." % _cursor_pos)
-
-# endregion
-
-
-
-# region graphics
-
-func _set_color(color: Color) -> void:
-	text_layer.add_color(color, _cursor_pos)
-
-func _set_background_color(color: Color) -> void:
-	text_layer.add_background_color(color, _cursor_pos)
-
-func _reset_graphics() -> void:
-	text_layer.add_color(Color.WHITE, _cursor_pos)
-	text_layer.add_background_color(Color.TRANSPARENT, _cursor_pos)
-
-# endregion
 
 func _shortcut_input(event: InputEvent) -> void:
-	# Guard: exit if terminal not ready
 	if not _terminal_available or text_layer == null:
 		return
-
 	if event is InputEventKey:
 		if not event.is_pressed(): return
-
 		if event.ctrl_pressed and event.keycode == KEY_C:
 			DisplayServer.clipboard_set(text_layer.get_selected_text())
-
 		if event.ctrl_pressed and event.keycode == KEY_V:
 			terminal.write_input(DisplayServer.clipboard_get())
-			
+
 
 func _gui_input(event: InputEvent) -> void:
-	# Guard: exit if terminal not ready
 	if not _terminal_available or text_layer == null:
 		return
 
-	# if there's selected text ignore the event
 	if text_layer.selection_active:
 		if event is InputEventKey:
 			if not (event.keycode == KEY_CTRL or event.keycode == KEY_ALT):
 				text_layer.reset_selection.call_deferred()
-
 		return
 
 	if event is InputEventKey and event.pressed:
-		# Handle modifier key combinations first
-		if event.ctrl_pressed:
-			match event.keycode:
-				KEY_C: # Copy
-					terminal.write_input(char(3))  # CTRL+C sends ETX
-				KEY_V: # Paste
-					terminal.write_input(DisplayServer.clipboard_get())
-				KEY_Z: # CTRL+Z
-					terminal.write_input(char(26))  # SUB character
+		# Minerva-specific clipboard/signal shortcuts (not terminal pass-through)
+		if event.ctrl_pressed and event.keycode == KEY_C:
+			terminal.write_input(char(3))
+			get_viewport().set_input_as_handled()
+			return
+		if event.ctrl_pressed and event.keycode == KEY_V:
+			terminal.write_input(DisplayServer.clipboard_get())
+			get_viewport().set_input_as_handled()
+			return
 
-		# Handle navigation and editing keys
-		else:
-			match event.keycode:
-				KEY_ENTER:
-					terminal.write_input("\r\n")
-				KEY_BACKSPACE:
-					terminal.write_input(char(8))
-				KEY_ESCAPE:
-					terminal.write_input(char(27))
-				KEY_DELETE:
-					terminal.write_input(char(27) + "[3~")  # Delete key sequence
-				KEY_LEFT:
-					terminal.write_input(char(27) + "[D")  # Cursor left
-				KEY_RIGHT:
-					terminal.write_input(char(27) + "[C")  # Cursor right
-				KEY_UP:
-					terminal.write_input(char(27) + "[A")  # Cursor up (command history)
-				KEY_DOWN:
-					terminal.write_input(char(27) + "[B")  # Cursor down (command history)
-				KEY_HOME:
-					terminal.write_input(char(27) + "[H")  # Move to start of line
-				KEY_END:
-					terminal.write_input(char(27) + "[F")  # Move to end of line
-				
-				# Function keys F1-F9
-				KEY_F1:
-					terminal.write_input(char(27) + "[11~")  # or char(27) + "[11~"
-				KEY_F2:
-					terminal.write_input(char(27) + "[12~")  # or char(27) + "[12~"
-				KEY_F3:
-					terminal.write_input(char(27) + "[13~")  # or char(27) + "[13~"
-				KEY_F4:
-					terminal.write_input(char(27) + "[14~")  # or char(27) + "[14~"
-				KEY_F5:
-					terminal.write_input(char(27) + "[15~")
-				KEY_F6:
-					terminal.write_input(char(27) + "[17~")
-				KEY_F7:
-					terminal.write_input(char(27) + "[18~")
-				KEY_F8:
-					terminal.write_input(char(27) + "[19~")
-				KEY_F9:
-					terminal.write_input(char(27) + "[20~")
-				KEY_F10:
-					terminal.write_input(char(27) + "[21~")
-				KEY_F11:
-					terminal.write_input(char(27) + "[23~")
-				KEY_F12:
-					terminal.write_input(char(27) + "[24~")
-				_:
-					if event.unicode > 0:
-						terminal.write_input(char(event.unicode))
-		
+		# Build ghostty modifier bitmask
+		var mods: int = 0
+		if event.shift_pressed: mods |= GK_MODS_SHIFT
+		if event.ctrl_pressed:  mods |= GK_MODS_CTRL
+		if event.alt_pressed:   mods |= GK_MODS_ALT
+		if event.meta_pressed:  mods |= GK_MODS_SUPER
+
+		# Determine action
+		var action: int = GK_ACTION_PRESS if not event.is_echo() else GK_ACTION_REPEAT
+
+		# Map Godot keycode to ghostty key
+		var gk: int = _godot_to_ghostty.get(event.keycode, GK_UNIDENTIFIED)
+
+		# Build UTF-8 text from the event's unicode codepoint
+		var utf8_text: String = ""
+		if event.unicode > 0:
+			utf8_text = char(event.unicode)
+
+		# Try ghostty key encoder
+		var encoded: PackedByteArray = terminal.encode_key(gk, action, mods, utf8_text)
+
+		if encoded.size() > 0:
+			terminal.write_input(encoded.get_string_from_utf8())
+		elif event.unicode > 0:
+			# Fallback: send raw character if encoder produced nothing
+			terminal.write_input(char(event.unicode))
+
 		get_viewport().set_input_as_handled()
 
+# endregion
 
-class  Modifier extends RefCounted:
-	var callables: Array[Callable]
-	var name: String = "Modifier"
 
-	func _init(callables_: Array[Callable]) -> void:
-		callables = callables_
-
-	func _to_string() -> String:
-		return name
-
-	func add_callable(callable: Callable):
-		callables.append(callable)
-
-	func apply():
-		for callable in callables:
-			callable.call()
+# region CursorLayer
 
 class CursorLayer extends Control:
 	var terminal: TerminalNew
 	var blink_time: float = 0.5
 	var elapsed: float = 0
 	var cursor_visible: = true
-	var pos: Vector2i
-
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
-
 		queue_redraw()
 
-	# TODO: don't process if the cursor is hidden
 	func _process(delta: float) -> void:
 		elapsed += delta
-
 		if elapsed > 0.5:
 			elapsed = 0
 			cursor_visible = not cursor_visible
 			queue_redraw()
 
-
 	func _draw() -> void:
+		if not terminal or not terminal._terminal_available:
+			return
+		if not terminal.terminal.has_method("get_cursor"):
+			return
 
-		if cursor_visible:
-			var draw_pos = Vector2((pos.y-1) * terminal.char_width, (pos.x) * terminal.line_height)
+		var cursor_info: Dictionary = terminal.terminal.get_cursor()
+		if cursor_info.is_empty():
+			return
+
+		var cx: int = cursor_info.get("x", 0)
+		var cy: int = cursor_info.get("y", 0)
+		var visible: bool = cursor_info.get("visible", true)
+
+		if visible and cursor_visible:
+			var draw_pos = Vector2(cx * terminal.char_width, (cy + 1) * terminal.line_height)
 			draw_string(terminal.font, draw_pos, CURSOR_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size)
-			custom_minimum_size.y = draw_pos.y
+
+# endregion
 
 
+# region TextLayer
 
 class TextLayer extends Control:
 	var terminal: TerminalNew
 
-	var _foreground_color: = Color.WHITE
-	var _background_color: = Color.TRANSPARENT
 	var _selection_background_color: = Color.WHITE_SMOKE
-
-	var _modifier_queue: Array[Modifier]
+	var _draw_debug_printed: bool = false
+	var _draw_count: int = 0
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
 		mouse_default_cursor_shape = CursorShape.CURSOR_IBEAM
-
 		queue_redraw()
 
 	var selection_active: bool:
@@ -495,7 +485,6 @@ class TextLayer extends Control:
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			_selecting = event.is_pressed()
 			accept_event()
-
 			if not _selecting: return
 
 			var row: = maxi(0, floori(event.position.y / terminal.line_height))
@@ -506,395 +495,111 @@ class TextLayer extends Control:
 
 			var check = func(a, b):
 				return a.y < b.y or (a.y == b.y and a.x < b.x)
-			
+
 			_selection_start = p1 if check.call(p1, p2) else p2
 			_selection_end = p1 if check.call(p2, p1) else p2
-
 			_selecting = event.is_pressed()
-
 			queue_redraw()
-			
-		
+
 		if _selecting:
 			if event is InputEventMouseMotion:
 				var row: = maxi(0, floori(event.position.y / terminal.line_height))
 				var column: = maxi(0, floori(event.position.x / terminal.char_width))
-
 				p2 = Vector2i(column, row)
-
 				var check = func(a, b):
 					return a.y < b.y or (a.y == b.y and a.x < b.x)
-				
 				_selection_start = p1 if check.call(p1, p2) else p2
 				_selection_end = p1 if check.call(p2, p1) else p2
-
 				queue_redraw()
-		
+
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed == false:
 				_create_context_menu(event.global_position)
 
-
-	var content: Array[Array] = []
-
-	var content_modifiers: Dictionary = {}
-
-
-	func add_color(color: Color, _at: Vector2i) -> void:
-		var modifier_callable: = func(): _foreground_color = color
-
-		var modifier: = Modifier.new([modifier_callable])
-		modifier.name += ";fgr_color: %s" % color
-
-		_modifier_queue.append(modifier)
-
-	func add_background_color(color: Color, _at: Vector2i) -> void:
-		var modifier_callable: = func(): _background_color = color
-		
-		var modifier: = Modifier.new([modifier_callable])
-		modifier.name += ";bgr_color: %s" % color
-
-		_modifier_queue.append(modifier)
-
-
-	func _add_string_content_part(part: String, at: Vector2i) -> void:
-		pass # print("Adding '%s' at %s" % [part.c_escape(), at])
-		if at.x > content.size():
-			for i in range(at.x - content.size()):
-				content.append([])
-
-		var line_content: Array = content[at.x-1]
-
-		var total: = 0
-
-		var last_string_part_idx: = -1
-		for i in range(line_content.size()-1, -1, -1):
-			if line_content[i] is String:
-				last_string_part_idx = i
-				break
-		
-		if last_string_part_idx == -1:
-			var padded: =  "".rpad(at.y-total, char(10240))
-			padded[at.y-total-1] = part
-			line_content.append(padded)
-
-		else:
-			for i in range(line_content.size()):
-				var line_part = line_content[i]
-				
-				if line_part is String:
-					if total + line_part.length() >= at.y:
-						line_part[at.y-total-1] = part
-						line_content[i] = line_part
-						break
-										
-					# if we're on last i and we didnt add the text
-					elif i == line_content.size()-1:
-
-						# if string is the last element, append the new one
-						if i == last_string_part_idx:
-							line_part = line_part.rpad(at.y-total, char(10240))
-							line_part[at.y-total-1] = part
-						else:
-							var padded: =  "".rpad(at.y-total, char(10240))
-							padded[at.y-total-1] = part
-							line_content.append(padded)
-
-					total += line_part.length()
-				
-				elif line_part is Modifier:
-					# if we're not on the last one just skip it
-					if i == line_content.size()-1:
-						
-						var padded: =  "".rpad(at.y-total, char(10240))
-						padded[at.y-total-1] = part
-						line_content.append(padded)
-			
-				line_content[i] = line_part
-				
-
-		content[at.x-1] = line_content
-	
-
-	func _add_modifier_content_part(part: Modifier, at: Vector2i) -> void:
-		if at.x > content.size():
-			for i in range(at.x - content.size()):
-				content.append([])
-		
-		var line_content: Array = content[at.x-1]
-
-		var total: = 0
-
-		var last_modifier_part_idx: = -1
-		for i in range(line_content.size()-1, -1, -1):
-			if line_content[i] is Modifier:
-				last_modifier_part_idx = i
-				break
-		
-		if last_modifier_part_idx == -1:
-			line_content.append(part)
-
-		else:
-			for i in range(line_content.size()):
-				var line_part = line_content[i]
-				
-				if line_part is String:
-					
-					if total + line_part.length() >= at.y:			
-						# check if we're on first char of the string, and just add modifier before it
-
-						if at.y-total-1 == 0:
-							line_content.insert(i, part)
-							break
-
-						# if this is the case, devide the string into two and insert the modifier inbetween
-						var part1: String = line_part.substr(0, at.y-total-1)
-						var part2: String = line_part.substr(at.y-total-1)
-
-						line_content.remove_at(i)
-
-						line_content.insert(i, part2)
-						line_content.insert(i, part)
-						line_content.insert(i, part1)
-
-						break
-					
-					# if we're on last i and we didnt add the modifier
-					elif i == line_content.size()-1:
-						total += line_part.length()
-						# since we didn't reach the cursor position, add a padded string to reach it
-
-						line_content.append("".rpad(at.y-total-1))
-						line_content.append(part)
-						break
-
-					total += line_part.length()
-				
-				elif line_part is Modifier:
-					# if we're not on the last one just skip it
-					if i == line_content.size()-1:
-						if at.y-total > 0:
-							line_content.append("".rpad(at.y-total-1))
-							line_content.append(part)
-						else:
-							line_part.add_callable(part)
-
-				line_content[i] = line_part
-				
-
-		content[at.x-1] = line_content
-
-	func add_text(text: String, at: Vector2i) -> void:
-
-		for mod in _modifier_queue:
-			_add_modifier_content_part(mod, at)
-		_modifier_queue.clear()
-		
-		_add_string_content_part(text, at)
-
-		queue_redraw()
-	
-
-	## Erases everything displayed
-	func erase_screen() -> void:
-		content = []
-
-		# remove all check buttons
-		for ch in terminal._check_buttons_container.get_children(): ch.queue_free()
-
-		queue_redraw()
-
-	func erase(row: int, from: int, length: int = -1) -> void:
-		pass # print("\nErasing.")
-		pass # prints(row, from, length)
-
-		# remove check buttons first
-		for ch in terminal._check_buttons_container.get_children():
-			if ch is CheckButton and ch.get_meta("row") == row-1:
-				ch.queue_free()
-
-		if row-1 > content.size()-1:
-			pass # prints("Cant erase", row, content.size())		
-			return
-
-		
-		if from == 1 and length == -1: # just delete the whole line right away
-			pass # print("Deleting whole line ", content[row-1])
-			content[row-1] = []
-			queue_redraw()
-			return
-
-
-		from -= 1
-
-		var line_content: = content[row-1]
-
-		var _offset: = 0
-
-		pass # print("offset: ", offset)
-		pass # print("from: ", from)
-		pass # print("length: ", length)
-
-		pass # print("Erasing line content '%s'" % str(line_content))
-
-		var total: = 0
-		var delete_to: = -1 if length == -1 else from + length
-		var deleting: = false
-
-		for i in range(line_content.size()):
-			var line_part = line_content[i]
-
-			pass # print("line_part: ", line_part)
-
-			if line_part is String:
-				total += line_part.length()
-				pass # print("Total is now %s" % total)
-
-				# if we reach the point where we start deleting
-				if not deleting and from < total-1:
-					pass # print("Not deleting and from < total-1")
-					var from_rel: int = from - (total - line_part.length())
-					
-					var actl = line_part.length()-from_rel if length == -1 else length
-
-					if from_rel + actl >= line_part.length():
-						pass # print("Must delete in next parts, deleting = true")
-						var chars = max(0, line_part.length()-from_rel) if length == -1 else length
-						line_part = line_part.erase(from_rel, chars)
-						pass # print("line part is now '%s'" % line_part.c_escape())
-						deleting = true
-						line_content[i] = line_part
-						continue
-					else:
-						var chars = max(0, line_part.length()-from_rel) if length == -1 else length
-						
-						line_part = line_part.erase(from_rel, chars)
-						pass # print("line part is now '%s'" % line_part.c_escape())
-						pass # print(from_rel, length)
-						line_content[i] = line_part
-						pass # print("break")
-						break
-
-				if deleting:
-					pass # print("deleting...")
-					if delete_to == -1:
-						pass # print("Deleting the whole part")
-						line_part = ""
-					else:
-						pass # print("Deleting part of string")
-						if delete_to <= total-1:
-							line_part = line_part.erase(0, total-1-delete_to)
-							pass # print("line part is now '%s'" % line_part.c_escape())
-						else:
-							pass # print("Deleting whole string, deleting = false")
-							line_part = ""
-							deleting = false
-
-				if line_part.is_empty():
-					line_part = null
-
-				line_part = line_part
-
-			elif line_part is Modifier:
-				if deleting:
-					line_part = null
-			
-			line_content[i] = line_part
-
-		content[row-1] = line_content.filter(func(element): return element != null)
-
-		queue_redraw()
-
 	func _draw() -> void:
+		if not terminal or not terminal._terminal_available:
+			return
+		if not terminal.terminal.has_method("get_cell"):
+			return
 
-		_foreground_color = Color.WHITE
-		_background_color = Color.TRANSPARENT
-		
-		var pos: = Vector2(0, 1)  # Start at first line
+		var cols: int = terminal._cols
+		var rows: int = terminal._rows
+		var cw: float = terminal.char_width
+		var lh: float = terminal.line_height
 
+		_draw_count += 1
+		# Dump every 5th draw to catch terminal output
+		if _draw_count % 5 == 0:
+			print("[TextLayer] === draw #%d (%dx%d) ===" % [_draw_count, cols, rows])
+			for r in range(rows):
+				var line: String = ""
+				for c in range(mini(cols, 100)):
+					var sc: Dictionary = terminal.terminal.get_cell(c, r)
+					var cp: int = sc.get("codepoint", 0) if not sc.is_empty() else 0
+					if cp == 0:
+						line += "_"
+					elif cp == 32:
+						line += " "
+					elif cp > 32:
+						line += char(cp)
+					else:
+						line += "^"
+				print("[row %02d] %s" % [r, line.rstrip("_")])
 
-		for line_parts in content:
-			pass # print(line_parts)
-			for part in line_parts:
-				if part is String:
-					var string_pos: = pos * Vector2(terminal.char_width, terminal.line_height)
+		for row in range(rows):
+			var y_pos: float = (row + 1) * lh
+			var row_top: float = row * lh
 
-					var start: = 0
-					for i in range(part.length()):
+			for col in range(cols):
+				var cell: Dictionary = terminal.terminal.get_cell(col, row)
+				if cell.is_empty():
+					continue
 
-						if part[i] == char(10240) or i == part.length()-1:
-							if i > start+1:
-								var background_rect: = Rect2(
-									(pos + Vector2(start, 0)) * Vector2(terminal.char_width, terminal.line_height),
-									Vector2((i-start+1)*terminal.char_width, -terminal.line_height)
-								)
-								
-								draw_rect(background_rect, _background_color)
-							start = i+1
+				var codepoint: int = cell.get("codepoint", 0)
+				var wide_state: int = cell.get("wide", 0)
 
-					if pos.y-1 == _selection_start.y and pos.y-1 == _selection_end.y:
-						var background_rect: = Rect2(
-							(pos + Vector2(_selection_start.x, 0)) * Vector2(terminal.char_width, terminal.line_height),
-							Vector2((_selection_end.x-_selection_start.x)*terminal.char_width, -terminal.line_height)
-						)
-						
-						draw_rect(background_rect, _selection_background_color)
-					
-					# selection_end must be on another line down
-					elif pos.y-1 == _selection_start.y:
-						var background_rect: = Rect2(
-							(Vector2(_selection_start.x, pos.y)) * Vector2(terminal.char_width, terminal.line_height),
-							Vector2((max(0, part.length()-_selection_start.x))*terminal.char_width, -terminal.line_height)
-						)
-						
-						draw_rect(background_rect, _selection_background_color)
+				# Skip spacer tail cells (right half of wide chars)
+				if wide_state == 3:
+					continue
 
-					# selection_start must be on another line above
-					elif pos.y-1 == _selection_end.y:
-						var background_rect: = Rect2(
-							(pos) * Vector2(terminal.char_width, terminal.line_height),
-							Vector2((_selection_end.x)*terminal.char_width, -terminal.line_height)
-						)
-						
-						draw_rect(background_rect, _selection_background_color)
+				var fg: Color = terminal.resolve_color(cell, "fg", Color.WHITE)
+				var bg: Color = terminal.resolve_color(cell, "bg", Color.TRANSPARENT)
 
-					# we're inbetween the selection start and end
-					elif pos.y-1 > _selection_start.y and pos.y-1 < _selection_end.y:
-						var background_rect: = Rect2(
-							(pos) * Vector2(terminal.char_width, terminal.line_height),
-							Vector2((part.length())*terminal.char_width, -terminal.line_height)
-						)
-						
-						draw_rect(background_rect, _selection_background_color)
+				if cell.get("inverse", false):
+					var tmp = fg
+					fg = bg if bg.a > 0 else Color.BLACK
+					bg = tmp
 
-					draw_string_outline(terminal.font, string_pos, part, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size, 5, Color.BLACK)
-					draw_string(terminal.font, string_pos, part, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size, _foreground_color)
-					
-					
-					pos.x += part.length()
-				
-				if part is Modifier:
-					pass # print("Applying part: ", part)
-					part.apply()
+				# Snap to exact grid position — never accumulate float error
+				var x_pos: float = col * cw
+				var cell_w: float = cw * (2 if wide_state == 1 else 1)
 
-			pos.y += 1
-			pos.x = 0
-		
-		custom_minimum_size.y = pos.y * terminal.line_height
+				# Draw background
+				if bg.a > 0:
+					draw_rect(Rect2(x_pos, row_top, cell_w, lh), bg)
 
-	func _create_context_menu_item(text: String, keycode: Key, id: int, callback: Callable = Callable()):
-		var shortcut: = Shortcut.new()
-		var event: = InputEventKey.new()
-		event.keycode = keycode
-		event.ctrl_pressed = true
-		shortcut.events.append(event)
+				# Draw selection highlight
+				if selection_active:
+					var in_sel = false
+					if _selection_start.y == _selection_end.y:
+						in_sel = row == _selection_start.y and col >= _selection_start.x and col <= _selection_end.x
+					elif row == _selection_start.y:
+						in_sel = col >= _selection_start.x
+					elif row == _selection_end.y:
+						in_sel = col <= _selection_end.x
+					elif row > _selection_start.y and row < _selection_end.y:
+						in_sel = true
+					if in_sel:
+						draw_rect(Rect2(x_pos, row_top, cw, lh), _selection_background_color)
 
-		_context_menu.add_shortcut(shortcut, id)
-		_context_menu.set_item_text(id, text)
+				# Draw character at exact grid position
+				if codepoint > 32:
+					var ch: String = char(codepoint)
+					# Use draw_char for pixel-perfect grid placement
+					draw_char_outline(terminal.font, Vector2(x_pos, y_pos), ch, terminal.font_size, 2, Color.BLACK)
+					draw_char(terminal.font, Vector2(x_pos, y_pos), ch, terminal.font_size, fg)
 
-		if callback.is_valid():
-			_context_menu.id_pressed.connect(func(id_: int): if id_ == id: callback.call())
-		
+		custom_minimum_size.y = rows * lh
 
 	var _context_menu: PopupMenu
 	func _create_context_menu(at: Vector2) -> void:
@@ -902,35 +607,30 @@ class TextLayer extends Control:
 			_context_menu = PopupMenu.new()
 			_context_menu.initial_position = Window.WINDOW_INITIAL_POSITION_ABSOLUTE
 			add_child(_context_menu)
-
-			_create_context_menu_item("Copy", KEY_CTRL, 0, func(): DisplayServer.clipboard_set(get_selected_text());reset_selection())
+			_create_context_menu_item("Copy", KEY_CTRL, 0, func(): DisplayServer.clipboard_set(get_selected_text()); reset_selection())
 			_create_context_menu_item("Paste", KEY_V, 1, func(): terminal.terminal.write_input(DisplayServer.clipboard_get()))
 			_create_context_menu_item("Zoom In", KEY_PLUS, 2, func(): terminal.font_size += 1; terminal._update_font_metrics(); queue_redraw())
-			_create_context_menu_item("Zoom In", KEY_MINUS, 3, func(): terminal.font_size -= 1; terminal._update_font_metrics(); queue_redraw())
-
+			_create_context_menu_item("Zoom Out", KEY_MINUS, 3, func(): terminal.font_size -= 1; terminal._update_font_metrics(); queue_redraw())
 		_context_menu.popup()
-		_context_menu.position = at + Vector2(0, _context_menu.size.y/2.0)
+		_context_menu.position = at + Vector2(0, _context_menu.size.y / 2.0)
+
+	func _create_context_menu_item(text: String, keycode: Key, id: int, callback: Callable = Callable()):
+		var shortcut: = Shortcut.new()
+		var event: = InputEventKey.new()
+		event.keycode = keycode
+		event.ctrl_pressed = true
+		shortcut.events.append(event)
+		_context_menu.add_shortcut(shortcut, id)
+		_context_menu.set_item_text(id, text)
+		if callback.is_valid():
+			_context_menu.id_pressed.connect(func(id_: int): if id_ == id: callback.call())
 
 	func get_selected_text() -> String:
-		var parts: = PackedStringArray()
+		if not terminal or not terminal._terminal_available:
+			return ""
+		if not terminal.terminal.has_method("get_plain_text"):
+			return ""
+		# Use libghostty-vt plain text extraction
+		return terminal.terminal.get_plain_text()
 
-		var line_total: = 0
-
-		for i in range(_selection_start.y, _selection_end.y+1):
-			var line_parts: = content[i]
-			for part in line_parts:
-				line_total = 0
-				if part is String:
-					for j in range(part.length()):
-						line_total += 1
-						
-						if i == _selection_start.y and line_total < _selection_start.x:
-							continue
-
-						if i == _selection_end.y and line_total > _selection_end.x:
-							break
-
-						parts.append(part[j])
-				parts.append("\n")
-
-		return "".join(parts).strip_edges()
+# endregion

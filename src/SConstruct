@@ -7,8 +7,13 @@ env = SConscript("godot-cpp/SConstruct")
 # Add include paths for both common and terminal root
 env.Append(CPPPATH=[
     "gdextension/terminal/",       # For terminal root
-    "gdextension/terminal/common"  # For common interface
+    "gdextension/terminal/common",  # For common interface
+    "gdextension/terminal/ghostty-shim/zig-out/include"  # minerva-vt shim header
 ])
+
+# Link against minerva-vt shim library (ghostty-vt wrapper)
+env.Append(LIBPATH=["gdextension/terminal/ghostty-shim/zig-out/lib"])
+env.Append(LIBS=["minerva-vt"])
 
 # Platform specific sources
 sources = ["gdextension/terminal/register_types.cpp"]
@@ -28,6 +33,10 @@ elif env["platform"] == "macos":
     # macOS uses the same PTY implementation as Linux
     env.Append(LIBS=["util"])
     env.Append(CPPDEFINES=["PLATFORM_MACOS"])
+    # Workaround: macOS 26 (Tahoe) / Xcode 26 new linker ___dso_handle fixup error
+    # in godot-cpp static lib. -ld_classic is deprecated but works for now.
+    # TODO: Remove when godot-cpp fixes compatibility with the new Apple linker.
+    env.Append(LINKFLAGS=["-Wl,-ld_classic"])
 
 # Build the library
 if env["platform"] == "macos":
@@ -44,3 +53,19 @@ else:
     )
 
 Default(library)
+
+# Copy minerva-vt dylib into the framework directory so Godot can find it at runtime.
+# The libterminal dylib references @rpath/libminerva-vt.dylib, and @loader_path
+# resolves to the framework directory.
+if env["platform"] == "macos":
+    import shutil
+    minerva_vt_src = "gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.dylib"
+    framework_dir = "bin/libterminal.{}.{}.framework".format(env["platform"], env["target"])
+    minerva_vt_dst = os.path.join(framework_dir, "libminerva-vt.dylib")
+    if os.path.exists(minerva_vt_src) and os.path.isdir(framework_dir):
+        shutil.copy2(minerva_vt_src, minerva_vt_dst)
+    # Add @loader_path rpath so libterminal finds libminerva-vt.dylib next to itself
+    env.AddPostAction(library, "install_name_tool -add_rpath @loader_path $TARGET 2>/dev/null || true")
+    # Re-sign both dylibs (macOS rejects unsigned/invalidated code signatures)
+    env.AddPostAction(library, "codesign --force --sign - $TARGET")
+    env.AddPostAction(library, "codesign --force --sign - " + minerva_vt_dst)
