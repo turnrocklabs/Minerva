@@ -56,6 +56,7 @@ func _init(manager = null) -> void:
 		_register_meta_tools()
 		_register_skill_tools()
 		_register_voice_tools()
+		_register_container_tools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -460,6 +461,20 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions":
 			return _skill_update_instructions(arguments)
+
+		# Container management tools
+		"minerva_container_list":
+			return _container_list(arguments)
+		"minerva_container_status":
+			return _container_status(arguments)
+		"minerva_container_build":
+			return await _container_build(arguments)
+		"minerva_container_start":
+			return _container_start(arguments)
+		"minerva_container_stop":
+			return _container_stop(arguments)
+		"minerva_docker_status":
+			return _docker_status(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -9792,3 +9807,195 @@ func _list_voices(arguments: Dictionary) -> Dictionary:
 	return {"voices": voices, "count": voices.size(), "success": true}
 
 #endregion Voice Tools
+
+#region Container Tools
+
+func _register_container_tools() -> void:
+	_register_tool("minerva_docker_status",
+		"Check Docker availability, version, platform, runtime type, and GPU support.",
+		{
+			"type": "object",
+			"properties": {},
+		}
+	, "containers")
+
+	_register_tool("minerva_container_list",
+		"List all registered managed containers with their current state (stopped, building, running, error).",
+		{
+			"type": "object",
+			"properties": {},
+		}
+	, "containers")
+
+	_register_tool("minerva_container_status",
+		"Get detailed status of a specific container by name.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Container name (e.g., 'minerva-voice-gateway')"
+				}
+			},
+			"required": ["name"]
+		}
+	, "containers")
+
+	_register_tool("minerva_container_build",
+		"Build a Docker image for a registered container from its Dockerfile. Non-blocking — returns immediately, poll with minerva_container_status to check progress.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Container name (e.g., 'minerva-voice-gateway')"
+				}
+			},
+			"required": ["name"]
+		}
+	, "containers")
+
+	_register_tool("minerva_container_start",
+		"Start a registered container. Image must be built first.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Container name (e.g., 'minerva-voice-gateway')"
+				}
+			},
+			"required": ["name"]
+		}
+	, "containers")
+
+	_register_tool("minerva_container_stop",
+		"Stop a running container.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Container name (e.g., 'minerva-voice-gateway')"
+				}
+			},
+			"required": ["name"]
+		}
+	, "containers")
+
+
+func _docker_status(_arguments: Dictionary) -> Dictionary:
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	if manager.docker_status.is_empty():
+		manager.detect()
+	return {"docker": manager.docker_status, "success": true}
+
+
+func _container_list(_arguments: Dictionary) -> Dictionary:
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	var definitions: Array = manager.get_definitions()
+	var containers: Array = []
+
+	for def in definitions:
+		containers.append({
+			"name": def.container_name,
+			"display_name": def.display_name,
+			"image": def.image_name,
+			"state": manager.get_state(def),
+			"has_image": manager.is_image_built(def),
+			"running": manager.is_running(def),
+		})
+
+	return {"containers": containers, "count": containers.size(), "success": true}
+
+
+func _container_status(arguments: Dictionary) -> Dictionary:
+	var name: String = arguments.get("name", "")
+	if name == "":
+		return {"error": "Missing required field: name", "success": false}
+
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	var definitions: Array = manager.get_definitions()
+
+	for def in definitions:
+		if def.container_name == name:
+			return {
+				"name": def.container_name,
+				"display_name": def.display_name,
+				"image": def.image_name,
+				"state": manager.get_state(def),
+				"has_image": manager.is_image_built(def),
+				"running": manager.is_running(def),
+				"healthy": manager.check_health(def) if manager.is_running(def) else false,
+				"health_endpoint": def.health_endpoint,
+				"ports": def.ports,
+				"gpu_optional": def.gpu_optional,
+				"success": true,
+			}
+
+	return {"error": "Container '%s' not registered" % name, "success": false}
+
+
+func _container_build(arguments: Dictionary) -> Dictionary:
+	var name: String = arguments.get("name", "")
+	if name == "":
+		return {"error": "Missing required field: name", "success": false}
+
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	if not manager.is_available():
+		return {"error": "Docker not available", "success": false}
+
+	var definitions: Array = manager.get_definitions()
+	for def in definitions:
+		if def.container_name == name:
+			var started: bool = manager.build_image(def)
+			if started:
+				return {"message": "Build started for %s. Poll with minerva_container_status to check progress." % name, "state": "building", "success": true}
+			else:
+				return {"error": "Failed to start build (may already be building)", "state": manager.get_state(def), "success": false}
+
+	return {"error": "Container '%s' not registered" % name, "success": false}
+
+
+func _container_start(arguments: Dictionary) -> Dictionary:
+	var name: String = arguments.get("name", "")
+	if name == "":
+		return {"error": "Missing required field: name", "success": false}
+
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	if not manager.is_available():
+		return {"error": "Docker not available", "success": false}
+
+	var definitions: Array = manager.get_definitions()
+	for def in definitions:
+		if def.container_name == name:
+			if not manager.is_image_built(def):
+				return {"error": "Image not built. Run minerva_container_build first.", "success": false}
+			var ok: bool = manager.start_container(def)
+			if ok:
+				return {"message": "%s started" % name, "state": "running", "success": true}
+			else:
+				return {"error": "Failed to start container", "state": manager.get_state(def), "success": false}
+
+	return {"error": "Container '%s' not registered" % name, "success": false}
+
+
+func _container_stop(arguments: Dictionary) -> Dictionary:
+	var name: String = arguments.get("name", "")
+	if name == "":
+		return {"error": "Missing required field: name", "success": false}
+
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	var definitions: Array = manager.get_definitions()
+
+	for def in definitions:
+		if def.container_name == name:
+			var ok: bool = manager.stop_container(def)
+			if ok:
+				return {"message": "%s stopped" % name, "state": "stopped", "success": true}
+			else:
+				return {"error": "Failed to stop container", "success": false}
+
+	return {"error": "Container '%s' not registered" % name, "success": false}
+
+#endregion Container Tools

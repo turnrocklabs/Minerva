@@ -478,6 +478,16 @@ func get_voice_client() -> VoiceServiceClient:
 
 #endregion Voice
 
+#region Docker
+const DockerManagerScript = preload("res://Scripts/Services/Docker/DockerManager.gd")
+var docker_manager: RefCounted = null
+
+func get_docker_manager() -> RefCounted:
+	if not docker_manager:
+		docker_manager = DockerManagerScript.new()
+	return docker_manager
+#endregion Docker
+
 #region Agent System
 var agent_registry: AgentRegistry = null
 var trigger_manager: TriggerManager = null
@@ -814,6 +824,11 @@ func _exit_tree() -> void:
 	if editor_container and is_instance_valid(editor_container):
 		print("[SingletonObject] Releasing textures in editor...")
 		_release_textures_recursive(editor_container)
+
+	# Stop managed Docker containers
+	if docker_manager:
+		print("[SingletonObject] Stopping managed containers...")
+		docker_manager.stop_all()
 
 	# Force RenderingServer to release pending resources
 	RenderingServer.force_sync()

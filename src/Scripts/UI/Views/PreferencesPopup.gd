@@ -113,6 +113,7 @@ func _ready():
 	call_deferred("_create_tools_tab")
 	call_deferred("_create_skills_tab")
 	call_deferred("_create_voice_tab")
+	call_deferred("_create_containers_tab")
 
 	# Initialize ChatGPT auth status
 	call_deferred("_init_chatgpt_auth")
@@ -3031,3 +3032,218 @@ func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -
 		_: stream.format = AudioStreamWAV.FORMAT_16_BITS
 
 #endregion Voice Tab
+
+#region Containers Tab
+
+const DockerManagerScript = preload("res://Scripts/Services/Docker/DockerManager.gd")
+const ContainerDefScript = preload("res://Scripts/Services/Docker/ContainerDefinition.gd")
+
+var _containers_tab: VBoxContainer
+var _docker_status_label: Label
+var _container_cards_vbox: VBoxContainer
+var _docker_recheck_btn: Button
+
+func _create_containers_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	_containers_tab = VBoxContainer.new()
+	_containers_tab.name = "Containers"
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_containers_tab.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	# --- Docker Status Section ---
+	var docker_header := Label.new()
+	docker_header.text = "Docker Status"
+	docker_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(docker_header)
+
+	_docker_status_label = Label.new()
+	_docker_status_label.text = "Checking..."
+	_docker_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(_docker_status_label)
+
+	var btn_row := HBoxContainer.new()
+	btn_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(btn_row)
+
+	_docker_recheck_btn = Button.new()
+	_docker_recheck_btn.text = "Re-check Docker"
+	_docker_recheck_btn.pressed.connect(_on_docker_recheck)
+	btn_row.add_child(_docker_recheck_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	# --- Managed Containers Section ---
+	var containers_header := Label.new()
+	containers_header.text = "Managed Containers"
+	containers_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(containers_header)
+
+	_container_cards_vbox = VBoxContainer.new()
+	_container_cards_vbox.add_theme_constant_override("separation", 12)
+	vbox.add_child(_container_cards_vbox)
+
+	tab_container.add_child(_containers_tab)
+
+	# Run initial detection
+	_refresh_docker_status()
+
+
+func _refresh_docker_status() -> void:
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	var status: Dictionary = manager.detect()
+	_update_docker_status_ui(status)
+	_rebuild_container_cards()
+
+
+func _update_docker_status_ui(status: Dictionary) -> void:
+	if not _docker_status_label:
+		return
+
+	if status.get("available", false):
+		var runtime: String = status.get("runtime", "unknown")
+		var version: String = status.get("version", "")
+		var gpu: String = "GPU available" if status.get("gpu_available", false) else "CPU only"
+		_docker_status_label.text = "Docker %s (%s, %s)" % [version, runtime, gpu]
+		_docker_status_label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.2))
+	else:
+		var error: String = status.get("error", "Docker not found")
+		_docker_status_label.text = error
+		_docker_status_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+
+
+func _rebuild_container_cards() -> void:
+	if not _container_cards_vbox:
+		return
+
+	# Clear existing cards
+	for child in _container_cards_vbox.get_children():
+		child.queue_free()
+
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	var definitions: Array = manager.get_definitions()
+
+	if definitions.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "No containers registered. Enable features that require containers (e.g., Voice Gateway)."
+		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		_container_cards_vbox.add_child(empty_label)
+		return
+
+	for definition in definitions:
+		var card := _create_container_card(definition)
+		_container_cards_vbox.add_child(card)
+
+
+func _create_container_card(definition: Resource) -> PanelContainer:
+	var panel := PanelContainer.new()
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 12)
+	panel.add_child(hbox)
+
+	# Left: info
+	var info_vbox := VBoxContainer.new()
+	info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.add_child(info_vbox)
+
+	var name_label := Label.new()
+	name_label.text = definition.display_name
+	name_label.add_theme_font_size_override("font_size", 14)
+	info_vbox.add_child(name_label)
+
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	var state: String = manager.get_state(definition)
+	var state_label: Label = Label.new()
+	state_label.name = "StateLabel"
+	_apply_state_style(state_label, state)
+	info_vbox.add_child(state_label)
+
+	var image_label := Label.new()
+	image_label.text = "Image: %s" % definition.image_name
+	image_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	image_label.add_theme_font_size_override("font_size", 12)
+	info_vbox.add_child(image_label)
+
+	# Right: buttons
+	var btn_vbox := VBoxContainer.new()
+	btn_vbox.add_theme_constant_override("separation", 4)
+	hbox.add_child(btn_vbox)
+
+	var has_image: bool = manager.is_image_built(definition)
+
+	if not has_image:
+		var build_btn: Button = Button.new()
+		build_btn.text = "Build"
+		build_btn.pressed.connect(_on_build_pressed.bind(definition))
+		btn_vbox.add_child(build_btn)
+	else:
+		var is_running: bool = manager.is_running(definition)
+		var toggle_btn := Button.new()
+		toggle_btn.text = "Stop" if is_running else "Start"
+		toggle_btn.pressed.connect(_on_toggle_pressed.bind(definition))
+		btn_vbox.add_child(toggle_btn)
+
+		var rebuild_btn := Button.new()
+		rebuild_btn.text = "Rebuild"
+		rebuild_btn.pressed.connect(_on_build_pressed.bind(definition))
+		btn_vbox.add_child(rebuild_btn)
+
+	return panel
+
+
+func _apply_state_style(label: Label, state: String) -> void:
+	match state:
+		"running":
+			label.text = "Running"
+			label.add_theme_color_override("font_color", Color(0.2, 0.8, 0.2))
+		"building":
+			label.text = "Building..."
+			label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		"error":
+			label.text = "Error"
+			label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		_:
+			label.text = "Stopped"
+			label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+
+
+func _on_docker_recheck() -> void:
+	_docker_status_label.text = "Checking..."
+	_refresh_docker_status()
+
+
+func _on_build_pressed(definition: Resource) -> void:
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	if manager.build_image(definition):
+		_rebuild_container_cards()
+
+
+func _on_toggle_pressed(definition: Resource) -> void:
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	if manager.is_running(definition):
+		manager.stop_container(definition)
+	else:
+		manager.start_container(definition)
+	_rebuild_container_cards()
+
+#endregion Containers Tab
