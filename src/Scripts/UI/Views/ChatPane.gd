@@ -2009,8 +2009,9 @@ func _ready():
 	_engagement_label.text = "STANDBY"
 	_engagement_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 	_engagement_label.add_theme_font_size_override("font_size", 11)
-	if %btnMicrophone.get_parent():
-		%btnMicrophone.get_parent().add_child(_engagement_label)
+	# Place near top controls (next to chat button) to avoid bottom overflow
+	if _chat_button and _chat_button.get_parent():
+		_chat_button.get_parent().add_child(_engagement_label)
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
