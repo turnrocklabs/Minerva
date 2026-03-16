@@ -32,7 +32,7 @@ var _tts_player: AudioStreamPlayer
 
 ## Voice gateway client for always-listening mode (wake word + VAD + state machine)
 var _voice_gateway: Node = null
-var _engagement_indicator: Button = null
+var _engagement_indicator: PanelContainer = null
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
@@ -2005,25 +2005,21 @@ func _ready():
 	_tts_player.finished.connect(_on_tts_playback_finished)
 
 	# Engagement indicator label (next to mic button)
-	# Engagement indicator: small colored circle button (non-clickable) with tooltip
-	_engagement_indicator = Button.new()
-	_engagement_indicator.text = ""
-	_engagement_indicator.custom_minimum_size = Vector2(14, 14)
+	# Engagement indicator: small colored circle with tooltip
+	_engagement_indicator = PanelContainer.new()
+	_engagement_indicator.custom_minimum_size = Vector2(12, 12)
 	_engagement_indicator.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_engagement_indicator.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_engagement_indicator.flat = true
-	_engagement_indicator.disabled = true
-	_engagement_indicator.mouse_filter = Control.MOUSE_FILTER_PASS  # allow hover
+	_engagement_indicator.mouse_filter = Control.MOUSE_FILTER_STOP
 	_engagement_indicator.tooltip_text = "Voice: STANDBY"
-	# Style: grey circle
 	var style := StyleBoxFlat.new()
 	style.bg_color = Color(0.4, 0.4, 0.4)
-	style.corner_radius_top_left = 7
-	style.corner_radius_top_right = 7
-	style.corner_radius_bottom_left = 7
-	style.corner_radius_bottom_right = 7
-	_engagement_indicator.add_theme_stylebox_override("normal", style)
-	_engagement_indicator.add_theme_stylebox_override("disabled", style)
+	style.set_corner_radius_all(6)
+	style.content_margin_left = 0
+	style.content_margin_right = 0
+	style.content_margin_top = 0
+	style.content_margin_bottom = 0
+	_engagement_indicator.add_theme_stylebox_override("panel", style)
 	# Place in top bar next to btnNewChat
 	var vbox3: Node = get_parent().get_parent().get_parent()
 	if vbox3:
@@ -2535,14 +2531,13 @@ func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -
 ## Voice gateway: engagement state changed
 func _on_engagement_changed(state: String) -> void:
 	if _engagement_indicator:
-		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("normal") as StyleBoxFlat
+		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("panel") as StyleBoxFlat
 		if style:
 			if state == "ENGAGED":
 				style.bg_color = Color(0.2, 0.85, 0.2)
 			else:
 				style.bg_color = Color(0.4, 0.4, 0.4)
-			_engagement_indicator.add_theme_stylebox_override("normal", style)
-			_engagement_indicator.add_theme_stylebox_override("disabled", style)
+			_engagement_indicator.add_theme_stylebox_override("panel", style)
 		_engagement_indicator.tooltip_text = "Voice: %s" % state
 
 
