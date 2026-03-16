@@ -29,6 +29,9 @@ var _showing_archived: bool = false
 ## TTS playback for voice conversation mode (controlled by Voice Preferences)
 var _tts_player: AudioStreamPlayer
 
+## Voice gateway client for always-listening mode (wake word + VAD + state machine)
+var _voice_gateway: VoiceGatewayClient = null
+var _engagement_label: Label = null
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
@@ -1988,6 +1991,26 @@ func _ready():
 	# Connect transcription signal for voice mode auto-send + TTS
 	SingletonObject.AtT.transcription_completed.connect(_on_voice_transcription_completed)
 
+	# Voice gateway client (always-listening mode)
+	_voice_gateway = VoiceGatewayClient.new()
+	add_child(_voice_gateway)
+	_voice_gateway.engagement_changed.connect(_on_engagement_changed)
+	_voice_gateway.transcription_ready.connect(_on_gateway_transcription_ready)
+	_voice_gateway.wake_word_detected.connect(func(conf: float):
+		print("[ChatPane] Wake word detected (%.3f)" % conf)
+	)
+
+	# TTS finished → notify gateway
+	_tts_player.finished.connect(_on_tts_playback_finished)
+
+	# Engagement indicator label (next to mic button)
+	_engagement_label = Label.new()
+	_engagement_label.text = "STANDBY"
+	_engagement_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	_engagement_label.add_theme_font_size_override("font_size", 11)
+	if %btnMicrophone.get_parent():
+		%btnMicrophone.get_parent().add_child(_engagement_label)
+
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
 	var hbox: HBoxContainer = %AttachFileDialog.get_vbox().get_child(0)
@@ -2346,7 +2369,13 @@ func _on_token_estimation_timer_timeout():
 	update_token_estimation()
 
 func _on_btn_microphone_pressed():
-	if SingletonObject.AtT._StartConverting() != OK: return
+	# PTT: save gateway state on press, restore on release
+	if _voice_gateway:
+		_voice_gateway.ptt_down()
+	if SingletonObject.AtT._StartConverting() != OK:
+		if _voice_gateway:
+			_voice_gateway.ptt_up()
+		return
 	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
 	SingletonObject.AtT.btn = %btnMicrophone
 	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
@@ -2355,6 +2384,10 @@ func _on_btn_microphone_pressed():
 
 ## After transcription completes, auto-send if configured in Voice Preferences.
 func _on_voice_transcription_completed(text: String) -> void:
+	# Restore gateway PTT state
+	if _voice_gateway:
+		_voice_gateway.ptt_up()
+
 	if text.is_empty():
 		return
 
@@ -2436,6 +2469,9 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	_tts_player.stream = stream
 	_tts_player.volume_db = linear_to_db(cfg.tts_volume)
 	_tts_player.play()
+	# Notify gateway: TTS playing (barge-in detection active)
+	if _voice_gateway:
+		_voice_gateway.notify_tts_started()
 
 	if status_label:
 		if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
@@ -2474,6 +2510,59 @@ func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -
 		8: stream.format = AudioStreamWAV.FORMAT_8_BITS
 		16: stream.format = AudioStreamWAV.FORMAT_16_BITS
 		_: stream.format = AudioStreamWAV.FORMAT_16_BITS
+
+
+## Voice gateway: engagement state changed
+func _on_engagement_changed(state: String) -> void:
+	if _engagement_label:
+		_engagement_label.text = state
+		if state == "ENGAGED":
+			_engagement_label.add_theme_color_override("font_color", Color(0.2, 0.9, 0.2))
+		else:
+			_engagement_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+
+
+## Voice gateway: VAD-endpointed audio ready for STT
+func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
+	if audio_wav.is_empty():
+		return
+
+	var cfg := SingletonObject.get_voice_config()
+	var client := SingletonObject.get_voice_client()
+
+	# Send to STT
+	var text: String = await client.transcribe_auto(audio_wav, cfg)
+	if text.is_empty():
+		return
+
+	# T6: Check for dismiss phrase
+	if _voice_gateway and _voice_gateway.check_dismiss_phrase(text):
+		return  # "stop listening" — don't send to chat
+
+	# Put transcription in input and optionally auto-send
+	%txtMainUserInput.text = text
+	if cfg.auto_send_transcription:
+		_on_send_message_button_item_selected(0)
+
+
+## TTS playback finished — notify gateway for idle timer
+func _on_tts_playback_finished() -> void:
+	if _voice_gateway:
+		_voice_gateway.notify_tts_finished()
+
+
+## Start the voice gateway (called when always-listening is enabled)
+func start_voice_gateway() -> void:
+	if _voice_gateway and not _voice_gateway._connected:
+		_voice_gateway.start()
+		print("[ChatPane] Voice gateway started")
+
+
+## Stop the voice gateway
+func stop_voice_gateway() -> void:
+	if _voice_gateway:
+		_voice_gateway.stop()
+		print("[ChatPane] Voice gateway stopped")
 
 
 func _on_child_order_changed():

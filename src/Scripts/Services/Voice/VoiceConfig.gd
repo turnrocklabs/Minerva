@@ -42,6 +42,9 @@ var auto_send_transcription: bool = false
 ## Fallback to OpenAI Whisper when Core disconnected (only relevant when stt_provider == VOICE_SERVICE)
 var whisper_fallback: bool = true
 
+## Always-listening mode: uses voice gateway container for wake word + VAD
+var always_listening: bool = false
+
 
 func save() -> void:
 	SingletonObject.save_to_config_file("Voice", "stt_provider", stt_provider)
@@ -56,6 +59,7 @@ func save() -> void:
 	SingletonObject.save_to_config_file("Voice", "tts_volume", tts_volume)
 	SingletonObject.save_to_config_file("Voice", "auto_send_transcription", auto_send_transcription)
 	SingletonObject.save_to_config_file("Voice", "whisper_fallback", whisper_fallback)
+	SingletonObject.save_to_config_file("Voice", "always_listening", always_listening)
 
 
 func load_from_config() -> void:
@@ -71,6 +75,7 @@ func load_from_config() -> void:
 	tts_volume = SingletonObject.config_file.get_value("Voice", "tts_volume", 1.0)
 	auto_send_transcription = SingletonObject.config_file.get_value("Voice", "auto_send_transcription", false)
 	whisper_fallback = SingletonObject.config_file.get_value("Voice", "whisper_fallback", true)
+	always_listening = SingletonObject.config_file.get_value("Voice", "always_listening", false)
 	summary_model = SingletonObject.config_file.get_value("Voice", "summary_model", "")
 	summary_timeout = SingletonObject.config_file.get_value("Voice", "summary_timeout", 30.0)
 
