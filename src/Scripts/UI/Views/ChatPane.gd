@@ -2,6 +2,7 @@ class_name ChatPane
 extends TabContainer
 
 const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
+const VoiceGatewayClientScript = preload("res://Scripts/Services/Voice/VoiceGatewayClient.gd")
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -30,7 +31,7 @@ var _showing_archived: bool = false
 var _tts_player: AudioStreamPlayer
 
 ## Voice gateway client for always-listening mode (wake word + VAD + state machine)
-var _voice_gateway: VoiceGatewayClient = null
+var _voice_gateway: Node = null
 var _engagement_label: Label = null
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
@@ -1992,7 +1993,7 @@ func _ready():
 	SingletonObject.AtT.transcription_completed.connect(_on_voice_transcription_completed)
 
 	# Voice gateway client (always-listening mode)
-	_voice_gateway = VoiceGatewayClient.new()
+	_voice_gateway = VoiceGatewayClientScript.new()
 	add_child(_voice_gateway)
 	_voice_gateway.engagement_changed.connect(_on_engagement_changed)
 	_voice_gateway.transcription_ready.connect(_on_gateway_transcription_ready)
