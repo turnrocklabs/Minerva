@@ -499,7 +499,7 @@ func _register_builtin_containers() -> void:
 	voice_gw.ports = {8090: 8080}
 	voice_gw.health_endpoint = "http://localhost:8090/health"
 	voice_gw.gpu_optional = true
-	docker_manager.register(voice_gw)
+	docker_manager.register(voice_gw, true)
 #endregion Docker
 
 #region Agent System

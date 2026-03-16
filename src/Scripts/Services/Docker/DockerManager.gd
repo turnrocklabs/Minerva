@@ -24,14 +24,18 @@ var _health_failures: Dictionary = {}
 var _build_pids: Dictionary = {}
 var _build_log_paths: Dictionary = {}
 var _log_dir: String = ""
+var _config_path: String = ""
 var _detector: RefCounted
+var _builtin_names: Array[String] = []  # names registered by code, not user
 
 
 func _init() -> void:
 	_detector = DockerDetectorScript.new()
 	_log_dir = OS.get_user_data_dir().path_join("docker_logs")
+	_config_path = OS.get_user_data_dir().path_join("docker_containers.json")
 	if not DirAccess.dir_exists_absolute(_log_dir):
 		DirAccess.make_dir_recursive_absolute(_log_dir)
+	_load_custom_containers()
 
 
 # ── Detection ───────────────────────────────────────────────────────────
@@ -50,13 +54,49 @@ func is_gpu_available() -> bool:
 
 # ── Registration ────────────────────────────────────────────────────────
 
-func register(definition: Resource) -> void:
+func register(definition: Resource, builtin: bool = false) -> void:
 	var cname: String = definition.container_name
 	_definitions[cname] = definition
+	if builtin:
+		_builtin_names.append(cname)
 	if is_running(definition):
 		_set_state(cname, "running")
 	else:
 		_set_state(cname, "stopped")
+
+func register_custom(display_name: String, image_name: String,
+		dockerfile_path: String, build_context: String,
+		ports: Dictionary = {}, health_endpoint: String = "",
+		gpu_optional: bool = false, environment: Dictionary = {}) -> Resource:
+	var def: Resource = ContainerDefinitionScript.new()
+	def.display_name = display_name
+	def.image_name = image_name
+	def.dockerfile_path = dockerfile_path
+	def.build_context = build_context
+	def.ports = ports
+	def.health_endpoint = health_endpoint
+	def.gpu_optional = gpu_optional
+	def.environment = environment
+	register(def, false)
+	_save_custom_containers()
+	return def
+
+func remove_container(definition: Resource) -> bool:
+	var cname: String = definition.container_name
+	if cname in _builtin_names:
+		return false  # Can't remove builtin containers
+	if is_running(definition):
+		stop_container(definition)
+	# Remove docker image
+	OS.execute("docker", ["rmi", "-f", definition.image_name], [], true)
+	_definitions.erase(cname)
+	_container_states.erase(cname)
+	_health_failures.erase(cname)
+	_save_custom_containers()
+	return true
+
+func is_builtin(definition: Resource) -> bool:
+	return definition.container_name in _builtin_names
 
 func get_definitions() -> Array:
 	return _definitions.values()
@@ -268,3 +308,50 @@ func _set_state(container_name: String, state: String) -> void:
 
 func _force_remove(container_name: String) -> void:
 	OS.execute("docker", ["rm", "-f", container_name], [], true)
+
+
+func _save_custom_containers() -> void:
+	var custom: Array = []
+	for cname in _definitions:
+		if cname in _builtin_names:
+			continue
+		var def: Resource = _definitions[cname]
+		custom.append({
+			"display_name": def.display_name,
+			"image_name": def.image_name,
+			"dockerfile_path": def.dockerfile_path,
+			"build_context": def.build_context,
+			"ports": def.ports,
+			"health_endpoint": def.health_endpoint,
+			"gpu_optional": def.gpu_optional,
+			"environment": def.environment,
+		})
+	var f: FileAccess = FileAccess.open(_config_path, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(custom, "\t"))
+		f.close()
+
+
+func _load_custom_containers() -> void:
+	if not FileAccess.file_exists(_config_path):
+		return
+	var f: FileAccess = FileAccess.open(_config_path, FileAccess.READ)
+	if not f:
+		return
+	var text: String = f.get_as_text()
+	f.close()
+	var parsed: Variant = JSON.parse_string(text)
+	if not parsed is Array:
+		return
+	for item in parsed:
+		if item is Dictionary and item.has("image_name"):
+			var def: Resource = ContainerDefinitionScript.new()
+			def.display_name = item.get("display_name", item.get("image_name", ""))
+			def.image_name = item.get("image_name", "")
+			def.dockerfile_path = item.get("dockerfile_path", "")
+			def.build_context = item.get("build_context", "")
+			def.ports = item.get("ports", {})
+			def.health_endpoint = item.get("health_endpoint", "")
+			def.gpu_optional = item.get("gpu_optional", false)
+			def.environment = item.get("environment", {})
+			register(def, false)

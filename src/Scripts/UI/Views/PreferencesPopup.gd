@@ -3103,6 +3103,12 @@ func _create_containers_tab() -> void:
 	_container_cards_vbox.add_theme_constant_override("separation", 12)
 	vbox.add_child(_container_cards_vbox)
 
+	# Add Container button
+	var add_btn := Button.new()
+	add_btn.text = "+ Add Container"
+	add_btn.pressed.connect(_on_add_container_pressed)
+	vbox.add_child(add_btn)
+
 	# Build log area (shown during builds)
 	_build_log_label = Label.new()
 	_build_log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -3224,6 +3230,14 @@ func _create_container_card(definition: Resource) -> PanelContainer:
 		rebuild_btn.pressed.connect(_on_build_pressed.bind(definition))
 		btn_vbox.add_child(rebuild_btn)
 
+	# Remove button (custom containers only)
+	if not manager.is_builtin(definition):
+		var remove_btn := Button.new()
+		remove_btn.text = "Remove"
+		remove_btn.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		remove_btn.pressed.connect(_on_remove_pressed.bind(definition))
+		btn_vbox.add_child(remove_btn)
+
 	return panel
 
 
@@ -3267,6 +3281,148 @@ func _on_toggle_pressed(definition: Resource) -> void:
 	else:
 		manager.start_container(definition)
 	_rebuild_container_cards()
+
+func _on_remove_pressed(definition: Resource) -> void:
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	manager.remove_container(definition)
+	_rebuild_container_cards()
+
+
+func _on_add_container_pressed() -> void:
+	# Create a popup dialog for adding a new container
+	var dialog := AcceptDialog.new()
+	dialog.title = "Add Container"
+	dialog.min_size = Vector2(500, 400)
+
+	var form := VBoxContainer.new()
+	form.add_theme_constant_override("separation", 6)
+
+	var fields: Dictionary = {}
+
+	# Display Name
+	var name_row := HBoxContainer.new()
+	var name_lbl := Label.new()
+	name_lbl.text = "Display Name:"
+	name_lbl.custom_minimum_size = Vector2(120, 0)
+	name_row.add_child(name_lbl)
+	var name_edit := LineEdit.new()
+	name_edit.placeholder_text = "My Container"
+	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_row.add_child(name_edit)
+	form.add_child(name_row)
+	fields["display_name"] = name_edit
+
+	# Image Name
+	var img_row := HBoxContainer.new()
+	var img_lbl := Label.new()
+	img_lbl.text = "Image Name:"
+	img_lbl.custom_minimum_size = Vector2(120, 0)
+	img_row.add_child(img_lbl)
+	var img_edit := LineEdit.new()
+	img_edit.placeholder_text = "my-container"
+	img_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	img_row.add_child(img_edit)
+	form.add_child(img_row)
+	fields["image_name"] = img_edit
+
+	# Dockerfile Path
+	var df_row := HBoxContainer.new()
+	var df_lbl := Label.new()
+	df_lbl.text = "Dockerfile:"
+	df_lbl.custom_minimum_size = Vector2(120, 0)
+	df_row.add_child(df_lbl)
+	var df_edit := LineEdit.new()
+	df_edit.placeholder_text = "/path/to/Dockerfile"
+	df_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	df_row.add_child(df_edit)
+	form.add_child(df_row)
+	fields["dockerfile_path"] = df_edit
+
+	# Build Context
+	var ctx_row := HBoxContainer.new()
+	var ctx_lbl := Label.new()
+	ctx_lbl.text = "Build Context:"
+	ctx_lbl.custom_minimum_size = Vector2(120, 0)
+	ctx_row.add_child(ctx_lbl)
+	var ctx_edit := LineEdit.new()
+	ctx_edit.placeholder_text = "/path/to/context/ (directory with Dockerfile)"
+	ctx_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ctx_row.add_child(ctx_edit)
+	form.add_child(ctx_row)
+	fields["build_context"] = ctx_edit
+
+	# Port (simple: one host:container pair)
+	var port_row := HBoxContainer.new()
+	var port_lbl := Label.new()
+	port_lbl.text = "Port (host:ctr):"
+	port_lbl.custom_minimum_size = Vector2(120, 0)
+	port_row.add_child(port_lbl)
+	var port_edit := LineEdit.new()
+	port_edit.placeholder_text = "8080:8080"
+	port_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	port_row.add_child(port_edit)
+	form.add_child(port_row)
+	fields["port"] = port_edit
+
+	# Health Endpoint
+	var health_row := HBoxContainer.new()
+	var health_lbl := Label.new()
+	health_lbl.text = "Health URL:"
+	health_lbl.custom_minimum_size = Vector2(120, 0)
+	health_row.add_child(health_lbl)
+	var health_edit := LineEdit.new()
+	health_edit.placeholder_text = "http://localhost:8080/health (optional)"
+	health_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	health_row.add_child(health_edit)
+	form.add_child(health_row)
+	fields["health_endpoint"] = health_edit
+
+	# GPU optional
+	var gpu_check := CheckButton.new()
+	gpu_check.text = "Request GPU if available"
+	form.add_child(gpu_check)
+	fields["gpu_optional"] = gpu_check
+
+	dialog.add_child(form)
+
+	dialog.confirmed.connect(func():
+		var dn: String = fields["display_name"].text.strip_edges()
+		var img: String = fields["image_name"].text.strip_edges()
+		var df: String = fields["dockerfile_path"].text.strip_edges()
+		var ctx: String = fields["build_context"].text.strip_edges()
+		var hp: String = fields["health_endpoint"].text.strip_edges()
+		var gpu: bool = fields["gpu_optional"].button_pressed
+
+		if img == "":
+			return  # Need at least image name
+
+		# Parse port
+		var ports: Dictionary = {}
+		var port_str: String = fields["port"].text.strip_edges()
+		if ":" in port_str:
+			var parts: PackedStringArray = port_str.split(":")
+			if parts.size() == 2 and parts[0].is_valid_int() and parts[1].is_valid_int():
+				ports[parts[0].to_int()] = parts[1].to_int()
+
+		if dn == "":
+			dn = img
+
+		if ctx == "" and df != "":
+			ctx = df.get_base_dir()
+
+		var manager: RefCounted = SingletonObject.get_docker_manager()
+		manager.register_custom(dn, img, df, ctx, ports, hp, gpu)
+		_rebuild_container_cards()
+		dialog.queue_free()
+	)
+
+	dialog.canceled.connect(func():
+		dialog.queue_free()
+	)
+
+	add_child(dialog)
+	dialog.popup_centered()
+
 
 func _on_build_poll() -> void:
 	var manager: RefCounted = SingletonObject.get_docker_manager()
