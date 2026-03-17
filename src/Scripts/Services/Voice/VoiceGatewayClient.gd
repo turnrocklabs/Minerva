@@ -16,6 +16,7 @@ const GATEWAY_URL := "ws://localhost:8090/audio"
 const ENGAGEMENT_IDLE_TIMEOUT := 20.0
 const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
 const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
+const TARGET_SAMPLE_RATE := 16000  # gateway expects 16kHz
 
 var engagement_state: String = "STANDBY"
 
@@ -179,18 +180,36 @@ func _on_capture_tick() -> void:
 		return
 
 	var frames_available: int = _capture_effect.get_frames_available()
-	if frames_available < 256:  # minimum useful chunk
+	if frames_available < 256:
 		return
 
-	# Get captured audio as Vector2 frames (stereo float), convert to s16le mono
+	# Get captured audio as Vector2 frames (stereo float) at native mix rate
 	var frames: PackedVector2Array = _capture_effect.get_buffer(frames_available)
-	var pcm := PackedByteArray()
-	pcm.resize(frames.size() * 2)  # 2 bytes per sample (s16le mono)
+	var native_rate: int = AudioServer.get_mix_rate()
 
+	# Convert stereo float to mono float array
+	var mono := PackedFloat32Array()
+	mono.resize(frames.size())
 	for i in range(frames.size()):
-		# Average stereo to mono, convert float [-1,1] to int16
-		var sample: float = (frames[i].x + frames[i].y) * 0.5
-		var s16: int = clampi(int(sample * 32767.0), -32768, 32767)
+		mono[i] = (frames[i].x + frames[i].y) * 0.5
+
+	# Resample from native rate (44100/48000) to 16kHz
+	if native_rate != TARGET_SAMPLE_RATE:
+		var ratio: float = float(TARGET_SAMPLE_RATE) / float(native_rate)
+		var new_len: int = int(mono.size() * ratio)
+		var resampled := PackedFloat32Array()
+		resampled.resize(new_len)
+		for i in range(new_len):
+			var src_idx: float = float(i) / ratio
+			var idx: int = mini(int(src_idx), mono.size() - 1)
+			resampled[i] = mono[idx]
+		mono = resampled
+
+	# Convert float [-1,1] to s16le PCM bytes
+	var pcm := PackedByteArray()
+	pcm.resize(mono.size() * 2)
+	for i in range(mono.size()):
+		var s16: int = clampi(int(mono[i] * 32767.0), -32768, 32767)
 		pcm.encode_s16(i * 2, s16)
 
 	# Send to gateway
