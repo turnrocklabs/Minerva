@@ -314,13 +314,14 @@ func pre_warm(keep_warm_seconds: int = 3600) -> bool:
 
 	var gpu_dispatch := Service.new({"client_id": "gpu-dispatch", "name": "GPU Dispatch"})
 	var action := Action.new({"topic": "gpu-dispatch/session/reserve"})
+	var cfg := SingletonObject.get_voice_config()
 	var data := {
 		"job_types": ["voice", "chat"],
 		"containers": ["voice", "ollama"],
 		"models": {
-			"stt": "faster-whisper",
-			"tts": "kokoro",
-			"llm": "auto",
+			"stt": {"model": cfg.stt_model, "backend": cfg.stt_backend},
+			"tts": {"backend": cfg.tts_backend},
+			"llm": {},
 		},
 		"keep_warm_seconds": keep_warm_seconds,
 	}
