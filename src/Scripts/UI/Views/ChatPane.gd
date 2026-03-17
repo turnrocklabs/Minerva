@@ -2444,6 +2444,10 @@ func _create_voice_status_label(msg_node: Control) -> RichTextLabel:
 
 
 ## Speak the assistant's response via TTS based on Voice Preferences speak mode.
+## Serialized: only one TTS at a time. New requests cancel the pending one.
+var _tts_busy := false
+var _tts_cancel := false
+
 func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null) -> void:
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF:
@@ -2452,6 +2456,16 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	var effective_tts := cfg.get_effective_tts_provider()
 	if effective_tts == VoiceConfig.TTSProvider.NONE:
 		return
+
+	# Cancel any in-flight TTS and wait for it to finish
+	if _tts_busy:
+		print("[ChatPane] TTS busy — cancelling previous, queuing new")
+		_tts_cancel = true
+		while _tts_busy:
+			await get_tree().create_timer(0.1).timeout
+		_tts_cancel = false
+
+	_tts_busy = true
 
 	# Create inline status label on the message node
 	var status_label: RichTextLabel = null
@@ -2466,23 +2480,40 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 				status_label.text = "Voice: No summary model configured"
 				await get_tree().create_timer(3.0).timeout
 				status_label.queue_free()
+			_tts_busy = false
 			return
 		if status_label:
 			status_label.text = "Voice: Summarizing via %s..." % cfg.summary_model
+		print("[ChatPane] TTS: summarizing via %s..." % cfg.summary_model)
 		var client := SingletonObject.get_voice_client()
 		text_to_speak = await client.summarize_for_speech(user_text, response_text, cfg.summary_model, cfg.summary_timeout)
+		if _tts_cancel:
+			print("[ChatPane] TTS: cancelled after summarize")
+			_tts_busy = false
+			return
+		print("[ChatPane] TTS: summary ready: %s" % text_to_speak.substr(0, 80))
 
 	if status_label:
 		status_label.text = "Voice: Synthesizing speech..."
+	print("[ChatPane] TTS: synthesizing %d chars..." % text_to_speak.length())
 	var voice_client := SingletonObject.get_voice_client()
 	var wav_data: PackedByteArray = await voice_client.synthesize_auto(text_to_speak, cfg)
 
+	if _tts_cancel:
+		print("[ChatPane] TTS: cancelled after synthesize")
+		_tts_busy = false
+		return
+
 	if wav_data.is_empty():
+		print("[ChatPane] TTS: synthesis returned empty audio!")
 		if status_label:
 			status_label.text = "Voice: TTS synthesis failed"
 			await get_tree().create_timer(3.0).timeout
 			status_label.queue_free()
+		_tts_busy = false
 		return
+
+	print("[ChatPane] TTS: got %d bytes, playing..." % wav_data.size())
 
 	# Collapse after successful synthesis — only in summarize mode
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
@@ -2498,6 +2529,11 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	# Notify gateway: TTS playing (barge-in detection active)
 	if _voice_gateway:
 		_voice_gateway.notify_tts_started()
+
+	# Release TTS busy flag when playback finishes
+	_tts_player.finished.connect(func():
+		_tts_busy = false
+	, CONNECT_ONE_SHOT)
 
 	if status_label:
 		if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
