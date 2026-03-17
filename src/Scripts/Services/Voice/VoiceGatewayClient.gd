@@ -3,79 +3,71 @@ extends Node
 ## Connects to the local voice gateway container via WebSocket.
 ## Streams mic audio, receives wake word + VAD events.
 ## Manages STANDBY/ENGAGED state machine.
-##
-## T2: State machine  T3: Always-listening  T4: Barge-in
-## T5: playback_finished  T6: Dismiss/timeout/PTT
 
 signal engagement_changed(state: String)  # "STANDBY" or "ENGAGED"
 signal vad_started()
 signal vad_ended()
 signal wake_word_detected(confidence: float)
-signal transcription_ready(audio_wav: PackedByteArray)  # VAD-endpointed audio ready for STT
+signal transcription_ready(audio_wav: PackedByteArray)
 signal connected_to_gateway()
 signal disconnected_from_gateway()
 
 const GATEWAY_URL := "ws://localhost:8090/audio"
-const ENGAGEMENT_IDLE_TIMEOUT := 20.0  # seconds after TTS ends before STANDBY
+const ENGAGEMENT_IDLE_TIMEOUT := 20.0
 const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
+const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
 
-## Current engagement state
 var engagement_state: String = "STANDBY"
 
-## WebSocket connection
 var _ws: WebSocketPeer = null
 var _connected := false
 
-## Audio capture
+# Mic capture: separate AudioStreamPlayer + AudioEffectCapture (no conflict with AudioToText)
 var _mic_player: AudioStreamPlayer = null
-var _record_effect: AudioEffectRecord = null
-var _capture_timer: Timer = null  # polls mic data at ~60Hz
+var _capture_effect: AudioEffectCapture = null
+var _capture_bus_idx: int = -1
+var _capture_timer: Timer = null
 
-## Recording state
+# Recording state
 var _recording := false
 var _audio_buffer: PackedByteArray = PackedByteArray()
 var _pre_vad_buffer: Array[PackedByteArray] = []
 var _vad_active := false
 
-## TTS playback tracking (for barge-in)
+# TTS playback tracking
 var _tts_playing := false
 
-## Idle timer
+# Idle timer
 var _idle_timer: Timer = null
 
-## PTT state
+# PTT state
 var _ptt_active := false
 var _ptt_saved_engagement: String = ""
 
-## Reconnection
+# Reconnection
 var _reconnect_timer: Timer = null
 var _should_connect := false
 
 
 func _ready() -> void:
-	# Mic capture timer (polls audio data)
 	_capture_timer = Timer.new()
-	_capture_timer.wait_time = 0.016  # ~60Hz
+	_capture_timer.wait_time = 1.0 / CAPTURE_POLL_HZ
 	_capture_timer.timeout.connect(_on_capture_tick)
 	add_child(_capture_timer)
 
-	# Engagement idle timer
 	_idle_timer = Timer.new()
 	_idle_timer.one_shot = true
 	_idle_timer.wait_time = ENGAGEMENT_IDLE_TIMEOUT
 	_idle_timer.timeout.connect(_on_idle_timeout)
 	add_child(_idle_timer)
 
-	# Reconnection timer
 	_reconnect_timer = Timer.new()
 	_reconnect_timer.wait_time = 3.0
 	_reconnect_timer.timeout.connect(_try_connect)
 	add_child(_reconnect_timer)
 
-	# Setup mic capture on "Rec" bus
-	var rec_idx: int = AudioServer.get_bus_index("Rec")
-	if rec_idx >= 0 and AudioServer.get_bus_effect_count(rec_idx) > 0:
-		_record_effect = AudioServer.get_bus_effect(rec_idx, 0) as AudioEffectRecord
+	# Create a dedicated audio bus for voice gateway capture
+	_setup_capture_bus()
 
 
 func _process(_delta: float) -> void:
@@ -86,8 +78,7 @@ func _process(_delta: float) -> void:
 			if not _connected:
 				_connected = true
 				connected_to_gateway.emit()
-				print("[VoiceGateway] Connected")
-			# Read incoming messages
+				print("[VoiceGateway] Connected to gateway")
 			while _ws.get_available_packet_count() > 0:
 				var packet: PackedByteArray = _ws.get_packet()
 				_handle_gateway_message(packet)
@@ -95,24 +86,49 @@ func _process(_delta: float) -> void:
 			if _connected:
 				_connected = false
 				disconnected_from_gateway.emit()
-				print("[VoiceGateway] Disconnected")
+				print("[VoiceGateway] Disconnected from gateway")
 			_ws = null
-			if _should_connect and not _reconnect_timer.is_stopped():
+			if _should_connect:
 				_reconnect_timer.start()
+
+
+# ── Audio Bus Setup ─────────────────────────────────────────────────────
+
+func _setup_capture_bus() -> void:
+	# Add a new bus "VoiceCapture" with AudioEffectCapture for streaming
+	var bus_name := "VoiceCapture"
+	_capture_bus_idx = AudioServer.get_bus_index(bus_name)
+	if _capture_bus_idx < 0:
+		AudioServer.add_bus()
+		_capture_bus_idx = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(_capture_bus_idx, bus_name)
+		AudioServer.set_bus_mute(_capture_bus_idx, true)  # don't output to speakers
+		AudioServer.set_bus_send(_capture_bus_idx, "Master")
+
+	# Add or get AudioEffectCapture on this bus
+	var has_capture := false
+	for i in range(AudioServer.get_bus_effect_count(_capture_bus_idx)):
+		if AudioServer.get_bus_effect(_capture_bus_idx, i) is AudioEffectCapture:
+			_capture_effect = AudioServer.get_bus_effect(_capture_bus_idx, i) as AudioEffectCapture
+			has_capture = true
+			break
+
+	if not has_capture:
+		_capture_effect = AudioEffectCapture.new()
+		AudioServer.add_bus_effect(_capture_bus_idx, _capture_effect)
 
 
 # ── Connection ──────────────────────────────────────────────────────────
 
 func start() -> void:
-	"""Start the gateway client. Connects to container and begins mic capture."""
 	_should_connect = true
 	_try_connect()
 	_start_mic_capture()
 	_capture_timer.start()
+	print("[VoiceGateway] Started")
 
 
 func stop() -> void:
-	"""Stop the gateway client."""
 	_should_connect = false
 	_capture_timer.stop()
 	_stop_mic_capture()
@@ -121,6 +137,7 @@ func stop() -> void:
 		_ws.close()
 		_ws = null
 	_connected = false
+	print("[VoiceGateway] Stopped")
 
 
 func _try_connect() -> void:
@@ -140,47 +157,46 @@ func _start_mic_capture() -> void:
 	if _mic_player:
 		return
 	_mic_player = AudioStreamPlayer.new()
-	_mic_player.bus = &"Rec"
+	_mic_player.bus = &"VoiceCapture"
 	_mic_player.stream = AudioStreamMicrophone.new()
 	add_child(_mic_player)
 	_mic_player.play()
-	if _record_effect:
-		_record_effect.set_recording_active(true)
+	print("[VoiceGateway] Mic capture started on VoiceCapture bus")
 
 
 func _stop_mic_capture() -> void:
-	if _record_effect:
-		_record_effect.set_recording_active(false)
 	if _mic_player:
 		_mic_player.stop()
 		_mic_player.queue_free()
 		_mic_player = null
+	# Drain any remaining captured audio
+	if _capture_effect:
+		_capture_effect.clear_buffer()
 
 
 func _on_capture_tick() -> void:
-	"""Called ~60Hz. Grabs mic audio and sends to gateway."""
-	if not _connected or not _record_effect:
-		return
-	if not _record_effect.is_recording_active():
+	if not _connected or not _capture_effect:
 		return
 
-	# Get recorded audio as WAV, extract PCM
-	var recording: AudioStreamWAV = _record_effect.get_recording()
-	if not recording:
+	var frames_available: int = _capture_effect.get_frames_available()
+	if frames_available < 256:  # minimum useful chunk
 		return
 
-	# Restart recording for next chunk
-	_record_effect.set_recording_active(false)
-	_record_effect.set_recording_active(true)
+	# Get captured audio as Vector2 frames (stereo float), convert to s16le mono
+	var frames: PackedVector2Array = _capture_effect.get_buffer(frames_available)
+	var pcm := PackedByteArray()
+	pcm.resize(frames.size() * 2)  # 2 bytes per sample (s16le mono)
 
-	var pcm: PackedByteArray = recording.data
-	if pcm.is_empty():
-		return
+	for i in range(frames.size()):
+		# Average stereo to mono, convert float [-1,1] to int16
+		var sample: float = (frames[i].x + frames[i].y) * 0.5
+		var s16: int = clampi(int(sample * 32767.0), -32768, 32767)
+		pcm.encode_s16(i * 2, s16)
 
-	# Send to gateway for wake word + VAD processing
+	# Send to gateway
 	_ws.send(pcm, WebSocketPeer.WRITE_MODE_BINARY)
 
-	# Manage pre-VAD buffer (always keep last ~1s)
+	# Manage pre-VAD buffer
 	_pre_vad_buffer.append(pcm)
 	var total_size: int = 0
 	for chunk in _pre_vad_buffer:
@@ -189,7 +205,7 @@ func _on_capture_tick() -> void:
 		total_size -= _pre_vad_buffer[0].size()
 		_pre_vad_buffer.remove_at(0)
 
-	# If recording (ENGAGED + VAD active), accumulate audio
+	# Accumulate if recording
 	if _recording:
 		_audio_buffer.append_array(pcm)
 
@@ -203,7 +219,6 @@ func _handle_gateway_message(packet: PackedByteArray) -> void:
 		return
 
 	var event_type: String = parsed.get("type", "")
-
 	match event_type:
 		"wake_word":
 			var confidence: float = parsed.get("confidence", 0.0)
@@ -217,20 +232,16 @@ func _handle_gateway_message(packet: PackedByteArray) -> void:
 
 func _handle_wake_word(confidence: float) -> void:
 	if _tts_playing:
-		# T4: Barge-in during TTS playback
 		print("[VoiceGateway] Wake word during playback (%.3f) — barge-in" % confidence)
 		_set_engagement("ENGAGED", "wake word barge-in")
 		_cancel_idle_timer()
-		# Clear pre-VAD buffer (contains the wake word, not a command)
 		_pre_vad_buffer.clear()
 		return
 
 	if engagement_state == "STANDBY":
-		# T2: STANDBY → ENGAGED
 		print("[VoiceGateway] Wake word in STANDBY (%.3f) — engaging" % confidence)
 		_set_engagement("ENGAGED", "wake word")
 		_cancel_idle_timer()
-		# Clear pre-VAD buffer (contains "Minerva", not a command)
 		_pre_vad_buffer.clear()
 
 
@@ -239,16 +250,13 @@ func _handle_vad_start() -> void:
 	vad_started.emit()
 
 	if not is_engaged_or_ptt():
-		return  # STANDBY: ignore speech
-
+		return
 	if _tts_playing:
-		return  # Don't record while TTS plays
+		return
 
-	# T3: Start recording with pre-VAD buffer
 	if not _recording:
 		_recording = true
 		_audio_buffer = PackedByteArray()
-		# Prepend pre-VAD buffer to capture speech onset
 		for chunk in _pre_vad_buffer:
 			_audio_buffer.append_array(chunk)
 		_pre_vad_buffer.clear()
@@ -263,17 +271,13 @@ func _handle_vad_end() -> void:
 	if _recording:
 		_recording = false
 		print("[VoiceGateway] Recording stopped (%d bytes)" % _audio_buffer.size())
-
-		if _audio_buffer.size() > 1600:  # At least 50ms of audio
-			# T6: Check for dismiss phrase after STT
-			# Package as WAV and emit for STT processing
+		if _audio_buffer.size() > 1600:
 			var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
 			transcription_ready.emit(wav)
-
 		_audio_buffer = PackedByteArray()
 
 
-# ── Engagement State Machine (T2, T6) ──────────────────────────────────
+# ── Engagement State Machine ────────────────────────────────────────────
 
 func is_engaged_or_ptt() -> bool:
 	return engagement_state == "ENGAGED" or _ptt_active
@@ -288,7 +292,6 @@ func _set_engagement(new_state: String, reason: String = "") -> void:
 	engagement_changed.emit(new_state)
 
 
-## T6: "stop listening" check — call after STT returns text
 func check_dismiss_phrase(text: String) -> bool:
 	var clean: String = text.strip_edges().to_lower().rstrip(".!,")
 	if clean in ["stop listening", "stop listen"]:
@@ -298,28 +301,23 @@ func check_dismiss_phrase(text: String) -> bool:
 	return false
 
 
-## T5: Call when TTS playback starts
 func notify_tts_started() -> void:
 	_tts_playing = true
 	_cancel_idle_timer()
 
 
-## T5: Call when TTS playback finishes
 func notify_tts_finished() -> void:
 	_tts_playing = false
-	# Start idle timer if ENGAGED
 	if engagement_state == "ENGAGED":
 		_start_idle_timer()
 
 
-## T6: PTT override
 func ptt_down() -> void:
 	_ptt_active = true
 	_ptt_saved_engagement = engagement_state
 	_cancel_idle_timer()
 
 
-## T6: PTT release — restore previous engagement state
 func ptt_up() -> void:
 	_ptt_active = false
 	var saved: String = _ptt_saved_engagement
@@ -333,10 +331,8 @@ func ptt_up() -> void:
 func _start_idle_timer() -> void:
 	_idle_timer.start(ENGAGEMENT_IDLE_TIMEOUT)
 
-
 func _cancel_idle_timer() -> void:
 	_idle_timer.stop()
-
 
 func _on_idle_timeout() -> void:
 	if engagement_state == "ENGAGED" and not _ptt_active:
@@ -346,7 +342,6 @@ func _on_idle_timeout() -> void:
 # ── Audio Utilities ─────────────────────────────────────────────────────
 
 func _pcm_to_wav(pcm: PackedByteArray) -> PackedByteArray:
-	"""Wrap raw PCM s16le mono 16kHz in a WAV header."""
 	var sample_rate: int = 16000
 	var channels: int = 1
 	var bits_per_sample: int = 16
@@ -358,26 +353,20 @@ func _pcm_to_wav(pcm: PackedByteArray) -> PackedByteArray:
 	var wav := PackedByteArray()
 	wav.resize(44 + data_size)
 
-	# RIFF header
-	wav[0] = 0x52; wav[1] = 0x49; wav[2] = 0x46; wav[3] = 0x46  # "RIFF"
+	wav[0] = 0x52; wav[1] = 0x49; wav[2] = 0x46; wav[3] = 0x46
 	wav.encode_u32(4, file_size)
-	wav[8] = 0x57; wav[9] = 0x41; wav[10] = 0x56; wav[11] = 0x45  # "WAVE"
-
-	# fmt chunk
-	wav[12] = 0x66; wav[13] = 0x6D; wav[14] = 0x74; wav[15] = 0x20  # "fmt "
-	wav.encode_u32(16, 16)  # chunk size
-	wav.encode_u16(20, 1)  # PCM format
+	wav[8] = 0x57; wav[9] = 0x41; wav[10] = 0x56; wav[11] = 0x45
+	wav[12] = 0x66; wav[13] = 0x6D; wav[14] = 0x74; wav[15] = 0x20
+	wav.encode_u32(16, 16)
+	wav.encode_u16(20, 1)
 	wav.encode_u16(22, channels)
 	wav.encode_u32(24, sample_rate)
 	wav.encode_u32(28, byte_rate)
 	wav.encode_u16(32, block_align)
 	wav.encode_u16(34, bits_per_sample)
-
-	# data chunk
-	wav[36] = 0x64; wav[37] = 0x61; wav[38] = 0x74; wav[39] = 0x61  # "data"
+	wav[36] = 0x64; wav[37] = 0x61; wav[38] = 0x74; wav[39] = 0x61
 	wav.encode_u32(40, data_size)
 
-	# PCM data
 	for i in range(data_size):
 		wav[44 + i] = pcm[i]
 

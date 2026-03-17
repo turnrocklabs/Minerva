@@ -2543,6 +2543,21 @@ func _on_engagement_indicator_clicked(event: InputEvent) -> void:
 			cfg.save()
 			stop_voice_gateway()
 		else:
+			# Ensure voice gateway container is running
+			var manager: RefCounted = SingletonObject.get_docker_manager()
+			if manager.is_available():
+				var defs: Array = manager.get_definitions()
+				for def in defs:
+					if def.image_name == "minerva-voice-gateway":
+						if not manager.is_running(def):
+							if manager.is_image_built(def):
+								manager.start_container(def)
+								# Wait briefly for container to start
+								await get_tree().create_timer(3.0).timeout
+							else:
+								push_warning("[ChatPane] Voice gateway image not built")
+								return
+						break
 			cfg.always_listening = true
 			cfg.save()
 			start_voice_gateway()
