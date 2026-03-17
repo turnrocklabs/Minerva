@@ -2005,7 +2005,7 @@ func _ready():
 	# TTS finished → notify gateway
 	_tts_player.finished.connect(_on_tts_playback_finished)
 
-	# Always-listening toggle switch with state label
+	# Always-listening toggle switch with state label — top bar
 	var listen_hbox := HBoxContainer.new()
 	listen_hbox.add_theme_constant_override("separation", 4)
 
@@ -2021,11 +2021,12 @@ func _ready():
 	_engagement_state_label.add_theme_font_size_override("font_size", 11)
 	listen_hbox.add_child(_engagement_state_label)
 
-	# Place to the left of the bottom controls
-	var bottom_controls: Node = %btnMicrophone.get_parent() if %btnMicrophone else null
-	if bottom_controls:
-		bottom_controls.add_child(listen_hbox)
-		bottom_controls.move_child(listen_hbox, 0)  # leftmost position
+	# Place in top bar next to btnNewChat
+	var vbox3: Node = get_parent().get_parent().get_parent()
+	if vbox3:
+		var btn_new: Node = vbox3.find_child("btnNewChat", true, false)
+		if btn_new and btn_new.get_parent():
+			btn_new.get_parent().add_child(listen_hbox)
 
 	# Auto-start voice gateway if always_listening was previously enabled
 	var cfg := SingletonObject.get_voice_config()
