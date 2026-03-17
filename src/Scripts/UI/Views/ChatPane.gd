@@ -2035,6 +2035,7 @@ func _ready():
 	if cfg.always_listening:
 		_engagement_toggle.set_pressed_no_signal(true)
 		call_deferred("start_voice_gateway")
+		call_deferred("_auto_pre_warm")
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -2559,6 +2560,9 @@ func _on_engagement_toggle_changed(enabled: bool) -> void:
 		cfg.always_listening = true
 		cfg.save()
 		start_voice_gateway()
+		# Pre-warm gpu-node: load STT/TTS/LLM models to eliminate cold start
+		var voice_client := SingletonObject.get_voice_client()
+		voice_client.pre_warm()
 	else:
 		cfg.always_listening = false
 		cfg.save()
@@ -2612,6 +2616,14 @@ func start_voice_gateway() -> void:
 			_engagement_state_label.text = "STANDBY"
 			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		print("[ChatPane] Voice gateway started")
+
+
+func _auto_pre_warm() -> void:
+	# Wait a few seconds for Core to connect and discover services
+	await get_tree().create_timer(5.0).timeout
+	if Core.client._connected:
+		var voice_client := SingletonObject.get_voice_client()
+		voice_client.pre_warm()
 
 
 ## Stop the voice gateway

@@ -305,7 +305,8 @@ func _handle_vad_end() -> void:
 	if _recording:
 		_recording = false
 		print("[VoiceGateway] Recording stopped (%d bytes)" % _audio_buffer.size())
-		if _audio_buffer.size() > 3200 and _has_speech_energy(_audio_buffer):
+		# Minimum 0.5s at 16kHz s16le = 16000 bytes
+		if _audio_buffer.size() > 16000 and _has_speech_energy(_audio_buffer):
 			var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
 			transcription_ready.emit(wav)
 		else:

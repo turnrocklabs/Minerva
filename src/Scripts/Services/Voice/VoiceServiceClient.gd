@@ -301,3 +301,42 @@ func _get_voice_service() -> Service:
 
 	# Create a minimal Service object — Core routes by client_id/target_service_id
 	return Service.new({"client_id": VOICE_SERVICE_ID, "name": "Voice Service"})
+
+
+## Send pre-warm request to gpu-dispatch to load STT/TTS/LLM models.
+## Eliminates cold start on first voice interaction.
+func pre_warm(keep_warm_seconds: int = 3600) -> bool:
+	if not Core.client._connected:
+		push_warning("[VoiceServiceClient] Cannot pre-warm: Core not connected")
+		return false
+
+	var gpu_dispatch := Service.new({"client_id": "gpu-dispatch", "name": "GPU Dispatch"})
+	var action := Action.new({"topic": "gpu-dispatch/session/reserve"})
+	var data := {
+		"job_types": ["voice", "chat"],
+		"containers": ["voice", "ollama"],
+		"models": {
+			"stt": "faster-whisper",
+			"tts": "kokoro",
+			"llm": "auto",
+		},
+		"keep_warm_seconds": keep_warm_seconds,
+	}
+
+	print("[VoiceServiceClient] Sending pre-warm request to gpu-dispatch...")
+	var awaiter := Core.send_message(gpu_dispatch, action, data)
+	var response = await awaiter.with_timeout(30.0).receive()
+
+	if response:
+		var result: Dictionary = response.get("params", {}).get("result", {})
+		var node_id: String = result.get("node_id", "")
+		if not node_id.is_empty():
+			print("[VoiceServiceClient] Pre-warm reserved node: %s" % node_id)
+			return true
+		var error: String = result.get("error", response.get("params", {}).get("error", ""))
+		if not error.is_empty():
+			push_warning("[VoiceServiceClient] Pre-warm failed: %s" % error)
+	else:
+		push_warning("[VoiceServiceClient] Pre-warm request timed out")
+
+	return false

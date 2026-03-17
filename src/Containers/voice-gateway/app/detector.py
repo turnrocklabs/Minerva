@@ -21,7 +21,7 @@ OWW_CHUNK_SAMPLES = 1280
 VAD_CHUNK_SAMPLES = 512
 
 # Energy gate: RMS below this threshold is considered silence
-ENERGY_THRESHOLD = 50  # int16 RMS (~0.15% of full scale)
+ENERGY_THRESHOLD = 250  # int16 RMS — filters ambient noise, passes speech
 
 # VAD settings
 VAD_MIN_SILENCE_MS = 300
