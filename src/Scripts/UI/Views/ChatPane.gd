@@ -2021,12 +2021,14 @@ func _ready():
 	_engagement_state_label.add_theme_font_size_override("font_size", 11)
 	listen_hbox.add_child(_engagement_state_label)
 
-	# Place in top bar next to btnNewChat
+	# Place in top bar, left of CloneChatButton
 	var vbox3: Node = get_parent().get_parent().get_parent()
 	if vbox3:
-		var btn_new: Node = vbox3.find_child("btnNewChat", true, false)
-		if btn_new and btn_new.get_parent():
-			btn_new.get_parent().add_child(listen_hbox)
+		var clone_btn: Node = vbox3.find_child("CloneChatButton", true, false)
+		if clone_btn and clone_btn.get_parent():
+			var parent_hbox: Node = clone_btn.get_parent()
+			parent_hbox.add_child(listen_hbox)
+			parent_hbox.move_child(listen_hbox, clone_btn.get_index())
 
 	# Auto-start voice gateway if always_listening was previously enabled
 	var cfg := SingletonObject.get_voice_config()
