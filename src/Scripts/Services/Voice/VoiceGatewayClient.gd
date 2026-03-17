@@ -281,8 +281,10 @@ func _handle_vad_start() -> void:
 	_vad_active = true
 	vad_started.emit()
 
-	if not is_engaged_or_ptt():
-		return
+	if _ptt_active:
+		return  # PTT: AudioToText handles recording, not gateway
+	if engagement_state != "ENGAGED":
+		return  # STANDBY: ignore speech
 	if _tts_playing:
 		return
 
