@@ -32,6 +32,10 @@ var _tts_player: AudioStreamPlayer
 
 ## Voice gateway client for always-listening mode (wake word + VAD + state machine)
 var _voice_gateway: Node = null
+
+## Voice conversation flow control: one utterance → one response
+var _voice_llm_busy := false
+var _voice_utterance_queue: Array[String] = []
 var _engagement_toggle: CheckButton = null
 var _engagement_state_label: Label = null
 
@@ -2451,10 +2455,12 @@ var _tts_cancel := false
 func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null) -> void:
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF:
+		_voice_on_response_complete()
 		return
 
 	var effective_tts := cfg.get_effective_tts_provider()
 	if effective_tts == VoiceConfig.TTSProvider.NONE:
+		_voice_on_response_complete()
 		return
 
 	# Cancel any in-flight TTS and wait for it to finish
@@ -2511,6 +2517,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 			await get_tree().create_timer(3.0).timeout
 			status_label.queue_free()
 		_tts_busy = false
+		_voice_on_response_complete()
 		return
 
 	print("[ChatPane] TTS: got %d bytes, playing..." % wav_data.size())
@@ -2530,9 +2537,10 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	if _voice_gateway:
 		_voice_gateway.notify_tts_started()
 
-	# Release TTS busy flag when playback finishes
+	# Release TTS busy flag and voice conversation gate when playback finishes
 	_tts_player.finished.connect(func():
 		_tts_busy = false
+		_voice_on_response_complete()
 	, CONNECT_ONE_SHOT)
 
 	if status_label:
@@ -2608,10 +2616,30 @@ func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
 	if _voice_gateway and _voice_gateway.check_dismiss_phrase(text):
 		return  # "stop listening" — don't send to chat
 
-	# Put transcription in input and auto-send
-	# Always-listening mode always auto-sends (no manual review needed)
+	print("[ChatPane] Voice transcription: '%s' (llm_busy=%s)" % [text, _voice_llm_busy])
+
+	# Queue utterance — only send when LLM is idle (one utterance → one response)
+	if _voice_llm_busy:
+		_voice_utterance_queue.append(text)
+		print("[ChatPane] Queued utterance (%d in queue)" % _voice_utterance_queue.size())
+		return
+
+	_voice_send_utterance(text)
+
+
+func _voice_send_utterance(text: String) -> void:
+	_voice_llm_busy = true
 	%txtMainUserInput.text = text
 	_on_send_message_button_item_selected(0)
+
+
+func _voice_on_response_complete() -> void:
+	"""Call after LLM response + TTS playback complete to process next queued utterance."""
+	_voice_llm_busy = false
+	if _voice_utterance_queue.size() > 0:
+		var next_text: String = _voice_utterance_queue.pop_front()
+		print("[ChatPane] Dequeuing utterance: '%s'" % next_text)
+		_voice_send_utterance(next_text)
 
 
 ## TTS playback finished — notify gateway for idle timer
