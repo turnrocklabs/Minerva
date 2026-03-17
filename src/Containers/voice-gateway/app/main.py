@@ -17,7 +17,7 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
-from .detector import VoiceDetector
+from .detector import VoiceDetector, VAD_CHUNK_SAMPLES, SAMPLE_RATE
 
 app = FastAPI(title="Minerva Voice Gateway")
 
@@ -79,3 +79,21 @@ async def reset():
     if _detector:
         _detector.reset()
     return JSONResponse({"status": "reset"})
+
+
+@app.post("/config")
+async def update_config(request: dict = {}):
+    """Update detector settings at runtime."""
+    if not _detector:
+        return JSONResponse({"error": "detector not ready"}, status_code=503)
+
+    if "vad_silence_ms" in request:
+        ms = int(request["vad_silence_ms"])
+        _detector._vad_silence_threshold = max(1, ms // (VAD_CHUNK_SAMPLES * 1000 // SAMPLE_RATE))
+        print(f"[VoiceGateway] VAD silence threshold updated to {ms}ms ({_detector._vad_silence_threshold} frames)")
+
+    if "wake_word_threshold" in request:
+        _detector.threshold = float(request["wake_word_threshold"])
+        print(f"[VoiceGateway] Wake word threshold updated to {_detector.threshold}")
+
+    return JSONResponse({"status": "ok"})

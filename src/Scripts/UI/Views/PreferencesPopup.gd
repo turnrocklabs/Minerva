@@ -2460,6 +2460,9 @@ var _summary_timeout_spin: SpinBox
 var _summary_timeout_row: HBoxContainer
 var _auto_send_check: CheckButton
 var _whisper_fallback_check: CheckButton
+var _stt_model_option: OptionButton
+var _vad_silence_slider: HSlider
+var _vad_silence_value_label: Label
 var _tts_volume_slider: HSlider
 var _voice_status_label: Label
 var _voice_refresh_btn: Button
@@ -2526,6 +2529,24 @@ func _create_voice_tab() -> void:
 	_stt_backend_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stt_backend_option.item_selected.connect(_on_stt_backend_changed)
 	stt_backend_row.add_child(_stt_backend_option)
+
+	# STT model selector (for faster-whisper)
+	var stt_model_row := HBoxContainer.new()
+	stt_model_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(stt_model_row)
+	var stt_model_lbl := Label.new()
+	stt_model_lbl.text = "STT Model:"
+	stt_model_lbl.custom_minimum_size = Vector2(140, 0)
+	stt_model_row.add_child(stt_model_lbl)
+	_stt_model_option = OptionButton.new()
+	_stt_model_option.add_item("tiny.en (fastest)", 0)
+	_stt_model_option.add_item("small.en (balanced)", 1)
+	_stt_model_option.add_item("medium.en (accurate)", 2)
+	_stt_model_option.add_item("large-v3-turbo (best)", 3)
+	_stt_model_option.add_item("distil-large-v3 (fast+accurate)", 4)
+	_stt_model_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_stt_model_option.item_selected.connect(_on_stt_model_changed)
+	stt_model_row.add_child(_stt_model_option)
 
 	# Whisper fallback
 	_whisper_fallback_check = CheckButton.new()
@@ -2680,6 +2701,26 @@ func _create_voice_tab() -> void:
 	_auto_send_check.toggled.connect(_on_auto_send_toggled)
 	vbox.add_child(_auto_send_check)
 
+	# VAD silence duration (think time)
+	var vad_silence_row := HBoxContainer.new()
+	vad_silence_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(vad_silence_row)
+	var vad_silence_lbl := Label.new()
+	vad_silence_lbl.text = "Pause tolerance:"
+	vad_silence_lbl.custom_minimum_size = Vector2(140, 0)
+	vad_silence_row.add_child(vad_silence_lbl)
+	_vad_silence_slider = HSlider.new()
+	_vad_silence_slider.min_value = 0.3
+	_vad_silence_slider.max_value = 5.0
+	_vad_silence_slider.step = 0.1
+	_vad_silence_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_vad_silence_slider.value_changed.connect(_on_vad_silence_changed)
+	vad_silence_row.add_child(_vad_silence_slider)
+	_vad_silence_value_label = Label.new()
+	_vad_silence_value_label.text = "1.0s"
+	_vad_silence_value_label.custom_minimum_size = Vector2(40, 0)
+	vad_silence_row.add_child(_vad_silence_value_label)
+
 	vbox.add_child(HSeparator.new())
 
 	# --- Status ---
@@ -2739,6 +2780,17 @@ func _voice_load_ui_from_config() -> void:
 	_whisper_fallback_check.button_pressed = cfg.whisper_fallback
 	_auto_send_check.button_pressed = cfg.auto_send_transcription
 	_tts_volume_slider.value = cfg.tts_volume
+
+	# STT model
+	var stt_model_map := {"tiny.en": 0, "small.en": 1, "medium.en": 2, "large-v3-turbo": 3, "distil-large-v3": 4}
+	if _stt_model_option:
+		_stt_model_option.select(stt_model_map.get(cfg.stt_model, 1))
+
+	# VAD silence duration
+	if _vad_silence_slider:
+		_vad_silence_slider.value = cfg.vad_silence_duration
+	if _vad_silence_value_label:
+		_vad_silence_value_label.text = "%.1fs" % cfg.vad_silence_duration
 
 	# Speak mode
 	for i in _speak_mode_option.item_count:
@@ -2892,6 +2944,25 @@ func _on_auto_send_toggled(enabled: bool) -> void:
 	var cfg := SingletonObject.get_voice_config()
 	cfg.auto_send_transcription = enabled
 	cfg.save()
+
+
+func _on_stt_model_changed(idx: int) -> void:
+	var models := ["tiny.en", "small.en", "medium.en", "large-v3-turbo", "distil-large-v3"]
+	var cfg := SingletonObject.get_voice_config()
+	cfg.stt_model = models[idx] if idx < models.size() else "small.en"
+	cfg.save()
+
+
+func _on_vad_silence_changed(value: float) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.vad_silence_duration = value
+	cfg.save()
+	if _vad_silence_value_label:
+		_vad_silence_value_label.text = "%.1fs" % value
+	# Update running gateway if connected
+	var gateway: Node = SingletonObject.Chats._voice_gateway if SingletonObject.Chats and SingletonObject.Chats._voice_gateway else null
+	if gateway and gateway._connected:
+		gateway._send_gateway_config()
 
 
 func _on_tts_volume_changed(value: float) -> void:

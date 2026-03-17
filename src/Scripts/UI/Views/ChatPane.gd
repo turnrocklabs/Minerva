@@ -32,7 +32,8 @@ var _tts_player: AudioStreamPlayer
 
 ## Voice gateway client for always-listening mode (wake word + VAD + state machine)
 var _voice_gateway: Node = null
-var _engagement_indicator: PanelContainer = null
+var _engagement_toggle: CheckButton = null
+var _engagement_state_label: Label = null
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
 const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
@@ -2004,33 +2005,32 @@ func _ready():
 	# TTS finished → notify gateway
 	_tts_player.finished.connect(_on_tts_playback_finished)
 
-	# Engagement indicator label (next to mic button)
-	# Engagement indicator: small colored circle with tooltip
-	_engagement_indicator = PanelContainer.new()
-	_engagement_indicator.custom_minimum_size = Vector2(12, 12)
-	_engagement_indicator.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_engagement_indicator.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_engagement_indicator.mouse_filter = Control.MOUSE_FILTER_STOP
-	_engagement_indicator.tooltip_text = "Voice: OFF (click to enable always-listening)"
-	_engagement_indicator.gui_input.connect(_on_engagement_indicator_clicked)
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.25, 0.25, 0.25)  # dark grey = OFF by default
-	style.set_corner_radius_all(6)
-	style.content_margin_left = 0
-	style.content_margin_right = 0
-	style.content_margin_top = 0
-	style.content_margin_bottom = 0
-	_engagement_indicator.add_theme_stylebox_override("panel", style)
-	# Place in top bar next to btnNewChat
-	var vbox3: Node = get_parent().get_parent().get_parent()
-	if vbox3:
-		var btn_new: Node = vbox3.find_child("btnNewChat", true, false)
-		if btn_new and btn_new.get_parent():
-			btn_new.get_parent().add_child(_engagement_indicator)
+	# Always-listening toggle switch with state label
+	var listen_hbox := HBoxContainer.new()
+	listen_hbox.add_theme_constant_override("separation", 4)
+
+	_engagement_toggle = CheckButton.new()
+	_engagement_toggle.text = ""
+	_engagement_toggle.tooltip_text = "Toggle always-listening voice mode"
+	_engagement_toggle.toggled.connect(_on_engagement_toggle_changed)
+	listen_hbox.add_child(_engagement_toggle)
+
+	_engagement_state_label = Label.new()
+	_engagement_state_label.text = "Voice Off"
+	_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	_engagement_state_label.add_theme_font_size_override("font_size", 11)
+	listen_hbox.add_child(_engagement_state_label)
+
+	# Place to the left of the bottom controls
+	var bottom_controls: Node = %btnMicrophone.get_parent() if %btnMicrophone else null
+	if bottom_controls:
+		bottom_controls.add_child(listen_hbox)
+		bottom_controls.move_child(listen_hbox, 0)  # leftmost position
 
 	# Auto-start voice gateway if always_listening was previously enabled
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.always_listening:
+		_engagement_toggle.set_pressed_no_signal(true)
 		call_deferred("start_voice_gateway")
 
 	#this is for overriding the separation in the open file dialog
@@ -2534,46 +2534,42 @@ func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -
 		_: stream.format = AudioStreamWAV.FORMAT_16_BITS
 
 
-## Toggle always-listening mode on indicator click
-func _on_engagement_indicator_clicked(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		var cfg := SingletonObject.get_voice_config()
-		if cfg.always_listening:
-			cfg.always_listening = false
-			cfg.save()
-			stop_voice_gateway()
-		else:
-			# Ensure voice gateway container is running
-			var manager: RefCounted = SingletonObject.get_docker_manager()
-			if manager.is_available():
-				var defs: Array = manager.get_definitions()
-				for def in defs:
-					if def.image_name == "minerva-voice-gateway":
-						if not manager.is_running(def):
-							if manager.is_image_built(def):
-								manager.start_container(def)
-								# Wait briefly for container to start
-								await get_tree().create_timer(3.0).timeout
-							else:
-								push_warning("[ChatPane] Voice gateway image not built")
-								return
-						break
-			cfg.always_listening = true
-			cfg.save()
-			start_voice_gateway()
+## Toggle always-listening mode via CheckButton
+func _on_engagement_toggle_changed(enabled: bool) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	if enabled:
+		# Ensure voice gateway container is running
+		var manager: RefCounted = SingletonObject.get_docker_manager()
+		if manager.is_available():
+			var defs: Array = manager.get_definitions()
+			for def in defs:
+				if def.image_name == "minerva-voice-gateway":
+					if not manager.is_running(def):
+						if manager.is_image_built(def):
+							manager.start_container(def)
+							await get_tree().create_timer(3.0).timeout
+						else:
+							push_warning("[ChatPane] Voice gateway image not built")
+							_engagement_toggle.set_pressed_no_signal(false)
+							return
+					break
+		cfg.always_listening = true
+		cfg.save()
+		start_voice_gateway()
+	else:
+		cfg.always_listening = false
+		cfg.save()
+		stop_voice_gateway()
 
 
 ## Voice gateway: engagement state changed
 func _on_engagement_changed(state: String) -> void:
-	if _engagement_indicator:
-		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("panel") as StyleBoxFlat
-		if style:
-			if state == "ENGAGED":
-				style.bg_color = Color(0.2, 0.85, 0.2)
-			else:
-				style.bg_color = Color(0.4, 0.4, 0.4)
-			_engagement_indicator.add_theme_stylebox_override("panel", style)
-		_engagement_indicator.tooltip_text = "Voice: %s" % state
+	if _engagement_state_label:
+		_engagement_state_label.text = state
+		if state == "ENGAGED":
+			_engagement_state_label.add_theme_color_override("font_color", Color(0.2, 0.9, 0.2))
+		else:
+			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 
 
 ## Voice gateway: VAD-endpointed audio ready for STT
@@ -2609,7 +2605,9 @@ func _on_tts_playback_finished() -> void:
 func start_voice_gateway() -> void:
 	if _voice_gateway:
 		_voice_gateway.start()
-		_update_indicator_for_listening(true)
+		if _engagement_state_label:
+			_engagement_state_label.text = "STANDBY"
+			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		print("[ChatPane] Voice gateway started")
 
 
@@ -2617,25 +2615,10 @@ func start_voice_gateway() -> void:
 func stop_voice_gateway() -> void:
 	if _voice_gateway:
 		_voice_gateway.stop()
-		_update_indicator_for_listening(false)
+		if _engagement_state_label:
+			_engagement_state_label.text = "Voice Off"
+			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		print("[ChatPane] Voice gateway stopped")
-
-
-func _update_indicator_for_listening(active: bool) -> void:
-	if not _engagement_indicator:
-		return
-	if active:
-		_engagement_indicator.tooltip_text = "Voice: STANDBY (click to disable)"
-		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("panel") as StyleBoxFlat
-		if style:
-			style.bg_color = Color(0.4, 0.4, 0.4)
-			_engagement_indicator.add_theme_stylebox_override("panel", style)
-	else:
-		_engagement_indicator.tooltip_text = "Voice: OFF (click to enable always-listening)"
-		var style: StyleBoxFlat = _engagement_indicator.get_theme_stylebox("panel") as StyleBoxFlat
-		if style:
-			style.bg_color = Color(0.25, 0.25, 0.25)
-			_engagement_indicator.add_theme_stylebox_override("panel", style)
 
 
 func _on_child_order_changed():

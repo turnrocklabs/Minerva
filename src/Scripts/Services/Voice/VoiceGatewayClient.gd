@@ -126,7 +126,20 @@ func start() -> void:
 	_try_connect()
 	_start_mic_capture()
 	_capture_timer.start()
+	# Send config to gateway (silence duration from preferences)
+	_send_gateway_config()
 	print("[VoiceGateway] Started")
+
+
+func _send_gateway_config() -> void:
+	var cfg: RefCounted = SingletonObject.get_voice_config()
+	var silence_ms: int = int(cfg.vad_silence_duration * 1000)
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.request("http://localhost:8090/config",
+		["Content-Type: application/json"], HTTPClient.METHOD_POST,
+		JSON.stringify({"vad_silence_ms": silence_ms}))
+	http.request_completed.connect(func(_r, _c, _h, _b): http.queue_free())
 
 
 func stop() -> void:

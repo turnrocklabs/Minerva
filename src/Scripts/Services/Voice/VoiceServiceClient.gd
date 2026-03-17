@@ -8,7 +8,7 @@ const VOICE_SERVICE_ID := "voice-service"
 
 ## Transcribe audio via voice-service STT.
 ## Returns the transcribed text, or "" on error.
-func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper") -> String:
+func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper", model: String = "") -> String:
 	var service := _get_voice_service()
 	if not service:
 		push_error("[VoiceServiceClient] voice-service not available")
@@ -20,6 +20,8 @@ func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: St
 		"language": language,
 		"backend": backend,
 	}
+	if not model.is_empty():
+		data["model"] = model
 
 	var awaiter := Core.send_message(service, action, data)
 	var response = await awaiter.with_timeout(120.0).receive()
@@ -214,7 +216,7 @@ func transcribe_auto(audio_wav: PackedByteArray, voice_config: VoiceConfig) -> S
 	var provider := voice_config.get_effective_stt_provider()
 
 	if provider == VoiceConfig.STTProvider.VOICE_SERVICE:
-		var result := await transcribe(audio_wav, "en", voice_config.stt_backend)
+		var result := await transcribe(audio_wav, "en", voice_config.stt_backend, voice_config.stt_model)
 		if result.is_empty() and voice_config.whisper_fallback:
 			push_warning("[VoiceServiceClient] Voice-service STT failed, falling back to Whisper")
 			return await transcribe_whisper(audio_wav)
