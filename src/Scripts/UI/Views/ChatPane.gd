@@ -2002,6 +2002,8 @@ func _ready():
 	add_child(_voice_gateway)
 	_voice_gateway.engagement_changed.connect(_on_engagement_changed)
 	_voice_gateway.transcription_ready.connect(_on_gateway_transcription_ready)
+	_voice_gateway.connected_to_gateway.connect(_on_gateway_connected)
+	_voice_gateway.disconnected_from_gateway.connect(_on_gateway_disconnected)
 	_voice_gateway.wake_word_detected.connect(func(conf: float):
 		print("[ChatPane] Wake word detected (%.3f)" % conf)
 	)
@@ -2589,6 +2591,19 @@ func _on_engagement_toggle_changed(enabled: bool) -> void:
 		stop_voice_gateway()
 
 
+## Voice gateway: connection state
+func _on_gateway_connected() -> void:
+	if _engagement_state_label:
+		_engagement_state_label.text = "STANDBY"
+		_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+
+
+func _on_gateway_disconnected() -> void:
+	if _engagement_state_label:
+		_engagement_state_label.text = "No Gateway"
+		_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+
+
 ## Voice gateway: engagement state changed
 func _on_engagement_changed(state: String) -> void:
 	if _engagement_state_label:
@@ -2651,10 +2666,10 @@ func _on_tts_playback_finished() -> void:
 ## Start the voice gateway (called when always-listening is enabled)
 func start_voice_gateway() -> void:
 	if _voice_gateway:
-		_voice_gateway.start()
 		if _engagement_state_label:
-			_engagement_state_label.text = "STANDBY"
-			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+			_engagement_state_label.text = "Connecting..."
+			_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		_voice_gateway.start()
 		print("[ChatPane] Voice gateway started")
 
 
