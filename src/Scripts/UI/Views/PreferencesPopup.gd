@@ -2960,9 +2960,10 @@ func _on_vad_silence_changed(value: float) -> void:
 	if _vad_silence_value_label:
 		_vad_silence_value_label.text = "%.1fs" % value
 	# Update running gateway if connected
-	var gateway: Node = SingletonObject.Chats._voice_gateway if SingletonObject.Chats and SingletonObject.Chats._voice_gateway else null
-	if gateway and gateway._connected:
-		gateway._send_gateway_config()
+	if SingletonObject.Chats and is_instance_valid(SingletonObject.Chats):
+		var gateway: Node = SingletonObject.Chats._voice_gateway
+		if gateway and gateway._connected:
+			gateway._send_gateway_config()
 
 
 func _on_tts_volume_changed(value: float) -> void:
