@@ -2038,7 +2038,7 @@ func _ready():
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.always_listening:
 		_engagement_toggle.set_pressed_no_signal(true)
-		call_deferred("start_voice_gateway")
+		call_deferred("_auto_start_voice")
 		call_deferred("_auto_pre_warm")
 
 	#this is for overriding the separation in the open file dialog
@@ -2656,6 +2656,21 @@ func start_voice_gateway() -> void:
 			_engagement_state_label.text = "STANDBY"
 			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		print("[ChatPane] Voice gateway started")
+
+
+func _auto_start_voice() -> void:
+	# Ensure gateway container is running on auto-start
+	var manager: RefCounted = SingletonObject.get_docker_manager()
+	if manager.is_available():
+		var defs: Array = manager.get_definitions()
+		for def in defs:
+			if def.image_name == "minerva-voice-gateway":
+				if not manager.is_running(def):
+					if manager.is_image_built(def):
+						manager.start_container(def)
+						await get_tree().create_timer(3.0).timeout
+				break
+	start_voice_gateway()
 
 
 func _auto_pre_warm() -> void:
