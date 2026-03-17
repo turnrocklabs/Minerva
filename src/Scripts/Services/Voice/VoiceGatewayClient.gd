@@ -388,8 +388,8 @@ func _has_speech_energy(pcm: PackedByteArray) -> bool:
 		var sample: float = float(pcm.decode_s16(i * 2))
 		sum_sq += sample * sample
 	var rms: float = sqrt(sum_sq / float(n_samples))
-	# RMS threshold: ~300 for speech, ambient noise is typically <100
-	return rms > 200.0
+	# RMS threshold: ~100 for quiet speech after resampling, ambient noise <50
+	return rms > 80.0
 
 
 func _pcm_to_wav(pcm: PackedByteArray) -> PackedByteArray:
