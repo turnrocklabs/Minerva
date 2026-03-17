@@ -305,6 +305,44 @@ func _get_voice_service() -> Service:
 	return Service.new({"client_id": VOICE_SERVICE_ID, "name": "Voice Service"})
 
 
+## Load audio bytes (WAV or raw PCM) into an AudioStreamWAV.
+## Handles both RIFF WAV containers and raw s16le PCM from voice-container.
+static func load_audio_into_stream(stream: AudioStreamWAV, audio_bytes: PackedByteArray) -> void:
+	if audio_bytes.size() < 4:
+		return
+
+	var header := audio_bytes.slice(0, 4).get_string_from_ascii()
+	if header == "RIFF" and audio_bytes.size() >= 44:
+		# Standard WAV: parse header
+		var channels := audio_bytes.decode_u16(22)
+		var sample_rate := audio_bytes.decode_u32(24)
+		var bits_per_sample := audio_bytes.decode_u16(34)
+
+		# Find data chunk
+		var data_offset := 12
+		while data_offset + 8 < audio_bytes.size():
+			var chunk_id := audio_bytes.slice(data_offset, data_offset + 4).get_string_from_ascii()
+			var chunk_size := audio_bytes.decode_u32(data_offset + 4)
+			if chunk_id == "data":
+				data_offset += 8
+				stream.data = audio_bytes.slice(data_offset, data_offset + chunk_size)
+				break
+			data_offset += 8 + chunk_size
+
+		stream.mix_rate = sample_rate
+		stream.stereo = channels == 2
+		match bits_per_sample:
+			8: stream.format = AudioStreamWAV.FORMAT_8_BITS
+			16: stream.format = AudioStreamWAV.FORMAT_16_BITS
+			_: stream.format = AudioStreamWAV.FORMAT_16_BITS
+	else:
+		# Raw PCM: assume s16le mono 16kHz (voice-container default output)
+		stream.data = audio_bytes
+		stream.mix_rate = 16000
+		stream.stereo = false
+		stream.format = AudioStreamWAV.FORMAT_16_BITS
+
+
 ## Send pre-warm request to gpu-dispatch to load STT/TTS/LLM models.
 ## Eliminates cold start on first voice interaction.
 func pre_warm(keep_warm_seconds: int = 3600) -> bool:
