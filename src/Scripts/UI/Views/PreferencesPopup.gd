@@ -3031,9 +3031,10 @@ func _on_voice_preview_pressed() -> void:
 	_voice_status_label.text = "Generating preview..."
 
 	var client := SingletonObject.get_voice_client()
+	var voice: String = cfg.voice_name if not cfg.voice_name.is_empty() else cfg.voice_id
 	var wav_data: PackedByteArray = await client.synthesize(
 		"Hello! This is a preview of the selected voice.",
-		cfg.voice_id,
+		voice,
 		cfg.tts_backend
 	)
 

@@ -230,7 +230,9 @@ func synthesize_auto(text: String, voice_config: VoiceConfig) -> PackedByteArray
 	var provider := voice_config.get_effective_tts_provider()
 
 	if provider == VoiceConfig.TTSProvider.VOICE_SERVICE:
-		return await synthesize(text, voice_config.voice_id, voice_config.tts_backend)
+		# Send voice name (stable across restarts) instead of UUID (ephemeral)
+		var voice: String = voice_config.voice_name if not voice_config.voice_name.is_empty() else voice_config.voice_id
+		return await synthesize(text, voice, voice_config.tts_backend)
 	else:
 		return PackedByteArray()
 
