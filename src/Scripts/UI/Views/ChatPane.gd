@@ -2593,10 +2593,10 @@ func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
 	if _voice_gateway and _voice_gateway.check_dismiss_phrase(text):
 		return  # "stop listening" — don't send to chat
 
-	# Put transcription in input and optionally auto-send
+	# Put transcription in input and auto-send
+	# Always-listening mode always auto-sends (no manual review needed)
 	%txtMainUserInput.text = text
-	if cfg.auto_send_transcription:
-		_on_send_message_button_item_selected(0)
+	_on_send_message_button_item_selected(0)
 
 
 ## TTS playback finished — notify gateway for idle timer
