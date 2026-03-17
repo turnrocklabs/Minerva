@@ -98,6 +98,17 @@ func take_voice_binary(request_id: String) -> PackedByteArray:
 	return PackedByteArray()
 
 
+# Stash for JSON responses that arrive while polling (used by VoiceServiceClient)
+var _stashed_responses: Dictionary = {}  # request_id -> Dictionary
+
+func take_response(request_id: String) -> Dictionary:
+	if _stashed_responses.has(request_id):
+		var resp: Dictionary = _stashed_responses[request_id]
+		_stashed_responses.erase(request_id)
+		return resp
+	return {}
+
+
 func _ready():
 	ProjectSettings.set_setting("network/limits/websocket/max_in_buffer_kb", 16384)  # 16 MB for text
 	ProjectSettings.set_setting("network/limits/websocket/max_out_buffer_kb", 16384)
@@ -382,9 +393,13 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 					print("  ⚠️ Received final response but only %s/%s files completed for request %s" % [_binary_files_completed, _binary_expected_files, request_id])
 				_reset_binary_transfer_state() # Reset anyway to prevent stale state
 		
+		# Stash response for polling (VoiceServiceClient uses this)
+		if not request_id.is_empty():
+			_stashed_responses[request_id] = data
+
 		# Always emit the response_received signal
 		response_received.emit(data)
-	
+
 	# Always emit the general message_received signal
 	message_received.emit(data)
 	

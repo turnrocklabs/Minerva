@@ -52,40 +52,41 @@ func synthesize(text: String, voice_id: String = "", backend: String = "kokoro")
 	if not voice_id.is_empty():
 		data["voice_id"] = voice_id
 
-	var awaiter := Core.send_message(service, action, data)
-	var response = await awaiter.with_timeout(120.0).receive()
+	# Send request — get request_id for tracking binary transfer
+	var req_id: String = Core.client.send_text_message(service, action, data)
 
-	if not response:
-		push_error("[VoiceServiceClient] TTS request timed out")
-		return PackedByteArray()
+	# Race: wait for EITHER binary audio (voice_binary_received) OR JSON response
+	# voice-service sends binary frames without a JSON response, so we can't just await JSON
+	var audio_result := PackedByteArray()
+	var got_result := false
 
-	var result: Dictionary = response.get("params", {}).get("result", {})
-	if result.has("error"):
-		push_error("[VoiceServiceClient] TTS error: %s" % result.get("error"))
-		return PackedByteArray()
+	# Poll for up to 120 seconds, checking both paths each iteration
+	for _attempt in range(1200):
+		# Check binary transfer (voice-service sends this)
+		var binary_audio: PackedByteArray = Core.client.take_voice_binary(req_id)
+		if not binary_audio.is_empty():
+			print("[VoiceServiceClient] TTS: got %d bytes via binary transfer" % binary_audio.size())
+			return binary_audio
 
-	# Check for binary transfer audio (voice-service sends binary frames alongside JSON response)
-	var req_id: String = response.get("params", {}).get("request_id", "")
-	if not req_id.is_empty():
-		# Binary frames may arrive before or after the JSON response — wait briefly
-		for _attempt in range(20):  # up to 2 seconds
-			var binary_audio: PackedByteArray = Core.client.take_voice_binary(req_id)
-			if not binary_audio.is_empty():
-				print("[VoiceServiceClient] TTS: got %d bytes via binary transfer" % binary_audio.size())
-				return binary_audio
-			# Check if base64 is available (older path)
+		# Check if JSON response arrived (for base64 fallback or error)
+		# Peek at the AwaitMessage system
+		var response: Dictionary = Core.client.take_response(req_id)
+		if not response.is_empty():
+			var result: Dictionary = response.get("params", {}).get("result", {})
+			if result.has("error"):
+				push_error("[VoiceServiceClient] TTS error: %s" % result.get("error"))
+				return PackedByteArray()
 			var audio_b64: String = result.get("audio_base64", "")
 			if not audio_b64.is_empty():
+				print("[VoiceServiceClient] TTS: got base64 audio")
 				return Marshalls.base64_to_raw(audio_b64)
-			await Core.get_tree().create_timer(0.1).timeout
+			# JSON arrived but no audio — binary might still be coming
+			# Continue polling for binary
 
-	# Final fallback
-	var audio_b64: String = result.get("audio_base64", "")
-	if audio_b64.is_empty():
-		push_error("[VoiceServiceClient] TTS returned no audio. Keys: %s" % str(result.keys()))
-		return PackedByteArray()
+		await Core.get_tree().create_timer(0.1).timeout
 
-	return Marshalls.base64_to_raw(audio_b64)
+	push_error("[VoiceServiceClient] TTS request timed out (120s)")
+	return PackedByteArray()
 
 
 ## List available voices from voice-service.
