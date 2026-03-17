@@ -19,6 +19,7 @@ signal binary_file_progress(file_index: int, received: int, total_size: int, pro
 signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
 signal image_received(filename: String, request_id: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
 signal artifact_binary_received(request_id: String, filename: String, buffer: PackedByteArray)
+signal voice_binary_received(request_id: String, audio_buffer: PackedByteArray)
 
 enum EntityType {
 	HUMAN_AGENT,
@@ -82,7 +83,19 @@ var _binary_pending_chunks: Dictionary = {}  # file_index -> [PackedByteArray] f
 var _binary_expected_files: int = 0
 var _binary_files_completed: int = 0
 var _current_binary_request_id: String = "" # request_id associated with the *currently streaming* binary data
-var _binary_transfer_mode: String = "" # "media_gen" or "artifact"
+var _binary_transfer_mode: String = "" # "media_gen", "artifact", or "voice"
+
+# Voice binary transfer: completed audio buffers keyed by request_id
+var _voice_binary_buffers: Dictionary = {}  # request_id -> PackedByteArray
+
+
+## Get and remove completed voice audio for a request_id. Returns empty if not available.
+func take_voice_binary(request_id: String) -> PackedByteArray:
+	if _voice_binary_buffers.has(request_id):
+		var buf: PackedByteArray = _voice_binary_buffers[request_id]
+		_voice_binary_buffers.erase(request_id)
+		return buf
+	return PackedByteArray()
 
 
 func _ready():
@@ -589,6 +602,8 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					_binary_transfer_mode = "media_gen"
 				elif hdr_topic == "artifact/download":
 					_binary_transfer_mode = "artifact"
+				elif hdr_topic.begins_with("voice/"):
+					_binary_transfer_mode = "voice"
 				else:
 					if SingletonObject.verbose_logging:
 						print("  ℹ️ Binary header topic=%s not handled, ignoring." % hdr_topic)
@@ -612,7 +627,21 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				print("❌ NEW_MESSAGE payload data too short for JSON length")
 		
 		FILE_INFO:
-			if _binary_transfer_mode == "artifact":
+			if _binary_transfer_mode == "voice":
+				# Voice Format A: [path_len(4B)] [file_size(4B u32)] [path_bytes]
+				if payload.size() < 8:
+					print("❌ FILE_INFO (voice) payload too short")
+					return
+				var path_len: int = payload.decode_u32(0)
+				var file_size: int = payload.decode_u32(4)
+				var _path: String = ""
+				if payload.size() >= 8 + path_len:
+					_path = payload.slice(8, 8 + path_len).get_string_from_utf8()
+				_binary_filenames[0] = _path
+				_binary_files[0] = {"size": file_size, "received": 0, "buffer": PackedByteArray()}
+				if SingletonObject.verbose_logging:
+					print("   📁 FILE_INFO (voice) path=%s size=%s" % [_path, file_size])
+			elif _binary_transfer_mode == "artifact":
 				# Artifact format: [file_index(4B)] + [file_size(8B u64)] + [name_len(4B)] + [name]
 				if payload.size() < 16:
 					print("❌ FILE_INFO (artifact) payload too short")
@@ -767,6 +796,23 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("   ⚠️ FILE_DATA for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
 		
 		FILE_END:
+			if _binary_transfer_mode == "voice":
+				# Voice Format A: FILE_END may have empty payload
+				if _binary_files.has(0):
+					var buf: PackedByteArray = (_binary_files[0] as Dictionary)["buffer"]
+					# Fix RIFF header if needed
+					if buf.size() > 8 and buf.slice(4, 8) == "WAVE".to_ascii_buffer() and buf.slice(0, 4) != "RIFF".to_ascii_buffer():
+						var fixed := PackedByteArray()
+						fixed.append_array("RIFF".to_ascii_buffer())
+						fixed.append_array(buf)
+						buf = fixed
+					print("   ✅ FILE_END (voice) size=%s bytes, req_id=%s" % [buf.size(), _current_binary_request_id])
+					_voice_binary_buffers[_current_binary_request_id] = buf
+					voice_binary_received.emit(_current_binary_request_id, buf)
+					_binary_files_completed += 1
+				_reset_binary_transfer_state()
+				return
+
 			if payload.size() < 4:
 				print("❌ FILE_END payload too short")
 				return

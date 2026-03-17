@@ -290,9 +290,11 @@ func _handle_vad_end() -> void:
 	if _recording:
 		_recording = false
 		print("[VoiceGateway] Recording stopped (%d bytes)" % _audio_buffer.size())
-		if _audio_buffer.size() > 1600:
+		if _audio_buffer.size() > 3200 and _has_speech_energy(_audio_buffer):
 			var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
 			transcription_ready.emit(wav)
+		else:
+			print("[VoiceGateway] Discarded recording (too short or below energy threshold)")
 		_audio_buffer = PackedByteArray()
 
 
@@ -359,6 +361,20 @@ func _on_idle_timeout() -> void:
 
 
 # ── Audio Utilities ─────────────────────────────────────────────────────
+
+func _has_speech_energy(pcm: PackedByteArray) -> bool:
+	"""Check if PCM audio has enough energy to be speech (not just noise)."""
+	if pcm.size() < 4:
+		return false
+	var sum_sq: float = 0.0
+	var n_samples: int = pcm.size() / 2
+	for i in range(n_samples):
+		var sample: float = float(pcm.decode_s16(i * 2))
+		sum_sq += sample * sample
+	var rms: float = sqrt(sum_sq / float(n_samples))
+	# RMS threshold: ~300 for speech, ambient noise is typically <100
+	return rms > 200.0
+
 
 func _pcm_to_wav(pcm: PackedByteArray) -> PackedByteArray:
 	var sample_rate: int = 16000

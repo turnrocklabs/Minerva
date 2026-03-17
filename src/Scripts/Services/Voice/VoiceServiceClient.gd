@@ -64,9 +64,25 @@ func synthesize(text: String, voice_id: String = "", backend: String = "kokoro")
 		push_error("[VoiceServiceClient] TTS error: %s" % result.get("error"))
 		return PackedByteArray()
 
+	# Check for binary transfer audio (voice-service sends binary frames alongside JSON response)
+	var req_id: String = response.get("params", {}).get("request_id", "")
+	if not req_id.is_empty():
+		# Binary frames may arrive before or after the JSON response — wait briefly
+		for _attempt in range(20):  # up to 2 seconds
+			var binary_audio: PackedByteArray = Core.client.take_voice_binary(req_id)
+			if not binary_audio.is_empty():
+				print("[VoiceServiceClient] TTS: got %d bytes via binary transfer" % binary_audio.size())
+				return binary_audio
+			# Check if base64 is available (older path)
+			var audio_b64: String = result.get("audio_base64", "")
+			if not audio_b64.is_empty():
+				return Marshalls.base64_to_raw(audio_b64)
+			await Core.get_tree().create_timer(0.1).timeout
+
+	# Final fallback
 	var audio_b64: String = result.get("audio_base64", "")
 	if audio_b64.is_empty():
-		push_error("[VoiceServiceClient] TTS returned no audio")
+		push_error("[VoiceServiceClient] TTS returned no audio. Keys: %s" % str(result.keys()))
 		return PackedByteArray()
 
 	return Marshalls.base64_to_raw(audio_b64)

@@ -2014,7 +2014,7 @@ func _ready():
 	_engagement_indicator.tooltip_text = "Voice: OFF (click to enable always-listening)"
 	_engagement_indicator.gui_input.connect(_on_engagement_indicator_clicked)
 	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.4, 0.4, 0.4)
+	style.bg_color = Color(0.25, 0.25, 0.25)  # dark grey = OFF by default
 	style.set_corner_radius_all(6)
 	style.content_margin_left = 0
 	style.content_margin_right = 0
