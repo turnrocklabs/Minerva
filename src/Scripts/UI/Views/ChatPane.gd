@@ -2550,28 +2550,38 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 
 ## Load raw WAV bytes into an AudioStreamWAV resource.
 func _load_wav_into_stream(stream: AudioStreamWAV, wav_bytes: PackedByteArray) -> void:
-	if wav_bytes.size() < 44:
+	if wav_bytes.size() < 4:
 		return
-	var channels := wav_bytes.decode_u16(22)
-	var sample_rate := wav_bytes.decode_u32(24)
-	var bits_per_sample := wav_bytes.decode_u16(34)
 
-	var data_offset := 12
-	while data_offset + 8 < wav_bytes.size():
-		var chunk_id := wav_bytes.slice(data_offset, data_offset + 4).get_string_from_ascii()
-		var chunk_size := wav_bytes.decode_u32(data_offset + 4)
-		if chunk_id == "data":
-			data_offset += 8
-			stream.data = wav_bytes.slice(data_offset, data_offset + chunk_size)
-			break
-		data_offset += 8 + chunk_size
+	var header := wav_bytes.slice(0, 4).get_string_from_ascii()
+	if header == "RIFF" and wav_bytes.size() >= 44:
+		# Standard WAV
+		var channels := wav_bytes.decode_u16(22)
+		var sample_rate := wav_bytes.decode_u32(24)
+		var bits_per_sample := wav_bytes.decode_u16(34)
 
-	stream.mix_rate = sample_rate
-	stream.stereo = channels == 2
-	match bits_per_sample:
+		var data_offset := 12
+		while data_offset + 8 < wav_bytes.size():
+			var chunk_id := wav_bytes.slice(data_offset, data_offset + 4).get_string_from_ascii()
+			var chunk_size := wav_bytes.decode_u32(data_offset + 4)
+			if chunk_id == "data":
+				data_offset += 8
+				stream.data = wav_bytes.slice(data_offset, data_offset + chunk_size)
+				break
+			data_offset += 8 + chunk_size
+
+		stream.mix_rate = sample_rate
+		stream.stereo = channels == 2
+		match bits_per_sample:
 		8: stream.format = AudioStreamWAV.FORMAT_8_BITS
 		16: stream.format = AudioStreamWAV.FORMAT_16_BITS
 		_: stream.format = AudioStreamWAV.FORMAT_16_BITS
+	else:
+		# Raw PCM: assume s16le mono 16kHz (voice-container default)
+		stream.data = wav_bytes
+		stream.mix_rate = 16000
+		stream.stereo = false
+		stream.format = AudioStreamWAV.FORMAT_16_BITS
 
 
 ## Toggle always-listening mode via CheckButton
