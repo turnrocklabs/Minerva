@@ -52,40 +52,67 @@ func synthesize(text: String, voice_id: String = "", backend: String = "kokoro")
 	if not voice_id.is_empty():
 		data["voice_id"] = voice_id
 
-	# Send request — get request_id for tracking binary transfer
-	var req_id: String = Core.client.send_text_message(service, action, data)
+	print("[VoiceServiceClient] TTS: sending request (text=%d chars, voice=%s, backend=%s)" % [text.length(), voice_id, backend])
 
-	# Race: wait for EITHER binary audio (voice_binary_received) OR JSON response
-	# voice-service sends binary frames without a JSON response, so we can't just await JSON
-	var audio_result := PackedByteArray()
-	var got_result := false
+	# Send via standard Core.send_message — also check for binary audio delivery
+	var awaiter := Core.send_message(service, action, data)
+	var req_id: String = awaiter.request_id
 
-	# Poll for up to 120 seconds, checking both paths each iteration
-	for _attempt in range(1200):
-		# Check binary transfer (voice-service sends this)
-		var binary_audio: PackedByteArray = Core.client.take_voice_binary(req_id)
+	# Start a background poll for binary audio while awaiter waits for JSON
+	# voice-service may send binary frames WITHOUT a JSON response
+	var binary_received := false
+	var binary_audio := PackedByteArray()
+
+	# Short timeout on JSON response — if binary comes instead, we'll catch it
+	var response = await awaiter.with_timeout(30.0).receive()
+
+	# Check if binary audio arrived during the await
+	if not req_id.is_empty():
+		binary_audio = Core.client.take_voice_binary(req_id)
+	if not binary_audio.is_empty():
+		print("[VoiceServiceClient] TTS: got %d bytes via binary transfer" % binary_audio.size())
+		return binary_audio
+
+	# JSON response path
+	if response:
+		var result: Dictionary = response.get("params", {}).get("result", {})
+		if result.has("error"):
+			push_error("[VoiceServiceClient] TTS error: %s" % result.get("error"))
+			return PackedByteArray()
+
+		# Check binary again (may have arrived just after JSON)
+		if not req_id.is_empty():
+			binary_audio = Core.client.take_voice_binary(req_id)
 		if not binary_audio.is_empty():
-			print("[VoiceServiceClient] TTS: got %d bytes via binary transfer" % binary_audio.size())
+			print("[VoiceServiceClient] TTS: got %d bytes via binary transfer (after JSON)" % binary_audio.size())
 			return binary_audio
 
-		# Check if JSON response arrived (for base64 fallback or error)
-		# Peek at the AwaitMessage system
-		var response: Dictionary = Core.client.take_response(req_id)
-		if not response.is_empty():
-			var result: Dictionary = response.get("params", {}).get("result", {})
-			if result.has("error"):
-				push_error("[VoiceServiceClient] TTS error: %s" % result.get("error"))
-				return PackedByteArray()
-			var audio_b64: String = result.get("audio_base64", "")
-			if not audio_b64.is_empty():
-				print("[VoiceServiceClient] TTS: got base64 audio")
-				return Marshalls.base64_to_raw(audio_b64)
-			# JSON arrived but no audio — binary might still be coming
-			# Continue polling for binary
+		var audio_b64: String = result.get("audio_base64", "")
+		if not audio_b64.is_empty():
+			print("[VoiceServiceClient] TTS: got base64 audio (%d chars)" % audio_b64.length())
+			return Marshalls.base64_to_raw(audio_b64)
 
-		await Core.get_tree().create_timer(0.1).timeout
+		# No audio in JSON — binary may still be arriving, poll briefly
+		for _i in range(50):  # up to 5 seconds
+			binary_audio = Core.client.take_voice_binary(req_id)
+			if not binary_audio.is_empty():
+				print("[VoiceServiceClient] TTS: got %d bytes via binary (polled)" % binary_audio.size())
+				return binary_audio
+			await Core.get_tree().create_timer(0.1).timeout
 
-	push_error("[VoiceServiceClient] TTS request timed out (120s)")
+	else:
+		# JSON timed out — check if binary arrived instead
+		print("[VoiceServiceClient] TTS: JSON timed out, checking binary...")
+		if not req_id.is_empty():
+			# Poll for binary with remaining patience
+			for _i in range(900):  # up to 90 more seconds
+				binary_audio = Core.client.take_voice_binary(req_id)
+				if not binary_audio.is_empty():
+					print("[VoiceServiceClient] TTS: got %d bytes via binary (after JSON timeout)" % binary_audio.size())
+					return binary_audio
+				await Core.get_tree().create_timer(0.1).timeout
+
+	push_error("[VoiceServiceClient] TTS: no audio received")
 	return PackedByteArray()
 
 
