@@ -668,6 +668,8 @@ var chat: Chat
 var undo: undoMain = undoMain.new()
 #Add AtT to use it through the singleton
 var AtT: AudioToTexts = AudioToTexts.new()
+# Stream Deck WebSocket server
+var streamdeck_server: StreamDeckServer = StreamDeckServer.new()
 
 #region UI Scaling
 var initial_ui_scale: float = 1.0
@@ -725,6 +727,14 @@ func _ready():
 	
 	add_child(AtT)
 	add_child(undo)
+	add_child(streamdeck_server)
+
+	# Auto-start Stream Deck server if enabled in config
+	if config_has_saved_section("StreamDeck"):
+		var sd_enabled: bool = config_file.get_value("StreamDeck", "enabled", false)
+		if sd_enabled:
+			var sd_port: int = config_file.get_value("StreamDeck", "port", 7778)
+			streamdeck_server.start(sd_port)
 	supported_text_formats.sort()
 	# this is for when you toggle experimental features
 	toggle_experimental.connect(toggle_experimental_actions)

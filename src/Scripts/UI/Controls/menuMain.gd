@@ -232,6 +232,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_item("Tool Settings...", 105)
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Add MCP Server...", 106)
+	tools_menu.add_item("Install Stream Deck Plugin...", 107)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
@@ -329,6 +330,7 @@ func _rebuild_tools_menu_full() -> void:
 	tools_menu.add_item("Tool Settings...", 105)
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Add MCP Server...", 106)
+	tools_menu.add_item("Install Stream Deck Plugin...", 107)
 	tools_menu.add_item("Refresh All Connections", 100)
 
 
@@ -351,6 +353,8 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_open_tool_settings()
 		106:
 			_show_add_server_dialog()
+		107:
+			_install_streamdeck_plugin()
 
 
 func _show_agent_manager() -> void:
@@ -385,6 +389,71 @@ func _show_add_server_dialog() -> void:
 		get_tree().root.add_child(_add_server_dialog)
 	_add_server_dialog.reset()
 	_add_server_dialog.popup_centered()
+
+
+func _install_streamdeck_plugin() -> void:
+	# Determine platform-specific install directory
+	var install_dir: String
+	match OS.get_name():
+		"macOS":
+			install_dir = OS.get_environment("HOME") + "/Library/Application Support/com.elgato.StreamDeck/Plugins"
+		"Windows":
+			install_dir = OS.get_environment("APPDATA") + "/Elgato/StreamDeck/Plugins"
+		"Linux":
+			# OpenDeck uses ~/.local/share/OpenDeck/Plugins (best guess)
+			install_dir = OS.get_environment("HOME") + "/.local/share/OpenDeck/Plugins"
+		_:
+			SingletonObject.create_toast_notification("Unsupported platform: %s" % OS.get_name(), ToastNotification.Type.ERROR)
+			return
+
+	var plugin_name := "com.minerva.streamdeck.sdPlugin"
+	var dest_dir := install_dir + "/" + plugin_name
+
+	# Find the plugin source in the project directory
+	var source_dir := ProjectSettings.globalize_path("res://").get_base_dir() + "/plugins/elgato"
+	if not DirAccess.dir_exists_absolute(source_dir):
+		SingletonObject.create_toast_notification("Plugin source not found at: %s" % source_dir, ToastNotification.Type.ERROR)
+		return
+
+	# Create destination directory
+	if not DirAccess.dir_exists_absolute(install_dir):
+		DirAccess.make_dir_recursive_absolute(install_dir)
+
+	# Copy plugin files
+	var err := _copy_dir_recursive(source_dir, dest_dir)
+	if err != OK:
+		SingletonObject.create_toast_notification("Failed to install Stream Deck plugin: %s" % error_string(err), ToastNotification.Type.ERROR)
+		return
+
+	SingletonObject.create_toast_notification("Stream Deck plugin installed to:\n%s\nRestart Stream Deck app to load it." % dest_dir, ToastNotification.Type.INFO)
+
+
+func _copy_dir_recursive(from: String, to: String) -> Error:
+	if not DirAccess.dir_exists_absolute(to):
+		DirAccess.make_dir_recursive_absolute(to)
+
+	var dir := DirAccess.open(from)
+	if not dir:
+		return ERR_CANT_OPEN
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name == "." or file_name == ".." or file_name == "node_modules" or file_name == "dist":
+			file_name = dir.get_next()
+			continue
+		var src_path := from + "/" + file_name
+		var dst_path := to + "/" + file_name
+		if dir.current_is_dir():
+			var err := _copy_dir_recursive(src_path, dst_path)
+			if err != OK:
+				return err
+		else:
+			var err := DirAccess.copy_absolute(src_path, dst_path)
+			if err != OK:
+				return err
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return OK
 
 
 ## Handle a user-added server from the dialog

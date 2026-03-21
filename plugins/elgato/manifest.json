@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.minerva.streamdeck",
+  "Name": "Minerva",
+  "Author": "Minerva",
+  "Description": "Control Minerva from your Stream Deck — PTT, audio device switching, and more.",
+  "Icon": "assets/plugin-icon",
+  "Version": "1.0.0.0",
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.4"
+  },
+  "OS": [
+    { "Platform": "mac", "MinimumVersion": "13" },
+    { "Platform": "windows", "MinimumVersion": "10" }
+  ],
+  "CodePath": "bin/minerva-plugin-linux",
+  "CodePathWin": "bin/minerva-plugin.exe",
+  "CodePathMac": "bin/minerva-plugin-mac",
+  "PropertyInspectorPath": "propertyInspector/index.html",
+  "Actions": [
+    {
+      "UUID": "com.minerva.streamdeck.ptt",
+      "Name": "Push to Talk",
+      "Icon": "assets/ptt-icon",
+      "Tooltip": "Hold to record voice, release to transcribe",
+      "DisableAutomaticStates": true,
+      "States": [
+        {
+          "Image": "assets/ptt-idle",
+          "Name": "Idle"
+        },
+        {
+          "Image": "assets/ptt-active",
+          "Name": "Recording"
+        }
+      ]
+    },
+    {
+      "UUID": "com.minerva.streamdeck.input-device",
+      "Name": "Input Device",
+      "Icon": "assets/input-device-icon",
+      "Tooltip": "Press to cycle input audio device",
+      "States": [
+        {
+          "Image": "assets/input-device-default"
+        }
+      ]
+    }
+  ]
+}

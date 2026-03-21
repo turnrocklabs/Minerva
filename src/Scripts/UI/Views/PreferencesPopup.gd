@@ -2468,6 +2468,11 @@ var _voice_status_label: Label
 var _voice_refresh_btn: Button
 var _voices_cache: Array = []
 
+# Stream Deck
+var _streamdeck_enable_check: CheckButton
+var _streamdeck_port_spin: SpinBox
+var _streamdeck_status_label: Label
+
 
 func _create_voice_tab() -> void:
 	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
@@ -2723,6 +2728,39 @@ func _create_voice_tab() -> void:
 
 	vbox.add_child(HSeparator.new())
 
+	# --- Stream Deck ---
+	var sd_header := Label.new()
+	sd_header.text = "Stream Deck"
+	sd_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(sd_header)
+
+	_streamdeck_enable_check = CheckButton.new()
+	_streamdeck_enable_check.text = "Enable Stream Deck server"
+	_streamdeck_enable_check.toggled.connect(_on_streamdeck_enable_toggled)
+	vbox.add_child(_streamdeck_enable_check)
+
+	var sd_port_row := HBoxContainer.new()
+	sd_port_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(sd_port_row)
+	var sd_port_lbl := Label.new()
+	sd_port_lbl.text = "Port:"
+	sd_port_lbl.custom_minimum_size = Vector2(140, 0)
+	sd_port_row.add_child(sd_port_lbl)
+	_streamdeck_port_spin = SpinBox.new()
+	_streamdeck_port_spin.min_value = 1024
+	_streamdeck_port_spin.max_value = 65535
+	_streamdeck_port_spin.value = 7778
+	_streamdeck_port_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_streamdeck_port_spin.value_changed.connect(_on_streamdeck_port_changed)
+	sd_port_row.add_child(_streamdeck_port_spin)
+
+	_streamdeck_status_label = Label.new()
+	_streamdeck_status_label.text = "Server: stopped"
+	_streamdeck_status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	vbox.add_child(_streamdeck_status_label)
+
+	vbox.add_child(HSeparator.new())
+
 	# --- Status ---
 	var status_row := HBoxContainer.new()
 	status_row.add_theme_constant_override("separation", 8)
@@ -2803,6 +2841,18 @@ func _voice_load_ui_from_config() -> void:
 
 	# Update TTS section visibility
 	_update_tts_section_enabled()
+
+	# Stream Deck settings
+	if _streamdeck_enable_check:
+		var sd_enabled: bool = SingletonObject.config_file.get_value("StreamDeck", "enabled", false)
+		_streamdeck_enable_check.button_pressed = sd_enabled
+		var sd_port: int = SingletonObject.config_file.get_value("StreamDeck", "port", 7778)
+		_streamdeck_port_spin.value = sd_port
+		if sd_enabled:
+			var sd_server := _get_streamdeck_server()
+			if sd_server and sd_server.is_running():
+				_streamdeck_status_label.text = "Server: listening on port %d (%d clients)" % [sd_port, sd_server.get_client_count()]
+				_streamdeck_status_label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
 
 
 func _update_tts_section_enabled() -> void:
@@ -2964,6 +3014,30 @@ func _on_vad_silence_changed(value: float) -> void:
 		var gateway: Node = SingletonObject.Chats._voice_gateway
 		if gateway and gateway._connected:
 			gateway._send_gateway_config()
+
+
+func _on_streamdeck_enable_toggled(enabled: bool) -> void:
+	SingletonObject.save_to_config_file("StreamDeck", "enabled", enabled)
+	var sd_server: StreamDeckServer = _get_streamdeck_server()
+	if sd_server == null:
+		return
+	if enabled:
+		var port := int(_streamdeck_port_spin.value)
+		sd_server.start(port)
+		_streamdeck_status_label.text = "Server: listening on port %d" % port
+		_streamdeck_status_label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+	else:
+		sd_server.stop()
+		_streamdeck_status_label.text = "Server: stopped"
+		_streamdeck_status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+
+
+func _on_streamdeck_port_changed(value: float) -> void:
+	SingletonObject.save_to_config_file("StreamDeck", "port", int(value))
+
+
+func _get_streamdeck_server() -> StreamDeckServer:
+	return SingletonObject.streamdeck_server
 
 
 func _on_tts_volume_changed(value: float) -> void:

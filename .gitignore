@@ -22,6 +22,10 @@ bin/
 *.os
 *.dbliteMinerva.dmg
 
+# Stream Deck plugin compiled binaries
+plugins/elgato/dist/
+plugins/elgato/node_modules/
+
 # SQLite journal files
 *.dct-wal
 *.dct-shm

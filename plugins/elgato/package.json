@@ -1,0 +1,16 @@
+{
+  "name": "minerva-streamdeck-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "bun test",
+    "build": "bun run build:linux && bun run build:windows && bun run build:mac",
+    "build:linux": "bun build --compile --target=bun-linux-x64 src/index.ts --outfile dist/bin/minerva-plugin-linux",
+    "build:windows": "bun build --compile --target=bun-windows-x64 src/index.ts --outfile dist/bin/minerva-plugin.exe",
+    "build:mac": "bun build --compile --target=bun-darwin-arm64 src/index.ts --outfile dist/bin/minerva-plugin-mac",
+    "build:local": "bun build --compile src/index.ts --outfile dist/bin/minerva-plugin-local"
+  },
+  "devDependencies": {
+    "bun-types": "latest"
+  }
+}
