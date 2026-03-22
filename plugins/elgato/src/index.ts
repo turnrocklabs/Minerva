@@ -10,6 +10,7 @@ import { parseArgs, createRegistrationMessage } from "./streamdeck-protocol";
 import type { SDEvent, SDCommand } from "./streamdeck-protocol";
 import type { MinervaCommand, MinervaEvent } from "./minerva-protocol";
 import { Icons } from "./icons";
+import { friendlyDeviceName } from "./friendly-names";
 import { isValidEvent, DEFAULT_PORT } from "./minerva-protocol";
 
 // ── Action UUIDs ──────────────────────────────────────────────────────
@@ -108,11 +109,21 @@ function handleKeyDown(action: string, context: string): void {
     return;
   }
 
-  if (!minervaConnected) return;
+  // If not connected, try reconnecting immediately on button press
+  if (!minervaConnected) {
+    minervaReconnectDelay = 1000;
+    connectMinerva();
+    return;
+  }
 
   switch (action) {
     case ACTION_PTT:
-      sendToMinerva({ action: "ptt_down" });
+      // Toggle PTT: press to start, press again to stop (matches Minerva UI)
+      if (pttActive) {
+        sendToMinerva({ action: "ptt_up" });
+      } else {
+        sendToMinerva({ action: "ptt_down" });
+      }
       break;
     case ACTION_INPUT_DEVICE:
       cycleInputDevice();
@@ -120,12 +131,8 @@ function handleKeyDown(action: string, context: string): void {
   }
 }
 
-function handleKeyUp(action: string, _context: string): void {
-  if (!minervaConnected) return;
-
-  if (action === ACTION_PTT) {
-    sendToMinerva({ action: "ptt_up" });
-  }
+function handleKeyUp(_action: string, _context: string): void {
+  // PTT is toggle-based (not hold-to-talk), so keyUp is a no-op
 }
 
 function cycleInputDevice(): void {
@@ -189,7 +196,7 @@ function scheduleMinervaReconnect(): void {
   setTimeout(() => {
     connectMinerva();
   }, minervaReconnectDelay);
-  minervaReconnectDelay = Math.min(minervaReconnectDelay * 2, 30000);
+  minervaReconnectDelay = Math.min(minervaReconnectDelay * 2, 5000); // cap at 5s
 }
 
 function sendToMinerva(cmd: MinervaCommand): void {
@@ -272,12 +279,13 @@ function updateButtonsByAction(action: string): void {
 
 function updateButtonImage(context: string, action: string): void {
   if (!minervaConnected) {
+    sendSetImage(context, ""); // reset to default icon
     sendSetTitle(context, "Offline");
     return;
   }
 
   if (hasError.get(context)) {
-    // showAlert already sent; just update title
+    sendShowAlert(context);
     sendSetTitle(context, "Error");
     return;
   }
@@ -285,16 +293,12 @@ function updateButtonImage(context: string, action: string): void {
   switch (action) {
     case ACTION_PTT:
       sendSetImage(context, pttActive ? Icons.pttActive : Icons.pttIdle);
-      sendSetTitle(context, pttActive ? "REC" : "PTT");
+      sendSetTitle(context, pttActive ? "REC" : "");
       break;
 
     case ACTION_INPUT_DEVICE: {
-      sendSetImage(context, Icons.inputDeviceDefault);
-      const name =
-        currentInputDevice.length > 10
-          ? currentInputDevice.substring(0, 9) + "…"
-          : currentInputDevice;
-      sendSetTitle(context, name);
+      sendSetImage(context, Icons.inputDevice);
+      sendSetTitle(context, friendlyDeviceName(currentInputDevice));
       break;
     }
   }

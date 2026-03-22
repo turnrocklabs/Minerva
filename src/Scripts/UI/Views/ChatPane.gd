@@ -36,6 +36,7 @@ var _voice_gateway: Node = null
 ## Voice conversation flow control: one utterance → one response
 var _voice_llm_busy := false
 var _voice_utterance_queue: Array[String] = []
+var _gpu_pre_warmed := false
 var _engagement_toggle: CheckButton = null
 var _engagement_state_label: Label = null
 
@@ -2004,8 +2005,10 @@ func _ready():
 	_voice_gateway.transcription_ready.connect(_on_gateway_transcription_ready)
 	_voice_gateway.connected_to_gateway.connect(_on_gateway_connected)
 	_voice_gateway.disconnected_from_gateway.connect(_on_gateway_disconnected)
+	_voice_gateway.gateway_start_failed.connect(_on_gateway_start_failed)
 	_voice_gateway.wake_word_detected.connect(func(conf: float):
 		print("[ChatPane] Wake word detected (%.3f)" % conf)
+		_lazy_pre_warm()
 	)
 
 	# TTS finished → notify gateway
@@ -2041,7 +2044,6 @@ func _ready():
 	if cfg.always_listening:
 		_engagement_toggle.set_pressed_no_signal(true)
 		call_deferred("_auto_start_voice")
-		call_deferred("_auto_pre_warm")
 
 	#this is for overriding the separation in the open file dialog
 	#this seems to be the only way I can access it
@@ -2573,7 +2575,6 @@ func _on_engagement_toggle_changed(enabled: bool) -> void:
 					if not manager.is_running(def):
 						if manager.is_image_built(def):
 							manager.start_container(def)
-							await get_tree().create_timer(3.0).timeout
 						else:
 							push_warning("[ChatPane] Voice gateway image not built")
 							_engagement_toggle.set_pressed_no_signal(false)
@@ -2585,6 +2586,7 @@ func _on_engagement_toggle_changed(enabled: bool) -> void:
 		# Pre-warm gpu-node: load STT/TTS/LLM models to eliminate cold start
 		var voice_client := SingletonObject.get_voice_client()
 		voice_client.pre_warm()
+		_gpu_pre_warmed = true
 	else:
 		cfg.always_listening = false
 		cfg.save()
@@ -2604,6 +2606,21 @@ func _on_gateway_disconnected() -> void:
 		_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
 
 
+## Voice gateway: failed to connect after max retries
+func _on_gateway_start_failed(reason: String) -> void:
+	push_warning("[ChatPane] Voice gateway failed: %s" % reason)
+	if _engagement_state_label:
+		_engagement_state_label.text = "Failed"
+		_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+	SingletonObject.create_toast_notification(
+		"Voice gateway failed: %s" % reason, ToastNotification.Type.ERROR)
+	_engagement_toggle.set_pressed_no_signal(false)
+	var cfg := SingletonObject.get_voice_config()
+	cfg.always_listening = false
+	cfg.save()
+	stop_voice_gateway()
+
+
 ## Voice gateway: engagement state changed
 func _on_engagement_changed(state: String) -> void:
 	if _engagement_state_label:
@@ -2618,6 +2635,8 @@ func _on_engagement_changed(state: String) -> void:
 func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
 	if audio_wav.is_empty():
 		return
+
+	_lazy_pre_warm()
 
 	var cfg := SingletonObject.get_voice_config()
 	var client := SingletonObject.get_voice_client()
@@ -2683,17 +2702,28 @@ func _auto_start_voice() -> void:
 				if not manager.is_running(def):
 					if manager.is_image_built(def):
 						manager.start_container(def)
-						await get_tree().create_timer(3.0).timeout
+					else:
+						push_warning("[ChatPane] Voice gateway image not built — skipping auto-start")
+						_engagement_toggle.set_pressed_no_signal(false)
+						if _engagement_state_label:
+							_engagement_state_label.text = "Not Built"
+							_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+						return
 				break
 	start_voice_gateway()
 
 
-func _auto_pre_warm() -> void:
-	# Wait a few seconds for Core to connect and discover services
-	await get_tree().create_timer(5.0).timeout
-	if Core.client._connected:
-		var voice_client := SingletonObject.get_voice_client()
-		voice_client.pre_warm()
+## Lazy GPU pre-warm: reserves GPU on first voice interaction, not at startup.
+func _lazy_pre_warm() -> void:
+	if _gpu_pre_warmed:
+		return
+	_gpu_pre_warmed = true
+	if not Core.client._connected:
+		_gpu_pre_warmed = false
+		return
+	await Core.fetch_services(true)
+	var voice_client := SingletonObject.get_voice_client()
+	voice_client.pre_warm()
 
 
 ## Stop the voice gateway

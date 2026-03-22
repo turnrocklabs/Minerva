@@ -11,8 +11,12 @@ signal wake_word_detected(confidence: float)
 signal transcription_ready(audio_wav: PackedByteArray)
 signal connected_to_gateway()
 signal disconnected_from_gateway()
+signal gateway_start_failed(reason: String)
 
 const GATEWAY_URL := "ws://localhost:8090/audio"
+const HEALTH_URL := "http://localhost:8090/health"
+const MAX_HEALTH_RETRIES := 20
+const HEALTH_POLL_INTERVAL := 1.5
 const ENGAGEMENT_IDLE_TIMEOUT := 20.0
 const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
 const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
@@ -48,6 +52,7 @@ var _ptt_saved_engagement: String = ""
 # Reconnection
 var _reconnect_timer: Timer = null
 var _should_connect := false
+var _health_retries := 0
 
 
 func _ready() -> void:
@@ -123,12 +128,39 @@ func _setup_capture_bus() -> void:
 
 func start() -> void:
 	_should_connect = true
-	_try_connect()
 	_start_mic_capture()
 	_capture_timer.start()
-	# Send config to gateway (silence duration from preferences)
-	_send_gateway_config()
-	print("[VoiceGateway] Started")
+	_health_retries = 0
+	_poll_gateway_health()
+	print("[VoiceGateway] Started (polling gateway health)")
+
+
+func _poll_gateway_health() -> void:
+	if not _should_connect:
+		return
+	var http := HTTPRequest.new()
+	http.timeout = 3.0
+	add_child(http)
+	http.request_completed.connect(
+		func(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray):
+			http.queue_free()
+			if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+				print("[VoiceGateway] Gateway healthy after %d poll(s)" % (_health_retries + 1))
+				_send_gateway_config()
+				_try_connect()
+			else:
+				_health_retries += 1
+				if _health_retries >= MAX_HEALTH_RETRIES:
+					push_warning("[VoiceGateway] Gateway not reachable after %d attempts" % _health_retries)
+					gateway_start_failed.emit("Gateway not responding after %d health checks" % _health_retries)
+					return
+				if not _should_connect:
+					return
+				get_tree().create_timer(HEALTH_POLL_INTERVAL).timeout.connect(
+					_poll_gateway_health, CONNECT_ONE_SHOT
+				)
+	)
+	http.request(HEALTH_URL)
 
 
 func _send_gateway_config() -> void:

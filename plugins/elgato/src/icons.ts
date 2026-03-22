@@ -1,41 +1,32 @@
 /**
- * Base64-encoded icon loading for Stream Deck setImage commands.
- * Icons are loaded from the assets/ directory at build time.
+ * Static PNG icon loading for Stream Deck setImage commands.
+ * Uses setImage for the icon + setTitle for dynamic text overlay.
  */
 
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 
-// Resolve asset path relative to the binary or script location
 function getAssetsDir(): string {
-  // When compiled, process.argv[0] is the binary path
-  // Assets are in ../assets/ relative to bin/
   const binDir = dirname(process.argv[0] || ".");
   return join(binDir, "..", "assets");
 }
 
-function loadIconBase64(filename: string): string {
-  try {
-    const assetsDir = getAssetsDir();
-    const data = readFileSync(join(assetsDir, filename));
-    return "data:image/png;base64," + data.toString("base64");
-  } catch {
-    return ""; // fallback: empty string resets to default icon
-  }
-}
-
-// Lazy-load icons on first access
 let _cache: Record<string, string> = {};
 
-function icon(name: string): string {
-  if (!_cache[name]) {
-    _cache[name] = loadIconBase64(name);
+function loadPng(filename: string): string {
+  if (!_cache[filename]) {
+    try {
+      const data = readFileSync(join(getAssetsDir(), filename));
+      _cache[filename] = "data:image/png;base64," + data.toString("base64");
+    } catch {
+      _cache[filename] = "";
+    }
   }
-  return _cache[name];
+  return _cache[filename];
 }
 
 export const Icons = {
-  get pttIdle() { return icon("ptt-idle.png"); },
-  get pttActive() { return icon("ptt-active.png"); },
-  get inputDeviceDefault() { return icon("input-device-default.png"); },
+  get pttIdle() { return loadPng("ptt-idle.png"); },
+  get pttActive() { return loadPng("ptt-active.png"); },
+  get inputDevice() { return loadPng("input-device-default.png"); },
 } as const;

@@ -400,8 +400,16 @@ func _install_streamdeck_plugin() -> void:
 		"Windows":
 			install_dir = OS.get_environment("APPDATA") + "/Elgato/StreamDeck/Plugins"
 		"Linux":
-			# OpenDeck uses ~/.local/share/OpenDeck/Plugins (best guess)
-			install_dir = OS.get_environment("HOME") + "/.local/share/OpenDeck/Plugins"
+			# OpenDeck Flatpak plugin directory
+			var flatpak_dir := OS.get_environment("HOME") + "/.var/app/me.amankhanna.opendeck/config/opendeck/plugins"
+			var native_dir := OS.get_environment("HOME") + "/.local/share/OpenDeck/Plugins"
+			if DirAccess.dir_exists_absolute(flatpak_dir):
+				install_dir = flatpak_dir
+			elif DirAccess.dir_exists_absolute(native_dir):
+				install_dir = native_dir
+			else:
+				# Default to Flatpak path and create it
+				install_dir = flatpak_dir
 		_:
 			SingletonObject.create_toast_notification("Unsupported platform: %s" % OS.get_name(), ToastNotification.Type.ERROR)
 			return
@@ -410,7 +418,9 @@ func _install_streamdeck_plugin() -> void:
 	var dest_dir := install_dir + "/" + plugin_name
 
 	# Find the plugin source in the project directory
-	var source_dir := ProjectSettings.globalize_path("res://").get_base_dir() + "/plugins/elgato"
+	# res:// globalizes to .../Minerva/src/, get_base_dir() gives .../Minerva/src, parent is .../Minerva
+	var project_root := ProjectSettings.globalize_path("res://").get_base_dir().get_base_dir()
+	var source_dir := project_root + "/plugins/elgato"
 	if not DirAccess.dir_exists_absolute(source_dir):
 		SingletonObject.create_toast_notification("Plugin source not found at: %s" % source_dir, ToastNotification.Type.ERROR)
 		return

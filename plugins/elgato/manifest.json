@@ -12,11 +12,17 @@
   },
   "OS": [
     { "Platform": "mac", "MinimumVersion": "13" },
-    { "Platform": "windows", "MinimumVersion": "10" }
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "linux" }
   ],
-  "CodePath": "bin/minerva-plugin-linux",
+  "CodePaths": {
+    "x86_64-unknown-linux-gnu": "bin/minerva-plugin-linux",
+    "x86_64-pc-windows-msvc": "bin/minerva-plugin.exe",
+    "aarch64-apple-darwin": "bin/minerva-plugin-mac"
+  },
   "CodePathWin": "bin/minerva-plugin.exe",
   "CodePathMac": "bin/minerva-plugin-mac",
+  "CodePathLin": "bin/minerva-plugin-linux",
   "PropertyInspectorPath": "propertyInspector/index.html",
   "Actions": [
     {
@@ -43,7 +49,9 @@
       "Tooltip": "Press to cycle input audio device",
       "States": [
         {
-          "Image": "assets/input-device-default"
+          "Image": "assets/input-device-default",
+          "TitleAlignment": "bottom",
+          "FontSize": "13"
         }
       ]
     }

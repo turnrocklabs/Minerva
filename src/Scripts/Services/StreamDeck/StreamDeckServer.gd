@@ -20,6 +20,7 @@ var _peer_ptt_active: Dictionary = {}  # peer_id → bool (tracks PTT ownership)
 var _port: int = DEFAULT_PORT
 var _enabled: bool = false
 var _shutdown_timer: Timer
+var _favorite_inputs: Array = []  # empty = all devices
 
 
 func _ready() -> void:
@@ -71,6 +72,7 @@ func start(port: int = DEFAULT_PORT) -> Error:
 		return OK  # already running
 
 	_port = port
+	_favorite_inputs = SingletonObject.config_file.get_value("StreamDeck", "favorite_inputs", [])
 	_tcp_server = TCPServer.new()
 	var err := _tcp_server.listen(_port, "127.0.0.1")
 	if err != OK:
@@ -120,6 +122,26 @@ func get_client_count() -> int:
 	return _peers.size()
 
 
+func update_favorite_inputs(favorites: Array) -> void:
+	_favorite_inputs = favorites
+	# Broadcast updated device list to all clients
+	_on_mic_changed(AudioServer.input_device)
+
+
+func _get_filtered_input_devices() -> Array:
+	var all_devices := AudioServer.get_input_device_list()
+	if _favorite_inputs.is_empty():
+		return all_devices
+	var filtered: Array = []
+	for device in all_devices:
+		if device in _favorite_inputs:
+			filtered.append(device)
+	# If none of the favorites exist anymore, fall back to all
+	if filtered.is_empty():
+		return all_devices
+	return filtered
+
+
 # ── Message Handling ───────────────────────────────────────────────────
 
 func _handle_message(peer_id: int, raw: String) -> void:
@@ -157,21 +179,29 @@ func _handle_ptt_down(peer_id: int) -> void:
 		_send_error(peer_id, "ptt_down", "No active chat")
 		return
 
+	# Set up field target and clear UI button refs before starting
+	var txt_input = chat_pane.find_child("txtMainUserInput", true, false)
+	if txt_input:
+		SingletonObject.AtT.FieldForFilling = txt_input
+	else:
+		print("[StreamDeck] WARNING: txtMainUserInput not found in ChatPane")
+	SingletonObject.AtT.btn = null
+	SingletonObject.AtT.btnStop = null
+
 	# Start PTT via the same flow as the mic button
 	var voice_gateway = chat_pane.get("_voice_gateway")
 	if voice_gateway:
 		voice_gateway.ptt_down()
 
-	if SingletonObject.AtT._StartConverting() != OK:
+	print("[StreamDeck] PTT DOWN: calling _StartConverting (recording_active=%s)" % SingletonObject.AtT.effect.is_recording_active())
+	var result = SingletonObject.AtT._StartConverting()
+	print("[StreamDeck] PTT DOWN: _StartConverting returned %s, recording_active=%s" % [result, SingletonObject.AtT.effect.is_recording_active()])
+
+	if result != OK:
 		if voice_gateway:
 			voice_gateway.ptt_up()
 		_send_error(peer_id, "ptt_down", "Failed to start recording")
 		return
-
-	# Set up the field and button targets
-	var txt_input = chat_pane.find_child("txtMainUserInput", true, false)
-	if txt_input:
-		SingletonObject.AtT.FieldForFilling = txt_input
 
 	_peer_ptt_active[peer_id] = true
 	_broadcast({"event": "ptt_active", "active": true})
@@ -179,12 +209,22 @@ func _handle_ptt_down(peer_id: int) -> void:
 
 func _handle_ptt_up(peer_id: int) -> void:
 	if not _peer_ptt_active.get(peer_id, false):
-		return  # no active PTT for this peer
+		print("[StreamDeck] PTT UP: ignored, no active PTT for peer %d" % peer_id)
+		return
 
-	# Stop recording (second call to _StartConverting toggles off)
-	SingletonObject.AtT._StartConverting()
+	print("[StreamDeck] PTT UP: calling _StartConverting (recording_active=%s)" % SingletonObject.AtT.effect.is_recording_active())
+	var result = SingletonObject.AtT._StartConverting()
+	print("[StreamDeck] PTT UP: _StartConverting returned %s, recording_active=%s" % [result, SingletonObject.AtT.effect.is_recording_active()])
+
 	_peer_ptt_active[peer_id] = false
-	# ptt_up on gateway will be called by _on_voice_transcription_completed
+	_broadcast({"event": "ptt_active", "active": false})
+
+	# Release gateway PTT
+	var chat_pane = SingletonObject.Chats
+	if chat_pane:
+		var voice_gateway = chat_pane.get("_voice_gateway")
+		if voice_gateway:
+			voice_gateway.ptt_up()
 
 
 func _handle_set_input_device(peer_id: int, device: String) -> void:
@@ -232,14 +272,14 @@ func _get_state_snapshot() -> Dictionary:
 	var chat_pane = SingletonObject.Chats
 	if chat_pane:
 		var voice_gateway = chat_pane.get("_voice_gateway")
-		if voice_gateway:
-			engagement = voice_gateway.get("engagement_state", "STANDBY")
+		if voice_gateway and "engagement_state" in voice_gateway:
+			engagement = voice_gateway.engagement_state
 
 	return {
 		"event": "state",
 		"protocol_version": PROTOCOL_VERSION,
 		"input_device": AudioServer.input_device,
-		"input_devices": AudioServer.get_input_device_list(),
+		"input_devices": _get_filtered_input_devices(),
 		"ptt_active": ptt_active,
 		"engagement": engagement,
 	}
@@ -247,9 +287,6 @@ func _get_state_snapshot() -> Dictionary:
 
 func _send_state(peer_id: int) -> void:
 	_send_to_peer(peer_id, _get_state_snapshot())
-	# Mark this as a newly connected client
-	if not client_connected.is_connected(Callable()):
-		client_connected.emit(peer_id)
 
 
 # ── Signal Connections ─────────────────────────────────────────────────
@@ -272,7 +309,7 @@ func _on_mic_changed(mic: String) -> void:
 	_broadcast({
 		"event": "input_device_changed",
 		"device": mic,
-		"devices": AudioServer.get_input_device_list(),
+		"devices": _get_filtered_input_devices(),
 	})
 
 

@@ -54,7 +54,8 @@ func _StartConverting():
 	stop_signal = false
 	if effect.is_recording_active():
 		# Stop recording and get WAV data
-		btn.modulate = Color.WHITE
+		if btn:
+			btn.modulate = Color.WHITE
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		_stop_mic()
@@ -108,8 +109,9 @@ func _read_wav_file() -> PackedByteArray:
 
 ## STT via voice-service (Core WebSocket).
 func _start_voice_service_stt(wav_bytes: PackedByteArray, voice_config: VoiceConfig) -> void:
-	btn.disabled = true
-	btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
+	if btn:
+		btn.disabled = true
+		btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
 	if btnStop != null:
 		btnStop.disabled = false
 
@@ -149,8 +151,9 @@ func _start_whisper_stt(wav_bytes: PackedByteArray) -> void:
 	]
 
 	http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
-	btn.disabled = true
-	btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
+	if btn:
+		btn.disabled = true
+		btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
 	if btnStop != null:
 		btnStop.disabled = false
 
@@ -169,18 +172,20 @@ func _StopConverting():
 		http_request = null
 		print("HTTP request stopped")
 
-	btn.disabled = false
-	btn.modulate = Color.WHITE
-	btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+	if btn:
+		btn.disabled = false
+		btn.modulate = Color.WHITE
+		btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
 	if btnStop != null:
 		btnStop.disabled = true
 
 
 ## Shared completion handler — fills text field and emits signal.
 func _finish_transcription(text: String) -> void:
-	btn.disabled = false
-	btn.modulate = Color.WHITE
-	btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+	if btn:
+		btn.disabled = false
+		btn.modulate = Color.WHITE
+		btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
 
 	if text.is_empty():
 		SingletonObject.ErrorDisplay("Transcription Failed", "No text returned from STT provider")
