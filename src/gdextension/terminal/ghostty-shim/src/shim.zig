@@ -255,6 +255,28 @@ export fn minerva_vt_free_string(str: ?[*:0]u8) callconv(.c) void {
     }
 }
 
+export fn minerva_vt_get_scroll_info(term: ?*anyopaque, total_rows: ?*u32, viewport_rows: ?*u32, is_at_bottom: ?*bool) callconv(.c) void {
+    const state: *TerminalState = @ptrCast(@alignCast(term orelse return));
+    state.mutex.lock();
+    defer state.mutex.unlock();
+
+    const t = state.terminal;
+    const screen = t.screens.active;
+
+    // Count total rows by iterating pages (totalRows is private)
+    if (total_rows) |p| {
+        var rows: u32 = 0;
+        var node_ = screen.pages.pages.first;
+        while (node_) |node| {
+            rows += node.data.size.rows;
+            node_ = node.next;
+        }
+        p.* = rows;
+    }
+    if (viewport_rows) |p| p.* = screen.pages.rows;
+    if (is_at_bottom) |p| p.* = screen.viewportIsBottom();
+}
+
 export fn minerva_vt_scroll_viewport(term: ?*anyopaque, lines: i32) callconv(.c) void {
     const state: *TerminalState = @ptrCast(@alignCast(term orelse return));
     state.mutex.lock();

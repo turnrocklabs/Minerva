@@ -99,6 +99,7 @@ public:
     Dictionary get_cursor() const;
     String get_plain_text() const;
     void scroll_viewport(int lines);
+    Dictionary get_scroll_info() const;
 
     // Key encoding (powered by ghostty key encoder)
     PackedByteArray encode_key(int ghostty_key, int action, int mods, const String &utf8_text) const;

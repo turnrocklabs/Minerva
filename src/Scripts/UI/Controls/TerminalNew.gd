@@ -15,6 +15,7 @@ var terminal = null
 var _terminal_available: bool = false
 
 var _viewport_start: int = 0
+var _scrolled_up: bool = false
 
 var cursor_visible: bool = true
 
@@ -54,22 +55,34 @@ func _recalc_terminal_size():
 	_rows = maxi(1, int(view_height / line_height))
 
 func _init_palette():
-	# Standard 16 colors
-	_palette = [
-		Color(0, 0, 0),        Color(0.8, 0, 0),      Color(0, 0.8, 0),      Color(0.8, 0.8, 0),
-		Color(0, 0, 0.8),      Color(0.8, 0, 0.8),    Color(0, 0.8, 0.8),    Color(0.8, 0.8, 0.8),
-		Color(0.5, 0.5, 0.5),  Color(1, 0, 0),        Color(0, 1, 0),        Color(1, 1, 0),
-		Color(0, 0, 1),        Color(1, 0, 1),         Color(0, 1, 1),        Color(1, 1, 1),
-	]
-	# 216 color cube (6x6x6)
-	for r in range(6):
-		for g in range(6):
-			for b in range(6):
-				_palette.append(Color(r * 51 / 255.0, g * 51 / 255.0, b * 51 / 255.0))
-	# 24 grayscale shades
-	for i in range(24):
-		var v: float = (i * 10 + 8) / 255.0
-		_palette.append(Color(v, v, v))
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	var _pal := tc.get_full_palette()
+	_palette.clear()
+	for c in _pal:
+		_palette.append(c)
+
+func _apply_terminal_config() -> void:
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	# Palette
+	var _pal := tc.get_full_palette()
+	_palette.clear()
+	for c in _pal:
+		_palette.append(c)
+	# Font
+	font = tc.get_font()
+	font_size = tc.font_size
+	_update_font_metrics()
+	_recalc_terminal_size()
+	if terminal and terminal.has_method("resize"):
+		terminal.resize(_cols, _rows)
+	# Cursor
+	if cursor_layer:
+		cursor_layer.cursor_style = tc.cursor_style
+		cursor_layer.cursor_blink = tc.cursor_blink
+		cursor_layer.queue_redraw()
+	# Redraw
+	if text_layer:
+		text_layer.queue_redraw()
 
 func _ready():
 	# Check if Terminal GDExtension is available
@@ -87,8 +100,13 @@ func _ready():
 				grab_focus()
 	)
 
+	# Apply terminal config (font, palette, cursor) and listen for changes
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	font = tc.get_font()
+	font_size = tc.font_size
 	_update_font_metrics()
 	_init_palette()
+	tc.settings_changed.connect(_apply_terminal_config)
 
 	_create_output_container()
 
@@ -135,10 +153,52 @@ func _ready():
 	)
 
 
+var _scrollbar_updating: bool = false
+
 func _on_vt_state_changed() -> void:
 	text_layer.queue_redraw()
 	cursor_layer.queue_redraw()
+	_update_scrollbar()
 
+func _update_scrollbar() -> void:
+	if not _vscrollbar or not terminal or not terminal.has_method("get_scroll_info"):
+		return
+	var info: Dictionary = terminal.get_scroll_info()
+	if info.is_empty():
+		return
+	var total: int = info.get("total_rows", _rows)
+	var viewport: int = info.get("viewport_rows", _rows)
+	var at_bottom: bool = info.get("is_at_bottom", true)
+	var scrollback: int = maxi(0, total - viewport)
+
+	_scrollbar_updating = true
+	# Godot ScrollBar: draggable range is [min_value, max_value - page]
+	# So set max_value = total, page = viewport → max position = total - viewport = scrollback
+	_vscrollbar.max_value = total
+	_vscrollbar.page = viewport
+	if at_bottom:
+		_vscrollbar.value = scrollback  # total - viewport
+		_scrolled_up = false
+	_scrollbar_updating = false
+
+func _on_scrollbar_changed(value: float) -> void:
+	if _scrollbar_updating or not terminal:
+		return
+	var info: Dictionary = terminal.get_scroll_info()
+	var total: int = info.get("total_rows", _rows)
+	var viewport: int = info.get("viewport_rows", _rows)
+	var scrollback: int = maxi(0, total - viewport)
+	# value range: 0 (top of history) to scrollback (bottom/current)
+	var lines_from_bottom: int = scrollback - int(value)
+	if lines_from_bottom <= 0:
+		_scrolled_up = false
+		terminal.scroll_viewport(0)
+	else:
+		_scrolled_up = true
+		terminal.scroll_viewport(0)
+		terminal.scroll_viewport(-lines_from_bottom)
+	text_layer.queue_redraw()
+	cursor_layer.queue_redraw()
 
 func _on_output_received(_text: String, _type: int) -> void:
 	# Legacy signal handler — kept only for shell prompt detection on Windows
@@ -149,7 +209,11 @@ func _on_output_received(_text: String, _type: int) -> void:
 			_create_check_button(cursor.get("y", 0))
 
 
+var _vscrollbar: VScrollBar
+
 func _create_output_container() -> void:
+	# Hide the inner ScrollContainer's scrollbar — we add our own driven by ghostty-vt
+	_output_container.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	var hbox: = HBoxContainer.new()
 	hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
@@ -171,6 +235,14 @@ func _create_output_container() -> void:
 	hbox.add_child(text_layer)
 
 	_output_container.add_child(hbox)
+
+	# Add a VScrollBar next to the output container, driven by ghostty-vt scroll info
+	_vscrollbar = VScrollBar.new()
+	_vscrollbar.custom_minimum_size.x = 12
+	_vscrollbar.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_vscrollbar.value_changed.connect(_on_scrollbar_changed)
+	# Insert scrollbar as sibling of _output_container inside its parent HBox
+	_output_container.get_parent().add_child(_vscrollbar)
 
 	_output_label_nodes.append(text_layer)
 
@@ -361,6 +433,33 @@ func _gui_input(event: InputEvent) -> void:
 	if not _terminal_available or text_layer == null:
 		return
 
+	# Scroll wheel → ghostty viewport scrolling
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			terminal.scroll_viewport(-3)
+			_scrolled_up = true
+			text_layer.queue_redraw()
+			cursor_layer.queue_redraw()
+			if _vscrollbar:
+				_scrollbar_updating = true
+				_vscrollbar.value = maxf(0, _vscrollbar.value - 3)
+				_scrollbar_updating = false
+			get_viewport().set_input_as_handled()
+			return
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			terminal.scroll_viewport(3)
+			text_layer.queue_redraw()
+			cursor_layer.queue_redraw()
+			if _vscrollbar:
+				_scrollbar_updating = true
+				var max_scroll = _vscrollbar.max_value - _vscrollbar.page
+				_vscrollbar.value = minf(max_scroll, _vscrollbar.value + 3)
+				_scrollbar_updating = false
+				if _vscrollbar.value >= max_scroll:
+					_scrolled_up = false
+			get_viewport().set_input_as_handled()
+			return
+
 	if text_layer.selection_active:
 		if event is InputEventKey:
 			if not (event.keycode == KEY_CTRL or event.keycode == KEY_ALT):
@@ -396,6 +495,12 @@ func _gui_input(event: InputEvent) -> void:
 		if event.unicode > 0:
 			utf8_text = char(event.unicode)
 
+		# Snap ghostty viewport to bottom on any keypress
+		if _scrolled_up:
+			_scrolled_up = false
+			terminal.scroll_viewport(0)
+			text_layer.queue_redraw()
+
 		# Try ghostty key encoder
 		var encoded: PackedByteArray = terminal.encode_key(gk, action, mods, utf8_text)
 
@@ -417,12 +522,19 @@ class CursorLayer extends Control:
 	var blink_time: float = 0.5
 	var elapsed: float = 0
 	var cursor_visible: = true
+	var cursor_style: int = 0  # 0=block, 1=bar, 2=underline
+	var cursor_blink: bool = true
 
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
 		queue_redraw()
 
 	func _process(delta: float) -> void:
+		if not cursor_blink:
+			if not cursor_visible:
+				cursor_visible = true
+				queue_redraw()
+			return
 		elapsed += delta
 		if elapsed > 0.5:
 			elapsed = 0
@@ -442,10 +554,24 @@ class CursorLayer extends Control:
 		var cx: int = cursor_info.get("x", 0)
 		var cy: int = cursor_info.get("y", 0)
 		var visible: bool = cursor_info.get("visible", true)
+		var tc: TerminalConfig = SingletonObject.get_terminal_config()
+		var fg: Color = tc.get_theme_fg_bg().fg
 
 		if visible and cursor_visible:
-			var draw_pos = Vector2(cx * terminal.char_width, (cy + 1) * terminal.line_height)
-			draw_string(terminal.font, draw_pos, CURSOR_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size)
+			var cw: float = terminal.char_width
+			var lh: float = terminal.line_height
+			match cursor_style:
+				0:  # Block
+					var draw_pos = Vector2(cx * cw, (cy + 1) * lh)
+					draw_string(terminal.font, draw_pos, CURSOR_CHAR, HORIZONTAL_ALIGNMENT_LEFT, -1, terminal.font_size, fg)
+				1:  # Bar
+					var bar_x = cx * cw
+					var bar_y = cy * lh
+					draw_rect(Rect2(bar_x, bar_y, 2, lh), fg)
+				2:  # Underline
+					var ul_x = cx * cw
+					var ul_y = (cy + 1) * lh - 2
+					draw_rect(Rect2(ul_x, ul_y, cw, 2), fg)
 
 # endregion
 
@@ -527,24 +653,13 @@ class TextLayer extends Control:
 		var cw: float = terminal.char_width
 		var lh: float = terminal.line_height
 
+		# Clear background with configured color
+		var tc: TerminalConfig = SingletonObject.get_terminal_config()
+		var cfg_fg: Color = tc.get_theme_fg_bg().fg
+		var cfg_bg: Color = tc.get_theme_fg_bg().bg
+		draw_rect(Rect2(Vector2.ZERO, size), cfg_bg)
+
 		_draw_count += 1
-		# Dump every 5th draw to catch terminal output
-		if _draw_count % 5 == 0:
-			print("[TextLayer] === draw #%d (%dx%d) ===" % [_draw_count, cols, rows])
-			for r in range(rows):
-				var line: String = ""
-				for c in range(mini(cols, 100)):
-					var sc: Dictionary = terminal.terminal.get_cell(c, r)
-					var cp: int = sc.get("codepoint", 0) if not sc.is_empty() else 0
-					if cp == 0:
-						line += "_"
-					elif cp == 32:
-						line += " "
-					elif cp > 32:
-						line += char(cp)
-					else:
-						line += "^"
-				print("[row %02d] %s" % [r, line.rstrip("_")])
 
 		for row in range(rows):
 			var y_pos: float = (row + 1) * lh
@@ -562,12 +677,12 @@ class TextLayer extends Control:
 				if wide_state == 3:
 					continue
 
-				var fg: Color = terminal.resolve_color(cell, "fg", Color.WHITE)
+				var fg: Color = terminal.resolve_color(cell, "fg", cfg_fg)
 				var bg: Color = terminal.resolve_color(cell, "bg", Color.TRANSPARENT)
 
 				if cell.get("inverse", false):
 					var tmp = fg
-					fg = bg if bg.a > 0 else Color.BLACK
+					fg = bg if bg.a > 0 else cfg_bg
 					bg = tmp
 
 				# Snap to exact grid position — never accumulate float error

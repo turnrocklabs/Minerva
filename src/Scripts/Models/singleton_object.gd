@@ -461,6 +461,25 @@ func get_skill_manager() -> SkillManager:
 
 #endregion Tool Profiles
 
+#region Terminal
+var terminal_config: TerminalConfig = null
+
+func get_terminal_config() -> TerminalConfig:
+	if not terminal_config:
+		terminal_config = TerminalConfig.new()
+		var cfg := load_config_file()
+		if cfg:
+			terminal_config.load_from_config(cfg)
+		terminal_config.settings_changed.connect(_on_terminal_config_changed)
+	return terminal_config
+
+func _on_terminal_config_changed() -> void:
+	var cfg := load_config_file()
+	if cfg:
+		terminal_config.save(cfg)
+		cfg.save(_config_file_name)
+#endregion
+
 #region Voice
 var voice_config: VoiceConfig = null
 var voice_client: VoiceServiceClient = null

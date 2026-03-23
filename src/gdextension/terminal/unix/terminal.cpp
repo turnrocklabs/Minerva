@@ -96,6 +96,7 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("get_cursor"), &Terminal::get_cursor);
     ClassDB::bind_method(D_METHOD("get_plain_text"), &Terminal::get_plain_text);
     ClassDB::bind_method(D_METHOD("scroll_viewport", "lines"), &Terminal::scroll_viewport);
+    ClassDB::bind_method(D_METHOD("get_scroll_info"), &Terminal::get_scroll_info);
 
     // Key encoding (powered by ghostty key encoder)
     ClassDB::bind_method(D_METHOD("encode_key", "ghostty_key", "action", "mods", "utf8_text"), &Terminal::encode_key);
@@ -663,12 +664,12 @@ bool Terminal::start(int width, int height)
     // Save original settings
     _old_term = term_settings;
     
-    // Modified settings for raw mode
+    // Raw input mode — let ghostty-vt handle all input sequences
     term_settings.c_lflag &= ~(ICANON | ISIG | IEXTEN);
     term_settings.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
     term_settings.c_cflag &= ~(CSIZE | PARENB);
     term_settings.c_cflag |= CS8 | ECHO;
-    term_settings.c_oflag &= ~(OPOST);
+    // Keep OPOST enabled — ghostty-vt needs ONLCR (\n → \r\n) from the PTY driver
     
     // Set minimal character and timing
     term_settings.c_cc[VMIN] = 1;
@@ -849,6 +850,18 @@ String Terminal::get_plain_text() const {
 void Terminal::scroll_viewport(int lines) {
     if (!_vt_terminal) return;
     minerva_vt_scroll_viewport(_vt_terminal, (int32_t)lines);
+}
+
+Dictionary Terminal::get_scroll_info() const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+    uint32_t total = 0, viewport = 0;
+    bool at_bottom = true;
+    minerva_vt_get_scroll_info(_vt_terminal, &total, &viewport, &at_bottom);
+    result["total_rows"] = (int)total;
+    result["viewport_rows"] = (int)viewport;
+    result["is_at_bottom"] = at_bottom;
+    return result;
 }
 
 PackedByteArray Terminal::encode_key(int ghostty_key, int action, int mods, const String &utf8_text) const {

@@ -113,6 +113,7 @@ func _ready():
 	call_deferred("_create_tools_tab")
 	call_deferred("_create_skills_tab")
 	call_deferred("_create_voice_tab")
+	call_deferred("_create_terminal_tab")
 	call_deferred("_create_containers_tab")
 
 	# Initialize ChatGPT auth status
@@ -3621,3 +3622,361 @@ func _on_build_poll() -> void:
 		_build_poll_timer.stop()
 
 #endregion Containers Tab
+
+#region Terminal Tab
+var _terminal_tab: VBoxContainer
+var _term_theme_option: OptionButton
+var _term_palette_grid: GridContainer
+var _term_fg_picker: ColorPickerButton
+var _term_bg_picker: ColorPickerButton
+var _term_font_option: OptionButton
+var _term_font_size_spin: SpinBox
+var _term_scrollback_option: OptionButton
+var _term_cursor_option: OptionButton
+var _term_cursor_blink: CheckButton
+var _term_preview_label: Label
+var _term_loading: bool = false
+
+var _available_fonts: Array[Dictionary] = []
+const SCROLLBACK_OPTIONS = [500, 1000, 5000, 10000, -1]
+
+func _create_terminal_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	_terminal_tab = VBoxContainer.new()
+	_terminal_tab.name = "Terminal"
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_terminal_tab.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	_scan_available_fonts()
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+
+	# --- Color Theme ---
+	var theme_header := Label.new()
+	theme_header.text = "Color Theme"
+	theme_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(theme_header)
+
+	var theme_row := HBoxContainer.new()
+	theme_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(theme_row)
+	var theme_lbl := Label.new()
+	theme_lbl.text = "Theme:"
+	theme_lbl.custom_minimum_size = Vector2(140, 0)
+	theme_row.add_child(theme_lbl)
+
+	_term_theme_option = OptionButton.new()
+	_term_theme_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for name in TerminalThemes.list_themes():
+		_term_theme_option.add_item(TerminalThemes.theme_display_name(name))
+		_term_theme_option.set_item_metadata(_term_theme_option.item_count - 1, name)
+	_term_theme_option.add_item("Custom")
+	_term_theme_option.set_item_metadata(_term_theme_option.item_count - 1, "custom")
+	theme_row.add_child(_term_theme_option)
+
+	# Palette color grid (2 rows x 8 columns)
+	_term_palette_grid = GridContainer.new()
+	_term_palette_grid.columns = 8
+	_term_palette_grid.add_theme_constant_override("h_separation", 4)
+	_term_palette_grid.add_theme_constant_override("v_separation", 4)
+	vbox.add_child(_term_palette_grid)
+	for i in range(16):
+		var cpb := ColorPickerButton.new()
+		cpb.custom_minimum_size = Vector2(32, 24)
+		cpb.color = Color.BLACK
+		cpb.color_changed.connect(_on_term_palette_color_changed.bind(i))
+		_term_palette_grid.add_child(cpb)
+
+	# Default fg/bg
+	var fgbg_row := HBoxContainer.new()
+	fgbg_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(fgbg_row)
+
+	var fg_lbl := Label.new()
+	fg_lbl.text = "Foreground:"
+	fg_lbl.custom_minimum_size = Vector2(140, 0)
+	fgbg_row.add_child(fg_lbl)
+	_term_fg_picker = ColorPickerButton.new()
+	_term_fg_picker.custom_minimum_size = Vector2(48, 24)
+	_term_fg_picker.color = tc.default_fg
+	_term_fg_picker.color_changed.connect(func(c): if not _term_loading: tc.default_fg = c)
+	fgbg_row.add_child(_term_fg_picker)
+
+	var bg_lbl := Label.new()
+	bg_lbl.text = "Background:"
+	bg_lbl.custom_minimum_size = Vector2(100, 0)
+	fgbg_row.add_child(bg_lbl)
+	_term_bg_picker = ColorPickerButton.new()
+	_term_bg_picker.custom_minimum_size = Vector2(48, 24)
+	_term_bg_picker.color = tc.default_bg
+	_term_bg_picker.color_changed.connect(func(c): if not _term_loading: tc.default_bg = c)
+	fgbg_row.add_child(_term_bg_picker)
+
+	# Separator
+	vbox.add_child(HSeparator.new())
+
+	# --- Font ---
+	var font_header := Label.new()
+	font_header.text = "Font"
+	font_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(font_header)
+
+	var font_row := HBoxContainer.new()
+	font_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(font_row)
+	var font_lbl := Label.new()
+	font_lbl.text = "Family:"
+	font_lbl.custom_minimum_size = Vector2(140, 0)
+	font_row.add_child(font_lbl)
+
+	_term_font_option = OptionButton.new()
+	_term_font_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for i in range(_available_fonts.size()):
+		_term_font_option.add_item(_available_fonts[i].name)
+		_term_font_option.set_item_metadata(i, _available_fonts[i].path)
+	font_row.add_child(_term_font_option)
+
+	var size_row := HBoxContainer.new()
+	size_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(size_row)
+	var size_lbl := Label.new()
+	size_lbl.text = "Size:"
+	size_lbl.custom_minimum_size = Vector2(140, 0)
+	size_row.add_child(size_lbl)
+
+	_term_font_size_spin = SpinBox.new()
+	_term_font_size_spin.min_value = 8
+	_term_font_size_spin.max_value = 32
+	_term_font_size_spin.step = 1
+	_term_font_size_spin.value = tc.font_size
+	size_row.add_child(_term_font_size_spin)
+
+	# Preview
+	_term_preview_label = Label.new()
+	_term_preview_label.text = "The quick brown fox jumps over the lazy dog 0123456789"
+	_term_preview_label.add_theme_font_size_override("font_size", tc.font_size)
+	vbox.add_child(_term_preview_label)
+
+	# Separator
+	vbox.add_child(HSeparator.new())
+
+	# --- Scrollback ---
+	var scroll_header := Label.new()
+	scroll_header.text = "Scrollback"
+	scroll_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(scroll_header)
+
+	var scroll_row := HBoxContainer.new()
+	scroll_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(scroll_row)
+	var scroll_lbl := Label.new()
+	scroll_lbl.text = "Buffer Lines:"
+	scroll_lbl.custom_minimum_size = Vector2(140, 0)
+	scroll_row.add_child(scroll_lbl)
+
+	_term_scrollback_option = OptionButton.new()
+	for val in SCROLLBACK_OPTIONS:
+		_term_scrollback_option.add_item("Unlimited" if val == -1 else str(val))
+	scroll_row.add_child(_term_scrollback_option)
+
+	# Separator
+	vbox.add_child(HSeparator.new())
+
+	# --- Cursor ---
+	var cursor_header := Label.new()
+	cursor_header.text = "Cursor"
+	cursor_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(cursor_header)
+
+	var cursor_row := HBoxContainer.new()
+	cursor_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(cursor_row)
+	var cursor_lbl := Label.new()
+	cursor_lbl.text = "Style:"
+	cursor_lbl.custom_minimum_size = Vector2(140, 0)
+	cursor_row.add_child(cursor_lbl)
+
+	_term_cursor_option = OptionButton.new()
+	_term_cursor_option.add_item("Block")
+	_term_cursor_option.add_item("Bar")
+	_term_cursor_option.add_item("Underline")
+	cursor_row.add_child(_term_cursor_option)
+
+	_term_cursor_blink = CheckButton.new()
+	_term_cursor_blink.text = "Blink"
+	_term_cursor_blink.button_pressed = tc.cursor_blink
+	vbox.add_child(_term_cursor_blink)
+
+	tab_container.add_child(_terminal_tab)
+
+	# Wire signals
+	_term_theme_option.item_selected.connect(_on_term_theme_selected)
+	_term_font_option.item_selected.connect(_on_term_font_selected)
+	_term_font_size_spin.value_changed.connect(_on_term_font_size_changed)
+	_term_scrollback_option.item_selected.connect(_on_term_scrollback_selected)
+	_term_cursor_option.item_selected.connect(_on_term_cursor_selected)
+	_term_cursor_blink.toggled.connect(_on_term_cursor_blink_toggled)
+
+	# Populate initial values
+	_term_load_values()
+
+
+func _scan_available_fonts() -> void:
+	_available_fonts.clear()
+	var font_dir := "res://assets/fonts/CascadiaCode/"
+	var dir := DirAccess.open(font_dir)
+	if not dir:
+		_available_fonts.append({"name": "CascadiaMono", "path": font_dir + "CascadiaMono.ttf"})
+		return
+	dir.list_dir_begin()
+	var file := dir.get_next()
+	while file != "":
+		if file.ends_with(".ttf") and not file.ends_with(".import"):
+			var display := file.get_basename()
+			_available_fonts.append({"name": display, "path": font_dir + file})
+		file = dir.get_next()
+	_available_fonts.sort_custom(func(a, b): return a.name < b.name)
+
+
+func _term_load_values() -> void:
+	_term_loading = true
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+
+	# Theme dropdown
+	for i in range(_term_theme_option.item_count):
+		if _term_theme_option.get_item_metadata(i) == tc.theme_name:
+			_term_theme_option.selected = i
+			break
+
+	# Palette grid
+	_term_update_palette_display()
+
+	# fg/bg
+	var fgbg := tc.get_theme_fg_bg()
+	_term_fg_picker.color = fgbg.fg
+	_term_bg_picker.color = fgbg.bg
+
+	# Font
+	for i in range(_available_fonts.size()):
+		if _available_fonts[i].path == tc.font_family:
+			_term_font_option.selected = i
+			break
+	_term_font_size_spin.value = tc.font_size
+	_term_update_preview()
+
+	# Scrollback
+	for i in range(SCROLLBACK_OPTIONS.size()):
+		if SCROLLBACK_OPTIONS[i] == tc.scrollback_lines:
+			_term_scrollback_option.selected = i
+			break
+
+	# Cursor
+	_term_cursor_option.selected = tc.cursor_style
+	_term_cursor_blink.button_pressed = tc.cursor_blink
+
+	_term_loading = false
+
+
+func _term_update_palette_display() -> void:
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	var palette := tc.get_active_palette()
+	var is_custom := tc.theme_name == "custom"
+	for i in range(mini(16, _term_palette_grid.get_child_count())):
+		var cpb: ColorPickerButton = _term_palette_grid.get_child(i)
+		if i < palette.size():
+			cpb.color = palette[i]
+		cpb.disabled = not is_custom
+
+
+func _term_update_preview() -> void:
+	if _term_preview_label:
+		var tc: TerminalConfig = SingletonObject.get_terminal_config()
+		var f := tc.get_font()
+		if f:
+			_term_preview_label.add_theme_font_override("font", f)
+		_term_preview_label.add_theme_font_size_override("font_size", tc.font_size)
+
+
+func _on_term_theme_selected(idx: int) -> void:
+	if _term_loading:
+		return
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	var name: String = _term_theme_option.get_item_metadata(idx)
+	tc.theme_name = name
+	# Update fg/bg from theme
+	var fgbg := tc.get_theme_fg_bg()
+	tc.default_fg = fgbg.fg
+	tc.default_bg = fgbg.bg
+	_term_fg_picker.color = fgbg.fg
+	_term_bg_picker.color = fgbg.bg
+	_term_update_palette_display()
+
+
+func _on_term_palette_color_changed(color: Color, idx: int) -> void:
+	if _term_loading:
+		return
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	if tc.theme_name != "custom":
+		return
+	var pal := tc.custom_palette
+	if pal.size() != 16:
+		pal = tc.get_active_palette()
+	pal[idx] = color
+	tc.custom_palette = pal
+
+
+func _on_term_font_selected(idx: int) -> void:
+	if _term_loading:
+		return
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	tc.font_family = _available_fonts[idx].path
+	_term_update_preview()
+
+
+func _on_term_font_size_changed(val: float) -> void:
+	if _term_loading:
+		return
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	tc.font_size = int(val)
+	_term_update_preview()
+
+
+func _on_term_scrollback_selected(idx: int) -> void:
+	if _term_loading:
+		return
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	tc.scrollback_lines = SCROLLBACK_OPTIONS[idx]
+
+
+func _on_term_cursor_selected(idx: int) -> void:
+	if _term_loading:
+		return
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	tc.cursor_style = idx
+
+
+func _on_term_cursor_blink_toggled(pressed: bool) -> void:
+	if _term_loading:
+		return
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	tc.cursor_blink = pressed
+
+#endregion Terminal Tab

@@ -20,27 +20,25 @@ extern "C" {
 /* Opaque handle to a terminal instance */
 typedef void* MinervaTerminal;
 
-/* Color type tag */
-typedef enum {
-    MINERVA_COLOR_NONE = 0,
-    MINERVA_COLOR_PALETTE = 1,
-    MINERVA_COLOR_RGB = 2,
-} MinervaColorType;
+/* Color type tag — must be uint8_t to match Zig enum(u8) */
+#define MINERVA_COLOR_NONE    0
+#define MINERVA_COLOR_PALETTE 1
+#define MINERVA_COLOR_RGB     2
+typedef uint8_t MinervaColorType;
 
-/* Color value */
+/* Color value — packed to match Zig extern struct layout (5 bytes) */
 typedef struct {
-    MinervaColorType type;
-    uint8_t r, g, b;       /* RGB values (valid when type == RGB, or resolved from palette) */
+    MinervaColorType type;  /* uint8_t */
+    uint8_t r, g, b;       /* RGB values (valid when type == RGB) */
     uint8_t palette_index;  /* palette index (valid when type == PALETTE) */
 } MinervaColor;
 
-/* Wide character state */
-typedef enum {
-    MINERVA_WIDE_NARROW = 0,
-    MINERVA_WIDE_WIDE = 1,
-    MINERVA_WIDE_SPACER_HEAD = 2,
-    MINERVA_WIDE_SPACER_TAIL = 3,
-} MinervaWide;
+/* Wide character state — must be uint8_t to match Zig enum(u8) */
+#define MINERVA_WIDE_NARROW     0
+#define MINERVA_WIDE_WIDE       1
+#define MINERVA_WIDE_SPACER_HEAD 2
+#define MINERVA_WIDE_SPACER_TAIL 3
+typedef uint8_t MinervaWide;
 
 /* Cell information returned by minerva_vt_get_cell */
 typedef struct {
@@ -118,6 +116,12 @@ char* minerva_vt_plain_string(MinervaTerminal term);
  * Free a string returned by minerva_vt_plain_string().
  */
 void minerva_vt_free_string(char* str);
+
+/**
+ * Get scroll information: total rows in scrollback+screen,
+ * visible viewport rows, and whether viewport is at bottom.
+ */
+void minerva_vt_get_scroll_info(MinervaTerminal term, uint32_t* total_rows, uint32_t* viewport_rows, bool* is_at_bottom);
 
 /**
  * Scroll the viewport by the given number of lines.
