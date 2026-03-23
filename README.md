@@ -12,6 +12,65 @@ Minerva adds a note-taking system and (hopefully) some editors and task runners.
 ## Features ##
 - Cloud Light -- minimize interactions with the cloud / cloud services as much as possible.  Save files locally, use local resources, etc.
 - Note area, with selectable notes.  (Only selected notes are submitted to the LLM, the rest are just for the human)
-- (Eventually) support for multiple LLMs / providers.
-    - Right now, only Google Vertex and Gemini 1.0 are supported.
+- Multi-provider support (Google Vertex, OpenAI, Anthropic Claude, OpenRouter, local Ollama, and more)
+- Built-in terminal with libghostty-vt integration
+- Autocoder for LLM-driven code generation with review agents
+- Stream Deck integration for hardware controls (PTT, audio device switching)
+- Voice support: push-to-talk, TTS, always-listening mode
+
+## Getting Started ##
+
+### Prerequisites
+- [Godot Engine 4.4+](https://godotengine.org/download)
+- Git
+
+### Clone and Build (Linux / macOS)
+
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/turnrocklabs/Minerva.git
+cd Minerva
+
+# Set up SQLite merge filters for docket files
+scripts/setup-git-filters.sh
+
+# Build all C++ extensions (installs Zig and SCons if needed)
+scripts/build-extensions.sh
+```
+
+### Clone and Build (Windows)
+
+```powershell
+# Clone with submodules
+git clone --recursive https://github.com/turnrocklabs/Minerva.git
+cd Minerva
+
+# Build all C++ extensions (installs Zig and SCons if needed)
+powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1
+```
+
+### What the Build Scripts Do
+
+Both scripts automatically handle:
+- Git submodule initialization (godot-cpp, vendor/ghostty)
+- Zig 0.15.2 download and install (user-local, no sudo/admin)
+- SCons install via pip
+- ghostty-vt shim build (Zig)
+- Godot C++ terminal extension build (SCons)
+- Library installation to `src/bin/`
+
+### Run
+
+Open `src/project.godot` in Godot Editor 4.4+ and press F5.
+
+### If You Already Cloned Without --recursive
+
+```bash
+git submodule update --init --recursive
+scripts/build-extensions.sh          # Linux/macOS
+```
+```powershell
+git submodule update --init --recursive
+powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1  # Windows
+```
 

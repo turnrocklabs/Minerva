@@ -20,6 +20,8 @@
 bin/
 *.obj
 *.os
+.zig-cache/
+zig-out/
 *.dbliteMinerva.dmg
 
 # Stream Deck plugin compiled binaries

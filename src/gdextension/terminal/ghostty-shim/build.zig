@@ -91,6 +91,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/shim.zig"),
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
     shim_mod.addImport("ghostty-vt", vt_mod);
 

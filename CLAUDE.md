@@ -15,17 +15,58 @@ Minerva is a Godot 4 application that provides an interface for interacting with
 
 ## Build Commands
 
-### Building C++ Extensions (Terminal functionality)
+### First-time Setup (clones submodules, installs tools, builds everything)
 ```bash
+# Linux / macOS
+git submodule update --init --recursive
+scripts/setup-git-filters.sh       # SQLite docket merge support
+scripts/build-extensions.sh        # Builds ghostty-vt shim + terminal extension
+```
+```powershell
+# Windows
+git submodule update --init --recursive
+powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1
+```
+
+### Building C++ Extensions (Terminal + ghostty-vt)
+The build script handles everything automatically:
+```bash
+scripts/build-extensions.sh          # Auto-detects platform
+scripts/build-extensions.sh linux    # Force Linux build
+scripts/build-extensions.sh macos    # Force macOS build
+```
+
+This builds two libraries:
+- `libminerva-vt.so/.dylib` — ghostty-vt shim (Zig, wraps libghostty terminal emulator)
+- `libterminal.*.so/.dylib/.dll` — Godot C++ GDExtension for terminal functionality
+
+Both end up in `src/bin/`. The build script installs Zig 0.15.2 and SCons automatically if missing.
+
+### Manual build (if you prefer)
+```bash
+# 1. Build ghostty-vt shim
+cd src/gdextension/terminal/ghostty-shim
+zig build -Doptimize=ReleaseFast
+
+# 2. Build Godot C++ extension
 cd src
-scons platform=linux  # For Linux
-scons platform=windows  # For Windows
+scons platform=linux  # or macos/windows
+
+# 3. Copy shim library to bin/
+cp src/gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.so src/bin/
 ```
 
 ### Running the Application
-- Open `src/project.godot` in Godot Editor 4.4
+- Open `src/project.godot` in Godot Editor 4.4+
 - Press F5 or click Play to run the application
 - Main scene: `res://Scenes/MainScene.tscn`
+
+### Stream Deck Plugin (optional)
+```bash
+cd plugins/elgato
+bun test                    # Run 80 tests
+bun build --compile src/index.ts --outfile dist/bin/minerva-plugin-linux
+```
 
 ## Core Architecture
 

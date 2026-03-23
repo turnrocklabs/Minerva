@@ -2,9 +2,10 @@ PRAGMA foreign_keys=OFF;
 BEGIN TRANSACTION;
 CREATE TABLE docket_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT INTO docket_meta VALUES('version','2.0.0');
-INSERT INTO docket_meta VALUES('counter','28');
+INSERT INTO docket_meta VALUES('counter','18');
 INSERT INTO docket_meta VALUES('project','minerva-experiments');
-INSERT INTO docket_meta VALUES('ui_scale','1.3');
+INSERT INTO docket_meta VALUES('ui_scale','1.15');
+INSERT INTO docket_meta VALUES('id_prefix','INE');
 CREATE TABLE items (
 		id TEXT PRIMARY KEY,
 		type TEXT NOT NULL, status TEXT NOT NULL,
@@ -22,222 +23,18 @@ CREATE TABLE items (
 		surprise TEXT, surfaced_from TEXT,
 		retrieval_count INTEGER DEFAULT 0, research_cost INTEGER DEFAULT 0,
 		blocked_by TEXT
-	, parent TEXT DEFAULT '');
-INSERT INTO items VALUES('DKT-0001','work_item','backlog','Phase 0: Prove the five rules with manual supervision','The first experiment from the thought paper. One supervisor (human in Claude Code), two worker agents (researcher + writer), two Docket files, one project. Human manually plays supervisor — reads agent Dockets, answers questions, assigns work, routes between agents. Validates the five data-flow rules, Docket-as-memory, Notes-as-findings, and the supervisor primitives before automating anything. Success = full cycle: researcher collects findings → hits question → supervisor answers → researcher completes → supervisor routes to writer → writer drafts → supervisor reviews.','2026-03-02T01:22:06','2026-03-02T01:22:06','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0002','work_item','backlog','Set up researcher agent Docket and Notes thread','Create a researcher.dct file and a Notes thread for findings. Define the researcher agent''s mission: take a topic, search the web, store findings as Notes, create work items for sub-topics in its own Docket. The researcher should use Docket for work structure (items, questions, hints) and Notes for content (research findings, references, collected data). This validates the Notes-vs-Docket convention from Gap 3 in the paper.','2026-03-02T01:22:10','2026-03-02T01:22:10','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0003','work_item','backlog','Set up writer agent Docket and Notes thread','Create a writer.dct file and a Notes thread for drafts. Define the writer agent''s mission: take researcher findings (from Notes), draft content, store drafts as Notes, track tasks in its own Docket. The writer receives work via its Docket (supervisor writes items there after researcher completes). This validates the handoff pattern: supervisor reads from researcher''s Docket/Notes, writes work items to writer''s Docket.','2026-03-02T01:22:12','2026-03-02T01:22:12','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0004','work_item','backlog','Run the researcher→supervisor→writer cycle end-to-end','Execute the full cycle described in the paper''s First Experiment section: (1) Researcher works on a topic, collects findings as Notes, creates work items in its Docket. (2) Researcher hits a question, creates it in Docket, fires ''blocked''. (3) Human-as-supervisor reads the question, answers it in researcher''s Docket. (4) Researcher resumes, completes, fires ''done''. (5) Supervisor routes findings to writer by creating work items in writer''s Docket referencing researcher''s Notes. (6) Writer drafts content, fires ''done''. (7) Supervisor reviews output. Validate that insights are only created from distilled evidence, not raw findings.','2026-03-02T01:22:16','2026-03-02T01:22:16','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0005','work_item','backlog','Test chat compaction: summarize→clone→replace','After the researcher agent has enough conversation turns, manually compact its chat thread. Clone-summarize-replace: summarize the current chat into a new thread preserving active decisions, open loops, learned preferences, and Docket/Note references. Delete the old thread. Rename the new one. Validate the agent can continue working from the compacted thread + Docket + Notes without losing important context. This proves Gap 4 (Chat Compaction) from the paper.','2026-03-02T01:22:25','2026-03-02T01:22:25','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0006','work_item','backlog','Test memory loading: cold-start agent from Docket + Note titles','Start a fresh agent session that loads only: (1) system prompt, (2) Docket active surface (open/in-progress items, recent questions/answers, hints), (3) Note titles (not content). Validate the agent can pick up where the last session left off, knows what work is pending, and loads full Note content on demand only when needed. This proves Gap 5 (Memory Management) from the paper — load structure first, content on demand.','2026-03-02T01:22:29','2026-03-02T01:22:29','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0007','work_item','backlog','Test cross-project Docket queries from supervisor perspective','With researcher.dct and writer.dct both populated from the Phase 0 cycle, test the supervisor''s cross-project view: query all open questions across both agents, query all blocked items, query all completed items from the last session. Validates Gap 6 (Supervisor Cross-Project Docket View). Docket already supports multiple --file args — verify this works with the MCP tools and that the supervisor can see a coherent aggregate view.','2026-03-02T01:22:33','2026-03-02T01:22:33','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0008','work_item','backlog','Gap 1: Kanban-to-Session binding in Autocoder board','Autocoder''s Kanban cards aren''t bound to chat threads. Needed: (1) Card field storing chat thread ID (or null). (2) Logic to create a thread when card moves to "In Progress." (3) Event subscription: card binds to the thread''s agent events. (4) Nested boards: clicking a supervisor card drills into that supervisor''s board. This is the bridge between the existing Kanban UI and agent lifecycle. Ref: thought-paper.md Gap 1.','2026-03-02T01:23:04','2026-03-02T01:23:04','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0009','work_item','active','Gap 2: Extend AgentDefinition with swarm fields',replace('Extend AgentDefinition.gd with swarm-specific fields. Don''t rebuild — extend.\n\nAlready exists in AgentDefinition.gd:\n- Name, system prompt, provider, model\n- Temperature, top_p, frequency_penalty, presence_penalty\n- Enabled tools allowlist\n- Locked notes tab, drawer tab\n- Core service ID + action name\n\nNew fields needed:\n- @address: short addressable name for voice/chat reference\n- docket: path to this agent''s .dct file\n- notes_thread: which tab holds findings\n- skills_thread: which tab holds skill notes\n- parent: which supervisor owns this agent (tree structure)\n- role: agent or supervisor\n- autonomy: list of actions the agent can do freely\n- requires_supervisor: list needing LLM supervisor approval\n- requires_human: list needing human approval\n- codetools_deny: per-agent regex additions to the global deny list (additive only, never weaker than global). E.g., marketing agent blocks curl POST to production APIs.\n\nAgentRegistry.gd needs to persist the new fields.\n\nRef: thought-paper.md Gap 2.\n\n[ip] Q: codetools_deny — shouldn''t this be global only?\n[claude] Per-agent overrides (additive, never weaker). Different agents need different restrictions — marketing can''t POST to prod APIs, research agent can. Global deny is the floor, per-agent adds to it.\n[ip] Agreed, per-agent override makes sense."}\012','\012',char(10)),'2026-03-02T01:23:09','2026-03-02T02:50:00','','Claude Code','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,'','');
-INSERT INTO items VALUES('DKT-0010','work_item','backlog','Gap 3: Document Notes-vs-Docket conventions for agents','Agents have two persistence layers and need clear conventions. Notes (project-scoped): research findings, drafts, media, references, working documents — anything that is content. Docket (.dct): work items (task queue), questions (escalation), hints (operational facts), insights (cross-project conclusions, expensive), RCAs (post-mortems), links (causal chains). Key rule: a finding is a Note. An insight is a Docket item that emerges from findings. Insights should cite the notes they were derived from. Write this up as agent instructions. Ref: thought-paper.md Gap 3.','2026-03-02T01:23:15','2026-03-02T01:23:15','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0011','work_item','backlog','Gap 7: Per-agent MCP tool sets','AgentDefinition.gd has enabled_tools allowlist. MCP integration supports multi-server tool registration. The gap: MCP server config is currently global. Need per-agent MCP server config so a marketing agent gets social-media-api + analytics-api while a research agent gets web-search + scraping tools. Also curate tool sets for common agent archetypes. Ref: thought-paper.md Gap 7.','2026-03-02T01:23:19','2026-03-02T01:23:19','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0012','work_item','backlog','Gap 8: Swarm-specific triggers for agent events','TriggerDefinition.gd + TriggerManager.gd already support timer and event triggers with chaining. Define swarm-specific trigger types: agent fires ''blocked'' → supervisor thread receives message. Agent fires ''done'' → supervisor evaluates card move to Review. Agent fires ''ready'' → supervisor assigns next work item. Escalation timeout: question unanswered for N hours → notify parent. Checkpoint interval: agent fires ''checkpoint'' every N minutes of active work. Ref: thought-paper.md Gap 8.','2026-03-02T01:23:25','2026-03-02T01:23:25','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0013','work_item','backlog','Gap 9: Hidden tab indicator for background agents','The swarm has many chat tabs open but hidden (idle agents/supervisors). The UI needs a way to show: which hidden tabs exist, their status (idle, active, has-event-pending), and allow quick switching. Small UI addition but important for the human to know what''s alive in the background. Ref: thought-paper.md Gap 9.','2026-03-02T01:23:29','2026-03-02T01:23:29','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0014','work_item','backlog','Gap 10: Per-agent cost tracking and budget limits','Minerva already tracks token costs per-provider. Needed: (1) Per-agent cost accumulation — each agent''s chat thread tracks its own token usage. (2) Budget limits — agent definition gets max_daily_cost or max_tokens_per_session; agent fires ''error'' with ''budget exceeded'' when hit. (3) Supervisor cost rollup — supervisor reports total subtree cost to parent. (4) Cost as decision input — supervisor factors cost into work assignment decisions. Autocoder already tracks session token usage; generalize to per-agent running totals. Ref: thought-paper.md Gap 10.','2026-03-02T01:23:34','2026-03-02T01:23:34','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0015','work_item','backlog','Gap 11: Observability — event timeline and trace view','Autocoder already logs full LLM traffic to JSONL. Docket has change tracking. Chat history is preserved. What''s needed: (1) Per-agent traffic logging wired to arbitrary agent threads, not just autocoder sessions. (2) Event log — timeline of events fired/received across the tree with timestamps. (3) Trace view — given a bad outcome, walk backward: output → tool call → LLM decision → context loaded. The data is mostly already captured; the gap is surfacing it for debugging a swarm. Ref: thought-paper.md Gap 11.','2026-03-02T01:23:39','2026-03-02T01:23:39','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0016','work_item','backlog','Phase 2: First automated supervisor in Minerva','After Phase 0 proves the patterns manually and Phase 1 closes the platform gaps, run the same researcher→writer experiment inside Minerva proper. The supervisor is now an LLM agent (not a human), with its own chat thread, reading children''s Dockets via MCP, responding to events via TriggerManager, and visible on the Kanban board. The human interacts via the CEO tab or voice. This is the first real swarm — small (1 supervisor, 2 agents) but fully automated. Success = the same cycle from Phase 0 runs without human intervention except final review approval.','2026-03-02T01:23:48','2026-03-02T01:23:48','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0017','work_item','backlog','Phase 3: Scale to 5:1 — one supervisor, five workers','Expand from 2 agents to 5 under one supervisor. Test the 5:1 ratio in practice: does the supervisor''s ~30-line context view (6 lines per child x 5) actually work? Does the Kanban board with 5 cards stay readable? Can the supervisor route work between 5 agents, handle concurrent questions from multiple agents, and keep its own status report coherent? This validates the scaling math from the paper before adding hierarchy depth.','2026-03-02T01:23:53','2026-03-02T01:23:53','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0018','work_item','backlog','Phase 4: Two-level hierarchy — supervisor of supervisors','Add a second level: a senior supervisor managing 2-3 mid-level supervisors, each managing up to 5 agents. Test: does the compression-per-level work? Does the senior supervisor get a coherent 3-line-per-child view of its mid-level supervisors? Do questions properly percolate up two levels? Does Rule 5 (complaints visible +1) work — can an agent skip its supervisor and reach the senior? This validates the recursive tree at minimal depth before going deeper.','2026-03-02T01:23:57','2026-03-02T01:23:57','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0019','work_item','done','Create AgentDefinition.gd model class',replace('Create src/Scripts/Models/AgentDefinition.gd following the MemoryThread pattern (RefCounted + Serialize/Deserialize).\n\nExisting fields (from current agent dict in AutocoderAdapter.gd):\n- agent_id: String\n- name: String\n- prompt: String\n- model: String\n- tools_enabled: bool\n- setup_commands: Array[String]\n\nNew swarm fields:\n- address: String — short addressable name\n- docket: String — path to agent''s .dct file\n- notes_thread: String — tab holding findings\n- skills_thread: String — tab holding skill notes\n- parent: String — supervisor agent_id (tree structure)\n- role: String — "agent" or "supervisor"\n- autonomy: Array[String] — actions agent can do freely\n- requires_supervisor: Array[String] — needs LLM supervisor approval\n- requires_human: Array[String] — needs human approval\n- codetools_deny: Array[String] — per-agent regex additions to global deny (additive only)\n\nSerialize() must produce backward-compatible dict for Core backend (only send fields Core knows). New swarm fields are client-side only for now.\n\nParent: DKT-0009','\n',char(10)),'2026-03-02T02:51:07','2026-03-02T03:32:53','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'DKT-0009');
-INSERT INTO items VALUES('DKT-0020','work_item','done','Create AgentRegistry.gd service class',replace('Create src/Scripts/Services/Autocoder/AgentRegistry.gd to encapsulate agent persistence and lookup.\n\nMethods:\n- register(def: AgentDefinition) -> String\n- get_agent(id: String) -> AgentDefinition\n- list_agents() -> Array[AgentDefinition]\n- update(def: AgentDefinition) -> bool\n- delete(id: String) -> bool\n- get_children(parent_id: String) -> Array[AgentDefinition] — tree query\n- get_supervisor(id: String) -> AgentDefinition — tree query\n\nWraps existing AutocoderAdapter CRUD methods, translating between AgentDefinition objects and the dict format Core expects.\n\nDepends on: AgentDefinition.gd existing first.\nParent: DKT-0009','\n',char(10)),'2026-03-02T02:51:11','2026-03-02T03:33:18','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'DKT-0009');
-INSERT INTO items VALUES('DKT-0021','work_item','done','Migrate AutocoderAdapter agent methods to AgentRegistry',replace('Replace dict-based agent CRUD in AutocoderAdapter.gd with AgentRegistry calls.\n\nCurrent methods to migrate (lines 478-625):\n- create_review_agent() -> registry.register()\n- list_review_agents() -> registry.list_agents()\n- get_review_agents() -> registry.list_agents()\n- update_review_agent() -> registry.update()\n- delete_review_agent() -> registry.delete()\n\nKeep backward compat: AutocoderAdapter public API can stay the same, but internally delegates to AgentRegistry. Or expose AgentRegistry directly and deprecate the old methods.\n\nDepends on: AgentRegistry.gd existing first.\nParent: DKT-0009','\n',char(10)),'2026-03-02T02:51:14','2026-03-02T03:36:47','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'DKT-0009');
-INSERT INTO items VALUES('DKT-0022','work_item','done','Update UI consumers to use AgentDefinition','Update 3 UI files to use AgentDefinition instead of raw dictionaries:\n\n1. ReviewAgentManager.gd — agent card CRUD UI. Replace dict field access with AgentDefinition properties.\n2. AutocoderCompactSubmit.gd — agent checkbox selection. _available_review_agents becomes Array[AgentDefinition].\n3. SubmitJob.gd — agent loading and ItemList display.\n\nNew swarm fields are NOT shown in UI yet — this is backend-only for Phase 1. UI changes are purely about switching from untyped dicts to typed AgentDefinition objects.\n\nDepends on: AutocoderAdapter migration complete.\nParent: DKT-0009','2026-03-02T02:51:18','2026-03-02T03:39:22','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'DKT-0009');
-INSERT INTO items VALUES('DKT-0023','rca','closed','Escaped newlines in Docket text fields via MCP',replace('Descriptions and other text fields show literal \n instead of actual line breaks when created/updated via MCP tools.\012\012Symptom: DKT-0019 description shows literal \n instead of newlines.\012\012Why 1: SQLite stores the two characters \ and n instead of newline (0x0A).\012\012Why 2: MCP server received a string containing literal \n and stored it as-is. No escape interpretation.\012\012Why 3: JSON-RPC body contained \\n (escaped backslash), which JSON deserializes as literal \n, not newline.\012\012Why 4: Claude writes \n in tool call XML parameters out of habit. XML parameters are plain text — \n has no special meaning. Only actual line breaks produce newlines.\012\012Why 5: No normalization layer anywhere in the pipeline. String flows tool parameter -> JSON-RPC -> SQLite completely raw. When input is wrong, nothing corrects it.\012\012Root cause: Two-sided failure.\012(A) Claude habitually writes \n in tool parameters (behavioral)\012(B) Docket has no defensive normalization of text fields (systemic)\012\012Fix: Add server-side normalization of literal \n -> real newlines in text fields on write (DataModel or DocketDB layer). This catches the mistake regardless of MCP client.','\012',char(10)),'2026-03-02T02:55:00','2026-03-02T02:58:50','','Claude Code','',2,2,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0024','dcr','closed','Add parent field to all item types',replace('Add a parent column to the items table so items can form a tree hierarchy. One parent per item (or empty for root items). Shows in detail form, queryable.\n\nChanges:\n- docket_db.gd: add parent TEXT column to items table + migration\n- docket_db.gd: add to _ITEM_COLS\n- record_form.gd: add Parent field to fields grid (always visible)\n- docket_update.gd / docket_create.gd: expose parent in MCP schema\n- query support: parent field queryable like any other field','\n',char(10)),'2026-03-02T03:01:10','2026-03-02T03:07:35','','Claude Code','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
-INSERT INTO items VALUES('DKT-0025','work_item','closed','Test AgentDefinition Serialize/Deserialize round-trip',replace('Verify AgentDefinition serialization integrity:\n\n1. Serialize() produces only Core fields (agent_id, name, prompt, model, tools_enabled, setup_commands) — no swarm fields leak to backend\n2. SerializeFull() includes all fields (Core + swarm)\n3. Deserialize(Serialize()) round-trips Core fields correctly\n4. Deserialize(SerializeFull()) round-trips all fields correctly\n5. Deserialize of a dict missing swarm fields produces safe defaults (role="agent", empty arrays)\n6. Backward compat: Deserialize of an old-format dict (from current Core backend) works','\n',char(10)),'2026-03-02T03:34:25','2026-03-02T03:51:39','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'DKT-0009');
-INSERT INTO items VALUES('DKT-0026','work_item','backlog','Test AgentRegistry CRUD against Core backend',replace('Verify AgentRegistry works end-to-end with AutocoderAdapter and Core:\n\n1. register() — creates agent, returns valid agent_id, def.agent_id is populated\n2. list_agents() — returns Array[AgentDefinition], not raw dicts\n3. get_agent(id) — finds registered agent, returns null for unknown id\n4. update() — modifies fields, verify round-trip via get_agent()\n5. delete() — removes agent, get_agent() returns null after\n6. get_children(parent_id) — returns only agents with matching parent\n7. get_supervisor(id) — follows parent link, returns null for root agents\n\nRequires a running Core backend connection.','\n',char(10)),'2026-03-02T03:34:30','2026-03-02T03:34:30','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'DKT-0009');
-INSERT INTO items VALUES('DKT-0027','work_item','backlog','Test UI backward compat after AutocoderAdapter migration',replace('Verify the three UI consumers work correctly after migration from raw dicts to AgentDefinition:\n\n1. ReviewAgentManager — create agent via form, verify it appears in card list. Edit agent, verify fields update. Delete agent, verify card removed.\n2. AutocoderCompactSubmit — verify agent checkboxes populate correctly, selection state persists, get_enabled_agent_ids() returns correct IDs\n3. SubmitJob — verify agent list loads, sorting works, selected agent IDs pass to generate() correctly\n\nAlso verify the inconsistency between "id" (AutocoderCompactSubmit) and "agent_id" (others) is resolved — all should use agent_id from AgentDefinition.','\n',char(10)),'2026-03-02T03:34:35','2026-03-02T03:34:35','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'DKT-0009');
-INSERT INTO items VALUES('DKT-0028','insight','draft','Godot 4.6 headless: --import required before first run for class_name resolution','When running a Godot 4.6 project headless (e.g. for automated tests), class_name identifiers won''t resolve unless the project has been imported first. Run `godot --headless --import` once before `godot --headless --path .` to scan the filesystem, register global class names, and build the uid cache. Without this, you get "Identifier not declared in the current scope" errors for any class_name types.','2026-03-02T03:51:06','2026-03-02T03:51:06','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'');
+	, parent TEXT DEFAULT '', findings TEXT);
+/****** CORRUPTION ERROR *******/
 CREATE TABLE item_tags (
 		item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
 		tag TEXT NOT NULL, PRIMARY KEY (item_id, tag)
 	);
-INSERT INTO item_tags VALUES('DKT-0001','phase-0');
-INSERT INTO item_tags VALUES('DKT-0001','experiment');
-INSERT INTO item_tags VALUES('DKT-0001','foundational');
-INSERT INTO item_tags VALUES('DKT-0002','phase-0');
-INSERT INTO item_tags VALUES('DKT-0002','researcher');
-INSERT INTO item_tags VALUES('DKT-0002','setup');
-INSERT INTO item_tags VALUES('DKT-0003','phase-0');
-INSERT INTO item_tags VALUES('DKT-0003','writer');
-INSERT INTO item_tags VALUES('DKT-0003','setup');
-INSERT INTO item_tags VALUES('DKT-0004','phase-0');
-INSERT INTO item_tags VALUES('DKT-0004','experiment');
-INSERT INTO item_tags VALUES('DKT-0004','validation');
-INSERT INTO item_tags VALUES('DKT-0005','phase-0');
-INSERT INTO item_tags VALUES('DKT-0005','compaction');
-INSERT INTO item_tags VALUES('DKT-0005','validation');
-INSERT INTO item_tags VALUES('DKT-0006','phase-0');
-INSERT INTO item_tags VALUES('DKT-0006','memory');
-INSERT INTO item_tags VALUES('DKT-0006','validation');
-INSERT INTO item_tags VALUES('DKT-0007','phase-0');
-INSERT INTO item_tags VALUES('DKT-0007','cross-project');
-INSERT INTO item_tags VALUES('DKT-0007','validation');
-INSERT INTO item_tags VALUES('DKT-0008','phase-1');
-INSERT INTO item_tags VALUES('DKT-0008','minerva');
-INSERT INTO item_tags VALUES('DKT-0008','kanban');
-INSERT INTO item_tags VALUES('DKT-0008','gap-1');
-INSERT INTO item_tags VALUES('DKT-0010','phase-1');
-INSERT INTO item_tags VALUES('DKT-0010','conventions');
-INSERT INTO item_tags VALUES('DKT-0010','documentation');
-INSERT INTO item_tags VALUES('DKT-0010','gap-3');
-INSERT INTO item_tags VALUES('DKT-0011','phase-1');
-INSERT INTO item_tags VALUES('DKT-0011','minerva');
-INSERT INTO item_tags VALUES('DKT-0011','mcp');
-INSERT INTO item_tags VALUES('DKT-0011','gap-7');
-INSERT INTO item_tags VALUES('DKT-0012','phase-1');
-INSERT INTO item_tags VALUES('DKT-0012','minerva');
-INSERT INTO item_tags VALUES('DKT-0012','triggers');
-INSERT INTO item_tags VALUES('DKT-0012','events');
-INSERT INTO item_tags VALUES('DKT-0012','gap-8');
-INSERT INTO item_tags VALUES('DKT-0013','phase-1');
-INSERT INTO item_tags VALUES('DKT-0013','minerva');
-INSERT INTO item_tags VALUES('DKT-0013','ui');
-INSERT INTO item_tags VALUES('DKT-0013','gap-9');
-INSERT INTO item_tags VALUES('DKT-0014','phase-1');
-INSERT INTO item_tags VALUES('DKT-0014','minerva');
-INSERT INTO item_tags VALUES('DKT-0014','cost');
-INSERT INTO item_tags VALUES('DKT-0014','gap-10');
-INSERT INTO item_tags VALUES('DKT-0015','phase-1');
-INSERT INTO item_tags VALUES('DKT-0015','minerva');
-INSERT INTO item_tags VALUES('DKT-0015','observability');
-INSERT INTO item_tags VALUES('DKT-0015','gap-11');
-INSERT INTO item_tags VALUES('DKT-0016','phase-2');
-INSERT INTO item_tags VALUES('DKT-0016','experiment');
-INSERT INTO item_tags VALUES('DKT-0016','minerva');
-INSERT INTO item_tags VALUES('DKT-0016','automation');
-INSERT INTO item_tags VALUES('DKT-0017','phase-3');
-INSERT INTO item_tags VALUES('DKT-0017','experiment');
-INSERT INTO item_tags VALUES('DKT-0017','scaling');
-INSERT INTO item_tags VALUES('DKT-0018','phase-4');
-INSERT INTO item_tags VALUES('DKT-0018','experiment');
-INSERT INTO item_tags VALUES('DKT-0018','hierarchy');
-INSERT INTO item_tags VALUES('DKT-0009','agent-definition');
-INSERT INTO item_tags VALUES('DKT-0009','gap-2');
-INSERT INTO item_tags VALUES('DKT-0009','minerva');
-INSERT INTO item_tags VALUES('DKT-0009','phase-1');
-INSERT INTO item_tags VALUES('DKT-0019','agent-definition');
-INSERT INTO item_tags VALUES('DKT-0019','minerva');
-INSERT INTO item_tags VALUES('DKT-0019','phase-1');
-INSERT INTO item_tags VALUES('DKT-0019','swarm');
-INSERT INTO item_tags VALUES('DKT-0020','agent-registry');
-INSERT INTO item_tags VALUES('DKT-0020','minerva');
-INSERT INTO item_tags VALUES('DKT-0020','phase-1');
-INSERT INTO item_tags VALUES('DKT-0020','swarm');
-INSERT INTO item_tags VALUES('DKT-0021','autocoder');
-INSERT INTO item_tags VALUES('DKT-0021','minerva');
-INSERT INTO item_tags VALUES('DKT-0021','phase-1');
-INSERT INTO item_tags VALUES('DKT-0021','swarm');
-INSERT INTO item_tags VALUES('DKT-0021','migration');
-INSERT INTO item_tags VALUES('DKT-0022','ui');
-INSERT INTO item_tags VALUES('DKT-0022','minerva');
-INSERT INTO item_tags VALUES('DKT-0022','phase-1');
-INSERT INTO item_tags VALUES('DKT-0022','swarm');
-INSERT INTO item_tags VALUES('DKT-0022','migration');
-INSERT INTO item_tags VALUES('DKT-0023','docket');
-INSERT INTO item_tags VALUES('DKT-0023','mcp');
-INSERT INTO item_tags VALUES('DKT-0023','text-formatting');
-INSERT INTO item_tags VALUES('DKT-0023','newlines');
-INSERT INTO item_tags VALUES('DKT-0024','docket');
-INSERT INTO item_tags VALUES('DKT-0024','schema');
-INSERT INTO item_tags VALUES('DKT-0024','parent-child');
-INSERT INTO item_tags VALUES('DKT-0025','test');
-INSERT INTO item_tags VALUES('DKT-0025','integration');
-INSERT INTO item_tags VALUES('DKT-0025','agent-definition');
-INSERT INTO item_tags VALUES('DKT-0025','minerva');
-INSERT INTO item_tags VALUES('DKT-0025','phase-1');
-INSERT INTO item_tags VALUES('DKT-0026','test');
-INSERT INTO item_tags VALUES('DKT-0026','integration');
-INSERT INTO item_tags VALUES('DKT-0026','agent-registry');
-INSERT INTO item_tags VALUES('DKT-0026','minerva');
-INSERT INTO item_tags VALUES('DKT-0026','phase-1');
-INSERT INTO item_tags VALUES('DKT-0027','test');
-INSERT INTO item_tags VALUES('DKT-0027','integration');
-INSERT INTO item_tags VALUES('DKT-0027','ui');
-INSERT INTO item_tags VALUES('DKT-0027','minerva');
-INSERT INTO item_tags VALUES('DKT-0027','phase-1');
-INSERT INTO item_tags VALUES('DKT-0028','godot');
-INSERT INTO item_tags VALUES('DKT-0028','headless');
-INSERT INTO item_tags VALUES('DKT-0028','testing');
-INSERT INTO item_tags VALUES('DKT-0028','class_name');
-INSERT INTO item_tags VALUES('DKT-0028','uid');
+/****** CORRUPTION ERROR *******/
 CREATE TABLE item_events (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
 		event_type TEXT NOT NULL, actor TEXT DEFAULT '',
 		timestamp TEXT NOT NULL, note TEXT DEFAULT ''
-	);
-INSERT INTO item_events VALUES(1,'DKT-0001','created','','2026-03-02T01:22:06','Item created');
-INSERT INTO item_events VALUES(2,'DKT-0002','created','','2026-03-02T01:22:10','Item created');
-INSERT INTO item_events VALUES(3,'DKT-0003','created','','2026-03-02T01:22:12','Item created');
-INSERT INTO item_events VALUES(4,'DKT-0004','created','','2026-03-02T01:22:16','Item created');
-INSERT INTO item_events VALUES(5,'DKT-0005','created','','2026-03-02T01:22:25','Item created');
-INSERT INTO item_events VALUES(6,'DKT-0006','created','','2026-03-02T01:22:29','Item created');
-INSERT INTO item_events VALUES(7,'DKT-0007','created','','2026-03-02T01:22:33','Item created');
-INSERT INTO item_events VALUES(8,'DKT-0008','created','','2026-03-02T01:23:04','Item created');
-INSERT INTO item_events VALUES(9,'DKT-0009','created','','2026-03-02T01:23:09','Item created');
-INSERT INTO item_events VALUES(10,'DKT-0010','created','','2026-03-02T01:23:15','Item created');
-INSERT INTO item_events VALUES(11,'DKT-0011','created','','2026-03-02T01:23:19','Item created');
-INSERT INTO item_events VALUES(12,'DKT-0012','created','','2026-03-02T01:23:25','Item created');
-INSERT INTO item_events VALUES(13,'DKT-0013','created','','2026-03-02T01:23:29','Item created');
-INSERT INTO item_events VALUES(14,'DKT-0014','created','','2026-03-02T01:23:34','Item created');
-INSERT INTO item_events VALUES(15,'DKT-0015','created','','2026-03-02T01:23:39','Item created');
-INSERT INTO item_events VALUES(16,'DKT-0016','created','','2026-03-02T01:23:48','Item created');
-INSERT INTO item_events VALUES(17,'DKT-0017','created','','2026-03-02T01:23:53','Item created');
-INSERT INTO item_events VALUES(18,'DKT-0018','created','','2026-03-02T01:23:57','Item created');
-INSERT INTO item_events VALUES(19,'DKT-0009','transition','user','2026-03-02T01:53:19','backlog → closed');
-INSERT INTO item_events VALUES(20,'DKT-0009','transition','user','2026-03-02T01:53:23','closed → backlog');
-INSERT INTO item_events VALUES(21,'DKT-0009','updated','','2026-03-02T02:08:15','Updated: description');
-INSERT INTO item_events VALUES(22,'DKT-0009','transition','agent','2026-03-02T02:36:17','backlog → active. Starting implementation planning');
-INSERT INTO item_events VALUES(23,'DKT-0009','updated','','2026-03-02T02:37:31','Updated: assigned_to');
-INSERT INTO item_events VALUES(24,'DKT-0009','updated','','2026-03-02T02:38:17','Updated: description');
-INSERT INTO item_events VALUES(25,'DKT-0009','comment_added','Claude Code','2026-03-02T02:39:26',replace('IMPLEMENTATION PLAN\n\nCurrent state: AgentDefinition.gd and AgentRegistry.gd do N','\n',char(10)));
-INSERT INTO item_events VALUES(26,'DKT-0009','updated','','2026-03-02T02:39:33','Updated: description');
-INSERT INTO item_events VALUES(27,'DKT-0009','comment_accepted','Imran Peerbhai','2026-03-02T02:50:00',replace('IMPLEMENTATION PLAN\n\nCurrent state: AgentDefinition.gd and AgentRegistry.gd do N','\n',char(10)));
-INSERT INTO item_events VALUES(28,'DKT-0019','created','','2026-03-02T02:51:07','Item created');
-INSERT INTO item_events VALUES(29,'DKT-0020','created','','2026-03-02T02:51:11','Item created');
-INSERT INTO item_events VALUES(30,'DKT-0021','created','','2026-03-02T02:51:14','Item created');
-INSERT INTO item_events VALUES(31,'DKT-0022','created','','2026-03-02T02:51:18','Item created');
-INSERT INTO item_events VALUES(32,'DKT-0019','updated','','2026-03-02T02:53:26','Updated: description');
-INSERT INTO item_events VALUES(33,'DKT-0020','updated','','2026-03-02T02:53:28','Updated: description');
-INSERT INTO item_events VALUES(34,'DKT-0021','updated','','2026-03-02T02:53:29','Updated: description');
-INSERT INTO item_events VALUES(35,'DKT-0023','created','','2026-03-02T02:55:00','Item created');
-INSERT INTO item_events VALUES(36,'DKT-0023','comment_added','Imran Peerbhai','2026-03-02T02:55:51','Agreed. need defense in depth. Approve, move to Active, plan the fix.');
-INSERT INTO item_events VALUES(37,'DKT-0023','comment_accepted','Imran Peerbhai','2026-03-02T02:55:58','Agreed. need defense in depth. Approve, move to Active, plan the fix.');
-INSERT INTO item_events VALUES(38,'DKT-0023','transition','agent','2026-03-02T02:56:25','detected → investigating. Approved by IP, planning fix');
-INSERT INTO item_events VALUES(39,'DKT-0023','updated','','2026-03-02T02:56:57','Updated: assigned_to');
-INSERT INTO item_events VALUES(40,'DKT-0023','comment_added','Claude Code','2026-03-02T02:57:42','Fix applied in docket_db.gd. Added static _normalize_text() that replaces litera');
-INSERT INTO item_events VALUES(41,'DKT-0023','transition','agent','2026-03-02T02:57:46','investigating → closed. Fix implemented: _normalize_text() on all DB write paths');
-INSERT INTO item_events VALUES(42,'DKT-0023','comment_accepted','Imran Peerbhai','2026-03-02T02:58:50','Fix applied in docket_db.gd. Added static _normalize_text() that replaces litera');
-INSERT INTO item_events VALUES(43,'DKT-0024','created','','2026-03-02T03:01:10','Item created');
-INSERT INTO item_events VALUES(44,'DKT-0024','transition','agent','2026-03-02T03:01:18','proposed → approved');
-INSERT INTO item_events VALUES(45,'DKT-0024','transition','agent','2026-03-02T03:07:35','approved → closed. Parent field implemented: column added to items table, DataModel updated (common_mutable + create_item), MCP schemas updated (create/update), UI field added to record_form, migration handles existing DBs. DKT-0019-0022 parent set to DKT-0009.');
-INSERT INTO item_events VALUES(46,'DKT-0019','transition','agent','2026-03-02T03:29:22','backlog → active. Parent DKT-0009 is active');
-INSERT INTO item_events VALUES(47,'DKT-0020','transition','agent','2026-03-02T03:29:22','backlog → active. Parent DKT-0009 is active');
-INSERT INTO item_events VALUES(48,'DKT-0021','transition','agent','2026-03-02T03:29:23','backlog → active. Parent DKT-0009 is active');
-INSERT INTO item_events VALUES(49,'DKT-0022','transition','agent','2026-03-02T03:29:24','backlog → active. Parent DKT-0009 is active');
-INSERT INTO item_events VALUES(50,'DKT-0019','transition','agent','2026-03-02T03:31:02','active → in_progress. Starting implementation of AgentDefinition.gd');
-INSERT INTO item_events VALUES(51,'DKT-0019','transition','agent','2026-03-02T03:32:53','in_progress → done. AgentDefinition.gd created at src/Scripts/Models/AgentDefinition.gd. Core fields: agent_id, name, prompt, model, tools_enabled, setup_commands. Swarm fields: address, docket, notes_thread, skills_thread, parent, role, autonomy, requires_supervisor, requires_human, codetools_deny. Serialize() sends only Core fields. SerializeFull() persists all. Deserialize() handles both.');
-INSERT INTO item_events VALUES(52,'DKT-0020','transition','agent','2026-03-02T03:32:56','active → in_progress. Starting AgentRegistry.gd implementation');
-INSERT INTO item_events VALUES(53,'DKT-0020','transition','agent','2026-03-02T03:33:18','in_progress → done. AgentRegistry.gd created at src/Scripts/Services/Autocoder/AgentRegistry.gd. Methods: register(), get_agent(), list_agents(), update(), delete(), get_children(), get_supervisor(). Wraps AutocoderAdapter CRUD, translates between AgentDefinition and Core dicts.');
-INSERT INTO item_events VALUES(54,'DKT-0021','transition','agent','2026-03-02T03:33:24','active → in_progress. Starting migration of AutocoderAdapter agent methods');
-INSERT INTO item_events VALUES(55,'DKT-0025','created','','2026-03-02T03:34:25','Item created');
-INSERT INTO item_events VALUES(56,'DKT-0026','created','','2026-03-02T03:34:30','Item created');
-INSERT INTO item_events VALUES(57,'DKT-0027','created','','2026-03-02T03:34:35','Item created');
-INSERT INTO item_events VALUES(58,'DKT-0021','transition','agent','2026-03-02T03:36:47','in_progress → done. Added agent_registry lazy property to AutocoderAdapter. Old dict-based CRUD methods kept as Core transport layer with deprecation comments pointing to agent_registry. No breaking changes.');
-INSERT INTO item_events VALUES(59,'DKT-0022','transition','agent','2026-03-02T03:36:48','active → in_progress. Starting UI consumer migration to AgentDefinition');
-INSERT INTO item_events VALUES(60,'DKT-0022','transition','agent','2026-03-02T03:39:22',replace('in_progress → done. All 3 UI consumers migrated to AgentDefinition:\n- ReviewAgentManager: Array[AgentDefinition], property access, registry CRUD\n- AutocoderCompactSubmit: Array[AgentDefinition], fixed id→agent_id bug\n- SubmitJob: Array[AgentDefinition], property access, registry list\nNo new UI fields added (Phase 1 is backend-only).','\n',char(10)));
-INSERT INTO item_events VALUES(61,'DKT-0028','created','','2026-03-02T03:51:06','Item created');
-INSERT INTO item_events VALUES(62,'DKT-0025','transition','agent','2026-03-02T03:51:34','backlog → active. Tests written and executed');
-INSERT INTO item_events VALUES(63,'DKT-0025','transition','agent','2026-03-02T03:51:39','active → closed. All 69 assertions passed: Serialize (core-only), SerializeFull, Deserialize roundtrips (core + full), missing swarm defaults, old backend dict compat, swarm field leak check, init with/without explicit ID.');
-CREATE TABLE item_links (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		from_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-		to_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-		relation TEXT NOT NULL
 	);
 /****** CORRUPTION ERROR *******/
 CREATE TABLE attachments (
@@ -250,7 +47,9 @@ CREATE TABLE attachments (
 		created_at TEXT NOT NULL,
 		description TEXT DEFAULT ''
 	);
+/****** CORRUPTION ERROR *******/
 CREATE TABLE saved_queries (name TEXT PRIMARY KEY, query_json TEXT NOT NULL);
+/****** CORRUPTION ERROR *******/
 CREATE TABLE comments (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -261,21 +60,67 @@ CREATE TABLE comments (
 			addressed_at TEXT DEFAULT '',
 			addressed_by TEXT DEFAULT ''
 		, parent_id INTEGER DEFAULT 0, resolved_at TEXT DEFAULT '', resolved_by TEXT DEFAULT '');
-INSERT INTO comments VALUES(1,'DKT-0009','Claude Code',replace('IMPLEMENTATION PLAN\n\nCurrent state: AgentDefinition.gd and AgentRegistry.gd do NOT exist yet. Agents are currently untyped dicts in AutocoderAdapter.gd with fields: agent_id, name, prompt, model, tools_enabled, setup_commands.\n\n4 files using current agent dicts:\n- AutocoderAdapter.gd (CRUD methods, lines 478-625)\n- ReviewAgentManager.gd (UI card management)\n- AutocoderCompactSubmit.gd (agent checkbox selection)\n- SubmitJob.gd (agent loading/display)\n\nSTEP 1: Create AgentDefinition.gd\nPath: src/Scripts/Models/AgentDefinition.gd\nFollow MemoryThread pattern (RefCounted + Serialize/Deserialize).\n\nExisting fields (from current dict):\n- agent_id, name, prompt, model, tools_enabled, setup_commands\n\nNew swarm fields (from thought paper):\n- address: String — short addressable name\n- docket: String — path to agent''s .dct file\n- notes_thread: String — tab holding findings\n- skills_thread: String — tab holding skill notes\n- parent: String — supervisor agent_id (tree structure)\n- role: String — "agent" or "supervisor"\n- autonomy: Array[String] — actions agent can do freely\n- requires_supervisor: Array[String] — needs LLM supervisor approval\n- requires_human: Array[String] — needs human approval\n- codetools_deny: Array[String] — per-agent regex additions to global deny (additive only)\n\nSTEP 2: Create AgentRegistry.gd\nPath: src/Scripts/Services/Autocoder/AgentRegistry.gd\nEncapsulates agent persistence + lookup. Wraps existing AutocoderAdapter CRUD.\n- register(def) -> String\n- get_agent(id) -> AgentDefinition\n- list_agents() -> Array[AgentDefinition]\n- update(def) -> bool\n- delete(id) -> bool\n- get_children(parent_id) -> Array[AgentDefinition]\n- get_supervisor(id) -> AgentDefinition\n\nSTEP 3: Migrate AutocoderAdapter agent methods\nReplace dict-based create/list/get/update/delete with AgentRegistry calls.\nKeep backward compat: Serialize() produces same dict shape for Core backend.\n\nSTEP 4: Update UI consumers\nReviewAgentManager, AutocoderCompactSubmit, SubmitJob — use AgentDefinition instead of raw dicts. New swarm fields hidden in UI for now (Phase 1 is backend only).\n\nRISK: Core backend doesn''t know about swarm fields yet. Serialize() should only send fields Core understands. New fields stored client-side only until Core is extended.','\n',char(10)),'accepted','2026-03-02T02:39:26','','',0,'2026-03-02T02:50:00','Imran Peerbhai');
-INSERT INTO comments VALUES(2,'DKT-0023','Imran Peerbhai','Agreed. need defense in depth. Approve, move to Active, plan the fix.','accepted','2026-03-02T02:55:51','','',0,'2026-03-02T02:55:58','Imran Peerbhai');
-INSERT INTO comments VALUES(3,'DKT-0023','Claude Code','Fix applied in docket_db.gd. Added static _normalize_text() that replaces literal \n and \t with real characters. Applied at all write paths: insert_item(), update_item_fields(), set_item_field(), add_comment(). Defense in depth — catches the problem regardless of MCP client behavior.','accepted','2026-03-02T02:57:42','','',0,'2026-03-02T02:58:50','Imran Peerbhai');
+/****** CORRUPTION ERROR *******/
+CREATE TABLE docket_secrets (
+			handle TEXT PRIMARY KEY,
+			ciphertext BLOB NOT NULL,
+			iv BLOB NOT NULL,
+			mac BLOB NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			requires_2fa INTEGER DEFAULT 0
+		);
+/****** CORRUPTION ERROR *******/
+CREATE TABLE docket_secret_versions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			handle TEXT NOT NULL,
+			version INTEGER NOT NULL,
+			ciphertext BLOB NOT NULL,
+			iv BLOB NOT NULL,
+			mac BLOB NOT NULL,
+			created_at TEXT NOT NULL,
+			rotated_by TEXT DEFAULT ''
+		);
+/****** CORRUPTION ERROR *******/
+CREATE TABLE transition_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp TEXT NOT NULL,
+			item_type TEXT NOT NULL,
+			from_state TEXT NOT NULL,
+			attempted_to TEXT NOT NULL,
+			succeeded INTEGER NOT NULL DEFAULT 0,
+			valid_transitions TEXT DEFAULT ''
+		);
+/****** CORRUPTION ERROR *******/
+CREATE TABLE mcp_error_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			timestamp TEXT NOT NULL,
+			tool_name TEXT NOT NULL,
+			error_message TEXT NOT NULL,
+			arg_keys TEXT DEFAULT ''
+		);
+/****** CORRUPTION ERROR *******/
+CREATE TABLE IF NOT EXISTS "item_links" (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			from_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+			to_id TEXT NOT NULL,
+			relation TEXT NOT NULL
+		);
 DELETE FROM sqlite_sequence;
-INSERT INTO sqlite_sequence VALUES('item_events',63);
-INSERT INTO sqlite_sequence VALUES('comments',3);
+INSERT INTO sqlite_sequence VALUES('item_events',21);
+INSERT INTO sqlite_sequence VALUES('item_links',0);
 CREATE INDEX idx_items_type ON items(type);
 CREATE INDEX idx_items_status ON items(status);
 CREATE INDEX idx_items_type_status ON items(type, status);
 CREATE INDEX idx_items_component_key ON items(component, key);
 CREATE INDEX idx_tags_tag ON item_tags(tag);
 CREATE INDEX idx_events_item ON item_events(item_id);
-CREATE INDEX idx_links_from ON item_links(from_id);
 CREATE INDEX idx_attachments_item ON attachments(item_id);
 CREATE INDEX idx_comments_item ON comments(item_id);
 CREATE INDEX idx_comments_status ON comments(status);
 CREATE INDEX idx_comments_parent ON comments(parent_id);
+CREATE INDEX idx_secret_versions_handle ON docket_secret_versions(handle);
+CREATE INDEX idx_transition_log_type ON transition_log(item_type);
+CREATE INDEX idx_mcp_error_tool ON mcp_error_log(tool_name);
+CREATE INDEX idx_links_from ON item_links(from_id);
 ROLLBACK; -- due to errors
