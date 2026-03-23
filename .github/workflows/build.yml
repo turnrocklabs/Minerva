@@ -103,7 +103,7 @@ jobs:
       with:
         submodules: recursive
         lfs: true
-        
+
     - name: Cache SCons build
       uses: actions/cache@v4
       with:
@@ -124,7 +124,19 @@ jobs:
         key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
         restore-keys: |
           ${{ runner.os }}-godot-cpp-
-    
+
+    - name: Setup Zig
+      uses: mlugg/setup-zig@v1
+      with:
+        version: 0.15.2
+
+    - name: Cache Zig build
+      uses: actions/cache@v4
+      with:
+        path: src/gdextension/terminal/ghostty-shim/.zig-cache
+        key: zig-linux-x86_64-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-linux-x86_64-
+
     - name: Setup Python and SCons
       uses: actions/setup-python@v5
       with:
@@ -135,18 +147,27 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential util-linux
-        
+
+    - name: Build ghostty-vt shim
+      working-directory: src/gdextension/terminal/ghostty-shim
+      run: zig build -Doptimize=ReleaseFast
+
+    - name: Copy shim library to bin
+      run: cp src/gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.so src/bin/
+
     - name: Build Extension
       run: |
         cd src
         scons platform=linux target=template_release
         scons platform=linux target=template_debug
-        
+
     - name: Upload Extension
       uses: actions/upload-artifact@v4
       with:
         name: terminal-linux
-        path: src/bin/libterminal*
+        path: |
+          src/bin/libterminal*
+          src/bin/libminerva-vt.so
 
   build-godot:
     needs: [check-gdextension, build-windows, build-linux]
@@ -168,7 +189,23 @@ jobs:
         run: |
           mkdir -p src/bin
           ls -la src/bin/
-          
+
+      - name: Download EIRTeam.FFmpeg
+        run: |
+          FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/autobuild-2025-11-12-13-44/eirteam-ffmpeg-1.1.4.zip"
+          curl -L -o /tmp/ffmpeg.zip "$FFMPEG_URL"
+          unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg-extract
+          FFMPEG_SRC=$(find /tmp/ffmpeg-extract -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
+          for subdir in linux64 win64 macos; do
+            if [ -d "$FFMPEG_SRC/$subdir" ]; then
+              mkdir -p "src/addons/ffmpeg/$subdir"
+              cp -r "$FFMPEG_SRC/$subdir/"* "src/addons/ffmpeg/$subdir/"
+            fi
+          done
+          cp -r "$FFMPEG_SRC/macos/"*.framework "src/addons/ffmpeg/macos/" 2>/dev/null || true
+          echo "FFmpeg addon installed"
+          ls src/addons/ffmpeg/linux64/ src/addons/ffmpeg/win64/ src/addons/ffmpeg/macos/ 2>/dev/null | head -20
+
       - name: Install Linux Build Dependencies
         run: |
           sudo apt-get update
