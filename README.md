@@ -31,7 +31,7 @@ Minerva adds a note-taking system and (hopefully) some editors and task runners.
 git clone --recursive https://github.com/turnrocklabs/Minerva.git
 cd Minerva
 
-# Set up SQLite merge filters for docket files
+# Set up git filters (required — see "Docket Files" section below)
 scripts/setup-git-filters.sh
 
 # Build all C++ extensions (installs Zig and SCons if needed)
@@ -73,4 +73,26 @@ scripts/build-extensions.sh          # Linux/macOS
 git submodule update --init --recursive
 powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1  # Windows
 ```
+
+## Docket Files (SQLite Clean/Smudge Filters) ##
+
+Minerva uses [Docket](https://github.com/turnrocklabs/docket) for issue/task tracking. Docket stores data in `.dct` files, which are SQLite databases. Since binary SQLite files corrupt easily when merged across branches or machines (WAL mode conflicts), we use **git clean/smudge filters** to store them as text SQL dumps in git.
+
+**How it works:**
+- **On commit (clean filter):** SQLite binary → SQL text dump (diffable, mergeable)
+- **On checkout (smudge filter):** SQL text dump → SQLite binary (usable by Docket)
+
+**Setup (required once per clone):**
+```bash
+scripts/setup-git-filters.sh
+```
+
+This registers the filters in your local git config. Without it, `.dct` files will be committed as raw binary and may corrupt on pull. The `.gitattributes` file tells git which files use the filter:
+```
+*.dct filter=sqlite3 diff=sqlite3
+```
+
+**Troubleshooting:**
+- If a `.dct` file shows as modified after checkout, that's normal — the smudge filter rebuilds the binary from SQL text, and the binary may differ byte-for-byte from the original.
+- If Docket can't open a `.dct` file after a pull, try: `git checkout -- Docs/minerva.dct` to re-trigger the smudge filter.
 
