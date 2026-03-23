@@ -96,3 +96,27 @@ This registers the filters in your local git config. Without it, `.dct` files wi
 - If a `.dct` file shows as modified after checkout, that's normal — the smudge filter rebuilds the binary from SQL text, and the binary may differ byte-for-byte from the original.
 - If Docket can't open a `.dct` file after a pull, try: `git checkout -- Docs/minerva.dct` to re-trigger the smudge filter.
 
+## External Dependencies ##
+
+| Library | Version | License | Purpose | Acquisition |
+|---------|---------|---------|---------|-------------|
+| [Godot Engine](https://godotengine.org) | 4.4+ | MIT | Application engine | User installs separately |
+| [godot-cpp](https://github.com/godotengine/godot-cpp) | 4.3 | MIT | C++ GDExtension bindings | Git submodule (`src/godot-cpp`) |
+| [Ghostty / libghostty-vt](https://github.com/ghostty-org/ghostty) | 1.3.1 | MIT | Terminal emulator core (VT parser) | Git submodule (`vendor/ghostty`), built by `build-extensions.sh` via Zig |
+| [EIRTeam.FFmpeg](https://github.com/EIRTeam/EIRTeam.FFmpeg) | 1.1.4 | MIT (wrapper) + LGPL 2.1 (ffmpeg) | Video/audio codec support | Downloaded from GitHub releases by `build-extensions.sh` |
+| [Zig](https://ziglang.org) | 0.15.2 | MIT | Build tool for ghostty shim | Auto-installed by `build-extensions.sh` |
+| [SCons](https://scons.org) | 4.x | MIT | Build tool for C++ extension | Auto-installed via pip by `build-extensions.sh` |
+| [Bun](https://bun.sh) | 1.x | MIT | Stream Deck plugin compiler (optional) | User installs: `curl -fsSL https://bun.sh/install \| bash` |
+
+All dependencies use permissive licenses (MIT, LGPL 2.1 for dynamic linking). FFmpeg libraries are used unmodified and dynamically linked, which is permitted under LGPL 2.1.
+
+## Acknowledgments ##
+
+Minerva is built on the shoulders of these open-source projects:
+
+- **Godot Engine** by Juan Linietsky, Ariel Manzur, and contributors (MIT)
+- **Ghostty** by Mitchell Hashimoto and contributors (MIT) — terminal emulator core
+- **EIRTeam.FFmpeg** by Alex Roman / EIRTeam (MIT) — Godot FFmpeg integration
+- **FFmpeg** by the FFmpeg developers (LGPL 2.1) — audio/video codecs
+- **godot-cpp** by Godot Engine contributors (MIT) — C++ GDExtension bindings
+
