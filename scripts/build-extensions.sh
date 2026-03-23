@@ -103,11 +103,55 @@ echo "=== Installing libraries ==="
 cp "$SHIM_LIB" src/bin/
 echo "Copied $(basename "$SHIM_LIB") to src/bin/"
 
+# ── Download EIRTeam.FFmpeg if needed ─────────────────────────────────
+
+FFMPEG_VERSION="1.1.4"
+FFMPEG_TAG="autobuild-2025-11-12-13-44"
+FFMPEG_ZIP="eirteam-ffmpeg-${FFMPEG_VERSION}.zip"
+FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/${FFMPEG_TAG}/${FFMPEG_ZIP}"
+FFMPEG_MARKER="src/addons/ffmpeg/.ffmpeg-version"
+
+if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ]; then
+    echo "EIRTeam.FFmpeg $FFMPEG_VERSION already installed"
+else
+    echo ""
+    echo "=== Downloading EIRTeam.FFmpeg $FFMPEG_VERSION ==="
+    TMP_FFMPEG=$(mktemp -d)
+    curl -L -o "$TMP_FFMPEG/$FFMPEG_ZIP" "$FFMPEG_URL"
+    unzip -o "$TMP_FFMPEG/$FFMPEG_ZIP" -d "$TMP_FFMPEG/extract"
+
+    # Find the addon directory inside the zip (may be nested)
+    FFMPEG_SRC=$(find "$TMP_FFMPEG/extract" -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
+    if [ -z "$FFMPEG_SRC" ]; then
+        echo "ERROR: Could not find ffmpeg.gdextension in downloaded zip"
+        exit 1
+    fi
+
+    # Copy platform binaries
+    for subdir in linux64 win64 macos; do
+        if [ -d "$FFMPEG_SRC/$subdir" ]; then
+            mkdir -p "src/addons/ffmpeg/$subdir"
+            cp -r "$FFMPEG_SRC/$subdir/"* "src/addons/ffmpeg/$subdir/"
+            echo "  Installed ffmpeg $subdir"
+        fi
+    done
+    # Copy macOS frameworks
+    if [ -d "$FFMPEG_SRC/macos" ]; then
+        cp -r "$FFMPEG_SRC/macos/"*.framework "src/addons/ffmpeg/macos/" 2>/dev/null || true
+    fi
+
+    echo "$FFMPEG_VERSION" > "$FFMPEG_MARKER"
+    rm -rf "$TMP_FFMPEG"
+    echo "EIRTeam.FFmpeg $FFMPEG_VERSION installed"
+fi
+
 # ── Verify ────────────────────────────────────────────────────────────
 
 echo ""
 echo "=== Build complete ==="
 echo "Libraries in src/bin/:"
 ls -lh src/bin/lib*.so src/bin/lib*.dylib src/bin/*.dll 2>/dev/null || true
+echo "FFmpeg addon:"
+ls src/addons/ffmpeg/linux64/*.so src/addons/ffmpeg/macos/*.dylib src/addons/ffmpeg/win64/*.dll 2>/dev/null | wc -l | xargs -I{} echo "  {} binary files"
 echo ""
 echo "Open src/project.godot in Godot 4.4+ to run Minerva."
