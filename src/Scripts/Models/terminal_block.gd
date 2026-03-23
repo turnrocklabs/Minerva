@@ -1,0 +1,147 @@
+extends RefCounted
+class_name TerminalBlock
+## A terminal block: one command + its output, bounded by shell prompts.
+
+## The command line text (e.g. "find . -name '*.gd'")
+var command: String = ""
+
+## Viewport row where this block's prompt appeared
+var prompt_row: int = 0
+
+## Viewport row where this block's output ends (set when next prompt arrives)
+var end_row: int = -1  # -1 = block still active (no next prompt yet)
+
+## Whether this block is checked for injection
+var checked: bool = false
+
+## Marked ranges for partial injection (Array of Dictionary: {start_row, end_row})
+var marked_ranges: Array[Dictionary] = []
+
+## Reference to the gutter CheckButton (for cleanup)
+var button: CheckButton = null
+
+## Note.Proxy for detached note injection into chat (set when checked)
+var proxy: RefCounted = null  # Note.Proxy
+
+
+func is_active() -> bool:
+	return end_row == -1
+
+
+func row_count() -> int:
+	if end_row == -1:
+		return 0  # unknown until finalized
+	return maxi(0, end_row - prompt_row)
+
+
+func get_text(terminal_node) -> String:
+	## Extract block text from terminal cells.
+	## If marked_ranges exist, only include those rows.
+	## terminal_node must have .terminal with .get_cell(col, row)
+	if not terminal_node or not terminal_node.terminal:
+		return ""
+
+	var rows_to_extract: Array[Dictionary] = []
+	if marked_ranges.size() > 0:
+		rows_to_extract = marked_ranges.duplicate()
+	else:
+		var last = end_row if end_row >= 0 else prompt_row + 1
+		rows_to_extract = [{"start_row": prompt_row, "end_row": last}]
+
+	var parts: PackedStringArray = []
+	var prev_end: int = -1
+
+	for range_dict in rows_to_extract:
+		var sr: int = range_dict.get("start_row", 0)
+		var er: int = range_dict.get("end_row", sr)
+
+		# Add omission marker between non-contiguous ranges
+		if prev_end >= 0 and sr > prev_end + 1:
+			var omitted: int = sr - prev_end - 1
+			parts.append("[... %d lines omitted ...]" % omitted)
+
+		for row in range(sr, er + 1):
+			var line: String = ""
+			for col in range(terminal_node._cols):
+				var cell: Dictionary = terminal_node.terminal.get_cell(col, row)
+				if cell.is_empty():
+					break
+				var cp: int = cell.get("codepoint", 0)
+				if cp == 0:
+					break
+				elif cp >= 32:
+					line += char(cp)
+			parts.append(line.rstrip(" "))
+
+		prev_end = er
+
+	return "\n".join(parts)
+
+
+func format_for_injection(terminal_node) -> String:
+	## Format this block as a terminal code fence for chat injection.
+	var text := get_text(terminal_node)
+	if text.is_empty():
+		return ""
+
+	var lines := text.split("\n")
+	var result: PackedStringArray = ["```terminal"]
+
+	for i in range(lines.size()):
+		if i == 0 and not command.is_empty():
+			result.append("$ " + command)
+		else:
+			result.append(lines[i])
+
+	result.append("```")
+	return "\n".join(result)
+
+
+func estimate_tokens(terminal_node = null) -> int:
+	## Token estimate: chars / 4 when terminal available, else row-based fallback.
+	if terminal_node:
+		var text := get_text(terminal_node)
+		if not text.is_empty():
+			return maxi(1, text.length() / 4)
+	# Fallback: estimate ~40 chars per row average, / 4 tokens per char
+	var rows := row_count()
+	if rows <= 0:
+		return 0
+	return rows * 10
+
+
+func estimate_tokens_for_ranges(terminal_node) -> int:
+	## Estimate tokens only for the marked ranges (partial injection).
+	## If no marked ranges, returns 0.
+	if marked_ranges.is_empty():
+		return 0
+	if not terminal_node or not terminal_node.terminal:
+		# Fallback: estimate from range row counts
+		var total_rows: int = 0
+		for range_dict in marked_ranges:
+			var sr: int = range_dict.get("start_row", 0)
+			var er: int = range_dict.get("end_row", sr)
+			total_rows += maxi(0, er - sr + 1)
+		return total_rows * 10
+
+	# Extract text only for the marked ranges
+	var parts: PackedStringArray = []
+	for range_dict in marked_ranges:
+		var sr: int = range_dict.get("start_row", 0)
+		var er: int = range_dict.get("end_row", sr)
+		for row in range(sr, er + 1):
+			var line: String = ""
+			for col in range(terminal_node._cols):
+				var cell: Dictionary = terminal_node.terminal.get_cell(col, row)
+				if cell.is_empty():
+					break
+				var cp: int = cell.get("codepoint", 0)
+				if cp == 0:
+					break
+				elif cp >= 32:
+					line += char(cp)
+			parts.append(line.rstrip(" "))
+	var text := "\n".join(parts)
+	if text.is_empty():
+		return 0
+	return maxi(1, text.length() / 4)

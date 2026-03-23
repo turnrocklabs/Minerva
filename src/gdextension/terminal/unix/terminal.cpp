@@ -12,6 +12,8 @@
 #include <signal.h>
 #include <errno.h>
 #include <cstring>
+#include <sys/stat.h>
+#include <cstdio>
 
 // Platform-specific PTY headers
 #if defined(__APPLE__)
@@ -633,16 +635,30 @@ bool Terminal::start(int width, int height)
             #endif
         }
 
-        // Detect shell type and use appropriate flags to disable startup files
-        // zsh uses -f, bash uses --norc --noprofile
+        // Inject Minerva prompt markers into the shell.
+        // \e[888z = prompt start (precmd), \e[999z = prompt end (preexec)
+        // Write a minimal rc file to a temp dir and point ZDOTDIR there.
         if (strstr(shell, "zsh") != nullptr) {
-            // zsh: -f disables startup files (.zshrc, .zprofile, etc.)
-            execlp(shell, shell, "-f", nullptr);
+            // Create temp ZDOTDIR with a .zshrc that sets up prompt hooks
+            const char* zdotdir = "/tmp/minerva-zsh";
+            mkdir(zdotdir, 0700);
+            FILE* rc = fopen("/tmp/minerva-zsh/.zshrc", "w");
+            if (rc) {
+                fprintf(rc,
+                    "precmd() { printf '\\e[888z'; }\n"
+                    "preexec() { printf '\\e[999z'; }\n"
+                );
+                fclose(rc);
+            }
+            setenv("ZDOTDIR", zdotdir, 1);
+            // --no-globalrcs skips /etc/zshrc but loads ZDOTDIR/.zshrc
+            execlp(shell, shell, "--no-globalrcs", nullptr);
         } else if (strstr(shell, "fish") != nullptr) {
-            // fish: --no-config disables config files
             execlp(shell, shell, "--no-config", nullptr);
         } else {
-            // bash and others: --norc --noprofile
+            // bash: use PROMPT_COMMAND for prompt start, PS0 for command start
+            setenv("PROMPT_COMMAND", "printf '\\e[888z'", 1);
+            setenv("PS0", "\\[\\e[999z\\]", 1);
             execlp(shell, shell, "--norc", "--noprofile", nullptr);
         }
         // If we get here, execlp failed

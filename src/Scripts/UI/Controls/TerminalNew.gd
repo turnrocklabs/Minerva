@@ -35,6 +35,16 @@ var char_width: float
 # Default palette colors for resolving palette indices
 var _palette: Array[Color] = []
 
+# Block tracking for terminal-to-chat injection
+var _blocks: Array[TerminalBlock] = []
+var _absolute_row_offset: int = 0  # tracks total rows scrolled off top
+
+var _token_budget_label: Label
+
+signal injection_requested(text: String)
+var _inject_button: Button
+var _tab_picker_popup: PopupMenu
+
 
 ## Creates new terminal instance
 static func create() -> TerminalNew:
@@ -120,17 +130,9 @@ func _ready():
 	# Keep legacy output signal for shell prompt marker detection
 	terminal.output_received.connect(_on_output_received)
 
-	# Shell prompt markers
-	terminal.on_shell_prompt_start.connect(
-		func():
-			var cursor = terminal.get_cursor()
-			_create_check_button(cursor.get("y", 0))
-	)
-	terminal.on_shell_prompt_end.connect(
-		func():
-			var cursor = terminal.get_cursor()
-			_create_check_button(cursor.get("y", 0))
-	)
+	# Shell prompt markers → block detection
+	terminal.on_shell_prompt_start.connect(_on_prompt_start)
+	terminal.on_shell_prompt_end.connect(_on_prompt_end)
 
 	await get_tree().process_frame
 
@@ -206,7 +208,7 @@ func _on_output_received(_text: String, _type: int) -> void:
 	if not matches.is_empty():
 		for match_ in matches:
 			var cursor = terminal.get_cursor()
-			_create_check_button(cursor.get("y", 0))
+			_on_prompt_start()  # Reuse block detection for Windows prompts
 
 
 var _vscrollbar: VScrollBar
@@ -246,17 +248,236 @@ func _create_output_container() -> void:
 
 	_output_label_nodes.append(text_layer)
 
+	# Token budget label — overlaid at the bottom-left of the check buttons area
+	_token_budget_label = Label.new()
+	_token_budget_label.text = ""
+	_token_budget_label.add_theme_font_size_override("font_size", 10)
+	_token_budget_label.modulate = Color(1.0, 1.0, 1.0, 0.7)
+	_token_budget_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_token_budget_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_token_budget_label.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	_token_budget_label.grow_horizontal = Control.GROW_DIRECTION_END
+	_token_budget_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_token_budget_label.offset_left = 2
+	_token_budget_label.offset_bottom = -2
+	_output_container.get_parent().add_child(_token_budget_label)
 
-func _create_check_button(row: int) -> void:
-	var btn = CheckButton.new()
-	btn.set_meta("row", row)
-	btn.toggled.connect(_on_check_button_toggled.bind(btn))
+	# Inject button — bottom-right, sends checked blocks to a chat tab
+	_inject_button = Button.new()
+	_inject_button.text = "→ Chat"
+	_inject_button.tooltip_text = "Send checked terminal blocks to a chat tab"
+	_inject_button.custom_minimum_size = Vector2(70, 28)
+	_inject_button.visible = false  # shown when blocks are checked
+	_inject_button.pressed.connect(_on_inject_pressed)
+	_inject_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_inject_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_inject_button.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_inject_button.offset_right = -16  # leave room for scrollbar
+	_inject_button.offset_bottom = -4
+	_output_container.get_parent().add_child(_inject_button)
+
+
+func _on_inject_pressed() -> void:
+	if not has_checked_blocks():
+		return
+	_show_tab_picker()
+
+func _show_tab_picker() -> void:
+	if _tab_picker_popup and _tab_picker_popup.visible:
+		_tab_picker_popup.hide()
+		return
+
+	if not _tab_picker_popup:
+		_tab_picker_popup = PopupMenu.new()
+		_tab_picker_popup.id_pressed.connect(_on_tab_picker_selected)
+		add_child(_tab_picker_popup)
+
+	_tab_picker_popup.clear()
+	var chat_list = SingletonObject.ChatList
+	for i in range(chat_list.size()):
+		var label: String = chat_list[i].HistoryName
+		if label.is_empty():
+			label = "Chat %d" % (i + 1)
+		# Mark active tab
+		if SingletonObject.Chats and i == SingletonObject.Chats.current_tab:
+			label += " (active)"
+		_tab_picker_popup.add_item(label, i)
+
+	_tab_picker_popup.add_separator()
+	_tab_picker_popup.add_item("New Chat", -1)
+
+	_tab_picker_popup.popup()
+	_tab_picker_popup.position = _inject_button.global_position - Vector2(0, _tab_picker_popup.size.y)
+
+func _on_tab_picker_selected(id: int) -> void:
+	var text := get_checked_blocks_text()
+	if text.is_empty():
+		return
+
+	if id == -1:
+		# Create new chat — use singleton's method
+		if SingletonObject.Chats:
+			SingletonObject.Chats._on_btn_new_pressed()
+			# Inject into the newly created tab (now the last one)
+			await get_tree().process_frame
+			_inject_into_chat(SingletonObject.ChatList.size() - 1, text)
+	else:
+		_inject_into_chat(id, text)
+
+	# Uncheck all blocks after injection
+	for block in _blocks:
+		if block.checked:
+			block.checked = false
+			if block.button:
+				block.button.button_pressed = false
+	_update_inject_button_visibility()
+
+func _inject_into_chat(tab_index: int, text: String) -> void:
+	if not SingletonObject.Chats:
+		return
+	if tab_index < 0 or tab_index >= SingletonObject.ChatList.size():
+		return
+	# Append to the chat input TextEdit
+	var chat_pane: ChatPane = SingletonObject.Chats
+	# Switch to target tab so the input is visible
+	chat_pane.current_tab = tab_index
+	await get_tree().process_frame
+	# Append text to the input field
+	if chat_pane.txt_main_user_input:
+		var existing: String = chat_pane.txt_main_user_input.text
+		if existing.is_empty():
+			chat_pane.txt_main_user_input.text = text
+		else:
+			chat_pane.txt_main_user_input.text = existing + "\n\n" + text
+		chat_pane.txt_main_user_input.set_caret_line(chat_pane.txt_main_user_input.get_line_count() - 1)
+
+func _update_inject_button_visibility() -> void:
+	if _inject_button:
+		_inject_button.visible = has_checked_blocks()
+
+
+func _on_prompt_start() -> void:
+	var cursor = terminal.get_cursor()
+	var row: int = cursor.get("y", 0)
+	_finalize_active_block(row)
+	_start_new_block(row)
+
+func _on_prompt_end() -> void:
+	# Prompt end = command line is now visible. Extract command text from cursor row.
+	if _blocks.is_empty():
+		return
+	var block: TerminalBlock = _blocks.back()
+	if not block.command.is_empty():
+		return
+	var cursor = terminal.get_cursor()
+	var row: int = cursor.get("y", 0)
+	# Extract command text from the prompt row
+	var cmd: String = ""
+	for col in range(_cols):
+		var cell: Dictionary = terminal.get_cell(col, row)
+		if cell.is_empty():
+			break
+		var cp: int = cell.get("codepoint", 0)
+		if cp == 0:
+			break
+		elif cp >= 32:
+			cmd += char(cp)
+	block.command = cmd.strip_edges()
+
+func _finalize_active_block(next_prompt_row: int) -> void:
+	if _blocks.is_empty():
+		return
+	var block: TerminalBlock = _blocks.back()
+	if block.is_active():
+		block.end_row = maxi(block.prompt_row, next_prompt_row - 1)
+
+func _start_new_block(row: int) -> void:
+	var block := TerminalBlock.new()
+	block.prompt_row = row
+
+	var btn := CheckButton.new()
+	btn.set_meta("block_index", _blocks.size())
+	btn.toggled.connect(_on_block_toggled.bind(_blocks.size()))
 	btn.position.y = row * line_height
+	btn.tooltip_text = "Include in chat injection"
 	_check_buttons_container.add_child(btn)
+	block.button = btn
 
+	_blocks.append(block)
 
-func _on_check_button_toggled(_toggled_on: bool, _btn: CheckButton):
-	pass
+func _on_block_toggled(toggled_on: bool, block_index: int) -> void:
+	if block_index >= _blocks.size():
+		return
+	var block: TerminalBlock = _blocks[block_index]
+	block.checked = toggled_on
+
+	if toggled_on:
+		# Create a Note.Proxy that generates a text Note from this block's content
+		var term_ref = self  # capture for closure
+		block.proxy = Note.Proxy.new(func():
+			var text := block.format_for_injection(term_ref)
+			var title: String = block.command.substr(0, 60) if not block.command.is_empty() else "Terminal block"
+			var note := Note.create_text_note(title, text, "", false)  # don't register in notes pane
+			note.enabled = true
+			return note
+		)
+		block.proxy.create_note()
+		SingletonObject.detached_note_proxies.append(block.proxy)
+		if SingletonObject.Chats:
+			SingletonObject.Chats.update_token_estimation()
+	else:
+		# Remove proxy from detached notes
+		if block.proxy:
+			SingletonObject.detached_note_proxies.erase(block.proxy)
+			block.proxy = null
+		block.marked_ranges.clear()
+		if text_layer:
+			text_layer.queue_redraw()
+		if SingletonObject.Chats:
+			SingletonObject.Chats.update_token_estimation()
+
+	_update_inject_button_visibility()
+	_update_token_budget()
+
+func get_checked_blocks_text() -> String:
+	## Assemble all checked blocks into injection-ready text.
+	var parts: PackedStringArray = []
+	for block in _blocks:
+		if block.checked:
+			var formatted := block.format_for_injection(self)
+			if not formatted.is_empty():
+				parts.append(formatted)
+	return "\n\n".join(parts)
+
+func get_checked_blocks_token_estimate() -> int:
+	var total: int = 0
+	for block in _blocks:
+		if block.checked:
+			total += block.estimate_tokens(self)
+	return total
+
+func _update_token_budget() -> void:
+	if not _token_budget_label:
+		return
+	var total: int = get_checked_blocks_token_estimate()
+	if total <= 0:
+		_token_budget_label.text = ""
+		return
+	_token_budget_label.text = "~%d tokens" % total
+	var tc: TerminalConfig = SingletonObject.get_terminal_config()
+	var threshold: int = tc.injection_token_threshold
+	if total > threshold * 2:
+		_token_budget_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+	elif total > threshold:
+		_token_budget_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	else:
+		_token_budget_label.add_theme_color_override("font_color", Color.WHITE)
+
+func has_checked_blocks() -> bool:
+	for block in _blocks:
+		if block.checked:
+			return true
+	return false
 
 
 func resolve_color(cell: Dictionary, key: String, default_color: Color) -> Color:
@@ -585,6 +806,9 @@ class TextLayer extends Control:
 	var _draw_debug_printed: bool = false
 	var _draw_count: int = 0
 
+	## Mark-in row for Shift+click range selection (-1 = no pending mark)
+	var _mark_in_row: int = -1
+
 	func _ready() -> void:
 		mouse_filter = Control.MOUSE_FILTER_PASS
 		mouse_default_cursor_shape = CursorShape.CURSOR_IBEAM
@@ -607,6 +831,30 @@ class TextLayer extends Control:
 	func _gui_input(event: InputEvent) -> void:
 		if _selecting:
 			accept_event()
+
+		# Shift+left-click: mark-in / mark-out range selection
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.is_pressed() and event.shift_pressed:
+			var row: int = maxi(0, floori(event.position.y / terminal.line_height))
+			if _mark_in_row < 0:
+				# First Shift+click: set mark-in
+				_mark_in_row = row
+			else:
+				# Second Shift+click: set mark-out, create range on containing block
+				var min_row: int = mini(_mark_in_row, row)
+				var max_row: int = maxi(_mark_in_row, row)
+				# Find the block that contains these rows
+				var target_block: TerminalBlock = null
+				for block in terminal._blocks:
+					var block_end: int = block.end_row if block.end_row >= 0 else terminal._rows - 1
+					if block.prompt_row <= min_row and block_end >= max_row:
+						target_block = block
+						break
+				if target_block:
+					target_block.marked_ranges.append({"start_row": min_row, "end_row": max_row})
+				_mark_in_row = -1
+			queue_redraw()
+			accept_event()
+			return
 
 		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 			_selecting = event.is_pressed()
@@ -658,6 +906,21 @@ class TextLayer extends Control:
 		var cfg_fg: Color = tc.get_theme_fg_bg().fg
 		var cfg_bg: Color = tc.get_theme_fg_bg().bg
 		draw_rect(Rect2(Vector2.ZERO, size), cfg_bg)
+
+		# Draw green highlight for marked ranges on blocks
+		var mark_color: = Color(0.0, 0.6, 0.0, 0.15)
+		for block in terminal._blocks:
+			for mr in block.marked_ranges:
+				var sr: int = mr.get("start_row", 0)
+				var er: int = mr.get("end_row", sr)
+				var rect_y: float = sr * lh
+				var rect_h: float = (er - sr + 1) * lh
+				draw_rect(Rect2(0, rect_y, size.x, rect_h), mark_color)
+
+		# Draw pending mark-in indicator (thin green horizontal line)
+		if _mark_in_row >= 0:
+			var mark_in_color: = Color(0.0, 0.8, 0.0, 0.5)
+			draw_rect(Rect2(0, _mark_in_row * lh, size.x, 2), mark_in_color)
 
 		_draw_count += 1
 

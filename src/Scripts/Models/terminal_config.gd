@@ -73,6 +73,14 @@ var cursor_blink: bool = true:
 			cursor_blink = v
 			settings_changed.emit()
 
+## Token threshold for injection budget warning.
+var injection_token_threshold: int = 8000:
+	set(v):
+		v = clampi(v, 1000, 200000)
+		if injection_token_threshold != v:
+			injection_token_threshold = v
+			settings_changed.emit()
+
 
 func _init() -> void:
 	if font_size == 0:
@@ -140,6 +148,7 @@ func save(config: ConfigFile) -> void:
 	config.set_value(SECTION, "scrollback_lines", scrollback_lines)
 	config.set_value(SECTION, "cursor_style", cursor_style)
 	config.set_value(SECTION, "cursor_blink", cursor_blink)
+	config.set_value(SECTION, "injection_token_threshold", injection_token_threshold)
 	if theme_name == "custom" and custom_palette.size() == 16:
 		config.set_value(SECTION, "custom_palette", custom_palette)
 
@@ -155,6 +164,7 @@ func load_from_config(config: ConfigFile) -> void:
 	scrollback_lines = config.get_value(SECTION, "scrollback_lines", 5000)
 	cursor_style = config.get_value(SECTION, "cursor_style", 0)
 	cursor_blink = config.get_value(SECTION, "cursor_blink", true)
+	injection_token_threshold = config.get_value(SECTION, "injection_token_threshold", 8000)
 	var saved_palette = config.get_value(SECTION, "custom_palette", PackedColorArray())
 	if saved_palette is PackedColorArray and saved_palette.size() == 16:
 		custom_palette = saved_palette
