@@ -41,7 +41,7 @@ static func run_command(command: String, working_dir: String = "",
 static func run_checked(command: String, working_dir: String = "",
 		timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dictionary:
 	## Execute with policy check. Returns error dict if denied.
-	var policy_error := CodeToolsPolicy.get_instance().check_bash_command(command)
+	var policy_error: String = CodeToolsPolicy.get_instance().check_bash_command(command)
 	if not policy_error.is_empty():
 		return {"success": false, "error": policy_error, "exit_code": -1}
 
