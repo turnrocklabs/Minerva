@@ -57,6 +57,7 @@ func _init(manager = null) -> void:
 		_register_skill_tools()
 		_register_voice_tools()
 		_register_container_tools()
+		_register_codetools()
 		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
 
 
@@ -479,6 +480,21 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _container_remove(arguments)
 		"minerva_docker_status":
 			return _docker_status(arguments)
+		# CodeTools
+		"minerva_file_read":
+			return _codetools_read(arguments)
+		"minerva_file_write":
+			return _codetools_write(arguments)
+		"minerva_file_edit":
+			return _codetools_edit(arguments)
+		"minerva_file_glob":
+			return _codetools_glob(arguments)
+		"minerva_file_grep":
+			return _codetools_grep(arguments)
+		"minerva_bash":
+			return _codetools_bash(arguments)
+		"minerva_cwd":
+			return _codetools_cwd(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -10104,3 +10120,143 @@ func _container_remove(arguments: Dictionary) -> Dictionary:
 	return {"error": "Container '%s' not registered" % name, "success": false}
 
 #endregion Container Tools
+
+#region CodeTools
+
+var _cwd_tool: CwdTool = CwdTool.new()
+var _write_tool: WriteTool
+
+func _register_codetools() -> void:
+	_write_tool = WriteTool.new(_cwd_tool)
+	_register_tool("minerva_file_read",
+		"Read file contents with optional line offset and limit. Returns numbered lines.",
+		{"type": "object", "properties": {
+			"path": {"type": "string", "description": "Absolute file path"},
+			"offset": {"type": "integer", "description": "Start line (0-based, default 0)"},
+			"limit": {"type": "integer", "description": "Max lines to read (default 2000)"},
+		}, "required": ["path"]}, "codetools")
+
+	_register_tool("minerva_file_write",
+		"Write content to a file. Creates parent directories if needed.",
+		{"type": "object", "properties": {
+			"path": {"type": "string", "description": "File path (absolute or relative to cwd)"},
+			"content": {"type": "string", "description": "Content to write"},
+		}, "required": ["path", "content"]}, "codetools")
+
+	_register_tool("minerva_file_edit",
+		"Make targeted string replacements in a file. old_string must be unique unless replace_all is true.",
+		{"type": "object", "properties": {
+			"path": {"type": "string", "description": "File path"},
+			"old_string": {"type": "string", "description": "String to find"},
+			"new_string": {"type": "string", "description": "Replacement string"},
+			"replace_all": {"type": "boolean", "description": "Replace all occurrences (default false)"},
+		}, "required": ["path", "old_string", "new_string"]}, "codetools")
+
+	_register_tool("minerva_file_glob",
+		"Find files matching a glob pattern. Supports *, **, and ? wildcards.",
+		{"type": "object", "properties": {
+			"pattern": {"type": "string", "description": "Glob pattern (e.g., **/*.gd)"},
+			"path": {"type": "string", "description": "Base directory (default: cwd)"},
+			"limit": {"type": "integer", "description": "Max results (default 100)"},
+		}, "required": ["pattern"]}, "codetools")
+
+	_register_tool("minerva_file_grep",
+		"Search file contents using regex patterns.",
+		{"type": "object", "properties": {
+			"pattern": {"type": "string", "description": "Regex pattern"},
+			"path": {"type": "string", "description": "File or directory to search (default: cwd)"},
+			"glob": {"type": "string", "description": "Filter files by glob pattern"},
+			"type": {"type": "string", "description": "Filter by file type (py, gd, js, ts, etc.)"},
+			"ignore_case": {"type": "boolean", "description": "Case-insensitive search"},
+			"context_lines": {"type": "integer", "description": "Lines of context around match"},
+			"limit": {"type": "integer", "description": "Max matches (default 100)"},
+		}, "required": ["pattern"]}, "codetools")
+
+	_register_tool("minerva_bash",
+		"Execute a shell command. Subject to policy enforcement.",
+		{"type": "object", "properties": {
+			"command": {"type": "string", "description": "Shell command to execute"},
+			"working_dir": {"type": "string", "description": "Working directory (default: cwd)"},
+			"timeout": {"type": "integer", "description": "Timeout in ms (default 120000, max 600000)"},
+		}, "required": ["command"]}, "codetools")
+
+	_register_tool("minerva_cwd",
+		"Get or set the working directory.",
+		{"type": "object", "properties": {
+			"path": {"type": "string", "description": "New directory (omit to just get current)"},
+		}}, "codetools")
+
+
+func _codetools_read(arguments: Dictionary) -> Dictionary:
+	var path: String = arguments.get("path", "")
+	if path.is_empty():
+		return {"success": false, "error": "path is required"}
+	if not path.is_absolute_path():
+		path = _cwd_tool.get_cwd().path_join(path)
+	var offset: int = int(arguments.get("offset", 0))
+	var limit: int = int(arguments.get("limit", 0))
+	return ReadTool.read_file(path, offset, limit)
+
+
+func _codetools_write(arguments: Dictionary) -> Dictionary:
+	var path: String = arguments.get("path", "")
+	var content: String = arguments.get("content", "")
+	if path.is_empty():
+		return {"success": false, "error": "path is required"}
+	if not path.is_absolute_path():
+		path = _cwd_tool.get_cwd().path_join(path)
+	return _write_tool.write_file(path, content)
+
+
+func _codetools_edit(arguments: Dictionary) -> Dictionary:
+	var path: String = arguments.get("path", "")
+	if not path.is_absolute_path():
+		path = _cwd_tool.get_cwd().path_join(path)
+	return EditTool.edit_file(
+		path,
+		arguments.get("old_string", ""),
+		arguments.get("new_string", ""),
+		arguments.get("replace_all", false),
+	)
+
+
+func _codetools_glob(arguments: Dictionary) -> Dictionary:
+	var pattern: String = arguments.get("pattern", "")
+	var base_dir: String = arguments.get("path", _cwd_tool.get_cwd())
+	var limit: int = int(arguments.get("limit", 100))
+	return GlobTool.glob_files(pattern, base_dir, limit)
+
+
+func _codetools_grep(arguments: Dictionary) -> Dictionary:
+	var path: String = arguments.get("path", _cwd_tool.get_cwd())
+	if not path.is_absolute_path():
+		path = _cwd_tool.get_cwd().path_join(path)
+	return GrepTool.grep_files(
+		arguments.get("pattern", ""),
+		path,
+		arguments.get("glob", ""),
+		arguments.get("type", ""),
+		arguments.get("ignore_case", false),
+		int(arguments.get("context_lines", 0)),
+		int(arguments.get("limit", 100)),
+	)
+
+
+func _codetools_bash(arguments: Dictionary) -> Dictionary:
+	var command: String = arguments.get("command", "")
+	if command.is_empty():
+		return {"success": false, "error": "command is required"}
+	var working_dir: String = arguments.get("working_dir", _cwd_tool.get_cwd())
+	if not working_dir.is_absolute_path():
+		working_dir = _cwd_tool.get_cwd().path_join(working_dir)
+	var timeout_ms: int = int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
+	return BashTool.run_checked(command, working_dir, timeout_ms)
+
+
+func _codetools_cwd(arguments: Dictionary) -> Dictionary:
+	var path: String = arguments.get("path", "")
+	if path.is_empty():
+		return {"success": true, "cwd": _cwd_tool.get_cwd()}
+	return _cwd_tool.set_cwd(path)
+
+#endregion CodeTools
