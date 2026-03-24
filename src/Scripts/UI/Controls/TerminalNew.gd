@@ -331,31 +331,37 @@ func _on_prompt_end() -> void:
 func _extract_row_text(row: int) -> String:
 	## Read one row of text from the terminal cells (viewport-relative).
 	var line: String = ""
-	for col in range(_cols):
+	var max_cols: int = maxi(_cols, 256)
+	for col in range(max_cols):
 		var cell: Dictionary = terminal.get_cell(col, row)
 		if cell.is_empty():
-			break
+			break  # out of bounds
 		var cp: int = cell.get("codepoint", 0)
-		if cp == 0:
-			break
-		elif cp >= 32:
+		if cp >= 32:
 			line += char(cp)
+		else:
+			line += " "  # unwritten cell or control char → space
 	return line.rstrip(" ")
 
 func _extract_row_text_screen(screen_row: int) -> String:
 	## Read one row of text using screen-absolute coordinates (scrollback-safe).
+	## Uses a generous max column count because scrollback rows may have been
+	## written at a wider terminal size than the current one.
+	## Does NOT break on codepoint 0 mid-row — programs like ls use cursor
+	## positioning to create columns, leaving gaps of unwritten cells.
 	if not terminal.has_method("get_cell_screen"):
 		return _extract_row_text(screen_row)  # fallback
 	var line: String = ""
-	for col in range(_cols):
+	var max_cols: int = maxi(_cols, 256)
+	for col in range(max_cols):
 		var cell: Dictionary = terminal.get_cell_screen(col, screen_row)
 		if cell.is_empty():
-			break
+			break  # out of bounds — end of row
 		var cp: int = cell.get("codepoint", 0)
-		if cp == 0:
-			break
-		elif cp >= 32:
+		if cp >= 32:
 			line += char(cp)
+		else:
+			line += " "  # unwritten cell or control char → space
 	return line.rstrip(" ")
 
 func _finalize_active_block(next_screen_row: int) -> void:
@@ -885,14 +891,51 @@ class TextLayer extends Control:
 
 		if _selecting:
 			if event is InputEventMouseMotion:
-				var row: = maxi(0, floori(event.position.y / terminal.line_height))
+				var row: = floori(event.position.y / terminal.line_height)
 				var column: = maxi(0, floori(event.position.x / terminal.char_width))
+
+				# Auto-scroll when dragging past top or bottom edge
+				if row < 0:
+					terminal.terminal.scroll_viewport(-1)  # scroll up (show history)
+					terminal.text_layer.queue_redraw()
+					terminal.cursor_layer.queue_redraw()
+					row = 0
+				elif row >= terminal._rows:
+					terminal.terminal.scroll_viewport(1)  # scroll down
+					terminal.text_layer.queue_redraw()
+					terminal.cursor_layer.queue_redraw()
+					row = terminal._rows - 1
+
 				p2 = Vector2i(column, row)
 				var check = func(a, b):
 					return a.y < b.y or (a.y == b.y and a.x < b.x)
 				_selection_start = p1 if check.call(p1, p2) else p2
 				_selection_end = p1 if check.call(p2, p1) else p2
 				queue_redraw()
+
+			# Mouse wheel during selection: scroll without breaking selection
+			if event is InputEventMouseButton and event.pressed:
+				if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+					terminal.terminal.scroll_viewport(-3)
+					terminal.text_layer.queue_redraw()
+					terminal.cursor_layer.queue_redraw()
+					# Shift selection start up to track scroll
+					p1.y = maxi(0, p1.y - 3)
+					p2.y = maxi(0, p2.y - 3)
+					_selection_start = p1 if p1.y < p2.y or (p1.y == p2.y and p1.x < p2.x) else p2
+					_selection_end = p2 if p1.y < p2.y or (p1.y == p2.y and p1.x < p2.x) else p1
+					queue_redraw()
+					accept_event()
+				elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+					terminal.terminal.scroll_viewport(3)
+					terminal.text_layer.queue_redraw()
+					terminal.cursor_layer.queue_redraw()
+					p1.y += 3
+					p2.y += 3
+					_selection_start = p1 if p1.y < p2.y or (p1.y == p2.y and p1.x < p2.x) else p2
+					_selection_end = p2 if p1.y < p2.y or (p1.y == p2.y and p1.x < p2.x) else p1
+					queue_redraw()
+					accept_event()
 
 		if event is InputEventMouseButton:
 			if event.button_index == MOUSE_BUTTON_RIGHT and event.pressed == false:
