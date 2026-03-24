@@ -95,10 +95,17 @@ bool minerva_vt_resize(MinervaTerminal term, uint16_t cols, uint16_t rows);
 void minerva_vt_get_size(MinervaTerminal term, uint16_t* cols, uint16_t* rows);
 
 /**
- * Get cell information at (col, row) in the active screen.
+ * Get cell information at (col, row) in the active screen (viewport-relative).
  * Returns true if the cell was retrieved, false if out of bounds.
  */
 bool minerva_vt_get_cell(MinervaTerminal term, uint16_t col, uint16_t row, MinervaCellInfo* out);
+
+/**
+ * Get cell information at (col, row) using screen-absolute coordinates.
+ * Row 0 is the top of scrollback history. This is stable across scrolling.
+ * Returns true if the cell was retrieved, false if out of bounds.
+ */
+bool minerva_vt_get_cell_screen(MinervaTerminal term, uint16_t col, uint32_t row, MinervaCellInfo* out);
 
 /**
  * Get current cursor state.

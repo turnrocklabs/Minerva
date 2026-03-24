@@ -95,6 +95,7 @@ void Terminal::_bind_methods()
 
     // Cell-grid access methods (powered by libghostty-vt)
     ClassDB::bind_method(D_METHOD("get_cell", "col", "row"), &Terminal::get_cell);
+    ClassDB::bind_method(D_METHOD("get_cell_screen", "col", "row"), &Terminal::get_cell_screen);
     ClassDB::bind_method(D_METHOD("get_cursor"), &Terminal::get_cursor);
     ClassDB::bind_method(D_METHOD("get_plain_text"), &Terminal::get_plain_text);
     ClassDB::bind_method(D_METHOD("scroll_viewport", "lines"), &Terminal::scroll_viewport);
@@ -828,6 +829,35 @@ Dictionary Terminal::get_cell(int col, int row) const {
     }
 
     // Background color
+    if (info.bg.type == MINERVA_COLOR_RGB) {
+        result["bg"] = Color(info.bg.r / 255.0f, info.bg.g / 255.0f, info.bg.b / 255.0f);
+    } else if (info.bg.type == MINERVA_COLOR_PALETTE) {
+        result["bg_palette"] = (int)info.bg.palette_index;
+    }
+
+    return result;
+}
+
+Dictionary Terminal::get_cell_screen(int col, int row) const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+
+    MinervaCellInfo info;
+    if (!minerva_vt_get_cell_screen(_vt_terminal, (uint16_t)col, (uint32_t)row, &info)) {
+        return result;
+    }
+
+    result["codepoint"] = (int)info.codepoint;
+    result["wide"] = (int)info.wide;
+    result["has_style"] = info.has_style;
+    result["bold"] = info.bold;
+    result["italic"] = info.italic;
+
+    if (info.fg.type == MINERVA_COLOR_RGB) {
+        result["fg"] = Color(info.fg.r / 255.0f, info.fg.g / 255.0f, info.fg.b / 255.0f);
+    } else if (info.fg.type == MINERVA_COLOR_PALETTE) {
+        result["fg_palette"] = (int)info.fg.palette_index;
+    }
     if (info.bg.type == MINERVA_COLOR_RGB) {
         result["bg"] = Color(info.bg.r / 255.0f, info.bg.g / 255.0f, info.bg.b / 255.0f);
     } else if (info.bg.type == MINERVA_COLOR_PALETTE) {

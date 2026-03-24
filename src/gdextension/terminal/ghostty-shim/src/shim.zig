@@ -212,6 +212,60 @@ export fn minerva_vt_get_cell(term: ?*anyopaque, col: u16, row: u16, out: ?*Mine
     return true;
 }
 
+export fn minerva_vt_get_cell_screen(term: ?*anyopaque, col: u16, row: u32, out: ?*MinervaCellInfo) callconv(.c) bool {
+    const state: *TerminalState = @ptrCast(@alignCast(term orelse return false));
+    const info = out orelse return false;
+    state.mutex.lock();
+    defer state.mutex.unlock();
+
+    const t = state.terminal;
+    const screen = t.screens.active;
+
+    const pt: ghostty.point.Point = .{ .screen = .{ .x = col, .y = @intCast(row) } };
+    const pin = screen.pages.pin(pt) orelse return false;
+    const page_data = &pin.node.data;
+    const rac = page_data.getRowAndCell(pin.x, pin.y);
+    const cell = rac.cell;
+
+    info.codepoint = switch (cell.content_tag) {
+        .codepoint => cell.content.codepoint,
+        else => 0,
+    };
+
+    info.wide = convertWide(cell.wide);
+
+    if (cell.style_id == 0) {
+        info.fg = default_color;
+        info.bg = default_color;
+        info.bold = false;
+        info.italic = false;
+        info.faint = false;
+        info.strikethrough = false;
+        info.inverse = false;
+        info.blink = false;
+        info.overline = false;
+        info.invisible = false;
+        info.underline = 0;
+        info.has_style = false;
+    } else {
+        const style = page_data.styles.get(page_data.memory, cell.style_id);
+        info.fg = convertColor(style.fg_color);
+        info.bg = convertColor(style.bg_color);
+        info.bold = style.flags.bold;
+        info.italic = style.flags.italic;
+        info.faint = style.flags.faint;
+        info.strikethrough = style.flags.strikethrough;
+        info.inverse = style.flags.inverse;
+        info.blink = style.flags.blink;
+        info.overline = style.flags.overline;
+        info.invisible = style.flags.invisible;
+        info.underline = convertUnderline(style.flags.underline);
+        info.has_style = true;
+    }
+
+    return true;
+}
+
 export fn minerva_vt_get_cursor(term: ?*anyopaque, out: ?*MinervaCursorInfo) callconv(.c) void {
     const state: *TerminalState = @ptrCast(@alignCast(term orelse return));
     const info = out orelse return;

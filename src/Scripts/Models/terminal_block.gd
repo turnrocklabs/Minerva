@@ -5,10 +5,16 @@ class_name TerminalBlock
 ## The command line text (e.g. "find . -name '*.gd'")
 var command: String = ""
 
-## Viewport row where this block's prompt appeared
+## Stored output text (captured at finalization before scrollback loses it)
+var output_text: String = ""
+
+## Screen-absolute row where this block's prompt appeared (stable across scrolling)
+var screen_row: int = 0
+
+## Viewport row where this block's prompt appeared (for gutter button positioning)
 var prompt_row: int = 0
 
-## Viewport row where this block's output ends (set when next prompt arrives)
+## Screen-absolute row where this block's output ends (set when next prompt arrives)
 var end_row: int = -1  # -1 = block still active (no next prompt yet)
 
 ## Whether this block is checked for injection
@@ -19,6 +25,9 @@ var marked_ranges: Array[Dictionary] = []
 
 ## Reference to the gutter CheckButton (for cleanup)
 var button: CheckButton = null
+
+## Reference to the per-block send button (for cleanup)
+var send_button: Button = null
 
 ## Note.Proxy for detached note injection into chat (set when checked)
 var proxy: RefCounted = null  # Note.Proxy
@@ -78,23 +87,35 @@ func get_text(terminal_node) -> String:
 	return "\n".join(parts)
 
 
-func format_for_injection(terminal_node) -> String:
+func format_for_injection(_terminal_node) -> String:
 	## Format this block as a terminal code fence for chat injection.
-	var text := get_text(terminal_node)
-	if text.is_empty():
-		return ""
-
-	var lines := text.split("\n")
+	## Uses stored command and output_text (captured before scrollback).
 	var result: PackedStringArray = ["```terminal"]
 
-	for i in range(lines.size()):
-		if i == 0 and not command.is_empty():
-			result.append("$ " + command)
-		else:
-			result.append(lines[i])
+	# 1. Command line — always first
+	if not command.is_empty():
+		# Strip shell prompt prefix (e.g., "bash-5.2$ ls -l" → "ls -l")
+		var cmd := _strip_prompt_prefix(command)
+		result.append("$ " + cmd)
+
+	# 2. Output — stored at finalization time
+	if not output_text.is_empty():
+		result.append(output_text)
 
 	result.append("```")
 	return "\n".join(result)
+
+
+static func _strip_prompt_prefix(raw_command: String) -> String:
+	## Strip shell prompt prefix from a captured command line.
+	## "bash-5.2$ ls -l" → "ls -l"
+	## "user@host ~/dir % pwd" → "pwd"
+	## ">>> print('hi')" → "print('hi')"
+	for sep in ["% ", "$ ", "> ", "# "]:
+		var idx := raw_command.rfind(sep)
+		if idx >= 0:
+			return raw_command.substr(idx + sep.length())
+	return raw_command
 
 
 func estimate_tokens(terminal_node = null) -> int:

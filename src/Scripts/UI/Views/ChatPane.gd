@@ -569,6 +569,10 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 
 	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
 	SingletonObject.detached_note_proxies.clear()
+	# Uncheck terminal blocks now that proxies are consumed
+	var _term = get_tree().get_first_node_in_group("terminal_pane")
+	if _term and _term.has_method("uncheck_all_blocks"):
+		_term.uncheck_all_blocks()
 
 
 ## Same as update_ui_after_response but WITHOUT emitting response_arrived signal.
@@ -989,6 +993,7 @@ func _on_send_message_button_item_selected(index: int) -> void:
 	var filteredInput: String = %txtMainUserInput.text#.replace("_",r"\_")
 	%txtMainUserInput.text = ""
 	audio_stop_1.disabled = false
+
 	match index:
 		0:
 			execute_regular_chat(filteredInput)

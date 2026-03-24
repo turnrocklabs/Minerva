@@ -96,6 +96,7 @@ public:
 
     // Cell-grid access methods (powered by libghostty-vt)
     Dictionary get_cell(int col, int row) const;
+    Dictionary get_cell_screen(int col, int row) const;
     Dictionary get_cursor() const;
     String get_plain_text() const;
     void scroll_viewport(int lines);
