@@ -250,14 +250,55 @@ func _create_output_container() -> void:
 	_send_icon = ResourceLoader.load("res://assets/icons/send_icons/send_icon_24_no_bg.png")
 
 
+var _redirect_popup: PopupMenu
+var _redirect_block_index: int = -1
+
 func _on_block_redirect_pressed(block_index: int) -> void:
-	## Redirect a block's injection target to a non-active chat tab.
-	## TODO: Implement when signal-based injection lifecycle with UUID
-	## targeting is available. For now, this is a placeholder.
+	## Show a picker of non-active chat tabs to redirect this block's injection.
 	if block_index >= _blocks.size():
 		return
-	# Future: show picker of non-active chat tabs, re-target proxy
-	pass
+	_redirect_block_index = block_index
+
+	if not _redirect_popup:
+		_redirect_popup = PopupMenu.new()
+		_redirect_popup.id_pressed.connect(_on_redirect_tab_selected)
+		add_child(_redirect_popup)
+
+	_redirect_popup.clear()
+	var chat_list = SingletonObject.ChatList
+	var active_tab: int = SingletonObject.Chats.current_tab if SingletonObject.Chats else -1
+
+	for i in range(chat_list.size()):
+		var label: String = chat_list[i].HistoryName
+		if label.is_empty():
+			label = "Chat %d" % (i + 1)
+		if i == active_tab:
+			label += " (active)"
+		_redirect_popup.add_item(label, i)
+
+	# Position near the send button
+	var block: TerminalBlock = _blocks[block_index]
+	if block.send_button:
+		_redirect_popup.popup()
+		_redirect_popup.position = block.send_button.global_position + Vector2(28, 0)
+
+func _on_redirect_tab_selected(tab_index: int) -> void:
+	## Inject the block into the selected chat tab as a reference.
+	if _redirect_block_index < 0 or _redirect_block_index >= _blocks.size():
+		return
+	var block: TerminalBlock = _blocks[_redirect_block_index]
+
+	# Ensure proxy exists
+	if not block.checked:
+		return
+
+	# The proxy is already in detached_note_proxies and will be consumed
+	# on the next send from ANY tab. To target a specific tab, we switch
+	# to it so it becomes active, then the user sends from there.
+	if SingletonObject.Chats and tab_index != SingletonObject.Chats.current_tab:
+		SingletonObject.Chats.current_tab = tab_index
+
+	_redirect_block_index = -1
 
 
 func _viewport_to_screen_row(viewport_row: int) -> int:
