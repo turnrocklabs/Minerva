@@ -567,12 +567,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
 
-	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-	SingletonObject.detached_note_proxies.clear()
-	# Uncheck terminal blocks now that proxies are consumed
-	var _term = get_tree().get_first_node_in_group("terminal_pane")
-	if _term and _term.has_method("uncheck_all_blocks"):
-		_term.uncheck_all_blocks()
+	SingletonObject.clear_consumed_proxies(history.HistoryId)
 
 
 ## Same as update_ui_after_response but WITHOUT emitting response_arrived signal.
@@ -965,8 +960,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		for i in SingletonObject.drawer_notes_container.get_tab_count():
 			SingletonObject.drawer_notes_container.disable_notes(i)
 
-		SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-		SingletonObject.detached_note_proxies.clear()
+		SingletonObject.clear_consumed_proxies(history.HistoryId)
 
 	_active_chat_requests -= 1
 	if _active_chat_requests <= 0:
@@ -1123,8 +1117,7 @@ func execute_regular_chat(text: String) -> void:
 		for i in SingletonObject.drawer_notes_container.get_tab_count():
 			SingletonObject.drawer_notes_container.disable_notes(i)
 
-		SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-		SingletonObject.detached_note_proxies.clear()
+		SingletonObject.clear_consumed_proxies(history.HistoryId)
 
 		return # if user is using Human provider we finish here
 
@@ -1286,9 +1279,8 @@ func _finish_agent_mode() -> void:
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
 
-	# Clear detached note proxies (editor "Send to LLM" toggles)
-	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-	SingletonObject.detached_note_proxies.clear()
+	var _history: ChatHistory = SingletonObject.ChatList[current_tab]
+	SingletonObject.clear_consumed_proxies(_history.HistoryId)
 
 
 ## Handle tool calls from an LLM response in agentic mode.
@@ -1590,8 +1582,7 @@ func execute_sequential_chat(text_input: String) -> void:
 			for j in SingletonObject.drawer_notes_container.get_tab_count():
 				SingletonObject.drawer_notes_container.disable_notes(j)
 			
-			SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-			SingletonObject.detached_note_proxies.clear()
+			SingletonObject.clear_consumed_proxies(history.HistoryId)
 
 			return # if user is using Human provider we finish here
 		
@@ -1632,8 +1623,7 @@ func execute_sequential_chat(text_input: String) -> void:
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
 	
-	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-	SingletonObject.detached_note_proxies.clear()
+	SingletonObject.clear_consumed_proxies(history.HistoryId)
 
 var parallel_loading: = preload("res://Scenes/multi_message_loading.tscn")
 var _mutex: Mutex = Mutex.new()

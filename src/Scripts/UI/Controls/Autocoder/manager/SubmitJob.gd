@@ -2105,8 +2105,7 @@ func _disable_injected_notes() -> void:
 			continue
 		for i in container.get_tab_count():
 			container.disable_notes(i)
-	SingletonObject.detached_note_proxies.map(func(proxy: Note.Proxy): (await proxy.create_note(true)).enabled = false)
-	SingletonObject.detached_note_proxies.clear()
+	SingletonObject.clear_consumed_proxies("")  # autocoder consumes all untargeted proxies
 
 
 # ============================================================================

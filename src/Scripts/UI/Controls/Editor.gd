@@ -259,6 +259,7 @@ func update_code_hightlighter(lang: String) -> CodeHighlighter:
 
 
 func _ready():
+	SingletonObject.injection_consumed.connect(_on_injection_consumed)
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
 	if file:
 		match type:
@@ -1106,6 +1107,14 @@ func _update_note(note: Note) -> void:
 
 
 var _proxy_note: Note.Proxy
+
+func _on_injection_consumed(_history_id: String) -> void:
+	## If our proxy was consumed (no longer in the array), uncheck the toggle.
+	if _proxy_note and _proxy_note not in SingletonObject.detached_note_proxies:
+		_proxy_note = null
+		if _note_check_button:
+			_note_check_button.set_pressed_no_signal(false)
+
 func _on_check_button_toggled(toggled_on: bool):
 	print("[Editor] _on_check_button_toggled(%s) called for editor type=%s" % [toggled_on, type])
 

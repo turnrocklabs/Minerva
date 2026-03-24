@@ -92,6 +92,7 @@ func _apply_terminal_config() -> void:
 
 func _ready():
 	add_to_group("terminal_pane")
+	SingletonObject.injection_consumed.connect(_on_injection_consumed)
 	# Check if Terminal GDExtension is available
 	if ClassDB.class_exists("Terminal"):
 		terminal = ClassDB.instantiate("Terminal")
@@ -283,20 +284,19 @@ func _on_block_redirect_pressed(block_index: int) -> void:
 		_redirect_popup.position = block.send_button.global_position + Vector2(28, 0)
 
 func _on_redirect_tab_selected(tab_index: int) -> void:
-	## Inject the block into the selected chat tab as a reference.
+	## Set the block's proxy to target a specific chat tab.
 	if _redirect_block_index < 0 or _redirect_block_index >= _blocks.size():
 		return
 	var block: TerminalBlock = _blocks[_redirect_block_index]
 
-	# Ensure proxy exists
-	if not block.checked:
+	if not block.checked or not block.proxy:
 		return
 
-	# The proxy is already in detached_note_proxies and will be consumed
-	# on the next send from ANY tab. To target a specific tab, we switch
-	# to it so it becomes active, then the user sends from there.
-	if SingletonObject.Chats and tab_index != SingletonObject.Chats.current_tab:
-		SingletonObject.Chats.current_tab = tab_index
+	if tab_index < 0 or tab_index >= SingletonObject.ChatList.size():
+		return
+
+	var target_id: String = SingletonObject.ChatList[tab_index].HistoryId
+	block.proxy.target_chat_id = target_id
 
 	_redirect_block_index = -1
 
@@ -462,6 +462,18 @@ func has_checked_blocks() -> bool:
 		if block.checked:
 			return true
 	return false
+
+func _on_injection_consumed(_history_id: String) -> void:
+	## Called when a chat consumed proxies. Uncheck blocks whose proxy is gone.
+	for block in _blocks:
+		if block.checked and block.proxy:
+			if block.proxy not in SingletonObject.detached_note_proxies:
+				block.checked = false
+				block.proxy = null
+				if block.button:
+					block.button.button_pressed = false
+				if block.send_button:
+					block.send_button.visible = false
 
 func uncheck_all_blocks() -> void:
 	for block in _blocks:

@@ -289,6 +289,25 @@ var drawer_notes_container: NotesContainer
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var detached_note_proxies: Array[Note.Proxy]
 
+## Emitted after proxies are consumed by a chat send. Sources (terminal, editor)
+## listen to uncheck/deactivate their UI controls.
+signal injection_consumed(history_id: String)
+
+## Clear proxies that match the given chat (or are untargeted). Preserve others.
+## Disables cached notes on consumed proxies, then emits injection_consumed.
+func clear_consumed_proxies(history_id: String) -> void:
+	var remaining: Array[Note.Proxy] = []
+	for proxy in detached_note_proxies:
+		if proxy.matches_chat(history_id):
+			# Disable the cached note so source UI can detect consumption
+			var note: Note = await proxy.create_note(true)
+			if note:
+				note.enabled = false
+		else:
+			remaining.append(proxy)
+	detached_note_proxies = remaining
+	injection_consumed.emit(history_id)
+
 enum note_type {
 	TEXT,
 	AUDIO, 

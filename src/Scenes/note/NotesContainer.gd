@@ -333,19 +333,18 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false, history_id: St
 			func(note: Note): return note.enabled and (history_id.is_empty() or note.is_linked_to_chat(history_id))
 		))
 
-	print("[NotesContainer] to_prompt: %d detached proxies, refresh_detached=%s" % [SingletonObject.detached_note_proxies.size(), refresh_detached])
 	for proxy_note in SingletonObject.detached_note_proxies:
+		# Filter: only include proxies targeting this chat (or untargeted)
+		if not proxy_note.matches_chat(history_id):
+			continue
 		var use_cached := not refresh_detached
-		print("[NotesContainer] Creating note from proxy (use_cached=%s)" % use_cached)
 		var note: = await proxy_note.create_note(use_cached)
 
 		if note:
-			print("[NotesContainer] Got note: type=%s, controls=%s" % [note.type, note.get_controls_container()])
 			notes.append(note)
 			if refresh_detached:
-				note.enabled = false # so the editor/terminal can catch and disable the check button
+				note.enabled = false
 		else:
-			print("[NotesContainer] ERROR: proxy_note.create_note() returned null")
 			SingletonObject.ErrorDisplay("Note Error", "Couldn't generate a Note object")
 
 	# notes are filtered for enabled ones, except for detached note

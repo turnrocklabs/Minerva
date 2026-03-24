@@ -1146,12 +1146,19 @@ func content_matches(input: Variant):
 class Proxy extends RefCounted:
 	# Emitted when [method Proxy.create_note] is called but only if a valid [class Note] object is returned.
 	signal note_created(note: Note)
-	
+
 	var _cache: Note
 	var _initializer: Callable
+	## Target chat history ID. Empty = any chat (consumed by whoever sends next).
+	## Non-empty = only consumed by the chat with this specific HistoryId.
+	var target_chat_id: String = ""
 
 	func _init(initializer: Callable) -> void:
 		_initializer = initializer
+
+	## Returns true if this proxy should be included for the given chat.
+	func matches_chat(history_id: String) -> bool:
+		return target_chat_id.is_empty() or target_chat_id == history_id
 	
 	## Calls the initializer callable to construct the [class Note] object.[br]
 	## If [param use_cached] is `true` and this method was used to create a valid [class Note] object,
