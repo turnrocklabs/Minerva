@@ -493,7 +493,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_file_grep":
 			return _codetools_grep(arguments)
 		"minerva_bash":
-			return _codetools_bash(arguments)
+			return await _codetools_bash(arguments)
 		"minerva_cwd":
 			return _codetools_cwd(arguments)
 
