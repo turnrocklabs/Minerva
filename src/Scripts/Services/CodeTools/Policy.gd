@@ -22,7 +22,7 @@ static func get_instance() -> RefCounted:
 	if _instance == null:
 		# Instantiate via load() so this works regardless of whether
 		# the class_name is globally registered.
-		var script: GDScript = load("res://src/Scripts/Services/CodeTools/Policy.gd")
+		var script: GDScript = load("res://Scripts/Services/CodeTools/Policy.gd")
 		_instance = script.new()
 		_instance._load_policy()
 	return _instance
