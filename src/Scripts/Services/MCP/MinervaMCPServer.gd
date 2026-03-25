@@ -10195,7 +10195,9 @@ func _codetools_read(arguments: Dictionary) -> Dictionary:
 		path = _cwd_tool.get_cwd().path_join(path)
 	var offset: int = int(arguments.get("offset", 0))
 	var limit: int = int(arguments.get("limit", 0))
-	return ReadTool.read_file(path, offset, limit)
+	var result := ReadTool.read_file(path, offset, limit)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_read", arguments, result)
+	return result
 
 
 func _codetools_write(arguments: Dictionary) -> Dictionary:
@@ -10205,33 +10207,39 @@ func _codetools_write(arguments: Dictionary) -> Dictionary:
 		return {"success": false, "error": "path is required"}
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
-	return _write_tool.write_file(path, content)
+	var result := _write_tool.write_file(path, content)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_write", arguments, result)
+	return result
 
 
 func _codetools_edit(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", "")
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
-	return EditTool.edit_file(
+	var result := EditTool.edit_file(
 		path,
 		arguments.get("old_string", ""),
 		arguments.get("new_string", ""),
 		arguments.get("replace_all", false),
 	)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_edit", arguments, result)
+	return result
 
 
 func _codetools_glob(arguments: Dictionary) -> Dictionary:
 	var pattern: String = arguments.get("pattern", "")
 	var base_dir: String = arguments.get("path", _cwd_tool.get_cwd())
 	var limit: int = int(arguments.get("limit", 100))
-	return GlobTool.glob_files(pattern, base_dir, limit)
+	var result := GlobTool.glob_files(pattern, base_dir, limit)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_glob", arguments, result)
+	return result
 
 
 func _codetools_grep(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", _cwd_tool.get_cwd())
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
-	return GrepTool.grep_files(
+	var result := GrepTool.grep_files(
 		arguments.get("pattern", ""),
 		path,
 		arguments.get("glob", ""),
@@ -10240,6 +10248,8 @@ func _codetools_grep(arguments: Dictionary) -> Dictionary:
 		int(arguments.get("context_lines", 0)),
 		int(arguments.get("limit", 100)),
 	)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_grep", arguments, result)
+	return result
 
 
 func _codetools_bash(arguments: Dictionary) -> Dictionary:
@@ -10250,13 +10260,19 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 	if not working_dir.is_absolute_path():
 		working_dir = _cwd_tool.get_cwd().path_join(working_dir)
 	var timeout_ms: int = int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
-	return BashTool.run_checked(command, working_dir, timeout_ms)
+	var result := BashTool.run_checked(command, working_dir, timeout_ms)
+	SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result)
+	return result
 
 
 func _codetools_cwd(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", "")
 	if path.is_empty():
-		return {"success": true, "cwd": _cwd_tool.get_cwd()}
-	return _cwd_tool.set_cwd(path)
+		var result := {"success": true, "cwd": _cwd_tool.get_cwd()}
+		SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result)
+		return result
+	var result := _cwd_tool.set_cwd(path)
+	SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result)
+	return result
 
 #endregion CodeTools

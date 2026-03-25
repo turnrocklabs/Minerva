@@ -293,6 +293,9 @@ var detached_note_proxies: Array[Note.Proxy]
 ## listen to uncheck/deactivate their UI controls.
 signal injection_consumed(history_id: String)
 
+## Emitted after an MCP CodeTools tool executes. Terminal listens to create virtual blocks.
+signal mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary)
+
 ## Clear proxies that match the given chat (or are untargeted). Preserve others.
 ## Disables cached notes on consumed proxies, then emits injection_consumed.
 func clear_consumed_proxies(history_id: String) -> void:

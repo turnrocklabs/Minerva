@@ -32,6 +32,16 @@ var send_button: Button = null
 ## Note.Proxy for detached note injection into chat (set when checked)
 var proxy: RefCounted = null  # Note.Proxy
 
+## Block type: COMMAND = real PTY command+output, VIRTUAL = MCP tool call
+enum BlockType { COMMAND, VIRTUAL }
+var block_type: BlockType = BlockType.COMMAND
+
+## Virtual block fields (only used when block_type == VIRTUAL)
+var tool_name: String = ""
+var tool_arguments: Dictionary = {}
+var tool_result: Dictionary = {}
+var timestamp: int = 0  # Unix time
+
 
 func is_active() -> bool:
 	return end_row == -1
@@ -90,6 +100,8 @@ func get_text(terminal_node) -> String:
 func format_for_injection(_terminal_node) -> String:
 	## Format this block as a terminal code fence for chat injection.
 	## Uses stored command and output_text (captured before scrollback).
+	if block_type == BlockType.VIRTUAL:
+		return _format_virtual_for_injection()
 	var result: PackedStringArray = ["```terminal"]
 
 	# 1. Command line — always first
@@ -118,8 +130,50 @@ static func _strip_prompt_prefix(raw_command: String) -> String:
 	return raw_command
 
 
+func _format_virtual_for_injection() -> String:
+	var result: PackedStringArray = ["```tool-call"]
+	result.append(tool_name)
+
+	# Format key arguments (skip very long values)
+	for key in tool_arguments:
+		var val = tool_arguments[key]
+		var val_str: String = str(val)
+		if val_str.length() > 200:
+			val_str = val_str.substr(0, 197) + "..."
+		result.append("%s: %s" % [key, val_str])
+
+	# Format result summary
+	if not tool_result.is_empty():
+		var success = tool_result.get("success", null)
+		if success != null:
+			var summary: String = "→ %s" % ("success" if success else "failed")
+			# Add key result metrics
+			for key in ["replacements", "bytes_written", "total_matches", "lines_read", "exit_code", "cwd"]:
+				if tool_result.has(key):
+					summary += ", %s: %s" % [key, str(tool_result[key])]
+			if tool_result.has("error"):
+				summary += ", error: %s" % tool_result["error"]
+			result.append(summary)
+
+	result.append("```")
+	return "\n".join(result)
+
+
+static func create_virtual(p_tool_name: String, p_arguments: Dictionary, p_result: Dictionary) -> TerminalBlock:
+	var block := TerminalBlock.new()
+	block.block_type = BlockType.VIRTUAL
+	block.tool_name = p_tool_name
+	block.tool_arguments = p_arguments
+	block.tool_result = p_result
+	block.timestamp = int(Time.get_unix_time_from_system())
+	return block
+
+
 func estimate_tokens(terminal_node = null) -> int:
 	## Token estimate: chars / 4 when terminal available, else row-based fallback.
+	if block_type == BlockType.VIRTUAL:
+		var text := _format_virtual_for_injection()
+		return maxi(1, text.length() / 4)
 	if terminal_node:
 		var text := get_text(terminal_node)
 		if not text.is_empty():

@@ -93,6 +93,7 @@ func _apply_terminal_config() -> void:
 func _ready():
 	add_to_group("terminal_pane")
 	SingletonObject.injection_consumed.connect(_on_injection_consumed)
+	SingletonObject.mcp_tool_executed.connect(_on_mcp_tool_executed)
 	# Check if Terminal GDExtension is available
 	if ClassDB.class_exists("Terminal"):
 		terminal = ClassDB.instantiate("Terminal")
@@ -480,6 +481,92 @@ func _on_injection_consumed(_history_id: String) -> void:
 					block.button.button_pressed = false
 				if block.send_button:
 					block.send_button.visible = false
+
+func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary) -> void:
+	## Create a virtual block for an MCP tool call and render it inline.
+	if not is_visible_in_tree():
+		return  # only the visible terminal captures tool calls
+
+	var block := TerminalBlock.create_virtual(tool_name, arguments, result)
+
+	# Create gutter checkbox for injection (same as real blocks)
+	var block_idx := _blocks.size()
+	var btn := CheckButton.new()
+	btn.set_meta("block_index", block_idx)
+	btn.toggled.connect(_on_block_toggled.bind(block_idx))
+	btn.tooltip_text = "Include in chat injection"
+	block.button = btn
+
+	# Position: after the last real content
+	# Use current cursor row for vertical placement
+	var cursor = terminal.get_cursor() if terminal else {"y": 0}
+	var viewport_row: int = cursor.get("y", 0)
+	btn.position.y = viewport_row * line_height
+	_check_buttons_container.add_child(btn)
+
+	_blocks.append(block)
+
+	# Render the virtual block as a styled card in the output area
+	_render_virtual_block(block, viewport_row)
+
+
+func _render_virtual_block(block: TerminalBlock, after_row: int) -> void:
+	## Render a virtual block as a styled card panel in the terminal output.
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _create_virtual_block_style())
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var vbox := VBoxContainer.new()
+	card.add_child(vbox)
+
+	# Header: tool name
+	var header := Label.new()
+	header.text = "  %s" % block.tool_name.replace("minerva_", "")
+	header.add_theme_font_size_override("font_size", 12)
+	header.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
+	vbox.add_child(header)
+
+	# Args: key = value (truncated)
+	for key in block.tool_arguments:
+		var val_str: String = str(block.tool_arguments[key])
+		if val_str.length() > 80:
+			val_str = val_str.substr(0, 77) + "..."
+		var arg_label := Label.new()
+		arg_label.text = "  %s: %s" % [key, val_str]
+		arg_label.add_theme_font_size_override("font_size", 11)
+		arg_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		vbox.add_child(arg_label)
+
+	# Result summary
+	var success = block.tool_result.get("success", null)
+	if success != null:
+		var summary := "  → %s" % ("success" if success else "failed")
+		for metric_key in ["replacements", "bytes_written", "total_matches", "lines_read", "exit_code"]:
+			if block.tool_result.has(metric_key):
+				summary += "  %s: %s" % [metric_key, str(block.tool_result[metric_key])]
+		if block.tool_result.has("error"):
+			summary += "  error: %s" % block.tool_result["error"]
+		var result_label := Label.new()
+		result_label.text = summary
+		result_label.add_theme_font_size_override("font_size", 11)
+		result_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4) if success else Color(1.0, 0.4, 0.4))
+		vbox.add_child(result_label)
+
+	# Insert into the output container
+	card.position.y = after_row * line_height + line_height
+	_output_container.get_parent().add_child(card)
+	block.set_meta("card_node", card)
+
+
+func _create_virtual_block_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.15, 0.22, 0.9)
+	style.border_color = Color(0.3, 0.4, 0.6, 0.8)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(4)
+	style.set_content_margin_all(6)
+	return style
+
 
 func uncheck_all_blocks() -> void:
 	for block in _blocks:
