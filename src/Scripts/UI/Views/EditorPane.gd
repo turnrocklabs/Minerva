@@ -498,46 +498,54 @@ func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dic
 	if not editor or not editor.code_edit:
 		return
 
-	# Format the entry as plain text
+	# Format full trace entry
 	var time_dict := Time.get_time_dict_from_system()
 	var timestamp := "%02d:%02d:%02d" % [time_dict.hour, time_dict.minute, time_dict.second]
 	var short_name: String = tool_name.replace("minerva_", "")
 
-	# Key arg
-	var arg_summary := ""
-	for key in arguments:
-		if key in ["path", "pattern", "command"]:
-			var val: String = str(arguments[key])
-			if val.length() > 80:
-				val = val.substr(0, 77) + "..."
-			arg_summary = " %s" % val
-			break
+	var lines: PackedStringArray = []
+	lines.append("── %s  %s ──" % [timestamp, short_name])
 
-	# Result
-	var result_summary := ""
+	# All arguments
+	for key in arguments:
+		var val: String = str(arguments[key])
+		# Multi-line values get indented
+		if "\n" in val:
+			lines.append("  %s:" % key)
+			for vline in val.split("\n"):
+				lines.append("    %s" % vline)
+		elif val.length() > 120:
+			lines.append("  %s: %s..." % [key, val.substr(0, 117)])
+		else:
+			lines.append("  %s: %s" % [key, val])
+
+	# All result fields
 	var success = result.get("success", null)
 	if success != null:
-		if success:
-			for key in ["bytes_written", "replacements", "total_matches", "lines_read"]:
-				if result.has(key):
-					result_summary = " → %s %s" % [str(result[key]), key.replace("_", " ")]
-					break
-			if result_summary.is_empty():
-				result_summary = " → ok"
+		lines.append("  → %s" % ("success" if success else "FAILED"))
+	for key in result:
+		if key == "success":
+			continue
+		var val: String = str(result[key])
+		if "\n" in val:
+			lines.append("  %s:" % key)
+			for vline in val.split("\n"):
+				lines.append("    %s" % vline)
+		elif val.length() > 120:
+			lines.append("  %s: %s..." % [key, val.substr(0, 117)])
 		else:
-			var err: String = str(result.get("error", "failed"))
-			if err.length() > 60:
-				err = err.substr(0, 57) + "..."
-			result_summary = " → %s" % err
+			lines.append("  %s: %s" % [key, val])
 
-	var line := "%s  %s%s%s" % [timestamp, short_name, arg_summary, result_summary]
+	lines.append("")  # blank line between entries
+
+	var entry := "\n".join(lines)
 
 	# Append to the text editor
 	var ce: CodeEdit = editor.code_edit
 	if ce.text.is_empty():
-		ce.text = line
+		ce.text = entry
 	else:
-		ce.text += "\n" + line
+		ce.text += "\n" + entry
 
 	# Auto-scroll to bottom
 	ce.set_caret_line(ce.get_line_count() - 1)
