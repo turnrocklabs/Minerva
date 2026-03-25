@@ -147,22 +147,30 @@ func get_or_create_agent_terminal(agent_id: String) -> TerminalNew:
 
 func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
 	## Route virtual block to the agent's terminal tab.
-	# Skip bash and cwd — those should be real PTY commands (future)
 	if tool_name in ["minerva_bash", "minerva_cwd"]:
 		return
 
 	var term: TerminalNew = get_or_create_agent_terminal(agent_id)
-	if not term or not term.terminal or not term.terminal.has_method("write_to_screen"):
+	if not term:
 		return
 
-	# Create block and write to the agent's terminal
+	# Defer write to ensure terminal is fully initialized
+	_write_virtual_to_terminal.call_deferred(term, tool_name, arguments, result)
+
+
+func _write_virtual_to_terminal(term: TerminalNew, tool_name: String, arguments: Dictionary, result: Dictionary) -> void:
+	if not term or not is_instance_valid(term):
+		return
+	if not term.terminal or not term.terminal.has_method("write_to_screen"):
+		# Terminal not ready yet — try again next frame
+		_write_virtual_to_terminal.call_deferred(term, tool_name, arguments, result)
+		return
+
 	var block: TerminalBlock = TerminalBlock.create_virtual(tool_name, arguments, result)
 	term._blocks.append(block)
 
-	# Write compact ANSI summary
 	term._write_virtual_summary(block)
 
-	# Add expand button in gutter
 	var cursor = term.terminal.get_cursor() if term.terminal else {"y": 0}
 	var viewport_row: int = cursor.get("y", 0)
 
