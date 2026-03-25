@@ -92,6 +92,7 @@ public:
     bool resize(int width, int height) override;
     void stop() override;
     bool write_input(const String &input) override;
+    void write_to_screen(const String &data);
     bool is_running() const override { return _running; }
 
     // Cell-grid access methods (powered by libghostty-vt)

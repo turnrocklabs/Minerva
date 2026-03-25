@@ -483,89 +483,66 @@ func _on_injection_consumed(_history_id: String) -> void:
 					block.send_button.visible = false
 
 func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary) -> void:
-	## Create a virtual block for an MCP tool call and render it inline.
-	if not is_visible_in_tree():
-		return  # only the visible terminal captures tool calls
+	## Inject a virtual block as ANSI-styled text directly into the terminal.
+	## This scrolls naturally with all other terminal content.
+	if not is_visible_in_tree() or not terminal:
+		return
+	if not terminal.has_method("write_to_screen"):
+		return
+
+	# Skip bash and cwd — those should be real PTY commands (future)
+	if tool_name in ["minerva_bash", "minerva_cwd"]:
+		return
 
 	var block: TerminalBlock = TerminalBlock.create_virtual(tool_name, arguments, result)
-
-	# Create gutter checkbox for injection (same as real blocks)
-	var block_idx := _blocks.size()
-	var btn := CheckButton.new()
-	btn.set_meta("block_index", block_idx)
-	btn.toggled.connect(_on_block_toggled.bind(block_idx))
-	btn.tooltip_text = "Include in chat injection"
-	block.button = btn
-
-	# Position: after the last real content
-	# Use current cursor row for vertical placement
-	var cursor = terminal.get_cursor() if terminal else {"y": 0}
-	var viewport_row: int = cursor.get("y", 0)
-	btn.position.y = viewport_row * line_height
-	_check_buttons_container.add_child(btn)
-
 	_blocks.append(block)
 
-	# Render the virtual block as a styled card in the output area
-	_render_virtual_block(block, viewport_row)
+	# Build compact ANSI-styled line to inject into terminal display
+	var short_name: String = tool_name.replace("minerva_", "")
 
-
-func _render_virtual_block(block: TerminalBlock, after_row: int) -> void:
-	## Render a virtual block as a styled card panel in the terminal output.
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _create_virtual_block_style())
-	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var vbox := VBoxContainer.new()
-	card.add_child(vbox)
-
-	# Header: tool name
-	var header := Label.new()
-	header.text = "  %s" % block.tool_name.replace("minerva_", "")
-	header.add_theme_font_size_override("font_size", 12)
-	header.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
-	vbox.add_child(header)
-
-	# Args: key = value (truncated)
-	for key in block.tool_arguments:
-		var val_str: String = str(block.tool_arguments[key])
-		if val_str.length() > 80:
-			val_str = val_str.substr(0, 77) + "..."
-		var arg_label := Label.new()
-		arg_label.text = "  %s: %s" % [key, val_str]
-		arg_label.add_theme_font_size_override("font_size", 11)
-		arg_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-		vbox.add_child(arg_label)
+	# Key arg summary (first meaningful arg, truncated)
+	var arg_summary := ""
+	for key in arguments:
+		if key in ["path", "pattern", "command"]:
+			var val: String = str(arguments[key])
+			if val.length() > 60:
+				val = val.substr(0, 57) + "..."
+			arg_summary = " %s" % val
+			break
 
 	# Result summary
-	var success = block.tool_result.get("success", null)
+	var result_summary := ""
+	var success = result.get("success", null)
 	if success != null:
-		var summary := "  → %s" % ("success" if success else "failed")
-		for metric_key in ["replacements", "bytes_written", "total_matches", "lines_read", "exit_code"]:
-			if block.tool_result.has(metric_key):
-				summary += "  %s: %s" % [metric_key, str(block.tool_result[metric_key])]
-		if block.tool_result.has("error"):
-			summary += "  error: %s" % block.tool_result["error"]
-		var result_label := Label.new()
-		result_label.text = summary
-		result_label.add_theme_font_size_override("font_size", 11)
-		result_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.4) if success else Color(1.0, 0.4, 0.4))
-		vbox.add_child(result_label)
+		if success:
+			for key in ["bytes_written", "replacements", "total_matches", "lines_read"]:
+				if result.has(key):
+					result_summary = " → %s %s" % [str(result[key]), key.replace("_", " ")]
+					break
+			if result_summary.is_empty():
+				result_summary = " → ok"
+		else:
+			var err: String = str(result.get("error", "failed"))
+			if err.length() > 40:
+				err = err.substr(0, 37) + "..."
+			result_summary = " → %s" % err
 
-	# Insert into the output container
-	card.position.y = after_row * line_height + line_height
-	_output_container.get_parent().add_child(card)
-	block.set_meta("card_node", card)
+	# ANSI escape: dim cyan for tool name, grey for args, green/red for result
+	var esc: String = char(0x1b)  # ESC character
+	var color_tool := esc + "[38;5;69m"   # steel blue
+	var color_args := esc + "[38;5;245m"  # grey
+	var color_result := esc + "[38;5;%dm" % (71 if success else 167)  # green or red
+	var reset := esc + "[0m"
+	var line := "\r\n%s▸ %s%s%s%s%s%s\r\n" % [
+		color_tool, short_name,
+		color_args, arg_summary,
+		color_result, result_summary,
+		reset,
+	]
 
-
-func _create_virtual_block_style() -> StyleBoxFlat:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.15, 0.22, 0.9)
-	style.border_color = Color(0.3, 0.4, 0.6, 0.8)
-	style.set_border_width_all(1)
-	style.set_corner_radius_all(4)
-	style.set_content_margin_all(6)
-	return style
+	terminal.write_to_screen(line)
+	text_layer.queue_redraw()
+	cursor_layer.queue_redraw()
 
 
 func uncheck_all_blocks() -> void:

@@ -34,6 +34,7 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("resize", "width", "height"), &Terminal::resize);
     ClassDB::bind_method(D_METHOD("stop"), &Terminal::stop);
     ClassDB::bind_method(D_METHOD("write_input", "input"), &Terminal::write_input);
+    ClassDB::bind_method(D_METHOD("write_to_screen", "data"), &Terminal::write_to_screen);
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
@@ -795,6 +796,16 @@ bool Terminal::write_input(const String &input)
     ssize_t written = write(_master_fd, data.ptr(), data.length());
 
     return written == data.length();
+}
+
+void Terminal::write_to_screen(const String &data)
+{
+    if (!_vt_terminal || data.is_empty())
+        return;
+
+    CharString utf8 = data.utf8();
+    minerva_vt_write(_vt_terminal, (const uint8_t*)utf8.ptr(), utf8.length());
+    emit_signal("vt_state_changed");
 }
 
 // -- Cell-grid access (powered by libghostty-vt) --------------------------
