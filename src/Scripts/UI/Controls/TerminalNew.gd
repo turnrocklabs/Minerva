@@ -520,15 +520,19 @@ func _write_virtual_summary(block: TerminalBlock) -> void:
 			result_summary = " → %s" % err
 
 	var esc: String = char(0x1b)
+	var save_cursor := esc + "7"       # DEC save cursor
+	var restore_cursor := esc + "8"    # DEC restore cursor
 	var color_tool := esc + "[38;5;69m"
 	var color_args := esc + "[38;5;245m"
 	var color_result := esc + "[38;5;%dm" % (71 if success else 167)
 	var reset := esc + "[0m"
-	var line := "\r\n%s%s%s%s%s%s%s\r\n" % [
+	var line := "%s\r\n%s%s%s%s%s%s%s%s\r\n" % [
+		save_cursor,
 		color_tool, short_name,
 		color_args, arg_summary,
 		color_result, result_summary,
 		reset,
+		restore_cursor,
 	]
 
 	terminal.write_to_screen(line)
@@ -573,7 +577,8 @@ func _expand_virtual_block(block_idx: int, btn: Button) -> void:
 		lines += "%s  %s%s%s= %s%s%s\r\n" % [dim, key_color, key, dim, val_color, val, reset]
 
 	if not lines.is_empty():
-		terminal.write_to_screen(lines)
+		var esc: String = char(0x1b)
+		terminal.write_to_screen(esc + "7" + lines + esc + "8")
 		text_layer.queue_redraw()
 		cursor_layer.queue_redraw()
 
