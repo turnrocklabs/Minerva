@@ -10408,6 +10408,8 @@ func _terminal_write(arguments: Dictionary) -> Dictionary:
 	var term: TerminalNew = _find_terminal_by_id(arguments.get("terminal_id", ""))
 	if not term:
 		return {"success": false, "error": "No terminal found"}
+	# Process escape sequences so \r, \n, \t, \x03 etc. become real control chars
+	text = text.c_unescape()
 	term.terminal.write_input(text)
 	return {"success": true, "bytes_sent": text.length()}
 
