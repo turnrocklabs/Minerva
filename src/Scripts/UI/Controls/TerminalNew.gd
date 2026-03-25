@@ -509,8 +509,8 @@ func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dic
 	expand_btn.text = "▶"
 	expand_btn.tooltip_text = "Show full tool call details"
 	expand_btn.flat = true
-	expand_btn.custom_minimum_size = Vector2(20, 18)
-	expand_btn.add_theme_font_size_override("font_size", 10)
+	expand_btn.custom_minimum_size = Vector2(28, 24)
+	expand_btn.add_theme_font_size_override("font_size", 14)
 	expand_btn.position.y = maxi(0, viewport_row - 1) * line_height
 	expand_btn.position.x = 0
 	expand_btn.pressed.connect(_expand_virtual_block.bind(block_idx, expand_btn))
@@ -555,7 +555,7 @@ func _write_virtual_summary(block: TerminalBlock) -> void:
 	var color_args := esc + "[38;5;245m"
 	var color_result := esc + "[38;5;%dm" % (71 if success else 167)
 	var reset := esc + "[0m"
-	var line := "\r\n%s▸ %s%s%s%s%s%s\r\n" % [
+	var line := "\r\n%s%s%s%s%s%s%s\r\n" % [
 		color_tool, short_name,
 		color_args, arg_summary,
 		color_result, result_summary,
