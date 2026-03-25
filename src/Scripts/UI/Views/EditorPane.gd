@@ -491,8 +491,6 @@ func update_current_text_tab(new_title: String, new_text: String) -> void:
 
 func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
 	## Route MCP tool call to the agent's Activity Log text editor tab.
-	if tool_name in ["minerva_bash", "minerva_cwd"]:
-		return
 
 	var editor: Editor = _get_or_create_activity_log(agent_id)
 	if not editor or not editor.code_edit:

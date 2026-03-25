@@ -1,6 +1,10 @@
 class_name TerminalNew
 extends Control
 
+## Emitted when a command block is finalized (next prompt arrived).
+## Used by MCP bash to await command completion.
+signal block_finalized(block: TerminalBlock)
+
 const CURSOR_CHAR: = "█"
 
 var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9\s-]+>)")
@@ -381,6 +385,8 @@ func _finalize_active_block(next_screen_row: int) -> void:
 			lines.append(_extract_row_text_screen(row))
 		block.output_text = "\n".join(lines)
 
+	block_finalized.emit(block)
+
 func _start_new_block(screen_row: int, viewport_row: int) -> void:
 	var block := TerminalBlock.new()
 	block.screen_row = screen_row
@@ -481,6 +487,27 @@ func _on_injection_consumed(_history_id: String) -> void:
 				if block.send_button:
 					block.send_button.visible = false
 
+
+
+func execute_command(command: String) -> Dictionary:
+	## Write a command to the PTY and await the output.
+	## Returns {stdout, exit_code, command, output_text} when the next prompt arrives.
+	if not terminal or not _terminal_available:
+		return {"success": false, "error": "Terminal not available"}
+
+	# Write command to PTY
+	terminal.write_input(command + "\n")
+
+	# Wait for block finalization (next prompt = command completed)
+	var result_block: TerminalBlock = await block_finalized
+
+	return {
+		"success": true,
+		"stdout": result_block.output_text,
+		"command": command,
+		"exit_code": 0,  # PTY doesn't give us exit code directly
+		"timed_out": false,
+	}
 
 
 func uncheck_all_blocks() -> void:

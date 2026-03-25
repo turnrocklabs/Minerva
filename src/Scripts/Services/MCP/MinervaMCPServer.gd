@@ -10258,13 +10258,44 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 	var command: String = arguments.get("command", "")
 	if command.is_empty():
 		return {"success": false, "error": "command is required"}
+
+	# Policy check first
+	var policy_error: String = CodeToolsPolicy.get_instance().check_bash_command(command)
+	if not policy_error.is_empty():
+		var result: Dictionary = {"success": false, "error": policy_error, "exit_code": -1}
+		SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)
+		return result
+
+	# Try to route through a visible terminal PTY
+	var term: TerminalNew = _find_active_terminal()
+	if term:
+		var working_dir: String = arguments.get("working_dir", "")
+		var full_command: String = command
+		if not working_dir.is_empty() and working_dir != _cwd_tool.get_cwd():
+			full_command = "cd %s && %s" % [working_dir, command]
+
+		var result: Dictionary = await term.execute_command(full_command)
+		SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)
+		return result
+
+	# Fallback: headless execution if no terminal available
 	var working_dir: String = arguments.get("working_dir", _cwd_tool.get_cwd())
 	if not working_dir.is_absolute_path():
 		working_dir = _cwd_tool.get_cwd().path_join(working_dir)
 	var timeout_ms: int = int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
-	var result := BashTool.run_checked(command, working_dir, timeout_ms)
+	var result: Dictionary = BashTool.run_command(command, working_dir, timeout_ms)
+	result["success"] = result["exit_code"] == 0
 	SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)
 	return result
+
+
+func _find_active_terminal() -> TerminalNew:
+	## Find the active visible terminal for PTY command execution.
+	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
+	for term in terminals:
+		if term is TerminalNew and term.is_visible_in_tree() and term._terminal_available:
+			return term
+	return null
 
 
 func _codetools_cwd(arguments: Dictionary) -> Dictionary:
