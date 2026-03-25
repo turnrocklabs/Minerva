@@ -29,12 +29,16 @@ var current_layout: LAYOUT
 
 var counter_for_remove
 
+## Agent → Activity Log editor mapping
+var _activity_log_editors: Dictionary = {}
+
 func _ready():
 	_last_state = false
 	_is_Completed = true
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
 	SingletonObject.UpdateUnsavedTabIcon.connect(update_tabs_icon)
+	SingletonObject.mcp_tool_executed.connect(_on_mcp_tool_executed)
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
@@ -185,6 +189,11 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 
 			Editor.Type.VIDEO_EDITOR:
 				var tab_name = "video " + str(Tabs.get_tab_count() )
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+
+			Editor.Type.ACTIVITY_LOG:
+				var tab_name = "Activity Log"
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
@@ -474,5 +483,44 @@ func update_current_text_tab(new_title: String, new_text: String) -> void:
 	if code_edit_node:
 			# Set the new text
 			code_edit_node.text = new_text
-	
+
 	update_tabs_icon()
+
+
+# ── Activity Log Routing ──────────────────────────────────────────────
+
+func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
+	## Route MCP tool call to the agent's Activity Log editor tab.
+	if tool_name in ["minerva_bash", "minerva_cwd"]:
+		return
+
+	var editor: Editor = _get_or_create_activity_log(agent_id)
+	if not editor:
+		return
+
+	for child in editor.get_children():
+		if child is ActivityLogPanel:
+			child.add_entry(tool_name, arguments, result)
+			break
+
+
+func _get_or_create_activity_log(agent_id: String) -> Editor:
+	var key: String = agent_id if not agent_id.is_empty() else "__mcp_default__"
+
+	if _activity_log_editors.has(key):
+		var existing: Editor = _activity_log_editors[key]
+		if is_instance_valid(existing):
+			return existing
+		_activity_log_editors.erase(key)
+
+	var display_name: String = "Activity: %s" % agent_id if not agent_id.is_empty() else "Activity: MCP"
+	var editor: Editor = add(Editor.Type.ACTIVITY_LOG, null, display_name)
+
+	# Set agent_id on the panel
+	for child in editor.get_children():
+		if child is ActivityLogPanel:
+			child.agent_id = agent_id
+			break
+
+	_activity_log_editors[key] = editor
+	return editor

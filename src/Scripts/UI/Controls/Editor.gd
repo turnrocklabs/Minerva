@@ -38,6 +38,7 @@ var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circ
 var spreadsheet_editor  # SpreadsheetEditor
 var pcb_editor  # PCBEditor - type annotation removed to avoid circular dependency
 var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
+var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -74,6 +75,7 @@ enum Type {
 	SPREADSHEET,
 	PCB,
 	VIDEO_EDITOR,
+	ACTIVITY_LOG,
 }
 
 
@@ -238,6 +240,13 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			if file_:
 				new_video_editor.load_from_path(file_)
 
+		Editor.Type.ACTIVITY_LOG:
+			var panel = ActivityLogPanel.new()
+			panel.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			panel.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(panel)
+			editor.activity_log_panel = panel
+
 	return editor
 
 func toggle(on: bool) -> void:
@@ -270,7 +279,7 @@ func _ready():
 			Type.KANBAN: _load_kanban_file(file)
 			Type.SPREADSHEET: _load_spreadsheet_file(file)
 	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -296,6 +305,12 @@ func _ready():
 		jump_to_line_panel.hide()
 		$VBoxContainer/ButtonsHBoxContainer.hide()
 	elif self.type == Type.KANBAN:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
+	elif self.type == Type.ACTIVITY_LOG:
 		mic_button.hide()
 		autowrap_button.hide()
 		find_string_container.hide()
@@ -563,6 +578,10 @@ func get_saved_state() -> int:
 
 		Type.VIDEO_EDITOR:
 			# Video editors save their edits to the recording directory
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.ACTIVITY_LOG:
+			# Activity log is read-only / append-only, always considered saved
 			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state
