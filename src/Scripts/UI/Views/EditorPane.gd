@@ -490,18 +490,57 @@ func update_current_text_tab(new_title: String, new_text: String) -> void:
 # ── Activity Log Routing ──────────────────────────────────────────────
 
 func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
-	## Route MCP tool call to the agent's Activity Log editor tab.
+	## Route MCP tool call to the agent's Activity Log text editor tab.
 	if tool_name in ["minerva_bash", "minerva_cwd"]:
 		return
 
 	var editor: Editor = _get_or_create_activity_log(agent_id)
-	if not editor:
+	if not editor or not editor.code_edit:
 		return
 
-	for child in editor.get_children():
-		if child is ActivityLogPanel:
-			child.add_entry(tool_name, arguments, result)
+	# Format the entry as plain text
+	var time_dict := Time.get_time_dict_from_system()
+	var timestamp := "%02d:%02d:%02d" % [time_dict.hour, time_dict.minute, time_dict.second]
+	var short_name: String = tool_name.replace("minerva_", "")
+
+	# Key arg
+	var arg_summary := ""
+	for key in arguments:
+		if key in ["path", "pattern", "command"]:
+			var val: String = str(arguments[key])
+			if val.length() > 80:
+				val = val.substr(0, 77) + "..."
+			arg_summary = " %s" % val
 			break
+
+	# Result
+	var result_summary := ""
+	var success = result.get("success", null)
+	if success != null:
+		if success:
+			for key in ["bytes_written", "replacements", "total_matches", "lines_read"]:
+				if result.has(key):
+					result_summary = " → %s %s" % [str(result[key]), key.replace("_", " ")]
+					break
+			if result_summary.is_empty():
+				result_summary = " → ok"
+		else:
+			var err: String = str(result.get("error", "failed"))
+			if err.length() > 60:
+				err = err.substr(0, 57) + "..."
+			result_summary = " → %s" % err
+
+	var line := "%s  %s%s%s" % [timestamp, short_name, arg_summary, result_summary]
+
+	# Append to the text editor
+	var ce: CodeEdit = editor.code_edit
+	if ce.text.is_empty():
+		ce.text = line
+	else:
+		ce.text += "\n" + line
+
+	# Auto-scroll to bottom
+	ce.set_caret_line(ce.get_line_count() - 1)
 
 
 func _get_or_create_activity_log(agent_id: String) -> Editor:
@@ -514,13 +553,7 @@ func _get_or_create_activity_log(agent_id: String) -> Editor:
 		_activity_log_editors.erase(key)
 
 	var display_name: String = "Activity: %s" % agent_id if not agent_id.is_empty() else "Activity: MCP"
-	var editor: Editor = add(Editor.Type.ACTIVITY_LOG, null, display_name)
-
-	# Set agent_id on the panel
-	for child in editor.get_children():
-		if child is ActivityLogPanel:
-			child.agent_id = agent_id
-			break
+	var editor: Editor = add(Editor.Type.TEXT, null, display_name)
 
 	_activity_log_editors[key] = editor
 	return editor
