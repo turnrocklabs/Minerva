@@ -577,7 +577,6 @@ func _expand_virtual_block(block_idx: int, btn: Button) -> void:
 		lines += "%s  %s%s%s= %s%s%s\r\n" % [dim, key_color, key, dim, val_color, val, reset]
 
 	if not lines.is_empty():
-		var esc: String = char(0x1b)
 		terminal.write_to_screen(esc + "7" + lines + esc + "8")
 		text_layer.queue_redraw()
 		cursor_layer.queue_redraw()
