@@ -487,7 +487,7 @@ func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dic
 	if not is_visible_in_tree():
 		return  # only the visible terminal captures tool calls
 
-	var block := TerminalBlock.create_virtual(tool_name, arguments, result)
+	var block: TerminalBlock = TerminalBlock.create_virtual(tool_name, arguments, result)
 
 	# Create gutter checkbox for injection (same as real blocks)
 	var block_idx := _blocks.size()
