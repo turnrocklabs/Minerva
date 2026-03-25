@@ -10188,9 +10188,9 @@ func _register_codetools() -> void:
 		}, "required": ["pattern"]}, "codetools")
 
 	_register_tool("minerva_bash",
-		"Execute a shell command. Subject to policy enforcement.",
+		"Execute a shell command and return its output. Runs in the visible terminal PTY if available (command appears in terminal UI), otherwise headless. Use this for normal commands like 'ls', 'echo hi', 'git status'. For interactive programs that need ongoing input (like launching 'claude'), use minerva_terminal_write instead.",
 		{"type": "object", "properties": {
-			"command": {"type": "string", "description": "Shell command to execute"},
+			"command": {"type": "string", "description": "Shell command to execute (Enter is handled automatically)"},
 			"working_dir": {"type": "string", "description": "Working directory (default: cwd)"},
 			"timeout": {"type": "integer", "description": "Timeout in ms (default 120000, max 600000)"},
 		}, "required": ["command"]}, "codetools")
@@ -10351,9 +10351,9 @@ func _register_terminal_tools() -> void:
 		{"type": "object", "properties": {}}, "terminal")
 
 	_register_tool("minerva_terminal_write",
-		"Send text/keystrokes to a terminal. Non-blocking. Use \\n for Enter, \\x03 for Ctrl+C.",
+		"Send text/keystrokes to a terminal PTY. Non-blocking. IMPORTANT: Use \\r for Enter (not \\n). Common escapes: \\r=Enter, \\t=Tab, \\x03=Ctrl+C. Example: 'ls -la\\r' to run a command.",
 		{"type": "object", "properties": {
-			"text": {"type": "string", "description": "Text to send to the terminal"},
+			"text": {"type": "string", "description": "Text to send. Use \\r at end to submit commands (Enter key). Example: 'echo hello\\r'"},
 			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list). Empty = active terminal."},
 		}, "required": ["text"]}, "terminal")
 

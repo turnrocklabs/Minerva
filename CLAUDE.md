@@ -245,3 +245,48 @@ curl -X POST "http://localhost:8677/v1/cobrowser/command/$SESSION_ID/sync" \
 - **No sessions**: Firefox extension not connected. Press `Ctrl+Shift+Y` in Firefox
 - **Connection refused**: Service not running. Start with `python src/humanweb/service.py`
 - **Timeout**: Page not loaded or selector not found
+
+## Terminal MCP Tools
+
+Minerva exposes interactive terminal control via MCP. These tools let agents drive CLI programs (including other Claude instances) through real PTY terminals visible in the UI.
+
+### Available Tools
+- `minerva_terminal_list` — list open terminals with IDs
+- `minerva_terminal_create` — open new terminal tab
+- `minerva_terminal_close` — close terminal by ID
+- `minerva_terminal_read` — read screen content (viewport or scrollback)
+- `minerva_terminal_write` — send keystrokes to terminal (non-blocking)
+- `minerva_terminal_wait` — wait for output to settle, return screen content
+
+### IMPORTANT: Use `\r` for Enter, not `\n`
+The terminal PTY expects carriage return (`\r`) for the Enter key. A line feed (`\n`) inserts a newline character but does NOT submit the command. Always use `\r` at the end of commands:
+```
+minerva_terminal_write text="ls -la\r"        ✓ correct
+minerva_terminal_write text="ls -la\n"        ✗ wrong — won't submit
+```
+
+### Common escape sequences
+- `\r` — Enter/Return (submit command)
+- `\n` — Line feed (literal newline, rarely needed)
+- `\t` — Tab (for tab completion)
+- `\x03` — Ctrl+C (interrupt/cancel)
+
+### Interactive CLI pattern
+To drive an interactive program (like `claude`):
+1. `terminal_write text="claude\r"` — launch it
+2. `terminal_wait timeout_ms=15000 settle_ms=3000` — wait for it to start
+3. `terminal_write text="your message here\r"` — send input
+4. `terminal_wait timeout_ms=30000 settle_ms=3000` — wait for response
+5. `terminal_read` — read the screen
+6. Repeat 3-5 for multi-turn conversation
+
+### CodeTools MCP
+File manipulation tools with policy enforcement:
+- `minerva_file_read`, `minerva_file_write`, `minerva_file_edit`
+- `minerva_file_glob`, `minerva_file_grep`
+- `minerva_bash` — executes in terminal PTY when visible, headless fallback
+- `minerva_cwd` — get/set working directory
+- Policy: `~/.codetools/policy.json` with regex deny patterns
+
+### Activity Log
+All MCP tool calls are automatically logged to an "Activity: MCP" editor tab for full traceability.
