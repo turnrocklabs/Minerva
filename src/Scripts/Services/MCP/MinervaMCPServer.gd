@@ -505,6 +505,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _terminal_create(arguments)
 		"minerva_terminal_close":
 			return _terminal_close(arguments)
+		"minerva_terminal_read":
+			return _terminal_read(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -10131,77 +10133,6 @@ func _container_remove(arguments: Dictionary) -> Dictionary:
 
 #endregion Container Tools
 
-#region Terminal Tools
-
-func _register_terminal_tools() -> void:
-	_register_tool("minerva_terminal_create",
-		"Create a new terminal tab. Returns its ID.",
-		{"type": "object", "properties": {
-			"name": {"type": "string", "description": "Tab name (optional)"},
-		}}, "terminal")
-
-	_register_tool("minerva_terminal_close",
-		"Close a terminal tab by ID.",
-		{"type": "object", "properties": {
-			"terminal_id": {"type": "string", "description": "Terminal ID to close"},
-		}, "required": ["terminal_id"]}, "terminal")
-
-
-func _terminal_create(arguments: Dictionary) -> Dictionary:
-	# Find a TerminalTabGroup to add to
-	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
-
-	# Find the TerminalTabGroup parent of any existing terminal
-	var tab_group: TerminalTabGroup = null
-	for term in terminals:
-		if term is TerminalNew:
-			var parent = term.get_parent()
-			while parent:
-				if parent is TerminalTabGroup:
-					tab_group = parent
-					break
-				parent = parent.get_parent()
-			if tab_group:
-				break
-
-	if not tab_group:
-		return {"success": false, "error": "No terminal tab group found. Is the terminal panel open?"}
-
-	var new_term: TerminalNew = tab_group.add_terminal()
-	var tab_name: String = arguments.get("name", "")
-	if not tab_name.is_empty() and tab_group._tab_bar:
-		var idx: int = tab_group.tab_count() - 1
-		tab_group._tab_bar.set_tab_title(idx, tab_name)
-
-	return {"success": true, "id": str(new_term.get_instance_id()), "name": new_term.name}
-
-
-func _terminal_close(arguments: Dictionary) -> Dictionary:
-	var terminal_id: String = arguments.get("terminal_id", "")
-	if terminal_id.is_empty():
-		return {"success": false, "error": "terminal_id is required"}
-
-	var target_id: int = int(terminal_id)
-	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
-	for term in terminals:
-		if term is TerminalNew and term.get_instance_id() == target_id:
-			# Find parent TabGroup and close
-			var parent = term.get_parent()
-			while parent:
-				if parent is TerminalTabGroup:
-					# Find tab index
-					for i in range(parent._tab_bar.tab_count):
-						if parent._tab_bar.get_tab_metadata(i) == term:
-							parent.close_terminal(i)
-							return {"success": true, "message": "Terminal closed"}
-					break
-				parent = parent.get_parent()
-			return {"success": false, "error": "Could not find terminal's tab group"}
-
-	return {"success": false, "error": "Terminal not found: %s" % terminal_id}
-
-#endregion Terminal Tools
-
 #region CodeTools
 
 var _cwd_tool: CwdTool = CwdTool.new()
@@ -10424,6 +10355,26 @@ func _register_terminal_tools() -> void:
 			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list). Empty = active terminal."},
 		}, "required": ["text"]}, "terminal")
 
+	_register_tool("minerva_terminal_read",
+		"Read terminal screen content as plain text. Returns the visible viewport or a specific row range from scrollback.",
+		{"type": "object", "properties": {
+			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list). Empty = active terminal."},
+			"start_row": {"type": "integer", "description": "Start row in scrollback (0 = top of history). Omit for visible viewport."},
+			"end_row": {"type": "integer", "description": "End row in scrollback. Omit for visible viewport."},
+		}}, "terminal")
+
+	_register_tool("minerva_terminal_create",
+		"Create a new terminal tab. Returns its ID.",
+		{"type": "object", "properties": {
+			"name": {"type": "string", "description": "Tab name (optional)"},
+		}}, "terminal")
+
+	_register_tool("minerva_terminal_close",
+		"Close a terminal tab by ID.",
+		{"type": "object", "properties": {
+			"terminal_id": {"type": "string", "description": "Terminal ID to close"},
+		}, "required": ["terminal_id"]}, "terminal")
+
 
 func _terminal_list(_arguments: Dictionary) -> Dictionary:
 	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
@@ -10449,5 +10400,109 @@ func _terminal_write(arguments: Dictionary) -> Dictionary:
 		return {"success": false, "error": "No terminal found"}
 	term.terminal.write_input(text)
 	return {"success": true, "bytes_sent": text.length()}
+
+
+func _terminal_read(arguments: Dictionary) -> Dictionary:
+	var term: TerminalNew = _find_terminal_by_id(arguments.get("terminal_id", ""))
+	if not term:
+		return {"success": false, "error": "No terminal found"}
+	if not term.terminal or not term._terminal_available:
+		return {"success": false, "error": "Terminal not initialized"}
+
+	var has_range: bool = arguments.has("start_row") or arguments.has("end_row")
+
+	if has_range:
+		# Read specific row range from scrollback (screen-absolute)
+		var start_row: int = int(arguments.get("start_row", 0))
+		var end_row: int = int(arguments.get("end_row", start_row))
+		var lines: PackedStringArray = []
+		for row in range(start_row, end_row + 1):
+			lines.append(term._extract_row_text_screen(row))
+		return {
+			"success": true,
+			"content": "\n".join(lines),
+			"rows": lines.size(),
+			"start_row": start_row,
+			"end_row": end_row,
+		}
+	else:
+		# Read visible viewport
+		var info: Dictionary = term.terminal.get_scroll_info()
+		var total_rows: int = info.get("total_rows", 0)
+		var viewport_rows: int = info.get("viewport_rows", term._rows)
+
+		# Viewport starts at total_rows - viewport_rows (when scrolled to bottom)
+		var viewport_start: int = maxi(0, total_rows - viewport_rows)
+
+		var lines: PackedStringArray = []
+		for row in range(viewport_start, total_rows):
+			lines.append(term._extract_row_text_screen(row))
+
+		# Trim trailing empty lines
+		while lines.size() > 0 and lines[lines.size() - 1].strip_edges().is_empty():
+			lines.remove_at(lines.size() - 1)
+
+		return {
+			"success": true,
+			"content": "\n".join(lines),
+			"rows": lines.size(),
+			"cols": term._cols,
+			"total_scrollback_rows": total_rows,
+			"viewport_rows": viewport_rows,
+		}
+
+
+func _terminal_create(arguments: Dictionary) -> Dictionary:
+	# Find a TerminalTabGroup to add to
+	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
+
+	# Find the TerminalTabGroup parent of any existing terminal
+	var tab_group: TerminalTabGroup = null
+	for term in terminals:
+		if term is TerminalNew:
+			var parent = term.get_parent()
+			while parent:
+				if parent is TerminalTabGroup:
+					tab_group = parent
+					break
+				parent = parent.get_parent()
+			if tab_group:
+				break
+
+	if not tab_group:
+		return {"success": false, "error": "No terminal tab group found. Is the terminal panel open?"}
+
+	var new_term: TerminalNew = tab_group.add_terminal()
+	var tab_name: String = arguments.get("name", "")
+	if not tab_name.is_empty() and tab_group._tab_bar:
+		var idx: int = tab_group.tab_count() - 1
+		tab_group._tab_bar.set_tab_title(idx, tab_name)
+
+	return {"success": true, "id": str(new_term.get_instance_id()), "name": new_term.name}
+
+
+func _terminal_close(arguments: Dictionary) -> Dictionary:
+	var terminal_id: String = arguments.get("terminal_id", "")
+	if terminal_id.is_empty():
+		return {"success": false, "error": "terminal_id is required"}
+
+	var target_id: int = int(terminal_id)
+	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
+	for term in terminals:
+		if term is TerminalNew and term.get_instance_id() == target_id:
+			# Find parent TabGroup and close
+			var parent = term.get_parent()
+			while parent:
+				if parent is TerminalTabGroup:
+					# Find tab index
+					for i in range(parent._tab_bar.tab_count):
+						if parent._tab_bar.get_tab_metadata(i) == term:
+							parent.close_terminal(i)
+							return {"success": true, "message": "Terminal closed"}
+					break
+				parent = parent.get_parent()
+			return {"success": false, "error": "Could not find terminal's tab group"}
+
+	return {"success": false, "error": "Terminal not found: %s" % terminal_id}
 
 #endregion Terminal Tools
