@@ -4,17 +4,23 @@ extends SceneTree
 ##
 ## Tests creation, formatting, token estimation, and truncation behavior
 ## for VIRTUAL block types (MCP tool calls).
+##
+## NOTE: Uses dynamic typing (var block = ... without type hints) to work
+## with Godot's headless execution where class_name resolution happens at runtime.
 
 var _pass_count: int = 0
 var _fail_count: int = 0
-var _terminal_block_class
+var _TerminalBlockClass
 
 
 func _init():
 	print("=== Virtual Terminal Block Tests ===\n")
 
-	# Load the TerminalBlock class directly (should be available as a class name)
-	# We'll manually create instances since loading might have scope issues
+	# Load TerminalBlock class dynamically
+	_TerminalBlockClass = load("res://src/Scripts/Models/terminal_block.gd")
+	if not _TerminalBlockClass:
+		printerr("ERROR: Failed to load TerminalBlock class")
+		quit(1)
 
 	test_default_block_type()
 	test_virtual_empty_fields()
@@ -47,14 +53,14 @@ func check(description: String, condition: bool) -> void:
 
 func test_default_block_type():
 	print("test_default_block_type:")
-	var block = TerminalBlock.new()
+	var block = _TerminalBlockClass.new()
 	check("new TerminalBlock defaults to COMMAND type",
-		block.block_type == TerminalBlock.BlockType.COMMAND)
+		block.block_type == _TerminalBlockClass.BlockType.COMMAND)
 
 
 func test_virtual_empty_fields():
 	print("test_virtual_empty_fields:")
-	var block = TerminalBlock.new()
+	var block = _TerminalBlockClass.new()
 	check("tool_name is empty", block.tool_name == "")
 	check("tool_arguments is empty dict", block.tool_arguments == {})
 	check("tool_result is empty dict", block.tool_result == {})
@@ -63,14 +69,14 @@ func test_virtual_empty_fields():
 
 func test_create_virtual_bash():
 	print("test_create_virtual_bash:")
-	var block = TerminalBlock.new()
-	block.block_type = TerminalBlock.BlockType.VIRTUAL
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.VIRTUAL
 	block.tool_name = "minerva_bash"
 	block.tool_arguments = {"command": "ls -la"}
 	block.tool_result = {"exit_code": 0, "stdout": "file.txt\ndir/", "success": true}
 	block.timestamp = 1711270498
 
-	check("block_type set to VIRTUAL", block.block_type == TerminalBlock.BlockType.VIRTUAL)
+	check("block_type set to VIRTUAL", block.block_type == _TerminalBlockClass.BlockType.VIRTUAL)
 	check("tool_name set", block.tool_name == "minerva_bash")
 	check("tool_arguments has command key", block.tool_arguments.has("command"))
 	check("tool_arguments command value", block.tool_arguments["command"] == "ls -la")
@@ -81,8 +87,8 @@ func test_create_virtual_bash():
 
 func test_create_virtual_file_write():
 	print("test_create_virtual_file_write:")
-	var block = TerminalBlock.new()
-	block.block_type = TerminalBlock.BlockType.VIRTUAL
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.VIRTUAL
 	block.tool_name = "minerva_file_write"
 	block.tool_arguments = {
 		"path": "/home/user/test.txt",
@@ -100,8 +106,8 @@ func test_create_virtual_file_write():
 
 func test_virtual_format_for_injection_bash():
 	print("test_virtual_format_for_injection_bash:")
-	var block = TerminalBlock.new()
-	block.block_type = TerminalBlock.BlockType.VIRTUAL
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.VIRTUAL
 	block.tool_name = "minerva_bash"
 	block.tool_arguments = {"command": "ls /tmp"}
 	block.tool_result = {
@@ -110,7 +116,7 @@ func test_virtual_format_for_injection_bash():
 		"success": true
 	}
 
-	var formatted: String = block.format_for_injection(null)
+	var formatted = block.format_for_injection(null)
 	check("format starts with ```tool-call", formatted.begins_with("```tool-call"))
 	check("format contains tool name", formatted.contains("minerva_bash"))
 	check("format contains command argument", formatted.contains("ls /tmp"))
@@ -120,8 +126,8 @@ func test_virtual_format_for_injection_bash():
 
 func test_virtual_format_for_injection_file_write():
 	print("test_virtual_format_for_injection_file_write:")
-	var block = TerminalBlock.new()
-	block.block_type = TerminalBlock.BlockType.VIRTUAL
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.VIRTUAL
 	block.tool_name = "minerva_file_write"
 	block.tool_arguments = {
 		"path": "/home/test.gd",
@@ -129,7 +135,7 @@ func test_virtual_format_for_injection_file_write():
 	}
 	block.tool_result = {"success": true}
 
-	var formatted: String = block.format_for_injection(null)
+	var formatted = block.format_for_injection(null)
 	check("format starts with ```tool-call", formatted.begins_with("```tool-call"))
 	check("format contains tool name", formatted.contains("minerva_file_write"))
 	check("format contains path argument", formatted.contains("/home/test.gd"))
@@ -143,8 +149,8 @@ func test_virtual_format_truncates_long_values():
 	var long_content := ""
 	for _i in range(300):
 		long_content += "x"
-	var block = TerminalBlock.new()
-	block.block_type = TerminalBlock.BlockType.VIRTUAL
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.VIRTUAL
 	block.tool_name = "minerva_file_write"
 	block.tool_arguments = {
 		"path": "/home/test.txt",
@@ -152,7 +158,7 @@ func test_virtual_format_truncates_long_values():
 	}
 	block.tool_result = {"success": true}
 
-	var formatted: String = block.format_for_injection(null)
+	var formatted = block.format_for_injection(null)
 
 	# If _format_virtual_for_injection is implemented with truncation,
 	# the formatted output should contain "..." or similar truncation marker
@@ -172,13 +178,13 @@ func test_virtual_format_truncates_long_values():
 
 func test_virtual_estimate_tokens():
 	print("test_virtual_estimate_tokens:")
-	var block = TerminalBlock.new()
-	block.block_type = TerminalBlock.BlockType.VIRTUAL
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.VIRTUAL
 	block.tool_name = "minerva_bash"
 	block.tool_arguments = {"command": "find . -name '*.gd'"}
 	block.tool_result = {"stdout": "script1.gd\nscript2.gd\nscript3.gd", "success": true}
 
-	var tokens: int = block.estimate_tokens(null)
+	var tokens = block.estimate_tokens(null)
 	# Virtual blocks without a terminal should estimate from row counts or content
 	# At minimum, should return a positive number or 0
 	check("estimate_tokens returns integer", tokens is int)
@@ -195,12 +201,12 @@ func test_virtual_estimate_tokens():
 
 func test_command_block_unchanged():
 	print("test_command_block_unchanged:")
-	var block = _terminal_block_class.new()
-	block.block_type = _terminal_block_class.BlockType.COMMAND
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.COMMAND
 	block.command = "bash-5.2$ ls -la"
 	block.output_text = "total 42\ndrwxr-xr-x  user  group  dir\n-rw-r--r--  user  group  file.txt"
 
-	var formatted: String = block.format_for_injection(null)
+	var formatted = block.format_for_injection(null)
 	check("format starts with ```terminal", formatted.begins_with("```terminal"))
 	check("format contains command", formatted.contains("ls -la"))
 	check("format contains output", formatted.contains("total 42"))
@@ -209,12 +215,12 @@ func test_command_block_unchanged():
 
 func test_virtual_block_timestamp():
 	print("test_virtual_block_timestamp:")
-	var block = _terminal_block_class.new()
-	block.block_type = _terminal_block_class.BlockType.VIRTUAL
+	var block = _TerminalBlockClass.new()
+	block.block_type = _TerminalBlockClass.BlockType.VIRTUAL
 	block.timestamp = 1711270498
 
 	check("timestamp can be set", block.timestamp == 1711270498)
 	check("timestamp > 0", block.timestamp > 0)
 
-	var block2 = _terminal_block_class.new()
+	var block2 = _TerminalBlockClass.new()
 	check("new block timestamp defaults to 0", block2.timestamp == 0)

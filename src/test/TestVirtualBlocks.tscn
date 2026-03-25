@@ -1,4 +1,4 @@
-[gd_scene load_steps=2 format=3 uid="uid://d0ahm03mlao3p"]
+[gd_scene format=3 uid="uid://d0ahm03mlao3p"]
 
 [ext_resource type="Script" path="res://src/test/test_virtual_blocks.gd" id="1_dh3u2"]
 

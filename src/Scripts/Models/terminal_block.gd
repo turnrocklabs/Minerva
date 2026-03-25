@@ -159,8 +159,9 @@ func _format_virtual_for_injection() -> String:
 	return "\n".join(result)
 
 
-static func create_virtual(p_tool_name: String, p_arguments: Dictionary, p_result: Dictionary) -> TerminalBlock:
-	var block := TerminalBlock.new()
+static func create_virtual(p_tool_name: String, p_arguments: Dictionary, p_result: Dictionary):
+	# Create a new instance using new() - this works because we're in the class body
+	var block = new()
 	block.block_type = BlockType.VIRTUAL
 	block.tool_name = p_tool_name
 	block.tool_arguments = p_arguments
