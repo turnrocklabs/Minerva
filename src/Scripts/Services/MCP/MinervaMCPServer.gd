@@ -507,6 +507,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _terminal_close(arguments)
 		"minerva_terminal_read":
 			return _terminal_read(arguments)
+		"minerva_terminal_wait":
+			return await _terminal_wait(arguments)
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -10375,6 +10377,14 @@ func _register_terminal_tools() -> void:
 			"terminal_id": {"type": "string", "description": "Terminal ID to close"},
 		}, "required": ["terminal_id"]}, "terminal")
 
+	_register_tool("minerva_terminal_wait",
+		"Wait for new output on a terminal, then return the screen content. Waits until output settles (no new data for settle_ms) or timeout.",
+		{"type": "object", "properties": {
+			"terminal_id": {"type": "string", "description": "Terminal ID. Empty = active terminal."},
+			"timeout_ms": {"type": "integer", "description": "Max wait time in ms (default 30000)"},
+			"settle_ms": {"type": "integer", "description": "Wait for output to stop for this long before returning (default 500)"},
+		}}, "terminal")
+
 
 func _terminal_list(_arguments: Dictionary) -> Dictionary:
 	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
@@ -10504,5 +10514,58 @@ func _terminal_close(arguments: Dictionary) -> Dictionary:
 			return {"success": false, "error": "Could not find terminal's tab group"}
 
 	return {"success": false, "error": "Terminal not found: %s" % terminal_id}
+
+func _terminal_wait(arguments: Dictionary) -> Dictionary:
+	var term: TerminalNew = _find_terminal_by_id(arguments.get("terminal_id", ""))
+	if not term:
+		return {"success": false, "error": "No terminal found"}
+	if not term.terminal or not term._terminal_available:
+		return {"success": false, "error": "Terminal not initialized"}
+
+	var timeout_ms: int = int(arguments.get("timeout_ms", 30000))
+	var settle_ms: int = int(arguments.get("settle_ms", 500))
+
+	# Wait for output to appear and settle
+	var timed_out: bool = false
+	var got_output: bool = false
+	var settle_timer_active: bool = false
+
+	# Use a simple polling approach: check for vt_state_changed via a flag
+	var output_changed: bool = false
+	var on_change := func():
+		output_changed = true
+
+	term.terminal.vt_state_changed.connect(on_change)
+
+	var start_time: int = Time.get_ticks_msec()
+	var last_change_time: int = 0
+
+	# Poll loop
+	while true:
+		var elapsed: int = Time.get_ticks_msec() - start_time
+		if elapsed >= timeout_ms:
+			timed_out = true
+			break
+
+		if output_changed:
+			output_changed = false
+			got_output = true
+			last_change_time = Time.get_ticks_msec()
+
+		# If we got output and it's been quiet for settle_ms, we're done
+		if got_output and (Time.get_ticks_msec() - last_change_time) >= settle_ms:
+			break
+
+		# Yield to let the engine process
+		await term.get_tree().process_frame
+
+	term.terminal.vt_state_changed.disconnect(on_change)
+
+	# Read the screen content
+	var read_result: Dictionary = _terminal_read({"terminal_id": arguments.get("terminal_id", "")})
+
+	read_result["timed_out"] = timed_out
+	read_result["waited_ms"] = Time.get_ticks_msec() - start_time
+	return read_result
 
 #endregion Terminal Tools
