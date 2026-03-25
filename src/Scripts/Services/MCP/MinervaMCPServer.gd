@@ -124,7 +124,8 @@ func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 
 ## Execute a minerva_* tool for HTTP/external access (does not require internal connection)
-func execute_tool_for_http(tool_name: String, arguments: Dictionary) -> Dictionary:
+func execute_tool_for_http(tool_name: String, arguments: Dictionary, agent_id: String = "") -> Dictionary:
+	_current_agent_id = agent_id
 	return await _execute_tool_impl(tool_name, arguments)
 
 
@@ -10125,6 +10126,7 @@ func _container_remove(arguments: Dictionary) -> Dictionary:
 
 var _cwd_tool: CwdTool = CwdTool.new()
 var _write_tool: WriteTool
+var _current_agent_id: String = ""
 
 func _register_codetools() -> void:
 	_write_tool = WriteTool.new(_cwd_tool)
@@ -10196,7 +10198,7 @@ func _codetools_read(arguments: Dictionary) -> Dictionary:
 	var offset: int = int(arguments.get("offset", 0))
 	var limit: int = int(arguments.get("limit", 0))
 	var result := ReadTool.read_file(path, offset, limit)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_read", arguments, result)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_read", arguments, result, _current_agent_id)
 	return result
 
 
@@ -10208,7 +10210,7 @@ func _codetools_write(arguments: Dictionary) -> Dictionary:
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
 	var result := _write_tool.write_file(path, content)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_write", arguments, result)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_write", arguments, result, _current_agent_id)
 	return result
 
 
@@ -10222,7 +10224,7 @@ func _codetools_edit(arguments: Dictionary) -> Dictionary:
 		arguments.get("new_string", ""),
 		arguments.get("replace_all", false),
 	)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_edit", arguments, result)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_edit", arguments, result, _current_agent_id)
 	return result
 
 
@@ -10231,7 +10233,7 @@ func _codetools_glob(arguments: Dictionary) -> Dictionary:
 	var base_dir: String = arguments.get("path", _cwd_tool.get_cwd())
 	var limit: int = int(arguments.get("limit", 100))
 	var result := GlobTool.glob_files(pattern, base_dir, limit)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_glob", arguments, result)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_glob", arguments, result, _current_agent_id)
 	return result
 
 
@@ -10248,7 +10250,7 @@ func _codetools_grep(arguments: Dictionary) -> Dictionary:
 		int(arguments.get("context_lines", 0)),
 		int(arguments.get("limit", 100)),
 	)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_grep", arguments, result)
+	SingletonObject.mcp_tool_executed.emit("minerva_file_grep", arguments, result, _current_agent_id)
 	return result
 
 
@@ -10261,7 +10263,7 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 		working_dir = _cwd_tool.get_cwd().path_join(working_dir)
 	var timeout_ms: int = int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
 	var result := BashTool.run_checked(command, working_dir, timeout_ms)
-	SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result)
+	SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)
 	return result
 
 
@@ -10269,10 +10271,10 @@ func _codetools_cwd(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", "")
 	if path.is_empty():
 		var result := {"success": true, "cwd": _cwd_tool.get_cwd()}
-		SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result)
+		SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result, _current_agent_id)
 		return result
 	var result := _cwd_tool.set_cwd(path)
-	SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result)
+	SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result, _current_agent_id)
 	return result
 
 #endregion CodeTools

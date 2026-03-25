@@ -294,7 +294,7 @@ var detached_note_proxies: Array[Note.Proxy]
 signal injection_consumed(history_id: String)
 
 ## Emitted after an MCP CodeTools tool executes. Terminal listens to create virtual blocks.
-signal mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary)
+signal mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String)
 
 ## Clear proxies that match the given chat (or are untargeted). Preserve others.
 ## Disables cached notes on consumed proxies, then emits injection_consumed.

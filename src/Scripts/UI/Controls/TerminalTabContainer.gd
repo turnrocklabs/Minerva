@@ -9,6 +9,9 @@ var _right_group: TerminalTabGroup  # null when not split
 var _active_group: TerminalTabGroup
 var _split_button: Button
 
+## Agent terminal registry: agent_id → TerminalNew instance
+var _agent_terminals: Dictionary = {}
+
 
 func _ready():
 	# Build split container
@@ -32,6 +35,9 @@ func _ready():
 	_left_group.add_header_button(_split_button)
 
 	visibility_changed.connect(_on_visibility_changed)
+
+	# Listen for MCP tool calls to route to agent terminals
+	SingletonObject.mcp_tool_executed.connect(_on_mcp_tool_executed)
 
 
 func _setup_group(group: TerminalTabGroup) -> void:
@@ -110,3 +116,64 @@ func get_active_terminal() -> TerminalNew:
 func _on_visibility_changed() -> void:
 	if is_visible_in_tree() and _left_group and _left_group.is_empty():
 		_left_group.add_terminal()
+
+
+# ── Agent Terminal Management ─────────────────────────────────────────
+
+func get_or_create_agent_terminal(agent_id: String) -> TerminalNew:
+	## Get or create a terminal tab for the given agent. Empty agent_id = "MCP Activity".
+	var display_name: String = "Agent: %s" % agent_id if not agent_id.is_empty() else "MCP Activity"
+	var key: String = agent_id if not agent_id.is_empty() else "__mcp_default__"
+
+	# Return existing if still valid
+	if _agent_terminals.has(key):
+		var existing: TerminalNew = _agent_terminals[key]
+		if is_instance_valid(existing):
+			return existing
+		_agent_terminals.erase(key)  # stale reference
+
+	# Create new agent terminal in the left group
+	var term: TerminalNew = _left_group.add_terminal()
+
+	# Rename the tab to show agent identity
+	var tab_idx: int = _left_group.tab_count() - 1
+	if _left_group._tab_bar and tab_idx >= 0:
+		_left_group._tab_bar.set_tab_title(tab_idx, display_name)
+		_left_group._tab_bar.set_tab_tooltip(tab_idx, "MCP agent terminal — tool call traceability")
+
+	_agent_terminals[key] = term
+	return term
+
+
+func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
+	## Route virtual block to the agent's terminal tab.
+	# Skip bash and cwd — those should be real PTY commands (future)
+	if tool_name in ["minerva_bash", "minerva_cwd"]:
+		return
+
+	var term: TerminalNew = get_or_create_agent_terminal(agent_id)
+	if not term or not term.terminal or not term.terminal.has_method("write_to_screen"):
+		return
+
+	# Create block and write to the agent's terminal
+	var block: TerminalBlock = TerminalBlock.create_virtual(tool_name, arguments, result)
+	term._blocks.append(block)
+
+	# Write compact ANSI summary
+	term._write_virtual_summary(block)
+
+	# Add expand button in gutter
+	var cursor = term.terminal.get_cursor() if term.terminal else {"y": 0}
+	var viewport_row: int = cursor.get("y", 0)
+
+	var block_idx: int = term._blocks.size() - 1
+	var expand_btn := Button.new()
+	expand_btn.text = "▶"
+	expand_btn.tooltip_text = "Show full tool call details"
+	expand_btn.flat = true
+	expand_btn.custom_minimum_size = Vector2(28, 24)
+	expand_btn.add_theme_font_size_override("font_size", 14)
+	expand_btn.position.y = maxi(0, viewport_row - 1) * term.line_height
+	expand_btn.position.x = 0
+	expand_btn.pressed.connect(term._expand_virtual_block.bind(block_idx, expand_btn))
+	term._check_buttons_container.add_child(expand_btn)

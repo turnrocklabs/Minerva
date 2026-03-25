@@ -301,6 +301,8 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 
 	var tool_name = params.get("name", "")
 	var arguments = params.get("arguments", {})
+	# TODO: extract agent_id from X-Agent-Id header
+	var agent_id: String = params.get("agent_id", "")
 
 	if tool_name.is_empty():
 		_send_jsonrpc_error(conn, request_id, -32602, "Missing tool name")
@@ -336,7 +338,7 @@ func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String
 
 	tool_executed.emit(tool_name, session_id)
 
-	var tool_result = await _mcp_manager.minerva_server.execute_tool_for_http(tool_name, arguments)
+	var tool_result = await _mcp_manager.minerva_server.execute_tool_for_http(tool_name, arguments, agent_id)
 
 	# Format result according to MCP spec
 	var result_text: String

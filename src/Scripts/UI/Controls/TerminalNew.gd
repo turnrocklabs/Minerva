@@ -93,7 +93,6 @@ func _apply_terminal_config() -> void:
 func _ready():
 	add_to_group("terminal_pane")
 	SingletonObject.injection_consumed.connect(_on_injection_consumed)
-	SingletonObject.mcp_tool_executed.connect(_on_mcp_tool_executed)
 	# Check if Terminal GDExtension is available
 	if ClassDB.class_exists("Terminal"):
 		terminal = ClassDB.instantiate("Terminal")
@@ -482,39 +481,9 @@ func _on_injection_consumed(_history_id: String) -> void:
 				if block.send_button:
 					block.send_button.visible = false
 
-func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary) -> void:
-	## Inject a virtual block as ANSI-styled text directly into the terminal.
-	## This scrolls naturally with all other terminal content.
-	if not is_visible_in_tree() or not terminal:
-		return
-	if not terminal.has_method("write_to_screen"):
-		return
-
-	# Skip bash and cwd — those should be real PTY commands (future)
-	if tool_name in ["minerva_bash", "minerva_cwd"]:
-		return
-
-	var block: TerminalBlock = TerminalBlock.create_virtual(tool_name, arguments, result)
-	var block_idx := _blocks.size()
-	_blocks.append(block)
-
-	# Write compact ANSI line to terminal
-	_write_virtual_summary(block)
-
-	# Add expand button in gutter
-	var cursor = terminal.get_cursor() if terminal else {"y": 0}
-	var viewport_row: int = cursor.get("y", 0)
-
-	var expand_btn := Button.new()
-	expand_btn.text = "▶"
-	expand_btn.tooltip_text = "Show full tool call details"
-	expand_btn.flat = true
-	expand_btn.custom_minimum_size = Vector2(28, 24)
-	expand_btn.add_theme_font_size_override("font_size", 14)
-	expand_btn.position.y = maxi(0, viewport_row - 1) * line_height
-	expand_btn.position.x = 0
-	expand_btn.pressed.connect(_expand_virtual_block.bind(block_idx, expand_btn))
-	_check_buttons_container.add_child(expand_btn)
+## NOTE: _on_mcp_tool_executed is handled by TerminalTabContainer which routes
+## to the correct agent terminal. _write_virtual_summary and _expand_virtual_block
+## are called by TerminalTabContainer on this instance.
 
 
 func _write_virtual_summary(block: TerminalBlock) -> void:
