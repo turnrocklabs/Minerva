@@ -274,6 +274,14 @@ INSERT INTO items VALUES('019d237d267c79a497574adabc7c7804','work_item','backlog
 INSERT INTO items VALUES('019d237d38fa790fabdefe7d3f706f30','work_item','backlog','Route mcp_tool_executed signal to Activity Log editors',replace('Listen to mcp_tool_executed signal, route to correct Activity Log tab.\n\n**Logic:**\n- EditorPane or a manager listens to SingletonObject.mcp_tool_executed\n- On signal: find or create Activity Log editor tab for this agent_id\n- Empty agent_id → "Activity: MCP" tab\n- Named agent → "Activity: {agent_id}" tab\n- Add entry to that Activity Log''s panel\n\n**Auto-create on first call:**\n- No Activity Log exists yet → create one via Editor.create(Type.ACTIVITY_LOG)\n- Store agent_id → editor mapping (similar to old _agent_terminals)\n\nBlocked by: ActivityLogEditor type','\n',char(10)),'2026-03-25T05:35:02','2026-03-25T05:35:02','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d237cc59c731faa978904f0a08353',NULL);
 INSERT INTO items VALUES('019d237d4df07407ab4a57de6d1fef50','work_item','backlog','Activity Log entries: injectable into chat as reference blocks',replace('Allow Activity Log entries to be selected and injected into chat.\n\n**Approach:**\n- Checkbox next to each entry (like terminal block gutter)\n- Checked entries create Note.Proxy with target_chat_id\n- format_for_injection() on virtual blocks already exists — reuse it\n- Entries consumed on chat send via injection_consumed signal\n\n**Or simpler:** Use the existing Editor "Send to LLM" toggle, which sends the entire Activity Log content as a note. Individual entry selection is a future enhancement.\n\nBlocked by: Activity Log rendering','\n',char(10)),'2026-03-25T05:35:07','2026-03-25T05:35:07','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d237cc59c731faa978904f0a08353',NULL);
 INSERT INTO items VALUES('019d237d5c00782995e5a8c9f25b3790','work_item','backlog','Write tests for Activity Log editor lifecycle',replace('Headless tests for Activity Log entry creation, formatting, routing.\n\n- Test: create virtual block, format for injection\n- Test: multiple entries maintain chronological order\n- Test: agent_id routing creates separate logs\n- Test: entry expand/collapse data integrity\n\nReuse existing test_virtual_blocks.gd data model tests.','\n',char(10)),'2026-03-25T05:35:11','2026-03-25T05:35:11','','','',3,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d237cc59c731faa978904f0a08353',NULL);
+INSERT INTO items VALUES('019d27433533752685776558b8046c78','dcr','approved','Interactive terminal control via MCP: read, write, wait',replace('Enable MCP agents to interactively control terminal sessions — read screen content, write keystrokes without blocking, and detect new output. This enables launching and conversing with interactive CLI tools (like Claude Code) from within Minerva.\n\n**The three missing capabilities:**\n\n1. **minerva_terminal_read** — Read current terminal screen content (or row range from scrollback). Returns plain text of what''s visible. Uses existing get_cell_screen() for scrollback-safe reads.\n\n2. **minerva_terminal_write** — Send keystrokes/text to a terminal''s PTY input without waiting for a prompt. Non-blocking. Uses existing write_input() on the C++ terminal object.\n\n3. **minerva_terminal_wait** — Block until new output appears on the terminal, with a timeout. Uses the existing vt_state_changed signal. Returns the new screen content when output arrives or times out.\n\n**Additional terminal MCP tools (from earlier DCR, now needed):**\n- minerva_terminal_list — list open terminal tabs with metadata\n- minerva_terminal_create — open a new terminal tab\n- minerva_terminal_close — close a terminal tab\n\n**Interactive flow example (agent drives claude CLI):**\n1. terminal_write "claude\n" → launches claude\n2. terminal_wait timeout=10000 → waits for claude to show its prompt\n3. terminal_read → sees claude''s welcome/prompt\n4. terminal_write "build hello world in rust\n" → sends prompt\n5. terminal_wait timeout=60000 → waits for response\n6. terminal_read → reads claude''s response\n7. Repeat or terminal_write "/exit\n" to quit\n\n**Implementation approach:**\n- terminal_read: new MCP tool calling get_cell_screen() across row range, returns text\n- terminal_write: new MCP tool calling terminal.write_input(), returns immediately\n- terminal_wait: new MCP tool that awaits vt_state_changed signal with timeout, returns screen content after change\n- All tools take a terminal_id parameter to target specific tabs\n- terminal_list/create/close for tab management\n\n**Key design decisions:**\n- terminal_read returns plain text (not cell data) — sufficient for agent use\n- terminal_wait needs a settle delay (output may arrive in chunks; wait for N ms of silence)\n- Terminal targeting: by tab index or auto-created agent terminal','\n',char(10)),'2026-03-25T23:10:09','2026-03-25T23:13:06','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'',NULL);
+INSERT INTO items VALUES('019d27435bdf7bd4ad45d89f683e8516','work_item','done','Add minerva_terminal_list MCP tool',replace('Register MCP tool to list all open terminal tabs.\n\nReturns array of: {id (instance_id), name, group (left/right), cols, rows, visible}\n\nNeeds to traverse TerminalTabContainer → TerminalTabGroup(s) → TerminalNew instances. Use get_tree().get_nodes_in_group("terminal_pane") or traverse the container.\n\nRegister in MinervaMCPServer._register_codetools(). Add handler function.','\n',char(10)),'2026-03-25T23:10:19','2026-03-25T23:14:21','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d27433533752685776558b8046c78',NULL);
+INSERT INTO items VALUES('019d274367da7ce2bfc5d30af7cae626','work_item','backlog','Add minerva_terminal_create and minerva_terminal_close MCP tools',replace('Register MCP tools to create and close terminal tabs.\n\nterminal_create: optional name param, creates via TerminalTabGroup.add_terminal(), returns {id, name}.\nterminal_close: takes terminal_id, finds and closes the tab.\n\nNeed to make terminal visible if hidden (toggle terminal container visibility).','\n',char(10)),'2026-03-25T23:10:22','2026-03-25T23:10:22','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d27433533752685776558b8046c78',NULL);
+INSERT INTO items VALUES('019d2743790a74d0badac0756322ac00','work_item','in_progress','Add minerva_terminal_read MCP tool',replace('Register MCP tool to read terminal screen content as plain text.\n\nParameters: terminal_id (optional, defaults to active), start_row (optional), end_row (optional)\n\nImplementation: iterate rows calling _extract_row_text_screen() or get_cell_screen(). Return {content: String, rows: int, cols: int}.\n\nIf no row range specified, return the full visible viewport. If start/end given, read that range from scrollback.\n\nThis is the critical "look at screen" capability. Uses existing get_cell_screen() which we already built and tested.','\n',char(10)),'2026-03-25T23:10:26','2026-03-25T23:14:35','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d27433533752685776558b8046c78',NULL);
+INSERT INTO items VALUES('019d2743890e79afa72aeb40655c220b','work_item','done','Add minerva_terminal_write MCP tool (non-blocking)',replace('Register MCP tool to send text/keystrokes to a terminal''s PTY input.\n\nParameters: terminal_id (optional, defaults to active), text (the input to send)\n\nImplementation: find the TerminalNew instance, call terminal.write_input(text). Returns immediately (non-blocking). The text appears in the terminal as if typed.\n\nCommon patterns: send "command\n" to execute, send "\x03" for Ctrl+C, send "	" for tab completion.\n\nUses existing write_input() C++ method — just needs MCP registration and routing.','\n',char(10)),'2026-03-25T23:10:30','2026-03-25T23:14:21','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d27433533752685776558b8046c78',NULL);
+INSERT INTO items VALUES('019d27439fd770b7b6c347687e40aea3','work_item','backlog','Add minerva_terminal_wait MCP tool (await output with timeout)',replace('Register MCP tool that waits for new terminal output, then returns screen content.\n\nParameters: terminal_id (optional), timeout_ms (default 30000), settle_ms (default 500 — wait for output to stop before returning)\n\nImplementation:\n- Connect to vt_state_changed signal on the terminal\n- Start a timer for timeout\n- On each vt_state_changed, reset a settle timer\n- When settle timer expires (no new output for settle_ms), return screen content\n- If timeout expires first, return what''s on screen + timed_out: true\n\nThis is the "wait for response" capability. The settle delay handles chunked output (programs write in bursts — we wait until it stops).\n\nReturns: {content: String, timed_out: bool, rows: int}','\n',char(10)),'2026-03-25T23:10:36','2026-03-25T23:10:36','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d27433533752685776558b8046c78',NULL);
+INSERT INTO items VALUES('019d2743ad83795ab1eeada1d7da3bab','work_item','done','Helper: find terminal by ID across groups',replace('All terminal MCP tools need to find a TerminalNew by ID (or default to active). Create a shared helper.\n\nfunc _find_terminal(terminal_id) -> TerminalNew:\n- If terminal_id provided: search all terminals in group "terminal_pane" by instance_id\n- If empty/null: return active terminal from TerminalTabContainer\n- Return null if not found\n\nUsed by: terminal_list, terminal_read, terminal_write, terminal_wait, terminal_close','\n',char(10)),'2026-03-25T23:10:40','2026-03-25T23:14:20','','','',1,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d27433533752685776558b8046c78',NULL);
+INSERT INTO items VALUES('019d2743bdeb7246a836e64b0aa549c6','work_item','backlog','Write tests for terminal MCP tools',replace('Integration tests for terminal MCP tools. These need a running terminal (can''t fully test headless).\n\nHeadless-testable:\n- Terminal helper finds terminals by group\n- Screen content extraction (reuse existing text extraction tests)\n\nManual test script:\n- Create terminal, write command, read screen, verify content\n- Wait for output with timeout\n- List terminals shows correct count','\n',char(10)),'2026-03-25T23:10:44','2026-03-25T23:10:44','','','',2,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,0,NULL,'minerva:019d27433533752685776558b8046c78',NULL);
 CREATE TABLE item_tags (
 		item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
 		tag TEXT NOT NULL, PRIMARY KEY (item_id, tag)
@@ -957,6 +965,27 @@ INSERT INTO item_tags VALUES('019d237d4df07407ab4a57de6d1fef50','phase-3');
 INSERT INTO item_tags VALUES('019d237d4df07407ab4a57de6d1fef50','injection');
 INSERT INTO item_tags VALUES('019d237d5c00782995e5a8c9f25b3790','phase-3');
 INSERT INTO item_tags VALUES('019d237d5c00782995e5a8c9f25b3790','testing');
+INSERT INTO item_tags VALUES('019d27433533752685776558b8046c78','terminal');
+INSERT INTO item_tags VALUES('019d27433533752685776558b8046c78','mcp');
+INSERT INTO item_tags VALUES('019d27433533752685776558b8046c78','interactive');
+INSERT INTO item_tags VALUES('019d27433533752685776558b8046c78','agent');
+INSERT INTO item_tags VALUES('019d27435bdf7bd4ad45d89f683e8516','phase-1');
+INSERT INTO item_tags VALUES('019d27435bdf7bd4ad45d89f683e8516','mcp');
+INSERT INTO item_tags VALUES('019d274367da7ce2bfc5d30af7cae626','phase-1');
+INSERT INTO item_tags VALUES('019d274367da7ce2bfc5d30af7cae626','mcp');
+INSERT INTO item_tags VALUES('019d2743790a74d0badac0756322ac00','phase-1');
+INSERT INTO item_tags VALUES('019d2743790a74d0badac0756322ac00','mcp');
+INSERT INTO item_tags VALUES('019d2743790a74d0badac0756322ac00','core');
+INSERT INTO item_tags VALUES('019d2743890e79afa72aeb40655c220b','phase-1');
+INSERT INTO item_tags VALUES('019d2743890e79afa72aeb40655c220b','mcp');
+INSERT INTO item_tags VALUES('019d2743890e79afa72aeb40655c220b','core');
+INSERT INTO item_tags VALUES('019d27439fd770b7b6c347687e40aea3','phase-2');
+INSERT INTO item_tags VALUES('019d27439fd770b7b6c347687e40aea3','mcp');
+INSERT INTO item_tags VALUES('019d27439fd770b7b6c347687e40aea3','core');
+INSERT INTO item_tags VALUES('019d2743ad83795ab1eeada1d7da3bab','phase-1');
+INSERT INTO item_tags VALUES('019d2743ad83795ab1eeada1d7da3bab','helper');
+INSERT INTO item_tags VALUES('019d2743bdeb7246a836e64b0aa549c6','phase-2');
+INSERT INTO item_tags VALUES('019d2743bdeb7246a836e64b0aa549c6','testing');
 CREATE TABLE item_events (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -1711,6 +1740,26 @@ INSERT INTO item_events VALUES(770,'019d237d0d3a77a7beb342bf92b06d5c','transitio
 INSERT INTO item_events VALUES(771,'019d237d0d3a77a7beb342bf92b06d5c','transition','agent','2026-03-25T05:38:40','open → in_progress. Starting implementation of ActivityLogEditor type');
 INSERT INTO item_events VALUES(772,'019d237d0d3a77a7beb342bf92b06d5c','transition','agent','2026-03-25T05:39:51','in_progress → done. ActivityLogEditor type implemented');
 INSERT INTO item_events VALUES(773,'019d237d0d3a77a7beb342bf92b06d5c','comment_added','agent','2026-03-25T05:40:00',replace('Implemented ActivityLogEditor type. Changes made:\n\n1. Editor.gd — Added ACTIVITY','\n',char(10)));
+INSERT INTO item_events VALUES(774,'019d27433533752685776558b8046c78','created','','2026-03-25T23:10:09','Item created');
+INSERT INTO item_events VALUES(775,'019d27435bdf7bd4ad45d89f683e8516','created','','2026-03-25T23:10:19','Item created');
+INSERT INTO item_events VALUES(776,'019d274367da7ce2bfc5d30af7cae626','created','','2026-03-25T23:10:22','Item created');
+INSERT INTO item_events VALUES(777,'019d2743790a74d0badac0756322ac00','created','','2026-03-25T23:10:26','Item created');
+INSERT INTO item_events VALUES(778,'019d2743890e79afa72aeb40655c220b','created','','2026-03-25T23:10:30','Item created');
+INSERT INTO item_events VALUES(779,'019d27439fd770b7b6c347687e40aea3','created','','2026-03-25T23:10:36','Item created');
+INSERT INTO item_events VALUES(780,'019d2743ad83795ab1eeada1d7da3bab','created','','2026-03-25T23:10:40','Item created');
+INSERT INTO item_events VALUES(781,'019d2743bdeb7246a836e64b0aa549c6','created','','2026-03-25T23:10:44','Item created');
+INSERT INTO item_events VALUES(782,'019d27433533752685776558b8046c78','transition','agent','2026-03-25T23:13:06','proposed → approved. Approved. Swarm deploying: 3 Haiku + 1 Sonnet wave 1, Opus wave 2.');
+INSERT INTO item_events VALUES(783,'019d2743ad83795ab1eeada1d7da3bab','transition','agent','2026-03-25T23:13:50','backlog → open');
+INSERT INTO item_events VALUES(784,'019d27435bdf7bd4ad45d89f683e8516','transition','agent','2026-03-25T23:13:50','backlog → open');
+INSERT INTO item_events VALUES(785,'019d2743890e79afa72aeb40655c220b','transition','agent','2026-03-25T23:13:51','backlog → open');
+INSERT INTO item_events VALUES(786,'019d2743ad83795ab1eeada1d7da3bab','transition','agent','2026-03-25T23:13:52','open → in_progress');
+INSERT INTO item_events VALUES(787,'019d27435bdf7bd4ad45d89f683e8516','transition','agent','2026-03-25T23:13:52','open → in_progress');
+INSERT INTO item_events VALUES(788,'019d2743890e79afa72aeb40655c220b','transition','agent','2026-03-25T23:13:52','open → in_progress');
+INSERT INTO item_events VALUES(789,'019d2743ad83795ab1eeada1d7da3bab','transition','agent','2026-03-25T23:14:20','in_progress → done. Added _find_terminal_by_id() helper function with smart fallback logic (visible first, then any available)');
+INSERT INTO item_events VALUES(790,'019d27435bdf7bd4ad45d89f683e8516','transition','agent','2026-03-25T23:14:21','in_progress → done. Added minerva_terminal_list tool - returns all available terminals with ID, name, visible status, cols, and rows');
+INSERT INTO item_events VALUES(791,'019d2743890e79afa72aeb40655c220b','transition','agent','2026-03-25T23:14:21','in_progress → done. Added minerva_terminal_write tool - sends text/keystrokes to terminal via terminal.write_input(). Supports \\n and \\x03 escape sequences');
+INSERT INTO item_events VALUES(792,'019d2743790a74d0badac0756322ac00','transition','agent','2026-03-25T23:14:33','backlog → open');
+INSERT INTO item_events VALUES(793,'019d2743790a74d0badac0756322ac00','transition','agent','2026-03-25T23:14:35','open → in_progress');
 CREATE TABLE attachments (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
@@ -2280,6 +2329,22 @@ INSERT INTO transition_log VALUES(455,'2026-03-25T05:38:36','work_item','backlog
 INSERT INTO transition_log VALUES(456,'2026-03-25T05:38:38','work_item','backlog','open',1,'');
 INSERT INTO transition_log VALUES(457,'2026-03-25T05:38:40','work_item','open','in_progress',1,'');
 INSERT INTO transition_log VALUES(458,'2026-03-25T05:39:51','work_item','in_progress','done',1,'');
+INSERT INTO transition_log VALUES(459,'2026-03-25T23:13:06','dcr','proposed','approved',1,'');
+INSERT INTO transition_log VALUES(460,'2026-03-25T23:13:47','work_item','backlog','in_progress',0,'open');
+INSERT INTO transition_log VALUES(461,'2026-03-25T23:13:48','work_item','backlog','in_progress',0,'open');
+INSERT INTO transition_log VALUES(462,'2026-03-25T23:13:48','work_item','backlog','in_progress',0,'open');
+INSERT INTO transition_log VALUES(463,'2026-03-25T23:13:50','work_item','backlog','open',1,'');
+INSERT INTO transition_log VALUES(464,'2026-03-25T23:13:50','work_item','backlog','open',1,'');
+INSERT INTO transition_log VALUES(465,'2026-03-25T23:13:51','work_item','backlog','open',1,'');
+INSERT INTO transition_log VALUES(466,'2026-03-25T23:13:52','work_item','open','in_progress',1,'');
+INSERT INTO transition_log VALUES(467,'2026-03-25T23:13:52','work_item','open','in_progress',1,'');
+INSERT INTO transition_log VALUES(468,'2026-03-25T23:13:52','work_item','open','in_progress',1,'');
+INSERT INTO transition_log VALUES(469,'2026-03-25T23:14:20','work_item','in_progress','done',1,'');
+INSERT INTO transition_log VALUES(470,'2026-03-25T23:14:21','work_item','in_progress','done',1,'');
+INSERT INTO transition_log VALUES(471,'2026-03-25T23:14:21','work_item','in_progress','done',1,'');
+INSERT INTO transition_log VALUES(472,'2026-03-25T23:14:31','work_item','backlog','in_progress',0,'open');
+INSERT INTO transition_log VALUES(473,'2026-03-25T23:14:33','work_item','backlog','open',1,'');
+INSERT INTO transition_log VALUES(474,'2026-03-25T23:14:35','work_item','open','in_progress',1,'');
 CREATE TABLE mcp_error_log (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			timestamp TEXT NOT NULL,
@@ -2339,9 +2404,9 @@ INSERT INTO item_links VALUES(27,'019cc5ef529d7682b710b27895ebecb3','019cc5eed37
 INSERT INTO item_links VALUES(28,'019cc71ef68d716280740bb81e5382fa','minerva-services:019cc562596b714a8ed1bbe34672814c','blocks');
 INSERT INTO item_links VALUES(29,'019cc71ef68d716280740bb81e5382fa','019cc65ce2ee72ddb82ac3adb0cc3c65','follow_up');
 DELETE FROM sqlite_sequence;
-INSERT INTO sqlite_sequence VALUES('item_events',773);
+INSERT INTO sqlite_sequence VALUES('item_events',793);
 INSERT INTO sqlite_sequence VALUES('comments',68);
-INSERT INTO sqlite_sequence VALUES('transition_log',458);
+INSERT INTO sqlite_sequence VALUES('transition_log',474);
 INSERT INTO sqlite_sequence VALUES('item_links',30);
 INSERT INTO sqlite_sequence VALUES('mcp_error_log',16);
 CREATE INDEX idx_comments_item ON comments(item_id);
