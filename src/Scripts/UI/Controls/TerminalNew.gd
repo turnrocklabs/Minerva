@@ -495,12 +495,35 @@ func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dic
 		return
 
 	var block: TerminalBlock = TerminalBlock.create_virtual(tool_name, arguments, result)
+	var block_idx := _blocks.size()
 	_blocks.append(block)
 
-	# Build compact ANSI-styled line to inject into terminal display
-	var short_name: String = tool_name.replace("minerva_", "")
+	# Write compact ANSI line to terminal
+	_write_virtual_summary(block)
 
-	# Key arg summary (first meaningful arg, truncated)
+	# Add expand button in gutter
+	var cursor = terminal.get_cursor() if terminal else {"y": 0}
+	var viewport_row: int = cursor.get("y", 0)
+
+	var expand_btn := Button.new()
+	expand_btn.text = "▶"
+	expand_btn.tooltip_text = "Show full tool call details"
+	expand_btn.flat = true
+	expand_btn.custom_minimum_size = Vector2(20, 18)
+	expand_btn.add_theme_font_size_override("font_size", 10)
+	expand_btn.position.y = maxi(0, viewport_row - 1) * line_height
+	expand_btn.position.x = 0
+	expand_btn.pressed.connect(_expand_virtual_block.bind(block_idx, expand_btn))
+	_check_buttons_container.add_child(expand_btn)
+
+
+func _write_virtual_summary(block: TerminalBlock) -> void:
+	## Write a compact one-line ANSI summary of a virtual block to the terminal.
+	var short_name: String = block.tool_name.replace("minerva_", "")
+	var arguments: Dictionary = block.tool_arguments
+	var result: Dictionary = block.tool_result
+
+	# Key arg (first meaningful one, truncated)
 	var arg_summary := ""
 	for key in arguments:
 		if key in ["path", "pattern", "command"]:
@@ -527,11 +550,10 @@ func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dic
 				err = err.substr(0, 37) + "..."
 			result_summary = " → %s" % err
 
-	# ANSI escape: dim cyan for tool name, grey for args, green/red for result
-	var esc: String = char(0x1b)  # ESC character
-	var color_tool := esc + "[38;5;69m"   # steel blue
-	var color_args := esc + "[38;5;245m"  # grey
-	var color_result := esc + "[38;5;%dm" % (71 if success else 167)  # green or red
+	var esc: String = char(0x1b)
+	var color_tool := esc + "[38;5;69m"
+	var color_args := esc + "[38;5;245m"
+	var color_result := esc + "[38;5;%dm" % (71 if success else 167)
 	var reset := esc + "[0m"
 	var line := "\r\n%s▸ %s%s%s%s%s%s\r\n" % [
 		color_tool, short_name,
@@ -543,6 +565,48 @@ func _on_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dic
 	terminal.write_to_screen(line)
 	text_layer.queue_redraw()
 	cursor_layer.queue_redraw()
+
+
+func _expand_virtual_block(block_idx: int, btn: Button) -> void:
+	## Write expanded tool call details as indented ANSI lines below the summary.
+	if block_idx >= _blocks.size():
+		return
+	var block: TerminalBlock = _blocks[block_idx]
+	if block.block_type != TerminalBlock.BlockType.VIRTUAL:
+		return
+
+	btn.text = "▼"
+	btn.disabled = true  # one-time expand (can't un-write terminal text)
+
+	var esc: String = char(0x1b)
+	var dim := esc + "[38;5;240m"  # dark grey
+	var key_color := esc + "[38;5;109m"  # muted teal
+	var val_color := esc + "[38;5;252m"  # light grey
+	var reset := esc + "[0m"
+
+	var lines := ""
+
+	# Arguments
+	for key in block.tool_arguments:
+		var val: String = str(block.tool_arguments[key])
+		if val.length() > 120:
+			val = val.substr(0, 117) + "..."
+		# Escape newlines in values
+		val = val.replace("\n", "\\n")
+		lines += "%s  %s%s%s: %s%s%s\r\n" % [dim, key_color, key, dim, val_color, val, reset]
+
+	# Result details
+	for key in block.tool_result:
+		var val: String = str(block.tool_result[key])
+		if val.length() > 120:
+			val = val.substr(0, 117) + "..."
+		val = val.replace("\n", "\\n")
+		lines += "%s  %s%s%s= %s%s%s\r\n" % [dim, key_color, key, dim, val_color, val, reset]
+
+	if not lines.is_empty():
+		terminal.write_to_screen(lines)
+		text_layer.queue_redraw()
+		cursor_layer.queue_redraw()
 
 
 func uncheck_all_blocks() -> void:
