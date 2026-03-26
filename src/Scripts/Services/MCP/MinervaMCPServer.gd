@@ -42,6 +42,12 @@ func _init(manager = null) -> void:
 		_enabled_tool_sets = []
 		for g in config.enabled_tool_groups:
 			_enabled_tool_sets.append(g)
+
+	# Load auto tool management setting
+	if SingletonObject and SingletonObject.config_file:
+		auto_tool_management = SingletonObject.config_file.get_value("Tools", "auto_tool_management", false)
+		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", 3000)
+		tool_budget_manager.set_budget(budget)
 	# Always register tools so they're available for HTTP server
 	# (internal LLM access is gated by server_enabled flag)
 	if mcp_manager:

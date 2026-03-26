@@ -1506,6 +1506,8 @@ var _server_port_spins: Dictionary = {}  # server_name -> SpinBox
 var _server_auto_connect_checks: Dictionary = {}  # server_name -> CheckButton
 var _server_status_labels: Dictionary = {}  # server_name -> Label
 var _tool_set_checks_container: VBoxContainer
+var _auto_tool_check: CheckButton
+var _tool_budget_spin: SpinBox
 var _server_list_container: VBoxContainer
 var _profile_checks_container: VBoxContainer
 var _add_server_dialog_prefs: AddMCPServerDialog = null
@@ -1558,6 +1560,43 @@ func _create_tools_tab() -> void:
 	refresh_btn.tooltip_text = "Re-scan for Python environments"
 	refresh_btn.pressed.connect(_refresh_python_envs)
 	py_hbox.add_child(refresh_btn)
+
+	vbox.add_child(HSeparator.new())
+
+	# --- Automatic Tool Management ---
+	var atm_header := Label.new()
+	atm_header.text = "Tool Token Management"
+	atm_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(atm_header)
+
+	_auto_tool_check = CheckButton.new()
+	_auto_tool_check.text = "Automatic tool management (reduces token usage ~95%)"
+	_auto_tool_check.tooltip_text = "When enabled, only active tools are sent to the LLM. Tools are discovered via minerva_tool_search and pruned when idle. Dramatically reduces token costs for agents."
+	_auto_tool_check.toggled.connect(_on_auto_tool_toggled)
+	vbox.add_child(_auto_tool_check)
+
+	var atm_desc := Label.new()
+	atm_desc.text = "LLM agents use minerva_tool_search to discover tools on demand instead of receiving all ~170 tool schemas upfront."
+	atm_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	atm_desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	atm_desc.add_theme_font_size_override("font_size", 11)
+	vbox.add_child(atm_desc)
+
+	var budget_row := HBoxContainer.new()
+	budget_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(budget_row)
+	var budget_lbl := Label.new()
+	budget_lbl.text = "Token budget:"
+	budget_lbl.custom_minimum_size = Vector2(140, 0)
+	budget_row.add_child(budget_lbl)
+	_tool_budget_spin = SpinBox.new()
+	_tool_budget_spin.min_value = 500
+	_tool_budget_spin.max_value = 10000
+	_tool_budget_spin.step = 500
+	_tool_budget_spin.value = 3000
+	_tool_budget_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tool_budget_spin.value_changed.connect(_on_tool_budget_changed)
+	budget_row.add_child(_tool_budget_spin)
 
 	vbox.add_child(HSeparator.new())
 
@@ -1646,6 +1685,13 @@ func _load_tools_settings() -> void:
 		else:
 			_server_status_labels[server_name].text = "Not installed"
 			_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.8, 0.4, 0.4))
+
+	# Auto tool management
+	if _auto_tool_check:
+		var atm_enabled: bool = SingletonObject.config_file.get_value("Tools", "auto_tool_management", false)
+		_auto_tool_check.button_pressed = atm_enabled
+		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", 3000)
+		_tool_budget_spin.value = budget
 
 	# Tool sets
 	_refresh_tool_set_checks()
@@ -1935,6 +1981,22 @@ func _on_python_env_selected(index: int) -> void:
 			config.python_environment = _python_envs_cache[env_idx]["path"]
 
 	config.save_config()
+
+
+func _on_auto_tool_toggled(enabled: bool) -> void:
+	SingletonObject.save_to_config_file("Tools", "auto_tool_management", enabled)
+	var mcp = SingletonObject.get("mcp_manager")
+	if mcp and mcp.minerva_server:
+		mcp.minerva_server.auto_tool_management = enabled
+		if enabled:
+			mcp.minerva_server.tool_budget_manager.reset()
+
+
+func _on_tool_budget_changed(value: float) -> void:
+	SingletonObject.save_to_config_file("Tools", "tool_token_budget", int(value))
+	var mcp = SingletonObject.get("mcp_manager")
+	if mcp and mcp.minerva_server:
+		mcp.minerva_server.tool_budget_manager.set_budget(int(value))
 
 
 ## Refresh tool set checkboxes from MinervaMCPServer
