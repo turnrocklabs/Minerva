@@ -42,6 +42,9 @@ var frozen_separator_color: Color = Color(0.5, 0.5, 0.6, 1.0)
 
 ## Font
 var font: Font
+var font_bold: Font
+var font_italic: Font
+var font_bold_italic: Font
 var font_size: int = 14
 var cell_padding: float = 4.0
 
@@ -66,9 +69,38 @@ func _ready() -> void:
 	focus_next = get_path()
 	focus_previous = get_path()
 
-	# Get default font
+	# Get default font and create bold/italic variants
 	font = ThemeDB.fallback_font
 	font_size = ThemeDB.fallback_font_size
+	_build_font_variants()
+
+
+func _build_font_variants() -> void:
+	var bold_var := FontVariation.new()
+	bold_var.base_font = font
+	bold_var.variation_embolden = 0.6
+	font_bold = bold_var
+
+	var italic_var := FontVariation.new()
+	italic_var.base_font = font
+	italic_var.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.2, 1), Vector2.ZERO)
+	font_italic = italic_var
+
+	var bold_italic_var := FontVariation.new()
+	bold_italic_var.base_font = font
+	bold_italic_var.variation_embolden = 0.6
+	bold_italic_var.variation_transform = Transform2D(Vector2(1, 0), Vector2(0.2, 1), Vector2.ZERO)
+	font_bold_italic = bold_italic_var
+
+
+func _get_font_for_cell(cell) -> Font:
+	if cell.bold and cell.italic:
+		return font_bold_italic
+	elif cell.bold:
+		return font_bold
+	elif cell.italic:
+		return font_italic
+	return font
 
 
 func _draw() -> void:
@@ -217,8 +249,8 @@ func _draw_cell_content_region(start_row: int, start_col: int, end_row: int, end
 			var text_rect := rect.grow(-cell_padding)
 			var text_pos := text_rect.position
 
-			# Get font variant
-			var draw_font := font
+			# Get font variant based on cell bold/italic
+			var draw_font: Font = _get_font_for_cell(cell)
 			var draw_size := font_size
 
 			# Text color

@@ -73,6 +73,10 @@ var _resize_row: int = -1
 var row_header_width: float = 50.0
 var column_header_height: float = 24.0
 
+# Toolbar format buttons (for state reflection)
+var _bold_btn: Button
+var _italic_btn: Button
+
 
 func _ready() -> void:
 	print("[SpreadsheetEditor] _ready() called, spreadsheet_data=%s" % spreadsheet_data)
@@ -195,20 +199,22 @@ func _build_toolbar() -> void:
 	main_container.add_child(toolbar)
 
 	# Bold button
-	var bold_btn := Button.new()
-	bold_btn.icon = preload("uid://cfu0tc5nslwku")
-	bold_btn.tooltip_text = "Bold (Ctrl+B)"
-	bold_btn.custom_minimum_size = Vector2(30, 28)
-	bold_btn.pressed.connect(_on_bold_pressed)
-	toolbar.add_child(bold_btn)
+	_bold_btn = Button.new()
+	_bold_btn.icon = preload("uid://cfu0tc5nslwku")
+	_bold_btn.tooltip_text = "Bold (Ctrl+B)"
+	_bold_btn.custom_minimum_size = Vector2(30, 28)
+	_bold_btn.toggle_mode = true
+	_bold_btn.pressed.connect(_on_bold_pressed)
+	toolbar.add_child(_bold_btn)
 
 	# Italic button
-	var italic_btn := Button.new()
-	italic_btn.icon = preload("uid://c2x042or4icqh")
-	italic_btn.tooltip_text = "Italic (Ctrl+I)"
-	italic_btn.custom_minimum_size = Vector2(30, 28)
-	italic_btn.pressed.connect(_on_italic_pressed)
-	toolbar.add_child(italic_btn)
+	_italic_btn = Button.new()
+	_italic_btn.icon = preload("uid://c2x042or4icqh")
+	_italic_btn.tooltip_text = "Italic (Ctrl+I)"
+	_italic_btn.custom_minimum_size = Vector2(30, 28)
+	_italic_btn.toggle_mode = true
+	_italic_btn.pressed.connect(_on_italic_pressed)
+	toolbar.add_child(_italic_btn)
 
 	# Separator
 	var sep1 := VSeparator.new()
@@ -556,6 +562,7 @@ func _on_cell_selected(row: int, col: int) -> void:
 	current_row = row
 	current_col = col
 	_update_selection_display()
+	_update_format_buttons()
 
 
 func _on_cell_double_clicked(row: int, col: int) -> void:
@@ -1271,10 +1278,20 @@ func _paste_selection() -> void:
 
 func _on_bold_pressed() -> void:
 	_apply_format_to_selection({"bold": true})
+	_update_format_buttons()
 
 
 func _on_italic_pressed() -> void:
 	_apply_format_to_selection({"italic": true})
+	_update_format_buttons()
+
+
+func _update_format_buttons() -> void:
+	var cell = spreadsheet_data.get_cell_if_exists(current_row, current_col)
+	var is_bold: bool = cell.bold if cell else false
+	var is_italic: bool = cell.italic if cell else false
+	_bold_btn.set_pressed_no_signal(is_bold)
+	_italic_btn.set_pressed_no_signal(is_italic)
 
 
 func _on_align_left_pressed() -> void:
@@ -1682,10 +1699,10 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 	# Apply new format (coerce types — MCP JSON may pass bools as strings)
 	if format_options.has("bold"):
 		var v = format_options["bold"]
-		cell.bold = v == true or v == "true"
+		cell.bold = (v is bool and v) or (v is String and v == "true")
 	if format_options.has("italic"):
 		var v = format_options["italic"]
-		cell.italic = v == true or v == "true"
+		cell.italic = (v is bool and v) or (v is String and v == "true")
 	if format_options.has("alignment"):
 		cell.alignment = str(format_options["alignment"])
 	if format_options.has("text_color"):
@@ -1697,7 +1714,7 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 		cell.refresh_display()
 	if format_options.has("wrap_text"):
 		var v = format_options["wrap_text"]
-		cell.wrap_text = v == true or v == "true"
+		cell.wrap_text = (v is bool and v) or (v is String and v == "true")
 
 	# Capture new format
 	var new_format := {

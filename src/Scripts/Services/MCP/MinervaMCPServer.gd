@@ -10693,10 +10693,8 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 		if not mcp_manager or not mcp_manager.tool_registry.has(name):
 			continue
 		var tool = mcp_manager.tool_registry[name]
-		# Check connectivity
-		if tool.server_name == "minerva" and not mcp_manager.is_minerva_connected():
-			continue
-		elif tool.server_name != "minerva" and not mcp_manager.is_server_connected(tool.server_name):
+		# Check connectivity (minerva tools are always local, only check external servers)
+		if tool.server_name != "minerva" and not mcp_manager.is_server_connected(tool.server_name):
 			continue
 		# Check tool_set filter (uses current enabled sets)
 		if not _enabled_tool_sets.is_empty():
