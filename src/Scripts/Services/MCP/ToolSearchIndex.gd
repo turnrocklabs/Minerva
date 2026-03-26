@@ -42,6 +42,19 @@ func register_tool(name: String, description: String, schema: Dictionary, tool_s
 
 func search(query: String, category: String = "", limit: int = 5) -> Array[Dictionary]:
 	## Search for tools matching the query. Returns array of {name, description, schema}.
+	## If query is empty or "*", returns all tools (optionally filtered by category).
+
+	# List all in category (or all tools) when query is empty or wildcard
+	var clean_query := query.strip_edges()
+	if clean_query.is_empty() or clean_query == "*":
+		var results: Array[Dictionary] = []
+		for name in _tool_meta:
+			if not category.is_empty() and _tool_meta[name].tool_set != category:
+				continue
+			results.append(_format_result(name))
+			if results.size() >= limit:
+				break
+		return results
 
 	# Exact name match — highest priority
 	if _tool_schemas.has(query):

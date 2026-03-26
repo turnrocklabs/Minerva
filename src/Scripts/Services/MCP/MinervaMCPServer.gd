@@ -10623,8 +10623,6 @@ func _register_tool_search() -> void:
 
 func _tool_search(arguments: Dictionary) -> Dictionary:
 	var query: String = arguments.get("query", "")
-	if query.is_empty():
-		return {"success": false, "error": "query is required"}
 
 	var category: String = arguments.get("category", "")
 	var limit: int = int(arguments.get("limit", 5))
