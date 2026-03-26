@@ -262,8 +262,6 @@ func remove_server_at_runtime(server_name: String) -> void:
 ## Get tools filtered for a specific chat history.
 ## Applies 4-layer filter: profile tool_sets → per-chat profile override → DisabledTools → connectivity.
 func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictionary]:
-	var tools: Array[Dictionary] = []
-
 	# Determine effective profile tool_sets
 	var effective_tool_sets: Array[String] = []
 	var skill_manager = SingletonObject.get_skill_manager()
@@ -278,7 +276,8 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 				agent_skills = agent_def.skills
 		effective_tool_sets = skill_manager.get_effective_tool_sets(chat_skills, agent_skills)
 
-	# Get all registered tools
+	# Build full filtered tool list (all 4 layers)
+	var all_filtered: Array[Dictionary] = []
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]
 		var server_name = tool.server_name
@@ -296,19 +295,85 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 		if not _passes_tool_set_filter(tool, effective_tool_sets):
 			continue
 
-		# Layer 3: Per-chat DisabledTools blocklist
 		var tool_dict: Dictionary
 		if format == "anthropic":
 			tool_dict = tool.to_anthropic_format()
 		else:
 			tool_dict = tool.to_openai_format()
 
+		# Layer 3: Per-chat DisabledTools blocklist
 		if tool_dict.get("name", "") in history.DisabledTools:
 			continue
 
-		tools.append(tool_dict)
+		all_filtered.append(tool_dict)
 
-	return tools
+	# Auto tool management: return only tool_search with dynamic description
+	if minerva_server and minerva_server.auto_tool_management:
+		minerva_server.tool_budget_manager.advance_turn()
+
+		# Collect categories from filtered tools for the dynamic description
+		var categories: Dictionary = {}
+		for tool_dict in all_filtered:
+			var name: String = tool_dict.get("name", "")
+			if tool_registry.has(name):
+				var ts: String = tool_registry[name].tool_set
+				if not ts.is_empty():
+					categories[ts] = categories.get(ts, 0) + 1
+
+		var cat_list: String = ", ".join(categories.keys()) if not categories.is_empty() else "various"
+
+		# Build tool_search with dynamic description
+		var search_desc := "This server has %d tools available (after filtering). Search to discover and activate. Categories: %s. Example: tool_search(query='edit file'). Activated tools can be called directly." % [all_filtered.size(), cat_list]
+		var search_schema: Dictionary
+		if format == "anthropic":
+			search_schema = {
+				"name": "minerva_tool_search",
+				"description": search_desc,
+				"input_schema": {
+					"type": "object",
+					"properties": {
+						"query": {"type": "string", "description": "Keyword search or exact tool name"},
+						"category": {"type": "string", "description": "Filter by category: %s" % cat_list},
+						"limit": {"type": "integer", "description": "Max results (default 5)"},
+					},
+					"required": ["query"]
+				}
+			}
+		else:
+			search_schema = {
+				"type": "function",
+				"function": {
+					"name": "minerva_tool_search",
+					"description": search_desc,
+					"parameters": {
+						"type": "object",
+						"properties": {
+							"query": {"type": "string", "description": "Keyword search or exact tool name"},
+							"category": {"type": "string", "description": "Filter by category: %s" % cat_list},
+							"limit": {"type": "integer", "description": "Max results (default 5)"},
+						},
+						"required": ["query"]
+					}
+				}
+			}
+
+		# Return tool_search + any already-activated tools from budget manager
+		var result: Array[Dictionary] = [search_schema]
+		for active_schema in minerva_server.tool_budget_manager.get_active_schemas():
+			var active_name: String = active_schema.get("name", "")
+			if active_name == "minerva_tool_search":
+				continue  # already added
+			# Verify this tool is in the filtered set
+			var in_filtered := false
+			for f in all_filtered:
+				if f.get("name", "") == active_name:
+					in_filtered = true
+					break
+			if in_filtered:
+				result.append(active_schema)
+		return result
+
+	return all_filtered
 
 
 ## Check if a tool passes the tool_set filter.

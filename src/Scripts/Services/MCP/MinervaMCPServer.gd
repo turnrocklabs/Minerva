@@ -10629,7 +10629,28 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	var category: String = arguments.get("category", "")
 	var limit: int = int(arguments.get("limit", 5))
 
-	var results: Array[Dictionary] = tool_search_index.search(query, category, limit)
+	# Search broadly, then filter
+	var raw_results: Array[Dictionary] = tool_search_index.search(query, category, limit * 3)
+
+	# Filter results through the same layers as get_tools_for_chat
+	var results: Array[Dictionary] = []
+	for result in raw_results:
+		var name: String = result.get("name", "")
+		if not mcp_manager or not mcp_manager.tool_registry.has(name):
+			continue
+		var tool = mcp_manager.tool_registry[name]
+		# Check connectivity
+		if tool.server_name == "minerva" and not mcp_manager.is_minerva_connected():
+			continue
+		elif tool.server_name != "minerva" and not mcp_manager.is_server_connected(tool.server_name):
+			continue
+		# Check tool_set filter (uses current enabled sets)
+		if not _enabled_tool_sets.is_empty():
+			if tool.tool_set != "meta" and tool.tool_set not in _enabled_tool_sets:
+				continue
+		results.append(result)
+		if results.size() >= limit:
+			break
 
 	if results.is_empty():
 		return {"success": true, "tools": [], "count": 0, "message": "No tools found matching '%s'" % query}
