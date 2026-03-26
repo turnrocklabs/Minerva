@@ -32,6 +32,10 @@ var tool_search_index: ToolSearchIndex = ToolSearchIndex.new()
 var tool_budget_manager: ToolBudgetManager = ToolBudgetManager.new()
 var auto_tool_management: bool = false  # toggled via preferences
 
+## Duplicate call detection
+var _last_call_hash: String = ""
+var _consecutive_count: int = 0
+
 
 func _init(manager = null) -> void:
 	mcp_manager = manager
@@ -143,13 +147,30 @@ func disconnect_server() -> void:
 func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 	if not server_enabled:
 		return {"error": "Minerva server not connected", "success": false}
-	return await _execute_tool_impl(tool_name, arguments)
+	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
+	return _check_duplicate_call(tool_name, arguments, result)
 
 
 ## Execute a minerva_* tool for HTTP/external access (does not require internal connection)
 func execute_tool_for_http(tool_name: String, arguments: Dictionary, agent_id: String = "") -> Dictionary:
 	_current_agent_id = agent_id
-	return await _execute_tool_impl(tool_name, arguments)
+	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
+	return _check_duplicate_call(tool_name, arguments, result)
+
+
+## Check for duplicate calls and inject warning if detected
+func _check_duplicate_call(tool_name: String, arguments: Dictionary, result: Dictionary) -> Dictionary:
+	var call_hash: String = (tool_name + JSON.stringify(arguments)).sha256_text()
+	if call_hash == _last_call_hash:
+		_consecutive_count += 1
+		if _consecutive_count >= 3:
+			result["warning"] = "This tool has been called %d times with identical arguments. You are likely stuck in a loop. Stop and reassess your plan." % (_consecutive_count + 1)
+		elif _consecutive_count >= 1:
+			result["warning"] = "Identical call repeated. Consider advancing to the next step in your plan."
+	else:
+		_consecutive_count = 0
+	_last_call_hash = call_hash
+	return result
 
 
 ## Internal tool execution implementation
@@ -564,7 +585,7 @@ func _register_tool(name: String, description: String, input_schema: Dictionary,
 
 func _register_chat_tools() -> void:
 	_register_tool("minerva_create_chat",
-		"Create a new chat tab in Minerva. Returns a chat_id (UUID) that MUST be used for all subsequent operations on this chat. Do not use the name as the chat_id.",
+		"Create a new chat tab in Minerva. Returns a chat_id (UUID) that MUST be used for all subsequent operations on this chat. Do not use the name as the chat_id. Next steps: use minerva_set_system_prompt to configure behavior, then minerva_send_message to start conversation.",
 		{
 			"type": "object",
 			"properties": {
@@ -689,7 +710,7 @@ func _register_chat_tools() -> void:
 
 func _register_notes_tools() -> void:
 	_register_tool("minerva_create_note",
-		"Create a new note. Notes can be used as context/memory for LLM conversations.",
+		"Create a new note. Notes can be used as context/memory for LLM conversations. After creating, use minerva_update_note to modify content. The note is immediately available for LLM context if enabled.",
 		{
 			"type": "object",
 			"properties": {
@@ -711,7 +732,7 @@ func _register_notes_tools() -> void:
 	, "notes")
 
 	_register_tool("minerva_create_note_tab",
-		"Create a new notes tab.",
+		"Create a new notes tab. Next steps: use minerva_create_note to add notes to this tab.",
 		{
 			"type": "object",
 			"properties": {
@@ -841,7 +862,7 @@ func _register_notes_tools() -> void:
 
 func _register_editor_tools() -> void:
 	_register_tool("minerva_create_text_editor",
-		"Create a new text/code editor tab.",
+		"Create a new text/code editor tab. Next steps: use minerva_update_editor to set content, minerva_save_editor to write to disk.",
 		{
 			"type": "object",
 			"properties": {
@@ -863,7 +884,7 @@ func _register_editor_tools() -> void:
 	, "editor")
 
 	_register_tool("minerva_create_graphics_editor",
-		"Create a new graphics editor tab for image editing.",
+		"Create a new graphics editor tab for image editing. Next steps: use minerva_graphics_generate or minerva_graphics_generate_iterative to create images.",
 		{
 			"type": "object",
 			"properties": {
@@ -1118,7 +1139,7 @@ func _register_editor_tools() -> void:
 
 func _register_spreadsheet_tools() -> void:
 	_register_tool("minerva_create_spreadsheet_editor",
-		"Create a new spreadsheet editor tab. Returns an editor_name that can be used for subsequent operations.",
+		"Create a new spreadsheet editor tab. Returns an editor_name that can be used for subsequent operations. Next steps: use minerva_update_spreadsheet_data to populate cells, minerva_format_cells for styling, minerva_create_chart for visualization, minerva_link_spreadsheet_to_note to save as a note.",
 		{
 			"type": "object",
 			"properties": {
@@ -1453,7 +1474,7 @@ func _register_spreadsheet_tools() -> void:
 	, "spreadsheet")
 
 	_register_tool("minerva_create_chart",
-		"Create a chart from spreadsheet data. Requires editor_name from minerva_list_editors. Get column/row data from minerva_get_spreadsheet_data first.",
+		"Create a chart from spreadsheet data. Requires editor_name from minerva_list_editors. Get column/row data from minerva_get_spreadsheet_data first. After creating, use minerva_get_chart_image to view the chart, minerva_update_chart to modify it.",
 		{
 			"type": "object",
 			"properties": {
@@ -1808,6 +1829,13 @@ func _create_chat(args: Dictionary) -> Dictionary:
 	var name_: String = args.get("name", "Agent Chat")
 	var provider_name: String = args.get("provider", "")
 
+	# Before creating, check if resource with same name exists
+	# If it does, return it with already_existed: true
+	if not name_.is_empty():
+		for existing in SingletonObject.ChatList:
+			if existing.HistoryName == name_:
+				return {"success": true, "already_existed": true, "chat_id": existing.HistoryId, "name": existing.HistoryName}
+
 	# Get the chat pane
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
@@ -2065,6 +2093,13 @@ func _create_note_tab(args: Dictionary) -> Dictionary:
 	if not notes_container:
 		return {"error": "Notes container not available", "success": false}
 
+	# Before creating, check if resource with same name exists
+	# If it does, return it with already_existed: true
+	if not name_.is_empty():
+		var existing_vbox = notes_container.find_tab_by_name(name_)
+		if existing_vbox:
+			return {"success": true, "already_existed": true, "tab_name": name_, "tab_id": existing_vbox.uuid}
+
 	var note_vbox = notes_container.create_tab(name_)
 	var _tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
 
@@ -2301,6 +2336,13 @@ func _create_text_editor(args: Dictionary) -> Dictionary:
 	if not editor_pane:
 		return {"error": "Editor pane not available", "success": false}
 
+	# Before creating, check if resource with same name exists
+	# If it does, return it with already_existed: true
+	if not name_.is_empty():
+		var existing_editor = _find_editor_by_name(name_)
+		if existing_editor:
+			return {"success": true, "already_existed": true, "editor_name": existing_editor.tab_title}
+
 	# Check if file exists when file_path is provided
 	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
 		return {"error": "File not found: %s" % file_path, "success": false}
@@ -2329,6 +2371,13 @@ func _create_graphics_editor(args: Dictionary) -> Dictionary:
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
 		return {"error": "Editor pane not available", "success": false}
+
+	# Before creating, check if resource with same name exists
+	# If it does, return it with already_existed: true
+	if not name_.is_empty():
+		var existing_editor = _find_editor_by_name(name_)
+		if existing_editor:
+			return {"success": true, "already_existed": true, "editor_name": existing_editor.tab_title}
 
 	# Check if file exists when file_path is provided
 	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
@@ -3168,6 +3217,13 @@ func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
 		return {"error": "Editor pane not available", "success": false}
+
+	# Before creating, check if resource with same name exists
+	# If it does, return it with already_existed: true
+	if not name_.is_empty():
+		var existing_editor = _find_editor_by_name(name_)
+		if existing_editor:
+			return {"success": true, "already_existed": true, "editor_name": existing_editor.tab_title}
 
 	# Check if file exists when file_path is provided
 	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
@@ -4586,7 +4642,7 @@ const PCBRouteHintScript := preload("res://Scripts/UI/Controls/PCBEditor/PCBRout
 
 func _register_pcb_tools() -> void:
 	_register_tool("minerva_create_pcb_editor",
-		"Create a new PCB Editor tab for designing printed circuit board layouts.",
+		"Create a new PCB Editor tab for designing printed circuit board layouts. Next steps: use minerva_pcb_add_component to place components, minerva_pcb_connect_net for routing.",
 		{
 			"type": "object",
 			"properties": {
@@ -7011,7 +7067,7 @@ func _pcb_create_note(args: Dictionary) -> Dictionary:
 
 func _register_video_editor_tools() -> void:
 	_register_tool("minerva_create_video_editor",
-		"Open a recording in the video editor. Creates a new editor tab for editing a recorded video.",
+		"Open a recording in the video editor. Creates a new editor tab for editing a recorded video. Next steps: use minerva_video_add_cut, minerva_video_add_speed_region for editing, minerva_video_export to render.",
 		{
 			"type": "object",
 			"properties": {
@@ -10403,7 +10459,7 @@ func _register_terminal_tools() -> void:
 		}}, "terminal")
 
 	_register_tool("minerva_terminal_create",
-		"Create a new terminal tab. Returns its ID.",
+		"Create a new terminal tab. Returns its ID. Next steps: use minerva_terminal_write to send commands (use \\r for Enter), minerva_terminal_read to see output.",
 		{"type": "object", "properties": {
 			"name": {"type": "string", "description": "Tab name (optional)"},
 		}}, "terminal")
