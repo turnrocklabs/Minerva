@@ -546,7 +546,7 @@ func _register_chat_tools() -> void:
 	, "chat")
 
 	_register_tool("minerva_set_system_prompt",
-		"Set the system prompt for a specific chat.",
+		"Set the system prompt for a specific chat. Requires chat_id from minerva_list_chats or minerva_create_chat.",
 		{
 			"type": "object",
 			"properties": {
@@ -595,7 +595,7 @@ func _register_chat_tools() -> void:
 	, "chat")
 
 	_register_tool("minerva_send_message",
-		"Send a message to a chat. Returns immediately (fire and forget). Use minerva_get_chat_history to check for the response later.",
+		"Send a message to a chat. Returns immediately (fire and forget). Use minerva_get_chat_history to check for the response later. Requires chat_id — get it from minerva_list_chats or minerva_create_chat.",
 		{
 			"type": "object",
 			"properties": {
@@ -613,7 +613,7 @@ func _register_chat_tools() -> void:
 	, "chat")
 
 	_register_tool("minerva_get_chat_history",
-		"Get the message history for a chat.",
+		"Get the message history for a chat. Requires chat_id from minerva_list_chats.",
 		{
 			"type": "object",
 			"properties": {
@@ -730,7 +730,7 @@ func _register_notes_tools() -> void:
 	, "notes")
 
 	_register_tool("minerva_delete_note",
-		"Delete a note by its ID.",
+		"Delete a note by its ID. Requires note_id from minerva_list_notes.",
 		{
 			"type": "object",
 			"properties": {
@@ -744,7 +744,7 @@ func _register_notes_tools() -> void:
 	, "notes")
 
 	_register_tool("minerva_get_note",
-		"Get a note's full content by its ID. Returns title, content, tab, and enabled status.",
+		"Get a note's full content by its ID. Returns title, content, tab, and enabled status. Requires note_id from minerva_list_notes.",
 		{
 			"type": "object",
 			"properties": {
@@ -758,7 +758,7 @@ func _register_notes_tools() -> void:
 	, "notes")
 
 	_register_tool("minerva_update_note",
-		"Update a note's content and/or title in-place by its ID.",
+		"Update a note's content and/or title in-place by its ID. Requires note_id from minerva_list_notes or minerva_create_note.",
 		{
 			"type": "object",
 			"properties": {
@@ -780,7 +780,7 @@ func _register_notes_tools() -> void:
 	, "notes")
 
 	_register_tool("minerva_link_note_to_chat",
-		"Link or unlink a note to a specific chat. Linked notes only appear in that chat's prompts. Unlinking makes the note global (visible to all chats).",
+		"Link or unlink a note to a specific chat. Linked notes only appear in that chat's prompts. Unlinking makes the note global (visible to all chats). Requires note_id from minerva_list_notes and chat_id from minerva_list_chats.",
 		{
 			"type": "object",
 			"properties": {
@@ -844,7 +844,7 @@ func _register_editor_tools() -> void:
 	, "editor")
 
 	_register_tool("minerva_get_editor_content",
-		"Get the content of a text editor.",
+		"Get the content of a text editor. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -858,7 +858,7 @@ func _register_editor_tools() -> void:
 	, "editor")
 
 	_register_tool("minerva_update_editor",
-		"Update the content of a text editor.",
+		"Update the content of a text editor. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -876,7 +876,7 @@ func _register_editor_tools() -> void:
 	, "editor")
 
 	_register_tool("minerva_save_editor",
-		"Save the editor content to a file.",
+		"Save the editor content to a file. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -894,7 +894,7 @@ func _register_editor_tools() -> void:
 	, "editor")
 
 	_register_tool("minerva_close_editor",
-		"Close an editor tab.",
+		"Close an editor tab. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -954,7 +954,7 @@ func _register_editor_tools() -> void:
 	, "editor")
 
 	_register_tool("minerva_graphics_generate",
-		"Generate or edit an image using AI (fire-and-forget, returns immediately). NOTE: If you need to SEE the result or ITERATE based on quality, use minerva_graphics_generate_iterative instead - it blocks until the image is visible. This tool is only for when you don't need to evaluate the output.",
+		"Generate or edit an image using AI (fire-and-forget, returns immediately). NOTE: If you need to SEE the result or ITERATE based on quality, use minerva_graphics_generate_iterative instead - it blocks until the image is visible. This tool is only for when you don't need to evaluate the output. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -1103,7 +1103,7 @@ func _register_spreadsheet_tools() -> void:
 	, "spreadsheet")
 
 	_register_tool("minerva_get_spreadsheet_data",
-		"Get the data from a spreadsheet in various formats. Returns data_starts_at_row (1-based) to show where content begins.",
+		"Get the data from a spreadsheet in various formats. Returns data_starts_at_row (1-based) to show where content begins. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -1130,7 +1130,7 @@ func _register_spreadsheet_tools() -> void:
 	, "spreadsheet")
 
 	_register_tool("minerva_update_spreadsheet_data",
-		"Update cells in a spreadsheet. Can update individual cells or load entire CSV content.",
+		"Update cells in a spreadsheet. Can update individual cells or load entire CSV content. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -1282,7 +1282,7 @@ func _register_spreadsheet_tools() -> void:
 	, "spreadsheet")
 
 	_register_tool("minerva_format_cells",
-		"Apply formatting to cells or a range of cells.",
+		"Apply formatting to cells or a range of cells. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -1394,7 +1394,7 @@ func _register_spreadsheet_tools() -> void:
 	, "spreadsheet")
 
 	_register_tool("minerva_set_cell_formula",
-		"Set a formula in a specific cell.",
+		"Set a formula in a specific cell. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -1416,7 +1416,7 @@ func _register_spreadsheet_tools() -> void:
 	, "spreadsheet")
 
 	_register_tool("minerva_create_chart",
-		"Create a chart from spreadsheet data.",
+		"Create a chart from spreadsheet data. Requires editor_name from minerva_list_editors. Get column/row data from minerva_get_spreadsheet_data first.",
 		{
 			"type": "object",
 			"properties": {
@@ -1456,7 +1456,7 @@ func _register_spreadsheet_tools() -> void:
 	, "spreadsheet")
 
 	_register_tool("minerva_get_chart_image",
-		"Export a chart as a base64-encoded PNG image for LLM viewing.",
+		"Export a chart as a base64-encoded PNG image for LLM viewing. Requires editor_name and chart_id from minerva_list_charts.",
 		{
 			"type": "object",
 			"properties": {
@@ -4760,7 +4760,7 @@ func _register_pcb_tools() -> void:
 	, "pcb")
 
 	_register_tool("minerva_pcb_move_component",
-		"Move a component to an absolute position.",
+		"Move a component to an absolute position. Requires editor_name from minerva_list_editors and component names from minerva_pcb_get_components.",
 		{
 			"type": "object",
 			"properties": {
@@ -4808,7 +4808,7 @@ func _register_pcb_tools() -> void:
 	, "pcb")
 
 	_register_tool("minerva_pcb_rotate_component",
-		"Rotate a component. Positive degrees rotate counter-clockwise (CCW), negative rotate clockwise (CW).",
+		"Rotate a component. Positive degrees rotate counter-clockwise (CCW), negative rotate clockwise (CW). Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -4830,7 +4830,7 @@ func _register_pcb_tools() -> void:
 	, "pcb")
 
 	_register_tool("minerva_pcb_delete_component",
-		"Delete a component from the PCB.",
+		"Delete a component from the PCB. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -4848,7 +4848,7 @@ func _register_pcb_tools() -> void:
 	, "pcb")
 
 	_register_tool("minerva_pcb_connect_net",
-		"Connect component pins to a net (creates net if it doesn't exist).",
+		"Connect component pins to a net (creates net if it doesn't exist). Get pin names from minerva_pcb_describe_component first. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -5041,7 +5041,7 @@ func _register_pcb_tools() -> void:
 
 	# Annotation tools
 	_register_tool("minerva_pcb_add_annotation",
-		"Add an annotation to the PCB (arrow, text, region, or polyline). Annotations are visual overlays for collaboration between human and AI.",
+		"Add an annotation to the PCB (arrow, text, region, or polyline). Annotations are visual overlays for collaboration between human and AI. Positions use {x,y} coordinates — call minerva_pcb_describe_component first to resolve component names to coordinates. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -5142,7 +5142,7 @@ func _register_pcb_tools() -> void:
 
 	# Route hint tools
 	_register_tool("minerva_pcb_add_route_hint",
-		"Add a routing hint to suggest trace paths. Supports waypoint-only hints, single trace hints, and bus hints with varying levels of detail.",
+		"Add a routing hint to suggest trace paths. Supports waypoint-only hints, single trace hints, and bus hints with varying levels of detail. Positions use {x,y} coordinates. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
@@ -7559,7 +7559,7 @@ func _register_agent_tools() -> void:
 	, "agents")
 
 	_register_tool("minerva_spawn_agent",
-		"Spawn a new chat from a registered agent definition. Creates a fully configured agent chat and optionally sends an initial message.",
+		"Spawn a new chat from a registered agent definition. Creates a fully configured agent chat and optionally sends an initial message. Requires agent_id from minerva_list_agents and chat_id from minerva_list_chats or minerva_create_chat.",
 		{
 			"type": "object",
 			"properties": {
