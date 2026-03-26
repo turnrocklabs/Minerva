@@ -1679,22 +1679,25 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 		"wrap_text": cell.wrap_text,
 	}
 
-	# Apply new format
+	# Apply new format (coerce types — MCP JSON may pass bools as strings)
 	if format_options.has("bold"):
-		cell.bold = format_options["bold"]
+		var v = format_options["bold"]
+		cell.bold = v == true or v == "true"
 	if format_options.has("italic"):
-		cell.italic = format_options["italic"]
+		var v = format_options["italic"]
+		cell.italic = v == true or v == "true"
 	if format_options.has("alignment"):
-		cell.alignment = format_options["alignment"]
+		cell.alignment = str(format_options["alignment"])
 	if format_options.has("text_color"):
-		cell.text_color = format_options["text_color"]
+		cell.text_color = str(format_options["text_color"])
 	if format_options.has("bg_color"):
-		cell.bg_color = format_options["bg_color"]
+		cell.bg_color = str(format_options["bg_color"])
 	if format_options.has("number_format"):
-		cell.number_format = format_options["number_format"]
+		cell.number_format = str(format_options["number_format"])
 		cell.refresh_display()
 	if format_options.has("wrap_text"):
-		cell.wrap_text = format_options["wrap_text"]
+		var v = format_options["wrap_text"]
+		cell.wrap_text = v == true or v == "true"
 
 	# Capture new format
 	var new_format := {
