@@ -74,7 +74,7 @@ func _init(manager = null) -> void:
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
 		# Auto-activate tool_search in the budget manager
-		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "Search for and activate MCP tools by keyword or name.", "input_schema": {
+		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, PCB, graphics, video, agents, costs.", "input_schema": {
 			"type": "object", "properties": {
 				"query": {"type": "string", "description": "Keyword search or exact tool name"},
 				"category": {"type": "string", "description": "Filter by category (optional)"},
@@ -10613,10 +10613,10 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 
 func _register_tool_search() -> void:
 	_register_tool("minerva_tool_search",
-		"Search for and activate MCP tools by keyword or exact name. Returns full tool schemas. Activated tools can be called directly in subsequent turns. Use this to discover tools not in the starter list.",
+		"This server has 170+ tools available. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), PCB design, graphics, video, agents, automation, models, costs. Example: tool_search(query='edit file') or tool_search(query='pcb annotation') or tool_search(query='spreadsheet format').",
 		{"type": "object", "properties": {
-			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'pcb annotation') or exact tool name (e.g., 'minerva_file_edit')"},
-			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, pcb, video, agents, triggers, etc."},
+			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'pcb annotation', 'cost summary') or exact tool name (e.g., 'minerva_file_edit')"},
+			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, pcb, video, agents, triggers, autocoder, costs, meta"},
 			"limit": {"type": "integer", "description": "Max results (default 5)"},
 		}, "required": ["query"]}, "meta")
 
@@ -10661,19 +10661,8 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	}
 
 
-## Generate the tool hint text for system prompts.
-## Returns a compact list of common tool names + discovery instruction.
-func get_tool_discovery_prompt() -> String:
-	if not auto_tool_management:
-		return ""
-
-	return """You have MCP tools available. Common tools:
-Files: minerva_file_read, file_write, file_edit, file_glob, file_grep, bash, cwd
-Chat: minerva_send_message, list_chats, create_chat
-Terminal: minerva_terminal_write, terminal_read, terminal_wait, terminal_list
-Notes: minerva_create_note, get_note, enable_notes
-
-More tools available (spreadsheet, PCB, graphics, video, agents, automation, etc.)
-Call minerva_tool_search(query) to discover and activate any tool."""
+## NOTE: System prompt starter list removed — the minerva_tool_search tool
+## description is self-documenting and sufficient for both internal and external
+## agents. Simulations showed Haiku finds all tools with just the description.
 
 #endregion Tool Discovery
