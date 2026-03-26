@@ -580,8 +580,9 @@ func _register_server_tools(connection) -> void:
 			collision_count += 1
 		tool_registry[tool.name] = tool
 
-		# Also index for search-based discovery
-		if minerva_server and minerva_server.tool_search_index:
+		# Also index for search-based discovery (if preference enabled)
+		var index_external: bool = SingletonObject.config_file.get_value("Tools", "index_external_mcp", false) if SingletonObject and SingletonObject.config_file else false
+		if index_external and minerva_server and minerva_server.tool_search_index:
 			var schema: Dictionary = tool.to_anthropic_format() if tool.has_method("to_anthropic_format") else {
 				"name": tool.name, "description": tool.description, "input_schema": tool.input_schema
 			}

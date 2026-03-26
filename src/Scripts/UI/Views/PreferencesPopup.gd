@@ -1508,6 +1508,7 @@ var _server_status_labels: Dictionary = {}  # server_name -> Label
 var _tool_set_checks_container: VBoxContainer
 var _auto_tool_check: CheckButton
 var _tool_budget_spin: SpinBox
+var _index_external_mcp_check: CheckButton
 var _server_list_container: VBoxContainer
 var _profile_checks_container: VBoxContainer
 var _add_server_dialog_prefs: AddMCPServerDialog = null
@@ -1597,6 +1598,12 @@ func _create_tools_tab() -> void:
 	_tool_budget_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tool_budget_spin.value_changed.connect(_on_tool_budget_changed)
 	budget_row.add_child(_tool_budget_spin)
+
+	_index_external_mcp_check = CheckButton.new()
+	_index_external_mcp_check.text = "Include external MCP tools in search"
+	_index_external_mcp_check.tooltip_text = "When enabled, tools from connected MCP servers (cobrowser, docket, nudge, etc.) are discoverable via minerva_tool_search."
+	_index_external_mcp_check.toggled.connect(_on_index_external_mcp_toggled)
+	vbox.add_child(_index_external_mcp_check)
 
 	vbox.add_child(HSeparator.new())
 
@@ -1692,6 +1699,9 @@ func _load_tools_settings() -> void:
 		_auto_tool_check.button_pressed = atm_enabled
 		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", 3000)
 		_tool_budget_spin.value = budget
+	if _index_external_mcp_check:
+		var idx_ext: bool = SingletonObject.config_file.get_value("Tools", "index_external_mcp", false)
+		_index_external_mcp_check.button_pressed = idx_ext
 
 	# Tool sets
 	_refresh_tool_set_checks()
@@ -1997,6 +2007,10 @@ func _on_tool_budget_changed(value: float) -> void:
 	var mcp = SingletonObject.get("mcp_manager")
 	if mcp and mcp.minerva_server:
 		mcp.minerva_server.tool_budget_manager.set_budget(int(value))
+
+
+func _on_index_external_mcp_toggled(enabled: bool) -> void:
+	SingletonObject.save_to_config_file("Tools", "index_external_mcp", enabled)
 
 
 ## Refresh tool set checkboxes from MinervaMCPServer
