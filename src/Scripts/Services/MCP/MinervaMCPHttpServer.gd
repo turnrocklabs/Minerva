@@ -263,29 +263,35 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 	if _sessions.has(session_id):
 		_sessions[session_id].last_activity = Time.get_unix_time_from_system()
 
-	# Resolve enabled sets: use global from minerva_server
-	var enabled_sets: Array = []
-	if _mcp_manager and _mcp_manager.minerva_server:
-		enabled_sets = _mcp_manager.minerva_server._enabled_tool_sets
-
-	# Get all minerva tools from the registry
 	var tools: Array[Dictionary] = []
 
-	if _mcp_manager:
-		for tool_name in _mcp_manager.tool_registry:
-			var tool = _mcp_manager.tool_registry[tool_name]
-			# Only include minerva tools (not external MCP server tools)
-			if tool.server_name == "minerva":
-				# Apply tool set filtering
-				if not enabled_sets.is_empty():
-					# When filtering is active, only include tools from enabled sets or "meta" set
-					if tool.tool_set != "meta" and tool.tool_set not in enabled_sets:
-						continue
+	if _mcp_manager and _mcp_manager.minerva_server:
+		var minerva_server = _mcp_manager.minerva_server
+
+		if minerva_server.auto_tool_management:
+			# Auto mode: only return active tools from budget manager
+			minerva_server.tool_budget_manager.advance_turn()
+			var active_schemas: Array[Dictionary] = minerva_server.tool_budget_manager.get_active_schemas()
+			for schema in active_schemas:
 				tools.append({
-					"name": tool.name,
-					"description": tool.description,
-					"inputSchema": tool.input_schema  # MCP uses camelCase
+					"name": schema.get("name", ""),
+					"description": schema.get("description", ""),
+					"inputSchema": schema.get("input_schema", {})
 				})
+		else:
+			# Manual mode: existing behavior — send all tools with filtering
+			var enabled_sets: Array = minerva_server._enabled_tool_sets
+			for tool_name in _mcp_manager.tool_registry:
+				var tool = _mcp_manager.tool_registry[tool_name]
+				if tool.server_name == "minerva":
+					if not enabled_sets.is_empty():
+						if tool.tool_set != "meta" and tool.tool_set not in enabled_sets:
+							continue
+					tools.append({
+						"name": tool.name,
+						"description": tool.description,
+						"inputSchema": tool.input_schema
+					})
 
 	var result = {
 		"tools": tools

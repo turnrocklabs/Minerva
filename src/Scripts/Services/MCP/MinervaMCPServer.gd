@@ -27,6 +27,11 @@ var _session_attempts_reset_time: int = 0
 ## Tool sets filtering: empty = all sets enabled (backward compatible)
 var _enabled_tool_sets: Array = []
 
+## Automatic tool management
+var tool_search_index: ToolSearchIndex = ToolSearchIndex.new()
+var tool_budget_manager: ToolBudgetManager = ToolBudgetManager.new()
+var auto_tool_management: bool = false  # toggled via preferences
+
 
 func _init(manager = null) -> void:
 	mcp_manager = manager
@@ -59,7 +64,18 @@ func _init(manager = null) -> void:
 		_register_container_tools()
 		_register_codetools()
 		_register_terminal_tools()
-		print("[MinervaMCPServer] Registered %d tools" % get_tool_count())
+		_register_tool_search()
+		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
+
+		# Auto-activate tool_search in the budget manager
+		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "Search for and activate MCP tools by keyword or name.", "input_schema": {
+			"type": "object", "properties": {
+				"query": {"type": "string", "description": "Keyword search or exact tool name"},
+				"category": {"type": "string", "description": "Filter by category (optional)"},
+				"limit": {"type": "integer", "description": "Max results (default 5)"},
+			}, "required": ["query"]
+		}}
+		tool_budget_manager.activate_tool("minerva_tool_search", search_schema)
 
 
 ## Register all minerva_* tools in the MCPManager's tool_registry
@@ -133,6 +149,8 @@ func execute_tool_for_http(tool_name: String, arguments: Dictionary, agent_id: S
 ## Internal tool execution implementation
 func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	print("[MinervaMCPServer] Executing: %s" % tool_name)
+	# Track tool usage for LRU
+	tool_budget_manager.mark_used(tool_name)
 
 	match tool_name:
 		# Chat tools
@@ -509,6 +527,13 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _terminal_read(arguments)
 		"minerva_terminal_wait":
 			return await _terminal_wait(arguments)
+		# Tool discovery
+		"minerva_tool_search":
+			return _tool_search(arguments)
+
+	# If auto tool management is on and tool exists but isn't active, hint to search
+	if auto_tool_management and mcp_manager.tool_registry.has(tool_name):
+		return {"error": "Tool '%s' is not loaded. Call minerva_tool_search('%s') to activate it." % [tool_name, tool_name], "success": false}
 
 	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
@@ -523,6 +548,12 @@ func _register_tool(name: String, description: String, input_schema: Dictionary,
 	tool.server_name = SERVER_NAME
 	tool.tool_set = p_tool_set
 	mcp_manager.tool_registry[name] = tool
+
+	# Also index for search-based discovery
+	var full_schema: Dictionary = tool.to_anthropic_format() if tool.has_method("to_anthropic_format") else {
+		"name": name, "description": description, "input_schema": input_schema
+	}
+	tool_search_index.register_tool(name, description, full_schema, p_tool_set)
 
 
 func _register_chat_tools() -> void:
@@ -10571,3 +10602,72 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 	return read_result
 
 #endregion Terminal Tools
+
+#region Tool Discovery
+
+func _register_tool_search() -> void:
+	_register_tool("minerva_tool_search",
+		"Search for and activate MCP tools by keyword or exact name. Returns full tool schemas. Activated tools can be called directly in subsequent turns. Use this to discover tools not in the starter list.",
+		{"type": "object", "properties": {
+			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'pcb annotation') or exact tool name (e.g., 'minerva_file_edit')"},
+			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, pcb, video, agents, triggers, etc."},
+			"limit": {"type": "integer", "description": "Max results (default 5)"},
+		}, "required": ["query"]}, "meta")
+
+
+func _tool_search(arguments: Dictionary) -> Dictionary:
+	var query: String = arguments.get("query", "")
+	if query.is_empty():
+		return {"success": false, "error": "query is required"}
+
+	var category: String = arguments.get("category", "")
+	var limit: int = int(arguments.get("limit", 5))
+
+	var results: Array[Dictionary] = tool_search_index.search(query, category, limit)
+
+	if results.is_empty():
+		return {"success": true, "tools": [], "count": 0, "message": "No tools found matching '%s'" % query}
+
+	# Auto-activate found tools in the budget manager
+	var activated: Array[String] = []
+	for result in results:
+		var name: String = result.get("name", "")
+		var schema: Dictionary = result.get("schema", {})
+		if not name.is_empty() and not schema.is_empty():
+			tool_budget_manager.activate_tool(name, schema)
+			activated.append(name)
+
+	# Return tool info for the LLM
+	var tool_summaries: Array[Dictionary] = []
+	for result in results:
+		tool_summaries.append({
+			"name": result.get("name", ""),
+			"description": result.get("description", ""),
+			"input_schema": result.get("schema", {}).get("input_schema", {}),
+		})
+
+	return {
+		"success": true,
+		"tools": tool_summaries,
+		"count": tool_summaries.size(),
+		"activated": activated,
+		"message": "Found %d tools. They are now activated and can be called directly." % tool_summaries.size(),
+	}
+
+
+## Generate the tool hint text for system prompts.
+## Returns a compact list of common tool names + discovery instruction.
+func get_tool_discovery_prompt() -> String:
+	if not auto_tool_management:
+		return ""
+
+	return """You have MCP tools available. Common tools:
+Files: minerva_file_read, file_write, file_edit, file_glob, file_grep, bash, cwd
+Chat: minerva_send_message, list_chats, create_chat
+Terminal: minerva_terminal_write, terminal_read, terminal_wait, terminal_list
+Notes: minerva_create_note, get_note, enable_notes
+
+More tools available (spreadsheet, PCB, graphics, video, agents, automation, etc.)
+Call minerva_tool_search(query) to discover and activate any tool."""
+
+#endregion Tool Discovery
