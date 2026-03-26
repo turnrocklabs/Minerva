@@ -580,6 +580,13 @@ func _register_server_tools(connection) -> void:
 			collision_count += 1
 		tool_registry[tool.name] = tool
 
+		# Also index for search-based discovery
+		if minerva_server and minerva_server.tool_search_index:
+			var schema: Dictionary = tool.to_anthropic_format() if tool.has_method("to_anthropic_format") else {
+				"name": tool.name, "description": tool.description, "input_schema": tool.input_schema
+			}
+			minerva_server.tool_search_index.register_tool(tool.name, tool.description, schema, tool.tool_set)
+
 	# Surface warnings to user via toast
 	if blocked_count > 0:
 		SingletonObject.create_toast_notification(
