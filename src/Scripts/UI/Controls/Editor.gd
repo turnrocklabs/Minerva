@@ -39,6 +39,7 @@ var spreadsheet_editor  # SpreadsheetEditor
 var pcb_editor  # PCBEditor - type annotation removed to avoid circular dependency
 var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
+var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -76,6 +77,7 @@ enum Type {
 	PCB,
 	VIDEO_EDITOR,
 	ACTIVITY_LOG,
+	WEBVIEW,
 }
 
 
@@ -247,6 +249,15 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			vbox_container.add_child(panel)
 			editor.activity_log_panel = panel
 
+		Editor.Type.WEBVIEW:
+			var webview_editor_scene = load("res://Scenes/WebViewEditor.tscn")
+			var new_webview_editor = webview_editor_scene.instantiate()
+			new_webview_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_webview_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(new_webview_editor)
+			editor.webview_editor = new_webview_editor
+			new_webview_editor.content_changed.connect(editor._on_editor_changed)
+
 	return editor
 
 func toggle(on: bool) -> void:
@@ -278,8 +289,9 @@ func _ready():
 			Type.PCB: _load_pcb_file(file)
 			Type.KANBAN: _load_kanban_file(file)
 			Type.SPREADSHEET: _load_spreadsheet_file(file)
-	
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG
+			Type.WEBVIEW: _load_webview_file(file)
+
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -316,6 +328,18 @@ func _ready():
 		find_string_container.hide()
 		jump_to_line_panel.hide()
 		$VBoxContainer/ButtonsHBoxContainer.hide()
+	elif self.type == Type.WEBVIEW:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		code_syntax_button.hide()
+		find_button.hide()
+		%btnApplyDiff.hide()
+		reload_button.hide()
+		export_area_button.hide()
+		$VBoxContainer/Control.hide()
+		$VBoxContainer/FillerControl3.hide()
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
@@ -424,6 +448,16 @@ func _load_spreadsheet_file(filename: String) -> void:
 		spreadsheet_editor.deserialize(json.data)
 
 
+func _load_webview_file(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		SingletonObject.ErrorDisplay("File not found", path)
+		return
+	var html = FileAccess.get_file_as_string(path)
+	if webview_editor:
+		webview_editor.set_html(html)
+		webview_editor.mark_saved()
+
+
 ## Changes the function that runs when user clicks the "save" button
 ## from the [method prompt_close] to [parameter save_function].[br]
 ## To revert back pass the empty [parameter save_function]:[br]
@@ -449,6 +483,8 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 			$FileDialog.filters = PackedStringArray(["*.minkb ; Minerva Kanban"])
 		Type.SPREADSHEET:
 			$FileDialog.filters = PackedStringArray(["*.minsheet ; Minerva Spreadsheet", "*.csv ; CSV Files"])
+		Type.WEBVIEW:
+			$FileDialog.filters = PackedStringArray(["*.html ; HTML Files"])
 
 	if not prompt_save: return true
 	if not show_save_file_dialog:
@@ -584,6 +620,12 @@ func get_saved_state() -> int:
 			# Activity log is read-only / append-only, always considered saved
 			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
+		Type.WEBVIEW:
+			if webview_editor and not webview_editor.is_saved():
+				pass  # state stays 0 — unsaved
+			else:
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
 	return state
 
 ## Returns whether the editor content is saved in regards to the file or the associated object.[br]
@@ -711,6 +753,20 @@ func save_file_to_disc(path: String) -> void:
 					return
 				save_file.store_string(json_string)
 
+		Type.WEBVIEW:
+			if webview_editor:
+				var save_file = FileAccess.open(path, FileAccess.WRITE)
+				if save_file == null:
+					var error := error_string(FileAccess.get_open_error())
+					push_warning(error)
+					SingletonObject.ErrorDisplay("Couldn't save HTML file", error)
+					return
+				save_file.store_string(webview_editor.get_html())
+				webview_editor.mark_saved()
+
+				if associated_object is Note:
+					_update_note(associated_object)
+
 	# Update editor state
 	_file_saved = true
 	file_saved_in_disc = true
@@ -758,6 +814,10 @@ func _on_create_note_button_pressed() -> void:
 			var pcb_image = await pcb_editor.canvas.capture_to_image(800, 600)
 			# Full PCB note with state for Edit button restoration
 			new_note = Note.create_pcb_note(tab_title, pcb_image, pcb_editor.data.to_dict())
+		Type.WEBVIEW:
+			if webview_editor:
+				var html = webview_editor.get_html()
+				new_note = Note.create_html_note(tab_title, html)
 		_:
 			new_note = Note.create_error_note(tab_title, "Can't create a note for the specified Editor type (%s)" % type)
 
@@ -1123,6 +1183,14 @@ func _update_note(note: Note) -> void:
 		# If this is a persistent note (has linked_pcb_data), update the PCB state too
 		if not note.linked_pcb_data.is_empty():
 			note.linked_pcb_data = JSON.stringify(pcb_editor.data.to_dict())
+
+	elif type == Type.WEBVIEW:
+		if webview_editor:
+			var html = webview_editor.get_html()
+			note.linked_html = html
+			var controls_container = note.get_controls_container()
+			if controls_container and controls_container.has_method("setup"):
+				controls_container.content = html
 
 
 var _proxy_note: Note.Proxy

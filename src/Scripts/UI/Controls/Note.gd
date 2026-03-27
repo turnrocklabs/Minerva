@@ -5,6 +5,7 @@ static var _scene: = preload("res://Scenes/Note.tscn")
 static var _text_controls_scene: = preload("res://Scenes/note/note_controls/text_controls.tscn")
 static var _image_controls_scene: = preload("res://Scenes/note/note_controls/image_controls.tscn")
 static var _audio_controls_scene: = preload("res://Scenes/note/note_controls/audio_controls.tscn")
+static var _html_controls_scene = load("res://Scenes/note/note_controls/html_controls.tscn")
 
 static var _remove_icon: = preload("res://assets/icons/remove.svg")
 
@@ -28,6 +29,7 @@ enum Type {
 	IMAGE,
 	VIDEO,
 	AUDIO,
+	HTML,
 }
 
 static var _type_names: = {
@@ -35,6 +37,7 @@ static var _type_names: = {
 	Type.IMAGE: "image",
 	Type.AUDIO: "audio",
 	Type.VIDEO: "video",
+	Type.HTML: "html",
 }
 
 ## Mapping of file extensions and their respective note type.[br]
@@ -120,6 +123,9 @@ var linked_spreadsheet: String = ""
 ## Linked PCB data as JSON string. When set, the Edit button opens a PCB editor
 ## and restores the full PCB state instead of creating a graphics editor.
 var linked_pcb_data: String = ""
+
+## HTML source for HTML notes (stored for rendering and editing)
+var linked_html: String = ""
 
 ## If non-empty, this note is only included in prompts for the listed chat HistoryIds.
 ## Empty means global (included in all chats) for backward compatibility.
@@ -265,6 +271,34 @@ static func create_spreadsheet_note(note_title: String, spreadsheet_name: String
 	note_scene.ready.connect(
 		func():
 			note_scene._set_controls_container(text_controls)
+			note_scene.initialized.emit()
+	)
+
+	return note_scene
+
+
+static func create_html_note(note_title: String, html_source: String, note_uuid: String = "", register: = true) -> Note:
+	var html_controls = _html_controls_scene.instantiate()
+	var note_scene: Note = _scene.instantiate()
+
+	note_scene._backing_note_controls.append(html_controls)
+
+	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
+
+	if register:
+		SingletonObject.register_object(note_scene, &"uuid")
+
+	html_controls.setup(note_scene, html_source)
+
+	note_scene.title = note_title
+	note_scene.type = Type.HTML
+	note_scene.linked_html = html_source
+	note_scene.expanded_height = 450
+	note_scene.minimum_expanded_height = 400
+
+	note_scene.ready.connect(
+		func():
+			note_scene._set_controls_container(html_controls)
 			note_scene.initialized.emit()
 	)
 
@@ -554,6 +588,11 @@ func _on_edit_button_pressed() -> void:
 
 	var editor_pane: EditorPane = SingletonObject.editor_container.editor_pane
 
+	# Handle linked HTML notes - open in WebView editor
+	if not linked_html.is_empty():
+		_open_linked_html(editor_pane)
+		return
+
 	# Handle linked PCB notes - create/open PCB editor with full state
 	if not linked_pcb_data.is_empty():
 		_open_linked_pcb(editor_pane)
@@ -632,6 +671,24 @@ func _open_linked_pcb(editor_pane: EditorPane) -> void:
 			editor.pcb_editor.load_from_dict(pcb_dict)
 		else:
 			push_error("[Note] Failed to parse linked_pcb_data: %s" % json.get_error_message())
+
+
+## Open the linked HTML content in a WebView editor
+func _open_linked_html(editor_pane: EditorPane) -> void:
+	# Show the editor if it's hidden
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+	# Check if already open (match by associated_object for robustness if title changes)
+	for editor in editor_pane.get_open_editors():
+		if editor.associated_object == self and editor.type == Editor.Type.WEBVIEW:
+			var idx = editor_pane.Tabs.get_tab_idx_from_control(editor)
+			editor_pane.Tabs.current_tab = idx
+			return
+
+	var editor = editor_pane.add_webview_editor(title)
+	if editor and editor.webview_editor:
+		editor.webview_editor.set_html(linked_html)
+		editor.associated_object = self
 
 
 func _on_hide_button_pressed() -> void:
@@ -945,6 +1002,10 @@ func serialize() -> Dictionary:
 	if not linked_pcb_data.is_empty():
 		note_data["LinkedPCBData"] = linked_pcb_data
 
+	# Add linked HTML if set
+	if not linked_html.is_empty():
+		note_data["LinkedHTML"] = linked_html
+
 	# Add linked chat IDs if set
 	if not linked_chat_ids.is_empty():
 		note_data["LinkedChatIds"] = linked_chat_ids
@@ -993,6 +1054,9 @@ func _serialize_controls_data() -> Dictionary:
 			data["MemoryImage"] = Marshalls.raw_to_base64(controls_container.image.save_png_to_buffer())
 		
 		data["ImageCaption"] = controls_container.caption
+
+	elif controls_container.get_script() and controls_container.get_script().get_global_name() == &"NoteHtmlControls":
+		data["Content"] = controls_container.content
 
 	return data
 
@@ -1095,6 +1159,13 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 					note_data.get("UUID", ""),
 					register,
 				)
+			"html":
+				note = create_html_note(
+					note_data.get("Title", "Unknown"),
+					note_data.get("Content", ""),
+					note_data.get("UUID", ""),
+					register,
+				)
 			_:
 				push_error("Couldn't deserialize note with content type: %s" % note_data.get("ContentType"))
 				return
@@ -1112,6 +1183,7 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 			note.visible = note_data.get("Visible", true)
 			note.linked_spreadsheet = note_data.get("LinkedSpreadsheet", "")
 			note.linked_pcb_data = note_data.get("LinkedPCBData", "")
+			note.linked_html = note_data.get("LinkedHTML", "")
 			note._update_link_button_label()
 	)
 

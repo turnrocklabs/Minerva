@@ -74,11 +74,12 @@ func _init(manager = null) -> void:
 		_register_container_tools()
 		_register_codetools()
 		_register_terminal_tools()
+		_register_webview_tools()
 		_register_tool_search()
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
 		# Auto-activate tool_search in the budget manager
-		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, PCB, graphics, video, agents, costs.", "input_schema": {
+		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, webview, PCB, graphics, video, agents, costs.", "input_schema": {
 			"type": "object", "properties": {
 				"query": {"type": "string", "description": "Keyword search or exact tool name"},
 				"category": {"type": "string", "description": "Filter by category (optional)"},
@@ -554,6 +555,15 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _terminal_read(arguments)
 		"minerva_terminal_wait":
 			return await _terminal_wait(arguments)
+		# Webview tools
+		"minerva_create_webview_panel":
+			return _create_webview_panel(arguments)
+		"minerva_update_webview_panel":
+			return _update_webview_panel(arguments)
+		"minerva_get_webview_source":
+			return _get_webview_source(arguments)
+		"minerva_link_webview_to_note":
+			return _link_webview_to_note(arguments)
 		# Tool discovery
 		"minerva_tool_search":
 			return _tool_search(arguments)
@@ -720,7 +730,12 @@ func _register_notes_tools() -> void:
 				},
 				"content": {
 					"type": "string",
-					"description": "Content of the note"
+					"description": "Content of the note. For html type, this is the HTML source."
+				},
+				"type": {
+					"type": "string",
+					"description": "Type of note: text or html. Defaults to text.",
+					"enum": ["text", "html"]
 				},
 				"tab": {
 					"type": "string",
@@ -2067,8 +2082,13 @@ func _create_note(args: Dictionary) -> Dictionary:
 		return {"error": "Notes container not available", "success": false}
 
 	# Create the note
-	var _NoteScript = load("res://Scripts/UI/Controls/Note.gd")
-	var note = _NoteScript.create_text_note(title, content)
+	var note_type: String = args.get("type", "text")
+	var note: Node
+	match note_type:
+		"html":
+			note = NoteScript.create_html_note(title, content)
+		_:
+			note = NoteScript.create_text_note(title, content)
 
 	# Find or create the tab
 	var tab_idx := -1
@@ -10665,14 +10685,183 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 
 #endregion Terminal Tools
 
+#region Webview Tools
+
+func _register_webview_tools() -> void:
+	_register_tool("minerva_create_webview_panel",
+		"Creates a webview panel tab with HTML/CSS/JS content. The HTML is rendered in an isolated webview (fault-isolated from Minerva). After creating, use minerva_update_webview_panel to modify content, or minerva_get_webview_source to read current HTML.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the webview panel tab"
+				},
+				"html": {
+					"type": "string",
+					"description": "HTML content to render in the webview"
+				}
+			},
+			"required": ["name", "html"]
+		}
+	, "webview")
+
+	_register_tool("minerva_update_webview_panel",
+		"Replace the HTML content in an existing webview panel. Supports iterative development -- generate, view, refine.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the webview panel tab"
+				},
+				"html": {
+					"type": "string",
+					"description": "New HTML content to render"
+				}
+			},
+			"required": ["editor_name", "html"]
+		}
+	, "webview")
+
+	_register_tool("minerva_get_webview_source",
+		"Get the current HTML source of a webview panel. Use to read what's rendered before making changes.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the webview panel tab"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	, "webview")
+
+	_register_tool("minerva_link_webview_to_note",
+		"Create a linked note from a webview panel. The note displays the rendered HTML. Editing the note reopens the webview editor. Similar to minerva_link_spreadsheet_to_note.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "The name/title of the webview panel tab to link"
+				},
+				"note_title": {
+					"type": "string",
+					"description": "Title for the new note. Defaults to webview panel name if not provided"
+				},
+				"thread_name": {
+					"type": "string",
+					"description": "Name of the notes thread/tab to add the note to. Creates new thread if doesn't exist"
+				}
+			},
+			"required": ["editor_name"]
+		}
+	, "webview")
+
+
+func _find_webview_editor(editor_name: String) -> Variant:
+	var editor = _find_editor_by_name(editor_name)
+	if not editor:
+		return null
+
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.WEBVIEW:
+		return null
+
+	return editor
+
+
+func _create_webview_panel(arguments: Dictionary) -> Dictionary:
+	var panel_name: String = arguments.get("name", "")
+	var html: String = arguments.get("html", "")
+	if panel_name.is_empty() or html.is_empty():
+		return {"error": "Both 'name' and 'html' are required", "success": false}
+
+	# Check if panel already exists (idempotency)
+	var existing = _find_webview_editor(panel_name)
+	if existing:
+		existing.webview_editor.set_html(html)
+		return {"editor_name": panel_name, "message": "Webview panel updated (already existed).", "success": true, "already_existed": true}
+
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return {"error": "Editor pane not available", "success": false}
+
+	var editor: Editor = editor_pane.add_webview_editor(panel_name)
+	if editor and editor.webview_editor:
+		editor.webview_editor.set_html(html)
+		return {"editor_name": panel_name, "message": "Webview panel created.", "success": true}
+	return {"error": "Failed to create webview panel", "success": false}
+
+
+func _update_webview_panel(arguments: Dictionary) -> Dictionary:
+	var editor_name: String = arguments.get("editor_name", "")
+	var html: String = arguments.get("html", "")
+	if editor_name.is_empty() or html.is_empty():
+		return {"error": "Both 'editor_name' and 'html' are required", "success": false}
+	var editor = _find_webview_editor(editor_name)
+	if not editor:
+		return {"error": "Webview panel '%s' not found" % editor_name, "success": false}
+	editor.webview_editor.set_html(html)
+	return {"editor_name": editor_name, "message": "Webview panel updated.", "success": true}
+
+
+func _get_webview_source(arguments: Dictionary) -> Dictionary:
+	var editor_name: String = arguments.get("editor_name", "")
+	if editor_name.is_empty():
+		return {"error": "'editor_name' is required", "success": false}
+	var editor = _find_webview_editor(editor_name)
+	if not editor:
+		return {"error": "Webview panel '%s' not found" % editor_name, "success": false}
+	return {"editor_name": editor_name, "html": editor.webview_editor.get_html(), "success": true}
+
+
+func _link_webview_to_note(arguments: Dictionary) -> Dictionary:
+	var editor_name: String = arguments.get("editor_name", "")
+	if editor_name.is_empty():
+		return {"error": "'editor_name' is required", "success": false}
+
+	var webview_editor = _find_webview_editor(editor_name)
+	if not webview_editor:
+		return {"error": "Webview panel '%s' not found" % editor_name, "success": false}
+
+	var html: String = webview_editor.webview_editor.get_html()
+	if html.is_empty():
+		return {"error": "Webview panel has no content", "success": false}
+
+	var note_title: String = arguments.get("note_title", editor_name)
+	var thread_name: String = arguments.get("thread_name", "Webviews")
+
+	var note = NoteScript.create_html_note(note_title, html)
+
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	var thread_vbox = notes_container.find_or_create_tab(thread_name)
+	thread_vbox.add_note(note)
+
+	return {
+		"success": true,
+		"note_uuid": note.uuid,
+		"note_title": note_title,
+		"thread_name": thread_name,
+		"linked_webview": editor_name,
+		"message": "Created linked HTML note '%s' in thread '%s'." % [note_title, thread_name]
+	}
+
+#endregion Webview Tools
+
 #region Tool Discovery
 
 func _register_tool_search() -> void:
 	_register_tool("minerva_tool_search",
-		"This server has 170+ tools available. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), PCB design, graphics, video, agents, automation, models, costs. Example: tool_search(query='edit file') or tool_search(query='pcb annotation') or tool_search(query='spreadsheet format').",
+		"This server has 170+ tools available. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), webview (create/update HTML panels), PCB design, graphics, video, agents, automation, models, costs. Example: tool_search(query='edit file') or tool_search(query='pcb annotation') or tool_search(query='webview panel').",
 		{"type": "object", "properties": {
 			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'pcb annotation', 'cost summary') or exact tool name (e.g., 'minerva_file_edit')"},
-			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, pcb, video, agents, triggers, autocoder, costs, meta"},
+			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, webview, pcb, video, agents, triggers, autocoder, costs, meta"},
 			"limit": {"type": "integer", "description": "Max results (default 5)"},
 		}, "required": ["query"]}, "meta")
 

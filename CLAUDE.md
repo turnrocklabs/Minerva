@@ -42,6 +42,26 @@ This builds two libraries:
 
 Both end up in `src/bin/`. The build script installs Zig 0.15.2 and SCons automatically if missing.
 
+### Building WebView Extension (Godot WRY)
+WebView panels use the godot_wry GDExtension (git submodule at `vendor/godot_wry`).
+
+**Linux prerequisites:**
+```bash
+sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev
+# Rust/Cargo required — install via rustup if missing
+```
+
+**Build:**
+```bash
+cd vendor/godot_wry/rust
+cargo build --release
+cp target/release/libgodot_wry.so ../../src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
+```
+
+The `.gdextension` file and `extension_list.cfg` are already configured. The binary goes to `src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/`.
+
+**Note:** The upstream godot_wry v1.0.2 release has a GTK init panic on Linux. Our submodule includes a fix for `get_screen_position()` → `get_global_position()` to correct native window positioning.
+
 ### Manual build (if you prefer)
 ```bash
 # 1. Build ghostty-vt shim
