@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Build all Minerva GDExtensions (terminal + ghostty-vt shim).
+# Build all Minerva GDExtensions (terminal + ghostty-vt shim + godot_wry webview).
 # Run from repo root: scripts/build-extensions.sh
 #
 # Prerequisites installed automatically if missing:
 #   - Zig 0.15.2 (downloaded to ~/.local/bin)
 #   - SCons (via pip)
-#   - Git submodules (godot-cpp, vendor/ghostty)
+#   - Rust/Cargo (must be pre-installed via rustup for godot_wry)
+#   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry)
+#
+# Linux-only prereqs for godot_wry: libgtk-3-dev libwebkit2gtk-4.1-dev
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -103,6 +106,68 @@ echo "=== Installing libraries ==="
 cp "$SHIM_LIB" src/bin/
 echo "Copied $(basename "$SHIM_LIB") to src/bin/"
 
+# ── Build godot_wry WebView extension (Rust/Cargo) ───────────────────
+
+echo ""
+echo "=== Building godot_wry WebView extension ==="
+
+if ! command -v cargo &>/dev/null; then
+    echo "WARNING: Rust/Cargo not found. Install via https://rustup.rs"
+    echo "         Skipping godot_wry build. WebView panels will show fallback."
+else
+    # Check Linux prereqs
+    if [ "$PLATFORM" = "linux" ]; then
+        for pkg in libgtk-3-dev libwebkit2gtk-4.1-dev; do
+            if ! dpkg -s "$pkg" &>/dev/null; then
+                echo "WARNING: $pkg not found. Install with: sudo apt install $pkg"
+                echo "         Skipping godot_wry build."
+                SKIP_WRY=1
+                break
+            fi
+        done
+    fi
+
+    if [ "${SKIP_WRY:-}" != "1" ]; then
+        # Apply Minerva patches to godot_wry before building
+        if [ -f "patches/godot_wry-fix-positioning.patch" ]; then
+            echo "Applying Minerva patches to godot_wry..."
+            cd vendor/godot_wry
+            git checkout -- . 2>/dev/null  # Reset to clean upstream first
+            git apply ../../patches/godot_wry-fix-positioning.patch
+            cd "$OLDPWD"
+            echo "Patches applied"
+        fi
+
+        cd vendor/godot_wry/rust
+        cargo build --release
+        cd "$OLDPWD"
+
+        # Copy binary to addons
+        case "$PLATFORM" in
+            linux)
+                WRY_SRC="vendor/godot_wry/rust/target/release/libgodot_wry.so"
+                WRY_DST="src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/"
+                ;;
+            macos)
+                WRY_SRC="vendor/godot_wry/rust/target/release/libgodot_wry.dylib"
+                WRY_DST="src/addons/godot_wry/bin/universal-apple-darwin/"
+                ;;
+            windows)
+                WRY_SRC="vendor/godot_wry/rust/target/release/godot_wry.dll"
+                WRY_DST="src/addons/godot_wry/bin/x86_64-pc-windows-msvc/"
+                ;;
+        esac
+
+        if [ -f "$WRY_SRC" ]; then
+            mkdir -p "$WRY_DST"
+            cp "$WRY_SRC" "$WRY_DST"
+            echo "godot_wry built: $WRY_DST$(basename "$WRY_SRC") ($(du -h "$WRY_SRC" | cut -f1))"
+        else
+            echo "WARNING: godot_wry binary not found at $WRY_SRC"
+        fi
+    fi
+fi
+
 # ── Download EIRTeam.FFmpeg if needed ─────────────────────────────────
 
 FFMPEG_VERSION="1.1.4"
@@ -153,5 +218,7 @@ echo "Libraries in src/bin/:"
 ls -lh src/bin/lib*.so src/bin/lib*.dylib src/bin/*.dll 2>/dev/null || true
 echo "FFmpeg addon:"
 ls src/addons/ffmpeg/linux64/*.so src/addons/ffmpeg/macos/*.dylib src/addons/ffmpeg/win64/*.dll 2>/dev/null | wc -l | xargs -I{} echo "  {} binary files"
+echo "WebView addon:"
+ls -lh src/addons/godot_wry/bin/*/libgodot_wry.* src/addons/godot_wry/bin/*/godot_wry.* 2>/dev/null || echo "  (not built)"
 echo ""
 echo "Open src/project.godot in Godot 4.4+ to run Minerva."

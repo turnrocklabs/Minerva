@@ -1,0 +1,28 @@
+diff --git a/rust/src/lib.rs b/rust/src/lib.rs
+index 75c3838..3b730bb 100644
+--- a/rust/src/lib.rs
++++ b/rust/src/lib.rs
+@@ -129,12 +129,12 @@ impl WebView {
+             let viewport_size = self.base().get_tree().expect("Could not get tree").get_root().expect("Could not get viewport").get_size();
+             let window_position = DisplayServer::singleton().window_get_position();
+ 
+-            let needs_resize = self.base().get_screen_position() != self.previous_screen_position
++            let needs_resize = self.base().get_global_position() != self.previous_screen_position
+                 || viewport_size != self.previous_viewport_size
+                 || window_position != self.previous_window_position;
+ 
+             if needs_resize {
+-                self.previous_screen_position = self.base().get_screen_position();
++                self.previous_screen_position = self.base().get_global_position();
+                 self.previous_viewport_size = viewport_size;
+                 self.previous_window_position = window_position;
+                 self.resize();
+@@ -497,7 +497,7 @@ impl WebView {
+                     size: PhysicalSize::new(viewport_size.x, viewport_size.y).into(),
+                 }
+             } else {
+-                let pos = self.base().get_screen_position();
++                let pos = self.base().get_global_position();
+                 let size = self.base().get_size();
+                 Rect {
+                     position: PhysicalPosition::new(pos.x, pos.y).into(),

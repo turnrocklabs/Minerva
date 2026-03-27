@@ -26,7 +26,9 @@ bin/
 zig-out/
 
 # godot_wry addon binary (built from vendor/godot_wry submodule)
-!src/addons/godot_wry/bin/
+src/addons/godot_wry/bin/**/*.so
+src/addons/godot_wry/bin/**/*.dylib
+src/addons/godot_wry/bin/**/*.dll
 
 # ffmpeg addon binaries (downloaded by build script)
 src/addons/ffmpeg/linux64/*.so*
