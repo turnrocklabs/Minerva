@@ -3,6 +3,3 @@
 
 # Use bd merge for beads JSONL files
 .beads/issues.jsonl merge=beads
-
-# SQLite docket files: store as text SQL dumps for mergeable diffs
-*.dct filter=sqlite3 diff=sqlite3

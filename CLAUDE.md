@@ -19,7 +19,6 @@ Minerva is a Godot 4 application that provides an interface for interacting with
 ```bash
 # Linux / macOS
 git submodule update --init --recursive
-scripts/setup-git-filters.sh       # SQLite docket merge support
 scripts/build-extensions.sh        # Builds ghostty-vt shim + terminal extension
 ```
 ```powershell

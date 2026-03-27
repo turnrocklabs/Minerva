@@ -43,7 +43,10 @@ src/addons/ffmpeg/.ffmpeg-version
 plugins/elgato/dist/
 plugins/elgato/node_modules/
 
-# SQLite journal files
+# SQLite journal files and cache
 *.dct-wal
 *.dct-shm
+*.dct.cache
+*.dct.lock
+*.dct.tmp.*
 .sconsign.dblite
