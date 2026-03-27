@@ -12,6 +12,7 @@ on:
         - all
         - windows
         - linux
+        - macos
       create_release:
         description: 'Create GitHub Release'
         required: false
@@ -223,8 +224,113 @@ jobs:
           src/bin/libterminal*
           src/bin/libminerva-vt.so
 
+  build-macos:
+    needs: check-gdextension
+    if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    - name: Cache SCons build
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/.sconsign.dblite
+          src/**/*.os
+          src/**/*.obj
+        key: ${{ runner.os }}-scons-${{ hashFiles('src/**/*.cpp', 'src/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-scons-
+
+    - name: Cache godot-cpp
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/godot-cpp/bin/**
+          src/godot-cpp/gen/**
+        key: ${{ runner.os }}-godot-cpp-${{ hashFiles('src/godot-cpp/**/*.cpp', 'src/godot-cpp/**/*.h') }}
+        restore-keys: |
+          ${{ runner.os }}-godot-cpp-
+
+    - name: Setup Zig
+      run: |
+        ZIG_VERSION="0.15.2"
+        case "$(uname -s)-$(uname -m)" in
+          Darwin-x86_64)  ZIG_PLATFORM="x86_64-macos" ;;
+          Darwin-arm64)   ZIG_PLATFORM="aarch64-macos" ;;
+        esac
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
+        tar xf /tmp/zig.tar.xz -C /tmp
+        echo "/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}" >> $GITHUB_PATH
+        zig version
+
+    - name: Cache Zig build
+      uses: actions/cache@v4
+      with:
+        path: src/gdextension/terminal/ghostty-shim/.zig-cache
+        key: zig-macos-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-macos-
+
+    - name: Setup Python and SCons
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+    - run: pip install scons
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Apply godot_wry patches
+      run: |
+        cd vendor/godot_wry
+        git checkout -- .
+        for patch in ../../patches/godot_wry-*.patch; do
+          [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
+        done
+
+    - name: Build godot_wry
+      working-directory: vendor/godot_wry/rust
+      run: cargo build --release
+
+    - name: Install godot_wry binary
+      run: |
+        mkdir -p src/addons/godot_wry/bin/universal-apple-darwin
+        cp vendor/godot_wry/rust/target/release/libgodot_wry.dylib src/addons/godot_wry/bin/universal-apple-darwin/
+
+    - name: Build ghostty-vt shim (universal)
+      working-directory: src/gdextension/terminal/ghostty-shim
+      run: |
+        zig build -Doptimize=ReleaseFast -Dtarget=aarch64-macos
+        cp zig-out/lib/libminerva-vt.dylib ../libminerva-vt-arm64.dylib
+        zig build -Doptimize=ReleaseFast -Dtarget=x86_64-macos
+        cp zig-out/lib/libminerva-vt.dylib ../libminerva-vt-x86_64.dylib
+
+    - name: Create universal binary
+      working-directory: src/gdextension/terminal
+      run: |
+        lipo -create libminerva-vt-arm64.dylib libminerva-vt-x86_64.dylib \
+             -output libminerva-vt.dylib
+        cp libminerva-vt.dylib ../bin/
+
+    - name: Build Extension
+      run: |
+        cd src
+        scons platform=macos target=template_release
+        scons platform=macos target=template_debug
+
+    - name: Upload Extension
+      uses: actions/upload-artifact@v4
+      with:
+        name: terminal-macos
+        path: |
+          src/bin/libterminal*
+          src/bin/libminerva-vt.dylib
+
   build-godot:
-    needs: [check-gdextension, build-windows, build-linux]
+    needs: [check-gdextension, build-windows, build-linux, build-macos]
     if: always()
     runs-on: ubuntu-latest
     steps:
