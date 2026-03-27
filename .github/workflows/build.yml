@@ -76,12 +76,34 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-godot-cpp-
         
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Apply godot_wry patches
+      shell: bash
+      run: |
+        cd vendor/godot_wry
+        git checkout -- .
+        for patch in ../../patches/godot_wry-*.patch; do
+          [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
+        done
+
+    - name: Build godot_wry
+      working-directory: vendor/godot_wry/rust
+      run: cargo build --release
+
+    - name: Install godot_wry binary
+      shell: bash
+      run: |
+        mkdir -p src/addons/godot_wry/bin/x86_64-pc-windows-msvc
+        cp vendor/godot_wry/rust/target/release/godot_wry.dll src/addons/godot_wry/bin/x86_64-pc-windows-msvc/
+
     - name: Setup Python and SCons
       uses: actions/setup-python@v5
       with:
         python-version: '3.x'
     - run: pip install scons
-        
+
     - name: Build Extension
       run: |
         cd src
@@ -126,9 +148,18 @@ jobs:
           ${{ runner.os }}-godot-cpp-
 
     - name: Setup Zig
-      uses: mlugg/setup-zig@v1
-      with:
-        version: 0.15.2
+      run: |
+        ZIG_VERSION="0.15.2"
+        case "$(uname -s)-$(uname -m)" in
+          Linux-x86_64)   ZIG_PLATFORM="x86_64-linux" ;;
+          Linux-aarch64)  ZIG_PLATFORM="aarch64-linux" ;;
+          Darwin-x86_64)  ZIG_PLATFORM="x86_64-macos" ;;
+          Darwin-arm64)   ZIG_PLATFORM="aarch64-macos" ;;
+        esac
+        curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
+        tar xf /tmp/zig.tar.xz -C /tmp
+        echo "/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}" >> $GITHUB_PATH
+        zig version
 
     - name: Cache Zig build
       uses: actions/cache@v4
@@ -147,6 +178,29 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential util-linux
+
+    - name: Install WRY dependencies
+      run: sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Apply godot_wry patches
+      run: |
+        cd vendor/godot_wry
+        git checkout -- .
+        for patch in ../../patches/godot_wry-*.patch; do
+          [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
+        done
+
+    - name: Build godot_wry
+      working-directory: vendor/godot_wry/rust
+      run: cargo build --release
+
+    - name: Install godot_wry binary
+      run: |
+        mkdir -p src/addons/godot_wry/bin/x86_64-unknown-linux-gnu
+        cp vendor/godot_wry/rust/target/release/libgodot_wry.so src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
 
     - name: Build ghostty-vt shim
       working-directory: src/gdextension/terminal/ghostty-shim

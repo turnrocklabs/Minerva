@@ -1,0 +1,162 @@
+name: Build godot-wry
+
+on:
+  push:
+    paths:
+      - "vendor/godot_wry"
+      - "patches/godot_wry-*.patch"
+      - "src/addons/godot_wry/**"
+      - ".github/workflows/godot-wry.yml"
+    branches-ignore:
+      - main
+  pull_request:
+    paths:
+      - "vendor/godot_wry"
+      - "patches/godot_wry-*.patch"
+      - "src/addons/godot_wry/**"
+      - ".github/workflows/godot-wry.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: godot-wry-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            vendor/godot_wry/rust/target
+          key: ${{ runner.os }}-cargo-wry-${{ hashFiles('vendor/godot_wry/rust/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wry-
+
+      - name: Apply Minerva patches
+        run: |
+          cd vendor/godot_wry
+          git checkout -- .
+          for patch in ../../patches/godot_wry-*.patch; do
+            [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
+          done
+
+      - name: Build
+        working-directory: vendor/godot_wry/rust
+        run: cargo build --release
+
+      - name: Install binary
+        run: |
+          mkdir -p src/addons/godot_wry/bin/x86_64-unknown-linux-gnu
+          cp vendor/godot_wry/rust/target/release/libgodot_wry.so src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
+          ls -lh src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-wry-linux-x86_64
+          path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/libgodot_wry.so
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            vendor/godot_wry/rust/target
+          key: ${{ runner.os }}-cargo-wry-${{ hashFiles('vendor/godot_wry/rust/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wry-
+
+      - name: Apply Minerva patches
+        run: |
+          cd vendor/godot_wry
+          git checkout -- .
+          for patch in ../../patches/godot_wry-*.patch; do
+            [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
+          done
+
+      - name: Build
+        working-directory: vendor/godot_wry/rust
+        run: cargo build --release
+
+      - name: Install binary
+        run: |
+          mkdir -p src/addons/godot_wry/bin/universal-apple-darwin
+          cp vendor/godot_wry/rust/target/release/libgodot_wry.dylib src/addons/godot_wry/bin/universal-apple-darwin/
+          ls -lh src/addons/godot_wry/bin/universal-apple-darwin/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-wry-macos
+          path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.dylib
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            vendor/godot_wry/rust/target
+          key: ${{ runner.os }}-cargo-wry-${{ hashFiles('vendor/godot_wry/rust/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-wry-
+
+      - name: Apply Minerva patches
+        shell: bash
+        run: |
+          cd vendor/godot_wry
+          git checkout -- .
+          for patch in ../../patches/godot_wry-*.patch; do
+            [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
+          done
+
+      - name: Build
+        working-directory: vendor/godot_wry/rust
+        run: cargo build --release
+
+      - name: Install binary
+        shell: bash
+        run: |
+          mkdir -p src/addons/godot_wry/bin/x86_64-pc-windows-msvc
+          cp vendor/godot_wry/rust/target/release/godot_wry.dll src/addons/godot_wry/bin/x86_64-pc-windows-msvc/
+          ls -lh src/addons/godot_wry/bin/x86_64-pc-windows-msvc/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: godot-wry-windows-x86_64
+          path: src/addons/godot_wry/bin/x86_64-pc-windows-msvc/godot_wry.dll

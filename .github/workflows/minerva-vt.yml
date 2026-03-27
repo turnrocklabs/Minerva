@@ -44,9 +44,18 @@ jobs:
           submodules: recursive
 
       - name: Setup Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.15.2
+        run: |
+          ZIG_VERSION="0.15.2"
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64)   ZIG_PLATFORM="x86_64-linux" ;;
+            Linux-aarch64)  ZIG_PLATFORM="aarch64-linux" ;;
+            Darwin-x86_64)  ZIG_PLATFORM="x86_64-macos" ;;
+            Darwin-arm64)   ZIG_PLATFORM="aarch64-macos" ;;
+          esac
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
+          tar xf /tmp/zig.tar.xz -C /tmp
+          echo "/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}" >> $GITHUB_PATH
+          zig version
 
       - name: Cache Zig build
         uses: actions/cache@v4
@@ -72,9 +81,18 @@ jobs:
           submodules: recursive
 
       - name: Setup Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.15.2
+        run: |
+          ZIG_VERSION="0.15.2"
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64)   ZIG_PLATFORM="x86_64-linux" ;;
+            Linux-aarch64)  ZIG_PLATFORM="aarch64-linux" ;;
+            Darwin-x86_64)  ZIG_PLATFORM="x86_64-macos" ;;
+            Darwin-arm64)   ZIG_PLATFORM="aarch64-macos" ;;
+          esac
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
+          tar xf /tmp/zig.tar.xz -C /tmp
+          echo "/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}" >> $GITHUB_PATH
+          zig version
 
       - name: Cache Zig build (arm64)
         uses: actions/cache@v4
@@ -122,9 +140,18 @@ jobs:
           submodules: recursive
 
       - name: Setup Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.15.2
+        run: |
+          ZIG_VERSION="0.15.2"
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64)   ZIG_PLATFORM="x86_64-linux" ;;
+            Linux-aarch64)  ZIG_PLATFORM="aarch64-linux" ;;
+            Darwin-x86_64)  ZIG_PLATFORM="x86_64-macos" ;;
+            Darwin-arm64)   ZIG_PLATFORM="aarch64-macos" ;;
+          esac
+          curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
+          tar xf /tmp/zig.tar.xz -C /tmp
+          echo "/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}" >> $GITHUB_PATH
+          zig version
 
       - name: Cache Zig build
         uses: actions/cache@v4
