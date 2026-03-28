@@ -233,6 +233,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_item("Install MCP Servers...", 101)
 	tools_menu.add_item("Add MCP Server...", 106)
 	tools_menu.add_item("Install Stream Deck Plugin...", 107)
+	tools_menu.add_item("Plugin Manager...", 108)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
@@ -355,6 +356,12 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_show_add_server_dialog()
 		107:
 			_install_streamdeck_plugin()
+		108:
+			_open_plugin_manager()
+
+
+func _open_plugin_manager() -> void:
+	SingletonObject.editor_container.editor_pane.add_plugin_manager_editor()
 
 
 func _show_agent_manager() -> void:

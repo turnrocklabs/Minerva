@@ -568,6 +568,15 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_tool_search":
 			return _tool_search(arguments)
 
+	# Plugin-contributed tools (minerva_<plugin_id>_*) — check first since
+	# is_plugin_tool() is an exact-match lookup and avoids prefix collisions.
+	if SingletonObject.plugin_tool_registry != null and SingletonObject.plugin_tool_registry.is_plugin_tool(tool_name):
+		return await SingletonObject.plugin_tool_registry.handle_tool_call(tool_name, arguments)
+
+	# Plugin management tools (minerva_plugin_list, etc.)
+	if tool_name.begins_with("minerva_plugin_") and SingletonObject.plugin_mcp_tools != null:
+		return await SingletonObject.plugin_mcp_tools.handle_tool_call(tool_name, arguments)
+
 	# If auto tool management is on and tool exists but isn't active, hint to search
 	if auto_tool_management and mcp_manager.tool_registry.has(tool_name):
 		return {"error": "Tool '%s' is not loaded. Call minerva_tool_search('%s') to activate it." % [tool_name, tool_name], "success": false}

@@ -1,0 +1,61 @@
+{
+	"id": "notes_helper",
+	"name": "Notes Helper",
+	"version": "0.1.0",
+	"host_api_version": "1",
+	"backend": {
+		"transport": "stdio",
+		"entrypoint": "python3",
+		"args": ["server.py"]
+	},
+	"tools": [
+		{
+			"name": "minerva_notes_helper_create_summary",
+			"description": "Summarize text and create a note with the summary. Generates a concise summary of the provided text, then creates a note containing that summary in Minerva's notes system.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"text": {
+						"type": "string",
+						"description": "Text to summarize"
+					},
+					"max_length": {
+						"type": "integer",
+						"description": "Max summary length in words (default: 50)",
+						"default": 50
+					}
+				},
+				"required": ["text"]
+			}
+		},
+		{
+			"name": "minerva_notes_helper_diagnostics",
+			"description": "Test tool that writes to stderr at various log levels to verify stderr routing.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"level": {
+						"type": "string",
+						"description": "Log level: info, warning, or error",
+						"enum": ["info", "warning", "error"]
+					},
+					"message": {
+						"type": "string",
+						"description": "Message to log"
+					}
+				},
+				"required": ["level", "message"]
+			}
+		}
+	],
+	"permissions": {
+		"host_capabilities": ["notes.create"],
+		"network": {
+			"mode": "none"
+		},
+		"filesystem": {
+			"mode": "scoped_paths",
+			"paths": ["user://plugins/data/notes_helper/"]
+		}
+	}
+}

@@ -202,6 +202,11 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
+			Editor.Type.PLUGIN_MANAGER:
+				var tab_name = "Plugin Manager"
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+
 	return editor_node
 
 
@@ -211,6 +216,9 @@ func add_pcb_editor(name_: String = "") -> Editor:
 
 func add_webview_editor(name_: String = "") -> Editor:
 	return add(Editor.Type.WEBVIEW, null, name_, null, true)
+
+func add_plugin_manager_editor() -> Editor:
+	return add(Editor.Type.PLUGIN_MANAGER, null, "Plugin Manager", null, true)
 
 
 func get_open_editors() -> Array[Editor]:

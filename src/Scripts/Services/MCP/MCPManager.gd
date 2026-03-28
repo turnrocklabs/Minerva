@@ -452,7 +452,7 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 		result["success"] = not result.has("error")
 
 	# If tool execution failed with a connection error, clean up the dead connection
-	if not result.get("success", false) and not connection.is_connected:
+	if not result.get("success", false) and not connection.server_connected:
 		push_warning("[MCP] Server %s disconnected during tool execution — cleaning up" % server_name)
 		_unregister_server_tools(server_name)
 		servers.erase(server_name)
@@ -540,14 +540,14 @@ func get_server_tools(server_name: String) -> Array:
 
 ## Check if a server is connected
 func is_server_connected(server_name: String) -> bool:
-	return servers.has(server_name) and servers[server_name].is_connected
+	return servers.has(server_name) and servers[server_name].server_connected
 
 
 ## Get list of connected server names
 func get_connected_servers() -> Array[String]:
 	var connected: Array[String] = []
 	for server_name in servers:
-		if servers[server_name].is_connected:
+		if servers[server_name].server_connected:
 			connected.append(server_name)
 	return connected
 

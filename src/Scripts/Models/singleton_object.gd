@@ -433,6 +433,13 @@ func initialize_mcp() -> void:
 		else:
 			push_warning("[MCP] Failed to auto-start HTTP server: %s" % error_string(err))
 
+	# Initialize plugin system after MCP is ready
+	initialize_plugins()
+
+	# Wire plugin tools into MinervaMCPServer
+	if mcp_manager and mcp_manager.minerva_server and plugin_tool_registry:
+		_wire_plugin_tools_to_mcp()
+
 ## Initialize Co-Browser client (call when needed)
 func get_cobrowser_client() -> RefCounted:
 	if not cobrowser_client:
@@ -471,6 +478,148 @@ func is_mcp_http_server_running() -> bool:
 	return mcp_manager != null and mcp_manager.is_http_server_running()
 
 #endregion MCP
+
+#region Plugins
+
+## Plugin system components (untyped to avoid autoload parse-order issues)
+var plugin_manager = null  # PluginManager
+var plugin_policy = null  # PluginPolicy
+var plugin_audit_log = null  # PluginAuditLog
+var plugin_tool_registry = null  # PluginToolRegistry
+var plugin_capability_broker = null  # CapabilityBroker
+var plugin_mcp_tools = null  # PluginMCPTools
+
+## Initialize the plugin system. Call after initialize_mcp().
+## Uses load() instead of class_name references to avoid autoload parse-order issues.
+func initialize_plugins() -> void:
+	if plugin_manager != null:
+		return
+
+	var AuditLogClass = load("res://Scripts/Services/Plugins/PluginAuditLog.gd")
+	var ManagerClass = load("res://Scripts/Services/Plugins/PluginManager.gd")
+	var PolicyClass = load("res://Scripts/Services/Plugins/PluginPolicy.gd")
+	var BrokerClass = load("res://Scripts/Services/Plugins/CapabilityBroker.gd")
+	var ToolRegClass = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
+	var MCPToolsClass = load("res://Scripts/Services/Plugins/PluginMCPTools.gd")
+
+	# Audit log (no dependencies)
+	plugin_audit_log = AuditLogClass.new()
+
+	# Plugin manager (extends Node, needs scene tree for _process)
+	plugin_manager = ManagerClass.new()
+	plugin_manager.name = "PluginManager"
+	add_child(plugin_manager)
+
+	# Inject refs into manager (avoids circular dep on SingletonObject)
+	plugin_manager._audit_log_ref = plugin_audit_log
+
+	# Policy engine (references DB and audit log)
+	plugin_policy = PolicyClass.new(plugin_manager.get_db(), plugin_audit_log)
+	plugin_manager._policy_ref = plugin_policy
+
+	# Capability broker (references policy)
+	plugin_capability_broker = BrokerClass.new(plugin_policy)
+
+	# Tool registry (references manager, policy, audit log, broker)
+	plugin_tool_registry = ToolRegClass.new(plugin_manager, plugin_policy, plugin_audit_log)
+	plugin_tool_registry.capability_broker = plugin_capability_broker
+
+	# MCP management tools (inject dependencies)
+	plugin_mcp_tools = MCPToolsClass.new(plugin_manager, plugin_policy, plugin_audit_log)
+
+	# Wire PluginManager lifecycle signals to PluginToolRegistry
+	plugin_manager.plugin_started.connect(plugin_tool_registry.on_plugin_started)
+	plugin_manager.plugin_stopped.connect(plugin_tool_registry.on_plugin_stopped)
+	plugin_manager.plugin_crashed.connect(plugin_tool_registry.on_plugin_stopped)
+
+	# Wire PluginManager signals to audit log
+	plugin_manager.plugin_started.connect(func(id: String) -> void:
+		plugin_audit_log.log_event(id, "plugin_start"))
+	plugin_manager.plugin_stopped.connect(func(id: String) -> void:
+		plugin_audit_log.log_event(id, "plugin_stop"))
+	plugin_manager.plugin_crashed.connect(func(id: String) -> void:
+		plugin_audit_log.log_event(id, "plugin_crash"))
+
+	# Pre-populate built-in tool names before initial registration (prevents shadowing)
+	if mcp_manager and mcp_manager.tool_registry:
+		plugin_tool_registry.set_builtin_tool_names(mcp_manager.tool_registry.keys())
+
+	# Register tools for any already-installed plugins
+	for def in plugin_manager.get_db().get_all():
+		plugin_tool_registry.register_plugin_tools(def.id, def.tools)
+
+	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
+
+	# Autostart plugins (like SCM services with auto-start flag)
+	plugin_manager.start_autostart_plugins()
+
+
+## Wire plugin tool registry signals to MinervaMCPServer's tool_registry and search index.
+## Also registers the plugin management MCP tools (minerva_plugin_list, etc.).
+func _wire_plugin_tools_to_mcp() -> void:
+	var minerva_server = mcp_manager.minerva_server
+	if minerva_server == null:
+		push_warning("[Plugins] MinervaMCPServer not available for plugin tool wiring")
+		return
+
+	# Tell the tool registry which names are built-in (prevents shadowing)
+	plugin_tool_registry.set_builtin_tool_names(mcp_manager.tool_registry.keys())
+
+	# When a plugin's tools are registered, add them to MCP tool_registry + search index
+	plugin_tool_registry.tools_registered.connect(
+		func(p_plugin_id: String, _tool_names: Array) -> void:
+			for entry in plugin_tool_registry.get_plugin_tools(p_plugin_id):
+				var tool_def = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd").new()
+				tool_def.name = entry["name"]
+				tool_def.description = entry["description"]
+				tool_def.input_schema = entry["input_schema"]
+				tool_def.server_name = "plugin:%s" % p_plugin_id
+				tool_def.tool_set = "plugin"
+				mcp_manager.tool_registry[entry["name"]] = tool_def
+				minerva_server.tool_search_index.register_tool(
+					entry["name"], entry["description"],
+					tool_def.to_anthropic_format() if tool_def.has_method("to_anthropic_format") else {
+						"name": entry["name"], "description": entry["description"],
+						"input_schema": entry["input_schema"]
+					},
+					"plugin"
+				)
+	)
+
+	# When a plugin's tools are unregistered, remove them from MCP tool_registry
+	plugin_tool_registry.tools_unregistered.connect(
+		func(_p_plugin_id: String, p_tool_names: Array) -> void:
+			for tool_name in p_tool_names:
+				mcp_manager.tool_registry.erase(tool_name)
+	)
+
+	# Register the 7 plugin management MCP tools (minerva_plugin_list, etc.)
+	for tool_def_dict in plugin_mcp_tools.get_tool_definitions():
+		var tool_def = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd").new()
+		tool_def.name = tool_def_dict["name"]
+		tool_def.description = tool_def_dict["description"]
+		tool_def.input_schema = tool_def_dict["input_schema"]
+		tool_def.server_name = "minerva"
+		tool_def.tool_set = "plugin"
+		mcp_manager.tool_registry[tool_def_dict["name"]] = tool_def
+		minerva_server.tool_search_index.register_tool(
+			tool_def_dict["name"], tool_def_dict["description"],
+			tool_def.to_anthropic_format() if tool_def.has_method("to_anthropic_format") else {
+				"name": tool_def_dict["name"], "description": tool_def_dict["description"],
+				"input_schema": tool_def_dict["input_schema"]
+			},
+			"plugin"
+		)
+
+	print("[Plugins] Wired plugin tools to MinervaMCPServer (%d management tools registered)" % plugin_mcp_tools.get_tool_definitions().size())
+
+
+## Shutdown all running plugins. Call on application exit.
+func shutdown_plugins() -> void:
+	if plugin_manager != null:
+		await plugin_manager.shutdown_all()
+
+#endregion Plugins
 
 #region Tool Profiles
 var skill_manager: SkillManager = null
@@ -870,6 +1019,13 @@ func _release_textures_recursive(node: Node) -> void:
 func _exit_tree() -> void:
 	# Ensure proper cleanup order during shutdown
 	print("[SingletonObject] Cleaning up...")
+
+	# Stop all running plugins (best-effort synchronous cleanup)
+	if plugin_manager != null:
+		print("[SingletonObject] Stopping plugins...")
+		# shutdown_all is async but _exit_tree is sync — plugins will be
+		# force-killed when the process exits if they don't stop in time.
+		plugin_manager.shutdown_all()
 
 	# Save cost tracker state (ledger + budgets) before shutdown
 	if cost_tracker:

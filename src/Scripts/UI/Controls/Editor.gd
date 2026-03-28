@@ -78,6 +78,7 @@ enum Type {
 	VIDEO_EDITOR,
 	ACTIVITY_LOG,
 	WEBVIEW,
+	PLUGIN_MANAGER,
 }
 
 
@@ -258,6 +259,14 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.webview_editor = new_webview_editor
 			new_webview_editor.content_changed.connect(editor._on_editor_changed)
 
+		Editor.Type.PLUGIN_MANAGER:
+			vbox_container.clip_contents = true
+			var plugin_manager_scene = load("res://Scenes/PluginManagerPanel.tscn")
+			var new_plugin_manager = plugin_manager_scene.instantiate()
+			new_plugin_manager.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_plugin_manager.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(new_plugin_manager)
+
 	return editor
 
 func toggle(on: bool) -> void:
@@ -323,6 +332,12 @@ func _ready():
 		jump_to_line_panel.hide()
 		$VBoxContainer/ButtonsHBoxContainer.hide()
 	elif self.type == Type.ACTIVITY_LOG:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
+	elif self.type == Type.PLUGIN_MANAGER:
 		mic_button.hide()
 		autowrap_button.hide()
 		find_string_container.hide()
@@ -625,6 +640,10 @@ func get_saved_state() -> int:
 				pass  # state stays 0 — unsaved
 			else:
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.PLUGIN_MANAGER:
+			# Plugin manager is read-only control panel, always considered saved
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state
 
