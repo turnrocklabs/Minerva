@@ -1,0 +1,5 @@
+# Compiled binary
+obs_controller
+
+# Runtime config (contains OBS password)
+config.json

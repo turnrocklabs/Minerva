@@ -235,6 +235,14 @@ func start_plugin(id: String) -> Dictionary:
 	if plugin_dir.begins_with("res://"):
 		plugin_dir = ProjectSettings.globalize_path(plugin_dir)
 
+	# Resolve relative entrypoint (e.g., "./obs_controller") to absolute path.
+	# This is needed for Go binaries and other executables without file extensions,
+	# since the args resolution loop below only handles .py/.js/.sh/.gd files.
+	if command.begins_with("./"):
+		var abs_command: String = plugin_dir.path_join(command.substr(2))
+		if FileAccess.file_exists(abs_command) or FileAccess.file_exists(ProjectSettings.localize_path(abs_command)):
+			command = abs_command
+
 	var resolved_args: PackedStringArray = PackedStringArray()
 	for arg in def.args:
 		if arg.ends_with(".py") or arg.ends_with(".js") or arg.ends_with(".sh") or arg.ends_with(".gd"):

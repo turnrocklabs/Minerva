@@ -1,0 +1,139 @@
+{
+	"id": "obs_controller",
+	"name": "OBS Controller",
+	"version": "0.1.0",
+	"host_api_version": "1",
+	"backend": {
+		"transport": "stdio",
+		"entrypoint": "./obs_controller",
+		"args": []
+	},
+	"tools": [
+		{
+			"name": "minerva_obs_controller_connect",
+			"description": "Connect to OBS WebSocket server. Defaults to localhost:4455.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"host": {
+						"type": "string",
+						"description": "OBS WebSocket host (default: localhost)"
+					},
+					"port": {
+						"type": "integer",
+						"description": "OBS WebSocket port (default: 4455)"
+					},
+					"password": {
+						"type": "string",
+						"description": "OBS WebSocket password (leave empty if authentication is disabled)"
+					}
+				}
+			}
+		},
+		{
+			"name": "minerva_obs_controller_disconnect",
+			"description": "Disconnect from the OBS WebSocket server.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "minerva_obs_controller_get_status",
+			"description": "Get current OBS connection status and scene info. Always works, even when disconnected.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "minerva_obs_controller_list_scenes",
+			"description": "List all scenes in OBS and identify the current program scene.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "minerva_obs_controller_switch_scene",
+			"description": "Switch the current OBS program scene.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"scene": {
+						"type": "string",
+						"description": "Name of the scene to switch to"
+					}
+				},
+				"required": ["scene"]
+			}
+		},
+		{
+			"name": "minerva_obs_controller_set_camera_position",
+			"description": "Position the webcam overlay using a semantic 3x3 grid. Row: top/middle/bottom, Column: left/center/right, Size: small/medium/large.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"row": {"type": "string", "enum": ["top", "middle", "bottom"], "description": "Vertical position"},
+					"column": {"type": "string", "enum": ["left", "center", "right"], "description": "Horizontal position"},
+					"size": {"type": "string", "enum": ["small", "medium", "large"], "description": "Overlay size (default: medium)", "default": "medium"}
+				},
+				"required": ["row", "column"]
+			}
+		},
+		{
+			"name": "minerva_obs_controller_list_sources",
+			"description": "List all sources in the current OBS scene. Use this to discover the webcam source name for camera positioning.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "minerva_obs_controller_start_recording",
+			"description": "Start OBS recording.",
+			"input_schema": {"type": "object", "properties": {}}
+		},
+		{
+			"name": "minerva_obs_controller_stop_recording",
+			"description": "Stop OBS recording and return the output file path.",
+			"input_schema": {"type": "object", "properties": {}}
+		},
+		{
+			"name": "minerva_obs_controller_list_recordings",
+			"description": "List video recordings in the OBS output directory, sorted by newest first.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"limit": {"type": "integer", "description": "Max recordings to return (default: 10)", "default": 10}
+				}
+			}
+		},
+		{
+			"name": "minerva_obs_controller_configure",
+			"description": "Set OBS connection details, webcam source name, and output directory. Saved to disk for persistence.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"obs_host": {"type": "string", "description": "OBS WebSocket host (default: localhost)"},
+					"obs_port": {"type": "integer", "description": "OBS WebSocket port (default: 4455)"},
+					"obs_password": {"type": "string", "description": "OBS WebSocket password"},
+					"camera_source": {"type": "string", "description": "Name of the webcam source in OBS"},
+					"output_directory": {"type": "string", "description": "Directory where OBS saves recordings"},
+					"auto_connect": {"type": "boolean", "description": "Auto-connect to OBS on plugin start"}
+				}
+			}
+		}
+	],
+	"permissions": {
+		"host_capabilities": [],
+		"network": {
+			"mode": "localhost",
+			"ports": [4455]
+		},
+		"filesystem": {
+			"mode": "scoped_paths",
+			"paths": ["user://plugins/data/obs_controller/"]
+		}
+	}
+}
