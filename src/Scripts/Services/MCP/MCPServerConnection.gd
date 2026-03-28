@@ -70,6 +70,13 @@ var capability_request_handler: Callable = Callable()
 ## Plugin ID associated with this connection (set when used as a plugin connection).
 var plugin_id: String = ""
 
+## True while _stdio_request is actively polling. When true, the async handler
+## defers to the polling loop (which already handles all message types).
+var _in_stdio_request: bool = false
+
+## Reference to PluginEventBroker for routing async events/state.
+var event_broker = null
+
 
 func _init(name: String = "", url: String = "", type: TransportType = TransportType.HTTP) -> void:
 	server_name = name
@@ -681,6 +688,8 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 		print("[MCP STDIO] Error: Subprocess not running")
 		return {"error": "Subprocess not running"}
 
+	_in_stdio_request = true
+
 	var request_id: String = str(request.get("id", ""))
 	var request_json := JSON.stringify(request) + "\n"
 
@@ -693,6 +702,7 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 	# Send request
 	if not _subprocess.write_data(request_json):
 		print("[MCP STDIO] Error: Failed to write to subprocess")
+		_in_stdio_request = false
 		return {"error": "Failed to write to subprocess"}
 
 	# Wait for response with matching ID
@@ -725,19 +735,31 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 					await _handle_plugin_capability_request(msg)
 					continue
 
+				# Route event/state notifications that arrive during a tool call
+				if msg.has("method") and msg.get("method") == "minerva/plugin_event":
+					_handle_async_plugin_event(msg)
+					continue
+				if msg.has("method") and msg.get("method") == "minerva/plugin_state":
+					_handle_async_plugin_state(msg)
+					continue
+
 				# Check if this is our response
 				if str(msg.get("id", "")) == request_id:
 					if msg.has("error"):
 						var err = msg.get("error", {})
 						if err is Dictionary:
+							_in_stdio_request = false
 							return {"error": err.get("message", "Unknown error")}
+						_in_stdio_request = false
 						return {"error": str(err)}
+					_in_stdio_request = false
 					return msg
 
 		await Engine.get_main_loop().create_timer(poll_interval).timeout
 		elapsed += poll_interval
 
 	print("[MCP STDIO] Error: Request timed out after %.1fs" % timeout)
+	_in_stdio_request = false
 	return {"error": "STDIO request timed out"}
 
 
@@ -809,3 +831,84 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var result = response.get("result", {})
 	tool_result_received.emit(tool_name, result)
 	return result
+
+
+# ---------------------------------------------------------------------------
+# Async output handling (between tool calls)
+# ---------------------------------------------------------------------------
+
+## Called when SubProcess emits output_ready outside of a tool call.
+## Drains the output queue and routes messages to appropriate handlers.
+func _on_async_output_ready() -> void:
+	# If we're inside _stdio_request, that loop handles draining — don't double-drain.
+	if _in_stdio_request:
+		return
+
+	if not _subprocess or not _subprocess.is_running():
+		return
+
+	while _subprocess.has_output():
+		var line: String = _subprocess.read_line()
+		if line.is_empty():
+			continue
+
+		var json := JSON.new()
+		if json.parse(line) != OK or not json.data is Dictionary:
+			push_warning("[MCP STDIO Async] Unparseable line from plugin '%s': %s" % [plugin_id, line.left(200)])
+			continue
+
+		var msg: Dictionary = json.data
+
+		# Route based on method
+		var method: String = str(msg.get("method", ""))
+		match method:
+			"minerva/capability":
+				# Capability request outside a tool call — still dispatch it
+				_handle_plugin_capability_request(msg)
+			"minerva/plugin_event":
+				_handle_async_plugin_event(msg)
+			"minerva/plugin_state":
+				_handle_async_plugin_state(msg)
+			"notifications/tools/list_changed":
+				# go-sdk emits this on startup, safe to ignore
+				pass
+			_:
+				if not method.is_empty():
+					print("[MCP STDIO Async] Unrecognized method from plugin '%s': %s" % [plugin_id, method])
+				# Messages with an "id" but no "method" are responses to requests
+				# we didn't send (or late responses). Log and discard.
+				elif msg.has("id"):
+					print("[MCP STDIO Async] Unexpected response from plugin '%s' (id=%s)" % [plugin_id, str(msg.get("id", ""))])
+
+
+func _handle_async_plugin_event(msg: Dictionary) -> void:
+	var params: Dictionary = msg.get("params", {})
+	var event_name: String = str(params.get("event", ""))
+	var payload: Dictionary = params.get("payload", {})
+
+	if event_name.is_empty():
+		push_warning("[MCP STDIO Async] Plugin '%s' sent event with empty name" % plugin_id)
+		return
+
+	print("[MCP STDIO Async] Plugin '%s' event: %s" % [plugin_id, event_name])
+
+	if event_broker != null:
+		event_broker.handle_plugin_event(plugin_id, event_name, payload)
+	else:
+		push_warning("[MCP STDIO Async] No event_broker set — dropping event '%s' from plugin '%s'" % [event_name, plugin_id])
+
+
+func _handle_async_plugin_state(msg: Dictionary) -> void:
+	var params: Dictionary = msg.get("params", {})
+	var state: Dictionary = params.get("state", {})
+
+	if state.is_empty():
+		push_warning("[MCP STDIO Async] Plugin '%s' sent empty state update" % plugin_id)
+		return
+
+	print("[MCP STDIO Async] Plugin '%s' state update (keys: %s)" % [plugin_id, str(state.keys())])
+
+	if event_broker != null:
+		event_broker.handle_plugin_state(plugin_id, state)
+	else:
+		push_warning("[MCP STDIO Async] No event_broker set — dropping state from plugin '%s'" % plugin_id)

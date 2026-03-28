@@ -271,6 +271,11 @@ func start_plugin(id: String) -> Dictionary:
 	else:
 		push_warning("[PluginManager] No CapabilityBroker available — plugin '%s' cannot use bidirectional capabilities" % id)
 
+	# Set event broker reference for async event/state routing
+	var event_broker_ref = _get_event_broker()
+	if event_broker_ref != null:
+		conn.event_broker = event_broker_ref
+
 	var rt := _ensure_runtime(id)
 	rt["connection"] = conn
 	rt["start_time"] = Time.get_unix_time_from_system()
@@ -291,6 +296,11 @@ func start_plugin(id: String) -> Dictionary:
 		return {"error": "Subprocess failed to start: %s" % error_string(err)}
 
 	_transition_state(id, S_RUNNING)
+
+	# Connect async output handler for event/state notifications between tool calls
+	if conn._subprocess and not conn._subprocess.output_ready.is_connected(conn._on_async_output_ready):
+		conn._subprocess.output_ready.connect(conn._on_async_output_ready)
+
 	plugin_started.emit(id)
 	print("[PluginManager] Plugin '%s' is RUNNING" % id)
 	return {"ok": true}
@@ -689,6 +699,17 @@ func _get_capability_broker():
 	if so == null:
 		return null
 	return so.get("plugin_capability_broker") if "plugin_capability_broker" in so else null
+
+
+## Return the PluginEventBroker from SingletonObject, or null if unavailable.
+func _get_event_broker():
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	var so = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	return so.get("plugin_event_broker") if "plugin_event_broker" in so else null
 
 
 ## Return the runtime Dictionary for `id`, creating it if absent.

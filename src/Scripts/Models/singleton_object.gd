@@ -488,6 +488,7 @@ var plugin_audit_log = null  # PluginAuditLog
 var plugin_tool_registry = null  # PluginToolRegistry
 var plugin_capability_broker = null  # CapabilityBroker
 var plugin_mcp_tools = null  # PluginMCPTools
+var plugin_event_broker = null  # PluginEventBroker
 
 ## Initialize the plugin system. Call after initialize_mcp().
 ## Uses load() instead of class_name references to avoid autoload parse-order issues.
@@ -501,6 +502,7 @@ func initialize_plugins() -> void:
 	var BrokerClass = load("res://Scripts/Services/Plugins/CapabilityBroker.gd")
 	var ToolRegClass = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
 	var MCPToolsClass = load("res://Scripts/Services/Plugins/PluginMCPTools.gd")
+	var EventBrokerClass = load("res://Scripts/Services/Plugins/PluginEventBroker.gd")
 
 	# Audit log (no dependencies)
 	plugin_audit_log = AuditLogClass.new()
@@ -524,8 +526,11 @@ func initialize_plugins() -> void:
 	plugin_tool_registry = ToolRegClass.new(plugin_manager, plugin_policy, plugin_audit_log)
 	plugin_tool_registry.capability_broker = plugin_capability_broker
 
+	# Event/state broker (references DB and audit log)
+	plugin_event_broker = EventBrokerClass.new(plugin_manager.get_db(), plugin_audit_log)
+
 	# MCP management tools (inject dependencies)
-	plugin_mcp_tools = MCPToolsClass.new(plugin_manager, plugin_policy, plugin_audit_log)
+	plugin_mcp_tools = MCPToolsClass.new(plugin_manager, plugin_policy, plugin_audit_log, plugin_event_broker)
 
 	# Wire PluginManager lifecycle signals to PluginToolRegistry
 	plugin_manager.plugin_started.connect(plugin_tool_registry.on_plugin_started)
@@ -539,6 +544,14 @@ func initialize_plugins() -> void:
 		plugin_audit_log.log_event(id, "plugin_stop"))
 	plugin_manager.plugin_crashed.connect(func(id: String) -> void:
 		plugin_audit_log.log_event(id, "plugin_crash"))
+
+	# Clear plugin state on stop/crash
+	plugin_manager.plugin_stopped.connect(func(id: String) -> void:
+		if plugin_event_broker:
+			plugin_event_broker.clear_plugin_state(id))
+	plugin_manager.plugin_crashed.connect(func(id: String) -> void:
+		if plugin_event_broker:
+			plugin_event_broker.clear_plugin_state(id))
 
 	# Pre-populate built-in tool names before initial registration (prevents shadowing)
 	if mcp_manager and mcp_manager.tool_registry:

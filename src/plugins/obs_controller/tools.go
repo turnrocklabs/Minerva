@@ -48,6 +48,7 @@ func connectHandler(ctx context.Context, req *mcp.CallToolRequest, args ConnectA
 		return errorResult("Failed to connect: " + err.Error()), nil, nil
 	}
 
+	go emitCurrentState()
 	status, _ := obs.GetStatus()
 	return jsonResult(status), nil, nil
 }
@@ -65,6 +66,7 @@ func disconnectHandler(ctx context.Context, req *mcp.CallToolRequest, args Disco
 		return errorResult("Failed to disconnect: " + err.Error()), nil, nil
 	}
 
+	go emitCurrentState()
 	return jsonResult(map[string]any{"disconnected": true}), nil, nil
 }
 
@@ -116,6 +118,7 @@ func switchSceneHandler(ctx context.Context, req *mcp.CallToolRequest, args Swit
 		return errorResult("Failed to switch scene: " + err.Error()), nil, nil
 	}
 
+	go emitCurrentState()
 	status, _ := obs.GetStatus()
 	return jsonResult(status), nil, nil
 }

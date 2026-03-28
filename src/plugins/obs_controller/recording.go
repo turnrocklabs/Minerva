@@ -41,6 +41,7 @@ func startRecordingHandler(ctx context.Context, req *mcp.CallToolRequest, args S
 		result["timecode"] = statusResp.OutputTimecode
 	}
 
+	go emitCurrentState()
 	return jsonResult(result), nil, nil
 }
 
@@ -61,6 +62,7 @@ func stopRecordingHandler(ctx context.Context, req *mcp.CallToolRequest, args St
 		return errorResult("Failed to stop recording: " + err.Error()), nil, nil
 	}
 
+	go emitCurrentState()
 	return jsonResult(map[string]any{
 		"stopped":     true,
 		"output_path": resp.OutputPath,

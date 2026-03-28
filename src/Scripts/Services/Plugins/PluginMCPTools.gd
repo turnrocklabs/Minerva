@@ -13,12 +13,14 @@ extends RefCounted
 var _plugin_manager = null  # PluginManager
 var _plugin_policy = null   # PluginPolicy
 var _audit_log = null       # PluginAuditLog
+var _event_broker = null    # PluginEventBroker
 
 
-func _init(p_manager = null, p_policy = null, p_audit_log = null) -> void:
+func _init(p_manager = null, p_policy = null, p_audit_log = null, p_event_broker = null) -> void:
 	_plugin_manager = p_manager
 	_plugin_policy = p_policy
 	_audit_log = p_audit_log
+	_event_broker = p_event_broker
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +39,7 @@ func get_tool_definitions() -> Array:
 		_get_plugin_restart_tool_def(),
 		_get_plugin_reload_tool_def(),
 		_get_plugin_inspect_tool_def(),
+		_get_plugin_state_tool_def(),
 	]
 
 
@@ -61,6 +64,8 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return await _handle_plugin_reload(args)
 		"minerva_plugin_inspect":
 			return _handle_plugin_inspect(args)
+		"minerva_plugin_state":
+			return _handle_plugin_state(args)
 		_:
 			return {"error": "Unknown plugin management tool: %s" % tool_name}
 
@@ -184,6 +189,23 @@ func _get_plugin_reload_tool_def() -> Dictionary:
 				"id": {
 					"type": "string",
 					"description": "The plugin ID to reload"
+				}
+			},
+			"required": ["id"]
+		}
+	}
+
+
+func _get_plugin_state_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_state",
+		"description": "Get the latest state snapshot for a running plugin. Returns the most recent state the plugin has pushed.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "The plugin ID to get state for"
 				}
 			},
 			"required": ["id"]
@@ -389,6 +411,24 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 	}
 
 
+func _handle_plugin_state(args: Dictionary) -> Dictionary:
+	var id = args.get("id", "")
+	if id.is_empty():
+		return {"error": "id is required"}
+
+	var event_broker = _get_event_broker()
+	if event_broker == null:
+		return {"error": "Plugin event broker not available"}
+
+	var state = event_broker.get_plugin_state(id)
+	return {
+		"success": true,
+		"id": id,
+		"state": state,
+		"has_state": not state.is_empty(),
+	}
+
+
 # ---------------------------------------------------------------------------
 # Private Helpers
 # ---------------------------------------------------------------------------
@@ -406,3 +446,8 @@ func _get_plugin_policy() -> Variant:
 ## Return the injected PluginAuditLog reference.
 func _get_plugin_audit_log() -> Variant:
 	return _audit_log
+
+
+## Return the injected PluginEventBroker reference.
+func _get_event_broker() -> Variant:
+	return _event_broker

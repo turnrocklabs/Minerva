@@ -99,6 +99,13 @@ var autostart: bool = false
 ## "restart when source files change" (hot reload during development).
 var auto_reload: bool = false
 
+## Event declarations from manifest. Each entry: {name: String, payload_schema: Dictionary}
+## These are top-level manifest fields — a headless plugin can emit events without a webview.
+var events: Array[Dictionary] = []
+
+## State schema from manifest. Describes the shape of the plugin's state updates.
+var state_schema: Dictionary = {}
+
 ## Current runtime state (set by PluginDB / supervisor, not persisted in manifest)
 var state: State = State.INSTALLED
 
@@ -187,6 +194,10 @@ func to_dict() -> Dictionary:
 		"autostart": autostart,
 		"auto_reload": auto_reload,
 	}
+	if not events.is_empty():
+		result["events"] = events.duplicate(true)
+	if not state_schema.is_empty():
+		result["state"] = {"schema": state_schema}
 	return result
 
 
@@ -198,6 +209,10 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.data_directory = d.get("data_directory", "")
 	def.autostart = bool(d.get("autostart", false))
 	def.auto_reload = bool(d.get("auto_reload", false))
+	for ev in d.get("events", []):
+		if ev is Dictionary:
+			def.events.append(ev.duplicate(true))
+	def.state_schema = d.get("state", {}).get("schema", {})
 	return def
 
 
@@ -282,6 +297,12 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	def.filesystem_mode = filesystem.get("mode", "none")
 	for p in filesystem.get("paths", []):
 		def.filesystem_paths.append(str(p))
+
+	# Events & State (top-level, not under ui)
+	for ev in data.get("events", []):
+		if ev is Dictionary:
+			def.events.append(ev.duplicate(true))
+	def.state_schema = data.get("state", {}).get("schema", {})
 
 	return def
 

@@ -125,6 +125,24 @@
 			}
 		}
 	],
+	"events": [
+		{"name": "obs.state_changed", "payload_schema": {"type": "object"}},
+		{"name": "obs.scene_changed", "payload_schema": {"type": "object", "properties": {"scene": {"type": "string"}}}},
+		{"name": "obs.recording_started", "payload_schema": {"type": "object"}},
+		{"name": "obs.recording_stopped", "payload_schema": {"type": "object", "properties": {"output_path": {"type": "string"}}}},
+		{"name": "obs.disconnected", "payload_schema": {"type": "object"}}
+	],
+	"state": {
+		"schema": {
+			"type": "object",
+			"properties": {
+				"connected": {"type": "boolean"},
+				"scene": {"type": "string"},
+				"recording": {"type": "boolean"},
+				"camera": {"type": "object", "properties": {"row": {"type": "string"}, "column": {"type": "string"}, "size": {"type": "string"}}}
+			}
+		}
+	},
 	"permissions": {
 		"host_capabilities": [],
 		"network": {

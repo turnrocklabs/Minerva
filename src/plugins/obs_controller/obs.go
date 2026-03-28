@@ -44,6 +44,7 @@ func (o *OBSClient) Connect(host string, port int, password string) error {
 
 	o.client = client
 	o.connected = true
+	o.StartEventListener()
 	return nil
 }
 

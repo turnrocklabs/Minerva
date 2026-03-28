@@ -5,11 +5,37 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/andreykaipov/goobs/api/requests/sceneitems"
 	"github.com/andreykaipov/goobs/api/typedefs"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var (
+	lastCameraMu  sync.RWMutex
+	lastCameraPos = map[string]any{}
+)
+
+func setLastCameraPosition(row, column, size string) {
+	lastCameraMu.Lock()
+	defer lastCameraMu.Unlock()
+	lastCameraPos = map[string]any{
+		"row":    row,
+		"column": column,
+		"size":   size,
+	}
+}
+
+func getLastCameraPosition() map[string]any {
+	lastCameraMu.RLock()
+	defer lastCameraMu.RUnlock()
+	result := make(map[string]any)
+	for k, v := range lastCameraPos {
+		result[k] = v
+	}
+	return result
+}
 
 // getCameraSource returns the configured webcam source name from the plugin config.
 func getCameraSource() string {
@@ -111,13 +137,16 @@ func setCameraPositionHandler(
 		return errorResult(fmt.Sprintf("failed to set scene item transform: %v", err)), nil, nil
 	}
 
+	setLastCameraPosition(string(row), string(col), string(size))
+	go emitCurrentState()
+
 	result := map[string]any{
-		"row":          string(row),
-		"column":       string(col),
-		"size":         string(size),
-		"position_x":   transform.PositionX,
-		"position_y":   transform.PositionY,
-		"bounds_width": transform.BoundsWidth,
+		"row":           string(row),
+		"column":        string(col),
+		"size":          string(size),
+		"position_x":    transform.PositionX,
+		"position_y":    transform.PositionY,
+		"bounds_width":  transform.BoundsWidth,
 		"bounds_height": transform.BoundsHeight,
 	}
 	data, err := json.Marshal(result)
