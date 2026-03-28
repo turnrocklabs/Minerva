@@ -22,6 +22,15 @@ const CRASH_LOOP_THRESHOLD := 3
 ## Rolling window (seconds) used for crash-loop detection.
 const CRASH_LOOP_WINDOW_SEC := 60.0
 
+## How often (seconds) to check plugin file modification times for hot reload.
+const FILE_WATCH_INTERVAL_SEC := 2.0
+
+## Seconds to wait after a file change before triggering a reload (debounce).
+const RELOAD_DEBOUNCE_SEC := 0.5
+
+## File extensions watched for hot reload.
+const WATCH_EXTENSIONS := ["py", "js", "sh", "json"]
+
 ## Mirrors of PluginDefinition.State to avoid parse-order dependency.
 ## PluginManager extends Node (parsed early); PluginDefinition extends RefCounted.
 const S_INSTALLED := 0   # S_INSTALLED
@@ -40,6 +49,7 @@ signal plugin_started(id: String)
 signal plugin_stopped(id: String)
 signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
+signal plugin_file_changed(id: String)
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +80,18 @@ var _runtime: Dictionary = {}
 ## Accumulated time since last health-check sweep.
 var _health_timer_acc: float = 0.0
 
+## Accumulated time since last file-watch sweep.
+var _file_watch_acc: float = 0.0
+
+## Per-plugin file modification time snapshots.
+## Structure: { plugin_id: { file_path: modified_time_int } }
+var _file_mtimes: Dictionary = {}
+
+## Per-plugin debounce timers awaiting reload after a file change.
+## Structure: { plugin_id: SceneTreeTimer }
+## A non-null entry means a debounce is in flight for that plugin.
+var _reload_pending: Dictionary = {}
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle (Node)
@@ -86,6 +108,11 @@ func _process(delta: float) -> void:
 	if _health_timer_acc >= HEALTH_CHECK_INTERVAL_SEC:
 		_health_timer_acc = 0.0
 		_run_health_checks()
+
+	_file_watch_acc += delta
+	if _file_watch_acc >= FILE_WATCH_INTERVAL_SEC:
+		_file_watch_acc = 0.0
+		_run_file_watch_checks()
 
 
 # ---------------------------------------------------------------------------
@@ -105,13 +132,48 @@ func install_plugin(manifest_path: String) -> Dictionary:
 		return {"error": "Failed to install plugin from manifest: %s" % manifest_path}
 
 	_ensure_runtime(def.id)
+
+	# Auto-create plugin data directory and declared filesystem paths
+	var create_result := _create_plugin_directories(def)
+	if create_result.has("error"):
+		# Don't fail the install, but log a warning
+		push_warning("[PluginManager] Warning creating directories for '%s': %s" % [def.id, create_result["error"]])
+
 	print("[PluginManager] Installed plugin '%s' v%s" % [def.id, def.version])
 	return {"ok": true, "id": def.id}
 
 
-## Stop the plugin if running, then remove it from the DB.
+## Create plugin data directories. Called on successful install.
+## Creates user://plugins/data/<plugin_id>/ and any declared filesystem_paths.
 ## Returns {"ok": true} or {"error": "..."}.
-func remove_plugin(id: String) -> Dictionary:
+func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
+	# Create base plugin data directory
+	var base_dir := "user://plugins/data".path_join(def.id)
+	var err := DirAccess.make_dir_recursive_absolute(base_dir)
+	if err != OK:
+		return {"error": "Failed to create plugin data directory '%s': %s" % [base_dir, error_string(err)]}
+
+	print("[PluginManager] Created plugin data directory: %s" % base_dir)
+
+	# Create any declared filesystem_paths
+	if def.filesystem_mode == "scoped_paths":
+		for path in def.filesystem_paths:
+			# Expand user:// to absolute path
+			var abs_path: String = ProjectSettings.globalize_path(path) if path.begins_with("user://") else path
+			err = DirAccess.make_dir_recursive_absolute(abs_path)
+			if err != OK:
+				# Log but don't fail — plugin might use paths conditionally
+				push_warning("[PluginManager] Could not create filesystem path '%s' for plugin '%s': %s" % [path, def.id, error_string(err)])
+			else:
+				print("[PluginManager] Created filesystem path: %s" % abs_path)
+
+	return {"ok": true}
+
+
+## Stop the plugin if running, then remove it from the DB.
+## If delete_data is true, also remove the plugin's data directory.
+## Returns {"ok": true} or {"error": "..."}.
+func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
@@ -125,6 +187,15 @@ func remove_plugin(id: String) -> Dictionary:
 
 	if not _db.remove(id):
 		return {"error": "Failed to remove plugin '%s' from DB" % id}
+
+	# Clean up data directory if requested
+	if delete_data:
+		var data_dir := "user://plugins/data".path_join(id)
+		var err := _delete_directory_recursive(data_dir)
+		if err != OK:
+			push_warning("[PluginManager] Could not delete data directory for '%s': %s" % [id, error_string(err)])
+		else:
+			print("[PluginManager] Deleted plugin data directory: %s" % data_dir)
 
 	print("[PluginManager] Removed plugin '%s'" % id)
 	return {"ok": true}
@@ -180,6 +251,18 @@ func start_plugin(id: String) -> Dictionary:
 	var conn := MCPServerConnection.new(def.id, "", MCPServerConnection.TransportType.STDIO)
 	conn.configure_stdio(command, resolved_args)
 
+	# Tag the connection with the plugin id so _stdio_request can pass it to the handler.
+	conn.plugin_id = id
+
+	# Wire bidirectional capability request handler so the plugin can call
+	# Minerva tools mid-execution via minerva/capability on stdout.
+	var broker = _get_capability_broker()
+	if broker != null:
+		conn.capability_request_handler = func(p_id: String, capability: String, args: Dictionary) -> Dictionary:
+			return await broker.dispatch(p_id, capability, args)
+	else:
+		push_warning("[PluginManager] No CapabilityBroker available — plugin '%s' cannot use bidirectional capabilities" % id)
+
 	var rt := _ensure_runtime(id)
 	rt["connection"] = conn
 	rt["start_time"] = Time.get_unix_time_from_system()
@@ -219,6 +302,9 @@ func stop_plugin(id: String) -> Dictionary:
 	if rt.get("stopping", false):
 		return {"ok": true}  # Re-entrant call during async stop — ignore.
 	rt["stopping"] = true
+
+	# Cancel any pending hot-reload debounce to prevent stale restart
+	_reload_pending.erase(id)
 
 	print("[PluginManager] Stopping plugin '%s'..." % id)
 
@@ -314,6 +400,13 @@ func get_audit_log():  # -> PluginAuditLog
 # Public API — bulk operations
 # ---------------------------------------------------------------------------
 
+## Enable or disable hot-reload for a plugin.
+## When enabled, the plugin is restarted automatically when files in its
+## data_directory change (2s poll, 500ms debounce).
+func set_auto_reload(id: String, enabled: bool) -> bool:
+	return _db.set_auto_reload(id, enabled)
+
+
 ## Start all plugins whose autostart flag is true.
 ## Called by Minerva on boot.
 func start_autostart_plugins() -> void:
@@ -376,6 +469,90 @@ func _run_health_checks() -> void:
 		if not alive:
 			push_warning("[PluginManager] Health check: plugin '%s' process is gone" % def.id)
 			_handle_unexpected_exit(def.id)
+
+
+# ---------------------------------------------------------------------------
+# File-watch sweep (called from _process)
+# ---------------------------------------------------------------------------
+
+## Check whether any watched files in installed plugins have been modified.
+## Emits plugin_file_changed and starts a debounce timer for auto_reload plugins.
+func _run_file_watch_checks() -> void:
+	for def in _db.get_all():
+		var plugin_dir: String = def.data_directory
+		if plugin_dir.is_empty():
+			continue
+
+		var current := _scan_plugin_files(plugin_dir)
+		if current.is_empty():
+			continue
+
+		var stored: Dictionary = _file_mtimes.get(def.id, {})
+
+		# On first scan, just store the baseline — don't trigger a reload.
+		if stored.is_empty():
+			_file_mtimes[def.id] = current
+			continue
+
+		# Compare current times to stored times.
+		var changed := false
+		for path in current:
+			if not stored.has(path) or stored[path] != current[path]:
+				changed = true
+				break
+		# Also detect deletions
+		if not changed:
+			for path in stored:
+				if not current.has(path):
+					changed = true
+					break
+
+		if changed:
+			_file_mtimes[def.id] = current
+			print("[PluginManager] Files changed for plugin '%s'" % def.id)
+			plugin_file_changed.emit(def.id)
+
+			if def.auto_reload and not _reload_pending.has(def.id):
+				# Start debounce timer — reload after RELOAD_DEBOUNCE_SEC.
+				var timer: SceneTreeTimer = Engine.get_main_loop().create_timer(RELOAD_DEBOUNCE_SEC)
+				_reload_pending[def.id] = timer
+				var id_copy: String = def.id
+				timer.timeout.connect(func(): _on_reload_debounce_expired(id_copy))
+
+
+## Called when the debounce timer fires for a plugin with auto_reload enabled.
+func _on_reload_debounce_expired(id: String) -> void:
+	_reload_pending.erase(id)
+	var def = _db.get_by_id(id)
+	if def == null or not def.auto_reload:
+		return
+	# Only reload if the plugin is currently running or in error state.
+	if def.state not in [S_RUNNING, S_STARTING, S_ERROR]:
+		return
+	print("[PluginManager] Auto-reloading plugin '%s' due to file change" % id)
+	await restart_plugin(id)
+
+
+## Return a Dictionary of { absolute_path: modified_time_int } for all watched
+## files (*.py, *.js, *.sh, *.json) found directly in plugin_dir.
+## Does not recurse into sub-directories.
+func _scan_plugin_files(plugin_dir: String) -> Dictionary:
+	var result: Dictionary = {}
+	var dir := DirAccess.open(plugin_dir)
+	if dir == null:
+		return result
+
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if not dir.current_is_dir():
+			var ext := file_name.get_extension().to_lower()
+			if ext in WATCH_EXTENSIONS:
+				var full_path := plugin_dir.path_join(file_name)
+				result[full_path] = FileAccess.get_modified_time(full_path)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return result
 
 
 # ---------------------------------------------------------------------------
@@ -461,6 +638,49 @@ func _cleanup_connection(id: String) -> void:
 		conn.disconnect_from_server()
 
 	rt["connection"] = null
+
+
+## Delete a directory and all its contents recursively.
+## Returns OK on success, or an error code.
+func _delete_directory_recursive(path: String) -> Error:
+	var abs_path := ProjectSettings.globalize_path(path) if path.begins_with("user://") else path
+	var dir := DirAccess.open(abs_path)
+	if dir == null:
+		# Maybe it's a file or doesn't exist
+		var parent := DirAccess.open(abs_path.get_base_dir())
+		if parent != null:
+			return parent.remove(abs_path)
+		return DirAccess.get_open_error()
+	# Remove all files and subdirectories first
+	dir.list_dir_begin()
+	var entry := dir.get_next()
+	while not entry.is_empty():
+		if entry == "." or entry == "..":
+			entry = dir.get_next()
+			continue
+		var full := abs_path.path_join(entry)
+		if dir.current_is_dir():
+			_delete_directory_recursive(full)
+		else:
+			dir.remove(full)
+		entry = dir.get_next()
+	dir.list_dir_end()
+	# Now remove the empty directory itself
+	var parent := DirAccess.open(abs_path.get_base_dir())
+	if parent != null:
+		return parent.remove(abs_path)
+	return OK
+
+
+## Return the CapabilityBroker from SingletonObject, or null if unavailable.
+func _get_capability_broker():
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	var so = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	return so.get("plugin_capability_broker") if "plugin_capability_broker" in so else null
 
 
 ## Return the runtime Dictionary for `id`, creating it if absent.

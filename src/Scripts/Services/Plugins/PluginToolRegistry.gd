@@ -62,6 +62,16 @@ var _plugin_by_tool: Dictionary = {}
 ## register_plugin_tools() can reject conflicts without importing MinervaMCPServer.
 var _builtin_tool_names: Dictionary = {}
 
+## Stderr toast rate limiting: plugin_id -> { window_start: float, count: int }
+## Prevents log spam from flooding toasts — max 5 toasts per plugin per 30 seconds
+var _stderr_toast_counts: Dictionary = {}
+
+## Stderr toast rate limit configuration (per plugin, fixed)
+var _stderr_toast_limit := {
+	"max_toasts": 5,
+	"window_seconds": 30.0,
+}
+
 
 # ---------------------------------------------------------------------------
 # Construction
@@ -320,6 +330,7 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 	# --- Step 6: drain stderr to Minerva's error display ---
 	# Plugin stderr is diagnostic output, not tool results. Route it to
 	# Minerva's toast system so the user sees it, not the LLM.
+	# BUT apply rate limiting to prevent log spam from flooding the UI.
 	var stderr_output := _drain_plugin_stderr(plugin_id)
 	if not stderr_output.is_empty():
 		# Always log to audit
@@ -329,10 +340,19 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 		var has_error := stderr_output.contains("ERROR") or stderr_output.contains("CRITICAL")
 		var has_warning := stderr_output.contains("WARNING") or stderr_output.contains("WARN")
 		if has_error or has_warning:
-			var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
-			if so and so.has_method("create_toast_notification"):
-				var toast_type: int = 2 if has_error else 1  # ERROR=2, WARNING=1
-				so.create_toast_notification("[Plugin:%s] %s" % [plugin_id, stderr_output], toast_type)
+			# Check if we can show a toast for this plugin
+			if _check_stderr_toast_rate_limit(plugin_id):
+				var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
+				if so and so.has_method("create_toast_notification"):
+					var toast_type: int = 2 if has_error else 1  # ERROR=2, WARNING=1
+					so.create_toast_notification("[Plugin:%s] %s" % [plugin_id, stderr_output], toast_type)
+			else:
+				# Toast rate limit exceeded — logged to audit but not shown to user
+				if audit_log != null:
+					audit_log.log_event(plugin_id, "stderr_toast_dropped", {
+						"reason": "rate_limit_exceeded",
+						"output_preview": stderr_output.left(100)
+					})
 
 	return result
 
@@ -387,7 +407,7 @@ func _process_capability_requests(plugin_id: String, tool_name: String, result: 
 				"capability": capability,
 			})
 
-		var broker_result: Dictionary = capability_broker.dispatch(plugin_id, capability, cap_args)
+		var broker_result: Dictionary = await capability_broker.dispatch(plugin_id, capability, cap_args)
 		broker_results.append({
 			"capability": capability,
 			"result": broker_result,
@@ -424,6 +444,39 @@ func _drain_plugin_stderr(plugin_id: String) -> String:
 				lines += "\n"
 			lines += line
 	return lines
+
+
+## Check if a stderr toast can be displayed for this plugin.
+## Returns true if the toast is within the rate limit, false if exceeding.
+## Uses a sliding window: max 5 toasts per 30 seconds per plugin.
+func _check_stderr_toast_rate_limit(plugin_id: String) -> bool:
+	var current_time := Time.get_ticks_msec() / 1000.0
+
+	# Initialize plugin entry if not present
+	if not _stderr_toast_counts.has(plugin_id):
+		_stderr_toast_counts[plugin_id] = {
+			"window_start": current_time,
+			"count": 0,
+		}
+
+	var entry: Dictionary = _stderr_toast_counts[plugin_id]
+	var window_start: float = entry["window_start"]
+	var count: int = entry["count"]
+
+	# Check if window has expired
+	if current_time - window_start > _stderr_toast_limit["window_seconds"]:
+		# Window reset: new window starts now
+		entry["window_start"] = current_time
+		entry["count"] = 1
+		return true
+
+	# Check if we've exceeded the limit
+	if count >= _stderr_toast_limit["max_toasts"]:
+		return false
+
+	# Increment counter and allow
+	entry["count"] = count + 1
+	return true
 
 
 # ---------------------------------------------------------------------------

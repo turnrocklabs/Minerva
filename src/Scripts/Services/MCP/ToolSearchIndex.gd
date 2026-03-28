@@ -49,7 +49,8 @@ func search(query: String, category: String = "", limit: int = 5) -> Array[Dicti
 	if clean_query.is_empty() or clean_query == "*":
 		var results: Array[Dictionary] = []
 		for name in _tool_meta:
-			if not category.is_empty() and _tool_meta[name].tool_set != category:
+			var ts: String = _tool_meta[name].tool_set
+			if not category.is_empty() and not ts.is_empty() and ts != category:
 				continue
 			results.append(_format_result(name))
 			if results.size() >= limit:
@@ -85,12 +86,14 @@ func search(query: String, category: String = "", limit: int = 5) -> Array[Dicti
 				for tool_name in _keyword_index[indexed_word]:
 					scores[tool_name] = scores.get(tool_name, 0) + 1
 
-	# Filter by category if specified
+	# Filter by category if specified (tools with empty tool_set are universal — match any category)
 	if not category.is_empty():
 		var filtered: Dictionary = {}
 		for tool_name in scores:
-			if _tool_meta.has(tool_name) and _tool_meta[tool_name].tool_set == category:
-				filtered[tool_name] = scores[tool_name]
+			if _tool_meta.has(tool_name):
+				var ts: String = _tool_meta[tool_name].tool_set
+				if ts.is_empty() or ts == category:
+					filtered[tool_name] = scores[tool_name]
 		scores = filtered
 
 	# Sort by score descending

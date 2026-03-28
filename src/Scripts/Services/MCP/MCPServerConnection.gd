@@ -62,6 +62,14 @@ var _request_id_counter: int = 0
 ## MCP session ID (for HTTP transport)
 var _session_id: String = ""
 
+## Optional handler for plugin-initiated capability requests (bidirectional channel).
+## Signature: func(plugin_id: String, capability: String, args: Dictionary) -> Dictionary
+## Set by PluginManager after creating the connection for a plugin.
+var capability_request_handler: Callable = Callable()
+
+## Plugin ID associated with this connection (set when used as a plugin connection).
+var plugin_id: String = ""
+
 
 func _init(name: String = "", url: String = "", type: TransportType = TransportType.HTTP) -> void:
 	server_name = name
@@ -663,7 +671,11 @@ func _next_request_id() -> String:
 	return str(_request_id_counter)
 
 
-## Send a JSON-RPC request over STDIO and wait for response
+## Send a JSON-RPC request over STDIO and wait for response.
+## Handles interleaved plugin-initiated capability requests (bidirectional channel):
+## while waiting for our response, the plugin may send minerva/capability requests
+## on stdout. We dispatch them through capability_request_handler and write results
+## back on stdin before continuing to poll for our original response.
 func _stdio_request(request: Dictionary) -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
 		print("[MCP STDIO] Error: Subprocess not running")
@@ -702,22 +714,66 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 
 			var json := JSON.new()
 			if json.parse(line) == OK and json.data is Dictionary:
-				var response: Dictionary = json.data
+				var msg: Dictionary = json.data
+
+				# Bidirectional channel: detect plugin-initiated capability requests.
+				# A plugin request has a "method" field and is NOT a response to our
+				# pending request (i.e., its id doesn't match request_id, or it has
+				# no matching id in _pending_requests). We specifically handle
+				# "minerva/capability" method.
+				if msg.has("method") and msg.get("method") == "minerva/capability":
+					await _handle_plugin_capability_request(msg)
+					continue
 
 				# Check if this is our response
-				if str(response.get("id", "")) == request_id:
-					if response.has("error"):
-						var err = response.get("error", {})
+				if str(msg.get("id", "")) == request_id:
+					if msg.has("error"):
+						var err = msg.get("error", {})
 						if err is Dictionary:
 							return {"error": err.get("message", "Unknown error")}
 						return {"error": str(err)}
-					return response
+					return msg
 
 		await Engine.get_main_loop().create_timer(poll_interval).timeout
 		elapsed += poll_interval
 
 	print("[MCP STDIO] Error: Request timed out after %.1fs" % timeout)
 	return {"error": "STDIO request timed out"}
+
+
+## Handle a plugin-initiated minerva/capability request received mid-execution.
+## Dispatches through capability_request_handler (if set), writes the result
+## back to the plugin's stdin, and returns.
+func _handle_plugin_capability_request(msg: Dictionary) -> void:
+	var cap_id = msg.get("id", null)
+	var params: Dictionary = msg.get("params", {})
+	var capability: String = str(params.get("capability", ""))
+	var args: Dictionary = params.get("args", {})
+
+	print("[MCP STDIO] Plugin capability request: %s (id=%s)" % [capability, str(cap_id)])
+
+	var result_payload: Dictionary
+	if capability_request_handler.is_valid():
+		var broker_result: Dictionary = await capability_request_handler.call(plugin_id, capability, args)
+		result_payload = broker_result
+	else:
+		push_warning("[MCP STDIO] No capability_request_handler set — denying '%s' for plugin '%s'" % [capability, plugin_id])
+		result_payload = {
+			"success": false,
+			"error_code": "no_handler",
+			"error_message": "No capability request handler configured",
+		}
+
+	# Send JSON-RPC result back to plugin stdin
+	var response: Dictionary = {
+		"jsonrpc": "2.0",
+		"id": cap_id,
+		"result": result_payload,
+	}
+	var response_json := JSON.stringify(response) + "\n"
+	print("[MCP STDIO] Writing capability result back: %s" % response_json.left(200))
+	if not _subprocess.write_data(response_json):
+		push_warning("[MCP STDIO] Failed to write capability result back to plugin '%s'" % plugin_id)
 
 
 ## STDIO transport: Call a tool

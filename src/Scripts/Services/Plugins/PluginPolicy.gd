@@ -34,6 +34,16 @@ var audit_log: PluginAuditLog = null
 ## In-memory store: plugin_id -> Array[String] of granted capability strings
 var _grants: Dictionary = {}
 
+## Rate limit tracking: plugin_id -> { capability -> { window_start: float, count: int, max_calls: int, window_seconds: float } }
+## Default: 60 calls per 60 seconds per capability per plugin
+var _rate_limits: Dictionary = {}
+
+## Default rate limit config (can be overridden per plugin/capability)
+var _default_rate_limit := {
+	"max_calls": 60,
+	"window_seconds": 60.0,
+}
+
 
 func _init(p_plugin_db: PluginDB = null, p_audit_log: PluginAuditLog = null) -> void:
 	plugin_db = p_plugin_db
@@ -126,17 +136,166 @@ func get_requested_capabilities(plugin_id: String) -> Array:
 ##
 ## Returns {"allowed": true} on success.
 ## Returns {"allowed": false, "error_code": "capability_not_granted", ...} on denial.
+## Returns {"allowed": false, "error_code": "rate_limit_exceeded", ...} if rate limited.
 ##
+## Supports mcp.proxy pattern matching:
+##   - Exact: granted "mcp.proxy:minerva_create_note" matches request "mcp.proxy:minerva_create_note"
+##   - Wildcard: granted "mcp.proxy:minerva_note_*" matches request "mcp.proxy:minerva_create_note"
+##   - Universal: granted "mcp.proxy:*" matches any mcp.proxy:<tool> request
+##
+## Rate limiting is applied AFTER the grant check: if granted but rate-limited, returns rate_limit_exceeded.
 ## Always emits the policy_decision signal and logs to audit_log if set.
 func check_capability(plugin_id: String, capability: String) -> Dictionary:
 	var granted := is_capability_granted(plugin_id, capability)
 
+	# If not an exact match, check mcp.proxy wildcard patterns
+	if not granted and capability.begins_with("mcp.proxy:"):
+		granted = _check_mcp_proxy_wildcards(plugin_id, capability)
+
 	if granted:
-		_record_decision(plugin_id, capability, true, "granted")
-		return {"allowed": true}
+		# Capability is granted. Now check rate limit.
+		var rate_limit_result := check_rate_limit(plugin_id, capability)
+		if rate_limit_result.get("allowed", false):
+			_record_decision(plugin_id, capability, true, "granted")
+			return {"allowed": true}
+		else:
+			# Rate limit exceeded
+			_record_decision(plugin_id, capability, false, "rate_limit_exceeded")
+			return rate_limit_result
 	else:
 		_record_decision(plugin_id, capability, false, "not_granted")
 		return PluginErrors.capability_not_granted(plugin_id, capability)
+
+
+## Check whether a plugin has exceeded its rate limit for a specific capability.
+##
+## Uses a sliding window counter: if current_time - window_start > window_seconds,
+## the window resets. Otherwise, increments the counter.
+##
+## Returns {"allowed": true} on success.
+## Returns PluginErrors.rate_limit_exceeded() if the limit is exceeded.
+##
+## Call this AFTER check_capability() returns allowed=true, to enforce that
+## the plugin is both granted AND not rate-limited.
+func check_rate_limit(plugin_id: String, capability: String) -> Dictionary:
+	var current_time := Time.get_ticks_msec() / 1000.0
+
+	# Initialize plugin entry if not present
+	if not _rate_limits.has(plugin_id):
+		_rate_limits[plugin_id] = {}
+
+	var plugin_limits: Dictionary = _rate_limits[plugin_id]
+
+	# Initialize capability entry if not present (use defaults)
+	if not plugin_limits.has(capability):
+		plugin_limits[capability] = {
+			"window_start": current_time,
+			"count": 0,
+			"max_calls": _default_rate_limit["max_calls"],
+			"window_seconds": _default_rate_limit["window_seconds"],
+		}
+
+	var limit_entry: Dictionary = plugin_limits[capability]
+	var window_start: float = limit_entry["window_start"]
+	var count: int = limit_entry["count"]
+	var max_calls: int = limit_entry["max_calls"]
+	var window_seconds: float = limit_entry["window_seconds"]
+
+	# Check if window has expired
+	if current_time - window_start > window_seconds:
+		# Window reset: new window starts now
+		limit_entry["window_start"] = current_time
+		limit_entry["count"] = 1
+		_record_rate_limit_decision(plugin_id, capability, true, "allowed")
+		return {"allowed": true}
+
+	# Check if we've exceeded the limit
+	if count >= max_calls:
+		_record_rate_limit_decision(plugin_id, capability, false, "rate_limit_exceeded")
+		return PluginErrors.rate_limit_exceeded(plugin_id, capability)
+
+	# Increment counter and allow
+	limit_entry["count"] = count + 1
+	_record_rate_limit_decision(plugin_id, capability, true, "allowed")
+	return {"allowed": true}
+
+
+## Set a custom rate limit for a specific plugin and capability.
+## max_calls: maximum number of calls allowed in the window
+## window_seconds: duration of the sliding window in seconds
+## If the plugin/capability does not yet have tracking data, it is initialized.
+func set_rate_limit(plugin_id: String, capability: String, max_calls: int, window_seconds: float) -> void:
+	if plugin_id.is_empty() or capability.is_empty():
+		push_warning("[PluginPolicy] set_rate_limit: empty plugin_id or capability")
+		return
+
+	if max_calls < 1:
+		push_warning("[PluginPolicy] set_rate_limit: max_calls must be >= 1")
+		return
+
+	if window_seconds < 0.1:
+		push_warning("[PluginPolicy] set_rate_limit: window_seconds must be >= 0.1")
+		return
+
+	if not _rate_limits.has(plugin_id):
+		_rate_limits[plugin_id] = {}
+
+	var plugin_limits: Dictionary = _rate_limits[plugin_id]
+	var current_time := Time.get_ticks_msec() / 1000.0
+
+	# Initialize or update
+	if not plugin_limits.has(capability):
+		plugin_limits[capability] = {
+			"window_start": current_time,
+			"count": 0,
+			"max_calls": max_calls,
+			"window_seconds": window_seconds,
+		}
+	else:
+		# Update limits (preserve current window progress)
+		plugin_limits[capability]["max_calls"] = max_calls
+		plugin_limits[capability]["window_seconds"] = window_seconds
+
+	print("[PluginPolicy] Set rate limit for '%s' / '%s': %d calls per %.1f seconds" % [
+		plugin_id, capability, max_calls, window_seconds
+	])
+
+	if audit_log != null:
+		audit_log.log_event(plugin_id, "rate_limit_set", {
+			"capability": capability,
+			"max_calls": max_calls,
+			"window_seconds": window_seconds,
+		})
+
+
+## Get the current rate limit configuration for a plugin and capability.
+## Returns a Dictionary with keys: max_calls, window_seconds, current_count, window_start
+## If no custom limit is set, returns the default limits.
+func get_rate_limit(plugin_id: String, capability: String) -> Dictionary:
+	if not _rate_limits.has(plugin_id):
+		return {
+			"max_calls": _default_rate_limit["max_calls"],
+			"window_seconds": _default_rate_limit["window_seconds"],
+			"current_count": 0,
+			"window_start": 0.0,
+		}
+
+	var plugin_limits: Dictionary = _rate_limits[plugin_id]
+	if not plugin_limits.has(capability):
+		return {
+			"max_calls": _default_rate_limit["max_calls"],
+			"window_seconds": _default_rate_limit["window_seconds"],
+			"current_count": 0,
+			"window_start": 0.0,
+		}
+
+	var entry: Dictionary = plugin_limits[capability]
+	return {
+		"max_calls": entry.get("max_calls", _default_rate_limit["max_calls"]),
+		"window_seconds": entry.get("window_seconds", _default_rate_limit["window_seconds"]),
+		"current_count": entry.get("count", 0),
+		"window_start": entry.get("window_start", 0.0),
+	}
 
 
 ## Check whether a plugin is allowed to make a specific tool call.
@@ -234,11 +393,63 @@ func _ensure_data_dir() -> void:
 # Private helpers
 # ---------------------------------------------------------------------------
 
+## Check if any granted mcp.proxy wildcard pattern matches the requested capability.
+## The requested capability must be in the form "mcp.proxy:<tool_name>".
+## Granted patterns can be:
+##   "mcp.proxy:*" — matches any mcp.proxy tool
+##   "mcp.proxy:minerva_note_*" — matches any tool starting with "minerva_note_"
+##   "mcp.proxy:minerva_create_note" — exact match (handled by is_capability_granted)
+func _check_mcp_proxy_wildcards(plugin_id: String, capability: String) -> bool:
+	if not _grants.has(plugin_id):
+		return false
+
+	var requested_tool: String = capability.substr("mcp.proxy:".length())
+	if requested_tool.is_empty():
+		return false
+	var caps: Array = _grants[plugin_id]
+
+	for granted_cap in caps:
+		var gc: String = str(granted_cap)
+		if not gc.begins_with("mcp.proxy:"):
+			continue
+
+		var granted_pattern: String = gc.substr("mcp.proxy:".length())
+
+		# Universal wildcard
+		if granted_pattern == "*":
+			return true
+
+		# Prefix wildcard: "minerva_note_*" matches "minerva_create_note" if
+		# the tool starts with the prefix before the *
+		if granted_pattern.ends_with("*"):
+			var prefix: String = granted_pattern.left(granted_pattern.length() - 1)
+			if requested_tool.begins_with(prefix):
+				return true
+
+		# Exact match already handled by is_capability_granted, but check here too
+		# in case the grant was stored differently
+		if granted_pattern == requested_tool:
+			return true
+
+	return false
+
+
 func _record_decision(plugin_id: String, capability: String, allowed: bool, reason: String) -> void:
 	policy_decision.emit(plugin_id, capability, allowed, reason)
 	if audit_log != null:
 		var event_type := PluginAuditLog.EVENT_POLICY_ALLOW if allowed else PluginAuditLog.EVENT_POLICY_DENY
 		audit_log.log_event(plugin_id, event_type, {
+			"capability": capability,
+			"reason": reason,
+		})
+
+
+func _record_rate_limit_decision(plugin_id: String, capability: String, allowed: bool, reason: String) -> void:
+	## Log rate limit decision to audit log if available.
+	## Does not emit policy_decision signal (that is reserved for grant/deny decisions).
+	if audit_log != null:
+		var event_type := PluginAuditLog.EVENT_POLICY_ALLOW if allowed else PluginAuditLog.EVENT_POLICY_DENY
+		audit_log.log_event(plugin_id, "rate_limit_check", {
 			"capability": capability,
 			"reason": reason,
 		})

@@ -544,14 +544,11 @@ func initialize_plugins() -> void:
 	if mcp_manager and mcp_manager.tool_registry:
 		plugin_tool_registry.set_builtin_tool_names(mcp_manager.tool_registry.keys())
 
-	# Register tools for any already-installed plugins
-	for def in plugin_manager.get_db().get_all():
-		plugin_tool_registry.register_plugin_tools(def.id, def.tools)
+	# NOTE: initial tool registration for already-installed plugins happens in
+	# _wire_plugin_tools_to_mcp() AFTER the signal is connected, so tools
+	# propagate to the search index and tool_registry correctly.
 
 	print("[Plugins] Plugin system initialized (%d plugin(s) in DB)" % plugin_manager.get_db().get_all().size())
-
-	# Autostart plugins (like SCM services with auto-start flag)
-	plugin_manager.start_autostart_plugins()
 
 
 ## Wire plugin tool registry signals to MinervaMCPServer's tool_registry and search index.
@@ -573,8 +570,8 @@ func _wire_plugin_tools_to_mcp() -> void:
 				tool_def.name = entry["name"]
 				tool_def.description = entry["description"]
 				tool_def.input_schema = entry["input_schema"]
-				tool_def.server_name = "plugin:%s" % p_plugin_id
-				tool_def.tool_set = "plugin"
+				tool_def.server_name = "minerva"  # Must be "minerva" to pass discovery filters
+				tool_def.tool_set = ""  # Empty = default set, visible in all presets
 				mcp_manager.tool_registry[entry["name"]] = tool_def
 				minerva_server.tool_search_index.register_tool(
 					entry["name"], entry["description"],
@@ -593,14 +590,15 @@ func _wire_plugin_tools_to_mcp() -> void:
 				mcp_manager.tool_registry.erase(tool_name)
 	)
 
-	# Register the 7 plugin management MCP tools (minerva_plugin_list, etc.)
+	# Register plugin management MCP tools (minerva_plugin_list, etc.)
+	# Empty tool_set = universal — appears in any category search
 	for tool_def_dict in plugin_mcp_tools.get_tool_definitions():
 		var tool_def = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd").new()
 		tool_def.name = tool_def_dict["name"]
 		tool_def.description = tool_def_dict["description"]
 		tool_def.input_schema = tool_def_dict["input_schema"]
 		tool_def.server_name = "minerva"
-		tool_def.tool_set = "plugin"
+		tool_def.tool_set = ""
 		mcp_manager.tool_registry[tool_def_dict["name"]] = tool_def
 		minerva_server.tool_search_index.register_tool(
 			tool_def_dict["name"], tool_def_dict["description"],
@@ -608,10 +606,18 @@ func _wire_plugin_tools_to_mcp() -> void:
 				"name": tool_def_dict["name"], "description": tool_def_dict["description"],
 				"input_schema": tool_def_dict["input_schema"]
 			},
-			"plugin"
+			""
 		)
 
 	print("[Plugins] Wired plugin tools to MinervaMCPServer (%d management tools registered)" % plugin_mcp_tools.get_tool_definitions().size())
+
+	# Now that signals are connected, register tools for already-installed plugins
+	# (signal fires → tools propagate to search index + tool_registry)
+	for def in plugin_manager.get_db().get_all():
+		plugin_tool_registry.register_plugin_tools(def.id, def.tools)
+
+	# Autostart plugins (like SCM services with auto-start flag)
+	plugin_manager.start_autostart_plugins()
 
 
 ## Shutdown all running plugins. Call on application exit.

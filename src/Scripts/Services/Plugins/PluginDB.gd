@@ -129,6 +129,18 @@ func set_autostart(plugin_id: String, enabled: bool) -> bool:
 	return true
 
 
+## Set the auto_reload flag for a plugin and persist the change.
+## When true, PluginManager will restart this plugin automatically when
+## its source files change (hot reload for development).
+func set_auto_reload(plugin_id: String, enabled: bool) -> bool:
+	var def: PluginDefinition = _plugins.get(plugin_id, null)
+	if def == null:
+		return false
+	def.auto_reload = enabled
+	_save()
+	return true
+
+
 # ---------------------------------------------------------------------------
 # Persistence
 # ---------------------------------------------------------------------------

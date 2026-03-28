@@ -22,6 +22,7 @@ Manual test:
 import sys
 import json
 import logging
+import itertools
 
 # Stderr is separate from stdout — safe for logging
 logging.basicConfig(
@@ -39,6 +40,9 @@ log = logging.getLogger(__name__)
 PROTOCOL_VERSION = "2024-11-05"
 SERVER_NAME = "notes_helper"
 SERVER_VERSION = "0.1.0"
+
+# Counter for generating unique capability request IDs.
+_cap_id_counter = itertools.count(1)
 
 TOOL_CREATE_SUMMARY = {
     "name": "minerva_notes_helper_create_summary",
@@ -111,6 +115,77 @@ def summarize_text(text: str, max_length: int = 50) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Bidirectional capability channel
+# ---------------------------------------------------------------------------
+
+
+def request_capability(capability: str, args: dict) -> dict:
+    """
+    Send a minerva/capability request to Minerva on stdout and block waiting
+    for the response on stdin.
+
+    This implements the bidirectional stdio channel: while Minerva is waiting
+    for our tool-call response, we can send capability requests upstream.
+    Minerva detects the "method" field, dispatches through CapabilityBroker,
+    and writes the JSON-RPC result back on our stdin.
+
+    Returns the result dict from Minerva, or {"success": False, "error": "..."}
+    on failure.
+    """
+    cap_id = f"cap-{next(_cap_id_counter)}"
+    request = {
+        "jsonrpc": "2.0",
+        "id": cap_id,
+        "method": "minerva/capability",
+        "params": {
+            "capability": capability,
+            "args": args,
+        },
+    }
+    log.info("Sending capability request: %s (id=%s)", capability, cap_id)
+    # Send on stdout — Minerva's _stdio_request loop will intercept this.
+    print(json.dumps(request, separators=(",", ":")), flush=True)
+
+    # Read lines from stdin until we get the matching response.
+    # IMPORTANT: use readline(), not the file iterator — Python's file iterator
+    # uses a separate read-ahead buffer that conflicts with readline() in _iter_lines.
+    while True:
+        raw_line = sys.stdin.readline()
+        if not raw_line:
+            break  # EOF
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            log.warning("Received invalid JSON while waiting for capability response: %s", line[:200])
+            continue
+
+        if str(msg.get("id", "")) == cap_id:
+            if "error" in msg:
+                err = msg["error"]
+                log.error("Capability request '%s' failed: %s", capability, err)
+                return {"success": False, "error": str(err)}
+            result = msg.get("result", {})
+            log.info("Capability request '%s' succeeded: %s", capability, str(result)[:200])
+            return result
+
+        # This line is for the outer MCP dispatch loop — push it back.
+        # We can't unread from stdin, so we queue it for re-processing.
+        log.warning("Unexpected message while waiting for cap %s: %s", cap_id, line[:200])
+        _pending_stdin_lines.append(line)
+
+    # stdin closed — Minerva is gone
+    log.error("stdin closed while waiting for capability response (id=%s)", cap_id)
+    return {"success": False, "error": "stdin closed"}
+
+
+# Lines read out of order during capability request (dequeued by main loop).
+_pending_stdin_lines: list[str] = []
+
+
+# ---------------------------------------------------------------------------
 # JSON-RPC handlers
 # ---------------------------------------------------------------------------
 
@@ -158,23 +233,25 @@ def handle_tools_call(params: dict, req_id) -> dict:
         summary = summarize_text(text, max_length)
         log.info("Summary: %d words, truncated=%s", len(summary.split()), len(text.split()) > max_length)
 
+        # Bidirectional channel: request Minerva to create a note mid-execution.
+        # Minerva's _stdio_request loop intercepts minerva/capability messages,
+        # dispatches through CapabilityBroker, and writes the result back here.
+        note_result = request_capability(
+            "mcp.proxy:minerva_create_note",
+            {
+                "title": "Summary",
+                "content": summary,
+            },
+        )
+        log.info("Note creation result: %s", str(note_result)[:200])
+
         result_payload = {
             "summary": summary,
             "original_length_words": len(text.split()) if text.strip() else 0,
             "summary_length_words": len(summary.split()) if summary.strip() else 0,
             "truncated": len(text.split()) > max_length if text.strip() else False,
-            # Request Minerva to create a note with the summary.
-            # Minerva's CapabilityBroker will check policy (notes.create must be
-            # granted) and dispatch to the host note creation code.
-            "capability_requests": [
-                {
-                    "capability": "notes.create",
-                    "args": {
-                        "title": "Summary",
-                        "content": summary,
-                    },
-                }
-            ],
+            "note_created": note_result.get("success", False),
+            "note_result": note_result,
         }
 
         return {
@@ -283,13 +360,29 @@ def _send(obj: dict) -> None:
     print(line, flush=True)
 
 
+def _iter_lines():
+    """
+    Yield lines for the main dispatch loop, draining _pending_stdin_lines
+    (messages re-queued during a capability request round-trip) before
+    reading from sys.stdin.
+    """
+    while True:
+        if _pending_stdin_lines:
+            yield _pending_stdin_lines.pop(0)
+        else:
+            raw = sys.stdin.readline()
+            if not raw:
+                break  # EOF
+            yield raw.rstrip("\n")
+
+
 def main() -> None:
     # CRITICAL: stdout must be line-buffered for stdio MCP transport.
     # Python defaults to block-buffering when stdout is not a tty.
     sys.stdout.reconfigure(line_buffering=True)
 
-    for raw_line in sys.stdin:
-        line = raw_line.strip()
+    for line in _iter_lines():
+        line = line.strip()
         if not line:
             continue
 

@@ -49,7 +49,7 @@
 		}
 	],
 	"permissions": {
-		"host_capabilities": ["notes.create"],
+		"host_capabilities": ["mcp.proxy:minerva_create_note"],
 		"network": {
 			"mode": "none"
 		},

@@ -25,6 +25,9 @@ var _remove_confirm: ConfirmationDialog = null
 ## Pending plugin id for removal confirmation.
 var _pending_remove_id: String = ""
 
+## Checkbox to delete plugin data directory on removal.
+var _remove_delete_data_check: CheckButton = null
+
 
 # ---------------------------------------------------------------------------
 # UI References — left pane
@@ -50,7 +53,10 @@ var _detail_uptime_label: Label = null
 var _start_button: Button = null
 var _stop_button: Button = null
 var _restart_button: Button = null
+var _reload_button: Button = null
 var _autostart_check: CheckButton = null
+var _auto_reload_check: CheckButton = null
+var _files_changed_label: Label = null
 var _remove_button: Button = null
 
 
@@ -254,7 +260,7 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_detail_uptime_label.text = "-"
 	status_row.add_child(_detail_uptime_label)
 
-	# Control buttons
+	# Control buttons — row 1: Start / Stop / Restart / Reload
 	var btn_row := HBoxContainer.new()
 	parent.add_child(btn_row)
 
@@ -273,11 +279,11 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_restart_button.pressed.connect(_on_restart_pressed)
 	btn_row.add_child(_restart_button)
 
-	_autostart_check = CheckButton.new()
-	_autostart_check.text = "Auto-start"
-	_autostart_check.tooltip_text = "Start this plugin automatically when Minerva launches"
-	_autostart_check.toggled.connect(_on_autostart_toggled)
-	btn_row.add_child(_autostart_check)
+	_reload_button = Button.new()
+	_reload_button.text = "Reload"
+	_reload_button.tooltip_text = "Kill, recompile/reinitialise, and restart the plugin to pick up code changes"
+	_reload_button.pressed.connect(_on_reload_pressed)
+	btn_row.add_child(_reload_button)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -288,6 +294,29 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_remove_button.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 	_remove_button.pressed.connect(_on_remove_pressed)
 	btn_row.add_child(_remove_button)
+
+	# Control toggles — row 2: Auto-start / Auto-reload / files-changed indicator
+	var toggle_row := HBoxContainer.new()
+	parent.add_child(toggle_row)
+
+	_autostart_check = CheckButton.new()
+	_autostart_check.text = "Auto-start"
+	_autostart_check.tooltip_text = "Start this plugin automatically when Minerva launches"
+	_autostart_check.toggled.connect(_on_autostart_toggled)
+	toggle_row.add_child(_autostart_check)
+
+	_auto_reload_check = CheckButton.new()
+	_auto_reload_check.text = "Auto-reload"
+	_auto_reload_check.tooltip_text = "Automatically reload this plugin when its source files change (hot reload)"
+	_auto_reload_check.toggled.connect(_on_auto_reload_toggled)
+	toggle_row.add_child(_auto_reload_check)
+
+	_files_changed_label = Label.new()
+	_files_changed_label.text = "● files changed"
+	_files_changed_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.1))
+	_files_changed_label.tooltip_text = "Source files have changed. Click 'Reload' to pick up changes."
+	_files_changed_label.visible = false
+	toggle_row.add_child(_files_changed_label)
 
 
 func _build_caps_section(parent: VBoxContainer) -> void:
@@ -390,6 +419,8 @@ func _connect_signals() -> void:
 		pm.plugin_stopped.connect(_on_plugin_event)
 	if not pm.plugin_crashed.is_connected(_on_plugin_event):
 		pm.plugin_crashed.connect(_on_plugin_event)
+	if not pm.plugin_file_changed.is_connected(_on_plugin_file_changed):
+		pm.plugin_file_changed.connect(_on_plugin_file_changed)
 
 	if SingletonObject.plugin_audit_log:
 		var al: PluginAuditLog = SingletonObject.plugin_audit_log
@@ -410,6 +441,8 @@ func _disconnect_signals() -> void:
 		pm.plugin_stopped.disconnect(_on_plugin_event)
 	if pm.plugin_crashed.is_connected(_on_plugin_event):
 		pm.plugin_crashed.disconnect(_on_plugin_event)
+	if pm.plugin_file_changed.is_connected(_on_plugin_file_changed):
+		pm.plugin_file_changed.disconnect(_on_plugin_file_changed)
 
 	if SingletonObject.plugin_audit_log:
 		var al: PluginAuditLog = SingletonObject.plugin_audit_log
@@ -507,10 +540,13 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_stop_button.disabled = not (is_running or is_starting)
 	_restart_button.disabled = not (is_running or is_starting)
 
-	# Autostart toggle — reflect current DB state without re-triggering the signal
+	# Autostart / auto-reload toggles — reflect current DB state without re-triggering signals
 	var def = pm.get_db().get_by_id(plugin_id)
-	if def != null and _autostart_check != null:
-		_autostart_check.set_pressed_no_signal(def.autostart)
+	if def != null:
+		if _autostart_check != null:
+			_autostart_check.set_pressed_no_signal(def.autostart)
+		if _auto_reload_check != null:
+			_auto_reload_check.set_pressed_no_signal(def.auto_reload)
 
 	# Capabilities
 	_populate_capabilities(plugin_id)
@@ -547,7 +583,12 @@ func _populate_capabilities(plugin_id: String) -> void:
 		_caps_container.add_child(row)
 
 		var toggle := CheckButton.new()
-		toggle.text = cap
+		# Display mcp.proxy capabilities with the prefix stripped for readability
+		var display_name: String = cap
+		if cap.begins_with("mcp.proxy:"):
+			display_name = cap.substr("mcp.proxy:".length())
+			toggle.tooltip_text = cap
+		toggle.text = display_name
 		toggle.button_pressed = cap in granted
 		toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		# Capture cap in a local variable for the lambda
@@ -560,6 +601,14 @@ func _populate_capabilities(plugin_id: String) -> void:
 			_show_status("Capability '%s' %s" % [cap_copy, "granted" if pressed else "revoked"])
 		)
 		row.add_child(toggle)
+
+		# Add mcp.proxy badge for proxy capabilities
+		if cap.begins_with("mcp.proxy:"):
+			var badge := Label.new()
+			badge.text = "mcp.proxy"
+			badge.add_theme_color_override("font_color", Color(0.5, 0.7, 0.9))
+			badge.add_theme_font_size_override("font_size", 10)
+			row.add_child(badge)
 
 	# Also show any extra granted caps not in the manifest (shouldn't happen, but be safe)
 	for cap in granted:
@@ -720,6 +769,9 @@ func _populate_tools(plugin_id: String) -> void:
 
 func _on_plugin_selected(index: int) -> void:
 	_selected_plugin_id = _plugin_list.get_item_metadata(index)
+	# Clear the files-changed indicator when switching to a different plugin.
+	if _files_changed_label:
+		_files_changed_label.visible = false
 	_populate_detail_panel(_selected_plugin_id)
 
 
@@ -774,12 +826,36 @@ func _on_restart_pressed() -> void:
 	_refresh_plugin_list()
 
 
+func _on_reload_pressed() -> void:
+	if _selected_plugin_id.is_empty():
+		return
+	_show_status("Reloading %s..." % _selected_plugin_id)
+	_reload_button.disabled = true
+	if _files_changed_label:
+		_files_changed_label.visible = false
+	await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
+	_reload_button.disabled = false
+	_refresh_plugin_list()
+
+
 func _on_autostart_toggled(enabled: bool) -> void:
 	if _selected_plugin_id.is_empty():
 		return
 	SingletonObject.plugin_manager.get_db().set_autostart(_selected_plugin_id, enabled)
 	_show_status("Auto-start %s for %s" % ["enabled" if enabled else "disabled", _selected_plugin_id])
 
+
+func _on_auto_reload_toggled(enabled: bool) -> void:
+	if _selected_plugin_id.is_empty():
+		return
+	SingletonObject.plugin_manager.set_auto_reload(_selected_plugin_id, enabled)
+	_show_status("Auto-reload %s for %s" % ["enabled" if enabled else "disabled", _selected_plugin_id])
+
+
+func _on_plugin_file_changed(id: String) -> void:
+	# Show the "files changed" indicator if the changed plugin is currently selected.
+	if id == _selected_plugin_id and _files_changed_label:
+		_files_changed_label.visible = true
 
 
 func _on_install_pressed() -> void:
@@ -815,6 +891,12 @@ func _on_remove_pressed() -> void:
 		_remove_confirm.confirmed.connect(_on_remove_confirmed)
 		add_child(_remove_confirm)
 
+		# Add a checkbox option to delete data to the dialog's content area
+		_remove_delete_data_check = CheckButton.new()
+		_remove_delete_data_check.text = "Also delete plugin data directory"
+		_remove_delete_data_check.tooltip_text = "If checked, the plugin's data directory (user://plugins/data/<id>/) will be permanently deleted"
+		_remove_confirm.add_child(_remove_delete_data_check)
+
 	_pending_remove_id = _selected_plugin_id
 	var pm_name := _selected_plugin_id
 	if SingletonObject.plugin_manager:
@@ -822,6 +904,7 @@ func _on_remove_pressed() -> void:
 		pm_name = status.get("name", _selected_plugin_id)
 
 	_remove_confirm.dialog_text = "Remove plugin '%s'?\n\nThis will stop the plugin and remove it from Minerva." % pm_name
+	_remove_delete_data_check.button_pressed = false
 	_remove_confirm.popup_centered()
 
 
@@ -829,7 +912,8 @@ func _on_remove_confirmed() -> void:
 	if _pending_remove_id.is_empty() or not SingletonObject.plugin_manager:
 		return
 
-	var result: Dictionary = await SingletonObject.plugin_manager.remove_plugin(_pending_remove_id)
+	var delete_data := _remove_delete_data_check.button_pressed if _remove_delete_data_check else false
+	var result: Dictionary = await SingletonObject.plugin_manager.remove_plugin(_pending_remove_id, delete_data)
 	if result.has("error"):
 		_show_status("Remove failed: %s" % result["error"], true)
 	else:

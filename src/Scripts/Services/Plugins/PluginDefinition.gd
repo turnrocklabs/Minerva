@@ -94,6 +94,11 @@ var data_directory: String = ""
 ## Whether Minerva should start this plugin automatically on launch
 var autostart: bool = false
 
+## Whether Minerva should automatically reload this plugin when its files change.
+## Separate from autostart — autostart means "start on boot", auto_reload means
+## "restart when source files change" (hot reload during development).
+var auto_reload: bool = false
+
 ## Current runtime state (set by PluginDB / supervisor, not persisted in manifest)
 var state: State = State.INSTALLED
 
@@ -180,6 +185,7 @@ func to_dict() -> Dictionary:
 		},
 		"data_directory": data_directory,
 		"autostart": autostart,
+		"auto_reload": auto_reload,
 	}
 	return result
 
@@ -191,6 +197,7 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 		return null
 	def.data_directory = d.get("data_directory", "")
 	def.autostart = bool(d.get("autostart", false))
+	def.auto_reload = bool(d.get("auto_reload", false))
 	return def
 
 

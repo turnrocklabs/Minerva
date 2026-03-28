@@ -35,6 +35,7 @@ func get_tool_definitions() -> Array:
 		_get_plugin_start_tool_def(),
 		_get_plugin_stop_tool_def(),
 		_get_plugin_restart_tool_def(),
+		_get_plugin_reload_tool_def(),
 		_get_plugin_inspect_tool_def(),
 	]
 
@@ -56,6 +57,8 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return await _handle_plugin_stop(args)
 		"minerva_plugin_restart":
 			return await _handle_plugin_restart(args)
+		"minerva_plugin_reload":
+			return await _handle_plugin_reload(args)
 		"minerva_plugin_inspect":
 			return _handle_plugin_inspect(args)
 		_:
@@ -102,13 +105,17 @@ func _get_plugin_install_tool_def() -> Dictionary:
 func _get_plugin_remove_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_remove",
-		"description": "Remove an installed plugin. If the plugin is running, it will be stopped first.",
+		"description": "Remove an installed plugin. If the plugin is running, it will be stopped first. Optionally delete the plugin's data directory.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
 				"id": {
 					"type": "string",
 					"description": "The plugin ID to remove"
+				},
+				"delete_data": {
+					"type": "boolean",
+					"description": "If true, also delete the plugin's data directory (user://plugins/data/<id>/). Default: false."
 				}
 			},
 			"required": ["id"]
@@ -153,13 +160,30 @@ func _get_plugin_stop_tool_def() -> Dictionary:
 func _get_plugin_restart_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_restart",
-		"description": "Stop and then restart a plugin.",
+		"description": "Stop and then restart a plugin. Use this when a plugin process is misbehaving and needs to be restarted.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
 				"id": {
 					"type": "string",
 					"description": "The plugin ID to restart"
+				}
+			},
+			"required": ["id"]
+		}
+	}
+
+
+func _get_plugin_reload_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_reload",
+		"description": "Reload a plugin after code changes — kill the current process, recompile/reinitialise, and reconnect. Use this when you have modified the plugin's source files and want Minerva to pick up the new code. Semantically different from restart (process misbehaving) — reload means 'I changed the code, load the new version'.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "The plugin ID to reload"
 				}
 			},
 			"required": ["id"]
@@ -231,11 +255,13 @@ func _handle_plugin_remove(args: Dictionary) -> Dictionary:
 	if id.is_empty():
 		return {"error": "id is required"}
 
+	var delete_data = bool(args.get("delete_data", false))
+
 	var plugin_manager = _get_plugin_manager()
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 
-	var result = await plugin_manager.remove_plugin(id)
+	var result = await plugin_manager.remove_plugin(id, delete_data)
 	return result
 
 
@@ -276,6 +302,29 @@ func _handle_plugin_restart(args: Dictionary) -> Dictionary:
 
 	var result = await plugin_manager.restart_plugin(id)
 	return result
+
+
+func _handle_plugin_reload(args: Dictionary) -> Dictionary:
+	var id = args.get("id", "")
+	if id.is_empty():
+		return {"error": "id is required"}
+
+	var plugin_manager = _get_plugin_manager()
+	if plugin_manager == null:
+		return {"error": "Plugin manager not available"}
+
+	# Reload == restart, but semantically signals "code was changed".
+	# Returns status after restart so the caller can confirm the new process is up.
+	var result = await plugin_manager.restart_plugin(id)
+	if result.has("error"):
+		return result
+
+	var status = plugin_manager.get_plugin_status(id)
+	return {
+		"success": true,
+		"message": "Plugin '%s' reloaded successfully." % id,
+		"status": status,
+	}
 
 
 func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
@@ -331,6 +380,7 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 			"network_mode": def.network_mode,
 			"filesystem_mode": def.filesystem_mode,
 		},
+		"tools": def.tools,
 		"capabilities": {
 			"requested": requested_caps,
 			"granted": granted_caps
