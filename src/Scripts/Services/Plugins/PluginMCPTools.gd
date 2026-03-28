@@ -40,6 +40,7 @@ func get_tool_definitions() -> Array:
 		_get_plugin_reload_tool_def(),
 		_get_plugin_inspect_tool_def(),
 		_get_plugin_state_tool_def(),
+		_get_plugin_help_tool_def(),
 	]
 
 
@@ -66,6 +67,8 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return _handle_plugin_inspect(args)
 		"minerva_plugin_state":
 			return _handle_plugin_state(args)
+		"minerva_plugin_help":
+			return _handle_plugin_help(args)
 		_:
 			return {"error": "Unknown plugin management tool: %s" % tool_name}
 
@@ -209,6 +212,22 @@ func _get_plugin_state_tool_def() -> Dictionary:
 				}
 			},
 			"required": ["id"]
+		}
+	}
+
+
+func _get_plugin_help_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_help",
+		"description": "Get plugin documentation. Without an id (or id='system'), returns the plugin system guide: how to create, install, and use plugins in any language. With a plugin id, returns that plugin's help.md usage documentation. Call this before creating or using an unfamiliar plugin.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "Plugin ID for plugin-specific help, or 'system' (or omit) for the plugin system guide"
+				}
+			}
 		}
 	}
 
@@ -426,6 +445,74 @@ func _handle_plugin_state(args: Dictionary) -> Dictionary:
 		"id": id,
 		"state": state,
 		"has_state": not state.is_empty(),
+	}
+
+
+func _handle_plugin_help(args: Dictionary) -> Dictionary:
+	var id = args.get("id", "")
+
+	# System guide: no id or id="system"
+	if id.is_empty() or id == "system":
+		return _get_system_guide()
+
+	var plugin_manager = _get_plugin_manager()
+	if plugin_manager == null:
+		return {"error": "Plugin manager not available"}
+
+	var db = plugin_manager.get_db()
+	var def = db.get_by_id(id)
+	if def == null:
+		return {"error": "Plugin '%s' not found" % id}
+
+	# Look for help.md in the plugin's directory
+	var plugin_dir: String = def.data_directory
+	if plugin_dir.begins_with("res://"):
+		plugin_dir = ProjectSettings.globalize_path(plugin_dir)
+
+	var help_path: String = plugin_dir.path_join("help.md")
+	if not FileAccess.file_exists(help_path):
+		# No help file — generate a basic summary from the manifest
+		var tool_names: Array[String] = []
+		for tool_entry in def.tools:
+			tool_names.append(tool_entry.get("name", ""))
+		return {
+			"success": true,
+			"id": id,
+			"has_help_file": false,
+			"message": "No help.md found for plugin '%s'. Use minerva_plugin_inspect for manifest details." % id,
+			"tools": tool_names,
+		}
+
+	var content: String = FileAccess.get_file_as_string(help_path)
+	return {
+		"success": true,
+		"id": id,
+		"has_help_file": true,
+		"help": content,
+	}
+
+
+func _get_system_guide() -> Dictionary:
+	# Look for the system guide file in the plugins directory
+	var guide_path := "res://plugins/plugin_system_guide.md"
+	var global_path := ProjectSettings.globalize_path(guide_path)
+
+	var content: String = ""
+	if FileAccess.file_exists(global_path):
+		content = FileAccess.get_file_as_string(global_path)
+	elif FileAccess.file_exists(guide_path):
+		content = FileAccess.get_file_as_string(guide_path)
+
+	if content.is_empty():
+		return {
+			"success": false,
+			"error": "Plugin system guide not found at %s" % guide_path,
+		}
+
+	return {
+		"success": true,
+		"id": "system",
+		"help": content,
 	}
 
 

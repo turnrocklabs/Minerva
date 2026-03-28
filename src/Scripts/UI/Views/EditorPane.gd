@@ -217,6 +217,15 @@ func add_pcb_editor(name_: String = "") -> Editor:
 func add_webview_editor(name_: String = "") -> Editor:
 	return add(Editor.Type.WEBVIEW, null, name_, null, true)
 
+func add_plugin_panel_editor(plugin_id: String, panel_name: String, panel_html: String, tab_title: String = "") -> Editor:
+	var title := tab_title if not tab_title.is_empty() else panel_name
+	var editor := add(Editor.Type.WEBVIEW, null, title, null, true)
+	if editor and editor.webview_editor:
+		editor.webview_editor.plugin_id = plugin_id
+		editor.webview_editor.plugin_panel_name = panel_name
+		editor.webview_editor.set_html(panel_html)
+	return editor
+
 func add_plugin_manager_editor() -> Editor:
 	return add(Editor.Type.PLUGIN_MANAGER, null, "Plugin Manager", null, true)
 

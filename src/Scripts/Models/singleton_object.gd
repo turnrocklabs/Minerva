@@ -489,6 +489,7 @@ var plugin_tool_registry = null  # PluginToolRegistry
 var plugin_capability_broker = null  # CapabilityBroker
 var plugin_mcp_tools = null  # PluginMCPTools
 var plugin_event_broker = null  # PluginEventBroker
+var plugin_webview_broker = null  # PluginWebviewBroker
 
 ## Initialize the plugin system. Call after initialize_mcp().
 ## Uses load() instead of class_name references to avoid autoload parse-order issues.
@@ -503,6 +504,7 @@ func initialize_plugins() -> void:
 	var ToolRegClass = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
 	var MCPToolsClass = load("res://Scripts/Services/Plugins/PluginMCPTools.gd")
 	var EventBrokerClass = load("res://Scripts/Services/Plugins/PluginEventBroker.gd")
+	var WebviewBrokerClass = load("res://Scripts/Services/Plugins/PluginWebviewBroker.gd")
 
 	# Audit log (no dependencies)
 	plugin_audit_log = AuditLogClass.new()
@@ -529,6 +531,9 @@ func initialize_plugins() -> void:
 	# Event/state broker (references DB and audit log)
 	plugin_event_broker = EventBrokerClass.new(plugin_manager.get_db(), plugin_audit_log)
 
+	# Webview IPC broker (references manager, policy, capability broker, audit log)
+	plugin_webview_broker = WebviewBrokerClass.new(plugin_manager, plugin_policy, plugin_capability_broker, plugin_audit_log)
+
 	# MCP management tools (inject dependencies)
 	plugin_mcp_tools = MCPToolsClass.new(plugin_manager, plugin_policy, plugin_audit_log, plugin_event_broker)
 
@@ -552,6 +557,13 @@ func initialize_plugins() -> void:
 	plugin_manager.plugin_crashed.connect(func(id: String) -> void:
 		if plugin_event_broker:
 			plugin_event_broker.clear_plugin_state(id))
+
+	# Push plugin events/state to webview panels
+	if plugin_event_broker:
+		plugin_event_broker.plugin_event.connect(func(p_id: String, event_name: String, payload: Dictionary) -> void:
+			_push_to_plugin_panels(p_id, "event", event_name, payload))
+		plugin_event_broker.plugin_state_changed.connect(func(p_id: String, state: Dictionary) -> void:
+			_push_to_plugin_panels(p_id, "state", "", state))
 
 	# Pre-populate built-in tool names before initial registration (prevents shadowing)
 	if mcp_manager and mcp_manager.tool_registry:
@@ -637,6 +649,36 @@ func _wire_plugin_tools_to_mcp() -> void:
 func shutdown_plugins() -> void:
 	if plugin_manager != null:
 		await plugin_manager.shutdown_all()
+
+## Push plugin events/state to any open webview panels for that plugin.
+func _push_to_plugin_panels(p_plugin_id: String, push_type: String, event_name: String, data: Dictionary) -> void:
+	if editor_pane == null:
+		return
+	# Scan open editors for WebViewEditors belonging to this plugin
+	for i in range(editor_pane.Tabs.get_tab_count()):
+		var tab = editor_pane.Tabs.get_child(i)
+		if tab == null:
+			continue
+		var editor = _find_webview_editor(tab)
+		if editor == null:
+			continue
+		if editor.get("plugin_id") != p_plugin_id:
+			continue
+		if push_type == "event":
+			editor.push_plugin_event(event_name, data)
+		elif push_type == "state":
+			editor.push_plugin_state(data)
+
+
+func _find_webview_editor(node: Node):
+	# Use duck typing to avoid parse-order issues with WebViewEditor class_name
+	if node.has_method("push_plugin_event"):
+		return node
+	for child in node.get_children():
+		var found = _find_webview_editor(child)
+		if found != null:
+			return found
+	return null
 
 #endregion Plugins
 

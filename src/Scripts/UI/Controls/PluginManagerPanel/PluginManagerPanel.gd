@@ -58,6 +58,7 @@ var _autostart_check: CheckButton = null
 var _auto_reload_check: CheckButton = null
 var _files_changed_label: Label = null
 var _remove_button: Button = null
+var _panel_button: Button = null
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +285,13 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_reload_button.tooltip_text = "Kill, recompile/reinitialise, and restart the plugin to pick up code changes"
 	_reload_button.pressed.connect(_on_reload_pressed)
 	btn_row.add_child(_reload_button)
+
+	_panel_button = Button.new()
+	_panel_button.text = "Open Panel"
+	_panel_button.tooltip_text = "Open this plugin's webview UI panel"
+	_panel_button.pressed.connect(_on_open_panel_pressed)
+	_panel_button.visible = false  # shown only if plugin declares ui.panels
+	btn_row.add_child(_panel_button)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -540,8 +548,13 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_stop_button.disabled = not (is_running or is_starting)
 	_restart_button.disabled = not (is_running or is_starting)
 
-	# Autostart / auto-reload toggles — reflect current DB state without re-triggering signals
+	# Show "Open Panel" button only if plugin declares UI panels and is running
 	var def = pm.get_db().get_by_id(plugin_id)
+	if _panel_button != null and def != null:
+		_panel_button.visible = not def.ui_panels.is_empty()
+		_panel_button.disabled = not is_running
+
+	# Autostart / auto-reload toggles — reflect current DB state without re-triggering signals
 	if def != null:
 		if _autostart_check != null:
 			_autostart_check.set_pressed_no_signal(def.autostart)
@@ -836,6 +849,46 @@ func _on_reload_pressed() -> void:
 	await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
 	_reload_button.disabled = false
 	_refresh_plugin_list()
+
+
+func _on_open_panel_pressed() -> void:
+	if _selected_plugin_id.is_empty():
+		return
+	var pm = SingletonObject.plugin_manager
+	if pm == null:
+		return
+	var def = pm.get_db().get_by_id(_selected_plugin_id)
+	if def == null or def.ui_panels.is_empty():
+		return
+
+	# Find the panel HTML file in the plugin's directory
+	var panel_name: String = def.ui_panels[0]
+	var html_path: String = def.data_directory.path_join("ui/panel.html")
+	if not FileAccess.file_exists(html_path):
+		# Try globalized path
+		var global_path: String = ProjectSettings.globalize_path(html_path) if html_path.begins_with("res://") else html_path
+		if not FileAccess.file_exists(global_path):
+			_show_status("Panel HTML not found: %s" % html_path)
+			return
+		html_path = global_path
+
+	var html: String = FileAccess.get_file_as_string(html_path)
+	if html.is_empty():
+		_show_status("Panel HTML is empty: %s" % html_path)
+		return
+
+	# Open in editor pane
+	var editor_pane = SingletonObject.editor_pane
+	if editor_pane == null:
+		return
+
+	# Register panel with the webview broker
+	if SingletonObject.plugin_webview_broker:
+		SingletonObject.plugin_webview_broker.register_plugin_panel(_selected_plugin_id, panel_name)
+
+	var tab_title: String = def.name + " Panel"
+	editor_pane.add_plugin_panel_editor(_selected_plugin_id, panel_name, html, tab_title)
+	_show_status("Opened panel for %s" % _selected_plugin_id)
 
 
 func _on_autostart_toggled(enabled: bool) -> void:

@@ -215,7 +215,7 @@ func handle_ipc_message(
 
 	var result: Dictionary
 	if message_type.begins_with("capability:"):
-		result = _dispatch_to_capability_broker(plugin_id, message_type, payload)
+		result = await _dispatch_to_capability_broker(plugin_id, message_type, payload)
 	else:
 		result = await _dispatch_to_plugin_backend(plugin_id, message_type, payload)
 
@@ -293,7 +293,7 @@ func _dispatch_to_capability_broker(
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"Host capability broker is not available")
 
-	return capability_broker.dispatch(plugin_id, capability, payload)
+	return await capability_broker.dispatch(plugin_id, capability, payload)
 
 
 ## Dispatch a plugin-specific IPC message to the plugin's MCP backend.

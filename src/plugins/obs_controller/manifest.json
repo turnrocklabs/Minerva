@@ -143,6 +143,16 @@
 			}
 		}
 	},
+	"ui": {
+		"panels": ["obs_controller_panel"],
+		"ipc_messages": [
+			"obs.get_status",
+			"obs.switch_scene",
+			"obs.start_recording",
+			"obs.stop_recording",
+			"obs.set_camera_position"
+		]
+	},
 	"permissions": {
 		"host_capabilities": [],
 		"network": {

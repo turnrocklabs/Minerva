@@ -14,6 +14,12 @@ var _last_saved_html: String = ""
 ## Unique ID for this editor instance.
 var editor_id: String = ""
 
+## Plugin panel name (set when opening a plugin panel). Empty = regular webview.
+var plugin_panel_name: String = ""
+
+## Plugin ID this panel belongs to (set when opening a plugin panel).
+var plugin_id: String = ""
+
 ## Internal reference to the WebView node (null if addon missing).
 var _webview: Control = null
 
@@ -140,5 +146,68 @@ func _inject_bridge(source: String) -> String:
 
 
 func _on_ipc_message(msg: String) -> void:
-	# Future JS bridge handler — log for now.
-	print("[WebViewEditor:%s] IPC: %s" % [editor_id, msg.left(120)])
+	print("[WebViewEditor:%s] IPC: %s" % [editor_id, msg.left(200)])
+
+	# Parse the JSON message
+	var json := JSON.new()
+	if json.parse(msg) != OK or not json.data is Dictionary:
+		push_warning("[WebViewEditor:%s] Invalid IPC JSON: %s" % [editor_id, msg.left(100)])
+		return
+
+	var data: Dictionary = json.data
+	var ipc_id = data.get("id", "")
+	var message_type: String = str(data.get("type", ""))
+	var payload: Dictionary = data.get("payload", {})
+
+	# Check if this is a plugin panel
+	if not plugin_panel_name.is_empty():
+		_handle_plugin_ipc(ipc_id, message_type, payload)
+	else:
+		# Regular Minerva webview IPC — existing behavior (currently just logs)
+		print("[WebViewEditor:%s] Non-plugin IPC type=%s" % [editor_id, message_type])
+
+
+func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary) -> void:
+	var broker = _get_webview_broker()
+	if broker == null:
+		_send_ipc_reply(ipc_id, {"success": false, "error_message": "Webview broker not available"})
+		return
+
+	var result: Dictionary = await broker.handle_ipc_message(plugin_panel_name, message_type, payload)
+
+	# Relay result back to JS
+	_send_ipc_reply(ipc_id, result)
+
+
+func _send_ipc_reply(ipc_id, result: Dictionary) -> void:
+	if _webview == null:
+		return
+	var reply := result.duplicate()
+	reply["id"] = ipc_id
+	var reply_json := JSON.stringify(reply)
+	_webview.eval("window.minerva._ipcReply(%s)" % reply_json)
+
+
+func _get_webview_broker():
+	var singleton = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	if singleton and singleton.get("plugin_webview_broker"):
+		return singleton.plugin_webview_broker
+	return null
+
+
+## Push a plugin event to the webview JS.
+func push_plugin_event(event_name: String, payload: Dictionary) -> void:
+	if _webview == null:
+		return
+	var js := "window.minerva._dispatchPluginEvent(%s, %s)" % [
+		JSON.stringify(event_name), JSON.stringify(payload)
+	]
+	_webview.eval(js)
+
+
+## Push a plugin state update to the webview JS.
+func push_plugin_state(state: Dictionary) -> void:
+	if _webview == null:
+		return
+	var js := "window.minerva._dispatchPluginState(%s)" % JSON.stringify(state)
+	_webview.eval(js)

@@ -42,10 +42,61 @@ const BRIDGE_JS: String = """
 		// Convenience: create a note
 		createNote: function(title, content, thread) {
 			return this.call('minerva_create_note', { title: title, content: content, thread_name: thread || 'default' });
+		},
+
+		// Plugin IPC -- sends message through WRY ipc_message signal to Minerva broker
+		pluginIPC: function(messageType, payload) {
+			return new Promise(function(resolve, reject) {
+				var id = '' + Date.now() + Math.random();
+				window._minervaIPCPending = window._minervaIPCPending || {};
+				window._minervaIPCPending[id] = { resolve: resolve, reject: reject };
+				window.ipc.postMessage(JSON.stringify({
+					id: id,
+					type: messageType,
+					payload: payload || {}
+				}));
+			});
+		},
+
+		// Register handler for plugin events pushed from Minerva
+		onPluginEvent: function(callback) {
+			window._minervaPluginEventHandlers = window._minervaPluginEventHandlers || [];
+			window._minervaPluginEventHandlers.push(callback);
+		},
+
+		// Register handler for plugin state pushed from Minerva
+		onPluginState: function(callback) {
+			window._minervaPluginStateHandlers = window._minervaPluginStateHandlers || [];
+			window._minervaPluginStateHandlers.push(callback);
+		},
+
+		// Called by Minerva (evaluate_javascript) to deliver IPC response
+		_ipcReply: function(result) {
+			var pending = (window._minervaIPCPending || {})[result.id];
+			if (!pending) return;
+			delete window._minervaIPCPending[result.id];
+			if (result.success) pending.resolve(result.result);
+			else pending.reject(new Error(result.error_message || 'IPC error'));
+		},
+
+		// Called by Minerva (evaluate_javascript) to push plugin event
+		_dispatchPluginEvent: function(eventName, payload) {
+			var handlers = window._minervaPluginEventHandlers || [];
+			for (var i = 0; i < handlers.length; i++) {
+				try { handlers[i](eventName, payload); } catch(e) { console.error('Plugin event handler error:', e); }
+			}
+		},
+
+		// Called by Minerva (evaluate_javascript) to push plugin state
+		_dispatchPluginState: function(state) {
+			var handlers = window._minervaPluginStateHandlers || [];
+			for (var i = 0; i < handlers.length; i++) {
+				try { handlers[i](state); } catch(e) { console.error('Plugin state handler error:', e); }
+			}
 		}
 	};
 
-	console.log('[Minerva Bridge] Loaded -- window.minerva.call() available');
+	console.log('[Minerva Bridge] Loaded -- window.minerva.call() / pluginIPC() available');
 })();
 </script>
 """
