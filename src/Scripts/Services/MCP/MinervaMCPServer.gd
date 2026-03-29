@@ -79,7 +79,7 @@ func _init(manager = null) -> void:
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
 		# Auto-activate tool_search in the budget manager
-		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, webview, PCB, graphics, video, agents, costs.", "input_schema": {
+		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools plus connected external MCP servers. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, webview, PCB, graphics, video, agents, costs. External servers (docket, nudge, etc.) searchable by name.", "input_schema": {
 			"type": "object", "properties": {
 				"query": {"type": "string", "description": "Keyword search or exact tool name"},
 				"category": {"type": "string", "description": "Filter by category (optional)"},
@@ -8884,7 +8884,7 @@ func _list_tool_sets(_args: Dictionary) -> Dictionary:
 	var sets: Dictionary = {}
 	for tool_name in mcp_manager.tool_registry:
 		var tool = mcp_manager.tool_registry[tool_name]
-		if tool.server_name == SERVER_NAME and not tool.tool_set.is_empty():
+		if not tool.tool_set.is_empty():
 			sets[tool.tool_set] = sets.get(tool.tool_set, 0) + 1
 
 	var enabled_info: Array = _enabled_tool_sets.duplicate()
@@ -10867,10 +10867,10 @@ func _link_webview_to_note(arguments: Dictionary) -> Dictionary:
 
 func _register_tool_search() -> void:
 	_register_tool("minerva_tool_search",
-		"This server has 170+ tools available. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), webview (create/update HTML panels), PCB design, graphics, video, agents, automation, models, costs. Example: tool_search(query='edit file') or tool_search(query='pcb annotation') or tool_search(query='webview panel').",
+		"This server has 170+ tools available, plus tools from connected external MCP servers. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), webview (create/update HTML panels), PCB design, graphics, video, agents, automation, models, costs. Connected external servers (e.g., docket, nudge, cobrowser) are also searchable by name. Example: tool_search(query='edit file') or tool_search(query='docket') or tool_search(query='webview panel').",
 		{"type": "object", "properties": {
-			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'pcb annotation', 'cost summary') or exact tool name (e.g., 'minerva_file_edit')"},
-			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, webview, pcb, video, agents, triggers, autocoder, costs, meta"},
+			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'docket create', 'cost summary') or exact tool name (e.g., 'minerva_file_edit')"},
+			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, webview, pcb, video, agents, triggers, autocoder, costs, meta. External server names (e.g., docket, nudge) also work as categories."},
 			"limit": {"type": "integer", "description": "Max results (default 5)"},
 		}, "required": ["query"]}, "meta")
 
@@ -10881,11 +10881,11 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	var category: String = arguments.get("category", "")
 	var limit: int = int(arguments.get("limit", 5))
 
-	# Search broadly, then filter
-	var raw_results: Array[Dictionary] = tool_search_index.search(query, category, limit * 3)
+	# Search broadly — fetch all matches so we can show the full catalog
+	var raw_results: Array[Dictionary] = tool_search_index.search(query, category, 200)
 
-	# Filter results through the same layers as get_tools_for_chat
-	var results: Array[Dictionary] = []
+	# Filter results through connectivity and tool_set checks
+	var filtered: Array[Dictionary] = []
 	for result in raw_results:
 		var name: String = result.get("name", "")
 		if not mcp_manager or not mcp_manager.tool_registry.has(name):
@@ -10894,41 +10894,56 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 		# Check connectivity (minerva tools are always local, only check external servers)
 		if tool.server_name != "minerva" and not mcp_manager.is_server_connected(tool.server_name):
 			continue
-		# Check tool_set filter (uses current enabled sets)
-		if not _enabled_tool_sets.is_empty():
+		# Check tool_set filter — only applies to minerva-native tools.
+		# External server tools bypass this (connectivity check above is sufficient).
+		if tool.server_name == "minerva" and not _enabled_tool_sets.is_empty():
 			if tool.tool_set != "meta" and tool.tool_set not in _enabled_tool_sets:
 				continue
-		results.append(result)
-		if results.size() >= limit:
-			break
+		filtered.append(result)
 
-	if results.is_empty():
-		return {"success": true, "tools": [], "count": 0, "message": "No tools found matching '%s'" % query}
+	if filtered.is_empty():
+		return {"success": true, "tools": [], "count": 0, "total_matches": 0, "message": "No tools found matching '%s'" % query}
 
-	# Auto-activate found tools in the budget manager
+	# Split: top N get full schemas (activated), remainder get name+description only
 	var activated: Array[String] = []
-	for result in results:
-		var name: String = result.get("name", "")
-		var schema: Dictionary = result.get("schema", {})
-		if not name.is_empty() and not schema.is_empty():
-			tool_budget_manager.activate_tool(name, schema)
-			activated.append(name)
-
-	# Return tool info for the LLM
 	var tool_summaries: Array[Dictionary] = []
-	for result in results:
-		tool_summaries.append({
-			"name": result.get("name", ""),
-			"description": result.get("description", ""),
-			"input_schema": result.get("schema", {}).get("input_schema", {}),
-		})
+
+	for i in range(filtered.size()):
+		var result: Dictionary = filtered[i]
+		var name: String = result.get("name", "")
+		var description: String = result.get("description", "")
+
+		if i < limit:
+			# Top results: full schema, activated in budget manager
+			var schema: Dictionary = result.get("schema", {})
+			if not name.is_empty() and not schema.is_empty():
+				tool_budget_manager.activate_tool(name, schema)
+				activated.append(name)
+			tool_summaries.append({
+				"name": name,
+				"description": description,
+				"input_schema": schema.get("input_schema", {}),
+			})
+		else:
+			# Remaining: lightweight name+description only (no schema, no activation)
+			tool_summaries.append({
+				"name": name,
+				"description": description,
+			})
+
+	var message: String
+	if filtered.size() <= limit:
+		message = "Found %d tools. They are now activated and can be called directly." % filtered.size()
+	else:
+		message = "Found %d tools. Top %d are activated and ready to call. The remaining %d are listed by name — search by exact name to activate any of them." % [filtered.size(), limit, filtered.size() - limit]
 
 	return {
 		"success": true,
 		"tools": tool_summaries,
 		"count": tool_summaries.size(),
 		"activated": activated,
-		"message": "Found %d tools. They are now activated and can be called directly." % tool_summaries.size(),
+		"total_matches": filtered.size(),
+		"message": message,
 	}
 
 
