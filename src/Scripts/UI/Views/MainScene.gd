@@ -339,6 +339,9 @@ func _input(event) -> void:
 	if event.is_action_pressed("ui_terminal", true):
 		terminal_container.visible = not terminal_container.visible
 		accept_event()
+	elif event.is_action_pressed("new_editor_item", true):
+		_show_new_editor_item_popup()
+		accept_event()
 	# Detect mouse button press to start drag
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
@@ -450,9 +453,9 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 			return
 	if editor_pane.Tabs.get_tab_count() < 1:
 		for file in files:
-			if SingletonObject.supported_image_formats.has(file.get_extension()): 
+			if SingletonObject.supported_image_formats.has(file.get_extension()):
 				editor_pane.add(Editor.Type.GRAPHICS, file, file.get_file())
-			elif SingletonObject.supported_text_formats.has(file.get_extension()): 
+			elif SingletonObject.supported_text_formats.has(file.get_extension()):
 				editor_pane.add(Editor.Type.TEXT, file, file.get_file())
 		return
 	else:
@@ -461,3 +464,28 @@ func _on_files_dropped(files: PackedStringArray) -> void:
 			for file in files:
 				var image: = Image.load_from_file(file)
 				editor.graphics_editor.create_new_image_layer(file.get_file(), image)
+
+
+## Show popup menu with all creatable editor items from registry
+func _show_new_editor_item_popup() -> void:
+	var registry = SingletonObject.creatable_item_registry
+	var items = registry.get_all_items()
+
+	if items.is_empty():
+		return
+
+	var popup = PopupMenu.new()
+	popup.name = "NewEditorItemPopup"
+
+	for item in items:
+		popup.add_item(item.display_name)
+
+	popup.id_pressed.connect(func(id: int):
+		if id >= 0 and id < items.size():
+			var selected_item = items[id]
+			selected_item.create_callback.call()
+	)
+
+	add_child(popup)
+	popup.popup_centered()
+	popup.queue_free.call_deferred()

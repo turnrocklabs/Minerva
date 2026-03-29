@@ -61,49 +61,29 @@ func _on_file_index_pressed(index):
 			else:
 				preferences_popup.grab_focus()
 
-# Handle new file creation
-func handle_new_file():
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.TEXT)
-
-# Handle new graphics creation
-func handle_new_graphics():
-	SingletonObject.is_graph = true
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
-
-# Handle new spreadsheet creation
-func handle_new_spreadsheet():
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.SPREADSHEET)
-
-# Handle new PCB editor creation
-func handle_new_pcb():
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.PCB)
-
-# Handle new video recorder
-func handle_new_video_recorder():
-	# Show the recording overlay instead of opening an editor tab
-	var overlay_scene = load("res://Scenes/VideoRecorder.tscn")
-	var overlay = overlay_scene.instantiate()
-	overlay.recording_completed.connect(_on_recording_completed)
-	get_tree().root.add_child(overlay)
-
 func _on_recording_completed(recording_data) -> void:
-	# Open the recording in a video editor tab
+	## Open the recording in a video editor tab after recording completes.
 	var recording_path = recording_data.get_recording_dir()
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.VIDEO_EDITOR, recording_path, "recording " + recording_data.recording_id.substr(0, 8))
 
-func _on_file_submenu_index_pressed(index):
-	match index:
-		0:
-			handle_new_file()
-		1:
-			SingletonObject.is_picture = false
-			handle_new_graphics()
-		2:
-			handle_new_spreadsheet()
-		3:
-			handle_new_pcb()
-		4:
-			handle_new_video_recorder()
+
+## Rebuild the File > New submenu from the CreatableItemRegistry.
+## Called once during _ready and again whenever items_changed fires.
+func _rebuild_new_submenu() -> void:
+	file_submenu.clear()
+	var items := SingletonObject.creatable_item_registry.get_all_items()
+	for item in items:
+		if item.icon:
+			file_submenu.add_icon_item(item.icon, item.display_name)
+		else:
+			file_submenu.add_item(item.display_name)
+
+
+func _on_new_submenu_index_pressed(index: int) -> void:
+	## Dispatch to the selected item's create_callback.
+	var items := SingletonObject.creatable_item_registry.get_all_items()
+	if index >= 0 and index < items.size():
+		items[index].create_callback.call()
 			
 
 
@@ -156,14 +136,11 @@ func _ready():
 	save_project_shortcut.events.append(save_project_input_event)
 	%Project.set_item_shortcut(2, save_project_shortcut, true)
 	
-	# Create the new submenu
+	# Create the new submenu dynamically from CreatableItemRegistry
 	file_submenu.name = "file_submenu"
-	file_submenu.add_item("New File")
-	file_submenu.add_item("New Graphics")
-	file_submenu.add_item("New Spreadsheet")
-	file_submenu.add_item("New PCB")
-	file_submenu.add_item("Record Video")
-	file_submenu.index_pressed.connect(_on_file_submenu_index_pressed)
+	_rebuild_new_submenu()
+	file_submenu.index_pressed.connect(_on_new_submenu_index_pressed)
+	SingletonObject.creatable_item_registry.items_changed.connect(_rebuild_new_submenu)
 	# Add the "New" submenu to the top of the "File" menu
 	%File.add_child(file_submenu)
 	%File.add_submenu_item("New", "file_submenu", 0)  # Note the index 0 here

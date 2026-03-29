@@ -99,6 +99,10 @@ var autostart: bool = false
 ## "restart when source files change" (hot reload during development).
 var auto_reload: bool = false
 
+## Editor items this plugin contributes to the "New -> Item" creation flow.
+## Each entry: {id: String, name: String, panel: String}
+var editor_items: Array[Dictionary] = []
+
 ## Event declarations from manifest. Each entry: {name: String, payload_schema: Dictionary}
 ## These are top-level manifest fields — a headless plugin can emit events without a webview.
 var events: Array[Dictionary] = []
@@ -194,6 +198,8 @@ func to_dict() -> Dictionary:
 		"autostart": autostart,
 		"auto_reload": auto_reload,
 	}
+	if not editor_items.is_empty():
+		result["editor_items"] = editor_items.duplicate(true)
 	if not events.is_empty():
 		result["events"] = events.duplicate(true)
 	if not state_schema.is_empty():
@@ -209,6 +215,9 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.data_directory = d.get("data_directory", "")
 	def.autostart = bool(d.get("autostart", false))
 	def.auto_reload = bool(d.get("auto_reload", false))
+	for ei in d.get("editor_items", []):
+		if ei is Dictionary:
+			def.editor_items.append(ei.duplicate(true))
 	for ev in d.get("events", []):
 		if ev is Dictionary:
 			def.events.append(ev.duplicate(true))
@@ -297,6 +306,11 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	def.filesystem_mode = filesystem.get("mode", "none")
 	for p in filesystem.get("paths", []):
 		def.filesystem_paths.append(str(p))
+
+	# Editor items (top-level)
+	for ei in data.get("editor_items", []):
+		if ei is Dictionary:
+			def.editor_items.append(ei.duplicate(true))
 
 	# Events & State (top-level, not under ui)
 	for ev in data.get("events", []):

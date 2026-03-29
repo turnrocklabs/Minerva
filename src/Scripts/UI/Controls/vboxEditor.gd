@@ -547,22 +547,32 @@ func _on_redo_button_pressed():
 
 
 func _on_add_file_editor_pressed() -> void:
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.TEXT)
+	## Show a popup menu of all registered creatable items near the mouse cursor.
+	var items := SingletonObject.creatable_item_registry.get_all_items()
+	if items.is_empty():
+		return
 
+	var popup := PopupMenu.new()
+	add_child(popup)
+	for item in items:
+		if item.icon:
+			popup.add_icon_item(item.icon, item.display_name)
+		else:
+			popup.add_item(item.display_name)
 
-func _on_add_graphics_editor_pressed() -> void:
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.GRAPHICS)
+	popup.index_pressed.connect(func(index: int) -> void:
+		var current_items := SingletonObject.creatable_item_registry.get_all_items()
+		if index >= 0 and index < current_items.size():
+			current_items[index].create_callback.call()
+	)
+	popup.popup_hide.connect(popup.queue_free)
+
+	var mouse_pos := get_viewport().get_mouse_position()
+	popup.popup(Rect2i(int(mouse_pos.x), int(mouse_pos.y), 0, 0))
+
 
 func _on_add_package_editor_pressed() -> void:
 	SingletonObject.editor_container.editor_pane.add(Editor.Type.PACKAGE)
-
-
-func _on_add_spreadsheet_editor_pressed() -> void:
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.SPREADSHEET)
-
-
-func _on_add_pcb_editor_pressed() -> void:
-	SingletonObject.editor_container.editor_pane.add(Editor.Type.PCB)
 
 
 func _on_add_many_new_files_editor_pressed() -> void:

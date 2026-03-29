@@ -565,6 +565,11 @@ func initialize_plugins() -> void:
 		plugin_event_broker.plugin_state_changed.connect(func(p_id: String, state: Dictionary) -> void:
 			_push_to_plugin_panels(p_id, "state", "", state))
 
+	# Register/unregister editor_items in CreatableItemRegistry on plugin start/stop
+	plugin_manager.plugin_started.connect(_register_plugin_editor_items)
+	plugin_manager.plugin_stopped.connect(_unregister_plugin_editor_items)
+	plugin_manager.plugin_crashed.connect(_unregister_plugin_editor_items)
+
 	# Pre-populate built-in tool names before initial registration (prevents shadowing)
 	if mcp_manager and mcp_manager.tool_registry:
 		plugin_tool_registry.set_builtin_tool_names(mcp_manager.tool_registry.keys())
@@ -680,6 +685,72 @@ func _find_webview_editor(node: Node):
 			return found
 	return null
 
+
+## Register editor_items from a plugin's definition into the CreatableItemRegistry.
+## Called when a plugin transitions to RUNNING.
+func _register_plugin_editor_items(id: String) -> void:
+	if creatable_item_registry == null or plugin_manager == null:
+		return
+	var def = plugin_manager.get_db().get_by_id(id)
+	if def == null:
+		return
+	for ei in def.editor_items:
+		var item_id: String = ei.get("id", "")
+		var item_name: String = ei.get("name", "")
+		var panel_name: String = ei.get("panel", "")
+		if item_id.is_empty() or item_name.is_empty() or panel_name.is_empty():
+			push_warning("[Plugins] Skipping invalid editor_item in plugin '%s': %s" % [id, str(ei)])
+			continue
+		var plugin_id_copy := id
+		var panel_name_copy := panel_name
+		var item_name_copy := item_name
+		var callback := func() -> void:
+			_open_plugin_panel_for_editor_item(plugin_id_copy, panel_name_copy, item_name_copy)
+		var item = CreatableItemRegistry.CreatableItem.create(
+			item_id, item_name, callback, null, 100, "plugin", id
+		)
+		creatable_item_registry.register_item(item)
+	if not def.editor_items.is_empty():
+		print("[Plugins] Registered %d editor item(s) for plugin '%s'" % [def.editor_items.size(), id])
+
+
+## Unregister all editor_items belonging to a plugin from the CreatableItemRegistry.
+## Called when a plugin is stopped or crashes.
+func _unregister_plugin_editor_items(id: String) -> void:
+	if creatable_item_registry == null:
+		return
+	creatable_item_registry.unregister_by_source(id)
+
+
+## Open a plugin webview panel for an editor_item's declared panel name.
+func _open_plugin_panel_for_editor_item(plugin_id: String, panel_name: String, tab_title: String) -> void:
+	if plugin_manager == null or editor_pane == null:
+		return
+	var def = plugin_manager.get_db().get_by_id(plugin_id)
+	if def == null:
+		return
+
+	# Find the panel HTML file in the plugin's directory
+	var html_path: String = def.data_directory.path_join("ui/%s.html" % panel_name)
+	if not FileAccess.file_exists(html_path):
+		html_path = def.data_directory.path_join("ui/panel.html")
+	if not FileAccess.file_exists(html_path):
+		var global_path: String = ProjectSettings.globalize_path(html_path) if html_path.begins_with("res://") else html_path
+		if not FileAccess.file_exists(global_path):
+			push_warning("[Plugins] Panel HTML not found for editor_item '%s' in plugin '%s'" % [panel_name, plugin_id])
+			return
+		html_path = global_path
+
+	var html: String = FileAccess.get_file_as_string(html_path)
+	if html.is_empty():
+		push_warning("[Plugins] Panel HTML is empty: %s" % html_path)
+		return
+
+	if plugin_webview_broker:
+		plugin_webview_broker.register_plugin_panel(plugin_id, panel_name)
+
+	editor_pane.add_plugin_panel_editor(plugin_id, panel_name, html, tab_title)
+
 #endregion Plugins
 
 #region Tool Profiles
@@ -752,6 +823,11 @@ func _register_builtin_containers() -> void:
 	voice_gw.gpu_optional = true
 	docker_manager.register(voice_gw, true)
 #endregion Docker
+
+#region Creatable Item Registry
+## Registry of items that can be created via File > New and toolbar buttons.
+var creatable_item_registry: CreatableItemRegistry = CreatableItemRegistry.new()
+#endregion Creatable Item Registry
 
 #region Agent System
 var agent_registry: AgentRegistry = null
@@ -1054,6 +1130,89 @@ func _ready():
 
 	# Initialize agent system (registry + trigger manager)
 	_init_agent_system()
+
+	# Initialize creatable items registry with built-in editor types
+	_init_creatable_items()
+
+
+## Register built-in editor types in the creatable items registry
+func _init_creatable_items() -> void:
+	var ep = editor_container.editor_pane
+
+	# Text Editor (sort_order: 10)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"text", "Text Editor",
+			func(): ep.add(Editor.Type.TEXT),
+			null, 10
+		)
+	)
+
+	# Graphics Editor (sort_order: 20)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"graphics", "Graphics Editor",
+			func():
+				is_graph = true
+				ep.add(Editor.Type.GRAPHICS),
+			null, 20
+		)
+	)
+
+	# Spreadsheet (sort_order: 30)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"spreadsheet", "Spreadsheet",
+			func(): ep.add(Editor.Type.SPREADSHEET),
+			null, 30
+		)
+	)
+
+	# PCB Editor (sort_order: 40)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"pcb", "PCB Editor",
+			func(): ep.add(Editor.Type.PCB),
+			null, 40
+		)
+	)
+
+	# Video Recorder (sort_order: 50)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"video_recorder", "Video Recorder",
+			func():
+				var overlay_scene = load("res://Scenes/VideoRecorder.tscn")
+				var overlay = overlay_scene.instantiate()
+				overlay.recording_completed.connect(_on_creatable_video_recorder_completed)
+				get_tree().root.add_child(overlay),
+			null, 50
+		)
+	)
+
+	# Webview (sort_order: 60)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"webview", "Webview",
+			func(): ep.add(Editor.Type.WEBVIEW),
+			null, 60
+		)
+	)
+
+	# Kanban Board (sort_order: 70)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"kanban", "Kanban Board",
+			func(): ep.add(Editor.Type.KANBAN),
+			null, 70
+		)
+	)
+
+
+## Handle recording completion for creatable items registry
+func _on_creatable_video_recorder_completed(recording_data) -> void:
+	var recording_path = recording_data.get_recording_dir()
+	editor_container.editor_pane.add(Editor.Type.VIDEO_EDITOR, recording_path, "recording " + recording_data.recording_id.substr(0, 8))
 
 
 ## Recursively release all textures in a node tree to prevent RID leaks on exit

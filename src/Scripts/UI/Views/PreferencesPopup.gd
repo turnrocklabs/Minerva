@@ -345,7 +345,6 @@ func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
 	# Save experimental features setting to config
 	SingletonObject.save_to_config_file("Experimental", "enabled", toggled_on)
 	$"../VBoxRoot/HBoxContainer/menuMain/View".set_item_disabled(3, !toggled_on)
-	$"../VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/AddGraphicsEditor".visible = toggled_on
 	SingletonObject.toggle_experimental.emit(toggled_on)
 
 
