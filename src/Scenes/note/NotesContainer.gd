@@ -442,9 +442,9 @@ func deserialize(notes_data: Array) -> void:
 		# check if this tab doesnt exist already
 		var note_vbox: NoteVBox
 
-		for i in SingletonObject.notes_container.get_tab_count():
-			if SingletonObject.notes_container.get_tab_id(i) == tab_id:
-				note_vbox = SingletonObject.notes_container.get_tab_control(i)
+		for i in get_tab_count():
+			if get_tab_id(i) == tab_id:
+				note_vbox = get_tab_control(i)
 
 		if not note_vbox:
 			note_vbox = create_tab(tab_title, tab_id)

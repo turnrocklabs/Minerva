@@ -172,7 +172,7 @@ func _add_default_servers() -> void:
 
 		var config := ServerConfig.new(server_name, known.default_type,
 			"http://localhost:%d" % port)
-		config.auto_connect = false  # User must explicitly enable via Tools menu
+		config.auto_connect = true  # Try to connect on startup; falls back to disconnected if unavailable
 		config.mcp_endpoint = known.default_mcp_endpoint
 		config.origin = "known"
 
@@ -381,7 +381,7 @@ func load_config() -> Error:
 				port = discover_nudge_port()
 			var new_config := ServerConfig.new(known_name, known.default_type,
 				"http://localhost:%d" % port)
-			new_config.auto_connect = false
+			new_config.auto_connect = true  # Try to connect on startup
 			new_config.mcp_endpoint = known.default_mcp_endpoint
 			new_config.origin = "known"
 			if known_name == "codetools":

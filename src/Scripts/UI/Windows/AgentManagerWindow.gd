@@ -62,6 +62,21 @@ var trigger_schedule_time_label: Label
 var trigger_schedule_days_label: Label
 var trigger_schedule_day_of_month_label: Label
 var trigger_schedule_month_label: Label
+## Docket poll controls
+var trigger_docket_project_edit: LineEdit
+var trigger_docket_filter_tags_edit: LineEdit
+var trigger_docket_filter_parent_edit: LineEdit
+var trigger_docket_filter_item_ids_edit: LineEdit
+var trigger_docket_filter_types_edit: LineEdit
+var trigger_docket_poll_interval_spin: SpinBox
+var trigger_docket_container: VBoxContainer
+## Hook controls
+var trigger_hook_container: VBoxContainer
+var trigger_hook_fire_probability_spin: SpinBox
+var trigger_hook_tool_pattern_edit: LineEdit
+var trigger_hook_route_table_edit: TextEdit
+var trigger_hook_route_table_label: Label
+var trigger_hook_pending_label: Label
 #endregion
 
 var _selected_agent_idx: int = -1
@@ -353,6 +368,7 @@ func _build_triggers_tab() -> Control:
 	trigger_type_option.add_item("Event", TriggerDefinition.TriggerType.EVENT)
 	trigger_type_option.add_item("Time", TriggerDefinition.TriggerType.TIME)
 	trigger_type_option.add_item("Timer", TriggerDefinition.TriggerType.TIMER)
+	trigger_type_option.add_item("Docket Poll", TriggerDefinition.TriggerType.DOCKET_POLL)
 	trigger_type_option.item_selected.connect(_on_trigger_type_changed)
 	right_vbox.add_child(trigger_type_option)
 
@@ -430,12 +446,78 @@ func _build_triggers_tab() -> Control:
 	trigger_last_fired_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	right_vbox.add_child(trigger_last_fired_label)
 
+	# Docket poll controls (shown only when trigger_type == DOCKET_POLL)
+	trigger_docket_container = VBoxContainer.new()
+	trigger_docket_container.add_theme_constant_override("separation", 6)
+	var docket_project_label = _label("Docket Project:")
+	trigger_docket_container.add_child(docket_project_label)
+	trigger_docket_project_edit = LineEdit.new()
+	trigger_docket_project_edit.placeholder_text = "e.g. MyProject"
+	trigger_docket_project_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_docket_container.add_child(trigger_docket_project_edit)
+	trigger_docket_container.add_child(_label("Parent Item ID (optional):"))
+	trigger_docket_filter_parent_edit = LineEdit.new()
+	trigger_docket_filter_parent_edit.placeholder_text = "e.g. project:item-id"
+	trigger_docket_filter_parent_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_docket_container.add_child(trigger_docket_filter_parent_edit)
+	trigger_docket_container.add_child(_label("Watch Item IDs (optional, comma-separated):"))
+	trigger_docket_filter_item_ids_edit = LineEdit.new()
+	trigger_docket_filter_item_ids_edit.placeholder_text = "e.g. DKT-0001, DKT-0002"
+	trigger_docket_filter_item_ids_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_docket_container.add_child(trigger_docket_filter_item_ids_edit)
+	trigger_docket_container.add_child(_label("Item Types (optional, comma-separated):"))
+	trigger_docket_filter_types_edit = LineEdit.new()
+	trigger_docket_filter_types_edit.placeholder_text = "e.g. work_item, bug"
+	trigger_docket_filter_types_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_docket_container.add_child(trigger_docket_filter_types_edit)
+	var docket_tags_label = _label("Tags (optional, comma-separated):")
+	trigger_docket_container.add_child(docket_tags_label)
+	trigger_docket_filter_tags_edit = LineEdit.new()
+	trigger_docket_filter_tags_edit.placeholder_text = "e.g. urgent, review"
+	trigger_docket_filter_tags_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_docket_container.add_child(trigger_docket_filter_tags_edit)
+	var docket_interval_label = _label("Poll Interval (s):")
+	trigger_docket_container.add_child(docket_interval_label)
+	trigger_docket_poll_interval_spin = _spin(30, 3600, 60, 10)
+	trigger_docket_container.add_child(trigger_docket_poll_interval_spin)
+	right_vbox.add_child(trigger_docket_container)
+
+	# Hook controls (shown only when trigger_type == EVENT and event_type is MCP_TOOL_*)
+	trigger_hook_container = VBoxContainer.new()
+	trigger_hook_container.add_theme_constant_override("separation", 6)
+	trigger_hook_container.add_child(_label("Fire Probability (0.0-1.0):"))
+	trigger_hook_fire_probability_spin = _spin(0.0, 1.0, 1.0, 0.05)
+	trigger_hook_fire_probability_spin.allow_greater = false
+	trigger_hook_fire_probability_spin.allow_lesser = false
+	trigger_hook_container.add_child(trigger_hook_fire_probability_spin)
+	trigger_hook_container.add_child(_label("Tool Name Pattern (regex, optional):"))
+	trigger_hook_tool_pattern_edit = LineEdit.new()
+	trigger_hook_tool_pattern_edit.placeholder_text = "e.g. minerva_file_.*"
+	trigger_hook_tool_pattern_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_hook_container.add_child(trigger_hook_tool_pattern_edit)
+	trigger_hook_route_table_label = _label("Route Table (JSON, for About To Execute):")
+	trigger_hook_container.add_child(trigger_hook_route_table_label)
+	trigger_hook_route_table_edit = TextEdit.new()
+	trigger_hook_route_table_edit.custom_minimum_size = Vector2(0, 80)
+	trigger_hook_route_table_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trigger_hook_route_table_edit.placeholder_text = "[[\"tool_regex\", \"arg_name\", \"arg_match\", \"hint\"], ...]"
+	trigger_hook_container.add_child(trigger_hook_route_table_edit)
+	trigger_hook_pending_label = Label.new()
+	trigger_hook_pending_label.text = "\u23f3 Pending human approval"
+	trigger_hook_pending_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.0))
+	trigger_hook_pending_label.visible = false
+	trigger_hook_container.add_child(trigger_hook_pending_label)
+	trigger_hook_container.visible = false
+	right_vbox.add_child(trigger_hook_container)
+
 	# Event type
 	right_vbox.add_child(_label("Event Type:"))
 	trigger_event_option = OptionButton.new()
 	trigger_event_option.add_item("Note Created", TriggerDefinition.EventType.NOTE_CREATED)
 	trigger_event_option.add_item("Note Changed", TriggerDefinition.EventType.NOTE_CHANGED)
 	trigger_event_option.add_item("Chat Completed", TriggerDefinition.EventType.CHAT_COMPLETED)
+	trigger_event_option.add_item("MCP Tool Executed", TriggerDefinition.EventType.MCP_TOOL_EXECUTED)
+	trigger_event_option.add_item("MCP Tool About To Execute", TriggerDefinition.EventType.MCP_TOOL_ABOUT_TO_EXECUTE)
 	trigger_event_option.item_selected.connect(_on_event_type_changed)
 	right_vbox.add_child(trigger_event_option)
 
@@ -983,6 +1065,18 @@ func _on_trigger_selected(index: int) -> void:
 	_populate_chain_options(trig.id)
 	_select_chain_option(trig.chain_trigger_id)
 	trigger_enabled_check.button_pressed = trig.enabled
+	# Load docket poll fields
+	trigger_docket_project_edit.text = trig.docket_project
+	trigger_docket_filter_parent_edit.text = trig.docket_filter_parent
+	trigger_docket_filter_item_ids_edit.text = trig.docket_filter_item_ids
+	trigger_docket_filter_types_edit.text = trig.docket_filter_types
+	trigger_docket_filter_tags_edit.text = trig.docket_filter_tags
+	trigger_docket_poll_interval_spin.value = trig.docket_poll_interval
+	# Load hook fields
+	trigger_hook_fire_probability_spin.value = trig.hook_fire_probability
+	trigger_hook_tool_pattern_edit.text = trig.hook_tool_name_pattern
+	trigger_hook_route_table_edit.text = trig.hook_route_table
+	trigger_hook_pending_label.visible = trig.pending_approval
 	_on_trigger_type_changed(trig.trigger_type)
 	_populate_watched_agents(trig.watched_agent_ids)
 	_update_watched_visibility(trig.trigger_type, trig.event_type)
@@ -993,11 +1087,13 @@ func _on_trigger_type_changed(index: int) -> void:
 	index = trigger_type_option.get_item_id(index)
 	var is_timer = (index == TriggerDefinition.TriggerType.TIMER)
 	var is_time = (index == TriggerDefinition.TriggerType.TIME)
+	var is_docket_poll = (index == TriggerDefinition.TriggerType.DOCKET_POLL)
 	_populate_schedule_type_options(index, trigger_schedule_type_option.get_selected_id())
 	trigger_schedule_type_label.visible = is_time
 	trigger_schedule_type_option.visible = is_time
-	trigger_event_option.visible = not (is_timer or is_time)
+	trigger_event_option.visible = not (is_timer or is_time or is_docket_poll)
 	trigger_fire_if_missed_check.visible = is_time
+	trigger_docket_container.visible = is_docket_poll
 	if is_timer or is_time:
 		_on_schedule_type_changed(trigger_schedule_type_option.get_selected_id())
 	else:
@@ -1013,7 +1109,7 @@ func _on_trigger_type_changed(index: int) -> void:
 		trigger_interval_spin.visible = false
 		trigger_schedule_preview.visible = false
 		trigger_last_fired_label.visible = false
-	var event_type = trigger_event_option.get_selected_id() if not (is_timer or is_time) else -1
+	var event_type = trigger_event_option.get_selected_id() if not (is_timer or is_time or is_docket_poll) else -1
 	_update_watched_visibility(index, event_type)
 
 
@@ -1027,6 +1123,18 @@ func _update_watched_visibility(trigger_type: int, event_type: int) -> void:
 			and event_type == TriggerDefinition.EventType.CHAT_COMPLETED)
 	trigger_watched_label.visible = show_watched
 	trigger_watched_container.visible = show_watched
+	_update_hook_visibility(trigger_type, event_type)
+
+
+func _update_hook_visibility(trigger_type: int, event_type: int) -> void:
+	var is_mcp_event = (trigger_type == TriggerDefinition.TriggerType.EVENT \
+			and (event_type == TriggerDefinition.EventType.MCP_TOOL_EXECUTED \
+			or event_type == TriggerDefinition.EventType.MCP_TOOL_ABOUT_TO_EXECUTE))
+	trigger_hook_container.visible = is_mcp_event
+	var is_about_to_execute = (trigger_type == TriggerDefinition.TriggerType.EVENT \
+			and event_type == TriggerDefinition.EventType.MCP_TOOL_ABOUT_TO_EXECUTE)
+	trigger_hook_route_table_label.visible = is_about_to_execute
+	trigger_hook_route_table_edit.visible = is_about_to_execute
 
 
 func _on_schedule_type_changed(index: int) -> void:
@@ -1181,6 +1289,16 @@ func _on_trigger_new() -> void:
 	trigger_batch_label_edit.text = ""
 	_populate_chain_options("")
 	trigger_enabled_check.button_pressed = false
+	trigger_docket_project_edit.text = ""
+	trigger_docket_filter_parent_edit.text = ""
+	trigger_docket_filter_item_ids_edit.text = ""
+	trigger_docket_filter_types_edit.text = ""
+	trigger_docket_filter_tags_edit.text = ""
+	trigger_docket_poll_interval_spin.value = 60
+	trigger_hook_fire_probability_spin.value = 1.0
+	trigger_hook_tool_pattern_edit.text = ""
+	trigger_hook_route_table_edit.text = ""
+	trigger_hook_pending_label.visible = false
 	_on_trigger_type_changed(0)
 	var empty_ids: Array[String] = []
 	_populate_watched_agents(empty_ids)
@@ -1224,6 +1342,15 @@ func _on_trigger_save() -> void:
 		trig.batch_label = trigger_batch_label_edit.text.strip_edges()
 		trig.chain_trigger_id = _get_selected_chain_trigger_id()
 		trig.enabled = trigger_enabled_check.button_pressed
+		trig.docket_project = trigger_docket_project_edit.text.strip_edges()
+		trig.docket_filter_parent = trigger_docket_filter_parent_edit.text.strip_edges()
+		trig.docket_filter_item_ids = trigger_docket_filter_item_ids_edit.text.strip_edges()
+		trig.docket_filter_types = trigger_docket_filter_types_edit.text.strip_edges()
+		trig.docket_filter_tags = trigger_docket_filter_tags_edit.text.strip_edges()
+		trig.docket_poll_interval = trigger_docket_poll_interval_spin.value
+		trig.hook_fire_probability = trigger_hook_fire_probability_spin.value
+		trig.hook_tool_name_pattern = trigger_hook_tool_pattern_edit.text.strip_edges()
+		trig.hook_route_table = trigger_hook_route_table_edit.text.strip_edges()
 		tm.update_trigger(trig.id, trig)
 		SingletonObject.create_toast_notification("Trigger updated", ToastNotification.Type.SUCCESS)
 	else:
@@ -1247,6 +1374,15 @@ func _on_trigger_save() -> void:
 		trig.batch_label = trigger_batch_label_edit.text.strip_edges()
 		trig.chain_trigger_id = _get_selected_chain_trigger_id()
 		trig.enabled = trigger_enabled_check.button_pressed
+		trig.docket_project = trigger_docket_project_edit.text.strip_edges()
+		trig.docket_filter_parent = trigger_docket_filter_parent_edit.text.strip_edges()
+		trig.docket_filter_item_ids = trigger_docket_filter_item_ids_edit.text.strip_edges()
+		trig.docket_filter_types = trigger_docket_filter_types_edit.text.strip_edges()
+		trig.docket_filter_tags = trigger_docket_filter_tags_edit.text.strip_edges()
+		trig.docket_poll_interval = trigger_docket_poll_interval_spin.value
+		trig.hook_fire_probability = trigger_hook_fire_probability_spin.value
+		trig.hook_tool_name_pattern = trigger_hook_tool_pattern_edit.text.strip_edges()
+		trig.hook_route_table = trigger_hook_route_table_edit.text.strip_edges()
 		tm.add_trigger(trig)
 		SingletonObject.create_toast_notification("Trigger created", ToastNotification.Type.SUCCESS)
 
@@ -1344,11 +1480,14 @@ func _refresh_trigger_list() -> void:
 			type_str = "Timer"
 		elif trig.trigger_type == TriggerDefinition.TriggerType.TIME:
 			type_str = "Time"
+		elif trig.trigger_type == TriggerDefinition.TriggerType.DOCKET_POLL:
+			type_str = "Docket Poll"
 		var action_str = " (msg)" if trig.action_type == TriggerDefinition.ActionType.MESSAGE_EXISTING else ""
 		var enabled_str = " [ON]" if trig.enabled else " [OFF]"
 		var batch_str = " [%d params]" % trig.batch_params.size() if not trig.batch_params.is_empty() else ""
 		var chain_str = " -> chain" if not trig.chain_trigger_id.is_empty() else ""
+		var pending_str = " [PENDING]" if trig.pending_approval else ""
 		var display_name = trig.name if not trig.name.is_empty() else agent_name
-		trigger_list.add_item("%s%s: %s%s%s%s" % [type_str, action_str, display_name, batch_str, chain_str, enabled_str])
+		trigger_list.add_item("%s%s: %s%s%s%s%s" % [type_str, action_str, display_name, batch_str, chain_str, pending_str, enabled_str])
 
 #endregion List Refresh

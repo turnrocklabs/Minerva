@@ -651,6 +651,8 @@ func expand_message() -> void:
 
 
 func contract_message() -> void:
+	if not is_inside_tree():
+		return
 	_animate_called_from_button = true
 	_animate_expand(0.0, -90.0, expand_icon_color)
 	await get_tree().create_timer(expand_anim_duration- 0.24).timeout

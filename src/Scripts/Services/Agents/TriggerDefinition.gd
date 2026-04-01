@@ -2,8 +2,8 @@ class_name TriggerDefinition
 extends RefCounted
 ## Data class for an agent trigger.
 
-enum TriggerType { TIMER, EVENT, TIME }
-enum EventType { NOTE_CREATED, NOTE_CHANGED, CHAT_COMPLETED }
+enum TriggerType { TIMER, EVENT, TIME, DOCKET_POLL }
+enum EventType { NOTE_CREATED, NOTE_CHANGED, CHAT_COMPLETED, MCP_TOOL_EXECUTED, MCP_TOOL_ABOUT_TO_EXECUTE }
 enum ActionType { SPAWN_NEW, MESSAGE_EXISTING }
 enum ScheduleType { INTERVAL, DAILY, WEEKLY, MONTHLY, YEARLY }
 
@@ -38,6 +38,28 @@ var schedule_month: int = 1
 var last_fired_at: String = ""
 ## If true, fire on next startup if a scheduled time was missed.
 var fire_if_missed: bool = true
+## Docket project name to poll (e.g., "cad", "minerva")
+var docket_project: String = ""
+## Optional tag filter for docket poll (comma-separated tags)
+var docket_filter_tags: String = ""
+## Optional parent item ID — only watch children of this item
+var docket_filter_parent: String = ""
+## Optional specific item IDs to watch (comma-separated)
+var docket_filter_item_ids: String = ""
+## Optional item type filter (comma-separated, e.g. "work_item,bug")
+var docket_filter_types: String = ""
+## Poll interval in seconds (default 60, min 30)
+var docket_poll_interval: float = 60.0
+## ISO datetime of last successful poll (persisted)
+var docket_last_poll_at: String = ""
+## Probability of firing for hook events (0.0-1.0, default 1.0)
+var hook_fire_probability: float = 1.0
+## Regex pattern matching tool name (empty = all tools)
+var hook_tool_name_pattern: String = ""
+## Route table for PreToolUse matching, JSON: [[tool_regex, arg_name, arg_match_regex, hint_string], ...]
+var hook_route_table: String = ""
+## Whether this trigger is pending human approval (agents can't enable directly)
+var pending_approval: bool = false
 
 
 func _init(p_id: String = ""):
@@ -69,6 +91,17 @@ func serialize() -> Dictionary:
 		"schedule_month": schedule_month,
 		"last_fired_at": last_fired_at,
 		"fire_if_missed": fire_if_missed,
+		"docket_project": docket_project,
+		"docket_filter_tags": docket_filter_tags,
+		"docket_filter_parent": docket_filter_parent,
+		"docket_filter_item_ids": docket_filter_item_ids,
+		"docket_filter_types": docket_filter_types,
+		"docket_poll_interval": docket_poll_interval,
+		"docket_last_poll_at": docket_last_poll_at,
+		"hook_fire_probability": hook_fire_probability,
+		"hook_tool_name_pattern": hook_tool_name_pattern,
+		"hook_route_table": hook_route_table,
+		"pending_approval": pending_approval,
 	}
 	return data
 
@@ -100,6 +133,17 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 	trig.schedule_month = int(data.get("schedule_month", 1))
 	trig.last_fired_at = data.get("last_fired_at", "")
 	trig.fire_if_missed = data.get("fire_if_missed", true)
+	trig.docket_project = data.get("docket_project", "")
+	trig.docket_filter_tags = data.get("docket_filter_tags", "")
+	trig.docket_filter_parent = data.get("docket_filter_parent", "")
+	trig.docket_filter_item_ids = data.get("docket_filter_item_ids", "")
+	trig.docket_filter_types = data.get("docket_filter_types", "")
+	trig.docket_poll_interval = float(data.get("docket_poll_interval", 60.0))
+	trig.docket_last_poll_at = data.get("docket_last_poll_at", "")
+	trig.hook_fire_probability = float(data.get("hook_fire_probability", 1.0))
+	trig.hook_tool_name_pattern = data.get("hook_tool_name_pattern", "")
+	trig.hook_route_table = data.get("hook_route_table", "")
+	trig.pending_approval = data.get("pending_approval", false)
 	# Backward compatibility: older wall-clock schedules were stored as TIMER + non-INTERVAL schedule.
 	if trig.trigger_type == TriggerType.TIMER and trig.schedule_type != ScheduleType.INTERVAL:
 		trig.trigger_type = TriggerType.TIME

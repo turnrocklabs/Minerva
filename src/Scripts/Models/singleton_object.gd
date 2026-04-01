@@ -296,6 +296,9 @@ signal injection_consumed(history_id: String)
 ## Emitted after an MCP CodeTools tool executes. Terminal listens to create virtual blocks.
 signal mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String)
 
+## Emitted before any MCP tool executes. Used by hook triggers for PreToolUse matching.
+signal mcp_tool_about_to_execute(tool_name: String, arguments: Dictionary)
+
 ## Clear proxies that match the given chat (or are untargeted). Preserve others.
 ## Disables cached notes on consumed proxies, then emits injection_consumed.
 func clear_consumed_proxies(history_id: String) -> void:
@@ -404,7 +407,7 @@ var mcp_http_server_port: int = 9315:
 			mcp_http_server_port = saved if saved != null and saved > 0 else 9315
 		return mcp_http_server_port
 
-var mcp_http_server_auto_start: bool = false:
+var mcp_http_server_auto_start: bool = true:
 	set(value):
 		mcp_http_server_auto_start = value
 		save_to_config_file("MCPServer", "auto_start", value)
@@ -423,15 +426,36 @@ func initialize_mcp() -> void:
 		return
 	mcp_manager = MCPManagerScript.new()
 	add_child(mcp_manager)
-	await mcp_manager.initialize()
 
-	# Auto-start HTTP server if configured
+	# Auto-connect internal Minerva MCP server (always — it's in-process)
+	mcp_manager.connect_minerva_server()
+
+	# Auto-start HTTP server (Minerva's own MCP server for external clients)
 	if mcp_http_server_auto_start:
 		var err = mcp_manager.start_http_server(mcp_http_server_port)
 		if err == OK:
 			print("[MCP] HTTP server auto-started on port %d" % mcp_http_server_port)
 		else:
 			push_warning("[MCP] Failed to auto-start HTTP server: %s" % error_string(err))
+
+	# Auto-start and connect external MCP servers
+	var auto_servers = mcp_manager.config.get_auto_connect_servers()
+	if not auto_servers.is_empty():
+		var runner := preload("res://Scripts/Services/MCP/MCPServerRunner.gd").new()
+		for server_config in auto_servers:
+			var sname: String = server_config.name
+			# Try to start the process (no-op if already running or not installed)
+			var start_err := runner.start_server(sname)
+			if start_err == OK:
+				print("[MCP] Auto-started server process: %s" % sname)
+			elif start_err == ERR_ALREADY_IN_USE:
+				print("[MCP] Server already running: %s" % sname)
+			else:
+				print("[MCP] Could not start %s (err=%s), will try connect anyway" % [sname, error_string(start_err)])
+		# Wait for processes to initialize before connecting
+		await get_tree().create_timer(2.0).timeout
+		# Now connect to all auto-connect servers
+		await mcp_manager.initialize()
 
 	# Initialize plugin system after MCP is ready
 	initialize_plugins()

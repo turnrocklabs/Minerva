@@ -180,6 +180,11 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# Track tool usage for LRU
 	tool_budget_manager.mark_used(tool_name)
 
+	# Emit pre-execution signal for hook triggers (PreToolUse)
+	# Only emit if TriggerManager has hook triggers — avoids signal dispatch overhead per tool call
+	if arguments is Dictionary and SingletonObject.trigger_manager and not SingletonObject.trigger_manager.triggers.is_empty():
+		SingletonObject.mcp_tool_about_to_execute.emit(tool_name, arguments)
+
 	match tool_name:
 		# Chat tools
 		"minerva_create_chat":
@@ -614,8 +619,11 @@ func _register_chat_tools() -> void:
 				},
 				"provider": {
 					"type": "string",
-					"description": "Model provider to use. Options: claude_sonnet, claude_haiku, claude_opus, gpt_nano, gpt_standard, gpt_deep, gemini_flash, gemini_pro. Default: current selected provider.",
-					"enum": ["claude_sonnet", "claude_haiku", "claude_opus", "gpt_nano", "gpt_standard", "gpt_deep", "gemini_flash", "gemini_pro"]
+					"description": "Model provider. Use enum name (e.g. claude_sonnet, claude_opus, gpt_standard, gpt_deep, gemini_flash, chatgpt_default) or 'current' to use the calling chat's provider. Case-insensitive. Default: current UI selection."
+				},
+				"provider_enum_id": {
+					"type": "integer",
+					"description": "Alternative: provider enum ID (e.g. 11=CLAUDE_SONNET, 12=CLAUDE_OPUS, 20=CHATGPT_DEFAULT). Use for OpenRouter dynamic models (>=1000). Takes precedence over provider name."
 				}
 			},
 			"required": ["name"]
@@ -1865,26 +1873,46 @@ func _create_chat(args: Dictionary) -> Dictionary:
 	if not chat_pane:
 		return {"error": "Chat pane not available", "success": false}
 
-	# Map provider name to enum
+	# Resolve provider: friendly name, enum ID, "current", or fallback
 	var provider_obj = null
-	if not provider_name.is_empty():
-		var provider_map = {
-			"claude_sonnet": SingletonObject.API_MODEL_PROVIDERS.CLAUDE_SONNET,
-			"claude_haiku": SingletonObject.API_MODEL_PROVIDERS.CLAUDE_HAIKU,
-			"claude_opus": SingletonObject.API_MODEL_PROVIDERS.CLAUDE_OPUS,
-			"gpt_nano": SingletonObject.API_MODEL_PROVIDERS.GPT_NANO,
-			"gpt_standard": SingletonObject.API_MODEL_PROVIDERS.GPT_STANDARD,
-			"gpt_deep": SingletonObject.API_MODEL_PROVIDERS.GPT_DEEP,
-			"gemini_flash": SingletonObject.API_MODEL_PROVIDERS.GEMINI_FLASH,
-			"gemini_pro": SingletonObject.API_MODEL_PROVIDERS.GEMINI_PRO,
-		}
-		if provider_map.has(provider_name):
-			var enum_val = provider_map[provider_name]
-			if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(enum_val):
-				provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[enum_val].new()
-				print("[MinervaMCPServer] Using provider: %s" % provider_name)
+	var provider_enum_id = args.get("provider_enum_id", -1)
 
-	# Fall back to current selected provider
+	if provider_name == "current":
+		# Use the calling chat's provider
+		if chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
+			var caller_history = SingletonObject.ChatList[chat_pane.current_tab]
+			if caller_history and caller_history.provider:
+				provider_obj = caller_history.provider.duplicate() if caller_history.provider.has_method("duplicate") else caller_history.provider
+				if not provider_obj:
+					# Can't duplicate, create new instance of same type
+					var script = caller_history.provider.get_script()
+					if script:
+						provider_obj = script.new()
+				print("[MinervaMCPServer] Using current chat's provider")
+
+	if not provider_obj and int(provider_enum_id) >= 0:
+		# Accept raw enum ID (covers OpenRouter >=1000, ChatGPT=20, etc.)
+		var eid: int = int(provider_enum_id)
+		if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(eid):
+			provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[eid].new()
+			print("[MinervaMCPServer] Using provider enum ID: %d" % eid)
+
+	if not provider_obj and not provider_name.is_empty():
+		# Build friendly name map dynamically from the enum
+		var name_map: Dictionary = {}
+		for eid in SingletonObject.API_MODEL_PROVIDERS.values():
+			var ename: String = SingletonObject.API_MODEL_PROVIDERS.find_key(eid)
+			if ename:
+				name_map[ename.to_lower()] = eid
+		# Try exact match first, then common aliases
+		var lookup_name := provider_name.to_lower().replace("-", "_").replace(" ", "_")
+		if name_map.has(lookup_name):
+			var eid: int = name_map[lookup_name]
+			if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(eid):
+				provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[eid].new()
+				print("[MinervaMCPServer] Using provider: %s (enum: %d)" % [provider_name, eid])
+
+	# Fall back to current selected provider in UI
 	if not provider_obj:
 		provider_obj = chat_pane._provider_option_button.get_selected_provider()
 		if not provider_obj:
@@ -2003,9 +2031,11 @@ func _send_message(args: Dictionary) -> Dictionary:
 	print("[MinervaMCPServer] Sending message to chat '%s': %s" % [history.HistoryName, message.left(50)])
 	chat_pane.execute_regular_chat(message)
 
-	# Immediately restore original tab - don't wait for response
-	# This prevents breaking the calling agent's loop
-	chat_pane.current_tab = original_tab
+	# Restore original tab after the current frame completes.
+	# IMPORTANT: Don't switch back immediately — execute_regular_chat reads
+	# current_tab during setup. Switching too early causes provider mismatch
+	# (e.g., sub-agent uses caller's ChatGPT format instead of its own Anthropic format).
+	chat_pane.call_deferred("set_current_tab", original_tab)
 
 	return {
 		"success": true,
@@ -7884,7 +7914,7 @@ func _register_trigger_tools() -> void:
 	, "triggers")
 
 	_register_tool("minerva_create_trigger",
-		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1, TIME=2. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1.",
+		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1, TIME=2. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2, MCP_TOOL_EXECUTED=3, MCP_TOOL_ABOUT_TO_EXECUTE=4. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1.",
 		{
 			"type": "object",
 			"properties": {
@@ -7906,7 +7936,7 @@ func _register_trigger_tools() -> void:
 				},
 				"event_type": {
 					"type": "integer",
-					"description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED. Default 0"
+					"description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED, 3=MCP_TOOL_EXECUTED, 4=MCP_TOOL_ABOUT_TO_EXECUTE. Default 0"
 				},
 				"action_type": {
 					"type": "integer",
@@ -7962,6 +7992,46 @@ func _register_trigger_tools() -> void:
 				"fire_if_missed": {
 					"type": "boolean",
 					"description": "Fire on next startup if scheduled time was missed. Default true."
+				},
+				"docket_project": {
+					"type": "string",
+					"description": "For DOCKET_POLL: docket project name to poll (e.g. 'cad', 'minerva')"
+				},
+				"docket_filter_parent": {
+					"type": "string",
+					"description": "For DOCKET_POLL: only watch children of this parent item ID"
+				},
+				"docket_filter_item_ids": {
+					"type": "string",
+					"description": "For DOCKET_POLL: only watch these specific item IDs (comma-separated)"
+				},
+				"docket_filter_types": {
+					"type": "string",
+					"description": "For DOCKET_POLL: only watch these item types (comma-separated, e.g. 'work_item,bug')"
+				},
+				"docket_filter_tags": {
+					"type": "string",
+					"description": "For DOCKET_POLL: only watch items with these tags (comma-separated)"
+				},
+				"docket_poll_interval": {
+					"type": "number",
+					"description": "For DOCKET_POLL: poll interval in seconds (min 30, default 60)"
+				},
+				"hook_fire_probability": {
+					"type": "number",
+					"description": "Probability of firing (0.0-1.0). Default 1.0. Use 0.1 for 10% nudge rate."
+				},
+				"hook_tool_name_pattern": {
+					"type": "string",
+					"description": "Regex pattern matching tool name. Empty = all tools."
+				},
+				"hook_route_table": {
+					"type": "string",
+					"description": "JSON route table for PreToolUse: [[tool_regex, arg_name, arg_match_regex, hint], ...]"
+				},
+				"pending_approval": {
+					"type": "boolean",
+					"description": "Whether trigger is pending human approval. Read-only for internal agents."
 				}
 			},
 			"required": ["name", "agent_id"]
@@ -7979,9 +8049,9 @@ func _register_trigger_tools() -> void:
 				},
 				"name": { "type": "string", "description": "New display name" },
 				"agent_id": { "type": "string", "description": "New agent definition ID" },
-				"trigger_type": { "type": "integer", "description": "0=TIMER, 1=EVENT, 2=TIME" },
+				"trigger_type": { "type": "integer", "description": "0=TIMER, 1=EVENT, 2=TIME, 3=DOCKET_POLL" },
 				"interval_seconds": { "type": "number", "description": "Timer interval" },
-				"event_type": { "type": "integer", "description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED" },
+				"event_type": { "type": "integer", "description": "0=NOTE_CREATED, 1=NOTE_CHANGED, 2=CHAT_COMPLETED, 3=MCP_TOOL_EXECUTED, 4=MCP_TOOL_ABOUT_TO_EXECUTE" },
 				"action_type": { "type": "integer", "description": "0=SPAWN_NEW, 1=MESSAGE_EXISTING" },
 				"initial_message": { "type": "string", "description": "Message template" },
 				"batch_params": { "type": "array", "items": {"type": "string"}, "description": "Batch parameter list" },
@@ -7994,7 +8064,17 @@ func _register_trigger_tools() -> void:
 				"schedule_days": { "type": "array", "items": {"type": "integer"}, "description": "Days of week 0=Mon..6=Sun" },
 				"schedule_day_of_month": { "type": "integer", "description": "Day of month for MONTHLY/YEARLY schedules" },
 				"schedule_month": { "type": "integer", "description": "Month for YEARLY schedules (1-12)" },
-				"fire_if_missed": { "type": "boolean", "description": "Fire on startup if missed" }
+				"fire_if_missed": { "type": "boolean", "description": "Fire on startup if missed" },
+				"docket_project": { "type": "string", "description": "For DOCKET_POLL: project name" },
+				"docket_filter_parent": { "type": "string", "description": "For DOCKET_POLL: parent item ID filter" },
+				"docket_filter_item_ids": { "type": "string", "description": "For DOCKET_POLL: specific item IDs (comma-separated)" },
+				"docket_filter_types": { "type": "string", "description": "For DOCKET_POLL: item types (comma-separated)" },
+				"docket_filter_tags": { "type": "string", "description": "For DOCKET_POLL: tag filter (comma-separated)" },
+				"docket_poll_interval": { "type": "number", "description": "For DOCKET_POLL: poll interval seconds" },
+				"hook_fire_probability": { "type": "number", "description": "Probability of firing (0.0-1.0). Default 1.0. Use 0.1 for 10% nudge rate." },
+				"hook_tool_name_pattern": { "type": "string", "description": "Regex pattern matching tool name. Empty = all tools." },
+				"hook_route_table": { "type": "string", "description": "JSON route table for PreToolUse: [[tool_regex, arg_name, arg_match_regex, hint], ...]" },
+				"pending_approval": { "type": "boolean", "description": "Whether trigger is pending human approval. Read-only for internal agents." }
 			},
 			"required": ["trigger_id"]
 		}
@@ -8247,6 +8327,20 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 	trig.schedule_month = int(args.get("schedule_month", 1))
 	trig.fire_if_missed = args.get("fire_if_missed", true)
 
+	# Hook event fields
+	# Docket poll fields
+	trig.docket_project = args.get("docket_project", "")
+	trig.docket_filter_parent = args.get("docket_filter_parent", "")
+	trig.docket_filter_item_ids = args.get("docket_filter_item_ids", "")
+	trig.docket_filter_types = args.get("docket_filter_types", "")
+	trig.docket_filter_tags = args.get("docket_filter_tags", "")
+	trig.docket_poll_interval = float(args.get("docket_poll_interval", 60.0))
+	# Hook fields
+	trig.hook_fire_probability = float(args.get("hook_fire_probability", 1.0))
+	trig.hook_tool_name_pattern = args.get("hook_tool_name_pattern", "")
+	trig.hook_route_table = args.get("hook_route_table", "")
+	trig.pending_approval = args.get("pending_approval", false)
+
 	var bp: Array = args.get("batch_params", [])
 	for p in bp:
 		trig.batch_params.append(str(p))
@@ -8301,6 +8395,20 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	trig.schedule_month = int(args.get("schedule_month", existing.schedule_month))
 	trig.fire_if_missed = args.get("fire_if_missed", existing.fire_if_missed)
 	trig.last_fired_at = existing.last_fired_at
+
+	# Docket poll fields
+	trig.docket_project = args.get("docket_project", existing.docket_project)
+	trig.docket_filter_parent = args.get("docket_filter_parent", existing.docket_filter_parent)
+	trig.docket_filter_item_ids = args.get("docket_filter_item_ids", existing.docket_filter_item_ids)
+	trig.docket_filter_types = args.get("docket_filter_types", existing.docket_filter_types)
+	trig.docket_filter_tags = args.get("docket_filter_tags", existing.docket_filter_tags)
+	trig.docket_poll_interval = float(args.get("docket_poll_interval", existing.docket_poll_interval))
+	trig.docket_last_poll_at = existing.docket_last_poll_at
+	# Hook event fields
+	trig.hook_fire_probability = float(args.get("hook_fire_probability", existing.hook_fire_probability))
+	trig.hook_tool_name_pattern = args.get("hook_tool_name_pattern", existing.hook_tool_name_pattern)
+	trig.hook_route_table = args.get("hook_route_table", existing.hook_route_table)
+	trig.pending_approval = args.get("pending_approval", existing.pending_approval)
 
 	if args.has("batch_params"):
 		var bp: Array = args["batch_params"]

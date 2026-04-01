@@ -524,7 +524,7 @@ func process_bot_response(bot_response, _history_provider: BaseProvider) -> Chat
 	if bot_response != null:
 		chi.Id = bot_response.id
 		chi.Role = ChatHistoryItem.ChatRole.MODEL
-		chi.provider = bot_response.provider
+		chi.provider = _history_provider  # Use the chat's provider, not the response's — prevents format contamination across providers
 		chi.Message = bot_response.text
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
@@ -650,18 +650,28 @@ func ensure_chat_open() -> void:
 ## If [param refresh_detached] is `true`, [method NotesContainer.to_prompt] will regenerate the editor notes.[br]
 ## If there's no active history [parameter provider_fallback] can be used to determine which provider to use.[br]
 ## Check `History.to_prompt` for explanation on `predicate`.
-func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable()) -> Array[Variant]:
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null) -> Array[Variant]:
 
 	# if we don't have any chats history_list will be empty
 	var history_list: Array[Variant] = []
 	var provider: BaseProvider = provider_fallback
 	var history: ChatHistory = null
 
-	if not SingletonObject.ChatList.is_empty():
+	if history_override:
+		# Use explicitly passed history — critical for agent mode tool call loops
+		# where current_tab may point to a different chat (e.g., sub-agent)
+		history = history_override
+		if not provider:
+			provider = history.provider
+	elif not SingletonObject.ChatList.is_empty():
 		history = SingletonObject.ChatList[current_tab]
 		if not provider:
 			provider = history.provider
 
+	if not provider:
+		return []
+
+	if history:
 		# Handle agentic system prompt: use it instead of regular system prompt when agent mode is on
 		var effective_system_prompt: String = ""
 		if history.AgentModeEnabled:
@@ -690,12 +700,15 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 		# Build history list, handling system prompt based on provider support
 		history_list = _build_history_list_with_system_prompt(history, provider, effective_system_prompt, predicate, history.AgentModeEnabled)
 
-	if not provider:
-		return []
-
 	# any notes container `to_prompt` will go over both standard and drawer notes
 	var history_id_for_filter: String = history.HistoryId if history else ""
 	var working_memory: Array = await SingletonObject.notes_container.to_prompt(provider, refresh_detached, history_id_for_filter)
+
+	# Immediately consume proxies after collection to prevent leaking into
+	# other chats that may run during this turn (e.g., sub-agents).
+	# The notes are already captured in working_memory for this turn.
+	if history and not working_memory.is_empty():
+		SingletonObject.clear_consumed_proxies(history.HistoryId)
 
 	# If we don't have a new item but we have active notes, we still need new item to add the notes in there
 	if not append_item and working_memory:
@@ -1031,7 +1044,7 @@ func execute_hcp_chat():
 	
 	history.HistoryItemList.append(user_history_item)
 	
-	var history_list: = await create_prompt(user_history_item)
+	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
 
 	# rerender the message since we changed the history item
 	user_msg_node.first_time_message = true
@@ -1158,7 +1171,7 @@ func execute_regular_chat(text: String) -> void:
 					history.VBox.render_history(history)
 
 	# make a chat request
-	var history_list: = await create_prompt(user_history_item)
+	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
 	# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 	history.HistoryItemList.append(user_history_item)
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
@@ -1436,7 +1449,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# and sets provider.system_prompt for Anthropic/Google)
 	# NOTE: Use refresh_detached=false to use cached notes (created when tool enabled "Send to LLM")
 	# instead of calling the initializer again, which can cause issues with graphics composition
-	var continuation_list = await create_prompt(null, false)
+	# Pass history explicitly to avoid current_tab race with concurrent sub-agent chats
+	var continuation_list = await create_prompt(null, false, null, Callable(), history)
 
 	print("[Agent] Sending continuation with %d messages" % continuation_list.size())
 
@@ -1590,7 +1604,7 @@ func execute_sequential_chat(text_input: String) -> void:
 		if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
 		
 		# make a chat request
-		var history_list: = await create_prompt(user_history_item)
+		var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
 		# first pass `user_history_item` to `create_prompt` so it gets all the notes, and now add it to history
 		history.HistoryItemList.append(user_history_item)
 		user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
@@ -1726,7 +1740,7 @@ func create_message_new(inputs_idx: int) -> void:
 		return
 	
 	# make a chat request
-	var history_list: = await create_prompt(user_history_item)
+	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
 	
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 	

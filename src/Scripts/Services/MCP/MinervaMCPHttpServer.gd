@@ -19,6 +19,8 @@ var _sessions: Dictionary = {}  # session_id -> {created_at, last_activity}
 var _is_running: bool = false
 var _port: int = DEFAULT_PORT
 var _inflight_connections: Dictionary = {}  # conn -> true (handling) / false (done)
+var _cached_tools_list: Array[Dictionary] = []  # Cached tools/list response
+var _tools_list_dirty: bool = true  # Invalidate cache when tools change
 
 # Reference to the MCP manager and minerva server
 var _mcp_manager = null
@@ -267,19 +269,10 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 
 	if _mcp_manager and _mcp_manager.minerva_server:
 		var minerva_server = _mcp_manager.minerva_server
-
-		if minerva_server.auto_tool_management:
-			# Auto mode: only return active tools from budget manager
-			minerva_server.tool_budget_manager.advance_turn()
-			var active_schemas: Array[Dictionary] = minerva_server.tool_budget_manager.get_active_schemas()
-			for schema in active_schemas:
-				tools.append({
-					"name": schema.get("name", ""),
-					"description": schema.get("description", ""),
-					"inputSchema": schema.get("input_schema", {})
-				})
-		else:
-			# Manual mode: existing behavior — send all tools with filtering
+		# External MCP clients (Claude Code, etc.) always get the full tool catalog.
+		# Cache the result to avoid re-serializing 170+ tools on every tools/list call.
+		if _cached_tools_list.is_empty() or _tools_list_dirty:
+			_cached_tools_list.clear()
 			var enabled_sets: Array = minerva_server._enabled_tool_sets
 			for tool_name in _mcp_manager.tool_registry:
 				var tool = _mcp_manager.tool_registry[tool_name]
@@ -287,11 +280,13 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 					if not enabled_sets.is_empty():
 						if tool.tool_set != "meta" and tool.tool_set not in enabled_sets:
 							continue
-					tools.append({
+					_cached_tools_list.append({
 						"name": tool.name,
 						"description": tool.description,
 						"inputSchema": tool.input_schema
 					})
+			_tools_list_dirty = false
+		tools = _cached_tools_list
 
 	var result = {
 		"tools": tools

@@ -88,14 +88,15 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 		return bot_response
 
 	# Build Responses API input array (flatten arrays from Format())
+	# Also convert standard "text" content type to ChatGPT-specific input_text/output_text
 	var input_items: Array = []
 	for item in prompt:
 		if item is Array:
 			for sub_item in item:
 				if sub_item != null:
-					input_items.append(sub_item)
+					input_items.append(_convert_content_types(sub_item))
 		elif item != null:
-			input_items.append(item)
+			input_items.append(_convert_content_types(item))
 
 	# Build request body — instructions is always required by the backend
 	var instructions: String = system_prompt if not system_prompt.is_empty() else "You are a helpful AI assistant."
@@ -292,7 +293,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 			items.append({
 				"type": "message",
 				"role": "assistant",
-				"content": [{"type": "output_text", "text": chat_item.Message}]
+				"content": [{"type": "text", "text": chat_item.Message}]
 			})
 
 		for tool_call in chat_item.ToolCalls:
@@ -317,22 +318,20 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		return items
 
 	# Build content based on role
+	# Use standard "text" content type for cross-provider compatibility.
+	# The ChatGPT-specific input_text/output_text conversion happens in generate_content().
 	var role: String
-	var content_type: String
 
 	match chat_item.Role:
 		ChatHistoryItem.ChatRole.USER:
 			role = "user"
-			content_type = "input_text"
 		ChatHistoryItem.ChatRole.ASSISTANT, ChatHistoryItem.ChatRole.MODEL:
 			role = "assistant"
-			content_type = "output_text"
 		ChatHistoryItem.ChatRole.SYSTEM:
 			# System messages are handled via the instructions field
 			return null
 		_:
 			role = "user"
-			content_type = "input_text"
 
 	# Collect text notes
 	var text_notes := PackedStringArray()
@@ -352,8 +351,32 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	return {
 		"type": "message",
 		"role": role,
-		"content": [{"type": content_type, "text": full_text}]
+		"content": [{"type": "text", "text": full_text}]
 	}
+
+
+## Convert standard "text" content types to ChatGPT Responses API-specific types.
+## Format() uses "text" for cross-provider compatibility; this converts at API call time.
+func _convert_content_types(item: Variant) -> Variant:
+	if not item is Dictionary:
+		return item
+	# Only convert "message" type items that have content arrays
+	if item.get("type", "") != "message":
+		return item
+	var content: Variant = item.get("content", [])
+	if not content is Array:
+		return item
+	var role: String = item.get("role", "user")
+	var target_type: String = "input_text" if role == "user" else "output_text"
+	var new_content: Array = []
+	for block in content:
+		if block is Dictionary and block.get("type", "") == "text":
+			new_content.append({"type": target_type, "text": block.get("text", "")})
+		else:
+			new_content.append(block)
+	var result: Dictionary = item.duplicate()
+	result["content"] = new_content
+	return result
 
 
 func wrap_memory(item: Note) -> Variant:
