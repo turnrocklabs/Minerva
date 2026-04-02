@@ -155,10 +155,12 @@ func disconnect_server() -> void:
 
 
 ## Execute a minerva_* tool (requires internal connection to be enabled)
-func execute_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
+func execute_tool(tool_name: String, arguments: Dictionary, caller_chat_id: String = "") -> Dictionary:
 	if not server_enabled:
 		return {"error": "Minerva server not connected", "success": false}
+	_current_caller_chat_id = caller_chat_id
 	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
+	_current_caller_chat_id = ""
 	return _check_duplicate_call(tool_name, arguments, result)
 
 
@@ -8069,13 +8071,16 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	var max_tool_rounds: int = int(args.get("max_tool_rounds", 25))
 	var timeout_seconds: float = float(args.get("timeout_seconds", -1))
 
-	# 2. Determine parent_chat_id from current_tab BEFORE any tab switching
+	# 2. Determine parent_chat_id — prefer caller identity from tool dispatch chain,
+	# fall back to current_tab only if no caller identity is available
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
 		return {"error": "Chat pane not available", "success": false}
 
 	var parent_chat_id: String = ""
-	if chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
+	if not _current_caller_chat_id.is_empty():
+		parent_chat_id = _current_caller_chat_id
+	elif chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
 		parent_chat_id = SingletonObject.ChatList[chat_pane.current_tab].HistoryId
 
 	# 2b. Check budget before spawning
@@ -10918,6 +10923,8 @@ func _container_remove(arguments: Dictionary) -> Dictionary:
 var _cwd_tool: CwdTool = CwdTool.new()
 var _write_tool: WriteTool
 var _current_agent_id: String = ""
+## The HistoryId of the chat that invoked the current tool call (set by execute_tool, cleared after)
+var _current_caller_chat_id: String = ""
 
 func _register_codetools() -> void:
 	_write_tool = WriteTool.new(_cwd_tool)

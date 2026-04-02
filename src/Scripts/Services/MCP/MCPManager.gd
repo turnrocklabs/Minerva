@@ -403,7 +403,7 @@ func _find_agent_def(agent_id: String):
 
 
 ## Execute a tool by name
-func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
+func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id: String = "") -> Dictionary:
 	print("[MCP] execute_tool called: %s" % tool_name)
 
 	if not tool_registry.has(tool_name):
@@ -431,7 +431,7 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}) -> Dictionary:
 		if not minerva_server or not minerva_server.server_enabled:
 			return {"error": "Minerva server not connected", "success": false}
 
-		var minerva_result = await minerva_server.execute_tool(tool_name, arguments)
+		var minerva_result = await minerva_server.execute_tool(tool_name, arguments, caller_chat_id)
 
 		# Normalize result
 		if not minerva_result.has("success"):

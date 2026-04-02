@@ -41,7 +41,7 @@ var _engagement_toggle: CheckButton = null
 var _engagement_state_label: Label = null
 
 ## Default max tool call rounds (fallback if per-chat setting is 0)
-const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 10
+const DEFAULT_MAX_TOOL_CALL_ROUNDS: int = 25
 
 ## Agent mode context management constants
 const AGENT_MAX_TOOL_RESULT_LENGTH: int = 8000  # Truncate tool results longer than this
@@ -1391,8 +1391,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			print("[Agent] Tool blocked by AllowedDirectories: %s" % tool_name)
 			result = path_error
 		else:
-			# Execute the tool
-			result = await mcp_manager.execute_tool(tool_name, tool_args)
+			# Execute the tool — pass caller_chat_id so tools like spawn_worker know who called
+			result = await mcp_manager.execute_tool(tool_name, tool_args, history.HistoryId)
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
 
