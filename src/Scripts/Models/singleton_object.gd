@@ -388,13 +388,9 @@ var autocoder_manager: AutocodeManager
 #region MCP
 
 const MCPManagerScript := preload("res://Scripts/Services/MCP/MCPManager.gd")
-const CoBrowserMCPClientScript := preload("res://Scripts/Services/MCP/Servers/CoBrowserMCPClient.gd")
 
 ## Manager for MCP (Model Context Protocol) server connections
 var mcp_manager: Node = null
-
-## Co-Browser client for browser automation
-var cobrowser_client: RefCounted = null
 
 ## MCP HTTP Server settings - allows external agents to connect to Minerva
 var mcp_http_server_port: int = 9315:
@@ -463,18 +459,6 @@ func initialize_mcp() -> void:
 	# Wire plugin tools into MinervaMCPServer
 	if mcp_manager and mcp_manager.minerva_server and plugin_tool_registry:
 		_wire_plugin_tools_to_mcp()
-
-## Initialize Co-Browser client (call when needed)
-func get_cobrowser_client() -> RefCounted:
-	if not cobrowser_client:
-		cobrowser_client = CoBrowserMCPClientScript.new()
-	return cobrowser_client
-
-## Check if Co-Browser is available
-func is_cobrowser_available() -> bool:
-	var client = get_cobrowser_client()
-	return await client.has_active_session()
-
 
 ## Get the MCP manager instance (lazy initialization)
 func get_mcp_manager() -> Node:
