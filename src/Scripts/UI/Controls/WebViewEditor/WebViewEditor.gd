@@ -37,6 +37,15 @@ func _ready() -> void:
 	SingletonObject.theme_changed.connect(func(_t): _apply_editor_style())
 
 
+func _exit_tree() -> void:
+	# Destroy the native WRY webview window when the editor tab is closed.
+	# Without this, the OS-level webview window persists on screen after the tab is gone.
+	if _webview != null:
+		remove_child(_webview)
+		_webview.queue_free()
+		_webview = null
+
+
 func _apply_editor_style() -> void:
 	# Read the CodeEdit's actual themed normal style so we match exactly
 	var ref := CodeEdit.new()
