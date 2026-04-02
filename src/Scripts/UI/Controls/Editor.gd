@@ -40,6 +40,7 @@ var pcb_editor  # PCBEditor - type annotation removed to avoid circular dependen
 var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
+var worker_status_panel  # WorkerStatusPanel - type annotation removed to avoid circular dependency
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -79,6 +80,7 @@ enum Type {
 	ACTIVITY_LOG,
 	WEBVIEW,
 	PLUGIN_MANAGER,
+	WORKER_STATUS,
 }
 
 
@@ -267,6 +269,13 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_plugin_manager.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(new_plugin_manager)
 
+		Editor.Type.WORKER_STATUS:
+			var panel = WorkerStatusPanel.new()
+			panel.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			panel.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(panel)
+			editor.worker_status_panel = panel
+
 	return editor
 
 func toggle(on: bool) -> void:
@@ -338,6 +347,12 @@ func _ready():
 		jump_to_line_panel.hide()
 		$VBoxContainer/ButtonsHBoxContainer.hide()
 	elif self.type == Type.PLUGIN_MANAGER:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
+	elif self.type == Type.WORKER_STATUS:
 		mic_button.hide()
 		autowrap_button.hide()
 		find_string_container.hide()
@@ -643,6 +658,10 @@ func get_saved_state() -> int:
 
 		Type.PLUGIN_MANAGER:
 			# Plugin manager is read-only control panel, always considered saved
+			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
+		Type.WORKER_STATUS:
+			# Worker status is a live read-only view, always considered saved
 			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 	return state

@@ -857,6 +857,7 @@ var creatable_item_registry: CreatableItemRegistry = CreatableItemRegistry.new()
 var agent_registry: AgentRegistry = null
 var trigger_manager: TriggerManager = null
 var ledger_manager: LedgerManager = null
+var worker_registry = null  # WorkerRegistry — initialized in _init_agent_system()
 
 func _init_agent_system() -> void:
 	agent_registry = AgentRegistry.new()
@@ -865,6 +866,7 @@ func _init_agent_system() -> void:
 	trigger_manager.name = "TriggerManager"
 	add_child(trigger_manager)
 	ledger_manager = LedgerManager.new()
+	worker_registry = preload("res://Scripts/Services/Agents/WorkerRegistry.gd").new()
 	print("[SingletonObject] Agent system initialized (%d agents)" % agent_registry.agents.size())
 #endregion Agent System
 
@@ -1229,6 +1231,15 @@ func _init_creatable_items() -> void:
 			"kanban", "Kanban Board",
 			func(): ep.add(Editor.Type.KANBAN),
 			null, 70
+		)
+	)
+
+	# Worker Status (sort_order: 80)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"worker_status", "Worker Status",
+			func(): ep.add(Editor.Type.WORKER_STATUS),
+			null, 80
 		)
 	)
 

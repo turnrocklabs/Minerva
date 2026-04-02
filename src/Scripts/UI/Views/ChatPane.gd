@@ -1119,6 +1119,10 @@ func execute_regular_chat(text: String) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 
+	# Reset termination tracking for this new turn
+	history.termination_reason = ""
+	history.termination_message = ""
+
 	var user_history_item = create_user_history_item(text)
 	user_history_item.provider = history.provider
 	# if we're using the human provider, handle it here
@@ -1222,6 +1226,9 @@ func execute_regular_chat(text: String) -> void:
 		await handle_tool_calls(history, bot_response.tool_calls, 0, chi, user_history_item)
 	else:
 		print("[ChatPane] NOT entering tool call branch - skipping tool execution")
+		if history.AgentModeEnabled:
+			history.termination_reason = "completed"
+			history.termination_message = ""
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
 	# Notify trigger system that this agent chat is fully done (all tool rounds complete)
@@ -1320,6 +1327,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		push_warning("Agent mode: Max tool call rounds (%d) reached, stopping." % max_rounds)
 		# Add tool_result blocks for unexecuted tools so conversation can continue
 		_add_unexecuted_tool_results(history, tool_calls, "Max tool call rounds (%d) reached" % max_rounds)
+		history.termination_reason = "quota_exhausted"
+		history.termination_message = "Max tool call rounds (%d) reached" % max_rounds
 		finish_with_signal.call()
 		return
 
@@ -1328,6 +1337,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		SingletonObject.clear_cancelled(history.HistoryId)
 		# Add tool_result blocks for unexecuted tools so conversation can continue
 		_add_unexecuted_tool_results(history, tool_calls, "Cancelled by user")
+		history.termination_reason = "cancelled"
+		history.termination_message = "Cancelled by user"
 		finish_with_signal.call()
 		return
 
@@ -1348,6 +1359,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			# Add tool_results for remaining unexecuted tools (current + rest)
 			var remaining_tools = tool_calls.slice(i)
 			_add_unexecuted_tool_results(history, remaining_tools, "Cancelled by user")
+			history.termination_reason = "cancelled"
+			history.termination_message = "Cancelled by user during tool execution"
 			finish_with_signal.call()
 			return
 
@@ -1424,6 +1437,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	if not context_status.ok:
 		# Hard limit exceeded - stop the agent loop
 		push_warning("Agent mode: %s" % context_status.message)
+		history.termination_reason = "quota_exhausted"
+		history.termination_message = context_status.message
 		finish_with_signal.call()
 		return
 	elif context_status.warning:
@@ -1441,6 +1456,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	# Check for cancellation before continuation
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
+		history.termination_reason = "cancelled"
+		history.termination_message = "Cancelled by user before continuation"
 		finish_with_signal.call()
 		return
 
@@ -1465,6 +1482,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		print("[Agent] ERROR: No continuation response received")
 		if is_instance_valid(model_chi.rendered_node):
 			model_chi.rendered_node.loading_append = false
+		history.termination_reason = "error"
+		history.termination_message = "No continuation response received"
 		finish_with_signal.call()
 		return
 
@@ -1486,6 +1505,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 				if is_instance_valid(model_chi.rendered_node):
 					model_chi.rendered_node.loading_append = false
 					model_chi.rendered_node.render()
+				history.termination_reason = "error"
+				history.termination_message = err_msg
 				finish_with_signal.call()
 				return
 		else:
@@ -1494,6 +1515,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			if is_instance_valid(model_chi.rendered_node):
 				model_chi.rendered_node.loading_append = false
 				model_chi.rendered_node.render()
+			history.termination_reason = "error"
+			history.termination_message = continuation_response.error
 			finish_with_signal.call()
 			return
 
@@ -1535,6 +1558,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			SingletonObject.clear_cancelled(history.HistoryId)
 			# Add tool_results for unexecuted tools so conversation can continue
 			_add_unexecuted_tool_results(history, continuation_response.tool_calls, "Cancelled by user")
+			history.termination_reason = "cancelled"
+			history.termination_message = "Cancelled by user before continuation"
 			finish_with_signal.call()
 			return
 
@@ -1570,6 +1595,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			var user_text := user_history_item.Message if user_history_item else ""
 			_voice_speak_response(final_text, user_text, model_chi.rendered_node)
 
+		history.termination_reason = "completed"
+		history.termination_message = ""
 		finish_with_signal.call()
 
 

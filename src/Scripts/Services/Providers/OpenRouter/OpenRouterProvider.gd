@@ -81,7 +81,14 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 		else:
 			if SingletonObject.verbose_logging:
 				print("[OpenRouter] Error response (code %s): %s" % [response.response_code, data])
-			if "error" in data or "message" in data:
+
+			# Check for rate limiting before generic error handling
+			if response.response_code == 429:
+				bot_response.is_rate_limited = true
+				bot_response.rate_limit_retry_after = parse_retry_after(response.headers)
+				bot_response.error = "Rate limited by OpenRouter"
+				print("[OpenRouter] Rate limited (HTTP 429, retry_after: %s)" % bot_response.rate_limit_retry_after)
+			elif "error" in data or "message" in data:
 				if "error" in data:
 					var error_data = data["error"]
 					if error_data is Dictionary:

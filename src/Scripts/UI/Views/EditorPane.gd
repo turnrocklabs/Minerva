@@ -207,6 +207,11 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
+			Editor.Type.WORKER_STATUS:
+				var tab_name = "Worker Status"
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+
 	return editor_node
 
 

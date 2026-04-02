@@ -329,6 +329,20 @@ func make_request(url: String, method: int, body: Variant = "", headers: Array[S
 	return results
 
 
+## Parse the Retry-After value (seconds) from a PackedStringArray of response headers.
+## Returns -1.0 if the header is absent or unparseable.
+static func parse_retry_after(headers: PackedStringArray) -> float:
+	for header in headers:
+		var lower: String = header.to_lower()
+		if lower.begins_with("retry-after:"):
+			var value: String = header.substr(header.find(":") + 1).strip_edges()
+			if value.is_valid_float():
+				return value.to_float()
+			if value.is_valid_int():
+				return float(value.to_int())
+	return -1.0
+
+
 func cancel_active_resquests() -> void:
 	for i: HTTPRequest in active_requests:
 		if i.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:

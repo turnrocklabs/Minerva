@@ -64,6 +64,7 @@ func _init(manager = null) -> void:
 		_register_video_editor_tools()
 		_register_utility_tools()
 		_register_agent_tools()
+		_register_worker_tools()
 		_register_trigger_tools()
 		_register_autocoder_tools()
 		_register_model_tools()
@@ -131,6 +132,11 @@ func connect_server() -> void:
 
 	register_tools()
 	server_enabled = true
+
+	# Connect completion routing for sub-agent workers
+	if not SingletonObject.agent_chat_finished.is_connected(_on_worker_chat_finished):
+		SingletonObject.agent_chat_finished.connect(_on_worker_chat_finished)
+
 	print("[MinervaMCPServer] Connected")
 
 
@@ -139,6 +145,10 @@ func connect_server() -> void:
 func disconnect_server() -> void:
 	if not server_enabled:
 		return
+
+	# Disconnect completion routing
+	if SingletonObject.agent_chat_finished.is_connected(_on_worker_chat_finished):
+		SingletonObject.agent_chat_finished.disconnect(_on_worker_chat_finished)
 
 	server_enabled = false
 	print("[MinervaMCPServer] Disconnected")
@@ -415,6 +425,20 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _delete_agent(arguments)
 		"minerva_spawn_agent":
 			return _spawn_agent(arguments)
+
+		# Worker tools
+		"minerva_spawn_worker":
+			return _spawn_worker(arguments)
+		"minerva_check_worker":
+			return _check_worker(arguments)
+		"minerva_list_workers":
+			return _list_workers(arguments)
+		"minerva_set_worker_budget":
+			return _set_worker_budget(arguments)
+		"minerva_get_worker_budget":
+			return _get_worker_budget(arguments)
+		"minerva_approve_workers":
+			return _approve_workers(arguments)
 
 		# Trigger tools
 		"minerva_list_triggers":
@@ -7897,6 +7921,530 @@ func _spawn_agent(args: Dictionary) -> Dictionary:
 		"agent_name": agent_def.name,
 		"agent_id": agent_def.id
 	}
+
+#endregion
+
+
+#region Worker Tool Registration and Implementations
+
+func _register_worker_tools() -> void:
+	_register_tool("minerva_spawn_worker",
+		"Spawn a managed sub-agent worker. Creates a new chat, configures it, sends the task, and tracks the parent-child relationship. The supervisor will be automatically notified when the worker finishes. Returns worker_id for tracking.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the worker chat"
+				},
+				"system_prompt": {
+					"type": "string",
+					"description": "System prompt written FROM THE WORKER'S PERSPECTIVE"
+				},
+				"task": {
+					"type": "string",
+					"description": "The task message to send to the worker"
+				},
+				"provider": {
+					"type": "string",
+					"description": "Provider name or 'current'. Default: 'current'"
+				},
+				"provider_enum_id": {
+					"type": "integer",
+					"description": "Alternative provider by enum ID (e.g. 11=CLAUDE_SONNET, 12=CLAUDE_OPUS). Takes precedence over provider name."
+				},
+				"max_tool_rounds": {
+					"type": "integer",
+					"description": "Max tool call rounds. Default: 25"
+				},
+				"timeout_seconds": {
+					"type": "number",
+					"description": "Wall-clock timeout in seconds. Default: -1 (no timeout)"
+				}
+			},
+			"required": ["name", "system_prompt", "task"]
+		}
+	, "chat")
+
+	_register_tool("minerva_check_worker",
+		"Check the status of a spawned worker. Returns current status, progress, and last message summary.",
+		{
+			"type": "object",
+			"properties": {
+				"worker_id": {
+					"type": "string",
+					"description": "The worker_id returned from minerva_spawn_worker"
+				}
+			},
+			"required": ["worker_id"]
+		}
+	, "chat")
+
+	_register_tool("minerva_list_workers",
+		"List all spawned workers, optionally filtered by parent chat.",
+		{
+			"type": "object",
+			"properties": {
+				"parent_chat_id": {
+					"type": "string",
+					"description": "Filter to workers spawned by this chat. Omit to list all workers."
+				}
+			},
+			"required": []
+		}
+	, "chat")
+
+	_register_tool("minerva_set_worker_budget",
+		"Set resource limits for worker spawning from a specific chat. Controls max concurrent workers, total worker cap, token budget, and approval thresholds.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The supervisor chat to set budget for. Default: current chat."
+				},
+				"max_concurrent_workers": {
+					"type": "integer",
+					"description": "Max simultaneous workers. Default: 5."
+				},
+				"max_total_workers": {
+					"type": "integer",
+					"description": "Lifetime worker cap. -1 = unlimited."
+				},
+				"max_total_tokens": {
+					"type": "integer",
+					"description": "Total token budget across all workers. -1 = unlimited."
+				},
+				"approval_after": {
+					"type": "integer",
+					"description": "Require human approval after this many workers. Default: 3. -1 = never."
+				}
+			},
+			"required": []
+		}
+	, "chat")
+
+	_register_tool("minerva_get_worker_budget",
+		"Get current budget status for a chat's worker spawning. Shows concurrent workers, total spawned, token usage, and approval gate status.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The chat to check. Default: current chat."
+				}
+			},
+			"required": []
+		}
+	, "chat")
+
+	_register_tool("minerva_approve_workers",
+		"Approve continued worker spawning after an approval gate was reached. Resets the approval requirement until the next threshold.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The supervisor chat to approve."
+				}
+			},
+			"required": ["chat_id"]
+		}
+	, "chat")
+
+
+func _spawn_worker(args: Dictionary) -> Dictionary:
+	# 1. Validate required fields
+	var worker_name: String = args.get("name", "")
+	var system_prompt: String = args.get("system_prompt", "")
+	var task: String = args.get("task", "")
+
+	if worker_name.is_empty():
+		return {"error": "name is required", "success": false}
+	if system_prompt.is_empty():
+		return {"error": "system_prompt is required", "success": false}
+	if task.is_empty():
+		return {"error": "task is required", "success": false}
+
+	var max_tool_rounds: int = int(args.get("max_tool_rounds", 25))
+	var timeout_seconds: float = float(args.get("timeout_seconds", -1))
+
+	# 2. Determine parent_chat_id from current_tab BEFORE any tab switching
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return {"error": "Chat pane not available", "success": false}
+
+	var parent_chat_id: String = ""
+	if chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
+		parent_chat_id = SingletonObject.ChatList[chat_pane.current_tab].HistoryId
+
+	# 2b. Check budget before spawning
+	if not parent_chat_id.is_empty():
+		var registry_check = SingletonObject.worker_registry
+		if registry_check:
+			var budget_check = registry_check.check_budget(parent_chat_id)
+			if not budget_check.allowed:
+				var result: Dictionary = {
+					"success": false,
+					"error": "Budget exceeded: %s" % budget_check.reason,
+					"budget": budget_check.budget_summary,
+				}
+				if budget_check.get("requires_approval", false):
+					result["requires_approval"] = true
+				return result
+
+	# 3. Resolve provider (reuse _create_chat logic)
+	var provider_name: String = args.get("provider", "current")
+	var create_args: Dictionary = {
+		"name": worker_name,
+		"provider": provider_name,
+	}
+	if args.has("provider_enum_id"):
+		create_args["provider_enum_id"] = args["provider_enum_id"]
+
+	var create_result: Dictionary = _create_chat(create_args)
+	if not create_result.get("success", false):
+		return create_result
+
+	var chat_id: String = create_result.get("chat_id", "")
+	var history = _find_chat_by_id(chat_id)
+	if not history:
+		return {"error": "Failed to find newly created chat", "success": false}
+
+	# 4. Set system prompt
+	var prompt_result: Dictionary = _set_system_prompt({"chat_id": chat_id, "prompt": system_prompt})
+	if not prompt_result.get("success", false):
+		return prompt_result
+
+	# 5. Set agent mode with max_tool_rounds
+	var agent_result: Dictionary = _set_agent_mode({
+		"chat_id": chat_id,
+		"enabled": true,
+		"max_rounds": max_tool_rounds,
+	})
+	if not agent_result.get("success", false):
+		return agent_result
+
+	# 6. Create WorkerInfo and register in WorkerRegistry
+	var worker_id: String = AgentDefinition._generate_id()
+	var registry = SingletonObject.worker_registry
+
+	var WorkerRegistryScript = preload("res://Scripts/Services/Agents/WorkerRegistry.gd")
+	var info = WorkerRegistryScript.WorkerInfo.new()
+	info.worker_id = worker_id
+	info.worker_chat_id = chat_id
+	info.parent_chat_id = parent_chat_id
+	info.worker_name = worker_name
+	info.task_summary = task.left(200)
+	info.provider_name = create_result.get("provider", "unknown")
+	info.max_tool_rounds = max_tool_rounds
+	info.timeout_seconds = timeout_seconds
+	info.spawned_at = Time.get_datetime_string_from_system(true)
+	info.status = "running"
+	info.termination_message = ""
+	info.tokens_used = 0
+	info.rounds_used = 0
+
+	registry.register_worker(info)
+
+	# 6b. Consume budget for this spawn
+	if not parent_chat_id.is_empty():
+		registry.consume_budget(parent_chat_id)
+
+	# 7. Send task message (follow _send_message pattern)
+	var tab_idx = _find_chat_tab_index(chat_id)
+	if tab_idx == -1:
+		registry.update_worker_status(worker_id, "error", "Chat tab not found after creation")
+		return {"error": "Worker chat tab not found", "success": false}
+
+	var original_tab = chat_pane.current_tab
+	chat_pane.current_tab = tab_idx
+
+	print("[MinervaMCPServer] Spawned worker '%s' (worker_id=%s, chat_id=%s, parent=%s)" % [worker_name, worker_id, chat_id, parent_chat_id])
+	chat_pane.execute_regular_chat(task)
+
+	# Restore original tab after the current frame (same pattern as _send_message)
+	chat_pane.call_deferred("set_current_tab", original_tab)
+
+	# 8. Set up timeout if configured
+	if timeout_seconds > 0:
+		_setup_worker_timeout(worker_id, timeout_seconds)
+
+	return {
+		"success": true,
+		"worker_id": worker_id,
+		"chat_id": chat_id,
+		"name": worker_name,
+		"parent_chat_id": parent_chat_id,
+		"message": "Worker spawned and task sent. Use minerva_check_worker or minerva_list_workers to monitor progress."
+	}
+
+
+func _setup_worker_timeout(worker_id: String, timeout_seconds: float) -> void:
+	# Create a one-shot timer for worker timeout
+	var timer := Timer.new()
+	timer.wait_time = timeout_seconds
+	timer.one_shot = true
+	timer.timeout.connect(func():
+		var registry = SingletonObject.worker_registry
+		var info = registry.get_worker(worker_id)
+		if info and not registry.is_terminal_status(info.status):
+			registry.update_worker_status(worker_id, "timeout", "Worker exceeded %ds timeout" % int(timeout_seconds))
+			print("[MinervaMCPServer] Worker '%s' timed out after %ds" % [info.worker_name, int(timeout_seconds)])
+		timer.queue_free()
+	)
+	# Add to scene tree so it can tick
+	if SingletonObject and SingletonObject.is_inside_tree():
+		SingletonObject.add_child(timer)
+		timer.start()
+
+
+func _check_worker(args: Dictionary) -> Dictionary:
+	var worker_id: String = args.get("worker_id", "")
+	if worker_id.is_empty():
+		return {"error": "worker_id is required", "success": false}
+
+	var registry = SingletonObject.worker_registry
+	var info = registry.get_worker(worker_id)
+	if not info:
+		return {"error": "Worker not found: %s" % worker_id, "success": false}
+
+	var result: Dictionary = {
+		"success": true,
+		"worker_id": info.worker_id,
+		"worker_name": info.worker_name,
+		"status": info.status,
+		"chat_id": info.worker_chat_id,
+		"parent_chat_id": info.parent_chat_id,
+		"provider": info.provider_name,
+		"max_tool_rounds": info.max_tool_rounds,
+		"rounds_used": info.rounds_used,
+		"tokens_used": info.tokens_used,
+		"spawned_at": info.spawned_at,
+		"task_summary": info.task_summary,
+	}
+
+	if not info.termination_message.is_empty():
+		result["termination_message"] = info.termination_message
+
+	# Peek at the worker chat's last assistant message for a summary
+	var history = _find_chat_by_id(info.worker_chat_id)
+	if history:
+		result["message_count"] = history.HistoryItemList.size()
+		var last_assistant_msg: String = ""
+		for i in range(history.HistoryItemList.size() - 1, -1, -1):
+			var item = history.HistoryItemList[i]
+			if item.Role == 1:  # ChatRole.ASSISTANT = 1
+				last_assistant_msg = item.Message
+				break
+		if not last_assistant_msg.is_empty():
+			# Truncate to keep response size reasonable
+			result["last_response_preview"] = last_assistant_msg.left(500)
+
+	return result
+
+
+func _list_workers(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.worker_registry
+	var parent_chat_id: String = args.get("parent_chat_id", "")
+
+	var workers: Array
+	if not parent_chat_id.is_empty():
+		workers = registry.get_workers_for_parent(parent_chat_id)
+	else:
+		workers = registry.get_all_workers()
+
+	var result: Array = []
+	for info in workers:
+		result.append({
+			"worker_id": info.worker_id,
+			"worker_name": info.worker_name,
+			"status": info.status,
+			"chat_id": info.worker_chat_id,
+			"parent_chat_id": info.parent_chat_id,
+			"provider": info.provider_name,
+			"spawned_at": info.spawned_at,
+			"task_summary": info.task_summary,
+		})
+
+	return {
+		"success": true,
+		"workers": result,
+		"count": result.size(),
+	}
+
+
+func _resolve_chat_id_for_budget(args: Dictionary) -> String:
+	var chat_id: String = args.get("chat_id", "")
+	if chat_id.is_empty():
+		var chat_pane = SingletonObject.Chats
+		if chat_pane and chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
+			chat_id = SingletonObject.ChatList[chat_pane.current_tab].HistoryId
+	return chat_id
+
+
+func _set_worker_budget(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.worker_registry
+	if not registry:
+		return {"error": "Worker registry not initialized", "success": false}
+
+	var chat_id := _resolve_chat_id_for_budget(args)
+	if chat_id.is_empty():
+		return {"error": "Could not determine chat_id. Provide chat_id or ensure a chat is active.", "success": false}
+
+	var max_concurrent: int = int(args.get("max_concurrent_workers", 5))
+	var max_total: int = int(args.get("max_total_workers", -1))
+	var max_tokens: int = int(args.get("max_total_tokens", -1))
+	var approval_after: int = int(args.get("approval_after", 3))
+
+	registry.set_budget(chat_id, max_concurrent, max_total, max_tokens, approval_after)
+
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"message": "Worker budget set for chat %s" % chat_id,
+		"budget": registry.get_budget_summary(chat_id),
+	}
+
+
+func _get_worker_budget(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.worker_registry
+	if not registry:
+		return {"error": "Worker registry not initialized", "success": false}
+
+	var chat_id := _resolve_chat_id_for_budget(args)
+	if chat_id.is_empty():
+		return {"error": "Could not determine chat_id. Provide chat_id or ensure a chat is active.", "success": false}
+
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"budget": registry.get_budget_summary(chat_id),
+	}
+
+
+func _approve_workers(args: Dictionary) -> Dictionary:
+	var registry = SingletonObject.worker_registry
+	if not registry:
+		return {"error": "Worker registry not initialized", "success": false}
+
+	var chat_id: String = args.get("chat_id", "")
+	if chat_id.is_empty():
+		return {"error": "chat_id is required", "success": false}
+
+	var result: Dictionary = registry.approve_workers(chat_id)
+	if result.get("success", false):
+		result["chat_id"] = chat_id
+	return result
+
+
+#region Worker Completion Routing
+
+## Handler for agent_chat_finished signal — routes worker completions to parent chats.
+func _on_worker_chat_finished(history_id: String, _agent_definition_id: String) -> void:
+	var registry = SingletonObject.worker_registry
+	if not registry:
+		return
+
+	var worker = registry.get_worker_by_chat(history_id)
+	if not worker:
+		return  # Not a tracked worker — manual chat or trigger-spawned agent
+
+	# Extract termination info from the chat
+	var chat_history = _find_chat_by_id(history_id)
+	var reason := "completed"
+	var message := ""
+	var total_output_tokens := 0
+	var total_rounds := 0
+
+	if chat_history:
+		reason = chat_history.termination_reason if not chat_history.termination_reason.is_empty() else "completed"
+		message = chat_history.termination_message
+
+		# Count output tokens and tool rounds from history items
+		for item in chat_history.HistoryItemList:
+			total_output_tokens += item.OutputTokens
+			if item.Role == ChatHistoryItem.ChatRole.MODEL or item.Role == ChatHistoryItem.ChatRole.ASSISTANT:
+				if not item.ToolCalls.is_empty():
+					total_rounds += 1
+
+	# Update worker status in registry
+	registry.update_worker_status(worker.worker_id, reason, message, total_output_tokens, total_rounds)
+
+	# Inject synthetic completion message into parent chat
+	_inject_completion_into_parent(worker, reason, message, chat_history)
+
+
+## Build a synthetic user message and inject it into the parent (supervisor) chat,
+## waking the supervisor with information about what the worker did.
+func _inject_completion_into_parent(worker, reason: String, message: String, chat_history) -> void:
+	var parent_chat = _find_chat_by_id(worker.parent_chat_id)
+	if not parent_chat:
+		push_warning("[WorkerCompletion] Parent chat not found: %s" % worker.parent_chat_id)
+		return
+
+	# Get worker's last assistant message as summary
+	var last_response := ""
+	if chat_history:
+		for i in range(chat_history.HistoryItemList.size() - 1, -1, -1):
+			var item = chat_history.HistoryItemList[i]
+			if item.Role == ChatHistoryItem.ChatRole.MODEL or item.Role == ChatHistoryItem.ChatRole.ASSISTANT:
+				last_response = item.Message.left(500)
+				break
+
+	# Compute duration
+	var duration_text := ""
+	if not worker.spawned_at.is_empty():
+		var spawned_dt := Time.get_datetime_dict_from_datetime_string(worker.spawned_at, true)
+		if not spawned_dt.is_empty():
+			var spawned_unix := Time.get_unix_time_from_datetime_dict(spawned_dt)
+			var now_unix := Time.get_unix_time_from_system()
+			var elapsed := int(now_unix - spawned_unix)
+			if elapsed >= 60:
+				duration_text = "%dm%ds" % [elapsed / 60, elapsed % 60]
+			else:
+				duration_text = "%ds" % elapsed
+
+	# Build synthetic message
+	var status_label: String = {
+		"completed": "completed successfully",
+		"error": "finished with error",
+		"cancelled": "was cancelled",
+		"quota_exhausted": "hit max tool rounds",
+		"rate_limited": "was rate limited",
+		"timeout": "timed out",
+	}.get(reason, "finished (%s)" % reason)
+
+	var synthetic := '[Sub-agent "%s" %s]' % [worker.worker_name, status_label]
+	if not duration_text.is_empty():
+		synthetic += " Duration: %s." % duration_text
+	if worker.tokens_used > 0:
+		synthetic += " Tokens: %d." % worker.tokens_used
+	if not message.is_empty():
+		synthetic += "\nReason: %s" % message
+	if not last_response.is_empty():
+		synthetic += "\nWorker's last response:\n%s" % last_response
+	if last_response.length() >= 500:
+		synthetic += "..."
+
+	# Send the synthetic message to the parent chat, waking the supervisor
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		push_warning("[WorkerCompletion] Chat pane not available")
+		return
+
+	var tab_idx := _find_chat_tab_index(worker.parent_chat_id)
+	if tab_idx == -1:
+		push_warning("[WorkerCompletion] Parent chat tab not found: %s" % worker.parent_chat_id)
+		return
+
+	var original_tab: int = chat_pane.current_tab
+	chat_pane.current_tab = tab_idx
+	print("[WorkerCompletion] Injecting completion for worker '%s' into parent chat '%s'" % [worker.worker_name, parent_chat.HistoryName])
+	chat_pane.execute_regular_chat(synthetic)
+	chat_pane.call_deferred("set_current_tab", original_tab)
+
+#endregion Worker Completion Routing
 
 #endregion
 

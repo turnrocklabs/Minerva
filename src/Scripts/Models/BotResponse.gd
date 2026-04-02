@@ -28,6 +28,12 @@ var total_tokens: int:
 	get: return prompt_tokens + completion_tokens
 
 
+## Rate limit flag — set when the provider returns HTTP 429 or a rate limit error
+var is_rate_limited: bool = false
+
+## Seconds to wait before retrying, as advised by the provider. -1 = unknown.
+var rate_limit_retry_after: float = -1.0
+
 ## Tool calls requested by the LLM (for agentic mode)
 ## Each item: {id: String, name: String, arguments: Dictionary}
 var tool_calls: Array[Dictionary] = []

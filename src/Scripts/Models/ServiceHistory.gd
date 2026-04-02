@@ -94,6 +94,11 @@ var ActiveSkills: Array[String] = []:
 var Archived: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); Archived = value
 
+## Why this chat's last agent turn ended. Empty string = not terminated or not an agent chat.
+var termination_reason: String = ""
+## Human-readable message about termination (error text, quota details, etc.)
+var termination_message: String = ""
+
 var VBox: VBoxChat
 var provider: BaseProvider
 
@@ -124,6 +129,8 @@ static var SERIALIZER_FIELDS = [
 	"AgentDefinitionId",
 	"ActiveSkills",
 	"Archived",
+	"termination_reason",
+	"termination_message",
 ]
 
 
@@ -246,6 +253,8 @@ func Serialize() -> Dictionary:
 		"AgentDefinitionId": AgentDefinitionId,
 		"ActiveSkills": ActiveSkills,
 		"Archived": Archived,
+		"termination_reason": termination_reason,
+		"termination_message": termination_message,
 	}
 	return save_dict
 
@@ -331,5 +340,9 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.ActiveSkills.assign(active_sk)
 	if data.has("Archived"):
 		history.Archived = data.get("Archived", false)
+	if data.has("termination_reason"):
+		history.termination_reason = data.get("termination_reason", "")
+	if data.has("termination_message"):
+		history.termination_message = data.get("termination_message", "")
 
 	return history

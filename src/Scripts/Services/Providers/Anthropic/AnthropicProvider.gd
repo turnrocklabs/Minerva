@@ -70,7 +70,19 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 		if response.response_code >= 200 and response.response_code <= 299:
 			bot_response = to_bot_response(data)
 		else:
-			if "error" in data:
+			# Check for rate limiting before generic error handling
+			var error_type: String = ""
+			if data is Dictionary and "error" in data:
+				var err = data["error"]
+				if err is Dictionary:
+					error_type = err.get("type", "")
+
+			if response.response_code == 429 or error_type in ["rate_limit_error", "overloaded_error"]:
+				bot_response.is_rate_limited = true
+				bot_response.rate_limit_retry_after = parse_retry_after(response.headers)
+				bot_response.error = "Rate limited by Anthropic"
+				print("[Anthropic] Rate limited (HTTP %d, type: %s, retry_after: %s)" % [response.response_code, error_type, bot_response.rate_limit_retry_after])
+			elif "error" in data:
 				bot_response.error = data["error"]["message"]
 			else:
 				bot_response.error = "Unexpected error occurred while generating the response"

@@ -78,7 +78,14 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 
 
 	if cmd == "error":
-		bot_response.error = params.get("error", "Unknown Error")
+		var error_msg: String = params.get("error", "Unknown Error")
+		# Check if the error indicates rate limiting (HTTP 429 passed through by the backend)
+		if "429" in error_msg or "rate limit" in error_msg.to_lower() or "rate_limit" in error_msg.to_lower():
+			bot_response.is_rate_limited = true
+			bot_response.error = "Rate limited by TurnRock"
+			print("[CoreProvider] Rate limited (error: %s)" % error_msg)
+		else:
+			bot_response.error = error_msg
 		return bot_response
 
 	if not params.has("result"):

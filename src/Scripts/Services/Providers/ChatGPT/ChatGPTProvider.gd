@@ -152,6 +152,15 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	if response.response_code < 200 or response.response_code > 299:
 		var err_body := response.body.get_string_from_utf8()
 		var err_json = JSON.parse_string(err_body)
+
+		# Check for rate limiting first
+		if response.response_code == 429:
+			bot_response.is_rate_limited = true
+			bot_response.rate_limit_retry_after = parse_retry_after(response.headers)
+			bot_response.error = "Rate limited by ChatGPT"
+			print("[ChatGPT] Rate limited (HTTP 429, retry_after: %s)" % bot_response.rate_limit_retry_after)
+			return bot_response
+
 		if err_json is Dictionary:
 			var err_msg = ""
 			if "error" in err_json:

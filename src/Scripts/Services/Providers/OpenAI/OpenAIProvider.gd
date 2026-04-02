@@ -81,7 +81,19 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 		if response.response_code >= 200 and response.response_code <= 299:
 			bot_response = to_bot_response(data)
 		else:
-			if "error" in data or "message" in data:
+			# Check for rate limiting before generic error handling
+			var error_code: String = ""
+			if data is Dictionary and "error" in data:
+				var err = data["error"]
+				if err is Dictionary:
+					error_code = err.get("code", "")
+
+			if response.response_code == 429 or error_code in ["rate_limit_exceeded", "insufficient_quota"]:
+				bot_response.is_rate_limited = true
+				bot_response.rate_limit_retry_after = parse_retry_after(response.headers)
+				bot_response.error = "Rate limited by OpenAI"
+				print("[OpenAI] Rate limited (HTTP %d, code: %s, retry_after: %s)" % [response.response_code, error_code, bot_response.rate_limit_retry_after])
+			elif "error" in data or "message" in data:
 				if "error" in data:
 					bot_response.error = data["error"]["message"]
 				else:
