@@ -1230,7 +1230,7 @@ func execute_regular_chat(text: String) -> void:
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 
 	# Notify trigger system that this agent chat is fully done (all tool rounds complete)
-	if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
+	if history.IsAgentChat:
 		SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
 
 	history.is_request_active = false
