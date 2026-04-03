@@ -669,7 +669,7 @@ func _register_chat_tools() -> void:
 				},
 				"provider_enum_id": {
 					"type": "integer",
-					"description": "Alternative: provider enum ID (e.g. 11=CLAUDE_SONNET, 12=CLAUDE_OPUS, 20=CHATGPT_DEFAULT). Use for OpenRouter dynamic models (>=1000). Takes precedence over provider name."
+					"description": "Alternative: provider enum ID (e.g. 11=CLAUDE_SONNET, 12=CLAUDE_OPUS, 20=CHATGPT). Use for OpenRouter dynamic models (>=1000). Takes precedence over provider name."
 				}
 			},
 			"required": ["name"]
@@ -1978,6 +1978,14 @@ func _create_chat(args: Dictionary) -> Dictionary:
 
 	# Fall back to current selected provider in UI
 	if not provider_obj:
+		if not provider_name.is_empty():
+			# Provider was specified but not found — log warning with valid names
+			var valid_names: PackedStringArray = []
+			for eid in SingletonObject.API_MODEL_PROVIDERS.values():
+				var ename: String = SingletonObject.API_MODEL_PROVIDERS.find_key(eid)
+				if ename:
+					valid_names.append(ename.to_lower())
+			push_warning("[MinervaMCPServer] Provider '%s' not found. Valid names: %s. Falling back to UI selection." % [provider_name, ", ".join(valid_names)])
 		provider_obj = chat_pane._provider_option_button.get_selected_provider()
 		if not provider_obj:
 			provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[SingletonObject.API_MODEL_PROVIDERS.GPT_NANO].new()
@@ -2047,6 +2055,10 @@ func _set_agent_mode(args: Dictionary) -> Dictionary:
 		return {"error": "Chat not found: %s" % chat_id, "success": false}
 
 	history.AgentModeEnabled = enabled
+	# Any chat with agent mode enabled via MCP is an agent chat —
+	# ensures agent_chat_finished fires on completion for completion routing
+	if enabled:
+		history.IsAgentChat = true
 
 	if args.has("agentic_prompt"):
 		history.AgenticSystemPrompt = args.get("agentic_prompt", "")

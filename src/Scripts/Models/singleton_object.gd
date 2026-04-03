@@ -1414,7 +1414,7 @@ enum API_MODEL_PROVIDERS {
 	CLAUDE_CODE_SONNET = 18,
 	CLAUDE_CODE_OPUS = 19,
 	# ChatGPT (Plus/Pro subscription via OAuth)
-	CHATGPT_DEFAULT = 20,
+	CHATGPT = 20,
 }
 
 ## Dictionary of all model providers and scripts that implement their functionality
@@ -1444,7 +1444,7 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
 	# ChatGPT (Plus/Pro subscription)
-	API_MODEL_PROVIDERS.CHATGPT_DEFAULT: ChatGPTProviderScript,
+	API_MODEL_PROVIDERS.CHATGPT: ChatGPTProviderScript,
 }
 
 ## Maps each model to its parent provider (for enable/disable filtering).
@@ -1473,7 +1473,7 @@ var MODEL_TO_PROVIDER: Dictionary = {
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: API_PROVIDER.CLAUDE_CODE,
 	# ChatGPT
-	API_MODEL_PROVIDERS.CHATGPT_DEFAULT: API_PROVIDER.CHATGPT,
+	API_MODEL_PROVIDERS.CHATGPT: API_PROVIDER.CHATGPT,
 }
 
 ## User-friendly names for providers (used in menu)
