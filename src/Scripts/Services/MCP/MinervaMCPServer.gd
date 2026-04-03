@@ -35,6 +35,7 @@ var auto_tool_management: bool = false  # toggled via preferences
 ## Duplicate call detection
 var _last_call_hash: String = ""
 var _consecutive_count: int = 0
+var _consecutive_error_count: int = 0
 
 
 func _init(manager = null) -> void:
@@ -183,6 +184,23 @@ func _check_duplicate_call(tool_name: String, arguments: Dictionary, result: Dic
 	else:
 		_consecutive_count = 0
 	_last_call_hash = call_hash
+
+	# Track consecutive errors on repeated calls
+	var is_error: bool = result.has("error") or result.get("success", true) == false
+	if call_hash == _last_call_hash and is_error:
+		_consecutive_error_count += 1
+	else:
+		_consecutive_error_count = 0
+
+	# Escalate based on consecutive error count
+	if _consecutive_error_count >= 5:
+		# Hard block — refuse to let the agent continue this pattern
+		result["error"] = "BLOCKED: This tool has been called %d times with identical arguments and failed every time. This approach does not work. Try a completely different tool or approach, or report that you are blocked." % _consecutive_error_count
+		result["blocked"] = true
+	elif _consecutive_error_count >= 3:
+		# Strong warning
+		result["warning"] = "STOP: You have called this tool %d times with identical arguments and it failed each time. Do NOT retry. Try a different approach immediately." % _consecutive_error_count
+
 	return result
 
 
@@ -209,6 +227,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _send_message(arguments)
 		"minerva_get_chat_history":
 			return _get_chat_history(arguments)
+		"minerva_get_tool_calls":
+			return _get_tool_calls(arguments)
 		"minerva_list_chats":
 			return _list_chats(arguments)
 		"minerva_close_chat":
@@ -757,6 +777,24 @@ func _register_chat_tools() -> void:
 				}
 			},
 			"required": ["chat_id"]
+		}
+	, "chat")
+
+	_register_tool("minerva_get_tool_calls",
+		"Get detailed tool call arguments and results for a specific message in a chat. Use after minerva_get_chat_history shows tool_calls_count > 0 on a message. Returns the full arguments passed to each tool and a summary of the result.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The chat ID from minerva_list_chats"
+				},
+				"message_index": {
+					"type": "integer",
+					"description": "0-based index of the message in chat history"
+				}
+			},
+			"required": ["chat_id", "message_index"]
 		}
 	, "chat")
 
@@ -2084,16 +2122,76 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 
 	for item in history.HistoryItemList:
 		var role = role_names[item.Role] if item.Role < role_names.size() else "unknown"
-		messages.append({
+		var msg: Dictionary = {
 			"role": role,
 			"content": item.Message
-		})
+		}
+		if item.IsToolCall and not item.ToolCalls.is_empty():
+			msg["tool_calls_count"] = item.ToolCalls.size()
+			var names: Array[String] = []
+			for tc in item.ToolCalls:
+				names.append(tc.get("name", ""))
+			msg["tool_names"] = names
+		if item.Role == ChatHistoryItem.ChatRole.TOOL:
+			msg["tool_call_id"] = item.ToolCallId
+			msg["tool_name"] = item.ToolName
+		messages.append(msg)
 
 	return {
 		"success": true,
 		"chat_id": chat_id,
 		"name": history.HistoryName,
 		"messages": messages
+	}
+
+
+func _get_tool_calls(args: Dictionary) -> Dictionary:
+	var chat_id: String = args.get("chat_id", "")
+	var msg_index: int = int(args.get("message_index", -1))
+
+	if chat_id.is_empty():
+		return {"error": "chat_id is required", "success": false}
+
+	var history = _find_chat_by_id(chat_id)
+	if not history:
+		return {"error": "Chat not found: %s" % chat_id, "success": false}
+
+	if msg_index < 0 or msg_index >= history.HistoryItemList.size():
+		return {"error": "message_index %d out of range (0-%d)" % [msg_index, history.HistoryItemList.size() - 1], "success": false}
+
+	var item = history.HistoryItemList[msg_index]
+
+	if not item.IsToolCall or item.ToolCalls.is_empty():
+		return {"error": "Message at index %d has no tool calls" % msg_index, "success": false}
+
+	# Build detailed tool call info
+	var calls: Array = []
+	for tc in item.ToolCalls:
+		var call_info: Dictionary = {
+			"tool_name": tc.get("name", ""),
+			"arguments": tc.get("arguments", {}),
+			"call_id": tc.get("id", ""),
+		}
+		calls.append(call_info)
+
+	# Also include ToolExecutions if available (has results)
+	var executions: Array = []
+	for exec in item.ToolExecutions:
+		executions.append({
+			"tool_name": exec.get("tool_name", ""),
+			"arguments": exec.get("arguments", {}),
+			"call_id": exec.get("call_id", ""),
+			"status": exec.get("status", ""),
+			"result": exec.get("result", "").left(500),  # Truncate result
+		})
+
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"message_index": msg_index,
+		"tool_calls": calls,
+		"tool_executions": executions,
+		"count": calls.size(),
 	}
 
 
