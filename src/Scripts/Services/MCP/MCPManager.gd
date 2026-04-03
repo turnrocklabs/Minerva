@@ -581,6 +581,12 @@ func _register_server_tools(connection) -> void:
 		# Use server name as tool_set for external tools so they pass category filters
 		if tool.tool_set.is_empty() and connection.server_name != "minerva":
 			tool.tool_set = connection.server_name
+
+		# Deprioritize native_* tools by putting them in a separate tool_set
+		# Standard cobrowser tools remain in the default "cobrowser" set
+		if tool.tool_set == "cobrowser" and "native_" in tool.name:
+			tool.tool_set = "cobrowser-native"
+
 		tool_registry[tool.name] = tool
 
 		# Always index connected external tools for search-based discovery

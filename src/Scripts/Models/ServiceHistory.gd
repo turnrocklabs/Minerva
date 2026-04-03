@@ -94,6 +94,9 @@ var ActiveSkills: Array[String] = []:
 var Archived: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); Archived = value
 
+## Runtime-only: whether this chat has an active LLM request in flight. Not serialized.
+var is_request_active: bool = false
+
 ## Why this chat's last agent turn ended. Empty string = not terminated or not an agent chat.
 var termination_reason: String = ""
 ## Human-readable message about termination (error text, quota details, etc.)

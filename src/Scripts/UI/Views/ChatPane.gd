@@ -13,7 +13,7 @@ var container: TabContainer  # Store the TabContainer
 @onready var buffer_control_chats: Control = %BufferControlChats
 @onready var audio_stop_1: IconsButton = %AudioStop1
 @onready var _chat_button: Button = %btnChat
-var _active_chat_requests: int = 0  # Ref count of active chat requests across all tabs
+## REMOVED: var _active_chat_requests — replaced by per-chat is_request_active on ServiceHistory
 
 @onready var dynamic_ui_container: Container = %DynamicUIContainer
 
@@ -910,8 +910,8 @@ func regenerate_response(chi: ChatHistoryItem):
 	var history_list = await create_prompt(chi, false, null, predicate)
 
 	# Track this request so the stop button works
-	_active_chat_requests += 1
-	audio_stop_1.disabled = false
+	history.is_request_active = true
+	_update_stop_button()
 
 	# Ensure rendered_node exists (may have been freed if message was deleted)
 	if not is_instance_valid(existing_response.rendered_node):
@@ -923,10 +923,8 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	# if there was an error with the request
 	if not bot_response:
-		_active_chat_requests -= 1
-		if _active_chat_requests <= 0:
-			_active_chat_requests = 0
-			audio_stop_1.disabled = true
+		history.is_request_active = false
+		_update_stop_button()
 		return
 
 	if bot_response.id: existing_response.Id = bot_response.id
@@ -975,10 +973,8 @@ func regenerate_response(chi: ChatHistoryItem):
 
 		SingletonObject.clear_consumed_proxies(history.HistoryId)
 
-	_active_chat_requests -= 1
-	if _active_chat_requests <= 0:
-		_active_chat_requests = 0
-		audio_stop_1.disabled = true
+	history.is_request_active = false
+	_update_stop_button()
 	_update_compact_button()
 
 
@@ -1005,10 +1001,12 @@ func _on_send_message_button_item_selected(index: int) -> void:
 		0:
 			execute_regular_chat(filteredInput)
 		1:
-			_active_chat_requests += 1
+			history.is_request_active = true
+			_update_stop_button()
 			execute_parallel_chat(filteredInput)
 		2:
-			_active_chat_requests += 1
+			history.is_request_active = true
+			_update_stop_button()
 			execute_sequential_chat(filteredInput)
 
 func execute_hcp_chat():
@@ -1109,14 +1107,14 @@ func execute_regular_chat(text: String) -> void:
 
 	if text.is_empty(): return
 
-	# Track this request so the stop button works
-	# (callers like AgentSpawner, TriggerManager, and MCP tools bypass the UI button handler)
-	_active_chat_requests += 1
-	audio_stop_1.disabled = false
-
 	ensure_chat_open()
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+
+	# Track this request so the stop button works
+	# (callers like AgentSpawner, TriggerManager, and MCP tools bypass the UI button handler)
+	history.is_request_active = true
+	_update_stop_button()
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 
 	# Reset termination tracking for this new turn
@@ -1235,10 +1233,8 @@ func execute_regular_chat(text: String) -> void:
 	if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
 		SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
 
-	_active_chat_requests -= 1
-	if _active_chat_requests <= 0:
-		_active_chat_requests = 0  # Ensure non-negative
-		audio_stop_1.disabled = true
+	history.is_request_active = false
+	_update_stop_button()
 	_update_compact_button()
 
 
@@ -1290,7 +1286,7 @@ func _add_unexecuted_tool_results(history: ChatHistory, tool_calls: Array, reaso
 
 ## Clean up UI state after agent mode finishes (success or error).
 ## Re-enables notes and cleans up detached proxies.
-## Note: Does NOT touch _active_chat_requests — that is managed by the request lifecycle
+## Note: Does NOT touch is_request_active — that is managed by the request lifecycle
 ## (incremented in execute_regular_chat, decremented after await handle_tool_calls returns).
 func _finish_agent_mode() -> void:
 	# Disable notes in containers
@@ -1652,10 +1648,8 @@ func execute_sequential_chat(text_input: String) -> void:
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
-	_active_chat_requests -= 1
-	if _active_chat_requests <= 0:
-		_active_chat_requests = 0
-		audio_stop_1.disabled = true
+	history.is_request_active = false
+	_update_stop_button()
 	_update_compact_button()
 
 	for i in SingletonObject.notes_container.get_tab_count():
@@ -1718,10 +1712,8 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 		_user_parallel_chat_UUID = ""
 		_parallel_chat_UUID = ""
 		_multi_slider_container_UUID = ""
-		_active_chat_requests -= 1
-		if _active_chat_requests <= 0:
-			_active_chat_requests = 0
-			audio_stop_1.disabled = true
+		history.is_request_active = false
+		_update_stop_button()
 		_update_compact_button()
 
 	if SingletonObject.is_cancelled(history.HistoryId):
@@ -2121,7 +2113,8 @@ func _drop_note_on_chat(at_position: Vector2, data: Variant) -> void:
 ## Handle global input - ESC key triggers stop
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
-		if _active_chat_requests > 0:
+		var esc_history: ChatHistory = SingletonObject.ChatList[current_tab] if current_tab >= 0 and current_tab < SingletonObject.ChatList.size() else null
+		if esc_history and esc_history.is_request_active:
 			_on_audio_stop_1_pressed()
 			get_viewport().set_input_as_handled()
 
@@ -2379,6 +2372,15 @@ func _apply_archive_filter() -> void:
 				current_tab = i
 				return
 
+
+
+## Update stop button state based on current tab's active request status.
+func _update_stop_button() -> void:
+	if current_tab >= 0 and current_tab < SingletonObject.ChatList.size():
+		var h: ChatHistory = SingletonObject.ChatList[current_tab]
+		audio_stop_1.disabled = not h.is_request_active
+	else:
+		audio_stop_1.disabled = true
 
 
 func _update_compact_button() -> void:
@@ -2861,6 +2863,7 @@ func _on_tab_changed(tab: int):
 		SingletonObject.last_tab_index = tab
 
 	_update_compact_button()
+	_update_stop_button()
 
 ## if enter is pressed, accept the event and trigger chat
 func _on_txt_main_user_input_gui_input(event: InputEvent):
@@ -2897,8 +2900,11 @@ func get_first_chat_item() -> ChatHistoryItem:
 #endregion Add New HistoryItem
 
 func _on_audio_stop_1_pressed() -> void:
-	if _active_chat_requests > 0:
+	if current_tab >= 0 and current_tab < SingletonObject.ChatList.size():
 		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+		if not history.is_request_active:
+			SingletonObject.AtT._StopConverting()
+			return
 
 		# Track this history as cancelled so agentic loops can check
 		SingletonObject.cancelled_history_ids.append(history.HistoryId)
@@ -2927,13 +2933,21 @@ func _on_audio_stop_1_pressed() -> void:
 		if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
 			SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
 
-		# Decrement ref count for the stopped request
-		_active_chat_requests -= 1
-		if _active_chat_requests <= 0:
-			_active_chat_requests = 0
-			audio_stop_1.disabled = true
-	else:
-		SingletonObject.AtT._StopConverting()
+		# Mark request as stopped
+		history.is_request_active = false
+
+		# Cascade stop to all workers spawned by this chat
+		var registry = SingletonObject.worker_registry
+		if registry:
+			var workers = registry.get_workers_for_parent(history.HistoryId)
+			for worker in workers:
+				if not registry.is_terminal_status(worker.status):
+					SingletonObject.cancelled_history_ids.append(worker.worker_chat_id)
+					SingletonObject.stop_all_requests.emit(worker.worker_chat_id)
+					registry.update_worker_status(worker.worker_id, "cancelled", "Parent supervisor stopped")
+					print("[ChatPane] Cascade stop: cancelled worker '%s'" % worker.worker_name)
+
+		_update_stop_button()
 
 
 func clone_chat(tab_idx: int) -> void:
