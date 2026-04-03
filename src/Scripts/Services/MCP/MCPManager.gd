@@ -440,6 +440,18 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 		tool_executed.emit(server_name, tool_name, minerva_result)
 		return minerva_result
 
+	# Auto-inject cobrowser tab_id/agent_id for managed workers
+	if tool_name.begins_with("cobrowser_") and not caller_chat_id.is_empty():
+		var registry = SingletonObject.worker_registry
+		if registry:
+			var worker = registry.get_worker_by_chat(caller_chat_id)
+			if worker and worker.cobrowser_tab_id >= 0:
+				if not arguments.has("tab_id") or arguments.get("tab_id") == null:
+					arguments["tab_id"] = worker.cobrowser_tab_id
+				if not arguments.has("agent_id") or arguments.get("agent_id", "").is_empty():
+					if not worker.cobrowser_agent_id.is_empty():
+						arguments["agent_id"] = worker.cobrowser_agent_id
+
 	# Handle external server tools
 	if not servers.has(server_name):
 		return {"error": "Server not connected: %s" % server_name, "success": false}

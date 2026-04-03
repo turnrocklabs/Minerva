@@ -19,6 +19,8 @@ class WorkerInfo:
 	var termination_message: String
 	var tokens_used: int
 	var rounds_used: int
+	var cobrowser_tab_id: int = -1      ## -1 = no tab assigned
+	var cobrowser_agent_id: String = ""  ## empty = no agent_id
 
 
 class BudgetInfo:

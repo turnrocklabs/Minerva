@@ -8060,6 +8060,14 @@ func _register_worker_tools() -> void:
 				"timeout_seconds": {
 					"type": "number",
 					"description": "Wall-clock timeout in seconds. Default: -1 (no timeout)"
+				},
+				"cobrowser_tab_id": {
+					"type": "integer",
+					"description": "Browser tab ID assigned to this worker. If set, all cobrowser calls from this worker will automatically include this tab_id."
+				},
+				"cobrowser_agent_id": {
+					"type": "string",
+					"description": "Browser agent ID for this worker. If set, all cobrowser calls from this worker will automatically include this agent_id."
 				}
 			},
 			"required": ["name", "system_prompt", "task"]
@@ -8247,6 +8255,8 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	info.termination_message = ""
 	info.tokens_used = 0
 	info.rounds_used = 0
+	info.cobrowser_tab_id = int(args.get("cobrowser_tab_id", -1))
+	info.cobrowser_agent_id = args.get("cobrowser_agent_id", "")
 
 	registry.register_worker(info)
 
