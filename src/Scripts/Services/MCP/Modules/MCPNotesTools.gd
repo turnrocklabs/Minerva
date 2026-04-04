@@ -1,0 +1,461 @@
+class_name MCPNotesTools
+extends MCPToolModule
+## MCP tool module for the Notes domain.
+## Handles creation, listing, editing, enabling/disabling, deletion,
+## and chat-linking of notes and note tabs.
+
+const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
+const NotesContainerScript := preload("res://Scenes/note/NotesContainer.gd")
+
+
+func get_tool_names() -> Array[String]:
+	return [
+		"minerva_create_note",
+		"minerva_create_note_tab",
+		"minerva_list_notes",
+		"minerva_enable_notes",
+		"minerva_disable_notes",
+		"minerva_delete_note",
+		"minerva_get_note",
+		"minerva_update_note",
+		"minerva_link_note_to_chat",
+	]
+
+
+func register_tools() -> void:
+	server._register_tool("minerva_create_note",
+		"Create a new note. Notes can be used as context/memory for LLM conversations. After creating, use minerva_update_note to modify content. The note is immediately available for LLM context if enabled.",
+		{
+			"type": "object",
+			"properties": {
+				"title": {
+					"type": "string",
+					"description": "Title of the note"
+				},
+				"content": {
+					"type": "string",
+					"description": "Content of the note. For html type, this is the HTML source."
+				},
+				"type": {
+					"type": "string",
+					"description": "Type of note: text or html. Defaults to text.",
+					"enum": ["text", "html"]
+				},
+				"tab": {
+					"type": "string",
+					"description": "Optional tab name to add the note to. If not specified, uses current tab."
+				}
+			},
+			"required": ["title", "content"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_create_note_tab",
+		"Create a new notes tab. Next steps: use minerva_create_note to add notes to this tab.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Name for the new tab"
+				}
+			},
+			"required": ["name"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_list_notes",
+		"List all notes in a tab or all tabs.",
+		{
+			"type": "object",
+			"properties": {
+				"tab": {
+					"type": "string",
+					"description": "Optional tab name. If not specified, lists notes from all tabs."
+				}
+			},
+			"required": []
+		}
+	, "notes")
+
+	server._register_tool("minerva_enable_notes",
+		"Enable all notes in a tab (makes them active for LLM context).",
+		{
+			"type": "object",
+			"properties": {
+				"tab": {
+					"type": "string",
+					"description": "Tab name to enable notes in"
+				}
+			},
+			"required": ["tab"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_disable_notes",
+		"Disable all notes in a tab (excludes them from LLM context).",
+		{
+			"type": "object",
+			"properties": {
+				"tab": {
+					"type": "string",
+					"description": "Tab name to disable notes in"
+				}
+			},
+			"required": ["tab"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_delete_note",
+		"Delete a note by its ID. Requires note_id from minerva_list_notes.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to delete"
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_get_note",
+		"Get a note's full content by its ID. Returns title, content, tab, and enabled status. Requires note_id from minerva_list_notes.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to read"
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_update_note",
+		"Update a note's content and/or title in-place by its ID. Requires note_id from minerva_list_notes or minerva_create_note.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to update"
+				},
+				"content": {
+					"type": "string",
+					"description": "New content for the note. If omitted, content is unchanged."
+				},
+				"title": {
+					"type": "string",
+					"description": "New title for the note. If omitted, title is unchanged."
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_link_note_to_chat",
+		"Link or unlink a note to a specific chat. Linked notes only appear in that chat's prompts. Unlinking makes the note global (visible to all chats). Requires note_id from minerva_list_notes and chat_id from minerva_list_chats.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID of the note to link/unlink"
+				},
+				"chat_id": {
+					"type": "string",
+					"description": "HistoryId of the chat to link to. If omitted, unlinks from all chats (makes global)."
+				},
+				"unlink": {
+					"type": "boolean",
+					"description": "If true, removes the link to the specified chat_id instead of adding it. Defaults to false."
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
+
+func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+	match tool_name:
+		"minerva_create_note":
+			return _create_note(arguments)
+		"minerva_create_note_tab":
+			return _create_note_tab(arguments)
+		"minerva_list_notes":
+			return _list_notes(arguments)
+		"minerva_enable_notes":
+			return _enable_notes(arguments)
+		"minerva_disable_notes":
+			return _disable_notes(arguments)
+		"minerva_delete_note":
+			return _delete_note(arguments)
+		"minerva_get_note":
+			return _get_note(arguments)
+		"minerva_update_note":
+			return _update_note(arguments)
+		"minerva_link_note_to_chat":
+			return _link_note_to_chat(arguments)
+	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
+
+
+#region Tool Implementations
+
+func _create_note(args: Dictionary) -> Dictionary:
+	var title: String = args.get("title", "Untitled")
+	var content: String = args.get("content", "")
+	var tab_name: String = args.get("tab", "")
+
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	# Create the note
+	var note_type: String = args.get("type", "text")
+	var note: Node
+	match note_type:
+		"html":
+			note = NoteScript.create_html_note(title, content)
+		_:
+			note = NoteScript.create_text_note(title, content)
+
+	# Find or create the tab
+	var tab_idx := -1
+	if not tab_name.is_empty():
+		var note_vbox = notes_container.find_or_create_tab(tab_name)
+		tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
+
+	# Add the note
+	notes_container.add_note(note, tab_idx)
+
+	return {
+		"success": true,
+		"note_id": note.uuid,
+		"title": title
+	}
+
+
+func _create_note_tab(args: Dictionary) -> Dictionary:
+	var name_: String = args.get("name", "Notes")
+
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	# Before creating, check if resource with same name exists
+	# If it does, return it with already_existed: true
+	if not name_.is_empty():
+		var existing_vbox = notes_container.find_tab_by_name(name_)
+		if existing_vbox:
+			return {"success": true, "already_existed": true, "tab_name": name_, "tab_id": existing_vbox.uuid}
+
+	var note_vbox = notes_container.create_tab(name_)
+	var _tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
+
+	return {
+		"success": true,
+		"tab_name": name_,
+		"tab_id": note_vbox.uuid
+	}
+
+
+func _list_notes(args: Dictionary) -> Dictionary:
+	var tab_name: String = args.get("tab", "")
+
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	var result: Array = []
+
+	if tab_name.is_empty():
+		# List all notes from all tabs
+		for i in range(notes_container.get_tab_count()):
+			var tab_title = notes_container.get_tab_title(i)
+			var notes = notes_container.get_notes(i)
+			for note in notes:
+				result.append({
+					"note_id": note.uuid,
+					"title": note.title,
+					"enabled": note.enabled,
+					"tab": tab_title
+				})
+	else:
+		# List notes from specific tab
+		var note_vbox = notes_container.find_tab_by_name(tab_name)
+		if not note_vbox:
+			return {"error": "Tab not found: %s" % tab_name, "success": false}
+
+		var tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
+		var notes = notes_container.get_notes(tab_idx)
+		for note in notes:
+			result.append({
+				"note_id": note.uuid,
+				"title": note.title,
+				"enabled": note.enabled,
+				"tab": tab_name
+			})
+
+	return {
+		"success": true,
+		"notes": result,
+		"count": result.size()
+	}
+
+
+func _enable_notes(args: Dictionary) -> Dictionary:
+	var tab_name: String = args.get("tab", "")
+
+	if tab_name.is_empty():
+		return {"error": "tab is required", "success": false}
+
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	var note_vbox = notes_container.find_tab_by_name(tab_name)
+	if not note_vbox:
+		return {"error": "Tab not found: %s" % tab_name, "success": false}
+
+	var tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
+	notes_container.enable_notes(tab_idx)
+
+	return {"success": true, "message": "Notes enabled in tab: %s" % tab_name}
+
+
+func _disable_notes(args: Dictionary) -> Dictionary:
+	var tab_name: String = args.get("tab", "")
+
+	if tab_name.is_empty():
+		return {"error": "tab is required", "success": false}
+
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return {"error": "Notes container not available", "success": false}
+
+	var note_vbox = notes_container.find_tab_by_name(tab_name)
+	if not note_vbox:
+		return {"error": "Tab not found: %s" % tab_name, "success": false}
+
+	var tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
+	notes_container.disable_notes(tab_idx)
+
+	return {"success": true, "message": "Notes disabled in tab: %s" % tab_name}
+
+
+func _delete_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	# Find the note by UUID
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note:
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	# Remove the note
+	note.queue_free()
+
+	return {"success": true, "message": "Note deleted"}
+
+
+func _get_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	# Get content from the backing controls
+	var content_text: String = ""
+	var controls_container = note.get_controls_container()
+	if controls_container is NoteTextControls:
+		content_text = controls_container.content
+
+	# Find which tab this note is in
+	var tab_name: String = ""
+	var notes_container = SingletonObject.notes_container
+	if notes_container:
+		for i in notes_container.get_tab_count():
+			var notes = notes_container.get_notes(i)
+			for n in notes:
+				if n.uuid == note_id:
+					tab_name = notes_container.get_tab_title(i)
+					break
+			if not tab_name.is_empty():
+				break
+
+	return {
+		"success": true,
+		"note_id": note_id,
+		"title": note.title,
+		"content": content_text,
+		"tab": tab_name,
+		"enabled": note.enabled,
+		"type": Note.Type.keys()[note.type] if note.type < Note.Type.size() else "UNKNOWN"
+	}
+
+
+func _update_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	var updated_fields: Array[String] = []
+
+	if args.has("title"):
+		note.title = args["title"]
+		updated_fields.append("title")
+
+	if args.has("content"):
+		var controls_container = note.get_controls_container()
+		if controls_container is NoteTextControls:
+			controls_container.content = args["content"]
+			updated_fields.append("content")
+		else:
+			return {"error": "Note is not a text note, cannot update content", "success": false}
+
+	return {
+		"success": true,
+		"note_id": note_id,
+		"updated": updated_fields
+	}
+
+
+func _link_note_to_chat(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+	var chat_id: String = args.get("chat_id", "")
+	var do_unlink: bool = args.get("unlink", false)
+
+	if note_id.is_empty():
+		return {"error": "note_id is required", "success": false}
+
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return {"error": "Note not found: %s" % note_id, "success": false}
+
+	if chat_id.is_empty():
+		note.linked_chat_ids.clear()
+		return {"success": true, "message": "Note unlinked from all chats (now global)"}
+
+	if do_unlink:
+		note.linked_chat_ids.erase(chat_id)
+		return {"success": true, "message": "Note unlinked from chat %s" % chat_id}
+	else:
+		if chat_id not in note.linked_chat_ids:
+			note.linked_chat_ids.append(chat_id)
+		return {"success": true, "message": "Note linked to chat %s" % chat_id}
+
+#endregion

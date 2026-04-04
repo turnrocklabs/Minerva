@@ -1706,9 +1706,9 @@ func format_cell_with_history(row: int, col: int, format_options: Dictionary) ->
 	if format_options.has("alignment"):
 		cell.alignment = str(format_options["alignment"])
 	if format_options.has("text_color"):
-		cell.text_color = str(format_options["text_color"])
+		cell.text_color = format_options["text_color"]
 	if format_options.has("bg_color"):
-		cell.bg_color = str(format_options["bg_color"])
+		cell.bg_color = format_options["bg_color"]
 	if format_options.has("number_format"):
 		cell.number_format = str(format_options["number_format"])
 		cell.refresh_display()
