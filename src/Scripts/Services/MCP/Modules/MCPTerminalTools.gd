@@ -134,8 +134,8 @@ func _terminal_read(arguments: Dictionary) -> Dictionary:
 
 	if has_range:
 		# Read specific row range from scrollback (screen-absolute)
-		var start_row: int = int(arguments.get("start_row", 0))
-		var end_row: int = int(arguments.get("end_row", start_row))
+		var start_row: int = MCPToolUtils.coerce_int(arguments.get("start_row", 0))
+		var end_row: int = MCPToolUtils.coerce_int(arguments.get("end_row", start_row))
 		var lines: PackedStringArray = []
 		for row in range(start_row, end_row + 1):
 			lines.append(term._extract_row_text_screen(row))
@@ -234,8 +234,8 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 	if not term.terminal or not term._terminal_available:
 		return {"success": false, "error": "Terminal not initialized"}
 
-	var timeout_ms: int = int(arguments.get("timeout_ms", 30000))
-	var settle_ms: int = int(arguments.get("settle_ms", 500))
+	var timeout_ms: int = MCPToolUtils.coerce_int(arguments.get("timeout_ms", 30000))
+	var settle_ms: int = MCPToolUtils.coerce_int(arguments.get("settle_ms", 500))
 
 	# Wait for output to appear and settle
 	var timed_out: bool = false

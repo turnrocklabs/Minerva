@@ -769,10 +769,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 #region Helpers
 
-func _find_spreadsheet_editor(editor_name: String) -> Variant:
-	var editor = MCPToolUtils.find_editor_by_name(editor_name)
-	if not editor:
-		return null
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	if editor.type != EditorGDScript.Type.SPREADSHEET:
@@ -968,7 +964,7 @@ func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	# Before creating, check if resource with same name exists
 	# If it does, return it with already_existed: true
@@ -979,7 +975,7 @@ func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
 
 	# Check if file exists when file_path is provided
 	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
-		return {"error": "File not found: %s" % file_path, "success": false}
+		return MCPToolUtils.error("File not found: %s" % file_path)
 
 	# Create the spreadsheet editor
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
@@ -1010,18 +1006,18 @@ func _get_spreadsheet_data(args: Dictionary) -> Dictionary:
 	var include_empty_rows: bool = args.get("include_empty_rows", false)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Get the used range to determine where data starts
 	var used_range: Rect2i = data.get_used_range()
@@ -1061,18 +1057,18 @@ func _update_spreadsheet_data(args: Dictionary) -> Dictionary:
 	var cells: Array = args.get("cells", [])
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	var updated_count := 0
 
@@ -1107,18 +1103,18 @@ func _add_spreadsheet_row(args: Dictionary) -> Dictionary:
 	var values: Array = args.get("values", [])
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Determine row index
 	var row_idx: int = at_row if at_row >= 0 else data.row_count
@@ -1147,18 +1143,18 @@ func _add_spreadsheet_column(args: Dictionary) -> Dictionary:
 	var values: Array = args.get("values", [])
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Determine column index
 	var col_idx: int = at_col if at_col >= 0 else data.column_count
@@ -1192,32 +1188,32 @@ func _delete_spreadsheet_row(args: Dictionary) -> Dictionary:
 	var row: int = args.get("row", -1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if row < 1:
-		return {"error": "row number is required and must be >= 1 (1-based indexing)", "success": false}
+		return MCPToolUtils.error("row number is required and must be >= 1 (1-based indexing)")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Convert from 1-based to 0-based indexing
 	var internal_row: int = row - 1
 
 	if internal_row >= data.row_count:
-		return {"error": "Row %d out of bounds (max row: %d)" % [row, data.row_count], "success": false}
+		return MCPToolUtils.error("Row %d out of bounds (max row: %d)" % [row, data.row_count])
 
 	# Delete the row with history support
 	var success = editor.spreadsheet_editor.delete_row_with_history(internal_row)
 	if not success:
-		return {"error": "Failed to delete row %d" % row, "success": false}
+		return MCPToolUtils.error("Failed to delete row %d" % row)
 
 	return {
 		"success": true,
@@ -1231,34 +1227,34 @@ func _delete_spreadsheet_column(args: Dictionary) -> Dictionary:
 	var column: int = args.get("column", -1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if column < 1:
-		return {"error": "column number is required and must be >= 1 (1-based indexing)", "success": false}
+		return MCPToolUtils.error("column number is required and must be >= 1 (1-based indexing)")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Convert from 1-based to 0-based indexing
 	var internal_col: int = column - 1
 
 	if internal_col >= data.column_count:
-		return {"error": "Column %d out of bounds (max column: %d)" % [column, data.column_count], "success": false}
+		return MCPToolUtils.error("Column %d out of bounds (max column: %d)" % [column, data.column_count])
 
 	var col_label = SpreadsheetDataScript.get_column_label(internal_col)
 
 	# Delete the column with history support
 	var success = editor.spreadsheet_editor.delete_column_with_history(internal_col)
 	if not success:
-		return {"error": "Failed to delete column %d (%s)" % [column, col_label], "success": false}
+		return MCPToolUtils.error("Failed to delete column %d (%s)" % [column, col_label])
 
 	return {
 		"success": true,
@@ -1273,21 +1269,21 @@ func _insert_spreadsheet_row(args: Dictionary) -> Dictionary:
 	var at_row: int = args.get("at_row", -1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if at_row < 0:
-		return {"error": "at_row is required and must be >= 0", "success": false}
+		return MCPToolUtils.error("at_row is required and must be >= 0")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Insert empty row
 	data.insert_row(at_row)
@@ -1308,21 +1304,21 @@ func _insert_spreadsheet_column(args: Dictionary) -> Dictionary:
 	var at_column: int = args.get("at_column", -1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if at_column < 0:
-		return {"error": "at_column is required and must be >= 0", "success": false}
+		return MCPToolUtils.error("at_column is required and must be >= 0")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Insert empty column
 	data.insert_column(at_column)
@@ -1346,21 +1342,21 @@ func _format_cells(args: Dictionary) -> Dictionary:
 	var range_str: String = args.get("range", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if range_str.is_empty():
-		return {"error": "range is required", "success": false}
+		return MCPToolUtils.error("range is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Parse the range
 	var cells_to_format: Array[Vector2i] = []
@@ -1382,7 +1378,7 @@ func _format_cells(args: Dictionary) -> Dictionary:
 			cells_to_format.append(Vector2i(pos.x, pos.y))
 
 	if cells_to_format.is_empty():
-		return {"error": "Invalid range: %s" % range_str, "success": false}
+		return MCPToolUtils.error("Invalid range: %s" % range_str)
 
 	# Build format options dictionary
 	var format_options: Dictionary = {}
@@ -1427,21 +1423,21 @@ func _set_row_height(args: Dictionary) -> Dictionary:
 	var rows: Array = args.get("rows", [])
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if rows.is_empty():
-		return {"error": "rows array is required", "success": false}
+		return MCPToolUtils.error("rows array is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	var updated_count := 0
 	for row_config in rows:
@@ -1480,21 +1476,21 @@ func _set_column_width(args: Dictionary) -> Dictionary:
 	var columns: Array = args.get("columns", [])
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if columns.is_empty():
-		return {"error": "columns array is required", "success": false}
+		return MCPToolUtils.error("columns array is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	var updated_count := 0
 	for col_config in columns:
@@ -1540,29 +1536,29 @@ func _set_cell_formula(args: Dictionary) -> Dictionary:
 	var formula: String = args.get("formula", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if cell_ref.is_empty():
-		return {"error": "cell is required", "success": false}
+		return MCPToolUtils.error("cell is required")
 
 	if formula.is_empty():
-		return {"error": "formula is required", "success": false}
+		return MCPToolUtils.error("formula is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 	if not data:
-		return {"error": "No spreadsheet data available", "success": false}
+		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Parse cell reference
 	var pos: Vector2i = SpreadsheetDataScript.parse_cell_reference(cell_ref)
 	if pos.x < 0 or pos.y < 0:
-		return {"error": "Invalid cell reference: %s" % cell_ref, "success": false}
+		return MCPToolUtils.error("Invalid cell reference: %s" % cell_ref)
 
 	# Ensure formula starts with =
 	if not formula.begins_with("="):
@@ -1593,20 +1589,20 @@ func _create_chart(args: Dictionary) -> Dictionary:
 	var first_row_is_header: bool = MCPToolUtils.coerce_bool(args.get("first_row_is_header", true), true)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if x_range.is_empty():
-		return {"error": "x_range is required", "success": false}
+		return MCPToolUtils.error("x_range is required")
 
 	if series.is_empty():
-		return {"error": "series is required (array of cell ranges)", "success": false}
+		return MCPToolUtils.error("series is required (array of cell ranges)")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	# Create the chart
 	var chart := SpreadsheetChartScript.new()
@@ -1639,22 +1635,22 @@ func _get_chart_image(args: Dictionary) -> Dictionary:
 	var height: int = MCPToolUtils.coerce_int(args.get("height", 400), 400)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var charts = editor.spreadsheet_editor.charts
 	if chart_index < 0 or chart_index >= charts.size():
-		return {"error": "Chart index out of range (have %d charts)" % charts.size(), "success": false}
+		return MCPToolUtils.error("Chart index out of range (have %d charts)" % charts.size())
 
 	var chart_canvas = editor.spreadsheet_editor._chart_canvas
 	if not chart_canvas:
-		return {"error": "Chart canvas not available", "success": false}
+		return MCPToolUtils.error("Chart canvas not available")
 
 	# Make sure the chart canvas has the right chart selected
 	var target_chart = charts[chart_index]
@@ -1665,7 +1661,7 @@ func _get_chart_image(args: Dictionary) -> Dictionary:
 	var base64_png: String = await chart_canvas.capture_to_base64_png(width, height)
 
 	if base64_png.is_empty():
-		return {"error": "Failed to capture chart image", "success": false}
+		return MCPToolUtils.error("Failed to capture chart image")
 
 	return {
 		"success": true,
@@ -1683,14 +1679,14 @@ func _list_charts(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var charts_info: Array = []
 	for i in range(editor.spreadsheet_editor.charts.size()):
@@ -1726,14 +1722,14 @@ func _update_chart(args: Dictionary) -> Dictionary:
 	var chart_index: int = MCPToolUtils.coerce_int(args.get("chart_index", -1), -1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	# Find chart by ID or index
 	var target_index: int = -1
@@ -1743,7 +1739,7 @@ func _update_chart(args: Dictionary) -> Dictionary:
 		target_index = chart_index
 
 	if target_index < 0 or target_index >= editor.spreadsheet_editor.charts.size():
-		return {"error": "Chart not found. Provide valid chart_id or chart_index.", "success": false}
+		return MCPToolUtils.error("Chart not found. Provide valid chart_id or chart_index.")
 
 	# Build properties dictionary from args
 	var properties: Dictionary = {}
@@ -1773,13 +1769,13 @@ func _update_chart(args: Dictionary) -> Dictionary:
 		properties["y_max"] = MCPToolUtils.coerce_float(args["y_max"])
 
 	if properties.is_empty():
-		return {"error": "No properties to update. Provide at least one property.", "success": false}
+		return MCPToolUtils.error("No properties to update. Provide at least one property.")
 
 	# Update the chart
 	var success: bool = editor.spreadsheet_editor.update_chart_properties(target_index, properties)
 
 	if not success:
-		return {"error": "Failed to update chart", "success": false}
+		return MCPToolUtils.error("Failed to update chart")
 
 	var chart = editor.spreadsheet_editor.charts[target_index]
 	return {
@@ -1797,14 +1793,14 @@ func _delete_chart(args: Dictionary) -> Dictionary:
 	var chart_index: int = MCPToolUtils.coerce_int(args.get("chart_index", -1), -1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	# Find chart by ID or index
 	var target_index: int = -1
@@ -1814,7 +1810,7 @@ func _delete_chart(args: Dictionary) -> Dictionary:
 		target_index = chart_index
 
 	if target_index < 0 or target_index >= editor.spreadsheet_editor.charts.size():
-		return {"error": "Chart not found. Provide valid chart_id or chart_index.", "success": false}
+		return MCPToolUtils.error("Chart not found. Provide valid chart_id or chart_index.")
 
 	var deleted_id: String = editor.spreadsheet_editor.charts[target_index].id
 	editor.spreadsheet_editor.remove_chart(target_index)
@@ -1831,14 +1827,14 @@ func _refresh_charts(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	editor.spreadsheet_editor._update_all_charts()
 
@@ -1855,14 +1851,14 @@ func _link_spreadsheet_to_note(args: Dictionary) -> Dictionary:
 	var thread_name: String = args.get("thread_name", "Spreadsheets")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	# Use spreadsheet name as note title if not provided
 	if note_title.is_empty():
@@ -1878,7 +1874,7 @@ func _link_spreadsheet_to_note(args: Dictionary) -> Dictionary:
 	# Find or create the notes thread
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	var thread_vbox = notes_container.find_or_create_tab(thread_name)
 	thread_vbox.add_note(note)
@@ -1901,20 +1897,20 @@ func _export_to_nudge(args: Dictionary) -> Dictionary:
 	var include_charts: bool = MCPToolUtils.coerce_bool(args.get("include_charts", false))
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if component.is_empty():
-		return {"error": "component is required", "success": false}
+		return MCPToolUtils.error("component is required")
 
 	if key.is_empty():
-		return {"error": "key is required", "success": false}
+		return MCPToolUtils.error("key is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var data = editor.spreadsheet_editor.spreadsheet_data
 
@@ -1953,7 +1949,7 @@ func _export_to_nudge(args: Dictionary) -> Dictionary:
 	var nudge_result: Dictionary = await _call_nudge_set_hint(component, key, export_value)
 
 	if nudge_result.has("error"):
-		return {"error": "Nudge export failed: %s" % nudge_result.get("error", "Unknown error"), "success": false}
+		return MCPToolUtils.error("Nudge export failed: %s" % nudge_result.get("error", "Unknown error"))
 
 	return {
 		"success": true,
@@ -1970,14 +1966,14 @@ func _undo_spreadsheet(args: Dictionary) -> Dictionary:
 	var count: int = MCPToolUtils.coerce_int(args.get("count", 1), 1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var spreadsheet = editor.spreadsheet_editor
 
@@ -2011,14 +2007,14 @@ func _redo_spreadsheet(args: Dictionary) -> Dictionary:
 	var count: int = MCPToolUtils.coerce_int(args.get("count", 1), 1)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var spreadsheet = editor.spreadsheet_editor
 
@@ -2051,14 +2047,14 @@ func _get_spreadsheet_history(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var spreadsheet = editor.spreadsheet_editor
 
@@ -2079,20 +2075,20 @@ func _fill_down_spreadsheet(args: Dictionary) -> Dictionary:
 	var columns: Array = args.get("columns", [])
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if source_row < 1:
-		return {"error": "source_row must be >= 1 (1-based row number)", "success": false}
+		return MCPToolUtils.error("source_row must be >= 1 (1-based row number)")
 
 	if target_rows.is_empty():
-		return {"error": "target_rows array is required", "success": false}
+		return MCPToolUtils.error("target_rows array is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var spreadsheet = editor.spreadsheet_editor
 	var data = spreadsheet.spreadsheet_data
@@ -2116,7 +2112,7 @@ func _fill_down_spreadsheet(args: Dictionary) -> Dictionary:
 				col_indices.append(col_idx)
 
 	if col_indices.is_empty():
-		return {"error": "No columns to fill (source row is empty or columns not found)", "success": false}
+		return MCPToolUtils.error("No columns to fill (source row is empty or columns not found)")
 
 	# Capture old cells for history
 	var old_cells: Dictionary = {}
@@ -2187,14 +2183,14 @@ func _recalculate_spreadsheet(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var editor = _find_spreadsheet_editor(editor_name)
+	var editor = MCPToolUtils.find_spreadsheet(editor_name)
 	if not editor:
-		return {"error": "Spreadsheet editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not found: %s" % editor_name)
 
 	if not editor.spreadsheet_editor:
-		return {"error": "Spreadsheet editor not initialized", "success": false}
+		return MCPToolUtils.error("Spreadsheet editor not initialized")
 
 	var spreadsheet = editor.spreadsheet_editor
 	spreadsheet._recalculate_all()

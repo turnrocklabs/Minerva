@@ -146,7 +146,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 func _skill_list(arguments: Dictionary) -> Dictionary:
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
-		return {"error": "Skill manager not available", "success": false}
+		return MCPToolUtils.error("Skill manager not available")
 
 	var include_profiles: bool = arguments.get("include_profiles", false)
 	var result: Array[Dictionary] = []
@@ -171,15 +171,15 @@ func _skill_list(arguments: Dictionary) -> Dictionary:
 func _skill_get(arguments: Dictionary) -> Dictionary:
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
-		return {"error": "Skill manager not available", "success": false}
+		return MCPToolUtils.error("Skill manager not available")
 
 	var skill_id: String = arguments.get("skill_id", "")
 	if skill_id.is_empty():
-		return {"error": "skill_id is required", "success": false}
+		return MCPToolUtils.error("skill_id is required")
 
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
-		return {"error": "Skill not found: %s" % skill_id, "success": false}
+		return MCPToolUtils.error("Skill not found: %s" % skill_id)
 
 	var data := {
 		"success": true,
@@ -210,15 +210,15 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 func _skill_activate(arguments: Dictionary) -> Dictionary:
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
-		return {"error": "Skill manager not available", "success": false}
+		return MCPToolUtils.error("Skill manager not available")
 
 	var skill_id: String = arguments.get("skill_id", "")
 	if skill_id.is_empty():
-		return {"error": "skill_id is required", "success": false}
+		return MCPToolUtils.error("skill_id is required")
 
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
-		return {"error": "Skill not found: %s" % skill_id, "success": false}
+		return MCPToolUtils.error("Skill not found: %s" % skill_id)
 
 	if skill_manager.is_active(skill_id):
 		return {"success": true, "skill_id": skill_id, "message": "Already active"}
@@ -230,15 +230,15 @@ func _skill_activate(arguments: Dictionary) -> Dictionary:
 func _skill_deactivate(arguments: Dictionary) -> Dictionary:
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
-		return {"error": "Skill manager not available", "success": false}
+		return MCPToolUtils.error("Skill manager not available")
 
 	var skill_id: String = arguments.get("skill_id", "")
 	if skill_id.is_empty():
-		return {"error": "skill_id is required", "success": false}
+		return MCPToolUtils.error("skill_id is required")
 
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
-		return {"error": "Skill not found: %s" % skill_id, "success": false}
+		return MCPToolUtils.error("Skill not found: %s" % skill_id)
 
 	if not skill_manager.is_active(skill_id):
 		return {"success": true, "skill_id": skill_id, "message": "Already inactive"}
@@ -250,18 +250,18 @@ func _skill_deactivate(arguments: Dictionary) -> Dictionary:
 func _skill_update_instructions(arguments: Dictionary) -> Dictionary:
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
-		return {"error": "Skill manager not available", "success": false}
+		return MCPToolUtils.error("Skill manager not available")
 
 	var skill_id: String = arguments.get("skill_id", "")
 	if skill_id.is_empty():
-		return {"error": "skill_id is required", "success": false}
+		return MCPToolUtils.error("skill_id is required")
 
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
-		return {"error": "Skill not found: %s" % skill_id, "success": false}
+		return MCPToolUtils.error("Skill not found: %s" % skill_id)
 
 	if not skill.is_skill():
-		return {"error": "Cannot update instructions on a profile (only user skills)", "success": false}
+		return MCPToolUtils.error("Cannot update instructions on a profile (only user skills)")
 
 	var instructions: String = arguments.get("instructions", "")
 	skill.instructions = instructions
@@ -282,10 +282,10 @@ func _skill_update_instructions(arguments: Dictionary) -> Dictionary:
 func _speak(arguments: Dictionary) -> Dictionary:
 	var text: String = arguments.get("text", "")
 	if text.is_empty():
-		return {"error": "text is required", "success": false}
+		return MCPToolUtils.error("text is required")
 
 	if not Core.client._connected:
-		return {"error": "Core not connected — cannot use voice-service", "success": false}
+		return MCPToolUtils.error("Core not connected — cannot use voice-service")
 
 	var cfg := SingletonObject.get_voice_config()
 	var voice_id: String = arguments.get("voice_id", "")
@@ -299,7 +299,7 @@ func _speak(arguments: Dictionary) -> Dictionary:
 	var wav_data: PackedByteArray = await client.synthesize(text, voice_id, backend)
 
 	if wav_data.is_empty():
-		return {"error": "TTS synthesis failed", "success": false}
+		return MCPToolUtils.error("TTS synthesis failed")
 
 	# Play via the ChatPane TTS player if available
 	var chats = SingletonObject.Chats
@@ -311,7 +311,7 @@ func _speak(arguments: Dictionary) -> Dictionary:
 		chats._tts_player.play()
 	else:
 		push_warning("[MCPSkillTools] No TTS player available for minerva_speak")
-		return {"error": "No audio player available", "success": false}
+		return MCPToolUtils.error("No audio player available")
 
 	return {
 		"success": true,
@@ -324,7 +324,7 @@ func _speak(arguments: Dictionary) -> Dictionary:
 
 func _list_voices(arguments: Dictionary) -> Dictionary:
 	if not Core.client._connected:
-		return {"error": "Core not connected — cannot query voice-service", "success": false}
+		return MCPToolUtils.error("Core not connected — cannot query voice-service")
 
 	var backend: String = arguments.get("backend", "")
 	var client := SingletonObject.get_voice_client()

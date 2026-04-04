@@ -918,10 +918,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 #region Helpers
 
 ## Find a PCB editor by name. Returns the inner PCBEditor panel or null.
-func _find_pcb_editor(name_: String):  # Returns PCBEditor or null
-	var editor_pane = SingletonObject.editor_pane
-	if not editor_pane:
-		return null
 
 	var clean_name = name_.strip_edges()
 
@@ -1015,16 +1011,16 @@ func _create_pcb_editor(args: Dictionary) -> Dictionary:
 	var board_height: float = args.get("board_height", 100.0)
 
 	if name_.is_empty():
-		return {"error": "name is required", "success": false}
+		return MCPToolUtils.error("name is required")
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	# Create new PCB editor tab
 	var editor = editor_pane.add_pcb_editor(name_)
 	if not editor or not editor.pcb_editor:
-		return {"error": "Failed to create PCB editor", "success": false}
+		return MCPToolUtils.error("Failed to create PCB editor")
 
 	# Set board size
 	var data = editor.pcb_editor.get_data()
@@ -1048,15 +1044,15 @@ func _pcb_set_board_size(args: Dictionary) -> Dictionary:
 	var height: float = args.get("height", 100.0)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	data.board_width = width
 	data.board_height = height
@@ -1074,15 +1070,15 @@ func _pcb_get_components(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	var components: Array = []
 	for comp_id in data.components:
@@ -1113,17 +1109,17 @@ func _pcb_describe_component(args: Dictionary) -> Dictionary:
 	var component_id: String = args.get("component_id", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if component_id.is_empty():
-		return {"error": "component_id is required", "success": false}
+		return MCPToolUtils.error("component_id is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var context = pcb_editor.describe_component(component_id)
 	if context.is_empty():
-		return {"error": "Component not found: %s" % component_id, "success": false}
+		return MCPToolUtils.error("Component not found: %s" % component_id)
 
 	context["success"] = true
 	return context
@@ -1136,11 +1132,11 @@ func _pcb_spatial_query(args: Dictionary) -> Dictionary:
 	var radius: float = args.get("radius_mm", 20.0)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	if reference_component.is_empty():
 		# Return all components if no reference
@@ -1171,15 +1167,15 @@ func _pcb_get_nets(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	var nets_arr: Array = []
 	for net_name in data.nets:
@@ -1208,23 +1204,23 @@ func _pcb_get_pin_position(args: Dictionary) -> Dictionary:
 	var pin: String = args.get("pin", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if component_id.is_empty():
-		return {"error": "component_id is required", "success": false}
+		return MCPToolUtils.error("component_id is required")
 	if pin.is_empty():
-		return {"error": "pin is required", "success": false}
+		return MCPToolUtils.error("pin is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	var comp = data.get_component(component_id)
 	if not comp:
-		return {"error": "Component not found: %s" % component_id, "success": false}
+		return MCPToolUtils.error("Component not found: %s" % component_id)
 
 	# Build available pins list for self-correction on error
 	var available_pins: Array = []
@@ -1266,22 +1262,22 @@ func _pcb_add_component(args: Dictionary) -> Dictionary:
 	var y: float = float(args.get("y", 50.0))
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if footprint_str.is_empty():
-		return {"error": "footprint is required", "success": false}
+		return MCPToolUtils.error("footprint is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Parse footprint type
 	var footprint_idx := PCBComponentScript.FootprintType.keys().find(footprint_str.to_upper())
 	if footprint_idx < 0:
-		return {"error": "Invalid footprint type: %s" % footprint_str, "success": false}
+		return MCPToolUtils.error("Invalid footprint type: %s" % footprint_str)
 
 	# Create component
 	var component_id: String = args.get("id", "")
@@ -1352,20 +1348,20 @@ func _pcb_move_component(args: Dictionary) -> Dictionary:
 	var y: float = args.get("y", 0.0)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if component_id.is_empty():
-		return {"error": "component_id is required", "success": false}
+		return MCPToolUtils.error("component_id is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	if not data.has_component(component_id):
-		return {"error": "Component not found: %s" % component_id, "success": false}
+		return MCPToolUtils.error("Component not found: %s" % component_id)
 
 	var new_pos = data.snap_to_grid(Vector2(x, y))
 	data.save_to_history("Move " + component_id)
@@ -1386,15 +1382,15 @@ func _pcb_move_relative(args: Dictionary) -> Dictionary:
 	var direction: String = args.get("direction", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if component_id.is_empty():
-		return {"error": "component_id is required", "success": false}
+		return MCPToolUtils.error("component_id is required")
 	if direction.is_empty():
-		return {"error": "direction is required", "success": false}
+		return MCPToolUtils.error("direction is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var new_pos = pcb_editor.move_component_relative(component_id, direction)
 
@@ -1414,21 +1410,21 @@ func _pcb_rotate_component(args: Dictionary) -> Dictionary:
 	var degrees = args.get("degrees", 90)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if component_id.is_empty():
-		return {"error": "component_id is required", "success": false}
+		return MCPToolUtils.error("component_id is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	var comp = data.get_component(component_id)
 	if not comp:
-		return {"error": "Component not found: %s" % component_id, "success": false}
+		return MCPToolUtils.error("Component not found: %s" % component_id)
 
 	var new_rotation: float = comp.rotation
 	if degrees is String:
@@ -1455,20 +1451,20 @@ func _pcb_delete_component(args: Dictionary) -> Dictionary:
 	var component_id: String = args.get("component_id", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if component_id.is_empty():
-		return {"error": "component_id is required", "success": false}
+		return MCPToolUtils.error("component_id is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	if not data.has_component(component_id):
-		return {"error": "Component not found: %s" % component_id, "success": false}
+		return MCPToolUtils.error("Component not found: %s" % component_id)
 
 	data.save_to_history("Delete " + component_id)
 	data.remove_component(component_id)
@@ -1486,19 +1482,19 @@ func _pcb_connect_net(args: Dictionary) -> Dictionary:
 	var pins: Array = args.get("pins", [])
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if net_name.is_empty():
-		return {"error": "net_name is required", "success": false}
+		return MCPToolUtils.error("net_name is required")
 	if pins.is_empty():
-		return {"error": "pins array is required", "success": false}
+		return MCPToolUtils.error("pins array is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Collect operations first
 	var operations: Array = []
@@ -1521,7 +1517,7 @@ func _pcb_connect_net(args: Dictionary) -> Dictionary:
 	}
 	var test_json := JSON.stringify(result)
 	if test_json.is_empty():
-		return {"error": "Internal serialization error", "success": false}
+		return MCPToolUtils.error("Internal serialization error")
 
 	# Commit all operations
 	for op in operations:
@@ -1535,11 +1531,11 @@ func _pcb_export_csv(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var csv = pcb_editor.export_csv()
 	return {
@@ -1553,11 +1549,11 @@ func _pcb_export_yaml(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var yaml = pcb_editor.export_yaml()
 	return {
@@ -1572,13 +1568,13 @@ func _pcb_import_csv(args: Dictionary) -> Dictionary:
 	var csv_content: String = args.get("csv_content", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if csv_content.is_empty():
-		return {"error": "csv_content is required", "success": false}
+		return MCPToolUtils.error("csv_content is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	pcb_editor.import_csv(csv_content)
 
@@ -1597,17 +1593,17 @@ func _pcb_import_footprint_geometry(args: Dictionary) -> Dictionary:
 	var invert_y: bool = args.get("invert_y", false)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if geometry_data.is_empty():
-		return {"error": "geometry data is required", "success": false}
+		return MCPToolUtils.error("geometry data is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	var components_data: Dictionary = geometry_data.get("components", {})
 	var updated_count := 0
@@ -1680,17 +1676,17 @@ func _pcb_import_trace_geometry(args: Dictionary) -> Dictionary:
 	var trace_data: Dictionary = args.get("trace_data", {})
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if trace_data.is_empty():
-		return {"error": "trace_data is required", "success": false}
+		return MCPToolUtils.error("trace_data is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Clear existing traces
 	data.clear_traces()
@@ -1775,15 +1771,15 @@ func _pcb_export_trace_geometry(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Export traces: expand polyline waypoints to individual segments
 	var traces_output: Array = []
@@ -1844,19 +1840,19 @@ func _pcb_add_annotation(args: Dictionary) -> Dictionary:
 	var associated_net: String = args.get("associated_net", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if type_str.is_empty():
-		return {"error": "type is required (arrow, text, region, polyline)", "success": false}
+		return MCPToolUtils.error("type is required (arrow, text, region, polyline)")
 	if positions_arr.is_empty():
-		return {"error": "positions array is required", "success": false}
+		return MCPToolUtils.error("positions array is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Convert positions
 	var positions: Array[Vector2] = []
@@ -1869,24 +1865,24 @@ func _pcb_add_annotation(args: Dictionary) -> Dictionary:
 	match type_str.to_lower():
 		"arrow":
 			if positions.size() < 2:
-				return {"error": "arrow requires 2 positions (start, end)", "success": false}
+				return MCPToolUtils.error("arrow requires 2 positions (start, end)")
 			annotation = PCBAnnotationScript.create_arrow(positions[0], positions[1], text_content, "ai")
 		"text":
 			if positions.size() < 1:
-				return {"error": "text requires 1 position", "success": false}
+				return MCPToolUtils.error("text requires 1 position")
 			if text_content.is_empty():
-				return {"error": "text annotation requires text content", "success": false}
+				return MCPToolUtils.error("text annotation requires text content")
 			annotation = PCBAnnotationScript.create_text(positions[0], text_content, "ai")
 		"region":
 			if positions.size() < 2:
-				return {"error": "region requires 2 positions (corners)", "success": false}
+				return MCPToolUtils.error("region requires 2 positions (corners)")
 			annotation = PCBAnnotationScript.create_region(positions[0], positions[1], text_content, "ai")
 		"polyline":
 			if positions.size() < 2:
-				return {"error": "polyline requires at least 2 positions", "success": false}
+				return MCPToolUtils.error("polyline requires at least 2 positions")
 			annotation = PCBAnnotationScript.create_polyline(positions, text_content, "ai")
 		_:
-			return {"error": "Unknown annotation type: %s" % type_str, "success": false}
+			return MCPToolUtils.error("Unknown annotation type: %s" % type_str)
 
 	# Apply optional settings
 	if not color_str.is_empty():
@@ -1905,7 +1901,7 @@ func _pcb_add_annotation(args: Dictionary) -> Dictionary:
 	}
 	var test_json := JSON.stringify(result)
 	if test_json.is_empty():
-		return {"error": "Internal serialization error", "success": false}
+		return MCPToolUtils.error("Internal serialization error")
 
 	data.add_annotation(annotation)
 	return result
@@ -1917,15 +1913,15 @@ func _pcb_list_annotations(args: Dictionary) -> Dictionary:
 	var author_filter: String = args.get("author", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	var annotations_list: Array = []
 	var all_annotations: Array
@@ -1968,20 +1964,20 @@ func _pcb_remove_annotation(args: Dictionary) -> Dictionary:
 	var annotation_id: String = args.get("annotation_id", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if annotation_id.is_empty():
-		return {"error": "annotation_id is required", "success": false}
+		return MCPToolUtils.error("annotation_id is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	if not data.get_annotation(annotation_id):
-		return {"error": "Annotation not found: %s" % annotation_id, "success": false}
+		return MCPToolUtils.error("Annotation not found: %s" % annotation_id)
 
 	data.remove_annotation(annotation_id)
 
@@ -1997,15 +1993,15 @@ func _pcb_clear_annotations(args: Dictionary) -> Dictionary:
 	var author_filter: String = args.get("author", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Count before clearing
 	var count_before := 0
@@ -2037,17 +2033,17 @@ func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 	var client_id: String = args.get("client_id", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if hint_type_str.is_empty():
-		return {"error": "hint_type is required", "success": false}
+		return MCPToolUtils.error("hint_type is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Convert waypoints to Vector2 array
 	var waypoints: Array[Vector2] = []
@@ -2070,22 +2066,22 @@ func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 			hint = PCBRouteHintScript.create_waypoint_hint(waypoints, text, "ai")
 		"single_trace":
 			if source_pins.is_empty() or dest_pins.is_empty():
-				return {"error": "single_trace hint requires source_pins and dest_pins", "success": false}
+				return MCPToolUtils.error("single_trace hint requires source_pins and dest_pins")
 			if source_pins[0] == dest_pins[0]:
-				return {"error": "single_trace hint cannot have the same source and destination pin: %s" % source_pins[0], "success": false}
+				return MCPToolUtils.error("single_trace hint cannot have the same source and destination pin: %s" % source_pins[0])
 			hint = PCBRouteHintScript.create_single_trace_hint(
 				source_pins[0], dest_pins[0], waypoints, layer, width, text, "ai"
 			)
 		"bus":
 			if source_pins.is_empty() or dest_pins.is_empty():
-				return {"error": "bus hint requires source_pins and dest_pins", "success": false}
+				return MCPToolUtils.error("bus hint requires source_pins and dest_pins")
 			if source_pins.size() != dest_pins.size():
-				return {"error": "bus hint requires equal number of source and dest pins", "success": false}
+				return MCPToolUtils.error("bus hint requires equal number of source and dest pins")
 			hint = PCBRouteHintScript.create_bus_hint(
 				source_pins, dest_pins, waypoints, layer, width, bus_spacing, text, "ai"
 			)
 		_:
-			return {"error": "Invalid hint_type: %s. Must be 'waypoint', 'single_trace', or 'bus'" % hint_type_str, "success": false}
+			return MCPToolUtils.error("Invalid hint_type: %s. Must be 'waypoint', 'single_trace', or 'bus'" % hint_type_str)
 
 	# Set layer if specified
 	if not layer.is_empty():
@@ -2098,7 +2094,7 @@ func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 	var created_id := hint.id
 	var returned_hint = data.add_route_hint(hint)
 	if returned_hint == null:
-		return {"error": "Route hint was rejected (self-referencing)", "success": false}
+		return MCPToolUtils.error("Route hint was rejected (self-referencing)")
 
 	var is_duplicate: bool = (returned_hint.id != created_id)
 
@@ -2116,7 +2112,7 @@ func _pcb_add_route_hint(args: Dictionary) -> Dictionary:
 	# Transactional: test serialization before returning
 	var test_json := JSON.stringify(result)
 	if test_json.is_empty():
-		return {"error": "Internal serialization error", "success": false}
+		return MCPToolUtils.error("Internal serialization error")
 
 	return result
 
@@ -2127,15 +2123,15 @@ func _pcb_list_route_hints(args: Dictionary) -> Dictionary:
 	var author_filter: String = args.get("author", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# First, just return count and IDs to test
 	var hint_ids: Array = []
@@ -2195,20 +2191,20 @@ func _pcb_remove_route_hint(args: Dictionary) -> Dictionary:
 	var hint_id: String = args.get("hint_id", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 	if hint_id.is_empty():
-		return {"error": "hint_id is required", "success": false}
+		return MCPToolUtils.error("hint_id is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	if not data.get_route_hint(hint_id):
-		return {"error": "Route hint not found: %s" % hint_id, "success": false}
+		return MCPToolUtils.error("Route hint not found: %s" % hint_id)
 
 	data.remove_route_hint(hint_id)
 
@@ -2224,15 +2220,15 @@ func _pcb_clear_route_hints(args: Dictionary) -> Dictionary:
 	var author_filter: String = args.get("author", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Count before clearing
 	var count_before := 0
@@ -2255,15 +2251,15 @@ func _pcb_interpret_route_hints(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	# Get all annotations
 	var annotations = data.get_all_annotations()
@@ -2399,15 +2395,15 @@ func _pcb_get_change_journal(args: Dictionary) -> Dictionary:
 	var limit: int = args.get("limit", 50)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	var data = pcb_editor.get_data()
 	if not data:
-		return {"error": "PCB data not available", "success": false}
+		return MCPToolUtils.error("PCB data not available")
 
 	var entries: Array = data.get_change_journal(since_timestamp)
 
@@ -2430,14 +2426,14 @@ func _pcb_get_image(args: Dictionary) -> Dictionary:
 	var height: int = args.get("height", 600)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	if not pcb_editor.canvas:
-		return {"error": "PCB canvas not available", "success": false}
+		return MCPToolUtils.error("PCB canvas not available")
 
 	var canvas = pcb_editor.canvas
 	var data = pcb_editor.get_data()
@@ -2468,7 +2464,7 @@ func _pcb_get_image(args: Dictionary) -> Dictionary:
 	canvas.show_route_hints = orig_show_route_hints
 
 	if base64_png.is_empty():
-		return {"error": "Failed to capture PCB image", "success": false}
+		return MCPToolUtils.error("Failed to capture PCB image")
 
 	# Gather metadata about the board
 	var metadata := {}
@@ -2500,14 +2496,14 @@ func _pcb_create_note(args: Dictionary) -> Dictionary:
 	var thread_name: String = args.get("thread_name", "PCB Boards")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
-	var pcb_editor = _find_pcb_editor(editor_name)
+	var pcb_editor = MCPToolUtils.find_pcb(editor_name)
 	if not pcb_editor:
-		return {"error": "PCB editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("PCB editor not found: %s" % editor_name)
 
 	if not pcb_editor.canvas:
-		return {"error": "PCB canvas not available", "success": false}
+		return MCPToolUtils.error("PCB canvas not available")
 
 	# Use editor name as note title if not provided
 	if note_title.is_empty():
@@ -2523,7 +2519,7 @@ func _pcb_create_note(args: Dictionary) -> Dictionary:
 	# Find or create the notes thread
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	var thread_vbox = notes_container.find_or_create_tab(thread_name)
 	thread_vbox.add_note(note)

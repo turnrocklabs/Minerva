@@ -372,11 +372,11 @@ func _get_artifact_adapter():
 func _autocoder_plan(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var prompt: String = args.get("prompt", "")
 	if prompt.is_empty():
-		return {"error": "prompt is required", "success": false}
+		return MCPToolUtils.error("prompt is required")
 
 	var session_id: String = args.get("session_id", "")
 	var input_archive_uri: String = args.get("input_archive_uri", "")
@@ -385,7 +385,7 @@ func _autocoder_plan(args: Dictionary) -> Dictionary:
 
 	var result = await adapter.plan(prompt, session_id, input_archive_uri, model, modify_request)
 	if not result:
-		return {"error": "Planning request failed", "success": false}
+		return MCPToolUtils.error("Planning request failed")
 
 	# Sync UI to track this session (same as if user clicked "Start Planning")
 	if result.session_id and not result.session_id.is_empty():
@@ -425,11 +425,11 @@ func _autocoder_plan(args: Dictionary) -> Dictionary:
 func _autocoder_generate(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var prompt: String = args.get("prompt", "")
 	if prompt.is_empty():
-		return {"error": "prompt is required", "success": false}
+		return MCPToolUtils.error("prompt is required")
 
 	var session_id: String = args.get("session_id", "")
 	var input_archive_uri: String = args.get("input_archive_uri", "")
@@ -443,7 +443,7 @@ func _autocoder_generate(args: Dictionary) -> Dictionary:
 		model, review_agent_ids, use_plan_tasks, [], auto_review
 	)
 	if not result:
-		return {"error": "Generation request failed", "success": false}
+		return MCPToolUtils.error("Generation request failed")
 
 	# Sync UI to track this session (same as if user clicked "Generate Code")
 	if result.session_id and not result.session_id.is_empty():
@@ -468,15 +468,15 @@ func _autocoder_generate(args: Dictionary) -> Dictionary:
 func _autocoder_status(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var session_id: String = args.get("session_id", "")
 	if session_id.is_empty():
-		return {"error": "session_id is required", "success": false}
+		return MCPToolUtils.error("session_id is required")
 
 	var info = await adapter.get_session_info(session_id)
 	if not info or info.is_empty():
-		return {"error": "Session not found or status unavailable", "success": false}
+		return MCPToolUtils.error("Session not found or status unavailable")
 
 	# Merge cached artifact URIs from the manager
 	var mgr = SingletonObject.autocoder_manager
@@ -503,11 +503,11 @@ func _autocoder_status(args: Dictionary) -> Dictionary:
 func _autocoder_review(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var session_id: String = args.get("session_id", "")
 	if session_id.is_empty():
-		return {"error": "session_id is required", "success": false}
+		return MCPToolUtils.error("session_id is required")
 
 	var user_id: String = Core.client.client_id
 	var custom_prompt: String = args.get("custom_prompt", "")
@@ -516,7 +516,7 @@ func _autocoder_review(args: Dictionary) -> Dictionary:
 
 	var ok = await adapter.request_review(user_id, session_id, custom_prompt, models, auto_fix)
 	if not ok:
-		return {"error": "Review request failed", "success": false}
+		return MCPToolUtils.error("Review request failed")
 
 	return {"success": true, "session_id": session_id, "message": "Review requested"}
 
@@ -524,16 +524,16 @@ func _autocoder_review(args: Dictionary) -> Dictionary:
 func _autocoder_approve(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var session_id: String = args.get("session_id", "")
 	if session_id.is_empty():
-		return {"error": "session_id is required", "success": false}
+		return MCPToolUtils.error("session_id is required")
 
 	var user_id: String = Core.client.client_id
 	var ok = await adapter.approve(user_id, session_id)
 	if not ok:
-		return {"error": "Approve request failed", "success": false}
+		return MCPToolUtils.error("Approve request failed")
 
 	return {"success": true, "session_id": session_id, "message": "Session approved"}
 
@@ -541,21 +541,21 @@ func _autocoder_approve(args: Dictionary) -> Dictionary:
 func _autocoder_answer_question(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var session_id: String = args.get("session_id", "")
 	if session_id.is_empty():
-		return {"error": "session_id is required", "success": false}
+		return MCPToolUtils.error("session_id is required")
 
 	var question_id: String = args.get("question_id", "")
 	if question_id.is_empty():
-		return {"error": "question_id is required", "success": false}
+		return MCPToolUtils.error("question_id is required")
 
 	var answer: String = args.get("answer", "")
 
 	var ok = await adapter.answer_question(session_id, question_id, answer)
 	if not ok:
-		return {"error": "Failed to submit answer", "success": false}
+		return MCPToolUtils.error("Failed to submit answer")
 
 	return {"success": true, "session_id": session_id, "question_id": question_id, "message": "Answer submitted"}
 
@@ -563,15 +563,15 @@ func _autocoder_answer_question(args: Dictionary) -> Dictionary:
 func _autocoder_create_review_agent(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var agent_name: String = args.get("name", "")
 	if agent_name.is_empty():
-		return {"error": "name is required", "success": false}
+		return MCPToolUtils.error("name is required")
 
 	var prompt: String = args.get("prompt", "")
 	if prompt.is_empty():
-		return {"error": "prompt is required", "success": false}
+		return MCPToolUtils.error("prompt is required")
 
 	var setup_commands: Array = args.get("setup_commands", [])
 	var model: String = args.get("model", "")
@@ -579,7 +579,7 @@ func _autocoder_create_review_agent(args: Dictionary) -> Dictionary:
 
 	var agent_id = await adapter.create_review_agent(agent_name, prompt, setup_commands, model, tools_enabled)
 	if not agent_id or (agent_id is String and agent_id.is_empty()):
-		return {"error": "Failed to create review agent", "success": false}
+		return MCPToolUtils.error("Failed to create review agent")
 
 	return {"success": true, "agent_id": agent_id, "message": "Review agent created"}
 
@@ -587,7 +587,7 @@ func _autocoder_create_review_agent(args: Dictionary) -> Dictionary:
 func _autocoder_list_review_agents(_args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var agents = await adapter.list_review_agents()
 	return {"success": true, "agents": agents, "count": agents.size()}
@@ -596,10 +596,10 @@ func _autocoder_list_review_agents(_args: Dictionary) -> Dictionary:
 func _autocoder_update_review_agent(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 	var agent_id: String = args.get("agent_id", "")
 	if agent_id.is_empty():
-		return {"error": "agent_id is required", "success": false}
+		return MCPToolUtils.error("agent_id is required")
 	var name: String = args.get("name", "")
 	var prompt: String = args.get("prompt", "")
 	var setup_commands = args.get("setup_commands", null)
@@ -607,27 +607,27 @@ func _autocoder_update_review_agent(args: Dictionary) -> Dictionary:
 	var tools_enabled = args.get("tools_enabled", null)
 	var ok = await adapter.update_review_agent(agent_id, name, prompt, setup_commands, model, tools_enabled)
 	if not ok:
-		return {"error": "Failed to update review agent", "success": false}
+		return MCPToolUtils.error("Failed to update review agent")
 	return {"success": true, "agent_id": agent_id, "message": "Review agent updated"}
 
 
 func _autocoder_delete_review_agent(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 	var agent_id: String = args.get("agent_id", "")
 	if agent_id.is_empty():
-		return {"error": "agent_id is required", "success": false}
+		return MCPToolUtils.error("agent_id is required")
 	var ok = await adapter.delete_review_agent(agent_id)
 	if not ok:
-		return {"error": "Failed to delete review agent", "success": false}
+		return MCPToolUtils.error("Failed to delete review agent")
 	return {"success": true, "agent_id": agent_id, "message": "Review agent deleted"}
 
 
 func _autocoder_list_sessions(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 
 	var status_filter: String = args.get("status_filter", "")
 	var sessions = await adapter.list_sessions(status_filter)
@@ -637,7 +637,7 @@ func _autocoder_list_sessions(args: Dictionary) -> Dictionary:
 func _autocoder_download(args: Dictionary) -> Dictionary:
 	var artifact_adapter = _get_artifact_adapter()
 	if not artifact_adapter:
-		return {"error": "Artifact registry not connected", "success": false}
+		return MCPToolUtils.error("Artifact registry not connected")
 
 	var artifact_uri: String = args.get("artifact_uri", "")
 	var session_id: String = args.get("session_id", "")
@@ -645,7 +645,7 @@ func _autocoder_download(args: Dictionary) -> Dictionary:
 	# If no URI given, try to resolve from session's latest archive
 	if artifact_uri.is_empty():
 		if session_id.is_empty():
-			return {"error": "Either session_id or artifact_uri is required", "success": false}
+			return MCPToolUtils.error("Either session_id or artifact_uri is required")
 
 		var mgr = SingletonObject.autocoder_manager
 		if mgr and mgr._latest_archive_by_session.has(session_id):
@@ -661,17 +661,17 @@ func _autocoder_download(args: Dictionary) -> Dictionary:
 					artifact_uri = info["output_archive_uri"]
 
 		if artifact_uri.is_empty():
-			return {"error": "No artifact URI found for session %s" % session_id, "success": false}
+			return MCPToolUtils.error("No artifact URI found for session %s" % session_id)
 
 	var result = await artifact_adapter._download_binary(artifact_uri)
 	if not result or result.is_empty():
-		return {"error": "Binary download failed for artifact: %s" % artifact_uri, "success": false}
+		return MCPToolUtils.error("Binary download failed for artifact: %s" % artifact_uri)
 
 	var filename: String = result.get("filename", "")
 	var buffer: PackedByteArray = result.get("buffer", PackedByteArray())
 
 	if buffer.is_empty() or filename.is_empty():
-		return {"error": "Empty artifact data for: %s" % artifact_uri, "success": false}
+		return MCPToolUtils.error("Empty artifact data for: %s" % artifact_uri)
 
 	# Save to disk
 	var artifacts_dir := "user://autocoder_artifacts"
@@ -683,7 +683,7 @@ func _autocoder_download(args: Dictionary) -> Dictionary:
 	var file := FileAccess.open(save_path, FileAccess.WRITE)
 	if not file:
 		var err := FileAccess.get_open_error()
-		return {"error": "Failed to save artifact to disk: %s" % error_string(err), "success": false}
+		return MCPToolUtils.error("Failed to save artifact to disk: %s" % error_string(err))
 	file.store_buffer(buffer)
 	file.close()
 
@@ -701,23 +701,23 @@ func _autocoder_download(args: Dictionary) -> Dictionary:
 func _autocoder_create_review_preset(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 	var preset_name: String = args.get("name", "")
 	if preset_name.is_empty():
-		return {"error": "name is required", "success": false}
+		return MCPToolUtils.error("name is required")
 	var agent_ids: Array = args.get("agent_ids", [])
 	if agent_ids.is_empty():
-		return {"error": "agent_ids is required and must be non-empty", "success": false}
+		return MCPToolUtils.error("agent_ids is required and must be non-empty")
 	var preset_id = await adapter.create_review_preset(preset_name, agent_ids)
 	if not preset_id or (preset_id is String and preset_id.is_empty()):
-		return {"error": "Failed to create review preset", "success": false}
+		return MCPToolUtils.error("Failed to create review preset")
 	return {"success": true, "preset_id": preset_id, "message": "Review preset created"}
 
 
 func _autocoder_list_review_presets(_args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 	var presets = await adapter.list_review_presets()
 	return {"success": true, "presets": presets, "count": presets.size()}
 
@@ -725,26 +725,26 @@ func _autocoder_list_review_presets(_args: Dictionary) -> Dictionary:
 func _autocoder_update_review_preset(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 	var preset_id: String = args.get("preset_id", "")
 	if preset_id.is_empty():
-		return {"error": "preset_id is required", "success": false}
+		return MCPToolUtils.error("preset_id is required")
 	var preset_name: String = args.get("name", "")
 	var agent_ids: Array = args.get("agent_ids", [])
 	var ok = await adapter.update_review_preset(preset_id, preset_name, agent_ids)
 	if not ok:
-		return {"error": "Failed to update review preset", "success": false}
+		return MCPToolUtils.error("Failed to update review preset")
 	return {"success": true, "preset_id": preset_id, "message": "Review preset updated"}
 
 
 func _autocoder_delete_review_preset(args: Dictionary) -> Dictionary:
 	var adapter = _get_autocoder_adapter()
 	if not adapter:
-		return {"error": "AutoCoder not connected", "success": false}
+		return MCPToolUtils.error("AutoCoder not connected")
 	var preset_id: String = args.get("preset_id", "")
 	if preset_id.is_empty():
-		return {"error": "preset_id is required", "success": false}
+		return MCPToolUtils.error("preset_id is required")
 	var ok = await adapter.delete_review_preset(preset_id)
 	if not ok:
-		return {"error": "Failed to delete review preset", "success": false}
+		return MCPToolUtils.error("Failed to delete review preset")
 	return {"success": true, "preset_id": preset_id, "message": "Review preset deleted"}

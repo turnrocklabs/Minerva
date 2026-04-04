@@ -183,6 +183,35 @@ static func find_webview(name_: String) -> Variant:
 	return find_typed_editor(name_, _get_editor_type("WEBVIEW"))
 
 
+## Convenience: find kanban board panel by name (with partial match fallback).
+static func find_kanban(name_: String) -> Variant:
+	var editor_pane = SingletonObject.editor_pane
+	if not editor_pane:
+		return null
+
+	var clean_name := name_.strip_edges()
+	var kanban_type := _get_editor_type("KANBAN")
+
+	# Exact match
+	for editor in editor_pane.get_open_editors():
+		if editor.type == kanban_type and editor.tab_title == clean_name:
+			return editor.kanban_board
+
+	# Case-insensitive
+	var lower_name := clean_name.to_lower()
+	for editor in editor_pane.get_open_editors():
+		if editor.type == kanban_type and editor.tab_title.to_lower() == lower_name:
+			return editor.kanban_board
+
+	# Partial/contains match
+	for editor in editor_pane.get_open_editors():
+		if editor.type == kanban_type:
+			if editor.tab_title.to_lower().contains(lower_name) or lower_name.contains(editor.tab_title.to_lower()):
+				return editor.kanban_board
+
+	return null
+
+
 ## Get Editor.Type enum value by name string, avoiding direct const dependency.
 static func _get_editor_type(type_name: String) -> int:
 	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")

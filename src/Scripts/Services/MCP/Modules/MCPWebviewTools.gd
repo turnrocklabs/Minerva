@@ -98,10 +98,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
-func _find_webview_editor(editor_name: String) -> Variant:
-	var editor = MCPToolUtils.find_editor_by_name(editor_name)
-	if not editor:
-		return null
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	if editor.type != EditorGDScript.Type.WEBVIEW:
@@ -114,33 +110,33 @@ func _create_webview_panel(arguments: Dictionary) -> Dictionary:
 	var panel_name: String = arguments.get("name", "")
 	var html: String = arguments.get("html", "")
 	if panel_name.is_empty() or html.is_empty():
-		return {"error": "Both 'name' and 'html' are required", "success": false}
+		return MCPToolUtils.error("Both 'name' and 'html' are required")
 
 	# Check if panel already exists (idempotency)
-	var existing = _find_webview_editor(panel_name)
+	var existing = MCPToolUtils.find_webview(panel_name)
 	if existing:
 		existing.webview_editor.set_html(html)
 		return {"editor_name": panel_name, "message": "Webview panel updated (already existed).", "success": true, "already_existed": true}
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	var editor: Editor = editor_pane.add_webview_editor(panel_name)
 	if editor and editor.webview_editor:
 		editor.webview_editor.set_html(html)
 		return {"editor_name": panel_name, "message": "Webview panel created.", "success": true}
-	return {"error": "Failed to create webview panel", "success": false}
+	return MCPToolUtils.error("Failed to create webview panel")
 
 
 func _update_webview_panel(arguments: Dictionary) -> Dictionary:
 	var editor_name: String = arguments.get("editor_name", "")
 	var html: String = arguments.get("html", "")
 	if editor_name.is_empty() or html.is_empty():
-		return {"error": "Both 'editor_name' and 'html' are required", "success": false}
-	var editor = _find_webview_editor(editor_name)
+		return MCPToolUtils.error("Both 'editor_name' and 'html' are required")
+	var editor = MCPToolUtils.find_webview(editor_name)
 	if not editor:
-		return {"error": "Webview panel '%s' not found" % editor_name, "success": false}
+		return MCPToolUtils.error("Webview panel '%s' not found" % editor_name)
 	editor.webview_editor.set_html(html)
 	return {"editor_name": editor_name, "message": "Webview panel updated.", "success": true}
 
@@ -148,25 +144,25 @@ func _update_webview_panel(arguments: Dictionary) -> Dictionary:
 func _get_webview_source(arguments: Dictionary) -> Dictionary:
 	var editor_name: String = arguments.get("editor_name", "")
 	if editor_name.is_empty():
-		return {"error": "'editor_name' is required", "success": false}
-	var editor = _find_webview_editor(editor_name)
+		return MCPToolUtils.error("'editor_name' is required")
+	var editor = MCPToolUtils.find_webview(editor_name)
 	if not editor:
-		return {"error": "Webview panel '%s' not found" % editor_name, "success": false}
+		return MCPToolUtils.error("Webview panel '%s' not found" % editor_name)
 	return {"editor_name": editor_name, "html": editor.webview_editor.get_html(), "success": true}
 
 
 func _link_webview_to_note(arguments: Dictionary) -> Dictionary:
 	var editor_name: String = arguments.get("editor_name", "")
 	if editor_name.is_empty():
-		return {"error": "'editor_name' is required", "success": false}
+		return MCPToolUtils.error("'editor_name' is required")
 
-	var webview_editor = _find_webview_editor(editor_name)
+	var webview_editor = MCPToolUtils.find_webview(editor_name)
 	if not webview_editor:
-		return {"error": "Webview panel '%s' not found" % editor_name, "success": false}
+		return MCPToolUtils.error("Webview panel '%s' not found" % editor_name)
 
 	var html: String = webview_editor.webview_editor.get_html()
 	if html.is_empty():
-		return {"error": "Webview panel has no content", "success": false}
+		return MCPToolUtils.error("Webview panel has no content")
 
 	var note_title: String = arguments.get("note_title", editor_name)
 	var thread_name: String = arguments.get("thread_name", "Webviews")
@@ -175,7 +171,7 @@ func _link_webview_to_note(arguments: Dictionary) -> Dictionary:
 
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	var thread_vbox = notes_container.find_or_create_tab(thread_name)
 	thread_vbox.add_note(note)

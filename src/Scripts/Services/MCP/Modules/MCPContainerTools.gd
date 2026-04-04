@@ -188,7 +188,7 @@ func _container_list(_arguments: Dictionary) -> Dictionary:
 func _container_status(arguments: Dictionary) -> Dictionary:
 	var name: String = arguments.get("name", "")
 	if name == "":
-		return {"error": "Missing required field: name", "success": false}
+		return MCPToolUtils.error("Missing required field: name")
 
 	var manager: RefCounted = SingletonObject.get_docker_manager()
 	var definitions: Array = manager.get_definitions()
@@ -209,17 +209,17 @@ func _container_status(arguments: Dictionary) -> Dictionary:
 				"success": true,
 			}
 
-	return {"error": "Container '%s' not registered" % name, "success": false}
+	return MCPToolUtils.error("Container '%s' not registered" % name)
 
 
 func _container_build(arguments: Dictionary) -> Dictionary:
 	var name: String = arguments.get("name", "")
 	if name == "":
-		return {"error": "Missing required field: name", "success": false}
+		return MCPToolUtils.error("Missing required field: name")
 
 	var manager: RefCounted = SingletonObject.get_docker_manager()
 	if not manager.is_available():
-		return {"error": "Docker not available", "success": false}
+		return MCPToolUtils.error("Docker not available")
 
 	var definitions: Array = manager.get_definitions()
 	for def in definitions:
@@ -230,36 +230,36 @@ func _container_build(arguments: Dictionary) -> Dictionary:
 			else:
 				return {"error": "Failed to start build (may already be building)", "state": manager.get_state(def), "success": false}
 
-	return {"error": "Container '%s' not registered" % name, "success": false}
+	return MCPToolUtils.error("Container '%s' not registered" % name)
 
 
 func _container_start(arguments: Dictionary) -> Dictionary:
 	var name: String = arguments.get("name", "")
 	if name == "":
-		return {"error": "Missing required field: name", "success": false}
+		return MCPToolUtils.error("Missing required field: name")
 
 	var manager: RefCounted = SingletonObject.get_docker_manager()
 	if not manager.is_available():
-		return {"error": "Docker not available", "success": false}
+		return MCPToolUtils.error("Docker not available")
 
 	var definitions: Array = manager.get_definitions()
 	for def in definitions:
 		if def.container_name == name:
 			if not manager.is_image_built(def):
-				return {"error": "Image not built. Run minerva_container_build first.", "success": false}
+				return MCPToolUtils.error("Image not built. Run minerva_container_build first.")
 			var ok: bool = manager.start_container(def)
 			if ok:
 				return {"message": "%s started" % name, "state": "running", "success": true}
 			else:
 				return {"error": "Failed to start container", "state": manager.get_state(def), "success": false}
 
-	return {"error": "Container '%s' not registered" % name, "success": false}
+	return MCPToolUtils.error("Container '%s' not registered" % name)
 
 
 func _container_stop(arguments: Dictionary) -> Dictionary:
 	var name: String = arguments.get("name", "")
 	if name == "":
-		return {"error": "Missing required field: name", "success": false}
+		return MCPToolUtils.error("Missing required field: name")
 
 	var manager: RefCounted = SingletonObject.get_docker_manager()
 	var definitions: Array = manager.get_definitions()
@@ -270,15 +270,15 @@ func _container_stop(arguments: Dictionary) -> Dictionary:
 			if ok:
 				return {"message": "%s stopped" % name, "state": "stopped", "success": true}
 			else:
-				return {"error": "Failed to stop container", "success": false}
+				return MCPToolUtils.error("Failed to stop container")
 
-	return {"error": "Container '%s' not registered" % name, "success": false}
+	return MCPToolUtils.error("Container '%s' not registered" % name)
 
 
 func _container_add(arguments: Dictionary) -> Dictionary:
 	var img: String = arguments.get("image_name", "")
 	if img == "":
-		return {"error": "Missing required field: image_name", "success": false}
+		return MCPToolUtils.error("Missing required field: image_name")
 
 	var dn: String = arguments.get("display_name", img)
 	var df: String = arguments.get("dockerfile_path", "")
@@ -303,7 +303,7 @@ func _container_add(arguments: Dictionary) -> Dictionary:
 func _container_remove(arguments: Dictionary) -> Dictionary:
 	var name: String = arguments.get("name", "")
 	if name == "":
-		return {"error": "Missing required field: name", "success": false}
+		return MCPToolUtils.error("Missing required field: name")
 
 	var manager: RefCounted = SingletonObject.get_docker_manager()
 	var definitions: Array = manager.get_definitions()
@@ -311,10 +311,10 @@ func _container_remove(arguments: Dictionary) -> Dictionary:
 	for def in definitions:
 		if def.container_name == name:
 			if manager.is_builtin(def):
-				return {"error": "Cannot remove builtin container '%s'" % name, "success": false}
+				return MCPToolUtils.error("Cannot remove builtin container '%s'" % name)
 			var ok: bool = manager.remove_container(def)
 			if ok:
 				return {"message": "Container '%s' removed" % name, "success": true}
-			return {"error": "Failed to remove container", "success": false}
+			return MCPToolUtils.error("Failed to remove container")
 
-	return {"error": "Container '%s' not registered" % name, "success": false}
+	return MCPToolUtils.error("Container '%s' not registered" % name)

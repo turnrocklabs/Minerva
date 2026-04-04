@@ -158,10 +158,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
-func _find_kanban_board_by_name(name_: String):  # Returns AutocoderKanbanBoard or null
-	var editor_pane = SingletonObject.editor_pane
-	if not editor_pane:
-		return null
 
 	# Clean up the name - models sometimes add whitespace/newlines
 	var clean_name = name_.strip_edges()
@@ -227,20 +223,20 @@ func _kanban_create_task(args: Dictionary) -> Dictionary:
 	var board_name: String = str(args.get("board_name", "")).strip_edges()
 	var title: String = str(args.get("title", "")).strip_edges()
 	var description: String = str(args.get("description", "")).strip_edges()
-	var priority: int = int(args.get("priority", 2))
+	var priority: int = MCPToolUtils.coerce_int(args.get("priority", 2))
 	var status_str: String = str(args.get("status", "plan")).strip_edges()
 
 	if board_name.is_empty():
-		return {"error": "board_name is required", "success": false}
+		return MCPToolUtils.error("board_name is required")
 	if title.is_empty():
-		return {"error": "title is required", "success": false}
+		return MCPToolUtils.error("title is required")
 
-	var board = _find_kanban_board_by_name(board_name)
+	var board = MCPToolUtils.find_kanban(board_name)
 	if not board:
-		return {"error": "Kanban board not found: %s" % board_name, "success": false}
+		return MCPToolUtils.error("Kanban board not found: %s" % board_name)
 
 	if not board.task_store:
-		return {"error": "Kanban board has no task store", "success": false}
+		return MCPToolUtils.error("Kanban board has no task store")
 
 	var status = _status_string_to_enum(status_str)
 
@@ -287,14 +283,14 @@ func _kanban_get_tasks(args: Dictionary) -> Dictionary:
 	var status_filter: String = str(args.get("status", "")).strip_edges()
 
 	if board_name.is_empty():
-		return {"error": "board_name is required", "success": false}
+		return MCPToolUtils.error("board_name is required")
 
-	var board = _find_kanban_board_by_name(board_name)
+	var board = MCPToolUtils.find_kanban(board_name)
 	if not board:
-		return {"error": "Kanban board not found: %s" % board_name, "success": false}
+		return MCPToolUtils.error("Kanban board not found: %s" % board_name)
 
 	if not board.task_store:
-		return {"error": "Kanban board has no task store", "success": false}
+		return MCPToolUtils.error("Kanban board has no task store")
 
 	var tasks: Array  # Array of AutocoderTask
 	if status_filter.is_empty():
@@ -328,16 +324,16 @@ func _kanban_update_task(args: Dictionary) -> Dictionary:
 	var task_id: String = str(args.get("task_id", "")).strip_edges()
 
 	if board_name.is_empty():
-		return {"error": "board_name is required", "success": false}
+		return MCPToolUtils.error("board_name is required")
 	if task_id.is_empty():
-		return {"error": "task_id is required", "success": false}
+		return MCPToolUtils.error("task_id is required")
 
-	var board = _find_kanban_board_by_name(board_name)
+	var board = MCPToolUtils.find_kanban(board_name)
 	if not board:
-		return {"error": "Kanban board not found: %s" % board_name, "success": false}
+		return MCPToolUtils.error("Kanban board not found: %s" % board_name)
 
 	if not board.task_store:
-		return {"error": "Kanban board has no task store", "success": false}
+		return MCPToolUtils.error("Kanban board has no task store")
 
 	var updates: Dictionary = {}
 	if args.has("title"):
@@ -348,11 +344,11 @@ func _kanban_update_task(args: Dictionary) -> Dictionary:
 		updates["priority"] = args["priority"]
 
 	if updates.is_empty():
-		return {"error": "No updates provided", "success": false}
+		return MCPToolUtils.error("No updates provided")
 
 	var success = board.task_store.update_task(task_id, updates)
 	if not success:
-		return {"error": "Task not found: %s" % task_id, "success": false}
+		return MCPToolUtils.error("Task not found: %s" % task_id)
 
 	return {
 		"success": true,
@@ -367,23 +363,23 @@ func _kanban_move_task(args: Dictionary) -> Dictionary:
 	var new_status_str: String = str(args.get("new_status", "")).strip_edges()
 
 	if board_name.is_empty():
-		return {"error": "board_name is required", "success": false}
+		return MCPToolUtils.error("board_name is required")
 	if task_id.is_empty():
-		return {"error": "task_id is required", "success": false}
+		return MCPToolUtils.error("task_id is required")
 	if new_status_str.is_empty():
-		return {"error": "new_status is required", "success": false}
+		return MCPToolUtils.error("new_status is required")
 
-	var board = _find_kanban_board_by_name(board_name)
+	var board = MCPToolUtils.find_kanban(board_name)
 	if not board:
-		return {"error": "Kanban board not found: %s" % board_name, "success": false}
+		return MCPToolUtils.error("Kanban board not found: %s" % board_name)
 
 	if not board.task_store:
-		return {"error": "Kanban board has no task store", "success": false}
+		return MCPToolUtils.error("Kanban board has no task store")
 
 	var new_status = _status_string_to_enum(new_status_str)
 	var success = board.task_store.move_task(task_id, new_status)
 	if not success:
-		return {"error": "Task not found: %s" % task_id, "success": false}
+		return MCPToolUtils.error("Task not found: %s" % task_id)
 
 	return {
 		"success": true,
@@ -398,20 +394,20 @@ func _kanban_delete_task(args: Dictionary) -> Dictionary:
 	var task_id: String = str(args.get("task_id", "")).strip_edges()
 
 	if board_name.is_empty():
-		return {"error": "board_name is required", "success": false}
+		return MCPToolUtils.error("board_name is required")
 	if task_id.is_empty():
-		return {"error": "task_id is required", "success": false}
+		return MCPToolUtils.error("task_id is required")
 
-	var board = _find_kanban_board_by_name(board_name)
+	var board = MCPToolUtils.find_kanban(board_name)
 	if not board:
-		return {"error": "Kanban board not found: %s" % board_name, "success": false}
+		return MCPToolUtils.error("Kanban board not found: %s" % board_name)
 
 	if not board.task_store:
-		return {"error": "Kanban board has no task store", "success": false}
+		return MCPToolUtils.error("Kanban board has no task store")
 
 	var success = board.task_store.delete_task(task_id)
 	if not success:
-		return {"error": "Task not found: %s" % task_id, "success": false}
+		return MCPToolUtils.error("Task not found: %s" % task_id)
 
 	return {
 		"success": true,

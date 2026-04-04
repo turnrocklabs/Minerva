@@ -105,8 +105,8 @@ func _codetools_read(arguments: Dictionary) -> Dictionary:
 		return {"success": false, "error": "path is required"}
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
-	var offset: int = int(arguments.get("offset", 0))
-	var limit: int = int(arguments.get("limit", 0))
+	var offset: int = MCPToolUtils.coerce_int(arguments.get("offset", 0))
+	var limit: int = MCPToolUtils.coerce_int(arguments.get("limit", 0))
 	var result := ReadTool.read_file(path, offset, limit)
 	SingletonObject.mcp_tool_executed.emit("minerva_file_read", arguments, result, _current_agent_id)
 	return result
@@ -127,7 +127,7 @@ func _codetools_write(arguments: Dictionary) -> Dictionary:
 func _codetools_edit(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", "")
 	if path.is_empty():
-		return {"error": "path is required", "success": false}
+		return MCPToolUtils.error("path is required")
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
 	var result := EditTool.edit_file(
@@ -143,7 +143,7 @@ func _codetools_edit(arguments: Dictionary) -> Dictionary:
 func _codetools_glob(arguments: Dictionary) -> Dictionary:
 	var pattern: String = arguments.get("pattern", "")
 	var base_dir: String = arguments.get("path", _cwd_tool.get_cwd())
-	var limit: int = int(arguments.get("limit", 100))
+	var limit: int = MCPToolUtils.coerce_int(arguments.get("limit", 100))
 	var result := GlobTool.glob_files(pattern, base_dir, limit)
 	SingletonObject.mcp_tool_executed.emit("minerva_file_glob", arguments, result, _current_agent_id)
 	return result
@@ -159,8 +159,8 @@ func _codetools_grep(arguments: Dictionary) -> Dictionary:
 		arguments.get("glob", ""),
 		arguments.get("type", ""),
 		arguments.get("ignore_case", false),
-		int(arguments.get("context_lines", 0)),
-		int(arguments.get("limit", 100)),
+		MCPToolUtils.coerce_int(arguments.get("context_lines", 0)),
+		MCPToolUtils.coerce_int(arguments.get("limit", 100)),
 	)
 	SingletonObject.mcp_tool_executed.emit("minerva_file_grep", arguments, result, _current_agent_id)
 	return result
@@ -194,7 +194,7 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 	var working_dir: String = arguments.get("working_dir", _cwd_tool.get_cwd())
 	if not working_dir.is_absolute_path():
 		working_dir = _cwd_tool.get_cwd().path_join(working_dir)
-	var timeout_ms: int = int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
+	var timeout_ms: int = MCPToolUtils.coerce_int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
 	var result: Dictionary = BashTool.run_command(command, working_dir, timeout_ms)
 	result["success"] = result["exit_code"] == 0
 	SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)

@@ -333,7 +333,7 @@ func _create_text_editor(args: Dictionary) -> Dictionary:
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	# Before creating, check if resource with same name exists
 	# If it does, return it with already_existed: true
@@ -344,7 +344,7 @@ func _create_text_editor(args: Dictionary) -> Dictionary:
 
 	# Check if file exists when file_path is provided
 	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
-		return {"error": "File not found: %s" % file_path, "success": false}
+		return MCPToolUtils.error("File not found: %s" % file_path)
 
 	# Create the editor
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
@@ -369,7 +369,7 @@ func _create_graphics_editor(args: Dictionary) -> Dictionary:
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	# Before creating, check if resource with same name exists
 	# If it does, return it with already_existed: true
@@ -380,7 +380,7 @@ func _create_graphics_editor(args: Dictionary) -> Dictionary:
 
 	# Check if file exists when file_path is provided
 	if not file_path.is_empty() and not FileAccess.file_exists(file_path):
-		return {"error": "File not found: %s" % file_path, "success": false}
+		return MCPToolUtils.error("File not found: %s" % file_path)
 
 	# Create the graphics editor
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
@@ -399,18 +399,18 @@ func _get_editor_content(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if not editor:
-		return {"error": "Editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	if editor.type != EditorGDScript.Type.TEXT:
-		return {"error": "Not a text editor", "success": false}
+		return MCPToolUtils.error("Not a text editor")
 
 	if not editor.code_edit:
-		return {"error": "Editor has no code_edit", "success": false}
+		return MCPToolUtils.error("Editor has no code_edit")
 
 	return {
 		"success": true,
@@ -424,18 +424,18 @@ func _update_editor(args: Dictionary) -> Dictionary:
 	var content: String = args.get("content", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if not editor:
-		return {"error": "Editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	if editor.type != EditorGDScript.Type.TEXT:
-		return {"error": "Not a text editor", "success": false}
+		return MCPToolUtils.error("Not a text editor")
 
 	if not editor.code_edit:
-		return {"error": "Editor has no code_edit", "success": false}
+		return MCPToolUtils.error("Editor has no code_edit")
 
 	editor.code_edit.text = content
 
@@ -450,18 +450,18 @@ func _save_editor(args: Dictionary) -> Dictionary:
 	var file_path: String = args.get("file_path", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if not editor:
-		return {"error": "Editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 	# Set file path if provided
 	if not file_path.is_empty():
 		editor.file = file_path
 
 	if editor.file.is_empty():
-		return {"error": "No file path specified", "success": false}
+		return MCPToolUtils.error("No file path specified")
 
 	# Save the editor
 	editor.save()
@@ -477,19 +477,19 @@ func _close_editor(args: Dictionary) -> Dictionary:
 	var force: bool = args.get("force", false)
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if not editor:
-		return {"error": "Editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 	var tab_idx = editor_pane.Tabs.get_tab_idx_from_control(editor)
 	if tab_idx == -1:
-		return {"error": "Editor not in tab container", "success": false}
+		return MCPToolUtils.error("Editor not in tab container")
 
 	# Check for unsaved content
 	if not force and not editor.is_content_saved():
@@ -508,7 +508,7 @@ func _close_editor(args: Dictionary) -> Dictionary:
 func _list_editors(_args: Dictionary) -> Dictionary:
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	var editors: Array[Dictionary] = []
@@ -557,14 +557,14 @@ func _rename_editor(args: Dictionary) -> Dictionary:
 	var new_name: String = args.get("new_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	if new_name.is_empty():
-		return {"error": "new_name is required", "success": false}
+		return MCPToolUtils.error("new_name is required")
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"error": "Editor pane not available", "success": false}
+		return MCPToolUtils.error("Editor pane not available")
 
 	# Find the editor by name
 	for i in range(editor_pane.Tabs.get_tab_count()):
@@ -582,25 +582,25 @@ func _rename_editor(args: Dictionary) -> Dictionary:
 				"message": "Editor renamed from '%s' to '%s'" % [editor_name, new_name]
 			}
 
-	return {"error": "Editor not found: %s" % editor_name, "success": false}
+	return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 
 func _get_graphics_capabilities(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if not editor:
-		return {"error": "Editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	if editor.type != EditorGDScript.Type.GRAPHICS:
-		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Not a graphics editor: %s" % editor_name)
 
 	if not editor.graphics_editor:
-		return {"error": "Graphics editor not initialized", "success": false}
+		return MCPToolUtils.error("Graphics editor not initialized")
 
 	return editor.graphics_editor.get_ai_capabilities()
 
@@ -609,18 +609,18 @@ func _generate_graphics(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if not editor:
-		return {"error": "Editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	if editor.type != EditorGDScript.Type.GRAPHICS:
-		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Not a graphics editor: %s" % editor_name)
 
 	if not editor.graphics_editor:
-		return {"error": "Graphics editor not initialized", "success": false}
+		return MCPToolUtils.error("Graphics editor not initialized")
 
 	var result = editor.graphics_editor.execute_ai_action(args)
 
@@ -664,18 +664,18 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 		}
 
 	if editor_name.is_empty():
-		return {"error": "editor_name is required", "success": false}
+		return MCPToolUtils.error("editor_name is required")
 
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if not editor:
-		return {"error": "Editor not found: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	if editor.type != EditorGDScript.Type.GRAPHICS:
-		return {"error": "Not a graphics editor: %s" % editor_name, "success": false}
+		return MCPToolUtils.error("Not a graphics editor: %s" % editor_name)
 
 	if not editor.graphics_editor:
-		return {"error": "Graphics editor not initialized", "success": false}
+		return MCPToolUtils.error("Graphics editor not initialized")
 
 	# Start generation
 	var result = editor.graphics_editor.execute_ai_action(args)
@@ -710,7 +710,7 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 
 	if not image_state.completed:
 		push_error("[MCPEditorTools] Timeout waiting for image generation")
-		return {"error": "Image generation timed out after %.0f seconds" % image_timeout, "success": false}
+		return MCPToolUtils.error("Image generation timed out after %.0f seconds" % image_timeout)
 
 	print("[MCPEditorTools] Image generated after %.1f seconds, now preparing for display..." % image_elapsed)
 
@@ -719,7 +719,7 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 
 	# === BLOCKING: Wait for note to be ready ===
 	if not editor or not is_instance_valid(editor):
-		return {"error": "Editor no longer valid", "success": false}
+		return MCPToolUtils.error("Editor no longer valid")
 
 	# Toggle OFF first to clean up any existing state
 	print("[MCPEditorTools] Toggling OFF to clean up existing state...")
@@ -763,14 +763,14 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 		if editor.note_ready_for_chat.is_connected(note_handler):
 			editor.note_ready_for_chat.disconnect(note_handler)
 		push_error("[MCPEditorTools] Timeout waiting for note_ready_for_chat after %.0f seconds" % note_timeout)
-		return {"error": "Note composition timed out after %.0f seconds" % note_timeout, "success": false}
+		return MCPToolUtils.error("Note composition timed out after %.0f seconds" % note_timeout)
 
 	var received_note = note_state["note"]
 	print("[MCPEditorTools] Note ready! Received: %s" % received_note)
 
 	if received_note == null:
 		push_error("[MCPEditorTools] note_ready_for_chat returned null")
-		return {"error": "Note composition failed - received null note", "success": false}
+		return MCPToolUtils.error("Note composition failed - received null note")
 
 	print("[MCPEditorTools] Note ready after %.1f seconds. Total time: %.1f seconds" % [note_elapsed, image_elapsed + note_elapsed])
 

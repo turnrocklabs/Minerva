@@ -211,7 +211,7 @@ func _create_note(args: Dictionary) -> Dictionary:
 
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	# Create the note
 	var note_type: String = args.get("type", "text")
@@ -243,7 +243,7 @@ func _create_note_tab(args: Dictionary) -> Dictionary:
 
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	# Before creating, check if resource with same name exists
 	# If it does, return it with already_existed: true
@@ -267,7 +267,7 @@ func _list_notes(args: Dictionary) -> Dictionary:
 
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	var result: Array = []
 
@@ -287,7 +287,7 @@ func _list_notes(args: Dictionary) -> Dictionary:
 		# List notes from specific tab
 		var note_vbox = notes_container.find_tab_by_name(tab_name)
 		if not note_vbox:
-			return {"error": "Tab not found: %s" % tab_name, "success": false}
+			return MCPToolUtils.error("Tab not found: %s" % tab_name)
 
 		var tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
 		var notes = notes_container.get_notes(tab_idx)
@@ -310,15 +310,15 @@ func _enable_notes(args: Dictionary) -> Dictionary:
 	var tab_name: String = args.get("tab", "")
 
 	if tab_name.is_empty():
-		return {"error": "tab is required", "success": false}
+		return MCPToolUtils.error("tab is required")
 
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	var note_vbox = notes_container.find_tab_by_name(tab_name)
 	if not note_vbox:
-		return {"error": "Tab not found: %s" % tab_name, "success": false}
+		return MCPToolUtils.error("Tab not found: %s" % tab_name)
 
 	var tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
 	notes_container.enable_notes(tab_idx)
@@ -330,15 +330,15 @@ func _disable_notes(args: Dictionary) -> Dictionary:
 	var tab_name: String = args.get("tab", "")
 
 	if tab_name.is_empty():
-		return {"error": "tab is required", "success": false}
+		return MCPToolUtils.error("tab is required")
 
 	var notes_container = SingletonObject.notes_container
 	if not notes_container:
-		return {"error": "Notes container not available", "success": false}
+		return MCPToolUtils.error("Notes container not available")
 
 	var note_vbox = notes_container.find_tab_by_name(tab_name)
 	if not note_vbox:
-		return {"error": "Tab not found: %s" % tab_name, "success": false}
+		return MCPToolUtils.error("Tab not found: %s" % tab_name)
 
 	var tab_idx = notes_container.get_tab_idx_from_control(note_vbox)
 	notes_container.disable_notes(tab_idx)
@@ -350,12 +350,12 @@ func _delete_note(args: Dictionary) -> Dictionary:
 	var note_id: String = args.get("note_id", "")
 
 	if note_id.is_empty():
-		return {"error": "note_id is required", "success": false}
+		return MCPToolUtils.error("note_id is required")
 
 	# Find the note by UUID
 	var note = SingletonObject.get_registered_object(note_id)
 	if not note:
-		return {"error": "Note not found: %s" % note_id, "success": false}
+		return MCPToolUtils.error("Note not found: %s" % note_id)
 
 	# Remove the note
 	note.queue_free()
@@ -367,11 +367,11 @@ func _get_note(args: Dictionary) -> Dictionary:
 	var note_id: String = args.get("note_id", "")
 
 	if note_id.is_empty():
-		return {"error": "note_id is required", "success": false}
+		return MCPToolUtils.error("note_id is required")
 
 	var note = SingletonObject.get_registered_object(note_id)
 	if not note or not (note is Note):
-		return {"error": "Note not found: %s" % note_id, "success": false}
+		return MCPToolUtils.error("Note not found: %s" % note_id)
 
 	# Get content from the backing controls
 	var content_text: String = ""
@@ -407,11 +407,11 @@ func _update_note(args: Dictionary) -> Dictionary:
 	var note_id: String = args.get("note_id", "")
 
 	if note_id.is_empty():
-		return {"error": "note_id is required", "success": false}
+		return MCPToolUtils.error("note_id is required")
 
 	var note = SingletonObject.get_registered_object(note_id)
 	if not note or not (note is Note):
-		return {"error": "Note not found: %s" % note_id, "success": false}
+		return MCPToolUtils.error("Note not found: %s" % note_id)
 
 	var updated_fields: Array[String] = []
 
@@ -425,7 +425,7 @@ func _update_note(args: Dictionary) -> Dictionary:
 			controls_container.content = args["content"]
 			updated_fields.append("content")
 		else:
-			return {"error": "Note is not a text note, cannot update content", "success": false}
+			return MCPToolUtils.error("Note is not a text note, cannot update content")
 
 	return {
 		"success": true,
@@ -440,11 +440,11 @@ func _link_note_to_chat(args: Dictionary) -> Dictionary:
 	var do_unlink: bool = args.get("unlink", false)
 
 	if note_id.is_empty():
-		return {"error": "note_id is required", "success": false}
+		return MCPToolUtils.error("note_id is required")
 
 	var note = SingletonObject.get_registered_object(note_id)
 	if not note or not (note is Note):
-		return {"error": "Note not found: %s" % note_id, "success": false}
+		return MCPToolUtils.error("Note not found: %s" % note_id)
 
 	if chat_id.is_empty():
 		note.linked_chat_ids.clear()

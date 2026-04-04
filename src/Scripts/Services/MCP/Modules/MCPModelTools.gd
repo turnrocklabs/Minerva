@@ -415,14 +415,14 @@ func _list_models(args: Dictionary) -> Dictionary:
 func _add_model(args: Dictionary) -> Dictionary:
 	var provider: String = args.get("provider", "")
 	if provider.is_empty():
-		return {"error": "provider is required", "success": false}
+		return MCPToolUtils.error("provider is required")
 	var model_name: String = args.get("model_name", "")
 	if model_name.is_empty():
-		return {"error": "model_name is required", "success": false}
+		return MCPToolUtils.error("model_name is required")
 
 	var manager = _get_manager_for_provider_string(provider)
 	if manager == null:
-		return {"error": "Unknown provider: %s" % provider, "success": false}
+		return MCPToolUtils.error("Unknown provider: %s" % provider)
 
 	var display_name: String = args.get("display_name", model_name)
 	var short_name: String = args.get("short_name", "")
@@ -458,17 +458,17 @@ func _add_model(args: Dictionary) -> Dictionary:
 func _update_model(args: Dictionary) -> Dictionary:
 	var model_id: int = args.get("model_id", -1)
 	if model_id < 0:
-		return {"error": "model_id is required", "success": false}
+		return MCPToolUtils.error("model_id is required")
 	if model_id < SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		return {"error": "Cannot update built-in model (id %d). Only dynamic models can be updated." % model_id, "success": false}
+		return MCPToolUtils.error("Cannot update built-in model (id %d). Only dynamic models can be updated." % model_id)
 
 	var manager = SingletonObject.get_model_manager_for_id(model_id)
 	if manager == null:
-		return {"error": "No model manager found for model_id %d" % model_id, "success": false}
+		return MCPToolUtils.error("No model manager found for model_id %d" % model_id)
 
 	var existing: Dictionary = manager.get_model(model_id)
 	if existing.is_empty():
-		return {"error": "Model with id %d not found" % model_id, "success": false}
+		return MCPToolUtils.error("Model with id %d not found" % model_id)
 
 	# Merge provided fields into existing config
 	var updatable_fields: Array = ["display_name", "short_name", "input_token_cost", "output_token_cost", "is_reasoning_model"]
@@ -479,7 +479,7 @@ func _update_model(args: Dictionary) -> Dictionary:
 			updated = true
 
 	if not updated:
-		return {"error": "No updatable fields provided. Updatable fields: %s" % str(updatable_fields), "success": false}
+		return MCPToolUtils.error("No updatable fields provided. Updatable fields: %s" % str(updatable_fields))
 
 	manager.update_model(model_id, existing)
 	return {"success": true, "model_id": model_id, "message": "Model %d updated" % model_id}
@@ -488,17 +488,17 @@ func _update_model(args: Dictionary) -> Dictionary:
 func _remove_model(args: Dictionary) -> Dictionary:
 	var model_id: int = args.get("model_id", -1)
 	if model_id < 0:
-		return {"error": "model_id is required", "success": false}
+		return MCPToolUtils.error("model_id is required")
 	if model_id < SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		return {"error": "Cannot remove built-in model (id %d). Only dynamic models can be removed." % model_id, "success": false}
+		return MCPToolUtils.error("Cannot remove built-in model (id %d). Only dynamic models can be removed." % model_id)
 
 	var manager = SingletonObject.get_model_manager_for_id(model_id)
 	if manager == null:
-		return {"error": "No model manager found for model_id %d" % model_id, "success": false}
+		return MCPToolUtils.error("No model manager found for model_id %d" % model_id)
 
 	var existing: Dictionary = manager.get_model(model_id)
 	if existing.is_empty():
-		return {"error": "Model with id %d not found" % model_id, "success": false}
+		return MCPToolUtils.error("Model with id %d not found" % model_id)
 
 	var display_name: String = existing.get("display_name", str(model_id))
 	manager.remove_model(model_id)
@@ -511,7 +511,7 @@ func _remove_model(args: Dictionary) -> Dictionary:
 
 func _get_cost_summary(args: Dictionary) -> Dictionary:
 	if not SingletonObject.cost_tracker:
-		return {"error": "Cost tracker not initialized", "success": false}
+		return MCPToolUtils.error("Cost tracker not initialized")
 	var period: String = args.get("period", "today")
 	var provider_filter: String = args.get("provider", "")
 	var summary: Dictionary = SingletonObject.cost_tracker.get_cost_summary(period, provider_filter)
@@ -521,10 +521,10 @@ func _get_cost_summary(args: Dictionary) -> Dictionary:
 
 func _get_chat_cost(args: Dictionary) -> Dictionary:
 	if not SingletonObject.cost_tracker:
-		return {"error": "Cost tracker not initialized", "success": false}
+		return MCPToolUtils.error("Cost tracker not initialized")
 	var chat_id: String = args.get("chat_id", "")
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 	var result: Dictionary = SingletonObject.cost_tracker.get_cost_for_chat(chat_id)
 	result["success"] = true
 	result["chat_id"] = chat_id
@@ -533,17 +533,17 @@ func _get_chat_cost(args: Dictionary) -> Dictionary:
 
 func _set_budget(args: Dictionary) -> Dictionary:
 	if not SingletonObject.cost_tracker:
-		return {"error": "Cost tracker not initialized", "success": false}
+		return MCPToolUtils.error("Cost tracker not initialized")
 	var chat_id: String = args.get("chat_id", "")
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 	var budget_usd: float = args.get("budget_usd", 0.0)
 	if budget_usd <= 0:
-		return {"error": "budget_usd must be positive", "success": false}
+		return MCPToolUtils.error("budget_usd must be positive")
 	var warn_pct: float = args.get("warn_pct", 0.8)
 	var period: String = args.get("period", "day")
 	if period not in SingletonObject.cost_tracker.BUDGET_PERIODS:
-		return {"error": "Invalid period. Must be one of: hour, day, week, month", "success": false}
+		return MCPToolUtils.error("Invalid period. Must be one of: hour, day, week, month")
 	var previous: float = SingletonObject.cost_tracker.set_budget(chat_id, budget_usd, warn_pct, period)
 	return {
 		"success": true,
@@ -558,13 +558,13 @@ func _set_budget(args: Dictionary) -> Dictionary:
 
 func _extend_budget(args: Dictionary) -> Dictionary:
 	if not SingletonObject.cost_tracker:
-		return {"error": "Cost tracker not initialized", "success": false}
+		return MCPToolUtils.error("Cost tracker not initialized")
 	var chat_id: String = args.get("chat_id", "")
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 	var additional_usd: float = args.get("additional_usd", 0.0)
 	if additional_usd <= 0:
-		return {"error": "additional_usd must be positive", "success": false}
+		return MCPToolUtils.error("additional_usd must be positive")
 	var new_total: float = SingletonObject.cost_tracker.extend_budget(chat_id, additional_usd)
 	return {
 		"success": true,
@@ -615,7 +615,7 @@ func _enable_tool_sets(args: Dictionary) -> Dictionary:
 func _disable_tool_sets(args: Dictionary) -> Dictionary:
 	var sets_to_disable: Array = args.get("sets", [])
 	if sets_to_disable.is_empty():
-		return {"error": "sets array required and must not be empty", "success": false}
+		return MCPToolUtils.error("sets array required and must not be empty")
 
 	# If currently all-enabled, populate with all known sets minus the disabled ones
 	if server._enabled_tool_sets.is_empty():
@@ -652,7 +652,7 @@ func _clock(arguments: Dictionary) -> Dictionary:
 
 	# Mode 1: delta_seconds — relative to now
 	if arguments.has("delta_seconds"):
-		var delta := int(arguments.get("delta_seconds", 0))
+		var delta := MCPToolUtils.coerce_int(arguments.get("delta_seconds", 0))
 		var target_ts := unix_now + delta
 		var delta_dt := Time.get_datetime_dict_from_unix_time(target_ts)
 		return {
@@ -667,12 +667,12 @@ func _clock(arguments: Dictionary) -> Dictionary:
 	# Mode 2: absolute date/time
 	if arguments.has("year"):
 		var abs_dt := {
-			"year": int(arguments.get("year", 1970)),
-			"month": int(arguments.get("month", 1)),
-			"day": int(arguments.get("day", 1)),
-			"hour": int(arguments.get("hour", 0)),
-			"minute": int(arguments.get("minute", 0)),
-			"second": int(arguments.get("second", 0)),
+			"year": MCPToolUtils.coerce_int(arguments.get("year", 1970)),
+			"month": MCPToolUtils.coerce_int(arguments.get("month", 1)),
+			"day": MCPToolUtils.coerce_int(arguments.get("day", 1)),
+			"hour": MCPToolUtils.coerce_int(arguments.get("hour", 0)),
+			"minute": MCPToolUtils.coerce_int(arguments.get("minute", 0)),
+			"second": MCPToolUtils.coerce_int(arguments.get("second", 0)),
 		}
 		var unix_ts := Time.get_unix_time_from_datetime_dict(abs_dt)
 		return {

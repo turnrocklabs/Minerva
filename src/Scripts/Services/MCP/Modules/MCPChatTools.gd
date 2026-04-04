@@ -252,7 +252,7 @@ func _create_chat(args: Dictionary) -> Dictionary:
 	# Get the chat pane
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
-		return {"error": "Chat pane not available", "success": false}
+		return MCPToolUtils.error("Chat pane not available")
 
 	# Resolve provider: friendly name, enum ID, "current", or fallback
 	var provider_obj = null
@@ -337,11 +337,11 @@ func _set_system_prompt(args: Dictionary) -> Dictionary:
 	var prompt: String = args.get("prompt", "")
 
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
-		return {"error": "Chat not found: %s" % chat_id, "success": false}
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	# Create system prompt history item
 	var ChatHistoryItemScript = load("res://Scripts/Models/ChatHistoryItem.gd")
@@ -365,11 +365,11 @@ func _set_agent_mode(args: Dictionary) -> Dictionary:
 	var enabled: bool = args.get("enabled", false)
 
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
-		return {"error": "Chat not found: %s" % chat_id, "success": false}
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	history.AgentModeEnabled = enabled
 	# Any chat with agent mode enabled via MCP is an agent chat —
@@ -381,7 +381,7 @@ func _set_agent_mode(args: Dictionary) -> Dictionary:
 		history.AgenticSystemPrompt = args.get("agentic_prompt", "")
 
 	if args.has("max_rounds"):
-		history.MaxToolCallRounds = int(args.get("max_rounds", 10))
+		history.MaxToolCallRounds = MCPToolUtils.coerce_int(args.get("max_rounds", 10))
 
 	if args.has("disabled_tools"):
 		var disabled = args.get("disabled_tools", [])
@@ -397,23 +397,23 @@ func _send_message(args: Dictionary) -> Dictionary:
 	var message: String = args.get("message", "")
 
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	if message.is_empty():
-		return {"error": "message is required", "success": false}
+		return MCPToolUtils.error("message is required")
 
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
-		return {"error": "Chat not found: %s" % chat_id, "success": false}
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
-		return {"error": "Chat pane not available", "success": false}
+		return MCPToolUtils.error("Chat pane not available")
 
 	# Find the target chat tab
 	var tab_idx = MCPToolUtils.find_chat_tab_index(chat_id)
 	if tab_idx == -1:
-		return {"error": "Chat tab not found", "success": false}
+		return MCPToolUtils.error("Chat tab not found")
 
 	# Save original tab
 	var original_tab = chat_pane.current_tab
@@ -440,11 +440,11 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 	var chat_id: String = args.get("chat_id", "")
 
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
-		return {"error": "Chat not found: %s" % chat_id, "success": false}
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	var messages: Array = []
 	var role_names = ["user", "assistant", "system", "tool"]
@@ -476,22 +476,22 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 
 func _get_tool_calls(args: Dictionary) -> Dictionary:
 	var chat_id: String = args.get("chat_id", "")
-	var msg_index: int = int(args.get("message_index", -1))
+	var msg_index: int = MCPToolUtils.coerce_int(args.get("message_index", -1))
 
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
-		return {"error": "Chat not found: %s" % chat_id, "success": false}
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	if msg_index < 0 or msg_index >= history.HistoryItemList.size():
-		return {"error": "message_index %d out of range (0-%d)" % [msg_index, history.HistoryItemList.size() - 1], "success": false}
+		return MCPToolUtils.error("message_index %d out of range (0-%d)" % [msg_index, history.HistoryItemList.size() - 1])
 
 	var item = history.HistoryItemList[msg_index]
 
 	if not item.IsToolCall or item.ToolCalls.is_empty():
-		return {"error": "Message at index %d has no tool calls" % msg_index, "success": false}
+		return MCPToolUtils.error("Message at index %d has no tool calls" % msg_index)
 
 	# Build detailed tool call info
 	var calls: Array = []
@@ -544,15 +544,15 @@ func _close_chat(args: Dictionary) -> Dictionary:
 	var chat_id: String = args.get("chat_id", "")
 
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	var tab_idx = MCPToolUtils.find_chat_tab_index(chat_id)
 	if tab_idx == -1:
-		return {"error": "Chat not found: %s" % chat_id, "success": false}
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
-		return {"error": "Chat pane not available", "success": false}
+		return MCPToolUtils.error("Chat pane not available")
 
 	# Close the tab
 	chat_pane.get_tab_bar().tab_close_pressed.emit(tab_idx)
@@ -567,7 +567,7 @@ func _close_chat(args: Dictionary) -> Dictionary:
 func _list_ledger_entries(args: Dictionary) -> Dictionary:
 	var lm = SingletonObject.ledger_manager
 	if not lm:
-		return {"error": "Ledger manager not available", "success": false}
+		return MCPToolUtils.error("Ledger manager not available")
 
 	var chat_id: String = args.get("chat_id", "")
 	var entries: Array[LedgerEntry]
@@ -592,15 +592,15 @@ func _list_ledger_entries(args: Dictionary) -> Dictionary:
 func _get_ledger_entry(args: Dictionary) -> Dictionary:
 	var lm = SingletonObject.ledger_manager
 	if not lm:
-		return {"error": "Ledger manager not available", "success": false}
+		return MCPToolUtils.error("Ledger manager not available")
 
 	var entry_id: String = args.get("entry_id", "")
 	if entry_id.is_empty():
-		return {"error": "entry_id is required", "success": false}
+		return MCPToolUtils.error("entry_id is required")
 
 	var entry = lm.get_entry(entry_id)
 	if not entry:
-		return {"error": "Ledger entry not found: %s" % entry_id, "success": false}
+		return MCPToolUtils.error("Ledger entry not found: %s" % entry_id)
 
 	return {
 		"success": true,
@@ -611,17 +611,17 @@ func _get_ledger_entry(args: Dictionary) -> Dictionary:
 func _compact_chat_mcp(args: Dictionary) -> Dictionary:
 	var chat_id: String = args.get("chat_id", "")
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	var chats = SingletonObject.Chats
 	if not chats:
-		return {"error": "Chat pane not available", "success": false}
+		return MCPToolUtils.error("Chat pane not available")
 
 	# Find the chat by ID
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 
 	if not history:
-		return {"error": "Chat not found: %s" % chat_id, "success": false}
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	var result = await chats.compact_chat(history)
 	if not result:

@@ -640,7 +640,7 @@ func _register_trigger_tools() -> void:
 func _list_agents(_args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.agent_registry
 	if not registry:
-		return {"error": "Agent registry not available", "success": false}
+		return MCPToolUtils.error("Agent registry not available")
 
 	var result: Array = []
 	for agent in registry.agents:
@@ -666,23 +666,23 @@ func _list_agents(_args: Dictionary) -> Dictionary:
 func _create_agent(args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.agent_registry
 	if not registry:
-		return {"error": "Agent registry not available", "success": false}
+		return MCPToolUtils.error("Agent registry not available")
 
 	var agent_name: String = args.get("name", "")
 	if agent_name.is_empty():
-		return {"error": "name is required", "success": false}
+		return MCPToolUtils.error("name is required")
 
 	var agent = AgentDefinition.new()
 	agent.name = agent_name
 	agent.system_prompt = args.get("system_prompt", "")
-	agent.provider_enum_id = int(args.get("provider_enum_id", 0))
+	agent.provider_enum_id = MCPToolUtils.coerce_int(args.get("provider_enum_id", 0))
 	agent.core_service_id = args.get("core_service_id", "")
 	agent.core_action_name = args.get("core_action_name", "")
 	agent.temperature = float(args.get("temperature", 1.0))
 	agent.top_p = float(args.get("top_p", 1.0))
 	agent.frequency_penalty = float(args.get("frequency_penalty", 0.0))
 	agent.presence_penalty = float(args.get("presence_penalty", 0.0))
-	agent.max_tool_call_rounds = int(args.get("max_tool_call_rounds", 10))
+	agent.max_tool_call_rounds = MCPToolUtils.coerce_int(args.get("max_tool_call_rounds", 10))
 	agent.memory_tab_name = args.get("memory_tab_name", "")
 	agent.drawer_tab_name = args.get("drawer_tab_name", "")
 
@@ -702,15 +702,15 @@ func _create_agent(args: Dictionary) -> Dictionary:
 func _update_agent(args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.agent_registry
 	if not registry:
-		return {"error": "Agent registry not available", "success": false}
+		return MCPToolUtils.error("Agent registry not available")
 
 	var agent_id: String = args.get("agent_id", "")
 	if agent_id.is_empty():
-		return {"error": "agent_id is required", "success": false}
+		return MCPToolUtils.error("agent_id is required")
 
 	var agent = registry.get_agent(agent_id)
 	if not agent:
-		return {"error": "Agent not found: %s" % agent_id, "success": false}
+		return MCPToolUtils.error("Agent not found: %s" % agent_id)
 
 	if args.has("name"):
 		agent.name = args["name"]
@@ -753,15 +753,15 @@ func _update_agent(args: Dictionary) -> Dictionary:
 func _delete_agent(args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.agent_registry
 	if not registry:
-		return {"error": "Agent registry not available", "success": false}
+		return MCPToolUtils.error("Agent registry not available")
 
 	var agent_id: String = args.get("agent_id", "")
 	if agent_id.is_empty():
-		return {"error": "agent_id is required", "success": false}
+		return MCPToolUtils.error("agent_id is required")
 
 	var agent = registry.get_agent(agent_id)
 	if not agent:
-		return {"error": "Agent not found: %s" % agent_id, "success": false}
+		return MCPToolUtils.error("Agent not found: %s" % agent_id)
 
 	registry.remove_agent(agent_id)
 
@@ -774,7 +774,7 @@ func _delete_agent(args: Dictionary) -> Dictionary:
 func _spawn_agent(args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.agent_registry
 	if not registry:
-		return {"error": "Agent registry not available", "success": false}
+		return MCPToolUtils.error("Agent registry not available")
 
 	var agent_def: AgentDefinition = null
 
@@ -787,13 +787,13 @@ func _spawn_agent(args: Dictionary) -> Dictionary:
 		agent_def = registry.get_agent_by_name(agent_name)
 
 	if not agent_def:
-		return {"error": "Agent not found (id='%s', name='%s')" % [agent_id, agent_name], "success": false}
+		return MCPToolUtils.error("Agent not found (id='%s', name='%s')" % [agent_id, agent_name])
 
 	var initial_message: String = args.get("initial_message", "")
 
 	var history = AgentSpawner.spawn_agent(agent_def, initial_message)
 	if not history:
-		return {"error": "Failed to spawn agent '%s'" % agent_def.name, "success": false}
+		return MCPToolUtils.error("Failed to spawn agent '%s'" % agent_def.name)
 
 	return {
 		"success": true,
@@ -814,20 +814,20 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	var task: String = args.get("task", "")
 
 	if worker_name.is_empty():
-		return {"error": "name is required", "success": false}
+		return MCPToolUtils.error("name is required")
 	if system_prompt.is_empty():
-		return {"error": "system_prompt is required", "success": false}
+		return MCPToolUtils.error("system_prompt is required")
 	if task.is_empty():
-		return {"error": "task is required", "success": false}
+		return MCPToolUtils.error("task is required")
 
-	var max_tool_rounds: int = int(args.get("max_tool_rounds", 25))
+	var max_tool_rounds: int = MCPToolUtils.coerce_int(args.get("max_tool_rounds", 25))
 	var timeout_seconds: float = float(args.get("timeout_seconds", -1))
 
 	# 2. Determine parent_chat_id — prefer caller identity from tool dispatch chain,
 	# fall back to current_tab only if no caller identity is available
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
-		return {"error": "Chat pane not available", "success": false}
+		return MCPToolUtils.error("Chat pane not available")
 
 	var parent_chat_id: String = ""
 	if not server._current_caller_chat_id.is_empty():
@@ -866,7 +866,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	var chat_id: String = create_result.get("chat_id", "")
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
-		return {"error": "Failed to find newly created chat", "success": false}
+		return MCPToolUtils.error("Failed to find newly created chat")
 
 	# 4. Set system prompt
 	var prompt_result: Dictionary = await server.call_tool("minerva_set_system_prompt", {"chat_id": chat_id, "prompt": system_prompt})
@@ -901,7 +901,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	info.termination_message = ""
 	info.tokens_used = 0
 	info.rounds_used = 0
-	info.cobrowser_tab_id = int(args.get("cobrowser_tab_id", -1))
+	info.cobrowser_tab_id = MCPToolUtils.coerce_int(args.get("cobrowser_tab_id", -1))
 	info.cobrowser_agent_id = args.get("cobrowser_agent_id", "")
 
 	registry.register_worker(info)
@@ -914,7 +914,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	var tab_idx = MCPToolUtils.find_chat_tab_index(chat_id)
 	if tab_idx == -1:
 		registry.update_worker_status(worker_id, "error", "Chat tab not found after creation")
-		return {"error": "Worker chat tab not found", "success": false}
+		return MCPToolUtils.error("Worker chat tab not found")
 
 	var original_tab = chat_pane.current_tab
 	chat_pane.current_tab = tab_idx
@@ -961,12 +961,12 @@ func _setup_worker_timeout(worker_id: String, timeout_seconds: float) -> void:
 func _check_worker(args: Dictionary) -> Dictionary:
 	var worker_id: String = args.get("worker_id", "")
 	if worker_id.is_empty():
-		return {"error": "worker_id is required", "success": false}
+		return MCPToolUtils.error("worker_id is required")
 
 	var registry = SingletonObject.worker_registry
 	var info = registry.get_worker(worker_id)
 	if not info:
-		return {"error": "Worker not found: %s" % worker_id, "success": false}
+		return MCPToolUtils.error("Worker not found: %s" % worker_id)
 
 	var result: Dictionary = {
 		"success": true,
@@ -1045,16 +1045,16 @@ func _resolve_chat_id_for_budget(args: Dictionary) -> String:
 func _set_worker_budget(args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.worker_registry
 	if not registry:
-		return {"error": "Worker registry not initialized", "success": false}
+		return MCPToolUtils.error("Worker registry not initialized")
 
 	var chat_id := _resolve_chat_id_for_budget(args)
 	if chat_id.is_empty():
-		return {"error": "Could not determine chat_id. Provide chat_id or ensure a chat is active.", "success": false}
+		return MCPToolUtils.error("Could not determine chat_id. Provide chat_id or ensure a chat is active.")
 
-	var max_concurrent: int = int(args.get("max_concurrent_workers", 5))
-	var max_total: int = int(args.get("max_total_workers", -1))
-	var max_tokens: int = int(args.get("max_total_tokens", -1))
-	var approval_after: int = int(args.get("approval_after", 3))
+	var max_concurrent: int = MCPToolUtils.coerce_int(args.get("max_concurrent_workers", 5))
+	var max_total: int = MCPToolUtils.coerce_int(args.get("max_total_workers", -1))
+	var max_tokens: int = MCPToolUtils.coerce_int(args.get("max_total_tokens", -1))
+	var approval_after: int = MCPToolUtils.coerce_int(args.get("approval_after", 3))
 
 	registry.set_budget(chat_id, max_concurrent, max_total, max_tokens, approval_after)
 
@@ -1069,11 +1069,11 @@ func _set_worker_budget(args: Dictionary) -> Dictionary:
 func _get_worker_budget(args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.worker_registry
 	if not registry:
-		return {"error": "Worker registry not initialized", "success": false}
+		return MCPToolUtils.error("Worker registry not initialized")
 
 	var chat_id := _resolve_chat_id_for_budget(args)
 	if chat_id.is_empty():
-		return {"error": "Could not determine chat_id. Provide chat_id or ensure a chat is active.", "success": false}
+		return MCPToolUtils.error("Could not determine chat_id. Provide chat_id or ensure a chat is active.")
 
 	return {
 		"success": true,
@@ -1085,11 +1085,11 @@ func _get_worker_budget(args: Dictionary) -> Dictionary:
 func _approve_workers(args: Dictionary) -> Dictionary:
 	var registry = SingletonObject.worker_registry
 	if not registry:
-		return {"error": "Worker registry not initialized", "success": false}
+		return MCPToolUtils.error("Worker registry not initialized")
 
 	var chat_id: String = args.get("chat_id", "")
 	if chat_id.is_empty():
-		return {"error": "chat_id is required", "success": false}
+		return MCPToolUtils.error("chat_id is required")
 
 	var result: Dictionary = registry.approve_workers(chat_id)
 	if result.get("success", false):
@@ -1213,7 +1213,7 @@ func _inject_completion_into_parent(worker, reason: String, message: String, cha
 func _list_triggers(_args: Dictionary) -> Dictionary:
 	var tm = SingletonObject.trigger_manager
 	if not tm:
-		return {"error": "Trigger manager not available", "success": false}
+		return MCPToolUtils.error("Trigger manager not available")
 
 	var result: Array[Dictionary] = []
 	var registry = SingletonObject.agent_registry
@@ -1263,30 +1263,30 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 func _create_trigger(args: Dictionary) -> Dictionary:
 	var tm = SingletonObject.trigger_manager
 	if not tm:
-		return {"error": "Trigger manager not available", "success": false}
+		return MCPToolUtils.error("Trigger manager not available")
 
 	var trig_name: String = args.get("name", "")
 	var agent_id: String = args.get("agent_id", "")
 	if agent_id.is_empty():
-		return {"error": "agent_id is required", "success": false}
+		return MCPToolUtils.error("agent_id is required")
 
 	var trig = TriggerDefinition.new()
 	trig.name = trig_name
 	trig.agent_id = agent_id
-	trig.trigger_type = int(args.get("trigger_type", TriggerDefinition.TriggerType.TIMER))
+	trig.trigger_type = MCPToolUtils.coerce_int(args.get("trigger_type", TriggerDefinition.TriggerType.TIMER))
 	trig.interval_seconds = float(args.get("interval_seconds", 300.0))
-	trig.event_type = int(args.get("event_type", TriggerDefinition.EventType.NOTE_CREATED))
-	trig.action_type = int(args.get("action_type", TriggerDefinition.ActionType.SPAWN_NEW))
+	trig.event_type = MCPToolUtils.coerce_int(args.get("event_type", TriggerDefinition.EventType.NOTE_CREATED))
+	trig.action_type = MCPToolUtils.coerce_int(args.get("action_type", TriggerDefinition.ActionType.SPAWN_NEW))
 	trig.initial_message = args.get("initial_message", "")
 	trig.batch_label = args.get("batch_label", "")
 	trig.chain_trigger_id = args.get("chain_trigger_id", "")
 	trig.enabled = args.get("enabled", false)
-	trig.schedule_type = int(args.get("schedule_type", TriggerDefinition.ScheduleType.INTERVAL))
+	trig.schedule_type = MCPToolUtils.coerce_int(args.get("schedule_type", TriggerDefinition.ScheduleType.INTERVAL))
 	if trig.trigger_type == TriggerDefinition.TriggerType.TIME and trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
 		trig.schedule_type = TriggerDefinition.ScheduleType.DAILY
 	trig.schedule_time = args.get("schedule_time", "09:00")
-	trig.schedule_day_of_month = int(args.get("schedule_day_of_month", 1))
-	trig.schedule_month = int(args.get("schedule_month", 1))
+	trig.schedule_day_of_month = MCPToolUtils.coerce_int(args.get("schedule_day_of_month", 1))
+	trig.schedule_month = MCPToolUtils.coerce_int(args.get("schedule_month", 1))
 	trig.fire_if_missed = args.get("fire_if_missed", true)
 
 	# Docket poll fields
@@ -1326,34 +1326,34 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 func _update_trigger(args: Dictionary) -> Dictionary:
 	var tm = SingletonObject.trigger_manager
 	if not tm:
-		return {"error": "Trigger manager not available", "success": false}
+		return MCPToolUtils.error("Trigger manager not available")
 
 	var trigger_id: String = args.get("trigger_id", "")
 	if trigger_id.is_empty():
-		return {"error": "trigger_id is required", "success": false}
+		return MCPToolUtils.error("trigger_id is required")
 
 	var existing = tm.get_trigger(trigger_id)
 	if not existing:
-		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+		return MCPToolUtils.error("Trigger not found: %s" % trigger_id)
 
 	# Clone into a new TriggerDefinition with same ID
 	var trig = TriggerDefinition.new(trigger_id)
 	trig.name = args.get("name", existing.name)
 	trig.agent_id = args.get("agent_id", existing.agent_id)
-	trig.trigger_type = int(args.get("trigger_type", existing.trigger_type))
+	trig.trigger_type = MCPToolUtils.coerce_int(args.get("trigger_type", existing.trigger_type))
 	trig.interval_seconds = float(args.get("interval_seconds", existing.interval_seconds))
-	trig.event_type = int(args.get("event_type", existing.event_type))
-	trig.action_type = int(args.get("action_type", existing.action_type))
+	trig.event_type = MCPToolUtils.coerce_int(args.get("event_type", existing.event_type))
+	trig.action_type = MCPToolUtils.coerce_int(args.get("action_type", existing.action_type))
 	trig.initial_message = args.get("initial_message", existing.initial_message)
 	trig.batch_label = args.get("batch_label", existing.batch_label)
 	trig.chain_trigger_id = args.get("chain_trigger_id", existing.chain_trigger_id)
 	trig.enabled = args.get("enabled", existing.enabled)
-	trig.schedule_type = int(args.get("schedule_type", existing.schedule_type))
+	trig.schedule_type = MCPToolUtils.coerce_int(args.get("schedule_type", existing.schedule_type))
 	if trig.trigger_type == TriggerDefinition.TriggerType.TIME and trig.schedule_type == TriggerDefinition.ScheduleType.INTERVAL:
 		trig.schedule_type = TriggerDefinition.ScheduleType.DAILY
 	trig.schedule_time = args.get("schedule_time", existing.schedule_time)
-	trig.schedule_day_of_month = int(args.get("schedule_day_of_month", existing.schedule_day_of_month))
-	trig.schedule_month = int(args.get("schedule_month", existing.schedule_month))
+	trig.schedule_day_of_month = MCPToolUtils.coerce_int(args.get("schedule_day_of_month", existing.schedule_day_of_month))
+	trig.schedule_month = MCPToolUtils.coerce_int(args.get("schedule_month", existing.schedule_month))
 	trig.fire_if_missed = args.get("fire_if_missed", existing.fire_if_missed)
 	trig.last_fired_at = existing.last_fired_at
 
@@ -1400,15 +1400,15 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 func _delete_trigger(args: Dictionary) -> Dictionary:
 	var tm = SingletonObject.trigger_manager
 	if not tm:
-		return {"error": "Trigger manager not available", "success": false}
+		return MCPToolUtils.error("Trigger manager not available")
 
 	var trigger_id: String = args.get("trigger_id", "")
 	if trigger_id.is_empty():
-		return {"error": "trigger_id is required", "success": false}
+		return MCPToolUtils.error("trigger_id is required")
 
 	var existing = tm.get_trigger(trigger_id)
 	if not existing:
-		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+		return MCPToolUtils.error("Trigger not found: %s" % trigger_id)
 
 	tm.remove_trigger(trigger_id)
 	return {"success": true, "trigger_id": trigger_id}
@@ -1417,15 +1417,15 @@ func _delete_trigger(args: Dictionary) -> Dictionary:
 func _fire_trigger_mcp(args: Dictionary) -> Dictionary:
 	var tm = SingletonObject.trigger_manager
 	if not tm:
-		return {"error": "Trigger manager not available", "success": false}
+		return MCPToolUtils.error("Trigger manager not available")
 
 	var trigger_id: String = args.get("trigger_id", "")
 	if trigger_id.is_empty():
-		return {"error": "trigger_id is required", "success": false}
+		return MCPToolUtils.error("trigger_id is required")
 
 	var trig = tm.get_trigger(trigger_id)
 	if not trig:
-		return {"error": "Trigger not found: %s" % trigger_id, "success": false}
+		return MCPToolUtils.error("Trigger not found: %s" % trigger_id)
 
 	tm._fire_trigger(trigger_id, {}, {}, true)  # force=true bypasses enabled check for manual fire
 
@@ -1442,11 +1442,11 @@ func _fire_trigger_mcp(args: Dictionary) -> Dictionary:
 func _get_batch_status(args: Dictionary) -> Dictionary:
 	var tm = SingletonObject.trigger_manager
 	if not tm:
-		return {"error": "Trigger manager not available", "success": false}
+		return MCPToolUtils.error("Trigger manager not available")
 
 	var trigger_id: String = args.get("trigger_id", "")
 	if trigger_id.is_empty():
-		return {"error": "trigger_id is required", "success": false}
+		return MCPToolUtils.error("trigger_id is required")
 
 	var status = tm.get_batch_status(trigger_id)
 	status["success"] = true
