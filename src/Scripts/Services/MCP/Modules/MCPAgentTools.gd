@@ -859,7 +859,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	if args.has("provider_enum_id"):
 		create_args["provider_enum_id"] = args["provider_enum_id"]
 
-	var create_result: Dictionary = server._create_chat(create_args)
+	var create_result: Dictionary = await server.call_tool("minerva_create_chat", create_args)
 	if not create_result.get("success", false):
 		return create_result
 
@@ -869,12 +869,12 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 		return {"error": "Failed to find newly created chat", "success": false}
 
 	# 4. Set system prompt
-	var prompt_result: Dictionary = server._set_system_prompt({"chat_id": chat_id, "prompt": system_prompt})
+	var prompt_result: Dictionary = await server.call_tool("minerva_set_system_prompt", {"chat_id": chat_id, "prompt": system_prompt})
 	if not prompt_result.get("success", false):
 		return prompt_result
 
 	# 5. Set agent mode with max_tool_rounds
-	var agent_result: Dictionary = server._set_agent_mode({
+	var agent_result: Dictionary = await server.call_tool("minerva_set_agent_mode", {
 		"chat_id": chat_id,
 		"enabled": true,
 		"max_rounds": max_tool_rounds,
