@@ -189,6 +189,21 @@ FFMPEG_ZIP="eirteam-ffmpeg-${FFMPEG_VERSION}.zip"
 FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/${FFMPEG_TAG}/${FFMPEG_ZIP}"
 FFMPEG_MARKER="src/addons/ffmpeg/.ffmpeg-version"
 
+ffmpeg_platform_has_binaries() {
+    case "$PLATFORM" in
+        macos)
+            # Check for the framework binary (not just Info.plist)
+            test -f "src/addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework/libgdffmpeg.macos.template_debug" 2>/dev/null
+            ;;
+        linux)
+            test -f "src/addons/ffmpeg/linux64/libgdffmpeg.linux.template_debug.x86_64.so" 2>/dev/null
+            ;;
+        windows)
+            test -f "src/addons/ffmpeg/win64/libgdffmpeg.windows.template_debug.x86_64.dll" 2>/dev/null
+            ;;
+    esac
+}
+
 install_ffmpeg_from_download() {
     echo ""
     echo "=== Downloading EIRTeam.FFmpeg $FFMPEG_VERSION ==="
@@ -220,9 +235,16 @@ install_ffmpeg_from_download() {
         cp -r "$FFMPEG_SRC/macos/"*.framework "src/addons/ffmpeg/macos/" 2>/dev/null || true
     fi
 
-    echo "$FFMPEG_VERSION" > "$FFMPEG_MARKER"
     rm -rf "$TMP_FFMPEG"
-    echo "EIRTeam.FFmpeg $FFMPEG_VERSION installed"
+
+    # Verify we actually got binaries for this platform
+    if ffmpeg_platform_has_binaries; then
+        echo "$FFMPEG_VERSION" > "$FFMPEG_MARKER"
+        echo "EIRTeam.FFmpeg $FFMPEG_VERSION installed"
+    else
+        echo "WARNING: Downloaded FFmpeg has no $PLATFORM binaries"
+        return 1
+    fi
 }
 
 install_ffmpeg_from_source() {
