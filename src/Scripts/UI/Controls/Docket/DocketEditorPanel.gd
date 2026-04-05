@@ -34,7 +34,7 @@ func _ready() -> void:
 		dm.comment_added.connect(_on_item_mutated)
 
 	_build_ui()
-	_query_grid.run_query()
+	_query_grid.refresh()
 
 
 func _build_ui() -> void:
@@ -122,7 +122,7 @@ func _on_item_activated(id: String) -> void:
 
 
 func _on_item_changed() -> void:
-	_query_grid.run_query()
+	_query_grid.refresh()
 	data_changed.emit()
 
 
@@ -135,7 +135,7 @@ func _on_project_selected(index: int) -> void:
 		project_filter = ""
 	else:
 		project_filter = _project_option.get_item_text(index)
-	_query_grid.run_query()
+	_query_grid.refresh()
 
 
 func _on_new_item() -> void:
@@ -164,7 +164,7 @@ func _on_refresh() -> void:
 	if dm:
 		_state.sync_from_docket_manager(dm)
 		_populate_project_dropdown()
-	_query_grid.run_query()
+	_query_grid.refresh()
 
 
 func _on_project_changed(_project_name: String) -> void:
@@ -172,16 +172,16 @@ func _on_project_changed(_project_name: String) -> void:
 	if dm:
 		_state.sync_from_docket_manager(dm)
 		_populate_project_dropdown()
-	_query_grid.run_query()
+	_query_grid.refresh()
 
 
 func _on_item_mutated(_id: String, _arg2 = null, _arg3 = null) -> void:
 	## Refresh grid when any item is created/updated/transitioned via MCP.
-	_query_grid.run_query()
+	_query_grid.refresh()
 
 
 func _on_item_transitioned(_id: String, _old: String, _new: String, _proj: String) -> void:
-	_query_grid.run_query()
+	_query_grid.refresh()
 	# If the record form is showing this item, reload it
 	if _record_form.visible and _record_form._current_id == _id:
 		_record_form.load_item(_id)
