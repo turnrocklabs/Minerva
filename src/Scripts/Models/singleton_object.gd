@@ -299,6 +299,14 @@ signal mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dicti
 ## Emitted before any MCP tool executes. Used by hook triggers for PreToolUse matching.
 signal mcp_tool_about_to_execute(tool_name: String, arguments: Dictionary)
 
+
+func emit_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
+	mcp_tool_executed.emit(tool_name, arguments, result, agent_id)
+
+
+func emit_mcp_tool_about_to_execute(tool_name: String, arguments: Dictionary) -> void:
+	mcp_tool_about_to_execute.emit(tool_name, arguments)
+
 ## Clear proxies that match the given chat (or are untargeted). Preserve others.
 ## Disables cached notes on consumed proxies, then emits injection_consumed.
 func clear_consumed_proxies(history_id: String) -> void:
@@ -661,7 +669,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 ## Shutdown all running plugins. Call on application exit.
 func shutdown_plugins() -> void:
 	if plugin_manager != null:
-		await plugin_manager.shutdown_all()
+		plugin_manager.shutdown_all()
 
 ## Push plugin events/state to any open webview panels for that plugin.
 func _push_to_plugin_panels(p_plugin_id: String, push_type: String, event_name: String, data: Dictionary) -> void:
@@ -836,6 +844,16 @@ func _register_builtin_containers() -> void:
 ## Registry of items that can be created via File > New and toolbar buttons.
 var creatable_item_registry: CreatableItemRegistry = CreatableItemRegistry.new()
 #endregion Creatable Item Registry
+
+#region Docket
+var docket_manager: DocketManager = null
+
+func _init_docket() -> void:
+	docket_manager = DocketManager.new()
+	docket_manager.name = "DocketManager"
+	add_child(docket_manager)
+	print("[SingletonObject] Docket initialized (%d projects)" % docket_manager.get_loaded_projects().size())
+#endregion Docket
 
 #region Agent System
 var agent_registry: AgentRegistry = null
@@ -1137,6 +1155,9 @@ func _ready():
 	# Initialize MCP manager (connects to Nudge, etc.)
 	# Defer to avoid add_child errors during scene tree setup
 	initialize_mcp.call_deferred()
+
+	# Initialize docket (master + personal dockets, tool registry)
+	_init_docket()
 
 	# Initialize agent system (registry + trigger manager)
 	_init_agent_system()

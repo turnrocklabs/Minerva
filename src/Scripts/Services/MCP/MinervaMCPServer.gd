@@ -93,6 +93,7 @@ func _init_modules() -> void:
 		MCPCodeTools.new(self),
 		MCPTerminalTools.new(self),
 		MCPWebviewTools.new(self),
+		MCPDocketTools.new(self),
 	]
 
 	# Cache agent module for signal wiring
@@ -140,6 +141,20 @@ func get_tool_count() -> int:
 		if mcp_manager.tool_registry[tool_name].server_name == SERVER_NAME:
 			count += 1
 	return count
+
+
+func consume_session_iterative_attempt(reset_threshold_ms: int) -> int:
+	var current_time := Time.get_ticks_msec()
+	if current_time - _session_attempts_reset_time > reset_threshold_ms:
+		_session_iterative_attempts = 0
+	_session_iterative_attempts += 1
+	_session_attempts_reset_time = current_time
+	return _session_iterative_attempts
+
+
+func reset_session_iterative_attempts() -> void:
+	_session_iterative_attempts = 0
+	_session_attempts_reset_time = Time.get_ticks_msec()
 
 
 ## Unregister all minerva tools
@@ -224,7 +239,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 	# Emit pre-execution signal for hook triggers (PreToolUse)
 	if arguments is Dictionary and SingletonObject.trigger_manager and not SingletonObject.trigger_manager.triggers.is_empty():
-		SingletonObject.mcp_tool_about_to_execute.emit(tool_name, arguments)
+		SingletonObject.emit_mcp_tool_about_to_execute(tool_name, arguments)
 
 	# Tool search (always available, handled here to avoid module overhead)
 	if tool_name == "minerva_tool_search":

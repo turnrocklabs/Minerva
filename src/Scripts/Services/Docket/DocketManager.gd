@@ -1,0 +1,325 @@
+extends Node
+class_name DocketManager
+## Manages docket databases (master, personal, project) with signal-based event routing.
+## Lives on SingletonObject. Master + personal load at startup; project dockets lazy-load.
+
+# -- Signals ------------------------------------------------------------------
+
+signal item_created(item_id: String, item_type: String, project_name: String)
+signal item_transitioned(item_id: String, old_status: String, new_status: String, project_name: String)
+signal item_updated(item_id: String, project_name: String)
+signal comment_added(item_id: String, project_name: String)
+signal project_loaded(project_name: String)
+signal project_unloaded(project_name: String)
+
+# -- Constants ----------------------------------------------------------------
+
+const MASTER_DCT_RES := "res://Data/master.dct"
+const MASTER_DCT_USER := "user://master.dct"
+const PERSONAL_DCT_USER := "user://personal.dct"
+const REGISTRY_PATH := "user://docket_projects.cfg"
+
+# -- State --------------------------------------------------------------------
+
+var _master_db: DocketDB = null
+var _personal_db: DocketDB = null
+var _project_dbs: Dictionary = {}  # project_name → DocketDB
+var _project_paths: Dictionary = {}  # project_name → filesystem path (for registry)
+var _tool_registry: ToolRegistry = null
+var _schema: Dictionary = {}
+var _ready_done: bool = false
+
+# -- Lifecycle ----------------------------------------------------------------
+
+func _ready() -> void:
+	_load_schema()
+	_init_master()
+	_init_personal()
+	_load_registry()
+	_init_tool_registry()
+	_ready_done = true
+
+
+func _exit_tree() -> void:
+	close_all()
+
+
+func _load_schema() -> void:
+	var f := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	if f:
+		var parsed = JSON.parse_string(f.get_as_text())
+		if parsed is Dictionary:
+			_schema = parsed
+		f.close()
+	if _schema.is_empty():
+		push_warning("DocketManager: could not load schema.json")
+
+
+func _init_master() -> void:
+	var user_path := ProjectSettings.globalize_path(MASTER_DCT_USER)
+	# Copy from res:// on first run
+	if not FileAccess.file_exists(MASTER_DCT_USER):
+		if FileAccess.file_exists(MASTER_DCT_RES):
+			var res_path := ProjectSettings.globalize_path(MASTER_DCT_RES)
+			DirAccess.copy_absolute(res_path, user_path)
+			# Also copy .cache if it exists
+			if FileAccess.file_exists(MASTER_DCT_RES + ".cache"):
+				DirAccess.copy_absolute(res_path + ".cache", user_path + ".cache")
+	if FileAccess.file_exists(MASTER_DCT_USER):
+		_master_db = JSONLCache.open_or_rebuild(user_path)
+		if _master_db:
+			_master_db.set_project_name("master")
+	else:
+		# No shipped master.dct — create empty
+		_master_db = DocketDB.create_new(user_path + ".cache")
+		if _master_db:
+			_master_db.set_project_name("master")
+	if _master_db:
+		_project_dbs["master"] = _master_db
+		_project_paths["master"] = user_path
+
+
+func _init_personal() -> void:
+	var user_path := ProjectSettings.globalize_path(PERSONAL_DCT_USER)
+	if FileAccess.file_exists(PERSONAL_DCT_USER):
+		_personal_db = JSONLCache.open_or_rebuild(user_path)
+		if _personal_db:
+			_personal_db.set_project_name("personal")
+			_project_dbs["personal"] = _personal_db
+			_project_paths["personal"] = user_path
+
+
+func _ensure_personal() -> DocketDB:
+	## Create personal.dct on demand (first write).
+	if _personal_db:
+		return _personal_db
+	var user_path := ProjectSettings.globalize_path(PERSONAL_DCT_USER)
+	# Create empty JSONL file first, then build cache
+	var f := FileAccess.open(PERSONAL_DCT_USER, FileAccess.WRITE)
+	if f:
+		var meta_line := JSON.stringify({"_type": "meta", "version": "1.0.0", "counter": 0, "id_prefix": "PRS", "project": "personal"})
+		f.store_line(meta_line)
+		f.close()
+	_personal_db = JSONLCache.open_or_rebuild(user_path)
+	if not _personal_db:
+		_personal_db = DocketDB.create_new(user_path + ".cache")
+	if _personal_db:
+		_personal_db.set_project_name("personal")
+		_project_dbs["personal"] = _personal_db
+		_project_paths["personal"] = user_path
+	return _personal_db
+
+
+func _init_tool_registry() -> void:
+	_tool_registry = ToolRegistry.new()
+	var primary := _master_db if _master_db else DocketDB.new()
+	_tool_registry.init(_schema, primary, _project_dbs)
+	_tool_registry.add_project_fn = _add_project_from_tool
+	_tool_registry.remove_project_fn = _remove_project_from_tool
+
+
+# -- Project registry ---------------------------------------------------------
+
+func _load_registry() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(REGISTRY_PATH) == OK:
+		if cfg.has_section("projects"):
+			for key in cfg.get_section_keys("projects"):
+				_project_paths[key] = cfg.get_value("projects", key, "")
+
+
+func _save_registry() -> void:
+	var cfg := ConfigFile.new()
+	for proj_name in _project_paths:
+		cfg.set_value("projects", proj_name, _project_paths[proj_name])
+	cfg.save(REGISTRY_PATH)
+
+
+# -- Project open/close -------------------------------------------------------
+
+func open_project(dct_path: String) -> Dictionary:
+	## Open a project docket from a .dct JSONL file path. Returns status dict.
+	var abs_path: String = dct_path
+	if dct_path.begins_with("res://") or dct_path.begins_with("user://"):
+		abs_path = ProjectSettings.globalize_path(dct_path)
+	if not FileAccess.file_exists(abs_path):
+		return {"error": "File not found: %s" % abs_path}
+	var db := JSONLCache.open_or_rebuild(abs_path)
+	if not db:
+		return {"error": "Failed to open docket: %s" % abs_path}
+	var proj_name := db.get_project_name()
+	if proj_name.is_empty():
+		proj_name = abs_path.get_file().get_basename()
+		db.set_project_name(proj_name)
+	# Close existing if same name
+	if _project_dbs.has(proj_name) and _project_dbs[proj_name] != db:
+		_project_dbs[proj_name].close()
+	_project_dbs[proj_name] = db
+	_project_paths[proj_name] = abs_path
+	_save_registry()
+	_refresh_tool_registry()
+	project_loaded.emit(proj_name)
+	return {"success": true, "project": proj_name, "path": abs_path}
+
+
+func close_project(project_name: String) -> Dictionary:
+	## Close a project docket. Cannot close master.
+	if project_name == "master":
+		return {"error": "Cannot close master docket"}
+	if not _project_dbs.has(project_name):
+		return {"error": "Project '%s' not loaded" % project_name}
+	_save_project_to_jsonl(project_name)
+	_project_dbs[project_name].close()
+	_project_dbs.erase(project_name)
+	_refresh_tool_registry()
+	project_unloaded.emit(project_name)
+	return {"success": true, "project": project_name}
+
+
+func get_db(project_name: String = "master") -> DocketDB:
+	## Get a loaded project's DB. Returns null if not loaded.
+	return _project_dbs.get(project_name)
+
+
+func get_master_db() -> DocketDB:
+	return _master_db
+
+
+func get_personal_db() -> DocketDB:
+	return _personal_db
+
+
+func get_loaded_projects() -> Array[String]:
+	var names: Array[String] = []
+	for key in _project_dbs:
+		names.append(key)
+	return names
+
+
+func get_known_projects() -> Dictionary:
+	## Returns {project_name: {"path": ..., "loaded": bool}} for all known projects.
+	var result := {}
+	for proj_name in _project_paths:
+		result[proj_name] = {
+			"path": _project_paths[proj_name],
+			"loaded": _project_dbs.has(proj_name),
+		}
+	return result
+
+
+func is_project_loaded(project_name: String) -> bool:
+	return _project_dbs.has(project_name)
+
+
+# -- Tool dispatch (with signal emission) -------------------------------------
+
+func call_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
+	## Call a docket tool. Emits signals on successful mutations.
+	if not _tool_registry:
+		return {"error": "DocketManager not initialized"}
+	# Ensure personal docket exists for hint/personal writes
+	if tool_name in ["docket_hint_set"] and str(arguments.get("project", "")).is_empty():
+		# Default hint writes to master (skill queries hit master)
+		pass
+	var result := _tool_registry.call_tool(tool_name, arguments)
+	if not result.has("error"):
+		_emit_signals_for(tool_name, arguments, result)
+	return result
+
+
+func get_tool_definitions() -> Array:
+	## Get MCP tool definitions for registration.
+	if _tool_registry:
+		return _tool_registry.list_tools()
+	return []
+
+
+func has_tool(tool_name: String) -> bool:
+	return _tool_registry != null and _tool_registry.has_tool(tool_name)
+
+
+# -- Signal emission ----------------------------------------------------------
+
+func _emit_signals_for(tool_name: String, args: Dictionary, result: Dictionary) -> void:
+	var proj := str(args.get("project", "master"))
+	match tool_name:
+		"docket_create":
+			item_created.emit(
+				str(result.get("id", "")),
+				str(result.get("type", "")),
+				proj
+			)
+		"docket_transition":
+			item_transitioned.emit(
+				str(args.get("id", "")),
+				str(result.get("previous_status", "")),
+				str(result.get("status", "")),
+				proj
+			)
+		"docket_update":
+			item_updated.emit(str(args.get("id", "")), proj)
+		"docket_comment":
+			comment_added.emit(str(args.get("id", "")), proj)
+		"docket_delete":
+			item_updated.emit(str(args.get("id", "")), proj)
+		"docket_hint_set":
+			item_created.emit(str(result.get("id", "")), "hint", proj)
+		"docket_quality":
+			item_updated.emit(str(result.get("id", "")), proj)
+
+
+# -- JSONL persistence --------------------------------------------------------
+
+func save_project(project_name: String) -> void:
+	## Write a project's SQLite state back to its .dct JSONL file.
+	_save_project_to_jsonl(project_name)
+
+
+func save_all() -> void:
+	## Save all loaded projects to JSONL.
+	for proj_name in _project_dbs:
+		_save_project_to_jsonl(proj_name)
+
+
+func _save_project_to_jsonl(project_name: String) -> void:
+	if not _project_dbs.has(project_name):
+		return
+	var path: String = _project_paths.get(project_name, "")
+	if path.is_empty():
+		return
+	var db: DocketDB = _project_dbs[project_name]
+	var jsonl_text := JSONLSerializer.serialize_all(db)
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f:
+		f.store_string(jsonl_text)
+		f.close()
+
+
+func close_all() -> void:
+	## Save and close all dockets. Called on exit.
+	save_all()
+	for proj_name in _project_dbs.keys():
+		_project_dbs[proj_name].close()
+	_project_dbs.clear()
+	_master_db = null
+	_personal_db = null
+
+
+# -- Internal helpers ---------------------------------------------------------
+
+func _refresh_tool_registry() -> void:
+	if _tool_registry:
+		var primary := _master_db if _master_db else DocketDB.new()
+		_tool_registry.update_db(_schema, primary, _project_dbs)
+		_tool_registry.add_project_fn = _add_project_from_tool
+		_tool_registry.remove_project_fn = _remove_project_from_tool
+
+
+func _add_project_from_tool(path: String) -> Dictionary:
+	## Callback for ToolRegistry's docket_project_add tool.
+	return open_project(path)
+
+
+func _remove_project_from_tool(name: String) -> Dictionary:
+	## Callback for ToolRegistry's docket_project_remove tool.
+	return close_project(name)
