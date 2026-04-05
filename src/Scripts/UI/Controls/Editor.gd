@@ -280,12 +280,15 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 
 		Editor.Type.DOCKET:
 			vbox_container.clip_contents = true
-			var new_docket_editor = DocketEditorPanel.new()
-			new_docket_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_docket_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
-			vbox_container.add_child(new_docket_editor)
-			editor.docket_editor = new_docket_editor
-			new_docket_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
+			var new_docket_panel = DocketPanel.new()
+			new_docket_panel.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_docket_panel.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			var dm: DocketManager = SingletonObject.docket_manager
+			if dm:
+				new_docket_panel.init(dm)
+			vbox_container.add_child(new_docket_panel)
+			editor.docket_editor = new_docket_panel
+			new_docket_panel.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
 
 	return editor
 

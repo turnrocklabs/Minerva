@@ -1248,6 +1248,15 @@ func _init_creatable_items() -> void:
 		)
 	)
 
+	# Docket (sort_order: 90)
+	creatable_item_registry.register_item(
+		CreatableItemRegistry.CreatableItem.create(
+			"docket", "Docket",
+			func(): ep.add(Editor.Type.DOCKET, null, "Docket"),
+			null, 90
+		)
+	)
+
 
 ## Handle recording completion for creatable items registry
 func _on_creatable_video_recorder_completed(recording_data) -> void:
