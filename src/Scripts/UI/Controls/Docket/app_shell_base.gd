@@ -47,8 +47,7 @@ var _recent_files: PackedStringArray = []
 ## DocketManager reference (Minerva integration)
 var _dm: DocketManager = null
 
-## Signal for Editor tab unsaved indicator
-signal data_changed()
+
 
 
 func init(dm: DocketManager) -> void:

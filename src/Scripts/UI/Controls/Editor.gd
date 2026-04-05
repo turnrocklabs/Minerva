@@ -279,6 +279,8 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.worker_status_panel = panel
 
 		Editor.Type.DOCKET:
+			# Docket now uses pane-level mode (SingletonObject.show_docket()),
+			# but keep this path for programmatic compatibility.
 			vbox_container.clip_contents = true
 			var new_docket_panel = DocketPanel.new()
 			new_docket_panel.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
@@ -288,7 +290,6 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 				new_docket_panel.init(dm)
 			vbox_container.add_child(new_docket_panel)
 			editor.docket_editor = new_docket_panel
-			new_docket_panel.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
 
 	return editor
 
