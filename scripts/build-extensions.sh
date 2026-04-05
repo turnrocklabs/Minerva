@@ -160,8 +160,16 @@ else
 
         if [ -f "$WRY_SRC" ]; then
             mkdir -p "$WRY_DST"
-            cp "$WRY_SRC" "$WRY_DST"
-            echo "godot_wry built: $WRY_DST$(basename "$WRY_SRC") ($(du -h "$WRY_SRC" | cut -f1))"
+            if [ "$PLATFORM" = "macos" ]; then
+                # WRY.gdextension expects a .framework bundle on macOS
+                FW_DIR="$WRY_DST/libgodot_wry.framework"
+                mkdir -p "$FW_DIR"
+                cp "$WRY_SRC" "$FW_DIR/libgodot_wry"
+                echo "godot_wry built: $FW_DIR ($(du -h "$WRY_SRC" | cut -f1))"
+            else
+                cp "$WRY_SRC" "$WRY_DST"
+                echo "godot_wry built: $WRY_DST$(basename "$WRY_SRC") ($(du -h "$WRY_SRC" | cut -f1))"
+            fi
         else
             echo "WARNING: godot_wry binary not found at $WRY_SRC"
         fi
@@ -232,6 +240,35 @@ if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ];
     echo "EIRTeam.FFmpeg $FFMPEG_VERSION already installed"
 else
     install_ffmpeg_from_download || install_ffmpeg_from_source
+fi
+
+# ── Download godot-sqlite if needed ───────────────────────────────────
+
+SQLITE_VERSION="v4.7"
+SQLITE_URL="https://github.com/2shady4u/godot-sqlite/releases/download/${SQLITE_VERSION}/bin.zip"
+SQLITE_MARKER="src/addons/godot-sqlite/.sqlite-version"
+
+if [ -f "$SQLITE_MARKER" ] && [ "$(cat "$SQLITE_MARKER")" = "$SQLITE_VERSION" ]; then
+    echo "godot-sqlite $SQLITE_VERSION already installed"
+else
+    echo ""
+    echo "=== Downloading godot-sqlite $SQLITE_VERSION ==="
+    TMP_SQLITE=$(mktemp -d)
+    if curl -fL -o "$TMP_SQLITE/bin.zip" "$SQLITE_URL"; then
+        unzip -o "$TMP_SQLITE/bin.zip" -d "$TMP_SQLITE/extract" >/dev/null
+        SQLITE_BIN="$TMP_SQLITE/extract/bin"
+        if [ -d "$SQLITE_BIN" ]; then
+            mkdir -p "src/addons/godot-sqlite/bin"
+            cp -r "$SQLITE_BIN/"* "src/addons/godot-sqlite/bin/"
+            echo "$SQLITE_VERSION" > "$SQLITE_MARKER"
+            echo "godot-sqlite $SQLITE_VERSION installed"
+        else
+            echo "WARNING: Could not find bin/ in downloaded godot-sqlite zip"
+        fi
+    else
+        echo "WARNING: Failed to download godot-sqlite. SQLite addon will not be available."
+    fi
+    rm -rf "$TMP_SQLITE"
 fi
 
 # ── Verify ────────────────────────────────────────────────────────────

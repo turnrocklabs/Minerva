@@ -29,6 +29,7 @@ zig-out/
 src/addons/godot_wry/bin/**/*.so
 src/addons/godot_wry/bin/**/*.dylib
 src/addons/godot_wry/bin/**/*.dll
+src/addons/godot_wry/bin/**/*.framework/
 
 # ffmpeg addon binaries (downloaded or built from vendor/EIRTeam.FFmpeg)
 src/addons/ffmpeg/linux64/*.so*
@@ -37,6 +38,10 @@ src/addons/ffmpeg/macos/*.framework/
 src/addons/ffmpeg/win64/*.dll
 src/addons/ffmpeg/win64/*.lib
 src/addons/ffmpeg/.ffmpeg-version
+
+# godot-sqlite addon binaries (downloaded by build script)
+src/addons/godot-sqlite/bin/
+src/addons/godot-sqlite/.sqlite-version
 *.dbliteMinerva.dmg
 
 # Stream Deck plugin compiled binaries
