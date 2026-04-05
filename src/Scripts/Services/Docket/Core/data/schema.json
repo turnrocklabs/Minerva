@@ -248,6 +248,23 @@
 			"transition_rules": {},
 			"required_fields": ["title"],
 			"optional_fields": ["description", "article", "summary", "key", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+		},
+		"policy": {
+			"label": "Policy",
+			"description": "Workflow policy defining gates, tool restrictions, and enforcement rules. Anyone can increase gating intensity; only humans can decrease.",
+			"states": ["draft", "proposed", "active", "suspended", "archived"],
+			"initial_state": "draft",
+			"terminal_states": [],
+			"transitions": {
+				"draft": ["proposed"],
+				"proposed": ["active", "draft"],
+				"active": ["suspended", "archived"],
+				"suspended": ["active", "archived"],
+				"archived": ["active"]
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "component", "tags", "assigned_to", "directed_to", "steps", "preconditions", "outcome"]
 		}
 	},
 	"common_fields": ["id", "type", "status", "title", "description", "created_at", "updated_at", "created_by", "assigned_to", "directed_to", "priority", "severity", "tags", "links", "events"],
