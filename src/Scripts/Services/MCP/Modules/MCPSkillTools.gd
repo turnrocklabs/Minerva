@@ -17,34 +17,37 @@ func get_tool_names() -> Array[String]:
 
 
 func register_tools() -> void:
-	# Skill tools
-	server._register_tool("minerva_list_skills",
-		"List all defined skills with their active state. Skills inject instructions into the system prompt and optionally register executable tools.",
-		{
-			"type": "object",
-			"properties": {
-				"include_profiles": {
-					"type": "boolean",
-					"description": "Also include tool profiles (default false — only user skills)"
-				}
-			},
-			"required": []
-		}
-	, "utility")
+	# Skill tools — these are PROTECTED (always available, never pruned)
+	var list_desc := "List all available skills — from both Minerva skill manager and docket master. Skills contain step-by-step instructions for common tasks (agent supervision, tool usage, knowledge management, work tracking). Use minerva_get_skill to load full instructions."
+	var list_schema := {
+		"type": "object",
+		"properties": {
+			"include_profiles": {
+				"type": "boolean",
+				"description": "Also include tool profiles (default false — only user skills)"
+			}
+		},
+		"required": []
+	}
+	server._register_tool("minerva_list_skills", list_desc, list_schema, "utility")
+	server.tool_budget_manager.activate_tool("minerva_list_skills", {"name": "minerva_list_skills", "description": list_desc, "input_schema": list_schema})
 
-	server._register_tool("minerva_get_skill",
-		"Get full details of a skill including its instructions and executable configuration.",
-		{
-			"type": "object",
-			"properties": {
-				"skill_id": {
-					"type": "string",
-					"description": "The skill ID to retrieve"
-				}
+	var get_desc := "Get full details of a skill including step-by-step instructions, preconditions, and expected outcome. Use the skill_id from minerva_list_skills, or search by title."
+	var get_schema := {
+		"type": "object",
+		"properties": {
+			"skill_id": {
+				"type": "string",
+				"description": "The skill ID to retrieve (from minerva_list_skills)"
 			},
-			"required": ["skill_id"]
-		}
-	, "utility")
+			"title": {
+				"type": "string",
+				"description": "Search by skill title (alternative to skill_id)"
+			}
+		},
+	}
+	server._register_tool("minerva_get_skill", get_desc, get_schema, "utility")
+	server.tool_budget_manager.activate_tool("minerva_get_skill", {"name": "minerva_get_skill", "description": get_desc, "input_schema": get_schema})
 
 	server._register_tool("minerva_activate_skill",
 		"Activate a skill globally. Active skills inject their instructions into the system prompt and register any executable tools.",
@@ -144,38 +147,76 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 #region Skill Handlers
 
 func _skill_list(arguments: Dictionary) -> Dictionary:
-	var skill_manager = SingletonObject.get_skill_manager()
-	if not skill_manager:
-		return MCPToolUtils.error("Skill manager not available")
-
-	var include_profiles: bool = arguments.get("include_profiles", false)
 	var result: Array[Dictionary] = []
 
-	for skill in skill_manager.skills:
-		if not include_profiles and skill.is_profile():
-			continue
-		result.append({
-			"id": skill.id,
-			"name": skill.name,
-			"description": skill.description,
-			"origin": skill.origin,
-			"type": "profile" if skill.is_profile() else "skill",
-			"active": skill_manager.is_active(skill.id),
-			"has_instructions": skill.has_instructions(),
-			"has_executable": skill.has_executable(),
-		})
+	# Minerva SkillManager skills (note-based)
+	var skill_manager = SingletonObject.get_skill_manager()
+	if skill_manager:
+		var include_profiles: bool = arguments.get("include_profiles", false)
+		for skill in skill_manager.skills:
+			if not include_profiles and skill.is_profile():
+				continue
+			result.append({
+				"id": skill.id,
+				"name": skill.name,
+				"description": skill.description,
+				"origin": skill.origin,
+				"type": "profile" if skill.is_profile() else "skill",
+				"active": skill_manager.is_active(skill.id),
+				"has_instructions": skill.has_instructions(),
+				"has_executable": skill.has_executable(),
+			})
+
+	# Docket master skills
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm:
+		var docket_result := dm.call_tool("docket_skill_list", {})
+		if not docket_result.has("error") and docket_result.has("skills"):
+			for dskill in docket_result["skills"]:
+				result.append({
+					"id": str(dskill.get("id", "")),
+					"name": str(dskill.get("title", "")),
+					"description": str(dskill.get("description", "")),
+					"origin": "docket",
+					"type": "skill",
+				})
 
 	return {"success": true, "skills": result, "count": result.size()}
 
 
 func _skill_get(arguments: Dictionary) -> Dictionary:
+	var skill_id: String = arguments.get("skill_id", "")
+	var title: String = arguments.get("title", "")
+
+	# Try docket first if we have a title or docket-style ID
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm and (not title.is_empty() or (not skill_id.is_empty() and skill_id.length() >= 7)):
+		var docket_args := {}
+		if not title.is_empty():
+			docket_args["title"] = title
+		elif not skill_id.is_empty():
+			docket_args["id"] = skill_id
+		var docket_result := dm.call_tool("docket_skill_get", docket_args)
+		if not docket_result.has("error"):
+			return {
+				"success": true,
+				"id": str(docket_result.get("id", "")),
+				"name": str(docket_result.get("title", "")),
+				"description": str(docket_result.get("description", "")),
+				"origin": "docket",
+				"type": "skill",
+				"instructions": str(docket_result.get("steps", "")),
+				"preconditions": str(docket_result.get("preconditions", "")),
+				"outcome": str(docket_result.get("outcome", "")),
+			}
+
+	# Fall back to SkillManager
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
-		return MCPToolUtils.error("Skill manager not available")
+		return MCPToolUtils.error("Skill not found")
 
-	var skill_id: String = arguments.get("skill_id", "")
 	if skill_id.is_empty():
-		return MCPToolUtils.error("skill_id is required")
+		return MCPToolUtils.error("skill_id or title is required")
 
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:

@@ -4,7 +4,8 @@ extends RefCounted
 ## Tools are activated via minerva_tool_search and pruned when budget is exceeded.
 
 const DEFAULT_BUDGET: int = 3000  # max tokens for tool schemas
-const PROTECTED_TOOL: String = "minerva_tool_search"  # never pruned
+## Tools that are never pruned from the active set.
+const PROTECTED_TOOLS: Array[String] = ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 
 ## Active tool entry: {schema: Dictionary, last_used_turn: int, token_cost: int}
 var _active_tools: Dictionary = {}
@@ -93,10 +94,12 @@ func get_current_turn() -> int:
 
 ## Reset to initial state (compaction). Only tool_search survives if it was active.
 func reset() -> void:
-	var search_entry = _active_tools.get(PROTECTED_TOOL)
+	var saved: Dictionary = {}
+	for pname in PROTECTED_TOOLS:
+		if _active_tools.has(pname):
+			saved[pname] = _active_tools[pname]
 	_active_tools.clear()
-	if search_entry:
-		_active_tools[PROTECTED_TOOL] = search_entry
+	_active_tools.merge(saved)
 	_current_turn = 0
 
 
@@ -118,7 +121,7 @@ func _prune_one() -> bool:
 	var oldest_turn: int = _current_turn + 1  # higher than any possible turn
 
 	for name in _active_tools:
-		if name == PROTECTED_TOOL:
+		if name in PROTECTED_TOOLS:
 			continue
 		if _active_tools[name].last_used_turn < oldest_turn:
 			oldest_turn = _active_tools[name].last_used_turn
@@ -134,4 +137,4 @@ func _prune_one() -> bool:
 ## Estimate token cost of a tool schema (~4 chars per token on JSON).
 func _estimate_tokens(schema: Dictionary) -> int:
 	var json_str: String = JSON.stringify(schema)
-	return maxi(1, json_str.length() / 4)
+	return maxi(1, ceili(float(json_str.length()) / 4.0))
