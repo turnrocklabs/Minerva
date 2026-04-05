@@ -61,7 +61,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 
 func _open_docket_editor(args: Dictionary) -> Dictionary:
-	var tab_name: String = args.get("name", "Docket")
 	var dct_path: String = args.get("dct_path", "")
 
 	# Open project docket if path provided
@@ -71,18 +70,9 @@ func _open_docket_editor(args: Dictionary) -> Dictionary:
 			var open_result := dm.open_project(dct_path)
 			if open_result.has("error"):
 				return MCPToolUtils.error(str(open_result["error"]))
-			if tab_name == "Docket" and open_result.has("project"):
-				tab_name = str(open_result["project"])
 
-	var editor_pane = SingletonObject.editor_container.editor_pane
-	if not editor_pane:
-		return MCPToolUtils.error("Editor pane not available")
-
-	var editor = editor_pane.add_docket_editor(tab_name)
-	if not editor:
-		return MCPToolUtils.error("Failed to create docket editor")
-
-	return {"success": true, "editor_name": tab_name, "message": "Docket editor opened."}
+	SingletonObject.show_docket()
+	return {"success": true, "message": "Docket panel shown."}
 
 
 static func _categorize(tool_name: String) -> String:

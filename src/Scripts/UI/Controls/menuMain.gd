@@ -341,7 +341,7 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 
 
 func _open_docket() -> void:
-	SingletonObject.editor_container.editor_pane.add_docket_editor("Docket")
+	SingletonObject.show_docket()
 
 
 func _open_plugin_manager() -> void:

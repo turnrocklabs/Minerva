@@ -847,12 +847,58 @@ var creatable_item_registry: CreatableItemRegistry = CreatableItemRegistry.new()
 
 #region Docket
 var docket_manager: DocketManager = null
+var docket_panel: DocketPanel = null
+var _docket_visible: bool = false
 
 func _init_docket() -> void:
 	docket_manager = DocketManager.new()
 	docket_manager.name = "DocketManager"
 	add_child(docket_manager)
 	print("[SingletonObject] Docket initialized (%d projects)" % docket_manager.get_loaded_projects().size())
+
+
+func show_docket() -> void:
+	## Show docket panel, hide editor pane. Toggle behavior.
+	if _docket_visible:
+		hide_docket()
+		return
+	if not docket_panel:
+		docket_panel = DocketPanel.new()
+		docket_panel.name = "DocketPanel"
+		docket_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		docket_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		docket_panel.visible = false
+		docket_panel.init(docket_manager)
+		# Add as sibling of editor_container in the MiddlePane VBoxContainer
+		if editor_container:
+			editor_container.get_parent().add_child(docket_panel)
+	if editor_container:
+		editor_container.visible = false
+	# Also hide the editor toolbar (HBoxContainer sibling)
+	if editor_container and editor_container.get_parent():
+		for child in editor_container.get_parent().get_children():
+			if child is HBoxContainer and child != docket_panel:
+				child.visible = false
+	docket_panel.visible = true
+	_docket_visible = true
+
+
+func hide_docket() -> void:
+	## Hide docket panel, show editor pane.
+	if docket_panel:
+		docket_panel.visible = false
+	if editor_container:
+		editor_container.visible = true
+	# Re-show the editor toolbar
+	if editor_container and editor_container.get_parent():
+		for child in editor_container.get_parent().get_children():
+			if child is HBoxContainer:
+				child.visible = true
+	_docket_visible = false
+
+
+func is_docket_visible() -> bool:
+	return _docket_visible
 #endregion Docket
 
 #region Agent System
