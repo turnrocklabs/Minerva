@@ -88,9 +88,18 @@ func _ready() -> void:
 	# Restore persisted UI settings (zoom, font size)
 	_restore_ui_settings()
 
-	# Start with "All Items" query
-	_add_work_entry("query", "All Items", "", "")
+	# Restore last query if available, otherwise start with "All Items"
+	var last_q := UserPrefs.load_last_query()
+	if last_q.is_empty():
+		_add_work_entry("query", "All Items", "", "")
+	else:
+		_add_work_entry("query", last_q.label, last_q.filter, "")
 	_activate_work_entry(0)
+
+
+func _exit_tree() -> void:
+	_persist_last_query()
+	_save_session()
 
 
 func _persist_last_query() -> void:
@@ -532,6 +541,18 @@ func _update_file_label() -> void:
 		_file_label.text = projects[0]
 	else:
 		_file_label.text = "%d projects" % projects.size()
+
+
+func _save_session() -> void:
+	## Save the list of open project paths for restore on next launch.
+	if not _dm:
+		return
+	var paths := PackedStringArray()
+	for proj_name in _dm.get_loaded_projects():
+		var db := _dm.get_db(proj_name)
+		if db and not db.get_path().is_empty():
+			paths.append(db.get_path())
+	UserPrefs.save_session(paths)
 
 
 func _update_project_menu() -> void:

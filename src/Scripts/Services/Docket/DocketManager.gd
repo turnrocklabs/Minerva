@@ -36,8 +36,24 @@ func _ready() -> void:
 	_init_master()
 	_init_personal()
 	_load_registry()
+	_restore_session()
 	_init_tool_registry()
 	_ready_done = true
+
+
+func _restore_session() -> void:
+	## Re-open project dockets that were loaded in the previous session.
+	var paths := UserPrefs.load_session()
+	for path in paths:
+		if FileAccess.file_exists(path) and not _is_already_loaded(path):
+			open_project(path)
+
+
+func _is_already_loaded(abs_path: String) -> bool:
+	for proj_name in _project_paths:
+		if _project_paths[proj_name] == abs_path:
+			return true
+	return false
 
 
 func _exit_tree() -> void:
