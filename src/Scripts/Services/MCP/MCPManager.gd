@@ -314,9 +314,9 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 		# Collect categories from filtered tools for the dynamic description
 		var categories: Dictionary = {}
 		for tool_dict in all_filtered:
-			var name: String = tool_dict.get("name", "")
-			if tool_registry.has(name):
-				var ts: String = tool_registry[name].tool_set
+			var tool_name: String = tool_dict.get("name", "")
+			if tool_registry.has(tool_name):
+				var ts: String = tool_registry[tool_name].tool_set
 				if not ts.is_empty():
 					categories[ts] = categories.get(ts, 0) + 1
 
@@ -587,6 +587,12 @@ func _register_server_tools(connection) -> void:
 			continue
 		if tool_registry.has(tool.name):
 			var existing_server: String = tool_registry[tool.name].server_name
+			# Native (minerva) tools always win over external servers
+			if existing_server == "minerva" and connection.server_name != "minerva":
+				push_warning("[MCP] Skipping external tool '%s' (from %s) — native tool takes priority" % [
+					tool.name, connection.server_name])
+				collision_count += 1
+				continue
 			push_warning("Tool name collision: %s (from %s, replacing %s)" % [
 				tool.name, connection.server_name, existing_server])
 			collision_count += 1
