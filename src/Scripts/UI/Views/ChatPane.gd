@@ -96,17 +96,28 @@ const AGENT_SYSTEM_PROMPT_ERROR: String = """
 - If results are truncated, use more specific queries to get the data you need.
 """
 
-## Build the agent system prompt dynamically based on connected tools
+## Get a system prompt section from docket (active prompts only), falling back to hardcoded constant.
+func _get_prompt(key: String, fallback: String) -> String:
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm:
+		var text := dm.get_system_prompt(key)
+		if not text.is_empty():
+			return text
+	return fallback
+
+
+## Build the agent system prompt dynamically based on connected tools.
+## Prompts are loaded from docket (master → project override) with hardcoded fallback.
 func _build_agent_system_prompt(history = null) -> String:
 	var mcp = SingletonObject.get_mcp_manager()
 	if not mcp:
-		return AGENT_SYSTEM_PROMPT_BASE
+		return _get_prompt("agentic-base", AGENT_SYSTEM_PROMPT_BASE)
 
 	var tools = mcp.get_available_tools()
 	if tools.is_empty():
-		return AGENT_SYSTEM_PROMPT_BASE + "\n\nNote: No tools are currently connected. You cannot use any tools until they are enabled."
+		return _get_prompt("agentic-base", AGENT_SYSTEM_PROMPT_BASE) + "\n\nNote: No tools are currently connected. You cannot use any tools until they are enabled."
 
-	var prompt = AGENT_SYSTEM_PROMPT_BASE + AGENT_SYSTEM_PROMPT_GENERAL
+	var prompt = _get_prompt("agentic-base", AGENT_SYSTEM_PROMPT_BASE) + _get_prompt("agentic-general", AGENT_SYSTEM_PROMPT_GENERAL)
 
 	# Collect prompt fragments from active profiles and skill instructions
 	var skill_manager = SingletonObject.get_skill_manager()
@@ -145,13 +156,13 @@ func _build_agent_system_prompt(history = null) -> String:
 			has_docket = true
 
 	if has_cobrowser:
-		prompt += AGENT_SYSTEM_PROMPT_COBROWSER
+		prompt += _get_prompt("agentic-cobrowser", AGENT_SYSTEM_PROMPT_COBROWSER)
 	if has_codetools:
-		prompt += AGENT_SYSTEM_PROMPT_CODETOOLS
+		prompt += _get_prompt("agentic-codetools", AGENT_SYSTEM_PROMPT_CODETOOLS)
 	if has_docket:
-		prompt += AGENT_SYSTEM_PROMPT_DOCKET
+		prompt += _get_prompt("agentic-docket", AGENT_SYSTEM_PROMPT_DOCKET)
 
-	prompt += AGENT_SYSTEM_PROMPT_ERROR
+	prompt += _get_prompt("agentic-error", AGENT_SYSTEM_PROMPT_ERROR)
 	return prompt
 
 # Script of the default provider to use when creating new chat tab

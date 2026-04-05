@@ -29,6 +29,10 @@ var _tool_registry: ToolRegistry = null
 var _schema: Dictionary = {}
 var _ready_done: bool = false
 
+## Cached system prompts: key (e.g. "agentic-base") → prompt_text
+var _prompt_cache: Dictionary = {}
+var _prompt_cache_valid: bool = false
+
 # -- Lifecycle ----------------------------------------------------------------
 
 func _ready() -> void:
@@ -254,6 +258,89 @@ func has_tool(tool_name: String) -> bool:
 	return _tool_registry != null and _tool_registry.has_tool(tool_name)
 
 
+# -- System prompt loading ----------------------------------------------------
+
+func get_system_prompt(key: String, model_id: String = "") -> String:
+	## Get a system prompt by key (e.g. "agentic-base").
+	## Searches: project dockets → master docket. Only returns active prompts.
+	## Model-specific lookup: tries "key:model_id" → "key:family" → "key".
+	## Returns "" if not found (caller should fall back to hardcoded constant).
+	if not _prompt_cache_valid:
+		_rebuild_prompt_cache()
+
+	# Model-specific fallback chain
+	if not model_id.is_empty():
+		# Try exact model: "agentic-base:claude-sonnet-4-6"
+		var exact_key := "%s:%s" % [key, model_id]
+		if _prompt_cache.has(exact_key):
+			return _prompt_cache[exact_key]
+		# Try family: "agentic-base:claude" (first segment before hyphen-digit)
+		var family := _extract_model_family(model_id)
+		if not family.is_empty() and family != model_id:
+			var family_key := "%s:%s" % [key, family]
+			if _prompt_cache.has(family_key):
+				return _prompt_cache[family_key]
+
+	# Generic key: "agentic-base"
+	if _prompt_cache.has(key):
+		return _prompt_cache[key]
+
+	return ""
+
+
+func invalidate_prompt_cache() -> void:
+	_prompt_cache_valid = false
+
+
+func _rebuild_prompt_cache() -> void:
+	## Build prompt cache: project overrides win over master.
+	_prompt_cache.clear()
+
+	# Layer 1: master docket prompts (lowest priority)
+	if _master_db:
+		_load_prompts_from_db(_master_db)
+
+	# Layer 2: project docket prompts (override master)
+	for proj_name in _project_dbs:
+		if proj_name == "master" or proj_name == "personal":
+			continue
+		_load_prompts_from_db(_project_dbs[proj_name])
+
+	_prompt_cache_valid = true
+
+
+func _load_prompts_from_db(db: DocketDB) -> void:
+	## Load active prompts with component="system-prompt" into cache.
+	var results := db.execute_query({
+		"filter": {
+			"conditions": [
+				{"field": "type", "op": "eq", "value": "prompt"},
+				{"conj": "and", "field": "status", "op": "eq", "value": "active"},
+				{"conj": "and", "field": "component", "op": "eq", "value": "system-prompt"},
+			]
+		}
+	})
+	for item in results:
+		var item_key: String = str(item.get("key", ""))
+		var prompt_text: String = str(item.get("prompt_text", ""))
+		if not item_key.is_empty() and not prompt_text.is_empty():
+			_prompt_cache[item_key] = prompt_text
+
+
+static func _extract_model_family(model_id: String) -> String:
+	## Extract model family from ID: "claude-sonnet-4-6" → "claude"
+	## "gemini-2.5-pro" → "gemini". Takes first segment before a digit.
+	var parts := model_id.split("-")
+	var family := ""
+	for part in parts:
+		if not part.is_empty() and part[0] >= "0" and part[0] <= "9":
+			break
+		if not family.is_empty():
+			family += "-"
+		family += part
+	return family
+
+
 # -- Signal emission ----------------------------------------------------------
 
 func _emit_signals_for(tool_name: String, args: Dictionary, result: Dictionary) -> void:
@@ -282,6 +369,12 @@ func _emit_signals_for(tool_name: String, args: Dictionary, result: Dictionary) 
 			item_created.emit(str(result.get("id", "")), "hint", proj)
 		"docket_quality":
 			item_updated.emit(str(result.get("id", "")), proj)
+
+	# Invalidate prompt cache if a prompt item was created/updated/transitioned
+	if tool_name in ["docket_create", "docket_update", "docket_transition", "docket_delete"]:
+		var item_type: String = str(result.get("type", args.get("type", "")))
+		if item_type == "prompt":
+			invalidate_prompt_cache()
 
 
 # -- JSONL persistence --------------------------------------------------------

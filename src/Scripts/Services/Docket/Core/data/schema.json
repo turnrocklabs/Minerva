@@ -232,7 +232,7 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title"],
-			"optional_fields": ["description", "prompt_text", "parameters", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+			"optional_fields": ["description", "prompt_text", "parameters", "component", "key", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
 		},
 		"kb": {
 			"label": "KB Article",
