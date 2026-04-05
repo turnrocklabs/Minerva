@@ -266,12 +266,12 @@ func _add_server_submenus_to_menu() -> void:
 	for server_config in config.servers:
 		var server_name: String = server_config.name
 		var display_name: String = MCPKnownServers.get_display_name(server_name)
-		var submenu := PopupMenu.new()
-		submenu.name = "%sSubmenu" % server_name.capitalize().replace(" ", "").replace("-", "")
-		submenu.id_pressed.connect(_on_dynamic_server_submenu_pressed.bind(server_name))
-		tools_menu.add_child(submenu)
-		tools_menu.add_submenu_item(display_name, submenu.name)
-		_server_submenus[server_name] = submenu
+		var srv_submenu := PopupMenu.new()
+		srv_submenu.name = "%sSubmenu" % server_name.capitalize().replace(" ", "").replace("-", "")
+		srv_submenu.id_pressed.connect(_on_dynamic_server_submenu_pressed.bind(server_name))
+		tools_menu.add_child(srv_submenu)
+		tools_menu.add_submenu_item(display_name, srv_submenu.name)
+		_server_submenus[server_name] = srv_submenu
 
 	# Keep backward-compatible references
 	nudge_submenu = _server_submenus.get("nudge")

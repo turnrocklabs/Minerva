@@ -174,31 +174,31 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 	# Policy check first
 	var policy_error: String = CodeToolsPolicy.get_instance().check_bash_command(command)
 	if not policy_error.is_empty():
-		var result: Dictionary = {"success": false, "error": policy_error, "exit_code": -1}
-		SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)
-		return result
+		var policy_result: Dictionary = {"success": false, "error": policy_error, "exit_code": -1}
+		SingletonObject.emit_mcp_tool_executed("minerva_bash", arguments, policy_result, _current_agent_id)
+		return policy_result
 
 	# Try to route through a visible terminal PTY
 	var term: TerminalNew = _find_active_terminal()
 	if term:
-		var working_dir: String = arguments.get("working_dir", "")
+		var terminal_working_dir: String = arguments.get("working_dir", "")
 		var full_command: String = command
-		if not working_dir.is_empty() and working_dir != _cwd_tool.get_cwd():
-			full_command = "cd %s && %s" % [working_dir, command]
+		if not terminal_working_dir.is_empty() and terminal_working_dir != _cwd_tool.get_cwd():
+			full_command = "cd %s && %s" % [terminal_working_dir, command]
 
-		var result: Dictionary = await term.execute_command(full_command)
-		SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)
-		return result
+		var terminal_result: Dictionary = await term.execute_command(full_command)
+		SingletonObject.emit_mcp_tool_executed("minerva_bash", arguments, terminal_result, _current_agent_id)
+		return terminal_result
 
 	# Fallback: headless execution if no terminal available
-	var working_dir: String = arguments.get("working_dir", _cwd_tool.get_cwd())
-	if not working_dir.is_absolute_path():
-		working_dir = _cwd_tool.get_cwd().path_join(working_dir)
+	var resolved_working_dir: String = arguments.get("working_dir", _cwd_tool.get_cwd())
+	if not resolved_working_dir.is_absolute_path():
+		resolved_working_dir = _cwd_tool.get_cwd().path_join(resolved_working_dir)
 	var timeout_ms: int = MCPToolUtils.coerce_int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
-	var result: Dictionary = BashTool.run_command(command, working_dir, timeout_ms)
-	result["success"] = result["exit_code"] == 0
-	SingletonObject.mcp_tool_executed.emit("minerva_bash", arguments, result, _current_agent_id)
-	return result
+	var command_result: Dictionary = BashTool.run_command(command, resolved_working_dir, timeout_ms)
+	command_result["success"] = command_result["exit_code"] == 0
+	SingletonObject.emit_mcp_tool_executed("minerva_bash", arguments, command_result, _current_agent_id)
+	return command_result
 
 
 func _find_active_terminal() -> TerminalNew:
@@ -212,10 +212,10 @@ func _find_active_terminal() -> TerminalNew:
 
 func _codetools_cwd(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", "")
+	var cwd_result: Dictionary
 	if path.is_empty():
-		var result := {"success": true, "cwd": _cwd_tool.get_cwd()}
-		SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result, _current_agent_id)
-		return result
-	var result := _cwd_tool.set_cwd(path)
-	SingletonObject.mcp_tool_executed.emit("minerva_cwd", arguments, result, _current_agent_id)
-	return result
+		cwd_result = {"success": true, "cwd": _cwd_tool.get_cwd()}
+	else:
+		cwd_result = _cwd_tool.set_cwd(path)
+	SingletonObject.emit_mcp_tool_executed("minerva_cwd", arguments, cwd_result, _current_agent_id)
+	return cwd_result

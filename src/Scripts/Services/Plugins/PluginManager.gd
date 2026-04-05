@@ -179,7 +179,7 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 
 	var def = _db.get_by_id(id)
 	if def.state in [S_RUNNING, S_STARTING]:
-		var stop_result := await stop_plugin(id)
+		var stop_result := stop_plugin(id)
 		if stop_result.get("error"):
 			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
 
@@ -344,7 +344,7 @@ func restart_plugin(id: String) -> Dictionary:
 
 	print("[PluginManager] Restarting plugin '%s'..." % id)
 
-	var stop_result := await stop_plugin(id)
+	var stop_result := stop_plugin(id)
 	if stop_result.get("error"):
 		return {"error": "Restart failed during stop: %s" % stop_result.get("error")}
 
@@ -442,7 +442,7 @@ func shutdown_all() -> void:
 	var running = _db.get_by_status(S_RUNNING)
 	var starting = _db.get_by_status(S_STARTING)
 	for def in (running + starting):
-		await stop_plugin(def.id)
+		stop_plugin(def.id)
 	print("[PluginManager] All plugins stopped")
 
 
@@ -665,9 +665,9 @@ func _delete_directory_recursive(path: String) -> Error:
 	var dir := DirAccess.open(abs_path)
 	if dir == null:
 		# Maybe it's a file or doesn't exist
-		var parent := DirAccess.open(abs_path.get_base_dir())
-		if parent != null:
-			return parent.remove(abs_path)
+		var fallback_dir := DirAccess.open(abs_path.get_base_dir())
+		if fallback_dir != null:
+			return fallback_dir.remove(abs_path)
 		return DirAccess.get_open_error()
 	# Remove all files and subdirectories first
 	dir.list_dir_begin()
@@ -684,9 +684,9 @@ func _delete_directory_recursive(path: String) -> Error:
 		entry = dir.get_next()
 	dir.list_dir_end()
 	# Now remove the empty directory itself
-	var parent := DirAccess.open(abs_path.get_base_dir())
-	if parent != null:
-		return parent.remove(abs_path)
+	var cleanup_dir := DirAccess.open(abs_path.get_base_dir())
+	if cleanup_dir != null:
+		return cleanup_dir.remove(abs_path)
 	return OK
 
 

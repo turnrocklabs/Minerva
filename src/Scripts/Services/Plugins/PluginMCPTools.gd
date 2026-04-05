@@ -58,7 +58,7 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 		"minerva_plugin_start":
 			return await _handle_plugin_start(args)
 		"minerva_plugin_stop":
-			return await _handle_plugin_stop(args)
+			return _handle_plugin_stop(args)
 		"minerva_plugin_restart":
 			return await _handle_plugin_restart(args)
 		"minerva_plugin_reload":
@@ -328,7 +328,7 @@ func _handle_plugin_stop(args: Dictionary) -> Dictionary:
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 
-	var result = await plugin_manager.stop_plugin(id)
+	var result = plugin_manager.stop_plugin(id)
 	return result
 
 

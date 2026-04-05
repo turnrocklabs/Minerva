@@ -444,11 +444,10 @@ func _record_decision(plugin_id: String, capability: String, allowed: bool, reas
 		})
 
 
-func _record_rate_limit_decision(plugin_id: String, capability: String, allowed: bool, reason: String) -> void:
+func _record_rate_limit_decision(plugin_id: String, capability: String, _allowed: bool, reason: String) -> void:
 	## Log rate limit decision to audit log if available.
 	## Does not emit policy_decision signal (that is reserved for grant/deny decisions).
 	if audit_log != null:
-		var event_type := PluginAuditLog.EVENT_POLICY_ALLOW if allowed else PluginAuditLog.EVENT_POLICY_DENY
 		audit_log.log_event(plugin_id, "rate_limit_check", {
 			"capability": capability,
 			"reason": reason,
