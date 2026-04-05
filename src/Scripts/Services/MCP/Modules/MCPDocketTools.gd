@@ -12,6 +12,11 @@ func get_tool_names() -> Array[String]:
 	return _tool_names
 
 
+## Tools that are auto-activated (always available without search).
+## Everything else is discoverable via minerva_tool_search.
+const AUTO_ACTIVATE := ["docket_skill_list", "docket_skill_get", "minerva_open_docket"]
+
+
 func register_tools() -> void:
 	var dm: DocketManager = SingletonObject.docket_manager
 	if not dm:
@@ -26,26 +31,30 @@ func register_tools() -> void:
 		var desc: String = def.get("description", "")
 		var schema: Dictionary = def.get("inputSchema", {})
 		var category := _categorize(tool_name)
+		# Register in search index (all tools discoverable)
 		server._register_tool(tool_name, desc, schema, category)
+		# Auto-activate only key tools
+		if tool_name in AUTO_ACTIVATE:
+			server.tool_budget_manager.activate_tool(tool_name, {"name": tool_name, "description": desc, "input_schema": schema})
 
 	# Register Minerva-specific docket UI tools
-	_tool_names.append("minerva_open_docket")
-	server._register_tool("minerva_open_docket",
-		"Open a docket editor tab in Minerva. Optionally open a specific project docket by path.",
-		{
-			"type": "object",
-			"properties": {
-				"name": {
-					"type": "string",
-					"description": "Tab name for the docket editor. Default: 'Docket'"
-				},
-				"dct_path": {
-					"type": "string",
-					"description": "Optional: path to a .dct file to open. If not provided, shows all loaded projects."
-				}
+	var open_desc := "Open a docket editor tab in Minerva. Optionally open a specific project docket by path."
+	var open_schema := {
+		"type": "object",
+		"properties": {
+			"name": {
+				"type": "string",
+				"description": "Tab name for the docket editor. Default: 'Docket'"
 			},
-		}
-	, "docket")
+			"dct_path": {
+				"type": "string",
+				"description": "Optional: path to a .dct file to open. If not provided, shows all loaded projects."
+			}
+		},
+	}
+	_tool_names.append("minerva_open_docket")
+	server._register_tool("minerva_open_docket", open_desc, open_schema, "docket")
+	server.tool_budget_manager.activate_tool("minerva_open_docket", {"name": "minerva_open_docket", "description": open_desc, "input_schema": open_schema})
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
