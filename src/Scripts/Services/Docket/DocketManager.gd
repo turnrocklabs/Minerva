@@ -320,6 +320,6 @@ func _add_project_from_tool(path: String) -> Dictionary:
 	return open_project(path)
 
 
-func _remove_project_from_tool(name: String) -> Dictionary:
+func _remove_project_from_tool(project_name_: String) -> Dictionary:
 	## Callback for ToolRegistry's docket_project_remove tool.
-	return close_project(name)
+	return close_project(project_name_)
