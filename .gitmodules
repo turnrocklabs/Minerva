@@ -8,3 +8,6 @@
 [submodule "vendor/godot_wry"]
 	path = vendor/godot_wry
 	url = https://github.com/doceazedo/godot_wry.git
+[submodule "vendor/EIRTeam.FFmpeg"]
+	path = vendor/EIRTeam.FFmpeg
+	url = https://github.com/EIRTeam/EIRTeam.FFmpeg.git

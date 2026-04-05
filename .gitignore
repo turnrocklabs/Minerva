@@ -30,7 +30,7 @@ src/addons/godot_wry/bin/**/*.so
 src/addons/godot_wry/bin/**/*.dylib
 src/addons/godot_wry/bin/**/*.dll
 
-# ffmpeg addon binaries (downloaded by build script)
+# ffmpeg addon binaries (downloaded or built from vendor/EIRTeam.FFmpeg)
 src/addons/ffmpeg/linux64/*.so*
 src/addons/ffmpeg/macos/*.dylib
 src/addons/ffmpeg/macos/*.framework/
@@ -47,6 +47,8 @@ plugins/elgato/node_modules/
 *.dct-wal
 *.dct-shm
 *.dct.cache
+*.dct.cache-shm
+*.dct.cache-wal
 *.dct.lock
 *.dct.tmp.*
 .sconsign.dblite

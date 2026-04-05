@@ -6,7 +6,7 @@
 #   - Zig 0.15.2 (downloaded to ~/.local/bin)
 #   - SCons (via pip)
 #   - Rust/Cargo (must be pre-installed via rustup for godot_wry)
-#   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry)
+#   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry, vendor/EIRTeam.FFmpeg)
 #
 # Linux-only prereqs for godot_wry: libgtk-3-dev libwebkit2gtk-4.1-dev
 
@@ -168,7 +168,7 @@ else
     fi
 fi
 
-# ── Download EIRTeam.FFmpeg if needed ─────────────────────────────────
+# ── Install EIRTeam.FFmpeg (download prebuilt, fallback to source build) ──
 
 FFMPEG_VERSION="1.1.4"
 FFMPEG_TAG="autobuild-2025-11-12-13-44"
@@ -176,23 +176,26 @@ FFMPEG_ZIP="eirteam-ffmpeg-${FFMPEG_VERSION}.zip"
 FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/${FFMPEG_TAG}/${FFMPEG_ZIP}"
 FFMPEG_MARKER="src/addons/ffmpeg/.ffmpeg-version"
 
-if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ]; then
-    echo "EIRTeam.FFmpeg $FFMPEG_VERSION already installed"
-else
+install_ffmpeg_from_download() {
     echo ""
     echo "=== Downloading EIRTeam.FFmpeg $FFMPEG_VERSION ==="
     TMP_FFMPEG=$(mktemp -d)
-    curl -L -o "$TMP_FFMPEG/$FFMPEG_ZIP" "$FFMPEG_URL"
-    unzip -o "$TMP_FFMPEG/$FFMPEG_ZIP" -d "$TMP_FFMPEG/extract"
-
-    # Find the addon directory inside the zip (may be nested)
-    FFMPEG_SRC=$(find "$TMP_FFMPEG/extract" -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
-    if [ -z "$FFMPEG_SRC" ]; then
-        echo "ERROR: Could not find ffmpeg.gdextension in downloaded zip"
-        exit 1
+    if ! curl -fL -o "$TMP_FFMPEG/$FFMPEG_ZIP" "$FFMPEG_URL"; then
+        rm -rf "$TMP_FFMPEG"
+        return 1
+    fi
+    if ! unzip -o "$TMP_FFMPEG/$FFMPEG_ZIP" -d "$TMP_FFMPEG/extract" >/dev/null; then
+        rm -rf "$TMP_FFMPEG"
+        return 1
     fi
 
-    # Copy platform binaries
+    FFMPEG_SRC=$(find "$TMP_FFMPEG/extract" -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
+    if [ -z "$FFMPEG_SRC" ]; then
+        echo "WARNING: Could not find ffmpeg.gdextension in downloaded zip"
+        rm -rf "$TMP_FFMPEG"
+        return 1
+    fi
+
     for subdir in linux64 win64 macos; do
         if [ -d "$FFMPEG_SRC/$subdir" ]; then
             mkdir -p "src/addons/ffmpeg/$subdir"
@@ -200,7 +203,6 @@ else
             echo "  Installed ffmpeg $subdir"
         fi
     done
-    # Copy macOS frameworks
     if [ -d "$FFMPEG_SRC/macos" ]; then
         cp -r "$FFMPEG_SRC/macos/"*.framework "src/addons/ffmpeg/macos/" 2>/dev/null || true
     fi
@@ -208,6 +210,23 @@ else
     echo "$FFMPEG_VERSION" > "$FFMPEG_MARKER"
     rm -rf "$TMP_FFMPEG"
     echo "EIRTeam.FFmpeg $FFMPEG_VERSION installed"
+}
+
+install_ffmpeg_from_source() {
+    echo ""
+    echo "=== Download failed — building EIRTeam.FFmpeg from source ==="
+    if [ -x "scripts/build-ffmpeg.sh" ]; then
+        scripts/build-ffmpeg.sh "$PLATFORM"
+    else
+        echo "ERROR: scripts/build-ffmpeg.sh not found or not executable"
+        echo "       FFmpeg addon will not be available."
+    fi
+}
+
+if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ]; then
+    echo "EIRTeam.FFmpeg $FFMPEG_VERSION already installed"
+else
+    install_ffmpeg_from_download || install_ffmpeg_from_source
 fi
 
 # ── Verify ────────────────────────────────────────────────────────────
