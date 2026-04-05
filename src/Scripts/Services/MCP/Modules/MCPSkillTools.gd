@@ -18,21 +18,29 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	# Skill tools — these are PROTECTED (always available, never pruned)
-	var list_desc := "List all available skills — from both Minerva skill manager and docket master. Skills contain step-by-step instructions for common tasks (agent supervision, tool usage, knowledge management, work tracking). Use minerva_get_skill to load full instructions."
+	var list_desc := "List available skills (lean: name + description only). Skills provide step-by-step instructions — load before starting unfamiliar work. Key categories: tool-usage (efficient tool patterns), tool-suite (docket, cobrowser, terminal guides — load before first use of a suite), agent-supervision (decompose work, spawn sub-agents, coordinate). Use query/tags to filter. Call minerva_get_skill to load full instructions."
 	var list_schema := {
 		"type": "object",
 		"properties": {
+			"query": {
+				"type": "string",
+				"description": "Text search across skill titles and descriptions"
+			},
+			"tags": {
+				"type": "array",
+				"items": {"type": "string"},
+				"description": "Filter by tags (e.g. 'tool-suite', 'agent-supervision', 'tool-usage')"
+			},
 			"include_profiles": {
 				"type": "boolean",
-				"description": "Also include tool profiles (default false — only user skills)"
+				"description": "Also include tool profiles (default false)"
 			}
 		},
-		"required": []
 	}
 	server._register_tool("minerva_list_skills", list_desc, list_schema, "utility")
 	server.tool_budget_manager.activate_tool("minerva_list_skills", {"name": "minerva_list_skills", "description": list_desc, "input_schema": list_schema})
 
-	var get_desc := "Get full details of a skill including step-by-step instructions, preconditions, and expected outcome. Use the skill_id from minerva_list_skills, or search by title."
+	var get_desc := "Get full skill details: step-by-step instructions, preconditions, and expected outcome. Use skill_id from minerva_list_skills, or search by title. Searches across all loaded docket projects."
 	var get_schema := {
 		"type": "object",
 		"properties": {
@@ -43,6 +51,10 @@ func register_tools() -> void:
 			"title": {
 				"type": "string",
 				"description": "Search by skill title (alternative to skill_id)"
+			},
+			"project": {
+				"type": "string",
+				"description": "Docket project name hint (optional — searches all projects if omitted)"
 			}
 		},
 	}
@@ -147,6 +159,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 #region Skill Handlers
 
 func _skill_list(arguments: Dictionary) -> Dictionary:
+	var query_text: String = str(arguments.get("query", "")).to_lower()
+	var filter_tags: Array = arguments.get("tags", [])
 	var result: Array[Dictionary] = []
 
 	# Minerva SkillManager skills (note-based)
@@ -156,71 +170,107 @@ func _skill_list(arguments: Dictionary) -> Dictionary:
 		for skill in skill_manager.skills:
 			if not include_profiles and skill.is_profile():
 				continue
-			result.append({
+			var entry := {
 				"id": skill.id,
 				"name": skill.name,
 				"description": skill.description,
-				"origin": skill.origin,
-				"type": "profile" if skill.is_profile() else "skill",
-				"active": skill_manager.is_active(skill.id),
-				"has_instructions": skill.has_instructions(),
-				"has_executable": skill.has_executable(),
-			})
+				"origin": "minerva",
+			}
+			if _matches_filters(entry, query_text, filter_tags):
+				result.append(entry)
 
-	# Docket master skills
+	# Docket skills — search ALL loaded projects
 	var dm: DocketManager = SingletonObject.docket_manager
 	if dm:
-		var docket_result := dm.call_tool("docket_skill_list", {})
-		if not docket_result.has("error") and docket_result.has("skills"):
-			for dskill in docket_result["skills"]:
-				result.append({
-					"id": str(dskill.get("id", "")),
-					"name": str(dskill.get("title", "")),
-					"description": str(dskill.get("description", "")),
-					"origin": "docket",
-					"type": "skill",
-				})
+		for proj_name in dm.get_loaded_projects():
+			var docket_args := {"project": proj_name}
+			if not query_text.is_empty():
+				docket_args["query"] = query_text
+			if not filter_tags.is_empty():
+				docket_args["tags"] = filter_tags
+			var docket_result := dm.call_tool("docket_skill_list", docket_args)
+			if not docket_result.has("error") and docket_result.has("skills"):
+				for dskill in docket_result["skills"]:
+					var entry := {
+						"id": str(dskill.get("id", "")),
+						"name": str(dskill.get("title", "")),
+						"description": str(dskill.get("description", "")),
+						"origin": "docket",
+						"project": proj_name,
+					}
+					# Docket already filtered by query/tags, but apply text filter for SkillManager consistency
+					if not query_text.is_empty() and not _matches_filters(entry, query_text, []):
+						continue
+					result.append(entry)
 
 	return {"success": true, "skills": result, "count": result.size()}
+
+
+func _matches_filters(entry: Dictionary, query_text: String, filter_tags: Array) -> bool:
+	# Text search on name + description
+	if not query_text.is_empty():
+		var name_lower: String = str(entry.get("name", "")).to_lower()
+		var desc_lower: String = str(entry.get("description", "")).to_lower()
+		if not name_lower.contains(query_text) and not desc_lower.contains(query_text):
+			return false
+	# Tag filtering (if we have tags on the entry)
+	if not filter_tags.is_empty() and entry.has("tags"):
+		var entry_tags: Array = entry.get("tags", [])
+		for required_tag in filter_tags:
+			if str(required_tag) not in entry_tags:
+				return false
+	return true
 
 
 func _skill_get(arguments: Dictionary) -> Dictionary:
 	var skill_id: String = arguments.get("skill_id", "")
 	var title: String = arguments.get("title", "")
+	var project_hint: String = arguments.get("project", "")
 
-	# Try docket first if we have a title or docket-style ID
+	if skill_id.is_empty() and title.is_empty():
+		return MCPToolUtils.error("skill_id or title is required")
+
+	# Search docket projects for the skill
 	var dm: DocketManager = SingletonObject.docket_manager
 	if dm and (not title.is_empty() or (not skill_id.is_empty() and skill_id.length() >= 7)):
-		var docket_args := {}
-		if not title.is_empty():
-			docket_args["title"] = title
-		elif not skill_id.is_empty():
-			docket_args["id"] = skill_id
-		var docket_result := dm.call_tool("docket_skill_get", docket_args)
-		if not docket_result.has("error"):
-			return {
-				"success": true,
-				"id": str(docket_result.get("id", "")),
-				"name": str(docket_result.get("title", "")),
-				"description": str(docket_result.get("description", "")),
-				"origin": "docket",
-				"type": "skill",
-				"instructions": str(docket_result.get("steps", "")),
-				"preconditions": str(docket_result.get("preconditions", "")),
-				"outcome": str(docket_result.get("outcome", "")),
-			}
+		# If project hint given, search that project first
+		var projects_to_search: Array[String] = []
+		if not project_hint.is_empty():
+			projects_to_search.append(project_hint)
+		# Then search all loaded projects
+		for pname in dm.get_loaded_projects():
+			if pname not in projects_to_search:
+				projects_to_search.append(pname)
 
-	# Fall back to SkillManager
+		for proj_name in projects_to_search:
+			var docket_args := {"project": proj_name}
+			if not title.is_empty():
+				docket_args["title"] = title
+			elif not skill_id.is_empty():
+				docket_args["id"] = skill_id
+			var docket_result := dm.call_tool("docket_skill_get", docket_args)
+			if not docket_result.has("error"):
+				return {
+					"success": true,
+					"id": str(docket_result.get("id", "")),
+					"name": str(docket_result.get("title", "")),
+					"description": str(docket_result.get("description", "")),
+					"origin": "docket",
+					"project": proj_name,
+					"type": "skill",
+					"instructions": str(docket_result.get("steps", "")),
+					"preconditions": str(docket_result.get("preconditions", "")),
+					"outcome": str(docket_result.get("outcome", "")),
+				}
+
+	# Fall back to SkillManager (note-based skills)
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
 		return MCPToolUtils.error("Skill not found")
 
-	if skill_id.is_empty():
-		return MCPToolUtils.error("skill_id or title is required")
-
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
-		return MCPToolUtils.error("Skill not found: %s" % skill_id)
+		return MCPToolUtils.error("Skill not found: %s" % [skill_id if not skill_id.is_empty() else title])
 
 	var data := {
 		"success": true,
