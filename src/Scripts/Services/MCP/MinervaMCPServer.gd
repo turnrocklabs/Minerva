@@ -64,7 +64,7 @@ func _init(manager = null) -> void:
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
 		# Auto-activate tool_search in the budget manager
-		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools plus connected external MCP servers. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, webview, PCB, graphics, video, agents, costs. External servers (docket, nudge, etc.) searchable by name.", "input_schema": {
+		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools plus connected external MCP servers. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, webview, PCB, graphics, video, agents, docket, costs. Docket tools: work tracking (create/query/transition items), knowledge (skills, hints, quality scoring), projects. Search 'docket skill' for skill discovery, 'docket' for all work tracking tools.", "input_schema": {
 			"type": "object", "properties": {
 				"query": {"type": "string", "description": "Keyword search or exact tool name"},
 				"category": {"type": "string", "description": "Filter by category (optional)"},
