@@ -71,8 +71,8 @@ func _open_docket_editor(args: Dictionary) -> Dictionary:
 			if open_result.has("error"):
 				return MCPToolUtils.error(str(open_result["error"]))
 
-	SingletonObject.show_docket()
-	return {"success": true, "message": "Docket panel shown."}
+	SingletonObject.open_docket_tab()
+	return {"success": true, "message": "Docket tab opened."}
 
 
 static func _categorize(tool_name: String) -> String:

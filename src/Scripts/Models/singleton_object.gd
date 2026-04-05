@@ -847,8 +847,6 @@ var creatable_item_registry: CreatableItemRegistry = CreatableItemRegistry.new()
 
 #region Docket
 var docket_manager: DocketManager = null
-var docket_panel: DocketPanel = null
-var _docket_visible: bool = false
 
 func _init_docket() -> void:
 	docket_manager = DocketManager.new()
@@ -857,38 +855,18 @@ func _init_docket() -> void:
 	print("[SingletonObject] Docket initialized (%d projects)" % docket_manager.get_loaded_projects().size())
 
 
-func show_docket() -> void:
-	## Show docket panel, hide editor pane. Toggle behavior.
-	if _docket_visible:
-		hide_docket()
+func open_docket_tab() -> void:
+	## Open (or switch to) a docket tab in the editor pane.
+	var ep = editor_container.editor_pane if editor_container else null
+	if not ep:
 		return
-	if not docket_panel:
-		docket_panel = DocketPanel.new()
-		docket_panel.name = "DocketPanel"
-		docket_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		docket_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		docket_panel.visible = false
-		docket_panel.init(docket_manager)
-		# Add as sibling of editor_container in the MiddlePane VBoxContainer
-		if editor_container:
-			editor_container.get_parent().add_child(docket_panel)
-	if editor_container:
-		editor_container.visible = false
-	docket_panel.visible = true
-	_docket_visible = true
-
-
-func hide_docket() -> void:
-	## Hide docket panel, show editor pane.
-	if docket_panel:
-		docket_panel.visible = false
-	if editor_container:
-		editor_container.visible = true
-	_docket_visible = false
-
-
-func is_docket_visible() -> bool:
-	return _docket_visible
+	# Check if a docket tab already exists — switch to it
+	for editor: Editor in ep.Tabs.get_children():
+		if editor is Editor and editor.type == Editor.Type.DOCKET:
+			ep.Tabs.current_tab = ep.Tabs.get_tab_idx_from_control(editor)
+			return
+	# Create new docket tab
+	ep.add(Editor.Type.DOCKET, null, "Docket")
 #endregion Docket
 
 #region Agent System

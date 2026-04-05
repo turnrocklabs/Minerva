@@ -211,7 +211,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_item("Add MCP Server...", 106)
 	tools_menu.add_item("Install Stream Deck Plugin...", 107)
 	tools_menu.add_item("Plugin Manager...", 108)
-	tools_menu.add_check_item("Docket", 109)
+	tools_menu.add_item("Docket...", 109)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
@@ -337,15 +337,7 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 		108:
 			_open_plugin_manager()
 		109:
-			_toggle_docket()
-
-
-func _toggle_docket() -> void:
-	SingletonObject.show_docket()  # show_docket() already toggles
-	# Update checkmark state
-	var idx := tools_menu.get_item_index(109)
-	if idx >= 0:
-		tools_menu.set_item_checked(idx, SingletonObject.is_docket_visible())
+			SingletonObject.open_docket_tab()
 
 
 func _open_plugin_manager() -> void:
