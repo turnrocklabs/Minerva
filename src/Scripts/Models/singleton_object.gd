@@ -874,11 +874,6 @@ func show_docket() -> void:
 			editor_container.get_parent().add_child(docket_panel)
 	if editor_container:
 		editor_container.visible = false
-	# Also hide the editor toolbar (HBoxContainer sibling)
-	if editor_container and editor_container.get_parent():
-		for child in editor_container.get_parent().get_children():
-			if child is HBoxContainer and child != docket_panel:
-				child.visible = false
 	docket_panel.visible = true
 	_docket_visible = true
 
@@ -889,11 +884,6 @@ func hide_docket() -> void:
 		docket_panel.visible = false
 	if editor_container:
 		editor_container.visible = true
-	# Re-show the editor toolbar
-	if editor_container and editor_container.get_parent():
-		for child in editor_container.get_parent().get_children():
-			if child is HBoxContainer:
-				child.visible = true
 	_docket_visible = false
 
 
