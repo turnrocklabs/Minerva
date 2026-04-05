@@ -80,6 +80,16 @@ const AGENT_SYSTEM_PROMPT_CODETOOLS: String = """
 - When editing, make targeted changes rather than rewriting entire files.
 """
 
+const AGENT_SYSTEM_PROMPT_DOCKET: String = """
+## Docket Knowledge & Skills
+Docket is Minerva's integrated work tracker and knowledge base. Skills are executable pipelines available to you:
+- Use `docket_skill_list` to discover available skills (agent supervision, tool usage patterns, etc.)
+- Use `docket_skill_get` with a skill title to load full instructions when you need them
+- Use `docket_hint_get` and `docket_hint_query` to check for known gotchas and working patterns before starting work
+- When you learn something non-obvious, save it with `docket_hint_set` for future sessions
+- Use `docket_quality` to rate knowledge that helped or misled you (-5 to +5)
+"""
+
 const AGENT_SYSTEM_PROMPT_ERROR: String = """
 ## Error Handling
 - If a tool times out or fails, try a different approach rather than retrying the same thing.
@@ -121,20 +131,25 @@ func _build_agent_system_prompt(history = null) -> String:
 		for frag in fragments:
 			prompt += "\n\n" + frag
 
-	# Check which tool categories are available (legacy fallback)
+	# Check which tool categories are available
 	var has_cobrowser = false
 	var has_codetools = false
+	var has_docket = false
 	for tool in tools:
 		var tool_name: String = tool.name if "name" in tool else ""
 		if tool_name.begins_with("cobrowser"):
 			has_cobrowser = true
 		elif tool_name in ["glob", "grep", "read", "read_file", "write", "write_file", "edit"]:
 			has_codetools = true
+		elif tool_name.begins_with("docket_"):
+			has_docket = true
 
 	if has_cobrowser:
 		prompt += AGENT_SYSTEM_PROMPT_COBROWSER
 	if has_codetools:
 		prompt += AGENT_SYSTEM_PROMPT_CODETOOLS
+	if has_docket:
+		prompt += AGENT_SYSTEM_PROMPT_DOCKET
 
 	prompt += AGENT_SYSTEM_PROMPT_ERROR
 	return prompt
