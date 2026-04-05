@@ -919,21 +919,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 ## Find a PCB editor by name. Returns the inner PCBEditor panel or null.
 
-	var clean_name = name_.strip_edges()
-
-	# Look for PCB editor type
-	for editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.PCB and editor.tab_title == clean_name:
-			return editor.pcb_editor
-
-	# Case-insensitive match
-	var lower_name = clean_name.to_lower()
-	for editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.PCB and editor.tab_title.to_lower() == lower_name:
-			return editor.pcb_editor
-
-	return null
-
 
 ## Helper: find nearest component to a position within max_distance.
 func _find_nearest_component(pos: Vector2, component_positions: Dictionary, max_distance: float = 20.0) -> String:

@@ -98,14 +98,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
-
-	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorGDScript.Type.WEBVIEW:
-		return null
-
-	return editor
-
-
 func _create_webview_panel(arguments: Dictionary) -> Dictionary:
 	var panel_name: String = arguments.get("name", "")
 	var html: String = arguments.get("html", "")

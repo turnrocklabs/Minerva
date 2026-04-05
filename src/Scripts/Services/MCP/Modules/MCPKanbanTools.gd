@@ -158,30 +158,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
-
-	# Clean up the name - models sometimes add whitespace/newlines
-	var clean_name = name_.strip_edges()
-
-	# First try exact match
-	for editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.KANBAN and editor.tab_title == clean_name:
-			return editor.kanban_board
-
-	# Try case-insensitive match
-	var lower_name = clean_name.to_lower()
-	for editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.KANBAN and editor.tab_title.to_lower() == lower_name:
-			return editor.kanban_board
-
-	# Try partial/contains match (in case model adds extra text)
-	for editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.KANBAN:
-			if editor.tab_title.to_lower().contains(lower_name) or lower_name.contains(editor.tab_title.to_lower()):
-				return editor.kanban_board
-
-	return null
-
-
 func _get_all_kanban_boards() -> Array[Dictionary]:
 	var boards: Array[Dictionary] = []
 	var editor_pane = SingletonObject.editor_pane

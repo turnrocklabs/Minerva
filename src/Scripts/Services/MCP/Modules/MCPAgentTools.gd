@@ -50,7 +50,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _spawn_agent(arguments)
 		# Worker tools
 		"minerva_spawn_worker":
-			return _spawn_worker(arguments)
+			return await _spawn_worker(arguments)
 		"minerva_check_worker":
 			return _check_worker(arguments)
 		"minerva_list_workers":

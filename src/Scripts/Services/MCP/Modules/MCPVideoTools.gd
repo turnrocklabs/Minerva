@@ -213,21 +213,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 ## Find a video editor by tab name
 
-	var clean_name = name_.strip_edges()
-
-	# Exact match
-	for editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.VIDEO_EDITOR and editor.tab_title == clean_name:
-			return editor.video_editor_panel
-
-	# Case-insensitive match
-	var lower_name = clean_name.to_lower()
-	for editor in editor_pane.get_open_editors():
-		if editor.type == Editor.Type.VIDEO_EDITOR and editor.tab_title.to_lower() == lower_name:
-			return editor.video_editor_panel
-
-	return null
-
 
 ## Create a new video editor
 func _create_video_editor(args: Dictionary) -> Dictionary:

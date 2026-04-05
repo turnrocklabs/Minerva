@@ -769,14 +769,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 #region Helpers
 
-
-	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorGDScript.Type.SPREADSHEET:
-		return null
-
-	return editor
-
-
 ## Helper to generate CSV including empty rows from row 0
 func _to_csv_with_empty_rows(data) -> String:
 	var used_range: Rect2i = data.get_used_range()
