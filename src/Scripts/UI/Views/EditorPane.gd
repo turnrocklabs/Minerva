@@ -212,6 +212,13 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
+			Editor.Type.DOCKET:
+				var tab_name = "Docket"
+				if name_:
+					tab_name = name_
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+
 	return editor_node
 
 
@@ -221,6 +228,9 @@ func add_pcb_editor(name_: String = "") -> Editor:
 
 func add_webview_editor(name_: String = "") -> Editor:
 	return add(Editor.Type.WEBVIEW, null, name_, null, true)
+
+func add_docket_editor(name_: String = "Docket") -> Editor:
+	return add(Editor.Type.DOCKET, null, name_, null, true)
 
 func add_plugin_panel_editor(plugin_id: String, panel_name: String, panel_html: String, tab_title: String = "") -> Editor:
 	var title := tab_title if not tab_title.is_empty() else panel_name

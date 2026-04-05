@@ -41,6 +41,7 @@ var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid ci
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
 var worker_status_panel  # WorkerStatusPanel - type annotation removed to avoid circular dependency
+var docket_editor  # DocketEditorPanel - type annotation removed to avoid circular dependency
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -81,6 +82,7 @@ enum Type {
 	WEBVIEW,
 	PLUGIN_MANAGER,
 	WORKER_STATUS,
+	DOCKET,
 }
 
 
@@ -275,6 +277,15 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			panel.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			vbox_container.add_child(panel)
 			editor.worker_status_panel = panel
+
+		Editor.Type.DOCKET:
+			vbox_container.clip_contents = true
+			var new_docket_editor = DocketEditorPanel.new()
+			new_docket_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
+			new_docket_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
+			vbox_container.add_child(new_docket_editor)
+			editor.docket_editor = new_docket_editor
+			new_docket_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
 
 	return editor
 
