@@ -25,12 +25,32 @@ func register_tools() -> void:
 		_tool_names.append(tool_name)
 		var desc: String = def.get("description", "")
 		var schema: Dictionary = def.get("inputSchema", {})
-		# Categorize tools for Minerva's tool set system
 		var category := _categorize(tool_name)
 		server._register_tool(tool_name, desc, schema, category)
 
+	# Register Minerva-specific docket UI tools
+	_tool_names.append("minerva_open_docket")
+	server._register_tool("minerva_open_docket",
+		"Open a docket editor tab in Minerva. Optionally open a specific project docket by path.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Tab name for the docket editor. Default: 'Docket'"
+				},
+				"dct_path": {
+					"type": "string",
+					"description": "Optional: path to a .dct file to open. If not provided, shows all loaded projects."
+				}
+			},
+		}
+	, "docket")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+	if tool_name == "minerva_open_docket":
+		return _open_docket_editor(arguments)
 	var dm: DocketManager = SingletonObject.docket_manager
 	if not dm:
 		return MCPToolUtils.error("DocketManager not available")
@@ -38,6 +58,31 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	if result.has("error"):
 		return MCPToolUtils.error(str(result["error"]))
 	return result
+
+
+func _open_docket_editor(args: Dictionary) -> Dictionary:
+	var tab_name: String = args.get("name", "Docket")
+	var dct_path: String = args.get("dct_path", "")
+
+	# Open project docket if path provided
+	if not dct_path.is_empty():
+		var dm: DocketManager = SingletonObject.docket_manager
+		if dm:
+			var open_result := dm.open_project(dct_path)
+			if open_result.has("error"):
+				return MCPToolUtils.error(str(open_result["error"]))
+			if tab_name == "Docket" and open_result.has("project"):
+				tab_name = str(open_result["project"])
+
+	var editor_pane = SingletonObject.editor_container.editor_pane
+	if not editor_pane:
+		return MCPToolUtils.error("Editor pane not available")
+
+	var editor = editor_pane.add_docket_editor(tab_name)
+	if not editor:
+		return MCPToolUtils.error("Failed to create docket editor")
+
+	return {"success": true, "editor_name": tab_name, "message": "Docket editor opened."}
 
 
 static func _categorize(tool_name: String) -> String:

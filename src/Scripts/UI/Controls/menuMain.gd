@@ -211,6 +211,7 @@ func _setup_tools_menu() -> void:
 	tools_menu.add_item("Add MCP Server...", 106)
 	tools_menu.add_item("Install Stream Deck Plugin...", 107)
 	tools_menu.add_item("Plugin Manager...", 108)
+	tools_menu.add_item("Docket...", 109)
 	tools_menu.add_item("Refresh All Connections", 100)
 	tools_menu.id_pressed.connect(_on_tools_menu_id_pressed)
 
@@ -250,10 +251,10 @@ func _rebuild_server_submenus() -> void:
 func _add_server_submenus_to_menu() -> void:
 	# Clean up old submenu nodes
 	for server_name in _server_submenus:
-		var submenu: PopupMenu = _server_submenus[server_name]
-		if is_instance_valid(submenu):
-			tools_menu.remove_child(submenu)
-			submenu.queue_free()
+		var server_submenu: PopupMenu = _server_submenus[server_name]
+		if is_instance_valid(server_submenu):
+			tools_menu.remove_child(server_submenu)
+			server_submenu.queue_free()
 	_server_submenus.clear()
 
 	var mcp = SingletonObject.mcp_manager
@@ -335,6 +336,12 @@ func _on_tools_menu_id_pressed(id: int) -> void:
 			_install_streamdeck_plugin()
 		108:
 			_open_plugin_manager()
+		109:
+			_open_docket()
+
+
+func _open_docket() -> void:
+	SingletonObject.editor_container.editor_pane.add_docket_editor("Docket")
 
 
 func _open_plugin_manager() -> void:
@@ -879,11 +886,11 @@ func _refresh_all_tool_submenus() -> void:
 
 ## Refresh a dynamic server submenu with status and actions
 func _refresh_dynamic_server_submenu(server_name: String) -> void:
-	var submenu: PopupMenu = _server_submenus.get(server_name)
-	if not submenu:
+	var server_submenu: PopupMenu = _server_submenus.get(server_name)
+	if not server_submenu:
 		return
 
-	submenu.clear()
+	server_submenu.clear()
 
 	var mcp = SingletonObject.mcp_manager
 	var connected = mcp and mcp.is_server_connected(server_name)
@@ -903,45 +910,45 @@ func _refresh_dynamic_server_submenu(server_name: String) -> void:
 		status_text = "◇ User Server"
 	else:
 		status_text = "⚠ Not Installed"
-	submenu.add_item(status_text, -1)
-	submenu.set_item_disabled(0, true)
+	server_submenu.add_item(status_text, -1)
+	server_submenu.set_item_disabled(0, true)
 
 	# Connection status
 	var conn_text = "  ✓ Connected" if connected else "  ✗ Disconnected"
-	submenu.add_item(conn_text, 0)
+	server_submenu.add_item(conn_text, 0)
 
-	submenu.add_separator()
+	server_submenu.add_separator()
 
 	# Start/Stop server (known installable servers only)
 	if is_known and MCPKnownServers.is_installable(server_name):
 		if is_installed:
 			if is_running:
-				submenu.add_item("Stop Server", 10)
+				server_submenu.add_item("Stop Server", 10)
 			else:
-				submenu.add_item("Start Server", 11)
+				server_submenu.add_item("Start Server", 11)
 			# Cobrowser-specific: Firefox extension
 			if server_name == "cobrowser":
-				submenu.add_separator()
-				submenu.add_item("Install Firefox Extension...", 20)
+				server_submenu.add_separator()
+				server_submenu.add_item("Install Firefox Extension...", 20)
 		else:
-			submenu.add_item("Locate Existing Installation...", 30)
+			server_submenu.add_item("Locate Existing Installation...", 30)
 
 	# Nudge-specific actions
 	if server_name == "nudge":
-		submenu.add_separator()
-		submenu.add_item("Pull All", 1)
-		submenu.add_item("Push Current Tab", 2)
-		submenu.add_item("Push All Tabs", 3)
-		submenu.add_item("Delete Current Tab", 4)
+		server_submenu.add_separator()
+		server_submenu.add_item("Pull All", 1)
+		server_submenu.add_item("Push Current Tab", 2)
+		server_submenu.add_item("Push All Tabs", 3)
+		server_submenu.add_item("Delete Current Tab", 4)
 		# Disable actions if not connected
-		var action_start_idx := submenu.get_item_index(1)
-		for i in range(action_start_idx, submenu.get_item_count()):
-			submenu.set_item_disabled(i, not connected)
+		var action_start_idx := server_submenu.get_item_index(1)
+		for i in range(action_start_idx, server_submenu.get_item_count()):
+			server_submenu.set_item_disabled(i, not connected)
 
 	# User servers get a Remove option
 	if is_user:
-		submenu.add_separator()
-		submenu.add_item("Remove Server", 40)
+		server_submenu.add_separator()
+		server_submenu.add_item("Remove Server", 40)
 
 
 ## Handle Nudge submenu item pressed (kept for nudge-specific actions)
