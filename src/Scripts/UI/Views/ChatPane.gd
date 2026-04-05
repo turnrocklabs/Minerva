@@ -51,75 +51,22 @@ const AGENT_SUMMARIZE_THRESHOLD: int = 60000  # Trigger summarization above this
 const AGENT_KEEP_RECENT_MESSAGES: int = 6  # Keep this many recent messages when summarizing
 
 ## Base agent system prompt - tool-specific sections added dynamically
-const AGENT_SYSTEM_PROMPT_BASE: String = """You are an AI assistant. You can only use tools that are explicitly provided to you in this conversation."""
+## Hardcoded fallback — only used if docket master prompt is unavailable.
+const AGENT_SYSTEM_PROMPT_FALLBACK: String = "You are an AI assistant with access to tools. Use `minerva_tool_search` to discover tools by keyword. Use `minerva_list_skills` to find step-by-step guides before unfamiliar work. Use `minerva_get_skill` to load a guide's full instructions. Be targeted and efficient."
 
-const AGENT_SYSTEM_PROMPT_GENERAL: String = """
-## General Principles
-- Plan your approach before acting. Think about what information you need and the most efficient way to get it.
-- Prefer targeted queries over broad data fetches. Getting specific data is better than getting everything.
-- If a tool result is truncated, adapt your approach to use more targeted queries.
-- Complete the task in as few tool calls as possible while being thorough.
-"""
-
-const AGENT_SYSTEM_PROMPT_COBROWSER: String = """
-## Co-Browser Tool Guidelines (when browsing web pages)
-- Start with `cobrowser_get_page_info` for quick page metadata.
-- Use `cobrowser_query_all` with specific CSS selectors to understand page structure before reading content.
-- AVOID `cobrowser_get_state` - it returns the entire DOM and is very expensive.
-- AVOID `cobrowser_screenshot` unless specifically needed - it can be slow.
-- Use `cobrowser_scroll` to find content below the fold or in infinite scroll containers.
-- Look for patterns like `.infinite-scroll`, `[class*='feed']`, `[class*='post']` for dynamic content.
-- When reading, use specific selectors rather than broad ones to get targeted content.
-"""
-
-const AGENT_SYSTEM_PROMPT_CODETOOLS: String = """
-## File/Code Tool Guidelines (when working with files)
-- Use `glob` to find files by pattern before reading them.
-- Use `grep` to search for specific content rather than reading entire files.
-- Read only the sections of files you need, not entire large files.
-- When editing, make targeted changes rather than rewriting entire files.
-"""
-
-const AGENT_SYSTEM_PROMPT_DOCKET: String = """
-## Docket Knowledge & Skills
-Docket is Minerva's integrated work tracker and knowledge base. Skills are executable pipelines available to you:
-- Use `docket_skill_list` to discover available skills (agent supervision, tool usage patterns, etc.)
-- Use `docket_skill_get` with a skill title to load full instructions when you need them
-- Use `docket_hint_get` and `docket_hint_query` to check for known gotchas and working patterns before starting work
-- When you learn something non-obvious, save it with `docket_hint_set` for future sessions
-- Use `docket_quality` to rate knowledge that helped or misled you (-5 to +5)
-"""
-
-const AGENT_SYSTEM_PROMPT_ERROR: String = """
-## Error Handling
-- If a tool times out or fails, try a different approach rather than retrying the same thing.
-- If results are truncated, use more specific queries to get the data you need.
-"""
-
-## Get a system prompt section from docket (active prompts only), falling back to hardcoded constant.
-func _get_prompt(key: String, fallback: String) -> String:
-	var dm: DocketManager = SingletonObject.docket_manager
-	if dm:
-		var text := dm.get_system_prompt(key)
-		if not text.is_empty():
-			return text
-	return fallback
-
-
-## Build the agent system prompt dynamically based on connected tools.
-## Prompts are loaded from docket (master → project override) with hardcoded fallback.
+## Build the agent system prompt.
+## Loads from docket master (key: agentic-base), falls back to hardcoded.
+## Skills provide all domain-specific guidance — the base prompt just bootstraps.
 func _build_agent_system_prompt(history = null) -> String:
-	var mcp = SingletonObject.get_mcp_manager()
-	if not mcp:
-		return _get_prompt("agentic-base", AGENT_SYSTEM_PROMPT_BASE)
+	# Load base prompt from docket (project override → master → fallback)
+	var dm: DocketManager = SingletonObject.docket_manager
+	var prompt: String = ""
+	if dm:
+		prompt = dm.get_system_prompt("agentic-base")
+	if prompt.is_empty():
+		prompt = AGENT_SYSTEM_PROMPT_FALLBACK
 
-	var tools = mcp.get_available_tools()
-	if tools.is_empty():
-		return _get_prompt("agentic-base", AGENT_SYSTEM_PROMPT_BASE) + "\n\nNote: No tools are currently connected. You cannot use any tools until they are enabled."
-
-	var prompt = _get_prompt("agentic-base", AGENT_SYSTEM_PROMPT_BASE) + _get_prompt("agentic-general", AGENT_SYSTEM_PROMPT_GENERAL)
-
-	# Collect prompt fragments from active profiles and skill instructions
+	# Inject skill instructions from active Minerva skills (note-based)
 	var skill_manager = SingletonObject.get_skill_manager()
 	if skill_manager and history:
 		var chat_skills: Array[String] = []
@@ -132,37 +79,14 @@ func _build_agent_system_prompt(history = null) -> String:
 					agent_skills.assign(agent_def.skills)
 					break
 
-		# Inject skill instructions from notes tabs (before profile fragments)
 		var instructions = skill_manager.get_skill_instructions(chat_skills, agent_skills)
 		if not instructions.is_empty():
 			prompt += "\n\n" + instructions
 
-		# Inject profile prompt fragments
 		var fragments = skill_manager.get_prompt_fragments(chat_skills, agent_skills)
 		for frag in fragments:
 			prompt += "\n\n" + frag
 
-	# Check which tool categories are available
-	var has_cobrowser = false
-	var has_codetools = false
-	var has_docket = false
-	for tool in tools:
-		var tool_name: String = tool.name if "name" in tool else ""
-		if tool_name.begins_with("cobrowser"):
-			has_cobrowser = true
-		elif tool_name in ["glob", "grep", "read", "read_file", "write", "write_file", "edit"]:
-			has_codetools = true
-		elif tool_name.begins_with("docket_"):
-			has_docket = true
-
-	if has_cobrowser:
-		prompt += _get_prompt("agentic-cobrowser", AGENT_SYSTEM_PROMPT_COBROWSER)
-	if has_codetools:
-		prompt += _get_prompt("agentic-codetools", AGENT_SYSTEM_PROMPT_CODETOOLS)
-	if has_docket:
-		prompt += _get_prompt("agentic-docket", AGENT_SYSTEM_PROMPT_DOCKET)
-
-	prompt += _get_prompt("agentic-error", AGENT_SYSTEM_PROMPT_ERROR)
 	return prompt
 
 # Script of the default provider to use when creating new chat tab
