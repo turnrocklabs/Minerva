@@ -6,10 +6,15 @@ var data_path: String = "user://drawer_data.json"
 ## Whether we have already loaded the drawer data on open
 var _loaded: = false
 
+func _ready() -> void:
+	# Eager load: restore drawer data on startup so it's never empty when save fires
+	load_drawer_data.call_deferred()
+
 func _notification(what: int) -> void:
 	match what:
 		NOTIFICATION_WM_CLOSE_REQUEST:
-			save_drawer_data()
+			if _loaded:
+				save_drawer_data()
 
 
 ## Main save function - called by signal
