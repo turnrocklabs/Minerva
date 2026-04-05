@@ -24,11 +24,8 @@ var _active_batches: Dictionary = {}
 ## Pending single-fire chains: trigger_id -> { chain_trigger_id, chain_visited }
 var _pending_single_chains: Dictionary = {}
 
-## Active docket polls in flight (trigger_id -> true) to prevent overlapping requests
-var _active_docket_polls: Dictionary = {}
-
-## Dedicated timers for DOCKET_POLL triggers with non-default intervals
-var _docket_poll_timers: Dictionary = {}
+## Signal connections for DOCKET_POLL triggers (trigger_id -> true)
+var _docket_signal_connected: Dictionary = {}
 
 ## Per-session dedup for PreToolUse route hints: trigger_id -> Set of fired route indices
 var _hook_route_shown: Dictionary = {}
@@ -128,7 +125,7 @@ func clear_all() -> void:
 	_active_trigger_chats.clear()
 	_active_batches.clear()
 	_pending_single_chains.clear()
-	_active_docket_polls.clear()
+	_docket_signal_connected.clear()
 	_hook_route_shown.clear()
 	triggers_changed.emit()
 
@@ -701,18 +698,7 @@ func _on_schedule_check() -> void:
 		if _fire_trigger(trig.id):
 			trig.last_fired_at = scheduled_occurrence
 
-	# Evaluate DOCKET_POLL triggers that piggyback on the 60s timer
-	# (triggers with custom intervals use their own dedicated timers)
-	for trig in triggers:
-		if not trig.enabled:
-			continue
-		if trig.trigger_type != TriggerDefinition.TriggerType.DOCKET_POLL:
-			continue
-		# Skip triggers with dedicated timers (non-default interval)
-		if _docket_poll_timers.has(trig.id):
-			continue
-		if _is_docket_poll_due(trig):
-			_poll_docket(trig)
+	# DOCKET_POLL triggers now use direct DocketManager signals — no polling needed
 
 
 ## Return the scheduled occurrence string if the trigger should fire now, else "".
@@ -862,248 +848,161 @@ func _is_leap_year(year: int) -> bool:
 #endregion Wall-Clock Schedules
 
 
-#region Docket Poll
+#region Docket Signals
 
 func _activate_docket_poll(trig: TriggerDefinition) -> void:
-	# If the poll interval differs from the 60s schedule timer, create a dedicated timer
-	var interval := maxf(trig.docket_poll_interval, 30.0)
-	if absf(interval - 60.0) > 1.0:
-		_stop_docket_poll_timer(trig)
-		var timer = Timer.new()
-		timer.name = "DocketPoll_%s" % trig.id
-		timer.wait_time = interval
-		timer.one_shot = false
-		timer.timeout.connect(_on_docket_poll_timer.bind(trig.id))
-		add_child(timer)
-		_docket_poll_timers[trig.id] = timer
-		timer.start()
-		print("[TriggerManager] Started docket poll timer for '%s' (%.0fs)" % [trig.id, interval])
-	else:
-		# Piggyback on the existing 60s _schedule_check_timer
-		print("[TriggerManager] Docket poll '%s' using default 60s schedule timer" % trig.id)
+	## Connect to DocketManager signals for real-time event-driven triggers.
+	_deactivate_docket_poll(trig)
+	var dm: DocketManager = SingletonObject.docket_manager
+	if not dm:
+		push_warning("[TriggerManager] DocketManager not available for trigger '%s'" % trig.id)
+		return
+	dm.item_created.connect(_on_docket_event_created.bind(trig.id))
+	dm.item_transitioned.connect(_on_docket_event_transitioned.bind(trig.id))
+	dm.item_updated.connect(_on_docket_event_updated.bind(trig.id))
+	dm.comment_added.connect(_on_docket_event_comment.bind(trig.id))
+	_docket_signal_connected[trig.id] = true
+	print("[TriggerManager] Connected docket signals for trigger '%s' (project=%s)" % [trig.id, trig.docket_project])
 
 
 func _deactivate_docket_poll(trig: TriggerDefinition) -> void:
-	_stop_docket_poll_timer(trig)
-	_active_docket_polls.erase(trig.id)
+	if not _docket_signal_connected.has(trig.id):
+		return
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm:
+		if dm.item_created.is_connected(_on_docket_event_created):
+			dm.item_created.disconnect(_on_docket_event_created)
+		if dm.item_transitioned.is_connected(_on_docket_event_transitioned):
+			dm.item_transitioned.disconnect(_on_docket_event_transitioned)
+		if dm.item_updated.is_connected(_on_docket_event_updated):
+			dm.item_updated.disconnect(_on_docket_event_updated)
+		if dm.comment_added.is_connected(_on_docket_event_comment):
+			dm.comment_added.disconnect(_on_docket_event_comment)
+	_docket_signal_connected.erase(trig.id)
 
 
-func _stop_docket_poll_timer(trig: TriggerDefinition) -> void:
-	if _docket_poll_timers.has(trig.id):
-		var timer: Timer = _docket_poll_timers[trig.id]
-		if is_instance_valid(timer):
-			timer.stop()
-			timer.queue_free()
-		_docket_poll_timers.erase(trig.id)
+func _on_docket_event_created(item_id: String, item_type: String, project: String, trigger_id: String) -> void:
+	_handle_docket_event(trigger_id, project, item_id, "created", item_type)
 
 
-func _on_docket_poll_timer(trigger_id: String) -> void:
-	var trig = get_trigger(trigger_id)
+func _on_docket_event_transitioned(item_id: String, old_status: String, new_status: String, project: String, trigger_id: String) -> void:
+	_handle_docket_event(trigger_id, project, item_id, "transitioned", "", old_status, new_status)
+
+
+func _on_docket_event_updated(item_id: String, project: String, trigger_id: String) -> void:
+	_handle_docket_event(trigger_id, project, item_id, "updated")
+
+
+func _on_docket_event_comment(item_id: String, project: String, trigger_id: String) -> void:
+	_handle_docket_event(trigger_id, project, item_id, "comment_added")
+
+
+func _handle_docket_event(trigger_id: String, project: String, item_id: String, event_type: String, item_type: String = "", old_status: String = "", new_status: String = "") -> void:
+	var trig := get_trigger(trigger_id)
 	if not trig or not trig.enabled:
 		return
-	if _is_docket_poll_due(trig):
-		_poll_docket(trig)
 
-
-func _is_docket_poll_due(trig: TriggerDefinition) -> bool:
-	if trig.docket_last_poll_at.is_empty():
-		return true
-	# Parse last poll time and compare with now
-	var last_poll_dt := Time.get_datetime_dict_from_datetime_string(trig.docket_last_poll_at, false)
-	if last_poll_dt.is_empty():
-		return true
-	var last_poll_unix := Time.get_unix_time_from_datetime_dict(last_poll_dt)
-	var now_unix := Time.get_unix_time_from_system()
-	var interval := maxf(trig.docket_poll_interval, 30.0)
-	return (now_unix - last_poll_unix) >= interval
-
-
-func _poll_docket(trig: TriggerDefinition) -> void:
-	# Guard: don't overlap polls for the same trigger
-	if _active_docket_polls.has(trig.id):
+	# Project filter
+	if not trig.docket_project.is_empty() and trig.docket_project != project:
 		return
 
-	# Guard: don't poll if trigger already has an active chat (anti-flood)
-	if _active_trigger_chats.has(trig.id):
-		var active_hid: String = _active_trigger_chats[trig.id]
+	# Item ID filter
+	if not trig.docket_filter_item_ids.is_empty():
+		var ids := trig.docket_filter_item_ids.split(",")
+		var matched := false
+		for id_str in ids:
+			if id_str.strip_edges() == item_id:
+				matched = true
+				break
+		if not matched:
+			return
+
+	# Type filter
+	if not trig.docket_filter_types.is_empty() and not item_type.is_empty():
+		var types := trig.docket_filter_types.split(",")
+		var matched := false
+		for t in types:
+			if t.strip_edges() == item_type:
+				matched = true
+				break
+		if not matched:
+			return
+
+	# Parent filter — requires DB lookup
+	if not trig.docket_filter_parent.is_empty():
+		var dm: DocketManager = SingletonObject.docket_manager
+		if dm:
+			var db := dm.get_db(project)
+			if db:
+				var item := db.get_item(item_id)
+				if item.is_empty() or str(item.get("parent", "")) != trig.docket_filter_parent:
+					return
+
+	# Tag filter — requires DB lookup
+	if not trig.docket_filter_tags.is_empty():
+		var dm: DocketManager = SingletonObject.docket_manager
+		if dm:
+			var db := dm.get_db(project)
+			if db:
+				var item := db.get_item(item_id)
+				var item_tags: Array = item.get("tags", [])
+				var filter_tags := trig.docket_filter_tags.split(",")
+				for ftag in filter_tags:
+					if not ftag.strip_edges().is_empty() and ftag.strip_edges() not in item_tags:
+						return
+
+	# Anti-flood: don't fire if trigger already has active chat
+	if _active_trigger_chats.has(trigger_id):
+		var active_hid: String = _active_trigger_chats[trigger_id]
 		for chat in SingletonObject.ChatList:
 			if chat.HistoryId == active_hid:
 				return
-		_active_trigger_chats.erase(trig.id)
+		_active_trigger_chats.erase(trigger_id)
 
-	# Validate project name
-	if trig.docket_project.is_empty():
-		print("[TriggerManager] Docket poll '%s' has no project configured, skipping" % trig.id)
-		return
+	# Build synthetic message
+	var synthetic := _build_docket_signal_message(project, item_id, event_type, old_status, new_status)
 
-	# Check MCP manager availability
-	var mcp_manager = SingletonObject.get_mcp_manager()
-	if not mcp_manager:
-		print("[TriggerManager] Docket poll '%s': MCP manager not available" % trig.id)
-		return
-
-	# Check docket server connectivity
-	if not mcp_manager.is_server_connected("docket"):
-		print("[TriggerManager] Docket poll '%s': docket server not connected" % trig.id)
-		return
-
-	_active_docket_polls[trig.id] = true
-	print("[TriggerManager] Polling docket for trigger '%s' (project=%s)" % [trig.id, trig.docket_project])
-
-	# Build the query arguments
-	var query_args: Dictionary = {
-		"project": trig.docket_project,
-		"sort": [{"field": "updated_at", "dir": "desc"}],
-		"detail": "lean",
-		"limit": 20,
-	}
-
-	# Add updated_at filter if we have a previous poll timestamp
-	if not trig.docket_last_poll_at.is_empty():
-		var filter_dict: Dictionary = {
-			"conditions": [
-				{"field": "updated_at", "op": "after", "value": trig.docket_last_poll_at}
-			]
-		}
-		# Add tag filter if configured
-		if not trig.docket_filter_tags.is_empty():
-			var tags := trig.docket_filter_tags.split(",")
-			for i in tags.size():
-				tags[i] = tags[i].strip_edges()
-			for tag in tags:
-				if not tag.is_empty():
-					filter_dict["conditions"].append(
-						{"conj": "and", "field": "tags", "op": "eq", "value": tag}
-					)
-		query_args["filter"] = filter_dict
-	elif not trig.docket_filter_tags.is_empty():
-		# First poll with tag filter but no timestamp
-		var tags := trig.docket_filter_tags.split(",")
-		var conditions: Array = []
-		for i in tags.size():
-			var tag := tags[i].strip_edges()
-			if tag.is_empty():
-				continue
-			if conditions.is_empty():
-				conditions.append({"field": "tags", "op": "eq", "value": tag})
-			else:
-				conditions.append({"conj": "and", "field": "tags", "op": "eq", "value": tag})
-		if not conditions.is_empty():
-			query_args["filter"] = {"conditions": conditions}
-
-	# Execute the MCP tool call (async)
-	var result: Dictionary = await mcp_manager.execute_tool("docket_query", query_args)
-
-	# Poll complete — remove in-flight guard
-	_active_docket_polls.erase(trig.id)
-
-	# Update the last poll timestamp regardless of result
-	var now_iso := Time.get_datetime_string_from_system(true)
-	trig.docket_last_poll_at = now_iso
-
-	# Handle errors
-	if result.get("error", ""):
-		print("[TriggerManager] Docket poll '%s' error: %s" % [trig.id, result.get("error", "unknown")])
-		return
-
-	if not result.get("success", false):
-		print("[TriggerManager] Docket poll '%s' unsuccessful" % trig.id)
-		return
-
-	# Extract items from the result
-	var items: Array = _extract_docket_items(result)
-	if items.is_empty():
-		print("[TriggerManager] Docket poll '%s': no changes detected" % trig.id)
-		return
-
-	print("[TriggerManager] Docket poll '%s': %d changed items found" % [trig.id, items.size()])
-
-	# Construct synthetic turn from changes
-	var synthetic_message := _build_docket_synthetic_turn(trig.docket_project, items)
-
-	# Fire the trigger with the synthetic message
-	# Temporarily set initial_message so _fire_trigger uses it
+	# Fire trigger with synthetic message
 	var original_message := trig.initial_message
-	trig.initial_message = synthetic_message
-	_fire_trigger(trig.id)
+	trig.initial_message = synthetic
+	_fire_trigger(trigger_id)
 	trig.initial_message = original_message
 
 
-func _extract_docket_items(result: Dictionary) -> Array:
-	# The MCP tool result is wrapped — look for items in common locations
-	# Result format from docket_query: {"success": true, "content": [...], "items": [...]}
-	# or the content may be a JSON string
-	if result.has("items") and result["items"] is Array:
-		return result["items"]
-
-	# Check if result has "content" which may contain the items
-	if result.has("content"):
-		var content = result["content"]
-		if content is Array:
-			# MCP content blocks: [{"type": "text", "text": "..."}]
-			for block in content:
-				if block is Dictionary and block.get("type", "") == "text":
-					var text: String = block.get("text", "")
-					if not text.is_empty():
-						var parsed = JSON.parse_string(text)
-						if parsed is Dictionary and parsed.has("items"):
-							return parsed["items"]
-						elif parsed is Array:
-							return parsed
-		elif content is String:
-			var parsed = JSON.parse_string(content)
-			if parsed is Dictionary and parsed.has("items"):
-				return parsed["items"]
-			elif parsed is Array:
-				return parsed
-
-	# Check for "result" key wrapping
-	if result.has("result"):
-		var inner = result["result"]
-		if inner is Dictionary:
-			return _extract_docket_items(inner)
-
-	return []
-
-
-func _build_docket_synthetic_turn(project: String, items: Array) -> String:
+func _build_docket_signal_message(project: String, item_id: String, event_type: String, old_status: String = "", new_status: String = "") -> String:
 	var lines: PackedStringArray = []
-	lines.append("Docket changes detected in project '%s':" % project)
+	lines.append("Docket event in project '%s':" % project)
 	lines.append("")
 
-	var shown := mini(items.size(), 20)
-	for i in shown:
-		var item = items[i]
-		if not item is Dictionary:
-			continue
-		var title: String = str(item.get("title", item.get("summary", "Untitled")))
-		var status: String = str(item.get("status", "unknown"))
-		var uid: String = str(item.get("uid", ""))
+	# Try to fetch item details for a richer message
+	var dm: DocketManager = SingletonObject.docket_manager
+	var title := item_id
+	var item_type := ""
+	var status := ""
+	if dm:
+		var db := dm.get_db(project)
+		if db:
+			var item := db.get_item(item_id)
+			if not item.is_empty():
+				title = str(item.get("title", item_id))
+				item_type = str(item.get("type", ""))
+				status = str(item.get("status", ""))
 
-		var line := "- %s (status: %s)" % [title, status]
-
-		# Include status transition if available
-		var transitions = item.get("transitions", item.get("transition_history", []))
-		if transitions is Array and not transitions.is_empty():
-			var last_transition = transitions[transitions.size() - 1]
-			if last_transition is Dictionary:
-				var from_status: String = str(last_transition.get("from", last_transition.get("from_status", "")))
-				var to_status: String = str(last_transition.get("to", last_transition.get("to_status", "")))
-				if not from_status.is_empty() and not to_status.is_empty():
-					line += " [%s -> %s]" % [from_status, to_status]
-
-		if not uid.is_empty():
-			line += " (uid: %s)" % uid
-
-		lines.append(line)
-
-	if items.size() > 20:
-		lines.append("")
-		lines.append("(and %d more)" % (items.size() - 20))
+	match event_type:
+		"created":
+			lines.append("- New %s created: '%s' (id: %s)" % [item_type, title, item_id])
+		"transitioned":
+			lines.append("- '%s' transitioned: %s → %s (id: %s)" % [title, old_status, new_status, item_id])
+		"updated":
+			lines.append("- '%s' updated (status: %s, id: %s)" % [title, status, item_id])
+		"comment_added":
+			lines.append("- New comment on '%s' (id: %s)" % [title, item_id])
+		_:
+			lines.append("- %s: '%s' (id: %s)" % [event_type, title, item_id])
 
 	return "\n".join(lines)
 
-#endregion Docket Poll
+#endregion Docket Signals
 
 
 #region Serialization (per-project)
