@@ -67,7 +67,7 @@ if ! command -v scons &>/dev/null; then
     echo "Installing SCons via pip..."
     pip3 install scons
 fi
-echo "SCons $(scons --version 2>&1 | grep -oP 'v[\d.]+' | head -1) ready"
+echo "SCons $(scons --version 2>&1 | grep -oE 'v[0-9.]+' | head -1) ready"
 
 # ── Build ghostty-vt shim (Zig) ──────────────────────────────────────
 
@@ -165,6 +165,11 @@ else
         else
             echo "WARNING: godot_wry binary not found at $WRY_SRC"
         fi
+
+        # Reset submodule to clean upstream so it doesn't show as dirty
+        cd vendor/godot_wry
+        git checkout -- . 2>/dev/null
+        cd "$OLDPWD"
     fi
 fi
 
