@@ -1,0 +1,257 @@
+{
+	"version": "1.0.0",
+	"id_prefix": "DKT",
+	"id_format": "uuid7",
+	"types": {
+		"bug": {
+			"label": "Bug",
+			"description": "Something is broken.",
+			"states": ["new", "triaged", "active", "resolved", "verified", "closed"],
+			"initial_state": "new",
+			"terminal_states": ["closed"],
+			"transitions": {
+				"new": ["triaged"],
+				"triaged": ["active", "closed"],
+				"active": ["resolved", "triaged"],
+				"resolved": ["verified", "active"],
+				"verified": ["closed", "active"],
+				"closed": []
+			},
+			"transition_rules": {
+				"resolved": {
+					"required_fields": ["resolution"]
+				}
+			},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "severity", "priority", "environment", "resolution", "repro_steps", "assigned_to", "directed_to", "tags"],
+			"resolutions": ["fixed", "wont_fix", "by_design", "duplicate", "not_repro"]
+		},
+		"dcr": {
+			"label": "DCR",
+			"description": "Design Change Request.",
+			"states": ["proposed", "approved", "designing", "implementing", "reviewing", "shipped"],
+			"initial_state": "proposed",
+			"terminal_states": ["shipped"],
+			"transitions": {
+				"proposed": ["approved", "shipped"],
+				"approved": ["designing", "proposed"],
+				"designing": ["implementing", "approved"],
+				"implementing": ["reviewing", "designing"],
+				"reviewing": ["shipped", "implementing"],
+				"shipped": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "severity", "priority", "assigned_to", "directed_to", "tags"]
+		},
+		"rca": {
+			"label": "RCA",
+			"description": "Root Cause Analysis.",
+			"states": ["detected", "investigating", "root_caused", "remediating", "verified", "closed"],
+			"initial_state": "detected",
+			"terminal_states": ["closed"],
+			"transitions": {
+				"detected": ["investigating"],
+				"investigating": ["root_caused", "detected"],
+				"root_caused": ["remediating", "investigating"],
+				"remediating": ["verified", "root_caused"],
+				"verified": ["closed", "remediating"],
+				"closed": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "severity", "priority", "assigned_to", "directed_to", "tags", "occurred_at", "detected_at", "reported_at", "why_chain", "significant_events", "contributing_factors"]
+		},
+		"chore": {
+			"label": "Chore",
+			"description": "Maintenance work with no broken state.",
+			"states": ["open", "in_progress", "done"],
+			"initial_state": "open",
+			"terminal_states": ["done"],
+			"transitions": {
+				"open": ["in_progress"],
+				"in_progress": ["done", "open"],
+				"done": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "priority", "assigned_to", "directed_to", "tags"]
+		},
+		"hint": {
+			"label": "Hint",
+			"description": "An actionable micro-fact for tool or workflow recall.",
+			"states": ["draft", "validated", "promoted"],
+			"initial_state": "draft",
+			"terminal_states": ["promoted"],
+			"transitions": {
+				"draft": ["validated", "promoted"],
+				"validated": ["promoted", "draft"],
+				"promoted": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title", "value"],
+			"optional_fields": ["description", "component", "key", "topic", "subtopic", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed"]
+		},
+		"insight": {
+			"label": "Insight",
+			"description": "A correction to a mental model.",
+			"states": ["draft", "confirmed"],
+			"initial_state": "draft",
+			"terminal_states": ["confirmed"],
+			"transitions": {
+				"draft": ["confirmed"],
+				"confirmed": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title", "assumed", "corrected"],
+			"optional_fields": ["description", "topic", "subtopic", "surprise", "surfaced_from", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed"]
+		},
+		"question": {
+			"label": "Question",
+			"description": "Blocking knowledge request.",
+			"states": ["asked", "researching", "escalated", "answered"],
+			"initial_state": "asked",
+			"terminal_states": ["answered"],
+			"transitions": {
+				"asked": ["researching", "escalated", "answered"],
+				"researching": ["answered", "escalated", "asked"],
+				"escalated": ["researching", "answered", "asked"],
+				"answered": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "directed_to", "findings", "answer", "tags", "assigned_to"]
+		},
+		"work_item": {
+			"label": "Work Item",
+			"description": "Generic trackable unit of work.",
+			"states": ["backlog", "open", "in_progress", "blocked", "done"],
+			"initial_state": "backlog",
+			"terminal_states": ["done"],
+			"transitions": {
+				"backlog": ["open"],
+				"open": ["in_progress", "backlog"],
+				"in_progress": ["done", "blocked", "open"],
+				"blocked": ["in_progress", "open"],
+				"done": []
+			},
+			"transition_rules": {
+				"blocked": {
+					"required_fields": ["blocked_by"]
+				}
+			},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "severity", "priority", "assigned_to", "directed_to", "tags", "blocked_by"]
+		},
+		"secret": {
+			"label": "Secret",
+			"description": "Encrypted credential with location, identity, and secret value.",
+			"states": ["active", "rotated", "revoked"],
+			"initial_state": "active",
+			"terminal_states": ["revoked"],
+			"transitions": {
+				"active": ["rotated", "revoked"],
+				"rotated": ["active", "revoked"],
+				"revoked": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "environment", "surfaced_from", "key", "tags", "assigned_to"]
+		},
+		"encrypted_note": {
+			"label": "Encrypted Note",
+			"description": "Encrypted free-text note (diary entry, JSON blob, etc.).",
+			"states": ["draft", "sealed"],
+			"initial_state": "draft",
+			"terminal_states": ["sealed"],
+			"transitions": {
+				"draft": ["sealed"],
+				"sealed": ["draft"]
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "tags", "assigned_to"]
+		},
+		"test": {
+			"label": "Test",
+			"description": "A test case with setup, steps, and expected result.",
+			"states": ["draft", "ready", "passing", "failing", "skipped", "retired"],
+			"initial_state": "draft",
+			"terminal_states": ["retired"],
+			"transitions": {
+				"draft": ["ready"],
+				"ready": ["passing", "failing", "skipped"],
+				"passing": ["failing", "ready", "skipped", "retired"],
+				"failing": ["passing", "ready", "skipped", "retired"],
+				"skipped": ["ready", "retired"],
+				"retired": []
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "priority", "severity", "assigned_to", "directed_to", "tags", "test_setup", "test_steps", "expected_result", "environment", "component"]
+		},
+		"discussion": {
+			"label": "Discussion",
+			"description": "A thread for async discussion; comments carry the content.",
+			"states": ["active", "resolved"],
+			"initial_state": "active",
+			"terminal_states": [],
+			"transitions": {
+				"active": ["resolved"],
+				"resolved": ["active"]
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "tags", "priority"]
+		},
+		"skill": {
+			"label": "Skill",
+			"description": "Self-contained executable pipeline for LLM tool usage. Steps field contains the full procedure.",
+			"states": ["draft", "active", "archived"],
+			"initial_state": "draft",
+			"terminal_states": [],
+			"transitions": {
+				"draft": ["active"],
+				"active": ["archived"],
+				"archived": ["active"]
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "steps", "preconditions", "outcome", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+		},
+		"prompt": {
+			"label": "Prompt",
+			"description": "A reusable prompt template for LLM interactions.",
+			"states": ["draft", "active", "archived"],
+			"initial_state": "draft",
+			"terminal_states": [],
+			"transitions": {
+				"draft": ["active"],
+				"active": ["archived"],
+				"archived": ["active"]
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "prompt_text", "parameters", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+		},
+		"kb": {
+			"label": "KB Article",
+			"description": "A knowledge base article or reference document.",
+			"states": ["draft", "active", "archived"],
+			"initial_state": "draft",
+			"terminal_states": [],
+			"transitions": {
+				"draft": ["active"],
+				"active": ["archived"],
+				"archived": ["active"]
+			},
+			"transition_rules": {},
+			"required_fields": ["title"],
+			"optional_fields": ["description", "article", "summary", "key", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+		}
+	},
+	"common_fields": ["id", "type", "status", "title", "description", "created_at", "updated_at", "created_by", "assigned_to", "directed_to", "priority", "severity", "tags", "links", "events"],
+	"link_relations": ["caused_by", "blocks", "duplicates", "follow_up", "surfaced"],
+	"priority_values": [1, 2, 3, 4],
+	"severity_values": [1, 2, 3, 4]
+}
