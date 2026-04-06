@@ -183,11 +183,9 @@ func _skill_list(arguments: Dictionary) -> Dictionary:
 	var dm: DocketManager = SingletonObject.docket_manager
 	if dm:
 		for proj_name in dm.get_loaded_projects():
+			# Don't pass query/tags to docket — let it return all skills so we
+			# can filter once locally via _matches_filters() for consistency.
 			var docket_args := {"project": proj_name}
-			if not query_text.is_empty():
-				docket_args["query"] = query_text
-			if not filter_tags.is_empty():
-				docket_args["tags"] = filter_tags
 			var docket_result := dm.call_tool("docket_skill_list", docket_args)
 			if not docket_result.has("error") and docket_result.has("skills"):
 				for dskill in docket_result["skills"]:
@@ -198,10 +196,8 @@ func _skill_list(arguments: Dictionary) -> Dictionary:
 						"origin": "docket",
 						"project": proj_name,
 					}
-					# Docket already filtered by query/tags, but apply text filter for SkillManager consistency
-					if not query_text.is_empty() and not _matches_filters(entry, query_text, []):
-						continue
-					result.append(entry)
+					if _matches_filters(entry, query_text, filter_tags):
+						result.append(entry)
 
 	# If filtered search returned nothing, fall back to full catalog
 	if result.is_empty() and (not query_text.is_empty() or not filter_tags.is_empty()):

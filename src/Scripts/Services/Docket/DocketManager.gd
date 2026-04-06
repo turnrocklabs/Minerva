@@ -378,11 +378,11 @@ func _emit_signals_for(tool_name: String, args: Dictionary, result: Dictionary) 
 		"docket_quality":
 			item_updated.emit(str(result.get("id", "")), proj)
 
-	# Invalidate prompt cache if a prompt item was created/updated/transitioned
+	# Invalidate prompt cache on any mutation — prompt items are rare so the
+	# cost of an unnecessary rebuild is negligible, and docket_update results
+	# do not include a "type" field, making per-type checks unreliable.
 	if tool_name in ["docket_create", "docket_update", "docket_transition", "docket_delete"]:
-		var item_type: String = str(result.get("type", args.get("type", "")))
-		if item_type == "prompt":
-			invalidate_prompt_cache()
+		invalidate_prompt_cache()
 
 
 # -- JSONL persistence --------------------------------------------------------
