@@ -185,6 +185,11 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	var prompt_tokens := 0
 	var completion_tokens := 0
 
+	# Track function call metadata from output_item events (name, call_id)
+	# since function_call_arguments.done may have name=null (known OpenAI API bug)
+	var _pending_func_calls: Dictionary = {}  # item_id → {"name": ..., "call_id": ...}
+	var reasoning_parts := PackedStringArray()
+
 	# Split on double newline to get individual events
 	var events := body_text.split("\n\n")
 	for event_str in events:
@@ -222,6 +227,49 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 					if not full_text.is_empty() and text_parts.is_empty():
 						text_parts.append(full_text)
 
+				"response.reasoning_summary_text.delta":
+					var delta_text: String = data.get("delta", "")
+					if not delta_text.is_empty():
+						reasoning_parts.append(delta_text)
+
+				"response.output_item.added", "response.output_item.done":
+					# Capture function_call metadata (name, call_id) from output items.
+					# These events carry the full item including name, which
+					# function_call_arguments.done may omit (OpenAI API bug).
+					var item = data.get("item", {})
+					if item is Dictionary and item.get("type") == "function_call":
+						var item_id: String = item.get("id", "")
+						if not item_id.is_empty():
+							_pending_func_calls[item_id] = {
+								"name": str(item.get("name", "")),
+								"call_id": str(item.get("call_id", item_id)),
+								"arguments": str(item.get("arguments", "")),
+							}
+
+				"response.function_call_arguments.done":
+					# Individual function call completion — arguments are final here.
+					# Name may be null (OpenAI bug), so fall back to _pending_func_calls.
+					var item_id: String = data.get("item_id", "")
+					var func_name: String = str(data.get("name", ""))
+					var call_id: String = str(data.get("call_id", ""))
+					var args_str: String = data.get("arguments", "{}")
+
+					# Fall back to pending metadata if name is missing
+					if func_name.is_empty() and _pending_func_calls.has(item_id):
+						var pending: Dictionary = _pending_func_calls[item_id]
+						func_name = pending.get("name", "")
+						if call_id.is_empty():
+							call_id = pending.get("call_id", item_id)
+					if call_id.is_empty():
+						call_id = item_id
+
+					var args: Dictionary = {}
+					var parsed = JSON.parse_string(args_str)
+					if parsed is Dictionary:
+						args = parsed
+					if not func_name.is_empty():
+						bot_response.add_tool_call(call_id, func_name, args)
+
 				"response.completed", "response.done":
 					var resp = data.get("response", data)
 					if resp is Dictionary:
@@ -244,35 +292,25 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 												if part is Dictionary and part.get("type") == "output_text":
 													text_parts.append(part.get("text", ""))
 
-						# Parse tool calls from output
-						var output = resp.get("output", [])
-						if output is Array:
-							for item in output:
-								if item is Dictionary and item.get("type") == "function_call":
-									var args_str: String = item.get("arguments", "{}")
-									var args: Dictionary = {}
-									var parsed = JSON.parse_string(args_str)
-									if parsed is Dictionary:
-										args = parsed
-									bot_response.add_tool_call(
-										item.get("call_id", item.get("id", "")),
-										item.get("name", ""),
-										args
-									)
-
-				"response.function_call_arguments.done":
-					# Individual function call completion event
-					var call_id: String = data.get("call_id", data.get("item_id", ""))
-					var func_name: String = data.get("name", "")
-					var args_str: String = data.get("arguments", "{}")
-					var args: Dictionary = {}
-					var parsed = JSON.parse_string(args_str)
-					if parsed is Dictionary:
-						args = parsed
-					if not func_name.is_empty():
-						bot_response.add_tool_call(call_id, func_name, args)
+						# Parse tool calls from output (fallback if streaming events missed them)
+						if bot_response.tool_calls.is_empty():
+							var output = resp.get("output", [])
+							if output is Array:
+								for item in output:
+									if item is Dictionary and item.get("type") == "function_call":
+										var tc_name: String = str(item.get("name", ""))
+										var tc_call_id: String = str(item.get("call_id", item.get("id", "")))
+										var tc_args_str: String = item.get("arguments", "{}")
+										var tc_args: Dictionary = {}
+										var tc_parsed = JSON.parse_string(tc_args_str)
+										if tc_parsed is Dictionary:
+											tc_args = tc_parsed
+										if not tc_name.is_empty():
+											bot_response.add_tool_call(tc_call_id, tc_name, tc_args)
 
 	bot_response.text = "".join(text_parts)
+	# Reasoning captured but BotResponse has no reasoning field yet — store for future use
+	#bot_response.reasoning = "".join(reasoning_parts)
 	bot_response.id = response_id
 	bot_response.prompt_tokens = prompt_tokens
 	bot_response.completion_tokens = completion_tokens
