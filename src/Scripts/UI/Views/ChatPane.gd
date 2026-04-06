@@ -52,7 +52,7 @@ const AGENT_KEEP_RECENT_MESSAGES: int = 6  # Keep this many recent messages when
 
 ## Base agent system prompt - tool-specific sections added dynamically
 ## Hardcoded fallback — only used if docket master prompt is unavailable.
-const AGENT_SYSTEM_PROMPT_FALLBACK: String = "You are an AI assistant with access to tools.\n- `minerva_tool_search` finds and activates tools by keyword.\n- `minerva_list_skills` shows available guides. Call with no arguments to see the full catalog.\n- `minerva_get_skill` loads a skill's full instructions. Load relevant skills before unfamiliar work.\n\nSave knowledge that future agents can't discover from tools alone — workarounds, preferences, failure patterns, things to avoid. Correct wrong knowledge, downgrade outdated."
+const AGENT_SYSTEM_PROMPT_FALLBACK: String = "You are an AI assistant with access to tools.\n- minerva_tool_search finds and activates tools.\n- minerva_list_skills shows all skills available with filtering/search.\n- minerva_get_skill loads skills.\n\nDo:\n- Broaden search in minerva_list_skills by using fewer, broader queries.\n- use minerva_list_skills with no query at all if you get 0 skills returned and verify no skill exists for your task."
 
 ## Build the agent system prompt.
 ## Loads from docket master (key: agentic-base), falls back to hardcoded.
