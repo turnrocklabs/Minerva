@@ -210,6 +210,7 @@ func _init_tool_registry() -> void:
 	_tool_registry.init(_schema, primary, _project_dbs)
 	_tool_registry.add_project_fn = _add_project_from_tool
 	_tool_registry.remove_project_fn = _remove_project_from_tool
+	_tool_registry.gui_open_fn = _gui_open_item
 
 
 # -- Project registry ---------------------------------------------------------
@@ -511,3 +512,23 @@ func _add_project_from_tool(path: String) -> Dictionary:
 func _remove_project_from_tool(project_name_: String) -> Dictionary:
 	## Callback for ToolRegistry's docket_project_remove tool.
 	return close_project(project_name_)
+
+
+func _gui_open_item(request: Dictionary) -> Dictionary:
+	## Callback for ToolRegistry's docket_gui_open tool.
+	## Opens the docket tab and navigates to the requested item or query.
+	SingletonObject.open_docket_tab()
+	# Find the docket panel in the editor tabs
+	var ep = SingletonObject.editor_container.editor_pane if SingletonObject.editor_container else null
+	if not ep:
+		return {"error": "Editor pane not available"}
+	for editor: Editor in ep.Tabs.get_children():
+		if editor is Editor and editor.type == Editor.Type.DOCKET and editor.docket_editor:
+			var panel = editor.docket_editor
+			if request.has("id"):
+				panel._state.open_item_requested.emit(str(request["id"]))
+				return {"success": true, "opened": str(request["id"])}
+			elif request.has("filter"):
+				# TODO: open query tab with filter
+				return {"success": true, "message": "Query tab not yet implemented via MCP"}
+	return {"error": "Docket panel not found"}
