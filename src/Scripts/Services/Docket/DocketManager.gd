@@ -150,6 +150,10 @@ func _merge_shipped_master() -> void:
 			for key in item:
 				if key not in ["id", "_type", "events"]:
 					changes[key] = item[key]
+			# Tags are comma-separated strings in JSONL but update_item_fields expects Array
+			if changes.has("tags") and changes["tags"] is String:
+				var tag_str: String = changes["tags"]
+				changes["tags"] = tag_str.split(",") if not tag_str.is_empty() else []
 			_master_db.update_item_fields(id, changes)
 			updated += 1
 		else:
