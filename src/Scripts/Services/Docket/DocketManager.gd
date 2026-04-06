@@ -145,10 +145,11 @@ func _merge_shipped_master() -> void:
 		if id.is_empty():
 			continue
 		if _master_db.has_item(id):
-			# Update existing — overwrite with shipped version
+			# Update existing — overwrite with shipped version.
+			# Only include fields that exist as SQLite columns (_ITEM_COLS) + tags.
 			var changes := {}
 			for key in item:
-				if key not in ["id", "_type", "events"]:
+				if key in DocketDB._ITEM_COLS or key == "tags":
 					changes[key] = item[key]
 			# Tags are comma-separated strings in JSONL but update_item_fields expects Array
 			if changes.has("tags") and changes["tags"] is String:
