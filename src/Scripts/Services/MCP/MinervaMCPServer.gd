@@ -36,6 +36,10 @@ var _last_call_hash: String = ""
 var _consecutive_count: int = 0
 var _consecutive_error_count: int = 0
 
+## Error-loop detection: tracks last error hash per tool name
+## Format: { tool_name: { "error_hash": int, "count": int } }
+var _error_tracker: Dictionary = {}
+
 ## Caller identity (threaded through tool dispatch chain)
 var _current_caller_chat_id: String = ""
 var _current_agent_id: String = ""
@@ -341,7 +345,43 @@ func _check_duplicate_call(tool_name: String, arguments: Dictionary, result: Dic
 	elif _consecutive_error_count >= 3:
 		result["warning"] = "STOP: You have called this tool %d times with identical arguments and it failed each time. Do NOT retry. Try a different approach immediately." % _consecutive_error_count
 
+	# Error-loop detection: same tool, same error message, different (or same) arguments
+	_check_error_loop(tool_name, result, is_error)
+
 	return result
+
+
+## Detect when the same tool keeps returning the same error (regardless of arguments).
+## Injects a "retry_hint" key to nudge the LLM toward a different approach.
+func _check_error_loop(tool_name: String, result: Dictionary, is_error: bool) -> void:
+	if is_error:
+		var error_msg: String = str(result.get("error", result.get("success", "")))
+		var error_hash: int = error_msg.hash()
+
+		if _error_tracker.has(tool_name):
+			var entry: Dictionary = _error_tracker[tool_name]
+			if entry["error_hash"] == error_hash:
+				entry["count"] += 1
+				_error_tracker[tool_name] = entry
+				var count: int = entry["count"]
+				if count >= 3:
+					result["retry_hint"] = "STOP: This tool keeps failing. Review your available tools and choose a different approach entirely."
+				elif count >= 2:
+					result["retry_hint"] = "This tool has failed 2 times with the same error. Try a different tool or approach."
+			else:
+				# Different error — reset counter for this tool
+				_error_tracker[tool_name] = {"error_hash": error_hash, "count": 1}
+		else:
+			_error_tracker[tool_name] = {"error_hash": error_hash, "count": 1}
+	else:
+		# Tool succeeded — clear its error tracking entry
+		if _error_tracker.has(tool_name):
+			_error_tracker.erase(tool_name)
+		# Also clear entries for other tools when a different tool succeeds,
+		# since the agent has adapted and is no longer stuck.
+		for other_tool in _error_tracker.keys():
+			if other_tool != tool_name:
+				_error_tracker.erase(other_tool)
 
 #endregion
 
@@ -385,7 +425,7 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	if filtered.is_empty():
 		return {"success": true, "tools": [], "count": 0, "total_matches": 0, "message": "No tools found matching '%s'" % query}
 
-	# Split: top N get full schemas (activated), remainder get name+description only
+	# Top N are activated (full schema sent to API tools array), all results are lean in chat output
 	var activated: Array[String] = []
 	var tool_summaries: Array[Dictionary] = []
 
@@ -395,22 +435,17 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 		var description: String = result.get("description", "")
 
 		if i < limit:
-			# Top results: full schema, activated in budget manager
+			# Top results: activate full schema in budget manager (so tool is callable),
+			# but only return name+description in the chat result to save tokens.
 			var schema: Dictionary = result.get("schema", {})
 			if not name.is_empty() and not schema.is_empty():
 				tool_budget_manager.activate_tool(name, schema)
 				activated.append(name)
-			tool_summaries.append({
-				"name": name,
-				"description": description,
-				"input_schema": schema.get("input_schema", {}),
-			})
-		else:
-			# Remaining: lightweight name+description only
-			tool_summaries.append({
-				"name": name,
-				"description": description,
-			})
+		# All results: lean name+description only — no input_schema in chat output
+		tool_summaries.append({
+			"name": name,
+			"description": description,
+		})
 
 	var message: String
 	if filtered.size() <= limit:

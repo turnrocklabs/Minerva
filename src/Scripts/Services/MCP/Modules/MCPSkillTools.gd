@@ -250,7 +250,7 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 				docket_args["id"] = skill_id
 			var docket_result := dm.call_tool("docket_skill_get", docket_args)
 			if not docket_result.has("error"):
-				return {
+				var result := {
 					"success": true,
 					"id": str(docket_result.get("id", "")),
 					"name": str(docket_result.get("title", "")),
@@ -262,6 +262,24 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 					"preconditions": str(docket_result.get("preconditions", "")),
 					"outcome": str(docket_result.get("outcome", "")),
 				}
+				# Auto-activate tools listed in tool_deps
+				var tool_deps: Array = docket_result.get("tool_deps", [])
+				if not tool_deps.is_empty():
+					result["tool_deps"] = tool_deps
+					var activated: Array[String] = []
+					var skipped: Array[String] = []
+					for dep_name in tool_deps:
+						var search_results := server.tool_search_index.search(str(dep_name), "", 1)
+						if not search_results.is_empty() and search_results[0].get("name", "") == str(dep_name):
+							var schema: Dictionary = search_results[0].get("schema", {})
+							server.tool_budget_manager.activate_tool(str(dep_name), schema)
+							activated.append(str(dep_name))
+						else:
+							skipped.append(str(dep_name))
+					result["activated_tools"] = activated
+					if not skipped.is_empty():
+						result["skipped_tools"] = skipped
+				return result
 
 	# Fall back to SkillManager (note-based skills)
 	var skill_manager = SingletonObject.get_skill_manager()

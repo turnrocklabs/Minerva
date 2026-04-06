@@ -102,10 +102,20 @@ func search(query: String, category: String = "", limit: int = 5) -> Array[Dicti
 		sorted_tools.append({"name": tool_name, "score": scores[tool_name]})
 	sorted_tools.sort_custom(func(a, b): return a.score > b.score)
 
+	# Suppress native tools unless query explicitly requests them.
+	# Tools with "_native_" in their name require explicit OS-level permissions
+	# and should not surface in general searches.
+	var want_native: bool = "native" in query.to_lower()
+
 	# Return top results with full schemas
 	var results: Array[Dictionary] = []
-	for i in range(mini(limit, sorted_tools.size())):
-		results.append(_format_result(sorted_tools[i].name))
+	for i in range(sorted_tools.size()):
+		if results.size() >= limit:
+			break
+		var tname: String = sorted_tools[i].name
+		if not want_native and "_native_" in tname:
+			continue
+		results.append(_format_result(tname))
 
 	return results
 

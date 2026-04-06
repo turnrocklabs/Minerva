@@ -77,7 +77,7 @@ func _format_skill(item: Dictionary) -> Dictionary:
 	}
 	# Include all non-empty skill fields
 	for field in ["description", "steps", "preconditions", "outcome",
-				   "component", "topic", "tags", "quality"]:
+				   "component", "topic", "tags", "quality", "tool_deps"]:
 		var val = item.get(field, "")
 		if val is String and val.is_empty():
 			continue

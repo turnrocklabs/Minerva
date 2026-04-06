@@ -217,7 +217,14 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title"],
-			"optional_fields": ["description", "steps", "preconditions", "outcome", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+			"optional_fields": ["description", "steps", "preconditions", "outcome", "tool_deps", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"],
+			"field_definitions": {
+				"tool_deps": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Tool names this skill requires (auto-activated on skill load)"
+				}
+			}
 		},
 		"prompt": {
 			"label": "Prompt",
