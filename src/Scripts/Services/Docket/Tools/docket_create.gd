@@ -5,11 +5,11 @@ class_name DocketCreate
 func get_definition() -> Dictionary:
 	return {
 		"name": "docket_create",
-		"description": "Create a new work item. Supports types: bug, dcr, rca, chore, hint, insight, question, work_item, test, discussion, skill, prompt, kb. For secrets, use docket_secret_set instead.",
+		"description": "Create a new work item. Supports types: bug, dcr, rca, chore, hint, insight, question, work_item, test, discussion, skill, prompt, kb, policy. For secrets, use docket_secret_set instead.",
 		"inputSchema": {
 			"type": "object",
 			"properties": {
-				"type": {"type": "string", "enum": ["bug", "dcr", "rca", "chore", "hint", "insight", "question", "work_item", "test", "discussion", "skill", "prompt", "kb"]},
+				"type": {"type": "string", "enum": ["bug", "dcr", "rca", "chore", "hint", "insight", "question", "work_item", "test", "discussion", "skill", "prompt", "kb", "policy"]},
 				"title": {"type": "string"},
 				"description": {"type": "string"},
 				"priority": {"type": "integer", "minimum": 1, "maximum": 4},

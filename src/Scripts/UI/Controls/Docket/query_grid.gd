@@ -46,7 +46,7 @@ const _OP_LABELS := {
 
 # Fields with fixed-value dropdowns
 const _DROPDOWN_VALUES := {
-	"type": ["bug", "dcr", "rca", "chore", "hint", "insight", "question", "work_item", "test", "discussion"],
+	"type": ["bug", "dcr", "rca", "chore", "hint", "insight", "question", "work_item", "test", "discussion", "skill", "prompt", "kb", "policy"],
 	"status": [
 		"new", "triaged", "active", "resolved", "verified", "closed",
 		"proposed", "approved", "designing", "implementing", "reviewing", "shipped",

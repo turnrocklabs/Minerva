@@ -28,6 +28,9 @@ var tool_search_index: ToolSearchIndex = ToolSearchIndex.new()
 var tool_budget_manager: ToolBudgetManager = ToolBudgetManager.new()
 var auto_tool_management: bool = false  # toggled via preferences
 
+## Policy engine — evaluates tool calls against Docket-sourced rules
+var policy_engine: PolicyEngine
+
 ## Duplicate call detection
 var _last_call_hash: String = ""
 var _consecutive_count: int = 0
@@ -104,6 +107,13 @@ func _init_modules() -> void:
 	# Register all module tools
 	for module in _modules:
 		module.register_tools()
+
+	# Initialize policy engine (loads rules from Docket)
+	policy_engine = PolicyEngine.new()
+	policy_engine.reload()
+
+	# Register policy meta-tools
+	_register_policy_tools()
 
 #endregion
 
@@ -234,36 +244,74 @@ func call_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
 ## Internal tool execution — routes to modules, plugins, or tool search
 func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	print("[MinervaMCPServer] Executing: %s" % tool_name)
-	# Track tool usage for LRU
+
+	# Policy override tool — handled before policy check so it can't be blocked
+	if tool_name == "minerva_policy_override":
+		return await _handle_policy_override(arguments)
+
+	# Policy reload tool — handled before policy check
+	if tool_name == "minerva_policy_reload":
+		policy_engine.reload()
+		return {"success": true, "rules_loaded": policy_engine.rule_count()}
+
+	# PRE-TOOL POLICY CHECK — before tool_budget_manager and advisory hooks
+	var pending_observations: Array = []
+	if policy_engine:
+		var policy_result := policy_engine.evaluate(tool_name, arguments)
+		if not policy_result["allowed"]:
+			# Pre-activate tools the agent needs to comply with the policy
+			_activate_policy_tools(policy_result)
+			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, _current_agent_id)
+			return policy_result
+		pending_observations = policy_result.get("observations", [])
+
+	# Track tool usage for LRU (blocked calls don't count)
 	tool_budget_manager.mark_used(tool_name)
 
 	# Emit pre-execution signal for hook triggers (PreToolUse)
 	if arguments is Dictionary and SingletonObject.trigger_manager and not SingletonObject.trigger_manager.triggers.is_empty():
 		SingletonObject.emit_mcp_tool_about_to_execute(tool_name, arguments)
 
+	# Dispatch to the appropriate handler and collect the result
+	var dispatch_result: Dictionary = {}
+	var dispatched := false
+
 	# Tool search (always available, handled here to avoid module overhead)
 	if tool_name == "minerva_tool_search":
-		return _tool_search(arguments)
+		dispatch_result = _tool_search(arguments)
+		dispatched = true
 
 	# Route to domain modules
-	for module in _modules:
-		if module.can_handle(tool_name):
-			return await module.handle(tool_name, arguments)
+	if not dispatched:
+		for module in _modules:
+			if module.can_handle(tool_name):
+				dispatch_result = await module.handle(tool_name, arguments)
+				dispatched = true
+				break
 
 	# Plugin-contributed tools (minerva_<plugin_id>_*) — check first since
 	# is_plugin_tool() is an exact-match lookup and avoids prefix collisions.
-	if SingletonObject.plugin_tool_registry != null and SingletonObject.plugin_tool_registry.is_plugin_tool(tool_name):
-		return await SingletonObject.plugin_tool_registry.handle_tool_call(tool_name, arguments)
+	if not dispatched and SingletonObject.plugin_tool_registry != null and SingletonObject.plugin_tool_registry.is_plugin_tool(tool_name):
+		dispatch_result = await SingletonObject.plugin_tool_registry.handle_tool_call(tool_name, arguments)
+		dispatched = true
 
 	# Plugin management tools (minerva_plugin_list, etc.)
-	if tool_name.begins_with("minerva_plugin_") and SingletonObject.plugin_mcp_tools != null:
-		return await SingletonObject.plugin_mcp_tools.handle_tool_call(tool_name, arguments)
+	if not dispatched and tool_name.begins_with("minerva_plugin_") and SingletonObject.plugin_mcp_tools != null:
+		dispatch_result = await SingletonObject.plugin_mcp_tools.handle_tool_call(tool_name, arguments)
+		dispatched = true
 
-	# If auto tool management is on and tool exists but isn't active, hint to search
-	if auto_tool_management and mcp_manager.tool_registry.has(tool_name):
-		return {"error": "Tool '%s' is not loaded. Call minerva_tool_search('%s') to activate it." % [tool_name, tool_name], "success": false}
+	if not dispatched:
+		# If auto tool management is on and tool exists but isn't active, hint to search
+		if auto_tool_management and mcp_manager.tool_registry.has(tool_name):
+			dispatch_result = {"error": "Tool '%s' is not loaded. Call minerva_tool_search('%s') to activate it." % [tool_name, tool_name], "success": false}
+		else:
+			dispatch_result = {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
 
-	return {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
+	# POST-DISPATCH: drain observation telemetry (best-effort, non-blocking)
+	if not pending_observations.is_empty():
+		_write_observation_telemetry(pending_observations)
+
+	return dispatch_result
 
 
 ## Check for duplicate calls and inject warning if detected
@@ -378,5 +426,130 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 		"total_matches": filtered.size(),
 		"message": message,
 	}
+
+#endregion
+
+
+#region Policy Tools
+
+func _register_policy_tools() -> void:
+	_register_tool(
+		"minerva_policy_reload",
+		"Reload policy rules from Docket. Call after editing policy items.",
+		{"type": "object", "properties": {}, "required": []},
+		"meta"
+	)
+
+	_register_tool(
+		"minerva_policy_override",
+		"Override a blocking policy rule for this session. Requires rule_id.",
+		{"type": "object", "properties": {
+			"rule_id": {"type": "string", "description": "ID of the policy rule to override"},
+			"reason": {"type": "string", "description": "Why the override is needed"}
+		}, "required": ["rule_id"]},
+		"meta"
+	)
+
+
+func _handle_policy_override(arguments: Dictionary) -> Dictionary:
+	var rule_id: String = arguments.get("rule_id", "")
+	var reason: String = arguments.get("reason", "")
+	if rule_id.is_empty():
+		return {"error": "rule_id is required", "success": false}
+
+	# Human-gated: require UI confirmation for policy overrides.
+	var approved := await _request_policy_override_approval(rule_id, reason)
+	if not approved:
+		return {"error": "Policy override denied — human approval required", "success": false}
+
+	policy_engine.add_session_override(rule_id)
+	return {"success": true, "message": "Rule %s overridden for this session" % rule_id}
+
+
+func _request_policy_override_approval(rule_id: String, reason: String) -> bool:
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Policy Override — Human Approval Required"
+	var msg := "An agent is requesting to override a blocking policy rule for this session.\n\nRule: %s" % rule_id
+	if not reason.is_empty():
+		msg += "\nReason: %s" % reason
+	msg += "\n\nApprove only if you intended this."
+	dialog.dialog_text = msg
+	dialog.ok_button_text = "Approve Override"
+	dialog.cancel_button_text = "Deny"
+	dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_PRIMARY_SCREEN
+	dialog.size = Vector2i(500, 200)
+
+	var tree := Engine.get_main_loop()
+	if tree == null or not tree is SceneTree:
+		return false
+	(tree as SceneTree).root.add_child(dialog)
+	dialog.popup_centered()
+
+	var result := [false]
+	var done := [false]
+	dialog.confirmed.connect(func():
+		result[0] = true
+		done[0] = true
+	)
+	dialog.canceled.connect(func():
+		result[0] = false
+		done[0] = true
+	)
+	while not done[0]:
+		await (tree as SceneTree).process_frame
+
+	dialog.queue_free()
+	return result[0]
+
+
+## Write observation telemetry to Docket as comments on rule items.
+## Best-effort: failures are silently ignored so they never break tool dispatch.
+## Goes through DocketManager.call_tool() directly (not MCP dispatch) to avoid
+## recursion back into the policy engine.
+func _write_observation_telemetry(observations: Array) -> void:
+	var dm = SingletonObject.docket_manager if SingletonObject else null
+	if dm == null:
+		return
+	for obs in observations:
+		var rule_id: String = str(obs.get("rule_id", ""))
+		if rule_id.is_empty():
+			continue
+		var comment_text := "[Observation] Tool: %s | Would-have: %s | Time: %s\nFacts: %s" % [
+			str(obs.get("tool_name", "?")),
+			str(obs.get("would_have_effect", "?")),
+			Time.get_datetime_string_from_system(),
+			str(obs.get("facts", {})),
+		]
+		# Best-effort write — ignore errors to never disrupt the tool call path
+		dm.call_tool("docket_comment", {
+			"action": "add",
+			"item_id": rule_id,
+			"author": "policy-engine",
+			"text": comment_text,
+		})
+
+
+## Pre-activate tools referenced in a policy block response so the agent can comply.
+## Parses tool names from knowledge_ref (activates minerva_docket_get) and alternatives.
+func _activate_policy_tools(policy_result: Dictionary) -> void:
+	# Always activate minerva_docket_get so the agent can read the KB
+	var knowledge_ref: String = str(policy_result.get("knowledge_ref", ""))
+	if not knowledge_ref.is_empty():
+		var schema := {"name": "minerva_docket_get", "description": "Get a docket item by ID.", "input_schema": {
+			"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]
+		}}
+		tool_budget_manager.activate_tool("minerva_docket_get", schema)
+
+	# Parse tool names from alternatives (look for minerva_* or docket_* patterns)
+	var re := RegEx.new()
+	re.compile(r"\b(minerva_\w+)\b")
+	for alt in policy_result.get("allowed_next_actions", []):
+		var matches := re.search_all(str(alt))
+		for m in matches:
+			var tool_name: String = m.get_string(1)
+			if mcp_manager.tool_registry.has(tool_name):
+				var tool_def = mcp_manager.tool_registry[tool_name]
+				var schema := {"name": tool_name, "description": tool_def.description, "input_schema": tool_def.input_schema}
+				tool_budget_manager.activate_tool(tool_name, schema)
 
 #endregion

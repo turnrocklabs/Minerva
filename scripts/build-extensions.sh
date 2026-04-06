@@ -6,7 +6,7 @@
 #   - Zig 0.15.2 (downloaded to ~/.local/bin)
 #   - SCons (via pip)
 #   - Rust/Cargo (must be pre-installed via rustup for godot_wry)
-#   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry)
+#   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry, vendor/EIRTeam.FFmpeg)
 #
 # Linux-only prereqs for godot_wry: libgtk-3-dev libwebkit2gtk-4.1-dev
 
@@ -67,7 +67,7 @@ if ! command -v scons &>/dev/null; then
     echo "Installing SCons via pip..."
     pip3 install scons
 fi
-echo "SCons $(scons --version 2>&1 | grep -oP 'v[\d.]+' | head -1) ready"
+echo "SCons $(scons --version 2>&1 | grep -oE 'v[0-9.]+' | head -1) ready"
 
 # ── Build ghostty-vt shim (Zig) ──────────────────────────────────────
 
@@ -160,15 +160,28 @@ else
 
         if [ -f "$WRY_SRC" ]; then
             mkdir -p "$WRY_DST"
-            cp "$WRY_SRC" "$WRY_DST"
-            echo "godot_wry built: $WRY_DST$(basename "$WRY_SRC") ($(du -h "$WRY_SRC" | cut -f1))"
+            if [ "$PLATFORM" = "macos" ]; then
+                # WRY.gdextension expects a .framework bundle on macOS
+                FW_DIR="$WRY_DST/libgodot_wry.framework"
+                mkdir -p "$FW_DIR"
+                cp "$WRY_SRC" "$FW_DIR/libgodot_wry"
+                echo "godot_wry built: $FW_DIR ($(du -h "$WRY_SRC" | cut -f1))"
+            else
+                cp "$WRY_SRC" "$WRY_DST"
+                echo "godot_wry built: $WRY_DST$(basename "$WRY_SRC") ($(du -h "$WRY_SRC" | cut -f1))"
+            fi
         else
             echo "WARNING: godot_wry binary not found at $WRY_SRC"
         fi
+
+        # Reset submodule to clean upstream so it doesn't show as dirty
+        cd vendor/godot_wry
+        git checkout -- . 2>/dev/null
+        cd "$OLDPWD"
     fi
 fi
 
-# ── Download EIRTeam.FFmpeg if needed ─────────────────────────────────
+# ── Install EIRTeam.FFmpeg (download prebuilt, fallback to source build) ──
 
 FFMPEG_VERSION="1.1.4"
 FFMPEG_TAG="autobuild-2025-11-12-13-44"
@@ -176,23 +189,41 @@ FFMPEG_ZIP="eirteam-ffmpeg-${FFMPEG_VERSION}.zip"
 FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/${FFMPEG_TAG}/${FFMPEG_ZIP}"
 FFMPEG_MARKER="src/addons/ffmpeg/.ffmpeg-version"
 
-if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ]; then
-    echo "EIRTeam.FFmpeg $FFMPEG_VERSION already installed"
-else
+ffmpeg_platform_has_binaries() {
+    case "$PLATFORM" in
+        macos)
+            # Check for the framework binary (not just Info.plist)
+            test -f "src/addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework/libgdffmpeg.macos.template_debug" 2>/dev/null
+            ;;
+        linux)
+            test -f "src/addons/ffmpeg/linux64/libgdffmpeg.linux.template_debug.x86_64.so" 2>/dev/null
+            ;;
+        windows)
+            test -f "src/addons/ffmpeg/win64/libgdffmpeg.windows.template_debug.x86_64.dll" 2>/dev/null
+            ;;
+    esac
+}
+
+install_ffmpeg_from_download() {
     echo ""
     echo "=== Downloading EIRTeam.FFmpeg $FFMPEG_VERSION ==="
     TMP_FFMPEG=$(mktemp -d)
-    curl -L -o "$TMP_FFMPEG/$FFMPEG_ZIP" "$FFMPEG_URL"
-    unzip -o "$TMP_FFMPEG/$FFMPEG_ZIP" -d "$TMP_FFMPEG/extract"
-
-    # Find the addon directory inside the zip (may be nested)
-    FFMPEG_SRC=$(find "$TMP_FFMPEG/extract" -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
-    if [ -z "$FFMPEG_SRC" ]; then
-        echo "ERROR: Could not find ffmpeg.gdextension in downloaded zip"
-        exit 1
+    if ! curl -fL -o "$TMP_FFMPEG/$FFMPEG_ZIP" "$FFMPEG_URL"; then
+        rm -rf "$TMP_FFMPEG"
+        return 1
+    fi
+    if ! unzip -o "$TMP_FFMPEG/$FFMPEG_ZIP" -d "$TMP_FFMPEG/extract" >/dev/null; then
+        rm -rf "$TMP_FFMPEG"
+        return 1
     fi
 
-    # Copy platform binaries
+    FFMPEG_SRC=$(find "$TMP_FFMPEG/extract" -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
+    if [ -z "$FFMPEG_SRC" ]; then
+        echo "WARNING: Could not find ffmpeg.gdextension in downloaded zip"
+        rm -rf "$TMP_FFMPEG"
+        return 1
+    fi
+
     for subdir in linux64 win64 macos; do
         if [ -d "$FFMPEG_SRC/$subdir" ]; then
             mkdir -p "src/addons/ffmpeg/$subdir"
@@ -200,14 +231,66 @@ else
             echo "  Installed ffmpeg $subdir"
         fi
     done
-    # Copy macOS frameworks
     if [ -d "$FFMPEG_SRC/macos" ]; then
         cp -r "$FFMPEG_SRC/macos/"*.framework "src/addons/ffmpeg/macos/" 2>/dev/null || true
     fi
 
-    echo "$FFMPEG_VERSION" > "$FFMPEG_MARKER"
     rm -rf "$TMP_FFMPEG"
-    echo "EIRTeam.FFmpeg $FFMPEG_VERSION installed"
+
+    # Verify we actually got binaries for this platform
+    if ffmpeg_platform_has_binaries; then
+        echo "$FFMPEG_VERSION" > "$FFMPEG_MARKER"
+        echo "EIRTeam.FFmpeg $FFMPEG_VERSION installed"
+    else
+        echo "WARNING: Downloaded FFmpeg has no $PLATFORM binaries"
+        return 1
+    fi
+}
+
+install_ffmpeg_from_source() {
+    echo ""
+    echo "=== Download failed — building EIRTeam.FFmpeg from source ==="
+    if [ -x "scripts/build-ffmpeg.sh" ]; then
+        scripts/build-ffmpeg.sh "$PLATFORM"
+    else
+        echo "ERROR: scripts/build-ffmpeg.sh not found or not executable"
+        echo "       FFmpeg addon will not be available."
+    fi
+}
+
+if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ]; then
+    echo "EIRTeam.FFmpeg $FFMPEG_VERSION already installed"
+else
+    install_ffmpeg_from_download || install_ffmpeg_from_source
+fi
+
+# ── Download godot-sqlite if needed ───────────────────────────────────
+
+SQLITE_VERSION="v4.7"
+SQLITE_URL="https://github.com/2shady4u/godot-sqlite/releases/download/${SQLITE_VERSION}/bin.zip"
+SQLITE_MARKER="src/addons/godot-sqlite/.sqlite-version"
+
+if [ -f "$SQLITE_MARKER" ] && [ "$(cat "$SQLITE_MARKER")" = "$SQLITE_VERSION" ]; then
+    echo "godot-sqlite $SQLITE_VERSION already installed"
+else
+    echo ""
+    echo "=== Downloading godot-sqlite $SQLITE_VERSION ==="
+    TMP_SQLITE=$(mktemp -d)
+    if curl -fL -o "$TMP_SQLITE/bin.zip" "$SQLITE_URL"; then
+        unzip -o "$TMP_SQLITE/bin.zip" -d "$TMP_SQLITE/extract" >/dev/null
+        SQLITE_BIN="$TMP_SQLITE/extract/bin"
+        if [ -d "$SQLITE_BIN" ]; then
+            mkdir -p "src/addons/godot-sqlite/bin"
+            cp -r "$SQLITE_BIN/"* "src/addons/godot-sqlite/bin/"
+            echo "$SQLITE_VERSION" > "$SQLITE_MARKER"
+            echo "godot-sqlite $SQLITE_VERSION installed"
+        else
+            echo "WARNING: Could not find bin/ in downloaded godot-sqlite zip"
+        fi
+    else
+        echo "WARNING: Failed to download godot-sqlite. SQLite addon will not be available."
+    fi
+    rm -rf "$TMP_SQLITE"
 fi
 
 # ── Verify ────────────────────────────────────────────────────────────

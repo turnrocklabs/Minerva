@@ -21,16 +21,17 @@ func get_definition() -> Dictionary:
 
 
 func execute(args: Dictionary, _schema: Dictionary, db: DocketDB) -> Dictionary:
-	# Direct ID lookup (works for hints and insights)
+	# Direct ID lookup (hints and insights only)
 	if args.has("id"):
 		var id: String = args.id
 		if not db.has_item(id):
 			return {"error": "Item not found: %s" % id}
 		var item: Dictionary = db.get_item(id)
 		var item_type: String = str(item.get("type", ""))
-		if item_type in ["hint", "insight"]:
-			db.bump_retrieval(id)
-			item = db.get_item(id)
+		if item_type not in ["hint", "insight"]:
+			return {"error": "Item %s is type '%s', not a hint or insight. Use docket_get for other types." % [id, item_type]}
+		db.bump_retrieval(id)
+		item = db.get_item(id)
 		return DocketDB._strip_empty(item)
 
 	# Component+key lookup
