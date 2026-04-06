@@ -456,6 +456,15 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 	if not servers.has(server_name):
 		return {"error": "Server not connected: %s" % server_name, "success": false}
 
+	# Policy evaluation for external tools — same enforcement as minerva tools
+	if minerva_server and minerva_server.policy_engine:
+		var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments)
+		if not policy_result["allowed"]:
+			# Pre-activate tools the agent needs to comply with the policy
+			minerva_server._activate_policy_tools(policy_result)
+			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, caller_chat_id)
+			return policy_result
+
 	var connection = servers[server_name]
 	var result = await connection.call_tool(tool_name, arguments)
 

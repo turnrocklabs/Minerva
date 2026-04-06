@@ -299,6 +299,9 @@ signal mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dicti
 ## Emitted before any MCP tool executes. Used by hook triggers for PreToolUse matching.
 signal mcp_tool_about_to_execute(tool_name: String, arguments: Dictionary)
 
+## Emitted when an MCP tool call is blocked by PolicyEngine.
+signal mcp_tool_blocked(tool_name: String, arguments: Dictionary, policy_result: Dictionary, agent_id: String)
+
 
 func emit_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
 	mcp_tool_executed.emit(tool_name, arguments, result, agent_id)
@@ -306,6 +309,10 @@ func emit_mcp_tool_executed(tool_name: String, arguments: Dictionary, result: Di
 
 func emit_mcp_tool_about_to_execute(tool_name: String, arguments: Dictionary) -> void:
 	mcp_tool_about_to_execute.emit(tool_name, arguments)
+
+
+func emit_mcp_tool_blocked(tool_name: String, arguments: Dictionary, policy_result: Dictionary, agent_id: String) -> void:
+	mcp_tool_blocked.emit(tool_name, arguments, policy_result, agent_id)
 
 ## Clear proxies that match the given chat (or are untargeted). Preserve others.
 ## Disables cached notes on consumed proxies, then emits injection_consumed.
