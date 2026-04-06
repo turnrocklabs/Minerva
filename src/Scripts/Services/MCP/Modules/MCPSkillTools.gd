@@ -203,6 +203,10 @@ func _skill_list(arguments: Dictionary) -> Dictionary:
 						continue
 					result.append(entry)
 
+	# If filtered search returned nothing, fall back to full catalog
+	if result.is_empty() and (not query_text.is_empty() or not filter_tags.is_empty()):
+		return _skill_list({})  # Recurse with no filters — return everything
+
 	return {"success": true, "skills": result, "count": result.size()}
 
 
