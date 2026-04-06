@@ -43,6 +43,7 @@ func _process(_delta: float) -> void:
 			var peer_id := conn.get_instance_id()
 			_peers[peer_id] = ws
 			_peer_ptt_active[peer_id] = false
+			client_connected.emit(peer_id)
 
 	# Process each peer
 	var to_remove: Array[int] = []
@@ -336,7 +337,7 @@ func _send_error(peer_id: int, source_action: String, message: String) -> void:
 	})
 	# Use toast for non-blocking error feedback instead of modal dialog
 	if SingletonObject.has_method("create_toast_notification"):
-		SingletonObject.create_toast_notification("[StreamDeck] %s" % message, 2)  # Type.ERROR = 2
+		SingletonObject.create_toast_notification("[StreamDeck] %s" % message, ToastNotification.Type.ERROR)
 	else:
 		printerr("[StreamDeck] %s" % message)
 

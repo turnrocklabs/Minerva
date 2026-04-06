@@ -152,7 +152,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_docker_status": return _docker_status(arguments)
 		"minerva_container_list": return _container_list(arguments)
 		"minerva_container_status": return _container_status(arguments)
-		"minerva_container_build": return await _container_build(arguments)
+		"minerva_container_build": return _container_build(arguments)
 		"minerva_container_start": return _container_start(arguments)
 		"minerva_container_stop": return _container_stop(arguments)
 		"minerva_container_add": return _container_add(arguments)

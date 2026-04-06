@@ -47,15 +47,15 @@ func search(query: String, category: String = "", limit: int = 5) -> Array[Dicti
 	# List all in category (or all tools) when query is empty or wildcard
 	var clean_query := query.strip_edges()
 	if clean_query.is_empty() or clean_query == "*":
-		var results: Array[Dictionary] = []
+		var all_results: Array[Dictionary] = []
 		for name in _tool_meta:
 			var ts: String = _tool_meta[name].tool_set
 			if not category.is_empty() and not ts.is_empty() and ts != category:
 				continue
-			results.append(_format_result(name))
-			if results.size() >= limit:
+			all_results.append(_format_result(name))
+			if all_results.size() >= limit:
 				break
-		return results
+		return all_results
 
 	# Exact name match — highest priority
 	if _tool_schemas.has(query):

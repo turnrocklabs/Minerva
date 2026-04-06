@@ -638,24 +638,15 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 	var criteria: String = args.get("criteria", "")
 
 	# SESSION-WIDE iteration tracking (prevents bypass via creating new editors)
-	var current_time := Time.get_ticks_msec()
 	var reset_threshold := 5 * 60 * 1000  # Reset after 5 minutes of inactivity
-
-	# Reset counter if it's been too long since last attempt (allows new sessions)
-	if current_time - server._session_attempts_reset_time > reset_threshold:
-		server._session_iterative_attempts = 0
-
-	# Increment attempt counter BEFORE doing anything
-	server._session_iterative_attempts += 1
-	server._session_attempts_reset_time = current_time
-	var iteration: int = server._session_iterative_attempts
+	var iteration: int = server.consume_session_iterative_attempt(reset_threshold)
 
 	print("[MCPEditorTools] Iterative generation: %d/%d (session-wide)" % [iteration, max_iterations])
 
 	# Check iteration limit (session-enforced)
 	if iteration > max_iterations:
 		# Reset for next session
-		server._session_iterative_attempts = 0
+		server.reset_session_iterative_attempts()
 		return {
 			"error": "Maximum iterations (%d) reached for this session. Creating new editors will NOT bypass this limit. You must accept the current result or ask the user to increase the limit in settings." % max_iterations,
 			"success": false,

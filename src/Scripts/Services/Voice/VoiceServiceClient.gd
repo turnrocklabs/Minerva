@@ -62,7 +62,6 @@ func synthesize(text: String, voice_id: String = "", backend: String = "kokoro")
 
 	# Start a background poll for binary audio while awaiter waits for JSON
 	# voice-service may send binary frames WITHOUT a JSON response
-	var binary_received := false
 	var binary_audio := PackedByteArray()
 
 	# Short timeout on JSON response — if binary comes instead, we'll catch it

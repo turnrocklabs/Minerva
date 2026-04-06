@@ -826,7 +826,7 @@ func _on_stop_pressed() -> void:
 		return
 	_show_status("Stopping %s..." % _selected_plugin_id)
 	_stop_button.disabled = true
-	await SingletonObject.plugin_manager.stop_plugin(_selected_plugin_id)
+	SingletonObject.plugin_manager.stop_plugin(_selected_plugin_id)
 	_refresh_plugin_list()
 
 

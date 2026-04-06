@@ -2026,17 +2026,17 @@ func _refresh_tool_set_checks() -> void:
 
 	var all_enabled: bool = minerva_server._enabled_tool_sets.is_empty()
 
-	var set_names := sets.keys()
-	set_names.sort()
-	for set_name in set_names:
+	var tool_set_names := sets.keys()
+	tool_set_names.sort()
+	for tool_set_name in tool_set_names:
 		var check := CheckButton.new()
-		check.text = "%s (%d tools)" % [set_name, sets[set_name]]
-		check.button_pressed = all_enabled or (set_name in minerva_server._enabled_tool_sets)
-		check.toggled.connect(_on_tool_set_check_toggled.bind(set_name))
+		check.text = "%s (%d tools)" % [tool_set_name, sets[tool_set_name]]
+		check.button_pressed = all_enabled or (tool_set_name in minerva_server._enabled_tool_sets)
+		check.toggled.connect(_on_tool_set_check_toggled.bind(tool_set_name))
 		_tool_set_checks_container.add_child(check)
 
 
-func _on_tool_set_check_toggled(toggled_on: bool, set_name: String) -> void:
+func _on_tool_set_check_toggled(toggled_on: bool, tool_set_name: String) -> void:
 	var mcp = SingletonObject.mcp_manager
 	if not mcp or not mcp.minerva_server:
 		return
@@ -2052,13 +2052,13 @@ func _on_tool_set_check_toggled(toggled_on: bool, set_name: String) -> void:
 				if tool.tool_set not in all_sets:
 					all_sets.append(tool.tool_set)
 		if not toggled_on:
-			all_sets.erase(set_name)
+			all_sets.erase(tool_set_name)
 		minerva_server._enabled_tool_sets = all_sets
 	else:
-		if toggled_on and set_name not in minerva_server._enabled_tool_sets:
-			minerva_server._enabled_tool_sets.append(set_name)
+		if toggled_on and tool_set_name not in minerva_server._enabled_tool_sets:
+			minerva_server._enabled_tool_sets.append(tool_set_name)
 		elif not toggled_on:
-			minerva_server._enabled_tool_sets.erase(set_name)
+			minerva_server._enabled_tool_sets.erase(tool_set_name)
 
 		# If all sets are now enabled, clear the filter
 		var all_sets: Array = []
@@ -2966,7 +2966,7 @@ func _on_core_connection_changed(_connected: bool) -> void:
 
 func _on_stt_provider_changed(idx: int) -> void:
 	var cfg := SingletonObject.get_voice_config()
-	cfg.stt_provider = _stt_provider_option.get_item_id(idx)
+	cfg.stt_provider = _stt_provider_option.get_item_id(idx) as VoiceConfig.STTProvider
 	var is_voice_service: bool = cfg.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE
 	_whisper_fallback_check.visible = is_voice_service
 	_stt_backend_option.disabled = not is_voice_service
@@ -2983,7 +2983,7 @@ func _on_stt_backend_changed(idx: int) -> void:
 
 func _on_tts_provider_changed(idx: int) -> void:
 	var cfg := SingletonObject.get_voice_config()
-	cfg.tts_provider = _tts_provider_option.get_item_id(idx)
+	cfg.tts_provider = _tts_provider_option.get_item_id(idx) as VoiceConfig.TTSProvider
 	_update_tts_section_enabled()
 	cfg.save()
 
@@ -3019,7 +3019,7 @@ func _on_whisper_fallback_toggled(enabled: bool) -> void:
 
 func _on_speak_mode_changed(idx: int) -> void:
 	var cfg := SingletonObject.get_voice_config()
-	cfg.speak_mode = _speak_mode_option.get_item_id(idx)
+	cfg.speak_mode = _speak_mode_option.get_item_id(idx) as VoiceConfig.SpeakMode
 	_update_summary_controls_visible()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
 		_populate_summary_models()
@@ -3040,9 +3040,9 @@ func _on_summary_timeout_changed(value: float) -> void:
 
 func _update_summary_controls_visible() -> void:
 	var cfg := SingletonObject.get_voice_config()
-	var show: bool = cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE
-	_summary_model_row.visible = show
-	_summary_timeout_row.visible = show
+	var show_summary_controls: bool = cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE
+	_summary_model_row.visible = show_summary_controls
+	_summary_timeout_row.visible = show_summary_controls
 
 
 func _populate_summary_models() -> void:
@@ -3746,9 +3746,9 @@ func _create_terminal_tab() -> void:
 
 	_term_theme_option = OptionButton.new()
 	_term_theme_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	for name in TerminalThemes.list_themes():
-		_term_theme_option.add_item(TerminalThemes.theme_display_name(name))
-		_term_theme_option.set_item_metadata(_term_theme_option.item_count - 1, name)
+	for theme_name in TerminalThemes.list_themes():
+		_term_theme_option.add_item(TerminalThemes.theme_display_name(theme_name))
+		_term_theme_option.set_item_metadata(_term_theme_option.item_count - 1, theme_name)
 	_term_theme_option.add_item("Custom")
 	_term_theme_option.set_item_metadata(_term_theme_option.item_count - 1, "custom")
 	theme_row.add_child(_term_theme_option)
@@ -3980,8 +3980,8 @@ func _on_term_theme_selected(idx: int) -> void:
 	if _term_loading:
 		return
 	var tc: TerminalConfig = SingletonObject.get_terminal_config()
-	var name: String = _term_theme_option.get_item_metadata(idx)
-	tc.theme_name = name
+	var theme_name: String = _term_theme_option.get_item_metadata(idx)
+	tc.theme_name = theme_name
 	# Update fg/bg from theme
 	var fgbg := tc.get_theme_fg_bg()
 	tc.default_fg = fgbg.fg

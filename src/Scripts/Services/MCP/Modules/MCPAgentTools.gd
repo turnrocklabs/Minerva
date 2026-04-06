@@ -1162,7 +1162,8 @@ func _inject_completion_into_parent(worker, reason: String, message: String, cha
 			var now_unix := Time.get_unix_time_from_system()
 			var elapsed := int(now_unix - spawned_unix)
 			if elapsed >= 60:
-				duration_text = "%dm%ds" % [elapsed / 60, elapsed % 60]
+				var minutes := int(elapsed / 60.0)
+				duration_text = "%dm%ds" % [minutes, elapsed % 60]
 			else:
 				duration_text = "%ds" % elapsed
 

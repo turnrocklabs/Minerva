@@ -42,7 +42,7 @@ func _build_ui() -> void:
 	_tab_bar = TabBar.new()
 	_tab_bar.name = "TabBar"
 	_tab_bar.clip_tabs = false
-	_tab_bar.tab_close_display_policy = 2          # SHOW_NEVER_BUT_WHEN_HOVERED equivalent index
+	_tab_bar.tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ACTIVE_ONLY
 	_tab_bar.max_tab_width = 250
 	_tab_bar.drag_to_rearrange_enabled = true
 	_tab_bar.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -88,6 +88,7 @@ func add_terminal() -> TerminalNew:
 
 	_tab_bar.current_tab = _tab_bar.tab_count - 1
 
+	focus_requested.emit()
 	terminal_added.emit(terminal)
 	return terminal
 
@@ -147,6 +148,7 @@ func _on_tab_bar_tab_changed(tab: int) -> void:
 	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
 	if terminal:
 		terminal.visible = true
+		focus_requested.emit()
 
 
 func _on_tab_bar_tab_close_pressed(tab: int) -> void:

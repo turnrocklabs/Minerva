@@ -146,9 +146,12 @@ func _format_duration(spawned_at: String) -> String:
 	if elapsed < 0:
 		elapsed = 0
 	if elapsed >= 3600:
-		return "%dh%dm" % [elapsed / 3600, (elapsed % 3600) / 60]
+		var hours := int(elapsed / 3600.0)
+		var minutes := int((elapsed % 3600) / 60.0)
+		return "%dh%dm" % [hours, minutes]
 	elif elapsed >= 60:
-		return "%dm%ds" % [elapsed / 60, elapsed % 60]
+		var minutes := int(elapsed / 60.0)
+		return "%dm%ds" % [minutes, elapsed % 60]
 	return "%ds" % elapsed
 
 

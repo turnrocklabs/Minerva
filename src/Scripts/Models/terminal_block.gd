@@ -174,11 +174,11 @@ func estimate_tokens(terminal_node = null) -> int:
 	## Token estimate: chars / 4 when terminal available, else row-based fallback.
 	if block_type == BlockType.VIRTUAL:
 		var text := _format_virtual_for_injection()
-		return maxi(1, text.length() / 4)
+		return maxi(1, ceili(float(text.length()) / 4.0))
 	if terminal_node:
 		var text := get_text(terminal_node)
 		if not text.is_empty():
-			return maxi(1, text.length() / 4)
+			return maxi(1, ceili(float(text.length()) / 4.0))
 	# Fallback: estimate ~40 chars per row average, / 4 tokens per char
 	var rows := row_count()
 	if rows <= 0:
@@ -220,4 +220,4 @@ func estimate_tokens_for_ranges(terminal_node) -> int:
 	var text := "\n".join(parts)
 	if text.is_empty():
 		return 0
-	return maxi(1, text.length() / 4)
+	return maxi(1, ceili(float(text.length()) / 4.0))

@@ -230,7 +230,7 @@ func _on_capture_tick() -> void:
 
 	# Get captured audio as Vector2 frames (stereo float) at native mix rate
 	var frames: PackedVector2Array = _capture_effect.get_buffer(frames_available)
-	var native_rate: int = AudioServer.get_mix_rate()
+	var native_rate: int = int(AudioServer.get_mix_rate())
 
 	# Convert stereo float to mono float array
 	var mono := PackedFloat32Array()
@@ -415,7 +415,7 @@ func _has_speech_energy(pcm: PackedByteArray) -> bool:
 	if pcm.size() < 4:
 		return false
 	var sum_sq: float = 0.0
-	var n_samples: int = pcm.size() / 2
+	var n_samples: int = pcm.size() >> 1
 	for i in range(n_samples):
 		var sample: float = float(pcm.decode_s16(i * 2))
 		sum_sq += sample * sample
@@ -428,8 +428,9 @@ func _pcm_to_wav(pcm: PackedByteArray) -> PackedByteArray:
 	var sample_rate: int = 16000
 	var channels: int = 1
 	var bits_per_sample: int = 16
-	var byte_rate: int = sample_rate * channels * bits_per_sample / 8
-	var block_align: int = channels * bits_per_sample / 8
+	var bytes_per_sample: int = bits_per_sample >> 3
+	var byte_rate: int = sample_rate * channels * bytes_per_sample
+	var block_align: int = channels * bytes_per_sample
 	var data_size: int = pcm.size()
 	var file_size: int = 36 + data_size
 

@@ -31,7 +31,7 @@ func add_entry(tool_name: String, arguments: Dictionary, result: Dictionary) -> 
 	# Auto-scroll to bottom
 	if _auto_scroll:
 		await get_tree().process_frame
-		_scroll.scroll_vertical = _scroll.get_v_scroll_bar().max_value
+		_scroll.scroll_vertical = ceili(_scroll.get_v_scroll_bar().max_value)
 
 func get_entry_count() -> int:
 	return _entries_container.get_child_count()

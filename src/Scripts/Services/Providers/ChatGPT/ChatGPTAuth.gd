@@ -37,7 +37,7 @@ func is_authenticated() -> bool:
 func get_status_text() -> String:
 	if not is_authenticated():
 		return "Not connected"
-	var expires_str := Time.get_datetime_string_from_unix_time(expires_at / 1000, true)
+	var expires_str := Time.get_datetime_string_from_unix_time(int(expires_at / 1000.0), true)
 	return "Connected (expires %s)" % expires_str
 
 

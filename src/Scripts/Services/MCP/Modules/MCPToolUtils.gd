@@ -214,8 +214,8 @@ static func find_kanban(name_: String) -> Variant:
 
 ## Get Editor.Type enum value by name string, avoiding direct const dependency.
 static func _get_editor_type(type_name: String) -> int:
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	return EditorScript.Type.get(type_name, -1)
+	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
+	return editor_script.Type.get(type_name, -1)
 
 #endregion
 

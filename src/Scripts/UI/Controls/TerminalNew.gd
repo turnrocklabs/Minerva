@@ -18,7 +18,6 @@ var _output_label_nodes: Array[TextLayer]
 var terminal = null
 var _terminal_available: bool = false
 
-var _viewport_start: int = 0
 var _scrolled_up: bool = false
 
 var cursor_visible: bool = true
@@ -41,7 +40,6 @@ var _palette: Array[Color] = []
 
 # Block tracking for terminal-to-chat injection
 var _blocks: Array[TerminalBlock] = []
-var _absolute_row_offset: int = 0  # tracks total rows scrolled off top
 
 var _send_icon: Texture2D
 
@@ -209,7 +207,6 @@ func _on_output_received(_text: String, _type: int) -> void:
 	var matches: = WINDOWS_CWD_REGEX.search_all(_text)
 	if not matches.is_empty():
 		for match_ in matches:
-			var cursor = terminal.get_cursor()
 			_on_prompt_start()  # Reuse block detection for Windows prompts
 
 
@@ -817,11 +814,11 @@ class CursorLayer extends Control:
 
 		var cx: int = cursor_info.get("x", 0)
 		var cy: int = cursor_info.get("y", 0)
-		var visible: bool = cursor_info.get("visible", true)
+		var cursor_is_visible: bool = cursor_info.get("visible", true)
 		var tc: TerminalConfig = SingletonObject.get_terminal_config()
 		var fg: Color = tc.get_theme_fg_bg().fg
 
-		if visible and cursor_visible:
+		if cursor_is_visible and cursor_visible:
 			var cw: float = terminal.char_width
 			var lh: float = terminal.line_height
 			match cursor_style:
@@ -846,7 +843,6 @@ class TextLayer extends Control:
 	var terminal: TerminalNew
 
 	var _selection_background_color: = Color.WHITE_SMOKE
-	var _draw_debug_printed: bool = false
 	var _draw_count: int = 0
 
 	## Mark-in row for Shift+click range selection (-1 = no pending mark)

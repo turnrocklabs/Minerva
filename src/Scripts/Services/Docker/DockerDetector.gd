@@ -95,8 +95,8 @@ func _check_docker_daemon() -> Dictionary:
 	var exit_code := OS.execute("docker", ["info", "--format", "{{.ServerVersion}}"], output, true)
 
 	if exit_code == 0:
-		var runtime := _detect_runtime()
-		return {"running": true, "runtime": runtime}
+		var detected_runtime := _detect_runtime()
+		return {"running": true, "runtime": detected_runtime}
 
 	# Daemon not running — provide platform-specific guidance
 	var platform := _get_platform()
@@ -113,7 +113,7 @@ func _check_docker_daemon() -> Dictionary:
 				error = "Docker daemon not running. Start Colima with: colima start"
 			else:
 				# Check for Docker Desktop
-				var desktop_check := OS.execute("docker", ["context", "ls"], colima_output, true)
+				OS.execute("docker", ["context", "ls"], colima_output, true)
 				runtime = "docker_desktop"
 				error = "Docker daemon not running. Start Docker Desktop or run: colima start"
 		"windows":

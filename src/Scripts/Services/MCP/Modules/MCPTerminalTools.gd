@@ -242,9 +242,9 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 	var got_output: bool = false
 
 	# Use a simple polling approach: check for vt_state_changed via a flag
-	var output_changed: bool = false
+	var output_state := {"changed": false}
 	var on_change := func():
-		output_changed = true
+		output_state["changed"] = true
 
 	term.terminal.vt_state_changed.connect(on_change)
 
@@ -258,8 +258,8 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 			timed_out = true
 			break
 
-		if output_changed:
-			output_changed = false
+		if output_state["changed"]:
+			output_state["changed"] = false
 			got_output = true
 			last_change_time = Time.get_ticks_msec()
 

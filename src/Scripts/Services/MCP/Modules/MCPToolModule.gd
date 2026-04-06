@@ -32,5 +32,5 @@ func get_tool_names() -> Array[String]:
 ## Use MCPToolUtils helpers for response formatting.
 ## NOTE: Implementations may use `await` internally, making handle() a coroutine.
 ## Callers MUST always `await handle()` to support async tool handlers.
-func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+func handle(tool_name: String, _arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Tool '%s' not implemented in %s" % [tool_name, get_script().get_path().get_file()])

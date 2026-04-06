@@ -234,9 +234,9 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 
 						# Extract text from output array if we didn't get deltas
 						if text_parts.is_empty():
-							var output = resp.get("output", [])
-							if output is Array:
-								for item in output:
+							var output_items = resp.get("output", [])
+							if output_items is Array:
+								for item in output_items:
 									if item is Dictionary and item.get("type") == "message":
 										var content = item.get("content", [])
 										if content is Array:
