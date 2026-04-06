@@ -269,7 +269,7 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 					var activated: Array[String] = []
 					var skipped: Array[String] = []
 					for dep_name in tool_deps:
-						var search_results := server.tool_search_index.search(str(dep_name), "", 1)
+						var search_results: Array[Dictionary] = server.tool_search_index.search(str(dep_name), "", 1)
 						if not search_results.is_empty() and search_results[0].get("name", "") == str(dep_name):
 							var schema: Dictionary = search_results[0].get("schema", {})
 							server.tool_budget_manager.activate_tool(str(dep_name), schema)
