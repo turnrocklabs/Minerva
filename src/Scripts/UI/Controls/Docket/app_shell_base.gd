@@ -544,14 +544,14 @@ func _update_file_label() -> void:
 
 
 func _save_session() -> void:
-	## Save the list of open project paths for restore on next launch.
+	## Save the list of open project JSONL paths for restore on next launch.
 	if not _dm:
 		return
 	var paths := PackedStringArray()
 	for proj_name in _dm.get_loaded_projects():
-		var db := _dm.get_db(proj_name)
-		if db and not db.get_path().is_empty():
-			paths.append(db.get_path())
+		var p := _dm.get_project_path(proj_name)
+		if not p.is_empty():
+			paths.append(p)
 	UserPrefs.save_session(paths)
 
 

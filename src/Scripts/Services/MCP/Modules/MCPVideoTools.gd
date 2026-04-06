@@ -220,39 +220,34 @@ func _create_video_editor(args: Dictionary) -> Dictionary:
 	var recording_path: String = args.get("recording_path", "")
 
 	if name_.is_empty():
-		return {"success": false, "error": "name is required"}
+		return MCPToolUtils.error("name is required")
 	if recording_path.is_empty():
-		return {"success": false, "error": "recording_path is required"}
+		return MCPToolUtils.error("recording_path is required")
 
-	# Check if editor already open with this name
 	var existing = MCPToolUtils.find_video(name_)
 	if existing:
 		return {"success": true, "editor_name": name_, "message": "Editor already open"}
 
 	var editor_pane = SingletonObject.editor_pane
 	if not editor_pane:
-		return {"success": false, "error": "Editor pane not available"}
+		return MCPToolUtils.error("Editor pane not available")
 
 	var editor = editor_pane.add(Editor.Type.VIDEO_EDITOR, recording_path, name_)
 	if not editor:
-		return {"success": false, "error": "Failed to create video editor"}
+		return MCPToolUtils.error("Failed to create video editor")
 
-	return {
-		"success": true,
-		"editor_name": name_,
-		"message": "Video editor created for recording: %s" % recording_path
-	}
+	return {"success": true, "editor_name": name_, "message": "Video editor created for recording: %s" % recording_path}
 
 
 ## Add a cut segment
 func _video_add_cut(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
-	var start_ms: int = args.get("start_ms", 0)
-	var end_ms: int = args.get("end_ms", 0)
+	var start_ms: int = MCPToolUtils.coerce_int(args.get("start_ms", 0))
+	var end_ms: int = MCPToolUtils.coerce_int(args.get("end_ms", 0))
 
 	var editor = MCPToolUtils.find_video(editor_name)
 	if not editor:
-		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+		return MCPToolUtils.error("Video editor '%s' not found" % editor_name)
 
 	return editor.mcp_add_cut(start_ms, end_ms)
 
@@ -260,13 +255,13 @@ func _video_add_cut(args: Dictionary) -> Dictionary:
 ## Add a speed region
 func _video_add_speed_region(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
-	var start_ms: int = args.get("start_ms", 0)
-	var end_ms: int = args.get("end_ms", 0)
-	var speed: float = args.get("speed", 3.0)
+	var start_ms: int = MCPToolUtils.coerce_int(args.get("start_ms", 0))
+	var end_ms: int = MCPToolUtils.coerce_int(args.get("end_ms", 0))
+	var speed: float = MCPToolUtils.coerce_float(args.get("speed", 3.0))
 
 	var editor = MCPToolUtils.find_video(editor_name)
 	if not editor:
-		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+		return MCPToolUtils.error("Video editor '%s' not found" % editor_name)
 
 	return editor.mcp_add_speed_region(start_ms, end_ms, speed)
 
@@ -274,11 +269,11 @@ func _video_add_speed_region(args: Dictionary) -> Dictionary:
 ## Remove an edit segment
 func _video_remove_edit(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
-	var segment_index: int = args.get("segment_index", -1)
+	var segment_index: int = MCPToolUtils.coerce_int(args.get("segment_index", -1))
 
 	var editor = MCPToolUtils.find_video(editor_name)
 	if not editor:
-		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+		return MCPToolUtils.error("Video editor '%s' not found" % editor_name)
 
 	return editor.mcp_remove_edit(segment_index)
 
@@ -286,13 +281,13 @@ func _video_remove_edit(args: Dictionary) -> Dictionary:
 ## Set PiP position keyframe
 func _video_set_pip_position(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
-	var time_ms: int = args.get("time_ms", 0)
-	var x: float = args.get("x", 0.85)
-	var y: float = args.get("y", 0.8)
+	var time_ms: int = MCPToolUtils.coerce_int(args.get("time_ms", 0))
+	var x: float = MCPToolUtils.coerce_float(args.get("x", 0.85))
+	var y: float = MCPToolUtils.coerce_float(args.get("y", 0.8))
 
 	var editor = MCPToolUtils.find_video(editor_name)
 	if not editor:
-		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+		return MCPToolUtils.error("Video editor '%s' not found" % editor_name)
 
 	return editor.mcp_set_pip_position(time_ms, x, y)
 
@@ -300,12 +295,12 @@ func _video_set_pip_position(args: Dictionary) -> Dictionary:
 ## Set crop position keyframe
 func _video_set_crop_position(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
-	var time_ms: int = args.get("time_ms", 0)
-	var x: float = args.get("x", 0.5)
+	var time_ms: int = MCPToolUtils.coerce_int(args.get("time_ms", 0))
+	var x: float = MCPToolUtils.coerce_float(args.get("x", 0.5))
 
 	var editor = MCPToolUtils.find_video(editor_name)
 	if not editor:
-		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+		return MCPToolUtils.error("Video editor '%s' not found" % editor_name)
 
 	return editor.mcp_set_crop_position(time_ms, x)
 
@@ -316,7 +311,7 @@ func _video_get_state(args: Dictionary) -> Dictionary:
 
 	var editor = MCPToolUtils.find_video(editor_name)
 	if not editor:
-		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+		return MCPToolUtils.error("Video editor '%s' not found" % editor_name)
 
 	var state = editor.get_state_dict()
 	state["success"] = true
@@ -330,11 +325,11 @@ func _video_export(args: Dictionary) -> Dictionary:
 	var aspect_ratio_str: String = args.get("aspect_ratio", "16:9")
 
 	if output_path.is_empty():
-		return {"success": false, "error": "output_path is required"}
+		return MCPToolUtils.error("output_path is required")
 
 	var editor = MCPToolUtils.find_video(editor_name)
 	if not editor:
-		return {"success": false, "error": "Video editor '%s' not found" % editor_name}
+		return MCPToolUtils.error("Video editor '%s' not found" % editor_name)
 
 	return editor.mcp_export(output_path, aspect_ratio_str)
 

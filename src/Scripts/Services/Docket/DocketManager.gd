@@ -49,6 +49,9 @@ func _restore_session() -> void:
 	## Re-open project dockets that were loaded in the previous session.
 	var paths := UserPrefs.load_session()
 	for path in paths:
+		# Skip cache files (stale session data from before the fix)
+		if path.ends_with(".cache"):
+			continue
 		if FileAccess.file_exists(path) and not _is_already_loaded(path):
 			open_project(path)
 
@@ -229,6 +232,11 @@ func get_known_projects() -> Dictionary:
 
 func is_project_loaded(project_name: String) -> bool:
 	return _project_dbs.has(project_name)
+
+
+func get_project_path(project_name: String) -> String:
+	## Get the JSONL .dct file path for a project (not the .cache path).
+	return _project_paths.get(project_name, "")
 
 
 # -- Tool dispatch (with signal emission) -------------------------------------
