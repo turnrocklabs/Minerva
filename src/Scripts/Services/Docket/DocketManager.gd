@@ -16,6 +16,7 @@ signal project_unloaded(project_name: String)
 
 const MASTER_DCT_RES := "res://Data/master.dct"
 const MASTER_DCT_USER := "user://master.dct"
+const MASTER_SHIPPED_HASH := "user://master.dct.shipped_hash"
 const PERSONAL_DCT_USER := "user://personal.dct"
 const REGISTRY_PATH := "user://docket_projects.cfg"
 
@@ -100,6 +101,71 @@ func _init_master() -> void:
 	if _master_db:
 		_project_dbs["master"] = _master_db
 		_project_paths["master"] = user_path
+		# Merge any shipped updates from res://master.dct into user://
+		if FileAccess.file_exists(MASTER_DCT_RES):
+			_merge_shipped_master()
+
+
+func _merge_shipped_master() -> void:
+	## Compare shipped res://master.dct against a stored hash. If changed,
+	## upsert shipped items into the user:// DB (preserving user-created items).
+	var res_path := ProjectSettings.globalize_path(MASTER_DCT_RES)
+	var hash_path := ProjectSettings.globalize_path(MASTER_SHIPPED_HASH)
+
+	# Compute hash of shipped file
+	var f := FileAccess.open(MASTER_DCT_RES, FileAccess.READ)
+	if not f:
+		return
+	var content := f.get_as_text()
+	f.close()
+	var current_hash := str(content.hash())
+
+	# Compare with stored hash
+	var stored_hash := ""
+	if FileAccess.file_exists(MASTER_SHIPPED_HASH):
+		var hf := FileAccess.open(MASTER_SHIPPED_HASH, FileAccess.READ)
+		if hf:
+			stored_hash = hf.get_as_text().strip_edges()
+			hf.close()
+
+	if current_hash == stored_hash:
+		return  # No changes since last sync
+
+	# Parse shipped items
+	var parsed := JSONLParser.parse_file(res_path)
+	var shipped_items: Array = parsed.get("items", [])
+	if shipped_items.is_empty():
+		return
+
+	# Upsert each shipped item into the master DB
+	var updated := 0
+	var inserted := 0
+	for item: Dictionary in shipped_items:
+		var id: String = str(item.get("id", ""))
+		if id.is_empty():
+			continue
+		if _master_db.has_item(id):
+			# Update existing — overwrite with shipped version
+			var changes := {}
+			for key in item:
+				if key not in ["id", "_type", "events"]:
+					changes[key] = item[key]
+			_master_db.update_item_fields(id, changes)
+			updated += 1
+		else:
+			# Insert new shipped item
+			_master_db.insert_item(id, item)
+			inserted += 1
+
+	# Save the hash so we don't re-merge next startup
+	var hf := FileAccess.open(MASTER_SHIPPED_HASH, FileAccess.WRITE)
+	if hf:
+		hf.store_string(current_hash)
+		hf.close()
+
+	if updated > 0 or inserted > 0:
+		print("[DocketManager] Merged shipped master.dct: %d updated, %d inserted" % [updated, inserted])
+		invalidate_prompt_cache()
 
 
 func _init_personal() -> void:
