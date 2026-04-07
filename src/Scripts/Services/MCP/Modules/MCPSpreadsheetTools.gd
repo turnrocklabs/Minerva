@@ -91,7 +91,7 @@ func register_tools() -> void:
 	, "spreadsheet")
 
 	server._register_tool("minerva_update_spreadsheet_data",
-		"Update cells in a spreadsheet. Can update individual cells or load entire CSV content. Requires editor_name from minerva_list_editors.",
+		"Update cells in a spreadsheet. Two modes: (1) csv_content parameter for full CSV replacement, (2) cells parameter for individual cell updates [{\"cell\":\"A1\",\"value\":\"Hello\"}]. Requires editor_name from minerva_list_editors.",
 		{
 			"type": "object",
 			"properties": {
