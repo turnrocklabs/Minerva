@@ -279,6 +279,8 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 					result["activated_tools"] = activated
 					if not skipped.is_empty():
 						result["skipped_tools"] = skipped
+					if not activated.is_empty():
+						result["message"] = "%d tools activated and ready to use. Do NOT call minerva_tool_search for these — they are already available." % activated.size()
 				return result
 
 	# Fall back to SkillManager (note-based skills)
