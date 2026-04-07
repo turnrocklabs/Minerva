@@ -415,6 +415,17 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 
 	# Handle skill executable tools
 	if tool_name.begins_with("skill_"):
+		# Policy check for skill tools (same enforcement as all other tools)
+		if minerva_server and minerva_server.policy_engine:
+			var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments)
+			if not policy_result["allowed"]:
+				minerva_server._activate_policy_tools(policy_result)
+				SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, caller_chat_id)
+				return policy_result
+			var pending_observations: Array = policy_result.get("observations", [])
+			if not pending_observations.is_empty():
+				minerva_server._write_observation_telemetry(pending_observations)
+
 		var skill_id := tool_name.substr(6)  # Strip "skill_" prefix
 		var skill_manager = SingletonObject.get_skill_manager()
 		if skill_manager:
@@ -464,6 +475,10 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 			minerva_server._activate_policy_tools(policy_result)
 			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, caller_chat_id)
 			return policy_result
+		# Drain observation telemetry for external tools (internal tools do this in _execute_tool_impl)
+		var pending_observations: Array = policy_result.get("observations", [])
+		if not pending_observations.is_empty():
+			minerva_server._write_observation_telemetry(pending_observations)
 
 	var connection = servers[server_name]
 	var result = await connection.call_tool(tool_name, arguments)

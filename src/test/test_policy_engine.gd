@@ -18,6 +18,10 @@ func _init():
 	test_normalize_docket_tool()
 	test_normalize_terminal_write_ignored()
 	test_normalize_unknown_tool()
+	test_normalize_cobrowser_navigate()
+	test_normalize_cobrowser_click()
+	test_normalize_cobrowser_read()
+	test_normalize_nudge_tool()
 
 	# RiskScopeState tests
 	print("\n-- RiskScopeState --")
@@ -168,12 +172,45 @@ func test_normalize_terminal_write_ignored():
 func test_normalize_unknown_tool():
 	print("test_normalize_unknown_tool:")
 	var n := ActionNormalizer.new()
+	# Unknown external tools get their prefix as domain (fallback behavior)
 	var facts := n.normalize("some_random_tool_xyz", {"foo": "bar"})
-	check("unknown tool: domains is empty", facts["domains"].is_empty())
-	check("unknown tool: verbs is empty", facts["verbs"].is_empty())
+	check("unknown tool: gets prefix domain", "some" in facts["domains"])
 	check("unknown tool: flags is empty", facts["flags"].is_empty())
 	check("unknown tool: paths is empty", facts["paths"].is_empty())
 	check("unknown tool: tool name preserved", facts["tool"] == "some_random_tool_xyz")
+
+
+func test_normalize_cobrowser_navigate():
+	print("test_normalize_cobrowser_navigate:")
+	var n := ActionNormalizer.new()
+	var facts := n.normalize("cobrowser_navigate", {"url": "https://example.com"})
+	check("cobrowser_navigate: domain is browser", "browser" in facts["domains"])
+	check("cobrowser_navigate: verb is navigate", "navigate" in facts["verbs"])
+	check("cobrowser_navigate: url in paths", "https://example.com" in facts["paths"])
+
+
+func test_normalize_cobrowser_click():
+	print("test_normalize_cobrowser_click:")
+	var n := ActionNormalizer.new()
+	var facts := n.normalize("cobrowser_click", {"selector": "#btn"})
+	check("cobrowser_click: domain is browser", "browser" in facts["domains"])
+	check("cobrowser_click: verb is interact", "interact" in facts["verbs"])
+	check("cobrowser_click: paths is empty (no url)", facts["paths"].is_empty())
+
+
+func test_normalize_cobrowser_read():
+	print("test_normalize_cobrowser_read:")
+	var n := ActionNormalizer.new()
+	var facts := n.normalize("cobrowser_read", {"selector": "body"})
+	check("cobrowser_read: domain is browser", "browser" in facts["domains"])
+	check("cobrowser_read: verb is read", "read" in facts["verbs"])
+
+
+func test_normalize_nudge_tool():
+	print("test_normalize_nudge_tool:")
+	var n := ActionNormalizer.new()
+	var facts := n.normalize("nudge_set_hint", {"component": "build", "key": "cmd", "value": "make"})
+	check("nudge_set_hint: domain is nudge", "nudge" in facts["domains"])
 
 
 # ── RiskScopeState tests ───────────────────────────────────────────────────────

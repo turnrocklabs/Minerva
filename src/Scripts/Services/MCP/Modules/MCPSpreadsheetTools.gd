@@ -24,7 +24,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_set_row_height",
 		"minerva_set_column_width",
 		"minerva_set_cell_formula",
-		"minerva_create_chart",
+		"minerva_add_spreadsheet_chart",
 		"minerva_get_chart_image",
 		"minerva_list_charts",
 		"minerva_update_chart",
@@ -42,7 +42,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_create_spreadsheet_editor",
-		"Create a new spreadsheet editor tab. Returns an editor_name that can be used for subsequent operations. Next steps: use minerva_update_spreadsheet_data to populate cells, minerva_format_cells for styling, minerva_create_chart for visualization, minerva_link_spreadsheet_to_note to save as a note.",
+		"Create a new spreadsheet. Use this when asked to 'make a spreadsheet', 'create a table', or organize data into rows and columns. Returns an editor_name for subsequent operations. Next steps: use minerva_update_spreadsheet_data to populate cells, minerva_format_cells for styling, minerva_link_spreadsheet_to_note to save as a note.",
 		{
 			"type": "object",
 			"properties": {
@@ -376,8 +376,8 @@ func register_tools() -> void:
 		}
 	, "spreadsheet")
 
-	server._register_tool("minerva_create_chart",
-		"Create a chart from spreadsheet data. Requires editor_name from minerva_list_editors. Get column/row data from minerva_get_spreadsheet_data first. After creating, use minerva_get_chart_image to view the chart, minerva_update_chart to modify it.",
+	server._register_tool("minerva_add_spreadsheet_chart",
+		"Add a line or bar chart visualization to an existing spreadsheet. Requires an already-created spreadsheet (minerva_create_spreadsheet_editor) with data. This does NOT create a spreadsheet — use minerva_create_spreadsheet_editor for that. After creating, use minerva_get_chart_image to view the chart, minerva_update_chart to modify it.",
 		{
 			"type": "object",
 			"properties": {
@@ -467,7 +467,7 @@ func register_tools() -> void:
 				},
 				"chart_id": {
 					"type": "string",
-					"description": "The chart ID to update (from minerva_list_charts or minerva_create_chart)"
+					"description": "The chart ID to update (from minerva_list_charts or minerva_add_spreadsheet_chart)"
 				},
 				"chart_index": {
 					"type": "integer",
@@ -738,7 +738,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _set_column_width(arguments)
 		"minerva_set_cell_formula":
 			return _set_cell_formula(arguments)
-		"minerva_create_chart":
+		"minerva_add_spreadsheet_chart":
 			return _create_chart(arguments)
 		"minerva_get_chart_image":
 			return await _get_chart_image(arguments)

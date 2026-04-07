@@ -68,6 +68,9 @@ func normalize(tool_name: String, arguments: Dictionary) -> Dictionary:
 			or tool_name.begins_with("minerva_docket_") \
 			or tool_name.begins_with("docket_"):
 		_add_domain(facts, "docket")
+	elif not tool_name.begins_with("minerva_"):
+		# External tool fallback: derive domain from tool prefix (e.g., cobrowser_navigate -> "browser")
+		_normalize_external(tool_name, arguments, facts)
 
 	return facts
 
@@ -112,6 +115,43 @@ func _normalize_bash(command: String, facts: Dictionary) -> void:
 		_add_flag(facts, "hard")
 	if _re_flag_recursive.search(command):
 		_add_flag(facts, "recursive")
+
+
+func _normalize_external(tool_name: String, arguments: Dictionary, facts: Dictionary) -> void:
+	## Derive a domain from the external tool's prefix (text before the first underscore).
+	## Known prefixes are mapped to semantic domains; unknown prefixes pass through as-is.
+	var underscore_idx := tool_name.find("_")
+	var prefix := tool_name if underscore_idx == -1 else tool_name.left(underscore_idx)
+
+	# Map well-known prefixes to semantic domains
+	match prefix:
+		"cobrowser":
+			_add_domain(facts, "browser")
+		"nudge":
+			_add_domain(facts, "nudge")
+		_:
+			if not prefix.is_empty():
+				_add_domain(facts, prefix)
+
+	# Extract verb from the action part (text after prefix_)
+	if underscore_idx != -1 and underscore_idx + 1 < tool_name.length():
+		var action := tool_name.substr(underscore_idx + 1)
+		# Map common action suffixes to verbs
+		if action.begins_with("navigate"):
+			_add_verb(facts, "navigate")
+		elif action.begins_with("click") or action.begins_with("doubleclick") or action.begins_with("rightclick"):
+			_add_verb(facts, "interact")
+		elif action.begins_with("type"):
+			_add_verb(facts, "input")
+		elif action.begins_with("read") or action.begins_with("get_") or action.begins_with("query") or action.begins_with("screenshot"):
+			_add_verb(facts, "read")
+		elif action.begins_with("tab_new") or action.begins_with("tab_close"):
+			_add_verb(facts, "manage-tab")
+
+	# If the tool has a url argument, record it as a path
+	var url: String = str(arguments.get("url", ""))
+	if not url.is_empty():
+		facts["paths"].append(url)
 
 
 func _normalize_file(arguments: Dictionary, facts: Dictionary) -> void:

@@ -591,9 +591,9 @@ func _activate_policy_tools(policy_result: Dictionary) -> void:
 		}}
 		tool_budget_manager.activate_tool("minerva_docket_get", schema)
 
-	# Parse tool names from alternatives (look for minerva_* or docket_* patterns)
+	# Parse tool names from alternatives (match any word_word pattern, then check registry)
 	var re := RegEx.new()
-	re.compile(r"\b(minerva_\w+)\b")
+	re.compile(r"\b([a-z][a-z0-9]*_[a-z0-9_]+)\b")
 	for alt in policy_result.get("allowed_next_actions", []):
 		var matches := re.search_all(str(alt))
 		for m in matches:

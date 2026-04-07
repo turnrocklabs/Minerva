@@ -112,13 +112,15 @@ func _merge_shipped_master() -> void:
 	var res_path := ProjectSettings.globalize_path(MASTER_DCT_RES)
 	var hash_path := ProjectSettings.globalize_path(MASTER_SHIPPED_HASH)
 
-	# Compute hash of shipped file
+	# Compute hash of shipped file + schema columns so that adding a column
+	# forces a re-merge even when the JSONL content hasn't changed.
 	var f := FileAccess.open(MASTER_DCT_RES, FileAccess.READ)
 	if not f:
 		return
 	var content := f.get_as_text()
 	f.close()
-	var current_hash := str(content.hash())
+	var schema_key := ",".join(DocketDB._ITEM_COLS)
+	var current_hash := str((content + schema_key).hash())
 
 	# Compare with stored hash
 	var stored_hash := ""

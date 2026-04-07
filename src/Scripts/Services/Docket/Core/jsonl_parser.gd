@@ -207,9 +207,11 @@ static func _parse_item(d: Dictionary) -> Dictionary:
 	_copy_int_opt(d, out, "retrieval_count")
 	_copy_int_opt(d, out, "research_cost")
 	_copy_int_opt(d, out, "quality")
-	# Tags array
+	# Array fields
 	if d.has("tags") and d["tags"] is Array:
 		out["tags"] = d["tags"].duplicate()
+	if d.has("tool_deps") and d["tool_deps"] is Array:
+		out["tool_deps"] = d["tool_deps"].duplicate()
 	return out
 
 

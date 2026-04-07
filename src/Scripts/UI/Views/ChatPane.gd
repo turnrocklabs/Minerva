@@ -1296,6 +1296,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 	var model_chi: ChatHistoryItem = accumulator_chi if accumulator_chi else _get_last_model_history_item(history)
 
 	# Execute each tool call and collect results
+	# Batch-level dedup: identical tool+args within the same round reuse cached result
+	var _batch_cache: Dictionary = {}
+
 	for i in range(tool_calls.size()):
 		var tool_call = tool_calls[i]
 
@@ -1337,8 +1340,16 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			print("[Agent] Tool blocked by AllowedDirectories: %s" % tool_name)
 			result = path_error
 		else:
-			# Execute the tool — pass caller_chat_id so tools like spawn_worker know who called
-			result = await mcp_manager.execute_tool(tool_name, tool_args, history.HistoryId)
+			# Batch dedup: skip if identical tool+args already executed this round
+			var call_hash: String = (tool_name + JSON.stringify(tool_args)).sha256_text()
+			if _batch_cache.has(call_hash):
+				result = _batch_cache[call_hash].duplicate()
+				result["_deduped"] = true
+				print("[Agent] Dedup: reusing result for %s" % tool_name)
+			else:
+				# Execute the tool — pass caller_chat_id so tools like spawn_worker know who called
+				result = await mcp_manager.execute_tool(tool_name, tool_args, history.HistoryId)
+				_batch_cache[call_hash] = result
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
 
@@ -1369,6 +1380,11 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		# Add to history (this is critical - must happen before continuation)
 		history.HistoryItemList.append(tool_result_item)
+
+		# Yield one frame so Godot can render/process input between tool calls.
+		# Most tool handlers are synchronous, so `await execute_tool()` completes
+		# instantly — without this, the entire for-loop runs in one frame and walls the CPU.
+		await get_tree().process_frame
 
 	# Add tool block marker to message for proper interleaving during render
 	# Format: {{TOOL_BLOCK:count}} where count is the number of tool executions for this round

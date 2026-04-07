@@ -44,7 +44,7 @@ func _build_test_index() -> ToolSearchIndex:
 	index.register_tool("minerva_send_message", "Send a message to a chat. Requires chat_id from minerva_list_chats.", {"name": "minerva_send_message", "description": "Send message"}, "chat")
 	index.register_tool("minerva_create_spreadsheet_editor", "Create a new spreadsheet editor", {"name": "minerva_create_spreadsheet_editor", "description": "Create spreadsheet"}, "spreadsheet")
 	index.register_tool("minerva_format_cells", "Apply formatting to cells. Requires editor_name from minerva_list_editors.", {"name": "minerva_format_cells", "description": "Format cells"}, "spreadsheet")
-	index.register_tool("minerva_create_chart", "Create a chart from spreadsheet data. Requires editor_name.", {"name": "minerva_create_chart", "description": "Create chart"}, "spreadsheet")
+	index.register_tool("minerva_add_spreadsheet_chart", "Create a chart from spreadsheet data. Requires editor_name.", {"name": "minerva_add_spreadsheet_chart", "description": "Create chart"}, "spreadsheet")
 	return index
 
 
@@ -89,7 +89,7 @@ func test_category_filter(index: ToolSearchIndex):
 	check("category filter returns results", results.size() > 0)
 	var all_spreadsheet := true
 	for r in results:
-		if r.name != "minerva_create_spreadsheet_editor" and r.name != "minerva_create_chart":
+		if r.name != "minerva_create_spreadsheet_editor" and r.name != "minerva_add_spreadsheet_chart":
 			all_spreadsheet = false
 	check("all results are spreadsheet tools", all_spreadsheet)
 
