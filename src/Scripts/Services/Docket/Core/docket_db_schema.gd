@@ -30,7 +30,7 @@ static func init_schema(db: DocketDB) -> void:
 		quality INTEGER DEFAULT 0, last_reviewed TEXT DEFAULT '',
 		command TEXT, usage TEXT, prompt_text TEXT, preconditions TEXT,
 		summary TEXT, article TEXT, parameters TEXT,
-		steps TEXT, outcome TEXT
+		steps TEXT, outcome TEXT, tool_deps TEXT
 	);""")
 
 	db._exec("""CREATE TABLE IF NOT EXISTS item_tags (
@@ -149,7 +149,7 @@ static func migrate_schema(db: DocketDB) -> void:
 			"test_setup", "test_steps", "expected_result", "last_reviewed",
 			"command", "usage", "prompt_text", "preconditions",
 			"summary", "article", "parameters",
-			"steps", "outcome"]:
+			"steps", "outcome", "tool_deps"]:
 		if not DocketDB._has_column(col_rows, col_name):
 			db._exec("ALTER TABLE items ADD COLUMN %s TEXT;" % col_name)
 

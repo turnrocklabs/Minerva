@@ -273,6 +273,8 @@ static func parse_qualified_ref(ref: String) -> Dictionary:
 ## Replace literal \n and \t escape sequences with real characters.
 ## Defends against MCP clients that pass escaped text instead of actual newlines.
 static func _normalize_text(val) -> Variant:
+	if val is Array:
+		return JSON.stringify(val)
 	if val is String:
 		var s: String = val
 		s = s.replace("\\n", "\n")
@@ -301,7 +303,7 @@ const _ITEM_COLS: Array = [
 	"quality", "last_reviewed",
 	"command", "usage", "prompt_text", "preconditions",
 	"summary", "article", "parameters",
-	"steps", "outcome",
+	"steps", "outcome", "tool_deps",
 ]
 
 
@@ -1280,6 +1282,14 @@ func _build_item_dict(row: Dictionary) -> Dictionary:
 			item[col] = str(val)
 		else:
 			item[col] = ""
+
+	# tool_deps: JSON array stored as TEXT
+	var tool_deps_raw = row.get("tool_deps")
+	if tool_deps_raw != null and not str(tool_deps_raw).is_empty():
+		var parsed = JSON.parse_string(str(tool_deps_raw))
+		item["tool_deps"] = parsed if parsed is Array else []
+	else:
+		item["tool_deps"] = []
 
 	# Fetch tags
 	var tag_rows := _exec_select("SELECT tag FROM item_tags WHERE item_id=?;", [id])
