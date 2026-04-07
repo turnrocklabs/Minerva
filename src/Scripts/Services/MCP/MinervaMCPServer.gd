@@ -320,6 +320,22 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 ## Check for duplicate calls and inject warning if detected
 func _check_duplicate_call(tool_name: String, arguments: Dictionary, result: Dictionary) -> Dictionary:
+	# Translate nested cobrowser errors into top-level errors with prescriptive messages.
+	# Cobrowser wraps errors as {"success": true, "result": {"error": "...", "success": false}}.
+	# This makes them invisible to error tracking and unhelpful to the LLM.
+	if result.get("success", false) == true and result.has("result"):
+		var inner = result.get("result")
+		if inner is Dictionary and inner.get("success", true) == false and inner.has("error"):
+			var inner_error: String = str(inner["error"])
+			result["success"] = false
+			# Prescriptive error messages for common cobrowser failures
+			if "No active tab" in inner_error or "Invalid tab ID" in inner_error:
+				result["error"] = "No browser tab found. Call cobrowser_tab_new to create a tab, or cobrowser_tab_list to discover existing tabs. Do NOT guess tab IDs — they are arbitrary numbers like 47, 53, 56."
+			elif "Could not establish connection" in inner_error or "Receiving end does not exist" in inner_error:
+				result["error"] = "Browser extension not responding on this tab. The tab may have been closed or the extension reloaded. Call cobrowser_tab_list to find valid tabs, or cobrowser_tab_new to create a new one."
+			else:
+				result["error"] = inner_error
+
 	var call_hash: String = (tool_name + JSON.stringify(arguments)).sha256_text()
 	if call_hash == _last_call_hash:
 		_consecutive_count += 1
@@ -331,7 +347,7 @@ func _check_duplicate_call(tool_name: String, arguments: Dictionary, result: Dic
 		_consecutive_count = 0
 	_last_call_hash = call_hash
 
-	# Track consecutive errors on repeated calls
+	# Track consecutive errors on repeated calls (now sees cobrowser errors too)
 	var is_error: bool = result.has("error") or result.get("success", true) == false
 	if call_hash == _last_call_hash and is_error:
 		_consecutive_error_count += 1
