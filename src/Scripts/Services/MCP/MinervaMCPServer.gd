@@ -261,7 +261,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# PRE-TOOL POLICY CHECK — before tool_budget_manager and advisory hooks
 	var pending_observations: Array = []
 	if policy_engine:
-		var policy_result := policy_engine.evaluate(tool_name, arguments)
+		var policy_result := policy_engine.evaluate(tool_name, arguments, _current_caller_chat_id)
 		if not policy_result["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
 			_activate_policy_tools(policy_result)
@@ -441,42 +441,40 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	if filtered.is_empty():
 		return {"success": true, "tools": [], "count": 0, "total_matches": 0, "message": "No tools found matching '%s'" % query}
 
-	# Top N are activated (full schema sent to API tools array), all results are lean in chat output
+	# Top N are activated (full schema sent to API tools array).
+	# Chat result is minimal — schemas are already in the tools array where models read them.
 	var activated: Array[String] = []
-	var tool_summaries: Array[Dictionary] = []
+	var also_available: Array[String] = []
 
 	for i in range(filtered.size()):
 		var result: Dictionary = filtered[i]
 		var name: String = result.get("name", "")
-		var description: String = result.get("description", "")
 
 		if i < limit:
-			# Top results: activate full schema in budget manager (so tool is callable),
-			# but only return name+description in the chat result to save tokens.
 			var schema: Dictionary = result.get("schema", {})
 			if not name.is_empty() and not schema.is_empty():
 				tool_budget_manager.activate_tool(name, schema)
 				activated.append(name)
-		# All results: lean name+description only — no input_schema in chat output
-		tool_summaries.append({
-			"name": name,
-			"description": description,
-		})
+		else:
+			also_available.append(name)
 
 	var message: String
 	if filtered.size() <= limit:
-		message = "Found %d tools. They are now activated and can be called directly." % filtered.size()
+		message = "%d tools activated and ready to call." % activated.size()
 	else:
-		message = "Found %d tools. Top %d are activated and ready to call. The remaining %d are listed by name — search by exact name to activate any of them." % [filtered.size(), limit, filtered.size() - limit]
+		message = "%d tools activated. %d more available — search by exact name to activate." % [activated.size(), also_available.size()]
 
-	return {
+	var result_dict: Dictionary = {
 		"success": true,
-		"tools": tool_summaries,
-		"count": tool_summaries.size(),
 		"activated": activated,
-		"total_matches": filtered.size(),
 		"message": message,
 	}
+	# Only include overflow list if small enough to be useful; omit when too large
+	if not also_available.is_empty() and also_available.size() <= 20:
+		result_dict["also_available"] = also_available
+	elif not also_available.is_empty():
+		result_dict["remaining_count"] = also_available.size()
+	return result_dict
 
 #endregion
 

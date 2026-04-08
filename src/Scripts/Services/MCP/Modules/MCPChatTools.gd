@@ -12,6 +12,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_set_agent_mode",
 		"minerva_send_message",
 		"minerva_get_chat_history",
+		"minerva_get_chat_messages",
 		"minerva_get_tool_calls",
 		"minerva_list_chats",
 		"minerva_close_chat",
@@ -94,7 +95,7 @@ func register_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_send_message",
-		"Send a message to a chat. Returns immediately (fire and forget). Use minerva_get_chat_history to check for the response later. Requires chat_id — get it from minerva_list_chats or minerva_create_chat.",
+		"Send a message to a chat. Returns immediately (fire and forget). For worker chats, use minerva_check_worker to monitor status (compact, ~100 tokens). Only use minerva_get_chat_history when you need the full transcript. Requires chat_id — get it from minerva_list_chats or minerva_create_chat.",
 		{
 			"type": "object",
 			"properties": {
@@ -112,7 +113,7 @@ func register_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_get_chat_history",
-		"Get the message history for a chat. Requires chat_id from minerva_list_chats.",
+		"Get a metadata-only message list for a chat. Returns one entry per message with index, role, chars, tool_calls, and tool_names when present. Use this to decide which specific messages to hydrate with minerva_get_chat_messages. Requires chat_id from minerva_list_chats.",
 		{
 			"type": "object",
 			"properties": {
@@ -122,6 +123,25 @@ func register_tools() -> void:
 				}
 			},
 			"required": ["chat_id"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_get_chat_messages",
+		"Get full content for specific messages in a chat by 0-based index. Use minerva_get_chat_history first, then hydrate only the indices you need. Requires chat_id and indices. Recommended: fetch 5 or fewer messages at a time.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The UUID returned from minerva_create_chat (not the display name)"
+				},
+				"indices": {
+					"type": "array",
+					"items": {"type": "integer"},
+					"description": "Array of 0-based message indices to hydrate"
+				}
+			},
+			"required": ["chat_id", "indices"]
 		}
 	, "chat")
 
@@ -149,7 +169,7 @@ func register_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_get_tool_calls",
-		"Get detailed tool call arguments and results for a specific message in a chat. Use after minerva_get_chat_history shows tool_calls_count > 0 on a message. Returns the full arguments passed to each tool and a summary of the result.",
+		"Get detailed tool call arguments and results for a specific message in a chat. Use after minerva_get_chat_history shows tool_calls > 0 on a message. Returns the full arguments passed to each tool and a summary of the result.",
 		{
 			"type": "object",
 			"properties": {
@@ -221,6 +241,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _send_message(arguments)
 		"minerva_get_chat_history":
 			return _get_chat_history(arguments)
+		"minerva_get_chat_messages":
+			return _get_chat_messages(arguments)
 		"minerva_get_tool_calls":
 			return _get_tool_calls(arguments)
 		"minerva_list_chats":
@@ -287,6 +309,16 @@ func _create_chat(args: Dictionary) -> Dictionary:
 				name_map[ename.to_lower()] = eid
 		# Try exact match first, then common aliases
 		var lookup_name := provider_name.to_lower().replace("-", "_").replace(" ", "_")
+		# Common aliases that agents might use
+		var aliases := {
+			"anthropic": "claude_sonnet",
+			"claude": "claude_sonnet",
+			"google": "gemini_flash",
+			"gemini": "gemini_flash",
+			"chatgpt": "chatgpt",
+		}
+		if not name_map.has(lookup_name) and aliases.has(lookup_name):
+			lookup_name = aliases[lookup_name]
 		if name_map.has(lookup_name):
 			var eid: int = name_map[lookup_name]
 			if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(eid):
@@ -381,7 +413,7 @@ func _set_agent_mode(args: Dictionary) -> Dictionary:
 		history.AgenticSystemPrompt = args.get("agentic_prompt", "")
 
 	if args.has("max_rounds"):
-		history.MaxToolCallRounds = MCPToolUtils.coerce_int(args.get("max_rounds", 10))
+		history.MaxToolCallRounds = MCPToolUtils.coerce_int(args.get("max_rounds", 15))
 
 	if args.has("disabled_tools"):
 		var disabled = args.get("disabled_tools", [])
@@ -405,6 +437,15 @@ func _send_message(args: Dictionary) -> Dictionary:
 	var history = MCPToolUtils.find_chat_by_id(chat_id)
 	if not history:
 		return MCPToolUtils.error("Chat not found: %s" % chat_id)
+
+	# Tool fence: reject if the target chat has pending tool calls.
+	# Inserting a user message between an assistant's tool_calls and their
+	# tool_results violates the OpenAI API contract and causes
+	# "No tool output found for function call" errors.
+	var pending := _count_pending_tool_calls(history)
+	if pending > 0:
+		return MCPToolUtils.error(
+			"Worker has %d pending tool call(s). Wait for them to complete before sending a message. Use minerva_check_worker to monitor progress." % pending)
 
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
@@ -432,8 +473,81 @@ func _send_message(args: Dictionary) -> Dictionary:
 
 	return {
 		"success": true,
-		"message": "Message sent. Use minerva_get_chat_history to check for the response."
+		"message": "Message sent. Use minerva_check_worker to monitor worker progress (compact). Use minerva_get_chat_history only to read final results."
 	}
+
+
+## Returns the number of unresolved tool calls in the chat's most recent
+## assistant tool_call message. Returns 0 if no tool calls are pending.
+func _count_pending_tool_calls(history) -> int:
+	var items: Array = history.HistoryItemList
+	# Walk backward to find the last assistant message with tool calls
+	for i in range(items.size() - 1, -1, -1):
+		var item: ChatHistoryItem = items[i]
+		if item.Role == ChatHistoryItem.ChatRole.USER:
+			return 0  # Hit a user message first — no pending tool calls
+		if (item.Role == ChatHistoryItem.ChatRole.ASSISTANT or item.Role == ChatHistoryItem.ChatRole.MODEL) and item.IsToolCall:
+			# Found it — count expected vs received
+			var expected_ids: Dictionary = {}
+			for tc in item.ToolCalls:
+				var cid: String = tc.get("id", "")
+				if not cid.is_empty():
+					expected_ids[cid] = true
+			# Remove IDs that have matching TOOL responses after this message
+			for j in range(i + 1, items.size()):
+				if items[j].Role == ChatHistoryItem.ChatRole.TOOL:
+					expected_ids.erase(items[j].ToolCallId)
+			return expected_ids.size()
+	return 0
+
+
+func _chat_role_name(item: ChatHistoryItem) -> String:
+	match item.Role:
+		ChatHistoryItem.ChatRole.USER:
+			return "user"
+		ChatHistoryItem.ChatRole.ASSISTANT, ChatHistoryItem.ChatRole.MODEL:
+			return "assistant"
+		ChatHistoryItem.ChatRole.SYSTEM:
+			return "system"
+		ChatHistoryItem.ChatRole.TOOL:
+			return "tool"
+	return "unknown"
+
+
+func _tool_names_from_item(item: ChatHistoryItem) -> Array[String]:
+	var names: Array[String] = []
+	for tc in item.ToolCalls:
+		names.append(tc.get("name", ""))
+	return names
+
+
+func _serialize_chat_message_metadata(item: ChatHistoryItem, index: int) -> Dictionary:
+	var msg: Dictionary = {
+		"index": index,
+		"role": _chat_role_name(item),
+		"chars": item.Message.length(),
+		"tool_calls": item.ToolCalls.size() if item.IsToolCall else 0,
+	}
+	if item.IsToolCall and not item.ToolCalls.is_empty():
+		msg["tool_names"] = _tool_names_from_item(item)
+	if item.Role == ChatHistoryItem.ChatRole.TOOL:
+		msg["tool_name"] = item.ToolName
+	return msg
+
+
+func _serialize_chat_message_full(item: ChatHistoryItem, index: int) -> Dictionary:
+	var msg: Dictionary = {
+		"index": index,
+		"role": _chat_role_name(item),
+		"content": item.Message,
+	}
+	if item.IsToolCall and not item.ToolCalls.is_empty():
+		msg["tool_calls"] = item.ToolCalls.duplicate(true)
+		msg["tool_names"] = _tool_names_from_item(item)
+	if item.Role == ChatHistoryItem.ChatRole.TOOL:
+		msg["tool_call_id"] = item.ToolCallId
+		msg["tool_name"] = item.ToolName
+	return msg
 
 
 func _get_chat_history(args: Dictionary) -> Dictionary:
@@ -447,30 +561,52 @@ func _get_chat_history(args: Dictionary) -> Dictionary:
 		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
 	var messages: Array = []
-	var role_names = ["user", "assistant", "system", "tool"]
-
-	for item in history.HistoryItemList:
-		var role = role_names[item.Role] if item.Role < role_names.size() else "unknown"
-		var msg: Dictionary = {
-			"role": role,
-			"content": item.Message
-		}
-		if item.IsToolCall and not item.ToolCalls.is_empty():
-			msg["tool_calls_count"] = item.ToolCalls.size()
-			var names: Array[String] = []
-			for tc in item.ToolCalls:
-				names.append(tc.get("name", ""))
-			msg["tool_names"] = names
-		if item.Role == ChatHistoryItem.ChatRole.TOOL:
-			msg["tool_call_id"] = item.ToolCallId
-			msg["tool_name"] = item.ToolName
-		messages.append(msg)
+	for i in range(history.HistoryItemList.size()):
+		messages.append(_serialize_chat_message_metadata(history.HistoryItemList[i], i))
 
 	return {
 		"success": true,
 		"chat_id": chat_id,
 		"name": history.HistoryName,
-		"messages": messages
+		"messages": messages,
+		"count": messages.size(),
+	}
+
+
+func _get_chat_messages(args: Dictionary) -> Dictionary:
+	var chat_id: String = args.get("chat_id", "")
+	var indices_raw = args.get("indices", [])
+
+	if chat_id.is_empty():
+		return MCPToolUtils.error("chat_id is required")
+	if not (indices_raw is Array) or indices_raw.is_empty():
+		return MCPToolUtils.error("indices is required")
+
+	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	if not history:
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
+
+	var history_size: int = history.HistoryItemList.size()
+	if history_size == 0:
+		return MCPToolUtils.error("Chat has no messages")
+
+	var indices: Array[int] = []
+	for raw_index in indices_raw:
+		var msg_index := MCPToolUtils.coerce_int(raw_index, -1)
+		if msg_index < 0 or msg_index >= history_size:
+			return MCPToolUtils.error("message index %d out of range (0-%d)" % [msg_index, history_size - 1])
+		indices.append(msg_index)
+
+	var messages: Array = []
+	for msg_index in indices:
+		messages.append(_serialize_chat_message_full(history.HistoryItemList[msg_index], msg_index))
+
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"name": history.HistoryName,
+		"messages": messages,
+		"count": messages.size(),
 	}
 
 

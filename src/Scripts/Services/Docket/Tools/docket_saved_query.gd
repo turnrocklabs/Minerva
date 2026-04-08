@@ -12,7 +12,7 @@ func get_definition() -> Dictionary:
 				"action": {"type": "string", "enum": ["save", "load", "list"]},
 				"name": {"type": "string"},
 				"filter": {"type": "object"},
-				"sort": {"type": "array"},
+				"sort": {"type": "array", "items": {"type": "object", "properties": {"field": {"type": "string"}, "dir": {"type": "string", "enum": ["asc", "desc"]}}}},
 				"columns": {"type": "array", "items": {"type": "string"}},
 				"project": {"type": "string", "description": "Project name (optional, defaults to primary)"},
 			},

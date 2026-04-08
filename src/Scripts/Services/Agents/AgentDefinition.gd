@@ -17,6 +17,7 @@ var max_tool_call_rounds: int = 10
 var enabled_tools: Array[String] = []
 var tool_sets: Array[String] = []  # Tool set filter for this agent (empty = use global default)
 var skills: Array[String] = []  # Profile IDs to activate for this agent (empty = use global default)
+var skill_names: Array[String] = []  # Skill names/IDs to resolve for static tool mode (empty = dynamic discovery)
 var memory_tab_name: String = ""   # Project-scoped notes tab locked to this agent
 var drawer_tab_name: String = ""   # App-scoped drawer notes tab locked to this agent
 
@@ -50,6 +51,7 @@ func serialize() -> Dictionary:
 		"enabled_tools": enabled_tools,
 		"tool_sets": tool_sets,
 		"skills": skills,
+		"skill_names": skill_names,
 		"memory_tab_name": memory_tab_name,
 		"drawer_tab_name": drawer_tab_name,
 	}
@@ -76,6 +78,9 @@ static func deserialize(data: Dictionary) -> AgentDefinition:
 	var skill_ids = data.get("skills", [])
 	for sk in skill_ids:
 		def.skills.append(str(sk))
+	var snames = data.get("skill_names", [])
+	for sn in snames:
+		def.skill_names.append(str(sn))
 	def.memory_tab_name = data.get("memory_tab_name", "")
 	def.drawer_tab_name = data.get("drawer_tab_name", "")
 	return def

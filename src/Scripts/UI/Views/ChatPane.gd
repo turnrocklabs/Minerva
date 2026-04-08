@@ -196,6 +196,31 @@ func compact_chat(history: ChatHistory, keep_recent: int = AGENT_KEEP_RECENT_MES
 	var summarize_start = 1 if has_system_prompt else 0
 	var summarize_end = item_count - keep_recent
 
+	# Adjust summarize_end to avoid splitting tool_calls from their tool_results.
+	# If a kept assistant message references tool_call IDs whose TOOL results are
+	# in the compacted portion, move the boundary back to include them.
+	var adjusted := true
+	while adjusted:
+		adjusted = false
+		# Collect all tool_call IDs referenced by kept assistant messages
+		var needed_call_ids: Dictionary = {}  # call_id -> true
+		for i in range(summarize_end, item_count):
+			var item = history.HistoryItemList[i]
+			if (item.Role == ChatHistoryItem.ChatRole.MODEL or item.Role == ChatHistoryItem.ChatRole.ASSISTANT) and item.IsToolCall:
+				for tc in item.ToolCalls:
+					var cid: String = tc.get("id", "")
+					if not cid.is_empty():
+						needed_call_ids[cid] = true
+		# Check if any TOOL results for those IDs are in the compacted portion
+		if not needed_call_ids.is_empty():
+			for i in range(summarize_start, summarize_end):
+				var item = history.HistoryItemList[i]
+				if item.Role == ChatHistoryItem.ChatRole.TOOL and needed_call_ids.has(item.ToolCallId):
+					# This tool_result would be compacted but its tool_call is kept — move boundary
+					summarize_end = i
+					adjusted = true
+					break
+
 	if summarize_end <= summarize_start:
 		return false  # Nothing to summarize
 
@@ -2824,12 +2849,33 @@ func _on_tab_changed(tab: int):
 	if is_instance_valid(active_provider):
 		var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
 
-		_provider_option_button.select(item_index)
+		if item_index >= 0:
+			_provider_option_button.select(item_index)
+		else:
+			# Provider not in dropdown (e.g. MCP-spawned worker with a different model).
+			# Add a temporary entry so the chooser shows the correct model name.
+			var enum_id: int = _resolve_provider_enum_id(active_provider)
+			if enum_id >= 0:
+				_provider_option_button.add_item(active_provider.display_name, enum_id)
+				_provider_option_button.select(_provider_option_button.get_item_count() - 1)
 
 		SingletonObject.last_tab_index = tab
 
 	_update_compact_button()
 	_update_stop_button()
+
+
+## Resolve a provider's enum ID by matching its script against API_MODEL_PROVIDER_SCRIPTS.
+func _resolve_provider_enum_id(provider: BaseProvider) -> int:
+	var provider_script = provider.get_script()
+	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+		if SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key] == provider_script:
+			return key
+	# Dynamic models
+	if "enum_id" in provider:
+		return provider.enum_id
+	return -1
+
 
 ## if enter is pressed, accept the event and trigger chat
 func _on_txt_main_user_input_gui_input(event: InputEvent):

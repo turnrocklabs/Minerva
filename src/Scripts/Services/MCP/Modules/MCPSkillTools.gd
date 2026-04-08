@@ -156,6 +156,78 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
+## Resolve a list of skill names/IDs into their tool dependencies and instructions.
+## Searches both SkillManager (minerva) and DocketManager (docket) for each skill.
+## Returns: {"tools": Array[String], "instructions": String}
+## - tools: deduplicated union of tool_deps from all matched skills
+## - instructions: concatenated skill instructions separated by headers
+func resolve_skills(skill_names: Array[String]) -> Dictionary:
+	var all_tools: Array[String] = []
+	var all_instructions: Array[String] = []
+
+	var skill_manager = SingletonObject.get_skill_manager()
+	var dm: DocketManager = SingletonObject.docket_manager
+
+	for skill_name in skill_names:
+		var skill_name_str: String = str(skill_name)
+		var found: bool = false
+
+		# Try docket first (search all loaded projects by ID then title)
+		if dm:
+			for proj_name in dm.get_loaded_projects():
+				# Try by id
+				var by_id := dm.call_tool("docket_skill_get", {"project": proj_name, "id": skill_name_str})
+				if not by_id.has("error"):
+					var deps: Array = by_id.get("tool_deps", [])
+					for dep in deps:
+						var dep_str: String = str(dep)
+						if dep_str not in all_tools:
+							all_tools.append(dep_str)
+					var steps: String = str(by_id.get("steps", ""))
+					var title: String = str(by_id.get("title", skill_name_str))
+					if not steps.is_empty():
+						all_instructions.append("## Skill: %s\n\n%s" % [title, steps])
+					found = true
+					break
+				# Try by title
+				var by_title := dm.call_tool("docket_skill_get", {"project": proj_name, "title": skill_name_str})
+				if not by_title.has("error"):
+					var deps: Array = by_title.get("tool_deps", [])
+					for dep in deps:
+						var dep_str: String = str(dep)
+						if dep_str not in all_tools:
+							all_tools.append(dep_str)
+					var steps: String = str(by_title.get("steps", ""))
+					var title: String = str(by_title.get("title", skill_name_str))
+					if not steps.is_empty():
+						all_instructions.append("## Skill: %s\n\n%s" % [title, steps])
+					found = true
+					break
+			if found:
+				continue
+
+		# Fall back to SkillManager (note-based skills)
+		if skill_manager:
+			var skill = skill_manager.get_skill(skill_name_str)
+			if skill:
+				var deps: Array = skill.tool_deps if "tool_deps" in skill else []
+				for dep in deps:
+					var dep_str: String = str(dep)
+					if dep_str not in all_tools:
+						all_tools.append(dep_str)
+				if not skill.instructions.is_empty():
+					all_instructions.append("## Skill: %s\n\n%s" % [skill.name, skill.instructions])
+				found = true
+
+		if not found:
+			push_warning("[MCPSkillTools] resolve_skills: skill not found: %s" % skill_name_str)
+
+	return {
+		"tools": all_tools,
+		"instructions": "\n\n".join(all_instructions),
+	}
+
+
 #region Skill Handlers
 
 func _skill_list(arguments: Dictionary) -> Dictionary:
@@ -329,6 +401,10 @@ func _skill_activate(arguments: Dictionary) -> Dictionary:
 
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
+		# Fall through to docket — activate_skill should work for docket skills too
+		var docket_result := _skill_get(arguments)
+		if docket_result.get("success", false):
+			return docket_result
 		return MCPToolUtils.error("Skill not found: %s" % skill_id)
 
 	if skill_manager.is_active(skill_id):

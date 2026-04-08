@@ -41,7 +41,7 @@ var PresencePenalty: float = 0:
 	set(value): SingletonObject.call_deferred("save_state", false); PresencePenalty = value
 
 ## Agentic settings - per-chat configuration for agent mode
-var MaxToolCallRounds: int = 10:
+var MaxToolCallRounds: int = 15:
 	set(value): SingletonObject.call_deferred("save_state", false); MaxToolCallRounds = value
 
 var AutoContinueToolCalls: bool = true:
@@ -96,6 +96,10 @@ var Archived: bool = false:
 
 ## Runtime-only: whether this chat has an active LLM request in flight. Not serialized.
 var is_request_active: bool = false
+
+## Static tool mode: when true, the worker has a pre-configured tool set and dynamic
+## tool discovery (tool_search, list_skills, get_skill) is suppressed. Not serialized.
+var StaticToolMode: bool = false
 
 ## Why this chat's last agent turn ended. Empty string = not terminated or not an agent chat.
 var termination_reason: String = ""
@@ -311,7 +315,7 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 
 	# Agentic settings (with defaults for backwards compatibility)
 	if data.has("MaxToolCallRounds"):
-		history.MaxToolCallRounds = int(data.get("MaxToolCallRounds", 10))
+		history.MaxToolCallRounds = int(data.get("MaxToolCallRounds", 15))
 	if data.has("AutoContinueToolCalls"):
 		history.AutoContinueToolCalls = data.get("AutoContinueToolCalls", true)
 	if data.has("DisabledTools"):

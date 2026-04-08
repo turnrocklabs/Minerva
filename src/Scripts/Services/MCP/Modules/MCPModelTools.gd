@@ -324,6 +324,8 @@ func _get_provider_name_for_enum(provider_enum) -> String:
 			return "claude_code"
 		SingletonObject.API_PROVIDER.TURNROCK:
 			return "turnrock"
+		SingletonObject.API_PROVIDER.CHATGPT:
+			return "chatgpt"
 		_:
 			return "unknown"
 
@@ -365,19 +367,10 @@ func _list_models(args: Dictionary) -> Dictionary:
 			if script == null:
 				continue
 			var provider_instance = script.new()
-			var api_id: String = provider_instance.model_name
-			if "api_model_id" in provider_instance and not provider_instance.api_model_id.is_empty():
-				api_id = provider_instance.api_model_id
 			results.append({
 				"id": model_id,
+				"name": provider_instance.display_name,
 				"provider": provider_name,
-				"model_name": provider_instance.model_name,
-				"api_model_id": api_id,
-				"display_name": provider_instance.display_name,
-				"short_name": provider_instance.short_name,
-				"input_token_cost": provider_instance.input_token_cost,
-				"output_token_cost": provider_instance.output_token_cost,
-				"is_dynamic": false,
 			})
 
 	# Collect dynamic models from all managers
@@ -395,18 +388,10 @@ func _list_models(args: Dictionary) -> Dictionary:
 		if manager == null:
 			continue
 		for config in manager.models:
-			var model_name: String = config.get("model_name", config.get("api_model_id", ""))
-			var api_model_id: String = config.get("api_model_id", model_name)
 			results.append({
 				"id": config.get("id", -1),
+				"name": config.get("display_name", config.get("model_name", config.get("api_model_id", ""))),
 				"provider": prov_name,
-				"model_name": model_name,
-				"api_model_id": api_model_id,
-				"display_name": config.get("display_name", model_name),
-				"short_name": config.get("short_name", ""),
-				"input_token_cost": config.get("input_token_cost", 0.0),
-				"output_token_cost": config.get("output_token_cost", 0.0),
-				"is_dynamic": true,
 			})
 
 	return {"success": true, "models": results, "count": results.size()}

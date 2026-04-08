@@ -173,6 +173,9 @@ func _merge_shipped_master() -> void:
 	if updated > 0 or inserted > 0:
 		print("[DocketManager] Merged shipped master.dct: %d updated, %d inserted" % [updated, inserted])
 		invalidate_prompt_cache()
+		# Persist merged content to JSONL immediately so that save_all() on exit
+		# doesn't clobber the merge with stale pre-merge data from a prior session.
+		_save_project_to_jsonl("master")
 
 
 func _init_personal() -> void:

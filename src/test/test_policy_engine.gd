@@ -37,6 +37,8 @@ func _init():
 	test_compile_invalid_json()
 	test_compile_missing_required_field()
 	test_compile_valid_rule()
+	test_compile_triggers_array()
+	test_compile_single_element_triggers_array()
 
 	# PolicyEngine evaluation tests
 	print("\n-- PolicyEngine: Evaluation --")
@@ -49,6 +51,18 @@ func _init():
 	test_evaluate_priority_ordering()
 	test_evaluate_domain_predicate_matching()
 	test_evaluate_verb_predicate_matching()
+	test_evaluate_multi_trigger_first_trigger_matches()
+	test_evaluate_multi_trigger_second_trigger_matches()
+	test_evaluate_multi_trigger_neither_matches()
+	test_evaluate_legacy_format_backward_compat()
+
+	# Scope duration tests
+	print("\n-- Scope Duration --")
+	test_scope_custom_duration()
+
+	# Per-chat scope isolation tests
+	print("\n-- Per-Chat Scope Isolation --")
+	test_scope_per_chat()
 
 	# Override safety note
 	print("\n-- Override Safety (manual validation note) --")
@@ -73,6 +87,9 @@ func check(description: String, condition: bool) -> void:
 
 ## Build a fully-compiled rule Dictionary that can be injected directly into
 ## PolicyEngine._rules, bypassing the Docket/reload path.
+##
+## Accepts either a "triggers" array (new format) or "tool_pattern"/"arg_predicates"
+## at the top level (legacy format, auto-wrapped into a single-element triggers list).
 func _make_rule(overrides: Dictionary = {}) -> Dictionary:
 	var base := {
 		"rule_id": "test-rule-001",
@@ -80,14 +97,14 @@ func _make_rule(overrides: Dictionary = {}) -> Dictionary:
 		"status": "active",
 		"effect": "block",
 		"tool_pattern": "minerva_bash",
-		"tool_regex": null,
 		"arg_predicates": {},
-		"arg_regexes": {},
 		"context_predicates": {},
 		"domain_predicates": [],
 		"verb_predicates": [],
 		"flag_predicates": [],
 		"activate_scope": null,
+		"scope_max_actions": 10,
+		"scope_ttl_ms": 300000,
 		"priority": 10,
 		"provenance": "user",
 		"knowledge_ref": "",
@@ -96,23 +113,43 @@ func _make_rule(overrides: Dictionary = {}) -> Dictionary:
 	}
 	base.merge(overrides, true)
 
-	# Compile tool regex from tool_pattern if present
-	var pattern: String = str(base.get("tool_pattern", ""))
-	if not pattern.is_empty():
-		var re := RegEx.new()
-		re.compile(pattern)
-		base["tool_regex"] = re
+	# Build the compiled triggers list.
+	# If the caller supplied a pre-compiled "triggers" array, use it directly.
+	# Otherwise wrap the legacy tool_pattern / arg_predicates into one trigger.
+	if not base.has("triggers"):
+		var trigger := _compile_trigger(
+			str(base.get("tool_pattern", "")),
+			base.get("arg_predicates", {})
+		)
+		base["triggers"] = [trigger]
 
-	# Compile arg regexes from arg_predicates
-	var arg_regexes: Dictionary = {}
-	var arg_preds: Dictionary = base.get("arg_predicates", {})
-	for key in arg_preds:
-		var re := RegEx.new()
-		re.compile(str(arg_preds[key]))
-		arg_regexes[key] = re
-	base["arg_regexes"] = arg_regexes
+	# Remove legacy top-level keys so tests don't accidentally rely on them.
+	base.erase("tool_pattern")
+	base.erase("arg_predicates")
 
 	return base
+
+
+## Compile a single trigger dict (tool_pattern + arg_predicates → regexes).
+func _compile_trigger(tool_pattern: String, arg_predicates: Dictionary) -> Dictionary:
+	var tool_regex: RegEx = null
+	if not tool_pattern.is_empty():
+		var re := RegEx.new()
+		re.compile(tool_pattern)
+		tool_regex = re
+
+	var arg_regexes: Dictionary = {}
+	for key in arg_predicates:
+		var re := RegEx.new()
+		re.compile(str(arg_predicates[key]))
+		arg_regexes[key] = re
+
+	return {
+		"tool_pattern": tool_pattern,
+		"tool_regex": tool_regex,
+		"arg_predicates": arg_predicates,
+		"arg_regexes": arg_regexes,
+	}
 
 
 # ── ActionNormalizer tests ─────────────────────────────────────────────────────
@@ -336,10 +373,62 @@ func test_compile_valid_rule():
 	check("title matches", rule.get("title", "") == "Block Force Push")
 	check("effect is 'block'", rule.get("effect", "") == "block")
 	check("priority is 20", rule.get("priority", 0) == 20)
-	check("tool_regex compiled (non-null)", rule.get("tool_regex", null) != null)
+	var triggers: Array = rule.get("triggers", [])
+	check("triggers array has one entry (legacy wrap)", triggers.size() == 1)
+	check("trigger tool_regex compiled (non-null)", triggers.size() > 0 and triggers[0].get("tool_regex", null) != null)
 	check("domain_predicates preserved", "git" in rule.get("domain_predicates", []))
 	check("verb_predicates preserved", "force-push" in rule.get("verb_predicates", []))
 	check("alternatives preserved", "git push" in rule.get("alternatives", []))
+
+
+func test_compile_triggers_array():
+	print("test_compile_triggers_array:")
+	var engine := PolicyEngine.new()
+	var json_block := JSON.stringify({
+		"triggers": [
+			{"tool_pattern": "cobrowser_navigate", "arg_predicates": {"url": "amazon"}},
+			{"tool_pattern": "cobrowser_tab_new", "arg_predicates": {"url": "amazon"}},
+		],
+		"effect": "block",
+		"priority": 100,
+	})
+	var item := {
+		"id": "rule-multi-001",
+		"title": "Multi-Trigger Block",
+		"status": "active",
+		"description": "---policy-rule---\n%s\n---end-rule---" % json_block,
+	}
+	var rule: Dictionary = engine._compile_rule(item)
+	check("multi-trigger rule compiles", not rule.is_empty())
+	var triggers: Array = rule.get("triggers", [])
+	check("triggers array has 2 entries", triggers.size() == 2)
+	check("first trigger has tool_regex", triggers[0].get("tool_regex", null) != null)
+	check("second trigger has tool_regex", triggers[1].get("tool_regex", null) != null)
+	check("first trigger has arg_regexes", triggers[0].get("arg_regexes", {}).has("url"))
+	check("second trigger has arg_regexes", triggers[1].get("arg_regexes", {}).has("url"))
+
+
+func test_compile_single_element_triggers_array():
+	print("test_compile_single_element_triggers_array:")
+	var engine := PolicyEngine.new()
+	var json_block := JSON.stringify({
+		"triggers": [
+			{"tool_pattern": "minerva_bash", "arg_predicates": {"command": "git push"}},
+		],
+		"effect": "block",
+		"priority": 10,
+	})
+	var item := {
+		"id": "rule-single-trig-001",
+		"title": "Single Element Triggers",
+		"status": "active",
+		"description": "---policy-rule---\n%s\n---end-rule---" % json_block,
+	}
+	var rule: Dictionary = engine._compile_rule(item)
+	check("single-element triggers compiles", not rule.is_empty())
+	var triggers: Array = rule.get("triggers", [])
+	check("triggers array has 1 entry", triggers.size() == 1)
+	check("trigger tool_pattern is minerva_bash", triggers[0].get("tool_pattern", "") == "minerva_bash")
 
 
 # ── PolicyEngine evaluation tests ─────────────────────────────────────────────
@@ -506,7 +595,168 @@ func test_evaluate_verb_predicate_matching():
 	check("verb predicate: regular git push is allowed", allowed.get("allowed", false) == true)
 
 
+func test_evaluate_multi_trigger_first_trigger_matches():
+	print("test_evaluate_multi_trigger_first_trigger_matches:")
+	var engine := PolicyEngine.new()
+	engine._rules.append(_make_rule({
+		"rule_id": "multi-trig-001",
+		"effect": "block",
+		"triggers": [
+			_compile_trigger("cobrowser_navigate", {"url": "amazon"}),
+			_compile_trigger("cobrowser_tab_new", {"url": "amazon"}),
+		],
+	}))
+	var result := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"})
+	check("first trigger matches: blocked", result.get("allowed", true) == false)
+
+
+func test_evaluate_multi_trigger_second_trigger_matches():
+	print("test_evaluate_multi_trigger_second_trigger_matches:")
+	var engine := PolicyEngine.new()
+	engine._rules.append(_make_rule({
+		"rule_id": "multi-trig-002",
+		"effect": "block",
+		"triggers": [
+			_compile_trigger("cobrowser_navigate", {"url": "amazon"}),
+			_compile_trigger("cobrowser_tab_new", {"url": "amazon"}),
+		],
+	}))
+	var result := engine.evaluate("cobrowser_tab_new", {"url": "https://www.amazon.com"})
+	check("second trigger matches: blocked", result.get("allowed", true) == false)
+
+
+func test_evaluate_multi_trigger_neither_matches():
+	print("test_evaluate_multi_trigger_neither_matches:")
+	var engine := PolicyEngine.new()
+	engine._rules.append(_make_rule({
+		"rule_id": "multi-trig-003",
+		"effect": "block",
+		"triggers": [
+			_compile_trigger("cobrowser_navigate", {"url": "amazon"}),
+			_compile_trigger("cobrowser_tab_new", {"url": "amazon"}),
+		],
+	}))
+	var result := engine.evaluate("cobrowser_navigate", {"url": "https://www.bestbuy.com"})
+	check("neither trigger matches: allowed", result.get("allowed", false) == true)
+
+
+func test_evaluate_legacy_format_backward_compat():
+	print("test_evaluate_legacy_format_backward_compat:")
+	var engine := PolicyEngine.new()
+	# Use legacy format (tool_pattern + arg_predicates at top level, no triggers array)
+	engine._rules.append(_make_rule({
+		"rule_id": "legacy-001",
+		"effect": "block",
+		"tool_pattern": "minerva_bash",
+		"arg_predicates": {"command": "rm -rf"},
+	}))
+	var blocked := engine.evaluate("minerva_bash", {"command": "rm -rf /"})
+	check("legacy format: matching call is blocked", blocked.get("allowed", true) == false)
+	var allowed := engine.evaluate("minerva_bash", {"command": "ls -la"})
+	check("legacy format: non-matching call is allowed", allowed.get("allowed", false) == true)
+
+
 # ── Override safety test ───────────────────────────────────────────────────────
+
+func test_scope_custom_duration():
+	print("test_scope_custom_duration:")
+	var engine := PolicyEngine.new()
+	# Scope rule with custom max_actions=3 (expires after 3 tool calls)
+	engine._rules.append(_make_rule({
+		"rule_id": "scope-custom-001",
+		"title": "Short-lived scope",
+		"effect": "scope",
+		"tool_pattern": "minerva_docket_get",
+		"activate_scope": "short-scope",
+		"scope_max_actions": 3,
+		"scope_ttl_ms": 600000,
+	}))
+	# Block rule gated on scope_not_active
+	engine._rules.append(_make_rule({
+		"rule_id": "block-gated-001",
+		"title": "Gated block",
+		"effect": "block",
+		"tool_pattern": "cobrowser_navigate",
+		"context_predicates": {"scope_not_active": "short-scope"},
+		"priority": 100,
+	}))
+
+	# Before scope: navigate should be blocked
+	var r1 := engine.evaluate("cobrowser_navigate", {"url": "https://example.com"})
+	check("custom scope: blocked before scope activation", r1.get("allowed", true) == false)
+
+	# Activate scope by triggering the scope rule
+	var r2 := engine.evaluate("minerva_docket_get", {"id": "some-article"})
+	check("custom scope: docket_get allowed", r2.get("allowed", false) == true)
+	check("custom scope: scope is now active", engine._scope_state.is_active("short-scope"))
+
+	# Navigate should now pass (scope active, 2 actions remaining after tick+is_active)
+	var r3 := engine.evaluate("cobrowser_navigate", {"url": "https://example.com"})
+	check("custom scope: navigate allowed while scope active", r3.get("allowed", false) == true)
+
+	# Consume remaining actions (scope started at 3, tick has been called 3 times now)
+	engine.evaluate("cobrowser_navigate", {"url": "https://example.com"})
+
+	# Scope should be expired — next navigate is blocked again
+	var r5 := engine.evaluate("cobrowser_navigate", {"url": "https://example.com"})
+	check("custom scope: blocked after scope expires (3 actions consumed)", r5.get("allowed", true) == false)
+
+
+func test_scope_per_chat():
+	print("test_scope_per_chat:")
+	var engine := PolicyEngine.new()
+
+	# Scope rule: reading an Amazon KB article activates "amazon-kb-read" scope.
+	engine._rules.append(_make_rule({
+		"rule_id": "amazon-kb-scope-001",
+		"title": "Activate Amazon KB Scope",
+		"effect": "scope",
+		"triggers": [
+			_compile_trigger("cobrowser_read", {"selector": ".*"}),
+		],
+		"activate_scope": "amazon-kb-read",
+		"scope_max_actions": 10,
+		"scope_ttl_ms": 300000,
+		"priority": 50,
+	}))
+
+	# Block rule: navigating Amazon requires the scope to be active.
+	engine._rules.append(_make_rule({
+		"rule_id": "amazon-nav-block-001",
+		"title": "Block Amazon Navigate Without KB Scope",
+		"effect": "block",
+		"triggers": [
+			_compile_trigger("cobrowser_navigate", {"url": "amazon"}),
+		],
+		"context_predicates": {"scope_not_active": "amazon-kb-read"},
+		"priority": 100,
+	}))
+
+	# Sort by priority descending (as reload() would do)
+	engine._rules.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["priority"] > b["priority"]
+	)
+
+	# Chat A reads the KB article → activates scope for chat A only.
+	var r_a_read := engine.evaluate("cobrowser_read", {"selector": "body"}, "chat-A")
+	check("per-chat scope: chat A read is allowed", r_a_read.get("allowed", false) == true)
+	check("per-chat scope: scope active for chat A after read", \
+		engine._scope_state.is_active("amazon-kb-read:chat-A"))
+
+	# Chat B should NOT have the scope — scope for chat A must not bleed into chat B.
+	check("per-chat scope: scope NOT active for chat B", \
+		not engine._scope_state.is_active("amazon-kb-read:chat-B"))
+
+	# Chat B tries to navigate Amazon → must be BLOCKED (no scope for chat B).
+	var r_b_nav := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"}, "chat-B")
+	check("per-chat scope: chat B navigate is blocked (scope not active for B)", \
+		r_b_nav.get("allowed", true) == false)
+
+	# Chat A tries to navigate Amazon → must be ALLOWED (scope is active for chat A).
+	var r_a_nav := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"}, "chat-A")
+	check("per-chat scope: chat A navigate is allowed (scope active for A)", \
+		r_a_nav.get("allowed", false) == true)
+
 
 func test_agent_cannot_self_override_note():
 	print("test_agent_cannot_self_override_note:")

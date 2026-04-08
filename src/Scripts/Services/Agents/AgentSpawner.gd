@@ -47,6 +47,29 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 					disabled.append(tool_name)
 			history.DisabledTools = disabled
 
+	# 3b. Apply static tool mode from skill_names (overrides enabled_tools if both set)
+	if not agent_def.skill_names.is_empty():
+		var skill_module = _find_skill_tools_module()
+		var resolved: Dictionary = skill_module.resolve_skills(agent_def.skill_names) if skill_module else {"tools": [], "instructions": ""}
+		var resolved_tools: Array[String] = []
+		resolved_tools.assign(resolved.get("tools", []))
+		var skill_instructions: String = resolved.get("instructions", "")
+		var mcp = SingletonObject.get_mcp_manager()
+		if mcp:
+			var all_tools = mcp.get_available_tools()
+			var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
+			var disabled: Array[String] = []
+			for tool_def in all_tools:
+				var tool_name: String = str(tool_def.name) if tool_def is MCPToolDefinition else str(tool_def)
+				if tool_name not in resolved_tools or tool_name in discovery_tools:
+					disabled.append(tool_name)
+			history.DisabledTools = disabled
+			history.StaticToolMode = true
+		# Prepend skill instructions to system prompt
+		if not skill_instructions.is_empty():
+			history.AgenticSystemPrompt = skill_instructions + "\n\n---\n\n" + history.AgenticSystemPrompt
+		print("[AgentSpawner] Static tool mode: %d skill_names resolved for agent '%s'" % [agent_def.skill_names.size(), agent_def.name])
+
 	# 4. Create agent memory tabs if configured (pass history so tabs auto-link)
 	_ensure_agent_memory_tabs(agent_def, history)
 
@@ -108,6 +131,18 @@ static func _create_core_provider(service_id: String, action_name: String) -> Ba
 					return CoreProvider.new(service, action)
 
 	push_error("[AgentSpawner] Core service '%s' action '%s' not found" % [service_id, action_name])
+	return null
+
+
+## Find MCPSkillTools module through the singleton chain.
+## Returns the module instance, or null if not available.
+static func _find_skill_tools_module():
+	var mcp = SingletonObject.get_mcp_manager()
+	if mcp and mcp.minerva_server:
+		for module in mcp.minerva_server._modules:
+			if module is MCPSkillTools:
+				return module
+	push_warning("[AgentSpawner] MCPSkillTools module not found — skill resolution unavailable")
 	return null
 
 

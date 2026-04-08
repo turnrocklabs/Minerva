@@ -307,6 +307,10 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 
 		all_filtered.append(tool_dict)
 
+	# Static tool mode: worker has a pre-locked tool set — skip auto_tool_management entirely
+	if "StaticToolMode" in history and history.StaticToolMode:
+		return all_filtered
+
 	# Auto tool management: return only tool_search with dynamic description
 	if minerva_server and minerva_server.auto_tool_management:
 		minerva_server.tool_budget_manager.advance_turn()
@@ -417,7 +421,7 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 	if tool_name.begins_with("skill_"):
 		# Policy check for skill tools (same enforcement as all other tools)
 		if minerva_server and minerva_server.policy_engine:
-			var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments)
+			var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments, caller_chat_id)
 			if not policy_result["allowed"]:
 				minerva_server._activate_policy_tools(policy_result)
 				SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, caller_chat_id)
@@ -456,12 +460,15 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 		var registry = SingletonObject.worker_registry
 		if registry:
 			var worker = registry.get_worker_by_chat(caller_chat_id)
-			if worker and worker.cobrowser_tab_id >= 0:
-				if not arguments.has("tab_id") or arguments.get("tab_id") == null:
-					arguments["tab_id"] = worker.cobrowser_tab_id
+			if worker:
+				# Always inject agent_id if the worker has one (needed for tab_claim/tab_new)
 				if not arguments.has("agent_id") or arguments.get("agent_id", "").is_empty():
 					if not worker.cobrowser_agent_id.is_empty():
 						arguments["agent_id"] = worker.cobrowser_agent_id
+				# Only inject tab_id when the worker has been assigned one
+				if worker.cobrowser_tab_id >= 0:
+					if not arguments.has("tab_id") or arguments.get("tab_id") == null:
+						arguments["tab_id"] = worker.cobrowser_tab_id
 
 	# Handle external server tools
 	if not servers.has(server_name):
@@ -469,7 +476,7 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 
 	# Policy evaluation for external tools — same enforcement as minerva tools
 	if minerva_server and minerva_server.policy_engine:
-		var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments)
+		var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments, caller_chat_id)
 		if not policy_result["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
 			minerva_server._activate_policy_tools(policy_result)

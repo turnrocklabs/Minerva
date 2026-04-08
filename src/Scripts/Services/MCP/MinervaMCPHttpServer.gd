@@ -10,7 +10,12 @@ signal client_connected(session_id: String)
 signal tool_executed(tool_name: String, session_id: String)
 
 const DEFAULT_PORT = 9315
-const PROTOCOL_VERSION = "2024-11-05"
+const LATEST_PROTOCOL_VERSION = "2025-06-18"
+const SUPPORTED_PROTOCOL_VERSIONS = [
+	"2025-06-18",
+	"2025-03-26",
+	"2024-11-05"
+]
 const CONNECTION_TIMEOUT = 30.0  # seconds
 
 var _tcp_server: TCPServer = null
@@ -230,19 +235,23 @@ func _handle_jsonrpc(conn, request: Dictionary, session_id: String) -> void:
 
 
 func _handle_initialize(conn, params: Dictionary, request_id) -> void:
+	var requested_protocol_version: String = params.get("protocolVersion", "")
+	var negotiated_protocol_version := _negotiate_protocol_version(requested_protocol_version)
+
 	# Create a new session
 	var new_session_id = SingletonObject.generate_UUID()
 	_sessions[new_session_id] = {
 		"created_at": Time.get_unix_time_from_system(),
 		"last_activity": Time.get_unix_time_from_system(),
 		"client_info": params.get("clientInfo", {}),
+		"protocol_version": negotiated_protocol_version,
 		"enabled_sets": []  # empty = all sets enabled (backward compatible)
 	}
 
 	client_connected.emit(new_session_id)
 
 	var result = {
-		"protocolVersion": PROTOCOL_VERSION,
+		"protocolVersion": negotiated_protocol_version,
 		"serverInfo": {
 			"name": "minerva",
 			"version": "1.0.0"
@@ -254,10 +263,16 @@ func _handle_initialize(conn, params: Dictionary, request_id) -> void:
 
 	var headers = {
 		"MCP-Session-Id": new_session_id,
-		"MCP-Protocol-Version": PROTOCOL_VERSION
+		"MCP-Protocol-Version": negotiated_protocol_version
 	}
 
 	_send_jsonrpc_result(conn, request_id, result, headers)
+
+
+func _negotiate_protocol_version(requested_protocol_version: String) -> String:
+	if requested_protocol_version in SUPPORTED_PROTOCOL_VERSIONS:
+		return requested_protocol_version
+	return LATEST_PROTOCOL_VERSION
 
 
 func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: String) -> void:
@@ -364,7 +379,7 @@ func _send_jsonrpc_result(conn, request_id, result: Dictionary, extra_headers: D
 	var response = {
 		"jsonrpc": "2.0",
 		"result": result,
-		"id": request_id
+		"id": _normalize_jsonrpc_id(request_id)
 	}
 
 	var body = JSON.stringify(response)
@@ -378,11 +393,17 @@ func _send_jsonrpc_error(conn, request_id, code: int, message: String) -> void:
 			"code": code,
 			"message": message
 		},
-		"id": request_id
+		"id": _normalize_jsonrpc_id(request_id)
 	}
 
 	var body = JSON.stringify(response)
 	conn.send_response(200, {}, body)
+
+
+func _normalize_jsonrpc_id(request_id):
+	if request_id is float and is_equal_approx(request_id, floor(request_id)):
+		return int(request_id)
+	return request_id
 
 
 func _send_error(conn, status_code: int, message: String) -> void:

@@ -69,7 +69,8 @@ func reload() -> void:
 
 ## Evaluate a tool call against all loaded rules.
 ## Returns an allowed or blocked response Dictionary.
-func evaluate(tool_name: String, arguments: Dictionary) -> Dictionary:
+## caller_id: chat ID for per-chat scope isolation. Empty string = global scope (backward compat).
+func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") -> Dictionary:
 	# Get normalized action facts.
 	var facts: Dictionary = _normalizer.normalize(tool_name, arguments)
 
@@ -87,7 +88,7 @@ func evaluate(tool_name: String, arguments: Dictionary) -> Dictionary:
 			continue
 
 		# Skip rules that do not match this call.
-		if not _matches(rule, tool_name, arguments, facts):
+		if not _matches(rule, tool_name, arguments, facts, caller_id):
 			continue
 
 		# Proposed items are observation-only regardless of their effect field.
@@ -111,7 +112,9 @@ func evaluate(tool_name: String, arguments: Dictionary) -> Dictionary:
 				}
 
 			"scope":
-				_scope_state.activate(rule["activate_scope"] if rule["activate_scope"] != null else rule_id)
+				var scope_name: String = rule["activate_scope"] if rule["activate_scope"] != null else rule_id
+				var scoped_key: String = _make_scope_key(scope_name, caller_id)
+				_scope_state.activate(scoped_key, rule["scope_max_actions"], rule["scope_ttl_ms"])
 				_record_observation(rule, tool_name, facts, "scope")
 
 			"observe":
@@ -184,45 +187,79 @@ func _compile_rule(item: Dictionary) -> Dictionary:
 	var data: Dictionary = parsed
 
 	# Validate required fields.
-	for required_key in ["tool_pattern", "effect", "priority"]:
+	# "tool_pattern" OR "triggers" must be present; "effect" and "priority" are always required.
+	for required_key in ["effect", "priority"]:
 		if not data.has(required_key):
 			push_warning(
 				"PolicyEngine: item '%s' ('%s') missing required field '%s'; skipping."
 				% [rule_id, title, required_key]
 			)
 			return {}
+	if not data.has("tool_pattern") and not data.has("triggers"):
+		push_warning(
+			"PolicyEngine: item '%s' ('%s') missing required field 'tool_pattern' (or 'triggers'); skipping."
+			% [rule_id, title]
+		)
+		return {}
 
-	# Compile tool pattern regex.
-	var tool_pattern: String = str(data.get("tool_pattern", ""))
-	var tool_regex: RegEx = null
-	if not tool_pattern.is_empty():
-		var re := RegEx.new()
-		var err := re.compile(tool_pattern)
-		if err != OK:
+	# Build a normalized triggers list. Each entry has "tool_pattern" and "arg_predicates".
+	# If a "triggers" array is provided use it directly; otherwise wrap the legacy fields.
+	var raw_triggers: Array = []
+	if data.has("triggers") and data["triggers"] is Array:
+		raw_triggers = data["triggers"]
+	else:
+		# Legacy single-trigger format — wrap into a one-element array.
+		raw_triggers = [{
+			"tool_pattern": data.get("tool_pattern", ""),
+			"arg_predicates": data.get("arg_predicates", {}),
+		}]
+
+	# Compile each trigger into its own tool_regex + arg_regexes.
+	var compiled_triggers: Array = []
+	for trigger_data in raw_triggers:
+		if not trigger_data is Dictionary:
 			push_warning(
-				"PolicyEngine: item '%s' ('%s') has invalid tool_pattern regex '%s'; skipping."
-				% [rule_id, title, tool_pattern]
+				"PolicyEngine: item '%s' ('%s') has a non-dict trigger entry; skipping rule."
+				% [rule_id, title]
 			)
 			return {}
-		tool_regex = re
 
-	# Compile argument predicate regexes.
-	var raw_arg_predicates = data.get("arg_predicates", {})
-	var arg_predicates: Dictionary = {}
-	var arg_regexes: Dictionary = {}
-	if raw_arg_predicates is Dictionary:
-		for arg_name in raw_arg_predicates.keys():
-			var pattern: String = str(raw_arg_predicates[arg_name])
-			arg_predicates[arg_name] = pattern
+		var tool_pattern: String = str(trigger_data.get("tool_pattern", ""))
+		var tool_regex: RegEx = null
+		if not tool_pattern.is_empty():
 			var re := RegEx.new()
-			var err := re.compile(pattern)
+			var err := re.compile(tool_pattern)
 			if err != OK:
 				push_warning(
-					"PolicyEngine: item '%s' ('%s') has invalid arg_predicate regex for '%s'; skipping."
-					% [rule_id, title, arg_name]
+					"PolicyEngine: item '%s' ('%s') has invalid tool_pattern regex '%s'; skipping."
+					% [rule_id, title, tool_pattern]
 				)
 				return {}
-			arg_regexes[arg_name] = re
+			tool_regex = re
+
+		var raw_arg_predicates = trigger_data.get("arg_predicates", {})
+		var arg_predicates: Dictionary = {}
+		var arg_regexes: Dictionary = {}
+		if raw_arg_predicates is Dictionary:
+			for arg_name in raw_arg_predicates.keys():
+				var pattern: String = str(raw_arg_predicates[arg_name])
+				arg_predicates[arg_name] = pattern
+				var re := RegEx.new()
+				var err := re.compile(pattern)
+				if err != OK:
+					push_warning(
+						"PolicyEngine: item '%s' ('%s') has invalid arg_predicate regex for '%s'; skipping."
+						% [rule_id, title, arg_name]
+					)
+					return {}
+				arg_regexes[arg_name] = re
+
+		compiled_triggers.append({
+			"tool_pattern": tool_pattern,
+			"tool_regex": tool_regex,
+			"arg_predicates": arg_predicates,
+			"arg_regexes": arg_regexes,
+		})
 
 	var context_preds = data.get("context_predicates", {})
 	if not context_preds is Dictionary:
@@ -239,15 +276,14 @@ func _compile_rule(item: Dictionary) -> Dictionary:
 		"title": title,
 		"status": status,
 		"effect": str(data.get("effect", "observe")),
-		"tool_pattern": tool_pattern,
-		"tool_regex": tool_regex,
-		"arg_predicates": arg_predicates,
-		"arg_regexes": arg_regexes,
+		"triggers": compiled_triggers,
 		"context_predicates": context_preds,
 		"domain_predicates": domain_predicates,
 		"verb_predicates": verb_predicates,
 		"flag_predicates": flag_predicates,
 		"activate_scope": data.get("activate_scope", null),
+		"scope_max_actions": int(data.get("scope_max_actions", 10)),
+		"scope_ttl_ms": int(data.get("scope_ttl_ms", 300000)),
 		"priority": int(data.get("priority", 0)),
 		"provenance": str(data.get("provenance", "user")),
 		"knowledge_ref": str(data.get("knowledge_ref", "")),
@@ -277,27 +313,21 @@ func _extract_fenced_json(description: String) -> String:
 # ── Private: Matching ──────────────────────────────────────────────────────────
 
 ## Return true if the rule matches the given tool call.
-## All sub-checks must pass (AND semantics).
-func _matches(rule: Dictionary, tool_name: String, arguments: Dictionary, facts: Dictionary) -> bool:
-	# Tool pattern: empty string = match everything.
-	var tool_pattern: String = rule["tool_pattern"]
-	if not tool_pattern.is_empty():
-		var tool_regex: RegEx = rule["tool_regex"]
-		if tool_regex == null:
-			return false
-		if not tool_regex.search(tool_name):
-			return false
-
-	# Argument predicates: each arg value (as string) must match its regex.
-	var arg_regexes: Dictionary = rule["arg_regexes"]
-	for arg_name in arg_regexes.keys():
-		var re: RegEx = arg_regexes[arg_name]
-		var arg_value: String = str(arguments.get(arg_name, ""))
-		if not re.search(arg_value):
-			return false
+## Trigger matching uses OR semantics (any trigger fires the rule).
+## Domain/verb/flag/context predicates are shared and use AND semantics.
+func _matches(rule: Dictionary, tool_name: String, arguments: Dictionary, facts: Dictionary, caller_id: String = "") -> bool:
+	# At least one trigger must match (OR semantics across triggers).
+	var triggers: Array = rule.get("triggers", [])
+	var any_trigger_matched := false
+	for trigger in triggers:
+		if _trigger_matches(trigger, tool_name, arguments):
+			any_trigger_matched = true
+			break
+	if not any_trigger_matched:
+		return false
 
 	# Fact predicates: check normalized domains, verbs, and flags.
-	# Each predicate value must be present in the corresponding facts array.
+	# Each predicate value must be present in the corresponding facts array (AND semantics).
 	var fact_domains: Array = facts.get("domains", [])
 	for required_domain in rule["domain_predicates"]:
 		if str(required_domain) not in fact_domains:
@@ -318,12 +348,36 @@ func _matches(rule: Dictionary, tool_name: String, arguments: Dictionary, facts:
 	for pred_key in context_preds.keys():
 		if pred_key == "scope_active":
 			var scope_name: String = str(context_preds[pred_key])
-			if not _scope_state.is_active(scope_name):
+			var scoped_key: String = _make_scope_key(scope_name, caller_id)
+			if not _scope_state.is_active(scoped_key):
 				return false
 		elif pred_key == "scope_not_active":
 			var scope_name: String = str(context_preds[pred_key])
-			if _scope_state.is_active(scope_name):
+			var scoped_key: String = _make_scope_key(scope_name, caller_id)
+			if _scope_state.is_active(scoped_key):
 				return false
+
+	return true
+
+
+## Return true if a single compiled trigger matches the given tool call.
+## tool_pattern: empty string = match everything.
+## arg_predicates: each arg value (as string) must match its regex (AND semantics).
+func _trigger_matches(trigger: Dictionary, tool_name: String, arguments: Dictionary) -> bool:
+	var tool_pattern: String = trigger.get("tool_pattern", "")
+	if not tool_pattern.is_empty():
+		var tool_regex: RegEx = trigger.get("tool_regex", null)
+		if tool_regex == null:
+			return false
+		if not tool_regex.search(tool_name):
+			return false
+
+	var arg_regexes: Dictionary = trigger.get("arg_regexes", {})
+	for arg_name in arg_regexes.keys():
+		var re: RegEx = arg_regexes[arg_name]
+		var arg_value: String = str(arguments.get(arg_name, ""))
+		if not re.search(arg_value):
+			return false
 
 	return true
 
@@ -346,6 +400,14 @@ func _record_observation(
 
 
 # ── Private: Helpers ───────────────────────────────────────────────────────────
+
+## Build a scope key that is unique per caller (chat).
+## If caller_id is empty, falls back to a global scope for backwards compat.
+func _make_scope_key(scope_name: String, caller_id: String) -> String:
+	if caller_id.is_empty():
+		return scope_name
+	return scope_name + ":" + caller_id
+
 
 func _get_docket_manager() -> Variant:
 	var root := Engine.get_main_loop()

@@ -3,6 +3,13 @@ extends MCPToolModule
 ## MCP tool module for the Agent, Worker, and Trigger domains.
 ## Handles agent registry CRUD, worker spawning/tracking, and trigger management.
 
+## Tracks last check_worker state per worker for delta responses
+var _last_check_state: Dictionary = {}
+## Rate limit: last unix timestamp per worker_id for check_worker calls
+var _check_worker_timestamps: Dictionary = {}
+## Minimum seconds between check_worker calls for the same worker
+const CHECK_WORKER_COOLDOWN_SEC: float = 120.0
+
 
 func get_tool_names() -> Array[String]:
 	return [
@@ -316,6 +323,11 @@ func _register_worker_tools() -> void:
 				"cobrowser_agent_id": {
 					"type": "string",
 					"description": "Browser agent ID for this worker. If set, all cobrowser calls from this worker will automatically include this agent_id."
+				},
+				"skills": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Optional list of skill names/IDs to pre-configure for this worker. When provided, resolves each skill's tool dependencies and instructions, locks the worker to those tools only (static mode — no dynamic tool discovery), and prepends skill instructions to the system prompt. Use this for workers that must use a fixed tool set (e.g. GPT-5.4 workers that cannot do dynamic tool search)."
 				}
 			},
 			"required": ["name", "system_prompt", "task"]
@@ -323,7 +335,7 @@ func _register_worker_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_check_worker",
-		"Check the status of a spawned worker. Returns current status, progress, and last message summary.",
+		"Check worker status, rounds used, tokens used, and last response preview (~100 tokens). Preferred over minerva_get_chat_history for monitoring — much cheaper.",
 		{
 			"type": "object",
 			"properties": {
@@ -814,11 +826,13 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	var task: String = args.get("task", "")
 
 	if worker_name.is_empty():
-		return MCPToolUtils.error("name is required")
+		return MCPToolUtils.error("name is required. Example: minerva_spawn_worker(name=\"MyWorker\", system_prompt=\"You are a research assistant.\", task=\"Find USB-C cables on Amazon\", provider=\"chatgpt\", skills=[\"Co-Browser Automation\"])")
+	var auto_defaults: Dictionary = {}
 	if system_prompt.is_empty():
-		return MCPToolUtils.error("system_prompt is required")
+		system_prompt = "You are an AI worker named '%s'. Complete the assigned task efficiently and report results clearly." % worker_name
+		auto_defaults["system_prompt"] = "auto-generated"
 	if task.is_empty():
-		return MCPToolUtils.error("task is required")
+		return MCPToolUtils.error("task is required. The task is the first user message sent to the worker.")
 
 	var max_tool_rounds: int = MCPToolUtils.coerce_int(args.get("max_tool_rounds", 25))
 	var timeout_seconds: float = float(args.get("timeout_seconds", -1))
@@ -868,7 +882,35 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	if not history:
 		return MCPToolUtils.error("Failed to find newly created chat")
 
-	# 4. Set system prompt
+	# 4. Resolve skills (optional) — prepend instructions to system_prompt and compute tool lock
+	var requested_skills_raw = args.get("skills", [])
+	var requested_skills: Array = []
+	if requested_skills_raw is Array:
+		requested_skills = requested_skills_raw
+	elif requested_skills_raw is String and not requested_skills_raw.is_empty():
+		requested_skills = [requested_skills_raw]
+	var resolved_tools: Array[String] = []
+	var static_tool_mode: bool = false
+	if not requested_skills.is_empty():
+		# Find the skill tools module to call resolve_skills()
+		var skill_tools_module = null
+		for module in server._modules:
+			if module is MCPSkillTools:
+				skill_tools_module = module
+				break
+		if skill_tools_module:
+			var skill_names_typed: Array[String] = []
+			for sn in requested_skills:
+				skill_names_typed.append(str(sn))
+			var resolved: Dictionary = skill_tools_module.resolve_skills(skill_names_typed)
+			var skill_instructions: String = resolved.get("instructions", "")
+			resolved_tools.assign(resolved.get("tools", []))
+			# Prepend skill instructions to system_prompt
+			if not skill_instructions.is_empty():
+				system_prompt = skill_instructions + "\n\n---\n\n" + system_prompt
+			static_tool_mode = true
+
+	# 4b. Set system prompt (potentially with skill instructions prepended)
 	var prompt_result: Dictionary = await server.call_tool("minerva_set_system_prompt", {"chat_id": chat_id, "prompt": system_prompt})
 	if not prompt_result.get("success", false):
 		return prompt_result
@@ -881,6 +923,22 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	})
 	if not agent_result.get("success", false):
 		return agent_result
+
+	# 5b. Apply static tool mode if skills were provided
+	if static_tool_mode:
+		var mcp = SingletonObject.get_mcp_manager()
+		if mcp:
+			var all_tools = mcp.get_available_tools()
+			# Discovery tools are always suppressed in static mode
+			var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
+			var disabled: Array[String] = []
+			for tool_def in all_tools:
+				var tool_name: String = str(tool_def.name) if tool_def is MCPToolDefinition else str(tool_def)
+				if tool_name not in resolved_tools or tool_name in discovery_tools:
+					disabled.append(tool_name)
+			history.DisabledTools = disabled
+			history.StaticToolMode = true
+			print("[MCPAgentTools] Static tool mode: %d tools enabled, %d disabled for worker '%s'" % [resolved_tools.size(), disabled.size(), worker_name])
 
 	# 6. Create WorkerInfo and register in WorkerRegistry
 	var worker_id: String = AgentDefinition._generate_id()
@@ -902,7 +960,11 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	info.tokens_used = 0
 	info.rounds_used = 0
 	info.cobrowser_tab_id = MCPToolUtils.coerce_int(args.get("cobrowser_tab_id", -1))
-	info.cobrowser_agent_id = args.get("cobrowser_agent_id", "")
+	var agent_id_arg: String = args.get("cobrowser_agent_id", "")
+	if agent_id_arg.is_empty():
+		# Auto-generate agent_id from worker name for cobrowser tab claiming
+		agent_id_arg = worker_name.to_lower().replace(" ", "_")
+	info.cobrowser_agent_id = agent_id_arg
 
 	registry.register_worker(info)
 
@@ -929,7 +991,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	if timeout_seconds > 0:
 		_setup_worker_timeout(worker_id, timeout_seconds)
 
-	return {
+	var spawn_result: Dictionary = {
 		"success": true,
 		"worker_id": worker_id,
 		"chat_id": chat_id,
@@ -937,6 +999,9 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 		"parent_chat_id": parent_chat_id,
 		"message": "Worker spawned and task sent. Use minerva_check_worker or minerva_list_workers to monitor progress."
 	}
+	if not auto_defaults.is_empty():
+		spawn_result["auto_defaults"] = auto_defaults
+	return spawn_result
 
 
 func _setup_worker_timeout(worker_id: String, timeout_seconds: float) -> void:
@@ -967,6 +1032,21 @@ func _check_worker(args: Dictionary) -> Dictionary:
 	var info = registry.get_worker(worker_id)
 	if not info:
 		return MCPToolUtils.error("Worker not found: %s" % worker_id)
+
+	# Rate limit: 1 call per worker every CHECK_WORKER_COOLDOWN_SEC seconds.
+	# Terminal statuses always pass (so post-completion checks work).
+	var now := Time.get_unix_time_from_system()
+	var last_check: float = _check_worker_timestamps.get(worker_id, 0.0)
+	var elapsed := now - last_check
+	if last_check > 0.0 and elapsed < CHECK_WORKER_COOLDOWN_SEC and not registry.is_terminal_status(info.status):
+		var wait_secs := int(CHECK_WORKER_COOLDOWN_SEC - elapsed)
+		return {
+			"success": false,
+			"error": "Rate limited. Next check for '%s' available in %ds. You will be notified automatically when the worker completes." % [info.worker_name, wait_secs],
+			"status": info.status,
+			"rounds_used": info.rounds_used,
+		}
+	_check_worker_timestamps[worker_id] = now
 
 	var result: Dictionary = {
 		"success": true,
@@ -999,6 +1079,24 @@ func _check_worker(args: Dictionary) -> Dictionary:
 		if not last_assistant_msg.is_empty():
 			# Truncate to keep response size reasonable
 			result["last_response_preview"] = last_assistant_msg.left(500)
+
+	# Delta detection: if status and message_count unchanged, return lean response
+	var state_key: String = info.worker_id
+	var current_state: Dictionary = {"status": info.status, "message_count": result.get("message_count", -1)}
+	var prev_state: Dictionary = _last_check_state.get(state_key, {})
+	_last_check_state[state_key] = current_state
+
+	if not prev_state.is_empty() and prev_state == current_state:
+		# Nothing changed — return minimal response to save tokens
+		return {
+			"success": true,
+			"worker_id": info.worker_id,
+			"status": info.status,
+			"rounds_used": info.rounds_used,
+			"tokens_used": info.tokens_used,
+			"message_count": result.get("message_count", 0),
+			"message": "No change since last check.",
+		}
 
 	return result
 
@@ -1144,13 +1242,14 @@ func _inject_completion_into_parent(worker, reason: String, message: String, cha
 		push_warning("[WorkerCompletion] Parent chat not found: %s" % worker.parent_chat_id)
 		return
 
-	# Get worker's last assistant message as summary
+	# Get worker's last assistant message — full text so supervisor can use it directly
+	# without needing to call get_chat_history + get_chat_messages (saves ~5 rounds)
 	var last_response := ""
 	if chat_history:
 		for i in range(chat_history.HistoryItemList.size() - 1, -1, -1):
 			var item = chat_history.HistoryItemList[i]
 			if item.Role == ChatHistoryItem.ChatRole.MODEL or item.Role == ChatHistoryItem.ChatRole.ASSISTANT:
-				last_response = item.Message.left(500)
+				last_response = item.Message
 				break
 
 	# Compute duration
@@ -1186,8 +1285,6 @@ func _inject_completion_into_parent(worker, reason: String, message: String, cha
 		synthetic += "\nReason: %s" % message
 	if not last_response.is_empty():
 		synthetic += "\nWorker's last response:\n%s" % last_response
-	if last_response.length() >= 500:
-		synthetic += "..."
 
 	# Send the synthetic message to the parent chat, waking the supervisor
 	var chat_pane = SingletonObject.Chats
