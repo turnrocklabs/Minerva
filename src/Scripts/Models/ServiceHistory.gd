@@ -90,6 +90,23 @@ var AgentDefinitionId: String = "":
 var ActiveSkills: Array[String] = []:
 	set(value): SingletonObject.call_deferred("save_state", false); ActiveSkills = value
 
+## Chat-scoped knowledge acquired through knowledge tools.
+## Each entry is a Dictionary with stable fields like id/type/title/content.
+var AcquiredKnowledge: Array[Dictionary] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); AcquiredKnowledge = value
+
+## UUID of the note tab that stores agent tool artifacts for this chat.
+var AgentNotesTabId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); AgentNotesTabId = value
+
+## UUID of the current floating summary note for this chat, when configured.
+var AgentFloatingSummaryNoteId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); AgentFloatingSummaryNoteId = value
+
+## Prompt/dehydration telemetry for this chat.
+var AgentContextTelemetry: Dictionary = {}:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentContextTelemetry = value
+
 ## Whether this chat is archived (hidden from active tab list, retrievable)
 var Archived: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); Archived = value
@@ -135,6 +152,10 @@ static var SERIALIZER_FIELDS = [
 	"IsAgentChat",
 	"AgentDefinitionId",
 	"ActiveSkills",
+	"AcquiredKnowledge",
+	"AgentNotesTabId",
+	"AgentFloatingSummaryNoteId",
+	"AgentContextTelemetry",
 	"Archived",
 	"termination_reason",
 	"termination_message",
@@ -259,6 +280,10 @@ func Serialize() -> Dictionary:
 		"IsAgentChat": IsAgentChat,
 		"AgentDefinitionId": AgentDefinitionId,
 		"ActiveSkills": ActiveSkills,
+		"AcquiredKnowledge": AcquiredKnowledge,
+		"AgentNotesTabId": AgentNotesTabId,
+		"AgentFloatingSummaryNoteId": AgentFloatingSummaryNoteId,
+		"AgentContextTelemetry": AgentContextTelemetry,
 		"Archived": Archived,
 		"termination_reason": termination_reason,
 		"termination_message": termination_message,
@@ -345,6 +370,16 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	if data.has("ActiveSkills"):
 		var active_sk = data.get("ActiveSkills", [])
 		history.ActiveSkills.assign(active_sk)
+	if data.has("AcquiredKnowledge"):
+		var acquired: Array[Dictionary] = []
+		acquired.assign(data.get("AcquiredKnowledge", []))
+		history.AcquiredKnowledge = acquired
+	if data.has("AgentNotesTabId"):
+		history.AgentNotesTabId = data.get("AgentNotesTabId", "")
+	if data.has("AgentFloatingSummaryNoteId"):
+		history.AgentFloatingSummaryNoteId = data.get("AgentFloatingSummaryNoteId", "")
+	if data.has("AgentContextTelemetry"):
+		history.AgentContextTelemetry = data.get("AgentContextTelemetry", {})
 	if data.has("Archived"):
 		history.Archived = data.get("Archived", false)
 	if data.has("termination_reason"):

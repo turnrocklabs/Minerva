@@ -23,6 +23,8 @@ var complete:= true
 
 var prompt_tokens: int
 var completion_tokens: int
+var cache_creation_tokens: int
+var cache_read_tokens: int
 
 var total_tokens: int:
 	get: return prompt_tokens + completion_tokens

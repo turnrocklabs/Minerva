@@ -56,6 +56,9 @@ func _ready() -> void:
 			%CreateNewNote.notes_container_override = SingletonObject.drawer_notes_container
 	)
 
+	SingletonObject.agent_notes_container = %tcThreadsAgent
+	SingletonObject.agent_notes_container.supports_remote = false
+
 	get_window().files_dropped.connect(_on_files_dropped)
 
 
@@ -400,20 +403,52 @@ func _on_ledger_menu_selected(id: int) -> void:
 
 @onready var bottom_drawer_control: DrawerNotesManager = %BottomDrawerControl
 @onready var notes_drawer_split: VSplitContainer = %NotesDrawerSplit
+@onready var agent_notes_container: NotesContainer = %tcThreadsAgent
+@onready var drawer_notes_container: NotesContainer = %tcThreadsDrawer
+@onready var bottom_notes_label: Label = %BottomNotesLabel
+@onready var drawer_add_note_button: Button = %DrawerAddNote
+@onready var drawer_add_shelf_button: Button = %DrawerAddShelf
 var split_drawer_tween: Tween
 @export var _drawer_anim_duration: = 0.5
-func _on_btn_drawer_pressed() -> void:
+var _bottom_notes_mode: String = ""
 
+func _set_bottom_notes_mode(mode: String) -> void:
+	_bottom_notes_mode = mode
+	var show_drawer := mode != "agent"
+	if bottom_notes_label:
+		bottom_notes_label.text = "Drawer" if show_drawer else "Agent Notes"
+	if drawer_add_note_button:
+		drawer_add_note_button.visible = show_drawer
+	if drawer_add_shelf_button:
+		drawer_add_shelf_button.visible = show_drawer
+	if drawer_notes_container:
+		drawer_notes_container.visible = show_drawer
+	if agent_notes_container:
+		agent_notes_container.visible = not show_drawer
+
+	if show_drawer:
+		_open_drawer_notes()
+		bottom_drawer_control.load_drawer_data()
+
+
+func _toggle_bottom_notes_panel(mode: String) -> void:
 	if split_drawer_tween and split_drawer_tween.is_running():
 		return
 
-	if !bottom_drawer_control.visible:
+	var was_visible := bottom_drawer_control.visible
+	var switching_mode := was_visible and _bottom_notes_mode != mode
+	if not was_visible or switching_mode:
+		_set_bottom_notes_mode(mode)
+
+	if not was_visible:
 		notes_drawer_split.split_offset = 600
 		split_drawer_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_SPRING)
 		bottom_drawer_control.visible = true
 		split_drawer_tween.tween_property(notes_drawer_split, "split_offset", 0, _drawer_anim_duration)
-		_open_drawer_notes()
-		bottom_drawer_control.visible = true
+		return
+
+	if switching_mode:
+		return
 	else:
 		
 		split_drawer_tween = create_tween().set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_LINEAR)
@@ -421,10 +456,17 @@ func _on_btn_drawer_pressed() -> void:
 		
 		await get_tree().create_timer(0.48).timeout
 		bottom_drawer_control.visible = false
-	
-	bottom_drawer_control.load_drawer_data()
+
 	for i in SingletonObject.drawer_notes_container.get_tab_count():
 		SingletonObject.drawer_notes_container.disable_notes(i)
+
+
+func _on_btn_drawer_pressed() -> void:
+	_toggle_bottom_notes_panel("drawer")
+
+
+func _on_btn_agent_notes_pressed() -> void:
+	_toggle_bottom_notes_panel("agent")
 
 
 #reading file and create note in Drawer thread

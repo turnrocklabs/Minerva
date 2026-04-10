@@ -49,6 +49,8 @@ const AGENT_CONTEXT_WARNING_THRESHOLD: int = 80000  # Warn when estimated tokens
 const AGENT_CONTEXT_HARD_LIMIT: int = 100000  # Stop agent loop when exceeding this
 const AGENT_SUMMARIZE_THRESHOLD: int = 60000  # Trigger summarization above this token count
 const AGENT_KEEP_RECENT_MESSAGES: int = 6  # Keep this many recent messages when summarizing
+const AGENT_NOTES_TAB_PREFIX: String = "Agent Notes"
+const AGENT_TOOL_WINDOW_LENGTH: int = 4000
 
 ## Base agent system prompt - tool-specific sections added dynamically
 ## Hardcoded fallback — only used if docket master prompt is unavailable.
@@ -130,6 +132,457 @@ HINT: This result was too large and was truncated. To get the information you ne
 - Avoid cobrowser_get_state (returns entire DOM) - use targeted queries instead
 - Consider if you already have enough information to proceed""" % [result_str.length(), truncated.length()]
 	return truncated + notice
+
+
+func _filter_tool_result_text(result_str: String) -> String:
+	var lines := result_str.split("\n")
+	var filtered := PackedStringArray()
+	var previous_line := ""
+	var repeat_count := 0
+
+	for raw_line in lines:
+		var line := str(raw_line).rstrip("\r").strip_edges(false, true)
+		var stripped := line.strip_edges()
+		var is_separator := stripped.length() >= 5 and stripped.replace("-", "").is_empty()
+		is_separator = is_separator or (stripped.length() >= 5 and stripped.replace("=", "").is_empty())
+		if is_separator:
+			continue
+		if stripped.is_empty():
+			if previous_line.is_empty():
+				continue
+			previous_line = ""
+			filtered.append("")
+			continue
+		if line == previous_line:
+			repeat_count += 1
+			continue
+		if repeat_count > 0:
+			filtered.append("... repeated %d more times" % repeat_count)
+			repeat_count = 0
+		filtered.append(line)
+		previous_line = line
+
+	if repeat_count > 0:
+		filtered.append("... repeated %d more times" % repeat_count)
+
+	return "\n".join(filtered).strip_edges()
+
+
+func _get_agent_notes_tab(history: ChatHistory) -> NoteVBox:
+	if not SingletonObject.agent_notes_container:
+		return null
+
+	if not history.AgentNotesTabId.is_empty():
+		for i in range(SingletonObject.agent_notes_container.get_tab_count()):
+			if SingletonObject.agent_notes_container.get_tab_id(i) == history.AgentNotesTabId:
+				return SingletonObject.agent_notes_container.get_tab_control(i) as NoteVBox
+
+	var tab_name := history.HistoryName if not history.HistoryName.is_empty() else "Chat %s" % history.HistoryId.left(8)
+	var agent_key := "chat:%s" % history.HistoryId
+	var vbox := SingletonObject.agent_notes_container.find_or_create_agent_tab(tab_name, agent_key)
+	if history.HistoryId not in vbox.default_linked_chat_ids:
+		vbox.default_linked_chat_ids.append(history.HistoryId)
+	var tab_idx := SingletonObject.agent_notes_container.get_tab_idx_from_control(vbox)
+	if tab_idx >= 0:
+		history.AgentNotesTabId = SingletonObject.agent_notes_container.get_tab_id(tab_idx)
+	return vbox
+
+
+func _sync_agent_notes_tab_title(history: ChatHistory) -> void:
+	if history.AgentNotesTabId.is_empty() or not SingletonObject.agent_notes_container:
+		return
+	for i in range(SingletonObject.agent_notes_container.get_tab_count()):
+		if SingletonObject.agent_notes_container.get_tab_id(i) == history.AgentNotesTabId:
+			SingletonObject.agent_notes_container.set_tab_title(i, history.HistoryName)
+			break
+
+
+func _upsert_agent_note(history: ChatHistory, existing_note_id: String, title: String, content: String, enabled: bool = false) -> String:
+	var tab := _get_agent_notes_tab(history)
+	if not tab:
+		return ""
+
+	var note: Note = null
+	if not existing_note_id.is_empty():
+		for candidate in tab.get_notes():
+			if candidate.uuid == existing_note_id:
+				note = candidate
+				break
+
+	if not note:
+		note = Note.create_text_note(title, content)
+		note.link_to_chat(history.HistoryId)
+		note.enabled = enabled
+		tab.add_note(note)
+		return note.uuid
+
+	note.title = title
+	var controls = note.get_controls_container()
+	if controls and controls is NoteTextControls:
+		controls.content = content
+	note.enabled = enabled
+	return note.uuid
+
+
+func _build_tool_summary(tool_name: String, result: Dictionary, note_id: String) -> String:
+	var ref_suffix := ""
+	if not note_id.is_empty():
+		ref_suffix = " [agent-note:%s]" % note_id.left(8)
+
+	match tool_name:
+		"minerva_list_skills":
+			var skills: Array = result.get("skills", [])
+			return "[list_skills: %d skills]%s" % [skills.size(), ref_suffix]
+		"minerva_tool_search":
+			var activated: Array = result.get("activated", [])
+			return "[tool_search: %d activated]%s" % [activated.size(), ref_suffix]
+		"minerva_list_models":
+			var models: Array = result.get("results", [])
+			return "[list_models: %d models]%s" % [models.size(), ref_suffix]
+		"minerva_get_skill":
+			return "[get_skill: %s]%s" % [str(result.get("name", result.get("id", "skill"))), ref_suffix]
+		"minerva_spawn_worker":
+			return "[spawn_worker: %s]%s" % [str(result.get("worker_id", "?")), ref_suffix]
+		"minerva_check_worker":
+			return "[check_worker: status=%s rounds=%s]%s" % [str(result.get("status", "?")), str(result.get("rounds_used", "?")), ref_suffix]
+
+	if result.get("error", null) != null:
+		return "[%s error]%s" % [tool_name, ref_suffix]
+
+	var keys := result.keys()
+	keys.sort()
+	var preview := PackedStringArray()
+	for key in keys:
+		if preview.size() >= 3:
+			break
+		var value = result.get(key)
+		if value is Array:
+			preview.append("%s=%d items" % [str(key), value.size()])
+		elif value is Dictionary:
+			preview.append("%s=%d keys" % [str(key), value.size()])
+		else:
+			preview.append("%s=%s" % [str(key), str(value).left(40)])
+	return "[%s: %s]%s" % [tool_name, ", ".join(preview), ref_suffix]
+
+
+func _build_tool_ref_message(tool_name: String, note_id: String, folded_into_floating_summary: bool = false) -> String:
+	var parts := PackedStringArray(["t:%s" % tool_name])
+	if not note_id.is_empty():
+		parts.append("n:%s" % note_id.left(8))
+	if folded_into_floating_summary:
+		parts.append("fs")
+	return "[%s]" % " ".join(parts)
+
+
+func _store_tool_artifact(history: ChatHistory, tool_name: String, tool_args: Dictionary, filtered_result_str: String, tool_id: String) -> String:
+	var content_parts := PackedStringArray()
+	content_parts.append("## Tool: %s" % tool_name)
+	content_parts.append("### Call ID\n%s" % tool_id)
+	content_parts.append("### Arguments\n```json\n%s\n```" % JSON.stringify(tool_args, "  "))
+	content_parts.append("### Result\n```json\n%s\n```" % filtered_result_str)
+	var title := "Tool Artifact: %s" % tool_name
+	return _upsert_agent_note(history, "", title, "\n\n".join(content_parts), false)
+
+
+func _record_agent_context_telemetry(history: ChatHistory, update: Dictionary) -> void:
+	var telemetry := history.AgentContextTelemetry.duplicate(true)
+	for key in update.keys():
+		telemetry[key] = update[key]
+	history.AgentContextTelemetry = telemetry
+
+
+func _get_agent_note_text(note_id: String) -> String:
+	if note_id.is_empty():
+		return ""
+	var note = SingletonObject.get_registered_object(note_id)
+	if not note or not (note is Note):
+		return ""
+	var controls = note.get_controls_container()
+	if controls is NoteTextControls:
+		return controls.content
+	return ""
+
+
+func _get_agent_context_summary_settings() -> Dictionary:
+	if SingletonObject.preferences_popup and SingletonObject.preferences_popup.has_method("get_agent_context_summary_config"):
+		return SingletonObject.preferences_popup.get_agent_context_summary_config()
+	return {}
+
+
+func _is_agent_context_summary_configured() -> bool:
+	if SingletonObject.preferences_popup and SingletonObject.preferences_popup.has_method("is_agent_context_summary_configured"):
+		return SingletonObject.preferences_popup.is_agent_context_summary_configured()
+	return false
+
+
+func _provider_has_property(provider: Object, property_name: String) -> bool:
+	for prop in provider.get_property_list():
+		if str(prop.get("name", "")) == property_name:
+			return true
+	return false
+
+
+func _build_floating_summary_source(item: ChatHistoryItem) -> String:
+	var section := PackedStringArray()
+	section.append("Tool: %s" % item.ToolName)
+	if not item.ToolSummary.is_empty():
+		section.append("Compact summary: %s" % item.ToolSummary)
+	if not item.ToolArtifactNoteId.is_empty():
+		section.append("Artifact note: %s" % item.ToolArtifactNoteId)
+		var artifact_text := _get_agent_note_text(item.ToolArtifactNoteId)
+		if not artifact_text.is_empty():
+			section.append("Artifact excerpt:\n%s" % artifact_text.left(AGENT_TOOL_WINDOW_LENGTH))
+	return "\n".join(section)
+
+
+func _build_deterministic_floating_summary(existing_summary: String, source_text: String) -> String:
+	var parts := PackedStringArray()
+	if not existing_summary.is_empty():
+		parts.append(existing_summary.strip_edges())
+	if not source_text.is_empty():
+		parts.append(source_text.strip_edges())
+	var joined := "\n\n---\n\n".join(parts)
+	if joined.length() <= AGENT_TOOL_WINDOW_LENGTH:
+		return joined
+	return joined.substr(joined.length() - AGENT_TOOL_WINDOW_LENGTH, AGENT_TOOL_WINDOW_LENGTH)
+
+
+func _create_agent_context_summary_provider(provider_spec: Dictionary, settings: Dictionary) -> Dictionary:
+	var kind := str(provider_spec.get("kind", ""))
+	var provider: BaseProvider = null
+	var provider_label := ""
+
+	match kind:
+		"builtin", "dynamic":
+			var model_id := int(provider_spec.get("model_id", -1))
+			if model_id == SingletonObject.API_MODEL_PROVIDERS.HUMAN:
+				return {"provider": null, "error": "human_provider_not_supported", "provider_label": "human"}
+			if kind == "dynamic":
+				provider = SingletonObject.create_dynamic_provider(model_id)
+			elif SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(model_id):
+				provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id].new()
+			provider_label = str(model_id)
+		"core_action":
+			var service_client_id := str(provider_spec.get("service_client_id", ""))
+			var action_name := str(provider_spec.get("action_name", ""))
+			var matched_service: Service = null
+			var matched_action: Action = null
+			for service in Core.services:
+				if service.client_id != service_client_id:
+					continue
+				matched_service = service
+				for action in service.actions:
+					if action.name == action_name:
+						matched_action = action
+						break
+				if matched_action:
+					break
+			if matched_service and matched_action:
+				provider = CoreProvider.new(matched_service, matched_action)
+				provider_label = "%s:%s" % [service_client_id, action_name]
+			else:
+				return {
+					"provider": null,
+					"error": "core_action_not_found:%s:%s" % [service_client_id, action_name],
+					"provider_label": "%s:%s" % [service_client_id, action_name],
+				}
+		_:
+			return {"provider": null, "error": "invalid_provider_spec", "provider_label": ""}
+
+	if not provider:
+		return {"provider": null, "error": "provider_creation_failed", "provider_label": provider_label}
+
+	if _provider_has_property(provider, "system_prompt"):
+		provider.system_prompt = str(settings.get("system_prompt", ""))
+	if _provider_has_property(provider, "reasoning_effort"):
+		provider.reasoning_effort = str(settings.get("reasoning_effort", ""))
+	if provider.supports_num_ctx and int(settings.get("context_size", 0)) > 0:
+		provider.default_context = int(settings.get("context_size", 0))
+	provider.request_timeout = float(settings.get("summary_timeout", 30.0))
+	return {"provider": provider, "error": "", "provider_label": provider.model_name}
+
+
+func _call_agent_context_summary_provider(provider_spec: Dictionary, settings: Dictionary, prompt_text: String) -> Dictionary:
+	var provider_result := _create_agent_context_summary_provider(provider_spec, settings)
+	var provider: BaseProvider = provider_result.get("provider", null)
+	if not provider:
+		return {
+			"ok": false,
+			"text": "",
+			"error": str(provider_result.get("error", "provider_creation_failed")),
+			"provider_label": str(provider_result.get("provider_label", "")),
+		}
+
+	add_child(provider)
+
+	var user_item := ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER, prompt_text)
+	user_item.provider = provider
+	var prompt: Array[Variant] = []
+	var formatted = provider.Format(user_item)
+	if formatted != null:
+		prompt.append(formatted)
+
+	var additional_params: Dictionary = {}
+	if provider.supports_temperature:
+		additional_params["temperature"] = float(settings.get("temperature", 0.2))
+
+	var response: BotResponse = await provider.generate_content(prompt, additional_params)
+	provider.queue_free()
+	if not response:
+		return {"ok": false, "text": "", "error": "no_response", "provider_label": provider.model_name}
+	if not response.error.is_empty():
+		return {"ok": false, "text": "", "error": response.error, "provider_label": provider.model_name}
+	var response_text := response.text.strip_edges()
+	if response_text.is_empty():
+		return {"ok": false, "text": "", "error": "empty_response_text", "provider_label": provider.model_name}
+	return {"ok": true, "text": response_text, "error": "", "provider_label": provider.model_name}
+
+
+func _refresh_floating_tool_summary(history: ChatHistory) -> void:
+	if not _is_agent_context_summary_configured():
+		_record_agent_context_telemetry(history, {"floating_summary_enabled": false})
+		return
+
+	var tool_items: Array[ChatHistoryItem] = []
+	for item in history.HistoryItemList:
+		if item.Role == ChatHistoryItem.ChatRole.TOOL:
+			tool_items.append(item)
+
+	if tool_items.size() <= 1:
+		_record_agent_context_telemetry(history, {"floating_summary_enabled": true, "floating_summary_items": 0})
+		return
+
+	var settings := _get_agent_context_summary_settings()
+	var existing_summary := _get_agent_note_text(history.AgentFloatingSummaryNoteId)
+	var previous_latest: ChatHistoryItem = tool_items[tool_items.size() - 2]
+	var latest_source := _build_floating_summary_source(previous_latest)
+	var configured_prompt: String = str(settings.get("summary_prompt", "")).strip_edges()
+	if configured_prompt.is_empty():
+		configured_prompt = "Create a compact rolling summary of prior tool activity for an agent chat. Preserve important IDs, failures, file paths, item IDs, note IDs, and decisions. Omit chatter. Keep it concise but information-dense."
+	var summary_prompt := "%s\n\nExisting floating summary:\n%s\n\n---\n\nNewest completed tool to fold in:\n%s" % [configured_prompt, existing_summary, latest_source]
+	var primary_result := await _call_agent_context_summary_provider(settings.get("primary_provider", {}), settings, summary_prompt)
+	var summary_text := str(primary_result.get("text", ""))
+	var fallback_result: Dictionary = {}
+
+	if summary_text.is_empty() and bool(settings.get("fallback_enabled", false)) and not (settings.get("fallback_provider", {}) as Dictionary).is_empty():
+		fallback_result = await _call_agent_context_summary_provider(settings.get("fallback_provider", {}), settings, summary_prompt)
+		summary_text = str(fallback_result.get("text", ""))
+
+	var used_deterministic_fallback := false
+	if summary_text.is_empty():
+		summary_text = _build_deterministic_floating_summary(existing_summary, latest_source)
+		used_deterministic_fallback = not summary_text.is_empty()
+	if summary_text.is_empty():
+		_record_agent_context_telemetry(history, {
+			"floating_summary_enabled": true,
+			"floating_summary_error": "summary_generation_failed",
+			"floating_summary_primary_error": str(primary_result.get("error", "")),
+			"floating_summary_primary_provider": str(primary_result.get("provider_label", "")),
+			"floating_summary_fallback_error": str(fallback_result.get("error", "")),
+			"floating_summary_fallback_provider": str(fallback_result.get("provider_label", "")),
+		})
+		return
+
+	history.AgentFloatingSummaryNoteId = _upsert_agent_note(history, history.AgentFloatingSummaryNoteId, "Floating Tool Summary", summary_text, false)
+	_record_agent_context_telemetry(history, {
+		"floating_summary_enabled": true,
+		"floating_summary_items": tool_items.size() - 1,
+		"floating_summary_note_id": history.AgentFloatingSummaryNoteId,
+		"floating_summary_primary_error": str(primary_result.get("error", "")),
+		"floating_summary_primary_provider": str(primary_result.get("provider_label", "")),
+		"floating_summary_fallback_error": str(fallback_result.get("error", "")),
+		"floating_summary_fallback_provider": str(fallback_result.get("provider_label", "")),
+		"floating_summary_mode": "deterministic" if used_deterministic_fallback else ("fallback" if not fallback_result.is_empty() and str(fallback_result.get("text", "")).length() > 0 else "primary"),
+	})
+
+
+func _build_knowledge_injection_text(history: ChatHistory) -> String:
+	if history.AcquiredKnowledge.is_empty():
+		return ""
+
+	var entries: Array[Dictionary] = []
+	entries.assign(history.AcquiredKnowledge)
+	entries.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ak := "%s:%s" % [str(a.get("type", "")), str(a.get("id", ""))]
+		var bk := "%s:%s" % [str(b.get("type", "")), str(b.get("id", ""))]
+		return ak < bk
+	)
+
+	var sections := PackedStringArray()
+	sections.append("Here is potentially useful knowledge for this chat. Confirm receipt implicitly and use it when relevant.")
+	for entry in entries:
+		var header := "[%s %s]" % [str(entry.get("type", "knowledge")).to_upper(), str(entry.get("id", ""))]
+		var body := PackedStringArray()
+		if not str(entry.get("title", "")).is_empty():
+			body.append("Title: %s" % str(entry.get("title", "")))
+		if not str(entry.get("description", "")).is_empty():
+			body.append("Description: %s" % str(entry.get("description", "")))
+		if not str(entry.get("content", "")).is_empty():
+			body.append(str(entry.get("content", "")))
+		sections.append("%s\n%s" % [header, "\n".join(body)])
+	return "\n\n".join(sections)
+
+
+func _project_history_for_prompt(history: ChatHistory) -> Array[ChatHistoryItem]:
+	var projected: Array[ChatHistoryItem] = []
+	var latest_tool_idx := -1
+	for i in range(history.HistoryItemList.size() - 1, -1, -1):
+		if history.HistoryItemList[i].Role == ChatHistoryItem.ChatRole.TOOL:
+			latest_tool_idx = i
+			break
+
+	var knowledge_text := _build_knowledge_injection_text(history)
+	var floating_summary_text := _get_agent_note_text(history.AgentFloatingSummaryNoteId)
+	var injected_knowledge := false
+	var dehydrated_items := 0
+	var chars_removed := 0
+
+	for i in range(history.HistoryItemList.size()):
+		var item := history.HistoryItemList[i]
+		var prompt_item := item
+		var mutated := false
+
+		if item.Role == ChatHistoryItem.ChatRole.USER and not injected_knowledge and not knowledge_text.is_empty():
+			prompt_item = item.duplicate_for_prompt()
+			var notes_copy: Array[Variant] = prompt_item.InjectedNotes.duplicate()
+			notes_copy.append(knowledge_text)
+			prompt_item.InjectedNotes = notes_copy
+			injected_knowledge = true
+			mutated = true
+
+		if item.Role == ChatHistoryItem.ChatRole.TOOL and i != latest_tool_idx:
+			var compact_message := item.ToolSummary
+			if compact_message.is_empty() and not item.ToolArtifactNoteId.is_empty():
+				compact_message = _build_tool_ref_message(item.ToolName, item.ToolArtifactNoteId, false)
+			if not floating_summary_text.is_empty():
+				var ref_message := _build_tool_ref_message(item.ToolName, item.ToolArtifactNoteId, true)
+				if not mutated:
+					prompt_item = item.duplicate_for_prompt()
+				prompt_item.Message = ref_message
+				dehydrated_items += 1
+				chars_removed += maxi(0, item.Message.length() - ref_message.length())
+			elif not compact_message.is_empty():
+				if not mutated:
+					prompt_item = item.duplicate_for_prompt()
+				prompt_item.Message = compact_message
+				dehydrated_items += 1
+				chars_removed += maxi(0, item.Message.length() - compact_message.length())
+
+		if item.Role == ChatHistoryItem.ChatRole.TOOL and i == latest_tool_idx and not floating_summary_text.is_empty():
+			if not mutated:
+				prompt_item = item.duplicate_for_prompt()
+			prompt_item.Message = "[recent tool context]\n%s\n\n[current tool result]\n%s" % [floating_summary_text, prompt_item.Message]
+			mutated = true
+
+		projected.append(prompt_item)
+
+	_record_agent_context_telemetry(history, {
+		"last_projection_items_dehydrated": dehydrated_items,
+		"last_projection_chars_removed": chars_removed,
+		"knowledge_items": history.AcquiredKnowledge.size(),
+		"floating_summary_active": not floating_summary_text.is_empty(),
+	})
+	return projected
 
 
 ## Estimate the current context size for a chat history in agent mode.
@@ -510,12 +963,21 @@ func process_bot_response(bot_response, _history_provider: BaseProvider) -> Chat
 	return chi
 
 # Update UI after receiving bot response
+func _accumulate_cache_telemetry(bot_response: BotResponse, history: ChatHistory) -> void:
+	if bot_response.cache_creation_tokens > 0 or bot_response.cache_read_tokens > 0:
+		var telemetry := history.AgentContextTelemetry.duplicate(true)
+		telemetry["cache_creation_tokens"] = int(telemetry.get("cache_creation_tokens", 0)) + bot_response.cache_creation_tokens
+		telemetry["cache_read_tokens"] = int(telemetry.get("cache_read_tokens", 0)) + bot_response.cache_read_tokens
+		history.AgentContextTelemetry = telemetry
+
+
 func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control,
 							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
 	if bot_response != null:
 		# Update user message node with input tokens (prompt tokens for this turn)
 		user_history_item.InputTokens = bot_response.prompt_tokens
+		_accumulate_cache_telemetry(bot_response, history)
 		user_msg_node.render()
 
 		# Change the history item and the message node will update itself
@@ -553,6 +1015,7 @@ func update_ui_after_response_no_signal(user_history_item: ChatHistoryItem, user
 	if bot_response != null:
 		# Update user message node with input tokens (prompt tokens for this turn)
 		user_history_item.InputTokens = bot_response.prompt_tokens
+		_accumulate_cache_telemetry(bot_response, history)
 		user_msg_node.render()
 
 		# Change the history item and the message node will update itself
@@ -724,6 +1187,12 @@ func _build_request_metadata(history: ChatHistory, history_list: Array[Variant])
 	if history.Temperature > 0:
 		metadata["temperature"] = history.Temperature
 
+	if not history.AgentContextTelemetry.is_empty():
+		metadata["agent_context"] = history.AgentContextTelemetry
+
+	if not history.AcquiredKnowledge.is_empty():
+		metadata["knowledge_items"] = history.AcquiredKnowledge.size()
+
 	return metadata
 
 
@@ -732,8 +1201,9 @@ func _build_request_metadata(history: ChatHistory, history_list: Array[Variant])
 func _build_history_list_with_system_prompt(history: ChatHistory, provider: BaseProvider, system_prompt: String, predicate: Callable, agent_mode: bool = false) -> Array[Variant]:
 	var history_list: Array[Variant] = []
 	var system_prompt_prepended := false
+	var projected_history := _project_history_for_prompt(history)
 
-	for chat: ChatHistoryItem in history.HistoryItemList:
+	for chat: ChatHistoryItem in projected_history:
 		# Apply predicate if provided
 		if predicate.is_valid():
 			var results = predicate.call(chat)
@@ -1378,10 +1848,14 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
 
+		# Capture and store the filtered full result before truncation so later
+		# prompt projection can dehydrate older tool payloads safely.
+		var full_result_str := _filter_tool_result_text(JSON.stringify(result))
+		var artifact_note_id := _store_tool_artifact(history, tool_name, tool_args, full_result_str, tool_id)
+
 		# Stringify and truncate the result to prevent context explosion
-		var result_str = JSON.stringify(result)
-		var original_len = result_str.length()
-		result_str = truncate_tool_result(result_str, history.AgentMaxToolResultLength)
+		var result_str = truncate_tool_result(full_result_str, history.AgentMaxToolResultLength)
+		var original_len = full_result_str.length()
 		if result_str.length() < original_len:
 			print("[Agent] Truncated tool result from %d to %d chars" % [original_len, result_str.length()])
 
@@ -1400,11 +1874,23 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		tool_result_item.ToolCallId = tool_id
 		tool_result_item.ToolName = tool_name
 		tool_result_item.Message = result_str
+		tool_result_item.ToolSummary = _build_tool_summary(tool_name, result, artifact_note_id)
+		tool_result_item.ToolArtifactNoteId = artifact_note_id
 		tool_result_item.provider = history.provider
 		tool_result_item.Visible = false  # Don't render separately - shown in parent message
 
 		# Add to history (this is critical - must happen before continuation)
 		history.HistoryItemList.append(tool_result_item)
+		_record_agent_context_telemetry(history, {
+			"last_tool_name": tool_name,
+			"last_tool_artifact_note_id": artifact_note_id,
+			"last_tool_result_chars": original_len,
+		})
+		# Keep the normal append-loading indicator visible while we wait on
+		# floating-summary generation so blocked parent chats still show work.
+		if is_instance_valid(model_chi.rendered_node):
+			model_chi.rendered_node.loading_append = true
+		await _refresh_floating_tool_summary(history)
 
 		# Yield one frame so Godot can render/process input between tool calls.
 		# Most tool handlers are synchronous, so `await execute_tool()` completes
@@ -1509,6 +1995,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 	# Process the continuation response
 	var continuation_chi = process_bot_response(continuation_response, history.provider)
+	_accumulate_cache_telemetry(continuation_response, history)
 
 	print("[Agent] Continuation has tool_calls: %s" % continuation_response.has_tool_calls())
 
@@ -1958,6 +2445,11 @@ func render_history(chat_history: ChatHistory):
 	%tcChats.add_child(wrapper)
 	var tab_idx = %tcChats.get_tab_idx_from_control(wrapper)
 	%tcChats.set_tab_title(tab_idx, _name)
+
+	# Eagerly create the agent-notes tab for agent chats so it's visible
+	# before any tool calls happen.
+	if chat_history.AgentModeEnabled or chat_history.IsAgentChat:
+		_get_agent_notes_tab(chat_history)
 	
 	var multi_slider_containers: = {}
 	var slider_containers: = {}
@@ -2260,8 +2752,11 @@ func show_title_edit_dialog(tab: int):
 
 func _on_edit_title_dialog_confirmed():
 	var tab = %EditTitleDialog.get_meta("tab")
-	set_tab_title(tab, %LineEdit.text)
-	SingletonObject.ChatList[tab].HistoryName = %LineEdit.text
+	var new_name: String = %LineEdit.text
+	set_tab_title(tab, new_name)
+	var history: ChatHistory = SingletonObject.ChatList[tab]
+	history.HistoryName = new_name
+	_sync_agent_notes_tab_title(history)
 
 
 func _on_line_edit_text_submitted(_new_text: String) -> void:
@@ -2401,6 +2896,8 @@ func _on_chat_header_agent_mode_toggled(toggled_on: bool, history: ChatHistory) 
 		print("[Agent Mode] Enabled for '%s' with %d tools available" % [history.HistoryName, tools.size()])
 		if tools.is_empty():
 			push_warning("Agent Mode enabled but no MCP tools are available. Connect to MCP servers first.")
+		# Eagerly create agent-notes tab so it's visible immediately
+		_get_agent_notes_tab(history)
 	else:
 		print("[Agent Mode] Disabled for '%s'" % history.HistoryName)
 

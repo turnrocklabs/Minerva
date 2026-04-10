@@ -7,6 +7,14 @@ signal save_as_dialog_exited()
 var save_path: String
 var last_save_path: String
 
+func _clear_notes_container(container: NotesContainer) -> void:
+	if not container:
+		return
+	for i in range(container.get_tab_count() - 1, -1, -1):
+		var control := container.get_tab_control(i)
+		if control:
+			control.queue_free()
+
 func update_last_save_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
 
@@ -25,6 +33,8 @@ func _new_project():
 	# Clear notes pane if it exists
 	if SingletonObject.Notes:
 		SingletonObject.Notes.clear_all_notes()
+	if SingletonObject.agent_notes_container:
+		_clear_notes_container(SingletonObject.agent_notes_container)
 	
 	SingletonObject.editor_container.clear_editor_tabs()
 	SingletonObject.clear_registered_objects()
@@ -143,6 +153,9 @@ func save_editor_panes(skip_selecting_items: bool = false) -> bool:
 ## Serialize project with multiple service types
 func serialize_project() -> Dictionary:
 	var notes: = SingletonObject.notes_container.serialize()
+	var agent_notes: Array[Dictionary] = []
+	if SingletonObject.agent_notes_container:
+		agent_notes = SingletonObject.agent_notes_container.serialize()
 	var chats: Array[Dictionary] = []
 	var notes_histories: Array[Dictionary] = []
 	
@@ -170,6 +183,7 @@ func serialize_project() -> Dictionary:
 
 	return {
 		"ThreadList": notes,
+		"AgentThreadList": agent_notes,
 		"ChatList": chats,
 		"NotesHistories": notes_histories,
 		"Editors": editors,
@@ -189,6 +203,9 @@ func deserialize_project(data: Dictionary) -> int:
 
 	# Deserialize notes container (legacy notes system)
 	SingletonObject.notes_container.deserialize(data.get("ThreadList", []))
+	if SingletonObject.agent_notes_container:
+		_clear_notes_container(SingletonObject.agent_notes_container)
+		SingletonObject.agent_notes_container.deserialize(data.get("AgentThreadList", []))
 
 	# Clear rendered_node references from currently displayed chats BEFORE clearing ChatList
 	if SingletonObject.Chats:

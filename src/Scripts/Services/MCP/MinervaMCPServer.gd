@@ -228,6 +228,7 @@ func execute_tool(tool_name: String, arguments: Dictionary, caller_chat_id: Stri
 		return {"error": "Minerva server not connected", "success": false}
 	_current_caller_chat_id = caller_chat_id
 	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
+	_maybe_capture_chat_knowledge(tool_name, result)
 	_current_caller_chat_id = ""
 	return _check_duplicate_call(tool_name, arguments, result)
 
@@ -316,6 +317,77 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		_write_observation_telemetry(pending_observations)
 
 	return dispatch_result
+
+
+func _maybe_capture_chat_knowledge(tool_name: String, result: Dictionary) -> void:
+	if _current_caller_chat_id.is_empty():
+		return
+	if result.is_empty() or result.get("success", true) == false:
+		return
+
+	var history = MCPToolUtils.find_chat_by_id(_current_caller_chat_id)
+	if history == null:
+		return
+
+	var knowledge_entry := _extract_knowledge_entry(tool_name, result)
+	if knowledge_entry.is_empty():
+		return
+
+	var acquired: Array[Dictionary] = history.AcquiredKnowledge.duplicate(true)
+	var entry_id := str(knowledge_entry.get("id", ""))
+	var replaced := false
+	for i in range(acquired.size()):
+		if str(acquired[i].get("id", "")) == entry_id and not entry_id.is_empty():
+			acquired[i] = knowledge_entry
+			replaced = true
+			break
+	if not replaced:
+		acquired.append(knowledge_entry)
+	history.AcquiredKnowledge = acquired
+
+
+func _extract_knowledge_entry(tool_name: String, result: Dictionary) -> Dictionary:
+	match tool_name:
+		"minerva_get_skill":
+			return {
+				"id": str(result.get("id", "")),
+				"type": "skill",
+				"title": str(result.get("name", "")),
+				"description": str(result.get("description", "")),
+				"content": str(result.get("instructions", "")),
+			}
+		"minerva_docket_hint_get":
+			return {
+				"id": str(result.get("id", "")),
+				"type": "hint",
+				"title": str(result.get("title", "")),
+				"description": str(result.get("summary", "")),
+				"content": str(result.get("value", "")),
+			}
+		"minerva_docket_skill_get":
+			return {
+				"id": str(result.get("id", "")),
+				"type": "skill",
+				"title": str(result.get("title", "")),
+				"description": str(result.get("description", "")),
+				"content": str(result.get("steps", "")),
+			}
+		"minerva_docket_get":
+			var item_type := str(result.get("type", ""))
+			if item_type in ["kb", "hint", "insight", "skill"]:
+				var content := str(result.get("value", ""))
+				if content.is_empty():
+					content = str(result.get("steps", ""))
+				if content.is_empty():
+					content = str(result.get("article", ""))
+				return {
+					"id": str(result.get("id", "")),
+					"type": item_type,
+					"title": str(result.get("title", "")),
+					"description": str(result.get("summary", "")),
+					"content": content,
+				}
+	return {}
 
 
 ## Check for duplicate calls and inject warning if detected

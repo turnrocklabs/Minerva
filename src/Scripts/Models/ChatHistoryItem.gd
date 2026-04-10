@@ -33,66 +33,74 @@ static var SERIALIZER_FIELDS = [
 	"ToolCalls",
 	"IsToolCall",
 	"ToolExecutions",
+	"ToolSummary",
+	"ToolArtifactNoteId",
 	"RequestMetadata"
 ]
 
 # This signal is to be emitted when new message in the history list is added
 signal response_arrived(item: ChatHistoryItem)
 
+var _suppress_save_state: bool = false
+
+func _queue_save_state() -> void:
+	if not _suppress_save_state:
+		SingletonObject.call_deferred("save_state", false)
+
 var Id: String:
-	set(value): SingletonObject.call_deferred("save_state", false); Id = value
+	set(value): _queue_save_state(); Id = value
 
 var Role: ChatRole:
-	set(value): SingletonObject.call_deferred("save_state", false); Role = value
+	set(value): _queue_save_state(); Role = value
 
 var InjectedNotes: Array[Variant]:
-	set(value): SingletonObject.call_deferred("save_state", false); InjectedNotes = value
+	set(value): _queue_save_state(); InjectedNotes = value
 
 var HcpData: Dictionary:
-	set(value): SingletonObject.save_state(false); HcpData = value
+	set(value): _queue_save_state(); HcpData = value
 
 var HcpStructure: Dictionary:
-	set(value): SingletonObject.save_state(false); HcpStructure = value
+	set(value): _queue_save_state(); HcpStructure = value
 
 var Message: String:
-	set(value): SingletonObject.call_deferred("save_state", false); Message = value
+	set(value): _queue_save_state(); Message = value
 
 var Images: Array[Image]:
-	set(value): SingletonObject.call_deferred("save_state", false); Images = value
+	set(value): _queue_save_state(); Images = value
 
 var Order: int:
-	set(value): SingletonObject.call_deferred("save_state", false); Order = value
+	set(value): _queue_save_state(); Order = value
 
 var Type: PartType:
-	set(value): SingletonObject.call_deferred("save_state", false); Type = value
+	set(value): _queue_save_state(); Type = value
 
 var ModelName: String:
-	set(value): SingletonObject.call_deferred("save_state", false); ModelName = value
+	set(value): _queue_save_state(); ModelName = value
 
 var ModelShortName: String:
-	set(value): SingletonObject.call_deferred("save_state", false); ModelShortName = value
+	set(value): _queue_save_state(); ModelShortName = value
 
 var Complete: bool:
-	set(value): SingletonObject.call_deferred("save_state", false); Complete = value
+	set(value): _queue_save_state(); Complete = value
 
 var Error: String:
-	set(value): SingletonObject.call_deferred("save_state", false); Error = value
+	set(value): _queue_save_state(); Error = value
 
 var Visible: bool = true:
-	set(value): SingletonObject.call_deferred("save_state", false); Visible = value
+	set(value): _queue_save_state(); Visible = value
 
 ## Estimated amount of tokens of this history item.
 ## `null` if no estimation was made for this history item.
 var EstimatedTokenCost: int:
-	set(value): SingletonObject.call_deferred("save_state", false); EstimatedTokenCost = value
+	set(value): _queue_save_state(); EstimatedTokenCost = value
 
 ## Number of input tokens (prompt tokens) for this turn
 var InputTokens: int = 0:
-	set(value): SingletonObject.call_deferred("save_state", false); InputTokens = value
+	set(value): _queue_save_state(); InputTokens = value
 
 ## Number of output tokens (completion tokens) for this turn
 var OutputTokens: int = 0:
-	set(value): SingletonObject.call_deferred("save_state", false); OutputTokens = value
+	set(value): _queue_save_state(); OutputTokens = value
 
 ## Amount of tokens of this history item (legacy - now computed from InputTokens + OutputTokens)
 var TokenCost: int:
@@ -100,7 +108,7 @@ var TokenCost: int:
 	set(value):
 		# Legacy setter - distribute to output tokens for backwards compat
 		OutputTokens = value
-		SingletonObject.call_deferred("save_state", false)
+		_queue_save_state()
 
 var provider: BaseProvider:
 	set(value):
@@ -108,60 +116,69 @@ var provider: BaseProvider:
 		_provider_updated()
 
 var Expanded: bool = true:
-	set(value): SingletonObject.call_deferred("save_state", false); Expanded = value
+	set(value): _queue_save_state(); Expanded = value
 
 var LastYSize: float = 0.0:
-	set(value): SingletonObject.call_deferred("save_state", false); LastYSize = value
+	set(value): _queue_save_state(); LastYSize = value
 
 #this  filed is for saving the UUID of the memoryItems with its respective code label
 #{codeLabelIndex: int, MemoryItemUUID: String}
 var LinkedMemories: Dictionary = {}:
-	set(value): SingletonObject.call_deferred("save_state", false); LinkedMemories = value
+	set(value): _queue_save_state(); LinkedMemories = value
 
 var CodeLabelsState: Dictionary = {}:
-	set(value): SingletonObject.call_deferred("save_state", false); CodeLabelsState = value
+	set(value): _queue_save_state(); CodeLabelsState = value
 	
 var isMerged: bool = false:
-	set(value): SingletonObject.call_deferred("save_state", false); isMerged = value
+	set(value): _queue_save_state(); isMerged = value
 
 var SliderContainerId: String = "":
-	set(value): SingletonObject.call_deferred("save_state", false); SliderContainerId = value
+	set(value): _queue_save_state(); SliderContainerId = value
 
 var MultiSliderContainerId: String = "":
-	set(value): SingletonObject.call_deferred("save_state", false); MultiSliderContainerId = value
+	set(value): _queue_save_state(); MultiSliderContainerId = value
 
 ## Tool call ID (for TOOL role responses - correlates with the tool_call that triggered this)
 var ToolCallId: String = "":
-	set(value): SingletonObject.call_deferred("save_state", false); ToolCallId = value
+	set(value): _queue_save_state(); ToolCallId = value
 
 ## Tool name (for TOOL role - which tool was called)
 var ToolName: String = "":
-	set(value): SingletonObject.call_deferred("save_state", false); ToolName = value
+	set(value): _queue_save_state(); ToolName = value
 
 ## Tool arguments (for ASSISTANT role with tool calls)
 var ToolCalls: Array[Dictionary] = []:
-	set(value): SingletonObject.call_deferred("save_state", false); ToolCalls = value
+	set(value): _queue_save_state(); ToolCalls = value
 
 ## Whether this is a tool call message
 var IsToolCall: bool = false:
-	set(value): SingletonObject.call_deferred("save_state", false); IsToolCall = value
+	set(value): _queue_save_state(); IsToolCall = value
 
 ## Tool execution data for displaying in UI
 ## Structure: [{call_id: String, tool_name: String, arguments: Dictionary, result: String, status: String}]
 ## status can be: "calling", "done", "error"
 var ToolExecutions: Array[Dictionary] = []:
-	set(value): SingletonObject.call_deferred("save_state", false); ToolExecutions = value
+	set(value): _queue_save_state(); ToolExecutions = value
+
+## Compact deterministic summary used for prompt projection/dehydration.
+var ToolSummary: String = "":
+	set(value): _queue_save_state(); ToolSummary = value
+
+## UUID of the note storing the full tool artifact, when available.
+var ToolArtifactNoteId: String = "":
+	set(value): _queue_save_state(); ToolArtifactNoteId = value
 
 ## Request metadata for debugging - stored on USER messages to show what was sent
 ## Structure: {system_prompt: String, tools: Array, tool_count: int, message_count: int, model: String}
 var RequestMetadata: Dictionary = {}:
-	set(value): SingletonObject.call_deferred("save_state", false); RequestMetadata = value
+	set(value): _queue_save_state(); RequestMetadata = value
 
 ## The node that is currently rendering this item
 var rendered_node: MessageMarkdown
 
 
-func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _text: String = ""):
+func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _text: String = "", suppress_save_state: bool = false):
+	self._suppress_save_state = suppress_save_state
 	self.Type = _type
 	self.Role = _role
 	self.Message = _text
@@ -177,6 +194,7 @@ func _init(_type: PartType = PartType.TEXT, _role: ChatRole = ChatRole.USER, _te
 	rng.randomize() # Uses the current time to seed the random number generator
 	var random_number = rng.randi() # Generates a random integer
 	self.Id = str(random_number).sha256_text()
+	self._suppress_save_state = false
 
 	response_arrived.connect(_on_response_arrived)
 
@@ -263,6 +281,8 @@ func Serialize() -> Dictionary:
 		"ToolName": ToolName,
 		"ToolCalls": ToolCalls,
 		"IsToolCall": IsToolCall,
+		"ToolSummary": ToolSummary,
+		"ToolArtifactNoteId": ToolArtifactNoteId,
 		# Request metadata for debugging
 		"RequestMetadata": RequestMetadata
 	}
@@ -353,6 +373,21 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 		chi.set(prop, value)
 
 	return chi
+
+
+## Create a shallow prompt-safe copy of this history item.
+## Used when prompt projection needs to adjust notes or dehydrate tool payloads
+## without mutating the canonical transcript.
+func duplicate_for_prompt() -> ChatHistoryItem:
+	var copy := ChatHistoryItem.new(PartType.TEXT, ChatRole.USER, "", true)
+	copy._suppress_save_state = true
+	for prop in SERIALIZER_FIELDS:
+		copy.set(prop, get(prop))
+	copy.provider = provider
+	copy.Complete = Complete
+	copy.Error = Error
+	copy._suppress_save_state = false
+	return copy
 
 
 ## Merges two history items together

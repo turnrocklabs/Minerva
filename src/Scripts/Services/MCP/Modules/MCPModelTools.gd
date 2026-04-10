@@ -511,6 +511,9 @@ func _get_chat_cost(args: Dictionary) -> Dictionary:
 	if chat_id.is_empty():
 		return MCPToolUtils.error("chat_id is required")
 	var result: Dictionary = SingletonObject.cost_tracker.get_cost_for_chat(chat_id)
+	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	if history and not history.AgentContextTelemetry.is_empty():
+		result["agent_context"] = history.AgentContextTelemetry
 	result["success"] = true
 	result["chat_id"] = chat_id
 	return result

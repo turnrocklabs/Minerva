@@ -7,6 +7,10 @@ var system_prompt: String
 var api_model_id: String
 var max_tokens: int
 
+## Path to write HTTP request/response debug logs. Empty = no logging.
+static var debug_log_path: String = ""
+static var _debug_log_counter: int = 0
+
 ## Available tools for agentic mode (set by ChatPane when agent mode is enabled)
 var available_tools: Array[Dictionary] = []
 
@@ -96,11 +100,33 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 
 # https://docs.anthropic.com/en/api/messages
 func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}):
+	var system_payload: Variant = system_prompt
+	if not system_prompt.is_empty():
+		system_payload = [{
+			"type": "text",
+			"text": system_prompt,
+			"cache_control": {"type": "ephemeral"}
+		}]
+
+	var request_messages: Array[Variant] = prompt.duplicate(true)
+	if not request_messages.is_empty():
+		var first_message = request_messages[0]
+		if first_message is Dictionary:
+			var content = first_message.get("content", [])
+			if content is Array and not content.is_empty():
+				var content_blocks: Array = content.duplicate(true)
+				var first_block = content_blocks[0]
+				if first_block is Dictionary and first_block.get("type", "") == "text":
+					first_block["cache_control"] = {"type": "ephemeral"}
+					content_blocks[0] = first_block
+					first_message["content"] = content_blocks
+					request_messages[0] = first_message
+
 	var request_body = {
 		"model": api_model_id,
-		"messages": prompt,
+		"messages": request_messages,
 		"max_tokens": max_tokens,
-		"system": system_prompt
+		"system": system_payload
 	}
 
 	# Add tools if enabled
@@ -113,6 +139,9 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 	var body_stringified: String = JSON.stringify(request_body)
 
+	print("[AnthropicProvider] generate_content called. debug_log_path='%s' body_chars=%d" % [debug_log_path, body_stringified.length()])
+	_debug_log_request(body_stringified)
+
 	var response: RequestResults = await make_request(
 		"%s/messages" % BASE_URL,
 		HTTPClient.METHOD_POST,
@@ -124,11 +153,55 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 		],
 	)
 
+	_debug_log_response(response)
+
 	var item = _parse_request_results(response)
 
 	SingletonObject.chat_completed.emit(item)
 
 	return item
+
+
+static func _debug_log_request(body: String) -> void:
+	if debug_log_path.is_empty():
+		return
+	_debug_log_counter += 1
+	var entry := {
+		"seq": _debug_log_counter,
+		"direction": "request",
+		"timestamp": Time.get_datetime_string_from_system(true),
+		"body_chars": body.length(),
+		"body": JSON.parse_string(body),
+	}
+	_debug_append_log(JSON.stringify(entry, "\t"))
+
+
+static func _debug_log_response(response: RequestResults) -> void:
+	if debug_log_path.is_empty():
+		return
+	var body_text := response.body.get_string_from_utf8() if response.body else ""
+	var entry := {
+		"seq": _debug_log_counter,
+		"direction": "response",
+		"timestamp": Time.get_datetime_string_from_system(true),
+		"success": response.success,
+		"http_code": response.response_code,
+		"body_chars": body_text.length(),
+		"body": JSON.parse_string(body_text),
+	}
+	_debug_append_log(JSON.stringify(entry, "\t"))
+
+
+static func _debug_append_log(json_line: String) -> void:
+	var f := FileAccess.open(debug_log_path, FileAccess.READ_WRITE)
+	if not f:
+		f = FileAccess.open(debug_log_path, FileAccess.WRITE)
+	if not f:
+		push_error("[AnthropicProvider] Cannot open debug log: %s" % debug_log_path)
+		return
+	f.seek_end(0)
+	f.store_string(json_line + "\n---\n")
+	f.close()
 
 
 func wrap_memory(item: Note) -> Variant:
@@ -315,6 +388,8 @@ func to_bot_response(data: Variant) -> BotResponse:
 
 	response.prompt_tokens = data["usage"]["input_tokens"]
 	response.completion_tokens = data["usage"]["output_tokens"]
+	response.cache_creation_tokens = int(data["usage"].get("cache_creation_input_tokens", 0))
+	response.cache_read_tokens = int(data["usage"].get("cache_read_input_tokens", 0))
 
 	# Parse content blocks - can be text and/or tool_use
 	var text_parts: PackedStringArray = []

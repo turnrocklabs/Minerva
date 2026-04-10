@@ -1046,7 +1046,14 @@ func _get_spreadsheet_data(args: Dictionary) -> Dictionary:
 func _update_spreadsheet_data(args: Dictionary) -> Dictionary:
 	var editor_name: String = args.get("editor_name", "")
 	var csv_content: String = args.get("csv_content", "")
-	var cells: Array = args.get("cells", [])
+	var cells_raw = args.get("cells", [])
+	var cells: Array = []
+	if cells_raw is Array:
+		cells = cells_raw
+	elif cells_raw is String and not cells_raw.is_empty():
+		var parsed = JSON.parse_string(cells_raw)
+		if parsed is Array:
+			cells = parsed
 
 	if editor_name.is_empty():
 		return MCPToolUtils.error("editor_name is required")

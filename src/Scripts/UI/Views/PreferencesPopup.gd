@@ -33,6 +33,8 @@ const PROVIDERS = {
 }
 
 # --- Authentication Presets ---
+const AGENT_CONTEXT_SECTION := "AgentContextSummary"
+
 const AUTH_PRESET_PROD = "https://www.turnrock.ai:4040/v1/login"
 const AUTH_PRESET_LOCAL = "http://localhost:4040/v1/login"
 const WS_PRESET_PROD = "wss://www.turnrock.ai:27500/connect"
@@ -113,6 +115,7 @@ func _ready():
 	call_deferred("_create_tools_tab")
 	call_deferred("_create_skills_tab")
 	call_deferred("_create_voice_tab")
+	call_deferred("_create_agent_context_tab")
 	call_deferred("_create_terminal_tab")
 	call_deferred("_create_containers_tab")
 
@@ -243,6 +246,7 @@ func _on_btn_save_prefs_pressed():
 	config_file.set_value("HCP", "auto_connect", _fields["hcp_auto_connect"].button_pressed)
 	config_file.set_value("HCP", "selected_services", service_selection_window.get_selected_service_data())
 
+	_save_agent_context_summary_preferences()
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 
 	hide()
@@ -251,6 +255,7 @@ func _on_about_to_popup():
 	set_field_values()
 	theme_option_button.selected = SingletonObject.get_theme_enum()
 	set_microphone_option_menu(SingletonObject.get_microphone())
+	_load_agent_context_summary_preferences()
 	populate_output_devices_button()
 	_sync_provider_checkboxes()
 	_populate_openrouter_models()
@@ -4041,3 +4046,350 @@ func _on_term_cursor_blink_toggled(pressed: bool) -> void:
 	tc.cursor_blink = pressed
 
 #endregion Terminal Tab
+
+
+#region Agent Context Tab
+
+var _agent_context_tab: VBoxContainer
+var _agent_primary_model_picker: ProviderOptionButton
+var _agent_fallback_model_picker: ProviderOptionButton
+var _agent_fallback_enabled_check: CheckButton
+var _agent_summary_prompt_edit: TextEdit
+var _agent_reasoning_option: OptionButton
+var _agent_temperature_spin: SpinBox
+var _agent_context_spin: SpinBox
+var _agent_summary_timeout_spin: SpinBox
+var _agent_context_pref_loading: bool = false
+var _agent_debug_log_edit: LineEdit
+
+func _create_agent_context_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	_agent_context_tab = VBoxContainer.new()
+	_agent_context_tab.name = "Agent Context"
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_agent_context_tab.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	var header := Label.new()
+	header.text = "Floating Tool Summary"
+	header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(header)
+
+	var help := Label.new()
+	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	help.text = "This summary pipeline stays disabled until you configure a primary provider, primary model, and system prompt."
+	vbox.add_child(help)
+
+	var primary_provider_row := HBoxContainer.new()
+	primary_provider_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(primary_provider_row)
+	var primary_provider_label := Label.new()
+	primary_provider_label.text = "Primary Model:"
+	primary_provider_label.custom_minimum_size = Vector2(160, 0)
+	primary_provider_row.add_child(primary_provider_label)
+	_agent_primary_model_picker = ProviderOptionButton.new()
+	_agent_primary_model_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_agent_primary_model_picker.item_selected.connect(func(_idx: int): _save_agent_context_summary_preferences())
+	primary_provider_row.add_child(_agent_primary_model_picker)
+
+	var fallback_provider_row := HBoxContainer.new()
+	fallback_provider_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(fallback_provider_row)
+	var fallback_provider_label := Label.new()
+	fallback_provider_label.text = "Fallback Model:"
+	fallback_provider_label.custom_minimum_size = Vector2(160, 0)
+	fallback_provider_row.add_child(fallback_provider_label)
+	_agent_fallback_model_picker = ProviderOptionButton.new()
+	_agent_fallback_model_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_agent_fallback_model_picker.visible = false
+	_agent_fallback_model_picker.item_selected.connect(func(_idx: int): _save_agent_context_summary_preferences())
+	fallback_provider_row.add_child(_agent_fallback_model_picker)
+	_agent_fallback_enabled_check = CheckButton.new()
+	_agent_fallback_enabled_check.text = "Enabled"
+	_agent_fallback_enabled_check.toggled.connect(func(toggled: bool):
+		_agent_fallback_model_picker.visible = toggled
+		_save_agent_context_summary_preferences()
+	)
+	fallback_provider_row.add_child(_agent_fallback_enabled_check)
+
+	var reasoning_row := HBoxContainer.new()
+	reasoning_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(reasoning_row)
+	var reasoning_label := Label.new()
+	reasoning_label.text = "Reasoning Effort:"
+	reasoning_label.custom_minimum_size = Vector2(160, 0)
+	reasoning_row.add_child(reasoning_label)
+	_agent_reasoning_option = OptionButton.new()
+	_agent_reasoning_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_agent_reasoning_option.add_item("Default", -1)
+	_agent_reasoning_option.add_item("Minimal", 0)
+	_agent_reasoning_option.add_item("Low", 1)
+	_agent_reasoning_option.add_item("Medium", 2)
+	_agent_reasoning_option.add_item("High", 3)
+	_agent_reasoning_option.add_item("XHigh", 4)
+	_agent_reasoning_option.item_selected.connect(func(_idx: int): _save_agent_context_summary_preferences())
+	reasoning_row.add_child(_agent_reasoning_option)
+
+	var temperature_row := HBoxContainer.new()
+	temperature_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(temperature_row)
+	var temperature_label := Label.new()
+	temperature_label.text = "Temperature:"
+	temperature_label.custom_minimum_size = Vector2(160, 0)
+	temperature_row.add_child(temperature_label)
+	_agent_temperature_spin = SpinBox.new()
+	_agent_temperature_spin.min_value = 0.0
+	_agent_temperature_spin.max_value = 2.0
+	_agent_temperature_spin.step = 0.1
+	_agent_temperature_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_agent_temperature_spin.value_changed.connect(func(_value: float): _save_agent_context_summary_preferences())
+	temperature_row.add_child(_agent_temperature_spin)
+
+	var context_row := HBoxContainer.new()
+	context_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(context_row)
+	var context_label := Label.new()
+	context_label.text = "Context Size:"
+	context_label.custom_minimum_size = Vector2(160, 0)
+	context_row.add_child(context_label)
+	_agent_context_spin = SpinBox.new()
+	_agent_context_spin.min_value = 0
+	_agent_context_spin.max_value = 1000000
+	_agent_context_spin.step = 1024
+	_agent_context_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_agent_context_spin.value_changed.connect(func(_value: float): _save_agent_context_summary_preferences())
+	context_row.add_child(_agent_context_spin)
+
+	var timeout_row := HBoxContainer.new()
+	timeout_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(timeout_row)
+	var timeout_label := Label.new()
+	timeout_label.text = "Summary Timeout:"
+	timeout_label.custom_minimum_size = Vector2(160, 0)
+	timeout_row.add_child(timeout_label)
+	_agent_summary_timeout_spin = SpinBox.new()
+	_agent_summary_timeout_spin.min_value = 5.0
+	_agent_summary_timeout_spin.max_value = 300.0
+	_agent_summary_timeout_spin.step = 5.0
+	_agent_summary_timeout_spin.suffix = "s"
+	_agent_summary_timeout_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_agent_summary_timeout_spin.value_changed.connect(func(_value: float): _save_agent_context_summary_preferences())
+	timeout_row.add_child(_agent_summary_timeout_spin)
+
+	var prompt_label := Label.new()
+	prompt_label.text = "System Prompt:"
+	vbox.add_child(prompt_label)
+	_agent_summary_prompt_edit = TextEdit.new()
+	_agent_summary_prompt_edit.custom_minimum_size = Vector2(0, 180)
+	_agent_summary_prompt_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_agent_summary_prompt_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_agent_summary_prompt_edit.text_changed.connect(_save_agent_context_summary_preferences)
+	vbox.add_child(_agent_summary_prompt_edit)
+
+	vbox.add_child(HSeparator.new())
+
+	var debug_header := Label.new()
+	debug_header.text = "Debug Logging"
+	debug_header.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(debug_header)
+
+	var debug_row := HBoxContainer.new()
+	debug_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(debug_row)
+	var debug_label := Label.new()
+	debug_label.text = "Anthropic Log File:"
+	debug_label.custom_minimum_size = Vector2(160, 0)
+	debug_row.add_child(debug_label)
+	_agent_debug_log_edit = LineEdit.new()
+	_agent_debug_log_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_agent_debug_log_edit.placeholder_text = "Empty = no logging. e.g. /tmp/anthropic_debug.jsonl"
+	_agent_debug_log_edit.text_changed.connect(func(new_text: String):
+		AnthropicProvider.debug_log_path = new_text.strip_edges()
+	)
+	debug_row.add_child(_agent_debug_log_edit)
+
+	tab_container.add_child(_agent_context_tab)
+	_sync_agent_context_model_pickers()
+	call_deferred("_load_agent_context_summary_preferences")
+
+
+func _set_model_picker_to_spec(option: ProviderOptionButton, spec: Dictionary) -> void:
+	if option.select_provider_spec(spec):
+		return
+	if not spec.is_empty():
+		return
+	if option.get_item_count() > 0:
+		option.select(0)
+
+
+func _set_option_to_id(option: OptionButton, selected_id: int) -> void:
+	for i in range(option.item_count):
+		if option.get_item_id(i) == selected_id:
+			option.select(i)
+			return
+	if option.item_count > 0:
+		option.select(0)
+
+
+func _sync_agent_context_model_pickers() -> void:
+	if not _agent_primary_model_picker or not _agent_fallback_model_picker:
+		return
+	# Use Core.services (already discovered) instead of service_selection helper
+	var chat_services: Array[Service] = [Service.create_chat_service()]
+	for service in Core.services:
+		if Core.get_service_history_type(service) != ServiceHistory.ServiceType.CHAT:
+			continue
+		if service.client_id == Service.INTERNAL_CHAT_SERVICE_ID:
+			continue
+		chat_services.append(service)
+
+	_agent_primary_model_picker.switch_to_provider_set_for_services(chat_services)
+	_agent_fallback_model_picker.switch_to_provider_set_for_services(chat_services)
+
+
+func _restore_agent_context_model_picker_selections() -> void:
+	if not _agent_primary_model_picker:
+		return
+	_agent_context_pref_loading = true
+	var cfg := get_agent_context_summary_config()
+	_set_model_picker_to_spec(_agent_primary_model_picker, cfg.get("primary_provider", {}))
+	_set_model_picker_to_spec(_agent_fallback_model_picker, cfg.get("fallback_provider", {}))
+	_agent_context_pref_loading = false
+
+
+func _load_agent_context_summary_preferences() -> void:
+	if not _agent_primary_model_picker:
+		return
+	_agent_context_pref_loading = true
+	_sync_agent_context_model_pickers()
+	var cfg := get_agent_context_summary_config()
+	_set_model_picker_to_spec(_agent_primary_model_picker, cfg.get("primary_provider", {}))
+	_set_model_picker_to_spec(_agent_fallback_model_picker, cfg.get("fallback_provider", {}))
+	_agent_fallback_enabled_check.button_pressed = bool(cfg.get("fallback_enabled", false))
+	_agent_fallback_model_picker.visible = _agent_fallback_enabled_check.button_pressed
+	_agent_summary_prompt_edit.text = str(cfg.get("system_prompt", ""))
+	_agent_temperature_spin.value = float(cfg.get("temperature", 0.2))
+	_agent_context_spin.value = int(cfg.get("context_size", 0))
+	_agent_summary_timeout_spin.value = float(cfg.get("summary_timeout", 30.0))
+	if _agent_debug_log_edit:
+		var log_path: String = str(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "debug_log_path") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "debug_log_path") != null else "")
+		_agent_debug_log_edit.text = log_path
+		AnthropicProvider.debug_log_path = log_path
+	var reasoning := str(cfg.get("reasoning_effort", ""))
+	var selected_reasoning := -1
+	match reasoning:
+		"minimal":
+			selected_reasoning = 0
+		"low":
+			selected_reasoning = 1
+		"medium":
+			selected_reasoning = 2
+		"high":
+			selected_reasoning = 3
+		"xhigh":
+			selected_reasoning = 4
+	_set_option_to_id(_agent_reasoning_option, selected_reasoning)
+	_agent_context_pref_loading = false
+
+
+func _save_agent_context_summary_preferences() -> void:
+	if not _agent_primary_model_picker:
+		return
+	if _agent_context_pref_loading:
+		return
+
+	var reasoning_effort := ""
+	match _agent_reasoning_option.get_selected_id():
+		0:
+			reasoning_effort = "minimal"
+		1:
+			reasoning_effort = "low"
+		2:
+			reasoning_effort = "medium"
+		3:
+			reasoning_effort = "high"
+		4:
+			reasoning_effort = "xhigh"
+
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "primary_provider", _agent_primary_model_picker.get_selected_provider_spec())
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "fallback_enabled", _agent_fallback_enabled_check.button_pressed)
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "fallback_provider", _agent_fallback_model_picker.get_selected_provider_spec() if _agent_fallback_enabled_check.button_pressed else {})
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "system_prompt", _agent_summary_prompt_edit.text.strip_edges())
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "reasoning_effort", reasoning_effort)
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "temperature", _agent_temperature_spin.value)
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "context_size", int(_agent_context_spin.value))
+	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "summary_timeout", _agent_summary_timeout_spin.value)
+	if _agent_debug_log_edit:
+		SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "debug_log_path", _agent_debug_log_edit.text.strip_edges())
+		AnthropicProvider.debug_log_path = _agent_debug_log_edit.text.strip_edges()
+
+
+func get_agent_context_summary_config() -> Dictionary:
+	var primary_provider_value = SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "primary_provider")
+	var fallback_provider_value = SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "fallback_provider")
+	return {
+		"primary_provider": _normalize_agent_context_provider_spec(primary_provider_value if primary_provider_value != null else _get_legacy_agent_context_provider_spec("primary")),
+		"fallback_enabled": bool(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "fallback_enabled") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "fallback_enabled") != null else false),
+		"fallback_provider": _normalize_agent_context_provider_spec(fallback_provider_value if fallback_provider_value != null else _get_legacy_agent_context_provider_spec("fallback")),
+		"system_prompt": str(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "system_prompt") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "system_prompt") != null else ""),
+		"reasoning_effort": str(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "reasoning_effort") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "reasoning_effort") != null else ""),
+		"temperature": float(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "temperature") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "temperature") != null else 0.2),
+		"context_size": int(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "context_size") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "context_size") != null else 0),
+		"summary_timeout": float(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "summary_timeout") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "summary_timeout") != null else 30.0),
+	}
+
+
+func _normalize_agent_context_provider_spec(value: Variant) -> Dictionary:
+	if value is Dictionary:
+		return value
+	return {}
+
+
+func _get_legacy_agent_context_provider_spec(prefix: String) -> Dictionary:
+	var model_id_value = SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "%s_model_id" % prefix)
+	if model_id_value != null:
+		return {
+			"kind": "builtin" if int(model_id_value) < SingletonObject.DYNAMIC_MODEL_ID_BASE else "dynamic",
+			"model_id": int(model_id_value),
+		}
+	var provider_value = SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "%s_provider" % prefix)
+	if provider_value == null:
+		return {}
+	var provider_id := int(provider_value)
+	match provider_id:
+		SingletonObject.API_PROVIDER.OPENAI:
+			return {"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.GPT_STANDARD}
+		SingletonObject.API_PROVIDER.ANTHROPIC:
+			return {"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.CLAUDE_SONNET}
+		SingletonObject.API_PROVIDER.GOOGLE:
+			return {"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.GEMINI_FLASH}
+		SingletonObject.API_PROVIDER.LOCAL:
+			return {"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.NEMOTRON_NANO}
+	return {}
+
+
+func is_agent_context_summary_configured() -> bool:
+	var cfg := get_agent_context_summary_config()
+	return not (cfg.get("primary_provider", {}) as Dictionary).is_empty() \
+		and not str(cfg.get("system_prompt", "")).is_empty()
+
+#endregion Agent Context Tab

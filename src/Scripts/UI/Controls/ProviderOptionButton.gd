@@ -98,6 +98,55 @@ func get_selected_provider() -> BaseProvider:
 	return _get_provider_from_id(get_selected_id())
 
 
+## Returns a serializable spec for the currently selected provider/model entry.
+func get_selected_provider_spec() -> Dictionary:
+	if selected < 0 or selected >= get_item_count():
+		return {}
+	return get_item_provider_spec(selected)
+
+
+## Returns a serializable spec for a given dropdown index.
+func get_item_provider_spec(index: int) -> Dictionary:
+	if index < 0 or index >= get_item_count():
+		return {}
+
+	var item_id := get_item_id(index)
+	var metadata = get_item_metadata(index)
+	if metadata is Array and metadata.size() == 2:
+		var service: Service = metadata[0]
+		var action: Action = metadata[1]
+		if service and action:
+			return {
+				"kind": "core_action",
+				"service_client_id": service.client_id,
+				"service_name": service.name,
+				"action_name": action.name,
+			}
+
+	if item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		return {
+			"kind": "dynamic",
+			"model_id": item_id,
+		}
+
+	if item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
+		return {
+			"kind": "builtin",
+			"model_id": item_id,
+		}
+
+	return {}
+
+
+## Selects a provider/model entry matching the given serialized provider spec.
+func select_provider_spec(spec: Dictionary) -> bool:
+	for i in range(get_item_count()):
+		if _provider_spec_matches(get_item_provider_spec(i), spec):
+			select(i)
+			return true
+	return false
+
+
 ## Returns the dropdown index for a given provider (for programmatic selection)
 func get_item_index_for_provider(provider: BaseProvider) -> int:
 	for i in range(get_item_count()):
@@ -326,6 +375,22 @@ func _find_item_index_by_id(id: int) -> int:
 		if get_item_id(i) == id:
 			return i
 	return -1
+
+
+func _provider_spec_matches(left: Dictionary, right: Dictionary) -> bool:
+	if left.is_empty() or right.is_empty():
+		return false
+	if str(left.get("kind", "")) != str(right.get("kind", "")):
+		return false
+
+	match str(left.get("kind", "")):
+		"builtin", "dynamic":
+			return int(left.get("model_id", -1)) == int(right.get("model_id", -1))
+		"core_action":
+			return str(left.get("service_client_id", "")) == str(right.get("service_client_id", "")) \
+				and str(left.get("action_name", "")) == str(right.get("action_name", ""))
+
+	return false
 
 
 ## Creates unique key for combination of services

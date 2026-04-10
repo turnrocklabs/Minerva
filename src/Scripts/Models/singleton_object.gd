@@ -285,6 +285,7 @@ var notes_sync_manger: = NoteSyncManager.new()
 
 var notes_container: NotesContainer
 var drawer_notes_container: NotesContainer
+var agent_notes_container: NotesContainer
 
 ## Notes that don't reside inside any thread. eg. Editor and terminal notes
 var detached_note_proxies: Array[Note.Proxy]

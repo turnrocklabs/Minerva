@@ -70,6 +70,7 @@
 [ext_resource type="Texture2D" uid="uid://eu5n264nx6h8" path="res://assets/icons/undo_icons/redo_arrow_48.png" id="69_redo2"]
 [ext_resource type="Texture2D" uid="uid://d14ff0fa4a1cf" path="res://assets/icons/undo_icons/redo_arrow_64.png" id="70_redo3"]
 [ext_resource type="Texture2D" uid="uid://cm8qe32jgwcgs" path="res://assets/icons/bookmark.svg" id="71_ledgr"]
+[ext_resource type="Texture2D" uid="uid://dkq31owppnmm7" path="res://assets/icons/robot_AI.png" id="72_agentbot"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_c0x6k"]
 font_size = 25
@@ -643,8 +644,14 @@ icon = ExtResource("71_ledgr")
 [node name="btnDrawer" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer" unique_id=318955679]
 layout_mode = 2
 size_flags_horizontal = 8
-tooltip_text = "Creates a new note in current active tab"
+tooltip_text = "Open/Close the drawer"
 icon = ExtResource("47_dn1w2")
+
+[node name="btnAgentNotes" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer" unique_id=201119922]
+layout_mode = 2
+size_flags_horizontal = 8
+tooltip_text = "Show agent notes for the active chat"
+icon = ExtResource("72_agentbot")
 
 [node name="btnAddAttachement" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer" unique_id=1527313941]
 layout_mode = 2
@@ -733,19 +740,22 @@ alignment = 2
 layout_mode = 2
 size_flags_horizontal = 2
 
-[node name="Label" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/HBoxContainer" unique_id=2017904119]
+[node name="BottomNotesLabel" type="Label" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/HBoxContainer" unique_id=2017904119]
+unique_name_in_owner = true
 layout_mode = 2
 theme_override_font_sizes/font_size = 25
 text = "Drawer"
 
-[node name="AddNote" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel" unique_id=1439152613]
+[node name="DrawerAddNote" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel" unique_id=1439152613]
+unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Add note to current drawer tab"
 focus_mode = 0
 mouse_default_cursor_shape = 2
 icon = ExtResource("20_n1ygu")
 
-[node name="AddShelf" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel" unique_id=1768955315]
+[node name="DrawerAddShelf" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel" unique_id=1768955315]
+unique_name_in_owner = true
 layout_mode = 2
 tooltip_text = "Add tab to drawer shelf"
 focus_mode = 0
@@ -754,6 +764,18 @@ icon = ExtResource("40_056ov")
 
 [node name="tcThreadsDrawer" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer" unique_id=36538000]
 unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/icon_separation = 16
+drag_to_rearrange_enabled = true
+use_hidden_tabs_for_min_size = true
+tab_focus_mode = 1
+script = ExtResource("57_jnakw")
+
+[node name="tcThreadsAgent" type="TabContainer" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer" unique_id=129900101]
+unique_name_in_owner = true
+visible = false
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
@@ -845,12 +867,15 @@ visible = false
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer/VButton" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain" method="_on_v_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/DisableNotesButton" to="." method="_on_disable_notes_button_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnDrawer" to="." method="_on_btn_drawer_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAgentNotes" to="." method="_on_btn_agent_notes_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnAddAttachement" to="." method="_on_btn_add_attachment_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnCreateNote" to="." method="_on_btn_create_note_pressed"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnNewTab" to="NewThreadPopup" method="_on_btn_new_tab_pressed" binds= [false]]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_active_tab_rearranged"]
 [connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/tcThreads" method="_on_tab_clicked"]
 [connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/HBoxContainer/btnLedger" to="." method="_on_btn_ledger_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddNote" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_note_pressed"]
-[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/AddShelf" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_shelf_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/DrawerAddNote" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_note_pressed"]
+[connection signal="pressed" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/ControlPanel/DrawerAddShelf" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl" method="_on_add_shelf_pressed"]
 [connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsDrawer" method="_on_active_tab_rearranged"]
+[connection signal="active_tab_rearranged" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsAgent" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsAgent" method="_on_active_tab_rearranged"]
+[connection signal="tab_clicked" from="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsAgent" to="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/RightPane/Control/VBoxContainer/NotesDrawerSplit/BottomDrawerControl/VBoxContainer/tcThreadsAgent" method="_on_tab_clicked"]

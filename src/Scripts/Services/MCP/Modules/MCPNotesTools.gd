@@ -13,10 +13,13 @@ func get_tool_names() -> Array[String]:
 		"minerva_create_note",
 		"minerva_create_note_tab",
 		"minerva_list_notes",
+		"minerva_list_agent_notes",
 		"minerva_enable_notes",
 		"minerva_disable_notes",
 		"minerva_delete_note",
 		"minerva_get_note",
+		"minerva_get_agent_note",
+		"minerva_read_agent_note",
 		"minerva_update_note",
 		"minerva_link_note_to_chat",
 	]
@@ -72,6 +75,20 @@ func register_tools() -> void:
 				"tab": {
 					"type": "string",
 					"description": "Optional tab name. If not specified, lists notes from all tabs."
+				}
+			},
+			"required": []
+		}
+	, "notes")
+
+	server._register_tool("minerva_list_agent_notes",
+		"List hidden agent-note artifacts, optionally filtered to a specific chat. Returns note IDs, titles, and content sizes for hydration workflows.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "Optional HistoryId of the chat whose agent notes should be listed."
 				}
 			},
 			"required": []
@@ -134,6 +151,50 @@ func register_tools() -> void:
 		}
 	, "notes")
 
+	server._register_tool("minerva_get_agent_note",
+		"Get a hidden agent-note artifact by full ID or short prefix. Optionally restrict to a specific chat.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID or unique short prefix of the agent note"
+				},
+				"chat_id": {
+					"type": "string",
+					"description": "Optional HistoryId to ensure the note belongs to a specific chat."
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
+	server._register_tool("minerva_read_agent_note",
+		"Read a windowed slice of an agent-note artifact by full ID or short prefix. Use offset/limit for large tool outputs.",
+		{
+			"type": "object",
+			"properties": {
+				"note_id": {
+					"type": "string",
+					"description": "The UUID or unique short prefix of the agent note"
+				},
+				"chat_id": {
+					"type": "string",
+					"description": "Optional HistoryId to ensure the note belongs to a specific chat."
+				},
+				"offset": {
+					"type": "integer",
+					"description": "Start character offset. Defaults to 0."
+				},
+				"limit": {
+					"type": "integer",
+					"description": "Maximum number of characters to return. Defaults to 4000, capped at 16000."
+				}
+			},
+			"required": ["note_id"]
+		}
+	, "notes")
+
 	server._register_tool("minerva_update_note",
 		"Update a note's content and/or title in-place by its ID. Requires note_id from minerva_list_notes or minerva_create_note.",
 		{
@@ -187,6 +248,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _create_note_tab(arguments)
 		"minerva_list_notes":
 			return _list_notes(arguments)
+		"minerva_list_agent_notes":
+			return _list_agent_notes(arguments)
 		"minerva_enable_notes":
 			return _enable_notes(arguments)
 		"minerva_disable_notes":
@@ -195,6 +258,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _delete_note(arguments)
 		"minerva_get_note":
 			return _get_note(arguments)
+		"minerva_get_agent_note":
+			return _get_agent_note(arguments)
+		"minerva_read_agent_note":
+			return _read_agent_note(arguments)
 		"minerva_update_note":
 			return _update_note(arguments)
 		"minerva_link_note_to_chat":
@@ -203,6 +270,47 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 
 #region Tool Implementations
+
+func _resolve_agent_note(note_id: String) -> Variant:
+	if note_id.is_empty():
+		return null
+
+	var exact = SingletonObject.get_registered_object(note_id)
+	if exact and exact is Note:
+		return exact
+
+	var container = SingletonObject.agent_notes_container
+	if not container:
+		return null
+
+	var matches: Array[Note] = []
+	for i in range(container.get_tab_count()):
+		for note in container.get_notes(i):
+			if note.uuid.begins_with(note_id):
+				matches.append(note)
+
+	if matches.size() == 1:
+		return matches[0]
+	return null
+
+
+func _note_text_content(note: Note) -> String:
+	if not note:
+		return ""
+	var controls_container = note.get_controls_container()
+	if controls_container is NoteTextControls:
+		return controls_container.content
+	return ""
+
+
+func _find_note_tab_name(container: NotesContainer, note_id: String) -> String:
+	if not container:
+		return ""
+	for i in range(container.get_tab_count()):
+		for candidate in container.get_notes(i):
+			if candidate.uuid == note_id:
+				return container.get_tab_title(i)
+	return ""
 
 func _create_note(args: Dictionary) -> Dictionary:
 	var title: String = args.get("title", "Untitled")
@@ -306,6 +414,34 @@ func _list_notes(args: Dictionary) -> Dictionary:
 	}
 
 
+func _list_agent_notes(args: Dictionary) -> Dictionary:
+	var chat_id: String = args.get("chat_id", "")
+	var container = SingletonObject.agent_notes_container
+	if not container:
+		return MCPToolUtils.error("Agent notes container not available")
+
+	var result: Array = []
+	for i in range(container.get_tab_count()):
+		var tab_title = container.get_tab_title(i)
+		for note in container.get_notes(i):
+			if not chat_id.is_empty() and not note.is_linked_to_chat(chat_id):
+				continue
+			var content := _note_text_content(note)
+			result.append({
+				"note_id": note.uuid,
+				"title": note.title,
+				"tab": tab_title,
+				"chars": content.length(),
+				"linked_chat_ids": note.linked_chat_ids,
+			})
+
+	return {
+		"success": true,
+		"notes": result,
+		"count": result.size(),
+	}
+
+
 func _enable_notes(args: Dictionary) -> Dictionary:
 	var tab_name: String = args.get("tab", "")
 
@@ -400,6 +536,60 @@ func _get_note(args: Dictionary) -> Dictionary:
 		"tab": tab_name,
 		"enabled": note.enabled,
 		"type": Note.Type.keys()[note.type] if note.type < Note.Type.size() else "UNKNOWN"
+	}
+
+
+func _get_agent_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+	var chat_id: String = args.get("chat_id", "")
+	if note_id.is_empty():
+		return MCPToolUtils.error("note_id is required")
+
+	var note = _resolve_agent_note(note_id)
+	if not note or not (note is Note):
+		return MCPToolUtils.error("Agent note not found: %s" % note_id)
+	if not chat_id.is_empty() and not note.is_linked_to_chat(chat_id):
+		return MCPToolUtils.error("Agent note %s is not linked to chat %s" % [note.uuid, chat_id])
+
+	var content := _note_text_content(note)
+	return {
+		"success": true,
+		"note_id": note.uuid,
+		"title": note.title,
+		"content": content,
+		"chars": content.length(),
+		"tab": _find_note_tab_name(SingletonObject.agent_notes_container, note.uuid),
+		"linked_chat_ids": note.linked_chat_ids,
+	}
+
+
+func _read_agent_note(args: Dictionary) -> Dictionary:
+	var note_id: String = args.get("note_id", "")
+	var chat_id: String = args.get("chat_id", "")
+	if note_id.is_empty():
+		return MCPToolUtils.error("note_id is required")
+
+	var note = _resolve_agent_note(note_id)
+	if not note or not (note is Note):
+		return MCPToolUtils.error("Agent note not found: %s" % note_id)
+	if not chat_id.is_empty() and not note.is_linked_to_chat(chat_id):
+		return MCPToolUtils.error("Agent note %s is not linked to chat %s" % [note.uuid, chat_id])
+
+	var content := _note_text_content(note)
+	var offset := maxi(0, MCPToolUtils.coerce_int(args.get("offset", 0)))
+	var limit := clampi(MCPToolUtils.coerce_int(args.get("limit", 4000)), 1, 16000)
+	var window := content.substr(offset, min(limit, maxi(0, content.length() - offset)))
+
+	return {
+		"success": true,
+		"note_id": note.uuid,
+		"title": note.title,
+		"offset": offset,
+		"limit": limit,
+		"content": window,
+		"total_chars": content.length(),
+		"remaining_chars": maxi(0, content.length() - (offset + window.length())),
+		"tab": _find_note_tab_name(SingletonObject.agent_notes_container, note.uuid),
 	}
 
 

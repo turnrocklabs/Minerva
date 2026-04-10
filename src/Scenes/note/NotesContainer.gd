@@ -364,12 +364,14 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false, history_id: St
 
 static var _agent_tab_icon: Texture2D = preload("res://assets/icons/robot_AI_48.png")
 
-## Lock a tab to an agent. Shows a robot icon on the tab header.
+## Lock a tab to an agent. Shows a robot icon on the tab header
+## unless this container is the dedicated agent-notes container.
 func lock_tab_to_agent(tab_idx: int, agent_id: String) -> void:
 	var note_vbox: NoteVBox = get_tab_control(tab_idx)
 	if note_vbox:
 		note_vbox.locked_agent_id = agent_id
-		set_tab_icon(tab_idx, _agent_tab_icon)
+		if self != SingletonObject.agent_notes_container:
+			set_tab_icon(tab_idx, _agent_tab_icon)
 
 
 ## Check if a tab is locked to an agent.
@@ -461,8 +463,8 @@ func deserialize(notes_data: Array) -> void:
 
 		var tab_idx: = get_tab_idx_from_control(note_vbox)
 
-		# Show robot icon on agent-locked tabs
-		if not note_vbox.locked_agent_id.is_empty():
+		# Show robot icon on agent-locked tabs (skip for dedicated agent-notes container)
+		if not note_vbox.locked_agent_id.is_empty() and self != SingletonObject.agent_notes_container:
 			set_tab_icon(tab_idx, _agent_tab_icon)
 
 		# NOTICE: this may not be the best place to check for sync of remote notes
