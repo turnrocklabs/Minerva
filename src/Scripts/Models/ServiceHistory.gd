@@ -107,6 +107,11 @@ var AgentFloatingSummaryNoteId: String = "":
 var AgentContextTelemetry: Dictionary = {}:
 	set(value): SingletonObject.call_deferred("save_state", false); AgentContextTelemetry = value
 
+## Persisted tool memory state used by prompt projection to collapse stale tool activity.
+## Structure: {version, active, compressed, recovery, status}
+var AgentToolMemoryState: Dictionary = {}:
+	set(value): SingletonObject.call_deferred("save_state", false); AgentToolMemoryState = value
+
 ## Whether this chat is archived (hidden from active tab list, retrievable)
 var Archived: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); Archived = value
@@ -156,6 +161,7 @@ static var SERIALIZER_FIELDS = [
 	"AgentNotesTabId",
 	"AgentFloatingSummaryNoteId",
 	"AgentContextTelemetry",
+	"AgentToolMemoryState",
 	"Archived",
 	"termination_reason",
 	"termination_message",
@@ -284,6 +290,7 @@ func Serialize() -> Dictionary:
 		"AgentNotesTabId": AgentNotesTabId,
 		"AgentFloatingSummaryNoteId": AgentFloatingSummaryNoteId,
 		"AgentContextTelemetry": AgentContextTelemetry,
+		"AgentToolMemoryState": AgentToolMemoryState,
 		"Archived": Archived,
 		"termination_reason": termination_reason,
 		"termination_message": termination_message,
@@ -380,6 +387,8 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgentFloatingSummaryNoteId = data.get("AgentFloatingSummaryNoteId", "")
 	if data.has("AgentContextTelemetry"):
 		history.AgentContextTelemetry = data.get("AgentContextTelemetry", {})
+	if data.has("AgentToolMemoryState"):
+		history.AgentToolMemoryState = data.get("AgentToolMemoryState", {})
 	if data.has("Archived"):
 		history.Archived = data.get("Archived", false)
 	if data.has("termination_reason"):

@@ -226,17 +226,26 @@ func disconnect_server() -> void:
 func execute_tool(tool_name: String, arguments: Dictionary, caller_chat_id: String = "") -> Dictionary:
 	if not server_enabled:
 		return {"error": "Minerva server not connected", "success": false}
+	var previous_caller_chat_id := _current_caller_chat_id
+	var previous_agent_id := _current_agent_id
 	_current_caller_chat_id = caller_chat_id
+	_current_agent_id = ""
 	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
-	_maybe_capture_chat_knowledge(tool_name, result)
-	_current_caller_chat_id = ""
+	_current_caller_chat_id = previous_caller_chat_id
+	_current_agent_id = previous_agent_id
+	_maybe_capture_chat_knowledge(tool_name, result, caller_chat_id)
 	return _check_duplicate_call(tool_name, arguments, result)
 
 
 ## Execute a minerva_* tool for HTTP/external access (does not require internal connection)
 func execute_tool_for_http(tool_name: String, arguments: Dictionary, agent_id: String = "") -> Dictionary:
+	var previous_caller_chat_id := _current_caller_chat_id
+	var previous_agent_id := _current_agent_id
+	_current_caller_chat_id = ""
 	_current_agent_id = agent_id
 	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
+	_current_caller_chat_id = previous_caller_chat_id
+	_current_agent_id = previous_agent_id
 	return _check_duplicate_call(tool_name, arguments, result)
 
 
@@ -319,75 +328,157 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return dispatch_result
 
 
-func _maybe_capture_chat_knowledge(tool_name: String, result: Dictionary) -> void:
-	if _current_caller_chat_id.is_empty():
+func _record_history_knowledge_telemetry(history, update: Dictionary) -> void:
+	if history == null:
+		return
+	var telemetry: Dictionary = history.AgentContextTelemetry.duplicate(true)
+	for key in update.keys():
+		telemetry[key] = update[key]
+	history.AgentContextTelemetry = telemetry
+
+
+func _maybe_capture_chat_knowledge(tool_name: String, result: Dictionary, caller_chat_id: String) -> void:
+	if caller_chat_id.is_empty():
 		return
 	if result.is_empty() or result.get("success", true) == false:
 		return
 
-	var history = MCPToolUtils.find_chat_by_id(_current_caller_chat_id)
+	var history = MCPToolUtils.find_chat_by_id(caller_chat_id)
 	if history == null:
 		return
 
-	var knowledge_entry := _extract_knowledge_entry(tool_name, result)
-	if knowledge_entry.is_empty():
+	var knowledge_entries := _extract_knowledge_entries(tool_name, result)
+	if knowledge_entries.is_empty():
+		_record_history_knowledge_telemetry(history, {
+			"last_knowledge_capture_tool": tool_name,
+			"last_knowledge_capture_status": "pure_read_internal",
+		})
 		return
 
 	var acquired: Array[Dictionary] = history.AcquiredKnowledge.duplicate(true)
-	var entry_id := str(knowledge_entry.get("id", ""))
-	var replaced := false
-	for i in range(acquired.size()):
-		if str(acquired[i].get("id", "")) == entry_id and not entry_id.is_empty():
-			acquired[i] = knowledge_entry
-			replaced = true
-			break
-	if not replaced:
-		acquired.append(knowledge_entry)
+	var changed_count := 0
+	for knowledge_entry in knowledge_entries:
+		var entry_id := str(knowledge_entry.get("id", ""))
+		var entry_type := str(knowledge_entry.get("type", "knowledge"))
+		var replaced := false
+		for i in range(acquired.size()):
+			if str(acquired[i].get("id", "")) == entry_id and str(acquired[i].get("type", "")) == entry_type and not entry_id.is_empty():
+				acquired[i] = knowledge_entry
+				replaced = true
+				changed_count += 1
+				break
+		if not replaced:
+			acquired.append(knowledge_entry)
+			changed_count += 1
 	history.AcquiredKnowledge = acquired
+	_record_history_knowledge_telemetry(history, {
+		"last_knowledge_capture_tool": tool_name,
+		"last_knowledge_capture_status": "captured",
+		"last_knowledge_capture_count": knowledge_entries.size(),
+		"last_knowledge_capture_changed": changed_count,
+		"knowledge_items": acquired.size(),
+	})
 
 
-func _extract_knowledge_entry(tool_name: String, result: Dictionary) -> Dictionary:
+func _build_knowledge_entry(item_type: String, item_id: String, title: String, description: String, content: String) -> Dictionary:
+	if item_id.is_empty() and title.is_empty() and content.is_empty():
+		return {}
+	return {
+		"id": item_id,
+		"type": item_type,
+		"title": title,
+		"description": description,
+		"content": content,
+	}
+
+
+func _extract_content_field(result: Dictionary, fields: Array[String]) -> String:
+	for field in fields:
+		var value = result.get(field, "")
+		if value is String and not value.is_empty():
+			return str(value)
+	return ""
+
+
+func _extract_knowledge_entries(tool_name: String, result: Dictionary) -> Array[Dictionary]:
 	match tool_name:
 		"minerva_get_skill":
-			return {
-				"id": str(result.get("id", "")),
-				"type": "skill",
-				"title": str(result.get("name", "")),
-				"description": str(result.get("description", "")),
-				"content": str(result.get("instructions", "")),
-			}
+			var minerva_skill_entry := _build_knowledge_entry(
+				"skill",
+				str(result.get("id", "")),
+				str(result.get("name", "")),
+				str(result.get("description", "")),
+				_extract_content_field(result, ["instructions", "steps", "outcome"])
+			)
+			var minerva_skill_entries: Array[Dictionary] = []
+			if not minerva_skill_entry.is_empty():
+				minerva_skill_entries.append(minerva_skill_entry)
+			return minerva_skill_entries
 		"minerva_docket_hint_get":
-			return {
-				"id": str(result.get("id", "")),
-				"type": "hint",
-				"title": str(result.get("title", "")),
-				"description": str(result.get("summary", "")),
-				"content": str(result.get("value", "")),
-			}
+			var hint_entry := _build_knowledge_entry(
+				"hint",
+				str(result.get("id", "")),
+				str(result.get("title", "")),
+				str(result.get("summary", "")),
+				_extract_content_field(result, ["value", "article"])
+			)
+			var hint_entries: Array[Dictionary] = []
+			if not hint_entry.is_empty():
+				hint_entries.append(hint_entry)
+			return hint_entries
+		"minerva_docket_hint_query", "minerva_docket_context":
+			var entries: Array[Dictionary] = []
+			var items = result.get("items", [])
+			if items is Array:
+				for item in items:
+					if not (item is Dictionary):
+						continue
+					var dict_item: Dictionary = item
+					var item_type := str(dict_item.get("type", ""))
+					if tool_name == "minerva_docket_hint_query" and item_type.is_empty():
+						item_type = "hint"
+					if item_type not in ["kb", "hint", "insight", "skill"]:
+						continue
+					var entry := _build_knowledge_entry(
+						item_type,
+						str(dict_item.get("id", "")),
+						str(dict_item.get("title", "")),
+						str(dict_item.get("summary", dict_item.get("description", ""))),
+						_extract_content_field(dict_item, ["value", "steps", "article", "answer", "corrected"])
+					)
+					if not entry.is_empty():
+						entries.append(entry)
+						if entries.size() >= 12:
+							break
+			return entries
 		"minerva_docket_skill_get":
-			return {
-				"id": str(result.get("id", "")),
-				"type": "skill",
-				"title": str(result.get("title", "")),
-				"description": str(result.get("description", "")),
-				"content": str(result.get("steps", "")),
-			}
+			var docket_skill_entry := _build_knowledge_entry(
+				"skill",
+				str(result.get("id", "")),
+				str(result.get("title", "")),
+				str(result.get("description", "")),
+				_extract_content_field(result, ["steps", "outcome", "preconditions"])
+			)
+			var docket_skill_entries: Array[Dictionary] = []
+			if not docket_skill_entry.is_empty():
+				docket_skill_entries.append(docket_skill_entry)
+			return docket_skill_entries
 		"minerva_docket_get":
 			var item_type := str(result.get("type", ""))
 			if item_type in ["kb", "hint", "insight", "skill"]:
-				var content := str(result.get("value", ""))
-				if content.is_empty():
-					content = str(result.get("steps", ""))
-				if content.is_empty():
-					content = str(result.get("article", ""))
-				return {
-					"id": str(result.get("id", "")),
-					"type": item_type,
-					"title": str(result.get("title", "")),
-					"description": str(result.get("summary", "")),
-					"content": content,
-				}
-	return {}
+				var docket_entry := _build_knowledge_entry(
+					item_type,
+					str(result.get("id", "")),
+					str(result.get("title", "")),
+					str(result.get("summary", "")),
+					_extract_content_field(result, ["value", "steps", "article", "answer", "corrected"])
+				)
+				var docket_entries: Array[Dictionary] = []
+				if not docket_entry.is_empty():
+					docket_entries.append(docket_entry)
+				return docket_entries
+	var empty_entries: Array[Dictionary] = []
+	return empty_entries
 
 
 ## Check for duplicate calls and inject warning if detected

@@ -51,6 +51,7 @@ const AGENT_SUMMARIZE_THRESHOLD: int = 60000  # Trigger summarization above this
 const AGENT_KEEP_RECENT_MESSAGES: int = 6  # Keep this many recent messages when summarizing
 const AGENT_NOTES_TAB_PREFIX: String = "Agent Notes"
 const AGENT_TOOL_WINDOW_LENGTH: int = 4000
+const AGENT_FLOATING_SUMMARY_PROMPT_LENGTH: int = 1200
 
 ## Base agent system prompt - tool-specific sections added dynamically
 ## Hardcoded fallback — only used if docket master prompt is unavailable.
@@ -129,9 +130,67 @@ func truncate_tool_result(result_str: String, max_length: int = 0) -> String:
 HINT: This result was too large and was truncated. To get the information you need:
 - Use more specific CSS selectors with cobrowser_query_all or cobrowser_read
 - For web pages, target specific elements rather than the whole page
-- Avoid cobrowser_get_state (returns entire DOM) - use targeted queries instead
-- Consider if you already have enough information to proceed""" % [result_str.length(), truncated.length()]
+	- Avoid cobrowser_get_state (returns entire DOM) - use targeted queries instead
+	- Consider if you already have enough information to proceed""" % [result_str.length(), truncated.length()]
 	return truncated + notice
+
+
+func _build_windowed_tool_result_message(tool_name: String, full_result_str: String, note_id: String, max_length: int = 0) -> Dictionary:
+	var limit = max_length if max_length > 0 else AGENT_MAX_TOOL_RESULT_LENGTH
+	if full_result_str.length() <= limit:
+		var direct_result: Dictionary = {}
+		direct_result["text"] = full_result_str
+		direct_result["windowed"] = false
+		direct_result["shown_chars"] = full_result_str.length()
+		return direct_result
+	if note_id.is_empty():
+		var truncated_text := truncate_tool_result(full_result_str, limit)
+		var truncated_result: Dictionary = {}
+		truncated_result["text"] = truncated_text
+		truncated_result["windowed"] = truncated_text.length() < full_result_str.length()
+		truncated_result["shown_chars"] = min(truncated_text.length(), full_result_str.length())
+		return truncated_result
+
+	var window_limit: int = min(limit, AGENT_TOOL_WINDOW_LENGTH)
+	var window_text := full_result_str.substr(0, window_limit)
+	var last_newline := window_text.rfind("\n")
+	var last_space := window_text.rfind(" ")
+	var cut_point := maxi(last_newline, last_space)
+	if cut_point > int(window_limit * 0.8):
+		window_text = window_text.substr(0, cut_point)
+
+	var ref_message := _build_tool_ref_message(tool_name, note_id, false)
+	var retrieval_hint: String = "[w %d/%d %s more:minerva_read_agent_note note_id=%s offset=%d limit=%d]" % [
+		window_text.length(),
+		full_result_str.length(),
+		ref_message,
+		note_id,
+		window_text.length(),
+		AGENT_TOOL_WINDOW_LENGTH,
+	]
+	var windowed_result: Dictionary = {}
+	windowed_result["text"] = "%s\n\n%s" % [window_text, retrieval_hint]
+	windowed_result["windowed"] = true
+	windowed_result["shown_chars"] = window_text.length()
+	return windowed_result
+
+
+func _trim_prompt_context_tail(text: String, limit: int) -> String:
+	var trimmed := text.strip_edges()
+	if trimmed.length() <= limit:
+		return trimmed
+
+	var tail := trimmed.substr(trimmed.length() - limit, limit)
+	var first_newline := tail.find("\n")
+	var first_space := tail.find(" ")
+	var cut_point := -1
+	if first_newline >= 0 and first_space >= 0:
+		cut_point = mini(first_newline, first_space)
+	else:
+		cut_point = maxi(first_newline, first_space)
+	if cut_point >= 0 and cut_point < int(limit * 0.2):
+		tail = tail.substr(cut_point + 1)
+	return "...%s" % tail
 
 
 func _filter_tool_result_text(result_str: String) -> String:
@@ -265,12 +324,10 @@ func _build_tool_summary(tool_name: String, result: Dictionary, note_id: String)
 	return "[%s: %s]%s" % [tool_name, ", ".join(preview), ref_suffix]
 
 
-func _build_tool_ref_message(tool_name: String, note_id: String, folded_into_floating_summary: bool = false) -> String:
+func _build_tool_ref_message(tool_name: String, note_id: String, _folded_into_floating_summary: bool = false) -> String:
 	var parts := PackedStringArray(["t:%s" % tool_name])
 	if not note_id.is_empty():
 		parts.append("n:%s" % note_id.left(8))
-	if folded_into_floating_summary:
-		parts.append("fs")
 	return "[%s]" % " ".join(parts)
 
 
@@ -289,6 +346,12 @@ func _record_agent_context_telemetry(history: ChatHistory, update: Dictionary) -
 	for key in update.keys():
 		telemetry[key] = update[key]
 	history.AgentContextTelemetry = telemetry
+
+
+func _hash_projection_fragment(text: String) -> String:
+	if text.is_empty():
+		return ""
+	return text.sha256_text().left(12)
 
 
 func _get_agent_note_text(note_id: String) -> String:
@@ -523,19 +586,168 @@ func _build_knowledge_injection_text(history: ChatHistory) -> String:
 	return "\n\n".join(sections)
 
 
-func _project_history_for_prompt(history: ChatHistory) -> Array[ChatHistoryItem]:
-	var projected: Array[ChatHistoryItem] = []
+func _set_prompt_item_fields(prompt_item: ChatHistoryItem, updates: Dictionary) -> void:
+	prompt_item._suppress_save_state = true
+	for key in updates.keys():
+		prompt_item.set(key, updates[key])
+	prompt_item._suppress_save_state = false
+
+
+func _get_tool_projection_message(item: ChatHistoryItem, floating_summary_active: bool) -> String:
+	if floating_summary_active:
+		return _build_tool_ref_message(item.ToolName, item.ToolArtifactNoteId, true)
+	if not item.ToolSummary.is_empty():
+		return item.ToolSummary
+	if not item.ToolArtifactNoteId.is_empty():
+		return _build_tool_ref_message(item.ToolName, item.ToolArtifactNoteId, false)
+	return "[t:%s]" % item.ToolName
+
+
+func _build_collapsed_tool_use_message(tool_calls: Array[Dictionary]) -> String:
+	var tool_names := PackedStringArray()
+	for tool_call in tool_calls:
+		var tool_name := str(tool_call.get("name", "tool"))
+		if not tool_name.is_empty():
+			tool_names.append(tool_name)
+	if tool_names.is_empty():
+		return "[tool-use summarized]"
+	return "[tool-use summarized: %s]" % ", ".join(tool_names)
+
+
+func _trim_tool_memory_text(text: String, limit: int = 160) -> String:
+	var trimmed := text.strip_edges().replace("\n", " ")
+	if trimmed.length() <= limit:
+		return trimmed
+	return "%s..." % trimmed.left(limit - 3)
+
+
+func _build_tool_memory_projection_state(history: ChatHistory, floating_summary_text: String) -> Dictionary:
 	var latest_tool_idx := -1
+	var total_tool_results := 0
+	var first_user_message := ""
+
+	for i in range(history.HistoryItemList.size()):
+		var item := history.HistoryItemList[i]
+		if first_user_message.is_empty() and item.Role == ChatHistoryItem.ChatRole.USER and not item.Message.strip_edges().is_empty():
+			first_user_message = _trim_tool_memory_text(item.Message, 180)
+		if item.Role != ChatHistoryItem.ChatRole.TOOL:
+			continue
+		total_tool_results += 1
+		latest_tool_idx = i
+
+	var latest_tool_call_ids := {}
+	var latest_tool_name := ""
+	var latest_tool_note_id := ""
+	if latest_tool_idx >= 0:
+		var latest_tool: ChatHistoryItem = history.HistoryItemList[latest_tool_idx]
+		latest_tool_name = latest_tool.ToolName
+		latest_tool_note_id = latest_tool.ToolArtifactNoteId
+		if not latest_tool.ToolCallId.is_empty():
+			latest_tool_call_ids[latest_tool.ToolCallId] = true
+
+	var state := {
+		"version": 3,
+		"active": {
+			"task": first_user_message,
+			"latest_tool": latest_tool_name,
+			"latest_tool_note_id": latest_tool_note_id,
+			"floating_summary_note_id": history.AgentFloatingSummaryNoteId,
+		},
+		"status": {
+			"floating_summary_active": not floating_summary_text.is_empty(),
+			"knowledge_items": history.AcquiredKnowledge.size(),
+			"stale_tool_results": maxi(0, total_tool_results - 1),
+			"tool_result_count": total_tool_results,
+		},
+	}
+	if history.AgentToolMemoryState != state:
+		history.AgentToolMemoryState = state
+
+	return {
+		"latest_tool_idx": latest_tool_idx,
+		"latest_tool_call_ids": latest_tool_call_ids,
+		"state": state,
+	}
+
+
+func _build_tool_memory_header_text(state: Dictionary) -> String:
+	if state.is_empty():
+		return ""
+
+	var active: Dictionary = state.get("active", {})
+	var status: Dictionary = state.get("status", {})
+	var floating_summary_active := bool(status.get("floating_summary_active", false))
+	if not floating_summary_active:
+		return ""
+
+	var lines := PackedStringArray(["[tm v3]"])
+	var task := str(active.get("task", ""))
+	if not task.is_empty():
+		lines.append("task=%s" % task)
+	var latest_tool := str(active.get("latest_tool", ""))
+	if not latest_tool.is_empty():
+		lines.append("latest=%s" % latest_tool)
+	var floating_note_id := str(active.get("floating_summary_note_id", ""))
+	if not floating_note_id.is_empty():
+		lines.append("floating=%s" % floating_note_id.left(8))
+	var latest_tool_note_id := str(active.get("latest_tool_note_id", ""))
+	if not latest_tool_note_id.is_empty():
+		lines.append("latest_note=%s" % latest_tool_note_id.left(8))
+	lines.append("stats=tools:%d stale:%d knowledge:%d" % [
+		int(status.get("tool_result_count", 0)),
+		int(status.get("stale_tool_results", 0)),
+		int(status.get("knowledge_items", 0)),
+	])
+	return "\n".join(lines)
+
+
+func _get_latest_tool_chain_state(history: ChatHistory) -> Dictionary:
+	var latest_tool_call_message_idx := -1
 	for i in range(history.HistoryItemList.size() - 1, -1, -1):
-		if history.HistoryItemList[i].Role == ChatHistoryItem.ChatRole.TOOL:
-			latest_tool_idx = i
+		var item := history.HistoryItemList[i]
+		var is_tool_call_message := item.IsToolCall and (item.Role == ChatHistoryItem.ChatRole.ASSISTANT or item.Role == ChatHistoryItem.ChatRole.MODEL)
+		if is_tool_call_message:
+			latest_tool_call_message_idx = i
 			break
 
+	var retained_tool_result_indices := {}
+	var latest_tool_idx := -1
+	if latest_tool_call_message_idx >= 0:
+		for i in range(latest_tool_call_message_idx + 1, history.HistoryItemList.size()):
+			var item := history.HistoryItemList[i]
+			if item.Role != ChatHistoryItem.ChatRole.TOOL:
+				break
+			retained_tool_result_indices[i] = true
+			latest_tool_idx = i
+	else:
+		for i in range(history.HistoryItemList.size() - 1, -1, -1):
+			if history.HistoryItemList[i].Role == ChatHistoryItem.ChatRole.TOOL:
+				latest_tool_idx = i
+				retained_tool_result_indices[i] = true
+				break
+
+	return {
+		"latest_tool_call_message_idx": latest_tool_call_message_idx,
+		"retained_tool_result_indices": retained_tool_result_indices,
+		"latest_tool_idx": latest_tool_idx,
+	}
+
+
+func _project_history_for_prompt(history: ChatHistory) -> Array[ChatHistoryItem]:
+	var projected: Array[ChatHistoryItem] = []
 	var knowledge_text := _build_knowledge_injection_text(history)
 	var floating_summary_text := _get_agent_note_text(history.AgentFloatingSummaryNoteId)
+	var projection_state := _build_tool_memory_projection_state(history, floating_summary_text)
+	var latest_tool_chain := _get_latest_tool_chain_state(history)
+	var latest_tool_idx := int(latest_tool_chain.get("latest_tool_idx", -1))
+	var latest_tool_call_message_idx := int(latest_tool_chain.get("latest_tool_call_message_idx", -1))
+	var retained_tool_result_indices: Dictionary = latest_tool_chain.get("retained_tool_result_indices", {})
+	var tool_memory_text := _build_tool_memory_header_text(projection_state.get("state", {}))
 	var injected_knowledge := false
 	var dehydrated_items := 0
 	var chars_removed := 0
+	var collapsed_tool_use_items := 0
+	var collapsed_tool_result_items := 0
 
 	for i in range(history.HistoryItemList.size()):
 		var item := history.HistoryItemList[i]
@@ -546,41 +758,81 @@ func _project_history_for_prompt(history: ChatHistory) -> Array[ChatHistoryItem]
 			prompt_item = item.duplicate_for_prompt()
 			var notes_copy: Array[Variant] = prompt_item.InjectedNotes.duplicate()
 			notes_copy.append(knowledge_text)
-			prompt_item.InjectedNotes = notes_copy
+			if not tool_memory_text.is_empty():
+				notes_copy.append(tool_memory_text)
+			_set_prompt_item_fields(prompt_item, {"InjectedNotes": notes_copy})
+			injected_knowledge = true
+			mutated = true
+		elif item.Role == ChatHistoryItem.ChatRole.USER and not injected_knowledge and not tool_memory_text.is_empty():
+			prompt_item = item.duplicate_for_prompt()
+			var tool_notes_copy: Array[Variant] = prompt_item.InjectedNotes.duplicate()
+			tool_notes_copy.append(tool_memory_text)
+			_set_prompt_item_fields(prompt_item, {"InjectedNotes": tool_notes_copy})
 			injected_knowledge = true
 			mutated = true
 
-		if item.Role == ChatHistoryItem.ChatRole.TOOL and i != latest_tool_idx:
-			var compact_message := item.ToolSummary
-			if compact_message.is_empty() and not item.ToolArtifactNoteId.is_empty():
-				compact_message = _build_tool_ref_message(item.ToolName, item.ToolArtifactNoteId, false)
-			if not floating_summary_text.is_empty():
-				var ref_message := _build_tool_ref_message(item.ToolName, item.ToolArtifactNoteId, true)
+		if item.IsToolCall and (item.Role == ChatHistoryItem.ChatRole.ASSISTANT or item.Role == ChatHistoryItem.ChatRole.MODEL):
+			if i != latest_tool_call_message_idx:
 				if not mutated:
 					prompt_item = item.duplicate_for_prompt()
-				prompt_item.Message = ref_message
-				dehydrated_items += 1
-				chars_removed += maxi(0, item.Message.length() - ref_message.length())
-			elif not compact_message.is_empty():
-				if not mutated:
-					prompt_item = item.duplicate_for_prompt()
-				prompt_item.Message = compact_message
-				dehydrated_items += 1
-				chars_removed += maxi(0, item.Message.length() - compact_message.length())
+					mutated = true
+				_set_prompt_item_fields(prompt_item, {
+					"IsToolCall": false,
+					"ToolCalls": [],
+					"ToolExecutions": [],
+					"Message": _build_collapsed_tool_use_message(item.ToolCalls),
+				})
+				collapsed_tool_use_items += 1
+				chars_removed += maxi(0, item.Message.length() - prompt_item.Message.length())
 
-		if item.Role == ChatHistoryItem.ChatRole.TOOL and i == latest_tool_idx and not floating_summary_text.is_empty():
+		if item.Role == ChatHistoryItem.ChatRole.TOOL and not retained_tool_result_indices.has(i):
+			var compact_message := _get_tool_projection_message(item, not floating_summary_text.is_empty())
 			if not mutated:
 				prompt_item = item.duplicate_for_prompt()
-			prompt_item.Message = "[recent tool context]\n%s\n\n[current tool result]\n%s" % [floating_summary_text, prompt_item.Message]
-			mutated = true
+				mutated = true
+			_set_prompt_item_fields(prompt_item, {
+				"Role": ChatHistoryItem.ChatRole.USER,
+				"ToolCallId": "",
+				"ToolName": "",
+				"ToolCalls": [],
+				"IsToolCall": false,
+				"ToolExecutions": [],
+				"Message": compact_message,
+			})
+			dehydrated_items += 1
+			collapsed_tool_result_items += 1
+			chars_removed += maxi(0, item.Message.length() - compact_message.length())
+
+			if item.Role == ChatHistoryItem.ChatRole.TOOL and i == latest_tool_idx and not floating_summary_text.is_empty():
+				if not mutated:
+					prompt_item = item.duplicate_for_prompt()
+					mutated = true
+				_set_prompt_item_fields(prompt_item, {
+					"Message": "[tm]\n%s\n\n[cur]\n%s" % [floating_summary_text, prompt_item.Message],
+				})
+				mutated = true
 
 		projected.append(prompt_item)
+
+	var prefix_parts := PackedStringArray()
+	if not knowledge_text.is_empty():
+		prefix_parts.append(knowledge_text)
+	if not tool_memory_text.is_empty():
+		prefix_parts.append(tool_memory_text)
 
 	_record_agent_context_telemetry(history, {
 		"last_projection_items_dehydrated": dehydrated_items,
 		"last_projection_chars_removed": chars_removed,
 		"knowledge_items": history.AcquiredKnowledge.size(),
 		"floating_summary_active": not floating_summary_text.is_empty(),
+		"tool_memory_header_chars": tool_memory_text.length(),
+		"knowledge_hash": _hash_projection_fragment(knowledge_text),
+		"tool_memory_hash": _hash_projection_fragment(tool_memory_text),
+		"floating_summary_hash": _hash_projection_fragment(floating_summary_text),
+		"floating_summary_prompt_chars": floating_summary_text.length(),
+		"projection_prefix_hash": _hash_projection_fragment("\n".join(prefix_parts)),
+		"collapsed_tool_use_items": collapsed_tool_use_items,
+		"collapsed_tool_result_items": collapsed_tool_result_items,
 	})
 	return projected
 
@@ -1192,6 +1444,9 @@ func _build_request_metadata(history: ChatHistory, history_list: Array[Variant])
 
 	if not history.AcquiredKnowledge.is_empty():
 		metadata["knowledge_items"] = history.AcquiredKnowledge.size()
+
+	if not history.AgentToolMemoryState.is_empty():
+		metadata["tool_memory_state"] = history.AgentToolMemoryState
 
 	return metadata
 
@@ -1853,10 +2108,15 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		var full_result_str := _filter_tool_result_text(JSON.stringify(result))
 		var artifact_note_id := _store_tool_artifact(history, tool_name, tool_args, full_result_str, tool_id)
 
-		# Stringify and truncate the result to prevent context explosion
-		var result_str = truncate_tool_result(full_result_str, history.AgentMaxToolResultLength)
+		# Store a compact window in chat history while keeping the full artifact in agent notes.
+		var windowed_result := _build_windowed_tool_result_message(tool_name, full_result_str, artifact_note_id, history.AgentMaxToolResultLength)
+		var result_str: String = str(windowed_result.get("text", full_result_str))
+		var was_windowed := bool(windowed_result.get("windowed", false))
+		var shown_chars := int(windowed_result.get("shown_chars", result_str.length()))
 		var original_len = full_result_str.length()
-		if result_str.length() < original_len:
+		if was_windowed:
+			print("[Agent] Windowed tool result from %d to %d chars" % [original_len, shown_chars])
+		elif result_str.length() < original_len:
 			print("[Agent] Truncated tool result from %d to %d chars" % [original_len, result_str.length()])
 
 		# Update execution entry with result
@@ -1885,6 +2145,8 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			"last_tool_name": tool_name,
 			"last_tool_artifact_note_id": artifact_note_id,
 			"last_tool_result_chars": original_len,
+			"last_tool_result_windowed": was_windowed,
+			"last_tool_result_shown_chars": shown_chars,
 		})
 		# Keep the normal append-loading indicator visible while we wait on
 		# floating-summary generation so blocked parent chats still show work.
