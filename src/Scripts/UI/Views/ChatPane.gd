@@ -328,7 +328,11 @@ func _build_tool_summary(tool_name: String, result: Dictionary, note_id: String)
 			var models: Array = result.get("results", [])
 			return "[list_models: %d models]%s" % [models.size(), ref_suffix]
 		"minerva_get_skill":
-			return "[get_skill: %s]%s" % [str(result.get("name", result.get("id", "skill"))), ref_suffix]
+			var skill_name: String = str(result.get("name", result.get("id", "skill")))
+			var activated: Array = result.get("activated_tools", [])
+			if activated.size() > 0:
+				return "[get_skill: %s | activated: %s]%s" % [skill_name, ", ".join(PackedStringArray(activated)), ref_suffix]
+			return "[get_skill: %s]%s" % [skill_name, ref_suffix]
 		"minerva_spawn_worker":
 			return "[spawn_worker: %s]%s" % [str(result.get("worker_id", "?")), ref_suffix]
 		"minerva_check_worker":

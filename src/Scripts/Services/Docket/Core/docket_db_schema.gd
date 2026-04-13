@@ -31,7 +31,8 @@ static func init_schema(db: DocketDB) -> void:
 		command TEXT, usage TEXT, prompt_text TEXT, preconditions TEXT,
 		summary TEXT, article TEXT, parameters TEXT,
 		steps TEXT, outcome TEXT, tool_deps TEXT,
-		target TEXT DEFAULT ''
+		target TEXT DEFAULT '',
+		optimization TEXT DEFAULT ''
 	);""")
 
 	db._exec("""CREATE TABLE IF NOT EXISTS item_tags (
@@ -161,6 +162,8 @@ static func migrate_schema(db: DocketDB) -> void:
 		db._exec("ALTER TABLE items ADD COLUMN quality INTEGER DEFAULT 0;")
 	if not DocketDB._has_column(col_rows, "target"):
 		db._exec("ALTER TABLE items ADD COLUMN target TEXT DEFAULT '';")
+	if not DocketDB._has_column(col_rows, "optimization"):
+		db._exec("ALTER TABLE items ADD COLUMN optimization TEXT DEFAULT '';")
 
 	# Seed id_prefix if missing
 	var prefix_rows := db._exec_select("SELECT value FROM docket_meta WHERE key='id_prefix';")

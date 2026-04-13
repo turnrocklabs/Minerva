@@ -304,7 +304,7 @@ const _ITEM_COLS: Array = [
 	"command", "usage", "prompt_text", "preconditions",
 	"summary", "article", "parameters",
 	"steps", "outcome", "tool_deps",
-	"target",
+	"target", "optimization",
 ]
 
 
@@ -1291,6 +1291,14 @@ func _build_item_dict(row: Dictionary) -> Dictionary:
 		item["tool_deps"] = parsed if parsed is Array else []
 	else:
 		item["tool_deps"] = []
+
+	# optimization: JSON dict stored as TEXT
+	var opt_raw = row.get("optimization")
+	if opt_raw != null and not str(opt_raw).is_empty():
+		var parsed = JSON.parse_string(str(opt_raw))
+		item["optimization"] = parsed if parsed is Dictionary else {}
+	else:
+		item["optimization"] = {}
 
 	# Fetch tags
 	var tag_rows := _exec_select("SELECT tag FROM item_tags WHERE item_id=?;", [id])

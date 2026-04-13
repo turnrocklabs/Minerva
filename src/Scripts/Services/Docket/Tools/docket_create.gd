@@ -51,6 +51,7 @@ func get_definition() -> Dictionary:
 				"steps": {"type": "string", "description": "The executable pipeline — ordered commands/actions for an LLM to follow"},
 				"preconditions": {"type": "string", "description": "What must be true before using this skill"},
 				"outcome": {"type": "string", "description": "What success looks like when the skill completes"},
+				"optimization": {"type": "object", "description": "Runtime optimization profile: {context_window, summary_mode, tool_idle_turns, tool_budget}"},
 				# Prompt fields
 				"parameters": {"type": "string", "description": "Variables or placeholders in the prompt, e.g. {{language}}"},
 				# KB fields

@@ -3,7 +3,8 @@ extends RefCounted
 ## Manages the active tools array with LRU eviction and token budget enforcement.
 ## Tools are activated via minerva_tool_search and pruned when budget is exceeded.
 
-const DEFAULT_BUDGET: int = 3000  # max tokens for tool schemas
+const DEFAULT_BUDGET: int = 10000  # max tokens for tool schemas
+const DEFAULT_MAX_IDLE_TURNS: int = 0  # 0 = disabled, >0 = evict tools unused for N turns
 ## Tools that are never pruned from the active set.
 const PROTECTED_TOOLS: Array[String] = ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
 
@@ -11,6 +12,7 @@ const PROTECTED_TOOLS: Array[String] = ["minerva_tool_search", "minerva_list_ski
 var _active_tools: Dictionary = {}
 var _current_turn: int = 0
 var _token_budget: int = DEFAULT_BUDGET
+var _max_idle_turns: int = DEFAULT_MAX_IDLE_TURNS
 
 
 func _init(budget: int = DEFAULT_BUDGET) -> void:
@@ -82,9 +84,18 @@ func try_call(name: String) -> Dictionary:
 	}
 
 
-## Advance to the next turn.
+## Advance to the next turn. Evicts tools idle for too long.
 func advance_turn() -> void:
 	_current_turn += 1
+	if _max_idle_turns > 0:
+		var to_evict: Array[String] = []
+		for name in _active_tools:
+			if name in PROTECTED_TOOLS:
+				continue
+			if _current_turn - _active_tools[name].last_used_turn > _max_idle_turns:
+				to_evict.append(name)
+		for name in to_evict:
+			_active_tools.erase(name)
 
 
 ## Get current turn number.
@@ -113,6 +124,16 @@ func get_budget() -> int:
 	return _token_budget
 
 
+## Set the max idle turns before eviction. 0 = disabled.
+func set_max_idle_turns(turns: int) -> void:
+	_max_idle_turns = turns
+
+
+## Get the max idle turns setting.
+func get_max_idle_turns() -> int:
+	return _max_idle_turns
+
+
 # ── Internal ──────────────────────────────────────────────────────────
 
 ## Prune the least recently used non-protected tool. Returns true if something was pruned.
@@ -134,7 +155,7 @@ func _prune_one() -> bool:
 	return true
 
 
-## Estimate token cost of a tool schema (~4 chars per token on JSON).
+## Estimate token cost of a tool schema (~2.5 chars per token for JSON with short keys).
 func _estimate_tokens(schema: Dictionary) -> int:
 	var json_str: String = JSON.stringify(schema)
-	return maxi(1, ceili(float(json_str.length()) / 4.0))
+	return maxi(1, ceili(float(json_str.length()) / 2.5))

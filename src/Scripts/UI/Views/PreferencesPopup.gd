@@ -1512,6 +1512,7 @@ var _server_status_labels: Dictionary = {}  # server_name -> Label
 var _tool_set_checks_container: VBoxContainer
 var _auto_tool_check: CheckButton
 var _tool_budget_spin: SpinBox
+var _tool_idle_turns_spin: SpinBox
 var _server_list_container: VBoxContainer
 var _profile_checks_container: VBoxContainer
 var _add_server_dialog_prefs: AddMCPServerDialog = null
@@ -1595,12 +1596,28 @@ func _create_tools_tab() -> void:
 	budget_row.add_child(budget_lbl)
 	_tool_budget_spin = SpinBox.new()
 	_tool_budget_spin.min_value = 500
-	_tool_budget_spin.max_value = 10000
+	_tool_budget_spin.max_value = 50000
 	_tool_budget_spin.step = 500
-	_tool_budget_spin.value = 3000
+	_tool_budget_spin.value = ToolBudgetManager.DEFAULT_BUDGET
 	_tool_budget_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tool_budget_spin.value_changed.connect(_on_tool_budget_changed)
 	budget_row.add_child(_tool_budget_spin)
+
+	var idle_row := HBoxContainer.new()
+	idle_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(idle_row)
+	var idle_lbl := Label.new()
+	idle_lbl.text = "Evict idle tools after N turns (0=off):"
+	idle_lbl.custom_minimum_size = Vector2(140, 0)
+	idle_row.add_child(idle_lbl)
+	_tool_idle_turns_spin = SpinBox.new()
+	_tool_idle_turns_spin.min_value = 0
+	_tool_idle_turns_spin.max_value = 100
+	_tool_idle_turns_spin.step = 1
+	_tool_idle_turns_spin.value = ToolBudgetManager.DEFAULT_MAX_IDLE_TURNS
+	_tool_idle_turns_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tool_idle_turns_spin.value_changed.connect(_on_tool_idle_turns_changed)
+	idle_row.add_child(_tool_idle_turns_spin)
 
 	vbox.add_child(HSeparator.new())
 
@@ -1694,8 +1711,10 @@ func _load_tools_settings() -> void:
 	if _auto_tool_check:
 		var atm_enabled: bool = SingletonObject.config_file.get_value("Tools", "auto_tool_management", false)
 		_auto_tool_check.button_pressed = atm_enabled
-		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", 3000)
+		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", ToolBudgetManager.DEFAULT_BUDGET)
 		_tool_budget_spin.value = budget
+		var idle_turns: int = SingletonObject.config_file.get_value("Tools", "tool_max_idle_turns", ToolBudgetManager.DEFAULT_MAX_IDLE_TURNS)
+		_tool_idle_turns_spin.value = idle_turns
 	# Tool sets
 	_refresh_tool_set_checks()
 
@@ -2000,6 +2019,13 @@ func _on_tool_budget_changed(value: float) -> void:
 	var mcp = SingletonObject.get("mcp_manager")
 	if mcp and mcp.minerva_server:
 		mcp.minerva_server.tool_budget_manager.set_budget(int(value))
+
+
+func _on_tool_idle_turns_changed(value: float) -> void:
+	SingletonObject.save_to_config_file("Tools", "tool_max_idle_turns", int(value))
+	var mcp = SingletonObject.get("mcp_manager")
+	if mcp and mcp.minerva_server:
+		mcp.minerva_server.tool_budget_manager.set_max_idle_turns(int(value))
 
 
 
@@ -4130,7 +4156,7 @@ func _create_agent_context_tab() -> void:
 		row.add_child(spin)
 		return spin
 
-	_tmm_dehydrate_spin = _tmm_make_spin_row.call("Dehydrate after N rounds", 1, 1, 50, 1)
+	_tmm_dehydrate_spin = _tmm_make_spin_row.call("Tool Context Window (batch size)", 1, 1, 50, 1)
 	_tmm_max_summary_spin = _tmm_make_spin_row.call("Max summary length (chars)", 2000, 500, 20000, 100)
 	_tmm_drop_refs_spin = _tmm_make_spin_row.call("Drop refs after N rounds (-1=never)", -1, -1, 100, 1)
 	_tmm_max_tool_schema_spin = _tmm_make_spin_row.call("Max active tool schemas (0=unlimited)", 0, 0, 50, 1)

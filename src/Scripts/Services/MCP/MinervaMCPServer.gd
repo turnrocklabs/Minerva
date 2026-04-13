@@ -69,8 +69,10 @@ func _init(manager = null) -> void:
 	# Load auto tool management setting
 	if SingletonObject and SingletonObject.config_file:
 		auto_tool_management = SingletonObject.config_file.get_value("Tools", "auto_tool_management", false)
-		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", 3000)
+		var budget: int = SingletonObject.config_file.get_value("Tools", "tool_token_budget", ToolBudgetManager.DEFAULT_BUDGET)
 		tool_budget_manager.set_budget(budget)
+		var idle_turns: int = SingletonObject.config_file.get_value("Tools", "tool_max_idle_turns", ToolBudgetManager.DEFAULT_MAX_IDLE_TURNS)
+		tool_budget_manager.set_max_idle_turns(idle_turns)
 
 	if mcp_manager:
 		_init_modules()
@@ -294,6 +296,19 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# Emit pre-execution signal for hook triggers (PreToolUse)
 	if arguments is Dictionary and SingletonObject.trigger_manager and not SingletonObject.trigger_manager.triggers.is_empty():
 		SingletonObject.emit_mcp_tool_about_to_execute(tool_name, arguments)
+
+	# Coerce argument types to match declared schema (LLMs send arrays/objects as JSON strings)
+	if arguments is Dictionary:
+		var schema_for_coerce: Dictionary = {}
+		if tool_budget_manager.is_active(tool_name):
+			var tool_info := tool_budget_manager.try_call(tool_name)
+			schema_for_coerce = tool_info.get("schema", {})
+		elif tool_search_index:
+			var search_hits: Array[Dictionary] = tool_search_index.search(tool_name, "", 1)
+			if not search_hits.is_empty() and search_hits[0].get("name", "") == tool_name:
+				schema_for_coerce = search_hits[0].get("schema", {})
+		if not schema_for_coerce.is_empty():
+			arguments = MCPToolUtils.coerce_args_to_schema(arguments, schema_for_coerce)
 
 	# Dispatch to the appropriate handler and collect the result
 	var dispatch_result: Dictionary = {}

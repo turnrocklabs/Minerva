@@ -354,6 +354,12 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 					if not activated.is_empty():
 						result["message"] = "%d tools activated and ready to use. Do NOT call minerva_tool_search for these — they are already available." % activated.size()
 
+				# Apply skill optimization profile if present
+				var optimization: Dictionary = docket_result.get("optimization", {})
+				if not optimization.is_empty():
+					_apply_skill_optimization(server, optimization)
+					result["optimization_applied"] = optimization
+
 				# Surface model-targeted insights/hints for this skill's domain
 				var targeted := _query_targeted_knowledge(dm, proj_name, docket_result, server._current_caller_chat_id)
 				if not targeted.is_empty():
@@ -587,5 +593,29 @@ func _query_targeted_knowledge(dm: DocketManager, proj_name: String, skill_data:
 			entry["corrected"] = str(item.get("corrected", ""))
 		result.append(entry)
 	return result
+
+
+## Apply optimization knobs from a skill's "optimization" dict.
+## Adjusts ToolBudgetManager and ToolMemoryManager settings for the calling chat.
+func _apply_skill_optimization(server, optimization: Dictionary) -> void:
+	# Tool budget knobs
+	if optimization.has("tool_budget"):
+		server.tool_budget_manager.set_budget(int(optimization["tool_budget"]))
+	if optimization.has("tool_idle_turns"):
+		server.tool_budget_manager.set_max_idle_turns(int(optimization["tool_idle_turns"]))
+
+	# ToolMemoryManager knobs (per-chat)
+	if optimization.has("context_window") or optimization.has("summary_mode"):
+		var history = MCPToolUtils.find_chat_by_id(server._current_caller_chat_id)
+		if history and history is ChatHistory and history.tool_memory_manager:
+			var tmm = history.tool_memory_manager
+			if optimization.has("context_window"):
+				tmm.dehydrate_after_n_rounds = int(optimization["context_window"])
+			if optimization.has("summary_mode"):
+				var mode: String = str(optimization["summary_mode"])
+				if mode == "deterministic":
+					# Disable LLM summary calls — use deterministic fallback only
+					tmm.summary_call_fn = Callable()
+					tmm.fallback_summary_call_fn = Callable()
 
 #endregion

@@ -432,6 +432,15 @@ static func _serialize_item_row(db: DocketDB, row: Dictionary) -> String:
 	elif tool_deps is Array and not tool_deps.is_empty():
 		d["tool_deps"] = tool_deps
 
+	# optimization: stored as JSON TEXT in SQLite, deserialized to Dictionary by _build_item_dict
+	var optimization = row.get("optimization")
+	if optimization is String and not optimization.is_empty():
+		var parsed_opt = JSON.parse_string(optimization)
+		if parsed_opt is Dictionary and not parsed_opt.is_empty():
+			d["optimization"] = parsed_opt
+	elif optimization is Dictionary and not optimization.is_empty():
+		d["optimization"] = optimization
+
 	return _to_ordered_json(d)
 
 

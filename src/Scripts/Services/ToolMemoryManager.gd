@@ -7,6 +7,9 @@ extends RefCounted
 # --- Master switch ---
 var enabled: bool = false
 
+# --- Batch tracking ---
+var _last_summary_tool_count: int = 0
+
 # --- Analog dials (configurable thresholds) ---
 var dehydrate_after_n_rounds: int = 1
 var max_floating_summary_chars: int = 2000
@@ -67,9 +70,23 @@ func project(history: ServiceHistory, provider: BaseProvider) -> Array:
 
 ## Update floating summary after tool execution. Blocking per-chat.
 ## When disabled, skips summarization entirely (raw history preserved).
+## With batch mode (dehydrate_after_n_rounds > 0): only summarizes when a full
+## batch of tool results has accumulated outside the context window.
 func fold_tool_result(history: ServiceHistory) -> void:
 	if not enabled:
 		return
+	# Count total tool results in history
+	var tool_count := 0
+	for item in history.HistoryItemList:
+		if item.Role == ChatHistoryItem.ChatRole.TOOL:
+			tool_count += 1
+	# Batch mode: only summarize when enough tools have accumulated to retire a batch
+	var window := dehydrate_after_n_rounds
+	if window > 0:
+		var tools_since_last_summary := tool_count - _last_summary_tool_count
+		if tools_since_last_summary <= window:
+			return  # Batch not full yet — skip summary
+		_last_summary_tool_count = tool_count
 	await _refresh_floating_tool_summary(history)
 
 
@@ -170,11 +187,13 @@ func _hydrate_from_history(history: ServiceHistory) -> void:
 	floating_summary_note_id = history.AgentFloatingSummaryNoteId
 	tool_memory_state = history.AgentToolMemoryState
 	telemetry = history.AgentContextTelemetry
+	_last_summary_tool_count = int(tool_memory_state.get("last_summary_tool_count", 0))
 
 
 ## Write current state back to a ServiceHistory instance.
 func persist_to_history(history: ServiceHistory) -> void:
 	history.AgentFloatingSummaryNoteId = floating_summary_note_id
+	tool_memory_state["last_summary_tool_count"] = _last_summary_tool_count
 	history.AgentToolMemoryState = tool_memory_state
 	history.AgentContextTelemetry = telemetry
 
@@ -418,24 +437,50 @@ func _build_tool_memory_header_text(state: Dictionary) -> String:
 
 
 func _get_latest_tool_chain_state(items: Array[ChatHistoryItem]) -> Dictionary:
-	var latest_tool_call_message_idx := -1
-	for i in range(items.size() - 1, -1, -1):
+	# Find all tool call chain boundaries (assistant IsToolCall messages)
+	var chain_starts: Array[int] = []
+	for i in range(items.size()):
 		var item := items[i]
 		var is_tool_call_message := item.IsToolCall and (item.Role == ChatHistoryItem.ChatRole.ASSISTANT or item.Role == ChatHistoryItem.ChatRole.MODEL)
 		if is_tool_call_message:
-			latest_tool_call_message_idx = i
-			break
+			chain_starts.append(i)
+
+	# Determine how many chains to retain based on tool_context_window (batch size)
+	# 0 = retain only the latest chain (original behavior)
+	var chains_to_retain := 1
+	if dehydrate_after_n_rounds > 0:
+		chains_to_retain = dehydrate_after_n_rounds
+
+	# Keep the last N chain starts
+	var retained_chain_starts: Array[int] = []
+	if chain_starts.size() > 0:
+		var start_idx := maxi(0, chain_starts.size() - chains_to_retain)
+		for i in range(start_idx, chain_starts.size()):
+			retained_chain_starts.append(chain_starts[i])
+
+	var latest_tool_call_message_idx := chain_starts[-1] if chain_starts.size() > 0 else -1
+	var first_retained_chain_idx := retained_chain_starts[0] if retained_chain_starts.size() > 0 else -1
 
 	var retained_tool_result_indices := {}
 	var latest_tool_idx := -1
-	if latest_tool_call_message_idx >= 0:
-		for i in range(latest_tool_call_message_idx + 1, items.size()):
+
+	# Retain all tool results from all retained chains
+	for chain_start in retained_chain_starts:
+		for i in range(chain_start + 1, items.size()):
 			var item := items[i]
-			if item.Role != ChatHistoryItem.ChatRole.TOOL:
-				break
-			retained_tool_result_indices[i] = true
-			latest_tool_idx = i
-	else:
+			if item.Role == ChatHistoryItem.ChatRole.TOOL:
+				retained_tool_result_indices[i] = true
+				latest_tool_idx = i
+			elif item.IsToolCall:
+				break  # Hit the next chain
+
+	# Also retain the assistant IsToolCall messages for retained chains
+	var retained_tool_call_message_indices := {}
+	for chain_start in retained_chain_starts:
+		retained_tool_call_message_indices[chain_start] = true
+
+	if retained_tool_result_indices.is_empty():
+		# Fallback: find the last TOOL item
 		for i in range(items.size() - 1, -1, -1):
 			if items[i].Role == ChatHistoryItem.ChatRole.TOOL:
 				latest_tool_idx = i
@@ -444,7 +489,9 @@ func _get_latest_tool_chain_state(items: Array[ChatHistoryItem]) -> Dictionary:
 
 	return {
 		"latest_tool_call_message_idx": latest_tool_call_message_idx,
+		"first_retained_chain_idx": first_retained_chain_idx,
 		"retained_tool_result_indices": retained_tool_result_indices,
+		"retained_tool_call_message_indices": retained_tool_call_message_indices,
 		"latest_tool_idx": latest_tool_idx,
 	}
 
@@ -462,6 +509,7 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 	var latest_tool_idx := int(latest_tool_chain.get("latest_tool_idx", -1))
 	var latest_tool_call_message_idx := int(latest_tool_chain.get("latest_tool_call_message_idx", -1))
 	var retained_tool_result_indices: Dictionary = latest_tool_chain.get("retained_tool_result_indices", {})
+	var retained_tool_call_message_indices: Dictionary = latest_tool_chain.get("retained_tool_call_message_indices", {})
 	var tool_memory_text := _build_tool_memory_header_text(projection_state.get("state", {}))
 	var injected_knowledge := false
 	var dehydrated_items := 0
@@ -492,7 +540,7 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 			mutated = true
 
 		if item.IsToolCall and (item.Role == ChatHistoryItem.ChatRole.ASSISTANT or item.Role == ChatHistoryItem.ChatRole.MODEL):
-			if i != latest_tool_call_message_idx:
+			if not retained_tool_call_message_indices.has(i):
 				if not mutated:
 					prompt_item = item.duplicate_for_prompt()
 					mutated = true
@@ -573,12 +621,32 @@ func _refresh_floating_tool_summary(history: ServiceHistory) -> void:
 
 	var settings := summary_settings
 	var existing_summary := _get_agent_note_text(history.AgentFloatingSummaryNoteId)
-	var previous_latest: ChatHistoryItem = tool_items[tool_items.size() - 2]
-	var latest_source := _build_floating_summary_source(previous_latest)
+
+	# Build source text from the retiring batch — all tool items outside the live window.
+	# The live window is the last `dehydrate_after_n_rounds` items; everything before is retiring.
+	var window := dehydrate_after_n_rounds if dehydrate_after_n_rounds > 0 else 1
+	var live_start := maxi(0, tool_items.size() - window)
+	var retiring_items: Array[ChatHistoryItem] = []
+	for idx in range(live_start):
+		retiring_items.append(tool_items[idx])
+
+	# If no items to retire, nothing to summarize
+	if retiring_items.is_empty():
+		return
+
+	# Build combined source from all retiring items
+	var batch_sources := PackedStringArray()
+	for item in retiring_items:
+		batch_sources.append(_build_floating_summary_source(item))
+	var combined_source := "\n\n---\n\n".join(batch_sources)
+
 	var configured_prompt: String = str(settings.get("summary_prompt", "")).strip_edges()
 	if configured_prompt.is_empty():
 		configured_prompt = "Create a compact rolling summary of prior tool activity for an agent chat. Preserve important IDs, failures, file paths, item IDs, note IDs, and decisions. Omit chatter. Keep it concise but information-dense."
-	var prompt_text := "%s\n\nExisting floating summary:\n%s\n\n---\n\nNewest completed tool to fold in:\n%s" % [configured_prompt, existing_summary, latest_source]
+	# Substitute {batch_size} placeholder if present
+	if configured_prompt.contains("{batch_size}"):
+		configured_prompt = configured_prompt.replace("{batch_size}", str(dehydrate_after_n_rounds))
+	var prompt_text := "%s\n\nExisting floating summary:\n%s\n\n---\n\nTool calls to summarize (%d items):\n%s" % [configured_prompt, existing_summary, retiring_items.size(), combined_source]
 	var primary_result: Dictionary = await summary_call_fn.call(settings.get("primary_provider", {}), settings, prompt_text)
 	var summary_text := str(primary_result.get("text", ""))
 	var fallback_result: Dictionary = {}
@@ -589,7 +657,7 @@ func _refresh_floating_tool_summary(history: ServiceHistory) -> void:
 
 	var used_deterministic_fallback := false
 	if summary_text.is_empty():
-		summary_text = _build_deterministic_floating_summary(existing_summary, latest_source)
+		summary_text = _build_deterministic_floating_summary(existing_summary, combined_source)
 		used_deterministic_fallback = not summary_text.is_empty()
 	if summary_text.is_empty():
 		_record_agent_context_telemetry(history, {

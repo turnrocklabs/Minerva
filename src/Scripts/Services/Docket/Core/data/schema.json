@@ -217,12 +217,16 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title"],
-			"optional_fields": ["description", "steps", "preconditions", "outcome", "tool_deps", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"],
+			"optional_fields": ["description", "steps", "preconditions", "outcome", "tool_deps", "optimization", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"],
 			"field_definitions": {
 				"tool_deps": {
 					"type": "array",
 					"items": {"type": "string"},
 					"description": "Tool names this skill requires (auto-activated on skill load)"
+				},
+				"optimization": {
+					"type": "object",
+					"description": "Runtime optimization profile applied when skill is loaded. Keys: context_window (int), summary_mode ('deterministic'|'llm'), tool_idle_turns (int), tool_budget (int)"
 				}
 			}
 		},
