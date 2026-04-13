@@ -64,6 +64,14 @@ func _init():
 	print("\n-- Per-Chat Scope Isolation --")
 	test_scope_per_chat()
 
+	# Inject effect tests
+	print("\n-- Inject Effect --")
+	test_inject_effect_allowed_with_injections()
+	test_inject_with_scope_prevents_reinjection()
+	test_inject_proposed_downgrades_to_observe()
+	test_inject_multiple_rules_collect_all()
+	test_inject_plus_block_block_wins()
+
 	# Override safety note
 	print("\n-- Override Safety (manual validation note) --")
 	test_agent_cannot_self_override_note()
@@ -756,6 +764,128 @@ func test_scope_per_chat():
 	var r_a_nav := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"}, "chat-A")
 	check("per-chat scope: chat A navigate is allowed (scope active for A)", \
 		r_a_nav.get("allowed", false) == true)
+
+
+func test_inject_effect_allowed_with_injections():
+	print("test_inject_effect_allowed_with_injections:")
+	var engine := PolicyEngine.new()
+	engine._rules.append(_make_rule({
+		"rule_id": "inject-nav-001",
+		"title": "Inject Amazon Hints",
+		"effect": "inject",
+		"tool_pattern": "cobrowser_navigate",
+		"knowledge_ref": "kb-article-001",
+		"activate_scope": null,
+	}))
+	var result := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"})
+	check("inject: allowed is true", result.get("allowed", false) == true)
+	check("inject: effect is 'inject'", result.get("effect", "") == "inject")
+	var injections: Array = result.get("injections", [])
+	check("inject: injections array has 1 entry", injections.size() == 1)
+	check("inject: injection has correct rule_id", str(injections[0].get("rule_id", "")) == "inject-nav-001")
+	check("inject: injection has knowledge_ref", str(injections[0].get("knowledge_ref", "")) == "kb-article-001")
+
+
+func test_inject_with_scope_prevents_reinjection():
+	print("test_inject_with_scope_prevents_reinjection:")
+	var engine := PolicyEngine.new()
+	engine._rules.append(_make_rule({
+		"rule_id": "inject-scope-001",
+		"title": "Inject With Scope",
+		"effect": "inject",
+		"tool_pattern": "cobrowser_navigate",
+		"knowledge_ref": "kb-article-002",
+		"activate_scope": "amazon-injected",
+		"scope_max_actions": 50,
+		"scope_ttl_ms": 300000,
+		"context_predicates": {"scope_not_active": "amazon-injected"},
+	}))
+	# First call: inject fires, scope activates
+	var r1 := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"})
+	check("inject+scope: first call has injections", r1.get("injections", []).size() == 1)
+	check("inject+scope: scope activated", engine._scope_state.is_active("amazon-injected"))
+	# Second call: scope active, inject rule skipped via context_predicate
+	var r2 := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com/dp/123"})
+	check("inject+scope: second call has no injections", r2.get("injections", []).size() == 0)
+	check("inject+scope: second call still allowed", r2.get("allowed", false) == true)
+
+
+func test_inject_proposed_downgrades_to_observe():
+	print("test_inject_proposed_downgrades_to_observe:")
+	var engine := PolicyEngine.new()
+	engine._rules.append(_make_rule({
+		"rule_id": "inject-proposed-001",
+		"title": "Proposed Inject Rule",
+		"status": "proposed",
+		"effect": "inject",
+		"tool_pattern": "cobrowser_navigate",
+		"knowledge_ref": "kb-article-003",
+	}))
+	var result := engine.evaluate("cobrowser_navigate", {"url": "https://www.amazon.com"})
+	check("proposed inject: allowed is true", result.get("allowed", false) == true)
+	check("proposed inject: no injections (downgraded to observe)", result.get("injections", []).size() == 0)
+	var observations: Array = result.get("observations", [])
+	check("proposed inject: has observation", observations.size() >= 1)
+	check("proposed inject: observation records inject as would_have_effect", \
+		str(observations[0].get("would_have_effect", "")) == "inject")
+
+
+func test_inject_multiple_rules_collect_all():
+	print("test_inject_multiple_rules_collect_all:")
+	var engine := PolicyEngine.new()
+	engine._rules.append(_make_rule({
+		"rule_id": "inject-multi-001",
+		"title": "Inject Rule A",
+		"effect": "inject",
+		"tool_pattern": "cobrowser_navigate",
+		"knowledge_ref": "kb-a",
+		"priority": 10,
+	}))
+	engine._rules.append(_make_rule({
+		"rule_id": "inject-multi-002",
+		"title": "Inject Rule B",
+		"effect": "inject",
+		"tool_pattern": "cobrowser_navigate",
+		"knowledge_ref": "kb-b",
+		"priority": 5,
+	}))
+	engine._rules.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["priority"] > b["priority"]
+	)
+	var result := engine.evaluate("cobrowser_navigate", {"url": "https://example.com"})
+	check("multi inject: allowed is true", result.get("allowed", false) == true)
+	var injections: Array = result.get("injections", [])
+	check("multi inject: 2 injections collected", injections.size() == 2)
+	check("multi inject: first is higher priority rule", str(injections[0].get("rule_id", "")) == "inject-multi-001")
+	check("multi inject: second is lower priority rule", str(injections[1].get("rule_id", "")) == "inject-multi-002")
+
+
+func test_inject_plus_block_block_wins():
+	print("test_inject_plus_block_block_wins:")
+	var engine := PolicyEngine.new()
+	# Block rule at higher priority
+	engine._rules.append(_make_rule({
+		"rule_id": "block-nav-001",
+		"title": "Block Navigate",
+		"effect": "block",
+		"tool_pattern": "cobrowser_navigate",
+		"priority": 100,
+	}))
+	# Inject rule at lower priority
+	engine._rules.append(_make_rule({
+		"rule_id": "inject-nav-002",
+		"title": "Inject Hints",
+		"effect": "inject",
+		"tool_pattern": "cobrowser_navigate",
+		"knowledge_ref": "kb-hints",
+		"priority": 50,
+	}))
+	engine._rules.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["priority"] > b["priority"]
+	)
+	var result := engine.evaluate("cobrowser_navigate", {"url": "https://example.com"})
+	check("block+inject: block wins (allowed is false)", result.get("allowed", true) == false)
+	check("block+inject: no injections in blocked response", result.get("injections", []).size() == 0)
 
 
 func test_agent_cannot_self_override_note():

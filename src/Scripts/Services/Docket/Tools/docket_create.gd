@@ -58,6 +58,8 @@ func get_definition() -> Dictionary:
 				"summary": {"type": "string", "description": "Short preview (1-2 sentences) for search results"},
 				# Work item fields
 				"blocked_by": {"type": "string"},
+				# Model targeting
+				"target": {"type": "string", "description": "Model targeting expression. Grammar: family[:version][@provider]. Examples: 'all', 'sonnet', 'sonnet:<=4.6', 'sonnet:<=4.6@openrouter'. Comma-separated for OR."},
 				# Multi-project
 				"project": {"type": "string", "description": "Target project name (optional, defaults to primary)"},
 			},

@@ -79,6 +79,7 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 
 	var matched_rule_ids: Array[String] = []
 	var observations: Array[Dictionary] = []
+	var injections: Array[Dictionary] = []
 
 	for rule in _rules:
 		var rule_id: String = rule["rule_id"]
@@ -117,6 +118,20 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 				_scope_state.activate(scoped_key, rule["scope_max_actions"], rule["scope_ttl_ms"])
 				_record_observation(rule, tool_name, facts, "scope")
 
+			"inject":
+				if not rule["knowledge_ref"].is_empty():
+					injections.append({
+						"rule_id": rule_id,
+						"knowledge_ref": rule["knowledge_ref"],
+						"title": rule["title"],
+					})
+				# Optionally activate scope to prevent re-injection
+				if rule["activate_scope"] != null:
+					var inject_scope: String = rule["activate_scope"]
+					var inject_key: String = _make_scope_key(inject_scope, caller_id)
+					_scope_state.activate(inject_key, rule["scope_max_actions"], rule["scope_ttl_ms"])
+				_record_observation(rule, tool_name, facts, "inject")
+
 			"observe":
 				_record_observation(rule, tool_name, facts, rule["effect"])
 
@@ -124,12 +139,16 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 	var pending := _observation_log.duplicate()
 	_observation_log.clear()
 
-	return {
+	var result := {
 		"allowed": true,
 		"effect": "clear",
 		"matched_rules": matched_rule_ids,
 		"observations": pending,
 	}
+	if not injections.is_empty():
+		result["injections"] = injections
+		result["effect"] = "inject"
+	return result
 
 
 ## Return the number of currently compiled rules.
@@ -283,7 +302,7 @@ func _compile_rule(item: Dictionary) -> Dictionary:
 		"flag_predicates": flag_predicates,
 		"activate_scope": data.get("activate_scope", null),
 		"scope_max_actions": int(data.get("scope_max_actions", 10)),
-		"scope_ttl_ms": int(data.get("scope_ttl_ms", 300000)),
+		"scope_ttl_ms": int(data.get("scope_ttl_ms", 2147483647)),
 		"priority": int(data.get("priority", 0)),
 		"provenance": str(data.get("provenance", "user")),
 		"knowledge_ref": str(data.get("knowledge_ref", "")),

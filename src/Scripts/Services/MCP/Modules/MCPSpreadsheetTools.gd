@@ -1116,7 +1116,7 @@ func _add_spreadsheet_row(args: Dictionary) -> Dictionary:
 		return MCPToolUtils.error("No spreadsheet data available")
 
 	# Determine row index
-	var row_idx: int = at_row if at_row >= 0 else data.row_count
+	var row_idx: int = at_row if at_row >= 0 else data.get_used_range().end.y
 
 	# Insert the row
 	data.insert_row(row_idx)

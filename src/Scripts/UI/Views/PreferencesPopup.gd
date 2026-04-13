@@ -4062,6 +4062,15 @@ var _agent_summary_timeout_spin: SpinBox
 var _agent_context_pref_loading: bool = false
 var _agent_debug_log_edit: LineEdit
 
+# ToolMemoryManager controls
+var _tmm_enabled_check: CheckButton
+var _tmm_dehydrate_spin: SpinBox
+var _tmm_max_summary_spin: SpinBox
+var _tmm_drop_refs_spin: SpinBox
+var _tmm_max_tool_schema_spin: SpinBox
+var _tmm_context_budget_spin: SpinBox
+var _tmm_max_index_spin: SpinBox
+
 func _create_agent_context_tab() -> void:
 	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
 	if not tab_container:
@@ -4089,6 +4098,78 @@ func _create_agent_context_tab() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	scroll.add_child(vbox)
 
+	# --- ToolMemoryManager section ---
+	var tmm_header := Label.new()
+	tmm_header.text = "Tool Memory Manager"
+	tmm_header.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(tmm_header)
+
+	var tmm_enable_row := HBoxContainer.new()
+	tmm_enable_row.add_theme_constant_override("separation", 8)
+	vbox.add_child(tmm_enable_row)
+	_tmm_enabled_check = CheckButton.new()
+	_tmm_enabled_check.text = "Enable Tool Memory Optimization"
+	_tmm_enabled_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tmm_enable_row.add_child(_tmm_enabled_check)
+
+	var _tmm_make_spin_row := func(label_text: String, default_val: float, min_val: float, max_val: float, step_val: float) -> SpinBox:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		vbox.add_child(row)
+		var lbl := Label.new()
+		lbl.text = label_text
+		lbl.custom_minimum_size = Vector2(260, 0)
+		row.add_child(lbl)
+		var spin := SpinBox.new()
+		spin.min_value = min_val
+		spin.max_value = max_val
+		spin.step = step_val
+		spin.value = default_val
+		spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spin.value_changed.connect(func(_v: float): _save_agent_context_summary_preferences())
+		row.add_child(spin)
+		return spin
+
+	_tmm_dehydrate_spin = _tmm_make_spin_row.call("Dehydrate after N rounds", 1, 1, 50, 1)
+	_tmm_max_summary_spin = _tmm_make_spin_row.call("Max summary length (chars)", 2000, 500, 20000, 100)
+	_tmm_drop_refs_spin = _tmm_make_spin_row.call("Drop refs after N rounds (-1=never)", -1, -1, 100, 1)
+	_tmm_max_tool_schema_spin = _tmm_make_spin_row.call("Max active tool schemas (0=unlimited)", 0, 0, 50, 1)
+	_tmm_context_budget_spin = _tmm_make_spin_row.call("Context budget tokens (0=unlimited)", 0, 0, 500000, 1000)
+	_tmm_max_index_spin = _tmm_make_spin_row.call("Max recovery index entries", 50, 10, 500, 10)
+
+	var _tmm_spins: Array[SpinBox] = [
+		_tmm_dehydrate_spin, _tmm_max_summary_spin, _tmm_drop_refs_spin,
+		_tmm_max_tool_schema_spin, _tmm_context_budget_spin, _tmm_max_index_spin
+	]
+	_tmm_enabled_check.toggled.connect(func(on: bool) -> void:
+		for sp in _tmm_spins:
+			sp.editable = on
+		# Also disable summary controls when master switch is off
+		if _agent_primary_model_picker:
+			_agent_primary_model_picker.disabled = not on
+		if _agent_fallback_model_picker:
+			_agent_fallback_model_picker.disabled = not on
+		if _agent_fallback_enabled_check:
+			_agent_fallback_enabled_check.disabled = not on
+		if _agent_summary_prompt_edit:
+			_agent_summary_prompt_edit.editable = on
+		if _agent_temperature_spin:
+			_agent_temperature_spin.editable = on
+		if _agent_summary_timeout_spin:
+			_agent_summary_timeout_spin.editable = on
+		if _agent_reasoning_option:
+			_agent_reasoning_option.disabled = not on
+		if _agent_context_spin:
+			_agent_context_spin.editable = on
+		_save_agent_context_summary_preferences()
+	)
+	# Apply initial greyed state (off by default)
+	for sp in _tmm_spins:
+		sp.editable = false
+
+	vbox.add_child(HSeparator.new())
+
+	# --- Floating Tool Summary section ---
 	var header := Label.new()
 	header.text = "Floating Tool Summary"
 	header.add_theme_font_size_override("font_size", 16)
@@ -4308,6 +4389,38 @@ func _load_agent_context_summary_preferences() -> void:
 		"xhigh":
 			selected_reasoning = 4
 	_set_option_to_id(_agent_reasoning_option, selected_reasoning)
+	if _tmm_enabled_check:
+		var tmm_enabled := bool(SingletonObject.get_config_file_value("ToolMemoryManager", "enabled") if SingletonObject.get_config_file_value("ToolMemoryManager", "enabled") != null else false)
+		_tmm_enabled_check.button_pressed = tmm_enabled
+		_tmm_dehydrate_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "dehydrate_after_n_rounds") if SingletonObject.get_config_file_value("ToolMemoryManager", "dehydrate_after_n_rounds") != null else 1)
+		_tmm_max_summary_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") != null else 2000)
+		_tmm_drop_refs_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") if SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") != null else -1)
+		_tmm_max_tool_schema_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") != null else 0)
+		_tmm_context_budget_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") if SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") != null else 0)
+		_tmm_max_index_spin.value = int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") != null else 50)
+		var tmm_spins_load: Array[SpinBox] = [
+			_tmm_dehydrate_spin, _tmm_max_summary_spin, _tmm_drop_refs_spin,
+			_tmm_max_tool_schema_spin, _tmm_context_budget_spin, _tmm_max_index_spin
+		]
+		for sp in tmm_spins_load:
+			sp.editable = tmm_enabled
+		# Also apply greyed state to summary controls
+		if _agent_primary_model_picker:
+			_agent_primary_model_picker.disabled = not tmm_enabled
+		if _agent_fallback_model_picker:
+			_agent_fallback_model_picker.disabled = not tmm_enabled
+		if _agent_fallback_enabled_check:
+			_agent_fallback_enabled_check.disabled = not tmm_enabled
+		if _agent_summary_prompt_edit:
+			_agent_summary_prompt_edit.editable = tmm_enabled
+		if _agent_temperature_spin:
+			_agent_temperature_spin.editable = tmm_enabled
+		if _agent_summary_timeout_spin:
+			_agent_summary_timeout_spin.editable = tmm_enabled
+		if _agent_reasoning_option:
+			_agent_reasoning_option.disabled = not tmm_enabled
+		if _agent_context_spin:
+			_agent_context_spin.editable = tmm_enabled
 	_agent_context_pref_loading = false
 
 
@@ -4338,6 +4451,14 @@ func _save_agent_context_summary_preferences() -> void:
 	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "temperature", _agent_temperature_spin.value)
 	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "context_size", int(_agent_context_spin.value))
 	SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "summary_timeout", _agent_summary_timeout_spin.value)
+	if _tmm_enabled_check:
+		SingletonObject.save_to_config_file("ToolMemoryManager", "enabled", _tmm_enabled_check.button_pressed)
+		SingletonObject.save_to_config_file("ToolMemoryManager", "dehydrate_after_n_rounds", int(_tmm_dehydrate_spin.value))
+		SingletonObject.save_to_config_file("ToolMemoryManager", "max_floating_summary_chars", int(_tmm_max_summary_spin.value))
+		SingletonObject.save_to_config_file("ToolMemoryManager", "drop_refs_after_n_rounds", int(_tmm_drop_refs_spin.value))
+		SingletonObject.save_to_config_file("ToolMemoryManager", "max_tool_schema_count", int(_tmm_max_tool_schema_spin.value))
+		SingletonObject.save_to_config_file("ToolMemoryManager", "context_budget_tokens", int(_tmm_context_budget_spin.value))
+		SingletonObject.save_to_config_file("ToolMemoryManager", "max_index_entries", int(_tmm_max_index_spin.value))
 	if _agent_debug_log_edit:
 		SingletonObject.save_to_config_file(AGENT_CONTEXT_SECTION, "debug_log_path", _agent_debug_log_edit.text.strip_edges())
 		AnthropicProvider.debug_log_path = _agent_debug_log_edit.text.strip_edges()
@@ -4355,6 +4476,15 @@ func get_agent_context_summary_config() -> Dictionary:
 		"temperature": float(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "temperature") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "temperature") != null else 0.2),
 		"context_size": int(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "context_size") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "context_size") != null else 0),
 		"summary_timeout": float(SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "summary_timeout") if SingletonObject.get_config_file_value(AGENT_CONTEXT_SECTION, "summary_timeout") != null else 30.0),
+		"tool_memory_manager": {
+			"enabled": bool(SingletonObject.get_config_file_value("ToolMemoryManager", "enabled") if SingletonObject.get_config_file_value("ToolMemoryManager", "enabled") != null else false),
+			"dehydrate_after_n_rounds": int(SingletonObject.get_config_file_value("ToolMemoryManager", "dehydrate_after_n_rounds") if SingletonObject.get_config_file_value("ToolMemoryManager", "dehydrate_after_n_rounds") != null else 1),
+			"max_floating_summary_chars": int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_floating_summary_chars") != null else 2000),
+			"drop_refs_after_n_rounds": int(SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") if SingletonObject.get_config_file_value("ToolMemoryManager", "drop_refs_after_n_rounds") != null else -1),
+			"max_tool_schema_count": int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_tool_schema_count") != null else 0),
+			"context_budget_tokens": int(SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") if SingletonObject.get_config_file_value("ToolMemoryManager", "context_budget_tokens") != null else 0),
+			"max_index_entries": int(SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") if SingletonObject.get_config_file_value("ToolMemoryManager", "max_index_entries") != null else 50),
+		},
 	}
 
 

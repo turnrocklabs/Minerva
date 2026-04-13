@@ -104,6 +104,47 @@ static func coerce_bool(value, default: bool = false) -> bool:
 		return value != 0
 	return default
 
+## Coerce a JSON string to a Dictionary. If value is already a Dictionary, return as-is.
+## If it's a string that parses as JSON object, return the parsed dict. Otherwise return default.
+static func coerce_object(value, default: Dictionary = {}) -> Dictionary:
+	if value == null:
+		return default
+	if value is Dictionary:
+		return value
+	if value is String:
+		var parsed = JSON.parse_string(value)
+		if parsed is Dictionary:
+			return parsed
+	return default
+
+
+## Coerce tool arguments to match declared schema types.
+## LLMs (especially Sonnet) often send objects as JSON strings, integers as strings,
+## and integers as floats. This function uses the tool's input_schema to fix these
+## before forwarding to external MCP servers that expect correct types.
+static func coerce_args_to_schema(arguments: Dictionary, schema: Dictionary) -> Dictionary:
+	var properties: Dictionary = schema.get("properties", {})
+	if properties.is_empty():
+		return arguments
+	for key in arguments.keys():
+		if not properties.has(key):
+			continue
+		var declared_type: String = str(properties[key].get("type", ""))
+		var value = arguments[key]
+		match declared_type:
+			"object":
+				arguments[key] = coerce_object(value)
+			"integer":
+				if not (value is int):
+					arguments[key] = coerce_int(value)
+			"number":
+				if not (value is float) and not (value is int):
+					arguments[key] = coerce_float(value)
+			"boolean":
+				if not (value is bool):
+					arguments[key] = coerce_bool(value)
+	return arguments
+
 #endregion
 
 

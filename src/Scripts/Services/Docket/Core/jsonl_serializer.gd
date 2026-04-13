@@ -421,6 +421,8 @@ static func _serialize_item_row(db: DocketDB, row: Dictionary) -> String:
 	_set_if_nonempty(d, "steps", _nullable_str(row.get("steps")))
 	_set_if_nonempty(d, "outcome", _nullable_str(row.get("outcome")))
 
+	_set_if_nonempty(d, "target", _nullable_str(row.get("target")))
+
 	# tool_deps: stored as JSON TEXT in SQLite, deserialized to Array by _build_item_dict
 	var tool_deps = row.get("tool_deps")
 	if tool_deps is String and not tool_deps.is_empty():

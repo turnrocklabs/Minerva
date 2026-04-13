@@ -304,6 +304,7 @@ const _ITEM_COLS: Array = [
 	"command", "usage", "prompt_text", "preconditions",
 	"summary", "article", "parameters",
 	"steps", "outcome", "tool_deps",
+	"target",
 ]
 
 
@@ -1276,7 +1277,7 @@ func _build_item_dict(row: Dictionary) -> Dictionary:
 				 "test_setup", "test_steps", "expected_result", "last_reviewed",
 				 "command", "usage", "prompt_text", "preconditions",
 				 "summary", "article", "parameters",
-				 "steps", "outcome"]:
+				 "steps", "outcome", "target"]:
 		var val = row.get(col)
 		if val != null:
 			item[col] = str(val)

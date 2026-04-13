@@ -7,6 +7,12 @@ extends MCPToolModule
 const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
 const NotesContainerScript := preload("res://Scenes/note/NotesContainer.gd")
 
+const TOOL_MEMORY_NOTE_TOOLS := {
+	"minerva_list_agent_notes": true,
+	"minerva_get_agent_note": true,
+	"minerva_read_agent_note": true,
+}
+
 
 func get_tool_names() -> Array[String]:
 	return [
@@ -241,6 +247,8 @@ func register_tools() -> void:
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+	if TOOL_MEMORY_NOTE_TOOLS.has(tool_name) and not _tool_memory_optimization_enabled():
+		return MCPToolUtils.error("Tool memory optimization is disabled")
 	match tool_name:
 		"minerva_create_note":
 			return _create_note(arguments)
@@ -292,6 +300,12 @@ func _resolve_agent_note(note_id: String) -> Variant:
 	if matches.size() == 1:
 		return matches[0]
 	return null
+
+
+func _tool_memory_optimization_enabled() -> bool:
+	if SingletonObject == null or SingletonObject.config_file == null:
+		return false
+	return bool(SingletonObject.config_file.get_value("ToolMemoryManager", "enabled", false))
 
 
 func _note_text_content(note: Note) -> String:

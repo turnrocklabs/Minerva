@@ -60,6 +60,8 @@ func get_definition() -> Dictionary:
 				"last_reviewed": {"type": "string", "description": "ISO 8601 timestamp of last quality review"},
 				# Work item fields
 				"blocked_by": {"type": "string"},
+				# Model targeting
+				"target": {"type": "string", "description": "Model targeting expression. Grammar: family[:version][@provider]. Examples: 'all', 'sonnet', 'sonnet:<=4.6', 'sonnet:<=4.6@openrouter'. Comma-separated for OR."},
 				# Multi-project
 				"project": {"type": "string", "description": "Target project name (optional, defaults to primary)"},
 			},

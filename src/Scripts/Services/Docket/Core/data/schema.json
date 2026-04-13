@@ -90,7 +90,7 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title", "value"],
-			"optional_fields": ["description", "component", "key", "topic", "subtopic", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed"]
+			"optional_fields": ["description", "component", "key", "topic", "subtopic", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed", "target"]
 		},
 		"insight": {
 			"label": "Insight",
@@ -104,7 +104,7 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title", "assumed", "corrected"],
-			"optional_fields": ["description", "topic", "subtopic", "surprise", "surfaced_from", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed"]
+			"optional_fields": ["description", "component", "key", "topic", "subtopic", "surprise", "surfaced_from", "confidence", "retrieval_count", "research_cost", "tags", "directed_to", "quality", "last_reviewed", "target"]
 		},
 		"question": {
 			"label": "Question",
@@ -239,7 +239,7 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title"],
-			"optional_fields": ["description", "prompt_text", "parameters", "component", "key", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed"]
+			"optional_fields": ["description", "prompt_text", "parameters", "component", "key", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed", "target"]
 		},
 		"kb": {
 			"label": "KB Article",

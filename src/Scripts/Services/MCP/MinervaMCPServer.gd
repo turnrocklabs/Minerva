@@ -48,6 +48,13 @@ var _current_agent_id: String = ""
 var _modules: Array = []
 var _agent_module: MCPAgentTools  # cached for signal wiring
 
+const TOOL_MEMORY_HYDRATION_TOOLS := {
+	"minerva_tool_memory_search": true,
+	"minerva_list_agent_notes": true,
+	"minerva_get_agent_note": true,
+	"minerva_read_agent_note": true,
+}
+
 
 func _init(manager = null) -> void:
 	mcp_manager = manager
@@ -270,6 +277,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 
 	# PRE-TOOL POLICY CHECK — before tool_budget_manager and advisory hooks
 	var pending_observations: Array = []
+	var pending_injections: Array = []
 	if policy_engine:
 		var policy_result := policy_engine.evaluate(tool_name, arguments, _current_caller_chat_id)
 		if not policy_result["allowed"]:
@@ -278,6 +286,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, _current_agent_id)
 			return policy_result
 		pending_observations = policy_result.get("observations", [])
+		pending_injections = policy_result.get("injections", [])
 
 	# Track tool usage for LRU (blocked calls don't count)
 	tool_budget_manager.mark_used(tool_name)
@@ -293,6 +302,17 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# Tool search (always available, handled here to avoid module overhead)
 	if tool_name == "minerva_tool_search":
 		dispatch_result = _tool_search(arguments)
+		dispatched = true
+
+	# Tool memory search — retrieval from the calling chat's ToolMemoryManager recovery index
+	if not dispatched and tool_name == "minerva_tool_memory_search":
+		if not _tool_memory_optimization_enabled():
+			return {"error": "Tool memory optimization is disabled", "success": false}
+		var history = MCPToolUtils.find_chat_by_id(_current_caller_chat_id)
+		if history and history is ChatHistory and history.tool_memory_manager:
+			dispatch_result = history.tool_memory_manager.handle_recall(arguments)
+		else:
+			dispatch_result = {"error": "No active chat with tool memory manager"}
 		dispatched = true
 
 	# Route to domain modules
@@ -324,6 +344,12 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# POST-DISPATCH: drain observation telemetry (best-effort, non-blocking)
 	if not pending_observations.is_empty():
 		_write_observation_telemetry(pending_observations)
+
+	# POST-DISPATCH: resolve and append policy injections
+	if not pending_injections.is_empty():
+		var resolved := _resolve_policy_injections(pending_injections)
+		if not resolved.is_empty():
+			dispatch_result["_injected_knowledge"] = resolved
 
 	return dispatch_result
 
@@ -576,6 +602,14 @@ func _register_tool_search() -> void:
 			"limit": {"type": "integer", "description": "Max results (default 5)"},
 		}, "required": ["query"]}, "meta")
 
+	_register_tool("minerva_tool_memory_search",
+		"Search or retrieve archived tool results from earlier in this conversation. Two modes: (1) Search: pass 'query' to filter by tool name or description, returns compact index entries. (2) Retrieve: pass 'note_id' to get full archived result content. Use when the floating summary lacks detail you need.",
+		{"type": "object", "properties": {
+			"query": {"type": "string", "description": "Filter archived results by tool name or keyword"},
+			"note_id": {"type": "string", "description": "Retrieve full content of a specific archived result by its note ID"},
+			"limit": {"type": "integer", "description": "Max results to return in search mode (default: 10)"},
+		}, "required": []}, "meta")
+
 
 func _tool_search(arguments: Dictionary) -> Dictionary:
 	var query: String = arguments.get("query", "")
@@ -589,6 +623,8 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	var filtered: Array[Dictionary] = []
 	for result in raw_results:
 		var name: String = result.get("name", "")
+		if not _tool_memory_optimization_enabled() and TOOL_MEMORY_HYDRATION_TOOLS.has(name):
+			continue
 		if not mcp_manager or not mcp_manager.tool_registry.has(name):
 			continue
 		var tool = mcp_manager.tool_registry[name]
@@ -638,6 +674,12 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	elif not also_available.is_empty():
 		result_dict["remaining_count"] = also_available.size()
 	return result_dict
+
+
+func _tool_memory_optimization_enabled() -> bool:
+	if SingletonObject == null or SingletonObject.config_file == null:
+		return false
+	return bool(SingletonObject.config_file.get_value("ToolMemoryManager", "enabled", false))
 
 #endregion
 
@@ -763,5 +805,51 @@ func _activate_policy_tools(policy_result: Dictionary) -> void:
 				var tool_def = mcp_manager.tool_registry[tool_name]
 				var schema := {"name": tool_name, "description": tool_def.description, "input_schema": tool_def.input_schema}
 				tool_budget_manager.activate_tool(tool_name, schema)
+
+
+## Resolve policy injections into concrete knowledge content.
+## Takes the injections array from PolicyEngine.evaluate() and fetches each
+## knowledge_ref from the docket.  Returns an array of compact content dicts.
+func _resolve_policy_injections(injections: Array) -> Array:
+	if injections.is_empty():
+		return []
+	var dm = SingletonObject.docket_manager if SingletonObject else null
+	if dm == null:
+		return []
+
+	var resolved: Array = []
+	for injection in injections:
+		var refs: String = str(injection.get("knowledge_ref", ""))
+		if refs.is_empty():
+			continue
+		# knowledge_ref can be comma-separated list of docket item IDs
+		for ref_id in refs.split(",", false):
+			ref_id = ref_id.strip_edges()
+			if ref_id.is_empty():
+				continue
+			var item_result: Dictionary = dm.call_tool("docket_get", {"id": ref_id})
+			if item_result.has("error"):
+				continue
+			var item_type: String = str(item_result.get("type", ""))
+			var entry := {
+				"id": ref_id,
+				"type": item_type,
+				"title": str(item_result.get("title", "")),
+				"from_rule": str(injection.get("rule_id", "")),
+			}
+			match item_type:
+				"hint":
+					entry["value"] = str(item_result.get("value", ""))
+				"insight":
+					entry["assumed"] = str(item_result.get("assumed", ""))
+					entry["corrected"] = str(item_result.get("corrected", ""))
+				"kb":
+					entry["summary"] = str(item_result.get("summary", ""))
+					if entry["summary"].is_empty():
+						entry["article"] = str(item_result.get("article", "")).left(500)
+				_:
+					entry["description"] = str(item_result.get("description", "")).left(500)
+			resolved.append(entry)
+	return resolved
 
 #endregion

@@ -353,6 +353,15 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 						result["skipped_tools"] = skipped
 					if not activated.is_empty():
 						result["message"] = "%d tools activated and ready to use. Do NOT call minerva_tool_search for these — they are already available." % activated.size()
+
+				# Surface model-targeted insights/hints for this skill's domain
+				var targeted := _query_targeted_knowledge(dm, proj_name, docket_result, server._current_caller_chat_id)
+				if not targeted.is_empty():
+					result["insights"] = targeted
+					var msg: String = result.get("message", "")
+					var sep := " " if not msg.is_empty() else ""
+					result["message"] = msg + sep + "%d targeted insights — review before starting." % targeted.size()
+
 				return result
 
 	# Fall back to SkillManager (note-based skills)
@@ -521,5 +530,62 @@ func _list_voices(arguments: Dictionary) -> Dictionary:
 		return {"voices": [], "count": 0, "message": "No voices available (voice-service may not be running)", "success": true}
 
 	return {"voices": voices, "count": voices.size(), "success": true}
+
+
+## Query docket for hints/insights relevant to a skill, filtered by model targeting.
+## Derives search components from the skill's tags and tool_deps prefixes.
+func _query_targeted_knowledge(dm: DocketManager, proj_name: String, skill_data: Dictionary, caller_chat_id: String) -> Array:
+	var identity := ModelTargeting.identify_from_chat(caller_chat_id)
+	if identity.is_empty():
+		return []
+
+	# Derive hint components from skill tags and tool_deps prefixes
+	var components: Array[String] = []
+	var skill_tags = skill_data.get("tags", [])
+	if skill_tags is String:
+		skill_tags = skill_tags.split(",")
+	for tag in skill_tags:
+		var t := str(tag).strip_edges().to_lower()
+		if not t.is_empty() and t not in components:
+			components.append(t)
+	for dep in skill_data.get("tool_deps", []):
+		var prefix: String = str(dep).split("_")[0]
+		if not prefix.is_empty() and prefix not in components:
+			components.append(prefix)
+
+	if components.is_empty():
+		return []
+
+	# Query hints and insights for each component
+	var raw_items: Array[Dictionary] = []
+	for component in components:
+		for item_type in ["hint", "insight"]:
+			var query_result: Dictionary = dm.call_tool("docket_query", {
+				"project": proj_name,
+				"filter": {"type": item_type, "component": component},
+				"limit": 10,
+			})
+			for item in query_result.get("items", []):
+				if item is Dictionary and not item.get("target", "").is_empty():
+					raw_items.append(item)
+
+	# Filter by model target
+	var targeted := ModelTargeting.filter_items(raw_items, identity)
+
+	# Build compact output for the LLM
+	var result: Array = []
+	for item in targeted:
+		var entry := {
+			"type": str(item.get("type", "")),
+			"component": str(item.get("component", "")),
+			"title": str(item.get("title", "")),
+		}
+		if item.get("type") == "hint":
+			entry["value"] = str(item.get("value", ""))
+		elif item.get("type") == "insight":
+			entry["assumed"] = str(item.get("assumed", ""))
+			entry["corrected"] = str(item.get("corrected", ""))
+		result.append(entry)
+	return result
 
 #endregion

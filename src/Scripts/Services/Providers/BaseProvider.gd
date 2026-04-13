@@ -45,6 +45,10 @@ var supports_frequency_penalty: bool = false
 var supports_presence_penalty: bool = false
 var is_reasoning_model: bool = false
 
+## Cache hint style for this model. Providers/models override as needed.
+## Values: "anthropic_ephemeral", "auto", "none"
+var cache_hint_style: String = "none"
+
 ## If true, inject a default system prompt when none is provided.
 ## This is needed for models like Mistral/Devstral that have a built-in
 ## "Le Chat" system prompt with date injection that we want to override.
@@ -161,6 +165,11 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 	push_error("continue_partial_response method of %s not implemented" % get_script().resource_path.get_file())
 	return null
 
+## Apply provider/model-specific cache annotations to formatted messages.
+## Called by ToolMemoryManager after project() orders history cache-friendly.
+## Default: no-op. Override in providers/models with cache support.
+func apply_cache_hints(_system_prompt: Variant, _messages: Array) -> void:
+	pass
 
 #endregion
 

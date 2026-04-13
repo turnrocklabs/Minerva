@@ -420,6 +420,7 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 	# Handle skill executable tools
 	if tool_name.begins_with("skill_"):
 		# Policy check for skill tools (same enforcement as all other tools)
+		var skill_injections: Array = []
 		if minerva_server and minerva_server.policy_engine:
 			var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments, caller_chat_id)
 			if not policy_result["allowed"]:
@@ -429,6 +430,7 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 			var pending_observations: Array = policy_result.get("observations", [])
 			if not pending_observations.is_empty():
 				minerva_server._write_observation_telemetry(pending_observations)
+			skill_injections = policy_result.get("injections", [])
 
 		var skill_id := tool_name.substr(6)  # Strip "skill_" prefix
 		var skill_manager = SingletonObject.get_skill_manager()
@@ -437,6 +439,10 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 			var skill_result = skill_manager.execute_skill_tool(skill_id, args_str)
 			if not skill_result.has("success"):
 				skill_result["success"] = not skill_result.has("error")
+			if not skill_injections.is_empty() and minerva_server:
+				var resolved := minerva_server._resolve_policy_injections(skill_injections)
+				if not resolved.is_empty():
+					skill_result["_injected_knowledge"] = resolved
 			tool_executed.emit(server_name, tool_name, skill_result)
 			return skill_result
 		return {"error": "Skill manager not available", "success": false}
@@ -470,11 +476,18 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 					if not arguments.has("tab_id") or arguments.get("tab_id") == null:
 						arguments["tab_id"] = worker.cobrowser_tab_id
 
+	# Normalize explicit cobrowser tab IDs before crossing the MCP boundary.
+	# LLMs often echo tab IDs as strings ("69") or JSON floats (69.0), while
+	# the browser bridge expects an integer tab identifier.
+	if tool_name.begins_with("cobrowser_") and arguments.has("tab_id") and arguments.get("tab_id") != null:
+		arguments["tab_id"] = MCPToolUtils.coerce_int(arguments.get("tab_id"), -1)
+
 	# Handle external server tools
 	if not servers.has(server_name):
 		return {"error": "Server not connected: %s" % server_name, "success": false}
 
 	# Policy evaluation for external tools — same enforcement as minerva tools
+	var ext_injections: Array = []
 	if minerva_server and minerva_server.policy_engine:
 		var policy_result: Dictionary = minerva_server.policy_engine.evaluate(tool_name, arguments, caller_chat_id)
 		if not policy_result["allowed"]:
@@ -486,8 +499,15 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 		var pending_observations: Array = policy_result.get("observations", [])
 		if not pending_observations.is_empty():
 			minerva_server._write_observation_telemetry(pending_observations)
+		ext_injections = policy_result.get("injections", [])
 
 	var connection = servers[server_name]
+
+	# Coerce argument types to match the tool's declared schema.
+	# LLMs often send objects as JSON strings, integers as strings, etc.
+	if tool_registry.has(tool_name):
+		arguments = MCPToolUtils.coerce_args_to_schema(arguments, tool_registry[tool_name].input_schema)
+
 	var result = await connection.call_tool(tool_name, arguments)
 
 	# Normalize result
@@ -500,6 +520,12 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 		_unregister_server_tools(server_name)
 		servers.erase(server_name)
 		server_disconnected.emit(server_name)
+
+	# Resolve and append policy injections to external tool results
+	if not ext_injections.is_empty() and minerva_server:
+		var resolved := minerva_server._resolve_policy_injections(ext_injections)
+		if not resolved.is_empty():
+			result["_injected_knowledge"] = resolved
 
 	tool_executed.emit(server_name, tool_name, result)
 	return result

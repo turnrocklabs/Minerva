@@ -1609,12 +1609,7 @@ func get_content() -> String:
 
 
 func set_content(csv_text: String) -> void:
-	# Parse CSV and populate data
-	var lines := csv_text.split("\n")
-	for row in range(lines.size()):
-		var values := lines[row].split(",")
-		for col in range(values.size()):
-			spreadsheet_data.set_cell_value(row, col, values[col])
+	spreadsheet_data.from_csv(csv_text)
 
 
 ## Undo/Redo Public API
