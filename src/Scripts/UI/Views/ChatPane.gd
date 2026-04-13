@@ -26,6 +26,8 @@ var _token_estimation_timer: Timer
 var _compact_button: Button
 ## Whether archived chats are visible
 var _showing_archived: bool = false
+## Focused chat popup (lazy-instantiated)
+var _focused_chat_popup: FocusedChatPopup = null
 
 ## TTS playback for voice conversation mode (controlled by Voice Preferences)
 var _tts_player: AudioStreamPlayer
@@ -909,8 +911,16 @@ func update_ui_after_response_no_signal(user_history_item: ChatHistoryItem, user
 	# Don't disable notes during tool chain - they stay disabled until chain completes
 
 
-## add new chat 
+## add new chat
 func _on_new_chat():
+	# Check if the selected model defaults to static tool mode → redirect to focused chat
+	var selected_id := _provider_option_button.get_selected_id()
+	if selected_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		var manager = SingletonObject.get_model_manager_for_id(selected_id)
+		if manager and manager.get_tool_mode(selected_id) == "static":
+			_on_focused_chat_pressed()
+			return
+
 	var last_chat_number: int = -1
 
 	# reverse loop and find last largest number after the Chat string literal
@@ -950,6 +960,103 @@ func _on_new_chat():
 
 	if get_tab_count() > 0:
 		buffer_control_chats.hide()
+
+
+## Open the Focused Chat popup to create a static-tool-mode chat.
+func _on_focused_chat_pressed() -> void:
+	if not _focused_chat_popup:
+		_focused_chat_popup = FocusedChatPopup.new()
+		add_child(_focused_chat_popup)
+		_focused_chat_popup.focused_chat_requested.connect(_on_focused_chat_create)
+	_focused_chat_popup.refresh()
+	_focused_chat_popup.popup_centered()
+
+
+## Create a focused chat from the popup's resolved config.
+func _on_focused_chat_create(config: Dictionary) -> void:
+	# Generate tab name with "Focused" prefix
+	# Use same "Chat N" naming as normal chats
+	var last_chat_number: int = -1
+	for i in range(get_tab_count() - 1, -1, -1):
+		var tab_title := get_tab_title(i)
+		if tab_title == "Chat":
+			last_chat_number = max(last_chat_number, 0)
+		elif tab_title.begins_with("Chat"):
+			var suffix = tab_title.right(-"Chat".length()).strip_edges()
+			if suffix.is_valid_int():
+				last_chat_number = max(last_chat_number, int(suffix))
+	var tab_name := "Chat" if last_chat_number == -1 else "Chat %s" % (last_chat_number + 1)
+
+	var provider_obj := _provider_option_button.get_selected_provider()
+	if not provider_obj:
+		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[0].new()
+
+	var history: ChatHistory = ChatHistory.new(provider_obj)
+	history.HistoryName = tab_name
+	history.HistoryItemList = []
+	history.SystemPromptEnabled = provider_obj.requires_default_system_prompt
+	history.AgentModeEnabled = true
+
+	# Static tool mode
+	history.StaticToolMode = true
+	var resolved_tools: Array[String] = []
+	resolved_tools.assign(config.get("resolved_tools", []))
+	history.ConfiguredTools = resolved_tools
+	var skill_names: Array[String] = []
+	skill_names.assign(config.get("skills", []))
+	history.ConfiguredSkills = skill_names
+
+	# Compute DisabledTools: everything NOT in ConfiguredTools + discovery tools
+	var mcp = SingletonObject.get_mcp_manager()
+	if mcp:
+		var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
+		var disabled: Array[String] = []
+		for tool_def in mcp.get_available_tools():
+			var tool_name: String = str(tool_def.name)
+			if tool_name not in resolved_tools or tool_name in discovery_tools:
+				disabled.append(tool_name)
+		history.DisabledTools = disabled
+
+	# Inject skill instructions into agentic system prompt
+	var instructions: String = config.get("instructions", "")
+	if not instructions.is_empty():
+		history.AgenticSystemPrompt = instructions
+
+	SingletonObject.ChatList.append(history)
+	render_history(history)
+	current_tab = get_tab_count() - 1
+
+	if provider_obj.requires_default_system_prompt:
+		add_new_system_prompt_item(provider_obj.default_system_prompt)
+
+	if get_tab_count() > 0:
+		buffer_control_chats.hide()
+
+
+func _connect_mcp_signals() -> void:
+	var mcp = SingletonObject.get_mcp_manager()
+	if mcp and not mcp.server_connected.is_connected(_on_mcp_server_connected):
+		mcp.server_connected.connect(_on_mcp_server_connected)
+
+
+## Recompute DisabledTools for focused chats after MCP (re)connects.
+## Tool registry may have changed between sessions or after reconnection.
+func _on_mcp_server_connected(server_name: String) -> void:
+	if server_name != "minerva":
+		return
+	var mcp = SingletonObject.get_mcp_manager()
+	if not mcp:
+		return
+	var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
+	for history in SingletonObject.ChatList:
+		if not history.StaticToolMode or history.ConfiguredTools.is_empty():
+			continue
+		var disabled: Array[String] = []
+		for tool_def in mcp.get_available_tools():
+			var tool_name: String = str(tool_def.name)
+			if tool_name not in history.ConfiguredTools or tool_name in discovery_tools:
+				disabled.append(tool_name)
+		history.DisabledTools = disabled
 
 
 ## Opens a chat tab if one isn't open yet
@@ -2388,6 +2495,11 @@ func _ready():
 	# Hide old AgentModeToggle in chat controls - agent mode is now per-chat via ChatHeader
 	%AgentModeToggle.hide()
 
+	# Recompute DisabledTools for focused chats when MCP connects (tool registry may differ).
+	# IMPORTANT: Do NOT call get_mcp_manager() here — it would create the MCPManager before
+	# initialize_mcp() runs, causing it to skip connect_minerva_server(). Defer the connection.
+	call_deferred("_connect_mcp_signals")
+
 	# Add Compact button to chat controls (before the stop button)
 	_compact_button = Button.new()
 	_compact_button.text = "C"
@@ -2445,6 +2557,19 @@ func _ready():
 			var parent_hbox: Node = clone_btn.get_parent()
 			parent_hbox.add_child(listen_hbox)
 			parent_hbox.move_child(listen_hbox, clone_btn.get_index())
+
+			# "Focused Chat" button — creates a chat with a fixed tool set
+			var new_chat_btn: Node = vbox3.find_child("btnNewChat", true, false)
+			if new_chat_btn and new_chat_btn.get_parent():
+				var focused_btn := Button.new()
+				focused_btn.tooltip_text = "Create a focused chat with a fixed tool set (no dynamic tool discovery)"
+				focused_btn.focus_mode = Control.FOCUS_NONE
+				var bot_icon = load("res://assets/icons/robot_AI.png")
+				if bot_icon:
+					focused_btn.icon = bot_icon
+				focused_btn.pressed.connect(_on_focused_chat_pressed)
+				new_chat_btn.get_parent().add_child(focused_btn)
+				new_chat_btn.get_parent().move_child(focused_btn, new_chat_btn.get_index())
 
 	# Auto-start voice gateway if always_listening was previously enabled
 	var cfg := SingletonObject.get_voice_config()
@@ -3357,7 +3482,7 @@ func _on_audio_stop_1_pressed() -> void:
 
 func clone_chat(tab_idx: int) -> void:
 	var chat_to_clone: ChatHistory = SingletonObject.ChatList[tab_idx]
-	
+
 	# Clone using the live provider reference, not serialization
 	var new_provider = chat_to_clone.provider.get_script().new()
 	var new_chat_history: ChatHistory = ChatHistory.new(new_provider)
@@ -3368,13 +3493,19 @@ func clone_chat(tab_idx: int) -> void:
 	new_chat_history.FrequencyPenalty = chat_to_clone.FrequencyPenalty
 	new_chat_history.SystemPromptEnabled = chat_to_clone.SystemPromptEnabled
 	new_chat_history.AgenticSystemPromptEnabled = chat_to_clone.AgenticSystemPromptEnabled
+	new_chat_history.AgentModeEnabled = chat_to_clone.AgentModeEnabled
+	new_chat_history.AgenticSystemPrompt = chat_to_clone.AgenticSystemPrompt
+	new_chat_history.DisabledTools = chat_to_clone.DisabledTools.duplicate()
+	new_chat_history.StaticToolMode = chat_to_clone.StaticToolMode
+	new_chat_history.ConfiguredTools = chat_to_clone.ConfiguredTools.duplicate()
+	new_chat_history.ConfiguredSkills = chat_to_clone.ConfiguredSkills.duplicate()
 
 	# Deep clone history items
 	for item in chat_to_clone.HistoryItemList:
 		var serialized = item.Serialize()
 		var cloned_item = ChatHistoryItem.Deserialize(serialized)
 		new_chat_history.HistoryItemList.append(cloned_item)
-	
+
 	SingletonObject.ChatList.append(new_chat_history)
 	render_history(new_chat_history)
 

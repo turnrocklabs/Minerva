@@ -8,6 +8,7 @@ extends MCPToolModule
 func get_tool_names() -> Array[String]:
 	return [
 		"minerva_create_chat",
+		"minerva_create_focused_chat",
 		"minerva_set_system_prompt",
 		"minerva_set_agent_mode",
 		"minerva_send_message",
@@ -39,6 +40,42 @@ func register_tools() -> void:
 				"provider_enum_id": {
 					"type": "integer",
 					"description": "Alternative: provider enum ID (e.g. 11=CLAUDE_SONNET, 12=CLAUDE_OPUS, 20=CHATGPT). Use for OpenRouter dynamic models (>=1000). Takes precedence over provider name."
+				}
+			},
+			"required": ["name"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_create_focused_chat",
+		"Create a focused chat with a fixed tool set (static mode). Skills resolve to tools — no dynamic tool discovery. Ideal for models that struggle with 2-step tool calling. Returns chat_id for subsequent operations.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the chat tab"
+				},
+				"provider": {
+					"type": "string",
+					"description": "Model provider (e.g. claude_sonnet, gpt_standard, chatgpt). Default: current UI selection."
+				},
+				"provider_enum_id": {
+					"type": "integer",
+					"description": "Alternative: provider enum ID. Takes precedence over provider name."
+				},
+				"skills": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Skill names or IDs to resolve (docket skills). Their tool_deps become the tool set."
+				},
+				"extra_tools": {
+					"type": "array",
+					"items": {"type": "string"},
+					"description": "Additional tool names to include beyond what skills provide."
+				},
+				"system_prompt": {
+					"type": "string",
+					"description": "System prompt. Skill instructions are automatically prepended."
 				}
 			},
 			"required": ["name"]
@@ -233,6 +270,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		"minerva_create_chat":
 			return _create_chat(arguments)
+		"minerva_create_focused_chat":
+			return _create_focused_chat(arguments)
 		"minerva_set_system_prompt":
 			return _set_system_prompt(arguments)
 		"minerva_set_agent_mode":
@@ -361,6 +400,91 @@ func _create_chat(args: Dictionary) -> Dictionary:
 		"name": history.HistoryName,
 		"provider": provider_display,
 		"message": "Chat created. Use the chat_id value (not the name) for subsequent operations."
+	}
+
+
+func _create_focused_chat(args: Dictionary) -> Dictionary:
+	# 1. Create the chat via the normal path (handles provider resolution)
+	var create_result := _create_chat(args)
+	if create_result.has("error") or not create_result.get("success", false):
+		return create_result
+
+	var chat_id: String = create_result.get("chat_id", "")
+	var history = MCPToolUtils.find_chat_by_id(chat_id)
+	if not history:
+		return MCPToolUtils.error("Chat created but not found: %s" % chat_id)
+
+	# 2. Resolve skills
+	var skill_names_raw: Array = args.get("skills", [])
+	var extra_tools_raw: Array = args.get("extra_tools", [])
+	var system_prompt: String = args.get("system_prompt", "")
+
+	var resolved_tools: Array[String] = []
+	var instructions := ""
+	if not skill_names_raw.is_empty():
+		var skill_names: Array[String] = []
+		for sn in skill_names_raw:
+			skill_names.append(str(sn))
+		# Find MCPSkillTools module
+		for module in server._modules:
+			if module is MCPSkillTools:
+				var resolved: Dictionary = module.resolve_skills(skill_names)
+				instructions = resolved.get("instructions", "")
+				resolved_tools.assign(resolved.get("tools", []))
+				break
+
+	# 3. Union with extra_tools
+	for et in extra_tools_raw:
+		var tool_name: String = str(et)
+		if tool_name not in resolved_tools:
+			resolved_tools.append(tool_name)
+
+	if resolved_tools.is_empty():
+		return MCPToolUtils.error("No tools resolved — provide skills or extra_tools")
+
+	# 4. Compute disabled set
+	var mcp = SingletonObject.get_mcp_manager()
+	if not mcp:
+		return MCPToolUtils.error("MCP manager not available")
+
+	var discovery_tools := ["minerva_tool_search", "minerva_list_skills", "minerva_get_skill"]
+	var disabled: Array[String] = []
+	for tool_def in mcp.get_available_tools():
+		var tool_name: String = str(tool_def.name)
+		if tool_name not in resolved_tools or tool_name in discovery_tools:
+			disabled.append(tool_name)
+
+	# 5. Configure static mode on history
+	history.StaticToolMode = true
+	history.ConfiguredTools = resolved_tools
+	var configured_skills: Array[String] = []
+	for sn in skill_names_raw:
+		configured_skills.append(str(sn))
+	history.ConfiguredSkills = configured_skills
+	history.DisabledTools = disabled
+	history.AgentModeEnabled = true
+
+	# 6. Set system prompt with skill instructions prepended
+	if not instructions.is_empty() or not system_prompt.is_empty():
+		var full_prompt := ""
+		if not instructions.is_empty():
+			full_prompt = instructions
+		if not system_prompt.is_empty():
+			full_prompt = full_prompt + "\n\n---\n\n" + system_prompt if not full_prompt.is_empty() else system_prompt
+		history.AgenticSystemPrompt = full_prompt
+
+	var skill_count := skill_names_raw.size()
+	print("[MCPChatTools] Created focused chat '%s' (id: %s) — %d skills, %d tools, %d disabled" % [
+		history.HistoryName, chat_id, skill_count, resolved_tools.size(), disabled.size()])
+
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"name": history.HistoryName,
+		"tool_count": resolved_tools.size(),
+		"skills_resolved": skill_count,
+		"tools": resolved_tools,
+		"message": "Focused chat created with %d tools. Static tool mode — no dynamic discovery." % resolved_tools.size(),
 	}
 
 

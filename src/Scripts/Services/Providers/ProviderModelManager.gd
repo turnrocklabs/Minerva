@@ -117,6 +117,12 @@ func get_model(model_id: int) -> Dictionary:
 	return {}
 
 
+## Get the preferred tool mode for a model. Returns "dynamic" (default) or "static".
+func get_tool_mode(model_id: int) -> String:
+	var model := get_model(model_id)
+	return model.get("tool_mode", "dynamic")
+
+
 func get_model_by_name(name_key: String, name_value: String) -> Dictionary:
 	for m in models:
 		if m.get(name_key) == name_value:

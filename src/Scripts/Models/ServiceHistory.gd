@@ -119,9 +119,18 @@ var Archived: bool = false:
 ## Runtime-only: whether this chat has an active LLM request in flight. Not serialized.
 var is_request_active: bool = false
 
-## Static tool mode: when true, the worker has a pre-configured tool set and dynamic
-## tool discovery (tool_search, list_skills, get_skill) is suppressed. Not serialized.
-var StaticToolMode: bool = false
+## Static tool mode: when true, the chat has a pre-configured tool set and dynamic
+## tool discovery (tool_search, list_skills, get_skill) is suppressed.
+var StaticToolMode: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); StaticToolMode = value
+
+## Tool names configured for this focused chat (source of truth for the static set).
+var ConfiguredTools: Array[String] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); ConfiguredTools = value
+
+## Skill names/IDs selected when creating this focused chat (for display/restore).
+var ConfiguredSkills: Array[String] = []:
+	set(value): SingletonObject.call_deferred("save_state", false); ConfiguredSkills = value
 
 ## Why this chat's last agent turn ended. Empty string = not terminated or not an agent chat.
 var termination_reason: String = ""
@@ -165,6 +174,9 @@ static var SERIALIZER_FIELDS = [
 	"Archived",
 	"termination_reason",
 	"termination_message",
+	"StaticToolMode",
+	"ConfiguredTools",
+	"ConfiguredSkills",
 ]
 
 
@@ -294,6 +306,9 @@ func Serialize() -> Dictionary:
 		"Archived": Archived,
 		"termination_reason": termination_reason,
 		"termination_message": termination_message,
+		"StaticToolMode": StaticToolMode,
+		"ConfiguredTools": ConfiguredTools,
+		"ConfiguredSkills": ConfiguredSkills,
 	}
 	return save_dict
 
@@ -395,5 +410,11 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.termination_reason = data.get("termination_reason", "")
 	if data.has("termination_message"):
 		history.termination_message = data.get("termination_message", "")
+	if data.has("StaticToolMode"):
+		history.StaticToolMode = data.get("StaticToolMode", false)
+	if data.has("ConfiguredTools"):
+		history.ConfiguredTools.assign(data.get("ConfiguredTools", []))
+	if data.has("ConfiguredSkills"):
+		history.ConfiguredSkills.assign(data.get("ConfiguredSkills", []))
 
 	return history

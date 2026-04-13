@@ -26,7 +26,7 @@ func setup(history) -> void:
 		agent_label.tooltip_text = "Triggered agent chat"
 		add_child(agent_label)
 
-	# Agent mode toggle
+	# Agent mode toggle (always interactive — focused chats can turn off agent mode for plain chat)
 	agent_mode_toggle = CheckButton.new()
 	agent_mode_toggle.text = "Agent"
 	agent_mode_toggle.tooltip_text = "Enable Agent Mode for this chat"
@@ -36,6 +36,17 @@ func setup(history) -> void:
 		agent_mode_toggle.icon = gears_icon
 	agent_mode_toggle.toggled.connect(_on_agent_mode_toggled)
 	add_child(agent_mode_toggle)
+
+	# Focused chat indicator (after agent toggle — visually to its right)
+	if history.StaticToolMode:
+		var focused_label = Label.new()
+		focused_label.text = "[Focused: %d tools]" % history.ConfiguredTools.size()
+		focused_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		if not history.ConfiguredSkills.is_empty():
+			focused_label.tooltip_text = "Skills: %s" % ", ".join(history.ConfiguredSkills)
+		else:
+			focused_label.tooltip_text = "Fixed tool set (no dynamic discovery)"
+		add_child(focused_label)
 
 	# Spacer
 	var spacer = Control.new()
