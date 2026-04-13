@@ -78,7 +78,6 @@ func evaluate(tool_name: String, arguments: Dictionary, caller_id: String = "") 
 	_scope_state.tick()
 
 	var matched_rule_ids: Array[String] = []
-	var observations: Array[Dictionary] = []
 	var injections: Array[Dictionary] = []
 
 	for rule in _rules:

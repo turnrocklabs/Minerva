@@ -357,7 +357,7 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 				# Apply skill optimization profile if present
 				var optimization: Dictionary = docket_result.get("optimization", {})
 				if not optimization.is_empty():
-					_apply_skill_optimization(server, optimization)
+					_apply_skill_optimization(optimization)
 					result["optimization_applied"] = optimization
 
 				# Surface model-targeted insights/hints for this skill's domain
@@ -597,7 +597,7 @@ func _query_targeted_knowledge(dm: DocketManager, proj_name: String, skill_data:
 
 ## Apply optimization knobs from a skill's "optimization" dict.
 ## Adjusts ToolBudgetManager and ToolMemoryManager settings for the calling chat.
-func _apply_skill_optimization(server, optimization: Dictionary) -> void:
+func _apply_skill_optimization(optimization: Dictionary) -> void:
 	# Tool budget knobs
 	if optimization.has("tool_budget"):
 		server.tool_budget_manager.set_budget(int(optimization["tool_budget"]))

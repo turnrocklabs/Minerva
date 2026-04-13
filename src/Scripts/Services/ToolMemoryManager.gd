@@ -153,7 +153,9 @@ func compact(items: Array, keep_recent: int) -> Array:
 	if not enabled:
 		return items
 	# TODO: Phase 2 — migrate from ChatPane compact logic
-	return items
+	if keep_recent >= items.size():
+		return items
+	return items.slice(-keep_recent)
 
 
 ## Get stats for telemetry/debugging.
@@ -507,7 +509,6 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 	var projection_state := _build_tool_memory_projection_state(history, floating_summary_text)
 	var latest_tool_chain := _get_latest_tool_chain_state(history.HistoryItemList)
 	var latest_tool_idx := int(latest_tool_chain.get("latest_tool_idx", -1))
-	var latest_tool_call_message_idx := int(latest_tool_chain.get("latest_tool_call_message_idx", -1))
 	var retained_tool_result_indices: Dictionary = latest_tool_chain.get("retained_tool_result_indices", {})
 	var retained_tool_call_message_indices: Dictionary = latest_tool_chain.get("retained_tool_call_message_indices", {})
 	var tool_memory_text := _build_tool_memory_header_text(projection_state.get("state", {}))

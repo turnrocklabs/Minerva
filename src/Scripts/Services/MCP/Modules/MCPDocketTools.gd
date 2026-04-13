@@ -64,7 +64,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var docket_name: String = tool_name.trim_prefix(DOCKET_PREFIX)
 
 	# Policy protection: operations that decrease enforcement require human approval
-	if await _requires_policy_approval(docket_name, arguments, dm):
+	if _requires_policy_approval(docket_name, arguments, dm):
 		var approved := await _request_human_approval(docket_name, arguments, dm)
 		if not approved:
 			return MCPToolUtils.error("Policy modification denied — human approval required")

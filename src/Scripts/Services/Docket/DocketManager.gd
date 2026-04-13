@@ -110,7 +110,6 @@ func _merge_shipped_master() -> void:
 	## Compare shipped res://master.dct against a stored hash. If changed,
 	## upsert shipped items into the user:// DB (preserving user-created items).
 	var res_path := ProjectSettings.globalize_path(MASTER_DCT_RES)
-	var hash_path := ProjectSettings.globalize_path(MASTER_SHIPPED_HASH)
 
 	# Compute hash of shipped file + schema columns so that adding a column
 	# forces a re-merge even when the JSONL content hasn't changed.
@@ -125,10 +124,10 @@ func _merge_shipped_master() -> void:
 	# Compare with stored hash
 	var stored_hash := ""
 	if FileAccess.file_exists(MASTER_SHIPPED_HASH):
-		var hf := FileAccess.open(MASTER_SHIPPED_HASH, FileAccess.READ)
-		if hf:
-			stored_hash = hf.get_as_text().strip_edges()
-			hf.close()
+		var hf_read := FileAccess.open(MASTER_SHIPPED_HASH, FileAccess.READ)
+		if hf_read:
+			stored_hash = hf_read.get_as_text().strip_edges()
+			hf_read.close()
 
 	if current_hash == stored_hash:
 		return  # No changes since last sync
@@ -156,7 +155,7 @@ func _merge_shipped_master() -> void:
 			# Tags are comma-separated strings in JSONL but update_item_fields expects Array
 			if changes.has("tags") and changes["tags"] is String:
 				var tag_str: String = changes["tags"]
-				changes["tags"] = tag_str.split(",") if not tag_str.is_empty() else []
+				changes["tags"] = Array(tag_str.split(",")) if not tag_str.is_empty() else []
 			_master_db.update_item_fields(id, changes)
 			updated += 1
 		else:
