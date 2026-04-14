@@ -160,18 +160,18 @@ func test_protected_tool_never_pruned():
 	print("test_protected_tool_never_pruned:")
 	# Very tight budget: only fits 1 small tool
 	var mgr := ToolBudgetManager.new(60)
-	var search_schema := _make_schema(ToolBudgetManager.PROTECTED_TOOL, 5)
-	mgr.activate_tool(ToolBudgetManager.PROTECTED_TOOL, search_schema)
+	var search_schema := _make_schema(ToolBudgetManager.PROTECTED_TOOLS[0], 5)
+	mgr.activate_tool(ToolBudgetManager.PROTECTED_TOOLS[0], search_schema)
 	# Activate another tool that would require pruning tool_search to fit — it cannot
 	mgr.activate_tool("tool_a", _make_schema("tool_a", 5))
-	check("protected tool is never pruned", mgr.is_active(ToolBudgetManager.PROTECTED_TOOL))
+	check("protected tool is never pruned", mgr.is_active(ToolBudgetManager.PROTECTED_TOOLS[0]))
 
 
 func test_reset():
 	print("test_reset:")
 	var mgr := ToolBudgetManager.new()
 	# Activate tool_search and several others
-	mgr.activate_tool(ToolBudgetManager.PROTECTED_TOOL, _make_schema(ToolBudgetManager.PROTECTED_TOOL))
+	mgr.activate_tool(ToolBudgetManager.PROTECTED_TOOLS[0], _make_schema(ToolBudgetManager.PROTECTED_TOOLS[0]))
 	for i in range(4):
 		mgr.activate_tool("tool_%d" % i, _make_schema("tool_%d" % i))
 	mgr.advance_turn()
@@ -179,7 +179,7 @@ func test_reset():
 	check("5 tools active before reset", mgr.get_active_count() == 5)
 	mgr.reset()
 	check("only 1 tool remains after reset (tool_search)", mgr.get_active_count() == 1)
-	check("tool_search survives reset", mgr.is_active(ToolBudgetManager.PROTECTED_TOOL))
+	check("tool_search survives reset", mgr.is_active(ToolBudgetManager.PROTECTED_TOOLS[0]))
 	check("turn resets to 0", mgr.get_current_turn() == 0)
 
 	# Test reset without tool_search active

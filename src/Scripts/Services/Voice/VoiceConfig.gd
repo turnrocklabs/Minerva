@@ -30,6 +30,13 @@ var speak_mode: SpeakMode = SpeakMode.OFF
 ## Model name for summarization (action name from model-chat service, e.g. "gemma3:12b")
 var summary_model: String = ""
 
+## System prompt for summarization
+static var DEFAULT_SUMMARY_PROMPT := "Summarize this conversation exchange into a single conversational sentence suitable for speaking aloud. Be concise and natural."
+var summary_prompt: String = DEFAULT_SUMMARY_PROMPT
+
+## Max tokens for summarization response
+var summary_max_tokens: int = 300
+
 ## Timeout for summarization requests (seconds)
 var summary_timeout: float = 30.0
 
@@ -61,6 +68,8 @@ func save() -> void:
 	SingletonObject.save_to_config_file("Voice", "tts_backend", tts_backend)
 	SingletonObject.save_to_config_file("Voice", "speak_mode", speak_mode)
 	SingletonObject.save_to_config_file("Voice", "summary_model", summary_model)
+	SingletonObject.save_to_config_file("Voice", "summary_prompt", summary_prompt)
+	SingletonObject.save_to_config_file("Voice", "summary_max_tokens", summary_max_tokens)
 	SingletonObject.save_to_config_file("Voice", "summary_timeout", summary_timeout)
 	SingletonObject.save_to_config_file("Voice", "tts_volume", tts_volume)
 	SingletonObject.save_to_config_file("Voice", "auto_send_transcription", auto_send_transcription)
@@ -87,6 +96,8 @@ func load_from_config() -> void:
 	vad_silence_duration = SingletonObject.config_file.get_value("Voice", "vad_silence_duration", 1.0)
 	stt_model = SingletonObject.config_file.get_value("Voice", "stt_model", "small.en")
 	summary_model = SingletonObject.config_file.get_value("Voice", "summary_model", "")
+	summary_prompt = SingletonObject.config_file.get_value("Voice", "summary_prompt", DEFAULT_SUMMARY_PROMPT)
+	summary_max_tokens = SingletonObject.config_file.get_value("Voice", "summary_max_tokens", 300)
 	summary_timeout = SingletonObject.config_file.get_value("Voice", "summary_timeout", 30.0)
 
 	# Migrate from old auto_play_tts boolean to speak_mode enum

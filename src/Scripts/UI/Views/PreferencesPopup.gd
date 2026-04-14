@@ -2549,6 +2549,10 @@ var _tts_backend_option: OptionButton
 var _speak_mode_option: OptionButton
 var _summary_model_option: OptionButton
 var _summary_model_row: HBoxContainer
+var _summary_prompt_edit: TextEdit
+var _summary_prompt_container: VBoxContainer
+var _summary_max_tokens_spin: SpinBox
+var _summary_max_tokens_row: HBoxContainer
 var _summary_timeout_spin: SpinBox
 var _summary_timeout_row: HBoxContainer
 var _auto_send_check: CheckButton
@@ -2726,6 +2730,37 @@ func _create_voice_tab() -> void:
 	_summary_model_option.item_selected.connect(_on_summary_model_changed)
 	_summary_model_row.add_child(_summary_model_option)
 
+	# Summary prompt (visible only in SUMMARIZE mode)
+	_summary_prompt_container = VBoxContainer.new()
+	_summary_prompt_container.visible = false
+	vbox.add_child(_summary_prompt_container)
+	var summary_prompt_lbl := Label.new()
+	summary_prompt_lbl.text = "Summary Prompt:"
+	_summary_prompt_container.add_child(summary_prompt_lbl)
+	_summary_prompt_edit = TextEdit.new()
+	_summary_prompt_edit.custom_minimum_size.y = 60
+	_summary_prompt_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_summary_prompt_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	_summary_prompt_edit.placeholder_text = VoiceConfig.DEFAULT_SUMMARY_PROMPT
+	_summary_prompt_edit.text_changed.connect(_on_summary_prompt_changed)
+	_summary_prompt_container.add_child(_summary_prompt_edit)
+
+	# Summary max tokens (visible only in SUMMARIZE mode)
+	_summary_max_tokens_row = HBoxContainer.new()
+	_summary_max_tokens_row.add_theme_constant_override("separation", 8)
+	_summary_max_tokens_row.visible = false
+	vbox.add_child(_summary_max_tokens_row)
+	var summary_max_tokens_lbl := Label.new()
+	summary_max_tokens_lbl.text = "Max Tokens:"
+	_summary_max_tokens_row.add_child(summary_max_tokens_lbl)
+	_summary_max_tokens_spin = SpinBox.new()
+	_summary_max_tokens_spin.min_value = 50
+	_summary_max_tokens_spin.max_value = 2000
+	_summary_max_tokens_spin.step = 50
+	_summary_max_tokens_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_summary_max_tokens_spin.value_changed.connect(_on_summary_max_tokens_changed)
+	_summary_max_tokens_row.add_child(_summary_max_tokens_spin)
+
 	# Summary timeout (visible only in SUMMARIZE mode)
 	_summary_timeout_row = HBoxContainer.new()
 	_summary_timeout_row.add_theme_constant_override("separation", 8)
@@ -2897,6 +2932,8 @@ func _voice_load_ui_from_config() -> void:
 			_speak_mode_option.select(i)
 			break
 	_summary_timeout_spin.value = cfg.summary_timeout
+	_summary_max_tokens_spin.value = cfg.summary_max_tokens
+	_summary_prompt_edit.text = cfg.summary_prompt
 	_update_summary_controls_visible()
 	_populate_summary_models()
 
@@ -3036,6 +3073,18 @@ func _on_summary_model_changed(idx: int) -> void:
 	cfg.save()
 
 
+func _on_summary_prompt_changed() -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.summary_prompt = _summary_prompt_edit.text
+	cfg.save()
+
+
+func _on_summary_max_tokens_changed(value: float) -> void:
+	var cfg := SingletonObject.get_voice_config()
+	cfg.summary_max_tokens = int(value)
+	cfg.save()
+
+
 func _on_summary_timeout_changed(value: float) -> void:
 	var cfg := SingletonObject.get_voice_config()
 	cfg.summary_timeout = value
@@ -3046,6 +3095,8 @@ func _update_summary_controls_visible() -> void:
 	var cfg := SingletonObject.get_voice_config()
 	var show_summary_controls: bool = cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE
 	_summary_model_row.visible = show_summary_controls
+	_summary_prompt_container.visible = show_summary_controls
+	_summary_max_tokens_row.visible = show_summary_controls
 	_summary_timeout_row.visible = show_summary_controls
 
 

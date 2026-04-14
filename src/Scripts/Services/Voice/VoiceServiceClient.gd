@@ -258,15 +258,17 @@ func summarize_for_speech(user_text: String, response_text: String, model_name: 
 		push_warning("[VoiceServiceClient] model-chat model '%s' not found for summarization" % model_name)
 		return response_text.substr(0, 200)
 
+	var cfg := SingletonObject.get_voice_config()
+	var system_prompt: String = cfg.summary_prompt if not cfg.summary_prompt.is_empty() else VoiceConfig.DEFAULT_SUMMARY_PROMPT
 	var messages: Array = [
-		{"role": "system", "content": "Summarize this conversation exchange into a single conversational sentence suitable for speaking aloud. Be concise and natural."},
+		{"role": "system", "content": system_prompt},
 		{"role": "user", "content": "User said: %s\n\nAssistant replied: %s" % [user_text, response_text]},
 	]
 
 	var msg_data: Dictionary = {
 		"messages": messages,
 		"temperature": 0.7,
-		"max_tokens": 150,
+		"max_tokens": cfg.summary_max_tokens,
 		"options": {"num_ctx": 4000},
 	}
 
