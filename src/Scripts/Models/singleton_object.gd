@@ -2093,6 +2093,7 @@ func get_output_device() -> String:
 func set_output_device(device: String) -> void:
 	if device in AudioServer.get_output_device_list():
 		AudioServer.output_device = device
+		output_device_changed.emit(device)
 		if get_output_device() != device:
 			save_to_config_file("AudioSettings", "OutputDevice",  device)
 
