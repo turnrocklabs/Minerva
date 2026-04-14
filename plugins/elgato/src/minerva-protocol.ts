@@ -18,7 +18,14 @@ export type MinervaCommand =
   | { action: "ptt_up" }
   | { action: "list_input_devices" }
   | { action: "set_input_device"; device: string }
-  | { action: "get_state" };
+  | { action: "get_state" }
+  | { action: "clear_input" }
+  | { action: "submit_chat" }
+  | { action: "set_output_device"; device: string };
+
+export type ClearInputCommand = { action: "clear_input" };
+export type SubmitChatCommand = { action: "submit_chat" };
+export type SetOutputDeviceCommand = { action: "set_output_device"; device: string };
 
 export type MinervaCommandAction = MinervaCommand["action"];
 
@@ -27,6 +34,7 @@ export type MinervaCommandAction = MinervaCommand["action"];
 export type MinervaEvent =
   | MinervaStateEvent
   | MinervaInputDeviceChangedEvent
+  | MinervaOutputDeviceChangedEvent
   | MinervaPttActiveEvent
   | MinervaMicStateEvent
   | MinervaEngagementChangedEvent
@@ -37,12 +45,20 @@ export type MinervaStateEvent = {
   protocol_version: number;
   input_device: string;
   input_devices: string[];
+  output_device: string;
+  output_devices: string[];
   ptt_active: boolean;
   engagement: string; // "STANDBY" | "ENGAGED"
 };
 
 export type MinervaInputDeviceChangedEvent = {
   event: "input_device_changed";
+  device: string;
+  devices: string[];
+};
+
+export type MinervaOutputDeviceChangedEvent = {
+  event: "output_device_changed";
   device: string;
   devices: string[];
 };
@@ -82,8 +98,11 @@ export function isValidCommand(data: unknown): data is MinervaCommand {
     case "ptt_up":
     case "list_input_devices":
     case "get_state":
+    case "clear_input":
+    case "submit_chat":
       return true;
     case "set_input_device":
+    case "set_output_device":
       return typeof obj.device === "string" && obj.device.length > 0;
     default:
       return false;
@@ -105,6 +124,7 @@ export function isValidEvent(data: unknown): data is MinervaEvent {
         typeof obj.engagement === "string"
       );
     case "input_device_changed":
+    case "output_device_changed":
       return typeof obj.device === "string" && Array.isArray(obj.devices);
     case "ptt_active":
       return typeof obj.active === "boolean";

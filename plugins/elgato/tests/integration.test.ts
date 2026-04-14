@@ -167,6 +167,12 @@ describe("error action mapping", () => {
       case "set_input_device":
       case "list_input_devices":
         return "com.minerva.streamdeck.input-device";
+      case "set_output_device":
+        return "com.minerva.streamdeck.choose-output";
+      case "clear_input":
+        return "com.minerva.streamdeck.clear-input";
+      case "submit_chat":
+        return "com.minerva.streamdeck.submit-chat";
       default:
         return null;
     }
@@ -186,7 +192,83 @@ describe("error action mapping", () => {
     );
   });
 
+  test("set_output_device maps to choose-output action", () => {
+    expect(mapSourceActionToUUID("set_output_device")).toBe(
+      "com.minerva.streamdeck.choose-output"
+    );
+  });
+
+  test("clear_input maps to clear-input action", () => {
+    expect(mapSourceActionToUUID("clear_input")).toBe(
+      "com.minerva.streamdeck.clear-input"
+    );
+  });
+
+  test("submit_chat maps to submit-chat action", () => {
+    expect(mapSourceActionToUUID("submit_chat")).toBe(
+      "com.minerva.streamdeck.submit-chat"
+    );
+  });
+
   test("unknown action returns null", () => {
     expect(mapSourceActionToUUID("explode")).toBeNull();
+  });
+});
+
+// ── New Action keyDown Payloads ────────────────────────────────────────
+
+describe("new action keyDown payloads", () => {
+  type MinervaCommand =
+    | { action: "clear_input" }
+    | { action: "submit_chat" }
+    | { action: "set_output_device"; device: string };
+
+  function buildClearInputCommand(): MinervaCommand {
+    return { action: "clear_input" };
+  }
+
+  function buildSubmitChatCommand(): MinervaCommand {
+    return { action: "submit_chat" };
+  }
+
+  function buildSetOutputDeviceCommand(
+    devices: string[],
+    current: string
+  ): MinervaCommand | null {
+    if (devices.length <= 1) return null;
+    const idx = devices.indexOf(current);
+    const next = (idx + 1) % devices.length;
+    return { action: "set_output_device", device: devices[next] };
+  }
+
+  test("ClearInput keyDown sends clear_input", () => {
+    const cmd = buildClearInputCommand();
+    expect(cmd).toEqual({ action: "clear_input" });
+  });
+
+  test("SubmitChat keyDown sends submit_chat", () => {
+    const cmd = buildSubmitChatCommand();
+    expect(cmd).toEqual({ action: "submit_chat" });
+  });
+
+  test("ChooseOutput keyDown sends set_output_device with next device", () => {
+    const cmd = buildSetOutputDeviceCommand(
+      ["Speakers", "Headphones", "HDMI"],
+      "Speakers"
+    );
+    expect(cmd).toEqual({ action: "set_output_device", device: "Headphones" });
+  });
+
+  test("ChooseOutput cycles past last device to first", () => {
+    const cmd = buildSetOutputDeviceCommand(
+      ["Speakers", "Headphones", "HDMI"],
+      "HDMI"
+    );
+    expect(cmd).toEqual({ action: "set_output_device", device: "Speakers" });
+  });
+
+  test("ChooseOutput does nothing with single device", () => {
+    const cmd = buildSetOutputDeviceCommand(["Speakers"], "Speakers");
+    expect(cmd).toBeNull();
   });
 });

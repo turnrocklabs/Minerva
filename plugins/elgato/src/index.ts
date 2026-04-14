@@ -17,6 +17,9 @@ import { isValidEvent, DEFAULT_PORT } from "./minerva-protocol";
 
 const ACTION_PTT = "com.minerva.streamdeck.ptt";
 const ACTION_INPUT_DEVICE = "com.minerva.streamdeck.input-device";
+const ACTION_OUTPUT_DEVICE = "com.minerva.streamdeck.choose-output";
+const ACTION_CLEAR_INPUT = "com.minerva.streamdeck.clear-input";
+const ACTION_SUBMIT_CHAT = "com.minerva.streamdeck.submit-chat";
 
 // ── State ─────────────────────────────────────────────────────────────
 
@@ -35,6 +38,8 @@ let minervaConnected = false;
 // Minerva state cache
 let currentInputDevice = "Default";
 let inputDevices: string[] = ["Default"];
+let currentOutputDevice = "Default";
+let outputDevices: string[] = ["Default"];
 let pttActive = false;
 let micState: "idle" | "recording" | "transcribing" = "idle";
 let hasError: Map<string, boolean> = new Map(); // context → error state
@@ -129,6 +134,15 @@ function handleKeyDown(action: string, context: string): void {
     case ACTION_INPUT_DEVICE:
       cycleInputDevice();
       break;
+    case ACTION_OUTPUT_DEVICE:
+      cycleOutputDevice();
+      break;
+    case ACTION_CLEAR_INPUT:
+      sendToMinerva({ action: "clear_input" });
+      break;
+    case ACTION_SUBMIT_CHAT:
+      sendToMinerva({ action: "submit_chat" });
+      break;
   }
 }
 
@@ -144,6 +158,17 @@ function cycleInputDevice(): void {
   sendToMinerva({
     action: "set_input_device",
     device: inputDevices[nextIndex],
+  });
+}
+
+function cycleOutputDevice(): void {
+  if (outputDevices.length <= 1) return;
+
+  const currentIndex = outputDevices.indexOf(currentOutputDevice);
+  const nextIndex = (currentIndex + 1) % outputDevices.length;
+  sendToMinerva({
+    action: "set_output_device",
+    device: outputDevices[nextIndex],
   });
 }
 
@@ -213,6 +238,8 @@ function handleMinervaEvent(event: MinervaEvent): void {
     case "state":
       currentInputDevice = event.input_device;
       inputDevices = event.input_devices;
+      if (event.output_device) currentOutputDevice = event.output_device;
+      if (event.output_devices) outputDevices = event.output_devices;
       pttActive = event.ptt_active;
       micState = pttActive ? "recording" : "idle";
       updateAllButtons();
@@ -222,6 +249,12 @@ function handleMinervaEvent(event: MinervaEvent): void {
       currentInputDevice = event.device;
       inputDevices = event.devices;
       updateButtonsByAction(ACTION_INPUT_DEVICE);
+      break;
+
+    case "output_device_changed":
+      currentOutputDevice = event.device;
+      outputDevices = event.devices;
+      updateButtonsByAction(ACTION_OUTPUT_DEVICE);
       break;
 
     case "ptt_active":
@@ -273,6 +306,12 @@ function mapSourceActionToUUID(sourceAction: string): string | null {
     case "set_input_device":
     case "list_input_devices":
       return ACTION_INPUT_DEVICE;
+    case "set_output_device":
+      return ACTION_OUTPUT_DEVICE;
+    case "clear_input":
+      return ACTION_CLEAR_INPUT;
+    case "submit_chat":
+      return ACTION_SUBMIT_CHAT;
     default:
       return null;
   }
@@ -313,7 +352,7 @@ function updateButtonImage(context: string, action: string): void {
       let title: string;
       switch (micState) {
         case "recording":
-          icon = Icons.pttActive;
+          icon = Icons.pttRecording;
           title = "REC";
           break;
         case "transcribing":
@@ -330,8 +369,26 @@ function updateButtonImage(context: string, action: string): void {
     }
 
     case ACTION_INPUT_DEVICE: {
-      sendSetImage(context, Icons.inputDevice);
+      sendSetImage(context, Icons.micIcon);
       sendSetTitle(context, friendlyDeviceName(currentInputDevice));
+      break;
+    }
+
+    case ACTION_OUTPUT_DEVICE: {
+      sendSetImage(context, Icons.speakerIcon);
+      sendSetTitle(context, friendlyDeviceName(currentOutputDevice));
+      break;
+    }
+
+    case ACTION_CLEAR_INPUT: {
+      sendSetImage(context, Icons.clearIcon);
+      sendSetTitle(context, "Clear");
+      break;
+    }
+
+    case ACTION_SUBMIT_CHAT: {
+      sendSetImage(context, Icons.submitIcon);
+      sendSetTitle(context, "Send");
       break;
     }
   }

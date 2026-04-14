@@ -18,6 +18,12 @@ const VALID_COMMANDS: { name: string; msg: MinervaCommand }[] = [
     name: "set_input_device",
     msg: { action: "set_input_device", device: "Blue Yeti" },
   },
+  { name: "clear_input", msg: { action: "clear_input" } },
+  { name: "submit_chat", msg: { action: "submit_chat" } },
+  {
+    name: "set_output_device",
+    msg: { action: "set_output_device", device: "Headphones" },
+  },
 ];
 
 const VALID_EVENTS: { name: string; msg: MinervaEvent }[] = [
@@ -28,6 +34,8 @@ const VALID_EVENTS: { name: string; msg: MinervaEvent }[] = [
       protocol_version: PROTOCOL_VERSION,
       input_device: "Default",
       input_devices: ["Default", "Blue Yeti", "Webcam Mic"],
+      output_device: "Speakers",
+      output_devices: ["Speakers", "Headphones"],
       ptt_active: false,
       engagement: "STANDBY",
     },
@@ -38,6 +46,14 @@ const VALID_EVENTS: { name: string; msg: MinervaEvent }[] = [
       event: "input_device_changed",
       device: "Blue Yeti",
       devices: ["Default", "Blue Yeti", "Webcam Mic"],
+    },
+  },
+  {
+    name: "output_device_changed",
+    msg: {
+      event: "output_device_changed",
+      device: "Headphones",
+      devices: ["Speakers", "Headphones"],
     },
   },
   {
@@ -100,6 +116,16 @@ describe("isValidCommand", () => {
   test("rejects set_input_device with non-string device", () => {
     expect(
       isValidCommand({ action: "set_input_device", device: 42 })
+    ).toBe(false);
+  });
+
+  test("rejects set_output_device without device", () => {
+    expect(isValidCommand({ action: "set_output_device" })).toBe(false);
+  });
+
+  test("rejects set_output_device with empty device", () => {
+    expect(
+      isValidCommand({ action: "set_output_device", device: "" })
     ).toBe(false);
   });
 });

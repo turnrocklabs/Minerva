@@ -27,7 +27,12 @@ function loadPng(filename: string): string {
 
 export const Icons = {
   get pttIdle() { return loadPng("ptt-idle.png"); },
-  get pttActive() { return loadPng("ptt-active.png"); },
+  get pttRecording() { return loadPng("ptt-recording.png"); },
+  get pttActive() { return loadPng("ptt-recording.png"); }, // alias kept for legacy callers
   get pttTranscribing() { return loadPng("ptt-transcribing.png"); },
   get inputDevice() { return loadPng("input-device-default.png"); },
+  get micIcon() { return loadPng("mic.png"); },
+  get speakerIcon() { return loadPng("speaker.png"); },
+  get clearIcon() { return loadPng("clear.png"); },
+  get submitIcon() { return loadPng("submit.png"); },
 } as const;

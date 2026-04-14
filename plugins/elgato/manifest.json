@@ -28,30 +28,74 @@
     {
       "UUID": "com.minerva.streamdeck.ptt",
       "Name": "Push to Talk",
-      "Icon": "assets/ptt-icon",
+      "Icon": "assets/ptt-idle",
       "Tooltip": "Hold to record voice, release to transcribe",
       "DisableAutomaticStates": true,
       "States": [
         {
           "Image": "assets/ptt-idle",
-          "Name": "Idle"
+          "Name": "Idle",
+          "TitleAlignment": "top"
         },
         {
-          "Image": "assets/ptt-active",
-          "Name": "Recording"
+          "Image": "assets/ptt-recording",
+          "Name": "Recording",
+          "TitleAlignment": "top"
+        },
+        {
+          "Image": "assets/ptt-transcribing",
+          "Name": "Transcribing",
+          "TitleAlignment": "top"
         }
       ]
     },
     {
       "UUID": "com.minerva.streamdeck.input-device",
-      "Name": "Input Device",
-      "Icon": "assets/input-device-icon",
-      "Tooltip": "Press to cycle input audio device",
+      "Name": "Choose Mic",
+      "Icon": "assets/mic",
+      "Tooltip": "Press to cycle through favorite input audio devices",
       "States": [
         {
-          "Image": "assets/input-device-default",
-          "TitleAlignment": "bottom",
+          "Image": "assets/mic",
+          "TitleAlignment": "top",
           "FontSize": "13"
+        }
+      ]
+    },
+    {
+      "UUID": "com.minerva.streamdeck.choose-output",
+      "Name": "Choose Output",
+      "Icon": "assets/speaker",
+      "Tooltip": "Cycle through favorite output devices",
+      "States": [
+        {
+          "Image": "assets/speaker",
+          "TitleAlignment": "top",
+          "FontSize": "13"
+        }
+      ]
+    },
+    {
+      "UUID": "com.minerva.streamdeck.clear-input",
+      "Name": "Clear Input",
+      "Icon": "assets/clear",
+      "Tooltip": "Clear the chat input box",
+      "States": [
+        {
+          "Image": "assets/clear",
+          "TitleAlignment": "top"
+        }
+      ]
+    },
+    {
+      "UUID": "com.minerva.streamdeck.submit-chat",
+      "Name": "Submit Chat",
+      "Icon": "assets/submit",
+      "Tooltip": "Send the chat message",
+      "States": [
+        {
+          "Image": "assets/submit",
+          "TitleAlignment": "top"
         }
       ]
     }
