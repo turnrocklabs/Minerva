@@ -21,6 +21,7 @@ var _port: int = DEFAULT_PORT
 var _enabled: bool = false
 var _shutdown_timer: Timer
 var _favorite_inputs: Array = []  # empty = all devices
+var _favorite_outputs: Array = []  # empty = all devices
 var _virtual_mic_button: StreamDeckVirtualMicButton = null
 
 
@@ -77,6 +78,7 @@ func start(port: int = DEFAULT_PORT) -> Error:
 
 	_port = port
 	_favorite_inputs = SingletonObject.config_file.get_value("StreamDeck", "favorite_inputs", [])
+	_favorite_outputs = SingletonObject.config_file.get_value("StreamDeck", "favorite_outputs", [])
 	_tcp_server = TCPServer.new()
 	var err := _tcp_server.listen(_port, "127.0.0.1")
 	if err != OK:
@@ -136,6 +138,12 @@ func update_favorite_inputs(favorites: Array) -> void:
 	_on_mic_changed(AudioServer.input_device)
 
 
+func update_favorite_outputs(favorites: Array) -> void:
+	_favorite_outputs = favorites
+	# Broadcast updated device list to all clients
+	_on_output_device_changed(AudioServer.output_device)
+
+
 ## Called by StreamDeckVirtualMicButton to push mic state transitions to peers.
 func broadcast_mic_state(state: String) -> void:
 	_broadcast({"event": "mic_state", "state": state})
@@ -148,6 +156,20 @@ func _get_filtered_input_devices() -> Array:
 	var filtered: Array = []
 	for device in all_devices:
 		if device in _favorite_inputs:
+			filtered.append(device)
+	# If none of the favorites exist anymore, fall back to all
+	if filtered.is_empty():
+		return all_devices
+	return filtered
+
+
+func _get_filtered_output_devices() -> Array:
+	var all_devices := AudioServer.get_output_device_list()
+	if _favorite_outputs.is_empty():
+		return all_devices
+	var filtered: Array = []
+	for device in all_devices:
+		if device in _favorite_outputs:
 			filtered.append(device)
 	# If none of the favorites exist anymore, fall back to all
 	if filtered.is_empty():
@@ -183,6 +205,9 @@ func _handle_message(peer_id: int, raw: String) -> void:
 		"set_input_device":
 			var device: String = data.get("device", "")
 			_handle_set_input_device(peer_id, device)
+		"set_output_device":
+			var device: String = data.get("device", "")
+			_handle_set_output_device(peer_id, device)
 		"submit_chat":
 			_handle_submit_chat(peer_id)
 		_:
@@ -249,6 +274,19 @@ func _handle_set_input_device(peer_id: int, device: String) -> void:
 	SingletonObject.set_microphone(device)
 
 
+func _handle_set_output_device(peer_id: int, device: String) -> void:
+	if device.is_empty():
+		_send_error(peer_id, "set_output_device", "Device name is empty")
+		return
+
+	var devices := AudioServer.get_output_device_list()
+	if device not in devices:
+		_send_error(peer_id, "set_output_device", "Device not found: %s" % device)
+		return
+
+	SingletonObject.set_output_device(device)
+
+
 func _handle_clear_input(peer_id: int) -> void:
 	var chat_pane = SingletonObject.Chats
 	if chat_pane == null:
@@ -308,6 +346,8 @@ func _get_state_snapshot() -> Dictionary:
 		"protocol_version": PROTOCOL_VERSION,
 		"input_device": AudioServer.input_device,
 		"input_devices": _get_filtered_input_devices(),
+		"output_device": AudioServer.output_device,
+		"output_devices": _get_filtered_output_devices(),
 		"ptt_active": ptt_active,
 		"engagement": engagement,
 	}
@@ -341,9 +381,12 @@ func _on_mic_changed(mic: String) -> void:
 	})
 
 
-func _on_output_device_changed(_device: String) -> void:
-	# Not in v1 scope, but signal is connected for future use
-	pass
+func _on_output_device_changed(device: String) -> void:
+	_broadcast({
+		"event": "output_device_changed",
+		"device": device,
+		"devices": _get_filtered_output_devices(),
+	})
 
 
 # ── Transport ──────────────────────────────────────────────────────────
