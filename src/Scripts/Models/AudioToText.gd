@@ -23,6 +23,28 @@ var mic_player: AudioStreamPlayer
 signal transcription_completed(text: String)
 
 
+## How transcript text should be inserted into the target control.
+enum InsertMode { APPEND, REPLACE, AT_CARET }
+
+
+## Bundle of PTT parameters. Callers set fields directly then pass to start_ptt().
+class PTTRequest:
+	var target: Control                # required — TextEdit/LineEdit/CodeEdit where transcript lands
+	var mic_button: BaseButton = null  # optional — drives LIME_GREEN → loading → mic icon cycle
+	var stop_button: BaseButton = null # optional — for UIs with a separate stop control
+	var voice_gateway = null           # optional — object with ptt_down()/ptt_up() methods
+	var clear_before: bool = false     # pre-clear target before recording (AISettings pattern)
+	var insert_mode: int = InsertMode.APPEND
+
+
+## The currently active PTT request, if start_ptt initiated the recording. Consulted by
+## _finish_transcription to choose insertion behaviour. Null for legacy call sites.
+var _active_ptt_req: PTTRequest = null
+## True if the most recent start_ptt called voice_gateway.ptt_down(). Gates stop_ptt's
+## ptt_up() call so stop_ptt is idempotent.
+var _ptt_gateway_down: bool = false
+
+
 func _ready():
 	var idx = AudioServer.get_bus_index("Rec")
 	effect = AudioServer.get_bus_effect(idx, 0)
@@ -47,6 +69,54 @@ func _stop_mic():
 
 func _exit_tree():
 	_stop_mic()
+
+
+## Unified PTT entry point. Owns legacy-field assignment, gateway sequencing, button
+## state, and recording start. Returns OK on success, or an error code on failure.
+func start_ptt(req: PTTRequest) -> int:
+	if req == null or req.target == null:
+		push_warning("AudioToText.start_ptt: req.target is required")
+		return ERR_INVALID_PARAMETER
+
+	# Populate legacy fields so existing _finish_transcription / _StartConverting paths work.
+	FieldForFilling = req.target
+	btn = req.mic_button
+	btnStop = req.stop_button
+	_active_ptt_req = req
+	_ptt_gateway_down = false
+
+	if req.clear_before:
+		req.target.text = ""
+
+	if req.voice_gateway != null and req.voice_gateway.has_method("ptt_down"):
+		req.voice_gateway.ptt_down()
+		_ptt_gateway_down = true
+
+	var err: int = _StartConverting()
+	if err != OK:
+		# Roll back gateway state if we engaged it, so the gateway doesn't stay suppressed.
+		if _ptt_gateway_down and req.voice_gateway != null and req.voice_gateway.has_method("ptt_up"):
+			req.voice_gateway.ptt_up()
+		_ptt_gateway_down = false
+		_active_ptt_req = null
+		return err
+
+	if req.mic_button:
+		req.mic_button.modulate = Color.LIME_GREEN
+
+	return OK
+
+
+## Tear down the gateway side of PTT. Idempotent — safe to call when no PTT is active.
+## Does NOT stop recording (that's owned by _StartConverting toggle / btnStop press).
+func stop_ptt() -> void:
+	# ptt_up gated on ptt_down having fired, to keep stop_ptt idempotent.
+	if not _ptt_gateway_down:
+		return
+	var req := _active_ptt_req
+	if req != null and req.voice_gateway != null and req.voice_gateway.has_method("ptt_up"):
+		req.voice_gateway.ptt_up()
+	_ptt_gateway_down = false
 
 
 ## Start/stop recording toggle. Routes STT based on VoiceConfig provider selection.
@@ -180,6 +250,22 @@ func _StopConverting():
 		btnStop.disabled = true
 
 
+## Move caret to the end of the control's text, handling TextEdit/CodeEdit vs LineEdit.
+func _move_caret_to_end(ctrl: Control) -> void:
+	if ctrl == null:
+		return
+	if ctrl is TextEdit:
+		var te: TextEdit = ctrl
+		var last_line: int = te.get_line_count() - 1
+		if last_line < 0:
+			last_line = 0
+		te.set_caret_line(last_line)
+		te.set_caret_column(te.get_line(last_line).length())
+	elif ctrl is LineEdit:
+		var le: LineEdit = ctrl
+		le.caret_column = le.text.length()
+
+
 ## Shared completion handler — fills text field and emits signal.
 func _finish_transcription(text: String) -> void:
 	if btn:
@@ -187,15 +273,36 @@ func _finish_transcription(text: String) -> void:
 		btn.modulate = Color.WHITE
 		btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
 
+	var active_req := _active_ptt_req
+
 	if text.is_empty():
 		SingletonObject.ErrorDisplay("Transcription Failed", "No text returned from STT provider")
 	else:
 		print("Transcription:", text)
-		if FieldForFilling:
-			FieldForFilling.text += " " + text
+		var target: Control = null
+		if active_req != null:
+			target = active_req.target
+		else:
+			target = FieldForFilling
+
+		if target != null:
+			var mode: int = active_req.insert_mode if active_req != null else InsertMode.APPEND
+			if active_req != null and mode == InsertMode.REPLACE:
+				target.text = text
+			elif active_req != null and mode == InsertMode.AT_CARET and target.has_method("insert_text_at_caret"):
+				target.insert_text_at_caret(text)
+			else:
+				# APPEND (or legacy). Drop the leading space when target is empty.
+				var prefix := "" if target.text.is_empty() else " "
+				target.text += prefix + text
+
+			_move_caret_to_end(target)
+			if target.has_method("grab_focus"):
+				target.grab_focus()
 
 	SingletonObject.transcription_notification_player.play()
 	transcription_completed.emit(text)
+	_active_ptt_req = null
 
 
 func _on_request_completed(_result, response_code, _headers, body):
