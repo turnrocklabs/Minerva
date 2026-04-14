@@ -82,7 +82,7 @@ func test_start_ptt_null_target_returns_invalid():
 	# req.target left null
 	var err := att.start_ptt(req)
 	check("returns ERR_INVALID_PARAMETER when target is null", err == ERR_INVALID_PARAMETER)
-	check("FieldForFilling not set on invalid input", att.FieldForFilling == null)
+	check("_field_for_filling not set on invalid input", att._field_for_filling == null)
 	att.free()
 
 
@@ -100,9 +100,9 @@ func test_start_ptt_populates_legacy_fields():
 	req.stop_button = stop_btn
 	var err := att.start_ptt(req)
 	check("start_ptt returns OK with stub", err == OK)
-	check("FieldForFilling == target", att.FieldForFilling == te)
-	check("btn == mic_button", att.btn == btn)
-	check("btnStop == stop_button", att.btnStop == stop_btn)
+	check("_field_for_filling == target", att._field_for_filling == te)
+	check("_btn == mic_button", att._btn == btn)
+	check("_btn_stop == stop_button", att._btn_stop == stop_btn)
 	check("mic button modulate is LIME_GREEN", btn.modulate == Color.LIME_GREEN)
 	btn.free()
 	stop_btn.free()
@@ -177,7 +177,7 @@ func test_finish_transcription_append_empty():
 	req.target = te
 	req.insert_mode = AudioToTexts.InsertMode.APPEND
 	att._active_ptt_req = req
-	att.FieldForFilling = te
+	att._field_for_filling = te
 	att._finish_transcription_no_notify("hello")
 	check("empty target appends without leading space", te.text == "hello")
 	check("caret at end line", te.get_caret_line() == te.get_line_count() - 1)
@@ -195,7 +195,7 @@ func test_finish_transcription_append_nonempty():
 	req.target = te
 	req.insert_mode = AudioToTexts.InsertMode.APPEND
 	att._active_ptt_req = req
-	att.FieldForFilling = te
+	att._field_for_filling = te
 	att._finish_transcription_no_notify("there")
 	check("non-empty target gets single leading space", te.text == "hi there")
 	te.free()
@@ -210,7 +210,7 @@ func test_finish_transcription_replace():
 	req.target = te
 	req.insert_mode = AudioToTexts.InsertMode.REPLACE
 	att._active_ptt_req = req
-	att.FieldForFilling = te
+	att._field_for_filling = te
 	att._finish_transcription_no_notify("fresh")
 	check("REPLACE overwrites target text", te.text == "fresh")
 	te.free()
@@ -222,7 +222,7 @@ func test_finish_transcription_legacy_path():
 	# No PTTRequest — simulates current 13 call sites.
 	var att := _StubbedATT.new()
 	var te := _make_text_edit("old")
-	att.FieldForFilling = te
+	att._field_for_filling = te
 	att._active_ptt_req = null
 	att._finish_transcription_no_notify("new")
 	# Legacy behaviour: APPEND with space separator. Our new rule only drops the
@@ -257,7 +257,7 @@ class _StubbedATT extends AudioToTexts:
 		if active_req != null:
 			target = active_req.target
 		else:
-			target = FieldForFilling
+			target = _field_for_filling
 		if target == null:
 			return
 		var mode: int = active_req.insert_mode if active_req != null else AudioToTexts.InsertMode.APPEND

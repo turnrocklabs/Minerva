@@ -5,14 +5,14 @@ var effect
 var recording
 var file_path = "res://VoiceAudio.wav"
 
-var btn: Button
-var btnStop: Button
+var _btn: Button
+var _btn_stop: Button
 var is_converting: bool = false
 var http_request
 
 const WHISPER_API_URL = "https://api.openai.com/v1/audio/transcriptions"
 
-var FieldForFilling  # TextEdit or LineEdit — untyped for flexibility
+var _field_for_filling  # TextEdit or LineEdit — untyped for flexibility
 
 var stop_signal: bool = false
 
@@ -78,10 +78,10 @@ func start_ptt(req: PTTRequest) -> int:
 		push_warning("AudioToText.start_ptt: req.target is required")
 		return ERR_INVALID_PARAMETER
 
-	# Populate legacy fields so existing _finish_transcription / _StartConverting paths work.
-	FieldForFilling = req.target
-	btn = req.mic_button
-	btnStop = req.stop_button
+	# Populate internal fields so existing _finish_transcription / _StartConverting paths work.
+	_field_for_filling = req.target
+	_btn = req.mic_button
+	_btn_stop = req.stop_button
 	_active_ptt_req = req
 	_ptt_gateway_down = false
 
@@ -124,8 +124,8 @@ func _StartConverting():
 	stop_signal = false
 	if effect.is_recording_active():
 		# Stop recording and get WAV data
-		if btn:
-			btn.modulate = Color.WHITE
+		if _btn:
+			_btn.modulate = Color.WHITE
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		_stop_mic()
@@ -179,11 +179,11 @@ func _read_wav_file() -> PackedByteArray:
 
 ## STT via voice-service (Core WebSocket).
 func _start_voice_service_stt(wav_bytes: PackedByteArray, voice_config: VoiceConfig) -> void:
-	if btn:
-		btn.disabled = true
-		btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
-	if btnStop != null:
-		btnStop.disabled = false
+	if _btn:
+		_btn.disabled = true
+		_btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
+	if _btn_stop != null:
+		_btn_stop.disabled = false
 
 	var client := SingletonObject.get_voice_client()
 	var text := await client.transcribe_auto(wav_bytes, voice_config)
@@ -221,11 +221,11 @@ func _start_whisper_stt(wav_bytes: PackedByteArray) -> void:
 	]
 
 	http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
-	if btn:
-		btn.disabled = true
-		btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
-	if btnStop != null:
-		btnStop.disabled = false
+	if _btn:
+		_btn.disabled = true
+		_btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
+	if _btn_stop != null:
+		_btn_stop.disabled = false
 
 
 func _StopConverting():
@@ -242,12 +242,12 @@ func _StopConverting():
 		http_request = null
 		print("HTTP request stopped")
 
-	if btn:
-		btn.disabled = false
-		btn.modulate = Color.WHITE
-		btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
-	if btnStop != null:
-		btnStop.disabled = true
+	if _btn:
+		_btn.disabled = false
+		_btn.modulate = Color.WHITE
+		_btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+	if _btn_stop != null:
+		_btn_stop.disabled = true
 
 
 ## Move caret to the end of the control's text, handling TextEdit/CodeEdit vs LineEdit.
@@ -268,10 +268,10 @@ func _move_caret_to_end(ctrl: Control) -> void:
 
 ## Shared completion handler — fills text field and emits signal.
 func _finish_transcription(text: String) -> void:
-	if btn:
-		btn.disabled = false
-		btn.modulate = Color.WHITE
-		btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+	if _btn:
+		_btn.disabled = false
+		_btn.modulate = Color.WHITE
+		_btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
 
 	var active_req := _active_ptt_req
 
@@ -283,7 +283,7 @@ func _finish_transcription(text: String) -> void:
 		if active_req != null:
 			target = active_req.target
 		else:
-			target = FieldForFilling
+			target = _field_for_filling
 
 		if target != null:
 			var mode: int = active_req.insert_mode if active_req != null else InsertMode.APPEND
