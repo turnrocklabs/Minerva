@@ -10,6 +10,8 @@ signal focused_chat_requested(config: Dictionary)
 var _skills: Dictionary = {}
 # All available tool names (excluding discovery tools)
 var _all_tool_names: Array[String] = []
+# tool_name → description (used for search)
+var _tool_descriptions: Dictionary = {}
 # Extra tools added manually (not from skills)
 var _extra_tools: Dictionary = {}  # tool_name → bool
 # Tools contributed by selected skills
@@ -178,14 +180,16 @@ func _build_ui() -> void:
 	_create_btn.pressed.connect(_on_create_pressed)
 	action_bar.add_child(_create_btn)
 
-	# Set initial split position (60% skills, 40% tools)
-	vsplit.split_offset = 280
+	# Initial split favors the tool chooser — skill transfer needs less room than
+	# the scrollable tool list + search box.
+	vsplit.split_offset = 200
 
 
 ## Reload skills and tools from docket/MCP. Call before showing.
 func refresh() -> void:
 	_skills.clear()
 	_all_tool_names.clear()
+	_tool_descriptions.clear()
 	_extra_tools.clear()
 	_skill_tools.clear()
 	_selected_skill_ids.clear()
@@ -267,6 +271,7 @@ func _load_tools() -> void:
 		if tool_name.is_empty() or tool_name in discovery_tools:
 			continue
 		_all_tool_names.append(tool_name)
+		_tool_descriptions[tool_name] = str(tool_def.description) if "description" in tool_def else ""
 		_extra_tools[tool_name] = false
 	_all_tool_names.sort()
 
@@ -317,10 +322,21 @@ func _render_tool_list(filter: String) -> void:
 		child.queue_free()
 
 	var filter_lower := filter.to_lower()
+	# Stem the filter for loose plural/singular matching (notes ↔ note).
+	var filter_stem := filter_lower
+	if filter_stem.length() > 3 and filter_stem.ends_with("s"):
+		filter_stem = filter_stem.substr(0, filter_stem.length() - 1)
 
 	for tool_name in _all_tool_names:
-		if not filter_lower.is_empty() and not tool_name.to_lower().contains(filter_lower):
-			continue
+		if not filter_lower.is_empty():
+			var name_lower := tool_name.to_lower()
+			var desc_lower := str(_tool_descriptions.get(tool_name, "")).to_lower()
+			var matches := name_lower.contains(filter_lower) \
+				or desc_lower.contains(filter_lower) \
+				or name_lower.contains(filter_stem) \
+				or desc_lower.contains(filter_stem)
+			if not matches:
+				continue
 
 		var from_skill := _skill_tools.has(tool_name)
 		var manually_added: bool = _extra_tools.get(tool_name, false)
