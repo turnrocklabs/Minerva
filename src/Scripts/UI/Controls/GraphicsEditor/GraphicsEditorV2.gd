@@ -2717,19 +2717,23 @@ func _on_delete_layer(layer: LayerV2) -> void:
 
 
 func _on_positive_prompt_mic_button_pressed() -> void:
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.FieldForFilling = prompt_text_edit
-	SingletonObject.AtT.btn = positive_prompt_mic_button
-	positive_prompt_mic_button.modulate = Color(Color.LIME_GREEN)
-	SingletonObject.AtT.btnStop = positive_prompt_mic_button
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = prompt_text_edit
+	req.mic_button = positive_prompt_mic_button
+	req.stop_button = positive_prompt_mic_button
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("GraphicsEditor positive PTT failed: %s" % error_string(err))
 
 
 func _on_negative_prompt_mic_button_pressed() -> void:
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.FieldForFilling = negative_text_edit
-	SingletonObject.AtT.btn = negative_prompt_mic_button
-	negative_prompt_mic_button.modulate = Color(Color.LIME_GREEN)
-	SingletonObject.AtT.btnStop = negative_prompt_mic_button
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = negative_text_edit
+	req.mic_button = negative_prompt_mic_button
+	req.stop_button = negative_prompt_mic_button
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("GraphicsEditor negative PTT failed: %s" % error_string(err))
 
 
 func _on_active_layer_mask_layer(is_mask: bool) -> void:
