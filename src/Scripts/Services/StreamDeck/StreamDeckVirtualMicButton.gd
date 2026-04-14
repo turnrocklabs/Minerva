@@ -29,6 +29,7 @@ var _shadow_icon_path: String = MIC_ICON_PATH
 
 func _init(server: Node) -> void:
 	_server = server
+	visible = false
 
 
 ## Intercept writes to inherited modulate / icon via the virtual _set hook.
