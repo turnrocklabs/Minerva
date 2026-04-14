@@ -2570,6 +2570,7 @@ var _streamdeck_enable_check: CheckButton
 var _streamdeck_port_spin: SpinBox
 var _streamdeck_status_label: Label
 var _streamdeck_devices_container: VBoxContainer
+var _streamdeck_output_devices_container: VBoxContainer
 
 
 func _create_voice_tab() -> void:
@@ -2854,6 +2855,22 @@ func _create_voice_tab() -> void:
 	vbox.add_child(sd_refresh_btn)
 
 	_refresh_streamdeck_device_list()
+
+	# Output devices checklist
+	var sd_output_devices_lbl := Label.new()
+	sd_output_devices_lbl.text = "Output devices for Stream Deck:"
+	sd_output_devices_lbl.add_theme_font_size_override("font_size", 12)
+	vbox.add_child(sd_output_devices_lbl)
+
+	_streamdeck_output_devices_container = VBoxContainer.new()
+	vbox.add_child(_streamdeck_output_devices_container)
+
+	var sd_output_refresh_btn := Button.new()
+	sd_output_refresh_btn.text = "Refresh Devices"
+	sd_output_refresh_btn.pressed.connect(_refresh_streamdeck_output_device_list)
+	vbox.add_child(sd_output_refresh_btn)
+
+	_refresh_streamdeck_output_device_list()
 
 	vbox.add_child(HSeparator.new())
 
@@ -3207,6 +3224,40 @@ func _on_streamdeck_device_toggled(_pressed: bool, _device: String) -> void:
 	var sd_server := _get_streamdeck_server()
 	if sd_server and sd_server.is_running():
 		sd_server.update_favorite_inputs(favorites)
+
+
+func _refresh_streamdeck_output_device_list() -> void:
+	if not _streamdeck_output_devices_container:
+		return
+
+	for child in _streamdeck_output_devices_container.get_children():
+		child.queue_free()
+
+	var favorites: Array = SingletonObject.config_file.get_value("StreamDeck", "favorite_outputs", [])
+
+	var devices := AudioServer.get_output_device_list()
+	for device in devices:
+		var cb := CheckButton.new()
+		cb.text = device
+		cb.clip_text = true
+		cb.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cb.tooltip_text = device
+		cb.button_pressed = device in favorites or favorites.is_empty()
+		cb.toggled.connect(_on_streamdeck_output_device_toggled.bind(device))
+		_streamdeck_output_devices_container.add_child(cb)
+
+
+func _on_streamdeck_output_device_toggled(_pressed: bool, _device: String) -> void:
+	var favorites: Array = []
+	for child in _streamdeck_output_devices_container.get_children():
+		if child is CheckButton and child.button_pressed:
+			favorites.append(child.text)
+	SingletonObject.save_to_config_file("StreamDeck", "favorite_outputs", favorites)
+
+	var sd_server := _get_streamdeck_server()
+	if sd_server and sd_server.is_running():
+		sd_server.update_favorite_outputs(favorites)
 
 
 func _get_streamdeck_server() -> StreamDeckServer:
