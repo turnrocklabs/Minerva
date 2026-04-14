@@ -404,7 +404,9 @@ func _add_condition_row(is_first: bool) -> void:
 
 	# Field dropdown
 	var field_option := OptionButton.new()
-	for f in _QUERY_FIELDS:
+	var sorted_fields: Array = _QUERY_FIELDS.duplicate()
+	sorted_fields.sort_custom(func(a, b): return a.to_lower() < b.to_lower())
+	for f in sorted_fields:
 		field_option.add_item(f)
 	field_option.custom_minimum_size.x = 120
 	hbox.add_child(field_option)
