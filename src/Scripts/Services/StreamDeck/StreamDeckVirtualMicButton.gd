@@ -18,38 +18,36 @@ extends Button
 const LOADING_ICON_PATH := "res://assets/icons/loading_white-16-16.png"
 const MIC_ICON_PATH := "res://assets/icons/mic_icons/microphone_24.png"
 
-var _server: StreamDeckServer
+# Untyped to break the class_name cycle between this class and StreamDeckServer —
+# circular class_name type references cause one side to fail class registration.
+var _server: Node
 
 ## Internal shadow values so we can detect the combined idle condition.
 var _shadow_modulate: Color = Color.WHITE
 var _shadow_icon_path: String = MIC_ICON_PATH
 
 
-func _init(server: StreamDeckServer) -> void:
+func _init(server: Node) -> void:
 	_server = server
 
 
-## Shadow the CanvasItem modulate property so we can intercept assignments.
-var modulate: Color:
-	set(v):
-		_shadow_modulate = v
-		super.modulate = v
+## Intercept writes to inherited modulate / icon via the virtual _set hook.
+## GDScript 4 does not permit re-declaring inherited properties with custom
+## setters at class scope — that silently breaks class_name registration.
+## Returning false here lets the default (inherited) setter also run.
+func _set(property: StringName, value) -> bool:
+	if property == &"modulate":
+		_shadow_modulate = value
 		_evaluate_state()
-	get:
-		return super.modulate
-
-
-## Shadow the Button icon property so we can intercept assignments.
-var icon: Texture2D:
-	set(v):
-		super.icon = v
-		if v == null:
+		return false
+	if property == &"icon":
+		if value == null:
 			_shadow_icon_path = ""
 		else:
-			_shadow_icon_path = v.resource_path
+			_shadow_icon_path = (value as Texture2D).resource_path
 		_evaluate_state()
-	get:
-		return super.icon
+		return false
+	return false
 
 
 ## Evaluate the combined (modulate, icon) pair and broadcast mic_state.
