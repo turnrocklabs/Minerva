@@ -451,6 +451,7 @@ func _build_ui() -> void:
 	_desc_edit.custom_minimum_size.y = 80
 	_desc_edit.placeholder_text = "Describe the item..."
 	_desc_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_desc_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_desc_edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
 	_body_vbox.add_child(_desc_edit)
 
