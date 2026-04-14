@@ -2950,24 +2950,19 @@ func _on_token_estimation_timer_timeout():
 	update_token_estimation()
 
 func _on_btn_microphone_pressed():
-	# PTT: save gateway state on press, restore on release
-	if _voice_gateway:
-		_voice_gateway.ptt_down()
-	if SingletonObject.AtT._StartConverting() != OK:
-		if _voice_gateway:
-			_voice_gateway.ptt_up()
-		return
-	SingletonObject.AtT.FieldForFilling = %txtMainUserInput
-	SingletonObject.AtT.btn = %btnMicrophone
-	%btnMicrophone.modulate = Color(Color.LIME_GREEN)
-	SingletonObject.AtT.btnStop = %AudioStop1
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = %txtMainUserInput
+	req.mic_button = %btnMicrophone
+	req.stop_button = %AudioStop1
+	req.voice_gateway = _voice_gateway
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("ChatPane PTT failed: %s" % error_string(err))
 
 
 ## After transcription completes, auto-send if configured in Voice Preferences.
 func _on_voice_transcription_completed(text: String) -> void:
-	# Restore gateway PTT state
-	if _voice_gateway:
-		_voice_gateway.ptt_up()
+	SingletonObject.AtT.stop_ptt()
 
 	if text.is_empty():
 		return
