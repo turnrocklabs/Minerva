@@ -21,6 +21,7 @@ var _port: int = DEFAULT_PORT
 var _enabled: bool = false
 var _shutdown_timer: Timer
 var _favorite_inputs: Array = []  # empty = all devices
+var _virtual_mic_button: StreamDeckVirtualMicButton = null
 
 
 func _ready() -> void:
@@ -28,6 +29,8 @@ func _ready() -> void:
 	_shutdown_timer.one_shot = true
 	_shutdown_timer.timeout.connect(_on_shutdown_timeout)
 	add_child(_shutdown_timer)
+	_virtual_mic_button = StreamDeckVirtualMicButton.new(self)
+	add_child(_virtual_mic_button)
 
 
 func _process(_delta: float) -> void:
@@ -114,6 +117,10 @@ func stop() -> void:
 	server_stopped.emit()
 	print("[StreamDeck] Server stopped")
 
+	if _virtual_mic_button != null:
+		_virtual_mic_button.queue_free()
+		_virtual_mic_button = null
+
 
 func is_running() -> bool:
 	return _tcp_server != null and _enabled
@@ -127,6 +134,11 @@ func update_favorite_inputs(favorites: Array) -> void:
 	_favorite_inputs = favorites
 	# Broadcast updated device list to all clients
 	_on_mic_changed(AudioServer.input_device)
+
+
+## Called by StreamDeckVirtualMicButton to push mic state transitions to peers.
+func broadcast_mic_state(state: String) -> void:
+	_broadcast({"event": "mic_state", "state": state})
 
 
 func _get_filtered_input_devices() -> Array:
@@ -174,33 +186,27 @@ func _handle_message(peer_id: int, raw: String) -> void:
 
 
 func _handle_ptt_down(peer_id: int) -> void:
-	# Check if there's an active ChatPane with voice gateway
 	var chat_pane = SingletonObject.Chats
 	if chat_pane == null:
 		_send_error(peer_id, "ptt_down", "No active chat")
 		return
 
-	# Set up field target and clear UI button refs before starting
 	var txt_input = chat_pane.find_child("txtMainUserInput", true, false)
-	if txt_input:
-		SingletonObject.AtT.FieldForFilling = txt_input
-	else:
-		print("[StreamDeck] WARNING: txtMainUserInput not found in ChatPane")
-	SingletonObject.AtT.btn = null
-	SingletonObject.AtT.btnStop = null
+	if txt_input == null:
+		_send_error(peer_id, "ptt_down", "txtMainUserInput not found in ChatPane")
+		return
 
-	# Start PTT via the same flow as the mic button
-	var voice_gateway = chat_pane.get("_voice_gateway")
-	if voice_gateway:
-		voice_gateway.ptt_down()
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = txt_input
+	req.mic_button = _virtual_mic_button
+	req.voice_gateway = chat_pane.get("_voice_gateway")
+	req.insert_mode = AudioToTexts.InsertMode.APPEND
 
-	print("[StreamDeck] PTT DOWN: calling _StartConverting (recording_active=%s)" % SingletonObject.AtT.effect.is_recording_active())
-	var result = SingletonObject.AtT._StartConverting()
-	print("[StreamDeck] PTT DOWN: _StartConverting returned %s, recording_active=%s" % [result, SingletonObject.AtT.effect.is_recording_active()])
+	print("[StreamDeck] PTT DOWN: calling start_ptt (recording_active=%s)" % SingletonObject.AtT.effect.is_recording_active())
+	var result: int = SingletonObject.AtT.start_ptt(req)
+	print("[StreamDeck] PTT DOWN: start_ptt returned %s, recording_active=%s" % [result, SingletonObject.AtT.effect.is_recording_active()])
 
 	if result != OK:
-		if voice_gateway:
-			voice_gateway.ptt_up()
 		_send_error(peer_id, "ptt_down", "Failed to start recording")
 		return
 
@@ -220,12 +226,8 @@ func _handle_ptt_up(peer_id: int) -> void:
 	_peer_ptt_active[peer_id] = false
 	_broadcast({"event": "ptt_active", "active": false})
 
-	# Release gateway PTT
-	var chat_pane = SingletonObject.Chats
-	if chat_pane:
-		var voice_gateway = chat_pane.get("_voice_gateway")
-		if voice_gateway:
-			voice_gateway.ptt_up()
+	# Release gateway side of PTT (recording teardown is handled by _StartConverting above).
+	SingletonObject.AtT.stop_ptt()
 
 
 func _handle_set_input_device(peer_id: int, device: String) -> void:
@@ -250,12 +252,8 @@ func _release_ptt(peer_id: int) -> void:
 	if SingletonObject.AtT.effect.is_recording_active():
 		SingletonObject.AtT._StartConverting()
 
-	# Release gateway PTT
-	var chat_pane = SingletonObject.Chats
-	if chat_pane:
-		var voice_gateway = chat_pane.get("_voice_gateway")
-		if voice_gateway:
-			voice_gateway.ptt_up()
+	# Release gateway side of PTT.
+	SingletonObject.AtT.stop_ptt()
 
 	_broadcast({"event": "ptt_active", "active": false})
 

@@ -28,6 +28,7 @@ export type MinervaEvent =
   | MinervaStateEvent
   | MinervaInputDeviceChangedEvent
   | MinervaPttActiveEvent
+  | MinervaMicStateEvent
   | MinervaEngagementChangedEvent
   | MinervaErrorEvent;
 
@@ -49,6 +50,11 @@ export type MinervaInputDeviceChangedEvent = {
 export type MinervaPttActiveEvent = {
   event: "ptt_active";
   active: boolean;
+};
+
+export type MinervaMicStateEvent = {
+  event: "mic_state";
+  state: "idle" | "recording" | "transcribing";
 };
 
 export type MinervaEngagementChangedEvent = {
@@ -102,6 +108,11 @@ export function isValidEvent(data: unknown): data is MinervaEvent {
       return typeof obj.device === "string" && Array.isArray(obj.devices);
     case "ptt_active":
       return typeof obj.active === "boolean";
+    case "mic_state":
+      return (
+        typeof obj.state === "string" &&
+        (obj.state === "idle" || obj.state === "recording" || obj.state === "transcribing")
+      );
     case "engagement_changed":
       return typeof obj.state === "string";
     case "error":

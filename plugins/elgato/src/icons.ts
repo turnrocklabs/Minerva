@@ -28,5 +28,6 @@ function loadPng(filename: string): string {
 export const Icons = {
   get pttIdle() { return loadPng("ptt-idle.png"); },
   get pttActive() { return loadPng("ptt-active.png"); },
+  get pttTranscribing() { return loadPng("ptt-transcribing.png"); },
   get inputDevice() { return loadPng("input-device-default.png"); },
 } as const;

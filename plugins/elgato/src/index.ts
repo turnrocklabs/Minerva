@@ -36,6 +36,7 @@ let minervaConnected = false;
 let currentInputDevice = "Default";
 let inputDevices: string[] = ["Default"];
 let pttActive = false;
+let micState: "idle" | "recording" | "transcribing" = "idle";
 let hasError: Map<string, boolean> = new Map(); // context → error state
 
 // ── Stream Deck Connection ────────────────────────────────────────────
@@ -213,6 +214,7 @@ function handleMinervaEvent(event: MinervaEvent): void {
       currentInputDevice = event.input_device;
       inputDevices = event.input_devices;
       pttActive = event.ptt_active;
+      micState = pttActive ? "recording" : "idle";
       updateAllButtons();
       break;
 
@@ -224,6 +226,21 @@ function handleMinervaEvent(event: MinervaEvent): void {
 
     case "ptt_active":
       pttActive = event.active;
+      // Only update from ptt_active if no mic_state has been received yet
+      // (mic_state is the higher-fidelity source of truth when present).
+      if (micState === "idle" && event.active) {
+        micState = "recording";
+      } else if (!event.active && micState === "recording") {
+        // ptt_active=false while still in "recording" means we didn't get mic_state
+        micState = "idle";
+      }
+      updateButtonsByAction(ACTION_PTT);
+      break;
+
+    case "mic_state":
+      micState = event.state;
+      // Keep pttActive in sync so legacy code paths stay consistent.
+      pttActive = micState !== "idle";
       updateButtonsByAction(ACTION_PTT);
       break;
 
@@ -291,10 +308,26 @@ function updateButtonImage(context: string, action: string): void {
   }
 
   switch (action) {
-    case ACTION_PTT:
-      sendSetImage(context, pttActive ? Icons.pttActive : Icons.pttIdle);
-      sendSetTitle(context, pttActive ? "REC" : "");
+    case ACTION_PTT: {
+      let icon: string;
+      let title: string;
+      switch (micState) {
+        case "recording":
+          icon = Icons.pttActive;
+          title = "REC";
+          break;
+        case "transcribing":
+          icon = Icons.pttTranscribing;
+          title = "...";
+          break;
+        default:
+          icon = Icons.pttIdle;
+          title = "";
+      }
+      sendSetImage(context, icon);
+      sendSetTitle(context, title);
       break;
+    }
 
     case ACTION_INPUT_DEVICE: {
       sendSetImage(context, Icons.inputDevice);
