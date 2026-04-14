@@ -162,28 +162,37 @@ func _on_btn_add_attachment_pressed():
 
 
 func _on_btn_voice_pressed():
-	SingletonObject.AtT.FieldForFilling = %NoteDescription
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.btn = %btnVoice
-	%btnVoice.modulate = Color.LIME_GREEN
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = %NoteDescription
+	req.mic_button = %btnVoice
+	req.stop_button = %StopButton4
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("MainScene: PTT failed for description: %s" % error_string(err))
+		return
 	%AddNotePopUp.disabled = false
-	SingletonObject.AtT.btnStop = %StopButton4
 	
 func _on_btn_voice_for_header_pressed():
-	SingletonObject.AtT.FieldForFilling = %NoteHead
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.btn = %btnVoiceForHeader
-	%btnVoiceForHeader.modulate = Color.LIME_GREEN
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = %NoteHead
+	req.mic_button = %btnVoiceForHeader
+	req.stop_button = %StopButton3
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("MainScene: PTT failed for header: %s" % error_string(err))
+		return
 	%AddNotePopUp.disabled = false
-	SingletonObject.AtT.btnStop = %StopButton3
 
 func _on_btn_voice_for_note_tab_pressed():
-	SingletonObject.AtT.FieldForFilling = %txtNewTabName
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = %txtNewTabName
+	req.mic_button = %btnVoiceForNoteTab
+	req.stop_button = %AudioStopButton2
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("MainScene: PTT failed for note tab: %s" % error_string(err))
+		return
 	%AudioStopButton2.visible = true
-	SingletonObject.AtT.btnStop = %AudioStopButton2
 
 # this method calls the singleton object to toggle the enable/disable all notes in all tabs
 var notes_enabled = true
