@@ -27,10 +27,12 @@ func set_values(tab_name: String, tab: Control = null) -> void:
 
 
 func _on_btn_voice_for_note_tab_pressed():
-	SingletonObject.AtT.FieldForFilling = %txtNewTabName
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.btn = %btnVoiceForNoteTab
-	%btnVoiceForNoteTab.modulate = Color.LIME_GREEN
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = %txtNewTabName
+	req.mic_button = %btnVoiceForNoteTab
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("NewThreadPopupDrawer PTT failed: %s" % error_string(err))
 
 
 func _on_btn_create_thread_pressed() -> void:

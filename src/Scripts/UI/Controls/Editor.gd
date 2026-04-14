@@ -1160,10 +1160,12 @@ func clear_text():
 
 
 func _on_mic_button_pressed() -> void:
-	SingletonObject.AtT.FieldForFilling = code_edit
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.btn = mic_button
-	mic_button.modulate = Color(Color.LIME_GREEN)
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = code_edit
+	req.mic_button = mic_button
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("Editor PTT failed: %s" % error_string(err))
 
 #endregion Top Editor buttons
 #endregion Code Editor
