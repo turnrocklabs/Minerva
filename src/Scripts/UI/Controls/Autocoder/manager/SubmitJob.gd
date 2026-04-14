@@ -1890,12 +1890,13 @@ func _on_clear_text_button_pressed() -> void:
 
 
 func _on_microphone_button_pressed() -> void:
-	if SingletonObject.AtT._StartConverting() != OK:
-		return
-	SingletonObject.AtT.FieldForFilling = _prompt_text_edit
-	SingletonObject.AtT.btn = _microphone_button
-	_microphone_button.modulate = Color(Color.LIME_GREEN)
-	SingletonObject.AtT.btnStop = _stop_button
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = _prompt_text_edit
+	req.mic_button = _microphone_button
+	req.stop_button = _stop_button
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("SubmitJob microphone PTT failed: %s" % error_string(err))
 
 
 func _on_stop_button_pressed() -> void:

@@ -703,11 +703,13 @@ func _on_timeout_changed(value: float) -> void:
 
 
 func _on_record_system_prompt_button_pressed() -> void:
-	%SystemPromptTextEdit.text = ""
-	SingletonObject.AtT.FieldForFilling = %SystemPromptTextEdit
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.btn = %RecordSystemPromptButton
-	%RecordSystemPromptButton.modulate = Color(Color.LIME_GREEN)
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = %SystemPromptTextEdit
+	req.mic_button = %RecordSystemPromptButton
+	req.clear_before = true
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("AISettings system prompt PTT failed: %s" % error_string(err))
 
 
 func _on_system_prompt_enabled_check_button_toggled(toggled_on: bool) -> void:
@@ -816,11 +818,13 @@ func _on_agentic_system_prompt_enabled_check_button_toggled(toggled_on: bool) ->
 
 
 func _on_record_agentic_system_prompt_button_pressed() -> void:
-	%AgenticSystemPromptTextEdit.text = ""
-	SingletonObject.AtT.FieldForFilling = %AgenticSystemPromptTextEdit
-	if SingletonObject.AtT._StartConverting() != OK: return
-	SingletonObject.AtT.btn = %RecordAgenticSystemPromptButton
-	%RecordAgenticSystemPromptButton.modulate = Color(Color.LIME_GREEN)
+	var req := AudioToTexts.PTTRequest.new()
+	req.target = %AgenticSystemPromptTextEdit
+	req.mic_button = %RecordAgenticSystemPromptButton
+	req.clear_before = true
+	var err := SingletonObject.AtT.start_ptt(req)
+	if err != OK:
+		push_warning("AISettings agentic system prompt PTT failed: %s" % error_string(err))
 
 
 func _on_max_tool_result_spin_box_value_changed(value: float) -> void:
