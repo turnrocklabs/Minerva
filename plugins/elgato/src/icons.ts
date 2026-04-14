@@ -30,6 +30,7 @@ export const Icons = {
   get pttRecording() { return loadPng("ptt-recording.png"); },
   get pttActive() { return loadPng("ptt-recording.png"); }, // alias kept for legacy callers
   get pttTranscribing() { return loadPng("ptt-transcribing.png"); },
+  get pttError() { return loadPng("ptt-error.png"); },
   get inputDevice() { return loadPng("input-device-default.png"); },
   get micIcon() { return loadPng("mic.png"); },
   get speakerIcon() { return loadPng("speaker.png"); },

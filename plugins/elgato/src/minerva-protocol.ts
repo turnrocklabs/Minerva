@@ -70,7 +70,8 @@ export type MinervaPttActiveEvent = {
 
 export type MinervaMicStateEvent = {
   event: "mic_state";
-  state: "idle" | "recording" | "transcribing";
+  state: "idle" | "recording" | "transcribing" | "error";
+  error_message?: string;
 };
 
 export type MinervaEngagementChangedEvent = {
@@ -131,7 +132,7 @@ export function isValidEvent(data: unknown): data is MinervaEvent {
     case "mic_state":
       return (
         typeof obj.state === "string" &&
-        (obj.state === "idle" || obj.state === "recording" || obj.state === "transcribing")
+        (obj.state === "idle" || obj.state === "recording" || obj.state === "transcribing" || obj.state === "error")
       );
     case "engagement_changed":
       return typeof obj.state === "string";

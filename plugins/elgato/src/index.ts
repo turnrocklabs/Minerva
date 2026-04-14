@@ -41,7 +41,7 @@ let inputDevices: string[] = ["Default"];
 let currentOutputDevice = "Default";
 let outputDevices: string[] = ["Default"];
 let pttActive = false;
-let micState: "idle" | "recording" | "transcribing" = "idle";
+let micState: "idle" | "recording" | "transcribing" | "error" = "idle";
 let hasError: Map<string, boolean> = new Map(); // context → error state
 
 // ── Stream Deck Connection ────────────────────────────────────────────
@@ -358,6 +358,10 @@ function updateButtonImage(context: string, action: string): void {
         case "transcribing":
           icon = Icons.pttTranscribing;
           title = "...";
+          break;
+        case "error":
+          icon = Icons.pttError;
+          title = "ERR";
           break;
         default:
           icon = Icons.pttIdle;

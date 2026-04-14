@@ -22,7 +22,6 @@ var _enabled: bool = false
 var _shutdown_timer: Timer
 var _favorite_inputs: Array = []  # empty = all devices
 var _favorite_outputs: Array = []  # empty = all devices
-var _virtual_mic_button: StreamDeckVirtualMicButton = null
 
 
 func _ready() -> void:
@@ -30,8 +29,6 @@ func _ready() -> void:
 	_shutdown_timer.one_shot = true
 	_shutdown_timer.timeout.connect(_on_shutdown_timeout)
 	add_child(_shutdown_timer)
-	_virtual_mic_button = StreamDeckVirtualMicButton.new(self)
-	add_child(_virtual_mic_button)
 
 
 func _process(_delta: float) -> void:
@@ -119,10 +116,6 @@ func stop() -> void:
 	server_stopped.emit()
 	print("[StreamDeck] Server stopped")
 
-	if _virtual_mic_button != null:
-		_virtual_mic_button.queue_free()
-		_virtual_mic_button = null
-
 
 func is_running() -> bool:
 	return _tcp_server != null and _enabled
@@ -144,9 +137,52 @@ func update_favorite_outputs(favorites: Array) -> void:
 	_on_output_device_changed(AudioServer.output_device)
 
 
-## Called by StreamDeckVirtualMicButton to push mic state transitions to peers.
-func broadcast_mic_state(state: String) -> void:
-	_broadcast({"event": "mic_state", "state": state})
+## Push mic state transitions to peers. Called by the AtT signal handler.
+func broadcast_mic_state(state: String, error_message: String = "") -> void:
+	var payload := {"event": "mic_state", "state": state}
+	if not error_message.is_empty():
+		payload["error_message"] = error_message
+	_broadcast(payload)
+
+
+## Minimum time the Stream Deck key must show the transcribing icon before we
+## allow an idle broadcast. Voice-service transcription can return in <100 ms;
+## without the hold, the key's render pipeline misses the state entirely.
+const MIN_TRANSCRIBING_VISIBLE_MS := 500
+var _transcribing_broadcast_time_ms: int = -1
+
+
+## AudioToText is the single source of truth for PTT state. Translate its
+## signal into WebSocket events for all connected Stream Deck plugins.
+func _on_atT_ptt_state_changed(new_state: int, info: Dictionary) -> void:
+	match new_state:
+		AudioToTexts.PTTState.READY:
+			_broadcast_ready_respecting_hold()
+		AudioToTexts.PTTState.LISTENING:
+			_transcribing_broadcast_time_ms = -1
+			broadcast_mic_state("recording")
+		AudioToTexts.PTTState.TRANSCRIBING:
+			_transcribing_broadcast_time_ms = Time.get_ticks_msec()
+			broadcast_mic_state("transcribing")
+		AudioToTexts.PTTState.ERROR:
+			_transcribing_broadcast_time_ms = -1
+			broadcast_mic_state("error", str(info.get("error_message", "")))
+
+
+func _broadcast_ready_respecting_hold() -> void:
+	if _transcribing_broadcast_time_ms < 0:
+		broadcast_mic_state("idle")
+		return
+	var elapsed := Time.get_ticks_msec() - _transcribing_broadcast_time_ms
+	_transcribing_broadcast_time_ms = -1
+	if elapsed >= MIN_TRANSCRIBING_VISIBLE_MS:
+		broadcast_mic_state("idle")
+		return
+	# Delay the idle broadcast so the Stream Deck key has time to paint
+	# the transcribing icon before flipping back to idle.
+	var remaining_s: float = float(MIN_TRANSCRIBING_VISIBLE_MS - elapsed) / 1000.0
+	var t := get_tree().create_timer(remaining_s)
+	t.timeout.connect(func(): broadcast_mic_state("idle"), CONNECT_ONE_SHOT)
 
 
 func _get_filtered_input_devices() -> Array:
@@ -227,9 +263,14 @@ func _handle_ptt_down(peer_id: int) -> void:
 		_send_error(peer_id, "ptt_down", "txtMainUserInput not found in ChatPane")
 		return
 
+	# Resolve the real UI mic button so pressing the Stream Deck key updates
+	# the ChatPane mic button too (bi-directional visual link via
+	# AudioToTexts.ptt_state_changed → MicButtonBinding).
+	var ui_mic_btn: BaseButton = chat_pane.get_node_or_null("%btnMicrophone")
+
 	var req := AudioToTexts.PTTRequest.new()
 	req.target = txt_input
-	req.mic_button = _virtual_mic_button
+	req.mic_button = ui_mic_btn
 	req.voice_gateway = chat_pane.get("_voice_gateway")
 	req.insert_mode = AudioToTexts.InsertMode.APPEND
 
@@ -364,6 +405,9 @@ func _connect_signals() -> void:
 		SingletonObject.mic_changed.connect(_on_mic_changed)
 	if not SingletonObject.output_device_changed.is_connected(_on_output_device_changed):
 		SingletonObject.output_device_changed.connect(_on_output_device_changed)
+	var atT = SingletonObject.AtT
+	if atT != null and not atT.ptt_state_changed.is_connected(_on_atT_ptt_state_changed):
+		atT.ptt_state_changed.connect(_on_atT_ptt_state_changed)
 
 
 func _disconnect_signals() -> void:
@@ -371,6 +415,9 @@ func _disconnect_signals() -> void:
 		SingletonObject.mic_changed.disconnect(_on_mic_changed)
 	if SingletonObject.output_device_changed.is_connected(_on_output_device_changed):
 		SingletonObject.output_device_changed.disconnect(_on_output_device_changed)
+	var atT = SingletonObject.AtT
+	if atT != null and atT.ptt_state_changed.is_connected(_on_atT_ptt_state_changed):
+		atT.ptt_state_changed.disconnect(_on_atT_ptt_state_changed)
 
 
 func _on_mic_changed(mic: String) -> void:

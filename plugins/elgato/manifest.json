@@ -46,6 +46,11 @@
           "Image": "assets/ptt-transcribing",
           "Name": "Transcribing",
           "TitleAlignment": "top"
+        },
+        {
+          "Image": "assets/ptt-error",
+          "Name": "Error",
+          "TitleAlignment": "top"
         }
       ]
     },

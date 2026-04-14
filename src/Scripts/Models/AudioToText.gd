@@ -22,6 +22,16 @@ var mic_player: AudioStreamPlayer
 ## text is the transcribed string, empty on error.
 signal transcription_completed(text: String)
 
+## Explicit PTT state machine. Consumed by MicButtonBinding (UI visuals) and
+## StreamDeckServer (WebSocket broadcasts). Every visual transition goes
+## through _set_ptt_state — no direct .modulate / .icon writes on _btn.
+enum PTTState { READY, LISTENING, TRANSCRIBING, ERROR }
+var ptt_state: int = PTTState.READY
+## info dict carries: mic_button (BaseButton), target (Control), error_message (String)
+signal ptt_state_changed(new_state: int, info: Dictionary)
+
+const ERROR_AUTO_CLEAR_SECONDS := 1.5
+
 
 ## How transcript text should be inserted into the target control.
 enum InsertMode { APPEND, REPLACE, AT_CARET }
@@ -71,6 +81,24 @@ func _exit_tree():
 	_stop_mic()
 
 
+## Canonical PTT state transition. All visual updates flow from ptt_state_changed;
+## callers must not write to mic buttons directly. ERROR auto-clears back to READY
+## after a short hold so transient failures don't leave the button stuck red.
+func _set_ptt_state(new_state: int, info: Dictionary = {}) -> void:
+	ptt_state = new_state
+	ptt_state_changed.emit(new_state, info)
+	if new_state == PTTState.ERROR:
+		var tree := get_tree()
+		if tree == null:
+			return
+		var stored_btn: BaseButton = info.get("mic_button")
+		var t := tree.create_timer(ERROR_AUTO_CLEAR_SECONDS)
+		var cb := func() -> void:
+			if ptt_state == PTTState.ERROR:
+				_set_ptt_state(PTTState.READY, {"mic_button": stored_btn})
+		t.timeout.connect(cb, CONNECT_ONE_SHOT)
+
+
 ## Unified PTT entry point. Owns legacy-field assignment, gateway sequencing, button
 ## state, and recording start. Returns OK on success, or an error code on failure.
 func start_ptt(req: PTTRequest) -> int:
@@ -94,6 +122,10 @@ func start_ptt(req: PTTRequest) -> int:
 	_active_ptt_req = req
 	_ptt_gateway_down = false
 
+	# Auto-attach visual binding. Idempotent via meta marker.
+	if req.mic_button != null:
+		MicButtonBinding.attach(req.mic_button)
+
 	if req.clear_before:
 		req.target.text = ""
 
@@ -110,9 +142,8 @@ func start_ptt(req: PTTRequest) -> int:
 		_active_ptt_req = null
 		return err
 
-	if req.mic_button:
-		req.mic_button.modulate = Color.LIME_GREEN
-
+	# LISTENING is emitted inside _StartConverting's start-recording branch, so
+	# toggle-press-twice flows end in TRANSCRIBING without being overwritten here.
 	return OK
 
 
@@ -133,8 +164,6 @@ func _StartConverting():
 	stop_signal = false
 	if effect.is_recording_active():
 		# Stop recording and get WAV data
-		if _btn:
-			_btn.modulate = Color.WHITE
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		_stop_mic()
@@ -144,19 +173,19 @@ func _StartConverting():
 		# get_recording() returns null.
 		if recording == null:
 			push_warning("AudioToText: no audio captured (PTT tap too fast or mic not primed)")
-			if _btn:
-				_btn.modulate = Color.WHITE
-				_btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "No audio captured"})
 			return ERR_INVALID_DATA
 
 		recording.save_to_wav(file_path)
 
 		var wav_bytes := _read_wav_file()
 		if wav_bytes.is_empty():
+			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Audio file unreadable"})
 			return ERR_INVALID_DATA
 
 		if stop_signal:
 			print("Conversion stopped")
+			_set_ptt_state(PTTState.READY, {"mic_button": _btn})
 			return ERR_SKIP
 
 		# Route to appropriate STT backend
@@ -171,6 +200,7 @@ func _StartConverting():
 	else:
 		_start_mic()
 		effect.set_recording_active(true)
+		_set_ptt_state(PTTState.LISTENING, {"mic_button": _btn, "target": _field_for_filling})
 
 	return OK
 
@@ -199,9 +229,7 @@ func _read_wav_file() -> PackedByteArray:
 
 ## STT via voice-service (Core WebSocket).
 func _start_voice_service_stt(wav_bytes: PackedByteArray, voice_config: VoiceConfig) -> void:
-	if _btn:
-		_btn.disabled = true
-		_btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
+	_set_ptt_state(PTTState.TRANSCRIBING, {"mic_button": _btn, "target": _field_for_filling})
 	if _btn_stop != null:
 		_btn_stop.disabled = false
 
@@ -241,9 +269,7 @@ func _start_whisper_stt(wav_bytes: PackedByteArray) -> void:
 	]
 
 	http_request.request_raw(WHISPER_API_URL, headers, HTTPClient.METHOD_POST, form_data)
-	if _btn:
-		_btn.disabled = true
-		_btn.icon = ResourceLoader.load("res://assets/icons/loading_white-16-16.png")
+	_set_ptt_state(PTTState.TRANSCRIBING, {"mic_button": _btn, "target": _field_for_filling})
 	if _btn_stop != null:
 		_btn_stop.disabled = false
 
@@ -262,10 +288,7 @@ func _StopConverting():
 		http_request = null
 		print("HTTP request stopped")
 
-	if _btn:
-		_btn.disabled = false
-		_btn.modulate = Color.WHITE
-		_btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+	_set_ptt_state(PTTState.READY, {"mic_button": _btn})
 	if _btn_stop != null:
 		_btn_stop.disabled = true
 
@@ -288,16 +311,13 @@ func _move_caret_to_end(ctrl: Control) -> void:
 
 ## Shared completion handler — fills text field and emits signal.
 func _finish_transcription(text: String) -> void:
-	if _btn:
-		_btn.disabled = false
-		_btn.modulate = Color.WHITE
-		_btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
-
 	var active_req := _active_ptt_req
 
 	if text.is_empty():
+		_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Transcription failed"})
 		SingletonObject.ErrorDisplay("Transcription Failed", "No text returned from STT provider")
 	else:
+		_set_ptt_state(PTTState.READY, {"mic_button": _btn})
 		print("Transcription:", text)
 		var target: Control = null
 		if active_req != null:

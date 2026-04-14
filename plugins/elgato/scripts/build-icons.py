@@ -31,6 +31,7 @@ GLYPH_SIZE = 44
 COLOR_DARK_NEUTRAL = (0x1E, 0x21, 0x28)  # Dark grey: #1E2128
 COLOR_LIME_GREEN = (0x32, 0xCD, 0x32)   # Godot Color.LIME_GREEN: #32CD32
 COLOR_AMBER = (0xE0, 0xA0, 0x20)        # Amber: #E0A020
+COLOR_RED = (0xCC, 0x20, 0x20)          # Red (error): #CC2020
 
 # Source icon paths (relative to repo root)
 SOURCES = {
@@ -204,6 +205,7 @@ def main():
         ("ptt-idle.png", mic_glyph, COLOR_DARK_NEUTRAL),
         ("ptt-recording.png", mic_glyph, COLOR_LIME_GREEN),
         ("ptt-transcribing.png", mic_glyph, COLOR_AMBER),
+        ("ptt-error.png", mic_glyph, COLOR_RED),
         ("mic.png", mic_glyph, COLOR_DARK_NEUTRAL),
         ("speaker.png", speaker_glyph, COLOR_DARK_NEUTRAL),
         ("clear.png", clear_glyph, COLOR_DARK_NEUTRAL),
