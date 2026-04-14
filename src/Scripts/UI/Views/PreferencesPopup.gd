@@ -2539,7 +2539,7 @@ func _on_remove_selected_skill() -> void:
 
 #region Voice Tab
 
-var _voice_tab: VBoxContainer
+var _voice_tab: MarginContainer
 var _stt_provider_option: OptionButton
 var _stt_backend_option: OptionButton
 var _tts_provider_option: OptionButton
@@ -2573,19 +2573,19 @@ func _create_voice_tab() -> void:
 	if not tab_container:
 		return
 
-	_voice_tab = VBoxContainer.new()
+	_voice_tab = MarginContainer.new()
 	_voice_tab.name = "Voice"
+	_voice_tab.add_theme_constant_override("margin_left", 12)
+	_voice_tab.add_theme_constant_override("margin_right", 12)
+	_voice_tab.add_theme_constant_override("margin_top", 8)
+	_voice_tab.add_theme_constant_override("margin_bottom", 8)
+	_voice_tab.clip_contents = true
 
-	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 12)
-	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
-	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_voice_tab.add_child(margin)
+	var margin := _voice_tab  # margin IS the tab — no extra wrapper
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	margin.add_child(scroll)
 
@@ -2600,56 +2600,39 @@ func _create_voice_tab() -> void:
 	stt_header.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(stt_header)
 
-	var stt_row := HBoxContainer.new()
-	stt_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(stt_row)
-	var stt_lbl := Label.new()
-	stt_lbl.text = "Provider:"
-	stt_lbl.custom_minimum_size = Vector2(140, 0)
-	stt_row.add_child(stt_lbl)
-	_stt_provider_option = OptionButton.new()
+	var stt_grid := _voice_grid()
+	vbox.add_child(stt_grid)
+
+	stt_grid.add_child(_voice_label("Provider:"))
+	_stt_provider_option = _voice_option()
 	_stt_provider_option.add_item("Voice Service (via Core)", VoiceConfig.STTProvider.VOICE_SERVICE)
 	_stt_provider_option.add_item("OpenAI Whisper (REST)", VoiceConfig.STTProvider.OPENAI_WHISPER)
-	_stt_provider_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stt_provider_option.item_selected.connect(_on_stt_provider_changed)
-	stt_row.add_child(_stt_provider_option)
+	stt_grid.add_child(_stt_provider_option)
 
-	# STT backend (voice-service backends: faster-whisper, qwen3-asr)
-	var stt_backend_row := HBoxContainer.new()
-	stt_backend_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(stt_backend_row)
-	var stt_backend_lbl := Label.new()
-	stt_backend_lbl.text = "STT Backend:"
-	stt_backend_lbl.custom_minimum_size = Vector2(140, 0)
-	stt_backend_row.add_child(stt_backend_lbl)
-	_stt_backend_option = OptionButton.new()
+	stt_grid.add_child(_voice_label("STT Backend:"))
+	_stt_backend_option = _voice_option()
 	_stt_backend_option.add_item("faster-whisper (fast)", 0)
 	_stt_backend_option.add_item("qwen3-asr (quality)", 1)
-	_stt_backend_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stt_backend_option.item_selected.connect(_on_stt_backend_changed)
-	stt_backend_row.add_child(_stt_backend_option)
+	stt_grid.add_child(_stt_backend_option)
 
-	# STT model selector (for faster-whisper)
-	var stt_model_row := HBoxContainer.new()
-	stt_model_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(stt_model_row)
-	var stt_model_lbl := Label.new()
-	stt_model_lbl.text = "STT Model:"
-	stt_model_lbl.custom_minimum_size = Vector2(140, 0)
-	stt_model_row.add_child(stt_model_lbl)
-	_stt_model_option = OptionButton.new()
+	stt_grid.add_child(_voice_label("STT Model:"))
+	_stt_model_option = _voice_option()
 	_stt_model_option.add_item("tiny.en (fastest)", 0)
 	_stt_model_option.add_item("small.en (balanced)", 1)
 	_stt_model_option.add_item("medium.en (accurate)", 2)
 	_stt_model_option.add_item("large-v3-turbo (best)", 3)
 	_stt_model_option.add_item("distil-large-v3 (fast+accurate)", 4)
-	_stt_model_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_stt_model_option.item_selected.connect(_on_stt_model_changed)
-	stt_model_row.add_child(_stt_model_option)
+	stt_grid.add_child(_stt_model_option)
 
-	# Whisper fallback
+	# Whisper fallback (full-width checkbox, outside grid)
 	_whisper_fallback_check = CheckButton.new()
 	_whisper_fallback_check.text = "Fall back to Whisper when Core disconnected"
+	_whisper_fallback_check.clip_text = true
+	_whisper_fallback_check.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_whisper_fallback_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_whisper_fallback_check.toggled.connect(_on_whisper_fallback_toggled)
 	vbox.add_child(_whisper_fallback_check)
 
@@ -2661,56 +2644,37 @@ func _create_voice_tab() -> void:
 	tts_header.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(tts_header)
 
-	var tts_row := HBoxContainer.new()
-	tts_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(tts_row)
-	var tts_lbl := Label.new()
-	tts_lbl.text = "Provider:"
-	tts_lbl.custom_minimum_size = Vector2(140, 0)
-	tts_row.add_child(tts_lbl)
-	_tts_provider_option = OptionButton.new()
+	var tts_grid := _voice_grid()
+	vbox.add_child(tts_grid)
+
+	tts_grid.add_child(_voice_label("Provider:"))
+	_tts_provider_option = _voice_option()
 	_tts_provider_option.add_item("Voice Service (via Core)", VoiceConfig.TTSProvider.VOICE_SERVICE)
 	_tts_provider_option.add_item("Disabled", VoiceConfig.TTSProvider.NONE)
-	_tts_provider_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tts_provider_option.item_selected.connect(_on_tts_provider_changed)
-	tts_row.add_child(_tts_provider_option)
+	tts_grid.add_child(_tts_provider_option)
 
-	# Backend filter
-	var backend_row := HBoxContainer.new()
-	backend_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(backend_row)
-	var backend_lbl := Label.new()
-	backend_lbl.text = "TTS Backend:"
-	backend_lbl.custom_minimum_size = Vector2(140, 0)
-	backend_row.add_child(backend_lbl)
-	_tts_backend_option = OptionButton.new()
+	tts_grid.add_child(_voice_label("TTS Backend:"))
+	_tts_backend_option = _voice_option()
 	_tts_backend_option.add_item("All", 0)
 	_tts_backend_option.add_item("kokoro", 1)
 	_tts_backend_option.add_item("qwen3-base", 2)
 	_tts_backend_option.add_item("qwen3-customvoice", 3)
 	_tts_backend_option.add_item("gpt-sovits", 4)
-	_tts_backend_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tts_backend_option.item_selected.connect(_on_tts_backend_changed)
-	backend_row.add_child(_tts_backend_option)
+	tts_grid.add_child(_tts_backend_option)
 
-	# Voice selector
-	var voice_row := HBoxContainer.new()
-	voice_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(voice_row)
-	var voice_lbl := Label.new()
-	voice_lbl.text = "Voice:"
-	voice_lbl.custom_minimum_size = Vector2(140, 0)
-	voice_row.add_child(voice_lbl)
-	_voice_selector = OptionButton.new()
-	_voice_selector.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tts_grid.add_child(_voice_label("Voice:"))
+	_voice_selector = _voice_option()
 	_voice_selector.add_item("(click Refresh to load voices)")
 	_voice_selector.disabled = true
 	_voice_selector.item_selected.connect(_on_voice_selected)
-	voice_row.add_child(_voice_selector)
+	tts_grid.add_child(_voice_selector)
 
+	# Voice action buttons (full-width row, outside grid)
 	var voice_btn_row := HBoxContainer.new()
 	voice_btn_row.add_theme_constant_override("separation", 4)
-	voice_row.add_child(voice_btn_row)
+	vbox.add_child(voice_btn_row)
 
 	_voice_refresh_btn = Button.new()
 	_voice_refresh_btn.text = "Refresh"
@@ -2730,49 +2694,35 @@ func _create_voice_tab() -> void:
 	audio_header.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(audio_header)
 
-	# Volume
-	var vol_row := HBoxContainer.new()
-	vol_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(vol_row)
-	var vol_lbl := Label.new()
-	vol_lbl.text = "TTS Volume:"
-	vol_lbl.custom_minimum_size = Vector2(140, 0)
-	vol_row.add_child(vol_lbl)
+	var audio_grid := _voice_grid()
+	vbox.add_child(audio_grid)
+
+	audio_grid.add_child(_voice_label("TTS Volume:"))
 	_tts_volume_slider = HSlider.new()
 	_tts_volume_slider.min_value = 0.0
 	_tts_volume_slider.max_value = 1.0
 	_tts_volume_slider.step = 0.05
 	_tts_volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tts_volume_slider.value_changed.connect(_on_tts_volume_changed)
-	vol_row.add_child(_tts_volume_slider)
+	audio_grid.add_child(_tts_volume_slider)
 
-	# Speak mode
-	var speak_mode_row := HBoxContainer.new()
-	speak_mode_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(speak_mode_row)
-	var speak_mode_lbl := Label.new()
-	speak_mode_lbl.text = "Auto-speak:"
-	speak_mode_lbl.custom_minimum_size = Vector2(140, 0)
-	speak_mode_row.add_child(speak_mode_lbl)
-	_speak_mode_option = OptionButton.new()
+	audio_grid.add_child(_voice_label("Auto-speak:"))
+	_speak_mode_option = _voice_option()
 	_speak_mode_option.add_item("Off", VoiceConfig.SpeakMode.OFF)
 	_speak_mode_option.add_item("Speak Full Response", VoiceConfig.SpeakMode.FULL)
 	_speak_mode_option.add_item("Summarize then Speak", VoiceConfig.SpeakMode.SUMMARIZE)
-	_speak_mode_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_speak_mode_option.item_selected.connect(_on_speak_mode_changed)
-	speak_mode_row.add_child(_speak_mode_option)
+	audio_grid.add_child(_speak_mode_option)
 
-	# Summary model (visible only in SUMMARIZE mode)
+	# Summary model (visible only in SUMMARIZE mode) — own grid row
 	_summary_model_row = HBoxContainer.new()
 	_summary_model_row.add_theme_constant_override("separation", 8)
 	_summary_model_row.visible = false
 	vbox.add_child(_summary_model_row)
 	var summary_model_lbl := Label.new()
 	summary_model_lbl.text = "Summary Model:"
-	summary_model_lbl.custom_minimum_size = Vector2(140, 0)
 	_summary_model_row.add_child(summary_model_lbl)
-	_summary_model_option = OptionButton.new()
-	_summary_model_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_summary_model_option = _voice_option()
 	_summary_model_option.item_selected.connect(_on_summary_model_changed)
 	_summary_model_row.add_child(_summary_model_option)
 
@@ -2783,7 +2733,6 @@ func _create_voice_tab() -> void:
 	vbox.add_child(_summary_timeout_row)
 	var summary_timeout_lbl := Label.new()
 	summary_timeout_lbl.text = "Summary Timeout:"
-	summary_timeout_lbl.custom_minimum_size = Vector2(140, 0)
 	_summary_timeout_row.add_child(summary_timeout_lbl)
 	_summary_timeout_spin = SpinBox.new()
 	_summary_timeout_spin.min_value = 5.0
@@ -2794,31 +2743,35 @@ func _create_voice_tab() -> void:
 	_summary_timeout_spin.value_changed.connect(_on_summary_timeout_changed)
 	_summary_timeout_row.add_child(_summary_timeout_spin)
 
-	# Auto-send transcription
+	# Auto-send transcription (full-width checkbox)
 	_auto_send_check = CheckButton.new()
 	_auto_send_check.text = "Auto-send after transcription (skip editing)"
+	_auto_send_check.clip_text = true
+	_auto_send_check.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_auto_send_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_auto_send_check.toggled.connect(_on_auto_send_toggled)
 	vbox.add_child(_auto_send_check)
 
-	# VAD silence duration (think time)
-	var vad_silence_row := HBoxContainer.new()
-	vad_silence_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(vad_silence_row)
-	var vad_silence_lbl := Label.new()
-	vad_silence_lbl.text = "Pause tolerance:"
-	vad_silence_lbl.custom_minimum_size = Vector2(140, 0)
-	vad_silence_row.add_child(vad_silence_lbl)
+	# VAD silence — own grid
+	var vad_grid := _voice_grid()
+	vbox.add_child(vad_grid)
+
+	vad_grid.add_child(_voice_label("Pause tolerance:"))
+	var vad_hbox := HBoxContainer.new()
+	vad_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vad_hbox.add_theme_constant_override("separation", 4)
+	vad_grid.add_child(vad_hbox)
 	_vad_silence_slider = HSlider.new()
 	_vad_silence_slider.min_value = 0.3
 	_vad_silence_slider.max_value = 5.0
 	_vad_silence_slider.step = 0.1
 	_vad_silence_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_vad_silence_slider.value_changed.connect(_on_vad_silence_changed)
-	vad_silence_row.add_child(_vad_silence_slider)
+	vad_hbox.add_child(_vad_silence_slider)
 	_vad_silence_value_label = Label.new()
 	_vad_silence_value_label.text = "1.0s"
-	_vad_silence_value_label.custom_minimum_size = Vector2(40, 0)
-	vad_silence_row.add_child(_vad_silence_value_label)
+	_vad_silence_value_label.custom_minimum_size = Vector2(32, 0)
+	vad_hbox.add_child(_vad_silence_value_label)
 
 	vbox.add_child(HSeparator.new())
 
@@ -2830,23 +2783,21 @@ func _create_voice_tab() -> void:
 
 	_streamdeck_enable_check = CheckButton.new()
 	_streamdeck_enable_check.text = "Enable Stream Deck server"
+	_streamdeck_enable_check.clip_text = true
+	_streamdeck_enable_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_streamdeck_enable_check.toggled.connect(_on_streamdeck_enable_toggled)
 	vbox.add_child(_streamdeck_enable_check)
 
-	var sd_port_row := HBoxContainer.new()
-	sd_port_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(sd_port_row)
-	var sd_port_lbl := Label.new()
-	sd_port_lbl.text = "Port:"
-	sd_port_lbl.custom_minimum_size = Vector2(140, 0)
-	sd_port_row.add_child(sd_port_lbl)
+	var sd_grid := _voice_grid()
+	vbox.add_child(sd_grid)
+	sd_grid.add_child(_voice_label("Port:"))
 	_streamdeck_port_spin = SpinBox.new()
 	_streamdeck_port_spin.min_value = 1024
 	_streamdeck_port_spin.max_value = 65535
 	_streamdeck_port_spin.value = 7778
 	_streamdeck_port_spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_streamdeck_port_spin.value_changed.connect(_on_streamdeck_port_changed)
-	sd_port_row.add_child(_streamdeck_port_spin)
+	sd_grid.add_child(_streamdeck_port_spin)
 
 	_streamdeck_status_label = Label.new()
 	_streamdeck_status_label.text = "Server: stopped"
@@ -2993,6 +2944,28 @@ func _on_core_connection_changed(_connected: bool) -> void:
 	if not _voice_tab:
 		return
 	_update_tts_section_enabled()
+
+
+func _voice_grid() -> GridContainer:
+	var g := GridContainer.new()
+	g.columns = 2
+	g.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	g.add_theme_constant_override("h_separation", 8)
+	g.add_theme_constant_override("v_separation", 6)
+	return g
+
+func _voice_label(text: String) -> Label:
+	var l := Label.new()
+	l.text = text
+	return l
+
+func _voice_option() -> OptionButton:
+	var o := OptionButton.new()
+	o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	o.fit_to_longest_item = false
+	o.clip_text = true
+	o.custom_minimum_size.x = 0
+	return o
 
 
 func _on_stt_provider_changed(idx: int) -> void:
@@ -3162,6 +3135,10 @@ func _refresh_streamdeck_device_list() -> void:
 	for device in devices:
 		var cb := CheckButton.new()
 		cb.text = device
+		cb.clip_text = true
+		cb.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cb.tooltip_text = device
 		cb.button_pressed = device in favorites or favorites.is_empty()
 		cb.toggled.connect(_on_streamdeck_device_toggled.bind(device))
 		_streamdeck_devices_container.add_child(cb)
