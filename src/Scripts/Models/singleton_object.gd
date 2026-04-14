@@ -2091,10 +2091,12 @@ func get_output_device() -> String:
 
 
 func set_output_device(device: String) -> void:
-	if device in AudioServer.get_output_device_list():
-		AudioServer.output_device = device
-		output_device_changed.emit(device)
-		if get_output_device() != device:
-			save_to_config_file("AudioSettings", "OutputDevice",  device)
+	if not (device in AudioServer.get_output_device_list()):
+		return
+	if AudioServer.output_device == device:
+		return  # no-op; also breaks the output_device_changed → set_output_device self-loop
+	AudioServer.output_device = device
+	save_to_config_file("AudioSettings", "OutputDevice", device)
+	output_device_changed.emit(device)
 
 #endregion Output Device
