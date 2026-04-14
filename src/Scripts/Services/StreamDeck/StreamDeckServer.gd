@@ -170,6 +170,8 @@ func _handle_message(peer_id: int, raw: String) -> void:
 
 	var action: String = data.get("action", "")
 	match action:
+		"clear_input":
+			_handle_clear_input(peer_id)
 		"get_state":
 			_send_state(peer_id)
 		"ptt_down":
@@ -181,6 +183,8 @@ func _handle_message(peer_id: int, raw: String) -> void:
 		"set_input_device":
 			var device: String = data.get("device", "")
 			_handle_set_input_device(peer_id, device)
+		"submit_chat":
+			_handle_submit_chat(peer_id)
 		_:
 			_send_error(peer_id, action, "Unknown action: %s" % action)
 
@@ -243,6 +247,29 @@ func _handle_set_input_device(peer_id: int, device: String) -> void:
 		return
 
 	SingletonObject.set_microphone(device)
+
+
+func _handle_clear_input(peer_id: int) -> void:
+	var chat_pane = SingletonObject.Chats
+	if chat_pane == null:
+		_send_error(peer_id, "clear_input", "No active chat")
+		return
+
+	var txt_input: Control = chat_pane.get_node_or_null("%txtMainUserInput")
+	if txt_input == null:
+		_send_error(peer_id, "clear_input", "txtMainUserInput not found in ChatPane")
+		return
+
+	txt_input.text = ""
+
+
+func _handle_submit_chat(peer_id: int) -> void:
+	var chat_pane = SingletonObject.Chats
+	if chat_pane == null:
+		_send_error(peer_id, "submit_chat", "No active chat")
+		return
+
+	chat_pane.submit_chat(0)
 
 
 func _release_ptt(peer_id: int) -> void:

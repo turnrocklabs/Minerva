@@ -1414,6 +1414,13 @@ func _on_chat_pressed():
 	_on_send_message_button_item_selected(0)
 
 
+## Public entry point for triggering a chat submit from an external source
+## (e.g. Stream Deck plugin). `mode` mirrors SendMessageButton indices:
+## 0 = regular, 1 = parallel, 2 = sequential.
+func submit_chat(mode: int = 0) -> void:
+	_on_send_message_button_item_selected(mode)
+
+
 func _on_send_message_button_item_selected(index: int) -> void:
 
 	# Ensure we have open chat so we can get its history and disable the notes
