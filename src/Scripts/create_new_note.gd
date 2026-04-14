@@ -71,7 +71,7 @@ func _on_btn_voice_for_header_pressed():
 	var req := AudioToTexts.PTTRequest.new()
 	req.target = %NoteHead
 	req.mic_button = %btnVoiceForHeader
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("create_new_note: PTT failed for header: %s" % error_string(err))
 		return
@@ -82,7 +82,7 @@ func _on_btn_voice_pressed():
 	var req := AudioToTexts.PTTRequest.new()
 	req.target = %NoteDescription
 	req.mic_button = %btnVoice
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("create_new_note: PTT failed for description: %s" % error_string(err))
 		return

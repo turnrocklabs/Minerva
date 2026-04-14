@@ -1894,7 +1894,7 @@ func _on_microphone_button_pressed() -> void:
 	req.target = _prompt_text_edit
 	req.mic_button = _microphone_button
 	req.stop_button = _stop_button
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("SubmitJob microphone PTT failed: %s" % error_string(err))
 

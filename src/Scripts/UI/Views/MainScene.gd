@@ -166,7 +166,7 @@ func _on_btn_voice_pressed():
 	req.target = %NoteDescription
 	req.mic_button = %btnVoice
 	req.stop_button = %StopButton4
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("MainScene: PTT failed for description: %s" % error_string(err))
 		return
@@ -177,7 +177,7 @@ func _on_btn_voice_for_header_pressed():
 	req.target = %NoteHead
 	req.mic_button = %btnVoiceForHeader
 	req.stop_button = %StopButton3
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("MainScene: PTT failed for header: %s" % error_string(err))
 		return
@@ -188,7 +188,7 @@ func _on_btn_voice_for_note_tab_pressed():
 	req.target = %txtNewTabName
 	req.mic_button = %btnVoiceForNoteTab
 	req.stop_button = %AudioStopButton2
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("MainScene: PTT failed for note tab: %s" % error_string(err))
 		return

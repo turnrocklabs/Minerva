@@ -30,7 +30,7 @@ func _on_btn_voice_for_note_tab_pressed():
 	var req := AudioToTexts.PTTRequest.new()
 	req.target = %txtNewTabName
 	req.mic_button = %btnVoiceForNoteTab
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("NewThreadPopupDrawer PTT failed: %s" % error_string(err))
 

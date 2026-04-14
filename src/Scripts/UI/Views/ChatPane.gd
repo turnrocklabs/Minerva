@@ -2962,7 +2962,7 @@ func _on_btn_microphone_pressed():
 	req.mic_button = %btnMicrophone
 	req.stop_button = %AudioStop1
 	req.voice_gateway = _voice_gateway
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("ChatPane PTT failed: %s" % error_string(err))
 
@@ -3005,6 +3005,36 @@ func _create_voice_status_label(msg_node: Control) -> RichTextLabel:
 var _tts_busy := false
 var _tts_cancel := false
 
+
+## Cancel any in-flight TTS (synthesis or playback). Non-blocking.
+## Public entry so PTT surfaces can call it before binding the mic — ending
+## output playback before mic capture starts avoids the audio-driver duplex-entry
+## race that leaves mic streams zombied until app restart.
+##
+## Sets _tts_cancel so in-flight _voice_speak_response bails at its next checkpoint,
+## and stops the player immediately if playing. The flag stays set until the NEXT
+## _voice_speak_response clears it on entry — that ensures a slow synthesize_auto
+## WebSocket round-trip still sees the cancel when it wakes up.
+## Only cancels CURRENT work; future TTS requests play normally.
+func cancel_tts() -> void:
+	if _tts_busy:
+		_tts_cancel = true
+	if _tts_player:
+		_tts_player.stop()  # no-op if not playing; fires finished → _tts_busy = false
+
+
+## Dismiss a status label with a terminal message; auto-free after hold_seconds.
+## Safe to call with null or freed labels. Fire-and-forget.
+func _dismiss_status_label(label: RichTextLabel, final_text: String, hold_seconds: float = 2.0) -> void:
+	if not is_instance_valid(label):
+		return
+	label.text = final_text
+	var timer := get_tree().create_timer(hold_seconds)
+	timer.timeout.connect(func():
+		if is_instance_valid(label):
+			label.queue_free()
+	, CONNECT_ONE_SHOT)
+
 func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null) -> void:
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF:
@@ -3022,7 +3052,10 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		_tts_cancel = true
 		while _tts_busy:
 			await get_tree().create_timer(0.1).timeout
-		_tts_cancel = false
+	# Always clear — handles external cancel_tts() that left the flag set.
+	# Without this, a slow-synth cancel by PTT would stick the flag and silently
+	# suppress every future summary.
+	_tts_cancel = false
 
 	_tts_busy = true
 
@@ -3035,10 +3068,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
 		if cfg.summary_model.is_empty():
 			push_warning("[ChatPane] Summarize mode active but no summary model configured")
-			if status_label:
-				status_label.text = "Voice: No summary model configured"
-				await get_tree().create_timer(3.0).timeout
-				status_label.queue_free()
+			_dismiss_status_label(status_label, "Voice: No summary model configured", 3.0)
 			_tts_busy = false
 			return
 		if status_label:
@@ -3048,6 +3078,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		text_to_speak = await client.summarize_for_speech(user_text, response_text, cfg.summary_model, cfg.summary_timeout)
 		if _tts_cancel:
 			print("[ChatPane] TTS: cancelled after summarize")
+			_dismiss_status_label(status_label, "Voice: cancelled", 1.5)
 			_tts_busy = false
 			return
 		print("[ChatPane] TTS: summary ready: %s" % text_to_speak.substr(0, 80))
@@ -3060,15 +3091,13 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 
 	if _tts_cancel:
 		print("[ChatPane] TTS: cancelled after synthesize")
+		_dismiss_status_label(status_label, "Voice: cancelled", 1.5)
 		_tts_busy = false
 		return
 
 	if wav_data.is_empty():
 		print("[ChatPane] TTS: synthesis returned empty audio!")
-		if status_label:
-			status_label.text = "Voice: TTS synthesis failed"
-			await get_tree().create_timer(3.0).timeout
-			status_label.queue_free()
+		_dismiss_status_label(status_label, "Voice: TTS synthesis failed", 3.0)
 		_tts_busy = false
 		_voice_on_response_complete()
 		return

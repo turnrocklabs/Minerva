@@ -675,6 +675,13 @@ func _ready() -> void:
 	# Initialize AI models registry for MCP tools
 	_init_ai_models()
 
+	# Bind pose preview to its SubViewport in code. Embedding a ViewportTexture in the
+	# .tscn fails load-time resolution because SubViewport lives inside an instanced
+	# sub-scene (PoseEditorPanel) and isn't addressable when the sub_resource loads.
+	var pose_viewport: SubViewport = pose_editor_panel.get_node_or_null("%SubViewport")
+	if pose_viewport != null and pose_texture_rect != null:
+		pose_texture_rect.texture = pose_viewport.get_texture()
+
 	layer_cards_popup_panel.hide()
 	image_gen_window.hide()
 	progress_window.hide()
@@ -2721,7 +2728,7 @@ func _on_positive_prompt_mic_button_pressed() -> void:
 	req.target = prompt_text_edit
 	req.mic_button = positive_prompt_mic_button
 	req.stop_button = positive_prompt_mic_button
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("GraphicsEditor positive PTT failed: %s" % error_string(err))
 
@@ -2731,7 +2738,7 @@ func _on_negative_prompt_mic_button_pressed() -> void:
 	req.target = negative_text_edit
 	req.mic_button = negative_prompt_mic_button
 	req.stop_button = negative_prompt_mic_button
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("GraphicsEditor negative PTT failed: %s" % error_string(err))
 

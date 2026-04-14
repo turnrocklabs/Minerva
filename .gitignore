@@ -8,6 +8,16 @@
 # docker stuff
 .env
 
+# Secrets / credentials (defense-in-depth)
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+config.local.*
+
 # Minerva Project Save files
 *.minproj
 

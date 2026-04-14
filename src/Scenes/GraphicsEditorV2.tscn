@@ -129,9 +129,6 @@ corner_radius_bottom_right = 20
 corner_radius_bottom_left = 20
 anti_aliasing = false
 
-[sub_resource type="ViewportTexture" id="ViewportTexture_v7532"]
-viewport_path = NodePath("PoseEditorWindow/PoseEditorPanel/VBoxContainer/HSplitContainer/SubViewportContainer/SubViewport")
-
 [node name="GraphicsEditorV2" type="PanelContainer" unique_id=1919594253]
 texture_filter = 1
 clip_contents = true
@@ -1581,7 +1578,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(300, 300)
 layout_mode = 2
 size_flags_horizontal = 3
-texture = SubResource("ViewportTexture_v7532")
 expand_mode = 2
 
 [node name="UpdateButton" type="Button" parent="ImageGenWindow/ImageGenPanelContainer/MarginContainer/VBoxContainer/ScrollContainer/VBoxContainer/3DContainer/3DPoseViewportContainer" unique_id=1365150857]

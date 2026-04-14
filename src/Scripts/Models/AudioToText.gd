@@ -78,6 +78,15 @@ func start_ptt(req: PTTRequest) -> int:
 		push_warning("AudioToText.start_ptt: req.target is required")
 		return ERR_INVALID_PARAMETER
 
+	# Cancel any in-flight TTS before binding the mic. Output stream must end before
+	# the driver renegotiates for input, otherwise the mic capture comes up zombied.
+	# Non-blocking: cancel_tts() stops playback synchronously and flags in-flight
+	# synthesis to bail at its next checkpoint; the flag stays set through the
+	# WebSocket round-trip and is cleared by the next _voice_speak_response.
+	var chats := SingletonObject.Chats
+	if chats != null and chats.has_method("cancel_tts"):
+		chats.cancel_tts()
+
 	# Populate internal fields so existing _finish_transcription / _StartConverting paths work.
 	_field_for_filling = req.target
 	_btn = req.mic_button
@@ -129,6 +138,17 @@ func _StartConverting():
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
 		_stop_mic()
+
+		# Guard: recording_data can be empty when PTT is tapped faster than the mic
+		# takes to prime, or when no samples were captured before stop. In that case
+		# get_recording() returns null.
+		if recording == null:
+			push_warning("AudioToText: no audio captured (PTT tap too fast or mic not primed)")
+			if _btn:
+				_btn.modulate = Color.WHITE
+				_btn.icon = ResourceLoader.load("res://assets/icons/mic_icons/microphone_24.png")
+			return ERR_INVALID_DATA
+
 		recording.save_to_wav(file_path)
 
 		var wav_bytes := _read_wav_file()

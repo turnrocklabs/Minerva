@@ -1163,7 +1163,7 @@ func _on_mic_button_pressed() -> void:
 	var req := AudioToTexts.PTTRequest.new()
 	req.target = code_edit
 	req.mic_button = mic_button
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("Editor PTT failed: %s" % error_string(err))
 

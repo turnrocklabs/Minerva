@@ -707,7 +707,7 @@ func _on_record_system_prompt_button_pressed() -> void:
 	req.target = %SystemPromptTextEdit
 	req.mic_button = %RecordSystemPromptButton
 	req.clear_before = true
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("AISettings system prompt PTT failed: %s" % error_string(err))
 
@@ -822,7 +822,7 @@ func _on_record_agentic_system_prompt_button_pressed() -> void:
 	req.target = %AgenticSystemPromptTextEdit
 	req.mic_button = %RecordAgenticSystemPromptButton
 	req.clear_before = true
-	var err := SingletonObject.AtT.start_ptt(req)
+	var err: int = SingletonObject.AtT.start_ptt(req)
 	if err != OK:
 		push_warning("AISettings agentic system prompt PTT failed: %s" % error_string(err))
 
