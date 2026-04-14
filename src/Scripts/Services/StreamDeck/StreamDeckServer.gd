@@ -191,7 +191,9 @@ func _handle_ptt_down(peer_id: int) -> void:
 		_send_error(peer_id, "ptt_down", "No active chat")
 		return
 
-	var txt_input = chat_pane.find_child("txtMainUserInput", true, false)
+	# Use the unique-name lookup (% prefix) rather than find_child — the TextEdit
+	# is marked unique_name_in_owner=true in Chat.tscn and sits a few levels down.
+	var txt_input: Control = chat_pane.get_node_or_null("%txtMainUserInput")
 	if txt_input == null:
 		_send_error(peer_id, "ptt_down", "txtMainUserInput not found in ChatPane")
 		return
