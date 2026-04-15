@@ -22,10 +22,12 @@ class_name ReadTool extends RefCounted
 ##     - binary: bool (true if file is binary)
 ##     - error: str (error message if success=false)
 static func read_file(path: String, offset: int = 0, limit: int = 0) -> Dictionary:
-	# Resolve path (relative paths are relative to cwd)
+	# Resolve Godot virtual paths to absolute OS paths. Relative paths are
+	# left for the caller to join with cwd — this tool only owns the virtual
+	# → absolute expansion.
 	var file_path := path
-	if not path.begins_with("/"):
-		file_path = ProjectSettings.globalize_path("user://") if path.begins_with("user://") else path
+	if path.begins_with("user://") or path.begins_with("res://"):
+		file_path = ProjectSettings.globalize_path(path)
 
 	# Check if file exists
 	if not FileAccess.file_exists(file_path):

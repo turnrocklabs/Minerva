@@ -8,6 +8,8 @@ func get_tool_names() -> Array[String]:
 	return [
 		"minerva_list_skills",
 		"minerva_get_skill",
+		"minerva_skill_create",
+		"minerva_skill_update",
 		"minerva_activate_skill",
 		"minerva_deactivate_skill",
 		"minerva_update_skill_instructions",
@@ -89,6 +91,52 @@ func register_tools() -> void:
 		}
 	, "utility")
 
+	var create_desc := "Create a new skill in the docket with tool_deps for auto-activation. Use this to author skills at runtime — it handles insertion, active-status transition, and tool activation in one call. Writes to user://master.dct (the runtime docket). Do NOT use minerva_docket_create for skills — its schema omits tool_deps so auto-activation stays empty."
+	var create_schema := {
+		"type": "object",
+		"properties": {
+			"title": {"type": "string", "description": "Skill title — appears in the skill chooser. Keep short."},
+			"description": {"type": "string", "description": "One-line explanation shown in skill_list results. Lead with when the skill should be used."},
+			"steps": {"type": "string", "description": "Numbered imperative steps. Use exact tool names (not paraphrases). Include recovery patterns and a call budget."},
+			"preconditions": {"type": "string", "description": "What must be true before using this skill."},
+			"outcome": {"type": "string", "description": "What success looks like when the skill completes."},
+			"tool_deps": {
+				"type": "array",
+				"items": {"type": "string"},
+				"description": "Exact MCP tool names this skill needs. Auto-activated on skill load.",
+			},
+			"tags": {"type": "array", "items": {"type": "string"}, "description": "Category filters (e.g. 'editor', 'notes', 'tool-suite')."},
+			"optimization": {"type": "object", "description": "Optional runtime profile: {context_window: int, summary_mode: 'deterministic'|'llm', tool_idle_turns: int, tool_budget: int}"},
+			"status": {"type": "string", "enum": ["active", "draft"], "description": "Initial status (default 'active')."},
+			"project": {"type": "string", "description": "Target docket project (default 'master')."},
+		},
+		"required": ["title"],
+	}
+	server._register_tool("minerva_skill_create", create_desc, create_schema, "utility")
+
+	var update_desc := "Update fields on an existing skill, including tool_deps (which minerva_docket_update's schema omits). Pass only the fields you want to change. Use this to evolve skills as their workflows mature. Does NOT transition status — use minerva_docket_transition for that."
+	var update_schema := {
+		"type": "object",
+		"properties": {
+			"id": {"type": "string", "description": "Skill id (from minerva_get_skill or minerva_skill_create). Full id or short prefix."},
+			"title": {"type": "string"},
+			"description": {"type": "string"},
+			"steps": {"type": "string"},
+			"preconditions": {"type": "string"},
+			"outcome": {"type": "string"},
+			"tool_deps": {
+				"type": "array",
+				"items": {"type": "string"},
+				"description": "Replaces the existing tool_deps list. Auto-activation re-runs after update.",
+			},
+			"tags": {"type": "array", "items": {"type": "string"}},
+			"optimization": {"type": "object"},
+			"project": {"type": "string", "description": "Target docket project (default 'master')."},
+		},
+		"required": ["id"],
+	}
+	server._register_tool("minerva_skill_update", update_desc, update_schema, "utility")
+
 	server._register_tool("minerva_update_skill_instructions",
 		"Update the instructions text for a user-created skill. Instructions are markdown injected into the system prompt when the skill is active.",
 		{
@@ -148,6 +196,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		"minerva_list_skills": return _skill_list(arguments)
 		"minerva_get_skill": return _skill_get(arguments)
+		"minerva_skill_create": return _skill_create(arguments)
+		"minerva_skill_update": return _skill_update(arguments)
 		"minerva_activate_skill": return await _skill_activate(arguments)
 		"minerva_deactivate_skill": return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
@@ -447,6 +497,154 @@ func _skill_deactivate(arguments: Dictionary) -> Dictionary:
 
 	skill_manager.deactivate_skill(skill_id, server.mcp_manager)
 	return {"success": true, "skill_id": skill_id, "message": "Skill deactivated: %s" % skill.name}
+
+
+## Create a new docket-backed skill, including tool_deps (which docket_create's
+## MCP schema omits). Defaults to status=active and auto-activates the tools
+## in the caller's budget manager so the skill is immediately usable.
+func _skill_create(arguments: Dictionary) -> Dictionary:
+	var title: String = str(arguments.get("title", "")).strip_edges()
+	if title.is_empty():
+		return MCPToolUtils.error("title is required")
+
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm == null:
+		return MCPToolUtils.error("DocketManager not available")
+
+	var project: String = str(arguments.get("project", "master"))
+
+	# Forward skill fields to docket_create. DataModel.create_item copies any
+	# field listed in the skill type's optional_fields (including tool_deps and
+	# optimization), so the persisted item will carry them — the only gap was
+	# the MCP-layer schema on docket_create itself.
+	var create_args := {
+		"project": project,
+		"type": "skill",
+		"title": title,
+	}
+	var forwarded := ["description", "steps", "preconditions", "outcome",
+		"tool_deps", "optimization", "tags", "component", "topic", "subtopic", "target"]
+	for key in forwarded:
+		if arguments.has(key):
+			create_args[key] = arguments[key]
+
+	var create_result := dm.call_tool("docket_create", create_args)
+	if create_result.has("error"):
+		return create_result
+
+	var skill_id: String = str(create_result.get("id", ""))
+	if skill_id.is_empty():
+		return MCPToolUtils.error("docket_create returned no id")
+
+	# Transition to active unless caller asked for draft. New skills start in
+	# "draft" state per the schema (skill.initial_state); skill_list filters
+	# out drafts by default so we flip to active immediately.
+	var requested_status: String = str(arguments.get("status", "active"))
+	var final_status: String = "draft"
+	var transition_warning := ""
+	if requested_status == "active":
+		var transition_result := dm.call_tool("docket_transition", {
+			"project": project,
+			"id": skill_id,
+			"to": "active",
+		})
+		if transition_result.has("error"):
+			transition_warning = "Skill created in draft; transition to active failed: %s" % str(transition_result.get("error", ""))
+		else:
+			final_status = "active"
+
+	# Auto-activate declared tools in the caller's budget manager so the
+	# skill is immediately usable without a second minerva_activate_skill call.
+	var tool_deps: Array = arguments.get("tool_deps", [])
+	var activated: Array[String] = []
+	var skipped: Array[String] = []
+	for dep_name in tool_deps:
+		var dep_str := str(dep_name)
+		var search_results: Array[Dictionary] = server.tool_search_index.search(dep_str, "", 1)
+		if not search_results.is_empty() and str(search_results[0].get("name", "")) == dep_str:
+			var dep_schema: Dictionary = search_results[0].get("schema", {})
+			server.tool_budget_manager.activate_tool(dep_str, dep_schema)
+			activated.append(dep_str)
+		else:
+			skipped.append(dep_str)
+
+	var result := {
+		"success": true,
+		"id": skill_id,
+		"title": title,
+		"status": final_status,
+		"project": project,
+		"activated_tools": activated,
+	}
+	if not skipped.is_empty():
+		result["skipped_tools"] = skipped
+		result["message"] = "%d tools activated, %d skipped (unknown tool names)." % [activated.size(), skipped.size()]
+	else:
+		result["message"] = "Skill created and %d tools activated." % activated.size()
+	if not transition_warning.is_empty():
+		result["warning"] = transition_warning
+	return result
+
+
+## Update fields on an existing docket-backed skill, including tool_deps
+## (which minerva_docket_update's MCP schema omits). Re-runs auto-activation
+## for tool_deps when they change.
+func _skill_update(arguments: Dictionary) -> Dictionary:
+	var id: String = str(arguments.get("id", "")).strip_edges()
+	if id.is_empty():
+		return MCPToolUtils.error("id is required")
+
+	var dm: DocketManager = SingletonObject.docket_manager
+	if dm == null:
+		return MCPToolUtils.error("DocketManager not available")
+
+	var project: String = str(arguments.get("project", "master"))
+
+	var update_args := {"project": project, "id": id}
+	var forwarded := ["title", "description", "steps", "preconditions", "outcome",
+		"tool_deps", "optimization", "tags", "component", "topic", "subtopic", "target"]
+	var has_changes := false
+	for key in forwarded:
+		if arguments.has(key):
+			update_args[key] = arguments[key]
+			has_changes = true
+
+	if not has_changes:
+		return MCPToolUtils.error("No updatable fields provided")
+
+	var update_result := dm.call_tool("docket_update", update_args)
+	if update_result.has("error"):
+		return update_result
+
+	var result := {
+		"success": true,
+		"id": id,
+		"project": project,
+		"updated_fields": update_args.keys().filter(func(k): return k != "id" and k != "project"),
+	}
+
+	# If tool_deps was part of the update, re-activate them so the caller's
+	# budget manager reflects the new set immediately. We don't try to
+	# deactivate removed tools — activation is idempotent and old deps
+	# expire naturally via tool_idle_turns.
+	if arguments.has("tool_deps"):
+		var tool_deps: Array = arguments.get("tool_deps", [])
+		var activated: Array[String] = []
+		var skipped: Array[String] = []
+		for dep_name in tool_deps:
+			var dep_str := str(dep_name)
+			var search_results: Array[Dictionary] = server.tool_search_index.search(dep_str, "", 1)
+			if not search_results.is_empty() and str(search_results[0].get("name", "")) == dep_str:
+				var dep_schema: Dictionary = search_results[0].get("schema", {})
+				server.tool_budget_manager.activate_tool(dep_str, dep_schema)
+				activated.append(dep_str)
+			else:
+				skipped.append(dep_str)
+		result["activated_tools"] = activated
+		if not skipped.is_empty():
+			result["skipped_tools"] = skipped
+
+	return result
 
 
 func _skill_update_instructions(arguments: Dictionary) -> Dictionary:

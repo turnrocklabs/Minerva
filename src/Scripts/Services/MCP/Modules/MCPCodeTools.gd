@@ -99,10 +99,19 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
+## Expand Godot virtual paths (`res://`, `user://`) to absolute OS paths so the
+## underlying CodeTools (which use OS FileAccess, DirAccess) can resolve them.
+static func _resolve_virtual_path(path: String) -> String:
+	if path.begins_with("user://") or path.begins_with("res://"):
+		return ProjectSettings.globalize_path(path)
+	return path
+
+
 func _codetools_read(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", "")
 	if path.is_empty():
 		return {"success": false, "error": "path is required"}
+	path = _resolve_virtual_path(path)
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
 	var offset: int = MCPToolUtils.coerce_int(arguments.get("offset", 0))
@@ -117,6 +126,7 @@ func _codetools_write(arguments: Dictionary) -> Dictionary:
 	var content: String = arguments.get("content", "")
 	if path.is_empty():
 		return {"success": false, "error": "path is required"}
+	path = _resolve_virtual_path(path)
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
 	var result := _write_tool.write_file(path, content)
@@ -128,6 +138,7 @@ func _codetools_edit(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", "")
 	if path.is_empty():
 		return MCPToolUtils.error("path is required")
+	path = _resolve_virtual_path(path)
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
 	var result := EditTool.edit_file(
@@ -143,6 +154,7 @@ func _codetools_edit(arguments: Dictionary) -> Dictionary:
 func _codetools_glob(arguments: Dictionary) -> Dictionary:
 	var pattern: String = arguments.get("pattern", "")
 	var base_dir: String = arguments.get("path", _cwd_tool.get_cwd())
+	base_dir = _resolve_virtual_path(base_dir)
 	var limit: int = MCPToolUtils.coerce_int(arguments.get("limit", 100))
 	var result := GlobTool.glob_files(pattern, base_dir, limit)
 	SingletonObject.mcp_tool_executed.emit("minerva_file_glob", arguments, result, _current_agent_id)
@@ -151,6 +163,7 @@ func _codetools_glob(arguments: Dictionary) -> Dictionary:
 
 func _codetools_grep(arguments: Dictionary) -> Dictionary:
 	var path: String = arguments.get("path", _cwd_tool.get_cwd())
+	path = _resolve_virtual_path(path)
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
 	var result := GrepTool.grep_files(

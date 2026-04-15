@@ -18,6 +18,7 @@ func get_tool_names() -> Array[String]:
 	return [
 		"minerva_create_note",
 		"minerva_create_note_tab",
+		"minerva_list_note_tabs",
 		"minerva_list_notes",
 		"minerva_list_agent_notes",
 		"minerva_enable_notes",
@@ -71,6 +72,11 @@ func register_tools() -> void:
 			},
 			"required": ["name"]
 		}
+	, "notes")
+
+	server._register_tool("minerva_list_note_tabs",
+		"List all notes tabs with their names, ids, and note counts. Use before minerva_create_note when the caller wants to target a specific tab, or to discover empty tabs awaiting content.",
+		{"type": "object", "properties": {}, "required": []}
 	, "notes")
 
 	server._register_tool("minerva_list_notes",
@@ -254,6 +260,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _create_note(arguments)
 		"minerva_create_note_tab":
 			return _create_note_tab(arguments)
+		"minerva_list_note_tabs":
+			return _list_note_tabs(arguments)
 		"minerva_list_notes":
 			return _list_notes(arguments)
 		"minerva_list_agent_notes":
@@ -382,6 +390,25 @@ func _create_note_tab(args: Dictionary) -> Dictionary:
 		"tab_name": name_,
 		"tab_id": note_vbox.uuid
 	}
+
+
+func _list_note_tabs(_args: Dictionary) -> Dictionary:
+	var notes_container = SingletonObject.notes_container
+	if not notes_container:
+		return MCPToolUtils.error("Notes container not available")
+
+	var tabs: Array = []
+	for i in range(notes_container.get_tab_count()):
+		var tab_control = notes_container.get_tab_control(i)
+		var tab_entry := {
+			"name": notes_container.get_tab_title(i),
+			"note_count": notes_container.get_notes(i).size(),
+		}
+		if tab_control and "uuid" in tab_control:
+			tab_entry["id"] = tab_control.uuid
+		tabs.append(tab_entry)
+
+	return {"success": true, "tabs": tabs, "count": tabs.size()}
 
 
 func _list_notes(args: Dictionary) -> Dictionary:
