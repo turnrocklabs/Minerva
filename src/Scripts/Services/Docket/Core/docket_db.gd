@@ -275,6 +275,8 @@ static func parse_qualified_ref(ref: String) -> Dictionary:
 static func _normalize_text(val) -> Variant:
 	if val is Array:
 		return JSON.stringify(val)
+	if val is Dictionary:
+		return JSON.stringify(val)
 	if val is String:
 		var s: String = val
 		s = s.replace("\\n", "\n")
@@ -1292,11 +1294,20 @@ func _build_item_dict(row: Dictionary) -> Dictionary:
 	else:
 		item["tool_deps"] = []
 
-	# optimization: JSON dict stored as TEXT
+	# optimization: JSON dict stored as TEXT.
+	# Godot's JSON.parse_string returns all numbers as floats; coerce known-int
+	# fields so downstream consumers (tool budget, memory manager, LLM tool schemas)
+	# don't have to defensively int()-cast at every read site.
 	var opt_raw = row.get("optimization")
 	if opt_raw != null and not str(opt_raw).is_empty():
 		var parsed = JSON.parse_string(str(opt_raw))
-		item["optimization"] = parsed if parsed is Dictionary else {}
+		if parsed is Dictionary:
+			for int_key in ["context_window", "tool_budget", "tool_idle_turns"]:
+				if parsed.has(int_key):
+					parsed[int_key] = int(parsed[int_key])
+			item["optimization"] = parsed
+		else:
+			item["optimization"] = {}
 	else:
 		item["optimization"] = {}
 
