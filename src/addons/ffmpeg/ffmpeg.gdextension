@@ -10,9 +10,9 @@ linux.debug.x86_64 = "res://addons/ffmpeg/linux64/libgdffmpeg.linux.template_deb
 linux.release.x86_64 = "res://addons/ffmpeg/linux64/libgdffmpeg.linux.template_release.x86_64.so"
 android.debug.arm64 = "res://addons/ffmpeg/android/libgdffmpeg.android.template_debug.arm64.so"
 android.release.arm64 = "res://addons/ffmpeg/android/libgdffmpeg.android.template_release.arm64.so"
-; macOS: no prebuilt binaries available — build from source with scripts/build-ffmpeg.sh
-;macos.debug = "res://addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework"
-;macos.release = "res://addons/ffmpeg/macos/libgdffmpeg.macos.template_release.framework"
+; macOS: built from source via scripts/build-ffmpeg.sh (arm64 / Apple Silicon only)
+macos.debug = "res://addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework"
+macos.release = "res://addons/ffmpeg/macos/libgdffmpeg.macos.template_release.framework"
 
 [dependencies]
 
@@ -42,12 +42,12 @@ android.arm64 =
         "res://addons/ffmpeg/android/libswscale.so": ""
     }
 
-;macos =
-;    {
-;        "res://addons/ffmpeg/macos/libavcodec.dylib": "",
-;        "res://addons/ffmpeg/macos/libavfilter.dylib": "",
-;        "res://addons/ffmpeg/macos/libavformat.dylib": "",
-;        "res://addons/ffmpeg/macos/libavutil.dylib": "",
-;        "res://addons/ffmpeg/macos/libswresample.dylib": "",
-;        "res://addons/ffmpeg/macos/libswscale.dylib": ""
-;    }
+macos =
+    {
+        "res://addons/ffmpeg/macos/libavcodec.dylib": "",
+        "res://addons/ffmpeg/macos/libavfilter.dylib": "",
+        "res://addons/ffmpeg/macos/libavformat.dylib": "",
+        "res://addons/ffmpeg/macos/libavutil.dylib": "",
+        "res://addons/ffmpeg/macos/libswresample.dylib": "",
+        "res://addons/ffmpeg/macos/libswscale.dylib": ""
+    }

@@ -161,10 +161,44 @@ else
         if [ -f "$WRY_SRC" ]; then
             mkdir -p "$WRY_DST"
             if [ "$PLATFORM" = "macos" ]; then
-                # WRY.gdextension expects a .framework bundle on macOS
+                # WRY.gdextension expects a proper .framework bundle on macOS.
+                # Three things must be right or dyld silently crashes Godot:
+                #   1. Info.plist with correct CFBundleExecutable
+                #   2. Install name rewritten from cargo's abs build path to @rpath
+                #   3. Codesigned as a bundle (not just the binary)
                 FW_DIR="$WRY_DST/libgodot_wry.framework"
-                mkdir -p "$FW_DIR"
+                mkdir -p "$FW_DIR/Resources"
                 cp "$WRY_SRC" "$FW_DIR/libgodot_wry"
+
+                cat > "$FW_DIR/Resources/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>libgodot_wry</string>
+    <key>CFBundleIdentifier</key>
+    <string>org.doceazedo.godot-wry</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>libgodot_wry</string>
+    <key>CFBundlePackageType</key>
+    <string>FMWK</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>MinimumOSVersion</key>
+    <string>10.13</string>
+</dict>
+</plist>
+PLIST
+
+                install_name_tool -id "@rpath/libgodot_wry.framework/libgodot_wry" "$FW_DIR/libgodot_wry"
+                codesign --force --sign - "$FW_DIR"
                 echo "godot_wry built: $FW_DIR ($(du -h "$WRY_SRC" | cut -f1))"
             else
                 cp "$WRY_SRC" "$WRY_DST"

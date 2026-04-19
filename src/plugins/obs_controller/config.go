@@ -8,10 +8,12 @@ import (
 	"sync"
 )
 
+// Config holds non-secret OBS settings persisted to disk.
+// The OBS WebSocket password is intentionally NOT here — it lives in
+// Minerva's docket vault and is supplied by the panel via the connect tool.
 type Config struct {
 	OBSHost         string `json:"obs_host"`
 	OBSPort         int    `json:"obs_port"`
-	OBSPassword     string `json:"obs_password"`
 	CameraSource    string `json:"camera_source"`
 	OutputDirectory string `json:"output_directory"`
 	AutoConnect     bool   `json:"auto_connect"`
@@ -103,10 +105,6 @@ func UpdateConfig(updates map[string]any) error {
 			case float64:
 				cfg.OBSPort = int(n)
 			}
-		case "obs_password":
-			if s, ok := v.(string); ok {
-				cfg.OBSPassword = s
-			}
 		case "camera_source":
 			if s, ok := v.(string); ok {
 				cfg.CameraSource = s
@@ -127,21 +125,17 @@ func UpdateConfig(updates map[string]any) error {
 	return SaveConfig()
 }
 
-// RedactedConfig returns the config as a map with the password replaced by "***" if set.
-func RedactedConfig() map[string]any {
+// PublicConfig returns the on-disk config as a map. The OBS password is not
+// stored on disk — it lives in the docket vault and is fetched separately by
+// the panel via the secrets capability.
+func PublicConfig() map[string]any {
 	cfgMu.RLock()
 	c := cfg
 	cfgMu.RUnlock()
 
-	password := ""
-	if c.OBSPassword != "" {
-		password = "***"
-	}
-
 	return map[string]any{
 		"obs_host":         c.OBSHost,
 		"obs_port":         c.OBSPort,
-		"obs_password":     password,
 		"camera_source":    c.CameraSource,
 		"output_directory": c.OutputDirectory,
 		"auto_connect":     c.AutoConnect,

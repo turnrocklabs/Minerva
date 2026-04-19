@@ -13,7 +13,8 @@
 #   - Git submodules initialized (vendor/EIRTeam.FFmpeg)
 
 set -euo pipefail
-cd "$(git rev-parse --show-toplevel)"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
 
 PLATFORM="${1:-}"
 
@@ -92,14 +93,64 @@ fi
 echo "Initializing EIRTeam.FFmpeg submodules (ffmpeg-kit, godot-cpp)..."
 cd "$FFMPEG_DIR"
 git submodule update --init --recursive
-cd "$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# ── Patch ffmpeg-kit for CMake 4.x (x265 3.4 uses removed policy behaviors) ──
+# CMake 4.3+ dropped cmake_policy(OLD) for CMP0025/CMP0054 and removed
+# cmake_minimum_required<3.5 compat. x265 3.4's CMakeLists hits all three.
+# Fix: add -DCMAKE_POLICY_VERSION_MINIMUM=3.5 to its cmake invocation.
+if [ "$PLATFORM" = "macos" ]; then
+    X265_SCRIPT="$FFMPEG_DIR/ffmpeg-kit/scripts/apple/x265.sh"
+    if [ -f "$X265_SCRIPT" ] && ! grep -q "CMAKE_POLICY_VERSION_MINIMUM" "$X265_SCRIPT"; then
+        echo "Patching ffmpeg-kit x265 script for CMake 4.x compatibility..."
+        awk '
+            {print}
+            /^cmake -Wno-dev \\$/ { print "  -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \\" }
+        ' "$X265_SCRIPT" > "$X265_SCRIPT.tmp" && mv "$X265_SCRIPT.tmp" "$X265_SCRIPT"
+        chmod +x "$X265_SCRIPT"
+    fi
+
+    # ffmpeg-kit overwrites x265's CMakeLists.txt with a patched copy that hardcodes
+    # cmake_policy(SET CMP0025 OLD) and CMP0054 OLD — CMake 4.x refuses both.
+    # Flip OLD → NEW so modern CMake accepts them.
+    X265_CMAKE="$FFMPEG_DIR/ffmpeg-kit/tools/patch/cmake/x265/CMakeLists.txt"
+    if [ -f "$X265_CMAKE" ] && grep -q "cmake_policy(SET CMP0025 OLD)" "$X265_CMAKE"; then
+        echo "Patching ffmpeg-kit x265 CMakeLists.txt for CMake 4.x policies..."
+        # Flip OLD → NEW to satisfy CMake 4.x; CMP0025 NEW makes Apple's compiler
+        # report as "AppleClang" instead of "Clang", so broaden the identity check
+        # at line 141 so CLANG=1 still gets set.
+        sed -i '' \
+            -e 's/cmake_policy(SET CMP0025 OLD)/cmake_policy(SET CMP0025 NEW)/' \
+            -e 's/cmake_policy(SET CMP0054 OLD)/cmake_policy(SET CMP0054 NEW)/' \
+            -e 's/\${CMAKE_CXX_COMPILER_ID} STREQUAL "Clang"/${CMAKE_CXX_COMPILER_ID} MATCHES "Clang"/' \
+            "$X265_CMAKE"
+    fi
+fi
 
 # ── Install build dependencies ───────────────────────────────────────
 
-echo "Installing build dependencies..."
-cd "$FFMPEG_DIR"
-make bootstrap
-cd "$(git rev-parse --show-toplevel)"
+echo "Checking build dependencies..."
+if [ "$PLATFORM" = "macos" ]; then
+    # Replicate Makefile's `bootstrap` target but only install missing packages,
+    # so re-runs don't spam brew with 16 already-installed formulae.
+    REQUIRED_BREW_PKGS=(autoconf automake libtool pkg-config curl cmake gperf groff texinfo yasm nasm bison autogen git wget meson ninja guile)
+    MISSING_PKGS=()
+    for pkg in "${REQUIRED_BREW_PKGS[@]}"; do
+        if ! brew list --formula "$pkg" &>/dev/null; then
+            MISSING_PKGS+=("$pkg")
+        fi
+    done
+    if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
+        echo "Installing missing brew packages: ${MISSING_PKGS[*]}"
+        brew install "${MISSING_PKGS[@]}"
+    else
+        echo "All brew build dependencies already installed"
+    fi
+else
+    cd "$FFMPEG_DIR"
+    make bootstrap
+    cd "$REPO_ROOT"
+fi
 
 # ── Ensure SCons is available ────────────────────────────────────────
 
@@ -117,7 +168,9 @@ cd "$FFMPEG_DIR"
 
 case "$PLATFORM" in
     macos)
-        make ffmpeg PLATFORM=macos
+        # Minerva targets M-series only; override Makefile default (arm64 x86_64)
+        # to skip the x86_64 half of the universal build.
+        make ffmpeg PLATFORM=macos TARGET_ARCH=arm64
         ;;
     linux)
         make ffmpeg PLATFORM=linux
@@ -135,7 +188,7 @@ echo "=== Building FFmpeg GDExtension wrapper ==="
 
 case "$PLATFORM" in
     macos)
-        make gdextension PLATFORM=macos
+        make gdextension PLATFORM=macos TARGET_ARCH=arm64
         ;;
     linux)
         make gdextension PLATFORM=linux
@@ -149,7 +202,7 @@ case "$PLATFORM" in
         ;;
 esac
 
-cd "$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
 
 # ── Install built binaries ───────────────────────────────────────────
 
@@ -161,6 +214,10 @@ case "$PLATFORM" in
         mkdir -p "$ADDON_DIR/macos"
         cp -r "$FFMPEG_BUILD_OUT/macos/"* "$ADDON_DIR/macos/"
         echo "  Installed macOS frameworks + dylibs"
+        # Ad-hoc codesign so Gatekeeper doesn't block dlopen at runtime.
+        find "$ADDON_DIR/macos" -name '*.dylib' -exec codesign --force --sign - {} \;
+        find "$ADDON_DIR/macos" -maxdepth 2 -name '*.framework' -exec codesign --force --sign - {} \;
+        echo "  Codesigned (ad-hoc)"
         ;;
     linux)
         mkdir -p "$ADDON_DIR/linux64"

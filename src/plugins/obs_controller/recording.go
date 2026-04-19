@@ -165,10 +165,12 @@ func listRecordingsHandler(ctx context.Context, req *mcp.CallToolRequest, args L
 
 // --- configure ---
 
+// ConfigureArgs holds non-secret OBS settings. The password is intentionally
+// absent — it's stored in Minerva's docket vault by the panel via the
+// secrets:set:obs_password capability.
 type ConfigureArgs struct {
 	OBSHost         *string `json:"obs_host,omitempty"`
 	OBSPort         *int    `json:"obs_port,omitempty"`
-	OBSPassword     *string `json:"obs_password,omitempty"`
 	CameraSource    *string `json:"camera_source,omitempty"`
 	OutputDirectory *string `json:"output_directory,omitempty"`
 	AutoConnect     *bool   `json:"auto_connect,omitempty"`
@@ -183,9 +185,6 @@ func configureHandler(ctx context.Context, req *mcp.CallToolRequest, args Config
 	if args.OBSPort != nil {
 		updates["obs_port"] = *args.OBSPort
 	}
-	if args.OBSPassword != nil {
-		updates["obs_password"] = *args.OBSPassword
-	}
 	if args.CameraSource != nil {
 		updates["camera_source"] = *args.CameraSource
 	}
@@ -197,14 +196,14 @@ func configureHandler(ctx context.Context, req *mcp.CallToolRequest, args Config
 	}
 
 	if len(updates) == 0 {
-		return jsonResult(RedactedConfig()), nil, nil
+		return jsonResult(PublicConfig()), nil, nil
 	}
 
 	if err := UpdateConfig(updates); err != nil {
 		return errorResult("Failed to save config: " + err.Error()), nil, nil
 	}
 
-	return jsonResult(RedactedConfig()), nil, nil
+	return jsonResult(PublicConfig()), nil, nil
 }
 
 // registerRecordingTools registers recording and config MCP tools on the server.
@@ -237,13 +236,12 @@ func registerRecordingTools(server *mcp.Server) {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "minerva_obs_controller_configure",
-		Description: "Set OBS connection details, webcam source name, and output directory. Saved to disk for persistence.",
+		Description: "Set non-secret OBS settings (host, port, camera source, output directory, auto-connect). The OBS password is stored separately in Minerva's vault — set it via the panel UI.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"obs_host":         {"type": "string",  "description": "OBS WebSocket host (default: localhost)"},
 				"obs_port":         {"type": "integer", "description": "OBS WebSocket port (default: 4455)"},
-				"obs_password":     {"type": "string",  "description": "OBS WebSocket password"},
 				"camera_source":    {"type": "string",  "description": "Name of the webcam source in OBS"},
 				"output_directory": {"type": "string",  "description": "Directory where OBS saves recordings"},
 				"auto_connect":     {"type": "boolean", "description": "Auto-connect to OBS on plugin start"}
