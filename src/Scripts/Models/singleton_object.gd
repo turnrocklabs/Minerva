@@ -1190,6 +1190,8 @@ func _ready():
 
 ## Register built-in editor types in the creatable items registry
 func _init_creatable_items() -> void:
+	if editor_container == null:
+		return
 	var ep = editor_container.editor_pane
 
 	# Text Editor (sort_order: 10)
