@@ -227,6 +227,125 @@
 
   .pos-label span { color: var(--accent); }
 
+  /* ── header right cluster ── */
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .icon-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: var(--radius);
+    width: 26px;
+    height: 26px;
+    font-size: 14px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .icon-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .icon-btn.active { color: var(--accent); border-color: var(--accent); }
+
+  /* ── settings panel ── */
+  .settings-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 110px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .field-row label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .field-row input[type="text"],
+  .field-row input[type="number"],
+  .field-row input[type="password"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font: inherit;
+    font-size: 12px;
+    width: 100%;
+  }
+
+  .field-row input:focus { outline: none; border-color: var(--accent); }
+
+  .field-row input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+    margin: 0;
+    justify-self: start;
+  }
+
+  .pwd-status {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .pwd-status.set { color: var(--green); }
+
+  .settings-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .settings-actions button {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 4px;
+    padding: 5px 12px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .settings-actions button.primary { border-color: var(--accent); color: var(--accent); }
+  .settings-actions button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .settings-msg {
+    margin-top: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    background: rgba(243,139,168,0.10);
+    border: 1px solid var(--red);
+    color: var(--red);
+  }
+
+  .settings-msg.ok {
+    background: rgba(166,227,161,0.10);
+    border-color: var(--green);
+    color: var(--green);
+  }
+
   /* ── error toast ── */
   .toast {
     position: fixed;
@@ -253,10 +372,57 @@
 <!-- header -->
 <div class="header">
   <div class="header-title">OBS Controller</div>
-  <div class="status-badge">
-    <div class="status-dot" id="statusDot"></div>
-    <span class="status-label disconnected" id="statusLabel">Disconnected</span>
+  <div class="header-right">
+    <button class="icon-btn" id="btnSettings" title="Settings" onclick="toggleSettings()">⚙</button>
+    <div class="status-badge">
+      <div class="status-dot" id="statusDot"></div>
+      <span class="status-label disconnected" id="statusLabel">Disconnected</span>
+    </div>
   </div>
+</div>
+
+<!-- settings (hidden by default; opens via gear button) -->
+<div class="settings-panel" id="settingsPanel" hidden>
+  <div class="section-label">Connection</div>
+  <div class="field-row">
+    <label>Host</label>
+    <input type="text" id="cfgHost" placeholder="localhost">
+    <span></span>
+  </div>
+  <div class="field-row">
+    <label>Port</label>
+    <input type="number" id="cfgPort" placeholder="4455">
+    <span></span>
+  </div>
+  <div class="field-row">
+    <label>Password</label>
+    <input type="password" id="cfgPassword" placeholder="(unchanged)">
+    <span class="pwd-status" id="cfgPasswordStatus">not set</span>
+  </div>
+
+  <div class="section-label" style="margin-top:10px;">Recording</div>
+  <div class="field-row">
+    <label>Camera Source</label>
+    <input type="text" id="cfgCamera">
+    <span></span>
+  </div>
+  <div class="field-row">
+    <label>Output Dir</label>
+    <input type="text" id="cfgOutputDir">
+    <span></span>
+  </div>
+  <div class="field-row">
+    <label>Auto-connect</label>
+    <input type="checkbox" id="cfgAutoConnect">
+    <span></span>
+  </div>
+
+  <div class="settings-actions">
+    <button class="primary" onclick="saveSettings()">Save</button>
+    <button onclick="connectNow()">Connect Now</button>
+    <button onclick="toggleSettings()">Close</button>
+  </div>
+  <div class="settings-msg" id="settingsMsg" hidden></div>
 </div>
 
 <!-- scene -->
@@ -690,12 +856,170 @@ async function init() {
     console.error('get_status failed:', e);
   }
 
+  // Try to auto-connect using saved credentials. If anything's missing
+  // (no password, vault locked, OBS down), show the settings panel so
+  // the user can sort it out.
+  try {
+    var cfg = unwrapMCP(await minerva.call('minerva_obs_controller_configure', {}));
+    if (cfg && cfg.auto_connect && !state.connected) {
+      var ok = await connectWithSavedPassword(cfg);
+      if (!ok) openSettings(cfg);
+    } else if (!state.connected) {
+      // Nothing auto — but pre-populate the form so it's ready when opened.
+      cacheConfig(cfg || {});
+    }
+  } catch(e) {
+    console.error('initial configure read failed:', e);
+  }
+
   try {
     var scenesData = unwrapMCP(await minerva.call('minerva_obs_controller_list_scenes', {}));
     populateScenes(scenesData);
   } catch(e) {
     console.error('list_scenes failed:', e);
   }
+}
+
+// ── settings ───────────────────────────────────────────────────────────────
+var settingsPanel = document.getElementById('settingsPanel');
+var btnSettings   = document.getElementById('btnSettings');
+var settingsMsg   = document.getElementById('settingsMsg');
+var cachedConfig  = {};
+var passwordIsSet = false;
+
+function cacheConfig(cfg) {
+  cachedConfig = cfg || {};
+  document.getElementById('cfgHost').value         = cfg.obs_host || '';
+  document.getElementById('cfgPort').value         = cfg.obs_port || '';
+  document.getElementById('cfgCamera').value       = cfg.camera_source || '';
+  document.getElementById('cfgOutputDir').value    = cfg.output_directory || '';
+  document.getElementById('cfgAutoConnect').checked = !!cfg.auto_connect;
+}
+
+function setPasswordIndicator(isSet) {
+  passwordIsSet = isSet;
+  var el = document.getElementById('cfgPasswordStatus');
+  el.textContent = isSet ? 'set' : 'not set';
+  el.classList.toggle('set', isSet);
+  document.getElementById('cfgPassword').placeholder = isSet ? '(unchanged)' : 'enter password';
+}
+
+function showSettingsMsg(text, ok) {
+  settingsMsg.hidden = false;
+  settingsMsg.textContent = text;
+  settingsMsg.classList.toggle('ok', !!ok);
+}
+
+function clearSettingsMsg() {
+  settingsMsg.hidden = true;
+  settingsMsg.textContent = '';
+}
+
+async function openSettings(cfg) {
+  if (cfg) cacheConfig(cfg);
+  settingsPanel.hidden = false;
+  btnSettings.classList.add('active');
+  // Refresh password-set indicator each time we open.
+  try {
+    var got = await minerva.pluginIPC('capability:secrets:get:obs_password', {});
+    setPasswordIndicator(!!(got && got.exists !== false && got.value));
+  } catch(e) {
+    setPasswordIndicator(false);
+  }
+}
+
+function closeSettings() {
+  settingsPanel.hidden = true;
+  btnSettings.classList.remove('active');
+  clearSettingsMsg();
+  // Clear the password input so it doesn't linger in DOM.
+  document.getElementById('cfgPassword').value = '';
+}
+
+function toggleSettings() {
+  if (settingsPanel.hidden) openSettings();
+  else closeSettings();
+}
+
+async function saveSettings() {
+  clearSettingsMsg();
+
+  var newPassword = document.getElementById('cfgPassword').value;
+  var configUpdate = {
+    obs_host:         document.getElementById('cfgHost').value || 'localhost',
+    obs_port:         parseInt(document.getElementById('cfgPort').value, 10) || 4455,
+    camera_source:    document.getElementById('cfgCamera').value,
+    output_directory: document.getElementById('cfgOutputDir').value,
+    auto_connect:     document.getElementById('cfgAutoConnect').checked
+  };
+
+  // Save non-secret config first.
+  try {
+    var saved = unwrapMCP(await minerva.call('minerva_obs_controller_configure', configUpdate));
+    cacheConfig(saved || configUpdate);
+  } catch(e) {
+    showSettingsMsg('Failed to save config: ' + (e.message || e));
+    return;
+  }
+
+  // Save password if user entered one.
+  if (newPassword) {
+    try {
+      await minerva.pluginIPC('capability:secrets:set:obs_password', { value: newPassword });
+      setPasswordIndicator(true);
+      document.getElementById('cfgPassword').value = '';
+    } catch(e) {
+      showSettingsMsg('Vault error: ' + (e.message || e));
+      return;
+    }
+  }
+
+  showSettingsMsg('Saved.', true);
+}
+
+async function connectWithSavedPassword(cfg) {
+  cfg = cfg || cachedConfig;
+  // Fetch the password from the vault.
+  try {
+    var got = await minerva.pluginIPC('capability:secrets:get:obs_password', {});
+    var password = got && got.value;
+
+    if (!password && (cfg.obs_password === undefined)) {
+      // No password configured at all — connect anyway in case OBS auth is off.
+    }
+
+    var result = unwrapMCP(await minerva.call('minerva_obs_controller_connect', {
+      host:     cfg.obs_host || 'localhost',
+      port:     cfg.obs_port || 4455,
+      password: password || ''
+    }));
+    return !!(result && (result.connected || result.connection || result));
+  } catch(e) {
+    console.error('connect failed:', e);
+    return false;
+  }
+}
+
+async function connectNow() {
+  clearSettingsMsg();
+  // If user typed a new password in the form, save it first.
+  var typed = document.getElementById('cfgPassword').value;
+  if (typed) {
+    try {
+      await minerva.pluginIPC('capability:secrets:set:obs_password', { value: typed });
+      setPasswordIndicator(true);
+      document.getElementById('cfgPassword').value = '';
+    } catch(e) {
+      showSettingsMsg('Vault error: ' + (e.message || e));
+      return;
+    }
+  }
+  var cfg = {
+    obs_host: document.getElementById('cfgHost').value || cachedConfig.obs_host || 'localhost',
+    obs_port: parseInt(document.getElementById('cfgPort').value, 10) || cachedConfig.obs_port || 4455
+  };
+  var ok = await connectWithSavedPassword(cfg);
+  showSettingsMsg(ok ? 'Connected.' : 'Connect failed — check OBS is running and password is correct.', ok);
 }
 
 // bridge state push

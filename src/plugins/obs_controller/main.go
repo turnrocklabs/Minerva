@@ -39,16 +39,10 @@ func main() {
 		log.Printf("Config load: %v (using defaults)", err)
 	}
 
-	// Auto-connect if configured.
-	config := GetConfig()
-	if config.AutoConnect && config.OBSHost != "" {
-		log.Printf("Auto-connecting to OBS at %s:%d", config.OBSHost, config.OBSPort)
-		if err := obs.Connect(config.OBSHost, config.OBSPort, config.OBSPassword); err != nil {
-			log.Printf("Auto-connect failed (OBS may not be running): %v", err)
-		} else {
-			log.Println("Auto-connected to OBS")
-		}
-	}
+	// Auto-connect lives in the panel now: the password is in Minerva's vault,
+	// not in the on-disk config, so the plugin process can't initiate a
+	// connection without help. The panel reads the password via the
+	// secrets:get:obs_password capability and calls the connect tool.
 
 	log.Println("Starting OBS Controller MCP server on stdio")
 

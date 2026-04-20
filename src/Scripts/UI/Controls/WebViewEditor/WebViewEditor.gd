@@ -35,12 +35,24 @@ func _ready() -> void:
 	_apply_editor_style()
 	_build_ui()
 	SingletonObject.theme_changed.connect(func(_t): _apply_editor_style())
+	# Refocus the native webview when this panel becomes visible (e.g. user
+	# switches back to this tab). Without this, text inputs don't show a
+	# cursor until the user clicks a second time.
+	visibility_changed.connect(_refocus_webview_if_visible)
+
+
+func _refocus_webview_if_visible() -> void:
+	if is_visible_in_tree() and _webview != null and _webview.has_method("focus"):
+		_webview.call_deferred("focus")
 
 
 func _exit_tree() -> void:
 	# Destroy the native WRY webview window when the editor tab is closed.
-	# Without this, the OS-level webview window persists on screen after the tab is gone.
+	# WRY only hides the OS window in response to Godot's visibility_changed
+	# signal, which does NOT fire on tree removal — toggle visible first so
+	# the native window un-draws immediately, then free the node.
 	if _webview != null:
+		_webview.visible = false
 		remove_child(_webview)
 		_webview.queue_free()
 		_webview = null
@@ -110,6 +122,11 @@ func set_html(source: String) -> void:
 		webview.ipc_message.connect(_on_ipc_message)
 
 	_webview = webview
+	print("[WebViewEditor focus-probe] class=", webview.get_class(),
+		" has_method(focus)=", webview.has_method("focus"),
+		" methods=", webview.get_method_list().map(func(m): return m.name).filter(func(n): return "focus" in String(n).to_lower()))
+	if webview.has_method("focus"):
+		webview.call_deferred("focus")
 	content_changed.emit()
 
 
@@ -194,7 +211,10 @@ func _send_ipc_reply(ipc_id, result: Dictionary) -> void:
 	var reply := result.duplicate()
 	reply["id"] = ipc_id
 	var reply_json := JSON.stringify(reply)
-	_webview.eval("window.minerva._ipcReply(%s)" % reply_json)
+	# Defer: the IPC handler runs inside WebView's mutable borrow (emitted from
+	# Rust); calling eval() synchronously would re-bind and panic. call_deferred
+	# schedules the eval for idle, after the signal emission has released.
+	_webview.call_deferred("eval", "window.minerva._ipcReply(%s)" % reply_json)
 
 
 func _get_webview_broker():
@@ -211,7 +231,7 @@ func push_plugin_event(event_name: String, payload: Dictionary) -> void:
 	var js := "window.minerva._dispatchPluginEvent(%s, %s)" % [
 		JSON.stringify(event_name), JSON.stringify(payload)
 	]
-	_webview.eval(js)
+	_webview.call_deferred("eval", js)
 
 
 ## Push a plugin state update to the webview JS.
@@ -219,4 +239,4 @@ func push_plugin_state(state: Dictionary) -> void:
 	if _webview == null:
 		return
 	var js := "window.minerva._dispatchPluginState(%s)" % JSON.stringify(state)
-	_webview.eval(js)
+	_webview.call_deferred("eval", js)

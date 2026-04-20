@@ -1,0 +1,70 @@
+diff --git a/rust/src/lib.rs b/rust/src/lib.rs
+index 75c3838..eeefaee 100644
+--- a/rust/src/lib.rs
++++ b/rust/src/lib.rs
+@@ -586,6 +586,65 @@ impl WebView {
+         if let Some(webview) = &self.webview {
+             let _ = webview.focus();
+         }
++        #[cfg(target_os = "linux")]
++        Self::linux_set_x11_input_focus();
++    }
++
++    // On Linux, webview.focus() only updates GTK's internal widget-focus chain
++    // (gtk_widget_grab_focus). X11 keyboard focus stays with Godot's main window,
++    // so webkit2gtk never receives KeyPress events and text inputs don't show
++    // a cursor. The WRY webview lives in a child X window of Godot's window
++    // (reparented GtkWindow); giving that child window X input focus fixes it.
++    #[cfg(target_os = "linux")]
++    fn linux_set_x11_input_focus() {
++        use godot::classes::DisplayServer;
++        use godot::classes::display_server::HandleType;
++        use x11_dl::xlib::{Xlib, RevertToParent};
++        use std::os::raw::{c_uint, c_ulong};
++        use std::ptr;
++
++        let xlib = match Xlib::open() {
++            Ok(x) => x,
++            Err(_) => return,
++        };
++        let display_server = DisplayServer::singleton();
++        let display_raw = display_server.window_get_native_handle(HandleType::DISPLAY_HANDLE);
++        let godot_xid = display_server.window_get_native_handle(HandleType::WINDOW_HANDLE);
++        if display_raw == 0 || godot_xid == 0 {
++            return;
++        }
++
++        unsafe {
++            let display = display_raw as *mut x11_dl::xlib::_XDisplay;
++            let mut root: c_ulong = 0;
++            let mut parent: c_ulong = 0;
++            let mut children: *mut c_ulong = ptr::null_mut();
++            let mut nchildren: c_uint = 0;
++
++            let ok = (xlib.XQueryTree)(
++                display,
++                godot_xid as c_ulong,
++                &mut root,
++                &mut parent,
++                &mut children,
++                &mut nchildren,
++            );
++            if ok == 0 || nchildren == 0 || children.is_null() {
++                return;
++            }
++            // WRY reparents its GtkWindow as a child of Godot's X window.
++            // The last child is the topmost; prefer it if multiple exist.
++            let idx = (nchildren as isize) - 1;
++            let webview_xid = *children.offset(idx);
++            (xlib.XSetInputFocus)(
++                display,
++                webview_xid,
++                RevertToParent,
++                0, // CurrentTime
++            );
++            (xlib.XFree)(children as *mut _);
++            (xlib.XFlush)(display);
++        }
+     }
+ 
+     #[func]

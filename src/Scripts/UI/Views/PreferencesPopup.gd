@@ -23,6 +23,13 @@ extends PersistentWindow
 @onready var service_selection_window: ServiceSelection = %ServiceSelection
 @onready var logs_window: HcpLogs = %Logs
 
+# Vault password UI (encrypts plugin secrets — see CapabilityBroker.secrets:* handler)
+@onready var _vault_status_label: Label    = %VaultStatusLabel
+@onready var _vault_password: LineEdit     = %leVaultPassword
+@onready var _vault_confirm: LineEdit      = %leVaultConfirm
+@onready var _vault_hint: LineEdit         = %leVaultHint
+@onready var _vault_message: Label         = %VaultMessageLabel
+
 # maps API_PROVIDERs to their config file field name
 const PROVIDERS = {
 	SingletonObject.API_PROVIDER.OPENAI: "openai",
@@ -260,6 +267,7 @@ func _on_about_to_popup():
 	_sync_provider_checkboxes()
 	_populate_openrouter_models()
 	_populate_custom_models()
+	_refresh_vault_status()
 
 
 ## Sync provider checkbox states with SingletonObject enabled state
@@ -440,6 +448,77 @@ func _on_password_checkbox_toggled(toggled_on:bool) -> void:
 
 func _on_hcp_logs_button_pressed() -> void:
 	logs_window.popup_centered()
+
+
+# ── Vault password ──────────────────────────────────────────────────────────
+# The vault password encrypts plugin secrets (CapabilityBroker.secrets:*).
+# Stored unencrypted in user://docket_prefs.json; the OS file permissions are
+# the only protection. Loss of password = loss of all encrypted secrets, since
+# v1 has no re-encryption flow.
+
+## Refresh the "Vault: configured/not configured" label and clear input fields.
+func _refresh_vault_status() -> void:
+	if _vault_status_label == null:
+		return
+	var has_pw: bool = not UserPrefs.load_vault_password().is_empty()
+	var dm = SingletonObject.docket_manager if "docket_manager" in SingletonObject else null
+	var has_data := false
+	if dm != null:
+		var db = dm.get_master_db() if dm.has_method("get_master_db") else dm.get_db()
+		if db != null and db.has_vault():
+			has_data = true
+	if has_pw and has_data:
+		_vault_status_label.text = "Vault: configured (contains encrypted secrets)"
+	elif has_pw:
+		_vault_status_label.text = "Vault: password set (no secrets stored yet)"
+	else:
+		_vault_status_label.text = "Vault: not configured — set a password to enable plugin secrets"
+
+	_vault_hint.text = UserPrefs.load_vault_password_hint()
+	_vault_password.text = ""
+	_vault_confirm.text = ""
+	_vault_message.text = ""
+
+
+## Save the vault password from the form. Validates match + non-empty,
+## warns if it would invalidate an existing initialized vault.
+func _on_set_vault_password_pressed() -> void:
+	var new_pw: String = _vault_password.text
+	var confirm: String = _vault_confirm.text
+	var hint: String = _vault_hint.text
+
+	if new_pw.is_empty():
+		_vault_message.text = "Password cannot be empty."
+		return
+
+	if new_pw != confirm:
+		_vault_message.text = "Passwords do not match."
+		return
+
+	# If a vault has already been initialized in the active docket, check
+	# whether the new password derives the same key. If not, the existing
+	# secrets become unreadable until the user sets the matching password
+	# back. v1 doesn't re-encrypt — flag this clearly.
+	var dm = SingletonObject.docket_manager if "docket_manager" in SingletonObject else null
+	if dm != null:
+		var db = dm.get_master_db() if dm.has_method("get_master_db") else dm.get_db()
+		if db != null and db.has_vault():
+			var salt := db.get_vault_salt()
+			var key := VaultCrypto.derive_key(new_pw, salt)
+			if not db.verify_vault(key):
+				_vault_message.text = "Warning: this password does not match the existing vault — already-stored secrets will be unreadable until the matching password is set. Saving anyway."
+
+	UserPrefs.save_vault_password(new_pw)
+	UserPrefs.save_vault_password_hint(hint)
+
+	# Append to whatever warning we may have already shown.
+	var prefix: String = ""
+	if not _vault_message.text.is_empty():
+		prefix = _vault_message.text + " "
+	_vault_message.text = prefix + "Saved."
+	_vault_password.text = ""
+	_vault_confirm.text = ""
+	_refresh_vault_status()
 
 
 #region OpenRouter Models Tab

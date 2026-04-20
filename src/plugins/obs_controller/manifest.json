@@ -111,13 +111,12 @@
 		},
 		{
 			"name": "minerva_obs_controller_configure",
-			"description": "Set OBS connection details, webcam source name, and output directory. Saved to disk for persistence.",
+			"description": "Set non-secret OBS settings (host, port, camera source, output directory, auto-connect). The OBS WebSocket password is stored separately in Minerva's vault — set it via the panel UI.",
 			"input_schema": {
 				"type": "object",
 				"properties": {
 					"obs_host": {"type": "string", "description": "OBS WebSocket host (default: localhost)"},
 					"obs_port": {"type": "integer", "description": "OBS WebSocket port (default: 4455)"},
-					"obs_password": {"type": "string", "description": "OBS WebSocket password"},
 					"camera_source": {"type": "string", "description": "Name of the webcam source in OBS"},
 					"output_directory": {"type": "string", "description": "Directory where OBS saves recordings"},
 					"auto_connect": {"type": "boolean", "description": "Auto-connect to OBS on plugin start"}
@@ -146,15 +145,26 @@
 	"ui": {
 		"panels": ["obs_controller_panel"],
 		"ipc_messages": [
-			"obs.get_status",
-			"obs.switch_scene",
-			"obs.start_recording",
-			"obs.stop_recording",
-			"obs.set_camera_position"
+			"capability:secrets:get:obs_password",
+			"capability:secrets:set:obs_password",
+			"minerva_obs_controller_connect",
+			"minerva_obs_controller_disconnect",
+			"minerva_obs_controller_get_status",
+			"minerva_obs_controller_list_scenes",
+			"minerva_obs_controller_switch_scene",
+			"minerva_obs_controller_list_sources",
+			"minerva_obs_controller_set_camera_position",
+			"minerva_obs_controller_start_recording",
+			"minerva_obs_controller_stop_recording",
+			"minerva_obs_controller_list_recordings",
+			"minerva_obs_controller_configure"
 		]
 	},
 	"permissions": {
-		"host_capabilities": [],
+		"host_capabilities": [
+			"secrets:get:obs_password",
+			"secrets:set:obs_password"
+		],
 		"network": {
 			"mode": "localhost",
 			"ports": [4455]

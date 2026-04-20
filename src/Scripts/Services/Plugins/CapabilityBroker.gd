@@ -2,8 +2,9 @@ class_name CapabilityBroker
 extends RefCounted
 ## Host capability broker for the Minerva plugin system.
 ##
-## Routes mcp.proxy:<tool_name> capability requests to MinervaMCPServer's
-## _execute_tool_impl(), gated by PluginPolicy.
+## Routes capability requests to host services, gated by PluginPolicy:
+##   - mcp.proxy:<tool_name> → MinervaMCPServer._execute_tool_impl()
+##   - secrets:<op>:<handle> → docket vault (per-plugin namespaced)
 ##
 ## Return format (all public methods):
 ##   Success: {"success": true, "result": {...}}
@@ -12,9 +13,10 @@ extends RefCounted
 ## Design notes:
 ## - CapabilityBroker is stateless with respect to plugin identity; it delegates
 ##   all grant checks to PluginPolicy.
-## - The mcp.proxy meta-capability routes to MinervaMCPServer._execute_tool_impl()
-##   so individual capability handlers are not needed.
-## - Non-mcp.proxy capabilities return "not_implemented" for now.
+## - Per-handle isolation for secrets is enforced at the broker, not by trust:
+##   the docket handle is auto-prefixed with "plugin/<id>/" so plugins can never
+##   construct a string that reaches another plugin's secrets.
+## - Other capabilities not listed above return "not_implemented".
 
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
@@ -91,6 +93,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 	if capability.begins_with("mcp.proxy:"):
 		return await _handle_mcp_proxy(plugin_id, capability, args)
 
+	# Route secrets:<op>:<handle> to docket vault, namespaced per plugin.
+	if capability.begins_with("secrets:"):
+		return await _handle_secrets(plugin_id, capability, args)
+
 	# Legacy / non-mcp.proxy capabilities — not yet implemented
 	match capability:
 		"network.none":
@@ -135,6 +141,92 @@ func _handle_mcp_proxy(plugin_id: String, capability: String, args: Dictionary) 
 			"plugin_id": plugin_id,
 			"tool_name": tool_name,
 		}
+
+
+# ---------------------------------------------------------------------------
+# secrets handler
+# ---------------------------------------------------------------------------
+
+## Route a secrets:<op>:<handle> capability to the docket vault.
+##
+## Capability format: "secrets:<op>:<handle>" where op is get|set|delete.
+## The plugin's manifest must declare each capability+handle combination it needs in
+## permissions.host_capabilities (e.g. "secrets:get:obs_password", "secrets:set:obs_password").
+## Per-handle access is enforced by the existing PluginPolicy exact-match check.
+##
+## Handles are namespaced as "plugin/<plugin_id>/<handle>" inside the docket vault
+## so plugins cannot reach each other's secrets even if a misconfigured manifest
+## or compromised plugin tries to read a sibling's handle.
+##
+## Args:
+##   secrets:get / secrets:delete — no required args.
+##   secrets:set — args.value is the secret value to store.
+func _handle_secrets(plugin_id: String, capability: String, args: Dictionary) -> Dictionary:
+	var rest: String = capability.substr("secrets:".length())
+	var sep: int = rest.find(":")
+	if sep == -1:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"secrets capability must be 'secrets:<op>:<handle>' (op=get|set|delete)")
+
+	var op: String = rest.substr(0, sep)
+	var handle_suffix: String = rest.substr(sep + 1)
+	if handle_suffix.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"secrets capability requires a non-empty handle")
+
+	var minerva_server = _get_minerva_server()
+	if minerva_server == null:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"secrets: MinervaMCPServer is not available")
+
+	# Namespace under "plugin/<id>/" so plugins cannot reach other plugins' handles.
+	var docket_handle: String = "plugin/%s/%s" % [plugin_id, handle_suffix]
+	var tool_args: Dictionary = {"handle": docket_handle}
+	var tool_name: String
+
+	match op:
+		"get":
+			tool_name = "minerva_docket_secret_get"
+		"set":
+			if not args.has("value"):
+				return PluginErrors.schema_validation_failed(plugin_id,
+					"secrets:set requires args.value")
+			tool_args["value"] = str(args["value"])
+			tool_name = "minerva_docket_secret_set"
+		"delete":
+			tool_name = "minerva_docket_secret_delete"
+		_:
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"Unknown secrets op '%s' (expected get|set|delete)" % op)
+
+	print("[CapabilityBroker] Plugin '%s' invoking secrets:%s on handle '%s'" % [plugin_id, op, handle_suffix])
+
+	var result: Dictionary = await minerva_server._execute_tool_impl(tool_name, tool_args)
+
+	if result.has("error"):
+		# Distinguish "secret not found" (a normal "not yet set" state for plugins)
+		# from real errors. The vault returns a string; sniff its prefix.
+		var err: String = str(result["error"])
+		if op == "get" and err.begins_with("Secret not found"):
+			return PluginErrors.success({"handle": handle_suffix, "value": null, "exists": false})
+		return {
+			"success": false,
+			"error_code": "secrets_error",
+			"error_message": err,
+			"plugin_id": plugin_id,
+			"operation": op,
+			"handle": handle_suffix,
+		}
+
+	# Strip the namespace prefix from the returned handle so the plugin only
+	# sees its own handle name, not the internal docket-side path.
+	if result.has("handle"):
+		var returned_handle: String = str(result["handle"])
+		var prefix: String = "plugin/%s/" % plugin_id
+		if returned_handle.begins_with(prefix):
+			result["handle"] = returned_handle.substr(prefix.length())
+
+	return PluginErrors.success(result)
 
 
 # ---------------------------------------------------------------------------

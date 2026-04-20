@@ -242,6 +242,15 @@ func start_plugin(id: String) -> Dictionary:
 		var abs_command: String = plugin_dir.path_join(command.substr(2))
 		if FileAccess.file_exists(abs_command) or FileAccess.file_exists(ProjectSettings.localize_path(abs_command)):
 			command = abs_command
+		else:
+			# Binary not found — plugin probably wasn't compiled for this platform.
+			# Fail early so the UI shows "error" with a clear message instead of
+			# letting the OS-level spawn failure take down the subprocess API.
+			var msg := "Plugin binary not found at '%s'. This plugin needs to be compiled for %s." % [abs_command, OS.get_name()]
+			push_error("[PluginManager] " + msg)
+			_cleanup_connection(id)
+			_transition_state(id, S_ERROR)
+			return {"error": msg}
 
 	var resolved_args: PackedStringArray = PackedStringArray()
 	for arg in def.args:
