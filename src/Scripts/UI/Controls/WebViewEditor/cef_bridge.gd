@@ -30,8 +30,20 @@ const BRIDGE_JS: String = """
 			});
 			const json = await resp.json();
 			if (json.error) throw new Error(json.error.message);
-			const text = json.result?.content?.[0]?.text;
-			return text ? JSON.parse(text) : json.result;
+			// MCP tool errors arrive as a resolved result with isError:true; throw
+			// so callers see them in .catch() rather than silently swallowing.
+			let data = json.result;
+			if (data && data.isError === true) {
+				const msg = data.content?.[0]?.text || 'MCP tool reported an error';
+				throw new Error(msg);
+			}
+			// Success: unwrap content[0].text if it's a JSON string; otherwise
+			// return it as-is (some tools return plain text content).
+			const text = data?.content?.[0]?.text;
+			if (typeof text === 'string') {
+				try { return JSON.parse(text); } catch(e) { return text; }
+			}
+			return data;
 		},
 
 		getSpreadsheet: function(name) {
