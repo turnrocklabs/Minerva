@@ -396,7 +396,7 @@
   </div>
   <div class="field-row">
     <label>Password</label>
-    <input type="password" id="cfgPassword" placeholder="(unchanged)">
+    <input type="password" id="cfgPassword" autocomplete="new-password" placeholder="(unchanged)">
     <span class="pwd-status" id="cfgPasswordStatus">not set</span>
   </div>
 
@@ -830,6 +830,15 @@ function showToast(msg) {
 // Unwrap nested MCP content format: {content:[{text:"..."}]} → parsed inner JSON
 function unwrapMCP(data) {
   if (!data) return data;
+  // MCP signals tool-level failures via isError:true with the failure message
+  // in content[0].text. Surface those as real exceptions so callers can't
+  // silently treat errors as success (as connectWithSavedPassword used to).
+  if (data.isError === true) {
+    var errText = (data.content && data.content[0] && typeof data.content[0].text === 'string')
+      ? data.content[0].text
+      : 'MCP tool reported an error';
+    throw new Error(errText);
+  }
   // If it has content[0].text, unwrap it (may be double-wrapped by plugin transport)
   while (data && data.content && Array.isArray(data.content) && data.content[0] && typeof data.content[0].text === 'string') {
     try { data = JSON.parse(data.content[0].text); } catch(e) { break; }
@@ -917,6 +926,11 @@ function clearSettingsMsg() {
 
 async function openSettings(cfg) {
   if (cfg) cacheConfig(cfg);
+  // Defeat any lingering Chromium autofill — the `autocomplete="new-password"`
+  // attribute blocks most prefills but some CEF builds still race a silent
+  // autofill in before user input. An explicit clear guarantees the field
+  // starts empty so typed input can't be concatenated onto a hidden value.
+  document.getElementById('cfgPassword').value = '';
   settingsPanel.hidden = false;
   btnSettings.classList.add('active');
   // Refresh password-set indicator each time we open.
@@ -993,9 +1007,10 @@ async function connectWithSavedPassword(cfg) {
       port:     cfg.obs_port || 4455,
       password: password || ''
     }));
-    return !!(result && (result.connected || result.connection || result));
+    return !!(result && (result.connected || result.connection));
   } catch(e) {
     console.error('connect failed:', e);
+    window._lastConnectError = (e && e.message) || String(e);
     return false;
   }
 }
@@ -1019,7 +1034,12 @@ async function connectNow() {
     obs_port: parseInt(document.getElementById('cfgPort').value, 10) || cachedConfig.obs_port || 4455
   };
   var ok = await connectWithSavedPassword(cfg);
-  showSettingsMsg(ok ? 'Connected.' : 'Connect failed — check OBS is running and password is correct.', ok);
+  if (ok) {
+    showSettingsMsg('Connected.', true);
+  } else {
+    var reason = window._lastConnectError ? ' — ' + window._lastConnectError : ' — check OBS is running and password is correct.';
+    showSettingsMsg('Connect failed' + reason, false);
+  }
 }
 
 // bridge state push
