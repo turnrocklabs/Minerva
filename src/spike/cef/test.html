@@ -22,9 +22,14 @@ button:hover { background: #7ab4ff; }
 <input id="txt" type="text" placeholder="click and type">
 
 <label for="pw">Password input (same)</label>
-<input id="pw" type="password" placeholder="click and type">
+<input id="pw" type="password" placeholder="click and type"> <button type="button" id="pw-show" style="padding:4px 10px">Show</button>
+
+<div style="margin-top:16px; padding:8px; background:#242a38; border-radius:4px; font-size:12px;">
+  <strong>Paste-doubling gate:</strong> clear a field, Ctrl+V once, observe logged length vs clipboard length. They should match (1×), not double (2×).
+</div>
 
 <button id="ipc-btn">Send IPC to Godot (Gate 3)</button>
+<button type="button" id="clear-btn" style="margin-left:8px; background:#888;">Clear inputs + log</button>
 
 <div id="status">status: waiting...</div>
 
@@ -94,6 +99,41 @@ btn.addEventListener('click', () => {
 window.spike_from_godot = function(msg) {
   logStatus('received from Godot: ' + msg);
 };
+
+// Paste-doubling gate: log paste + input events on both fields so we can
+// directly observe whether the first Ctrl+V after focus commits once or twice.
+['txt', 'pw'].forEach((id) => {
+  const el = document.getElementById(id);
+  el.addEventListener('paste', (e) => {
+    const clip = (e.clipboardData && e.clipboardData.getData('text')) || '';
+    logStatus(`[${id}] paste event: clipboard len=${clip.length} content="${clip.slice(0,24)}${clip.length>24?'…':''}"`);
+    // Read .value on next tick so we see the post-paste DOM value
+    setTimeout(() => {
+      const v = el.value;
+      const doubled = clip.length > 0 && v.length === clip.length * 2;
+      logStatus(`[${id}] post-paste value len=${v.length} ${doubled ? '❌ DOUBLED' : '✓ single'} | value="${v.slice(0,48)}${v.length>48?'…':''}"`);
+    }, 0);
+  });
+  el.addEventListener('input', (e) => {
+    logStatus(`[${id}] input event: value len=${el.value.length} inputType=${e.inputType || '?'}`);
+  });
+  el.addEventListener('focus', () => logStatus(`[${id}] focus`));
+  el.addEventListener('blur', () => logStatus(`[${id}] blur`));
+});
+
+document.getElementById('pw-show').addEventListener('click', () => {
+  const pw = document.getElementById('pw');
+  const btn = document.getElementById('pw-show');
+  if (pw.type === 'password') { pw.type = 'text'; btn.textContent = 'Hide'; }
+  else { pw.type = 'password'; btn.textContent = 'Show'; }
+});
+
+document.getElementById('clear-btn').addEventListener('click', () => {
+  document.getElementById('txt').value = '';
+  document.getElementById('pw').value = '';
+  statusEl.textContent = '';
+  logStatus('cleared');
+});
 
 logStatus('page loaded');
 </script>

@@ -119,6 +119,46 @@
   select:focus { outline: none; border-color: var(--accent); }
   select:disabled { opacity: 0.4; cursor: not-allowed; }
 
+  /* ── custom dropdown (CEF-safe replacement for <select>) ── */
+  .cdd { position: relative; flex: 1; }
+  .cdd-trigger {
+    width: 100%;
+    text-align: left;
+    padding: 5px 24px 5px 8px;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237f849c'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+  }
+  .cdd-trigger:disabled { opacity: 0.4; cursor: not-allowed; }
+  .cdd-menu {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    max-height: 240px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  .cdd-menu[hidden] { display: none; }
+  .cdd-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .cdd-item:hover, .cdd-item.active { background: var(--border); }
+  .cdd-item.current { color: var(--accent); font-weight: 600; }
+
   /* ── buttons ── */
   button {
     background: var(--surface);
@@ -396,16 +436,21 @@
   </div>
   <div class="field-row">
     <label>Password</label>
-    <input type="password" id="cfgPassword" autocomplete="new-password" placeholder="(unchanged)">
+    <input type="password" id="cfgPassword" autocomplete="off" placeholder="(unchanged)">
+    <button type="button" id="cfgPasswordShow" onclick="togglePasswordVisibility()" style="padding:2px 8px;">Show</button>
     <span class="pwd-status" id="cfgPasswordStatus">not set</span>
   </div>
 
   <div class="section-label" style="margin-top:10px;">Recording</div>
   <div class="field-row">
     <label>Camera Source</label>
-    <input type="text" id="cfgCamera">
+    <div style="flex:1; display:flex; gap:6px;">
+      <input type="text" id="cfgCamera" style="flex:1;">
+      <button type="button" id="btnDetectSources" style="padding:4px 8px;">Detect</button>
+    </div>
     <span></span>
   </div>
+  <div id="cameraSourceMenu" class="cdd-menu" hidden style="position:static; margin: 2px 0 8px;"></div>
   <div class="field-row">
     <label>Output Dir</label>
     <input type="text" id="cfgOutputDir">
@@ -429,9 +474,10 @@
 <div class="section">
   <div class="section-label">Scene</div>
   <div class="scene-row">
-    <select id="sceneSelect" disabled>
-      <option value="">— no scenes —</option>
-    </select>
+    <div class="cdd" id="sceneDropdown">
+      <button type="button" class="cdd-trigger" id="sceneTrigger" disabled>— no scenes —</button>
+      <div class="cdd-menu" id="sceneMenu" hidden></div>
+    </div>
   </div>
 </div>
 
@@ -482,7 +528,9 @@ var recInterval    = null;
 // ── DOM refs ───────────────────────────────────────────────────────────────
 var statusDot    = document.getElementById('statusDot');
 var statusLabel  = document.getElementById('statusLabel');
-var sceneSelect  = document.getElementById('sceneSelect');
+var sceneTrigger = document.getElementById('sceneTrigger');
+var sceneMenu    = document.getElementById('sceneMenu');
+var sceneItems   = [];           // array of scene names in DOM order
 var btnRecord    = document.getElementById('btnRecord');
 var btnStop      = document.getElementById('btnStop');
 var recTimer     = document.getElementById('recTimer');
@@ -680,7 +728,8 @@ function applyPosition(row, column, size) {
   if (typeof minerva !== 'undefined') {
     minerva.call('minerva_obs_controller_set_camera_position', {
       row: row, column: column, size: size
-    }).catch(function(err) { showToast('Camera: ' + err); });
+    }).then(function(r) { unwrapMCP(r); })
+      .catch(function(err) { showToast('Camera: ' + (err && err.message || err)); });
   }
 }
 
@@ -698,14 +747,27 @@ function updateSizeButtons(size) {
 }
 
 // ── scene dropdown ─────────────────────────────────────────────────────────
-sceneSelect.addEventListener('change', function() {
-  var selected = sceneSelect.value;
-  if (!selected) return;
-  if (typeof minerva !== 'undefined') {
-    minerva.call('minerva_obs_controller_switch_scene', { scene: selected })
-      .catch(function(err) { showToast('Scene: ' + err); });
+function doSwitchScene(name) {
+  if (!name) return;
+  if (typeof minerva === 'undefined') {
+    showToast('minerva bridge unavailable');
+    return;
   }
+  minerva.call('minerva_obs_controller_switch_scene', { scene: name })
+    .then(function(r) { unwrapMCP(r); })
+    .catch(function(err) { showToast('Scene: ' + (err && err.message || err)); });
+}
+
+function closeSceneMenu() { sceneMenu.hidden = true; }
+function openSceneMenu()  { if (!sceneTrigger.disabled) sceneMenu.hidden = false; }
+
+sceneTrigger.addEventListener('click', function(e) {
+  e.stopPropagation();
+  if (sceneMenu.hidden) openSceneMenu(); else closeSceneMenu();
 });
+
+// Close menu on outside click.
+document.addEventListener('click', function() { closeSceneMenu(); });
 
 function populateScenes(data) {
   // data may be array of strings or objects with .name
@@ -719,33 +781,44 @@ function populateScenes(data) {
     return;
   }
   scenes = names;
-  sceneSelect.innerHTML = '';
+  sceneItems = names.slice();
+  sceneMenu.innerHTML = '';
   if (names.length === 0) {
-    sceneSelect.innerHTML = '<option value="">— no scenes —</option>';
+    sceneTrigger.textContent = '— no scenes —';
+    sceneTrigger.disabled = true;
     return;
   }
   names.forEach(function(n) {
-    var opt = document.createElement('option');
-    opt.value = n;
-    opt.textContent = n;
-    sceneSelect.appendChild(opt);
+    var item = document.createElement('div');
+    item.className = 'cdd-item' + (n === state.scene ? ' current' : '');
+    item.textContent = n;
+    item.setAttribute('data-value', n);
+    item.addEventListener('click', function(e) {
+      e.stopPropagation();
+      closeSceneMenu();
+      sceneTrigger.textContent = n;
+      doSwitchScene(n);
+    });
+    sceneMenu.appendChild(item);
   });
-  sceneSelect.disabled = !state.connected;
-  if (state.scene) { sceneSelect.value = state.scene; }
+  sceneTrigger.disabled = !state.connected;
+  sceneTrigger.textContent = state.scene || names[0] || 'Select scene';
 }
 
 // ── recording ──────────────────────────────────────────────────────────────
 btnRecord.addEventListener('click', function() {
   if (typeof minerva !== 'undefined') {
     minerva.call('minerva_obs_controller_start_recording', {})
-      .catch(function(err) { showToast('Record: ' + err); });
+      .then(function(r) { unwrapMCP(r); })
+      .catch(function(err) { showToast('Record: ' + (err && err.message || err)); });
   }
 });
 
 btnStop.addEventListener('click', function() {
   if (typeof minerva !== 'undefined') {
     minerva.call('minerva_obs_controller_stop_recording', {})
-      .catch(function(err) { showToast('Stop: ' + err); });
+      .then(function(r) { unwrapMCP(r); })
+      .catch(function(err) { showToast('Stop: ' + (err && err.message || err)); });
   }
 });
 
@@ -777,11 +850,9 @@ function updateUI(s) {
   if (typeof s.connected  !== 'undefined') state.connected  = !!s.connected;
   if (typeof s.scene      !== 'undefined') state.scene      = s.scene;
   if (typeof s.recording  !== 'undefined') state.recording  = !!s.recording;
-  if (s.camera) {
-    state.camera.row    = s.camera.row    || state.camera.row;
-    state.camera.column = s.camera.column || state.camera.column;
-    state.camera.size   = s.camera.size   || state.camera.size;
-  }
+  // Deliberately ignore s.camera. The plugin's `lastCameraPos` only reflects
+  // the last set_camera_position call it made — it's not ground truth for OBS
+  // and can race with in-flight user clicks. Panel owns camera state.
 
   // connection
   statusDot.classList.toggle('connected',    state.connected);
@@ -790,15 +861,13 @@ function updateUI(s) {
   statusLabel.textContent = state.connected ? 'Connected' : 'Disconnected';
 
   // scene dropdown
-  sceneSelect.disabled = !state.connected;
-  if (state.scene && sceneSelect.value !== state.scene) {
-    // try to select it if present
-    for (var i = 0; i < sceneSelect.options.length; i++) {
-      if (sceneSelect.options[i].value === state.scene) {
-        sceneSelect.value = state.scene;
-        break;
-      }
-    }
+  sceneTrigger.disabled = !state.connected;
+  if (state.scene) {
+    sceneTrigger.textContent = state.scene;
+    // re-mark the current item
+    Array.prototype.forEach.call(sceneMenu.querySelectorAll('.cdd-item'), function(it) {
+      it.classList.toggle('current', it.getAttribute('data-value') === state.scene);
+    });
   }
 
   // recording
@@ -881,11 +950,54 @@ async function init() {
     console.error('initial configure read failed:', e);
   }
 
+  await refreshScenes();
+}
+
+async function refreshScenes() {
   try {
     var scenesData = unwrapMCP(await minerva.call('minerva_obs_controller_list_scenes', {}));
     populateScenes(scenesData);
   } catch(e) {
     console.error('list_scenes failed:', e);
+  }
+}
+
+async function detectCameraSources() {
+  var menu = document.getElementById('cameraSourceMenu');
+  var input = document.getElementById('cfgCamera');
+  try {
+    var data = unwrapMCP(await minerva.call('minerva_obs_controller_list_sources', {}));
+    var sources = (data && data.sources) || [];
+    menu.innerHTML = '';
+    if (sources.length === 0) {
+      menu.innerHTML = '<div class="cdd-item">No sources in scene "' + (data.scene || '?') + '"</div>';
+      menu.hidden = false;
+      return;
+    }
+    sources.forEach(function(s) {
+      var item = document.createElement('div');
+      item.className = 'cdd-item' + (s.name === input.value ? ' current' : '');
+      item.textContent = s.name + (s.type ? '  (' + s.type + ')' : '');
+      item.setAttribute('data-value', s.name);
+      item.addEventListener('click', function(e) {
+        e.stopPropagation();
+        input.value = s.name;
+        menu.hidden = true;
+      });
+      menu.appendChild(item);
+    });
+    menu.hidden = false;
+  } catch(e) {
+    showSettingsMsg('Detect sources failed: ' + (e.message || e), false);
+  }
+}
+
+async function refreshStatus() {
+  try {
+    var status = await minerva.call('minerva_obs_controller_get_status', {});
+    updateStatus(status);
+  } catch(e) {
+    console.error('get_status failed:', e);
   }
 }
 
@@ -926,11 +1038,6 @@ function clearSettingsMsg() {
 
 async function openSettings(cfg) {
   if (cfg) cacheConfig(cfg);
-  // Defeat any lingering Chromium autofill — the `autocomplete="new-password"`
-  // attribute blocks most prefills but some CEF builds still race a silent
-  // autofill in before user input. An explicit clear guarantees the field
-  // starts empty so typed input can't be concatenated onto a hidden value.
-  document.getElementById('cfgPassword').value = '';
   settingsPanel.hidden = false;
   btnSettings.classList.add('active');
   // Refresh password-set indicator each time we open.
@@ -948,11 +1055,31 @@ function closeSettings() {
   clearSettingsMsg();
   // Clear the password input so it doesn't linger in DOM.
   document.getElementById('cfgPassword').value = '';
+  // Hide any open source picker.
+  var menu = document.getElementById('cameraSourceMenu');
+  if (menu) menu.hidden = true;
 }
+
+document.getElementById('btnDetectSources').addEventListener('click', function(e) {
+  e.stopPropagation();
+  detectCameraSources();
+});
 
 function toggleSettings() {
   if (settingsPanel.hidden) openSettings();
   else closeSettings();
+}
+
+function togglePasswordVisibility() {
+  var input = document.getElementById('cfgPassword');
+  var btn = document.getElementById('cfgPasswordShow');
+  if (input.type === 'password') {
+    input.type = 'text';
+    btn.textContent = 'Hide';
+  } else {
+    input.type = 'password';
+    btn.textContent = 'Show';
+  }
 }
 
 async function saveSettings() {
@@ -1036,6 +1163,8 @@ async function connectNow() {
   var ok = await connectWithSavedPassword(cfg);
   if (ok) {
     showSettingsMsg('Connected.', true);
+    await refreshStatus();
+    await refreshScenes();
   } else {
     var reason = window._lastConnectError ? ' — ' + window._lastConnectError : ' — check OBS is running and password is correct.';
     showSettingsMsg('Connect failed' + reason, false);
