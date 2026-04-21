@@ -208,6 +208,10 @@ func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary) -> vo
 		return
 
 	var result: Dictionary = await broker.handle_ipc_message(plugin_panel_name, message_type, payload)
+	if not result.get("success", false):
+		print("[CefWebViewEditor:%s] IPC denied panel=%s type=%s result=%s" % [
+			editor_id, plugin_panel_name, message_type, JSON.stringify(result)
+		])
 	_send_ipc_reply(ipc_id, result)
 
 

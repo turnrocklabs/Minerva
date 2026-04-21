@@ -1106,6 +1106,20 @@ func _ready():
 	add_child(undo)
 	add_child(streamdeck_server)
 
+	# Pin a hidden CefTexture for the life of the process. gdcef refcounts CEF's
+	# lifecycle (cef_retain in cef_init.rs:251); if the last CefTexture is freed
+	# the refcount hits 0 and CefShutdown fires. Creating another CefTexture then
+	# crashes deep in libcef (ChromeContentBrowserClient::SetSamplingProfiler)
+	# because CEF is call-once-per-process. The pin keeps refcount >= 1 forever.
+	# Tracked under DCR 019dac8d.
+	if ClassDB.class_exists("CefTexture"):
+		var cef_pin: Node = ClassDB.instantiate("CefTexture")
+		if cef_pin != null:
+			cef_pin.name = "CefLifecyclePin"
+			if cef_pin is CanvasItem:
+				cef_pin.visible = false
+			add_child(cef_pin)
+
 	# Auto-start Stream Deck server if enabled in config
 	if config_has_saved_section("StreamDeck"):
 		var sd_enabled: bool = config_file.get_value("StreamDeck", "enabled", false)
