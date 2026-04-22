@@ -61,6 +61,24 @@ The `.gdextension` file and `extension_list.cfg` are already configured. The bin
 
 **Note:** The upstream godot_wry v1.0.2 release has a GTK init panic on Linux. Our submodule includes a fix for `get_screen_position()` → `get_global_position()` to correct native window positioning.
 
+### Building godot-cef (CEF-based webview panels)
+CEF-hosted plugin panels use the godot-cef GDExtension (git submodule at `vendor/godot_cef` pinned to v1.13.0).
+
+**Prerequisites:** rustup (the script installs `nightly` and `export-cef-dir` as needed).
+
+**Build + deploy (auto-detects platform):**
+```bash
+scripts/build-godot-cef.sh
+# or explicitly:
+scripts/build-godot-cef.sh linux
+scripts/build-godot-cef.sh macos
+scripts/build-godot-cef.sh windows
+```
+
+The script applies every `patches/godot_cef/*.patch` to the submodule before building, so the patched binaries are what land in `src/addons/godot_cef/bin/<platform>/`. Patches are self-documenting — see `patches/godot_cef/README.md`. The submodule working tree is reset before each build so patches are idempotent.
+
+**Cross-building is not supported.** Run the script on each target OS (Mac for universal-apple-darwin, Windows for x86_64-pc-windows-msvc, Linux for x86_64-unknown-linux-gnu).
+
 ### Manual build (if you prefer)
 ```bash
 # 1. Build ghostty-vt shim
