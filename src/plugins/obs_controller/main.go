@@ -46,7 +46,14 @@ func main() {
 
 	log.Println("Starting OBS Controller MCP server on stdio")
 
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+	// Use IOTransport wired to sharedStdout (mutex-wrapped os.Stdout) so the
+	// SDK's JSON-RPC frames and our emitEvent/emitState notifications cannot
+	// interleave mid-frame. See stdout.go.
+	transport := &mcp.IOTransport{
+		Reader: nopReadCloser{os.Stdin},
+		Writer: sharedStdout,
+	}
+	if err := server.Run(context.Background(), transport); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

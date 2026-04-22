@@ -3,15 +3,9 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"os"
-	"sync"
 
 	"github.com/andreykaipov/goobs/api/events"
 )
-
-// stdoutMu serializes all writes to stdout.
-// MCP tool responses and event notifications share stdout, so we need a mutex.
-var stdoutMu sync.Mutex
 
 // emitEvent sends a minerva/plugin_event JSON-RPC notification on stdout.
 func emitEvent(name string, payload map[string]any) {
@@ -41,6 +35,8 @@ func emitState(state map[string]any) {
 }
 
 // writeStdoutJSON writes a JSON message to stdout with newline, thread-safe.
+// sharedStdout (defined in stdout.go) serializes writes with the MCP SDK's
+// own transport writes so JSON-RPC frames cannot interleave.
 func writeStdoutJSON(msg map[string]any) {
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -48,10 +44,7 @@ func writeStdoutJSON(msg map[string]any) {
 		return
 	}
 	data = append(data, '\n')
-
-	stdoutMu.Lock()
-	defer stdoutMu.Unlock()
-	os.Stdout.Write(data)
+	sharedStdout.Write(data)
 }
 
 // buildCurrentState returns the current OBS state as a map.

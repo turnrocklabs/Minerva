@@ -11,3 +11,6 @@
 [submodule "vendor/EIRTeam.FFmpeg"]
 	path = vendor/EIRTeam.FFmpeg
 	url = https://github.com/EIRTeam/EIRTeam.FFmpeg.git
+[submodule "vendor/godot_cef"]
+	path = vendor/godot_cef
+	url = https://github.com/dsh0416/godot-cef.git

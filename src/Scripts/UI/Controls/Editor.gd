@@ -255,7 +255,14 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			editor.activity_log_panel = panel
 
 		Editor.Type.WEBVIEW:
-			var webview_editor_scene = load("res://Scenes/WebViewEditor.tscn")
+			# Prefer CEF (texture-based Chromium) when available — texture/offscreen
+			# hosting fixes the caret-rendering gap WRY has on Linux/X11 (DCR
+			# 019dac8d). Falls back to WRY-based WebViewEditor if godot-cef
+			# extension isn't installed.
+			var webview_scene_path: String = "res://Scenes/WebViewEditor.tscn"
+			if ClassDB.class_exists("CefTexture"):
+				webview_scene_path = "res://Scenes/CefWebViewEditor.tscn"
+			var webview_editor_scene = load(webview_scene_path)
 			var new_webview_editor = webview_editor_scene.instantiate()
 			new_webview_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			new_webview_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL

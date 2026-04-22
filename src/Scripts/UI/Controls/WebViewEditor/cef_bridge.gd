@@ -1,15 +1,21 @@
-class_name MinervaBridge
+class_name CefBridge
 extends RefCounted
-## Holds the JavaScript bridge code that gets injected into webview panels.
+## JavaScript bridge injected into CEF-hosted plugin panels.
+##
+## Differences from MinervaBridge (WRY-targeted):
+##   - pluginIPC() uses window.sendIpcMessage(jsonString) instead of
+##     window.ipc.postMessage. CEF's sendIpcMessage fires the CefTexture's
+##     ipc_message(String) signal on the Godot side.
+##   - Otherwise keeps the same window.minerva surface (call, pluginIPC,
+##     onPluginEvent, onPluginState, _ipcReply, _dispatchPluginEvent,
+##     _dispatchPluginState) so existing plugin panel HTML works unchanged.
 
 const BRIDGE_JS: String = """
 <script>
 (function() {
-	// Minerva Bridge -- allows webview panels to call MCP tools
 	window.minerva = {
 		_port: 9315,
 
-		// Call any MCP tool: minerva.call('minerva_get_spreadsheet_data', {editor_name: 'My Sheet'})
 		call: async function(toolName, args) {
 			const payload = {
 				jsonrpc: '2.0',
@@ -40,48 +46,40 @@ const BRIDGE_JS: String = """
 			return data;
 		},
 
-		// Convenience: get spreadsheet data
 		getSpreadsheet: function(name) {
 			return this.call('minerva_get_spreadsheet_data', { editor_name: name });
 		},
-
-		// Convenience: update spreadsheet
 		updateSpreadsheet: function(name, updates) {
 			return this.call('minerva_update_spreadsheet_data', { editor_name: name, updates: updates });
 		},
-
-		// Convenience: create a note
 		createNote: function(title, content, thread) {
 			return this.call('minerva_create_note', { title: title, content: content, thread_name: thread || 'default' });
 		},
 
-		// Plugin IPC -- sends message through WRY ipc_message signal to Minerva broker
 		pluginIPC: function(messageType, payload) {
 			return new Promise(function(resolve, reject) {
 				var id = '' + Date.now() + Math.random();
 				window._minervaIPCPending = window._minervaIPCPending || {};
 				window._minervaIPCPending[id] = { resolve: resolve, reject: reject };
-				window.ipc.postMessage(JSON.stringify({
+				var msg = JSON.stringify({
 					id: id,
 					type: messageType,
 					payload: payload || {}
-				}));
+				});
+				// CEF: sendIpcMessage with a JSON string fires ipc_message(String) on Godot.
+				window.sendIpcMessage(msg);
 			});
 		},
 
-		// Register handler for plugin events pushed from Minerva
 		onPluginEvent: function(callback) {
 			window._minervaPluginEventHandlers = window._minervaPluginEventHandlers || [];
 			window._minervaPluginEventHandlers.push(callback);
 		},
-
-		// Register handler for plugin state pushed from Minerva
 		onPluginState: function(callback) {
 			window._minervaPluginStateHandlers = window._minervaPluginStateHandlers || [];
 			window._minervaPluginStateHandlers.push(callback);
 		},
 
-		// Called by Minerva (evaluate_javascript) to deliver IPC response
 		_ipcReply: function(result) {
 			var pending = (window._minervaIPCPending || {})[result.id];
 			if (!pending) return;
@@ -89,16 +87,12 @@ const BRIDGE_JS: String = """
 			if (result.success) pending.resolve(result.result);
 			else pending.reject(new Error(result.error_message || 'IPC error'));
 		},
-
-		// Called by Minerva (evaluate_javascript) to push plugin event
 		_dispatchPluginEvent: function(eventName, payload) {
 			var handlers = window._minervaPluginEventHandlers || [];
 			for (var i = 0; i < handlers.length; i++) {
 				try { handlers[i](eventName, payload); } catch(e) { console.error('Plugin event handler error:', e); }
 			}
 		},
-
-		// Called by Minerva (evaluate_javascript) to push plugin state
 		_dispatchPluginState: function(state) {
 			var handlers = window._minervaPluginStateHandlers || [];
 			for (var i = 0; i < handlers.length; i++) {
@@ -107,7 +101,7 @@ const BRIDGE_JS: String = """
 		}
 	};
 
-	console.log('[Minerva Bridge] Loaded -- window.minerva.call() / pluginIPC() available');
+	console.log('[Minerva Bridge/CEF] Loaded -- window.minerva.call() / pluginIPC() available');
 })();
 </script>
 """

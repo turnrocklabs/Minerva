@@ -1,0 +1,38 @@
+diff --git a/crates/gdcef/src/input/mod.rs b/crates/gdcef/src/input/mod.rs
+index a58062e..b91171c 100644
+--- a/crates/gdcef/src/input/mod.rs
++++ b/crates/gdcef/src/input/mod.rs
+@@ -28,6 +28,7 @@ struct EditorShortcuts {
+     select_all: Gd<InputEvent>,            // Ctrl/Cmd+A
+     copy: Gd<InputEvent>,                  // Ctrl/Cmd+C
+     cut: Gd<InputEvent>,                   // Ctrl/Cmd+X
++    paste: Gd<InputEvent>,                 // Ctrl/Cmd+V
+     paste_and_match_style: Gd<InputEvent>, // Ctrl/Cmd+Shift+V
+ }
+ 
+@@ -37,6 +38,7 @@ impl EditorShortcuts {
+             select_all: create_shortcut(Key::A, true, false),
+             copy: create_shortcut(Key::C, true, false),
+             cut: create_shortcut(Key::X, true, false),
++            paste: create_shortcut(Key::V, true, false),
+             paste_and_match_style: create_shortcut(Key::V, true, true),
+         }
+     }
+@@ -343,9 +345,15 @@ pub fn handle_key_event(
+             } else if shortcuts.paste_and_match_style.is_match(&input_event) {
+                 frame.paste_and_match_style();
+                 return true;
++            } else if focus_on_editable_field && shortcuts.paste.is_match(&input_event) {
++                // When the IME proxy LineEdit holds focus, it already pastes via
++                // text_changed → ime_commit_text. Suppress the browser-host path
++                // so the clipboard isn't committed twice (dual-path doubling).
++                return true;
+             }
+-            // The normal paste shortcut is handled by the browser host itself,
+-            // which is why we don't need to handle it here.
++            // The normal paste shortcut is handled by the browser host itself
++            // (when the IME proxy is not active), which is why we don't need
++            // to handle it here.
+             false
+         });
+         if handled {
