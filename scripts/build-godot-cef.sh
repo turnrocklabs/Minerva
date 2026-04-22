@@ -27,7 +27,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
 PLATFORM="${1:-}"
-CEF_VERSION="145.0.26"
+# CEF version must match the `cef` / `cef-dll-sys` crate version pinned in
+# vendor/godot_cef/Cargo.lock (currently 146.5.0+146.0.10 on v1.13.0). Mixing
+# a libcef.so from a different major.minor causes `cef::initialize()` to
+# silently fail and the plugin panel renders blank. When bumping the
+# submodule, check `grep 'cef-dll-sys' vendor/godot_cef/Cargo.lock` and update
+# here to the matching 146.0.x / 147.0.x / etc. Upstream README's example
+# version string is NOT authoritative.
+CEF_VERSION="146.0.12"
 
 # ── Detect platform ───────────────────────────────────────────────────
 
