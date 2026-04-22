@@ -1,0 +1,96 @@
+name: Build godot-cef
+
+on:
+  push:
+    paths:
+      - "vendor/godot_cef"
+      - "patches/godot_cef/**"
+      - "scripts/build-godot-cef.sh"
+      - "src/addons/godot_cef/**"
+      - ".github/workflows/godot-cef.yml"
+    branches-ignore:
+      - main
+  pull_request:
+    paths:
+      - "vendor/godot_cef"
+      - "patches/godot_cef/**"
+      - "scripts/build-godot-cef.sh"
+      - "src/addons/godot_cef/**"
+      - ".github/workflows/godot-cef.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: godot-cef-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CEF_VERSION: "145.0.26"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            triple: x86_64-unknown-linux-gnu
+            artifact_name: godot-cef-linux-x86_64
+          - os: macos-latest
+            platform: macos
+            triple: universal-apple-darwin
+            artifact_name: godot-cef-macos-universal
+          - os: windows-latest
+            platform: windows
+            triple: x86_64-pc-windows-msvc
+            artifact_name: godot-cef-windows-x86_64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache Cargo registry and target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            vendor/godot_cef/target
+          key: ${{ runner.os }}-cargo-cef-${{ hashFiles('vendor/godot_cef/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-cef-
+
+      - name: Cache CEF binary bundle
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/cef
+          key: ${{ runner.os }}-cef-bundle-${{ env.CEF_VERSION }}
+
+      - name: Install export-cef-dir
+        shell: bash
+        run: |
+          if ! command -v export-cef-dir >/dev/null 2>&1; then
+            cargo +nightly install export-cef-dir
+          fi
+
+      - name: Run build script
+        shell: bash
+        run: |
+          scripts/build-godot-cef.sh ${{ matrix.platform }}
+
+      - name: List deployed artifacts
+        shell: bash
+        run: |
+          ls -la src/addons/godot_cef/bin/${{ matrix.triple }}/ || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: src/addons/godot_cef/bin/${{ matrix.triple }}/
+          if-no-files-found: error
