@@ -91,6 +91,8 @@ func validate(annotation: Dictionary) -> Array:
 
 ## Return the authoring tool for this kind, or null to use the default
 ## primitive-level author UI (design §11.2).
+# TODO(019dc055e8da710588ea283351710c01): narrow return type to AnnotationAuthorTool
+# once that class exists (authoring-UI task).
 func author_ui() -> Object:  # -> AnnotationAuthorTool (defined in separate task)
 	return null
 
@@ -120,6 +122,10 @@ func rewrite_paths(annotation: Dictionary, mode: String, base: String) -> Dictio
 ## Compute the AABB of a primitives[] array using only substrate-known primitive
 ## types. Used for unknown-kind placeholder rendering (design §10).
 static func bounds_from_primitives(primitives: Array) -> Rect2:
+	# Uses an explicit `initialized` flag rather than a zero-Rect2 sentinel so that
+	# primitives legitimately positioned at the origin (e.g. arrow from [0,0] to [0,0],
+	# highlight with a zero-size rect at origin) are included in the AABB instead of
+	# being silently skipped.  Fix for follow-up item 1 (review comment 217).
 	var result := Rect2()
 	var initialized := false
 
@@ -127,8 +133,6 @@ static func bounds_from_primitives(primitives: Array) -> Rect2:
 		if not prim is Dictionary:
 			continue
 		var prim_bounds := _primitive_bounds(prim)
-		if prim_bounds.size == Vector2.ZERO and prim_bounds.position == Vector2.ZERO:
-			continue
 		if not initialized:
 			result = prim_bounds
 			initialized = true
@@ -197,10 +201,8 @@ static func _points_aabb(pts: Variant) -> Rect2:
 
 
 ## AABB for ink_stroke points which are [x, y, p, t] 4-element arrays.
+## _to_vec2 reads only indices 0 and 1, so the extra pressure/timestamp columns
+## are ignored automatically — no separate implementation needed.
+## Deduped per follow-up item 5 (review comment 217).
 static func _points_aabb_4col(pts: Variant) -> Rect2:
-	if not pts is Array or (pts as Array).size() == 0:
-		return Rect2()
-	var result := Rect2(_to_vec2(pts[0]), Vector2.ZERO)
-	for i in range(1, (pts as Array).size()):
-		result = result.expand(_to_vec2(pts[i]))
-	return result
+	return _points_aabb(pts)

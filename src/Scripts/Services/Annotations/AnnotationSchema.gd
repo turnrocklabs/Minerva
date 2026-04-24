@@ -36,12 +36,6 @@ const PRIMITIVE_KINDS: PackedStringArray = [
 	"ink_stroke",
 ]
 
-## Primitive kinds that are out-of-scope for this task (post-MVP)
-## Included in PRIMITIVE_KINDS above for schema recognition; logic is in a separate task.
-const PRIMITIVE_KINDS_POST_MVP: PackedStringArray = [
-	"ink_stroke",
-]
-
 ## Built-in annotation kinds shipped by core (2d_* prefix reserved for core).
 ## 2d_polyline added per plan-decision comment (enables lossless PCB migration).
 const BUILTIN_ANNOTATION_KINDS: PackedStringArray = [
@@ -133,7 +127,7 @@ static func validate_annotation(
 	if not annotation.has("primitives"):
 		if not primitives_optional:
 			result.add_error("primitives", "Field 'primitives' is required", "required")
-	elif not annotation["primitives"] is Array:
+	elif not (annotation["primitives"] is Array):
 		result.add_error("primitives", "Field 'primitives' must be an array", "type")
 	else:
 		# Validate each primitive
@@ -278,7 +272,7 @@ static func _validate_prim_highlight(result: ValidationResult, p: Dictionary, pa
 		result.add_error("%s.rect" % path, "highlight primitive requires 'rect'", "required")
 		return
 	var rect = p["rect"]
-	if not rect is Array or (rect as Array).size() != 4:
+	if not (rect is Array) or (rect as Array).size() != 4:
 		result.add_error("%s.rect" % path, "'rect' must be [x, y, w, h] (4-element array)", "type")
 		return
 	for i in 4:
@@ -318,7 +312,7 @@ static func _validate_prim_ink_stroke(result: ValidationResult, p: Dictionary, p
 	if not p.has("points"):
 		result.add_error("%s.points" % path, "ink_stroke primitive requires 'points'", "required")
 		return
-	if not p["points"] is Array:
+	if not (p["points"] is Array):
 		result.add_error("%s.points" % path, "'points' must be an array", "type")
 
 
@@ -335,7 +329,7 @@ static func _require_point2(
 		result.add_error(key, "Field '%s' is required" % field, "required")
 		return
 	var v = p[field]
-	if not v is Array or (v as Array).size() != 2:
+	if not (v is Array) or (v as Array).size() != 2:
 		result.add_error(key, "'%s' must be a 2-element [x, y] array" % field, "type")
 		return
 	for i in 2:
@@ -359,7 +353,7 @@ static func _require_points_array(
 		result.add_error(key, "Field '%s' is required" % field, "required")
 		return
 	var arr = p[field]
-	if not arr is Array:
+	if not (arr is Array):
 		result.add_error(key, "'%s' must be an array of [x, y] points" % field, "type")
 		return
 	if (arr as Array).size() < min_points:
@@ -371,7 +365,7 @@ static func _require_points_array(
 		return
 	for i in (arr as Array).size():
 		var pt = arr[i]
-		if not pt is Array or (pt as Array).size() != 2:
+		if not (pt is Array) or (pt as Array).size() != 2:
 			result.add_error(
 				"%s[%d]" % [key, i],
 				"Each point must be a 2-element [x, y] array",
@@ -398,7 +392,12 @@ static func _require_positive_number(
 		result.add_error(path, "Must be a positive number, got %s" % str(value), "range")
 
 
-## Minimal RFC3339 shape: YYYY-MM-DDTHH:MM:SS (optionally followed by Z or offset)
+## Shape-check only — NOT a full RFC3339 validator.
+## Accepts strings whose structural positions match YYYY-MM-DDTHH:MM:SS; it will
+## pass invalid calendar dates such as "2026-13-99T99:99:99Z".  The substrate
+## trusts clients to supply valid timestamps; this guards against gross
+## misformatting (e.g. Unix epoch integers), not calendar correctness.
+## Per follow-up item 6 (review comment 217).
 static func _looks_like_rfc3339(s: String) -> bool:
 	if s.length() < 19:
 		return false

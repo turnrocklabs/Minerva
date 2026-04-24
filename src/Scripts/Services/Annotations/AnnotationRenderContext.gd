@@ -122,7 +122,10 @@ func draw_string(
 	f.draw_string(canvas_item, screen_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
 
 
-func draw_rect(rect: Rect2, color: Color, filled: bool) -> void:
+## width applies to the stroke when filled=false.  Pass 1.0 / ctx.zoom for a
+## zoom-invariant one-pixel border; omit (default 1.0) for a fixed-world-unit stroke.
+## Added per follow-up item 2 (review comment 217).
+func draw_rect(rect: Rect2, color: Color, filled: bool, width: float = 1.0) -> void:
 	# Transform all four corners independently (handles rotated transforms).
 	var tl := to_screen(rect.position)
 	var br := to_screen(rect.position + rect.size)
@@ -134,11 +137,11 @@ func draw_rect(rect: Rect2, color: Color, filled: bool) -> void:
 		var cols := PackedColorArray([color, color, color, color])
 		RenderingServer.canvas_item_add_polygon(canvas_item, pts, cols)
 	else:
-		# Stroke as a closed polyline
-		RenderingServer.canvas_item_add_line(canvas_item, tl, tr, color, 1.0)
-		RenderingServer.canvas_item_add_line(canvas_item, tr, br, color, 1.0)
-		RenderingServer.canvas_item_add_line(canvas_item, br, bl, color, 1.0)
-		RenderingServer.canvas_item_add_line(canvas_item, bl, tl, color, 1.0)
+		# Stroke as a closed polyline.
+		RenderingServer.canvas_item_add_line(canvas_item, tl, tr, color, width)
+		RenderingServer.canvas_item_add_line(canvas_item, tr, br, color, width)
+		RenderingServer.canvas_item_add_line(canvas_item, br, bl, color, width)
+		RenderingServer.canvas_item_add_line(canvas_item, bl, tl, color, width)
 
 # ── Author colour helper ───────────────────────────────────────────────────────
 
