@@ -111,6 +111,7 @@ func _init_modules() -> void:
 		MCPWebviewTools.new(self),
 		MCPDocketTools.new(self),
 		MCPHttpTools.new(self),
+		MCPAnnotationTools.new(self),
 	]
 
 	# Cache agent module for signal wiring
