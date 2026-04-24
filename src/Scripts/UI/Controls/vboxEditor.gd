@@ -146,17 +146,16 @@ func serialize() -> Array:
 				else:
 					content = {}
 
-		# TODO(019dc05578cf7e388ac090e3f19ade19): PLUGIN_SCENE project-file serialize.
-		# When editor.type == Editor.Type.PLUGIN_SCENE, call the plugin's
-		# serialize_channel IPC (design §8.1) to get tab_state and sidecar_paths,
-		# then embed under editors.plugin_scene[editor_id]. For now, leave a
-		# warning so project-file round-trips don't silently lose plugin editor tabs.
+		# PLUGIN_SCENE editors are serialised via async MCP dispatch below.
+		# We handle them after the match block so we can use await cleanly.
 		if editor.type == Editor.Type.PLUGIN_SCENE:
-			push_warning(
-				("[EditorContainer] serialize: PLUGIN_SCENE editor for plugin '%s' panel '%s' " +
-				"will not be restored from project file — project-file hooks task pending.") %
-				[editor.plugin_id, editor.panel_name]
+			var plugin_entry: Dictionary = await _serialize_plugin_scene_editor(
+				editor,
+				editor_pane.Tabs.get_tab_title(tab_idx)
 			)
+			editors_serialized.append(plugin_entry)
+			tab_idx += 1
+			continue
 
 		var editor_data = {
 			"name": editor_pane.Tabs.get_tab_title(tab_idx),
@@ -435,20 +434,243 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 					editor_inst.pcb_editor.load_from_dict(content)
 
 		elif editor_inst.type == Editor.Type.PLUGIN_SCENE:
-			# TODO(019dc05578cf7e388ac090e3f19ade19): PLUGIN_SCENE project-file deserialize.
-			# When this tab type is encountered in a .minproj, open the plugin editor
-			# with Editor.create_plugin_scene(), wait for _on_panel_loaded, then dispatch
-			# the deserialize_channel with the saved tab_state (design §8.1).
-			push_warning(
-				("[EditorContainer] deserialize: PLUGIN_SCENE editor type encountered " +
-				"in project file — restoration not yet implemented " +
-				"(task 019dc05578cf7e388ac090e3f19ade19 pending).")
-			)
+			await _deserialize_plugin_scene_editor(editor_inst, editor_ser)
 
 		editor_instances.append(editor_inst)
 	
 	return editor_instances
 
+
+
+## Serialise a PLUGIN_SCENE editor into a project-file manifest entry (design §8.1).
+##
+## Dispatches the plugin's declared project_file.serialize_channel as an MCP tool call
+## and returns the complete editor manifest entry Dictionary.
+##
+## Fallback cases (no IPC dispatch):
+##   - No project_file.serialize_channel declared → skipped silently, entry omitted.
+##   - Plugin not running / connection unavailable → entry with plugin_unavailable:true.
+##
+## tab_title is the display name of the tab (taken from Tabs.get_tab_title).
+func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictionary:
+	var plugin_id: String = editor.plugin_id
+	var panel_name: String = editor.panel_name
+	var editor_id: String = SingletonObject.registered_object_get_uuid(editor.associated_object)
+
+	# Resolve PluginDefinition — need project_file_serialize_channel.
+	var def: PluginDefinition = _get_plugin_def(plugin_id)
+
+	if def == null or def.project_file_serialize_channel.is_empty():
+		# No project_file hook declared for this plugin — skip serialisation.
+		# Return a minimal entry that can be re-opened but carries no saved state.
+		# The type is still PLUGIN_SCENE so open_file/deserialize can handle it.
+		push_warning(
+			("[EditorContainer] serialize: PLUGIN_SCENE editor for plugin '%s' panel '%s' " +
+			"has no project_file.serialize_channel — tab state will not be restored.") %
+			[plugin_id, panel_name]
+		)
+		return {
+			"name": tab_title,
+			"file": editor.file,
+			"type": Editor.Type.PLUGIN_SCENE,
+			"plugin_id": plugin_id,
+			"panel_name": panel_name,
+			"plugin_version": def.version if def != null else "",
+			"plugin_state": {"version": 1, "plugin_id": plugin_id,
+				"plugin_version": def.version if def != null else "",
+				"panel_name": panel_name, "payload": {}},
+			"sidecar_paths": [],
+			"associated_object": editor_id,
+		}
+
+	# Attempt MCP dispatch.
+	var conn: MCPServerConnection = _get_plugin_connection(plugin_id)
+	if conn == null:
+		push_warning(
+			("[EditorContainer] serialize: PLUGIN_SCENE plugin '%s' is not running; " +
+			"saving with plugin_unavailable flag.") % plugin_id
+		)
+		return {
+			"name": tab_title,
+			"file": editor.file,
+			"type": Editor.Type.PLUGIN_SCENE,
+			"plugin_id": plugin_id,
+			"panel_name": panel_name,
+			"plugin_version": def.version,
+			"plugin_state": {"version": 1, "plugin_id": plugin_id,
+				"plugin_version": def.version, "panel_name": panel_name, "payload": {}},
+			"sidecar_paths": [],
+			"plugin_unavailable": true,
+			"associated_object": editor_id,
+		}
+
+	var call_result = await conn.call_tool(
+		def.project_file_serialize_channel,
+		{
+			"file_path": editor.file,
+			"panel_name": panel_name,
+			"editor_id": editor_id,
+		}
+	)
+
+	var tab_state: Dictionary = {}
+	var sidecar_paths: Array = []
+
+	if call_result is Dictionary:
+		tab_state = call_result.get("tab_state", {})
+		var raw_paths = call_result.get("sidecar_paths", [])
+		if raw_paths is Array:
+			for p in raw_paths:
+				sidecar_paths.append(str(p))
+	else:
+		push_warning(
+			("[EditorContainer] serialize: plugin '%s' serialize_channel returned " +
+			"unexpected result; saving with empty payload.") % plugin_id
+		)
+
+	return {
+		"name": tab_title,
+		"file": editor.file,
+		"type": Editor.Type.PLUGIN_SCENE,
+		"plugin_id": plugin_id,
+		"panel_name": panel_name,
+		"plugin_version": def.version,
+		"plugin_state": {
+			"version": 1,
+			"plugin_id": plugin_id,
+			"plugin_version": def.version,
+			"panel_name": panel_name,
+			"payload": tab_state,
+		},
+		"sidecar_paths": sidecar_paths,
+		"associated_object": editor_id,
+	}
+
+
+## Deserialise a PLUGIN_SCENE entry from a project-file manifest back into
+## an already-created Editor node (design §8.1, §8.3).
+##
+## `editor_inst` was created by Editor.create_plugin_scene() (or with Type.PLUGIN_SCENE).
+## `editor_ser` is the raw Dictionary entry from the Editors array in the .minproj.
+##
+## Handles:
+##   - Plugin not installed → placeholder label in the editor's VBox.
+##   - Plugin version mismatch → stored_version passed to deserialize_channel.
+##   - Normal path → waits for panel_loaded then dispatches deserialize_channel.
+static func _deserialize_plugin_scene_editor(
+		editor_inst: Editor,
+		editor_ser: Dictionary
+) -> void:
+	var plugin_id: String = editor_ser.get("plugin_id", editor_inst.plugin_id)
+	var panel_name: String = editor_ser.get("panel_name", editor_inst.panel_name)
+	var plugin_state: Dictionary = editor_ser.get("plugin_state", {})
+	var stored_version: String = str(editor_ser.get("plugin_version", ""))
+	var payload: Dictionary = plugin_state.get("payload", {})
+
+	# Ensure the editor instance has the right plugin identity.
+	editor_inst.plugin_id = plugin_id
+	editor_inst.panel_name = panel_name
+
+	# Check if plugin is installed.
+	var def: PluginDefinition = _get_plugin_def_static(plugin_id)
+	if def == null:
+		# Plugin not installed — show a placeholder label.
+		_show_placeholder(
+			editor_inst,
+			("Install '%s' to open this document.") % plugin_id
+		)
+		return
+
+	if def.project_file_deserialize_channel.is_empty():
+		# Plugin installed but no deserialize_channel declared — scene is open,
+		# but state cannot be restored.
+		push_warning(
+			("[EditorContainer] deserialize: plugin '%s' has no " +
+			"project_file.deserialize_channel — tab opened without saved state.") %
+			plugin_id
+		)
+		return
+
+	# Dispatch deserialize_channel.  The panel was already instantiated during
+	# Editor.create_plugin_scene(), so the scene is already mounted.  Wait one
+	# frame to allow _on_panel_loaded to fire before we push state into it.
+	await SingletonObject.editor_container.get_tree().process_frame
+
+	var conn: MCPServerConnection = _get_plugin_connection_static(plugin_id)
+	if conn == null:
+		push_warning(
+			("[EditorContainer] deserialize: plugin '%s' is not running; " +
+			"tab opened without saved state.") % plugin_id
+		)
+		return
+
+	var call_result = await conn.call_tool(
+		def.project_file_deserialize_channel,
+		{
+			"tab_state": payload,
+			"stored_version": stored_version,
+		}
+	)
+
+	if call_result is Dictionary and call_result.get("isError", false):
+		push_warning(
+			("[EditorContainer] deserialize: plugin '%s' deserialize_channel returned " +
+			"an error: %s") % [plugin_id, str(call_result)]
+		)
+
+
+## Return a PluginDefinition for the given plugin_id, or null.
+## Delegates to the static variant so it can be called from the instance context too.
+func _get_plugin_def(plugin_id: String) -> PluginDefinition:
+	return _get_plugin_def_static(plugin_id)
+
+
+## Return a PluginDefinition for the given plugin_id via the singleton's plugin_manager.
+## Null-safe at every step — returns null when the plugin system is not initialised.
+static func _get_plugin_def_static(plugin_id: String) -> PluginDefinition:
+	var pm = SingletonObject.get("plugin_manager") if "plugin_manager" in SingletonObject else null
+	if pm == null:
+		return null
+	var db = pm.get_db()
+	if db == null:
+		return null
+	return db.get_by_id(plugin_id)
+
+
+## Return the live MCPServerConnection for a plugin, or null.
+func _get_plugin_connection(plugin_id: String) -> MCPServerConnection:
+	return _get_plugin_connection_static(plugin_id)
+
+
+## Return the live MCPServerConnection for a plugin, or null.
+## Only returns non-null when the plugin is in RUNNING state.
+static func _get_plugin_connection_static(plugin_id: String) -> MCPServerConnection:
+	var pm = SingletonObject.get("plugin_manager") if "plugin_manager" in SingletonObject else null
+	if pm == null:
+		return null
+	var db = pm.get_db()
+	if db == null:
+		return null
+	var def: PluginDefinition = db.get_by_id(plugin_id)
+	if def == null or def.state != PluginDefinition.State.RUNNING:
+		return null
+	return pm.get_connection(plugin_id)
+
+
+## Show a placeholder label inside the editor's VBox (used when a plugin is
+## unavailable during deserialize — design §8.3, §12).
+static func _show_placeholder(editor_inst: Editor, message: String) -> void:
+	var vbox = editor_inst.get_node_or_null("VBoxContainer")
+	if vbox == null:
+		push_warning("[EditorContainer] _show_placeholder: VBoxContainer not found")
+		return
+	var lbl := Label.new()
+	lbl.text = message
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.add_child(lbl)
 
 
 func clear_editor_tabs():

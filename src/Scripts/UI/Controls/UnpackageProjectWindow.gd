@@ -167,7 +167,11 @@ func _on_export_button_pressed():
 	if err != OK:
 		show_message(error_string(err), package.get_last_error())
 		return
-	
+
+	# Dispatch plugin apply_channel for any PLUGIN_SCENE editors with export metadata.
+	var pm = SingletonObject.get("plugin_manager") if "plugin_manager" in SingletonObject else null
+	await package.apply_plugin_exports(package.data, _files_path_line_edit.text, pm)
+
 	show_message(error_string(OK), "Successfully exported the package file.")
 	_dialog.visibility_changed.connect(
 		func(): if not _dialog.visible: hide(),

@@ -123,6 +123,27 @@ var state: State = State.INSTALLED
 ## Populated by PluginDB.install() via scan_class_names(); empty until then.
 var class_names: Array[String] = []
 
+# ---------------------------------------------------------------------------
+# Project-file and project-export hook channels (design §8)
+# ---------------------------------------------------------------------------
+
+## Channel the plugin uses to serialise a plugin-scene tab into a .minproj entry.
+## Empty string means the plugin has not declared this hook.
+## Both project_file channels MUST appear in ui_ipc_messages (allowlist check in
+## _from_dict_internal).  Stored as a flat pair for easy lookup; the manifest uses
+## a nested { "project_file": { "serialize_channel": "...", "deserialize_channel": "..." } }
+## shape which is normalised here.
+var project_file_serialize_channel: String = ""
+
+## Channel the plugin uses to deserialise a saved tab_state back into an open panel.
+var project_file_deserialize_channel: String = ""
+
+## Channel the plugin calls to collect sidecar files for .minpackage export.
+var project_export_collect_channel: String = ""
+
+## Channel the plugin calls after unpack to rewrite absolute paths.
+var project_export_apply_channel: String = ""
+
 
 # ---------------------------------------------------------------------------
 # Construction helpers
@@ -216,6 +237,16 @@ func to_dict() -> Dictionary:
 		result["state"] = {"schema": state_schema}
 	if not class_names.is_empty():
 		result["class_names"] = Array(class_names)
+	if not project_file_serialize_channel.is_empty() or not project_file_deserialize_channel.is_empty():
+		result["project_file"] = {
+			"serialize_channel": project_file_serialize_channel,
+			"deserialize_channel": project_file_deserialize_channel,
+		}
+	if not project_export_collect_channel.is_empty() or not project_export_apply_channel.is_empty():
+		result["project_export"] = {
+			"collect_channel": project_export_collect_channel,
+			"apply_channel": project_export_apply_channel,
+		}
 	return result
 
 
@@ -236,6 +267,13 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.state_schema = d.get("state", {}).get("schema", {})
 	for cn in d.get("class_names", []):
 		def.class_names.append(str(cn))
+	# project_file and project_export hooks (design §8)
+	var pf: Dictionary = d.get("project_file", {})
+	def.project_file_serialize_channel = str(pf.get("serialize_channel", ""))
+	def.project_file_deserialize_channel = str(pf.get("deserialize_channel", ""))
+	var pe: Dictionary = d.get("project_export", {})
+	def.project_export_collect_channel = str(pe.get("collect_channel", ""))
+	def.project_export_apply_channel = str(pe.get("apply_channel", ""))
 	return def
 
 
@@ -375,6 +413,70 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 		if ev is Dictionary:
 			def.events.append(ev.duplicate(true))
 	def.state_schema = data.get("state", {}).get("schema", {})
+
+	# project_file hook channels (design §8.1)
+	# Both channels MUST appear in ui.ipc_messages.
+	var pf_raw: Variant = data.get("project_file", null)
+	if pf_raw != null:
+		if not (pf_raw is Dictionary):
+			push_error("[PluginDefinition] 'project_file' must be a Dictionary")
+			return null
+		var pf: Dictionary = pf_raw as Dictionary
+		var ser_ch: String = str(pf.get("serialize_channel", ""))
+		var des_ch: String = str(pf.get("deserialize_channel", ""))
+		if ser_ch.is_empty() or des_ch.is_empty():
+			push_error(
+				"[PluginDefinition] 'project_file' requires both serialize_channel and " +
+				"deserialize_channel; got serialize='%s' deserialize='%s'" %
+				[ser_ch, des_ch]
+			)
+			return null
+		if not def.ui_ipc_messages.has(ser_ch):
+			push_error(
+				("[PluginDefinition] project_file.serialize_channel '%s' is not in " +
+				"ui.ipc_messages (allowlist)") % ser_ch
+			)
+			return null
+		if not def.ui_ipc_messages.has(des_ch):
+			push_error(
+				("[PluginDefinition] project_file.deserialize_channel '%s' is not in " +
+				"ui.ipc_messages (allowlist)") % des_ch
+			)
+			return null
+		def.project_file_serialize_channel = ser_ch
+		def.project_file_deserialize_channel = des_ch
+
+	# project_export hook channels (design §8.2)
+	# Both channels MUST appear in ui.ipc_messages.
+	var pe_raw: Variant = data.get("project_export", null)
+	if pe_raw != null:
+		if not (pe_raw is Dictionary):
+			push_error("[PluginDefinition] 'project_export' must be a Dictionary")
+			return null
+		var pe: Dictionary = pe_raw as Dictionary
+		var col_ch: String = str(pe.get("collect_channel", ""))
+		var app_ch: String = str(pe.get("apply_channel", ""))
+		if col_ch.is_empty() or app_ch.is_empty():
+			push_error(
+				"[PluginDefinition] 'project_export' requires both collect_channel and " +
+				"apply_channel; got collect='%s' apply='%s'" %
+				[col_ch, app_ch]
+			)
+			return null
+		if not def.ui_ipc_messages.has(col_ch):
+			push_error(
+				("[PluginDefinition] project_export.collect_channel '%s' is not in " +
+				"ui.ipc_messages (allowlist)") % col_ch
+			)
+			return null
+		if not def.ui_ipc_messages.has(app_ch):
+			push_error(
+				("[PluginDefinition] project_export.apply_channel '%s' is not in " +
+				"ui.ipc_messages (allowlist)") % app_ch
+			)
+			return null
+		def.project_export_collect_channel = col_ch
+		def.project_export_apply_channel = app_ch
 
 	return def
 

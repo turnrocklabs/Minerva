@@ -78,7 +78,7 @@ func package_project():
 		editor.queue_free()
 
 	var ppw: PackageProjectWindow = %PackageProjectWindow
-	ppw.data = serialize_project()
+	ppw.data = await serialize_project()
 	ppw.popup_centered()
 
 func unpackage_project():
@@ -103,7 +103,7 @@ func save_project():
 		await save_project_as()
 		return
 	
-	var proj_data: = serialize_project()
+	var proj_data: = await serialize_project()
 
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
 	save_file.store_line(JSON.stringify(proj_data, "\t"))
@@ -169,7 +169,7 @@ func serialize_project() -> Dictionary:
 		var serialized_notes = notes_thread.Serialize()
 		notes_histories.append(serialized_notes)
 
-	var editors = SingletonObject.editor_container.serialize()
+	var editors = await SingletonObject.editor_container.serialize()
 
 	# Get current tab indices with fallbacks
 	var active_chat_index = 0

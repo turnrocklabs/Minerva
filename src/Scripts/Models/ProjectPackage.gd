@@ -13,6 +13,10 @@ const editor_files_key = "Editors" # Where in project_data are editor paths
 ## Design §9.1: set to the package-relative sidecar path when a sidecar was found.
 const sidecar_manifest_key = "sidecar"
 
+## Key used in each Editors[i] manifest entry to record plugin-export metadata.
+## Design §8.2: set to a Dictionary with path rewrites when a plugin collect was run.
+const plugin_export_manifest_key = "plugin_export"
+
 ## Path of the package file
 var path: String
 
@@ -58,9 +62,11 @@ func close():
 ## that MUST contain [param original_files] open in editor.[br]
 ## [param original_files] is an array open editor file paths.[br]
 ## [param package_files] is an array of same size as [param original_files]
-## that maps where in bundle the appropriate original file should be placed
-## [param save_path] is where the resulting bundle file will be. [br]
+## that maps where in bundle the appropriate original file should be placed.[br]
+## [param save_path] is where the resulting bundle file will be.[br]
 ## Returns [int] error. To know what happened use the [method get_last_error] method.
+## Note: Call [method collect_plugin_exports] BEFORE this method if you want plugin
+## sidecar files to be included in the package (design §8.2).
 func save_package(
 	project_data: Dictionary,
 	original_files: PackedStringArray,
@@ -187,6 +193,12 @@ func error_cleanup(paths: PackedStringArray):
 
 
 
+## Unpack a .minpackage file.[br]
+## [param files_destination] is the directory where editor files will be written.[br]
+## [param project_destination] is the path where the .minproj file will be written.[br]
+## Returns [int] error.
+## Note: Call [method apply_plugin_exports] AFTER this method if you want plugin
+## absolute-path rewrites to be applied (design §8.2).
 func unpack(files_destination: String, project_destination: String) -> int:
 	if not reader:
 		_error = "Package reader unconfigured."
@@ -286,11 +298,187 @@ func unpack(files_destination: String, project_destination: String) -> int:
 	if not proj_fa:
 		_error = "Failed to open file (%s) for writing." % project_destination
 		error_cleanup(written_files)
-		return FileAccess.get_open_error() 
+		return FileAccess.get_open_error()
 
 	proj_fa.store_string(JSON.stringify(project_data))
 
 	return OK
+
+
+## Async pre-pass for plugin project_export.collect_channel (design §8.2).
+##
+## Call this BEFORE save_package() when you want plugin-contributed sidecar files
+## included in the package.  Mutates `project_data` in-place: for each PLUGIN_SCENE
+## editor entry whose plugin declares a collect_channel, the plugin is asked for the
+## files it wants packed, those files are written to `staging_dir` (a temporary flat
+## directory), and path rewrites are applied to the editor's plugin_state.payload.
+## The manifest key `plugin_export` is set on each qualifying editor entry.
+##
+## `staging_dir` must be a writable absolute path.  Call site creates it; this method
+## does NOT clean it up.  PackageProjectWindow feeds it into the `original_files` /
+## `package_files` arrays for save_package.
+##
+## Returns an Array of {original_abs, pack_rel} Dictionaries for any plugin sidecar
+## files that should be included in the package alongside the regular editor files.
+func collect_plugin_exports(
+		project_data: Dictionary,
+		plugin_manager,
+		staging_dir: String
+) -> Array:
+	var extra_files: Array = []
+	if plugin_manager == null:
+		return extra_files
+
+	for editor_entry in project_data.get("Editors", []):
+		if not (editor_entry is Dictionary):
+			continue
+		if editor_entry.get("type") != Editor.Type.PLUGIN_SCENE:
+			continue
+
+		var plugin_id: String = str(editor_entry.get("plugin_id", ""))
+		if plugin_id.is_empty():
+			continue
+
+		var db = plugin_manager.get_db()
+		if db == null:
+			continue
+		var def: PluginDefinition = db.get_by_id(plugin_id)
+		if def == null or def.project_export_collect_channel.is_empty():
+			continue
+		if def.state != PluginDefinition.State.RUNNING:
+			push_warning(
+				("ProjectPackage.collect_plugin_exports: plugin '%s' not running; " +
+				"skipping collect.") % plugin_id
+			)
+			continue
+
+		var conn = plugin_manager.get_connection(plugin_id)  # MCPServerConnection; untyped for duck-typing in tests
+		if conn == null:
+			push_warning(
+				("ProjectPackage.collect_plugin_exports: no connection for plugin '%s'; " +
+				"skipping collect.") % plugin_id
+			)
+			continue
+
+		var call_result = await conn.call_tool(
+			def.project_export_collect_channel,
+			{
+				"file_path": str(editor_entry.get("file", "")),
+				"panel_name": str(editor_entry.get("panel_name", "")),
+			}
+		)
+
+		if not (call_result is Dictionary):
+			push_warning(
+				("ProjectPackage.collect_plugin_exports: plugin '%s' collect_channel " +
+				"returned unexpected result; skipping.") % plugin_id
+			)
+			continue
+
+		# Collect plugin-declared sidecar files.
+		var files_list: Array = call_result.get("files", [])
+		var packed_files: Array[String] = []
+		for file_entry in files_list:
+			if not (file_entry is Dictionary):
+				continue
+			var src_abs: String = str(file_entry.get("src_abs", ""))
+			var pack_rel: String = str(file_entry.get("pack_rel", ""))
+			if src_abs.is_empty() or pack_rel.is_empty():
+				continue
+			if not FileAccess.file_exists(src_abs):
+				push_warning(
+					("ProjectPackage.collect_plugin_exports: plugin '%s' returned " +
+					"non-existent file '%s'; skipping.") % [plugin_id, src_abs]
+				)
+				continue
+			# Stage the file so save_package can copy it into the zip.
+			var staged: String = staging_dir.path_join(pack_rel)
+			DirAccess.make_dir_recursive_absolute(staged.get_base_dir())
+			DirAccess.copy_absolute(src_abs, staged)
+			extra_files.append({"original_abs": staged, "pack_rel": pack_rel})
+			packed_files.append(pack_rel)
+
+		# Apply path rewrites to plugin_state.payload.
+		var rewrites: Dictionary = call_result.get("paths_to_rewrite", {})
+		if not rewrites.is_empty():
+			var plugin_state: Dictionary = editor_entry.get("plugin_state", {})
+			var payload: Dictionary = plugin_state.get("payload", {}).duplicate(true)
+			for field_path in rewrites:
+				var pack_rel_val: String = str(rewrites[field_path])
+				if payload.has(field_path):
+					payload[field_path] = pack_rel_val
+			plugin_state["payload"] = payload
+			editor_entry["plugin_state"] = plugin_state
+
+		editor_entry[plugin_export_manifest_key] = {
+			"packed_files": packed_files,
+			"rewrites": rewrites,
+		}
+
+	return extra_files
+
+
+## Async post-pass for plugin project_export.apply_channel (design §8.2).
+##
+## Call this AFTER unpack() to let plugins rewrite internal absolute paths.
+## For each PLUGIN_SCENE editor entry that has a `plugin_export` manifest key,
+## the plugin's apply_channel is called with the unpack destination directory.
+func apply_plugin_exports(
+		project_data: Dictionary,
+		files_destination: String,
+		plugin_manager
+) -> void:
+	if plugin_manager == null:
+		return
+
+	for editor_entry in project_data.get("Editors", []):
+		if not (editor_entry is Dictionary):
+			continue
+		if editor_entry.get("type") != Editor.Type.PLUGIN_SCENE:
+			continue
+		var plugin_export_meta: Dictionary = editor_entry.get(plugin_export_manifest_key, {})
+		if plugin_export_meta.is_empty():
+			continue
+
+		var plugin_id: String = str(editor_entry.get("plugin_id", ""))
+		if plugin_id.is_empty():
+			continue
+
+		var db = plugin_manager.get_db()
+		if db == null:
+			continue
+		var def: PluginDefinition = db.get_by_id(plugin_id)
+		if def == null or def.project_export_apply_channel.is_empty():
+			continue
+		if def.state != PluginDefinition.State.RUNNING:
+			push_warning(
+				("ProjectPackage.apply_plugin_exports: plugin '%s' not running; " +
+				"skipping apply.") % plugin_id
+			)
+			continue
+
+		var conn = plugin_manager.get_connection(plugin_id)  # MCPServerConnection; untyped for duck-typing in tests
+		if conn == null:
+			push_warning(
+				("ProjectPackage.apply_plugin_exports: no connection for plugin '%s'; " +
+				"skipping apply.") % plugin_id
+			)
+			continue
+
+		var call_result = await conn.call_tool(
+			def.project_export_apply_channel,
+			{
+				"unpack_dir": files_destination,
+				"file_path": str(editor_entry.get("file", "")),
+				"panel_name": str(editor_entry.get("panel_name", "")),
+			}
+		)
+
+		if call_result is Dictionary and call_result.get("isError", false):
+			push_warning(
+				("ProjectPackage.apply_plugin_exports: plugin '%s' apply_channel " +
+				"returned an error: %s") % [plugin_id, str(call_result)]
+			)
 
 
 ## This function tries to find the lowest common parent directory for all passed file paths.

@@ -177,7 +177,20 @@ func _on_package_button_pressed():
 	var packager: = ProjectPackage.new()
 
 	var files_data: = get_final_file_paths()
-	var err: = packager.save_package(data, files_data["original_files"], files_data["package_files"], save_path)
+	var pm = SingletonObject.get("plugin_manager") if "plugin_manager" in SingletonObject else null
+	var staging_dir: String = save_path + ".plugin_staging"
+	DirAccess.make_dir_recursive_absolute(staging_dir)
+	var extra_files: Array = await packager.collect_plugin_exports(data, pm, staging_dir)
+	# Merge plugin sidecar files into the file lists for save_package.
+	var orig_files: PackedStringArray = files_data["original_files"]
+	var pkg_files: PackedStringArray = files_data["package_files"]
+	for ef in extra_files:
+		orig_files.append(str(ef.get("original_abs", "")))
+		pkg_files.append(str(ef.get("pack_rel", "")))
+	var err: = packager.save_package(data, orig_files, pkg_files, save_path)
+	# Clean up staging dir.
+	if DirAccess.dir_exists_absolute(staging_dir):
+		_remove_dir_recursive(staging_dir)
 
 	if err != OK:
 		show_message(error_string(err), packager.get_last_error())
@@ -211,3 +224,22 @@ func _on_files_tree_button_clicked(item: TreeItem, _column: int, _id: int, mouse
 
 func _on_close_requested() -> void:
 	call_deferred("hide")
+
+
+## Recursively delete a directory and all its contents.
+## Used to clean up plugin-export staging directories after packing.
+func _remove_dir_recursive(dir_path: String) -> void:
+	var da := DirAccess.open(dir_path)
+	if da == null:
+		return
+	da.list_dir_begin()
+	var fname := da.get_next()
+	while fname != "":
+		var full := dir_path.path_join(fname)
+		if da.current_is_dir():
+			_remove_dir_recursive(full)
+		else:
+			DirAccess.remove_absolute(full)
+		fname = da.get_next()
+	da.list_dir_end()
+	DirAccess.remove_absolute(dir_path)
