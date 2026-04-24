@@ -146,6 +146,18 @@ func serialize() -> Array:
 				else:
 					content = {}
 
+		# TODO(019dc05578cf7e388ac090e3f19ade19): PLUGIN_SCENE project-file serialize.
+		# When editor.type == Editor.Type.PLUGIN_SCENE, call the plugin's
+		# serialize_channel IPC (design §8.1) to get tab_state and sidecar_paths,
+		# then embed under editors.plugin_scene[editor_id]. For now, leave a
+		# warning so project-file round-trips don't silently lose plugin editor tabs.
+		if editor.type == Editor.Type.PLUGIN_SCENE:
+			push_warning(
+				("[EditorContainer] serialize: PLUGIN_SCENE editor for plugin '%s' panel '%s' " +
+				"will not be restored from project file — project-file hooks task pending.") %
+				[editor.plugin_id, editor.panel_name]
+			)
+
 		var editor_data = {
 			"name": editor_pane.Tabs.get_tab_title(tab_idx),
 			"file": editor.file,
@@ -422,6 +434,17 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 				if content and content is Dictionary:
 					editor_inst.pcb_editor.load_from_dict(content)
 
+		elif editor_inst.type == Editor.Type.PLUGIN_SCENE:
+			# TODO(019dc05578cf7e388ac090e3f19ade19): PLUGIN_SCENE project-file deserialize.
+			# When this tab type is encountered in a .minproj, open the plugin editor
+			# with Editor.create_plugin_scene(), wait for _on_panel_loaded, then dispatch
+			# the deserialize_channel with the saved tab_state (design §8.1).
+			push_warning(
+				("[EditorContainer] deserialize: PLUGIN_SCENE editor type encountered " +
+				"in project file — restoration not yet implemented " +
+				"(task 019dc05578cf7e388ac090e3f19ade19 pending).")
+			)
+
 		editor_instances.append(editor_inst)
 	
 	return editor_instances
@@ -460,7 +483,12 @@ func _on_open_files(files: PackedStringArray):
 func open_file(filename: String):
 	## Determine the file type, create a control for that type (CodeEdit/TextureRect)
 	## Then add the new control to the active_container
-	## Determine file type
+	## Determine file type.
+	##
+	## Resolution order (design §7.3):
+	##   1. Core extension table (graphics, minpcb, minkb, minsheet, text)
+	##   2. PluginEditorRegistry (plugin-contributed extensions)
+	##   3. Fallback to TEXT
 	if _is_graphics_file(filename):
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
@@ -472,7 +500,18 @@ func open_file(filename: String):
 	elif filename.to_lower().ends_with(".minsheet"):
 		editor_pane.add(Editor.Type.SPREADSHEET, filename)
 	else:
-		editor_pane.add(Editor.Type.TEXT, filename)
+		# Check plugin registry before falling back to TEXT (design §7.3).
+		var ext: String = "." + filename.get_extension().to_lower()
+		var reg = SingletonObject.get("plugin_editor_registry") if "plugin_editor_registry" in SingletonObject else null
+		var panel_info: Dictionary = reg.resolve_extension(ext) if reg != null else {}
+		if not panel_info.is_empty():
+			var p_id: String = panel_info.get("plugin_id", "")
+			var p_name: String = panel_info.get("panel_name", "")
+			# Use add_plugin_scene_editor() which sets plugin_id/panel_name on the
+			# Editor node BEFORE Editor.create() reads them.
+			editor_pane.add_plugin_scene_editor(p_id, p_name, filename)
+		else:
+			editor_pane.add(Editor.Type.TEXT, filename)
 		# new_control = CodeEdit.new()
 		# ## Open the file and read the content into one giant string
 		# var fa_object = FileAccess.open(filename, FileAccess.READ)

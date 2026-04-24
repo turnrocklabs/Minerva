@@ -8,14 +8,21 @@ extends RefCounted
 ## Design §6.2 — used by PluginDB.install() to reject plugins whose class_names
 ## collide with core identifiers.
 
-# Populated on first call to get(), then reused.
+# Populated on first call to get_all(), then reused.
 static var _cached: Array[String] = []
 static var _loaded: bool = false
 
 ## Return the Array[String] of core class_names.
 ## Scans res://Scripts/**/*.gd on the first call; subsequent calls return the
 ## cached array.  Safe to call from the main thread only.
-static func get() -> Array[String]:
+##
+## NOTE: this method is named `get_all`, NOT `get`, because GDScript's resolver
+## prefers Godot's built-in `Object.get(name)` instance method over a class's
+## static method of the same name when the call has zero arguments.  Calling
+## `CoreClassNames.get()` parses but resolves to `Object.get()` (one-arg) and
+## fails at parse time with "Too few arguments for get() call". Naming it
+## `get_all` sidesteps the collision.
+static func get_all() -> Array[String]:
 	if _loaded:
 		return _cached
 	_cached = _scan_dir("res://Scripts")
@@ -23,7 +30,7 @@ static func get() -> Array[String]:
 	return _cached
 
 
-## Force a re-scan on the next call to get().
+## Force a re-scan on the next call to get_all().
 ## Useful in tests where the virtual filesystem has been modified.
 static func invalidate() -> void:
 	_loaded = false

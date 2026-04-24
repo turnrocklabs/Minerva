@@ -56,8 +56,11 @@ func install(manifest_path: String) -> PluginDefinition:
 	var other_names := _build_class_name_map(def.id)
 
 	# Fetch or lazily build the core class_names index.
+	# NOTE: method is `get_all`, not `get`, because GDScript's resolver picks
+	# `Object.get(name)` (one-arg) over a class's static `get()` (zero-arg),
+	# producing a parse-time "Too few arguments" error.  See _core_class_names.gd.
 	var CoreCN = load("res://Scripts/Services/Plugins/_core_class_names.gd")
-	var core_names: Array = CoreCN.get() if CoreCN != null else []
+	var core_names: Array = CoreCN.get_all() if CoreCN != null else []
 
 	var cn_error: Dictionary = def.validate_class_names(other_names, core_names)
 	if not cn_error.is_empty():

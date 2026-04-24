@@ -42,6 +42,14 @@ var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid ci
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
 var worker_status_panel  # WorkerStatusPanel - type annotation removed to avoid circular dependency
 var docket_editor  # DocketEditorPanel - type annotation removed to avoid circular dependency
+var plugin_scene_root: Control  ## Mounted scene root for PLUGIN_SCENE editors.
+
+## Set by caller before Editor.create(Type.PLUGIN_SCENE) to identify the panel.
+var plugin_id: String = ""
+var panel_name: String = ""
+## save_mode mirrors the manifest's panel save_mode ("host_owned" | "plugin_owned").
+## Set during create() from the panel definition; defaults to "host_owned".
+var plugin_save_mode: String = "host_owned"
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -83,6 +91,7 @@ enum Type {
 	PLUGIN_MANAGER,
 	WORKER_STATUS,
 	DOCKET,
+	PLUGIN_SCENE,   ## Native Godot-scene panel contributed by a plugin (design §7.1).
 }
 
 
@@ -127,6 +136,9 @@ var file: String:
 #var file_path: String
 var type: Type
 var _file_saved := false
+## Tracks unsaved changes for PLUGIN_SCENE editors; set true on content_changed,
+## cleared on successful save.
+var _plugin_scene_modified := false
 
 var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
@@ -136,6 +148,64 @@ var prompt_save:= true
 var file_saved_in_disc := false # this is used when you press the save button on the file menu
 
 static var code_syntax_enabled: = true
+
+## Convenience factory for PLUGIN_SCENE editors that pre-sets plugin_id / panel_name
+## on the editor instance before Editor.create() reads them in the match arm.
+static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name_ = null, associated_object_ = null) -> Editor:
+	# Instantiate a bare Editor node, set the plugin fields, then delegate to create().
+	# We must set the fields on the instance BEFORE create() runs the match arm,
+	# so we instantiate here and call create() with a dummy type that we override.
+	# Actually the cleanest path: instantiate directly and run only the PLUGIN_SCENE
+	# branch, mirroring what create() does for other types.
+	var editor = editor_scene.instantiate()
+	editor.type = Type.PLUGIN_SCENE
+	editor.plugin_id = p_id
+	editor.panel_name = p_name
+	editor.associated_object = associated_object_
+	if name_:
+		editor.tab_title = name_
+	if file_:
+		editor.file = file_
+
+	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
+
+	if p_id.is_empty() or p_name.is_empty():
+		push_error(
+			"[Editor] create_plugin_scene(): plugin_id and panel_name must be non-empty"
+		)
+	else:
+		vbox_container.clip_contents = true
+		var pm = _get_plugin_manager_safe()
+		if pm != null:
+			var db = pm.get_db()
+			var def = db.get_by_id(p_id) if db != null else null
+			if def != null:
+				for pd in def.ui_panels:
+					if pd is Dictionary and pd.get("name", "") == p_name:
+						editor.plugin_save_mode = pd.get("save_mode", "host_owned")
+						break
+		var root: Control = PluginScenePanelHost.instantiate_into(
+			vbox_container, p_id, p_name, editor
+		)
+		editor.plugin_scene_root = root
+		if root != null and root.has_signal("content_changed"):
+			root.content_changed.connect(editor._on_editor_changed)
+		if pm != null:
+			var tscn_path: String = ""
+			var db2 = pm.get_db()
+			var def2 = db2.get_by_id(p_id) if db2 != null else null
+			if def2 != null:
+				for pd2 in def2.ui_panels:
+					if pd2 is Dictionary and pd2.get("name", "") == p_name:
+						var data_dir: String = def2.data_directory
+						var entry_rel: String = pd2.get("entry_scene", "")
+						if not entry_rel.is_empty() and not data_dir.is_empty():
+							tscn_path = data_dir.path_join(entry_rel).simplify_path()
+						break
+			pm.register_live_panel(p_id, p_name, tscn_path, vbox_container, root, editor)
+
+	return editor
+
 
 static func create(type_: Type, file_ = null, name_ = null, associated_object_ = null, initial_setup: = true) -> Editor:
 	var editor = editor_scene.instantiate()
@@ -296,7 +366,50 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			vbox_container.add_child(new_docket_panel)
 			editor.docket_editor = new_docket_panel
 
+		Editor.Type.PLUGIN_SCENE:
+			# PLUGIN_SCENE editors must be created via Editor.create_plugin_scene()
+			# so that plugin_id and panel_name are set before the match arm runs.
+			# If create() is called directly with PLUGIN_SCENE, log an error and
+			# leave the editor without a mounted scene (placeholder will show via
+			# PluginScenePanelHost when plugin_id is empty).
+			push_error(
+				"[Editor] create() called with Type.PLUGIN_SCENE — use " +
+				"Editor.create_plugin_scene(plugin_id, panel_name, ...) instead."
+			)
+
 	return editor
+
+
+## Return PluginManager from SingletonObject safely (no hard dependency at parse time).
+static func _get_plugin_manager_safe():
+	var loop := Engine.get_main_loop()
+	if loop == null or not loop is SceneTree:
+		return null
+	var root: Node = (loop as SceneTree).root
+	if root == null:
+		return null
+	var so: Node = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	if "plugin_manager" in so:
+		return so.get("plugin_manager")
+	return null
+
+
+## Return PluginEditorRegistry from SingletonObject safely.
+static func _get_plugin_editor_registry_safe():
+	var loop := Engine.get_main_loop()
+	if loop == null or not loop is SceneTree:
+		return null
+	var root: Node = (loop as SceneTree).root
+	if root == null:
+		return null
+	var so: Node = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	if "plugin_editor_registry" in so:
+		return so.get("plugin_editor_registry")
+	return null
 
 func toggle(on: bool) -> void:
 	_note_check_button.button_pressed = on
@@ -328,8 +441,9 @@ func _ready():
 			Type.KANBAN: _load_kanban_file(file)
 			Type.SPREADSHEET: _load_spreadsheet_file(file)
 			Type.WEBVIEW: _load_webview_file(file)
+			Type.PLUGIN_SCENE: _load_plugin_scene_file(file)
 
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW and type != Type.PLUGIN_SCENE
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -390,6 +504,17 @@ func _ready():
 		export_area_button.hide()
 		$VBoxContainer/Control.hide()
 		$VBoxContainer/FillerControl3.hide()
+	elif self.type == Type.PLUGIN_SCENE:
+		mic_button.hide()
+		autowrap_button.hide()
+		find_string_container.hide()
+		jump_to_line_panel.hide()
+		code_syntax_button.hide()
+		find_button.hide()
+		%btnApplyDiff.hide()
+		reload_button.hide()
+		export_area_button.hide()
+		$VBoxContainer/ButtonsHBoxContainer.hide()
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
@@ -420,6 +545,12 @@ func _ready():
 func _exit_tree() -> void:
 	if _proxy_note:
 		SingletonObject.detached_note_proxies.erase(_proxy_note)
+	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
+	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
+		PluginScenePanelHost.invoke_unload(plugin_scene_root)
+		var pm = _get_plugin_manager_safe()
+		if pm != null:
+			pm.unregister_live_panel(plugin_id, panel_name)
 
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
@@ -508,6 +639,39 @@ func _load_webview_file(path: String) -> void:
 		webview_editor.mark_saved()
 
 
+## Load a file into a PLUGIN_SCENE editor by calling invoke_load on the scene root.
+## Called from _ready() when a file path is associated with the editor at creation time.
+func _load_plugin_scene_file(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		SingletonObject.ErrorDisplay("File not found", path)
+		return
+	if plugin_scene_root == null:
+		push_warning(
+			("[Editor] _load_plugin_scene_file: plugin_scene_root is null for '%s'") % path
+		)
+		return
+	var content: String = FileAccess.get_file_as_string(path)
+	if content.is_empty():
+		# Empty file is valid; pass an empty dict.
+		PluginScenePanelHost.invoke_load(plugin_scene_root, {})
+		return
+	var json := JSON.new()
+	if json.parse(content) != OK:
+		SingletonObject.ErrorDisplay(
+			"Invalid plugin file",
+			("Could not parse '%s' as JSON: %s") % [path, json.get_error_message()]
+		)
+		return
+	var doc: Variant = json.data
+	if doc is Dictionary:
+		PluginScenePanelHost.invoke_load(plugin_scene_root, doc)
+	else:
+		push_warning(
+			("[Editor] _load_plugin_scene_file: '%s' parsed but is not a Dictionary") % path
+		)
+		PluginScenePanelHost.invoke_load(plugin_scene_root, {})
+
+
 ## Changes the function that runs when user clicks the "save" button
 ## from the [method prompt_close] to [parameter save_function].[br]
 ## To revert back pass the empty [parameter save_function]:[br]
@@ -535,6 +699,16 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 			$FileDialog.filters = PackedStringArray(["*.minsheet ; Minerva Spreadsheet", "*.csv ; CSV Files"])
 		Type.WEBVIEW:
 			$FileDialog.filters = PackedStringArray(["*.html ; HTML Files"])
+		Type.PLUGIN_SCENE:
+			# Set filter to the plugin's registered extension(s), falling back to all files.
+			var reg = _get_plugin_editor_registry_safe()
+			if reg != null:
+				var exts: Array[String] = reg.list_extensions()
+				var filters: PackedStringArray = PackedStringArray()
+				for ext in exts:
+					filters.append(("*%s ; Plugin file") % ext)
+				if not filters.is_empty():
+					$FileDialog.filters = filters
 
 	if not prompt_save: return true
 	if not show_save_file_dialog:
@@ -684,6 +858,12 @@ func get_saved_state() -> int:
 			# Worker status is a live read-only view, always considered saved
 			state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
+		Type.PLUGIN_SCENE:
+			# Plugin scene is_modified flag is driven by content_changed signal from the
+			# scene root.  Track via _plugin_scene_modified set in _on_editor_changed.
+			if not _plugin_scene_modified:
+				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
+
 	return state
 
 ## Returns whether the editor content is saved in regards to the file or the associated object.[br]
@@ -824,6 +1004,55 @@ func save_file_to_disc(path: String) -> void:
 
 				if associated_object is Note:
 					_update_note(associated_object)
+
+		Type.PLUGIN_SCENE:
+			if plugin_save_mode == "plugin_owned":
+				# TODO: dispatch capability:editor.request_save when capability
+				# framework is wired (task 019dc125834f72e987ffdaf88fc152a7).
+				push_warning(
+					("[Editor] PLUGIN_SCENE save: plugin_owned mode not yet implemented. " +
+					"Plugin '%s' panel '%s' — file NOT written by Minerva.") %
+					[plugin_id, panel_name]
+				)
+				return
+			# host_owned: call _on_panel_save_request, serialise, write.
+			var ctx: Dictionary = {}
+			var payload: Variant = PluginScenePanelHost.invoke_save(plugin_scene_root, ctx)
+			if payload == null:
+				SingletonObject.ErrorDisplay(
+					"Save failed",
+					("Plugin '%s' panel '%s' did not return a save payload.") %
+					[plugin_id, panel_name]
+				)
+				return
+			if not payload is Dictionary:
+				SingletonObject.ErrorDisplay(
+					"Save failed",
+					("Plugin '%s' panel '%s' _on_panel_save_request must return a Dictionary.") %
+					[plugin_id, panel_name]
+				)
+				return
+			var payload_dict: Dictionary = payload as Dictionary
+			# If the dict contains a "_bytes" key with PackedByteArray, write raw bytes.
+			if payload_dict.has("_bytes") and payload_dict["_bytes"] is PackedByteArray:
+				var raw_bytes: PackedByteArray = payload_dict["_bytes"]
+				var f_raw := FileAccess.open(path, FileAccess.WRITE)
+				if f_raw == null:
+					var err_raw := error_string(FileAccess.get_open_error())
+					push_warning(err_raw)
+					SingletonObject.ErrorDisplay("Couldn't save plugin file", err_raw)
+					return
+				f_raw.store_buffer(raw_bytes)
+			else:
+				var json_str: String = JSON.stringify(payload_dict, "\t")
+				var f_json := FileAccess.open(path, FileAccess.WRITE)
+				if f_json == null:
+					var err_json := error_string(FileAccess.get_open_error())
+					push_warning(err_json)
+					SingletonObject.ErrorDisplay("Couldn't save plugin file", err_json)
+					return
+				f_json.store_string(json_str)
+			_plugin_scene_modified = false
 
 	# Update editor state
 	_file_saved = true
@@ -1103,6 +1332,9 @@ func _on_editor_changed(text: String = ""):
 		# SingletonObject.UpdateUnsavedTabIcon.emit()
 		# _file_saved = false
 		# file_saved_in_disc = false
+
+	if type == Type.PLUGIN_SCENE:
+		_plugin_scene_modified = true
 
 	content_changed.emit()
 

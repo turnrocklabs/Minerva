@@ -219,6 +219,47 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
+			Editor.Type.PLUGIN_SCENE:
+				# add_plugin_scene_editor() is the preferred path; this fallback handles
+				# PLUGIN_SCENE passed through the generic add() call.
+				var tab_name: String = editor_node.panel_name if not editor_node.panel_name.is_empty() else ("plugin " + str(Tabs.get_tab_count()))
+				Tabs.set_tab_title(Tabs.current_tab, tab_name)
+				editor_node.tab_title = tab_name
+
+	return editor_node
+
+
+## Convenience function to add a plugin Godot-scene editor.
+## Sets plugin_id and panel_name on the Editor BEFORE instantiation so that
+## Editor.create_plugin_scene() can pass them to PluginScenePanelHost.
+## `file` is the associated file path (may be null for new untitled editors).
+func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null, name_: String = "") -> Editor:
+	# Check if we're opening a file that's already open.
+	if file != null:
+		for editor: Editor in Tabs.get_children():
+			if not editor is Editor:
+				continue
+			if editor.file == file:
+				Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
+				return editor
+
+	var title: String = name_ if not name_.is_empty() else panel_name
+	if file != null:
+		var fname: String = str(file).get_file()
+		if not fname.is_empty():
+			title = editor_name_to_use(fname)
+
+	var editor_node: Editor = Editor.create_plugin_scene(plugin_id, panel_name, file, title)
+	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
+	Tabs.add_child(editor_node)
+	Tabs.current_tab = Tabs.get_tab_count() - 1
+	if Tabs.get_tab_count() > 0:
+		buffer_control_editor.hide()
+	if title:
+		Tabs.set_tab_title(Tabs.current_tab, title)
+		editor_node.tab_title = title
+	if file != null:
+		Tabs.set_tab_tooltip(Tabs.current_tab, str(file))
 	return editor_node
 
 

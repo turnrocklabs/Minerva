@@ -594,6 +594,11 @@ func initialize_plugins() -> void:
 	plugin_manager.plugin_stopped.connect(_unregister_plugin_editor_items)
 	plugin_manager.plugin_crashed.connect(_unregister_plugin_editor_items)
 
+	# Register/unregister file extensions and editor kinds in PluginEditorRegistry (design §7.2)
+	plugin_manager.plugin_started.connect(_register_plugin_editor_extensions)
+	plugin_manager.plugin_stopped.connect(_unregister_plugin_editor_extensions)
+	plugin_manager.plugin_crashed.connect(_unregister_plugin_editor_extensions)
+
 	# Pre-populate built-in tool names before initial registration (prevents shadowing)
 	if mcp_manager and mcp_manager.tool_registry:
 		plugin_tool_registry.set_builtin_tool_names(mcp_manager.tool_registry.keys())
@@ -746,7 +751,30 @@ func _unregister_plugin_editor_items(id: String) -> void:
 	creatable_item_registry.unregister_by_source(id)
 
 
-## Open a plugin webview panel for an editor_item's declared panel name.
+## Register a plugin's file extensions and editor kinds into PluginEditorRegistry.
+## Called when a plugin transitions to RUNNING (design §7.2).
+func _register_plugin_editor_extensions(id: String) -> void:
+	if plugin_editor_registry == null or plugin_manager == null:
+		return
+	var def = plugin_manager.get_db().get_by_id(id)
+	if def == null:
+		return
+	var warnings: Array[String] = plugin_editor_registry.register_plugin(def)
+	for w in warnings:
+		push_warning(w)
+
+
+## Unregister a plugin's file extensions and editor kinds from PluginEditorRegistry.
+## Called when a plugin is stopped or crashes (design §7.2).
+func _unregister_plugin_editor_extensions(id: String) -> void:
+	if plugin_editor_registry == null:
+		return
+	plugin_editor_registry.unregister_plugin(id)
+
+
+## Open a plugin panel for an editor_item's declared panel name.
+## Routes to add_plugin_scene_editor() for godot_scene panels, and to the
+## existing HTML webview path for html-kind panels.
 func _open_plugin_panel_for_editor_item(plugin_id: String, panel_name: String, tab_title: String) -> void:
 	if plugin_manager == null or editor_pane == null:
 		return
@@ -754,7 +782,19 @@ func _open_plugin_panel_for_editor_item(plugin_id: String, panel_name: String, t
 	if def == null:
 		return
 
-	# Find the panel HTML file in the plugin's directory
+	# Determine panel kind from ui_panels.
+	var panel_kind: String = "html"
+	for pd in def.ui_panels:
+		if pd is Dictionary and pd.get("name", "") == panel_name:
+			panel_kind = pd.get("kind", "html")
+			break
+
+	if panel_kind == "godot_scene":
+		# Route to native Godot-scene editor tab (design §3, §7.4).
+		editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
+		return
+
+	# Fallback: html-kind panel (existing webview path).
 	var html_path: String = def.data_directory.path_join("ui/%s.html" % panel_name)
 	if not FileAccess.file_exists(html_path):
 		html_path = def.data_directory.path_join("ui/panel.html")
@@ -852,6 +892,17 @@ func _register_builtin_containers() -> void:
 ## Registry of items that can be created via File > New and toolbar buttons.
 var creatable_item_registry: CreatableItemRegistry = CreatableItemRegistry.new()
 #endregion Creatable Item Registry
+
+#region Plugin Editor Registry
+## Maps plugin-contributed file extensions and editor kinds to (plugin_id, panel_name).
+## Single source of truth for file-dialog routing and "File > New" plugin items.
+## Design §7.2.
+##
+## NOTE: Wiring into plugin start/stop is done in initialize_plugins() below.
+## This property is intentionally NOT a Godot autoload; it is accessed via
+## SingletonObject.plugin_editor_registry.
+var plugin_editor_registry: PluginEditorRegistry = PluginEditorRegistry.new()
+#endregion Plugin Editor Registry
 
 #region Docket
 var docket_manager: DocketManager = null
