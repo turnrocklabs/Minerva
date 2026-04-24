@@ -1013,6 +1013,12 @@ func _create_custom_models_tab() -> void:
 	browse_google_btn.pressed.connect(_on_browse_provider_pressed.bind("google"))
 	btn_hbox.add_child(browse_google_btn)
 
+	var browse_chatgpt_btn := Button.new()
+	browse_chatgpt_btn.text = "ChatGPT"
+	browse_chatgpt_btn.tooltip_text = "Browse available ChatGPT/Codex models"
+	browse_chatgpt_btn.pressed.connect(_on_browse_provider_pressed.bind("chatgpt"))
+	btn_hbox.add_child(browse_chatgpt_btn)
+
 	var refresh_btn := Button.new()
 	refresh_btn.text = "Ollama"
 	refresh_btn.tooltip_text = "Re-discover models from local Ollama server"
@@ -1043,6 +1049,7 @@ func _populate_custom_models() -> void:
 		{"label": "OpenAI", "manager": SingletonObject.openai_model_manager, "name_key": "model_name"},
 		{"label": "Google", "manager": SingletonObject.google_model_manager, "name_key": "model_name"},
 		{"label": "Ollama (discovered)", "manager": SingletonObject.local_model_manager, "name_key": "model_name"},
+		{"label": "ChatGPT", "manager": SingletonObject.chatgpt_model_manager, "name_key": "model_name"},
 	]
 
 	var any_models := false
@@ -1252,14 +1259,15 @@ func _show_custom_model_dialog(existing_config: Dictionary = {}, existing_manage
 		if model_name.is_empty():
 			return
 
-		var new_config := {
+		var new_config: Dictionary = existing_config.duplicate(true) if is_edit else {}
+		new_config.merge({
 			"model_name": model_name,
 			"display_name": dn_edit.text.strip_edges() if not dn_edit.text.strip_edges().is_empty() else model_name,
 			"short_name": sn_edit.text.strip_edges() if not sn_edit.text.strip_edges().is_empty() else model_name.left(3).to_upper(),
 			"input_token_cost": in_spin.value,
 			"output_token_cost": out_spin.value,
 			"is_reasoning_model": reasoning_check.button_pressed,
-		}
+		}, true)
 
 		# For Anthropic, also set api_model_id (used by generate_content)
 		if is_edit:
@@ -1309,6 +1317,16 @@ func _on_browse_provider_pressed(provider_key: String) -> void:
 			api_key = get_api_key(SingletonObject.API_PROVIDER.GOOGLE)
 			manager = SingletonObject.google_model_manager
 			provider_label = "Google"
+		"chatgpt":
+			var chatgpt_auth := SingletonObject.ChatGPTProviderScript.get_auth()
+			if not chatgpt_auth.is_authenticated():
+				chatgpt_auth.load_tokens()
+			if not chatgpt_auth.is_authenticated():
+				SingletonObject.ErrorDisplay("ChatGPT Not Connected", "Connect ChatGPT in Preferences before browsing ChatGPT models.", self)
+				return
+			api_key = "oauth"
+			manager = SingletonObject.chatgpt_model_manager
+			provider_label = "ChatGPT"
 
 	if api_key.strip_edges().is_empty():
 		SingletonObject.ErrorDisplay("No API Key", "Please set your %s API key in the API Keys tab first." % provider_label, self)
@@ -1406,7 +1424,7 @@ func _show_provider_browse_dialog(provider_key: String, provider_label: String, 
 		if selected.size() == 1:
 			var model_idx: int = item_list.get_item_metadata(selected[0])
 			var m: Dictionary = all_models[model_idx]
-			details_label.text = "%s\nID: %s" % [m.get("display_name", ""), m.get("model_name", "")]
+			details_label.text = _format_provider_model_details(provider_key, m)
 		elif selected.size() > 1:
 			details_label.text = "%d models selected" % selected.size()
 		else:
@@ -1422,9 +1440,11 @@ func _show_provider_browse_dialog(provider_key: String, provider_label: String, 
 		var skipped := 0
 		for sel_idx in selected:
 			var model_idx: int = item_list.get_item_metadata(sel_idx)
-			var m: Dictionary = all_models[model_idx].duplicate()
+			var m: Dictionary = all_models[model_idx].duplicate(true)
 			# Check if already added
-			var existing: Dictionary = manager.get_model_by_name("model_name", m.get("model_name", ""))
+			var duplicate_key := "catalog_key" if provider_key == "chatgpt" else "model_name"
+			var duplicate_value: String = str(m.get(duplicate_key, m.get("model_name", "")))
+			var existing: Dictionary = manager.get_model_by_name(duplicate_key, duplicate_value)
 			if not existing.is_empty():
 				skipped += 1
 				continue
@@ -1460,8 +1480,51 @@ func _show_provider_browse_dialog(provider_key: String, provider_label: String, 
 	_do_fetch.call()
 
 
+func _format_provider_model_details(provider_key: String, model: Dictionary) -> String:
+	var details := "%s\nID: %s" % [model.get("display_name", ""), model.get("model_name", "")]
+	if provider_key != "chatgpt":
+		return details
+
+	var extra: Array[String] = []
+	var effort: String = str(model.get("reasoning_effort", ""))
+	if not effort.is_empty():
+		extra.append("Reasoning effort: %s" % effort)
+
+	var modalities: Array = model.get("input_modalities", [])
+	if not modalities.is_empty():
+		var modality_names := PackedStringArray()
+		for modality in modalities:
+			modality_names.append(str(modality))
+		extra.append("Modalities: %s" % ", ".join(modality_names))
+
+	if bool(model.get("supports_search_tool", false)):
+		extra.append("Search tool: yes")
+	if bool(model.get("supports_parallel_tool_calls", false)):
+		extra.append("Parallel tools: yes")
+	if "image" in modalities:
+		extra.append("Image generation: available")
+
+	var description: String = str(model.get("reasoning_description", model.get("description", "")))
+	if not description.is_empty():
+		extra.append(description)
+
+	if not extra.is_empty():
+		details += "\n" + "\n".join(extra)
+	return details
+
+
 ## Fetch available models from a provider's API. Returns array of config dicts.
 func _fetch_provider_models(provider_key: String, api_key: String) -> Array:
+	if provider_key == "chatgpt":
+		if SingletonObject.chatgpt_model_manager == null:
+			return []
+		var chatgpt_result: Dictionary = await SingletonObject.chatgpt_model_manager.fetch_available_models(get_tree())
+		if not chatgpt_result.get("success", false):
+			push_warning("[PreferencesPopup] ChatGPT model discovery failed: %s" % str(chatgpt_result.get("error", "Unknown error")))
+			return []
+		var discovered: Array = chatgpt_result.get("models", [])
+		return discovered
+
 	var http := HTTPRequest.new()
 	add_child(http)
 

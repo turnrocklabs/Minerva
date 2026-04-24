@@ -11,6 +11,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_add_model",
 		"minerva_update_model",
 		"minerva_remove_model",
+		"minerva_refresh_chatgpt_models",
 		"minerva_get_cost_summary",
 		"minerva_get_chat_cost",
 		"minerva_set_budget",
@@ -31,7 +32,7 @@ func register_tools() -> void:
 			"properties": {
 				"provider": {
 					"type": "string",
-					"enum": ["anthropic", "openai", "google", "openrouter", "local"],
+					"enum": ["anthropic", "openai", "google", "openrouter", "local", "chatgpt"],
 					"description": "Filter to only show models from this provider"
 				},
 				"dynamic_only": {
@@ -50,7 +51,7 @@ func register_tools() -> void:
 			"properties": {
 				"provider": {
 					"type": "string",
-					"enum": ["anthropic", "openai", "google", "openrouter", "local"],
+					"enum": ["anthropic", "openai", "google", "openrouter", "local", "chatgpt"],
 					"description": "The provider to add the model to"
 				},
 				"model_name": {
@@ -127,6 +128,15 @@ func register_tools() -> void:
 				}
 			},
 			"required": ["model_id"]
+		}
+	, "models")
+
+	server._register_tool("minerva_refresh_chatgpt_models",
+		"Refresh ChatGPT/Codex models using the signed-in ChatGPT OAuth account. Returns the number of discovered selectable model/effort entries.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
 		}
 	, "models")
 
@@ -295,6 +305,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_add_model": return _add_model(arguments)
 		"minerva_update_model": return _update_model(arguments)
 		"minerva_remove_model": return _remove_model(arguments)
+		"minerva_refresh_chatgpt_models": return await _refresh_chatgpt_models()
 		"minerva_get_cost_summary": return _get_cost_summary(arguments)
 		"minerva_get_chat_cost": return _get_chat_cost(arguments)
 		"minerva_set_budget": return _set_budget(arguments)
@@ -342,6 +353,8 @@ func _get_manager_for_provider_string(provider: String):
 			return SingletonObject.openrouter_model_manager
 		"local":
 			return SingletonObject.local_model_manager
+		"chatgpt":
+			return SingletonObject.chatgpt_model_manager
 		_:
 			return null
 
@@ -371,6 +384,8 @@ func _list_models(args: Dictionary) -> Dictionary:
 				"id": model_id,
 				"name": provider_instance.display_name,
 				"provider": provider_name,
+				"model_name": provider_instance.model_name,
+				"is_dynamic": false,
 			})
 
 	# Collect dynamic models from all managers
@@ -380,6 +395,7 @@ func _list_models(args: Dictionary) -> Dictionary:
 		"google": SingletonObject.google_model_manager,
 		"openrouter": SingletonObject.openrouter_model_manager,
 		"local": SingletonObject.local_model_manager,
+		"chatgpt": SingletonObject.chatgpt_model_manager,
 	}
 	for prov_name in managers:
 		if not provider_filter.is_empty() and prov_name != provider_filter:
@@ -388,13 +404,43 @@ func _list_models(args: Dictionary) -> Dictionary:
 		if manager == null:
 			continue
 		for config in manager.models:
-			results.append({
+			var entry := {
 				"id": config.get("id", -1),
 				"name": config.get("display_name", config.get("model_name", config.get("api_model_id", ""))),
 				"provider": prov_name,
-			})
+				"model_name": config.get("model_name", config.get("api_model_id", "")),
+				"is_dynamic": true,
+			}
+			if prov_name == "chatgpt":
+				entry["reasoning_effort"] = config.get("reasoning_effort", "")
+				entry["supported_reasoning_levels"] = config.get("supported_reasoning_levels", [])
+				entry["reasoning_description"] = config.get("reasoning_description", "")
+				entry["supports_reasoning_summaries"] = config.get("supports_reasoning_summaries", false)
+				entry["default_reasoning_summary"] = config.get("default_reasoning_summary", "")
+				entry["support_verbosity"] = config.get("support_verbosity", false)
+				entry["default_verbosity"] = config.get("default_verbosity", null)
+				entry["additional_speed_tiers"] = config.get("additional_speed_tiers", [])
+				entry["input_modalities"] = config.get("input_modalities", [])
+				entry["supports_image_generation"] = "image" in config.get("input_modalities", [])
+				entry["supports_parallel_tool_calls"] = config.get("supports_parallel_tool_calls", false)
+				entry["supports_search_tool"] = config.get("supports_search_tool", false)
+				entry["web_search_tool_type"] = config.get("web_search_tool_type", "")
+				entry["apply_patch_tool_type"] = config.get("apply_patch_tool_type", null)
+				entry["experimental_supported_tools"] = config.get("experimental_supported_tools", [])
+				entry["priority"] = config.get("priority", 0)
+				entry["catalog_key"] = config.get("catalog_key", "")
+			results.append(entry)
 
 	return {"success": true, "models": results, "count": results.size()}
+
+
+func _refresh_chatgpt_models() -> Dictionary:
+	if SingletonObject.chatgpt_model_manager == null:
+		return MCPToolUtils.error("ChatGPT model manager not initialized")
+	var result: Dictionary = await SingletonObject.chatgpt_model_manager.refresh_from_account(SingletonObject.get_tree())
+	if not result.get("success", false):
+		return MCPToolUtils.error(str(result.get("error", "ChatGPT model refresh failed")))
+	return result
 
 
 func _add_model(args: Dictionary) -> Dictionary:

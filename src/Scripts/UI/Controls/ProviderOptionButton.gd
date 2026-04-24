@@ -160,6 +160,8 @@ func get_item_index_for_provider(provider: BaseProvider) -> int:
 
 		# Dynamic models: match by model_name since they share a provider script
 		elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+			if provider.has_meta("dynamic_model_id") and int(provider.get_meta("dynamic_model_id")) == item_id:
+				return i
 			var dynamic_instance = SingletonObject.create_dynamic_provider(item_id)
 			if dynamic_instance and dynamic_instance.model_name == provider.model_name:
 				return i

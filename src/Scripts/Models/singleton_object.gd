@@ -1443,12 +1443,14 @@ const AnthropicProviderScript = preload("res://Scripts/Services/Providers/Anthro
 const OpenRouterProviderScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterProvider.gd")
 const OpenRouterModelManagerScript = preload("res://Scripts/Services/Providers/OpenRouter/OpenRouterModelManager.gd")
 const ProviderModelManagerScript = preload("res://Scripts/Services/Providers/ProviderModelManager.gd")
+const ChatGPTModelManagerScript = preload("res://Scripts/Services/Providers/ChatGPT/ChatGPTModelManager.gd")
 const CostTrackerScript = preload("res://Scripts/Models/CostTracker.gd")
 const DYNAMIC_MODEL_ID_BASE := 10000
 const ANTHROPIC_MODEL_ID_BASE := 20000
 const OPENAI_MODEL_ID_BASE := 30000
 const GOOGLE_MODEL_ID_BASE := 40000
 const LOCAL_MODEL_ID_BASE := 50000
+const CHATGPT_MODEL_ID_BASE := 60000
 const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
 const ChatGPTProviderScript = preload("res://Scripts/Services/Providers/ChatGPT/ChatGPTProvider.gd")
 const LocalProviderScript = preload("res://Scripts/Services/Providers/LocalProvider.gd")
@@ -1648,6 +1650,7 @@ var anthropic_model_manager   # ProviderModelManager for user-added Anthropic mo
 var openai_model_manager      # ProviderModelManager for user-added OpenAI models
 var google_model_manager      # ProviderModelManager for user-added Google models
 var local_model_manager       # ProviderModelManager for user-added Ollama models
+var chatgpt_model_manager     # ChatGPTModelManager for OAuth-discovered ChatGPT/Codex models
 
 ## Provider script + API_PROVIDER mapping for each dynamic ID range
 var _dynamic_provider_map: Dictionary = {}  # {id_base: {script: GDScript, provider: API_PROVIDER, manager: ProviderModelManager}}
@@ -1678,6 +1681,11 @@ func _init_dynamic_models() -> void:
 	local_model_manager.load_config()
 	local_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.LOCAL))
 
+	# ChatGPT/Codex (ID base 60000)
+	chatgpt_model_manager = ChatGPTModelManagerScript.new()
+	chatgpt_model_manager.load_config()
+	chatgpt_model_manager.models_changed.connect(_on_dynamic_models_changed.bind(API_PROVIDER.CHATGPT))
+
 	# Build provider map for ID range lookups
 	_dynamic_provider_map = {
 		DYNAMIC_MODEL_ID_BASE: {"script": OpenRouterProviderScript, "provider": API_PROVIDER.OPENROUTER, "manager": openrouter_model_manager},
@@ -1685,6 +1693,7 @@ func _init_dynamic_models() -> void:
 		OPENAI_MODEL_ID_BASE: {"script": OpenAIProviderScript, "provider": API_PROVIDER.OPENAI, "manager": openai_model_manager},
 		GOOGLE_MODEL_ID_BASE: {"script": GoogleProviderScript, "provider": API_PROVIDER.GOOGLE, "manager": google_model_manager},
 		LOCAL_MODEL_ID_BASE: {"script": LocalProviderScript, "provider": API_PROVIDER.LOCAL, "manager": local_model_manager},
+		CHATGPT_MODEL_ID_BASE: {"script": ChatGPTProviderScript, "provider": API_PROVIDER.CHATGPT, "manager": chatgpt_model_manager},
 	}
 
 	_register_all_dynamic_models()
@@ -1735,17 +1744,23 @@ func create_dynamic_provider(model_id: int) -> BaseProvider:
 	if config.is_empty():
 		return null
 
+	var provider: BaseProvider = null
 	# Determine which ID range and dispatch to the correct factory
-	if model_id >= LOCAL_MODEL_ID_BASE:
-		return LocalProviderScript.create_from_config(config)
+	if model_id >= CHATGPT_MODEL_ID_BASE:
+		provider = ChatGPTProviderScript.create_from_config(config)
+	elif model_id >= LOCAL_MODEL_ID_BASE:
+		provider = LocalProviderScript.create_from_config(config)
 	elif model_id >= GOOGLE_MODEL_ID_BASE:
-		return GoogleProviderScript.create_from_config(config)
+		provider = GoogleProviderScript.create_from_config(config)
 	elif model_id >= OPENAI_MODEL_ID_BASE:
-		return OpenAIProviderScript.create_from_config(config)
+		provider = OpenAIProviderScript.create_from_config(config)
 	elif model_id >= ANTHROPIC_MODEL_ID_BASE:
-		return AnthropicProviderScript.create_from_config(config)
+		provider = AnthropicProviderScript.create_from_config(config)
 	else:
-		return OpenRouterProviderScript.create_from_config(config)
+		provider = OpenRouterProviderScript.create_from_config(config)
+	if provider:
+		provider.set_meta("dynamic_model_id", model_id)
+	return provider
 
 #endregion Dynamic Models
 

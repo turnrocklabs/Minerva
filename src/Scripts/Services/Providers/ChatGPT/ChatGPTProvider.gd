@@ -7,6 +7,7 @@ extends BaseProvider
 const CHATGPT_BASE_URL = "https://chatgpt.com/backend-api"
 const CODEX_ENDPOINT = "/codex/responses"
 const ChatGPTAuthScript = preload("res://Scripts/Services/Providers/ChatGPT/ChatGPTAuth.gd")
+const GENERATED_IMAGES_DIR := "user://chatgpt_generated_images"
 
 ## System prompt to send with the request (set by ChatPane)
 var system_prompt: String
@@ -14,6 +15,23 @@ var system_prompt: String
 ## Available tools for agentic mode
 var available_tools: Array[Dictionary] = []
 var tools_enabled: bool = false
+
+## Catalog-discovered model options.
+var reasoning_effort: String = "medium"
+var supported_reasoning_levels: Array = []
+var supports_reasoning_summaries: bool = true
+var default_reasoning_summary: String = "auto"
+var support_verbosity: bool = false
+var default_verbosity: Variant = null
+var additional_speed_tiers: Array = []
+var input_modalities: Array = ["text", "image"]
+var supports_parallel_tool_calls: bool = false
+var supports_search_tool: bool = false
+var web_search_tool_type: String = "text"
+var apply_patch_tool_type: Variant = null
+var experimental_supported_tools: Array = []
+var supports_image_generation: bool = false
+var raw_model_info: Dictionary = {}
 
 ## Shared auth instance (set from PreferencesPopup or singleton)
 static var auth: RefCounted = null
@@ -62,6 +80,11 @@ func format_tools_for_request() -> Array:
 			"description": tool.get("description", ""),
 			"parameters": tool.get("input_schema", {"type": "object", "properties": {}})
 		})
+	if supports_image_generation:
+		formatted.append({
+			"type": "image_generation",
+			"output_format": "png",
+		})
 	return formatted
 
 
@@ -106,12 +129,18 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 		"input": input_items,
 		"store": false,
 		"stream": true,
-		"reasoning": {"effort": "medium", "summary": "auto"},
 		"include": ["reasoning.encrypted_content"],
 	}
 
+	var reasoning := _build_reasoning_options()
+	if not reasoning.is_empty():
+		request_body["reasoning"] = reasoning
+	var text_options := _build_text_options()
+	if not text_options.is_empty():
+		request_body["text"] = text_options
+
 	# Add tools if enabled
-	if tools_enabled and not available_tools.is_empty():
+	if (tools_enabled and not available_tools.is_empty()) or supports_image_generation:
 		request_body["tools"] = format_tools_for_request()
 
 	request_body.merge(additional_params)
@@ -122,7 +151,7 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 	var headers: Array[String] = [
 		"Content-Type: application/json",
 		"Authorization: Bearer %s" % chatgpt_auth.access_token,
-		"chatgpt-account-id: %s" % chatgpt_auth.account_id,
+		"ChatGPT-Account-ID: %s" % chatgpt_auth.account_id,
 		"OpenAI-Beta: responses=experimental",
 		"originator: codex_cli_rs",
 		"accept: text/event-stream",
@@ -134,6 +163,49 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 	SingletonObject.chat_completed.emit(bot_response)
 	return bot_response
+
+
+func _build_reasoning_options() -> Dictionary:
+	var reasoning := {}
+	if not _is_reasoning_effort_supported(reasoning_effort):
+		reasoning_effort = _default_supported_reasoning_effort()
+	if not reasoning_effort.is_empty():
+		reasoning["effort"] = reasoning_effort
+	var summary := _valid_reasoning_summary(default_reasoning_summary)
+	if supports_reasoning_summaries and not summary.is_empty():
+		reasoning["summary"] = summary
+	return reasoning
+
+
+func _build_text_options() -> Dictionary:
+	if not support_verbosity or default_verbosity == null:
+		return {}
+	return {"verbosity": str(default_verbosity)}
+
+
+func _is_reasoning_effort_supported(effort: String) -> bool:
+	if effort.is_empty() or supported_reasoning_levels.is_empty():
+		return true
+	for preset in supported_reasoning_levels:
+		if preset is Dictionary and str(preset.get("effort", "")) == effort:
+			return true
+	return false
+
+
+func _default_supported_reasoning_effort() -> String:
+	if supported_reasoning_levels.is_empty():
+		return ""
+	for preset in supported_reasoning_levels:
+		if preset is Dictionary:
+			return str(preset.get("effort", ""))
+	return ""
+
+
+func _valid_reasoning_summary(summary: String) -> String:
+	var normalized := summary.strip_edges().to_lower()
+	if normalized in ["concise", "detailed", "auto"]:
+		return normalized
+	return ""
 
 
 ## Parse the SSE response from the ChatGPT backend
@@ -184,6 +256,7 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	var response_id := ""
 	var prompt_tokens := 0
 	var completion_tokens := 0
+	var generated_image: Image = null
 
 	# Track function call metadata from output_item events (name, call_id)
 	# since function_call_arguments.done may have name=null (known OpenAI API bug)
@@ -245,6 +318,10 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 								"call_id": str(item.get("call_id", item_id)),
 								"arguments": str(item.get("arguments", "")),
 							}
+					elif item is Dictionary and item.get("type") == "image_generation_call":
+						var image := _image_from_generation_item(item)
+						if image != null:
+							generated_image = image
 
 				"response.function_call_arguments.done":
 					# Individual function call completion — arguments are final here.
@@ -307,8 +384,14 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 											tc_args = tc_parsed
 										if not tc_name.is_empty():
 											bot_response.add_tool_call(tc_call_id, tc_name, tc_args)
+									elif item is Dictionary and item.get("type") == "image_generation_call":
+										var image := _image_from_generation_item(item)
+										if image != null:
+											generated_image = image
 
 	bot_response.text = "".join(text_parts)
+	if generated_image != null:
+		bot_response.image = generated_image
 	# Reasoning captured but BotResponse has no reasoning field yet — store for future use
 	#bot_response.reasoning = "".join(reasoning_parts)
 	bot_response.id = response_id
@@ -316,6 +399,47 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	bot_response.completion_tokens = completion_tokens
 
 	return bot_response
+
+
+func _image_from_generation_item(item: Dictionary) -> Image:
+	var result_b64: String = str(item.get("result", ""))
+	if result_b64.is_empty():
+		return null
+	if result_b64.begins_with("data:") and "," in result_b64:
+		result_b64 = result_b64.split(",", true, 1)[1]
+
+	var bytes := Marshalls.base64_to_raw(result_b64)
+	if bytes.is_empty():
+		push_warning("[ChatGPT] image_generation_call returned invalid base64")
+		return null
+
+	var image := Image.new()
+	var err := image.load_png_from_buffer(bytes)
+	if err != OK:
+		push_warning("[ChatGPT] image_generation_call PNG decode failed: %s" % error_string(err))
+		return null
+
+	var output_path := _save_generated_image(bytes, str(item.get("id", "")))
+	if not output_path.is_empty():
+		image.set_meta("output_path", output_path)
+		image.set_meta("caption", str(item.get("revised_prompt", "Generated by ChatGPT")))
+	return image
+
+
+func _save_generated_image(bytes: PackedByteArray, call_id: String) -> String:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(GENERATED_IMAGES_DIR))
+	var safe_id := sanitize_tool_id(call_id)
+	if safe_id.is_empty():
+		safe_id = "image"
+	var timestamp := Time.get_datetime_string_from_system(false, true).replace(":", "").replace("-", "").replace(" ", "_")
+	var path := "%s/%s_%s.png" % [GENERATED_IMAGES_DIR, timestamp, safe_id]
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if not file:
+		push_warning("[ChatGPT] Could not save generated image: %s" % error_string(FileAccess.get_open_error()))
+		return ""
+	file.store_buffer(bytes)
+	file.close()
+	return path
 
 
 func Format(chat_item: ChatHistoryItem) -> Variant:
@@ -458,3 +582,36 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 	var chi = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
 	chi.Message = "finish"
 	return chi
+
+
+# ============================================================================
+# Dynamic Model Factory
+# ============================================================================
+
+static func create_from_config(config: Dictionary) -> ChatGPTProvider:
+	var p := ChatGPTProvider.new()
+	p.model_name = config.get("model_name", p.model_name)
+	p.display_name = config.get("display_name", p.model_name)
+	p.short_name = config.get("short_name", "CG")
+	p.input_token_cost = config.get("input_token_cost", 0.0)
+	p.output_token_cost = config.get("output_token_cost", 0.0)
+	p.reasoning_effort = str(config.get("reasoning_effort", config.get("default_reasoning_level", "")))
+	p.supported_reasoning_levels = config.get("supported_reasoning_levels", [])
+	p.supports_reasoning_summaries = bool(config.get("supports_reasoning_summaries", false))
+	p.default_reasoning_summary = str(config.get("default_reasoning_summary", "auto"))
+	p.support_verbosity = bool(config.get("support_verbosity", false))
+	p.default_verbosity = config.get("default_verbosity", null)
+	p.additional_speed_tiers = config.get("additional_speed_tiers", [])
+	p.input_modalities = config.get("input_modalities", ["text", "image"])
+	p.supports_parallel_tool_calls = bool(config.get("supports_parallel_tool_calls", false))
+	p.supports_search_tool = bool(config.get("supports_search_tool", false))
+	p.web_search_tool_type = str(config.get("web_search_tool_type", "text"))
+	p.apply_patch_tool_type = config.get("apply_patch_tool_type", null)
+	p.experimental_supported_tools = config.get("experimental_supported_tools", [])
+	p.raw_model_info = config.get("raw_model_info", {})
+	p.is_reasoning_model = not p.supported_reasoning_levels.is_empty() or not p.reasoning_effort.is_empty()
+	p.supports_image_generation = "image" in p.input_modalities
+	var max_ctx = config.get("max_context_window", config.get("context_window", null))
+	if max_ctx != null:
+		p.default_context = int(max_ctx)
+	return p

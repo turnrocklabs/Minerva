@@ -184,6 +184,8 @@ static var SERIALIZER_FIELDS = [
 static func _get_provider_enum(prov) -> int:
 	if not prov:
 		return SingletonObject.API_MODEL_PROVIDERS.HUMAN
+	if prov.has_meta("dynamic_model_id"):
+		return int(prov.get_meta("dynamic_model_id"))
 
 	var provider_script = prov.get_script()
 	for key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
@@ -320,9 +322,11 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	var provider_enum_index = int(data.get("Provider", 0))
 	var provider_obj: BaseProvider
 
-	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
+	if provider_enum_index >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+		provider_obj = SingletonObject.create_dynamic_provider(provider_enum_index)
+	if provider_obj == null and SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
 		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
-	else:
+	if provider_obj == null:
 		# Fallback to second defined model, skipping the human provider
 		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.values()[1].new()
 
