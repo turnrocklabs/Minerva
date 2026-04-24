@@ -74,7 +74,8 @@ func _init() -> void:
 	test_audit_null_packed_scene_returns_false()
 
 	print("\n-- _get_panel_def helper --")
-	test_get_panel_def_missing_field_returns_empty()
+	test_get_panel_def_string_entries_returns_empty()
+	test_get_panel_def_no_panels_field_returns_empty()
 	test_get_panel_def_empty_defs_returns_empty()
 	test_get_panel_def_panel_not_in_defs_returns_empty()
 	test_get_panel_def_finds_matching_panel()

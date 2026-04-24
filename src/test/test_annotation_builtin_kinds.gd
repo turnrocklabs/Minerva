@@ -527,10 +527,17 @@ func test_polyline_bounds_covers_points() -> void:
 	var kind := AnnotationPolyline.new()
 	var ann  := _ann("2d_polyline", [_polyline_prim([[10.0,20.0],[80.0,60.0],[30.0,90.0]])])
 	var b    := kind.bounds(ann)
+	# Rect2.has_point is half-open on max edges (p.x < pos.x+size.x);
+	# points exactly on the right/bottom edge fail. Check enclosure via
+	# explicit min/max bounds instead.
+	var x_min: float = b.position.x
+	var x_max: float = b.position.x + b.size.x
+	var y_min: float = b.position.y
+	var y_max: float = b.position.y + b.size.y
 	check("polyline bounds contains all points",
-		b.has_point(Vector2(10.0, 20.0)) and
-		b.has_point(Vector2(80.0, 60.0)) and
-		b.has_point(Vector2(30.0, 90.0))
+		x_min <= 10.0 and 10.0 <= x_max and y_min <= 20.0 and 20.0 <= y_max and
+		x_min <= 80.0 and 80.0 <= x_max and y_min <= 60.0 and 60.0 <= y_max and
+		x_min <= 30.0 and 30.0 <= x_max and y_min <= 90.0 and 90.0 <= y_max
 	)
 
 
