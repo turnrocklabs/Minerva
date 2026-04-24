@@ -25,6 +25,27 @@ signal annotation_kind_deregistered(kind_name: StringName)
 ## kind.name (StringName) → AnnotationKind instance
 var _kinds: Dictionary = {}
 
+## Set of unknown kind names already warned about this session (design §10 rule 5).
+## Cleared whenever the registry changes (kind registered or deregistered) so that
+## a plugin installing mid-session resets the "already warned" state for its kinds.
+var _warned_unknown_kinds: Dictionary = {}
+
+# ── Placeholder rendering constants ───────────────────────────────────────────
+
+## Default placeholder rect when primitives produce no bounds.
+const _PLACEHOLDER_DEFAULT_W: float = 100.0
+const _PLACEHOLDER_DEFAULT_H: float = 40.0
+
+## Dashed-stroke segment length and gap length in document units.
+const _DASH_LEN: float  = 8.0
+const _GAP_LEN: float   = 4.0
+
+## Placeholder style
+const _PLACEHOLDER_COLOR: Color    = Color(0.55, 0.55, 0.55, 0.85)   # grey
+const _PLACEHOLDER_TEXT_SIZE: int  = 11
+const _PLACEHOLDER_INSET: float    = 4.0   # text inset from top-left corner
+const _PLACEHOLDER_STROKE_W: float = 1.5
+
 # ── Registration API ───────────────────────────────────────────────────────────
 
 ## Register a new kind. Returns true on success, false on collision or
@@ -57,6 +78,9 @@ func register_annotation_kind(kind: AnnotationKind) -> bool:
 		return false
 
 	_kinds[kind.name] = kind
+	# A new registration may resolve previously-unknown kinds — reset the
+	# warned-set so that any remaining unknowns get a fresh log entry.
+	_warned_unknown_kinds.clear()
 	annotation_kind_registered.emit(kind.name)
 	return true
 
@@ -68,6 +92,9 @@ func deregister_annotation_kind(kind_name: StringName) -> bool:
 	if not _kinds.has(kind_name):
 		return false
 	_kinds.erase(kind_name)
+	# Deregistration may cause annotations to fall back to placeholder — reset
+	# the warned-set so the "missing plugin" message fires once for the new state.
+	_warned_unknown_kinds.clear()
 	annotation_kind_deregistered.emit(kind_name)
 	return true
 
@@ -98,27 +125,143 @@ func has_kind(kind_name: StringName) -> bool:
 
 # ── Dispatch helpers ───────────────────────────────────────────────────────────
 
-## Dispatch render() to the appropriate kind, or perform placeholder rendering
-## if the kind is unknown (design §10). Placeholder rendering is the
-## responsibility of the unknown-kind-fallback task; this method logs and no-ops
-## to keep the registry free of rendering policy.
+## Dispatch render() to the appropriate kind.
+## For unknown kinds renders a grey dashed-stroke placeholder rectangle with
+## the kind name and a warning glyph (design §10). Never silently drops.
 func dispatch_render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
 	var kind_name: StringName = StringName(annotation.get("kind", ""))
 	var kind := get_annotation_kind(kind_name)
 	if kind == null:
-		# Unknown kind — placeholder rendering is handled by a separate subsystem.
-		# Log once per kind per session (logging deduplication is caller's responsibility).
-		push_warning(
-			"[AnnotationRegistry] Unknown annotation kind '%s' — "
-			% str(kind_name) +
-			"placeholder rendering not yet implemented (separate task)."
-		)
+		_render_unknown_placeholder(ctx, annotation, kind_name)
 		return
 	kind.render(ctx, annotation)
 
 
+## Renders a grey dashed-rectangle placeholder for an annotation whose kind is
+## not currently registered.  Called only by dispatch_render(); not part of the
+## public API.
+func _render_unknown_placeholder(
+	ctx: AnnotationRenderContext,
+	annotation: Dictionary,
+	kind_name: StringName
+) -> void:
+	# ── 1. Warn once per unknown kind per registry state ──────────────────────
+	var kind_str := str(kind_name)
+	if not _warned_unknown_kinds.has(kind_str):
+		_warned_unknown_kinds[kind_str] = true
+		# Extract owning_plugin hint from the kind name prefix (design §10 §3).
+		var plugin_hint := kind_str.split("_")[0] if "_" in kind_str else kind_str
+		push_warning(
+			("[AnnotationRegistry] Missing plugin: annotation kind '%s' is not registered. "
+			% kind_str) +
+			("Plugin hint: '%s'. Annotation is preserved and rendered as placeholder." % plugin_hint)
+		)
+
+	# ── 2. Compute bounds ─────────────────────────────────────────────────────
+	var bounds := _placeholder_bounds(annotation)
+
+	# ── 3. Draw dashed-stroke rectangle ──────────────────────────────────────
+	_draw_dashed_rect(ctx, bounds, _PLACEHOLDER_COLOR, _PLACEHOLDER_STROKE_W)
+
+	# ── 4. Warning glyph + kind name at top-left, slightly inset ─────────────
+	var label := ("⚠ " + kind_str)
+	var text_pos := bounds.position + Vector2(_PLACEHOLDER_INSET, _PLACEHOLDER_INSET)
+	ctx.draw_string(null, text_pos, label, _PLACEHOLDER_COLOR, _PLACEHOLDER_TEXT_SIZE)
+
+
+## Computes the document-space bounding rect for an unknown-kind placeholder.
+## Falls back to a fixed default if primitives yield no bounds (design §10).
+func _placeholder_bounds(annotation: Dictionary) -> Rect2:
+	var prims = annotation.get("primitives", [])
+	var bounds := Rect2()
+	if prims is Array and (prims as Array).size() > 0:
+		bounds = AnnotationKind.bounds_from_primitives(prims)
+
+	# bounds_from_primitives returns Rect2() (zero) when no known primitive type
+	# matched.  Fall back to a fixed-size placeholder at the centroid of any
+	# point primitives, or at (0, 0) if none exist (design §10).
+	if bounds.size == Vector2.ZERO:
+		var centroid := _primitives_centroid(prims if prims is Array else [])
+		bounds = Rect2(
+			centroid.x - _PLACEHOLDER_DEFAULT_W * 0.5,
+			centroid.y - _PLACEHOLDER_DEFAULT_H * 0.5,
+			_PLACEHOLDER_DEFAULT_W,
+			_PLACEHOLDER_DEFAULT_H
+		)
+	return bounds
+
+
+## Returns the centroid of all point-like coordinates found in primitives[].
+## Returns Vector2.ZERO when no points are found.
+func _primitives_centroid(prims: Array) -> Vector2:
+	var pts: PackedVector2Array = []
+	for prim in prims:
+		if not prim is Dictionary:
+			continue
+		# Collect any coordinate fields we recognise as single points.
+		for field in ["at", "from", "to", "a", "b", "c", "center", "edge"]:
+			var v = prim.get(field)
+			if v is Array and (v as Array).size() >= 2:
+				pts.append(Vector2(float(v[0]), float(v[1])))
+		# Also collect individual vertices from points[] arrays.
+		var points_arr = prim.get("points")
+		if points_arr is Array:
+			for pt in (points_arr as Array):
+				if pt is Array and (pt as Array).size() >= 2:
+					pts.append(Vector2(float(pt[0]), float(pt[1])))
+	if pts.size() == 0:
+		return Vector2.ZERO
+	var sum := Vector2.ZERO
+	for p in pts:
+		sum += p
+	return sum / float(pts.size())
+
+
+## Draws a dashed stroke rectangle by decomposing each edge into alternating
+## drawn/skipped segments.  Godot has no native dashed-line primitive.
+func _draw_dashed_rect(
+	ctx: AnnotationRenderContext,
+	rect: Rect2,
+	color: Color,
+	width: float
+) -> void:
+	var tl := rect.position
+	var tr := Vector2(rect.position.x + rect.size.x, rect.position.y)
+	var br := rect.position + rect.size
+	var bl := Vector2(rect.position.x, rect.position.y + rect.size.y)
+
+	_draw_dashed_segment(ctx, tl, tr, color, width)
+	_draw_dashed_segment(ctx, tr, br, color, width)
+	_draw_dashed_segment(ctx, br, bl, color, width)
+	_draw_dashed_segment(ctx, bl, tl, color, width)
+
+
+## Draws a single edge as a series of short drawn / skipped segments.
+func _draw_dashed_segment(
+	ctx: AnnotationRenderContext,
+	a: Vector2,
+	b: Vector2,
+	color: Color,
+	width: float
+) -> void:
+	var total_len := a.distance_to(b)
+	if total_len < 0.001:
+		return
+	var dir := (b - a) / total_len
+	var t := 0.0
+	var drawing := true  # start with a drawn segment
+	while t < total_len:
+		var seg_len := _DASH_LEN if drawing else _GAP_LEN
+		var t_end := minf(t + seg_len, total_len)
+		if drawing:
+			ctx.draw_line(a + dir * t, a + dir * t_end, color, width)
+		t = t_end
+		drawing = not drawing
+
+
 ## Dispatch hit_test() to the appropriate kind.
-## Returns false for unknown kinds (AABB hit is available through bounds() dispatch).
+## For unknown kinds, uses the same AABB the placeholder renders at,
+## so a click on the visible placeholder box actually selects it.
 func dispatch_hit_test(
 	annotation: Dictionary,
 	point: Vector2,
@@ -127,23 +270,26 @@ func dispatch_hit_test(
 	var kind_name: StringName = StringName(annotation.get("kind", ""))
 	var kind := get_annotation_kind(kind_name)
 	if kind == null:
-		# Unknown kind: fall back to AABB hit via bounds
+		# Unknown kind: AABB hit against the SAME bounds used by the
+		# placeholder renderer (design §10 rule 4). See dispatch_bounds.
 		var b := dispatch_bounds(annotation)
 		return b.grow(threshold).has_point(point)
 	return kind.hit_test(annotation, point, threshold)
 
 
 ## Dispatch bounds() to the appropriate kind.
-## For unknown kinds, computes bounds from primitives[] directly (design §10).
+## For unknown kinds, returns the SAME bounds the placeholder renderer
+## draws at (design §10) — so hit-test and visible placeholder agree
+## even when primitives[] is empty or unrecognised.
 func dispatch_bounds(annotation: Dictionary) -> Rect2:
 	var kind_name: StringName = StringName(annotation.get("kind", ""))
 	var kind := get_annotation_kind(kind_name)
 	if kind == null:
-		# Unknown kind: substrate computes bounds from primitives (design §10)
-		var prims = annotation.get("primitives", [])
-		if prims is Array:
-			return AnnotationKind.bounds_from_primitives(prims)
-		return Rect2()
+		# Unknown kind: delegate to the placeholder-bounds helper so
+		# render-bounds and hit-bounds stay in sync.  _placeholder_bounds
+		# falls back to a fixed-size default when bounds_from_primitives
+		# returns an empty rect.
+		return _placeholder_bounds(annotation)
 	return kind.bounds(annotation)
 
 
