@@ -741,10 +741,13 @@ func test_measure_radius_hit_near_circumference() -> void:
 func test_measure_radius_hit_well_inside() -> void:
 	print("test_measure_radius_hit_well_inside:")
 	var kind := AnnotationMeasureRadius.new()
-	# Point at center — well inside (>5 from circumference at radius 20).
+	# Center (0,0), edge (20,0) → radius=20, radial line along +x axis.
+	# Point (5, 5): distance to circumference = 20 − √50 ≈ 12.93 (>>5);
+	# distance to radial segment = 5 (>5 with the threshold value).
+	# Threshold tightened to 4.0 so 5.0 is genuinely a miss on the radial too.
 	var ann  := _ann("2d_measure_radius", [_measure_radius_prim(0.0, 0.0, 20.0, 0.0)])
-	check("measure_radius miss at center (not near circumference or radial)",
-		not kind.hit_test(ann, Vector2(0.0, 0.0), 5.0))
+	check("measure_radius miss in interior (not near circumference or radial)",
+		not kind.hit_test(ann, Vector2(5.0, 5.0), 4.0))
 
 
 func test_measure_radius_hit_near_radial() -> void:
@@ -761,10 +764,14 @@ func test_measure_radius_bounds() -> void:
 	# Center (50,50), edge (70,50) → radius=20.
 	var ann  := _ann("2d_measure_radius", [_measure_radius_prim(50.0, 50.0, 70.0, 50.0)])
 	var b    := kind.bounds(ann)
-	# Circle bounding rect: (30,30,40,40) = [50-20, 50-20, 40, 40].
-	check("measure_radius bounds covers left of circle",   b.has_point(Vector2(30.0, 50.0)))
-	check("measure_radius bounds covers top of circle",    b.has_point(Vector2(50.0, 30.0)))
-	check("measure_radius bounds covers bottom of circle", b.has_point(Vector2(50.0, 70.0)))
+	# Circle bounding rect: position (30,30), size (40,40) → edges at x=30,70 / y=30,70.
+	# Note: Rect2.has_point is half-open on the max edge (`p.y < pos.y + size.y`),
+	# so points exactly on the bottom/right edge fail. Verify enclosure via
+	# explicit bounds checks instead.
+	check("measure_radius bounds left edge",   b.position.x <= 30.0 and b.position.x + b.size.x >= 30.0)
+	check("measure_radius bounds top edge",    b.position.y <= 30.0 and b.position.y + b.size.y >= 30.0)
+	check("measure_radius bounds right edge",  b.position.x + b.size.x >= 70.0)
+	check("measure_radius bounds bottom edge", b.position.y + b.size.y >= 70.0)
 
 
 func test_measure_radius_label_unit() -> void:

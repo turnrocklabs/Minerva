@@ -9,7 +9,7 @@ extends RefCounted
 ##
 ## Loading flow (design §3):
 ##   1. Resolve plugin definition from SingletonObject.plugin_manager.
-##   2. Locate the typed panel dict from PluginDefinition.ui_panel_defs.
+##   2. Locate the typed panel dict from PluginDefinition.ui_panels (typed entries).
 ##   3. Validate panel kind == "godot_scene" and required fields present.
 ##   4. _resolve_plugin_relative_path: canonicalise + escape check.
 ##   5. Preload each script with ResourceLoader (CACHE_MODE_IGNORE).
@@ -24,7 +24,7 @@ extends RefCounted
 ## never a silent no-op.
 ##
 ## NOTE: PluginDefinition currently only has ui_panels: Array[String].
-## The typed ui_panel_defs: Array[Dictionary] field (with entry_scene, scripts,
+## The typed ui_panels (typed entries): Array[Dictionary] field (with entry_scene, scripts,
 ## ipc_channels) is added by the manifest-parsing task.  Until that lands,
 ## instantiate_into returns a placeholder with reason "manifest_panel_defs_missing".
 ## Tests exercise this path explicitly.
@@ -78,7 +78,7 @@ static func instantiate_into(
 
 	# -----------------------------------------------------------------------
 	# Step 2: Locate the typed panel dict.
-	# PluginDefinition.ui_panel_defs is added by the manifest-parsing task.
+	# PluginDefinition.ui_panels (typed entries) is added by the manifest-parsing task.
 	# If the field is absent the host fails gracefully with a clear diagnostic
 	# so the tab renders a placeholder rather than crashing.
 	# -----------------------------------------------------------------------
@@ -86,7 +86,7 @@ static func instantiate_into(
 	if panel_def.is_empty():
 		return _mount_placeholder(vbox,
 			(("[PluginScenePanelHost] Panel '%s' not found in plugin '%s' typed panel definitions. " +
-			"Ensure PluginDefinition.ui_panel_defs is populated by the manifest task.") %
+			"Ensure PluginDefinition.ui_panels (typed entries) is populated by the manifest task.") %
 			[panel_name, plugin_id]))
 
 	# -----------------------------------------------------------------------
@@ -425,25 +425,28 @@ static func _build_ctx(
 
 ## Resolve the typed panel dict for `panel_name` from a PluginDefinition.
 ##
-## PluginDefinition.ui_panel_defs (Array[Dictionary]) is added by the
-## manifest-parsing task (not yet in the codebase).  This helper checks for
-## the field via duck-typing and returns {} if absent so callers can render
-## a clear placeholder rather than crashing.
+## Per design §2.2 the manifest-parsing task upgrades `PluginDefinition.ui_panels`
+## from `Array[String]` (legacy) IN-PLACE to `Array[Dictionary]` (typed).  Until
+## that task lands, ui_panels still holds bare strings — every godot_scene panel
+## open will render a placeholder with the "manifest_panel_defs_missing"
+## diagnostic.  Once the task lands, each Dictionary entry has the shape
+## {name, kind, entry_scene, scripts, ipc_channels, file_extensions, ...}.
 static func _get_panel_def(def, panel_name: String) -> Dictionary:
-	# Future field: ui_panel_defs: Array[Dictionary]
-	# Each entry has: {name, kind, entry_scene, scripts, ipc_channels, ...}
 	if def == null:
 		return {}
+	if not ("ui_panels" in def):
+		return {}
 
-	# Check for the typed defs field (added by the manifest task).
-	if "ui_panel_defs" in def:
-		var defs: Array = def.ui_panel_defs
-		for entry in defs:
-			if entry is Dictionary and entry.get("name", "") == panel_name:
-				return entry
+	var panels: Array = def.ui_panels
+	for entry in panels:
+		# Pre-manifest-task entries are bare strings — skip; will trigger
+		# placeholder with "manifest_panel_defs_missing".
+		if entry is String:
+			continue
+		# Post-manifest-task entries are Dictionaries with at least a `name` key.
+		if entry is Dictionary and entry.get("name", "") == panel_name:
+			return entry
 
-	# Fallback: if the field doesn't exist yet, return {} to trigger a
-	# placeholder with a diagnostic pointing at the manifest task.
 	return {}
 
 

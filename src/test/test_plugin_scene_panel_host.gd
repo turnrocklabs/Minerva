@@ -28,7 +28,7 @@ extends SceneTree
 ##     - retry_callback provided: button present; pressing it calls the callback
 ##
 ##   instantiate_into guard paths (via helper inspection, without live SceneTree):
-##     - ui_panel_defs absent → _get_panel_def returns {}
+##     - ui_panels missing or contains only String entries → _get_panel_def returns {}
 ##     - panel_name not in defs → _get_panel_def returns {}
 ##     - wrong kind → kind != "godot_scene" detected
 ##     - missing entry_scene → empty string detected
@@ -110,15 +110,19 @@ func check(description: String, condition: bool) -> void:
 # Test helpers / stubs
 # ===========================================================================
 
-## Stub PluginDefinition-like object with ui_panel_defs.
+## Stub PluginDefinition-like object.
 ## We do NOT extend PluginDefinition_ to avoid parse-order issues in headless
 ## mode; we duck-type instead (all accesses go through "in" checks or .get()).
+##
+## Per design §2.2: ui_panels upgrades IN-PLACE from Array[String] (legacy) to
+## Array[Dictionary] (typed) when the manifest task lands.  Tests populate
+## ui_panels with Dictionary entries to exercise post-manifest behaviour;
+## leaving it empty / String-only exercises the pre-manifest path.
 class StubPluginDef extends RefCounted:
 	var id: String = ""
 	var data_directory: String = ""
-	## Typed panel defs — mimics the future ui_panel_defs field.
-	var ui_panel_defs: Array = []
-	## Legacy panel names list.
+	## ui_panels: Array — entries are String (legacy/pre-manifest) OR
+	## Dictionary {name, kind, entry_scene, scripts, ipc_channels, ...} (typed).
 	var ui_panels: Array = []
 	var state: int = 2  # PluginDefinition.State.RUNNING
 
@@ -202,7 +206,7 @@ func _make_def_with_panel(
 	def.id = plugin_id
 	def.data_directory = data_dir
 	def.ui_panels = [panel_name]
-	def.ui_panel_defs = [{
+	def.ui_panels = [{
 		"name": panel_name,
 		"kind": "godot_scene",
 		"entry_scene": entry_scene_rel,
@@ -356,22 +360,31 @@ func test_audit_null_packed_scene_returns_false() -> void:
 # _get_panel_def helper tests
 # ===========================================================================
 
-func test_get_panel_def_missing_field_returns_empty() -> void:
-	print("test_get_panel_def_missing_field_returns_empty:")
-	# A def that does NOT have ui_panel_defs at all (simulate pre-manifest-task
-	# PluginDefinition that only has ui_panels: Array[String]).
-	# We use an object without the field using a custom class.
-	var def_no_field := _DefWithoutPanelDefs.new()
+func test_get_panel_def_string_entries_returns_empty() -> void:
+	print("test_get_panel_def_string_entries_returns_empty:")
+	# Pre-manifest-task PluginDefinition: ui_panels is Array[String].
+	# Each String entry is skipped — return {} so caller renders placeholder.
+	var def := StubPluginDef.new()
+	def.ui_panels = ["cad_viewer", "cad_text"]
+	var result: Dictionary = PluginScenePanelHost_._get_panel_def(def, "cad_viewer")
+	check("def with String-only ui_panels returns empty dict", result.is_empty())
+
+
+func test_get_panel_def_no_panels_field_returns_empty() -> void:
+	print("test_get_panel_def_no_panels_field_returns_empty:")
+	# A def lacking ui_panels entirely (defensive — shouldn't happen in
+	# practice but should not crash).
+	var def_no_field := _DefWithoutPanelsField.new()
 	var result: Dictionary = PluginScenePanelHost_._get_panel_def(def_no_field, "cad_viewer")
-	check("def without ui_panel_defs field returns empty dict", result.is_empty())
+	check("def without ui_panels field returns empty dict", result.is_empty())
 
 
 func test_get_panel_def_empty_defs_returns_empty() -> void:
 	print("test_get_panel_def_empty_defs_returns_empty:")
 	var def := StubPluginDef.new()
-	def.ui_panel_defs = []
+	def.ui_panels = []
 	var result: Dictionary = PluginScenePanelHost_._get_panel_def(def, "cad_viewer")
-	check("def with empty ui_panel_defs returns empty dict", result.is_empty())
+	check("def with empty ui_panels returns empty dict", result.is_empty())
 
 
 func test_get_panel_def_panel_not_in_defs_returns_empty() -> void:
@@ -425,7 +438,7 @@ func test_instantiate_wrong_kind_detected() -> void:
 	var def := StubPluginDef.new()
 	def.id = "myplugin"
 	def.data_directory = "/tmp/myplugin"
-	def.ui_panel_defs = [{
+	def.ui_panels = [{
 		"name": "html_panel",
 		"kind": "html",
 		"entry": "ui/panel.html",
@@ -442,7 +455,7 @@ func test_instantiate_missing_entry_scene_detected() -> void:
 	var def := StubPluginDef.new()
 	def.id = "myplugin"
 	def.data_directory = "/tmp/myplugin"
-	def.ui_panel_defs = [{
+	def.ui_panels = [{
 		"name": "my_panel",
 		"kind": "godot_scene",
 		# entry_scene intentionally absent
@@ -561,15 +574,14 @@ func test_on_panel_loaded_receives_ctx_keys() -> void:
 
 
 # ===========================================================================
-# Helper class: simulates a PluginDefinition without ui_panel_defs field.
-# Used to test the fallback path in _get_panel_def.
+# Helper class: simulates a PluginDefinition WITHOUT a ui_panels field at all.
+# Defensive coverage — exercises `not ("ui_panels" in def)` early-return.
 # ===========================================================================
 
-class _DefWithoutPanelDefs extends RefCounted:
+class _DefWithoutPanelsField extends RefCounted:
 	var id: String = "stub"
 	var data_directory: String = "/tmp/stub"
-	# Deliberately NO ui_panel_defs field.
-	var ui_panels: Array = []
+	# Deliberately NO ui_panels field.
 
 
 # ===========================================================================
