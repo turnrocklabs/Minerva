@@ -51,6 +51,10 @@ const EVENT_SCENE_DISPATCHED := "scene_dispatched"
 const EVENT_SCENE_PUSH       := "scene_push"
 ## push_to_panel: panel not live (not an error; plugin may push before panel opens).
 const EVENT_SCENE_PUSH_MISS  := "scene_push_miss"
+## push_progress: panel found and on_progress() called.
+const EVENT_SCENE_PROGRESS   := "scene_progress"
+## push_progress: panel not live, wrong owner, or scene lacks on_progress.
+const EVENT_SCENE_PROGRESS_MISS := "scene_progress_miss"
 
 
 # ---------------------------------------------------------------------------
@@ -482,6 +486,106 @@ func push_to_panel(
 		"channel": channel,
 	})
 	panel_root.receive(channel, payload)
+	return true
+
+
+## Push a progress notification from the plugin backend to a specific panel.
+##
+## Progress notifications are an implicit, platform-managed channel — they do
+## NOT need to be declared in the panel's ipc_channels or the manifest's
+## ui.ipc_messages.  They are delivered via a direct method call on the scene
+## root; the scene opts in by implementing `on_progress(request_id, phase, fraction)`.
+##
+## Called by the upstream MCP-server → broker integration layer when the
+## plugin emits a `{"method":"progress","params":{"id":…,"phase":…,"fraction":…}}`
+## notification (see Go-python-bridge-design.md §4).
+##
+## Parameters:
+##   plugin_id  — the plugin that owns the panel (spoof check).
+##   panel_name — registered panel name.
+##   request_id — opaque correlation id echoed from the originating request
+##                (e.g. "req_00017").  Passed through unchanged to the scene.
+##   phase      — human-readable phase label (e.g. "tessellate", "export").
+##   fraction   — completion fraction in [0.0, 1.0].
+##
+## Returns:
+##   true   — panel is live and on_progress() was called.
+##   false  — panel not registered, plugin mismatch, or scene lacks on_progress
+##            (the last case is non-fatal: many scenes simply do not display
+##            progress; it is logged with reason "progress_unsupported").
+##
+## TODO(integration): The upstream wiring from MinervaMCPServer / plugin MCP
+## stdio transport to this method does not exist yet.  When the plugin-MCP-server
+## protocol layer gains a `progress` notification channel, add a handler in
+## MinervaMCPServer (or a dedicated PluginNotificationRouter) that parses
+## `{"method":"progress","params":{…}}` and calls:
+##   plugin_scene_panel_broker.push_progress(plugin_id, panel_name,
+##       params["id"], params["phase"], params["fraction"])
+## That wiring is deliberately out of scope for this task (broker-API only).
+func push_progress(
+		plugin_id: String,
+		panel_name: String,
+		request_id: String,
+		phase: String,
+		fraction: float
+) -> bool:
+	# --- panel not registered ------------------------------------------------
+	if not _panel_registry.has(panel_name):
+		_audit(plugin_id, EVENT_SCENE_PROGRESS_MISS, {
+			"panel_name": panel_name,
+			"request_id": request_id,
+			"reason": "not_registered",
+		})
+		return false
+
+	var entry: _PanelEntry = _panel_registry[panel_name]
+
+	# --- spoof check: plugin must own the panel --------------------------------
+	if entry.plugin_id != plugin_id:
+		_audit(plugin_id, EVENT_SCENE_DENIED, {
+			"panel_name": panel_name,
+			"request_id": request_id,
+			"reason": "progress_plugin_mismatch",
+			"scene_expected": entry.plugin_id,
+		})
+		push_warning(
+			("[PluginScenePanelBroker] push_progress: plugin '%s' tried to push progress to " +
+			"panel '%s' owned by '%s'") % [plugin_id, panel_name, entry.plugin_id]
+		)
+		return false
+
+	# --- scene root still alive? ----------------------------------------------
+	var panel_root: Node = entry.panel_ref.get_ref() as Node
+	if panel_root == null:
+		_audit(plugin_id, EVENT_SCENE_PROGRESS_MISS, {
+			"panel_name": panel_name,
+			"request_id": request_id,
+			"reason": "panel_root_freed",
+		})
+		return false
+
+	# --- scene must implement on_progress (opt-in) ----------------------------
+	if not panel_root.has_method("on_progress"):
+		_audit(plugin_id, EVENT_SCENE_PROGRESS_MISS, {
+			"panel_name": panel_name,
+			"request_id": request_id,
+			"reason": "progress_unsupported",
+		})
+		# Non-fatal: many scenes won't implement progress display.
+		push_warning(
+			("[PluginScenePanelBroker] push_progress: panel '%s' (plugin '%s') has no " +
+			"`on_progress` method; progress notification dropped") % [panel_name, plugin_id]
+		)
+		return false
+
+	# --- deliver ---------------------------------------------------------------
+	_audit(plugin_id, EVENT_SCENE_PROGRESS, {
+		"panel_name": panel_name,
+		"request_id": request_id,
+		"phase": phase,
+		"fraction": fraction,
+	})
+	panel_root.on_progress(request_id, phase, fraction)
 	return true
 
 
