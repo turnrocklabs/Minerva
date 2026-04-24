@@ -143,7 +143,30 @@
 		}
 	},
 	"ui": {
-		"panels": ["obs_controller_panel"],
+		"panels": [
+			{
+				"name": "obs_controller_panel",
+				"kind": "html",
+				"entry": "ui/panel.html",
+				"ipc_channels": [
+					"capability:secrets:get:obs_password",
+					"capability:secrets:set:obs_password",
+					"minerva_obs_controller_connect",
+					"minerva_obs_controller_disconnect",
+					"minerva_obs_controller_get_status",
+					"minerva_obs_controller_list_scenes",
+					"minerva_obs_controller_switch_scene",
+					"minerva_obs_controller_list_sources",
+					"minerva_obs_controller_set_camera_position",
+					"minerva_obs_controller_start_recording",
+					"minerva_obs_controller_stop_recording",
+					"minerva_obs_controller_list_recordings",
+					"minerva_obs_controller_configure"
+				],
+				"fullscreen_capable": false,
+				"multi_window": false
+			}
+		],
 		"ipc_messages": [
 			"capability:secrets:get:obs_password",
 			"capability:secrets:set:obs_password",

@@ -53,8 +53,14 @@ var working_dir: String = ""
 # UI / IPC configuration
 # ---------------------------------------------------------------------------
 
-## Panel names this plugin wants to register (for future UI hosting)
-var ui_panels: Array[String] = []
+## Typed panel definitions this plugin contributes.
+## Each entry is a Dictionary with at minimum {name, kind} plus kind-specific fields.
+## See design §2.2 for the full schema.
+var ui_panels: Array[Dictionary] = []
+
+## Parallel array of panel names extracted from ui_panels, for fast broker lookups.
+## Kept in sync with ui_panels by _from_dict_internal().
+var ui_panel_names: Array[String] = []
 
 ## IPC message names this plugin handles (e.g. "myplugin.do_thing")
 var ui_ipc_messages: Array[String] = []
@@ -180,7 +186,7 @@ func to_dict() -> Dictionary:
 			"working_dir": working_dir,
 		},
 		"ui": {
-			"panels": Array(ui_panels),
+			"panels": ui_panels.duplicate(true),
 			"ipc_messages": Array(ui_ipc_messages),
 		},
 		"tools": tools.duplicate(true),
@@ -259,6 +265,28 @@ func validate() -> Array[String]:
 				"Tool '%s' must start with '%s'" % [tool_name, expected_prefix]
 			)
 
+	# Validate editor_items panel references — each must name a known ui panel.
+	for ei in editor_items:
+		if not (ei is Dictionary):
+			continue
+		var panel_ref: String = ei.get("panel", "")
+		if not panel_ref.is_empty() and not ui_panel_names.has(panel_ref):
+			errors.append(
+				("editor_items entry '%s' references panel '%s' which is not declared in ui.panels") %
+				[str(ei.get("id", "")), panel_ref]
+			)
+
+	# Validate panel name uniqueness within the plugin.
+	var seen_names: Dictionary = {}
+	for panel_dict in ui_panels:
+		if not (panel_dict is Dictionary):
+			continue
+		var pname: String = panel_dict.get("name", "")
+		if seen_names.has(pname):
+			errors.append("Duplicate panel name '%s' in ui.panels" % pname)
+		else:
+			seen_names[pname] = true
+
 	return errors
 
 
@@ -286,10 +314,32 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 
 	# UI
 	var ui: Dictionary = data.get("ui", {})
-	for panel in ui.get("panels", []):
-		def.ui_panels.append(str(panel))
-	for msg in ui.get("ipc_messages", []):
+	var ipc_allowlist: Array = ui.get("ipc_messages", [])
+	for msg in ipc_allowlist:
 		def.ui_ipc_messages.append(str(msg))
+
+	var panel_list: Array = ui.get("panels", [])
+	for panel in panel_list:
+		# §2.2: String entries are rejected — no backward-compat.
+		if panel is String:
+			push_error(("[PluginDefinition] panel entry must be a typed Dictionary, " +
+				"got String '%s'. Use {\"name\": \"%s\", \"kind\": \"html\", ...}") % [str(panel), str(panel)])
+			return null
+
+		if not (panel is Dictionary):
+			push_error("[PluginDefinition] panel entry must be a Dictionary")
+			return null
+
+		var panel_dict: Dictionary = panel as Dictionary
+		var parse_result: Variant = _parse_panel_entry(panel_dict, def.ui_ipc_messages)
+		if parse_result is Dictionary and parse_result.has("error"):
+			push_error(("[PluginDefinition] panel parse error: %s — %s") %
+				[str(parse_result.get("error", "")), str(parse_result.get("detail", {}))])
+			return null
+
+		var typed_panel: Dictionary = parse_result as Dictionary
+		def.ui_panels.append(typed_panel)
+		def.ui_panel_names.append(typed_panel.get("name", "") as String)
 
 	# Tools
 	for tool_entry in data.get("tools", []):
@@ -319,6 +369,110 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	def.state_schema = data.get("state", {}).get("schema", {})
 
 	return def
+
+
+## Parse and validate a single typed panel entry Dictionary (design §2.1, §2.2).
+##
+## Returns the normalised panel Dictionary on success, or a structured error
+## Dictionary {error: String, detail: Dictionary} on failure.
+##
+## ipc_allowlist is the top-level ui.ipc_messages array (already parsed as
+## Array[String]); used to validate ipc_channels intersect.
+static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) -> Dictionary:
+	# --- name (required) ---
+	var panel_name: String = panel.get("name", "")
+	if panel_name.is_empty():
+		return {
+			"error": "panel_missing_name",
+			"detail": {"panel": panel},
+		}
+
+	# --- kind (default "html") ---
+	var kind: String = panel.get("kind", "html")
+	if kind != "html" and kind != "godot_scene":
+		return {
+			"error": "panel_unknown_kind",
+			"detail": {"name": panel_name, "kind": kind},
+		}
+
+	var result: Dictionary = {
+		"name": panel_name,
+		"kind": kind,
+	}
+
+	if kind == "godot_scene":
+		# entry_scene required
+		var entry_scene: String = panel.get("entry_scene", "")
+		if entry_scene.is_empty():
+			return {
+				"error": "panel_missing_entry_scene",
+				"detail": {"name": panel_name},
+			}
+		# scripts required
+		var scripts_raw: Variant = panel.get("scripts", null)
+		if scripts_raw == null or not (scripts_raw is Array) or (scripts_raw as Array).is_empty():
+			return {
+				"error": "panel_missing_scripts",
+				"detail": {"name": panel_name},
+			}
+		var scripts: Array[String] = []
+		for s in (scripts_raw as Array):
+			scripts.append(str(s))
+		result["entry_scene"] = entry_scene
+		result["scripts"] = scripts
+
+	elif kind == "html":
+		# entry: explicit path, or derived from name as "ui/<name>.html"
+		var entry: String = panel.get("entry", "")
+		if entry.is_empty():
+			entry = ("ui/%s.html") % panel_name
+		result["entry"] = entry
+
+	# --- file_extensions (optional) ---
+	var file_exts_raw: Variant = panel.get("file_extensions", null)
+	if file_exts_raw != null:
+		if not (file_exts_raw is Array):
+			return {
+				"error": "panel_file_extensions_not_array",
+				"detail": {"name": panel_name},
+			}
+		var file_exts: Array[String] = []
+		for ext_raw in (file_exts_raw as Array):
+			var ext: String = str(ext_raw).to_lower()
+			if not ext.begins_with("."):
+				return {
+					"error": "panel_file_extension_missing_dot",
+					"detail": {"name": panel_name, "extension": ext},
+				}
+			file_exts.append(ext)
+		result["file_extensions"] = file_exts
+
+	# --- ipc_channels (optional) — must intersect ui.ipc_messages allowlist ---
+	var channels_raw: Variant = panel.get("ipc_channels", null)
+	if channels_raw != null:
+		if not (channels_raw is Array):
+			return {
+				"error": "panel_ipc_channels_not_array",
+				"detail": {"name": panel_name},
+			}
+		var channels: Array[String] = []
+		for ch_raw in (channels_raw as Array):
+			var ch: String = str(ch_raw)
+			if not ipc_allowlist.has(ch):
+				return {
+					"error": "panel_ipc_channel_not_in_allowlist",
+					"detail": {"name": panel_name, "channel": ch},
+				}
+			channels.append(ch)
+		result["ipc_channels"] = channels
+
+	# --- fullscreen_capable (optional, default false) ---
+	result["fullscreen_capable"] = bool(panel.get("fullscreen_capable", false))
+
+	# --- multi_window (optional, default false) ---
+	result["multi_window"] = bool(panel.get("multi_window", false))
+
+	return result
 
 
 ## Check that an id string is safe: lowercase letters, digits, underscores only.
