@@ -474,6 +474,23 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 			channels.append(ch)
 		result["ipc_channels"] = channels
 
+	# --- save_mode (optional, default "host_owned") — design §7.5 ---
+	# Valid values: "host_owned" | "plugin_owned"
+	# "host_owned": Minerva calls _on_panel_save_request(), serialises result, writes file.
+	# "plugin_owned": Minerva dispatches capability:editor.request_save; plugin writes the file.
+	var save_mode_raw: Variant = panel.get("save_mode", null)
+	if save_mode_raw == null:
+		result["save_mode"] = "host_owned"
+	else:
+		var save_mode: String = str(save_mode_raw)
+		if save_mode != "host_owned" and save_mode != "plugin_owned":
+			return {
+				"error": "panel_save_mode_invalid",
+				"detail": {"name": panel_name, "save_mode": save_mode,
+					"allowed": ["host_owned", "plugin_owned"]},
+			}
+		result["save_mode"] = save_mode
+
 	# --- fullscreen_capable (optional, default false) ---
 	result["fullscreen_capable"] = bool(panel.get("fullscreen_capable", false))
 

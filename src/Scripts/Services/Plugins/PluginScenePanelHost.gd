@@ -218,6 +218,80 @@ static func instantiate_into(
 
 
 # ---------------------------------------------------------------------------
+# Save / load / unload dispatch helpers (design §5.1, §7.5)
+# ---------------------------------------------------------------------------
+
+## Call `_on_panel_save_request()` on `panel_root` if the method exists.
+##
+## Returns the Dictionary returned by the hook on success.
+## Returns null and logs a push_warning if the scene does not implement the
+## hook (per §7.5: scenes without the hook cannot participate in host_owned
+## saves).
+##
+## Note on error semantics: GDScript 4 has no try/catch. This helper relies
+## on `push_error`/`push_warning` being non-fatal in Godot — they log but do
+## not abort. A genuine runtime error inside the hook (null-deref, type
+## mismatch, infinite recursion, wrong return type) WILL still propagate /
+## abort; the helper cannot shield against those. For misbehaving plugins,
+## `has_method` is the only practical guard available before the call.
+static func invoke_save(panel_root: Node, ctx: Dictionary) -> Variant:
+	if panel_root == null:
+		push_warning("[PluginScenePanelHost] invoke_save: panel_root is null")
+		return null
+	if not panel_root.has_method("_on_panel_save_request"):
+		push_warning(
+			("[PluginScenePanelHost] invoke_save: scene '%s' does not implement " +
+			"_on_panel_save_request — cannot host_owned save") % panel_root.name
+		)
+		return null
+	# Defensive call: errors inside the hook are surfaced via Godot's error
+	# reporter but do not propagate as GDScript exceptions here.
+	var result: Variant = null
+	result = panel_root._on_panel_save_request()
+	return result
+
+
+## Call `_on_panel_load_request(document)` on `panel_root` if the method exists.
+##
+## Returns true on successful dispatch (method exists and was called).
+## Returns false and logs a push_warning if the scene does not implement the
+## hook.
+##
+## Same error-semantics caveat as invoke_save: GDScript has no try/catch;
+## `push_error` is non-fatal but a real runtime error inside the hook will
+## still propagate.
+static func invoke_load(panel_root: Node, document: Variant) -> bool:
+	if panel_root == null:
+		push_warning("[PluginScenePanelHost] invoke_load: panel_root is null")
+		return false
+	if not panel_root.has_method("_on_panel_load_request"):
+		push_warning(
+			("[PluginScenePanelHost] invoke_load: scene '%s' does not implement " +
+			"_on_panel_load_request") % panel_root.name
+		)
+		return false
+	panel_root._on_panel_load_request(document)
+	return true
+
+
+## Call `_on_panel_unload()` on `panel_root` if the method exists.
+##
+## Named wrapper for the inline pattern already used in instantiate_into —
+## extracted here for consistency and testability (design §5.1).
+##
+## Same error-semantics caveat as invoke_save: GDScript has no try/catch;
+## `push_error` is non-fatal but real runtime errors propagate.  Per §5.3:
+## IPC from inside _on_panel_unload is rejected by the broker (panel_unloading)
+## — the scene must not initiate new IPC calls here.
+static func invoke_unload(panel_root: Node) -> void:
+	if panel_root == null:
+		return
+	if not panel_root.has_method("_on_panel_unload"):
+		return
+	panel_root._on_panel_unload()
+
+
+# ---------------------------------------------------------------------------
 # Path resolution
 # ---------------------------------------------------------------------------
 
