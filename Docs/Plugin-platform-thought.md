@@ -201,7 +201,7 @@ This gives us three guarantees:
 
 ### 3.6 Storage: sidecar
 
-Annotations live in a sidecar file next to the document: `foo.mcad` ↔ `foo.mcad.meta.json`; `foo.minpcb` ↔ `foo.minpcb.meta.json`. Reasons:
+Annotations live in a sidecar file next to the document: `foo.mcad` ↔ `foo.mcad.annotations.json`; `foo.minpcb` ↔ `foo.minpcb.annotations.json`. Reasons:
 
 - Git-friendly; annotations diff cleanly as JSON.
 - LLM can read/edit via generic `file_read`/`file_edit` tools.
@@ -262,14 +262,14 @@ Minerva ─stdio MCP─▶ CAD plugin (Go binary)
                                                       (Build123d / OCCT)
 ```
 
-- **Go MCP server**: protocol, `.mcad` I/O, `.mcad.meta.json` sidecar coordination, render/export orchestration, Godot-scene panel.
+- **Go MCP server**: protocol, `.mcad` I/O, `.mcad.annotations.json` sidecar coordination, render/export orchestration, Godot-scene panel.
 - **Python worker as a subprocess**: runs the existing `mcad/` package (lex/parse/translate/evaluate/export) almost unchanged. Subprocess isolation over in-process `goempy` because OCCT's C++ exceptions are real and we want crash isolation. `goempy`-style embedding remains an optimization path if packaging or latency later demands it.
 
 **Why Go + Python, not pure Go or pure Rust.** Pure Go has no credible B-Rep library in 2026 (every option is mesh/SDF-based, reintroducing the approximation we're trying to escape). Rust + `opencascade-rs` is LGPL-encumbered, has open fillet/chamfer crashes, and requires a full rewrite of the 1899-line translator. Go + embedded-or-subprocess Python + Build123d keeps the existing translator intact and rides the most battle-tested OCCT wrapper in the ecosystem. Revisit in ~18 months if `opencascade-rs` hardens.
 
 ### 4.3 `.mcad` file format
 
-Pure DSL text on disk. Annotations live in the platform sidecar: `foo.mcad` + `foo.mcad.meta.json`. The sidecar also holds reference geometry pointers and view state:
+Pure DSL text on disk. Annotations live in the platform sidecar: `foo.mcad` + `foo.mcad.annotations.json`. The sidecar also holds reference geometry pointers and view state:
 
 ```json
 {
