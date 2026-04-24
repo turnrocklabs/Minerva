@@ -29,7 +29,7 @@ const FILE_WATCH_INTERVAL_SEC := 2.0
 const RELOAD_DEBOUNCE_SEC := 0.5
 
 ## File extensions watched for hot reload.
-const WATCH_EXTENSIONS := ["py", "js", "sh", "json"]
+const WATCH_EXTENSIONS := ["py", "js", "sh", "json", "gd", "tscn"]
 
 ## Mirrors of PluginDefinition.State to avoid parse-order dependency.
 ## PluginManager extends Node (parsed early); PluginDefinition extends RefCounted.
@@ -91,6 +91,19 @@ var _file_mtimes: Dictionary = {}
 ## Structure: { plugin_id: SceneTreeTimer }
 ## A non-null entry means a debounce is in flight for that plugin.
 var _reload_pending: Dictionary = {}
+
+## Per-plugin set of paths that changed during the current debounce window.
+## Accumulated during file-watch scans; consumed (and cleared) when the debounce
+## timer fires.  Structure: { plugin_id: Array[String] }
+var _pending_changed_paths: Dictionary = {}
+
+## Per-plugin live scene-panel registry for hot-reload.
+## Maps plugin_id -> Array of Dictionaries:
+##   { "panel_name": String, "tscn_path": String, "editor": Editor,
+##     "vbox": Control, "root": Control }
+## Populated when a PLUGIN_SCENE editor is opened; cleaned on close / stop.
+## NOTE: Only PluginManager.gd writes to this; callers use the public API below.
+var _live_scene_panels: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +345,7 @@ func stop_plugin(id: String) -> Dictionary:
 
 	# Cancel any pending hot-reload debounce to prevent stale restart
 	_reload_pending.erase(id)
+	_pending_changed_paths.erase(id)
 
 	print("[PluginManager] Stopping plugin '%s'..." % id)
 
@@ -535,29 +549,237 @@ func _run_file_watch_checks() -> void:
 					break
 
 		if changed:
+			# Collect the set of changed paths so the debounce handler can apply
+			# the correct per-extension reload strategy (design §9.2).
+			var changed_paths: Array[String] = []
+			for path in current:
+				if not stored.has(path) or stored[path] != current[path]:
+					changed_paths.append(path)
+			for path in stored:
+				if not current.has(path):
+					changed_paths.append(path)
+
 			_file_mtimes[def.id] = current
 			print("[PluginManager] Files changed for plugin '%s'" % def.id)
 			plugin_file_changed.emit(def.id)
 
-			if def.auto_reload and not _reload_pending.has(def.id):
-				# Start debounce timer — reload after RELOAD_DEBOUNCE_SEC.
-				var timer: SceneTreeTimer = Engine.get_main_loop().create_timer(RELOAD_DEBOUNCE_SEC)
-				_reload_pending[def.id] = timer
-				var id_copy: String = def.id
-				timer.timeout.connect(func(): _on_reload_debounce_expired(id_copy))
+			if def.auto_reload:
+				# Accumulate changed paths for the debounce window (union semantics).
+				if not _pending_changed_paths.has(def.id):
+					_pending_changed_paths[def.id] = []
+				var acc: Array = _pending_changed_paths[def.id]
+				for p in changed_paths:
+					if not (p in acc):
+						acc.append(p)
+
+				if not _reload_pending.has(def.id):
+					# Start debounce timer — reload after RELOAD_DEBOUNCE_SEC.
+					var timer: SceneTreeTimer = Engine.get_main_loop().create_timer(RELOAD_DEBOUNCE_SEC)
+					_reload_pending[def.id] = timer
+					var id_copy: String = def.id
+					timer.timeout.connect(func(): _on_reload_debounce_expired(id_copy))
 
 
 ## Called when the debounce timer fires for a plugin with auto_reload enabled.
+## Implements the hot-reload decision tree (design §9.2):
+##   .py/.js/.sh/.json → plugin stop + start (unchanged)
+##   .gd → in-place GDScript.reload() if live panels exist; fallback stop+start
+##   .tscn → in-place re-instantiate for each live panel using that scene
+##   multiple extensions changed → union; tscn always in-place
 func _on_reload_debounce_expired(id: String) -> void:
 	_reload_pending.erase(id)
+
+	# Collect and clear the accumulated changed paths for this plugin.
+	var changed_paths: Array = _pending_changed_paths.get(id, [])
+	_pending_changed_paths.erase(id)
+
 	var def = _db.get_by_id(id)
 	if def == null or not def.auto_reload:
 		return
 	# Only reload if the plugin is currently running or in error state.
 	if def.state not in [S_RUNNING, S_STARTING, S_ERROR]:
 		return
-	print("[PluginManager] Auto-reloading plugin '%s' due to file change" % id)
-	await restart_plugin(id)
+
+	# Classify changed extensions (union across all changed paths).
+	var has_process_ext := false   # py/js/sh/json — always stop+start
+	var gd_paths: Array[String] = []
+	var tscn_paths: Array[String] = []
+
+	for path in changed_paths:
+		var ext: String = (path as String).get_extension().to_lower()
+		match ext:
+			"py", "js", "sh", "json":
+				has_process_ext = true
+			"gd":
+				gd_paths.append(path)
+			"tscn":
+				tscn_paths.append(path)
+
+	# If any process-layer file changed, fall back immediately to stop+start.
+	if has_process_ext:
+		print("[PluginManager] Auto-reloading plugin '%s' (process file change)" % id)
+		await restart_plugin(id)
+		return
+
+	# Handle .gd changes.
+	if not gd_paths.is_empty():
+		var gd_ok := await _hot_reload_gd(id, gd_paths)
+		if not gd_ok:
+			# Fallback: full stop+start.
+			print(("[PluginManager] hot_reload_gd_failed for '%s' — falling back to " +
+				"stop+start") % id)
+			await restart_plugin(id)
+			return
+
+	# Handle .tscn changes (always in-place, even if .gd was also changed).
+	for tscn_path in tscn_paths:
+		await _hot_reload_tscn(id, tscn_path)
+
+
+## Attempt in-place GDScript reload for all changed .gd paths belonging to plugin `id`.
+## Returns true if all reloads succeeded and _on_hot_reload() was dispatched.
+## Returns false if any reload failed (caller should fall back to stop+start).
+func _hot_reload_gd(id: String, gd_paths: Array[String]) -> bool:
+	# Check if there are any live scene panels for this plugin.
+	var live_panels: Array = _live_scene_panels.get(id, [])
+
+	if live_panels.is_empty():
+		# No live panels — stop+start is safe and simpler.
+		print(("[PluginManager] hot_reload_gd: plugin '%s' has no live panels, " +
+			"using stop+start") % id)
+		return false
+
+	# Attempt GDScript.reload() for every changed .gd file.
+	# We iterate ResourceLoader's cache by scanning live panels' scripts.
+	# The safest approach: reload every GDScript loaded by the plugin.
+	var all_ok := true
+	for gd_path in gd_paths:
+		# ResourceLoader.has_cached() tells us if the resource is in cache.
+		if ResourceLoader.has_cached(gd_path):
+			var script = ResourceLoader.load(gd_path, "GDScript", ResourceLoader.CACHE_MODE_REUSE)
+			if script is GDScript:
+				var reload_err: int = (script as GDScript).reload(true)
+				if reload_err != OK:
+					push_warning(("[PluginManager] GDScript.reload() failed for '%s' " +
+						"(error %d)") % [gd_path, reload_err])
+					all_ok = false
+			# If it loaded but isn't GDScript (shouldn't happen for .gd), treat as failure.
+			elif script == null:
+				push_warning("[PluginManager] Could not load script for reload: '%s'" % gd_path)
+				all_ok = false
+		# If not cached, we can't reload it in-place — but it wasn't running either,
+		# so this is not a failure for the hot-reload path.
+
+	if not all_ok:
+		return false
+
+	# All reloads succeeded — notify each live panel.
+	for entry in live_panels:
+		var root: Control = entry.get("root", null)
+		if root != null and is_instance_valid(root):
+			if root.has_method("_on_hot_reload"):
+				root._on_hot_reload()
+
+	print("[PluginManager] hot_reload_gd_ok for plugin '%s'" % id)
+	return true
+
+
+## Perform in-place .tscn re-instantiate for any live panel whose entry_scene
+## path matches `tscn_path`.
+func _hot_reload_tscn(id: String, tscn_path: String) -> void:
+	var live_panels: Array = _live_scene_panels.get(id, [])
+	if live_panels.is_empty():
+		# No live instance — next open picks up the new version automatically
+		# (PluginScenePanelHost always uses CACHE_MODE_IGNORE).
+		return
+
+	# Get the broker for unregistration.
+	var broker: PluginScenePanelBroker = _get_scene_panel_broker()
+
+	# Work on a copy because we may modify the array during iteration.
+	var panels_copy: Array = live_panels.duplicate()
+	for entry in panels_copy:
+		var entry_tscn: String = entry.get("tscn_path", "")
+		if entry_tscn != tscn_path:
+			continue
+
+		var panel_name: String = entry.get("panel_name", "")
+		var vbox: Control = entry.get("vbox", null)
+		var old_root: Control = entry.get("root", null)
+		var editor = entry.get("editor", null)
+
+		# Step 1: Call _on_panel_unload() on the old root if it exists.
+		if old_root != null and is_instance_valid(old_root):
+			if old_root.has_method("_on_panel_unload"):
+				old_root._on_panel_unload()
+
+		# Step 2: Unregister old panel from broker.
+		if broker != null:
+			broker.unregister_panel(id, panel_name)
+
+		# Step 3: Free the old scene.
+		if old_root != null and is_instance_valid(old_root):
+			old_root.queue_free()
+
+		# Step 4: Re-run §3 scene loading flow in the same Editor wrapper.
+		# PluginScenePanelHost.instantiate_into mounts the new instance into vbox
+		# and fires _on_panel_loaded(ctx) itself.
+		if vbox != null and is_instance_valid(vbox):
+			var new_root: Control = PluginScenePanelHost.instantiate_into(
+				vbox, id, panel_name, editor)
+			# Update registry entry with new root.
+			entry["root"] = new_root
+			print(("[PluginManager] hot_reload_tscn_ok: re-instantiated panel '%s' " +
+				"for plugin '%s'") % [panel_name, id])
+		else:
+			push_warning(("[PluginManager] hot_reload_tscn: vbox for panel '%s' plugin '%s' " +
+				"is no longer valid — cannot re-instantiate") % [panel_name, id])
+			# Remove dead entry from registry.
+			_live_scene_panels[id].erase(entry)
+
+
+# ---------------------------------------------------------------------------
+# Public API — live scene panel registry
+# ---------------------------------------------------------------------------
+
+## Register a live scene panel so hot-reload can find and re-instantiate it.
+##
+## Called by Editor.create() (or equivalent) after a PLUGIN_SCENE panel is
+## successfully mounted.  `tscn_path` is the absolute path to the .tscn file
+## so _hot_reload_tscn can match changed paths to live instances.
+func register_live_panel(
+		plugin_id: String,
+		panel_name: String,
+		tscn_path: String,
+		vbox: Control,
+		root: Control,
+		editor  # Editor — untyped to avoid circular dep
+) -> void:
+	if not _live_scene_panels.has(plugin_id):
+		_live_scene_panels[plugin_id] = []
+	var entry := {
+		"panel_name": panel_name,
+		"tscn_path":  tscn_path,
+		"vbox":       vbox,
+		"root":       root,
+		"editor":     editor,
+	}
+	_live_scene_panels[plugin_id].append(entry)
+
+
+## Unregister a live scene panel (called on tab close or plugin stop).
+func unregister_live_panel(plugin_id: String, panel_name: String) -> void:
+	if not _live_scene_panels.has(plugin_id):
+		return
+	var panels: Array = _live_scene_panels[plugin_id]
+	for i in range(panels.size() - 1, -1, -1):
+		if panels[i].get("panel_name", "") == panel_name:
+			panels.remove_at(i)
+
+
+## Return all live panel entries for a plugin (read-only copy).
+func get_live_panels(plugin_id: String) -> Array:
+	return _live_scene_panels.get(plugin_id, []).duplicate()
 
 
 ## Return a Dictionary of { absolute_path: modified_time_int } for all watched
@@ -719,6 +941,17 @@ func _get_event_broker():
 	if so == null:
 		return null
 	return so.get("plugin_event_broker") if "plugin_event_broker" in so else null
+
+
+## Return the PluginScenePanelBroker from SingletonObject, or null if unavailable.
+func _get_scene_panel_broker() -> PluginScenePanelBroker:
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	var so = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	return so.get("plugin_scene_panel_broker") if "plugin_scene_panel_broker" in so else null
 
 
 ## Return the runtime Dictionary for `id`, creating it if absent.

@@ -302,3 +302,19 @@ func dispatch_validate(annotation: Dictionary) -> Array:
 	if kind == null:
 		return []
 	return kind.validate(annotation)
+
+
+## Dispatch rewrite_paths() to the appropriate kind during project pack/unpack.
+## mode is "pack" or "unpack"; base is the package root (pack) or unpack destination (unpack).
+## Returns the annotation with paths rewritten if the kind implements rewrite_paths().
+## Returns the annotation unchanged for unknown kinds or kinds that don't override the method.
+## Design §9.4: per-kind path rewrites are optional; the base class no-op default handles
+## kinds with no path payloads.
+func dispatch_rewrite_paths(annotation: Dictionary, mode: String, base: String) -> Dictionary:
+	var kind_name: StringName = StringName(annotation.get("kind", ""))
+	var kind := get_annotation_kind(kind_name)
+	if kind == null:
+		return annotation
+	# All AnnotationKind subclasses inherit the base no-op rewrite_paths(), so has_method
+	# is always true. We call it directly — kinds that need rewrites override the method.
+	return kind.rewrite_paths(annotation, mode, base)

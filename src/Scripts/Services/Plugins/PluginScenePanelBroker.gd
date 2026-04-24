@@ -521,7 +521,11 @@ func _validate_panel_ownership(plugin_id: String, panel_name: String) -> bool:
 	if def == null:
 		return false
 
-	return panel_name in def.ui_panels
+	# After the manifest-parsing task (Round 3), `def.ui_panels` is
+	# `Array[Dictionary]` of typed entries — `panel_name in def.ui_panels`
+	# would always return false. Use the parallel `ui_panel_names: Array[String]`
+	# kept in sync by `_from_dict_internal` for fast string lookups.
+	return panel_name in def.ui_panel_names
 
 
 # ---------------------------------------------------------------------------

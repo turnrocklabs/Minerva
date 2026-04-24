@@ -117,15 +117,25 @@ class StubManager extends RefCounted:
 ## Uses from_dict to avoid the validation path that requires entrypoint/version.
 func _make_def(plugin_id: String, panel_names: Array, ipc_messages: Array) -> PluginDefinition:
 	# Build a minimal dict that bypasses the validate() call.
-	# We use _from_dict_internal-equivalent manually since from_dict does not
-	# call validate(). from_dict is the right path here.
+	# Per the manifest-parsing task (Round 3), panels MUST be Array[Dictionary]
+	# (typed entries); legacy String form is rejected by from_dict.  Convert
+	# the bare panel_names list to typed html-kind entries here so existing
+	# call sites (broker tests pre-dating the manifest task) keep working.
+	var typed_panels: Array = []
+	for n in panel_names:
+		typed_panels.append({
+			"name": String(n),
+			"kind": "html",
+			"entry": "ui/%s.html" % String(n),
+		})
+
 	var d := {
 		"id": plugin_id,
 		"name": plugin_id,
 		"version": "0.0.1",
 		"host_api_version": "1",
 		"backend": {"transport": "stdio", "entrypoint": "stub.py", "args": [], "working_dir": ""},
-		"ui": {"panels": panel_names, "ipc_messages": ipc_messages},
+		"ui": {"panels": typed_panels, "ipc_messages": ipc_messages},
 		"tools": [],
 		"permissions": {"host_capabilities": [], "network": {"mode": "none"},
 			"filesystem": {"mode": "none", "paths": []}},
@@ -245,18 +255,19 @@ func test_ipc_reply_fires_for_pending() -> void:
 	var observer := MinervaIPC._ReplyObserver.new()
 	ipc._pending["test-id-1"] = observer
 
-	var fired := false
-	var fired_result: Dictionary = {}
+	# GDScript lambdas capture locals by value — use Array wrapper so the
+	# outer scope can observe lambda mutations (saved hint: gdscript.lambda_captures_by_value).
+	var captured: Array = [false, {}]
 	observer.resolved.connect(func(r: Dictionary) -> void:
-		fired = true
-		fired_result = r
+		captured[0] = true
+		captured[1] = r
 	)
 
 	ipc._reply("test-id-1", {"success": true, "result": {"x": 42}})
 
-	check("reply fires observer for registered reply_id", fired)
-	check("result is passed through correctly", fired_result.get("success", false) == true)
-	check("result.result has expected data", fired_result.get("result", {}).get("x", 0) == 42)
+	check("reply fires observer for registered reply_id", captured[0])
+	check("result is passed through correctly", (captured[1] as Dictionary).get("success", false) == true)
+	check("result.result has expected data", (captured[1] as Dictionary).get("result", {}).get("x", 0) == 42)
 	ipc.free()
 
 
@@ -269,16 +280,16 @@ func test_ipc_pending_ids_are_independent() -> void:
 	ipc._pending["id-a"] = obs_a
 	ipc._pending["id-b"] = obs_b
 
-	var fired_a := false
-	var fired_b := false
-	obs_a.resolved.connect(func(_r: Dictionary) -> void: fired_a = true)
-	obs_b.resolved.connect(func(_r: Dictionary) -> void: fired_b = true)
+	# Lambda capture-by-value workaround.
+	var fired: Array = [false, false]  # [a, b]
+	obs_a.resolved.connect(func(_r: Dictionary) -> void: fired[0] = true)
+	obs_b.resolved.connect(func(_r: Dictionary) -> void: fired[1] = true)
 
 	# Only fire reply for id-b.
 	ipc._reply("id-b", {"success": false, "error_code": "test"})
 
-	check("only obs_b fired", fired_b)
-	check("obs_a not fired by id-b reply", not fired_a)
+	check("only obs_b fired", fired[1])
+	check("obs_a not fired by id-b reply", not fired[0])
 	check("id-a still in _pending after id-b reply", ipc._pending.has("id-a"))
 	ipc.free()
 
@@ -319,18 +330,18 @@ func test_register_panel_emits_signal() -> void:
 	var parts := _make_broker_with_plugin("cad", ["cad_viewer"], ["cad.render"])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var emitted_pid := ""
-	var emitted_pname := ""
+	# Lambda capture-by-value workaround.
+	var emitted: Array = ["", ""]  # [plugin_id, panel_name]
 	broker.panel_registered.connect(func(pid: String, pname: String) -> void:
-		emitted_pid = pid
-		emitted_pname = pname
+		emitted[0] = pid
+		emitted[1] = pname
 	)
 
 	var root := StubSceneRoot.new()
 	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
 
-	check("panel_registered emits plugin_id", emitted_pid == "cad")
-	check("panel_registered emits panel_name", emitted_pname == "cad_viewer")
+	check("panel_registered emits plugin_id", emitted[0] == "cad")
+	check("panel_registered emits panel_name", emitted[1] == "cad_viewer")
 	root.free()
 
 

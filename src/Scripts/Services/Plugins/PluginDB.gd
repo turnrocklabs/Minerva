@@ -10,6 +10,10 @@ const DB_VERSION := 1
 ## In-memory store: plugin_id -> PluginDefinition
 var _plugins: Dictionary = {}
 
+## class_name -> plugin_id for all installed plugins.
+## Built lazily during install and loaded from DB at startup.
+var _class_name_registry: Dictionary = {}
+
 signal plugins_changed()
 
 
@@ -24,7 +28,17 @@ func _init() -> void:
 
 ## Register a new plugin from a manifest.json path.
 ## Returns the parsed PluginDefinition on success, or null on failure.
+## Returns a structured error Dictionary instead of null when class_name validation
+## fails: {"error": String, "detail": Dictionary} — callers may inspect this.
+## For backward-compatibility with callers that check `== null`, failure still
+## returns null; the last structured error is available via get_last_install_error().
+var _last_install_error: Dictionary = {}
+
+func get_last_install_error() -> Dictionary:
+	return _last_install_error
+
 func install(manifest_path: String) -> PluginDefinition:
+	_last_install_error = {}
 	var def := PluginDefinition.from_manifest(manifest_path)
 	if def == null:
 		push_error("[PluginDB] Failed to parse manifest: %s" % manifest_path)
@@ -33,6 +47,27 @@ func install(manifest_path: String) -> PluginDefinition:
 	if _plugins.has(def.id):
 		push_warning("[PluginDB] Plugin '%s' is already installed — use update_definition() to replace it" % def.id)
 		return null
+
+	# --- class_name validation (design §6.2) ---
+	# Scan all panel scripts for class_name declarations.
+	def.scan_class_names()
+
+	# Build the cross-plugin registry view (exclude this plugin — it's not installed yet).
+	var other_names := _build_class_name_map(def.id)
+
+	# Fetch or lazily build the core class_names index.
+	var CoreCN = load("res://Scripts/Services/Plugins/_core_class_names.gd")
+	var core_names: Array = CoreCN.get() if CoreCN != null else []
+
+	var cn_error: Dictionary = def.validate_class_names(other_names, core_names)
+	if not cn_error.is_empty():
+		_last_install_error = cn_error
+		push_error(("[PluginDB] class_name validation failed for '%s': %s — %s") %
+			[def.id, str(cn_error.get("error", "")), str(cn_error.get("detail", {}))])
+		return null
+
+	# Register this plugin's class_names into the in-process registry.
+	_register_class_names(def)
 
 	_plugins[def.id] = def
 	_save()
@@ -44,6 +79,7 @@ func install(manifest_path: String) -> PluginDefinition:
 func remove(plugin_id: String) -> bool:
 	if not _plugins.has(plugin_id):
 		return false
+	_unregister_class_names(plugin_id)
 	_plugins.erase(plugin_id)
 	_save()
 	plugins_changed.emit()
@@ -164,6 +200,7 @@ func load_db() -> Error:
 	var records: Array = root.get("plugins", [])
 
 	_plugins.clear()
+	_class_name_registry.clear()
 	for record in records:
 		if not record is Dictionary:
 			continue
@@ -177,6 +214,8 @@ func load_db() -> Error:
 			push_warning("[PluginDB] Plugin '%s': %s" % [def.id, e])
 		# State is always reconstructed as INSTALLED (not persisted)
 		def.state = PluginDefinition.State.INSTALLED
+		# Restore class_names from persisted data and rebuild registry.
+		_register_class_names(def)
 		_plugins[def.id] = def
 
 	return OK
@@ -210,3 +249,39 @@ func _ensure_data_dir() -> void:
 	var dir := DirAccess.open("user://")
 	if dir and not dir.dir_exists("plugins"):
 		dir.make_dir("plugins")
+
+
+# ---------------------------------------------------------------------------
+# class_name registry helpers
+# ---------------------------------------------------------------------------
+
+## Add all class_names from `def` into _class_name_registry.
+## No-op if def.class_names is empty.
+func _register_class_names(def: PluginDefinition) -> void:
+	for cn in def.class_names:
+		_class_name_registry[cn] = def.id
+
+
+## Remove all class_names belonging to `plugin_id` from _class_name_registry.
+func _unregister_class_names(plugin_id: String) -> void:
+	var to_erase: Array[String] = []
+	for cn in _class_name_registry:
+		if _class_name_registry[cn] == plugin_id:
+			to_erase.append(cn)
+	for cn in to_erase:
+		_class_name_registry.erase(cn)
+
+
+## Return a snapshot of the class_name -> plugin_id map, optionally excluding
+## one plugin (used during install to check against peers, not self).
+func _build_class_name_map(exclude_plugin_id: String = "") -> Dictionary:
+	var result: Dictionary = {}
+	for cn in _class_name_registry:
+		if _class_name_registry[cn] != exclude_plugin_id:
+			result[cn] = _class_name_registry[cn]
+	return result
+
+
+## Read-only access to the class_name registry (used by tests and PluginManager).
+func get_class_name_registry() -> Dictionary:
+	return _class_name_registry.duplicate()

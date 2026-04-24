@@ -9,6 +9,10 @@ const project_fp = "project.minproj" # name of project file inside the zip
 const pkg_base_dir = "files" # folder where in zip file packaged files reside
 const editor_files_key = "Editors" # Where in project_data are editor paths
 
+## Key used in each Editors[i] manifest entry to record the packed sidecar path.
+## Design §9.1: set to the package-relative sidecar path when a sidecar was found.
+const sidecar_manifest_key = "sidecar"
+
 ## Path of the package file
 var path: String
 
@@ -108,6 +112,40 @@ func save_package(
 		
 		editor_file["file"] = package_path
 
+		# ── Annotation sidecar (design §9.1) ──────────────────────────────────
+		# Check whether a sidecar exists for this document.  A missing sidecar
+		# is silently skipped — zero-annotation documents have no sidecar (§7.5).
+		var sidecar_disk_path: String = AnnotationSidecar.sidecar_path_for(original_path)
+		if FileAccess.file_exists(sidecar_disk_path):
+			var sidecar_data: Dictionary = AnnotationSidecar.read_sidecar(original_path)
+			if sidecar_data.is_empty():
+				# Sidecar exists but couldn't be parsed (corrupt — already backed up
+				# by read_sidecar).  Log and continue; pack succeeds without sidecar.
+				push_warning(
+					("ProjectPackage: sidecar for '%s' exists but could not be read "
+					% original_path) +
+					"(corrupt?). Skipping sidecar in package."
+				)
+			else:
+				# Rewrite per-annotation payload paths to package-relative form.
+				# The registry dispatches to each kind's optional rewrite_paths().
+				var registry := AnnotationRegistry.new()
+				var rewritten_annotations: Array = []
+				for ann in sidecar_data.get("annotations", []):
+					rewritten_annotations.append(
+						registry.dispatch_rewrite_paths(ann, "pack", pkg_base_dir)
+					)
+				sidecar_data["annotations"] = rewritten_annotations
+
+				# Write the rewritten sidecar JSON into the zip alongside the document.
+				var sidecar_pkg_path: String = ("%s/%s.annotations.json") % [pkg_base_dir, package_path]
+				writer.start_file(sidecar_pkg_path)
+				writer.write_file(JSON.stringify(sidecar_data).to_utf8_buffer())
+				writer.close_file()
+
+				# Record the sidecar entry in the manifest so unpack knows to restore it.
+				editor_file[sidecar_manifest_key] = package_path + ".annotations.json"
+
 
 	writer.start_file(project_fp)
 	writer.write_file(JSON.stringify(data).to_utf8_buffer())
@@ -191,6 +229,58 @@ func unpack(files_destination: String, project_destination: String) -> int:
 		written_files.append(fa.get_path_absolute())
 
 		editors[i]["file"] = write_path
+
+		# ── Annotation sidecar unpack (design §9.2) ───────────────────────────
+		# If the manifest entry includes a sidecar field, extract and rewrite it.
+		var sidecar_pkg_rel: String = str(editors[i].get(sidecar_manifest_key, ""))
+		if not sidecar_pkg_rel.is_empty():
+			var sidecar_zip_path: String = "%s/%s" % [pkg_base_dir, sidecar_pkg_rel]
+			if reader.file_exists(sidecar_zip_path):
+				var sidecar_raw: PackedByteArray = reader.read_file(sidecar_zip_path)
+				var sidecar_data: Variant = JSON.parse_string(sidecar_raw.get_string_from_utf8())
+
+				if sidecar_data is Dictionary and (sidecar_data as Dictionary).has("annotations"):
+					# Rewrite payload paths from package-relative back to absolute.
+					var registry := AnnotationRegistry.new()
+					var rewritten_annotations: Array = []
+					for ann in (sidecar_data as Dictionary).get("annotations", []):
+						rewritten_annotations.append(
+							registry.dispatch_rewrite_paths(ann, "unpack", files_destination)
+						)
+					(sidecar_data as Dictionary)["annotations"] = rewritten_annotations
+
+					# Write the sidecar to disk alongside the unpacked document.
+					var sidecar_write_path: String = "%s/%s" % [files_destination, sidecar_pkg_rel]
+					var sidecar_dir_err: = DirAccess.make_dir_recursive_absolute(
+						sidecar_write_path.get_base_dir()
+					)
+					if sidecar_dir_err != OK:
+						push_warning(
+							("ProjectPackage: could not create directory for sidecar '%s'. "
+							% sidecar_write_path) +
+							"Sidecar not written."
+						)
+					else:
+						var sfa: = FileAccess.open(sidecar_write_path, FileAccess.WRITE)
+						if sfa == null:
+							push_warning(
+								"ProjectPackage: could not write sidecar '%s'." % sidecar_write_path
+							)
+						else:
+							sfa.store_string(JSON.stringify(sidecar_data))
+							written_files.append(sfa.get_path_absolute())
+				else:
+					push_warning(
+						("ProjectPackage: sidecar '%s' in package is corrupt or empty. "
+						% sidecar_zip_path) +
+						"Skipping."
+					)
+			else:
+				push_warning(
+					("ProjectPackage: manifest references sidecar '%s' but it is not "
+					% sidecar_zip_path) +
+					"present in the package. Skipping."
+				)
 
 	var proj_fa: = FileAccess.open(project_destination, FileAccess.WRITE)
 	if not proj_fa:

@@ -119,6 +119,10 @@ var state_schema: Dictionary = {}
 ## Current runtime state (set by PluginDB / supervisor, not persisted in manifest)
 var state: State = State.INSTALLED
 
+## class_names declared by scripts in this plugin's ui_panels.
+## Populated by PluginDB.install() via scan_class_names(); empty until then.
+var class_names: Array[String] = []
+
 
 # ---------------------------------------------------------------------------
 # Construction helpers
@@ -210,6 +214,8 @@ func to_dict() -> Dictionary:
 		result["events"] = events.duplicate(true)
 	if not state_schema.is_empty():
 		result["state"] = {"schema": state_schema}
+	if not class_names.is_empty():
+		result["class_names"] = Array(class_names)
 	return result
 
 
@@ -228,6 +234,8 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 		if ev is Dictionary:
 			def.events.append(ev.duplicate(true))
 	def.state_schema = d.get("state", {}).get("schema", {})
+	for cn in d.get("class_names", []):
+		def.class_names.append(str(cn))
 	return def
 
 
@@ -473,6 +481,173 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 	result["multi_window"] = bool(panel.get("multi_window", false))
 
 	return result
+
+
+# ---------------------------------------------------------------------------
+# class_name scanning and prefix validation (design §6)
+# ---------------------------------------------------------------------------
+
+## Return the canonical prefix for a plugin id.
+##
+## Rule (design §6.1, plan-decision item 2):
+##   canonical_prefix: strip underscores, upper-case the first char, lower-case the rest.
+##
+## We do NOT use GDScript's built-in capitalize() because it inserts spaces at
+## non-alpha boundaries (underscores, digits), producing "Pcbv 2" for "pcb_v2".
+## Instead: strip("_"), then manually upper[0] + lower[1:].
+##
+## Examples:
+##   "cad"            -> "Cad"
+##   "obs_controller" -> "Obscontroller"
+##   "pcb_v2"         -> "Pcbv2"
+static func canonical_prefix(plugin_id: String) -> String:
+	var stripped: String = plugin_id.replace("_", "").to_lower()
+	if stripped.is_empty():
+		return ""
+	return stripped[0].to_upper() + stripped.substr(1)
+
+
+## Scan a .gd file for a top-level `class_name` declaration.
+## Matches `class_name <Identifier>` at file start, allowing leading blank
+## lines and # comments.  Returns the identifier string, or "" if none found.
+##
+## We only look at the first 40 non-blank, non-comment lines — class_name
+## must appear before any code in GDScript.
+static func _scan_script_for_class_name(abs_path: String) -> String:
+	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
+		return ""
+	var file := FileAccess.open(abs_path, FileAccess.READ)
+	if not file:
+		return ""
+	var lines_checked := 0
+	while not file.eof_reached() and lines_checked < 40:
+		var line: String = file.get_line().strip_edges()
+		# Skip blank lines and comments.
+		if line.is_empty() or line.begins_with("#"):
+			continue
+		lines_checked += 1
+		# Match: class_name <Identifier>  (optionally followed by extends)
+		if line.begins_with("class_name"):
+			var rest: String = line.substr(len("class_name")).strip_edges()
+			# rest is "<Identifier>" or "<Identifier> extends ..."
+			var space_pos: int = rest.find(" ")
+			var cn: String = rest.substr(0, space_pos) if space_pos != -1 else rest
+			cn = cn.strip_edges()
+			# Sanity: must start with upper-case letter and be a valid identifier.
+			if not cn.is_empty() and cn[0] == cn[0].to_upper() and cn[0] != cn[0].to_lower():
+				return cn
+		# Stop once we hit real code (not class_name, not @tool, not @icon, not blank/comment).
+		# Allow @tool and @icon annotations before class_name.
+		if not line.begins_with("@tool") and not line.begins_with("@icon"):
+			break
+	return ""
+
+
+## Scan all scripts declared in this plugin's ui_panels and populate class_names.
+## Requires data_directory to be set.  Idempotent — replaces any prior scan.
+##
+## `abs_path_resolver` is an optional Callable(rel_path)->String that converts
+## a panel-relative path to an absolute path.  When null, paths are resolved as
+## data_directory.path_join(rel_path).simplify_path().
+func scan_class_names(abs_path_resolver: Callable = Callable()) -> void:
+	class_names.clear()
+	var seen: Dictionary = {}
+	for panel in ui_panels:
+		if not (panel is Dictionary):
+			continue
+		var scripts: Array = panel.get("scripts", [])
+		for rel_path in scripts:
+			var abs_path: String
+			if abs_path_resolver.is_valid():
+				abs_path = abs_path_resolver.call(str(rel_path))
+			else:
+				abs_path = data_directory.path_join(str(rel_path)).simplify_path()
+			var cn: String = _scan_script_for_class_name(abs_path)
+			if cn.is_empty():
+				continue
+			if not seen.has(cn):
+				seen[cn] = true
+				class_names.append(cn)
+
+
+## Validate this plugin's declared class_names against the install-time policy.
+##
+## Checks:
+##  1. Each class_name matches the canonical-prefix regex for this plugin id.
+##  2. No class_name appears more than once within this plugin's scripts.
+##  3. No class_name collides with core Minerva class_names or an already-installed
+##     plugin's class_names.
+##
+## Parameters:
+##   other_plugin_class_names: Dictionary { class_name -> plugin_id } for
+##     all currently-installed plugins (excluding this one).
+##   core_class_names: Array[String] of class_names found in Minerva core scripts.
+##
+## Returns {} on success.
+## Returns {"error": String, "detail": Dictionary} on the first failure found.
+func validate_class_names(
+		other_plugin_class_names: Dictionary,
+		core_class_names: Array) -> Dictionary:
+
+	var prefix: String = canonical_prefix(id)
+	# Regex: ^<prefix>_[A-Za-z0-9_]+$  (prefix followed by _ then alphanumeric segments)
+	var pattern: String = ("^%s_[A-Za-z0-9_]+$") % prefix
+	var rx := RegEx.new()
+	if rx.compile(pattern) != OK:
+		return {
+			"error": "class_name_internal_error",
+			"detail": {"reason": "failed to compile prefix regex for plugin '%s'" % id},
+		}
+
+	# Track names seen so far within this plugin to detect intra-plugin duplicates.
+	var seen_within: Dictionary = {}
+
+	for cn in class_names:
+		# --- 1. Intra-plugin duplicate check ---
+		if seen_within.has(cn):
+			return {
+				"error": "class_name_duplicated_in_plugin",
+				"detail": {
+					"class_name": cn,
+					"plugin": id,
+				},
+			}
+		seen_within[cn] = true
+
+		# --- 2. Prefix check ---
+		if rx.search(cn) == null:
+			return {
+				"error": "class_name_bad_prefix",
+				"detail": {
+					"class_name": cn,
+					"plugin": id,
+					"expected_prefix": prefix,
+				},
+			}
+
+		# --- 3a. Core collision ---
+		if cn in core_class_names:
+			return {
+				"error": "class_name collision",
+				"detail": {
+					"class_name": cn,
+					"plugin": id,
+					"conflicts_with": "core",
+				},
+			}
+
+		# --- 3b. Other-plugin collision ---
+		if other_plugin_class_names.has(cn):
+			return {
+				"error": "class_name collision",
+				"detail": {
+					"class_name": cn,
+					"plugin": id,
+					"conflicts_with": ("plugin:%s") % str(other_plugin_class_names[cn]),
+				},
+			}
+
+	return {}
 
 
 ## Check that an id string is safe: lowercase letters, digits, underscores only.
