@@ -44,8 +44,8 @@ func _ready() -> void:
 	_label = $VBoxContainer/Label
 	_line_edit = $VBoxContainer/LineEdit
 	_greet_button = $VBoxContainer/Button
-	_toolbar = $VBoxContainer/AnnotationToolbar
-	_canvas = $VBoxContainer/AnnotationCanvas
+	_toolbar = $VBoxContainer/CanvasRow/AnnotationToolbar
+	_canvas = $VBoxContainer/CanvasRow/AnnotationCanvas
 
 	_greet_button.pressed.connect(_on_greet_pressed)
 	_line_edit.text_changed.connect(_on_text_changed)

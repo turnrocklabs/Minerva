@@ -17,6 +17,19 @@ func _init() -> void:
 	schema_version = 1
 	owning_plugin  = &"core"
 	default_payload = {}
+	toolbar_icon   = preload("uid://obermhq5hkgs")
+
+
+# ── Authoring ─────────────────────────────────────────────────────────────────
+
+## Returns a fresh AnnotationTextAuthorTool instance.
+##
+## Each call returns a NEW instance so the toolbar can deactivate-then-
+## reactivate without state leak. The toolbar calls author_ui() once per
+## activation; the previous instance is dropped on the floor (RefCounted)
+## once the toolbar lets it go. Mirrors AnnotationArrow.author_ui().
+func author_ui() -> Object:
+	return AnnotationTextAuthorTool.new()
 
 
 # ── Required overrides ────────────────────────────────────────────────────────

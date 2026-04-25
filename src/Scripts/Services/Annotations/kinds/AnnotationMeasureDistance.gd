@@ -23,6 +23,8 @@ func _init() -> void:
 	schema_version = 1
 	owning_plugin  = &"core"
 	default_payload = {}
+	# TODO(019dc632a7dd7fdfb4f22974651333a9): set toolbar_icon once a ruler/measure-distance icon asset is added to the repo.
+	# No suitable asset found under src/assets/icons/ at time of wiring task.
 
 
 # ── Required overrides ────────────────────────────────────────────────────────

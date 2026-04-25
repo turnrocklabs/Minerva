@@ -1,11 +1,17 @@
 class_name AnnotationToolbar
-extends HBoxContainer
+extends VBoxContainer
 ## Annotation authoring toolbar widget.
 ##
 ## Design §11.1. Populated at runtime from an AnnotationRegistry. Each kind
 ## that returns a non-null author_ui() gets one toggle button. Pressing a
 ## button activates that kind's AnnotationAuthorTool and deactivates the
 ## previously-active one.
+##
+## Layout (matches PCBEditor's annotation sidebar pattern):
+##   - Header Label (centered) showing `header_text` (default "Annotate")
+##   - FlowContainer (`_button_flow`) holding the icon-only toggle buttons
+##   - Status Label (`_status_label`) in pink showing the active kind's
+##     display_name, or empty when no tool is active
 ##
 ## Ownership:
 ##   - Call set_registry() to wire up the kind list and live register/deregister signals.
@@ -26,6 +32,9 @@ extends HBoxContainer
 ## previews from) the current tool.
 signal active_tool_changed(tool: AnnotationAuthorTool)
 
+## Header label text. Configurable; default "Annotate".
+@export var header_text: String = "Annotate"
+
 ## The active tool, or null when no tool is selected.
 var _active_tool: AnnotationAuthorTool = null
 
@@ -41,6 +50,16 @@ var _host: AnnotationHost = null
 ## kind_name (StringName) → Button — the live button table.
 var _buttons: Dictionary = {}
 
+## Layout children — built lazily by _ensure_layout(). May be null until then.
+var _header_label: Label = null
+var _button_flow: FlowContainer = null
+var _status_label: Label = null
+
+
+func _ready() -> void:
+	_ensure_layout()
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 ## Bind this toolbar to a registry.
@@ -48,6 +67,8 @@ var _buttons: Dictionary = {}
 ## then connects to registration/deregistration signals for live updates.
 ## Calling again replaces the previous registry.
 func set_registry(registry: AnnotationRegistry) -> void:
+	_ensure_layout()
+
 	# Disconnect from the old registry if any.
 	if _registry != null:
 		if _registry.annotation_kind_registered.is_connected(_on_kind_registered):
@@ -95,23 +116,53 @@ func set_host(host: AnnotationHost) -> void:
 func get_active_tool() -> AnnotationAuthorTool:
 	return _active_tool
 
+# ── Internal: layout ──────────────────────────────────────────────────────────
+
+## Build the header / FlowContainer / status-label structure if not already
+## built. Idempotent. Called from _ready() and defensively from set_registry()
+## so the toolbar works even when used outside the SceneTree (headless tests).
+func _ensure_layout() -> void:
+	if _button_flow != null:
+		return
+
+	_header_label = Label.new()
+	_header_label.text = header_text
+	_header_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(_header_label)
+
+	_button_flow = FlowContainer.new()
+	_button_flow.name = "_button_flow"
+	add_child(_button_flow)
+
+	_status_label = Label.new()
+	_status_label.name = "_status_label"
+	_status_label.text = ""
+	_status_label.add_theme_color_override("font_color", Color(0.95, 0.5, 0.9))
+	add_child(_status_label)
+
 # ── Internal: button population ───────────────────────────────────────────────
 
 ## Try to add a button for this kind. Does nothing if author_ui() returns null.
 func _try_add_button(kind: AnnotationKind) -> void:
 	if kind.author_ui() == null:
 		return
+	_ensure_layout()
 	var btn := Button.new()
-	btn.text = kind.display_name
 	btn.toggle_mode = true
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	btn.tooltip_text = kind.display_name
 	if kind.toolbar_icon != null:
+		# Icon-only button: no text, just the icon.
 		btn.icon = kind.toolbar_icon
+	else:
+		# Fallback: text label (legacy behavior for kinds with no icon).
+		btn.text = kind.display_name
 	# Capture the kind name in an Array wrapper to survive lambda capture semantics.
 	var kind_name_capture: Array = [kind.name]
 	btn.toggled.connect(func(pressed: bool) -> void:
 		_on_button_toggled(kind_name_capture[0], pressed)
 	)
-	add_child(btn)
+	_button_flow.add_child(btn)
 	_buttons[kind.name] = btn
 
 
@@ -138,6 +189,8 @@ func _deactivate_current_tool() -> void:
 	_active_tool.on_deactivate()
 	_active_tool = null
 	_active_kind_name = &""
+	if _status_label != null:
+		_status_label.text = ""
 	active_tool_changed.emit(null)
 
 
@@ -175,6 +228,8 @@ func _activate_tool_for_kind(kind_name: StringName) -> void:
 	_active_tool.cancelled.connect(_on_tool_cancelled)
 
 	_active_tool.on_activate(_host)
+	if _status_label != null:
+		_status_label.text = kind.display_name
 	active_tool_changed.emit(_active_tool)
 
 # ── Internal: signal handlers ─────────────────────────────────────────────────
@@ -250,6 +305,8 @@ func _on_kind_deregistered(kind_name: StringName) -> void:
 			_active_tool.cancelled.emit()
 			_active_tool = null
 			_active_kind_name = &""
+			if _status_label != null:
+				_status_label.text = ""
 			active_tool_changed.emit(null)
 
 	# Remove the button.

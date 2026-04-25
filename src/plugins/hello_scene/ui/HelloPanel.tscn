@@ -22,18 +22,25 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="AnnotationToolbar" type="HBoxContainer" parent="VBoxContainer"]
+[node name="CanvasRow" type="HBoxContainer" parent="VBoxContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
-script = ExtResource("2_anntoolbar")
+size_flags_vertical = 3
 
-[node name="AnnotationCanvas" type="Control" parent="VBoxContainer"]
+[node name="AnnotationCanvas" type="Control" parent="VBoxContainer/CanvasRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 custom_minimum_size = Vector2(400, 300)
 mouse_filter = 0
 script = ExtResource("3_anncanvas")
+
+[node name="AnnotationToolbar" type="VBoxContainer" parent="VBoxContainer/CanvasRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+size_flags_horizontal = 0
+size_flags_vertical = 3
+script = ExtResource("2_anntoolbar")
 
 [node name="Label" type="Label" parent="VBoxContainer"]
 layout_mode = 2

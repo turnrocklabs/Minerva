@@ -16,6 +16,7 @@ func _init() -> void:
 	schema_version = 1
 	owning_plugin  = &"core"
 	default_payload = {}
+	toolbar_icon   = preload("uid://cln205u37w7n0")
 
 
 # ── Authoring ─────────────────────────────────────────────────────────────────

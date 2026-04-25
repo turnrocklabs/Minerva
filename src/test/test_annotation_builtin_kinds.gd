@@ -139,6 +139,16 @@ func _init() -> void:
 	test_measure_radius_bounds()
 	test_measure_radius_label_unit()
 
+	print("\n-- toolbar_icon wiring --")
+	test_toolbar_icon_arrow()
+	test_toolbar_icon_text()
+	test_toolbar_icon_region()
+	test_toolbar_icon_polyline()
+	test_toolbar_icon_highlight_null()
+	test_toolbar_icon_measure_distance_null()
+	test_toolbar_icon_measure_angle_null()
+	test_toolbar_icon_measure_radius_null()
+
 	print("\n-- AnnotationKind base fixes --")
 	test_bounds_from_primitives_at_origin_included()
 	test_points_aabb_4col_delegates()
@@ -790,6 +800,60 @@ func test_measure_radius_label_unit() -> void:
 	kind.render(ctx, ann)
 	check("measure_radius label contains unit", "mm" in ctx.last_string)
 	check("measure_radius label contains 'r='", "r=" in ctx.last_string)
+
+
+# ── toolbar_icon wiring tests ─────────────────────────────────────────────────
+
+func test_toolbar_icon_arrow() -> void:
+	print("test_toolbar_icon_arrow:")
+	var kind := AnnotationArrow.new()
+	check("arrow toolbar_icon is set", kind.toolbar_icon != null)
+
+
+func test_toolbar_icon_text() -> void:
+	print("test_toolbar_icon_text:")
+	var kind := AnnotationText.new()
+	check("text toolbar_icon is set", kind.toolbar_icon != null)
+
+
+func test_toolbar_icon_region() -> void:
+	print("test_toolbar_icon_region:")
+	var kind := AnnotationRegion.new()
+	check("region toolbar_icon is set", kind.toolbar_icon != null)
+
+
+func test_toolbar_icon_polyline() -> void:
+	print("test_toolbar_icon_polyline:")
+	var kind := AnnotationPolyline.new()
+	check("polyline toolbar_icon is set", kind.toolbar_icon != null)
+
+
+func test_toolbar_icon_highlight_null() -> void:
+	print("test_toolbar_icon_highlight_null:")
+	var kind := AnnotationHighlight.new()
+	# toolbar_icon intentionally null until a highlight icon asset is added.
+	check("highlight toolbar_icon is null (no asset yet — acceptable)", kind.toolbar_icon == null)
+
+
+func test_toolbar_icon_measure_distance_null() -> void:
+	print("test_toolbar_icon_measure_distance_null:")
+	var kind := AnnotationMeasureDistance.new()
+	# toolbar_icon intentionally null until a measure-distance icon asset is added.
+	check("measure_distance toolbar_icon is null (no asset yet — acceptable)", kind.toolbar_icon == null)
+
+
+func test_toolbar_icon_measure_angle_null() -> void:
+	print("test_toolbar_icon_measure_angle_null:")
+	var kind := AnnotationMeasureAngle.new()
+	# toolbar_icon intentionally null until a measure-angle icon asset is added.
+	check("measure_angle toolbar_icon is null (no asset yet — acceptable)", kind.toolbar_icon == null)
+
+
+func test_toolbar_icon_measure_radius_null() -> void:
+	print("test_toolbar_icon_measure_radius_null:")
+	var kind := AnnotationMeasureRadius.new()
+	# toolbar_icon intentionally null until a measure-radius icon asset is added.
+	check("measure_radius toolbar_icon is null (no asset yet — acceptable)", kind.toolbar_icon == null)
 
 
 # ── AnnotationKind base fixes (follow-up items) ───────────────────────────────

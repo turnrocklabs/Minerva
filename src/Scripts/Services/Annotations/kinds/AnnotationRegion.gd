@@ -18,6 +18,7 @@ func _init() -> void:
 	schema_version = 1
 	owning_plugin  = &"core"
 	default_payload = {"filled": false}
+	toolbar_icon   = preload("uid://bkg87ln1gvdla")
 
 
 # ── Required overrides ────────────────────────────────────────────────────────
