@@ -78,7 +78,7 @@ func bounds(annotation: Dictionary) -> Rect2:
 			"arrow":
 				var a := AnnotationKind._to_vec2(prim.get("from", [0, 0]))
 				var b := AnnotationKind._to_vec2(prim.get("to",   [0, 0]))
-				var head := float(prim.get("head_size", 1.5))
+				var head := float(prim.get("head_size", 12.0))
 				r = Rect2(a, Vector2.ZERO).expand(b).grow(head)
 			"text":
 				var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
@@ -99,7 +99,7 @@ func bounds(annotation: Dictionary) -> Rect2:
 func _render_arrow(ctx: AnnotationRenderContext, prim: Dictionary, color: Color) -> void:
 	var a := AnnotationKind._to_vec2(prim.get("from", [0, 0]))
 	var b := AnnotationKind._to_vec2(prim.get("to",   [0, 0]))
-	var raw_head := float(prim.get("head_size", 1.5))
+	var raw_head := float(prim.get("head_size", 12.0))
 	# Floor zoom so head_size doesn't vanish at very low zoom.
 	var head := raw_head * maxf(floor(ctx.zoom), 1.0)
 
