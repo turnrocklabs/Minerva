@@ -1,0 +1,69 @@
+{
+	"id": "hello_scene",
+	"name": "Hello Scene",
+	"version": "0.1.0",
+	"host_api_version": "1",
+	"backend": {
+		"transport": "stdio",
+		"entrypoint": "python3",
+		"args": ["server.py"]
+	},
+	"tools": [],
+	"ui": {
+		"panels": [
+			{
+				"name": "hello_panel",
+				"kind": "godot_scene",
+				"entry_scene": "ui/HelloPanel.tscn",
+				"scripts": ["ui/HelloPanel.gd"],
+				"file_extensions": [".hello"],
+				"ipc_channels": [
+					"hello.greet",
+					"hello.content_changed",
+					"hello.serialize",
+					"hello.deserialize",
+					"hello.collect_export",
+					"hello.apply_export"
+				],
+				"save_mode": "host_owned"
+			}
+		],
+		"ipc_messages": [
+			"hello.greet",
+			"hello.content_changed",
+			"hello.serialize",
+			"hello.deserialize",
+			"hello.collect_export",
+			"hello.apply_export"
+		]
+	},
+	"editor_items": [
+		{
+			"id": "new_hello",
+			"name": "New Hello Document",
+			"panel": "hello_panel",
+			"default_filename": "untitled.hello"
+		}
+	],
+	"project_file": {
+		"serialize_channel": "hello.serialize",
+		"deserialize_channel": "hello.deserialize"
+	},
+	"project_export": {
+		"collect_channel": "hello.collect_export",
+		"apply_channel": "hello.apply_export"
+	},
+	"permissions": {
+		"host_capabilities": [],
+		"network": {
+			"mode": "none"
+		},
+		"filesystem": {
+			"mode": "none",
+			"paths": []
+		}
+	},
+	"data_directory": "",
+	"autostart": false,
+	"auto_reload": true
+}
