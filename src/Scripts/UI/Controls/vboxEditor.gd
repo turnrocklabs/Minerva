@@ -696,7 +696,7 @@ static func _ensure_plugins_running_for_entries(entries: Array) -> void:
 		if def.state == PluginDefinition.State.STARTING:
 			await _wait_for_plugin_ready(pid, 5000)
 			continue
-		var result: Dictionary = pm.start_plugin(pid)
+		var result: Dictionary = await pm.start_plugin(pid)
 		if result.has("error"):
 			push_warning(
 				("[EditorContainer] deserialize: failed to start plugin '%s': %s") %
@@ -731,6 +731,16 @@ static func _wait_for_plugin_ready(plugin_id: String, timeout_ms: int) -> bool:
 
 ## Restore the panel's __panel_state via the host_owned _on_panel_load_request
 ## hook.  Server-independent — runs whether or not the plugin process is alive.
+##
+## During project deserialize the editor isn't yet in the live tree
+## (ProjectMenuActions adds it AFTER EditorContainer.deserialize() returns),
+## which means the panel root's _ready hasn't fired and its child node
+## refs are still null.  Calling _on_panel_load_request now would no-op
+## because plugin scenes typically guard against null fields.  Defer via
+## the ready signal — _on_panel_loaded was wired via the same pattern in
+## PluginScenePanelHost.instantiate_into and was connected EARLIER, so it
+## fires first when the signal emits.  Restore lands after the panel
+## paints its initial state.
 static func _restore_panel_state(editor_inst: Editor, payload: Dictionary) -> void:
 	var panel_state = payload.get("__panel_state", null)
 	if not (panel_state is Dictionary):
@@ -738,8 +748,15 @@ static func _restore_panel_state(editor_inst: Editor, payload: Dictionary) -> vo
 	if editor_inst.plugin_scene_root == null:
 		return
 	var panel_root: Control = editor_inst.plugin_scene_root
-	if panel_root.has_method("_on_panel_load_request"):
+	if not panel_root.has_method("_on_panel_load_request"):
+		return
+	if panel_root.is_node_ready():
 		panel_root._on_panel_load_request(panel_state)
+	else:
+		panel_root.ready.connect(func() -> void:
+			if is_instance_valid(panel_root):
+				panel_root._on_panel_load_request(panel_state)
+		, CONNECT_ONE_SHOT)
 
 
 ## Return a PluginDefinition for the given plugin_id, or null.
