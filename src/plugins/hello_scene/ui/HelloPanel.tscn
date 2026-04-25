@@ -1,6 +1,8 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="HelloPanel.gd" id="1_helloscene"]
+[ext_resource type="Script" path="res://Scripts/Services/Annotations/AnnotationToolbar.gd" id="2_anntoolbar"]
+[ext_resource type="Script" path="HelloAnnotationCanvas.gd" id="3_anncanvas"]
 
 [node name="HelloPanel" type="Control"]
 anchors_preset = 15
@@ -19,6 +21,19 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+
+[node name="AnnotationToolbar" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_anntoolbar")
+
+[node name="AnnotationCanvas" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(400, 300)
+mouse_filter = 0
+script = ExtResource("3_anncanvas")
 
 [node name="Label" type="Label" parent="VBoxContainer"]
 layout_mode = 2

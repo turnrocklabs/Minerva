@@ -19,6 +19,13 @@ extends HBoxContainer
 ##
 ## Keyboard shortcuts: deferred to a future task per task scope constraint.
 
+## Emitted whenever the active tool changes. tool is the newly-active
+## AnnotationAuthorTool, or null when the previously-active tool was
+## deactivated without a successor (toggle-off, kind deregister, etc.).
+## Hosting canvases listen so they can route pointer events to (and draw
+## previews from) the current tool.
+signal active_tool_changed(tool: AnnotationAuthorTool)
+
 ## The active tool, or null when no tool is selected.
 var _active_tool: AnnotationAuthorTool = null
 
@@ -131,6 +138,7 @@ func _deactivate_current_tool() -> void:
 	_active_tool.on_deactivate()
 	_active_tool = null
 	_active_kind_name = &""
+	active_tool_changed.emit(null)
 
 
 ## Activate a tool for the given kind. Deactivates the previous tool first.
@@ -167,6 +175,7 @@ func _activate_tool_for_kind(kind_name: StringName) -> void:
 	_active_tool.cancelled.connect(_on_tool_cancelled)
 
 	_active_tool.on_activate(_host)
+	active_tool_changed.emit(_active_tool)
 
 # ── Internal: signal handlers ─────────────────────────────────────────────────
 
@@ -241,6 +250,7 @@ func _on_kind_deregistered(kind_name: StringName) -> void:
 			_active_tool.cancelled.emit()
 			_active_tool = null
 			_active_kind_name = &""
+			active_tool_changed.emit(null)
 
 	# Remove the button.
 	if _buttons.has(kind_name):

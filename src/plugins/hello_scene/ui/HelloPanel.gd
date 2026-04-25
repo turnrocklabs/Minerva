@@ -28,6 +28,12 @@ var _reply_counter: int = 0
 var _label: Label = null
 var _line_edit: LineEdit = null
 var _greet_button: Button = null
+var _toolbar: AnnotationToolbar = null
+var _canvas: Helloscene_AnnotationCanvas = null
+
+# Annotation-substrate ownership (created in _ready, lives for panel lifetime).
+var _annotation_registry: AnnotationRegistry = null
+var _annotation_host: Helloscene_AnnotationHost = null
 
 
 # ---------------------------------------------------------------------------
@@ -38,11 +44,33 @@ func _ready() -> void:
 	_label = $VBoxContainer/Label
 	_line_edit = $VBoxContainer/LineEdit
 	_greet_button = $VBoxContainer/Button
+	_toolbar = $VBoxContainer/AnnotationToolbar
+	_canvas = $VBoxContainer/AnnotationCanvas
 
 	_greet_button.pressed.connect(_on_greet_pressed)
 	_line_edit.text_changed.connect(_on_text_changed)
 
+	# Build the annotation registry, populate built-in 2D kinds, and wire
+	# the host/toolbar/canvas trio. This is the reference wiring pattern
+	# CAD/PCB will copy.
+	_annotation_registry = AnnotationRegistry.new()
+	BuiltinKinds.register_all(_annotation_registry)
+
+	_annotation_host = Helloscene_AnnotationHost.new()
+	_annotation_host._registry = _annotation_registry
+
+	_toolbar.set_registry(_annotation_registry)
+	_toolbar.set_host(_annotation_host)
+	_toolbar.active_tool_changed.connect(_on_active_tool_changed)
+
+	_canvas.set_host(_annotation_host)
+
 	_label.text = "Hello Scene ready. Type something and press Greet."
+
+
+func _on_active_tool_changed(tool: AnnotationAuthorTool) -> void:
+	if _canvas != null:
+		_canvas.set_active_tool(tool)
 
 
 # ---------------------------------------------------------------------------
@@ -66,16 +94,47 @@ func _on_panel_unload() -> void:
 		_greet_button.pressed.disconnect(_on_greet_pressed)
 	if _line_edit != null and _line_edit.text_changed.is_connected(_on_text_changed):
 		_line_edit.text_changed.disconnect(_on_text_changed)
+	# Symmetric teardown for the toolbar→canvas active-tool forwarder.
+	if _toolbar != null and _toolbar.active_tool_changed.is_connected(_on_active_tool_changed):
+		_toolbar.active_tool_changed.disconnect(_on_active_tool_changed)
+	if _canvas != null:
+		_canvas.set_active_tool(null)
+		_canvas.set_host(null)
 
 
 ## Capture the FULL visible state of the panel (DCR-1 grandchild 019dc5d4...).
 ## Used for both host_owned save (Ctrl+S writes to .hello) and project-state
 ## capture (stashed in .minproj under tab_state.__panel_state).
 func _on_panel_save_request() -> Dictionary:
+	var annotations: Array = _annotation_host.get_annotations() if _annotation_host != null else []
+
+	# Write the file-bound sidecar IF we have a document path. This is a side
+	# effect inside _on_panel_save_request — known smell, tracked in a future
+	# task to introduce a cleaner _on_file_saved(path) hook.
+	#
+	# We deliberately call write_sidecar even when `annotations` is empty:
+	# write_sidecar applies the zero-annotation rule and DELETES the file when
+	# the list is empty.  That keeps a stale sidecar from resurrecting deleted
+	# annotations on the next load (sidecar wins precedence — see load_request).
+	var file_path: String = _ctx.get("file_path", "")
+	if not file_path.is_empty():
+		var sidecar_data := {
+			"substrate_version": 1,
+			# kind = plugin_id (globally unique).  PCB's sidecar will use its
+			# own plugin_id discriminator following the same convention.
+			"document": {"path": file_path, "kind": "hello_scene"},
+			"annotations": annotations,
+			"unknown_kinds": [],
+		}
+		var err := AnnotationSidecar.write_sidecar(file_path, sidecar_data)
+		if err != OK:
+			push_warning("[HelloPanel] sidecar write failed for '%s': %d" % [file_path, err])
+
 	return {
 		"version": 1,
 		"text": _line_edit.text if _line_edit != null else "",
 		"label_text": _label.text if _label != null else "",
+		"annotations": annotations,
 	}
 
 
@@ -92,6 +151,31 @@ func _on_panel_load_request(document: Dictionary) -> void:
 			_label.text = saved_label
 		else:
 			_label.text = "Loaded: " + str(document.get("text", ""))
+
+	if _annotation_host == null:
+		return
+
+	# Sidecar precedence: if a sidecar exists at the document path, it wins
+	# over whatever's in the project-state Dict. Reasoning: the file is
+	# authoritative; an explicit Ctrl+S save means "this is the document
+	# state" and should override walk-away/walk-back transient state.
+	var file_path: String = _ctx.get("file_path", "")
+	var annotations_to_restore: Array = []
+
+	if not file_path.is_empty():
+		var sidecar: Dictionary = AnnotationSidecar.read_sidecar(file_path)
+		if not sidecar.is_empty() and sidecar.has("annotations"):
+			var sidecar_anns = sidecar.get("annotations", [])
+			if sidecar_anns is Array:
+				annotations_to_restore = sidecar_anns
+
+	# Fall back to project-state Dict if no sidecar
+	if annotations_to_restore.is_empty():
+		var doc_anns = document.get("annotations", [])
+		if doc_anns is Array:
+			annotations_to_restore = doc_anns
+
+	_annotation_host.set_annotations(annotations_to_restore)
 
 
 # ---------------------------------------------------------------------------

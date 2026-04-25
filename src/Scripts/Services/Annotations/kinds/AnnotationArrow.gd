@@ -18,6 +18,18 @@ func _init() -> void:
 	default_payload = {}
 
 
+# ── Authoring ─────────────────────────────────────────────────────────────────
+
+## Returns a fresh AnnotationArrowAuthorTool instance.
+##
+## Each call returns a NEW instance so the toolbar can deactivate-then-reactivate
+## without state leak. The toolbar calls author_ui() once per activation; the
+## previous instance is dropped on the floor (RefCounted) once the toolbar lets
+## it go.
+func author_ui() -> Object:
+	return AnnotationArrowAuthorTool.new()
+
+
 # ── Required overrides ────────────────────────────────────────────────────────
 
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
