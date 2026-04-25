@@ -394,6 +394,14 @@ static func _audit_packed_scene(
 					)
 					return false
 
+				# Core Minerva scripts (anything under res://) are implicitly
+				# trusted — they ship with the binary and cannot be modified
+				# by a plugin.  This lets plugin scenes attach core widgets
+				# (e.g. AnnotationToolbar) without each plugin having to
+				# whitelist the platform's own files.
+				if script_path.begins_with("res://"):
+					continue
+
 				# Canonicalise the script path before comparison.
 				var canonical: String = script_path.simplify_path()
 

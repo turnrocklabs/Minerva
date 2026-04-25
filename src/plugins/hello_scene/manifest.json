@@ -15,7 +15,7 @@
 				"name": "hello_panel",
 				"kind": "godot_scene",
 				"entry_scene": "ui/HelloPanel.tscn",
-				"scripts": ["ui/HelloPanel.gd"],
+				"scripts": ["ui/HelloPanel.gd", "ui/HelloAnnotationCanvas.gd", "ui/HelloAnnotationHost.gd"],
 				"file_extensions": [".hello"],
 				"ipc_channels": [
 					"hello.greet",
