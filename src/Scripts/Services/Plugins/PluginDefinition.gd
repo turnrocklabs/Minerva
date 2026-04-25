@@ -123,6 +123,26 @@ var state: State = State.INSTALLED
 ## Populated by PluginDB.install() via scan_class_names(); empty until then.
 var class_names: Array[String] = []
 
+## Capabilities the plugin opts into.  Each capability is a contract: the platform
+## promises certain behavior (e.g. routing serialize/deserialize through the
+## plugin), and the plugin promises certain hooks exist on its panel scripts and
+## manifest.  Validated at install time by validate_capabilities().
+##
+## Allowed values: see CAPABILITIES.  Unknown values rejected at parse time.
+##
+## Plugins MAY ship without any capabilities — they are *opt-in*.  Plugins that
+## decline a capability (e.g. a stateless dev-tool that doesn't care about
+## project save/load) simply omit it; the platform never asks them to participate.
+var capabilities: Array[String] = []
+
+## Allowed capability identifiers.  See validate_capabilities() for the
+## per-capability requirement contract.
+const CAPABILITIES := [
+	"project_state",      # participates in .minproj save/load (panel + server hooks)
+	"host_owned_save",    # panel writes its own document file via Ctrl+S
+	"project_export",     # contributes sidecar files to .minpackage export
+]
+
 # ---------------------------------------------------------------------------
 # Project-file and project-export hook channels (design §8)
 # ---------------------------------------------------------------------------
@@ -237,6 +257,8 @@ func to_dict() -> Dictionary:
 		result["state"] = {"schema": state_schema}
 	if not class_names.is_empty():
 		result["class_names"] = Array(class_names)
+	if not capabilities.is_empty():
+		result["capabilities"] = Array(capabilities)
 	if not project_file_serialize_channel.is_empty() or not project_file_deserialize_channel.is_empty():
 		result["project_file"] = {
 			"serialize_channel": project_file_serialize_channel,
@@ -267,6 +289,7 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.state_schema = d.get("state", {}).get("schema", {})
 	for cn in d.get("class_names", []):
 		def.class_names.append(str(cn))
+	# capabilities already populated by _from_dict_internal — do not re-append
 	# project_file and project_export hooks (design §8)
 	var pf: Dictionary = d.get("project_file", {})
 	def.project_file_serialize_channel = str(pf.get("serialize_channel", ""))
@@ -413,6 +436,25 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 		if ev is Dictionary:
 			def.events.append(ev.duplicate(true))
 	def.state_schema = data.get("state", {}).get("schema", {})
+
+	# Capabilities (top-level, optional).  Reject unknown values at parse time so
+	# install fails loudly rather than silently treating a typo'd capability as a
+	# no-op.  See validate_capabilities() for per-capability requirements.
+	var caps_raw: Variant = data.get("capabilities", null)
+	if caps_raw != null:
+		if not (caps_raw is Array):
+			push_error("[PluginDefinition] 'capabilities' must be an Array of Strings")
+			return null
+		for cap_raw in (caps_raw as Array):
+			var cap: String = str(cap_raw)
+			if not CAPABILITIES.has(cap):
+				push_error(
+					("[PluginDefinition] unknown capability '%s' (allowed: %s)") %
+					[cap, str(CAPABILITIES)]
+				)
+				return null
+			if not def.capabilities.has(cap):
+				def.capabilities.append(cap)
 
 	# project_file hook channels (design §8.1)
 	# Both channels MUST appear in ui.ipc_messages.
@@ -769,14 +811,169 @@ func validate_class_names(
 	return {}
 
 
-## Check that an id string is safe: lowercase letters, digits, underscores only.
+## Scan a .gd source file for a top-level `func <method_name>(` declaration.
+## Returns true if the declaration appears at the start of any non-blank line
+## (indentation tolerated for nested classes, but typical panel scripts declare
+## hooks at indentation 0).
+##
+## We use a regex over the source rather than loading the script and calling
+## `script.has_method()` because (a) plugin scripts may have unresolved
+## class_name references at install time before they enter the global registry,
+## and (b) Script.has_method() returns built-in Object methods too, which would
+## false-positive for `_init`, `set`, `get`, etc.
+##
+## abs_path: absolute filesystem path to the .gd file.
+## method_name: bare name without parens, e.g. "_on_panel_save_request".
+static func _script_declares_method(abs_path: String, method_name: String) -> bool:
+	if abs_path.is_empty() or not FileAccess.file_exists(abs_path):
+		return false
+	var file := FileAccess.open(abs_path, FileAccess.READ)
+	if not file:
+		return false
+	var text: String = file.get_as_text()
+	var rx := RegEx.new()
+	# Multiline mode: ^ matches at line starts.  Tolerate tabs/spaces before func.
+	if rx.compile("(?m)^[\\t ]*func[\\t ]+%s[\\t ]*\\(" % method_name) != OK:
+		return false
+	return rx.search(text) != null
+
+
+## Return true if any script declared by any panel in this plugin defines
+## `method_name`.  Resolves script paths the same way scan_class_names() does.
+func _any_panel_script_declares(method_name: String) -> bool:
+	for panel in ui_panels:
+		if not (panel is Dictionary):
+			continue
+		for rel_path in panel.get("scripts", []):
+			var abs: String = data_directory.path_join(str(rel_path)).simplify_path()
+			if _script_declares_method(abs, method_name):
+				return true
+	return false
+
+
+## Validate this plugin's declared capabilities against required hooks/manifest.
+##
+## Each declared capability has a contract — the platform will route certain
+## flows to the plugin (panel hooks, server channels) only if the corresponding
+## artefacts exist.  This validator catches silent participation gaps at install
+## time rather than letting them surface as runtime state-loss bugs.
+##
+## Per-capability requirements:
+##   "project_state":
+##     - some panel script defines `_on_panel_save_request`
+##     - some panel script defines `_on_panel_load_request`
+##     - manifest declares non-empty project_file.serialize_channel and
+##       project_file.deserialize_channel
+##   "host_owned_save":
+##     - some panel script defines `_on_panel_save_request`
+##     - some panel script defines `_on_panel_load_request`
+##     - at least one panel declares non-empty file_extensions
+##     - at least one godot_scene panel has save_mode == "host_owned"
+##   "project_export":
+##     - manifest declares non-empty project_export.collect_channel and
+##       project_export.apply_channel
+##
+## Returns {} on success.
+## Returns {"error": String, "detail": Dictionary} on first failure.
+##
+## Note: server-side MCP tools/list verification is deferred to plugin start,
+## not install — install-time can't talk to the server process yet.
+func validate_capabilities() -> Dictionary:
+	for cap in capabilities:
+		match cap:
+			"project_state":
+				if project_file_serialize_channel.is_empty() or project_file_deserialize_channel.is_empty():
+					return {
+						"error": "capability_missing_channels",
+						"detail": {
+							"capability": cap,
+							"missing": "project_file.serialize_channel and/or deserialize_channel",
+						},
+					}
+				if not _any_panel_script_declares("_on_panel_save_request"):
+					return {
+						"error": "capability_missing_hook",
+						"detail": {
+							"capability": cap,
+							"missing_hook": "_on_panel_save_request",
+						},
+					}
+				if not _any_panel_script_declares("_on_panel_load_request"):
+					return {
+						"error": "capability_missing_hook",
+						"detail": {
+							"capability": cap,
+							"missing_hook": "_on_panel_load_request",
+						},
+					}
+
+			"host_owned_save":
+				if not _any_panel_script_declares("_on_panel_save_request"):
+					return {
+						"error": "capability_missing_hook",
+						"detail": {
+							"capability": cap,
+							"missing_hook": "_on_panel_save_request",
+						},
+					}
+				if not _any_panel_script_declares("_on_panel_load_request"):
+					return {
+						"error": "capability_missing_hook",
+						"detail": {
+							"capability": cap,
+							"missing_hook": "_on_panel_load_request",
+						},
+					}
+				var has_extensions: bool = false
+				var has_host_owned_panel: bool = false
+				for panel in ui_panels:
+					if not (panel is Dictionary):
+						continue
+					var exts: Array = panel.get("file_extensions", [])
+					if exts is Array and not exts.is_empty():
+						has_extensions = true
+					if panel.get("kind", "") == "godot_scene" and panel.get("save_mode", "") == "host_owned":
+						has_host_owned_panel = true
+				if not has_extensions:
+					return {
+						"error": "capability_missing_file_extensions",
+						"detail": {"capability": cap},
+					}
+				if not has_host_owned_panel:
+					return {
+						"error": "capability_no_host_owned_panel",
+						"detail": {"capability": cap},
+					}
+
+			"project_export":
+				if project_export_collect_channel.is_empty() or project_export_apply_channel.is_empty():
+					return {
+						"error": "capability_missing_channels",
+						"detail": {
+							"capability": cap,
+							"missing": "project_export.collect_channel and/or apply_channel",
+						},
+					}
+
+			_:
+				# Unknown values are rejected at parse time; this branch is unreachable
+				# in normal flow but included for defensive completeness.
+				return {
+					"error": "capability_unknown",
+					"detail": {"capability": cap},
+				}
+
+	return {}
+
+
+## Check that an id string is safe: starts with a lowercase letter, followed by
+## lowercase letters, digits, or underscores.  Per-char String.is_valid_identifier()
+## was incorrect because single digit chars ("2") are NOT valid identifier *starts*,
+## but digits in middle positions are fine — switched to a whole-string regex.
 static func _is_valid_id(value: String) -> bool:
 	if value.is_empty():
 		return false
-	for i in range(value.length()):
-		var ch := value[i]
-		if not (ch.is_valid_identifier() or ch == "_"):
-			return false
-		if ch != ch.to_lower():
-			return false
-	return true
+	var rx := RegEx.new()
+	if rx.compile("^[a-z][a-z0-9_]*$") != OK:
+		return false
+	return rx.search(value) != null

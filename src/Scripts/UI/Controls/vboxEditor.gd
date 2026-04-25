@@ -174,13 +174,24 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 	var editor_instances: Array[Editor] = []
 	for editor_ser in editors_array:
 		prints("Getting registered object:", editor_ser.get("associated_object"))
-		var editor_inst = Editor.create(
-			editor_ser.get("type"),
-			editor_ser.get("file"),
-			null,
-			SingletonObject.get_registered_object(editor_ser.get("associated_object")),
-			false
-		)
+		var ser_type = editor_ser.get("type")
+		var editor_inst: Editor
+		if ser_type == Editor.Type.PLUGIN_SCENE:
+			editor_inst = Editor.create_plugin_scene(
+				editor_ser.get("plugin_id", ""),
+				editor_ser.get("panel_name", ""),
+				editor_ser.get("file"),
+				null,
+				SingletonObject.get_registered_object(editor_ser.get("associated_object")),
+			)
+		else:
+			editor_inst = Editor.create(
+				ser_type,
+				editor_ser.get("file"),
+				null,
+				SingletonObject.get_registered_object(editor_ser.get("associated_object")),
+				false
+			)
 		editor_inst.tab_title = editor_ser.get("name")
 		
 		await SingletonObject.editor_container.get_tree().process_frame
@@ -455,7 +466,8 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictionary:
 	var plugin_id: String = editor.plugin_id
 	var panel_name: String = editor.panel_name
-	var editor_id: String = SingletonObject.registered_object_get_uuid(editor.associated_object)
+	var raw_editor_id = SingletonObject.registered_object_get_uuid(editor.associated_object)
+	var editor_id: String = str(raw_editor_id) if raw_editor_id != null else ""
 
 	# Resolve PluginDefinition — need project_file_serialize_channel.
 	var def: PluginDefinition = _get_plugin_def(plugin_id)
@@ -527,6 +539,15 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 			("[EditorContainer] serialize: plugin '%s' serialize_channel returned " +
 			"unexpected result; saving with empty payload.") % plugin_id
 		)
+
+	# Platform-managed panel-state capture (sibling to the plugin's tab_state).
+	# Reuses the host_owned _on_panel_save_request hook so simple panels round-trip
+	# through the project file without each plugin author wiring their own cache.
+	var panel_root: Control = editor.plugin_scene_root
+	if panel_root != null and panel_root.has_method("_on_panel_save_request"):
+		var panel_state = panel_root._on_panel_save_request()
+		if panel_state is Dictionary:
+			tab_state["__panel_state"] = panel_state
 
 	return {
 		"name": tab_title,
@@ -617,6 +638,16 @@ static func _deserialize_plugin_scene_editor(
 			("[EditorContainer] deserialize: plugin '%s' deserialize_channel returned " +
 			"an error: %s") % [plugin_id, str(call_result)]
 		)
+
+	# Platform-managed panel-state restore — mirrors the capture path in
+	# _serialize_plugin_scene_editor.  Pushes __panel_state back through the
+	# host_owned _on_panel_load_request hook so simple panels round-trip without
+	# the plugin server having to broker the push itself.
+	var panel_state = payload.get("__panel_state", null)
+	if panel_state is Dictionary and editor_inst.plugin_scene_root != null:
+		var panel_root: Control = editor_inst.plugin_scene_root
+		if panel_root.has_method("_on_panel_load_request"):
+			panel_root._on_panel_load_request(panel_state)
 
 
 ## Return a PluginDefinition for the given plugin_id, or null.

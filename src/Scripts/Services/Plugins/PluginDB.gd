@@ -69,6 +69,17 @@ func install(manifest_path: String) -> PluginDefinition:
 			[def.id, str(cn_error.get("error", "")), str(cn_error.get("detail", {}))])
 		return null
 
+	# --- Capability validation (DCR-1 grandchild 019dc5d4f6877ae5be60ea02e51dcd38) ---
+	# Each declared capability requires specific panel hooks and/or manifest channels.
+	# Failing here surfaces silent participation gaps at install time rather than at
+	# project save/load.
+	var cap_error: Dictionary = def.validate_capabilities()
+	if not cap_error.is_empty():
+		_last_install_error = cap_error
+		push_error(("[PluginDB] capability validation failed for '%s': %s — %s") %
+			[def.id, str(cap_error.get("error", "")), str(cap_error.get("detail", {}))])
+		return null
+
 	# Register this plugin's class_names into the in-process registry.
 	_register_class_names(def)
 

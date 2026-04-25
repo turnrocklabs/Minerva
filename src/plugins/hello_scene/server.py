@@ -48,6 +48,32 @@ SERVER_VERSION = "0.1.0"
 
 
 # ---------------------------------------------------------------------------
+# Server-side state (per-document cache)
+# ---------------------------------------------------------------------------
+#
+# The plugin server is the source of truth for any state that lives outside
+# the panel UI.  Round-tripping demonstrates the full serialize/deserialize
+# contract end-to-end:
+#   - hello.content_changed updates _states[file_path]
+#   - hello.greet increments greet_count
+#   - hello.serialize returns the cached state in tab_state
+#   - hello.deserialize restores the state when a project reopens
+#
+# Keyed by file_path so multiple .hello tabs don't clobber each other.
+
+_states: dict = {}
+
+
+def _state_for(file_path: str) -> dict:
+    """Get or initialise the state slot for a given file path."""
+    s = _states.get(file_path)
+    if s is None:
+        s = {"cached_text": "", "greet_count": 0}
+        _states[file_path] = s
+    return s
+
+
+# ---------------------------------------------------------------------------
 # JSON-RPC handlers
 # ---------------------------------------------------------------------------
 
@@ -132,16 +158,31 @@ def handle_tools_call(params: dict, req_id) -> dict:
 
 
 def _handle_greet(arguments: dict, req_id) -> dict:
-    """hello.greet — returns a greeting that includes the user's text."""
+    """hello.greet — returns a greeting that includes the user's text.
+
+    Also increments the per-file greet_count so the server has demonstrable
+    state to round-trip through serialize/deserialize.
+    """
     message = arguments.get("message", "")
-    log.info("hello.greet: message='%s'", message[:80])
+    file_path = arguments.get("file_path", "")
+    log.info("hello.greet: message='%s' file='%s'", message[:80], file_path)
+    state = _state_for(file_path)
+    state["greet_count"] += 1
     greeting = "hello from server, you said: %s" % message
-    return _ok(req_id, {"text": greeting})
+    return _ok(req_id, {"text": greeting, "greet_count": state["greet_count"]})
 
 
 def _handle_content_changed(arguments: dict, req_id) -> dict:
-    """hello.content_changed — ACK; server has no persistent state to update here."""
-    log.info("hello.content_changed: content notification received (no-op on server)")
+    """hello.content_changed — cache the latest text so serialize can return it.
+
+    Receives: {text, file_path?}
+    Returns:  {ok: true}
+    """
+    text = arguments.get("text", "")
+    file_path = arguments.get("file_path", "")
+    state = _state_for(file_path)
+    state["cached_text"] = text
+    log.info("hello.content_changed: file='%s' len=%d", file_path, len(text))
     return _ok(req_id, {"ok": True})
 
 
@@ -149,16 +190,26 @@ def _handle_serialize(arguments: dict, req_id) -> dict:
     """hello.serialize — called by Minerva when saving a .minproj entry.
 
     Receives: {file_path, panel_name, editor_id}
-    Returns:  {tab_state: {custom_field, saved_at}, sidecar_paths: []}
+    Returns:  {tab_state, sidecar_paths}
+
+    tab_state is server-side state ONLY (cached_text, greet_count, saved_at).
+    The platform separately captures panel UI state via _on_panel_save_request
+    and stashes it under tab_state.__panel_state — that path is owned by the
+    Editor wrapper, not by us.  We must NOT overwrite tab_state.__panel_state
+    here.  By returning a fresh dict that does not include that key, the
+    platform's merge step preserves the panel-side capture intact.
     """
     file_path = arguments.get("file_path", "")
     panel_name = arguments.get("panel_name", "")
     editor_id = arguments.get("editor_id", "")
-    log.info("hello.serialize: file='%s' panel='%s' editor='%s'", file_path, panel_name, editor_id)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    state = _state_for(file_path)
+    log.info("hello.serialize: file='%s' panel='%s' editor='%s' greet_count=%d",
+             file_path, panel_name, editor_id, state["greet_count"])
     tab_state = {
-        "custom_field": "from-plugin",
-        "saved_at": now_iso,
+        "version": 1,
+        "cached_text": state["cached_text"],
+        "greet_count": state["greet_count"],
+        "saved_at": datetime.now(timezone.utc).isoformat(),
     }
     return _ok(req_id, {
         "tab_state": tab_state,
@@ -169,13 +220,18 @@ def _handle_serialize(arguments: dict, req_id) -> dict:
 def _handle_deserialize(arguments: dict, req_id) -> dict:
     """hello.deserialize — called by Minerva when restoring a tab from .minproj.
 
-    Receives: {tab_state, stored_version}
+    Receives: {tab_state, stored_version, file_path?}
+    Restores server-side state from tab_state into _states.
     Returns:  {ok: true}
     """
     tab_state = arguments.get("tab_state", {})
     stored_version = arguments.get("stored_version", "")
-    log.info("hello.deserialize: stored_version='%s' tab_state keys=%s",
-             stored_version, list(tab_state.keys()))
+    file_path = arguments.get("file_path", "") or tab_state.get("file_path", "")
+    state = _state_for(file_path)
+    state["cached_text"] = tab_state.get("cached_text", "")
+    state["greet_count"] = int(tab_state.get("greet_count", 0))
+    log.info("hello.deserialize: file='%s' stored_version='%s' restored greet_count=%d",
+             file_path, stored_version, state["greet_count"])
     return _ok(req_id, {"ok": True})
 
 

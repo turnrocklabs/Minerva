@@ -45,6 +45,7 @@
 			"default_filename": "untitled.hello"
 		}
 	],
+	"capabilities": ["project_state", "host_owned_save", "project_export"],
 	"project_file": {
 		"serialize_channel": "hello.serialize",
 		"deserialize_channel": "hello.deserialize"
