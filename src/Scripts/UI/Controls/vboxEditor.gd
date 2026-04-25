@@ -172,6 +172,14 @@ func serialize() -> Array:
 
 static func deserialize(editors_array: Array) -> Array[Editor]:
 	var editor_instances: Array[Editor] = []
+
+	# Pre-pass: any plugin referenced by a PLUGIN_SCENE tab must be RUNNING
+	# before its tab deserializes, so the deserialize_channel dispatch finds
+	# a live connection.  This wires plugin lifecycle to project state — a
+	# project that was saved with plugin X running comes back with plugin X
+	# running, regardless of the manifest's autostart flag.
+	await _ensure_plugins_running_for_entries(editors_array)
+
 	for editor_ser in editors_array:
 		prints("Getting registered object:", editor_ser.get("associated_object"))
 		var ser_type = editor_ser.get("type")
@@ -602,26 +610,35 @@ static func _deserialize_plugin_scene_editor(
 		)
 		return
 
+	# Wait one frame to allow the just-instantiated panel's _ready and
+	# _on_panel_loaded hooks to run before we push state into it.
+	await SingletonObject.editor_container.get_tree().process_frame
+
+	# Platform-managed panel-state restore — runs UNCONDITIONALLY of plugin server
+	# state.  __panel_state lives in the .minproj and only needs the panel to be
+	# mounted (which it already is, courtesy of Editor.create_plugin_scene).
+	# Doing this before the server-side dispatch means a closed/crashed plugin
+	# server still gets a faithful UI restore — the user's text comes back even
+	# if the plugin's backend isn't running yet.
+	_restore_panel_state(editor_inst, payload)
+
+	# Server-side deserialize is best-effort: only fires when the plugin is
+	# running AND declares a deserialize_channel.  Both branches log a warning
+	# and continue — the panel UI restore above is the load-bearing step.
 	if def.project_file_deserialize_channel.is_empty():
-		# Plugin installed but no deserialize_channel declared — scene is open,
-		# but state cannot be restored.
 		push_warning(
 			("[EditorContainer] deserialize: plugin '%s' has no " +
-			"project_file.deserialize_channel — tab opened without saved state.") %
+			"project_file.deserialize_channel — server-side state not restored.") %
 			plugin_id
 		)
 		return
-
-	# Dispatch deserialize_channel.  The panel was already instantiated during
-	# Editor.create_plugin_scene(), so the scene is already mounted.  Wait one
-	# frame to allow _on_panel_loaded to fire before we push state into it.
-	await SingletonObject.editor_container.get_tree().process_frame
 
 	var conn: MCPServerConnection = _get_plugin_connection_static(plugin_id)
 	if conn == null:
 		push_warning(
 			("[EditorContainer] deserialize: plugin '%s' is not running; " +
-			"tab opened without saved state.") % plugin_id
+			"server-side state not restored (UI was restored from __panel_state).") %
+			plugin_id
 		)
 		return
 
@@ -639,15 +656,90 @@ static func _deserialize_plugin_scene_editor(
 			"an error: %s") % [plugin_id, str(call_result)]
 		)
 
-	# Platform-managed panel-state restore — mirrors the capture path in
-	# _serialize_plugin_scene_editor.  Pushes __panel_state back through the
-	# host_owned _on_panel_load_request hook so simple panels round-trip without
-	# the plugin server having to broker the push itself.
+
+## Ensure that every plugin referenced by a PLUGIN_SCENE entry in `entries`
+## is RUNNING.  Plugins not yet running are started; the function awaits each
+## one's handshake (with a per-plugin timeout) so subsequent deserialize_channel
+## dispatches find a live connection.
+##
+## Plugins not installed are skipped with a warning — the per-tab deserialize
+## will surface its own placeholder for missing plugins.  Plugins in CRASH_LOOP
+## are also skipped (start_plugin would refuse anyway).
+static func _ensure_plugins_running_for_entries(entries: Array) -> void:
+	var pm = SingletonObject.get("plugin_manager") if "plugin_manager" in SingletonObject else null
+	if pm == null:
+		return
+	var db = pm.get_db()
+	if db == null:
+		return
+
+	var plugins_needed: Dictionary = {}
+	for entry in entries:
+		if not (entry is Dictionary):
+			continue
+		if entry.get("type") != Editor.Type.PLUGIN_SCENE:
+			continue
+		var pid: String = entry.get("plugin_id", "")
+		if not pid.is_empty():
+			plugins_needed[pid] = true
+
+	for pid in plugins_needed:
+		var def: PluginDefinition = db.get_by_id(pid)
+		if def == null:
+			push_warning(
+				("[EditorContainer] deserialize: plugin '%s' referenced by a tab " +
+				"is not installed; tab will show install placeholder.") % pid
+			)
+			continue
+		if def.state == PluginDefinition.State.RUNNING:
+			continue
+		if def.state == PluginDefinition.State.STARTING:
+			await _wait_for_plugin_ready(pid, 5000)
+			continue
+		var result: Dictionary = pm.start_plugin(pid)
+		if result.has("error"):
+			push_warning(
+				("[EditorContainer] deserialize: failed to start plugin '%s': %s") %
+				[pid, str(result.get("error", ""))]
+			)
+			continue
+		await _wait_for_plugin_ready(pid, 5000)
+
+
+## Poll the plugin's state until it is RUNNING (return true) or transitions
+## to ERROR / CRASH_LOOP (return false), with `timeout_ms` overall budget.
+## Returns false on timeout.
+static func _wait_for_plugin_ready(plugin_id: String, timeout_ms: int) -> bool:
+	var pm = SingletonObject.get("plugin_manager") if "plugin_manager" in SingletonObject else null
+	if pm == null:
+		return false
+	var db = pm.get_db()
+	if db == null:
+		return false
+	var start_ms: int = Time.get_ticks_msec()
+	while Time.get_ticks_msec() - start_ms < timeout_ms:
+		var def: PluginDefinition = db.get_by_id(plugin_id)
+		if def == null:
+			return false
+		if def.state == PluginDefinition.State.RUNNING:
+			return true
+		if def.state == PluginDefinition.State.ERROR or def.state == PluginDefinition.State.CRASH_LOOP:
+			return false
+		await SingletonObject.editor_container.get_tree().create_timer(0.1).timeout
+	return false
+
+
+## Restore the panel's __panel_state via the host_owned _on_panel_load_request
+## hook.  Server-independent — runs whether or not the plugin process is alive.
+static func _restore_panel_state(editor_inst: Editor, payload: Dictionary) -> void:
 	var panel_state = payload.get("__panel_state", null)
-	if panel_state is Dictionary and editor_inst.plugin_scene_root != null:
-		var panel_root: Control = editor_inst.plugin_scene_root
-		if panel_root.has_method("_on_panel_load_request"):
-			panel_root._on_panel_load_request(panel_state)
+	if not (panel_state is Dictionary):
+		return
+	if editor_inst.plugin_scene_root == null:
+		return
+	var panel_root: Control = editor_inst.plugin_scene_root
+	if panel_root.has_method("_on_panel_load_request"):
+		panel_root._on_panel_load_request(panel_state)
 
 
 ## Return a PluginDefinition for the given plugin_id, or null.
