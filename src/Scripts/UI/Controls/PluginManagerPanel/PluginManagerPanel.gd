@@ -99,6 +99,7 @@ var _status_label: Label = null
 
 func _ready() -> void:
 	_build_ui()
+	_ensure_plugin_system()
 	_connect_signals()
 	_refresh_plugin_list()
 
@@ -288,7 +289,7 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 
 	_panel_button = Button.new()
 	_panel_button.text = "Open Panel"
-	_panel_button.tooltip_text = "Open this plugin's webview UI panel"
+	_panel_button.tooltip_text = "Open this plugin's UI panel"
 	_panel_button.pressed.connect(_on_open_panel_pressed)
 	_panel_button.visible = false  # shown only if plugin declares ui.panels
 	btn_row.add_child(_panel_button)
@@ -415,6 +416,7 @@ func _build_bottom_toolbar() -> HBoxContainer:
 # ---------------------------------------------------------------------------
 
 func _connect_signals() -> void:
+	_ensure_plugin_system()
 	if not SingletonObject.plugin_manager:
 		return
 
@@ -467,6 +469,7 @@ func _refresh_plugin_list() -> void:
 		return
 
 	_plugin_list.clear()
+	_ensure_plugin_system()
 
 	if not SingletonObject.plugin_manager:
 		var empty_item := _plugin_list.add_item("(Plugin system unavailable)")
@@ -486,6 +489,13 @@ func _refresh_plugin_list() -> void:
 		var idx := _plugin_list.add_item(display_name)
 		_plugin_list.set_item_metadata(idx, status.get("id", ""))
 		_apply_state_color(idx, status.get("state", PluginDefinition.State.INSTALLED))
+
+
+func _ensure_plugin_system() -> void:
+	if SingletonObject.plugin_manager != null:
+		return
+	if SingletonObject.has_method("initialize_plugins"):
+		SingletonObject.initialize_plugins()
 
 
 func _apply_state_color(item_idx: int, state: int) -> void:
@@ -861,9 +871,23 @@ func _on_open_panel_pressed() -> void:
 	if def == null or def.ui_panels.is_empty():
 		return
 
+	var panel_entry: Dictionary = def.ui_panels[0]
+	var panel_name: String = panel_entry.get("name", "")
+	if panel_name.is_empty():
+		_show_status("Plugin panel is missing a name: %s" % _selected_plugin_id)
+		return
+
+	var panel_kind: String = panel_entry.get("kind", "html")
+	if panel_kind == "godot_scene":
+		var tab_title: String = def.name + " Panel"
+		SingletonObject.editor_pane.add_plugin_scene_editor(_selected_plugin_id, panel_name, null, tab_title)
+		_show_status("Opened panel for %s" % _selected_plugin_id)
+		return
+
 	# Find the panel HTML file in the plugin's directory
-	var panel_name: String = def.ui_panels[0]
-	var html_path: String = def.data_directory.path_join("ui/panel.html")
+	var html_path: String = def.data_directory.path_join("ui/%s.html" % panel_name)
+	if not FileAccess.file_exists(html_path):
+		html_path = def.data_directory.path_join("ui/panel.html")
 	if not FileAccess.file_exists(html_path):
 		# Try globalized path
 		var global_path: String = ProjectSettings.globalize_path(html_path) if html_path.begins_with("res://") else html_path

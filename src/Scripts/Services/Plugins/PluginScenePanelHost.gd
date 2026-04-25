@@ -205,14 +205,19 @@ static func instantiate_into(
 
 	# -----------------------------------------------------------------------
 	# Step 11: Fire _on_panel_loaded(ctx) if the scene implements it.
-	# Errors inside the hook are caught and logged; the panel stays visible.
+	# The Editor wrapper is constructed before it is added to the live tree,
+	# so plugin scene _ready() may not have run yet. Wait for ready in that
+	# case so scene scripts can safely use child-node refs initialised there.
 	# -----------------------------------------------------------------------
 	if root_ctrl.has_method("_on_panel_loaded"):
 		var ctx := _build_ctx(plugin_id, panel_name, data_dir, broker, editor)
-		# Guard against errors raised inside the plugin scene's hook.
-		# We do not use a bare .call() that would propagate exceptions —
-		# instead we use Callable to let Godot's error reporter handle it.
-		root_ctrl._on_panel_loaded(ctx)
+		if root_ctrl.is_node_ready():
+			root_ctrl._on_panel_loaded(ctx)
+		else:
+			root_ctrl.ready.connect(func() -> void:
+				if is_instance_valid(root_ctrl):
+					root_ctrl._on_panel_loaded(ctx)
+			, CONNECT_ONE_SHOT)
 
 	return root_ctrl
 
@@ -549,7 +554,16 @@ static func _get_broker() -> PluginScenePanelBroker:
 	if so == null:
 		return null
 	if "plugin_scene_panel_broker" in so:
-		return so.get("plugin_scene_panel_broker") as PluginScenePanelBroker
+		var broker = so.get("plugin_scene_panel_broker")
+		if broker == null:
+			broker = PluginScenePanelBroker.new(
+				so.get("plugin_manager"),
+				so.get("plugin_policy"),
+				so.get("plugin_capability_broker"),
+				so.get("plugin_audit_log")
+			)
+			so.set("plugin_scene_panel_broker", broker)
+		return broker as PluginScenePanelBroker
 	return null
 
 

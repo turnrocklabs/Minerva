@@ -266,7 +266,7 @@ func _validate_panel_ownership(plugin_id: String, panel_name: String) -> bool:
 	if def == null:
 		return false
 
-	return panel_name in def.ui_panels
+	return panel_name in def.ui_panel_names
 
 
 # ---------------------------------------------------------------------------

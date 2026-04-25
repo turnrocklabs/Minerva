@@ -514,6 +514,7 @@ var plugin_capability_broker = null  # CapabilityBroker
 var plugin_mcp_tools = null  # PluginMCPTools
 var plugin_event_broker = null  # PluginEventBroker
 var plugin_webview_broker = null  # PluginWebviewBroker
+var plugin_scene_panel_broker = null  # PluginScenePanelBroker
 
 ## Initialize the plugin system. Call after initialize_mcp().
 ## Uses load() instead of class_name references to avoid autoload parse-order issues.
@@ -529,6 +530,7 @@ func initialize_plugins() -> void:
 	var MCPToolsClass = load("res://Scripts/Services/Plugins/PluginMCPTools.gd")
 	var EventBrokerClass = load("res://Scripts/Services/Plugins/PluginEventBroker.gd")
 	var WebviewBrokerClass = load("res://Scripts/Services/Plugins/PluginWebviewBroker.gd")
+	var ScenePanelBrokerClass = load("res://Scripts/Services/Plugins/PluginScenePanelBroker.gd")
 
 	# Audit log (no dependencies)
 	plugin_audit_log = AuditLogClass.new()
@@ -558,6 +560,9 @@ func initialize_plugins() -> void:
 	# Webview IPC broker (references manager, policy, capability broker, audit log)
 	plugin_webview_broker = WebviewBrokerClass.new(plugin_manager, plugin_policy, plugin_capability_broker, plugin_audit_log)
 
+	# Native Godot-scene IPC broker (same security/dependency surface as webview panels)
+	plugin_scene_panel_broker = ScenePanelBrokerClass.new(plugin_manager, plugin_policy, plugin_capability_broker, plugin_audit_log)
+
 	# MCP management tools (inject dependencies)
 	plugin_mcp_tools = MCPToolsClass.new(plugin_manager, plugin_policy, plugin_audit_log, plugin_event_broker)
 
@@ -582,7 +587,7 @@ func initialize_plugins() -> void:
 		if plugin_event_broker:
 			plugin_event_broker.clear_plugin_state(id))
 
-	# Push plugin events/state to webview panels
+	# Push plugin events/state to open plugin panels
 	if plugin_event_broker:
 		plugin_event_broker.plugin_event.connect(func(p_id: String, event_name: String, payload: Dictionary) -> void:
 			_push_to_plugin_panels(p_id, "event", event_name, payload))
@@ -684,7 +689,7 @@ func shutdown_plugins() -> void:
 	if plugin_manager != null:
 		plugin_manager.shutdown_all()
 
-## Push plugin events/state to any open webview panels for that plugin.
+## Push plugin events/state to any open plugin panels for that plugin.
 func _push_to_plugin_panels(p_plugin_id: String, push_type: String, event_name: String, data: Dictionary) -> void:
 	if editor_pane == null:
 		return
@@ -702,6 +707,16 @@ func _push_to_plugin_panels(p_plugin_id: String, push_type: String, event_name: 
 			editor.push_plugin_event(event_name, data)
 		elif push_type == "state":
 			editor.push_plugin_state(data)
+
+	if plugin_scene_panel_broker != null and plugin_manager != null:
+		for entry in plugin_manager.get_live_panels(p_plugin_id):
+			var panel_name: String = entry.get("panel_name", "")
+			if panel_name.is_empty():
+				continue
+			if push_type == "event":
+				plugin_scene_panel_broker.push_to_panel(p_plugin_id, panel_name, event_name, data)
+			elif push_type == "state":
+				plugin_scene_panel_broker.push_to_panel(p_plugin_id, panel_name, "state", data)
 
 
 func _find_webview_editor(node: Node):
