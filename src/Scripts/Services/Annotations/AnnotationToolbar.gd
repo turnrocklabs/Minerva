@@ -8,6 +8,8 @@ extends VBoxContainer
 ## previously-active one.
 ##
 ## Layout (matches PCBEditor's annotation sidebar pattern):
+##   - Tools Header Label (centered) "Tools"
+##   - FlowContainer (`_tools_flow`) holding Select/Translate/Rotate/Scale buttons
 ##   - Header Label (centered) showing `header_text` (default "Annotate")
 ##   - FlowContainer (`_button_flow`) holding the icon-only toggle buttons
 ##   - Status Label (`_status_label`) in pink showing the active kind's
@@ -32,6 +34,22 @@ extends VBoxContainer
 ## previews from) the current tool.
 signal active_tool_changed(tool: AnnotationAuthorTool)
 
+## Emitted whenever the active Tools-section button changes.
+## name is the button name ("select", "translate", "rotate", "scale") or ""
+## when the previously-active Tools button was toggled off.
+signal active_tool_button_changed(name: String)
+
+# ── Tools-section icons ────────────────────────────────────────────────────────
+## PCB icon UIDs for the Tools-section buttons (Select/Translate/Rotate).
+## Verified by grepping .import files — all three assets exist.
+## "scale" has no matching PCB icon; falls back to text label.
+const _TOOL_ICON_UIDS: Dictionary = {
+	"select":    "uid://eckoinneympm",  # graphics_editor/select_tool_icon_24.png
+	"translate": "uid://1q2kkovqy5qk",  # pcb_editor/expand-arrows_white_24.png
+	"rotate":    "uid://c6bt6vccnmejo", # pcb_editor/rotate_24.png
+	"scale":     "",                    # no PCB icon; text fallback
+}
+
 ## Header label text. Configurable; default "Annotate".
 @export var header_text: String = "Annotate"
 
@@ -50,7 +68,16 @@ var _host: AnnotationHost = null
 ## kind_name (StringName) → Button — the live button table.
 var _buttons: Dictionary = {}
 
+## name (String) → Button — the Tools-section button table.
+## Keys: "select", "translate", "rotate", "scale".
+var _tool_buttons: Dictionary = {}
+
+## The name of the currently-active Tools button, or "" if none.
+var _active_tool_button_name: String = ""
+
 ## Layout children — built lazily by _ensure_layout(). May be null until then.
+var _tools_header_label: Label = null
+var _tools_flow: FlowContainer = null
 var _header_label: Label = null
 var _button_flow: FlowContainer = null
 var _status_label: Label = null
@@ -125,6 +152,40 @@ func _ensure_layout() -> void:
 	if _button_flow != null:
 		return
 
+	# ── Tools section ──────────────────────────────────────────────────────────
+	_tools_header_label = Label.new()
+	_tools_header_label.name = "_tools_header_label"
+	_tools_header_label.text = "Tools"
+	_tools_header_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(_tools_header_label)
+
+	_tools_flow = FlowContainer.new()
+	_tools_flow.name = "_tools_flow"
+	add_child(_tools_flow)
+
+	for tool_name in ["Select", "Translate", "Rotate", "Scale"]:
+		var btn := Button.new()
+		btn.tooltip_text = tool_name
+		btn.toggle_mode = true
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		# Apply icon if one is declared for this key; otherwise fall back to text.
+		var tool_key: String = tool_name.to_lower()
+		var icon_uid: String = _TOOL_ICON_UIDS.get(tool_key, "")
+		if icon_uid != "":
+			btn.icon = load(icon_uid) as Texture2D
+			# No text when an icon is present (matches PCBEditor convention).
+		else:
+			# Text fallback for tools without a dedicated icon (currently: Scale).
+			btn.text = tool_name
+		# Capture the tool name in an Array wrapper to survive lambda capture.
+		var name_capture: Array = [tool_key]
+		btn.toggled.connect(func(pressed: bool) -> void:
+			_on_tool_button_toggled(name_capture[0], pressed)
+		)
+		_tools_flow.add_child(btn)
+		_tool_buttons[tool_key] = btn
+
+	# ── Annotate section ───────────────────────────────────────────────────────
 	_header_label = Label.new()
 	_header_label.text = header_text
 	_header_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -139,6 +200,19 @@ func _ensure_layout() -> void:
 	_status_label.text = ""
 	_status_label.add_theme_color_override("font_color", Color(0.95, 0.5, 0.9))
 	add_child(_status_label)
+
+# ── Internal: Tools-section tool construction ─────────────────────────────────
+
+## Construct and return a fresh tool instance for the given Tools-section button
+## name. Returns null for unknown names.
+func _construct_tool_for_name(tool_name: String) -> AnnotationAuthorTool:
+	match tool_name:
+		"select":    return AnnotationSelectTool.new()
+		"translate": return AnnotationTranslateTool.new()
+		"rotate":    return AnnotationRotateTool.new()
+		"scale":     return AnnotationScaleTool.new()
+		_:           return null
+
 
 # ── Internal: button population ───────────────────────────────────────────────
 
@@ -200,11 +274,14 @@ func _activate_tool_for_kind(kind_name: StringName) -> void:
 	var prev_kind_name := _active_kind_name
 	_deactivate_current_tool()
 
-	# Untoggle the previous button without re-entering the toggle handler.
+	# Untoggle the previous Annotate button without re-entering the toggle handler.
 	if prev_kind_name != &"" and _buttons.has(prev_kind_name):
 		var prev_btn: Button = _buttons[prev_kind_name]
 		if is_instance_valid(prev_btn) and prev_btn.button_pressed:
 			prev_btn.set_pressed_no_signal(false)
+
+	# Untoggle any active Tools-section button (mutual exclusion across sections).
+	_untoggle_active_tool_button()
 
 	if _registry == null:
 		return
@@ -231,6 +308,110 @@ func _activate_tool_for_kind(kind_name: StringName) -> void:
 	if _status_label != null:
 		_status_label.text = kind.display_name
 	active_tool_changed.emit(_active_tool)
+
+# ── Internal: Tools-section helpers ──────────────────────────────────────────
+
+## Visually untoggle the currently-active Tools button (if any) and clear the
+## tracked name + emit active_tool_button_changed(""). Does NOT re-enter
+## _on_tool_button_toggled because it uses set_pressed_no_signal.
+func _untoggle_active_tool_button() -> void:
+	if _active_tool_button_name == "":
+		return
+	var prev_name := _active_tool_button_name
+	_active_tool_button_name = ""
+	if _tool_buttons.has(prev_name):
+		var prev_btn: Button = _tool_buttons[prev_name]
+		if is_instance_valid(prev_btn) and prev_btn.button_pressed:
+			prev_btn.set_pressed_no_signal(false)
+	active_tool_button_changed.emit("")
+
+
+## Called when a Tools-section button is toggled on or off.
+func _on_tool_button_toggled(name: String, pressed: bool) -> void:
+	if pressed:
+		# Untoggle every other Tools button first.
+		for other_name in _tool_buttons.keys():
+			if other_name != name:
+				var other_btn: Button = _tool_buttons[other_name]
+				if is_instance_valid(other_btn) and other_btn.button_pressed:
+					other_btn.set_pressed_no_signal(false)
+
+		# Tear down any previously-active manipulation tool (one might have been
+		# active from a prior Tools-button press). Disconnect annotation_modified
+		# before we drop the reference to avoid stale signal connections.
+		_teardown_active_manipulation_tool()
+
+		# Untoggle and deactivate any active Annotate-section tool.
+		# _deactivate_current_tool emits active_tool_changed(null) internally;
+		# we will emit active_tool_changed(new_tool) afterwards, so the final
+		# emission seen by the canvas is the new tool.
+		var prev_kind := _active_kind_name
+		_deactivate_current_tool()
+		# _deactivate_current_tool clears _active_kind_name but not the button visual.
+		if prev_kind != &"" and _buttons.has(prev_kind):
+			var prev_btn: Button = _buttons[prev_kind]
+			if is_instance_valid(prev_btn) and prev_btn.button_pressed:
+				prev_btn.set_pressed_no_signal(false)
+
+		_active_tool_button_name = name
+		if _status_label != null:
+			_status_label.text = name.capitalize()
+		active_tool_button_changed.emit(name)
+
+		# Construct and activate the tool, then forward to the canvas via
+		# active_tool_changed. This is the single canonical emission point for
+		# Tools-section tools; _deactivate_current_tool's null-emission above is
+		# transient and the canvas will be overwritten by this non-null one.
+		var new_tool: AnnotationAuthorTool = _construct_tool_for_name(name)
+		if new_tool != null:
+			new_tool.on_activate(_host)
+			# Wire annotation_modified so the canvas can forward it to the host.
+			if new_tool.annotation_modified.is_connected(_on_manipulation_tool_modified):
+				pass  # already connected (shouldn't happen, but be safe)
+			else:
+				new_tool.annotation_modified.connect(_on_manipulation_tool_modified)
+			_active_tool = new_tool
+			_active_kind_name = &""
+		active_tool_changed.emit(new_tool)
+	else:
+		# Toggled off: only clear if this button was the active one.
+		if _active_tool_button_name == name:
+			_teardown_active_manipulation_tool()
+			_active_tool_button_name = ""
+			if _status_label != null:
+				_status_label.text = ""
+			active_tool_button_changed.emit("")
+			active_tool_changed.emit(null)
+
+
+# ── Internal: manipulation tool helpers ───────────────────────────────────────
+
+## Deactivate and disconnect the currently-active Tools-section manipulation
+## tool (Select/Translate/Rotate/Scale), if any. Does NOT touch _active_kind_name
+## or the Annotate-section state. Does NOT emit active_tool_changed — callers
+## are responsible for the appropriate follow-up emission.
+func _teardown_active_manipulation_tool() -> void:
+	if _active_tool == null:
+		return
+	# Only tear down if this is a manipulation tool (i.e. active from a Tools
+	# button, not from an Annotate-section kind). We detect this by checking
+	# whether _active_kind_name is empty — kind-activated tools always set it.
+	if _active_kind_name != &"":
+		return
+	# Disconnect annotation_modified to avoid stale callbacks.
+	if _active_tool.annotation_modified.is_connected(_on_manipulation_tool_modified):
+		_active_tool.annotation_modified.disconnect(_on_manipulation_tool_modified)
+	_active_tool.on_deactivate()
+	_active_tool = null
+
+
+## Forwarded from a manipulation tool's annotation_modified signal.
+## Relays the change to the host via update_annotation.
+## The host's annotations_changed signal then triggers canvas redraw.
+func _on_manipulation_tool_modified(annotation_id: String, new_annotation: Dictionary) -> void:
+	if _host != null:
+		_host.update_annotation(annotation_id, new_annotation)
+
 
 # ── Internal: signal handlers ─────────────────────────────────────────────────
 

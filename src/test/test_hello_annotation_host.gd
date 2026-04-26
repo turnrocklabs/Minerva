@@ -31,6 +31,16 @@ func _init() -> void:
 	test_identity_transforms()
 	test_annotations_changed_fires_on_add()
 	test_annotations_changed_fires_on_set_annotations()
+	test_update_annotation_happy_path()
+	test_update_annotation_unknown_id_returns_false()
+	test_update_annotation_preserves_id()
+	test_remove_annotation_happy_path()
+	test_remove_annotation_unknown_id_returns_false()
+	test_remove_annotation_clears_selection()
+	test_set_selected_annotation_id_fires_signal()
+	test_set_selected_annotation_id_no_op_same_id()
+	test_set_selected_annotation_id_clears_selection()
+	test_get_selected_annotation_id_default_and_roundtrip()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -195,3 +205,141 @@ func test_annotations_changed_fires_on_set_annotations() -> void:
 	check_eq("annotations_changed fired once after set_annotations", fired[0], 1)
 	host.set_annotations([])
 	check_eq("annotations_changed fires even on empty set", fired[0], 2)
+
+
+func test_update_annotation_happy_path() -> void:
+	print("test_update_annotation_happy_path:")
+	var host := Helloscene_AnnotationHost.new()
+	var fired: Array = [0]
+	host.annotations_changed.connect(func() -> void: fired[0] += 1)
+
+	var id := host.add_annotation({"kind": "2d_arrow"})
+	fired[0] = 0  # reset counter after add
+
+	var result := host.update_annotation(id, {"kind": "2d_text", "extra": "data"})
+	check("update_annotation returns true for known id", result == true)
+	check_eq("annotations_changed fired once after update", fired[0], 1)
+	check_eq("list size unchanged after update", host.get_annotations().size(), 1)
+	var stored: Dictionary = host.get_annotations()[0]
+	check_eq("kind was mutated", str(stored.get("kind", "")), "2d_text")
+	check_eq("extra field present", str(stored.get("extra", "")), "data")
+
+
+func test_update_annotation_unknown_id_returns_false() -> void:
+	print("test_update_annotation_unknown_id_returns_false:")
+	var host := Helloscene_AnnotationHost.new()
+	host.add_annotation({"kind": "2d_arrow"})
+	var fired: Array = [0]
+	host.annotations_changed.connect(func() -> void: fired[0] += 1)
+
+	var result := host.update_annotation("ann_nonexistent", {"kind": "2d_text"})
+	check("update_annotation returns false for unknown id", result == false)
+	check_eq("annotations_changed NOT fired for unknown id", fired[0], 0)
+
+
+func test_update_annotation_preserves_id() -> void:
+	print("test_update_annotation_preserves_id:")
+	var host := Helloscene_AnnotationHost.new()
+	var id := host.add_annotation({"kind": "2d_arrow"})
+
+	# Caller passes a dict without an id field — id must be stamped back on.
+	var new_dict := {"kind": "2d_region"}
+	var result := host.update_annotation(id, new_dict)
+	check("update succeeds", result == true)
+	var stored: Dictionary = host.get_annotations()[0]
+	check_eq("id is re-stamped onto stored entry", str(stored.get("id", "")), id)
+	check("caller's dict was not mutated with id", not new_dict.has("id"))
+
+
+func test_remove_annotation_happy_path() -> void:
+	print("test_remove_annotation_happy_path:")
+	var host := Helloscene_AnnotationHost.new()
+	var fired: Array = [0]
+	host.annotations_changed.connect(func() -> void: fired[0] += 1)
+
+	var id := host.add_annotation({"kind": "2d_arrow"})
+	fired[0] = 0  # reset after add
+
+	var result := host.remove_annotation(id)
+	check("remove_annotation returns true for known id", result == true)
+	check_eq("annotations_changed fired once after remove", fired[0], 1)
+	check_eq("list is empty after remove", host.get_annotations().size(), 0)
+
+
+func test_remove_annotation_unknown_id_returns_false() -> void:
+	print("test_remove_annotation_unknown_id_returns_false:")
+	var host := Helloscene_AnnotationHost.new()
+	host.add_annotation({"kind": "2d_arrow"})
+	var fired: Array = [0]
+	host.annotations_changed.connect(func() -> void: fired[0] += 1)
+
+	var result := host.remove_annotation("ann_does_not_exist")
+	check("remove_annotation returns false for unknown id", result == false)
+	check_eq("annotations_changed NOT fired for unknown id", fired[0], 0)
+	check_eq("list unchanged", host.get_annotations().size(), 1)
+
+
+func test_remove_annotation_clears_selection() -> void:
+	print("test_remove_annotation_clears_selection:")
+	var host := Helloscene_AnnotationHost.new()
+	var sel_fired: Array = ["unset"]
+	host.selection_changed.connect(func(ann_id: String) -> void: sel_fired[0] = ann_id)
+
+	var id := host.add_annotation({"kind": "2d_arrow"})
+	host.set_selected_annotation_id(id)
+	sel_fired[0] = "unset"  # reset after selection set
+
+	var result := host.remove_annotation(id)
+	check("remove returns true", result == true)
+	check_eq("selection_changed fired with empty string", sel_fired[0], "")
+	check_eq("get_selected_annotation_id returns empty", host.get_selected_annotation_id(), "")
+
+
+func test_set_selected_annotation_id_fires_signal() -> void:
+	print("test_set_selected_annotation_id_fires_signal:")
+	var host := Helloscene_AnnotationHost.new()
+	var sel_fired: Array = ["unset"]
+	host.selection_changed.connect(func(ann_id: String) -> void: sel_fired[0] = ann_id)
+
+	host.set_selected_annotation_id("ann_abc")
+	check_eq("selection_changed emitted with new id", sel_fired[0], "ann_abc")
+	check_eq("get_selected_annotation_id returns set value",
+		host.get_selected_annotation_id(), "ann_abc")
+
+
+func test_set_selected_annotation_id_no_op_same_id() -> void:
+	print("test_set_selected_annotation_id_no_op_same_id:")
+	var host := Helloscene_AnnotationHost.new()
+	var count: Array = [0]
+	host.selection_changed.connect(func(_ann_id: String) -> void: count[0] += 1)
+
+	host.set_selected_annotation_id("ann_abc")
+	check_eq("signal fired once on first set", count[0], 1)
+	host.set_selected_annotation_id("ann_abc")
+	check_eq("signal NOT fired again for same id", count[0], 1)
+
+
+func test_set_selected_annotation_id_clears_selection() -> void:
+	print("test_set_selected_annotation_id_clears_selection:")
+	var host := Helloscene_AnnotationHost.new()
+	var sel_fired: Array = ["unset"]
+	host.selection_changed.connect(func(ann_id: String) -> void: sel_fired[0] = ann_id)
+
+	host.set_selected_annotation_id("ann_abc")
+	sel_fired[0] = "unset"  # reset
+
+	host.set_selected_annotation_id("")
+	check_eq("selection_changed fired with empty string", sel_fired[0], "")
+	check_eq("get_selected_annotation_id returns empty", host.get_selected_annotation_id(), "")
+
+
+func test_get_selected_annotation_id_default_and_roundtrip() -> void:
+	print("test_get_selected_annotation_id_default_and_roundtrip:")
+	var host := Helloscene_AnnotationHost.new()
+	check_eq("default selected id is empty string", host.get_selected_annotation_id(), "")
+
+	host.set_selected_annotation_id("ann_xyz")
+	check_eq("roundtrip: get returns what was set", host.get_selected_annotation_id(), "ann_xyz")
+
+	host.set_selected_annotation_id("")
+	check_eq("roundtrip: cleared id returns empty", host.get_selected_annotation_id(), "")

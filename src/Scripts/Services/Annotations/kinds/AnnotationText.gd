@@ -32,6 +32,24 @@ func author_ui() -> Object:
 	return AnnotationTextAuthorTool.new()
 
 
+# ── Optional overrides ────────────────────────────────────────────────────────
+
+func summary(annotation: Dictionary) -> String:
+	var prims: Array = annotation.get("primitives", [])
+	for prim in prims:
+		if prim is Dictionary and prim.get("kind", "") == "text":
+			var content := str(prim.get("content", ""))
+			var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
+			var anchor := AnnotationSchema.get_anchored_to(annotation)
+			# Truncate content to 30 chars for token efficiency
+			var preview := content if content.length() <= 30 else content.substr(0, 27) + "..."
+			var base := "text '%s' at (%.0f, %.0f)" % [preview, at.x, at.y]
+			if not anchor.is_empty():
+				return "%s → %s" % [base, anchor]
+			return base
+	return super(annotation)  # fall through to default
+
+
 # ── Required overrides ────────────────────────────────────────────────────────
 
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:

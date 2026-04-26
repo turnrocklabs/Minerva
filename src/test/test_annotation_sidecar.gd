@@ -90,6 +90,7 @@ func _init() -> void:
 
 	print("\n-- write → read round-trip --")
 	test_round_trip_annotations_unchanged()
+	test_round_trip_anchored_to_survives()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -462,4 +463,19 @@ func test_round_trip_annotations_unchanged() -> void:
 	check_eq("round-trip: first annotation id", anns[0].get("id"), ann1["id"])
 	check_eq("round-trip: second annotation id", anns[1].get("id"), ann2["id"])
 	check_eq("round-trip: second annotation kind", anns[1].get("kind"), ann2["kind"])
+	AnnotationSidecar.delete_sidecar(doc)
+
+
+func test_round_trip_anchored_to_survives() -> void:
+	print("test_round_trip_anchored_to_survives:")
+	var doc := _doc_path("anchored_to_round_trip.minpcb")
+	var ann := _valid_annotation()
+	ann["anchored_to"] = "comp:R5"
+	var data := _sidecar_data([ann])
+	AnnotationSidecar.write_sidecar(doc, data)
+	var result := AnnotationSidecar.read_sidecar(doc)
+	var anns: Array = result.get("annotations", [])
+	check_eq("anchored_to round-trip: one annotation", anns.size(), 1)
+	check_eq("anchored_to round-trip: value preserved",
+		anns[0].get("anchored_to", ""), "comp:R5")
 	AnnotationSidecar.delete_sidecar(doc)

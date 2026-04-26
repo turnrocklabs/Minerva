@@ -165,6 +165,15 @@ static func validate_annotation(
 				"format"
 			)
 
+	# anchored_to: optional, but if present must be a String
+	if annotation.has("anchored_to"):
+		if not annotation["anchored_to"] is String:
+			result.add_error(
+				"anchored_to",
+				"'anchored_to' must be a String when present",
+				"type"
+			)
+
 	return result
 
 
@@ -191,6 +200,13 @@ static func is_core_kind(kind_name: StringName) -> bool:
 ## Returns true if the given plugin kind name is valid (no 2d_ prefix).
 static func is_valid_plugin_kind_name(kind_name: StringName) -> bool:
 	return not str(kind_name).begins_with("2d_") and str(kind_name).length() > 0
+
+
+## Returns the anchored_to value from an annotation dict, or "" if absent.
+## Consumer plugins set this field to a domain-scoped identifier such as
+## "comp:R5" (PCB component), "net:VCC" (PCB net), or "part:42" (CAD part).
+static func get_anchored_to(annotation: Dictionary) -> String:
+	return str(annotation.get("anchored_to", ""))
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────

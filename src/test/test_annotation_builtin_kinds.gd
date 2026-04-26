@@ -153,6 +153,15 @@ func _init() -> void:
 	test_bounds_from_primitives_at_origin_included()
 	test_points_aabb_4col_delegates()
 
+	print("\n-- summary() default and overrides --")
+	test_summary_default_no_anchor()
+	test_summary_default_with_anchor()
+	test_summary_arrow_no_anchor()
+	test_summary_arrow_with_anchor()
+	test_summary_text_no_anchor()
+	test_summary_text_with_anchor()
+	test_summary_text_truncates_long_content()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -893,3 +902,87 @@ func test_points_aabb_4col_delegates() -> void:
 	check_approx("_points_aabb_4col y matches _points_aabb", b4.position.y, b2.position.y)
 	check_approx("_points_aabb_4col w matches _points_aabb", b4.size.x, b2.size.x)
 	check_approx("_points_aabb_4col h matches _points_aabb", b4.size.y, b2.size.y)
+
+
+# ── summary() default and overrides ──────────────────────────────────────────
+
+func test_summary_default_no_anchor() -> void:
+	print("test_summary_default_no_anchor:")
+	# Use AnnotationArrow but craft an annotation with no arrow primitive so
+	# summary() falls back to super() — the default AnnotationKind implementation.
+	var kind := AnnotationArrow.new()
+	var ann := _ann("2d_arrow", [])  # no primitives → no arrow prim → falls to super
+	var s := kind.summary(ann)
+	check("default summary contains display_name", "Arrow" in s)
+	check("default summary contains primitive count", "0 primitives" in s)
+	check("default summary has no anchor suffix", not ("→" in s))
+
+
+func test_summary_default_with_anchor() -> void:
+	print("test_summary_default_with_anchor:")
+	var kind := AnnotationArrow.new()
+	var ann := _ann("2d_arrow", [])  # no arrow prim → super path
+	ann["anchored_to"] = "comp:R5"
+	var s := kind.summary(ann)
+	check("default summary with anchor contains display_name", "Arrow" in s)
+	check("default summary with anchor contains '→'", "→" in s)
+	check("default summary with anchor contains anchor value", "comp:R5" in s)
+
+
+func test_summary_arrow_no_anchor() -> void:
+	print("test_summary_arrow_no_anchor:")
+	var kind := AnnotationArrow.new()
+	var ann := _ann("2d_arrow", [_arrow_prim(10.0, 20.0, 30.0, 40.0)])
+	var s := kind.summary(ann)
+	check("arrow summary starts with 'arrow from'", s.begins_with("arrow from"))
+	check("arrow summary contains from coords", "(10, 20)" in s)
+	check("arrow summary contains to coords",   "(30, 40)" in s)
+	check("arrow summary has no anchor suffix", not ("→" in s))
+
+
+func test_summary_arrow_with_anchor() -> void:
+	print("test_summary_arrow_with_anchor:")
+	var kind := AnnotationArrow.new()
+	var ann := _ann("2d_arrow", [_arrow_prim(10.0, 20.0, 30.0, 40.0)])
+	ann["anchored_to"] = "net:VCC"
+	var s := kind.summary(ann)
+	check("arrow summary with anchor contains coords", "(10, 20)" in s)
+	check("arrow summary with anchor contains '→'", "→" in s)
+	check("arrow summary with anchor contains anchor value", "net:VCC" in s)
+
+
+func test_summary_text_no_anchor() -> void:
+	print("test_summary_text_no_anchor:")
+	var kind := AnnotationText.new()
+	var ann := _ann("2d_text", [_text_prim(5.0, 6.0, "hello")])
+	var s := kind.summary(ann)
+	check("text summary starts with \"text '\"", s.begins_with("text '"))
+	check("text summary contains content", "hello" in s)
+	check("text summary contains position", "(5, 6)" in s)
+	check("text summary has no anchor suffix", not ("→" in s))
+
+
+func test_summary_text_with_anchor() -> void:
+	print("test_summary_text_with_anchor:")
+	var kind := AnnotationText.new()
+	var ann := _ann("2d_text", [_text_prim(5.0, 6.0, "hello")])
+	ann["anchored_to"] = "part:42"
+	var s := kind.summary(ann)
+	check("text summary with anchor contains content", "hello" in s)
+	check("text summary with anchor contains '→'", "→" in s)
+	check("text summary with anchor contains anchor value", "part:42" in s)
+
+
+func test_summary_text_truncates_long_content() -> void:
+	print("test_summary_text_truncates_long_content:")
+	var kind := AnnotationText.new()
+	# Content longer than 30 characters must be truncated with "..."
+	var long_content := "This content is definitely longer than thirty characters"
+	var ann := _ann("2d_text", [_text_prim(0.0, 0.0, long_content)])
+	var s := kind.summary(ann)
+	# The preview is 27 chars + "..." = 30 chars; full string must NOT appear
+	check("long text summary does not contain full content", not (long_content in s))
+	check("long text summary ends preview with '...'", "..." in s)
+	# But the truncated form (first 27 chars) should be present
+	check("long text summary contains first 27 chars",
+		long_content.substr(0, 27) in s)

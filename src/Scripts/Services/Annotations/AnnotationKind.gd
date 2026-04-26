@@ -117,6 +117,24 @@ func rewrite_paths(annotation: Dictionary, mode: String, base: String) -> Dictio
 	return annotation
 
 
+## Return a one-line natural-language description of this annotation.
+##
+## Used by minerva_annotations_list (LLM ergonomics).  Default implementation
+## uses display_name + primitive count + anchored_to suffix if present.
+## Override in each kind for richer kind-specific output.
+func summary(annotation: Dictionary) -> String:
+	var prim_count: int = annotation.get("primitives", []).size()
+	var anchor: String = AnnotationSchema.get_anchored_to(annotation)
+	var base: String = "%s (%d primitive%s)" % [
+		display_name,
+		prim_count,
+		"s" if prim_count != 1 else "",
+	]
+	if not anchor.is_empty():
+		return "%s → %s" % [base, anchor]
+	return base
+
+
 # ── Convenience helpers ────────────────────────────────────────────────────────
 
 ## Compute the AABB of a primitives[] array using only substrate-known primitive
@@ -206,3 +224,46 @@ static func _points_aabb(pts: Variant) -> Rect2:
 ## Deduped per follow-up item 5 (review comment 217).
 static func _points_aabb_4col(pts: Variant) -> Rect2:
 	return _points_aabb(pts)
+
+
+## Apply a Transform2D to all coord arrays in a primitives list.
+## Recognizes scalar coord-array keys: "from", "to", "at", "p0", "p1", "p2".
+## Coord values must be 2-element Arrays [x, y].
+## Also handles the "points" key, which is an Array of 2-element Arrays.
+## Returns a NEW primitives Array; does not mutate the input.
+##
+## Used by TranslateTool (pure translation), and will be shared by RotateTool
+## and ScaleTool for their respective Transform2D arguments.
+##
+## Example (pure translation by delta):
+##   var t := Transform2D(0.0, delta)
+##   var new_prims := AnnotationKind.transform_primitives(old_prims, t)
+static func transform_primitives(primitives: Array, transform: Transform2D) -> Array:
+	var result: Array = []
+	# TODO(019dc64be4967c3a9a45e5038273ee88): expand to recognize coord keys
+	# used by the remaining built-in kinds — measure_angle uses a/b/c,
+	# measure_radius uses center/edge, highlight uses rect. Today those
+	# primitives silently pass through transform_primitives unchanged.
+	# Arrow + text + polyline + region are correctly handled. Keep this list
+	# in sync with _primitive_bounds.
+	var coord_keys := ["from", "to", "at", "p0", "p1", "p2"]
+	for prim in primitives:
+		if not (prim is Dictionary):
+			result.append(prim)
+			continue
+		var new_prim: Dictionary = (prim as Dictionary).duplicate(true)
+		for key in coord_keys:
+			if new_prim.has(key):
+				var v := _to_vec2(new_prim[key])
+				var t := transform * v
+				new_prim[key] = [t.x, t.y]
+		# "points" is an Array of 2-element Arrays (polyline / region).
+		if new_prim.has("points") and new_prim["points"] is Array:
+			var new_points: Array = []
+			for p in new_prim["points"]:
+				var v := _to_vec2(p)
+				var t := transform * v
+				new_points.append([t.x, t.y])
+			new_prim["points"] = new_points
+		result.append(new_prim)
+	return result

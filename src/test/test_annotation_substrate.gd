@@ -111,6 +111,12 @@ func _init() -> void:
 	print("\n-- AnnotationSchema: unknown primitive kind --")
 	test_unknown_primitive_kind_tolerated()
 
+	print("\n-- AnnotationSchema: anchored_to field --")
+	test_anchored_to_accepted()
+	test_anchored_to_absent_still_valid()
+	test_anchored_to_non_string_rejected()
+	test_get_anchored_to_helper()
+
 	print("\n-- AnnotationSchema: generate_id / namespace helpers --")
 	test_generate_id_format()
 	test_is_core_kind()
@@ -564,6 +570,45 @@ func test_unknown_primitive_kind_tolerated() -> void:
 	var p := {"kind": "future_kind_xyz", "data": [1, 2, 3]}
 	var r := AnnotationSchema.validate_primitive(p)
 	check("unknown primitive kind → no errors (preserved verbatim)", not r.has_errors())
+
+
+# ── AnnotationSchema: anchored_to field ──────────────────────────────────────
+
+func test_anchored_to_accepted() -> void:
+	print("test_anchored_to_accepted:")
+	var ann := _valid_annotation()
+	ann["anchored_to"] = "comp:R5"
+	var r := AnnotationSchema.validate_annotation(ann)
+	check("anchored_to string value accepted", not r.has_errors())
+
+
+func test_anchored_to_absent_still_valid() -> void:
+	print("test_anchored_to_absent_still_valid:")
+	var ann := _valid_annotation()
+	# No anchored_to key at all — must still pass
+	var r := AnnotationSchema.validate_annotation(ann)
+	check("missing anchored_to is still valid", not r.has_errors())
+
+
+func test_anchored_to_non_string_rejected() -> void:
+	print("test_anchored_to_non_string_rejected:")
+	var ann := _valid_annotation()
+	ann["anchored_to"] = 42
+	var r := AnnotationSchema.validate_annotation(ann)
+	check("non-string anchored_to → has_errors", r.has_errors())
+	check("non-string anchored_to → error on 'anchored_to'", _has_error_for(r, "anchored_to"))
+	check("non-string anchored_to → code=type", _error_code_for(r, "anchored_to") == "type")
+
+
+func test_get_anchored_to_helper() -> void:
+	print("test_get_anchored_to_helper:")
+	var ann := _valid_annotation()
+	ann["anchored_to"] = "net:VCC"
+	check_eq("get_anchored_to returns value when present",
+		AnnotationSchema.get_anchored_to(ann), "net:VCC")
+	var ann2 := _valid_annotation()
+	check_eq("get_anchored_to returns '' when absent",
+		AnnotationSchema.get_anchored_to(ann2), "")
 
 
 # ── generate_id / namespace helpers ──────────────────────────────────────────

@@ -64,9 +64,11 @@ func can_handle(tool_name: String) -> bool:
 func register_tools() -> void:
 	server._register_tool(
 		"minerva_annotations_list",
-		"List all annotations attached to a document. Returns the raw annotation array "
-		+ "from the sidecar. Annotations with unregistered kinds are returned verbatim — "
-		+ "they are preserved on disk even when their plugin is not installed.",
+		"List annotations in a document. Returns a flat array; each entry has id, kind, author, "
+		+ "summary (one-line natural-language description), bounds ({x, y, w, h}), "
+		+ "anchored_to (semantic anchor to a domain entity, often empty), plus the original "
+		+ "primitives array. Optional author filter ('human' or 'ai') narrows the output. "
+		+ "Use this for token-efficient annotation introspection; call render_overlay if you need vision.",
 		{
 			"type": "object",
 			"properties": {
@@ -74,6 +76,11 @@ func register_tools() -> void:
 					"type": "string",
 					"description": "Absolute path to the document file (e.g. /home/user/boards/board.minpcb). "
 					+ "The sidecar is looked up at <document_path>.annotations.json.",
+				},
+				"author": {
+					"type": "string",
+					"enum": ["human", "ai"],
+					"description": "Optional. Filter to only annotations authored by 'human' or 'ai'. Omit for all.",
 				},
 			},
 			"required": ["document_path"],
@@ -222,13 +229,62 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 		return _err(missing)
 
 	var doc_path: String = args["document_path"]
+
+	# Optional author filter — validate if present.
+	var author_filter: String = str(args.get("author", ""))
+	if not author_filter.is_empty() and author_filter != AnnotationSchema.AUTHOR_HUMAN and author_filter != AnnotationSchema.AUTHOR_AI:
+		return _err("author filter must be 'human' or 'ai', got: %s" % author_filter)
+
 	var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
 	if sidecar.is_empty():
 		# No sidecar = no annotations (not an error; §7.5 zero-annotation rule).
-		return _ok({"annotations": []})
+		return _ok({
+			"document_path": doc_path,
+			"annotations": [],
+			"count": 0,
+			"author_filter": author_filter if not author_filter.is_empty() else null,
+		})
 
-	var annotations: Array = sidecar.get("annotations", [])
-	return _ok({"annotations": annotations})
+	var raw_annotations: Array = sidecar.get("annotations", [])
+	var registry: AnnotationRegistry = _get_registry()
+
+	var result_annotations: Array = []
+	for ann in raw_annotations:
+		if not ann is Dictionary:
+			continue
+
+		# Apply author filter.
+		if not author_filter.is_empty() and str(ann.get("author", "")) != author_filter:
+			continue
+
+		# Build the enriched entry: start with full annotation (all original fields pass through),
+		# then overlay the new computed fields so existing assertions remain unaffected.
+		var entry: Dictionary = ann.duplicate(true)
+		entry["anchored_to"] = AnnotationSchema.get_anchored_to(ann)
+
+		# summary: use kind.summary() if kind is registered; fall back to display_name+count.
+		var kind_obj: AnnotationKind = null
+		if registry != null:
+			kind_obj = registry.get_annotation_kind(StringName(str(ann.get("kind", ""))))
+		if kind_obj != null:
+			entry["summary"] = kind_obj.summary(ann)
+		else:
+			var prim_count: int = (ann.get("primitives", []) as Array).size()
+			entry["summary"] = "%s (%d primitives)" % [str(ann.get("kind", "")), prim_count]
+
+		# bounds: only include when kind is registered and bounds is non-zero.
+		if kind_obj != null:
+			var b: Rect2 = kind_obj.bounds(ann)
+			entry["bounds"] = {"x": b.position.x, "y": b.position.y, "w": b.size.x, "h": b.size.y}
+
+		result_annotations.append(entry)
+
+	return _ok({
+		"document_path": doc_path,
+		"annotations": result_annotations,
+		"count": result_annotations.size(),
+		"author_filter": author_filter if not author_filter.is_empty() else null,
+	})
 
 
 func _annotations_add(args: Dictionary) -> Dictionary:
@@ -518,23 +574,53 @@ static func _coerce_bool(value: Variant, default_val: bool = false) -> bool:
 	return default_val
 
 
-## Returns the global AnnotationRegistry if the singleton exposes one,
-## or null if the registry is not available in this execution context.
-## In headless tests there is no autoloaded singleton, so null is safe —
-## kind validation is skipped (structural schema validation still runs).
+## Cached fallback registry, lazily built from BuiltinKinds. Used when no
+## global registry is available — gives live MCP calls (and headless tests
+## that opt in via _use_fallback_registry) summary/bounds for built-in kinds
+## even without an autoloaded host registry.
+static var _fallback_registry: AnnotationRegistry = null
+
+## Set by tests that want to skip the BuiltinKinds fallback (preserves the
+## "kind unknown → bounds omitted" headless behavior). Live runs leave this
+## false so MCP callers get summaries and bounds for built-in kinds.
+static var _disable_fallback_registry: bool = false
+
+
+## Returns an AnnotationRegistry — either a global one if any plugin
+## registered it, or a lazy built-in fallback that knows the eight 2D kinds.
+##
+## Resolution order:
+##   1. Engine singleton named "AnnotationRegistry" (if any plugin registers one)
+##   2. Engine singleton named "MinervaAnnotationRegistry"
+##   3. The SingletonObject autoload (via /root/SingletonObject) if it exposes
+##      `annotation_registry`. Engine.has_singleton() does NOT return true for
+##      GDScript autoloads — we use the tree path instead.
+##   4. The lazy BuiltinKinds fallback (gives summaries + bounds for the eight
+##      built-in 2D kinds even without a host registry).
+##
+## When `_disable_fallback_registry` is true (test-only), step 4 is skipped
+## and null is returned, preserving the legacy "kind unknown" behavior.
 func _get_registry() -> AnnotationRegistry:
-	# Try the standard Godot autoload path first.
 	if Engine.has_singleton("AnnotationRegistry"):
 		return Engine.get_singleton("AnnotationRegistry") as AnnotationRegistry
-	# Some project configs register it under "MinervaAnnotationRegistry".
 	if Engine.has_singleton("MinervaAnnotationRegistry"):
 		return Engine.get_singleton("MinervaAnnotationRegistry") as AnnotationRegistry
-	# Fall back to SingletonObject if it exposes annotation_registry.
-	if Engine.has_singleton("SingletonObject"):
-		var so: Object = Engine.get_singleton("SingletonObject")
+
+	# GDScript autoload via tree path. Engine.has_singleton() doesn't see these.
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree != null and tree.root != null:
+		var so := tree.root.get_node_or_null("SingletonObject")
 		if so != null and so.get("annotation_registry") is AnnotationRegistry:
 			return so.annotation_registry as AnnotationRegistry
-	return null
+
+	if _disable_fallback_registry:
+		return null
+
+	# Lazy BuiltinKinds fallback.
+	if _fallback_registry == null:
+		_fallback_registry = AnnotationRegistry.new()
+		BuiltinKinds.register_all(_fallback_registry)
+	return _fallback_registry
 
 
 ## Build the base sidecar dict for a document that has no sidecar yet.

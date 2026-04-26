@@ -15,6 +15,12 @@ extends RefCounted
 ## AnnotationToolbar.set_host(). The toolbar forwards it to each tool on
 ## activation via AnnotationAuthorTool.on_activate(host).
 
+# ── Selection ──────────────────────────────────────────────────────────────────
+
+## Emitted when the selected annotation changes. Emits "" when selection is
+## cleared. Subclasses MUST emit this when the selected id changes.
+signal selection_changed(annotation_id: String)
+
 # ── Registry ───────────────────────────────────────────────────────────────────
 
 ## Return the AnnotationRegistry used by this editor.
@@ -32,6 +38,41 @@ func get_registry() -> AnnotationRegistry:
 func add_annotation(annotation: Dictionary) -> String:
 	push_warning("[AnnotationHost] add_annotation() not overridden — annotation not stored")
 	return ""
+
+
+## Replace a stored annotation by id. The new_annotation dict is stamped with
+## the original id before storing. Returns true on success, false if id unknown.
+## Subclass MUST emit annotations_changed (or equivalent) on success.
+## Default returns false with a push_warning.
+func update_annotation(annotation_id: String, new_annotation: Dictionary) -> bool:
+	push_warning("[AnnotationHost] update_annotation() not overridden")
+	return false
+
+
+## Remove an annotation by id. Returns true if removed, false if id unknown.
+## If the removed annotation is currently selected, the selection MUST be
+## cleared. Default returns false with a push_warning.
+func remove_annotation(annotation_id: String) -> bool:
+	push_warning("[AnnotationHost] remove_annotation() not overridden")
+	return false
+
+
+## Track which annotation is currently selected. Empty string = no selection.
+## Subclass MUST emit selection_changed when the value changes. Default no-ops.
+func set_selected_annotation_id(annotation_id: String) -> void:
+	pass
+
+
+## Return the current selection id, or "" if none. Default returns "".
+func get_selected_annotation_id() -> String:
+	return ""
+
+
+## Return the current document's annotation list. Manipulation tools iterate
+## this to hit-test, render halos, etc. Concrete subclasses store annotations
+## internally; the base default returns []. Subclasses override.
+func get_annotations() -> Array:
+	return []
 
 # ── Coordinate transforms ──────────────────────────────────────────────────────
 

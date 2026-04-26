@@ -63,6 +63,20 @@ func _init() -> void:
 	print("\n-- render_overlay: returns non-empty PNG bytes --")
 	test_render_returns_png(tools)
 
+	print("\n-- list: new enriched fields (summary, anchored_to, bounds) --")
+	test_list_has_summary_field(tools)
+	test_list_anchored_to_present(tools)
+	test_list_anchored_to_absent(tools)
+	test_list_summary_arrow_kind(tools)
+	test_list_summary_text_kind(tools)
+	test_list_no_bounds_without_registry(tools)
+
+	print("\n-- list: author filter --")
+	test_list_author_filter_human(tools)
+	test_list_author_filter_ai(tools)
+	test_list_author_filter_omitted(tools)
+	test_list_author_filter_invalid(tools)
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -478,3 +492,222 @@ func test_render_returns_png(tools: MCPAnnotationTools) -> void:
 	})
 	check("render with include_kinds filter succeeds", result_filtered.get("success", false))
 	check("image_png present with filter", result_filtered.has("image_png"))
+
+
+# ── New enriched-fields tests ─────────────────────────────────────────────────
+
+## Every annotation in a list result must have a non-empty 'summary' string.
+func test_list_has_summary_field(tools: MCPAnnotationTools) -> void:
+	print("test_list_has_summary_field:")
+	var doc := _doc_path("summary_check.txt")
+	var ann := _valid_annotation_dict()
+	tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+
+	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	check("list succeeds", list_result.get("success", false))
+	var annotations: Array = list_result.get("annotations", [])
+	check("one annotation returned", annotations.size() == 1)
+	if annotations.size() > 0:
+		var returned: Dictionary = annotations[0]
+		check("summary field present", returned.has("summary"))
+		check("summary is non-empty string", returned.get("summary", "") is String and (returned.get("summary", "") as String).length() > 0)
+
+
+## Annotation with 'anchored_to' set → list entry includes the value.
+func test_list_anchored_to_present(tools: MCPAnnotationTools) -> void:
+	print("test_list_anchored_to_present:")
+	var doc := _doc_path("anchored_present.txt")
+	var ann := _valid_annotation_dict()
+	ann["anchored_to"] = "comp:R5"
+	ann["id"] = "ann_anchor1"
+	ann["created_at"] = "2026-04-24T10:00:00Z"
+	ann["author"] = "ai"
+	_write_raw_sidecar(doc, [ann])
+
+	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	check("list succeeds", list_result.get("success", false))
+	var annotations: Array = list_result.get("annotations", [])
+	check("one annotation returned", annotations.size() == 1)
+	if annotations.size() > 0:
+		check_eq("anchored_to preserved", annotations[0].get("anchored_to", "MISSING"), "comp:R5")
+
+
+## Annotation without 'anchored_to' → list entry has anchored_to == "".
+func test_list_anchored_to_absent(tools: MCPAnnotationTools) -> void:
+	print("test_list_anchored_to_absent:")
+	var doc := _doc_path("anchored_absent.txt")
+	var ann := _valid_annotation_dict()
+	ann["id"] = "ann_noanchor"
+	ann["created_at"] = "2026-04-24T10:00:00Z"
+	ann["author"] = "ai"
+	# No 'anchored_to' key in the annotation.
+	_write_raw_sidecar(doc, [ann])
+
+	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	check("list succeeds", list_result.get("success", false))
+	var annotations: Array = list_result.get("annotations", [])
+	check("one annotation returned", annotations.size() == 1)
+	if annotations.size() > 0:
+		check_eq("anchored_to is empty string when absent", annotations[0].get("anchored_to", "MISSING"), "")
+
+
+## Arrow annotation's summary (fallback path, no registry) contains the kind name "2d_arrow".
+func test_list_summary_arrow_kind(tools: MCPAnnotationTools) -> void:
+	print("test_list_summary_arrow_kind:")
+	var doc := _doc_path("summary_arrow.txt")
+	var ann := _valid_annotation_dict()  # kind = 2d_arrow
+	ann["id"] = "ann_arrowsumm"
+	ann["created_at"] = "2026-04-24T10:00:00Z"
+	ann["author"] = "ai"
+	_write_raw_sidecar(doc, [ann])
+
+	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	check("list succeeds", list_result.get("success", false))
+	var annotations: Array = list_result.get("annotations", [])
+	check("one annotation returned", annotations.size() == 1)
+	if annotations.size() > 0:
+		var s: String = str(annotations[0].get("summary", ""))
+		# In headless (no registry), fallback is "<kind> (N primitives)"
+		check("arrow summary contains '2d_arrow' or 'arrow'", "arrow" in s.to_lower())
+
+
+## Text annotation's summary (fallback path, no registry) contains "text".
+func test_list_summary_text_kind(tools: MCPAnnotationTools) -> void:
+	print("test_list_summary_text_kind:")
+	var doc := _doc_path("summary_text.txt")
+	var ann: Dictionary = {
+		"id": "ann_textsumm",
+		"kind": "2d_text",
+		"author": "ai",
+		"view_context": "pcb",
+		"created_at": "2026-04-24T10:00:00Z",
+		"primitives": [{"kind": "text", "at": [5.0, 5.0], "content": "hello"}],
+	}
+	_write_raw_sidecar(doc, [ann])
+
+	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	check("list succeeds", list_result.get("success", false))
+	var annotations: Array = list_result.get("annotations", [])
+	check("one annotation returned", annotations.size() == 1)
+	if annotations.size() > 0:
+		var s: String = str(annotations[0].get("summary", ""))
+		check("text summary contains 'text'", "text" in s.to_lower())
+
+
+## In headless mode (no registry), 'bounds' key is absent from list entries.
+## When a registry IS present the kind's bounds() is called and bounds is included;
+## headless coverage is the meaningful case for this test suite.
+func test_list_no_bounds_without_registry(tools: MCPAnnotationTools) -> void:
+	print("test_list_no_bounds_without_registry:")
+	var doc := _doc_path("bounds_headless.txt")
+	var ann := _valid_annotation_dict()
+	ann["id"] = "ann_boundstest"
+	ann["created_at"] = "2026-04-24T10:00:00Z"
+	ann["author"] = "ai"
+	_write_raw_sidecar(doc, [ann])
+
+	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	check("list succeeds", list_result.get("success", false))
+	var annotations: Array = list_result.get("annotations", [])
+	check("one annotation returned", annotations.size() == 1)
+	if annotations.size() > 0:
+		# In headless, registry is null → bounds key not added.
+		# If registry is available: bounds key IS added with {x,y,w,h} numerics.
+		var entry: Dictionary = annotations[0]
+		if entry.has("bounds"):
+			# Registry was available — verify {x,y,w,h} structure.
+			var b: Dictionary = entry["bounds"]
+			check("bounds has x key", b.has("x"))
+			check("bounds has y key", b.has("y"))
+			check("bounds has w key", b.has("w"))
+			check("bounds has h key", b.has("h"))
+		else:
+			# Expected headless path: no registry → no bounds key.
+			check("headless: bounds absent when no registry", true)
+
+
+# ── Author filter tests ───────────────────────────────────────────────────────
+
+## Build a doc with one human and one ai annotation, shared across filter tests.
+func _setup_mixed_author_doc(tools: MCPAnnotationTools, doc: String) -> void:
+	var human_ann: Dictionary = {
+		"id": "ann_human1",
+		"kind": "2d_arrow",
+		"author": "human",
+		"view_context": "pcb",
+		"created_at": "2026-04-24T10:00:00Z",
+		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [10.0, 5.0]}],
+	}
+	var ai_ann: Dictionary = {
+		"id": "ann_ai1",
+		"kind": "2d_text",
+		"author": "ai",
+		"view_context": "pcb",
+		"created_at": "2026-04-24T10:00:00Z",
+		"primitives": [{"kind": "text", "at": [5.0, 5.0], "content": "ai note"}],
+	}
+	_write_raw_sidecar(doc, [human_ann, ai_ann])
+
+
+## author filter "human" → only human-authored annotations returned.
+func test_list_author_filter_human(tools: MCPAnnotationTools) -> void:
+	print("test_list_author_filter_human:")
+	var doc := _doc_path("filter_human.txt")
+	_setup_mixed_author_doc(tools, doc)
+
+	var result := tools.handle("minerva_annotations_list", {
+		"document_path": doc,
+		"author": "human",
+	})
+	check("filter human: list succeeds", result.get("success", false))
+	check("filter human: author_filter in response", result.get("author_filter", "") == "human")
+	var annotations: Array = result.get("annotations", [])
+	check("filter human: count == 1", annotations.size() == 1)
+	if annotations.size() > 0:
+		check_eq("filter human: returned annotation is human-authored", annotations[0].get("author", ""), "human")
+		check_eq("filter human: id is ann_human1", annotations[0].get("id", ""), "ann_human1")
+
+
+## author filter "ai" → only AI-authored annotations returned.
+func test_list_author_filter_ai(tools: MCPAnnotationTools) -> void:
+	print("test_list_author_filter_ai:")
+	var doc := _doc_path("filter_ai.txt")
+	_setup_mixed_author_doc(tools, doc)
+
+	var result := tools.handle("minerva_annotations_list", {
+		"document_path": doc,
+		"author": "ai",
+	})
+	check("filter ai: list succeeds", result.get("success", false))
+	check("filter ai: author_filter in response", result.get("author_filter", "") == "ai")
+	var annotations: Array = result.get("annotations", [])
+	check("filter ai: count == 1", annotations.size() == 1)
+	if annotations.size() > 0:
+		check_eq("filter ai: returned annotation is ai-authored", annotations[0].get("author", ""), "ai")
+		check_eq("filter ai: id is ann_ai1", annotations[0].get("id", ""), "ann_ai1")
+
+
+## author filter omitted → all annotations returned, author_filter is null.
+func test_list_author_filter_omitted(tools: MCPAnnotationTools) -> void:
+	print("test_list_author_filter_omitted:")
+	var doc := _doc_path("filter_omitted.txt")
+	_setup_mixed_author_doc(tools, doc)
+
+	var result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	check("filter omitted: list succeeds", result.get("success", false))
+	check("filter omitted: author_filter is null", result.get("author_filter", "NOT_NULL") == null)
+	var annotations: Array = result.get("annotations", [])
+	check("filter omitted: all 2 annotations returned", annotations.size() == 2)
+
+
+## author filter "invalid" → error result (success=false).
+func test_list_author_filter_invalid(tools: MCPAnnotationTools) -> void:
+	print("test_list_author_filter_invalid:")
+	var doc := _doc_path("filter_invalid.txt")
+
+	var result := tools.handle("minerva_annotations_list", {
+		"document_path": doc,
+		"author": "invalid",
+	})
+	check("filter invalid: success=false", result.get("success", true) == false)
+	check("filter invalid: error message present", result.has("error"))

@@ -41,6 +41,20 @@ func _init() -> void:
 	test_status_label_clears_on_deregister_active_kind()
 	test_status_label_clears_on_toggle_off()
 
+	print("\n-- Tools section: structure --")
+	test_tools_header_label_exists()
+	test_tools_flow_exists_with_four_buttons()
+	test_tool_buttons_properties()
+
+	print("\n-- Tools section: mutual exclusion --")
+	test_tool_buttons_mutual_exclusion_within_tools()
+	test_tool_button_untoggle_kind_button()
+	test_kind_button_untoggle_tool_button()
+
+	print("\n-- Tools section: signal --")
+	test_active_tool_button_changed_signal_on_toggle()
+	test_active_tool_button_changed_signal_on_toggle_off()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -367,3 +381,180 @@ func test_status_label_clears_on_toggle_off() -> void:
 	check_eq("status cleared on toggle-off", tb._status_label.text, "")
 
 	_free_toolbar(tb)
+
+
+# ── Tests: Tools section structure ───────────────────────────────────────────
+
+func test_tools_header_label_exists() -> void:
+	print("test_tools_header_label_exists:")
+	var tb := _make_toolbar()
+	check("_tools_header_label is non-null", tb._tools_header_label != null)
+	if tb._tools_header_label != null:
+		check_eq("_tools_header_label text is 'Tools'", tb._tools_header_label.text, "Tools")
+		check_eq("_tools_header_label is horizontally centered",
+			tb._tools_header_label.horizontal_alignment, HORIZONTAL_ALIGNMENT_CENTER)
+		check("_tools_header_label is a child of toolbar",
+			tb._tools_header_label.get_parent() == tb)
+	_free_toolbar(tb)
+
+
+func test_tools_flow_exists_with_four_buttons() -> void:
+	print("test_tools_flow_exists_with_four_buttons:")
+	var tb := _make_toolbar()
+	check("_tools_flow is non-null", tb._tools_flow != null)
+	check("_tools_flow is a FlowContainer", tb._tools_flow is FlowContainer)
+	check("_tools_flow is a child of toolbar",
+		tb._tools_flow != null and tb._tools_flow.get_parent() == tb)
+	check_eq("_tools_flow has exactly 4 children",
+		tb._tools_flow.get_child_count() if tb._tools_flow != null else -1, 4)
+	check_eq("_tool_buttons dict has 4 entries", tb._tool_buttons.size(), 4)
+	for expected_key in ["select", "translate", "rotate", "scale"]:
+		check("_tool_buttons has key '%s'" % expected_key, tb._tool_buttons.has(expected_key))
+	_free_toolbar(tb)
+
+
+func test_tool_buttons_properties() -> void:
+	print("test_tool_buttons_properties:")
+	var tb := _make_toolbar()
+	# "select", "translate", "rotate" get icons so their text is empty.
+	# "scale" has no PCB icon so it keeps its text label.
+	# All four share tooltip, toggle_mode, size_flags, and parent constraints.
+	var expected_pairs: Array = [
+		# [key, display_name, has_icon]
+		["select",    "Select",    true],
+		["translate", "Translate", true],
+		["rotate",    "Rotate",    true],
+		["scale",     "Scale",     false],
+	]
+	for pair in expected_pairs:
+		var key: String     = pair[0]
+		var display: String = pair[1]
+		var has_icon: bool  = pair[2]
+		if not tb._tool_buttons.has(key):
+			check("button '%s' exists in _tool_buttons" % key, false)
+			continue
+		var btn: Button = tb._tool_buttons[key]
+		if has_icon:
+			check("button '%s' has icon" % key,      btn.icon != null)
+			check_eq("button '%s' text empty (icon mode)" % key, btn.text, "")
+		else:
+			check_eq("button '%s' text (text fallback)" % key, btn.text, display)
+		check_eq("button '%s' tooltip" % key, btn.tooltip_text,  display)
+		check("button '%s' toggle_mode" % key,                   btn.toggle_mode)
+		check_eq("button '%s' size_flags_horizontal" % key,
+			btn.size_flags_horizontal, Control.SIZE_SHRINK_BEGIN)
+		check("button '%s' parent is _tools_flow" % key,
+			btn.get_parent() == tb._tools_flow)
+	_free_toolbar(tb)
+
+
+# ── Tests: Tools section mutual exclusion ─────────────────────────────────────
+
+func test_tool_buttons_mutual_exclusion_within_tools() -> void:
+	print("test_tool_buttons_mutual_exclusion_within_tools:")
+	var tb := _make_toolbar()
+
+	# Simulate toggling "select" ON.
+	tb._on_tool_button_toggled("select", true)
+	check_eq("select is the active tool button", tb._active_tool_button_name, "select")
+
+	# Simulate toggling "translate" ON — "select" must visually untoggle.
+	# Force select button to pressed state to simulate the visual toggle.
+	var select_btn: Button = tb._tool_buttons["select"]
+	select_btn.set_pressed_no_signal(true)
+
+	tb._on_tool_button_toggled("translate", true)
+	check_eq("translate is now the active tool button", tb._active_tool_button_name, "translate")
+	check("select button is visually untoggled", not select_btn.button_pressed)
+	check_eq("rotate not active", tb._active_tool_button_name, "translate")
+
+	_free_toolbar(tb)
+
+
+func test_tool_button_untoggle_kind_button() -> void:
+	print("test_tool_button_untoggle_kind_button:")
+	var reg  := _make_registry()
+	var kind := MockKindWithUI.new(&"plug_cross", "Cross Kind")
+	reg.register_annotation_kind(kind)
+
+	var tb := _make_toolbar()
+	tb.set_registry(reg)
+
+	# Activate an Annotate kind button.
+	tb._on_button_toggled(&"plug_cross", true)
+	check("annotate tool is active before tool-button press", tb.get_active_tool() != null)
+
+	# Force the kind button to visually pressed (normally done by the Button widget).
+	var kind_btn: Button = tb._buttons[&"plug_cross"]
+	kind_btn.set_pressed_no_signal(true)
+
+	# Now activate a Tools-section button — kind tool must deactivate and button untoggle.
+	tb._on_tool_button_toggled("select", true)
+	# The active tool is now an AnnotationSelectTool (not the kind's tool); the kind
+	# binding is cleared. Mutual exclusion across sections is preserved.
+	check("annotate kind binding cleared after tool-button press", tb._active_kind_name == &"")
+	check("active tool is an AnnotationSelectTool", tb.get_active_tool() is AnnotationSelectTool)
+	check("kind button visually untoggled", not kind_btn.button_pressed)
+	check_eq("active_tool_button_name is 'select'", tb._active_tool_button_name, "select")
+
+	_free_toolbar(tb)
+
+
+func test_kind_button_untoggle_tool_button() -> void:
+	print("test_kind_button_untoggle_tool_button:")
+	var reg  := _make_registry()
+	var kind := MockKindWithUI.new(&"plug_undo", "Undo Kind")
+	reg.register_annotation_kind(kind)
+
+	var tb := _make_toolbar()
+	tb.set_registry(reg)
+
+	# Activate a Tools-section button.
+	tb._on_tool_button_toggled("rotate", true)
+	check_eq("rotate is active tool button", tb._active_tool_button_name, "rotate")
+
+	# Force the rotate button visually pressed.
+	var rotate_btn: Button = tb._tool_buttons["rotate"]
+	rotate_btn.set_pressed_no_signal(true)
+
+	# Activate an Annotate kind button — Tools button must visually untoggle.
+	tb._on_button_toggled(&"plug_undo", true)
+	check("annotate tool is now active", tb.get_active_tool() != null)
+	check("rotate button visually untoggled", not rotate_btn.button_pressed)
+	check_eq("active_tool_button_name cleared", tb._active_tool_button_name, "")
+
+	_free_toolbar(tb)
+
+
+# ── Tests: active_tool_button_changed signal ──────────────────────────────────
+
+func test_active_tool_button_changed_signal_on_toggle() -> void:
+	print("test_active_tool_button_changed_signal_on_toggle:")
+	var tb := _make_toolbar()
+
+	var received: Array = []
+	tb.active_tool_button_changed.connect(func(name: String) -> void:
+		received.append(name)
+	)
+
+	tb._on_tool_button_toggled("translate", true)
+	check_eq("signal fired once on toggle-on", received.size(), 1)
+	check_eq("signal carries 'translate'", received[0], "translate")
+
+	_free_toolbar(tb)
+
+
+func test_active_tool_button_changed_signal_on_toggle_off() -> void:
+	print("test_active_tool_button_changed_signal_on_toggle_off:")
+	var tb := _make_toolbar()
+
+	var received: Array = []
+	tb.active_tool_button_changed.connect(func(name: String) -> void:
+		received.append(name)
+	)
+
+	tb._on_tool_button_toggled("scale", true)
+	tb._on_tool_button_toggled("scale", false)
+	check_eq("signal fired twice total (on + off)", received.size(), 2)
+	check_eq("first signal is 'scale'", received[0], "scale")
+	check_eq("second signal is '' (cleared)", received[1], "")

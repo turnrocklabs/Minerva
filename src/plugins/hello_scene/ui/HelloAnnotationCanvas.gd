@@ -36,19 +36,39 @@ var _active_tool: AnnotationAuthorTool = null
 ## Bind this canvas to the panel's annotation host.
 ## Connects to host.annotations_changed so the canvas redraws when an
 ## annotation is added (or the list is bulk-replaced via set_annotations).
+## Also connects to host.selection_changed so the selection halo refreshes
+## whenever the user selects/deselects an annotation.
 func set_host(host: Helloscene_AnnotationHost) -> void:
-	if _host != null and _host.annotations_changed.is_connected(_on_annotations_changed):
-		_host.annotations_changed.disconnect(_on_annotations_changed)
+	if _host != null:
+		if _host.annotations_changed.is_connected(_on_annotations_changed):
+			_host.annotations_changed.disconnect(_on_annotations_changed)
+		if _host.selection_changed.is_connected(queue_redraw):
+			_host.selection_changed.disconnect(queue_redraw)
 	_host = host
 	if _host != null:
 		_host.annotations_changed.connect(_on_annotations_changed)
+		_host.selection_changed.connect(queue_redraw)
 	queue_redraw()
 
 
 ## Set or clear the active authoring tool. The toolbar pushes this on tool
 ## activation/deactivation via its active_tool_changed signal.
+## Disconnects annotation_modified from the previous tool (if any) and
+## connects it to the new one (if it has that signal) so manipulation-tool
+## changes are forwarded to the host via _on_tool_annotation_modified.
 func set_active_tool(tool: AnnotationAuthorTool) -> void:
+	# Disconnect from the outgoing tool's annotation_modified.
+	if _active_tool != null:
+		if _active_tool.annotation_modified.is_connected(_on_tool_annotation_modified):
+			_active_tool.annotation_modified.disconnect(_on_tool_annotation_modified)
 	_active_tool = tool
+	# Connect to the incoming tool's annotation_modified (manipulation tools emit
+	# this; authoring tools never do). The toolbar also connects annotation_modified
+	# on its side for host.update_annotation; having both connected is safe because
+	# the host's update_annotation is idempotent for equal-content calls.
+	if _active_tool != null:
+		if not _active_tool.annotation_modified.is_connected(_on_tool_annotation_modified):
+			_active_tool.annotation_modified.connect(_on_tool_annotation_modified)
 	queue_redraw()
 
 
@@ -106,14 +126,24 @@ func _gui_input(event: InputEvent) -> void:
 
 	if event is InputEventKey:
 		var ek: InputEventKey = event
-		if ek.pressed and ek.keycode == KEY_ESCAPE:
-			# Surface Escape to the tool via the mods channel (per
-			# AnnotationArrowAuthorTool.on_pointer_down's Escape contract: when
-			# mods == KEY_ESCAPE the tool treats it as a cancel). pos/button
-			# are unused on the cancel path.
-			_active_tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_ESCAPE)
-			queue_redraw()
-			accept_event()
+		if ek.pressed and not ek.is_echo():
+			if ek.keycode == KEY_ESCAPE:
+				# Surface Escape to the tool via the mods channel (per
+				# AnnotationArrowAuthorTool.on_pointer_down's Escape contract: when
+				# mods == KEY_ESCAPE the tool treats it as a cancel). pos/button
+				# are unused on the cancel path.
+				var consumed := _active_tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_ESCAPE)
+				if consumed:
+					accept_event()
+				queue_redraw()
+			elif ek.keycode == KEY_DELETE:
+				# Surface Delete to the tool via the mods channel.
+				# AnnotationSelectTool interprets mods == KEY_DELETE as a remove
+				# command on the currently-selected annotation.
+				var consumed := _active_tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_DELETE)
+				if consumed:
+					accept_event()
+				queue_redraw()
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -138,4 +168,14 @@ func _mods_from_event(event: InputEventWithModifiers) -> int:
 # ── Signal handlers ────────────────────────────────────────────────────────────
 
 func _on_annotations_changed() -> void:
+	queue_redraw()
+
+
+## Called when the active manipulation tool emits annotation_modified.
+## Forwards the change to the host so the host's annotations_changed signal
+## fires and the canvas redraws with the updated annotation.
+func _on_tool_annotation_modified(annotation_id: String, new_annotation: Dictionary) -> void:
+	if _host == null:
+		return
+	_host.update_annotation(annotation_id, new_annotation)
 	queue_redraw()

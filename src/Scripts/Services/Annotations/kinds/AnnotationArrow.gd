@@ -31,6 +31,23 @@ func author_ui() -> Object:
 	return AnnotationArrowAuthorTool.new()
 
 
+# ── Optional overrides ────────────────────────────────────────────────────────
+
+func summary(annotation: Dictionary) -> String:
+	# Find the arrow primitive (skip text labels)
+	var prims: Array = annotation.get("primitives", [])
+	for prim in prims:
+		if prim is Dictionary and prim.get("kind", "") == "arrow":
+			var a := AnnotationKind._to_vec2(prim.get("from", [0, 0]))
+			var b := AnnotationKind._to_vec2(prim.get("to", [0, 0]))
+			var anchor := AnnotationSchema.get_anchored_to(annotation)
+			var base := "arrow from (%.0f, %.0f) to (%.0f, %.0f)" % [a.x, a.y, b.x, b.y]
+			if not anchor.is_empty():
+				return "%s → %s" % [base, anchor]
+			return base
+	return super(annotation)  # fall through to default
+
+
 # ── Required overrides ────────────────────────────────────────────────────────
 
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
