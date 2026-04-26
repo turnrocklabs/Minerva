@@ -59,6 +59,44 @@ func primary_anchor_point(annotation: Dictionary) -> Vector2:
 	return super(annotation)
 
 
+## Projection distance used when the head lands in empty space.
+const _PROJECTION_DISTANCE: float = 32.0
+
+## Override: try head first; if that misses, project 32px past the tip along the
+## arrow direction and try again. Captures arrows whose head is drawn just off a
+## widget — the projection often lands on the widget the arrow is pointing at.
+func describe_target_point(annotation: Dictionary, base_pos: Vector2, host: AnnotationHost) -> String:
+	if host == null:
+		return ""
+
+	# First: try the head position directly.
+	var result: String = host.describe_point(base_pos)
+	if not result.is_empty():
+		return result
+
+	# Second: compute direction (head - tail) and project forward by _PROJECTION_DISTANCE.
+	var prims: Array = annotation.get("primitives", [])
+	var first_arrow_prim: Dictionary = {}
+	for prim in prims:
+		if prim is Dictionary and prim.get("kind", "") == "arrow":
+			first_arrow_prim = prim as Dictionary
+			break
+
+	if first_arrow_prim.is_empty():
+		return result  # no arrow prim found; return whatever we got (empty)
+
+	var head: Vector2 = base_pos
+	var tail: Vector2 = AnnotationKind._to_vec2(first_arrow_prim.get("from", [0, 0]))
+	var direction: Vector2 = head - tail
+	# Guard against zero-length arrows — skip projection if nearly coincident.
+	if direction.length() < 0.001:
+		return result
+
+	direction = direction.normalized()
+	var projected: Vector2 = head + direction * _PROJECTION_DISTANCE
+	return host.describe_point(projected)
+
+
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
 	var color := _annotation_color(annotation)
 	var prims: Array = annotation.get("primitives", [])

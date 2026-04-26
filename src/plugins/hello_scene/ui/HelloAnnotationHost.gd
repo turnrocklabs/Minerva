@@ -36,6 +36,11 @@ var _annotations: Array = []  # Array[Dictionary]
 ## The id of the currently selected annotation, or "" if none.
 var _selected_id: String = ""
 
+## Tolerance margin (pixels) added to each control's rect during _find_leaf_at hit
+## testing. Allows arrows and other annotations whose head is drawn a few pixels
+## outside a widget's exact rect to still resolve to that widget.
+const _TOLERANCE_MARGIN: float = 16.0
+
 ## Canvas Control node — needed to compute canvas-global coords for describe_point.
 ## Set via set_canvas_and_root() called from HelloPanel._ready().
 var _canvas_node: Control = null
@@ -43,6 +48,17 @@ var _canvas_node: Control = null
 ## Root Control of the panel (HelloPanel itself). Used to walk the UI tree in
 ## describe_point(). Set via set_canvas_and_root().
 var _ui_root: Control = null
+
+## Pre-cached panel image, refreshed via RenderingServer.frame_post_draw after
+## each annotation mutation event so MCP callers get a synchronous (non-stalling)
+## result from render_content_to_image. Null until the first post-draw capture
+## completes or until the host is destroyed.
+var _cached_panel_image: Image = null
+
+## Re-entrancy guard: true while a frame_post_draw capture is already scheduled.
+## Prevents multiple annotation_changed signals queued in the same frame from
+## each registering their own one-shot listener.
+var _cache_refresh_pending: bool = false
 
 # ── AnnotationHost overrides ───────────────────────────────────────────────────
 
@@ -64,6 +80,7 @@ func add_annotation(annotation: Dictionary) -> String:
 	# Stamp the anchor BEFORE appending so listeners see the final state.
 	AnnotationHost._stamp_anchor(stored, self)
 	_annotations.append(stored)
+	_schedule_cache_refresh()
 	annotations_changed.emit()
 	return id
 
@@ -97,6 +114,7 @@ func update_annotation(annotation_id: String, new_annotation: Dictionary) -> boo
 			# Re-stamp the anchor BEFORE storing so listeners see the final state.
 			AnnotationHost._stamp_anchor(stored, self)
 			_annotations[i] = stored
+			_schedule_cache_refresh()
 			annotations_changed.emit()
 			return true
 	return false
@@ -113,6 +131,7 @@ func remove_annotation(annotation_id: String) -> bool:
 			if _selected_id == annotation_id:
 				_selected_id = ""
 				selection_changed.emit("")
+			_schedule_cache_refresh()
 			annotations_changed.emit()
 			return true
 	return false
@@ -152,6 +171,7 @@ func set_annotations(list: Array) -> void:
 		if ann is Dictionary:
 			_annotations.append((ann as Dictionary).duplicate(true))
 	AnnotationHost.refresh_all_anchors(_annotations, self)
+	_schedule_cache_refresh()
 	annotations_changed.emit()
 
 
@@ -162,6 +182,7 @@ func set_annotations(list: Array) -> void:
 func set_canvas_and_root(canvas: Control, root: Control) -> void:
 	_canvas_node = canvas
 	_ui_root = root
+	_schedule_cache_refresh()
 
 
 ## Map a canvas-local document-space point to a semantic UI identifier.
@@ -202,8 +223,12 @@ func describe_point(doc_pos: Vector2) -> String:
 ## global_pos. Skips the canvas node and its descendants (they are the
 ## annotation drawing surface, not UI content we want to annotate "onto").
 ## Also skips pure layout containers (VBoxContainer, HBoxContainer).
+## Applies _TOLERANCE_MARGIN to all rect checks so annotations drawn a few pixels
+## outside a widget's exact boundary still resolve to that widget.
 func _find_leaf_at(ctrl: Control, global_pos: Vector2) -> Control:
 	# Check all children first (depth-first, last-child = top-most in draw order).
+	# Grow by _TOLERANCE_MARGIN so children of containers that slightly overhang
+	# their parent's rect are still visited (handles negative-margin layouts).
 	var best: Control = null
 	for i in range(ctrl.get_child_count()):
 		var child := ctrl.get_child(i)
@@ -215,6 +240,9 @@ func _find_leaf_at(ctrl: Control, global_pos: Vector2) -> Control:
 		var child_name: String = child_ctrl.name
 		if child_name == "AnnotationCanvas" or child_name == "AnnotationToolbar":
 			continue
+		# Only recurse into children whose grown rect contains the point.
+		if not child_ctrl.get_global_rect().grow(_TOLERANCE_MARGIN).has_point(global_pos):
+			continue
 		var result := _find_leaf_at(child_ctrl, global_pos)
 		if result != null:
 			best = result
@@ -224,7 +252,7 @@ func _find_leaf_at(ctrl: Control, global_pos: Vector2) -> Control:
 
 	# Check this node itself. Skip layout containers (VBoxContainer, HBoxContainer,
 	# Control without a meaningful class name) — we want leaf-level widgets.
-	if not ctrl.get_global_rect().has_point(global_pos):
+	if not ctrl.get_global_rect().grow(_TOLERANCE_MARGIN).has_point(global_pos):
 		return null
 
 	# Skip pure layout containers by class name.
@@ -235,35 +263,68 @@ func _find_leaf_at(ctrl: Control, global_pos: Vector2) -> Control:
 	return ctrl
 
 
-## Render the panel's current UI into an Image by capturing the viewport
-## texture and cropping to _ui_root's global rect.
+## Return the pre-cached panel image.
 ##
-## viewport_rect ignored in v1; full panel always rendered.
-## Returns null if _ui_root is not set, the viewport texture is unavailable
-## (headless GPU-less mode), or the resulting crop rect is degenerate.
-## The viewport_rect parameter is reserved for future partial-region rendering.
+## The image is captured asynchronously via RenderingServer.frame_post_draw so
+## that MCP tool handlers never block on a GPU→CPU sync. The first call after
+## the host is created (or after the panel is opened) will return null while the
+## initial capture is pending; subsequent calls return the last good image.
+##
+## viewport_rect ignored in v1; full panel always rendered. The parameter is
+## reserved for future partial-region rendering.
 func render_content_to_image(_viewport_rect: Rect2) -> Image:
-	# Defensive check: _ui_root is wired by set_canvas_and_root() (Unit B).
-	# Using "in self" lets this method return null gracefully if called before
-	# Unit B lands, so test ordering does not matter.
-	if not ("_ui_root" in self) or _ui_root == null:
-		return null
+	if _cached_panel_image == null:
+		# Cache is cold — schedule a refresh so the next MCP call gets a result,
+		# but return null immediately rather than blocking on GPU→CPU sync.
+		_schedule_cache_refresh()
+	return _cached_panel_image
+
+
+## Schedule a one-shot frame_post_draw capture if not already pending.
+##
+## Pattern follows PluginScenePanelHost.gd CONNECT_ONE_SHOT usage: connect a
+## lambda to the signal with CONNECT_ONE_SHOT so it fires exactly once on the
+## next rendered frame then auto-disconnects.
+func _schedule_cache_refresh() -> void:
+	if _cache_refresh_pending:
+		return  # already queued, de-dup
+	if _ui_root == null:
+		return  # can't capture without a UI root — try again after set_canvas_and_root
+	_cache_refresh_pending = true
+	RenderingServer.frame_post_draw.connect(
+		func() -> void: _do_capture_now(),
+		CONNECT_ONE_SHOT)
+
+
+## Perform the actual viewport capture and store the result in _cached_panel_image.
+## Called from a frame_post_draw one-shot lambda so the GPU pipeline has flushed
+## and get_image() is safe to call without a multi-minute stall.
+func _do_capture_now() -> void:
+	# Clear the pending flag first so any annotation event arriving DURING this
+	# capture can re-schedule immediately (1-frame staleness is acceptable).
+	_cache_refresh_pending = false
+
+	if not is_instance_valid(_ui_root):
+		return  # host or panel torn down between scheduling and firing
+
 	var vp := _ui_root.get_viewport()
 	if vp == null:
-		return null
+		return
 	var vp_tex := vp.get_texture()
 	if vp_tex == null:
-		return null
+		return
 	var full_image := vp_tex.get_image()
 	if full_image == null:
-		return null
+		return
 	var root_rect := _ui_root.get_global_rect()
 	var crop_rect := Rect2i(root_rect.position, root_rect.size)
 	# Clamp to image bounds so get_region() never goes out of range.
 	crop_rect = crop_rect.intersection(Rect2i(Vector2i.ZERO, full_image.get_size()))
 	if crop_rect.size.x <= 0 or crop_rect.size.y <= 0:
-		return null
-	return full_image.get_region(crop_rect)
+		# Degenerate rect — leave _cached_panel_image unchanged so we don't clobber
+		# a previous good capture with a transient failure (e.g. panel mid-resize).
+		return
+	_cached_panel_image = full_image.get_region(crop_rect)
 
 
 ## Resolve which word in label's text is under the given global screen position.

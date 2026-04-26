@@ -146,7 +146,7 @@ static func _stamp_anchor(annotation: Dictionary, host: AnnotationHost) -> void:
 	if kind == null:
 		return
 	var anchor_point: Vector2 = kind.primary_anchor_point(annotation)
-	var target: String = host.describe_point(anchor_point)
+	var target: String = kind.describe_target_point(annotation, anchor_point, host)
 	annotation["anchored_to"] = target
 
 

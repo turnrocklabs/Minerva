@@ -41,6 +41,14 @@ func _init() -> void:
 	test_set_annotations_refreshes_anchors()
 	test_set_annotations_empty_list_no_crash()
 
+	print("\n-- _find_leaf_at tolerance margin --")
+	test_describe_point_within_margin_5px_outside_hits()
+	test_describe_point_within_margin_15px_outside_hits()
+	test_describe_point_outside_margin_25px_misses()
+
+	print("\n-- arrow directional projection --")
+	test_arrow_projection_resolves_widget_past_tip()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -349,3 +357,108 @@ func test_set_annotations_empty_list_no_crash() -> void:
 	host.set_annotations([])
 	check_eq("set_annotations([]) results in empty list", host.get_annotations().size(), 0)
 	check("no crash on empty set_annotations", true)
+
+
+# ── _find_leaf_at tolerance margin ───────────────────────────────────────────
+##
+## Fixture: Label at global_position=(0,300), size=(400,30).
+## canvas at (0,0). doc_pos maps directly to global coords (identity).
+## Testing points at 5/15/25 px OUTSIDE the label's bottom edge (y=330).
+## _TOLERANCE_MARGIN = 16px, so:
+##   y=335 (5px outside)  → within margin → hit
+##   y=345 (15px outside) → within margin → hit
+##   y=355 (25px outside) → outside margin → miss
+
+func test_describe_point_within_margin_5px_outside_hits() -> void:
+	print("test_describe_point_within_margin_5px_outside_hits:")
+	var fixture := _build_ui_fixture()
+	var root: Control = fixture[0]
+	var fake_canvas: Control = fixture[1]
+	var label: Label = fixture[2]
+	label.text = ""  # empty text so result is "ui:Label"
+
+	var host := _build_host(fake_canvas, root)
+	# Label bottom edge is at y=330 (position.y=300 + size.y=30).
+	# 5px outside: y = 335. x = 5 is inside the label's x range.
+	var result := host.describe_point(Vector2(5.0, 335.0))
+	check("5px outside label rect hits within 16px margin",
+		result == "ui:Label" or result.begins_with("label.word:"))
+
+
+func test_describe_point_within_margin_15px_outside_hits() -> void:
+	print("test_describe_point_within_margin_15px_outside_hits:")
+	var fixture := _build_ui_fixture()
+	var root: Control = fixture[0]
+	var fake_canvas: Control = fixture[1]
+	var label: Label = fixture[2]
+	label.text = ""
+
+	var host := _build_host(fake_canvas, root)
+	# 15px outside bottom edge: y = 345.
+	var result := host.describe_point(Vector2(5.0, 345.0))
+	check("15px outside label rect hits within 16px margin",
+		result == "ui:Label" or result.begins_with("label.word:"))
+
+
+func test_describe_point_outside_margin_25px_misses() -> void:
+	print("test_describe_point_outside_margin_25px_misses:")
+	var fixture := _build_ui_fixture()
+	var root: Control = fixture[0]
+	var fake_canvas: Control = fixture[1]
+	var label: Label = fixture[2]
+	label.text = ""
+
+	var host := _build_host(fake_canvas, root)
+	# 25px outside bottom edge: y = 355. Exceeds _TOLERANCE_MARGIN=16, so miss.
+	var result := host.describe_point(Vector2(5.0, 355.0))
+	check_eq("25px outside label rect misses (beyond 16px margin)", result, "")
+
+
+# ── arrow directional projection ──────────────────────────────────────────────
+
+func test_arrow_projection_resolves_widget_past_tip() -> void:
+	print("test_arrow_projection_resolves_widget_past_tip:")
+	## Arrow pointing right. Head is in empty space just past the label's right edge.
+	## Projection (32px further right) still lands on the label thanks to the margin.
+	##
+	## Label is at global_position=(0,300), size=(400,30).
+	## The label's right edge is at x=400.
+	## Head doc_pos: (408, 315) — 8px outside the label's right edge, outside strict rect.
+	## With _TOLERANCE_MARGIN=16, the grown rect is [−16..416, 284..346].
+	## Head at x=408 is within 16px margin → describe_point(head) already resolves.
+	## So let's place head further: (420, 315) — 20px outside → miss without margin,
+	## still miss with margin (400+16=416 < 420). Projection: direction = (1,0)*32 →
+	## projected = (452, 315) → also misses.
+	##
+	## Instead: use a vertical arrow pointing DOWN at the label from above.
+	## Head: (5, 295) — 5px ABOVE the label top (label.top = 300).
+	##   With _TOLERANCE_MARGIN=16: grown rect top = 300-16 = 284. 295 > 284 → HIT.
+	##
+	## To truly test projection we need head to land outside even the margin (>16px away):
+	## Head: (5, 280) — 20px above label top (300-280=20 > 16) → misses even with margin.
+	## Tail: (5, 200). direction = (0,1). projected = (5, 312) — inside label → HIT.
+
+	var fixture := _build_ui_fixture()
+	var root: Control = fixture[0]
+	var fake_canvas: Control = fixture[1]
+	var label: Label = fixture[2]
+	label.text = ""  # empty text → resolve to "ui:Label" or ""
+
+	var host := _build_host(fake_canvas, root, true)
+
+	# Arrow from (5, 200) pointing DOWN, head at (5, 280).
+	# head=280 is 20px above label top=300 → outside 16px margin → describe_point("") miss.
+	# projection direction=(0,1)*32 → projected=(5,312) → inside label → HIT.
+	var ann := {
+		"kind": "2d_arrow",
+		"author": "human",
+		"primitives": [{"kind": "arrow", "from": [5.0, 200.0], "to": [5.0, 280.0]}],
+	}
+	var id := host.add_annotation(ann)
+	check("add_annotation returned id", not id.is_empty())
+
+	var stored: Dictionary = host.get_annotations()[0]
+	var anchored: String = str(stored.get("anchored_to", ""))
+	# The projection should have resolved the label.
+	check("arrow with head 20px above label resolves via projection to the label",
+		anchored == "ui:Label" or anchored.begins_with("label.word:"))

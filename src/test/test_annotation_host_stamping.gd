@@ -36,6 +36,16 @@ func _init() -> void:
 	test_refresh_all_anchors_walks_list()
 	test_refresh_all_anchors_skips_non_dict()
 
+	print("\n-- describe_target_point: AnnotationKind default --")
+	test_describe_target_point_default_delegates_to_host()
+	test_describe_target_point_default_null_host_returns_empty()
+
+	print("\n-- describe_target_point: AnnotationArrow override --")
+	test_arrow_describe_target_point_hits_head_directly()
+	test_arrow_describe_target_point_falls_through_to_projection()
+	test_arrow_describe_target_point_zero_length_arrow_no_projection()
+	test_arrow_describe_target_point_head_wins_over_projection()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -257,3 +267,125 @@ class _MockHost extends AnnotationHost:
 	## Convenience: register a kind into this host's private registry.
 	func register_kind(kind: AnnotationKind) -> void:
 		_registry.register_annotation_kind(kind)
+
+
+## AnnotationHost whose describe_point returns a result based on a lookup
+## Dictionary {Vector2: String}. Points not matching any key return "".
+## Used for projection tests where head and projected point return different strings.
+class _CallbackHost extends AnnotationHost:
+	## Map of point → label. Lookups compare rounded integer coords for robustness.
+	var _point_map: Dictionary  # Dictionary[Vector2, String]
+	var _registry: AnnotationRegistry
+
+	func _init(point_map: Dictionary) -> void:
+		_point_map = point_map
+		_registry = AnnotationRegistry.new()
+
+	func get_registry() -> AnnotationRegistry:
+		return _registry
+
+	func describe_point(doc_pos: Vector2) -> String:
+		# Round to nearest integer for comparison (projection yields float coords).
+		var key := Vector2(roundf(doc_pos.x), roundf(doc_pos.y))
+		if _point_map.has(key):
+			return _point_map[key]
+		return ""
+
+	func register_kind(kind: AnnotationKind) -> void:
+		_registry.register_annotation_kind(kind)
+
+
+# ── describe_target_point: AnnotationKind default ────────────────────────────
+
+func test_describe_target_point_default_delegates_to_host() -> void:
+	print("test_describe_target_point_default_delegates_to_host:")
+	var kind := _MockKindFixedBounds.new()
+	var host := _MockHost.new("ui:SomeWidget")
+	var annotation: Dictionary = {}
+	var result := kind.describe_target_point(annotation, Vector2(5.0, 10.0), host)
+	check_eq("default describe_target_point delegates to host.describe_point",
+		result, "ui:SomeWidget")
+
+
+func test_describe_target_point_default_null_host_returns_empty() -> void:
+	print("test_describe_target_point_default_null_host_returns_empty:")
+	var kind := _MockKindFixedBounds.new()
+	var result := kind.describe_target_point({}, Vector2(5.0, 10.0), null)
+	check_eq("default describe_target_point with null host returns ''", result, "")
+
+
+# ── describe_target_point: AnnotationArrow override ──────────────────────────
+
+func test_arrow_describe_target_point_hits_head_directly() -> void:
+	print("test_arrow_describe_target_point_hits_head_directly:")
+	# Head at (100, 200) → host returns "ui:HeadWidget" directly, no projection needed.
+	var head := Vector2(100.0, 200.0)
+	var host := _MockHost.new("ui:HeadWidget")
+	var kind := AnnotationArrow.new()
+	var annotation := {
+		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [100.0, 200.0]}]
+	}
+	var result := kind.describe_target_point(annotation, head, host)
+	check_eq("arrow: head hit returns immediately without projection", result, "ui:HeadWidget")
+
+
+func test_arrow_describe_target_point_falls_through_to_projection() -> void:
+	print("test_arrow_describe_target_point_falls_through_to_projection:")
+	# Head at (100, 200), tail at (0, 0).
+	# direction = normalize(100,200) → approx (0.447, 0.894)
+	# projected = (100 + 0.447*32, 200 + 0.894*32) = approx (114.3, 228.6) → rounds to (114, 229)
+	var head := Vector2(100.0, 200.0)
+	var tail := Vector2(0.0, 0.0)
+	var direction := (head - tail).normalized()
+	var projected := head + direction * 32.0
+	var projected_key := Vector2(roundf(projected.x), roundf(projected.y))
+
+	# Host: head returns "", projected point returns "ui:TargetLabel".
+	var point_map: Dictionary = {projected_key: "ui:TargetLabel"}
+	var host := _CallbackHost.new(point_map)
+	var kind := AnnotationArrow.new()
+	var annotation := {
+		"primitives": [{"kind": "arrow", "from": [tail.x, tail.y], "to": [head.x, head.y]}]
+	}
+	var result := kind.describe_target_point(annotation, head, host)
+	check_eq("arrow: projection resolves to widget past the head", result, "ui:TargetLabel")
+
+
+func test_arrow_describe_target_point_zero_length_arrow_no_projection() -> void:
+	print("test_arrow_describe_target_point_zero_length_arrow_no_projection:")
+	# Degenerate arrow: from == to → direction is zero-length → skip projection.
+	# Both head and projected (if it were attempted) return "".
+	var host := _MockHost.new("")
+	var kind := AnnotationArrow.new()
+	var annotation := {
+		"primitives": [{"kind": "arrow", "from": [50.0, 50.0], "to": [50.0, 50.0]}]
+	}
+	var result := kind.describe_target_point(annotation, Vector2(50.0, 50.0), host)
+	check_eq("zero-length arrow: no projection, returns ''", result, "")
+
+
+func test_arrow_describe_target_point_head_wins_over_projection() -> void:
+	print("test_arrow_describe_target_point_head_wins_over_projection:")
+	# Head lands on a widget. Even though a projected point might also resolve,
+	# we should return the head result immediately without projection.
+	var head := Vector2(50.0, 100.0)
+	# Make head resolve to "ui:HeadTarget" and projected also resolve (if queried)
+	# to "ui:ProjectedTarget". Only head should be returned.
+	var tail := Vector2(0.0, 0.0)
+	var direction := (head - tail).normalized()
+	var projected := head + direction * 32.0
+	var projected_key := Vector2(roundf(projected.x), roundf(projected.y))
+	var head_key := Vector2(roundf(head.x), roundf(head.y))
+
+	var point_map: Dictionary = {
+		head_key: "ui:HeadTarget",
+		projected_key: "ui:ProjectedTarget"
+	}
+	var host := _CallbackHost.new(point_map)
+	var kind := AnnotationArrow.new()
+	var annotation := {
+		"primitives": [{"kind": "arrow", "from": [tail.x, tail.y], "to": [head.x, head.y]}]
+	}
+	var result := kind.describe_target_point(annotation, head, host)
+	check_eq("arrow: head wins, projection not used when head resolves",
+		result, "ui:HeadTarget")

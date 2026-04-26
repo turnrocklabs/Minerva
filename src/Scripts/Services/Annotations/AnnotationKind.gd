@@ -128,6 +128,20 @@ func primary_anchor_point(annotation: Dictionary) -> Vector2:
 	return bounds(annotation).get_center()
 
 
+## Return the semantic target description for an annotation's anchor point.
+##
+## kinds with directional/extended target semantics override this.
+## base_pos is the kind.primary_anchor_point. Default delegates to host.describe_point.
+##
+## Called by AnnotationHost._stamp_anchor instead of host.describe_point directly,
+## so arrow (and future kinds) can apply directional projection or other geometry
+## before the host lookup.
+func describe_target_point(annotation: Dictionary, base_pos: Vector2, host: AnnotationHost) -> String:
+	if host == null:
+		return ""
+	return host.describe_point(base_pos)
+
+
 ## Return a one-line natural-language description of this annotation.
 ##
 ## Used by minerva_annotations_list (LLM ergonomics).  Default implementation
