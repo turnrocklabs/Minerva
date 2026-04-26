@@ -252,6 +252,35 @@ static func transform_primitives(primitives: Array, transform: Transform2D) -> A
 			result.append(prim)
 			continue
 		var new_prim: Dictionary = (prim as Dictionary).duplicate(true)
+		var prim_kind := str(new_prim.get("kind", ""))
+
+		# Text primitives carry their orientation/size in `rotation_rad` and
+		# `scale` fields rather than via multiple coord points. Rotating just
+		# the `at` anchor would slide the glyph along a circle without ever
+		# turning it; scaling `at` would move it without enlarging the font.
+		# Decompose the incoming Transform2D so the rendered glyph actually
+		# rotates and grows: translate `at` (this picks up the rotate-around-
+		# center lever arm), accumulate rotation into `rotation_rad`, and
+		# multiply the uniform scale into `scale`.
+		if prim_kind == "text":
+			if new_prim.has("at"):
+				var av := _to_vec2(new_prim["at"])
+				var atv := transform * av
+				new_prim["at"] = [atv.x, atv.y]
+			var dr: float = transform.get_rotation()
+			if absf(dr) > 0.0001:
+				var cur_rot: float = float(new_prim.get("rotation_rad", 0.0))
+				new_prim["rotation_rad"] = cur_rot + dr
+			var ds: Vector2 = transform.get_scale()
+			# Scale tool emits uniform Transform2D; average sx/sy in case a
+			# future caller passes a slightly non-uniform one.
+			var s_uniform: float = (ds.x + ds.y) * 0.5
+			if absf(s_uniform - 1.0) > 0.0001:
+				var cur_scale: float = float(new_prim.get("scale", 1.0))
+				new_prim["scale"] = cur_scale * s_uniform
+			result.append(new_prim)
+			continue
+
 		for key in coord_keys:
 			if new_prim.has(key):
 				var v := _to_vec2(new_prim[key])

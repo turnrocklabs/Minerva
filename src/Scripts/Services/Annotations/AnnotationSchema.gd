@@ -273,6 +273,12 @@ static func _validate_prim_text(result: ValidationResult, p: Dictionary, path: S
 		result.add_error("%s.content" % path, "'content' must be a string", "type")
 	if p.has("size"):
 		_require_positive_number(result, p["size"], "%s.size" % path)
+	# Optional render-side affine fields used by manipulation tools (rotate/scale).
+	# When absent they default to 0.0 / 1.0 respectively in AnnotationText.
+	if p.has("rotation_rad") and not (p["rotation_rad"] is float or p["rotation_rad"] is int):
+		result.add_error("%s.rotation_rad" % path, "'rotation_rad' must be a number", "type")
+	if p.has("scale"):
+		_require_positive_number(result, p["scale"], "%s.scale" % path)
 
 
 static func _validate_prim_region(result: ValidationResult, p: Dictionary, path: String) -> void:

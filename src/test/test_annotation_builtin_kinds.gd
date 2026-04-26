@@ -92,6 +92,9 @@ func _init() -> void:
 	test_text_hit_inside()
 	test_text_hit_outside()
 	test_text_bounds_nonempty()
+	test_text_bounds_grows_with_scale()
+	test_text_bounds_rotates_with_rotation_rad()
+	test_text_render_uses_rotation_field()
 
 	print("\n-- AnnotationRegion --")
 	test_region_render_stroke()
@@ -229,6 +232,19 @@ class MockRenderContext extends AnnotationRenderContext:
 		polygon_calls += 1
 
 	func draw_string(_font: Font, _pos: Vector2, text: String, _color: Color, _size: int = 16) -> void:
+		string_calls += 1
+		last_string = text
+
+	## Mirror of draw_string for AnnotationText, which routes through the rotated
+	## helper so primitive `rotation_rad` is honoured.
+	func draw_string_rotated(
+		_font: Font,
+		_pos: Vector2,
+		text: String,
+		_color: Color,
+		_size: int = 16,
+		_rotation_rad: float = 0.0
+	) -> void:
 		string_calls += 1
 		last_string = text
 
@@ -454,6 +470,45 @@ func test_text_bounds_nonempty() -> void:
 	var ann  := _ann("2d_text", [_text_prim(0.0, 0.0, "hello")])
 	var b    := kind.bounds(ann)
 	check("text bounds has positive area", b.get_area() > 0.0)
+
+
+func test_text_bounds_grows_with_scale() -> void:
+	print("test_text_bounds_grows_with_scale:")
+	var kind := AnnotationText.new()
+	var p_base: Dictionary = _text_prim(0.0, 0.0, "hello")
+	var p_scaled: Dictionary = _text_prim(0.0, 0.0, "hello")
+	p_scaled["scale"] = 2.0
+	var b_base := kind.bounds(_ann("2d_text", [p_base]))
+	var b_scaled := kind.bounds(_ann("2d_text", [p_scaled]))
+	check("scaled bounds wider", b_scaled.size.x > b_base.size.x * 1.5)
+	check("scaled bounds taller", b_scaled.size.y > b_base.size.y * 1.5)
+
+
+func test_text_bounds_rotates_with_rotation_rad() -> void:
+	print("test_text_bounds_rotates_with_rotation_rad:")
+	var kind := AnnotationText.new()
+	var p_base: Dictionary = _text_prim(0.0, 0.0, "hello")
+	var p_rot: Dictionary = _text_prim(0.0, 0.0, "hello")
+	p_rot["rotation_rad"] = PI * 0.5  # 90° — rotated rect has w/h swapped
+	var b_base := kind.bounds(_ann("2d_text", [p_base]))
+	var b_rot := kind.bounds(_ann("2d_text", [p_rot]))
+	# After 90° rotation around `at`, the unrotated horizontal extent becomes
+	# vertical, so the AABB height should now exceed its base height.
+	check("rotated AABB taller than base", b_rot.size.y > b_base.size.y)
+
+
+func test_text_render_uses_rotation_field() -> void:
+	print("test_text_render_uses_rotation_field:")
+	# Rendering a rotated text primitive must still trigger draw_string
+	# (now via draw_string_rotated, which the mock counts in the same bucket).
+	var kind := AnnotationText.new()
+	var ctx  := MockRenderContext.new()
+	var prim: Dictionary = _text_prim(5.0, 5.0, "hi")
+	prim["rotation_rad"] = 1.0
+	var ann := _ann("2d_text", [prim])
+	kind.render(ctx, ann)
+	check("rotated text render: draw_string_rotated called once", ctx.string_calls == 1)
+	check("rotated text content forwarded", ctx.last_string == "hi")
 
 
 # ── AnnotationRegion tests ────────────────────────────────────────────────────

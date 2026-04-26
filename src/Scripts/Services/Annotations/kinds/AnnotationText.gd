@@ -92,20 +92,41 @@ func bounds(annotation: Dictionary) -> Rect2:
 func _render_text(ctx: AnnotationRenderContext, prim: Dictionary, color: Color) -> void:
 	var at   := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
 	var text := str(prim.get("content", ""))
-	# Clamp size so text stays legible: pixel size = primitive size * zoom, min 8, max 64.
+	# Clamp size so text stays legible: pixel size = primitive size * scale * zoom,
+	# min 8, max 64. The optional `scale` field is multiplied in pre-clamp so a
+	# scaled-down annotation can shrink to 8px (legibility floor) and a scaled-up
+	# one can grow to 64px (no runaway growth).
 	var base_size := float(prim.get("size", 14.0))
-	var px_size   := int(clampf(base_size * ctx.zoom, 8.0, 64.0))
-	ctx.draw_string(null, at, text, color, px_size)
+	var scale_factor := float(prim.get("scale", 1.0))
+	var rotation_rad := float(prim.get("rotation_rad", 0.0))
+	var px_size := int(clampf(base_size * scale_factor * ctx.zoom, 8.0, 64.0))
+	ctx.draw_string_rotated(null, at, text, color, px_size, rotation_rad)
 
 
 static func _text_aabb(prim: Dictionary) -> Rect2:
 	var at      := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
 	var content := str(prim.get("content", ""))
 	# Approximate: 7px per character width, 14px height at default size.
+	# Multiplied by `scale` (default 1.0) so a scale-tool drag grows the AABB.
 	var base := float(prim.get("size", 14.0))
-	var w    := content.length() * base * 0.55
-	var h    := base * 1.2
-	return Rect2(at, Vector2(w, h))
+	var scale_factor := float(prim.get("scale", 1.0))
+	var rotation_rad := float(prim.get("rotation_rad", 0.0))
+	var w := content.length() * base * scale_factor * 0.55
+	var h := base * scale_factor * 1.2
+	if absf(rotation_rad) < 0.0001:
+		return Rect2(at, Vector2(w, h))
+	# Rotated AABB: the unrotated rect's four corners (relative to `at`) get
+	# rotated by `rotation_rad`; we return the AABB enclosing them.
+	var t := Transform2D(rotation_rad, Vector2.ZERO)
+	var c0 := t * Vector2(0.0, 0.0)
+	var c1 := t * Vector2(w, 0.0)
+	var c2 := t * Vector2(0.0, h)
+	var c3 := t * Vector2(w, h)
+	var min_x := minf(minf(c0.x, c1.x), minf(c2.x, c3.x))
+	var min_y := minf(minf(c0.y, c1.y), minf(c2.y, c3.y))
+	var max_x := maxf(maxf(c0.x, c1.x), maxf(c2.x, c3.x))
+	var max_y := maxf(maxf(c0.y, c1.y), maxf(c2.y, c3.y))
+	return Rect2(at + Vector2(min_x, min_y), Vector2(max_x - min_x, max_y - min_y))
 
 
 static func _annotation_color(annotation: Dictionary) -> Color:

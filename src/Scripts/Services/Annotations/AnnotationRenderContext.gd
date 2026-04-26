@@ -122,6 +122,35 @@ func draw_string(
 	f.draw_string(canvas_item, screen_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
 
 
+## Draws a string at document-space `pos`, rotated by `rotation_rad` around `pos`.
+## `size` is the desired pixel size — callers are expected to pre-multiply any
+## scale factor into it. Resets the canvas-item transform to identity after
+## drawing so subsequent draws are unaffected.
+func draw_string_rotated(
+	font: Font,
+	pos: Vector2,
+	text: String,
+	color: Color,
+	size: int = 16,
+	rotation_rad: float = 0.0
+) -> void:
+	var f: Font = font
+	if f == null:
+		f = ThemeDB.fallback_font
+	if f == null:
+		return
+	var screen_pos := to_screen(pos)
+	if absf(rotation_rad) < 0.0001:
+		f.draw_string(canvas_item, screen_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
+		return
+	# Set a canvas-item transform that translates to screen_pos and rotates by
+	# rotation_rad. Draw at origin in that local frame; reset to identity after.
+	var t := Transform2D(rotation_rad, screen_pos)
+	RenderingServer.canvas_item_add_set_transform(canvas_item, t)
+	f.draw_string(canvas_item, Vector2.ZERO, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
+	RenderingServer.canvas_item_add_set_transform(canvas_item, Transform2D.IDENTITY)
+
+
 ## width applies to the stroke when filled=false.  Pass 1.0 / ctx.zoom for a
 ## zoom-invariant one-pixel border; omit (default 1.0) for a fixed-world-unit stroke.
 ## Added per follow-up item 2 (review comment 217).

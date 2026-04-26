@@ -73,6 +73,9 @@ func _init() -> void:
 	test_transform_primitives_deep_copy_input_not_mutated()
 	test_transform_primitives_arrow_from_to()
 	test_transform_primitives_text_at()
+	test_transform_primitives_text_rotation_accumulates()
+	test_transform_primitives_text_scale_accumulates()
+	test_transform_primitives_text_compound_rotation()
 	test_transform_primitives_polyline_points()
 	test_transform_primitives_p0_p1_p2()
 	test_transform_primitives_identity_unchanged()
@@ -591,6 +594,65 @@ func test_transform_primitives_text_at() -> void:
 	check_approx("text at.y = 205.0", float(at_arr[1]), 205.0)
 	# Non-coord key should be untouched.
 	check_eq("content unchanged", prim.get("content", ""), "hello")
+	# Pure translation: rotation_rad/scale must NOT appear (no accumulation).
+	check("no rotation_rad written for pure translate", not prim.has("rotation_rad"))
+	check("no scale written for pure translate", not prim.has("scale"))
+
+
+func test_transform_primitives_text_rotation_accumulates() -> void:
+	print("test_transform_primitives_text_rotation_accumulates:")
+	# Build a rotation-around-center transform: T(+c) · R(θ) · T(-c).
+	var center := Vector2(50.0, 50.0)
+	var theta  := PI * 0.5  # 90°
+	var t := Transform2D(0.0, center) * Transform2D(theta, Vector2.ZERO) * Transform2D(0.0, -center)
+
+	var input := [{"kind": "text", "at": [100.0, 50.0], "content": "x"}]
+	var result := AnnotationKind.transform_primitives(input, t)
+	var prim: Dictionary = result[0]
+	# `at` should rotate to (50, 100) around center (50, 50).
+	check_approx("rotated at.x ~= 50",  float((prim["at"] as Array)[0]), 50.0)
+	check_approx("rotated at.y ~= 100", float((prim["at"] as Array)[1]), 100.0)
+	# rotation_rad must be θ.
+	check_approx("rotation_rad accumulated", float(prim.get("rotation_rad", 0.0)), theta)
+	# Pure rotation: scale must NOT appear.
+	check("no scale written for pure rotation", not prim.has("scale"))
+
+
+func test_transform_primitives_text_scale_accumulates() -> void:
+	print("test_transform_primitives_text_scale_accumulates:")
+	# Build a scale-around-center transform.
+	var center := Vector2(0.0, 0.0)
+	var s := 2.0
+	var t := Transform2D(0.0, center) * Transform2D(0.0, Vector2(s, s), 0.0, Vector2.ZERO) * Transform2D(0.0, -center)
+
+	var input := [{"kind": "text", "at": [10.0, 0.0], "content": "x"}]
+	var result := AnnotationKind.transform_primitives(input, t)
+	var prim: Dictionary = result[0]
+	check_approx("scaled at.x = 20", float((prim["at"] as Array)[0]), 20.0)
+	check_approx("scale accumulated", float(prim.get("scale", 1.0)), 2.0)
+	# Pure scale: rotation_rad must NOT appear.
+	check("no rotation_rad written for pure scale", not prim.has("rotation_rad"))
+
+
+func test_transform_primitives_text_compound_rotation() -> void:
+	print("test_transform_primitives_text_compound_rotation:")
+	# Starting from a primitive that already carries rotation_rad and scale,
+	# applying another rotation/scale must compound (additive rotation,
+	# multiplicative scale).
+	var input := [{
+		"kind": "text",
+		"at": [0.0, 0.0],
+		"content": "x",
+		"rotation_rad": 0.5,
+		"scale": 1.5,
+	}]
+	# Pure rotation by 0.25 around origin (no translation).
+	var t := Transform2D(0.25, Vector2.ZERO)
+	var result := AnnotationKind.transform_primitives(input, t)
+	var prim: Dictionary = result[0]
+	check_approx("rotation_rad compound = 0.75", float(prim["rotation_rad"]), 0.75)
+	# Scale unchanged (no scale component in this transform).
+	check_approx("scale unchanged at 1.5", float(prim["scale"]), 1.5)
 
 
 func test_transform_primitives_polyline_points() -> void:
