@@ -43,11 +43,11 @@ func _init() -> void:
 
 	print("\n-- Tools section: structure --")
 	test_tools_header_label_exists()
-	test_tools_flow_exists_with_four_buttons()
+	test_tools_flow_exists_with_one_button()
 	test_tool_buttons_properties()
 
 	print("\n-- Tools section: mutual exclusion --")
-	test_tool_buttons_mutual_exclusion_within_tools()
+	test_tool_button_toggle_lifecycle()
 	test_tool_button_untoggle_kind_button()
 	test_kind_button_untoggle_tool_button()
 
@@ -398,80 +398,78 @@ func test_tools_header_label_exists() -> void:
 	_free_toolbar(tb)
 
 
-func test_tools_flow_exists_with_four_buttons() -> void:
-	print("test_tools_flow_exists_with_four_buttons:")
+func test_tools_flow_exists_with_one_button() -> void:
+	# R2.6: toolbar collapsed from 4 buttons to 1 "Select" button that maps to
+	# AnnotationTransformTool (the unified gizmo tool).
+	print("test_tools_flow_exists_with_one_button:")
 	var tb := _make_toolbar()
 	check("_tools_flow is non-null", tb._tools_flow != null)
 	check("_tools_flow is a FlowContainer", tb._tools_flow is FlowContainer)
 	check("_tools_flow is a child of toolbar",
 		tb._tools_flow != null and tb._tools_flow.get_parent() == tb)
-	check_eq("_tools_flow has exactly 4 children",
-		tb._tools_flow.get_child_count() if tb._tools_flow != null else -1, 4)
-	check_eq("_tool_buttons dict has 4 entries", tb._tool_buttons.size(), 4)
-	for expected_key in ["select", "translate", "rotate", "scale"]:
-		check("_tool_buttons has key '%s'" % expected_key, tb._tool_buttons.has(expected_key))
+	check_eq("_tools_flow has exactly 1 child",
+		tb._tools_flow.get_child_count() if tb._tools_flow != null else -1, 1)
+	check_eq("_tool_buttons dict has 1 entry", tb._tool_buttons.size(), 1)
+	check("_tool_buttons has key 'select'", tb._tool_buttons.has("select"))
 	_free_toolbar(tb)
 
 
 func test_tool_buttons_properties() -> void:
+	# R2.6: only "select" button remains; it has an icon (uid://eckoinneympm),
+	# empty text, tooltip "Select", toggle_mode=true, SIZE_SHRINK_BEGIN, in _tools_flow.
 	print("test_tool_buttons_properties:")
 	var tb := _make_toolbar()
-	# "select", "translate", "rotate" get icons so their text is empty.
-	# "scale" has no PCB icon so it keeps its text label.
-	# All four share tooltip, toggle_mode, size_flags, and parent constraints.
-	var expected_pairs: Array = [
-		# [key, display_name, has_icon]
-		["select",    "Select",    true],
-		["translate", "Translate", true],
-		["rotate",    "Rotate",    true],
-		["scale",     "Scale",     false],
-	]
-	for pair in expected_pairs:
-		var key: String     = pair[0]
-		var display: String = pair[1]
-		var has_icon: bool  = pair[2]
-		if not tb._tool_buttons.has(key):
-			check("button '%s' exists in _tool_buttons" % key, false)
-			continue
-		var btn: Button = tb._tool_buttons[key]
-		if has_icon:
-			check("button '%s' has icon" % key,      btn.icon != null)
-			check_eq("button '%s' text empty (icon mode)" % key, btn.text, "")
-		else:
-			check_eq("button '%s' text (text fallback)" % key, btn.text, display)
-		check_eq("button '%s' tooltip" % key, btn.tooltip_text,  display)
-		check("button '%s' toggle_mode" % key,                   btn.toggle_mode)
-		check_eq("button '%s' size_flags_horizontal" % key,
-			btn.size_flags_horizontal, Control.SIZE_SHRINK_BEGIN)
-		check("button '%s' parent is _tools_flow" % key,
-			btn.get_parent() == tb._tools_flow)
+	if not tb._tool_buttons.has("select"):
+		check("button 'select' exists in _tool_buttons", false)
+		_free_toolbar(tb)
+		return
+	var btn: Button = tb._tool_buttons["select"]
+	check("button 'select' has icon",          btn.icon != null)
+	check_eq("button 'select' text empty (icon mode)", btn.text, "")
+	check_eq("button 'select' tooltip",        btn.tooltip_text, "Select")
+	check("button 'select' toggle_mode",       btn.toggle_mode)
+	check_eq("button 'select' size_flags_horizontal",
+		btn.size_flags_horizontal, Control.SIZE_SHRINK_BEGIN)
+	check("button 'select' parent is _tools_flow",
+		btn.get_parent() == tb._tools_flow)
 	_free_toolbar(tb)
 
 
-# ── Tests: Tools section mutual exclusion ─────────────────────────────────────
+# ── Tests: Tools-section single-button toggle lifecycle ──────────────────────
 
-func test_tool_buttons_mutual_exclusion_within_tools() -> void:
-	print("test_tool_buttons_mutual_exclusion_within_tools:")
+func test_tool_button_toggle_lifecycle() -> void:
+	# R2.6: only one Tools button ("select") exists; toggle-on then toggle-off.
+	# Invariant: _active_tool_button_name clears and active_tool_button_changed("")
+	# fires on toggle-off.  The button's visual state is managed by the Button
+	# widget in real UI; we verify the handler-level state machine only.
+	# (Pre-R2.6 this slot tested mutual exclusion among 4 Tools buttons; now
+	# there is only one button and "exclusion" reduces to toggle-off behavior.)
+	print("test_tool_button_toggle_lifecycle:")
 	var tb := _make_toolbar()
 
 	# Simulate toggling "select" ON.
 	tb._on_tool_button_toggled("select", true)
 	check_eq("select is the active tool button", tb._active_tool_button_name, "select")
+	check("active tool is AnnotationTransformTool after select toggle-on",
+		tb.get_active_tool() is AnnotationTransformTool)
 
-	# Simulate toggling "translate" ON — "select" must visually untoggle.
-	# Force select button to pressed state to simulate the visual toggle.
-	var select_btn: Button = tb._tool_buttons["select"]
-	select_btn.set_pressed_no_signal(true)
+	# Collect signals emitted during toggle-off.
+	var off_signals: Array = []
+	tb.active_tool_button_changed.connect(func(name: String) -> void:
+		off_signals.append(name)
+	)
 
-	tb._on_tool_button_toggled("translate", true)
-	check_eq("translate is now the active tool button", tb._active_tool_button_name, "translate")
-	check("select button is visually untoggled", not select_btn.button_pressed)
-	check_eq("rotate not active", tb._active_tool_button_name, "translate")
+	tb._on_tool_button_toggled("select", false)
+	check_eq("active_tool_button_name cleared after toggle-off", tb._active_tool_button_name, "")
+	check_eq("active_tool_button_changed('') fired on toggle-off",
+		off_signals.size() >= 1 and off_signals[off_signals.size() - 1] == "", true)
 
 	_free_toolbar(tb)
 
 
 func test_tool_button_untoggle_kind_button() -> void:
+	# R2.6: "select" button now creates AnnotationTransformTool (not AnnotationSelectTool).
+	# Invariant: activating the Tools button clears any active Annotate-section kind.
 	print("test_tool_button_untoggle_kind_button:")
 	var reg  := _make_registry()
 	var kind := MockKindWithUI.new(&"plug_cross", "Cross Kind")
@@ -488,12 +486,11 @@ func test_tool_button_untoggle_kind_button() -> void:
 	var kind_btn: Button = tb._buttons[&"plug_cross"]
 	kind_btn.set_pressed_no_signal(true)
 
-	# Now activate a Tools-section button — kind tool must deactivate and button untoggle.
+	# Now activate the Tools-section "select" button — kind tool must deactivate.
 	tb._on_tool_button_toggled("select", true)
-	# The active tool is now an AnnotationSelectTool (not the kind's tool); the kind
-	# binding is cleared. Mutual exclusion across sections is preserved.
+	# The active tool is now an AnnotationTransformTool; the kind binding is cleared.
 	check("annotate kind binding cleared after tool-button press", tb._active_kind_name == &"")
-	check("active tool is an AnnotationSelectTool", tb.get_active_tool() is AnnotationSelectTool)
+	check("active tool is an AnnotationTransformTool", tb.get_active_tool() is AnnotationTransformTool)
 	check("kind button visually untoggled", not kind_btn.button_pressed)
 	check_eq("active_tool_button_name is 'select'", tb._active_tool_button_name, "select")
 
@@ -501,6 +498,8 @@ func test_tool_button_untoggle_kind_button() -> void:
 
 
 func test_kind_button_untoggle_tool_button() -> void:
+	# R2.6: uses "select" (the only Tools button) instead of "rotate".
+	# Invariant: activating an Annotate-section kind visually untoggle the Tools button.
 	print("test_kind_button_untoggle_tool_button:")
 	var reg  := _make_registry()
 	var kind := MockKindWithUI.new(&"plug_undo", "Undo Kind")
@@ -509,18 +508,18 @@ func test_kind_button_untoggle_tool_button() -> void:
 	var tb := _make_toolbar()
 	tb.set_registry(reg)
 
-	# Activate a Tools-section button.
-	tb._on_tool_button_toggled("rotate", true)
-	check_eq("rotate is active tool button", tb._active_tool_button_name, "rotate")
+	# Activate the Tools-section "select" button.
+	tb._on_tool_button_toggled("select", true)
+	check_eq("select is active tool button", tb._active_tool_button_name, "select")
 
-	# Force the rotate button visually pressed.
-	var rotate_btn: Button = tb._tool_buttons["rotate"]
-	rotate_btn.set_pressed_no_signal(true)
+	# Force the select button visually pressed.
+	var select_btn: Button = tb._tool_buttons["select"]
+	select_btn.set_pressed_no_signal(true)
 
 	# Activate an Annotate kind button — Tools button must visually untoggle.
 	tb._on_button_toggled(&"plug_undo", true)
 	check("annotate tool is now active", tb.get_active_tool() != null)
-	check("rotate button visually untoggled", not rotate_btn.button_pressed)
+	check("select button visually untoggled", not select_btn.button_pressed)
 	check_eq("active_tool_button_name cleared", tb._active_tool_button_name, "")
 
 	_free_toolbar(tb)
@@ -529,6 +528,7 @@ func test_kind_button_untoggle_tool_button() -> void:
 # ── Tests: active_tool_button_changed signal ──────────────────────────────────
 
 func test_active_tool_button_changed_signal_on_toggle() -> void:
+	# R2.6: "select" is the only Tools button; signal must carry "select".
 	print("test_active_tool_button_changed_signal_on_toggle:")
 	var tb := _make_toolbar()
 
@@ -537,14 +537,15 @@ func test_active_tool_button_changed_signal_on_toggle() -> void:
 		received.append(name)
 	)
 
-	tb._on_tool_button_toggled("translate", true)
+	tb._on_tool_button_toggled("select", true)
 	check_eq("signal fired once on toggle-on", received.size(), 1)
-	check_eq("signal carries 'translate'", received[0], "translate")
+	check_eq("signal carries 'select'", received[0], "select")
 
 	_free_toolbar(tb)
 
 
 func test_active_tool_button_changed_signal_on_toggle_off() -> void:
+	# R2.6: toggle "select" on then off — signal must fire twice.
 	print("test_active_tool_button_changed_signal_on_toggle_off:")
 	var tb := _make_toolbar()
 
@@ -553,8 +554,8 @@ func test_active_tool_button_changed_signal_on_toggle_off() -> void:
 		received.append(name)
 	)
 
-	tb._on_tool_button_toggled("scale", true)
-	tb._on_tool_button_toggled("scale", false)
+	tb._on_tool_button_toggled("select", true)
+	tb._on_tool_button_toggled("select", false)
 	check_eq("signal fired twice total (on + off)", received.size(), 2)
-	check_eq("first signal is 'scale'", received[0], "scale")
+	check_eq("first signal is 'select'", received[0], "select")
 	check_eq("second signal is '' (cleared)", received[1], "")

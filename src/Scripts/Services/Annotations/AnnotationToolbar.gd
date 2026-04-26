@@ -163,7 +163,7 @@ func _ensure_layout() -> void:
 	_tools_flow.name = "_tools_flow"
 	add_child(_tools_flow)
 
-	for tool_name in ["Select", "Translate", "Rotate", "Scale"]:
+	for tool_name in ["Select"]:
 		var btn := Button.new()
 		btn.tooltip_text = tool_name
 		btn.toggle_mode = true
@@ -207,11 +207,8 @@ func _ensure_layout() -> void:
 ## name. Returns null for unknown names.
 func _construct_tool_for_name(tool_name: String) -> AnnotationAuthorTool:
 	match tool_name:
-		"select":    return AnnotationSelectTool.new()
-		"translate": return AnnotationTranslateTool.new()
-		"rotate":    return AnnotationRotateTool.new()
-		"scale":     return AnnotationScaleTool.new()
-		_:           return null
+		"select": return AnnotationTransformTool.new()
+		_:        return null
 
 
 # ── Internal: button population ───────────────────────────────────────────────
