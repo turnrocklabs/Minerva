@@ -24,7 +24,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CEF_VERSION: "145.0.26"
+  # Cache key only — the binary version actually downloaded is the one
+  # pinned inside scripts/build-godot-cef.sh (must match cef-dll-sys in
+  # vendor/godot_cef/Cargo.lock). Keep these in sync so caches hit.
+  CEF_VERSION: "146.0.12"
 
 jobs:
   build:
@@ -54,6 +57,11 @@ jobs:
 
       - name: Setup Rust nightly
         uses: dtolnay/rust-toolchain@nightly
+
+      - name: Add x86_64 Rust target (macOS universal build)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: rustup target add x86_64-apple-darwin --toolchain nightly
 
       - name: Cache Cargo registry and target
         uses: actions/cache@v4

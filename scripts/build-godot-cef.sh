@@ -99,12 +99,30 @@ fi
 
 # ── Fetch CEF binary bundle ───────────────────────────────────────────
 
-CEF_DIR="$HOME/.local/share/cef"
-# export-cef-dir is idempotent on the version: if the dir already has the
-# matching release it's a no-op, otherwise it overwrites.
-echo "Exporting CEF $CEF_VERSION to $CEF_DIR..."
-export-cef-dir --version "$CEF_VERSION" --force "$CEF_DIR"
-export CEF_PATH="$CEF_DIR"
+CEF_BASE_DIR="$HOME/.local/share/cef"
+
+if [ "$PLATFORM" = "macos" ]; then
+    # macOS universal bundling (xtask bundle_app.rs) reads CEF_PATH_ARM64
+    # and CEF_PATH_X64 separately so it can embed both Frameworks into the
+    # .app. A single CEF_PATH is not enough — fetch each arch into its own
+    # directory.
+    CEF_DIR_ARM64="$CEF_BASE_DIR/$CEF_VERSION/cef_macos_aarch64"
+    CEF_DIR_X64="$CEF_BASE_DIR/$CEF_VERSION/cef_macos_x86_64"
+    echo "Exporting CEF $CEF_VERSION (arm64) to $CEF_DIR_ARM64..."
+    export-cef-dir --version "$CEF_VERSION" --target aarch64-apple-darwin --force "$CEF_DIR_ARM64"
+    echo "Exporting CEF $CEF_VERSION (x86_64) to $CEF_DIR_X64..."
+    export-cef-dir --version "$CEF_VERSION" --target x86_64-apple-darwin --force "$CEF_DIR_X64"
+    export CEF_PATH_ARM64="$CEF_DIR_ARM64"
+    export CEF_PATH_X64="$CEF_DIR_X64"
+    # cef-dll-sys's build-script linkage step also reads CEF_PATH; point it
+    # at the host arch so the cargo build itself succeeds.
+    export CEF_PATH="$CEF_DIR_ARM64"
+else
+    CEF_DIR="$CEF_BASE_DIR"
+    echo "Exporting CEF $CEF_VERSION to $CEF_DIR..."
+    export-cef-dir --version "$CEF_VERSION" --force "$CEF_DIR"
+    export CEF_PATH="$CEF_DIR"
+fi
 
 # ── Build ─────────────────────────────────────────────────────────────
 
