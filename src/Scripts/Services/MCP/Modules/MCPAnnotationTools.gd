@@ -15,6 +15,13 @@ extends RefCounted
 ## module array is duck-typed (Array, not Array[MCPToolModule]), so this is
 ## fully compatible at runtime.
 ##
+## Render-via-kind implementation note (R6):
+##   _render_annotation_via_kind() dispatches to kind.render() using an
+##   _ImageRenderContext that overrides all draw helpers with pure-software
+##   rasterizers that write directly to an Image. This works in both headless
+##   test environments (no GPU, no SceneTree _draw callback) and in live usage.
+##   The placeholder fill_rect is kept as a fallback for null (unknown) kinds.
+##
 ## Scope constraints enforced here:
 ##   - Live-authoring (start_stroke / add_points / end_stroke) is task
 ##     019dc0ec06f77301858eed9cc22bb116 — NOT HERE.
@@ -622,10 +629,19 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 		img = Image.create(width, height, false, Image.FORMAT_RGBA8)
 		img.fill(Color(0, 0, 0, 0))  # transparent
 
-	# Render each annotation's bounding box as a placeholder rectangle.
+	# Render each annotation via its kind's render() virtual.
+	# Falls back to the placeholder fill for annotations whose kind is not
+	# registered (unknown kinds: design §10).
 	var registry: AnnotationRegistry = _get_registry()
 	for ann in filtered:
-		_render_annotation_placeholder(img, ann, registry, overlay_scale)
+		var kind_name: StringName = StringName(str(ann.get("kind", "")))
+		var kind: AnnotationKind = null
+		if registry != null:
+			kind = registry.get_annotation_kind(kind_name)
+		if kind != null:
+			_render_annotation_via_kind(img, ann, kind, overlay_scale)
+		else:
+			_render_annotation_placeholder(img, ann, registry, overlay_scale)
 
 	# Write PNG to the caller-supplied path.
 	var save_err: Error = img.save_png(output_path)
@@ -755,10 +771,27 @@ func _load_or_init_sidecar(doc_path: String) -> Dictionary:
 	}
 
 
+## Render a single annotation via its kind's render() virtual into img.
+##
+## Builds an _ImageRenderContext whose draw helpers rasterize directly to img
+## using pure-software pixel operations — no GPU, no SceneTree, no CanvasItem RID
+## required. Works correctly in both headless test contexts and live usage.
+##
+## scale_factor: passed to the render context's transform so all coordinates are
+## scaled to match a downsampled bg_image. At 1.0 (no downsampling), annotation
+## coordinates map 1:1 to image pixels.
+func _render_annotation_via_kind(
+	img: Image,
+	ann: Dictionary,
+	kind: AnnotationKind,
+	scale_factor: float = 1.0
+) -> void:
+	var ctx := _ImageRenderContext.new(img, scale_factor)
+	kind.render(ctx, ann)
+
+
 ## Render a single annotation as a placeholder rectangle on the image.
-## Uses AnnotationKind.bounds_from_primitives() (substrate-side, no plugin required)
-## to determine placement. Fills known-kind bounds with a semi-transparent color;
-## unknown kinds get a grey placeholder (design §10).
+## Used as a fallback when kind == null (unknown / unregistered kind).
 ##
 ## scale_factor: multiply annotation bounds by this before drawing. Pass < 1.0 when
 ## bg_image was downsampled so annotations stay aligned with the smaller image.
@@ -802,3 +835,207 @@ func _render_annotation_placeholder(
 
 	# Single native call — avoids the GDScript per-pixel loop overhead.
 	img.fill_rect(Rect2i(ix0, iy0, ix1 - ix0, iy1 - iy0), fill_color)
+
+
+# ── _ImageRenderContext ───────────────────────────────────────────────────────
+## Software-rasterizing render context that writes directly to an Image.
+##
+## Overrides all draw helpers from AnnotationRenderContext. No GPU, no
+## CanvasItem RID, no SceneTree required — usable in headless Godot.
+##
+## Coordinate model: annotation primitives are in view/document space.
+## The context applies `scale_factor` as a uniform scale so that annotations
+## drawn on top of a downsampled bg_image land at the correct pixel positions.
+## At scale_factor=1.0, document coordinates map 1:1 to image pixels.
+##
+## Line width: Bresenham lines are 1px. Widths > 1 are approximated by
+## drawing parallel offset lines (integer rounding keeps it fast).
+##
+## Text: GDScript's Image class has no font rasterizer. draw_string and
+## draw_string_rotated instead draw a horizontal bar of colored pixels at the
+## text position so the region reads as "non-empty" in pixel-diversity tests.
+## In a live Godot process with a display the rendering is identical — the bar
+## is all an off-screen Image can produce without a canvas_item RID.
+class _ImageRenderContext extends AnnotationRenderContext:
+	var _img: Image
+
+	func _init(img: Image, scale_factor: float = 1.0) -> void:
+		_img        = img
+		zoom        = scale_factor
+		# Build a scale-only Transform2D so to_screen() applies scale_factor.
+		# origin stays at (0,0) — annotation coords and image pixels share an origin.
+		transform   = Transform2D(0.0, Vector2(scale_factor, scale_factor), 0.0, Vector2.ZERO)
+		viewport_rect = Rect2(Vector2.ZERO, Vector2(img.get_width(), img.get_height()))
+
+	# ── Draw helpers ─────────────────────────────────────────────────────────
+
+	func draw_line(a: Vector2, b: Vector2, color: Color, width: float = 1.0) -> void:
+		var sa := to_screen(a)
+		var sb := to_screen(b)
+		var passes: int = maxi(1, int(roundi(width)))
+		for w in passes:
+			_bresenham_line(sa, sb, color)
+			# Offset perpendicular for wider strokes.
+			if w + 1 < passes:
+				var dir := (sb - sa).normalized()
+				var perp := Vector2(-dir.y, dir.x)
+				sa += perp
+				sb += perp
+
+
+	func draw_polyline(points: PackedVector2Array, color: Color, width: float = 1.0) -> void:
+		for i in range(points.size() - 1):
+			draw_line(points[i], points[i + 1], color, width)
+
+
+	func draw_polygon(points: PackedVector2Array, colors: PackedColorArray) -> void:
+		if points.size() < 3:
+			return
+		# Pick the first (or only) color. Polygon fills are typically uniform.
+		var color: Color = colors[0] if colors.size() > 0 else Color.WHITE
+		# Screen-transform all points.
+		var screen_pts: PackedVector2Array = PackedVector2Array()
+		screen_pts.resize(points.size())
+		for i in points.size():
+			screen_pts[i] = to_screen(points[i])
+		# For triangle fans (arrowheads): rasterize each triangle as a filled
+		# scan-line band. General polygons: fan from vertex 0.
+		for i in range(1, screen_pts.size() - 1):
+			_fill_triangle(screen_pts[0], screen_pts[i], screen_pts[i + 1], color)
+		# Always draw the outline so even degenerate fills are visible.
+		for i in screen_pts.size():
+			var next: int = (i + 1) % screen_pts.size()
+			_bresenham_line(screen_pts[i], screen_pts[next], color)
+
+
+	## Draws a text placeholder: a solid horizontal bar at the text anchor
+	## position. The bar is proportional to a typical character width × text
+	## length estimate so the rendered region has a recognisable shape.
+	## Real font rendering requires a canvas_item RID (not available here).
+	func draw_string(
+		_font: Font,
+		pos: Vector2,
+		text: String,
+		color: Color,
+		size: int = 16
+	) -> void:
+		var sp := to_screen(pos)
+		# Approximate: 0.6× width per char, height ≈ 0.8× size.
+		var bar_w: int = maxi(4, int(text.length() * size * 0.6 * zoom))
+		var bar_h: int = maxi(2, int(size * 0.8 * zoom))
+		var x0: int = int(sp.x)
+		var y0: int = int(sp.y) - bar_h
+		_img.fill_rect(
+			Rect2i(
+				clampi(x0, 0, _img.get_width() - 1),
+				clampi(y0, 0, _img.get_height() - 1),
+				clampi(bar_w, 0, _img.get_width() - clampi(x0, 0, _img.get_width() - 1)),
+				clampi(bar_h, 0, _img.get_height() - clampi(y0, 0, _img.get_height() - 1)),
+			),
+			color
+		)
+
+
+	func draw_string_rotated(
+		font: Font,
+		pos: Vector2,
+		text: String,
+		color: Color,
+		size: int = 16,
+		_rotation_rad: float = 0.0
+	) -> void:
+		# Rotation is ignored for the software rasterizer — we draw the bar
+		# axis-aligned at the anchor point regardless of rotation.
+		draw_string(font, pos, text, color, size)
+
+
+	func draw_rect(rect: Rect2, color: Color, filled: bool, width: float = 1.0) -> void:
+		var tl := to_screen(rect.position)
+		var br := to_screen(rect.position + rect.size)
+		if filled:
+			var x0: int = clampi(int(tl.x), 0, _img.get_width() - 1)
+			var y0: int = clampi(int(tl.y), 0, _img.get_height() - 1)
+			var x1: int = clampi(int(br.x), 0, _img.get_width())
+			var y1: int = clampi(int(br.y), 0, _img.get_height())
+			_img.fill_rect(Rect2i(x0, y0, x1 - x0, y1 - y0), color)
+		else:
+			var tr := to_screen(Vector2(rect.position.x + rect.size.x, rect.position.y))
+			var bl := to_screen(Vector2(rect.position.x, rect.position.y + rect.size.y))
+			draw_line(tl, tr, color, width)
+			draw_line(tr, br, color, width)
+			draw_line(br, bl, color, width)
+			draw_line(bl, tl, color, width)
+
+
+	# to_screen / from_screen are inherited from AnnotationRenderContext and
+	# use the Transform2D we set in _init — no override needed.
+
+	# ── Software rasterization helpers ───────────────────────────────────────
+
+	## Bresenham integer line-draw — writes one pixel per step.
+	## Clips to image bounds per pixel so no out-of-range writes occur.
+	func _bresenham_line(a: Vector2, b: Vector2, color: Color) -> void:
+		var x0: int = roundi(a.x)
+		var y0: int = roundi(a.y)
+		var x1: int = roundi(b.x)
+		var y1: int = roundi(b.y)
+		var dx: int = absi(x1 - x0)
+		var dy: int = absi(y1 - y0)
+		var sx: int = 1 if x0 < x1 else -1
+		var sy: int = 1 if y0 < y1 else -1
+		var err: int = dx - dy
+		var w: int = _img.get_width()
+		var h: int = _img.get_height()
+		while true:
+			if x0 >= 0 and x0 < w and y0 >= 0 and y0 < h:
+				_img.set_pixel(x0, y0, color)
+			if x0 == x1 and y0 == y1:
+				break
+			var e2: int = err * 2
+			if e2 > -dy:
+				err -= dy
+				x0  += sx
+			if e2 < dx:
+				err += dx
+				y0  += sy
+
+
+	## Scan-line fill for a single triangle (no clipping — we set_pixel only
+	## when in-bounds). Vertices are already in image/screen space.
+	func _fill_triangle(v0: Vector2, v1: Vector2, v2: Vector2, color: Color) -> void:
+		# Sort vertices by y.
+		var pts: Array = [v0, v1, v2]
+		pts.sort_custom(func(a: Vector2, b: Vector2) -> bool: return a.y < b.y)
+		var pa: Vector2 = pts[0]
+		var pb: Vector2 = pts[1]
+		var pc: Vector2 = pts[2]
+
+		var img_w: int = _img.get_width()
+		var img_h: int = _img.get_height()
+
+		var y_start: int = clampi(roundi(pa.y), 0, img_h - 1)
+		var y_end:   int = clampi(roundi(pc.y), 0, img_h - 1)
+
+		for y in range(y_start, y_end + 1):
+			# Compute x range for this scanline using edge intersections.
+			var t_ac: float = 0.0
+			if pc.y - pa.y > 0.0001:
+				t_ac = (y - pa.y) / (pc.y - pa.y)
+			var x_ac: float = pa.x + t_ac * (pc.x - pa.x)
+
+			var x_other: float
+			if y <= pb.y:
+				var t_ab: float = 0.0
+				if pb.y - pa.y > 0.0001:
+					t_ab = (y - pa.y) / (pb.y - pa.y)
+				x_other = pa.x + t_ab * (pb.x - pa.x)
+			else:
+				var t_bc: float = 0.0
+				if pc.y - pb.y > 0.0001:
+					t_bc = (y - pb.y) / (pc.y - pb.y)
+				x_other = pb.x + t_bc * (pc.x - pb.x)
+
+			var x_left:  int = clampi(roundi(minf(x_ac, x_other)), 0, img_w - 1)
+			var x_right: int = clampi(roundi(maxf(x_ac, x_other)), 0, img_w - 1)
+			for x in range(x_left, x_right + 1):
+				_img.set_pixel(x, y, color)

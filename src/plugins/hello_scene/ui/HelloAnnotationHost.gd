@@ -328,35 +328,58 @@ func _do_capture_now() -> void:
 
 
 ## Resolve which word in label's text is under the given global screen position.
-## Uses a character-width approximation consistent with AnnotationText._text_aabb
-## (base * 0.55 per character at default size 14) since headless tests have no
-## real font metrics available.
+##
+## Uses real font metrics via label.get_theme_font(&"font") so the measured
+## prefix width matches what Godot actually rendered. Falls back to
+## ThemeDB.fallback_font / ThemeDB.fallback_font_size when the label has no
+## theme override (headless tests, theme-less Controls).
+##
+## Assumption: words are separated by single spaces. The label text is split on
+## " " (false = no empty tokens) and the prefix is re-joined with single spaces
+## before measuring. If the source text contains multiple consecutive spaces or
+## tabs, the measured prefix will be slightly shorter than the rendered run, but
+## the result will still be within one word of correct. Change the join character
+## here if non-single-space separators are ever needed.
 func _resolve_word(label: Label, global_pos: Vector2) -> String:
 	var text: String = label.text
 	if text.is_empty():
 		return ""
 
-	# Try to get the real font size from the theme; fall back to 14.
-	var font_size: float = 14.0
-	if label.get_theme_font_size("font_size") > 0:
-		font_size = float(label.get_theme_font_size("font_size"))
+	# Resolve font via the theme chain so theme_override_fonts/font is honoured.
+	# get_theme_font("font") walks: local override → ancestor themes → project default.
+	var font: Font = label.get_theme_font(&"font")
+	if font == null:
+		font = ThemeDB.fallback_font
+	if font == null:
+		return ""  # no font available at all — bail gracefully
+
+	# Resolve font size via the same theme chain.
+	var font_size: int = label.get_theme_font_size(&"font_size")
+	if font_size <= 0:
+		font_size = ThemeDB.fallback_font_size
+	if font_size <= 0:
+		font_size = 16  # last-resort constant
 
 	# Compute x offset of the test point relative to the label's left edge.
 	var local_x: float = global_pos.x - label.global_position.x
 
-	# Walk through words, accumulating their widths (with a space between each).
-	var words: PackedStringArray = text.split(" ")
-	var char_w: float = font_size * 0.55
-	var space_w: float = char_w  # approximate space width as one char-width
-	var cursor: float = 0.0
+	# Split on single spaces, dropping empty tokens (handles leading/trailing
+	# spaces gracefully without introducing phantom empty words).
+	var words: PackedStringArray = text.split(" ", false)
+	if words.is_empty():
+		return ""
 
-	for word in words:
-		if word.is_empty():
-			cursor += space_w
-			continue
-		var word_w: float = word.length() * char_w
-		if local_x >= cursor and local_x < cursor + word_w:
-			return word
-		cursor += word_w + space_w
+	# Walk through words by measuring the width of the prefix "words[0..i]".
+	# When the cumulative prefix width first exceeds local_x, the clicked word
+	# is words[i]. This matches Godot's left-to-right text layout exactly.
+	for i in range(words.size()):
+		var prefix: String = " ".join(words.slice(0, i + 1))
+		var prefix_w: float = font.get_string_size(
+				prefix,
+				HORIZONTAL_ALIGNMENT_LEFT,
+				-1,
+				font_size).x
+		if local_x <= prefix_w:
+			return words[i]
 
 	return ""

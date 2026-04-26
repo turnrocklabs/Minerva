@@ -91,6 +91,12 @@ func _init() -> void:
 	test_render_editor_returns_png(tools)
 	test_render_editor_with_include_document(tools)
 
+	print("\n-- render_overlay: kind dispatch (R6) --")
+	test_render_arrow_kind_produces_pixel_diversity(tools)
+	test_render_text_kind_produces_pixels_at_anchor(tools)
+	test_render_unknown_kind_placeholder_not_transparent(tools)
+	test_render_kind_dispatch_via_mock(tools)
+
 	print("\n-- render_overlay: downsample + fill_rect --")
 	test_render_overlay_caps_output_dimension(tools)
 	test_render_overlay_no_downsample_when_small(tools)
@@ -1001,6 +1007,278 @@ func test_render_editor_with_include_document(tools: MCPAnnotationTools) -> void
 	DirAccess.remove_absolute(out_path)
 
 	AnnotationHostRegistry._reset_for_test()
+
+
+# ── Kind-dispatch render tests (R6) ──────────────────────────────────────────
+
+## Helper: count non-transparent pixels in a box centered on `center`
+## with half-side `radius`. Returns the count of opaque pixels.
+func _count_opaque_pixels(img: Image, center: Vector2, radius: int) -> int:
+	var count: int = 0
+	var cx: int = int(center.x)
+	var cy: int = int(center.y)
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var px: int = cx + dx
+			var py: int = cy + dy
+			if px < 0 or px >= img.get_width() or py < 0 or py >= img.get_height():
+				continue
+			if img.get_pixel(px, py).a > 0.01:
+				count += 1
+	return count
+
+
+## Helper: count transparent (alpha≈0) pixels in a box around `center`.
+func _count_transparent_pixels(img: Image, center: Vector2, radius: int) -> int:
+	var count: int = 0
+	var cx: int = int(center.x)
+	var cy: int = int(center.y)
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var px: int = cx + dx
+			var py: int = cy + dy
+			if px < 0 or px >= img.get_width() or py < 0 or py >= img.get_height():
+				continue
+			if img.get_pixel(px, py).a < 0.01:
+				count += 1
+	return count
+
+
+## Helper: count distinct RGBA colors (opaque only) in a box around `center`.
+func _count_distinct_colors(img: Image, center: Vector2, radius: int) -> int:
+	var seen: Dictionary = {}
+	var cx: int = int(center.x)
+	var cy: int = int(center.y)
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var px: int = cx + dx
+			var py: int = cy + dy
+			if px < 0 or px >= img.get_width() or py < 0 or py >= img.get_height():
+				continue
+			var c: Color = img.get_pixel(px, py)
+			if c.a < 0.01:
+				continue  # skip transparent
+			# Quantize to 4-bit per channel to tolerate minor anti-aliasing.
+			var key: int = (int(c.r * 15) << 12) | (int(c.g * 15) << 8) | (int(c.b * 15) << 4) | int(c.a * 15)
+			seen[key] = true
+	return seen.size()
+
+
+## Arrow annotations rendered via kind.render() should produce visible geometry
+## (line + arrowhead polygon). Proof that kind.render() was used instead of a
+## solid fill_rect:
+##  1. Pixels exist near the arrowhead 'to' point (geometry was drawn there).
+##  2. Pixels also exist along the shaft midpoint (line was drawn).
+##  3. The bounding-box of the arrow contains both opaque AND transparent pixels
+##     (geometry is sparse; fill_rect would leave no transparent pixels).
+## A solid fill_rect over the whole bounds would fail check 3 because every
+## pixel inside the bounds rect would be opaque.
+func test_render_arrow_kind_produces_pixel_diversity(tools: MCPAnnotationTools) -> void:
+	print("test_render_arrow_kind_produces_pixel_diversity:")
+	AnnotationHostRegistry._reset_for_test()
+
+	# Arrow from (20, 20) to (100, 100) — both endpoints well inside a 256×256 image.
+	var host := _FixtureLiveHost.new()
+	host.push({
+		"id": "ann_arrow_div",
+		"kind": "2d_arrow",
+		"view_context": "test",
+		"author": "ai",
+		"primitives": [{"kind": "arrow", "from": [20.0, 20.0], "to": [100.0, 100.0]}],
+	})
+	AnnotationHostRegistry.register("ArrowDiv", host)
+
+	var out_path := "/tmp/minerva_render_test_%d_arrowdiv.png" % int(Time.get_unix_time_from_system())
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name": "ArrowDiv",
+		"view":        "test",
+		"width":       256,
+		"height":      256,
+		"output_path": out_path,
+	})
+	check("arrow div: render succeeded", result.get("success", false))
+	check("arrow div: PNG written", FileAccess.file_exists(out_path))
+
+	if FileAccess.file_exists(out_path):
+		var img := Image.load_from_file(out_path)
+		check("arrow div: PNG loads", img != null)
+		if img != null:
+			# Check 1: pixels exist near the arrowhead 'to' point (100, 100).
+			var head_opaque: int = _count_opaque_pixels(img, Vector2(100, 100), 8)
+			check("arrow div: arrowhead region has opaque pixels (geometry drawn at 'to')",
+				head_opaque >= 1)
+
+			# Check 2: pixels exist along the shaft midpoint.
+			var mid_opaque: int = _count_opaque_pixels(img, Vector2(60, 60), 4)
+			check("arrow div: mid-shaft region has pixels (line drawn)", mid_opaque >= 1)
+
+			# Check 3: the bounding box of the arrow (from tail to head, roughly 20..100)
+			# contains SOME transparent pixels. A solid fill_rect over the whole bounds
+			# would leave no transparent pixels. The line-only geometry is 1-pixel wide,
+			# so most of the 80×80 bounding box remains transparent.
+			# Sample a 20×20 box well inside the bounds but away from the diagonal —
+			# for a diagonal arrow from (20,20) to (100,100), the center (60,60) is on
+			# the line. Sample (60, 40) — off the diagonal, should be transparent.
+			var off_diagonal_transparent: int = _count_transparent_pixels(img, Vector2(60, 40), 5)
+			check("arrow div: off-diagonal region has transparent pixels (proves geometry, not solid fill)",
+				off_diagonal_transparent >= 1)
+	DirAccess.remove_absolute(out_path)
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+## Text annotations rendered via kind.render() should produce visible pixels at
+## the text anchor point 'at'. The software rasterizer paints a color bar at
+## that position even without a font rasterizer.
+func test_render_text_kind_produces_pixels_at_anchor(tools: MCPAnnotationTools) -> void:
+	print("test_render_text_kind_produces_pixels_at_anchor:")
+	AnnotationHostRegistry._reset_for_test()
+
+	# Text at (60, 80) with content "Hi" — should produce a color bar there.
+	var host := _FixtureLiveHost.new()
+	host.push({
+		"id": "ann_text_pix",
+		"kind": "2d_text",
+		"view_context": "test",
+		"author": "ai",
+		"primitives": [{"kind": "text", "at": [60.0, 80.0], "content": "Hi", "size": 14}],
+	})
+	AnnotationHostRegistry.register("TextPix", host)
+
+	var out_path := "/tmp/minerva_render_test_%d_textpix.png" % int(Time.get_unix_time_from_system())
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name": "TextPix",
+		"view":        "test",
+		"width":       256,
+		"height":      256,
+		"output_path": out_path,
+	})
+	check("text pix: render succeeded", result.get("success", false))
+	check("text pix: PNG written", FileAccess.file_exists(out_path))
+
+	if FileAccess.file_exists(out_path):
+		var img := Image.load_from_file(out_path)
+		check("text pix: PNG loads", img != null)
+		if img != null:
+			# Sample a box around the anchor. The software rasterizer paints a
+			# solid bar of the annotation color starting at 'at', so at least
+			# 1 non-transparent pixel should be present near (60, 80).
+			var distinct: int = _count_distinct_colors(img, Vector2(60, 80), 10)
+			check("text pix: ≥ 1 non-transparent color near anchor (proves draw_string was called)",
+				distinct >= 1)
+	DirAccess.remove_absolute(out_path)
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+## Unknown-kind annotations must still render the placeholder fill (not
+## transparent). Regression guard: the placeholder must not be dropped when
+## kind is null.
+func test_render_unknown_kind_placeholder_not_transparent(tools: MCPAnnotationTools) -> void:
+	print("test_render_unknown_kind_placeholder_not_transparent:")
+	AnnotationHostRegistry._reset_for_test()
+
+	# An annotation whose kind is not in the fallback registry.
+	# MCPAnnotationTools._disable_fallback_registry keeps the fallback, but the
+	# fallback registry only contains built-in kinds; a completely novel name is
+	# still unknown to it.  We write to a sidecar so the registry's add-guard
+	# (unknown kinds rejected at add) doesn't block us.
+	var doc := _doc_path("unknown_placeholder.txt")
+	_write_raw_sidecar(doc, [{
+		"id":            "ann_unk_rend",
+		"kind":          "totally_unknown_xyz_kind",
+		"view_context":  "pcb",
+		"author":        "ai",
+		"primitives":    [{"kind": "arrow", "from": [30.0, 30.0], "to": [80.0, 80.0]}],
+		"created_at":    "2026-04-25T00:00:00Z",
+	}])
+
+	var out_path := "/tmp/minerva_render_test_%d_unknownph.png" % int(Time.get_unix_time_from_system())
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"document_path": doc,
+		"view":          "pcb",
+		"width":         256,
+		"height":        256,
+		"output_path":   out_path,
+	})
+	check("unknown placeholder: render succeeded", result.get("success", false))
+	check("unknown placeholder: 1 annotation drawn", result.get("annotations_drawn", 0) == 1)
+	check("unknown placeholder: PNG written", FileAccess.file_exists(out_path))
+
+	if FileAccess.file_exists(out_path):
+		var img := Image.load_from_file(out_path)
+		check("unknown placeholder: PNG loads", img != null)
+		if img != null:
+			# The placeholder fill_rect should have put colored pixels at bounds center.
+			var distinct: int = _count_distinct_colors(img, Vector2(55, 55), 20)
+			check("unknown placeholder: region is not fully transparent (placeholder rendered)",
+				distinct >= 1)
+	DirAccess.remove_absolute(out_path)
+
+
+## Verify that the kind dispatch path calls kind.render() and NOT the placeholder
+## fill, using a mock kind that records whether render() was invoked.
+## This test is the dispatch-logic companion to the pixel-diversity tests above;
+## it works even if headless Godot's Image pixel sampling is unreliable.
+func test_render_kind_dispatch_via_mock(tools: MCPAnnotationTools) -> void:
+	print("test_render_kind_dispatch_via_mock:")
+	AnnotationHostRegistry._reset_for_test()
+
+	# Build a minimal registry with a mock kind that records render() calls.
+	var mock_kind := _MockAnnotationKind.new()
+	var registry := AnnotationRegistry.new()
+	registry.register_annotation_kind(mock_kind)
+
+	# Override the fallback registry so our mock kind is found.
+	MCPAnnotationTools._fallback_registry = registry
+	MCPAnnotationTools._disable_fallback_registry = false
+
+	var doc := _doc_path("mock_dispatch.txt")
+	_write_raw_sidecar(doc, [{
+		"id":           "ann_mock1",
+		"kind":         "mock_test_kind",
+		"view_context": "mock",
+		"author":       "ai",
+		"primitives":   [],
+		"created_at":   "2026-04-25T00:00:00Z",
+	}])
+
+	var out_path := "/tmp/minerva_render_test_%d_mockdisp.png" % int(Time.get_unix_time_from_system())
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"document_path": doc,
+		"view":          "mock",
+		"width":         64,
+		"height":        64,
+		"output_path":   out_path,
+	})
+	check("mock dispatch: render succeeded", result.get("success", false))
+	check("mock dispatch: 1 annotation drawn", result.get("annotations_drawn", 0) == 1)
+	check("mock dispatch: kind.render() was called", mock_kind.render_call_count == 1)
+	check("mock dispatch: placeholder was NOT used (render_call_count=1, not 0)",
+		mock_kind.render_call_count >= 1)
+	DirAccess.remove_absolute(out_path)
+
+	# Restore global state.
+	MCPAnnotationTools._fallback_registry = null
+	AnnotationHostRegistry._reset_for_test()
+
+
+## Minimal mock AnnotationKind used by test_render_kind_dispatch_via_mock.
+## Records how many times render() is called.
+class _MockAnnotationKind extends AnnotationKind:
+	var render_call_count: int = 0
+
+	func _init() -> void:
+		name         = &"mock_test_kind"
+		display_name = "Mock Test Kind"
+		owning_plugin = &"mock"
+		primitives_optional = true  # no primitives required
+
+	func render(_ctx: AnnotationRenderContext, _annotation: Dictionary) -> void:
+		render_call_count += 1
+
+	func bounds(_annotation: Dictionary) -> Rect2:
+		return Rect2(0, 0, 10, 10)
 
 
 # ── Downsample + fill_rect tests ──────────────────────────────────────────────

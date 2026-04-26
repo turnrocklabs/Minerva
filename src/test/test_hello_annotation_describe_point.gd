@@ -30,6 +30,12 @@ func _init() -> void:
 	test_describe_point_word_resolution_second_word()
 	test_describe_point_word_resolution_empty_label()
 
+	print("\n-- word resolution: real font metrics --")
+	test_word_resolution_x0_returns_first_word()
+	test_word_resolution_empty_text_no_crash()
+	test_word_resolution_x_past_end_returns_empty()
+	test_word_resolution_kittens_can_meow_9_points()
+
 	print("\n-- add_annotation stamps anchored_to --")
 	test_add_annotation_stamps_anchor_with_registry()
 	test_add_annotation_no_registry_no_anchor()
@@ -159,19 +165,14 @@ func test_describe_point_inside_label_returns_ui_label() -> void:
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 
-	# The label text is "Hello World". Let's point at a position to the right
-	# of both words so word resolution returns "" and we fall back to "ui:Label".
-	# Label is at global (0,300), size (400,30). Point at x=399 (far right, no word).
-	label.text = "Hi"  # short text — x=399 is beyond the word
+	# Short text "Hi" — point far to the right (x=399) so word resolution returns ""
+	# and we fall back to "ui:Label". x=399 is well beyond the measured width of "Hi"
+	# with any real font, so _resolve_word returns "" and describe_point returns "ui:Label".
+	label.text = "Hi"
 	var host := _build_host(fake_canvas, root)
-	# doc_pos such that canvas_global lands inside the label but beyond its text.
-	# canvas_global = canvas.global_pos + doc_pos = (0,0) + doc_pos.
-	# Label at y=300..330. doc_pos y = 310 lands inside.
-	# doc_pos x = 399 is inside the label rect but beyond "Hi" text (~2 * 14 * 0.55 = ~15px wide).
+	# canvas at (0,0), so canvas_global = doc_pos.
+	# Label at y=300..330; y=310 is inside. x=399 is inside the rect but past the text.
 	var result := host.describe_point(Vector2(399.0, 310.0))
-	# Either "ui:Label" (word resolution failed) or "label.word:Hi" — both acceptable
-	# depending on where exactly the approximation places the word boundary.
-	# We just check it returns something referencing the label.
 	check("describe_point inside label returns label reference",
 		result == "ui:Label" or result.begins_with("label.word:"))
 
@@ -185,11 +186,24 @@ func test_describe_point_word_resolution_single_word() -> void:
 	label.text = "Hello"
 
 	var host := _build_host(fake_canvas, root)
-	# "Hello" at x=0 in the label; label global_position.x = 0.
-	# canvas global_pos = (0,0), so canvas_global = doc_pos.
-	# Label starts at y=300. Point at (5, 310) should land on "Hello".
-	var result := host.describe_point(Vector2(5.0, 310.0))
-	check_eq("single word 'Hello' resolved at x=5", result, "label.word:Hello")
+	# "Hello" is the only word. Use real font metrics to find a valid x inside it.
+	# label global_position.x = 0; canvas at (0,0), so canvas_global = doc_pos.
+	# Label at y=300..330; y=310 is inside.
+	# Compute the actual width of "Hello" with the theme-resolved font.
+	var font: Font = label.get_theme_font(&"font")
+	if font == null:
+		font = ThemeDB.fallback_font
+	var fsize: int = label.get_theme_font_size(&"font_size")
+	if fsize <= 0:
+		fsize = ThemeDB.fallback_font_size
+	if fsize <= 0:
+		fsize = 16
+	var hello_w: float = font.get_string_size("Hello", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	# Click at the midpoint of "Hello".
+	var mid_x: float = hello_w * 0.5
+	var result := host.describe_point(Vector2(mid_x, 310.0))
+	print("    'Hello' pixel width=%s  click x=%s  result=%s" % [str(hello_w), str(mid_x), result])
+	check_eq("single word 'Hello' resolved at midpoint", result, "label.word:Hello")
 
 
 func test_describe_point_word_resolution_second_word() -> void:
@@ -201,11 +215,28 @@ func test_describe_point_word_resolution_second_word() -> void:
 	label.text = "Hello World"
 
 	var host := _build_host(fake_canvas, root)
-	# "Hello" is 5 chars * 14 * 0.55 = 38.5px wide. Space = 7.7px.
-	# "World" starts at ~46.2px.
-	# Point at x=60 should land on "World".
-	var result := host.describe_point(Vector2(60.0, 310.0))
-	check_eq("second word 'World' resolved at x=60", result, "label.word:World")
+	# Use real font metrics to find a valid x inside "World".
+	# The prefix "Hello World" width minus half of "World" width gives a click
+	# well inside the second word, regardless of actual font metrics.
+	var font: Font = label.get_theme_font(&"font")
+	if font == null:
+		font = ThemeDB.fallback_font
+	var fsize: int = label.get_theme_font_size(&"font_size")
+	if fsize <= 0:
+		fsize = ThemeDB.fallback_font_size
+	if fsize <= 0:
+		fsize = 16
+	var hello_w: float = font.get_string_size("Hello", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	var hello_world_w: float = font.get_string_size("Hello World", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	var world_w: float = font.get_string_size("World", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	# "World" starts at (hello_world_w - world_w); click at its midpoint.
+	var world_start: float = hello_world_w - world_w
+	var mid_x: float = world_start + world_w * 0.5
+	print("    hello_w=%s  hello_world_w=%s  world_start=%s  click x=%s" % [
+		str(hello_w), str(hello_world_w), str(world_start), str(mid_x)])
+	var result := host.describe_point(Vector2(mid_x, 310.0))
+	print("    result=%s" % result)
+	check_eq("second word 'World' resolved at midpoint", result, "label.word:World")
 
 
 func test_describe_point_word_resolution_empty_label() -> void:
@@ -220,6 +251,138 @@ func test_describe_point_word_resolution_empty_label() -> void:
 	# Empty label text → word resolution returns "" → falls back to "ui:Label".
 	var result := host.describe_point(Vector2(5.0, 310.0))
 	check_eq("empty label text → 'ui:Label'", result, "ui:Label")
+
+
+# ── word resolution: real font metrics (regression + edge cases) ──────────────
+
+## Helper: get the resolved Font and font_size for a Label using the same
+## fallback chain as _resolve_word, so test expected values match the impl.
+func _label_font(label: Label) -> Font:
+	var f: Font = label.get_theme_font(&"font")
+	if f == null:
+		f = ThemeDB.fallback_font
+	return f
+
+
+func _label_font_size(label: Label) -> int:
+	var s: int = label.get_theme_font_size(&"font_size")
+	if s <= 0:
+		s = ThemeDB.fallback_font_size
+	if s <= 0:
+		s = 16
+	return s
+
+
+func test_word_resolution_empty_text_no_crash() -> void:
+	print("test_word_resolution_empty_text_no_crash:")
+	# _resolve_word should return "" without crashing when label.text is empty.
+	var label := Label.new()
+	label.set_position(Vector2(0.0, 0.0))
+	label.set_size(Vector2(200.0, 30.0))
+	label.text = ""
+	var host := Helloscene_AnnotationHost.new()
+	# Call _resolve_word directly — no canvas/root needed for this path.
+	var result: String = host._resolve_word(label, Vector2(5.0, 5.0))
+	check_eq("empty text returns ''", result, "")
+	label.free()
+
+
+func test_word_resolution_x0_returns_first_word() -> void:
+	print("test_word_resolution_x0_returns_first_word:")
+	# A click at exactly x=0 (left edge of label) must return the first word.
+	var label := Label.new()
+	label.set_position(Vector2(0.0, 0.0))
+	label.set_size(Vector2(400.0, 30.0))
+	label.text = "alpha beta"
+	var host := Helloscene_AnnotationHost.new()
+	# global_pos.x = label.global_position.x + 0 = 0 → local_x = 0.
+	# The first prefix "alpha" has width > 0, so local_x=0 <= prefix_w → "alpha".
+	var result: String = host._resolve_word(label, Vector2(0.0, 5.0))
+	print("    click x=0 → result=%s" % result)
+	check_eq("click at x=0 returns first word 'alpha'", result, "alpha")
+	label.free()
+
+
+func test_word_resolution_x_past_end_returns_empty() -> void:
+	print("test_word_resolution_x_past_end_returns_empty:")
+	# A click far past the end of the text should return "" — no word there.
+	var label := Label.new()
+	label.set_position(Vector2(0.0, 0.0))
+	label.set_size(Vector2(400.0, 30.0))
+	label.text = "hi"
+	var font: Font = _label_font(label)
+	var fsize: int = _label_font_size(label)
+	var text_w: float = font.get_string_size("hi", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	# Click at 3× the text width — clearly past the end.
+	var far_x: float = text_w * 3.0
+	var host := Helloscene_AnnotationHost.new()
+	var result: String = host._resolve_word(label, Vector2(far_x, 5.0))
+	print("    text_w=%s  click x=%s  result='%s'" % [str(text_w), str(far_x), result])
+	check_eq("click past end of text returns ''", result, "")
+	label.free()
+
+
+func test_word_resolution_kittens_can_meow_9_points() -> void:
+	## Regression test for the confirmed off-by-one: user pointed at "meow",
+	## old 0.55-estimate resolver returned "can". Verify all three words resolve
+	## correctly at their start, middle, and end x positions.
+	##
+	## 9-point grid: {kittens, can, meow} × {start, mid, end}
+	## x positions are computed from real font metrics so this test is
+	## font-agnostic and will stay correct across Godot upgrades.
+	##
+	## Note: "end" of each word is measured as (prefix_w - 1px) — one pixel
+	## before the prefix boundary — because _resolve_word uses local_x <= prefix_w
+	## (inclusive upper edge), so exactly at the boundary maps to that word.
+	print("test_word_resolution_kittens_can_meow_9_points:")
+	var label := Label.new()
+	label.set_position(Vector2(0.0, 0.0))
+	label.set_size(Vector2(600.0, 30.0))
+	label.text = "kittens can meow"
+
+	var font: Font = _label_font(label)
+	var fsize: int = _label_font_size(label)
+
+	# Measure prefix widths for each word boundary.
+	var w_k: float  = font.get_string_size("kittens", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	var w_kc: float = font.get_string_size("kittens can", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+	var w_kcm: float = font.get_string_size("kittens can meow", HORIZONTAL_ALIGNMENT_LEFT, -1, fsize).x
+
+	# Word x ranges (local coords, label.global_position.x = 0):
+	#   kittens : [0,          w_k]
+	#   can     : (w_k,        w_kc]   → start = w_k + 1 (first pixel past kittens boundary)
+	#   meow    : (w_kc,       w_kcm]  → start = w_kc + 1
+
+	# Build the 9-point test grid as: [local_x, expected_word, description]
+	var grid: Array = [
+		# kittens: start, middle, end
+		[1.0,                             "kittens", "kittens@start(x=1)"],
+		[w_k * 0.5,                       "kittens", "kittens@mid"],
+		[w_k - 1.0,                       "kittens", "kittens@end(x=w_k-1)"],
+		# can: start, middle, end
+		[w_k + 1.0,                       "can",     "can@start(x=w_k+1)"],
+		[w_k + (w_kc - w_k) * 0.5,       "can",     "can@mid"],
+		[w_kc - 1.0,                      "can",     "can@end(x=w_kc-1)"],
+		# meow: start, middle, end
+		[w_kc + 1.0,                      "meow",    "meow@start(x=w_kc+1)"],
+		[w_kc + (w_kcm - w_kc) * 0.5,    "meow",    "meow@mid"],
+		[w_kcm - 1.0,                     "meow",    "meow@end(x=w_kcm-1)"],
+	]
+
+	print("    font_size=%d  w_kittens=%.1f  w_kittens+can=%.1f  w_full=%.1f" % [
+		fsize, w_k, w_kc, w_kcm])
+
+	var host := Helloscene_AnnotationHost.new()
+	for entry in grid:
+		var local_x: float = float(entry[0])
+		var expected: String = str(entry[1])
+		var desc: String = str(entry[2])
+		# label.global_position = (0,0), so global_pos.x = local_x.
+		var got: String = host._resolve_word(label, Vector2(local_x, 5.0))
+		print("    %-28s → got='%s' expected='%s'" % [desc, got, expected])
+		check_eq("kittens_can_meow: " + desc, got, expected)
+
+	label.free()
 
 
 # ── add_annotation stamps anchored_to ────────────────────────────────────────
