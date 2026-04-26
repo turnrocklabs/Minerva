@@ -96,6 +96,11 @@ func _init() -> void:
 	test_render_overlay_no_downsample_when_small(tools)
 	test_render_overlay_with_annotation_produces_png(tools)
 
+	print("\n-- render_overlay: output_path negative tests --")
+	test_render_output_path_empty(tools)
+	test_render_output_path_relative(tools)
+	test_render_output_path_missing_parent(tools)
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -461,6 +466,7 @@ func test_list_unknown_kind_verbatim(tools: MCPAnnotationTools) -> void:
 func test_render_returns_png(tools: MCPAnnotationTools) -> void:
 	print("test_render_returns_png:")
 	var doc := _doc_path("render_test.txt")
+	var out_path := "/tmp/minerva_render_test_%d_a.png" % int(Time.get_unix_time_from_system())
 
 	# Add a couple of annotations to render.
 	var ann1 := _valid_annotation_dict()
@@ -476,41 +482,55 @@ func test_render_returns_png(tools: MCPAnnotationTools) -> void:
 		"view": "pcb",
 		"width": 256,
 		"height": 256,
+		"output_path": out_path,
 	})
 	check("render succeeds (success=true)", result.get("success", false))
-	check("image_png key present", result.has("image_png"))
-	var b64: String = str(result.get("image_png", ""))
-	check("image_png is non-empty base64 string", b64.length() > 0)
+	check("response has output_path", result.has("output_path"))
+	check("response has width", result.has("width"))
+	check("response has height", result.has("height"))
+	check("response has annotations_drawn", result.has("annotations_drawn"))
+	check("response does NOT have image_png", not result.has("image_png"))
+	check("output_path echoed correctly", result.get("output_path", "") == out_path)
+	check("PNG file exists on disk", FileAccess.file_exists(out_path))
 
-	# Verify it decodes to actual PNG bytes (magic bytes: 0x89 0x50 0x4E 0x47).
-	var png_bytes := Marshalls.base64_to_raw(b64)
-	check("decoded bytes non-empty", png_bytes.size() > 0)
-	if png_bytes.size() >= 4:
-		check("PNG magic bytes present",
-			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
-			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
+	# Verify it loads as a valid image with matching dimensions.
+	if FileAccess.file_exists(out_path):
+		var loaded := Image.load_from_file(out_path)
+		check("PNG loads cleanly", loaded != null)
+		if loaded != null:
+			check_eq("loaded width matches response", loaded.get_width(), result.get("width", -1))
+			check_eq("loaded height matches response", loaded.get_height(), result.get("height", -1))
+	DirAccess.remove_absolute(out_path)
 
 	# Test with include_document=true — should warn but still succeed.
+	var out_path2 := "/tmp/minerva_render_test_%d_b.png" % int(Time.get_unix_time_from_system())
 	var result_with_doc := tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view": "pcb",
 		"width": 128,
 		"height": 128,
 		"include_document": true,
+		"output_path": out_path2,
 	})
 	check("render with include_document=true still succeeds (stub path)", result_with_doc.get("success", false))
-	check("image_png still returned with include_document", result_with_doc.has("image_png"))
+	check("output_path returned with include_document", result_with_doc.has("output_path"))
+	check("PNG file exists (include_document)", FileAccess.file_exists(out_path2))
+	DirAccess.remove_absolute(out_path2)
 
 	# Test with include_kinds filter — should return only matching.
+	var out_path3 := "/tmp/minerva_render_test_%d_c.png" % int(Time.get_unix_time_from_system())
 	var result_filtered := tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view": "pcb",
 		"width": 128,
 		"height": 128,
 		"include_kinds": ["2d_arrow"],
+		"output_path": out_path3,
 	})
 	check("render with include_kinds filter succeeds", result_filtered.get("success", false))
-	check("image_png present with filter", result_filtered.has("image_png"))
+	check("output_path present with filter", result_filtered.has("output_path"))
+	check("PNG file exists (filtered)", FileAccess.file_exists(out_path3))
+	DirAccess.remove_absolute(out_path3)
 
 
 # ── New enriched-fields tests ─────────────────────────────────────────────────
@@ -858,7 +878,10 @@ func test_list_editor_response_shape(tools: MCPAnnotationTools) -> void:
 ## render_overlay with neither editor_name nor document_path → error.
 func test_render_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
 	print("test_render_requires_path_or_editor:")
-	var result := tools.handle("minerva_annotations_render_overlay", {"view": "hello"})
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"view": "hello",
+		"output_path": "/tmp/minerva_render_test_path_or_editor.png",
+	})
 	check("missing both: success=false", result.get("success", true) == false)
 	check("missing both: error mentions editor_name",
 		str(result.get("error", "")).contains("editor_name"))
@@ -873,6 +896,7 @@ func test_render_rejects_both(tools: MCPAnnotationTools) -> void:
 		"editor_name":    "Live",
 		"document_path": _doc_path("ambiguous_render.txt"),
 		"view":           "hello",
+		"output_path":    "/tmp/minerva_render_test_rejects_both.png",
 	})
 	check("both: success=false", result.get("success", true) == false)
 	check("both: error mentions 'only one'",
@@ -886,6 +910,7 @@ func test_render_editor_unknown(tools: MCPAnnotationTools) -> void:
 	var result := tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "Nope",
 		"view":        "hello",
+		"output_path": "/tmp/minerva_render_test_editor_unknown.png",
 	})
 	check("unknown editor: success=false", result.get("success", true) == false)
 	check("unknown editor: error names the editor",
@@ -893,7 +918,7 @@ func test_render_editor_unknown(tools: MCPAnnotationTools) -> void:
 	AnnotationHostRegistry._reset_for_test()
 
 
-## render_overlay with a registered live host → success, image_png non-empty.
+## render_overlay with a registered live host → success, PNG written to disk.
 func test_render_editor_returns_png(tools: MCPAnnotationTools) -> void:
 	print("test_render_editor_returns_png:")
 	AnnotationHostRegistry._reset_for_test()
@@ -909,28 +934,36 @@ func test_render_editor_returns_png(tools: MCPAnnotationTools) -> void:
 	})
 	AnnotationHostRegistry.register("Live", host)
 
+	var out_path := "/tmp/minerva_render_test_%d_editor.png" % int(Time.get_unix_time_from_system())
 	var result := tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "Live",
 		"view":        "hello",
 		"width":       128,
 		"height":      128,
+		"output_path": out_path,
 	})
 	check("render editor: success=true", result.get("success", false))
-	check("render editor: image_png present", result.has("image_png"))
-	var b64: String = str(result.get("image_png", ""))
-	check("render editor: image_png non-empty", b64.length() > 0)
-	var png_bytes := Marshalls.base64_to_raw(b64)
-	check("render editor: decoded bytes non-empty", png_bytes.size() > 0)
-	if png_bytes.size() >= 4:
-		check("render editor: PNG magic bytes",
-			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
-			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
+	check("render editor: output_path present", result.has("output_path"))
+	check("render editor: width present", result.has("width"))
+	check("render editor: height present", result.has("height"))
+	check("render editor: annotations_drawn present", result.has("annotations_drawn"))
+	check("render editor: no image_png in response", not result.has("image_png"))
+	check("render editor: output_path echoed", result.get("output_path", "") == out_path)
+	check("render editor: file exists", FileAccess.file_exists(out_path))
+
+	if FileAccess.file_exists(out_path):
+		var loaded := Image.load_from_file(out_path)
+		check("render editor: PNG loads cleanly", loaded != null)
+		if loaded != null:
+			check_eq("render editor: width matches", loaded.get_width(), result.get("width", -1))
+			check_eq("render editor: height matches", loaded.get_height(), result.get("height", -1))
+	DirAccess.remove_absolute(out_path)
 
 	AnnotationHostRegistry._reset_for_test()
 
 
 ## render_overlay with include_document=true and a fixture host that returns a
-## known Image → compositing succeeds and image_png is non-empty.
+## known Image → compositing succeeds and PNG is written to disk.
 func test_render_editor_with_include_document(tools: MCPAnnotationTools) -> void:
 	print("test_render_editor_with_include_document:")
 	AnnotationHostRegistry._reset_for_test()
@@ -950,22 +983,22 @@ func test_render_editor_with_include_document(tools: MCPAnnotationTools) -> void
 	})
 	AnnotationHostRegistry.register("Live", host)
 
+	var out_path := "/tmp/minerva_render_test_%d_incdoc.png" % int(Time.get_unix_time_from_system())
 	var result := tools.handle("minerva_annotations_render_overlay", {
 		"editor_name":      "Live",
 		"view":             "hello",
 		"include_document": true,
+		"output_path":      out_path,
 	})
 	check("include_document: success=true", result.get("success", false))
-	check("include_document: image_png present", result.has("image_png"))
-	var b64: String = str(result.get("image_png", ""))
-	check("include_document: image_png non-empty", b64.length() > 0)
-	# Verify it is valid PNG (magic bytes) — don't assert pixel colours (too brittle).
-	var png_bytes := Marshalls.base64_to_raw(b64)
-	check("include_document: decoded bytes non-empty", png_bytes.size() > 0)
-	if png_bytes.size() >= 4:
-		check("include_document: PNG magic bytes",
-			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
-			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
+	check("include_document: output_path present", result.has("output_path"))
+	check("include_document: no image_png", not result.has("image_png"))
+	check("include_document: file exists", FileAccess.file_exists(out_path))
+	# Verify it is a valid loadable PNG — don't assert pixel colours (too brittle).
+	if FileAccess.file_exists(out_path):
+		var loaded := Image.load_from_file(out_path)
+		check("include_document: PNG loads cleanly", loaded != null)
+	DirAccess.remove_absolute(out_path)
 
 	AnnotationHostRegistry._reset_for_test()
 
@@ -992,23 +1025,27 @@ func test_render_overlay_caps_output_dimension(tools: MCPAnnotationTools) -> voi
 	})
 	AnnotationHostRegistry.register("BigPanel", host)
 
+	var out_path := "/tmp/minerva_render_test_%d_cap.png" % int(Time.get_unix_time_from_system())
 	var result := tools.handle("minerva_annotations_render_overlay", {
 		"editor_name":      "BigPanel",
 		"view":             "hello",
 		"include_document": true,
+		"output_path":      out_path,
 	})
 	check("cap: success=true", result.get("success", false))
-	check("cap: image_png present", result.has("image_png"))
+	check("cap: output_path present", result.has("output_path"))
+	check("cap: file exists", FileAccess.file_exists(out_path))
 
-	# Decode the PNG and verify dimensions.
-	var png_bytes := Marshalls.base64_to_raw(str(result.get("image_png", "")))
-	check("cap: decoded bytes non-empty", png_bytes.size() > 0)
-	var decoded := Image.new()
-	var err := decoded.load_png_from_buffer(png_bytes)
-	check("cap: PNG loads cleanly", err == OK)
-	if err == OK:
-		var longest_edge: int = maxi(decoded.get_width(), decoded.get_height())
-		check("cap: longest edge <= 1024", longest_edge <= 1024)
+	# Load the written PNG and verify dimensions.
+	if FileAccess.file_exists(out_path):
+		var decoded := Image.load_from_file(out_path)
+		check("cap: PNG loads cleanly", decoded != null)
+		if decoded != null:
+			var longest_edge: int = maxi(decoded.get_width(), decoded.get_height())
+			check("cap: longest edge <= 1024", longest_edge <= 1024)
+			check_eq("cap: width matches response", decoded.get_width(), result.get("width", -1))
+			check_eq("cap: height matches response", decoded.get_height(), result.get("height", -1))
+	DirAccess.remove_absolute(out_path)
 
 	AnnotationHostRegistry._reset_for_test()
 
@@ -1026,26 +1063,29 @@ func test_render_overlay_no_downsample_when_small(tools: MCPAnnotationTools) -> 
 	host.set_render_image(small_bg)
 	AnnotationHostRegistry.register("SmallPanel", host)
 
+	var out_path := "/tmp/minerva_render_test_%d_small.png" % int(Time.get_unix_time_from_system())
 	var result := tools.handle("minerva_annotations_render_overlay", {
 		"editor_name":      "SmallPanel",
 		"view":             "hello",
 		"include_document": true,
+		"output_path":      out_path,
 	})
 	check("no-downsample: success=true", result.get("success", false))
+	check("no-downsample: file exists", FileAccess.file_exists(out_path))
 
-	var png_bytes := Marshalls.base64_to_raw(str(result.get("image_png", "")))
-	var decoded := Image.new()
-	var err := decoded.load_png_from_buffer(png_bytes)
-	check("no-downsample: PNG loads cleanly", err == OK)
-	if err == OK:
-		check_eq("no-downsample: width preserved at 500", decoded.get_width(), 500)
-		check_eq("no-downsample: height preserved at 500", decoded.get_height(), 500)
+	if FileAccess.file_exists(out_path):
+		var decoded := Image.load_from_file(out_path)
+		check("no-downsample: PNG loads cleanly", decoded != null)
+		if decoded != null:
+			check_eq("no-downsample: width preserved at 500", decoded.get_width(), 500)
+			check_eq("no-downsample: height preserved at 500", decoded.get_height(), 500)
+	DirAccess.remove_absolute(out_path)
 
 	AnnotationHostRegistry._reset_for_test()
 
 
 ## Integration test: render_overlay with a known-bounds annotation produces a
-## valid, non-empty PNG and no FAIL output (verifies fill_rect path end-to-end).
+## valid PNG on disk (verifies fill_rect path end-to-end).
 func test_render_overlay_with_annotation_produces_png(tools: MCPAnnotationTools) -> void:
 	print("test_render_overlay_with_annotation_produces_png:")
 	AnnotationHostRegistry._reset_for_test()
@@ -1061,19 +1101,69 @@ func test_render_overlay_with_annotation_produces_png(tools: MCPAnnotationTools)
 	})
 	AnnotationHostRegistry.register("FillRectPanel", host)
 
+	var out_path := "/tmp/minerva_render_test_%d_fillrect.png" % int(Time.get_unix_time_from_system())
 	var result := tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "FillRectPanel",
 		"view":        "hello",
 		"width":       256,
 		"height":      256,
+		"output_path": out_path,
 	})
 	check("fill_rect integration: success=true", result.get("success", false))
-	check("fill_rect integration: image_png present", result.has("image_png"))
-	var png_bytes := Marshalls.base64_to_raw(str(result.get("image_png", "")))
-	check("fill_rect integration: decoded bytes non-empty", png_bytes.size() > 0)
-	if png_bytes.size() >= 4:
-		check("fill_rect integration: PNG magic bytes",
-			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
-			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
+	check("fill_rect integration: output_path present", result.has("output_path"))
+	check("fill_rect integration: no image_png", not result.has("image_png"))
+	check("fill_rect integration: file exists", FileAccess.file_exists(out_path))
+	check("fill_rect integration: annotations_drawn >= 0", result.get("annotations_drawn", -1) >= 0)
+
+	if FileAccess.file_exists(out_path):
+		var loaded := Image.load_from_file(out_path)
+		check("fill_rect integration: PNG loads cleanly", loaded != null)
+	DirAccess.remove_absolute(out_path)
 
 	AnnotationHostRegistry._reset_for_test()
+
+
+# ── render_overlay: output_path negative tests ───────────────────────────────
+
+## render_overlay with empty output_path → error "output_path is required".
+func test_render_output_path_empty(tools: MCPAnnotationTools) -> void:
+	print("test_render_output_path_empty:")
+	var doc := _doc_path("render_empty_path.txt")
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"document_path": doc,
+		"view":          "pcb",
+		"output_path":   "",
+	})
+	check("empty output_path: success=false", result.get("success", true) == false)
+	check("empty output_path: error mentions output_path",
+		str(result.get("error", "")).contains("output_path"))
+
+
+## render_overlay with a relative (non-absolute) output_path → error.
+func test_render_output_path_relative(tools: MCPAnnotationTools) -> void:
+	print("test_render_output_path_relative:")
+	var doc := _doc_path("render_rel_path.txt")
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"document_path": doc,
+		"view":          "pcb",
+		"output_path":   "relative.png",
+	})
+	check("relative output_path: success=false", result.get("success", true) == false)
+	check("relative output_path: error mentions 'absolute'",
+		str(result.get("error", "")).to_lower().contains("absolute"))
+
+
+## render_overlay with a non-existent parent directory → error.
+func test_render_output_path_missing_parent(tools: MCPAnnotationTools) -> void:
+	print("test_render_output_path_missing_parent:")
+	var doc := _doc_path("render_missing_parent.txt")
+	var rand_suffix := int(Time.get_unix_time_from_system())
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"document_path": doc,
+		"view":          "pcb",
+		"output_path":   "/tmp/this_does_not_exist_%d/output.png" % rand_suffix,
+	})
+	check("missing parent: success=false", result.get("success", true) == false)
+	check("missing parent: error mentions parent directory",
+		str(result.get("error", "")).to_lower().contains("parent") or
+		str(result.get("error", "")).to_lower().contains("directory"))

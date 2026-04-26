@@ -175,13 +175,15 @@ func register_tools() -> void:
 
 	server._register_tool(
 		"minerva_annotations_render_overlay",
-		"Render annotations composited with the host's UI, return PNG. "
-		+ "EXACTLY ONE of `editor_name` (live in-memory annotations from a running plugin panel) "
-		+ "or `document_path` (saved sidecar) must be provided. EXPENSIVE — image tokens. "
+		"Render annotations composited with the host's UI and write PNG to a caller-supplied "
+		+ "absolute path. EXACTLY ONE of `editor_name` (live in-memory annotations from a running "
+		+ "plugin panel) or `document_path` (saved sidecar) must be provided. EXPENSIVE — call "
+		+ "sparingly and read the written file with your Read tool for vision. "
 		+ "include_document=true: composites the host's UI underneath when a renderer is registered "
 		+ "(live editor) or falls back to transparent if not. "
 		+ "include_kinds filters to only those annotation kinds; empty = all. "
-		+ "Returns {image_png: '<base64>'} on success.",
+		+ "output_path must be an absolute filesystem path; the parent directory must already exist. "
+		+ "Returns {output_path, width, height, annotations_drawn} on success.",
 		{
 			"type": "object",
 			"properties": {
@@ -199,6 +201,11 @@ func register_tools() -> void:
 					"type": "string",
 					"description": "view_context string (e.g. 'pcb', 'cad:top'). Annotations whose "
 					+ "view_context does not match are excluded.",
+				},
+				"output_path": {
+					"type": "string",
+					"description": "Absolute filesystem path where the rendered PNG will be written. "
+					+ "Parent directory must exist. If the file already exists, it is silently overwritten.",
 				},
 				"width": {
 					"type": "integer",
@@ -220,7 +227,7 @@ func register_tools() -> void:
 					"description": "Filter to only these annotation kinds. Empty array = all kinds. Default: [].",
 				},
 			},
-			"required": ["view"],
+			"required": ["view", "output_path"],
 		},
 		_TOOL_SET
 	)
@@ -505,10 +512,20 @@ func _annotations_delete(args: Dictionary) -> Dictionary:
 
 
 func _annotations_render_overlay(args: Dictionary) -> Dictionary:
-	# Require view; source identifier resolved below.
+	# Require view and output_path; source identifier resolved below.
 	var view_missing: String = _require_args(args, ["view"])
 	if not view_missing.is_empty():
 		return _err(view_missing)
+
+	# Validate output_path before doing any rendering work.
+	var output_path: String = str(args.get("output_path", ""))
+	if output_path.is_empty():
+		return _err("output_path is required")
+	if not output_path.is_absolute_path():
+		return _err("output_path must be absolute (got: %s)" % output_path)
+	var parent_dir: String = output_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(parent_dir):
+		return _err("output_path parent directory does not exist: %s" % parent_dir)
 
 	# Dual-path source resolution — mirrors _annotations_list.
 	var doc_path: String = str(args.get("document_path", ""))
@@ -610,13 +627,17 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 	for ann in filtered:
 		_render_annotation_placeholder(img, ann, registry, overlay_scale)
 
-	# Encode to PNG and base64.
-	var png_bytes: PackedByteArray = img.save_png_to_buffer()
-	if png_bytes.is_empty():
-		return _err("Failed to encode overlay image as PNG")
+	# Write PNG to the caller-supplied path.
+	var save_err: Error = img.save_png(output_path)
+	if save_err != OK:
+		return _err("failed to write PNG to %s: %d" % [output_path, save_err])
 
-	var b64: String = Marshalls.raw_to_base64(png_bytes)
-	return _ok({"image_png": b64})
+	return _ok({
+		"output_path": output_path,
+		"width": img.get_width(),
+		"height": img.get_height(),
+		"annotations_drawn": filtered.size(),
+	})
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
