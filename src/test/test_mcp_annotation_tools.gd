@@ -77,6 +77,13 @@ func _init() -> void:
 	test_list_author_filter_omitted(tools)
 	test_list_author_filter_invalid(tools)
 
+	print("\n-- list: editor_name (live in-memory) path --")
+	test_list_requires_path_or_editor(tools)
+	test_list_rejects_both_path_and_editor(tools)
+	test_list_editor_unknown_returns_error(tools)
+	test_list_editor_returns_live_annotations(tools)
+	test_list_editor_response_shape(tools)
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -711,3 +718,115 @@ func test_list_author_filter_invalid(tools: MCPAnnotationTools) -> void:
 	})
 	check("filter invalid: success=false", result.get("success", true) == false)
 	check("filter invalid: error message present", result.has("error"))
+
+
+# ── editor_name (live in-memory) path ─────────────────────────────────────────
+
+## Minimal AnnotationHost subclass for the live-path tests. Stores annotations
+## in-memory and returns them via get_annotations().
+class _FixtureLiveHost extends AnnotationHost:
+	var _annotations: Array = []
+	var _registry: AnnotationRegistry = null
+
+	func _init(registry: AnnotationRegistry = null) -> void:
+		_registry = registry
+
+	func get_registry() -> AnnotationRegistry:
+		return _registry
+
+	func get_annotations() -> Array:
+		return _annotations.duplicate()
+
+	func push(ann: Dictionary) -> void:
+		_annotations.append(ann.duplicate(true))
+
+
+func test_list_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
+	print("test_list_requires_path_or_editor:")
+	var result := tools.handle("minerva_annotations_list", {})
+	check("missing both: success=false", result.get("success", true) == false)
+	check("missing both: error mentions both keys",
+		str(result.get("error", "")).contains("editor_name")
+		and str(result.get("error", "")).contains("document_path"))
+
+
+func test_list_rejects_both_path_and_editor(tools: MCPAnnotationTools) -> void:
+	print("test_list_rejects_both_path_and_editor:")
+	var result := tools.handle("minerva_annotations_list", {
+		"document_path": _doc_path("ambiguous.txt"),
+		"editor_name":   "Some Editor",
+	})
+	check("both: success=false", result.get("success", true) == false)
+	check("both: error explains the conflict",
+		str(result.get("error", "")).contains("only one"))
+
+
+func test_list_editor_unknown_returns_error(tools: MCPAnnotationTools) -> void:
+	print("test_list_editor_unknown_returns_error:")
+	# Ensure registry is empty so the lookup definitely fails.
+	AnnotationHostRegistry._reset_for_test()
+	var result := tools.handle("minerva_annotations_list", {
+		"editor_name": "No Such Editor",
+	})
+	check("unknown editor: success=false", result.get("success", true) == false)
+	check("unknown editor: error names the editor",
+		str(result.get("error", "")).contains("No Such Editor"))
+
+
+func test_list_editor_returns_live_annotations(tools: MCPAnnotationTools) -> void:
+	print("test_list_editor_returns_live_annotations:")
+	AnnotationHostRegistry._reset_for_test()
+	var host := _FixtureLiveHost.new()
+	host.push({
+		"id": "ann_live1",
+		"kind": "2d_arrow",
+		"view_context": "pcb",
+		"author": "human",
+		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [10.0, 5.0]}],
+	})
+	host.push({
+		"id": "ann_live2",
+		"kind": "2d_text",
+		"view_context": "pcb",
+		"author": "ai",
+		"primitives": [{"kind": "text", "at": [5.0, 5.0], "content": "label"}],
+	})
+	AnnotationHostRegistry.register("Live Panel", host)
+
+	var result := tools.handle("minerva_annotations_list", {
+		"editor_name": "Live Panel",
+	})
+	check("live: success=true", result.get("success", false))
+	var annotations: Array = result.get("annotations", [])
+	check_eq("live: count=2", annotations.size(), 2)
+	# Author filter still works on the live path.
+	var filtered := tools.handle("minerva_annotations_list", {
+		"editor_name": "Live Panel",
+		"author":      "human",
+	})
+	check_eq("live + author=human filter: 1", (filtered.get("annotations", []) as Array).size(), 1)
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_list_editor_response_shape(tools: MCPAnnotationTools) -> void:
+	print("test_list_editor_response_shape:")
+	AnnotationHostRegistry._reset_for_test()
+	var host := _FixtureLiveHost.new()
+	host.push({
+		"id": "ann_shape",
+		"kind": "2d_text",
+		"view_context": "pcb",
+		"author": "human",
+		"primitives": [{"kind": "text", "at": [0.0, 0.0], "content": "x"}],
+	})
+	AnnotationHostRegistry.register("Shape Test", host)
+
+	var result := tools.handle("minerva_annotations_list", {
+		"editor_name": "Shape Test",
+	})
+	check_eq("source=live", result.get("source", ""), "live")
+	check_eq("editor_name echoed", result.get("editor_name", ""), "Shape Test")
+	check("no document_path on live response", not result.has("document_path"))
+
+	AnnotationHostRegistry._reset_for_test()

@@ -35,6 +35,11 @@ var _canvas: Helloscene_AnnotationCanvas = null
 var _annotation_registry: AnnotationRegistry = null
 var _annotation_host: Helloscene_AnnotationHost = null
 
+# Editor name under which we registered our annotation host with
+# AnnotationHostRegistry. Tracked so _on_panel_unload deregisters the same
+# key regardless of any later tab-rename. Empty string when not registered.
+var _registered_editor_name: String = ""
+
 
 # ---------------------------------------------------------------------------
 # Godot lifecycle
@@ -88,6 +93,17 @@ func _on_panel_loaded(ctx: Dictionary) -> void:
 	var panel_name: String = ctx.get("panel_name", "")
 	_label.text = ("Hello Scene loaded — plugin: %s, panel: %s") % [plugin_id, panel_name]
 
+	# Register our live AnnotationHost so MCP queries (minerva_annotations_list
+	# editor_name=…) can answer "what did the user just draw?" without
+	# requiring a save-to-sidecar first. The lookup key is the editor's tab
+	# title — the same string surfaced by minerva_list_editors.
+	var ed: Variant = ctx.get("editor", null)
+	if ed != null and "tab_title" in ed and _annotation_host != null:
+		var ed_name: String = str(ed.tab_title)
+		if not ed_name.is_empty():
+			AnnotationHostRegistry.register(ed_name, _annotation_host)
+			_registered_editor_name = ed_name
+
 
 func _on_panel_unload() -> void:
 	if _greet_button != null and _greet_button.pressed.is_connected(_on_greet_pressed):
@@ -100,6 +116,10 @@ func _on_panel_unload() -> void:
 	if _canvas != null:
 		_canvas.set_active_tool(null)
 		_canvas.set_host(null)
+	# Symmetric to _on_panel_loaded's register call.
+	if _registered_editor_name != "":
+		AnnotationHostRegistry.deregister(_registered_editor_name)
+		_registered_editor_name = ""
 
 
 ## Capture the FULL visible state of the panel (DCR-1 grandchild 019dc5d4...).

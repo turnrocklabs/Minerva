@@ -68,10 +68,19 @@ func register_tools() -> void:
 		+ "summary (one-line natural-language description), bounds ({x, y, w, h}), "
 		+ "anchored_to (semantic anchor to a domain entity, often empty), plus the original "
 		+ "primitives array. Optional author filter ('human' or 'ai') narrows the output. "
-		+ "Use this for token-efficient annotation introspection; call render_overlay if you need vision.",
+		+ "Use this for token-efficient annotation introspection; call render_overlay if you need vision. "
+		+ "Provide EXACTLY ONE of: editor_name (live in-memory annotations from a running plugin "
+		+ "panel — match the name returned by minerva_list_editors), or document_path (sidecar "
+		+ "on disk at <document_path>.annotations.json). Prefer editor_name for unsaved work.",
 		{
 			"type": "object",
 			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Editor tab title (as returned by minerva_list_editors). Queries the "
+					+ "live in-memory AnnotationHost for that editor — needed when the user's just-drawn "
+					+ "annotations haven't been saved to a sidecar yet.",
+				},
 				"document_path": {
 					"type": "string",
 					"description": "Absolute path to the document file (e.g. /home/user/boards/board.minpcb). "
@@ -83,7 +92,6 @@ func register_tools() -> void:
 					"description": "Optional. Filter to only annotations authored by 'human' or 'ai'. Omit for all.",
 				},
 			},
-			"required": ["document_path"],
 		},
 		_TOOL_SET
 	)
@@ -224,29 +232,51 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 # ── Tool implementations ──────────────────────────────────────────────────────
 
 func _annotations_list(args: Dictionary) -> Dictionary:
-	var missing: String = _require_args(args, ["document_path"])
-	if not missing.is_empty():
-		return _err(missing)
-
-	var doc_path: String = args["document_path"]
+	# Caller must pick exactly one of the two source identifiers.
+	# editor_name → live in-memory AnnotationHost (no save required).
+	# document_path → on-disk sidecar (authoritative when saved).
+	var doc_path: String = str(args.get("document_path", ""))
+	var editor_name: String = str(args.get("editor_name", ""))
+	if doc_path.is_empty() and editor_name.is_empty():
+		return _err("either 'editor_name' or 'document_path' is required")
+	if not doc_path.is_empty() and not editor_name.is_empty():
+		return _err("provide only one of 'editor_name' or 'document_path', not both")
 
 	# Optional author filter — validate if present.
 	var author_filter: String = str(args.get("author", ""))
 	if not author_filter.is_empty() and author_filter != AnnotationSchema.AUTHOR_HUMAN and author_filter != AnnotationSchema.AUTHOR_AI:
 		return _err("author filter must be 'human' or 'ai', got: %s" % author_filter)
 
-	var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
-	if sidecar.is_empty():
-		# No sidecar = no annotations (not an error; §7.5 zero-annotation rule).
-		return _ok({
-			"document_path": doc_path,
-			"annotations": [],
-			"count": 0,
-			"author_filter": author_filter if not author_filter.is_empty() else null,
-		})
-
-	var raw_annotations: Array = sidecar.get("annotations", [])
 	var registry: AnnotationRegistry = _get_registry()
+	var raw_annotations: Array = []
+	var source_label: String = ""
+
+	if not editor_name.is_empty():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			var known: Array = AnnotationHostRegistry.list_editor_names()
+			return _err("no live annotation host registered for editor '%s'. Known: %s"
+				% [editor_name, str(known)])
+		raw_annotations = host.get_annotations()
+		source_label = "live"
+		# Live hosts know their own kind registry; prefer it over the fallback
+		# so plugin-contributed kinds resolve correctly.
+		var host_reg: AnnotationRegistry = host.get_registry()
+		if host_reg != null:
+			registry = host_reg
+	else:
+		var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
+		if sidecar.is_empty():
+			# No sidecar = no annotations (not an error; §7.5 zero-annotation rule).
+			return _ok({
+				"source": "sidecar",
+				"document_path": doc_path,
+				"annotations": [],
+				"count": 0,
+				"author_filter": author_filter if not author_filter.is_empty() else null,
+			})
+		raw_annotations = sidecar.get("annotations", [])
+		source_label = "sidecar"
 
 	var result_annotations: Array = []
 	for ann in raw_annotations:
@@ -279,12 +309,17 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 
 		result_annotations.append(entry)
 
-	return _ok({
-		"document_path": doc_path,
+	var resp: Dictionary = {
+		"source": source_label,
 		"annotations": result_annotations,
 		"count": result_annotations.size(),
 		"author_filter": author_filter if not author_filter.is_empty() else null,
-	})
+	}
+	if source_label == "live":
+		resp["editor_name"] = editor_name
+	else:
+		resp["document_path"] = doc_path
+	return _ok(resp)
 
 
 func _annotations_add(args: Dictionary) -> Dictionary:
