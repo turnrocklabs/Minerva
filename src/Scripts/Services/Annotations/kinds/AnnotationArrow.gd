@@ -50,6 +50,15 @@ func summary(annotation: Dictionary) -> String:
 
 # ── Required overrides ────────────────────────────────────────────────────────
 
+## Arrow's canonical anchor is the head (the point being indicated).
+func primary_anchor_point(annotation: Dictionary) -> Vector2:
+	var prims: Array = annotation.get("primitives", [])
+	for prim in prims:
+		if prim is Dictionary and prim.get("kind", "") == "arrow":
+			return AnnotationKind._to_vec2(prim.get("to", [0, 0]))
+	return super(annotation)
+
+
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
 	var color := _annotation_color(annotation)
 	var prims: Array = annotation.get("primitives", [])

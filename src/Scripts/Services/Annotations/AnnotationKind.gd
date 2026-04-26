@@ -117,6 +117,17 @@ func rewrite_paths(annotation: Dictionary, mode: String, base: String) -> Dictio
 	return annotation
 
 
+## The canonical document-space point that describe_point should be called against.
+##
+## Contract: arrow returns `to` (the head — what the arrow points AT); text returns
+## `at`; polyline, region, highlight, measure_*, and ink_stroke default to the
+## bounds center via this base implementation.
+##
+## Hosts call this to compute `anchored_to` via AnnotationHost._stamp_anchor().
+func primary_anchor_point(annotation: Dictionary) -> Vector2:
+	return bounds(annotation).get_center()
+
+
 ## Return a one-line natural-language description of this annotation.
 ##
 ## Used by minerva_annotations_list (LLM ergonomics).  Default implementation
