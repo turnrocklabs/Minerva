@@ -69,6 +69,8 @@ func _ready() -> void:
 	_toolbar.active_tool_changed.connect(_on_active_tool_changed)
 
 	_canvas.set_host(_annotation_host)
+	# Wire canvas + root into the host so describe_point can resolve UI elements.
+	_annotation_host.set_canvas_and_root(_canvas, self)
 
 	_label.text = "Hello Scene ready. Type something and press Greet."
 

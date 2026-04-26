@@ -172,14 +172,22 @@ func register_tools() -> void:
 
 	server._register_tool(
 		"minerva_annotations_render_overlay",
-		"Render annotations to a transparent PNG overlay. If include_document is true, "
-		+ "composites the document render underneath (requires a registered editor renderer — "
-		+ "falls back to transparent background with a warning if not available). "
+		"Render annotations composited with the host's UI, return PNG. "
+		+ "EXACTLY ONE of `editor_name` (live in-memory annotations from a running plugin panel) "
+		+ "or `document_path` (saved sidecar) must be provided. EXPENSIVE — image tokens. "
+		+ "include_document=true: composites the host's UI underneath when a renderer is registered "
+		+ "(live editor) or falls back to transparent if not. "
 		+ "include_kinds filters to only those annotation kinds; empty = all. "
 		+ "Returns {image_png: '<base64>'} on success.",
 		{
 			"type": "object",
 			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Editor tab title (as returned by minerva_list_editors). Queries the "
+					+ "live in-memory AnnotationHost for that editor — needed when the user's just-drawn "
+					+ "annotations haven't been saved to a sidecar yet.",
+				},
 				"document_path": {
 					"type": "string",
 					"description": "Absolute path to the document file.",
@@ -199,8 +207,9 @@ func register_tools() -> void:
 				},
 				"include_document": {
 					"type": "boolean",
-					"description": "If true, composite the document render underneath the overlay. "
-					+ "Requires a registered editor render callback. Default: false.",
+					"description": "If true, composite the host's UI render underneath the overlay. "
+					+ "Requires a live AnnotationHost with render_content_to_image() (editor_name path). "
+					+ "Falls back to transparent background with a warning if not available. Default: false.",
 				},
 				"include_kinds": {
 					"type": "array",
@@ -208,7 +217,7 @@ func register_tools() -> void:
 					"description": "Filter to only these annotation kinds. Empty array = all kinds. Default: [].",
 				},
 			},
-			"required": ["document_path", "view"],
+			"required": ["view"],
 		},
 		_TOOL_SET
 	)
@@ -493,11 +502,19 @@ func _annotations_delete(args: Dictionary) -> Dictionary:
 
 
 func _annotations_render_overlay(args: Dictionary) -> Dictionary:
-	var missing: String = _require_args(args, ["document_path", "view"])
-	if not missing.is_empty():
-		return _err(missing)
+	# Require view; source identifier resolved below.
+	var view_missing: String = _require_args(args, ["view"])
+	if not view_missing.is_empty():
+		return _err(view_missing)
 
-	var doc_path: String = args["document_path"]
+	# Dual-path source resolution — mirrors _annotations_list.
+	var doc_path: String = str(args.get("document_path", ""))
+	var editor_name: String = str(args.get("editor_name", ""))
+	if doc_path.is_empty() and editor_name.is_empty():
+		return _err("either 'editor_name' or 'document_path' is required")
+	if not doc_path.is_empty() and not editor_name.is_empty():
+		return _err("provide only one of 'editor_name' or 'document_path', not both")
+
 	var view: String = str(args.get("view", ""))
 	var width: int = _coerce_int(args.get("width", 1024), 1024)
 	var height: int = _coerce_int(args.get("height", 768), 768)
@@ -510,11 +527,49 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 	width = clampi(width, 1, 4096)
 	height = clampi(height, 1, 4096)
 
-	# Load annotations from sidecar.
-	var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
+	# Resolve annotations and optional background image based on source path.
 	var all_annotations: Array = []
-	if not sidecar.is_empty():
-		all_annotations = sidecar.get("annotations", [])
+	var bg_image: Image = null  # null = transparent background
+
+	if not editor_name.is_empty():
+		# Live path: query the registered AnnotationHost directly.
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			var known: Array = AnnotationHostRegistry.list_editor_names()
+			return _err("no live annotation host registered for editor '%s'. Known: %s"
+				% [editor_name, str(known)])
+		all_annotations = host.get_annotations()
+
+		if include_document:
+			# Ask the host to render its UI content. Returns null in headless / when
+			# _ui_root is not wired — we fall back to transparent gracefully.
+			var viewport_rect := Rect2()  # TODO: derive from host or args in a future version
+			var rendered: Image = host.render_content_to_image(viewport_rect)
+			if rendered == null:
+				push_warning(
+					"[MCPAnnotationTools] render_overlay: editor '%s' returned null from "
+					+ "render_content_to_image(). Falling back to transparent background."
+					% editor_name
+				)
+				# bg_image stays null → transparent
+			else:
+				bg_image = rendered
+				# Match the output size to the captured panel so annotations align.
+				width = bg_image.get_width()
+				height = bg_image.get_height()
+	else:
+		# Sidecar path: existing behavior — read from disk; no document underlay.
+		var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
+		if not sidecar.is_empty():
+			all_annotations = sidecar.get("annotations", [])
+
+		if include_document:
+			# Sidecar path has no live renderer yet; warn and fall back.
+			push_warning(
+				"[MCPAnnotationTools] render_overlay: include_document=true requested for "
+				+ "document_path path — no live renderer available for sidecar-only documents. "
+				+ "Returning overlay-only PNG."
+			)
 
 	# Filter by view_context and include_kinds.
 	var filtered: Array = []
@@ -528,25 +583,16 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 				continue
 		filtered.append(ann)
 
-	# Create an RGBA image for the overlay.
-	var img: Image = Image.create(width, height, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))  # transparent
-
-	# If include_document: stub — PluginEditorRegistry not yet implemented.
-	# Per task spec: stub with a warning, fall back to transparent background.
-	if include_document:
-		push_warning(
-			"[MCPAnnotationTools] render_overlay: include_document=true requested but "
-			+ "PluginEditorRegistry is not yet implemented. Document compositing is not available. "
-			+ "Returning overlay-only PNG. (Separate implementation task required.)"
-		)
-		# TODO(render_overlay): When PluginEditorRegistry is available, look up
-		# the editor's render_document(view, w, h) callback here and composite under.
+	# Create an RGBA image for the overlay (or composite onto the bg image).
+	var img: Image
+	if bg_image != null:
+		# Start from the captured panel image so it forms the background.
+		img = bg_image.duplicate()
+	else:
+		img = Image.create(width, height, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0, 0, 0, 0))  # transparent
 
 	# Render each annotation's bounding box as a placeholder rectangle.
-	# Full per-kind rendering requires a live CanvasItem/RenderingServer and
-	# is deferred to the rendering task. This stub proves the PNG plumbing works
-	# and gives callers a spatial overview.
 	var registry: AnnotationRegistry = _get_registry()
 	for ann in filtered:
 		_render_annotation_placeholder(img, ann, registry)

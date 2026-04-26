@@ -84,6 +84,13 @@ func _init() -> void:
 	test_list_editor_returns_live_annotations(tools)
 	test_list_editor_response_shape(tools)
 
+	print("\n-- render_overlay: editor_name path --")
+	test_render_requires_path_or_editor(tools)
+	test_render_rejects_both(tools)
+	test_render_editor_unknown(tools)
+	test_render_editor_returns_png(tools)
+	test_render_editor_with_include_document(tools)
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -724,9 +731,12 @@ func test_list_author_filter_invalid(tools: MCPAnnotationTools) -> void:
 
 ## Minimal AnnotationHost subclass for the live-path tests. Stores annotations
 ## in-memory and returns them via get_annotations().
+## render_image: optional Image to return from render_content_to_image().
+## When null (default), render_content_to_image() returns null (mimics headless).
 class _FixtureLiveHost extends AnnotationHost:
 	var _annotations: Array = []
 	var _registry: AnnotationRegistry = null
+	var _render_image: Image = null
 
 	func _init(registry: AnnotationRegistry = null) -> void:
 		_registry = registry
@@ -739,6 +749,12 @@ class _FixtureLiveHost extends AnnotationHost:
 
 	func push(ann: Dictionary) -> void:
 		_annotations.append(ann.duplicate(true))
+
+	func set_render_image(img: Image) -> void:
+		_render_image = img
+
+	func render_content_to_image(_viewport_rect: Rect2) -> Image:
+		return _render_image
 
 
 func test_list_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
@@ -828,5 +844,122 @@ func test_list_editor_response_shape(tools: MCPAnnotationTools) -> void:
 	check_eq("source=live", result.get("source", ""), "live")
 	check_eq("editor_name echoed", result.get("editor_name", ""), "Shape Test")
 	check("no document_path on live response", not result.has("document_path"))
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+# ── render_overlay: editor_name path ─────────────────────────────────────────
+
+## render_overlay with neither editor_name nor document_path → error.
+func test_render_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
+	print("test_render_requires_path_or_editor:")
+	var result := tools.handle("minerva_annotations_render_overlay", {"view": "hello"})
+	check("missing both: success=false", result.get("success", true) == false)
+	check("missing both: error mentions editor_name",
+		str(result.get("error", "")).contains("editor_name"))
+	check("missing both: error mentions document_path",
+		str(result.get("error", "")).contains("document_path"))
+
+
+## render_overlay with both editor_name and document_path → error.
+func test_render_rejects_both(tools: MCPAnnotationTools) -> void:
+	print("test_render_rejects_both:")
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name":    "Live",
+		"document_path": _doc_path("ambiguous_render.txt"),
+		"view":           "hello",
+	})
+	check("both: success=false", result.get("success", true) == false)
+	check("both: error mentions 'only one'",
+		str(result.get("error", "")).contains("only one"))
+
+
+## render_overlay with unknown editor_name → error naming the editor.
+func test_render_editor_unknown(tools: MCPAnnotationTools) -> void:
+	print("test_render_editor_unknown:")
+	AnnotationHostRegistry._reset_for_test()
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name": "Nope",
+		"view":        "hello",
+	})
+	check("unknown editor: success=false", result.get("success", true) == false)
+	check("unknown editor: error names the editor",
+		str(result.get("error", "")).contains("Nope"))
+	AnnotationHostRegistry._reset_for_test()
+
+
+## render_overlay with a registered live host → success, image_png non-empty.
+func test_render_editor_returns_png(tools: MCPAnnotationTools) -> void:
+	print("test_render_editor_returns_png:")
+	AnnotationHostRegistry._reset_for_test()
+
+	var host := _FixtureLiveHost.new()
+	# render_image stays null → render_content_to_image returns null (transparent fallback).
+	host.push({
+		"id": "ann_render1",
+		"kind": "2d_arrow",
+		"view_context": "hello",
+		"author": "ai",
+		"primitives": [{"kind": "arrow", "from": [10.0, 10.0], "to": [50.0, 50.0]}],
+	})
+	AnnotationHostRegistry.register("Live", host)
+
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name": "Live",
+		"view":        "hello",
+		"width":       128,
+		"height":      128,
+	})
+	check("render editor: success=true", result.get("success", false))
+	check("render editor: image_png present", result.has("image_png"))
+	var b64: String = str(result.get("image_png", ""))
+	check("render editor: image_png non-empty", b64.length() > 0)
+	var png_bytes := Marshalls.base64_to_raw(b64)
+	check("render editor: decoded bytes non-empty", png_bytes.size() > 0)
+	if png_bytes.size() >= 4:
+		check("render editor: PNG magic bytes",
+			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
+			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+## render_overlay with include_document=true and a fixture host that returns a
+## known Image → compositing succeeds and image_png is non-empty.
+func test_render_editor_with_include_document(tools: MCPAnnotationTools) -> void:
+	print("test_render_editor_with_include_document:")
+	AnnotationHostRegistry._reset_for_test()
+
+	# Build a small 10×10 red image as the mocked panel render.
+	var mock_bg := Image.create(10, 10, false, Image.FORMAT_RGBA8)
+	mock_bg.fill(Color(1.0, 0.0, 0.0, 1.0))
+
+	var host := _FixtureLiveHost.new()
+	host.set_render_image(mock_bg)
+	host.push({
+		"id": "ann_bgtest",
+		"kind": "2d_arrow",
+		"view_context": "hello",
+		"author": "ai",
+		"primitives": [{"kind": "arrow", "from": [1.0, 1.0], "to": [8.0, 8.0]}],
+	})
+	AnnotationHostRegistry.register("Live", host)
+
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name":      "Live",
+		"view":             "hello",
+		"include_document": true,
+	})
+	check("include_document: success=true", result.get("success", false))
+	check("include_document: image_png present", result.has("image_png"))
+	var b64: String = str(result.get("image_png", ""))
+	check("include_document: image_png non-empty", b64.length() > 0)
+	# Verify it is valid PNG (magic bytes) — don't assert pixel colours (too brittle).
+	var png_bytes := Marshalls.base64_to_raw(b64)
+	check("include_document: decoded bytes non-empty", png_bytes.size() > 0)
+	if png_bytes.size() >= 4:
+		check("include_document: PNG magic bytes",
+			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
+			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
 
 	AnnotationHostRegistry._reset_for_test()
