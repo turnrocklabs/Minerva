@@ -39,6 +39,9 @@ extends RefCounted
 var server
 
 const _TOOL_SET := "annotations"
+## Maximum edge length (pixels) for the output overlay image. Images wider or
+## taller than this are downsampled before compositing to keep PNG encoding fast.
+const _MAX_OUTPUT_EDGE: int = 1024
 
 
 func _init(mcp_server = null) -> void:
@@ -523,13 +526,16 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 	if args.has("include_kinds") and args["include_kinds"] is Array:
 		include_kinds = args["include_kinds"]
 
-	# Clamp to sane bounds.
-	width = clampi(width, 1, 4096)
-	height = clampi(height, 1, 4096)
+	# Clamp to sane bounds — single-sourced from _MAX_OUTPUT_EDGE.
+	width = clampi(width, 1, _MAX_OUTPUT_EDGE)
+	height = clampi(height, 1, _MAX_OUTPUT_EDGE)
 
 	# Resolve annotations and optional background image based on source path.
 	var all_annotations: Array = []
 	var bg_image: Image = null  # null = transparent background
+	# Scale factor applied to bg_image (and therefore to annotation bounds).
+	# Stays 1.0 when no downsampling is needed.
+	var overlay_scale: float = 1.0
 
 	if not editor_name.is_empty():
 		# Live path: query the registered AnnotationHost directly.
@@ -554,7 +560,14 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 				# bg_image stays null → transparent
 			else:
 				bg_image = rendered
-				# Match the output size to the captured panel so annotations align.
+				# Downsample if the captured image exceeds the output edge cap.
+				var max_edge: int = maxi(bg_image.get_width(), bg_image.get_height())
+				if max_edge > _MAX_OUTPUT_EDGE:
+					overlay_scale = _MAX_OUTPUT_EDGE / float(max_edge)
+					var new_w: int = int(bg_image.get_width() * overlay_scale)
+					var new_h: int = int(bg_image.get_height() * overlay_scale)
+					bg_image.resize(new_w, new_h, Image.INTERPOLATE_BILINEAR)
+				# Match the output size to the (possibly resized) panel image.
 				width = bg_image.get_width()
 				height = bg_image.get_height()
 	else:
@@ -595,7 +608,7 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 	# Render each annotation's bounding box as a placeholder rectangle.
 	var registry: AnnotationRegistry = _get_registry()
 	for ann in filtered:
-		_render_annotation_placeholder(img, ann, registry)
+		_render_annotation_placeholder(img, ann, registry, overlay_scale)
 
 	# Encode to PNG and base64.
 	var png_bytes: PackedByteArray = img.save_png_to_buffer()
@@ -725,10 +738,14 @@ func _load_or_init_sidecar(doc_path: String) -> Dictionary:
 ## Uses AnnotationKind.bounds_from_primitives() (substrate-side, no plugin required)
 ## to determine placement. Fills known-kind bounds with a semi-transparent color;
 ## unknown kinds get a grey placeholder (design §10).
+##
+## scale_factor: multiply annotation bounds by this before drawing. Pass < 1.0 when
+## bg_image was downsampled so annotations stay aligned with the smaller image.
 func _render_annotation_placeholder(
 	img: Image,
 	ann: Dictionary,
-	registry: AnnotationRegistry  # may be null
+	registry: AnnotationRegistry,  # may be null
+	scale_factor: float = 1.0
 ) -> void:
 	var prims: Variant = ann.get("primitives", [])
 	var bounds: Rect2
@@ -741,6 +758,10 @@ func _render_annotation_placeholder(
 
 	if bounds.size == Vector2.ZERO:
 		return
+
+	# Scale annotation bounds to match a downsampled bg_image.
+	if scale_factor != 1.0:
+		bounds = Rect2(bounds.position * scale_factor, bounds.size * scale_factor)
 
 	# Choose fill color based on author (design §5 author colors).
 	var author: String = str(ann.get("author", "ai"))
@@ -758,6 +779,5 @@ func _render_annotation_placeholder(
 	var ix1: int = clampi(int(bounds.position.x + bounds.size.x), 0, img.get_width())
 	var iy1: int = clampi(int(bounds.position.y + bounds.size.y), 0, img.get_height())
 
-	for y in range(iy0, iy1):
-		for x in range(ix0, ix1):
-			img.set_pixel(x, y, fill_color)
+	# Single native call — avoids the GDScript per-pixel loop overhead.
+	img.fill_rect(Rect2i(ix0, iy0, ix1 - ix0, iy1 - iy0), fill_color)

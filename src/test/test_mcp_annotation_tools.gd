@@ -91,6 +91,11 @@ func _init() -> void:
 	test_render_editor_returns_png(tools)
 	test_render_editor_with_include_document(tools)
 
+	print("\n-- render_overlay: downsample + fill_rect --")
+	test_render_overlay_caps_output_dimension(tools)
+	test_render_overlay_no_downsample_when_small(tools)
+	test_render_overlay_with_annotation_produces_png(tools)
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -959,6 +964,115 @@ func test_render_editor_with_include_document(tools: MCPAnnotationTools) -> void
 	check("include_document: decoded bytes non-empty", png_bytes.size() > 0)
 	if png_bytes.size() >= 4:
 		check("include_document: PNG magic bytes",
+			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
+			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+# ── Downsample + fill_rect tests ──────────────────────────────────────────────
+
+## render_overlay with a 2000×2000 fixture bg returns an image whose longest
+## edge is ≤ 1024 (the _MAX_OUTPUT_EDGE cap).
+func test_render_overlay_caps_output_dimension(tools: MCPAnnotationTools) -> void:
+	print("test_render_overlay_caps_output_dimension:")
+	AnnotationHostRegistry._reset_for_test()
+
+	var big_bg := Image.create(2000, 2000, false, Image.FORMAT_RGBA8)
+	big_bg.fill(Color(0.2, 0.4, 0.8, 1.0))
+
+	var host := _FixtureLiveHost.new()
+	host.set_render_image(big_bg)
+	host.push({
+		"id": "ann_cap1",
+		"kind": "2d_arrow",
+		"view_context": "hello",
+		"author": "ai",
+		"primitives": [{"kind": "arrow", "from": [100.0, 100.0], "to": [500.0, 500.0]}],
+	})
+	AnnotationHostRegistry.register("BigPanel", host)
+
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name":      "BigPanel",
+		"view":             "hello",
+		"include_document": true,
+	})
+	check("cap: success=true", result.get("success", false))
+	check("cap: image_png present", result.has("image_png"))
+
+	# Decode the PNG and verify dimensions.
+	var png_bytes := Marshalls.base64_to_raw(str(result.get("image_png", "")))
+	check("cap: decoded bytes non-empty", png_bytes.size() > 0)
+	var decoded := Image.new()
+	var err := decoded.load_png_from_buffer(png_bytes)
+	check("cap: PNG loads cleanly", err == OK)
+	if err == OK:
+		var longest_edge: int = maxi(decoded.get_width(), decoded.get_height())
+		check("cap: longest edge <= 1024", longest_edge <= 1024)
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+## render_overlay with a 500×500 fixture bg keeps the output at 500×500
+## (no upscaling, no downscaling below the cap).
+func test_render_overlay_no_downsample_when_small(tools: MCPAnnotationTools) -> void:
+	print("test_render_overlay_no_downsample_when_small:")
+	AnnotationHostRegistry._reset_for_test()
+
+	var small_bg := Image.create(500, 500, false, Image.FORMAT_RGBA8)
+	small_bg.fill(Color(0.8, 0.2, 0.2, 1.0))
+
+	var host := _FixtureLiveHost.new()
+	host.set_render_image(small_bg)
+	AnnotationHostRegistry.register("SmallPanel", host)
+
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name":      "SmallPanel",
+		"view":             "hello",
+		"include_document": true,
+	})
+	check("no-downsample: success=true", result.get("success", false))
+
+	var png_bytes := Marshalls.base64_to_raw(str(result.get("image_png", "")))
+	var decoded := Image.new()
+	var err := decoded.load_png_from_buffer(png_bytes)
+	check("no-downsample: PNG loads cleanly", err == OK)
+	if err == OK:
+		check_eq("no-downsample: width preserved at 500", decoded.get_width(), 500)
+		check_eq("no-downsample: height preserved at 500", decoded.get_height(), 500)
+
+	AnnotationHostRegistry._reset_for_test()
+
+
+## Integration test: render_overlay with a known-bounds annotation produces a
+## valid, non-empty PNG and no FAIL output (verifies fill_rect path end-to-end).
+func test_render_overlay_with_annotation_produces_png(tools: MCPAnnotationTools) -> void:
+	print("test_render_overlay_with_annotation_produces_png:")
+	AnnotationHostRegistry._reset_for_test()
+
+	var host := _FixtureLiveHost.new()
+	# No render_image → transparent background, still exercises the fill_rect path.
+	host.push({
+		"id": "ann_fillrect1",
+		"kind": "2d_highlight",
+		"view_context": "hello",
+		"author": "human",
+		"primitives": [{"kind": "highlight", "rect": [10.0, 10.0, 80.0, 40.0]}],
+	})
+	AnnotationHostRegistry.register("FillRectPanel", host)
+
+	var result := tools.handle("minerva_annotations_render_overlay", {
+		"editor_name": "FillRectPanel",
+		"view":        "hello",
+		"width":       256,
+		"height":      256,
+	})
+	check("fill_rect integration: success=true", result.get("success", false))
+	check("fill_rect integration: image_png present", result.has("image_png"))
+	var png_bytes := Marshalls.base64_to_raw(str(result.get("image_png", "")))
+	check("fill_rect integration: decoded bytes non-empty", png_bytes.size() > 0)
+	if png_bytes.size() >= 4:
+		check("fill_rect integration: PNG magic bytes",
 			png_bytes[0] == 0x89 and png_bytes[1] == 0x50 and
 			png_bytes[2] == 0x4E and png_bytes[3] == 0x47)
 
