@@ -1,7 +1,8 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="compact_toolbar_smoke.gd" id="1_smoke"]
 [ext_resource type="Script" path="res://Scripts/Services/Annotations/AnnotationToolbar.gd" id="2_toolbar"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/responsive_container.gd" id="3_responsive"]
 
 [node name="CompactToolbarSmoke" type="Control"]
 anchors_preset = 15
@@ -11,60 +12,76 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_smoke")
 
-[node name="VBox" type="VBoxContainer" parent="."]
+[node name="ResponsiveContainer" type="Container" parent="."]
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("3_responsive")
 
-[node name="TitleLabel" type="Label" parent="VBox"]
+[node name="VBox" type="VBoxContainer" parent="ResponsiveContainer"]
 layout_mode = 2
-text = "AnnotationToolbar — LABELED vs COMPACT smoke test (vertical stack)"
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="TitleLabel" type="Label" parent="ResponsiveContainer/VBox"]
+layout_mode = 2
+text = "AnnotationToolbar — LABELED vs COMPACT smoke test"
+horizontal_alignment = 1
+clip_text = true
+
+[node name="WidthLabel" type="Label" parent="ResponsiveContainer/VBox"]
+layout_mode = 2
+text = "width class: ..."
 horizontal_alignment = 1
 
-[node name="LabeledSection" type="VBoxContainer" parent="VBox"]
+[node name="LabeledSection" type="VBoxContainer" parent="ResponsiveContainer/VBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="LabeledTitle" type="Label" parent="VBox/LabeledSection"]
+[node name="LabeledTitle" type="Label" parent="ResponsiveContainer/VBox/LabeledSection"]
 layout_mode = 2
-text = "── LABELED (full-width, default presentation) ──"
+text = "── top toolbar ──"
+clip_text = true
 
-[node name="LabeledToolbar" type="VBoxContainer" parent="VBox/LabeledSection"]
-layout_mode = 2
-size_flags_horizontal = 3
-script = ExtResource("2_toolbar")
-
-[node name="Separator" type="HSeparator" parent="VBox"]
-layout_mode = 2
-
-[node name="CompactSection" type="VBoxContainer" parent="VBox"]
-layout_mode = 2
-size_flags_horizontal = 3
-
-[node name="CompactTitle" type="Label" parent="VBox/CompactSection"]
-layout_mode = 2
-text = "── COMPACT (full-width, toggleable) ──"
-
-[node name="CompactToolbar" type="VBoxContainer" parent="VBox/CompactSection"]
+[node name="LabeledToolbar" type="VBoxContainer" parent="ResponsiveContainer/VBox/LabeledSection"]
 layout_mode = 2
 size_flags_horizontal = 3
 script = ExtResource("2_toolbar")
 
-[node name="Spacer" type="Control" parent="VBox"]
+[node name="Separator" type="HSeparator" parent="ResponsiveContainer/VBox"]
+layout_mode = 2
+
+[node name="CompactSection" type="VBoxContainer" parent="ResponsiveContainer/VBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CompactTitle" type="Label" parent="ResponsiveContainer/VBox/CompactSection"]
+layout_mode = 2
+text = "── bottom toolbar (toggleable) ──"
+clip_text = true
+
+[node name="CompactToolbar" type="VBoxContainer" parent="ResponsiveContainer/VBox/CompactSection"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_toolbar")
+
+[node name="Spacer" type="Control" parent="ResponsiveContainer/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Controls" type="HBoxContainer" parent="VBox"]
+[node name="Controls" type="HBoxContainer" parent="ResponsiveContainer/VBox"]
 layout_mode = 2
 
-[node name="ToggleButton" type="Button" parent="VBox/Controls"]
+[node name="ToggleButton" type="Button" parent="ResponsiveContainer/VBox/Controls"]
 layout_mode = 2
-text = "Toggle bottom toolbar mode"
+text = "Toggle bottom"
+clip_text = true
 
-[node name="StatusLabel" type="Label" parent="VBox/Controls"]
+[node name="StatusLabel" type="Label" parent="ResponsiveContainer/VBox/Controls"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "(status)"
+clip_text = true

@@ -160,24 +160,15 @@ func _on_panel_save_request() -> Dictionary:
 	}
 
 
-## Build a Note payload for the Editor-tab "Turn into Note" chrome action
-## (Cycle 1 R2). Returns the manifest-compatible shape Editor.gd recognises:
-##   {"kind": "text", "title": String, "content": String}
-##
-## Hello Scene contributes a text note containing the current line-edit text
-## and the most recent label (greet response). The platform always has a
-## default screenshot fallback if this hook is missing.
-func _on_panel_create_note_request(_ctx: Dictionary) -> Dictionary:
-	var current_text: String = _line_edit.text if _line_edit != null else ""
-	var current_label: String = _label.text if _label != null else ""
-	var content: String = "Hello Scene note\n\nText: %s\nLabel: %s" % [
-		current_text, current_label,
-	]
-	return {
-		"kind":    "text",
-		"title":   "Hello Scene Note",
-		"content": content,
-	}
+## Hello Scene intentionally does NOT implement _on_panel_create_note_request.
+## A text-only rich note can't round-trip the panel's annotations or re-open
+## into a hello tab on Edit, which is misleading. Until plugin-extensible Note
+## kinds ship (docket task 019dd0c895ec — "my-object + annotations" contract
+## with both native round-trip and screenshot LLM-interchange), the platform's
+## screenshot-fallback path is the right behavior for hello, just like for the
+## smoke panels. When 019dd0c895ec lands, hello will register a real Note kind
+## that captures text + annotations + an image, and Edit will dispatch back to
+## a hello tab with state restored.
 
 
 ## React to the Editor's chat-injection toggle. Hello Scene just records
