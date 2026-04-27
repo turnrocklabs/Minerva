@@ -26,6 +26,24 @@
 					"hello.apply_export"
 				],
 				"save_mode": "host_owned"
+			},
+			{
+				"name": "responsive_smoke",
+				"kind": "godot_scene",
+				"entry_scene": "ui/ResponsiveSmoke.tscn",
+				"scripts": ["ui/ResponsiveSmoke.gd"],
+				"file_extensions": [],
+				"ipc_channels": [],
+				"save_mode": "none"
+			},
+			{
+				"name": "compact_toolbar_smoke",
+				"kind": "godot_scene",
+				"entry_scene": "scenes/compact_toolbar_smoke.tscn",
+				"scripts": ["scenes/compact_toolbar_smoke.gd"],
+				"file_extensions": [],
+				"ipc_channels": [],
+				"save_mode": "none"
 			}
 		],
 		"ipc_messages": [
@@ -43,6 +61,18 @@
 			"name": "New Hello Document",
 			"panel": "hello_panel",
 			"default_filename": "untitled.hello"
+		},
+		{
+			"id": "responsive_smoke",
+			"name": "Responsive Container Smoke Test",
+			"panel": "responsive_smoke",
+			"default_filename": ""
+		},
+		{
+			"id": "compact_toolbar_smoke",
+			"name": "Compact AnnotationToolbar Smoke",
+			"panel": "compact_toolbar_smoke",
+			"default_filename": ""
 		}
 	],
 	"capabilities": ["project_state", "host_owned_save", "project_export"],

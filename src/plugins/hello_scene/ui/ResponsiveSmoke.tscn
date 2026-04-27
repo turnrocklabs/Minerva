@@ -1,0 +1,148 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/responsive_container.gd" id="1_respcontainer"]
+[ext_resource type="Script" path="ResponsiveSmoke.gd" id="2_smokescript"]
+
+[node name="ResponsiveSmoke" type="Control"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("2_smokescript")
+
+[node name="Header" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 0
+anchor_right = 1.0
+offset_bottom = 32
+grow_horizontal = 2
+
+[node name="TitleLabel" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ResponsiveContainer smoke test — resize the panel to switch layout."
+
+[node name="ClassLabel" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "Width class: ..."
+
+[node name="ResponsiveContainer" type="Container" parent="."]
+layout_mode = 1
+anchor_top = 0.0
+anchor_left = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 36
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+script = ExtResource("1_respcontainer")
+
+[node name="GridContainer" type="GridContainer" parent="ResponsiveContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+columns = 4
+
+[node name="Cell1" type="PanelContainer" parent="ResponsiveContainer/GridContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(80, 60)
+
+[node name="CellLabel1" type="Label" parent="ResponsiveContainer/GridContainer/Cell1"]
+layout_mode = 2
+text = "A"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Cell2" type="PanelContainer" parent="ResponsiveContainer/GridContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(80, 60)
+
+[node name="CellLabel2" type="Label" parent="ResponsiveContainer/GridContainer/Cell2"]
+layout_mode = 2
+text = "B"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Cell3" type="PanelContainer" parent="ResponsiveContainer/GridContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(80, 60)
+
+[node name="CellLabel3" type="Label" parent="ResponsiveContainer/GridContainer/Cell3"]
+layout_mode = 2
+text = "C"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Cell4" type="PanelContainer" parent="ResponsiveContainer/GridContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+custom_minimum_size = Vector2(80, 60)
+
+[node name="CellLabel4" type="Label" parent="ResponsiveContainer/GridContainer/Cell4"]
+layout_mode = 2
+text = "D"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StackContainer" type="VBoxContainer" parent="ResponsiveContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+visible = false
+
+[node name="StackCell1" type="PanelContainer" parent="ResponsiveContainer/StackContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 60)
+
+[node name="StackLabel1" type="Label" parent="ResponsiveContainer/StackContainer/StackCell1"]
+layout_mode = 2
+text = "A — single column (xs/sm)"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StackCell2" type="PanelContainer" parent="ResponsiveContainer/StackContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 60)
+
+[node name="StackLabel2" type="Label" parent="ResponsiveContainer/StackContainer/StackCell2"]
+layout_mode = 2
+text = "B — single column (xs/sm)"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StackCell3" type="PanelContainer" parent="ResponsiveContainer/StackContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 60)
+
+[node name="StackLabel3" type="Label" parent="ResponsiveContainer/StackContainer/StackCell3"]
+layout_mode = 2
+text = "C — single column (xs/sm)"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="StackCell4" type="PanelContainer" parent="ResponsiveContainer/StackContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+custom_minimum_size = Vector2(0, 60)
+
+[node name="StackLabel4" type="Label" parent="ResponsiveContainer/StackContainer/StackCell4"]
+layout_mode = 2
+text = "D — single column (xs/sm)"
+horizontal_alignment = 1
+vertical_alignment = 1

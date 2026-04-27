@@ -229,6 +229,91 @@ blue border on focus, it should use a `PanelContainer` or `StyleBoxFlat` that
 reads from the theme's `CodeEdit/focus` entry (as `CefWebViewEditor._apply_editor_style()`
 does at `src/Scripts/UI/Controls/WebViewEditor/CefWebViewEditor.gd:46`).
 
+## ResponsiveContainer — Bootstrap-style width classification
+
+`ResponsiveContainer` (`res://Scripts/UI/Controls/responsive_container.gd`) is a
+platform-provided `Container` subclass that classifies its own rendered width into
+one of five Bootstrap-equivalent breakpoint classes. Plugin Godot-scene panels can
+use it to switch layouts when the panel is resized.
+
+### Breakpoints
+
+| Class | Width range       |
+|-------|-------------------|
+| `xs`  | < 480 px          |
+| `sm`  | 480 – 767 px      |
+| `md`  | 768 – 1023 px     |
+| `lg`  | 1024 – 1439 px    |
+| `xl`  | ≥ 1440 px         |
+
+### Copy-paste usage
+
+**In your panel .tscn** — add a `ResponsiveContainer` node and attach the script:
+
+```
+[ext_resource type="Script" path="res://Scripts/UI/Controls/responsive_container.gd" id="1_rc"]
+
+[node name="ResponsiveContainer" type="Container" parent="."]
+script = ExtResource("1_rc")
+```
+
+Children of the node lay themselves out normally (anchors, size flags). The
+container only _classifies_ width; it does not reflow children automatically.
+
+**In your panel .gd (in-tree)** — connect the signal and switch layout:
+
+```gdscript
+func _ready() -> void:
+    var rc := $ResponsiveContainer as ResponsiveContainer
+    rc.width_class_changed.connect(_on_width_class_changed)
+    # Apply initial state before the first resize event fires.
+    _on_width_class_changed(rc.width_class)
+
+func _on_width_class_changed(cls: StringName) -> void:
+    match cls:
+        ResponsiveContainer.CLASS_LG, ResponsiveContainer.CLASS_XL:
+            _grid.columns = 4
+            _grid.visible  = true
+            _stack.visible = false
+        ResponsiveContainer.CLASS_MD:
+            _grid.columns = 2
+            _grid.visible  = true
+            _stack.visible = false
+        _: # xs, sm
+            _grid.visible  = false
+            _stack.visible = true
+```
+
+**From an off-tree plugin** — Godot's parser cache only sees scripts under
+`res://`, so off-tree plugin scripts cannot statically reference the
+`ResponsiveContainer` class name. Use `preload()` + base-class typing instead:
+
+```gdscript
+const _RC := preload("res://Scripts/UI/Controls/responsive_container.gd")
+
+func _ready() -> void:
+    var rc: Container = $ResponsiveContainer  # base type, not class_name
+    rc.width_class_changed.connect(_on_width_class_changed)
+    _on_width_class_changed(rc.get("width_class"))
+```
+
+The `width_class` property and `width_class_changed` signal are duck-typeable —
+the wire surface is the public contract.
+
+**Reading the class without a signal** (one-shot check):
+
+```gdscript
+var cls: StringName = $ResponsiveContainer.width_class
+if cls == ResponsiveContainer.CLASS_XS:
+    do_narrow_thing()
+```
+
+### Live demo
+
+The `hello_scene` plugin ships a smoke-test panel (`responsive_smoke`) that
+demonstrates all three layout modes. Open it from the plugin's editor items list
+and resize the panel to see the layout change in real time.
+
 ## Management Tools Reference
 
 | Tool | Description |
