@@ -7,13 +7,31 @@ extends VBoxContainer
 ## button activates that kind's AnnotationAuthorTool and deactivates the
 ## previously-active one.
 ##
-## Layout (matches PCBEditor's annotation sidebar pattern):
-##   - Tools Header Label (centered) "Tools"
-##   - FlowContainer (`_tools_flow`) holding Select/Translate/Rotate/Scale buttons
-##   - Header Label (centered) showing `header_text` (default "Annotate")
-##   - FlowContainer (`_button_flow`) holding the icon-only toggle buttons
-##   - Status Label (`_status_label`) in pink showing the active kind's
-##     display_name, or empty when no tool is active
+## Presentation modes (set `presentation_mode` @export or call set_presentation_mode()):
+##
+##   LABELED (default) — VBoxContainer layout with Tools/Annotate header labels,
+##     FlowContainers for buttons, and a status label.  Unchanged from v1 behavior.
+##     - Tools Header Label (centered) "Tools"
+##     - FlowContainer (`_tools_flow`) holding Select/Translate/Rotate/Scale buttons
+##     - Header Label (centered) showing `header_text` (default "Annotate")
+##     - FlowContainer (`_button_flow`) holding the icon-only toggle buttons
+##     - Status Label (`_status_label`) in pink showing the active kind's
+##       display_name, or empty when no tool is active
+##
+##   COMPACT — HBoxContainer strip ~40–50 px tall. No header labels, no status label.
+##     Suitable for narrow plugin panels (e.g. CAD side-panel).
+##     - Buttons flow left-to-right inside an HBoxContainer.
+##     - Buttons WITH toolbar_icon: rendered icon-only, no text.
+##     - Buttons WITHOUT toolbar_icon: rendered with a 1–2 char abbreviation.
+##       Abbreviation rule: first character of the display_name, uppercased.
+##       If that would collide with an existing button, two chars are used
+##       (first + second of the name).  Plugin authors should set toolbar_icon
+##       to avoid abbreviation collisions in dense toolbars.
+##     - Tooltips show the full display_name so users can discover each icon.
+##
+## Switching modes at runtime (set_presentation_mode) drops all layout children
+## and rebuilds cleanly — no orphan nodes, no signal leaks in the layout layer.
+## Button state (toggle, active tool) is preserved across rebuilds.
 ##
 ## Ownership:
 ##   - Call set_registry() to wire up the kind list and live register/deregister signals.
@@ -38,6 +56,36 @@ signal active_tool_changed(tool: AnnotationAuthorTool)
 ## name is the button name ("select", "translate", "rotate", "scale") or ""
 ## when the previously-active Tools button was toggled off.
 signal active_tool_button_changed(name: String)
+
+# ── Presentation mode ──────────────────────────────────────────────────────────
+
+enum PresentationMode {
+	## Default labeled VBox layout with section headers and a status label.
+	LABELED,
+	## Compact HBox icon strip (~40–50 px tall). No headers or status label.
+	COMPACT,
+}
+
+## Current presentation mode. Changing this at runtime triggers a full layout
+## rebuild. Existing consumers (LABELED is the default) see no behavioral change.
+@export var presentation_mode: PresentationMode = PresentationMode.LABELED : set = set_presentation_mode
+
+
+## Switch the toolbar to a new presentation mode. Safe to call at runtime:
+## drops all layout children and rebuilds them cleanly, then re-populates
+## buttons from the current registry without disturbing tool activation state.
+##
+## Called automatically when the @export property is changed in the Inspector
+## or by code. If the layout has not been built yet (before _ready()), the
+## setter records the mode and returns — _ready() will call _ensure_layout()
+## with the correct mode already set.
+func set_presentation_mode(mode: PresentationMode) -> void:
+	presentation_mode = mode
+	# Only rebuild if the layout has already been constructed.
+	# If _button_flow is null, _ready() hasn't run yet; _ensure_layout() will
+	# pick up the correct mode when it fires for the first time.
+	if _button_flow != null:
+		_rebuild_layout()
 
 # ── Tools-section icons ────────────────────────────────────────────────────────
 ## PCB icon UIDs for the Tools-section buttons (Select/Translate/Rotate).
@@ -76,10 +124,13 @@ var _tool_buttons: Dictionary = {}
 var _active_tool_button_name: String = ""
 
 ## Layout children — built lazily by _ensure_layout(). May be null until then.
+## In LABELED mode _tools_flow and _button_flow are FlowContainers; in COMPACT
+## mode they both point to the same HBoxContainer. Typed as Container (common
+## base) so both modes can share assignment without static-type errors.
 var _tools_header_label: Label = null
-var _tools_flow: FlowContainer = null
+var _tools_flow: Container = null
 var _header_label: Label = null
-var _button_flow: FlowContainer = null
+var _button_flow: Container = null
 var _status_label: Label = null
 
 
@@ -145,13 +196,91 @@ func get_active_tool() -> AnnotationAuthorTool:
 
 # ── Internal: layout ──────────────────────────────────────────────────────────
 
+## Drop all layout children and rebuild for the current presentation_mode, then
+## re-populate kind buttons from the current registry. Safe to call at runtime:
+## button table (_buttons, _tool_buttons) is cleared before rebuild so the new
+## buttons replace the old ones cleanly. Active tool state is preserved.
+func _rebuild_layout() -> void:
+	# Tear down existing layout nodes (layout container refs are nulled after free).
+	_tear_down_layout()
+	# Rebuild for the current mode.
+	_ensure_layout()
+	# Re-populate kind buttons from the registry (layout just created empty slots).
+	if _registry != null:
+		var kinds := _registry.list_annotation_kinds()
+		var core_kinds: Array[AnnotationKind] = []
+		var plugin_kinds: Array[AnnotationKind] = []
+		for kind in kinds:
+			if str(kind.name).begins_with("2d_"):
+				core_kinds.append(kind)
+			else:
+				plugin_kinds.append(kind)
+		for kind in core_kinds:
+			_try_add_button(kind)
+		for kind in plugin_kinds:
+			_try_add_button(kind)
+	# Restore visual toggle state for the active kind (if any).
+	if _active_kind_name != &"" and _buttons.has(_active_kind_name):
+		var btn: Button = _buttons[_active_kind_name]
+		if is_instance_valid(btn) and not btn.button_pressed:
+			btn.set_pressed_no_signal(true)
+	# Restore visual toggle state for the active tool button (if any).
+	if _active_tool_button_name != "" and _tool_buttons.has(_active_tool_button_name):
+		var tbtn: Button = _tool_buttons[_active_tool_button_name]
+		if is_instance_valid(tbtn) and not tbtn.button_pressed:
+			tbtn.set_pressed_no_signal(true)
+	# Restore status label text.
+	if _status_label != null:
+		if _active_kind_name != &"" and _registry != null:
+			var kind := _registry.get_annotation_kind(_active_kind_name)
+			_status_label.text = kind.display_name if kind != null else ""
+		elif _active_tool_button_name != "":
+			_status_label.text = _active_tool_button_name.capitalize()
+		else:
+			_status_label.text = ""
+
+
+## Remove all layout nodes created by _ensure_layout() and clear the button
+## tables. Does NOT free the outer VBoxContainer (self). Signal connections on
+## the registry are left intact — only layout children are destroyed.
+##
+## In COMPACT mode _tools_flow and _button_flow both point to the same
+## HBoxContainer, so we de-duplicate before freeing to avoid a double-free.
+func _tear_down_layout() -> void:
+	# Collect unique valid node references — guards against COMPACT mode where
+	# _tools_flow and _button_flow are the same object.
+	var seen: Array = []
+	for node in [_status_label, _button_flow, _header_label, _tools_flow, _tools_header_label]:
+		if node != null and is_instance_valid(node) and not (node in seen):
+			seen.append(node)
+			node.queue_free()
+	_status_label = null
+	_button_flow = null
+	_header_label = null
+	_tools_flow = null
+	_tools_header_label = null
+	# Clear button tables (buttons were children of the now-freed containers).
+	_buttons.clear()
+	_tool_buttons.clear()
+
+
 ## Build the header / FlowContainer / status-label structure if not already
 ## built. Idempotent. Called from _ready() and defensively from set_registry()
 ## so the toolbar works even when used outside the SceneTree (headless tests).
+## Respects the current `presentation_mode`.
 func _ensure_layout() -> void:
 	if _button_flow != null:
 		return
 
+	if presentation_mode == PresentationMode.COMPACT:
+		_ensure_layout_compact()
+	else:
+		_ensure_layout_labeled()
+
+
+## Build the LABELED layout (default). VBoxContainer with section headers,
+## FlowContainers, and a status label.
+func _ensure_layout_labeled() -> void:
 	# ── Tools section ──────────────────────────────────────────────────────────
 	_tools_header_label = Label.new()
 	_tools_header_label.name = "_tools_header_label"
@@ -201,6 +330,50 @@ func _ensure_layout() -> void:
 	_status_label.add_theme_color_override("font_color", Color(0.95, 0.5, 0.9))
 	add_child(_status_label)
 
+
+## Build the COMPACT layout. A single HBoxContainer strip ~40–50 px tall.
+## No header labels, no status label. Tools-section and Annotate-section
+## buttons are placed side-by-side in one row. Tooltip shows full names.
+func _ensure_layout_compact() -> void:
+	# Reuse _tools_flow and _button_flow as a single HBoxContainer. We store
+	# both references pointing to the same node so _try_add_button and the
+	# Tools-section construction code work without changes.
+	var hbox := HBoxContainer.new()
+	hbox.name = "_compact_hbox"
+	# Limit height so the strip stays ~40–50 px.
+	hbox.custom_minimum_size = Vector2(0, 40)
+	add_child(hbox)
+
+	# Point both flow refs at the same HBox so shared helpers (_try_add_button,
+	# _tool_buttons population) add into the right container.
+	_tools_flow = hbox
+	_button_flow = hbox
+
+	# _tools_header_label and _status_label remain null (compact mode omits them).
+	# _header_label remains null (compact mode omits section labels).
+
+	# Build Tools-section (Select) button into the compact HBox.
+	for tool_name in ["Select"]:
+		var btn := Button.new()
+		btn.toggle_mode = true
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		var tool_key: String = tool_name.to_lower()
+		var icon_uid: String = _TOOL_ICON_UIDS.get(tool_key, "")
+		if icon_uid != "":
+			btn.icon = load(icon_uid) as Texture2D
+			btn.tooltip_text = tool_name
+		else:
+			# Compact abbreviation: first char of name (uppercase).
+			# See class-level doc for the abbreviation rule.
+			btn.text = tool_name.left(1).to_upper()
+			btn.tooltip_text = tool_name
+		var name_capture: Array = [tool_key]
+		btn.toggled.connect(func(pressed: bool) -> void:
+			_on_tool_button_toggled(name_capture[0], pressed)
+		)
+		hbox.add_child(btn)
+		_tool_buttons[tool_key] = btn
+
 # ── Internal: Tools-section tool construction ─────────────────────────────────
 
 ## Construct and return a fresh tool instance for the given Tools-section button
@@ -214,6 +387,10 @@ func _construct_tool_for_name(tool_name: String) -> AnnotationAuthorTool:
 # ── Internal: button population ───────────────────────────────────────────────
 
 ## Try to add a button for this kind. Does nothing if author_ui() returns null.
+## In COMPACT mode, buttons without toolbar_icon render as a 1–2 char abbreviation:
+##   - Primary: first character of display_name (uppercased).
+##   - If that 1-char label already exists in _buttons' texts, use first 2 chars.
+## Tooltip always shows the full display_name so users can discover the icon's meaning.
 func _try_add_button(kind: AnnotationKind) -> void:
 	if kind.author_ui() == null:
 		return
@@ -221,12 +398,23 @@ func _try_add_button(kind: AnnotationKind) -> void:
 	var btn := Button.new()
 	btn.toggle_mode = true
 	btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	# Tooltip always shows the full name (works in both modes, essential in COMPACT).
 	btn.tooltip_text = kind.display_name
 	if kind.toolbar_icon != null:
-		# Icon-only button: no text, just the icon.
+		# Icon-only button in both modes: no text, just the icon.
 		btn.icon = kind.toolbar_icon
+	elif presentation_mode == PresentationMode.COMPACT:
+		# Compact abbreviation rule: first char of display_name, uppercased.
+		# If that would duplicate an existing button's text, use first 2 chars.
+		var abbr_1: String = kind.display_name.left(1).to_upper()
+		var abbr_2: String = kind.display_name.left(2).to_upper()
+		var used_texts: Array = []
+		for existing_btn: Button in _buttons.values():
+			if is_instance_valid(existing_btn):
+				used_texts.append(existing_btn.text)
+		btn.text = abbr_2 if (abbr_1 in used_texts) else abbr_1
 	else:
-		# Fallback: text label (legacy behavior for kinds with no icon).
+		# LABELED fallback: full display_name as text (legacy behavior).
 		btn.text = kind.display_name
 	# Capture the kind name in an Array wrapper to survive lambda capture semantics.
 	var kind_name_capture: Array = [kind.name]
