@@ -1006,6 +1006,8 @@ func save_file_to_disc(path: String) -> void:
 					_update_note(associated_object)
 
 		Type.PLUGIN_SCENE:
+			if plugin_save_mode == "none":
+				return
 			if plugin_save_mode == "plugin_owned":
 				# TODO: dispatch capability:editor.request_save when capability
 				# framework is wired (task 019dc125834f72e987ffdaf88fc152a7).
