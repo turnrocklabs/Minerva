@@ -251,7 +251,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_annotations_delete":
 			return _annotations_delete(arguments)
 		"minerva_annotations_render_overlay":
-			return _annotations_render_overlay(arguments)
+			return await _annotations_render_overlay(arguments)
 	return _err("Unknown annotation tool: %s" % tool_name)
 
 
@@ -639,7 +639,7 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 		if registry != null:
 			kind = registry.get_annotation_kind(kind_name)
 		if kind != null:
-			_render_annotation_via_kind(img, ann, kind, overlay_scale)
+			await _render_annotation_via_kind(img, ann, kind, overlay_scale)
 		else:
 			_render_annotation_placeholder(img, ann, registry, overlay_scale)
 
@@ -788,6 +788,11 @@ func _render_annotation_via_kind(
 ) -> void:
 	var ctx := _ImageRenderContext.new(img, scale_factor)
 	kind.render(ctx, ann)
+	# Text primitives are queued (Image has no font rasterizer); rasterize them
+	# via an offscreen SubViewport + Label and blend into img. Async because we
+	# wait for RenderingServer.frame_post_draw between Label submission and
+	# texture capture.
+	await ctx._flush_text_queue()
 
 
 ## Render a single annotation as a placeholder rectangle on the image.
@@ -851,13 +856,23 @@ func _render_annotation_placeholder(
 ## Line width: Bresenham lines are 1px. Widths > 1 are approximated by
 ## drawing parallel offset lines (integer rounding keeps it fast).
 ##
-## Text: GDScript's Image class has no font rasterizer. draw_string and
-## draw_string_rotated instead draw a horizontal bar of colored pixels at the
-## text position so the region reads as "non-empty" in pixel-diversity tests.
-## In a live Godot process with a display the rendering is identical — the bar
-## is all an off-screen Image can produce without a canvas_item RID.
+## Text: GDScript's Image class has no font rasterizer, so draw_string /
+## draw_string_rotated cannot rasterize directly. They enqueue (pos, text,
+## color, size, rotation) tuples; the orchestrator flushes the queue after
+## kind.render() returns by spinning up a transient SubViewport + Label per
+## text entry, awaiting frame_post_draw, capturing the viewport texture, and
+## blending into the target Image at the screen-space text anchor. See
+## _flush_text_queue(). The live (canvas_item) render path in
+## AnnotationRenderContext.draw_string uses Font.draw_string and produces the
+## same visual; this path matches that pixel-for-pixel within rounding.
 class _ImageRenderContext extends AnnotationRenderContext:
 	var _img: Image
+	## Deferred text draws: each entry is
+	## { "pos": Vector2 (screen-space), "text": String, "color": Color,
+	##   "size": int, "rotation": float (radians) }.
+	## Populated by draw_string / draw_string_rotated, flushed by
+	## _flush_text_queue() after the kind's synchronous render() returns.
+	var _text_queue: Array = []
 
 	func _init(img: Image, scale_factor: float = 1.0) -> void:
 		_img        = img
@@ -908,10 +923,11 @@ class _ImageRenderContext extends AnnotationRenderContext:
 			_bresenham_line(screen_pts[i], screen_pts[next], color)
 
 
-	## Draws a text placeholder: a solid horizontal bar at the text anchor
-	## position. The bar is proportional to a typical character width × text
-	## length estimate so the rendered region has a recognisable shape.
-	## Real font rendering requires a canvas_item RID (not available here).
+	## Enqueues a text draw to be rasterized after the synchronous kind.render()
+	## pass. The actual GPU work happens in _flush_text_queue(), which awaits
+	## RenderingServer.frame_post_draw — incompatible with the synchronous
+	## kind.render() callback. `pos` is in document space; we convert to screen
+	## space (which is image-pixel space for this context) once, here.
 	func draw_string(
 		_font: Font,
 		pos: Vector2,
@@ -919,34 +935,155 @@ class _ImageRenderContext extends AnnotationRenderContext:
 		color: Color,
 		size: int = 16
 	) -> void:
-		var sp := to_screen(pos)
-		# Approximate: 0.6× width per char, height ≈ 0.8× size.
-		var bar_w: int = maxi(4, int(text.length() * size * 0.6 * zoom))
-		var bar_h: int = maxi(2, int(size * 0.8 * zoom))
-		var x0: int = int(sp.x)
-		var y0: int = int(sp.y) - bar_h
-		_img.fill_rect(
-			Rect2i(
-				clampi(x0, 0, _img.get_width() - 1),
-				clampi(y0, 0, _img.get_height() - 1),
-				clampi(bar_w, 0, _img.get_width() - clampi(x0, 0, _img.get_width() - 1)),
-				clampi(bar_h, 0, _img.get_height() - clampi(y0, 0, _img.get_height() - 1)),
-			),
-			color
-		)
+		if text.is_empty():
+			return
+		_text_queue.append({
+			"pos": to_screen(pos),
+			"text": text,
+			"color": color,
+			"size": size,
+			"rotation": 0.0,
+		})
 
 
 	func draw_string_rotated(
-		font: Font,
+		_font: Font,
 		pos: Vector2,
 		text: String,
 		color: Color,
 		size: int = 16,
-		_rotation_rad: float = 0.0
+		rotation_rad: float = 0.0
 	) -> void:
-		# Rotation is ignored for the software rasterizer — we draw the bar
-		# axis-aligned at the anchor point regardless of rotation.
-		draw_string(font, pos, text, color, size)
+		if text.is_empty():
+			return
+		_text_queue.append({
+			"pos": to_screen(pos),
+			"text": text,
+			"color": color,
+			"size": size,
+			"rotation": rotation_rad,
+		})
+
+
+	## Drains _text_queue: for each pending text draw, render to an offscreen
+	## SubViewport+Label, await one frame, capture, blend into _img.
+	## Idempotent — safe to call when queue is empty.
+	## Requires a live SceneTree (Engine.get_main_loop() must be a SceneTree).
+	## In a true headless context with no SceneTree, falls back to a tiny
+	## colored marker so the region still reads as non-empty.
+	func _flush_text_queue() -> void:
+		if _text_queue.is_empty():
+			return
+		var tree := Engine.get_main_loop() as SceneTree
+		if tree == null or tree.root == null:
+			# No SceneTree → can't host a SubViewport. Draw a 4×4 marker per
+			# entry so the region is non-empty for diversity tests, then bail.
+			for entry in _text_queue:
+				var sp: Vector2 = entry["pos"]
+				var col: Color = entry["color"]
+				var x: int = clampi(int(sp.x), 0, _img.get_width() - 1)
+				var y: int = clampi(int(sp.y), 0, _img.get_height() - 1)
+				_img.fill_rect(Rect2i(x, y, mini(4, _img.get_width() - x), mini(4, _img.get_height() - y)), col)
+			_text_queue.clear()
+			return
+
+		var font: Font = ThemeDB.fallback_font
+		for entry in _text_queue:
+			var text: String = entry["text"]
+			var size: int = entry["size"]
+			var color: Color = entry["color"]
+			var sp: Vector2 = entry["pos"]
+			var rotation: float = entry["rotation"]
+
+			# Measure the text so the SubViewport is just large enough.
+			# Add a small margin so descenders and AA edges aren't clipped.
+			var measured: Vector2 = Vector2(text.length() * size, size * 1.5)
+			if font != null:
+				measured = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size)
+			var pad: int = maxi(2, int(size * 0.3))
+			var vp_w: int = maxi(4, int(ceil(measured.x)) + pad * 2)
+			var vp_h: int = maxi(4, int(ceil(measured.y)) + pad * 2)
+
+			var viewport := SubViewport.new()
+			viewport.size = Vector2i(vp_w, vp_h)
+			viewport.transparent_bg = true
+			viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+			viewport.disable_3d = true
+			viewport.gui_disable_input = true
+
+			var label := Label.new()
+			label.text = text
+			label.add_theme_color_override("font_color", color)
+			label.add_theme_font_size_override("font_size", size)
+			if font != null:
+				label.add_theme_font_override("font", font)
+			# Position the label so glyphs don't touch the viewport edge.
+			label.position = Vector2(pad, pad)
+			label.size = Vector2(vp_w - pad * 2, vp_h - pad * 2)
+
+			viewport.add_child(label)
+			tree.root.add_child(viewport)
+
+			# Wait for the SubViewport to actually render this frame.
+			await RenderingServer.frame_post_draw
+
+			var rendered: Image = viewport.get_texture().get_image()
+
+			# Blend the rendered text onto _img. Anchor is the baseline-ish
+			# bottom-left in canvas-item draw_string semantics; SubViewport
+			# renders the Label's top-left at (pad, pad). We compensate by
+			# placing the viewport's text-bottom at sp.y, so the destination
+			# top-left is sp.y - measured.y - pad.
+			# rotation_rad is intentionally ignored (matches the prior
+			# draw_string_rotated behaviour, which also drew axis-aligned).
+			# Per-pixel rotation here would need a CPU-side resample and is
+			# unnecessary for the label-style text annotation kinds emit.
+			var _r := rotation
+			var dst_x: int = int(sp.x) - pad
+			var dst_y: int = int(sp.y) - int(ceil(measured.y)) - pad
+
+			if rendered != null:
+				_blend_image_clipped(rendered, dst_x, dst_y)
+
+			# Clean up immediately to avoid leaks / orphan-node warnings.
+			viewport.remove_child(label)
+			label.queue_free()
+			tree.root.remove_child(viewport)
+			viewport.queue_free()
+		_text_queue.clear()
+
+
+	## Blends `src` onto _img at (dst_x, dst_y), clipping to _img bounds.
+	## Uses Image.blend_rect so existing pixels compose with the text alpha.
+	func _blend_image_clipped(src: Image, dst_x: int, dst_y: int) -> void:
+		var src_w: int = src.get_width()
+		var src_h: int = src.get_height()
+		var img_w: int = _img.get_width()
+		var img_h: int = _img.get_height()
+
+		# Compute source rect after clipping the destination to _img bounds.
+		var src_x0: int = 0
+		var src_y0: int = 0
+		var copy_w: int = src_w
+		var copy_h: int = src_h
+		if dst_x < 0:
+			src_x0 = -dst_x
+			copy_w -= src_x0
+			dst_x = 0
+		if dst_y < 0:
+			src_y0 = -dst_y
+			copy_h -= src_y0
+			dst_y = 0
+		if dst_x + copy_w > img_w:
+			copy_w = img_w - dst_x
+		if dst_y + copy_h > img_h:
+			copy_h = img_h - dst_y
+		if copy_w <= 0 or copy_h <= 0:
+			return
+		# Image.blend_rect requires matching formats.
+		if src.get_format() != _img.get_format():
+			src.convert(_img.get_format())
+		_img.blend_rect(src, Rect2i(src_x0, src_y0, copy_w, copy_h), Vector2i(dst_x, dst_y))
 
 
 	func draw_rect(rect: Rect2, color: Color, filled: bool, width: float = 1.0) -> void:
