@@ -199,6 +199,36 @@ Create `help.md` in your plugin directory. Agents call `minerva_plugin_help(id: 
 - Configuration requirements
 - Common use cases
 
+## Active-tab focus indicator
+
+The blue border that marks the active editor tab is defined entirely in
+`src/assets/themes/blue_dark_mode.theme` (the project's default dark theme,
+applied at runtime to `root_control` by `singleton_object.gd:2058`).
+
+Two distinct style entries produce the visual:
+
+| Theme type | Style key | Color | Border widths (T/R/B/L) | What you see |
+|---|---|---|---|---|
+| `TabContainer` | `tab_selected` | `Color(0.1647, 0.3451, 0.8314)` ≈ #2A58D4 | 2 / 4 / 2 / 0 | Blue top + side border on the active tab chip |
+| `CodeEdit` | `focus` | `Color(0.1647, 0.3451, 0.8314)` | 1 / 1 / 1 / 1 | Blue 1 px border around the code-editor surface when it holds keyboard focus |
+
+**Do `PLUGIN_SCENE` tabs inherit this?**
+Yes — both effects apply automatically:
+
+- `TabContainer/tab_selected` is painted by the engine for whichever child of the
+  `TabContainer` is current. Because `EditorPane`'s `TabContainer` is the same
+  widget for all editor types, the selected-tab chip gets the blue border regardless
+  of whether the content is a `CodeEdit`, a plugin scene, or anything else.
+- `CodeEdit/focus` is irrelevant for `PLUGIN_SCENE` editors (they contain no
+  `CodeEdit`); the plugin scene's own controls will receive whatever focus style
+  their type carries in the theme.
+
+No fix is needed. Plugin scene tabs already participate in the `tab_selected`
+blue-chip styling. If a plugin panel wants its own inner content to show a
+blue border on focus, it should use a `PanelContainer` or `StyleBoxFlat` that
+reads from the theme's `CodeEdit/focus` entry (as `CefWebViewEditor._apply_editor_style()`
+does at `src/Scripts/UI/Controls/WebViewEditor/CefWebViewEditor.gd:46`).
+
 ## Management Tools Reference
 
 | Tool | Description |
