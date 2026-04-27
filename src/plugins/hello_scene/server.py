@@ -267,11 +267,29 @@ def _handle_apply_export(arguments: dict, req_id) -> dict:
 def handle_notification(method: str, params: dict) -> None:
     """Handle notifications (no response sent)."""
     log.info("notification: %s", method)
+    # After the MCP handshake completes (notifications/initialized), emit a
+    # host.notify smoke-test so the end-to-end channel can be verified.
+    if method == "notifications/initialized":
+        _send_host_notify("info", "hello_scene plugin started — host.notify channel OK")
 
 
 # ---------------------------------------------------------------------------
 # Response helpers
 # ---------------------------------------------------------------------------
+
+
+def _send_host_notify(level: str, message: str, details=None) -> None:
+    """Emit a host.notify JSON-RPC 2.0 notification to Minerva (no id, no response expected).
+
+    Wire format:
+        {"jsonrpc":"2.0","method":"host.notify",
+         "params":{"level":"info|warning|error","message":"...","details":<optional>}}
+    """
+    params: dict = {"level": level, "message": message}
+    if details is not None:
+        params["details"] = details
+    _send({"jsonrpc": "2.0", "method": "host.notify", "params": params})
+    log.info("host.notify sent: level=%s message=%s", level, message[:80])
 
 
 def _ok(req_id, payload: dict) -> dict:

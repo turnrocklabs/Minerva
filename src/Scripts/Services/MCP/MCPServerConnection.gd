@@ -743,6 +743,11 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 					_handle_async_plugin_state(msg)
 					continue
 
+				# host.notify: plugin → host notification; no id, no response needed
+				if msg.has("method") and msg.get("method") == "host.notify" and not msg.has("id"):
+					_handle_host_notify(msg)
+					continue
+
 				# Check if this is our response
 				if str(msg.get("id", "")) == request_id:
 					if msg.has("error"):
@@ -893,6 +898,12 @@ func _on_async_output_ready() -> void:
 				_handle_async_plugin_event(msg)
 			"minerva/plugin_state":
 				_handle_async_plugin_state(msg)
+			"host.notify":
+				# Plugin → host notification (no id, no response)
+				if not msg.has("id"):
+					_handle_host_notify(msg)
+				else:
+					print("[MCP STDIO Async] Ignoring host.notify with unexpected id from plugin '%s'" % plugin_id)
 			"notifications/tools/list_changed":
 				# go-sdk emits this on startup, safe to ignore
 				pass
@@ -920,6 +931,22 @@ func _handle_async_plugin_event(msg: Dictionary) -> void:
 		event_broker.handle_plugin_event(plugin_id, event_name, payload)
 	else:
 		push_warning("[MCP STDIO Async] No event_broker set — dropping event '%s' from plugin '%s'" % [event_name, plugin_id])
+
+
+## Handle a host.notify notification from the plugin.
+## Delegates to PluginNotifyRouter (no response is sent — this is a one-way channel).
+func _handle_host_notify(msg: Dictionary) -> void:
+	var params: Dictionary = msg.get("params", {})
+	print("[MCP STDIO] host.notify from plugin '%s': level=%s message=%s" % [
+		plugin_id,
+		str(params.get("level", "?")),
+		str(params.get("message", "")).left(120)
+	])
+	var RouterScript = load("res://Scripts/Services/Plugins/PluginNotifyRouter.gd")
+	if RouterScript:
+		RouterScript.route(plugin_id, params)
+	else:
+		push_warning("[MCP STDIO] PluginNotifyRouter not found — cannot route host.notify from '%s'" % plugin_id)
 
 
 func _handle_async_plugin_state(msg: Dictionary) -> void:
