@@ -20,15 +20,16 @@ anchor_right = 1.0
 offset_bottom = 32
 grow_horizontal = 2
 
-[node name="TitleLabel" type="Label" parent="Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-text = "ResponsiveContainer smoke test — resize the panel to switch layout."
-
 [node name="ClassLabel" type="Label" parent="Header"]
 layout_mode = 2
 size_flags_horizontal = 0
 text = "Width class: ..."
+
+[node name="TitleLabel" type="Label" parent="Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+clip_text = true
+text = "  resize the panel to switch layout"
 
 [node name="ResponsiveContainer" type="Container" parent="."]
 layout_mode = 1
