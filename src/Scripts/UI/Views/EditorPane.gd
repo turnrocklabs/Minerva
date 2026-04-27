@@ -640,7 +640,13 @@ func _get_or_create_activity_log(agent_id: String) -> Editor:
 		_activity_log_editors.erase(key)
 
 	var display_name: String = "Activity: %s" % agent_id if not agent_id.is_empty() else "Activity: MCP"
+	# Activity log is a background trace surface; creating it must not steal
+	# focus from whatever tab the user is on. add() always foregrounds the new
+	# tab, so we capture-and-restore.
+	var prior_tab: int = Tabs.current_tab
 	var editor: Editor = add(Editor.Type.TEXT, null, display_name)
+	if prior_tab >= 0 and prior_tab < Tabs.get_tab_count() - 1:
+		Tabs.current_tab = prior_tab
 
 	_activity_log_editors[key] = editor
 	return editor

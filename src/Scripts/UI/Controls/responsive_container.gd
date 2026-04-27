@@ -84,8 +84,18 @@ func _ready() -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_RESIZED:
-		_classify()
+	match what:
+		NOTIFICATION_RESIZED:
+			_classify()
+		NOTIFICATION_SORT_CHILDREN:
+			# Container base class won't lay out children unless we tell it how.
+			# Stack all Control children to fill the full bounds — consumers toggle
+			# .visible on whichever layout matches the current width class; multiple
+			# visible children overlap, which is fine for stack-style switching.
+			var rect := Rect2(Vector2.ZERO, size)
+			for child in get_children():
+				if child is Control:
+					fit_child_in_rect(child, rect)
 
 # ---------------------------------------------------------------------------
 # Public API
