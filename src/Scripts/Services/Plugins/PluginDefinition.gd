@@ -637,6 +637,41 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 			}
 		result["save_mode"] = save_mode
 
+	# --- chrome (optional) — Editor-tab chrome contract for PLUGIN_SCENE ---
+	# Schema: {"suppress": [<action>, ...]} where each action is one of
+	#   "save_all" | "save" | "create_note" | "inject_toggle".
+	# Unknown action names → parse error so authors can't silently mistype.
+	# Default (chrome key absent or chrome.suppress absent): all chrome controls
+	# visible (subject to save_mode == "none" hiding the save buttons).
+	const CHROME_ACTIONS := ["save_all", "save", "create_note", "inject_toggle"]
+	var chrome_suppress: Array[String] = []
+	var chrome_raw: Variant = panel.get("chrome", null)
+	if chrome_raw != null:
+		if not (chrome_raw is Dictionary):
+			return {
+				"error": "panel_chrome_not_dict",
+				"detail": {"name": panel_name},
+			}
+		var chrome_dict: Dictionary = chrome_raw as Dictionary
+		var suppress_raw: Variant = chrome_dict.get("suppress", null)
+		if suppress_raw != null:
+			if not (suppress_raw is Array):
+				return {
+					"error": "panel_chrome_suppress_not_array",
+					"detail": {"name": panel_name},
+				}
+			for action_raw in (suppress_raw as Array):
+				var action_name: String = str(action_raw)
+				if not CHROME_ACTIONS.has(action_name):
+					return {
+						"error": "panel_chrome_suppress_unknown_action",
+						"detail": {"name": panel_name, "action": action_name,
+							"allowed": CHROME_ACTIONS},
+					}
+				if not chrome_suppress.has(action_name):
+					chrome_suppress.append(action_name)
+	result["chrome_suppress"] = chrome_suppress
+
 	# --- fullscreen_capable (optional, default false) ---
 	result["fullscreen_capable"] = bool(panel.get("fullscreen_capable", false))
 

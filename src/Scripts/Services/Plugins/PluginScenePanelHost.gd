@@ -279,6 +279,39 @@ static func invoke_load(panel_root: Node, document: Variant) -> bool:
 	return true
 
 
+## Call `_on_panel_create_note_request(ctx)` on `panel_root` if the method exists.
+##
+## Returns the Variant returned by the hook on success (expected to be a
+## Dictionary describing the note — see Editor.gd PLUGIN_SCENE create-note
+## branch).  Returns null and logs a push_warning if the scene does not
+## implement the hook — callers are expected to fall back to the platform
+## default (screenshot-to-image-note).
+##
+## Same error-semantics caveat as invoke_save: GDScript has no try/catch.
+static func invoke_create_note(panel_root: Node, ctx: Dictionary) -> Variant:
+	if panel_root == null:
+		push_warning("[PluginScenePanelHost] invoke_create_note: panel_root is null")
+		return null
+	if not panel_root.has_method("_on_panel_create_note_request"):
+		# Not an error — the platform falls back to screenshot-to-image-note.
+		return null
+	return panel_root._on_panel_create_note_request(ctx)
+
+
+## Call `_on_panel_inject_toggle_changed(enabled)` on `panel_root` if the
+## method exists.  Fire-and-forget: no return value is consumed.
+##
+## The toggle state change is non-blocking — Minerva's chat-injection
+## bookkeeping happens on the host side regardless of whether the panel
+## reacts to the signal.
+static func invoke_inject_toggle(panel_root: Node, enabled: bool) -> void:
+	if panel_root == null:
+		return
+	if not panel_root.has_method("_on_panel_inject_toggle_changed"):
+		return
+	panel_root._on_panel_inject_toggle_changed(enabled)
+
+
 ## Call `_on_panel_unload()` on `panel_root` if the method exists.
 ##
 ## Named wrapper for the inline pattern already used in instantiate_into —

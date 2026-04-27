@@ -34,7 +34,10 @@
 				"scripts": ["ui/ResponsiveSmoke.gd"],
 				"file_extensions": [],
 				"ipc_channels": [],
-				"save_mode": "none"
+				"save_mode": "none",
+				"chrome": {
+					"suppress": ["create_note", "inject_toggle"]
+				}
 			},
 			{
 				"name": "compact_toolbar_smoke",
@@ -43,7 +46,10 @@
 				"scripts": ["scenes/compact_toolbar_smoke.gd"],
 				"file_extensions": [],
 				"ipc_channels": [],
-				"save_mode": "none"
+				"save_mode": "none",
+				"chrome": {
+					"suppress": ["create_note", "inject_toggle"]
+				}
 			}
 		],
 		"ipc_messages": [

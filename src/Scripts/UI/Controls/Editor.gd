@@ -50,6 +50,10 @@ var panel_name: String = ""
 ## save_mode mirrors the manifest's panel save_mode ("host_owned" | "plugin_owned").
 ## Set during create() from the panel definition; defaults to "host_owned".
 var plugin_save_mode: String = "host_owned"
+## Chrome actions the plugin manifest asks Minerva to hide on this PLUGIN_SCENE tab.
+## Each entry is one of "save_all" | "save" | "create_note" | "inject_toggle".
+## Populated from manifest panel.chrome.suppress in create_plugin_scene().
+var plugin_chrome_suppress: Array[String] = []
 @onready var _note_check_button: CheckButton = %CheckButton
 
 @onready var autowrap_button: Button = %AutowrapButton
@@ -183,6 +187,12 @@ static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name
 				for pd in def.ui_panels:
 					if pd is Dictionary and pd.get("name", "") == p_name:
 						editor.plugin_save_mode = pd.get("save_mode", "host_owned")
+						var cs_raw: Variant = pd.get("chrome_suppress", [])
+						var cs_list: Array[String] = []
+						if cs_raw is Array:
+							for cs_item in (cs_raw as Array):
+								cs_list.append(str(cs_item))
+						editor.plugin_chrome_suppress = cs_list
 						break
 		var root: Control = PluginScenePanelHost.instantiate_into(
 			vbox_container, p_id, p_name, editor
@@ -505,6 +515,13 @@ func _ready():
 		$VBoxContainer/Control.hide()
 		$VBoxContainer/FillerControl3.hide()
 	elif self.type == Type.PLUGIN_SCENE:
+		# Cycle 1 R2: PLUGIN_SCENE tabs participate in the editor-tab chrome
+		# contract. Hide controls that don't apply to plugin scenes (mic, find,
+		# autowrap, code-syntax, apply-diff, reload, export-region) but KEEP
+		# the right-three actions (Save All / Save / Turn-into-Note) and the
+		# inject toggle visible by default. Plugin manifest's chrome.suppress
+		# field selectively hides any of those four; save_mode == "none"
+		# additionally disables Save / Save All on a per-tab basis.
 		mic_button.hide()
 		autowrap_button.hide()
 		find_string_container.hide()
@@ -514,7 +531,7 @@ func _ready():
 		%btnApplyDiff.hide()
 		reload_button.hide()
 		export_area_button.hide()
-		$VBoxContainer/ButtonsHBoxContainer.hide()
+		_apply_plugin_chrome_visibility()
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
@@ -670,6 +687,51 @@ func _load_plugin_scene_file(path: String) -> void:
 			("[Editor] _load_plugin_scene_file: '%s' parsed but is not a Dictionary") % path
 		)
 		PluginScenePanelHost.invoke_load(plugin_scene_root, {})
+
+
+## Apply manifest-driven chrome visibility for a PLUGIN_SCENE editor tab.
+##
+## Action vocabulary (matches PluginDefinition._parse_panel_entry):
+##   - "save_all"      → SaveOpenEditorTabsButton
+##   - "save"          → SaveButton
+##   - "create_note"   → CreateNoteButton
+##   - "inject_toggle" → CheckButton (chat-injection toggle)
+##
+## Behaviour:
+##   - The chrome row (ButtonsHBoxContainer) is always visible — Round 2 of
+##     Cycle 1 explicitly removes the legacy blanket-hide.
+##   - Each control is hidden iff its action name is in plugin_chrome_suppress.
+##   - save_mode == "none" additionally hides Save and Save All (the host's
+##     save dispatch already short-circuits — see Type.PLUGIN_SCENE branch in
+##     save_file_to_disc — but hiding the buttons makes the no-op explicit).
+##
+## Round 2 design decision: hide-when-suppressed (not disable). Disabled
+## buttons make the no-save case look like an error; hiding signals "the
+## plugin does not participate in this action," which is the truth.
+func _apply_plugin_chrome_visibility() -> void:
+	var buttons_row: HBoxContainer = $VBoxContainer/ButtonsHBoxContainer
+	if buttons_row == null:
+		return
+	buttons_row.show()
+
+	var save_all_btn: Button = buttons_row.get_node_or_null("SaveOpenEditorTabsButton")
+	var save_btn: Button = buttons_row.get_node_or_null("SaveButton")
+	var create_note_btn: Button = buttons_row.get_node_or_null("CreateNoteButton")
+	var inject_toggle: CheckButton = _note_check_button
+
+	var hide_save_all: bool = plugin_chrome_suppress.has("save_all") or plugin_save_mode == "none"
+	var hide_save:     bool = plugin_chrome_suppress.has("save")     or plugin_save_mode == "none"
+	var hide_note:     bool = plugin_chrome_suppress.has("create_note")
+	var hide_inject:   bool = plugin_chrome_suppress.has("inject_toggle")
+
+	if save_all_btn != null:
+		save_all_btn.visible = not hide_save_all
+	if save_btn != null:
+		save_btn.visible = not hide_save
+	if create_note_btn != null:
+		create_note_btn.visible = not hide_note
+	if inject_toggle != null:
+		inject_toggle.visible = not hide_inject
 
 
 ## Changes the function that runs when user clicks the "save" button
@@ -1107,8 +1169,13 @@ func _on_create_note_button_pressed() -> void:
 			if webview_editor:
 				var html = webview_editor.get_html()
 				new_note = Note.create_html_note(tab_title, html)
+		Type.PLUGIN_SCENE:
+			new_note = await _create_plugin_scene_note()
 		_:
 			new_note = Note.create_error_note(tab_title, "Can't create a note for the specified Editor type (%s)" % type)
+
+	if new_note == null:
+		return
 
 	SingletonObject.notes_container.add_note(new_note)
 	
@@ -1413,7 +1480,7 @@ func _on_mic_button_pressed() -> void:
 
 ## Returns whether or not this editor instance can be turned into a [class Note] objects
 func _supports_note():
-	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET, Type.PCB]
+	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET, Type.PCB, Type.PLUGIN_SCENE]
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
@@ -1452,11 +1519,159 @@ func _create_note() -> Note:
 			# Simple image note for LLM context (transient, no Edit needed)
 			note = Note.create_image_note("PCB Note", image)
 			print("[Editor] PCB image note created: %s" % note)
+		Type.PLUGIN_SCENE:
+			note = await _create_plugin_scene_note()
+
+	if note == null:
+		push_warning("[Editor] _create_note: note is null, returning null")
+		return null
 
 	note.enabled = true
 	print("[Editor] _create_note() returning note: %s" % note)
 
 	return note
+
+
+## Build a Note for a PLUGIN_SCENE editor.
+##
+## Dispatch policy:
+##   1. Try the panel's optional `_on_panel_create_note_request(ctx)` hook
+##      via PluginScenePanelHost.invoke_create_note. The hook should return a
+##      Dictionary with at minimum {"kind": "text"|"image"|"html", ...} —
+##      see _build_note_from_plugin_payload below for the recognised shapes.
+##   2. If the hook is missing, returns invalid data, or raises an error,
+##      fall back to a screenshot of the plugin scene viewport packaged as
+##      an image note. This is the default policy: every plugin tab can
+##      contribute *some* visual context to a chat, even without code.
+##
+## Errors during the plugin hook are surfaced via host.notify (toast +
+## Activity:MCP) so the user knows the panel mis-handled the call.
+func _create_plugin_scene_note() -> Note:
+	var note_title: String = tab_title if not tab_title.is_empty() else panel_name
+	var ctx: Dictionary = {
+		"plugin_id":  plugin_id,
+		"panel_name": panel_name,
+		"tab_title":  note_title,
+	}
+
+	var payload: Variant = null
+	if plugin_scene_root != null:
+		payload = PluginScenePanelHost.invoke_create_note(plugin_scene_root, ctx)
+
+	if payload != null:
+		var maybe_note: Note = _build_note_from_plugin_payload(note_title, payload)
+		if maybe_note != null:
+			return maybe_note
+		# Plugin returned something we couldn't interpret — surface to the user
+		# (DCR R1-C host.notify pipe) and fall through to screenshot fallback.
+		_notify_plugin_chrome_error(
+			("create_note: plugin '%s' panel '%s' returned invalid note payload " +
+			"— falling back to screenshot.") % [plugin_id, panel_name]
+		)
+
+	return await _create_plugin_scene_screenshot_note(note_title)
+
+
+## Translate a plugin-returned payload into a Note. Recognised shapes:
+##   {kind: "text",  title?: String, content: String}
+##   {kind: "html",  title?: String, html: String}
+##   {kind: "image", title?: String, image: Image}              # in-memory Image
+## Returns null on unknown/invalid shape so the caller can fall back.
+func _build_note_from_plugin_payload(default_title: String, payload: Variant) -> Note:
+	if not (payload is Dictionary):
+		return null
+	var d: Dictionary = payload as Dictionary
+	var kind: String = str(d.get("kind", "")).to_lower()
+	var title: String = str(d.get("title", default_title))
+	if title.is_empty():
+		title = default_title
+	match kind:
+		"text":
+			var content: String = str(d.get("content", ""))
+			return Note.create_text_note(title, content)
+		"html":
+			var html: String = str(d.get("html", ""))
+			return Note.create_html_note(title, html)
+		"image":
+			var img_v: Variant = d.get("image", null)
+			if img_v is Image:
+				return Note.create_image_note(title, img_v as Image)
+			return null
+		_:
+			return null
+
+
+## Default fallback for PLUGIN_SCENE create-note: capture the plugin's scene
+## viewport as a PNG-backed image note. Mirrors the GraphicsEditor / PCB
+## screenshot pattern but uses get_viewport().get_texture() because plugin
+## scenes don't expose a dedicated capture API.
+##
+## Capture happens after the next post-draw signal so the image reflects the
+## current frame (avoids a 1-frame stale capture). On Linux we still fall
+## back to the synchronous get_image() if the deferred path fails — this
+## helper is best-effort, not perf-critical.
+func _create_plugin_scene_screenshot_note(default_title: String) -> Note:
+	var title: String = default_title if not default_title.is_empty() else "Plugin Note"
+	var img: Image = await _capture_plugin_scene_image()
+	if img == null:
+		# Couldn't capture — return an error note so the user gets feedback in
+		# the chat rather than a silent failure.
+		_notify_plugin_chrome_error(
+			("create_note: failed to capture plugin '%s' panel '%s' viewport.") %
+			[plugin_id, panel_name]
+		)
+		return Note.create_error_note(title,
+			"Failed to capture plugin panel screenshot.")
+	return Note.create_image_note(title, img)
+
+
+## Synchronous-feeling viewport capture for the plugin scene root. Uses the
+## RenderingServer.frame_post_draw signal to ensure GPU work is flushed
+## before get_image() — without this the texture can be stale and produce
+## a partially-rendered note.
+func _capture_plugin_scene_image() -> Image:
+	if plugin_scene_root == null or not is_instance_valid(plugin_scene_root):
+		return null
+	var vp: Viewport = plugin_scene_root.get_viewport()
+	if vp == null:
+		return null
+	# Wait one post-draw cycle so the latest frame is on the GPU.
+	await RenderingServer.frame_post_draw
+	var tex: ViewportTexture = vp.get_texture()
+	if tex == null:
+		return null
+	var img: Image = tex.get_image()
+	if img == null:
+		return null
+	# Crop to the panel rect so the note is just the plugin's own content,
+	# not the surrounding chrome / other tabs.
+	var rect: Rect2 = plugin_scene_root.get_global_rect()
+	var x: int = max(0, int(rect.position.x))
+	var y: int = max(0, int(rect.position.y))
+	var w: int = min(int(rect.size.x), img.get_width() - x)
+	var h: int = min(int(rect.size.y), img.get_height() - y)
+	if w > 0 and h > 0 and (x > 0 or y > 0 or w < img.get_width() or h < img.get_height()):
+		img = img.get_region(Rect2i(x, y, w, h))
+	return img
+
+
+## Toast-and-log surface for chrome-action errors specific to PLUGIN_SCENE.
+## Routes through PluginNotifyRouter so messages land in both a toast and
+## the Activity:MCP editor tab — same channel R1-C set up for host.notify.
+func _notify_plugin_chrome_error(message: String) -> void:
+	push_warning("[Editor] %s" % message)
+	var router_script := load("res://Scripts/Services/Plugins/PluginNotifyRouter.gd")
+	if router_script != null:
+		router_script.route(plugin_id, {
+			"level": "error",
+			"message": message,
+		})
+	else:
+		# Fallback: at least show a toast so the user notices.
+		if SingletonObject and SingletonObject.has_method("create_toast_notification"):
+			SingletonObject.call("create_toast_notification", message,
+				ToastNotification.Type.ERROR)
+
 
 func _update_note(note: Note) -> void:
 	if type == Type.TEXT:
@@ -1498,6 +1713,13 @@ func _on_injection_consumed(_history_id: String) -> void:
 
 func _on_check_button_toggled(toggled_on: bool):
 	print("[Editor] _on_check_button_toggled(%s) called for editor type=%s" % [toggled_on, type])
+
+	# PLUGIN_SCENE: forward toggle state to the panel so plugins can react
+	# (e.g. start/stop streaming live state to chat). Fire-and-forget — the
+	# panel does not have to implement the hook, and Minerva's own injection
+	# bookkeeping continues to run regardless.
+	if type == Type.PLUGIN_SCENE and plugin_scene_root != null:
+		PluginScenePanelHost.invoke_inject_toggle(plugin_scene_root, toggled_on)
 
 	if not _supports_note():
 		SingletonObject.ErrorDisplay("Not supported", "Notes for this editor type are not supported.")

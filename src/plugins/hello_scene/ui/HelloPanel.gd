@@ -160,6 +160,42 @@ func _on_panel_save_request() -> Dictionary:
 	}
 
 
+## Build a Note payload for the Editor-tab "Turn into Note" chrome action
+## (Cycle 1 R2). Returns the manifest-compatible shape Editor.gd recognises:
+##   {"kind": "text", "title": String, "content": String}
+##
+## Hello Scene contributes a text note containing the current line-edit text
+## and the most recent label (greet response). The platform always has a
+## default screenshot fallback if this hook is missing.
+func _on_panel_create_note_request(_ctx: Dictionary) -> Dictionary:
+	var current_text: String = _line_edit.text if _line_edit != null else ""
+	var current_label: String = _label.text if _label != null else ""
+	var content: String = "Hello Scene note\n\nText: %s\nLabel: %s" % [
+		current_text, current_label,
+	]
+	return {
+		"kind":    "text",
+		"title":   "Hello Scene Note",
+		"content": content,
+	}
+
+
+## React to the Editor's chat-injection toggle. Hello Scene just records
+## the state; richer plugins might start/stop streaming live state here.
+func _on_panel_inject_toggle_changed(enabled: bool) -> void:
+	if _label != null:
+		var suffix: String = " [chat injection ON]" if enabled else " [chat injection OFF]"
+		# Strip any prior suffix so repeated toggling doesn't accumulate them.
+		var base: String = _label.text
+		var on_idx: int = base.find(" [chat injection ON]")
+		var off_idx: int = base.find(" [chat injection OFF]")
+		if on_idx >= 0:
+			base = base.substr(0, on_idx)
+		elif off_idx >= 0:
+			base = base.substr(0, off_idx)
+		_label.text = base + suffix
+
+
 ## Restore state from a previously-captured save.  Mirrors _on_panel_save_request.
 func _on_panel_load_request(document: Dictionary) -> void:
 	if _line_edit != null:
