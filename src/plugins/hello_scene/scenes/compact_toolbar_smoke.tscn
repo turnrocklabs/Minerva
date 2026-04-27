@@ -78,7 +78,6 @@ layout_mode = 2
 [node name="ToggleButton" type="Button" parent="ResponsiveContainer/VBox/Controls"]
 layout_mode = 2
 text = "Toggle bottom"
-clip_text = true
 
 [node name="StatusLabel" type="Label" parent="ResponsiveContainer/VBox/Controls"]
 layout_mode = 2
