@@ -21,49 +21,48 @@ grow_vertical = 2
 
 [node name="TitleLabel" type="Label" parent="VBox"]
 layout_mode = 2
-text = "AnnotationToolbar — LABELED vs COMPACT smoke test"
+text = "AnnotationToolbar — LABELED vs COMPACT smoke test (vertical stack)"
 horizontal_alignment = 1
 
-[node name="SideBySide" type="HBoxContainer" parent="VBox"]
-layout_mode = 2
-size_flags_vertical = 3
-
-[node name="LabeledPanel" type="VBoxContainer" parent="VBox/SideBySide"]
+[node name="LabeledSection" type="VBoxContainer" parent="VBox"]
 layout_mode = 2
 size_flags_horizontal = 3
-custom_minimum_size = Vector2(140, 0)
 
-[node name="PanelTitle" type="Label" parent="VBox/SideBySide/LabeledPanel"]
+[node name="LabeledTitle" type="Label" parent="VBox/LabeledSection"]
 layout_mode = 2
-text = "LABELED (default)"
-horizontal_alignment = 1
+text = "── LABELED (full-width, default presentation) ──"
 
-[node name="AnnotationToolbar" type="VBoxContainer" parent="VBox/SideBySide/LabeledPanel"]
-layout_mode = 2
-size_flags_vertical = 3
-script = ExtResource("2_toolbar")
-
-[node name="CompactPanel" type="VBoxContainer" parent="VBox/SideBySide"]
+[node name="LabeledToolbar" type="VBoxContainer" parent="VBox/LabeledSection"]
 layout_mode = 2
 size_flags_horizontal = 3
-custom_minimum_size = Vector2(140, 0)
+script = ExtResource("2_toolbar")
 
-[node name="PanelTitle" type="Label" parent="VBox/SideBySide/CompactPanel"]
+[node name="Separator" type="HSeparator" parent="VBox"]
 layout_mode = 2
-text = "COMPACT / toggled at runtime"
-horizontal_alignment = 1
 
-[node name="AnnotationToolbar" type="VBoxContainer" parent="VBox/SideBySide/CompactPanel"]
+[node name="CompactSection" type="VBoxContainer" parent="VBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CompactTitle" type="Label" parent="VBox/CompactSection"]
+layout_mode = 2
+text = "── COMPACT (full-width, toggleable) ──"
+
+[node name="CompactToolbar" type="VBoxContainer" parent="VBox/CompactSection"]
+layout_mode = 2
+size_flags_horizontal = 3
+script = ExtResource("2_toolbar")
+
+[node name="Spacer" type="Control" parent="VBox"]
 layout_mode = 2
 size_flags_vertical = 3
-script = ExtResource("2_toolbar")
 
 [node name="Controls" type="HBoxContainer" parent="VBox"]
 layout_mode = 2
 
 [node name="ToggleButton" type="Button" parent="VBox/Controls"]
 layout_mode = 2
-text = "Toggle right toolbar mode"
+text = "Toggle bottom toolbar mode"
 
 [node name="StatusLabel" type="Label" parent="VBox/Controls"]
 layout_mode = 2
