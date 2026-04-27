@@ -939,6 +939,10 @@ func _on_install_pressed() -> void:
 	if _install_dialog == null:
 		_install_dialog = FileDialog.new()
 		_install_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		# ACCESS_FILESYSTEM lets users pick manifests from anywhere on disk —
+		# required for off-tree plugin monorepos (e.g. ~/github/plugins/cad/).
+		# The default ACCESS_RESOURCES would clamp the dialog to res://.
+		_install_dialog.access = FileDialog.ACCESS_FILESYSTEM
 		_install_dialog.filters = PackedStringArray(["*.json ; Plugin Manifest"])
 		_install_dialog.title = "Select Plugin Manifest (manifest.json)"
 		_install_dialog.file_selected.connect(_on_manifest_selected)
