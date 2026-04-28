@@ -658,6 +658,11 @@ func _load_webview_file(path: String) -> void:
 
 ## Load a file into a PLUGIN_SCENE editor by calling invoke_load on the scene root.
 ## Called from _ready() when a file path is associated with the editor at creation time.
+##
+## The document handed to the plugin always includes `file_path`. If the file
+## body is valid JSON Dictionary (round-trip from _on_panel_save_request), its
+## keys are merged into the document. Otherwise `raw_text` carries the body so
+## non-JSON plugin formats (.mcad, custom DSLs) can read their own document.
 func _load_plugin_scene_file(path: String) -> void:
 	if not FileAccess.file_exists(path):
 		SingletonObject.ErrorDisplay("File not found", path)
@@ -667,26 +672,15 @@ func _load_plugin_scene_file(path: String) -> void:
 			("[Editor] _load_plugin_scene_file: plugin_scene_root is null for '%s'") % path
 		)
 		return
+	var doc: Dictionary = {"file_path": path}
 	var content: String = FileAccess.get_file_as_string(path)
-	if content.is_empty():
-		# Empty file is valid; pass an empty dict.
-		PluginScenePanelHost.invoke_load(plugin_scene_root, {})
-		return
-	var json := JSON.new()
-	if json.parse(content) != OK:
-		SingletonObject.ErrorDisplay(
-			"Invalid plugin file",
-			("Could not parse '%s' as JSON: %s") % [path, json.get_error_message()]
-		)
-		return
-	var doc: Variant = json.data
-	if doc is Dictionary:
-		PluginScenePanelHost.invoke_load(plugin_scene_root, doc)
-	else:
-		push_warning(
-			("[Editor] _load_plugin_scene_file: '%s' parsed but is not a Dictionary") % path
-		)
-		PluginScenePanelHost.invoke_load(plugin_scene_root, {})
+	if not content.is_empty():
+		var json := JSON.new()
+		if json.parse(content) == OK and json.data is Dictionary:
+			doc.merge(json.data, true)
+		else:
+			doc["raw_text"] = content
+	PluginScenePanelHost.invoke_load(plugin_scene_root, doc)
 
 
 ## Apply manifest-driven chrome visibility for a PLUGIN_SCENE editor tab.
