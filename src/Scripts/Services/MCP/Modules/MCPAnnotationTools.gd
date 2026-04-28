@@ -577,8 +577,8 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 			var rendered: Image = host.render_content_to_image(viewport_rect)
 			if rendered == null:
 				push_warning(
-					"[MCPAnnotationTools] render_overlay: editor '%s' returned null from "
-					+ "render_content_to_image(). Falling back to transparent background."
+					("[MCPAnnotationTools] render_overlay: editor '%s' returned null from "
+					+ "render_content_to_image(). Falling back to transparent background.")
 					% editor_name
 				)
 				# bg_image stays null → transparent
