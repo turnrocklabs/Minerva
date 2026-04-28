@@ -879,8 +879,8 @@ func _on_open_panel_pressed() -> void:
 
 	var panel_kind: String = panel_entry.get("kind", "html")
 	if panel_kind == "godot_scene":
-		var tab_title: String = def.name + " Panel"
-		SingletonObject.editor_pane.add_plugin_scene_editor(_selected_plugin_id, panel_name, null, tab_title)
+		var scene_tab_title: String = def.name + " Panel"
+		SingletonObject.editor_pane.add_plugin_scene_editor(_selected_plugin_id, panel_name, null, scene_tab_title)
 		_show_status("Opened panel for %s" % _selected_plugin_id)
 		return
 
@@ -1041,6 +1041,8 @@ func _format_uptime(seconds: float) -> String:
 	if s < 60:
 		return "%ds" % s
 	elif s < 3600:
-		return "%dm %ds" % [s / 60, s % 60]
+		# floori(s / 60.0) instead of `s / 60` to silence INTEGER_DIVISION
+		# without an @warning_ignore — same numeric result.
+		return "%dm %ds" % [floori(s / 60.0), s % 60]
 	else:
-		return "%dh %dm" % [s / 3600, (s % 3600) / 60]
+		return "%dh %dm" % [floori(s / 3600.0), floori((s % 3600) / 60.0)]

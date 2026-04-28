@@ -623,7 +623,8 @@ func _on_reload_debounce_expired(id: String) -> void:
 
 	# Handle .gd changes.
 	if not gd_paths.is_empty():
-		var gd_ok := await _hot_reload_gd(id, gd_paths)
+		# _hot_reload_gd is synchronous (no internal awaits) — don't `await` it.
+		var gd_ok := _hot_reload_gd(id, gd_paths)
 		if not gd_ok:
 			# Fallback: full stop+start.
 			print(("[PluginManager] hot_reload_gd_failed for '%s' — falling back to " +
@@ -633,7 +634,8 @@ func _on_reload_debounce_expired(id: String) -> void:
 
 	# Handle .tscn changes (always in-place, even if .gd was also changed).
 	for tscn_path in tscn_paths:
-		await _hot_reload_tscn(id, tscn_path)
+		# _hot_reload_tscn is synchronous — don't `await` it.
+		_hot_reload_tscn(id, tscn_path)
 
 
 ## Attempt in-place GDScript reload for all changed .gd paths belonging to plugin `id`.

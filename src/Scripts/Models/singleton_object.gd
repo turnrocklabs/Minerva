@@ -738,6 +738,11 @@ func _register_plugin_editor_items(id: String) -> void:
 	var def = plugin_manager.get_db().get_by_id(id)
 	if def == null:
 		return
+	# Idempotency: if this plugin already registered items (e.g. plugin_started
+	# fired twice across hot-reload, or this handler is invoked redundantly),
+	# clear them first so the second registration doesn't trip the
+	# "overwriting existing item 'X'" push_warning in CreatableItemRegistry.
+	creatable_item_registry.unregister_by_source(id)
 	for ei in def.editor_items:
 		var item_id: String = ei.get("id", "")
 		var item_name: String = ei.get("name", "")

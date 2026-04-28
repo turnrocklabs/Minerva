@@ -294,12 +294,15 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 		var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
 		if sidecar.is_empty():
 			# No sidecar = no annotations (not an error; §7.5 zero-annotation rule).
+			var empty_filter_value: Variant = null
+			if not author_filter.is_empty():
+				empty_filter_value = author_filter
 			return _ok({
 				"source": "sidecar",
 				"document_path": doc_path,
 				"annotations": [],
 				"count": 0,
-				"author_filter": author_filter if not author_filter.is_empty() else null,
+				"author_filter": empty_filter_value,
 			})
 		raw_annotations = sidecar.get("annotations", [])
 		source_label = "sidecar"
@@ -335,11 +338,16 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 
 		result_annotations.append(entry)
 
+	# Bind to a Variant so the ternary's String/null mix doesn't warn
+	# INCOMPATIBLE_TERNARY (parser can't infer a single result type otherwise).
+	var resp_filter_value: Variant = null
+	if not author_filter.is_empty():
+		resp_filter_value = author_filter
 	var resp: Dictionary = {
 		"source": source_label,
 		"annotations": result_annotations,
 		"count": result_annotations.size(),
-		"author_filter": author_filter if not author_filter.is_empty() else null,
+		"author_filter": resp_filter_value,
 	}
 	if source_label == "live":
 		resp["editor_name"] = editor_name
@@ -1096,12 +1104,13 @@ class _ImageRenderContext extends AnnotationRenderContext:
 			var y1: int = clampi(int(br.y), 0, _img.get_height())
 			_img.fill_rect(Rect2i(x0, y0, x1 - x0, y1 - y0), color)
 		else:
-			var tr := to_screen(Vector2(rect.position.x + rect.size.x, rect.position.y))
-			var bl := to_screen(Vector2(rect.position.x, rect.position.y + rect.size.y))
-			draw_line(tl, tr, color, width)
-			draw_line(tr, br, color, width)
-			draw_line(br, bl, color, width)
-			draw_line(bl, tl, color, width)
+			# _corner suffix because plain `tr` shadows Object.tr translation method.
+			var tr_corner := to_screen(Vector2(rect.position.x + rect.size.x, rect.position.y))
+			var bl_corner := to_screen(Vector2(rect.position.x, rect.position.y + rect.size.y))
+			draw_line(tl, tr_corner, color, width)
+			draw_line(tr_corner, br, color, width)
+			draw_line(br, bl_corner, color, width)
+			draw_line(bl_corner, tl, color, width)
 
 
 	# to_screen / from_screen are inherited from AnnotationRenderContext and

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://y78uks8l0bfs"]
 
-[ext_resource type="Script" uid="uid://plugin_manager_panel" path="res://Scripts/UI/Controls/PluginManagerPanel/PluginManagerPanel.gd" id="1_plugin_manager_panel"]
+[ext_resource type="Script" path="res://Scripts/UI/Controls/PluginManagerPanel/PluginManagerPanel.gd" id="1_plugin_manager_panel"]
 
 [node name="PluginManagerPanel" type="PanelContainer" unique_id=820670001]
 clip_contents = true
