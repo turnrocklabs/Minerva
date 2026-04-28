@@ -88,6 +88,36 @@ func _init() -> void:
 	print("\n-- cad_get_document_source: missing host --")
 	test_document_source_missing_host(tools)
 
+	print("\n-- cad_annotate_edges: happy path --")
+	test_annotate_edges_happy(tools)
+
+	print("\n-- cad_annotate_edges: user-supplied group_id --")
+	test_annotate_edges_user_group_id(tools)
+
+	print("\n-- cad_annotate_edges: skipped unknown ids --")
+	test_annotate_edges_skipped_unknown(tools)
+
+	print("\n-- cad_annotate_edges: tags_any filter --")
+	test_annotate_edges_tags_any_filter(tools)
+
+	print("\n-- cad_annotate_edges: requires selector --")
+	test_annotate_edges_requires_selector(tools)
+
+	print("\n-- cad_annotate_edges: rejects both selectors --")
+	test_annotate_edges_rejects_both_selectors(tools)
+
+	print("\n-- cad_clear_edge_annotations: clear by group_id --")
+	test_clear_by_group_id(tools)
+
+	print("\n-- cad_clear_edge_annotations: clear all=true --")
+	test_clear_all_true(tools)
+
+	print("\n-- cad_clear_edge_annotations: requires predicate --")
+	test_clear_requires_predicate(tools)
+
+	print("\n-- cad_clear_edge_annotations: no match returns zero --")
+	test_clear_no_match_returns_zero(tools)
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -169,6 +199,31 @@ class _FakeCadHost extends AnnotationHost:
 
 	func get_document_source() -> Dictionary:
 		return {"file_path": _document_file_path, "dsl_text": _document_dsl_text}
+
+	# ── Annotation store (for annotation tool tests) ──────────────────────────
+	var _stored_annotations: Array = []  # Array[Dictionary]
+	var _next_ann_id: int = 1
+
+	func add_annotation(annotation: Dictionary) -> String:
+		var stored: Dictionary = annotation.duplicate(true)
+		var id: String = str(stored.get("id", ""))
+		if id.is_empty():
+			id = "ann_%04d" % _next_ann_id
+			_next_ann_id += 1
+		stored["id"] = id
+		_stored_annotations.append(stored)
+		return id
+
+	func remove_annotation(annotation_id: String) -> bool:
+		for i in range(_stored_annotations.size()):
+			var entry: Dictionary = _stored_annotations[i] as Dictionary
+			if str(entry.get("id", "")) == annotation_id:
+				_stored_annotations.remove_at(i)
+				return true
+		return false
+
+	func get_annotations() -> Array:
+		return _stored_annotations.duplicate()
 
 
 # ── Test helpers ──────────────────────────────────────────────────────────────
@@ -393,3 +448,213 @@ func test_document_source_missing_host(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
 	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "Ghost"})
 	check("success=false for missing host", bool(result.get("success", true)) == false)
+
+
+# ── cad_annotate_edges tests ──────────────────────────────────────────────────
+
+## Five-edge registry used by annotation tests.
+## Edges 1-5 as straight edges with known start/end so midpoint is computable.
+func _annotation_edges() -> Array:
+	return [
+		{"id": 1, "kind": "straight", "length": 10.0, "start": [0.0, 0.0, 0.0], "end": [2.0, 0.0, 0.0], "tags": []},
+		{"id": 2, "kind": "straight", "length": 10.0, "start": [0.0, 1.0, 0.0], "end": [2.0, 1.0, 0.0], "tags": []},
+		{"id": 3, "kind": "straight", "length": 10.0, "start": [0.0, 2.0, 0.0], "end": [2.0, 2.0, 0.0], "tags": []},
+		{"id": 4, "kind": "straight", "length": 10.0, "start": [0.0, 3.0, 0.0], "end": [2.0, 3.0, 0.0], "tags": []},
+		{"id": 5, "kind": "straight", "length": 10.0, "start": [0.0, 4.0, 0.0], "end": [2.0, 4.0, 0.0], "tags": []},
+	]
+
+
+func test_annotate_edges_happy(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "edge_ids": [1, 2, 3]}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	var created: Variant = result.get("created_edge_ids", null)
+	check("created_edge_ids is Array", created is Array)
+	check("3 annotations created", created is Array and (created as Array).size() == 3)
+	var group_id: String = str(result.get("group_id", ""))
+	check("group_id minted (non-empty)", not group_id.is_empty())
+	check("group_id starts with cad_edge_grp_", group_id.begins_with("cad_edge_grp_"))
+	var skipped: Variant = result.get("skipped_unknown_ids", null)
+	check("skipped_unknown_ids is Array", skipped is Array)
+	check("no skipped ids", skipped is Array and (skipped as Array).is_empty())
+	check("3 annotations stored on host", h.get_annotations().size() == 3)
+	# Each stored annotation must have kind = cad_edge_number and the group_id in payload.
+	var all_ann: Array = h.get_annotations()
+	var all_have_kind := true
+	var all_have_group := true
+	for ann in all_ann:
+		if str((ann as Dictionary).get("kind", "")) != "cad_edge_number":
+			all_have_kind = false
+		var payload: Dictionary = (ann as Dictionary).get("payload", {}) as Dictionary
+		if str(payload.get("group_id", "")) != group_id:
+			all_have_group = false
+	check("all annotations have kind=cad_edge_number", all_have_kind)
+	check("all annotations carry minted group_id", all_have_group)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_annotate_edges_user_group_id(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "edge_ids": [1, 2], "group_id": "my-group"}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	check("returned group_id matches", str(result.get("group_id", "")) == "my-group")
+	var all_ann: Array = h.get_annotations()
+	var all_correct := true
+	for ann in all_ann:
+		var payload: Dictionary = (ann as Dictionary).get("payload", {}) as Dictionary
+		if str(payload.get("group_id", "")) != "my-group":
+			all_correct = false
+	check("all annotations carry user group_id", all_correct)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_annotate_edges_skipped_unknown(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "edge_ids": [1, 99]}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	var created: Variant = result.get("created_edge_ids", null)
+	check("1 annotation created", created is Array and (created as Array).size() == 1)
+	check("created edge is id=1", created is Array and int((created as Array)[0]) == 1)
+	var skipped: Variant = result.get("skipped_unknown_ids", null)
+	check("1 skipped id", skipped is Array and (skipped as Array).size() == 1)
+	check("skipped id is 99", skipped is Array and int((skipped as Array)[0]) == 99)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_annotate_edges_tags_any_filter(tools) -> void:
+	var h := _make_host("MyCAD")
+	# Edges with explicit tags for filtering.
+	h.set_edge_registry([
+		{"id": 1, "kind": "straight", "start": [0.0, 0.0, 0.0], "end": [1.0, 0.0, 0.0], "tags": ["outer"]},
+		{"id": 2, "kind": "straight", "start": [0.0, 1.0, 0.0], "end": [1.0, 1.0, 0.0], "tags": ["inner"]},
+		{"id": 3, "kind": "straight", "start": [0.0, 2.0, 0.0], "end": [1.0, 2.0, 0.0], "tags": ["outer", "feature"]},
+	])
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "tags_any": ["outer"]}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	var created: Variant = result.get("created_edge_ids", null)
+	check("2 annotations created (edges 1 and 3)", created is Array and (created as Array).size() == 2)
+	if created is Array and (created as Array).size() == 2:
+		var ca: Array = created as Array
+		var ids_set: Array = [int(ca[0]), int(ca[1])]
+		ids_set.sort()
+		check("created ids are [1, 3]", ids_set == [1, 3])
+	check("edge 2 (inner) not annotated", h.get_annotations().size() == 2)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_annotate_edges_requires_selector(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD"}
+	)
+	check("success=false when no selector", bool(result.get("success", true)) == false)
+	check("error message present", str(result.get("error", "")).length() > 0)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_annotate_edges_rejects_both_selectors(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "edge_ids": [1], "tags_any": ["outer"]}
+	)
+	check("success=false when both selectors given", bool(result.get("success", true)) == false)
+	check("error message present", str(result.get("error", "")).length() > 0)
+	AnnotationHostRegistry._reset_for_test()
+
+
+# ── cad_clear_edge_annotations tests ─────────────────────────────────────────
+
+## Helper: annotate a set of edge_ids under a given group_id, return the host.
+func _annotate_group(tools, h: _FakeCadHost, edge_ids: Array, group_id: String) -> void:
+	tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "edge_ids": edge_ids, "group_id": group_id}
+	)
+
+
+func test_clear_by_group_id(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	_annotate_group(tools, h, [1, 2, 3], "group-A")
+	_annotate_group(tools, h, [4, 5], "group-B")
+	check("5 total before clear", h.get_annotations().size() == 5)
+
+	var result: Dictionary = tools.handle(
+		"minerva_cad_clear_edge_annotations",
+		{"editor_name": "MyCAD", "group_id": "group-A"}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	check("cleared_count=3", int(result.get("cleared_count", -1)) == 3)
+	check("2 annotations remain (group-B)", h.get_annotations().size() == 2)
+	# Verify remaining annotations are all group-B.
+	var remaining: Array = h.get_annotations()
+	var all_b := true
+	for ann in remaining:
+		var payload: Dictionary = (ann as Dictionary).get("payload", {}) as Dictionary
+		if str(payload.get("group_id", "")) != "group-B":
+			all_b = false
+	check("remaining annotations are all group-B", all_b)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_clear_all_true(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	_annotate_group(tools, h, [1, 2, 3], "group-X")
+	_annotate_group(tools, h, [4, 5], "group-Y")
+	check("5 total before clear", h.get_annotations().size() == 5)
+
+	var result: Dictionary = tools.handle(
+		"minerva_cad_clear_edge_annotations",
+		{"editor_name": "MyCAD", "all": true}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	check("cleared_count=5", int(result.get("cleared_count", -1)) == 5)
+	check("0 annotations remain", h.get_annotations().is_empty())
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_clear_requires_predicate(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	var result: Dictionary = tools.handle(
+		"minerva_cad_clear_edge_annotations",
+		{"editor_name": "MyCAD"}
+	)
+	check("success=false when no predicate", bool(result.get("success", true)) == false)
+	check("error message present", str(result.get("error", "")).length() > 0)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_clear_no_match_returns_zero(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry(_annotation_edges())
+	_annotate_group(tools, h, [1, 2], "group-A")
+
+	var result: Dictionary = tools.handle(
+		"minerva_cad_clear_edge_annotations",
+		{"editor_name": "MyCAD", "group_id": "does-not-exist"}
+	)
+	check("success=true (not an error)", bool(result.get("success", false)) == true)
+	check("cleared_count=0", int(result.get("cleared_count", -1)) == 0)
+	check("annotations unchanged", h.get_annotations().size() == 2)
+	AnnotationHostRegistry._reset_for_test()

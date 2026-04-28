@@ -42,6 +42,18 @@ var view_context: String = ""
 ## Per-primitive "unit" field overrides this (design §5 / §14 Q2).
 var unit: String = "mm"
 
+## Optional reference to the AnnotationHost that owns this render pass.
+## Nil for editors that don't expose multi-pane or 3-D projection info.
+## Read by plugin kinds (e.g. cad_edge_number) that need camera/pane data.
+##
+## Safe-read pattern for kinds:
+##     if ctx.host != null and ctx.host.has_method("get_panes"):
+##         var panes: Array = ctx.host.get_panes()
+##         ...
+## Treat null as "host-less render context" and fall back to a
+## screen-space-only path. Never crash if absent.
+var host: Object = null
+
 # ── Factory helper ─────────────────────────────────────────────────────────────
 
 ## Construct a fully populated context in one call.
