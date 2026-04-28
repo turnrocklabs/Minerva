@@ -72,7 +72,7 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 
 ## Returns the document-space bounding rectangle of this annotation.
 ## Used for unknown-kind placeholder rendering and viewport culling.
-func bounds(annotation: Dictionary) -> Rect2:
+func bounds(_annotation: Dictionary) -> Rect2:
 	push_error(
 		"[AnnotationKind] bounds() not implemented for kind '%s'. "
 		% str(name) +
@@ -85,7 +85,7 @@ func bounds(annotation: Dictionary) -> Rect2:
 ## Additional kind-specific validation beyond the envelope schema.
 ## Called after AnnotationSchema.validate_annotation() passes.
 ## Return an empty array on success; array of AnnotationSchema.ValidationError on failure.
-func validate(annotation: Dictionary) -> Array:
+func validate(_annotation: Dictionary) -> Array:
 	return []
 
 
@@ -113,7 +113,7 @@ func migrate(annotation: Dictionary, from_version: int) -> Dictionary:
 ## mode is "pack" or "unpack"; base is the sidecar directory path.
 ## Called by ProjectPackage per annotation (design §9.4).
 ## Default implementation does nothing (kinds with no path payloads don't need this).
-func rewrite_paths(annotation: Dictionary, mode: String, base: String) -> Dictionary:
+func rewrite_paths(annotation: Dictionary, _mode: String, _base: String) -> Dictionary:
 	return annotation
 
 
@@ -136,7 +136,7 @@ func primary_anchor_point(annotation: Dictionary) -> Vector2:
 ## Called by AnnotationHost._stamp_anchor instead of host.describe_point directly,
 ## so arrow (and future kinds) can apply directional projection or other geometry
 ## before the host lookup.
-func describe_target_point(annotation: Dictionary, base_pos: Vector2, host: AnnotationHost) -> String:
+func describe_target_point(_annotation: Dictionary, base_pos: Vector2, host: AnnotationHost) -> String:
 	if host == null:
 		return ""
 	return host.describe_point(base_pos)

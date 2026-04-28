@@ -45,22 +45,27 @@ extends RefCounted
 ## Emitted when the user has completed authoring an annotation.
 ## annotation is a full annotation envelope dict (design §2.1) without an id;
 ## the substrate assigns one on add.
+## Subclass author-tools are the actual emitters; the base class only declares
+## the contract, so the parser can't see usage from this file.
+@warning_ignore("unused_signal")
 signal annotation_ready(annotation: Dictionary)
 
 ## Emitted when a manipulation tool changes an existing annotation. Toolbar
 ## or canvas should call host.update_annotation(annotation_id, new_dict) on
 ## receipt. Author tools that CREATE annotations emit `annotation_ready`
 ## instead and never use this signal.
+@warning_ignore("unused_signal")
 signal annotation_modified(annotation_id: String, new_annotation: Dictionary)
 
 ## Emitted when authoring/manipulation is aborted (Escape, tool switch, kind deregister).
+@warning_ignore("unused_signal")
 signal cancelled()
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
 
 ## Called when this tool becomes the active tool in the toolbar.
 ## host provides access to the editor's registry, add_annotation, and transforms.
-func on_activate(host: AnnotationHost) -> void:
+func on_activate(_host: AnnotationHost) -> void:
 	pass
 
 
@@ -76,18 +81,18 @@ func on_deactivate() -> void:
 
 ## Called when a pointer button is pressed.
 ## Returns true to consume the event (prevent host default handling).
-func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
+func on_pointer_down(_pos: Vector2, _button: int, _mods: int) -> bool:
 	return false
 
 
 ## Called when the pointer moves (with or without a button held).
-func on_pointer_move(pos: Vector2) -> void:
+func on_pointer_move(_pos: Vector2) -> void:
 	pass
 
 
 ## Called when a pointer button is released.
 ## Returns true to consume the event.
-func on_pointer_up(pos: Vector2, button: int, mods: int) -> bool:
+func on_pointer_up(_pos: Vector2, _button: int, _mods: int) -> bool:
 	return false
 
 # ── Optional preview ───────────────────────────────────────────────────────────
@@ -95,5 +100,5 @@ func on_pointer_up(pos: Vector2, button: int, mods: int) -> bool:
 ## Draw an in-progress preview of the annotation being authored.
 ## Called by the editor's draw callback while this tool is active.
 ## Default implementation is a no-op (no preview).
-func draw_preview(ctx: AnnotationRenderContext) -> void:
+func draw_preview(_ctx: AnnotationRenderContext) -> void:
 	pass

@@ -225,15 +225,17 @@ func _draw_dashed_rect(
 	color: Color,
 	width: float
 ) -> void:
-	var tl := rect.position
-	var tr := Vector2(rect.position.x + rect.size.x, rect.position.y)
-	var br := rect.position + rect.size
-	var bl := Vector2(rect.position.x, rect.position.y + rect.size.y)
+	# Corner names use _corner suffix because plain `tr` shadows Object.tr()
+	# (Godot's translation lookup method).
+	var tl_corner := rect.position
+	var tr_corner := Vector2(rect.position.x + rect.size.x, rect.position.y)
+	var br_corner := rect.position + rect.size
+	var bl_corner := Vector2(rect.position.x, rect.position.y + rect.size.y)
 
-	_draw_dashed_segment(ctx, tl, tr, color, width)
-	_draw_dashed_segment(ctx, tr, br, color, width)
-	_draw_dashed_segment(ctx, br, bl, color, width)
-	_draw_dashed_segment(ctx, bl, tl, color, width)
+	_draw_dashed_segment(ctx, tl_corner, tr_corner, color, width)
+	_draw_dashed_segment(ctx, tr_corner, br_corner, color, width)
+	_draw_dashed_segment(ctx, br_corner, bl_corner, color, width)
+	_draw_dashed_segment(ctx, bl_corner, tl_corner, color, width)
 
 
 ## Draws a single edge as a series of short drawn / skipped segments.
