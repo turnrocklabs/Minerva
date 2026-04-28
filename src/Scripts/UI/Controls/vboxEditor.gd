@@ -843,46 +843,14 @@ func _on_open_files(files: PackedStringArray):
 
 
 func open_file(filename: String):
-	## Determine the file type, create a control for that type (CodeEdit/TextureRect)
-	## Then add the new control to the active_container
-	## Determine file type.
-	##
-	## Resolution order (design §7.3):
-	##   1. Core extension table (graphics, minpcb, minkb, minsheet, text)
-	##   2. PluginEditorRegistry (plugin-contributed extensions)
-	##   3. Fallback to TEXT
+	## Delegate all type-resolution and editor-creation to the singleton helper
+	## open_file_at_path(), which is also called by the minerva_open_file MCP tool.
+	## This keeps the dispatch logic in a single place (design §7.3).
 	if _is_graphics_file(filename):
+		# Keep the legacy is_graph/is_picture flags for the GRAPHICS branch.
 		SingletonObject.is_graph = true
 		SingletonObject.is_picture = true
-		editor_pane.add(Editor.Type.GRAPHICS, filename)
-	elif filename.to_lower().ends_with(".minpcb"):
-		editor_pane.add(Editor.Type.PCB, filename)
-	elif filename.to_lower().ends_with(".minkb"):
-		editor_pane.add(Editor.Type.KANBAN, filename)
-	elif filename.to_lower().ends_with(".minsheet"):
-		editor_pane.add(Editor.Type.SPREADSHEET, filename)
-	else:
-		# Check plugin registry before falling back to TEXT (design §7.3).
-		var ext: String = "." + filename.get_extension().to_lower()
-		var reg = SingletonObject.get("plugin_editor_registry") if "plugin_editor_registry" in SingletonObject else null
-		var panel_info: Dictionary = reg.resolve_extension(ext) if reg != null else {}
-		if not panel_info.is_empty():
-			var p_id: String = panel_info.get("plugin_id", "")
-			var p_name: String = panel_info.get("panel_name", "")
-			# Use add_plugin_scene_editor() which sets plugin_id/panel_name on the
-			# Editor node BEFORE Editor.create() reads them.
-			editor_pane.add_plugin_scene_editor(p_id, p_name, filename)
-		else:
-			editor_pane.add(Editor.Type.TEXT, filename)
-		# new_control = CodeEdit.new()
-		# ## Open the file and read the content into one giant string
-		# var fa_object = FileAccess.open(filename, FileAccess.READ)
-		# new_control.text = fa_object.get_as_text()
-
-	# new_control.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# new_control.size_flags_vertical = Control.SIZE_EXPAND_FILL
-
-	# editor_pane.add(Editor.Type.TEXT, filename)
+	SingletonObject.open_file_at_path(filename)
 
 
 func _on_h_button_pressed():

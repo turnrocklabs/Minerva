@@ -1462,6 +1462,124 @@ var Is_code_completed:bool = true
 
 ## Video recorder overlay scene
 var video_recorder_overlay_scene = preload("res://Scenes/VideoRecorder.tscn")
+
+
+## Open `path` in the appropriate editor type.  Idempotent — if the file is
+## already open, returns the existing editor's tab title without creating a
+## duplicate tab.
+##
+## Resolution order (mirrors vboxEditor.open_file, design §7.3):
+##   1. Graphics extensions (.png, .jpg, .jpeg)
+##   2. Typed-editor extensions (.minpcb, .minkb, .minsheet)
+##   3. PluginEditorRegistry (plugin-contributed extensions)
+##   4. TEXT fallback
+##
+## Returns:
+##   {ok: true, editor_kind: String, editor_name: String,
+##    plugin_id: String|null, panel_name: String|null}
+##   on success.
+##   {ok: false, errors: Array[String]}
+##   on failure.
+func open_file_at_path(path: String) -> Dictionary:
+	# --- Path validation ---
+	var abs_path: String = path
+	if not abs_path.is_absolute_path():
+		# Resolve via ProjectSettings as best-effort; warn in response.
+		var globalized: String = ProjectSettings.globalize_path(abs_path)
+		abs_path = globalized
+		push_warning("[open_file_at_path] path was relative; resolved to: %s" % abs_path)
+
+	if not FileAccess.file_exists(abs_path):
+		if DirAccess.dir_exists_absolute(abs_path):
+			return {"ok": false, "errors": ["not_a_file: %s" % abs_path]}
+		return {"ok": false, "errors": ["file_not_found: %s" % abs_path]}
+
+	if editor_pane == null:
+		return {"ok": false, "errors": ["editor_pane not available"]}
+
+	# --- Idempotency: check if already open ---
+	for editor: Editor in editor_pane.get_open_editors():
+		if editor.file == abs_path:
+			var kind_name: String = _editor_type_to_string(editor.type)
+			return {
+				"ok": true,
+				"editor_kind": kind_name,
+				"editor_name": editor.tab_title,
+				"plugin_id": editor.plugin_id if not editor.plugin_id.is_empty() else null,
+				"panel_name": editor.panel_name if not editor.panel_name.is_empty() else null,
+			}
+
+	# --- Extension resolution ---
+	var lower: String = abs_path.to_lower()
+	var ext: String = "." + abs_path.get_extension().to_lower()
+
+	var result_editor: Editor = null
+	var editor_kind: String = ""
+	var p_id: String = ""
+	var p_name: String = ""
+
+	if lower.ends_with(".jpeg") or lower.ends_with(".jpg") or lower.ends_with(".png"):
+		result_editor = editor_pane.add(Editor.Type.GRAPHICS, abs_path)
+		editor_kind = "GRAPHICS"
+	elif lower.ends_with(".minpcb"):
+		result_editor = editor_pane.add(Editor.Type.PCB, abs_path)
+		editor_kind = "PCB"
+	elif lower.ends_with(".minkb"):
+		result_editor = editor_pane.add(Editor.Type.KANBAN, abs_path)
+		editor_kind = "KANBAN"
+	elif lower.ends_with(".minsheet"):
+		result_editor = editor_pane.add(Editor.Type.SPREADSHEET, abs_path)
+		editor_kind = "SPREADSHEET"
+	else:
+		# Check plugin registry before falling back to TEXT (design §7.3).
+		var reg = get("plugin_editor_registry") if "plugin_editor_registry" in self else null
+		var panel_info: Dictionary = reg.resolve_extension(ext) if reg != null else {}
+		if not panel_info.is_empty():
+			p_id = panel_info.get("plugin_id", "")
+			p_name = panel_info.get("panel_name", "")
+			# Validate plugin is running before opening.
+			if plugin_manager != null:
+				var status: Dictionary = plugin_manager.get_plugin_status(p_id)
+				if not status.get("running", false):
+					return {"ok": false, "errors": ["plugin_not_running: %s" % p_id]}
+			result_editor = editor_pane.add_plugin_scene_editor(p_id, p_name, abs_path)
+			editor_kind = "PLUGIN_SCENE"
+		else:
+			result_editor = editor_pane.add(Editor.Type.TEXT, abs_path)
+			editor_kind = "TEXT"
+
+	if result_editor == null:
+		return {"ok": false, "errors": ["no_handler_for_extension: %s" % ext]}
+
+	return {
+		"ok": true,
+		"editor_kind": editor_kind,
+		"editor_name": result_editor.tab_title,
+		"plugin_id": p_id if not p_id.is_empty() else null,
+		"panel_name": p_name if not p_name.is_empty() else null,
+	}
+
+
+## Map Editor.Type enum to a human-readable string for open_file_at_path responses.
+func _editor_type_to_string(t: int) -> String:
+	match t:
+		Editor.Type.TEXT:            return "TEXT"
+		Editor.Type.GRAPHICS:        return "GRAPHICS"
+		Editor.Type.VIDEO:           return "VIDEO"
+		Editor.Type.PACKAGE:         return "PACKAGE"
+		Editor.Type.LOGS:            return "LOGS"
+		Editor.Type.KANBAN:          return "KANBAN"
+		Editor.Type.SPREADSHEET:     return "SPREADSHEET"
+		Editor.Type.PCB:             return "PCB"
+		Editor.Type.VIDEO_EDITOR:    return "VIDEO_EDITOR"
+		Editor.Type.ACTIVITY_LOG:    return "ACTIVITY_LOG"
+		Editor.Type.WEBVIEW:         return "WEBVIEW"
+		Editor.Type.PLUGIN_MANAGER:  return "PLUGIN_MANAGER"
+		Editor.Type.WORKER_STATUS:   return "WORKER_STATUS"
+		Editor.Type.DOCKET:          return "DOCKET"
+		Editor.Type.PLUGIN_SCENE:    return "PLUGIN_SCENE"
+		_:                           return "UNKNOWN"
+
 #endregion
 
 #region Common UI Tasks
