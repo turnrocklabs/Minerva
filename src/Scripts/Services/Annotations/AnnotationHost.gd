@@ -25,35 +25,37 @@ signal selection_changed(annotation_id: String)
 
 ## Return the AnnotationRegistry used by this editor.
 ## The toolbar and tools use this to look up kinds.
-## Default returns null; override in each editor.
+## Subclasses MUST override; reaching the base implementation indicates a
+## missing override (programmer error, not a runtime condition).
 func get_registry() -> AnnotationRegistry:
-	push_warning("[AnnotationHost] get_registry() not overridden — returning null")
+	push_error("[AnnotationHost] get_registry() not overridden — returning null")
 	return null
 
 # ── Document mutation ──────────────────────────────────────────────────────────
 
 ## Add a completed annotation dict to the editor's document.
 ## Returns the assigned annotation id (substrate-generated "ann_<hex>").
-## Default implementation logs a warning and returns an empty string.
+## Subclasses MUST override; reaching the base implementation indicates a
+## missing override (programmer error, not a runtime condition).
 func add_annotation(annotation: Dictionary) -> String:
-	push_warning("[AnnotationHost] add_annotation() not overridden — annotation not stored")
+	push_error("[AnnotationHost] add_annotation() not overridden — annotation not stored")
 	return ""
 
 
 ## Replace a stored annotation by id. The new_annotation dict is stamped with
 ## the original id before storing. Returns true on success, false if id unknown.
 ## Subclass MUST emit annotations_changed (or equivalent) on success.
-## Default returns false with a push_warning.
+## Subclasses MUST override; base implementation is a programmer-error trap.
 func update_annotation(annotation_id: String, new_annotation: Dictionary) -> bool:
-	push_warning("[AnnotationHost] update_annotation() not overridden")
+	push_error("[AnnotationHost] update_annotation() not overridden")
 	return false
 
 
 ## Remove an annotation by id. Returns true if removed, false if id unknown.
 ## If the removed annotation is currently selected, the selection MUST be
-## cleared. Default returns false with a push_warning.
+## cleared. Subclasses MUST override; base implementation is a programmer-error trap.
 func remove_annotation(annotation_id: String) -> bool:
-	push_warning("[AnnotationHost] remove_annotation() not overridden")
+	push_error("[AnnotationHost] remove_annotation() not overridden")
 	return false
 
 
