@@ -47,7 +47,7 @@ func _init() -> void:
 	test_mesh_info_missing_host(tools)
 
 	print("\n-- cad_get_mesh_info: missing editor_name --")
-	test_missing_editor_name(tools, "cad_get_mesh_info")
+	test_missing_editor_name(tools, "minerva_cad_get_mesh_info")
 
 	print("\n-- cad_list_edges_live: empty edges --")
 	test_list_edges_empty(tools)
@@ -207,7 +207,7 @@ func _canned_edges() -> Array:
 func test_mesh_info_empty_host(tools) -> void:
 	var h := _make_host("MyCAD")
 	# host has no mesh — default _mesh_data is {}
-	var result: Dictionary = tools.handle("cad_get_mesh_info", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_get_mesh_info", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	check("has_geometry=false", bool(result.get("has_geometry", true)) == false)
 	check_eq("vertex_count=0", result.get("vertex_count", -1), 0)
@@ -220,7 +220,7 @@ func test_mesh_info_empty_host(tools) -> void:
 func test_mesh_info_populated(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_mesh_data(_canned_mesh())
-	var result: Dictionary = tools.handle("cad_get_mesh_info", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_get_mesh_info", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	check("has_geometry=true", bool(result.get("has_geometry", false)) == true)
 	check_eq("vertex_count=3", result.get("vertex_count", -1), 3)
@@ -242,7 +242,7 @@ func test_mesh_info_populated(tools) -> void:
 
 func test_mesh_info_missing_host(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
-	var result: Dictionary = tools.handle("cad_get_mesh_info", {"editor_name": "NoSuchEditor"})
+	var result: Dictionary = tools.handle("minerva_cad_get_mesh_info", {"editor_name": "NoSuchEditor"})
 	check("success=false for missing host", bool(result.get("success", true)) == false)
 	check("error contains editor name",
 		str(result.get("error", "")).contains("NoSuchEditor"))
@@ -260,7 +260,7 @@ func test_missing_editor_name(tools, tool_name: String) -> void:
 
 func test_list_edges_empty(tools) -> void:
 	var h := _make_host("MyCAD")
-	var result: Dictionary = tools.handle("cad_list_edges_live", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_list_edges_live", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	var edges: Variant = result.get("edges", null)
 	check("edges is Array", edges is Array)
@@ -271,7 +271,7 @@ func test_list_edges_empty(tools) -> void:
 func test_list_edges_populated(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_edge_registry(_canned_edges())
-	var result: Dictionary = tools.handle("cad_list_edges_live", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_list_edges_live", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	var edges: Variant = result.get("edges", null)
 	check("edges is Array", edges is Array)
@@ -287,7 +287,7 @@ func test_list_edges_populated(tools) -> void:
 
 func test_list_edges_missing_host(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
-	var result: Dictionary = tools.handle("cad_list_edges_live", {"editor_name": "Ghost"})
+	var result: Dictionary = tools.handle("minerva_cad_list_edges_live", {"editor_name": "Ghost"})
 	check("success=false for missing host", bool(result.get("success", true)) == false)
 
 
@@ -296,7 +296,7 @@ func test_list_edges_missing_host(tools) -> void:
 func test_get_edge_hit(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_edge_registry(_canned_edges())
-	var result: Dictionary = tools.handle("cad_get_edge", {"editor_name": "MyCAD", "edge_id": 2})
+	var result: Dictionary = tools.handle("minerva_cad_get_edge", {"editor_name": "MyCAD", "edge_id": 2})
 	check("success=true", bool(result.get("success", false)) == true)
 	var edge: Variant = result.get("edge", null)
 	check("edge not null", edge != null)
@@ -309,7 +309,7 @@ func test_get_edge_hit(tools) -> void:
 func test_get_edge_miss(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_edge_registry(_canned_edges())
-	var result: Dictionary = tools.handle("cad_get_edge", {"editor_name": "MyCAD", "edge_id": 999})
+	var result: Dictionary = tools.handle("minerva_cad_get_edge", {"editor_name": "MyCAD", "edge_id": 999})
 	check("success=true for miss", bool(result.get("success", false)) == true)
 	check("edge=null for miss", result.get("edge", "NOT_NULL") == null)
 	AnnotationHostRegistry._reset_for_test()
@@ -317,7 +317,7 @@ func test_get_edge_miss(tools) -> void:
 
 func test_get_edge_missing_host(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
-	var result: Dictionary = tools.handle("cad_get_edge", {"editor_name": "Ghost", "edge_id": 1})
+	var result: Dictionary = tools.handle("minerva_cad_get_edge", {"editor_name": "Ghost", "edge_id": 1})
 	check("success=false for missing host", bool(result.get("success", true)) == false)
 
 
@@ -327,7 +327,7 @@ func test_selected_edge_none(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_edge_registry(_canned_edges())
 	# Default selected_edge_id is -1.
-	var result: Dictionary = tools.handle("cad_get_selected_edge", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_get_selected_edge", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	check_eq("selected_edge_id=-1", result.get("selected_edge_id", 0), -1)
 	check("edge=null when no selection", result.get("edge", "NOT_NULL") == null)
@@ -338,7 +338,7 @@ func test_selected_edge_set(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_edge_registry(_canned_edges())
 	h.set_selected_edge_id(1)
-	var result: Dictionary = tools.handle("cad_get_selected_edge", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_get_selected_edge", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	check_eq("selected_edge_id=1", result.get("selected_edge_id", -1), 1)
 	var edge: Variant = result.get("edge", null)
@@ -350,7 +350,7 @@ func test_selected_edge_set(tools) -> void:
 
 func test_selected_edge_missing_host(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
-	var result: Dictionary = tools.handle("cad_get_selected_edge", {"editor_name": "Ghost"})
+	var result: Dictionary = tools.handle("minerva_cad_get_selected_edge", {"editor_name": "Ghost"})
 	check("success=false for missing host", bool(result.get("success", true)) == false)
 
 
@@ -358,7 +358,7 @@ func test_selected_edge_missing_host(tools) -> void:
 
 func test_document_source_empty(tools) -> void:
 	var h := _make_host("MyCAD")
-	var result: Dictionary = tools.handle("cad_get_document_source", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	check("file_path=null when not set", result.get("file_path", "NOT_NULL") == null)
 	check("dsl_text=null when not set", result.get("dsl_text", "NOT_NULL") == null)
@@ -370,7 +370,7 @@ func test_document_source_set_no_mesh(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_document_source("/home/user/box.mcad", "import build123d as bd\nb = bd.Box(10,10,10)")
 	# No mesh pushed → evaluated=false.
-	var result: Dictionary = tools.handle("cad_get_document_source", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	check_eq("file_path echoed", result.get("file_path", ""), "/home/user/box.mcad")
 	check("dsl_text non-null", result.get("dsl_text", null) != null)
@@ -383,7 +383,7 @@ func test_document_source_set_with_mesh(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_document_source("/home/user/box.mcad", "import build123d as bd\nb = bd.Box(10,10,10)")
 	h.set_mesh_data(_canned_mesh())
-	var result: Dictionary = tools.handle("cad_get_document_source", {"editor_name": "MyCAD"})
+	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	check("evaluated=true (mesh present)", bool(result.get("evaluated", false)) == true)
 	AnnotationHostRegistry._reset_for_test()
@@ -391,5 +391,5 @@ func test_document_source_set_with_mesh(tools) -> void:
 
 func test_document_source_missing_host(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
-	var result: Dictionary = tools.handle("cad_get_document_source", {"editor_name": "Ghost"})
+	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "Ghost"})
 	check("success=false for missing host", bool(result.get("success", true)) == false)

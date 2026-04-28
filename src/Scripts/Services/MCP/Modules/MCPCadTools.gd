@@ -27,17 +27,17 @@ extends MCPToolModule
 
 func get_tool_names() -> Array[String]:
 	return [
-		"cad_get_mesh_info",
-		"cad_list_edges_live",
-		"cad_get_edge",
-		"cad_get_selected_edge",
-		"cad_get_document_source",
+		"minerva_cad_get_mesh_info",
+		"minerva_cad_list_edges_live",
+		"minerva_cad_get_edge",
+		"minerva_cad_get_selected_edge",
+		"minerva_cad_get_document_source",
 	]
 
 
 func register_tools() -> void:
 	server._register_tool(
-		"cad_get_mesh_info",
+		"minerva_cad_get_mesh_info",
 		"Return geometry summary for a live CAD editor: vertex count, face count, "
 		+ "axis-aligned bounding box, and whether any geometry exists. "
 		+ "Bounding box coordinates are in millimetres (CAD always uses mm). "
@@ -58,7 +58,7 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
-		"cad_list_edges_live",
+		"minerva_cad_list_edges_live",
 		"Return the full edge registry from a live CAD editor as an array of edge dicts. "
 		+ "Each dict has at minimum: id (int), kind (string: 'straight' or 'circle'). "
 		+ "Straight edges include length (mm); circle edges include radius (mm). "
@@ -78,7 +78,7 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
-		"cad_get_edge",
+		"minerva_cad_get_edge",
 		"Return a single edge dict from a live CAD editor by integer id. "
 		+ "Returns {ok: true, edge: null} when the id is not found (not an error). "
 		+ "Use cad_list_edges_live to enumerate available ids.",
@@ -100,7 +100,7 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
-		"cad_get_selected_edge",
+		"minerva_cad_get_selected_edge",
 		"Return the currently selected edge id and its full dict from a live CAD editor. "
 		+ "selected_edge_id is -1 and edge is null when no edge is selected. "
 		+ "Edge selection is driven by the user clicking in the 3-D viewport or via the "
@@ -119,7 +119,7 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
-		"cad_get_document_source",
+		"minerva_cad_get_document_source",
 		"Return the DSL source text and file path for a live CAD editor. "
 		+ "file_path is null or empty when the panel was opened without a file. "
 		+ "dsl_text is null or empty when no source has been loaded yet. "
@@ -142,15 +142,15 @@ func register_tools() -> void:
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
-		"cad_get_mesh_info":
+		"minerva_cad_get_mesh_info":
 			return _cad_get_mesh_info(arguments)
-		"cad_list_edges_live":
+		"minerva_cad_list_edges_live":
 			return _cad_list_edges_live(arguments)
-		"cad_get_edge":
+		"minerva_cad_get_edge":
 			return _cad_get_edge(arguments)
-		"cad_get_selected_edge":
+		"minerva_cad_get_selected_edge":
 			return _cad_get_selected_edge(arguments)
-		"cad_get_document_source":
+		"minerva_cad_get_document_source":
 			return _cad_get_document_source(arguments)
 	return _err("Unknown CAD tool: %s" % tool_name)
 
