@@ -512,11 +512,12 @@ func _untoggle_active_tool_button() -> void:
 
 
 ## Called when a Tools-section button is toggled on or off.
-func _on_tool_button_toggled(name: String, pressed: bool) -> void:
+## Param renamed `tool_name` from `name` to avoid shadowing Node.name.
+func _on_tool_button_toggled(tool_name: String, pressed: bool) -> void:
 	if pressed:
 		# Untoggle every other Tools button first.
 		for other_name in _tool_buttons.keys():
-			if other_name != name:
+			if other_name != tool_name:
 				var other_btn: Button = _tool_buttons[other_name]
 				if is_instance_valid(other_btn) and other_btn.button_pressed:
 					other_btn.set_pressed_no_signal(false)
@@ -538,16 +539,16 @@ func _on_tool_button_toggled(name: String, pressed: bool) -> void:
 			if is_instance_valid(prev_btn) and prev_btn.button_pressed:
 				prev_btn.set_pressed_no_signal(false)
 
-		_active_tool_button_name = name
+		_active_tool_button_name = tool_name
 		if _status_label != null:
-			_status_label.text = name.capitalize()
-		active_tool_button_changed.emit(name)
+			_status_label.text = tool_name.capitalize()
+		active_tool_button_changed.emit(tool_name)
 
 		# Construct and activate the tool, then forward to the canvas via
 		# active_tool_changed. This is the single canonical emission point for
 		# Tools-section tools; _deactivate_current_tool's null-emission above is
 		# transient and the canvas will be overwritten by this non-null one.
-		var new_tool: AnnotationAuthorTool = _construct_tool_for_name(name)
+		var new_tool: AnnotationAuthorTool = _construct_tool_for_name(tool_name)
 		if new_tool != null:
 			new_tool.on_activate(_host)
 			# Wire annotation_modified so the canvas can forward it to the host.
@@ -560,7 +561,7 @@ func _on_tool_button_toggled(name: String, pressed: bool) -> void:
 		active_tool_changed.emit(new_tool)
 	else:
 		# Toggled off: only clear if this button was the active one.
-		if _active_tool_button_name == name:
+		if _active_tool_button_name == tool_name:
 			_teardown_active_manipulation_tool()
 			_active_tool_button_name = ""
 			if _status_label != null:

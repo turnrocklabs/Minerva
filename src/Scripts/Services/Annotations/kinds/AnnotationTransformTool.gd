@@ -251,12 +251,13 @@ static func _hit_zone(doc_pos: Vector2, b: Rect2) -> Zone:
 # ── Corner / edge geometry helpers ────────────────────────────────────────────
 
 ## Returns [TL, TR, BL, BR] corners in document space.
+## _corner suffix because plain `tr` shadows Object.tr translation method.
 static func _corner_positions(b: Rect2) -> Array:
-	var tl := b.position
-	var tr := b.position + Vector2(b.size.x, 0.0)
-	var bl := b.position + Vector2(0.0, b.size.y)
-	var br := b.position + b.size
-	return [tl, tr, bl, br]
+	var tl_corner := b.position
+	var tr_corner := b.position + Vector2(b.size.x, 0.0)
+	var bl_corner := b.position + Vector2(0.0, b.size.y)
+	var br_corner := b.position + b.size
+	return [tl_corner, tr_corner, bl_corner, br_corner]
 
 
 ## Returns [T, B, L, R] edge midpoints in document space.
