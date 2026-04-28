@@ -19,6 +19,9 @@ extends RefCounted
 
 ## Emitted when the selected annotation changes. Emits "" when selection is
 ## cleared. Subclasses MUST emit this when the selected id changes.
+## Declared on the base class so all hosts share the contract; subclasses
+## are the actual emitters, so the parser can't see usage from this file.
+@warning_ignore("unused_signal")
 signal selection_changed(annotation_id: String)
 
 # ── Registry ───────────────────────────────────────────────────────────────────
@@ -37,7 +40,7 @@ func get_registry() -> AnnotationRegistry:
 ## Returns the assigned annotation id (substrate-generated "ann_<hex>").
 ## Subclasses MUST override; reaching the base implementation indicates a
 ## missing override (programmer error, not a runtime condition).
-func add_annotation(annotation: Dictionary) -> String:
+func add_annotation(_annotation: Dictionary) -> String:
 	push_error("[AnnotationHost] add_annotation() not overridden — annotation not stored")
 	return ""
 
@@ -46,7 +49,7 @@ func add_annotation(annotation: Dictionary) -> String:
 ## the original id before storing. Returns true on success, false if id unknown.
 ## Subclass MUST emit annotations_changed (or equivalent) on success.
 ## Subclasses MUST override; base implementation is a programmer-error trap.
-func update_annotation(annotation_id: String, new_annotation: Dictionary) -> bool:
+func update_annotation(_annotation_id: String, _new_annotation: Dictionary) -> bool:
 	push_error("[AnnotationHost] update_annotation() not overridden")
 	return false
 
@@ -54,14 +57,14 @@ func update_annotation(annotation_id: String, new_annotation: Dictionary) -> boo
 ## Remove an annotation by id. Returns true if removed, false if id unknown.
 ## If the removed annotation is currently selected, the selection MUST be
 ## cleared. Subclasses MUST override; base implementation is a programmer-error trap.
-func remove_annotation(annotation_id: String) -> bool:
+func remove_annotation(_annotation_id: String) -> bool:
 	push_error("[AnnotationHost] remove_annotation() not overridden")
 	return false
 
 
 ## Track which annotation is currently selected. Empty string = no selection.
 ## Subclass MUST emit selection_changed when the value changes. Default no-ops.
-func set_selected_annotation_id(annotation_id: String) -> void:
+func set_selected_annotation_id(_annotation_id: String) -> void:
 	pass
 
 
@@ -110,7 +113,7 @@ func get_view_context() -> String:
 ## The return value is written into annotation["anchored_to"] by _stamp_anchor().
 ## Returning "" is valid and means "no meaningful target here."
 ## Default returns "" — override in each editor that can identify content.
-func describe_point(doc_pos: Vector2) -> String:
+func describe_point(_doc_pos: Vector2) -> String:
 	return ""
 
 # ── Compositing ────────────────────────────────────────────────────────────────
@@ -126,7 +129,7 @@ func describe_point(doc_pos: Vector2) -> String:
 ## viewport_rect is expressed in document coordinates. The returned Image should
 ## have dimensions matching the pixel size of that rect (i.e. the caller handles
 ## coordinate mapping). Returning null is valid and safe.
-func render_content_to_image(viewport_rect: Rect2) -> Image:
+func render_content_to_image(_viewport_rect: Rect2) -> Image:
 	return null
 
 # ── Anchor stamping helpers ────────────────────────────────────────────────────

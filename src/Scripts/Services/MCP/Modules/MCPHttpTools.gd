@@ -226,7 +226,7 @@ func _process_response(
 		var json_result = JSON.parse_string(body_text)
 		if json_result == null:
 			# JSON parse failed — return raw with an error field
-			var envelope: Dictionary = {
+			var error_envelope: Dictionary = {
 				"status": status_code,
 				"headers": headers_dict,
 				"body": body_text,
@@ -237,12 +237,12 @@ func _process_response(
 				}
 			}
 			if status_code < 200 or status_code >= 300:
-				envelope["error"] = {
+				error_envelope["error"] = {
 					"kind": "http_error",
 					"message": "HTTP %d with non-JSON body" % status_code,
 					"retriable": status_code >= 500 and status_code < 600,
 				}
-			return envelope
+			return error_envelope
 		parsed_body = json_result
 
 	var envelope: Dictionary = {

@@ -121,12 +121,12 @@ static func instantiate_into(
 	# -----------------------------------------------------------------------
 	var script_abs_paths: Array[String] = []
 	for rel in declared_scripts:
-		var abs: String = _resolve_plugin_relative_path(data_dir, str(rel))
-		if abs.is_empty():
+		var abs_path: String = _resolve_plugin_relative_path(data_dir, str(rel))
+		if abs_path.is_empty():
 			return _mount_placeholder(vbox,
 				("[PluginScenePanelHost] Script path '%s' in panel '%s' escapes plugin directory") %
 				[str(rel), panel_name])
-		script_abs_paths.append(abs)
+		script_abs_paths.append(abs_path)
 
 	for abs_path in script_abs_paths:
 		if not FileAccess.file_exists(abs_path):
@@ -239,7 +239,7 @@ static func instantiate_into(
 ## mismatch, infinite recursion, wrong return type) WILL still propagate /
 ## abort; the helper cannot shield against those. For misbehaving plugins,
 ## `has_method` is the only practical guard available before the call.
-static func invoke_save(panel_root: Node, ctx: Dictionary) -> Variant:
+static func invoke_save(panel_root: Node, _ctx: Dictionary) -> Variant:
 	if panel_root == null:
 		push_warning("[PluginScenePanelHost] invoke_save: panel_root is null")
 		return null

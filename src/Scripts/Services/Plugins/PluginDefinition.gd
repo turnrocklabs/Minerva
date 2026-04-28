@@ -882,8 +882,8 @@ func _any_panel_script_declares(method_name: String) -> bool:
 		if not (panel is Dictionary):
 			continue
 		for rel_path in panel.get("scripts", []):
-			var abs: String = data_directory.path_join(str(rel_path)).simplify_path()
-			if _script_declares_method(abs, method_name):
+			var abs_path: String = data_directory.path_join(str(rel_path)).simplify_path()
+			if _script_declares_method(abs_path, method_name):
 				return true
 	return false
 

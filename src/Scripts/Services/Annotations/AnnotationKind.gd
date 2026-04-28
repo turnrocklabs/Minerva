@@ -54,7 +54,7 @@ var primitives_optional: bool = false
 ## Render the annotation onto ctx.
 ## annotation is the full annotation envelope dict (id, kind, primitives, payload, …).
 ## Must not mutate annotation.
-func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
+func render(_ctx: AnnotationRenderContext, _annotation: Dictionary) -> void:
 	push_error(
 		"[AnnotationKind] render() not implemented for kind '%s'. "
 		% str(name) +
