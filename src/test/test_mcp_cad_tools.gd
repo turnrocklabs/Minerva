@@ -106,6 +106,12 @@ func _init() -> void:
 	print("\n-- cad_annotate_edges: rejects both selectors --")
 	test_annotate_edges_rejects_both_selectors(tools)
 
+	print("\n-- cad_annotate_edges: prefers worker-emitted midpoint --")
+	test_annotate_edges_prefers_worker_midpoint(tools)
+
+	print("\n-- cad_annotate_edges: falls back to (start+end)/2 when midpoint absent --")
+	test_annotate_edges_chord_fallback(tools)
+
 	print("\n-- cad_clear_edge_annotations: clear by group_id --")
 	test_clear_by_group_id(tools)
 
@@ -584,6 +590,73 @@ func test_annotate_edges_rejects_both_selectors(tools) -> void:
 # ── cad_clear_edge_annotations tests ─────────────────────────────────────────
 
 ## Helper: annotate a set of edge_ids under a given group_id, return the host.
+## Verifies the worker-emitted `midpoint` field is preferred over recomputing
+## (start+end)/2. The recomputation is only correct for straight lines; for
+## arcs it gives a chord midpoint that lands inside the part. Round 2b-α HITL
+## caught annotations on edges 6 & 8 of t_beam.mcad anchored at "random points
+## in space" because the chord-midpoint of a curved/transformed edge isn't
+## where the edge actually is.
+func test_annotate_edges_prefers_worker_midpoint(tools) -> void:
+	var h := _make_host("MyCAD")
+	# Edge with start (0,0,0), end (10,0,0), but worker says midpoint is
+	# (5, 5, 0) — i.e. the parametric midpoint is OFF the chord (an arc).
+	# Recomputing (start+end)/2 would give (5,0,0); the test confirms we
+	# don't do that and use the worker value instead.
+	h.set_edge_registry([
+		{
+			"id": 1, "kind": "straight",
+			"start": [0.0, 0.0, 0.0], "end": [10.0, 0.0, 0.0],
+			"midpoint": [5.0, 5.0, 0.0],
+			"tags": [],
+		},
+	])
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "edge_ids": [1]}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	var stored: Array = h.get_annotations()
+	check("1 annotation stored", stored.size() == 1)
+	if stored.size() == 1:
+		var prims: Array = (stored[0] as Dictionary).get("primitives", []) as Array
+		check("annotation has one primitive", prims.size() == 1)
+		if prims.size() == 1:
+			var at: Array = (prims[0] as Dictionary).get("at", []) as Array
+			check("at uses worker midpoint x=5", at.size() == 3 and float(at[0]) == 5.0)
+			check("at uses worker midpoint y=5 (NOT chord y=0)", at.size() == 3 and float(at[1]) == 5.0)
+			check("at uses worker midpoint z=0", at.size() == 3 and float(at[2]) == 0.0)
+	AnnotationHostRegistry._reset_for_test()
+
+
+## When the worker doesn't emit a midpoint field, we fall back to (start+end)/2.
+## This is correct for straight lines and is the V1 behavior the existing
+## tests already covered — preserved here as a regression guard.
+func test_annotate_edges_chord_fallback(tools) -> void:
+	var h := _make_host("MyCAD")
+	h.set_edge_registry([
+		{
+			"id": 1, "kind": "straight",
+			"start": [0.0, 0.0, 0.0], "end": [10.0, 0.0, 0.0],
+			# NO midpoint field — should fall back to chord.
+			"tags": [],
+		},
+	])
+	var result: Dictionary = tools.handle(
+		"minerva_cad_annotate_edges",
+		{"editor_name": "MyCAD", "edge_ids": [1]}
+	)
+	check("success=true", bool(result.get("success", false)) == true)
+	var stored: Array = h.get_annotations()
+	if stored.size() == 1:
+		var prims: Array = (stored[0] as Dictionary).get("primitives", []) as Array
+		if prims.size() == 1:
+			var at: Array = (prims[0] as Dictionary).get("at", []) as Array
+			check("chord fallback x=5", at.size() == 3 and float(at[0]) == 5.0)
+			check("chord fallback y=0", at.size() == 3 and float(at[1]) == 0.0)
+			check("chord fallback z=0", at.size() == 3 and float(at[2]) == 0.0)
+	AnnotationHostRegistry._reset_for_test()
+
+
 func _annotate_group(tools, h: _FakeCadHost, edge_ids: Array, group_id: String) -> void:
 	tools.handle(
 		"minerva_cad_annotate_edges",

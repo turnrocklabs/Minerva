@@ -634,19 +634,23 @@ static func _compute_bbox(vertices: Array) -> Variant:
 ## Compute the 3-D midpoint of an edge dict from the registry.
 ## Returns [x, y, z] as a float array.
 ##
-## For straight edges: midpoint = (start + end) / 2.
-## For circle edges:   midpoint = center.
-## Fallback: [0, 0, 0] when geometry fields are absent.
+## Preference order:
+##   1. edge_dict["midpoint"] — worker-emitted via build123d's `edge @ 0.5`.
+##      This is the canonical parametric midpoint, correct for any curve type
+##      (straight, arc, spline, post-transform). Always prefer when present.
+##   2. (start + end) / 2 — chord midpoint, only correct for straight lines.
+##      Wrong for arcs (yields a point inside the arc), splines (chord, not
+##      curve midpoint), and any non-linear edge.
+##   3. center (for circles, if midpoint absent) — circle CENTER, not arc
+##      midpoint. Last-ditch fallback so we don't return [0,0,0]; visually
+##      misplaced for non-full-loop arcs.
+##   4. [0, 0, 0] — geometry fields absent.
 static func _edge_midpoint(edge_dict: Dictionary) -> Array:
-	var kind: String = str(edge_dict.get("kind", ""))
-	if kind == "circle":
-		var center: Variant = edge_dict.get("center", null)
-		if center is Array and (center as Array).size() >= 3:
-			var ca: Array = center as Array
-			return [float(ca[0]), float(ca[1]), float(ca[2])]
-		return [0.0, 0.0, 0.0]
+	var midpoint: Variant = edge_dict.get("midpoint", null)
+	if midpoint is Array and (midpoint as Array).size() >= 3:
+		var ma: Array = midpoint as Array
+		return [float(ma[0]), float(ma[1]), float(ma[2])]
 
-	# Straight (or unknown kind): use (start + end) / 2.
 	var start: Variant = edge_dict.get("start", null)
 	var end_pt: Variant = edge_dict.get("end", null)
 	if start is Array and (start as Array).size() >= 3 and end_pt is Array and (end_pt as Array).size() >= 3:
@@ -657,4 +661,12 @@ static func _edge_midpoint(edge_dict: Dictionary) -> Array:
 			(float(sa[1]) + float(ea[1])) * 0.5,
 			(float(sa[2]) + float(ea[2])) * 0.5,
 		]
+
+	var kind: String = str(edge_dict.get("kind", ""))
+	if kind == "circle":
+		var center: Variant = edge_dict.get("center", null)
+		if center is Array and (center as Array).size() >= 3:
+			var ca: Array = center as Array
+			return [float(ca[0]), float(ca[1]), float(ca[2])]
+
 	return [0.0, 0.0, 0.0]
