@@ -473,12 +473,10 @@ func _cad_annotate_edges(args: Dictionary) -> Dictionary:
 			label = str(edge_id)
 
 		# Build annotation envelope.
-		# WORKAROUND (bug 019dd65c237d): default visible_in_views to ["iso"] only
-		# until Round 2b lands the canvas-reparent fix. Cross-pane rendering
-		# projects via each pane's camera correctly, but the AnnotationCanvas is
-		# parented to the iso quadrant only — leaders for top/front/right would
-		# draw at the wrong screen position. Scoping to iso keeps MCP-authored
-		# annotations correctly placed on shipped Round 2a.
+		# Bug 019dd65c237d resolved by Round 2b-α Unit 1: the AnnotationCanvas is
+		# now parented to a full-rect overlay above all 4 SubViewportContainers,
+		# and viewport_rect offsets are applied per-pane in cad_edge_number_kind.
+		# visible_in_views defaults to all 4 panes (no metadata restriction needed).
 		var annotation: Dictionary = {
 			"kind": "cad_edge_number",
 			"payload": {
@@ -489,9 +487,6 @@ func _cad_annotate_edges(args: Dictionary) -> Dictionary:
 			"primitives": [
 				{"type": "point", "at": midpoint},
 			],
-			"metadata": {
-				"visible_in_views": ["iso"],
-			},
 		}
 
 		host.call("add_annotation", annotation)

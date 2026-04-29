@@ -13,12 +13,16 @@ extends SceneTree
 ##   registration: kind registers in AnnotationRegistry without collision
 ##   sidebar: CADPanel.gd source contains "Edge Markers" text
 ##
-## Coverage (Round 2a-Unit2 — 5 new multi-pane tests):
+## Coverage (Round 2a-Unit2 — 5 multi-pane tests):
 ##   render_visible_in_one_pane
 ##   render_visible_in_all_panes_default
 ##   render_visible_in_two_panes
 ##   render_skips_missing_pane
 ##   render_uses_each_pane_camera
+##
+## Coverage (Round 2b-α Unit 1 — 2 new viewport-offset tests):
+##   render_applies_viewport_offset_iso_only
+##   render_applies_viewport_offset_per_pane
 ##
 ## Note: preload() is used instead of class_name lookup because this script
 ## references a file outside Minerva's res:// tree (the CAD plugin). The plugin
@@ -73,6 +77,13 @@ func _init() -> void:
 
 	print("\n-- multi-pane: two cameras at different positions → different screen coords --")
 	test_render_uses_each_pane_camera()
+
+	# ── Round 2b-α Unit 1: viewport-rect offset tests ───────────────────────────
+	print("\n-- viewport offset: single pane with non-zero rect position --")
+	test_render_applies_viewport_offset_iso_only()
+
+	print("\n-- viewport offset: 4 panes at distinct rects → 4 distinct anchors --")
+	test_render_applies_viewport_offset_per_pane()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -137,7 +148,7 @@ class _MockCamera extends RefCounted:
 
 # ── MockHost: AnnotationHost with get_panes() for multi-pane tests.
 ##
-## _panes is a list of {name, camera, viewport_size} dicts. Tests configure
+## _panes is a list of {name, camera, viewport_rect} dicts. Tests configure
 ## this before calling render(). Existing _FakeHost tests are unaffected since
 ## they use _FakeHost (no get_panes).
 class _MockHost extends AnnotationHost:
@@ -157,14 +168,21 @@ class _MockHost extends AnnotationHost:
 		return _panes
 
 	## Convenience: add a named pane with a MockCamera at screen_offset.
+	## viewport_rect is the pane's panel-relative Rect2 (Round 2b-α Unit 1).
+	## Defaults to Rect2(0,0,512,512) so existing tests keep their semantics
+	## (zero offset, same as before the reparent fix).
 	## Returns the MockCamera so tests can inspect call_count / last_world_pos.
-	func add_pane(pane_name: String, cam_offset: Vector2 = Vector2.ZERO) -> RefCounted:
+	func add_pane(
+		pane_name: String,
+		cam_offset: Vector2 = Vector2.ZERO,
+		viewport_rect: Rect2 = Rect2(0.0, 0.0, 512.0, 512.0)
+	) -> RefCounted:
 		var cam := _MockCamera.new()
 		cam.screen_offset = cam_offset
 		_panes.append({
 			"name": pane_name,
 			"camera": cam,
-			"viewport_size": Vector2(512.0, 512.0),
+			"viewport_rect": viewport_rect,
 		})
 		return cam
 
@@ -214,10 +232,19 @@ class _CapturingCtx extends AnnotationRenderContext:
 	func draw_line(a: Vector2, _b: Vector2, _color: Color, _width: float = 1.0) -> void:
 		anchors.append(a)
 
+	func draw_polyline(_points: PackedVector2Array, _color: Color, _width: float = 1.0) -> void:
+		pass
+
 	func draw_polygon(_points: PackedVector2Array, _colors: PackedColorArray) -> void:
 		pass
 
+	func draw_rect(_rect: Rect2, _color: Color, _filled: bool, _width: float = 1.0) -> void:
+		pass
+
 	func draw_string(_font: Font, _pos: Vector2, _text: String, _color: Color, _size: int = 16) -> void:
+		pass
+
+	func draw_string_rotated(_font: Font, _pos: Vector2, _text: String, _color: Color, _size: int = 16, _rotation_rad: float = 0.0) -> void:
 		pass
 
 
@@ -437,14 +464,24 @@ func test_render_skips_missing_pane() -> void:
 
 
 func test_render_uses_each_pane_camera() -> void:
-	# Two panes with cameras at DIFFERENT positions. Capture what the kind
-	# actually emits to ctx.draw_line so we assert real per-pane screen coords,
-	# not just that cameras were called.
+	# Two panes with cameras at DIFFERENT positions AND distinct viewport_rects.
+	# Capture what the kind actually emits to ctx.draw_line so we assert real
+	# per-pane screen coords including the viewport_rect.position offset.
 	var kind = _CadEdgeNumberKindScript.new()
 
 	var host := _MockHost.new()
-	var iso_cam: RefCounted   = host.add_pane("iso",   Vector2(100.0, 200.0))
-	var front_cam: RefCounted = host.add_pane("front", Vector2(500.0, 700.0))
+	# iso pane: camera offset (100,200), viewport_rect top-left at (0,0).
+	var iso_cam: RefCounted = host.add_pane(
+		"iso",
+		Vector2(100.0, 200.0),
+		Rect2(0.0, 0.0, 400.0, 300.0)
+	)
+	# front pane: camera offset (500,700), viewport_rect top-left at (400,0).
+	var front_cam: RefCounted = host.add_pane(
+		"front",
+		Vector2(500.0, 700.0),
+		Rect2(400.0, 0.0, 400.0, 300.0)
+	)
 
 	var world_pos := Vector3(10.0, 20.0, 0.0)
 	var ann := _make_3d_annotation(
@@ -466,12 +503,92 @@ func test_render_uses_each_pane_camera() -> void:
 
 	# The kind's _draw_callout starts with draw_line(anchor, ...) so each call
 	# captured corresponds to one pane's leader anchor.
-	var expected_iso := Vector2(world_pos.x, world_pos.y) + Vector2(100.0, 200.0)
-	var expected_front := Vector2(world_pos.x, world_pos.y) + Vector2(500.0, 700.0)
+	# Expected: camera.unproject_position(world) + viewport_rect.position
+	#   iso:   (10+100, 20+200) + (0, 0)   = (110, 220)
+	#   front: (10+500, 20+700) + (400, 0) = (910, 720)
+	var expected_iso := Vector2(world_pos.x, world_pos.y) + Vector2(100.0, 200.0) + Vector2(0.0, 0.0)
+	var expected_front := Vector2(world_pos.x, world_pos.y) + Vector2(500.0, 700.0) + Vector2(400.0, 0.0)
 	check("captured exactly two anchors (one per pane)", ctx.anchors.size() == 2)
-	check("anchors include iso-projected screen pos",
+	check("anchors include iso-projected screen pos (with rect offset)",
 		ctx.anchors.has(expected_iso))
-	check("anchors include front-projected screen pos",
+	check("anchors include front-projected screen pos (with rect offset)",
 		ctx.anchors.has(expected_front))
 	check("the two captured anchors are distinct",
 		ctx.anchors.size() == 2 and not ctx.anchors[0].is_equal_approx(ctx.anchors[1]))
+
+
+# ── Round 2b-α Unit 1: viewport-rect offset tests ────────────────────────────
+
+func test_render_applies_viewport_offset_iso_only() -> void:
+	# Single pane at viewport_rect=Rect2(100,200,400,300).
+	# Camera has zero screen_offset, so unproject_position([0,0,0]) → (0,0).
+	# After adding rect.position: anchor = (100, 200).
+	var kind = _CadEdgeNumberKindScript.new()
+
+	var host := _MockHost.new()
+	var iso_cam: RefCounted = host.add_pane(
+		"iso",
+		Vector2(0.0, 0.0),          # camera screen_offset = 0
+		Rect2(100.0, 200.0, 400.0, 300.0)  # pane at (100,200) in panel-root coords
+	)
+
+	var world_pos := Vector3(0.0, 0.0, 0.0)
+	var ann := _make_3d_annotation(
+		{"edge_id": 10},
+		world_pos,
+		{"visible_in_views": ["iso"]}
+	)
+	var ctx := _make_capturing_ctx(host)
+	kind.render(ctx, ann)
+
+	check("iso camera called once", (iso_cam as _MockCamera).call_count == 1)
+	check("captured exactly one anchor", ctx.anchors.size() == 1)
+	# unproject returns (0,0) + camera_offset(0,0) = (0,0); + rect.position(100,200) = (100,200)
+	var expected := Vector2(0.0, 0.0) + Vector2(100.0, 200.0)
+	check("anchor equals projected pos + viewport_rect.position",
+		ctx.anchors.size() == 1 and ctx.anchors[0].is_equal_approx(expected))
+
+
+func test_render_applies_viewport_offset_per_pane() -> void:
+	# 4 panes at distinct viewport_rects. Camera screen_offset = (50,50) for all.
+	# world point projects to (50,50) relative to each camera.
+	# After adding each rect.position, each anchor is at a distinct panel-root coord.
+	var kind = _CadEdgeNumberKindScript.new()
+
+	var host := _MockHost.new()
+	var cam_offset := Vector2(50.0, 50.0)
+	var iso_cam: RefCounted   = host.add_pane("iso",   cam_offset, Rect2(  0.0,   0.0, 400.0, 300.0))
+	var top_cam: RefCounted   = host.add_pane("top",   cam_offset, Rect2(400.0,   0.0, 400.0, 300.0))
+	var front_cam: RefCounted = host.add_pane("front", cam_offset, Rect2(  0.0, 300.0, 400.0, 300.0))
+	var right_cam: RefCounted = host.add_pane("right", cam_offset, Rect2(400.0, 300.0, 400.0, 300.0))
+
+	# world_pos = (0,0,0) → each camera returns cam_offset = (50,50)
+	var world_pos := Vector3(0.0, 0.0, 0.0)
+	# No visible_in_views → all 4 panes.
+	var ann := _make_3d_annotation({"edge_id": 11}, world_pos)
+	var ctx := _make_capturing_ctx(host)
+	kind.render(ctx, ann)
+
+	check("all 4 cameras called",
+		(iso_cam as _MockCamera).call_count == 1
+		and (top_cam as _MockCamera).call_count == 1
+		and (front_cam as _MockCamera).call_count == 1
+		and (right_cam as _MockCamera).call_count == 1)
+	check("captured exactly 4 anchors", ctx.anchors.size() == 4)
+
+	# Expected anchors: cam_offset + rect.position for each pane.
+	var exp_iso   := cam_offset + Vector2(  0.0,   0.0)  # (50, 50)
+	var exp_top   := cam_offset + Vector2(400.0,   0.0)  # (450, 50)
+	var exp_front := cam_offset + Vector2(  0.0, 300.0)  # (50, 350)
+	var exp_right := cam_offset + Vector2(400.0, 300.0)  # (450, 350)
+	check("iso anchor includes rect offset",   ctx.anchors.has(exp_iso))
+	check("top anchor includes rect offset",   ctx.anchors.has(exp_top))
+	check("front anchor includes rect offset", ctx.anchors.has(exp_front))
+	check("right anchor includes rect offset", ctx.anchors.has(exp_right))
+	# All 4 anchors must be distinct (rects have different positions).
+	var all_distinct := true
+	for i in range(ctx.anchors.size()):
+		for j in range(ctx.anchors.size()):
+			if i != j and ctx.anchors[i].is_equal_approx(ctx.anchors[j]):
+				all_distinct = false
+	check("all 4 anchors are distinct", all_distinct)
