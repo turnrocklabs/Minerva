@@ -299,7 +299,8 @@ func test_cancel_clears_state() -> void:
 	check("annotation_ready NOT emitted", annotation_emits.size() == 0)
 	# After cancel, _host should be cleared (on_deactivate was called).
 	check("tool host cleared after cancel", tool._host == null)
-	check("tool canvas_overlay cleared after cancel", tool._canvas_overlay == null)
+	# Mouse-filter management is now owned by CadAnnotationCanvas.set_active_tool()
+	# (Round 2b-α regression fix). The tool no longer holds an overlay reference.
 
 
 func test_round_trip_validates() -> void:
