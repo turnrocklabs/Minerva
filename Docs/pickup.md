@@ -17,42 +17,51 @@ so this is not a blocker.
 Run:
 
 ```
-/work-cycle 019ddacd6e34
+/work-cycle 019ddb7a0f407621
 ```
 
-This task (`Annotation v2 contract tests and smoke consumer`) is the recommended
-**first** work-cycle for the substrate plan. It writes red contract tests
-covering every other task in the plan, plus the text-editor smoke consumer
-flow. Tests-first forces every upstream task to commit to a concrete schema
-before any implementer touches them.
+This task (`Contract tests + smoke consumer (text editor) — START HERE`) is the
+recommended **first** work-cycle for the substrate plan. It writes red contract
+tests covering every other task in the plan, plus the text-editor smoke
+consumer flow. Tests-first forces every upstream task to commit to a concrete
+schema before any implementer touches them.
 
 The task description is fully self-contained — it lists the smoke consumer
 (text editor with `core/text.range` anchor, NOT CAD/PCB), the per-upstream-task
 test groups, and a 5-round decomposition.
 
+> **Reconstruction note** (2026-04-29 laptop): the original substrate IDs
+> referenced in earlier revisions of this file (`019ddacc5f76`, `019ddacc9c95`,
+> `019ddacd*`, `019ddae35c78`) were created on the desktop but never committed
+> to `Docs/minerva.dct`. The plan + 11 children were rebuilt from discussion
+> `0bd63d76bb70` (comments #248 #249 #250) on the laptop with new IDs (below).
+> The reframe sharpened the action-intent + PCB-as-proof-of-value framing,
+> shifting acceptance criteria on five children (envelope lifecycle,
+> built-in/plugin kind split, chat context, MCP, trust boundary).
+
 ## Plan map
 
 Project: `minerva` (always pass `project="minerva"` to docket tools).
 
-- DCR root: `019ddacc5f76` — First-class editor annotations
-- Plan: `019ddacc9c95` — Annotation v2 semantic-anchor substrate
-- Discussion: `0bd63d76bb70` — Annotation substrate refactor
+- DCR root: `019ddb704374` — First-class editor annotations: action-intent envelope + plugin semantic anchors
+- Plan: `019ddb70ca45` — Annotation v2 substrate (action-intent + semantic anchors)
+- Discussion: `0bd63d76bb70` — Annotation substrate refactor (resolved into the DCR)
 
 ### Children of the plan
 
 | ID | Title |
 |----|-------|
-| `019ddaccb2be` | Annotation v2 envelope (typed anchor, payload, status, author, schema_version) |
-| `019ddaccca9a` | Plugin-scoped anchor registry (validate/summary/repair) |
-| `019ddacce0a3` | Base AnnotationHost resolve_anchor contract |
-| `019ddaccf5ba` | Broken/stale anchor UX (canvas, sidebar, MCP, chat) |
-| `019ddacd08a2` | Resolve cache + perf budget |
-| `019ddacd1bb6` | Generic kinds carry plugin anchors via host resolve |
-| `019ddacd2ea8` | Capability-aware to_chat_context |
-| `019ddacd4275` | MCP query/update surface |
-| `019ddacd5bd2` | v1 migration + coexistence hooks |
-| **`019ddacd6e34`** | **Contract tests + smoke consumer ← START HERE** |
-| `019ddae35c78` | Plugin trust boundary + fail-containment |
+| `019ddb7593467eef` | Annotation v2 envelope: typed anchor, payload, lifecycle, author, summary |
+| `019ddb75ffad7dd8` | Plugin-scoped anchor registry (validate / summary / repair) |
+| `019ddb767fe871ba` | Base AnnotationHost.resolve_anchor + anchor_screen_rect contract |
+| `019ddb76ed897520` | Broken / stale anchor UX (canvas, sidebar, MCP, chat) |
+| `019ddb77576b7b56` | Resolve cache + perf budget |
+| `019ddb77c4b37516` | Built-in anchors carry generic kinds; plugin anchors carry plugin kinds |
+| `019ddb7843b4742d` | Capability-aware to_chat_context (structured_json IS the action contract) |
+| `019ddb78c40c74bc` | MCP query / update_status surface + apply-tool hook |
+| `019ddb796041719a` | v1 → v2 migration + coexistence hooks |
+| **`019ddb7a0f407621`** | **Contract tests + smoke consumer (text editor) ← START HERE** |
+| `019ddb7aaf247033` | Plugin trust boundary + fail-containment (render / resolver / apply-tool) |
 
 All eleven items are backlog and have full implementation detail in their
 descriptions (envelope literals, method signatures, perf numbers, lifecycle
@@ -61,17 +70,21 @@ compaction — readable cold by an implementer with no session history.
 
 ## Recommended round order (within the work-cycle)
 
-1. **Round 1 (start here)**: `019ddacd6e34` test scaffolding only — write all
-   contract tests as red. Single Sonnet implementer + Opus reviewer.
+1. **Round 1 (start here)**: `019ddb7a0f407621` test scaffolding only — write
+   all contract tests as red. Single Sonnet implementer + Opus reviewer.
    Stop condition 3c (auto-verified, no human gate).
-2. **Round 2**: Envelope + Registry + Resolve in parallel.
-3. **Round 3**: Cache + Trust + Broken UX in parallel.
-4. **Round 4**: Chat + Generic kinds.
+2. **Round 2**: Envelope (`019ddb7593467eef`) + Anchor registry
+   (`019ddb75ffad7dd8`) + resolve_anchor (`019ddb767fe871ba`) in parallel.
+3. **Round 3**: Cache (`019ddb77576b7b56`) + Trust (`019ddb7aaf247033`) +
+   Broken UX (`019ddb76ed897520`) in parallel.
+4. **Round 4**: Chat (`019ddb7843b4742d`) + Built-in/plugin kinds split
+   (`019ddb77c4b37516`) + MCP (`019ddb78c40c74bc`) + Migration
+   (`019ddb796041719a`) in parallel.
 5. **Round 5**: Smoke consumer (text editor wiring). HITL stop — human verifies
-   the "Add note here" flow.
+   the "select text → add comment → LLM marks applied" flow.
 
-Migration (`019ddacd5bd2`) and MCP query (`019ddacd4275`) slot in around
-rounds 3–4.
+Migration and MCP query may slot earlier than round 4 if other tasks force
+them — see plan body.
 
 ## State of the trees on this commit
 
