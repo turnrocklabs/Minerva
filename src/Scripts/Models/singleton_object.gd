@@ -1501,12 +1501,19 @@ func open_file_at_path(path: String) -> Dictionary:
 	for editor: Editor in editor_pane.get_open_editors():
 		if editor.file == abs_path:
 			var kind_name: String = _editor_type_to_string(editor.type)
+			# Explicit Variant locals so null branches type-check (incompatible ternary).
+			var existing_plugin_id: Variant = null
+			if not editor.plugin_id.is_empty():
+				existing_plugin_id = editor.plugin_id
+			var existing_panel_name: Variant = null
+			if not editor.panel_name.is_empty():
+				existing_panel_name = editor.panel_name
 			return {
 				"ok": true,
 				"editor_kind": kind_name,
 				"editor_name": editor.tab_title,
-				"plugin_id": editor.plugin_id if not editor.plugin_id.is_empty() else null,
-				"panel_name": editor.panel_name if not editor.panel_name.is_empty() else null,
+				"plugin_id": existing_plugin_id,
+				"panel_name": existing_panel_name,
 			}
 
 	# --- Extension resolution ---
@@ -1551,12 +1558,19 @@ func open_file_at_path(path: String) -> Dictionary:
 	if result_editor == null:
 		return {"ok": false, "errors": ["no_handler_for_extension: %s" % ext]}
 
+	# Explicit Variant locals so null branches type-check (incompatible ternary).
+	var plugin_id_out: Variant = null
+	if not p_id.is_empty():
+		plugin_id_out = p_id
+	var panel_name_out: Variant = null
+	if not p_name.is_empty():
+		panel_name_out = p_name
 	return {
 		"ok": true,
 		"editor_kind": editor_kind,
 		"editor_name": result_editor.tab_title,
-		"plugin_id": p_id if not p_id.is_empty() else null,
-		"panel_name": p_name if not p_name.is_empty() else null,
+		"plugin_id": plugin_id_out,
+		"panel_name": panel_name_out,
 	}
 
 
