@@ -175,6 +175,9 @@ var _file_saved := false
 ## order; the runtime value is always a TextEditorAnnotationHost instance.
 var annotation_host: RefCounted = null
 const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
+## Overlay Control that paints broken-anchor indicators for Type.TEXT editors.
+## Resolved in _ready via $AnnotationCanvas; null in headless tests.
+var _annotation_canvas: Control = null
 ## Headless test fallback: when there is no live code_edit selection, set_selection()
 ## stores its [start, end] here and add_comment() reads from it.
 var _pending_annotation_selection: Dictionary = {}
@@ -484,6 +487,9 @@ func _ready():
 	# can attach to it. Type-gated: non-TEXT editors leave annotation_host null.
 	if self.type == Type.TEXT:
 		_init_annotation_host()
+		_annotation_canvas = get_node_or_null("AnnotationCanvas")
+		if _annotation_canvas != null:
+			_annotation_canvas.set_meta("editor_ref", self)
 	if file:
 		match type:
 			Type.TEXT: _load_text_file(file)
@@ -1447,6 +1453,14 @@ func _on_editor_changed(text: String = ""):
 	if type == Type.PLUGIN_SCENE:
 		_plugin_scene_modified = true
 
+	# Annotation v2 (Round 5b): bump host revision so anchors re-resolve against
+	# the new text. The resolve cache is keyed by revision; bump → next resolve
+	# call is a miss → _resolve_text_range re-evaluates against current document.
+	if type == Type.TEXT and annotation_host != null:
+		annotation_host.bump_revision()
+		if _annotation_canvas != null:
+			_annotation_canvas.queue_redraw()
+
 	content_changed.emit()
 
 #region Top Editor buttons
@@ -1923,7 +1937,10 @@ func add_comment(text: String) -> String:
 		push_warning("[Editor.add_comment] no valid selection")
 		return ""
 
-	return annotation_host.add_comment_at(start, end, text)
+	var ann_id := annotation_host.add_comment_at(start, end, text)
+	if _annotation_canvas != null:
+		_annotation_canvas.queue_redraw()
+	return ann_id
 
 
 ## Persist annotations to <path>.annotations.json. Called from save_file_to_disc.
@@ -1964,6 +1981,8 @@ func _load_annotations_sidecar(path: String) -> void:
 	var parsed: Variant = JSON.parse_string(raw)
 	if parsed is Array:
 		annotation_host.load_annotations(parsed)
+		if _annotation_canvas != null:
+			_annotation_canvas.queue_redraw()
 
 
 # Flat-offset / line-column conversion helpers (used by add_comment, set_selection).

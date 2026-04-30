@@ -20,6 +20,8 @@ extends SceneTree
 
 const _TEAHScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
 const _AnnotationHostScript = preload("res://Scripts/Services/Annotations/AnnotationHost.gd")
+const _CoreAnchorsScript = preload("res://Scripts/Services/Annotations/CoreAnchors.gd")
+const _MCPAnnotationToolsScript = preload("res://Scripts/Services/MCP/Modules/MCPAnnotationTools.gd")
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -369,12 +371,10 @@ func test_stale_annotation_renders_broken_indicator() -> void:
 
 func test_repair_button_available_for_stale_text_range() -> void:
 	print("test_repair_button_available_for_stale_text_range:")
-	if not ClassDB.class_exists("CoreAnchors"):
-		check("CoreAnchors exists", false)
-		return
 	# core/text.range resolver should provide a repair path (even if repair returns null
-	# and triggers retarget picker)
-	var core_anchors = ClassDB.instantiate("CoreAnchors")
+	# and triggers retarget picker). ClassDB does not see GDScript class_name classes,
+	# so probe via preload + .new().
+	var core_anchors = _CoreAnchorsScript.new()
 	if core_anchors == null or not core_anchors.has_method("get_resolver_for"):
 		check("CoreAnchors has get_resolver_for method", false)
 		return
@@ -415,49 +415,42 @@ func test_repair_returns_annotation_to_open() -> void:
 
 func test_mcp_query_returns_open_comment() -> void:
 	print("test_mcp_query_returns_open_comment:")
-	if not ClassDB.class_exists("MCPAnnotationsTools"):
-		check("MCPAnnotationsTools exists", false)
-		return
-	var tools = ClassDB.instantiate("MCPAnnotationsTools")
+	# ClassDB does not see GDScript class_name classes; probe via preload + .new().
+	var tools = _MCPAnnotationToolsScript.new()
 	if tools == null:
-		check("MCPAnnotationsTools instantiable", false)
+		check("MCPAnnotationTools instantiable", false)
 		return
-	check("MCPAnnotationsTools query method exists for text editor flow",
+	# 5c will add a typed query() method; until then "handle" is the dispatch surface.
+	check("MCPAnnotationTools query method exists for text editor flow (5c)",
 		tools.has_method("query"))
 
 
 func test_mcp_query_with_capabilities_has_chat_context() -> void:
 	print("test_mcp_query_with_capabilities_has_chat_context:")
-	if not ClassDB.class_exists("MCPAnnotationsTools"):
-		check("MCPAnnotationsTools exists", false)
-		return
-	# Query with capabilities dict should include chat_context in each result
-	var tools = ClassDB.instantiate("MCPAnnotationsTools")
+	var tools = _MCPAnnotationToolsScript.new()
 	if tools == null or not tools.has_method("query"):
-		check("query method exists", false)
+		check("query method exists (5c)", false)
 		return
 	# We verify the parameter is accepted (wired to to_chat_context in Round 2/7)
-	check("MCPAnnotationsTools.query accepts capabilities parameter",
+	check("MCPAnnotationTools.query accepts capabilities parameter",
 		true)  # Verified in Round 4
 
 
 func test_mcp_update_status_applied_succeeds() -> void:
 	print("test_mcp_update_status_applied_succeeds:")
-	if not ClassDB.class_exists("MCPAnnotationsTools"):
-		check("MCPAnnotationsTools exists", false)
-		return
-	var tools = ClassDB.instantiate("MCPAnnotationsTools")
+	var tools = _MCPAnnotationToolsScript.new()
 	if tools == null:
-		check("MCPAnnotationsTools instantiable", false)
+		check("MCPAnnotationTools instantiable", false)
 		return
-	check("MCPAnnotationsTools.update_status exists for round-trip",
+	check("MCPAnnotationTools.update_status exists for round-trip (5c)",
 		tools.has_method("update_status"))
 
 
 func test_mcp_subsequent_query_shows_applied() -> void:
 	print("test_mcp_subsequent_query_shows_applied:")
-	if not ClassDB.class_exists("MCPAnnotationsTools"):
-		check("MCPAnnotationsTools exists", false)
+	var tools = _MCPAnnotationToolsScript.new()
+	if tools == null:
+		check("MCPAnnotationTools instantiable", false)
 		return
 	# After marking applied, query should show lifecycle=applied
 	# Verified in Round 4 integration; contract defined here

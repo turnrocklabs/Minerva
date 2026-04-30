@@ -262,11 +262,21 @@ func _resolve_text_range(anchor: Dictionary) -> Dictionary:
 	if not start is int or not end is int:
 		return {"position": snap_pos, "bounds": Rect2(snap_pos, Vector2.ZERO), "stale": true, "view_metadata": {}}
 
-	var text_len := _get_text().length()
+	var src_text := _get_text()
+	var text_len := src_text.length()
 	if (start as int) < 0 or (end as int) > text_len or (start as int) > (end as int):
 		return {"position": snap_pos, "bounds": Rect2(snap_pos, Vector2.ZERO), "stale": true, "view_metadata": {}}
 
-	# Valid range — compute a rough line/col for position feedback.
+	# Snapshot-text equality (Round 5b): the live substring at [start, end) must
+	# match what the user originally selected. Any divergence — insert, retype,
+	# whitespace shift — marks the anchor stale so broken-anchor UX kicks in.
+	# Skipped when the snapshot has no text (older or migrated annotations).
+	var snap_text: String = str(snapshot.get("text", ""))
+	if not snap_text.is_empty():
+		var live: String = src_text.substr(start as int, (end as int) - (start as int))
+		if live != snap_text:
+			return {"position": snap_pos, "bounds": Rect2(snap_pos, Vector2.ZERO), "stale": true, "view_metadata": {}}
+
 	var line_col := _offset_to_line_col(start as int)
 	var pos := Vector2(float(line_col[0]), float(line_col[1]))
 	return {"position": pos, "bounds": Rect2(pos, Vector2.ZERO), "stale": false, "view_metadata": {}}
