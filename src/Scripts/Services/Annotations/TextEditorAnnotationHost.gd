@@ -15,6 +15,8 @@ extends AnnotationHost
 ##
 ## Sidecar file:  <file_path>.annotations.json
 
+signal annotations_changed()
+
 const _ANN_ID_PREFIX := "ann_"
 const _SCHEMA := preload("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
 const _SidecarIOScript := preload("res://Scripts/Services/Annotations/AnnotationSidecarIO.gd")
@@ -92,6 +94,7 @@ func add_annotation_v2(envelope: Dictionary) -> String:
 		push_warning("[TextEditorAnnotationHost] add_annotation_v2: validation errors: %s" % str(result.to_error_dicts()))
 		return ""
 	_annotations.append(stored)
+	annotations_changed.emit()
 	return ann_id
 
 
@@ -103,10 +106,12 @@ func add_annotation(annotation: Dictionary) -> String:
 ## Build and store a v2 envelope from (start, end, text). Used by Editor.add_comment
 ## (UI path) and the minerva_text_editor_add_comment MCP tool.
 ## Returns the assigned annotation id, or "" on failure.
-func add_comment_at(start: int, end: int, text: String) -> String:
+func add_comment_at(start: int, end: int, text: String, target_scope: String = "range") -> String:
 	if start < 0 or end < start:
 		push_warning("[TextEditorAnnotationHost] add_comment_at: invalid range %d..%d" % [start, end])
 		return ""
+	if target_scope != "line":
+		target_scope = "range"
 	var src := _get_text()
 	var snapshot_text := ""
 	if end <= src.length():
@@ -126,9 +131,10 @@ func add_comment_at(start: int, end: int, text: String) -> String:
 				"position": [float(line_col[0]), float(line_col[1])],
 				"text": snapshot_text,
 				"document_revision": doc_revision,
+				"target_scope": target_scope,
 			},
 		},
-		"kind_payload": {"text": text},
+		"kind_payload": {"text": text, "target_scope": target_scope},
 		"lifecycle": "open",
 		"author": {"kind": "human"},
 		"view_context": "text",
@@ -145,6 +151,19 @@ func get_all_annotations() -> Array:
 	return _annotations
 
 
+## Store-adapter alias used by MCPAnnotationsTools.
+func get_all() -> Array:
+	return get_all_annotations()
+
+
+## Store-adapter lookup used by MCPAnnotationsTools.
+func get_by_id(annotation_id: String) -> Dictionary:
+	for ann in _annotations:
+		if ann is Dictionary and str((ann as Dictionary).get("id", "")) == annotation_id:
+			return (ann as Dictionary).duplicate(true)
+	return {}
+
+
 ## Override AnnotationHost.get_annotations().
 func get_annotations() -> Array:
 	return _annotations
@@ -157,8 +176,16 @@ func update_annotation(annotation_id: String, new_annotation: Dictionary) -> boo
 			var updated := new_annotation.duplicate(true)
 			updated["id"] = annotation_id
 			_annotations[i] = updated
+			annotations_changed.emit()
 			return true
 	return false
+
+
+## Store-adapter update used by MCPAnnotationsTools.
+func update(annotation: Dictionary) -> void:
+	var annotation_id := str(annotation.get("id", ""))
+	if not annotation_id.is_empty():
+		update_annotation(annotation_id, annotation)
 
 
 ## Remove an annotation by id.  Returns true if found and removed.
@@ -166,6 +193,7 @@ func remove_annotation(annotation_id: String) -> bool:
 	for i in range(_annotations.size()):
 		if _annotations[i].get("id", "") == annotation_id:
 			_annotations.remove_at(i)
+			annotations_changed.emit()
 			return true
 	return false
 
@@ -201,6 +229,7 @@ func retarget_annotation(annotation_id: String, start: int, end: int) -> bool:
 		ann["updated_at"] = int(Time.get_unix_time_from_system())
 		_annotations[i] = ann
 		bump_revision()
+		annotations_changed.emit()
 		return true
 	return false
 
@@ -232,6 +261,7 @@ func load_annotations(raw_array: Array) -> void:
 					var n: int = hex_part.hex_to_int()
 					if n > _id_counter:
 						_id_counter = n
+	annotations_changed.emit()
 
 
 ## In-place coercion: walk a freshly-deserialised envelope and turn any

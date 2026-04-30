@@ -43,7 +43,7 @@ func set_can_add_comment(value: bool) -> void:
 	_can_add_comment = value
 	if _add_button != null:
 		_add_button.disabled = not value
-		_add_button.tooltip_text = "Add comment to selected text" if value else "Select text first"
+		_add_button.tooltip_text = "Add comment to selected text" if value else "Select text or click a line indicator"
 
 
 func begin_add_comment_flow() -> void:
@@ -83,6 +83,8 @@ func refresh() -> void:
 				var resolved: Dictionary = _host.resolve_anchor(d.get("anchor", {}))
 				if bool(resolved.get("stale", false)):
 					d["stale"] = true
+			d["_display_index"] = decorated.size() + 1
+			d["_anchor_label"] = _annotation_anchor_label(d)
 			decorated.append(d)
 	_model.set_annotations(decorated)
 	_populate_entries()
@@ -185,10 +187,10 @@ func _make_broken_row(entry: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 6)
 	var label := Label.new()
 	var summary: String = str(entry.get("summary", ""))
-	label.text = "⚠ %s" % summary
+	label.text = "%s %s" % [_annotation_prefix(entry), summary]
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_color_override("font_color", _BROKEN_COLOR)
-	label.tooltip_text = summary
+	label.tooltip_text = "%s\n%s" % [str(entry.get("anchor_label", "")), summary]
 	row.add_child(label)
 	var btn := Button.new()
 	btn.text = "Repair"
@@ -202,11 +204,50 @@ func _make_healthy_row(annotation: Dictionary) -> Control:
 	row.add_theme_constant_override("separation", 6)
 	var label := Label.new()
 	var summary: String = str(annotation.get("summary", ""))
-	label.text = "  %s" % summary
+	label.text = "%s %s" % [_annotation_prefix(annotation), summary]
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.tooltip_text = summary
+	label.tooltip_text = "%s\n%s" % [str(annotation.get("_anchor_label", "")), summary]
 	row.add_child(label)
 	return row
+
+
+func _annotation_prefix(annotation: Dictionary) -> String:
+	var index := int(annotation.get("display_index", annotation.get("_display_index", 0)))
+	var anchor_label := str(annotation.get("anchor_label", annotation.get("_anchor_label", "")))
+	var prefix := "#%d" % index if index > 0 else "#?"
+	if not anchor_label.is_empty():
+		prefix += " " + anchor_label
+	if bool(annotation.get("stale", false)) or str(annotation.get("lifecycle", "")) == "stale":
+		prefix = "! " + prefix
+	return prefix
+
+
+func _annotation_anchor_label(annotation: Dictionary) -> String:
+	var anchor: Variant = annotation.get("anchor", {})
+	if not anchor is Dictionary:
+		return ""
+	var snapshot: Variant = (anchor as Dictionary).get("snapshot", {})
+	var scope := ""
+	var text := ""
+	var line_num := -1
+	if snapshot is Dictionary:
+		var snap: Dictionary = snapshot
+		scope = str(snap.get("target_scope", ""))
+		text = str(snap.get("text", ""))
+		var pos: Variant = snap.get("position", [])
+		if pos is Array and (pos as Array).size() >= 1:
+			line_num = int(float(pos[0])) + 1
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and scope.is_empty():
+		scope = str((payload as Dictionary).get("target_scope", ""))
+	if scope == "line" and line_num > 0:
+		return "Line %d" % line_num
+	if text.is_empty():
+		return "Range"
+	text = text.replace("\n", " ").strip_edges()
+	if text.length() > 32:
+		text = text.substr(0, 29) + "..."
+	return "\"%s\"" % text
 
 
 # ── Signals ──────────────────────────────────────────────────────────────────

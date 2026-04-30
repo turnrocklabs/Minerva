@@ -41,6 +41,8 @@ func get_broken_entries() -> Array:
 			"id": str(ann.get("id", "")),
 			"summary": str(ann.get("summary", "")),
 			"last_view": str(ann.get("view_context", "")),
+			"display_index": int(ann.get("_display_index", 0)),
+			"anchor_label": str(ann.get("_anchor_label", "")),
 			"repair_available": true,
 			"annotation": ann.duplicate(true),
 		})

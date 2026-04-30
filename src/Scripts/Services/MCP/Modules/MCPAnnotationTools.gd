@@ -8,6 +8,9 @@ extends RefCounted
 ##   minerva_annotations_update       — shallow patch top-level fields
 ##   minerva_annotations_delete       — delete by id (idempotent)
 ##   minerva_annotations_render_overlay — render annotations to PNG
+##   minerva_annotations_query        — v2 lifecycle/chat-context query surface
+##   minerva_annotations_update_status — transition v2 lifecycle state
+##   minerva_annotations_repair_anchor — direct/admin anchor retarget surface
 ##
 ## Intentionally extends RefCounted (not MCPToolModule) to avoid a transitive
 ## compile-time dependency on MCPToolUtils, which references the SingletonObject
@@ -49,6 +52,7 @@ const _TOOL_SET := "annotations"
 ## Maximum edge length (pixels) for the output overlay image. Images wider or
 ## taller than this are downsampled before compositing to keep PNG encoding fast.
 const _MAX_OUTPUT_EDGE: int = 1024
+const _DEFAULT_QUERY_STATUSES: PackedStringArray = ["open", "applied"]
 
 
 func _init(mcp_server = null) -> void:
@@ -64,6 +68,9 @@ func get_tool_names() -> Array[String]:
 		"minerva_annotations_update",
 		"minerva_annotations_delete",
 		"minerva_annotations_render_overlay",
+		"minerva_annotations_query",
+		"minerva_annotations_update_status",
+		"minerva_annotations_repair_anchor",
 		"minerva_text_editor_add_comment",
 	]
 
@@ -241,6 +248,68 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
+		"minerva_annotations_query",
+		"Query v2 annotations for LLM action flows. Prefer editor_name for live "
+		+ "unsaved work; document_path queries the sidecar. Default status filter "
+		+ "returns open + applied annotations. Pass capabilities to receive "
+		+ "chat_context blocks for non-multimodal and multimodal models.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {"type": "string", "description": "Live editor tab title."},
+				"document_path": {"type": "string", "description": "Document path; sidecar is <path>.annotations.json."},
+				"status": {"type": "string", "description": "open, applied, resolved, stale, or any. Omitted = open + applied."},
+				"anchor_type": {"type": "string", "description": "Filter like core/text.range or cad/*."},
+				"kind": {"type": "string", "description": "Annotation kind filter."},
+				"text": {"type": "string", "description": "Case-insensitive text search over summary/payload."},
+				"capabilities": {"type": "object", "description": "Capability schema for chat_context projection."},
+			},
+		},
+		_TOOL_SET
+	)
+
+	server._register_tool(
+		"minerva_annotations_update_status",
+		"Transition a v2 annotation lifecycle state. Used by LLM apply flows to "
+		+ "mark an open annotation applied with applied.links. Refuses substrate-only "
+		+ "stale transitions and illegal lifecycle transitions.",
+		{
+			"type": "object",
+			"properties": {
+				"annotation_id": {"type": "string", "description": "Annotation id."},
+				"id": {"type": "string", "description": "Alias for annotation_id."},
+				"editor_name": {"type": "string", "description": "Optional live editor scope."},
+				"document_path": {"type": "string", "description": "Optional sidecar scope."},
+				"lifecycle": {"type": "string", "description": "Target lifecycle: applied, resolved, or open."},
+				"status": {"type": "string", "description": "Alias for lifecycle."},
+				"patch": {"type": "object", "description": "Fields to merge, e.g. applied/resolved objects."},
+				"applied": {"type": "object", "description": "Shortcut for patch.applied."},
+				"resolved": {"type": "object", "description": "Shortcut for patch.resolved."},
+			},
+		},
+		_TOOL_SET
+	)
+
+	server._register_tool(
+		"minerva_annotations_repair_anchor",
+		"Retarget a v2 annotation anchor. For text editor admin/LLM repair, pass "
+		+ "new_anchor={plugin:'core', type:'text.range', id:{start,end}, snapshot:{...}}. "
+		+ "If new_anchor is omitted, returns needs_retarget=true unless the anchor registry "
+		+ "can repair automatically.",
+		{
+			"type": "object",
+			"properties": {
+				"annotation_id": {"type": "string", "description": "Annotation id."},
+				"id": {"type": "string", "description": "Alias for annotation_id."},
+				"editor_name": {"type": "string", "description": "Optional live editor scope."},
+				"document_path": {"type": "string", "description": "Optional sidecar scope."},
+				"new_anchor": {"type": "object", "description": "Replacement anchor dictionary."},
+			},
+		},
+		_TOOL_SET
+	)
+
+	server._register_tool(
 		"minerva_text_editor_add_comment",
 		"Add a v2 annotation (kind=text, anchor=core/text.range) to a built-in text "
 		+ "editor tab, anchored to a flat character-offset range [start, end). The "
@@ -286,6 +355,12 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _annotations_delete(arguments)
 		"minerva_annotations_render_overlay":
 			return await _annotations_render_overlay(arguments)
+		"minerva_annotations_query":
+			return query(arguments)
+		"minerva_annotations_update_status":
+			return _handle_update_status(arguments)
+		"minerva_annotations_repair_anchor":
+			return _handle_repair_anchor(arguments)
 		"minerva_text_editor_add_comment":
 			return _text_editor_add_comment(arguments)
 	return _err("Unknown annotation tool: %s" % tool_name)
@@ -317,6 +392,163 @@ func _text_editor_add_comment(args: Dictionary) -> Dictionary:
 		return _err("add_comment_at returned empty id (validation failed; check log)")
 	var count: int = (host.get_annotations() as Array).size() if host.has_method("get_annotations") else -1
 	return {"ok": true, "annotation_id": ann_id, "count": count}
+
+
+# ── V2 MCP query / lifecycle / repair surface (Round 5c) ─────────────────────
+
+func query(filters: Dictionary = {}) -> Dictionary:
+	var source := _resolve_annotation_source(filters, false)
+	if not bool(source.get("ok", false)):
+		return _err(str(source.get("error", "annotation source not found")))
+
+	var host: AnnotationHost = source.get("host", null) as AnnotationHost
+	var registry: AnnotationRegistry = source.get("registry", null) as AnnotationRegistry
+	if registry == null and host != null:
+		registry = host.get_registry()
+	if registry == null:
+		registry = _get_registry()
+
+	var projected: Array = []
+	var raw_annotations: Array = source.get("annotations", [])
+	for ann_v in raw_annotations:
+		if not ann_v is Dictionary:
+			continue
+		var ann: Dictionary = (ann_v as Dictionary).duplicate(true)
+		var stale := _compute_stale(ann, host)
+		if not _matches_query_filters(ann, filters, stale):
+			continue
+		projected.append(_project_query_annotation(ann, filters, host, registry, stale))
+
+	var total := projected.size()
+	var truncated := total > 100
+	if truncated:
+		projected = projected.slice(0, 100)
+	var result := {
+		"success": true,
+		"ok": true,
+		"source": str(source.get("source", "")),
+		"annotations": projected,
+		"total": total,
+		"count": projected.size(),
+		"truncated": truncated,
+	}
+	if source.has("editor_name"):
+		result["editor_name"] = source["editor_name"]
+	if source.has("document_path"):
+		result["document_path"] = source["document_path"]
+	return result
+
+
+func update_status(annotation_id: String, lifecycle: String, patch: Dictionary = {}) -> Dictionary:
+	if annotation_id.strip_edges().is_empty():
+		return {"ok": false, "success": false, "error": "annotation_id is required"}
+	if lifecycle.strip_edges().is_empty():
+		return {"ok": false, "success": false, "error": "lifecycle is required"}
+
+	var source := _resolve_annotation_source(patch, true, annotation_id)
+	if not bool(source.get("ok", false)):
+		return {"ok": false, "success": false, "error": str(source.get("error", "annotation not found"))}
+	var annotation: Dictionary = source.get("annotation", {})
+	if annotation.is_empty():
+		return {"ok": false, "success": false, "error": "annotation not found: %s" % annotation_id}
+
+	var current := str(annotation.get("lifecycle", "open"))
+	if lifecycle == "stale":
+		return {"ok": false, "success": false, "error": "stale is substrate-only", "from": current, "to": lifecycle}
+	if not AnnotationLifecycle.can_transition(current, lifecycle):
+		return {
+			"ok": false,
+			"success": false,
+			"error": "illegal lifecycle transition: %s -> %s" % [current, lifecycle],
+			"from": current,
+			"to": lifecycle,
+		}
+
+	var payload_error := _validate_status_payload(lifecycle, patch)
+	if not payload_error.is_empty():
+		return {"ok": false, "success": false, "error": payload_error, "from": current, "to": lifecycle}
+
+	for key in patch.keys():
+		if key in ["editor_name", "document_path", "annotation_id", "id", "lifecycle", "status"]:
+			continue
+		annotation[key] = patch[key]
+	annotation["lifecycle"] = lifecycle
+	annotation["updated_at"] = int(Time.get_unix_time_from_system())
+
+	var update_result := _write_annotation_to_source(source, annotation)
+	if not bool(update_result.get("ok", false)):
+		return update_result
+
+	var host: AnnotationHost = source.get("host", null) as AnnotationHost
+	var registry: AnnotationRegistry = source.get("registry", null) as AnnotationRegistry
+	var stale := _compute_stale(annotation, host)
+	return {
+		"ok": true,
+		"success": true,
+		"annotation": _project_query_annotation(annotation, {"status": "any"}, host, registry, stale),
+	}
+
+
+func repair_anchor(annotation_id: String, new_anchor: Variant = null, scope: Dictionary = {}) -> Dictionary:
+	if annotation_id.strip_edges().is_empty():
+		return {"ok": false, "success": false, "error": "annotation_id is required"}
+	var source := _resolve_annotation_source(scope, true, annotation_id)
+	if not bool(source.get("ok", false)):
+		return {"ok": false, "success": false, "error": str(source.get("error", "annotation not found"))}
+	var annotation: Dictionary = source.get("annotation", {})
+	if annotation.is_empty():
+		return {"ok": false, "success": false, "error": "annotation not found: %s" % annotation_id}
+
+	var repaired: Variant = new_anchor
+	if repaired == null:
+		var host: AnnotationHost = source.get("host", null) as AnnotationHost
+		if host != null and host.has_method("get_anchor_registry"):
+			var anchor_registry: Variant = host.get_anchor_registry()
+			if anchor_registry != null and anchor_registry.has_method("repair"):
+				repaired = anchor_registry.repair(annotation.get("anchor", {}), host)
+		if repaired == null:
+			return {"ok": false, "success": false, "needs_retarget": true}
+	if not repaired is Dictionary:
+		return {"ok": false, "success": false, "error": "new_anchor must be a Dictionary", "needs_retarget": true}
+
+	annotation["anchor"] = (repaired as Dictionary).duplicate(true)
+	annotation["lifecycle"] = "open"
+	annotation["updated_at"] = int(Time.get_unix_time_from_system())
+	var update_result := _write_annotation_to_source(source, annotation)
+	if not bool(update_result.get("ok", false)):
+		return update_result
+	var host2: AnnotationHost = source.get("host", null) as AnnotationHost
+	var registry: AnnotationRegistry = source.get("registry", null) as AnnotationRegistry
+	return {
+		"ok": true,
+		"success": true,
+		"annotation": _project_query_annotation(annotation, {"status": "any"}, host2, registry, _compute_stale(annotation, host2)),
+	}
+
+
+func _handle_update_status(args: Dictionary) -> Dictionary:
+	var annotation_id := str(args.get("annotation_id", args.get("id", "")))
+	var lifecycle := str(args.get("lifecycle", args.get("status", "")))
+	var raw_patch: Variant = args.get("patch", {})
+	var patch: Dictionary = (raw_patch as Dictionary).duplicate(true) if raw_patch is Dictionary else {}
+	for key in ["editor_name", "document_path"]:
+		if args.has(key):
+			patch[key] = args[key]
+	if args.has("applied"):
+		patch["applied"] = args["applied"]
+	if args.has("resolved"):
+		patch["resolved"] = args["resolved"]
+	return update_status(annotation_id, lifecycle, patch)
+
+
+func _handle_repair_anchor(args: Dictionary) -> Dictionary:
+	var annotation_id := str(args.get("annotation_id", args.get("id", "")))
+	var scope := {}
+	for key in ["editor_name", "document_path"]:
+		if args.has(key):
+			scope[key] = args[key]
+	var new_anchor: Variant = args.get("new_anchor", null)
+	return repair_anchor(annotation_id, new_anchor, scope)
 
 
 # ── Tool implementations ──────────────────────────────────────────────────────
@@ -733,6 +965,261 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
+func _resolve_annotation_source(filters: Dictionary, require_annotation: bool, annotation_id: String = "") -> Dictionary:
+	var doc_path := str(filters.get("document_path", ""))
+	var editor_name := str(filters.get("editor_name", ""))
+	if not doc_path.is_empty() and not editor_name.is_empty():
+		return {"ok": false, "error": "provide only one of 'editor_name' or 'document_path', not both"}
+
+	if not editor_name.is_empty():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			var known: Array = AnnotationHostRegistry.list_editor_names()
+			return {
+				"ok": false,
+				"error": "no live annotation host registered for editor '%s'. Known: %s" % [editor_name, str(known)],
+			}
+		return _source_from_host(editor_name, host, require_annotation, annotation_id)
+
+	if not doc_path.is_empty():
+		var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
+		var annotations: Array = sidecar.get("annotations", []) if not sidecar.is_empty() else []
+		var source := {
+			"ok": true,
+			"source": "sidecar",
+			"document_path": doc_path,
+			"sidecar": sidecar,
+			"annotations": annotations,
+			"registry": _get_registry(),
+		}
+		return _attach_source_annotation(source, require_annotation, annotation_id)
+
+	if require_annotation:
+		return _resolve_annotation_by_id(annotation_id)
+
+	return {"ok": false, "error": "either 'editor_name' or 'document_path' is required"}
+
+
+func _source_from_host(editor_name: String, host: AnnotationHost, require_annotation: bool, annotation_id: String = "") -> Dictionary:
+	var annotations: Array = host.get_annotations() if host.has_method("get_annotations") else []
+	var source := {
+		"ok": true,
+		"source": "live",
+		"editor_name": editor_name,
+		"host": host,
+		"annotations": annotations,
+		"registry": host.get_registry() if host.has_method("get_registry") else _get_registry(),
+	}
+	return _attach_source_annotation(source, require_annotation, annotation_id)
+
+
+func _resolve_annotation_by_id(annotation_id: String) -> Dictionary:
+	var matches: Array = []
+	for editor_name in AnnotationHostRegistry.list_editor_names():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(str(editor_name))
+		if host == null:
+			continue
+		var source := _source_from_host(str(editor_name), host, true, annotation_id)
+		if bool(source.get("ok", false)):
+			matches.append(source)
+	if matches.size() == 1:
+		return matches[0]
+	if matches.size() > 1:
+		var names: Array = []
+		for source in matches:
+			names.append(str(source.get("editor_name", "")))
+		return {"ok": false, "error": "annotation id '%s' is ambiguous across live editors: %s" % [annotation_id, str(names)]}
+	return {"ok": false, "error": "annotation not found: %s; provide editor_name or document_path for saved sidecar annotations" % annotation_id}
+
+
+func _attach_source_annotation(source: Dictionary, require_annotation: bool, annotation_id: String) -> Dictionary:
+	if not require_annotation:
+		return source
+	if annotation_id.strip_edges().is_empty():
+		return {"ok": false, "error": "annotation_id is required"}
+	var annotations: Array = source.get("annotations", [])
+	for i in range(annotations.size()):
+		var ann_v: Variant = annotations[i]
+		if ann_v is Dictionary and str((ann_v as Dictionary).get("id", "")) == annotation_id:
+			source["annotation"] = (ann_v as Dictionary).duplicate(true)
+			source["index"] = i
+			return source
+	return {"ok": false, "error": "annotation not found: %s" % annotation_id}
+
+
+func _compute_stale(annotation: Dictionary, host: AnnotationHost) -> bool:
+	var stale := str(annotation.get("lifecycle", "")) == AnnotationLifecycle.STATE_STALE or bool(annotation.get("stale", false))
+	if host != null and annotation.get("anchor", {}) is Dictionary:
+		var resolved: Variant = host.resolve_anchor(annotation.get("anchor", {}))
+		if resolved is Dictionary:
+			stale = stale or bool((resolved as Dictionary).get("stale", false))
+	return stale
+
+
+func _matches_query_filters(annotation: Dictionary, filters: Dictionary, stale: bool) -> bool:
+	var lifecycle := str(annotation.get("lifecycle", ""))
+	var status := str(filters.get("status", ""))
+	if status.is_empty():
+		if not lifecycle in _DEFAULT_QUERY_STATUSES:
+			return false
+	elif status == "stale":
+		if not stale:
+			return false
+	elif status != "any" and lifecycle != status:
+		return false
+
+	if filters.has("anchor_type") and not _anchor_type_matches(annotation, str(filters["anchor_type"])):
+		return false
+	if filters.has("kind") and str(annotation.get("kind", "")) != str(filters["kind"]):
+		return false
+	if filters.has("author") and _author_kind(annotation) != str(filters["author"]):
+		return false
+	if filters.has("author_kind") and _author_kind(annotation) != str(filters["author_kind"]):
+		return false
+	if filters.has("author_id") and _author_id(annotation) != str(filters["author_id"]):
+		return false
+	if filters.has("text"):
+		var needle := str(filters["text"]).to_lower()
+		var haystack := "%s %s" % [str(annotation.get("summary", "")), str(annotation.get("kind_payload", {}))]
+		if not haystack.to_lower().contains(needle):
+			return false
+
+	var time_range: Variant = filters.get("time_range", {})
+	if time_range is Dictionary:
+		var range_dict: Dictionary = time_range
+		if range_dict.has("after") and str(annotation.get("created_at", "")) <= str(range_dict["after"]):
+			return false
+		if range_dict.has("before") and str(annotation.get("created_at", "")) >= str(range_dict["before"]):
+			return false
+	return true
+
+
+func _anchor_type_matches(annotation: Dictionary, expected: String) -> bool:
+	var anchor: Dictionary = annotation.get("anchor", {}) if annotation.get("anchor", {}) is Dictionary else {}
+	var actual := "%s/%s" % [str(anchor.get("plugin", "")), str(anchor.get("type", ""))]
+	if expected.ends_with("/*"):
+		return actual.begins_with(expected.substr(0, expected.length() - 1))
+	return actual == expected
+
+
+func _author_kind(annotation: Dictionary) -> String:
+	var author: Variant = annotation.get("author", "")
+	if author is Dictionary:
+		return str((author as Dictionary).get("kind", ""))
+	return str(author)
+
+
+func _author_id(annotation: Dictionary) -> String:
+	var author: Variant = annotation.get("author", {})
+	if author is Dictionary:
+		return str((author as Dictionary).get("id", ""))
+	return ""
+
+
+func _project_query_annotation(
+	annotation: Dictionary,
+	filters: Dictionary,
+	host: AnnotationHost,
+	registry: AnnotationRegistry,
+	stale: bool
+) -> Dictionary:
+	var entry := annotation.duplicate(true)
+	entry["stale"] = stale
+	if stale and str(entry.get("lifecycle", "")) != AnnotationLifecycle.STATE_STALE:
+		entry["lifecycle_effective"] = AnnotationLifecycle.STATE_STALE
+	entry["anchored_to"] = AnnotationSchema.get_anchored_to(entry)
+
+	var kind_obj: AnnotationKind = null
+	if registry != null:
+		kind_obj = registry.get_annotation_kind(StringName(str(entry.get("kind", ""))))
+	if str(entry.get("summary", "")).is_empty():
+		if kind_obj != null:
+			entry["summary"] = kind_obj.summary(entry)
+		else:
+			entry["summary"] = str(entry.get("kind", "annotation"))
+	if kind_obj != null:
+		var bounds: Rect2 = kind_obj.bounds(entry)
+		entry["bounds"] = {"x": bounds.position.x, "y": bounds.position.y, "w": bounds.size.x, "h": bounds.size.y}
+
+	if host != null and entry.get("anchor", {}) is Dictionary:
+		var resolved: Variant = host.resolve_anchor(entry.get("anchor", {}))
+		if resolved is Dictionary:
+			entry["resolved_anchor"] = _serialize_resolved_anchor(resolved as Dictionary)
+
+	if filters.has("capabilities"):
+		if kind_obj != null:
+			entry["chat_context"] = kind_obj.to_chat_context(entry, filters.get("capabilities", {}))
+		else:
+			entry["chat_context"] = AnnotationKind.new().to_chat_context(entry, filters.get("capabilities", {}))
+	return entry
+
+
+func _serialize_resolved_anchor(resolved: Dictionary) -> Dictionary:
+	var result := {"stale": bool(resolved.get("stale", false))}
+	var pos: Variant = resolved.get("position", null)
+	if pos is Vector2:
+		result["position"] = [(pos as Vector2).x, (pos as Vector2).y]
+	var bounds: Variant = resolved.get("bounds", null)
+	if bounds is Rect2:
+		var rect: Rect2 = bounds
+		result["bounds"] = {"x": rect.position.x, "y": rect.position.y, "w": rect.size.x, "h": rect.size.y}
+	var metadata: Variant = resolved.get("view_metadata", {})
+	if metadata is Dictionary:
+		result["view_metadata"] = metadata
+	return result
+
+
+func _validate_status_payload(lifecycle: String, patch: Dictionary) -> String:
+	if lifecycle == AnnotationLifecycle.STATE_APPLIED:
+		if not patch.has("applied") or not patch["applied"] is Dictionary:
+			return "applied object is required"
+		var applied: Dictionary = patch["applied"]
+		if not applied.has("links") or not applied["links"] is Array:
+			return "applied.links is required"
+	if lifecycle == AnnotationLifecycle.STATE_RESOLVED:
+		if not patch.has("resolved") or not patch["resolved"] is Dictionary:
+			return "resolved object is required"
+		var resolved: Dictionary = patch["resolved"]
+		if not resolved.has("by") or not resolved["by"] is Dictionary:
+			return "resolved.by is required"
+	return ""
+
+
+func _write_annotation_to_source(source: Dictionary, annotation: Dictionary) -> Dictionary:
+	var annotation_id := str(annotation.get("id", ""))
+	if annotation_id.is_empty():
+		return {"ok": false, "success": false, "error": "annotation id is required"}
+	if str(source.get("source", "")) == "live":
+		var host: AnnotationHost = source.get("host", null) as AnnotationHost
+		if host == null:
+			return {"ok": false, "success": false, "error": "live annotation host is unavailable"}
+		if not host.update_annotation(annotation_id, annotation):
+			return {"ok": false, "success": false, "error": "annotation not found: %s" % annotation_id}
+		return {"ok": true, "success": true}
+
+	var doc_path := str(source.get("document_path", ""))
+	if doc_path.is_empty():
+		return {"ok": false, "success": false, "error": "document_path is required for sidecar update"}
+	var sidecar: Dictionary = source.get("sidecar", {})
+	if sidecar.is_empty():
+		return {"ok": false, "success": false, "error": "annotation sidecar not found for %s" % doc_path}
+	var annotations: Array = sidecar.get("annotations", [])
+	var idx := int(source.get("index", -1))
+	if idx < 0 or idx >= annotations.size():
+		idx = -1
+		for i in range(annotations.size()):
+			if annotations[i] is Dictionary and str(annotations[i].get("id", "")) == annotation_id:
+				idx = i
+				break
+	if idx < 0:
+		return {"ok": false, "success": false, "error": "annotation not found: %s" % annotation_id}
+	annotations[idx] = annotation
+	sidecar["annotations"] = annotations
+	var write_err: Error = AnnotationSidecar.write_sidecar(doc_path, sidecar)
+	if write_err != OK:
+		return {"ok": false, "success": false, "error": "failed to write sidecar (error %d)" % write_err}
+	return {"ok": true, "success": true}
 
 ## Minimal success response builder (mirrors MCPToolUtils.success).
 static func _ok(data: Dictionary = {}) -> Dictionary:

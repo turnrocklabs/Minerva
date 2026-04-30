@@ -176,6 +176,7 @@ var _file_saved := false
 var annotation_host: RefCounted = null
 const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
 const _TextEditorAnnotationSidebarScript = preload("res://Scripts/UI/Controls/TextEditorAnnotationSidebar.gd")
+const _ANNOTATION_LINE_PICK_WIDTH := 34.0
 ## Overlay Control that paints broken-anchor indicators for Type.TEXT editors.
 ## Resolved in _ready via $AnnotationCanvas; null in headless tests.
 var _annotation_canvas: Control = null
@@ -1330,6 +1331,10 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 				_try_apply_retarget()
 				return
 
+	if type == Type.TEXT and _try_begin_line_comment_from_event(event):
+		accept_event()
+		return
+
 	if event is InputEventKey:
 		var shortcut := event as InputEventKey
 		if shortcut.pressed and not shortcut.echo and shortcut.ctrl_pressed and shortcut.shift_pressed and shortcut.keycode == KEY_M:
@@ -1939,6 +1944,8 @@ func _init_annotation_host() -> void:
 	annotation_host = _TextEditorAnnotationHostScript.new()
 	if code_edit != null:
 		annotation_host.set_code_edit(code_edit)
+	if annotation_host.has_signal("annotations_changed"):
+		annotation_host.connect("annotations_changed", Callable(self, "_on_annotation_host_changed"))
 	_register_annotation_host()
 
 
@@ -1952,6 +1959,8 @@ func initialize_as_text_editor() -> void:
 	type = Type.TEXT
 	if annotation_host == null:
 		annotation_host = _TextEditorAnnotationHostScript.new()
+		if annotation_host.has_signal("annotations_changed"):
+			annotation_host.connect("annotations_changed", Callable(self, "_on_annotation_host_changed"))
 	if code_edit != null:
 		annotation_host.set_code_edit(code_edit)
 
@@ -1989,12 +1998,13 @@ func add_comment(text: String) -> String:
 	if _has_pending_annotation_selection():
 		start = int(_pending_annotation_selection.get("start", -1))
 		end = int(_pending_annotation_selection.get("end", -1))
+	var target_scope := str(_pending_annotation_selection.get("target_scope", "range"))
 
 	if start < 0 or end <= start:
 		push_warning("[Editor.add_comment] no valid selection")
 		return ""
 
-	var ann_id: String = annotation_host.add_comment_at(start, end, text)
+	var ann_id: String = annotation_host.add_comment_at(start, end, text, target_scope)
 	if _annotation_canvas != null:
 		_annotation_canvas.queue_redraw()
 	if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
@@ -2094,7 +2104,7 @@ func repair_annotation(annotation_id: String, start: int, end: int) -> bool:
 func _on_sidebar_add_comment_requested(text: String) -> void:
 	if not _has_commentable_selection():
 		if _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
-			_annotation_sidebar.show_status("Select text first")
+			_annotation_sidebar.show_status("Select text or click a line indicator first")
 		return
 	var ann_id := add_comment(text)
 	if ann_id.is_empty() and _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
@@ -2106,9 +2116,10 @@ func _on_sidebar_add_comment_requested(text: String) -> void:
 func _begin_add_comment_from_shortcut() -> void:
 	_sync_annotation_add_affordance()
 	if not _has_commentable_selection():
-		if _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
-			_annotation_sidebar.show_status("Select text first")
-		return
+		if not _store_current_line_as_pending_annotation():
+			if _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
+				_annotation_sidebar.show_status("Select text or place the cursor on a non-empty line")
+			return
 	if _annotation_sidebar != null and _annotation_sidebar.has_method("begin_add_comment_flow"):
 		_annotation_sidebar.begin_add_comment_flow()
 
@@ -2130,13 +2141,13 @@ func _capture_current_annotation_selection(clear_when_empty: bool) -> bool:
 		var doc: String = code_edit.text
 		var start := _line_col_to_flat_offset(doc, code_edit.get_selection_from_line(), code_edit.get_selection_from_column())
 		var end := _line_col_to_flat_offset(doc, code_edit.get_selection_to_line(), code_edit.get_selection_to_column())
-		return _store_pending_annotation_selection(start, end)
+		return _store_pending_annotation_selection(start, end, "range")
 	if clear_when_empty and code_edit != null and code_edit.has_focus():
 		_pending_annotation_selection.clear()
 	return false
 
 
-func _store_pending_annotation_selection(start: int, end: int) -> bool:
+func _store_pending_annotation_selection(start: int, end: int, target_scope: String = "range") -> bool:
 	if end < start:
 		var tmp := start
 		start = end
@@ -2144,7 +2155,11 @@ func _store_pending_annotation_selection(start: int, end: int) -> bool:
 	if start < 0 or end <= start:
 		_pending_annotation_selection.clear()
 		return false
-	_pending_annotation_selection = {"start": start, "end": end}
+	_pending_annotation_selection = {
+		"start": start,
+		"end": end,
+		"target_scope": "line" if target_scope == "line" else "range",
+	}
 	return true
 
 
@@ -2155,6 +2170,85 @@ func _has_pending_annotation_selection() -> bool:
 	var end := int(_pending_annotation_selection.get("end", -1))
 	var text_len := code_edit.text.length() if code_edit != null else 0
 	return start >= 0 and end > start and end <= text_len
+
+
+func _try_begin_line_comment_from_event(event: InputEvent) -> bool:
+	if code_edit == null or _annotation_sidebar == null:
+		return false
+	if not event is InputEventMouseButton:
+		return false
+	var mb := event as InputEventMouseButton
+	if not mb.pressed or mb.button_index != MOUSE_BUTTON_LEFT:
+		return false
+	if mb.position.x > _ANNOTATION_LINE_PICK_WIDTH:
+		return false
+	var line := _line_at_code_edit_position(mb.position)
+	if line < 0:
+		return false
+	if not _store_line_as_pending_annotation(line):
+		if _annotation_sidebar.has_method("show_status"):
+			_annotation_sidebar.show_status("Cannot annotate an empty line")
+		return true
+	if _annotation_sidebar.has_method("set_can_add_comment"):
+		_annotation_sidebar.set_can_add_comment(true)
+	if _annotation_sidebar.has_method("begin_add_comment_flow"):
+		_annotation_sidebar.begin_add_comment_flow()
+	return true
+
+
+func _store_current_line_as_pending_annotation() -> bool:
+	if code_edit == null:
+		return false
+	var line := int(code_edit.get_caret_line()) if code_edit.has_method("get_caret_line") else -1
+	return _store_line_as_pending_annotation(line)
+
+
+func _store_line_as_pending_annotation(line: int) -> bool:
+	if code_edit == null or line < 0:
+		return false
+	var line_count := int(code_edit.get_line_count()) if code_edit.has_method("get_line_count") else 0
+	if line_count <= 0:
+		return false
+	line = clampi(line, 0, line_count - 1)
+	var doc: String = code_edit.text
+	var line_text := str(code_edit.get_line(line)) if code_edit.has_method("get_line") else ""
+	var start := _line_col_to_flat_offset(doc, line, 0)
+	var end := start + line_text.length()
+	if end <= start:
+		return false
+	return _store_pending_annotation_selection(start, end, "line")
+
+
+func _line_at_code_edit_position(position: Vector2) -> int:
+	if code_edit == null:
+		return -1
+	if code_edit.has_method("get_line_height"):
+		var first_visible := 0
+		if code_edit.has_method("get_first_visible_line"):
+			first_visible = int(code_edit.call("get_first_visible_line"))
+		var line_height := maxf(1.0, float(code_edit.get_line_height()))
+		var line := first_visible + int(floor(position.y / line_height))
+		if code_edit.has_method("get_line_count"):
+			line = clampi(line, 0, code_edit.get_line_count() - 1)
+		return line
+
+	if code_edit.has_method("get_line_column_at_pos"):
+		var value: Variant = code_edit.call("get_line_column_at_pos", Vector2i(int(position.x), int(position.y)))
+		if value is Vector2i:
+			return clampi((value as Vector2i).x, 0, code_edit.get_line_count() - 1)
+		if value is Vector2:
+			return clampi(int((value as Vector2).x), 0, code_edit.get_line_count() - 1)
+
+	var fallback_first_visible := 0
+	if code_edit.has_method("get_first_visible_line"):
+		fallback_first_visible = int(code_edit.call("get_first_visible_line"))
+	var fallback_line_height := 16.0
+	if code_edit.has_method("get_line_height"):
+		fallback_line_height = maxf(1.0, float(code_edit.get_line_height()))
+	var fallback_line := fallback_first_visible + int(floor(position.y / fallback_line_height))
+	if code_edit.has_method("get_line_count"):
+		fallback_line = clampi(fallback_line, 0, code_edit.get_line_count() - 1)
+	return fallback_line
 
 
 func _on_sidebar_repair_requested(annotation_id: String) -> void:
@@ -2193,3 +2287,8 @@ func _refresh_annotation_views() -> void:
 		_annotation_canvas.queue_redraw()
 	if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
 		_annotation_sidebar.refresh()
+
+
+func _on_annotation_host_changed() -> void:
+	_refresh_annotation_views()
+	content_changed.emit()
