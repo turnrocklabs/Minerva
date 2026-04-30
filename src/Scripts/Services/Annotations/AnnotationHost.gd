@@ -34,6 +34,22 @@ func get_registry() -> AnnotationRegistry:
 	push_error("[AnnotationHost] get_registry() not overridden — returning null")
 	return null
 
+
+## Return the v2 anchor registry used by this editor, if one is available.
+## Subclasses that accept v2 annotations should override this and call
+## validate_annotation_anchor() before storing or updating an annotation.
+func get_anchor_registry() -> Object:
+	return null
+
+
+func validate_annotation_anchor(annotation: Dictionary) -> Array:
+	if not annotation.has("anchor"):
+		return []
+	var registry := get_anchor_registry()
+	if registry == null:
+		return ["AnnotationHost has no AnnotationAnchorRegistry"]
+	return registry.validate_anchor(annotation["anchor"])
+
 # ── Document mutation ──────────────────────────────────────────────────────────
 
 ## Add a completed annotation dict to the editor's document.

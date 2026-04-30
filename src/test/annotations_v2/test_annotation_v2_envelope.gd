@@ -1,9 +1,10 @@
 extends SceneTree
-## Contract tests for the v2 annotation envelope (task #1).
+## Behavioral contract tests for the v2 annotation envelope (task #1).
 ## Run: godot --headless --path src --script test/annotations_v2/test_annotation_v2_envelope.gd
-##
-## RED in Round 1 — AnnotationV2Schema, AnnotationLifecycle do not exist yet.
-## Every test fails because the classes/methods are absent.
+
+const AnnotationV2SchemaScript = preload("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
+const AnnotationLifecycleScript = preload("res://Scripts/Services/Annotations/AnnotationLifecycle.gd")
+const AnnotationAuthorScript = preload("res://Scripts/Services/Annotations/AnnotationAuthor.gd")
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -13,13 +14,9 @@ func _init() -> void:
 	print("[tags: unit]")
 	print("=== test_annotation_v2_envelope ===\n")
 
-	print("-- envelope: class existence --")
-	test_annotation_v2_schema_class_exists()
-	test_annotation_lifecycle_class_exists()
-	test_annotation_author_validator_exists()
-
-	print("\n-- envelope: required fields --")
+	print("-- envelope: required fields --")
 	test_envelope_validate_minimal_valid()
+	test_envelope_empty_dict_rejected()
 	test_envelope_missing_id_rejected()
 	test_envelope_missing_kind_rejected()
 	test_envelope_missing_schema_version_rejected()
@@ -47,18 +44,21 @@ func _init() -> void:
 	print("\n-- envelope: lifecycle state machine --")
 	test_lifecycle_open_to_applied_legal()
 	test_lifecycle_open_to_resolved_legal()
+	test_lifecycle_open_to_stale_legal()
 	test_lifecycle_applied_to_resolved_legal()
 	test_lifecycle_resolved_to_open_legal()
-	test_lifecycle_any_to_stale_substrate_only()
 	test_lifecycle_stale_to_open_legal()
 	test_lifecycle_applied_to_open_illegal()
 	test_lifecycle_resolved_to_applied_illegal()
 	test_lifecycle_stale_to_resolved_illegal()
+	test_lifecycle_self_transition_illegal()
+	test_lifecycle_unknown_state_illegal()
 
 	print("\n-- envelope: anchored_to computed accessor --")
-	test_annotation_v2_schema_has_serialize_method()
-	test_annotation_v2_schema_has_deserialize_method()
-	test_annotation_v2_schema_has_validate_update_method()
+	test_anchored_to_round_trips_through_serialize()
+	test_deserialize_missing_anchor_leaves_anchored_to_empty()
+	test_view_context_immutability_helper()
+	test_validate_update_allows_visible_in_views_change()
 
 	print("\n-- envelope: author validation --")
 	test_author_kind_human_valid()
@@ -66,6 +66,7 @@ func _init() -> void:
 	test_author_kind_missing_rejected()
 	test_author_kind_invalid_enum_rejected()
 	test_author_id_optional()
+	test_author_optional_field_type_rejected()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -73,7 +74,7 @@ func _init() -> void:
 	quit(1 if _fail_count > 0 else 0)
 
 
-# ── Assertion helpers ─────────────────────────────────────────────────────────
+# -- Assertion helpers ---------------------------------------------------------
 
 func check(description: String, condition: bool) -> void:
 	if condition:
@@ -90,10 +91,14 @@ func check_eq(description: String, actual: Variant, expected: Variant) -> void:
 		print("  PASS: %s" % description)
 	else:
 		_fail_count += 1
-		printerr("  FAIL: %s — expected %s, got %s" % [description, str(expected), str(actual)])
+		printerr("  FAIL: %s - expected %s, got %s" % [description, str(expected), str(actual)])
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+# -- Fixtures ----------------------------------------------------------------
+
+func _schema() -> RefCounted:
+	return AnnotationV2SchemaScript.new()
+
 
 func _valid_envelope() -> Dictionary:
 	return {
@@ -124,300 +129,340 @@ func _valid_envelope() -> Dictionary:
 	}
 
 
-# ── Class existence tests ─────────────────────────────────────────────────────
-
-func test_annotation_v2_schema_class_exists() -> void:
-	print("test_annotation_v2_schema_class_exists:")
-	check("AnnotationV2Schema class exists", ClassDB.class_exists("AnnotationV2Schema"))
+func _validated(env: Dictionary) -> RefCounted:
+	return _schema().validate(env)
 
 
-func test_annotation_lifecycle_class_exists() -> void:
-	print("test_annotation_lifecycle_class_exists:")
-	check("AnnotationLifecycle class exists", ClassDB.class_exists("AnnotationLifecycle"))
+func _without_key(dict: Dictionary, key: String) -> Dictionary:
+	var out := dict.duplicate(true)
+	out.erase(key)
+	return out
 
 
-func test_annotation_author_validator_exists() -> void:
-	print("test_annotation_author_validator_exists:")
-	check("AnnotationAuthor class exists", ClassDB.class_exists("AnnotationAuthor"))
+func _envelope_without_top_level(key: String) -> Dictionary:
+	return _without_key(_valid_envelope(), key)
 
 
-# ── Required-field tests ──────────────────────────────────────────────────────
-
-func _call_validate(env: Dictionary) -> Variant:
-	if not ClassDB.class_exists("AnnotationV2Schema"):
-		return null
-	return ClassDB.instantiate("AnnotationV2Schema").validate(env) \
-		if ClassDB.can_instantiate("AnnotationV2Schema") else null
+func _envelope_without_anchor_key(key: String) -> Dictionary:
+	var env := _valid_envelope()
+	env["anchor"].erase(key)
+	return env
 
 
-func _schema_validate(env: Dictionary) -> Dictionary:
-	# Returns {ok: bool, has_errors: bool} or {failed: true} if class missing
-	if not ClassDB.class_exists("AnnotationV2Schema"):
-		return {"failed": true}
-	var schema = ClassDB.instantiate("AnnotationV2Schema")
-	if schema == null:
-		return {"failed": true}
-	var result = schema.validate(env)
-	if result == null:
-		return {"failed": true}
-	return {"ok": true, "result": result}
+func _has_error_for(result: RefCounted, field_path: String) -> bool:
+	for e in result.to_error_dicts():
+		if e.get("field_path", "") == field_path:
+			return true
+	return false
 
+
+# -- Required-field tests ------------------------------------------------------
 
 func test_envelope_validate_minimal_valid() -> void:
 	print("test_envelope_validate_minimal_valid:")
-	if not ClassDB.class_exists("AnnotationV2Schema"):
-		check("AnnotationV2Schema class exists for validate", false)
-		return
-	check("AnnotationV2Schema has validate static/instance method",
-		ClassDB.class_has_method("AnnotationV2Schema", "validate"))
+	check("valid envelope has no errors", not _validated(_valid_envelope()).has_errors())
+
+
+func test_envelope_empty_dict_rejected() -> void:
+	print("test_envelope_empty_dict_rejected:")
+	var result := _validated({})
+	check("empty envelope has errors", result.has_errors())
+	check("empty envelope reports missing id", _has_error_for(result, "id"))
+	check("empty envelope reports missing kind", _has_error_for(result, "kind"))
+	check("empty envelope reports missing schema_version", _has_error_for(result, "schema_version"))
+	check("empty envelope reports missing anchor", _has_error_for(result, "anchor"))
+	check("empty envelope reports missing kind_payload", _has_error_for(result, "kind_payload"))
+	check("empty envelope reports missing lifecycle", _has_error_for(result, "lifecycle"))
+	check("empty envelope reports missing author", _has_error_for(result, "author"))
+	check("empty envelope reports missing view_context", _has_error_for(result, "view_context"))
+	check("empty envelope reports missing visible_in_views", _has_error_for(result, "visible_in_views"))
+	check("empty envelope reports missing summary", _has_error_for(result, "summary"))
 
 
 func test_envelope_missing_id_rejected() -> void:
 	print("test_envelope_missing_id_rejected:")
-	if not ClassDB.class_exists("AnnotationV2Schema"):
-		check("AnnotationV2Schema exists for missing-id test", false)
-		return
-	check("AnnotationV2Schema.validate rejects missing id (method exists)",
-		ClassDB.class_has_method("AnnotationV2Schema", "validate"))
+	var result := _validated(_envelope_without_top_level("id"))
+	check("missing id rejected", result.has_errors())
+	check("missing id reports id path", _has_error_for(result, "id"))
 
 
 func test_envelope_missing_kind_rejected() -> void:
 	print("test_envelope_missing_kind_rejected:")
-	check("AnnotationV2Schema exists for missing-kind test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("kind"))
+	check("missing kind rejected", result.has_errors())
+	check("missing kind reports kind path", _has_error_for(result, "kind"))
 
 
 func test_envelope_missing_schema_version_rejected() -> void:
 	print("test_envelope_missing_schema_version_rejected:")
-	check("AnnotationV2Schema exists for schema_version test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("schema_version"))
+	check("missing schema_version rejected", result.has_errors())
+	check("missing schema_version reports schema_version path", _has_error_for(result, "schema_version"))
 
 
 func test_envelope_schema_version_1_rejected() -> void:
 	print("test_envelope_schema_version_1_rejected:")
-	check("AnnotationV2Schema exists and rejects schema_version=1",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var env := _valid_envelope()
+	env["schema_version"] = 1
+	var result := _validated(env)
+	check("schema_version=1 rejected", result.has_errors())
+	check("schema_version=1 reports schema_version path", _has_error_for(result, "schema_version"))
 
 
 func test_envelope_missing_anchor_rejected() -> void:
 	print("test_envelope_missing_anchor_rejected:")
-	check("AnnotationV2Schema exists for anchor test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("anchor"))
+	check("missing anchor rejected", result.has_errors())
+	check("missing anchor reports anchor path", _has_error_for(result, "anchor"))
 
 
 func test_envelope_missing_kind_payload_rejected() -> void:
 	print("test_envelope_missing_kind_payload_rejected:")
-	check("AnnotationV2Schema exists for kind_payload test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("kind_payload"))
+	check("missing kind_payload rejected", result.has_errors())
+	check("missing kind_payload reports kind_payload path", _has_error_for(result, "kind_payload"))
 
 
 func test_envelope_missing_lifecycle_rejected() -> void:
 	print("test_envelope_missing_lifecycle_rejected:")
-	check("AnnotationV2Schema exists for lifecycle test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("lifecycle"))
+	check("missing lifecycle rejected", result.has_errors())
+	check("missing lifecycle reports lifecycle path", _has_error_for(result, "lifecycle"))
 
 
 func test_envelope_missing_author_rejected() -> void:
 	print("test_envelope_missing_author_rejected:")
-	check("AnnotationV2Schema exists for author test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("author"))
+	check("missing author rejected", result.has_errors())
+	check("missing author reports author path", _has_error_for(result, "author"))
 
 
 func test_envelope_missing_view_context_rejected() -> void:
 	print("test_envelope_missing_view_context_rejected:")
-	check("AnnotationV2Schema exists for view_context test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("view_context"))
+	check("missing view_context rejected", result.has_errors())
+	check("missing view_context reports view_context path", _has_error_for(result, "view_context"))
 
 
 func test_envelope_missing_visible_in_views_rejected() -> void:
 	print("test_envelope_missing_visible_in_views_rejected:")
-	check("AnnotationV2Schema exists for visible_in_views test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("visible_in_views"))
+	check("missing visible_in_views rejected", result.has_errors())
+	check("missing visible_in_views reports visible_in_views path", _has_error_for(result, "visible_in_views"))
 
 
 func test_envelope_missing_summary_rejected() -> void:
 	print("test_envelope_missing_summary_rejected:")
-	check("AnnotationV2Schema exists for summary test",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_top_level("summary"))
+	check("missing summary rejected", result.has_errors())
+	check("missing summary reports summary path", _has_error_for(result, "summary"))
 
 
 func test_envelope_empty_summary_rejected() -> void:
 	print("test_envelope_empty_summary_rejected:")
-	check("AnnotationV2Schema rejects empty summary",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var env := _valid_envelope()
+	env["summary"] = ""
+	var result := _validated(env)
+	check("empty summary rejected", result.has_errors())
+	check("empty summary reports summary path", _has_error_for(result, "summary"))
 
 
-# ── Anchor shape tests ────────────────────────────────────────────────────────
+# -- Anchor shape tests --------------------------------------------------------
 
 func test_anchor_missing_plugin_rejected() -> void:
 	print("test_anchor_missing_plugin_rejected:")
-	check("AnnotationV2Schema validates anchor.plugin required",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_anchor_key("plugin"))
+	check("missing anchor.plugin rejected", result.has_errors())
+	check("missing anchor.plugin reports path", _has_error_for(result, "anchor.plugin"))
 
 
 func test_anchor_missing_type_rejected() -> void:
 	print("test_anchor_missing_type_rejected:")
-	check("AnnotationV2Schema validates anchor.type required",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_anchor_key("type"))
+	check("missing anchor.type rejected", result.has_errors())
+	check("missing anchor.type reports path", _has_error_for(result, "anchor.type"))
 
 
 func test_anchor_missing_id_rejected() -> void:
 	print("test_anchor_missing_id_rejected:")
-	check("AnnotationV2Schema validates anchor.id required",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_anchor_key("id"))
+	check("missing anchor.id rejected", result.has_errors())
+	check("missing anchor.id reports path", _has_error_for(result, "anchor.id"))
 
 
 func test_anchor_missing_snapshot_rejected() -> void:
 	print("test_anchor_missing_snapshot_rejected:")
-	check("AnnotationV2Schema validates anchor.snapshot required",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var result := _validated(_envelope_without_anchor_key("snapshot"))
+	check("missing anchor.snapshot rejected", result.has_errors())
+	check("missing anchor.snapshot reports path", _has_error_for(result, "anchor.snapshot"))
 
 
 func test_anchor_snapshot_without_position_rejected() -> void:
 	print("test_anchor_snapshot_without_position_rejected:")
-	check("AnnotationV2Schema validates snapshot.position required",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var env := _valid_envelope()
+	env["anchor"]["snapshot"].erase("position")
+	var result := _validated(env)
+	check("missing anchor.snapshot.position rejected", result.has_errors())
+	check("missing anchor.snapshot.position reports path", _has_error_for(result, "anchor.snapshot.position"))
 
 
 func test_anchor_id_variant_int_accepted() -> void:
 	print("test_anchor_id_variant_int_accepted:")
-	check("AnnotationV2Schema accepts int anchor.id",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var env := _valid_envelope()
+	env["anchor"]["id"] = 7
+	check("int anchor.id accepted", not _validated(env).has_errors())
 
 
 func test_anchor_id_variant_string_accepted() -> void:
 	print("test_anchor_id_variant_string_accepted:")
-	check("AnnotationV2Schema accepts string anchor.id",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var env := _valid_envelope()
+	env["anchor"]["id"] = "edge-7"
+	check("string anchor.id accepted", not _validated(env).has_errors())
 
 
 func test_anchor_id_variant_array_accepted() -> void:
 	print("test_anchor_id_variant_array_accepted:")
-	check("AnnotationV2Schema accepts array anchor.id for multi-element anchors",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var env := _valid_envelope()
+	env["anchor"]["id"] = [7, 8, 9]
+	check("array anchor.id accepted", not _validated(env).has_errors())
 
 
 func test_anchor_stable_key_optional() -> void:
 	print("test_anchor_stable_key_optional:")
-	check("AnnotationV2Schema accepts absent stable_key",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var env := _envelope_without_anchor_key("stable_key")
+	check("absent stable_key accepted", not _validated(env).has_errors())
 
 
-# ── Lifecycle state machine tests ─────────────────────────────────────────────
+# -- Lifecycle state machine tests -------------------------------------------
 
 func test_lifecycle_open_to_applied_legal() -> void:
 	print("test_lifecycle_open_to_applied_legal:")
-	if not ClassDB.class_exists("AnnotationLifecycle"):
-		check("AnnotationLifecycle exists with can_transition method", false)
-		return
-	check("AnnotationLifecycle has can_transition method",
-		ClassDB.class_has_method("AnnotationLifecycle", "can_transition"))
+	check("open -> applied legal", AnnotationLifecycleScript.can_transition("open", "applied"))
 
 
 func test_lifecycle_open_to_resolved_legal() -> void:
 	print("test_lifecycle_open_to_resolved_legal:")
-	check("AnnotationLifecycle exists for open→resolved",
-		ClassDB.class_exists("AnnotationLifecycle"))
+	check("open -> resolved legal", AnnotationLifecycleScript.can_transition("open", "resolved"))
+
+
+func test_lifecycle_open_to_stale_legal() -> void:
+	print("test_lifecycle_open_to_stale_legal:")
+	check("open -> stale legal", AnnotationLifecycleScript.can_transition("open", "stale"))
 
 
 func test_lifecycle_applied_to_resolved_legal() -> void:
 	print("test_lifecycle_applied_to_resolved_legal:")
-	check("AnnotationLifecycle exists for applied→resolved",
-		ClassDB.class_exists("AnnotationLifecycle"))
+	check("applied -> resolved legal", AnnotationLifecycleScript.can_transition("applied", "resolved"))
 
 
 func test_lifecycle_resolved_to_open_legal() -> void:
 	print("test_lifecycle_resolved_to_open_legal:")
-	check("AnnotationLifecycle exists for resolved→open (reopen)",
-		ClassDB.class_exists("AnnotationLifecycle"))
-
-
-func test_lifecycle_any_to_stale_substrate_only() -> void:
-	print("test_lifecycle_any_to_stale_substrate_only:")
-	check("AnnotationLifecycle enforces stale-only-by-substrate policy",
-		ClassDB.class_exists("AnnotationLifecycle"))
+	check("resolved -> open legal", AnnotationLifecycleScript.can_transition("resolved", "open"))
 
 
 func test_lifecycle_stale_to_open_legal() -> void:
 	print("test_lifecycle_stale_to_open_legal:")
-	check("AnnotationLifecycle allows stale→open for repair",
-		ClassDB.class_exists("AnnotationLifecycle"))
+	check("stale -> open legal", AnnotationLifecycleScript.can_transition("stale", "open"))
 
 
 func test_lifecycle_applied_to_open_illegal() -> void:
 	print("test_lifecycle_applied_to_open_illegal:")
-	check("AnnotationLifecycle rejects applied→open",
-		ClassDB.class_exists("AnnotationLifecycle"))
+	check("applied -> open illegal", not AnnotationLifecycleScript.can_transition("applied", "open"))
 
 
 func test_lifecycle_resolved_to_applied_illegal() -> void:
 	print("test_lifecycle_resolved_to_applied_illegal:")
-	check("AnnotationLifecycle rejects resolved→applied",
-		ClassDB.class_exists("AnnotationLifecycle"))
+	check("resolved -> applied illegal", not AnnotationLifecycleScript.can_transition("resolved", "applied"))
 
 
 func test_lifecycle_stale_to_resolved_illegal() -> void:
 	print("test_lifecycle_stale_to_resolved_illegal:")
-	check("AnnotationLifecycle rejects stale→resolved",
-		ClassDB.class_exists("AnnotationLifecycle"))
+	check("stale -> resolved illegal", not AnnotationLifecycleScript.can_transition("stale", "resolved"))
 
 
-# ── anchored_to computed accessor tests ───────────────────────────────────────
-
-func test_annotation_v2_schema_has_serialize_method() -> void:
-	print("test_annotation_v2_schema_has_serialize_method:")
-	if not ClassDB.class_exists("AnnotationV2Schema"):
-		check("AnnotationV2Schema exists for serialize test", false)
-		return
-	check("AnnotationV2Schema has serialize method (strips anchored_to)",
-		ClassDB.class_has_method("AnnotationV2Schema", "serialize"))
+func test_lifecycle_self_transition_illegal() -> void:
+	print("test_lifecycle_self_transition_illegal:")
+	check("open -> open illegal", not AnnotationLifecycleScript.can_transition("open", "open"))
 
 
-func test_annotation_v2_schema_has_deserialize_method() -> void:
-	print("test_annotation_v2_schema_has_deserialize_method:")
-	if not ClassDB.class_exists("AnnotationV2Schema"):
-		check("AnnotationV2Schema exists for deserialize test", false)
-		return
-	check("AnnotationV2Schema has deserialize method (re-derives anchored_to)",
-		ClassDB.class_has_method("AnnotationV2Schema", "deserialize"))
+func test_lifecycle_unknown_state_illegal() -> void:
+	print("test_lifecycle_unknown_state_illegal:")
+	check("unknown source rejected", not AnnotationLifecycleScript.can_transition("missing", "open"))
+	check("unknown target rejected", not AnnotationLifecycleScript.can_transition("open", "missing"))
 
 
-func test_annotation_v2_schema_has_validate_update_method() -> void:
-	print("test_annotation_v2_schema_has_validate_update_method:")
-	if not ClassDB.class_exists("AnnotationV2Schema"):
-		check("AnnotationV2Schema exists for validate_update test", false)
-		return
-	check("AnnotationV2Schema has validate_update method (view_context immutability)",
-		ClassDB.class_has_method("AnnotationV2Schema", "validate_update"))
+# -- anchored_to computed accessor tests --------------------------------------
+
+func test_anchored_to_round_trips_through_serialize() -> void:
+	print("test_anchored_to_round_trips_through_serialize:")
+	var schema := _schema()
+	var env := _valid_envelope()
+	env["anchored_to"] = "stale.value:that-should-not-persist"
+	var serialized: Dictionary = schema.serialize(env)
+	check("serialize strips anchored_to", not serialized.has("anchored_to"))
+	var round_trip: Dictionary = schema.deserialize(serialized)
+	check("deserialize recomputes anchored_to", round_trip.has("anchored_to"))
+	check("anchored_to starts with anchor plugin/type", (round_trip["anchored_to"] as String).begins_with("core.text.range:"))
 
 
-# ── Author validation tests ───────────────────────────────────────────────────
+func test_deserialize_missing_anchor_leaves_anchored_to_empty() -> void:
+	print("test_deserialize_missing_anchor_leaves_anchored_to_empty:")
+	var serialized := _envelope_without_top_level("anchor")
+	var round_trip: Dictionary = _schema().deserialize(serialized)
+	check("missing anchor does not synthesize anchored_to", not round_trip.has("anchored_to"))
+
+
+func test_view_context_immutability_helper() -> void:
+	print("test_view_context_immutability_helper:")
+	var old_env := _valid_envelope()
+	var new_env := _valid_envelope()
+	new_env["view_context"] = "editor:secondary"
+	var errors: Array = _schema().check_view_context_immutable(old_env, new_env)
+	check("view_context change reports error", errors.size() > 0)
+	check_eq("view_context error path", errors[0].get("field_path", ""), "view_context")
+
+
+func test_validate_update_allows_visible_in_views_change() -> void:
+	print("test_validate_update_allows_visible_in_views_change:")
+	var old_env := _valid_envelope()
+	var new_env := _valid_envelope()
+	new_env["visible_in_views"] = ["main", "secondary"]
+	check("visible_in_views may change", _schema().validate_update(old_env, new_env).is_empty())
+
+
+# -- Author validation tests ---------------------------------------------------
 
 func test_author_kind_human_valid() -> void:
 	print("test_author_kind_human_valid:")
-	check("AnnotationV2Schema validates author.kind=human",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	check("author.kind=human accepted", AnnotationAuthorScript.validate({"kind": "human"}).is_empty())
 
 
 func test_author_kind_ai_valid() -> void:
 	print("test_author_kind_ai_valid:")
-	check("AnnotationV2Schema validates author.kind=ai with model field",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	check("author.kind=ai accepted", AnnotationAuthorScript.validate({"kind": "ai", "model": "test-model"}).is_empty())
 
 
 func test_author_kind_missing_rejected() -> void:
 	print("test_author_kind_missing_rejected:")
-	check("AnnotationV2Schema rejects author without kind field",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var errors: Array = AnnotationAuthorScript.validate({})
+	check("missing author.kind rejected", errors.size() > 0)
+	check_eq("missing author.kind error path", errors[0].get("field_path", ""), "author.kind")
 
 
 func test_author_kind_invalid_enum_rejected() -> void:
 	print("test_author_kind_invalid_enum_rejected:")
-	check("AnnotationV2Schema rejects author.kind=robot (not in enum)",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	var errors: Array = AnnotationAuthorScript.validate({"kind": "robot"})
+	check("author.kind=robot rejected", errors.size() > 0)
+	check_eq("author.kind=robot error path", errors[0].get("field_path", ""), "author.kind")
 
 
 func test_author_id_optional() -> void:
 	print("test_author_id_optional:")
-	check("AnnotationV2Schema accepts author without id field",
-		ClassDB.class_exists("AnnotationV2Schema"))
+	check("author id optional", AnnotationAuthorScript.validate({"kind": "human"}).is_empty())
+
+
+func test_author_optional_field_type_rejected() -> void:
+	print("test_author_optional_field_type_rejected:")
+	var errors: Array = AnnotationAuthorScript.validate({"kind": "human", "id": 12})
+	check("non-string author.id rejected", errors.size() > 0)
+	check_eq("non-string author.id error path", errors[0].get("field_path", ""), "author.id")
