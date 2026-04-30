@@ -105,7 +105,7 @@ func _draw_healthy(anchor: Dictionary, code: Object, ce_local: Vector2, line_hei
 		var p_b: Vector2i = code.get_pos_at_line_column(line, col_b)
 		if p_a.x < 0 or p_b.x < 0:
 			continue
-		var y := float(p_a.y) + line_height - 1.0
+		var y := ce_local.y + float(p_a.y) + line_height - 1.0
 		var x1 := float(p_a.x) + ce_local.x
 		var x2 := float(p_b.x) + ce_local.x
 		draw_line(Vector2(x1, y), Vector2(x2, y), _HEALTHY_COLOR, _UNDERLINE_THICKNESS)
