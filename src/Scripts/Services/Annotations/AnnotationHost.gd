@@ -15,6 +15,8 @@ extends RefCounted
 ## AnnotationToolbar.set_host(). The toolbar forwards it to each tool on
 ## activation via AnnotationAuthorTool.on_activate(host).
 
+const AnnotationResolveCacheScript = preload("res://Scripts/Services/Annotations/AnnotationResolveCache.gd")
+
 # ── Selection ──────────────────────────────────────────────────────────────────
 
 ## Emitted when the selected annotation changes. Emits "" when selection is
@@ -25,6 +27,11 @@ extends RefCounted
 signal selection_changed(annotation_id: String)
 
 var _anchor_resolvers: Dictionary = {}
+var resolve_cache: Object = null
+
+
+func _init() -> void:
+	resolve_cache = AnnotationResolveCacheScript.new()
 
 # ── Registry ───────────────────────────────────────────────────────────────────
 
@@ -98,6 +105,28 @@ func register_anchor_resolver(anchor_type: String, resolver: Callable) -> void:
 
 func has_anchor_resolver_for(anchor_type: String) -> bool:
 	return _anchor_resolvers.has(anchor_type)
+
+
+func _resolve_anchor_cached(anchor: Dictionary, view_context: String) -> Dictionary:
+	if resolve_cache == null:
+		return resolve_anchor(anchor)
+	return resolve_cache.resolve(anchor, self, view_context)
+
+
+func invalidate_resolve_cache(anchor_type: String = "") -> void:
+	if resolve_cache != null and resolve_cache.has_method("invalidate"):
+		resolve_cache.invalidate(anchor_type)
+
+
+func bump_revision() -> void:
+	if resolve_cache != null and resolve_cache.has_method("bump_revision"):
+		resolve_cache.bump_revision()
+
+
+func get_revision() -> int:
+	if resolve_cache != null and resolve_cache.has_method("revision"):
+		return int(resolve_cache.revision())
+	return 0
 
 
 func _anchor_key(anchor: Dictionary) -> String:
