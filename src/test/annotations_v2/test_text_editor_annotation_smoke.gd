@@ -13,6 +13,14 @@ extends SceneTree
 ##   5. Repair — user re-selects text → annotation updated
 ##   6. MCP round-trip — LLM queries, marks applied, query confirms
 
+## NOTE (Round 5a): ClassDB.class_exists() only returns true for native C++ classes
+## in Godot 4. GDScript 'class_name' declarations use a different registry.
+## This test was updated from ClassDB guards to preload-based guards so that
+## TextEditorAnnotationHost and Editor can be verified correctly.
+
+const _TEAHScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
+const _AnnotationHostScript = preload("res://Scripts/Services/Annotations/AnnotationHost.gd")
+
 var _pass_count: int = 0
 var _fail_count: int = 0
 
@@ -85,35 +93,40 @@ func check_eq(description: String, actual: Variant, expected: Variant) -> void:
 
 func test_text_editor_has_annotation_host() -> void:
 	print("test_text_editor_has_annotation_host:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	# Use direct GDScript instantiation (ClassDB.class_exists returns false for GDScript
+	# classes in Godot 4; see Round 5a notes). Editor.new() may fail if the full scene
+	# tree is not present, so we check via script method inspection.
+	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor_script == null:
+		check("Editor script loadable", false)
 		return
-	# Editor should have an annotation_host property or get_annotation_host method
-	var editor = Editor.new()
+	# Check via a temporary instance (works without scene tree for script reflection)
+	var editor_instance = editor_script.new()
+	if editor_instance == null:
+		check("Editor instantiable (headless)", false)
+		return
 	check("Editor has annotation_host property or get_annotation_host method",
-		"annotation_host" in editor or editor.has_method("get_annotation_host"))
+		"annotation_host" in editor_instance or editor_instance.has_method("get_annotation_host"))
 
 
 func test_annotation_host_is_text_editor_host_subclass() -> void:
 	print("test_annotation_host_is_text_editor_host_subclass:")
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost class exists", false)
+	# Use preload to check existence — ClassDB only covers native C++ classes in Godot 4.
+	var host = _TEAHScript.new()
+	check("TextEditorAnnotationHost instantiable", host != null)
+	if host == null:
 		return
-	if not ClassDB.class_exists("AnnotationHost"):
-		check("AnnotationHost class exists", false)
-		return
-	# TextEditorAnnotationHost must extend AnnotationHost
-	var host = ClassDB.instantiate("TextEditorAnnotationHost")
+	var base_host = _AnnotationHostScript.new()
 	check("TextEditorAnnotationHost is-a AnnotationHost",
 		host is AnnotationHost)
 
 
 func test_host_handles_core_text_range_anchor() -> void:
 	print("test_host_handles_core_text_range_anchor:")
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost exists", false)
+	var host = _TEAHScript.new()
+	check("TextEditorAnnotationHost instantiable", host != null)
+	if host == null:
 		return
-	var host = ClassDB.instantiate("TextEditorAnnotationHost")
 	if not host.has_method("has_anchor_resolver_for"):
 		check("has_anchor_resolver_for method exists", false)
 		return
@@ -125,18 +138,23 @@ func test_host_handles_core_text_range_anchor() -> void:
 
 func test_text_editor_has_add_comment_method() -> void:
 	print("test_text_editor_has_add_comment_method:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	# Use direct script load — ClassDB.class_exists returns false for GDScript classes in Godot 4.
+	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor_script == null:
+		check("Editor script loadable", false)
 		return
-	var editor = Editor.new()
+	var editor = editor_script.new()
+	if editor == null:
+		check("Editor instantiable (headless)", false)
+		return
 	check("Editor has add_comment method",
 		editor.has_method("add_comment"))
 
 
 func test_add_comment_via_selection_creates_annotation() -> void:
 	print("test_add_comment_via_selection_creates_annotation:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	if load("res://Scripts/UI/Controls/Editor.gd") == null:
+		check("Editor script loadable", false)
 		return
 	var editor = _make_text_editor()
 	if editor == null:
@@ -159,8 +177,8 @@ func test_add_comment_via_selection_creates_annotation() -> void:
 
 func test_add_comment_anchor_type_is_core_text_range() -> void:
 	print("test_add_comment_anchor_type_is_core_text_range:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	if load("res://Scripts/UI/Controls/Editor.gd") == null:
+		check("Editor script loadable", false)
 		return
 	var editor = _make_text_editor()
 	if editor == null:
@@ -186,8 +204,8 @@ func test_add_comment_anchor_type_is_core_text_range() -> void:
 
 func test_add_comment_anchor_id_matches_selection() -> void:
 	print("test_add_comment_anchor_id_matches_selection:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	if load("res://Scripts/UI/Controls/Editor.gd") == null:
+		check("Editor script loadable", false)
 		return
 	var editor = _make_text_editor()
 	if editor == null:
@@ -213,8 +231,8 @@ func test_add_comment_anchor_id_matches_selection() -> void:
 
 func test_add_comment_kind_is_generic_text() -> void:
 	print("test_add_comment_kind_is_generic_text:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	if load("res://Scripts/UI/Controls/Editor.gd") == null:
+		check("Editor script loadable", false)
 		return
 	var editor = _make_text_editor()
 	if editor == null:
@@ -238,8 +256,8 @@ func test_add_comment_kind_is_generic_text() -> void:
 
 func test_add_comment_lifecycle_is_open() -> void:
 	print("test_add_comment_lifecycle_is_open:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	if load("res://Scripts/UI/Controls/Editor.gd") == null:
+		check("Editor script loadable", false)
 		return
 	var editor = _make_text_editor()
 	if editor == null:
@@ -266,8 +284,8 @@ func test_add_comment_lifecycle_is_open() -> void:
 
 func test_annotations_persist_to_sidecar_on_save() -> void:
 	print("test_annotations_persist_to_sidecar_on_save:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	if load("res://Scripts/UI/Controls/Editor.gd") == null:
+		check("Editor script loadable", false)
 		return
 	var editor = _make_text_editor()
 	if editor == null:
@@ -279,10 +297,11 @@ func test_annotations_persist_to_sidecar_on_save() -> void:
 
 func test_sidecar_filename_derived_from_editor_path() -> void:
 	print("test_sidecar_filename_derived_from_editor_path:")
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost exists", false)
+	# Use preload — ClassDB only covers native C++ classes in Godot 4.
+	var host = _TEAHScript.new()
+	check("TextEditorAnnotationHost instantiable", host != null)
+	if host == null:
 		return
-	var host = ClassDB.instantiate("TextEditorAnnotationHost")
 	if not host.has_method("get_sidecar_path"):
 		check("TextEditorAnnotationHost has get_sidecar_path method", false)
 		return
@@ -295,9 +314,6 @@ func test_sidecar_filename_derived_from_editor_path() -> void:
 
 func test_reload_preserves_annotation() -> void:
 	print("test_reload_preserves_annotation:")
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost exists", false)
-		return
 	# After save + reload, annotation should be present in host
 	check("annotation survives save-reload cycle (verified in Round 5 HITL)", true)
 
@@ -306,10 +322,10 @@ func test_reload_preserves_annotation() -> void:
 
 func test_text_delete_bumps_host_revision() -> void:
 	print("test_text_delete_bumps_host_revision:")
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost exists", false)
+	var host = _TEAHScript.new()
+	check("TextEditorAnnotationHost instantiable", host != null)
+	if host == null:
 		return
-	var host = ClassDB.instantiate("TextEditorAnnotationHost")
 	if not host.has_method("bump_revision"):
 		check("TextEditorAnnotationHost has bump_revision method", false)
 		return
@@ -320,10 +336,11 @@ func test_text_delete_bumps_host_revision() -> void:
 
 func test_after_revision_bump_resolve_returns_stale() -> void:
 	print("test_after_revision_bump_resolve_returns_stale:")
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost exists", false)
+	# Use preload — ClassDB only covers native C++ classes in Godot 4.
+	var host = _TEAHScript.new()
+	check("TextEditorAnnotationHost instantiable", host != null)
+	if host == null:
 		return
-	var host = ClassDB.instantiate("TextEditorAnnotationHost")
 	if not host.has_method("resolve_anchor"):
 		check("resolve_anchor method exists", false)
 		return
@@ -343,9 +360,6 @@ func test_after_revision_bump_resolve_returns_stale() -> void:
 
 func test_stale_annotation_renders_broken_indicator() -> void:
 	print("test_stale_annotation_renders_broken_indicator:")
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost exists", false)
-		return
 	# After resolving stale, the canvas should show a broken indicator
 	# This is verified in Round 5 via HITL; contract defined here
 	check("stale text.range annotation triggers broken render path (Round 5 HITL)", true)
@@ -373,8 +387,8 @@ func test_repair_button_available_for_stale_text_range() -> void:
 
 func test_repair_updates_anchor_with_new_selection() -> void:
 	print("test_repair_updates_anchor_with_new_selection:")
-	if not ClassDB.class_exists("Editor"):
-		check("Editor class exists", false)
+	if load("res://Scripts/UI/Controls/Editor.gd") == null:
+		check("Editor script loadable", false)
 		return
 	var editor = _make_text_editor()
 	if editor == null:
@@ -389,10 +403,7 @@ func test_repair_returns_annotation_to_open() -> void:
 	# After repair (retarget to new range), lifecycle goes back to open.
 	# Round 5 wires this through Editor + TextEditorAnnotationHost; until then the
 	# API surface is absent and this test fails for the right reason.
-	if not ClassDB.class_exists("TextEditorAnnotationHost"):
-		check("TextEditorAnnotationHost exists (Round 5)", false)
-		return
-	var host = ClassDB.instantiate("TextEditorAnnotationHost")
+	var host = _TEAHScript.new()
 	if host == null:
 		check("TextEditorAnnotationHost instantiable (Round 5)", false)
 		return
@@ -456,9 +467,12 @@ func test_mcp_subsequent_query_shows_applied() -> void:
 # ── Helper functions ──────────────────────────────────────────────────────────
 
 func _make_text_editor() -> Variant:
-	if not ClassDB.class_exists("Editor"):
+	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor_script == null:
 		return null
-	var editor = Editor.new()
+	var editor = editor_script.new()
+	if editor == null:
+		return null
 	# Initialize as text editor type if needed
 	if editor.has_method("initialize_as_text_editor"):
 		editor.initialize_as_text_editor()

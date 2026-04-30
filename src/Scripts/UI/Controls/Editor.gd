@@ -6,9 +6,31 @@ extends Control
 
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
-static var editor_scene = preload("res://Scenes/Editor.tscn")
-static var graphics_editor_scene = preload("res://Scenes/GraphicsEditorV2.tscn")
-static var spreadsheet_editor_scene = preload("res://Scenes/SpreadsheetEditor.tscn")
+# Lazy scene refs. Defer the load until the static is first read so that
+# class-load time doesn't trigger compilation of every script referenced from
+# these .tscn files — which fails in script-only headless mode where the
+# project's autoloads (SingletonObject, MediaGen, etc.) are not available.
+static var _editor_scene_cache: PackedScene = null
+static var _graphics_editor_scene_cache: PackedScene = null
+static var _spreadsheet_editor_scene_cache: PackedScene = null
+
+static var editor_scene: PackedScene:
+	get:
+		if _editor_scene_cache == null:
+			_editor_scene_cache = load("res://Scenes/Editor.tscn")
+		return _editor_scene_cache
+
+static var graphics_editor_scene: PackedScene:
+	get:
+		if _graphics_editor_scene_cache == null:
+			_graphics_editor_scene_cache = load("res://Scenes/GraphicsEditorV2.tscn")
+		return _graphics_editor_scene_cache
+
+static var spreadsheet_editor_scene: PackedScene:
+	get:
+		if _spreadsheet_editor_scene_cache == null:
+			_spreadsheet_editor_scene_cache = load("res://Scenes/SpreadsheetEditor.tscn")
+		return _spreadsheet_editor_scene_cache
 
 
 signal content_changed()
@@ -140,6 +162,15 @@ var file: String:
 #var file_path: String
 var type: Type
 var _file_saved := false
+
+## Annotation v2 host for Type.TEXT editors. Null otherwise. RefCounted-typed
+## to keep Editor.gd independent of TextEditorAnnotationHost's class_name load
+## order; the runtime value is always a TextEditorAnnotationHost instance.
+var annotation_host: RefCounted = null
+const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
+## Headless test fallback: when there is no live code_edit selection, set_selection()
+## stores its [start, end] here and add_comment() reads from it.
+var _pending_annotation_selection: Dictionary = {}
 ## Tracks unsaved changes for PLUGIN_SCENE editors; set true on content_changed,
 ## cleared on successful save.
 var _plugin_scene_modified := false
@@ -472,6 +503,7 @@ func _ready():
 		autowrap_button.show()
 		export_area_button.hide()
 		toggle_autowrap()
+		_init_annotation_host()
 	elif self.type == Type.LOGS:
 		mic_button.hide()
 		autowrap_button.hide()
@@ -590,6 +622,7 @@ func _load_text_file(filename: String):
 		code_edit.text = fa_object.get_as_text()
 		code_edit.saved_content = code_edit.text
 		code_edit.text_changed.emit() # the signal is not emitted for some reason
+		_load_annotations_sidecar(filename)
 	else:
 		code_edit.text = "Could not retrieve file"
 	# %SaveButton.disabled = false
@@ -968,7 +1001,8 @@ func save_file_to_disc(path: String) -> void:
 			save_file.store_string(code_edit.text)
 			code_edit.tag_saved_version()
 			code_edit.saved_content = code_edit.text
-			
+			_save_annotations_sidecar(path)
+
 			if associated_object is Note:
 				_update_note(associated_object)
 
@@ -1807,3 +1841,160 @@ func _on_tab_connect(_tab_idx: int) -> void:
 		if export_area_button:
 			export_area_button.disabled = true
 			export_area_button.hide()
+
+
+# ── Annotation v2 (Round 5a) ──────────────────────────────────────────────────
+
+func _init_annotation_host() -> void:
+	if annotation_host != null:
+		return
+	annotation_host = _TextEditorAnnotationHostScript.new()
+	if code_edit != null:
+		annotation_host.set_code_edit(code_edit)
+
+
+func get_annotation_host() -> RefCounted:
+	return annotation_host
+
+
+## Headless-test entry point: ensures a host exists without requiring a scene
+## tree. Production code uses _ready() → _init_annotation_host() instead.
+func initialize_as_text_editor() -> void:
+	type = Type.TEXT
+	if annotation_host == null:
+		annotation_host = _TextEditorAnnotationHostScript.new()
+	if code_edit != null:
+		annotation_host.set_code_edit(code_edit)
+
+
+## Set selection from flat character offsets. Used by smoke tests and the
+## add-comment affordance.
+func set_selection(start: int, end: int) -> void:
+	if code_edit != null:
+		var from := _flat_offset_to_line_col(code_edit.text, start)
+		var to := _flat_offset_to_line_col(code_edit.text, end)
+		code_edit.select(from[0], from[1], to[0], to[1])
+	_pending_annotation_selection = {"start": start, "end": end}
+
+
+## Add a v2 annotation anchored to the current selection.
+func add_comment(text: String) -> String:
+	if annotation_host == null:
+		_init_annotation_host()
+	if annotation_host == null:
+		return ""
+
+	var start := -1
+	var end := -1
+	var snapshot_text := ""
+
+	if code_edit != null and code_edit.has_selection():
+		var doc: String = code_edit.text
+		start = _line_col_to_flat_offset(doc, code_edit.get_selection_from_line(), code_edit.get_selection_from_column())
+		end = _line_col_to_flat_offset(doc, code_edit.get_selection_to_line(), code_edit.get_selection_to_column())
+		snapshot_text = doc.substr(start, end - start)
+	elif not _pending_annotation_selection.is_empty():
+		start = int(_pending_annotation_selection.get("start", -1))
+		end = int(_pending_annotation_selection.get("end", -1))
+		if start >= 0 and end >= start:
+			var src: String = annotation_host.get_text_content() if annotation_host.has_method("get_text_content") else ""
+			if end <= src.length():
+				snapshot_text = src.substr(start, end - start)
+
+	if start < 0 or end < start:
+		push_warning("[Editor.add_comment] no valid selection")
+		return ""
+
+	var line_col: Array = annotation_host.offset_to_line_col(start) if annotation_host.has_method("offset_to_line_col") else [0, 0]
+	var doc_revision: int = annotation_host.get_revision() if annotation_host.has_method("get_revision") else 0
+	var now := int(Time.get_unix_time_from_system())
+
+	var envelope := {
+		"id": "",
+		"kind": "text",
+		"schema_version": 2,
+		"anchor": {
+			"plugin": "core",
+			"type": "text.range",
+			"id": {"start": start, "end": end},
+			"snapshot": {
+				"position": [float(line_col[0]), float(line_col[1])],
+				"text": snapshot_text,
+				"document_revision": doc_revision,
+			},
+		},
+		"kind_payload": {"text": text},
+		"lifecycle": "open",
+		"author": {"kind": "human"},
+		"view_context": "text",
+		"visible_in_views": ["all"],
+		"summary": text,
+		"created_at": now,
+		"updated_at": now,
+	}
+	return annotation_host.add_annotation_v2(envelope)
+
+
+## Persist annotations to <path>.annotations.json. Called from save_file_to_disc.
+func save_annotations(path: String) -> void:
+	_save_annotations_sidecar(path)
+
+
+func _save_annotations_sidecar(path: String) -> void:
+	if annotation_host == null:
+		return
+	var anns: Array = annotation_host.get_all_annotations() if annotation_host.has_method("get_all_annotations") else []
+	var sidecar_path: String = annotation_host.get_sidecar_path(path)
+	if anns.is_empty():
+		if FileAccess.file_exists(sidecar_path):
+			DirAccess.remove_absolute(sidecar_path)
+		return
+	var serialized: Array = []
+	for ann in anns:
+		if ann is Dictionary:
+			serialized.append((ann as Dictionary).duplicate(true))
+	var f := FileAccess.open(sidecar_path, FileAccess.WRITE)
+	if f == null:
+		push_warning("[Editor] could not write annotation sidecar %s" % sidecar_path)
+		return
+	f.store_string(JSON.stringify(serialized))
+
+
+func _load_annotations_sidecar(path: String) -> void:
+	if annotation_host == null:
+		return
+	var sidecar_path: String = annotation_host.get_sidecar_path(path)
+	if not FileAccess.file_exists(sidecar_path):
+		return
+	var f := FileAccess.open(sidecar_path, FileAccess.READ)
+	if f == null:
+		return
+	var raw := f.get_as_text()
+	var parsed: Variant = JSON.parse_string(raw)
+	if parsed is Array:
+		annotation_host.load_annotations(parsed)
+
+
+# Flat-offset / line-column conversion helpers (used by add_comment, set_selection).
+static func _flat_offset_to_line_col(doc: String, offset: int) -> Array:
+	var line := 0
+	var col := 0
+	var i := 0
+	while i < offset and i < doc.length():
+		if doc[i] == "\n":
+			line += 1
+			col = 0
+		else:
+			col += 1
+		i += 1
+	return [line, col]
+
+
+static func _line_col_to_flat_offset(doc: String, line: int, col: int) -> int:
+	var current_line := 0
+	var i := 0
+	while i < doc.length() and current_line < line:
+		if doc[i] == "\n":
+			current_line += 1
+		i += 1
+	return i + col
