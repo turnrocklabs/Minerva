@@ -175,9 +175,16 @@ var _file_saved := false
 ## order; the runtime value is always a TextEditorAnnotationHost instance.
 var annotation_host: RefCounted = null
 const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
+const _TextEditorAnnotationSidebarScript = preload("res://Scripts/UI/Controls/TextEditorAnnotationSidebar.gd")
 ## Overlay Control that paints broken-anchor indicators for Type.TEXT editors.
 ## Resolved in _ready via $AnnotationCanvas; null in headless tests.
 var _annotation_canvas: Control = null
+## Sidebar Control that surfaces broken-anchor list + Repair UX.
+## Resolved in _ready via $VBoxContainer/AnnotationSidebar.
+var _annotation_sidebar: Node = null
+## Retarget mode state (Round 5b.ii). Empty string = not in retarget mode;
+## otherwise the annotation_id whose anchor is being repaired.
+var _retarget_in_progress: String = ""
 ## Headless test fallback: when there is no live code_edit selection, set_selection()
 ## stores its [start, end] here and add_comment() reads from it.
 var _pending_annotation_selection: Dictionary = {}
@@ -276,6 +283,15 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_code_edit)
+
+			# Annotation sidebar (Round 5b.ii) — last child so it sits at the
+			# bottom of the editor pane. The script extends VBoxContainer; calling
+			# its .new() returns a fully-constructed Node ready to add.
+			var sidebar = _TextEditorAnnotationSidebarScript.new()
+			sidebar.name = "AnnotationSidebar"
+			sidebar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			sidebar.size_flags_vertical = Control.SIZE_SHRINK_END
+			vbox_container.add_child(sidebar)
 			
 			if name_ and code_syntax_enabled:
 				name_ = name_ as String
@@ -490,6 +506,12 @@ func _ready():
 		_annotation_canvas = get_node_or_null("AnnotationCanvas")
 		if _annotation_canvas != null:
 			_annotation_canvas.set_meta("editor_ref", self)
+		_annotation_sidebar = get_node_or_null("VBoxContainer/AnnotationSidebar")
+		if _annotation_sidebar != null and annotation_host != null:
+			if _annotation_sidebar.has_method("set_host"):
+				_annotation_sidebar.set_host(annotation_host)
+			if _annotation_sidebar.has_signal("repair_requested"):
+				_annotation_sidebar.repair_requested.connect(_on_sidebar_repair_requested)
 	if file:
 		match type:
 			Type.TEXT: _load_text_file(file)
@@ -1284,6 +1306,20 @@ func _on_save_open_editor_tabs_button_pressed() -> void:
 
 #this function catches input when the code editor is focused
 func _on_code_edit_gui_input(event: InputEvent) -> void:
+	# Annotation v2 (Round 5b.ii): retarget mode capture.
+	# Esc cancels; mouse-up over a non-empty selection commits the new range.
+	if _retarget_in_progress != "":
+		if event is InputEventKey:
+			var ke := event as InputEventKey
+			if ke.pressed and ke.keycode == KEY_ESCAPE:
+				_cancel_retarget()
+				return
+		elif event is InputEventMouseButton:
+			var mb := event as InputEventMouseButton
+			if not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+				_try_apply_retarget()
+				return
+
 	if event is InputEventKey:
 		if event.pressed and event.keycode == KEY_CTRL:
 			%FindStringLineEdit.set_process_input(false)
@@ -1295,7 +1331,7 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 		jump_to_line()
 	elif  event.is_action_pressed("find_string"):
 		find_string_in_code_edit()
-	
+
 
 
 func toggle_autowrap() -> void:
@@ -1460,6 +1496,8 @@ func _on_editor_changed(text: String = ""):
 		annotation_host.bump_revision()
 		if _annotation_canvas != null:
 			_annotation_canvas.queue_redraw()
+		if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
+			_annotation_sidebar.refresh()
 
 	content_changed.emit()
 
@@ -1940,6 +1978,8 @@ func add_comment(text: String) -> String:
 	var ann_id: String = annotation_host.add_comment_at(start, end, text)
 	if _annotation_canvas != null:
 		_annotation_canvas.queue_redraw()
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
+		_annotation_sidebar.refresh()
 	return ann_id
 
 
@@ -1983,6 +2023,8 @@ func _load_annotations_sidecar(path: String) -> void:
 		annotation_host.load_annotations(parsed)
 		if _annotation_canvas != null:
 			_annotation_canvas.queue_redraw()
+		if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
+			_annotation_sidebar.refresh()
 
 
 # Flat-offset / line-column conversion helpers (used by add_comment, set_selection).
@@ -2008,3 +2050,59 @@ static func _line_col_to_flat_offset(doc: String, line: int, col: int) -> int:
 			current_line += 1
 		i += 1
 	return i + col
+
+
+# ── Retarget mode (Round 5b.ii) ──────────────────────────────────────────────
+
+## Public entry point for the smoke test contract and external callers (MCP
+## repair will land in 5c). Updates the annotation's anchor to a new range.
+func retarget_annotation(annotation_id: String, start: int, end: int) -> bool:
+	if annotation_host == null or not annotation_host.has_method("retarget_annotation"):
+		return false
+	var ok: bool = annotation_host.retarget_annotation(annotation_id, start, end)
+	if ok:
+		_refresh_annotation_views()
+	return ok
+
+
+## Smoke-test alias.
+func repair_annotation(annotation_id: String, start: int, end: int) -> bool:
+	return retarget_annotation(annotation_id, start, end)
+
+
+func _on_sidebar_repair_requested(annotation_id: String) -> void:
+	if annotation_id.is_empty():
+		return
+	_retarget_in_progress = annotation_id
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("enter_retarget_mode"):
+		_annotation_sidebar.enter_retarget_mode(annotation_id)
+
+
+func _try_apply_retarget() -> void:
+	if _retarget_in_progress.is_empty() or code_edit == null:
+		return
+	if not code_edit.has_selection():
+		return
+	var doc: String = code_edit.text
+	var start := _line_col_to_flat_offset(doc, code_edit.get_selection_from_line(), code_edit.get_selection_from_column())
+	var end := _line_col_to_flat_offset(doc, code_edit.get_selection_to_line(), code_edit.get_selection_to_column())
+	if end <= start:
+		return
+	var ann_id := _retarget_in_progress
+	_retarget_in_progress = ""
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("exit_retarget_mode"):
+		_annotation_sidebar.exit_retarget_mode()
+	retarget_annotation(ann_id, start, end)
+
+
+func _cancel_retarget() -> void:
+	_retarget_in_progress = ""
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("exit_retarget_mode"):
+		_annotation_sidebar.exit_retarget_mode()
+
+
+func _refresh_annotation_views() -> void:
+	if _annotation_canvas != null:
+		_annotation_canvas.queue_redraw()
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
+		_annotation_sidebar.refresh()

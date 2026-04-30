@@ -169,6 +169,46 @@ func remove_annotation(annotation_id: String) -> bool:
 	return false
 
 
+## Round 5b.ii: re-anchor a stale annotation to a new [start, end) range in the
+## live document. Refreshes anchor.id + snapshot.text + snapshot.position from
+## the current document, sets lifecycle back to "open", bumps the host revision
+## so canvas + sidebar refresh. Returns true on success.
+func retarget_annotation(annotation_id: String, start: int, end: int) -> bool:
+	if start < 0 or end < start:
+		return false
+	for i in range(_annotations.size()):
+		var ann_v: Variant = _annotations[i]
+		if not ann_v is Dictionary:
+			continue
+		var ann: Dictionary = ann_v as Dictionary
+		if str(ann.get("id", "")) != annotation_id:
+			continue
+		var src := _get_text()
+		if end > src.length():
+			return false
+		var snapshot_text: String = src.substr(start, end - start)
+		var line_col := _offset_to_line_col(start)
+		var anchor: Dictionary = (ann.get("anchor", {}) as Dictionary).duplicate(true)
+		anchor["id"] = {"start": start, "end": end}
+		var snap: Dictionary = (anchor.get("snapshot", {}) as Dictionary).duplicate(true)
+		snap["position"] = [float(line_col[0]), float(line_col[1])]
+		snap["text"] = snapshot_text
+		snap["document_revision"] = get_revision()
+		anchor["snapshot"] = snap
+		ann["anchor"] = anchor
+		ann["lifecycle"] = "open"
+		ann["updated_at"] = int(Time.get_unix_time_from_system())
+		_annotations[i] = ann
+		bump_revision()
+		return true
+	return false
+
+
+## Smoke-test contract alias.
+func repair_annotation(annotation_id: String, start: int, end: int) -> bool:
+	return retarget_annotation(annotation_id, start, end)
+
+
 ## Load a serialized array of v2 envelopes into this host (replaces current list).
 func load_annotations(raw_array: Array) -> void:
 	var io := AnnotationSidecarIO.new()
