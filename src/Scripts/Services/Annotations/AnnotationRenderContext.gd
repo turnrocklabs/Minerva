@@ -54,6 +54,10 @@ var unit: String = "mm"
 ## screen-space-only path. Never crash if absent.
 var host: Object = null
 
+## True when the resolved anchor is stale/broken and rendering should use the
+## annotation's last-known snapshot as fallback context.
+var is_stale: bool = false
+
 # ── Factory helper ─────────────────────────────────────────────────────────────
 
 ## Construct a fully populated context in one call.
@@ -185,6 +189,12 @@ func draw_rect(rect: Rect2, color: Color, filled: bool, width: float = 1.0) -> v
 		RenderingServer.canvas_item_add_line(canvas_item, tr_corner, br_corner, color, width)
 		RenderingServer.canvas_item_add_line(canvas_item, br_corner, bl_corner, color, width)
 		RenderingServer.canvas_item_add_line(canvas_item, bl_corner, tl_corner, color, width)
+
+
+func draw_badge(pos: Vector2) -> void:
+	if not canvas_item.is_valid():
+		return
+	draw_string(null, pos, "!", Color(1.0, 0.75, 0.1), 12)
 
 # ── Author colour helper ───────────────────────────────────────────────────────
 

@@ -21,6 +21,8 @@ extends RefCounted
 ##   range annotations with payload.range). The sidecar I/O task will read this flag
 ##   when deciding whether to require primitives[].
 
+const ContextBlockScript = preload("res://Scripts/Services/Annotations/ContextBlock.gd")
+
 # ── Required properties ────────────────────────────────────────────────────────
 
 ## Globally unique kind identifier. Must match the "kind" discriminator in
@@ -60,6 +62,16 @@ func render(_ctx: AnnotationRenderContext, _annotation: Dictionary) -> void:
 		% str(name) +
 		"Subclass must override render()."
 	)
+
+
+func render_broken(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
+	if ctx != null:
+		ctx.is_stale = true
+		var snapshot: Dictionary = annotation.get("anchor", {}).get("snapshot", {})
+		var pos := _to_vec2(snapshot.get("position", []))
+		if ctx.has_method("draw_badge"):
+			ctx.draw_badge(pos)
+	render(ctx, annotation)
 
 
 ## Returns true if document-space point is within threshold pixels of this annotation.
@@ -158,6 +170,42 @@ func summary(annotation: Dictionary) -> String:
 	if not anchor.is_empty():
 		return "%s → %s" % [base, anchor]
 	return base
+
+
+func to_chat_context(annotation: Dictionary, capabilities: Dictionary) -> Array:
+	var blocks: Array = []
+	var supported: Array = capabilities.get("supported_block_types", ["text", "structured_json"])
+	var stale := str(annotation.get("lifecycle", "")) == "stale" or bool(annotation.get("stale", false))
+	var content := {
+		"id": str(annotation.get("id", "")),
+		"kind": str(annotation.get("kind", "")),
+		"anchor": annotation.get("anchor", {}),
+		"lifecycle": "stale" if stale else str(annotation.get("lifecycle", "")),
+		"stale": stale,
+		"summary": str(annotation.get("summary", "")),
+		"view_context": str(annotation.get("view_context", "")),
+		"author": annotation.get("author", {}),
+		"kind_payload": annotation.get("kind_payload", {}),
+	}
+	if "structured_json" in supported:
+		blocks.append(ContextBlockScript.make(ContextBlockScript.Type.STRUCTURED_JSON, content))
+	elif "text" in supported:
+		blocks.append(ContextBlockScript.make(ContextBlockScript.Type.UNSUPPORTED_PLACEHOLDER, "structured_json unsupported"))
+
+	if "text" in supported:
+		var text := str(annotation.get("summary", ""))
+		if stale:
+			text = "[BROKEN] %s" % text
+		blocks.append(ContextBlockScript.make(ContextBlockScript.Type.TEXT, _truncate_text(text, 500)))
+
+	return blocks
+
+
+func _truncate_text(text: String, max_words: int) -> String:
+	var words := text.split(" ", false)
+	if words.size() <= max_words:
+		return text
+	return " ".join(words.slice(0, max_words))
 
 
 # ── Convenience helpers ────────────────────────────────────────────────────────
