@@ -385,11 +385,15 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 		var entry: Dictionary = ann.duplicate(true)
 		entry["anchored_to"] = AnnotationSchema.get_anchored_to(ann)
 
-		# summary: use kind.summary() if kind is registered; fall back to display_name+count.
+		# v2 envelopes already carry a real `summary` field — preserve it.
+		# Only synthesise a placeholder for v1 annotations (which lack one).
+		var is_v2 := int(ann.get("schema_version", 1)) >= 2
 		var kind_obj: AnnotationKind = null
 		if registry != null:
 			kind_obj = registry.get_annotation_kind(StringName(str(ann.get("kind", ""))))
-		if kind_obj != null:
+		if is_v2 and not str(ann.get("summary", "")).is_empty():
+			entry["summary"] = str(ann.get("summary", ""))
+		elif kind_obj != null:
 			entry["summary"] = kind_obj.summary(ann)
 		else:
 			var prim_count: int = (ann.get("primitives", []) as Array).size()

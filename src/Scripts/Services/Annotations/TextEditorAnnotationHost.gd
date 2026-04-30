@@ -174,6 +174,12 @@ func load_annotations(raw_array: Array) -> void:
 	var io := AnnotationSidecarIO.new()
 	var result := io.process_annotations(raw_array)
 	_annotations = result.get("annotations", [])
+	# JSON.parse_string returns Variant::FLOAT for all numerics; coerce
+	# integer-valued anchor fields back to int so resolve_anchor's `is int`
+	# guards behave the same on reload as on first author.
+	for ann in _annotations:
+		if ann is Dictionary:
+			_coerce_envelope_ints(ann as Dictionary)
 	# Bump _id_counter past any loaded "ann_XXXX" id so newly-generated ids
 	# don't collide with persisted ones.
 	for ann in _annotations:
@@ -185,6 +191,27 @@ func load_annotations(raw_array: Array) -> void:
 					var n: int = hex_part.hex_to_int()
 					if n > _id_counter:
 						_id_counter = n
+
+
+## In-place coercion: walk a freshly-deserialised envelope and turn any
+## numeric field that should be an int back into one. Idempotent on already-int
+## inputs.
+func _coerce_envelope_ints(envelope: Dictionary) -> void:
+	if envelope.get("schema_version", null) is float:
+		envelope["schema_version"] = int(envelope["schema_version"])
+	for key in ["created_at", "updated_at"]:
+		if envelope.get(key, null) is float:
+			envelope[key] = int(envelope[key])
+	var anchor: Variant = envelope.get("anchor", null)
+	if anchor is Dictionary:
+		var anchor_id: Variant = (anchor as Dictionary).get("id", null)
+		if anchor_id is Dictionary:
+			for k in (anchor_id as Dictionary).keys():
+				if (anchor_id as Dictionary)[k] is float:
+					(anchor_id as Dictionary)[k] = int((anchor_id as Dictionary)[k])
+		var snap: Variant = (anchor as Dictionary).get("snapshot", null)
+		if snap is Dictionary and (snap as Dictionary).get("document_revision", null) is float:
+			(snap as Dictionary)["document_revision"] = int((snap as Dictionary)["document_revision"])
 
 
 # ── Snapshot / restore (for round-trip; 5b/5c will flesh these out) ───────────
