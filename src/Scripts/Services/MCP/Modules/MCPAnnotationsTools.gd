@@ -6,6 +6,8 @@ const AnnotationLifecycleScript = preload("res://Scripts/Services/Annotations/An
 
 var _annotation_store: Object = null
 var _anchor_registry: Object = null
+var _apply_hooks: Dictionary = {}
+var _hook_errors: Array = []
 
 
 func set_annotation_store(store: Object) -> void:
@@ -58,13 +60,38 @@ func update_status(annotation_id: String, lifecycle: String, patch: Dictionary =
 	if annotation.is_empty():
 		return {"ok": false, "error": "annotation not found: %s" % annotation_id}
 	var current := str(annotation.get("lifecycle", ""))
+	if lifecycle == "stale":
+		return {"ok": false, "error": "stale is substrate-only", "from": current, "to": lifecycle}
 	if not AnnotationLifecycleScript.can_transition(current, lifecycle):
-		return {"ok": false, "error": "illegal lifecycle transition: %s -> %s" % [current, lifecycle]}
+		return {"ok": false, "error": "illegal lifecycle transition: %s -> %s" % [current, lifecycle], "from": current, "to": lifecycle}
+	var required_error := _validate_status_payload(lifecycle, patch)
+	if not required_error.is_empty():
+		return {"ok": false, "error": required_error, "from": current, "to": lifecycle}
 	for key in patch.keys():
 		annotation[key] = patch[key]
 	annotation["lifecycle"] = lifecycle
 	_update_annotation(annotation)
+	if lifecycle == "applied":
+		_fire_apply_hooks(annotation)
 	return {"ok": true, "annotation": _project_annotation(annotation, {"status": "any"})}
+
+
+func register_apply_hook(plugin: String, kind: String, callable_name: String) -> Dictionary:
+	if kind.strip_edges().is_empty():
+		return {"ok": false, "error": "kind is required"}
+	_register_hook(kind, {"plugin": plugin, "callable_name": callable_name})
+	return {"ok": true}
+
+
+func register_apply_hook_callable(kind: String, hook: Callable) -> Dictionary:
+	if not hook.is_valid():
+		return {"ok": false, "error": "hook callable is invalid"}
+	_register_hook(kind, hook)
+	return {"ok": true}
+
+
+func get_hook_errors() -> Array:
+	return _hook_errors.duplicate(true)
 
 
 func _get_all_annotations() -> Array:
@@ -119,9 +146,10 @@ func _matches_filters(annotation: Dictionary, filters: Dictionary) -> bool:
 		var haystack := "%s %s" % [str(annotation.get("summary", "")), str(annotation.get("kind_payload", {}))]
 		if not haystack.to_lower().contains(needle):
 			return false
-	if filters.has("created_after") and str(annotation.get("created_at", "")) <= str(filters["created_after"]):
+	var time_range: Dictionary = filters.get("time_range", {})
+	if time_range.has("after") and str(annotation.get("created_at", "")) <= str(time_range["after"]):
 		return false
-	if filters.has("created_before") and str(annotation.get("created_at", "")) >= str(filters["created_before"]):
+	if time_range.has("before") and str(annotation.get("created_at", "")) >= str(time_range["before"]):
 		return false
 	return true
 
@@ -132,3 +160,35 @@ func _project_annotation(annotation: Dictionary, filters: Dictionary) -> Diction
 	if filters.has("capabilities"):
 		projected["chat_context"] = AnnotationKindScript.new().to_chat_context(projected, filters.get("capabilities", {}))
 	return projected
+
+
+func _validate_status_payload(lifecycle: String, patch: Dictionary) -> String:
+	if lifecycle == "applied":
+		if not patch.has("applied") or not patch["applied"] is Dictionary:
+			return "applied object is required"
+		var applied: Dictionary = patch["applied"]
+		if not applied.has("links") or not applied["links"] is Array:
+			return "applied.links is required"
+	if lifecycle == "resolved":
+		if not patch.has("resolved") or not patch["resolved"] is Dictionary:
+			return "resolved object is required"
+		var resolved: Dictionary = patch["resolved"]
+		if not resolved.has("by") or not resolved["by"] is Dictionary:
+			return "resolved.by is required"
+	return ""
+
+
+func _register_hook(kind: String, hook: Variant) -> void:
+	if not _apply_hooks.has(kind):
+		_apply_hooks[kind] = []
+	_apply_hooks[kind].append(hook)
+
+
+func _fire_apply_hooks(annotation: Dictionary) -> void:
+	var kind := str(annotation.get("kind", ""))
+	var hooks: Array = _apply_hooks.get(kind, [])
+	for hook in hooks:
+		if hook is Callable:
+			var result: Variant = (hook as Callable).call(str(annotation.get("id", "")))
+			if result is Dictionary and result.get("ok", true) == false:
+				_hook_errors.append({"annotation_id": annotation.get("id", ""), "kind": kind, "error": result.get("error", "hook failed")})
