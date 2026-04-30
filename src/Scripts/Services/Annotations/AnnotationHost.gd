@@ -24,6 +24,8 @@ extends RefCounted
 @warning_ignore("unused_signal")
 signal selection_changed(annotation_id: String)
 
+var _anchor_resolvers: Dictionary = {}
+
 # ── Registry ───────────────────────────────────────────────────────────────────
 
 ## Return the AnnotationRegistry used by this editor.
@@ -49,6 +51,95 @@ func validate_annotation_anchor(annotation: Dictionary) -> Array:
 	if registry == null:
 		return ["AnnotationHost has no AnnotationAnchorRegistry"]
 	return registry.validate_anchor(annotation["anchor"])
+
+
+# ── V2 anchor resolution ──────────────────────────────────────────────────────
+
+## Resolve an anchor to screen-space for rendering. Hosts with live semantic
+## documents should override this or register per-anchor callables; the base
+## fallback deliberately marks anchors stale and renders at snapshot.position.
+func resolve_anchor(anchor: Dictionary) -> Dictionary:
+	var resolver: Variant = _anchor_resolvers.get(_anchor_key(anchor), Callable())
+	if resolver is Callable and (resolver as Callable).is_valid():
+		return _normalise_resolve_result((resolver as Callable).call(anchor), anchor)
+
+	var pos := _snapshot_position_2d(anchor.get("snapshot", {}))
+	return {
+		"position": pos,
+		"bounds": Rect2(pos, Vector2.ZERO),
+		"stale": true,
+		"view_metadata": {},
+	}
+
+
+## Screen-space hit-test rectangle for an anchor in a view. Subclasses can
+## override when hit bounds depend on view_context beyond resolve_anchor().bounds.
+func anchor_screen_rect(anchor: Dictionary, _view_context: String) -> Rect2:
+	var resolved := resolve_anchor(anchor)
+	var bounds: Variant = resolved.get("bounds", Rect2(resolved.get("position", Vector2.ZERO), Vector2.ZERO))
+	if bounds is Rect2:
+		return bounds
+	var pos: Vector2 = resolved.get("position", Vector2.ZERO)
+	return Rect2(pos, Vector2.ZERO)
+
+
+## Register a host-local resolver callable for a full anchor key like
+## "core/text.range" or "cad/edge". This is useful for plugin hosts that want
+## composition over subclassing.
+func register_anchor_resolver(anchor_type: String, resolver: Callable) -> void:
+	if anchor_type.strip_edges().is_empty():
+		push_warning("[AnnotationHost] Cannot register empty anchor resolver key")
+		return
+	if not resolver.is_valid():
+		push_warning("[AnnotationHost] Cannot register invalid anchor resolver for %s" % anchor_type)
+		return
+	_anchor_resolvers[anchor_type] = resolver
+
+
+func has_anchor_resolver_for(anchor_type: String) -> bool:
+	return _anchor_resolvers.has(anchor_type)
+
+
+func _anchor_key(anchor: Dictionary) -> String:
+	return "%s/%s" % [str(anchor.get("plugin", "")), str(anchor.get("type", ""))]
+
+
+func _normalise_resolve_result(value: Variant, anchor: Dictionary) -> Dictionary:
+	if not value is Dictionary:
+		var pos := _snapshot_position_2d(anchor.get("snapshot", {}))
+		return {"position": pos, "bounds": Rect2(pos, Vector2.ZERO), "stale": true, "view_metadata": {}}
+
+	var result: Dictionary = (value as Dictionary).duplicate(true)
+	var pos: Variant = result.get("position", _snapshot_position_2d(anchor.get("snapshot", {})))
+	if not pos is Vector2:
+		pos = _to_vec2(pos)
+	result["position"] = pos
+
+	var bounds: Variant = result.get("bounds", Rect2(pos, Vector2.ZERO))
+	if not bounds is Rect2:
+		bounds = Rect2(pos, Vector2.ZERO)
+	result["bounds"] = bounds
+
+	result["stale"] = bool(result.get("stale", false))
+	var meta: Variant = result.get("view_metadata", {})
+	result["view_metadata"] = meta if meta is Dictionary else {}
+	return result
+
+
+func _snapshot_position_2d(snapshot: Variant) -> Vector2:
+	if not snapshot is Dictionary:
+		return Vector2.ZERO
+	return _to_vec2((snapshot as Dictionary).get("position", Vector2.ZERO))
+
+
+func _to_vec2(value: Variant) -> Vector2:
+	if value is Vector2:
+		return value
+	if value is Vector3:
+		return Vector2(value.x, value.y)
+	if value is Array and (value as Array).size() >= 2:
+		return Vector2(float(value[0]), float(value[1]))
+	return Vector2.ZERO
 
 # ── Document mutation ──────────────────────────────────────────────────────────
 
