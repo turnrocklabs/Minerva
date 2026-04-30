@@ -129,6 +129,14 @@ func get_revision() -> int:
 	return 0
 
 
+func capture_state_snapshot() -> Variant:
+	return null
+
+
+func restore_state_snapshot(_snapshot: Variant) -> bool:
+	return false
+
+
 func _anchor_key(anchor: Dictionary) -> String:
 	return "%s/%s" % [str(anchor.get("plugin", "")), str(anchor.get("type", ""))]
 
