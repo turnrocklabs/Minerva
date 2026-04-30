@@ -1,4 +1,4 @@
-extends Control
+extends AnnotationOverlay
 ## Overlay that paints anchor indicators on top of a Type.TEXT Editor.
 ##
 ## - Healthy anchors get a subtle blue underline along the actual character
@@ -15,7 +15,7 @@ const _BADGE_SIZE := Vector2(18.0, 16.0)
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	super._ready()
 	z_index = 50
 
 
@@ -45,11 +45,10 @@ func _draw() -> void:
 	var ce_size: Vector2 = code.size if "size" in code else Vector2.ZERO
 	var badge_slots_by_line := {}
 
-	var display_index := 0
 	for ann in anns:
 		if not ann is Dictionary:
 			continue
-		display_index += 1
+		var display_index := _display_index_for(host, ann as Dictionary)
 		var anchor: Dictionary = (ann as Dictionary).get("anchor", {})
 		if anchor.is_empty():
 			continue
@@ -254,3 +253,11 @@ static func _flat_offset_to_line_col(doc: String, offset: int) -> Array:
 			col += 1
 		i += 1
 	return [line, col]
+
+
+func _display_index_for(host: Object, annotation: Dictionary) -> int:
+	if host != null and host.has_method("get_annotation_display_index"):
+		var value := int(host.get_annotation_display_index(annotation))
+		if value > 0:
+			return value
+	return int(annotation.get("display_index", 0))

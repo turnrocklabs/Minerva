@@ -47,6 +47,10 @@ extends RefCounted
 ## Back-reference to MinervaMCPServer for tool registration.
 ## Null in unit tests (module still works — handle() has no server dependency).
 var server
+var _annotation_store: Object = null
+var _anchor_registry: Object = null
+var _apply_hooks: Dictionary = {}
+var _hook_errors: Array = []
 
 const _TOOL_SET := "annotations"
 ## Maximum edge length (pixels) for the output overlay image. Images wider or
@@ -57,6 +61,38 @@ const _DEFAULT_QUERY_STATUSES: PackedStringArray = ["open", "applied"]
 
 func _init(mcp_server = null) -> void:
 	server = mcp_server
+
+
+# ── Store-backed compatibility surface ───────────────────────────────────────
+#
+# Older v2 tests and plugin-facing code used MCPAnnotationsTools as a small
+# store adapter. Keep that API on the registered module so the singular/plural
+# split has only one implementation path.
+
+func set_annotation_store(store: Object) -> void:
+	_annotation_store = store
+
+
+func set_anchor_registry(registry: Object) -> void:
+	_anchor_registry = registry
+
+
+func register_apply_hook(plugin: String, kind: String, callable_name: String) -> Dictionary:
+	if kind.strip_edges().is_empty():
+		return {"ok": false, "error": "kind is required"}
+	_register_hook(kind, {"plugin": plugin, "callable_name": callable_name})
+	return {"ok": true}
+
+
+func register_apply_hook_callable(kind: String, hook: Callable) -> Dictionary:
+	if not hook.is_valid():
+		return {"ok": false, "error": "hook callable is invalid"}
+	_register_hook(kind, hook)
+	return {"ok": true}
+
+
+func get_hook_errors() -> Array:
+	return _hook_errors.duplicate(true)
 
 
 # ── MCPToolModule interface (duck-typed) ──────────────────────────────────────
@@ -478,6 +514,8 @@ func update_status(annotation_id: String, lifecycle: String, patch: Dictionary =
 	var update_result := _write_annotation_to_source(source, annotation)
 	if not bool(update_result.get("ok", false)):
 		return update_result
+	if lifecycle == AnnotationLifecycle.STATE_APPLIED:
+		_fire_apply_hooks(annotation)
 
 	var host: AnnotationHost = source.get("host", null) as AnnotationHost
 	var registry: AnnotationRegistry = source.get("registry", null) as AnnotationRegistry
@@ -506,6 +544,11 @@ func repair_anchor(annotation_id: String, new_anchor: Variant = null, scope: Dic
 			var anchor_registry: Variant = host.get_anchor_registry()
 			if anchor_registry != null and anchor_registry.has_method("repair"):
 				repaired = anchor_registry.repair(annotation.get("anchor", {}), host)
+		if repaired == null and _anchor_registry != null:
+			if _anchor_registry.has_method("repair"):
+				repaired = _anchor_registry.repair(annotation.get("anchor", {}), null)
+			elif _anchor_registry.has_method("repair_for"):
+				repaired = _anchor_registry.repair_for(annotation.get("anchor", {}), null)
 		if repaired == null:
 			return {"ok": false, "success": false, "needs_retarget": true}
 	if not repaired is Dictionary:
@@ -995,6 +1038,16 @@ func _resolve_annotation_source(filters: Dictionary, require_annotation: bool, a
 		}
 		return _attach_source_annotation(source, require_annotation, annotation_id)
 
+	if _annotation_store != null:
+		var annotations := _get_store_annotations()
+		var source := {
+			"ok": true,
+			"source": "store",
+			"annotations": annotations,
+			"registry": _get_registry(),
+		}
+		return _attach_source_annotation(source, require_annotation, annotation_id)
+
 	if require_annotation:
 		return _resolve_annotation_by_id(annotation_id)
 
@@ -1012,6 +1065,16 @@ func _source_from_host(editor_name: String, host: AnnotationHost, require_annota
 		"registry": host.get_registry() if host.has_method("get_registry") else _get_registry(),
 	}
 	return _attach_source_annotation(source, require_annotation, annotation_id)
+
+
+func _get_store_annotations() -> Array:
+	if _annotation_store == null:
+		return []
+	if _annotation_store.has_method("get_all"):
+		var result: Variant = _annotation_store.get_all()
+		if result is Array:
+			return result
+	return []
 
 
 func _resolve_annotation_by_id(annotation_id: String) -> Dictionary:
@@ -1198,6 +1261,12 @@ func _write_annotation_to_source(source: Dictionary, annotation: Dictionary) -> 
 			return {"ok": false, "success": false, "error": "annotation not found: %s" % annotation_id}
 		return {"ok": true, "success": true}
 
+	if str(source.get("source", "")) == "store":
+		if _annotation_store == null or not _annotation_store.has_method("update"):
+			return {"ok": false, "success": false, "error": "annotation store does not support update"}
+		_annotation_store.update(annotation)
+		return {"ok": true, "success": true}
+
 	var doc_path := str(source.get("document_path", ""))
 	if doc_path.is_empty():
 		return {"ok": false, "success": false, "error": "document_path is required for sidecar update"}
@@ -1220,6 +1289,26 @@ func _write_annotation_to_source(source: Dictionary, annotation: Dictionary) -> 
 	if write_err != OK:
 		return {"ok": false, "success": false, "error": "failed to write sidecar (error %d)" % write_err}
 	return {"ok": true, "success": true}
+
+
+func _register_hook(kind: String, hook: Variant) -> void:
+	if not _apply_hooks.has(kind):
+		_apply_hooks[kind] = []
+	_apply_hooks[kind].append(hook)
+
+
+func _fire_apply_hooks(annotation: Dictionary) -> void:
+	var kind := str(annotation.get("kind", ""))
+	var hooks: Array = _apply_hooks.get(kind, [])
+	for hook in hooks:
+		if hook is Callable:
+			var result: Variant = (hook as Callable).call(str(annotation.get("id", "")))
+			if result is Dictionary and result.get("ok", true) == false:
+				_hook_errors.append({
+					"annotation_id": annotation.get("id", ""),
+					"kind": kind,
+					"error": result.get("error", "hook failed"),
+				})
 
 ## Minimal success response builder (mirrors MCPToolUtils.success).
 static func _ok(data: Dictionary = {}) -> Dictionary:

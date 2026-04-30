@@ -20,6 +20,7 @@ signal annotations_changed()
 const _ANN_ID_PREFIX := "ann_"
 const _SCHEMA := preload("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
 const _SidecarIOScript := preload("res://Scripts/Services/Annotations/AnnotationSidecarIO.gd")
+const _LifecycleScript := preload("res://Scripts/Services/Annotations/AnnotationLifecycle.gd")
 
 # ── Back-reference to the live text source ────────────────────────────────────
 
@@ -35,6 +36,12 @@ var _annotations: Array = []
 
 ## Next numeric suffix for generated IDs.
 var _id_counter: int = 0
+
+## Next stable user-facing number. Numbers are persisted per annotation and are
+## never compacted, so chat references like "comment #2" survive resolve/reopen.
+var _display_index_counter: int = 0
+
+var _document_path: String = ""
 
 ## Per-host kind registry (built-in kinds registered eagerly).
 var _registry: AnnotationRegistry = null
@@ -54,12 +61,47 @@ func get_registry() -> AnnotationRegistry:
 	return _registry
 
 
+func get_capabilities() -> Dictionary:
+	return {
+		"kinds": ["text", "callout"],
+		"tools": ["select"],
+		"anchor_types": ["core/text.range"],
+		"lifecycle": {
+			"resolve": true,
+			"reopen": true,
+			"delete": true,
+			"repair": true,
+			"apply": true,
+		},
+		"authoring": {
+			"add": true,
+			"domain_pickers": true,
+		},
+		"panes": false,
+		"body_views": false,
+		"filters": ["all", "open", "applied", "resolved", "broken"],
+	}
+
+
+func get_document_identity() -> Dictionary:
+	return {
+		"kind": "text",
+		"path": _document_path,
+		"display_name": _document_path.get_file() if not _document_path.is_empty() else "Text",
+		"save_policy": "sidecar",
+	}
+
+
 # ── Public: code-edit binding ─────────────────────────────────────────────────
 
 ## Bind this host to an EditorCodeEdit node.  After binding, resolve_anchor()
 ## validates ranges against the live text.
 func set_code_edit(code_edit: Object) -> void:
 	_code_edit = code_edit
+
+
+func set_document_path(path: String) -> void:
+	_document_path = path
 
 
 ## Set the text directly (used by headless tests via set_text()).
@@ -88,6 +130,7 @@ func add_annotation_v2(envelope: Dictionary) -> String:
 		_id_counter += 1
 		ann_id = "%s%04x" % [_ANN_ID_PREFIX, _id_counter]
 		stored["id"] = ann_id
+	_ensure_display_index(stored)
 	var schema = _SCHEMA.new()
 	var result = schema.validate(stored)
 	if result.has_errors():
@@ -227,6 +270,7 @@ func retarget_annotation(annotation_id: String, start: int, end: int) -> bool:
 		ann["anchor"] = anchor
 		ann["lifecycle"] = "open"
 		ann["updated_at"] = int(Time.get_unix_time_from_system())
+		_ensure_display_index(ann)
 		_annotations[i] = ann
 		bump_revision()
 		annotations_changed.emit()
@@ -250,6 +294,7 @@ func load_annotations(raw_array: Array) -> void:
 	for ann in _annotations:
 		if ann is Dictionary:
 			_coerce_envelope_ints(ann as Dictionary)
+			_ensure_display_index(ann as Dictionary)
 	# Bump _id_counter past any loaded "ann_XXXX" id so newly-generated ids
 	# don't collide with persisted ones.
 	for ann in _annotations:
@@ -261,7 +306,40 @@ func load_annotations(raw_array: Array) -> void:
 					var n: int = hex_part.hex_to_int()
 					if n > _id_counter:
 						_id_counter = n
+			var display_index := int((ann as Dictionary).get("display_index", 0))
+			if display_index > _display_index_counter:
+				_display_index_counter = display_index
 	annotations_changed.emit()
+
+
+func update_annotation_lifecycle(annotation_id: String, lifecycle: String, patch: Dictionary = {}) -> Dictionary:
+	if annotation_id.strip_edges().is_empty():
+		return {"ok": false, "error": "annotation_id is required"}
+	if not _LifecycleScript.is_valid_state(lifecycle):
+		return {"ok": false, "error": "invalid lifecycle: %s" % lifecycle}
+	for i in range(_annotations.size()):
+		var ann_v: Variant = _annotations[i]
+		if not ann_v is Dictionary:
+			continue
+		var ann: Dictionary = (ann_v as Dictionary).duplicate(true)
+		if str(ann.get("id", "")) != annotation_id:
+			continue
+		var current := str(ann.get("lifecycle", "open"))
+		if not _LifecycleScript.can_transition(current, lifecycle):
+			return {"ok": false, "error": "illegal lifecycle transition: %s -> %s" % [current, lifecycle]}
+		for key in patch.keys():
+			ann[key] = patch[key]
+		ann["lifecycle"] = lifecycle
+		ann["updated_at"] = int(Time.get_unix_time_from_system())
+		_ensure_display_index(ann)
+		_annotations[i] = ann
+		annotations_changed.emit()
+		return {"ok": true, "annotation": ann.duplicate(true)}
+	return {"ok": false, "error": "annotation not found: %s" % annotation_id}
+
+
+func get_annotation_display_index(annotation: Dictionary) -> int:
+	return int(annotation.get("display_index", 0))
 
 
 ## In-place coercion: walk a freshly-deserialised envelope and turn any
@@ -270,6 +348,8 @@ func load_annotations(raw_array: Array) -> void:
 func _coerce_envelope_ints(envelope: Dictionary) -> void:
 	if envelope.get("schema_version", null) is float:
 		envelope["schema_version"] = int(envelope["schema_version"])
+	if envelope.get("display_index", null) is float:
+		envelope["display_index"] = int(envelope["display_index"])
 	for key in ["created_at", "updated_at"]:
 		if envelope.get(key, null) is float:
 			envelope[key] = int(envelope[key])
@@ -283,6 +363,16 @@ func _coerce_envelope_ints(envelope: Dictionary) -> void:
 		var snap: Variant = (anchor as Dictionary).get("snapshot", null)
 		if snap is Dictionary and (snap as Dictionary).get("document_revision", null) is float:
 			(snap as Dictionary)["document_revision"] = int((snap as Dictionary)["document_revision"])
+
+
+func _ensure_display_index(annotation: Dictionary) -> void:
+	var existing := int(annotation.get("display_index", 0))
+	if existing > 0:
+		if existing > _display_index_counter:
+			_display_index_counter = existing
+		return
+	_display_index_counter += 1
+	annotation["display_index"] = _display_index_counter
 
 
 # ── Snapshot / restore (for round-trip; 5b/5c will flesh these out) ───────────

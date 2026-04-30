@@ -175,14 +175,19 @@ var _file_saved := false
 ## order; the runtime value is always a TextEditorAnnotationHost instance.
 var annotation_host: RefCounted = null
 const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
-const _TextEditorAnnotationSidebarScript = preload("res://Scripts/UI/Controls/TextEditorAnnotationSidebar.gd")
+const _AnnotationDockPaneScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
 const _ANNOTATION_LINE_PICK_WIDTH := 34.0
+const _ANNOTATION_DOCK_RIGHT_BREAKPOINT := 1024.0
 ## Overlay Control that paints broken-anchor indicators for Type.TEXT editors.
 ## Resolved in _ready via $AnnotationCanvas; null in headless tests.
 var _annotation_canvas: Control = null
-## Sidebar Control that surfaces broken-anchor list + Repair UX.
-## Resolved in _ready via $VBoxContainer/AnnotationSidebar.
+## Row that owns the text editor surface and receives the annotation dock in
+## wide mode. In narrow mode the dock is reparented below this row.
+var _annotation_content_row: HBoxContainer = null
+## Shared dock/workbench Control that surfaces annotation list + lifecycle UX.
+## Resolved in _ready via $VBoxContainer/AnnotationDockPane.
 var _annotation_sidebar: Node = null
+var _annotation_dock_mode: int = -1
 ## Retarget mode state (Round 5b.ii). Empty string = not in retarget mode;
 ## otherwise the annotation_id whose anchor is being repaired.
 var _retarget_in_progress: String = ""
@@ -282,20 +287,25 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 	var vbox_container: VBoxContainer = editor.get_node("VBoxContainer")
 	match type_:
 		Editor.Type.TEXT:
+			var annotation_row := HBoxContainer.new()
+			annotation_row.name = "AnnotationContentRow"
+			annotation_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			annotation_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			vbox_container.add_child(annotation_row)
+
 			var new_code_edit = EditorCodeEdit.new()
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
 			new_code_edit.focus_exited.connect(editor._on_code_edit_focus_exited)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
-			vbox_container.add_child(new_code_edit)
+			new_code_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			new_code_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			annotation_row.add_child(new_code_edit)
 
-			# Annotation sidebar (Round 5b.ii) — last child so it sits at the
-			# bottom of the editor pane. The script extends VBoxContainer; calling
-			# its .new() returns a fully-constructed Node ready to add.
-			var sidebar = _TextEditorAnnotationSidebarScript.new()
-			sidebar.name = "AnnotationSidebar"
-			sidebar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			sidebar.size_flags_vertical = Control.SIZE_SHRINK_END
-			vbox_container.add_child(sidebar)
+			var annotation_pane = _AnnotationDockPaneScript.new()
+			annotation_pane.name = "AnnotationDockPane"
+			annotation_pane.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			annotation_pane.size_flags_vertical = Control.SIZE_SHRINK_END
+			vbox_container.add_child(annotation_pane)
 			
 			if name_ and code_syntax_enabled:
 				name_ = name_ as String
@@ -507,10 +517,11 @@ func _ready():
 	# can attach to it. Type-gated: non-TEXT editors leave annotation_host null.
 	if self.type == Type.TEXT:
 		_init_annotation_host()
+		_annotation_content_row = get_node_or_null("VBoxContainer/AnnotationContentRow")
 		_annotation_canvas = get_node_or_null("AnnotationCanvas")
 		if _annotation_canvas != null:
 			_annotation_canvas.set_meta("editor_ref", self)
-		_annotation_sidebar = get_node_or_null("VBoxContainer/AnnotationSidebar")
+		_annotation_sidebar = find_child("AnnotationDockPane", true, false)
 		if _annotation_sidebar != null and annotation_host != null:
 			if _annotation_sidebar.has_method("set_host"):
 				_annotation_sidebar.set_host(annotation_host)
@@ -520,6 +531,8 @@ func _ready():
 				_annotation_sidebar.repair_requested.connect(_on_sidebar_repair_requested)
 			if _annotation_sidebar.has_signal("add_comment_requested"):
 				_annotation_sidebar.add_comment_requested.connect(_on_sidebar_add_comment_requested)
+			resized.connect(_sync_annotation_dock_layout)
+			call_deferred("_sync_annotation_dock_layout")
 	if file:
 		match type:
 			Type.TEXT: _load_text_file(file)
@@ -650,6 +663,39 @@ func _exit_tree() -> void:
 		var pm = _get_plugin_manager_safe()
 		if pm != null:
 			pm.unregister_live_panel(plugin_id, panel_name)
+
+
+func _sync_annotation_dock_layout() -> void:
+	if type != Type.TEXT or _annotation_sidebar == null:
+		return
+	var vbox := get_node_or_null("VBoxContainer")
+	if vbox == null:
+		return
+	if _annotation_content_row == null:
+		_annotation_content_row = get_node_or_null("VBoxContainer/AnnotationContentRow")
+
+	var target_mode := _annotation_dock_mode_for_width(size.x)
+	var target_parent: Node = vbox
+	if target_mode == _AnnotationDockPaneScript.DockMode.RIGHT and _annotation_content_row != null:
+		target_parent = _annotation_content_row
+
+	if _annotation_sidebar.get_parent() != target_parent:
+		var current_parent := _annotation_sidebar.get_parent()
+		if current_parent != null:
+			current_parent.remove_child(_annotation_sidebar)
+		target_parent.add_child(_annotation_sidebar)
+		target_parent.move_child(_annotation_sidebar, target_parent.get_child_count() - 1)
+
+	if _annotation_sidebar.has_method("set_dock_mode"):
+		_annotation_sidebar.set_dock_mode(target_mode)
+	_annotation_dock_mode = target_mode
+
+
+static func _annotation_dock_mode_for_width(width: float) -> int:
+	if width >= _ANNOTATION_DOCK_RIGHT_BREAKPOINT:
+		return _AnnotationDockPaneScript.DockMode.RIGHT
+	return _AnnotationDockPaneScript.DockMode.BOTTOM
+
 
 func update_last_path(new_path: String) -> void:
 	SingletonObject.last_saved_path = new_path + "/"
@@ -1944,6 +1990,8 @@ func _init_annotation_host() -> void:
 	annotation_host = _TextEditorAnnotationHostScript.new()
 	if code_edit != null:
 		annotation_host.set_code_edit(code_edit)
+	if not str(file).is_empty() and annotation_host.has_method("set_document_path"):
+		annotation_host.set_document_path(str(file))
 	if annotation_host.has_signal("annotations_changed"):
 		annotation_host.connect("annotations_changed", Callable(self, "_on_annotation_host_changed"))
 	_register_annotation_host()
@@ -1963,6 +2011,8 @@ func initialize_as_text_editor() -> void:
 			annotation_host.connect("annotations_changed", Callable(self, "_on_annotation_host_changed"))
 	if code_edit != null:
 		annotation_host.set_code_edit(code_edit)
+	if not str(file).is_empty() and annotation_host.has_method("set_document_path"):
+		annotation_host.set_document_path(str(file))
 
 
 ## Registers the live host with AnnotationHostRegistry so MCP tools
@@ -2022,34 +2072,42 @@ func save_annotations(path: String) -> void:
 func _save_annotations_sidecar(path: String) -> void:
 	if annotation_host == null:
 		return
+	if annotation_host.has_method("set_document_path"):
+		annotation_host.set_document_path(path)
 	var anns: Array = annotation_host.get_all_annotations() if annotation_host.has_method("get_all_annotations") else []
-	var sidecar_path: String = annotation_host.get_sidecar_path(path)
 	if anns.is_empty():
-		if FileAccess.file_exists(sidecar_path):
-			DirAccess.remove_absolute(sidecar_path)
+		AnnotationSidecar.delete_sidecar(path)
 		return
 	var serialized: Array = []
 	for ann in anns:
 		if ann is Dictionary:
 			serialized.append((ann as Dictionary).duplicate(true))
-	var f := FileAccess.open(sidecar_path, FileAccess.WRITE)
-	if f == null:
-		push_warning("[Editor] could not write annotation sidecar %s" % sidecar_path)
-		return
-	f.store_string(JSON.stringify(serialized))
+	var sidecar_data := {
+		"substrate_version": AnnotationSidecar.SUBSTRATE_VERSION,
+		"document": {"path": path.get_file(), "kind": "text"},
+		"annotations": serialized,
+		"unknown_kinds": [],
+	}
+	var err := AnnotationSidecar.write_sidecar(path, sidecar_data)
+	if err != OK:
+		push_warning("[Editor] could not write annotation sidecar %s (error %d)" % [AnnotationSidecar.sidecar_path_for(path), err])
 
 
 func _load_annotations_sidecar(path: String) -> void:
 	if annotation_host == null:
 		return
-	var sidecar_path: String = annotation_host.get_sidecar_path(path)
+	if annotation_host.has_method("set_document_path"):
+		annotation_host.set_document_path(path)
+	var sidecar_path: String = AnnotationSidecar.sidecar_path_for(path)
 	if not FileAccess.file_exists(sidecar_path):
 		return
 	var f := FileAccess.open(sidecar_path, FileAccess.READ)
 	if f == null:
 		return
-	var raw := f.get_as_text()
-	var parsed: Variant = JSON.parse_string(raw)
+	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	f.close()
+	if parsed is Dictionary:
+		parsed = (parsed as Dictionary).get("annotations", [])
 	if parsed is Array:
 		annotation_host.load_annotations(parsed)
 		if _annotation_canvas != null:

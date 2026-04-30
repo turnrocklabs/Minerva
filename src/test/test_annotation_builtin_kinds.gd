@@ -4,8 +4,8 @@ extends SceneTree
 ##
 ## Coverage:
 ##   BuiltinKinds
-##     - register_all() registers all 8 kinds
-##     - deregister_all() removes all 8 kinds
+##     - register_all() registers all 9 kinds
+##     - deregister_all() removes all 9 kinds
 ##     - register_all() after deregister_all() succeeds (idempotent round-trip)
 ##     - All registered kinds own plugin = &"core"
 ##     - All registered kinds have non-empty name and display_name
@@ -324,7 +324,7 @@ func test_register_all_count() -> void:
 	var registry := AnnotationRegistry.new()
 	var ok := BuiltinKinds.register_all(registry)
 	check("register_all returns true", ok)
-	check_eq("8 kinds registered", registry.count(), 8)
+	check_eq("9 kinds registered", registry.count(), 9)
 
 
 func test_deregister_all() -> void:
@@ -342,7 +342,7 @@ func test_round_trip_register() -> void:
 	BuiltinKinds.deregister_all(registry)
 	var ok := BuiltinKinds.register_all(registry)
 	check("second register_all succeeds after deregister", ok)
-	check_eq("8 kinds after round-trip", registry.count(), 8)
+	check_eq("9 kinds after round-trip", registry.count(), 9)
 
 
 func test_all_owned_by_core() -> void:

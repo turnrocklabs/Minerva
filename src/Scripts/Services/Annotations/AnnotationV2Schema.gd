@@ -42,6 +42,7 @@ const _GENERIC_KIND_ANCHORS := {
 	"measure_distance": ["core/*"],
 	"measure_angle": ["core/*"],
 	"measure_radius": ["core/*"],
+	"callout": ["*/*"],
 	"2d_text": ["core/*"],
 	"2d_arrow": ["core/*"],
 	"2d_region": ["core/*"],
@@ -172,6 +173,8 @@ func validate_with_registry(envelope: Dictionary, registry: Object) -> Validatio
 
 
 func anchor_type_matches_pattern(anchor_type: String, pattern: String) -> bool:
+	if pattern == "*/*" or pattern == "*":
+		return not anchor_type.is_empty() and anchor_type != "/"
 	if pattern.ends_with("/*"):
 		return anchor_type.begins_with(pattern.substr(0, pattern.length() - 1))
 	return anchor_type == pattern

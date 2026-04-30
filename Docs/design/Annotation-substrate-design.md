@@ -1,7 +1,7 @@
 # Annotation Substrate — Design
 
-**Status:** Design, pre-implementation
-**Date:** 2026-04-23
+**Status:** Implemented substrate, UX workbench in progress
+**Date:** 2026-04-30
 **Scope:** DCR-2 — cross-editor annotation subsystem
 **Source spec:** `Docs/Plugin-platform-thought.md` §3
 **Policy:** `Docs/Plugin-platform-policy.md`
@@ -17,9 +17,9 @@ Annotations are **spatially-anchored, editor-agnostic, persistent overlays** aut
 2. **Registry + dispatch.** An `AnnotationKind` table plugins extend; renderers dispatch by `kind`.
 3. **MCP surface.** A small, composable CRUD + overlay + live-stroke tool set.
 
-Core ships the substrate and built-in 2D kinds. Plugins contribute additional kinds (`cad_3d_plane`, `pcb_net_callout`, etc.). Unknown kinds are preserved verbatim and rendered as placeholders — never dropped.
+Core ships the substrate and built-in 2D kinds plus the generic `callout` kind. Plugins contribute additional kinds (`cad_3d_plane`, `pcb_net_callout`, etc.). Unknown kinds are preserved verbatim and rendered as placeholders — never dropped.
 
-Non-goals decided upstream: object-identity anchoring, anchor repair, ephemeral flag, inheritance-based extensibility, centralized storage.
+Non-goals decided upstream: ephemeral flag, inheritance-based extensibility, centralized storage.
 
 ---
 
@@ -216,10 +216,48 @@ Each ships registered at startup, owned by `&"core"`. Format: kind → primitive
 | `2d_measure_angle` | `[measure_angle]` | two rays a-b and b-c, arc sweep, numeric label inside arc | point near either ray, arc, or label | three-point AABB + arc radius + label |
 | `2d_measure_radius` | `[measure_radius]` | circle outline, radial line, numeric label | annulus around circumference; near radial line or label | circle bounding rect ∪ label |
 | `2d_polyline` | `[polyline]` + optional `[text]` | stroked open polyline, no fill | swept-distance to polyline; label AABB | AABB of points ∪ label |
+| `callout` | optional | leader line + label bubble from resolved/snapshot anchor to text | label AABB | anchor point ∪ label |
 
 **Units.** Measure kinds read the display unit from `AnnotationRenderContext.unit` (string: `"mm"`, `"in"`, `"deg"`, etc.). Numeric primitive values stay numeric; the renderer formats display strings unit-aware. Do not embed units inside numeric values, and do not rely on numeric-type fidelity across JSON round-trips — Godot's JSON parser can coerce `int` ↔ `float` in ways that lose information. When a specific primitive needs to override the context unit, use `"unit": "in"` on that primitive; the renderer looks up `payload.unit` / `primitive.unit` first, then falls back to context.
 
 **Author colors.** Default from `author`: `human` = light magenta (matches PCB convention so migration is lossless), `ai` = cyan. `payload.color` overrides.
+
+### 5.1 Callout Anchor Policy
+
+`callout` is generic-plus-plugin-anchor-capable. It accepts `*/*` anchors, including plugin semantic anchors such as `cad/edge` and `pcb/net`. The substrate owns the default payload, summary, leader line, label bubble, and broken fallback. The host/plugin owns anchor resolution and projection.
+
+This avoids forcing every plugin to define a duplicate callout kind just to attach normal revision intent to a semantic entity. Plugins should still define custom kinds when the payload carries domain behavior, for example `pcb_bus_hint` or `cad_edge_note`.
+
+---
+
+## 5.2 UX Substrate Contract
+
+Editor and plugin panels mount the substrate workbench instead of subclassing it.
+
+The host-facing contract lives on `AnnotationHost`:
+
+```gdscript
+func get_capabilities() -> Dictionary
+func get_document_identity() -> Dictionary
+func get_panes() -> Array
+func get_domain_pickers() -> Array
+func get_current_selection_anchor(kind: String = "") -> Dictionary
+func get_kind_body_view(kind: String) -> Control
+func apply_annotation(annotation_id: String) -> Dictionary
+func update_annotation_lifecycle(annotation_id: String, lifecycle: String, patch: Dictionary = {}) -> Dictionary
+func get_annotation_display_index(annotation: Dictionary) -> int
+```
+
+The substrate-owned UI pieces are:
+
+- `AnnotationDockPane`: per-editor collapsible dock with bottom/right modes.
+- `AnnotationWorkbench`: header, counts, filters, add flow, list rows, resolve/reopen/delete/repair/applied actions, and selection sync.
+- `AnnotationOverlay`: base overlay with `MOUSE_FILTER_IGNORE` while idle and `MOUSE_FILTER_STOP` only while a tool is active.
+- `AnnotationToolbar`: compact/labeled modes plus host capability filtering for tools and kinds.
+
+Plugins own only domain-specific pieces: anchor resolvers, projection into panes/views, domain pickers, optional custom kind rendering, and optional kind body views.
+
+Display numbering is persisted as `display_index` on each annotation. Numbers are gap-preserving: resolving or deleting `#2` does not renumber later annotations.
 
 ---
 

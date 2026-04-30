@@ -112,6 +112,7 @@ var _registry: AnnotationRegistry = null
 
 ## Host passed to tools on activation.
 var _host: AnnotationHost = null
+var _capabilities: Dictionary = {}
 
 ## kind_name (StringName) → Button — the live button table.
 var _buttons: Dictionary = {}
@@ -188,6 +189,8 @@ func set_registry(registry: AnnotationRegistry) -> void:
 ## Can be called before or after set_registry().
 func set_host(host: AnnotationHost) -> void:
 	_host = host
+	_capabilities = host.get_capabilities() if host != null and host.has_method("get_capabilities") else {}
+	_rebuild_layout()
 
 
 ## Returns the currently-active AnnotationAuthorTool, or null if none is active.
@@ -293,6 +296,8 @@ func _ensure_layout_labeled() -> void:
 	add_child(_tools_flow)
 
 	for tool_name in ["Select"]:
+		if not _tool_allowed(tool_name.to_lower()):
+			continue
 		var btn := Button.new()
 		btn.tooltip_text = tool_name
 		btn.toggle_mode = true
@@ -354,6 +359,8 @@ func _ensure_layout_compact() -> void:
 
 	# Build Tools-section (Select) button into the compact HBox.
 	for tool_name in ["Select"]:
+		if not _tool_allowed(tool_name.to_lower()):
+			continue
 		var btn := Button.new()
 		btn.toggle_mode = true
 		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -394,6 +401,8 @@ func _construct_tool_for_name(tool_name: String) -> AnnotationAuthorTool:
 func _try_add_button(kind: AnnotationKind) -> void:
 	if kind.author_ui() == null:
 		return
+	if not _kind_allowed(str(kind.name)):
+		return
 	_ensure_layout()
 	var btn := Button.new()
 	btn.toggle_mode = true
@@ -423,6 +432,28 @@ func _try_add_button(kind: AnnotationKind) -> void:
 	)
 	_button_flow.add_child(btn)
 	_buttons[kind.name] = btn
+
+
+func _kind_allowed(kind_name: String) -> bool:
+	var kinds: Variant = _capabilities.get("kinds", [])
+	if kinds is Array and not (kinds as Array).is_empty():
+		if kind_name in kinds:
+			return true
+		var aliases := BuiltinKinds.BUILTIN_KIND_ALIASES
+		if aliases.has(kind_name) and aliases[kind_name] in kinds:
+			return true
+		for alias in aliases.keys():
+			if str(aliases[alias]) == kind_name and str(alias) in kinds:
+				return true
+		return false
+	return true
+
+
+func _tool_allowed(tool_name: String) -> bool:
+	var tools: Variant = _capabilities.get("tools", [])
+	if tools is Array and not (tools as Array).is_empty():
+		return tool_name in tools
+	return true
 
 
 ## Remove all buttons and clear the button table.

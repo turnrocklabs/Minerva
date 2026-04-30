@@ -312,7 +312,7 @@ static func _points_aabb_4col(pts: Variant) -> Rect2:
 static func _is_builtin_generic_kind(kind_name: String) -> bool:
 	return kind_name in [
 		"text", "arrow", "region", "polyline", "highlight",
-		"measure_distance", "measure_angle", "measure_radius",
+		"measure_distance", "measure_angle", "measure_radius", "callout",
 		"2d_text", "2d_arrow", "2d_region", "2d_polyline", "2d_highlight",
 		"2d_measure_distance", "2d_measure_angle", "2d_measure_radius",
 	]

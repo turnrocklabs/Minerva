@@ -17,6 +17,7 @@ extends RefCounted
 ##   2d_measure_distance — dimension line with end ticks and auto distance label
 ##   2d_measure_angle   — two-arm angle annotation with arc sweep and label
 ##   2d_measure_radius  — circle outline, radial line, and auto radius label
+##   callout            — leader line + label attached to core or plugin anchors
 ##
 ## Not registered here (separate tasks):
 ##   2d_ink_stroke      — post-MVP (task 019dc0ebf9d5797a82af41edd4c8c180)
@@ -31,6 +32,7 @@ const BUILTIN_KIND_NAMES: PackedStringArray = [
 	"2d_measure_distance",
 	"2d_measure_angle",
 	"2d_measure_radius",
+	"callout",
 ]
 
 const BUILTIN_KIND_ALIASES := {
@@ -42,6 +44,7 @@ const BUILTIN_KIND_ALIASES := {
 	"measure_distance": "2d_measure_distance",
 	"measure_angle": "2d_measure_angle",
 	"measure_radius": "2d_measure_radius",
+	"callout": "callout",
 }
 
 
@@ -63,6 +66,8 @@ func get_kind(kind_name: String) -> AnnotationKind:
 			return AnnotationMeasureAngle.new()
 		"2d_measure_radius":
 			return AnnotationMeasureRadius.new()
+		"callout":
+			return AnnotationCallout.new()
 	return null
 
 
@@ -84,6 +89,7 @@ static func register_all(registry: AnnotationRegistry) -> bool:
 	ok = registry.register_annotation_kind(AnnotationMeasureDistance.new()) and ok
 	ok = registry.register_annotation_kind(AnnotationMeasureAngle.new())   and ok
 	ok = registry.register_annotation_kind(AnnotationMeasureRadius.new())  and ok
+	ok = registry.register_annotation_kind(AnnotationCallout.new())        and ok
 	return ok
 
 

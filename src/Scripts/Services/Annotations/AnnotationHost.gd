@@ -60,6 +60,94 @@ func validate_annotation_anchor(annotation: Dictionary) -> Array:
 	return registry.validate_anchor(annotation["anchor"])
 
 
+# ── Workbench / plugin-facing capabilities ───────────────────────────────────
+
+## Return the small declarative contract consumed by the shared workbench,
+## toolbar, and plugin harnesses. Hosts override this to opt in to richer tools;
+## the defaults are intentionally conservative so unsupported actions are hidden.
+func get_capabilities() -> Dictionary:
+	return {
+		"kinds": [],
+		"tools": [],
+		"anchor_types": [],
+		"lifecycle": {
+			"resolve": false,
+			"reopen": false,
+			"delete": false,
+			"repair": false,
+			"apply": false,
+		},
+		"authoring": {
+			"add": false,
+			"domain_pickers": false,
+		},
+		"panes": false,
+		"body_views": false,
+	}
+
+
+## Stable document identity for MCP routing and sidecar ownership. Plugins should
+## include a document_path when they can persist sidecar mutations safely.
+func get_document_identity() -> Dictionary:
+	return {
+		"kind": "unknown",
+		"path": "",
+		"display_name": "",
+		"save_policy": "host",
+	}
+
+
+func can_persist_live_annotation_changes() -> bool:
+	var identity := get_document_identity()
+	return not str(identity.get("path", "")).is_empty()
+
+
+## Projection-agnostic pane descriptors. Multi-view editors return entries like
+## {id, display_name, viewport_rect, active, projection_metadata}. Single-view
+## editors can leave this empty; the workbench treats that as one implicit pane.
+func get_panes() -> Array:
+	return []
+
+
+## Domain pickers let plugins/editor surfaces contribute "current selection"
+## anchors without subclassing the workbench.
+func get_domain_pickers() -> Array:
+	return []
+
+
+func get_current_selection_anchor(_kind: String = "") -> Dictionary:
+	return {}
+
+
+func get_kind_body_view(_kind: String) -> Control:
+	return null
+
+
+func apply_annotation(_annotation_id: String) -> Dictionary:
+	return {"ok": false, "error": "apply_annotation not supported"}
+
+
+func update_annotation_lifecycle(annotation_id: String, lifecycle: String, patch: Dictionary = {}) -> Dictionary:
+	for ann in get_annotations():
+		if not ann is Dictionary:
+			continue
+		var current: Dictionary = (ann as Dictionary).duplicate(true)
+		if str(current.get("id", "")) != annotation_id:
+			continue
+		for key in patch.keys():
+			current[key] = patch[key]
+		current["lifecycle"] = lifecycle
+		current["updated_at"] = int(Time.get_unix_time_from_system())
+		if update_annotation(annotation_id, current):
+			return {"ok": true, "annotation": current}
+		return {"ok": false, "error": "update failed"}
+	return {"ok": false, "error": "annotation not found: %s" % annotation_id}
+
+
+func get_annotation_display_index(annotation: Dictionary) -> int:
+	return int(annotation.get("display_index", 0))
+
+
 # ── V2 anchor resolution ──────────────────────────────────────────────────────
 
 ## Resolve an anchor to screen-space for rendering. Hosts with live semantic
