@@ -1937,7 +1937,7 @@ func add_comment(text: String) -> String:
 		push_warning("[Editor.add_comment] no valid selection")
 		return ""
 
-	var ann_id := annotation_host.add_comment_at(start, end, text)
+	var ann_id: String = annotation_host.add_comment_at(start, end, text)
 	if _annotation_canvas != null:
 		_annotation_canvas.queue_redraw()
 	return ann_id
