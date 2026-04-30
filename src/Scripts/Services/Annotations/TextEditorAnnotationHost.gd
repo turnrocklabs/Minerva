@@ -33,11 +33,22 @@ var _annotations: Array = []
 ## Next numeric suffix for generated IDs.
 var _id_counter: int = 0
 
+## Per-host kind registry (built-in kinds registered eagerly).
+var _registry: AnnotationRegistry = null
+
 # ── Init ──────────────────────────────────────────────────────────────────────
 
 func _init() -> void:
 	super._init()
 	register_anchor_resolver("core/text.range", Callable(self, "_resolve_text_range"))
+	_registry = AnnotationRegistry.new()
+	BuiltinKinds.register_all(_registry)
+
+
+## Return this host's kind registry. Required by MCP tools that resolve
+## kind metadata (e.g. minerva_annotations_list).
+func get_registry() -> AnnotationRegistry:
+	return _registry
 
 
 # ── Public: code-edit binding ─────────────────────────────────────────────────
@@ -163,6 +174,17 @@ func load_annotations(raw_array: Array) -> void:
 	var io := AnnotationSidecarIO.new()
 	var result := io.process_annotations(raw_array)
 	_annotations = result.get("annotations", [])
+	# Bump _id_counter past any loaded "ann_XXXX" id so newly-generated ids
+	# don't collide with persisted ones.
+	for ann in _annotations:
+		if ann is Dictionary:
+			var ann_id := str((ann as Dictionary).get("id", ""))
+			if ann_id.begins_with(_ANN_ID_PREFIX):
+				var hex_part := ann_id.substr(_ANN_ID_PREFIX.length())
+				if hex_part.is_valid_hex_number():
+					var n: int = hex_part.hex_to_int()
+					if n > _id_counter:
+						_id_counter = n
 
 
 # ── Snapshot / restore (for round-trip; 5b/5c will flesh these out) ───────────
