@@ -101,6 +101,12 @@ func validate(_annotation: Dictionary) -> Array:
 	return []
 
 
+func accepted_anchor_types() -> Array:
+	if owning_plugin == &"core" and _is_builtin_generic_kind(str(name)):
+		return ["core/*"]
+	return []
+
+
 ## Return the authoring tool for this kind, or null to use the default
 ## primitive-level author UI (design §11.2).
 # TODO(019dc055e8da710588ea283351710c01): narrow return type to AnnotationAuthorTool
@@ -297,6 +303,15 @@ static func _points_aabb(pts: Variant) -> Rect2:
 ## Deduped per follow-up item 5 (review comment 217).
 static func _points_aabb_4col(pts: Variant) -> Rect2:
 	return _points_aabb(pts)
+
+
+static func _is_builtin_generic_kind(kind_name: String) -> bool:
+	return kind_name in [
+		"text", "arrow", "region", "polyline", "highlight",
+		"measure_distance", "measure_angle", "measure_radius",
+		"2d_text", "2d_arrow", "2d_region", "2d_polyline", "2d_highlight",
+		"2d_measure_distance", "2d_measure_angle", "2d_measure_radius",
+	]
 
 
 ## Apply a Transform2D to all coord arrays in a primitives list.

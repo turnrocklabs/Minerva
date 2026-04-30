@@ -33,6 +33,42 @@ const BUILTIN_KIND_NAMES: PackedStringArray = [
 	"2d_measure_radius",
 ]
 
+const BUILTIN_KIND_ALIASES := {
+	"arrow": "2d_arrow",
+	"text": "2d_text",
+	"region": "2d_region",
+	"polyline": "2d_polyline",
+	"highlight": "2d_highlight",
+	"measure_distance": "2d_measure_distance",
+	"measure_angle": "2d_measure_angle",
+	"measure_radius": "2d_measure_radius",
+}
+
+
+func get_kind(kind_name: String) -> AnnotationKind:
+	match _canonical_kind_name(kind_name):
+		"2d_arrow":
+			return AnnotationArrow.new()
+		"2d_text":
+			return AnnotationText.new()
+		"2d_region":
+			return AnnotationRegion.new()
+		"2d_polyline":
+			return AnnotationPolyline.new()
+		"2d_highlight":
+			return AnnotationHighlight.new()
+		"2d_measure_distance":
+			return AnnotationMeasureDistance.new()
+		"2d_measure_angle":
+			return AnnotationMeasureAngle.new()
+		"2d_measure_radius":
+			return AnnotationMeasureRadius.new()
+	return null
+
+
+func _canonical_kind_name(kind_name: String) -> String:
+	return str(BUILTIN_KIND_ALIASES.get(kind_name, kind_name))
+
 
 ## Register all built-in 2D kinds with the given registry.
 ## Each kind is a fresh instance; subsequent calls (e.g. after deregister_all)

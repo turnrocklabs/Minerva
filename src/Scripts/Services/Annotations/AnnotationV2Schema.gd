@@ -33,6 +33,24 @@ const _REQUIRED_FIELDS: PackedStringArray = [
 ]
 
 const _VALID_LIFECYCLES: PackedStringArray = ["open", "applied", "resolved", "stale"]
+const _GENERIC_KIND_ANCHORS := {
+	"text": ["core/*"],
+	"arrow": ["core/*"],
+	"region": ["core/*"],
+	"polyline": ["core/*"],
+	"highlight": ["core/*"],
+	"measure_distance": ["core/*"],
+	"measure_angle": ["core/*"],
+	"measure_radius": ["core/*"],
+	"2d_text": ["core/*"],
+	"2d_arrow": ["core/*"],
+	"2d_region": ["core/*"],
+	"2d_polyline": ["core/*"],
+	"2d_highlight": ["core/*"],
+	"2d_measure_distance": ["core/*"],
+	"2d_measure_angle": ["core/*"],
+	"2d_measure_radius": ["core/*"],
+}
 
 
 # ── Structured validation result (mirrors AnnotationSchema pattern) ───────────
@@ -132,7 +150,31 @@ func validate(envelope: Dictionary) -> ValidationResult:
 	elif not envelope["summary"] is String or (envelope["summary"] as String).is_empty():
 		result.add_error("summary", "'summary' must be a non-empty String", "bad_type")
 
+	if not result.has_errors():
+		_validate_kind_anchor_compat(result, envelope, null)
+
 	return result
+
+
+func validate_with_registry(envelope: Dictionary, registry: Object) -> ValidationResult:
+	var result := validate(envelope)
+	if result.has_errors():
+		var only_compat := true
+		for error in result.errors:
+			if str(error.get("code", "")) != "kind_anchor_incompatible":
+				only_compat = false
+				break
+		if not only_compat:
+			return result
+	result.errors = result.errors.filter(func(error): return str(error.get("code", "")) != "kind_anchor_incompatible")
+	_validate_kind_anchor_compat(result, envelope, registry)
+	return result
+
+
+func anchor_type_matches_pattern(anchor_type: String, pattern: String) -> bool:
+	if pattern.ends_with("/*"):
+		return anchor_type.begins_with(pattern.substr(0, pattern.length() - 1))
+	return anchor_type == pattern
 
 
 ## Validates an update: checks immutability of view_context.
@@ -228,3 +270,33 @@ func _validate_anchor(result: ValidationResult, anchor: Dictionary) -> void:
 				"'anchor.snapshot.position' is required (at minimum {position: ...})",
 				"required"
 			)
+
+
+func _validate_kind_anchor_compat(result: ValidationResult, envelope: Dictionary, registry: Object) -> void:
+	var kind_name := str(envelope.get("kind", ""))
+	var anchor: Dictionary = envelope.get("anchor", {})
+	var anchor_type := "%s/%s" % [str(anchor.get("plugin", "")), str(anchor.get("type", ""))]
+	var accepted := _accepted_anchor_types_for_kind(kind_name, registry)
+	if accepted.is_empty():
+		result.add_error("kind", "annotation kind '%s' accepts no anchors" % kind_name, "kind_anchor_incompatible")
+		return
+	for pattern in accepted:
+		if anchor_type_matches_pattern(anchor_type, str(pattern)):
+			return
+	result.add_error(
+		"anchor",
+		"annotation kind '%s' does not accept anchor '%s'" % [kind_name, anchor_type],
+		"kind_anchor_incompatible"
+	)
+
+
+func _accepted_anchor_types_for_kind(kind_name: String, registry: Object) -> Array:
+	if registry != null and registry.has_method("get_annotation_kind"):
+		var kind: Variant = registry.get_annotation_kind(StringName(kind_name))
+		if kind != null and kind.has_method("accepted_anchor_types"):
+			var accepted: Variant = kind.accepted_anchor_types()
+			if accepted is Array:
+				return accepted
+	if _GENERIC_KIND_ANCHORS.has(kind_name):
+		return _GENERIC_KIND_ANCHORS[kind_name]
+	return []
