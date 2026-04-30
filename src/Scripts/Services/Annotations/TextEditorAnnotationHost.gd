@@ -68,17 +68,17 @@ func get_sidecar_path(file_path: String) -> String:
 ## Add a v2 envelope.  Assigns a stable ID if one is not already present.
 ## Returns the assigned ID.
 func add_annotation_v2(envelope: Dictionary) -> String:
+	var stored := envelope.duplicate(true)
+	var ann_id: String = str(stored.get("id", ""))
+	if ann_id.is_empty():
+		_id_counter += 1
+		ann_id = "%s%04x" % [_ANN_ID_PREFIX, _id_counter]
+		stored["id"] = ann_id
 	var schema = _SCHEMA.new()
-	var result = schema.validate(envelope)
+	var result = schema.validate(stored)
 	if result.has_errors():
 		push_warning("[TextEditorAnnotationHost] add_annotation_v2: validation errors: %s" % str(result.to_error_dicts()))
 		return ""
-	_id_counter += 1
-	var ann_id: String = envelope.get("id", "")
-	if ann_id.is_empty():
-		ann_id = "%s%04x" % [_ANN_ID_PREFIX, _id_counter]
-	var stored := envelope.duplicate(true)
-	stored["id"] = ann_id
 	_annotations.append(stored)
 	return ann_id
 
