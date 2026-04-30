@@ -186,7 +186,9 @@ var _annotation_sidebar: Node = null
 ## otherwise the annotation_id whose anchor is being repaired.
 var _retarget_in_progress: String = ""
 ## Headless test fallback: when there is no live code_edit selection, set_selection()
-## stores its [start, end] here and add_comment() reads from it.
+## stores its [start, end] here and add_comment() reads from it. In the live
+## editor this also caches the last CodeEdit selection before sidebar focus
+## steals/clears the active selection.
 var _pending_annotation_selection: Dictionary = {}
 ## Tracks unsaved changes for PLUGIN_SCENE editors; set true on content_changed,
 ## cleared on successful save.
@@ -281,6 +283,7 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		Editor.Type.TEXT:
 			var new_code_edit = EditorCodeEdit.new()
 			new_code_edit.gui_input.connect(editor._on_code_edit_gui_input)
+			new_code_edit.focus_exited.connect(editor._on_code_edit_focus_exited)
 			new_code_edit.text_changed.connect(editor._on_editor_changed)
 			vbox_container.add_child(new_code_edit)
 
@@ -510,8 +513,12 @@ func _ready():
 		if _annotation_sidebar != null and annotation_host != null:
 			if _annotation_sidebar.has_method("set_host"):
 				_annotation_sidebar.set_host(annotation_host)
+			if _annotation_sidebar.has_method("set_can_add_comment"):
+				_annotation_sidebar.set_can_add_comment(_has_commentable_selection())
 			if _annotation_sidebar.has_signal("repair_requested"):
 				_annotation_sidebar.repair_requested.connect(_on_sidebar_repair_requested)
+			if _annotation_sidebar.has_signal("add_comment_requested"):
+				_annotation_sidebar.add_comment_requested.connect(_on_sidebar_add_comment_requested)
 	if file:
 		match type:
 			Type.TEXT: _load_text_file(file)
@@ -1306,6 +1313,9 @@ func _on_save_open_editor_tabs_button_pressed() -> void:
 
 #this function catches input when the code editor is focused
 func _on_code_edit_gui_input(event: InputEvent) -> void:
+	if type == Type.TEXT:
+		call_deferred("_sync_annotation_add_affordance")
+
 	# Annotation v2 (Round 5b.ii): retarget mode capture.
 	# Esc cancels; mouse-up over a non-empty selection commits the new range.
 	if _retarget_in_progress != "":
@@ -1321,6 +1331,11 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 				return
 
 	if event is InputEventKey:
+		var shortcut := event as InputEventKey
+		if shortcut.pressed and not shortcut.echo and shortcut.ctrl_pressed and shortcut.shift_pressed and shortcut.keycode == KEY_M:
+			_begin_add_comment_from_shortcut()
+			accept_event()
+			return
 		if event.pressed and event.keycode == KEY_CTRL:
 			%FindStringLineEdit.set_process_input(false)
 			%FindStringLineEdit.set_process_unhandled_key_input(false)
@@ -1331,6 +1346,13 @@ func _on_code_edit_gui_input(event: InputEvent) -> void:
 		jump_to_line()
 	elif  event.is_action_pressed("find_string"):
 		find_string_in_code_edit()
+
+
+func _on_code_edit_focus_exited() -> void:
+	if type != Type.TEXT:
+		return
+	_capture_current_annotation_selection(false)
+	_sync_annotation_add_affordance()
 
 
 
@@ -1950,7 +1972,7 @@ func set_selection(start: int, end: int) -> void:
 		var from := _flat_offset_to_line_col(code_edit.text, start)
 		var to := _flat_offset_to_line_col(code_edit.text, end)
 		code_edit.select(from[0], from[1], to[0], to[1])
-	_pending_annotation_selection = {"start": start, "end": end}
+	_store_pending_annotation_selection(start, end)
 
 
 ## Add a v2 annotation anchored to the current selection.
@@ -1963,15 +1985,12 @@ func add_comment(text: String) -> String:
 	var start := -1
 	var end := -1
 
-	if code_edit != null and code_edit.has_selection():
-		var doc: String = code_edit.text
-		start = _line_col_to_flat_offset(doc, code_edit.get_selection_from_line(), code_edit.get_selection_from_column())
-		end = _line_col_to_flat_offset(doc, code_edit.get_selection_to_line(), code_edit.get_selection_to_column())
-	elif not _pending_annotation_selection.is_empty():
+	_capture_current_annotation_selection(false)
+	if _has_pending_annotation_selection():
 		start = int(_pending_annotation_selection.get("start", -1))
 		end = int(_pending_annotation_selection.get("end", -1))
 
-	if start < 0 or end < start:
+	if start < 0 or end <= start:
 		push_warning("[Editor.add_comment] no valid selection")
 		return ""
 
@@ -1980,6 +1999,8 @@ func add_comment(text: String) -> String:
 		_annotation_canvas.queue_redraw()
 	if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
 		_annotation_sidebar.refresh()
+	if not ann_id.is_empty():
+		content_changed.emit()
 	return ann_id
 
 
@@ -2068,6 +2089,72 @@ func retarget_annotation(annotation_id: String, start: int, end: int) -> bool:
 ## Smoke-test alias.
 func repair_annotation(annotation_id: String, start: int, end: int) -> bool:
 	return retarget_annotation(annotation_id, start, end)
+
+
+func _on_sidebar_add_comment_requested(text: String) -> void:
+	if not _has_commentable_selection():
+		if _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
+			_annotation_sidebar.show_status("Select text first")
+		return
+	var ann_id := add_comment(text)
+	if ann_id.is_empty() and _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
+		_annotation_sidebar.show_status("Could not add comment")
+	else:
+		_sync_annotation_add_affordance()
+
+
+func _begin_add_comment_from_shortcut() -> void:
+	_sync_annotation_add_affordance()
+	if not _has_commentable_selection():
+		if _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
+			_annotation_sidebar.show_status("Select text first")
+		return
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("begin_add_comment_flow"):
+		_annotation_sidebar.begin_add_comment_flow()
+
+
+func _sync_annotation_add_affordance() -> void:
+	_capture_current_annotation_selection(true)
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("set_can_add_comment"):
+		_annotation_sidebar.set_can_add_comment(_has_commentable_selection())
+
+
+func _has_commentable_selection() -> bool:
+	if _capture_current_annotation_selection(false):
+		return true
+	return _has_pending_annotation_selection()
+
+
+func _capture_current_annotation_selection(clear_when_empty: bool) -> bool:
+	if code_edit != null and code_edit.has_selection():
+		var doc: String = code_edit.text
+		var start := _line_col_to_flat_offset(doc, code_edit.get_selection_from_line(), code_edit.get_selection_from_column())
+		var end := _line_col_to_flat_offset(doc, code_edit.get_selection_to_line(), code_edit.get_selection_to_column())
+		return _store_pending_annotation_selection(start, end)
+	if clear_when_empty and code_edit != null and code_edit.has_focus():
+		_pending_annotation_selection.clear()
+	return false
+
+
+func _store_pending_annotation_selection(start: int, end: int) -> bool:
+	if end < start:
+		var tmp := start
+		start = end
+		end = tmp
+	if start < 0 or end <= start:
+		_pending_annotation_selection.clear()
+		return false
+	_pending_annotation_selection = {"start": start, "end": end}
+	return true
+
+
+func _has_pending_annotation_selection() -> bool:
+	if _pending_annotation_selection.is_empty():
+		return false
+	var start := int(_pending_annotation_selection.get("start", -1))
+	var end := int(_pending_annotation_selection.get("end", -1))
+	var text_len := code_edit.text.length() if code_edit != null else 0
+	return start >= 0 and end > start and end <= text_len
 
 
 func _on_sidebar_repair_requested(annotation_id: String) -> void:

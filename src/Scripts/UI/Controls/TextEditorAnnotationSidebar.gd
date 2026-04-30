@@ -7,15 +7,21 @@ extends VBoxContainer
 ## `repair_requested(id)` so the parent Editor enters retarget mode.
 
 signal repair_requested(annotation_id: String)
+signal add_comment_requested(text: String)
 
 const _AnnotationSidebarModelScript = preload("res://Scripts/Services/Annotations/AnnotationSidebarModel.gd")
 const _BROKEN_COLOR := Color(1.0, 0.55, 0.05, 1.0)
 
 var _model: RefCounted = null
 var _host: RefCounted = null
+var _can_add_comment := false
 
+var _header_row: HBoxContainer
 var _header: Label
+var _add_button: Button
 var _filter_button: CheckBox
+var _add_row: HBoxContainer
+var _comment_input: LineEdit
 var _entries_list: VBoxContainer
 var _status_label: Label
 var _empty_label: Label
@@ -31,6 +37,23 @@ func _ready() -> void:
 func set_host(host: RefCounted) -> void:
 	_host = host
 	refresh()
+
+
+func set_can_add_comment(value: bool) -> void:
+	_can_add_comment = value
+	if _add_button != null:
+		_add_button.disabled = not value
+		_add_button.tooltip_text = "Add comment to selected text" if value else "Select text first"
+
+
+func begin_add_comment_flow() -> void:
+	_show_add_row()
+
+
+func show_status(message: String) -> void:
+	if _status_label != null:
+		_status_label.text = message
+		_status_label.show()
 
 
 func enter_retarget_mode(_annotation_id: String) -> void:
@@ -70,14 +93,51 @@ func refresh() -> void:
 func _build_ui() -> void:
 	add_theme_constant_override("separation", 6)
 
+	_header_row = HBoxContainer.new()
+	_header_row.add_theme_constant_override("separation", 6)
+	add_child(_header_row)
+
 	_header = Label.new()
 	_header.add_theme_font_size_override("font_size", 13)
-	add_child(_header)
+	_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_header_row.add_child(_header)
+
+	_add_button = Button.new()
+	_add_button.text = "+"
+	_add_button.disabled = true
+	_add_button.tooltip_text = "Select text first"
+	_add_button.custom_minimum_size = Vector2(28, 24)
+	_add_button.focus_mode = Control.FOCUS_NONE
+	_add_button.pressed.connect(begin_add_comment_flow)
+	_header_row.add_child(_add_button)
 
 	_filter_button = CheckBox.new()
 	_filter_button.text = "Show broken only"
 	_filter_button.toggled.connect(_on_filter_toggled)
 	add_child(_filter_button)
+
+	_add_row = HBoxContainer.new()
+	_add_row.add_theme_constant_override("separation", 4)
+	_add_row.hide()
+	add_child(_add_row)
+
+	_comment_input = LineEdit.new()
+	_comment_input.placeholder_text = "Comment"
+	_comment_input.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_comment_input.text_submitted.connect(_on_comment_submitted)
+	_add_row.add_child(_comment_input)
+
+	var add_confirm := Button.new()
+	add_confirm.text = "Add"
+	add_confirm.focus_mode = Control.FOCUS_NONE
+	add_confirm.pressed.connect(_commit_add_comment)
+	_add_row.add_child(add_confirm)
+
+	var add_cancel := Button.new()
+	add_cancel.text = "Cancel"
+	add_cancel.focus_mode = Control.FOCUS_NONE
+	add_cancel.pressed.connect(_hide_add_row)
+	_add_row.add_child(add_cancel)
 
 	_status_label = Label.new()
 	_status_label.add_theme_color_override("font_color", _BROKEN_COLOR)
@@ -162,3 +222,34 @@ func _on_repair_pressed(annotation_id: String) -> void:
 
 func _on_retarget_requested(annotation_id: String) -> void:
 	repair_requested.emit(annotation_id)
+
+
+func _show_add_row() -> void:
+	if _add_row == null or _comment_input == null:
+		return
+	_status_label.hide()
+	_comment_input.text = ""
+	_add_row.show()
+	_comment_input.grab_focus()
+
+
+func _hide_add_row() -> void:
+	if _add_row != null:
+		_add_row.hide()
+	if _comment_input != null:
+		_comment_input.text = ""
+
+
+func _on_comment_submitted(_text: String) -> void:
+	_commit_add_comment()
+
+
+func _commit_add_comment() -> void:
+	if _comment_input == null:
+		return
+	var text := _comment_input.text.strip_edges()
+	if text.is_empty():
+		show_status("Enter a comment")
+		return
+	add_comment_requested.emit(text)
+	_hide_add_row()

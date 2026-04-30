@@ -17,6 +17,7 @@ extends AnnotationHost
 
 const _ANN_ID_PREFIX := "ann_"
 const _SCHEMA := preload("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
+const _SidecarIOScript := preload("res://Scripts/Services/Annotations/AnnotationSidecarIO.gd")
 
 # ── Back-reference to the live text source ────────────────────────────────────
 
@@ -211,7 +212,7 @@ func repair_annotation(annotation_id: String, start: int, end: int) -> bool:
 
 ## Load a serialized array of v2 envelopes into this host (replaces current list).
 func load_annotations(raw_array: Array) -> void:
-	var io := AnnotationSidecarIO.new()
+	var io = _SidecarIOScript.new()
 	var result := io.process_annotations(raw_array)
 	_annotations = result.get("annotations", [])
 	# JSON.parse_string returns Variant::FLOAT for all numerics; coerce
