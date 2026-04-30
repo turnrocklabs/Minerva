@@ -105,7 +105,10 @@ func _draw_healthy(anchor: Dictionary, code: Object, ce_local: Vector2, line_hei
 		var p_b: Vector2i = code.get_pos_at_line_column(line, col_b)
 		if p_a.x < 0 or p_b.x < 0:
 			continue
-		var y := ce_local.y + float(p_a.y) + line_height - 1.0
+		# get_pos_at_line_column returns the baseline-ish y in code_edit-local
+		# space; -1px nudges the line just above the API y for an underline
+		# look directly under the text.
+		var y := ce_local.y + float(p_a.y) - 1.0
 		var x1 := float(p_a.x) + ce_local.x
 		var x2 := float(p_b.x) + ce_local.x
 		draw_line(Vector2(x1, y), Vector2(x2, y), _HEALTHY_COLOR, _UNDERLINE_THICKNESS)
