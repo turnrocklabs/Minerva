@@ -207,11 +207,15 @@ func to_chat_context(annotation: Dictionary, capabilities: Dictionary) -> Array:
 	return blocks
 
 
+func has_visual_render() -> bool:
+	return true
+
+
 func _truncate_text(text: String, max_words: int) -> String:
 	var words := text.split(" ", false)
 	if words.size() <= max_words:
 		return text
-	return " ".join(words.slice(0, max_words))
+	return "%s [truncated]" % " ".join(words.slice(0, max_words))
 
 
 # ── Convenience helpers ────────────────────────────────────────────────────────

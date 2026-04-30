@@ -13,13 +13,15 @@ enum Type {
 var type: Type = Type.TEXT
 var type_name: String = "TEXT"
 var content: Variant = null
+var meta: Dictionary = {}
 
 
-static func make(block_type: Type, block_content: Variant) -> Dictionary:
+static func make(block_type: Type, block_content: Variant, block_meta: Dictionary = {}) -> Dictionary:
 	return {
 		"type": int(block_type),
 		"type_name": type_name_for(block_type),
 		"content": block_content,
+		"meta": block_meta,
 	}
 
 
