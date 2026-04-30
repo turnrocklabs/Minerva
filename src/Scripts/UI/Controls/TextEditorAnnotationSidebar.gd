@@ -102,16 +102,25 @@ func _populate_entries() -> void:
 	if _model == null:
 		return
 	var broken_count: int = _model.get_broken_count()
+	var visible: Array = _model.get_visible_annotations()
 	if _header != null:
-		_header.text = "Broken (%d)" % broken_count
+		_header.text = "Annotations (%d total, %d broken)" % [visible.size(), broken_count]
 		_header.add_theme_color_override("font_color", _BROKEN_COLOR if broken_count > 0 else Color.WHITE)
 	if _empty_label != null:
-		_empty_label.visible = broken_count == 0
+		_empty_label.visible = visible.size() == 0
+	# Broken first (with Repair button + warning styling), then healthy.
 	for entry in _model.get_broken_entries():
-		_entries_list.add_child(_make_entry_row(entry))
+		_entries_list.add_child(_make_broken_row(entry))
+	for ann in visible:
+		if not ann is Dictionary:
+			continue
+		var d: Dictionary = ann as Dictionary
+		if bool(d.get("stale", false)) or str(d.get("lifecycle", "")) == "stale":
+			continue
+		_entries_list.add_child(_make_healthy_row(d))
 
 
-func _make_entry_row(entry: Dictionary) -> Control:
+func _make_broken_row(entry: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	var label := Label.new()
@@ -125,6 +134,18 @@ func _make_entry_row(entry: Dictionary) -> Control:
 	btn.text = "Repair"
 	btn.pressed.connect(_on_repair_pressed.bind(str(entry.get("id", ""))))
 	row.add_child(btn)
+	return row
+
+
+func _make_healthy_row(annotation: Dictionary) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var label := Label.new()
+	var summary: String = str(annotation.get("summary", ""))
+	label.text = "  %s" % summary
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.tooltip_text = summary
+	row.add_child(label)
 	return row
 
 
