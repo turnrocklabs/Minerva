@@ -480,6 +480,10 @@ func update_code_hightlighter(lang: String) -> CodeHighlighter:
 func _ready():
 	SingletonObject.injection_consumed.connect(_on_injection_consumed)
 	($CloseDialog as ConfirmationDialog).add_button("Close", true, "close")
+	# Annotation host must exist before _load_text_file so the sidecar load path
+	# can attach to it. Type-gated: non-TEXT editors leave annotation_host null.
+	if self.type == Type.TEXT:
+		_init_annotation_host()
 	if file:
 		match type:
 			Type.TEXT: _load_text_file(file)
