@@ -438,6 +438,9 @@ func _update_editor(args: Dictionary) -> Dictionary:
 		return MCPToolUtils.error("Editor has no code_edit")
 
 	editor.code_edit.text = content
+	# Setting `text =` does not emit text_changed; emit explicitly so downstream
+	# wiring (annotation revision bump, content_changed, etc.) sees the edit.
+	editor.code_edit.text_changed.emit()
 
 	return {
 		"success": true,
