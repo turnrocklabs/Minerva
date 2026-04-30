@@ -209,6 +209,61 @@ static func get_anchored_to(annotation: Dictionary) -> String:
 	return str(annotation.get("anchored_to", ""))
 
 
+func is_v1_envelope(annotation: Dictionary) -> bool:
+	if annotation.get("schema_version", null) == 1:
+		return true
+	if annotation.has("schema_version"):
+		return false
+	if not annotation.has("primitives") or not annotation["primitives"] is Array:
+		return false
+	for primitive in annotation["primitives"]:
+		if primitive is Dictionary and primitive.has("at") and primitive["at"] is Array and (primitive["at"] as Array).size() >= 3:
+			return true
+	return false
+
+
+func migrate_v1_to_v2(annotation: Dictionary, _registry: Object = null) -> Variant:
+	if str(annotation.get("kind", "")) == "cad_edge_number":
+		_last_migration_log.append({"id": annotation.get("id", ""), "action": "drop", "reason": "cad_edge_number is transient"})
+		return "drop"
+	if not is_v1_envelope(annotation):
+		return annotation.duplicate(true)
+	if not annotation.has("primitives") or not annotation["primitives"] is Array:
+		_last_migration_log.append({"id": annotation.get("id", ""), "action": "failed", "reason": "v1 primitives must be an array"})
+		return null
+
+	var metadata: Dictionary = annotation.get("metadata", {})
+	var now := "2026-04-29T17:00:00Z"
+	return {
+		"id": str(annotation.get("id", "")),
+		"kind": str(annotation.get("kind", "")),
+		"schema_version": 2,
+		"anchor": {
+			"plugin": "core",
+			"type": "none",
+			"id": str(annotation.get("id", "")),
+			"snapshot": {"position": _v1_snapshot_position(annotation.get("primitives", []))},
+		},
+		"kind_payload": _v1_payload(metadata),
+		"lifecycle": "open",
+		"author": _v1_author(metadata),
+		"view_context": str(metadata.get("view", "editor:main")),
+		"visible_in_views": metadata.get("visible_in_views", [str(metadata.get("view", "editor:main"))]),
+		"summary": str(metadata.get("summary", "Migrated %s annotation" % str(annotation.get("kind", "")))),
+		"created_at": str(metadata.get("created_at", now)),
+		"updated_at": str(metadata.get("updated_at", now)),
+		"applied": null,
+		"resolved": null,
+	}
+
+
+var _last_migration_log: Array = []
+
+
+func get_migration_log() -> Array:
+	return _last_migration_log.duplicate(true)
+
+
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
 static func _require_string(
@@ -221,6 +276,31 @@ static func _require_string(
 		result.add_error(field, "Field '%s' is required" % field, code)
 	elif not d[field] is String or (d[field] as String).is_empty():
 		result.add_error(field, "Field '%s' must be a non-empty string" % field, "type")
+
+
+func _v1_snapshot_position(primitives: Array) -> Array:
+	for primitive in primitives:
+		if primitive is Dictionary:
+			var at: Variant = primitive.get("at", null)
+			if at is Array and (at as Array).size() >= 2:
+				return [float(at[0]), float(at[1])]
+	return [0.0, 0.0]
+
+
+func _v1_author(metadata: Dictionary) -> Dictionary:
+	var raw := str(metadata.get("author", ""))
+	if raw == "ai":
+		return {"kind": "ai"}
+	if raw.is_empty():
+		return {"kind": "human", "id": null}
+	return {"kind": "human", "id": raw}
+
+
+func _v1_payload(metadata: Dictionary) -> Dictionary:
+	var payload := metadata.duplicate(true)
+	for key in ["author", "view", "visible_in_views", "summary", "created_at", "updated_at"]:
+		payload.erase(key)
+	return payload
 
 
 static func _validate_primitive(
