@@ -64,6 +64,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_annotations_update",
 		"minerva_annotations_delete",
 		"minerva_annotations_render_overlay",
+		"minerva_text_editor_add_comment",
 	]
 
 
@@ -239,6 +240,39 @@ func register_tools() -> void:
 		_TOOL_SET
 	)
 
+	server._register_tool(
+		"minerva_text_editor_add_comment",
+		"Add a v2 annotation (kind=text, anchor=core/text.range) to a built-in text "
+		+ "editor tab, anchored to a flat character-offset range [start, end). The "
+		+ "annotation appears immediately in the live AnnotationHost; persistence to "
+		+ "the .annotations.json sidecar happens on the next minerva_save_editor or "
+		+ "user Ctrl+S. Use minerva_list_editors first to find editor_name. "
+		+ "Returns {ok, annotation_id, count}.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Editor tab title (as returned by minerva_list_editors).",
+				},
+				"start": {
+					"type": "integer",
+					"description": "Inclusive start character offset (0-based, flat across newlines).",
+				},
+				"end": {
+					"type": "integer",
+					"description": "Exclusive end character offset. Must be >= start.",
+				},
+				"text": {
+					"type": "string",
+					"description": "Comment text — becomes annotation.kind_payload.text and summary.",
+				},
+			},
+			"required": ["editor_name", "start", "end", "text"],
+		},
+		_TOOL_SET
+	)
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
@@ -252,7 +286,37 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _annotations_delete(arguments)
 		"minerva_annotations_render_overlay":
 			return await _annotations_render_overlay(arguments)
+		"minerva_text_editor_add_comment":
+			return _text_editor_add_comment(arguments)
 	return _err("Unknown annotation tool: %s" % tool_name)
+
+
+# ── minerva_text_editor_add_comment ───────────────────────────────────────────
+
+func _text_editor_add_comment(args: Dictionary) -> Dictionary:
+	var editor_name: String = str(args.get("editor_name", ""))
+	if editor_name.is_empty():
+		return _err("'editor_name' is required")
+	if not args.has("start") or not args.has("end"):
+		return _err("'start' and 'end' are required")
+	var start: int = int(args.get("start", -1))
+	var end: int = int(args.get("end", -1))
+	var text: String = str(args.get("text", ""))
+	if start < 0 or end < start:
+		return _err("invalid range: start=%d, end=%d (require start >= 0 and end >= start)" % [start, end])
+
+	var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+	if host == null:
+		var known: Array = AnnotationHostRegistry.list_editor_names()
+		return _err("no annotation host registered for editor '%s'. Known: %s" % [editor_name, str(known)])
+	if not host.has_method("add_comment_at"):
+		return _err("editor '%s' is not a text editor (host lacks add_comment_at)" % editor_name)
+
+	var ann_id: String = host.call("add_comment_at", start, end, text)
+	if ann_id.is_empty():
+		return _err("add_comment_at returned empty id (validation failed; check log)")
+	var count: int = (host.get_annotations() as Array).size() if host.has_method("get_annotations") else -1
+	return {"ok": true, "annotation_id": ann_id, "count": count}
 
 
 # ── Tool implementations ──────────────────────────────────────────────────────

@@ -88,6 +88,46 @@ func add_annotation(annotation: Dictionary) -> String:
 	return add_annotation_v2(annotation)
 
 
+## Build and store a v2 envelope from (start, end, text). Used by Editor.add_comment
+## (UI path) and the minerva_text_editor_add_comment MCP tool.
+## Returns the assigned annotation id, or "" on failure.
+func add_comment_at(start: int, end: int, text: String) -> String:
+	if start < 0 or end < start:
+		push_warning("[TextEditorAnnotationHost] add_comment_at: invalid range %d..%d" % [start, end])
+		return ""
+	var src := _get_text()
+	var snapshot_text := ""
+	if end <= src.length():
+		snapshot_text = src.substr(start, end - start)
+	var line_col := _offset_to_line_col(start)
+	var doc_revision: int = get_revision()
+	var now := int(Time.get_unix_time_from_system())
+	var envelope := {
+		"id": "",
+		"kind": "text",
+		"schema_version": 2,
+		"anchor": {
+			"plugin": "core",
+			"type": "text.range",
+			"id": {"start": start, "end": end},
+			"snapshot": {
+				"position": [float(line_col[0]), float(line_col[1])],
+				"text": snapshot_text,
+				"document_revision": doc_revision,
+			},
+		},
+		"kind_payload": {"text": text},
+		"lifecycle": "open",
+		"author": {"kind": "human"},
+		"view_context": "text",
+		"visible_in_views": ["all"],
+		"summary": text if not text.is_empty() else "(empty comment)",
+		"created_at": now,
+		"updated_at": now,
+	}
+	return add_annotation_v2(envelope)
+
+
 ## Return all stored annotations (live array — do not mutate directly).
 func get_all_annotations() -> Array:
 	return _annotations

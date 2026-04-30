@@ -137,8 +137,15 @@ var _save_override: Callable
 
 var tab_title: String = "":
 	set(value):
+		var prev := tab_title
 		tab_title = value
-		
+		# Re-key the annotation host registration whenever the visible tab name changes.
+		if annotation_host != null and prev != value:
+			if not prev.is_empty():
+				AnnotationHostRegistry.deregister(prev)
+			if not value.is_empty():
+				AnnotationHostRegistry.register(value, annotation_host)
+
 		if not SingletonObject.editor_pane.Tabs.is_ancestor_of(self):
 			return
 
@@ -594,6 +601,9 @@ func _ready():
 func _exit_tree() -> void:
 	if _proxy_note:
 		SingletonObject.detached_note_proxies.erase(_proxy_note)
+	# Annotation host: drop registry entry so a stale RefCounted doesn't linger.
+	if type == Type.TEXT and not tab_title.is_empty():
+		AnnotationHostRegistry.deregister(tab_title)
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
 		PluginScenePanelHost.invoke_unload(plugin_scene_root)
@@ -1851,6 +1861,7 @@ func _init_annotation_host() -> void:
 	annotation_host = _TextEditorAnnotationHostScript.new()
 	if code_edit != null:
 		annotation_host.set_code_edit(code_edit)
+	_register_annotation_host()
 
 
 func get_annotation_host() -> RefCounted:
@@ -1865,6 +1876,15 @@ func initialize_as_text_editor() -> void:
 		annotation_host = _TextEditorAnnotationHostScript.new()
 	if code_edit != null:
 		annotation_host.set_code_edit(code_edit)
+
+
+## Registers the live host with AnnotationHostRegistry so MCP tools
+## (minerva_annotations_list with editor_name=...) can query it.
+## Idempotent — safe to call multiple times.
+func _register_annotation_host() -> void:
+	if annotation_host == null or tab_title.is_empty():
+		return
+	AnnotationHostRegistry.register(tab_title, annotation_host)
 
 
 ## Set selection from flat character offsets. Used by smoke tests and the
@@ -1886,53 +1906,20 @@ func add_comment(text: String) -> String:
 
 	var start := -1
 	var end := -1
-	var snapshot_text := ""
 
 	if code_edit != null and code_edit.has_selection():
 		var doc: String = code_edit.text
 		start = _line_col_to_flat_offset(doc, code_edit.get_selection_from_line(), code_edit.get_selection_from_column())
 		end = _line_col_to_flat_offset(doc, code_edit.get_selection_to_line(), code_edit.get_selection_to_column())
-		snapshot_text = doc.substr(start, end - start)
 	elif not _pending_annotation_selection.is_empty():
 		start = int(_pending_annotation_selection.get("start", -1))
 		end = int(_pending_annotation_selection.get("end", -1))
-		if start >= 0 and end >= start:
-			var src: String = annotation_host.get_text_content() if annotation_host.has_method("get_text_content") else ""
-			if end <= src.length():
-				snapshot_text = src.substr(start, end - start)
 
 	if start < 0 or end < start:
 		push_warning("[Editor.add_comment] no valid selection")
 		return ""
 
-	var line_col: Array = annotation_host.offset_to_line_col(start) if annotation_host.has_method("offset_to_line_col") else [0, 0]
-	var doc_revision: int = annotation_host.get_revision() if annotation_host.has_method("get_revision") else 0
-	var now := int(Time.get_unix_time_from_system())
-
-	var envelope := {
-		"id": "",
-		"kind": "text",
-		"schema_version": 2,
-		"anchor": {
-			"plugin": "core",
-			"type": "text.range",
-			"id": {"start": start, "end": end},
-			"snapshot": {
-				"position": [float(line_col[0]), float(line_col[1])],
-				"text": snapshot_text,
-				"document_revision": doc_revision,
-			},
-		},
-		"kind_payload": {"text": text},
-		"lifecycle": "open",
-		"author": {"kind": "human"},
-		"view_context": "text",
-		"visible_in_views": ["all"],
-		"summary": text,
-		"created_at": now,
-		"updated_at": now,
-	}
-	return annotation_host.add_annotation_v2(envelope)
+	return annotation_host.add_comment_at(start, end, text)
 
 
 ## Persist annotations to <path>.annotations.json. Called from save_file_to_disc.
