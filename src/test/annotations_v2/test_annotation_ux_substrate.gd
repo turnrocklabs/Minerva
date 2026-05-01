@@ -1,6 +1,7 @@
 extends SceneTree
 
 const TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
+const AnnotationHostScript = preload("res://Scripts/Services/Annotations/AnnotationHost.gd")
 const AnnotationOverlayScript = preload("res://Scripts/Services/Annotations/AnnotationOverlay.gd")
 const AnnotationDockPaneScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
 const AnnotationWorkbenchScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationWorkbench.gd")
@@ -14,12 +15,14 @@ var _fail_count := 0
 func _init() -> void:
 	print("[tags: unit,ux]")
 	print("=== test_annotation_ux_substrate ===\n")
+	test_annotation_capabilities_are_normalized()
 	test_text_host_capabilities()
 	test_display_numbers_are_persisted_and_gap_preserving()
 	test_callout_accepts_plugin_anchor()
 	test_toolbar_filters_by_host_capabilities()
 	test_overlay_mouse_filter_contract()
 	test_dock_pane_mounts_shared_workbench()
+	test_workbench_falls_back_to_ordered_display_numbers()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -35,9 +38,20 @@ func check(description: String, condition: bool) -> void:
 		printerr("  FAIL: %s" % description)
 
 
+func test_annotation_capabilities_are_normalized() -> void:
+	var caps: Dictionary = AnnotationHostScript.normalize_capabilities({
+		"kinds": ["callout"],
+		"lifecycle": {"delete": true},
+	})
+	check("normalized capabilities preserve declared kind", "callout" in caps.get("kinds", []))
+	check("normalized capabilities merge nested lifecycle field", bool(caps.get("lifecycle", {}).get("delete", false)))
+	check("normalized capabilities keep omitted lifecycle conservative", not bool(caps.get("lifecycle", {}).get("resolve", true)))
+	check("normalized capabilities provide default filters", "broken" in caps.get("filters", []))
+
+
 func test_text_host_capabilities() -> void:
 	var host = TextEditorAnnotationHostScript.new()
-	var caps: Dictionary = host.get_capabilities()
+	var caps: Dictionary = host.get_annotation_capabilities()
 	check("text host declares text kind", "text" in caps.get("kinds", []))
 	check("text host declares callout kind", "callout" in caps.get("kinds", []))
 	check("text host supports resolve", bool(caps.get("lifecycle", {}).get("resolve", false)))
@@ -125,3 +139,37 @@ func test_dock_pane_mounts_shared_workbench() -> void:
 	check("right expanded dock sets minimum width", pane.custom_minimum_size.x >= 260.0)
 	root.remove_child(pane)
 	pane.queue_free()
+
+
+func test_workbench_falls_back_to_ordered_display_numbers() -> void:
+	var workbench = AnnotationWorkbenchScript.new()
+	root.add_child(workbench)
+	workbench._ready()
+	workbench.set_host(_NoDisplayIndexHost.new())
+	var entries: Array = workbench._decorated_annotations()
+	check("workbench fallback creates first display number", int((entries[0] as Dictionary).get("display_index", 0)) == 1)
+	check("workbench fallback creates second display number", int((entries[1] as Dictionary).get("display_index", 0)) == 2)
+	root.remove_child(workbench)
+	workbench.queue_free()
+
+
+class _NoDisplayIndexHost extends AnnotationHost:
+	func get_annotations() -> Array:
+		return [
+			{
+				"id": "ann_without_number_1",
+				"kind": "callout",
+				"anchor": CoreAnchors.make_canvas_point(1.0, 2.0),
+				"kind_payload": {"text": "First"},
+				"summary": "First",
+				"lifecycle": "open",
+			},
+			{
+				"id": "ann_without_number_2",
+				"kind": "callout",
+				"anchor": CoreAnchors.make_canvas_point(3.0, 4.0),
+				"kind_payload": {"text": "Second"},
+				"summary": "Second",
+				"lifecycle": "open",
+			},
+		]

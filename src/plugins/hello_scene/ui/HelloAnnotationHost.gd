@@ -36,6 +36,10 @@ var _annotations: Array = []  # Array[Dictionary]
 ## The id of the currently selected annotation, or "" if none.
 var _selected_id: String = ""
 
+## Next stable user-facing number. Numbers are persisted with annotations so
+## dock rows, MCP results, and chat references line up.
+var _display_index_counter: int = 0
+
 ## Tolerance margin (pixels) added to each control's rect during _find_leaf_at hit
 ## testing. Allows arrows and other annotations whose head is drawn a few pixels
 ## outside a widget's exact rect to still resolve to that widget.
@@ -66,6 +70,28 @@ func get_registry() -> AnnotationRegistry:
 	return _registry
 
 
+func get_capabilities() -> Dictionary:
+	return {
+		"kinds": ["callout", "2d_arrow", "2d_text"],
+		"tools": ["select"],
+		"anchor_types": ["hello_scene/widget.point", "core/canvas.point"],
+		"lifecycle": {
+			"resolve": true,
+			"reopen": true,
+			"delete": true,
+			"repair": false,
+			"apply": true,
+		},
+		"authoring": {
+			"add": false,
+			"domain_pickers": false,
+		},
+		"panes": false,
+		"body_views": false,
+		"filters": ["all", "open", "applied", "resolved", "broken"],
+	}
+
+
 ## Append an annotation to the document. Assigns an id if none is present
 ## (the substrate convention is "ann_<hex>"), stamps anchored_to via
 ## _stamp_anchor, emits annotations_changed, and returns the assigned id
@@ -77,6 +103,7 @@ func add_annotation(annotation: Dictionary) -> String:
 	# Avoid mutating the caller's dict.
 	var stored: Dictionary = annotation.duplicate(true)
 	stored["id"] = id
+	_ensure_display_index(stored)
 	# Stamp the anchor BEFORE appending so listeners see the final state.
 	AnnotationHost._stamp_anchor(stored, self)
 	_annotations.append(stored)
@@ -111,6 +138,9 @@ func update_annotation(annotation_id: String, new_annotation: Dictionary) -> boo
 		if str(entry.get("id", "")) == annotation_id:
 			var stored: Dictionary = new_annotation.duplicate(true)
 			stored["id"] = annotation_id
+			if int(stored.get("display_index", 0)) <= 0:
+				stored["display_index"] = int(entry.get("display_index", 0))
+			_ensure_display_index(stored)
 			# Re-stamp the anchor BEFORE storing so listeners see the final state.
 			AnnotationHost._stamp_anchor(stored, self)
 			_annotations[i] = stored
@@ -151,6 +181,18 @@ func get_selected_annotation_id() -> String:
 	return _selected_id
 
 
+func get_annotation_display_index(annotation: Dictionary) -> int:
+	var existing := int(annotation.get("display_index", 0))
+	if existing > 0:
+		return existing
+	var annotation_id := str(annotation.get("id", ""))
+	for i in range(_annotations.size()):
+		var entry: Dictionary = _annotations[i] as Dictionary
+		if str(entry.get("id", "")) == annotation_id:
+			return int(entry.get("display_index", i + 1))
+	return 0
+
+
 # ── Hello-panel-specific API (not part of AnnotationHost protocol) ────────────
 
 ## Returns a SHALLOW DUPLICATE of the annotation list so consumers can iterate
@@ -167,12 +209,25 @@ func get_annotations() -> Array:
 ## so the canvas redraws.
 func set_annotations(list: Array) -> void:
 	_annotations = []
+	_display_index_counter = 0
 	for ann in list:
 		if ann is Dictionary:
-			_annotations.append((ann as Dictionary).duplicate(true))
+			var stored := (ann as Dictionary).duplicate(true)
+			_ensure_display_index(stored)
+			_annotations.append(stored)
 	AnnotationHost.refresh_all_anchors(_annotations, self)
 	_schedule_cache_refresh()
 	annotations_changed.emit()
+
+
+func _ensure_display_index(annotation: Dictionary) -> void:
+	var existing := int(annotation.get("display_index", 0))
+	if existing > 0:
+		if existing > _display_index_counter:
+			_display_index_counter = existing
+		return
+	_display_index_counter += 1
+	annotation["display_index"] = _display_index_counter
 
 
 ## Repeatable annotation fixture for the Hello Scene visible HITL harness.

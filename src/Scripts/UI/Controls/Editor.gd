@@ -170,9 +170,8 @@ var file: String:
 var type: Type
 var _file_saved := false
 
-## Annotation v2 host for Type.TEXT editors. Null otherwise. RefCounted-typed
-## to keep Editor.gd independent of TextEditorAnnotationHost's class_name load
-## order; the runtime value is always a TextEditorAnnotationHost instance.
+## Annotation v2 host for annotation-capable editors. RefCounted-typed to keep
+## Editor.gd independent of concrete host class_name load order.
 var annotation_host: RefCounted = null
 const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
 const _AnnotationDockPaneScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
@@ -624,6 +623,7 @@ func _ready():
 		reload_button.hide()
 		export_area_button.hide()
 		_apply_plugin_chrome_visibility()
+		call_deferred("_try_mount_plugin_annotation_dock")
 	else:
 		mic_button.hide() 
 		autowrap_button.hide()
@@ -655,7 +655,7 @@ func _exit_tree() -> void:
 	if _proxy_note:
 		SingletonObject.detached_note_proxies.erase(_proxy_note)
 	# Annotation host: drop registry entry so a stale RefCounted doesn't linger.
-	if type == Type.TEXT and not tab_title.is_empty():
+	if annotation_host != null and not tab_title.is_empty():
 		AnnotationHostRegistry.deregister(tab_title)
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
@@ -666,7 +666,7 @@ func _exit_tree() -> void:
 
 
 func _sync_annotation_dock_layout() -> void:
-	if type != Type.TEXT or _annotation_sidebar == null:
+	if not _annotation_dock_supported() or _annotation_sidebar == null:
 		return
 	var vbox := get_node_or_null("VBoxContainer")
 	if vbox == null:
@@ -689,6 +689,88 @@ func _sync_annotation_dock_layout() -> void:
 	if _annotation_sidebar.has_method("set_dock_mode"):
 		_annotation_sidebar.set_dock_mode(target_mode)
 	_annotation_dock_mode = target_mode
+
+
+func _annotation_dock_supported() -> bool:
+	return type == Type.TEXT or type == Type.PLUGIN_SCENE
+
+
+func _try_mount_plugin_annotation_dock() -> void:
+	if type != Type.PLUGIN_SCENE or plugin_scene_root == null:
+		return
+	if not plugin_scene_root.has_method("get_annotation_host"):
+		return
+	var host_value: Variant = plugin_scene_root.call("get_annotation_host")
+	if not (host_value is RefCounted):
+		return
+	var host := host_value as RefCounted
+	if host == null:
+		return
+	_mount_annotation_dock_for_surface(host, plugin_scene_root)
+
+
+func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> void:
+	var vbox := get_node_or_null("VBoxContainer") as VBoxContainer
+	if vbox == null or host == null or surface == null:
+		return
+	_ensure_annotation_content_row(vbox, surface)
+
+	if annotation_host != null and annotation_host != host:
+		var old_callable := Callable(self, "_on_annotation_host_changed")
+		if annotation_host.has_signal("annotations_changed") and annotation_host.is_connected("annotations_changed", old_callable):
+			annotation_host.disconnect("annotations_changed", old_callable)
+
+	annotation_host = host
+	var changed_callable := Callable(self, "_on_annotation_host_changed")
+	if annotation_host.has_signal("annotations_changed") and not annotation_host.is_connected("annotations_changed", changed_callable):
+		annotation_host.connect("annotations_changed", changed_callable)
+	_register_annotation_host()
+
+	if _annotation_sidebar == null:
+		_annotation_sidebar = find_child("AnnotationDockPane", true, false)
+	if _annotation_sidebar == null:
+		_annotation_sidebar = _AnnotationDockPaneScript.new()
+		_annotation_sidebar.name = "AnnotationDockPane"
+		_annotation_sidebar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_annotation_sidebar.size_flags_vertical = Control.SIZE_SHRINK_END
+		vbox.add_child(_annotation_sidebar)
+
+	if _annotation_sidebar.has_method("set_host"):
+		_annotation_sidebar.set_host(annotation_host)
+	if _annotation_sidebar.has_method("set_can_add_comment"):
+		_annotation_sidebar.set_can_add_comment(false)
+
+	var layout_callable := Callable(self, "_sync_annotation_dock_layout")
+	if not resized.is_connected(layout_callable):
+		resized.connect(layout_callable)
+	call_deferred("_sync_annotation_dock_layout")
+
+
+func _ensure_annotation_content_row(vbox: VBoxContainer, surface: Control) -> void:
+	if _annotation_content_row == null:
+		_annotation_content_row = get_node_or_null("VBoxContainer/AnnotationContentRow")
+	if _annotation_content_row == null:
+		var insert_index := vbox.get_child_count()
+		var old_parent := surface.get_parent()
+		if old_parent == vbox:
+			insert_index = surface.get_index()
+			vbox.remove_child(surface)
+		_annotation_content_row = HBoxContainer.new()
+		_annotation_content_row.name = "AnnotationContentRow"
+		_annotation_content_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		_annotation_content_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		vbox.add_child(_annotation_content_row)
+		vbox.move_child(_annotation_content_row, insert_index)
+		if old_parent == vbox:
+			_annotation_content_row.add_child(surface)
+
+	if surface.get_parent() != _annotation_content_row:
+		var old_parent := surface.get_parent()
+		if old_parent != null:
+			old_parent.remove_child(surface)
+		_annotation_content_row.add_child(surface)
+	surface.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	surface.size_flags_vertical = Control.SIZE_EXPAND_FILL
 
 
 static func _annotation_dock_mode_for_width(width: float) -> int:

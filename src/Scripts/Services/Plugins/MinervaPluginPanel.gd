@@ -106,3 +106,10 @@ func receive(channel: String, _payload: Dictionary) -> void:
 ## fraction: 0.0..1.0.
 func on_progress(_request_id: String, _phase: String, _fraction: float) -> void:
 	pass
+
+
+## Optional annotation substrate hook. Annotation-capable plugin panels override
+## this and return their live AnnotationHost. The editor pane uses it to mount
+## Minerva's shared dock/workbench around the plugin surface.
+func get_annotation_host() -> RefCounted:
+	return null

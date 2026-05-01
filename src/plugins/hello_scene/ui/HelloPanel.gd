@@ -87,6 +87,10 @@ func _on_active_tool_changed(tool: AnnotationAuthorTool) -> void:
 		_canvas.set_active_tool(tool)
 
 
+func get_annotation_host() -> RefCounted:
+	return _annotation_host
+
+
 # ---------------------------------------------------------------------------
 # Plugin platform lifecycle hooks (override MinervaPluginPanel virtuals).
 # ---------------------------------------------------------------------------

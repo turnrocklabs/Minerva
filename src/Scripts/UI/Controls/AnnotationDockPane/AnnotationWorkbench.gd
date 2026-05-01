@@ -182,8 +182,12 @@ func _decorated_annotations() -> Array:
 			var resolved: Dictionary = _host.resolve_anchor(d.get("anchor", {}))
 			if bool(resolved.get("stale", false)):
 				d["stale"] = true
-		if int(d.get("display_index", 0)) <= 0 and _host.has_method("get_annotation_display_index"):
-			d["display_index"] = int(_host.get_annotation_display_index(d))
+		var display_index := int(d.get("display_index", 0))
+		if display_index <= 0 and _host.has_method("get_annotation_display_index"):
+			display_index = int(_host.get_annotation_display_index(d))
+		if display_index <= 0:
+			display_index = result.size() + 1
+		d["display_index"] = display_index
 		d["_anchor_label"] = _annotation_anchor_label(d)
 		result.append(d)
 	return result
@@ -227,16 +231,18 @@ func _make_row(annotation: Dictionary) -> Control:
 	row.add_child(label)
 
 	var lifecycle := str(annotation.get("lifecycle", "open"))
-	if bool(annotation.get("stale", false)):
+	if bool(annotation.get("stale", false)) and _capability_lifecycle_enabled("repair"):
 		row.add_child(_small_button("Repair", _on_repair_pressed.bind(str(annotation.get("id", "")))))
-	elif lifecycle == "resolved":
+	elif lifecycle == "resolved" and _capability_lifecycle_enabled("reopen"):
 		row.add_child(_small_button("Reopen", _set_lifecycle.bind(str(annotation.get("id", "")), "open")))
-	elif lifecycle == "applied":
+	elif lifecycle == "applied" and _capability_lifecycle_enabled("resolve"):
 		row.add_child(_small_button("Resolve", _set_lifecycle.bind(str(annotation.get("id", "")), "resolved")))
 	else:
-		row.add_child(_small_button("Applied", _set_lifecycle.bind(str(annotation.get("id", "")), "applied")))
-		row.add_child(_small_button("Resolve", _set_lifecycle.bind(str(annotation.get("id", "")), "resolved")))
-	if _host != null and _host.has_method("remove_annotation"):
+		if _capability_lifecycle_enabled("apply"):
+			row.add_child(_small_button("Applied", _set_lifecycle.bind(str(annotation.get("id", "")), "applied")))
+		if _capability_lifecycle_enabled("resolve"):
+			row.add_child(_small_button("Resolve", _set_lifecycle.bind(str(annotation.get("id", "")), "resolved")))
+	if _host != null and _host.has_method("remove_annotation") and _capability_lifecycle_enabled("delete"):
 		row.add_child(_small_button("Del", _delete_annotation.bind(str(annotation.get("id", "")))))
 	return row
 
@@ -247,6 +253,23 @@ func _small_button(text: String, action: Callable) -> Button:
 	button.focus_mode = Control.FOCUS_NONE
 	button.pressed.connect(action)
 	return button
+
+
+func _host_capabilities() -> Dictionary:
+	if _host == null:
+		return {}
+	if _host.has_method("get_annotation_capabilities"):
+		return _host.get_annotation_capabilities()
+	if _host.has_method("get_capabilities"):
+		return _host.get_capabilities()
+	return {}
+
+
+func _capability_lifecycle_enabled(action: String) -> bool:
+	var lifecycle: Variant = _host_capabilities().get("lifecycle", {})
+	if lifecycle is Dictionary:
+		return bool((lifecycle as Dictionary).get(action, false))
+	return false
 
 
 func _annotation_prefix(annotation: Dictionary) -> String:

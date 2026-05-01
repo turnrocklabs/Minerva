@@ -31,6 +31,12 @@ extends Control
 var _host: Helloscene_AnnotationHost = null
 var _active_tool: AnnotationAuthorTool = null
 
+const _BADGE_RADIUS := 10.0
+const _BADGE_OFFSET := Vector2(10.0, -10.0)
+const _BADGE_FILL := Color(0.08, 0.10, 0.12, 0.92)
+const _BADGE_STROKE := Color(1.0, 0.72, 0.22, 1.0)
+const _BADGE_TEXT := Color.WHITE
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 ## Bind this canvas to the panel's annotation host.
@@ -93,6 +99,8 @@ func _draw() -> void:
 	for ann in _host.get_annotations():
 		if registry != null:
 			registry.dispatch_render(ctx, ann)
+		if ann is Dictionary:
+			_draw_annotation_number_badge(ann as Dictionary)
 
 	# In-progress preview from the active tool, if any.
 	if _active_tool != null:
@@ -164,6 +172,120 @@ func _mods_from_event(event: InputEventWithModifiers) -> int:
 	if event.meta_pressed:
 		mods |= KEY_MASK_META
 	return mods
+
+
+func get_annotation_badge_position(annotation: Dictionary) -> Vector2:
+	var base_pos: Variant = _annotation_badge_anchor_position(annotation)
+	if base_pos == null:
+		base_pos = Vector2.ZERO
+	return _clamp_badge_position((base_pos as Vector2) + _BADGE_OFFSET)
+
+
+func _draw_annotation_number_badge(annotation: Dictionary) -> void:
+	if _host == null:
+		return
+	var index := int(annotation.get("display_index", 0))
+	if index <= 0 and _host.has_method("get_annotation_display_index"):
+		index = int(_host.get_annotation_display_index(annotation))
+	if index <= 0:
+		return
+
+	var text := str(index)
+	var center := get_annotation_badge_position(annotation)
+	var radius := maxf(_BADGE_RADIUS, 7.0 + float(text.length()) * 3.0)
+	draw_circle(center, radius, _BADGE_FILL)
+	draw_arc(center, radius, 0.0, TAU, 32, _BADGE_STROKE, 2.0, true)
+
+	var font := get_theme_font(&"font")
+	if font == null:
+		font = ThemeDB.fallback_font
+	if font == null:
+		return
+	var font_size := 12
+	var text_size := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
+	var baseline := center + Vector2(-text_size.x * 0.5, font_size * 0.36)
+	draw_string(font, baseline, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, _BADGE_TEXT)
+
+
+func _annotation_badge_anchor_position(annotation: Dictionary) -> Variant:
+	var kind := str(annotation.get("kind", ""))
+	match kind:
+		"callout":
+			return _resolve_position_source(annotation.get("anchor", null))
+		"2d_arrow":
+			return _arrow_badge_anchor_position(annotation)
+		"2d_text":
+			var text_pos: Variant = _text_badge_anchor_position(annotation)
+			if text_pos != null:
+				return text_pos
+	return _resolve_position_source(annotation.get("anchor", null))
+
+
+func _arrow_badge_anchor_position(annotation: Dictionary) -> Variant:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and (payload as Dictionary).has("endpoint_b"):
+		var endpoint_pos: Variant = _resolve_position_source((payload as Dictionary).get("endpoint_b", null))
+		if endpoint_pos != null:
+			return endpoint_pos
+	var prims: Variant = annotation.get("primitives", [])
+	if prims is Array:
+		for prim in prims:
+			if prim is Dictionary and str((prim as Dictionary).get("kind", "")) == "arrow":
+				return _resolve_position_source((prim as Dictionary).get("to", null))
+	return null
+
+
+func _text_badge_anchor_position(annotation: Dictionary) -> Variant:
+	var anchor_pos: Variant = _resolve_position_source(annotation.get("anchor", null))
+	if anchor_pos != null:
+		return anchor_pos
+	var prims: Variant = annotation.get("primitives", [])
+	if prims is Array:
+		for prim in prims:
+			if prim is Dictionary and str((prim as Dictionary).get("kind", "")) == "text":
+				return _resolve_position_source((prim as Dictionary).get("at", null))
+	return null
+
+
+func _resolve_position_source(source: Variant) -> Variant:
+	if _host != null and _host.has_method("resolve_position_source"):
+		var resolved: Variant = _host.resolve_position_source(source)
+		if resolved is Vector2:
+			return resolved
+	if source is Vector2:
+		return source
+	if source is Vector3:
+		return Vector2((source as Vector3).x, (source as Vector3).y)
+	if source is Array and (source as Array).size() >= 2:
+		return Vector2(float((source as Array)[0]), float((source as Array)[1]))
+	if source is Dictionary:
+		var d: Dictionary = source
+		if d.has("x") and d.has("y") and not d.has("plugin"):
+			return Vector2(float(d.get("x", 0.0)), float(d.get("y", 0.0)))
+		var snapshot: Variant = d.get("snapshot", {})
+		if snapshot is Dictionary and (snapshot as Dictionary).has("position"):
+			return _array_or_vector_to_vec2((snapshot as Dictionary).get("position"))
+	return null
+
+
+func _array_or_vector_to_vec2(value: Variant) -> Vector2:
+	if value is Vector2:
+		return value
+	if value is Vector3:
+		return Vector2((value as Vector3).x, (value as Vector3).y)
+	if value is Array and (value as Array).size() >= 2:
+		return Vector2(float((value as Array)[0]), float((value as Array)[1]))
+	return Vector2.ZERO
+
+
+func _clamp_badge_position(pos: Vector2) -> Vector2:
+	if size.x <= 0.0 or size.y <= 0.0:
+		return pos
+	var margin := _BADGE_RADIUS + 2.0
+	return Vector2(
+		clampf(pos.x, margin, maxf(margin, size.x - margin)),
+		clampf(pos.y, margin, maxf(margin, size.y - margin))
+	)
 
 
 # ── Signal handlers ────────────────────────────────────────────────────────────

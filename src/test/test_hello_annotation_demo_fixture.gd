@@ -3,6 +3,8 @@ extends SceneTree
 ##
 ## Run: godot --headless --path src --script test/test_hello_annotation_demo_fixture.gd
 
+const HelloAnnotationCanvasScript := preload("res://plugins/hello_scene/ui/HelloAnnotationCanvas.gd")
+
 var _pass_count := 0
 var _fail_count := 0
 
@@ -17,6 +19,13 @@ func _initialize() -> void:
 	)
 	host.set_annotations(Helloscene_AnnotationHost.make_demo_annotations())
 
+	var caps: Dictionary = host.get_annotation_capabilities()
+	check("hello host declares callout capability", "callout" in caps.get("kinds", []))
+	check("hello host declares arrow capability", "2d_arrow" in caps.get("kinds", []))
+	check("hello host declares free text capability", "2d_text" in caps.get("kinds", []))
+	check("hello host declares select tool capability", "select" in caps.get("tools", []))
+	check("hello host exposes plugin anchor capability", "hello_scene/widget.point" in caps.get("anchor_types", []))
+
 	var annotations := host.get_annotations()
 	check_eq("fixture creates four annotations", annotations.size(), 4)
 	check("fixture includes callout", _has_kind(annotations, "callout"))
@@ -24,9 +33,23 @@ func _initialize() -> void:
 	check("fixture includes free text", _has_kind(annotations, "2d_text"))
 	check("fixture includes plugin-owned hello_scene anchor", _has_anchor_plugin(annotations, "hello_scene"))
 	check("fixture includes stale/snapshot fallback anchor", _has_anchor_plugin(annotations, "missing_plugin"))
+	check_eq("fixture assigns display number 1", int((annotations[0] as Dictionary).get("display_index", 0)), 1)
+	check_eq("fixture assigns display number 2", int((annotations[1] as Dictionary).get("display_index", 0)), 2)
+	check_eq("fixture assigns display number 3", int((annotations[2] as Dictionary).get("display_index", 0)), 3)
+	check_eq("fixture assigns display number 4", int((annotations[3] as Dictionary).get("display_index", 0)), 4)
 
 	var resolved: Variant = host.resolve_position_source(_first_anchor_for_plugin(annotations, "hello_scene"))
 	check("hello_scene plugin anchor resolves through host", resolved is Vector2 and (resolved as Vector2) != Vector2.ZERO)
+
+	var added_id := host.add_annotation({
+		"kind": "callout",
+		"anchor": CoreAnchors.make_canvas_point(5.0, 6.0),
+		"kind_payload": {"text": "Added"},
+		"summary": "Added",
+		"lifecycle": "open",
+	})
+	check_eq("new hello annotation gets next display number", host.get_annotation_display_index({"id": added_id}), 5)
+	test_canvas_badge_positions_match_annotation_targets(host)
 
 	_finish()
 
@@ -69,6 +92,30 @@ func _first_anchor_for_plugin(annotations: Array, plugin: String) -> Dictionary:
 				if endpoint is Dictionary and str((endpoint as Dictionary).get("plugin", "")) == plugin:
 					return endpoint as Dictionary
 	return {}
+
+
+func test_canvas_badge_positions_match_annotation_targets(host: Helloscene_AnnotationHost) -> void:
+	var canvas: Helloscene_AnnotationCanvas = HelloAnnotationCanvasScript.new()
+	canvas.size = Vector2(640.0, 360.0)
+	canvas.set_host(host)
+	var annotations := host.get_annotations()
+	check_eq(
+		"callout badge follows callout anchor",
+		canvas.get_annotation_badge_position(annotations[0] as Dictionary),
+		Vector2(94.0, 54.0)
+	)
+	check_eq(
+		"arrow badge follows arrow head",
+		canvas.get_annotation_badge_position(annotations[1] as Dictionary),
+		Vector2(320.0, 100.0)
+	)
+	check_eq(
+		"text badge follows text anchor",
+		canvas.get_annotation_badge_position(annotations[2] as Dictionary),
+		Vector2(56.0, 178.0)
+	)
+	canvas.set_host(null)
+	canvas.free()
 
 
 func _finish() -> void:

@@ -189,7 +189,12 @@ func set_registry(registry: AnnotationRegistry) -> void:
 ## Can be called before or after set_registry().
 func set_host(host: AnnotationHost) -> void:
 	_host = host
-	_capabilities = host.get_capabilities() if host != null and host.has_method("get_capabilities") else {}
+	if host != null and host.has_method("get_annotation_capabilities"):
+		_capabilities = host.get_annotation_capabilities()
+	elif host != null and host.has_method("get_capabilities"):
+		_capabilities = host.get_capabilities()
+	else:
+		_capabilities = {}
 	_rebuild_layout()
 
 

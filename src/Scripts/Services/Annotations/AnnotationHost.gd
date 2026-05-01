@@ -19,6 +19,9 @@ const AnnotationResolveCacheScript = preload("res://Scripts/Services/Annotations
 
 const _CANVAS_POINT_KEY := "core/canvas.point"
 
+const BASE_ANNOTATION_KINDS := ["callout", "2d_arrow", "2d_text"]
+const BASE_ANNOTATION_TOOLS := ["select"]
+
 # ── Selection ──────────────────────────────────────────────────────────────────
 
 ## Emitted when the selected annotation changes. Emits "" when selection is
@@ -68,6 +71,17 @@ func validate_annotation_anchor(annotation: Dictionary) -> Array:
 ## toolbar, and plugin harnesses. Hosts override this to opt in to richer tools;
 ## the defaults are intentionally conservative so unsupported actions are hidden.
 func get_capabilities() -> Dictionary:
+	return AnnotationHost.default_capabilities()
+
+
+## Return the capability contract with all expected sections present. Consumers
+## should call this helper so old hosts that only override a subset still behave
+## predictably in the shared dock/workbench.
+func get_annotation_capabilities() -> Dictionary:
+	return AnnotationHost.normalize_capabilities(get_capabilities())
+
+
+static func default_capabilities() -> Dictionary:
 	return {
 		"kinds": [],
 		"tools": [],
@@ -85,7 +99,22 @@ func get_capabilities() -> Dictionary:
 		},
 		"panes": false,
 		"body_views": false,
+		"filters": ["all", "open", "applied", "resolved", "broken"],
 	}
+
+
+static func normalize_capabilities(raw: Dictionary) -> Dictionary:
+	var caps := AnnotationHost.default_capabilities()
+	for key in raw.keys():
+		var value: Variant = raw[key]
+		if value is Dictionary and caps.get(key, null) is Dictionary:
+			var merged: Dictionary = (caps[key] as Dictionary).duplicate(true)
+			for sub_key in (value as Dictionary).keys():
+				merged[sub_key] = (value as Dictionary)[sub_key]
+			caps[key] = merged
+		else:
+			caps[key] = value
+	return caps
 
 
 ## Stable document identity for MCP routing and sidecar ownership. Plugins should
