@@ -86,6 +86,7 @@ func _draw() -> void:
 		1.0,
 		_host.get_view_context()
 	)
+	ctx.host = _host
 
 	# Render each annotation. dispatch_render handles unknown-kind placeholders
 	# (grey dashed rect with kind name) per design §10.

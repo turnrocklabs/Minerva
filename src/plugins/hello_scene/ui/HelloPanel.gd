@@ -28,6 +28,7 @@ var _reply_counter: int = 0
 var _label: Label = null
 var _line_edit: LineEdit = null
 var _greet_button: Button = null
+var _annotation_demo_button: Button = null
 var _toolbar: AnnotationToolbar = null
 var _canvas: Helloscene_AnnotationCanvas = null
 
@@ -49,10 +50,12 @@ func _ready() -> void:
 	_label = $VBoxContainer/Label
 	_line_edit = $VBoxContainer/LineEdit
 	_greet_button = $VBoxContainer/Button
+	_annotation_demo_button = $VBoxContainer/AnnotationDemoButton
 	_toolbar = $VBoxContainer/CanvasRow/AnnotationToolbar
 	_canvas = $VBoxContainer/CanvasRow/AnnotationCanvas
 
 	_greet_button.pressed.connect(_on_greet_pressed)
+	_annotation_demo_button.pressed.connect(_on_annotation_demo_pressed)
 	_line_edit.text_changed.connect(_on_text_changed)
 
 	# Build the annotation registry, populate built-in 2D kinds, and wire
@@ -63,6 +66,10 @@ func _ready() -> void:
 
 	_annotation_host = Helloscene_AnnotationHost.new()
 	_annotation_host._registry = _annotation_registry
+	_annotation_host.register_anchor_resolver(
+		"hello_scene/widget.point",
+		Callable(_annotation_host, "resolve_widget_point_anchor")
+	)
 
 	_toolbar.set_registry(_annotation_registry)
 	_toolbar.set_host(_annotation_host)
@@ -110,6 +117,8 @@ func _on_panel_loaded(ctx: Dictionary) -> void:
 func _on_panel_unload() -> void:
 	if _greet_button != null and _greet_button.pressed.is_connected(_on_greet_pressed):
 		_greet_button.pressed.disconnect(_on_greet_pressed)
+	if _annotation_demo_button != null and _annotation_demo_button.pressed.is_connected(_on_annotation_demo_pressed):
+		_annotation_demo_button.pressed.disconnect(_on_annotation_demo_pressed)
 	if _line_edit != null and _line_edit.text_changed.is_connected(_on_text_changed):
 		_line_edit.text_changed.disconnect(_on_text_changed)
 	# Symmetric teardown for the toolbar→canvas active-tool forwarder.
@@ -254,6 +263,27 @@ func _on_greet_pressed() -> void:
 		var err: String = result.get("error_message", "unknown error")
 		if _label != null:
 			_label.text = "Greet failed: " + err
+
+
+func _on_annotation_demo_pressed() -> void:
+	load_annotation_demo_fixture()
+
+
+## Load a repeatable visible fixture for annotation substrate HITL.
+##
+## This intentionally uses the same payload shapes MCP render_overlay tests use:
+## - callout: plugin-owned anchor + kind_payload.bubble_pos
+## - arrow: plugin-owned endpoint + core/canvas.point endpoint
+## - free text: core/canvas.point anchor + kind_payload.text
+## - stale callout: unknown plugin anchor with snapshot fallback
+func load_annotation_demo_fixture() -> void:
+	if _annotation_host == null:
+		return
+
+	_annotation_host.set_annotations(Helloscene_AnnotationHost.make_demo_annotations())
+
+	if _label != null:
+		_label.text = "Annotation demo fixture loaded."
 
 
 func _on_text_changed(new_text: String) -> void:

@@ -908,6 +908,8 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 	# Resolve annotations and optional background image based on source path.
 	var all_annotations: Array = []
 	var bg_image: Image = null  # null = transparent background
+	var render_host: AnnotationHost = null
+	var render_registry: AnnotationRegistry = _get_registry()
 	# Scale factor applied to bg_image (and therefore to annotation bounds).
 	# Stays 1.0 when no downsampling is needed.
 	var overlay_scale: float = 1.0
@@ -920,6 +922,10 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 			return _err("no live annotation host registered for editor '%s'. Known: %s"
 				% [editor_name, str(known)])
 		all_annotations = host.get_annotations()
+		render_host = host
+		var host_registry: AnnotationRegistry = host.get_registry()
+		if host_registry != null:
+			render_registry = host_registry
 
 		if include_document:
 			# Ask the host to render its UI content. Returns null in headless / when
@@ -983,16 +989,15 @@ func _annotations_render_overlay(args: Dictionary) -> Dictionary:
 	# Render each annotation via its kind's render() virtual.
 	# Falls back to the placeholder fill for annotations whose kind is not
 	# registered (unknown kinds: design §10).
-	var registry: AnnotationRegistry = _get_registry()
 	for ann in filtered:
 		var kind_name: StringName = StringName(str(ann.get("kind", "")))
 		var kind: AnnotationKind = null
-		if registry != null:
-			kind = registry.get_annotation_kind(kind_name)
+		if render_registry != null:
+			kind = render_registry.get_annotation_kind(kind_name)
 		if kind != null:
-			await _render_annotation_via_kind(img, ann, kind, overlay_scale)
+			await _render_annotation_via_kind(img, ann, kind, overlay_scale, render_host)
 		else:
-			_render_annotation_placeholder(img, ann, registry, overlay_scale)
+			_render_annotation_placeholder(img, ann, render_registry, overlay_scale)
 
 	# Write PNG to the caller-supplied path.
 	var save_err: Error = img.save_png(output_path)
@@ -1436,9 +1441,11 @@ func _render_annotation_via_kind(
 	img: Image,
 	ann: Dictionary,
 	kind: AnnotationKind,
-	scale_factor: float = 1.0
+	scale_factor: float = 1.0,
+	host: AnnotationHost = null
 ) -> void:
 	var ctx := _ImageRenderContext.new(img, scale_factor)
+	ctx.host = host
 	kind.render(ctx, ann)
 	# Text primitives are queued (Image has no font rasterizer); rasterize them
 	# via an offscreen SubViewport + Label and blend into img. Async because we
@@ -1627,9 +1634,10 @@ class _ImageRenderContext extends AnnotationRenderContext:
 		if _text_queue.is_empty():
 			return
 		var tree := Engine.get_main_loop() as SceneTree
-		if tree == null or tree.root == null:
-			# No SceneTree → can't host a SubViewport. Draw a 4×4 marker per
-			# entry so the region is non-empty for diversity tests, then bail.
+		if tree == null or tree.root == null or DisplayServer.get_name() == "headless":
+			# No drawable UI frame → can't rely on a SubViewport render pass.
+			# Draw a 4×4 marker per entry so the region is non-empty for
+			# diversity tests, then bail.
 			for entry in _text_queue:
 				var sp: Vector2 = entry["pos"]
 				var col: Color = entry["color"]

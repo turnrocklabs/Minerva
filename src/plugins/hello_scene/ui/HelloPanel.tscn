@@ -57,3 +57,8 @@ placeholder_text = "Type a message..."
 layout_mode = 2
 size_flags_horizontal = 1
 text = "Greet"
+
+[node name="AnnotationDemoButton" type="Button" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 1
+text = "Load Annotation Demo"

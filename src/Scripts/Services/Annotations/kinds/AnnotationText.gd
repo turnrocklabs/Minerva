@@ -219,4 +219,7 @@ static func _annotation_color(annotation: Dictionary) -> Color:
 	var payload: Dictionary = annotation.get("payload", {})
 	if payload.has("color"):
 		return Color(str(payload["color"]))
-	return AnnotationRenderContext.author_color(annotation.get("author", ""))
+	var author: Variant = annotation.get("author", "")
+	if author is Dictionary:
+		return AnnotationRenderContext.author_color(str((author as Dictionary).get("kind", "")))
+	return AnnotationRenderContext.author_color(str(author))

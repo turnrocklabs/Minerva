@@ -175,6 +175,102 @@ func set_annotations(list: Array) -> void:
 	annotations_changed.emit()
 
 
+## Repeatable annotation fixture for the Hello Scene visible HITL harness.
+## Kept on the host so tests can validate the fixture without instantiating the
+## full plugin panel scene.
+static func make_demo_annotations() -> Array:
+	var plugin_anchor := make_widget_point_anchor("label.word:Hello", Vector2(84.0, 64.0))
+	var stale_anchor := {
+		"plugin": "missing_plugin",
+		"type": "widget.point",
+		"id": "deleted-widget",
+		"snapshot": {"position": [330.0, 212.0], "label": "deleted-widget"},
+	}
+	return [
+		{
+			"id": "ann_hello_demo_callout",
+			"schema_version": 2,
+			"kind": "callout",
+			"author": {"kind": "human", "id": "hitl"},
+			"anchor": plugin_anchor,
+			"kind_payload": {
+				"text": "Callout anchored to the Hello label",
+				"bubble_pos": [160.0, 42.0],
+			},
+			"lifecycle": "open",
+			"view_context": "hello",
+			"visible_in_views": ["hello"],
+			"summary": "Callout anchored to the Hello label.",
+		},
+		{
+			"id": "ann_hello_demo_arrow",
+			"schema_version": 2,
+			"kind": "2d_arrow",
+			"author": {"kind": "ai", "model": "fixture"},
+			"kind_payload": {
+				"endpoint_a": plugin_anchor,
+				"endpoint_b": CoreAnchors.make_canvas_point(310.0, 110.0),
+				"head_style": "single",
+				"head_size": 14.0,
+			},
+			"lifecycle": "open",
+			"view_context": "hello",
+			"visible_in_views": ["hello"],
+			"summary": "Arrow from Hello label to a free canvas point.",
+		},
+		{
+			"id": "ann_hello_demo_text",
+			"schema_version": 2,
+			"kind": "2d_text",
+			"author": {"kind": "human", "id": "hitl"},
+			"anchor": CoreAnchors.make_canvas_point(46.0, 188.0),
+			"kind_payload": {"text": "Free text annotation", "font_size": 16.0},
+			"lifecycle": "open",
+			"view_context": "hello",
+			"visible_in_views": ["hello"],
+			"summary": "Free text annotation.",
+		},
+		{
+			"id": "ann_hello_demo_stale",
+			"schema_version": 2,
+			"kind": "callout",
+			"author": {"kind": "ai", "model": "fixture"},
+			"anchor": stale_anchor,
+			"kind_payload": {
+				"text": "Snapshot fallback for a stale anchor",
+				"bubble_pos": [292.0, 246.0],
+			},
+			"lifecycle": "open",
+			"view_context": "hello",
+			"visible_in_views": ["hello"],
+			"summary": "Stale anchor snapshot fallback demo.",
+		},
+	]
+
+
+static func make_widget_point_anchor(anchor_id: String, pos: Vector2) -> Dictionary:
+	return {
+		"plugin": "hello_scene",
+		"type": "widget.point",
+		"id": anchor_id,
+		"snapshot": {"position": [pos.x, pos.y], "label": anchor_id},
+	}
+
+
+## Plugin-owned point anchor used by the Hello Scene annotation demo harness.
+## It resolves through the host rather than through the substrate's
+## core/canvas.point fast path, so MCP/editor render tests exercise the same
+## plugin-anchor contract CAD/PCB will use later.
+func resolve_widget_point_anchor(anchor: Dictionary) -> Dictionary:
+	var pos: Vector2 = _snapshot_position_for_widget_anchor(anchor)
+	return {
+		"position": pos,
+		"bounds": Rect2(pos - Vector2(4.0, 4.0), Vector2(8.0, 8.0)),
+		"stale": false,
+		"view_metadata": {"label": str(anchor.get("id", ""))},
+	}
+
+
 # ── Hello-panel-specific describe_point ───────────────────────────────────────
 
 ## Set the canvas node and UI root that describe_point uses to resolve coords.
@@ -217,6 +313,17 @@ func describe_point(doc_pos: Vector2) -> String:
 			return "label.word:" + word
 
 	return "ui:" + hit.name
+
+
+func _snapshot_position_for_widget_anchor(anchor: Dictionary) -> Vector2:
+	var snapshot: Variant = anchor.get("snapshot", {})
+	if snapshot is Dictionary:
+		var pos: Variant = (snapshot as Dictionary).get("position", null)
+		if pos is Array and (pos as Array).size() >= 2:
+			return Vector2(float((pos as Array)[0]), float((pos as Array)[1]))
+		if pos is Vector2:
+			return pos
+	return Vector2.ZERO
 
 
 ## Recursively walk ctrl's children to find the deepest leaf Control under
