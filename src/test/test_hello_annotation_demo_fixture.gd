@@ -3,7 +3,7 @@ extends SceneTree
 ##
 ## Run: godot --headless --path src --script test/test_hello_annotation_demo_fixture.gd
 
-const HelloAnnotationCanvasScript := preload("res://plugins/hello_scene/ui/HelloAnnotationCanvas.gd")
+const AnnotationOverlayScript := preload("res://Scripts/Services/Annotations/AnnotationOverlay.gd")
 
 var _pass_count := 0
 var _fail_count := 0
@@ -95,7 +95,7 @@ func _first_anchor_for_plugin(annotations: Array, plugin: String) -> Dictionary:
 
 
 func test_canvas_badge_positions_match_annotation_targets(host: Helloscene_AnnotationHost) -> void:
-	var canvas: Helloscene_AnnotationCanvas = HelloAnnotationCanvasScript.new()
+	var canvas: AnnotationOverlay = AnnotationOverlayScript.new()
 	canvas.size = Vector2(640.0, 360.0)
 	canvas.set_host(host)
 	var annotations := host.get_annotations()

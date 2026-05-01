@@ -175,6 +175,7 @@ var _file_saved := false
 var annotation_host: RefCounted = null
 const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
 const _AnnotationDockPaneScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
+const _AnnotationOverlayScript = preload("res://Scripts/Services/Annotations/AnnotationOverlay.gd")
 const _ANNOTATION_LINE_PICK_WIDTH := 34.0
 const _ANNOTATION_DOCK_RIGHT_BREAKPOINT := 1024.0
 ## Overlay Control that paints broken-anchor indicators for Type.TEXT editors.
@@ -187,6 +188,8 @@ var _annotation_content_row: HBoxContainer = null
 ## Resolved in _ready via $VBoxContainer/AnnotationDockPane.
 var _annotation_sidebar: Node = null
 var _annotation_dock_mode: int = -1
+## Platform-owned annotation overlay for plugin-scene editors.
+var _platform_annotation_overlay: AnnotationOverlay = null
 ## Retarget mode state (Round 5b.ii). Empty string = not in retarget mode;
 ## otherwise the annotation_id whose anchor is being repaired.
 var _retarget_in_progress: String = ""
@@ -739,6 +742,20 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 		_annotation_sidebar.set_host(annotation_host)
 	if _annotation_sidebar.has_method("set_can_add_comment"):
 		_annotation_sidebar.set_can_add_comment(false)
+
+	var existing_overlay := surface.find_child("PlatformAnnotationOverlay", false, false)
+	if existing_overlay == null or not (existing_overlay is AnnotationOverlay):
+		_platform_annotation_overlay = _AnnotationOverlayScript.new()
+		_platform_annotation_overlay.name = "PlatformAnnotationOverlay"
+		surface.add_child(_platform_annotation_overlay)
+	else:
+		_platform_annotation_overlay = existing_overlay as AnnotationOverlay
+	_platform_annotation_overlay.set_host(host)
+
+	if _annotation_sidebar.has_signal("active_tool_changed"):
+		var overlay_callable := Callable(_platform_annotation_overlay, "set_active_tool")
+		if not _annotation_sidebar.active_tool_changed.is_connected(overlay_callable):
+			_annotation_sidebar.active_tool_changed.connect(overlay_callable)
 
 	var layout_callable := Callable(self, "_sync_annotation_dock_layout")
 	if not resized.is_connected(layout_callable):

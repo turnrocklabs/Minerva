@@ -9,6 +9,7 @@ extends VBoxContainer
 signal repair_requested(annotation_id: String)
 signal add_comment_requested(text: String)
 signal annotation_selected(annotation_id: String)
+signal active_tool_changed(tool: AnnotationAuthorTool)
 
 enum DockMode { RIGHT, BOTTOM }
 
@@ -18,6 +19,7 @@ var _host: RefCounted = null
 var _chevron: Button
 const _AnnotationWorkbenchScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationWorkbench.gd")
 var _workbench: Control = null
+var _toolbar: AnnotationToolbar = null
 
 const _RIGHT_EXPANDED_MIN := Vector2(260, 0)
 const _RIGHT_COLLAPSED_MIN := Vector2(30, 0)
@@ -35,11 +37,20 @@ func set_host(host: RefCounted) -> void:
 	_ensure_ui()
 	if _workbench.has_method("set_host"):
 		_workbench.set_host(host)
+	if _toolbar != null and host is AnnotationHost:
+		var ann_host := host as AnnotationHost
+		_toolbar.set_registry(ann_host.get_registry())
+		_toolbar.set_host(ann_host)
 
 
 func get_workbench() -> Control:
 	_ensure_ui()
 	return _workbench
+
+
+func get_toolbar() -> AnnotationToolbar:
+	_ensure_ui()
+	return _toolbar
 
 
 func set_dock_mode(mode: DockMode) -> void:
@@ -104,6 +115,13 @@ func _build_ui() -> void:
 	_chevron.pressed.connect(_toggle_collapsed)
 	add_child(_chevron)
 
+	_toolbar = AnnotationToolbar.new()
+	_toolbar.name = "AnnotationToolbar"
+	_toolbar.presentation_mode = AnnotationToolbar.PresentationMode.COMPACT
+	_toolbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_toolbar.active_tool_changed.connect(func(tool: AnnotationAuthorTool) -> void: active_tool_changed.emit(tool))
+	add_child(_toolbar)
+
 	_workbench = _AnnotationWorkbenchScript.new()
 	_workbench.name = "AnnotationWorkbench"
 	_workbench.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -127,6 +145,8 @@ func _set_collapsed(value: bool) -> void:
 
 
 func _apply_layout_state() -> void:
+	if _toolbar != null:
+		_toolbar.visible = not _collapsed
 	if _workbench != null:
 		_workbench.visible = not _collapsed
 	if _chevron != null:

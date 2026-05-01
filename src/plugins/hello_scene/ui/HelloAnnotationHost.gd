@@ -397,10 +397,8 @@ func _find_leaf_at(ctrl: Control, global_pos: Vector2) -> Control:
 		if not (child is Control):
 			continue
 		var child_ctrl := child as Control
-		# Skip the canvas and annotation toolbar subtrees entirely — those are
-		# the annotation drawing surface, not labelled UI content.
 		var child_name: String = child_ctrl.name
-		if child_name == "AnnotationCanvas" or child_name == "AnnotationToolbar":
+		if child_name == "PlatformAnnotationOverlay":
 			continue
 		# Only recurse into children whose grown rect contains the point.
 		if not child_ctrl.get_global_rect().grow(_TOLERANCE_MARGIN).has_point(global_pos):

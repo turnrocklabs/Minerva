@@ -29,8 +29,6 @@ var _label: Label = null
 var _line_edit: LineEdit = null
 var _greet_button: Button = null
 var _annotation_demo_button: Button = null
-var _toolbar: AnnotationToolbar = null
-var _canvas: Helloscene_AnnotationCanvas = null
 
 # Annotation-substrate ownership (created in _ready, lives for panel lifetime).
 var _annotation_registry: AnnotationRegistry = null
@@ -51,16 +49,11 @@ func _ready() -> void:
 	_line_edit = $VBoxContainer/LineEdit
 	_greet_button = $VBoxContainer/Button
 	_annotation_demo_button = $VBoxContainer/AnnotationDemoButton
-	_toolbar = $VBoxContainer/CanvasRow/AnnotationToolbar
-	_canvas = $VBoxContainer/CanvasRow/AnnotationCanvas
 
 	_greet_button.pressed.connect(_on_greet_pressed)
 	_annotation_demo_button.pressed.connect(_on_annotation_demo_pressed)
 	_line_edit.text_changed.connect(_on_text_changed)
 
-	# Build the annotation registry, populate built-in 2D kinds, and wire
-	# the host/toolbar/canvas trio. This is the reference wiring pattern
-	# CAD/PCB will copy.
 	_annotation_registry = AnnotationRegistry.new()
 	BuiltinKinds.register_all(_annotation_registry)
 
@@ -70,21 +63,9 @@ func _ready() -> void:
 		"hello_scene/widget.point",
 		Callable(_annotation_host, "resolve_widget_point_anchor")
 	)
-
-	_toolbar.set_registry(_annotation_registry)
-	_toolbar.set_host(_annotation_host)
-	_toolbar.active_tool_changed.connect(_on_active_tool_changed)
-
-	_canvas.set_host(_annotation_host)
-	# Wire canvas + root into the host so describe_point can resolve UI elements.
-	_annotation_host.set_canvas_and_root(_canvas, self)
+	_annotation_host.set_canvas_and_root(self, self)
 
 	_label.text = "Hello Scene ready. Type something and press Greet."
-
-
-func _on_active_tool_changed(tool: AnnotationAuthorTool) -> void:
-	if _canvas != null:
-		_canvas.set_active_tool(tool)
 
 
 func get_annotation_host() -> RefCounted:
@@ -125,12 +106,6 @@ func _on_panel_unload() -> void:
 		_annotation_demo_button.pressed.disconnect(_on_annotation_demo_pressed)
 	if _line_edit != null and _line_edit.text_changed.is_connected(_on_text_changed):
 		_line_edit.text_changed.disconnect(_on_text_changed)
-	# Symmetric teardown for the toolbar→canvas active-tool forwarder.
-	if _toolbar != null and _toolbar.active_tool_changed.is_connected(_on_active_tool_changed):
-		_toolbar.active_tool_changed.disconnect(_on_active_tool_changed)
-	if _canvas != null:
-		_canvas.set_active_tool(null)
-		_canvas.set_host(null)
 	# Symmetric to _on_panel_loaded's register call.
 	if _registered_editor_name != "":
 		AnnotationHostRegistry.deregister(_registered_editor_name)
