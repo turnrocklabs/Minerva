@@ -743,6 +743,7 @@ func _register_plugin_editor_items(id: String) -> void:
 	# clear them first so the second registration doesn't trip the
 	# "overwriting existing item 'X'" push_warning in CreatableItemRegistry.
 	creatable_item_registry.unregister_by_source(id)
+	var seen_item_ids: Dictionary = {}
 	for ei in def.editor_items:
 		var item_id: String = ei.get("id", "")
 		var item_name: String = ei.get("name", "")
@@ -750,6 +751,9 @@ func _register_plugin_editor_items(id: String) -> void:
 		if item_id.is_empty() or item_name.is_empty() or panel_name.is_empty():
 			push_warning("[Plugins] Skipping invalid editor_item in plugin '%s': %s" % [id, str(ei)])
 			continue
+		if seen_item_ids.has(item_id):
+			continue
+		seen_item_ids[item_id] = true
 		var plugin_id_copy := id
 		var panel_name_copy := panel_name
 		var item_name_copy := item_name

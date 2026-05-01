@@ -71,6 +71,7 @@ func _init() -> void:
 	test_editor_items_bad_panel_ref_fails_validate()
 	test_editor_items_good_panel_ref_passes_validate()
 	test_duplicate_panel_names_fail_validate()
+	test_from_dict_does_not_duplicate_top_level_arrays()
 
 	print("\n-- Real plugin manifests --")
 	test_obs_controller_manifest_parses()
@@ -479,6 +480,27 @@ func test_duplicate_panel_names_fail_validate() -> void:
 		if "Duplicate panel name" in e or "dup_panel" in e:
 			found = true
 	check("dup panel names: validate catches duplicate", found)
+
+
+func test_from_dict_does_not_duplicate_top_level_arrays() -> void:
+	var data := _minimal_manifest({
+		"panels": [
+			{"name": "real_panel", "kind": "html"}
+		],
+		"ipc_messages": ["test.event"],
+	})
+	data["editor_items"] = [
+		{"id": "new_thing", "name": "New Thing", "panel": "real_panel"}
+	]
+	data["events"] = [
+		{"name": "test.event", "payload_schema": {"type": "object"}}
+	]
+	var def = PluginDefinition_.from_dict(data)
+	check("from_dict no duplicate: def not null", def != null)
+	if def == null:
+		return
+	check_eq("from_dict no duplicate: one editor item", def.editor_items.size(), 1)
+	check_eq("from_dict no duplicate: one event", def.events.size(), 1)
 
 
 # ---------------------------------------------------------------------------

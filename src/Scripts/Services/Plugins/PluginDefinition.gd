@@ -280,17 +280,11 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	def.data_directory = d.get("data_directory", "")
 	def.autostart = bool(d.get("autostart", false))
 	def.auto_reload = bool(d.get("auto_reload", false))
-	for ei in d.get("editor_items", []):
-		if ei is Dictionary:
-			def.editor_items.append(ei.duplicate(true))
-	for ev in d.get("events", []):
-		if ev is Dictionary:
-			def.events.append(ev.duplicate(true))
-	def.state_schema = d.get("state", {}).get("schema", {})
 	for cn in d.get("class_names", []):
 		def.class_names.append(str(cn))
-	# capabilities already populated by _from_dict_internal — do not re-append
-	# project_file and project_export hooks (design §8)
+	# editor_items, events, capabilities, state_schema, project_file, and
+	# project_export are already populated by _from_dict_internal; do not
+	# re-append here or persisted plugin definitions multiply entries on reload.
 	var pf: Dictionary = d.get("project_file", {})
 	def.project_file_serialize_channel = str(pf.get("serialize_channel", ""))
 	def.project_file_deserialize_channel = str(pf.get("deserialize_channel", ""))
