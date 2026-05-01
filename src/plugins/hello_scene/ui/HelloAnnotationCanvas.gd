@@ -39,6 +39,11 @@ const _BADGE_TEXT := Color.WHITE
 const _HALO_COLOR := Color(1.0, 0.78, 0.30, 0.85)
 const _HALO_GROW := 4.0
 
+
+func _ready() -> void:
+	focus_mode = Control.FOCUS_ALL
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 ## Bind this canvas to the panel's annotation host.
@@ -50,12 +55,16 @@ func set_host(host: Helloscene_AnnotationHost) -> void:
 	if _host != null:
 		if _host.annotations_changed.is_connected(_on_annotations_changed):
 			_host.annotations_changed.disconnect(_on_annotations_changed)
-		if _host.selection_changed.is_connected(queue_redraw):
-			_host.selection_changed.disconnect(queue_redraw)
+		if _host.selection_changed.is_connected(_on_selection_changed):
+			_host.selection_changed.disconnect(_on_selection_changed)
 	_host = host
 	if _host != null:
 		_host.annotations_changed.connect(_on_annotations_changed)
-		_host.selection_changed.connect(queue_redraw)
+		_host.selection_changed.connect(_on_selection_changed)
+	queue_redraw()
+
+
+func _on_selection_changed(_annotation_id: String) -> void:
 	queue_redraw()
 
 
@@ -109,7 +118,11 @@ func _draw() -> void:
 		_active_tool.draw_preview(ctx)
 
 	# Selection halo around the currently selected annotation.
-	if _host != null:
+	# Suppress when a manipulation tool is active — those tools draw their own
+	# selection visualization (gizmo/halo) via draw_preview, and a duplicate
+	# halo would obscure their handles.
+	var tool_owns_selection_visual := _active_tool is AnnotationSelectTool or _active_tool is AnnotationTransformTool
+	if _host != null and not tool_owns_selection_visual:
 		var sel_id: String = _host.get_selected_annotation_id()
 		if not sel_id.is_empty():
 			for ann in _host.get_annotations():
@@ -139,6 +152,8 @@ func _gui_input(event: InputEvent) -> void:
 		var mb: InputEventMouseButton = event
 		var mods := _mods_from_event(mb)
 		if mb.pressed:
+			if mb.button_index == MOUSE_BUTTON_LEFT:
+				grab_focus()
 			var consumed := _active_tool.on_pointer_down(mb.position, mb.button_index, mods)
 			if consumed:
 				accept_event()
