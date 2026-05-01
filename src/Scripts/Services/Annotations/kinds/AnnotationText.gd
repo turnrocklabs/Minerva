@@ -63,6 +63,16 @@ func primary_anchor_point(annotation: Dictionary) -> Vector2:
 
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
 	var color := _annotation_color(annotation)
+
+	# Anchor-aware payload path (Round 2: overlay-canvas DCR). When
+	# kind_payload.text is set, render at the anchor-resolved position.
+	# kind_payload.font_size + .scale + .rotation_rad are honored if present.
+	var payload_pos: Variant = _resolve_payload_position(ctx, annotation)
+	if payload_pos is Vector2:
+		var payload: Dictionary = annotation.get("kind_payload", {})
+		_render_payload_text(ctx, payload_pos, payload, color)
+		return
+
 	var prims: Array = annotation.get("primitives", [])
 	for prim in prims:
 		if prim is Dictionary and prim.get("kind", "") == "text":
@@ -70,6 +80,11 @@ func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
 
 
 func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
+	var payload_pos: Variant = _resolve_payload_position(null, annotation)
+	if payload_pos is Vector2:
+		var rect := _payload_text_aabb(payload_pos, annotation.get("kind_payload", {})).grow(threshold)
+		return rect.has_point(point)
+
 	var prims: Array = annotation.get("primitives", [])
 	for prim in prims:
 		if not (prim is Dictionary and prim.get("kind", "") == "text"):
@@ -81,6 +96,10 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 
 
 func bounds(annotation: Dictionary) -> Rect2:
+	var payload_pos: Variant = _resolve_payload_position(null, annotation)
+	if payload_pos is Vector2:
+		return _payload_text_aabb(payload_pos, annotation.get("kind_payload", {}))
+
 	var prims: Array = annotation.get("primitives", [])
 	var result := Rect2()
 	var initialized := false
@@ -94,6 +113,64 @@ func bounds(annotation: Dictionary) -> Rect2:
 		else:
 			result = result.merge(r)
 	return result
+
+
+# ── Anchor-aware payload path (Round 2 overlay-canvas DCR) ───────────────────
+
+## Resolve the rendering position from the annotation envelope. Returns null
+## when this annotation is not in payload-anchor mode (legacy primitives path).
+##
+## ctx may be null for hit-test/bounds calls; in that case anchor resolution
+## falls back to anchor.snapshot.position so static geometry queries still work.
+func _resolve_payload_position(ctx: AnnotationRenderContext, annotation: Dictionary) -> Variant:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if not (payload is Dictionary and (payload as Dictionary).has("text")):
+		return null
+	var anchor: Variant = annotation.get("anchor", null)
+	if not anchor is Dictionary:
+		return null
+	if ctx != null and ctx.host != null and ctx.host.has_method("resolve_position_source"):
+		var resolved: Variant = ctx.host.resolve_position_source(anchor)
+		if resolved is Vector2:
+			return resolved
+	# Snapshot fallback (no host or host can't resolve).
+	var snapshot: Variant = (anchor as Dictionary).get("snapshot", {})
+	if snapshot is Dictionary and (snapshot as Dictionary).has("position"):
+		return AnnotationKind._to_vec2((snapshot as Dictionary).get("position"))
+	return null
+
+
+func _render_payload_text(ctx: AnnotationRenderContext, pos: Vector2, payload: Dictionary, color: Color) -> void:
+	var text := str(payload.get("text", ""))
+	var base_size := float(payload.get("font_size", 14.0))
+	var scale_factor := float(payload.get("scale", 1.0))
+	var rotation_rad := float(payload.get("rotation_rad", 0.0))
+	var px_size := int(clampf(base_size * scale_factor * ctx.zoom, 8.0, 64.0))
+	ctx.draw_string_rotated(null, pos, text, color, px_size, rotation_rad)
+
+
+func _payload_text_aabb(pos: Vector2, payload_v: Variant) -> Rect2:
+	var payload: Dictionary = {}
+	if payload_v is Dictionary:
+		payload = payload_v as Dictionary
+	var content := str(payload.get("text", ""))
+	var base := float(payload.get("font_size", 14.0))
+	var scale_factor := float(payload.get("scale", 1.0))
+	var rotation_rad := float(payload.get("rotation_rad", 0.0))
+	var w := content.length() * base * scale_factor * 0.55
+	var h := base * scale_factor * 1.2
+	if absf(rotation_rad) < 0.0001:
+		return Rect2(pos, Vector2(w, h))
+	var t := Transform2D(rotation_rad, Vector2.ZERO)
+	var c0 := t * Vector2(0.0, 0.0)
+	var c1 := t * Vector2(w, 0.0)
+	var c2 := t * Vector2(0.0, h)
+	var c3 := t * Vector2(w, h)
+	var min_x := minf(minf(c0.x, c1.x), minf(c2.x, c3.x))
+	var min_y := minf(minf(c0.y, c1.y), minf(c2.y, c3.y))
+	var max_x := maxf(maxf(c0.x, c1.x), maxf(c2.x, c3.x))
+	var max_y := maxf(maxf(c0.y, c1.y), maxf(c2.y, c3.y))
+	return Rect2(pos + Vector2(min_x, min_y), Vector2(max_x - min_x, max_y - min_y))
 
 
 # ── Private helpers ───────────────────────────────────────────────────────────

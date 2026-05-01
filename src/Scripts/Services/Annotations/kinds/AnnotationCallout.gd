@@ -42,17 +42,19 @@ func to_chat_context(annotation: Dictionary, capabilities: Dictionary) -> Array:
 
 
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:
-	var anchor_pos := _anchor_snapshot_pos(annotation)
-	var label_pos := anchor_pos + _payload_offset(annotation)
+	var anchor_pos := _resolve_anchor_pos(ctx, annotation)
+	var label_pos := _resolve_label_pos(annotation, anchor_pos)
 	var color := _annotation_color(annotation)
 	var text := _payload_text(annotation)
 	if text.is_empty():
 		text = "Callout"
 
-	ctx.draw_line(anchor_pos, label_pos, Color(color.r, color.g, color.b, 0.82), 1.25)
+	# Leader from anchor to nearest edge-center of label rect for a clean look.
+	var label_rect := _label_rect(label_pos, text)
+	var leader_end := _nearest_label_edge(anchor_pos, label_rect)
+	ctx.draw_line(anchor_pos, leader_end, Color(color.r, color.g, color.b, 0.82), 1.25)
 	ctx.draw_badge(anchor_pos)
 
-	var label_rect := _label_rect(label_pos, text)
 	ctx.draw_rect(label_rect, Color(0.05, 0.06, 0.07, 0.82), true)
 	ctx.draw_rect(label_rect, color, false, 1.0)
 	ctx.draw_string(null, label_pos + Vector2(_PADDING.x, _PADDING.y + _FONT_SIZE), text, Color.WHITE, _FONT_SIZE)
@@ -74,12 +76,56 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 
 func bounds(annotation: Dictionary) -> Rect2:
 	var anchor_pos := _anchor_snapshot_pos(annotation)
-	var label_pos := anchor_pos + _payload_offset(annotation)
+	var label_pos := _resolve_label_pos(annotation, anchor_pos)
 	return Rect2(anchor_pos, Vector2.ZERO).merge(_label_rect(label_pos, _payload_text(annotation)))
 
 
 func primary_anchor_point(annotation: Dictionary) -> Vector2:
 	return _anchor_snapshot_pos(annotation)
+
+
+# ── Bubble position + leader routing (Round 2 enrichment) ─────────────────────
+
+## Resolve anchor position from ctx.host when available, else snapshot fallback.
+## Lets the leader line follow the anchor as underlying content moves.
+static func _resolve_anchor_pos(ctx: AnnotationRenderContext, annotation: Dictionary) -> Vector2:
+	if ctx != null and ctx.host != null and ctx.host.has_method("resolve_position_source"):
+		var anchor: Variant = annotation.get("anchor", null)
+		if anchor is Dictionary:
+			var resolved: Variant = ctx.host.resolve_position_source(anchor)
+			if resolved is Vector2:
+				return resolved
+	return _anchor_snapshot_pos(annotation)
+
+
+## Bubble position: kind_payload.bubble_pos overrides the anchor+offset default
+## so user-dragged callouts persist their position independently of the anchor.
+static func _resolve_label_pos(annotation: Dictionary, anchor_pos: Vector2) -> Vector2:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary:
+		var p: Dictionary = payload
+		if p.has("bubble_pos"):
+			return AnnotationKind._to_vec2(p.get("bubble_pos"))
+	return anchor_pos + _payload_offset(annotation)
+
+
+## Pick the label-rect edge midpoint nearest the anchor for the leader endpoint.
+## Cleaner look than always pointing at the top-left corner.
+static func _nearest_label_edge(anchor: Vector2, label: Rect2) -> Vector2:
+	var top := Vector2(label.position.x + label.size.x * 0.5, label.position.y)
+	var bottom := Vector2(label.position.x + label.size.x * 0.5, label.end.y)
+	var left := Vector2(label.position.x, label.position.y + label.size.y * 0.5)
+	var right := Vector2(label.end.x, label.position.y + label.size.y * 0.5)
+	var candidates := [top, bottom, left, right]
+	var best: Vector2 = candidates[0]
+	var best_d: float = anchor.distance_squared_to(best)
+	for i in range(1, candidates.size()):
+		var c: Vector2 = candidates[i]
+		var d := anchor.distance_squared_to(c)
+		if d < best_d:
+			best = c
+			best_d = d
+	return best
 
 
 static func _anchor_snapshot_pos(annotation: Dictionary) -> Vector2:

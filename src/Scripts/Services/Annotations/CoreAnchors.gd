@@ -13,6 +13,7 @@ func register_all(registry: Object) -> void:
 	registry.register(CORE_PLUGIN, "text.selection", get_resolver_for("text.selection"))
 	registry.register(CORE_PLUGIN, "graphics.region", get_resolver_for("graphics.region"))
 	registry.register(CORE_PLUGIN, "graphics.layer", get_resolver_for("graphics.layer"))
+	registry.register(CORE_PLUGIN, "canvas.point", get_resolver_for("canvas.point"))
 
 
 func get_resolver_for(anchor_type: String) -> Object:
@@ -25,6 +26,8 @@ func get_resolver_for(anchor_type: String) -> Object:
 			return _GraphicsRegionResolver.new()
 		"graphics.layer":
 			return _GraphicsLayerResolver.new()
+		"canvas.point":
+			return _CanvasPointResolver.new()
 	return null
 
 
@@ -107,3 +110,53 @@ class _GraphicsLayerResolver extends _BaseResolver:
 
 	func summary(anchor: Dictionary, _host: Object) -> String:
 		return "graphics layer %s" % str(anchor.get("id", "unknown"))
+
+
+## Substrate-owned anchor for free positions on the overlay canvas.
+## id: {x: float, y: float} in canvas-space pixels.
+## Used by arrow/callout/text endpoints when the position is not bound to any
+## host-resolved domain element.
+class _CanvasPointResolver extends _BaseResolver:
+	func validate(anchor: Dictionary) -> Array:
+		var errors: Array = []
+		var id: Variant = anchor.get("id", null)
+		if not id is Dictionary:
+			errors.append("canvas.point id must be {x:number, y:number}")
+			return errors
+		var id_dict: Dictionary = id
+		if not id_dict.has("x"):
+			errors.append("canvas.point id.x is required")
+		elif not (id_dict["x"] is float or id_dict["x"] is int):
+			errors.append("canvas.point id.x must be a number")
+		if not id_dict.has("y"):
+			errors.append("canvas.point id.y is required")
+		elif not (id_dict["y"] is float or id_dict["y"] is int):
+			errors.append("canvas.point id.y must be a number")
+		return errors
+
+	func summary(anchor: Dictionary, _host: Object) -> String:
+		var id: Variant = anchor.get("id", {})
+		if id is Dictionary:
+			return "canvas point %s,%s" % [str((id as Dictionary).get("x", "?")), str((id as Dictionary).get("y", "?"))]
+		return "canvas point unknown"
+
+	## Resolve to a screen position from the anchor id payload.
+	## Substrate-owned: every host can resolve canvas.point without registering
+	## a host-local Callable.
+	static func position_from(anchor: Dictionary) -> Vector2:
+		var id: Variant = anchor.get("id", null)
+		if id is Dictionary:
+			var d: Dictionary = id
+			return Vector2(float(d.get("x", 0.0)), float(d.get("y", 0.0)))
+		return Vector2.ZERO
+
+
+## Build a well-formed core/canvas.point anchor at (x, y) in canvas space.
+## Helper used by arrow/callout/text kinds when authoring free endpoints.
+static func make_canvas_point(x: float, y: float) -> Dictionary:
+	return {
+		"plugin": CORE_PLUGIN,
+		"type": "canvas.point",
+		"id": {"x": x, "y": y},
+		"snapshot": {"position": [x, y]},
+	}

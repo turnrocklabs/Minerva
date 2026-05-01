@@ -251,7 +251,8 @@ func test_core_anchors_registered_in_registry() -> void:
 	check("text.selection registered", reg.get_resolver("core", "text.selection") != null)
 	check("graphics.region registered", reg.get_resolver("core", "graphics.region") != null)
 	check("graphics.layer registered", reg.get_resolver("core", "graphics.layer") != null)
-	check_eq("known core anchors count", reg.known_anchors_for("core").size(), 4)
+	check("canvas.point registered", reg.get_resolver("core", "canvas.point") != null)
+	check_eq("known core anchors count", reg.known_anchors_for("core").size(), 5)
 
 
 func test_core_anchor_repair_returns_null() -> void:

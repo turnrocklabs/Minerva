@@ -17,6 +17,8 @@ extends RefCounted
 
 const AnnotationResolveCacheScript = preload("res://Scripts/Services/Annotations/AnnotationResolveCache.gd")
 
+const _CANVAS_POINT_KEY := "core/canvas.point"
+
 # ── Selection ──────────────────────────────────────────────────────────────────
 
 ## Emitted when the selected annotation changes. Emits "" when selection is
@@ -153,8 +155,22 @@ func get_annotation_display_index(annotation: Dictionary) -> int:
 ## Resolve an anchor to screen-space for rendering. Hosts with live semantic
 ## documents should override this or register per-anchor callables; the base
 ## fallback deliberately marks anchors stale and renders at snapshot.position.
+##
+## Substrate-owned anchor types (core/canvas.point) are resolved here without
+## requiring host registration so arrow/callout/text endpoints work uniformly.
 func resolve_anchor(anchor: Dictionary) -> Dictionary:
-	var resolver: Variant = _anchor_resolvers.get(_anchor_key(anchor), Callable())
+	var key := _anchor_key(anchor)
+
+	if key == _CANVAS_POINT_KEY:
+		var canvas_pos := _canvas_point_position(anchor)
+		return {
+			"position": canvas_pos,
+			"bounds": Rect2(canvas_pos, Vector2.ZERO),
+			"stale": false,
+			"view_metadata": {},
+		}
+
+	var resolver: Variant = _anchor_resolvers.get(key, Callable())
 	if resolver is Callable and (resolver as Callable).is_valid():
 		return _normalise_resolve_result((resolver as Callable).call(anchor), anchor)
 
@@ -165,6 +181,52 @@ func resolve_anchor(anchor: Dictionary) -> Dictionary:
 		"stale": true,
 		"view_metadata": {},
 	}
+
+
+func _canvas_point_position(anchor: Dictionary) -> Vector2:
+	var id: Variant = anchor.get("id", null)
+	if id is Dictionary:
+		var d: Dictionary = id
+		return Vector2(float(d.get("x", 0.0)), float(d.get("y", 0.0)))
+	return _snapshot_position_2d(anchor.get("snapshot", {}))
+
+
+## Resolve a *position source* — either an anchor (Dictionary) or an inline
+## point (Vector2 / [x, y] / {x, y}) — to a screen-space Vector2.
+##
+## Returns null when the source cannot be resolved (unknown anchor with no
+## resolver, missing payload, etc.). Use this from arrow/callout endpoint
+## resolution so kinds do not need to know whether the endpoint is an anchor or
+## a free canvas point.
+func resolve_position_source(source: Variant) -> Variant:
+	if source is Vector2:
+		return source
+	if source is Vector3:
+		return Vector2((source as Vector3).x, (source as Vector3).y)
+	if source is Array and (source as Array).size() >= 2:
+		return Vector2(float((source as Array)[0]), float((source as Array)[1]))
+	if source is Dictionary:
+		var d: Dictionary = source
+		# Bare {x, y} — promoted to Vector2.
+		if d.has("x") and d.has("y") and not d.has("plugin"):
+			return Vector2(float(d.get("x", 0.0)), float(d.get("y", 0.0)))
+		# Anchor envelope — defer to resolve_anchor; return null only when there
+		# is genuinely no signal (no resolver registered AND no snapshot position).
+		# Stale anchors with a snapshot position still return that snapshot
+		# position so kinds can render broken endpoints in place.
+		if d.has("plugin") and d.has("type"):
+			var key := "%s/%s" % [str(d.get("plugin", "")), str(d.get("type", ""))]
+			var has_resolver: bool = key == _CANVAS_POINT_KEY or _anchor_resolvers.has(key)
+			var snapshot: Variant = d.get("snapshot", null)
+			var has_snapshot_position: bool = snapshot is Dictionary and (snapshot as Dictionary).has("position")
+			if not has_resolver and not has_snapshot_position:
+				return null
+			var resolved := resolve_anchor(d)
+			var pos: Variant = resolved.get("position", null)
+			if pos is Vector2:
+				return pos
+			return _to_vec2(pos)
+	return null
 
 
 ## Screen-space hit-test rectangle for an anchor in a view. Subclasses can

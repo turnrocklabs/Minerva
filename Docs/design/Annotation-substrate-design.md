@@ -261,6 +261,86 @@ Display numbering is persisted as `display_index` on each annotation. Numbers ar
 
 ---
 
+## 5.3 Overlay Canvas + Position-Source Contract
+
+The overlay-canvas DCR (`019de0cf51b87125ae03e4986bc05200`) extends the substrate from a paint-only overlay into a positioned-item canvas with an anchor-uniform endpoint contract for kinds that span two points (arrow, callout) or live at a free position (free text, future ink).
+
+### `AnnotationCanvas` — positioned-item surface
+
+`src/Scripts/Services/Annotations/AnnotationCanvas.gd` extends `AnnotationOverlay` with an item registry, hit-testing, z-order, selection state, and selection-handle rendering. Annotation kinds register **item types** with the canvas; the canvas owns interaction (drag, marquee, select), kinds own rendering for their item type.
+
+Canvas API:
+
+```gdscript
+# Item-type registry — kinds register draw + hit-test callbacks
+canvas.register_item_type(type_name, {
+    "draw": Callable(canvas, item) -> void,
+    "hit_test": Callable(item, point) -> bool,        # optional; defaults to bounds
+    "supported_transforms": PackedStringArray,         # subset of [translate, rotate, scale]
+})
+
+# Item lifecycle — items are plain Dictionaries with id, type, position, optional bounds/z_order/payload
+canvas.add_item(item) -> id
+canvas.remove_item(id)
+canvas.update_item_position(id, pos)
+canvas.update_item_bounds(id, rect)
+canvas.update_item_payload(id, payload)
+canvas.get_item(id) / get_items() / clear_items() / item_count()
+
+# Z-order
+canvas.bring_to_front(id) / send_to_back(id)
+
+# Selection
+canvas.select_item(id, additive=false)
+canvas.deselect_item(id) / clear_item_selection() / set_item_selection(ids)
+canvas.get_selected_item_ids() -> PackedStringArray
+
+# Hit testing
+canvas.hit_test(point) -> id      # topmost wins; respects per-item type hit_test callback
+canvas.items_in_rect(rect) -> ids  # for marquee selection
+```
+
+Reserved item-type names: `callout-bubble`, `arrow-segment`, `free-text`, `ink-stroke` (last is a future-DCR slot — registering with no draw callback is allowed; the canvas simply skips drawing).
+
+### `core/canvas.point` substrate anchor
+
+A free position on the overlay canvas is itself an anchor:
+
+```json
+{"plugin": "core", "type": "canvas.point", "id": {"x": 100.0, "y": 200.0}, "snapshot": {"position": [100.0, 200.0]}}
+```
+
+Built helper: `CoreAnchors.make_canvas_point(x, y) -> Dictionary`. Resolved by the substrate inside `AnnotationHost.resolve_anchor` — every host gets canvas-point resolution without registering a host-local Callable. Canvas points are never marked stale.
+
+### Position sources and `resolve_position_source`
+
+Arrow and callout endpoints, and any future kind that needs a point, accept a **position source** that is one of:
+
+- `Vector2`
+- `[x, y]` — array form
+- `{x, y}` — bare dict (treated as inline canvas point)
+- An anchor envelope `{plugin, type, id, snapshot, ...}` resolved by host or substrate
+
+`AnnotationHost.resolve_position_source(source) -> Vector2 | null` resolves any of these uniformly. Returns `null` only when there is genuinely no signal (no resolver registered AND no `snapshot.position` to fall back on). Stale anchors with snapshot positions still return the snapshot position so kinds can render broken endpoints in place.
+
+Plugins exposing point-precision domain anchors (e.g. `pcb/trace.point`, `cad/edge.point`) Just Work as arrow/callout endpoints — kinds do not need to know the anchor type, only that resolution returns a position.
+
+### Anchor-aware kind payload extensions
+
+Existing built-in kinds gain optional anchor-aware payload paths. The legacy primitives path stays intact — when the new payload fields are absent, the kind falls back to its primitives-based render/bounds/hit-test.
+
+**`2d_arrow`** — when `kind_payload.endpoint_a` and `kind_payload.endpoint_b` are present, both are resolved as position sources and the arrow renders a segment between them. Optional `head_size`, `head_style` (`single` / `double` / `none`).
+
+**`2d_text`** — when `kind_payload.text` is present, the text renders at the position resolved from the annotation's `anchor` field (typically a `core/canvas.point` for free placement). Optional `font_size`, `scale`, `rotation_rad`.
+
+**`callout`** — `kind_payload.bubble_pos` `[x, y]` overrides the default offset-based bubble placement so a user-dragged bubble persists independently of the anchor. The leader line picks the nearest edge midpoint of the bubble for a clean look. Anchor position is resolved live via `ctx.host.resolve_position_source` (snapshot fallback when host is absent).
+
+### Render path
+
+`AnnotationKind.render(ctx, annotation)` continues to be the single render entry point. `AnnotationRenderContext.host: Object` exposes the host so kinds can call `ctx.host.resolve_position_source(...)` for anchor-aware paths. Kinds without a host context (hit-test/bounds calls) fall back to anchor `snapshot.position` so static geometry queries remain stable.
+
+---
+
 ## 6. `ink_stroke` Primitive (post-MVP)
 
 ### 6.1 Shape
