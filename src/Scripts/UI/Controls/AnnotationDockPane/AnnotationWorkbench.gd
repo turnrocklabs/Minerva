@@ -12,10 +12,12 @@ signal annotation_selected(annotation_id: String)
 
 const _BROKEN_COLOR := Color(1.0, 0.55, 0.05, 1.0)
 const _MUTED := Color(1, 1, 1, 0.58)
+const _SELECTED_ROW_COLOR := Color(0.4, 0.55, 0.85, 0.18)
 
 var _host: RefCounted = null
 var _can_add_comment := false
 var _filter := "open"
+var _selected_id: String = ""
 
 var _header: Label
 var _count_label: Label
@@ -36,9 +38,16 @@ func _ready() -> void:
 func set_host(host: RefCounted) -> void:
 	if _host != null and _host.has_signal("annotations_changed") and _host.is_connected("annotations_changed", Callable(self, "refresh")):
 		_host.disconnect("annotations_changed", Callable(self, "refresh"))
+	if _host != null and _host.has_signal("selection_changed") and _host.is_connected("selection_changed", Callable(self, "_on_selection_changed")):
+		_host.disconnect("selection_changed", Callable(self, "_on_selection_changed"))
 	_host = host
+	_selected_id = ""
 	if _host != null and _host.has_signal("annotations_changed") and not _host.is_connected("annotations_changed", Callable(self, "refresh")):
 		_host.connect("annotations_changed", Callable(self, "refresh"))
+	if _host != null and _host.has_signal("selection_changed") and not _host.is_connected("selection_changed", Callable(self, "_on_selection_changed")):
+		_host.connect("selection_changed", Callable(self, "_on_selection_changed"))
+	if _host != null and _host.has_method("get_selected_annotation_id"):
+		_selected_id = _host.get_selected_annotation_id()
 	refresh()
 
 
@@ -214,6 +223,10 @@ func _make_row(annotation: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	row.tooltip_text = "%s\n%s" % [str(annotation.get("_anchor_label", "")), str(annotation.get("summary", ""))]
+	if str(annotation.get("id", "")) == _selected_id and not _selected_id.is_empty():
+		var style := StyleBoxFlat.new()
+		style.bg_color = _SELECTED_ROW_COLOR
+		row.add_theme_stylebox_override("panel", style)
 
 	var select := Button.new()
 	select.text = _annotation_prefix(annotation)
@@ -333,6 +346,11 @@ func _select_annotation(annotation_id: String) -> void:
 	if _host != null and _host.has_method("set_selected_annotation_id"):
 		_host.set_selected_annotation_id(annotation_id)
 	annotation_selected.emit(annotation_id)
+
+
+func _on_selection_changed(annotation_id: String) -> void:
+	_selected_id = annotation_id
+	refresh()
 
 
 func _on_repair_pressed(annotation_id: String) -> void:

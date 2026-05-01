@@ -36,6 +36,8 @@ const _BADGE_OFFSET := Vector2(10.0, -10.0)
 const _BADGE_FILL := Color(0.08, 0.10, 0.12, 0.92)
 const _BADGE_STROKE := Color(1.0, 0.72, 0.22, 1.0)
 const _BADGE_TEXT := Color.WHITE
+const _HALO_COLOR := Color(1.0, 0.78, 0.30, 0.85)
+const _HALO_GROW := 4.0
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
@@ -105,6 +107,26 @@ func _draw() -> void:
 	# In-progress preview from the active tool, if any.
 	if _active_tool != null:
 		_active_tool.draw_preview(ctx)
+
+	# Selection halo around the currently selected annotation.
+	if _host != null:
+		var sel_id: String = _host.get_selected_annotation_id()
+		if not sel_id.is_empty():
+			for ann in _host.get_annotations():
+				if not ann is Dictionary:
+					continue
+				if str((ann as Dictionary).get("id", "")) != sel_id:
+					continue
+				var ann_dict: Dictionary = ann as Dictionary
+				var kind_name := StringName(ann_dict.get("kind", ""))
+				var kind: AnnotationKind = registry.get_annotation_kind(kind_name) if registry != null else null
+				if kind == null:
+					break
+				var halo_rect: Rect2 = kind.bounds(ann_dict)
+				if halo_rect.size.length() < 0.5:
+					break
+				draw_rect(halo_rect.grow(_HALO_GROW), _HALO_COLOR, false, 2.0)
+				break
 
 
 # ── Input ──────────────────────────────────────────────────────────────────────
