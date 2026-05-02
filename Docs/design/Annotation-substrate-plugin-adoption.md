@@ -1,9 +1,9 @@
 # Annotation Substrate — Plugin Adoption Guide
 
-**Audience:** plugin authors and editor implementors who want to host annotations.
+**Audience:** plugin authors and editor implementors who want to host annotations. **You do not need a Minerva source checkout to read this guide** — every base-class signature, every contract method, and every worked example is reproduced inline. The substrate's surface is small enough that this document is self-contained.
 **Sibling:** [`Annotation-substrate-design.md`](./Annotation-substrate-design.md) — the substrate's design contract.
 
-This document teaches the practical side: how to subclass the substrate, register kinds, resolve custom anchors, contribute body views and per-row actions, write authoring tools, opt out of platform rendering, and avoid the off-tree-plugin gotchas. Every code snippet is grounded in real method signatures from the files cited in [§13](#13-source-references).
+This document teaches the practical side: how to subclass the substrate, register kinds, resolve custom anchors, contribute body views and per-row actions, write authoring tools, opt out of platform rendering, and avoid the off-tree-plugin gotchas. Every code snippet is reproduced from a real implementation; [§13](#13-in-tree-reference-implementations) lists the in-tree files those snippets came from for Minerva maintainers, but plugin authors do not need to consult those files.
 
 ---
 
@@ -583,7 +583,7 @@ const _MyOtherScript = preload("../tools/cad_edge_number_tool.gd")
 
 Reference the base class via `extends "<res://-or-relative-path>"`. Reference sibling scripts via `preload(...)`. Reference platform classes (which DO have `class_name`) directly — `AnnotationKind`, `AnnotationHost`, `AnnotationRenderContext` all resolve from off-tree.
 
-In-tree plugins (under `src/plugins/`) can keep `class_name` because they live in `res://`. `Helloscene_AnnotationHost` is in-tree; `Cad_AnnotationHost` is split — it lives at `~/github/plugins/cad/` and its class_name works only because the file path is mounted under res:// at plugin-load time.
+In-tree plugins (under `src/plugins/`) can keep `class_name` because they live in `res://`. Off-tree plugins should declare `class_name` only for documentation; do not rely on cross-script visibility for it. The CAD reference implementation declares `class_name Cad_AnnotationHost` in its host file, but other scripts in the same plugin still reach the host through `preload("res://path/to/CadAnnotationHost.gd")` and base-class typing on `AnnotationHost`, not by naming `Cad_AnnotationHost` directly.
 
 ### 10.2 Manifest scripts whitelist
 
@@ -635,11 +635,15 @@ The migration doc is the authority for the staging plan, capability list, and wh
 
 ## 12. CAD Adoption Sketch
 
-The CAD plugin's annotation scaffolding lives at `~/github/plugins/cad/ui/`:
+This section sketches the pattern for adopting the substrate in a multi-viewport CAD-style host. All of the patterns below are inlined; the CAD plugin you can build alongside them does not need to live in the Minerva tree (the reference implementation is off-tree and does not need to be read to follow this section).
 
-- `CadAnnotationHost.gd` (`class_name Cad_AnnotationHost`) — the host. Identity transforms in the current scaffold; multi-pane camera projection later.
-- `kinds/cad_edge_number_kind.gd` — first plugin kind, demonstrating `accepted_anchor_types`-free design (it stamps via primitives) and multi-pane rendering through `host.get_panes()`.
-- `tools/cad_edge_number_tool.gd` — first plugin authoring tool, showing the click-to-place pattern and the toolbar-driven `annotation_ready` → `host.add_annotation` flow.
+The CAD-style adoption has three pieces:
+
+- **A host** that advertises multiple viewports (panes) and a camera per pane.
+- **A kind** that uses 3D anchors and projects through each pane's camera in `render`.
+- **An authoring tool** that picks a 3D point or geometry feature and stamps an annotation.
+
+A reference implementation of all three lives off-tree at `~/github/plugins/cad/ui/` — `CadAnnotationHost.gd`, `kinds/cad_edge_number_kind.gd`, and `tools/cad_edge_number_tool.gd`. Patterns from those files are reproduced below; you do not need access to them to write your own CAD-style plugin.
 
 ### 12.1 Multi-pane implications
 
@@ -689,7 +693,9 @@ The current Cad_AnnotationHost stubs identity transforms, returns `""` from `des
 
 ---
 
-## 13. Source References
+## 13. In-Tree Reference Implementations
+
+> This appendix is for Minerva maintainers. Plugin authors do not need to read these files — every signature and pattern they expose is already inlined in the sections above.
 
 Substrate base classes:
 
