@@ -1,128 +1,144 @@
-# Pickup — Annotation v2 Substrate
+# Pickup — CAD plugin substrate adoption
 
-Last updated: 2026-04-30 (post Round 5b — text-editor consumer green for break detection, broken indicator, Repair UX, healthy-anchor render)
+Last updated: 2026-05-02 (after CAD Phase A R1+R2a+R2b — HITL pending)
 
 ## Where I left off
 
-**Substrate is complete and consumer-side flesh is built out:**
+**Annotation v2 substrate is fully shipped** through T8 (plugin adoption design doc, commit `b05a28fb` on Minerva). Dock DCR `019de430afa7` substrate features (T1-T8) all done. Plugin adoption guide at `Docs/design/Annotation-substrate-plugin-adoption.md`.
 
-- **Rounds 1–4 done.** v2 envelope, anchor registry, resolve_anchor, broken UX policy, resolve cache, kind/anchor compat, chat context, MCP query/update_status, v1 migration, plugin trust boundary — all shipped, tests green.
-- **Round 5a done.** TextEditorAnnotationHost + add_comment + sidecar persistence + MCP entry point.
-- **Round 5b done** (this session). Break detection, broken indicator render, sidebar with Repair button, retarget mode, healthy-anchor underline render. Six commits in `baa483a1 → c9d5808d`, push at `02da553e`. HITL verified end-to-end against /tmp/annot_smoke.txt via the MCP-driven test pattern.
-
-The text-editor view of the annotation substrate now does the full break-and-repair lifecycle without any Sonnet sub-agent. Process detail: 5b was run orchestrator-direct (no implementer sub-agent) per the lesson from 5a's reject-and-retry. Worked well — every bug was caught either at parse time, Layer-1, or HITL, and HITL surface caught real UX gaps the tests couldn't (sidebar showing only broken entries, underline y-offset twice).
-
-## What to do next
-
-Two open children of the parent plan:
+**CAD plugin Phase A (substrate consumer adoption) is committed but HITL-pending.** Three WIPs in `~/github/plugins/cad/`:
 
 ```
-/work-cycle 019ddccf60a27c95   # Round 5b.iii — add-comment UX affordance
-/work-cycle 019ddc27b59b7a57   # Round 5c — MCP query/update_status round-trip
+cda0822  WIP: CAD Phase A R2b — delete custom toolbar + selection mirror
+3c3afa9  WIP: CAD Phase A R2a — extract silhouette, delete edge_overlay.gd
+26ec57a  WIP: CAD Phase A R1 — substrate adoption (A1 + A3)
 ```
 
-5b.iii is small and isolated: sidebar "+" button + keyboard shortcut. Probably one orchestrator-direct round, ~100 lines, one HITL.
+Phase A net: **+272 / −1032 = −760 lines of duplicated annotation infrastructure removed.**
 
-5c is the bigger remaining substrate value piece: end-to-end LLM round-trip via MCP query/update_status. Pair the round-trip with a live provider so the apply-tool boundary gets exercised in production conditions.
+Substrate test suite stayed 39 PASS / 0 FAIL across all three sub-rounds.
 
-Either order is valid. 5b.iii completes the human-author surface; 5c completes the AI-author surface. 5b.iii first if you want to dogfood the text-editor experience without an LLM in the loop. 5c first if you want to validate the substrate's apply-tool boundary before more UX polish.
+## What to do next (in order)
+
+### 1. HITL Phase A — verify the cad plugin in a running Minerva
+
+Open the running Minerva, restart the CAD plugin panel, verify:
+
+1. Platform `AnnotationDockPane` is **visible by default** (no resize trick / chevron — that was the R1-only bug, fixed by R2b removing the custom toolbar).
+2. Toolbar comes from `AnnotationDockPane`. Should expose Select + the four advertised kinds (callout, 2d_arrow, 2d_text, cad_edge_number — whichever have `author_ui()` non-null).
+3. **No leftover custom toolbar** in the panel.
+4. Annotation controls actually work — pick a tool, place an annotation, see it.
+5. Edge tree (geometry inspector) still works — Prev/Next/Clear + click-to-select highlights the right row. Tree click pushes selection to the host (visible via `minerva_cad_get_selected_edge` MCP).
+6. Ortho silhouettes still render in Top/Front/Right panes (x-ray edge outlines).
+7. `cad_edge_number` tool still picks edges. **Anchoring still floats on re-evaluate** — that's the Phase B problem, not a Phase A regression.
+8. Iso pane shows shaded mesh + annotations as before.
+
+If green: transition `019de9b755b07366` (A1), `019de9b78eda7a6b` (A2), `019de9b7ae707aa0` (A3) → done with resolution citing the three commit SHAs. Then start Phase B.
+
+If broken: report what's broken; the failure mode informs whether to re-spin a single sub-round or roll back further.
+
+### 2. Phase B — CAD edge anchors (the original problem)
+
+Backlog filed under plan `019dc0552d6a` (project=minerva):
+
+| ID | Title | Notes |
+|---|---|---|
+| `019de9b807e67c01` | B1: define cad/edge anchor type schema + register resolver | Spine. Independent of Phase A. |
+| `019de9b82b977e11` | B2: migrate cad_edge_number_kind + tool to consume cad/edge anchor | follow_up of B1. |
+| `019de9b859d97f51` | B3: worker edge-ID stability across re-evaluation | **has open A/B/C design question — discuss before implementer round** |
+| `019de9b874dc704e` | B4: MCPCadTools._cad_annotate_edges — emit cad/edge anchors | follow_up of B2. In-tree work in Minerva. |
+
+Recommended cycle: B1 + B2 as one work-cycle (Sonnet implementer + Opus cold reviewer + Layer-1 + HITL), then a design discussion on B3 before its implementer round, then B4.
+
+### A4 (sidebar question) — answered, archived
+
+User chose Option C: keep custom edge tree as geometry inspector; substrate sidebar handles annotation listing. Drop `_selected_edge_id` mirror. R2b implemented this. See `019de9b7d73a70cf` for the answer.
 
 ## Plan map
 
 Project: `minerva` (always pass `project="minerva"` to docket tools).
 
-- DCR root: `019ddb704374` — First-class editor annotations: base substrate + plugin semantic anchors
-- Plan: `019ddb70ca45` — Annotation v2 substrate (base annotations + semantic anchors)
-- Discussion: `0bd63d76bb70` — Annotation substrate refactor (resolved into the DCR)
+- DCR: `019dc054a453` — CAD plugin: port MCAD experiment as first platform consumer
+- Plan: `019dc0552d6a` — Plan: CAD Plugin (v1 through exports)
 
-### Children of the plan
-
-Status legend: ✅ done · ⏳ open/backlog
+### Phase A (in_progress, HITL pending)
 
 | Status | ID | Title |
-|--------|----|-------|
-| ✅ | `019ddb7593467eef` | Annotation v2 envelope: typed anchor, payload, lifecycle, author, summary |
-| ✅ | `019ddb75ffad7dd8` | Plugin-scoped anchor registry (validate / summary / repair) |
-| ✅ | `019ddb767fe871ba` | Base AnnotationHost.resolve_anchor + anchor_screen_rect contract |
-| ✅ | `019ddb76ed897520` | Broken / stale anchor UX (canvas, sidebar, MCP, chat) — substrate policy |
-| ✅ | `019ddb77576b7b56` | Resolve cache + perf budget |
-| ✅ | `019ddb77c4b37516` | Built-in anchors carry generic kinds; plugin anchors carry plugin kinds |
-| ✅ | `019ddb7843b4742d` | Capability-aware to_chat_context (structured_json IS the action contract) |
-| ✅ | `019ddb78c40c74bc` | MCP query / update_status surface + apply-tool hook |
-| ✅ | `019ddb796041719a` | v1 → v2 migration + coexistence hooks |
-| ✅ | `019ddb7a0f407621` | Contract tests + smoke consumer (text editor) — Round 1 RED scaffolding |
-| ✅ | `019ddb7aaf247033` | Plugin trust boundary + fail-containment (render / resolver / apply-tool) |
-| ✅ | `019ddbcfeef774bb` | Fix stale libterminal stubs + harden contract tests with behavior |
-| ✅ | `019ddc26ac2b7f04` | Round 5a: TextEditorAnnotationHost + add_comment + sidecar persistence |
-| ✅ | `019ddc271a857ca0` | Round 5b: Break detection + broken indicator + repair UX in text editor |
-| ⏳ | `019ddccf60a27c95` | Round 5b.iii: Add-comment UX affordance (sidebar button + keyboard shortcut) |
-| ⏳ | `019ddc27b59b7a57` | Round 5c: MCP query / update_status round-trip from text editor |
+|---|---|---|
+| ⏳ HITL | `019de9b755b07366` | A1: replace Cad_AnnotationCanvas with platform AnnotationOverlay; mount AnnotationDockPane via get_annotation_host() |
+| ⏳ HITL | `019de9b78eda7a6b` | A2: delete edge_overlay.gd (5 instances) — route edge picking through substrate |
+| ⏳ HITL | `019de9b7ae707aa0` | A3: Cad_AnnotationHost.get_capabilities() — advertise registered kinds |
+| ✅ | `019de9b7d73a70cf` | A4 (question): edge browser sidebar — answered, option C |
+
+### Phase B (backlog)
+
+| ID | Title |
+|---|---|
+| `019de9b807e67c01` | B1: define cad/edge anchor type schema + register resolver |
+| `019de9b82b977e11` | B2: migrate cad_edge_number_kind + tool to consume cad/edge anchor |
+| `019de9b859d97f51` | B3: worker edge-ID stability across re-evaluation |
+| `019de9b874dc704e` | B4: MCPCadTools._cad_annotate_edges — emit cad/edge anchors |
+
+### Other open CAD work (not blocking)
+
+- `019dc1259c977380` — CAD panel: surface progress notifications from worker.
+- `019dd020c20f76aa` — CAD adopt: route worker/validation errors through plugin toast API.
+- `019dc0597b6071f8` — MCP tool: mcad_render with composable show flags.
+- `019dc05988787a22` — MCP tool: mcad_export.
+- `019dc0bb5f2e7655` — `.mcad.meta.json` sidecar fields.
+- `019dc0bb76d87a1e` — MCP tool: mcad_deviation.
+- `019dd017d9df` — CAD-specific AnnotationKind extensions (measurement, surface points). Probably waits until Phase B done.
+- `019dd021189373a5` — CAD: optional DSL bottom split.
+- `019dcc928a35` — Translator-stage validation feedback to mcad_validate.
 
 ## State of the trees at handoff
 
-Minerva (`user/imran/experiments/swarm`, HEAD = `02da553e`):
+### Minerva (`user/imran/experiments/swarm`)
 
-- Synced with origin — last push landed `4cfc39e6..02da553e`.
-- v1 substrate suite: `146 passed, 0 failed`.
-- v2 substrate suite: `500 passed, 10 failed`. Remaining failures decompose to:
-  - 7 × `Editor instantiable` — pre-existing; Editor.gd's body references `SingletonObject` which is not loaded under `godot --headless --script`. Test infrastructure issue, not 5b's responsibility.
-  - 3 × `MCPAnnotationTools` query / update_status method probes — 5c scope (those methods don't exist yet).
-- Working tree clean for code; only untracked `.gd.uid` companions Godot regenerated for already-tracked scripts. Submodule working-tree mods in `vendor/godot_cef` and `vendor/EIRTeam.FFmpeg` are local build patches per CLAUDE.md — not committed, not blocking.
+- HEAD: `b05a28fb` (T8 Round 1 reframe).
+- Last 5 commits: `b05a28fb`, `7c226c4a`, `a50cbb63`, `abc5ca9f`, `f0056c0e` (all T8 + T_apply Phase A from this session sequence).
+- Working tree: `Docs/minerva.dct` modified (this session's docket bookkeeping — committed alongside this pickup.md update). Submodule pointers in `vendor/godot_cef`, `vendor/godot_wry` show drift but are pre-existing local build patches per CLAUDE.md.
 
-## Files added or substantially modified by 5b
+### cad plugin (`~/github/plugins/cad/`, branch `main`)
 
-All in repo:
-
-- New: `src/Scripts/UI/Controls/TextEditorAnnotationCanvas.gd` (was renamed from the original 5a `AnnotationCanvas.gd` to avoid basename collision with substrate's `class_name AnnotationCanvas`). Paints orange gutter strip + line tint for stale anchors; soft-blue underline along the actual character range for healthy anchors using `CodeEdit.get_pos_at_line_column`.
-- New: `src/Scripts/UI/Controls/TextEditorAnnotationSidebar.gd`. VBoxContainer-derived Control wrapping the substrate's `AnnotationSidebarModel`. Renders "Annotations (N total, M broken)" header, broken rows with Repair button, healthy rows below, "Show broken only" filter pill. Decorates host annotations with current resolved-stale state on every refresh.
-- Modified: `src/Scripts/Services/Annotations/TextEditorAnnotationHost.gd` — `_resolve_text_range` now does snapshot-text equality check (range matches but content diverged → stale=true). New `retarget_annotation(id, start, end)` re-anchors a stale annotation, refreshes snapshot, sets lifecycle back to `open`, bumps revision. `repair_annotation` alias preserves smoke-test contract.
-- Modified: `src/Scripts/UI/Controls/Editor.gd` — `_on_editor_changed` bumps host revision + queues canvas redraw + refreshes sidebar. Sidebar mounted as last child of VBoxContainer in `create()` for Type.TEXT. Retarget mode (`_retarget_in_progress`) on the editor: enter on sidebar's `repair_requested` signal; mouse-up over a non-empty selection commits via `host.retarget_annotation`; Esc cancels. Public `retarget_annotation` / `repair_annotation` methods for smoke contract + future MCP. Sidebar refresh hooks added to `add_comment` and `_load_annotations_sidecar`.
-- Modified: `src/Scripts/Services/MCP/Modules/MCPEditorTools.gd` — `_update_editor` now calls `code_edit.text_changed.emit()` after assignment so revision bump and content_changed fire. Without this, MCP-driven text changes would not invalidate the resolve cache and the broken indicator would only appear after an unrelated layout reflow.
-- Modified: `src/Scenes/Editor.tscn` — `AnnotationCanvas` node carries the renamed script via ExtResource.
-- Modified: `src/test/annotations_v2/test_text_editor_annotation_smoke.gd` — `ClassDB.class_exists()` probes for `CoreAnchors` and `MCPAnnotationTools` replaced with `preload(...).new()` (ClassDB does not see GDScript class_name classes). Expected MCP method probe names corrected (`MCPAnnotationsTools` → `MCPAnnotationTools`).
+- HEAD: `cda0822` (Phase A R2b).
+- Working tree clean.
+- Pushed (after pickup commit lands).
 
 ## Constraints to carry forward
 
-These are all real, all bit me at least once:
-
-- Always pass `project="minerva"` to docket MCP tools when working with substrate IDs (saved as docket hint `docket/minerva-project-flag`).
-- Off-tree plugin scripts must use `preload()`, not `class_name` (memory: `project_off_tree_plugin_class_names.md`).
-- Plugin annotation code never crosses into another plugin's data — only via MCP, per the substrate's trust boundary task (`019ddb7aaf247033`).
+- Always pass `project="minerva"` to docket MCP tools when working with substrate IDs.
+- Off-tree plugin scripts must use `preload()`, not `class_name` for cross-script types (memory: `project_off_tree_plugin_class_names.md`).
+- Plugin annotation code never crosses into another plugin's data — only via MCP, per the substrate's trust boundary.
 - 2D ortho panes in CAD are intentionally edge-only x-ray, NOT 3D renders.
-- **Reverting C++ source under `src/gdextension/terminal/` does NOT evict the compiled binary.** Always rebuild via `scripts/build-extensions.sh <platform>` after any reversion.
-- **`ClassDB.class_exists()` does NOT see GDScript `class_name` classes** — it only resolves native C++ class registrations. Use `preload(path).new()` for GDScript class probing.
-- **Static `preload()` of a `.tscn` triggers compilation of every ext_resource script at class-load time.** In headless `--script` mode, autoloads (SingletonObject, MediaGen, etc.) are not loaded, so dependent scripts cascade-fail. Use lazy `load()` getters or skip the static preload entirely for classes that need to be loadable in headless tests.
-- **GDScript `id` field validation on v2 envelopes**: `AnnotationV2Schema.validate()` rejects empty-string `id`. Generators must assign the id BEFORE calling validate.
-- **`JSON.parse_string` returns `Variant::FLOAT` for all numerics.** Any GDScript code that does `is int` checks against deserialised JSON will fail. Either coerce on load (TextEditorAnnotationHost's `_coerce_envelope_ints` is the canonical example) or relax the type check.
-- **`var x := obj.method()` cannot infer when `obj` is RefCounted-typed.** RefCounted method calls resolve as Variant. Use `var x: SomeType = obj.method()` for typed return values.
-- **`CodeEdit.get_pos_at_line_column(line, col)` returns the position at the baseline, not the top of the line.** Don't add `line_height` for an underline — just use the returned y directly with the canvas-local offset.
-- **Setting `code_edit.text = …` does NOT emit `text_changed`.** Any code path that sets text directly (MCP `update_editor`, programmatic test setup, etc.) must call `code_edit.text_changed.emit()` afterward, or downstream signal listeners (annotation revision bump, content_changed, save-state tracking) will not fire.
-- **The substrate–editor boundary held cleanly through 5b.** Round 5b changed zero substrate files: `AnnotationHost`, `AnnotationAnchorRegistry`, `AnnotationSidebarModel`, `AnnotationResolveCache`, `BuiltinKinds`, `CoreAnchors` are all untouched. The pattern that makes this work: editors decorate annotations with current resolved-stale state on every refresh, then hand the decorated list to the substrate's sidebar model. If a future round needs a substrate change, that's a smell — the protocol probably has a gap.
+- When adding/removing plugin scripts, update BOTH `~/github/plugins/<id>/manifest.json` AND `~/.local/share/godot/app_userdata/Minerva/plugins/plugins.json` (cached). Skipping the cached one means Godot still loads the deleted script. (Nudge `minerva-plugin-platform/manifest_script_whitelist`.)
+- `queue_redraw()` does NOT trigger `_draw()` in headless tests — call `overlay._draw()` directly to assert draw-call behavior.
+- Docket state machine doesn't allow skipping states. work_item: backlog → open → in_progress → done. bug: new → triaged → active → resolved. Resolution string only on terminal hop.
+- AnnotationHost capability shape is **frozen** for canvas-sync compatibility — extend, don't rename.
+- `host.get_panes()` is real on `Cad_AnnotationHost` and returns panel-relative viewport rects. Don't reinvent.
 
 ## Cold pickup checklist
 
-1. `git pull` on `~/github/Minerva` (branch `user/imran/experiments/swarm`).
+1. `git pull` on `~/github/Minerva` (branch `user/imran/experiments/swarm`) and `~/github/plugins/cad` (branch `main`).
 2. Read `Docs/pickup.md` (this file).
-3. `git status` — expect submodule drift, untracked `.gd.uid` files, no uncommitted `.gd` changes.
-4. `git log --oneline -5` — HEAD should be `02da553e`.
-5. Run the verification probes:
-   - `bash src/test/annotations_v2/run_all.sh | tail -3` → expect `500 passed, 10 failed`.
-   - `godot --headless --path src --script test/test_annotation_substrate.gd | grep "=== Results"` → expect `146 passed, 0 failed`.
-6. Pick a next ticket:
-   - `mcp__docket__docket_get id="019ddccf60a27c95"` for 5b.iii (add-comment UX), or
-   - `mcp__docket__docket_get id="019ddc27b59b7a57"` for 5c (MCP round-trip).
-7. `/work-cycle <ticket id>`.
+3. In Minerva: `git status` — expect submodule drift only. `git log --oneline -5`.
+4. In cad plugin: `git status --short` — clean. `git log --oneline -3` — head should be `cda0822`.
+5. Read `~/.claude/projects/-home-imran-github-Minerva/memory/project_active_cycle_plan.md` for the full active CAD cycle context.
+6. Run the substrate regression suite from Minerva root:
+   ```
+   for t in test/annotations_v2/test_workbench_selection_sync.gd \
+            test/annotations_v2/test_kind_extension_api.gd \
+            test/annotations_v2/test_annotation_overlay_draw.gd; do
+     timeout 90 godot --headless --path src --script "$t"
+   done
+   ```
+   Expect 39 PASS / 0 FAIL.
+7. Open Minerva, restart CAD plugin, run the HITL test plan in "What to do next §1."
+8. Either transition Phase A tasks → done (if HITL passes) or report breakage.
+9. Then: `/work-cycle 019de9b807e67c01` (B1) when ready to start Phase B.
 
-## Lessons from 5b (process retrospective)
+## Process notes from this session
 
-5b ran clean orchestrator-direct (no Sonnet sub-agent). The 5a reject-and-retry made the right call: when the deliverable is mechanical wiring against a known substrate, an orchestrator that can hold the plan + the test + the file context in one head outperforms a sub-agent that has to be re-briefed every hop.
-
-Three findings worth carrying forward:
-
-1. **HITL caught what tests couldn't** — three real bugs surfaced only at HITL: sidebar showing broken-only entries (made healthy annotations invisible), underline y-offset (rendered above editor), underline y-overshoot (rendered below text). Layer-1 tests are correct as written but they exist-check the API; only an HITL run exercises the visual coordinate math. The tests serve as a compile gate, not a UX gate. Plan around that — don't expect tests to catch coordinate bugs.
-
-2. **Decompose into HITL-sized rounds** — 5b naturally split into three sub-rounds (5b.i revision-bump + canvas, 5b.ii sidebar + repair, 5b.iii add-comment). Each was small enough that an HITL-discovered bug fit into a single follow-up commit on the same branch without needing to roll back the round. The discipline of "one HITL per sub-round" kept blast radius small.
-
-3. **Substrate-first design pays off** — the round-3 broken-anchor UX policy + AnnotationSidebarModel were already ergonomic enough that 5b.ii consumed them without any substrate change. That's a reusable design pattern: when shipping a substrate, also ship the sample-consumer-shaped data structure (sidebar model, render context) so the consumer round becomes pure wiring.
-
-The "tighter scope contract / behavioral test scaffolding / smaller rounds" rules from the 5a retrospective stay valid but didn't fire in 5b — orchestrator-direct + sub-rounds + HITL caught everything that mattered.
+- **Two-sub-round split with no HITL between** worked well for the bigger Round 2 (delete edge_overlay + delete custom toolbar). Each sub-round had its own Sonnet implementer + Opus cold reviewer + Layer-1 gate. Single HITL at the end. Minimized HITL gates without sacrificing review safety.
+- **Cold reviewer with file allowlist + OUT-of-scope list + method-level kill list** caught the verbatim-move comment-drop in R2a (cosmetic, fixed in main context). Pattern is durable — the explicit lists make the reviewer's job mechanical.
+- **R1's intermediate state was not user-functional** (custom toolbar dead, platform UI layout-collapsed). The "skip-ahead" decision to bundle R2a+R2b sequentially was the right call once HITL surfaced this. Lesson: if the first round of a multi-round cleanup leaves a non-functional intermediate, don't pause for HITL — chain to the next round and HITL the end state.
