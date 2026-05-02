@@ -65,7 +65,7 @@ func get_registry() -> AnnotationRegistry:
 
 func get_capabilities() -> Dictionary:
 	return {
-		"kinds": ["text", "callout", "text_comment"],
+		"kinds": ["text_comment"],
 		"tools": ["select"],
 		"anchor_types": ["core/text.range"],
 		"lifecycle": {
