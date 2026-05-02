@@ -1,5 +1,7 @@
 # Annotation Substrate — Design
 
+> See also: [`Annotation-substrate-plugin-adoption.md`](./Annotation-substrate-plugin-adoption.md) — practical guide for plugin authors adopting this substrate.
+
 **Status:** Implemented substrate, UX workbench in progress
 **Date:** 2026-04-30
 **Scope:** DCR-2 — cross-editor annotation subsystem
