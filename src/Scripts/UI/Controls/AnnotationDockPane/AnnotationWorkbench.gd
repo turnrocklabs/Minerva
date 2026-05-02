@@ -14,10 +14,13 @@ const _BROKEN_COLOR := Color(1.0, 0.55, 0.05, 1.0)
 const _MUTED := Color(1, 1, 1, 0.58)
 const _SELECTED_ROW_COLOR := Color(0.4, 0.55, 0.85, 0.18)
 
+const _AnnotationApplyToolRunnerScript = preload("res://Scripts/Services/Annotations/AnnotationApplyToolRunner.gd")
+
 var _host: RefCounted = null
 var _can_add_comment := false
 var _filter := "open"
 var _selected_id: String = ""
+var _apply_runner: RefCounted = null
 
 var _header: Label
 var _count_label: Label
@@ -266,6 +269,15 @@ func _make_row(annotation: Dictionary) -> Control:
 			row.add_child(_small_button("Resolve", _set_lifecycle.bind(str(annotation.get("id", "")), "resolved")))
 	if _host != null and _host.has_method("remove_annotation") and _capability_lifecycle_enabled("delete"):
 		row.add_child(_small_button("Del", _delete_annotation.bind(str(annotation.get("id", "")))))
+	var kind_actions := _row_actions(annotation)
+	for action in kind_actions:
+		if not action is Dictionary:
+			continue
+		var action_id := str((action as Dictionary).get("id", ""))
+		var action_label := str((action as Dictionary).get("label", action_id))
+		if action_id.is_empty():
+			continue
+		row.add_child(_small_button(action_label, _run_action.bind(str(annotation.get("id", "")), action_id)))
 	return row
 
 
@@ -424,6 +436,78 @@ func _set_lifecycle(annotation_id: String, lifecycle: String) -> void:
 	else:
 		show_status("")
 		refresh()
+
+
+func _ensure_apply_runner() -> RefCounted:
+	if _apply_runner == null:
+		_apply_runner = _AnnotationApplyToolRunnerScript.new()
+	return _apply_runner
+
+
+func _row_actions(annotation: Dictionary) -> Array:
+	if _host == null:
+		return []
+	var registry: AnnotationRegistry = null
+	if _host.has_method("get_registry"):
+		registry = _host.get_registry()
+	if registry == null:
+		return []
+	var kind: AnnotationKind = registry.get_annotation_kind(StringName(annotation.get("kind", "")))
+	if kind == null:
+		return []
+	var raw: Array = kind.actions(annotation)
+	var lifecycle := str(annotation.get("lifecycle", "open"))
+	var visible: Array = []
+	for entry in raw:
+		if not entry is Dictionary:
+			continue
+		var requires: Variant = (entry as Dictionary).get("requires_lifecycle", [])
+		if requires is Array and not (requires as Array).is_empty() and not (lifecycle in requires):
+			continue
+		visible.append(entry)
+	return visible
+
+
+func _run_action(annotation_id: String, action_id: String) -> void:
+	if _host == null:
+		return
+	var registry: AnnotationRegistry = null
+	if _host.has_method("get_registry"):
+		registry = _host.get_registry()
+	if registry == null:
+		return
+	var annotation: Dictionary = {}
+	for a in _host.get_annotations():
+		if a is Dictionary and str((a as Dictionary).get("id", "")) == annotation_id:
+			annotation = a as Dictionary
+			break
+	if annotation.is_empty():
+		return
+	var kind: AnnotationKind = registry.get_annotation_kind(StringName(annotation.get("kind", "")))
+	if kind == null:
+		return
+	# Single-element Array wrapper so the closure can write the commit-phase result
+	# back to the enclosing scope; ApplyToolRunner.apply() returns bare {ok: true}.
+	var commit_result: Array = [{}]
+	var hook := func(ann_id: String, phase: String) -> Dictionary:
+		var ann: Dictionary = {}
+		for a in _host.get_annotations():
+			if a is Dictionary and str((a as Dictionary).get("id", "")) == ann_id:
+				ann = a as Dictionary
+				break
+		var hook_result: Dictionary = kind.run_action(action_id, ann, phase, _host as AnnotationHost)
+		if phase == "commit":
+			commit_result[0] = hook_result
+		return hook_result
+	var result: Dictionary = _ensure_apply_runner().apply(action_id, annotation_id, hook, _host)
+	if not bool(result.get("ok", false)):
+		show_status(str(result.get("error", "Action failed")))
+		return
+	var next_lifecycle := str((commit_result[0] as Dictionary).get("lifecycle", ""))
+	if not next_lifecycle.is_empty() and _host.has_method("update_annotation_lifecycle"):
+		_host.update_annotation_lifecycle(annotation_id, next_lifecycle, {})
+	show_status("")
+	refresh()
 
 
 func _delete_annotation(annotation_id: String) -> void:

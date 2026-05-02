@@ -229,6 +229,16 @@ func body_view_factory(_annotation: Dictionary, _emit_patch: Callable) -> Contro
 	return null
 
 
+## Override to advertise per-row actions; each entry {id, label, requires_lifecycle?}.
+func actions(_annotation: Dictionary) -> Array:
+	return []
+
+
+## Override to handle action presses; called dry_run then commit by ApplyToolRunner.
+func run_action(_action_id: String, _annotation: Dictionary, _phase: String, _host: AnnotationHost) -> Dictionary:
+	return {"ok": false, "error": "run_action not implemented"}
+
+
 func _truncate_text(text: String, max_words: int) -> String:
 	var words := text.split(" ", false)
 	if words.size() <= max_words:
