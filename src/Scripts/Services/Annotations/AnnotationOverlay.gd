@@ -85,6 +85,11 @@ func _draw() -> void:
 
 	for ann in _host.get_annotations():
 		if registry != null:
+			# Host-owned canvas; the host overlay subclass draws this kind.
+			var ann_kind_name := StringName((ann as Dictionary).get("kind", "")) if ann is Dictionary else StringName("")
+			var ann_kind: AnnotationKind = registry.get_annotation_kind(ann_kind_name)
+			if ann_kind != null and not ann_kind.has_visual_render():
+				continue
 			registry.dispatch_render(ctx, ann)
 		if ann is Dictionary:
 			_draw_annotation_number_badge(ann as Dictionary)
@@ -105,6 +110,9 @@ func _draw() -> void:
 				var kind_name := StringName(ann_dict.get("kind", ""))
 				var kind: AnnotationKind = registry.get_annotation_kind(kind_name) if registry != null else null
 				if kind == null:
+					break
+				# Host-owned canvas; the host overlay subclass draws this kind.
+				if not kind.has_visual_render():
 					break
 				var halo_rect: Rect2 = kind.bounds(ann_dict)
 				if halo_rect.size.length() < 0.5:

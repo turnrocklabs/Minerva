@@ -21,6 +21,7 @@ const _ANN_ID_PREFIX := "ann_"
 const _SCHEMA := preload("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
 const _SidecarIOScript := preload("res://Scripts/Services/Annotations/AnnotationSidecarIO.gd")
 const _LifecycleScript := preload("res://Scripts/Services/Annotations/AnnotationLifecycle.gd")
+const _AnnotationTextCommentScript = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextComment.gd")
 
 # ── Back-reference to the live text source ────────────────────────────────────
 
@@ -53,6 +54,7 @@ func _init() -> void:
 	register_anchor_resolver("core/text.range", Callable(self, "_resolve_text_range"))
 	_registry = AnnotationRegistry.new()
 	BuiltinKinds.register_all(_registry)
+	_registry.register_annotation_kind(_AnnotationTextCommentScript.new())
 
 
 ## Return this host's kind registry. Required by MCP tools that resolve
@@ -63,7 +65,7 @@ func get_registry() -> AnnotationRegistry:
 
 func get_capabilities() -> Dictionary:
 	return {
-		"kinds": ["text", "callout"],
+		"kinds": ["text", "callout", "text_comment"],
 		"tools": ["select"],
 		"anchor_types": ["core/text.range"],
 		"lifecycle": {
@@ -132,7 +134,7 @@ func add_annotation_v2(envelope: Dictionary) -> String:
 		stored["id"] = ann_id
 	_ensure_display_index(stored)
 	var schema = _SCHEMA.new()
-	var result = schema.validate(stored)
+	var result = schema.validate_with_registry(stored, _registry)
 	if result.has_errors():
 		push_warning("[TextEditorAnnotationHost] add_annotation_v2: validation errors: %s" % str(result.to_error_dicts()))
 		return ""
@@ -164,7 +166,7 @@ func add_comment_at(start: int, end: int, text: String, target_scope: String = "
 	var now := int(Time.get_unix_time_from_system())
 	var envelope := {
 		"id": "",
-		"kind": "text",
+		"kind": "text_comment",
 		"schema_version": 2,
 		"anchor": {
 			"plugin": "core",
@@ -293,6 +295,7 @@ func load_annotations(raw_array: Array) -> void:
 	# guards behave the same on reload as on first author.
 	for ann in _annotations:
 		if ann is Dictionary:
+			_migrate_text_to_text_comment(ann as Dictionary)
 			_coerce_envelope_ints(ann as Dictionary)
 			_ensure_display_index(ann as Dictionary)
 	# Bump _id_counter past any loaded "ann_XXXX" id so newly-generated ids
@@ -476,3 +479,17 @@ func _offset_to_line_col(offset: int) -> Array:
 			col += 1
 		i += 1
 	return [line, col]
+
+
+## Migrate older sidecar entries: kind=="text" with kind_payload.target_scope in
+## ["range","line"] are comments authored before the text_comment kind existed.
+## Read-side only — disk is not touched until next user write.
+func _migrate_text_to_text_comment(envelope: Dictionary) -> void:
+	if str(envelope.get("kind", "")) != "text":
+		return
+	var payload: Variant = envelope.get("kind_payload", null)
+	if not payload is Dictionary:
+		return
+	var scope := str((payload as Dictionary).get("target_scope", ""))
+	if scope == "range" or scope == "line":
+		envelope["kind"] = "text_comment"

@@ -251,7 +251,7 @@ func test_add_comment_kind_is_generic_text() -> void:
 		return
 	var annotations = host.get_all_annotations()
 	if annotations.size() > 0:
-		check_eq("annotation kind = text (generic)", annotations[0].get("kind", ""), "text")
+		check_eq("annotation kind = text_comment", annotations[0].get("kind", ""), "text_comment")
 	else:
 		check("annotation was created", false)
 

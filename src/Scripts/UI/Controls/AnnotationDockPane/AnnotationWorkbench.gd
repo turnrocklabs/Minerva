@@ -27,6 +27,8 @@ var _add_row: HBoxContainer
 var _comment_input: LineEdit
 var _status_label: Label
 var _entries_list: VBoxContainer
+var _body_view_container: PanelContainer
+var _current_body_view: Control = null
 var _empty_label: Label
 
 
@@ -49,6 +51,7 @@ func set_host(host: RefCounted) -> void:
 	if _host != null and _host.has_method("get_selected_annotation_id"):
 		_selected_id = _host.get_selected_annotation_id()
 	refresh()
+	_refresh_body_view()
 
 
 func set_can_add_comment(value: bool) -> void:
@@ -171,6 +174,12 @@ func _build_ui() -> void:
 	_entries_list.add_theme_constant_override("separation", 4)
 	_entries_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	add_child(_entries_list)
+
+	_body_view_container = PanelContainer.new()
+	_body_view_container.name = "BodyViewContainer"
+	_body_view_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_body_view_container.hide()
+	add_child(_body_view_container)
 
 	_empty_label = Label.new()
 	_empty_label.text = "(no annotations)"
@@ -351,6 +360,48 @@ func _select_annotation(annotation_id: String) -> void:
 func _on_selection_changed(annotation_id: String) -> void:
 	_selected_id = annotation_id
 	refresh()
+	_refresh_body_view()
+
+
+func _refresh_body_view() -> void:
+	if _body_view_container == null:
+		return
+	if _current_body_view != null:
+		_body_view_container.remove_child(_current_body_view)
+		_current_body_view.queue_free()
+		_current_body_view = null
+	if _selected_id.is_empty() or _host == null:
+		_body_view_container.hide()
+		return
+	var annotation: Dictionary = {}
+	for a in _host.get_annotations():
+		if a is Dictionary and str((a as Dictionary).get("id", "")) == _selected_id:
+			annotation = (a as Dictionary).duplicate(true)
+			break
+	if annotation.is_empty():
+		_body_view_container.hide()
+		return
+	var registry: AnnotationRegistry = _host.get_registry()
+	if registry == null:
+		_body_view_container.hide()
+		return
+	var kind: AnnotationKind = registry.get_annotation_kind(StringName(annotation.get("kind", "")))
+	if kind == null:
+		_body_view_container.hide()
+		return
+	var annotation_id: String = _selected_id
+	var emit := func(patch: Dictionary) -> void:
+		if _host != null and _host.has_method("update_annotation"):
+			var merged: Dictionary = annotation.duplicate(true)
+			merged.merge(patch, true)
+			_host.update_annotation(annotation_id, merged)
+	var view: Variant = kind.body_view_factory(annotation, emit)
+	if view == null or not view is Control:
+		_body_view_container.hide()
+		return
+	_current_body_view = view as Control
+	_body_view_container.add_child(_current_body_view)
+	_body_view_container.show()
 
 
 func _on_repair_pressed(annotation_id: String) -> void:

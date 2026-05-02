@@ -224,6 +224,11 @@ func has_visual_render() -> bool:
 	return true
 
 
+## Override to return a Control rendered in the workbench detail pane when selected.
+func body_view_factory(_annotation: Dictionary, _emit_patch: Callable) -> Control:
+	return null
+
+
 func _truncate_text(text: String, max_words: int) -> String:
 	var words := text.split(" ", false)
 	if words.size() <= max_words:
