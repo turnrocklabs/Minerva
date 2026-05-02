@@ -52,6 +52,11 @@ func summary(annotation: Dictionary) -> String:
 
 ## Arrow's canonical anchor is the head (the point being indicated).
 func primary_anchor_point(annotation: Dictionary) -> Vector2:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and (payload as Dictionary).has("endpoint_b"):
+		var endpoint_b: Variant = _resolve_endpoint(null, (payload as Dictionary).get("endpoint_b", null))
+		if endpoint_b is Vector2:
+			return endpoint_b
 	var prims: Array = annotation.get("primitives", [])
 	for prim in prims:
 		if prim is Dictionary and prim.get("kind", "") == "arrow":
@@ -75,6 +80,16 @@ func describe_target_point(annotation: Dictionary, base_pos: Vector2, host: Anno
 		return result
 
 	# Second: compute direction (head - tail) and project forward by _PROJECTION_DISTANCE.
+	var endpoints := _resolve_payload_endpoints(null, annotation)
+	if not endpoints.is_empty():
+		var payload_head: Vector2 = endpoints[1]
+		var payload_tail: Vector2 = endpoints[0]
+		var payload_direction: Vector2 = payload_head - payload_tail
+		if payload_direction.length() < 0.001:
+			return result
+		payload_direction = payload_direction.normalized()
+		return host.describe_point(payload_head + payload_direction * _PROJECTION_DISTANCE)
+
 	var prims: Array = annotation.get("primitives", [])
 	var first_arrow_prim: Dictionary = {}
 	for prim in prims:
@@ -95,6 +110,28 @@ func describe_target_point(annotation: Dictionary, base_pos: Vector2, host: Anno
 	direction = direction.normalized()
 	var projected: Vector2 = head + direction * _PROJECTION_DISTANCE
 	return host.describe_point(projected)
+
+
+func transform_annotation(annotation: Dictionary, transform: Transform2D, operation: String = "") -> Dictionary:
+	var out: Dictionary = super(annotation, transform, operation)
+	var payload_v: Variant = out.get("kind_payload", {})
+	if not payload_v is Dictionary:
+		return out
+	var payload: Dictionary = (payload_v as Dictionary).duplicate(true)
+	var changed := false
+	if payload.has("endpoint_a"):
+		payload["endpoint_a"] = AnnotationKind.transform_position_source(payload.get("endpoint_a", null), transform)
+		changed = true
+	if payload.has("endpoint_b"):
+		payload["endpoint_b"] = AnnotationKind.transform_position_source(payload.get("endpoint_b", null), transform)
+		changed = true
+	if changed and operation == "scale":
+		var scale_delta := AnnotationKind.transform_uniform_scale_delta(transform)
+		if absf(scale_delta - 1.0) > 0.0001:
+			payload["head_size"] = float(payload.get("head_size", 12.0)) * scale_delta
+	if changed:
+		out["kind_payload"] = payload
+	return out
 
 
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:

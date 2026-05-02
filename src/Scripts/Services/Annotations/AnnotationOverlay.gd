@@ -52,8 +52,6 @@ func set_active_tool(tool: AnnotationAuthorTool) -> void:
 	if _active_tool != null:
 		if _active_tool.annotation_modified.is_connected(_on_tool_annotation_modified):
 			_active_tool.annotation_modified.disconnect(_on_tool_annotation_modified)
-		if _active_tool.has_method("on_deactivate"):
-			_active_tool.on_deactivate()
 	_active_tool = tool
 	if _active_tool != null:
 		if not _active_tool.annotation_modified.is_connected(_on_tool_annotation_modified):

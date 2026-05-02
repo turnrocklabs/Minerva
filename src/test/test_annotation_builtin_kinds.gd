@@ -214,6 +214,7 @@ class MockRenderContext extends AnnotationRenderContext:
 
 	## Last string drawn (for label content assertions).
 	var last_string: String = ""
+	var last_string_pos: Vector2 = Vector2.ZERO
 
 	func _init() -> void:
 		transform     = Transform2D.IDENTITY
@@ -234,6 +235,7 @@ class MockRenderContext extends AnnotationRenderContext:
 	func draw_string(_font: Font, _pos: Vector2, text: String, _color: Color, _size: int = 16) -> void:
 		string_calls += 1
 		last_string = text
+		last_string_pos = _pos
 
 	## Mirror of draw_string for AnnotationText, which routes through the rotated
 	## helper so primitive `rotation_rad` is honoured.
@@ -247,6 +249,7 @@ class MockRenderContext extends AnnotationRenderContext:
 	) -> void:
 		string_calls += 1
 		last_string = text
+		last_string_pos = _pos
 
 	func draw_rect(_rect: Rect2, _color: Color, filled: bool, _width: float = 1.0) -> void:
 		rect_calls += 1
@@ -447,6 +450,7 @@ func test_text_render_calls_draw_string() -> void:
 	var ann  := _ann("2d_text", [_text_prim(5.0, 5.0, "hello")])
 	kind.render(ctx, ann)
 	check("text render: draw_string called once", ctx.string_calls == 1)
+	check("text render: baseline is inside bounds, not at top-left", ctx.last_string_pos.y > 5.0)
 
 
 func test_text_hit_inside() -> void:

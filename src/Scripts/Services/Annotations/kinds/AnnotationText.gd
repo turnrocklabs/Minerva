@@ -115,6 +115,28 @@ func bounds(annotation: Dictionary) -> Rect2:
 	return result
 
 
+func transform_annotation(annotation: Dictionary, transform: Transform2D, operation: String = "") -> Dictionary:
+	var out: Dictionary = super(annotation, transform, operation)
+	var payload_v: Variant = out.get("kind_payload", {})
+	if not (payload_v is Dictionary and (payload_v as Dictionary).has("text")):
+		return out
+	if not out.has("anchor"):
+		return out
+
+	out["anchor"] = AnnotationKind.transform_position_source(out.get("anchor", null), transform)
+	var payload: Dictionary = (payload_v as Dictionary).duplicate(true)
+	if operation == "rotate":
+		var rotation_delta := AnnotationKind.transform_rotation_delta(transform)
+		if absf(rotation_delta) > 0.0001:
+			payload["rotation_rad"] = float(payload.get("rotation_rad", 0.0)) + rotation_delta
+	elif operation == "scale":
+		var scale_delta := AnnotationKind.transform_uniform_scale_delta(transform)
+		if absf(scale_delta - 1.0) > 0.0001:
+			payload["scale"] = float(payload.get("scale", 1.0)) * scale_delta
+	out["kind_payload"] = payload
+	return out
+
+
 # ── Anchor-aware payload path (Round 2 overlay-canvas DCR) ───────────────────
 
 ## Resolve the rendering position from the annotation envelope. Returns null
@@ -146,7 +168,7 @@ func _render_payload_text(ctx: AnnotationRenderContext, pos: Vector2, payload: D
 	var scale_factor := float(payload.get("scale", 1.0))
 	var rotation_rad := float(payload.get("rotation_rad", 0.0))
 	var px_size := int(clampf(base_size * scale_factor * ctx.zoom, 8.0, 64.0))
-	ctx.draw_string_rotated(null, pos, text, color, px_size, rotation_rad)
+	ctx.draw_string_rotated(null, _baseline_position(pos, base_size, scale_factor, rotation_rad), text, color, px_size, rotation_rad)
 
 
 func _payload_text_aabb(pos: Vector2, payload_v: Variant) -> Rect2:
@@ -186,7 +208,14 @@ func _render_text(ctx: AnnotationRenderContext, prim: Dictionary, color: Color) 
 	var scale_factor := float(prim.get("scale", 1.0))
 	var rotation_rad := float(prim.get("rotation_rad", 0.0))
 	var px_size := int(clampf(base_size * scale_factor * ctx.zoom, 8.0, 64.0))
-	ctx.draw_string_rotated(null, at, text, color, px_size, rotation_rad)
+	ctx.draw_string_rotated(null, _baseline_position(at, base_size, scale_factor, rotation_rad), text, color, px_size, rotation_rad)
+
+
+static func _baseline_position(top_left: Vector2, base_size: float, scale_factor: float, rotation_rad: float) -> Vector2:
+	var baseline_offset := Vector2(0.0, base_size * scale_factor)
+	if absf(rotation_rad) < 0.0001:
+		return top_left + baseline_offset
+	return top_left + Transform2D(rotation_rad, Vector2.ZERO) * baseline_offset
 
 
 static func _text_aabb(prim: Dictionary) -> Rect2:

@@ -461,6 +461,7 @@ func test_tool_button_toggle_lifecycle() -> void:
 
 	tb._on_tool_button_toggled("select", false)
 	check_eq("active_tool_button_name cleared after toggle-off", tb._active_tool_button_name, "")
+	check_eq("active tool cleared after toggle-off", tb.get_active_tool(), null)
 	check_eq("active_tool_button_changed('') fired on toggle-off",
 		off_signals.size() >= 1 and off_signals[off_signals.size() - 1] == "", true)
 

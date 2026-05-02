@@ -218,6 +218,14 @@ static func _hit_zone(doc_pos: Vector2, b: Rect2) -> Zone:
 		if dist < HANDLE_HIT_RADIUS_DOC:
 			return corner_zones[i]
 
+	# Compact annotations such as short text labels can be smaller than the
+	# combined edge/rotate hit zones. Preserve a usable translate target inside
+	# the bounds; exact corner handles still win above.
+	var inside_bounds := b.has_point(doc_pos)
+	var compact_bounds := b.size.x <= HANDLE_HIT_RADIUS_DOC * 2.5 or b.size.y <= HANDLE_HIT_RADIUS_DOC * 2.5
+	if inside_bounds and compact_bounds:
+		return Zone.INSIDE
+
 	# 2. ROTATE ring check (annulus around each corner)
 	for i in corners.size():
 		var dist := doc_pos.distance_to(corners[i])
@@ -241,7 +249,7 @@ static func _hit_zone(doc_pos: Vector2, b: Rect2) -> Zone:
 				return edge_zones[i]
 
 	# 4. INSIDE
-	if b.has_point(doc_pos):
+	if inside_bounds:
 		return Zone.INSIDE
 
 	# 5. OUTSIDE
@@ -306,11 +314,7 @@ func _begin_drag(zone: Zone, doc_pos: Vector2, ann_id: String,
 func _apply_translate(doc_pos: Vector2) -> void:
 	var delta := doc_pos - _drag_start_doc
 	var transform := Transform2D(0.0, delta)
-	var new_prims := AnnotationKind.transform_primitives(
-		_drag_start_annotation.get("primitives", []), transform)
-	var new_ann := _drag_start_annotation.duplicate(true)
-	new_ann["primitives"] = new_prims
-	annotation_modified.emit(_drag_id, new_ann)
+	_emit_transformed_annotation(transform, "translate")
 
 
 func _apply_uniform_scale(doc_pos: Vector2) -> void:
@@ -324,11 +328,7 @@ func _apply_uniform_scale(doc_pos: Vector2) -> void:
 	var s := minf(sx, sy)
 	s = maxf(s, MIN_SCALE)
 	var transform := _build_scale_transform(_scale_center_doc, s, s)
-	var new_prims := AnnotationKind.transform_primitives(
-		_drag_start_annotation.get("primitives", []), transform)
-	var new_ann := _drag_start_annotation.duplicate(true)
-	new_ann["primitives"] = new_prims
-	annotation_modified.emit(_drag_id, new_ann)
+	_emit_transformed_annotation(transform, "scale")
 
 
 func _apply_axis_scale(doc_pos: Vector2, lock_x: bool, lock_y: bool) -> void:
@@ -342,11 +342,7 @@ func _apply_axis_scale(doc_pos: Vector2, lock_x: bool, lock_y: bool) -> void:
 		sy = current_offset.y / _drag_start_handle_offset.y
 		sy = maxf(sy, MIN_SCALE)
 	var transform := _build_scale_transform(_scale_center_doc, sx, sy)
-	var new_prims := AnnotationKind.transform_primitives(
-		_drag_start_annotation.get("primitives", []), transform)
-	var new_ann := _drag_start_annotation.duplicate(true)
-	new_ann["primitives"] = new_prims
-	annotation_modified.emit(_drag_id, new_ann)
+	_emit_transformed_annotation(transform, "scale")
 
 
 func _apply_rotate(doc_pos: Vector2) -> void:
@@ -358,11 +354,19 @@ func _apply_rotate(doc_pos: Vector2) -> void:
 	var t_rotate    := Transform2D(delta, Vector2.ZERO)
 	var t_back      := Transform2D(0.0, _rotation_center_doc)
 	var transform   := t_back * t_rotate * t_to_origin
+	_emit_transformed_annotation(transform, "rotate")
 
-	var new_prims := AnnotationKind.transform_primitives(
-		_drag_start_annotation.get("primitives", []), transform)
-	var new_ann := _drag_start_annotation.duplicate(true)
-	new_ann["primitives"] = new_prims
+
+func _emit_transformed_annotation(transform: Transform2D, operation: String) -> void:
+	var kind := _get_kind(_drag_start_annotation)
+	var new_ann: Dictionary
+	if kind != null:
+		new_ann = kind.transform_annotation(_drag_start_annotation, transform, operation)
+	else:
+		new_ann = _drag_start_annotation.duplicate(true)
+		var primitives: Variant = new_ann.get("primitives", [])
+		if primitives is Array:
+			new_ann["primitives"] = AnnotationKind.transform_primitives(primitives as Array, transform)
 	annotation_modified.emit(_drag_id, new_ann)
 
 

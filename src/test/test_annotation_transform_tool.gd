@@ -66,6 +66,7 @@ func _init() -> void:
 	test_deactivate_during_drag_silent()
 	test_pointer_up_commits_no_extra_emission()
 	test_right_click_noop()
+	test_payload_text_drag_uses_kind_transform()
 
 	print("\n-- selection / deselection --")
 	test_no_selection_click_on_annotation_selects()
@@ -556,6 +557,34 @@ func test_right_click_noop() -> void:
 	var consumed := tool.on_pointer_down(Vector2(140, 130), MOUSE_BUTTON_RIGHT, 0)
 	check("right-click not consumed", not consumed)
 	check("no emission on right-click", log.size() == 0)
+
+	tool.on_deactivate()
+
+
+func test_payload_text_drag_uses_kind_transform() -> void:
+	print("test_payload_text_drag_uses_kind_transform:")
+	var host := MockHost.new()
+	host._registry.register_annotation_kind(AnnotationText.new())
+	host.add_annotation({
+		"id": "ann_payload_text",
+		"kind": "2d_text",
+		"anchor": CoreAnchors.make_canvas_point(100.0, 100.0),
+		"kind_payload": {"text": "payload text", "font_size": 14.0},
+	})
+	host._selected_id = "ann_payload_text"
+	var tool := AnnotationTransformTool.new()
+	var log := _capture_modified(tool)
+	tool.on_activate(host)
+
+	check("pointer down inside payload text starts drag", tool.on_pointer_down(Vector2(120, 108), MOUSE_BUTTON_LEFT, 0))
+	tool.on_pointer_move(Vector2(130, 128))
+
+	check_eq("one payload text modification", log.size(), 1)
+	var ann: Dictionary = log[0]["ann"]
+	var anchor: Dictionary = ann.get("anchor", {})
+	var id: Dictionary = anchor.get("id", {})
+	check_eq("payload text anchor x translated", id.get("x"), 110.0)
+	check_eq("payload text anchor y translated", id.get("y"), 120.0)
 
 	tool.on_deactivate()
 

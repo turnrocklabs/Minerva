@@ -559,8 +559,7 @@ func _on_tool_button_toggled(tool_name: String, pressed: bool) -> void:
 					other_btn.set_pressed_no_signal(false)
 
 		# Tear down any previously-active manipulation tool (one might have been
-		# active from a prior Tools-button press). Disconnect annotation_modified
-		# before we drop the reference to avoid stale signal connections.
+		# active from a prior Tools-button press).
 		_teardown_active_manipulation_tool()
 
 		# Untoggle and deactivate any active Annotate-section tool.
@@ -587,11 +586,6 @@ func _on_tool_button_toggled(tool_name: String, pressed: bool) -> void:
 		var new_tool: AnnotationAuthorTool = _construct_tool_for_name(tool_name)
 		if new_tool != null:
 			new_tool.on_activate(_host)
-			# Wire annotation_modified so the canvas can forward it to the host.
-			if new_tool.annotation_modified.is_connected(_on_manipulation_tool_modified):
-				pass  # already connected (shouldn't happen, but be safe)
-			else:
-				new_tool.annotation_modified.connect(_on_manipulation_tool_modified)
 			_active_tool = new_tool
 			_active_kind_name = &""
 		active_tool_changed.emit(new_tool)
@@ -620,19 +614,9 @@ func _teardown_active_manipulation_tool() -> void:
 	# whether _active_kind_name is empty — kind-activated tools always set it.
 	if _active_kind_name != &"":
 		return
-	# Disconnect annotation_modified to avoid stale callbacks.
-	if _active_tool.annotation_modified.is_connected(_on_manipulation_tool_modified):
-		_active_tool.annotation_modified.disconnect(_on_manipulation_tool_modified)
 	_active_tool.on_deactivate()
 	_active_tool = null
 
-
-## Forwarded from a manipulation tool's annotation_modified signal.
-## Relays the change to the host via update_annotation.
-## The host's annotations_changed signal then triggers canvas redraw.
-func _on_manipulation_tool_modified(annotation_id: String, new_annotation: Dictionary) -> void:
-	if _host != null:
-		_host.update_annotation(annotation_id, new_annotation)
 
 
 # ── Internal: signal handlers ─────────────────────────────────────────────────

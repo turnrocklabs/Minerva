@@ -38,19 +38,15 @@ extends AnnotationAuthorTool
 ##   emitted. The cancelled signal is reserved for explicit user-abort
 ##   (dialog Cancel / Escape).
 ##
-## Annotation Dict shape (matches AnnotationText.render which reads "at" /
-## "content" / "size"):
+## Annotation Dict shape (canonical payload/anchor form):
 ##   {
 ##     "kind": "2d_text",
 ##     "schema_version": 1,
 ##     "author": "human",
 ##     "view_context": "<host.get_view_context()>",
-##     "primitives": [{
-##       "kind": "text",
-##       "at":   [x, y],
-##       "content": "<typed_string>",
-##       "size":    14,
-##     }]
+##     "anchor": core/canvas.point(x, y),
+##     "kind_payload": {"text": "<typed_string>", "font_size": 14},
+##     "primitives": []
 ##   }
 ## Note: id and created_at are added by the substrate's add_annotation(),
 ## not here.
@@ -250,7 +246,6 @@ func _reset_state() -> void:
 
 
 func _build_annotation(at_pos: Vector2, content: String) -> Dictionary:
-	# Keys "at" / "content" / "size" match what AnnotationText.render reads.
 	var view_ctx := ""
 	if _host != null:
 		view_ctx = _host.get_view_context()
@@ -259,10 +254,8 @@ func _build_annotation(at_pos: Vector2, content: String) -> Dictionary:
 		"schema_version": 1,
 		"author":         "human",
 		"view_context":   view_ctx,
-		"primitives":     [{
-			"kind":    "text",
-			"at":      [at_pos.x, at_pos.y],
-			"content": content,
-			"size":    DEFAULT_FONT_SIZE,
-		}],
+		"anchor":         CoreAnchors.make_canvas_point(at_pos.x, at_pos.y),
+		"kind_payload":   {"text": content, "font_size": DEFAULT_FONT_SIZE},
+		"summary":        content,
+		"primitives":     [],
 	}

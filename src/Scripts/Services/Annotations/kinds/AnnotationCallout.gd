@@ -84,6 +84,20 @@ func primary_anchor_point(annotation: Dictionary) -> Vector2:
 	return _anchor_snapshot_pos(annotation)
 
 
+func transform_annotation(annotation: Dictionary, transform: Transform2D, _operation: String = "") -> Dictionary:
+	var out: Dictionary = super(annotation, transform, _operation)
+	if out.has("anchor"):
+		out["anchor"] = AnnotationKind.transform_position_source(out.get("anchor", null), transform)
+
+	var payload_v: Variant = out.get("kind_payload", {})
+	var payload: Dictionary = payload_v.duplicate(true) if payload_v is Dictionary else {}
+	var label_pos := _resolve_label_pos(annotation, _anchor_snapshot_pos(annotation))
+	var moved_label := transform * label_pos
+	payload["bubble_pos"] = [moved_label.x, moved_label.y]
+	out["kind_payload"] = payload
+	return out
+
+
 # ── Bubble position + leader routing (Round 2 enrichment) ─────────────────────
 
 ## Resolve anchor position from ctx.host when available, else snapshot fallback.

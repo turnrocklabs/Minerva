@@ -178,6 +178,19 @@ func summary(annotation: Dictionary) -> String:
 	return base
 
 
+## Return a transformed copy of annotation geometry.
+##
+## The base implementation handles legacy primitives. Kinds whose editable
+## geometry lives in anchors or kind_payload should override this and delegate
+## primitive fallback here so manipulation tools do not need schema knowledge.
+func transform_annotation(annotation: Dictionary, transform: Transform2D, _operation: String = "") -> Dictionary:
+	var out := annotation.duplicate(true)
+	var primitives: Variant = out.get("primitives", [])
+	if primitives is Array:
+		out["primitives"] = AnnotationKind.transform_primitives(primitives as Array, transform)
+	return out
+
+
 func to_chat_context(annotation: Dictionary, capabilities: Dictionary) -> Array:
 	var blocks: Array = []
 	var supported: Array = capabilities.get("supported_block_types", ["text", "structured_json"])
@@ -289,7 +302,83 @@ static func _primitive_bounds(p: Dictionary) -> Rect2:
 static func _to_vec2(arr: Variant) -> Vector2:
 	if arr is Array and (arr as Array).size() >= 2:
 		return Vector2(float(arr[0]), float(arr[1]))
+	if arr is Vector2:
+		return arr
+	if arr is Vector3:
+		return Vector2((arr as Vector3).x, (arr as Vector3).y)
+	if arr is Dictionary:
+		var d: Dictionary = arr
+		if d.has("x") and d.has("y"):
+			return Vector2(float(d.get("x", 0.0)), float(d.get("y", 0.0)))
 	return Vector2.ZERO
+
+
+static func transform_position_source(source: Variant, transform: Transform2D) -> Variant:
+	if source is Vector2:
+		return transform * (source as Vector2)
+	if source is Vector3:
+		var p := transform * Vector2((source as Vector3).x, (source as Vector3).y)
+		return Vector3(p.x, p.y, (source as Vector3).z)
+	if source is Array:
+		var arr: Array = (source as Array).duplicate(true)
+		if arr.size() >= 2:
+			var p := transform * Vector2(float(arr[0]), float(arr[1]))
+			arr[0] = p.x
+			arr[1] = p.y
+		return arr
+	if source is Dictionary:
+		return _transform_position_dictionary(source as Dictionary, transform)
+	return source
+
+
+static func transform_rotation_delta(transform: Transform2D) -> float:
+	return transform.get_rotation()
+
+
+static func transform_uniform_scale_delta(transform: Transform2D) -> float:
+	var ds := transform.get_scale()
+	return (ds.x + ds.y) * 0.5
+
+
+static func _transform_position_dictionary(source: Dictionary, transform: Transform2D) -> Dictionary:
+	var out := source.duplicate(true)
+	if out.has("x") and out.has("y") and not out.has("plugin"):
+		var bare := transform * Vector2(float(out.get("x", 0.0)), float(out.get("y", 0.0)))
+		out["x"] = bare.x
+		out["y"] = bare.y
+		return out
+	if _is_canvas_point_anchor(out):
+		var current := _canvas_point_anchor_position(out)
+		var moved := transform * current
+		var id_v: Variant = out.get("id", {})
+		var id: Dictionary = id_v.duplicate(true) if id_v is Dictionary else {}
+		id["x"] = moved.x
+		id["y"] = moved.y
+		out["id"] = id
+		_set_snapshot_position(out, moved)
+	return out
+
+
+static func _is_canvas_point_anchor(source: Dictionary) -> bool:
+	return str(source.get("plugin", "")) == "core" and str(source.get("type", "")) == "canvas.point"
+
+
+static func _canvas_point_anchor_position(source: Dictionary) -> Vector2:
+	var id_v: Variant = source.get("id", {})
+	if id_v is Dictionary:
+		var id: Dictionary = id_v
+		return Vector2(float(id.get("x", 0.0)), float(id.get("y", 0.0)))
+	var snapshot: Variant = source.get("snapshot", {})
+	if snapshot is Dictionary:
+		return _to_vec2((snapshot as Dictionary).get("position", [0, 0]))
+	return Vector2.ZERO
+
+
+static func _set_snapshot_position(source: Dictionary, position: Vector2) -> void:
+	var snapshot_v: Variant = source.get("snapshot", {})
+	var snapshot: Dictionary = snapshot_v.duplicate(true) if snapshot_v is Dictionary else {}
+	snapshot["position"] = [position.x, position.y]
+	source["snapshot"] = snapshot
 
 
 static func _points_aabb(pts: Variant) -> Rect2:

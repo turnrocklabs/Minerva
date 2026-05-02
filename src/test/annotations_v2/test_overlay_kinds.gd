@@ -49,6 +49,9 @@ func _initialize() -> void:
 	_test_callout_falls_back_to_snapshot_without_host()
 	_test_callout_bounds_with_bubble_pos()
 	_test_callout_leader_picks_nearest_edge()
+	_test_text_payload_transform_moves_canvas_anchor()
+	_test_arrow_payload_transform_moves_canvas_endpoints()
+	_test_callout_transform_moves_bubble_not_semantic_anchor()
 
 	_test_sidecar_roundtrip_arrow_payload()
 	_test_sidecar_roundtrip_text_payload()
@@ -319,6 +322,58 @@ func _test_callout_leader_picks_nearest_edge() -> void:
 	var anchor_left := Vector2(0, 115)
 	var endpoint_left: Vector2 = AnnotationCalloutScript._nearest_label_edge(anchor_left, label_rect)
 	check("leader picks left edge when anchor left", absf(endpoint_left.x - 100.0) < 0.5)
+
+
+func _test_text_payload_transform_moves_canvas_anchor() -> void:
+	var text: AnnotationText = AnnotationTextScript.new()
+	var ann := {
+		"id": "t_transform",
+		"kind": "2d_text",
+		"anchor": _canvas_anchor(50.0, 60.0),
+		"kind_payload": {"text": "move me", "font_size": 14.0},
+	}
+	var moved := text.transform_annotation(ann, Transform2D(0.0, Vector2(10.0, 20.0)), "translate")
+	var anchor: Dictionary = moved.get("anchor", {})
+	var id: Dictionary = anchor.get("id", {})
+	check("text transform moves canvas anchor x", absf(float(id.get("x", 0.0)) - 60.0) < 0.001)
+	check("text transform moves canvas anchor y", absf(float(id.get("y", 0.0)) - 80.0) < 0.001)
+	check("text transform keeps payload text", str(moved.get("kind_payload", {}).get("text", "")) == "move me")
+
+
+func _test_arrow_payload_transform_moves_canvas_endpoints() -> void:
+	var arrow: AnnotationArrow = AnnotationArrowScript.new()
+	var ann := {
+		"id": "a_transform",
+		"kind": "2d_arrow",
+		"kind_payload": {
+			"endpoint_a": _canvas_anchor(1.0, 2.0),
+			"endpoint_b": _canvas_anchor(3.0, 4.0),
+		},
+	}
+	var moved := arrow.transform_annotation(ann, Transform2D(0.0, Vector2(10.0, 20.0)), "translate")
+	var payload: Dictionary = moved.get("kind_payload", {})
+	var endpoint_a: Dictionary = payload.get("endpoint_a", {})
+	var endpoint_b: Dictionary = payload.get("endpoint_b", {})
+	var id_a: Dictionary = endpoint_a.get("id", {})
+	var id_b: Dictionary = endpoint_b.get("id", {})
+	check("arrow transform moves endpoint_a", absf(float(id_a.get("x", 0.0)) - 11.0) < 0.001 and absf(float(id_a.get("y", 0.0)) - 22.0) < 0.001)
+	check("arrow transform moves endpoint_b", absf(float(id_b.get("x", 0.0)) - 13.0) < 0.001 and absf(float(id_b.get("y", 0.0)) - 24.0) < 0.001)
+
+
+func _test_callout_transform_moves_bubble_not_semantic_anchor() -> void:
+	var callout: AnnotationCallout = AnnotationCalloutScript.new()
+	var ann := {
+		"id": "c_transform",
+		"kind": "callout",
+		"anchor": {"plugin": "core", "type": "text.range", "snapshot": {"position": [100.0, 100.0]}, "id": {"start": 0, "end": 5}},
+		"kind_payload": {"text": "hi"},
+	}
+	var moved := callout.transform_annotation(ann, Transform2D(0.0, Vector2(10.0, 20.0)), "translate")
+	var anchor: Dictionary = moved.get("anchor", {})
+	var snapshot: Dictionary = anchor.get("snapshot", {})
+	var bubble: Array = moved.get("kind_payload", {}).get("bubble_pos", [])
+	check("callout transform preserves semantic anchor snapshot", snapshot.get("position", []) == [100.0, 100.0])
+	check("callout transform writes moved bubble_pos", bubble.size() == 2 and absf(float(bubble[0]) - 154.0) < 0.001 and absf(float(bubble[1]) - 92.0) < 0.001)
 
 
 # ── Sidecar round-trip ───────────────────────────────────────────────────────

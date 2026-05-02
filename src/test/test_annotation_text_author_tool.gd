@@ -219,11 +219,12 @@ func test_provider_submit_emits_annotation_ready_and_returns_to_idle() -> void:
 	check_eq("state back to IDLE",            tool._state, AnnotationTextAuthorTool.State.IDLE)
 
 	var ann: Dictionary = sigs["ready_payload"][0]
-	var prims: Array = ann["primitives"]
-	check_eq("one primitive", prims.size(), 1)
-	var prim: Dictionary = prims[0]
-	check_eq("primitive content matches typed string", prim["content"], "Hello world")
-	check_eq("primitive 'at' matches click", prim["at"], [10.0, 20.0])
+	var payload: Dictionary = ann.get("kind_payload", {})
+	var anchor: Dictionary = ann.get("anchor", {})
+	var anchor_id: Dictionary = anchor.get("id", {})
+	check_eq("payload text matches typed string", payload.get("text"), "Hello world")
+	check_eq("anchor x matches click", anchor_id.get("x"), 10.0)
+	check_eq("anchor y matches click", anchor_id.get("y"), 20.0)
 
 
 func test_provider_cancel_emits_cancelled() -> void:
@@ -357,17 +358,19 @@ func test_annotation_dict_shape() -> void:
 	check("annotation has no id (substrate assigns)",         not ann.has("id"))
 	check("annotation has no created_at (substrate assigns)", not ann.has("created_at"))
 
-	check("primitives is Array", ann.get("primitives") is Array)
-	var prims: Array = ann["primitives"]
-	check_eq("primitives length == 1", prims.size(), 1)
-	var prim: Dictionary = prims[0]
-	check_eq("primitive kind == 'text'", prim.get("kind"), "text")
-	check_eq("primitive content == typed string", prim.get("content"), "Annotated!")
-	check_eq("primitive size == default 14", prim.get("size"), AnnotationTextAuthorTool.DEFAULT_FONT_SIZE)
-	check("primitive 'at' is Array", prim.get("at") is Array)
-	check_eq("primitive 'at' length == 2", (prim["at"] as Array).size(), 2)
-	check_eq("primitive 'at' x", (prim["at"] as Array)[0], 42.0)
-	check_eq("primitive 'at' y", (prim["at"] as Array)[1], 99.0)
+	check("anchor is Dictionary", ann.get("anchor") is Dictionary)
+	var anchor: Dictionary = ann["anchor"]
+	check_eq("anchor plugin is core", anchor.get("plugin"), "core")
+	check_eq("anchor type is canvas.point", anchor.get("type"), "canvas.point")
+	var anchor_id: Dictionary = anchor.get("id", {})
+	check_eq("anchor x", anchor_id.get("x"), 42.0)
+	check_eq("anchor y", anchor_id.get("y"), 99.0)
+
+	check("kind_payload is Dictionary", ann.get("kind_payload") is Dictionary)
+	var payload: Dictionary = ann["kind_payload"]
+	check_eq("payload text == typed string", payload.get("text"), "Annotated!")
+	check_eq("payload font_size == default 14", payload.get("font_size"), AnnotationTextAuthorTool.DEFAULT_FONT_SIZE)
+	check("primitives is empty Array for v1 compatibility", ann.get("primitives") is Array and (ann["primitives"] as Array).is_empty())
 
 
 # ── Tests: author_ui factory ──────────────────────────────────────────────────
