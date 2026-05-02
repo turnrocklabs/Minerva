@@ -17,7 +17,7 @@ var _fail_count: int = 0
 var _tmp_dir: String = ""
 
 
-func _init() -> void:
+func _initialize() -> void:
 	_tmp_dir = _make_tmp_dir()
 
 	print("=== MCPAnnotationTools Tests ===\n")
@@ -29,83 +29,92 @@ func _init() -> void:
 	var tools := MCPAnnotationTools.new(null)
 
 	print("-- list: empty sidecar --")
-	test_list_no_sidecar(tools)
+	await test_list_no_sidecar(tools)
 
 	print("\n-- add: valid annotation (author forced to ai) --")
-	test_add_valid_forces_author_ai(tools)
+	await test_add_valid_forces_author_ai(tools)
 
 	print("\n-- add: explicit author=human is overwritten --")
-	test_add_author_human_forced_to_ai(tools)
+	await test_add_author_human_forced_to_ai(tools)
 
 	print("\n-- add: malformed annotation → structured errors --")
-	test_add_malformed_missing_kind(tools)
-	test_add_malformed_bad_primitive(tools)
+	await test_add_malformed_missing_kind(tools)
+	await test_add_malformed_bad_primitive(tools)
 
 	print("\n-- add: unknown kind rejected at MCP layer --")
-	test_add_unknown_kind_rejected(tools)
+	await test_add_unknown_kind_rejected(tools)
 
 	print("\n-- CRUD lifecycle --")
-	test_crud_lifecycle(tools)
+	await test_crud_lifecycle(tools)
 
 	print("\n-- update: nonexistent id --")
-	test_update_not_found(tools)
+	await test_update_not_found(tools)
 
 	print("\n-- update: author is immutable --")
-	test_update_author_immutable(tools)
+	await test_update_author_immutable(tools)
 
 	print("\n-- delete: idempotency --")
-	test_delete_idempotent(tools)
-	test_delete_not_found(tools)
+	await test_delete_idempotent(tools)
+	await test_delete_not_found(tools)
 
 	print("\n-- list: unknown-kind annotations from disk returned verbatim --")
-	test_list_unknown_kind_verbatim(tools)
+	await test_list_unknown_kind_verbatim(tools)
 
 	print("\n-- render_overlay: returns non-empty PNG bytes --")
-	test_render_returns_png(tools)
+	await test_render_returns_png(tools)
 
 	print("\n-- list: new enriched fields (summary, anchored_to, bounds) --")
-	test_list_has_summary_field(tools)
-	test_list_anchored_to_present(tools)
-	test_list_anchored_to_absent(tools)
-	test_list_summary_arrow_kind(tools)
-	test_list_summary_text_kind(tools)
-	test_list_no_bounds_without_registry(tools)
+	await test_list_has_summary_field(tools)
+	await test_list_anchored_to_present(tools)
+	await test_list_anchored_to_absent(tools)
+	await test_list_summary_arrow_kind(tools)
+	await test_list_summary_text_kind(tools)
+	await test_list_no_bounds_without_registry(tools)
 
 	print("\n-- list: author filter --")
-	test_list_author_filter_human(tools)
-	test_list_author_filter_ai(tools)
-	test_list_author_filter_omitted(tools)
-	test_list_author_filter_invalid(tools)
+	await test_list_author_filter_human(tools)
+	await test_list_author_filter_ai(tools)
+	await test_list_author_filter_omitted(tools)
+	await test_list_author_filter_invalid(tools)
 
 	print("\n-- list: editor_name (live in-memory) path --")
-	test_list_requires_path_or_editor(tools)
-	test_list_rejects_both_path_and_editor(tools)
-	test_list_editor_unknown_returns_error(tools)
-	test_list_editor_returns_live_annotations(tools)
-	test_list_editor_response_shape(tools)
+	await test_list_requires_path_or_editor(tools)
+	await test_list_rejects_both_path_and_editor(tools)
+	await test_list_editor_unknown_returns_error(tools)
+	await test_list_editor_returns_live_annotations(tools)
+	await test_list_editor_response_shape(tools)
 
 	print("\n-- render_overlay: editor_name path --")
-	test_render_requires_path_or_editor(tools)
-	test_render_rejects_both(tools)
-	test_render_editor_unknown(tools)
-	test_render_editor_returns_png(tools)
-	test_render_editor_with_include_document(tools)
+	await test_render_requires_path_or_editor(tools)
+	await test_render_rejects_both(tools)
+	await test_render_editor_unknown(tools)
+	await test_render_editor_returns_png(tools)
+	await test_render_editor_with_include_document(tools)
 
 	print("\n-- render_overlay: kind dispatch (R6) --")
-	test_render_arrow_kind_produces_pixel_diversity(tools)
-	test_render_text_kind_produces_pixels_at_anchor(tools)
-	test_render_unknown_kind_placeholder_not_transparent(tools)
-	test_render_kind_dispatch_via_mock(tools)
+	await test_render_arrow_kind_produces_pixel_diversity(tools)
+	await test_render_text_kind_produces_pixels_at_anchor(tools)
+	await test_render_unknown_kind_placeholder_not_transparent(tools)
+	await test_render_kind_dispatch_via_mock(tools)
 
 	print("\n-- render_overlay: downsample + fill_rect --")
-	test_render_overlay_caps_output_dimension(tools)
-	test_render_overlay_no_downsample_when_small(tools)
-	test_render_overlay_with_annotation_produces_png(tools)
+	await test_render_overlay_caps_output_dimension(tools)
+	await test_render_overlay_no_downsample_when_small(tools)
+	await test_render_overlay_with_annotation_produces_png(tools)
 
 	print("\n-- render_overlay: output_path negative tests --")
-	test_render_output_path_empty(tools)
-	test_render_output_path_relative(tools)
-	test_render_output_path_missing_parent(tools)
+	await test_render_output_path_empty(tools)
+	await test_render_output_path_relative(tools)
+	await test_render_output_path_missing_parent(tools)
+
+	print("\n-- add/update/delete: editor_name (live in-memory) path --")
+	await test_add_editor_writes_to_live_host(tools)
+	await test_add_editor_unknown_returns_error(tools)
+	await test_add_rejects_both_editor_and_document_path(tools)
+	await test_add_requires_one_of_editor_or_document_path(tools)
+	await test_add_returns_host_assigned_id(tools)
+	await test_update_editor_patches_live_annotation(tools)
+	await test_delete_editor_removes_from_live_host(tools)
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -192,7 +201,7 @@ func _cleanup_tmp_dir() -> void:
 func test_list_no_sidecar(tools: MCPAnnotationTools) -> void:
 	print("test_list_no_sidecar:")
 	var doc := _doc_path("no_sidecar.txt")
-	var result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("success=true on missing sidecar", result.get("success", false))
 	check("annotations is empty array", result.get("annotations", null) is Array and result["annotations"].size() == 0)
 
@@ -202,12 +211,12 @@ func test_add_valid_forces_author_ai(tools: MCPAnnotationTools) -> void:
 	var doc := _doc_path("add_ai.txt")
 	var ann := _valid_annotation_dict()
 	# Omit author — should be set to "ai" by the server.
-	var result := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	var result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	check("add succeeds (success=true)", result.get("success", false))
 	check("id returned", result.has("id") and str(result["id"]).begins_with("ann_"))
 
 	# Read back and verify author.
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation stored", annotations.size() == 1)
 	if annotations.size() > 0:
@@ -219,10 +228,10 @@ func test_add_author_human_forced_to_ai(tools: MCPAnnotationTools) -> void:
 	var doc := _doc_path("add_human.txt")
 	var ann := _valid_annotation_dict()
 	ann["author"] = "human"  # should be overwritten
-	var result := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	var result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	check("add with author=human succeeds (author overwritten)", result.get("success", false))
 
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	var annotations: Array = list_result.get("annotations", [])
 	if annotations.size() > 0:
 		check_eq("author is ai (overwritten from human)", annotations[0].get("author", ""), "ai")
@@ -238,7 +247,7 @@ func test_add_malformed_missing_kind(tools: MCPAnnotationTools) -> void:
 		"view_context": "pcb",
 		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [1.0, 1.0]}],
 	}
-	var result := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	var result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	check("missing kind → ok=false", result.get("ok", true) == false)
 	check("errors array present", result.has("errors") and result["errors"] is Array)
 	check("errors array non-empty", (result.get("errors", []) as Array).size() > 0)
@@ -260,7 +269,7 @@ func test_add_malformed_bad_primitive(tools: MCPAnnotationTools) -> void:
 		"view_context": "pcb",
 		"primitives": [{"kind": "arrow", "from": [0.0, 0.0]}],  # missing 'to'
 	}
-	var result := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	var result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	check("bad primitive → ok=false", result.get("ok", true) == false)
 	check("errors array present", result.has("errors"))
 	var errors: Array = result.get("errors", [])
@@ -294,7 +303,7 @@ func test_add_unknown_kind_rejected(tools: MCPAnnotationTools) -> void:
 		"view_context": "pcb",
 		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [5.0, 5.0]}],
 	}
-	var result := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	var result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	# Without a live registry (headless), the schema passes because schema only checks
 	# structural validity, not kind registration. Document this expected headless behavior.
 	# The rejection guard is tested by the _get_registry path: null → skip kind check.
@@ -312,12 +321,12 @@ func test_crud_lifecycle(tools: MCPAnnotationTools) -> void:
 	var doc := _doc_path("lifecycle.txt")
 
 	# 1. List on empty doc.
-	var list1 := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list1 := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("lifecycle: initial list empty", list1.get("annotations", []).size() == 0)
 
 	# 2. Add first annotation.
 	var ann1 := _valid_annotation_dict()
-	var add1 := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann1})
+	var add1 := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann1})
 	check("lifecycle: add1 succeeded", add1.get("success", false))
 	var id1: String = str(add1.get("id", ""))
 	check("lifecycle: id1 is ann_ prefixed", id1.begins_with("ann_"))
@@ -326,16 +335,16 @@ func test_crud_lifecycle(tools: MCPAnnotationTools) -> void:
 	var ann2 := _valid_annotation_dict()
 	ann2["kind"] = "2d_text"
 	ann2["primitives"] = [{"kind": "text", "at": [5.0, 5.0], "content": "hello"}]
-	var add2 := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann2})
+	var add2 := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann2})
 	check("lifecycle: add2 succeeded", add2.get("success", false))
 	var id2: String = str(add2.get("id", ""))
 
 	# 4. List — should have 2.
-	var list2 := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list2 := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("lifecycle: list has 2 annotations", list2.get("annotations", []).size() == 2)
 
 	# 5. Update first annotation's view_context.
-	var update1 := tools.handle("minerva_annotations_update", {
+	var update1 := await tools.handle("minerva_annotations_update", {
 		"document_path": doc,
 		"id": id1,
 		"patch": {"view_context": "cad:top"},
@@ -343,7 +352,7 @@ func test_crud_lifecycle(tools: MCPAnnotationTools) -> void:
 	check("lifecycle: update succeeded", update1.get("success", false))
 
 	# Verify update applied.
-	var list3 := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list3 := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	var updated_ann: Dictionary = {}
 	for a in list3.get("annotations", []):
 		if str(a.get("id", "")) == id1:
@@ -353,11 +362,11 @@ func test_crud_lifecycle(tools: MCPAnnotationTools) -> void:
 	check("lifecycle: author unchanged after update", updated_ann.get("author", "") == "ai")
 
 	# 6. Delete first annotation.
-	var del1 := tools.handle("minerva_annotations_delete", {"document_path": doc, "id": id1})
+	var del1 := await tools.handle("minerva_annotations_delete", {"document_path": doc, "id": id1})
 	check("lifecycle: delete1 succeeded", del1.get("success", false) or del1.get("ok", false))
 
 	# 7. List — should have 1.
-	var list4 := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list4 := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("lifecycle: list has 1 after delete", list4.get("annotations", []).size() == 1)
 	var remaining_ids: Array = []
 	for a in list4.get("annotations", []):
@@ -365,17 +374,17 @@ func test_crud_lifecycle(tools: MCPAnnotationTools) -> void:
 	check("lifecycle: remaining is id2", id2 in remaining_ids)
 
 	# 8. Delete second annotation → sidecar deleted (zero-annotation rule §7.5).
-	var del2 := tools.handle("minerva_annotations_delete", {"document_path": doc, "id": id2})
+	var del2 := await tools.handle("minerva_annotations_delete", {"document_path": doc, "id": id2})
 	check("lifecycle: delete2 succeeded", del2.get("success", false) or del2.get("ok", false))
 
-	var list5 := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list5 := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("lifecycle: list empty after all deleted", list5.get("annotations", []).size() == 0)
 
 
 func test_update_not_found(tools: MCPAnnotationTools) -> void:
 	print("test_update_not_found:")
 	var doc := _doc_path("update_nf.txt")
-	var result := tools.handle("minerva_annotations_update", {
+	var result := await tools.handle("minerva_annotations_update", {
 		"document_path": doc,
 		"id": "ann_notexist",
 		"patch": {"view_context": "pcb"},
@@ -390,19 +399,19 @@ func test_update_author_immutable(tools: MCPAnnotationTools) -> void:
 
 	# Add an annotation first.
 	var ann := _valid_annotation_dict()
-	var add_result := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	var add_result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	check("setup: add succeeded", add_result.get("success", false))
 	var ann_id: String = str(add_result.get("id", ""))
 
 	# Attempt to change author via update patch.
-	tools.handle("minerva_annotations_update", {
+	await tools.handle("minerva_annotations_update", {
 		"document_path": doc,
 		"id": ann_id,
 		"patch": {"author": "human"},  # should be ignored
 	})
 
 	# Read back and verify author is still "ai".
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	var annotations: Array = list_result.get("annotations", [])
 	var stored_ann: Dictionary = {}
 	for a in annotations:
@@ -417,14 +426,14 @@ func test_delete_idempotent(tools: MCPAnnotationTools) -> void:
 
 	# Add then delete once.
 	var ann := _valid_annotation_dict()
-	var add_result := tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	var add_result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	var ann_id: String = str(add_result.get("id", ""))
 
-	var del1 := tools.handle("minerva_annotations_delete", {"document_path": doc, "id": ann_id})
+	var del1 := await tools.handle("minerva_annotations_delete", {"document_path": doc, "id": ann_id})
 	check("first delete: ok or success", del1.get("ok", false) or del1.get("success", false))
 
 	# Second delete of same id — sidecar no longer exists.
-	var del2 := tools.handle("minerva_annotations_delete", {"document_path": doc, "id": ann_id})
+	var del2 := await tools.handle("minerva_annotations_delete", {"document_path": doc, "id": ann_id})
 	check("second delete: ok=false (idempotent, not error)", del2.get("ok", true) == false)
 	check("second delete: reason=not_found", del2.get("reason", "") == "not_found")
 
@@ -432,7 +441,7 @@ func test_delete_idempotent(tools: MCPAnnotationTools) -> void:
 func test_delete_not_found(tools: MCPAnnotationTools) -> void:
 	print("test_delete_not_found:")
 	var doc := _doc_path("delete_nf.txt")
-	var result := tools.handle("minerva_annotations_delete", {
+	var result := await tools.handle("minerva_annotations_delete", {
 		"document_path": doc,
 		"id": "ann_doesnotexist",
 	})
@@ -457,7 +466,7 @@ func test_list_unknown_kind_verbatim(tools: MCPAnnotationTools) -> void:
 	_write_raw_sidecar(doc, [unknown_ann])
 
 	# List should return the annotation verbatim.
-	var result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("list succeeds", result.get("success", false))
 	var annotations: Array = result.get("annotations", [])
 	check("one annotation returned", annotations.size() == 1)
@@ -476,14 +485,14 @@ func test_render_returns_png(tools: MCPAnnotationTools) -> void:
 
 	# Add a couple of annotations to render.
 	var ann1 := _valid_annotation_dict()
-	tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann1})
+	await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann1})
 
 	var ann2 := _valid_annotation_dict()
 	ann2["primitives"] = [{"kind": "highlight", "rect": [20.0, 20.0, 100.0, 50.0]}]
 	ann2["kind"] = "2d_highlight"
-	tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann2})
+	await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann2})
 
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view": "pcb",
 		"width": 256,
@@ -510,7 +519,7 @@ func test_render_returns_png(tools: MCPAnnotationTools) -> void:
 
 	# Test with include_document=true — should warn but still succeed.
 	var out_path2 := "/tmp/minerva_render_test_%d_b.png" % int(Time.get_unix_time_from_system())
-	var result_with_doc := tools.handle("minerva_annotations_render_overlay", {
+	var result_with_doc := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view": "pcb",
 		"width": 128,
@@ -525,7 +534,7 @@ func test_render_returns_png(tools: MCPAnnotationTools) -> void:
 
 	# Test with include_kinds filter — should return only matching.
 	var out_path3 := "/tmp/minerva_render_test_%d_c.png" % int(Time.get_unix_time_from_system())
-	var result_filtered := tools.handle("minerva_annotations_render_overlay", {
+	var result_filtered := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view": "pcb",
 		"width": 128,
@@ -546,9 +555,9 @@ func test_list_has_summary_field(tools: MCPAnnotationTools) -> void:
 	print("test_list_has_summary_field:")
 	var doc := _doc_path("summary_check.txt")
 	var ann := _valid_annotation_dict()
-	tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
+	await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("list succeeds", list_result.get("success", false))
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation returned", annotations.size() == 1)
@@ -569,7 +578,7 @@ func test_list_anchored_to_present(tools: MCPAnnotationTools) -> void:
 	ann["author"] = "ai"
 	_write_raw_sidecar(doc, [ann])
 
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("list succeeds", list_result.get("success", false))
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation returned", annotations.size() == 1)
@@ -588,7 +597,7 @@ func test_list_anchored_to_absent(tools: MCPAnnotationTools) -> void:
 	# No 'anchored_to' key in the annotation.
 	_write_raw_sidecar(doc, [ann])
 
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("list succeeds", list_result.get("success", false))
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation returned", annotations.size() == 1)
@@ -606,7 +615,7 @@ func test_list_summary_arrow_kind(tools: MCPAnnotationTools) -> void:
 	ann["author"] = "ai"
 	_write_raw_sidecar(doc, [ann])
 
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("list succeeds", list_result.get("success", false))
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation returned", annotations.size() == 1)
@@ -630,7 +639,7 @@ func test_list_summary_text_kind(tools: MCPAnnotationTools) -> void:
 	}
 	_write_raw_sidecar(doc, [ann])
 
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("list succeeds", list_result.get("success", false))
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation returned", annotations.size() == 1)
@@ -651,7 +660,7 @@ func test_list_no_bounds_without_registry(tools: MCPAnnotationTools) -> void:
 	ann["author"] = "ai"
 	_write_raw_sidecar(doc, [ann])
 
-	var list_result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("list succeeds", list_result.get("success", false))
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation returned", annotations.size() == 1)
@@ -700,7 +709,7 @@ func test_list_author_filter_human(tools: MCPAnnotationTools) -> void:
 	var doc := _doc_path("filter_human.txt")
 	_setup_mixed_author_doc(tools, doc)
 
-	var result := tools.handle("minerva_annotations_list", {
+	var result := await tools.handle("minerva_annotations_list", {
 		"document_path": doc,
 		"author": "human",
 	})
@@ -719,7 +728,7 @@ func test_list_author_filter_ai(tools: MCPAnnotationTools) -> void:
 	var doc := _doc_path("filter_ai.txt")
 	_setup_mixed_author_doc(tools, doc)
 
-	var result := tools.handle("minerva_annotations_list", {
+	var result := await tools.handle("minerva_annotations_list", {
 		"document_path": doc,
 		"author": "ai",
 	})
@@ -738,7 +747,7 @@ func test_list_author_filter_omitted(tools: MCPAnnotationTools) -> void:
 	var doc := _doc_path("filter_omitted.txt")
 	_setup_mixed_author_doc(tools, doc)
 
-	var result := tools.handle("minerva_annotations_list", {"document_path": doc})
+	var result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	check("filter omitted: list succeeds", result.get("success", false))
 	check("filter omitted: author_filter is null", result.get("author_filter", "NOT_NULL") == null)
 	var annotations: Array = result.get("annotations", [])
@@ -750,7 +759,7 @@ func test_list_author_filter_invalid(tools: MCPAnnotationTools) -> void:
 	print("test_list_author_filter_invalid:")
 	var doc := _doc_path("filter_invalid.txt")
 
-	var result := tools.handle("minerva_annotations_list", {
+	var result := await tools.handle("minerva_annotations_list", {
 		"document_path": doc,
 		"author": "invalid",
 	})
@@ -768,6 +777,7 @@ class _FixtureLiveHost extends AnnotationHost:
 	var _annotations: Array = []
 	var _registry: AnnotationRegistry = null
 	var _render_image: Image = null
+	var _assign_counter: int = 0
 
 	func _init(registry: AnnotationRegistry = null) -> void:
 		_registry = registry
@@ -787,10 +797,31 @@ class _FixtureLiveHost extends AnnotationHost:
 	func render_content_to_image(_viewport_rect: Rect2) -> Image:
 		return _render_image
 
+	func add_annotation(annotation: Dictionary) -> String:
+		_assign_counter += 1
+		var assigned: Dictionary = annotation.duplicate(true)
+		assigned["id"] = "assigned_%d" % _assign_counter
+		_annotations.append(assigned)
+		return assigned["id"]
+
+	func update_annotation(annotation_id: String, new_annotation: Dictionary) -> bool:
+		for i in _annotations.size():
+			if _annotations[i] is Dictionary and str(_annotations[i].get("id", "")) == annotation_id:
+				_annotations[i] = new_annotation.duplicate(true)
+				return true
+		return false
+
+	func remove_annotation(annotation_id: String) -> bool:
+		for i in _annotations.size():
+			if _annotations[i] is Dictionary and str(_annotations[i].get("id", "")) == annotation_id:
+				_annotations.remove_at(i)
+				return true
+		return false
+
 
 func test_list_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
 	print("test_list_requires_path_or_editor:")
-	var result := tools.handle("minerva_annotations_list", {})
+	var result := await tools.handle("minerva_annotations_list", {})
 	check("missing both: success=false", result.get("success", true) == false)
 	check("missing both: error mentions both keys",
 		str(result.get("error", "")).contains("editor_name")
@@ -799,7 +830,7 @@ func test_list_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
 
 func test_list_rejects_both_path_and_editor(tools: MCPAnnotationTools) -> void:
 	print("test_list_rejects_both_path_and_editor:")
-	var result := tools.handle("minerva_annotations_list", {
+	var result := await tools.handle("minerva_annotations_list", {
 		"document_path": _doc_path("ambiguous.txt"),
 		"editor_name":   "Some Editor",
 	})
@@ -812,7 +843,7 @@ func test_list_editor_unknown_returns_error(tools: MCPAnnotationTools) -> void:
 	print("test_list_editor_unknown_returns_error:")
 	# Ensure registry is empty so the lookup definitely fails.
 	AnnotationHostRegistry._reset_for_test()
-	var result := tools.handle("minerva_annotations_list", {
+	var result := await tools.handle("minerva_annotations_list", {
 		"editor_name": "No Such Editor",
 	})
 	check("unknown editor: success=false", result.get("success", true) == false)
@@ -840,14 +871,14 @@ func test_list_editor_returns_live_annotations(tools: MCPAnnotationTools) -> voi
 	})
 	AnnotationHostRegistry.register("Live Panel", host)
 
-	var result := tools.handle("minerva_annotations_list", {
+	var result := await tools.handle("minerva_annotations_list", {
 		"editor_name": "Live Panel",
 	})
 	check("live: success=true", result.get("success", false))
 	var annotations: Array = result.get("annotations", [])
 	check_eq("live: count=2", annotations.size(), 2)
 	# Author filter still works on the live path.
-	var filtered := tools.handle("minerva_annotations_list", {
+	var filtered := await tools.handle("minerva_annotations_list", {
 		"editor_name": "Live Panel",
 		"author":      "human",
 	})
@@ -869,7 +900,7 @@ func test_list_editor_response_shape(tools: MCPAnnotationTools) -> void:
 	})
 	AnnotationHostRegistry.register("Shape Test", host)
 
-	var result := tools.handle("minerva_annotations_list", {
+	var result := await tools.handle("minerva_annotations_list", {
 		"editor_name": "Shape Test",
 	})
 	check_eq("source=live", result.get("source", ""), "live")
@@ -884,7 +915,7 @@ func test_list_editor_response_shape(tools: MCPAnnotationTools) -> void:
 ## render_overlay with neither editor_name nor document_path → error.
 func test_render_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
 	print("test_render_requires_path_or_editor:")
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"view": "hello",
 		"output_path": "/tmp/minerva_render_test_path_or_editor.png",
 	})
@@ -898,7 +929,7 @@ func test_render_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
 ## render_overlay with both editor_name and document_path → error.
 func test_render_rejects_both(tools: MCPAnnotationTools) -> void:
 	print("test_render_rejects_both:")
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name":    "Live",
 		"document_path": _doc_path("ambiguous_render.txt"),
 		"view":           "hello",
@@ -913,7 +944,7 @@ func test_render_rejects_both(tools: MCPAnnotationTools) -> void:
 func test_render_editor_unknown(tools: MCPAnnotationTools) -> void:
 	print("test_render_editor_unknown:")
 	AnnotationHostRegistry._reset_for_test()
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "Nope",
 		"view":        "hello",
 		"output_path": "/tmp/minerva_render_test_editor_unknown.png",
@@ -941,7 +972,7 @@ func test_render_editor_returns_png(tools: MCPAnnotationTools) -> void:
 	AnnotationHostRegistry.register("Live", host)
 
 	var out_path := "/tmp/minerva_render_test_%d_editor.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "Live",
 		"view":        "hello",
 		"width":       128,
@@ -990,7 +1021,7 @@ func test_render_editor_with_include_document(tools: MCPAnnotationTools) -> void
 	AnnotationHostRegistry.register("Live", host)
 
 	var out_path := "/tmp/minerva_render_test_%d_incdoc.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name":      "Live",
 		"view":             "hello",
 		"include_document": true,
@@ -1089,7 +1120,7 @@ func test_render_arrow_kind_produces_pixel_diversity(tools: MCPAnnotationTools) 
 	AnnotationHostRegistry.register("ArrowDiv", host)
 
 	var out_path := "/tmp/minerva_render_test_%d_arrowdiv.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "ArrowDiv",
 		"view":        "test",
 		"width":       256,
@@ -1146,7 +1177,7 @@ func test_render_text_kind_produces_pixels_at_anchor(tools: MCPAnnotationTools) 
 	AnnotationHostRegistry.register("TextPix", host)
 
 	var out_path := "/tmp/minerva_render_test_%d_textpix.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "TextPix",
 		"view":        "test",
 		"width":       256,
@@ -1194,7 +1225,7 @@ func test_render_unknown_kind_placeholder_not_transparent(tools: MCPAnnotationTo
 	}])
 
 	var out_path := "/tmp/minerva_render_test_%d_unknownph.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view":          "pcb",
 		"width":         256,
@@ -1244,7 +1275,7 @@ func test_render_kind_dispatch_via_mock(tools: MCPAnnotationTools) -> void:
 	}])
 
 	var out_path := "/tmp/minerva_render_test_%d_mockdisp.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view":          "mock",
 		"width":         64,
@@ -1304,7 +1335,7 @@ func test_render_overlay_caps_output_dimension(tools: MCPAnnotationTools) -> voi
 	AnnotationHostRegistry.register("BigPanel", host)
 
 	var out_path := "/tmp/minerva_render_test_%d_cap.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name":      "BigPanel",
 		"view":             "hello",
 		"include_document": true,
@@ -1342,7 +1373,7 @@ func test_render_overlay_no_downsample_when_small(tools: MCPAnnotationTools) -> 
 	AnnotationHostRegistry.register("SmallPanel", host)
 
 	var out_path := "/tmp/minerva_render_test_%d_small.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name":      "SmallPanel",
 		"view":             "hello",
 		"include_document": true,
@@ -1380,7 +1411,7 @@ func test_render_overlay_with_annotation_produces_png(tools: MCPAnnotationTools)
 	AnnotationHostRegistry.register("FillRectPanel", host)
 
 	var out_path := "/tmp/minerva_render_test_%d_fillrect.png" % int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"editor_name": "FillRectPanel",
 		"view":        "hello",
 		"width":       256,
@@ -1407,7 +1438,7 @@ func test_render_overlay_with_annotation_produces_png(tools: MCPAnnotationTools)
 func test_render_output_path_empty(tools: MCPAnnotationTools) -> void:
 	print("test_render_output_path_empty:")
 	var doc := _doc_path("render_empty_path.txt")
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view":          "pcb",
 		"output_path":   "",
@@ -1421,7 +1452,7 @@ func test_render_output_path_empty(tools: MCPAnnotationTools) -> void:
 func test_render_output_path_relative(tools: MCPAnnotationTools) -> void:
 	print("test_render_output_path_relative:")
 	var doc := _doc_path("render_rel_path.txt")
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view":          "pcb",
 		"output_path":   "relative.png",
@@ -1436,7 +1467,7 @@ func test_render_output_path_missing_parent(tools: MCPAnnotationTools) -> void:
 	print("test_render_output_path_missing_parent:")
 	var doc := _doc_path("render_missing_parent.txt")
 	var rand_suffix := int(Time.get_unix_time_from_system())
-	var result := tools.handle("minerva_annotations_render_overlay", {
+	var result := await tools.handle("minerva_annotations_render_overlay", {
 		"document_path": doc,
 		"view":          "pcb",
 		"output_path":   "/tmp/this_does_not_exist_%d/output.png" % rand_suffix,
@@ -1445,3 +1476,135 @@ func test_render_output_path_missing_parent(tools: MCPAnnotationTools) -> void:
 	check("missing parent: error mentions parent directory",
 		str(result.get("error", "")).to_lower().contains("parent") or
 		str(result.get("error", "")).to_lower().contains("directory"))
+
+
+# ── add/update/delete: editor_name (live in-memory) path ─────────────────────
+
+func test_add_editor_writes_to_live_host(tools: MCPAnnotationTools) -> void:
+	print("test_add_editor_writes_to_live_host:")
+	AnnotationHostRegistry._reset_for_test()
+	var host := _FixtureLiveHost.new()
+	AnnotationHostRegistry.register("TestPanel", host)
+	var result := await tools.handle("minerva_annotations_add", {
+		"editor_name": "TestPanel",
+		"annotation": _valid_annotation_dict(),
+	})
+	check("add live: success=true", result.get("success", false))
+	var assigned_id: String = str(result.get("id", ""))
+	check("add live: id returned", not assigned_id.is_empty())
+	var stored: Array = host.get_annotations()
+	check("add live: annotation in host", stored.size() == 1)
+	check("add live: stored id matches", str(stored[0].get("id", "")) == assigned_id)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_add_editor_unknown_returns_error(tools: MCPAnnotationTools) -> void:
+	print("test_add_editor_unknown_returns_error:")
+	AnnotationHostRegistry._reset_for_test()
+	var result := await tools.handle("minerva_annotations_add", {
+		"editor_name": "No Such Editor",
+		"annotation": _valid_annotation_dict(),
+	})
+	check("add unknown editor: success=false", result.get("success", true) == false)
+	check("add unknown editor: error names editor",
+		str(result.get("error", "")).contains("No Such Editor"))
+	check("add unknown editor: error mentions Known",
+		str(result.get("error", "")).contains("Known"))
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_add_rejects_both_editor_and_document_path(tools: MCPAnnotationTools) -> void:
+	print("test_add_rejects_both_editor_and_document_path:")
+	AnnotationHostRegistry._reset_for_test()
+	var result := await tools.handle("minerva_annotations_add", {
+		"editor_name": "SomePanel",
+		"document_path": _doc_path("ambiguous.txt"),
+		"annotation": _valid_annotation_dict(),
+	})
+	check("add both: success=false", result.get("success", true) == false)
+	check("add both: error mentions only one",
+		str(result.get("error", "")).contains("only one"))
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_add_requires_one_of_editor_or_document_path(tools: MCPAnnotationTools) -> void:
+	print("test_add_requires_one_of_editor_or_document_path:")
+	AnnotationHostRegistry._reset_for_test()
+	var result := await tools.handle("minerva_annotations_add", {
+		"annotation": _valid_annotation_dict(),
+	})
+	check("add neither: success=false", result.get("success", true) == false)
+	check("add neither: error mentions either",
+		str(result.get("error", "")).contains("either"))
+	check("add neither: error mentions editor_name",
+		str(result.get("error", "")).contains("editor_name"))
+	check("add neither: error mentions document_path",
+		str(result.get("error", "")).contains("document_path"))
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_add_returns_host_assigned_id(tools: MCPAnnotationTools) -> void:
+	print("test_add_returns_host_assigned_id:")
+	AnnotationHostRegistry._reset_for_test()
+	var host := _FixtureLiveHost.new()
+	AnnotationHostRegistry.register("AssignPanel", host)
+	var result := await tools.handle("minerva_annotations_add", {
+		"editor_name": "AssignPanel",
+		"annotation": _valid_annotation_dict(),
+	})
+	check("host-assigned id: success=true", result.get("success", false))
+	var returned_id: String = str(result.get("id", ""))
+	check("host-assigned id: starts with assigned_", returned_id.begins_with("assigned_"))
+	var stored: Array = host.get_annotations()
+	check("host-assigned id: stored id matches returned", str(stored[0].get("id", "")) == returned_id)
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_update_editor_patches_live_annotation(tools: MCPAnnotationTools) -> void:
+	print("test_update_editor_patches_live_annotation:")
+	AnnotationHostRegistry._reset_for_test()
+	var host := _FixtureLiveHost.new()
+	host.push({
+		"id": "ann_u1",
+		"kind": "2d_arrow",
+		"view_context": "pcb",
+		"author": "human",
+		"summary": "original",
+		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [10.0, 5.0]}],
+	})
+	AnnotationHostRegistry.register("UpdatePanel", host)
+	var result := await tools.handle("minerva_annotations_update", {
+		"editor_name": "UpdatePanel",
+		"id": "ann_u1",
+		"patch": {"summary": "new summary"},
+	})
+	check("update live: success=true", result.get("success", false))
+	var stored: Array = host.get_annotations()
+	check("update live: annotation still present", stored.size() == 1)
+	check("update live: summary patched", str(stored[0].get("summary", "")) == "new summary")
+	check("update live: author preserved", str(stored[0].get("author", "")) == "human")
+	check("update live: id preserved", str(stored[0].get("id", "")) == "ann_u1")
+	check("update live: updated_at bumped", stored[0].has("updated_at"))
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_delete_editor_removes_from_live_host(tools: MCPAnnotationTools) -> void:
+	print("test_delete_editor_removes_from_live_host:")
+	AnnotationHostRegistry._reset_for_test()
+	var host := _FixtureLiveHost.new()
+	host.push({
+		"id": "ann_d1",
+		"kind": "2d_arrow",
+		"view_context": "pcb",
+		"author": "ai",
+		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [10.0, 5.0]}],
+	})
+	AnnotationHostRegistry.register("DeletePanel", host)
+	var result := await tools.handle("minerva_annotations_delete", {
+		"editor_name": "DeletePanel",
+		"id": "ann_d1",
+	})
+	check("delete live: success=true", result.get("success", false))
+	check("delete live: ok=true", bool(result.get("ok", false)))
+	check("delete live: host is empty", host.get_annotations().is_empty())
+	AnnotationHostRegistry._reset_for_test()

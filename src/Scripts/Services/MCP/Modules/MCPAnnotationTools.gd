@@ -156,10 +156,15 @@ func register_tools() -> void:
 		+ "substrate schema and the registered kind. Structural errors return "
 		+ "{ok: false, errors: [{field_path, message, code}, ...]}. "
 		+ "author is always forced to 'ai' regardless of the input value. "
-		+ "id and created_at are generated if absent.",
+		+ "id and created_at are generated if absent. "
+		+ "Provide either editor_name (live in-memory host) OR document_path (on-disk sidecar), not both.",
 		{
 			"type": "object",
 			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Live editor tab title; mutually exclusive with document_path.",
+				},
 				"document_path": {
 					"type": "string",
 					"description": "Absolute path to the document file.",
@@ -171,7 +176,7 @@ func register_tools() -> void:
 					+ "author is overwritten to 'ai' by the server.",
 				},
 			},
-			"required": ["document_path", "annotation"],
+			"required": ["annotation"],
 		},
 		_TOOL_SET
 	)
@@ -181,10 +186,15 @@ func register_tools() -> void:
 		"Shallow-patch top-level fields of an existing annotation. primitives[] is replaced "
 		+ "wholesale if present in the patch. updated_at is always bumped. author cannot be "
 		+ "changed (immutable post-creation). Returns {ok: false, error: 'not_found'} if "
-		+ "the id does not exist in the sidecar.",
+		+ "the id does not exist. "
+		+ "Provide either editor_name (live in-memory host) OR document_path (on-disk sidecar), not both.",
 		{
 			"type": "object",
 			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Live editor tab title; mutually exclusive with document_path.",
+				},
 				"document_path": {
 					"type": "string",
 					"description": "Absolute path to the document file.",
@@ -198,7 +208,7 @@ func register_tools() -> void:
 					"description": "Dict of top-level fields to replace. Only provided keys are modified.",
 				},
 			},
-			"required": ["document_path", "id", "patch"],
+			"required": ["id", "patch"],
 		},
 		_TOOL_SET
 	)
@@ -206,10 +216,15 @@ func register_tools() -> void:
 	server._register_tool(
 		"minerva_annotations_delete",
 		"Delete an annotation by id. Idempotent — if the id is not found, returns "
-		+ "{ok: false, reason: 'not_found'} but does not raise an error.",
+		+ "{ok: false, reason: 'not_found'} but does not raise an error. "
+		+ "Provide either editor_name (live in-memory host) OR document_path (on-disk sidecar), not both.",
 		{
 			"type": "object",
 			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Live editor tab title; mutually exclusive with document_path.",
+				},
 				"document_path": {
 					"type": "string",
 					"description": "Absolute path to the document file.",
@@ -219,7 +234,7 @@ func register_tools() -> void:
 					"description": "Annotation id to delete.",
 				},
 			},
-			"required": ["document_path", "id"],
+			"required": ["id"],
 		},
 		_TOOL_SET
 	)
@@ -700,11 +715,17 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 
 
 func _annotations_add(args: Dictionary) -> Dictionary:
-	var missing: String = _require_args(args, ["document_path", "annotation"])
+	var missing: String = _require_args(args, ["annotation"])
 	if not missing.is_empty():
 		return _err(missing)
 
-	var doc_path: String = args["document_path"]
+	var doc_path: String = str(args.get("document_path", ""))
+	var editor_name: String = str(args.get("editor_name", ""))
+	if doc_path.is_empty() and editor_name.is_empty():
+		return _err("either 'editor_name' or 'document_path' is required")
+	if not doc_path.is_empty() and not editor_name.is_empty():
+		return _err("provide only one of 'editor_name' or 'document_path', not both")
+
 	var raw_ann: Variant = args.get("annotation", {})
 	var annotation: Dictionary = raw_ann if raw_ann is Dictionary else {}
 
@@ -772,7 +793,14 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 					error_dicts.append({"field_path": "", "message": str(e), "code": "invalid"})
 			return {"ok": false, "errors": error_dicts}
 
-	# Read existing sidecar, append, write back.
+	if not editor_name.is_empty():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			return _err("no live annotation host registered for editor '%s'. Known: %s"
+				% [editor_name, str(AnnotationHostRegistry.list_editor_names())])
+		var assigned_id: String = host.add_annotation(annotation)
+		return _ok({"id": assigned_id})
+
 	var sidecar: Dictionary = _load_or_init_sidecar(doc_path)
 	var annotations: Array = sidecar["annotations"]
 	annotations.append(annotation)
@@ -786,14 +814,43 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 
 
 func _annotations_update(args: Dictionary) -> Dictionary:
-	var missing: String = _require_args(args, ["document_path", "id", "patch"])
+	var missing: String = _require_args(args, ["id", "patch"])
 	if not missing.is_empty():
 		return _err(missing)
 
-	var doc_path: String = args["document_path"]
+	var doc_path: String = str(args.get("document_path", ""))
+	var editor_name: String = str(args.get("editor_name", ""))
+	if doc_path.is_empty() and editor_name.is_empty():
+		return _err("either 'editor_name' or 'document_path' is required")
+	if not doc_path.is_empty() and not editor_name.is_empty():
+		return _err("provide only one of 'editor_name' or 'document_path', not both")
+
 	var target_id: String = str(args["id"])
 	var raw_patch: Variant = args.get("patch", {})
 	var patch: Dictionary = raw_patch if raw_patch is Dictionary else {}
+
+	if not editor_name.is_empty():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			return _err("no live annotation host registered for editor '%s'. Known: %s"
+				% [editor_name, str(AnnotationHostRegistry.list_editor_names())])
+		var existing: Dictionary = {}
+		for ann_v in host.get_annotations():
+			if ann_v is Dictionary and str((ann_v as Dictionary).get("id", "")) == target_id:
+				existing = (ann_v as Dictionary).duplicate(true)
+				break
+		if existing.is_empty():
+			return {"ok": false, "error": "not_found"}
+		for key in patch.keys():
+			if key == "author":
+				continue
+			if key == "id":
+				continue
+			existing[key] = patch[key]
+		existing["updated_at"] = Time.get_datetime_string_from_system(true) + "Z"
+		if not host.update_annotation(target_id, existing):
+			return {"ok": false, "error": "not_found"}
+		return _ok({"ok": true})
 
 	var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
 	if sidecar.is_empty():
@@ -809,7 +866,7 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 	if found_idx < 0:
 		return {"ok": false, "error": "not_found"}
 
-	var existing: Dictionary = annotations[found_idx].duplicate(true)
+	var existing2: Dictionary = annotations[found_idx].duplicate(true)
 
 	# Shallow patch: merge provided fields over the top, except author (immutable).
 	for key in patch.keys():
@@ -819,12 +876,12 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 		if key == "id":
 			# id is immutable.
 			continue
-		existing[key] = patch[key]
+		existing2[key] = patch[key]
 
 	# Always bump updated_at.
-	existing["updated_at"] = Time.get_datetime_string_from_system(true) + "Z"
+	existing2["updated_at"] = Time.get_datetime_string_from_system(true) + "Z"
 
-	annotations[found_idx] = existing
+	annotations[found_idx] = existing2
 	sidecar["annotations"] = annotations
 
 	var write_err: Error = AnnotationSidecar.write_sidecar(doc_path, sidecar)
@@ -835,16 +892,31 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 
 
 func _annotations_delete(args: Dictionary) -> Dictionary:
-	var missing: String = _require_args(args, ["document_path", "id"])
+	var missing: String = _require_args(args, ["id"])
 	if not missing.is_empty():
 		return _err(missing)
 
-	var doc_path: String = args["document_path"]
+	var doc_path: String = str(args.get("document_path", ""))
+	var editor_name: String = str(args.get("editor_name", ""))
+	if doc_path.is_empty() and editor_name.is_empty():
+		return _err("either 'editor_name' or 'document_path' is required")
+	if not doc_path.is_empty() and not editor_name.is_empty():
+		return _err("provide only one of 'editor_name' or 'document_path', not both")
+
 	var target_id: String = str(args["id"])
+
+	if not editor_name.is_empty():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			return _err("no live annotation host registered for editor '%s'. Known: %s"
+				% [editor_name, str(AnnotationHostRegistry.list_editor_names())])
+		var removed: bool = host.remove_annotation(target_id)
+		if removed:
+			return _ok({"ok": true})
+		return {"ok": false, "reason": "not_found"}
 
 	var sidecar: Dictionary = AnnotationSidecar.read_sidecar(doc_path)
 	if sidecar.is_empty():
-		# No sidecar means the id definitely doesn't exist.
 		return {"ok": false, "reason": "not_found"}
 
 	var annotations: Array = sidecar.get("annotations", [])
