@@ -155,7 +155,10 @@ func _gui_input(event: InputEvent) -> void:
 				if consumed:
 					accept_event()
 				queue_redraw()
-			elif ek.keycode == KEY_DELETE:
+			elif ek.keycode == KEY_DELETE or ek.keycode == KEY_BACKSPACE:
+				# macOS keyboards label Backspace as "Delete" and emit KEY_BACKSPACE;
+				# forward-delete (Fn+Delete) emits KEY_DELETE. Accept both, surface
+				# as KEY_DELETE to the tool so its mods contract is unchanged.
 				var consumed := _active_tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_DELETE)
 				if consumed:
 					accept_event()
