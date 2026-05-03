@@ -18,18 +18,29 @@ User's decision: **the SELECT button must reuse the substrate's universal-select
 |---|---|---|---|
 | 1a | `019def2880ba7c8886f47bf2511e73ef` | Schema: tile.rotation field | **done (Round 1)** |
 | 1b | `019defbd27767cb6a679de6dd4a02c4b` | Schema: slide.annotations[] field | **done (Round 1)** |
-| 2 | `019def2848547eaab2806d979429412d` | Build `Presentation_TileAnnotationHost` adapter (dual-source, substrate kinds + tile kinds) | next (Round 2) |
-| 3 | `019def2862aa771fbbf9ef4aad55c52c` | Define `Presentation_TileKind*` AnnotationKind subclasses (geometry-only, no `render()`) | Round 2 |
-| 4 | `019def28aaac79928594bff9eaa8b965` | Replace slide_canvas custom drag/resize/halo with substrate tools + AnnotationOverlay | Round 3 (high-risk; manual) |
+| 2 | `019def2848547eaab2806d979429412d` | Build `Presentation_TileAnnotationHost` adapter (dual-source, substrate kinds + tile kinds) | **done (Round 2)** |
+| 3 | `019def2862aa771fbbf9ef4aad55c52c` | Define `Presentation_TileKind*` AnnotationKind subclasses (geometry-only, no `render()`) | **done (Round 2)** |
+| 4 | `019def28aaac79928594bff9eaa8b965` | Replace slide_canvas custom drag/resize/halo with substrate tools + AnnotationOverlay | next (Round 3, high-risk; manual) |
 | 5 | `019def28c59e71309330e4421c84038e` | Tests for adapter + kinds + dual-source + signal idempotence | Round 4 |
 | 6 | `019def28e6be7e358a7a80e33014e526` | HITL: end-to-end universal-select re-review (closes T3 R2) | gate |
 | 7 | `019defbd4a0c7752b8e3b9bb2ab213ec` | Wire substrate AnnotationToolbar (callout / 2d_arrow / 2d_text) into SlideEditorPanel | post-HITL, pre-T4 |
 
-Round 1 deliverables (commit `<TBD-after-commit>`):
+Round 1 deliverables (plugins commit `e2dc967`, path-portability fix `2371d8d`):
 - `slide_model.gd`: optional `tile.rotation: float` (omit-when-default) on all 3 tile constructors + `set_tile_rotation` mutator + validator updates.
 - `slide_model.gd`: optional `slide.annotations: Array` (omit-when-empty) on `make_slide` + `add_annotation` / `update_annotation` / `remove_annotation` mutators + validator updates.
 - `test_slide_model.gd`: 168 PASS / 0 FAIL (was 84 / 0).
-- Substrate regression: 39 PASS / 0 FAIL (no leakage as expected).
+
+Round 2 deliverables (5 new files in `~/github/plugins/presentation/ui/`):
+- `presentation_tile_kind_base.gd` — `Presentation_TileKindBase extends AnnotationKind`. Geometry-only adapter (bounds, hit_test, transform_annotation, primary_anchor_point); `has_visual_render()` → false; no `render()`.
+- `presentation_tile_kind_{text,image,spreadsheet}.gd` — thin subclasses; `extends "presentation_tile_kind_base.gd"` (string-path; sibling class_name fails for off-tree per `feedback_off_tree_plugin_class_names.md`).
+- `presentation_tile_annotation_host.gd` — `Presentation_TileAnnotationHost extends AnnotationHost`. Dual-source `get_annotations()` (synthesized tile annotations + persisted `slide.annotations[]`); routes `update/add/remove` by kind discriminator (`presentation_tile_*` → tile writeback; substrate kinds → `slide_model` mutators); `set_selected_annotation_id` emits `selection_changed` only on actual change; `_init` registers BuiltinKinds + 3 tile kinds.
+- `manifest.json`: 5 new files appended to `ui.panels[0].scripts`.
+- Smoke test verified end-to-end: tile (0.1, 0.1, 0.3, 0.2) on 1920×1080 → rect_px (192, 108, 576, 216); translate(+100, 0) writes back tile.x = 0.1521; callout add persists to slide.annotations[].
+- Tests still 168/0 + 39/0 (Round 4 will add new integration tests).
+
+Defect log (caught by orchestrator, not implementer):
+- Round 1: `set_tile_rotation` was self-reported as added but missing from source; tests script-errored silently. Found by Opus reviewer running tests with stderr capture.
+- Round 2: Subclasses used `extends Presentation_TileKindBase` (sibling class_name) — fails parse for off-tree plugins. Found by orchestrator smoke test before reviewer launch. Fix: `extends "presentation_tile_kind_base.gd"`. Nudge hint saved under `minerva-plugin-platform/off_tree_extends_pattern`.
 
 DCR: `019dc0bbd6937264880b1327c942d5b6`
 Plan: `019dc0bbfcc57d81b4ac1300d4923094`
