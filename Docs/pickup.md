@@ -1,29 +1,35 @@
 # Pickup — Presentation plugin
 
-Last updated: 2026-05-03 (EOD)
+Last updated: 2026-05-03 (EOD, Round 1 of DRY refactor done)
 
 ## Where I left off
 
-Active workstream: **Presentation plugin** — T3 Round 2 PowerPoint-style rewrite shipped, but a substrate-DRY refactor of the SELECT tool is now blocking the HITL re-review sign-off.
+Active workstream: **Presentation plugin** — universal-select DRY refactor in progress. Round 1 (schema migrations) shipped; Round 2 (TileAnnotationHost adapter) is the next launch.
 
 T3 R2 collapsed Round 1's 3-pane layout (list / canvas / inspector) into a single-canvas PowerPoint UX: tool palette (Select / Text / Image / Sheet) on a single toolbar, click-drag-to-place rubber band, inline TextEdit for text tiles, wheel-zoom (cursor-anchored, [0.25, 5.0]), middle-drag pan, Background popover, fullscreen preview Window. Round-1 files (`slide_list_panel.gd`, `tile_inspector.gd`) are kept on disk but unwired from the R2 panel — will revive when the user comes back to multi-slide ergonomics.
 
-User's last decision: **the SELECT button must reuse the substrate's universal-select tool** (AnnotationSelectTool + AnnotationTransformTool — corner scale / edge axis-lock / rotate-ring / inside translate). Custom drag/resize/halo code in `slide_canvas.gd` (~300 LOC) gets ripped out and replaced. Six work_items filed under DCR `019dc0bbd6937264880b1327c942d5b6` covering the integration.
+User's decision: **the SELECT button must reuse the substrate's universal-select tool** (AnnotationTransformTool — corner scale / edge axis-lock / rotate-ring / inside translate, via AnnotationOverlay for input dispatch + writeback). Custom drag/resize/halo code in `slide_canvas.gd` (~300 LOC) gets ripped out and replaced. The presentation host will be a full substrate citizen — supporting both tile-as-annotation rows AND real substrate kinds (callout / 2d_arrow / 2d_text) on `slide.annotations[]`. Eight work_items filed under DCR `019dc0bbd6937264880b1327c942d5b6`.
 
 ## What to do next
 
-### Recommended next cycle: full-DRY universal-select integration
+### Universal-select DRY refactor — work-cycle in flight
 
-Pick up the 6 work_items in this order — they form a chain:
+| Order | ID | Title | Status |
+|---|---|---|---|
+| 1a | `019def2880ba7c8886f47bf2511e73ef` | Schema: tile.rotation field | **done (Round 1)** |
+| 1b | `019defbd27767cb6a679de6dd4a02c4b` | Schema: slide.annotations[] field | **done (Round 1)** |
+| 2 | `019def2848547eaab2806d979429412d` | Build `Presentation_TileAnnotationHost` adapter (dual-source, substrate kinds + tile kinds) | next (Round 2) |
+| 3 | `019def2862aa771fbbf9ef4aad55c52c` | Define `Presentation_TileKind*` AnnotationKind subclasses (geometry-only, no `render()`) | Round 2 |
+| 4 | `019def28aaac79928594bff9eaa8b965` | Replace slide_canvas custom drag/resize/halo with substrate tools + AnnotationOverlay | Round 3 (high-risk; manual) |
+| 5 | `019def28c59e71309330e4421c84038e` | Tests for adapter + kinds + dual-source + signal idempotence | Round 4 |
+| 6 | `019def28e6be7e358a7a80e33014e526` | HITL: end-to-end universal-select re-review (closes T3 R2) | gate |
+| 7 | `019defbd4a0c7752b8e3b9bb2ab213ec` | Wire substrate AnnotationToolbar (callout / 2d_arrow / 2d_text) into SlideEditorPanel | post-HITL, pre-T4 |
 
-| Order | ID | Title |
-|---|---|---|
-| 1 | `019def2880ba7c8886f47bf2511e73ef` | Schema migration: add optional `tile.rotation` (do this first — adapter needs it) |
-| 2 | `019def2848547eaab2806d979429412d` | Build `Presentation_TileAnnotationHost` adapter |
-| 3 | `019def2862aa771fbbf9ef4aad55c52c` | Define AnnotationKind subclasses for tile kinds |
-| 4 | `019def28aaac79928594bff9eaa8b965` | Replace slide_canvas custom drag/resize/halo with substrate tools |
-| 5 | `019def28c59e71309330e4421c84038e` | Tests for adapter + kinds |
-| 6 | `019def28e6be7e358a7a80e33014e526` | HITL: end-to-end universal-select tool re-review (closes T3 R2) |
+Round 1 deliverables (commit `<TBD-after-commit>`):
+- `slide_model.gd`: optional `tile.rotation: float` (omit-when-default) on all 3 tile constructors + `set_tile_rotation` mutator + validator updates.
+- `slide_model.gd`: optional `slide.annotations: Array` (omit-when-empty) on `make_slide` + `add_annotation` / `update_annotation` / `remove_annotation` mutators + validator updates.
+- `test_slide_model.gd`: 168 PASS / 0 FAIL (was 84 / 0).
+- Substrate regression: 39 PASS / 0 FAIL (no leakage as expected).
 
 DCR: `019dc0bbd6937264880b1327c942d5b6`
 Plan: `019dc0bbfcc57d81b4ac1300d4923094`
