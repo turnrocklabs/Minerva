@@ -20,7 +20,7 @@ User's decision: **the SELECT button must reuse the substrate's universal-select
 | 1b | `019defbd27767cb6a679de6dd4a02c4b` | Schema: slide.annotations[] field | **done (Round 1)** |
 | 2 | `019def2848547eaab2806d979429412d` | Build `Presentation_TileAnnotationHost` adapter (dual-source, substrate kinds + tile kinds) | **done (Round 2)** |
 | 3 | `019def2862aa771fbbf9ef4aad55c52c` | Define `Presentation_TileKind*` AnnotationKind subclasses (geometry-only, no `render()`) | **done (Round 2)** |
-| 4 | `019def28aaac79928594bff9eaa8b965` | Replace slide_canvas custom drag/resize/halo with substrate tools + AnnotationOverlay | next (Round 3, high-risk; manual) |
+| 4 | `019def28aaac79928594bff9eaa8b965` | Replace slide_canvas custom drag/resize/halo with substrate tools + AnnotationOverlay | **done (Round 3, manual)** — pending HITL |
 | 5 | `019def28c59e71309330e4421c84038e` | Tests for adapter + kinds + dual-source + signal idempotence | Round 4 |
 | 6 | `019def28e6be7e358a7a80e33014e526` | HITL: end-to-end universal-select re-review (closes T3 R2) | gate |
 | 7 | `019defbd4a0c7752b8e3b9bb2ab213ec` | Wire substrate AnnotationToolbar (callout / 2d_arrow / 2d_text) into SlideEditorPanel | post-HITL, pre-T4 |
@@ -38,9 +38,22 @@ Round 2 deliverables (5 new files in `~/github/plugins/presentation/ui/`):
 - Smoke test verified end-to-end: tile (0.1, 0.1, 0.3, 0.2) on 1920×1080 → rect_px (192, 108, 576, 216); translate(+100, 0) writes back tile.x = 0.1521; callout add persists to slide.annotations[].
 - Tests still 168/0 + 39/0 (Round 4 will add new integration tests).
 
+Round 3 deliverables (`slide_canvas.gd` rewire + 1-line host helper):
+- `slide_canvas.gd`: gutted MOVE/RESIZE drag math, `_hit_test_handles`, and `_draw` halo+handle rendering. PLACE drag for TEXT/IMAGE/SHEET retained. Net +215/-223 LOC; new wiring + host-signal handlers offset most of the deletion.
+- Input dispatch redesign: wheel-zoom + middle-pan + double-click-to-edit moved to `_input` (bypasses overlay's mouse_filter STOP). Del/Backspace/Esc moved to `_unhandled_key_input`. `_gui_input` now only fires PLACE for non-SELECT tools.
+- `_ready` creates `Presentation_TileAnnotationHost` + `AnnotationOverlay` as children, bootstraps `AnnotationTransformTool` for the default SELECT tool, wires `selection_changed` and `annotations_changed` callbacks.
+- `set_tool` swaps overlay's active tool: SELECT → new AnnotationTransformTool; non-SELECT → clear (overlay goes mouse_filter IGNORE so canvas owns PLACE).
+- `set_slide` / `_recompute_slide_rect` push state to host so synthesized envelopes stay current.
+- `delete_selected` and `_finish_placement` (+ image picker) call `_host.notify_changed()` to re-trigger overlay redraw.
+- Host: added 1-line `notify_changed()` helper.
+- Smoke test verified: default SELECT auto-activates the SRT tool, switching to TEXT clears it; transform_annotation through the kind round-trips into tile.x/y at correct math (50px translate at 1280-wide canvas → tile.x = 0.1390625).
+
+**HITL gate live now (work_item #6 / `019def28e6`).** Open Minerva, exercise the full universal-select flow on a deck, file findings.
+
 Defect log (caught by orchestrator, not implementer):
 - Round 1: `set_tile_rotation` was self-reported as added but missing from source; tests script-errored silently. Found by Opus reviewer running tests with stderr capture.
 - Round 2: Subclasses used `extends Presentation_TileKindBase` (sibling class_name) — fails parse for off-tree plugins. Found by orchestrator smoke test before reviewer launch. Fix: `extends "presentation_tile_kind_base.gd"`. Nudge hint saved under `minerva-plugin-platform/off_tree_extends_pattern`.
+- Round 3: `set_tool` early-returned when default `_tool == Tool.SELECT`, so the overlay never got `AnnotationTransformTool` on canvas mount. Fix: bootstrap the tool in `_ready` after overlay creation.
 
 DCR: `019dc0bbd6937264880b1327c942d5b6`
 Plan: `019dc0bbfcc57d81b4ac1300d4923094`
