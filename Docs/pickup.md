@@ -1,43 +1,43 @@
 # Pickup — CAD plugin substrate adoption
 
-Last updated: 2026-05-02 (after CAD Phase A R1+R2a+R2b — HITL pending)
+Last updated: 2026-05-02 (after CAD Phase A HITL roll-forward — A1/A2/A3 done)
 
 ## Where I left off
 
 **Annotation v2 substrate is fully shipped** through T8 (plugin adoption design doc, commit `b05a28fb` on Minerva). Dock DCR `019de430afa7` substrate features (T1-T8) all done. Plugin adoption guide at `Docs/design/Annotation-substrate-plugin-adoption.md`.
 
-**CAD plugin Phase A (substrate consumer adoption) is committed but HITL-pending.** Three WIPs in `~/github/plugins/cad/`:
+**CAD plugin Phase A (substrate consumer adoption) is fully done.** A1/A2/A3 transitioned to `done` in docket. WIPs on `~/github/plugins/cad/` (branch `main`):
 
 ```
+b483293  WIP: CAD Phase A HITL roll-forward — overlay restoration + layout fixes
 cda0822  WIP: CAD Phase A R2b — delete custom toolbar + selection mirror
 3c3afa9  WIP: CAD Phase A R2a — extract silhouette, delete edge_overlay.gd
 26ec57a  WIP: CAD Phase A R1 — substrate adoption (A1 + A3)
 ```
 
-Phase A net: **+272 / −1032 = −760 lines of duplicated annotation infrastructure removed.**
+Plus on Minerva (branch `user/imran/experiments/swarm`):
+```
+7a840861  WIP: substrate KEY_BACKSPACE fallback for Mac Delete
+```
 
-Substrate test suite stayed 39 PASS / 0 FAIL across all three sub-rounds.
+HITL caught and fixed in this session:
+- Mac main-keyboard "Delete" key (KEY_BACKSPACE) didn't delete annotations — substrate fallback added.
+- T_Beam.mcad opening crashed on `Invalid cast: could not convert value to 'Dictionary'` because the worker emits `error` as either Dict or bare String.
+- Stale `cad-plugin` Go binary on the laptop (Apr 26 vs source Apr 29) caused `method not found: cad.evaluate`. Memory `project_cad_plugin_binary.md` saved.
+- R2a's "verbatim move" silently dropped four functional pieces from `edge_overlay.gd`: ortho background fill, selected-edge highlight, click-to-pick, multi-edge chooser. All restored in `Cad_GeometryOverlay.gd` (now ~480 lines).
+- Cad_GeometryOverlay didn't redraw on camera transform changes (silhouette froze on pan/zoom). Added `_process` transform tracking.
+- Selection marker drifted from silhouette when AnnotationDockPane opened/closed (cache stale on Control resize). Added `size` tracking alongside transform.
+- Iso pane drew silhouette on top of shaded mesh. Now skipped in perspective panes via `Camera3D.projection` check.
+- Two orphan "Annotations" Label nodes in CADPanel.tscn (R2b leftovers) duplicated the substrate dock header.
+- WideLayout content min was 1020px (2×400 viewports + 220 sidebar); collided with the substrate dock at editor widths 1024–1280. Viewport mins shrunk to 300×225 → WideLayout now fits any panel ≥ 820px.
 
-## What to do next (in order)
+End-to-end MCP verification: drew an arrow + "Fillet this edge" text annotation on edge 5 of T_Beam.mcad. `minerva_cad_get_selected_edge` returned full edge dict; `minerva_annotations_list` returned both annotations with payloads. Substrate is talking to MCP correctly — link from arrow→edge is *positional* (canvas.point coords); making it semantic is Phase B B2.
 
-### 1. HITL Phase A — verify the cad plugin in a running Minerva
+Substrate test suite: 39 PASS / 0 FAIL throughout.
 
-Open the running Minerva, restart the CAD plugin panel, verify:
+## What to do next
 
-1. Platform `AnnotationDockPane` is **visible by default** (no resize trick / chevron — that was the R1-only bug, fixed by R2b removing the custom toolbar).
-2. Toolbar comes from `AnnotationDockPane`. Should expose Select + the four advertised kinds (callout, 2d_arrow, 2d_text, cad_edge_number — whichever have `author_ui()` non-null).
-3. **No leftover custom toolbar** in the panel.
-4. Annotation controls actually work — pick a tool, place an annotation, see it.
-5. Edge tree (geometry inspector) still works — Prev/Next/Clear + click-to-select highlights the right row. Tree click pushes selection to the host (visible via `minerva_cad_get_selected_edge` MCP).
-6. Ortho silhouettes still render in Top/Front/Right panes (x-ray edge outlines).
-7. `cad_edge_number` tool still picks edges. **Anchoring still floats on re-evaluate** — that's the Phase B problem, not a Phase A regression.
-8. Iso pane shows shaded mesh + annotations as before.
-
-If green: transition `019de9b755b07366` (A1), `019de9b78eda7a6b` (A2), `019de9b7ae707aa0` (A3) → done with resolution citing the three commit SHAs. Then start Phase B.
-
-If broken: report what's broken; the failure mode informs whether to re-spin a single sub-round or roll back further.
-
-### 2. Phase B — CAD edge anchors (the original problem)
+### Start Phase B — CAD edge anchors (the original problem)
 
 Backlog filed under plan `019dc0552d6a` (project=minerva):
 
@@ -61,13 +61,13 @@ Project: `minerva` (always pass `project="minerva"` to docket tools).
 - DCR: `019dc054a453` — CAD plugin: port MCAD experiment as first platform consumer
 - Plan: `019dc0552d6a` — Plan: CAD Plugin (v1 through exports)
 
-### Phase A (in_progress, HITL pending)
+### Phase A (done)
 
 | Status | ID | Title |
 |---|---|---|
-| ⏳ HITL | `019de9b755b07366` | A1: replace Cad_AnnotationCanvas with platform AnnotationOverlay; mount AnnotationDockPane via get_annotation_host() |
-| ⏳ HITL | `019de9b78eda7a6b` | A2: delete edge_overlay.gd (5 instances) — route edge picking through substrate |
-| ⏳ HITL | `019de9b7ae707aa0` | A3: Cad_AnnotationHost.get_capabilities() — advertise registered kinds |
+| ✅ | `019de9b755b07366` | A1: replace Cad_AnnotationCanvas with platform AnnotationOverlay; mount AnnotationDockPane via get_annotation_host() |
+| ✅ | `019de9b78eda7a6b` | A2: delete edge_overlay.gd (5 instances) — route edge picking through substrate |
+| ✅ | `019de9b7ae707aa0` | A3: Cad_AnnotationHost.get_capabilities() — advertise registered kinds |
 | ✅ | `019de9b7d73a70cf` | A4 (question): edge browser sidebar — answered, option C |
 
 ### Phase B (backlog)
@@ -95,15 +95,15 @@ Project: `minerva` (always pass `project="minerva"` to docket tools).
 
 ### Minerva (`user/imran/experiments/swarm`)
 
-- HEAD: `b05a28fb` (T8 Round 1 reframe).
-- Last 5 commits: `b05a28fb`, `7c226c4a`, `a50cbb63`, `abc5ca9f`, `f0056c0e` (all T8 + T_apply Phase A from this session sequence).
-- Working tree: `Docs/minerva.dct` modified (this session's docket bookkeeping — committed alongside this pickup.md update). Submodule pointers in `vendor/godot_cef`, `vendor/godot_wry` show drift but are pre-existing local build patches per CLAUDE.md.
+- HEAD: `7a840861` (substrate KEY_BACKSPACE fallback for Mac Delete).
+- Last commits: `7a840861`, `f3433675`, `b05a28fb`, `7c226c4a`, `a50cbb63`.
+- Working tree: this pickup.md update pending commit. Submodule pointers in `vendor/godot_cef`, `vendor/godot_wry` show drift but are pre-existing local build patches per CLAUDE.md.
 
 ### cad plugin (`~/github/plugins/cad/`, branch `main`)
 
-- HEAD: `cda0822` (Phase A R2b).
+- HEAD: `b483293` (Phase A HITL roll-forward).
 - Working tree clean.
-- Pushed (after pickup commit lands).
+- Not yet pushed.
 
 ## Constraints to carry forward
 
@@ -121,24 +121,26 @@ Project: `minerva` (always pass `project="minerva"` to docket tools).
 
 1. `git pull` on `~/github/Minerva` (branch `user/imran/experiments/swarm`) and `~/github/plugins/cad` (branch `main`).
 2. Read `Docs/pickup.md` (this file).
-3. In Minerva: `git status` — expect submodule drift only. `git log --oneline -5`.
-4. In cad plugin: `git status --short` — clean. `git log --oneline -3` — head should be `cda0822`.
-5. Read `~/.claude/projects/-home-imran-github-Minerva/memory/project_active_cycle_plan.md` for the full active CAD cycle context.
+3. In Minerva: `git status` — expect submodule drift only. `git log --oneline -5` — head should be `7a840861`.
+4. In cad plugin: `git status --short` — clean. `git log --oneline -4` — head should be `b483293`.
+5. **Rebuild the cad-plugin Go binary on this machine** if its mtime is older than `*.go` source — see `~/.claude/projects/-Users-ipeerbhai-github-Minerva/memory/project_cad_plugin_binary.md`. Symptom of skipping: opening any `.mcad` file shows `cad.evaluate worker error [unknown]: method not found: cad.evaluate`.
+   ```
+   cd ~/github/plugins/cad && go build -o cad-plugin .
+   ```
 6. Run the substrate regression suite from Minerva root:
    ```
    for t in test/annotations_v2/test_workbench_selection_sync.gd \
             test/annotations_v2/test_kind_extension_api.gd \
             test/annotations_v2/test_annotation_overlay_draw.gd; do
-     timeout 90 godot --headless --path src --script "$t"
+     godot --headless --path src --script "$t"
    done
    ```
-   Expect 39 PASS / 0 FAIL.
-7. Open Minerva, restart CAD plugin, run the HITL test plan in "What to do next §1."
-8. Either transition Phase A tasks → done (if HITL passes) or report breakage.
-9. Then: `/work-cycle 019de9b807e67c01` (B1) when ready to start Phase B.
+   Expect 39 PASS / 0 FAIL. (Note: Mac doesn't ship `timeout`; just run godot directly.)
+7. `/work-cycle 019de9b807e67c01` (B1) when ready to start Phase B. Discuss B3's A/B/C design question (`019de9b859d97f51`) before its implementer round.
 
 ## Process notes from this session
 
 - **Two-sub-round split with no HITL between** worked well for the bigger Round 2 (delete edge_overlay + delete custom toolbar). Each sub-round had its own Sonnet implementer + Opus cold reviewer + Layer-1 gate. Single HITL at the end. Minimized HITL gates without sacrificing review safety.
-- **Cold reviewer with file allowlist + OUT-of-scope list + method-level kill list** caught the verbatim-move comment-drop in R2a (cosmetic, fixed in main context). Pattern is durable — the explicit lists make the reviewer's job mechanical.
+- **Cold reviewer with file allowlist + OUT-of-scope list + method-level kill list** caught the verbatim-move *comment* drop in R2a (cosmetic, fixed in main context) but missed the *functional* drops (background fill, selected-edge highlight, click-to-pick, multi-edge chooser). The reviewer's allowlist treated the new file as a verbatim move, but the move dropped ~70% of the original by line count. **Process upgrade**: when a reviewer is told "verbatim move," it should also assert that the per-method line count delta is within ±5% — anything bigger is no longer a move, it's a refactor and needs a different review lens.
 - **R1's intermediate state was not user-functional** (custom toolbar dead, platform UI layout-collapsed). The "skip-ahead" decision to bundle R2a+R2b sequentially was the right call once HITL surfaced this. Lesson: if the first round of a multi-round cleanup leaves a non-functional intermediate, don't pause for HITL — chain to the next round and HITL the end state.
+- **HITL roll-forward as a separate WIP commit** (cad@b483293) preserved the R1/R2a/R2b commits as historical evidence rather than amending them. Easier to review what actually got dropped vs added.
