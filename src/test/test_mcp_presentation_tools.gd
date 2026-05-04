@@ -53,6 +53,14 @@ func _run_tests() -> void:
 	test_add_bulleted_facts(tools)
 	test_add_butter_tart_placeholder(tools)
 	test_list_slides_reflects_state(tools)
+	test_list_tiles_returns_4_with_kinds(tools)
+	test_list_annotations_empty(tools)
+	test_get_tile_round_trips(tools)
+	test_get_tile_excludes_image_src_by_default(tools)
+	test_get_tile_includes_image_src_when_requested(tools)
+	test_get_slide_returns_full_slide(tools)
+	test_inspect_unknown_tile_id_errors(tools)
+	test_inspect_slide_index_out_of_range(tools)
 	test_final_deck_validates_against_plugin()
 	test_solid_color_rejects_invalid_hex(tools)
 	test_coords_out_of_range_rejected(tools)
@@ -184,6 +192,116 @@ func test_list_slides_reflects_state(tools: Object) -> void:
 	var first: Dictionary = slides[0] as Dictionary
 	_assert(int(first.get("tile_count", 0)) == 4, "list_slides reports 4 tiles on slide 0", first)
 	_assert(str(r.get("aspect", "")) == "16:9", "list_slides reports aspect 16:9", r)
+
+
+func test_list_tiles_returns_4_with_kinds(tools: Object) -> void:
+	var r: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	_assert(r.get("success", false) == true, "list_tiles succeeds", r)
+	_assert(int(r.get("slide_index", -1)) == 0, "list_tiles echoes slide_index", r)
+	var tiles: Array = r.get("tiles", []) as Array
+	_assert(tiles.size() == 4, "list_tiles returns 4 entries", {"count": tiles.size()})
+
+	# Kind sequence per the compose order above.
+	var kinds: Array = []
+	for t in tiles:
+		kinds.append(str((t as Dictionary).get("kind", "")))
+	_assert(kinds == ["text", "image", "text", "image"], "list_tiles kinds in compose order", {"kinds": kinds})
+
+	# Title (tile 0): text content present, not truncated, no image bytes leaking.
+	var title: Dictionary = tiles[0] as Dictionary
+	_assert(title.has("tile_id") and not str(title["tile_id"]).is_empty(), "title summary has tile_id", title)
+	_assert(title.has("content") and str(title["content"]).contains("Butter Tarts"), "title summary preserves content", title)
+	_assert(not title.has("_truncated"), "title content not truncated", title)
+	_assert(str(title.get("text_mode", "")) == "plain", "title text_mode == plain", title)
+
+	# HR (tile 1): image — must NOT inline base64; must report src_size_bytes > 0.
+	var hr: Dictionary = tiles[1] as Dictionary
+	_assert(not hr.has("src"), "HR summary omits src", hr)
+	_assert(int(hr.get("src_size_bytes", 0)) > 0, "HR summary reports non-zero src_size_bytes", hr)
+
+	# Bullet facts (tile 2): text_mode == bullet, content preserved.
+	var facts: Dictionary = tiles[2] as Dictionary
+	_assert(str(facts.get("text_mode", "")) == "bullet", "facts text_mode == bullet", facts)
+	_assert(str(facts.get("content", "")).contains("Quintessentially"), "facts content preserved", facts)
+
+
+func test_list_annotations_empty(tools: Object) -> void:
+	# v1 compose path doesn't add annotations — expect empty list.
+	var r: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	_assert(r.get("success", false) == true, "list_annotations succeeds", r)
+	_assert((r.get("annotations", []) as Array).is_empty(), "annotations array is empty for fresh slide", r)
+
+
+func test_get_tile_round_trips(tools: Object) -> void:
+	# Pull tile 0's id from list_tiles, then fetch its full dict.
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var tile_id: String = str(((lr["tiles"] as Array)[0] as Dictionary)["tile_id"])
+
+	var r: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	_assert(r.get("success", false) == true, "get_tile succeeds", r)
+	var tile: Dictionary = r.get("tile", {}) as Dictionary
+	_assert(str(tile.get("id", "")) == tile_id, "get_tile returns matching id", tile)
+	_assert(str(tile.get("kind", "")) == "text", "get_tile preserves kind", tile)
+	_assert(str(tile.get("content", "")).contains("Butter Tarts"), "get_tile preserves content", tile)
+	_assert(abs(float(tile.get("h", 0.0)) - 0.11) < 0.0001, "get_tile preserves h", tile)
+
+
+func test_get_tile_excludes_image_src_by_default(tools: Object) -> void:
+	# Tile 1 (HR) is an image tile.
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var tile_id: String = str(((lr["tiles"] as Array)[1] as Dictionary)["tile_id"])
+
+	var r: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	_assert(r.get("success", false) == true, "get_tile (image) succeeds", r)
+	var tile: Dictionary = r.get("tile", {}) as Dictionary
+	_assert(str(tile.get("kind", "")) == "image", "get_tile returns image kind", tile)
+	_assert(not tile.has("src"), "default get_tile omits image src", tile)
+	_assert(int(tile.get("src_size_bytes", 0)) > 0, "get_tile reports src_size_bytes for image", tile)
+
+
+func test_get_tile_includes_image_src_when_requested(tools: Object) -> void:
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var tile_id: String = str(((lr["tiles"] as Array)[1] as Dictionary)["tile_id"])
+
+	var r: Dictionary = tools._get_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id, "include_src": true
+	})
+	_assert(r.get("success", false) == true, "get_tile with include_src succeeds", r)
+	var tile: Dictionary = r.get("tile", {}) as Dictionary
+	_assert(str(tile.get("src", "")).length() > 0, "get_tile with include_src returns base64", {"len": str(tile.get("src", "")).length()})
+
+
+func test_get_slide_returns_full_slide(tools: Object) -> void:
+	var r: Dictionary = tools._get_slide({"path": OUT_PATH, "slide_index": 0})
+	_assert(r.get("success", false) == true, "get_slide succeeds", r)
+	var slide: Dictionary = r.get("slide", {}) as Dictionary
+	_assert(slide.has("id") and not str(slide["id"]).is_empty(), "get_slide preserves id", slide)
+	_assert(slide.has("background"), "get_slide preserves background", {})
+	var bg: Dictionary = slide["background"] as Dictionary
+	_assert(str(bg.get("value", "")) == COLOR_BROWNED_BUTTER, "get_slide background color preserved", bg)
+	var slide_tiles: Array = slide.get("tiles", []) as Array
+	_assert(slide_tiles.size() == 4, "get_slide returns all 4 tiles", {"count": slide_tiles.size()})
+
+	# Image tiles must have src omitted by default but report src_size_bytes.
+	for t_v in slide_tiles:
+		var t: Dictionary = t_v as Dictionary
+		if str(t.get("kind", "")) == "image":
+			_assert(not t.has("src"), "get_slide default omits image src", t)
+			_assert(int(t.get("src_size_bytes", 0)) > 0, "get_slide reports src_size_bytes", t)
+
+
+func test_inspect_unknown_tile_id_errors(tools: Object) -> void:
+	var r: Dictionary = tools._get_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": "tile_does_not_exist"
+	})
+	_assert(r.get("success", false) == false, "get_tile with unknown id errors", r)
+	_assert(str(r.get("error", "")).to_lower().contains("not found"), "error mentions 'not found'", r)
+
+
+func test_inspect_slide_index_out_of_range(tools: Object) -> void:
+	var r: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 99})
+	_assert(r.get("success", false) == false, "list_tiles slide_index OOR errors", r)
+	_assert(str(r.get("error", "")).to_lower().contains("out of range"), "error mentions 'out of range'", r)
 
 
 func test_final_deck_validates_against_plugin() -> void:

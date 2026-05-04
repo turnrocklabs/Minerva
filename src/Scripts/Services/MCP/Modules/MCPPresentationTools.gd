@@ -68,6 +68,11 @@ func _get_editor_pane() -> Variant:
 # Tool registration
 # ---------------------------------------------------------------------------
 
+## Cap on text-tile content returned by inspect tools to keep responses small.
+## Truncated content is suffixed with a `_truncated: true` marker on the dict.
+const INSPECT_CONTENT_CAP_BYTES: int = 8192
+
+
 func get_tool_names() -> Array[String]:
 	return [
 		"presentation_create_deck",
@@ -77,6 +82,10 @@ func get_tool_names() -> Array[String]:
 		"presentation_set_slide_background",
 		"presentation_add_text_tile",
 		"presentation_add_image_tile",
+		"presentation_list_tiles",
+		"presentation_list_annotations",
+		"presentation_get_tile",
+		"presentation_get_slide",
 	]
 
 
@@ -165,6 +174,61 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
+	server._register_tool("presentation_list_tiles",
+		"List tiles on a slide. Returns id, kind, x/y/w/h, rotation, and kind-specific summary fields. Image tiles return src_size_bytes (NOT the base64) to keep responses small — use presentation_get_tile with include_src=true to fetch bytes. Text tiles return content (capped at 8 KB; if truncated, the dict has _truncated=true). Spreadsheet tiles return rows and cols (cell data via get_tile).",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+			},
+			"required": ["slide_index"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_list_annotations",
+		"List annotations on a slide. Returns id, kind, payload_summary (kind-specific: text content for text/callout kinds, geometry summary otherwise), position (when derivable), and resolved (when present on the envelope; defaults to false). Annotations are kept as opaque envelopes per the substrate contract — full envelope is available via the upcoming get_annotation tool.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+			},
+			"required": ["slide_index"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_get_tile",
+		"Fetch a tile dict by id. Default omits image base64 (which can be megabytes); pass include_src=true to include it. Spreadsheet tiles return their full cell grid.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"tile_id": {"type": "string"},
+				"include_src": {"type": "boolean", "description": "If true, include image base64 src for image tiles. Default false."},
+			},
+			"required": ["slide_index", "tile_id"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_get_slide",
+		"Fetch the full slide dict (id, title, background, tiles, reveal, annotations). Default omits image base64 on tiles; pass include_tile_src=true to include it.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"include_tile_src": {"type": "boolean", "description": "If true, include image base64 src on each image tile. Default false."},
+			},
+			"required": ["slide_index"],
+		}
+	, "presentation")
+
 	server._register_tool("presentation_add_image_tile",
 		"Add an image tile to a slide. Coords x/y/w/h are 0..1 normalized. Provide exactly one image source: image_path, image_base64, source_graphics_editor (name of an open graphics editor — pulls layer 0's PNG bytes), or solid_color (hex; generates a small flat-color PNG that scales to fill the tile — handy for HR lines and decorative blocks).",
 		{
@@ -208,6 +272,14 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _add_text_tile(arguments)
 		"presentation_add_image_tile":
 			return _add_image_tile(arguments)
+		"presentation_list_tiles":
+			return _list_tiles(arguments)
+		"presentation_list_annotations":
+			return _list_annotations(arguments)
+		"presentation_get_tile":
+			return _get_tile(arguments)
+		"presentation_get_slide":
+			return _get_slide(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -473,6 +545,216 @@ func _add_image_tile(args: Dictionary) -> Dictionary:
 	if commit_err != "":
 		return MCPToolUtils.error(commit_err)
 	return MCPToolUtils.success({"tile_id": str(tile["id"])})
+
+
+# ---------------------------------------------------------------------------
+# Inspect handlers (read-only)
+# ---------------------------------------------------------------------------
+
+func _list_tiles(args: Dictionary) -> Dictionary:
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var tiles: Array = slide.get("tiles", []) as Array
+	var summaries: Array = []
+	for t_v in tiles:
+		summaries.append(_summarize_tile(t_v as Dictionary))
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"tiles": summaries,
+	})
+
+
+func _list_annotations(args: Dictionary) -> Dictionary:
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	# annotations is omit-when-default — absent key means empty list.
+	var anns: Array = slide.get("annotations", []) as Array
+	var summaries: Array = []
+	for a_v in anns:
+		summaries.append(_summarize_annotation(a_v as Dictionary))
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"annotations": summaries,
+	})
+
+
+func _get_tile(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id"])
+	if missing != null:
+		return missing
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var tile_id: String = String(args["tile_id"]).strip_edges()
+	var tile: Dictionary = _find_tile_in_slide(slide, tile_id)
+	if tile.is_empty():
+		return MCPToolUtils.error("tile_id not found on slide %d: %s" % [
+			MCPToolUtils.coerce_int(args["slide_index"]), tile_id
+		])
+
+	var include_src: bool = bool(args.get("include_src", false))
+	var out: Dictionary = tile.duplicate(true)
+	# Image tiles: drop or keep `src` based on include_src. Always include
+	# src_size_bytes so the caller can budget.
+	if String(out.get("kind", "")) == TILE_IMAGE:
+		var src_str: String = String(out.get("src", ""))
+		out["src_size_bytes"] = src_str.length()
+		if not include_src:
+			out.erase("src")
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"tile": out,
+	})
+
+
+func _get_slide(args: Dictionary) -> Dictionary:
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var include_src: bool = bool(args.get("include_tile_src", false))
+	var out: Dictionary = slide.duplicate(true)
+	# Strip / annotate image tile srcs unless asked.
+	var out_tiles: Array = out.get("tiles", []) as Array
+	for i in range(out_tiles.size()):
+		var t: Dictionary = out_tiles[i] as Dictionary
+		if String(t.get("kind", "")) == TILE_IMAGE:
+			var src_str: String = String(t.get("src", ""))
+			t["src_size_bytes"] = src_str.length()
+			if not include_src:
+				t.erase("src")
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"slide": out,
+	})
+
+
+## Build a small summary dict for a tile suitable for list_tiles. Keeps image
+## bytes out, caps text content at INSPECT_CONTENT_CAP_BYTES.
+func _summarize_tile(tile: Dictionary) -> Dictionary:
+	var kind: String = String(tile.get("kind", ""))
+	var item: Dictionary = {
+		"tile_id": String(tile.get("id", "")),
+		"kind": kind,
+		"x": float(tile.get("x", 0.0)),
+		"y": float(tile.get("y", 0.0)),
+		"w": float(tile.get("w", 0.0)),
+		"h": float(tile.get("h", 0.0)),
+	}
+	if tile.has("rotation"):
+		item["rotation"] = float(tile["rotation"])
+	match kind:
+		TILE_TEXT:
+			item["text_mode"] = String(tile.get("text_mode", TEXT_MODE_PLAIN))
+			var content: String = String(tile.get("content", ""))
+			if content.length() > INSPECT_CONTENT_CAP_BYTES:
+				item["content"] = content.substr(0, INSPECT_CONTENT_CAP_BYTES)
+				item["_truncated"] = true
+			else:
+				item["content"] = content
+		TILE_IMAGE:
+			item["src_size_bytes"] = String(tile.get("src", "")).length()
+		"spreadsheet":
+			# Use literal — TILE_SPREADSHEET isn't a constant in this module yet
+			# (v1 didn't author them), but the substrate uses "spreadsheet" as kind.
+			item["rows"] = MCPToolUtils.coerce_int(tile.get("rows", 0))
+			item["cols"] = MCPToolUtils.coerce_int(tile.get("cols", 0))
+	return item
+
+
+## Build a small summary dict for an annotation envelope. Envelope shape is
+## opaque per substrate contract: `{id, kind, ...}` with kind-specific fields.
+## We expose id+kind plus a best-effort payload_summary, position, resolved.
+func _summarize_annotation(env: Dictionary) -> Dictionary:
+	var kind: String = String(env.get("kind", ""))
+	var item: Dictionary = {
+		"annotation_id": String(env.get("id", "")),
+		"kind": kind,
+	}
+	# Resolved field — substrate work_item 019df41ace3b adds this. For now,
+	# read defensively: report it when present, default to false.
+	if env.has("resolved"):
+		item["resolved"] = bool(env["resolved"])
+	else:
+		item["resolved"] = false
+
+	# Best-effort position: prefer explicit position dict, else first vertex
+	# of common geometry fields. Skip silently when nothing usable.
+	var pos: Variant = _extract_position(env)
+	if pos != null:
+		item["position"] = pos
+
+	# Best-effort payload_summary — text content for text-bearing kinds,
+	# else a short geometry note. Capped at the inspect cap.
+	var summary: String = _summarize_annotation_payload(env)
+	if not summary.is_empty():
+		if summary.length() > INSPECT_CONTENT_CAP_BYTES:
+			item["payload_summary"] = summary.substr(0, INSPECT_CONTENT_CAP_BYTES)
+			item["_truncated"] = true
+		else:
+			item["payload_summary"] = summary
+	return item
+
+
+func _extract_position(env: Dictionary) -> Variant:
+	if env.has("position") and env["position"] is Dictionary:
+		return env["position"]
+	# Common substrate shapes — anchor / center / first vertex.
+	for key in ["anchor", "center", "origin"]:
+		if env.has(key) and env[key] is Dictionary:
+			return env[key]
+	if env.has("points") and env["points"] is Array and (env["points"] as Array).size() > 0:
+		var first = (env["points"] as Array)[0]
+		if first is Dictionary:
+			return first
+	return null
+
+
+func _summarize_annotation_payload(env: Dictionary) -> String:
+	# Text-bearing kinds: callout, text_2d, text. Use whichever string field exists.
+	for key in ["text", "content", "label", "message"]:
+		if env.has(key) and env[key] is String and not (env[key] as String).is_empty():
+			return env[key] as String
+	# Geometric kinds: short note about size.
+	if env.has("points") and env["points"] is Array:
+		return "%d points" % (env["points"] as Array).size()
+	if env.has("rect") and env["rect"] is Dictionary:
+		var r: Dictionary = env["rect"]
+		return "rect %sx%s" % [str(r.get("w", "?")), str(r.get("h", "?"))]
+	return ""
+
+
+func _find_tile_in_slide(slide: Dictionary, tile_id: String) -> Dictionary:
+	for t_v in slide.get("tiles", []) as Array:
+		var t: Dictionary = t_v as Dictionary
+		if String(t.get("id", "")) == tile_id:
+			return t
+	return {}
 
 
 # ---------------------------------------------------------------------------
