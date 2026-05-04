@@ -807,12 +807,16 @@ func _summarize_annotation(env: Dictionary) -> Dictionary:
 		"annotation_id": String(env.get("id", "")),
 		"kind": kind,
 	}
-	# Resolved field — substrate work_item 019df41ace3b adds this. For now,
-	# read defensively: report it when present, default to false.
-	if env.has("resolved"):
-		item["resolved"] = bool(env["resolved"])
-	else:
-		item["resolved"] = false
+	# Substrate annotation v2 carries a lifecycle state machine
+	# ("open" | "applied" | "resolved" | "stale") — that's the authoritative
+	# resolved-ness signal (no separate `resolved` bool exists). We surface
+	# both: lifecycle verbatim (when present) for callers that care about
+	# applied/stale, plus a derived resolved bool for the common case.
+	# Hint: 019df443eb8777be962510697cdaddad
+	var lifecycle: String = String(env.get("lifecycle", ""))
+	if not lifecycle.is_empty():
+		item["lifecycle"] = lifecycle
+	item["resolved"] = (lifecycle == "resolved")
 
 	# Best-effort position: prefer explicit position dict, else first vertex
 	# of common geometry fields. Skip silently when nothing usable.
@@ -847,8 +851,9 @@ func _extract_position(env: Dictionary) -> Variant:
 
 
 func _summarize_annotation_payload(env: Dictionary) -> String:
-	# Text-bearing kinds: callout, text_2d, text. Use whichever string field exists.
-	for key in ["text", "content", "label", "message"]:
+	# Substrate annotation v2 always has `summary` — use it first. Fall back to
+	# kind-specific text fields for callout / text_2d / non-v2 envelopes.
+	for key in ["summary", "text", "content", "label", "message"]:
 		if env.has(key) and env[key] is String and not (env[key] as String).is_empty():
 			return env[key] as String
 	# Geometric kinds: short note about size.

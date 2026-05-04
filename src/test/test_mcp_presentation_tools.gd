@@ -85,6 +85,7 @@ func _run_tests() -> void:
 	test_remove_tile_unknown_id(tools)
 	test_remove_slide_succeeds_with_multiple(tools)
 	test_remove_slide_refuses_last(tools)
+	test_list_annotations_derives_resolved_from_lifecycle(tools)
 	test_post_modify_deck_still_validates()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
@@ -576,6 +577,49 @@ func test_remove_slide_refuses_last(tools: Object) -> void:
 	var r: Dictionary = tools._remove_slide({"path": OUT_PATH, "slide_index": 0})
 	_assert(r.get("success", false) == false, "remove_slide refuses last slide", r)
 	_assert(str(r.get("error", "")).to_lower().contains("only slide"), "error mentions 'only slide'", r)
+
+
+func test_list_annotations_derives_resolved_from_lifecycle(tools: Object) -> void:
+	# Inject 3 synthetic envelopes directly into slide.annotations[] (the
+	# add_annotation MCP tool ships in work_item #6). One open, one resolved,
+	# one without lifecycle — list_annotations should derive resolved from
+	# lifecycle=="resolved" and surface lifecycle verbatim when present.
+	var deck: Dictionary = _read_deck()
+	var slide: Dictionary = (deck["slides"] as Array)[0] as Dictionary
+	slide["annotations"] = [
+		{"id": "ann_open_1", "kind": "text_2d", "lifecycle": "open", "summary": "fix the title size"},
+		{"id": "ann_resolved_1", "kind": "callout", "lifecycle": "resolved", "summary": "good now"},
+		{"id": "ann_legacy_1", "kind": "text_2d", "summary": "no lifecycle field"},
+	]
+	# Write back to disk and re-list.
+	var f: FileAccess = FileAccess.open(OUT_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify(deck, "  "))
+	f.close()
+
+	var r: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	_assert(r.get("success", false) == true, "list_annotations succeeds with envelopes", r)
+	var anns: Array = r.get("annotations", []) as Array
+	_assert(anns.size() == 3, "list_annotations returns all 3 envelopes", {"count": anns.size()})
+
+	# Map by id for clarity.
+	var by_id: Dictionary = {}
+	for a in anns:
+		by_id[str((a as Dictionary)["annotation_id"])] = a as Dictionary
+
+	var open_a: Dictionary = by_id["ann_open_1"] as Dictionary
+	_assert(str(open_a.get("lifecycle", "")) == "open", "open envelope reports lifecycle=open", open_a)
+	_assert(bool(open_a.get("resolved", true)) == false, "open envelope: resolved=false", open_a)
+
+	var resolved_a: Dictionary = by_id["ann_resolved_1"] as Dictionary
+	_assert(str(resolved_a.get("lifecycle", "")) == "resolved", "resolved envelope reports lifecycle=resolved", resolved_a)
+	_assert(bool(resolved_a.get("resolved", false)) == true, "resolved envelope: resolved=true", resolved_a)
+
+	var legacy_a: Dictionary = by_id["ann_legacy_1"] as Dictionary
+	_assert(not legacy_a.has("lifecycle"), "legacy envelope omits lifecycle in summary", legacy_a)
+	_assert(bool(legacy_a.get("resolved", true)) == false, "legacy envelope (no lifecycle): resolved=false", legacy_a)
+
+	# Payload summary derived from `summary` field.
+	_assert(str(open_a.get("payload_summary", "")) == "fix the title size", "open envelope payload_summary preserved", open_a)
 
 
 func test_post_modify_deck_still_validates() -> void:
