@@ -132,15 +132,23 @@ const ANNOTATION_LIFECYCLES_VALID: PackedStringArray = [
 	ANNOTATION_LIFECYCLE_STALE,
 ]
 
-# Substrate-known annotation kinds. List mirrors the kinds enumerated in the
-# schema's _GENERIC_KIND_ANCHORS table. Keep in sync with substrate updates.
+# Annotation kinds the presentation host accepts. Source: presentation_tile_annotation_host.gd
+# allows ["callout", "2d_arrow", "2d_text"] (note "2d_" prefix, not "_2d" suffix).
+# Anchor-compat (AnnotationV2Schema._GENERIC_KIND_ANCHORS):
+#   - callout: "*/*"   → any anchor.plugin works (incl. "presentation")
+#   - 2d_arrow / 2d_text: "core/*" → anchor.plugin must be "core"
+# MCP-authored annotations default to anchor.plugin="presentation"; that's
+# only compat with callout. For 2d_arrow/2d_text the caller MUST supply an
+# explicit anchor with plugin="core" or the substrate validator rejects.
+# Hint: 019df4513e477ea0b3e0b513446e1606
 const ANNOTATION_KINDS_VALID: PackedStringArray = [
 	"callout",
-	"arrow_2d",
-	"text_2d",
-	"freehand",
-	"rectangle",
+	"2d_arrow",
+	"2d_text",
 ]
+const ANNOTATION_KINDS_TEXT_BEARING: PackedStringArray = ["callout", "2d_text"]
+const ANNOTATION_AUTHOR_KIND_AI: String = "ai"
+const ANNOTATION_AUTHOR_KIND_HUMAN: String = "human"
 
 
 func register_tools() -> void:
@@ -1072,10 +1080,10 @@ func _modify_tile(args: Dictionary) -> Dictionary:
 	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id"])
 	if missing != null:
 		return missing
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
+	var target := _resolve_target(args)
+	if target.has("error"):
+		return target
+	var deck: Dictionary = target["deck"]
 	var slide_v := _slide_at(deck, args)
 	if slide_v is Dictionary and slide_v.has("__error__"):
 		return MCPToolUtils.error(slide_v["__error__"])
@@ -1089,34 +1097,40 @@ func _modify_tile(args: Dictionary) -> Dictionary:
 		])
 	var kind: String = String(tile.get("kind", ""))
 
+	# Stage all mutations into a patch dict so a late-stage failure (e.g. an
+	# invalid solid_color hex) doesn't leave the live tile half-modified.
+	# We compute everything against the staged view, then merge in one shot.
+	var patch: Dictionary = {}
+	var erase_keys: Array[String] = []
+
 	# Coords: validate only when provided; clamp to [0,1].
 	for axis in _MODIFY_COORD_KEYS:
 		if args.has(axis) and args[axis] != null:
 			var v: float = MCPToolUtils.coerce_float(args[axis], -1.0)
 			if v < 0.0 or v > 1.0:
 				return MCPToolUtils.error("%s must be in [0, 1], got %f" % [axis, v])
-			tile[axis] = clampf(v, 0.0, 1.0)
+			patch[axis] = clampf(v, 0.0, 1.0)
 
 	# Rotation: 0 erases the field (omit-when-default), nonzero sets it.
 	if args.has("rotation") and args["rotation"] != null:
 		var rot: float = MCPToolUtils.coerce_float(args["rotation"], 0.0)
 		if is_zero_approx(rot):
-			tile.erase("rotation")
+			erase_keys.append("rotation")
 		else:
-			tile["rotation"] = rot
+			patch["rotation"] = rot
 
 	# Text-tile fields.
 	if args.has("content") and args["content"] != null:
 		if kind != TILE_TEXT:
 			return MCPToolUtils.error("content can only be set on text tiles (this is %s)" % kind)
-		tile["content"] = String(args["content"])
+		patch["content"] = String(args["content"])
 	if args.has("text_mode") and args["text_mode"] != null:
 		if kind != TILE_TEXT:
 			return MCPToolUtils.error("text_mode can only be set on text tiles (this is %s)" % kind)
 		var mode: String = String(args["text_mode"])
 		if not TEXT_MODES_VALID.has(mode):
 			return MCPToolUtils.error("text_mode must be one of %s" % str(TEXT_MODES_VALID))
-		tile["text_mode"] = mode
+		patch["text_mode"] = mode
 
 	# Image-source replacement — at most one of these is allowed.
 	var has_path := args.has("image_path") and not String(args.get("image_path", "")).is_empty()
@@ -1143,19 +1157,25 @@ func _modify_tile(args: Dictionary) -> Dictionary:
 				return MCPToolUtils.error(pulled["error"])
 			b64 = pulled["base64"]
 		else:
-			# Solid color — synthesize at the tile's CURRENT (post-modify) rendered aspect.
+			# Solid color — synthesize at the post-merge w/h so a same-call
+			# resize is reflected in the synthesized aspect.
+			var effective_w: float = float(patch.get("w", tile.get("w", 1.0)))
+			var effective_h: float = float(patch.get("h", tile.get("h", 1.0)))
 			var slide_aspect: float = _parse_aspect_ratio(String(deck.get("aspect", "16:9")))
 			b64 = _make_solid_color_png_base64(
-				String(args["solid_color"]),
-				float(tile.get("w", 1.0)),
-				float(tile.get("h", 1.0)),
-				slide_aspect
+				String(args["solid_color"]), effective_w, effective_h, slide_aspect
 			)
 			if b64.is_empty():
 				return MCPToolUtils.error("solid_color must be a valid hex color (e.g. #1F4E5A)")
-		tile["src"] = b64
+		patch["src"] = b64
 
-	var commit_err := _commit_target(resolved, deck)
+	# All validations passed — apply patch atomically.
+	for k in patch.keys():
+		tile[k] = patch[k]
+	for ek in erase_keys:
+		tile.erase(ek)
+
+	var commit_err := _commit_target(target, deck)
 	if commit_err != "":
 		return MCPToolUtils.error(commit_err)
 	return MCPToolUtils.success({
@@ -1217,35 +1237,32 @@ func _add_annotation(args: Dictionary) -> Dictionary:
 	if not ANNOTATION_KINDS_VALID.has(kind):
 		return MCPToolUtils.error("kind must be one of %s" % str(ANNOTATION_KINDS_VALID))
 	var summary: String = String(args["summary"])
+	if summary.is_empty():
+		return MCPToolUtils.error("summary must be a non-empty string")
 	var lifecycle: String = String(args.get("lifecycle", ANNOTATION_LIFECYCLE_OPEN))
 	if not ANNOTATION_LIFECYCLES_VALID.has(lifecycle):
 		return MCPToolUtils.error("lifecycle must be one of %s" % str(ANNOTATION_LIFECYCLES_VALID))
 
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
+	var target := _resolve_target(args)
+	if target.has("error"):
+		return target
+	var deck: Dictionary = target["deck"]
 	var slide_v := _slide_at(deck, args)
 	if slide_v is Dictionary and slide_v.has("__error__"):
 		return MCPToolUtils.error(slide_v["__error__"])
 	var slide: Dictionary = slide_v as Dictionary
+	var slide_id: String = String(slide.get("id", ""))
 
+	# Build substrate-v2-shape envelope. See AnnotationV2Schema.gd for required
+	# fields and AnnotationAuthor.gd for author shape. Hint: 019df4513e477ea0b3e0b513446e1606.
 	var ann_id: String = _gen_id("ann")
-	var anchor: Dictionary = {}
-	if args.has("anchor") and args["anchor"] is Dictionary:
-		anchor = args["anchor"] as Dictionary
-	else:
-		# Default anchor: slide-relative center. Substrate per-kind anchors live
-		# in _GENERIC_KIND_ANCHORS; this is a sane fallback for MCP-authored
-		# annotations not tied to a specific tile.
-		anchor = {"kind": "slide_relative", "x": 0.5, "y": 0.5}
-
+	var anchor: Dictionary = _resolve_annotation_anchor(args, kind, slide_id)
 	var kind_payload: Dictionary = {}
 	if args.has("kind_payload") and args["kind_payload"] is Dictionary:
-		kind_payload = args["kind_payload"] as Dictionary
-	# For text-bearing kinds where caller didn't specify, mirror summary into payload
-	# so substrate readers expecting kind_payload.text find it.
-	if (kind == "text_2d" or kind == "callout") and not kind_payload.has("text"):
+		kind_payload = (args["kind_payload"] as Dictionary).duplicate(true)
+	# Mirror summary into kind_payload.text for text-bearing kinds when caller
+	# didn't specify, so substrate readers expecting kind_payload.text find it.
+	if ANNOTATION_KINDS_TEXT_BEARING.has(kind) and not kind_payload.has("text"):
 		kind_payload["text"] = summary
 
 	var envelope: Dictionary = {
@@ -1255,26 +1272,70 @@ func _add_annotation(args: Dictionary) -> Dictionary:
 		"anchor": anchor,
 		"kind_payload": kind_payload,
 		"lifecycle": lifecycle,
-		"author": {"source": "mcp", "tool": "presentation_add_annotation"},
-		"view_context": {
-			"plugin_id": PLUGIN_ID,
-			"panel_name": PANEL_NAME,
-			"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"author": {
+			"kind": ANNOTATION_AUTHOR_KIND_AI,
+			"id": "mcp",
+			"session_id": "presentation_add_annotation",
 		},
+		"view_context": "%s:%s" % [PLUGIN_ID, slide_id if not slide_id.is_empty() else "slide_%d" % MCPToolUtils.coerce_int(args["slide_index"])],
 		"visible_in_views": [ANNOTATION_VIEW_CONTEXT_PRESENTATION],
 		"summary": summary,
 	}
+
+	# Validate against the substrate schema BEFORE writing. The plugin's own
+	# validate_deck only checks `annotations[i] is Dictionary`, so a bad
+	# envelope would only be caught at next read by AnnotationV2Schema —
+	# we'd rather fail-fast here so the LLM gets a usable error.
+	var schema_err := _validate_annotation_envelope(envelope)
+	if not schema_err.is_empty():
+		return MCPToolUtils.error("envelope rejected by AnnotationV2Schema: %s" % schema_err)
+
 	if not slide.has("annotations"):
 		slide["annotations"] = []
 	(slide["annotations"] as Array).append(envelope)
 
-	var commit_err := _commit_target(resolved, deck)
+	var commit_err := _commit_target(target, deck)
 	if commit_err != "":
 		return MCPToolUtils.error(commit_err)
 	return MCPToolUtils.success({
 		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
 		"annotation_id": ann_id,
 	})
+
+
+## Build an anchor for an annotation. Caller-supplied `anchor` arg wins
+## verbatim. Otherwise we synthesize a per-kind sensible default:
+##   - callout (anchor compat "*/*"): plugin="presentation", type="slide".
+##   - 2d_arrow / 2d_text (anchor compat "core/*"): plugin="core", type="slide_relative"
+##     since the substrate accepts the "core" plugin namespace as the universal one.
+## All defaults set snapshot.position = [0.5, 0.5] (slide center).
+func _resolve_annotation_anchor(args: Dictionary, kind: String, slide_id: String) -> Dictionary:
+	if args.has("anchor") and args["anchor"] is Dictionary:
+		return (args["anchor"] as Dictionary).duplicate(true)
+	var plugin: String = PLUGIN_ID if kind == "callout" else "core"
+	return {
+		"plugin": plugin,
+		"type": "slide",
+		"id": slide_id,
+		"snapshot": {"position": [0.5, 0.5]},
+	}
+
+
+## Validate an envelope against AnnotationV2Schema. Returns "" on success,
+## or a comma-separated error string. Loads the schema script lazily to
+## avoid a hard compile-time dep at module-load (autoload-order safety).
+func _validate_annotation_envelope(envelope: Dictionary) -> String:
+	var SchemaScript: Script = load("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
+	if SchemaScript == null:
+		return ""  # Schema unavailable — skip validation rather than crash.
+	var schema = SchemaScript.new()
+	var result = schema.validate(envelope)
+	if result == null or not result.has_errors():
+		return ""
+	var msgs: Array = []
+	for e in result.errors:
+		msgs.append("%s: %s" % [str(e.get("field_path", "?")), str(e.get("message", "?"))])
+	return ", ".join(msgs)
 
 
 func _remove_annotation(args: Dictionary) -> Dictionary:

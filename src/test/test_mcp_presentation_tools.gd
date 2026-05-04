@@ -91,6 +91,7 @@ func _run_tests() -> void:
 	test_add_annotation_basic(tools)
 	test_add_annotation_rejects_unknown_kind(tools)
 	test_add_annotation_text_payload_mirrored(tools)
+	test_add_annotation_with_explicit_anchor_validates(tools)
 	test_set_annotation_resolved_via_bool(tools)
 	test_set_annotation_resolved_via_lifecycle(tools)
 	test_set_annotation_resolved_with_note(tools)
@@ -646,13 +647,14 @@ func test_list_annotation_kinds(tools: Object) -> void:
 	var r: Dictionary = tools._list_annotation_kinds({})
 	_assert(r.get("success", false) == true, "list_annotation_kinds succeeds", r)
 	var kinds: Array = r.get("kinds", []) as Array
-	_assert(kinds.size() >= 5, "list_annotation_kinds returns >= 5 kinds", {"count": kinds.size()})
-	# Spot-check that callout and text_2d are in the list.
+	# Presentation host accepts ["callout", "2d_arrow", "2d_text"].
+	_assert(kinds.size() >= 3, "list_annotation_kinds returns >= 3 kinds", {"count": kinds.size()})
 	var names: Array = []
 	for k in kinds:
 		names.append(str((k as Dictionary).get("kind", "")))
 	_assert(names.has("callout"), "kinds include callout", {"names": names})
-	_assert(names.has("text_2d"), "kinds include text_2d", {"names": names})
+	_assert(names.has("2d_text"), "kinds include 2d_text", {"names": names})
+	_assert(names.has("2d_arrow"), "kinds include 2d_arrow", {"names": names})
 	# Lifecycle states surfaced.
 	var states: Array = r.get("lifecycle_states", []) as Array
 	_assert(states.has("open") and states.has("resolved"), "lifecycle_states include open + resolved", states)
@@ -667,12 +669,13 @@ func test_add_annotation_basic(tools: Object) -> void:
 	f.store_string(JSON.stringify(deck, "  "))
 	f.close()
 
+	# 2d_text uses anchor compat "core/*"; default anchor synthesized with plugin="core".
 	var r: Dictionary = tools._add_annotation({
 		"path": OUT_PATH, "slide_index": 0,
-		"kind": "text_2d",
+		"kind": "2d_text",
 		"summary": "make the title bigger",
 	})
-	_assert(r.get("success", false) == true, "add_annotation (text_2d) succeeds", r)
+	_assert(r.get("success", false) == true, "add_annotation (2d_text) succeeds", r)
 	_assert(not str(r.get("annotation_id", "")).is_empty(), "add_annotation returns annotation_id", r)
 
 	# Read back via list_annotations and verify shape.
@@ -680,10 +683,21 @@ func test_add_annotation_basic(tools: Object) -> void:
 	var anns: Array = lr.get("annotations", []) as Array
 	_assert(anns.size() == 1, "1 annotation present after add", {"count": anns.size()})
 	var ann: Dictionary = anns[0] as Dictionary
-	_assert(str(ann.get("kind", "")) == "text_2d", "annotation kind preserved", ann)
+	_assert(str(ann.get("kind", "")) == "2d_text", "annotation kind preserved", ann)
 	_assert(str(ann.get("lifecycle", "")) == "open", "default lifecycle is open", ann)
 	_assert(bool(ann.get("resolved", true)) == false, "default resolved=false", ann)
 	_assert(str(ann.get("payload_summary", "")) == "make the title bigger", "summary surfaces as payload_summary", ann)
+
+	# Substrate schema validation: round-trip through AnnotationV2Schema.
+	# This is the test hook the cold reviewer recommended — without it, bad
+	# envelope shape would only be caught at next read, not during authoring.
+	var deck_after: Dictionary = _read_deck()
+	var slide_after: Dictionary = (deck_after["slides"] as Array)[0] as Dictionary
+	var raw_envelope: Dictionary = ((slide_after["annotations"] as Array)[0] as Dictionary)
+	var SchemaScript: Script = load("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
+	var schema = SchemaScript.new()
+	var v_result = schema.validate(raw_envelope)
+	_assert(not v_result.has_errors(), "envelope passes AnnotationV2Schema.validate()", {"errors": v_result.to_error_dicts()})
 
 
 func test_add_annotation_rejects_unknown_kind(tools: Object) -> void:
@@ -714,6 +728,31 @@ func test_add_annotation_text_payload_mirrored(tools: Object) -> void:
 	var newest: Dictionary = anns[anns.size() - 1] as Dictionary
 	var payload: Dictionary = newest.get("kind_payload", {}) as Dictionary
 	_assert(str(payload.get("text", "")) == "fix this", "summary mirrored into kind_payload.text", payload)
+
+
+func test_add_annotation_with_explicit_anchor_validates(tools: Object) -> void:
+	# Caller-supplied anchor wins. Pass a custom anchor for a callout (compat */*).
+	var r: Dictionary = tools._add_annotation({
+		"path": OUT_PATH, "slide_index": 0,
+		"kind": "callout",
+		"summary": "anchored to a specific point",
+		"anchor": {
+			"plugin": "presentation",
+			"type": "tile",
+			"id": "tile_made_up",
+			"snapshot": {"position": [0.25, 0.75]},
+		},
+	})
+	_assert(r.get("success", false) == true, "add_annotation with explicit anchor succeeds", r)
+
+	# Round-trip envelope through schema validator.
+	var deck: Dictionary = _read_deck()
+	var anns: Array = ((deck["slides"] as Array)[0] as Dictionary).get("annotations", []) as Array
+	var newest: Dictionary = anns[anns.size() - 1] as Dictionary
+	var SchemaScript: Script = load("res://Scripts/Services/Annotations/AnnotationV2Schema.gd")
+	var schema = SchemaScript.new()
+	var v_result = schema.validate(newest)
+	_assert(not v_result.has_errors(), "explicit-anchor envelope passes AnnotationV2Schema", {"errors": v_result.to_error_dicts()})
 
 
 func test_set_annotation_resolved_via_bool(tools: Object) -> void:
