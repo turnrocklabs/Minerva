@@ -202,6 +202,22 @@ func set_host(host: AnnotationHost) -> void:
 func get_active_tool() -> AnnotationAuthorTool:
 	return _active_tool
 
+
+func clear_active_tool() -> void:
+	var prev_kind := _active_kind_name
+	var had_active_tool := _active_tool != null
+	_deactivate_current_tool()
+	if prev_kind != &"" and _buttons.has(prev_kind):
+		var prev_btn: Button = _buttons[prev_kind]
+		if is_instance_valid(prev_btn) and prev_btn.button_pressed:
+			prev_btn.set_pressed_no_signal(false)
+	_teardown_active_manipulation_tool()
+	_untoggle_active_tool_button()
+	if _status_label != null:
+		_status_label.text = ""
+	if not had_active_tool:
+		active_tool_changed.emit(null)
+
 # ── Internal: layout ──────────────────────────────────────────────────────────
 
 ## Drop all layout children and rebuild for the current presentation_mode, then

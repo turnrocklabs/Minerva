@@ -53,6 +53,12 @@ func get_toolbar() -> AnnotationToolbar:
 	return _toolbar
 
 
+func clear_active_tool() -> void:
+	_ensure_ui()
+	if _toolbar != null:
+		_toolbar.clear_active_tool()
+
+
 func set_dock_mode(mode: DockMode) -> void:
 	dock_mode = mode
 	_apply_layout_state()
