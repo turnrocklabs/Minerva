@@ -86,6 +86,17 @@ func _run_tests() -> void:
 	test_remove_slide_succeeds_with_multiple(tools)
 	test_remove_slide_refuses_last(tools)
 	test_list_annotations_derives_resolved_from_lifecycle(tools)
+	# Annotation tools — exercise add/remove/set_resolved + list_kinds + list_open.
+	test_list_annotation_kinds(tools)
+	test_add_annotation_basic(tools)
+	test_add_annotation_rejects_unknown_kind(tools)
+	test_add_annotation_text_payload_mirrored(tools)
+	test_set_annotation_resolved_via_bool(tools)
+	test_set_annotation_resolved_via_lifecycle(tools)
+	test_set_annotation_resolved_with_note(tools)
+	test_list_open_annotations_excludes_resolved(tools)
+	test_remove_annotation(tools)
+	test_remove_annotation_clears_empty_array(tools)
 	test_post_modify_deck_still_validates()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
@@ -620,6 +631,192 @@ func test_list_annotations_derives_resolved_from_lifecycle(tools: Object) -> voi
 
 	# Payload summary derived from `summary` field.
 	_assert(str(open_a.get("payload_summary", "")) == "fix the title size", "open envelope payload_summary preserved", open_a)
+
+
+func test_list_annotation_kinds(tools: Object) -> void:
+	var r: Dictionary = tools._list_annotation_kinds({})
+	_assert(r.get("success", false) == true, "list_annotation_kinds succeeds", r)
+	var kinds: Array = r.get("kinds", []) as Array
+	_assert(kinds.size() >= 5, "list_annotation_kinds returns >= 5 kinds", {"count": kinds.size()})
+	# Spot-check that callout and text_2d are in the list.
+	var names: Array = []
+	for k in kinds:
+		names.append(str((k as Dictionary).get("kind", "")))
+	_assert(names.has("callout"), "kinds include callout", {"names": names})
+	_assert(names.has("text_2d"), "kinds include text_2d", {"names": names})
+	# Lifecycle states surfaced.
+	var states: Array = r.get("lifecycle_states", []) as Array
+	_assert(states.has("open") and states.has("resolved"), "lifecycle_states include open + resolved", states)
+
+
+func test_add_annotation_basic(tools: Object) -> void:
+	# Reset slide.annotations[] first — the lifecycle test left synthetic envelopes.
+	var deck: Dictionary = _read_deck()
+	var slide: Dictionary = (deck["slides"] as Array)[0] as Dictionary
+	slide.erase("annotations")
+	var f: FileAccess = FileAccess.open(OUT_PATH, FileAccess.WRITE)
+	f.store_string(JSON.stringify(deck, "  "))
+	f.close()
+
+	var r: Dictionary = tools._add_annotation({
+		"path": OUT_PATH, "slide_index": 0,
+		"kind": "text_2d",
+		"summary": "make the title bigger",
+	})
+	_assert(r.get("success", false) == true, "add_annotation (text_2d) succeeds", r)
+	_assert(not str(r.get("annotation_id", "")).is_empty(), "add_annotation returns annotation_id", r)
+
+	# Read back via list_annotations and verify shape.
+	var lr: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	var anns: Array = lr.get("annotations", []) as Array
+	_assert(anns.size() == 1, "1 annotation present after add", {"count": anns.size()})
+	var ann: Dictionary = anns[0] as Dictionary
+	_assert(str(ann.get("kind", "")) == "text_2d", "annotation kind preserved", ann)
+	_assert(str(ann.get("lifecycle", "")) == "open", "default lifecycle is open", ann)
+	_assert(bool(ann.get("resolved", true)) == false, "default resolved=false", ann)
+	_assert(str(ann.get("payload_summary", "")) == "make the title bigger", "summary surfaces as payload_summary", ann)
+
+
+func test_add_annotation_rejects_unknown_kind(tools: Object) -> void:
+	var r: Dictionary = tools._add_annotation({
+		"path": OUT_PATH, "slide_index": 0,
+		"kind": "bogus_kind",
+		"summary": "won't land",
+	})
+	_assert(r.get("success", false) == false, "add_annotation rejects unknown kind", r)
+
+
+func test_add_annotation_text_payload_mirrored(tools: Object) -> void:
+	# When caller doesn't pass kind_payload, summary should be mirrored into
+	# kind_payload.text for text-bearing kinds (callout, text_2d).
+	var deck_before: Dictionary = _read_deck()
+	var pre_count: int = ((deck_before["slides"] as Array)[0] as Dictionary).get("annotations", []).size()
+
+	var r: Dictionary = tools._add_annotation({
+		"path": OUT_PATH, "slide_index": 0,
+		"kind": "callout",
+		"summary": "fix this",
+	})
+	_assert(r.get("success", false) == true, "add_annotation (callout) succeeds", r)
+
+	var deck_after: Dictionary = _read_deck()
+	var anns: Array = ((deck_after["slides"] as Array)[0] as Dictionary).get("annotations", []) as Array
+	_assert(anns.size() == pre_count + 1, "annotations count grew by 1", {"before": pre_count, "after": anns.size()})
+	var newest: Dictionary = anns[anns.size() - 1] as Dictionary
+	var payload: Dictionary = newest.get("kind_payload", {}) as Dictionary
+	_assert(str(payload.get("text", "")) == "fix this", "summary mirrored into kind_payload.text", payload)
+
+
+func test_set_annotation_resolved_via_bool(tools: Object) -> void:
+	# Use the first annotation we added. Pull its id from list_annotations.
+	var lr: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	var ann_id: String = str(((lr["annotations"] as Array)[0] as Dictionary)["annotation_id"])
+
+	var r: Dictionary = tools._set_annotation_resolved({
+		"path": OUT_PATH, "slide_index": 0,
+		"annotation_id": ann_id, "resolved": true,
+	})
+	_assert(r.get("success", false) == true, "set_annotation_resolved (true) succeeds", r)
+	_assert(str(r.get("lifecycle", "")) == "resolved", "lifecycle becomes 'resolved'", r)
+
+	# Confirm via list_annotations.
+	var lr2: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	for a in (lr2["annotations"] as Array):
+		if str((a as Dictionary)["annotation_id"]) == ann_id:
+			_assert(bool((a as Dictionary).get("resolved", false)) == true, "list_annotations sees resolved=true", a)
+
+
+func test_set_annotation_resolved_via_lifecycle(tools: Object) -> void:
+	var lr: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	var ann_id: String = str(((lr["annotations"] as Array)[0] as Dictionary)["annotation_id"])
+
+	var r: Dictionary = tools._set_annotation_resolved({
+		"path": OUT_PATH, "slide_index": 0,
+		"annotation_id": ann_id, "lifecycle": "applied",
+	})
+	_assert(r.get("success", false) == true, "set_annotation_resolved (lifecycle=applied) succeeds", r)
+	_assert(str(r.get("lifecycle", "")) == "applied", "lifecycle becomes 'applied'", r)
+
+	# 'applied' should not register as resolved=true (only "resolved" does).
+	var lr2: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	for a in (lr2["annotations"] as Array):
+		if str((a as Dictionary)["annotation_id"]) == ann_id:
+			_assert(bool((a as Dictionary).get("resolved", true)) == false, "applied is NOT resolved=true", a)
+			_assert(str((a as Dictionary).get("lifecycle", "")) == "applied", "lifecycle field surfaces 'applied'", a)
+
+
+func test_set_annotation_resolved_with_note(tools: Object) -> void:
+	var lr: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	var ann_id: String = str(((lr["annotations"] as Array)[0] as Dictionary)["annotation_id"])
+
+	var r: Dictionary = tools._set_annotation_resolved({
+		"path": OUT_PATH, "slide_index": 0,
+		"annotation_id": ann_id, "resolved": true, "note": "increased title h to 0.14",
+	})
+	_assert(r.get("success", false) == true, "set_annotation_resolved with note succeeds", r)
+
+	# Verify resolution_notes appended on disk.
+	var deck: Dictionary = _read_deck()
+	var anns: Array = ((deck["slides"] as Array)[0] as Dictionary).get("annotations", []) as Array
+	for a_v in anns:
+		var env: Dictionary = a_v as Dictionary
+		if str(env.get("id", "")) == ann_id:
+			var notes: Array = env.get("resolution_notes", []) as Array
+			_assert(notes.size() >= 1, "resolution_notes appended", env)
+			var first_note: Dictionary = notes[notes.size() - 1] as Dictionary
+			_assert(str(first_note.get("note", "")) == "increased title h to 0.14", "note text preserved", first_note)
+
+
+func test_list_open_annotations_excludes_resolved(tools: Object) -> void:
+	# At this point: at least one resolved + the unresolved callout.
+	var r: Dictionary = tools._list_open_annotations({"path": OUT_PATH})
+	_assert(r.get("success", false) == true, "list_open_annotations succeeds", r)
+	var open_list: Array = r.get("open", []) as Array
+	# The "fix this" callout (added in test_add_annotation_text_payload_mirrored)
+	# is still lifecycle=open. The first one we resolved must NOT appear here.
+	var summaries: Array = []
+	for o in open_list:
+		summaries.append(str((o as Dictionary).get("summary", "")))
+	_assert(summaries.has("fix this"), "open list includes the unresolved callout", summaries)
+	# The "make the title bigger" was set to lifecycle=applied (not resolved/open).
+	# applied != open, so it should NOT be in the open list either.
+	_assert(not summaries.has("make the title bigger"), "open list excludes non-open annotations", summaries)
+
+
+func test_remove_annotation(tools: Object) -> void:
+	# Remove the open callout. After this only the applied annotation remains.
+	var lr: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	var anns: Array = lr["annotations"] as Array
+	var victim_id: String = ""
+	for a in anns:
+		if str((a as Dictionary).get("payload_summary", "")) == "fix this":
+			victim_id = str((a as Dictionary)["annotation_id"])
+			break
+	_assert(not victim_id.is_empty(), "found 'fix this' annotation to remove", lr)
+
+	var r: Dictionary = tools._remove_annotation({
+		"path": OUT_PATH, "slide_index": 0, "annotation_id": victim_id,
+	})
+	_assert(r.get("success", false) == true, "remove_annotation succeeds", r)
+
+	var lr2: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	for a in (lr2["annotations"] as Array):
+		_assert(str((a as Dictionary)["annotation_id"]) != victim_id, "removed id absent from list", a)
+
+
+func test_remove_annotation_clears_empty_array(tools: Object) -> void:
+	# Remove the remaining annotation and confirm slide.annotations key is removed.
+	var lr: Dictionary = tools._list_annotations({"path": OUT_PATH, "slide_index": 0})
+	var anns: Array = lr["annotations"] as Array
+	for a in anns:
+		var ann_id: String = str((a as Dictionary)["annotation_id"])
+		tools._remove_annotation({
+			"path": OUT_PATH, "slide_index": 0, "annotation_id": ann_id,
+		})
+
+	var deck: Dictionary = _read_deck()
+	var slide: Dictionary = (deck["slides"] as Array)[0] as Dictionary
+	_assert(not slide.has("annotations"), "annotations key removed when array empties", slide)
 
 
 func test_post_modify_deck_still_validates() -> void:

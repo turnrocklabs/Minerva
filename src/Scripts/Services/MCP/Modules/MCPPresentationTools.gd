@@ -92,7 +92,42 @@ func get_tool_names() -> Array[String]:
 		"presentation_move_slide",
 		"presentation_remove_tile",
 		"presentation_remove_slide",
+		"presentation_add_annotation",
+		"presentation_remove_annotation",
+		"presentation_set_annotation_resolved",
+		"presentation_list_annotation_kinds",
+		"presentation_list_open_annotations",
 	]
+
+
+# ---------------------------------------------------------------------------
+# Annotation envelope constants — mirror substrate AnnotationV2Schema.
+# Source of truth: ~/github/Minerva/src/Scripts/Services/Annotations/AnnotationV2Schema.gd
+# Hint: 019df443eb8777be962510697cdaddad
+# ---------------------------------------------------------------------------
+
+const ANNOTATION_SCHEMA_VERSION: int = 2
+const ANNOTATION_VIEW_CONTEXT_PRESENTATION: String = "presentation"
+const ANNOTATION_LIFECYCLE_OPEN: String = "open"
+const ANNOTATION_LIFECYCLE_APPLIED: String = "applied"
+const ANNOTATION_LIFECYCLE_RESOLVED: String = "resolved"
+const ANNOTATION_LIFECYCLE_STALE: String = "stale"
+const ANNOTATION_LIFECYCLES_VALID: PackedStringArray = [
+	ANNOTATION_LIFECYCLE_OPEN,
+	ANNOTATION_LIFECYCLE_APPLIED,
+	ANNOTATION_LIFECYCLE_RESOLVED,
+	ANNOTATION_LIFECYCLE_STALE,
+]
+
+# Substrate-known annotation kinds. List mirrors the kinds enumerated in the
+# schema's _GENERIC_KIND_ANCHORS table. Keep in sync with substrate updates.
+const ANNOTATION_KINDS_VALID: PackedStringArray = [
+	"callout",
+	"arrow_2d",
+	"text_2d",
+	"freehand",
+	"rectangle",
+]
 
 
 func register_tools() -> void:
@@ -246,6 +281,74 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
+	server._register_tool("presentation_add_annotation",
+		"Add an annotation envelope to a slide. kind is one of: callout, arrow_2d, text_2d, freehand, rectangle. summary is the short text the annotation conveys (required, surfaced by list_annotations). Optional: anchor (substrate anchor dict, e.g. {kind:'slide_relative', x:0.5, y:0.5}); kind_payload (kind-specific dict — for text/callout typically {text: '...'}); lifecycle (defaults to 'open'). Server fills in id, schema_version, author, view_context, visible_in_views.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"kind": {"type": "string"},
+				"summary": {"type": "string"},
+				"anchor": {"type": "object"},
+				"kind_payload": {"type": "object"},
+				"lifecycle": {"type": "string", "description": "open | applied | resolved | stale (default open)"},
+			},
+			"required": ["slide_index", "kind", "summary"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_remove_annotation",
+		"Remove an annotation from a slide by annotation_id. If the slide.annotations array empties, the key is removed entirely (omit-when-default).",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"annotation_id": {"type": "string"},
+			},
+			"required": ["slide_index", "annotation_id"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_set_annotation_resolved",
+		"Mark an annotation resolved (true) or open (false). Maps onto substrate's lifecycle field: true → 'resolved', false → 'open'. To set 'applied' or 'stale' explicitly, pass lifecycle directly. Optional note appends to a resolution_notes array on the envelope for audit trail.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"annotation_id": {"type": "string"},
+				"resolved": {"type": "boolean"},
+				"lifecycle": {"type": "string", "description": "Explicit lifecycle state — overrides resolved when present."},
+				"note": {"type": "string"},
+			},
+			"required": ["slide_index", "annotation_id"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_list_annotation_kinds",
+		"List annotation kinds the substrate accepts (callout, arrow_2d, text_2d, freehand, rectangle) plus the lifecycle states. Discoverability for LLMs picking a kind for add_annotation.",
+		{
+			"type": "object",
+			"properties": {},
+		}
+	, "presentation")
+
+	server._register_tool("presentation_list_open_annotations",
+		"Return all annotations across the deck whose lifecycle is 'open' (not resolved/applied/stale). Each entry includes slide_index, annotation_id, kind, and summary. Use this to find work the LLM still needs to address.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+			},
+		}
+	, "presentation")
+
 	server._register_tool("presentation_remove_tile",
 		"Remove a tile from a slide by tile_id.",
 		{
@@ -391,6 +494,16 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _remove_tile(arguments)
 		"presentation_remove_slide":
 			return _remove_slide(arguments)
+		"presentation_add_annotation":
+			return _add_annotation(arguments)
+		"presentation_remove_annotation":
+			return _remove_annotation(arguments)
+		"presentation_set_annotation_resolved":
+			return _set_annotation_resolved(arguments)
+		"presentation_list_annotation_kinds":
+			return _list_annotation_kinds(arguments)
+		"presentation_list_open_annotations":
+			return _list_open_annotations(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -1021,6 +1134,219 @@ func _set_aspect(args: Dictionary) -> Dictionary:
 	if commit_err != "":
 		return MCPToolUtils.error(commit_err)
 	return MCPToolUtils.success({"aspect": aspect})
+
+
+func _add_annotation(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["kind", "summary"])
+	if missing != null:
+		return missing
+	var kind: String = String(args["kind"]).strip_edges()
+	if not ANNOTATION_KINDS_VALID.has(kind):
+		return MCPToolUtils.error("kind must be one of %s" % str(ANNOTATION_KINDS_VALID))
+	var summary: String = String(args["summary"])
+	var lifecycle: String = String(args.get("lifecycle", ANNOTATION_LIFECYCLE_OPEN))
+	if not ANNOTATION_LIFECYCLES_VALID.has(lifecycle):
+		return MCPToolUtils.error("lifecycle must be one of %s" % str(ANNOTATION_LIFECYCLES_VALID))
+
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var ann_id: String = _gen_id("ann")
+	var anchor: Dictionary = {}
+	if args.has("anchor") and args["anchor"] is Dictionary:
+		anchor = args["anchor"] as Dictionary
+	else:
+		# Default anchor: slide-relative center. Substrate per-kind anchors live
+		# in _GENERIC_KIND_ANCHORS; this is a sane fallback for MCP-authored
+		# annotations not tied to a specific tile.
+		anchor = {"kind": "slide_relative", "x": 0.5, "y": 0.5}
+
+	var kind_payload: Dictionary = {}
+	if args.has("kind_payload") and args["kind_payload"] is Dictionary:
+		kind_payload = args["kind_payload"] as Dictionary
+	# For text-bearing kinds where caller didn't specify, mirror summary into payload
+	# so substrate readers expecting kind_payload.text find it.
+	if (kind == "text_2d" or kind == "callout") and not kind_payload.has("text"):
+		kind_payload["text"] = summary
+
+	var envelope: Dictionary = {
+		"id": ann_id,
+		"kind": kind,
+		"schema_version": ANNOTATION_SCHEMA_VERSION,
+		"anchor": anchor,
+		"kind_payload": kind_payload,
+		"lifecycle": lifecycle,
+		"author": {"source": "mcp", "tool": "presentation_add_annotation"},
+		"view_context": {
+			"plugin_id": PLUGIN_ID,
+			"panel_name": PANEL_NAME,
+			"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		},
+		"visible_in_views": [ANNOTATION_VIEW_CONTEXT_PRESENTATION],
+		"summary": summary,
+	}
+	if not slide.has("annotations"):
+		slide["annotations"] = []
+	(slide["annotations"] as Array).append(envelope)
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"annotation_id": ann_id,
+	})
+
+
+func _remove_annotation(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["annotation_id"])
+	if missing != null:
+		return missing
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	if not slide.has("annotations"):
+		return MCPToolUtils.error("Slide has no annotations")
+	var anns: Array = slide["annotations"] as Array
+	var ann_id: String = String(args["annotation_id"]).strip_edges()
+	var found_at: int = -1
+	for i in range(anns.size()):
+		if String((anns[i] as Dictionary).get("id", "")) == ann_id:
+			found_at = i
+			break
+	if found_at < 0:
+		return MCPToolUtils.error("annotation_id not found on slide %d: %s" % [
+			MCPToolUtils.coerce_int(args["slide_index"]), ann_id
+		])
+	anns.remove_at(found_at)
+	# Omit-when-default: empty annotations key removed.
+	if anns.is_empty():
+		slide.erase("annotations")
+	# Scrub reveal[] references too — reveal entries can be tile OR annotation IDs.
+	if slide.has("reveal"):
+		var reveal: Array = slide["reveal"] as Array
+		var write: int = 0
+		for r_v in reveal:
+			if String(r_v) != ann_id:
+				reveal[write] = r_v
+				write += 1
+		reveal.resize(write)
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"annotation_id": ann_id,
+	})
+
+
+func _set_annotation_resolved(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["annotation_id"])
+	if missing != null:
+		return missing
+	# Compute target lifecycle. Explicit `lifecycle` arg wins; else `resolved`
+	# bool maps true → "resolved", false → "open".
+	var target_lifecycle: String = ""
+	if args.has("lifecycle") and not String(args.get("lifecycle", "")).is_empty():
+		target_lifecycle = String(args["lifecycle"])
+		if not ANNOTATION_LIFECYCLES_VALID.has(target_lifecycle):
+			return MCPToolUtils.error("lifecycle must be one of %s" % str(ANNOTATION_LIFECYCLES_VALID))
+	elif args.has("resolved") and args["resolved"] != null:
+		target_lifecycle = ANNOTATION_LIFECYCLE_RESOLVED if bool(args["resolved"]) else ANNOTATION_LIFECYCLE_OPEN
+	else:
+		return MCPToolUtils.error("Provide either resolved (bool) or lifecycle (string)")
+
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	if not slide.has("annotations"):
+		return MCPToolUtils.error("Slide has no annotations")
+	var anns: Array = slide["annotations"] as Array
+	var ann_id: String = String(args["annotation_id"]).strip_edges()
+	var env: Dictionary = {}
+	for a_v in anns:
+		if String((a_v as Dictionary).get("id", "")) == ann_id:
+			env = a_v as Dictionary
+			break
+	if env.is_empty():
+		return MCPToolUtils.error("annotation_id not found on slide %d: %s" % [
+			MCPToolUtils.coerce_int(args["slide_index"]), ann_id
+		])
+
+	env["lifecycle"] = target_lifecycle
+	# Optional audit-trail note.
+	if args.has("note") and not String(args.get("note", "")).is_empty():
+		if not env.has("resolution_notes"):
+			env["resolution_notes"] = []
+		(env["resolution_notes"] as Array).append({
+			"at": Time.get_datetime_string_from_system(),
+			"lifecycle": target_lifecycle,
+			"note": String(args["note"]),
+		})
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"annotation_id": ann_id,
+		"lifecycle": target_lifecycle,
+	})
+
+
+func _list_annotation_kinds(_args: Dictionary) -> Dictionary:
+	var kinds_out: Array = []
+	for k in ANNOTATION_KINDS_VALID:
+		kinds_out.append({"kind": k})
+	return MCPToolUtils.success({
+		"kinds": kinds_out,
+		"lifecycle_states": Array(ANNOTATION_LIFECYCLES_VALID),
+		"schema_version": ANNOTATION_SCHEMA_VERSION,
+	})
+
+
+func _list_open_annotations(args: Dictionary) -> Dictionary:
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slides: Array = deck.get("slides", []) as Array
+	var open_list: Array = []
+	for i in range(slides.size()):
+		var slide: Dictionary = slides[i] as Dictionary
+		if not slide.has("annotations"):
+			continue
+		var anns: Array = slide["annotations"] as Array
+		for a_v in anns:
+			var env: Dictionary = a_v as Dictionary
+			if String(env.get("lifecycle", ANNOTATION_LIFECYCLE_OPEN)) != ANNOTATION_LIFECYCLE_OPEN:
+				continue
+			open_list.append({
+				"slide_index": i,
+				"annotation_id": String(env.get("id", "")),
+				"kind": String(env.get("kind", "")),
+				"summary": String(env.get("summary", "")),
+			})
+	return MCPToolUtils.success({"open": open_list, "count": open_list.size()})
 
 
 func _remove_tile(args: Dictionary) -> Dictionary:
