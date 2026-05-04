@@ -217,7 +217,7 @@ func register_tools() -> void:
 	, "presentation")
 
 	server._register_tool("minerva_presentation_add_text_tile",
-		"Add a text tile to a slide. Coords x/y/w/h are 0..1 normalized to slide size. text_mode is plain (BBCode supported), bullet, or numbered. For bullet/numbered, leading whitespace per line encodes outline level (interim — proper level schema is backlog). FONT SIZE IS DERIVED FROM tile.h: the renderer divides the tile's rendered height across visible lines (split by \\n), giving you drag-corner-resize-the-text behavior. Sizing rule of thumb: title h≈0.10 (~55-65px font), section header h≈0.07 (~40px), body bullets h ≈ line_count × 0.05 (~25px per line). To make text bigger, make the tile taller. Avoid BBCode [font_size=N] tags — those are raw pixels and won't honor the rect. Style via BBCode for [i]italic[/i], [b]bold[/b], [color=#hex]color[/color], [center]horizontal-center[/center].",
+		"Add a text tile to a slide. Coords x/y/w/h are 0..1 normalized to slide size. text_mode is plain (BBCode supported), bullet, or numbered. For bullet/numbered, indent 4 spaces per nesting level — the renderer emits a level-appropriate glyph (• ◦ ▪ ‣). A leading '- ' after the indent is tolerated. Numbered mode only numbers level-0 lines; nested lines fall back to bullet glyphs. TWO FONT MODES: (a) coupled (default, no font_size) — renderer derives font from tile.h ÷ line_count, so resizing the tile resizes the text. Sizing rule of thumb: title h≈0.10 (~55-65px font), section header h≈0.07 (~40px), body bullets h ≈ line_count × 0.05. (b) fixed — pass font_size (in pixels, 8..200) to lock the font and let h grow independently; use this when you need more box room without scaling text up. Avoid BBCode [font_size=N] tags — they don't honor the tile rect. Style via BBCode for [i]italic[/i], [b]bold[/b], [color=#hex]color[/color], [center]horizontal-center[/center].",
 		{
 			"type": "object",
 			"properties": {
@@ -230,6 +230,7 @@ func register_tools() -> void:
 				"h": {"type": "number"},
 				"content": {"type": "string"},
 				"text_mode": {"type": "string", "description": "plain | bullet | numbered. Defaults to plain."},
+				"font_size": {"type": "integer", "description": "Optional fixed font size in pixels (8..200). Omit for coupled mode (font derived from h)."},
 				"rotation": {"type": "number", "description": "Optional rotation in radians."},
 			},
 			"required": ["slide_index", "x", "y", "w", "h", "content"],
@@ -237,7 +238,7 @@ func register_tools() -> void:
 	, "presentation")
 
 	server._register_tool("minerva_presentation_modify_tile",
-		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly.",
+		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly. font_size sets fixed-font mode (8..200 px); pass 0 to clear and revert to coupled mode (font derived from tile.h).",
 		{
 			"type": "object",
 			"properties": {
@@ -252,6 +253,7 @@ func register_tools() -> void:
 				"rotation": {"type": "number"},
 				"content": {"type": "string"},
 				"text_mode": {"type": "string", "description": "plain | bullet | numbered (text tiles only)"},
+				"font_size": {"type": "integer", "description": "Fixed font size in px (8..200). 0 clears the override (coupled mode). Text tiles only."},
 				"image_path": {"type": "string"},
 				"image_base64": {"type": "string"},
 				"solid_color": {"type": "string"},
@@ -768,9 +770,14 @@ func _add_text_tile(args: Dictionary) -> Dictionary:
 		"text_mode": text_mode,
 		"content": content,
 	}
-	# font_size is no longer authored — derived from tile.h ÷ line_count by the
-	# plugin renderer (drag-corner-resize-the-text). The schema still permits
-	# the field on tile dicts for forward-compat with a future "fixed" mode.
+	# Optional fixed-font mode. Omit for coupled mode (renderer derives font
+	# from tile.h ÷ line_count).
+	if args.has("font_size") and args["font_size"] != null:
+		var fs: int = MCPToolUtils.coerce_int(args["font_size"], 0)
+		if fs != 0:
+			if fs < 8 or fs > 200:
+				return MCPToolUtils.error("font_size must be in [8, 200], got %d" % fs)
+			tile["font_size"] = fs
 	var rotation: float = MCPToolUtils.coerce_float(args.get("rotation", 0.0))
 	if not is_zero_approx(rotation):
 		tile["rotation"] = rotation
@@ -1131,6 +1138,16 @@ func _modify_tile(args: Dictionary) -> Dictionary:
 		if not TEXT_MODES_VALID.has(mode):
 			return MCPToolUtils.error("text_mode must be one of %s" % str(TEXT_MODES_VALID))
 		patch["text_mode"] = mode
+	if args.has("font_size") and args["font_size"] != null:
+		if kind != TILE_TEXT:
+			return MCPToolUtils.error("font_size can only be set on text tiles (this is %s)" % kind)
+		var fs: int = MCPToolUtils.coerce_int(args["font_size"], 0)
+		if fs == 0:
+			erase_keys.append("font_size")
+		else:
+			if fs < 8 or fs > 200:
+				return MCPToolUtils.error("font_size must be in [8, 200] or 0 to clear, got %d" % fs)
+			patch["font_size"] = fs
 
 	# Image-source replacement — at most one of these is allowed.
 	var has_path := args.has("image_path") and not String(args.get("image_path", "")).is_empty()
