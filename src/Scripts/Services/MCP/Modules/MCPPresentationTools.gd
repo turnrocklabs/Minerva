@@ -85,31 +85,31 @@ const INSPECT_CONTENT_CAP_BYTES: int = 8192
 
 func get_tool_names() -> Array[String]:
 	return [
-		"presentation_create_deck",
-		"presentation_open_deck",
-		"presentation_list_slides",
-		"presentation_add_slide",
-		"presentation_set_slide_background",
-		"presentation_add_text_tile",
-		"presentation_add_image_tile",
-		"presentation_list_tiles",
-		"presentation_list_annotations",
-		"presentation_get_tile",
-		"presentation_get_slide",
-		"presentation_modify_tile",
-		"presentation_set_slide_title",
-		"presentation_set_aspect",
-		"presentation_move_slide",
-		"presentation_remove_tile",
-		"presentation_remove_slide",
-		"presentation_add_annotation",
-		"presentation_remove_annotation",
-		"presentation_set_annotation_resolved",
-		"presentation_list_annotation_kinds",
-		"presentation_list_open_annotations",
-		"presentation_add_spreadsheet_tile",
-		"presentation_modify_spreadsheet_cells",
-		"presentation_resize_spreadsheet",
+		"minerva_presentation_create_deck",
+		"minerva_presentation_open_deck",
+		"minerva_presentation_list_slides",
+		"minerva_presentation_add_slide",
+		"minerva_presentation_set_slide_background",
+		"minerva_presentation_add_text_tile",
+		"minerva_presentation_add_image_tile",
+		"minerva_presentation_list_tiles",
+		"minerva_presentation_list_annotations",
+		"minerva_presentation_get_tile",
+		"minerva_presentation_get_slide",
+		"minerva_presentation_modify_tile",
+		"minerva_presentation_set_slide_title",
+		"minerva_presentation_set_aspect",
+		"minerva_presentation_move_slide",
+		"minerva_presentation_remove_tile",
+		"minerva_presentation_remove_slide",
+		"minerva_presentation_add_annotation",
+		"minerva_presentation_remove_annotation",
+		"minerva_presentation_set_annotation_resolved",
+		"minerva_presentation_list_annotation_kinds",
+		"minerva_presentation_list_open_annotations",
+		"minerva_presentation_add_spreadsheet_tile",
+		"minerva_presentation_modify_spreadsheet_cells",
+		"minerva_presentation_resize_spreadsheet",
 	]
 
 
@@ -152,7 +152,7 @@ const ANNOTATION_AUTHOR_KIND_HUMAN: String = "human"
 
 
 func register_tools() -> void:
-	server._register_tool("presentation_create_deck",
+	server._register_tool("minerva_presentation_create_deck",
 		"Create a new .mdeck slide deck file on disk. Use presentation_open_deck afterward to open it as a tab. Returns the path written.",
 		{
 			"type": "object",
@@ -165,7 +165,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_open_deck",
+	server._register_tool("minerva_presentation_open_deck",
 		"Open an existing .mdeck file as a presentation editor tab. Returns the tab_name to use for follow-up live-mutation calls. If a tab with the same path is already open, focuses it.",
 		{
 			"type": "object",
@@ -176,7 +176,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_list_slides",
+	server._register_tool("minerva_presentation_list_slides",
 		"List the slides in an open deck (by tab_name) or on-disk deck (by path). Returns index, id, optional title, and tile_count for each slide.",
 		{
 			"type": "object",
@@ -187,7 +187,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_add_slide",
+	server._register_tool("minerva_presentation_add_slide",
 		"Append (default) or insert a blank slide. Returns the new slide_index and slide_id.",
 		{
 			"type": "object",
@@ -200,7 +200,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_set_slide_background",
+	server._register_tool("minerva_presentation_set_slide_background",
 		"Set a slide's background. Provide exactly one of color (hex like #A07A4A), image_path, or image_base64.",
 		{
 			"type": "object",
@@ -216,7 +216,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_add_text_tile",
+	server._register_tool("minerva_presentation_add_text_tile",
 		"Add a text tile to a slide. Coords x/y/w/h are 0..1 normalized to slide size. text_mode is plain (BBCode supported), bullet, or numbered. For bullet/numbered, leading whitespace per line encodes outline level (interim — proper level schema is backlog). FONT SIZE IS DERIVED FROM tile.h: the renderer divides the tile's rendered height across visible lines (split by \\n), giving you drag-corner-resize-the-text behavior. Sizing rule of thumb: title h≈0.10 (~55-65px font), section header h≈0.07 (~40px), body bullets h ≈ line_count × 0.05 (~25px per line). To make text bigger, make the tile taller. Avoid BBCode [font_size=N] tags — those are raw pixels and won't honor the rect. Style via BBCode for [i]italic[/i], [b]bold[/b], [color=#hex]color[/color], [center]horizontal-center[/center].",
 		{
 			"type": "object",
@@ -236,7 +236,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_modify_tile",
+	server._register_tool("minerva_presentation_modify_tile",
 		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly.",
 		{
 			"type": "object",
@@ -261,7 +261,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_set_slide_title",
+	server._register_tool("minerva_presentation_set_slide_title",
 		"Set or clear a slide's title (omit-when-default — empty string removes the field).",
 		{
 			"type": "object",
@@ -275,7 +275,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_set_aspect",
+	server._register_tool("minerva_presentation_set_aspect",
 		"Change the deck's aspect ratio. Existing tiles stay in normalized [0,1] coords; only rendering aspect changes. Solid-color image tiles authored at the previous aspect will letterbox — use modify_tile to re-synthesize them if needed.",
 		{
 			"type": "object",
@@ -288,7 +288,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_move_slide",
+	server._register_tool("minerva_presentation_move_slide",
 		"Reorder a slide by index. Tile data is preserved; only the slide's position in the slides[] array changes.",
 		{
 			"type": "object",
@@ -302,7 +302,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_add_spreadsheet_tile",
+	server._register_tool("minerva_presentation_add_spreadsheet_tile",
 		"Add a spreadsheet tile to a slide. rows × cols grid. cells is a 2D array [[{value, type?, ...formatting}], ...] matching rows × cols — if omitted, fills with empty cells. Cell types: 0=empty, 1=text, 2=number, 3=date, 4=formula. Optional formatting per cell: bold, italic, alignment, text_color, bg_color, formula. Optional header_row / header_col flags style the first row/column.",
 		{
 			"type": "object",
@@ -325,7 +325,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_modify_spreadsheet_cells",
+	server._register_tool("minerva_presentation_modify_spreadsheet_cells",
 		"Patch individual cells on a spreadsheet tile. cells is a sparse list of [{row, col, value, type?, bold?, italic?, alignment?, text_color?, bg_color?, formula?}] — only the named fields change; other cells and other fields are untouched. Out-of-bounds row/col entries are skipped (counted in skipped[]).",
 		{
 			"type": "object",
@@ -340,7 +340,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_resize_spreadsheet",
+	server._register_tool("minerva_presentation_resize_spreadsheet",
 		"Resize a spreadsheet tile's grid. Existing cells preserved when growing; truncated when shrinking. New cells filled with CELL_EMPTY. The tile's pixel rect (w/h) is unchanged — use modify_tile to change that.",
 		{
 			"type": "object",
@@ -356,7 +356,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_add_annotation",
+	server._register_tool("minerva_presentation_add_annotation",
 		"Add an annotation envelope to a slide. kind is one of: callout, arrow_2d, text_2d, freehand, rectangle. summary is the short text the annotation conveys (required, surfaced by list_annotations). Optional: anchor (substrate anchor dict, e.g. {kind:'slide_relative', x:0.5, y:0.5}); kind_payload (kind-specific dict — for text/callout typically {text: '...'}); lifecycle (defaults to 'open'). Server fills in id, schema_version, author, view_context, visible_in_views.",
 		{
 			"type": "object",
@@ -374,7 +374,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_remove_annotation",
+	server._register_tool("minerva_presentation_remove_annotation",
 		"Remove an annotation from a slide by annotation_id. If the slide.annotations array empties, the key is removed entirely (omit-when-default).",
 		{
 			"type": "object",
@@ -388,7 +388,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_set_annotation_resolved",
+	server._register_tool("minerva_presentation_set_annotation_resolved",
 		"Mark an annotation resolved (true) or open (false). Maps onto substrate's lifecycle field: true → 'resolved', false → 'open'. To set 'applied' or 'stale' explicitly, pass lifecycle directly. Optional note appends to a resolution_notes array on the envelope for audit trail.",
 		{
 			"type": "object",
@@ -405,7 +405,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_list_annotation_kinds",
+	server._register_tool("minerva_presentation_list_annotation_kinds",
 		"List annotation kinds the substrate accepts (callout, arrow_2d, text_2d, freehand, rectangle) plus the lifecycle states. Discoverability for LLMs picking a kind for add_annotation.",
 		{
 			"type": "object",
@@ -413,7 +413,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_list_open_annotations",
+	server._register_tool("minerva_presentation_list_open_annotations",
 		"Return all annotations across the deck whose lifecycle is 'open' (not resolved/applied/stale). Each entry includes slide_index, annotation_id, kind, and summary. Use this to find work the LLM still needs to address.",
 		{
 			"type": "object",
@@ -424,7 +424,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_remove_tile",
+	server._register_tool("minerva_presentation_remove_tile",
 		"Remove a tile from a slide by tile_id.",
 		{
 			"type": "object",
@@ -438,7 +438,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_remove_slide",
+	server._register_tool("minerva_presentation_remove_slide",
 		"Remove a slide by index. Refuses if it would leave the deck with zero slides — a 0-slide deck is broken state.",
 		{
 			"type": "object",
@@ -451,7 +451,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_list_tiles",
+	server._register_tool("minerva_presentation_list_tiles",
 		"List tiles on a slide. Returns id, kind, x/y/w/h, rotation, and kind-specific summary fields. Image tiles return src_size_bytes (NOT the base64) to keep responses small — use presentation_get_tile with include_src=true to fetch bytes. Text tiles return content (capped at 8 KB; if truncated, the dict has _truncated=true). Spreadsheet tiles return rows and cols (cell data via get_tile).",
 		{
 			"type": "object",
@@ -464,7 +464,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_list_annotations",
+	server._register_tool("minerva_presentation_list_annotations",
 		"List annotations on a slide. Returns id, kind, payload_summary (kind-specific: text content for text/callout kinds, geometry summary otherwise), position (when derivable), and resolved (when present on the envelope; defaults to false). Annotations are kept as opaque envelopes per the substrate contract — full envelope is available via the upcoming get_annotation tool.",
 		{
 			"type": "object",
@@ -477,7 +477,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_get_tile",
+	server._register_tool("minerva_presentation_get_tile",
 		"Fetch a tile dict by id. Default omits image base64 (which can be megabytes); pass include_src=true to include it. Spreadsheet tiles return their full cell grid.",
 		{
 			"type": "object",
@@ -492,7 +492,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_get_slide",
+	server._register_tool("minerva_presentation_get_slide",
 		"Fetch the full slide dict (id, title, background, tiles, reveal, annotations). Default omits image base64 on tiles; pass include_tile_src=true to include it.",
 		{
 			"type": "object",
@@ -506,7 +506,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("presentation_add_image_tile",
+	server._register_tool("minerva_presentation_add_image_tile",
 		"Add an image tile to a slide. Coords x/y/w/h are 0..1 normalized. Provide exactly one image source: image_path, image_base64, source_graphics_editor (name of an open graphics editor — pulls layer 0's PNG bytes), or solid_color (hex; generates a small flat-color PNG that scales to fill the tile — handy for HR lines and decorative blocks).",
 		{
 			"type": "object",
@@ -535,55 +535,55 @@ func register_tools() -> void:
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
-		"presentation_create_deck":
+		"minerva_presentation_create_deck":
 			return _create_deck(arguments)
-		"presentation_open_deck":
+		"minerva_presentation_open_deck":
 			return _open_deck(arguments)
-		"presentation_list_slides":
+		"minerva_presentation_list_slides":
 			return _list_slides(arguments)
-		"presentation_add_slide":
+		"minerva_presentation_add_slide":
 			return _add_slide(arguments)
-		"presentation_set_slide_background":
+		"minerva_presentation_set_slide_background":
 			return _set_slide_background(arguments)
-		"presentation_add_text_tile":
+		"minerva_presentation_add_text_tile":
 			return _add_text_tile(arguments)
-		"presentation_add_image_tile":
+		"minerva_presentation_add_image_tile":
 			return _add_image_tile(arguments)
-		"presentation_list_tiles":
+		"minerva_presentation_list_tiles":
 			return _list_tiles(arguments)
-		"presentation_list_annotations":
+		"minerva_presentation_list_annotations":
 			return _list_annotations(arguments)
-		"presentation_get_tile":
+		"minerva_presentation_get_tile":
 			return _get_tile(arguments)
-		"presentation_get_slide":
+		"minerva_presentation_get_slide":
 			return _get_slide(arguments)
-		"presentation_modify_tile":
+		"minerva_presentation_modify_tile":
 			return _modify_tile(arguments)
-		"presentation_set_slide_title":
+		"minerva_presentation_set_slide_title":
 			return _set_slide_title(arguments)
-		"presentation_set_aspect":
+		"minerva_presentation_set_aspect":
 			return _set_aspect(arguments)
-		"presentation_move_slide":
+		"minerva_presentation_move_slide":
 			return _move_slide(arguments)
-		"presentation_remove_tile":
+		"minerva_presentation_remove_tile":
 			return _remove_tile(arguments)
-		"presentation_remove_slide":
+		"minerva_presentation_remove_slide":
 			return _remove_slide(arguments)
-		"presentation_add_annotation":
+		"minerva_presentation_add_annotation":
 			return _add_annotation(arguments)
-		"presentation_remove_annotation":
+		"minerva_presentation_remove_annotation":
 			return _remove_annotation(arguments)
-		"presentation_set_annotation_resolved":
+		"minerva_presentation_set_annotation_resolved":
 			return _set_annotation_resolved(arguments)
-		"presentation_list_annotation_kinds":
+		"minerva_presentation_list_annotation_kinds":
 			return _list_annotation_kinds(arguments)
-		"presentation_list_open_annotations":
+		"minerva_presentation_list_open_annotations":
 			return _list_open_annotations(arguments)
-		"presentation_add_spreadsheet_tile":
+		"minerva_presentation_add_spreadsheet_tile":
 			return _add_spreadsheet_tile(arguments)
-		"presentation_modify_spreadsheet_cells":
+		"minerva_presentation_modify_spreadsheet_cells":
 			return _modify_spreadsheet_cells(arguments)
-		"presentation_resize_spreadsheet":
+		"minerva_presentation_resize_spreadsheet":
 			return _resize_spreadsheet(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
@@ -1275,7 +1275,7 @@ func _add_annotation(args: Dictionary) -> Dictionary:
 		"author": {
 			"kind": ANNOTATION_AUTHOR_KIND_AI,
 			"id": "mcp",
-			"session_id": "presentation_add_annotation",
+			"session_id": "minerva_presentation_add_annotation",
 		},
 		"view_context": "%s:%s" % [PLUGIN_ID, slide_id if not slide_id.is_empty() else "slide_%d" % MCPToolUtils.coerce_int(args["slide_index"])],
 		"visible_in_views": [ANNOTATION_VIEW_CONTEXT_PRESENTATION],
