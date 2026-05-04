@@ -79,6 +79,12 @@ func _run_tests() -> void:
 	test_set_aspect_rejects_invalid(tools)
 	test_move_slide(tools)
 	test_move_slide_out_of_range(tools)
+	# Remove tools — order matters: succeeds_with_multiple must run before
+	# refuses_last (succeeds_with_multiple drops the deck back to 1 slide).
+	test_remove_tile(tools)
+	test_remove_tile_unknown_id(tools)
+	test_remove_slide_succeeds_with_multiple(tools)
+	test_remove_slide_refuses_last(tools)
 	test_post_modify_deck_still_validates()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
@@ -506,6 +512,70 @@ func test_move_slide(tools: Object) -> void:
 func test_move_slide_out_of_range(tools: Object) -> void:
 	var r: Dictionary = tools._move_slide({"path": OUT_PATH, "from_index": 99, "to_index": 0})
 	_assert(r.get("success", false) == false, "move_slide OOR from_index errors", r)
+
+
+func test_remove_tile(tools: Object) -> void:
+	# Use whichever tile is at index 3 (the right-col placeholder).
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var tiles_before: Array = lr["tiles"] as Array
+	var before_count: int = tiles_before.size()
+	_assert(before_count >= 4, "deck has >= 4 tiles before remove_tile", {"count": before_count})
+	var victim_id: String = str((tiles_before[before_count - 1] as Dictionary)["tile_id"])
+
+	var r: Dictionary = tools._remove_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": victim_id
+	})
+	_assert(r.get("success", false) == true, "remove_tile succeeds", r)
+	_assert(int(r.get("removed_at", -1)) == before_count - 1, "removed_at returns old index", r)
+
+	var lr2: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	_assert((lr2["tiles"] as Array).size() == before_count - 1, "tile count drops by 1", lr2)
+	# Removed id no longer present.
+	for t_v in (lr2["tiles"] as Array):
+		_assert(str((t_v as Dictionary)["tile_id"]) != victim_id, "removed id absent", t_v)
+
+
+func test_remove_tile_unknown_id(tools: Object) -> void:
+	var r: Dictionary = tools._remove_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": "tile_does_not_exist"
+	})
+	_assert(r.get("success", false) == false, "remove_tile unknown id errors", r)
+	_assert(str(r.get("error", "")).to_lower().contains("not found"), "error mentions 'not found'", r)
+
+
+func test_remove_slide_succeeds_with_multiple(tools: Object) -> void:
+	# Pre-seed: ensure the deck has exactly 2 slides regardless of upstream
+	# state — earlier tests (move_slide) may have left a second slide present.
+	var deck_before: Dictionary = _read_deck()
+	var slides_before: Array = deck_before["slides"] as Array
+	while slides_before.size() < 2:
+		tools._add_slide({"path": OUT_PATH, "title": "Pad"})
+		deck_before = _read_deck()
+		slides_before = deck_before["slides"] as Array
+	# Remove every slide after index 1 directly so we always start at exactly 2.
+	# We don't have a wholesale-truncate tool yet, so loop remove_slide on the tail.
+	while slides_before.size() > 2:
+		tools._remove_slide({"path": OUT_PATH, "slide_index": slides_before.size() - 1})
+		deck_before = _read_deck()
+		slides_before = deck_before["slides"] as Array
+
+	var first_id: String = str((slides_before[0] as Dictionary)["id"])
+	var r: Dictionary = tools._remove_slide({"path": OUT_PATH, "slide_index": 0})
+	_assert(r.get("success", false) == true, "remove_slide (with >=2) succeeds", r)
+	_assert(str(r.get("slide_id", "")) == first_id, "removed id matches first slide id", r)
+
+	var ls: Dictionary = tools._list_slides({"path": OUT_PATH})
+	_assert((ls["slides"] as Array).size() == 1, "post-remove: 1 slide", ls)
+	_assert(str(((ls["slides"] as Array)[0] as Dictionary).get("id", "")) != first_id, "original first slide is gone", ls)
+
+
+func test_remove_slide_refuses_last(tools: Object) -> void:
+	# Precondition: succeeds_with_multiple ran first and dropped to 1 slide.
+	var ls: Dictionary = tools._list_slides({"path": OUT_PATH})
+	_assert((ls["slides"] as Array).size() == 1, "precondition: 1 slide", ls)
+	var r: Dictionary = tools._remove_slide({"path": OUT_PATH, "slide_index": 0})
+	_assert(r.get("success", false) == false, "remove_slide refuses last slide", r)
+	_assert(str(r.get("error", "")).to_lower().contains("only slide"), "error mentions 'only slide'", r)
 
 
 func test_post_modify_deck_still_validates() -> void:

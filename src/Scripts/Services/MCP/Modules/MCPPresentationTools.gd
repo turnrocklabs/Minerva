@@ -90,6 +90,8 @@ func get_tool_names() -> Array[String]:
 		"presentation_set_slide_title",
 		"presentation_set_aspect",
 		"presentation_move_slide",
+		"presentation_remove_tile",
+		"presentation_remove_slide",
 	]
 
 
@@ -244,6 +246,33 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
+	server._register_tool("presentation_remove_tile",
+		"Remove a tile from a slide by tile_id.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"tile_id": {"type": "string"},
+			},
+			"required": ["slide_index", "tile_id"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_remove_slide",
+		"Remove a slide by index. Refuses if it would leave the deck with zero slides — a 0-slide deck is broken state.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+			},
+			"required": ["slide_index"],
+		}
+	, "presentation")
+
 	server._register_tool("presentation_list_tiles",
 		"List tiles on a slide. Returns id, kind, x/y/w/h, rotation, and kind-specific summary fields. Image tiles return src_size_bytes (NOT the base64) to keep responses small — use presentation_get_tile with include_src=true to fetch bytes. Text tiles return content (capped at 8 KB; if truncated, the dict has _truncated=true). Spreadsheet tiles return rows and cols (cell data via get_tile).",
 		{
@@ -358,6 +387,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _set_aspect(arguments)
 		"presentation_move_slide":
 			return _move_slide(arguments)
+		"presentation_remove_tile":
+			return _remove_tile(arguments)
+		"presentation_remove_slide":
+			return _remove_slide(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -983,6 +1016,77 @@ func _set_aspect(args: Dictionary) -> Dictionary:
 	if commit_err != "":
 		return MCPToolUtils.error(commit_err)
 	return MCPToolUtils.success({"aspect": aspect})
+
+
+func _remove_tile(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id"])
+	if missing != null:
+		return missing
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var tile_id: String = String(args["tile_id"]).strip_edges()
+	var tiles: Array = slide.get("tiles", []) as Array
+	var idx: int = -1
+	for i in range(tiles.size()):
+		if String((tiles[i] as Dictionary).get("id", "")) == tile_id:
+			idx = i
+			break
+	if idx < 0:
+		return MCPToolUtils.error("tile_id not found on slide %d: %s" % [
+			MCPToolUtils.coerce_int(args["slide_index"]), tile_id
+		])
+	tiles.remove_at(idx)
+	# Scrub any reveal-order references to this tile id (reveal entries are
+	# IDs of items revealed in order — keeps the array consistent post-removal).
+	if slide.has("reveal"):
+		var reveal: Array = slide["reveal"] as Array
+		var write: int = 0
+		for r_v in reveal:
+			if String(r_v) != tile_id:
+				reveal[write] = r_v
+				write += 1
+		reveal.resize(write)
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"tile_id": tile_id,
+		"removed_at": idx,
+	})
+
+
+func _remove_slide(args: Dictionary) -> Dictionary:
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slides: Array = deck.get("slides", []) as Array
+	if not args.has("slide_index"):
+		return MCPToolUtils.error("slide_index is required")
+	var idx: int = MCPToolUtils.coerce_int(args["slide_index"], -1)
+	if idx < 0 or idx >= slides.size():
+		return MCPToolUtils.error("slide_index out of range: %d (deck has %d slides)" % [idx, slides.size()])
+	if slides.size() <= 1:
+		return MCPToolUtils.error("Cannot remove the only slide (would leave deck empty)")
+	var removed_id: String = String((slides[idx] as Dictionary).get("id", ""))
+	slides.remove_at(idx)
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": idx,
+		"slide_id": removed_id,
+		"remaining_slides": slides.size(),
+	})
 
 
 func _move_slide(args: Dictionary) -> Dictionary:
