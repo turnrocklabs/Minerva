@@ -27,6 +27,16 @@ const ASPECTS_VALID: PackedStringArray = ["16:9", "4:3", "1:1"]
 
 const TILE_TEXT: String = "text"
 const TILE_IMAGE: String = "image"
+const TILE_SPREADSHEET: String = "spreadsheet"
+
+# Cell types mirror Presentation_SlideModel constants. Values are the int
+# encoding the spreadsheet view + plugin renderer expect.
+const CELL_EMPTY: int = 0
+const CELL_TEXT: int = 1
+const CELL_NUMBER: int = 2
+const CELL_DATE: int = 3
+const CELL_FORMULA: int = 4
+const CELL_TYPES_VALID: PackedInt32Array = [CELL_EMPTY, CELL_TEXT, CELL_NUMBER, CELL_DATE, CELL_FORMULA]
 
 const TEXT_MODE_PLAIN: String = "plain"
 const TEXT_MODE_BULLET: String = "bullet"
@@ -97,6 +107,9 @@ func get_tool_names() -> Array[String]:
 		"presentation_set_annotation_resolved",
 		"presentation_list_annotation_kinds",
 		"presentation_list_open_annotations",
+		"presentation_add_spreadsheet_tile",
+		"presentation_modify_spreadsheet_cells",
+		"presentation_resize_spreadsheet",
 	]
 
 
@@ -278,6 +291,60 @@ func register_tools() -> void:
 				"to_index": {"type": "integer"},
 			},
 			"required": ["from_index", "to_index"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_add_spreadsheet_tile",
+		"Add a spreadsheet tile to a slide. rows × cols grid. cells is a 2D array [[{value, type?, ...formatting}], ...] matching rows × cols — if omitted, fills with empty cells. Cell types: 0=empty, 1=text, 2=number, 3=date, 4=formula. Optional formatting per cell: bold, italic, alignment, text_color, bg_color, formula. Optional header_row / header_col flags style the first row/column.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"x": {"type": "number"},
+				"y": {"type": "number"},
+				"w": {"type": "number"},
+				"h": {"type": "number"},
+				"rows": {"type": "integer"},
+				"cols": {"type": "integer"},
+				"cells": {"type": "array", "description": "2D array of cell dicts. Optional — defaults to empty grid."},
+				"header_row": {"type": "boolean"},
+				"header_col": {"type": "boolean"},
+				"rotation": {"type": "number"},
+			},
+			"required": ["slide_index", "x", "y", "w", "h", "rows", "cols"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_modify_spreadsheet_cells",
+		"Patch individual cells on a spreadsheet tile. cells is a sparse list of [{row, col, value, type?, bold?, italic?, alignment?, text_color?, bg_color?, formula?}] — only the named fields change; other cells and other fields are untouched. Out-of-bounds row/col entries are skipped (counted in skipped[]).",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"tile_id": {"type": "string"},
+				"cells": {"type": "array"},
+			},
+			"required": ["slide_index", "tile_id", "cells"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_resize_spreadsheet",
+		"Resize a spreadsheet tile's grid. Existing cells preserved when growing; truncated when shrinking. New cells filled with CELL_EMPTY. The tile's pixel rect (w/h) is unchanged — use modify_tile to change that.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"tile_id": {"type": "string"},
+				"rows": {"type": "integer"},
+				"cols": {"type": "integer"},
+			},
+			"required": ["slide_index", "tile_id", "rows", "cols"],
 		}
 	, "presentation")
 
@@ -504,6 +571,12 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _list_annotation_kinds(arguments)
 		"presentation_list_open_annotations":
 			return _list_open_annotations(arguments)
+		"presentation_add_spreadsheet_tile":
+			return _add_spreadsheet_tile(arguments)
+		"presentation_modify_spreadsheet_cells":
+			return _modify_spreadsheet_cells(arguments)
+		"presentation_resize_spreadsheet":
+			return _resize_spreadsheet(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -1347,6 +1420,254 @@ func _list_open_annotations(args: Dictionary) -> Dictionary:
 				"summary": String(env.get("summary", "")),
 			})
 	return MCPToolUtils.success({"open": open_list, "count": open_list.size()})
+
+
+func _add_spreadsheet_tile(args: Dictionary) -> Dictionary:
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var coords_err := _validate_coords(args)
+	if coords_err != "":
+		return MCPToolUtils.error(coords_err)
+
+	var rows: int = MCPToolUtils.coerce_int(args.get("rows", 0), 0)
+	var cols: int = MCPToolUtils.coerce_int(args.get("cols", 0), 0)
+	if rows < 1 or cols < 1:
+		return MCPToolUtils.error("rows and cols must both be >= 1")
+
+	var cells: Array
+	if args.has("cells") and args["cells"] is Array:
+		var caller_cells: Array = args["cells"] as Array
+		if caller_cells.size() != rows:
+			return MCPToolUtils.error("cells row count %d != rows=%d" % [caller_cells.size(), rows])
+		cells = []
+		for r in range(rows):
+			if not (caller_cells[r] is Array):
+				return MCPToolUtils.error("cells[%d] is not an Array" % r)
+			var row_in: Array = caller_cells[r] as Array
+			if row_in.size() != cols:
+				return MCPToolUtils.error("cells[%d] col count %d != cols=%d" % [r, row_in.size(), cols])
+			var row_out: Array = []
+			for c in range(cols):
+				var cell_in_v: Variant = row_in[c]
+				var cell_out: Dictionary = _normalize_cell(cell_in_v)
+				if cell_out.has("__error__"):
+					return MCPToolUtils.error("cells[%d][%d]: %s" % [r, c, cell_out["__error__"]])
+				row_out.append(cell_out)
+			cells.append(row_out)
+	else:
+		cells = _empty_cell_grid(rows, cols)
+
+	var tile: Dictionary = {
+		"id": _gen_id("tile"),
+		"kind": TILE_SPREADSHEET,
+		"x": float(args["x"]),
+		"y": float(args["y"]),
+		"w": float(args["w"]),
+		"h": float(args["h"]),
+		"rows": rows,
+		"cols": cols,
+		"cells": cells,
+		"header_row": bool(args.get("header_row", false)),
+		"header_col": bool(args.get("header_col", false)),
+	}
+	var rotation: float = MCPToolUtils.coerce_float(args.get("rotation", 0.0))
+	if not is_zero_approx(rotation):
+		tile["rotation"] = rotation
+
+	(slide["tiles"] as Array).append(tile)
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"tile_id": str(tile["id"]),
+	})
+
+
+func _modify_spreadsheet_cells(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id", "cells"])
+	if missing != null:
+		return missing
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var tile_id: String = String(args["tile_id"]).strip_edges()
+	var tile: Dictionary = _find_tile_in_slide(slide, tile_id)
+	if tile.is_empty():
+		return MCPToolUtils.error("tile_id not found on slide %d: %s" % [
+			MCPToolUtils.coerce_int(args["slide_index"]), tile_id
+		])
+	if String(tile.get("kind", "")) != TILE_SPREADSHEET:
+		return MCPToolUtils.error("modify_spreadsheet_cells only applies to spreadsheet tiles")
+
+	var rows: int = MCPToolUtils.coerce_int(tile.get("rows", 0))
+	var cols: int = MCPToolUtils.coerce_int(tile.get("cols", 0))
+	var cells: Array = tile.get("cells", []) as Array
+	var patches: Array = args["cells"] as Array
+
+	var updated: int = 0
+	var skipped: Array = []
+	for p_v in patches:
+		if not (p_v is Dictionary):
+			skipped.append({"reason": "patch is not a Dictionary"})
+			continue
+		var p: Dictionary = p_v as Dictionary
+		var r: int = MCPToolUtils.coerce_int(p.get("row", -1), -1)
+		var c: int = MCPToolUtils.coerce_int(p.get("col", -1), -1)
+		if r < 0 or r >= rows or c < 0 or c >= cols:
+			skipped.append({"row": r, "col": c, "reason": "out of bounds"})
+			continue
+		var cell: Dictionary = (cells[r] as Array)[c] as Dictionary
+		# Only the named fields change. Cell-level extras (bold, italic, etc.)
+		# merge in; existing extras not in the patch stay put.
+		for k in p.keys():
+			if k == "row" or k == "col":
+				continue
+			if k == "type":
+				var t_int: int = MCPToolUtils.coerce_int(p[k], -1)
+				if not CELL_TYPES_VALID.has(t_int):
+					skipped.append({"row": r, "col": c, "reason": "bad type %s" % str(p[k])})
+					continue
+				cell["type"] = t_int
+			else:
+				cell[k] = p[k]
+		updated += 1
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"tile_id": tile_id,
+		"cells_updated": updated,
+		"skipped": skipped,
+	})
+
+
+func _resize_spreadsheet(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id", "rows", "cols"])
+	if missing != null:
+		return missing
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var tile_id: String = String(args["tile_id"]).strip_edges()
+	var tile: Dictionary = _find_tile_in_slide(slide, tile_id)
+	if tile.is_empty():
+		return MCPToolUtils.error("tile_id not found on slide %d: %s" % [
+			MCPToolUtils.coerce_int(args["slide_index"]), tile_id
+		])
+	if String(tile.get("kind", "")) != TILE_SPREADSHEET:
+		return MCPToolUtils.error("resize_spreadsheet only applies to spreadsheet tiles")
+
+	var new_rows: int = MCPToolUtils.coerce_int(args["rows"], 0)
+	var new_cols: int = MCPToolUtils.coerce_int(args["cols"], 0)
+	if new_rows < 1 or new_cols < 1:
+		return MCPToolUtils.error("rows and cols must both be >= 1")
+
+	var old_rows: int = MCPToolUtils.coerce_int(tile.get("rows", 0))
+	var old_cols: int = MCPToolUtils.coerce_int(tile.get("cols", 0))
+	var old_cells: Array = tile.get("cells", []) as Array
+
+	var new_cells: Array = []
+	for r in range(new_rows):
+		var row: Array = []
+		for c in range(new_cols):
+			if r < old_rows and c < old_cols:
+				row.append((old_cells[r] as Array)[c])
+			else:
+				row.append(_empty_cell())
+		new_cells.append(row)
+
+	tile["rows"] = new_rows
+	tile["cols"] = new_cols
+	tile["cells"] = new_cells
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"tile_id": tile_id,
+		"old_rows": old_rows, "old_cols": old_cols,
+		"new_rows": new_rows, "new_cols": new_cols,
+	})
+
+
+# ---------------------------------------------------------------------------
+# Spreadsheet helpers
+# ---------------------------------------------------------------------------
+
+func _empty_cell() -> Dictionary:
+	return {"value": "", "type": CELL_EMPTY}
+
+
+func _empty_cell_grid(rows: int, cols: int) -> Array:
+	var grid: Array = []
+	for _r in range(rows):
+		var row: Array = []
+		for _c in range(cols):
+			row.append(_empty_cell())
+		grid.append(row)
+	return grid
+
+
+## Normalize a caller-supplied cell variant into the on-disk cell dict.
+## Accepts: a Dictionary (used directly with type validation), a String/Number
+## (wrapped into {value, type} with auto-typed default), or null (empty cell).
+## Returns Dictionary with "__error__" key on validation failure.
+func _normalize_cell(v: Variant) -> Dictionary:
+	if v == null:
+		return _empty_cell()
+	if v is Dictionary:
+		var d: Dictionary = (v as Dictionary).duplicate(true)
+		if not d.has("value"):
+			d["value"] = ""
+		if d.has("type"):
+			var t_int: int = MCPToolUtils.coerce_int(d["type"], -1)
+			if not CELL_TYPES_VALID.has(t_int):
+				return {"__error__": "bad type %s (valid: 0=empty, 1=text, 2=number, 3=date, 4=formula)" % str(d["type"])}
+			d["type"] = t_int
+		else:
+			# Auto-detect when type is missing.
+			d["type"] = _auto_cell_type(d["value"])
+		return d
+	# Bare scalar — wrap.
+	return {"value": v, "type": _auto_cell_type(v)}
+
+
+func _auto_cell_type(value: Variant) -> int:
+	if value == null:
+		return CELL_EMPTY
+	if value is int or value is float:
+		return CELL_NUMBER
+	if value is String:
+		var s: String = value as String
+		if s.is_empty():
+			return CELL_EMPTY
+		if s.begins_with("="):
+			return CELL_FORMULA
+		return CELL_TEXT
+	return CELL_TEXT
 
 
 func _remove_tile(args: Dictionary) -> Dictionary:

@@ -97,6 +97,15 @@ func _run_tests() -> void:
 	test_list_open_annotations_excludes_resolved(tools)
 	test_remove_annotation(tools)
 	test_remove_annotation_clears_empty_array(tools)
+	# Spreadsheet tools — exercise add/modify/resize end-to-end on disk.
+	test_add_spreadsheet_tile_default_grid(tools)
+	test_add_spreadsheet_tile_with_cells(tools)
+	test_add_spreadsheet_rejects_mismatched_grid(tools)
+	test_modify_spreadsheet_cells_round_trip(tools)
+	test_modify_spreadsheet_cells_skips_oob(tools)
+	test_modify_spreadsheet_rejects_non_spreadsheet_tile(tools)
+	test_resize_spreadsheet_grow_preserves(tools)
+	test_resize_spreadsheet_shrink_truncates(tools)
 	test_post_modify_deck_still_validates()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
@@ -817,6 +826,194 @@ func test_remove_annotation_clears_empty_array(tools: Object) -> void:
 	var deck: Dictionary = _read_deck()
 	var slide: Dictionary = (deck["slides"] as Array)[0] as Dictionary
 	_assert(not slide.has("annotations"), "annotations key removed when array empties", slide)
+
+
+func test_add_spreadsheet_tile_default_grid(tools: Object) -> void:
+	var r: Dictionary = tools._add_spreadsheet_tile({
+		"path": OUT_PATH, "slide_index": 0,
+		"x": 0.05, "y": 0.05, "w": 0.3, "h": 0.2,
+		"rows": 3, "cols": 4,
+	})
+	_assert(r.get("success", false) == true, "add_spreadsheet_tile (default grid) succeeds", r)
+	_assert(not str(r.get("tile_id", "")).is_empty(), "returns tile_id", r)
+	# Verify shape on disk.
+	var deck: Dictionary = _read_deck()
+	var tiles: Array = ((deck["slides"] as Array)[0] as Dictionary).get("tiles", []) as Array
+	var ss: Dictionary = tiles[tiles.size() - 1] as Dictionary
+	_assert(str(ss.get("kind", "")) == "spreadsheet", "tile kind == spreadsheet", ss)
+	_assert(int(ss.get("rows", 0)) == 3 and int(ss.get("cols", 0)) == 4, "rows/cols persist", ss)
+	var grid: Array = ss.get("cells", []) as Array
+	_assert(grid.size() == 3, "grid has 3 rows", {"size": grid.size()})
+	_assert((grid[0] as Array).size() == 4, "row 0 has 4 cols", {})
+
+
+func test_add_spreadsheet_tile_with_cells(tools: Object) -> void:
+	var r: Dictionary = tools._add_spreadsheet_tile({
+		"path": OUT_PATH, "slide_index": 0,
+		"x": 0.5, "y": 0.5, "w": 0.4, "h": 0.2,
+		"rows": 2, "cols": 2,
+		"header_row": true,
+		"cells": [
+			[{"value": "Name"}, {"value": "Score"}],
+			[{"value": "Alice"}, {"value": 42}],
+		],
+	})
+	_assert(r.get("success", false) == true, "add_spreadsheet_tile (with cells) succeeds", r)
+	var deck: Dictionary = _read_deck()
+	var tiles: Array = ((deck["slides"] as Array)[0] as Dictionary).get("tiles", []) as Array
+	var ss: Dictionary = tiles[tiles.size() - 1] as Dictionary
+	_assert(bool(ss.get("header_row", false)) == true, "header_row flag preserved", ss)
+	var grid: Array = ss["cells"] as Array
+	# Auto-typing: "Name" → text(1), 42 → number(2)
+	_assert(int((grid[0] as Array)[0]["type"]) == 1, "string auto-types to text(1)", grid[0])
+	_assert(int((grid[1] as Array)[1]["type"]) == 2, "number auto-types to number(2)", grid[1])
+
+
+func test_add_spreadsheet_rejects_mismatched_grid(tools: Object) -> void:
+	var r: Dictionary = tools._add_spreadsheet_tile({
+		"path": OUT_PATH, "slide_index": 0,
+		"x": 0.0, "y": 0.0, "w": 0.1, "h": 0.1,
+		"rows": 2, "cols": 2,
+		"cells": [
+			[{"value": "A"}, {"value": "B"}],
+			# Missing second row.
+		],
+	})
+	_assert(r.get("success", false) == false, "mismatched grid rejected", r)
+	_assert(str(r.get("error", "")).to_lower().contains("row count"), "error mentions row count", r)
+
+
+func test_modify_spreadsheet_cells_round_trip(tools: Object) -> void:
+	# Use the spreadsheet from test_add_spreadsheet_tile_with_cells (has data).
+	var deck: Dictionary = _read_deck()
+	var tiles: Array = ((deck["slides"] as Array)[0] as Dictionary).get("tiles", []) as Array
+	var ss_id: String = ""
+	for t in tiles:
+		var t_d: Dictionary = t as Dictionary
+		if str(t_d.get("kind", "")) == "spreadsheet" and int(t_d.get("rows", 0)) == 2:
+			ss_id = str(t_d["id"])
+			break
+	_assert(not ss_id.is_empty(), "located 2x2 spreadsheet tile", {})
+
+	var r: Dictionary = tools._modify_spreadsheet_cells({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": ss_id,
+		"cells": [
+			{"row": 1, "col": 1, "value": 99, "bold": true},
+			{"row": 0, "col": 0, "value": "Renamed"},
+		],
+	})
+	_assert(r.get("success", false) == true, "modify_spreadsheet_cells succeeds", r)
+	_assert(int(r.get("cells_updated", 0)) == 2, "2 cells updated", r)
+	_assert((r.get("skipped", []) as Array).is_empty(), "no cells skipped", r)
+
+	var gr: Dictionary = tools._get_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": ss_id, "include_src": true
+	})
+	var grid: Array = (gr["tile"] as Dictionary)["cells"] as Array
+	_assert(int((grid[1] as Array)[1]["value"]) == 99, "cell (1,1) value updated to 99", grid)
+	_assert(bool((grid[1] as Array)[1].get("bold", false)) == true, "cell (1,1) is now bold", grid)
+	_assert(str((grid[0] as Array)[0]["value"]) == "Renamed", "cell (0,0) value updated", grid)
+	# Untouched cells preserved.
+	_assert(str((grid[0] as Array)[1]["value"]) == "Score", "cell (0,1) untouched", grid)
+
+
+func test_modify_spreadsheet_cells_skips_oob(tools: Object) -> void:
+	var deck: Dictionary = _read_deck()
+	var tiles: Array = ((deck["slides"] as Array)[0] as Dictionary).get("tiles", []) as Array
+	var ss_id: String = ""
+	for t in tiles:
+		var t_d: Dictionary = t as Dictionary
+		if str(t_d.get("kind", "")) == "spreadsheet" and int(t_d.get("rows", 0)) == 2:
+			ss_id = str(t_d["id"])
+			break
+
+	var r: Dictionary = tools._modify_spreadsheet_cells({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": ss_id,
+		"cells": [
+			{"row": 0, "col": 0, "value": "OK"},
+			{"row": 99, "col": 99, "value": "out of bounds"},
+		],
+	})
+	_assert(r.get("success", false) == true, "modify with mixed valid/OOB succeeds", r)
+	_assert(int(r.get("cells_updated", 0)) == 1, "1 cell updated", r)
+	_assert((r.get("skipped", []) as Array).size() == 1, "1 cell skipped", r)
+
+
+func test_modify_spreadsheet_rejects_non_spreadsheet_tile(tools: Object) -> void:
+	# Earlier tests pruned the original Butter Tarts slide, so slide 0 may not
+	# have a text tile anymore. Add one explicitly, then try modify-cells on it.
+	var ar: Dictionary = tools._add_text_tile({
+		"path": OUT_PATH, "slide_index": 0,
+		"x": 0.01, "y": 0.01, "w": 0.05, "h": 0.05,
+		"content": "for-rejection-test",
+	})
+	_assert(ar.get("success", false) == true, "seeded a text tile for rejection test", ar)
+	var text_id: String = str(ar["tile_id"])
+
+	var r: Dictionary = tools._modify_spreadsheet_cells({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": text_id,
+		"cells": [{"row": 0, "col": 0, "value": "X"}],
+	})
+	_assert(r.get("success", false) == false, "rejects non-spreadsheet tile", r)
+	# Clean up.
+	tools._remove_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": text_id})
+
+
+## Tile id of the 2x2 spreadsheet seeded in test_add_spreadsheet_tile_with_cells —
+## carried forward through grow/shrink so the wrong-spreadsheet ambiguity can't bite.
+var _ss_2x2_id: String = ""
+
+
+func test_resize_spreadsheet_grow_preserves(tools: Object) -> void:
+	# Locate by rows=2 cols=2 (unique at this point).
+	var deck: Dictionary = _read_deck()
+	var tiles: Array = ((deck["slides"] as Array)[0] as Dictionary).get("tiles", []) as Array
+	for t in tiles:
+		var t_d: Dictionary = t as Dictionary
+		if str(t_d.get("kind", "")) == "spreadsheet" and int(t_d.get("rows", 0)) == 2 and int(t_d.get("cols", 0)) == 2:
+			_ss_2x2_id = str(t_d["id"])
+			break
+	_assert(not _ss_2x2_id.is_empty(), "located 2x2 spreadsheet to grow", {})
+
+	var r: Dictionary = tools._resize_spreadsheet({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": _ss_2x2_id,
+		"rows": 3, "cols": 3,
+	})
+	_assert(r.get("success", false) == true, "resize_spreadsheet (grow) succeeds", r)
+
+	var gr: Dictionary = tools._get_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": _ss_2x2_id, "include_src": true
+	})
+	var ss: Dictionary = gr["tile"] as Dictionary
+	_assert(int(ss["rows"]) == 3 and int(ss["cols"]) == 3, "grid is now 3x3", ss)
+	var grid: Array = ss["cells"] as Array
+	# Earlier modify-skips-oob set (0,0) to "OK", overwriting the prior "Renamed".
+	_assert(str((grid[0] as Array)[0]["value"]) == "OK", "(0,0) value preserved on grow", grid)
+	_assert(int((grid[1] as Array)[1]["value"]) == 99, "(1,1) value preserved on grow", grid)
+	# New cells: type=CELL_EMPTY=0
+	_assert(int((grid[2] as Array)[2]["type"]) == 0, "new cell (2,2) is empty", grid)
+
+
+func test_resize_spreadsheet_shrink_truncates(tools: Object) -> void:
+	# Use the carried-forward id from grow so we don't pick the wrong sheet.
+	_assert(not _ss_2x2_id.is_empty(), "carried-forward spreadsheet id is set", {})
+
+	var r: Dictionary = tools._resize_spreadsheet({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": _ss_2x2_id,
+		"rows": 1, "cols": 2,
+	})
+	_assert(r.get("success", false) == true, "resize_spreadsheet (shrink) succeeds", r)
+
+	var gr: Dictionary = tools._get_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": _ss_2x2_id, "include_src": true
+	})
+	var ss: Dictionary = gr["tile"] as Dictionary
+	var grid: Array = ss["cells"] as Array
+	_assert(int(ss["rows"]) == 1 and int(ss["cols"]) == 2, "grid is now 1x2", ss)
+	_assert(grid.size() == 1, "grid has 1 row after shrink", grid)
+	_assert((grid[0] as Array).size() == 2, "row has 2 cols after shrink", grid)
+	# (0,0) should still be "OK" from the modify_cells_skips_oob test.
+	_assert(str((grid[0] as Array)[0]["value"]) == "OK", "(0,0) preserved through shrink", grid)
 
 
 func test_post_modify_deck_still_validates() -> void:
