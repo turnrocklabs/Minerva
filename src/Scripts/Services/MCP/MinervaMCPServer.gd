@@ -113,6 +113,7 @@ func _init_modules() -> void:
 		MCPHttpTools.new(self),
 		MCPAnnotationTools.new(self),
 		MCPCadTools.new(self),
+		MCPPresentationTools.new(self),
 		MCPGeneralTools.new(self),
 	]
 
