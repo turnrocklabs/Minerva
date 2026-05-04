@@ -65,6 +65,21 @@ func _run_tests() -> void:
 	test_solid_color_rejects_invalid_hex(tools)
 	test_coords_out_of_range_rejected(tools)
 	test_target_requires_path_or_tab(tools)
+	# Modify tools — these MUTATE the test deck, so they run after all the
+	# read-only / fresh-compose assertions above.
+	test_modify_tile_coords(tools)
+	test_modify_tile_text_content(tools)
+	test_modify_tile_rejects_text_field_on_image_tile(tools)
+	test_modify_tile_image_solid_color(tools)
+	test_modify_tile_rejects_two_image_sources(tools)
+	test_modify_tile_rotation_round_trip(tools)
+	test_modify_tile_unknown_id(tools)
+	test_set_slide_title(tools)
+	test_set_aspect(tools)
+	test_set_aspect_rejects_invalid(tools)
+	test_move_slide(tools)
+	test_move_slide_out_of_range(tools)
+	test_post_modify_deck_still_validates()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
 	quit(_fail)
@@ -339,6 +354,164 @@ func test_target_requires_path_or_tab(tools: Object) -> void:
 		"content": "no target",
 	})
 	_assert(r.get("success", false) == false, "missing target rejected", r)
+
+
+# ---------------------------------------------------------------------------
+# Modify-tool tests (mutate the deck — run after all read-only assertions)
+# ---------------------------------------------------------------------------
+
+func test_modify_tile_coords(tools: Object) -> void:
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var t0: Dictionary = (lr["tiles"] as Array)[0] as Dictionary
+	var tile_id: String = str(t0["tile_id"])
+	var orig_x: float = float(t0["x"])
+	var new_x: float = orig_x + 0.1
+
+	var r: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id, "x": new_x
+	})
+	_assert(r.get("success", false) == true, "modify_tile (x) succeeds", r)
+
+	var gr: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	var tile: Dictionary = gr["tile"] as Dictionary
+	_assert(abs(float(tile["x"]) - new_x) < 0.0001, "modified x persists on disk", tile)
+
+
+func test_modify_tile_text_content(tools: Object) -> void:
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var tile_id: String = str(((lr["tiles"] as Array)[0] as Dictionary)["tile_id"])
+	var new_content: String = "Renamed Title"
+
+	var r: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id, "content": new_content
+	})
+	_assert(r.get("success", false) == true, "modify_tile (content) succeeds", r)
+
+	var gr: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	_assert(str((gr["tile"] as Dictionary)["content"]) == new_content, "modified content persists", gr)
+
+
+func test_modify_tile_rejects_text_field_on_image_tile(tools: Object) -> void:
+	# Tile 1 (HR) is an image tile.
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var hr_id: String = str(((lr["tiles"] as Array)[1] as Dictionary)["tile_id"])
+	var r: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": hr_id, "content": "nope"
+	})
+	_assert(r.get("success", false) == false, "modify_tile rejects content on image tile", r)
+
+
+func test_modify_tile_image_solid_color(tools: Object) -> void:
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var hr_id: String = str(((lr["tiles"] as Array)[1] as Dictionary)["tile_id"])
+	var r: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": hr_id, "solid_color": "#ff0000"
+	})
+	_assert(r.get("success", false) == true, "modify_tile (solid_color) succeeds", r)
+
+	var gr: Dictionary = tools._get_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": hr_id, "include_src": true
+	})
+	_assert(str((gr["tile"] as Dictionary).get("src", "")).length() > 0, "new src is non-empty", {})
+
+
+func test_modify_tile_rejects_two_image_sources(tools: Object) -> void:
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var hr_id: String = str(((lr["tiles"] as Array)[1] as Dictionary)["tile_id"])
+	var r: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": hr_id,
+		"solid_color": "#ff0000", "image_base64": "AAAA"
+	})
+	_assert(r.get("success", false) == false, "modify_tile rejects 2 image sources", r)
+
+
+func test_modify_tile_rotation_round_trip(tools: Object) -> void:
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var tile_id: String = str(((lr["tiles"] as Array)[0] as Dictionary)["tile_id"])
+
+	# Set rotation.
+	var r1: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id, "rotation": 0.25
+	})
+	_assert(r1.get("success", false) == true, "modify_tile set rotation succeeds", r1)
+	var g1: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	_assert(abs(float((g1["tile"] as Dictionary).get("rotation", 0.0)) - 0.25) < 0.0001, "rotation set", g1)
+
+	# Clear rotation (set to 0 erases the field per omit-when-default).
+	var r2: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id, "rotation": 0.0
+	})
+	_assert(r2.get("success", false) == true, "modify_tile clear rotation succeeds", r2)
+	var g2: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	_assert(not (g2["tile"] as Dictionary).has("rotation"), "rotation 0 erases field", g2)
+
+
+func test_modify_tile_unknown_id(tools: Object) -> void:
+	var r: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": "tile_does_not_exist", "x": 0.5
+	})
+	_assert(r.get("success", false) == false, "modify_tile unknown id errors", r)
+	_assert(str(r.get("error", "")).to_lower().contains("not found"), "error mentions 'not found'", r)
+
+
+func test_set_slide_title(tools: Object) -> void:
+	var r1: Dictionary = tools._set_slide_title({
+		"path": OUT_PATH, "slide_index": 0, "title": "Butter Tarts (renamed)"
+	})
+	_assert(r1.get("success", false) == true, "set_slide_title set succeeds", r1)
+	var ls1: Dictionary = tools._list_slides({"path": OUT_PATH})
+	var s1: Dictionary = (ls1["slides"] as Array)[0] as Dictionary
+	_assert(str(s1.get("title", "")) == "Butter Tarts (renamed)", "title persists", s1)
+
+	# Empty string clears (omit-when-default).
+	var r2: Dictionary = tools._set_slide_title({"path": OUT_PATH, "slide_index": 0, "title": ""})
+	_assert(r2.get("success", false) == true, "set_slide_title clear succeeds", r2)
+	var ls2: Dictionary = tools._list_slides({"path": OUT_PATH})
+	var s2: Dictionary = (ls2["slides"] as Array)[0] as Dictionary
+	_assert(not s2.has("title"), "empty title removes field", s2)
+
+
+func test_set_aspect(tools: Object) -> void:
+	var r: Dictionary = tools._set_aspect({"path": OUT_PATH, "aspect": "4:3"})
+	_assert(r.get("success", false) == true, "set_aspect succeeds", r)
+	var ls: Dictionary = tools._list_slides({"path": OUT_PATH})
+	_assert(str(ls.get("aspect", "")) == "4:3", "aspect persists on disk", ls)
+	# Restore for downstream tests.
+	tools._set_aspect({"path": OUT_PATH, "aspect": "16:9"})
+
+
+func test_set_aspect_rejects_invalid(tools: Object) -> void:
+	var r: Dictionary = tools._set_aspect({"path": OUT_PATH, "aspect": "21:9"})
+	_assert(r.get("success", false) == false, "set_aspect rejects invalid value", r)
+
+
+func test_move_slide(tools: Object) -> void:
+	# Add a second slide so we have something to reorder.
+	tools._add_slide({"path": OUT_PATH, "title": "Second slide"})
+	var deck_before: Dictionary = _read_deck()
+	var id0: String = str(((deck_before["slides"] as Array)[0] as Dictionary)["id"])
+	var id1: String = str(((deck_before["slides"] as Array)[1] as Dictionary)["id"])
+
+	var r: Dictionary = tools._move_slide({"path": OUT_PATH, "from_index": 0, "to_index": 1})
+	_assert(r.get("success", false) == true, "move_slide succeeds", r)
+
+	var deck_after: Dictionary = _read_deck()
+	_assert(str(((deck_after["slides"] as Array)[0] as Dictionary)["id"]) == id1, "slide1 now first", {})
+	_assert(str(((deck_after["slides"] as Array)[1] as Dictionary)["id"]) == id0, "slide0 now second", {})
+
+	# Restore order so post-modify validate sees the original index ordering.
+	tools._move_slide({"path": OUT_PATH, "from_index": 1, "to_index": 0})
+
+
+func test_move_slide_out_of_range(tools: Object) -> void:
+	var r: Dictionary = tools._move_slide({"path": OUT_PATH, "from_index": 99, "to_index": 0})
+	_assert(r.get("success", false) == false, "move_slide OOR from_index errors", r)
+
+
+func test_post_modify_deck_still_validates() -> void:
+	var deck: Dictionary = _read_deck()
+	var errors: Array = SlideModel.validate_deck(deck)
+	_assert(errors.is_empty(), "post-modify deck still passes validate_deck()", {"errors": errors})
 
 
 # ---------------------------------------------------------------------------

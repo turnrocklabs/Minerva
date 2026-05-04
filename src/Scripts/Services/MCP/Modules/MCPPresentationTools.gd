@@ -86,6 +86,10 @@ func get_tool_names() -> Array[String]:
 		"presentation_list_annotations",
 		"presentation_get_tile",
 		"presentation_get_slide",
+		"presentation_modify_tile",
+		"presentation_set_slide_title",
+		"presentation_set_aspect",
+		"presentation_move_slide",
 	]
 
 
@@ -171,6 +175,72 @@ func register_tools() -> void:
 				"rotation": {"type": "number", "description": "Optional rotation in radians."},
 			},
 			"required": ["slide_index", "x", "y", "w", "h", "content"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_modify_tile",
+		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"tile_id": {"type": "string"},
+				"x": {"type": "number"},
+				"y": {"type": "number"},
+				"w": {"type": "number"},
+				"h": {"type": "number"},
+				"rotation": {"type": "number"},
+				"content": {"type": "string"},
+				"text_mode": {"type": "string", "description": "plain | bullet | numbered (text tiles only)"},
+				"image_path": {"type": "string"},
+				"image_base64": {"type": "string"},
+				"solid_color": {"type": "string"},
+				"source_graphics_editor": {"type": "string"},
+			},
+			"required": ["slide_index", "tile_id"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_set_slide_title",
+		"Set or clear a slide's title (omit-when-default — empty string removes the field).",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"slide_index": {"type": "integer"},
+				"title": {"type": "string"},
+			},
+			"required": ["slide_index", "title"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_set_aspect",
+		"Change the deck's aspect ratio. Existing tiles stay in normalized [0,1] coords; only rendering aspect changes. Solid-color image tiles authored at the previous aspect will letterbox — use modify_tile to re-synthesize them if needed.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"aspect": {"type": "string", "description": "16:9 | 4:3 | 1:1"},
+			},
+			"required": ["aspect"],
+		}
+	, "presentation")
+
+	server._register_tool("presentation_move_slide",
+		"Reorder a slide by index. Tile data is preserved; only the slide's position in the slides[] array changes.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+				"path": {"type": "string"},
+				"from_index": {"type": "integer"},
+				"to_index": {"type": "integer"},
+			},
+			"required": ["from_index", "to_index"],
 		}
 	, "presentation")
 
@@ -280,6 +350,14 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _get_tile(arguments)
 		"presentation_get_slide":
 			return _get_slide(arguments)
+		"presentation_modify_tile":
+			return _modify_tile(arguments)
+		"presentation_set_slide_title":
+			return _set_slide_title(arguments)
+		"presentation_set_aspect":
+			return _set_aspect(arguments)
+		"presentation_move_slide":
+			return _move_slide(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -755,6 +833,183 @@ func _find_tile_in_slide(slide: Dictionary, tile_id: String) -> Dictionary:
 		if String(t.get("id", "")) == tile_id:
 			return t
 	return {}
+
+
+# ---------------------------------------------------------------------------
+# Modify handlers
+# ---------------------------------------------------------------------------
+# Backed onto the same _resolve_target / _commit_target pattern as authoring.
+# Field-by-field semantics: every property is optional; absent = unchanged.
+
+const _MODIFY_COORD_KEYS: PackedStringArray = ["x", "y", "w", "h"]
+
+
+func _modify_tile(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id"])
+	if missing != null:
+		return missing
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	var tile_id: String = String(args["tile_id"]).strip_edges()
+	var tile: Dictionary = _find_tile_in_slide(slide, tile_id)
+	if tile.is_empty():
+		return MCPToolUtils.error("tile_id not found on slide %d: %s" % [
+			MCPToolUtils.coerce_int(args["slide_index"]), tile_id
+		])
+	var kind: String = String(tile.get("kind", ""))
+
+	# Coords: validate only when provided; clamp to [0,1].
+	for axis in _MODIFY_COORD_KEYS:
+		if args.has(axis) and args[axis] != null:
+			var v: float = MCPToolUtils.coerce_float(args[axis], -1.0)
+			if v < 0.0 or v > 1.0:
+				return MCPToolUtils.error("%s must be in [0, 1], got %f" % [axis, v])
+			tile[axis] = clampf(v, 0.0, 1.0)
+
+	# Rotation: 0 erases the field (omit-when-default), nonzero sets it.
+	if args.has("rotation") and args["rotation"] != null:
+		var rot: float = MCPToolUtils.coerce_float(args["rotation"], 0.0)
+		if is_zero_approx(rot):
+			tile.erase("rotation")
+		else:
+			tile["rotation"] = rot
+
+	# Text-tile fields.
+	if args.has("content") and args["content"] != null:
+		if kind != TILE_TEXT:
+			return MCPToolUtils.error("content can only be set on text tiles (this is %s)" % kind)
+		tile["content"] = String(args["content"])
+	if args.has("text_mode") and args["text_mode"] != null:
+		if kind != TILE_TEXT:
+			return MCPToolUtils.error("text_mode can only be set on text tiles (this is %s)" % kind)
+		var mode: String = String(args["text_mode"])
+		if not TEXT_MODES_VALID.has(mode):
+			return MCPToolUtils.error("text_mode must be one of %s" % str(TEXT_MODES_VALID))
+		tile["text_mode"] = mode
+
+	# Image-source replacement — at most one of these is allowed.
+	var has_path := args.has("image_path") and not String(args.get("image_path", "")).is_empty()
+	var has_b64 := args.has("image_base64") and not String(args.get("image_base64", "")).is_empty()
+	var has_solid := args.has("solid_color") and not String(args.get("solid_color", "")).is_empty()
+	var has_src_editor := args.has("source_graphics_editor") and not String(args.get("source_graphics_editor", "")).is_empty()
+	var src_count := int(has_path) + int(has_b64) + int(has_solid) + int(has_src_editor)
+	if src_count > 1:
+		return MCPToolUtils.error("Provide at most one of: image_path, image_base64, solid_color, source_graphics_editor")
+	if src_count == 1:
+		if kind != TILE_IMAGE:
+			return MCPToolUtils.error("Image-source fields only apply to image tiles (this is %s)" % kind)
+		var b64: String = ""
+		if has_path:
+			var read := _read_file_as_base64(String(args["image_path"]))
+			if read.has("error"):
+				return MCPToolUtils.error(read["error"])
+			b64 = read["base64"]
+		elif has_b64:
+			b64 = String(args["image_base64"])
+		elif has_src_editor:
+			var pulled := _read_graphics_editor_as_base64(String(args["source_graphics_editor"]))
+			if pulled.has("error"):
+				return MCPToolUtils.error(pulled["error"])
+			b64 = pulled["base64"]
+		else:
+			# Solid color — synthesize at the tile's CURRENT (post-modify) rendered aspect.
+			var slide_aspect: float = _parse_aspect_ratio(String(deck.get("aspect", "16:9")))
+			b64 = _make_solid_color_png_base64(
+				String(args["solid_color"]),
+				float(tile.get("w", 1.0)),
+				float(tile.get("h", 1.0)),
+				slide_aspect
+			)
+			if b64.is_empty():
+				return MCPToolUtils.error("solid_color must be a valid hex color (e.g. #1F4E5A)")
+		tile["src"] = b64
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"tile_id": tile_id,
+	})
+
+
+func _set_slide_title(args: Dictionary) -> Dictionary:
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slide_v := _slide_at(deck, args)
+	if slide_v is Dictionary and slide_v.has("__error__"):
+		return MCPToolUtils.error(slide_v["__error__"])
+	var slide: Dictionary = slide_v as Dictionary
+
+	if not args.has("title"):
+		return MCPToolUtils.error("title is required (use \"\" to clear)")
+	var title: String = String(args["title"])
+	if title.is_empty():
+		slide.erase("title")
+	else:
+		slide["title"] = title
+
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({
+		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
+		"title": title,
+	})
+
+
+func _set_aspect(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["aspect"])
+	if missing != null:
+		return missing
+	var aspect: String = String(args["aspect"])
+	if not ASPECTS_VALID.has(aspect):
+		return MCPToolUtils.error("aspect must be one of %s" % str(ASPECTS_VALID))
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	deck["aspect"] = aspect
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({"aspect": aspect})
+
+
+func _move_slide(args: Dictionary) -> Dictionary:
+	var missing: Variant = MCPToolUtils.check_required(args, ["from_index", "to_index"])
+	if missing != null:
+		return missing
+	var resolved := _resolve_target(args)
+	if resolved.has("error"):
+		return resolved
+	var deck: Dictionary = resolved["deck"]
+	var slides: Array = deck.get("slides", []) as Array
+	var from_i: int = MCPToolUtils.coerce_int(args["from_index"], -1)
+	var to_i: int = MCPToolUtils.coerce_int(args["to_index"], -1)
+	if from_i < 0 or from_i >= slides.size():
+		return MCPToolUtils.error("from_index out of range: %d (deck has %d slides)" % [from_i, slides.size()])
+	if to_i < 0 or to_i >= slides.size():
+		return MCPToolUtils.error("to_index out of range: %d (deck has %d slides)" % [to_i, slides.size()])
+	if from_i == to_i:
+		return MCPToolUtils.success({"from_index": from_i, "to_index": to_i, "no_op": true})
+
+	var s: Dictionary = slides[from_i] as Dictionary
+	slides.remove_at(from_i)
+	slides.insert(to_i, s)
+	var commit_err := _commit_target(resolved, deck)
+	if commit_err != "":
+		return MCPToolUtils.error(commit_err)
+	return MCPToolUtils.success({"from_index": from_i, "to_index": to_i})
 
 
 # ---------------------------------------------------------------------------
