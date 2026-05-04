@@ -298,6 +298,66 @@ static func invoke_create_note(panel_root: Node, ctx: Dictionary) -> Variant:
 	return panel_root._on_panel_create_note_request(ctx)
 
 
+## Call `_on_panel_restore_from_note(payload)` on `panel_root` if the method
+## exists. The hook is the inverse of `_on_panel_create_note_request`: when a
+## plugin_data note is opened, the host invokes this hook so the plugin can
+## restore its scene from the saved JSON payload.
+##
+## Returns the bool returned by the hook (true = restore succeeded; false =
+## payload unrecognised / wrong version → host should display a toast and
+## leave the panel blank). Returns false and logs a push_warning when the
+## panel doesn't implement the hook — callers should treat that as
+## "unsupported" and degrade to preview-image-only display.
+##
+## Same error-semantics caveat as invoke_save.
+static func invoke_restore_from_note(panel_root: Node, payload: Dictionary) -> bool:
+	if panel_root == null:
+		push_warning("[PluginScenePanelHost] invoke_restore_from_note: panel_root is null")
+		return false
+	if not panel_root.has_method("_on_panel_restore_from_note"):
+		push_warning(
+			("[PluginScenePanelHost] invoke_restore_from_note: scene '%s' does not " +
+			"implement _on_panel_restore_from_note — cannot reopen plugin_data note") %
+			panel_root.name
+		)
+		return false
+	var result: Variant = panel_root._on_panel_restore_from_note(payload)
+	# Tolerate non-bool returns: anything truthy is success.
+	return bool(result)
+
+
+## Call `_on_panel_render_for_llm(ctx)` on `panel_root` if the method exists.
+##
+## Returns the canonical MultimodalPayload — an Array of content parts where
+## each part is either:
+##   {"type": "text",  "text": String}
+##   {"type": "image", "image": Image, "alt": String}
+##
+## Provider adapters (see DCR work item 019df4ebf896) translate this canonical
+## shape into per-provider wire formats. Plugins that don't implement the hook
+## fall back to a single text+image pair built from the note's preview_image
+## and preview_alt_text — this helper returns an empty Array in that case so
+## the caller can detect "no plugin-side rendering".
+##
+## Same error-semantics caveat as invoke_save.
+static func invoke_render_for_llm(panel_root: Node, ctx: Dictionary) -> Array:
+	if panel_root == null:
+		push_warning("[PluginScenePanelHost] invoke_render_for_llm: panel_root is null")
+		return []
+	if not panel_root.has_method("_on_panel_render_for_llm"):
+		# Not a warning — falling back to preview_image is the documented default.
+		return []
+	var result: Variant = panel_root._on_panel_render_for_llm(ctx)
+	if result is Array:
+		return result as Array
+	push_warning(
+		("[PluginScenePanelHost] invoke_render_for_llm: scene '%s' returned %s, " +
+		"expected Array of {type, ...} content parts — falling back to preview.") %
+		[panel_root.name, typeof(result)]
+	)
+	return []
+
+
 ## Call `_on_panel_inject_toggle_changed(enabled)` on `panel_root` if the
 ## method exists.  Fire-and-forget: no return value is consumed.
 ##

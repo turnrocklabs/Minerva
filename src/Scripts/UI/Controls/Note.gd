@@ -30,6 +30,7 @@ enum Type {
 	VIDEO,
 	AUDIO,
 	HTML,
+	PLUGIN_DATA,
 }
 
 static var _type_names: = {
@@ -38,6 +39,7 @@ static var _type_names: = {
 	Type.AUDIO: "audio",
 	Type.VIDEO: "video",
 	Type.HTML: "html",
+	Type.PLUGIN_DATA: "plugin_data",
 }
 
 ## Mapping of file extensions and their respective note type.[br]
@@ -126,6 +128,11 @@ var linked_pcb_data: String = ""
 
 ## HTML source for HTML notes (stored for rendering and editing)
 var linked_html: String = ""
+
+## Plugin scene state for plugin_data notes. JSON string wrapping
+## {version, plugin_id, panel_name, payload}. The Edit button uses plugin_id
+## to dispatch to the originating plugin's restore-from-note hook.
+var linked_plugin_payload: String = ""
 
 ## If non-empty, this note is only included in prompts for the listed chat HistoryIds.
 ## Empty means global (included in all chats) for backward compatibility.
@@ -328,6 +335,49 @@ static func create_image_note(note_title: String, image: Image, caption: String 
 	)
 
 	return note_scene
+
+## Create a note that round-trips a plugin scene. The preview_image renders
+## as a thumbnail (via NoteImageControls); the plugin's full state lives in
+## linked_plugin_payload as JSON. The Edit button dispatches by plugin_id to
+## the plugin's restore-from-note hook.
+static func create_plugin_data_note(
+	note_title: String,
+	plugin_id: String,
+	panel_name: String,
+	payload: Dictionary,
+	preview_image: Image,
+	preview_alt_text: String = "",
+	note_uuid: String = "",
+	register: bool = true
+) -> Note:
+	var image_controls: NoteImageControls = _image_controls_scene.instantiate()
+	var note_scene: Note = _scene.instantiate()
+
+	note_scene._backing_note_controls.append(image_controls)
+	note_scene.uuid = note_uuid if not note_uuid.is_empty() else SingletonObject.generate_UUID()
+
+	if register:
+		SingletonObject.register_object(note_scene, &"uuid")
+
+	image_controls.setup(note_scene, preview_image, preview_alt_text)
+
+	note_scene.title = note_title
+	note_scene.type = Type.PLUGIN_DATA
+	note_scene.linked_plugin_payload = JSON.stringify({
+		"version": 1,
+		"plugin_id": plugin_id,
+		"panel_name": panel_name,
+		"payload": payload,
+	})
+
+	note_scene.ready.connect(
+		func():
+			note_scene._set_controls_container(image_controls)
+			note_scene.initialized.emit()
+	)
+
+	return note_scene
+
 
 ## Create a note from a PCB editor with full state restoration.
 static func create_pcb_note(note_title: String, pcb_image: Image, pcb_data: Dictionary, note_uuid: String = "", register: = true) -> Note:
@@ -603,6 +653,13 @@ func _on_edit_button_pressed() -> void:
 		_open_linked_spreadsheet(editor_pane)
 		return
 
+	# Handle linked plugin_data notes - reopen the originating plugin scene
+	# panel and call the plugin's restore-from-note hook. Falls back to a
+	# toast if the plugin isn't installed/running anymore.
+	if not linked_plugin_payload.is_empty():
+		_open_linked_plugin_panel(editor_pane)
+		return
+
 	for editor in editor_pane.get_open_editors():
 		if editor.associated_object == self:
 			var curr_idx: = editor_pane.Tabs.get_tab_idx_from_control(editor)
@@ -671,6 +728,70 @@ func _open_linked_pcb(editor_pane: EditorPane) -> void:
 			editor.pcb_editor.load_from_dict(pcb_dict)
 		else:
 			push_error("[Note] Failed to parse linked_pcb_data: %s" % json.get_error_message())
+
+
+## Open a plugin scene editor and restore the panel state from
+## linked_plugin_payload. The wrapper carries plugin_id, panel_name, and the
+## opaque inner payload that the plugin's _on_panel_restore_from_note hook
+## consumes.
+func _open_linked_plugin_panel(editor_pane: EditorPane) -> void:
+	var wrapper_v: Variant = JSON.parse_string(linked_plugin_payload)
+	if not (wrapper_v is Dictionary):
+		push_error("[Note] linked_plugin_payload is not valid JSON Dictionary")
+		SingletonObject.create_toast_notification(
+			"Couldn't reopen plugin note — payload corrupted",
+			ToastNotification.Type.ERROR
+		)
+		return
+	var wrapper: Dictionary = wrapper_v as Dictionary
+	var note_plugin_id: String = String(wrapper.get("plugin_id", ""))
+	var note_panel_name: String = String(wrapper.get("panel_name", ""))
+	var inner_payload_v: Variant = wrapper.get("payload", {})
+	var inner_payload: Dictionary = inner_payload_v if inner_payload_v is Dictionary else {}
+
+	if note_plugin_id.is_empty() or note_panel_name.is_empty():
+		SingletonObject.create_toast_notification(
+			"Note is missing plugin_id or panel_name — cannot reopen",
+			ToastNotification.Type.ERROR
+		)
+		return
+
+	# Show the editor pane if hidden.
+	SingletonObject.main_ui.set_editor_pane_visible(true)
+
+	# Look for an existing tab already restored from this note.
+	for editor in editor_pane.get_open_editors():
+		if editor.associated_object == self and editor.type == Editor.Type.PLUGIN_SCENE:
+			var idx = editor_pane.Tabs.get_tab_idx_from_control(editor)
+			editor_pane.Tabs.current_tab = idx
+			return
+
+	var editor = editor_pane.add_plugin_scene_editor(note_plugin_id, note_panel_name, null, title)
+	if editor == null:
+		SingletonObject.create_toast_notification(
+			"Could not open plugin '%s' panel '%s'" % [note_plugin_id, note_panel_name],
+			ToastNotification.Type.ERROR
+		)
+		return
+	editor.associated_object = self
+
+	if editor.plugin_scene_root == null:
+		# Plugin is missing or failed to instantiate. Tab is open but blank;
+		# user gets visual feedback without a hard crash.
+		SingletonObject.create_toast_notification(
+			"Plugin '%s' is not installed or failed to load — note can't be edited" % note_plugin_id,
+			ToastNotification.Type.WARNING
+		)
+		return
+
+	var ok: bool = PluginScenePanelHost.invoke_restore_from_note(
+		editor.plugin_scene_root, inner_payload
+	)
+	if not ok:
+		SingletonObject.create_toast_notification(
+			"Plugin '%s' couldn't restore note — payload version mismatch?" % note_plugin_id,
+			ToastNotification.Type.WARNING
+		)
 
 
 ## Open the linked HTML content in a WebView editor
@@ -1006,6 +1127,10 @@ func serialize() -> Dictionary:
 	if not linked_html.is_empty():
 		note_data["LinkedHTML"] = linked_html
 
+	# Add linked plugin payload if set
+	if not linked_plugin_payload.is_empty():
+		note_data["LinkedPluginPayload"] = linked_plugin_payload
+
 	# Add linked chat IDs if set
 	if not linked_chat_ids.is_empty():
 		note_data["LinkedChatIds"] = linked_chat_ids
@@ -1163,6 +1288,29 @@ static func deserialize(note_data: Dictionary, register = true) -> Note:
 				note = create_html_note(
 					note_data.get("Title", "Unknown"),
 					note_data.get("Content", ""),
+					note_data.get("UUID", ""),
+					register,
+				)
+			"plugin_data":
+				var image_data = note_data.get("MemoryImage", "")
+				var image: = Image.new()
+				if image_data is String and not image_data.is_empty():
+					image.load_png_from_buffer(Marshalls.base64_to_raw(image_data))
+
+				var wrapper: Dictionary = {}
+				var payload_str: String = note_data.get("LinkedPluginPayload", "")
+				if not payload_str.is_empty():
+					var parsed: Variant = JSON.parse_string(payload_str)
+					if parsed is Dictionary:
+						wrapper = parsed
+
+				note = create_plugin_data_note(
+					note_data.get("Title", "Unknown"),
+					str(wrapper.get("plugin_id", "")),
+					str(wrapper.get("panel_name", "")),
+					wrapper.get("payload", {}) if wrapper.get("payload", {}) is Dictionary else {},
+					image,
+					note_data.get("ImageCaption", ""),
 					note_data.get("UUID", ""),
 					register,
 				)

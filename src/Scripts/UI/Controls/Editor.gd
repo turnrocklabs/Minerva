@@ -1825,6 +1825,19 @@ func _create_plugin_scene_note() -> Note:
 		payload = PluginScenePanelHost.invoke_create_note(plugin_scene_root, ctx)
 
 	if payload != null:
+		# Backfill missing preview_image on plugin_data shapes via a host
+		# screenshot — plugins are free to omit it (rendering a clean
+		# slide-only image takes a SubViewport round-trip), and the panel
+		# screenshot is a good-enough fallback that keeps the round-trip
+		# (plugin_data persistence) alive instead of degrading to a flat
+		# image note.
+		if payload is Dictionary:
+			var d: Dictionary = payload as Dictionary
+			if str(d.get("kind", "")).to_lower() == "plugin_data":
+				if not (d.get("preview_image", null) is Image):
+					var snap: Image = await _capture_plugin_scene_image()
+					if snap != null:
+						d["preview_image"] = snap
 		var maybe_note: Note = _build_note_from_plugin_payload(note_title, payload)
 		if maybe_note != null:
 			return maybe_note
@@ -1842,7 +1855,15 @@ func _create_plugin_scene_note() -> Note:
 ##   {kind: "text",  title?: String, content: String}
 ##   {kind: "html",  title?: String, html: String}
 ##   {kind: "image", title?: String, image: Image}              # in-memory Image
+##   {kind: "plugin_data",
+##      title?: String, plugin_id?: String, panel_name?: String,
+##      payload: Dictionary, preview_image: Image, preview_alt_text?: String}
 ## Returns null on unknown/invalid shape so the caller can fall back.
+##
+## For plugin_data: plugin_id and panel_name default to the originating
+## editor's values when the plugin omits them — every plugin_data note can
+## therefore be reopened in the same plugin/panel by default. Plugins are
+## free to override (e.g., to land a note in a sibling panel).
 func _build_note_from_plugin_payload(default_title: String, payload: Variant) -> Note:
 	if not (payload is Dictionary):
 		return null
@@ -1863,6 +1884,19 @@ func _build_note_from_plugin_payload(default_title: String, payload: Variant) ->
 			if img_v is Image:
 				return Note.create_image_note(title, img_v as Image)
 			return null
+		"plugin_data":
+			var pid: String = str(d.get("plugin_id", plugin_id))
+			var pname: String = str(d.get("panel_name", panel_name))
+			var pload_v: Variant = d.get("payload", {})
+			if not (pload_v is Dictionary):
+				return null
+			var img_v: Variant = d.get("preview_image", null)
+			if not (img_v is Image):
+				return null
+			var alt: String = str(d.get("preview_alt_text", ""))
+			return Note.create_plugin_data_note(
+				title, pid, pname, pload_v as Dictionary, img_v as Image, alt
+			)
 		_:
 			return null
 
@@ -1966,6 +2000,48 @@ func _update_note(note: Note) -> void:
 			var controls_container = note.get_controls_container()
 			if controls_container and controls_container.has_method("setup"):
 				controls_container.content = html
+
+	elif type == Type.PLUGIN_SCENE:
+		# Re-fetch the panel's current state via the same hook that built the
+		# note in the first place, then overwrite the note's wrapper +
+		# preview image. Without this branch, every Save-to-Note after the
+		# first is a silent no-op (the wrapper stays at its first-snapshot
+		# value).
+		if plugin_scene_root == null:
+			return
+		var ctx2: Dictionary = {
+			"plugin_id":  plugin_id,
+			"panel_name": panel_name,
+			"tab_title":  tab_title,
+		}
+		var payload2: Variant = PluginScenePanelHost.invoke_create_note(plugin_scene_root, ctx2)
+		if not (payload2 is Dictionary):
+			return
+		var d2: Dictionary = payload2 as Dictionary
+		if str(d2.get("kind", "")).to_lower() != "plugin_data":
+			return
+		var inner2: Variant = d2.get("payload", {})
+		if not (inner2 is Dictionary):
+			return
+		note.linked_plugin_payload = JSON.stringify({
+			"version":     1,
+			"plugin_id":   str(d2.get("plugin_id", plugin_id)),
+			"panel_name":  str(d2.get("panel_name", panel_name)),
+			"payload":     inner2,
+		})
+		# Refresh the preview thumbnail. Plugin may have provided one;
+		# otherwise host backfills (mirrors create-note path).
+		var preview_v: Variant = d2.get("preview_image", null)
+		var preview_img: Image = preview_v if preview_v is Image else null
+		if preview_img == null:
+			preview_img = await _capture_plugin_scene_image()
+		if preview_img != null:
+			var controls_pd = note.get_controls_container() as NoteImageControls
+			if controls_pd != null:
+				controls_pd.image = preview_img
+				var alt2: String = str(d2.get("preview_alt_text", ""))
+				if not alt2.is_empty():
+					controls_pd.caption = alt2
 
 
 var _proxy_note: Note.Proxy
