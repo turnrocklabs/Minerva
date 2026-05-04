@@ -1,91 +1,80 @@
 # Pickup — Presentation plugin
 
-Last updated: 2026-05-03 (EOD, Round 1 of DRY refactor done)
+Last updated: 2026-05-03 (EOD; Round 3 HITL polish landed; MCP interface is the next workstream)
 
 ## Where I left off
 
-Active workstream: **Presentation plugin** — universal-select DRY refactor in progress. Round 1 (schema migrations) shipped; Round 2 (TileAnnotationHost adapter) is the next launch.
+Active workstream: **Presentation plugin** — universal-select DRY refactor functionally complete. Round 3 (substrate integration) shipped and went through several rounds of HITL fixes. Codex pitched in to split the host responsibility cleanly. Next session pivots to **T7 MCP tools** (`019dc0bc768a7fc19c7ab73009762231`).
 
-T3 R2 collapsed Round 1's 3-pane layout (list / canvas / inspector) into a single-canvas PowerPoint UX: tool palette (Select / Text / Image / Sheet) on a single toolbar, click-drag-to-place rubber band, inline TextEdit for text tiles, wheel-zoom (cursor-anchored, [0.25, 5.0]), middle-drag pan, Background popover, fullscreen preview Window. Round-1 files (`slide_list_panel.gd`, `tile_inspector.gd`) are kept on disk but unwired from the R2 panel — will revive when the user comes back to multi-slide ergonomics.
+## What changed this session (post-Round-3 HITL polish)
 
-User's decision: **the SELECT button must reuse the substrate's universal-select tool** (AnnotationTransformTool — corner scale / edge axis-lock / rotate-ring / inside translate, via AnnotationOverlay for input dispatch + writeback). Custom drag/resize/halo code in `slide_canvas.gd` (~300 LOC) gets ripped out and replaced. The presentation host will be a full substrate citizen — supporting both tile-as-annotation rows AND real substrate kinds (callout / 2d_arrow / 2d_text) on `slide.annotations[]`. Eight work_items filed under DCR `019dc0bbd6937264880b1327c942d5b6`.
+Both repos have uncommitted work that lands in this session's WIP commit.
+
+### Plugins repo (`~/github/plugins`)
+
+- **`presentation_tile_annotation_host.gd`** — Codex added `configure_surface(include_tiles: bool, include_substrate_annotations: bool)` so the host can be reconfigured to be tile-only (canvas) vs substrate-only (panel chrome). Selection prune routine respects the configured surfaces. **Preserve this — do not undo.**
+- **`SlideEditorPanel.gd`** — Codex moved the substrate `AnnotationHost` ownership up to the panel itself. Panel host calls `configure_surface(false, true)` (substrate kinds only); canvas keeps a separate host with `configure_surface(true, false)` (tile kinds only). Panel registers/deregisters with `AnnotationHostRegistry` on plugin load/unload. Coupled via the new `slide_canvas.slide_rect_changed` signal so substrate annotations on `slide.annotations[]` keep the right pixel rect. Panel also overrides `Editor.get_annotation_host()` so the AnnotationDockPane mounts.
+- **`presentation_tile_kind_base.gd`** — minor (Codex touched).
+- **`slide_canvas.gd`** —
+  - Codex added `slide_rect_changed` signal + a `get_host()` helper so the panel can sync.
+  - Today: shrunk default click-place size for TEXT tool (`CLICK_PLACE_NORM_W` 0.35→0.10, `CLICK_PLACE_NORM_H` 0.20→0.045 — H bisected after two rounds of "too big" / "too small").
+  - Today: hooked `TextEdit.text_changed` → new `_autosize_text_tile_x()`. Inline edit grows tile.w only on X to fit the widest typed line (font-measured via `get_string_size`); never shrinks during a single edit, never touches Y. Y-overflow is intentional per user's "X-only" directive.
+
+### Minerva repo (`~/github/Minerva`)
+
+- **`src/Scripts/UI/Views/EditorPane.gd`** — added `_on_tab_bar_gui_input` + `_show_rename_tab_dialog`. Double-click any editor tab now pops a small rename dialog; Enter/OK applies, blank/unchanged is a no-op. For `Editor` controls the new value goes through the `tab_title` setter (so AnnotationHostRegistry re-keys correctly); for non-Editor children it falls back to `Tabs.set_tab_title`. Works for every editor type, not just presentation.
+
+### Docs / artifacts
+
+- `/tmp/butter_tarts.mdeck` — hand-authored demo deck (1 slide; BBCode-large title tile + bullet outline tile). Validates that the `.mdeck` JSON is straightforward enough for an MCP write path.
 
 ## What to do next
 
-### Universal-select DRY refactor — work-cycle in flight
+### T7 MCP tools — promoted to active
+
+Work_item `019dc0bc768a7fc19c7ab73009762231`. See its docket comment 318 for the suggested initial tool surface and implementation site (`src/Scripts/Services/MCP/Modules/MCPPresentationTools.gd`, pattern-match `MCPEditorTools.gd`).
+
+Suggested first cut:
+- `presentation_create_deck(path, title?)`
+- `presentation_open_deck(path)`
+- `presentation_add_slide(deck_path|tab, position?, title?)`
+- `presentation_add_text_tile(deck_path|tab, slide_index, x, y, w, h, content, text_mode)`
+- `presentation_add_image_tile(deck_path|tab, slide_index, x, y, w, h, image_path|base64)`
+- `presentation_set_slide_background(deck_path|tab, slide_index, color|image_path)`
+- `presentation_render_slide(deck_path|tab, slide_index) → PNG` (LLM vision path per `project_presentation_llm_edit_model.md`)
+
+### HITL polish still open (deferred until after MCP scope)
+
+Tracked on `019def28e6be7e358a7a80e33014e526` (comment 317). Items:
+- Scale gizmo: drag corner translates instead of scales. Root cause unknown — may be substrate's scale-around-center vs opposite-corner UX choice.
+- Rotate gizmo: visual rotation not applied to tile views (tile.rotation field updates but RichTextLabel / TextureRect / GridContainer don't apply `Control.rotation` in `_layout_views`).
+- Save/load round-trip of rotation not yet manually verified.
+- Fullscreen Window with rotated tiles not yet re-verified.
+
+### Universal-select DRY refactor — work_items recap
 
 | Order | ID | Title | Status |
 |---|---|---|---|
-| 1a | `019def2880ba7c8886f47bf2511e73ef` | Schema: tile.rotation field | **done (Round 1)** |
-| 1b | `019defbd27767cb6a679de6dd4a02c4b` | Schema: slide.annotations[] field | **done (Round 1)** |
-| 2 | `019def2848547eaab2806d979429412d` | Build `Presentation_TileAnnotationHost` adapter (dual-source, substrate kinds + tile kinds) | **done (Round 2)** |
-| 3 | `019def2862aa771fbbf9ef4aad55c52c` | Define `Presentation_TileKind*` AnnotationKind subclasses (geometry-only, no `render()`) | **done (Round 2)** |
-| 4 | `019def28aaac79928594bff9eaa8b965` | Replace slide_canvas custom drag/resize/halo with substrate tools + AnnotationOverlay | **done (Round 3, manual)** — pending HITL |
-| 5 | `019def28c59e71309330e4421c84038e` | Tests for adapter + kinds + dual-source + signal idempotence | Round 4 |
-| 6 | `019def28e6be7e358a7a80e33014e526` | HITL: end-to-end universal-select re-review (closes T3 R2) | gate |
-| 7 | `019defbd4a0c7752b8e3b9bb2ab213ec` | Wire substrate AnnotationToolbar (callout / 2d_arrow / 2d_text) into SlideEditorPanel | post-HITL, pre-T4 |
-
-Round 1 deliverables (plugins commit `e2dc967`, path-portability fix `2371d8d`):
-- `slide_model.gd`: optional `tile.rotation: float` (omit-when-default) on all 3 tile constructors + `set_tile_rotation` mutator + validator updates.
-- `slide_model.gd`: optional `slide.annotations: Array` (omit-when-empty) on `make_slide` + `add_annotation` / `update_annotation` / `remove_annotation` mutators + validator updates.
-- `test_slide_model.gd`: 168 PASS / 0 FAIL (was 84 / 0).
-
-Round 2 deliverables (5 new files in `~/github/plugins/presentation/ui/`):
-- `presentation_tile_kind_base.gd` — `Presentation_TileKindBase extends AnnotationKind`. Geometry-only adapter (bounds, hit_test, transform_annotation, primary_anchor_point); `has_visual_render()` → false; no `render()`.
-- `presentation_tile_kind_{text,image,spreadsheet}.gd` — thin subclasses; `extends "presentation_tile_kind_base.gd"` (string-path; sibling class_name fails for off-tree per `feedback_off_tree_plugin_class_names.md`).
-- `presentation_tile_annotation_host.gd` — `Presentation_TileAnnotationHost extends AnnotationHost`. Dual-source `get_annotations()` (synthesized tile annotations + persisted `slide.annotations[]`); routes `update/add/remove` by kind discriminator (`presentation_tile_*` → tile writeback; substrate kinds → `slide_model` mutators); `set_selected_annotation_id` emits `selection_changed` only on actual change; `_init` registers BuiltinKinds + 3 tile kinds.
-- `manifest.json`: 5 new files appended to `ui.panels[0].scripts`.
-- Smoke test verified end-to-end: tile (0.1, 0.1, 0.3, 0.2) on 1920×1080 → rect_px (192, 108, 576, 216); translate(+100, 0) writes back tile.x = 0.1521; callout add persists to slide.annotations[].
-- Tests still 168/0 + 39/0 (Round 4 will add new integration tests).
-
-Round 3 deliverables (`slide_canvas.gd` rewire + 1-line host helper):
-- `slide_canvas.gd`: gutted MOVE/RESIZE drag math, `_hit_test_handles`, and `_draw` halo+handle rendering. PLACE drag for TEXT/IMAGE/SHEET retained. Net +215/-223 LOC; new wiring + host-signal handlers offset most of the deletion.
-- Input dispatch redesign: wheel-zoom + middle-pan + double-click-to-edit moved to `_input` (bypasses overlay's mouse_filter STOP). Del/Backspace/Esc moved to `_unhandled_key_input`. `_gui_input` now only fires PLACE for non-SELECT tools.
-- `_ready` creates `Presentation_TileAnnotationHost` + `AnnotationOverlay` as children, bootstraps `AnnotationTransformTool` for the default SELECT tool, wires `selection_changed` and `annotations_changed` callbacks.
-- `set_tool` swaps overlay's active tool: SELECT → new AnnotationTransformTool; non-SELECT → clear (overlay goes mouse_filter IGNORE so canvas owns PLACE).
-- `set_slide` / `_recompute_slide_rect` push state to host so synthesized envelopes stay current.
-- `delete_selected` and `_finish_placement` (+ image picker) call `_host.notify_changed()` to re-trigger overlay redraw.
-- Host: added 1-line `notify_changed()` helper.
-- Smoke test verified: default SELECT auto-activates the SRT tool, switching to TEXT clears it; transform_annotation through the kind round-trips into tile.x/y at correct math (50px translate at 1280-wide canvas → tile.x = 0.1390625).
-
-**HITL gate live now (work_item #6 / `019def28e6`).** Open Minerva, exercise the full universal-select flow on a deck, file findings.
-
-Defect log (caught by orchestrator, not implementer):
-- Round 1: `set_tile_rotation` was self-reported as added but missing from source; tests script-errored silently. Found by Opus reviewer running tests with stderr capture.
-- Round 2: Subclasses used `extends Presentation_TileKindBase` (sibling class_name) — fails parse for off-tree plugins. Found by orchestrator smoke test before reviewer launch. Fix: `extends "presentation_tile_kind_base.gd"`. Nudge hint saved under `minerva-plugin-platform/off_tree_extends_pattern`.
-- Round 3: `set_tool` early-returned when default `_tool == Tool.SELECT`, so the overlay never got `AnnotationTransformTool` on canvas mount. Fix: bootstrap the tool in `_ready` after overlay creation.
+| 1a | `019def2880ba7c8886f47bf2511e73ef` | Schema: tile.rotation field | done (R1) |
+| 1b | `019defbd27767cb6a679de6dd4a02c4b` | Schema: slide.annotations[] field | done (R1) |
+| 2 | `019def2848547eaab2806d979429412d` | TileAnnotationHost adapter | done (R2) |
+| 3 | `019def2862aa771fbbf9ef4aad55c52c` | TileKind subclasses | done (R2) |
+| 4 | `019def28aaac79928594bff9eaa8b965` | slide_canvas substrate rewire | done (R3 + HITL polish) |
+| 5 | `019def28c59e71309330e4421c84038e` | Tests for adapter + kinds + dual-source | Round 4 (deferred) |
+| 6 | `019def28e6be7e358a7a80e33014e526` | HITL: end-to-end SRT re-review | partial; gizmo issues open |
+| 7 | `019defbd4a0c7752b8e3b9bb2ab213ec` | Wire substrate AnnotationToolbar | post-HITL, pre-T4 |
+| **T7** | **`019dc0bc768a7fc19c7ab73009762231`** | **MCP tools** | **next-up** |
 
 DCR: `019dc0bbd6937264880b1327c942d5b6`
 Plan: `019dc0bbfcc57d81b4ac1300d4923094`
-T3 work_item (still in_progress): `019dc0bc3ca07970b3cbce37093a89a4` — see comment 315 for full R2-end state.
-
-**Substrate tools to reuse (read these first):**
-- `~/github/Minerva/src/Scripts/Services/Annotations/kinds/AnnotationSelectTool.gd` (152 LOC)
-- `~/github/Minerva/src/Scripts/Services/Annotations/kinds/AnnotationTransformTool.gd` (521 LOC) — unified SRT gizmo with zone enum (CORNER_TL/TR/BL/BR, EDGE_T/B/L/R, ROTATE_TL/TR/BL/BR, INSIDE, OUTSIDE)
-- `~/github/Minerva/src/Scripts/Services/Annotations/AnnotationHost.gd` (interface contract)
-- `~/github/Minerva/src/Scripts/Services/Annotations/AnnotationKind.gd` (hit_test, bounds)
-
-**Reference for the existing R2 canvas (the thing being refactored):**
-- `~/github/plugins/presentation/ui/slide_canvas.gd` (973 LOC; DragMode.MOVE/RESIZE/PLACE, custom dashed halo `_draw()`, cursor-anchored wheel zoom, inline TextEdit overlay)
-- `~/github/plugins/presentation/ui/SlideEditorPanel.gd` (panel orchestrator, tool palette wiring, fullscreen Window spawn)
-- `~/github/plugins/presentation/ui/slide_model.gd` (validators + constructors — the `tile.rotation` schema migration lives here)
-
-### Stretch / deferred
-
-- `019dc0bc46997bd488ffbcf4acb18ca4` — T4 Reveal script (annotation-id sequencing on next-press)
-- `019dc0bc54227391b5162f6324cb5338` — T5 Fullscreen mode (the `Window` approach in R2 likely closes this)
-- `019dc0bc69087f45ba23a4045b435e78` — T6 Pen input (substrate-blocked)
-- `019dc0bc768a7fc19c7ab73009762231` — T7 MCP tools (independent; can interleave)
-- Stretch: modal SpreadsheetEditor for in-tile cell editing
-- Stretch: drag-to-reorder slides (Round 1 had up/down buttons; reorder UX never picked back up)
 
 ## Cold pickup checklist
 
 1. `git pull` on `~/github/Minerva` (branch `user/imran/experiments/swarm`).
-2. `git -C ~/github/plugins pull` (presentation plugin lives in the plugins monorepo).
+2. `git -C ~/github/plugins pull` (branch `main`).
 3. Read `Docs/pickup.md` (this file).
 4. `git -C ~/github/plugins log --oneline -5` and `git -C ~/github/Minerva log --oneline -5` — both should show today's WIP commits at the head.
-5. Run substrate regression suite:
+5. Substrate regression suite (sanity):
    ```
    for t in test/annotations_v2/test_workbench_selection_sync.gd \
             test/annotations_v2/test_kind_extension_api.gd \
@@ -94,38 +83,40 @@ T3 work_item (still in_progress): `019dc0bc3ca07970b3cbce37093a89a4` — see com
    done
    ```
    Expect 39 PASS / 0 FAIL.
-6. Run presentation plugin's model tests:
+6. Plugin model tests (sanity):
    ```
    godot --headless --path ~/github/Minerva/src \
      --script ~/github/plugins/presentation/test/test_slide_model.gd
    ```
-   Expect 84 PASS / 0 FAIL.
-7. Read the canvas to refactor: `~/github/plugins/presentation/ui/slide_canvas.gd` (focus on DragMode handling, `_draw()` halo, hit-test loop).
-8. Pick up work_item `019def2880ba7c8886f47bf2511e73ef` (schema migration first — smallest, unblocks the chain).
+   Expect 168 PASS / 0 FAIL (post-Round-1).
+7. Open Minerva, double-click any editor tab to confirm rename dialog still works.
+8. Open `/tmp/butter_tarts.mdeck` to confirm slide renders (title tile + bullet outline).
+9. Read `~/github/Minerva/src/Scripts/Services/MCP/Modules/MCPEditorTools.gd` as the pattern.
+10. Pick up work_item `019dc0bc768a7fc19c7ab73009762231` (T7 MCP tools).
 
-## Schema (locked through R2 — rotation field pending)
+## Schema
 
-- `version: 1`, `aspect: "16:9"` (4:3 / 1:1 also valid in `ASPECTS_VALID`)
-- Slides: `{id, title?, background, tiles[], reveal[]}` — title omit-when-default; reveal is for T4
+- `version: 1`, `aspect: "16:9"` (`4:3` / `1:1` also valid)
+- Slide: `{id, title?, background, tiles[], reveal[], annotations?}` — title and annotations both omit-when-default
 - Background: `{kind: "color"|"image", value: "#hex" | base64-png}`
 - Tiles use 0..1 normalized slide-relative coords
-- Three tile kinds: `text` (BBCode `[b]/[i]/[s]` + plain/bullet/numbered modes), `image` (base64-embedded), `spreadsheet` (mirrors `SpreadsheetCell.to_dict()` per cell — omit-when-default)
-- **Pending v1.x**: optional `rotation: float = 0.0` on tile, omit-when-default. Backwards-compat with existing decks.
-- Charts in v1 are **image tiles**, not a separate kind. Chart tile kind deferred to v2.
-- Speaker notes are **annotations** (T4), not a schema field.
+- Three tile kinds: `text` (BBCode + plain/bullet/numbered modes), `image` (base64-embedded), `spreadsheet`
+- Optional `rotation: float = 0.0` on tile (omit-when-default; v1.x)
+- Speaker notes are **annotations** on `slide.annotations[]` (T4), not a schema field
+- File extension: `.mdeck`
 
 ## Constraints to carry forward
 
 - Always pass `project="minerva"` to docket MCP tools when working with substrate/plan IDs.
-- Off-tree plugin scripts: class_name MUST start with the canonical prefix (for "presentation" → `Presentation_`); see memory `project_plugin_class_name_prefix_rule.md`.
-- New plugin scripts: list them in BOTH `~/github/plugins/<id>/manifest.json` AND the cached `~/.local/share/godot/app_userdata/Minerva/plugins/plugins.json` (`class_names` + `scripts` arrays). Skipping the cached one means Godot uses the stale list.
-- JSON round-trip turns ints into floats — validators that use `x is int` will fail; accept whole-number floats (memory: `project_godot_json_int_to_float.md`). The new `tile.rotation` validator must follow this rule.
-- `:=` inference fails through `preload()`-imported Scripts; use explicit type annotations on locals like `var preview: Control = _SlideCanvas.new()` (nudge: `walrus_inference_through_preload`).
-- Plugin Go binaries are per-machine — rebuild after `git pull` touches `*.go` (memory: `project_cad_plugin_binary.md`).
+- Off-tree plugin scripts: class_name MUST start with `Presentation_`. For `extends` between sibling plugin scripts use string-path (`extends "foo.gd"`), NOT class_name (memory: `feedback_off_tree_plugin_class_names.md` + nudge `off_tree_extends_pattern`).
+- New plugin scripts: list them in BOTH `~/github/plugins/<id>/manifest.json` AND the cached `~/.local/share/godot/app_userdata/Minerva/plugins/plugins.json`.
+- JSON round-trip turns ints into floats — validators that use `x is int` will fail; accept whole-number floats (memory: `project_godot_json_int_to_float.md`).
 - AnnotationHost capability shape is **frozen** for canvas-sync compatibility — extend, don't rename.
 - Plugin annotation code never crosses into another plugin's data — only via MCP, per the substrate's trust boundary.
-- LLMs see slides as RENDERED PNGs, not raw JSON (memory: `project_presentation_llm_edit_model.md`). T7 will register `presentation_render_slide` for that path.
-- White-on-white text fix in R2: RichTextLabel needs `default_color` theme override; Label needs `font_color`; TextEdit needs StyleBoxFlat with white bg + dark text + cyan border. Don't regress this when refactoring.
+- LLMs see slides as RENDERED PNGs, not raw JSON (memory: `project_presentation_llm_edit_model.md`). T7 MCP `presentation_render_slide` will own that path.
+- White-on-white text fix in R2: RichTextLabel needs `default_color` theme override; Label needs `font_color`; TextEdit needs StyleBoxFlat with white bg + dark text + cyan border. Don't regress.
+- AnnotationOverlay does NOT call `tool.on_activate(host)` — caller must do it explicitly (nudge `substrate_tool_on_activate_required`; substrate chore filed for overlay to own this).
+- Codex's host separation pattern (panel = substrate-only host, canvas = tile-only host, coupled via `slide_rect_changed`) is load-bearing — do not collapse back to a single host.
 
 ## Paused work (not picking up — see git/docket only if needed)
 

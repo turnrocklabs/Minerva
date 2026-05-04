@@ -37,8 +37,53 @@ func _ready():
 	_is_Completed = true
 	self.Tabs.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.Tabs.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self.Tabs))
+	self.Tabs.get_tab_bar().gui_input.connect(_on_tab_bar_gui_input)
 	SingletonObject.UpdateUnsavedTabIcon.connect(update_tabs_icon)
 	SingletonObject.mcp_tool_executed.connect(_on_mcp_tool_executed)
+
+
+func _on_tab_bar_gui_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if not (mb.pressed and mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT):
+		return
+	var tab_idx: int = Tabs.get_tab_bar().get_tab_idx_at_point(mb.position)
+	if tab_idx < 0:
+		return
+	_show_rename_tab_dialog(tab_idx)
+
+
+func _show_rename_tab_dialog(tab_idx: int) -> void:
+	var ctrl: Node = Tabs.get_tab_control(tab_idx)
+	if ctrl == null:
+		return
+	var current_title: String = Tabs.get_tab_title(tab_idx)
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Rename tab"
+	dialog.min_size = Vector2i(360, 120)
+	var line_edit := LineEdit.new()
+	line_edit.text = current_title
+	line_edit.placeholder_text = "Tab name"
+	line_edit.select_all_on_focus = true
+	line_edit.custom_minimum_size = Vector2(320, 0)
+	dialog.add_child(line_edit)
+	# Submitting via Enter accepts the dialog.
+	line_edit.text_submitted.connect(func(_t: String) -> void: dialog.get_ok_button().emit_signal("pressed"))
+	dialog.confirmed.connect(func() -> void:
+		var new_title: String = line_edit.text.strip_edges()
+		if new_title.is_empty() or new_title == current_title:
+			return
+		if ctrl is Editor:
+			(ctrl as Editor).tab_title = new_title
+		else:
+			Tabs.set_tab_title(tab_idx, new_title)
+	)
+	dialog.canceled.connect(func() -> void: dialog.queue_free())
+	dialog.confirmed.connect(func() -> void: dialog.queue_free())
+	add_child(dialog)
+	dialog.popup_centered()
+	line_edit.grab_focus()
 
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
