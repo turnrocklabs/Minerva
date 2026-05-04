@@ -715,6 +715,13 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 	if not editor or not is_instance_valid(editor):
 		return MCPToolUtils.error("Editor no longer valid")
 
+	# Capture the user's pre-call toggle state so we can restore it on every
+	# return path below. Without this, the trailing `editor.toggle(true)` at
+	# the end of this function leaks "inject into next chat" state into
+	# subsequent unrelated turns when the user had it OFF (RCA: persistent UI
+	# toggle was being reused as a transient visibility hook).
+	var prior_inject_state: bool = editor._note_check_button.button_pressed if editor._note_check_button != null else false
+
 	# Toggle OFF first to clean up any existing state
 	print("[MCPEditorTools] Toggling OFF to clean up existing state...")
 	editor.toggle(false)
@@ -756,6 +763,7 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 	if not note_state["received"]:
 		if editor.note_ready_for_chat.is_connected(note_handler):
 			editor.note_ready_for_chat.disconnect(note_handler)
+		editor.toggle(prior_inject_state)
 		push_error("[MCPEditorTools] Timeout waiting for note_ready_for_chat after %.0f seconds" % note_timeout)
 		return MCPToolUtils.error("Note composition timed out after %.0f seconds" % note_timeout)
 
@@ -763,10 +771,20 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 	print("[MCPEditorTools] Note ready! Received: %s" % received_note)
 
 	if received_note == null:
+		editor.toggle(prior_inject_state)
 		push_error("[MCPEditorTools] note_ready_for_chat returned null")
 		return MCPToolUtils.error("Note composition failed - received null note")
 
 	print("[MCPEditorTools] Note ready after %.1f seconds. Total time: %.1f seconds" % [note_elapsed, image_elapsed + note_elapsed])
+
+	# Restore the user's pre-call inject toggle state. The toggle ON above was
+	# used as a one-shot visibility mechanism to feed the generated image into
+	# the current LLM evaluation turn (via the proxy_note + note_ready_for_chat
+	# plumbing). Leaving it ON would leak the image into every subsequent chat
+	# turn, which is not what the tool advertises ("blocking until visible",
+	# not "permanent injection"). Callers that DO want persistent injection
+	# should explicitly toggle the editor's checkbox in the UI.
+	editor.toggle(prior_inject_state)
 
 	# === SUCCESS: Image is now visible to the LLM ===
 	var response_msg: String
