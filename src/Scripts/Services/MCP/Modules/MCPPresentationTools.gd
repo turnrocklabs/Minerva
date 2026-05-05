@@ -110,6 +110,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_presentation_add_spreadsheet_tile",
 		"minerva_presentation_modify_spreadsheet_cells",
 		"minerva_presentation_resize_spreadsheet",
+		"minerva_presentation_get_state",
 	]
 
 
@@ -217,7 +218,7 @@ func register_tools() -> void:
 	, "presentation")
 
 	server._register_tool("minerva_presentation_add_text_tile",
-		"Add a text tile to a slide. Coords x/y/w/h are 0..1 normalized to slide size. text_mode is plain (BBCode supported), bullet, or numbered. For bullet/numbered, indent 4 spaces per nesting level — the renderer emits a level-appropriate glyph (• ◦ ▪ ‣). A leading '- ' after the indent is tolerated. Numbered mode only numbers level-0 lines; nested lines fall back to bullet glyphs. TWO FONT MODES: (a) coupled (default, no font_size) — renderer derives font from tile.h ÷ line_count, so resizing the tile resizes the text. Sizing rule of thumb: title h≈0.10 (~55-65px font), section header h≈0.07 (~40px), body bullets h ≈ line_count × 0.05. (b) fixed — pass font_size (in pixels, 8..200) to lock the font and let h grow independently; use this when you need more box room without scaling text up. Avoid BBCode [font_size=N] tags — they don't honor the tile rect. Style via BBCode for [i]italic[/i], [b]bold[/b], [color=#hex]color[/color], [center]horizontal-center[/center].",
+		"Add a text tile to a slide. Coords x/y/w/h are 0..1 normalized to slide size. text_mode is plain (BBCode supported), bullet, or numbered. For bullet/numbered, indent 4 spaces per nesting level — the renderer emits a level-appropriate glyph (• ◦ ▪ ‣). A leading '- ' after the indent is tolerated. Numbered mode only numbers level-0 lines; nested lines fall back to bullet glyphs. THREE FONT MODES: (a) coupled (default, no font_size, no auto_fit) — renderer derives font from tile.h ÷ line_count, so resizing the tile resizes the text. Sizing rule of thumb: title h≈0.10 (~55-65px font), section header h≈0.07 (~40px), body bullets h ≈ line_count × 0.05. (b) fixed — pass font_size (in pixels, 8..200) to lock the font and let h grow independently; use this when you need more box room without scaling text up. (c) auto_fit — pass auto_fit=true to binary-search the largest font (8..200) that fits text inside (w, h) at any viewport zoom; recommended for titles and bullets that should scale across editor preview vs full-screen. font_size wins if both are set. Avoid BBCode [font_size=N] tags — they don't honor the tile rect. Style via BBCode for [i]italic[/i], [b]bold[/b], [color=#hex]color[/color], [center]horizontal-center[/center].",
 		{
 			"type": "object",
 			"properties": {
@@ -230,7 +231,8 @@ func register_tools() -> void:
 				"h": {"type": "number"},
 				"content": {"type": "string"},
 				"text_mode": {"type": "string", "description": "plain | bullet | numbered. Defaults to plain."},
-				"font_size": {"type": "integer", "description": "Optional fixed font size in pixels (8..200). Omit for coupled mode (font derived from h)."},
+				"font_size": {"type": "integer", "description": "Optional fixed font size in pixels (8..200). Omit for coupled mode (font derived from h). Wins over auto_fit when both set."},
+				"auto_fit": {"type": "boolean", "description": "When true and no font_size, picks largest font that fits text in (w, h). Scales proportionally with viewport. Defaults to false."},
 				"rotation": {"type": "number", "description": "Optional rotation in radians."},
 			},
 			"required": ["slide_index", "x", "y", "w", "h", "content"],
@@ -238,7 +240,7 @@ func register_tools() -> void:
 	, "presentation")
 
 	server._register_tool("minerva_presentation_modify_tile",
-		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly. font_size sets fixed-font mode (8..200 px); pass 0 to clear and revert to coupled mode (font derived from tile.h).",
+		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly. font_size sets fixed-font mode (8..200 px); pass 0 to clear and revert to coupled mode (font derived from tile.h). auto_fit=true picks the largest font fitting (w, h) at any viewport (font_size wins if both set); pass auto_fit=false to clear the field.",
 		{
 			"type": "object",
 			"properties": {
@@ -254,6 +256,7 @@ func register_tools() -> void:
 				"content": {"type": "string"},
 				"text_mode": {"type": "string", "description": "plain | bullet | numbered (text tiles only)"},
 				"font_size": {"type": "integer", "description": "Fixed font size in px (8..200). 0 clears the override (coupled mode). Text tiles only."},
+				"auto_fit": {"type": "boolean", "description": "Text tiles only. true = enable auto-fit; false = clear the field. font_size wins when both set."},
 				"image_path": {"type": "string"},
 				"image_base64": {"type": "string"},
 				"solid_color": {"type": "string"},
@@ -355,6 +358,17 @@ func register_tools() -> void:
 				"cols": {"type": "integer"},
 			},
 			"required": ["slide_index", "tile_id", "rows", "cols"],
+		}
+	, "presentation")
+
+	server._register_tool("minerva_presentation_get_state",
+		"Read the live UI state of an open presentation tab — useful for HITL (\"what slide is the user on?\"). Returns selected_slide_index plus slide_count and the title of the selected slide. Tab must be open; this tool does NOT accept a path because state only exists in a live editor.",
+		{
+			"type": "object",
+			"properties": {
+				"tab_name": {"type": "string"},
+			},
+			"required": ["tab_name"],
 		}
 	, "presentation")
 
@@ -561,6 +575,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _get_slide(arguments)
 		"minerva_presentation_modify_tile":
 			return _modify_tile(arguments)
+		"minerva_presentation_get_state":
+			return _get_state(arguments)
 		"minerva_presentation_set_slide_title":
 			return _set_slide_title(arguments)
 		"minerva_presentation_set_aspect":
@@ -778,6 +794,9 @@ func _add_text_tile(args: Dictionary) -> Dictionary:
 			if fs < 8 or fs > 200:
 				return MCPToolUtils.error("font_size must be in [8, 200], got %d" % fs)
 			tile["font_size"] = fs
+	# Optional auto-fit. Omit-when-default — only persisted when explicitly true.
+	if args.has("auto_fit") and bool(args["auto_fit"]):
+		tile["auto_fit"] = true
 	var rotation: float = MCPToolUtils.coerce_float(args.get("rotation", 0.0))
 	if not is_zero_approx(rotation):
 		tile["rotation"] = rotation
@@ -1148,6 +1167,13 @@ func _modify_tile(args: Dictionary) -> Dictionary:
 			if fs < 8 or fs > 200:
 				return MCPToolUtils.error("font_size must be in [8, 200] or 0 to clear, got %d" % fs)
 			patch["font_size"] = fs
+	if args.has("auto_fit") and args["auto_fit"] != null:
+		if kind != TILE_TEXT:
+			return MCPToolUtils.error("auto_fit can only be set on text tiles (this is %s)" % kind)
+		if bool(args["auto_fit"]):
+			patch["auto_fit"] = true
+		else:
+			erase_keys.append("auto_fit")
 
 	# Image-source replacement — at most one of these is allowed.
 	var has_path := args.has("image_path") and not String(args.get("image_path", "")).is_empty()
@@ -1198,6 +1224,30 @@ func _modify_tile(args: Dictionary) -> Dictionary:
 	return MCPToolUtils.success({
 		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
 		"tile_id": tile_id,
+	})
+
+
+## Reads live UI state from an open presentation tab. Tab-only — there's no
+## "selected slide" concept for an on-disk file.
+func _get_state(args: Dictionary) -> Dictionary:
+	var tab_name: String = String(args.get("tab_name", "")).strip_edges()
+	if tab_name.is_empty():
+		return MCPToolUtils.error("tab_name is required")
+	var panel: Variant = _find_panel_by_tab_name(tab_name)
+	if panel == null:
+		return MCPToolUtils.error("No open presentation tab named: %s" % tab_name)
+	if not panel.has_method("get_selected_slide_index"):
+		return MCPToolUtils.error("Panel does not expose selected slide (plugin may be out of date)")
+	var deck: Dictionary = panel.get_deck()
+	var slides: Array = deck.get("slides", []) as Array
+	var idx: int = int(panel.get_selected_slide_index())
+	var slide_title: String = ""
+	if idx >= 0 and idx < slides.size():
+		slide_title = String((slides[idx] as Dictionary).get("title", ""))
+	return MCPToolUtils.success({
+		"selected_slide_index": idx,
+		"slide_count": slides.size(),
+		"slide_title": slide_title,
 	})
 
 

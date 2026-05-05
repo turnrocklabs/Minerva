@@ -183,6 +183,19 @@ func estimate_tokens_from_prompt(_input_prompt_array: Array[Variant]):
 	return 0.0
 
 
+static func create_from_config(config: Dictionary) -> OpenAIImageProvider:
+	var p := OpenAIImageProvider.new()
+	p.model_name = config.get("model_name", p.model_name)
+	p.display_name = config.get("display_name", p.model_name)
+	p.short_name = config.get("short_name", "OAI")
+	p.input_token_cost = config.get("input_token_cost", 0.0)
+	p.output_token_cost = config.get("output_token_cost", 0.0)
+	p.token_cost = config.get("token_cost", p.token_cost)
+	p.prompt_limit = config.get("prompt_limit", 32000)
+	p.supports_response_format = bool(config.get("supports_response_format", false))
+	return p
+
+
 func continue_partial_response(_partial_chi: ChatHistoryItem):
 	return null
 

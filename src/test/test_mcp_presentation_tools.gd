@@ -65,6 +65,8 @@ func _run_tests() -> void:
 	test_solid_color_rejects_invalid_hex(tools)
 	test_coords_out_of_range_rejected(tools)
 	test_target_requires_path_or_tab(tools)
+	test_get_state_requires_tab_name(tools)
+	test_get_state_unknown_tab_errors(tools)
 	# Modify tools — these MUTATE the test deck, so they run after all the
 	# read-only / fresh-compose assertions above.
 	test_modify_tile_coords(tools)
@@ -73,6 +75,10 @@ func _run_tests() -> void:
 	test_modify_tile_image_solid_color(tools)
 	test_modify_tile_rejects_two_image_sources(tools)
 	test_modify_tile_rotation_round_trip(tools)
+	test_add_text_tile_persists_auto_fit(tools)
+	test_add_text_tile_omits_auto_fit_by_default(tools)
+	test_modify_tile_set_and_clear_auto_fit(tools)
+	test_modify_tile_rejects_auto_fit_on_image_tile(tools)
 	test_modify_tile_unknown_id(tools)
 	test_set_slide_title(tools)
 	test_set_aspect(tools)
@@ -384,6 +390,20 @@ func test_target_requires_path_or_tab(tools: Object) -> void:
 	_assert(r.get("success", false) == false, "missing target rejected", r)
 
 
+func test_get_state_requires_tab_name(tools: Object) -> void:
+	# get_state is tab-only — selected_slide_index is live UI state.
+	var r: Dictionary = tools._get_state({})
+	_assert(r.get("success", false) == false, "_get_state errors when tab_name omitted", r)
+	_assert(str(r.get("error", "")).to_lower().contains("tab_name"), "error mentions tab_name", r)
+
+
+func test_get_state_unknown_tab_errors(tools: Object) -> void:
+	# No headless harness for live tabs — exercise the not-found path.
+	var r: Dictionary = tools._get_state({"tab_name": "no such tab is open"})
+	_assert(r.get("success", false) == false, "_get_state errors when tab not open", r)
+	_assert(str(r.get("error", "")).to_lower().contains("no open"), "error mentions 'no open'", r)
+
+
 # ---------------------------------------------------------------------------
 # Modify-tool tests (mutate the deck — run after all read-only assertions)
 # ---------------------------------------------------------------------------
@@ -472,6 +492,71 @@ func test_modify_tile_rotation_round_trip(tools: Object) -> void:
 	_assert(r2.get("success", false) == true, "modify_tile clear rotation succeeds", r2)
 	var g2: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
 	_assert(not (g2["tile"] as Dictionary).has("rotation"), "rotation 0 erases field", g2)
+
+
+func test_add_text_tile_persists_auto_fit(tools: Object) -> void:
+	# Adds an auto_fit text tile, verifies persistence, then removes it to
+	# keep the slide's tile count stable for downstream tests.
+	var r: Dictionary = tools._add_text_tile({
+		"path": OUT_PATH,
+		"slide_index": 0,
+		"x": 0.05, "y": 0.85, "w": 0.5, "h": 0.10,
+		"content": "auto-fit probe",
+		"text_mode": "plain",
+		"auto_fit": true,
+	})
+	_assert(r.get("success", false) == true, "add_text_tile auto_fit=true succeeds", r)
+	var added_id: String = str(r.get("tile_id", ""))
+	var gr: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": added_id})
+	_assert((gr["tile"] as Dictionary).get("auto_fit", false) == true, "tile.auto_fit persisted as true", gr)
+	tools._remove_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": added_id})
+
+
+func test_add_text_tile_omits_auto_fit_by_default(tools: Object) -> void:
+	# Add without auto_fit arg; field should be absent (omit-when-default).
+	var r: Dictionary = tools._add_text_tile({
+		"path": OUT_PATH,
+		"slide_index": 0,
+		"x": 0.05, "y": 0.85, "w": 0.5, "h": 0.10,
+		"content": "no auto-fit",
+		"text_mode": "plain",
+	})
+	_assert(r.get("success", false) == true, "add_text_tile (no auto_fit) succeeds", r)
+	var added_id: String = str(r.get("tile_id", ""))
+	var gr: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": added_id})
+	_assert(not (gr["tile"] as Dictionary).has("auto_fit"), "auto_fit field omitted when default", gr)
+	tools._remove_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": added_id})
+
+
+func test_modify_tile_set_and_clear_auto_fit(tools: Object) -> void:
+	# Tile 0 is the title (text tile). Toggle auto_fit on, then off.
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var tile_id: String = str(((lr["tiles"] as Array)[0] as Dictionary)["tile_id"])
+
+	var r1: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id, "auto_fit": true
+	})
+	_assert(r1.get("success", false) == true, "modify_tile auto_fit=true succeeds", r1)
+	var g1: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	_assert((g1["tile"] as Dictionary).get("auto_fit", false) == true, "auto_fit set on existing tile", g1)
+
+	var r2: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id, "auto_fit": false
+	})
+	_assert(r2.get("success", false) == true, "modify_tile auto_fit=false succeeds", r2)
+	var g2: Dictionary = tools._get_tile({"path": OUT_PATH, "slide_index": 0, "tile_id": tile_id})
+	_assert(not (g2["tile"] as Dictionary).has("auto_fit"), "auto_fit field erased when set false", g2)
+
+
+func test_modify_tile_rejects_auto_fit_on_image_tile(tools: Object) -> void:
+	# Tile 1 is the HR (image tile).
+	var lr: Dictionary = tools._list_tiles({"path": OUT_PATH, "slide_index": 0})
+	var hr_id: String = str(((lr["tiles"] as Array)[1] as Dictionary)["tile_id"])
+	var r: Dictionary = tools._modify_tile({
+		"path": OUT_PATH, "slide_index": 0, "tile_id": hr_id, "auto_fit": true
+	})
+	_assert(r.get("success", false) == false, "modify_tile rejects auto_fit on image tile", r)
+	_assert(str(r.get("error", "")).to_lower().contains("auto_fit"), "error mentions auto_fit", r)
 
 
 func test_modify_tile_unknown_id(tools: Object) -> void:

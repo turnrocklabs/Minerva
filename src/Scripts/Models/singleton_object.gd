@@ -1862,6 +1862,25 @@ var chatgpt_model_manager     # ChatGPTModelManager for OAuth-discovered ChatGPT
 ## Provider script + API_PROVIDER mapping for each dynamic ID range
 var _dynamic_provider_map: Dictionary = {}  # {id_base: {script: GDScript, provider: API_PROVIDER, manager: ProviderModelManager}}
 
+
+static func classify_openai_model(model_id: String) -> String:
+	var id := model_id.strip_edges().to_lower()
+	if id.begins_with("gpt-image-") or id.begins_with("dall-e-") or id == "chatgpt-image-latest":
+		return "image"
+	if id.begins_with("text-embedding-"):
+		return "embedding"
+	if id.begins_with("tts-") or id.contains("tts"):
+		return "audio_tts"
+	if id.begins_with("whisper-") or id.contains("transcribe"):
+		return "audio_stt"
+	if id.begins_with("omni-moderation") or id.begins_with("text-moderation") or id == "moderation":
+		return "moderation"
+	return "chat"
+
+
+static func is_openai_image_model(model_id: String) -> bool:
+	return classify_openai_model(model_id) == "image"
+
 func _init_dynamic_models() -> void:
 	# OpenRouter (ID base 10000)
 	openrouter_model_manager = OpenRouterModelManagerScript.new()
@@ -1921,7 +1940,10 @@ func _register_all_dynamic_models() -> void:
 		var provider = info["provider"]
 		for config in manager.models:
 			var model_id: int = config["id"]
-			API_MODEL_PROVIDER_SCRIPTS[model_id] = script
+			var model_script = script
+			if provider == API_PROVIDER.OPENAI and _is_openai_image_config(config):
+				model_script = OpenAIImageProviderScript
+			API_MODEL_PROVIDER_SCRIPTS[model_id] = model_script
 			MODEL_TO_PROVIDER[model_id] = provider
 
 
@@ -1960,7 +1982,10 @@ func create_dynamic_provider(model_id: int) -> BaseProvider:
 	elif model_id >= GOOGLE_MODEL_ID_BASE:
 		provider = GoogleProviderScript.create_from_config(config)
 	elif model_id >= OPENAI_MODEL_ID_BASE:
-		provider = OpenAIProviderScript.create_from_config(config)
+		if _is_openai_image_config(config):
+			provider = OpenAIImageProviderScript.create_from_config(config)
+		else:
+			provider = OpenAIProviderScript.create_from_config(config)
 	elif model_id >= ANTHROPIC_MODEL_ID_BASE:
 		provider = AnthropicProviderScript.create_from_config(config)
 	else:
@@ -1968,6 +1993,11 @@ func create_dynamic_provider(model_id: int) -> BaseProvider:
 	if provider:
 		provider.set_meta("dynamic_model_id", model_id)
 	return provider
+
+
+func _is_openai_image_config(config: Dictionary) -> bool:
+	return str(config.get("provider_kind", "")) == "image" or is_openai_image_model(str(config.get("model_name", "")))
+
 
 #endregion Dynamic Models
 

@@ -1260,6 +1260,7 @@ func _show_custom_model_dialog(existing_config: Dictionary = {}, existing_manage
 			return
 
 		var new_config: Dictionary = existing_config.duplicate(true) if is_edit else {}
+		var selected_provider_id := provider_option.get_selected_id()
 		new_config.merge({
 			"model_name": model_name,
 			"display_name": dn_edit.text.strip_edges() if not dn_edit.text.strip_edges().is_empty() else model_name,
@@ -1268,6 +1269,10 @@ func _show_custom_model_dialog(existing_config: Dictionary = {}, existing_manage
 			"output_token_cost": out_spin.value,
 			"is_reasoning_model": reasoning_check.button_pressed,
 		}, true)
+		if selected_provider_id == 1:  # OpenAI
+			new_config["provider_kind"] = SingletonObject.classify_openai_model(model_name)
+			if new_config["provider_kind"] == "image":
+				new_config["supports_response_format"] = not SingletonObject.is_openai_image_model(model_name)
 
 		# For Anthropic, also set api_model_id (used by generate_content)
 		if is_edit:
@@ -1275,8 +1280,8 @@ func _show_custom_model_dialog(existing_config: Dictionary = {}, existing_manage
 				new_config["api_model_id"] = model_name
 			existing_manager.update_model(existing_config["id"], new_config)
 		else:
-			var manager = _get_manager_for_provider_index(provider_option.get_selected_id())
-			if provider_option.get_selected_id() == 0:  # Anthropic needs api_model_id
+			var manager = _get_manager_for_provider_index(selected_provider_id)
+			if selected_provider_id == 0:  # Anthropic needs api_model_id
 				new_config["api_model_id"] = model_name
 			manager.add_model(new_config)
 
@@ -1585,12 +1590,15 @@ func _fetch_provider_models(provider_key: String, api_key: String) -> Array:
 				if not m is Dictionary:
 					continue
 				var model_id: String = m.get("id", "")
-				# Filter to chat-capable models (skip embeddings, tts, whisper, dall-e, etc.)
-				if _is_openai_chat_model(model_id):
+				var provider_kind := SingletonObject.classify_openai_model(model_id)
+				# Filter out unsupported non-generative families but keep image models.
+				if provider_kind in ["chat", "image"]:
 					models.append({
 						"model_name": model_id,
 						"display_name": model_id,
 						"short_name": _generate_provider_short_name(model_id, "OA"),
+						"provider_kind": provider_kind,
+						"supports_response_format": provider_kind != "image",
 					})
 			# Sort alphabetically
 			models.sort_custom(func(a, b): return a["model_name"] < b["model_name"])
@@ -1615,11 +1623,8 @@ func _fetch_provider_models(provider_key: String, api_key: String) -> Array:
 
 ## Filter OpenAI models to only chat-capable ones
 func _is_openai_chat_model(model_id: String) -> bool:
-	# Exclude known non-chat model prefixes
-	var exclude_prefixes := ["tts-", "whisper-", "dall-e-", "text-embedding-", "babbage-", "davinci-", "moderation"]
-	for prefix in exclude_prefixes:
-		if model_id.begins_with(prefix):
-			return false
+	if SingletonObject.classify_openai_model(model_id) != "chat":
+		return false
 	# Exclude fine-tune snapshots (contain "ft:" or long hash suffixes)
 	if "ft:" in model_id:
 		return false

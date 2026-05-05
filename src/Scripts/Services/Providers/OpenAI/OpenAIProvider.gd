@@ -86,18 +86,19 @@ func _parse_request_results(response: RequestResults) -> BotResponse:
 			if data is Dictionary and "error" in data:
 				var err = data["error"]
 				if err is Dictionary:
-					error_code = err.get("code", "")
+					var raw_error_code = err.get("code", "")
+					error_code = "" if raw_error_code == null else str(raw_error_code)
 
 			if response.response_code == 429 or error_code in ["rate_limit_exceeded", "insufficient_quota"]:
 				bot_response.is_rate_limited = true
 				bot_response.rate_limit_retry_after = parse_retry_after(response.headers)
 				bot_response.error = "Rate limited by OpenAI"
 				print("[OpenAI] Rate limited (HTTP %d, code: %s, retry_after: %s)" % [response.response_code, error_code, bot_response.rate_limit_retry_after])
-			elif "error" in data or "message" in data:
-				if "error" in data:
-					bot_response.error = data["error"]["message"]
+			elif data is Dictionary and ("error" in data or "message" in data):
+				if "error" in data and data["error"] is Dictionary:
+					bot_response.error = str(data["error"].get("message", "OpenAI API error"))
 				else:
-					bot_response.error = data["message"]
+					bot_response.error = str(data.get("message", "OpenAI API error"))
 			else:
 				bot_response.error = "Unexpected error occurred while generating the response"
 	else:

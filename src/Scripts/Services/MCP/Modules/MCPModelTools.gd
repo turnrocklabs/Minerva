@@ -12,6 +12,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_update_model",
 		"minerva_remove_model",
 		"minerva_refresh_chatgpt_models",
+		"minerva_chatgpt_image_gen",
 		"minerva_get_cost_summary",
 		"minerva_get_chat_cost",
 		"minerva_set_budget",
@@ -137,6 +138,48 @@ func register_tools() -> void:
 			"type": "object",
 			"properties": {},
 			"required": []
+		}
+	, "models")
+
+	server._register_tool("minerva_chatgpt_image_gen",
+		"Generate an image through the signed-in ChatGPT backend using the hosted image_generation tool. Returns the saved PNG path and metadata.",
+		{
+			"type": "object",
+			"properties": {
+				"prompt": {
+					"type": "string",
+					"description": "Image prompt"
+				},
+				"model_id": {
+					"type": "integer",
+					"description": "Optional ChatGPT dynamic model ID from minerva_list_models. If omitted, Minerva picks a configured ChatGPT model."
+				},
+				"model_name": {
+					"type": "string",
+					"description": "Optional ChatGPT model name/display name/catalog key to use when model_id is omitted."
+				},
+				"size": {
+					"type": "string",
+					"description": "Optional output size such as 1024x1024, if accepted by the ChatGPT backend."
+				},
+				"quality": {
+					"type": "string",
+					"description": "Optional quality such as auto, low, medium, or high."
+				},
+				"background": {
+					"type": "string",
+					"description": "Optional background setting such as auto, opaque, or transparent."
+				},
+				"output_format": {
+					"type": "string",
+					"description": "Optional output format. Defaults to png."
+				},
+				"return_base64": {
+					"type": "boolean",
+					"description": "If true, include the generated PNG as base64 in the tool result."
+				}
+			},
+			"required": ["prompt"]
 		}
 	, "models")
 
@@ -306,6 +349,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_update_model": return _update_model(arguments)
 		"minerva_remove_model": return _remove_model(arguments)
 		"minerva_refresh_chatgpt_models": return await _refresh_chatgpt_models()
+		"minerva_chatgpt_image_gen": return await _chatgpt_image_gen(arguments)
 		"minerva_get_cost_summary": return _get_cost_summary(arguments)
 		"minerva_get_chat_cost": return _get_chat_cost(arguments)
 		"minerva_set_budget": return _set_budget(arguments)
@@ -411,6 +455,8 @@ func _list_models(args: Dictionary) -> Dictionary:
 				"model_name": config.get("model_name", config.get("api_model_id", "")),
 				"is_dynamic": true,
 			}
+			if config.has("provider_kind"):
+				entry["provider_kind"] = config.get("provider_kind", "")
 			if prov_name == "chatgpt":
 				entry["reasoning_effort"] = config.get("reasoning_effort", "")
 				entry["supported_reasoning_levels"] = config.get("supported_reasoning_levels", [])
@@ -441,6 +487,151 @@ func _refresh_chatgpt_models() -> Dictionary:
 	if not result.get("success", false):
 		return MCPToolUtils.error(str(result.get("error", "ChatGPT model refresh failed")))
 	return result
+
+
+func _chatgpt_image_gen(args: Dictionary) -> Dictionary:
+	var required = MCPToolUtils.check_required(args, ["prompt"])
+	if required != null:
+		return required
+
+	var prompt: String = str(args.get("prompt", "")).strip_edges()
+	var provider_result := _resolve_chatgpt_image_provider(args)
+	if provider_result.has("error"):
+		return MCPToolUtils.error(str(provider_result["error"]))
+
+	var provider: ChatGPTProvider = provider_result["provider"]
+	var options := {
+		"output_format": str(args.get("output_format", "png")),
+	}
+	for key in ["size", "quality", "background", "action", "partial_images"]:
+		if args.has(key):
+			var value = args[key]
+			if not (value is String and value.strip_edges().is_empty()):
+				options[key] = value
+
+	var attached_provider := false
+	if not provider.is_inside_tree():
+		SingletonObject.add_child(provider)
+		attached_provider = true
+		await SingletonObject.get_tree().process_frame
+
+	var response: BotResponse = await provider.generate_image(prompt, options)
+	if attached_provider:
+		provider.queue_free()
+	if response == null:
+		return MCPToolUtils.error("ChatGPT image generation returned no response")
+	if not response.error.is_empty():
+		return MCPToolUtils.error(response.error)
+	if response.image == null:
+		var details := response.text.strip_edges()
+		if details.is_empty():
+			details = "No image_generation_call result was returned."
+		return MCPToolUtils.error("ChatGPT returned no generated image. %s" % details)
+
+	var image: Image = response.image
+	var output_path := ""
+	if image.has_meta("output_path"):
+		output_path = str(image.get_meta("output_path"))
+	var absolute_path := output_path
+	if output_path.begins_with("user://") or output_path.begins_with("res://"):
+		absolute_path = ProjectSettings.globalize_path(output_path)
+
+	var result := MCPToolUtils.success({
+		"path": output_path,
+		"absolute_path": absolute_path,
+		"width": image.get_width(),
+		"height": image.get_height(),
+		"model": provider.model_name,
+		"display_name": provider.display_name,
+		"response_id": str(response.id),
+		"revised_prompt": str(image.get_meta("caption", "")),
+		"content_type": "image/png",
+	})
+	if provider.has_meta("dynamic_model_id"):
+		result["model_id"] = int(provider.get_meta("dynamic_model_id"))
+	if bool(args.get("return_base64", false)):
+		var png_buffer := image.save_png_to_buffer()
+		if png_buffer.is_empty():
+			return MCPToolUtils.error("Generated image could not be encoded as PNG")
+		result["image_base64"] = Marshalls.raw_to_base64(png_buffer)
+	return result
+
+
+func _resolve_chatgpt_image_provider(args: Dictionary) -> Dictionary:
+	var model_id := MCPToolUtils.coerce_int(args.get("model_id", 0), 0)
+	if model_id > 0:
+		var provider = SingletonObject.create_dynamic_provider(model_id)
+		if provider == null:
+			return {"error": "ChatGPT model_id not found: %d" % model_id}
+		if not provider is ChatGPTProvider:
+			return {"error": "model_id %d is not a ChatGPT model" % model_id}
+		return {"provider": provider}
+
+	var manager = SingletonObject.chatgpt_model_manager
+	var model_name := str(args.get("model_name", "")).strip_edges()
+	if manager != null and not model_name.is_empty():
+		for config in manager.models:
+			if _chatgpt_config_matches_name(config, model_name):
+				return {"provider": _provider_from_chatgpt_config(config)}
+		return {"error": "ChatGPT model not found: %s" % model_name}
+
+	if manager != null:
+		for config in manager.models:
+			if _chatgpt_config_supports_image_generation(config):
+				return {"provider": _provider_from_chatgpt_config(config)}
+		for config in manager.models:
+			if "image" in config.get("input_modalities", []):
+				return {"provider": _provider_from_chatgpt_config(config)}
+		if not manager.models.is_empty():
+			return {"provider": _provider_from_chatgpt_config(manager.models[0])}
+
+	return {"provider": SingletonObject.ChatGPTProviderScript.new()}
+
+
+func _provider_from_chatgpt_config(config: Dictionary) -> ChatGPTProvider:
+	var model_id := MCPToolUtils.coerce_int(config.get("id", 0), 0)
+	if model_id > 0:
+		var provider = SingletonObject.create_dynamic_provider(model_id)
+		if provider is ChatGPTProvider:
+			return provider
+	var fallback: ChatGPTProvider = SingletonObject.ChatGPTProviderScript.create_from_config(config)
+	return fallback
+
+
+func _chatgpt_config_matches_name(config: Dictionary, model_name: String) -> bool:
+	var needle := model_name.to_lower()
+	for key in ["model_name", "display_name", "catalog_key"]:
+		if str(config.get(key, "")).to_lower() == needle:
+			return true
+	return false
+
+
+func _chatgpt_config_supports_image_generation(config: Dictionary) -> bool:
+	var tool_lists := [
+		config.get("experimental_supported_tools", []),
+		config.get("supported_tools", []),
+		config.get("tools", []),
+	]
+	var raw: Dictionary = config.get("raw_model_info", {})
+	tool_lists.append(raw.get("experimental_supported_tools", []))
+	tool_lists.append(raw.get("supported_tools", []))
+	tool_lists.append(raw.get("tools", []))
+	for tools in tool_lists:
+		if not tools is Array:
+			continue
+		for tool in tools:
+			if _chatgpt_tool_is_image_generation(tool):
+				return true
+	return false
+
+
+func _chatgpt_tool_is_image_generation(tool: Variant) -> bool:
+	if tool is String:
+		return str(tool).to_lower() == "image_generation"
+	if tool is Dictionary:
+		var tool_name := str(tool.get("type", tool.get("name", ""))).to_lower()
+		return tool_name == "image_generation"
+	return false
 
 
 func _add_model(args: Dictionary) -> Dictionary:

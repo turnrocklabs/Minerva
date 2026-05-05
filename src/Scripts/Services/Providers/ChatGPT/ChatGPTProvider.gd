@@ -104,7 +104,12 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 		return bot_response
 
 	# Refresh token if needed
-	var token_valid: bool = await chatgpt_auth.ensure_valid_token(get_tree())
+	var scene_tree := _get_scene_tree()
+	if scene_tree == null:
+		bot_response.error = "ChatGPT provider is not attached to the scene tree."
+		SingletonObject.chat_completed.emit(bot_response)
+		return bot_response
+	var token_valid: bool = await chatgpt_auth.ensure_valid_token(scene_tree)
 	if not token_valid:
 		bot_response.error = "ChatGPT token expired. Please reconnect via Preferences."
 		SingletonObject.chat_completed.emit(bot_response)
@@ -163,6 +168,47 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 
 	SingletonObject.chat_completed.emit(bot_response)
 	return bot_response
+
+
+func _get_scene_tree() -> SceneTree:
+	if is_inside_tree():
+		return get_tree()
+	if SingletonObject != null and SingletonObject.is_inside_tree():
+		return SingletonObject.get_tree()
+	return null
+
+
+func generate_image(prompt: String, options: Dictionary = {}) -> BotResponse:
+	var image_tool := {
+		"type": "image_generation",
+		"output_format": str(options.get("output_format", "png")),
+	}
+	for key in ["size", "quality", "background", "action", "partial_images"]:
+		if options.has(key):
+			image_tool[key] = options[key]
+
+	var input := [{
+		"type": "message",
+		"role": "user",
+		"content": [{"type": "text", "text": prompt}]
+	}]
+
+	var old_tools := available_tools
+	var old_tools_enabled := tools_enabled
+	var old_supports_image_generation := supports_image_generation
+	available_tools = []
+	tools_enabled = false
+	supports_image_generation = false
+
+	var response := await generate_content(input, {
+		"tools": [image_tool],
+		"tool_choice": {"type": "image_generation"},
+	})
+
+	available_tools = old_tools
+	tools_enabled = old_tools_enabled
+	supports_image_generation = old_supports_image_generation
+	return response
 
 
 func _build_reasoning_options() -> Dictionary:
