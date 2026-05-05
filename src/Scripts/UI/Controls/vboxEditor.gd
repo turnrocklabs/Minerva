@@ -480,15 +480,27 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 	# Resolve PluginDefinition — need project_file_serialize_channel.
 	var def: PluginDefinition = _get_plugin_def(plugin_id)
 
+	# Platform-managed panel-state capture runs in ALL paths (no MCP channel
+	# declared, plugin not running, or MCP success). Reuses the host_owned
+	# _on_panel_save_request hook so panels round-trip through the project
+	# file without each plugin author wiring their own MCP serialize channel.
+	var tab_state: Dictionary = {}
+	var panel_root: Control = editor.plugin_scene_root
+	if panel_root != null and panel_root.has_method("_on_panel_save_request"):
+		var panel_state = panel_root._on_panel_save_request()
+		if panel_state is Dictionary:
+			tab_state["__panel_state"] = panel_state
+
 	if def == null or def.project_file_serialize_channel.is_empty():
-		# No project_file hook declared for this plugin — skip serialisation.
-		# Return a minimal entry that can be re-opened but carries no saved state.
-		# The type is still PLUGIN_SCENE so open_file/deserialize can handle it.
-		push_warning(
-			("[EditorContainer] serialize: PLUGIN_SCENE editor for plugin '%s' panel '%s' " +
-			"has no project_file.serialize_channel — tab state will not be restored.") %
-			[plugin_id, panel_name]
-		)
+		# No project_file hook declared for this plugin — skip MCP dispatch.
+		# Platform-managed __panel_state already captured above is preserved.
+		if tab_state.is_empty():
+			push_warning(
+				("[EditorContainer] serialize: PLUGIN_SCENE editor for plugin '%s' panel '%s' " +
+				"has no project_file.serialize_channel and no _on_panel_save_request — " +
+				"tab state will not be restored.") %
+				[plugin_id, panel_name]
+			)
 		return {
 			"name": tab_title,
 			"file": editor.file,
@@ -498,7 +510,7 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 			"plugin_version": def.version if def != null else "",
 			"plugin_state": {"version": 1, "plugin_id": plugin_id,
 				"plugin_version": def.version if def != null else "",
-				"panel_name": panel_name, "payload": {}},
+				"panel_name": panel_name, "payload": tab_state},
 			"sidecar_paths": [],
 			"associated_object": editor_id,
 		}
@@ -508,7 +520,7 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 	if conn == null:
 		push_warning(
 			("[EditorContainer] serialize: PLUGIN_SCENE plugin '%s' is not running; " +
-			"saving with plugin_unavailable flag.") % plugin_id
+			"saving with plugin_unavailable flag (panel-managed state preserved).") % plugin_id
 		)
 		return {
 			"name": tab_title,
@@ -518,7 +530,7 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 			"panel_name": panel_name,
 			"plugin_version": def.version,
 			"plugin_state": {"version": 1, "plugin_id": plugin_id,
-				"plugin_version": def.version, "panel_name": panel_name, "payload": {}},
+				"plugin_version": def.version, "panel_name": panel_name, "payload": tab_state},
 			"sidecar_paths": [],
 			"plugin_unavailable": true,
 			"associated_object": editor_id,
@@ -533,11 +545,14 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 		}
 	)
 
-	var tab_state: Dictionary = {}
 	var sidecar_paths: Array = []
 
 	if call_result is Dictionary:
-		tab_state = call_result.get("tab_state", {})
+		# Merge plugin's tab_state OVER the panel-managed state, but keep
+		# __panel_state so server-independent restore still works.
+		var server_tab_state: Dictionary = call_result.get("tab_state", {})
+		for k in server_tab_state.keys():
+			tab_state[k] = server_tab_state[k]
 		var raw_paths = call_result.get("sidecar_paths", [])
 		if raw_paths is Array:
 			for p in raw_paths:
@@ -545,17 +560,8 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 	else:
 		push_warning(
 			("[EditorContainer] serialize: plugin '%s' serialize_channel returned " +
-			"unexpected result; saving with empty payload.") % plugin_id
+			"unexpected result; saving panel-managed state only.") % plugin_id
 		)
-
-	# Platform-managed panel-state capture (sibling to the plugin's tab_state).
-	# Reuses the host_owned _on_panel_save_request hook so simple panels round-trip
-	# through the project file without each plugin author wiring their own cache.
-	var panel_root: Control = editor.plugin_scene_root
-	if panel_root != null and panel_root.has_method("_on_panel_save_request"):
-		var panel_state = panel_root._on_panel_save_request()
-		if panel_state is Dictionary:
-			tab_state["__panel_state"] = panel_state
 
 	return {
 		"name": tab_title,

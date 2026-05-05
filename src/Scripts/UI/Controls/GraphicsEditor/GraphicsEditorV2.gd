@@ -2841,8 +2841,10 @@ static var _edit_img_base_tooltip: = "Edit image (Image 1). If Image 2 is enable
 func check_ai_buttons_toggle() -> void:
 	# Always in floating windows mode - enable buttons based on connection status
 	if Core.connected:
-		edit_img_button.disabled = false
-		send_mask_edit_button.disabled = false
+		if edit_img_button:
+			edit_img_button.disabled = false
+		if send_mask_edit_button:
+			send_mask_edit_button.disabled = false
 	else:
 		if edit_img_button:
 			edit_img_button.disabled = true
