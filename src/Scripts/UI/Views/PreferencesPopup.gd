@@ -1591,8 +1591,8 @@ func _fetch_provider_models(provider_key: String, api_key: String) -> Array:
 					continue
 				var model_id: String = m.get("id", "")
 				var provider_kind := SingletonObject.classify_openai_model(model_id)
-				# Filter out unsupported non-generative families but keep image models.
-				if provider_kind in ["chat", "image"]:
+				# Preserve chat filtering, but keep image models as a separate supported kind.
+				if provider_kind == "image" or _is_openai_chat_model(model_id):
 					models.append({
 						"model_name": model_id,
 						"display_name": model_id,
@@ -1625,6 +1625,10 @@ func _fetch_provider_models(provider_key: String, api_key: String) -> Array:
 func _is_openai_chat_model(model_id: String) -> bool:
 	if SingletonObject.classify_openai_model(model_id) != "chat":
 		return false
+	var exclude_prefixes := ["babbage-", "davinci-"]
+	for prefix in exclude_prefixes:
+		if model_id.begins_with(prefix):
+			return false
 	# Exclude fine-tune snapshots (contain "ft:" or long hash suffixes)
 	if "ft:" in model_id:
 		return false
