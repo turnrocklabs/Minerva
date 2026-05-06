@@ -1,0 +1,53 @@
+{
+	"id": "test_paired_dsl",
+	"name": "Test Paired DSL",
+	"version": "0.1.0",
+	"host_api_version": "1",
+	"backend": {
+		"transport": "stdio",
+		"entrypoint": "python3",
+		"args": ["server.py"]
+	},
+	"tools": [],
+	"ui": {
+		"panels": [
+			{
+				"name": "test_paired_dsl_panel",
+				"kind": "godot_scene",
+				"entry_scene": "ui/Panel.tscn",
+				"scripts": ["ui/Panel.gd"],
+				"file_extensions": [".tdsl"],
+				"ipc_channels": [
+					"test_paired_dsl.cancel_eval"
+				],
+				"save_mode": "none",
+				"render_mode": "paired_dsl",
+				"layout_hint": "side_by_side"
+			}
+		],
+		"ipc_messages": [
+			"test_paired_dsl.cancel_eval"
+		]
+	},
+	"editor_items": [
+		{
+			"id": "new_test_paired_dsl",
+			"name": "New Paired DSL Document",
+			"panel": "test_paired_dsl_panel",
+			"default_filename": "untitled.tdsl"
+		}
+	],
+	"permissions": {
+		"host_capabilities": [],
+		"network": {
+			"mode": "none"
+		},
+		"filesystem": {
+			"mode": "none",
+			"paths": []
+		}
+	},
+	"data_directory": "",
+	"autostart": false,
+	"auto_reload": true
+}

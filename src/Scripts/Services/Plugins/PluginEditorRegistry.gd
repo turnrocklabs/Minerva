@@ -130,8 +130,10 @@ func register_plugin(def) -> Array[String]:
 				continue
 
 			_ext_to_panel[ext] = {
-				"plugin_id":  plugin_id,
-				"panel_name": panel_name,
+				"plugin_id":   plugin_id,
+				"panel_name":  panel_name,
+				"render_mode": panel_dict.get("render_mode", "single"),
+				"layout_hint": panel_dict.get("layout_hint", "tabs"),
 			}
 			registered_exts.append(ext)
 

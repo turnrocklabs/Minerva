@@ -75,6 +75,21 @@ func _init() -> void:
 	test_push_panel_live_no_receive_method()
 	test_push_panel_live_with_receive()
 
+	# --- Broker: attach_buffer_to_panel / detach_buffer_from_panel (DCR §T5) ---
+	print("\n-- PluginScenePanelBroker: buffer attach/detach (paired_dsl) --")
+	test_attach_buffer_pushes_initial_state()
+	test_attach_buffer_forwards_text_changed()
+	test_attach_buffer_panel_not_registered()
+	test_attach_buffer_plugin_mismatch()
+	test_attach_buffer_null_buffer()
+	test_reattach_replaces_previous_buffer()
+	test_reattach_same_buffer_is_no_op()
+	test_attach_bumps_buffer_attached_count()
+	test_detach_decrements_buffer_attached_count()
+	test_detach_buffer_disconnects_signal()
+	test_detach_buffer_pushes_detach_notification()
+	test_unregister_panel_disconnects_buffer()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -727,6 +742,256 @@ func test_push_panel_live_with_receive() -> void:
 	check("receive got correct channel", root.received_calls[0]["channel"] == "cad.update")
 	check("receive got correct payload",
 		root.received_calls[0]["payload"].get("entity_id", "") == "wall-001")
+	root.free()
+
+
+# ===========================================================================
+# Buffer attach/detach tests (DCR 019dfa66 §T5)
+# ===========================================================================
+
+func test_attach_buffer_pushes_initial_state() -> void:
+	print("test_attach_buffer_pushes_initial_state:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+	var audit: StubAuditLog = parts[2]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "hello")
+	var ok := broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+
+	check("attach_buffer returns true on success", ok)
+	check("scene received initial attach_buffer", root.received_calls.size() == 1)
+	check("channel is attach_buffer",
+		root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_ATTACH_BUFFER)
+	var payload: Dictionary = root.received_calls[0]["payload"]
+	check("payload.path matches", payload.get("path", "") == "/tmp/foo.tdsl")
+	check("payload.text matches", payload.get("text", "") == "hello")
+	check("payload.version matches", payload.get("version", -1) == 0)
+	check("audit: buffer_attached emitted",
+		audit.has_event_type(PluginScenePanelBroker.EVENT_BUFFER_ATTACHED))
+	root.free()
+
+
+func test_attach_buffer_forwards_text_changed() -> void:
+	print("test_attach_buffer_forwards_text_changed:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "a")
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	# Drop the initial attach_buffer push from the assertion target.
+	root.received_calls.clear()
+
+	buffer.apply_edit("ab")
+	buffer.apply_edit("abc")
+
+	check("two text_changed pushes received", root.received_calls.size() == 2)
+	check("first push channel is text_changed",
+		root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_TEXT_CHANGED)
+	check("first push text is ab",
+		root.received_calls[0]["payload"].get("text", "") == "ab")
+	check("first push version is 1",
+		root.received_calls[0]["payload"].get("version", -1) == 1)
+	check("second push text is abc",
+		root.received_calls[1]["payload"].get("text", "") == "abc")
+	check("second push version is 2",
+		root.received_calls[1]["payload"].get("version", -1) == 2)
+	root.free()
+
+
+func test_attach_buffer_panel_not_registered() -> void:
+	print("test_attach_buffer_panel_not_registered:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+	var audit: StubAuditLog = parts[2]
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	var ok := broker.attach_buffer_to_panel("dsl", "ghost_panel", buffer)
+
+	check("attach_buffer returns false for unregistered panel", not ok)
+	check("audit: buffer_denied emitted",
+		audit.has_event_type(PluginScenePanelBroker.EVENT_BUFFER_DENIED))
+
+
+func test_attach_buffer_plugin_mismatch() -> void:
+	print("test_attach_buffer_plugin_mismatch:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+	var audit: StubAuditLog = parts[2]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	var ok := broker.attach_buffer_to_panel("intruder", "dsl_render", buffer)
+
+	check("attach_buffer returns false on plugin mismatch", not ok)
+	check("audit: buffer_denied emitted",
+		audit.has_event_type(PluginScenePanelBroker.EVENT_BUFFER_DENIED))
+	root.free()
+
+
+func test_attach_buffer_null_buffer() -> void:
+	print("test_attach_buffer_null_buffer:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var ok := broker.attach_buffer_to_panel("dsl", "dsl_render", null)
+
+	check("attach_buffer returns false for null buffer", not ok)
+	root.free()
+
+
+func test_reattach_replaces_previous_buffer() -> void:
+	print("test_reattach_replaces_previous_buffer:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buf_a := DocumentBuffer.new("/tmp/a.tdsl", "alpha")
+	var buf_b := DocumentBuffer.new("/tmp/b.tdsl", "bravo")
+
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buf_a)
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buf_b)
+	root.received_calls.clear()
+
+	# After re-attaching, the original buffer's signal must NOT fire pushes.
+	buf_a.apply_edit("alpha2")
+	check("old buffer no longer pushes after re-attach", root.received_calls.size() == 0)
+
+	# But the new buffer does.
+	buf_b.apply_edit("bravo2")
+	check("new buffer pushes after re-attach", root.received_calls.size() == 1)
+	check("push payload comes from new buffer",
+		root.received_calls[0]["payload"].get("text", "") == "bravo2")
+	root.free()
+
+
+func test_reattach_same_buffer_is_no_op() -> void:
+	print("test_reattach_same_buffer_is_no_op:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	root.received_calls.clear()
+
+	# Same buffer again — should be a no-op: no extra attach_buffer push,
+	# no extra refcount churn.
+	var ok := broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	check("re-attach same buffer returns true", ok)
+	check("no redundant attach_buffer push", root.received_calls.size() == 0)
+	check("attached_count stays at 1", buffer.attached_count == 1)
+	root.free()
+
+
+func test_attach_bumps_buffer_attached_count() -> void:
+	print("test_attach_bumps_buffer_attached_count:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	check("buffer.attached_count starts at 0", buffer.attached_count == 0)
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	check("attach_buffer bumps buffer.attached_count to 1", buffer.attached_count == 1)
+	root.free()
+
+
+func test_detach_decrements_buffer_attached_count() -> void:
+	print("test_detach_decrements_buffer_attached_count:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	# Simulate the text editor side: it has its own attach() in Editor.gd.
+	buffer.attach()  # editor side
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	check("attached_count = 2 (editor + render)", buffer.attached_count == 2)
+	broker.detach_buffer_from_panel("dsl", "dsl_render")
+	check("after broker detach, attached_count = 1 (editor still attached)",
+		buffer.attached_count == 1)
+	root.free()
+
+
+func test_detach_buffer_disconnects_signal() -> void:
+	print("test_detach_buffer_disconnects_signal:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	broker.detach_buffer_from_panel("dsl", "dsl_render")
+	root.received_calls.clear()
+
+	buffer.apply_edit("y")
+	check("text_changed not forwarded after detach", root.received_calls.size() == 0)
+	root.free()
+
+
+func test_detach_buffer_pushes_detach_notification() -> void:
+	print("test_detach_buffer_pushes_detach_notification:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+	var audit: StubAuditLog = parts[2]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	root.received_calls.clear()
+
+	broker.detach_buffer_from_panel("dsl", "dsl_render")
+
+	check("detach pushed exactly one notification", root.received_calls.size() == 1)
+	check("channel is detach_buffer",
+		root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_DETACH_BUFFER)
+	check("detach payload includes path",
+		root.received_calls[0]["payload"].get("path", "") == "/tmp/foo.tdsl")
+	check("audit: buffer_detached emitted",
+		audit.has_event_type(PluginScenePanelBroker.EVENT_BUFFER_DETACHED))
+	root.free()
+
+
+func test_unregister_panel_disconnects_buffer() -> void:
+	print("test_unregister_panel_disconnects_buffer:")
+	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var root := StubSceneRoot.new()
+	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+
+	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
+	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
+	check("buffer.text_changed has connections before unregister",
+		buffer.text_changed.get_connections().size() == 1)
+
+	broker.unregister_panel("dsl", "dsl_render")
+
+	check("buffer.text_changed has no connections after unregister",
+		buffer.text_changed.get_connections().size() == 0)
 	root.free()
 
 

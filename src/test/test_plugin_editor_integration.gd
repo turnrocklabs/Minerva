@@ -58,6 +58,11 @@ func _init() -> void:
 	test_plugin_scene_type_exists()
 	test_plugin_scene_type_distinct_from_others()
 
+	print("\n-- render_mode + layout_hint passthrough (DCR 019dfa66 §T5) --")
+	test_resolve_extension_exposes_render_mode_default()
+	test_resolve_extension_exposes_render_mode_paired_dsl()
+	test_resolve_extension_exposes_layout_hint()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -344,3 +349,56 @@ func test_plugin_scene_type_distinct_from_others() -> void:
 			is_unique = false
 			break
 	check("PLUGIN_SCENE enum value is distinct from all other Editor.Type values", is_unique)
+
+
+# ---------------------------------------------------------------------------
+# render_mode + layout_hint passthrough (DCR 019dfa66 §T5)
+# ---------------------------------------------------------------------------
+
+## Variant of StubDef.make that lets us specify render_mode/layout_hint on the
+## panel dict.  The registry should expose these via resolve_extension so the
+## file-open dispatcher can branch on them without re-reading the manifest.
+func _make_def_with_panel(p_id: String, panel_name: String, exts: Array,
+		render_mode: String = "single", layout_hint: String = "tabs") -> StubDef:
+	var d := StubDef.new()
+	d.id = p_id
+	d.ui_panels = [{
+		"name": panel_name,
+		"kind": "godot_scene",
+		"entry_scene": "ui/Panel.tscn",
+		"scripts": [],
+		"file_extensions": exts,
+		"ipc_channels": [],
+		"render_mode": render_mode,
+		"layout_hint": layout_hint,
+	}]
+	return d
+
+
+func test_resolve_extension_exposes_render_mode_default() -> void:
+	var reg := PluginEditorRegistry_.new()
+	# Use bare StubDef.make — render_mode absent on panel dict → registry should
+	# still expose "single" via the .get(..., "single") default in register_plugin.
+	var def := StubDef.make("dsl", "dsl_render", [".tdsl"])
+	reg.register_plugin(def)
+	var info := reg.resolve_extension(".tdsl")
+	check_eq("missing render_mode defaults to 'single' in registry",
+		info.get("render_mode", ""), "single")
+
+
+func test_resolve_extension_exposes_render_mode_paired_dsl() -> void:
+	var reg := PluginEditorRegistry_.new()
+	var def := _make_def_with_panel("dsl", "dsl_render", [".tdsl"], "paired_dsl", "side_by_side")
+	reg.register_plugin(def)
+	var info := reg.resolve_extension(".tdsl")
+	check_eq("paired_dsl render_mode preserved through registry",
+		info.get("render_mode", ""), "paired_dsl")
+
+
+func test_resolve_extension_exposes_layout_hint() -> void:
+	var reg := PluginEditorRegistry_.new()
+	var def := _make_def_with_panel("dsl", "dsl_render", [".tdsl"], "paired_dsl", "side_by_side")
+	reg.register_plugin(def)
+	var info := reg.resolve_extension(".tdsl")
+	check_eq("side_by_side layout_hint preserved through registry",
+		info.get("layout_hint", ""), "side_by_side")

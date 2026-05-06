@@ -279,10 +279,17 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 ## Editor.create_plugin_scene() can pass them to PluginScenePanelHost.
 ## `file` is the associated file path (may be null for new untitled editors).
 func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null, name_: String = "") -> Editor:
-	# Check if we're opening a file that's already open.
+	# Check if a plugin-scene editor for the same plugin/panel/file is already open.
+	# Match by (type, plugin_id, panel_name, file) — not by file alone — so that
+	# a sibling text editor on the same path (paired_dsl) doesn't shortcut us
+	# into returning the wrong editor.
 	if file != null:
 		for editor: Editor in Tabs.get_children():
 			if not editor is Editor:
+				continue
+			if editor.type != Editor.Type.PLUGIN_SCENE:
+				continue
+			if editor.plugin_id != plugin_id or editor.panel_name != panel_name:
 				continue
 			if editor.file == file:
 				Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)

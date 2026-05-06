@@ -55,6 +55,30 @@ const EVENT_SCENE_PUSH_MISS  := "scene_push_miss"
 const EVENT_SCENE_PROGRESS   := "scene_progress"
 ## push_progress: panel not live, wrong owner, or scene lacks on_progress.
 const EVENT_SCENE_PROGRESS_MISS := "scene_progress_miss"
+## attach_buffer_to_panel: panel subscribed to a DocumentBuffer.
+const EVENT_BUFFER_ATTACHED  := "buffer_attached"
+## detach_buffer_from_panel: panel unsubscribed.
+const EVENT_BUFFER_DETACHED  := "buffer_detached"
+## buffer_attached but spoof check failed or panel missing.
+const EVENT_BUFFER_DENIED    := "buffer_denied"
+
+# ---------------------------------------------------------------------------
+# Platform-reserved channels (DCR 019dfa66 §T5)
+# ---------------------------------------------------------------------------
+# These channels are pushed by the broker to paired_dsl panels in response to
+# DocumentBuffer lifecycle events. They are NOT validated against
+# ipc_channels — they are platform-managed (mirroring `on_progress`).
+# The scene receives them via its `receive(channel, payload)` method.
+
+## Initial notification when a render panel attaches to a buffer.
+## Payload: {"path": String, "text": String, "version": int}
+const CHANNEL_ATTACH_BUFFER  := "attach_buffer"
+## Forwarded from DocumentBuffer.text_changed.
+## Payload: {"text": String, "version": int}
+const CHANNEL_TEXT_CHANGED   := "text_changed"
+## Final notification when a render panel detaches.
+## Payload: {"path": String}
+const CHANNEL_DETACH_BUFFER  := "detach_buffer"
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +188,8 @@ func register_panel(
 					panel_name, plugin_id
 				]
 			)
-		# Detach the old helper before overwriting.
+		# Detach the old buffer + helper before overwriting.
+		_disconnect_buffer(existing)
 		_detach_ipc_helper(existing)
 
 	# Create and attach the MinervaIPC helper node.
@@ -226,6 +251,7 @@ func unregister_panel(plugin_id: String, panel_name: String) -> void:
 		)
 		return
 
+	_disconnect_buffer(entry)
 	_detach_ipc_helper(entry)
 	_panel_registry.erase(panel_name)
 
@@ -249,6 +275,7 @@ func unregister_plugin_panels(plugin_id: String) -> void:
 
 	for panel_name in to_remove:
 		var entry: _PanelEntry = _panel_registry[panel_name]
+		_disconnect_buffer(entry)
 		_detach_ipc_helper(entry)
 		_panel_registry.erase(panel_name)
 		panel_unregistered.emit(plugin_id, panel_name)
@@ -590,6 +617,148 @@ func push_progress(
 
 
 # ---------------------------------------------------------------------------
+# DocumentBuffer attach/detach (DCR 019dfa66 §T5 — paired_dsl substrate)
+# ---------------------------------------------------------------------------
+
+## Subscribe a registered panel to a DocumentBuffer.
+##
+## Wires buffer.text_changed → panel.receive("text_changed", {text, version})
+## and pushes an initial "attach_buffer" notification with the current buffer
+## state. Idempotent for the same panel; re-attaching to a different buffer
+## detaches the previous one first.
+##
+## Used by the file-open dispatcher when a `render_mode: paired_dsl` panel
+## opens — the panel renders the buffer text, and updates flow through the
+## broker rather than the panel reading disk directly.
+##
+## Returns true on success, false if the panel is not registered, the spoof
+## check fails, or the buffer is null.
+func attach_buffer_to_panel(
+		plugin_id: String,
+		panel_name: String,
+		buffer: DocumentBuffer
+) -> bool:
+	if buffer == null:
+		_audit(plugin_id, EVENT_BUFFER_DENIED, {
+			"panel_name": panel_name,
+			"reason": "buffer_null",
+		})
+		return false
+
+	if not _panel_registry.has(panel_name):
+		_audit(plugin_id, EVENT_BUFFER_DENIED, {
+			"panel_name": panel_name,
+			"reason": "panel_not_registered",
+		})
+		return false
+
+	var entry: _PanelEntry = _panel_registry[panel_name]
+	if entry.plugin_id != plugin_id:
+		_audit(plugin_id, EVENT_BUFFER_DENIED, {
+			"panel_name": panel_name,
+			"reason": "buffer_plugin_mismatch",
+			"scene_expected": entry.plugin_id,
+		})
+		push_warning(
+			("[PluginScenePanelBroker] attach_buffer_to_panel: plugin '%s' tried to attach " +
+			"buffer to panel '%s' owned by '%s'") % [plugin_id, panel_name, entry.plugin_id]
+		)
+		return false
+
+	# Same-buffer re-attach is a no-op: keeps the panel's local state and avoids
+	# emitting a redundant attach_buffer notification that would reset its UI.
+	if entry.attached_buffer == buffer:
+		return true
+
+	# If already attached (to a different buffer), tear it down first so signal
+	# handles stay one-to-one.
+	if entry.attached_buffer != null:
+		_disconnect_buffer(entry)
+
+	# Connect the buffer's text_changed signal to a closure that pushes to the
+	# scene.  Capturing panel_name + plugin_id by value makes the handler safe
+	# against later panel re-registration.
+	var captured_panel_name: String = panel_name
+	var captured_plugin_id: String = plugin_id
+	var handler := func(text: String, version: int) -> void:
+		push_to_panel(captured_plugin_id, captured_panel_name, CHANNEL_TEXT_CHANGED, {
+			"text": text,
+			"version": version,
+		})
+	buffer.text_changed.connect(handler)
+	# Bump the buffer's attachment refcount so DocumentRegistry knows a UI
+	# surface is mirroring it.  The matching detach() runs in _disconnect_buffer.
+	buffer.attach()
+	entry.attached_buffer = buffer
+	entry._buffer_text_changed_handler = handler
+
+	# Push the initial attach_buffer notification with the current buffer state.
+	# Goes through push_to_panel so audit + alive-check are consistent with
+	# subsequent text_changed pushes.
+	push_to_panel(plugin_id, panel_name, CHANNEL_ATTACH_BUFFER, {
+		"path":    buffer.file_path,
+		"text":    buffer.text,
+		"version": buffer.version,
+	})
+
+	_audit(plugin_id, EVENT_BUFFER_ATTACHED, {
+		"panel_name": panel_name,
+		"path":       buffer.file_path,
+		"version":    buffer.version,
+	})
+	return true
+
+
+## Unsubscribe a panel from its attached DocumentBuffer.
+##
+## Disconnects the text_changed handler and pushes a final "detach_buffer"
+## notification.  No-op if the panel is not registered or has no attached
+## buffer.  Spoof-checks plugin_id against the panel owner.
+func detach_buffer_from_panel(plugin_id: String, panel_name: String) -> void:
+	if not _panel_registry.has(panel_name):
+		return
+
+	var entry: _PanelEntry = _panel_registry[panel_name]
+	if entry.plugin_id != plugin_id:
+		_audit(plugin_id, EVENT_BUFFER_DENIED, {
+			"panel_name": panel_name,
+			"reason": "detach_plugin_mismatch",
+			"scene_expected": entry.plugin_id,
+		})
+		return
+
+	if entry.attached_buffer == null:
+		return
+
+	var detach_path: String = entry.attached_buffer.file_path
+	_disconnect_buffer(entry)
+
+	# Best-effort detach notification; a freed panel ref is fine here.
+	push_to_panel(plugin_id, panel_name, CHANNEL_DETACH_BUFFER, {
+		"path": detach_path,
+	})
+
+	_audit(plugin_id, EVENT_BUFFER_DETACHED, {
+		"panel_name": panel_name,
+		"path":       detach_path,
+	})
+
+
+## Internal: drop the buffer signal connection on a panel entry.
+## Safe to call when no buffer is attached.
+func _disconnect_buffer(entry: _PanelEntry) -> void:
+	if entry.attached_buffer == null:
+		return
+	if entry._buffer_text_changed_handler.is_valid():
+		if entry.attached_buffer.text_changed.is_connected(entry._buffer_text_changed_handler):
+			entry.attached_buffer.text_changed.disconnect(entry._buffer_text_changed_handler)
+	# Balance the attach() bump from attach_buffer_to_panel.
+	entry.attached_buffer.detach()
+	entry.attached_buffer = null
+	entry._buffer_text_changed_handler = Callable()
+
+
+# ---------------------------------------------------------------------------
 # Validation helpers
 # ---------------------------------------------------------------------------
 
@@ -783,3 +952,10 @@ class _PanelEntry extends RefCounted:
 	var channels: PackedStringArray = PackedStringArray()
 	## The MinervaIPC helper node attached to panel_root.
 	var ipc_helper: MinervaIPC = null
+	## DocumentBuffer this panel is currently subscribed to via attach_buffer_to_panel.
+	## null when no buffer is attached. Cleared on detach_buffer_from_panel and
+	## on unregister_panel.
+	var attached_buffer: DocumentBuffer = null
+	## Callable connected to attached_buffer.text_changed; held so detach can
+	## disconnect the exact same handle.
+	var _buffer_text_changed_handler: Callable = Callable()

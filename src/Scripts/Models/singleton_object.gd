@@ -1455,6 +1455,37 @@ var Is_code_completed:bool = true
 var video_recorder_overlay_scene = preload("res://Scenes/VideoRecorder.tscn")
 
 
+## DCR 019dfa66 §T5 — Open a paired_dsl plugin: text editor + render panel,
+## both attached to the same DocumentBuffer.
+##
+## Returns the text editor (so open_file_at_path can keep its single-Editor
+## return contract). The render panel is opened as a sibling tab; layout
+## refinement (side_by_side splitting) is deferred to a follow-up — for the
+## substrate task it's enough that both editors exist and share the buffer.
+func _open_paired_dsl(abs_path: String, p_id: String, p_name: String) -> Editor:
+	var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, abs_path)
+	var render_editor: Editor = editor_pane.add_plugin_scene_editor(p_id, p_name, abs_path)
+
+	# Attach the buffer to the render panel so text_changed flows through the
+	# broker to the plugin scene's receive() method.
+	if plugin_scene_panel_broker != null and render_editor != null:
+		var reg := DocumentRegistry.get_instance()
+		var br := reg.get_or_create_buffer(abs_path)
+		if br.ok:
+			plugin_scene_panel_broker.attach_buffer_to_panel(p_id, p_name, br.buffer)
+		else:
+			push_warning(
+				"[open_file_at_path] paired_dsl buffer unavailable for '%s': %s" % [
+					abs_path, br.get("error", "?")
+				]
+			)
+	else:
+		push_warning(
+			"[open_file_at_path] paired_dsl: broker or render editor missing — buffer not attached"
+		)
+	return text_editor
+
+
 ## Open `path` in the appropriate editor type.  Idempotent — if the file is
 ## already open, returns the existing editor's tab title without creating a
 ## duplicate tab.
@@ -1489,6 +1520,10 @@ func open_file_at_path(path: String) -> Dictionary:
 		return {"ok": false, "errors": ["editor_pane not available"]}
 
 	# --- Idempotency: check if already open ---
+	# TODO(paired_dsl close-one): for render_mode=paired_dsl, two editors share
+	# editor.file. If the user closed only the render panel, this loop returns
+	# the surviving text editor and _open_paired_dsl never runs to recreate the
+	# render panel. Substrate-level limitation; revisit when paired_dsl ships.
 	for editor: Editor in editor_pane.get_open_editors():
 		if editor.file == abs_path:
 			var kind_name: String = _editor_type_to_string(editor.type)
@@ -1540,8 +1575,17 @@ func open_file_at_path(path: String) -> Dictionary:
 				var status: Dictionary = plugin_manager.get_plugin_status(p_id)
 				if not status.get("running", false):
 					return {"ok": false, "errors": ["plugin_not_running: %s" % p_id]}
-			result_editor = editor_pane.add_plugin_scene_editor(p_id, p_name, abs_path)
-			editor_kind = "PLUGIN_SCENE"
+			# DCR 019dfa66 §T5: render_mode "paired_dsl" routes to a paired
+			# text-editor + render-panel layout, both sharing the same
+			# DocumentBuffer. The text editor is the canonical edit surface;
+			# the render panel subscribes via the broker.
+			var render_mode: String = panel_info.get("render_mode", "single")
+			if render_mode == "paired_dsl":
+				result_editor = _open_paired_dsl(abs_path, p_id, p_name)
+				editor_kind = "PLUGIN_SCENE_PAIRED_DSL"
+			else:
+				result_editor = editor_pane.add_plugin_scene_editor(p_id, p_name, abs_path)
+				editor_kind = "PLUGIN_SCENE"
 		else:
 			result_editor = editor_pane.add(Editor.Type.TEXT, abs_path)
 			editor_kind = "TEXT"

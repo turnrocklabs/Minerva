@@ -73,10 +73,19 @@ func _init() -> void:
 	test_duplicate_panel_names_fail_validate()
 	test_from_dict_does_not_duplicate_top_level_arrays()
 
+	print("\n-- render_mode + layout_hint (DCR 019dfa66 §T5) --")
+	test_render_mode_defaults_to_single()
+	test_render_mode_paired_dsl_accepted()
+	test_render_mode_unknown_rejected()
+	test_layout_hint_defaults_to_tabs()
+	test_layout_hint_side_by_side_accepted()
+	test_layout_hint_unknown_rejected()
+
 	print("\n-- Real plugin manifests --")
 	test_obs_controller_manifest_parses()
 	test_notes_helper_manifest_parses()
 	test_test_stdio_server_manifest_parses()
+	test_test_paired_dsl_manifest_parses()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -504,6 +513,74 @@ func test_from_dict_does_not_duplicate_top_level_arrays() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Tests: render_mode + layout_hint (DCR 019dfa66 §T5)
+# ---------------------------------------------------------------------------
+
+func test_render_mode_defaults_to_single() -> void:
+	var manifest := _minimal_manifest({
+		"panels": [{"name": "p", "kind": "html"}],
+	})
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("render_mode default: def not null", def != null)
+	if def == null:
+		return
+	check_eq("render_mode default = single",
+		def.ui_panels[0].get("render_mode", ""), "single")
+
+
+func test_render_mode_paired_dsl_accepted() -> void:
+	var manifest := _minimal_manifest({
+		"panels": [{"name": "p", "kind": "html", "render_mode": "paired_dsl"}],
+	})
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("render_mode paired_dsl: def not null", def != null)
+	if def == null:
+		return
+	check_eq("render_mode paired_dsl preserved",
+		def.ui_panels[0].get("render_mode", ""), "paired_dsl")
+
+
+func test_render_mode_unknown_rejected() -> void:
+	var manifest := _minimal_manifest({
+		"panels": [{"name": "p", "kind": "html", "render_mode": "magic"}],
+	})
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("render_mode unknown: def is null", def == null)
+
+
+func test_layout_hint_defaults_to_tabs() -> void:
+	var manifest := _minimal_manifest({
+		"panels": [{"name": "p", "kind": "html"}],
+	})
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("layout_hint default: def not null", def != null)
+	if def == null:
+		return
+	check_eq("layout_hint default = tabs",
+		def.ui_panels[0].get("layout_hint", ""), "tabs")
+
+
+func test_layout_hint_side_by_side_accepted() -> void:
+	var manifest := _minimal_manifest({
+		"panels": [{"name": "p", "kind": "html", "layout_hint": "side_by_side"}],
+	})
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("layout_hint side_by_side: def not null", def != null)
+	if def == null:
+		return
+	check_eq("layout_hint side_by_side preserved",
+		def.ui_panels[0].get("layout_hint", ""), "side_by_side")
+
+
+func test_layout_hint_unknown_rejected() -> void:
+	var manifest := _minimal_manifest({
+		"panels": [{"name": "p", "kind": "html", "layout_hint": "carousel"}],
+	})
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("layout_hint unknown: def is null", def == null)
+
+
+# ---------------------------------------------------------------------------
 # Tests: real plugin manifests (via JSON dict round-trip)
 # ---------------------------------------------------------------------------
 
@@ -576,3 +653,27 @@ func test_test_stdio_server_manifest_parses() -> void:
 		return
 	check_eq("test_stdio_server: id", def.id, "test_stdio_server")
 	check_eq("test_stdio_server: panel count (no ui section)", def.ui_panels.size(), 0)
+
+
+func test_test_paired_dsl_manifest_parses() -> void:
+	# test_paired_dsl exercises render_mode=paired_dsl + layout_hint=side_by_side.
+	var data := _load_manifest_json("res://../../src/plugins/test_paired_dsl/manifest.json")
+	if data.is_empty():
+		data = _load_manifest_json("res://plugins/test_paired_dsl/manifest.json")
+	if data.is_empty():
+		printerr("  SKIP: test_paired_dsl/manifest.json not accessible from test runner path")
+		_pass_count += 1
+		print("  PASS (skip): test_paired_dsl manifest not reachable from res://")
+		return
+	var def = PluginDefinition_._from_dict_internal(data)
+	check("test_paired_dsl: def not null", def != null)
+	if def == null:
+		return
+	check_eq("test_paired_dsl: id", def.id, "test_paired_dsl")
+	check_eq("test_paired_dsl: panel count", def.ui_panels.size(), 1)
+	check_eq("test_paired_dsl: panel name",
+		def.ui_panels[0].get("name", ""), "test_paired_dsl_panel")
+	check_eq("test_paired_dsl: render_mode parsed",
+		def.ui_panels[0].get("render_mode", ""), "paired_dsl")
+	check_eq("test_paired_dsl: layout_hint parsed",
+		def.ui_panels[0].get("layout_hint", ""), "side_by_side")

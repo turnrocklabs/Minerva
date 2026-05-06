@@ -672,6 +672,41 @@ static func _parse_panel_entry(panel: Dictionary, ipc_allowlist: Array[String]) 
 	# --- multi_window (optional, default false) ---
 	result["multi_window"] = bool(panel.get("multi_window", false))
 
+	# --- render_mode (optional, default "single") — DCR 019dfa66 §T5 ---
+	# "single":     panel is self-contained; opens alone (legacy behaviour).
+	# "paired_dsl": panel renders a DSL buffer; host opens it next to a text
+	#               editor attached to the same DocumentBuffer. Plugin receives
+	#               attach_buffer / text_changed IPC from the broker.
+	var render_mode_raw: Variant = panel.get("render_mode", null)
+	if render_mode_raw == null:
+		result["render_mode"] = "single"
+	else:
+		var render_mode: String = str(render_mode_raw)
+		if render_mode != "single" and render_mode != "paired_dsl":
+			return {
+				"error": "panel_render_mode_invalid",
+				"detail": {"name": panel_name, "render_mode": render_mode,
+					"allowed": ["single", "paired_dsl"]},
+			}
+		result["render_mode"] = render_mode
+
+	# --- layout_hint (optional, default "tabs") — DCR 019dfa66 §T5 ---
+	# Suggests how the host should arrange the paired editor + render panel.
+	# "tabs":         existing tabbed layout (default; host may ignore for paired_dsl).
+	# "side_by_side": split the editor pane horizontally (text editor left, render right).
+	var layout_hint_raw: Variant = panel.get("layout_hint", null)
+	if layout_hint_raw == null:
+		result["layout_hint"] = "tabs"
+	else:
+		var layout_hint: String = str(layout_hint_raw)
+		if layout_hint != "tabs" and layout_hint != "side_by_side":
+			return {
+				"error": "panel_layout_hint_invalid",
+				"detail": {"name": panel_name, "layout_hint": layout_hint,
+					"allowed": ["tabs", "side_by_side"]},
+			}
+		result["layout_hint"] = layout_hint
+
 	return result
 
 
