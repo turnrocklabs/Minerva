@@ -99,6 +99,19 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
+## Emit the activity-log signal via runtime autoload lookup. Bare `SingletonObject.X`
+## references at parse time poison `--script` headless tests (the parser can't resolve
+## autoload identifiers, body-level use makes the script uninstantiable). Looking the
+## node up by string keeps the parser happy while preserving production behavior.
+static func _emit_tool_executed(tool_name: String, arguments: Dictionary, result: Dictionary, agent_id: String) -> void:
+	var ml := Engine.get_main_loop()
+	if not (ml is SceneTree):
+		return
+	var so := (ml as SceneTree).root.get_node_or_null("SingletonObject")
+	if so and so.has_method("emit_mcp_tool_executed"):
+		so.emit_mcp_tool_executed(tool_name, arguments, result, agent_id)
+
+
 ## Expand Godot virtual paths (`res://`, `user://`) to absolute OS paths so the
 ## underlying CodeTools (which use OS FileAccess, DirAccess) can resolve them.
 static func _resolve_virtual_path(path: String) -> String:
@@ -129,7 +142,7 @@ func _codetools_read(arguments: Dictionary) -> Dictionary:
 		else:
 			var buf: DocumentBuffer = br.buffer
 			result = ReadTool.format_text(buf.text, offset, limit)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_read", arguments, result, _current_agent_id)
+	_emit_tool_executed("minerva_file_read", arguments, result, _current_agent_id)
 	return result
 
 
@@ -157,7 +170,7 @@ func _codetools_write(arguments: Dictionary) -> Dictionary:
 			"path": path,
 			"bytes_written": content.length(),
 		}
-	SingletonObject.mcp_tool_executed.emit("minerva_file_write", arguments, result, _current_agent_id)
+	_emit_tool_executed("minerva_file_write", arguments, result, _current_agent_id)
 	return result
 
 
@@ -200,7 +213,7 @@ func _codetools_edit(arguments: Dictionary) -> Dictionary:
 						buf.apply_edit(new_text)
 						result = {"success": true, "replacements": 1, "path": path}
 
-	SingletonObject.mcp_tool_executed.emit("minerva_file_edit", arguments, result, _current_agent_id)
+	_emit_tool_executed("minerva_file_edit", arguments, result, _current_agent_id)
 	return result
 
 
@@ -210,7 +223,7 @@ func _codetools_glob(arguments: Dictionary) -> Dictionary:
 	base_dir = _resolve_virtual_path(base_dir)
 	var limit: int = MCPToolUtils.coerce_int(arguments.get("limit", 100))
 	var result := GlobTool.glob_files(pattern, base_dir, limit)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_glob", arguments, result, _current_agent_id)
+	_emit_tool_executed("minerva_file_glob", arguments, result, _current_agent_id)
 	return result
 
 
@@ -228,7 +241,7 @@ func _codetools_grep(arguments: Dictionary) -> Dictionary:
 		MCPToolUtils.coerce_int(arguments.get("context_lines", 0)),
 		MCPToolUtils.coerce_int(arguments.get("limit", 100)),
 	)
-	SingletonObject.mcp_tool_executed.emit("minerva_file_grep", arguments, result, _current_agent_id)
+	_emit_tool_executed("minerva_file_grep", arguments, result, _current_agent_id)
 	return result
 
 
@@ -241,7 +254,7 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 	var policy_error: String = CodeToolsPolicy.get_instance().check_bash_command(command)
 	if not policy_error.is_empty():
 		var policy_result: Dictionary = {"success": false, "error": policy_error, "exit_code": -1}
-		SingletonObject.emit_mcp_tool_executed("minerva_bash", arguments, policy_result, _current_agent_id)
+		_emit_tool_executed("minerva_bash", arguments, policy_result, _current_agent_id)
 		return policy_result
 
 	# Try to route through a visible terminal PTY
@@ -253,7 +266,7 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 			full_command = "cd %s && %s" % [terminal_working_dir, command]
 
 		var terminal_result: Dictionary = await term.execute_command(full_command)
-		SingletonObject.emit_mcp_tool_executed("minerva_bash", arguments, terminal_result, _current_agent_id)
+		_emit_tool_executed("minerva_bash", arguments, terminal_result, _current_agent_id)
 		return terminal_result
 
 	# Fallback: headless execution if no terminal available
@@ -263,13 +276,16 @@ func _codetools_bash(arguments: Dictionary) -> Dictionary:
 	var timeout_ms: int = MCPToolUtils.coerce_int(arguments.get("timeout", BashTool.DEFAULT_TIMEOUT_MS))
 	var command_result: Dictionary = BashTool.run_command(command, resolved_working_dir, timeout_ms)
 	command_result["success"] = command_result["exit_code"] == 0
-	SingletonObject.emit_mcp_tool_executed("minerva_bash", arguments, command_result, _current_agent_id)
+	_emit_tool_executed("minerva_bash", arguments, command_result, _current_agent_id)
 	return command_result
 
 
 func _find_active_terminal() -> TerminalNew:
 	## Find the active visible terminal for PTY command execution.
-	var terminals: Array = SingletonObject.get_tree().get_nodes_in_group("terminal_pane")
+	var ml := Engine.get_main_loop()
+	if not (ml is SceneTree):
+		return null
+	var terminals: Array = (ml as SceneTree).get_nodes_in_group("terminal_pane")
 	for term in terminals:
 		if term is TerminalNew and term.is_visible_in_tree() and term._terminal_available:
 			return term
@@ -283,5 +299,5 @@ func _codetools_cwd(arguments: Dictionary) -> Dictionary:
 		cwd_result = {"success": true, "cwd": _cwd_tool.get_cwd()}
 	else:
 		cwd_result = _cwd_tool.set_cwd(path)
-	SingletonObject.emit_mcp_tool_executed("minerva_cwd", arguments, cwd_result, _current_agent_id)
+	_emit_tool_executed("minerva_cwd", arguments, cwd_result, _current_agent_id)
 	return cwd_result

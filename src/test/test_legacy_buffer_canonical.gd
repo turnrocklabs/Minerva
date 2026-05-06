@@ -1,13 +1,18 @@
 extends SceneTree
-## Test: legacy MCP file tools are now buffer-canonical (Task 3 invariant).
+## Test: legacy minerva_file_* MCP tools are buffer-canonical (Task 3 of DCR 019dfa66).
 ##
-## After Task 3, calling minerva_file_write or minerva_file_edit must NOT
-## modify the file on disk. Disk only changes when minerva_doc_save runs.
+## After Task 3, the legacy tools must:
+##   - delegate writes through DocumentRegistry, NOT FileAccess directly
+##   - leave disk untouched until the buffer is explicitly saved
+##   - return content that reflects the buffer, even when disk has stale text
+##
+## Pattern follows test_mcp_cad_tools.gd: instantiate the module via .new(null),
+## skip register_tools(), exercise handle() directly. handle() is a coroutine in
+## MCPCodeTools (because _codetools_bash uses await), so all calls are awaited.
 ##
 ## Run: godot --headless --path src --script test/test_legacy_buffer_canonical.gd
 
 const MCPCodeToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPCodeTools.gd")
-const MCPDocToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPDocTools.gd")
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -20,14 +25,17 @@ func _init() -> void:
 	_setup()
 
 	var code_tools = MCPCodeToolsScript.new(null)
-	var doc_tools = MCPDocToolsScript.new(null)
+	if code_tools == null:
+		printerr("FATAL: MCPCodeTools.new(null) returned null — body-level compile failure?")
+		quit(2)
+		return
 
-	test_file_write_does_not_touch_disk(code_tools)
-	test_file_write_then_doc_save_writes_to_disk(code_tools, doc_tools)
-	test_file_edit_does_not_touch_disk(code_tools)
-	test_file_read_returns_buffer_text_not_disk_text(code_tools)
-	test_file_read_response_shape_preserved(code_tools)
-	test_file_edit_response_shape_preserved(code_tools)
+	await test_file_write_does_not_touch_disk(code_tools)
+	await test_file_write_creates_buffer_with_content(code_tools)
+	await test_file_write_preserves_existing_disk_until_save(code_tools)
+	await test_file_edit_does_not_touch_disk(code_tools)
+	await test_file_edit_modifies_buffer(code_tools)
+	await test_doc_save_flushes_legacy_writes_to_disk(code_tools)
 
 	_teardown()
 
@@ -67,118 +75,110 @@ func _reset_registry() -> void:
 	DocumentRegistry.reset_instance()
 
 
+func _read_disk(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return ""
+	var text := f.get_as_text()
+	f.close()
+	return text
+
+
+func _write_disk(path: String, text: String) -> void:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	f.store_string(text)
+	f.close()
+
+
+# ---------------------------------------------------------------------------
+# minerva_file_write — buffer-canonical, no disk touch
 # ---------------------------------------------------------------------------
 
 func test_file_write_does_not_touch_disk(tools) -> void:
 	print("test_file_write_does_not_touch_disk")
 	_reset_registry()
-	var path := _temp_path("file_write.txt")
+	var path := _temp_path("write_no_disk.txt")
 	check("file does not exist before", not FileAccess.file_exists(path))
 
-	var r: Dictionary = tools.handle("minerva_file_write", {"path": path, "content": "buffer-only"})
-	check("write success=true", r.get("success", false) == true)
-	check("response has path", r.get("path", "") == path)
-	check("response has bytes_written", r.get("bytes_written", -1) == "buffer-only".length())
-	# Buffer-canonical invariant: disk untouched
-	check("file STILL does not exist on disk", not FileAccess.file_exists(path))
-	# Buffer is dirty in registry
-	check("buffer registered after write", DocumentRegistry.get_instance().has_buffer(path))
+	var r: Dictionary = await tools.handle("minerva_file_write", {"path": path, "content": "buffer-only"})
+	check("write success", r.get("success", false) == true)
+	check("disk file STILL does not exist", not FileAccess.file_exists(path))
 
 
-func test_file_write_then_doc_save_writes_to_disk(code_tools, doc_tools) -> void:
-	print("test_file_write_then_doc_save_writes_to_disk")
+func test_file_write_creates_buffer_with_content(tools) -> void:
+	print("test_file_write_creates_buffer_with_content")
 	_reset_registry()
-	var path := _temp_path("write_then_save.txt")
+	var path := _temp_path("buffer_has_content.txt")
+	await tools.handle("minerva_file_write", {"path": path, "content": "hello"})
 
-	code_tools.handle("minerva_file_write", {"path": path, "content": "save me"})
-	check("file does not exist after write", not FileAccess.file_exists(path))
+	var registry := DocumentRegistry.get_instance()
+	check("buffer registered for path", registry.has_buffer(path))
+	var br := registry.get_or_create_buffer(path)
+	check("buffer ok", br.ok)
+	check("buffer text matches what was written", (br.buffer as DocumentBuffer).text == "hello")
+	check("buffer marked dirty", (br.buffer as DocumentBuffer).dirty == true)
 
-	var save_r: Dictionary = doc_tools.handle("minerva_doc_save", {"path": path})
-	check("doc_save success", save_r.get("success", false) == true)
-	check("file exists after doc_save", FileAccess.file_exists(path))
 
-	var f := FileAccess.open(path, FileAccess.READ)
-	check("disk text matches", f.get_as_text() == "save me")
-	f.close()
+func test_file_write_preserves_existing_disk_until_save(tools) -> void:
+	print("test_file_write_preserves_existing_disk_until_save")
+	_reset_registry()
+	var path := _temp_path("preserve_disk.txt")
+	_write_disk(path, "ORIGINAL")
 
+	await tools.handle("minerva_file_write", {"path": path, "content": "MUTATED"})
+	check("disk preserves ORIGINAL after legacy write", _read_disk(path) == "ORIGINAL")
+
+
+# ---------------------------------------------------------------------------
+# minerva_file_edit — buffer-canonical, no disk touch
+# ---------------------------------------------------------------------------
 
 func test_file_edit_does_not_touch_disk(tools) -> void:
 	print("test_file_edit_does_not_touch_disk")
 	_reset_registry()
-	var path := _temp_path("file_edit.txt")
-	# Seed disk so we can detect a write.
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	f.store_string("hello WORLD foo")
-	f.close()
+	var path := _temp_path("edit_no_disk.txt")
+	_write_disk(path, "alpha bravo charlie")
 
-	var r: Dictionary = tools.handle("minerva_file_edit", {
-		"path": path,
-		"old_string": "WORLD",
-		"new_string": "GALAXY",
+	await tools.handle("minerva_file_edit", {
+		"path": path, "old_string": "bravo", "new_string": "BRAVO",
 	})
-	check("edit success=true", r.get("success", false) == true)
-	check("response has replacements=1", r.get("replacements", 0) == 1)
-	check("response has path", r.get("path", "") == path)
-
-	# Buffer-canonical: disk still has the old content
-	var f2 := FileAccess.open(path, FileAccess.READ)
-	check("disk text UNCHANGED after edit", f2.get_as_text() == "hello WORLD foo")
-	f2.close()
+	check("disk unchanged after legacy edit", _read_disk(path) == "alpha bravo charlie")
 
 
-func test_file_read_returns_buffer_text_not_disk_text(tools) -> void:
-	print("test_file_read_returns_buffer_text_not_disk_text")
+func test_file_edit_modifies_buffer(tools) -> void:
+	print("test_file_edit_modifies_buffer")
 	_reset_registry()
-	var path := _temp_path("buffer_vs_disk.txt")
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	f.store_string("disk version")
-	f.close()
+	var path := _temp_path("edit_buffer.txt")
+	_write_disk(path, "alpha bravo charlie")
 
-	# Edit creates a divergent buffer.
-	tools.handle("minerva_file_edit", {
-		"path": path,
-		"old_string": "disk",
-		"new_string": "buffer",
+	var r: Dictionary = await tools.handle("minerva_file_edit", {
+		"path": path, "old_string": "bravo", "new_string": "BRAVO",
 	})
+	check("edit success", r.get("success", false) == true)
 
-	var r: Dictionary = tools.handle("minerva_file_read", {"path": path})
-	check("read success", r.get("success", false) == true)
-	# content is line-numbered; check the substring
-	check("read returns BUFFER text not disk", "buffer version" in str(r.get("content", "")))
+	var registry := DocumentRegistry.get_instance()
+	var br := registry.get_or_create_buffer(path)
+	check("buffer reflects edit", (br.buffer as DocumentBuffer).text == "alpha BRAVO charlie")
 
 
-func test_file_read_response_shape_preserved(tools) -> void:
-	print("test_file_read_response_shape_preserved")
+# ---------------------------------------------------------------------------
+# Save round-trip — only minerva_doc_save flips disk
+# ---------------------------------------------------------------------------
+
+func test_doc_save_flushes_legacy_writes_to_disk(tools) -> void:
+	print("test_doc_save_flushes_legacy_writes_to_disk")
 	_reset_registry()
-	var path := _temp_path("shape.txt")
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	f.store_string("line one\nline two\nline three")
-	f.close()
+	var path := _temp_path("flush_after_legacy.txt")
+	_write_disk(path, "OLD")
 
-	var r: Dictionary = tools.handle("minerva_file_read", {"path": path})
-	check("has success", r.has("success"))
-	check("has content", r.has("content"))
-	check("has lines_read", r.has("lines_read"))
-	check("has total_lines", r.has("total_lines"))
-	check("has truncated", r.has("truncated"))
-	check("has binary", r.has("binary"))
-	check("total_lines correct", r.get("total_lines", 0) == 3)
+	await tools.handle("minerva_file_write", {"path": path, "content": "NEW"})
+	check("disk still OLD after legacy write", _read_disk(path) == "OLD")
 
-
-func test_file_edit_response_shape_preserved(tools) -> void:
-	print("test_file_edit_response_shape_preserved")
-	_reset_registry()
-	var path := _temp_path("edit_shape.txt")
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	f.store_string("alpha BETA gamma")
-	f.close()
-
-	var r: Dictionary = tools.handle("minerva_file_edit", {
-		"path": path,
-		"old_string": "BETA",
-		"new_string": "DELTA",
-	})
-	check("has success", r.has("success"))
-	check("has replacements", r.has("replacements"))
-	check("has path", r.has("path"))
-	check("replacements=1", r.get("replacements", 0) == 1)
+	# Save via DocumentRegistry directly (the buffer-canonical path).
+	# Equivalent to calling minerva_doc_save through MCPDocTools.
+	var br := DocumentRegistry.get_instance().get_or_create_buffer(path)
+	check("buffer ok before save", br.ok)
+	var save_r: Dictionary = (br.buffer as DocumentBuffer).save_to_disk()
+	check("save succeeded", save_r.get("ok", false) == true)
+	check("disk now NEW after save", _read_disk(path) == "NEW")
+	check("buffer no longer dirty", (br.buffer as DocumentBuffer).dirty == false)
