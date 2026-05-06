@@ -2596,7 +2596,7 @@ func _ready():
 
 	# Setup debounce timer for token estimation (300ms delay)
 	_token_estimation_timer = Timer.new()
-	#_token_estimation_timer.one_shot = true
+	_token_estimation_timer.one_shot = true
 	_token_estimation_timer.wait_time = 0.3
 	_token_estimation_timer.timeout.connect(_on_token_estimation_timer_timeout)
 	add_child(_token_estimation_timer)

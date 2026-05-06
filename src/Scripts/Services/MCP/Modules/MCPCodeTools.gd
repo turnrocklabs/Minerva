@@ -29,7 +29,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_file_read",
-		"Read file contents with optional line offset and limit. Returns numbered lines.",
+		"DEPRECATED: prefer minerva_doc_read. Reads via the document registry; returns numbered lines from the buffer (or disk-loaded text on first read).",
 		{"type": "object", "properties": {
 			"path": {"type": "string", "description": "Absolute file path"},
 			"offset": {"type": "integer", "description": "Start line (0-based, default 0)"},
@@ -37,19 +37,19 @@ func register_tools() -> void:
 		}, "required": ["path"]}, "codetools")
 
 	server._register_tool("minerva_file_write",
-		"Write content to a file. Creates parent directories if needed.",
+		"DEPRECATED: prefer minerva_doc_write + minerva_doc_save. Writes to the document buffer for the path; disk is NOT modified until save. The legacy 'write to disk immediately' behavior no longer applies — call minerva_doc_save (or minerva_doc_save_all) to flush.",
 		{"type": "object", "properties": {
 			"path": {"type": "string", "description": "File path (absolute or relative to cwd)"},
 			"content": {"type": "string", "description": "Content to write"},
 		}, "required": ["path", "content"]}, "codetools")
 
 	server._register_tool("minerva_file_edit",
-		"Make targeted string replacements in a file. old_string must be unique unless replace_all is true.",
+		"DEPRECATED: prefer minerva_doc_edit + minerva_doc_save. Edits via the document buffer; disk is NOT modified until save. Old-string uniqueness is enforced (replace_all is no longer supported through this shim).",
 		{"type": "object", "properties": {
 			"path": {"type": "string", "description": "File path"},
 			"old_string": {"type": "string", "description": "String to find"},
 			"new_string": {"type": "string", "description": "Replacement string"},
-			"replace_all": {"type": "boolean", "description": "Replace all occurrences (default false)"},
+			"replace_all": {"type": "boolean", "description": "Ignored under the buffer-canonical migration; this shim treats every edit as unique-match-required."},
 		}, "required": ["path", "old_string", "new_string"]}, "codetools")
 
 	server._register_tool("minerva_file_glob",
@@ -116,7 +116,19 @@ func _codetools_read(arguments: Dictionary) -> Dictionary:
 		path = _cwd_tool.get_cwd().path_join(path)
 	var offset: int = MCPToolUtils.coerce_int(arguments.get("offset", 0))
 	var limit: int = MCPToolUtils.coerce_int(arguments.get("limit", 0))
-	var result := ReadTool.read_file(path, offset, limit)
+
+	# Buffer-canonical: prefer registry text. If no buffer and no disk file, not_found.
+	var registry := DocumentRegistry.get_instance()
+	var result: Dictionary
+	if not registry.has_buffer(path) and not DiskAccess.exists(path):
+		result = {"success": false, "error": "File not found: %s" % path}
+	else:
+		var br := registry.get_or_create_buffer(path)
+		if not br.ok:
+			result = {"success": false, "error": br.error}
+		else:
+			var buf: DocumentBuffer = br.buffer
+			result = ReadTool.format_text(buf.text, offset, limit)
 	SingletonObject.mcp_tool_executed.emit("minerva_file_read", arguments, result, _current_agent_id)
 	return result
 
@@ -129,7 +141,22 @@ func _codetools_write(arguments: Dictionary) -> Dictionary:
 	path = _resolve_virtual_path(path)
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
-	var result := _write_tool.write_file(path, content)
+
+	# Buffer-canonical: write to buffer, NOT to disk. Disk is only flushed by save.
+	var registry := DocumentRegistry.get_instance()
+	var br := registry.get_or_create_buffer(path)
+	var result: Dictionary
+	if not br.ok:
+		result = {"success": false, "error": br.error}
+	else:
+		var buf: DocumentBuffer = br.buffer
+		buf.apply_edit(content)
+		# Preserve legacy response shape (path + bytes_written).
+		result = {
+			"success": true,
+			"path": path,
+			"bytes_written": content.length(),
+		}
 	SingletonObject.mcp_tool_executed.emit("minerva_file_write", arguments, result, _current_agent_id)
 	return result
 
@@ -141,12 +168,38 @@ func _codetools_edit(arguments: Dictionary) -> Dictionary:
 	path = _resolve_virtual_path(path)
 	if not path.is_absolute_path():
 		path = _cwd_tool.get_cwd().path_join(path)
-	var result := EditTool.edit_file(
-		path,
-		arguments.get("old_string", ""),
-		arguments.get("new_string", ""),
-		arguments.get("replace_all", false),
-	)
+
+	var old_str: String = arguments.get("old_string", "")
+	var new_str: String = arguments.get("new_string", "")
+	var result: Dictionary
+
+	if old_str == new_str:
+		result = {"success": false, "error": "old_string and new_string are identical"}
+	elif old_str.is_empty():
+		result = {"success": false, "error": "old_string cannot be empty"}
+	else:
+		# Buffer-canonical: edit in the registry buffer; disk untouched.
+		var registry := DocumentRegistry.get_instance()
+		if not registry.has_buffer(path) and not DiskAccess.exists(path):
+			result = {"success": false, "error": "File not found: %s" % path}
+		else:
+			var br := registry.get_or_create_buffer(path)
+			if not br.ok:
+				result = {"success": false, "error": br.error}
+			else:
+				var buf: DocumentBuffer = br.buffer
+				var idx := buf.text.find(old_str)
+				if idx == -1:
+					result = {"success": false, "error": "String not found in file: %s" % old_str.substr(0, 100)}
+				else:
+					var second := buf.text.find(old_str, idx + old_str.length())
+					if second != -1:
+						result = {"success": false, "error": "Found multiple occurrences of old_string. Provide more context to make the match unique."}
+					else:
+						var new_text := buf.text.substr(0, idx) + new_str + buf.text.substr(idx + old_str.length())
+						buf.apply_edit(new_text)
+						result = {"success": true, "replacements": 1, "path": path}
+
 	SingletonObject.mcp_tool_executed.emit("minerva_file_edit", arguments, result, _current_agent_id)
 	return result
 

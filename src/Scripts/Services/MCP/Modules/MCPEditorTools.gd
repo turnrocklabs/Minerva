@@ -62,7 +62,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_get_editor_content",
-		"Get the content of a text editor. Requires editor_name from minerva_list_editors.",
+		"DEPRECATED: prefer minerva_doc_read. Returns the document buffer's text for the editor's file_path; falls back to the editor's in-memory text only when the editor has no file_path set.",
 		{
 			"type": "object",
 			"properties": {
@@ -76,7 +76,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_update_editor",
-		"Update the content of a text editor. Requires editor_name from minerva_list_editors.",
+		"DEPRECATED: prefer minerva_doc_write + minerva_doc_save. Writes through the document buffer for the editor's file_path; the visible editor pane is mirrored for the migration window. Disk is NOT modified until save.",
 		{
 			"type": "object",
 			"properties": {
@@ -94,7 +94,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_save_editor",
-		"Save the editor content to a file. Requires editor_name from minerva_list_editors.",
+		"DEPRECATED: prefer minerva_doc_save. Flushes the document buffer for the editor's file_path to disk. Falls back to the editor's own save() when no file_path is associated.",
 		{
 			"type": "object",
 			"properties": {
@@ -412,10 +412,24 @@ func _get_editor_content(args: Dictionary) -> Dictionary:
 	if not editor.code_edit:
 		return MCPToolUtils.error("Editor has no code_edit")
 
+	# Buffer-canonical: prefer the document registry's text when the editor has
+	# a file_path. Fall back to the editor's in-memory text for untitled buffers
+	# and for the migration window before Task 4 wires the editor to the registry.
+	var file_path: String = editor.file if "file" in editor else ""
+	if not file_path.is_empty():
+		var registry := DocumentRegistry.get_instance()
+		var br := registry.get_or_create_buffer(file_path)
+		if br.ok:
+			return {
+				"success": true,
+				"editor_name": editor_name,
+				"content": (br.buffer as DocumentBuffer).text,
+			}
+
 	return {
 		"success": true,
 		"editor_name": editor_name,
-		"content": editor.code_edit.text
+		"content": editor.code_edit.text,
 	}
 
 
@@ -436,6 +450,16 @@ func _update_editor(args: Dictionary) -> Dictionary:
 
 	if not editor.code_edit:
 		return MCPToolUtils.error("Editor has no code_edit")
+
+	# Buffer-canonical: write through the document registry when a file_path is
+	# associated. Mirror to editor.code_edit so the visible UI stays in sync
+	# during the migration window (Task 4 wires the editor to the registry).
+	var file_path: String = editor.file if "file" in editor else ""
+	if not file_path.is_empty():
+		var registry := DocumentRegistry.get_instance()
+		var br := registry.get_or_create_buffer(file_path)
+		if br.ok:
+			(br.buffer as DocumentBuffer).apply_edit(content)
 
 	editor.code_edit.text = content
 	# Setting `text =` does not emit text_changed; emit explicitly so downstream
@@ -466,8 +490,20 @@ func _save_editor(args: Dictionary) -> Dictionary:
 	if editor.file.is_empty():
 		return MCPToolUtils.error("No file path specified")
 
-	# Save the editor
-	editor.save()
+	# Buffer-canonical: mirror the editor's current visible text into the registry
+	# (until Task 4 wires the editor to attach directly), then flush via doc_save.
+	# This preserves "save what the user sees" while routing all writes through
+	# the registry layer.
+	var registry := DocumentRegistry.get_instance()
+	var br := registry.get_or_create_buffer(editor.file)
+	if br.ok and editor.code_edit:
+		(br.buffer as DocumentBuffer).apply_edit(editor.code_edit.text)
+		var save_r: Dictionary = (br.buffer as DocumentBuffer).save_to_disk()
+		if not save_r.ok:
+			return MCPToolUtils.error(save_r.error)
+	else:
+		# Fallback: editor.save() handles cases where registry can't allocate a buffer.
+		editor.save()
 
 	return {
 		"success": true,

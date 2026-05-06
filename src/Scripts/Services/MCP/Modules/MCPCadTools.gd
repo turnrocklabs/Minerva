@@ -197,9 +197,11 @@ func register_tools() -> void:
 
 	server._register_tool(
 		"minerva_cad_get_document_source",
-		"Return the DSL source text and file path for a live CAD editor. "
+		"DEPRECATED: prefer minerva_doc_read for the DSL text. "
+		+ "Return the DSL source text and file path for a live CAD editor. "
 		+ "file_path is null or empty when the panel was opened without a file. "
-		+ "dsl_text is null or empty when no source has been loaded yet. "
+		+ "dsl_text comes from the document registry when a file_path is set; "
+		+ "falls back to the panel's in-memory text for unsaved buffers. "
 		+ "evaluated is true when the panel has mesh geometry (i.e. cad_get_mesh_info "
 		+ "would return has_geometry: true). "
 		+ "Use this to answer 'what is the user editing?' without filesystem access.",
@@ -363,6 +365,19 @@ func _cad_get_document_source(args: Dictionary) -> Dictionary:
 		file_path = null
 	if dsl_text is String and (dsl_text as String).is_empty():
 		dsl_text = null
+
+	# Buffer-canonical: when a file_path is associated, prefer the document
+	# registry's text. The CAD panel does not yet attach to the registry
+	# (Task 6) so the registry may need to lazy-load from disk; that's fine.
+	# Falls through to the host's dsl_text when the registry has no usable
+	# text (e.g. unsaved buffer or path resolution error).
+	if file_path is String and not (file_path as String).is_empty():
+		var registry := DocumentRegistry.get_instance()
+		var br := registry.get_or_create_buffer(file_path)
+		if br.ok:
+			var buf_text: String = (br.buffer as DocumentBuffer).text
+			if not buf_text.is_empty():
+				dsl_text = buf_text
 
 	# evaluated == has any mesh geometry been produced.
 	var mesh: Dictionary = host.call("get_mesh_data")

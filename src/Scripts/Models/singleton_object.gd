@@ -419,19 +419,6 @@ var mcp_http_server_port: int = 9315:
 			mcp_http_server_port = saved if saved != null and saved > 0 else 9315
 		return mcp_http_server_port
 
-var mcp_http_server_auto_start: bool = true:
-	set(value):
-		mcp_http_server_auto_start = value
-		save_to_config_file("MCPServer", "auto_start", value)
-	get:
-		var saved = get_config_file_value("MCPServer", "auto_start")
-		if saved != null:
-			if saved is bool:
-				mcp_http_server_auto_start = saved
-			else:
-				mcp_http_server_auto_start = str(saved).to_lower() == "true"
-		return mcp_http_server_auto_start
-
 ## Initialize MCP manager (call from main scene _ready)
 func initialize_mcp() -> void:
 	if mcp_manager:
@@ -442,13 +429,13 @@ func initialize_mcp() -> void:
 	# Auto-connect internal Minerva MCP server (always — it's in-process)
 	mcp_manager.connect_minerva_server()
 
-	# Auto-start HTTP server (Minerva's own MCP server for external clients)
-	if mcp_http_server_auto_start:
-		var err = mcp_manager.start_http_server(mcp_http_server_port)
-		if err == OK:
-			print("[MCP] HTTP server auto-started on port %d" % mcp_http_server_port)
-		else:
-			push_warning("[MCP] Failed to auto-start HTTP server: %s" % error_string(err))
+	# Always start the HTTP server (Minerva's own MCP server for external clients).
+	# The Stop menu action stops it for the current session; next launch starts it again.
+	var err = mcp_manager.start_http_server(mcp_http_server_port)
+	if err == OK:
+		print("[MCP] HTTP server started on port %d" % mcp_http_server_port)
+	else:
+		push_warning("[MCP] Failed to start HTTP server: %s" % error_string(err))
 
 	# Auto-start and connect external MCP servers
 	var auto_servers = mcp_manager.config.get_auto_connect_servers()

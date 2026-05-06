@@ -153,6 +153,57 @@ static func read_file(path: String, offset: int = 0, limit: int = 0) -> Dictiona
 	}
 
 
+## Format an in-memory text string with line numbers / offset / limit, returning
+## the same response shape as read_file but without doing any disk IO.
+##
+## Used by MCPCodeTools._codetools_read after pulling text via DocumentRegistry,
+## so the legacy minerva_file_read response shape stays identical when routed
+## through the buffer-canonical layer.
+static func format_text(text: String, offset: int = 0, limit: int = 0) -> Dictionary:
+	if text.is_empty():
+		return {
+			"success": true,
+			"content": "",
+			"lines_read": 0,
+			"total_lines": 0,
+			"truncated": false,
+			"binary": false,
+		}
+
+	var lines := text.split("\n")
+	var total_lines := lines.size()
+	var start := clampi(offset, 0, total_lines)
+	var max_lines := limit if limit > 0 else 2000
+	var end := mini(start + max_lines, total_lines)
+
+	var selected_lines: Array[String] = []
+	for i in range(start, end):
+		selected_lines.append(lines[i])
+
+	var lines_read := selected_lines.size()
+	var truncated := end < total_lines
+
+	var max_line_width := len(str(start + lines_read))
+	var formatted_lines: Array[String] = []
+	for i in range(lines_read):
+		var line := selected_lines[i]
+		var line_number := start + i + 1
+		line = line.trim_suffix("\r").trim_suffix("\n")
+		if len(line) > 2000:
+			line = line.substr(0, 2000) + "... [truncated]"
+		var formatted := "%s\t%s" % [_format_padded(line_number, max_line_width), line]
+		formatted_lines.append(formatted)
+
+	return {
+		"success": true,
+		"content": "\n".join(formatted_lines),
+		"lines_read": lines_read,
+		"total_lines": total_lines,
+		"truncated": truncated,
+		"binary": false,
+	}
+
+
 ## Helper: format a number with right-alignment padding.
 ## Godot's % operator doesn't support *N width, so we do it manually.
 static func _format_padded(number: int, width: int) -> String:
