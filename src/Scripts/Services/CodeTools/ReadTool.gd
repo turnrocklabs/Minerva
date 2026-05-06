@@ -156,9 +156,9 @@ static func read_file(path: String, offset: int = 0, limit: int = 0) -> Dictiona
 ## Format an in-memory text string with line numbers / offset / limit, returning
 ## the same response shape as read_file but without doing any disk IO.
 ##
-## Used by MCPCodeTools._codetools_read after pulling text via DocumentRegistry,
-## so the legacy minerva_file_read response shape stays identical when routed
-## through the buffer-canonical layer.
+## Used by minerva_doc_read after pulling text via DocumentRegistry, so the
+## response shape (numbered lines, offset/limit semantics) stays consistent
+## with disk-backed read_file calls.
 static func format_text(text: String, offset: int = 0, limit: int = 0) -> Dictionary:
 	if text.is_empty():
 		return {

@@ -134,21 +134,35 @@ func test_disk_write_overwrites(tools) -> void:
 
 
 func test_disk_write_fires_external_change_when_buffer_exists(tools) -> void:
+	# Post-T7: minerva_disk_write routes through registry.poke_path → file_changed
+	# emission, which the registry dispatches as silent-reload for clean buffers
+	# and external_change_detected for dirty buffers. Verify both branches.
 	print("test_disk_write_fires_external_change_when_buffer_exists")
 	_reset_registry()
-	var path := _temp_path("disk_write_with_buffer.txt")
 
-	# Create a buffer for the path.
-	var buf_r := DocumentRegistry.get_instance().get_or_create_buffer(path)
-	check("buffer created", buf_r.ok)
-	var buf: DocumentBuffer = buf_r.buffer
+	# (a) Clean buffer → silent reload. external_change_detected does NOT fire;
+	# the buffer's text reflects the disk write.
+	var clean_path := _temp_path("disk_write_clean_buffer.txt")
+	var clean_r := DocumentRegistry.get_instance().get_or_create_buffer(clean_path)
+	check("clean buffer created", clean_r.ok)
+	var clean_buf: DocumentBuffer = clean_r.buffer
+	var clean_fired := {"count": 0}
+	clean_buf.external_change_detected.connect(func(): clean_fired.count += 1)
+	tools.handle("minerva_disk_write", {"path": clean_path, "text": "external on clean"})
+	check("clean buffer text now matches disk write", clean_buf.text == "external on clean")
+	check("external_change_detected did NOT fire for clean buffer", clean_fired.count == 0)
 
-	var fired := {"count": 0}
-	buf.external_change_detected.connect(func(): fired.count += 1)
-
-	# Disk write should fire external_change_detected on the existing buffer.
-	tools.handle("minerva_disk_write", {"path": path, "text": "from disk side"})
-	check("external_change_detected fired", fired.count == 1)
+	# (b) Dirty buffer → external_change_detected fires; buffer untouched.
+	var dirty_path := _temp_path("disk_write_dirty_buffer.txt")
+	var dirty_r := DocumentRegistry.get_instance().get_or_create_buffer(dirty_path)
+	check("dirty buffer created", dirty_r.ok)
+	var dirty_buf: DocumentBuffer = dirty_r.buffer
+	dirty_buf.apply_edit("user-edit-not-saved")
+	var dirty_fired := {"count": 0}
+	dirty_buf.external_change_detected.connect(func(): dirty_fired.count += 1)
+	tools.handle("minerva_disk_write", {"path": dirty_path, "text": "external on dirty"})
+	check("external_change_detected fired for dirty buffer", dirty_fired.count == 1)
+	check("dirty buffer text unchanged (waiting for user choice)", dirty_buf.text == "user-edit-not-saved")
 
 
 func test_disk_write_no_signal_when_no_buffer(tools) -> void:

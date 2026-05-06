@@ -22,7 +22,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_create_text_editor",
-		"Create a new text/code editor tab. Next steps: use minerva_update_editor to set content, minerva_save_editor to write to disk.",
+		"Create a new text/code editor tab. For path-backed editing prefer passing file_path here, then drive content via minerva_doc_read / minerva_doc_write / minerva_doc_edit / minerva_doc_save (path-canonical buffer). For unbacked scratchpads (no file_path), use minerva_update_editor / minerva_get_editor_content / minerva_save_editor — the editor_*-keyed scratchpad API.",
 		{
 			"type": "object",
 			"properties": {
@@ -62,7 +62,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_get_editor_content",
-		"DEPRECATED: prefer minerva_doc_read. Returns the document buffer's text for the editor's file_path; falls back to the editor's in-memory text only when the editor has no file_path set.",
+		"Read the in-memory text of an unbacked / scratchpad editor (no file_path). For path-backed editors prefer minerva_doc_read keyed on file_path. Returns the buffer's text when a file_path is associated; falls back to the editor's in-memory text otherwise.",
 		{
 			"type": "object",
 			"properties": {
@@ -76,7 +76,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_update_editor",
-		"DEPRECATED: prefer minerva_doc_write + minerva_doc_save. Writes through the document buffer for the editor's file_path; the visible editor pane is mirrored for the migration window. Disk is NOT modified until save.",
+		"Set the in-memory text of an unbacked / scratchpad editor (no file_path). For path-backed editors prefer minerva_doc_write or minerva_doc_edit keyed on file_path. Disk is NOT modified — pair with minerva_save_editor (or for path-backed editors, minerva_doc_save) to flush.",
 		{
 			"type": "object",
 			"properties": {
@@ -94,7 +94,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_save_editor",
-		"DEPRECATED: prefer minerva_doc_save. Flushes the document buffer for the editor's file_path to disk. Falls back to the editor's own save() when no file_path is associated.",
+		"Save an unbacked / scratchpad editor to disk — pass file_path to bind the tab to a location (\"save as\"). For path-backed editors prefer minerva_doc_save keyed on file_path. When the editor already has a file_path, this flushes the buffer to that path.",
 		{
 			"type": "object",
 			"properties": {

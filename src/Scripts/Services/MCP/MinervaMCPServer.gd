@@ -619,7 +619,7 @@ func _register_tool_search() -> void:
 	_register_tool("minerva_tool_search",
 		"This server has 170+ tools available, plus tools from connected external MCP servers. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), webview (create/update HTML panels), PCB design, graphics, video, agents, automation, models, costs. Connected external servers (e.g., docket, nudge, cobrowser) are also searchable by name. Example: tool_search(query='edit file') or tool_search(query='docket') or tool_search(query='webview panel').",
 		{"type": "object", "properties": {
-			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'docket create', 'cost summary') or exact tool name (e.g., 'minerva_file_edit')"},
+			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'docket create', 'cost summary') or exact tool name (e.g., 'minerva_doc_edit')"},
 			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, webview, pcb, video, agents, triggers, autocoder, costs, meta. External server names (e.g., docket, nudge) also work as categories."},
 			"limit": {"type": "integer", "description": "Max results (default 5)"},
 		}, "required": ["query"]}, "meta")

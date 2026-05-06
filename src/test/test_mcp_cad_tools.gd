@@ -16,9 +16,6 @@ extends SceneTree
 ##   cad_get_selected_edge: no selection → selected_edge_id=-1, edge=null
 ##   cad_get_selected_edge: selection set → id+dict echoed
 ##   cad_get_selected_edge: missing host → ok=false
-##   cad_get_document_source: empty host → file_path=null, dsl_text=null, evaluated=false
-##   cad_get_document_source: populated host → echoes what panel set, evaluated=true when mesh present
-##   cad_get_document_source: missing host → ok=false
 ##   editor_name missing → ok=false
 
 ## Preload is required for newly-added scripts that don't yet have a .uid file
@@ -75,18 +72,6 @@ func _init() -> void:
 
 	print("\n-- cad_get_selected_edge: missing host --")
 	test_selected_edge_missing_host(tools)
-
-	print("\n-- cad_get_document_source: empty host --")
-	test_document_source_empty(tools)
-
-	print("\n-- cad_get_document_source: populated, not yet evaluated --")
-	test_document_source_set_no_mesh(tools)
-
-	print("\n-- cad_get_document_source: populated + mesh present --")
-	test_document_source_set_with_mesh(tools)
-
-	print("\n-- cad_get_document_source: missing host --")
-	test_document_source_missing_host(tools)
 
 	print("\n-- cad_annotate_edges: happy path --")
 	test_annotate_edges_happy(tools)
@@ -412,47 +397,6 @@ func test_selected_edge_set(tools) -> void:
 func test_selected_edge_missing_host(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
 	var result: Dictionary = tools.handle("minerva_cad_get_selected_edge", {"editor_name": "Ghost"})
-	check("success=false for missing host", bool(result.get("success", true)) == false)
-
-
-# ── cad_get_document_source tests ─────────────────────────────────────────────
-
-func test_document_source_empty(tools) -> void:
-	var h := _make_host("MyCAD")
-	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "MyCAD"})
-	check("success=true", bool(result.get("success", false)) == true)
-	check("file_path=null when not set", result.get("file_path", "NOT_NULL") == null)
-	check("dsl_text=null when not set", result.get("dsl_text", "NOT_NULL") == null)
-	check("evaluated=false", bool(result.get("evaluated", true)) == false)
-	AnnotationHostRegistry._reset_for_test()
-
-
-func test_document_source_set_no_mesh(tools) -> void:
-	var h := _make_host("MyCAD")
-	h.set_document_source("/home/user/box.mcad", "import build123d as bd\nb = bd.Box(10,10,10)")
-	# No mesh pushed → evaluated=false.
-	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "MyCAD"})
-	check("success=true", bool(result.get("success", false)) == true)
-	check_eq("file_path echoed", result.get("file_path", ""), "/home/user/box.mcad")
-	check("dsl_text non-null", result.get("dsl_text", null) != null)
-	check("dsl_text contains Box", str(result.get("dsl_text", "")).contains("Box"))
-	check("evaluated=false (no mesh)", bool(result.get("evaluated", true)) == false)
-	AnnotationHostRegistry._reset_for_test()
-
-
-func test_document_source_set_with_mesh(tools) -> void:
-	var h := _make_host("MyCAD")
-	h.set_document_source("/home/user/box.mcad", "import build123d as bd\nb = bd.Box(10,10,10)")
-	h.set_mesh_data(_canned_mesh())
-	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "MyCAD"})
-	check("success=true", bool(result.get("success", false)) == true)
-	check("evaluated=true (mesh present)", bool(result.get("evaluated", false)) == true)
-	AnnotationHostRegistry._reset_for_test()
-
-
-func test_document_source_missing_host(tools) -> void:
-	AnnotationHostRegistry._reset_for_test()
-	var result: Dictionary = tools.handle("minerva_cad_get_document_source", {"editor_name": "Ghost"})
 	check("success=false for missing host", bool(result.get("success", true)) == false)
 
 

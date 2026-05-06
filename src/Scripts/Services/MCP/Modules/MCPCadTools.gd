@@ -2,14 +2,16 @@ class_name MCPCadTools
 extends MCPToolModule
 ## MCP tool module for CAD editor introspection (task 019dd2049ff6).
 ##
-## Five read-only tools that let an AI agent answer questions about a live
+## Read-only tools that let an AI agent answer questions about a live
 ## Cad_AnnotationHost without filesystem access or IPC round-trips:
 ##
 ##   cad_get_mesh_info       — geometry summary + bounding box
 ##   cad_list_edges_live     — full edge registry as the host holds it
 ##   cad_get_edge            — single edge by id
 ##   cad_get_selected_edge   — currently selected edge id + dict
-##   cad_get_document_source — file_path, dsl_text, evaluated flag
+##
+## (cad_get_document_source removed in T8 of DCR 019dfa66 — use minerva_doc_read
+## with the file path instead, which goes through the buffer-canonical pipeline.)
 ##
 ## All tools take `editor_name` (the tab title from minerva_list_editors) and
 ## resolve to a live AnnotationHost via AnnotationHostRegistry.
@@ -31,7 +33,6 @@ func get_tool_names() -> Array[String]:
 		"minerva_cad_list_edges_live",
 		"minerva_cad_get_edge",
 		"minerva_cad_get_selected_edge",
-		"minerva_cad_get_document_source",
 		"minerva_cad_annotate_edges",
 		"minerva_cad_clear_edge_annotations",
 	]
@@ -44,7 +45,7 @@ func register_tools() -> void:
 		+ "axis-aligned bounding box, and whether any geometry exists. "
 		+ "Bounding box coordinates are in millimetres (CAD always uses mm). "
 		+ "has_geometry is false when the panel has not yet evaluated any DSL source. "
-		+ "Use cad_get_document_source to check what DSL is loaded.",
+		+ "Use minerva_doc_read (with the editor's file path) to check what DSL is loaded.",
 		{
 			"type": "object",
 			"properties": {
@@ -195,28 +196,6 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
-		"minerva_cad_get_document_source",
-		"DEPRECATED: prefer minerva_doc_read for the DSL text. "
-		+ "Return the DSL source text and file path for a live CAD editor. "
-		+ "file_path is null or empty when the panel was opened without a file. "
-		+ "dsl_text comes from the document registry when a file_path is set; "
-		+ "falls back to the panel's in-memory text for unsaved buffers. "
-		+ "evaluated is true when the panel has mesh geometry (i.e. cad_get_mesh_info "
-		+ "would return has_geometry: true). "
-		+ "Use this to answer 'what is the user editing?' without filesystem access.",
-		{
-			"type": "object",
-			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Editor tab title (as returned by minerva_list_editors).",
-				},
-			},
-			"required": ["editor_name"],
-		},
-		"cad"
-	)
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
@@ -229,8 +208,6 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _cad_get_edge(arguments)
 		"minerva_cad_get_selected_edge":
 			return _cad_get_selected_edge(arguments)
-		"minerva_cad_get_document_source":
-			return _cad_get_document_source(arguments)
 		"minerva_cad_annotate_edges":
 			return _cad_annotate_edges(arguments)
 		"minerva_cad_clear_edge_annotations":
@@ -336,58 +313,6 @@ func _cad_get_selected_edge(args: Dictionary) -> Dictionary:
 	return _ok({
 		"selected_edge_id": selected_id,
 		"edge": edge_dict,
-	})
-
-
-func _cad_get_document_source(args: Dictionary) -> Dictionary:
-	var host: AnnotationHost = _resolve_host(args)
-	if host == null:
-		return _no_host_error(args)
-
-	if not host.has_method("get_document_source"):
-		return _err(
-			"cad_get_document_source: host for '%s' does not expose get_document_source."
-			% str(args.get("editor_name", ""))
-		)
-
-	if not host.has_method("get_mesh_data"):
-		return _err(
-			"cad_get_document_source: host for '%s' does not expose get_mesh_data."
-			% str(args.get("editor_name", ""))
-		)
-
-	var source: Dictionary = host.call("get_document_source")
-	var file_path: Variant = source.get("file_path", null)
-	var dsl_text: Variant = source.get("dsl_text", null)
-
-	# Normalise empty strings to null so callers can do a simple null check.
-	if file_path is String and (file_path as String).is_empty():
-		file_path = null
-	if dsl_text is String and (dsl_text as String).is_empty():
-		dsl_text = null
-
-	# Buffer-canonical: when a file_path is associated, prefer the document
-	# registry's text. The CAD panel does not yet attach to the registry
-	# (Task 6) so the registry may need to lazy-load from disk; that's fine.
-	# Falls through to the host's dsl_text when the registry has no usable
-	# text (e.g. unsaved buffer or path resolution error).
-	if file_path is String and not (file_path as String).is_empty():
-		var registry := DocumentRegistry.get_instance()
-		var br := registry.get_or_create_buffer(file_path)
-		if br.ok:
-			var buf_text: String = (br.buffer as DocumentBuffer).text
-			if not buf_text.is_empty():
-				dsl_text = buf_text
-
-	# evaluated == has any mesh geometry been produced.
-	var mesh: Dictionary = host.call("get_mesh_data")
-	var vertices: Array = mesh.get("vertices", []) if mesh is Dictionary else []
-	var evaluated: bool = vertices.size() > 0
-
-	return _ok({
-		"file_path": file_path,
-		"dsl_text": dsl_text,
-		"evaluated": evaluated,
 	})
 
 
