@@ -9,7 +9,10 @@ signal request(channel: String, payload: Dictionary, reply_id: String)
 
 var _label: Label = null
 var _path_label: Label = null
+var _fs_changed_label: Label = null
 var _attached_path: String = ""
+## Path currently registered with host.fs.watch. Tracked so detach can unwatch.
+var _fs_watched_path: String = ""
 ## Last text_changed version we have an eval "in flight" for. Cleared after
 ## we cancel via the cancel_eval IPC channel; lets us prove the broker round-
 ## trip end-to-end during HITL.
@@ -26,6 +29,7 @@ var _pending_channel: String = ""
 func _ready() -> void:
 	_label = $Vbox/EchoLabel
 	_path_label = $Vbox/PathLabel
+	_fs_changed_label = $Vbox/FsChangedLabel
 	if not _pending_channel.is_empty():
 		_apply(_pending_channel, _pending_payload)
 		_pending_channel = ""
@@ -56,6 +60,16 @@ func _apply(channel: String, payload: Dictionary) -> void:
 				_attached_path, int(payload.get("version", 0))
 			]
 			_label.text = str(payload.get("text", ""))
+			# T7.5 HITL: subscribe to host.fs.* notifications for the buffer's
+			# own path. The buffer-canonical pipeline already reflects external
+			# edits as text_changed; the additional host.fs.changed proves the
+			# plugin-facing watcher channel works end-to-end. Plugins watching
+			# unrelated paths (e.g. sidecar configs) use the same mechanism.
+			if not _attached_path.is_empty():
+				if not _fs_watched_path.is_empty() and _fs_watched_path != _attached_path:
+					request.emit("host.fs.unwatch", {"path": _fs_watched_path}, "")
+				_fs_watched_path = _attached_path
+				request.emit("host.fs.watch", {"path": _attached_path}, "")
 		"text_changed":
 			# A previous eval (if any) is now stale — cancel it via IPC so the
 			# substrate's cancel_eval round-trip is exercised during HITL.
@@ -69,7 +83,19 @@ func _apply(channel: String, payload: Dictionary) -> void:
 			]
 			_label.text = str(payload.get("text", ""))
 		"detach_buffer":
+			if not _fs_watched_path.is_empty():
+				request.emit("host.fs.unwatch", {"path": _fs_watched_path}, "")
+				_fs_watched_path = ""
 			_attached_path = ""
 			_last_eval_version = -1
 			_path_label.text = ""
 			_label.text = "(buffer detached)"
+			if _fs_changed_label != null:
+				_fs_changed_label.text = "host.fs.changed: (none yet)"
+		"host.fs.changed":
+			if _fs_changed_label != null:
+				_fs_changed_label.text = "host.fs.changed: %s  mtime=%d size=%d" % [
+					str(payload.get("path", "")),
+					int(payload.get("mtime", 0)),
+					int(payload.get("size", 0)),
+				]

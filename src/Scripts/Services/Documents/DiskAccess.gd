@@ -57,3 +57,28 @@ static func exists(path: String) -> bool:
 	if not resolved.ok:
 		return false
 	return FileAccess.file_exists(resolved.path)
+
+
+## Filesystem metadata snapshot for change detection.
+##
+## Returns:
+##   {ok: true, mtime: int, size: int} on success (mtime=0/size=0 if not found),
+##   {ok: false, error: String} on resolve failure.
+##
+## Used by FileWatcherService and DocumentBuffer for external-change detection.
+## Returns ok=true even when the file does not exist; the caller treats {0, 0}
+## as the "not present" snapshot.
+static func stat(path: String) -> Dictionary:
+	var resolved := PathResolver.resolve(path)
+	if not resolved.ok:
+		return {"ok": false, "error": resolved.error}
+	var abs_path: String = resolved.path
+	if not FileAccess.file_exists(abs_path):
+		return {"ok": true, "mtime": 0, "size": 0}
+	var mtime := int(FileAccess.get_modified_time(abs_path))
+	var size := 0
+	var f := FileAccess.open(abs_path, FileAccess.READ)
+	if f != null:
+		size = int(f.get_length())
+		f.close()
+	return {"ok": true, "mtime": mtime, "size": size}

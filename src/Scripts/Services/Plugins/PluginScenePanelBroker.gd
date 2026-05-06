@@ -80,6 +80,35 @@ const CHANNEL_TEXT_CHANGED   := "text_changed"
 ## Payload: {"path": String}
 const CHANNEL_DETACH_BUFFER  := "detach_buffer"
 
+# ---------------------------------------------------------------------------
+# Platform-reserved host.fs.* channels (DCR 019dfa66 §T7.5 — host_capabilities)
+# ---------------------------------------------------------------------------
+# Plugin file-watch capability. Like attach_buffer/text_changed/detach_buffer,
+# these are platform-managed: host.fs.watch and host.fs.unwatch are inbound
+# RPCs (panel emits request, broker replies); host.fs.changed is an outbound
+# push. None of them are declared in the plugin manifest's ipc_channels —
+# they bypass the allowlist as the substrate's filesystem-watcher capability.
+
+## Plugin asks host to watch a path. RPC; reply via _deliver_reply.
+## Payload: {"path": String}. Reply: {"success": bool, "error": String?}.
+const CHANNEL_HOST_FS_WATCH   := "host.fs.watch"
+## Plugin asks host to stop watching a path it previously watched.
+## Payload: {"path": String}. Reply: {"success": bool, "error": String?}.
+const CHANNEL_HOST_FS_UNWATCH := "host.fs.unwatch"
+## Host pushes a change notification to any panels that watched the path.
+## Pushed via scene.receive() (bypass push_to_panel).
+## Payload: {"path": String, "mtime": int, "size": int}
+const CHANNEL_HOST_FS_CHANGED := "host.fs.changed"
+
+## Owner_id prefix passed to FileWatcherService for plugin-panel subscriptions.
+## Format: "plugin_panel:<plugin_id>:<panel_name>". This means panel detach
+## (which calls unwatch_all on this owner_id) cleanly removes the panel's
+## subscriptions even if the panel didn't pair every watch with an unwatch.
+const _FS_OWNER_PREFIX := "plugin_panel"
+
+static func _fs_owner_id(plugin_id: String, panel_name: String) -> String:
+	return "%s:%s:%s" % [_FS_OWNER_PREFIX, plugin_id, panel_name]
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -125,6 +154,18 @@ var audit_log: PluginAuditLog = null
 ## Each entry stores the weak ref to the scene root, plugin ownership, declared
 ## channels, and the attached MinervaIPC helper.
 var _panel_registry: Dictionary = {}
+
+## Reverse map for host.fs.* push routing: absolute_path -> set-of-panel_names
+## (each panel_name → true). When FileWatcherService emits file_changed for a
+## path, broker iterates this map and pushes host.fs.changed to each subscribed
+## panel via scene.receive(). Maintained on host.fs.watch / host.fs.unwatch
+## RPCs and on panel teardown.
+var _fs_path_subscribers: Dictionary = {}
+
+## Whether the file_changed signal has been hooked. Connected lazily on the
+## first host.fs.watch call so unit tests that don't exercise host.fs.* don't
+## see the watcher hook.
+var _fs_signal_connected: bool = false
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +293,7 @@ func unregister_panel(plugin_id: String, panel_name: String) -> void:
 		return
 
 	_disconnect_buffer(entry)
+	_cleanup_fs_subscriptions(plugin_id, panel_name)
 	_detach_ipc_helper(entry)
 	_panel_registry.erase(panel_name)
 
@@ -276,6 +318,7 @@ func unregister_plugin_panels(plugin_id: String) -> void:
 	for panel_name in to_remove:
 		var entry: _PanelEntry = _panel_registry[panel_name]
 		_disconnect_buffer(entry)
+		_cleanup_fs_subscriptions(plugin_id, panel_name)
 		_detach_ipc_helper(entry)
 		_panel_registry.erase(panel_name)
 		panel_unregistered.emit(plugin_id, panel_name)
@@ -369,6 +412,26 @@ func handle_scene_request(
 		push_warning(
 			"[PluginScenePanelBroker] handle_scene_request: panel root for '%s' has been freed" % panel_name
 		)
+		return
+
+	# --- 2.5. Platform-reserved host.fs.* channels (DCR §T7.5) ----------------
+	# These are platform capabilities; bypass the manifest channel allowlist
+	# and dispatch directly. Same justification as attach_buffer/text_changed.
+	if channel == CHANNEL_HOST_FS_WATCH:
+		var result := _handle_host_fs_watch(plugin_id, panel_name, payload)
+		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
+			"panel_name": panel_name, "channel": channel,
+			"scene_success": result.get("success", false),
+		})
+		_deliver_reply(panel_name, reply_id, result)
+		return
+	if channel == CHANNEL_HOST_FS_UNWATCH:
+		var result := _handle_host_fs_unwatch(plugin_id, panel_name, payload)
+		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
+			"panel_name": panel_name, "channel": channel,
+			"scene_success": result.get("success", false),
+		})
+		_deliver_reply(panel_name, reply_id, result)
 		return
 
 	# --- 3. Validate panel ownership against manifest -------------------------
@@ -756,6 +819,105 @@ func _disconnect_buffer(entry: _PanelEntry) -> void:
 	entry.attached_buffer.detach()
 	entry.attached_buffer = null
 	entry._buffer_text_changed_handler = Callable()
+
+
+# ---------------------------------------------------------------------------
+# host.fs.* — plugin file watcher (DCR §T7.5)
+# ---------------------------------------------------------------------------
+
+func _ensure_fs_signal_connected() -> void:
+	if _fs_signal_connected:
+		return
+	FileWatcherService.get_instance().file_changed.connect(_on_fs_file_changed)
+	_fs_signal_connected = true
+
+
+func _handle_host_fs_watch(plugin_id: String, panel_name: String, payload: Dictionary) -> Dictionary:
+	var path: String = str(payload.get("path", ""))
+	if path.is_empty():
+		return {"success": false, "error": "path_required"}
+	# Resolve through PathResolver — failed resolution returns the error;
+	# never silently drops (DoD bullet 4).
+	var resolved := PathResolver.resolve(path)
+	if not resolved.ok:
+		return {"success": false, "error": str(resolved.error)}
+	var abs_path: String = resolved.path
+
+	_ensure_fs_signal_connected()
+	var fw := FileWatcherService.get_instance()
+	var owner_id := _fs_owner_id(plugin_id, panel_name)
+	var watch_result := fw.watch(abs_path, owner_id)
+	if not watch_result.ok:
+		return {"success": false, "error": str(watch_result.error)}
+
+	# Update the reverse map so file_changed can find the panel.
+	if not _fs_path_subscribers.has(abs_path):
+		_fs_path_subscribers[abs_path] = {}
+	_fs_path_subscribers[abs_path][panel_name] = true
+	return {"success": true, "path": abs_path}
+
+
+func _handle_host_fs_unwatch(plugin_id: String, panel_name: String, payload: Dictionary) -> Dictionary:
+	var path: String = str(payload.get("path", ""))
+	if path.is_empty():
+		return {"success": false, "error": "path_required"}
+	var resolved := PathResolver.resolve(path)
+	if not resolved.ok:
+		return {"success": false, "error": str(resolved.error)}
+	var abs_path: String = resolved.path
+
+	var owner_id := _fs_owner_id(plugin_id, panel_name)
+	FileWatcherService.get_instance().unwatch(abs_path, owner_id)
+
+	# Drop reverse-map entry. Multiple panels of the same plugin could share
+	# the path; only this panel's subscription is removed here.
+	if _fs_path_subscribers.has(abs_path):
+		(_fs_path_subscribers[abs_path] as Dictionary).erase(panel_name)
+		if (_fs_path_subscribers[abs_path] as Dictionary).is_empty():
+			_fs_path_subscribers.erase(abs_path)
+	return {"success": true, "path": abs_path}
+
+
+func _on_fs_file_changed(path: String, mtime: int, size: int) -> void:
+	if not _fs_path_subscribers.has(path):
+		return
+	var subscribers: Dictionary = _fs_path_subscribers[path]
+	# Iterate keys snapshot — receive() may dispatch into plugin code that
+	# unsubscribes synchronously, mutating the map.
+	var panel_names: Array = subscribers.keys()
+	var payload := {"path": path, "mtime": mtime, "size": size}
+	for panel_name_v in panel_names:
+		var panel_name: String = str(panel_name_v)
+		if not _panel_registry.has(panel_name):
+			continue
+		var entry: _PanelEntry = _panel_registry[panel_name]
+		if not _is_panel_alive(entry):
+			continue
+		var panel_root = entry.panel_ref.get_ref()
+		if panel_root == null:
+			continue
+		if panel_root.has_method("receive"):
+			panel_root.receive(CHANNEL_HOST_FS_CHANGED, payload)
+
+
+## Drop every host.fs.* subscription owned by a panel. Called from
+## unregister_panel and unregister_plugin_panels so plugin teardown can't leak
+## watches.
+func _cleanup_fs_subscriptions(plugin_id: String, panel_name: String) -> void:
+	# Drop all FileWatcherService rows for this owner (covers paths we may
+	# have lost track of in the reverse map for any reason).
+	FileWatcherService.get_instance().unwatch_all(_fs_owner_id(plugin_id, panel_name))
+
+	# Walk the reverse map and prune.
+	var paths_to_drop: Array[String] = []
+	for path in _fs_path_subscribers.keys():
+		var subs: Dictionary = _fs_path_subscribers[path]
+		if subs.has(panel_name):
+			subs.erase(panel_name)
+			if subs.is_empty():
+				paths_to_drop.append(str(path))
+	for p in paths_to_drop:
+		_fs_path_subscribers.erase(p)
 
 
 # ---------------------------------------------------------------------------

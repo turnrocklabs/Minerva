@@ -25,6 +25,13 @@ var text: String = ""
 var version: int = 0
 var dirty: bool = false
 
+## Filesystem snapshot at the moment the buffer last knew it was in sync with
+## disk (construct, save, reload). DocumentRegistry's external-change watcher
+## compares fresh stat results against these to detect external mutations.
+## Both are 0 when the underlying file did not exist at snapshot time.
+var loaded_mtime: int = 0
+var loaded_size: int = 0
+
 ## Number of UI panels (text editor, plugin render panel, etc.) currently
 ## attached to this buffer. Owned by attach() / detach(). When it reaches
 ## zero, the caller of detach() may safely dispose the buffer from the
@@ -41,6 +48,7 @@ func _init(path: String, initial_text: String) -> void:
 	version = 0
 	dirty = false
 	attached_count = 0
+	_snapshot_disk_state()
 
 
 ## Increment the attachment refcount. Call when a UI surface starts mirroring
@@ -79,6 +87,7 @@ func save_to_disk() -> Dictionary:
 	if not result.ok:
 		return result
 	dirty = false
+	_snapshot_disk_state()
 	saved.emit()
 	return {"ok": true}
 
@@ -99,6 +108,7 @@ func reload_from_disk() -> Dictionary:
 		version += 1
 		text_changed.emit(text, version)
 	dirty = false
+	_snapshot_disk_state()
 	return {"ok": true}
 
 
@@ -106,3 +116,23 @@ func reload_from_disk() -> Dictionary:
 ## watcher; emits external_change_detected for UI consumers to react to.
 func notify_external_change() -> void:
 	external_change_detected.emit()
+
+
+## Whether the supplied {mtime, size} pair matches the buffer's last in-sync
+## snapshot. DocumentRegistry uses this to decide whether a fresh stat counts
+## as an external change.
+func matches_disk_snapshot(mtime: int, size: int) -> bool:
+	return loaded_mtime == mtime and loaded_size == size
+
+
+## Refresh loaded_mtime / loaded_size from disk. Idempotent. Called at construct,
+## save_to_disk, and reload_from_disk — any moment we believe the buffer is
+## back in lockstep with disk.
+func _snapshot_disk_state() -> void:
+	var s := DiskAccess.stat(file_path)
+	if s.ok:
+		loaded_mtime = int(s.mtime)
+		loaded_size = int(s.size)
+	else:
+		loaded_mtime = 0
+		loaded_size = 0

@@ -25,6 +25,10 @@ size_flags_vertical = 3
 layout_mode = 2
 text = ""
 
+[node name="FsChangedLabel" type="Label" parent="Vbox"]
+layout_mode = 2
+text = "host.fs.changed: (none yet)"
+
 [node name="EchoLabel" type="Label" parent="Vbox"]
 layout_mode = 2
 size_flags_horizontal = 3

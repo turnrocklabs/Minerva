@@ -75,12 +75,11 @@ func _disk_write(args: Dictionary) -> Dictionary:
 	if not r.ok:
 		return _err(r.error)
 
-	# Symmetric with vim/git: notify any existing buffer that disk diverged.
-	var registry := DocumentRegistry.get_instance()
-	if registry.has_buffer(path):
-		var buf_r := registry.get_or_create_buffer(path)
-		if buf_r.ok:
-			(buf_r.buffer as DocumentBuffer).notify_external_change()
+	# Symmetric with vim/git: route through the registry's watcher path so a
+	# buffered file gets the same dispatch as any external change (clean →
+	# silent reload, dirty → external_change_detected with coalescing).
+	# poke_path bypasses the polling tick for synchronous prompt firing.
+	DocumentRegistry.get_instance().poke_path(path)
 
 	return _ok({"path": path})
 
