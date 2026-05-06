@@ -281,9 +281,10 @@ mouse_filter = 2
 script = ExtResource("50_anncv")
 
 [node name="CloseDialog" type="ConfirmationDialog" parent="."]
-title = "You have unsaved open editor "
+title = "Are you sure?"
 exclusive = false
 ok_button_text = "Save"
+dialog_text = "Do you want to save the file?"
 
 [node name="FileDialog" type="FileDialog" parent="."]
 size = Vector2i(700, 500)

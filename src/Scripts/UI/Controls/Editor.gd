@@ -211,6 +211,23 @@ var file_saved_in_disc := false # this is used when you press the save button on
 
 static var code_syntax_enabled: = true
 
+## Buffer-canonical document model (DCR 019dfa66, Task 4).
+##
+## When this Type.TEXT editor opens a file, it attaches to the shared
+## DocumentBuffer for that path via DocumentRegistry. User edits push into
+## the buffer; buffer text_changed pulls back into code_edit. Save flushes
+## buffer to disk. On tab close, detach; if refcount == 0, registry
+## disposes. Other types (PLUGIN_SCENE, GRAPHICS, etc.) don't use the
+## buffer model in this DCR — see Task 6 for the paired DSL plugin path.
+var _document_buffer: DocumentBuffer = null
+
+## Reentrancy guard. set true while pulling buffer text into code_edit so
+## the resulting code_edit.text_changed doesn't push the same value back
+## into the buffer (would still be a no-op via apply_edit's equality check
+## but firing text_changed twice has subtle UX side effects on annotation
+## revision tracking). Flipped tightly around the assignment.
+var _applying_buffer_text: bool = false
+
 ## Convenience factory for PLUGIN_SCENE editors that pre-sets plugin_id / panel_name
 ## on the editor instance before Editor.create() reads them in the match arm.
 static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name_ = null, associated_object_ = null) -> Editor:
@@ -660,6 +677,9 @@ func _exit_tree() -> void:
 	# Annotation host: drop registry entry so a stale RefCounted doesn't linger.
 	if annotation_host != null and not tab_title.is_empty():
 		AnnotationHostRegistry.deregister(tab_title)
+	# Buffer-canonical: detach from DocumentRegistry. If we were the last
+	# panel attached, the registry disposes the buffer.
+	_detach_document_buffer()
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
 		PluginScenePanelHost.invoke_unload(plugin_scene_root)
@@ -806,21 +826,83 @@ func _load_text_file(filename: String):
 			code_edit.syntax_highlighter = update_code_hightlighter(filename.get_extension())
 		else:
 			code_edit.syntax_highlighter = update_code_hightlighter(filename)
-	var fa_object = FileAccess.open(filename, FileAccess.READ)
-	if fa_object == null:
-				var error: = error_string(FileAccess.get_open_error())
-				push_warning(error)
-				SingletonObject.ErrorDisplay("Couldn't open file", error)
-				return
-	if fa_object:
-		#file_path = file
-		code_edit.text = fa_object.get_as_text()
+
+	# Buffer-canonical: attach to the registry's buffer for this path. Disk is
+	# read once by DocumentRegistry on first access; subsequent opens (this tab
+	# or another panel via Task 6) share the same buffer instance.
+	_attach_document_buffer(filename)
+	if _document_buffer == null:
+		# Registry refused (e.g. PathResolver error). Fall back to a direct read so
+		# the editor still loads — buffer mode just doesn't apply for this tab.
+		var fa_object = FileAccess.open(filename, FileAccess.READ)
+		if fa_object == null:
+			var error: = error_string(FileAccess.get_open_error())
+			push_warning(error)
+			SingletonObject.ErrorDisplay("Couldn't open file", error)
+			return
+		_set_code_edit_text_from_buffer(fa_object.get_as_text())
 		code_edit.saved_content = code_edit.text
-		code_edit.text_changed.emit() # the signal is not emitted for some reason
+		code_edit.text_changed.emit()
 		_load_annotations_sidecar(filename)
-	else:
-		code_edit.text = "Could not retrieve file"
+		return
+
+	_set_code_edit_text_from_buffer(_document_buffer.text)
+	code_edit.saved_content = _document_buffer.text
+	code_edit.text_changed.emit() # the signal is not emitted for some reason
+	_load_annotations_sidecar(filename)
 	# %SaveButton.disabled = false
+
+
+## Attach this editor to the DocumentRegistry buffer for path. Detaches from any
+## previously held buffer first (covers Save As / file-rename flows where the
+## tab's path changes). Sets _document_buffer to the new buffer or null on error.
+func _attach_document_buffer(path: String) -> void:
+	if _document_buffer != null and _document_buffer.file_path == path:
+		# Already attached to the right buffer; nothing to do.
+		return
+
+	_detach_document_buffer()
+
+	var registry := DocumentRegistry.get_instance()
+	var r := registry.get_or_create_buffer(path)
+	if not r.ok:
+		push_warning("[Editor] DocumentRegistry refused path '%s': %s" % [path, r.error])
+		_document_buffer = null
+		return
+
+	_document_buffer = r.buffer
+	_document_buffer.attach()
+	_document_buffer.text_changed.connect(_on_buffer_text_changed)
+
+
+## Detach from current buffer. If refcount reaches 0, dispose from the registry
+## so a stale buffer doesn't outlive the last attached panel.
+func _detach_document_buffer() -> void:
+	if _document_buffer == null:
+		return
+	if _document_buffer.text_changed.is_connected(_on_buffer_text_changed):
+		_document_buffer.text_changed.disconnect(_on_buffer_text_changed)
+	var remaining := _document_buffer.detach()
+	if remaining == 0:
+		DocumentRegistry.get_instance().dispose_buffer(_document_buffer.file_path)
+	_document_buffer = null
+
+
+## Set code_edit.text from a buffer-side string, with reentrancy guarded so the
+## resulting code_edit.text_changed signal doesn't echo back into the buffer.
+func _set_code_edit_text_from_buffer(new_text: String) -> void:
+	if code_edit == null or code_edit.text == new_text:
+		return
+	_applying_buffer_text = true
+	code_edit.text = new_text
+	_applying_buffer_text = false
+
+
+## Called when the buffer's text changes from any source (this editor's own
+## edit echoed back, MCP tool edit, another attached panel). Pulls the new
+## text into code_edit if it differs.
+func _on_buffer_text_changed(new_text: String, _new_version: int) -> void:
+	_set_code_edit_text_from_buffer(new_text)
 
 
 func _load_graphics_file(filename: String):
@@ -1185,15 +1267,30 @@ func save_file_to_disc(path: String) -> void:
 	file = path
 	match type:
 		Type.TEXT:
-			# Save text content to file
-			var save_file = FileAccess.open(path, FileAccess.WRITE)
-			if save_file == null:
-				var error: = error_string(FileAccess.get_open_error())
-				push_warning(error)
-				SingletonObject.ErrorDisplay("Couldn't save file", error)
-				return
-				
-			save_file.store_string(code_edit.text)
+			# Buffer-canonical: route saves through DocumentRegistry. Save As
+			# (path != current buffer's file_path) re-attaches to a buffer for
+			# the new path, mirrors current visible text into it, then flushes.
+			if _document_buffer == null or _document_buffer.file_path != path:
+				_attach_document_buffer(path)
+			if _document_buffer != null:
+				# Mirror current visible text into the buffer in case the editor
+				# diverged from the buffer (untitled save, Save As). apply_edit
+				# is a no-op when equal.
+				_document_buffer.apply_edit(code_edit.text)
+				var save_r: Dictionary = _document_buffer.save_to_disk()
+				if not save_r.ok:
+					push_warning(save_r.error)
+					SingletonObject.ErrorDisplay("Couldn't save file", save_r.error)
+					return
+			else:
+				# Registry refused the path; fall back to direct write so save still works.
+				var save_file = FileAccess.open(path, FileAccess.WRITE)
+				if save_file == null:
+					var error: = error_string(FileAccess.get_open_error())
+					push_warning(error)
+					SingletonObject.ErrorDisplay("Couldn't save file", error)
+					return
+				save_file.store_string(code_edit.text)
 			code_edit.tag_saved_version()
 			code_edit.saved_content = code_edit.text
 			_save_annotations_sidecar(path)
@@ -1651,6 +1748,14 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 #endregion code editor action commands
 
 func _on_editor_changed(text: String = ""):
+	# Buffer-canonical: push code_edit's new text into the attached buffer
+	# unless we're mid-pull from the buffer (reentrancy guard). apply_edit
+	# is a no-op when text matches, so a pull→push round-trip is safe;
+	# the guard exists so we don't fire text_changed twice for a single
+	# user keystroke (annotation revision tracking is sensitive to that).
+	if type == Type.TEXT and code_edit != null and _document_buffer != null and not _applying_buffer_text:
+		_document_buffer.apply_edit(code_edit.text)
+
 	if code_edit and text != "":
 		# this line gets the max number cf chars for the line edit e.g.: "12345" = 5
 		jump_to_line_edit.max_length = str(code_edit.get_line_count()).length()

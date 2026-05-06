@@ -25,12 +25,37 @@ var text: String = ""
 var version: int = 0
 var dirty: bool = false
 
+## Number of UI panels (text editor, plugin render panel, etc.) currently
+## attached to this buffer. Owned by attach() / detach(). When it reaches
+## zero, the caller of detach() may safely dispose the buffer from the
+## registry — no other surface is reading or mirroring it.
+##
+## Refcount, not an attachment-list: panels don't currently need to know
+## *who* else is attached, only *whether* they're the last to leave.
+var attached_count: int = 0
+
 
 func _init(path: String, initial_text: String) -> void:
 	file_path = path
 	text = initial_text
 	version = 0
 	dirty = false
+	attached_count = 0
+
+
+## Increment the attachment refcount. Call when a UI surface starts mirroring
+## this buffer (Editor.gd on file open, plugin render panel on attach_buffer).
+func attach() -> void:
+	attached_count += 1
+
+
+## Decrement the attachment refcount. Returns the new count. Call when a UI
+## surface stops mirroring (Editor.gd on tab close, plugin panel teardown).
+## Returning 0 signals the caller "you were the last; safe to dispose."
+func detach() -> int:
+	if attached_count > 0:
+		attached_count -= 1
+	return attached_count
 
 
 ## Replace buffer text with new_text. No-op when text is unchanged

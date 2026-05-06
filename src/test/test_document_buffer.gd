@@ -22,6 +22,9 @@ func _init() -> void:
 	test_reload_no_op_when_disk_matches()
 	test_reload_clears_dirty_regardless()
 	test_notify_external_change_emits_signal()
+	test_attach_starts_at_zero_and_increments()
+	test_detach_decrements_and_returns_remaining()
+	test_detach_at_zero_does_not_underflow()
 
 	_teardown()
 
@@ -188,3 +191,34 @@ func test_notify_external_change_emits_signal() -> void:
 	b.external_change_detected.connect(func(): fired.count += 1)
 	b.notify_external_change()
 	check("external_change_detected emitted", fired.count == 1)
+
+
+func test_attach_starts_at_zero_and_increments() -> void:
+	print("test_attach_starts_at_zero_and_increments")
+	var b := DocumentBuffer.new("/tmp/x.txt", "")
+	check("attached_count starts at 0", b.attached_count == 0)
+	b.attach()
+	check("attached_count = 1 after first attach", b.attached_count == 1)
+	b.attach()
+	check("attached_count = 2 after second attach", b.attached_count == 2)
+
+
+func test_detach_decrements_and_returns_remaining() -> void:
+	print("test_detach_decrements_and_returns_remaining")
+	var b := DocumentBuffer.new("/tmp/x.txt", "")
+	b.attach()
+	b.attach()
+	var remaining_after_first := b.detach()
+	check("detach returns 1 with one panel left", remaining_after_first == 1)
+	check("attached_count = 1", b.attached_count == 1)
+	var remaining_after_second := b.detach()
+	check("detach returns 0 when last panel leaves", remaining_after_second == 0)
+	check("attached_count = 0", b.attached_count == 0)
+
+
+func test_detach_at_zero_does_not_underflow() -> void:
+	print("test_detach_at_zero_does_not_underflow")
+	var b := DocumentBuffer.new("/tmp/x.txt", "")
+	var r := b.detach()
+	check("detach on fresh buffer returns 0", r == 0)
+	check("attached_count stays at 0 (no underflow)", b.attached_count == 0)
