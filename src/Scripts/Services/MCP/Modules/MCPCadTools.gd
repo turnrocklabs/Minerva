@@ -35,6 +35,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_cad_get_selected_edge",
 		"minerva_cad_annotate_edges",
 		"minerva_cad_clear_edge_annotations",
+		"minerva_cad_list_user_labels",
 	]
 
 
@@ -196,6 +197,32 @@ func register_tools() -> void:
 		"cad"
 	)
 
+	server._register_tool(
+		"minerva_cad_list_user_labels",
+		"Return the list of cad_edge_number annotations the USER has authored on a live CAD panel. "
+		+ "Use this whenever the user references 'the edges I labeled' (or 'pinned', 'tagged', "
+		+ "'marked', 'selected') and expects you to operate on a SET of edges they identified — "
+		+ "minerva_cad_get_selected_edge only returns the single most-recent click, not the "
+		+ "set the user has been building up. "
+		+ "Returns {labels: [{edge_id, text, annotation_id, view_context}], count}. "
+		+ "Each label corresponds to one cad_edge_number annotation with author=='human'; "
+		+ "agent-minted annotations (via minerva_cad_annotate_edges) are excluded. "
+		+ "text is whatever the user typed in the annotation dialog (may be empty). "
+		+ "When count==0 the user has not labelled anything — fall back to "
+		+ "minerva_cad_get_selected_edge or ask which edges they mean.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Editor tab title (as returned by minerva_list_editors).",
+				},
+			},
+			"required": ["editor_name"],
+		},
+		"cad"
+	)
+
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
@@ -212,6 +239,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _cad_annotate_edges(arguments)
 		"minerva_cad_clear_edge_annotations":
 			return _cad_clear_edge_annotations(arguments)
+		"minerva_cad_list_user_labels":
+			return _cad_list_user_labels(arguments)
 	return _err("Unknown CAD tool: %s" % tool_name)
 
 
@@ -496,6 +525,57 @@ func _cad_clear_edge_annotations(args: Dictionary) -> Dictionary:
 			host.call("remove_annotation", ann_id)
 
 	return _ok({"cleared_count": to_remove.size()})
+
+
+func _cad_list_user_labels(args: Dictionary) -> Dictionary:
+	var host: AnnotationHost = _resolve_host(args)
+	if host == null:
+		return _no_host_error(args)
+
+	if not host.has_method("get_annotations"):
+		return _err(
+			"cad_list_user_labels: host for '%s' does not expose get_annotations."
+			% str(args.get("editor_name", ""))
+		)
+
+	var annotations: Array = host.call("get_annotations")
+	var labels: Array = []
+	for ann in annotations:
+		if not (ann is Dictionary):
+			continue
+		var ann_dict: Dictionary = ann as Dictionary
+		# Filter to cad_edge_number kind authored by the user. The cad_edge_number
+		# tool stamps author="human"; agent-minted annotations from
+		# minerva_cad_annotate_edges have no author field. The exclusion is
+		# deliberate — agent labels are the agent's own bookkeeping, not user
+		# intent the agent should act on.
+		if str(ann_dict.get("kind", "")) != "cad_edge_number":
+			continue
+		if str(ann_dict.get("author", "")) != "human":
+			continue
+
+		var anchor: Variant = ann_dict.get("anchor", {})
+		if not (anchor is Dictionary):
+			continue
+		var anchor_d: Dictionary = anchor as Dictionary
+		if not anchor_d.has("id"):
+			continue
+		var edge_id: int = int(anchor_d["id"])
+
+		var payload: Dictionary = ann_dict.get("payload", {}) as Dictionary
+		var text: String = str(payload.get("text", ""))
+
+		labels.append({
+			"edge_id": edge_id,
+			"text": text,
+			"annotation_id": str(ann_dict.get("id", "")),
+			"view_context": str(ann_dict.get("view_context", "")),
+		})
+
+	return _ok({
+		"labels": labels,
+		"count": labels.size(),
+	})
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
