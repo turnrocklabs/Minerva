@@ -62,9 +62,12 @@ func register_tools() -> void:
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+	# _doc_write awaits PluginScenePanelHost.invoke_apply_sync (paired_dsl
+	# plugin scenes) so it must be called with `await`. The other ops are
+	# synchronous; awaiting them is cheap and keeps the match arm uniform.
 	match tool_name:
 		"minerva_doc_read": return _doc_read(arguments)
-		"minerva_doc_write": return _doc_write(arguments)
+		"minerva_doc_write": return await _doc_write(arguments)
 		"minerva_doc_edit": return _doc_edit(arguments)
 		"minerva_doc_save": return _doc_save(arguments)
 		"minerva_doc_save_all": return _doc_save_all(arguments)
@@ -222,13 +225,23 @@ func _doc_read(args: Dictionary) -> Dictionary:
 	match t.kind:
 		KIND_BUFFER:
 			var buf: DocumentBuffer = t.buffer
-			return _ok({
+			var read_ok := {
 				"text": buf.text,
 				"version": buf.version,
 				"dirty": buf.dirty,
 				"path": t.path,
 				"editor_name": t.editor_name,
-			})
+			}
+			# Paired_dsl plugin scene: also surface the panel's last_eval so the
+			# agent can verify worker outcome without burning a second tool round.
+			# Falls through silently when the editor has no plugin save hook.
+			var ed_r = t.editor
+			if ed_r != null and "type" in ed_r and int(ed_r.type) == Editor.Type.PLUGIN_SCENE \
+					and ed_r.plugin_scene_root != null:
+				var save_payload: Variant = PluginScenePanelHost.invoke_save(ed_r.plugin_scene_root, {})
+				if save_payload is Dictionary and save_payload.has("last_eval"):
+					read_ok["last_eval"] = save_payload["last_eval"]
+			return _ok(read_ok)
 		KIND_TEXT_LOCAL:
 			var editor = t.editor
 			return _ok({
@@ -276,12 +289,47 @@ func _doc_write(args: Dictionary) -> Dictionary:
 		KIND_BUFFER:
 			var buf: DocumentBuffer = t.buffer
 			buf.apply_edit(text)
-			return _ok({
+			var write_resp := {
 				"version": buf.version,
 				"dirty": buf.dirty,
 				"path": t.path,
 				"editor_name": t.editor_name,
-			})
+			}
+			# Paired_dsl plugin scene: await the panel's synchronous-apply hook
+			# (cancels in-flight, skips debounce, awaits worker reply) so the
+			# MCP response carries last_eval. Without this, the agent has to
+			# poll doc_read until the eval lands — burning rounds and racing
+			# the debounce. Falls through silently when the panel doesn't
+			# expose the hook (non-cad plugins, html panels, etc.).
+			var ed_w = t.editor
+			if ed_w != null and "type" in ed_w and int(ed_w.type) == Editor.Type.PLUGIN_SCENE \
+					and ed_w.plugin_scene_root != null:
+				var apply_doc := {"source": text}
+				var apply_result: Variant = await PluginScenePanelHost.invoke_apply_sync(
+					ed_w.plugin_scene_root, apply_doc
+				)
+				if apply_result is Dictionary:
+					if apply_result.has("last_eval"):
+						write_resp["last_eval"] = apply_result["last_eval"]
+					# If the plugin reports failure, propagate as MCP-level error
+					# so the agent's "did it work?" check is the tool reply, not
+					# a separate doc_read. Buffer write itself succeeded, so we
+					# preserve version/dirty in the error envelope too.
+					if not bool(apply_result.get("ok", true)):
+						var le: Dictionary = apply_result.get("last_eval", {}) as Dictionary
+						var err_kind: String = str(le.get("error_kind", "apply_failed"))
+						var err_msg: String = str(le.get("error_message", "plugin reported ok=false"))
+						return {
+							"success": false,
+							"ok": false,
+							"error": "%s: %s" % [err_kind, err_msg],
+							"last_eval": le,
+							"version": buf.version,
+							"dirty": buf.dirty,
+							"path": t.path,
+							"editor_name": t.editor_name,
+						}
+			return _ok(write_resp)
 		KIND_TEXT_LOCAL:
 			var editor = t.editor
 			editor.code_edit.text = text

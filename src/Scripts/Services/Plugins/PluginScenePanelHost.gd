@@ -256,6 +256,30 @@ static func invoke_save(panel_root: Node, _ctx: Dictionary) -> Variant:
 	return result
 
 
+## Call `_on_panel_apply_sync(document)` on `panel_root` and await its result.
+##
+## Synchronous variant of invoke_load: applies the document AND awaits the
+## plugin's per-apply work (e.g. cad's evaluate→worker round-trip) before
+## returning. Lets MCP write tools surface eval status / errors in their
+## reply rather than forcing the agent to poll.
+##
+## The hook contract: returns a Dictionary with at least `{ok: bool}` —
+## additional plugin-specific fields (e.g. cad's `last_eval`) are passed
+## through verbatim. Returns null when the panel does NOT implement the
+## hook — callers should fall back to invoke_load + buffer-only behavior.
+##
+## Same error-semantics caveat as invoke_save: GDScript has no try/catch.
+static func invoke_apply_sync(panel_root: Node, document: Variant) -> Variant:
+	if panel_root == null:
+		push_warning("[PluginScenePanelHost] invoke_apply_sync: panel_root is null")
+		return null
+	if not panel_root.has_method("_on_panel_apply_sync"):
+		# Not implemented is normal — caller falls back.
+		return null
+	var result: Variant = await panel_root._on_panel_apply_sync(document)
+	return result
+
+
 ## Call `_on_panel_load_request(document)` on `panel_root` if the method exists.
 ##
 ## Returns true on successful dispatch (method exists and was called).
