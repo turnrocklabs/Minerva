@@ -1005,7 +1005,16 @@ func _on_remove_confirmed() -> void:
 	if result.has("error"):
 		_show_status("Remove failed: %s" % result["error"], true)
 	else:
-		_show_status("Plugin removed.")
+		# DCR 019df57b T6: surface plugin-skill cleanup counts.
+		var deleted: int = int(result.get("skills_deleted", 0))
+		var kept: int = int(result.get("skills_kept", 0))
+		var msg := "Plugin removed."
+		if deleted > 0 or kept > 0:
+			msg += " Removed %d pristine skill(s)" % deleted
+			if kept > 0:
+				msg += ", kept %d customised skill(s)" % kept
+			msg += "."
+		_show_status(msg)
 		_selected_plugin_id = ""
 		_detail_placeholder.visible = true
 		_detail_panel.visible = false

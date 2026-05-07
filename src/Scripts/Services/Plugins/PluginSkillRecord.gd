@@ -99,3 +99,39 @@ static func is_customised(record: Dictionary) -> bool:
 ## Picker hides deprecated records by default (T5 read site).
 static func is_deprecated(record: Dictionary) -> bool:
 	return bool(record.get("deprecated", false))
+
+
+## Apply a user edit to a skill record, auto-flipping `customised=true` for
+## plugin-seeded records (DCR 019df57b T5).
+##
+## Use this helper anywhere a user-driven edit reaches a skill record — UI
+## editors, future `minerva_skill_update` MCP wrappers, etc.  Bypasses the
+## auto-flip ONLY when the caller explicitly includes `customised` in
+## `changes` (e.g. seeder.apply_reconcile sets it deliberately).
+##
+## Reading the record requires a docket_caller that supports docket_get.  In
+## production this is SingletonObject.docket_manager; tests pass a ToolRegistry
+## directly.
+##
+## Returns the docket_update result Dictionary.
+static func apply_user_edit(record_id: String, changes: Dictionary, docket_caller) -> Dictionary:
+	if docket_caller == null:
+		return {"error": "no_docket_caller"}
+	if record_id.is_empty():
+		return {"error": "missing_record_id"}
+
+	var fetched = docket_caller.call_tool("docket_get", {"id": record_id})
+	if not (fetched is Dictionary) or fetched.has("error"):
+		return {"error": "record_not_found", "detail": fetched}
+	var existing: Dictionary = fetched
+
+	var effective: Dictionary = changes.duplicate(true)
+	effective["id"] = record_id
+
+	# Auto-flip customised for plugin-seeded records.  Only when the caller
+	# didn't explicitly set customised — seeder.apply_reconcile passes it
+	# deliberately on the prompted-accept path and that should be respected.
+	if not effective.has("customised") and is_plugin_seeded(existing):
+		effective["customised"] = true
+
+	return docket_caller.call_tool("docket_update", effective)

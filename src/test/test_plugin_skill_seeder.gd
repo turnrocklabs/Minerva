@@ -67,6 +67,34 @@ func _init() -> void:
 	test_materialize_skips_skill_without_id()
 	test_materialize_empty_resolved()
 
+	print("\n-- unseed (T6) --")
+	test_unseed_no_records_returns_zero()
+	test_unseed_pristine_records_deleted()
+	test_unseed_customised_records_converted_to_user()
+	test_unseed_mixed_pristine_and_customised()
+	test_unseed_clears_pristine_metadata_on_kept()
+	test_unseed_distinguishes_plugins()
+
+	print("\n-- recompute_unsatisfied (T7) --")
+	test_recompute_no_skills_returns_zero()
+	test_recompute_clears_now_satisfied()
+	test_recompute_marks_now_unsatisfied()
+	test_recompute_no_op_when_unchanged()
+	test_recompute_partial_dep_satisfaction()
+
+	print("\n-- plan_reconcile / apply_reconcile (T4) --")
+	test_plan_seeds_new_skills()
+	test_plan_no_change_on_matching_hash()
+	test_plan_silent_update_on_pristine_hash_change()
+	test_plan_prompt_required_on_customised_hash_change()
+	test_plan_deprecates_records_absent_from_new_manifest()
+	test_plan_does_not_re_deprecate_already_deprecated()
+	test_apply_silent_update_writes_new_content()
+	test_apply_prompted_accept_overwrites()
+	test_apply_prompted_decline_keeps_user_edits()
+	test_apply_prompted_missing_decision_declines()
+	test_apply_deprecate_marks_records()
+
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -379,4 +407,474 @@ func test_materialize_empty_resolved() -> void:
 	check("seeded 0", result.get("seeded", 0) == 0)
 	check("skipped 0", result.get("skipped", 0) == 0)
 	check("deferred 0", result.get("deferred_to_update", 0) == 0)
+	ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
+# unseed (T6)
+# ---------------------------------------------------------------------------
+
+func test_unseed_no_records_returns_zero() -> void:
+	print("test_unseed_no_records_returns_zero")
+	var ctx := _new_docket()
+	var r: Dictionary = PluginSkillSeederScript.unseed("nonexistent_plugin", ctx.registry)
+	check("deleted 0", r.get("deleted", 0) == 0)
+	check("kept 0", r.get("kept", 0) == 0)
+	check("kept_skill_ids empty", (r.get("kept_skill_ids", []) as Array).is_empty())
+	ctx.db.close()
+
+
+func test_unseed_pristine_records_deleted() -> void:
+	print("test_unseed_pristine_records_deleted")
+	var ctx := _new_docket()
+	var def := _make_def("demo", [
+		_skill("demo", "alpha", []),
+		_skill("demo", "beta", []),
+	])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {}), ctx.registry)
+	# Both records are pristine (customised=false default).
+	var r: Dictionary = PluginSkillSeederScript.unseed("demo", ctx.registry)
+	check("deleted 2", r.get("deleted", 0) == 2)
+	check("kept 0", r.get("kept", 0) == 0)
+
+	# Verify records are gone.
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("alpha record gone", found.is_empty())
+	ctx.db.close()
+
+
+func test_unseed_customised_records_converted_to_user() -> void:
+	print("test_unseed_customised_records_converted_to_user")
+	var ctx := _new_docket()
+	var def := _make_def("demo", [_skill("demo", "alpha", [])])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {}), ctx.registry)
+	# Mark customised via update.
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	var record_id := str(found.get("id", ""))
+	ctx.registry.call_tool("docket_update", {"id": record_id, "customised": true, "steps": "user-edited"})
+
+	var r: Dictionary = PluginSkillSeederScript.unseed("demo", ctx.registry)
+	check("deleted 0 (customised, not pristine)", r.get("deleted", 0) == 0)
+	check("kept 1", r.get("kept", 1) == 1)
+	check("kept_skill_ids has the record id",
+		(r.get("kept_skill_ids", []) as Array).has(record_id))
+
+	# Record still exists, source flipped to "user", edits preserved.
+	var post = ctx.registry.call_tool("docket_get", {"id": record_id})
+	check("record still exists", not post.has("error"))
+	check("source flipped to 'user'", str(post.get("source", "")) == "user")
+	check("user edits preserved", str(post.get("steps", "")) == "user-edited")
+	ctx.db.close()
+
+
+func test_unseed_mixed_pristine_and_customised() -> void:
+	print("test_unseed_mixed_pristine_and_customised")
+	var ctx := _new_docket()
+	var def := _make_def("demo", [
+		_skill("demo", "alpha", []),  # will stay pristine
+		_skill("demo", "beta", []),   # will be customised
+		_skill("demo", "gamma", []),  # will stay pristine
+		_skill("demo", "delta", []),  # will be customised
+		_skill("demo", "epsilon", []),# will stay pristine
+	])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {}), ctx.registry)
+
+	# Mark beta and delta as customised.
+	for short in ["beta", "delta"]:
+		var f := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_%s" % short, ctx.registry)
+		ctx.registry.call_tool("docket_update", {"id": str(f.get("id", "")), "customised": true})
+
+	var r: Dictionary = PluginSkillSeederScript.unseed("demo", ctx.registry)
+	check("deleted 3 pristines", r.get("deleted", 0) == 3)
+	check("kept 2 customised", r.get("kept", 0) == 2)
+
+
+func test_unseed_clears_pristine_metadata_on_kept() -> void:
+	print("test_unseed_clears_pristine_metadata_on_kept")
+	var ctx := _new_docket()
+	var def := _make_def("demo", [_skill("demo", "alpha", [])])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {}), ctx.registry)
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	var record_id := str(found.get("id", ""))
+	ctx.registry.call_tool("docket_update", {"id": record_id, "customised": true})
+
+	# Pre-condition: pristine_hash is non-empty.
+	check("pre: pristine_hash non-empty", not str(found.get("pristine_hash", "")).is_empty())
+
+	PluginSkillSeederScript.unseed("demo", ctx.registry)
+
+	var post = ctx.registry.call_tool("docket_get", {"id": record_id})
+	check("post: pristine_hash cleared", str(post.get("pristine_hash", "")).is_empty())
+	check("post: pristine_content cleared",
+		(post.get("pristine_content") is Dictionary)
+		and (post.get("pristine_content") as Dictionary).is_empty())
+	ctx.db.close()
+
+
+func test_unseed_distinguishes_plugins() -> void:
+	print("test_unseed_distinguishes_plugins")
+	var ctx := _new_docket()
+	# Install two plugins.
+	var def_a := _make_def("plugin_a", [_skill("plugin_a", "alpha", [])])
+	var def_b := _make_def("plugin_b", [_skill("plugin_b", "beta", [])])
+	PluginSkillSeederScript.materialize("plugin_a",
+		PluginSkillSeederScript.resolve_deps(def_a, {}), ctx.registry)
+	PluginSkillSeederScript.materialize("plugin_b",
+		PluginSkillSeederScript.resolve_deps(def_b, {}), ctx.registry)
+
+	# Uninstall only plugin_a.
+	var r: Dictionary = PluginSkillSeederScript.unseed("plugin_a", ctx.registry)
+	check("plugin_a's 1 skill deleted", r.get("deleted", 0) == 1)
+
+	# plugin_b's skill must still be there.
+	var still := PluginSkillSeederScript.find_existing_record("plugin_b", "minerva_plugin_b_beta", ctx.registry)
+	check("plugin_b's skill still exists", not still.is_empty())
+	check("plugin_b's source unchanged", str(still.get("source", "")) == "plugin:plugin_b")
+	ctx.db.close()
+
+
+# ---------------------------------------------------------------------------
+# recompute_unsatisfied (T7)
+# ---------------------------------------------------------------------------
+
+func test_recompute_no_skills_returns_zero() -> void:
+	print("test_recompute_no_skills_returns_zero")
+	var ctx := _new_docket()
+	var r: Dictionary = PluginSkillSeederScript.recompute_unsatisfied({}, ctx.registry)
+	check("updated 0", r.get("updated", 0) == 0)
+	check("now_satisfied 0", r.get("now_satisfied", 0) == 0)
+	check("now_unsatisfied 0", r.get("now_unsatisfied", 0) == 0)
+	ctx.db.close()
+
+
+func test_recompute_clears_now_satisfied() -> void:
+	print("test_recompute_clears_now_satisfied")
+	var ctx := _new_docket()
+	# Install a skill with one missing dep.
+	var def := _make_def("demo", [_skill("demo", "alpha", ["minerva_other_dep"])])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {}), ctx.registry)
+
+	# Pre-condition: unsatisfied_deps has the missing dep.
+	var pre := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("pre: unsatisfied has 1 entry",
+		(pre.get("unsatisfied_deps", []) as Array).size() == 1)
+
+	# Now the dep becomes available (e.g. another plugin installed).
+	var r: Dictionary = PluginSkillSeederScript.recompute_unsatisfied(
+		{"minerva_other_dep": true}, ctx.registry)
+	check("updated 1", r.get("updated", 0) == 1)
+	check("now_satisfied 1", r.get("now_satisfied", 0) == 1)
+
+	# Post-condition: unsatisfied_deps cleared.
+	var post := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("post: unsatisfied is empty",
+		(post.get("unsatisfied_deps", []) as Array).is_empty())
+	ctx.db.close()
+
+
+func test_recompute_marks_now_unsatisfied() -> void:
+	print("test_recompute_marks_now_unsatisfied")
+	var ctx := _new_docket()
+	# Install a skill with all deps initially satisfied.
+	var def := _make_def("demo", [_skill("demo", "alpha", ["minerva_external_dep"])])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {"minerva_external_dep": true}),
+		ctx.registry)
+
+	# Pre-condition: unsatisfied is empty.
+	var pre := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("pre: unsatisfied empty",
+		(pre.get("unsatisfied_deps", []) as Array).is_empty())
+
+	# External dep disappears (the providing plugin uninstalled).
+	var r: Dictionary = PluginSkillSeederScript.recompute_unsatisfied({}, ctx.registry)
+	check("updated 1", r.get("updated", 0) == 1)
+	check("now_unsatisfied 1", r.get("now_unsatisfied", 0) == 1)
+
+	# Post-condition: unsatisfied lists the now-missing dep.
+	var post := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("post: unsatisfied has the missing dep",
+		(post.get("unsatisfied_deps", []) as Array).has("minerva_external_dep"))
+	ctx.db.close()
+
+
+func test_recompute_no_op_when_unchanged() -> void:
+	print("test_recompute_no_op_when_unchanged")
+	var ctx := _new_docket()
+	var def := _make_def("demo", [_skill("demo", "alpha", ["minerva_dep"])])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {"minerva_dep": true}),
+		ctx.registry)
+	# Same available_tools — nothing should change.
+	var r: Dictionary = PluginSkillSeederScript.recompute_unsatisfied(
+		{"minerva_dep": true}, ctx.registry)
+	check("updated 0 when set unchanged", r.get("updated", 0) == 0)
+	ctx.db.close()
+
+
+func test_plan_seeds_new_skills() -> void:
+	print("test_plan_seeds_new_skills")
+	var ctx := _new_docket()
+	# Empty docket; new manifest has 2 skills.
+	var def := _make_def("demo", [
+		_skill("demo", "alpha", []),
+		_skill("demo", "beta", []),
+	])
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(def, {}, ctx.registry)
+	var actions: Array = plan.get("actions", [])
+	check("2 actions planned", actions.size() == 2)
+	check("both are 'seed' actions",
+		actions[0].action == PluginSkillSeederScript.RECONCILE_SEED
+		and actions[1].action == PluginSkillSeederScript.RECONCILE_SEED)
+	check("no deprecations", (plan.get("deprecate_record_ids", []) as Array).is_empty())
+	ctx.db.close()
+
+
+func test_plan_no_change_on_matching_hash() -> void:
+	print("test_plan_no_change_on_matching_hash")
+	var ctx := _new_docket()
+	var skill := _skill("demo", "alpha", [])
+	var def := _make_def("demo", [skill])
+	# Install once.
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {}), ctx.registry)
+	# Plan re-install with identical content.
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(def, {}, ctx.registry)
+	var actions: Array = plan.get("actions", [])
+	check("1 action", actions.size() == 1)
+	check("action is no_change",
+		actions[0].action == PluginSkillSeederScript.RECONCILE_NO_CHANGE)
+	ctx.db.close()
+
+
+func test_plan_silent_update_on_pristine_hash_change() -> void:
+	print("test_plan_silent_update_on_pristine_hash_change")
+	var ctx := _new_docket()
+	var skill_v1 := _skill("demo", "alpha", [])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(_make_def("demo", [skill_v1]), {}), ctx.registry)
+	# New version: changed steps, record stays pristine (customised=false).
+	var skill_v2 := _skill("demo", "alpha", [])
+	skill_v2["steps"] = "v2 steps"
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(
+		_make_def("demo", [skill_v2]), {}, ctx.registry)
+	var actions: Array = plan.get("actions", [])
+	check("1 action", actions.size() == 1)
+	check("action is silent_update",
+		actions[0].action == PluginSkillSeederScript.RECONCILE_SILENT_UPDATE)
+	ctx.db.close()
+
+
+func test_plan_prompt_required_on_customised_hash_change() -> void:
+	print("test_plan_prompt_required_on_customised_hash_change")
+	var ctx := _new_docket()
+	var skill_v1 := _skill("demo", "alpha", [])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(_make_def("demo", [skill_v1]), {}), ctx.registry)
+	# Mark customised.
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	ctx.registry.call_tool("docket_update", {"id": str(found.get("id", "")), "customised": true})
+
+	var skill_v2 := _skill("demo", "alpha", [])
+	skill_v2["steps"] = "v2 steps"
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(
+		_make_def("demo", [skill_v2]), {}, ctx.registry)
+	var actions: Array = plan.get("actions", [])
+	check("1 action", actions.size() == 1)
+	check("action is prompt_required",
+		actions[0].action == PluginSkillSeederScript.RECONCILE_PROMPT_REQUIRED)
+	check("action carries existing record",
+		actions[0].has("existing")
+		and (actions[0].existing as Dictionary).get("customised") == true)
+	ctx.db.close()
+
+
+func test_plan_deprecates_records_absent_from_new_manifest() -> void:
+	print("test_plan_deprecates_records_absent_from_new_manifest")
+	var ctx := _new_docket()
+	var def_v1 := _make_def("demo", [
+		_skill("demo", "alpha", []),
+		_skill("demo", "beta", []),
+	])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def_v1, {}), ctx.registry)
+	# v2 drops beta.
+	var def_v2 := _make_def("demo", [_skill("demo", "alpha", [])])
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(def_v2, {}, ctx.registry)
+	var deprecate_ids: Array = plan.get("deprecate_record_ids", [])
+	check("1 record to deprecate", deprecate_ids.size() == 1)
+	# Verify it's beta's record.
+	var beta := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_beta", ctx.registry)
+	check("deprecate id matches beta",
+		deprecate_ids[0] == str(beta.get("id", "")))
+	ctx.db.close()
+
+
+func test_plan_does_not_re_deprecate_already_deprecated() -> void:
+	print("test_plan_does_not_re_deprecate_already_deprecated")
+	var ctx := _new_docket()
+	var def_v1 := _make_def("demo", [_skill("demo", "alpha", [])])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def_v1, {}), ctx.registry)
+	# Mark already-deprecated.
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	ctx.registry.call_tool("docket_update", {"id": str(found.get("id", "")), "deprecated": true})
+	# v2 also drops alpha (it's gone from manifest).
+	var def_v2 := _make_def("demo", [])
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(def_v2, {}, ctx.registry)
+	check("already-deprecated not re-listed",
+		(plan.get("deprecate_record_ids", []) as Array).is_empty())
+	ctx.db.close()
+
+
+func test_apply_silent_update_writes_new_content() -> void:
+	print("test_apply_silent_update_writes_new_content")
+	var ctx := _new_docket()
+	var skill_v1 := _skill("demo", "alpha", [])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(_make_def("demo", [skill_v1]), {}), ctx.registry)
+	var skill_v2 := _skill("demo", "alpha", [])
+	skill_v2["steps"] = "v2 steps"
+	skill_v2["title"] = "Alpha v2"
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(
+		_make_def("demo", [skill_v2]), {}, ctx.registry)
+	var result: Dictionary = PluginSkillSeederScript.apply_reconcile(plan, {}, ctx.registry)
+	check("silent_updated 1", result.get("silent_updated", 0) == 1)
+	# Verify new content + new hash.
+	var post := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("steps updated", str(post.get("steps", "")) == "v2 steps")
+	check("title updated", str(post.get("title", "")) == "Alpha v2")
+	check("pristine_hash matches new",
+		str(post.get("pristine_hash", ""))
+		== PluginSkillRecordScript.compute_hash(skill_v2))
+	ctx.db.close()
+
+
+func test_apply_prompted_accept_overwrites() -> void:
+	print("test_apply_prompted_accept_overwrites")
+	var ctx := _new_docket()
+	var skill_v1 := _skill("demo", "alpha", [])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(_make_def("demo", [skill_v1]), {}), ctx.registry)
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	# Mark customised + edit steps.
+	ctx.registry.call_tool("docket_update", {
+		"id": str(found.get("id", "")),
+		"customised": true,
+		"steps": "user-edited steps",
+	})
+	var skill_v2 := _skill("demo", "alpha", [])
+	skill_v2["steps"] = "upstream v2 steps"
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(
+		_make_def("demo", [skill_v2]), {}, ctx.registry)
+	# Accept the prompt.
+	var decisions: Dictionary = {"minerva_demo_alpha": true}
+	var result: Dictionary = PluginSkillSeederScript.apply_reconcile(plan, decisions, ctx.registry)
+	check("prompted_accepted 1", result.get("prompted_accepted", 0) == 1)
+	# User edits gone, upstream content in.
+	var post := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("user edits overwritten", str(post.get("steps", "")) == "upstream v2 steps")
+	check("customised flag preserved (user fork lineage)", post.get("customised") == true)
+	ctx.db.close()
+
+
+func test_apply_prompted_decline_keeps_user_edits() -> void:
+	print("test_apply_prompted_decline_keeps_user_edits")
+	var ctx := _new_docket()
+	var skill_v1 := _skill("demo", "alpha", [])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(_make_def("demo", [skill_v1]), {}), ctx.registry)
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	ctx.registry.call_tool("docket_update", {
+		"id": str(found.get("id", "")),
+		"customised": true,
+		"steps": "user-edited steps",
+	})
+	var skill_v2 := _skill("demo", "alpha", [])
+	skill_v2["steps"] = "upstream v2 steps"
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(
+		_make_def("demo", [skill_v2]), {}, ctx.registry)
+	var decisions: Dictionary = {"minerva_demo_alpha": false}
+	var result: Dictionary = PluginSkillSeederScript.apply_reconcile(plan, decisions, ctx.registry)
+	check("prompted_declined 1", result.get("prompted_declined", 0) == 1)
+	var post := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("user edits intact", str(post.get("steps", "")) == "user-edited steps")
+	# pristine_content refreshed for later diff.
+	check("pristine_content has upstream's new steps",
+		str((post.get("pristine_content", {}) as Dictionary).get("steps", "")) == "upstream v2 steps")
+	ctx.db.close()
+
+
+func test_apply_prompted_missing_decision_declines() -> void:
+	print("test_apply_prompted_missing_decision_declines")
+	var ctx := _new_docket()
+	var skill_v1 := _skill("demo", "alpha", [])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(_make_def("demo", [skill_v1]), {}), ctx.registry)
+	var found := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	ctx.registry.call_tool("docket_update", {
+		"id": str(found.get("id", "")),
+		"customised": true,
+		"steps": "user-edited",
+	})
+	var skill_v2 := _skill("demo", "alpha", [])
+	skill_v2["steps"] = "upstream v2"
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(
+		_make_def("demo", [skill_v2]), {}, ctx.registry)
+	# No decision provided — defaults to decline.
+	var result: Dictionary = PluginSkillSeederScript.apply_reconcile(plan, {}, ctx.registry)
+	check("missing decision counts as declined",
+		result.get("prompted_declined", 0) == 1
+		and result.get("prompted_accepted", 0) == 0)
+	ctx.db.close()
+
+
+func test_apply_deprecate_marks_records() -> void:
+	print("test_apply_deprecate_marks_records")
+	var ctx := _new_docket()
+	var def_v1 := _make_def("demo", [
+		_skill("demo", "alpha", []),
+		_skill("demo", "beta", []),
+	])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def_v1, {}), ctx.registry)
+	var def_v2 := _make_def("demo", [_skill("demo", "alpha", [])])
+	var plan: Dictionary = PluginSkillSeederScript.plan_reconcile(def_v2, {}, ctx.registry)
+	var result: Dictionary = PluginSkillSeederScript.apply_reconcile(plan, {}, ctx.registry)
+	check("deprecated count 1", result.get("deprecated", 0) == 1)
+	var beta := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_beta", ctx.registry)
+	check("beta marked deprecated", beta.get("deprecated") == true)
+	check("beta record still exists (not deleted)", not beta.is_empty())
+	ctx.db.close()
+
+
+func test_recompute_partial_dep_satisfaction() -> void:
+	print("test_recompute_partial_dep_satisfaction")
+	var ctx := _new_docket()
+	# Skill needs two deps.  Install with both missing.
+	var def := _make_def("demo",
+		[_skill("demo", "alpha", ["minerva_a", "minerva_b"])])
+	PluginSkillSeederScript.materialize("demo",
+		PluginSkillSeederScript.resolve_deps(def, {}), ctx.registry)
+	# Pre: both unsatisfied.
+	var pre := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("pre: 2 unsatisfied", (pre.get("unsatisfied_deps", []) as Array).size() == 2)
+
+	# Only one becomes available — skill is still hidden but unsatisfied list shrinks.
+	var r: Dictionary = PluginSkillSeederScript.recompute_unsatisfied(
+		{"minerva_a": true}, ctx.registry)
+	check("updated 1 (list shrunk but still non-empty)", r.get("updated", 0) == 1)
+	# Neither now_satisfied nor now_unsatisfied — went from non-empty to non-empty.
+	check("now_satisfied 0 (still has unsat)", r.get("now_satisfied", 0) == 0)
+	check("now_unsatisfied 0 (still has unsat)", r.get("now_unsatisfied", 0) == 0)
+
+	var post := PluginSkillSeederScript.find_existing_record("demo", "minerva_demo_alpha", ctx.registry)
+	check("post: only 'minerva_b' remains unsatisfied",
+		(post.get("unsatisfied_deps", []) as Array).size() == 1
+		and (post.get("unsatisfied_deps", []) as Array)[0] == "minerva_b")
 	ctx.db.close()

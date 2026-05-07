@@ -67,6 +67,12 @@ func _init() -> void:
 	test_is_deprecated_default_false()
 	test_is_deprecated_true()
 
+	print("\n-- apply_user_edit (T5 auto-flip) --")
+	test_apply_user_edit_flips_plugin_seeded()
+	test_apply_user_edit_user_record_unchanged()
+	test_apply_user_edit_explicit_customised_respected()
+	test_apply_user_edit_missing_record_id_errors()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -336,3 +342,86 @@ func test_is_deprecated_true() -> void:
 	print("test_is_deprecated_true")
 	check("explicit true → true",
 		PluginSkillRecordScript.is_deprecated({"deprecated": true}))
+
+
+# ---------------------------------------------------------------------------
+# apply_user_edit (T5)
+# ---------------------------------------------------------------------------
+
+# Helpers reused for the tests below (need a real docket).
+var _aue_tmp_dir: String = ""
+
+func _aue_setup() -> Dictionary:
+	if _aue_tmp_dir.is_empty():
+		_aue_tmp_dir = OS.get_cache_dir().path_join("aue_test_%d" % randi())
+		DirAccess.make_dir_recursive_absolute(_aue_tmp_dir)
+	var db_path := _aue_tmp_dir.path_join("aue_%d.db" % randi())
+	var db := DocketDB.create_new(db_path)
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
+	sf.close()
+	var registry := ToolRegistry.new()
+	registry.init(schema, db)
+	return {"db": db, "registry": registry}
+
+
+func test_apply_user_edit_flips_plugin_seeded() -> void:
+	print("test_apply_user_edit_flips_plugin_seeded")
+	var ctx := _aue_setup()
+	var create = ctx.registry.call_tool("docket_create", {
+		"type": "skill",
+		"title": "From plugin",
+		"source": "plugin:demo",
+		"customised": false,
+	})
+	var record_id := str(create.get("id", ""))
+	# Edit without specifying customised — should auto-flip.
+	PluginSkillRecordScript.apply_user_edit(record_id, {"steps": "user-edit"}, ctx.registry)
+	var post = ctx.registry.call_tool("docket_get", {"id": record_id})
+	check("steps written", str(post.get("steps", "")) == "user-edit")
+	check("customised auto-flipped to true", post.get("customised") == true)
+	check("source unchanged", str(post.get("source", "")) == "plugin:demo")
+	ctx.db.close()
+
+
+func test_apply_user_edit_user_record_unchanged() -> void:
+	print("test_apply_user_edit_user_record_unchanged")
+	var ctx := _aue_setup()
+	var create = ctx.registry.call_tool("docket_create", {
+		"type": "skill",
+		"title": "User skill",
+		"source": "user",
+	})
+	var record_id := str(create.get("id", ""))
+	PluginSkillRecordScript.apply_user_edit(record_id, {"steps": "edit"}, ctx.registry)
+	var post = ctx.registry.call_tool("docket_get", {"id": record_id})
+	check("steps written", str(post.get("steps", "")) == "edit")
+	check("customised stays false (not plugin-seeded)", post.get("customised") == false)
+	ctx.db.close()
+
+
+func test_apply_user_edit_explicit_customised_respected() -> void:
+	print("test_apply_user_edit_explicit_customised_respected")
+	var ctx := _aue_setup()
+	var create = ctx.registry.call_tool("docket_create", {
+		"type": "skill",
+		"title": "From plugin",
+		"source": "plugin:demo",
+		"customised": false,
+	})
+	var record_id := str(create.get("id", ""))
+	# Caller explicitly sets customised=false (e.g. seeder doing silent update).
+	# Helper must not override.
+	PluginSkillRecordScript.apply_user_edit(record_id,
+		{"steps": "auto-update", "customised": false}, ctx.registry)
+	var post = ctx.registry.call_tool("docket_get", {"id": record_id})
+	check("explicit customised=false honored", post.get("customised") == false)
+	ctx.db.close()
+
+
+func test_apply_user_edit_missing_record_id_errors() -> void:
+	print("test_apply_user_edit_missing_record_id_errors")
+	var ctx := _aue_setup()
+	var r := PluginSkillRecordScript.apply_user_edit("", {"steps": "x"}, ctx.registry)
+	check("missing id → error", r.has("error"))
+	ctx.db.close()

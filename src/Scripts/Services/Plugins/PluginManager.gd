@@ -174,6 +174,15 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) ->
 		var seed_result := await _seed_plugin_skills(def, auto_confirm_skills)
 		result.merge(seed_result)
 
+	# Cross-plugin reactivity (DCR 019df57b T7).  This plugin's declared tools
+	# are now part of the "available" set; any pre-existing skill whose
+	# unsatisfied_deps included one of those tools should re-resolve.
+	var reactivity := _recompute_skill_reactivity()
+	if reactivity.get("updated", 0) > 0:
+		result["reactivity_updated"] = reactivity.get("updated", 0)
+		result["reactivity_now_satisfied"] = reactivity.get("now_satisfied", 0)
+		result["reactivity_now_unsatisfied"] = reactivity.get("now_unsatisfied", 0)
+
 	return result
 
 
@@ -181,18 +190,8 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) ->
 ## Internal helper for install_plugin's skill-seeding path.
 func _seed_plugin_skills(def, auto_confirm: bool) -> Dictionary:
 	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-
-	var available_tools: Dictionary = {}
-	var docket_manager = null
-	if Engine.has_singleton("SingletonObject"):
-		docket_manager = Engine.get_singleton("SingletonObject").docket_manager
-	# Common case in editor / runtime: SingletonObject is an autoload accessed by name.
-	if docket_manager == null and typeof(SingletonObject) != TYPE_NIL:
-		if "docket_manager" in SingletonObject:
-			docket_manager = SingletonObject.docket_manager
-		if "mcp_manager" in SingletonObject and SingletonObject.mcp_manager != null \
-				and "tool_registry" in SingletonObject.mcp_manager:
-			available_tools = SingletonObject.mcp_manager.tool_registry
+	var available_tools: Dictionary = _build_available_tools()
+	var docket_manager = _get_docket_manager()
 
 	var resolved: Array = SeederClass.resolve_deps(def, available_tools)
 
@@ -265,6 +264,83 @@ func _create_plugin_directories(def) -> Dictionary:  # def: PluginDefinition
 	return {"ok": true}
 
 
+## Re-install (upgrade) an already-installed plugin from a new manifest version.
+##
+## DCR 019df57b T4: reconciles skill records against the new manifest:
+##   - new skills → seeded fresh
+##   - pristine record (customised=false) with content changed → silent overwrite
+##   - customised record with content changed → diff dialog (auto-confirm bypass
+##     available for headless/MCP flows via auto_confirm_updates=true)
+##   - record absent from new manifest → marked deprecated (NOT deleted)
+##
+## Returns:
+##   {"ok": true, "id": "...", "reconcile": {...counts...}, ...}
+##   {"error": "..."}
+func update_plugin(manifest_path: String, auto_confirm_updates: bool = false) -> Dictionary:
+	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
+	var def = PluginDef.from_manifest(manifest_path)
+	if def == null:
+		return {"error": "Failed to parse manifest: %s" % manifest_path}
+	if not _db.has_plugin(def.id):
+		return {"error": "Plugin '%s' not installed; use install_plugin first" % def.id}
+
+	if not _db.update_definition(def):
+		return {"error": "Failed to update plugin definition for '%s'" % def.id}
+
+	var result: Dictionary = {"ok": true, "id": def.id}
+
+	var docket_manager = _get_docket_manager()
+	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
+	var available_tools := _build_available_tools()
+
+	# Phase 1: classify each skill action (no docket writes yet).
+	var plan: Dictionary = SeederClass.plan_reconcile(def, available_tools, docket_manager)
+
+	# Phase 2: collect user decisions for prompt_required actions.
+	var decisions: Dictionary = {}
+	for action in plan.get("actions", []):
+		if str(action.get("action", "")) != SeederClass.RECONCILE_PROMPT_REQUIRED:
+			continue
+		var skill: Dictionary = action.get("skill", {})
+		var skill_id := str(skill.get("id", ""))
+		if auto_confirm_updates:
+			decisions[skill_id] = true
+			continue
+		var existing: Dictionary = action.get("existing", {})
+		var accepted: bool = await _show_skill_update_dialog(def, existing, skill)
+		decisions[skill_id] = accepted
+
+	# Phase 3: commit.
+	var reconcile_result: Dictionary = SeederClass.apply_reconcile(plan, decisions, docket_manager)
+	result["reconcile"] = reconcile_result
+
+	# T7 reactivity — tool_deps may have shifted in silent updates / accepted prompts.
+	var reactivity := _recompute_skill_reactivity()
+	if reactivity.get("updated", 0) > 0:
+		result["reactivity_updated"] = reactivity.get("updated", 0)
+		result["reactivity_now_satisfied"] = reactivity.get("now_satisfied", 0)
+		result["reactivity_now_unsatisfied"] = reactivity.get("now_unsatisfied", 0)
+
+	return result
+
+
+## Spawn the update-confirmation dialog for one customised+changed skill,
+## await the user's choice.  Returns true on accept (overwrite), false otherwise.
+func _show_skill_update_dialog(def, existing_record: Dictionary, new_skill: Dictionary) -> bool:
+	if not is_inside_tree():
+		push_warning("[PluginManager] Skill update dialog requested but PluginManager not in SceneTree; declining by default")
+		return false
+	var DialogClass = load("res://Scripts/Services/Plugins/PluginSkillUpdateDialog.gd")
+	var dialog = DialogClass.new()
+	add_child(dialog)
+	var display_name: String = def.name if not def.name.is_empty() else def.id
+	dialog.configure(display_name, existing_record, new_skill)
+	dialog.popup_centered()
+	var accepted: bool = await dialog.update_decision
+	dialog.queue_free()
+	return accepted
+
+
 ## Stop the plugin if running, then remove it from the DB.
 ## If delete_data is true, also remove the plugin's data directory.
 ## Returns {"ok": true} or {"error": "..."}.
@@ -277,6 +353,11 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		var stop_result := stop_plugin(id)
 		if stop_result.get("error"):
 			return {"error": "Could not stop plugin before removal: %s" % stop_result.get("error")}
+
+	# Unseed plugin-shipped skills before removing the plugin from the DB
+	# (DCR 019df57b T6).  Pristine records hard-delete; customised records
+	# auto-convert to source="user" so user edits are preserved.
+	var unseed_result: Dictionary = _unseed_plugin_skills(id)
 
 	_runtime.erase(id)
 
@@ -293,7 +374,74 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 			print("[PluginManager] Deleted plugin data directory: %s" % data_dir)
 
 	print("[PluginManager] Removed plugin '%s'" % id)
-	return {"ok": true}
+
+	# Cross-plugin reactivity (DCR 019df57b T7).  Plugin's declared tools are
+	# no longer "available"; any remaining skill (any source) whose tool_deps
+	# referenced them now has them in unsatisfied_deps.  Runs AFTER _db.remove
+	# so the uninstalled plugin's tools fall out of _build_available_tools.
+	var reactivity := _recompute_skill_reactivity()
+
+	var result: Dictionary = {"ok": true}
+	if unseed_result.get("deleted", 0) > 0 or unseed_result.get("kept", 0) > 0:
+		result["skills_deleted"] = unseed_result.get("deleted", 0)
+		result["skills_kept"] = unseed_result.get("kept", 0)
+		result["skills_kept_ids"] = unseed_result.get("kept_skill_ids", [])
+	if reactivity.get("updated", 0) > 0:
+		result["reactivity_updated"] = reactivity.get("updated", 0)
+		result["reactivity_now_satisfied"] = reactivity.get("now_satisfied", 0)
+		result["reactivity_now_unsatisfied"] = reactivity.get("now_unsatisfied", 0)
+	return result
+
+
+## Remove plugin-seeded skill records on uninstall.  Pristine records get
+## hard-deleted; customised records get their source flipped to "user" with
+## pristine_hash / pristine_content cleared (no longer reconcilable).
+func _unseed_plugin_skills(plugin_id: String) -> Dictionary:
+	var docket_manager = _get_docket_manager()
+	if docket_manager == null:
+		return {"deleted": 0, "kept": 0, "kept_skill_ids": []}
+	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
+	return SeederClass.unseed(plugin_id, docket_manager)
+
+
+## Recompute unsatisfied_deps for every skill record after a plugin lifecycle
+## change (DCR 019df57b T7).  Called from install_plugin and remove_plugin
+## after their main work commits.
+func _recompute_skill_reactivity() -> Dictionary:
+	var docket_manager = _get_docket_manager()
+	if docket_manager == null:
+		return {"updated": 0, "now_satisfied": 0, "now_unsatisfied": 0}
+	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
+	return SeederClass.recompute_unsatisfied(_build_available_tools(), docket_manager)
+
+
+## Build the union of (1) MCP-registered tools and (2) all installed plugins'
+## declared tools.  This is the "available_tools" set used by skill-deps
+## resolution: a tool counts as available if it's currently in the MCP
+## registry OR known to be declared by an installed plugin (regardless of
+## whether that plugin is currently running — invocation time enforces that).
+func _build_available_tools() -> Dictionary:
+	var available: Dictionary = {}
+	if typeof(SingletonObject) != TYPE_NIL and "mcp_manager" in SingletonObject \
+			and SingletonObject.mcp_manager != null \
+			and "tool_registry" in SingletonObject.mcp_manager:
+		for tool_name in (SingletonObject.mcp_manager.tool_registry as Dictionary):
+			available[tool_name] = true
+	if _db != null:
+		for def in _db.get_all():
+			for tool_entry in def.tools:
+				var tname := str(tool_entry.get("name", ""))
+				if not tname.is_empty():
+					available[tname] = true
+	return available
+
+
+## Resolve the docket manager via SingletonObject if available, else null.
+## Used by skill-seeding helpers; tests bypass this and pass a ToolRegistry directly.
+func _get_docket_manager():
+	if typeof(SingletonObject) != TYPE_NIL and "docket_manager" in SingletonObject:
+		return SingletonObject.docket_manager
+	return null
 
 
 # ---------------------------------------------------------------------------

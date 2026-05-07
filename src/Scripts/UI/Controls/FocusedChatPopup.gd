@@ -253,11 +253,20 @@ func _add_skill_from_item(item: Dictionary, proj_name: String) -> void:
 		if parsed is Array:
 			for dep in parsed:
 				deps_str.append(str(dep))
+	# Plugin-shipped skills metadata (DCR 019df57b T5).
+	var unsatisfied: Array[String] = []
+	var unsat_raw = item.get("unsatisfied_deps", [])
+	if unsat_raw is Array:
+		for dep in unsat_raw:
+			unsatisfied.append(str(dep))
 	_skills[id] = {
 		"title": str(item.get("title", "")),
 		"description": str(item.get("description", "")),
 		"tool_deps": deps_str,
 		"project": proj_name,
+		"source": str(item.get("source", "")),
+		"deprecated": bool(item.get("deprecated", false)),
+		"unsatisfied_deps": unsatisfied,
 	}
 
 
@@ -292,17 +301,45 @@ func _render_available_list(filter: String) -> void:
 		if id in _selected_skill_ids:
 			continue
 		var skill: Dictionary = _skills[id]
+		# DCR 019df57b T5: hide skills with non-empty unsatisfied_deps from
+		# the active picker.  They're still browsable in the docket UI; we
+		# just don't surface them where one click activates them, since
+		# their tool_deps would fail to bind.
+		var unsat: Array = skill.get("unsatisfied_deps", [])
+		if unsat is Array and not unsat.is_empty():
+			continue
+		# Deprecated skills are rendered with a tag and dropped to the bottom
+		# of the user's attention rather than fully hidden — user may still
+		# want to pick them deliberately.
 		var skill_title: String = skill["title"]
 		var desc: String = skill["description"]
 		if not filter_lower.is_empty():
 			if not skill_title.to_lower().contains(filter_lower) and not desc.to_lower().contains(filter_lower):
 				continue
 		var deps_count: int = skill["tool_deps"].size()
-		var display: String = "%s  (%d tools)" % [skill_title, deps_count] if deps_count > 0 else skill_title
+		var source: String = str(skill.get("source", ""))
+		var deprecated: bool = bool(skill.get("deprecated", false))
+
+		# Build display string with plugin badge and deprecation tag.
+		var display: String = skill_title
+		if source.begins_with("plugin:"):
+			var plugin_id := source.substr(7)
+			display = "%s  [from %s]" % [skill_title, plugin_id]
+		if deprecated:
+			display = "%s  [deprecated]" % display
+		if deps_count > 0:
+			display = "%s  (%d tools)" % [display, deps_count]
+
 		var idx := _available_list.add_item(display)
 		_available_list.set_item_metadata(idx, id)
-		if not desc.is_empty():
-			_available_list.set_item_tooltip(idx, desc)
+		var tooltip := desc
+		if source.begins_with("plugin:"):
+			var plugin_tooltip := "Seeded by plugin '%s'" % source.substr(7)
+			tooltip = plugin_tooltip if tooltip.is_empty() else "%s\n\n%s" % [plugin_tooltip, tooltip]
+		if deprecated:
+			tooltip = "Marked deprecated by plugin upstream — kept available in case you still want it.\n\n%s" % tooltip
+		if not tooltip.is_empty():
+			_available_list.set_item_tooltip(idx, tooltip)
 
 
 func _render_selected_list() -> void:

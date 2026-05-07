@@ -506,9 +506,11 @@ func test_plugin_skills_skill_get_lean_view() -> void:
 		var lean := registry.call_tool("docket_skill_get", {"id": sid})
 		check("lean view exposes source", lean.get("source", "") == "plugin:demo")
 		check("lean view exposes deprecated when true", lean.get("deprecated", false) == true)
+		check("lean view exposes unsatisfied_deps for picker filter",
+			lean.has("unsatisfied_deps")
+			and (lean.get("unsatisfied_deps", []) as Array).size() == 1)
 		check("lean view OMITS pristine_hash", not lean.has("pristine_hash"))
 		check("lean view OMITS pristine_content", not lean.has("pristine_content"))
-		check("lean view OMITS unsatisfied_deps", not lean.has("unsatisfied_deps"))
 		check("lean view OMITS customised", not lean.has("customised"))
 
 	db.close()
