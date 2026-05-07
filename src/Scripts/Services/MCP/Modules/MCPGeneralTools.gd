@@ -142,11 +142,13 @@ func _create_plugin_editor(args: Dictionary) -> Dictionary:
 	if tab_title.is_empty():
 		tab_title = str(editor_item.get("name", editor_item_id))
 
-	# Resolve panel kind from ui_panels (godot_scene vs html).
+	# Resolve panel kind + render_mode from ui_panels.
 	var panel_kind: String = "html"
+	var render_mode: String = "single"
 	for pd in def.ui_panels:
 		if pd is Dictionary and pd.get("name", "") == panel_name:
 			panel_kind = str(pd.get("kind", "html"))
+			render_mode = str(pd.get("render_mode", "single"))
 			break
 
 	var editor_pane = SingletonObject.editor_pane
@@ -159,6 +161,48 @@ func _create_plugin_editor(args: Dictionary) -> Dictionary:
 	if panel_kind != "godot_scene":
 		return MCPToolUtils.error("html_panel_anonymous_create_unsupported: kind=%s" % panel_kind)
 
+	# paired_dsl panels (e.g. cad) expect a sibling TEXT editor sharing a
+	# DocumentBuffer with the render panel. The file-open path
+	# (SingletonObject._open_paired_dsl) handles this for path-bound .mcad —
+	# the anonymous-create path mirrors that shape using an unbacked buffer
+	# (DocumentRegistry mints a synthetic identity that survives Save-As).
+	if render_mode == "paired_dsl":
+		var unbacked_r := DocumentRegistry.get_instance().create_unbacked_buffer()
+		if not unbacked_r.ok:
+			return MCPToolUtils.error("unbacked_buffer_creation_failed: %s" % unbacked_r.get("error", "?"))
+		var unbacked_buf: DocumentBuffer = unbacked_r.buffer
+		var unbacked_path: String = unbacked_buf.file_path
+
+		# Text editor: anonymous (no `file`), bind to unbacked buffer manually.
+		var text_tab: String = "%s (source)" % tab_title
+		var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, null, text_tab)
+		if text_editor == null:
+			return MCPToolUtils.error("text_editor_creation_failed")
+		text_editor.bind_to_buffer_path(unbacked_path)
+
+		# Render editor: anonymous plugin scene, broker attaches the unbacked
+		# buffer so text_changed signals from the TEXT editor flow to the panel
+		# via the substrate-reserved attach_buffer / text_changed channels.
+		var render_editor: Editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
+		if render_editor == null:
+			return MCPToolUtils.error("render_editor_creation_failed")
+		var broker = SingletonObject.plugin_scene_panel_broker
+		if broker != null:
+			broker.attach_buffer_to_panel(plugin_id, panel_name, unbacked_buf)
+		else:
+			push_warning("[minerva_create_plugin_editor] plugin_scene_panel_broker missing; text_changed will not flow to render panel")
+
+		return MCPToolUtils.success({
+			"editor_name": str(render_editor.tab_title),
+			"text_editor_name": str(text_editor.tab_title),
+			"plugin_id": plugin_id,
+			"panel_name": panel_name,
+			"panel_kind": panel_kind,
+			"render_mode": render_mode,
+			"buffer_path": unbacked_path,
+		})
+
+	# Non-paired_dsl (single-render) anonymous panel: same as before.
 	var editor = editor_pane.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
 	if editor == null:
 		return MCPToolUtils.error("editor_creation_failed")
@@ -168,4 +212,5 @@ func _create_plugin_editor(args: Dictionary) -> Dictionary:
 		"plugin_id": plugin_id,
 		"panel_name": panel_name,
 		"panel_kind": panel_kind,
+		"render_mode": render_mode,
 	})

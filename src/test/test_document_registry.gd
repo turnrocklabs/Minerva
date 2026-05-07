@@ -20,6 +20,16 @@ func _init() -> void:
 	test_list_buffer_paths()
 	test_list_dirty_buffer_paths()
 
+	test_create_unbacked_returns_buffer_with_synthetic_path()
+	test_create_unbacked_distinct_per_call()
+	test_unbacked_lookup_via_get_or_create()
+	test_get_or_create_unbacked_missing_errors()
+	test_rebind_buffer_unbacked_to_real_path()
+	test_rebind_buffer_preserves_instance_identity()
+	test_rebind_buffer_collision_errors()
+	test_dispose_unbacked_buffer()
+	test_is_unbacked_path_helper()
+
 	_teardown()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -150,3 +160,108 @@ func test_list_dirty_buffer_paths() -> void:
 	check("one dirty buffer", dirty_paths.size() == 1)
 	check("dirty path listed", dirty_path in dirty_paths)
 	check("clean path not listed", not (clean_path in dirty_paths))
+
+
+# ---------------------------------------------------------------------------
+# Unbacked buffers + rebind (anonymous editor support)
+# ---------------------------------------------------------------------------
+
+func test_create_unbacked_returns_buffer_with_synthetic_path() -> void:
+	print("test_create_unbacked_returns_buffer_with_synthetic_path")
+	var reg := _fresh_registry()
+	var r := reg.create_unbacked_buffer()
+	check("ok=true", r.ok == true)
+	var buf: DocumentBuffer = r.buffer
+	check("buffer is non-null", buf != null)
+	check("file_path begins with unbacked://", buf.file_path.begins_with("unbacked://"))
+	check("text starts empty", buf.text == "")
+	check("dirty starts false", buf.dirty == false)
+
+
+func test_create_unbacked_distinct_per_call() -> void:
+	print("test_create_unbacked_distinct_per_call")
+	var reg := _fresh_registry()
+	var a: DocumentBuffer = reg.create_unbacked_buffer().buffer
+	var b: DocumentBuffer = reg.create_unbacked_buffer().buffer
+	check("paths differ", a.file_path != b.file_path)
+	check("instances differ", a != b)
+
+
+func test_unbacked_lookup_via_get_or_create() -> void:
+	print("test_unbacked_lookup_via_get_or_create")
+	var reg := _fresh_registry()
+	var minted: DocumentBuffer = reg.create_unbacked_buffer().buffer
+	var lookup_r := reg.get_or_create_buffer(minted.file_path)
+	check("lookup succeeds", lookup_r.ok == true)
+	check("returns same instance", lookup_r.buffer == minted)
+
+
+func test_get_or_create_unbacked_missing_errors() -> void:
+	print("test_get_or_create_unbacked_missing_errors")
+	var reg := _fresh_registry()
+	# Synthetic path that was never minted via create_unbacked_buffer.
+	var r := reg.get_or_create_buffer("unbacked://does-not-exist")
+	check("ok=false", r.ok == false)
+	check("error mentions create_unbacked_buffer",
+		"create_unbacked_buffer" in str(r.get("error", "")))
+
+
+func test_rebind_buffer_unbacked_to_real_path() -> void:
+	print("test_rebind_buffer_unbacked_to_real_path")
+	var reg := _fresh_registry()
+	var buf: DocumentBuffer = reg.create_unbacked_buffer().buffer
+	var old_id: String = buf.file_path
+	var real_path := _temp_path("rebound.txt")
+	buf.apply_edit("seed text")  # Pre-rebind content survives.
+
+	var r := reg.rebind_buffer(old_id, real_path)
+	check("rebind ok", r.ok == true)
+	check("buffer.file_path is new path", buf.file_path == real_path)
+	check("old key removed", not reg.has_buffer(old_id))
+	check("new key registered", reg.has_buffer(real_path))
+	check("text preserved", buf.text == "seed text")
+
+
+func test_rebind_buffer_preserves_instance_identity() -> void:
+	print("test_rebind_buffer_preserves_instance_identity")
+	var reg := _fresh_registry()
+	var buf: DocumentBuffer = reg.create_unbacked_buffer().buffer
+	var old_id: String = buf.file_path
+	var real_path := _temp_path("identity.txt")
+	reg.rebind_buffer(old_id, real_path)
+	# Looking up via the new path returns the SAME instance.
+	var fetched: DocumentBuffer = reg.get_or_create_buffer(real_path).buffer
+	check("same instance after rebind", fetched == buf)
+
+
+func test_rebind_buffer_collision_errors() -> void:
+	print("test_rebind_buffer_collision_errors")
+	var reg := _fresh_registry()
+	var occupied := _temp_path("occupied.txt")
+	var f := FileAccess.open(occupied, FileAccess.WRITE)
+	f.store_string("existing")
+	f.close()
+	reg.get_or_create_buffer(occupied)  # Another buffer at this path.
+
+	var unbacked: DocumentBuffer = reg.create_unbacked_buffer().buffer
+	var r := reg.rebind_buffer(unbacked.file_path, occupied)
+	check("rebind into occupied path errors", r.ok == false)
+	check("error mentions buffer already exists",
+		"already exists" in str(r.get("error", "")))
+
+
+func test_dispose_unbacked_buffer() -> void:
+	print("test_dispose_unbacked_buffer")
+	var reg := _fresh_registry()
+	var buf: DocumentBuffer = reg.create_unbacked_buffer().buffer
+	var path: String = buf.file_path
+	check("buffer registered before dispose", reg.has_buffer(path))
+	reg.dispose_buffer(path)
+	check("buffer gone after dispose", not reg.has_buffer(path))
+
+
+func test_is_unbacked_path_helper() -> void:
+	print("test_is_unbacked_path_helper")
+	check("real path not unbacked", DocumentRegistry.is_unbacked_path("/abs/foo.txt") == false)
+	check("synthetic path is unbacked", DocumentRegistry.is_unbacked_path("unbacked://abc-def") == true)
+	check("empty not unbacked", DocumentRegistry.is_unbacked_path("") == false)

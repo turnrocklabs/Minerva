@@ -853,6 +853,17 @@ func _load_text_file(filename: String):
 	# %SaveButton.disabled = false
 
 
+## Public hook for code outside Editor that needs to bind this editor to an
+## existing buffer (e.g. minerva_create_plugin_editor pairing an unbacked buffer
+## with a fresh anonymous TEXT editor). Thin wrapper around _attach_document_buffer.
+##
+## The buffer must already exist in the registry. For unbacked anonymous
+## buffers, mint via DocumentRegistry.create_unbacked_buffer() and pass that
+## buffer's file_path here.
+func bind_to_buffer_path(path: String) -> void:
+	_attach_document_buffer(path)
+
+
 ## Attach this editor to the DocumentRegistry buffer for path. Detaches from any
 ## previously held buffer first (covers Save As / file-rename flows where the
 ## tab's path changes). Sets _document_buffer to the new buffer or null on error.
@@ -860,6 +871,22 @@ func _attach_document_buffer(path: String) -> void:
 	if _document_buffer != null and _document_buffer.file_path == path:
 		# Already attached to the right buffer; nothing to do.
 		return
+
+	# Save-As of an unbacked editor (anonymous → real path): rebind the
+	# existing buffer in-place instead of detach + create-new. Preserves
+	# instance identity so any other panels (e.g. paired_dsl render side)
+	# still attached to this buffer migrate atomically with us.
+	if (_document_buffer != null
+			and DocumentRegistry.is_unbacked_path(_document_buffer.file_path)
+			and not DocumentRegistry.is_unbacked_path(path)):
+		var registry_rb := DocumentRegistry.get_instance()
+		var rebind_r := registry_rb.rebind_buffer(_document_buffer.file_path, path)
+		if rebind_r.ok:
+			# Buffer's file_path is now `path`; nothing else to do — the editor
+			# is still attached, signal connection still live.
+			return
+		push_warning("[Editor] rebind_buffer failed for '%s' → '%s': %s; falling back to detach+create" %
+			[_document_buffer.file_path, path, rebind_r.error])
 
 	_detach_document_buffer()
 

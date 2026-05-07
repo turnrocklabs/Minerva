@@ -24,6 +24,24 @@ signal external_change_pending(path: String)
 ## the buffer it referenced.
 signal buffer_disposed(path: String)
 
+# ── Unbacked buffer support ────────────────────────────────────────────────
+#
+# An "unbacked" buffer is one with no file path — created for anonymous
+# editors (e.g. minerva_create_plugin_editor on a paired_dsl panel).
+# It uses a synthetic identity of the form "unbacked://<uid>" as its key in
+# _buffers and its file_path. No disk read on creation, no watcher subscription.
+# On Save-As (Editor.save_file_to_disc(real_path)), the editor calls
+# rebind_buffer to atomically re-key the buffer to the real path — preserving
+# its instance identity so other panels (e.g. paired_dsl render side) stay
+# attached without the broker having to re-send attach_buffer.
+
+const _UNBACKED_PREFIX := "unbacked://"
+
+
+static func is_unbacked_path(path: String) -> bool:
+	return path.begins_with(_UNBACKED_PREFIX)
+
+
 # ── Singleton ───────────────────────────────────────────────────────────────
 
 static var _instance: DocumentRegistry = null
@@ -69,8 +87,17 @@ static func _watcher_owner_id_for(abs_path: String) -> String:
 ## is created (supports the "agent writes to a new path" case).
 ## Subsequent calls for the same resolved path return the same instance.
 ##
+## For unbacked paths (begin with "unbacked://"), this is a lookup-only call —
+## returns the existing buffer if one was minted via create_unbacked_buffer,
+## otherwise an error. Unbacked buffers must be created explicitly.
+##
 ## Returns {ok: true, buffer: DocumentBuffer} or {ok: false, error: String}.
 func get_or_create_buffer(path: String) -> Dictionary:
+	if is_unbacked_path(path):
+		if _buffers.has(path):
+			return {"ok": true, "buffer": _buffers[path]}
+		return {"ok": false, "error": "unbacked buffer not found: %s (use create_unbacked_buffer to mint one)" % path}
+
 	var resolved := PathResolver.resolve(path)
 	if not resolved.ok:
 		return {"ok": false, "error": resolved.error}
@@ -92,8 +119,69 @@ func get_or_create_buffer(path: String) -> Dictionary:
 	return {"ok": true, "buffer": buffer}
 
 
+## Mint a new unbacked buffer with a synthetic identity.
+##
+## Used for anonymous editors (created via minerva_create_plugin_editor on
+## paired_dsl panels, etc.) that have no file path yet. The buffer's
+## file_path is "unbacked://<uid>" until Save-As re-keys it via rebind_buffer.
+##
+## Returns {ok: true, buffer: DocumentBuffer}.
+func create_unbacked_buffer() -> Dictionary:
+	var uid: String = "%d-%d" % [Time.get_ticks_usec(), randi()]
+	var synthetic: String = _UNBACKED_PREFIX + uid
+	# Collision is extremely unlikely but cheap to guard against.
+	while _buffers.has(synthetic):
+		uid = "%d-%d" % [Time.get_ticks_usec(), randi()]
+		synthetic = _UNBACKED_PREFIX + uid
+	var buf := DocumentBuffer.new(synthetic, "")
+	_buffers[synthetic] = buf
+	# Intentionally NOT subscribed to FileWatcherService — no real file.
+	return {"ok": true, "buffer": buf}
+
+
+## Atomically re-key a buffer from old_path to new_path. Used by Save-As on
+## unbacked editors — promotes the synthetic identity to a real path while
+## preserving the buffer instance so already-attached panels stay attached.
+##
+## new_path must not already have a buffer (other than old_path itself) — a
+## collision would mean two distinct buffers want the same canonical path,
+## which is unsafe to merge silently.
+##
+## Returns {ok: true, buffer: DocumentBuffer} or {ok: false, error: String}.
+func rebind_buffer(old_path: String, new_path: String) -> Dictionary:
+	if not _buffers.has(old_path):
+		return {"ok": false, "error": "no buffer for path: %s" % old_path}
+
+	var resolved_new: String = new_path
+	if not is_unbacked_path(new_path):
+		var resolved := PathResolver.resolve(new_path)
+		if not resolved.ok:
+			return {"ok": false, "error": resolved.error}
+		resolved_new = resolved.path
+
+	if resolved_new == old_path:
+		return {"ok": true, "buffer": _buffers[old_path]}
+	if _buffers.has(resolved_new):
+		return {"ok": false, "error": "buffer already exists for: %s" % resolved_new}
+
+	var buf: DocumentBuffer = _buffers[old_path]
+	_buffers.erase(old_path)
+	_buffers[resolved_new] = buf
+	buf.file_path = resolved_new
+
+	# Adjust watcher subscriptions — only real paths are watched.
+	if not is_unbacked_path(old_path):
+		FileWatcherService.get_instance().unwatch(old_path, _watcher_owner_id_for(old_path))
+	if not is_unbacked_path(resolved_new):
+		_subscribe_to_watcher(resolved_new)
+
+	return {"ok": true, "buffer": buf}
+
+
 ## Whether a buffer currently exists for path.
 func has_buffer(path: String) -> bool:
+	if is_unbacked_path(path):
+		return _buffers.has(path)
 	var resolved := PathResolver.resolve(path)
 	if not resolved.ok:
 		return false
@@ -106,13 +194,18 @@ func has_buffer(path: String) -> bool:
 ## Discard / Cancel) before calling this. dispose_buffer is intentionally
 ## low-level so tests and force-close paths can use it without policy.
 func dispose_buffer(path: String) -> void:
-	var resolved := PathResolver.resolve(path)
-	if not resolved.ok:
-		return
-	var abs_path: String = resolved.path
+	var abs_path: String
+	if is_unbacked_path(path):
+		abs_path = path
+	else:
+		var resolved := PathResolver.resolve(path)
+		if not resolved.ok:
+			return
+		abs_path = resolved.path
 	_buffers.erase(abs_path)
 	_prompt_open.erase(abs_path)
-	FileWatcherService.get_instance().unwatch(abs_path, _watcher_owner_id_for(abs_path))
+	if not is_unbacked_path(abs_path):
+		FileWatcherService.get_instance().unwatch(abs_path, _watcher_owner_id_for(abs_path))
 	buffer_disposed.emit(abs_path)
 
 
