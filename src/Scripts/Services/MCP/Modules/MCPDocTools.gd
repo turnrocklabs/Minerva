@@ -37,7 +37,7 @@ func register_tools() -> void:
 		}, []), "documents")
 
 	server._register_tool("minerva_doc_write",
-		"Replace a document's full text. Pass either `path` or `editor_name` (exactly one). Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
+		"Replace a document's full text. Pass either `path` or `editor_name` (exactly one). Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. For plugin-scene editors (e.g. cad): plain text is wrapped as {\"source\": text} — pass DSL as-is without JSON-stringifying; pass a JSON object literal if you need fuller control over the Dictionary the plugin receives. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
 		_dual_key_schema({
 			"text": {"type": "string", "description": "Full text content"},
 		}, ["text"]), "documents")
@@ -259,18 +259,26 @@ func _doc_write(args: Dictionary) -> Dictionary:
 				"editor_name": t.editor_name,
 			})
 		KIND_PLUGIN_SCENE:
-			# Parse the supplied text as JSON; the plugin is expected to load
-			# Dictionary documents. Plain-string payloads are passed through.
+			# Plugin scenes expect Dictionary documents (per
+			# _on_panel_load_request signature). Two input shapes are accepted:
+			#  1. JSON object/array text → parsed and passed as-is.
+			#  2. Plain text → wrapped as {"source": text}, the convention used
+			#     by paired-DSL plugins (e.g. cad). Lets the LLM pass raw DSL
+			#     without having to JSON-stringify it.
 			var editor2 = t.editor
 			if editor2.plugin_scene_root == null:
 				return _err("plugin_scene_root_missing: editor '%s' has no mounted plugin scene" % t.editor_name)
-			var doc: Variant = text
+			var doc: Dictionary = {}
 			var trimmed := text.strip_edges()
 			if trimmed.begins_with("{") or trimmed.begins_with("["):
 				var parsed: Variant = JSON.parse_string(text)
 				if parsed == null:
-					return _err("plugin_scene_invalid_json: text does not parse as JSON")
-				doc = parsed
+					return _err("plugin_scene_invalid_json: text starts with { or [ but does not parse as JSON")
+				if not (parsed is Dictionary):
+					return _err("plugin_scene_unsupported_payload: parsed JSON is not a Dictionary (got %s)" % type_string(typeof(parsed)))
+				doc = parsed as Dictionary
+			else:
+				doc = {"source": text}
 			var ok2: bool = PluginScenePanelHost.invoke_load(editor2.plugin_scene_root, doc)
 			if not ok2:
 				return _err("plugin_scene_load_request_failed: scene did not implement _on_panel_load_request")
