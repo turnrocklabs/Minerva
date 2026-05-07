@@ -156,7 +156,7 @@ static func materialize(plugin_id: String, resolved: Array, docket_caller) -> Di
 				continue
 
 		var record := build_install_record(plugin_id, skill, unsatisfied)
-		var create_result = docket_caller.call_tool("docket_create", record)
+		var create_result = _create_and_activate_skill(record, docket_caller)
 		if create_result is Dictionary and not create_result.has("error"):
 			seeded += 1
 		else:
@@ -164,6 +164,31 @@ static func materialize(plugin_id: String, resolved: Array, docket_caller) -> Di
 				[manifest_skill_id, plugin_id, str(create_result)])
 
 	return {"seeded": seeded, "skipped": skipped, "deferred_to_update": deferred}
+
+
+## docket_create + immediate transition to "active".  Plugin-seeded skills land
+## "draft" by schema default, which docket_skill_list filters out — making the
+## skill invisible to the picker.  Run the draft→active transition right after
+## create so the skill is usable as soon as the user accepts the install dialog.
+##
+## Returns the create_result dict (with the new record id) on full success, or
+## the first failing call's error dict.
+static func _create_and_activate_skill(record: Dictionary, docket_caller) -> Dictionary:
+	var create_result = docket_caller.call_tool("docket_create", record)
+	if not (create_result is Dictionary) or create_result.has("error"):
+		return create_result
+	var new_id := str(create_result.get("id", ""))
+	if new_id.is_empty():
+		return create_result
+	var trans_result = docket_caller.call_tool("docket_transition", {
+		"id": new_id,
+		"to": "active",
+		"note": "auto-activated by plugin skill seeder",
+	})
+	if trans_result is Dictionary and trans_result.has("error"):
+		push_warning("[PluginSkillSeeder] could not activate skill '%s': %s" %
+			[new_id, str(trans_result)])
+	return create_result
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +336,7 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 				# Defer to materialize-style create.
 				var unsatisfied = entry.get("unsatisfied", [])
 				var record := build_install_record(_extract_plugin_id(plan, skill), skill, unsatisfied)
-				var create_result = docket_caller.call_tool("docket_create", record)
+				var create_result = _create_and_activate_skill(record, docket_caller)
 				if create_result is Dictionary and not create_result.has("error"):
 					seeded += 1
 			RECONCILE_SILENT_UPDATE:
