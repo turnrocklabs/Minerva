@@ -52,7 +52,7 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 		"minerva_plugin_list":
 			return _handle_plugin_list(args)
 		"minerva_plugin_install":
-			return _handle_plugin_install(args)
+			return await _handle_plugin_install(args)
 		"minerva_plugin_remove":
 			return await _handle_plugin_remove(args)
 		"minerva_plugin_start":
