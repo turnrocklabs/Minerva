@@ -175,12 +175,14 @@ func _create_plugin_editor(args: Dictionary) -> Dictionary:
 		var unbacked_path: String = unbacked_buf.file_path
 
 		# Text editor: anonymous (no `file`), bind to unbacked buffer manually.
-		# Use the same display title as the render panel so the paired tabs
-		# read consistently (matches the path-bound _open_paired_dsl shape:
-		# both editors share the file basename). EditorPane disambiguates
-		# duplicate titles internally; MCPDocTools resolves either tab name
-		# back to the shared DocumentBuffer via get_document_buffer().
-		var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, null, tab_title)
+		# Distinct title from the render tab — when both share the same name,
+		# find_editor_by_name returns whichever is first in the list, breaking
+		# minerva_doc_write's resolver: it picks the TEXT editor and skips the
+		# PLUGIN_SCENE branch where invoke_apply_sync lives, so doc_write reply
+		# arrives without last_eval. F2's buffer routing keeps both tabs in sync
+		# via the shared DocumentBuffer regardless of which name the agent uses.
+		var text_tab: String = "%s (source)" % tab_title
+		var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, null, text_tab)
 		if text_editor == null:
 			return MCPToolUtils.error("text_editor_creation_failed")
 		text_editor.bind_to_buffer_path(unbacked_path)
