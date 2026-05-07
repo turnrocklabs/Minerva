@@ -205,7 +205,27 @@ func _doc_read(args: Dictionary) -> Dictionary:
 				"editor_name": t.editor_name,
 			})
 		KIND_PLUGIN_SCENE:
-			return _err("plugin_scene_unsupported: minerva_doc_read on plugin-scene editors lands in Slice 2")
+			# host_owned: round-trip the plugin's _on_panel_save_request → JSON.
+			var editor2 = t.editor
+			if editor2.plugin_scene_root == null:
+				return _err("plugin_scene_root_missing: editor '%s' has no mounted plugin scene" % t.editor_name)
+			var payload: Variant = PluginScenePanelHost.invoke_save(editor2.plugin_scene_root, {})
+			if payload == null:
+				return _err("plugin_scene_save_request_returned_null: scene did not implement _on_panel_save_request or returned null")
+			var serialised: String = ""
+			if payload is Dictionary:
+				serialised = JSON.stringify(payload, "\t")
+			elif payload is String:
+				serialised = payload
+			else:
+				return _err("plugin_scene_unsupported_payload_type: %s" % type_string(typeof(payload)))
+			return _ok({
+				"text": serialised,
+				"version": 0,
+				"dirty": false,
+				"path": t.path,
+				"editor_name": t.editor_name,
+			})
 	return _err("unhandled kind: %s" % t.kind)
 
 
@@ -239,7 +259,27 @@ func _doc_write(args: Dictionary) -> Dictionary:
 				"editor_name": t.editor_name,
 			})
 		KIND_PLUGIN_SCENE:
-			return _err("plugin_scene_unsupported: minerva_doc_write on plugin-scene editors lands in Slice 2")
+			# Parse the supplied text as JSON; the plugin is expected to load
+			# Dictionary documents. Plain-string payloads are passed through.
+			var editor2 = t.editor
+			if editor2.plugin_scene_root == null:
+				return _err("plugin_scene_root_missing: editor '%s' has no mounted plugin scene" % t.editor_name)
+			var doc: Variant = text
+			var trimmed := text.strip_edges()
+			if trimmed.begins_with("{") or trimmed.begins_with("["):
+				var parsed: Variant = JSON.parse_string(text)
+				if parsed == null:
+					return _err("plugin_scene_invalid_json: text does not parse as JSON")
+				doc = parsed
+			var ok2: bool = PluginScenePanelHost.invoke_load(editor2.plugin_scene_root, doc)
+			if not ok2:
+				return _err("plugin_scene_load_request_failed: scene did not implement _on_panel_load_request")
+			return _ok({
+				"version": 0,
+				"dirty": true,
+				"path": t.path,
+				"editor_name": t.editor_name,
+			})
 	return _err("unhandled kind: %s" % t.kind)
 
 
@@ -325,10 +365,22 @@ func _doc_save(args: Dictionary) -> Dictionary:
 		return _err("editor_not_found: %s" % editor_name)
 
 	var ed_type: int = int(editor.type) if "type" in editor else -1
-	if ed_type == Editor.Type.PLUGIN_SCENE:
-		return _err("plugin_scene_unsupported: minerva_doc_save on plugin-scene editors lands in Slice 2")
-
 	var ed_file: String = str(editor.file) if "file" in editor else ""
+
+	if ed_type == Editor.Type.PLUGIN_SCENE:
+		# host_owned save mode is the only one wired through doc_save; the
+		# editor's save_file_to_disc handles the dispatch (per Editor.gd
+		# Type.PLUGIN_SCENE branch). plugin_owned and "none" return cleanly
+		# from save_file_to_disc but don't actually write — surface that.
+		if editor.plugin_save_mode == "none":
+			return _err("plugin_scene_save_mode_none: this plugin's panel does not write to disk")
+		if editor.plugin_save_mode == "plugin_owned":
+			return _err("plugin_scene_save_mode_plugin_owned: not yet implemented; the plugin owns saving — call its tool directly")
+		if ed_file.is_empty() and not have_path:
+			return _err("editor '%s' is anonymous; pass `path` to bind via Save-As" % editor_name)
+		var save_target_p := path_arg if have_path else ed_file
+		editor.save_file_to_disc(save_target_p)
+		return _ok({"path": save_target_p, "editor_name": str(editor.tab_title)})
 
 	# Anonymous editor: path is required to bind it (Save-As).
 	if ed_file.is_empty() and not have_path:
