@@ -78,6 +78,12 @@ func _format_skill(item: Dictionary) -> Dictionary:
 	# Include all non-empty skill fields
 	for field in ["description", "steps", "preconditions", "outcome",
 				   "component", "topic", "tags", "quality", "tool_deps",
+				   # prompt_text holds the long-form §0–§N system_prompt
+				   # (manifest's `system_prompt`). Without it, MCPSkillTools'
+				   # _compose_skill_instructions falls back to steps-only and
+				   # plugin-shipped guidance (e.g. cad's "MCAD is NOT OpenSCAD"
+				   # callout) never reaches the activated agent.
+				   "prompt_text",
 				   # Plugin-shipped skills metadata (DCR 019df57b).
 				   # source: plugin badge; deprecated: hide rule;
 				   # unsatisfied_deps: picker hides when non-empty (T5).
