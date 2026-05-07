@@ -74,6 +74,14 @@ var ui_ipc_messages: Array[String] = []
 ## Tool names must start with "minerva_<id>_".
 var tools: Array[Dictionary] = []
 
+## Skill records contributed by this plugin (DCR 019df57b).
+## Each entry is a Dictionary mirroring the docket skill schema with required
+## keys: id, title, summary, system_prompt, outcome, preconditions, steps,
+## tool_deps, target.  Optional: optimization.
+## Skill IDs MUST match "^minerva_<id>_[a-z0-9_]+$" (mirrors tool prefix rule).
+## Materialised into user.dct on install with source="plugin:<id>".
+var skills: Array[Dictionary] = []
+
 # ---------------------------------------------------------------------------
 # Permissions
 # ---------------------------------------------------------------------------
@@ -141,6 +149,13 @@ const CAPABILITIES := [
 	"project_state",      # participates in .minproj save/load (panel + server hooks)
 	"host_owned_save",    # panel writes its own document file via Ctrl+S
 	"project_export",     # contributes sidecar files to .minpackage export
+]
+
+## Required fields on each entry of manifest.skills[] (DCR 019df57b).
+## "optimization" is allowed but optional; absent → record stores {}.
+const REQUIRED_SKILL_FIELDS := [
+	"id", "title", "summary", "system_prompt", "outcome",
+	"preconditions", "steps", "tool_deps", "target",
 ]
 
 # ---------------------------------------------------------------------------
@@ -249,6 +264,8 @@ func to_dict() -> Dictionary:
 		"autostart": autostart,
 		"auto_reload": auto_reload,
 	}
+	if not skills.is_empty():
+		result["skills"] = skills.duplicate(true)
 	if not editor_items.is_empty():
 		result["editor_items"] = editor_items.duplicate(true)
 	if not events.is_empty():
@@ -327,6 +344,62 @@ func validate() -> Array[String]:
 			errors.append(
 				"Tool '%s' must start with '%s'" % [tool_name, expected_prefix]
 			)
+
+	# Validate skills (DCR 019df57b).
+	# Rules:
+	#  - Each entry must be a Dictionary.
+	#  - Each entry must contain every key in REQUIRED_SKILL_FIELDS.
+	#  - skill.id must match "^minerva_<id>_[a-z0-9_]+$".
+	#  - skill.tool_deps must be an Array of non-empty strings (may be empty array).
+	#  - skill.id values must be unique within the manifest (manifest_duplicate_skill_id).
+	# tool_deps RESOLUTION against the active registry is NOT done here — that
+	# happens at install time (T3) where the registry is available.
+	if not id.is_empty() and not skills.is_empty():
+		var skill_id_rx := RegEx.new()
+		var _skill_rx_ok := skill_id_rx.compile("^minerva_%s_[a-z0-9_]+$" % id)
+		var seen_skill_ids: Dictionary = {}
+		for idx in skills.size():
+			var skill_entry: Variant = skills[idx]
+			if not (skill_entry is Dictionary):
+				errors.append("skills[%d] must be a Dictionary" % idx)
+				continue
+			var skill_dict: Dictionary = skill_entry as Dictionary
+			var s_id: String = str(skill_dict.get("id", ""))
+			# Required-field presence
+			for field_name in REQUIRED_SKILL_FIELDS:
+				if not skill_dict.has(field_name):
+					errors.append(
+						"skill '%s' missing required field '%s'" %
+						[s_id if not s_id.is_empty() else "skills[%d]" % idx, field_name]
+					)
+			# Prefix
+			if s_id.is_empty():
+				errors.append("skills[%d] has empty 'id'" % idx)
+			elif _skill_rx_ok == OK and skill_id_rx.search(s_id) == null:
+				errors.append(
+					"skill id '%s' must match '^minerva_%s_[a-z0-9_]+$'" % [s_id, id]
+				)
+			# Duplicate id
+			if not s_id.is_empty():
+				if seen_skill_ids.has(s_id):
+					errors.append("manifest_duplicate_skill_id: '%s'" % s_id)
+				else:
+					seen_skill_ids[s_id] = true
+			# tool_deps shape
+			if skill_dict.has("tool_deps"):
+				var tool_deps_raw: Variant = skill_dict.get("tool_deps")
+				if not (tool_deps_raw is Array):
+					errors.append("skill '%s' tool_deps must be an Array of strings" % s_id)
+				else:
+					for dep in (tool_deps_raw as Array):
+						if not (dep is String):
+							errors.append(
+								"skill '%s' tool_deps entry must be a String" % s_id
+							)
+						elif (dep as String).is_empty():
+							errors.append(
+								"skill '%s' tool_deps entry must be non-empty" % s_id
+							)
 
 	# Validate editor_items panel references — each must name a known ui panel.
 	for ei in editor_items:
@@ -408,6 +481,14 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	for tool_entry in data.get("tools", []):
 		if tool_entry is Dictionary:
 			def.tools.append(tool_entry.duplicate(true))
+
+	# Skills (DCR 019df57b — plugin-shipped skills).
+	# Lax parse: collect Dictionary entries; structural and prefix validation
+	# happens in validate().  Non-Dictionary entries are skipped silently here
+	# so a single malformed entry doesn't drop the whole skills array on parse.
+	for skill_entry in data.get("skills", []):
+		if skill_entry is Dictionary:
+			def.skills.append(skill_entry.duplicate(true))
 
 	# Permissions
 	var perms: Dictionary = data.get("permissions", {})
