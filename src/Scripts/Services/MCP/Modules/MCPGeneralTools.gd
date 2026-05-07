@@ -49,7 +49,8 @@ func register_tools() -> void:
 	server._register_tool(
 		"minerva_create_plugin_editor",
 		"Create a new ANONYMOUS (unsaved, no file path) editor backed by a plugin's editor_item — the MCP equivalent of File → New → <plugin item> in the UI. The buffer lives only in memory until the user (or a later minerva_doc_save with `path`) Save-As's it. Use the returned `editor_name` to drive content via minerva_doc_read / minerva_doc_write / minerva_doc_save (the unified-key API). "
-		+ "Returns {editor_name, plugin_id, panel_name, panel_kind}. "
+		+ "For paired_dsl panels (e.g. cad), TWO tabs are spawned (render + text source) sharing one DocumentBuffer; minerva_doc_* calls on EITHER editor_name resolve to the shared buffer, and the render panel re-evaluates automatically as the buffer changes. "
+		+ "Returns {editor_name, plugin_id, panel_name, panel_kind, render_mode, [text_editor_name, buffer_path] (paired_dsl only)}. "
 		+ "Possible errors: plugin_not_found:<id>, editor_item_not_found:<id>, "
 		+ "editor_pane_not_available, html_panel_anonymous_create_unsupported.",
 		{
@@ -174,8 +175,12 @@ func _create_plugin_editor(args: Dictionary) -> Dictionary:
 		var unbacked_path: String = unbacked_buf.file_path
 
 		# Text editor: anonymous (no `file`), bind to unbacked buffer manually.
-		var text_tab: String = "%s (source)" % tab_title
-		var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, null, text_tab)
+		# Use the same display title as the render panel so the paired tabs
+		# read consistently (matches the path-bound _open_paired_dsl shape:
+		# both editors share the file basename). EditorPane disambiguates
+		# duplicate titles internally; MCPDocTools resolves either tab name
+		# back to the shared DocumentBuffer via get_document_buffer().
+		var text_editor: Editor = editor_pane.add(Editor.Type.TEXT, null, tab_title)
 		if text_editor == null:
 			return MCPToolUtils.error("text_editor_creation_failed")
 		text_editor.bind_to_buffer_path(unbacked_path)

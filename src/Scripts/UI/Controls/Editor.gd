@@ -864,6 +864,13 @@ func bind_to_buffer_path(path: String) -> void:
 	_attach_document_buffer(path)
 
 
+## Public accessor for the DocumentBuffer this editor is currently bound to,
+## or null if none. Lets MCPDocTools route writes through the buffer for
+## anonymous (no editor.file) editors that were bind_to_buffer_path()'d.
+func get_document_buffer() -> DocumentBuffer:
+	return _document_buffer
+
+
 ## Attach this editor to the DocumentRegistry buffer for path. Detaches from any
 ## previously held buffer first (covers Save As / file-rename flows where the
 ## tab's path changes). Sets _document_buffer to the new buffer or null on error.

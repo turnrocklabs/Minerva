@@ -683,6 +683,21 @@ func push_progress(
 # DocumentBuffer attach/detach (DCR 019dfa66 §T5 — paired_dsl substrate)
 # ---------------------------------------------------------------------------
 
+## Look up the DocumentBuffer currently attached to a panel.
+##
+## Used by MCPDocTools to route writes through the buffer (rather than
+## invoke_load) on paired_dsl panels — keeps the paired text editor in sync.
+## Returns null if the panel isn't registered, has no buffer attached, or the
+## plugin_id spoof-check fails.
+func get_attached_buffer(plugin_id: String, panel_name: String) -> DocumentBuffer:
+	if not _panel_registry.has(panel_name):
+		return null
+	var entry: _PanelEntry = _panel_registry[panel_name]
+	if entry.plugin_id != plugin_id:
+		return null
+	return entry.attached_buffer
+
+
 ## Subscribe a registered panel to a DocumentBuffer.
 ##
 ## Wires buffer.text_changed → panel.receive("text_changed", {text, version})

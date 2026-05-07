@@ -233,10 +233,10 @@ func resolve_skills(skill_names: Array[String]) -> Dictionary:
 						var dep_str: String = str(dep)
 						if dep_str not in all_tools:
 							all_tools.append(dep_str)
-					var steps: String = str(by_id.get("steps", ""))
+					var body := _compose_skill_instructions(by_id)
 					var title: String = str(by_id.get("title", skill_name_str))
-					if not steps.is_empty():
-						all_instructions.append("## Skill: %s\n\n%s" % [title, steps])
+					if not body.is_empty():
+						all_instructions.append("## Skill: %s\n\n%s" % [title, body])
 					found = true
 					break
 				# Try by title
@@ -247,10 +247,10 @@ func resolve_skills(skill_names: Array[String]) -> Dictionary:
 						var dep_str: String = str(dep)
 						if dep_str not in all_tools:
 							all_tools.append(dep_str)
-					var steps: String = str(by_title.get("steps", ""))
+					var body := _compose_skill_instructions(by_title)
 					var title: String = str(by_title.get("title", skill_name_str))
-					if not steps.is_empty():
-						all_instructions.append("## Skill: %s\n\n%s" % [title, steps])
+					if not body.is_empty():
+						all_instructions.append("## Skill: %s\n\n%s" % [title, body])
 					found = true
 					break
 			if found:
@@ -276,6 +276,21 @@ func resolve_skills(skill_names: Array[String]) -> Dictionary:
 		"tools": all_tools,
 		"instructions": "\n\n".join(all_instructions),
 	}
+
+
+## Concat a docket skill record's prompt_text + steps into a single instructions
+## body. prompt_text holds the long-form §0–§N system prompt (manifest's
+## `system_prompt` field), steps holds the numbered checklist. Skills shipped
+## via plugin manifests rely on prompt_text — without this concat the §0
+## "MCAD is NOT OpenSCAD" callout (and similar) never reaches the agent.
+static func _compose_skill_instructions(record: Dictionary) -> String:
+	var prompt_text: String = str(record.get("prompt_text", "")).strip_edges()
+	var steps: String = str(record.get("steps", "")).strip_edges()
+	if prompt_text.is_empty():
+		return steps
+	if steps.is_empty():
+		return prompt_text
+	return "%s\n\n---\n\n%s" % [prompt_text, steps]
 
 
 #region Skill Handlers
@@ -380,7 +395,7 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 					"origin": "docket",
 					"project": proj_name,
 					"type": "skill",
-					"instructions": str(docket_result.get("steps", "")),
+					"instructions": _compose_skill_instructions(docket_result),
 					"preconditions": str(docket_result.get("preconditions", "")),
 					"outcome": str(docket_result.get("outcome", "")),
 				}

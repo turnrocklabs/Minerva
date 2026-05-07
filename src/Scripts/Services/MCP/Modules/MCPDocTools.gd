@@ -124,8 +124,26 @@ func _resolve_target(args: Dictionary, require_existing: bool) -> Dictionary:
 	if "type" in editor:
 		ed_type = int(editor.type)
 
-	# PLUGIN_SCENE → Slice 2 (not yet wired).
+	# PLUGIN_SCENE: if the broker has a DocumentBuffer attached to this panel
+	# (paired_dsl case), the buffer is canonical — route through it so that
+	# the paired text editor stays in sync (broker propagates text_changed back
+	# to the panel via its existing subscription). Otherwise the editor owns
+	# its own state via _on_panel_load_request / _on_panel_save_request.
 	if ed_type == Editor.Type.PLUGIN_SCENE:
+		var pbroker = SingletonObject.plugin_scene_panel_broker
+		var ed_pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
+		var ed_pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+		if pbroker != null and not ed_pid.is_empty() and not ed_pname.is_empty():
+			var attached: DocumentBuffer = pbroker.get_attached_buffer(ed_pid, ed_pname)
+			if attached != null:
+				return {
+					"ok": true,
+					"kind": KIND_BUFFER,
+					"buffer": attached,
+					"editor": editor,
+					"path": attached.file_path,
+					"editor_name": editor_name,
+				}
 		return {
 			"ok": true,
 			"kind": KIND_PLUGIN_SCENE,
@@ -151,6 +169,22 @@ func _resolve_target(args: Dictionary, require_existing: bool) -> Dictionary:
 				"editor_name": editor_name,
 			}
 		# Fall through to text_local if registry refused (rare).
+
+	# Anonymous TEXT editor that was bind_to_buffer_path()'d to an unbacked
+	# (or any) buffer — the buffer is canonical even though editor.file is
+	# empty. Route through it so MCP doc_* writes propagate to anyone else
+	# subscribed (e.g. paired plugin scene render panel via the broker).
+	if editor.has_method("get_document_buffer"):
+		var ed_buf: DocumentBuffer = editor.get_document_buffer()
+		if ed_buf != null:
+			return {
+				"ok": true,
+				"kind": KIND_BUFFER,
+				"buffer": ed_buf,
+				"editor": editor,
+				"path": str(ed_buf.file_path),
+				"editor_name": editor_name,
+			}
 
 	# Anonymous (or registry-refused) TEXT editor → operate on code_edit.text.
 	if not ("code_edit" in editor) or editor.code_edit == null:
