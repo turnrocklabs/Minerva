@@ -2,7 +2,7 @@ extends SceneTree
 ## Test: MCPDocTools — minerva_doc_read/write/edit/save/save_all.
 ## Run: godot --headless --path src --script test/test_mcp_doc_tools.gd
 
-const MCPDocToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPDocTools.gd")
+var MCPDocToolsScript: Script = null
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -10,6 +10,15 @@ var _temp_dir: String = "/tmp/mcp_doc_tools_test"
 
 
 func _init() -> void:
+	# Defer to first process_frame — SceneTree._init runs BEFORE autoloads
+	# register, and MCPDocTools transitively references SingletonObject via
+	# MCPToolUtils. Loading after first frame lets autoloads resolve.
+	process_frame.connect(_run_tests, CONNECT_ONE_SHOT)
+
+
+func _run_tests() -> void:
+	MCPDocToolsScript = load("res://Scripts/Services/MCP/Modules/MCPDocTools.gd")
+
 	print("=== MCPDocTools Tests ===\n")
 
 	_setup()
@@ -35,6 +44,10 @@ func _init() -> void:
 	test_doc_save_writes_to_disk_and_clears_dirty(tools)
 
 	test_doc_save_all_flushes_dirty_only(tools)
+
+	test_dual_key_both_specified_errors(tools)
+	test_dual_key_neither_specified_errors(tools)
+	test_editor_name_not_found_errors(tools)
 
 	_teardown()
 
@@ -283,3 +296,40 @@ func test_doc_save_all_flushes_dirty_only(tools) -> void:
 	check("clean NOT in saved", not (clean in saved))
 	check("dirty1 file exists", FileAccess.file_exists(dirty1))
 	check("dirty2 file exists", FileAccess.file_exists(dirty2))
+
+
+# ---------------------------------------------------------------------------
+# Dual-key validation (path XOR editor_name)
+# ---------------------------------------------------------------------------
+
+func test_dual_key_both_specified_errors(tools) -> void:
+	print("test_dual_key_both_specified_errors")
+	_reset_registry()
+	var r: Dictionary = tools.handle("minerva_doc_read", {
+		"path": _temp_path("x.txt"),
+		"editor_name": "scratch.txt",
+	})
+	check("success=false when both keys", r.success == false)
+	check("error mentions either / not both",
+		"either" in str(r.get("error", "")) or "not both" in str(r.get("error", "")))
+
+
+func test_dual_key_neither_specified_errors(tools) -> void:
+	print("test_dual_key_neither_specified_errors")
+	_reset_registry()
+	# doc_write: text is checked first, supply it so we exercise the resolver.
+	var r: Dictionary = tools.handle("minerva_doc_write", {"text": "..."})
+	check("success=false when neither key", r.success == false)
+	check("error mentions required",
+		"required" in str(r.get("error", "")))
+
+
+func test_editor_name_not_found_errors(tools) -> void:
+	print("test_editor_name_not_found_errors")
+	_reset_registry()
+	# In headless tests SingletonObject.editor_pane is null, so find_editor_by_name
+	# always returns null. That should surface as editor_not_found.
+	var r: Dictionary = tools.handle("minerva_doc_read", {"editor_name": "no_such_tab"})
+	check("success=false on unknown editor", r.success == false)
+	check("error contains editor_not_found",
+		"editor_not_found" in str(r.get("error", "")))
