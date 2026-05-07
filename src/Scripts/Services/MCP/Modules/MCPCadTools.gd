@@ -429,11 +429,6 @@ func _cad_annotate_edges(args: Dictionary) -> Dictionary:
 			)
 			continue
 
-		var edge_dict: Dictionary = edge_lookup[edge_id] as Dictionary
-
-		# Compute midpoint from edge geometry.
-		var midpoint: Array = _edge_midpoint(edge_dict)
-
 		# Build label.
 		var label: String = ""
 		if label_format_override != null and str(label_format_override) != "":
@@ -441,21 +436,28 @@ func _cad_annotate_edges(args: Dictionary) -> Dictionary:
 		else:
 			label = str(edge_id)
 
-		# Build annotation envelope.
-		# Bug 019dd65c237d resolved by Round 2b-α Unit 1: the AnnotationCanvas is
-		# now parented to a full-rect overlay above all 4 SubViewportContainers,
-		# and viewport_rect offsets are applied per-pane in cad_edge_number_kind.
-		# visible_in_views defaults to all 4 panes (no metadata restriction needed).
+		var view_context := ""
+		if host.has_method("get_view_context"):
+			view_context = str(host.call("get_view_context"))
+
+		# Build a v2 live edge-anchor annotation. The CAD renderer resolves the
+		# current midpoint from this anchor each draw; primitive-only v1 edge
+		# annotations are kept as a renderer compatibility path only.
 		var annotation: Dictionary = {
 			"kind": "cad_edge_number",
-			"payload": {
-				"edge_id": edge_id,
-				"label": label,
-				"group_id": group_id,
+			"schema_version": 2,
+			"author": "ai",
+			"view_context": view_context,
+			"anchor": {
+				"plugin": "cad",
+				"type": "edge",
+				"id": edge_id,
 			},
-			"primitives": [
-				{"type": "point", "at": midpoint},
-			],
+			"payload": {
+				"text": label,
+				"group_id": group_id,
+				"box_offset": [0.0, 0.0, 0.0],
+			},
 		}
 
 		host.call("add_annotation", annotation)
@@ -546,9 +548,8 @@ func _cad_list_user_labels(args: Dictionary) -> Dictionary:
 		var ann_dict: Dictionary = ann as Dictionary
 		# Filter to cad_edge_number kind authored by the user. The cad_edge_number
 		# tool stamps author="human"; agent-minted annotations from
-		# minerva_cad_annotate_edges have no author field. The exclusion is
-		# deliberate — agent labels are the agent's own bookkeeping, not user
-		# intent the agent should act on.
+		# minerva_cad_annotate_edges stamp author="ai". The exclusion is deliberate:
+		# agent labels are bookkeeping, not user intent the agent should act on.
 		if str(ann_dict.get("kind", "")) != "cad_edge_number":
 			continue
 		if str(ann_dict.get("author", "")) != "human":
@@ -649,44 +650,3 @@ static func _compute_bbox(vertices: Array) -> Variant:
 		"min": [min_x, min_y, min_z],
 		"max": [max_x, max_y, max_z],
 	}
-
-
-## Compute the 3-D midpoint of an edge dict from the registry.
-## Returns [x, y, z] as a float array.
-##
-## Preference order:
-##   1. edge_dict["midpoint"] — worker-emitted via build123d's `edge @ 0.5`.
-##      This is the canonical parametric midpoint, correct for any curve type
-##      (straight, arc, spline, post-transform). Always prefer when present.
-##   2. (start + end) / 2 — chord midpoint, only correct for straight lines.
-##      Wrong for arcs (yields a point inside the arc), splines (chord, not
-##      curve midpoint), and any non-linear edge.
-##   3. center (for circles, if midpoint absent) — circle CENTER, not arc
-##      midpoint. Last-ditch fallback so we don't return [0,0,0]; visually
-##      misplaced for non-full-loop arcs.
-##   4. [0, 0, 0] — geometry fields absent.
-static func _edge_midpoint(edge_dict: Dictionary) -> Array:
-	var midpoint: Variant = edge_dict.get("midpoint", null)
-	if midpoint is Array and (midpoint as Array).size() >= 3:
-		var ma: Array = midpoint as Array
-		return [float(ma[0]), float(ma[1]), float(ma[2])]
-
-	var start: Variant = edge_dict.get("start", null)
-	var end_pt: Variant = edge_dict.get("end", null)
-	if start is Array and (start as Array).size() >= 3 and end_pt is Array and (end_pt as Array).size() >= 3:
-		var sa: Array = start as Array
-		var ea: Array = end_pt as Array
-		return [
-			(float(sa[0]) + float(ea[0])) * 0.5,
-			(float(sa[1]) + float(ea[1])) * 0.5,
-			(float(sa[2]) + float(ea[2])) * 0.5,
-		]
-
-	var kind: String = str(edge_dict.get("kind", ""))
-	if kind == "circle":
-		var center: Variant = edge_dict.get("center", null)
-		if center is Array and (center as Array).size() >= 3:
-			var ca: Array = center as Array
-			return [float(ca[0]), float(ca[1]), float(ca[2])]
-
-	return [0.0, 0.0, 0.0]

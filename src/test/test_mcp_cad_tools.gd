@@ -91,10 +91,10 @@ func _init() -> void:
 	print("\n-- cad_annotate_edges: rejects both selectors --")
 	test_annotate_edges_rejects_both_selectors(tools)
 
-	print("\n-- cad_annotate_edges: prefers worker-emitted midpoint --")
+	print("\n-- cad_annotate_edges: emits live edge anchors --")
 	test_annotate_edges_prefers_worker_midpoint(tools)
 
-	print("\n-- cad_annotate_edges: falls back to (start+end)/2 when midpoint absent --")
+	print("\n-- cad_annotate_edges: does not depend on midpoint geometry --")
 	test_annotate_edges_chord_fallback(tools)
 
 	print("\n-- cad_clear_edge_annotations: clear by group_id --")
@@ -432,18 +432,30 @@ func test_annotate_edges_happy(tools) -> void:
 	check("skipped_unknown_ids is Array", skipped is Array)
 	check("no skipped ids", skipped is Array and (skipped as Array).is_empty())
 	check("3 annotations stored on host", h.get_annotations().size() == 3)
-	# Each stored annotation must have kind = cad_edge_number and the group_id in payload.
+	# Each stored annotation must use the v2 live edge-anchor shape the renderer expects.
 	var all_ann: Array = h.get_annotations()
 	var all_have_kind := true
 	var all_have_group := true
+	var all_have_anchor := true
+	var all_have_payload := true
 	for ann in all_ann:
-		if str((ann as Dictionary).get("kind", "")) != "cad_edge_number":
+		var ann_d: Dictionary = ann as Dictionary
+		if str(ann_d.get("kind", "")) != "cad_edge_number":
 			all_have_kind = false
-		var payload: Dictionary = (ann as Dictionary).get("payload", {}) as Dictionary
+		var anchor: Dictionary = ann_d.get("anchor", {}) as Dictionary
+		if str(anchor.get("plugin", "")) != "cad" or str(anchor.get("type", "")) != "edge":
+			all_have_anchor = false
+		if int(anchor.get("id", -1)) < 1:
+			all_have_anchor = false
+		var payload: Dictionary = ann_d.get("payload", {}) as Dictionary
 		if str(payload.get("group_id", "")) != group_id:
 			all_have_group = false
+		if not payload.has("text") or not payload.has("box_offset"):
+			all_have_payload = false
 	check("all annotations have kind=cad_edge_number", all_have_kind)
 	check("all annotations carry minted group_id", all_have_group)
+	check("all annotations carry cad/edge anchors", all_have_anchor)
+	check("all annotations carry renderer payload fields", all_have_payload)
 	AnnotationHostRegistry._reset_for_test()
 
 
@@ -534,12 +546,8 @@ func test_annotate_edges_rejects_both_selectors(tools) -> void:
 # ── cad_clear_edge_annotations tests ─────────────────────────────────────────
 
 ## Helper: annotate a set of edge_ids under a given group_id, return the host.
-## Verifies the worker-emitted `midpoint` field is preferred over recomputing
-## (start+end)/2. The recomputation is only correct for straight lines; for
-## arcs it gives a chord midpoint that lands inside the part. Round 2b-α HITL
-## caught annotations on edges 6 & 8 of t_beam.mcad anchored at "random points
-## in space" because the chord-midpoint of a curved/transformed edge isn't
-## where the edge actually is.
+## Verifies MCP-created annotations are live edge anchors, not baked primitive
+## points. The renderer resolves the edge midpoint from the current registry.
 func test_annotate_edges_prefers_worker_midpoint(tools) -> void:
 	var h := _make_host("MyCAD")
 	# Edge with start (0,0,0), end (10,0,0), but worker says midpoint is
@@ -562,19 +570,16 @@ func test_annotate_edges_prefers_worker_midpoint(tools) -> void:
 	var stored: Array = h.get_annotations()
 	check("1 annotation stored", stored.size() == 1)
 	if stored.size() == 1:
-		var prims: Array = (stored[0] as Dictionary).get("primitives", []) as Array
-		check("annotation has one primitive", prims.size() == 1)
-		if prims.size() == 1:
-			var at: Array = (prims[0] as Dictionary).get("at", []) as Array
-			check("at uses worker midpoint x=5", at.size() == 3 and float(at[0]) == 5.0)
-			check("at uses worker midpoint y=5 (NOT chord y=0)", at.size() == 3 and float(at[1]) == 5.0)
-			check("at uses worker midpoint z=0", at.size() == 3 and float(at[2]) == 0.0)
+		var ann: Dictionary = stored[0] as Dictionary
+		var anchor: Dictionary = ann.get("anchor", {}) as Dictionary
+		check("annotation has cad/edge anchor", str(anchor.get("plugin", "")) == "cad" and str(anchor.get("type", "")) == "edge")
+		check("anchor id is edge id", int(anchor.get("id", -1)) == 1)
+		check("annotation has no baked primitives", not ann.has("primitives"))
 	AnnotationHostRegistry._reset_for_test()
 
 
-## When the worker doesn't emit a midpoint field, we fall back to (start+end)/2.
-## This is correct for straight lines and is the V1 behavior the existing
-## tests already covered — preserved here as a regression guard.
+## Missing midpoint data should not matter because the annotation stores a live
+## edge id, not a baked point.
 func test_annotate_edges_chord_fallback(tools) -> void:
 	var h := _make_host("MyCAD")
 	h.set_edge_registry([
@@ -592,12 +597,10 @@ func test_annotate_edges_chord_fallback(tools) -> void:
 	check("success=true", bool(result.get("success", false)) == true)
 	var stored: Array = h.get_annotations()
 	if stored.size() == 1:
-		var prims: Array = (stored[0] as Dictionary).get("primitives", []) as Array
-		if prims.size() == 1:
-			var at: Array = (prims[0] as Dictionary).get("at", []) as Array
-			check("chord fallback x=5", at.size() == 3 and float(at[0]) == 5.0)
-			check("chord fallback y=0", at.size() == 3 and float(at[1]) == 0.0)
-			check("chord fallback z=0", at.size() == 3 and float(at[2]) == 0.0)
+		var ann: Dictionary = stored[0] as Dictionary
+		var anchor: Dictionary = ann.get("anchor", {}) as Dictionary
+		check("anchor survives without midpoint", int(anchor.get("id", -1)) == 1)
+		check("no chord fallback primitive is stored", not ann.has("primitives"))
 	AnnotationHostRegistry._reset_for_test()
 
 
