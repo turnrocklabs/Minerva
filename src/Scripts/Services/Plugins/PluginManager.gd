@@ -133,8 +133,21 @@ func _process(delta: float) -> void:
 # ---------------------------------------------------------------------------
 
 ## Parse a manifest.json, validate it, and register the plugin in the DB.
-## Returns {"ok": true, "id": "..."} or {"error": "..."}.
-func install_plugin(manifest_path: String) -> Dictionary:
+##
+## If the manifest declares skills[] (DCR 019df57b), seed them into the user
+## docket after the core install completes.  When auto_confirm_skills is false
+## (default), a confirmation dialog is shown to the user before seeding; pass
+## true for headless / programmatic flows that have already obtained consent.
+##
+## Returns {"ok": true, "id": "..."} on the no-skills path, or with extra keys
+## on the skill-seeding path:
+##   "skills_seeded": int — newly created records
+##   "skills_skipped": int — already-installed pristine matches (idempotent re-install)
+##   "skills_deferred_to_update": int — content changed; T4 reconciliation handles
+##   "skills_declined": true — user cancelled the seed dialog (only when not auto-confirmed)
+##
+## Returns {"error": "..."} on install failure.
+func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) -> Dictionary:
 	var def = _db.install(manifest_path)
 	if def == null:
 		# PluginDB.install already push_error'd; check for duplicate separately.
@@ -153,7 +166,76 @@ func install_plugin(manifest_path: String) -> Dictionary:
 		push_warning("[PluginManager] Warning creating directories for '%s': %s" % [def.id, create_result["error"]])
 
 	print("[PluginManager] Installed plugin '%s' v%s" % [def.id, def.version])
-	return {"ok": true, "id": def.id}
+
+	var result: Dictionary = {"ok": true, "id": def.id}
+
+	# Skill seeding (DCR 019df57b T3).
+	if not def.skills.is_empty():
+		var seed_result := await _seed_plugin_skills(def, auto_confirm_skills)
+		result.merge(seed_result)
+
+	return result
+
+
+## Resolve tool_deps + (optionally) confirm with user + materialise skill records.
+## Internal helper for install_plugin's skill-seeding path.
+func _seed_plugin_skills(def, auto_confirm: bool) -> Dictionary:
+	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
+
+	var available_tools: Dictionary = {}
+	var docket_manager = null
+	if Engine.has_singleton("SingletonObject"):
+		docket_manager = Engine.get_singleton("SingletonObject").docket_manager
+	# Common case in editor / runtime: SingletonObject is an autoload accessed by name.
+	if docket_manager == null and typeof(SingletonObject) != TYPE_NIL:
+		if "docket_manager" in SingletonObject:
+			docket_manager = SingletonObject.docket_manager
+		if "mcp_manager" in SingletonObject and SingletonObject.mcp_manager != null \
+				and "tool_registry" in SingletonObject.mcp_manager:
+			available_tools = SingletonObject.mcp_manager.tool_registry
+
+	var resolved: Array = SeederClass.resolve_deps(def, available_tools)
+
+	var accepted: bool = auto_confirm
+	if not auto_confirm:
+		accepted = await _show_skill_seed_dialog(def, resolved)
+
+	if not accepted:
+		return {
+			"skills_seeded": 0,
+			"skills_skipped": 0,
+			"skills_deferred_to_update": 0,
+			"skills_declined": true,
+		}
+
+	var materialise_result: Dictionary = SeederClass.materialize(def.id, resolved, docket_manager)
+	return {
+		"skills_seeded": materialise_result.get("seeded", 0),
+		"skills_skipped": materialise_result.get("skipped", 0),
+		"skills_deferred_to_update": materialise_result.get("deferred_to_update", 0),
+	}
+
+
+## Spawn the install-skill confirmation dialog, await the user's choice.
+## Returns true on accept, false on cancel / close.
+##
+## If the PluginManager isn't in a SceneTree (headless smoke test that forgot
+## to add_child the manager), defaults to false (decline) rather than blocking
+## indefinitely.
+func _show_skill_seed_dialog(def, resolved: Array) -> bool:
+	if not is_inside_tree():
+		push_warning("[PluginManager] Skill seed dialog requested but PluginManager not in SceneTree; declining by default")
+		return false
+
+	var DialogClass = load("res://Scripts/Services/Plugins/PluginSkillSeedDialog.gd")
+	var dialog = DialogClass.new()
+	add_child(dialog)
+	var display_name: String = def.name if not def.name.is_empty() else def.id
+	dialog.configure(display_name, resolved)
+	dialog.popup_centered()
+	var accepted: bool = await dialog.seed_decision
+	dialog.queue_free()
+	return accepted
 
 
 ## Create plugin data directories. Called on successful install.

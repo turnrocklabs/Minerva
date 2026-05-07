@@ -955,11 +955,18 @@ func _on_manifest_selected(path: String) -> void:
 		_show_status("Plugin manager unavailable.", true)
 		return
 
-	var result: Dictionary = SingletonObject.plugin_manager.install_plugin(path)
+	var result: Dictionary = await SingletonObject.plugin_manager.install_plugin(path)
 	if result.has("error"):
 		_show_status("Install failed: %s" % result["error"], true)
 	else:
-		_show_status("Installed plugin '%s'." % result.get("id", "?"))
+		var msg := "Installed plugin '%s'." % result.get("id", "?")
+		var seeded: int = int(result.get("skills_seeded", 0))
+		var declined: bool = bool(result.get("skills_declined", false))
+		if seeded > 0:
+			msg += " Seeded %d skill(s)." % seeded
+		elif declined:
+			msg += " Skills skipped (user declined)."
+		_show_status(msg)
 		_refresh_plugin_list()
 
 

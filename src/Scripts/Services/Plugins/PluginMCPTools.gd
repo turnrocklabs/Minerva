@@ -287,7 +287,12 @@ func _handle_plugin_install(args: Dictionary) -> Dictionary:
 	if plugin_manager == null:
 		return {"error": "Plugin manager not available"}
 
-	var result = plugin_manager.install_plugin(manifest_path)
+	# auto_confirm_skills allows MCP callers (e.g. an LLM that has already
+	# surfaced the skill list to the user in chat) to bypass the install dialog.
+	# Defaults to false: a UI dialog will be shown and the call awaits user
+	# input before returning.
+	var auto_confirm := bool(args.get("auto_confirm_skills", false))
+	var result = await plugin_manager.install_plugin(manifest_path, auto_confirm)
 	return result
 
 

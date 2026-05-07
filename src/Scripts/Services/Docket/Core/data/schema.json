@@ -217,7 +217,7 @@
 			},
 			"transition_rules": {},
 			"required_fields": ["title"],
-			"optional_fields": ["description", "steps", "preconditions", "outcome", "tool_deps", "optimization", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed", "source", "customised", "pristine_hash", "pristine_content", "unsatisfied_deps", "deprecated"],
+			"optional_fields": ["description", "steps", "preconditions", "outcome", "tool_deps", "optimization", "component", "topic", "subtopic", "confidence", "tags", "directed_to", "assigned_to", "quality", "last_reviewed", "source", "customised", "pristine_hash", "pristine_content", "unsatisfied_deps", "deprecated", "key"],
 			"field_definitions": {
 				"tool_deps": {
 					"type": "array",
