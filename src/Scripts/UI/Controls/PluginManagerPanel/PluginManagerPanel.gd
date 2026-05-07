@@ -262,7 +262,9 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_detail_uptime_label.text = "-"
 	status_row.add_child(_detail_uptime_label)
 
-	# Control buttons — row 1: Start / Stop / Restart / Reload
+	# Control buttons — split across two rows so the detail pane doesn't
+	# overflow at narrow widths. Row 1: lifecycle (Start / Stop / Restart).
+	# Row 2: maintenance + remove (Reload / Open Panel / Remove Plugin).
 	var btn_row := HBoxContainer.new()
 	parent.add_child(btn_row)
 
@@ -281,28 +283,31 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	_restart_button.pressed.connect(_on_restart_pressed)
 	btn_row.add_child(_restart_button)
 
+	var btn_row2 := HBoxContainer.new()
+	parent.add_child(btn_row2)
+
 	_reload_button = Button.new()
 	_reload_button.text = "Reload"
 	_reload_button.tooltip_text = "Kill, recompile/reinitialise, and restart the plugin to pick up code changes"
 	_reload_button.pressed.connect(_on_reload_pressed)
-	btn_row.add_child(_reload_button)
+	btn_row2.add_child(_reload_button)
 
 	_panel_button = Button.new()
 	_panel_button.text = "Open Panel"
 	_panel_button.tooltip_text = "Open this plugin's UI panel"
 	_panel_button.pressed.connect(_on_open_panel_pressed)
 	_panel_button.visible = false  # shown only if plugin declares ui.panels
-	btn_row.add_child(_panel_button)
+	btn_row2.add_child(_panel_button)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn_row.add_child(spacer)
+	btn_row2.add_child(spacer)
 
 	_remove_button = Button.new()
 	_remove_button.text = "Remove Plugin"
 	_remove_button.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 	_remove_button.pressed.connect(_on_remove_pressed)
-	btn_row.add_child(_remove_button)
+	btn_row2.add_child(_remove_button)
 
 	# Control toggles — row 2: Auto-start / Auto-reload / files-changed indicator
 	var toggle_row := HBoxContainer.new()
