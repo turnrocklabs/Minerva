@@ -36,6 +36,8 @@ func get_tool_names() -> Array[String]:
 		"minerva_cad_annotate_edges",
 		"minerva_cad_clear_edge_annotations",
 		"minerva_cad_list_user_labels",
+		"minerva_cad_export",
+		"minerva_cad_snapshot",
 	]
 
 
@@ -198,6 +200,89 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
+		"minerva_cad_snapshot",
+		"Capture a PNG snapshot of a live CAD editor's 3-D viewport so vision-capable "
+		+ "models can SEE the geometry instead of just reading mesh/edge metadata. "
+		+ "view selects which pane: 'iso' (perspective), 'top'/'front'/'right' "
+		+ "(orthographic outline), or 'active' (whichever pane is currently focused / "
+		+ "the only one visible in narrow layout). Wide layout renders all 4 panes "
+		+ "simultaneously so any view works; in narrow layout only the active view "
+		+ "captures live (others may be stale or null). "
+		+ "Saves the PNG under user://cad_snapshots/ unless output_path is supplied. "
+		+ "Returns {path, absolute_path, width, height, view, content_type ('image/png'), "
+		+ "has_geometry, vertex_count, face_count, bounding_box (mm, null when no geometry), "
+		+ "units ('mm')}; pass return_base64=true to additionally include image_base64 "
+		+ "(raw base64 PNG, no data: prefix) for direct vision consumption. "
+		+ "max_edge clamps the long edge (default 1024) to avoid blowing tool budgets. "
+		+ "output_path under res:// is rejected.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Editor tab title (as returned by minerva_list_editors).",
+				},
+				"view": {
+					"type": "string",
+					"enum": ["iso", "top", "front", "right", "active"],
+					"description": "Which viewport pane to capture. Default 'active'.",
+				},
+				"output_path": {
+					"type": "string",
+					"description": "Where to write the PNG. Default: user://cad_snapshots/<editor>_<view>_<ts>.png. "
+					+ "Absolute, ~-prefixed, or user:// paths accepted.",
+				},
+				"return_base64": {
+					"type": "boolean",
+					"description": "If true, also include image_base64 (raw base64 PNG, no data: prefix) in the result.",
+				},
+				"max_edge": {
+					"type": "integer",
+					"description": "Clamp the long edge of the captured image to this many pixels (default 1024). "
+					+ "Aspect ratio preserved.",
+				},
+			},
+			"required": ["editor_name"],
+		},
+		"cad"
+	)
+
+	server._register_tool(
+		"minerva_cad_export",
+		"Export the geometry of a live CAD editor to a file. "
+		+ "Resolves the editor's current DSL source via DocumentRegistry, then "
+		+ "dispatches to the cad plugin's worker which re-evaluates the DSL and "
+		+ "writes the file. Supported formats: 'stl' (binary STL — build123d default), "
+		+ "'step' or 'stp' (STEP AP214 — OCCT default), '3mf' (build123d Mesher). "
+		+ "Path is absolute as-is; ~-prefixed paths are expanded; bare relative "
+		+ "paths resolve against the user's home directory. "
+		+ "Returns {path, bytes_written, format} on success. DSL parse/translate "
+		+ "errors are surfaced verbatim — the user can fix them and retry.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Editor tab title (as returned by minerva_list_editors). "
+					+ "Must match a live CAD panel.",
+				},
+				"format": {
+					"type": "string",
+					"enum": ["stl", "step", "stp", "3mf"],
+					"description": "Output format. STL is binary by default.",
+				},
+				"path": {
+					"type": "string",
+					"description": "Absolute, ~-prefixed, or bare relative path. "
+					+ "Bare relative paths resolve against the user's home directory.",
+				},
+			},
+			"required": ["editor_name", "format", "path"],
+		},
+		"cad"
+	)
+
+	server._register_tool(
 		"minerva_cad_list_user_labels",
 		"Return the list of cad_edge_number annotations the USER has authored on a live CAD panel. "
 		+ "Use this whenever the user references 'the edges I labeled' (or 'pinned', 'tagged', "
@@ -241,6 +326,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _cad_clear_edge_annotations(arguments)
 		"minerva_cad_list_user_labels":
 			return _cad_list_user_labels(arguments)
+		"minerva_cad_export":
+			return await _cad_export(arguments)
+		"minerva_cad_snapshot":
+			return _cad_snapshot(arguments)
 	return _err("Unknown CAD tool: %s" % tool_name)
 
 
@@ -579,6 +668,246 @@ func _cad_list_user_labels(args: Dictionary) -> Dictionary:
 	})
 
 
+## Export geometry to a file. Resolves source via DocumentBuffer, then
+## delegates to the cad plugin's `cad.export` MCP tool (which forwards to the
+## Python worker via cad-plugin → bridge → mcad_worker).
+func _cad_export(args: Dictionary) -> Dictionary:
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return _err("editor_name is required")
+
+	var fmt: String = str(args.get("format", "")).strip_edges().to_lower()
+	const _SUPPORTED := ["stl", "step", "stp", "3mf"]
+	if fmt.is_empty():
+		return _err("format is required (one of: stl, step, stp, 3mf)")
+	if not _SUPPORTED.has(fmt):
+		return _err("unsupported format '%s' (supported: %s)" % [fmt, str(_SUPPORTED)])
+
+	var path: String = str(args.get("path", "")).strip_edges()
+	if path.is_empty():
+		return _err("path is required (absolute, ~-prefixed, or bare relative resolved against home)")
+
+	# Resolve editor → DocumentBuffer source. CAD panels are paired_dsl plugin
+	# scenes; the broker holds the canonical buffer attached to the panel.
+	var source: String = ""
+	var editor: Variant = MCPToolUtils.find_editor_by_name(editor_name)
+	if editor == null:
+		return _err("editor_not_found: %s" % editor_name)
+
+	var pbroker = SingletonObject.plugin_scene_panel_broker
+	if pbroker != null:
+		var ed_pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
+		var ed_pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+		if not ed_pid.is_empty() and not ed_pname.is_empty():
+			var attached: DocumentBuffer = pbroker.get_attached_buffer(ed_pid, ed_pname)
+			if attached != null:
+				source = attached.text
+	if source.is_empty() and editor.has_method("get_document_buffer"):
+		var ed_buf: DocumentBuffer = editor.get_document_buffer()
+		if ed_buf != null:
+			source = ed_buf.text
+	if source.is_empty():
+		return _err(
+			"no_source_for_editor: '%s' has no DocumentBuffer attached. "
+			% editor_name
+			+ "Ensure the panel is open and the DSL has been entered."
+		)
+
+	# Dispatch to cad plugin's `cad.export` MCP tool.
+	if SingletonObject.plugin_manager == null:
+		return _err("plugin_manager not initialised")
+	var conn = SingletonObject.plugin_manager.get_connection("cad")
+	if conn == null:
+		return _err("cad plugin not running — start it via PluginManager UI or minerva_plugin_start")
+
+	var plugin_args := {
+		"source": source,
+		"format": fmt,
+		"path": path,
+	}
+	var plugin_result: Dictionary = await conn.call_tool("cad.export", plugin_args)
+
+	# The plugin returns {ok: true, result: {...}} or {ok: false, error: {...}}
+	# wrapped in the MCP envelope. MCPServerConnection._normalize_mcp_tool_result
+	# already unwraps the {content:[{text}]} envelope to return the inner dict.
+	if plugin_result.has("error"):
+		var err_field: Variant = plugin_result["error"]
+		if err_field is Dictionary:
+			var err_d: Dictionary = err_field
+			return _err(
+				"cad_export_failed (kind=%s): %s"
+				% [str(err_d.get("kind", "unknown")), str(err_d.get("message", ""))]
+			)
+		return _err("cad_export_failed: %s" % str(err_field))
+
+	if not plugin_result.get("ok", false):
+		return _err("cad_export_failed: %s" % JSON.stringify(plugin_result))
+
+	var result_payload: Variant = plugin_result.get("result", plugin_result)
+	if not (result_payload is Dictionary):
+		return _err("cad_export_failed: unexpected payload shape: %s" % JSON.stringify(plugin_result))
+	var rd: Dictionary = result_payload as Dictionary
+
+	return _ok({
+		"path": str(rd.get("path", path)),
+		"bytes_written": int(rd.get("bytes_written", 0)),
+		"format": str(rd.get("format", fmt)),
+	})
+
+
+## Capture a PNG snapshot of the requested CAD viewport via
+## Cad_AnnotationHost.render_view_to_image(). Saves to disk and optionally
+## returns a base64-encoded copy for inline vision consumption.
+##
+## "active" view resolves to whatever the host's _active_viewport_id currently
+## reports (set_active_viewport tracks user focus). Named views capture only
+## reliably in WIDE layout where all 4 SubViewports render simultaneously; in
+## narrow layout, off-screen views may return stale or null images.
+const _SNAPSHOT_DEFAULT_DIR := "user://cad_snapshots"
+const _SNAPSHOT_DEFAULT_MAX_EDGE := 1024
+const _SNAPSHOT_VALID_VIEWS := ["iso", "top", "front", "right", "active"]
+
+func _cad_snapshot(args: Dictionary) -> Dictionary:
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return _err("editor_name is required")
+
+	var view_arg: String = str(args.get("view", "active")).strip_edges().to_lower()
+	if view_arg.is_empty():
+		view_arg = "active"
+	if not _SNAPSHOT_VALID_VIEWS.has(view_arg):
+		return _err("invalid view '%s' (valid: %s)" % [view_arg, str(_SNAPSHOT_VALID_VIEWS)])
+
+	var max_edge: int = int(args.get("max_edge", _SNAPSHOT_DEFAULT_MAX_EDGE))
+	if max_edge <= 0:
+		max_edge = _SNAPSHOT_DEFAULT_MAX_EDGE
+
+	var return_base64: bool = bool(args.get("return_base64", false))
+
+	var host: AnnotationHost = _resolve_host(args)
+	if host == null:
+		return _no_host_error(args)
+
+	if not host.has_method("render_view_to_image"):
+		return _err(
+			"snapshot: host for '%s' does not expose render_view_to_image — "
+			% editor_name
+			+ "the cad plugin may be older than the snapshot wiring."
+		)
+
+	# Resolve "active" to the host's current active viewport id. Cad_AnnotationHost
+	# exposes get_active_viewport() — fall back to "iso" if unavailable.
+	var view_id: String = view_arg
+	if view_arg == "active":
+		if host.has_method("get_active_viewport"):
+			view_id = str(host.call("get_active_viewport"))
+		else:
+			view_id = "iso"
+		if view_id.is_empty():
+			view_id = "iso"
+
+	var img: Image = host.call("render_view_to_image", view_id, Rect2()) as Image
+	if img == null:
+		return _err(
+			"snapshot: render_view_to_image returned null for view '%s'. "
+			% view_id
+			+ "First call may return null on cold start (frame_post_draw is "
+			+ "scheduled — retry next frame). For non-active views in narrow "
+			+ "layout, the SubViewport may not be rendering — switch to wide "
+			+ "layout or to view='active'."
+		)
+
+	# Downsample to max_edge if oversize. Aspect ratio preserved.
+	var orig_w: int = img.get_width()
+	var orig_h: int = img.get_height()
+	var long_edge: int = maxi(orig_w, orig_h)
+	if long_edge > max_edge:
+		var scale: float = float(max_edge) / float(long_edge)
+		var new_w: int = int(orig_w * scale)
+		var new_h: int = int(orig_h * scale)
+		# duplicate before mutating — render_view_to_image returns a cached image.
+		img = img.duplicate() as Image
+		img.resize(new_w, new_h, Image.INTERPOLATE_BILINEAR)
+
+	# Resolve output path. Default: user://cad_snapshots/<editor>_<view>_<ts>.png.
+	var output_raw: String = str(args.get("output_path", "")).strip_edges()
+	var output_path: String = output_raw
+	# Reject res:// — writing into the project bundle is a footgun on exported
+	# projects (read-only on most platforms) and a sign of caller confusion.
+	if output_path.begins_with("res://"):
+		return _err(
+			"snapshot: output_path under res:// is rejected (read-only on exported "
+			+ "builds). Use an absolute path, ~-prefixed, or user://."
+		)
+	if output_path.is_empty():
+		# ms suffix avoids same-second collisions between back-to-back snapshots.
+		var ts: String = Time.get_datetime_string_from_system().replace(":", "-").replace("T", "_")
+		var ms_suffix: String = str(Time.get_ticks_msec() % 1000).pad_zeros(3)
+		output_path = "%s/%s_%s_%s.%s.png" % [
+			_SNAPSHOT_DEFAULT_DIR,
+			_sanitize_filename(editor_name),
+			view_id,
+			ts,
+			ms_suffix,
+		]
+	elif output_path == "~" or output_path.begins_with("~/"):
+		# Targeted tilde expansion only at the start of the path. Global replace
+		# would also substitute literal `~` later in the string (e.g. backup
+		# suffix `foo~`). On platforms with no HOME we leave the path alone and
+		# let save_png surface the IO error rather than write to "/cad.png".
+		var home: String = OS.get_environment("HOME")
+		if not home.is_empty():
+			output_path = home + output_path.substr(1)
+
+	# Ensure parent dir exists. ProjectSettings.globalize_path handles both
+	# user:// and absolute (no-op) paths uniformly.
+	var globalized: String = ProjectSettings.globalize_path(output_path)
+	var parent_dir: String = globalized.get_base_dir()
+	if not parent_dir.is_empty():
+		DirAccess.make_dir_recursive_absolute(parent_dir)
+
+	var save_err: Error = img.save_png(output_path)
+	if save_err != OK:
+		return _err("snapshot: failed to write PNG to %s (err=%d)" % [output_path, save_err])
+
+	# Geometry summary (cheap — already used by minerva_cad_get_mesh_info).
+	var has_geometry: bool = false
+	var vertex_count: int = 0
+	var face_count: int = 0
+	var bbox: Variant = null
+	if host.has_method("get_mesh_data"):
+		var mesh: Dictionary = host.call("get_mesh_data")
+		var vertices: Array = mesh.get("vertices", []) if mesh is Dictionary else []
+		var faces: Array = mesh.get("faces", []) if mesh is Dictionary else []
+		vertex_count = vertices.size()
+		face_count = faces.size()
+		has_geometry = vertex_count > 0
+		if has_geometry:
+			bbox = _compute_bbox(vertices)
+
+	var result := {
+		"path": output_path,
+		"absolute_path": globalized,
+		"width": img.get_width(),
+		"height": img.get_height(),
+		"view": view_id,
+		"content_type": "image/png",
+		"has_geometry": has_geometry,
+		"vertex_count": vertex_count,
+		"face_count": face_count,
+		"bounding_box": bbox,
+		"units": "mm",
+	}
+
+	if return_base64:
+		var png_buf: PackedByteArray = img.save_png_to_buffer()
+		if png_buf.is_empty():
+			return _err("snapshot: failed to encode PNG buffer for base64 return")
+		result["image_base64"] = Marshalls.raw_to_base64(png_buf)
+
+	return _ok(result)
+
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 ## Resolve editor_name → AnnotationHost via the registry.
@@ -612,6 +941,22 @@ static func _ok(data: Dictionary = {}) -> Dictionary:
 ## Build an error response. Mirrors MCPToolUtils.error().
 static func _err(msg: String) -> Dictionary:
 	return {"error": msg, "success": false}
+
+
+## Sanitize an editor name into a filesystem-safe path component. Replaces
+## any character outside [A-Za-z0-9._-] with '_' so the default snapshot
+## path is portable (Windows reserves : \ * ? < > | besides the obvious /).
+static func _sanitize_filename(name: String) -> String:
+	var out := ""
+	for ch in name:
+		var c: String = ch
+		if (c >= "A" and c <= "Z") or (c >= "a" and c <= "z") or (c >= "0" and c <= "9") or c == "." or c == "_" or c == "-":
+			out += c
+		else:
+			out += "_"
+	if out.is_empty():
+		out = "editor"
+	return out
 
 
 ## Compute an axis-aligned bounding box from a vertex array.
