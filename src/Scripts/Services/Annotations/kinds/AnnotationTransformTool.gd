@@ -380,6 +380,13 @@ func _revert_drag() -> void:
 
 ## Hit-test all annotations in reverse order (topmost first). Sets or clears
 ## the host's selection. Returns true (always consumes the click).
+##
+## Click-empty also deactivates the tool. The overlay holds mouse_filter=STOP
+## while a tool is active (AnnotationOverlay.set_active_tool flips it), so a
+## sticky Select tool blocks the underlying SubViewport's camera orbit. Emitting
+## `cancelled` after a no-hit click lets the toolbar untoggle the button and
+## flip the overlay back to IGNORE, restoring orbit without forcing the user
+## to mouse over to the toolbar to manually deselect.
 func _do_selection(doc_pos: Vector2) -> bool:
 	var registry := _host.get_registry()
 	var annotations: Array = _host.get_annotations()
@@ -397,8 +404,13 @@ func _do_selection(doc_pos: Vector2) -> bool:
 			_host.set_selected_annotation_id(str(ann.get("id", "")))
 			return true
 
-	# No hit — clear selection.
+	# No hit — clear selection AND deactivate the tool so the overlay's
+	# mouse_filter flips back to IGNORE and the underlying SubViewport
+	# regains camera-orbit control. The toolbar's _on_tool_cancelled does
+	# the full untoggle pipeline.
 	_host.set_selected_annotation_id("")
+	_reset_drag_state()
+	cancelled.emit()
 	return true
 
 

@@ -147,6 +147,16 @@ func _toggle_collapsed() -> void:
 
 func _set_collapsed(value: bool) -> void:
 	_collapsed = value
+	# Collapsing the dock removes the only visible affordance for an active
+	# tool (the toolbar buttons go invisible) — leaving a tool active in that
+	# state strands the user: the AnnotationOverlay above the editor surface
+	# stays at MOUSE_FILTER_STOP while a tool is set, so the underlying view
+	# can't be interacted with, and there's no toolbar in sight to untoggle
+	# the tool. Force-clear when collapsing so the overlay flips back to
+	# IGNORE; expanding doesn't need a symmetric action (no tool was being
+	# preserved across the collapse).
+	if _collapsed and _toolbar != null:
+		_toolbar.clear_active_tool()
 	_apply_layout_state()
 
 

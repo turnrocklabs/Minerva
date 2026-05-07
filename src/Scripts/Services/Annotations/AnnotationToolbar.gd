@@ -661,7 +661,8 @@ func _on_annotation_ready(annotation: Dictionary) -> void:
 		_host.add_annotation(annotation)
 
 
-## Called when the active tool emits cancelled (e.g., user pressed Escape).
+## Called when the active tool emits cancelled (e.g., user pressed Escape, or
+## the Universal Select tool clicked empty space).
 func _on_tool_cancelled() -> void:
 	# Untoggle the active button and clean up.
 	var kind_name := _active_kind_name
@@ -670,6 +671,12 @@ func _on_tool_cancelled() -> void:
 		var btn: Button = _buttons[kind_name]
 		if is_instance_valid(btn):
 			btn.set_pressed_no_signal(false)
+	# Manipulation tools (Select/Transform) live in the Tools section and
+	# leave _active_tool_button_name set after _deactivate_current_tool —
+	# the kind-button branch above doesn't touch them. Untoggle here so the
+	# toolbar visual matches the now-deactivated tool. No-op for kind tools
+	# (idempotent: short-circuits when _active_tool_button_name is empty).
+	_untoggle_active_tool_button()
 
 
 ## Called when the registry emits annotation_kind_registered.
