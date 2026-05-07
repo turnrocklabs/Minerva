@@ -77,13 +77,21 @@ func _format_skill(item: Dictionary) -> Dictionary:
 	}
 	# Include all non-empty skill fields
 	for field in ["description", "steps", "preconditions", "outcome",
-				   "component", "topic", "tags", "quality", "tool_deps"]:
+				   "component", "topic", "tags", "quality", "tool_deps",
+				   # Plugin-shipped skills metadata (DCR 019df57b).  Lean view
+				   # surfaces source (picker badge) and deprecated (hide rule)
+				   # only.  pristine_hash / pristine_content / unsatisfied_deps /
+				   # customised are reconciliation-time and would bloat lean
+				   # responses; consumers can fetch the full item via docket_get.
+				   "source", "deprecated"]:
 		var val = item.get(field, "")
 		if val is String and val.is_empty():
 			continue
 		if val is Array and val.is_empty():
 			continue
 		if val is int and val == 0:
+			continue
+		if val is bool and not val:
 			continue
 		result[field] = val
 	return result

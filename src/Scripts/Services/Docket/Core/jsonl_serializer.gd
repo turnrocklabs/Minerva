@@ -441,6 +441,37 @@ static func _serialize_item_row(db: DocketDB, row: Dictionary) -> String:
 	elif optimization is Dictionary and not optimization.is_empty():
 		d["optimization"] = optimization
 
+	# Plugin-shipped skills metadata (DCR 019df57b).
+	_set_if_nonempty(d, "source", _nullable_str(row.get("source")))
+	_set_if_nonempty(d, "pristine_hash", _nullable_str(row.get("pristine_hash")))
+
+	# customised + deprecated stored as INTEGER 0/1; emit only when non-zero.
+	var customised := int(row.get("customised", 0))
+	if customised != 0:
+		d["customised"] = customised
+	var deprecated := int(row.get("deprecated", 0))
+	if deprecated != 0:
+		d["deprecated"] = deprecated
+
+	# pristine_content: same shape as optimization (JSON TEXT in SQLite,
+	# Dictionary in JSONL).
+	var pristine_content = row.get("pristine_content")
+	if pristine_content is String and not pristine_content.is_empty():
+		var parsed_pc = JSON.parse_string(pristine_content)
+		if parsed_pc is Dictionary and not parsed_pc.is_empty():
+			d["pristine_content"] = parsed_pc
+	elif pristine_content is Dictionary and not pristine_content.is_empty():
+		d["pristine_content"] = pristine_content
+
+	# unsatisfied_deps: same shape as tool_deps (JSON Array in SQLite, Array in JSONL).
+	var unsatisfied_deps = row.get("unsatisfied_deps")
+	if unsatisfied_deps is String and not unsatisfied_deps.is_empty():
+		var parsed_ud = JSON.parse_string(unsatisfied_deps)
+		if parsed_ud is Array and not parsed_ud.is_empty():
+			d["unsatisfied_deps"] = parsed_ud
+	elif unsatisfied_deps is Array and not unsatisfied_deps.is_empty():
+		d["unsatisfied_deps"] = unsatisfied_deps
+
 	return _to_ordered_json(d)
 
 

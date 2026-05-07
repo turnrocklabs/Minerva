@@ -23,6 +23,10 @@ func _init():
 	test_state_machine_enforcement()
 	test_policy_type_exists()
 	test_jsonl_roundtrip()
+	test_plugin_skills_metadata_roundtrip()
+	test_plugin_skills_jsonl_roundtrip()
+	test_plugin_skills_skill_get_lean_view()
+	test_plugin_skills_alter_table_migration()
 	test_master_dct_exists()
 
 	# Cleanup
@@ -349,3 +353,198 @@ func test_master_dct_exists() -> void:
 		var meta = JSON.parse_string(first_line)
 		check("master.dct first line is meta", meta is Dictionary and meta.get("_type", "") == "meta")
 		check("master.dct project is 'master'", str(meta.get("project", "")) == "master")
+
+
+# -- Plugin-shipped skills metadata (DCR 019df57b) ----------------------------
+
+func test_plugin_skills_metadata_roundtrip() -> void:
+	# SQLite round-trip: create a skill with all 6 new fields populated; fetch
+	# back via docket_skill_get + docket_query and verify each field shape.
+	var db_path := _tmp_dir.path_join("skill_metadata.db")
+	var db := DocketDB.create_new(db_path)
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
+	sf.close()
+
+	var registry := ToolRegistry.new()
+	registry.init(schema, db)
+
+	var pristine := {
+		"id": "minerva_demo_make_thing",
+		"title": "Make a thing",
+		"steps": "1. Read input. 2. Make.",
+	}
+	var create_result := registry.call_tool("docket_create", {
+		"type": "skill",
+		"title": "Make a thing",
+		"steps": "1. Read input. 2. Make.",
+		"source": "plugin:demo",
+		"customised": false,
+		"pristine_hash": "abc123def456",
+		"pristine_content": pristine,
+		"unsatisfied_deps": ["minerva_other_dep"],
+		"deprecated": false,
+	})
+	check("skill create with new fields succeeds", not create_result.has("error"))
+	var skill_id: String = str(create_result.get("id", ""))
+
+	# Read back via get_item (full record).
+	var fetched := db.get_item(skill_id)
+	check("source round-trips", str(fetched.get("source", "")) == "plugin:demo")
+	check("customised round-trips as bool", fetched.get("customised") == false)
+	check("pristine_hash round-trips", str(fetched.get("pristine_hash", "")) == "abc123def456")
+	check("pristine_content round-trips as Dictionary",
+		fetched.get("pristine_content") is Dictionary
+		and (fetched.get("pristine_content") as Dictionary).get("id") == "minerva_demo_make_thing")
+	check("unsatisfied_deps round-trips as Array",
+		fetched.get("unsatisfied_deps") is Array
+		and (fetched.get("unsatisfied_deps") as Array).size() == 1)
+	check("deprecated round-trips as bool", fetched.get("deprecated") == false)
+
+	# Toggle the booleans via update; confirm read reflects.
+	registry.call_tool("docket_update", {
+		"id": skill_id,
+		"customised": true,
+		"deprecated": true,
+		"unsatisfied_deps": [],
+	})
+	var refetched := db.get_item(skill_id)
+	check("customised flipped to true", refetched.get("customised") == true)
+	check("deprecated flipped to true", refetched.get("deprecated") == true)
+	check("unsatisfied_deps cleared", (refetched.get("unsatisfied_deps") as Array).is_empty())
+
+	db.close()
+
+
+func test_plugin_skills_jsonl_roundtrip() -> void:
+	# Create a skill with all new fields, serialize → JSONL file → rebuild DB
+	# from JSONL → confirm fields survive.
+	var db_path := _tmp_dir.path_join("skill_jsonl.db")
+	var db := DocketDB.create_new(db_path)
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
+	sf.close()
+
+	var registry := ToolRegistry.new()
+	registry.init(schema, db)
+
+	var pristine := {"id": "minerva_demo_make", "title": "Make"}
+	var create_result := registry.call_tool("docket_create", {
+		"type": "skill",
+		"title": "JSONL Skill",
+		"steps": "do thing",
+		"source": "plugin:demo",
+		"customised": true,
+		"pristine_hash": "deadbeef",
+		"pristine_content": pristine,
+		"unsatisfied_deps": ["minerva_demo_missing"],
+		"deprecated": true,
+	})
+	var skill_id: String = str(create_result.get("id", ""))
+
+	var jsonl := JSONLSerializer.serialize_all(db)
+	check("JSONL contains source field", jsonl.contains("\"source\":\"plugin:demo\""))
+	check("JSONL contains pristine_hash", jsonl.contains("\"pristine_hash\":\"deadbeef\""))
+	check("JSONL contains pristine_content as Dictionary", jsonl.contains("\"pristine_content\":"))
+	check("JSONL contains customised int", jsonl.contains("\"customised\":1"))
+	check("JSONL contains deprecated int", jsonl.contains("\"deprecated\":1"))
+
+	var dct_path := _tmp_dir.path_join("skill_jsonl.dct")
+	var f := FileAccess.open(dct_path, FileAccess.WRITE)
+	f.store_string(jsonl)
+	f.close()
+	db.close()
+
+	var db2 := JSONLCache.open_or_rebuild(dct_path)
+	check("JSONL cache rebuilds with new fields", db2 != null)
+	if db2:
+		var item := db2.get_item(skill_id)
+		check("source survives JSONL→SQLite", str(item.get("source", "")) == "plugin:demo")
+		check("pristine_hash survives JSONL→SQLite", str(item.get("pristine_hash", "")) == "deadbeef")
+		check("pristine_content dict survives",
+			item.get("pristine_content") is Dictionary
+			and (item.get("pristine_content") as Dictionary).get("id") == "minerva_demo_make")
+		check("unsatisfied_deps survives",
+			item.get("unsatisfied_deps") is Array
+			and (item.get("unsatisfied_deps") as Array).size() == 1)
+		check("customised true survives", item.get("customised") == true)
+		check("deprecated true survives", item.get("deprecated") == true)
+		db2.close()
+
+
+func test_plugin_skills_skill_get_lean_view() -> void:
+	# docket_skill_get's lean _format_skill should expose source + deprecated
+	# (T5 picker reads them) but NOT pristine_hash / pristine_content /
+	# unsatisfied_deps / customised (reconciliation-only, would bloat).
+	var db_path := _tmp_dir.path_join("skill_lean.db")
+	var db := DocketDB.create_new(db_path)
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
+	sf.close()
+
+	var registry := ToolRegistry.new()
+	registry.init(schema, db)
+
+	registry.call_tool("docket_create", {
+		"type": "skill",
+		"title": "Lean View Skill",
+		"steps": "step",
+		"source": "plugin:demo",
+		"customised": true,
+		"pristine_hash": "abcd",
+		"pristine_content": {"x": 1},
+		"unsatisfied_deps": ["minerva_demo_missing"],
+		"deprecated": true,
+	})
+
+	# Activate and fetch
+	var q := registry.call_tool("docket_query", {"filter": {"type": "skill"}})
+	var items: Array = q.get("items", [])
+	if items.size() > 0:
+		var sid: String = str(items[0].get("id", ""))
+		registry.call_tool("docket_transition", {"id": sid, "to": "active"})
+		var lean := registry.call_tool("docket_skill_get", {"id": sid})
+		check("lean view exposes source", lean.get("source", "") == "plugin:demo")
+		check("lean view exposes deprecated when true", lean.get("deprecated", false) == true)
+		check("lean view OMITS pristine_hash", not lean.has("pristine_hash"))
+		check("lean view OMITS pristine_content", not lean.has("pristine_content"))
+		check("lean view OMITS unsatisfied_deps", not lean.has("unsatisfied_deps"))
+		check("lean view OMITS customised", not lean.has("customised"))
+
+	db.close()
+
+
+func test_plugin_skills_alter_table_migration() -> void:
+	# Simulate an "old" .dct that pre-dates the 6 new columns by:
+	#   1. Creating a fresh DB (init_schema runs migrate already, so columns exist).
+	#   2. Manually dropping the new columns via a schema reset is non-trivial in
+	#      SQLite (no DROP COLUMN until 3.35; binding may be older).
+	# Instead, verify the migration helper is idempotent: calling migrate_schema
+	# on an already-migrated DB does NOT fail and does NOT corrupt data.
+	var db_path := _tmp_dir.path_join("skill_migration.db")
+	var db := DocketDB.create_new(db_path)
+
+	# Insert a baseline record.
+	var sf := FileAccess.open("res://Scripts/Services/Docket/Core/data/schema.json", FileAccess.READ)
+	var schema: Dictionary = JSON.parse_string(sf.get_as_text())
+	sf.close()
+	var id := db.next_uuid7_id()
+	db.insert_item(id, DataModel.create_item(schema, "skill", {
+		"title": "Pre-existing skill",
+		"steps": "step",
+	}))
+
+	# Re-run migration; should be no-op.
+	DocketDBSchema.migrate_schema(db)
+	var fetched := db.get_item(id)
+	check("data intact after re-running migrate_schema", str(fetched.get("title", "")) == "Pre-existing skill")
+
+	# Confirm new columns are queryable on the existing DB.
+	var rows := db._exec_select("PRAGMA table_info(items);")
+	var col_names: Array = []
+	for row in rows:
+		col_names.append(str(row.get("name", "")))
+	for new_col in ["source", "customised", "pristine_hash", "pristine_content", "unsatisfied_deps", "deprecated"]:
+		check("column '%s' present after migration" % new_col, col_names.has(new_col))
+
+	db.close()

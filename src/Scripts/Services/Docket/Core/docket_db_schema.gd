@@ -32,7 +32,13 @@ static func init_schema(db: DocketDB) -> void:
 		summary TEXT, article TEXT, parameters TEXT,
 		steps TEXT, outcome TEXT, tool_deps TEXT,
 		target TEXT DEFAULT '',
-		optimization TEXT DEFAULT ''
+		optimization TEXT DEFAULT '',
+		source TEXT DEFAULT '',
+		customised INTEGER DEFAULT 0,
+		pristine_hash TEXT DEFAULT '',
+		pristine_content TEXT DEFAULT '',
+		unsatisfied_deps TEXT DEFAULT '',
+		deprecated INTEGER DEFAULT 0
 	);""")
 
 	db._exec("""CREATE TABLE IF NOT EXISTS item_tags (
@@ -164,6 +170,23 @@ static func migrate_schema(db: DocketDB) -> void:
 		db._exec("ALTER TABLE items ADD COLUMN target TEXT DEFAULT '';")
 	if not DocketDB._has_column(col_rows, "optimization"):
 		db._exec("ALTER TABLE items ADD COLUMN optimization TEXT DEFAULT '';")
+
+	# Plugin-shipped skills metadata (DCR 019df57b).  Schema must match the
+	# defaults declared in init_schema() so a .dct opened by either docket
+	# codebase (Minerva built-in or ccsandbox experimental) lands on the same
+	# final schema.
+	if not DocketDB._has_column(col_rows, "source"):
+		db._exec("ALTER TABLE items ADD COLUMN source TEXT DEFAULT '';")
+	if not DocketDB._has_column(col_rows, "customised"):
+		db._exec("ALTER TABLE items ADD COLUMN customised INTEGER DEFAULT 0;")
+	if not DocketDB._has_column(col_rows, "pristine_hash"):
+		db._exec("ALTER TABLE items ADD COLUMN pristine_hash TEXT DEFAULT '';")
+	if not DocketDB._has_column(col_rows, "pristine_content"):
+		db._exec("ALTER TABLE items ADD COLUMN pristine_content TEXT DEFAULT '';")
+	if not DocketDB._has_column(col_rows, "unsatisfied_deps"):
+		db._exec("ALTER TABLE items ADD COLUMN unsatisfied_deps TEXT DEFAULT '';")
+	if not DocketDB._has_column(col_rows, "deprecated"):
+		db._exec("ALTER TABLE items ADD COLUMN deprecated INTEGER DEFAULT 0;")
 
 	# Seed id_prefix if missing
 	var prefix_rows := db._exec_select("SELECT value FROM docket_meta WHERE key='id_prefix';")

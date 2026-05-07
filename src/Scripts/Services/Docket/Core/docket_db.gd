@@ -307,6 +307,9 @@ const _ITEM_COLS: Array = [
 	"summary", "article", "parameters",
 	"steps", "outcome", "tool_deps",
 	"target", "optimization",
+	# Plugin-shipped skills metadata (DCR 019df57b)
+	"source", "customised", "pristine_hash", "pristine_content",
+	"unsatisfied_deps", "deprecated",
 ]
 
 
@@ -1279,12 +1282,18 @@ func _build_item_dict(row: Dictionary) -> Dictionary:
 				 "test_setup", "test_steps", "expected_result", "last_reviewed",
 				 "command", "usage", "prompt_text", "preconditions",
 				 "summary", "article", "parameters",
-				 "steps", "outcome", "target"]:
+				 "steps", "outcome", "target",
+				 "source", "pristine_hash"]:
 		var val = row.get(col)
 		if val != null:
 			item[col] = str(val)
 		else:
 			item[col] = ""
+
+	# Plugin-shipped skills boolean fields (DCR 019df57b).  Stored as INTEGER
+	# 0/1 in SQLite; expose as bool to consumers.
+	item["customised"] = int(row.get("customised", 0)) != 0
+	item["deprecated"] = int(row.get("deprecated", 0)) != 0
 
 	# tool_deps: JSON array stored as TEXT
 	var tool_deps_raw = row.get("tool_deps")
@@ -1310,6 +1319,26 @@ func _build_item_dict(row: Dictionary) -> Dictionary:
 			item["optimization"] = {}
 	else:
 		item["optimization"] = {}
+
+	# pristine_content: JSON-encoded dict (DCR 019df57b).  Stores the upstream
+	# plugin manifest's skill entry verbatim so a later plugin update can diff
+	# against current customised content.
+	var pristine_raw = row.get("pristine_content")
+	if pristine_raw != null and not str(pristine_raw).is_empty():
+		var parsed = JSON.parse_string(str(pristine_raw))
+		item["pristine_content"] = parsed if parsed is Dictionary else {}
+	else:
+		item["pristine_content"] = {}
+
+	# unsatisfied_deps: JSON-encoded list[str] (DCR 019df57b).  tool_deps that
+	# aren't currently resolvable in the active registry; picker hides skills
+	# with non-empty unsatisfied_deps.
+	var unsat_raw = row.get("unsatisfied_deps")
+	if unsat_raw != null and not str(unsat_raw).is_empty():
+		var parsed = JSON.parse_string(str(unsat_raw))
+		item["unsatisfied_deps"] = parsed if parsed is Array else []
+	else:
+		item["unsatisfied_deps"] = []
 
 	# Fetch tags
 	var tag_rows := _exec_select("SELECT tag FROM item_tags WHERE item_id=?;", [id])

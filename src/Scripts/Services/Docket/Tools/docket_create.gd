@@ -52,6 +52,13 @@ func get_definition() -> Dictionary:
 				"preconditions": {"type": "string", "description": "What must be true before using this skill"},
 				"outcome": {"type": "string", "description": "What success looks like when the skill completes"},
 				"optimization": {"type": "object", "description": "Runtime optimization profile: {context_window, summary_mode, tool_idle_turns, tool_budget}"},
+				# Plugin-shipped skills metadata (DCR 019df57b)
+				"source": {"type": "string", "description": "Origin marker: 'user' (hand-authored), 'master' (shipped master.dct), or 'plugin:<plugin_id>' (seeded by plugin install). Defaults to '' / treated as 'user'."},
+				"customised": {"type": "boolean", "description": "True once user has edited a plugin-seeded skill. Reconciliation prompts on plugin update only fire when customised is true."},
+				"pristine_hash": {"type": "string", "description": "SHA-256 of the canonical-JSON pristine content. Used to detect upstream changes vs. user edits."},
+				"pristine_content": {"type": "object", "description": "The original plugin-shipped skill record, preserved verbatim for diff prompts on plugin update."},
+				"unsatisfied_deps": {"type": "array", "items": {"type": "string"}, "description": "tool_deps that aren't resolvable in the current registry. Picker hides skills with non-empty unsatisfied_deps."},
+				"deprecated": {"type": "boolean", "description": "True if upstream removed this skill in a later plugin version. Hidden from picker by default."},
 				# Prompt fields
 				"parameters": {"type": "string", "description": "Variables or placeholders in the prompt, e.g. {{language}}"},
 				# KB fields

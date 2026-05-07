@@ -199,7 +199,8 @@ static func _parse_item(d: Dictionary) -> Dictionary:
 				"last_reviewed",
 				"command", "usage", "prompt_text", "preconditions",
 				"summary", "article", "parameters",
-				"steps", "outcome"]:
+				"steps", "outcome",
+				"source", "pristine_hash"]:
 		_copy_str_opt(d, out, key)
 	# Optional integer fields (omitted when 0)
 	_copy_int_opt(d, out, "priority")
@@ -207,11 +208,18 @@ static func _parse_item(d: Dictionary) -> Dictionary:
 	_copy_int_opt(d, out, "retrieval_count")
 	_copy_int_opt(d, out, "research_cost")
 	_copy_int_opt(d, out, "quality")
+	_copy_int_opt(d, out, "customised")
+	_copy_int_opt(d, out, "deprecated")
 	# Array fields
 	if d.has("tags") and d["tags"] is Array:
 		out["tags"] = d["tags"].duplicate()
 	if d.has("tool_deps") and d["tool_deps"] is Array:
 		out["tool_deps"] = d["tool_deps"].duplicate()
+	if d.has("unsatisfied_deps") and d["unsatisfied_deps"] is Array:
+		out["unsatisfied_deps"] = d["unsatisfied_deps"].duplicate()
+	# Object fields
+	if d.has("pristine_content") and d["pristine_content"] is Dictionary:
+		out["pristine_content"] = d["pristine_content"].duplicate(true)
 	return out
 
 

@@ -51,6 +51,13 @@ func get_definition() -> Dictionary:
 				"preconditions": {"type": "string", "description": "What must be true before using this skill"},
 				"outcome": {"type": "string", "description": "What success looks like when the skill completes"},
 				"optimization": {"type": "object", "description": "Runtime optimization profile: {context_window, summary_mode, tool_idle_turns, tool_budget}"},
+				# Plugin-shipped skills metadata (DCR 019df57b)
+				"source": {"type": "string", "description": "Origin marker: 'user', 'master', or 'plugin:<plugin_id>'."},
+				"customised": {"type": "boolean", "description": "True once user has edited a plugin-seeded skill."},
+				"pristine_hash": {"type": "string", "description": "SHA-256 of canonical-JSON pristine content."},
+				"pristine_content": {"type": "object", "description": "Original plugin-shipped record, preserved for update-time diff."},
+				"unsatisfied_deps": {"type": "array", "items": {"type": "string"}, "description": "tool_deps not resolvable in current registry."},
+				"deprecated": {"type": "boolean", "description": "True if upstream removed this skill in a later plugin version."},
 				# Prompt fields
 				"parameters": {"type": "string", "description": "Variables or placeholders in the prompt"},
 				# KB fields
