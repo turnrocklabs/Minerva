@@ -19,6 +19,8 @@ const CODE_CONFIRMATION_REQUIRED = "confirmation_required"
 const CODE_PLUGIN_NOT_RUNNING = "plugin_not_running"
 const CODE_TOOL_NOT_FOUND = "tool_not_found"
 const CODE_EDITOR_NOT_FOUND = "editor_not_found"
+const CODE_NOT_BUFFER_CANONICAL = "not_buffer_canonical"
+const CODE_VERSION_CONFLICT = "version_conflict"
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +135,32 @@ static func editor_not_found(plugin_id: String, editor_name: String) -> Dictiona
 		"error_message": "Editor '%s' not found" % editor_name,
 		"plugin_id": plugin_id,
 		"editor_name": editor_name,
+	}
+
+
+## Editor exists but does not have a canonical DocumentBuffer (e.g. non-paired
+## plugin-scene panel whose state lives in panel UI, not in a DocumentBuffer).
+static func not_buffer_canonical(plugin_id: String, editor_name: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_NOT_BUFFER_CANONICAL,
+		"error_message": "Editor '%s' is not buffer-canonical; use host_owned_save for state access" % editor_name,
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+	}
+
+
+## Optimistic-concurrency version mismatch: caller supplied expected_version but
+## the buffer has already been mutated past that version.
+static func version_conflict(plugin_id: String, editor_name: String, expected: int, actual: int) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_VERSION_CONFLICT,
+		"error_message": "Version conflict on editor '%s': expected %d, actual %d" % [editor_name, expected, actual],
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"expected_version": expected,
+		"actual_version": actual,
 	}
 
 

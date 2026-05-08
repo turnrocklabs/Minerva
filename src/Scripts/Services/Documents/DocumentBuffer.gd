@@ -112,6 +112,15 @@ func reload_from_disk() -> Dictionary:
 	return {"ok": true}
 
 
+## Mark the buffer dirty without changing text or bumping version.
+## Use when the host knows the buffer has unsaved changes but does not have
+## new text to supply (e.g. host.documents.mark_dirty capability call).
+## Prefer apply_edit() when you have new text — it also bumps version and
+## fires text_changed.
+func mark_dirty() -> void:
+	dirty = true
+
+
 ## Notify that an external mutation was observed. Called by DocumentRegistry's
 ## watcher; emits external_change_detected for UI consumers to react to.
 func notify_external_change() -> void:

@@ -13,7 +13,7 @@
     "ipc_messages": []
   },
   "permissions": {
-    "host_capabilities": ["host.documents.list_open", "host.documents.get_state"],
+    "host_capabilities": ["host.documents.list_open", "host.documents.get_state", "host.documents.set_state", "host.documents.mark_dirty"],
     "network": {"mode": "none"},
     "filesystem": {"mode": "none", "paths": []}
   }

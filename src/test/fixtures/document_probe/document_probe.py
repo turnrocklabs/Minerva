@@ -32,6 +32,28 @@ TOOLS = [
             "required": ["editor_name"],
         },
     },
+    {
+        "name": "probe_set_state",
+        "description": "Calls host.documents.set_state on a given editor.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "editor_name": {"type": "string"},
+                "buffer_text": {"type": "string"},
+                "expected_version": {"type": "integer"},
+            },
+            "required": ["editor_name", "buffer_text"],
+        },
+    },
+    {
+        "name": "probe_mark_dirty",
+        "description": "Calls host.documents.mark_dirty on a given editor.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"editor_name": {"type": "string"}},
+            "required": ["editor_name"],
+        },
+    },
 ]
 
 
@@ -80,6 +102,40 @@ def handle_tools_call(req_id, name, args):
                 "buffer_canonical": inner.get("buffer_canonical"),
                 "kind": inner.get("kind"),
                 "plugin_id": inner.get("plugin_id"),
+                "was_denied": not result.get("success", False),
+                "error_code": result.get("error_code"),
+            })}]
+        }})
+    elif name == "probe_set_state":
+        editor_name = args.get("editor_name", "")
+        buffer_text = args.get("buffer_text", "")
+        cap_args = {"editor_name": editor_name, "buffer_text": buffer_text}
+        if "expected_version" in args:
+            cap_args["expected_version"] = args["expected_version"]
+        result = call_capability("host.documents.set_state", cap_args)
+        inner = result.get("result", {}) if isinstance(result, dict) else {}
+        send({"jsonrpc": "2.0", "id": req_id, "result": {
+            "content": [{"type": "text", "text": json.dumps({
+                "success": True,
+                "capability_result": result,
+                "version": inner.get("version"),
+                "dirty": inner.get("dirty"),
+                "kind": inner.get("kind"),
+                "was_denied": not result.get("success", False),
+                "error_code": result.get("error_code"),
+            })}]
+        }})
+    elif name == "probe_mark_dirty":
+        editor_name = args.get("editor_name", "")
+        result = call_capability("host.documents.mark_dirty",
+                                 {"editor_name": editor_name})
+        inner = result.get("result", {}) if isinstance(result, dict) else {}
+        send({"jsonrpc": "2.0", "id": req_id, "result": {
+            "content": [{"type": "text", "text": json.dumps({
+                "success": True,
+                "capability_result": result,
+                "dirty": inner.get("dirty"),
+                "kind": inner.get("kind"),
                 "was_denied": not result.get("success", False),
                 "error_code": result.get("error_code"),
             })}]

@@ -147,6 +147,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_documents_list_open(plugin_id, args)
 		"host.documents.get_state":
 			named_result = _handle_host_documents_get_state(plugin_id, args)
+		"host.documents.set_state":
+			named_result = _handle_host_documents_set_state(plugin_id, args)
+		"host.documents.mark_dirty":
+			named_result = _handle_host_documents_mark_dirty(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -342,6 +346,102 @@ func _handle_host_documents_get_state(plugin_id: String, args: Dictionary) -> Di
 	return PluginErrors.success(_describe_editor_state(ed))
 
 
+## Write new buffer text for a single editor (optimistic-concurrency write).
+##
+## Args: {editor_name: String, buffer_text: String, expected_version?: int}
+## Unknown keys are rejected (strict schema — writes are destructive).
+##
+## On success: {editor_name, version, dirty: true, kind, plugin_id}
+## Errors: editor_not_found, not_buffer_canonical, version_conflict,
+##         schema_validation_failed.
+func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Dictionary:
+	# Strict args allowlist — unknown keys are a footgun on destructive writes.
+	var allowed_keys := ["editor_name", "buffer_text", "expected_version"]
+	for k in args.keys():
+		if k not in allowed_keys:
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.set_state: unknown arg '%s' (allowed: %s)" % [k, str(allowed_keys)])
+
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.set_state requires 'editor_name'")
+
+	if not args.has("buffer_text"):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.set_state requires 'buffer_text'")
+	var buffer_text: String = str(args["buffer_text"])
+
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
+	if buffer == null:
+		return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+
+	# Optimistic concurrency: if caller supplied expected_version, check it
+	# against the current version before mutating.
+	if args.has("expected_version"):
+		var expected: int = int(args["expected_version"])
+		if buffer.version != expected:
+			return PluginErrors.version_conflict(plugin_id, editor_name, expected, buffer.version)
+
+	buffer.apply_edit(buffer_text)
+
+	var ed_type: int = int(ed.type) if "type" in ed else -1
+	var pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
+	print("[CapabilityBroker] Plugin '%s' set_state on editor '%s' (version→%d)" % [plugin_id, editor_name, buffer.version])
+	return PluginErrors.success({
+		"editor_name": editor_name,
+		"version": buffer.version,
+		"dirty": buffer.dirty,
+		"kind": _editor_kind_string(ed_type),
+		"plugin_id": pid if not pid.is_empty() else null,
+	})
+
+
+## Mark an editor's canonical DocumentBuffer as dirty without changing its text.
+##
+## Args: {editor_name: String}
+## Unknown keys are rejected (strict schema).
+##
+## On success: {editor_name, dirty: true, kind, plugin_id}
+## Errors: editor_not_found, not_buffer_canonical, schema_validation_failed.
+func _handle_host_documents_mark_dirty(plugin_id: String, args: Dictionary) -> Dictionary:
+	# Strict args allowlist.
+	var allowed_keys := ["editor_name"]
+	for k in args.keys():
+		if k not in allowed_keys:
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.mark_dirty: unknown arg '%s' (allowed: %s)" % [k, str(allowed_keys)])
+
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.mark_dirty requires 'editor_name'")
+
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
+	if buffer == null:
+		return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+
+	buffer.mark_dirty()
+
+	var ed_type: int = int(ed.type) if "type" in ed else -1
+	var pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
+	print("[CapabilityBroker] Plugin '%s' mark_dirty on editor '%s'" % [plugin_id, editor_name])
+	return PluginErrors.success({
+		"editor_name": editor_name,
+		"dirty": true,
+		"kind": _editor_kind_string(ed_type),
+		"plugin_id": pid if not pid.is_empty() else null,
+	})
+
+
 # ---------------------------------------------------------------------------
 # Editor enumeration helpers
 # ---------------------------------------------------------------------------
@@ -510,7 +610,24 @@ func _audit(plugin_id: String, event_type: String, detail: Dictionary) -> void:
 		audit_log.log_event(plugin_id, event_type, detail)
 
 
-## Log a capability dispatch outcome (granted = dispatched, failed = denied).
+## Log a capability dispatch outcome.
+##
+## Success → EVENT_CAPABILITY_DISPATCHED.
+## Policy-level denial (capability_not_granted, permission_denied,
+##   target_not_allowlisted, rate_limit_exceeded, confirmation_required)
+##   → EVENT_CAPABILITY_DENIED.
+## All other broker-level failures (editor_not_found, not_buffer_canonical,
+##   version_conflict, schema_validation_failed, unknown_capability,
+##   mcp_tool_error, secrets_error, …)
+##   → EVENT_CAPABILITY_FAILED.
+const _POLICY_DENY_CODES := [
+	PluginErrors.CODE_CAPABILITY_NOT_GRANTED,
+	PluginErrors.CODE_PERMISSION_DENIED,
+	PluginErrors.CODE_TARGET_NOT_ALLOWLISTED,
+	PluginErrors.CODE_RATE_LIMIT_EXCEEDED,
+	PluginErrors.CODE_CONFIRMATION_REQUIRED,
+]
+
 func _audit_dispatch(plugin_id: String, capability: String, result: Dictionary) -> void:
 	if audit_log == null:
 		return
@@ -519,7 +636,14 @@ func _audit_dispatch(plugin_id: String, capability: String, result: Dictionary) 
 			"capability": capability,
 		})
 	else:
-		audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DENIED, {
-			"capability": capability,
-			"reason": result.get("error_code", "unknown"),
-		})
+		var error_code: String = result.get("error_code", "unknown")
+		if error_code in _POLICY_DENY_CODES:
+			audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DENIED, {
+				"capability": capability,
+				"reason": error_code,
+			})
+		else:
+			audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_FAILED, {
+				"capability": capability,
+				"reason": error_code,
+			})

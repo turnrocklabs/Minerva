@@ -21,9 +21,15 @@ const EVENT_CAPABILITY_REVOKE = "capability_revoke"
 ## Fired by CapabilityBroker when a plugin capability request is dispatched
 ## and succeeds (after policy allows it).
 const EVENT_CAPABILITY_DISPATCHED = "capability_dispatched"
-## Fired by CapabilityBroker when a capability request is denied (no handler
-## or unknown capability — after policy already denied, or broker unknown).
+## Fired by CapabilityBroker when a policy engine rejects a capability request
+## (capability_not_granted, permission_denied, target_not_allowlisted,
+## rate_limit_exceeded, confirmation_required).
 const EVENT_CAPABILITY_DENIED = "capability_denied"
+## Fired by CapabilityBroker when a capability is policy-granted but the broker
+## itself fails to satisfy the request (editor_not_found, not_buffer_canonical,
+## version_conflict, schema_validation_failed, unknown_capability,
+## mcp_tool_error, secrets_error, etc.).
+const EVENT_CAPABILITY_FAILED = "capability_failed"
 
 
 # ---------------------------------------------------------------------------

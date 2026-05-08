@@ -1,6 +1,6 @@
 extends SceneTree
-## Integration test for host.documents.list_open + host.documents.get_state
-## (broker phase 3 reads).
+## Integration test for host.documents.* capabilities (broker phase 3 reads +
+## phase 4 writes).
 ##
 ## Run: godot --headless --path src --script test/test_host_capability_documents.gd
 ##
@@ -12,11 +12,18 @@ extends SceneTree
 ##     - list_open returns {documents:[]} when editor_pane is null (headless)
 ##     - get_state with empty editor_name → schema_validation_failed
 ##     - get_state with bogus editor_name → editor_not_found
-##     - audit log records dispatched + denied entries
+##     - set_state with bogus editor_name → editor_not_found
+##     - set_state with unknown arg → schema_validation_failed
+##     - mark_dirty with bogus editor_name → editor_not_found
+##     - audit chore: broker-level failures log capability_failed, not capability_denied
+##     - audit log records dispatched + denied entries (policy path still correct)
 ##
 ##   Integration (real fixture subprocess):
 ##     - probe_list happy path: granted plugin gets documents array (empty in headless)
 ##     - probe_state with bogus name: structured editor_not_found error
+##     - probe_set_state with bogus editor → editor_not_found
+##     - probe_mark_dirty with bogus editor → editor_not_found
+##     - audit log: capability_failed recorded for broker-level errors
 ##     - deny path: separate fixture without host.documents.* declared gets denied,
 ##       audit log records the denial
 ##
@@ -175,11 +182,68 @@ func _run_unit_tests() -> void:
 		deny_code in ["capability_not_granted", "unknown_capability"],
 		"got error_code: '%s'" % deny_code)
 
-	# --- audit: denied entry exists ---
+	# --- audit: denied entry exists (policy deny) ---
 	var denied: Array = audit.get_entries("doc_probe_test", "capability_denied")
 	check("audit log records denied entry",
 		denied.size() > 0,
 		"denied entries: %s" % str(denied))
+
+	# -----------------------------------------------------------------------
+	# Write capabilities: set_state + mark_dirty (unit, no editor_pane)
+	# -----------------------------------------------------------------------
+	# Grant write capabilities for the remainder of unit tests.
+	policy.grant_capability("doc_probe_test", "host.documents.set_state")
+	policy.grant_capability("doc_probe_test", "host.documents.mark_dirty")
+
+	# --- set_state: bogus editor_name → editor_not_found ---
+	var ss_not_found: Dictionary = await broker.dispatch("doc_probe_test",
+		"host.documents.set_state",
+		{"editor_name": "no_such_editor_abc", "buffer_text": "hello"})
+	check("set_state bogus name returns success=false",
+		not ss_not_found.get("success", true),
+		"got: %s" % str(ss_not_found))
+	check("set_state bogus name error_code is editor_not_found",
+		ss_not_found.get("error_code", "") == "editor_not_found",
+		"got: %s" % str(ss_not_found))
+
+	# --- set_state: unknown arg key → schema_validation_failed ---
+	var ss_bad_args: Dictionary = await broker.dispatch("doc_probe_test",
+		"host.documents.set_state",
+		{"editor_name": "x", "buffer_text": "y", "rogue_key": "oops"})
+	check("set_state with unknown arg returns success=false",
+		not ss_bad_args.get("success", true),
+		"got: %s" % str(ss_bad_args))
+	check("set_state unknown arg error_code is schema_validation_failed",
+		ss_bad_args.get("error_code", "") == "schema_validation_failed",
+		"got: %s" % str(ss_bad_args))
+
+	# --- mark_dirty: bogus editor_name → editor_not_found ---
+	var md_not_found: Dictionary = await broker.dispatch("doc_probe_test",
+		"host.documents.mark_dirty",
+		{"editor_name": "no_such_editor_def"})
+	check("mark_dirty bogus name returns success=false",
+		not md_not_found.get("success", true),
+		"got: %s" % str(md_not_found))
+	check("mark_dirty bogus name error_code is editor_not_found",
+		md_not_found.get("error_code", "") == "editor_not_found",
+		"got: %s" % str(md_not_found))
+
+	# -----------------------------------------------------------------------
+	# Audit chore fix: broker-level failures → capability_failed, not capability_denied
+	# -----------------------------------------------------------------------
+	# get_state with bogus name was already dispatched above (policy-granted).
+	# That should have emitted capability_failed, not capability_denied.
+	var broker_failed: Array = audit.get_entries("doc_probe_test", "capability_failed")
+	check("audit log records capability_failed for broker-level errors (not capability_denied)",
+		broker_failed.size() > 0,
+		"capability_failed count=%d; all entries: %s" % [broker_failed.size(), str(audit.get_entries("doc_probe_test"))])
+
+	# Policy-deny count must not have grown from broker-level failures.
+	# We expect exactly the one policy denial from the ungranted set_state call above.
+	var denied_after_writes: Array = audit.get_entries("doc_probe_test", "capability_denied")
+	check("capability_denied count unchanged by broker-level errors (only policy denials)",
+		denied_after_writes.size() == denied.size(),
+		"before=%d after=%d" % [denied.size(), denied_after_writes.size()])
 
 	print("  (unit tests complete)\n")
 
@@ -231,7 +295,9 @@ func _run_integration_tests(manifest_path: String, no_caps_manifest: String) -> 
 	if policy != null:
 		policy.grant_capability("document_probe", "host.documents.list_open")
 		policy.grant_capability("document_probe", "host.documents.get_state")
-		print("  Granted host.documents.{list_open,get_state} to document_probe")
+		policy.grant_capability("document_probe", "host.documents.set_state")
+		policy.grant_capability("document_probe", "host.documents.mark_dirty")
+		print("  Granted host.documents.{list_open,get_state,set_state,mark_dirty} to document_probe")
 	else:
 		print("  WARNING: no policy available — happy-path assertions may fail")
 
@@ -276,6 +342,34 @@ func _run_integration_tests(manifest_path: String, no_caps_manifest: String) -> 
 		check("probe_state (bogus) error_code is editor_not_found",
 			str(bogus_call.get("error_code", "")) == "editor_not_found",
 			"got: %s" % str(bogus_call))
+
+	# --- set_state with bogus editor → editor_not_found (integration) ---
+	print("\n-- set_state on bogus editor name (integration) --")
+	var ss_bogus_call = await conn.call_tool("probe_set_state",
+		{"editor_name": "no_such_tab_for_write_xyz", "buffer_text": "irrelevant"})
+	check("probe_set_state (bogus) returned a Dictionary", ss_bogus_call is Dictionary,
+		"got type %d" % typeof(ss_bogus_call))
+	if ss_bogus_call is Dictionary:
+		check("probe_set_state (bogus) reports was_denied=true (lookup failed)",
+			ss_bogus_call.get("was_denied", false) == true,
+			"got: %s" % str(ss_bogus_call))
+		check("probe_set_state (bogus) error_code is editor_not_found",
+			str(ss_bogus_call.get("error_code", "")) == "editor_not_found",
+			"got: %s" % str(ss_bogus_call))
+
+	# --- mark_dirty with bogus editor → editor_not_found (integration) ---
+	print("\n-- mark_dirty on bogus editor name (integration) --")
+	var md_bogus_call = await conn.call_tool("probe_mark_dirty",
+		{"editor_name": "no_such_tab_for_mark_xyz"})
+	check("probe_mark_dirty (bogus) returned a Dictionary", md_bogus_call is Dictionary,
+		"got type %d" % typeof(md_bogus_call))
+	if md_bogus_call is Dictionary:
+		check("probe_mark_dirty (bogus) reports was_denied=true (lookup failed)",
+			md_bogus_call.get("was_denied", false) == true,
+			"got: %s" % str(md_bogus_call))
+		check("probe_mark_dirty (bogus) error_code is editor_not_found",
+			str(md_bogus_call.get("error_code", "")) == "editor_not_found",
+			"got: %s" % str(md_bogus_call))
 
 	print("\n-- stop_plugin (document_probe) --")
 	var stop_result = await pm.stop_plugin("document_probe")
@@ -334,6 +428,12 @@ func _run_integration_tests(manifest_path: String, no_caps_manifest: String) -> 
 		check("audit log records capability_dispatched for granted fixture",
 			dp_dispatched.size() > 0,
 			"dispatched count=%d" % dp_dispatched.size())
+		# Chore fix: broker-level errors (editor_not_found from bogus write calls)
+		# must appear as capability_failed, not capability_denied.
+		var dp_failed = audit_log.get_entries("document_probe", "capability_failed")
+		check("audit log records capability_failed for broker-level errors (write path)",
+			dp_failed.size() > 0,
+			"capability_failed count=%d" % dp_failed.size())
 	else:
 		print("  WARNING: no audit_log available — skipping audit assertions")
 
