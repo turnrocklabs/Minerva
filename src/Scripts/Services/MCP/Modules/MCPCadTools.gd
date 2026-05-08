@@ -329,7 +329,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_cad_export":
 			return await _cad_export(arguments)
 		"minerva_cad_snapshot":
-			return _cad_snapshot(arguments)
+			return await _cad_snapshot(arguments)
 	return _err("Unknown CAD tool: %s" % tool_name)
 
 
@@ -808,13 +808,24 @@ func _cad_snapshot(args: Dictionary) -> Dictionary:
 
 	var img: Image = host.call("render_view_to_image", view_id, Rect2()) as Image
 	if img == null:
+		# Cold-start: render_view_to_image scheduled a frame_post_draw one-shot
+		# but it hasn't fired yet. Wait one drawn frame so the cache populates,
+		# then retry. This makes the tool reliable from the agent's POV — they
+		# don't have to know about Godot's deferred capture model.
+		await RenderingServer.frame_post_draw
+		img = host.call("render_view_to_image", view_id, Rect2()) as Image
+	if img == null:
+		# Still null after a full frame — the SubViewport itself isn't rendering
+		# (most likely cause: narrow layout, where only the visible single-view
+		# pane runs the render pipeline; off-screen wide-layout panes return
+		# null from get_image()). Distinguish from cold-start so the agent
+		# knows retrying with the same args won't help.
 		return _err(
-			"snapshot: render_view_to_image returned null for view '%s'. "
+			"snapshot: render_view_to_image returned null for view '%s' "
 			% view_id
-			+ "First call may return null on cold start (frame_post_draw is "
-			+ "scheduled — retry next frame). For non-active views in narrow "
-			+ "layout, the SubViewport may not be rendering — switch to wide "
-			+ "layout or to view='active'."
+			+ "after one frame_post_draw. The SubViewport is likely not "
+			+ "rendering — common cause is narrow layout hiding off-screen "
+			+ "panes. Try view='active', or switch the panel to wide layout."
 		)
 
 	# Downsample to max_edge if oversize. Aspect ratio preserved.
