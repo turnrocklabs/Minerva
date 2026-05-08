@@ -808,7 +808,10 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary) -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
 		return {"error": "STDIO transport not connected"}
 
-	# For tools/list, use that method directly
+	# For tools/list, use that method directly. Unwrap the JSON-RPC envelope
+	# so callers (refresh_tools) see {tools: [...]} at the top level — matches
+	# the post-`rpc_response.get("result")` shape contract that _call_tool_http
+	# and _mcp_initialize already implement on this connection.
 	if tool_name == "tools/list":
 		var list_request := {
 			"jsonrpc": "2.0",
@@ -816,7 +819,13 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary) -> Dictionary:
 			"method": "tools/list",
 			"params": {}
 		}
-		return await _stdio_request(list_request)
+		var list_response := await _stdio_request(list_request)
+		if list_response.get("error"):
+			return list_response
+		var inner = list_response.get("result", {})
+		if inner is Dictionary:
+			return inner
+		return {"error": "tools/list response 'result' was not a Dictionary (got type=%d, value=%s)" % [typeof(inner), str(inner).left(120)]}
 
 	# For regular tool calls, use tools/call with wrapped params
 	var request := {
