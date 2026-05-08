@@ -555,7 +555,43 @@ func start_plugin(id: String) -> Dictionary:
 
 	plugin_started.emit(id)
 	print("[PluginManager] Plugin '%s' is RUNNING" % id)
+
+	# Dynamic tool discovery: query the backend's tools/list and register the
+	# results into PluginToolRegistry with the auto-prefix policy (Option B).
+	# This runs after plugin_started so MCP wiring in singleton_object.gd has
+	# already connected tools_registered → tool_registry propagation.
+	_discover_backend_tools(id, conn)
+
 	return {"ok": true}
+
+
+## Kick off backend tool discovery for a newly-started plugin.
+## Runs asynchronously so start_plugin() can return {"ok": true} immediately
+## while discovery completes in the background.
+## conn is MCPServerConnection (untyped to avoid parse-order dependency).
+func _discover_backend_tools(plugin_id: String, conn) -> void:
+	# Resolve tool registry via SingletonObject (avoids circular dep at parse time).
+	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
+	if so == null:
+		push_warning("[PluginManager] SingletonObject not in scene tree; skipping backend tool discovery for '%s'" % plugin_id)
+		return
+	var registry = so.get("plugin_tool_registry") if "plugin_tool_registry" in so else null
+	if registry == null:
+		push_warning("[PluginManager] plugin_tool_registry not available; skipping backend tool discovery for '%s'" % plugin_id)
+		return
+	var result: Dictionary = await registry.register_backend_tools(plugin_id, conn)
+	if result.get("error"):
+		push_warning("[PluginManager] Backend tool discovery for '%s' failed: %s" % [
+			plugin_id, result.get("error")
+		])
+	elif result.get("skipped"):
+		print("[PluginManager] Backend tool discovery skipped for '%s': %s" % [
+			plugin_id, result.get("skipped")
+		])
+	else:
+		print("[PluginManager] Backend tool discovery for '%s': %d tool(s) registered" % [
+			plugin_id, result.get("registered", []).size()
+		])
 
 
 ## Stop a running plugin cleanly.

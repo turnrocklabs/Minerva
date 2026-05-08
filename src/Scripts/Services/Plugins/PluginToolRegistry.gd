@@ -312,7 +312,19 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			"args_keys": args.keys(),
 		})
 
-	var result: Dictionary = await conn.call_tool(tool_name, args)
+	# Resolve the backend name: backend-discovered tools may have a different
+	# name on the wire (the short name the backend registered, before auto-prefix
+	# was applied). Look it up from the stored "_backend_name" field. If absent
+	# (manifest-declared tools always use the exact name), use tool_name as-is.
+	var dispatch_name := tool_name
+	for entry in _tools_by_plugin.get(plugin_id, []):
+		if entry.get("name") == tool_name:
+			var backend_name: String = entry.get("_backend_name", "")
+			if not backend_name.is_empty():
+				dispatch_name = backend_name
+			break
+
+	var result: Dictionary = await conn.call_tool(dispatch_name, args)
 
 	if audit_log != null:
 		var succeeded := not result.has("error")
@@ -509,6 +521,138 @@ func on_plugin_started(plugin_id: String) -> void:
 		push_error("[PluginToolRegistry] Failed to register tools for '%s' on start: %s" % [
 			plugin_id, result.get("error")
 		])
+
+
+# ---------------------------------------------------------------------------
+# Backend-discovered tool registration (dynamic discovery via tools/list)
+# ---------------------------------------------------------------------------
+#
+# PREFIX POLICY: Option B — Auto-prefix
+#
+# Plugin backends (e.g. Go binaries) advertise clean, short tool names such as
+# "mcad_validate" or "cad.evaluate". At registration time Minerva transforms
+# each name to "minerva_<plugin_id>_<sanitized_name>", where sanitization
+# replaces every '.' with '_'. This keeps plugin code clean and adds the
+# required namespace at the Minerva boundary.
+#
+# Special cases:
+#   - If a name ALREADY starts with "minerva_<plugin_id>_" it is used as-is
+#     (no double-prefix). This lets conformant backends opt in without
+#     breakage.
+#   - Names that start with "minerva_" but belong to a DIFFERENT plugin's
+#     prefix are rejected as they could shadow another plugin's tools.
+#
+# Rationale: plugin authors should not need to know Minerva's internal naming
+# conventions; Minerva adds the namespace. The manifest's tools[] array is
+# preserved as install-time expected-tool metadata and is not affected by this
+# runtime discovery path.
+
+## Sanitize a raw backend tool name for use as a Minerva-namespaced tool name.
+## Replaces '.' with '_'. Other characters are left as-is (Go tool names are
+## typically alphanumeric + underscores already).
+static func _sanitize_tool_name(raw_name: String) -> String:
+	return raw_name.replace(".", "_")
+
+
+## Apply the auto-prefix policy to a raw backend tool name.
+## Returns the conformant "minerva_<plugin_id>_<name>" string.
+## Does NOT double-prefix if the name already conforms.
+static func _apply_prefix(plugin_id: String, raw_name: String) -> String:
+	var expected_prefix := "minerva_%s_" % plugin_id
+	if raw_name.begins_with(expected_prefix):
+		return raw_name  # Already conformant — use as-is.
+	var sanitized := _sanitize_tool_name(raw_name)
+	return expected_prefix + sanitized
+
+
+## Discover and register tools reported by the plugin backend via tools/list.
+##
+## This is the dynamic discovery path: called by PluginManager after a plugin
+## has fully started (MCP handshake complete). It calls conn.refresh_tools(),
+## transforms each returned tool name with the auto-prefix policy (Option B),
+## and registers the resulting tool definitions.
+##
+## Any manifest-declared tools already registered under this plugin_id are
+## REPLACED by the backend-discovered set (the backend is authoritative at
+## runtime; manifest tools are install-time review metadata only).
+##
+## Returns {"ok": true, "registered": [...]} on success.
+## Returns {"error": "..."} if discovery or registration fails.
+## Returns {"ok": true, "registered": [], "skipped": "no_connection"} if the
+## connection is unavailable (non-fatal for headless/test scenarios).
+func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dictionary:
+	if plugin_id.is_empty():
+		return {"error": "plugin_id must not be empty"}
+
+	if conn == null:
+		push_warning("[PluginToolRegistry] register_backend_tools: no connection for '%s'" % plugin_id)
+		return {"ok": true, "registered": [], "skipped": "no_connection"}
+
+	# Refresh the tools list from the backend.
+	var refresh_err: int = await conn.refresh_tools()
+	if refresh_err != OK:
+		push_warning("[PluginToolRegistry] tools/list refresh failed for plugin '%s' (err=%d)" % [
+			plugin_id, refresh_err
+		])
+		return {"error": "tools/list refresh failed with error %d" % refresh_err}
+
+	var raw_tools: Array = conn.tools  # Array of MCPToolDefinition objects
+	if raw_tools.is_empty():
+		print("[PluginToolRegistry] No tools reported by backend for plugin '%s'" % plugin_id)
+		_unregister_internal(plugin_id)
+		_tools_by_plugin[plugin_id] = []
+		return {"ok": true, "registered": []}
+
+	# Transform each backend tool into a conformant entry dict.
+	var entries: Array[Dictionary] = []
+	for tool_def in raw_tools:
+		if tool_def == null:
+			continue
+		var raw_name: String = str(tool_def.name) if tool_def.name != null else ""
+		if raw_name.is_empty():
+			continue
+
+		var namespaced_name := _apply_prefix(plugin_id, raw_name)
+
+		# Reject if the name starts with "minerva_" but conflicts with another
+		# plugin's prefix (e.g. "minerva_otherplugin_foo").
+		var expected_prefix := "minerva_%s_" % plugin_id
+		if namespaced_name.begins_with("minerva_") and not namespaced_name.begins_with(expected_prefix):
+			push_warning("[PluginToolRegistry] Backend tool '%s' for plugin '%s' would produce '%s' which conflicts with another plugin's prefix — skipping" % [
+				raw_name, plugin_id, namespaced_name
+			])
+			continue
+
+		var entry := {
+			"name": namespaced_name,
+			"description": str(tool_def.description) if tool_def.description != null else "",
+			"input_schema": tool_def.input_schema if tool_def.input_schema != null else {"type": "object", "properties": {}},
+			"source": "plugin:%s" % plugin_id,
+			# Preserve the original backend name for dispatch — _call_tool_stdio
+			# uses the namespaced name and the plugin receives it via tools/call.
+			# The backend must handle the namespaced name OR we strip the prefix
+			# before forwarding. For now we forward as-is (the backend echoes its
+			# own name from tools/list, so it will recognise the prefixed name if
+			# it declared it, or the stripped name if it declared the short form).
+			"_backend_name": raw_name,
+		}
+		entries.append(entry)
+
+	if entries.is_empty():
+		print("[PluginToolRegistry] All backend tools filtered for plugin '%s'" % plugin_id)
+		_unregister_internal(plugin_id)
+		_tools_by_plugin[plugin_id] = []
+		return {"ok": true, "registered": []}
+
+	# Use register_plugin_tools with the already-namespaced entries.
+	# That function enforces the prefix rule again — since we applied the prefix
+	# above, all entries should pass. Build the dict array it expects.
+	var result := register_plugin_tools(plugin_id, entries)
+	if result.has("error"):
+		push_error("[PluginToolRegistry] register_backend_tools failed for '%s': %s" % [
+			plugin_id, result.get("error")
+		])
+	return result
 
 
 # ---------------------------------------------------------------------------

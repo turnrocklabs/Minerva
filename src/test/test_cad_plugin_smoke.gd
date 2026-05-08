@@ -1,24 +1,25 @@
 extends SceneTree
-## CAD plugin lifecycle smoke test — broker-DCR regression baseline.
+## CAD plugin lifecycle smoke test — broker-DCR regression baseline + dynamic
+## tool discovery assertions.
 ##
 ## Run: godot --headless --path src --script test/test_cad_plugin_smoke.gd
 ##
 ## Tracks docket: minerva 019e08fdd00c72a19e1cf8e6fde6a0b0
 ## Parent DCR:    minerva 019df8e2d0937613a326389a4df133fb (broker refactor)
 ##
-## Goal (v1): integration-boundary coverage of the plugin lifecycle path that
-## the broker refactor will touch — subprocess spawn, MCP handshake, clean
-## stop. Spawns the real cad-plugin Go binary (no stubs).
+## Goal (v1): integration-boundary coverage of the plugin lifecycle path.
+## Goal (v2): dynamic tool discovery via PluginToolRegistry.register_backend_tools.
+##   Prefix policy: Option B (auto-prefix) — "mcad_validate" becomes
+##   "minerva_cad_mcad_validate", "cad.evaluate" becomes "minerva_cad_cad_evaluate".
 ##
-## Out of scope (v1): MCP dispatch surface, geometry evaluation, snapshots.
-## See the docket item's "v2 — MCP dispatch surface" section for the planned
-## follow-up.
+## Out of scope: geometry evaluation, snapshots (separate test files).
 
 ## NOTE: PluginManager.gd and MCPServerConnection.gd reference the SingletonObject
 ## autoload at parse time. In `--script` mode autoloads register lazily, so an
 ## eager `preload(...)` at top-of-file fails to compile. Defer to a runtime
 ## `load(...)` once the autoload chain has had a chance to wire up.
 const PLUGIN_MANAGER_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginManager.gd"
+const PLUGIN_TOOL_REGISTRY_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginToolRegistry.gd"
 
 # Plugin source layout (dev-mode install). Not strictly portable, but matches
 # the data_directory the user's plugins.json already records.
@@ -170,6 +171,99 @@ func _run_test(manifest_path: String) -> void:
 				malformed_count == 0,
 				"%d of %d tools were missing required fields" % [malformed_count, tool_count])
 		print("    cad-plugin reported %d tool(s): %s" % [tool_count, str(tool_names).left(200)])
+
+	# --- DYNAMIC TOOL DISCOVERY (v2) ---
+	# After start_plugin, PluginManager._discover_backend_tools runs in the
+	# background. We exercise PluginToolRegistry.register_backend_tools directly
+	# here to confirm the auto-prefix policy and registry state.
+	print("\n-- dynamic tool discovery --")
+	var registry_script = load(PLUGIN_TOOL_REGISTRY_SCRIPT_PATH)
+	check("PluginToolRegistry script loaded", registry_script != null)
+	if registry_script != null and conn != null:
+		# Instantiate a fresh registry (no PluginManager — headless test mode).
+		var registry = registry_script.new()
+		check("PluginToolRegistry instantiated", registry != null)
+
+		if registry != null:
+			# Register backend tools from the live connection.
+			var reg_result: Dictionary = await registry.register_backend_tools("cad", conn)
+			check("register_backend_tools returns ok",
+					reg_result.get("ok", false) == true,
+					"got: %s" % str(reg_result))
+
+			var registered_names: Array = reg_result.get("registered", [])
+			check("at least one backend tool registered",
+					registered_names.size() > 0,
+					"registered: %s" % str(registered_names))
+
+			# Prefix policy assertion: every registered name must start with "minerva_cad_"
+			var all_prefixed := true
+			for n in registered_names:
+				if not str(n).begins_with("minerva_cad_"):
+					all_prefixed = false
+					break
+			check("all registered names start with 'minerva_cad_'",
+					all_prefixed,
+					"got: %s" % str(registered_names))
+
+			# Specific known tool: "mcad_validate" → "minerva_cad_mcad_validate"
+			check("'minerva_cad_mcad_validate' is in registry after backend discovery",
+					registry.is_plugin_tool("minerva_cad_mcad_validate"),
+					"registered names: %s" % str(registered_names))
+
+			# is_plugin_tool lookup works for the prefixed name
+			check("is_plugin_tool('minerva_cad_mcad_validate') returns true",
+					registry.is_plugin_tool("minerva_cad_mcad_validate"))
+
+			# get_tool_owner returns "cad"
+			check("get_tool_owner('minerva_cad_mcad_validate') returns 'cad'",
+					registry.get_tool_owner("minerva_cad_mcad_validate") == "cad",
+					"got: '%s'" % registry.get_tool_owner("minerva_cad_mcad_validate"))
+
+			# No raw backend names in registry (prefix policy enforced)
+			check("raw name 'mcad_validate' is NOT in registry (prefixed correctly)",
+					not registry.is_plugin_tool("mcad_validate"))
+
+			var tool_count_after: int = registry.get_tool_count()
+			print("    %d tool(s) registered with prefix: %s" % [tool_count_after, str(registered_names)])
+
+			# --- STOP + RESTART IDEMPOTENCY ---
+			# Verify re-registration is clean: call register_backend_tools again on the
+			# same registry and confirm the count stays the same (idempotent).
+			print("\n-- idempotency: re-register same tools --")
+			var reg_result2: Dictionary = await registry.register_backend_tools("cad", conn)
+			check("second register_backend_tools returns ok",
+					reg_result2.get("ok", false) == true,
+					"got: %s" % str(reg_result2))
+			var registered2: Array = reg_result2.get("registered", [])
+			check("re-register produces same count (idempotent)",
+					registered2.size() == registered_names.size(),
+					"first=%d second=%d" % [registered_names.size(), registered2.size()])
+			check("'minerva_cad_mcad_validate' still present after re-register",
+					registry.is_plugin_tool("minerva_cad_mcad_validate"))
+
+			# --- POST-STOP: tools unregistered ---
+			print("\n-- unregister on stop --")
+			registry.on_plugin_stopped("cad")
+			check("tools gone after on_plugin_stopped",
+					registry.get_tool_count() == 0,
+					"count=%d" % registry.get_tool_count())
+			check("is_plugin_tool returns false after stop",
+					not registry.is_plugin_tool("minerva_cad_mcad_validate"))
+
+			# --- RESTART CYCLE: re-discover after stop ---
+			print("\n-- restart cycle: re-discover after stop --")
+			var reg_result3: Dictionary = await registry.register_backend_tools("cad", conn)
+			check("register_backend_tools after stop returns ok",
+					reg_result3.get("ok", false) == true,
+					"got: %s" % str(reg_result3))
+			var registered3: Array = reg_result3.get("registered", [])
+			check("tools re-registered after stop+restart cycle",
+					registered3.size() == registered_names.size(),
+					"first=%d after_restart=%d" % [registered_names.size(), registered3.size()])
+			check("'minerva_cad_mcad_validate' present again after restart cycle",
+					registry.is_plugin_tool("minerva_cad_mcad_validate"))
+			print("    restart cycle restored %d tool(s)" % registered3.size())
 
 	# --- STOP ---
 	print("\n-- stop_plugin --")
