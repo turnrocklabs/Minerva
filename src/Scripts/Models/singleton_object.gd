@@ -534,8 +534,8 @@ func initialize_plugins() -> void:
 	plugin_policy = PolicyClass.new(plugin_manager.get_db(), plugin_audit_log)
 	plugin_manager._policy_ref = plugin_policy
 
-	# Capability broker (references policy)
-	plugin_capability_broker = BrokerClass.new(plugin_policy)
+	# Capability broker (references policy and audit log)
+	plugin_capability_broker = BrokerClass.new(plugin_policy, plugin_audit_log)
 
 	# Tool registry (references manager, policy, audit log, broker)
 	plugin_tool_registry = ToolRegClass.new(plugin_manager, plugin_policy, plugin_audit_log)

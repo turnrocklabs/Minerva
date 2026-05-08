@@ -16,14 +16,34 @@ extends RefCounted
 ## - Per-handle isolation for secrets is enforced at the broker, not by trust:
 ##   the docket handle is auto-prefixed with "plugin/<id>/" so plugins can never
 ##   construct a string that reaches another plugin's secrets.
-## - Other capabilities not listed above return "not_implemented".
+## - host.echo is a trivial debug capability: returns {"echo": <args>} unchanged.
+##   It is useful for validating the bidirectional channel end-to-end without
+##   requiring a real host service.  Always safe to grant in dev/test manifests.
+## - Other capabilities not listed above return "unknown_capability".
+##
+## Re-entrancy note (bidirectional channel):
+##   When a plugin calls minerva/capability from WITHIN a tools/call handler,
+##   Minerva's _stdio_request loop (MCPServerConnection.gd) detects the inbound
+##   "method":"minerva/capability" message and dispatches it inline via
+##   _handle_plugin_capability_request → capability_request_handler → broker.dispatch.
+##   The _in_stdio_request guard prevents _on_async_output_ready from double-draining
+##   the stdio pipe while this nested dispatch is in flight.  The plugin's tool
+##   call resumes only after the capability response is written back to its stdin
+##   and it sends its tools/call result.  This is single-threaded cooperative
+##   re-entrancy — no two capability requests from the same plugin can overlap
+##   because the plugin blocks waiting for each response before sending the next.
 
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
 
+## Audit log reference — optional. When set, capability dispatches and
+## denials are logged in addition to what PluginPolicy already records.
+var audit_log: PluginAuditLog = null
 
-func _init(p_policy: PluginPolicy = null) -> void:
+
+func _init(p_policy: PluginPolicy = null, p_audit_log: PluginAuditLog = null) -> void:
 	policy = p_policy
+	audit_log = p_audit_log
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +97,13 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 	if policy != null:
 		var check := policy.check_capability(plugin_id, capability)
 		if not check.get("allowed", false):
+			# Policy already logged the denial via _record_decision; log at
+			# broker level too so capability-request outcomes are queryable
+			# independently of raw policy events.
+			_audit(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DENIED, {
+				"capability": capability,
+				"reason": check.get("error_code", "not_granted"),
+			})
 			# Re-wrap as success=false (check_capability already uses PluginErrors format)
 			return {
 				"success": false,
@@ -87,25 +114,45 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 	else:
 		# No policy engine — fail closed
 		push_warning("[CapabilityBroker] No policy engine set — denying dispatch of '%s' for plugin '%s'" % [capability, plugin_id])
+		_audit(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DENIED, {
+			"capability": capability,
+			"reason": "no_policy_engine",
+		})
 		return PluginErrors.capability_not_granted(plugin_id, capability)
 
 	# Route mcp.proxy:<tool_name> to MinervaMCPServer
 	if capability.begins_with("mcp.proxy:"):
-		return await _handle_mcp_proxy(plugin_id, capability, args)
+		var mcp_result := await _handle_mcp_proxy(plugin_id, capability, args)
+		_audit_dispatch(plugin_id, capability, mcp_result)
+		return mcp_result
 
 	# Route secrets:<op>:<handle> to docket vault, namespaced per plugin.
 	if capability.begins_with("secrets:"):
-		return await _handle_secrets(plugin_id, capability, args)
+		var sec_result := await _handle_secrets(plugin_id, capability, args)
+		_audit_dispatch(plugin_id, capability, sec_result)
+		return sec_result
 
-	# Legacy / non-mcp.proxy capabilities — not yet implemented
+	# Named capability dispatch
+	var named_result: Dictionary
 	match capability:
 		"network.none":
 			# network.none is a deny marker — granting it is a configuration error
-			return PluginErrors.permission_denied(plugin_id,
+			named_result = PluginErrors.permission_denied(plugin_id,
 				"network.none is a deny marker and cannot be dispatched")
+		"host.echo":
+			# Trivial debug capability: echoes args back to the caller.
+			# Useful for validating the bidirectional channel end-to-end.
+			named_result = _handle_host_echo(plugin_id, args)
 		_:
-			return PluginErrors.schema_validation_failed(plugin_id,
-				"Capability '%s' is not implemented. Use mcp.proxy:<tool_name> to call Minerva tools." % capability)
+			named_result = {
+				"success": false,
+				"error_code": PluginErrors.CODE_UNKNOWN_CAPABILITY,
+				"error_message": "Unknown capability '%s'" % capability,
+				"plugin_id": plugin_id,
+				"capability": capability,
+			}
+	_audit_dispatch(plugin_id, capability, named_result)
+	return named_result
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +277,17 @@ func _handle_secrets(plugin_id: String, capability: String, args: Dictionary) ->
 
 
 # ---------------------------------------------------------------------------
+# host.echo handler
+# ---------------------------------------------------------------------------
+
+## Trivial debug capability: echoes the caller's args back unchanged.
+## Returns {"echo": <args>} so the plugin can verify round-trip fidelity.
+func _handle_host_echo(plugin_id: String, args: Dictionary) -> Dictionary:
+	print("[CapabilityBroker] Plugin '%s' invoking host.echo" % plugin_id)
+	return PluginErrors.success({"echo": args})
+
+
+# ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
 
@@ -245,3 +303,24 @@ func _get_minerva_server():
 	if mcp_mgr == null:
 		return null
 	return mcp_mgr.get("minerva_server") if "minerva_server" in mcp_mgr else null
+
+
+## Log a capability event to the audit log (if wired).
+func _audit(plugin_id: String, event_type: String, detail: Dictionary) -> void:
+	if audit_log != null:
+		audit_log.log_event(plugin_id, event_type, detail)
+
+
+## Log a capability dispatch outcome (granted = dispatched, failed = denied).
+func _audit_dispatch(plugin_id: String, capability: String, result: Dictionary) -> void:
+	if audit_log == null:
+		return
+	if result.get("success", false):
+		audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DISPATCHED, {
+			"capability": capability,
+		})
+	else:
+		audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DENIED, {
+			"capability": capability,
+			"reason": result.get("error_code", "unknown"),
+		})

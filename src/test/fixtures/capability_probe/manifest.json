@@ -1,0 +1,20 @@
+{
+  "id": "capability_probe",
+  "name": "Capability Probe",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": ["capability_probe.py"]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": ["host.echo"],
+    "network": {"mode": "none"},
+    "filesystem": {"mode": "none", "paths": []}
+  }
+}

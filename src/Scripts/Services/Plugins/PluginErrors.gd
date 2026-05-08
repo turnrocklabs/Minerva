@@ -10,6 +10,7 @@ extends RefCounted
 
 const CODE_PERMISSION_DENIED = "permission_denied"
 const CODE_CAPABILITY_NOT_GRANTED = "capability_not_granted"
+const CODE_UNKNOWN_CAPABILITY = "unknown_capability"
 const CODE_SCHEMA_VALIDATION_FAILED = "schema_validation_failed"
 const CODE_PAYLOAD_TOO_LARGE = "payload_too_large"
 const CODE_TARGET_NOT_ALLOWLISTED = "target_not_allowlisted"

@@ -18,6 +18,12 @@ const EVENT_PLUGIN_CRASH = "plugin_crash"
 const EVENT_PLUGIN_RESTART = "plugin_restart"
 const EVENT_CAPABILITY_GRANT = "capability_grant"
 const EVENT_CAPABILITY_REVOKE = "capability_revoke"
+## Fired by CapabilityBroker when a plugin capability request is dispatched
+## and succeeds (after policy allows it).
+const EVENT_CAPABILITY_DISPATCHED = "capability_dispatched"
+## Fired by CapabilityBroker when a capability request is denied (no handler
+## or unknown capability — after policy already denied, or broker unknown).
+const EVENT_CAPABILITY_DENIED = "capability_denied"
 
 
 # ---------------------------------------------------------------------------
