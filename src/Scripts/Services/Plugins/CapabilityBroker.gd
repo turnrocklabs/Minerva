@@ -400,6 +400,9 @@ func _resolve_editor_buffer(editor) -> DocumentBuffer:
 	var pname: String = str(editor.panel_name) if "panel_name" in editor else ""
 	var ed_file: String = str(editor.file) if "file" in editor else ""
 
+	# Resolution order mirrors MCPDocTools._resolve_target so reads here see the
+	# same buffer that doc_read/doc_write would. Order: paired_dsl plugin-scene
+	# broker attachment, then path-keyed registry, then anonymous-bound buffer.
 	if ed_type == Editor.Type.PLUGIN_SCENE:
 		var so_root = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
 		var pbroker = null
@@ -411,15 +414,17 @@ func _resolve_editor_buffer(editor) -> DocumentBuffer:
 			if attached != null:
 				return attached
 
-	if editor.has_method("get_document_buffer"):
-		var buf: DocumentBuffer = editor.get_document_buffer()
-		if buf != null:
-			return buf
-
 	if not ed_file.is_empty():
 		var reg_r := DocumentRegistry.get_instance().get_or_create_buffer(ed_file)
 		if reg_r.ok:
 			return reg_r.buffer
+
+	# Anonymous editor that was bind_to_buffer_path()'d to an unbacked buffer —
+	# the buffer is canonical even though editor.file is empty.
+	if editor.has_method("get_document_buffer"):
+		var buf: DocumentBuffer = editor.get_document_buffer()
+		if buf != null:
+			return buf
 
 	return null
 
@@ -472,12 +477,12 @@ func _describe_editor_state(editor) -> Dictionary:
 		state["dirty"] = buffer.dirty
 	else:
 		# Plugin-scene panels whose canonical state lives in panel UI rather
-		# than a DocumentBuffer. Round 3 returns the metadata that IS available
-		# without round-tripping through host_owned_save IPC.
+		# than a DocumentBuffer. Round-4 set_state must branch on
+		# unsupported_reason rather than string-matching free text.
 		state["buffer_text"] = ""
 		state["version"] = 0
 		state["dirty"] = false
-		state["note"] = "buffer-not-canonical: panel state requires host_owned_save IPC (out of scope for this round)"
+		state["unsupported_reason"] = "panel_state_via_host_owned_save"
 	return state
 
 
