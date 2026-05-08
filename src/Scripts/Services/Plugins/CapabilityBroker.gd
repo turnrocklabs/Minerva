@@ -388,6 +388,11 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 			return PluginErrors.version_conflict(plugin_id, editor_name, expected, buffer.version)
 
 	buffer.apply_edit(buffer_text)
+	# apply_edit is a no-op when buffer_text == buffer.text — version doesn't bump
+	# and dirty is preserved (could be false). set_state's contract is "host
+	# explicitly replaced state," so always mark dirty regardless. Otherwise the
+	# result dict's dirty:true would lie when a plugin re-writes identical text.
+	buffer.mark_dirty()
 
 	var ed_type: int = int(ed.type) if "type" in ed else -1
 	var pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
