@@ -166,7 +166,12 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 		validated.append(entry)
 
 	# Remove any previous registration for this plugin (idempotent re-register).
-	_unregister_internal(plugin_id)
+	# Emit tools_unregistered for the purged names so downstream listeners
+	# (mcp_manager.tool_registry, tool_search_index) clean up — otherwise
+	# orphan entries leak when manifest names differ from backend names.
+	var stale_names: Array = _unregister_internal(plugin_id)
+	if not stale_names.is_empty():
+		tools_unregistered.emit(plugin_id, stale_names)
 
 	# Commit to registry.
 	_tools_by_plugin[plugin_id] = validated
@@ -599,7 +604,9 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 	var raw_tools: Array = conn.tools  # Array of MCPToolDefinition objects
 	if raw_tools.is_empty():
 		print("[PluginToolRegistry] No tools reported by backend for plugin '%s'" % plugin_id)
-		_unregister_internal(plugin_id)
+		# Use the public unregister so tools_unregistered fires for any prior
+		# registration (e.g. manifest tools) that the backend churn supersedes.
+		unregister_plugin_tools(plugin_id)
 		_tools_by_plugin[plugin_id] = []
 		return {"ok": true, "registered": []}
 
@@ -640,7 +647,7 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 
 	if entries.is_empty():
 		print("[PluginToolRegistry] All backend tools filtered for plugin '%s'" % plugin_id)
-		_unregister_internal(plugin_id)
+		unregister_plugin_tools(plugin_id)
 		_tools_by_plugin[plugin_id] = []
 		return {"ok": true, "registered": []}
 

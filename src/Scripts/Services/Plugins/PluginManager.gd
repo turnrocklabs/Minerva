@@ -558,16 +558,21 @@ func start_plugin(id: String) -> Dictionary:
 
 	# Dynamic tool discovery: query the backend's tools/list and register the
 	# results into PluginToolRegistry with the auto-prefix policy (Option B).
-	# This runs after plugin_started so MCP wiring in singleton_object.gd has
-	# already connected tools_registered → tool_registry propagation.
-	_discover_backend_tools(id, conn)
+	# Awaited so callers observe a fully-registered tool surface when
+	# start_plugin() returns — no race window where the plugin is RUNNING but
+	# its tools aren't yet callable. plugin_started fires before discovery so
+	# any manifest-declared tools (registered by on_plugin_started) land first;
+	# backend discovery then supersedes them via the registry's purge-and-emit
+	# path.
+	await _discover_backend_tools(id, conn)
 
 	return {"ok": true}
 
 
-## Kick off backend tool discovery for a newly-started plugin.
-## Runs asynchronously so start_plugin() can return {"ok": true} immediately
-## while discovery completes in the background.
+## Discover and register the plugin backend's tools.
+## Awaited from start_plugin() so the plugin's tools are callable as soon as
+## start_plugin() returns. Reviewer (cycle round 1) flagged the original
+## fire-and-forget shape as a race; this is the resolution.
 ## conn is MCPServerConnection (untyped to avoid parse-order dependency).
 func _discover_backend_tools(plugin_id: String, conn) -> void:
 	# Resolve tool registry via SingletonObject (avoids circular dep at parse time).

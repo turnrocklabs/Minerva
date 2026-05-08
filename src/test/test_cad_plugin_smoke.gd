@@ -76,6 +76,19 @@ func _run_test(manifest_path: String) -> void:
 	# before we trigger PluginManager.gd compilation via load().
 	await process_frame
 
+	# Wait for SingletonObject.initialize_plugins() to complete. Its _ready()
+	# awaits a 2s timer + mcp_manager.initialize() before assigning
+	# plugin_tool_registry — see hint minerva-singleton/plugin-tool-registry-late-init.
+	# Without this wait, PluginManager._discover_backend_tools silently skips
+	# because the wired registry is still null.
+	var so_node_init = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	if so_node_init != null:
+		var deadline_ms: int = Time.get_ticks_msec() + 10000
+		while so_node_init.get("plugin_tool_registry") == null and Time.get_ticks_msec() < deadline_ms:
+			await Engine.get_main_loop().create_timer(0.1).timeout
+		var ready_at: int = Time.get_ticks_msec()
+		print("SingletonObject.plugin_tool_registry available after %dms" % (ready_at - (deadline_ms - 10000)))
+
 	var pm_script = load(PLUGIN_MANAGER_SCRIPT_PATH)
 	if pm_script == null:
 		printerr("FAIL: could not load PluginManager.gd")
@@ -265,6 +278,52 @@ func _run_test(manifest_path: String) -> void:
 					registry.is_plugin_tool("minerva_cad_mcad_validate"))
 			print("    restart cycle restored %d tool(s)" % registered3.size())
 
+	# --- WIRED REGISTRY: signal-propagation integration ---
+	# The fresh-registry tests above prove the registry contract in isolation.
+	# This block proves the integration path works end-to-end: PluginManager
+	# called register_backend_tools on the SingletonObject's wired registry
+	# during start_plugin (now awaited, post-fix), and the tools_registered
+	# signal propagated through the lambda at singleton_object.gd:617 into
+	# mcp_manager.tool_registry. Cold-review found this gap — without these
+	# assertions, a future regression in the signal-emission path would not
+	# be caught.
+	print("\n-- wired registry: signal propagation --")
+	var so_node = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	check("SingletonObject autoload reachable", so_node != null)
+	if so_node != null:
+		var wired_registry = so_node.get("plugin_tool_registry") if "plugin_tool_registry" in so_node else null
+		var mcp_mgr = so_node.get("mcp_manager") if "mcp_manager" in so_node else null
+		check("SingletonObject.plugin_tool_registry exists", wired_registry != null)
+		check("SingletonObject.mcp_manager exists", mcp_mgr != null)
+		if wired_registry != null:
+			check("wired registry.is_plugin_tool('minerva_cad_mcad_validate') is true",
+					wired_registry.is_plugin_tool("minerva_cad_mcad_validate"),
+					"wired registry tool count=%d" % wired_registry.get_tool_count())
+		if mcp_mgr != null and "tool_registry" in mcp_mgr:
+			var mcp_registry: Dictionary = mcp_mgr.tool_registry
+			check("mcp_manager.tool_registry has 'minerva_cad_mcad_validate' (signal propagated)",
+					mcp_registry.has("minerva_cad_mcad_validate"),
+					"signal lambda did not push backend tool into mcp_manager.tool_registry")
+
+		# --- WIRED REGISTRY: unregister signal chain ---
+		# Manually invoke the wired registry's on_plugin_stopped to exercise
+		# the path: on_plugin_stopped → unregister_plugin_tools →
+		# tools_unregistered.emit → singleton lambda → mcp_manager.tool_registry erase.
+		# (The chain normally fires via SingletonObject.plugin_manager's
+		# plugin_stopped signal, but this test uses an independent PluginManager
+		# so we trigger on_plugin_stopped directly.) Reviewer's Issue 1 fix
+		# (signal emission on purge) is what makes the second assertion possible.
+		if wired_registry != null:
+			wired_registry.on_plugin_stopped("cad")
+			check("wired registry cleared after on_plugin_stopped",
+					not wired_registry.is_plugin_tool("minerva_cad_mcad_validate"),
+					"on_plugin_stopped did not clear the wired registry")
+			if mcp_mgr != null and "tool_registry" in mcp_mgr:
+				var mcp_registry_after: Dictionary = mcp_mgr.tool_registry
+				check("mcp_manager.tool_registry cleared after on_plugin_stopped (unregister signal propagated)",
+						not mcp_registry_after.has("minerva_cad_mcad_validate"),
+						"tools_unregistered signal did not propagate to mcp_manager.tool_registry erase")
+
 	# --- STOP ---
 	print("\n-- stop_plugin --")
 	var stop_result = await pm.stop_plugin("cad")
@@ -274,6 +333,12 @@ func _run_test(manifest_path: String) -> void:
 	check("plugin state == STOPPED", def.state == S_STOPPED,
 			"got state=%d (expected %d)" % [def.state, S_STOPPED])
 	check("connection cleared post-stop", pm.get_connection("cad") == null)
+
+	# Note: we do NOT re-assert wired-registry post-stop here because our test's
+	# independent PluginManager doesn't share signal connections with
+	# SingletonObject.plugin_manager — pm.stop_plugin emits plugin_stopped on
+	# the test's pm, which the wired registry isn't listening to. The wired
+	# unregister chain is exercised above by calling on_plugin_stopped directly.
 
 
 func check(description: String, condition: bool, detail: String = "") -> void:
