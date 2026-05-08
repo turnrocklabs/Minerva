@@ -18,6 +18,7 @@ const CODE_RATE_LIMIT_EXCEEDED = "rate_limit_exceeded"
 const CODE_CONFIRMATION_REQUIRED = "confirmation_required"
 const CODE_PLUGIN_NOT_RUNNING = "plugin_not_running"
 const CODE_TOOL_NOT_FOUND = "tool_not_found"
+const CODE_EDITOR_NOT_FOUND = "editor_not_found"
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +122,17 @@ static func tool_not_found(plugin_id: String, tool_name: String) -> Dictionary:
 		"error_message": "Tool '%s' not found" % tool_name,
 		"plugin_id": plugin_id,
 		"tool_name": tool_name,
+	}
+
+
+## Editor with the given tab title was not found.
+static func editor_not_found(plugin_id: String, editor_name: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_EDITOR_NOT_FOUND,
+		"error_message": "Editor '%s' not found" % editor_name,
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
 	}
 
 

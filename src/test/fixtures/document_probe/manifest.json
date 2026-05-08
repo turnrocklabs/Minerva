@@ -1,0 +1,20 @@
+{
+  "id": "document_probe",
+  "name": "Document Probe",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": ["document_probe.py"]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": ["host.documents.list_open", "host.documents.get_state"],
+    "network": {"mode": "none"},
+    "filesystem": {"mode": "none", "paths": []}
+  }
+}

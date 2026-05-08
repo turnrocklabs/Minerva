@@ -143,6 +143,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			# Trivial debug capability: echoes args back to the caller.
 			# Useful for validating the bidirectional channel end-to-end.
 			named_result = _handle_host_echo(plugin_id, args)
+		"host.documents.list_open":
+			named_result = _handle_host_documents_list_open(plugin_id, args)
+		"host.documents.get_state":
+			named_result = _handle_host_documents_get_state(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -285,6 +289,196 @@ func _handle_secrets(plugin_id: String, capability: String, args: Dictionary) ->
 func _handle_host_echo(plugin_id: String, args: Dictionary) -> Dictionary:
 	print("[CapabilityBroker] Plugin '%s' invoking host.echo" % plugin_id)
 	return PluginErrors.success({"echo": args})
+
+
+# ---------------------------------------------------------------------------
+# host.documents.* handlers (phase 3 reads)
+# ---------------------------------------------------------------------------
+
+## Enumerate currently-open editor documents.
+##
+## Each entry: {editor_name, kind, plugin_id, panel_name, path}.
+## - kind: stable string mapped from Editor.Type ("text_editor", "plugin_scene", ...).
+## - plugin_id / panel_name: set for PLUGIN_SCENE editors, null for host editors.
+## - path: absolute file path when bound; null for anonymous/unbacked editors.
+##
+## In headless / pre-MainScene contexts, editor_pane is null and this returns
+## an empty list — the channel itself still works.
+func _handle_host_documents_list_open(plugin_id: String, _args: Dictionary) -> Dictionary:
+	var docs: Array = []
+	var editor_pane = _get_editor_pane()
+	if editor_pane != null and editor_pane.has_method("get_open_editors"):
+		for ed in editor_pane.get_open_editors():
+			if ed == null:
+				continue
+			docs.append(_describe_editor_summary(ed))
+	print("[CapabilityBroker] Plugin '%s' invoking host.documents.list_open (%d docs)" % [plugin_id, docs.size()])
+	return PluginErrors.success({"documents": docs})
+
+
+## Return the serialized state of a single editor.
+##
+## Args: {editor_name: String}
+##
+## Buffer-canonical paths (paired_dsl plugin scenes, path-bound text editors,
+## anonymous editors bound via bind_to_buffer_path) return buffer_canonical=true
+## with buffer_text + version + dirty from the shared DocumentBuffer.
+##
+## For plugin-scene editors whose canonical state lives in panel UI rather
+## than a DocumentBuffer (e.g. .mdeck slide tiles), buffer_canonical=false is
+## returned with whatever metadata IS available. Full state extraction via
+## host_owned_save IPC is out of scope for this round.
+func _handle_host_documents_get_state(plugin_id: String, args: Dictionary) -> Dictionary:
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.get_state requires 'editor_name'")
+
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	print("[CapabilityBroker] Plugin '%s' invoking host.documents.get_state (editor='%s')" % [plugin_id, editor_name])
+	return PluginErrors.success(_describe_editor_state(ed))
+
+
+# ---------------------------------------------------------------------------
+# Editor enumeration helpers
+# ---------------------------------------------------------------------------
+
+func _get_editor_pane():
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	var so = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	return so.get("editor_pane") if "editor_pane" in so else null
+
+
+## Find an open editor by tab title. Mirrors MCPToolUtils.find_editor_by_name
+## but inlined to keep CapabilityBroker free of MCP-module deps.
+func _find_editor_by_name(editor_name: String):
+	var editor_pane = _get_editor_pane()
+	if editor_pane == null:
+		return null
+	if editor_pane.has_method("get_open_editors"):
+		for ed in editor_pane.get_open_editors():
+			if ed != null and "tab_title" in ed and str(ed.tab_title) == editor_name:
+				return ed
+	return null
+
+
+## Stable string for an Editor.Type int. Decoupled from the enum so plugins
+## can match exact strings without parsing Godot enums.
+static func _editor_kind_string(ed_type: int) -> String:
+	match ed_type:
+		Editor.Type.TEXT: return "text_editor"
+		Editor.Type.PLUGIN_SCENE: return "plugin_scene"
+		Editor.Type.GRAPHICS: return "graphics"
+		Editor.Type.SPREADSHEET: return "spreadsheet"
+		Editor.Type.PCB: return "pcb"
+		Editor.Type.VIDEO_EDITOR: return "video_editor"
+		Editor.Type.WEBVIEW: return "webview"
+		Editor.Type.DOCKET: return "docket"
+		Editor.Type.PLUGIN_MANAGER: return "plugin_manager"
+		Editor.Type.WORKER_STATUS: return "worker_status"
+		Editor.Type.ACTIVITY_LOG: return "activity_log"
+		Editor.Type.KANBAN: return "kanban"
+		Editor.Type.VIDEO: return "video"
+		Editor.Type.PACKAGE: return "package"
+		Editor.Type.LOGS: return "logs"
+		_: return "unknown"
+
+
+## Resolve the canonical DocumentBuffer for an editor, if any.
+## Order: paired_dsl plugin-scene broker attachment, editor.get_document_buffer(),
+## file-path-keyed registry buffer.
+func _resolve_editor_buffer(editor) -> DocumentBuffer:
+	var ed_type: int = int(editor.type) if "type" in editor else -1
+	var pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
+	var pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+	var ed_file: String = str(editor.file) if "file" in editor else ""
+
+	if ed_type == Editor.Type.PLUGIN_SCENE:
+		var so_root = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
+		var pbroker = null
+		if so_root != null and "plugin_scene_panel_broker" in so_root:
+			pbroker = so_root.get("plugin_scene_panel_broker")
+		if pbroker != null and not pid.is_empty() and not pname.is_empty() \
+				and pbroker.has_method("get_attached_buffer"):
+			var attached: DocumentBuffer = pbroker.get_attached_buffer(pid, pname)
+			if attached != null:
+				return attached
+
+	if editor.has_method("get_document_buffer"):
+		var buf: DocumentBuffer = editor.get_document_buffer()
+		if buf != null:
+			return buf
+
+	if not ed_file.is_empty():
+		var reg_r := DocumentRegistry.get_instance().get_or_create_buffer(ed_file)
+		if reg_r.ok:
+			return reg_r.buffer
+
+	return null
+
+
+## Resolve the externally-visible file path for an editor.
+## Returns null when the editor is anonymous / unbacked.
+static func _resolve_editor_path(editor, buffer: DocumentBuffer):
+	if buffer != null and not buffer.file_path.is_empty() \
+			and not DocumentRegistry.is_unbacked_path(buffer.file_path):
+		return buffer.file_path
+	if "file" in editor:
+		var ed_file: String = str(editor.file)
+		if not ed_file.is_empty():
+			return ed_file
+	return null
+
+
+## Summary record for list_open (no buffer text).
+func _describe_editor_summary(editor) -> Dictionary:
+	var ed_type: int = int(editor.type) if "type" in editor else -1
+	var pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
+	var pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+	var buffer: DocumentBuffer = _resolve_editor_buffer(editor)
+	return {
+		"editor_name": str(editor.tab_title) if "tab_title" in editor else "",
+		"kind": _editor_kind_string(ed_type),
+		"plugin_id": pid if not pid.is_empty() else null,
+		"panel_name": pname if not pname.is_empty() else null,
+		"path": _resolve_editor_path(editor, buffer),
+	}
+
+
+## Full state record for get_state.
+func _describe_editor_state(editor) -> Dictionary:
+	var ed_type: int = int(editor.type) if "type" in editor else -1
+	var pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
+	var pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+	var buffer: DocumentBuffer = _resolve_editor_buffer(editor)
+	var state: Dictionary = {
+		"editor_name": str(editor.tab_title) if "tab_title" in editor else "",
+		"kind": _editor_kind_string(ed_type),
+		"plugin_id": pid if not pid.is_empty() else null,
+		"panel_name": pname if not pname.is_empty() else null,
+		"path": _resolve_editor_path(editor, buffer),
+		"buffer_canonical": buffer != null,
+	}
+	if buffer != null:
+		state["buffer_text"] = buffer.text
+		state["version"] = buffer.version
+		state["dirty"] = buffer.dirty
+	else:
+		# Plugin-scene panels whose canonical state lives in panel UI rather
+		# than a DocumentBuffer. Round 3 returns the metadata that IS available
+		# without round-tripping through host_owned_save IPC.
+		state["buffer_text"] = ""
+		state["version"] = 0
+		state["dirty"] = false
+		state["note"] = "buffer-not-canonical: panel state requires host_owned_save IPC (out of scope for this round)"
+	return state
 
 
 # ---------------------------------------------------------------------------
