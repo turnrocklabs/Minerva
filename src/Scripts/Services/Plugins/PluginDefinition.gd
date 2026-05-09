@@ -151,6 +151,25 @@ const CAPABILITIES := [
 	"project_export",     # contributes sidecar files to .minpackage export
 ]
 
+## Exact host_capability identifiers that are always permitted.
+## See validate_host_capabilities() and CapabilityBroker for the dispatch contract.
+const ALLOWED_HOST_CAPABILITIES := [
+	"host.echo",
+	"host.documents.list_open",
+	"host.documents.get_state",
+	"host.documents.set_state",
+	"host.documents.mark_dirty",
+	"network.none",
+]
+
+## Namespace prefixes for host_capability values that require at least one
+## character after the colon (e.g. "mcp.proxy:minerva_foo" or "secrets:get:h").
+## The broker dispatches these families without a fixed enumeration.
+const ALLOWED_HOST_CAPABILITY_NAMESPACES := [
+	"mcp.proxy:",
+	"secrets:",
+]
+
 ## Required fields on each entry of manifest.skills[] (DCR 019df57b).
 ## "optimization" is allowed but optional; absent → record stores {}.
 const REQUIRED_SKILL_FIELDS := [
@@ -422,6 +441,11 @@ func validate() -> Array[String]:
 			errors.append("Duplicate panel name '%s' in ui.panels" % pname)
 		else:
 			seen_names[pname] = true
+
+	# Validate host_capabilities entries against the allow-list and namespace rules.
+	var hcap_errors := validate_host_capabilities()
+	for e in hcap_errors:
+		errors.append(e)
 
 	return errors
 
@@ -996,6 +1020,37 @@ func _any_panel_script_declares(method_name: String) -> bool:
 			if _script_declares_method(abs_path, method_name):
 				return true
 	return false
+
+
+## Validate this plugin's host_capabilities array against the allow-list and
+## namespace rules.  Returns one error string per unknown or malformed entry.
+##
+## Match rules (in priority order):
+##   1. Empty string           → error
+##   2. Exact match in ALLOWED_HOST_CAPABILITIES → ok
+##   3. Begins with a prefix in ALLOWED_HOST_CAPABILITY_NAMESPACES AND has at
+##      least one char after the prefix → ok
+##   4. Otherwise              → error
+func validate_host_capabilities() -> Array[String]:
+	var errors: Array[String] = []
+	for hcap in host_capabilities:
+		var cap: String = str(hcap)
+		if cap.is_empty():
+			errors.append("host_capability entry must not be empty")
+			continue
+		if ALLOWED_HOST_CAPABILITIES.has(cap):
+			continue
+		var matched_ns := false
+		for ns_prefix in ALLOWED_HOST_CAPABILITY_NAMESPACES:
+			if cap.begins_with(ns_prefix) and cap.length() > ns_prefix.length():
+				matched_ns = true
+				break
+		if not matched_ns:
+			errors.append(
+				"unknown host_capability '%s' (allowed: %s or namespaces: %s)" %
+				[cap, str(ALLOWED_HOST_CAPABILITIES), str(ALLOWED_HOST_CAPABILITY_NAMESPACES)]
+			)
+	return errors
 
 
 ## Validate this plugin's declared capabilities against required hooks/manifest.

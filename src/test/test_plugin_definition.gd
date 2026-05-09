@@ -87,6 +87,19 @@ func _init() -> void:
 	test_test_stdio_server_manifest_parses()
 	test_test_paired_dsl_manifest_parses()
 
+	print("\n-- validate_host_capabilities() --")
+	test_hcap_empty_array_no_error()
+	test_hcap_host_echo_valid()
+	test_hcap_mcp_proxy_exact_valid()
+	test_hcap_mcp_proxy_wildcard_valid()
+	test_hcap_mcp_proxy_empty_suffix_invalid()
+	test_hcap_secrets_with_handle_valid()
+	test_hcap_secrets_empty_suffix_invalid()
+	test_hcap_host_bogus_invalid()
+	test_hcap_empty_string_invalid()
+	test_hcap_mixed_valid_and_invalid()
+	test_hcap_wired_into_validate()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -677,3 +690,116 @@ func test_test_paired_dsl_manifest_parses() -> void:
 		def.ui_panels[0].get("render_mode", ""), "paired_dsl")
 	check_eq("test_paired_dsl: layout_hint parsed",
 		def.ui_panels[0].get("layout_hint", ""), "side_by_side")
+
+
+# ---------------------------------------------------------------------------
+# Tests: validate_host_capabilities()
+# ---------------------------------------------------------------------------
+
+## Helper: create a PluginDefinition and set host_capabilities directly.
+func _def_with_hcaps(caps: Array[String]) -> PluginDefinition_:
+	var def := PluginDefinition_.new("test_plugin")
+	def.host_capabilities = caps
+	return def
+
+
+func test_hcap_empty_array_no_error() -> void:
+	var def := _def_with_hcaps([])
+	var errors := def.validate_host_capabilities()
+	check("hcap empty array: no errors", errors.is_empty())
+
+
+func test_hcap_host_echo_valid() -> void:
+	var def := _def_with_hcaps(["host.echo"])
+	var errors := def.validate_host_capabilities()
+	check("hcap host.echo: no errors", errors.is_empty())
+
+
+func test_hcap_mcp_proxy_exact_valid() -> void:
+	var def := _def_with_hcaps(["mcp.proxy:minerva_create_note"])
+	var errors := def.validate_host_capabilities()
+	check("hcap mcp.proxy:minerva_create_note: no errors", errors.is_empty())
+
+
+func test_hcap_mcp_proxy_wildcard_valid() -> void:
+	# "mcp.proxy:*" — wildcard literal; one char after prefix, so valid
+	var def := _def_with_hcaps(["mcp.proxy:*"])
+	var errors := def.validate_host_capabilities()
+	check("hcap mcp.proxy:*: no errors (wildcard literal ok)", errors.is_empty())
+
+
+func test_hcap_mcp_proxy_empty_suffix_invalid() -> void:
+	# "mcp.proxy:" — no char after the colon
+	var def := _def_with_hcaps(["mcp.proxy:"])
+	var errors := def.validate_host_capabilities()
+	check("hcap mcp.proxy: (empty suffix): has error", errors.size() == 1)
+	if errors.size() > 0:
+		check("hcap mcp.proxy: error mentions entry", "mcp.proxy:" in errors[0])
+
+
+func test_hcap_secrets_with_handle_valid() -> void:
+	var def := _def_with_hcaps(["secrets:get:my_handle"])
+	var errors := def.validate_host_capabilities()
+	check("hcap secrets:get:my_handle: no errors", errors.is_empty())
+
+
+func test_hcap_secrets_empty_suffix_invalid() -> void:
+	# "secrets:" — no char after the colon
+	var def := _def_with_hcaps(["secrets:"])
+	var errors := def.validate_host_capabilities()
+	check("hcap secrets: (empty suffix): has error", errors.size() == 1)
+	if errors.size() > 0:
+		check("hcap secrets: error mentions entry", "secrets:" in errors[0])
+
+
+func test_hcap_host_bogus_invalid() -> void:
+	var def := _def_with_hcaps(["host.bogus.fake"])
+	var errors := def.validate_host_capabilities()
+	check("hcap host.bogus.fake: has error", errors.size() == 1)
+	if errors.size() > 0:
+		check("hcap host.bogus.fake: error mentions entry", "host.bogus.fake" in errors[0])
+
+
+func test_hcap_empty_string_invalid() -> void:
+	var def := _def_with_hcaps([""])
+	var errors := def.validate_host_capabilities()
+	check("hcap empty string: has error", errors.size() == 1)
+
+
+func test_hcap_mixed_valid_and_invalid() -> void:
+	# Valid: host.echo, mcp.proxy:minerva_note_*
+	# Invalid: host.bogus.fake, secrets: (empty suffix)
+	var caps: Array[String] = [
+		"host.echo",
+		"host.bogus.fake",
+		"mcp.proxy:minerva_note_*",
+		"secrets:",
+	]
+	var def := _def_with_hcaps(caps)
+	var errors := def.validate_host_capabilities()
+	check_eq("hcap mixed: exactly 2 errors", errors.size(), 2)
+	var mentions_bogus := false
+	var mentions_secrets := false
+	for e in errors:
+		if "host.bogus.fake" in e:
+			mentions_bogus = true
+		if "secrets:" in e:
+			mentions_secrets = true
+	check("hcap mixed: error mentions host.bogus.fake", mentions_bogus)
+	check("hcap mixed: error mentions secrets:", mentions_secrets)
+
+
+func test_hcap_wired_into_validate() -> void:
+	# validate() must surface host_capabilities errors too.
+	var def := PluginDefinition_.new("test_plugin")
+	def.name = "Test Plugin"
+	def.version = "0.1.0"
+	def.entrypoint = "server.py"
+	def.transport = "stdio"
+	def.host_capabilities = ["host.bogus.fake"]
+	var errors := def.validate()
+	var found := false
+	for e in errors:
+		if "host.bogus.fake" in e:
+			found = true
+	check("hcap wired into validate(): bogus cap surfaces in validate()", found)
