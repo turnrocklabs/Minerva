@@ -222,10 +222,16 @@ func load_db() -> Error:
 		if def == null:
 			push_warning("[PluginDB] Skipping invalid plugin record: %s" % JSON.stringify(record))
 			continue
-		# Validate after loading (log warnings but don't discard)
+		# Reject persisted records that fail validation. Same contract as
+		# from_manifest at install time: an invalid definition does not register.
+		# Otherwise stale or now-disallowed manifests survive a Minerva restart
+		# silently, defeating the install-time deny-by-default gate.
 		var errors := def.validate()
-		for e in errors:
-			push_warning("[PluginDB] Plugin '%s': %s" % [def.id, e])
+		if not errors.is_empty():
+			for e in errors:
+				push_error("[PluginDB] Plugin '%s' failed validation on reload: %s" % [def.id, e])
+			push_warning("[PluginDB] Skipping '%s' (fix manifest and reinstall)" % def.id)
+			continue
 		# State is always reconstructed as INSTALLED (not persisted)
 		def.state = PluginDefinition.State.INSTALLED
 		# Restore class_names from persisted data and rebuild registry.

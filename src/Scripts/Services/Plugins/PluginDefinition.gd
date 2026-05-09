@@ -152,6 +152,11 @@ const CAPABILITIES := [
 ]
 
 ## Exact host_capability identifiers that are always permitted.
+##
+## Two transports exist for plugin↔host calls; THIS list governs only the
+## CapabilityBroker transport (backend MCP plugins, declared via
+## permissions.host_capabilities). Panel-broker channels (e.g. host.fs.watch,
+## attach_buffer) live in ui.panels[].ipc_channels and are NOT validated here.
 ## See validate_host_capabilities() and CapabilityBroker for the dispatch contract.
 const ALLOWED_HOST_CAPABILITIES := [
 	"host.echo",
@@ -159,7 +164,6 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.documents.get_state",
 	"host.documents.set_state",
 	"host.documents.mark_dirty",
-	"network.none",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

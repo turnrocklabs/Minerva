@@ -99,6 +99,8 @@ func _init() -> void:
 	test_hcap_empty_string_invalid()
 	test_hcap_mixed_valid_and_invalid()
 	test_hcap_wired_into_validate()
+	test_hcap_network_none_invalid()
+	test_hcap_round_trip_through_from_dict()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -803,3 +805,43 @@ func test_hcap_wired_into_validate() -> void:
 		if "host.bogus.fake" in e:
 			found = true
 	check("hcap wired into validate(): bogus cap surfaces in validate()", found)
+
+
+func test_hcap_network_none_invalid() -> void:
+	# network.none is the deny marker on permissions.network.mode, NOT a
+	# host_capability. The broker explicitly rejects it as undispatchable
+	# (CapabilityBroker.gd "network.none is a deny marker"). The validator
+	# must reject it at install time so a manifest typo doesn't sail through
+	# and only fail at runtime dispatch.
+	var def := _def_with_hcaps(["network.none"])
+	var errors := def.validate_host_capabilities()
+	check("hcap network.none: rejected at install time", errors.size() == 1)
+	if errors.size() > 0:
+		check("hcap network.none: error mentions entry", "network.none" in errors[0])
+
+
+func test_hcap_round_trip_through_from_dict() -> void:
+	# Drive the full parse → validate path so a future refactor that loses
+	# the wiring breaks loudly here. Bypassing from_dict (writing directly to
+	# def.host_capabilities) cannot detect a regression in _parse_permissions.
+	var record := {
+		"id": "round_trip_plugin",
+		"name": "Round Trip",
+		"version": "0.1.0",
+		"backend": {"transport": "stdio", "entrypoint": "server.py"},
+		"permissions": {
+			"host_capabilities": ["host.echo", "host.bogus.fake"],
+		},
+	}
+	var def := PluginDefinition_.from_dict(record)
+	check("round_trip: from_dict returns a definition", def != null)
+	if def == null:
+		return
+	check_eq("round_trip: host_capabilities populated through parse layer",
+		def.host_capabilities.size(), 2)
+	var errors := def.validate()
+	var found := false
+	for e in errors:
+		if "host.bogus.fake" in e:
+			found = true
+	check("round_trip: validate() surfaces bogus cap from parsed manifest", found)
