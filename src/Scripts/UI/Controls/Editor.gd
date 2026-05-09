@@ -2591,7 +2591,7 @@ func _store_line_as_pending_annotation(line: int) -> bool:
 	return _store_pending_annotation_selection(start, end, "line")
 
 
-func _line_at_code_edit_position(position: Vector2) -> int:
+func _line_at_code_edit_position(local_pos: Vector2) -> int:
 	if code_edit == null:
 		return -1
 	if code_edit.has_method("get_line_height"):
@@ -2599,13 +2599,13 @@ func _line_at_code_edit_position(position: Vector2) -> int:
 		if code_edit.has_method("get_first_visible_line"):
 			first_visible = int(code_edit.call("get_first_visible_line"))
 		var line_height := maxf(1.0, float(code_edit.get_line_height()))
-		var line := first_visible + int(floor(position.y / line_height))
+		var line := first_visible + int(floor(local_pos.y / line_height))
 		if code_edit.has_method("get_line_count"):
 			line = clampi(line, 0, code_edit.get_line_count() - 1)
 		return line
 
 	if code_edit.has_method("get_line_column_at_pos"):
-		var value: Variant = code_edit.call("get_line_column_at_pos", Vector2i(int(position.x), int(position.y)))
+		var value: Variant = code_edit.call("get_line_column_at_pos", Vector2i(int(local_pos.x), int(local_pos.y)))
 		if value is Vector2i:
 			return clampi((value as Vector2i).x, 0, code_edit.get_line_count() - 1)
 		if value is Vector2:
@@ -2617,7 +2617,7 @@ func _line_at_code_edit_position(position: Vector2) -> int:
 	var fallback_line_height := 16.0
 	if code_edit.has_method("get_line_height"):
 		fallback_line_height = maxf(1.0, float(code_edit.get_line_height()))
-	var fallback_line := fallback_first_visible + int(floor(position.y / fallback_line_height))
+	var fallback_line := fallback_first_visible + int(floor(local_pos.y / fallback_line_height))
 	if code_edit.has_method("get_line_count"):
 		fallback_line = clampi(fallback_line, 0, code_edit.get_line_count() - 1)
 	return fallback_line

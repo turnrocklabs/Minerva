@@ -150,7 +150,7 @@ func _draw_line_marker(
 	ce_size: Vector2,
 	line_height: float,
 	display_index: int,
-	badge_slots_by_line: Dictionary
+	_badge_slots_by_line: Dictionary
 ) -> void:
 	var id: Variant = anchor.get("id", null)
 	if not id is Dictionary:
@@ -210,10 +210,10 @@ func _claim_badge_slot(line_idx: int, badge_slots_by_line: Dictionary) -> int:
 	return slot
 
 
-func _draw_badge(position: Vector2, display_index: int, color: Color) -> void:
+func _draw_badge(top_left: Vector2, display_index: int, color: Color) -> void:
 	if display_index <= 0:
 		return
-	var rect := Rect2(position, _BADGE_SIZE)
+	var rect := Rect2(top_left, _BADGE_SIZE)
 	draw_rect(rect, color, true)
 	draw_rect(rect, Color(0, 0, 0, 0.35), false, 1.0)
 	var font := get_theme_default_font()
@@ -223,7 +223,7 @@ func _draw_badge(position: Vector2, display_index: int, color: Color) -> void:
 	if has_theme_font_size("font_size"):
 		font_size = min(12, get_theme_font_size("font_size"))
 	var text := str(display_index)
-	var text_pos := position + Vector2(4.0 if display_index < 10 else 2.0, 12.0)
+	var text_pos := top_left + Vector2(4.0 if display_index < 10 else 2.0, 12.0)
 	draw_string(font, text_pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, Color.WHITE)
 
 

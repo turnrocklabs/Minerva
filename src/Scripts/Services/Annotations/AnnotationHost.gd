@@ -322,8 +322,8 @@ func _anchor_key(anchor: Dictionary) -> String:
 
 func _normalise_resolve_result(value: Variant, anchor: Dictionary) -> Dictionary:
 	if not value is Dictionary:
-		var pos := _snapshot_position_2d(anchor.get("snapshot", {}))
-		return {"position": pos, "bounds": Rect2(pos, Vector2.ZERO), "stale": true, "view_metadata": {}}
+		var fallback_pos := _snapshot_position_2d(anchor.get("snapshot", {}))
+		return {"position": fallback_pos, "bounds": Rect2(fallback_pos, Vector2.ZERO), "stale": true, "view_metadata": {}}
 
 	var result: Dictionary = (value as Dictionary).duplicate(true)
 	var pos: Variant = result.get("position", _snapshot_position_2d(anchor.get("snapshot", {})))

@@ -50,6 +50,17 @@ func _init(p_policy: PluginPolicy = null, p_audit_log: PluginAuditLog = null) ->
 # Static helpers
 # ---------------------------------------------------------------------------
 
+## Return the string when non-empty, else null. Avoids the
+## `String if cond else null` ternary which Godot's analyzer flags as
+## mutually-incompatible. Uses if/else (not a ternary) because the
+## ternary form fires the same warning even with a Variant return type —
+## the analyzer is structural, not flow-sensitive.
+static func _str_or_null(value: String) -> Variant:
+	if value.is_empty():
+		return null
+	return value
+
+
 ## Validate that a requested path is within the allowed scopes.
 ## Normalizes both paths before comparison.
 ## Returns true if path is within any of the allowed_paths, false otherwise.
@@ -402,7 +413,7 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 		"version": buffer.version,
 		"dirty": buffer.dirty,
 		"kind": _editor_kind_string(ed_type),
-		"plugin_id": pid if not pid.is_empty() else null,
+		"plugin_id": _str_or_null(pid),
 	})
 
 
@@ -443,7 +454,7 @@ func _handle_host_documents_mark_dirty(plugin_id: String, args: Dictionary) -> D
 		"editor_name": editor_name,
 		"dirty": true,
 		"kind": _editor_kind_string(ed_type),
-		"plugin_id": pid if not pid.is_empty() else null,
+		"plugin_id": _str_or_null(pid),
 	})
 
 
@@ -556,8 +567,8 @@ func _describe_editor_summary(editor) -> Dictionary:
 	return {
 		"editor_name": str(editor.tab_title) if "tab_title" in editor else "",
 		"kind": _editor_kind_string(ed_type),
-		"plugin_id": pid if not pid.is_empty() else null,
-		"panel_name": pname if not pname.is_empty() else null,
+		"plugin_id": _str_or_null(pid),
+		"panel_name": _str_or_null(pname),
 		"path": _resolve_editor_path(editor, buffer),
 	}
 
@@ -571,8 +582,8 @@ func _describe_editor_state(editor) -> Dictionary:
 	var state: Dictionary = {
 		"editor_name": str(editor.tab_title) if "tab_title" in editor else "",
 		"kind": _editor_kind_string(ed_type),
-		"plugin_id": pid if not pid.is_empty() else null,
-		"panel_name": pname if not pname.is_empty() else null,
+		"plugin_id": _str_or_null(pid),
+		"panel_name": _str_or_null(pname),
 		"path": _resolve_editor_path(editor, buffer),
 		"buffer_canonical": buffer != null,
 	}

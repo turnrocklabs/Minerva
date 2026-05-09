@@ -418,20 +418,20 @@ func handle_scene_request(
 	# These are platform capabilities; bypass the manifest channel allowlist
 	# and dispatch directly. Same justification as attach_buffer/text_changed.
 	if channel == CHANNEL_HOST_FS_WATCH:
-		var result := _handle_host_fs_watch(plugin_id, panel_name, payload)
+		var fs_result := _handle_host_fs_watch(plugin_id, panel_name, payload)
 		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
 			"panel_name": panel_name, "channel": channel,
-			"scene_success": result.get("success", false),
+			"scene_success": fs_result.get("success", false),
 		})
-		_deliver_reply(panel_name, reply_id, result)
+		_deliver_reply(panel_name, reply_id, fs_result)
 		return
 	if channel == CHANNEL_HOST_FS_UNWATCH:
-		var result := _handle_host_fs_unwatch(plugin_id, panel_name, payload)
+		var fs_result := _handle_host_fs_unwatch(plugin_id, panel_name, payload)
 		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
 			"panel_name": panel_name, "channel": channel,
-			"scene_success": result.get("success", false),
+			"scene_success": fs_result.get("success", false),
 		})
-		_deliver_reply(panel_name, reply_id, result)
+		_deliver_reply(panel_name, reply_id, fs_result)
 		return
 
 	# --- 3. Validate panel ownership against manifest -------------------------

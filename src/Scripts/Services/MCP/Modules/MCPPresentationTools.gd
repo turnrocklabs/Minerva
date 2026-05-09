@@ -2146,8 +2146,8 @@ func _read_graphics_editor_as_base64(editor_name: String) -> Dictionary:
 	var editor = MCPToolUtils.find_editor_by_name(editor_name)
 	if editor == null:
 		return MCPToolUtils.error("Graphics editor not found: %s" % editor_name)
-	var EditorScript = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != EditorScript.Type.GRAPHICS:
+	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != editor_script.Type.GRAPHICS:
 		return MCPToolUtils.error("Editor '%s' is not a graphics editor" % editor_name)
 	if not editor.graphics_editor:
 		return MCPToolUtils.error("Graphics editor '%s' not initialized" % editor_name)

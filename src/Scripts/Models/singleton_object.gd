@@ -1894,7 +1894,7 @@ var chatgpt_model_manager     # ChatGPTModelManager for OAuth-discovered ChatGPT
 var _dynamic_provider_map: Dictionary = {}  # {id_base: {script: GDScript, provider: API_PROVIDER, manager: ProviderModelManager}}
 
 
-static func classify_openai_model(model_id: String) -> String:
+func classify_openai_model(model_id: String) -> String:
 	var id := model_id.strip_edges().to_lower()
 	if id.begins_with("gpt-image-") or id.begins_with("dall-e-") or id == "chatgpt-image-latest":
 		return "image"
@@ -1909,7 +1909,7 @@ static func classify_openai_model(model_id: String) -> String:
 	return "chat"
 
 
-static func is_openai_image_model(model_id: String) -> bool:
+func is_openai_image_model(model_id: String) -> bool:
 	return classify_openai_model(model_id) == "image"
 
 func _init_dynamic_models() -> void:

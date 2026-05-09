@@ -90,13 +90,13 @@ func refresh() -> void:
 		child.queue_free()
 
 	var entries := _decorated_annotations()
-	var visible := []
+	var visible_entries := []
 	var broken_count := 0
 	for entry in entries:
 		if bool(entry.get("stale", false)):
 			broken_count += 1
 		if _passes_filter(entry):
-			visible.append(entry)
+			visible_entries.append(entry)
 
 	if _header != null:
 		_header.text = "Annotations"
@@ -104,10 +104,10 @@ func refresh() -> void:
 		_count_label.text = "%d open, %d broken" % [_count_lifecycle(entries, "open"), broken_count]
 		_count_label.add_theme_color_override("font_color", _BROKEN_COLOR if broken_count > 0 else _MUTED)
 
-	for entry in visible:
+	for entry in visible_entries:
 		_entries_list.add_child(_make_row(entry))
 	if _empty_label != null:
-		_empty_label.visible = visible.is_empty()
+		_empty_label.visible = visible_entries.is_empty()
 
 
 func _build_ui() -> void:
@@ -457,15 +457,15 @@ func _row_actions(annotation: Dictionary) -> Array:
 		return []
 	var raw: Array = kind.actions(annotation)
 	var lifecycle := str(annotation.get("lifecycle", "open"))
-	var visible: Array = []
+	var visible_actions: Array = []
 	for entry in raw:
 		if not entry is Dictionary:
 			continue
 		var requires: Variant = (entry as Dictionary).get("requires_lifecycle", [])
 		if requires is Array and not (requires as Array).is_empty() and not (lifecycle in requires):
 			continue
-		visible.append(entry)
-	return visible
+		visible_actions.append(entry)
+	return visible_actions
 
 
 func _run_action(annotation_id: String, action_id: String) -> void:
