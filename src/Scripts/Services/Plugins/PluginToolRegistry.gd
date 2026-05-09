@@ -163,6 +163,13 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 			"input_schema": tool_entry.get("input_schema", {"type": "object", "properties": {}}),
 			"source": "plugin:%s" % plugin_id,
 		}
+		# Preserve _backend_name so handle_tool_call can strip the auto-prefix
+		# before forwarding to the plugin's stdio channel. Backend-discovered
+		# tools (round 1) set this to the unprefixed name from tools/list;
+		# manifest-declared tools omit it (the manifest name is already what
+		# the backend recognises).
+		if tool_entry.has("_backend_name"):
+			entry["_backend_name"] = str(tool_entry["_backend_name"])
 		validated.append(entry)
 
 	# Remove any previous registration for this plugin (idempotent re-register).
