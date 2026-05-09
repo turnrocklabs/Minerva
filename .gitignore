@@ -67,3 +67,6 @@ plugins/elgato/node_modules/
 *.dct.lock
 *.dct.tmp.*
 .sconsign.dblite
+
+# Sightline editor probe output (experimental tool — debugger state snapshots)
+.sightline/
