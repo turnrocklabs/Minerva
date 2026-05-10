@@ -186,6 +186,10 @@ func _run_tests() -> void:
 	await _test_capability_broker_get_state_no_broker_falls_back()
 	await _test_capability_broker_set_state_panel_state_routes()
 	await _test_capability_broker_set_state_mutual_exclusion()
+	await _test_request_state_timeout()
+	await _test_response_spoofing_rejected()
+	await _test_resolve_unknown_request_id_warns_silently()
+	await _test_panel_state_size_cap_enforced()
 
 
 func _test_request_state_happy_path() -> void:
@@ -267,13 +271,118 @@ func _test_capability_broker_get_state_routes_to_panel() -> void:
 
 func _test_capability_broker_get_state_no_broker_falls_back() -> void:
 	# When CapabilityBroker._get_panel_broker() returns null (headless/no
-	# SingletonObject), get_state must fall back to the existing placeholder
-	# shape (buffer_canonical=false + unsupported_reason). We can't easily
-	# exercise CapabilityBroker.get_state here without an editor_pane, so
-	# this is the contract-shape check: confirm the fallback branch exists
-	# in the code path. (Verified by unit reading; shape is asserted in
-	# test_host_capability_documents.)
-	check("capability path: fallback documented", true)
+	# SingletonObject autoload), get_state for a plugin-scene editor must
+	# return a structured result rather than crashing. _get_panel_broker
+	# returns null for us in --script mode (no SingletonObject), so the
+	# fallback branch is what executes when get_state hits a plugin_scene
+	# editor without a buffer. We exercise it by bypassing _find_editor_by_name
+	# (which also requires an editor_pane) and asserting the helper itself.
+	var Broker = _scripts["Broker"]
+	var capbroker = Broker.new(null, null)
+	var pb = capbroker._get_panel_broker()
+	check_eq("get_panel_broker returns null without SingletonObject", pb, null)
+
+
+func _test_request_state_timeout() -> void:
+	# Verify the timeout-fallback shape: when _resolve_panel_state_response
+	# is called with a timeout-coded payload from the legitimate owner, the
+	# awaiter resolves and its entry is erased.
+	#
+	# We construct a pending awaiter directly (rather than calling the async
+	# request_panel_state without await — Godot 4 rejects that with a runtime
+	# error). This tests the resolver path in isolation; the production
+	# 5-second SceneTreeTimer fallback is exercised in HITL.
+	var pb = _make_panel_broker()
+	var rid := "panel-state-test-timeout-1"
+	pb._seed_pending_panel_state_for_test(rid, TEST_PLUGIN_ID, TEST_PANEL_NAME)
+	check("timeout: pending entry seeded", pb._pending_panel_state.has(rid))
+
+	pb._resolve_panel_state_response(TEST_PLUGIN_ID, TEST_PANEL_NAME, {
+		"request_id": rid,
+		"success": false,
+		"error_code": "timeout",
+		"error_message": "synthetic timeout for test",
+	})
+	check("timeout: pending awaiter cleared after legit resolve",
+		not pb._pending_panel_state.has(rid))
+
+
+func _test_response_spoofing_rejected() -> void:
+	# Verify the anti-spoofing guard in _resolve_panel_state_response. We
+	# directly populate a pending awaiter so we don't depend on the async
+	# request_panel_state API — pure unit test of the resolver logic.
+	var pb = _make_panel_broker()
+	var rid := "panel-state-test-spoof-1"
+	pb._seed_pending_panel_state_for_test(rid, TEST_PLUGIN_ID, TEST_PANEL_NAME)
+
+	# Spoof attempt: foreign plugin_id/panel_name. Resolver must keep the
+	# entry pending (rejection IS the security guarantee).
+	pb._resolve_panel_state_response("attacker_plugin", "attacker_panel", {
+		"request_id": rid,
+		"success": true,
+		"state": {"injected": true},
+	})
+	check("spoofing: foreign responder cannot resolve",
+		pb._pending_panel_state.has(rid))
+
+	# Mismatched panel name (same plugin but wrong panel).
+	pb._resolve_panel_state_response(TEST_PLUGIN_ID, "different_panel", {
+		"request_id": rid, "success": true, "state": {},
+	})
+	check("spoofing: same plugin but wrong panel rejected",
+		pb._pending_panel_state.has(rid))
+
+	# Legit owner finally resolves the entry.
+	pb._resolve_panel_state_response(TEST_PLUGIN_ID, TEST_PANEL_NAME, {
+		"request_id": rid,
+		"success": true,
+		"state": {"injected": false},
+	})
+	check("spoofing: legitimate owner clears the entry",
+		not pb._pending_panel_state.has(rid))
+
+
+func _test_resolve_unknown_request_id_warns_silently() -> void:
+	# Stale or duplicate response with no matching pending entry: must not
+	# crash, must not raise — just push_warning and return.
+	var pb = _make_panel_broker()
+	# No setup — pending dict is empty.
+	pb._resolve_panel_state_response("any", "any", {
+		"request_id": "unknown-rid-xyz",
+		"success": true,
+	})
+	check("resolve unknown rid: did not crash", true)
+
+
+func _test_panel_state_size_cap_enforced() -> void:
+	# CapabilityBroker.set_state with a panel_state larger than the 8-MiB
+	# cap must reject as payload_too_large before any IPC happens. Build
+	# a Dictionary whose JSON serialization exceeds 8 MiB.
+	var Broker = _scripts["Broker"]
+	var Audit = _scripts["Audit"]
+	var Policy = _scripts["Policy"]
+	var DB = _scripts["DB"]
+	var db = DB.new()
+	var audit = Audit.new()
+	var policy = Policy.new(db, audit)
+	var capbroker = Broker.new(policy, audit)
+	policy.grant_capability(TEST_PLUGIN_ID, "host.documents.set_state")
+
+	# Build a state Dict that serializes to >8 MiB. Use a long string.
+	var giant_string: String = "x".repeat(9 * 1024 * 1024)
+	var state := {"giant": giant_string}
+	var args := {
+		"editor_name": "any_editor",
+		"panel_state": state,
+	}
+	var resp: Dictionary = await capbroker.dispatch(TEST_PLUGIN_ID,
+		"host.documents.set_state", args)
+	# Note: in headless we never reach the editor lookup either, but the
+	# size cap fires before the editor lookup so payload_too_large is the
+	# expected failure mode regardless.
+	check_eq("panel_state oversize → payload_too_large",
+		str(resp.get("error_code", "")), "payload_too_large")
+	policy.revoke_capability(TEST_PLUGIN_ID, "host.documents.set_state")
 
 
 func _test_capability_broker_set_state_panel_state_routes() -> void:

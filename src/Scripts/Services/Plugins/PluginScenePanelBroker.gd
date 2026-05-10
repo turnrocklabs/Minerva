@@ -209,9 +209,18 @@ var _next_panel_state_request_id: int = 0
 
 ## Awaiter for a single panel-state request. Lifetime is bounded by either
 ## the response landing (handle_scene_request emits) or a timeout fallback.
+##
+## owner_plugin_id + owner_panel_name are stored so _resolve_panel_state_response
+## can verify that the response originated from the panel we asked. Without
+## this binding, a malicious or buggy plugin could emit a host_owned_save.
+## response with another panel's request_id and resolve the awaiter with
+## arbitrary state. Identifiers are enumerable (counter-based "panel-state-N")
+## so the binding is mandatory, not optional.
 class _PanelStateAwaiter extends RefCounted:
 	signal completed(result: Dictionary)
 	var resolved: bool = false
+	var owner_plugin_id: String = ""
+	var owner_panel_name: String = ""
 
 	func resolve(result: Dictionary) -> void:
 		if resolved:
@@ -493,12 +502,14 @@ func handle_scene_request(
 	if channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE:
 		# Panel responding to a broker-initiated panel-state request. No
 		# reply expected (panel is responding, not requesting); just resolve
-		# the matching awaiter and audit the dispatch.
+		# the matching awaiter and audit the dispatch. Pass the resolved
+		# plugin_id + panel_name so _resolve_panel_state_response can verify
+		# the responder owns the request (anti-spoofing).
 		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
 			"panel_name": panel_name, "channel": channel,
 			"request_id": str(payload.get("request_id", "")),
 		})
-		_resolve_panel_state_response(payload)
+		_resolve_panel_state_response(plugin_id, panel_name, payload)
 		return
 
 	# --- 3. Validate panel ownership against manifest -------------------------
@@ -965,6 +976,8 @@ func _request_panel_state_op(
 	_next_panel_state_request_id += 1
 	var request_id := "panel-state-%d" % _next_panel_state_request_id
 	var awaiter := _PanelStateAwaiter.new()
+	awaiter.owner_plugin_id = plugin_id
+	awaiter.owner_panel_name = panel_name
 	_pending_panel_state[request_id] = awaiter
 
 	var payload := extra_payload.duplicate(true)
@@ -1004,18 +1017,61 @@ func _request_panel_state_op(
 	return await awaiter.completed
 
 
+## Test-only: seed a pending panel-state awaiter so unit tests can exercise
+## the resolver path (timeout fallback, spoofing rejection) without driving
+## the full async public API. Production code MUST go through
+## request_panel_state / apply_panel_state.
+func _seed_pending_panel_state_for_test(
+		request_id: String, plugin_id: String, panel_name: String) -> void:
+	var awaiter := _PanelStateAwaiter.new()
+	awaiter.owner_plugin_id = plugin_id
+	awaiter.owner_panel_name = panel_name
+	_pending_panel_state[request_id] = awaiter
+
+
 ## Internal: panel-side response dispatch. Called by handle_scene_request when
-## the panel emits CHANNEL_HOST_OWNED_SAVE_RESPONSE. Resolves the matching
-## awaiter (and erases its entry) so the original caller can resume.
-func _resolve_panel_state_response(payload: Dictionary) -> void:
+## the panel emits CHANNEL_HOST_OWNED_SAVE_RESPONSE. Verifies the responder is
+## the panel we asked (anti-spoofing — see _PanelStateAwaiter docstring) and
+## resolves the matching awaiter so the original caller can resume.
+func _resolve_panel_state_response(
+		responder_plugin_id: String,
+		responder_panel_name: String,
+		payload: Dictionary
+) -> void:
 	var request_id: String = str(payload.get("request_id", ""))
 	if request_id.is_empty():
 		push_warning("[PluginScenePanelBroker] host_owned_save.response missing request_id")
 		return
 	if not _pending_panel_state.has(request_id):
-		# Late response after timeout, or duplicate — drop quietly.
+		# Late response after timeout, or a duplicate from a panel that
+		# already responded once. Surface as a warning so a chatty/buggy
+		# plugin shows up in the logs rather than silently dropping.
+		push_warning(
+			"[PluginScenePanelBroker] host_owned_save.response for unknown request_id '%s' (plugin '%s', panel '%s')" %
+			[request_id, responder_plugin_id, responder_panel_name]
+		)
 		return
 	var awaiter: _PanelStateAwaiter = _pending_panel_state[request_id]
+	# Anti-spoofing: only the panel we sent the request to may resolve it.
+	# This protects against a misbehaving plugin emitting a response with a
+	# guessed/known request_id to inject state into another plugin's tab.
+	if awaiter.owner_plugin_id != responder_plugin_id \
+			or awaiter.owner_panel_name != responder_panel_name:
+		_audit(responder_plugin_id, EVENT_SCENE_DENIED, {
+			"panel_name": responder_panel_name,
+			"channel": CHANNEL_HOST_OWNED_SAVE_RESPONSE,
+			"reason": "request_owner_mismatch",
+			"request_id": request_id,
+			"awaiter_owner": "%s/%s" % [awaiter.owner_plugin_id, awaiter.owner_panel_name],
+		})
+		push_warning(
+			("[PluginScenePanelBroker] host_owned_save.response from '%s/%s' " +
+			"does not own request '%s' (owned by '%s/%s'); spoofing attempt rejected") % [
+				responder_plugin_id, responder_panel_name, request_id,
+				awaiter.owner_plugin_id, awaiter.owner_panel_name,
+			]
+		)
+		return
 	_pending_panel_state.erase(request_id)
 	# Strip request_id from the payload before resolving so callers see a
 	# clean result envelope.

@@ -509,6 +509,18 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"host.documents.set_state requires 'buffer_text' (text editors) or 'panel_state' (plugin-scene panels)")
 
+	# Size cap on panel_state — applied BEFORE editor lookup so an oversize
+	# payload is rejected without disclosing editor existence and without
+	# consuming the lookup work.
+	if has_panel_state:
+		var raw_state_pre: Variant = args["panel_state"]
+		if not (raw_state_pre is Dictionary):
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.set_state: 'panel_state' must be a Dictionary")
+		var serialized_pre: String = JSON.stringify(raw_state_pre)
+		if serialized_pre.length() > _FILES_MAX_BYTES:
+			return PluginErrors.payload_too_large(plugin_id, _FILES_MAX_BYTES, serialized_pre.length())
+
 	var ed = _find_editor_by_name(editor_name)
 	if ed == null:
 		return PluginErrors.editor_not_found(plugin_id, editor_name)
@@ -531,10 +543,9 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 			# silently bypass version + dirty bookkeeping the buffer owns.
 			return PluginErrors.schema_validation_failed(plugin_id,
 				"host.documents.set_state: this plugin-scene editor is buffer-canonical; use 'buffer_text'")
-		var raw_state: Variant = args["panel_state"]
-		if not (raw_state is Dictionary):
-			return PluginErrors.schema_validation_failed(plugin_id,
-				"host.documents.set_state: 'panel_state' must be a Dictionary")
+		# panel_state Dictionary type-check + size cap already enforced
+		# above (before editor lookup); raw_state is therefore safe to read.
+		var raw_state: Dictionary = args["panel_state"] as Dictionary
 		var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
 		var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
 		if owner_pid.is_empty() or pname.is_empty():
