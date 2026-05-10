@@ -106,6 +106,36 @@ const CHANNEL_HOST_FS_CHANGED := "host.fs.changed"
 ## subscriptions even if the panel didn't pair every watch with an unwatch.
 const _FS_OWNER_PREFIX := "plugin_panel"
 
+
+# Platform-reserved host_owned_save channels (DCR T6 R0 — panel-state IPC
+# for plugin-scene editors that don't carry a canonical DocumentBuffer).
+#
+# Pattern: CapabilityBroker.dispatch sees host.documents.get_state /
+# set_state for a plugin-scene editor whose buffer is null; it asks this
+# broker to round-trip via the panel.
+#
+# Inbound: broker pushes a request to the panel (via push_to_panel /
+# scene.receive). Outbound: panel emits a response back via the existing
+# panel→broker `request` signal, with channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE
+# and a request_id matching what was pushed.
+#
+# Like host.fs.*, these channels bypass the manifest ipc_channels allowlist
+# because they're substrate primitives the host owns.
+
+## Broker pushes "give me your state": {"request_id": String, "op": "get"}
+const CHANNEL_HOST_OWNED_SAVE_GET_REQUEST := "host_owned_save.get_request"
+## Broker pushes "apply this state": {"request_id": String, "op": "set",
+## "state": Dictionary} where state is the deck/panel state dict.
+const CHANNEL_HOST_OWNED_SAVE_SET_REQUEST := "host_owned_save.set_request"
+## Panel responds with: {"request_id": String, "success": bool,
+## "state": Dictionary?, "error_code": String?, "error_message": String?}
+const CHANNEL_HOST_OWNED_SAVE_RESPONSE    := "host_owned_save.response"
+
+## Default timeout for panel-state requests. Panels typically respond
+## within a frame; 5 seconds is generous enough to absorb scene reload
+## delays without leaving the broker hung indefinitely.
+const PANEL_STATE_REQUEST_TIMEOUT_SEC := 5.0
+
 static func _fs_owner_id(plugin_id: String, panel_name: String) -> String:
 	return "%s:%s:%s" % [_FS_OWNER_PREFIX, plugin_id, panel_name]
 
@@ -161,6 +191,33 @@ var _panel_registry: Dictionary = {}
 ## panel via scene.receive(). Maintained on host.fs.watch / host.fs.unwatch
 ## RPCs and on panel teardown.
 var _fs_path_subscribers: Dictionary = {}
+
+## Pending panel-state requests issued via request_panel_state, keyed by
+## request_id. Each value is a `_PanelStateAwaiter` whose `completed` signal
+## resolves with the panel's response (or a timeout-shaped failure).
+##
+## Lifecycle: created in request_panel_state, populated when the panel emits
+## a CHANNEL_HOST_OWNED_SAVE_RESPONSE with the matching id, erased after the
+## awaiter resolves (or timeout). Callers must `await awaiter.completed` to
+## get the result; the broker emits then erases.
+var _pending_panel_state: Dictionary = {}
+
+## Monotonic counter for panel-state request ids. Combined with a "panel-state-"
+## prefix for easy distinction in audit logs.
+var _next_panel_state_request_id: int = 0
+
+
+## Awaiter for a single panel-state request. Lifetime is bounded by either
+## the response landing (handle_scene_request emits) or a timeout fallback.
+class _PanelStateAwaiter extends RefCounted:
+	signal completed(result: Dictionary)
+	var resolved: bool = false
+
+	func resolve(result: Dictionary) -> void:
+		if resolved:
+			return
+		resolved = true
+		completed.emit(result)
 
 ## Whether the file_changed signal has been hooked. Connected lazily on the
 ## first host.fs.watch call so unit tests that don't exercise host.fs.* don't
@@ -432,6 +489,16 @@ func handle_scene_request(
 			"scene_success": fs_result.get("success", false),
 		})
 		_deliver_reply(panel_name, reply_id, fs_result)
+		return
+	if channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE:
+		# Panel responding to a broker-initiated panel-state request. No
+		# reply expected (panel is responding, not requesting); just resolve
+		# the matching awaiter and audit the dispatch.
+		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
+			"panel_name": panel_name, "channel": channel,
+			"request_id": str(payload.get("request_id", "")),
+		})
+		_resolve_panel_state_response(payload)
 		return
 
 	# --- 3. Validate panel ownership against manifest -------------------------
@@ -834,6 +901,127 @@ func _disconnect_buffer(entry: _PanelEntry) -> void:
 	entry.attached_buffer.detach()
 	entry.attached_buffer = null
 	entry._buffer_text_changed_handler = Callable()
+
+
+# ---------------------------------------------------------------------------
+# host_owned_save panel-state IPC (T6 R0)
+# ---------------------------------------------------------------------------
+
+## Request a plugin-scene panel's serialised state. Used by
+## CapabilityBroker.host.documents.get_state when the editor is plugin-scene
+## and has no canonical DocumentBuffer (state lives in panel UI memory).
+##
+## Returns one of:
+##   {"success": true, "state": Dictionary}
+##   {"success": false, "error_code": String, "error_message": String}
+##   {"success": false, "error_code": "panel_not_registered"|"panel_root_freed"|"timeout"}
+##
+## Awaitable. Times out after PANEL_STATE_REQUEST_TIMEOUT_SEC if the panel
+## never responds — never returns null, always a structured dict.
+func request_panel_state(plugin_id: String, panel_name: String) -> Dictionary:
+	return await _request_panel_state_op(plugin_id, panel_name,
+		CHANNEL_HOST_OWNED_SAVE_GET_REQUEST, {"op": "get"})
+
+
+## Apply a state dict to a plugin-scene panel. Symmetric with request_panel_state.
+## Used by CapabilityBroker.host.documents.set_state for plugin-scene editors.
+func apply_panel_state(plugin_id: String, panel_name: String, state: Dictionary) -> Dictionary:
+	return await _request_panel_state_op(plugin_id, panel_name,
+		CHANNEL_HOST_OWNED_SAVE_SET_REQUEST, {"op": "set", "state": state})
+
+
+## Internal: shared request/await/timeout machinery for both get and set.
+func _request_panel_state_op(
+		plugin_id: String,
+		panel_name: String,
+		channel: String,
+		extra_payload: Dictionary
+) -> Dictionary:
+	# Pre-flight: panel must be registered AND alive before we even allocate
+	# a request id. Spares the timeout path when the caller asks about a
+	# panel that isn't open.
+	if not _panel_registry.has(panel_name):
+		return {
+			"success": false,
+			"error_code": "panel_not_registered",
+			"error_message": "No registered panel named '%s'" % panel_name,
+		}
+	var entry: _PanelEntry = _panel_registry[panel_name]
+	if entry.plugin_id != plugin_id:
+		return {
+			"success": false,
+			"error_code": "panel_ownership_mismatch",
+			"error_message": "Panel '%s' is owned by plugin '%s', not '%s'" % [
+				panel_name, entry.plugin_id, plugin_id,
+			],
+		}
+	if not _is_panel_alive(entry):
+		return {
+			"success": false,
+			"error_code": "panel_root_freed",
+			"error_message": "Panel root for '%s' has been freed" % panel_name,
+		}
+
+	_next_panel_state_request_id += 1
+	var request_id := "panel-state-%d" % _next_panel_state_request_id
+	var awaiter := _PanelStateAwaiter.new()
+	_pending_panel_state[request_id] = awaiter
+
+	var payload := extra_payload.duplicate(true)
+	payload["request_id"] = request_id
+
+	# Push to the panel. push_to_panel handles the alive-check + audit; if it
+	# returns false (panel went away mid-flight), resolve immediately with
+	# panel_root_freed rather than waiting on a doomed timeout.
+	var pushed := push_to_panel(plugin_id, panel_name, channel, payload)
+	if not pushed:
+		_pending_panel_state.erase(request_id)
+		return {
+			"success": false,
+			"error_code": "panel_root_freed",
+			"error_message": "Push failed during panel-state request",
+		}
+
+	# Set up timeout. We use a SceneTreeTimer if a SceneTree is available
+	# (production path); in headless tests where the timer can't fire, the
+	# test can call _resolve_panel_state_response directly to short-circuit.
+	var tree := Engine.get_main_loop()
+	if tree is SceneTree:
+		var timer := (tree as SceneTree).create_timer(PANEL_STATE_REQUEST_TIMEOUT_SEC)
+		timer.timeout.connect(func():
+			if _pending_panel_state.has(request_id):
+				var pending: _PanelStateAwaiter = _pending_panel_state[request_id]
+				_pending_panel_state.erase(request_id)
+				pending.resolve({
+					"success": false,
+					"error_code": "timeout",
+					"error_message": "Panel '%s' did not respond within %.1fs" % [
+						panel_name, PANEL_STATE_REQUEST_TIMEOUT_SEC,
+					],
+				})
+		)
+
+	return await awaiter.completed
+
+
+## Internal: panel-side response dispatch. Called by handle_scene_request when
+## the panel emits CHANNEL_HOST_OWNED_SAVE_RESPONSE. Resolves the matching
+## awaiter (and erases its entry) so the original caller can resume.
+func _resolve_panel_state_response(payload: Dictionary) -> void:
+	var request_id: String = str(payload.get("request_id", ""))
+	if request_id.is_empty():
+		push_warning("[PluginScenePanelBroker] host_owned_save.response missing request_id")
+		return
+	if not _pending_panel_state.has(request_id):
+		# Late response after timeout, or duplicate — drop quietly.
+		return
+	var awaiter: _PanelStateAwaiter = _pending_panel_state[request_id]
+	_pending_panel_state.erase(request_id)
+	# Strip request_id from the payload before resolving so callers see a
+	# clean result envelope.
+	var result := payload.duplicate(true)
+	result.erase("request_id")
+	awaiter.resolve(result)
 
 
 # ---------------------------------------------------------------------------

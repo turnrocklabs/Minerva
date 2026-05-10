@@ -235,9 +235,9 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 		"host.documents.list_open":
 			named_result = _handle_host_documents_list_open(plugin_id, args)
 		"host.documents.get_state":
-			named_result = _handle_host_documents_get_state(plugin_id, args)
+			named_result = await _handle_host_documents_get_state(plugin_id, args)
 		"host.documents.set_state":
-			named_result = _handle_host_documents_set_state(plugin_id, args)
+			named_result = await _handle_host_documents_set_state(plugin_id, args)
 		"host.documents.mark_dirty":
 			named_result = _handle_host_documents_mark_dirty(plugin_id, args)
 		"host.files.read":
@@ -426,9 +426,14 @@ func _handle_host_documents_list_open(plugin_id: String, _args: Dictionary) -> D
 ## with buffer_text + version + dirty from the shared DocumentBuffer.
 ##
 ## For plugin-scene editors whose canonical state lives in panel UI rather
-## than a DocumentBuffer (e.g. .mdeck slide tiles), buffer_canonical=false is
-## returned with whatever metadata IS available. Full state extraction via
-## host_owned_save IPC is out of scope for this round.
+## than a DocumentBuffer (e.g. .mdeck slide tiles), the broker performs a
+## host_owned_save IPC roundtrip via PluginScenePanelBroker.request_panel_state:
+## the panel script returns its serialised state, and the response is folded
+## into the editor-state envelope under `panel_state`. T6 R0 substrate.
+##
+## In headless / pre-MainScene contexts where the panel broker isn't wired,
+## the response shape falls back to the pre-T6 placeholder
+## (`unsupported_reason: "panel_state_via_host_owned_save"`).
 func _handle_host_documents_get_state(plugin_id: String, args: Dictionary) -> Dictionary:
 	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
 	if editor_name.is_empty():
@@ -440,6 +445,34 @@ func _handle_host_documents_get_state(plugin_id: String, args: Dictionary) -> Di
 		return PluginErrors.editor_not_found(plugin_id, editor_name)
 
 	print("[CapabilityBroker] Plugin '%s' invoking host.documents.get_state (editor='%s')" % [plugin_id, editor_name])
+
+	var ed_type: int = int(ed.type) if "type" in ed else -1
+	if ed_type == Editor.Type.PLUGIN_SCENE:
+		var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
+		if buffer == null:
+			# Panel-canonical: state lives in panel UI memory. Round-trip
+			# through PluginScenePanelBroker.
+			var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
+			var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+			if owner_pid.is_empty() or pname.is_empty():
+				return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+			var pbroker = _get_panel_broker()
+			if pbroker != null and pbroker.has_method("request_panel_state"):
+				var resp: Dictionary = await pbroker.request_panel_state(owner_pid, pname)
+				if not resp.get("success", false):
+					return {
+						"success": false,
+						"error_code": str(resp.get("error_code", "panel_state_unavailable")),
+						"error_message": str(resp.get("error_message", "")),
+						"plugin_id": plugin_id,
+						"editor_name": editor_name,
+					}
+				var state_envelope: Dictionary = _describe_editor_state(ed)
+				state_envelope["panel_state"] = resp.get("state", {})
+				state_envelope.erase("unsupported_reason")
+				return PluginErrors.success(state_envelope)
+			# Headless / no panel broker — fall through to placeholder shape.
+
 	return PluginErrors.success(_describe_editor_state(ed))
 
 
@@ -453,7 +486,10 @@ func _handle_host_documents_get_state(plugin_id: String, args: Dictionary) -> Di
 ##         schema_validation_failed.
 func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Dictionary:
 	# Strict args allowlist — unknown keys are a footgun on destructive writes.
-	var allowed_keys := ["editor_name", "buffer_text", "expected_version"]
+	# T6 R0 added `panel_state` for plugin-scene non-canonical editors;
+	# `buffer_text` and `panel_state` are mutually exclusive — the broker
+	# routes by which one was supplied AND the editor type.
+	var allowed_keys := ["editor_name", "buffer_text", "panel_state", "expected_version"]
 	for k in args.keys():
 		if k not in allowed_keys:
 			return PluginErrors.schema_validation_failed(plugin_id,
@@ -464,10 +500,14 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"host.documents.set_state requires 'editor_name'")
 
-	if not args.has("buffer_text"):
+	var has_buffer_text := args.has("buffer_text")
+	var has_panel_state := args.has("panel_state")
+	if has_buffer_text and has_panel_state:
 		return PluginErrors.schema_validation_failed(plugin_id,
-			"host.documents.set_state requires 'buffer_text'")
-	var buffer_text: String = str(args["buffer_text"])
+			"host.documents.set_state: 'buffer_text' and 'panel_state' are mutually exclusive")
+	if not has_buffer_text and not has_panel_state:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.set_state requires 'buffer_text' (text editors) or 'panel_state' (plugin-scene panels)")
 
 	var ed = _find_editor_by_name(editor_name)
 	if ed == null:
@@ -477,6 +517,53 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 	if not ownership_err.is_empty():
 		return ownership_err
 
+	# T6 R0 — plugin-scene non-canonical path. The plugin sent panel_state
+	# (a Dictionary) and we IPC-roundtrip it to the panel for application.
+	if has_panel_state:
+		var ed_type_ps: int = int(ed.type) if "type" in ed else -1
+		if ed_type_ps != Editor.Type.PLUGIN_SCENE:
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.set_state: 'panel_state' requires plugin-scene editor")
+		var buffer_pre_check: DocumentBuffer = _resolve_editor_buffer(ed)
+		if buffer_pre_check != null:
+			# Plugin-scene editor that DOES have a canonical buffer (paired_dsl).
+			# Force the plugin to use buffer_text — mixing modes here would
+			# silently bypass version + dirty bookkeeping the buffer owns.
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.set_state: this plugin-scene editor is buffer-canonical; use 'buffer_text'")
+		var raw_state: Variant = args["panel_state"]
+		if not (raw_state is Dictionary):
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.set_state: 'panel_state' must be a Dictionary")
+		var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
+		var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+		if owner_pid.is_empty() or pname.is_empty():
+			return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+		var pbroker = _get_panel_broker()
+		if pbroker == null or not pbroker.has_method("apply_panel_state"):
+			return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+		var resp: Dictionary = await pbroker.apply_panel_state(owner_pid, pname, raw_state as Dictionary)
+		if not resp.get("success", false):
+			return {
+				"success": false,
+				"error_code": str(resp.get("error_code", "panel_state_unavailable")),
+				"error_message": str(resp.get("error_message", "")),
+				"plugin_id": plugin_id,
+				"editor_name": editor_name,
+			}
+		var ed_type_ok: int = int(ed.type) if "type" in ed else -1
+		var pid_ok: String = str(ed.plugin_id) if "plugin_id" in ed else ""
+		print("[CapabilityBroker] Plugin '%s' set_state (panel) on editor '%s'" % [plugin_id, editor_name])
+		return PluginErrors.success({
+			"editor_name": editor_name,
+			"dirty": true,
+			"kind": _editor_kind_string(ed_type_ok),
+			"plugin_id": _str_or_null(pid_ok),
+			"buffer_canonical": false,
+		})
+
+	# Buffer-canonical path (existing).
+	var buffer_text: String = str(args["buffer_text"])
 	var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
 	if buffer == null:
 		return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
@@ -727,6 +814,22 @@ func _get_plugin_definition(plugin_id: String) -> PluginDefinition:
 	if policy == null or policy.plugin_db == null:
 		return null
 	return policy.plugin_db.get_by_id(plugin_id)
+
+
+## Resolve the SingletonObject's PluginScenePanelBroker. Used by host.documents.*
+## handlers when an editor is plugin_scene non-canonical (state lives in panel
+## UI memory and must be retrieved via the host_owned_save IPC roundtrip).
+## Returns null in headless / pre-MainScene contexts.
+func _get_panel_broker():
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	var so = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	if not "plugin_scene_panel_broker" in so:
+		return null
+	return so.get("plugin_scene_panel_broker")
 
 
 # ---------------------------------------------------------------------------
