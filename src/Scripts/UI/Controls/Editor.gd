@@ -871,6 +871,68 @@ func get_document_buffer() -> DocumentBuffer:
 	return _document_buffer
 
 
+# ---------------------------------------------------------------------------
+# Export contract (T5 R2 — host.editors.export)
+# ---------------------------------------------------------------------------
+
+## List of named export formats this editor can produce. Empty by default;
+## type-specific blocks below extend it. host.editors.list reports this so
+## plugins can discover what's available without hard-coding editor types.
+##
+## Naming convention: lowercase short names. "png" / "jpeg" / "csv" / "text".
+## Plugins match exact strings; a misspelling becomes format_not_supported.
+func export_formats() -> PackedStringArray:
+	var formats := PackedStringArray()
+	if type == Type.GRAPHICS and graphics_editor != null:
+		formats.append("png")
+	# Buffer-canonical editors expose their text content as an export so
+	# plugins that don't want to use host.documents.get_state can still
+	# pull it via host.editors.export.
+	if _document_buffer != null:
+		formats.append("text")
+	return formats
+
+
+## Render this editor in the requested format. Returns:
+##   {success: true, bytes: PackedByteArray, mime: String, format: String}
+##   {success: false, error_code: "format_not_supported"}
+##
+## host.editors.export wraps this with audit + base64 encoding. Subclasses
+## (or this base for known kinds) populate the bytes; the broker does NOT
+## care which editor implementation produced them.
+##
+## NOTE: this is awaited because GraphicsEditorV2.compose_final_image() is
+## async (it can wait on multiple frames for layer compositing).
+func export_to_format(format: String) -> Dictionary:
+	if type == Type.GRAPHICS and graphics_editor != null and format == "png":
+		var image: Image = await graphics_editor.compose_final_image()
+		if image == null or image.is_empty():
+			return {
+				"success": false,
+				"error_code": "format_not_supported",
+				"detail": "graphics editor produced no composable image",
+			}
+		var bytes: PackedByteArray = image.save_png_to_buffer()
+		return {
+			"success": true,
+			"bytes": bytes,
+			"mime": "image/png",
+			"format": "png",
+		}
+	if format == "text" and _document_buffer != null:
+		var bytes_text: PackedByteArray = _document_buffer.text.to_utf8_buffer()
+		return {
+			"success": true,
+			"bytes": bytes_text,
+			"mime": "text/plain; charset=utf-8",
+			"format": "text",
+		}
+	return {
+		"success": false,
+		"error_code": "format_not_supported",
+	}
+
+
 ## Attach this editor to the DocumentRegistry buffer for path. Detaches from any
 ## previously held buffer first (covers Save As / file-rename flows where the
 ## tab's path changes). Sets _document_buffer to the new buffer or null on error.

@@ -244,6 +244,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_files_read(plugin_id, args)
 		"host.files.write":
 			named_result = _handle_host_files_write(plugin_id, args)
+		"host.editors.list":
+			named_result = _handle_host_editors_list(plugin_id, args)
+		"host.editors.export":
+			named_result = await _handle_host_editors_export(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -723,6 +727,116 @@ func _get_plugin_definition(plugin_id: String) -> PluginDefinition:
 	if policy == null or policy.plugin_db == null:
 		return null
 	return policy.plugin_db.get_by_id(plugin_id)
+
+
+# ---------------------------------------------------------------------------
+# host.editors.* handlers (T5 R2)
+# ---------------------------------------------------------------------------
+
+## Strict args allowlist for host.editors.export.
+const _EDITORS_EXPORT_ALLOWED_ARGS := ["editor_name", "format"]
+
+
+## Enumerate open editors with their advertised export formats.
+##
+## Each entry: {editor_name, kind, plugin_id, panel_name, export_formats}.
+## export_formats is an Array[String] (empty for editors that don't support
+## export). Plugins use this to discover what's available; pair with
+## host.editors.export to actually retrieve content.
+##
+## In headless / pre-MainScene contexts, editor_pane is null and this returns
+## an empty list (the channel itself still works).
+func _handle_host_editors_list(plugin_id: String, _args: Dictionary) -> Dictionary:
+	var editors: Array = []
+	var editor_pane = _get_editor_pane()
+	if editor_pane != null and editor_pane.has_method("get_open_editors"):
+		for ed in editor_pane.get_open_editors():
+			if ed == null:
+				continue
+			editors.append(_describe_editor_for_export(ed))
+	print("[CapabilityBroker] Plugin '%s' invoking host.editors.list (%d editors)" % [plugin_id, editors.size()])
+	return PluginErrors.success({"editors": editors})
+
+
+## Render an editor in a named format and return its bytes (base64-encoded).
+##
+## Args: {editor_name: String, format: String}
+##
+## On success: {editor_name, format, mime, size, content} where size is the
+## byte count of the rendered output and content is base64 of those bytes.
+## All exports are returned as base64 to keep the response shape uniform
+## across binary (PNG) and text (CSV / plain text) formats.
+##
+## Errors: schema_validation_failed, editor_not_found, format_not_supported,
+##         payload_too_large (if rendered bytes exceed 8 MiB cap).
+func _handle_host_editors_export(plugin_id: String, args: Dictionary) -> Dictionary:
+	for k in args.keys():
+		if k not in _EDITORS_EXPORT_ALLOWED_ARGS:
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown arg '%s' (allowed: %s)" % [k, str(_EDITORS_EXPORT_ALLOWED_ARGS)]
+			)
+
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "host.editors.export requires 'editor_name'"
+		)
+	var format: String = str(args.get("format", "")).strip_edges()
+	if format.is_empty():
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "host.editors.export requires 'format'"
+		)
+
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	if not ed.has_method("export_to_format"):
+		# Editor predates the export contract — treat as no formats.
+		return PluginErrors.format_not_supported(plugin_id, editor_name, format, [])
+
+	var supported: Array = []
+	if ed.has_method("export_formats"):
+		var ef: PackedStringArray = ed.export_formats()
+		for entry in ef:
+			supported.append(entry)
+
+	if format not in supported:
+		return PluginErrors.format_not_supported(plugin_id, editor_name, format, supported)
+
+	var raw: Dictionary = await ed.export_to_format(format)
+	if not raw.get("success", false):
+		# The editor knew the format but couldn't render it (e.g. graphics
+		# editor with no layers). Surface as format_not_supported with the
+		# detail string the editor returned.
+		return PluginErrors.format_not_supported(plugin_id, editor_name, format, supported)
+
+	var bytes: PackedByteArray = raw.get("bytes", PackedByteArray())
+	if bytes.size() > _FILES_MAX_BYTES:
+		return PluginErrors.payload_too_large(plugin_id, _FILES_MAX_BYTES, bytes.size())
+
+	print("[CapabilityBroker] Plugin '%s' exported editor '%s' as %s (%d bytes)" % [plugin_id, editor_name, format, bytes.size()])
+	return PluginErrors.success({
+		"editor_name": editor_name,
+		"format": format,
+		"mime": str(raw.get("mime", "application/octet-stream")),
+		"size": bytes.size(),
+		"content": Marshalls.raw_to_base64(bytes),
+	})
+
+
+## Build a single host.editors.list entry. Reuses _describe_editor_summary's
+## shape and appends export_formats so plugins can decide whether to call
+## host.editors.export without a discovery round-trip.
+func _describe_editor_for_export(editor) -> Dictionary:
+	var summary: Dictionary = _describe_editor_summary(editor)
+	var formats: Array = []
+	if editor.has_method("export_formats"):
+		var ef: PackedStringArray = editor.export_formats()
+		for entry in ef:
+			formats.append(entry)
+	summary["export_formats"] = formats
+	return summary
 
 
 # ---------------------------------------------------------------------------

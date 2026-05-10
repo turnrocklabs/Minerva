@@ -24,6 +24,7 @@ const CODE_VERSION_CONFLICT = "version_conflict"
 const CODE_OWNERSHIP_REQUIRED = "ownership_required"
 const CODE_IO_ERROR = "io_error"
 const CODE_FILESYSTEM_DISABLED = "filesystem_disabled"
+const CODE_FORMAT_NOT_SUPPORTED = "format_not_supported"
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +192,21 @@ static func io_error(plugin_id: String, path: String, detail: String) -> Diction
 		"plugin_id": plugin_id,
 		"path": path,
 		"detail": detail,
+	}
+
+
+## Editor exists but doesn't support the requested export format. Distinct
+## from schema_validation_failed because the request was well-formed; the
+## editor type just doesn't know how to render itself in that format.
+static func format_not_supported(plugin_id: String, editor_name: String, format: String, supported: Array) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_FORMAT_NOT_SUPPORTED,
+		"error_message": "Editor '%s' does not support format '%s' (supported: %s)" % [editor_name, format, str(supported)],
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"format": format,
+		"supported_formats": supported,
 	}
 
 

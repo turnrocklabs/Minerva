@@ -166,6 +166,8 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.documents.mark_dirty",
 	"host.files.read",
 	"host.files.write",
+	"host.editors.list",
+	"host.editors.export",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one
