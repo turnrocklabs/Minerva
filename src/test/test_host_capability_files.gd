@@ -116,6 +116,9 @@ func _run_tests() -> void:
 	_test_write_create_parents_true(broker)
 	_test_write_create_parents_false_missing_dir(broker)
 	_test_filesystem_disabled_when_mode_none(Def, db, broker)
+	_test_read_null_byte_in_path(broker)
+	_test_read_directory_path(broker)
+	_test_write_to_directory_path(broker)
 	_test_audit_dispatched_and_failed(audit)
 
 
@@ -282,6 +285,34 @@ func _test_filesystem_disabled_when_mode_none(Def, db, broker) -> void:
 
 	# Cleanup the secondary policy entry too.
 	broker.policy.revoke_capability(NO_FS_ID, "host.files.read")
+
+
+func _test_read_null_byte_in_path(broker) -> void:
+	# A null byte would be silently truncated at the libc layer; the validator
+	# rejects it explicitly so the audit trail and FileAccess agree.
+	var poisoned: String = _scope_dir.path_join("hello.txt") + char(0) + "..extra"
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.read",
+		{"path": poisoned})
+	check_eq("read with embedded null byte → schema_validation_failed",
+		res.get("error_code", ""), "schema_validation_failed")
+
+
+func _test_read_directory_path(broker) -> void:
+	# FileAccess.open(<directory>, READ) returns null on Linux; the broker
+	# surfaces that as io_error rather than crashing.
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.read",
+		{"path": _scope_dir})
+	check_eq("read of a directory path → io_error",
+		res.get("error_code", ""), "io_error")
+
+
+func _test_write_to_directory_path(broker) -> void:
+	# Existing directory at the target path: write must fail io_error, not
+	# clobber it. The scope_dir is, of course, a directory.
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.write",
+		{"path": _scope_dir, "content": "x"})
+	check_eq("write to a directory path → io_error",
+		res.get("error_code", ""), "io_error")
 
 
 func _test_audit_dispatched_and_failed(audit) -> void:

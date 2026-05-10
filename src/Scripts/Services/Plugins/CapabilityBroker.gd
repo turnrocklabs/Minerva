@@ -97,6 +97,15 @@ static func validate_files_path(plugin_id: String, path: String, allowed_paths: 
 	if path.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "path must not be empty")
 
+	# Embedded null bytes pass simplify_path / begins_with as ordinary chars but
+	# would be silently truncated at the libc layer (`open(2)`), creating a gap
+	# between what the validator audits and what FileAccess actually opens.
+	# Reject loudly instead.
+	if path.contains(char(0)):
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "path must not contain null bytes"
+		)
+
 	# user:// is the only supported relative-style prefix; expand it then enforce
 	# absolute-path-only for everything else.
 	var raw_path: String = path
