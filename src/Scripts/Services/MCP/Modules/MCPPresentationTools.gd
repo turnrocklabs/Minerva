@@ -103,7 +103,6 @@ func get_tool_names() -> Array[String]:
 	# get_state) use them.
 	return [
 		"minerva_presentation_open_deck",
-		"minerva_presentation_set_slide_background",
 		"minerva_presentation_add_image_tile",
 		"minerva_presentation_modify_tile",
 		"minerva_presentation_add_annotation",
@@ -171,21 +170,7 @@ func register_tools() -> void:
 
 	# T6 R3: minerva_presentation_add_slide migrated to plugin.
 
-	server._register_tool("minerva_presentation_set_slide_background",
-		"Set a slide's background. Provide exactly one of color (hex like #A07A4A), image_path, or image_base64.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer", "description": "0-based slide index."},
-				"color": {"type": "string", "description": "Hex color (with or without leading #)."},
-				"image_path": {"type": "string", "description": "Path to a PNG/JPEG file to embed as base64."},
-				"image_base64": {"type": "string", "description": "Bare base64 PNG/JPEG (no data: prefix)."},
-			},
-			"required": ["slide_index"],
-		}
-	, "presentation")
+	# T6 R7: minerva_presentation_set_slide_background migrated to plugin.
 
 	# T6 R4: minerva_presentation_add_text_tile migrated to plugin.
 
@@ -337,8 +322,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		# T6 R2: list_slides / list_tiles / list_annotations / get_tile / get_slide moved to plugin.
 		# T6 R3: add_slide / set_slide_title / set_aspect / move_slide / remove_slide moved to plugin.
 		# T6 R4: add_text_tile / remove_tile moved to plugin.
-		"minerva_presentation_set_slide_background":
-			return _set_slide_background(arguments)
+		# T6 R7: set_slide_background moved to plugin.
 		"minerva_presentation_add_image_tile":
 			return _add_image_tile(arguments)
 		"minerva_presentation_modify_tile":
@@ -435,41 +419,8 @@ func _list_slides(args: Dictionary) -> Dictionary:
 # T6 R3: _add_slide moved to plugin (~/github/plugins/presentation/main.go toolAddSlide).
 
 
-func _set_slide_background(args: Dictionary) -> Dictionary:
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slide_v := _slide_at(deck, args)
-	if slide_v is Dictionary and slide_v.has("__error__"):
-		return MCPToolUtils.error(slide_v["__error__"])
-	var slide: Dictionary = slide_v as Dictionary
-
-	var has_color := args.has("color") and not String(args.get("color", "")).is_empty()
-	var has_path := args.has("image_path") and not String(args.get("image_path", "")).is_empty()
-	var has_b64 := args.has("image_base64") and not String(args.get("image_base64", "")).is_empty()
-	var sources_set := int(has_color) + int(has_path) + int(has_b64)
-	if sources_set != 1:
-		return MCPToolUtils.error("Provide exactly one of: color, image_path, image_base64")
-
-	if has_color:
-		var hex: String = _normalize_hex(String(args["color"]))
-		slide["background"] = {"kind": BG_COLOR, "value": hex}
-	elif has_path:
-		var read := _read_file_as_base64(String(args["image_path"]))
-		if read.has("error"):
-			return MCPToolUtils.error(read["error"])
-		slide["background"] = {"kind": BG_IMAGE, "value": read["base64"]}
-	else:
-		slide["background"] = {"kind": BG_IMAGE, "value": String(args["image_base64"])}
-
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({"slide_index": int(args["slide_index"])})
-
-
-# T6 R4: _add_text_tile moved to plugin (~/github/plugins/presentation/main.go toolAddTextTile).
+# T6 R7: _set_slide_background moved to plugin.
+# T6 R4: _add_text_tile moved to plugin.
 
 
 func _add_image_tile(args: Dictionary) -> Dictionary:
@@ -1503,13 +1454,7 @@ func _validate_coords(args: Dictionary) -> String:
 	return ""
 
 
-func _normalize_hex(hex: String) -> String:
-	var s := hex.strip_edges()
-	if s.is_empty():
-		return "#ffffff"
-	if not s.begins_with("#"):
-		s = "#" + s
-	return s
+# T6 R7: _normalize_hex moved to plugin (used only by removed _set_slide_background).
 
 
 # ---------------------------------------------------------------------------
