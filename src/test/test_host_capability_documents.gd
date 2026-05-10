@@ -315,6 +315,65 @@ func _run_unit_tests() -> void:
 		short_redacted.get("editor_name", "") == "small.mcad",
 		"got: %s" % str(short_redacted))
 
+	# Credential field names (added per cold-Opus review of T4 U3) — denylisted.
+	var cred_redacted: Dictionary = BrokerStatic._redact_args({
+		"password": "hunter2",
+		"api_key": "sk-abc123",
+		"token": "Bearer xyz",
+	})
+	check("redact: password is denylisted",
+		str(cred_redacted.get("password", "")).begins_with("<redacted:"),
+		"got: %s" % str(cred_redacted))
+	check("redact: api_key is denylisted",
+		str(cred_redacted.get("api_key", "")).begins_with("<redacted:"),
+		"got: %s" % str(cred_redacted))
+	check("redact: token is denylisted",
+		str(cred_redacted.get("token", "")).begins_with("<redacted:"),
+		"got: %s" % str(cred_redacted))
+
+	# Nested dict at depth 1 is recursed — sensitive fields under wrapper keys
+	# are still caught. mcp.proxy: forwards arbitrary tool args; this is the
+	# leak path the recursion fix closes.
+	var nested_redacted: Dictionary = BrokerStatic._redact_args({
+		"params": {"api_key": "leaked-if-not-recursed", "name": "ok"},
+	})
+	check("redact: nested dict at depth 1 is recursed (still a Dictionary)",
+		nested_redacted.get("params", null) is Dictionary,
+		"got: %s" % str(nested_redacted))
+	if nested_redacted.get("params", null) is Dictionary:
+		var nested_inner: Dictionary = nested_redacted["params"]
+		check("redact: api_key inside nested dict is redacted",
+			str(nested_inner.get("api_key", "")).begins_with("<redacted:"),
+			"got inner: %s" % str(nested_inner))
+		check("redact: harmless field inside nested dict passes through",
+			nested_inner.get("name", "") == "ok",
+			"got inner: %s" % str(nested_inner))
+
+	# Depth 2 dict is summarised, not recursed — defends against silent
+	# deep-structure leaks.
+	var deep_redacted: Dictionary = BrokerStatic._redact_args({
+		"outer": {"middle": {"api_key": "deep-leak"}},
+	})
+	if deep_redacted.get("outer", null) is Dictionary:
+		var middle = deep_redacted["outer"].get("middle", null)
+		check("redact: depth-2 dict is summarised, not recursed",
+			middle is String and middle.begins_with("<nested dict:"),
+			"got middle: %s" % str(middle))
+
+	# Length-math fix: PackedByteArray reports byte count, not var_to_str-
+	# inflated char count (was ~10x off pre-fix).
+	var bytes_val := PackedByteArray()
+	bytes_val.resize(1000)
+	var bytes_redacted: Dictionary = BrokerStatic._redact_args({"bytes": bytes_val})
+	check("redact: PackedByteArray reports byte count",
+		str(bytes_redacted.get("bytes", "")) == "<redacted: 1000 bytes>",
+		"got: %s" % str(bytes_redacted))
+
+	var arr_redacted: Dictionary = BrokerStatic._redact_args({"data": [1, 2, 3, 4, 5]})
+	check("redact: Array reports item count",
+		str(arr_redacted.get("data", "")) == "<redacted: 5 items>",
+		"got: %s" % str(arr_redacted))
+
 	# -----------------------------------------------------------------------
 	# U3 integration: dispatched audit entries carry args_summary
 	# -----------------------------------------------------------------------

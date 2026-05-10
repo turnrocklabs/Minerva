@@ -68,8 +68,18 @@ static func _str_or_null(value: String) -> Variant:
 ## target_not_allowlisted for out-of-scope paths) on reject.
 ##
 ## Centralizes the path-normalization + scope-check + error-wrapping triad so
-## host.files.* handlers (T5) don't reinvent it three times. Symlink resolution
-## is OS-level and out of scope for this layer.
+## host.files.* handlers (T5) don't reinvent it three times.
+##
+## SECURITY FIXME (deferred to T5): symlink resolution is OS-level and not
+## performed here. A grant for /tmp combined with a symlink /tmp/escape -> /etc
+## defeats the begins_with scope check. T5's host.files.read/write should either
+## resolve real paths before calling this OR document that the host is responsible
+## for ensuring no escape symlinks exist within granted scopes.
+##
+## SECURITY FIXME (deferred to T5): relative paths are accepted today (they fail
+## the scope check accidentally because allowed_paths are absolute, but a future
+## relative entry in allowed_paths could match unexpectedly). T5 should add
+## explicit absolute-path enforcement here.
 ##
 ## No callers yet — host.files.read/write in T5 wire this in.
 static func validate_files_path(plugin_id: String, path: String, allowed_paths: Array) -> Dictionary:
@@ -659,6 +669,10 @@ func _get_minerva_server():
 ## Returns {} (empty dict) if ownership is fine OR the editor isn't a plugin
 ## scene (host-owned editors have no plugin owner). Returns a PluginErrors
 ## ownership_required dict otherwise. Caller short-circuits on non-empty return.
+##
+## `editor` is intentionally untyped — accepts any object exposing .type and
+## .plugin_id, which matters for the test suite's _OwnedEditorStub. Keep the
+## helper's name and signature stable; tests reach in directly.
 func _check_editor_ownership(plugin_id: String, editor, editor_name: String) -> Dictionary:
 	if editor == null:
 		return {}
@@ -674,32 +688,65 @@ func _check_editor_ownership(plugin_id: String, editor, editor_name: String) -> 
 
 ## Build a redaction-safe summary of capability call args for audit logging.
 ##
-## Two redaction rules:
-##   1. Field-name denylist: heavy/sensitive fields (e.g. buffer_text, raw bytes)
-##      are replaced with "<redacted: N chars>" descriptors regardless of length.
-##      Avoids logging full document bodies on every set_state call.
-##   2. Length cap on remaining string fields: anything over CAP chars becomes
-##      "<truncated: N chars>".
+## Three redaction rules:
+##   1. Field-name denylist: matched fields (regardless of nesting depth via
+##      one level of dict recursion) are replaced with "<redacted: ...>"
+##      descriptors. Includes document-write fields (buffer_text, bytes,
+##      data, content, value) and common credential field names that
+##      mcp.proxy: tools commonly forward (password, token, secret, api_key,
+##      authorization).
+##   2. One level of dict recursion so {wrapper: {api_key: "..."}} doesn't
+##      leak. Beyond depth 1, nested dicts are summarised as
+##      "<nested dict: N keys>" rather than recursed further (defends both
+##      against perf and against silently-shipping deeper structures).
+##   3. Length cap on remaining string fields: anything over CAP chars
+##      becomes "<truncated: N chars>".
 ##
-## Non-string scalar values (int, bool, float) and small dicts/arrays pass
-## through unchanged. Nested dicts are NOT recursed (the cap covers the common
-## case; nested-dict capability args are rare today).
-const _AUDIT_REDACT_FIELDS := ["buffer_text", "bytes", "data", "content", "value"]
+## Non-string scalar values (int, bool, float) pass through unchanged.
+## Arrays pass through (no key-name handle to denylist on); document the
+## constraint so capability authors don't tuck secrets into [params, value]
+## arrays.
+const _AUDIT_REDACT_FIELDS := [
+	# Document-write payload fields (set_state buffer body, raw bytes/data).
+	"buffer_text", "bytes", "data", "content", "value",
+	# Credential / auth field names commonly carried by mcp.proxy: tools and
+	# secrets: capability args. Forward-looks at T5+ MCP exposure.
+	"password", "token", "secret", "api_key", "authorization",
+]
 const _AUDIT_STRING_CAP := 256
 
-static func _redact_args(args: Dictionary) -> Dictionary:
+static func _redact_args(args: Dictionary, depth: int = 0) -> Dictionary:
 	var out: Dictionary = {}
 	for k in args.keys():
 		var key: String = str(k)
 		var val = args[k]
 		if key in _AUDIT_REDACT_FIELDS:
-			var n: int = (val.length() if val is String else String(var_to_str(val)).length())
-			out[key] = "<redacted: %d chars>" % n
+			out[key] = _redact_value(val)
+		elif val is Dictionary:
+			if depth < 1:
+				out[key] = _redact_args(val, depth + 1)
+			else:
+				out[key] = "<nested dict: %d keys>" % (val as Dictionary).size()
 		elif val is String and val.length() > _AUDIT_STRING_CAP:
 			out[key] = "<truncated: %d chars>" % val.length()
 		else:
 			out[key] = val
 	return out
+
+
+## Produce a redaction descriptor for a denylisted field's value.
+## Reports a meaningful size hint per type rather than a misleading
+## var_to_str-derived length (which inflates Packed*Array sizes by ~10x).
+static func _redact_value(val) -> String:
+	if val is String:
+		return "<redacted: %d chars>" % val.length()
+	if val is PackedByteArray:
+		return "<redacted: %d bytes>" % (val as PackedByteArray).size()
+	if val is Array:
+		return "<redacted: %d items>" % (val as Array).size()
+	if val is Dictionary:
+		return "<redacted: %d keys>" % (val as Dictionary).size()
+	return "<redacted>"
 
 
 ## Log a capability event to the audit log (if wired).
