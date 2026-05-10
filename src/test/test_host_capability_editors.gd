@@ -114,6 +114,41 @@ func _run_tests() -> void:
 	check("audit: broker-level errors recorded as capability_failed",
 		failed.size() >= 5, "got %d failed entries" % failed.size())
 
+	_test_internal_editor_filter(Broker)
+
+
+# Verify the static internal-editor denylist behaves as intended. Uses a
+# tiny script-derived stub since _editor_is_internal only reads the `.type`
+# property — no need to spin up a real Editor in headless.
+func _test_internal_editor_filter(Broker) -> void:
+	# Reproduce Editor.Type values directly (Editor extends Control and would
+	# need a SceneTree to instantiate; a plain int is enough for the helper).
+	# Source of truth: src/Scripts/UI/Controls/Editor.gd `enum Type`.
+	const T_TEXT := 0            # Editor.Type.TEXT
+	const T_GRAPHICS := 1        # Editor.Type.GRAPHICS
+	const T_LOGS := 4            # Editor.Type.LOGS
+	const T_ACTIVITY_LOG := 9    # Editor.Type.ACTIVITY_LOG
+	const T_PLUGIN_MANAGER := 11 # Editor.Type.PLUGIN_MANAGER
+	const T_WORKER_STATUS := 12  # Editor.Type.WORKER_STATUS
+	const T_DOCKET := 13         # Editor.Type.DOCKET
+
+	var stub_text := { "type": T_TEXT }
+	var stub_graphics := { "type": T_GRAPHICS }
+	var stub_activity := { "type": T_ACTIVITY_LOG }
+	var stub_logs := { "type": T_LOGS }
+	var stub_docket := { "type": T_DOCKET }
+	var stub_plugin_mgr := { "type": T_PLUGIN_MANAGER }
+	var stub_worker := { "type": T_WORKER_STATUS }
+
+	# `_editor_is_internal` checks `"type" in editor` — Dictionary works.
+	check("internal filter: TEXT not internal", not Broker._editor_is_internal(stub_text))
+	check("internal filter: GRAPHICS not internal", not Broker._editor_is_internal(stub_graphics))
+	check("internal filter: ACTIVITY_LOG flagged", Broker._editor_is_internal(stub_activity))
+	check("internal filter: LOGS flagged", Broker._editor_is_internal(stub_logs))
+	check("internal filter: DOCKET flagged", Broker._editor_is_internal(stub_docket))
+	check("internal filter: PLUGIN_MANAGER flagged", Broker._editor_is_internal(stub_plugin_mgr))
+	check("internal filter: WORKER_STATUS flagged", Broker._editor_is_internal(stub_worker))
+
 
 func _check_export_error(broker, args: Dictionary, expected_code: String, label: String) -> void:
 	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.editors.export", args)

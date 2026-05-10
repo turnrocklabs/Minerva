@@ -736,6 +736,27 @@ func _get_plugin_definition(plugin_id: String) -> PluginDefinition:
 ## Strict args allowlist for host.editors.export.
 const _EDITORS_EXPORT_ALLOWED_ARGS := ["editor_name", "format"]
 
+## Editor types reserved for Minerva internals — never exposed through
+## host.editors.list or host.editors.export. ACTIVITY_LOG in particular
+## logs every MCP call (including other plugins' args), so allowing
+## arbitrary plugin export of it would be a cross-plugin information leak.
+## DOCKET / PLUGIN_MANAGER / LOGS / WORKER_STATUS are similar host UI tabs
+## that hold operational state, not user content. If a plugin wants its
+## own state, it owns the panel and uses host.documents.* instead.
+const _EDITORS_INTERNAL_TYPES := [
+	Editor.Type.ACTIVITY_LOG,
+	Editor.Type.LOGS,
+	Editor.Type.PLUGIN_MANAGER,
+	Editor.Type.DOCKET,
+	Editor.Type.WORKER_STATUS,
+]
+
+
+static func _editor_is_internal(editor) -> bool:
+	if editor == null or not "type" in editor:
+		return false
+	return int(editor.type) in _EDITORS_INTERNAL_TYPES
+
 
 ## Enumerate open editors with their advertised export formats.
 ##
@@ -752,6 +773,10 @@ func _handle_host_editors_list(plugin_id: String, _args: Dictionary) -> Dictiona
 	if editor_pane != null and editor_pane.has_method("get_open_editors"):
 		for ed in editor_pane.get_open_editors():
 			if ed == null:
+				continue
+			# Hide Minerva-internal tabs (activity log, docket, plugin manager,
+			# logs, worker status). Plugins shouldn't see, let alone export, them.
+			if _editor_is_internal(ed):
 				continue
 			editors.append(_describe_editor_for_export(ed))
 	print("[CapabilityBroker] Plugin '%s' invoking host.editors.list (%d editors)" % [plugin_id, editors.size()])
@@ -791,6 +816,11 @@ func _handle_host_editors_export(plugin_id: String, args: Dictionary) -> Diction
 	if ed == null:
 		return PluginErrors.editor_not_found(plugin_id, editor_name)
 
+	# Surface internal editor tabs as "not found" rather than format errors —
+	# their existence shouldn't be observable to plugins.
+	if _editor_is_internal(ed):
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
 	if not ed.has_method("export_to_format"):
 		# Editor predates the export contract — treat as no formats.
 		return PluginErrors.format_not_supported(plugin_id, editor_name, format, [])
@@ -807,9 +837,14 @@ func _handle_host_editors_export(plugin_id: String, args: Dictionary) -> Diction
 	var raw: Dictionary = await ed.export_to_format(format)
 	if not raw.get("success", false):
 		# The editor knew the format but couldn't render it (e.g. graphics
-		# editor with no layers). Surface as format_not_supported with the
-		# detail string the editor returned.
-		return PluginErrors.format_not_supported(plugin_id, editor_name, format, supported)
+		# editor with no layers). Surface as format_not_supported and
+		# propagate the editor's detail string so plugins can distinguish
+		# "format unknown" from "format known but render failed".
+		var fail: Dictionary = PluginErrors.format_not_supported(plugin_id, editor_name, format, supported)
+		var detail: String = str(raw.get("detail", ""))
+		if not detail.is_empty():
+			fail["detail"] = detail
+		return fail
 
 	var bytes: PackedByteArray = raw.get("bytes", PackedByteArray())
 	if bytes.size() > _FILES_MAX_BYTES:

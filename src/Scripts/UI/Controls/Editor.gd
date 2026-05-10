@@ -881,15 +881,16 @@ func get_document_buffer() -> DocumentBuffer:
 ##
 ## Naming convention: lowercase short names. "png" / "jpeg" / "csv" / "text".
 ## Plugins match exact strings; a misspelling becomes format_not_supported.
+##
+## NOTE: text content is intentionally NOT exposed here. Plugins that want
+## buffer text use host.documents.get_state — that capability has the
+## complete error-code surface (not_buffer_canonical, version, dirty flag)
+## and grant scope. Surfacing "text" here would let a plugin granted only
+## host.editors.export bypass host.documents.get_state.
 func export_formats() -> PackedStringArray:
 	var formats := PackedStringArray()
 	if type == Type.GRAPHICS and graphics_editor != null:
 		formats.append("png")
-	# Buffer-canonical editors expose their text content as an export so
-	# plugins that don't want to use host.documents.get_state can still
-	# pull it via host.editors.export.
-	if _document_buffer != null:
-		formats.append("text")
 	return formats
 
 
@@ -918,14 +919,6 @@ func export_to_format(format: String) -> Dictionary:
 			"bytes": bytes,
 			"mime": "image/png",
 			"format": "png",
-		}
-	if format == "text" and _document_buffer != null:
-		var bytes_text: PackedByteArray = _document_buffer.text.to_utf8_buffer()
-		return {
-			"success": true,
-			"bytes": bytes_text,
-			"mime": "text/plain; charset=utf-8",
-			"format": "text",
 		}
 	return {
 		"success": false,
