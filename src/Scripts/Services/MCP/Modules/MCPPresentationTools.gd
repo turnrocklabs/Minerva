@@ -98,17 +98,18 @@ func get_tool_names() -> Array[String]:
 	#   - minerva_presentation_set_aspect
 	#   - minerva_presentation_move_slide
 	#   - minerva_presentation_remove_slide
+	# Migrated tile-level mutators (R4):
+	#   - minerva_presentation_add_text_tile
+	#   - minerva_presentation_remove_tile
 	# Helpers (_resolve_target / _slide_at) remain because the still-unmigrated
-	# tile/spreadsheet/annotation tools use them; will be removed alongside
-	# the next migration round.
+	# tools (modify_tile, image/spreadsheet, annotations) use them; will be
+	# removed alongside the next migration round.
 	return [
 		"minerva_presentation_create_deck",
 		"minerva_presentation_open_deck",
 		"minerva_presentation_set_slide_background",
-		"minerva_presentation_add_text_tile",
 		"minerva_presentation_add_image_tile",
 		"minerva_presentation_modify_tile",
-		"minerva_presentation_remove_tile",
 		"minerva_presentation_add_annotation",
 		"minerva_presentation_remove_annotation",
 		"minerva_presentation_set_annotation_resolved",
@@ -204,27 +205,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("minerva_presentation_add_text_tile",
-		"Add a text tile to a slide. Coords x/y/w/h are 0..1 normalized to slide size. text_mode is plain (BBCode supported), bullet, or numbered. For bullet/numbered, indent 4 spaces per nesting level — the renderer emits a level-appropriate glyph (• ◦ ▪ ‣). A leading '- ' after the indent is tolerated. Numbered mode only numbers level-0 lines; nested lines fall back to bullet glyphs. THREE FONT MODES: (a) coupled (default, no font_size, no auto_fit) — renderer derives font from tile.h ÷ line_count, so resizing the tile resizes the text. Sizing rule of thumb: title h≈0.10 (~55-65px font), section header h≈0.07 (~40px), body bullets h ≈ line_count × 0.05. (b) fixed — pass font_size (in pixels, 8..200) to lock the font and let h grow independently; use this when you need more box room without scaling text up. (c) auto_fit — pass auto_fit=true to binary-search the largest font (8..200) that fits text inside (w, h) at any viewport zoom; recommended for titles and bullets that should scale across editor preview vs full-screen. font_size wins if both are set. Avoid BBCode [font_size=N] tags — they don't honor the tile rect. Style via BBCode for [i]italic[/i], [b]bold[/b], [color=#hex]color[/color], [center]horizontal-center[/center].",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-				"x": {"type": "number"},
-				"y": {"type": "number"},
-				"w": {"type": "number"},
-				"h": {"type": "number"},
-				"content": {"type": "string"},
-				"text_mode": {"type": "string", "description": "plain | bullet | numbered. Defaults to plain."},
-				"font_size": {"type": "integer", "description": "Optional fixed font size in pixels (8..200). Omit for coupled mode (font derived from h). Wins over auto_fit when both set."},
-				"auto_fit": {"type": "boolean", "description": "When true and no font_size, picks largest font that fits text in (w, h). Scales proportionally with viewport. Defaults to false."},
-				"rotation": {"type": "number", "description": "Optional rotation in radians."},
-			},
-			"required": ["slide_index", "x", "y", "w", "h", "content"],
-		}
-	, "presentation")
+	# T6 R4: minerva_presentation_add_text_tile migrated to plugin.
 
 	server._register_tool("minerva_presentation_modify_tile",
 		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly. font_size sets fixed-font mode (8..200 px); pass 0 to clear and revert to coupled mode (font derived from tile.h). auto_fit=true picks the largest font fitting (w, h) at any viewport (font_size wins if both set); pass auto_fit=false to clear the field.",
@@ -382,19 +363,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("minerva_presentation_remove_tile",
-		"Remove a tile from a slide by tile_id.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-				"tile_id": {"type": "string"},
-			},
-			"required": ["slide_index", "tile_id"],
-		}
-	, "presentation")
+	# T6 R4: minerva_presentation_remove_tile migrated to plugin.
 
 	# T6 R3: minerva_presentation_remove_slide migrated to plugin.
 
@@ -438,18 +407,15 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _open_deck(arguments)
 		# T6 R2: list_slides / list_tiles / list_annotations / get_tile / get_slide moved to plugin.
 		# T6 R3: add_slide / set_slide_title / set_aspect / move_slide / remove_slide moved to plugin.
+		# T6 R4: add_text_tile / remove_tile moved to plugin.
 		"minerva_presentation_set_slide_background":
 			return _set_slide_background(arguments)
-		"minerva_presentation_add_text_tile":
-			return _add_text_tile(arguments)
 		"minerva_presentation_add_image_tile":
 			return _add_image_tile(arguments)
 		"minerva_presentation_modify_tile":
 			return _modify_tile(arguments)
 		"minerva_presentation_get_state":
 			return _get_state(arguments)
-		"minerva_presentation_remove_tile":
-			return _remove_tile(arguments)
 		"minerva_presentation_add_annotation":
 			return _add_annotation(arguments)
 		"minerva_presentation_remove_annotation":
@@ -599,55 +565,7 @@ func _set_slide_background(args: Dictionary) -> Dictionary:
 	return MCPToolUtils.success({"slide_index": int(args["slide_index"])})
 
 
-func _add_text_tile(args: Dictionary) -> Dictionary:
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slide_v := _slide_at(deck, args)
-	if slide_v is Dictionary and slide_v.has("__error__"):
-		return MCPToolUtils.error(slide_v["__error__"])
-	var slide: Dictionary = slide_v as Dictionary
-
-	var coords_err := _validate_coords(args)
-	if coords_err != "":
-		return MCPToolUtils.error(coords_err)
-
-	var content: String = String(args.get("content", ""))
-	var text_mode: String = String(args.get("text_mode", TEXT_MODE_PLAIN))
-	if not TEXT_MODES_VALID.has(text_mode):
-		return MCPToolUtils.error("text_mode must be one of %s" % str(TEXT_MODES_VALID))
-
-	var tile: Dictionary = {
-		"id": _gen_id("tile"),
-		"kind": TILE_TEXT,
-		"x": float(args["x"]),
-		"y": float(args["y"]),
-		"w": float(args["w"]),
-		"h": float(args["h"]),
-		"text_mode": text_mode,
-		"content": content,
-	}
-	# Optional fixed-font mode. Omit for coupled mode (renderer derives font
-	# from tile.h ÷ line_count).
-	if args.has("font_size") and args["font_size"] != null:
-		var fs: int = MCPToolUtils.coerce_int(args["font_size"], 0)
-		if fs != 0:
-			if fs < 8 or fs > 200:
-				return MCPToolUtils.error("font_size must be in [8, 200], got %d" % fs)
-			tile["font_size"] = fs
-	# Optional auto-fit. Omit-when-default — only persisted when explicitly true.
-	if args.has("auto_fit") and bool(args["auto_fit"]):
-		tile["auto_fit"] = true
-	var rotation: float = MCPToolUtils.coerce_float(args.get("rotation", 0.0))
-	if not is_zero_approx(rotation):
-		tile["rotation"] = rotation
-
-	(slide["tiles"] as Array).append(tile)
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({"tile_id": str(tile["id"])})
+# T6 R4: _add_text_tile moved to plugin (~/github/plugins/presentation/main.go toolAddTextTile).
 
 
 func _add_image_tile(args: Dictionary) -> Dictionary:
@@ -1598,52 +1516,7 @@ func _auto_cell_type(value: Variant) -> int:
 	return CELL_TEXT
 
 
-func _remove_tile(args: Dictionary) -> Dictionary:
-	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id"])
-	if missing != null:
-		return missing
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slide_v := _slide_at(deck, args)
-	if slide_v is Dictionary and slide_v.has("__error__"):
-		return MCPToolUtils.error(slide_v["__error__"])
-	var slide: Dictionary = slide_v as Dictionary
-
-	var tile_id: String = String(args["tile_id"]).strip_edges()
-	var tiles: Array = slide.get("tiles", []) as Array
-	var idx: int = -1
-	for i in range(tiles.size()):
-		if String((tiles[i] as Dictionary).get("id", "")) == tile_id:
-			idx = i
-			break
-	if idx < 0:
-		return MCPToolUtils.error("tile_id not found on slide %d: %s" % [
-			MCPToolUtils.coerce_int(args["slide_index"]), tile_id
-		])
-	tiles.remove_at(idx)
-	# Scrub any reveal-order references to this tile id (reveal entries are
-	# IDs of items revealed in order — keeps the array consistent post-removal).
-	if slide.has("reveal"):
-		var reveal: Array = slide["reveal"] as Array
-		var write: int = 0
-		for r_v in reveal:
-			if String(r_v) != tile_id:
-				reveal[write] = r_v
-				write += 1
-		reveal.resize(write)
-
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({
-		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
-		"tile_id": tile_id,
-		"removed_at": idx,
-	})
-
-
+# T6 R4: _remove_tile moved to plugin.
 # T6 R3: _remove_slide and _move_slide moved to plugin.
 
 
