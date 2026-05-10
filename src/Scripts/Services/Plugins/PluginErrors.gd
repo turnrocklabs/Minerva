@@ -21,6 +21,7 @@ const CODE_TOOL_NOT_FOUND = "tool_not_found"
 const CODE_EDITOR_NOT_FOUND = "editor_not_found"
 const CODE_NOT_BUFFER_CANONICAL = "not_buffer_canonical"
 const CODE_VERSION_CONFLICT = "version_conflict"
+const CODE_OWNERSHIP_REQUIRED = "ownership_required"
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +162,20 @@ static func version_conflict(plugin_id: String, editor_name: String, expected: i
 		"editor_name": editor_name,
 		"expected_version": expected,
 		"actual_version": actual,
+	}
+
+
+## Plugin holds the capability globally but the target editor belongs to a
+## different plugin. Distinct from permission_denied so callers can tell
+## "I don't have rights at all" from "I have rights but not for this editor."
+static func ownership_required(plugin_id: String, editor_name: String, owner_plugin_id: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_OWNERSHIP_REQUIRED,
+		"error_message": "Editor '%s' is owned by plugin '%s'; cross-plugin mutation requires explicit grant" % [editor_name, owner_plugin_id],
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"owner_plugin_id": owner_plugin_id,
 	}
 
 

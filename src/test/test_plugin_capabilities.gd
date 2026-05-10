@@ -51,6 +51,13 @@ func _initialize() -> void:
 	test_pluginddb_install_blocks_on_capability_error()
 	test_plugindb_install_succeeds_when_capabilities_satisfied()
 
+	test_validate_files_path_empty_input()
+	test_validate_files_path_in_scope()
+	test_validate_files_path_out_of_scope()
+	test_validate_files_path_traversal_normalized_then_rejected()
+	test_validate_files_path_user_prefix_expanded()
+	test_validate_files_path_empty_allowlist_rejects()
+
 	# Cleanup
 	_remove_dir_recursive(_tmp_root)
 
@@ -548,3 +555,66 @@ func test_plugindb_install_succeeds_when_capabilities_satisfied() -> void:
 		result != null and result.id == unique_id,
 		"got: %s, last_err=%s" % [str(result), str(db.get_last_install_error())])
 	db.remove(unique_id)
+
+
+# ---------------------------------------------------------------------------
+# T4 U4: validate_files_path wrapper
+# ---------------------------------------------------------------------------
+# Pure unit tests of the wrapper. No callers yet — T5's host.files.read/write
+# wires it in. These tests pin the contract so the T5 implementer can lean on
+# the success/error envelope shape without re-validating it.
+
+const _BrokerStatic = preload("res://Scripts/Services/Plugins/CapabilityBroker.gd")
+
+
+func test_validate_files_path_empty_input() -> void:
+	var res: Dictionary = _BrokerStatic.validate_files_path("p", "", ["/tmp"])
+	_check("validate_files_path: empty path → schema_validation_failed",
+		res.get("error_code", "") == "schema_validation_failed",
+		"got: %s" % str(res))
+
+
+func test_validate_files_path_in_scope() -> void:
+	var res: Dictionary = _BrokerStatic.validate_files_path("p", "/tmp/foo.txt", ["/tmp"])
+	_check("validate_files_path: in-scope path → success",
+		res.get("success", false), "got: %s" % str(res))
+	var inner: Dictionary = res.get("result", {})
+	_check("validate_files_path: success returns normalized path",
+		inner.get("path", "") == "/tmp/foo.txt", "got: %s" % str(inner))
+
+
+func test_validate_files_path_out_of_scope() -> void:
+	var res: Dictionary = _BrokerStatic.validate_files_path("p", "/etc/passwd", ["/tmp"])
+	_check("validate_files_path: out-of-scope → target_not_allowlisted",
+		res.get("error_code", "") == "target_not_allowlisted",
+		"got: %s" % str(res))
+
+
+func test_validate_files_path_traversal_normalized_then_rejected() -> void:
+	# /tmp/../etc/passwd normalizes to /etc/passwd via simplify_path, then
+	# fails the scope check. This is the security-relevant case: a plugin
+	# with /tmp granted cannot escape via traversal.
+	var res: Dictionary = _BrokerStatic.validate_files_path(
+		"p", "/tmp/../etc/passwd", ["/tmp"])
+	_check("validate_files_path: traversal normalized then rejected",
+		res.get("error_code", "") == "target_not_allowlisted",
+		"got: %s" % str(res))
+
+
+func test_validate_files_path_user_prefix_expanded() -> void:
+	# user:// paths are globalized to the project's user data dir before
+	# scope check. Allowing the same user:// prefix should match.
+	var user_dir: String = ProjectSettings.globalize_path("user://")
+	var res: Dictionary = _BrokerStatic.validate_files_path(
+		"p", "user://plugins/data/foo.json", [user_dir])
+	_check("validate_files_path: user:// prefix expanded and accepted",
+		res.get("success", false), "got: %s" % str(res))
+
+
+func test_validate_files_path_empty_allowlist_rejects() -> void:
+	# is_path_in_scope returns false on empty allowed_paths — the wrapper
+	# surfaces that as target_not_allowlisted, not a silent pass.
+	var res: Dictionary = _BrokerStatic.validate_files_path("p", "/tmp/x.txt", [])
+	_check("validate_files_path: empty allowlist → rejected",
+		res.get("error_code", "") == "target_not_allowlisted",
+		"got: %s" % str(res))

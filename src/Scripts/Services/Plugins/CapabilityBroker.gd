@@ -61,6 +61,30 @@ static func _str_or_null(value: String) -> Variant:
 	return value
 
 
+## Wrap is_path_in_scope with a structured result for capability handlers.
+##
+## Returns either {success: true, result: {path: <normalized abs>}} on accept,
+## or a PluginErrors failure dict (schema_validation_failed for empty input,
+## target_not_allowlisted for out-of-scope paths) on reject.
+##
+## Centralizes the path-normalization + scope-check + error-wrapping triad so
+## host.files.* handlers (T5) don't reinvent it three times. Symlink resolution
+## is OS-level and out of scope for this layer.
+##
+## No callers yet — host.files.read/write in T5 wire this in.
+static func validate_files_path(plugin_id: String, path: String, allowed_paths: Array) -> Dictionary:
+	if path.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "path must not be empty")
+
+	var abs_path: String = ProjectSettings.globalize_path(path) if path.begins_with("user://") else path
+	abs_path = abs_path.simplify_path()
+
+	if not is_path_in_scope(abs_path, allowed_paths):
+		return PluginErrors.target_not_allowlisted(plugin_id, abs_path)
+
+	return PluginErrors.success({"path": abs_path})
+
+
 ## Validate that a requested path is within the allowed scopes.
 ## Normalizes both paths before comparison.
 ## Returns true if path is within any of the allowed_paths, false otherwise.
@@ -134,13 +158,13 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 	# Route mcp.proxy:<tool_name> to MinervaMCPServer
 	if capability.begins_with("mcp.proxy:"):
 		var mcp_result := await _handle_mcp_proxy(plugin_id, capability, args)
-		_audit_dispatch(plugin_id, capability, mcp_result)
+		_audit_dispatch(plugin_id, capability, args, mcp_result)
 		return mcp_result
 
 	# Route secrets:<op>:<handle> to docket vault, namespaced per plugin.
 	if capability.begins_with("secrets:"):
 		var sec_result := await _handle_secrets(plugin_id, capability, args)
-		_audit_dispatch(plugin_id, capability, sec_result)
+		_audit_dispatch(plugin_id, capability, args, sec_result)
 		return sec_result
 
 	# Named capability dispatch
@@ -170,7 +194,7 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 				"plugin_id": plugin_id,
 				"capability": capability,
 			}
-	_audit_dispatch(plugin_id, capability, named_result)
+	_audit_dispatch(plugin_id, capability, args, named_result)
 	return named_result
 
 
@@ -387,6 +411,10 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 	if ed == null:
 		return PluginErrors.editor_not_found(plugin_id, editor_name)
 
+	var ownership_err := _check_editor_ownership(plugin_id, ed, editor_name)
+	if not ownership_err.is_empty():
+		return ownership_err
+
 	var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
 	if buffer == null:
 		return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
@@ -440,6 +468,10 @@ func _handle_host_documents_mark_dirty(plugin_id: String, args: Dictionary) -> D
 	var ed = _find_editor_by_name(editor_name)
 	if ed == null:
 		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	var ownership_err := _check_editor_ownership(plugin_id, ed, editor_name)
+	if not ownership_err.is_empty():
+		return ownership_err
 
 	var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
 	if buffer == null:
@@ -620,6 +652,56 @@ func _get_minerva_server():
 	return mcp_mgr.get("minerva_server") if "minerva_server" in mcp_mgr else null
 
 
+## Enforce that destructive capabilities on PLUGIN_SCENE editors are scoped
+## to the editor's owning plugin. Read-only capabilities (list_open, get_state)
+## intentionally do NOT use this — agents may need to inspect any open editor.
+##
+## Returns {} (empty dict) if ownership is fine OR the editor isn't a plugin
+## scene (host-owned editors have no plugin owner). Returns a PluginErrors
+## ownership_required dict otherwise. Caller short-circuits on non-empty return.
+func _check_editor_ownership(plugin_id: String, editor, editor_name: String) -> Dictionary:
+	if editor == null:
+		return {}
+	var ed_type: int = int(editor.type) if "type" in editor else -1
+	if ed_type != Editor.Type.PLUGIN_SCENE:
+		return {}
+	var owner_id: String = str(editor.plugin_id) if "plugin_id" in editor else ""
+	# Owner-unset plugin-scene editors are a host bookkeeping bug; deny defensively.
+	if owner_id.is_empty() or owner_id != plugin_id:
+		return PluginErrors.ownership_required(plugin_id, editor_name, owner_id)
+	return {}
+
+
+## Build a redaction-safe summary of capability call args for audit logging.
+##
+## Two redaction rules:
+##   1. Field-name denylist: heavy/sensitive fields (e.g. buffer_text, raw bytes)
+##      are replaced with "<redacted: N chars>" descriptors regardless of length.
+##      Avoids logging full document bodies on every set_state call.
+##   2. Length cap on remaining string fields: anything over CAP chars becomes
+##      "<truncated: N chars>".
+##
+## Non-string scalar values (int, bool, float) and small dicts/arrays pass
+## through unchanged. Nested dicts are NOT recursed (the cap covers the common
+## case; nested-dict capability args are rare today).
+const _AUDIT_REDACT_FIELDS := ["buffer_text", "bytes", "data", "content", "value"]
+const _AUDIT_STRING_CAP := 256
+
+static func _redact_args(args: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for k in args.keys():
+		var key: String = str(k)
+		var val = args[k]
+		if key in _AUDIT_REDACT_FIELDS:
+			var n: int = (val.length() if val is String else String(var_to_str(val)).length())
+			out[key] = "<redacted: %d chars>" % n
+		elif val is String and val.length() > _AUDIT_STRING_CAP:
+			out[key] = "<truncated: %d chars>" % val.length()
+		else:
+			out[key] = val
+	return out
+
+
 ## Log a capability event to the audit log (if wired).
 func _audit(plugin_id: String, event_type: String, detail: Dictionary) -> void:
 	if audit_log != null:
@@ -636,20 +718,27 @@ func _audit(plugin_id: String, event_type: String, detail: Dictionary) -> void:
 ##   version_conflict, schema_validation_failed, unknown_capability,
 ##   mcp_tool_error, secrets_error, …)
 ##   → EVENT_CAPABILITY_FAILED.
+## Codes that route to EVENT_CAPABILITY_DENIED (policy-class denials).
+## ownership_required is included because cross-plugin editor mutation is a
+## permission decision (the plugin lacks rights for THIS target), not a
+## broker-validation failure — audit consumers should see it as a security event.
 const _POLICY_DENY_CODES := [
 	PluginErrors.CODE_CAPABILITY_NOT_GRANTED,
 	PluginErrors.CODE_PERMISSION_DENIED,
 	PluginErrors.CODE_TARGET_NOT_ALLOWLISTED,
 	PluginErrors.CODE_RATE_LIMIT_EXCEEDED,
 	PluginErrors.CODE_CONFIRMATION_REQUIRED,
+	PluginErrors.CODE_OWNERSHIP_REQUIRED,
 ]
 
-func _audit_dispatch(plugin_id: String, capability: String, result: Dictionary) -> void:
+func _audit_dispatch(plugin_id: String, capability: String, args: Dictionary, result: Dictionary) -> void:
 	if audit_log == null:
 		return
+	var args_summary := _redact_args(args)
 	if result.get("success", false):
 		audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DISPATCHED, {
 			"capability": capability,
+			"args_summary": args_summary,
 		})
 	else:
 		var error_code: String = result.get("error_code", "unknown")
@@ -657,9 +746,11 @@ func _audit_dispatch(plugin_id: String, capability: String, result: Dictionary) 
 			audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_DENIED, {
 				"capability": capability,
 				"reason": error_code,
+				"args_summary": args_summary,
 			})
 		else:
 			audit_log.log_event(plugin_id, PluginAuditLog.EVENT_CAPABILITY_FAILED, {
 				"capability": capability,
 				"reason": error_code,
+				"args_summary": args_summary,
 			})

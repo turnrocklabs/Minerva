@@ -245,7 +245,99 @@ func _run_unit_tests() -> void:
 		denied_after_writes.size() == denied.size(),
 		"before=%d after=%d" % [denied.size(), denied_after_writes.size()])
 
+	# -----------------------------------------------------------------------
+	# U2: editor ownership validation (direct helper unit tests)
+	# -----------------------------------------------------------------------
+	# Test the ownership helper without a live editor_pane. Uses a duck-typed
+	# stub object with the .type and .plugin_id properties the broker reads.
+	var owned_by_other := _OwnedEditorStub.new(Editor.Type.PLUGIN_SCENE, "other_plugin")
+	var owner_err: Dictionary = broker._check_editor_ownership("doc_probe_test", owned_by_other, "their_editor")
+	check("ownership: cross-plugin set_state on plugin_scene rejected",
+		not owner_err.is_empty() and owner_err.get("error_code", "") == "ownership_required",
+		"got: %s" % str(owner_err))
+	check("ownership: error includes owner_plugin_id",
+		owner_err.get("owner_plugin_id", "") == "other_plugin",
+		"got: %s" % str(owner_err))
+
+	var owned_by_self := _OwnedEditorStub.new(Editor.Type.PLUGIN_SCENE, "doc_probe_test")
+	var self_err: Dictionary = broker._check_editor_ownership("doc_probe_test", owned_by_self, "my_editor")
+	check("ownership: same-plugin mutation passes (empty result dict)", self_err.is_empty(),
+		"got: %s" % str(self_err))
+
+	var host_text_editor := _OwnedEditorStub.new(Editor.Type.TEXT, "")
+	var text_err: Dictionary = broker._check_editor_ownership("doc_probe_test", host_text_editor, "notes.txt")
+	check("ownership: host-owned (non-plugin-scene) editors are not ownership-checked",
+		text_err.is_empty(),
+		"got: %s" % str(text_err))
+
+	var orphan_scene := _OwnedEditorStub.new(Editor.Type.PLUGIN_SCENE, "")
+	var orphan_err: Dictionary = broker._check_editor_ownership("doc_probe_test", orphan_scene, "orphan")
+	check("ownership: plugin_scene with empty owner_id denied defensively",
+		not orphan_err.is_empty() and orphan_err.get("error_code", "") == "ownership_required",
+		"got: %s" % str(orphan_err))
+
+	# -----------------------------------------------------------------------
+	# U3: audit args redaction (direct helper unit tests)
+	# -----------------------------------------------------------------------
+	# buffer_text is in the field denylist — replaced with a length descriptor
+	# regardless of size. Prevents writing full document bodies into the audit log
+	# on every set_state call.
+	var BrokerStatic = load(CAPABILITY_BROKER_SCRIPT_PATH)
+	var redacted: Dictionary = BrokerStatic._redact_args({
+		"editor_name": "foo.mcad",
+		"buffer_text": "secret password = abc123\nconfidential data\n".repeat(20),
+		"expected_version": 7,
+	})
+	check("redact: editor_name passes through unchanged",
+		redacted.get("editor_name", "") == "foo.mcad",
+		"got: %s" % str(redacted))
+	check("redact: buffer_text is denylisted (replaced with length descriptor)",
+		str(redacted.get("buffer_text", "")).begins_with("<redacted:"),
+		"got: %s" % str(redacted))
+	check("redact: scalar values pass through (expected_version is int)",
+		redacted.get("expected_version", -1) == 7,
+		"got: %s" % str(redacted))
+
+	# Long generic string fields → truncation marker (not full content).
+	var long_str := "x".repeat(500)
+	var long_redacted: Dictionary = BrokerStatic._redact_args({
+		"path": long_str,
+	})
+	check("redact: long non-denylisted string is truncated",
+		str(long_redacted.get("path", "")).begins_with("<truncated:"),
+		"got: %s" % str(long_redacted))
+
+	# Short strings pass through unchanged.
+	var short_redacted: Dictionary = BrokerStatic._redact_args({
+		"editor_name": "small.mcad",
+	})
+	check("redact: short strings pass through unchanged",
+		short_redacted.get("editor_name", "") == "small.mcad",
+		"got: %s" % str(short_redacted))
+
+	# -----------------------------------------------------------------------
+	# U3 integration: dispatched audit entries carry args_summary
+	# -----------------------------------------------------------------------
+	# A previous list_open dispatch logged into the audit. Verify its detail
+	# now includes args_summary (the wiring change).
+	var ds_entries: Array = audit.get_entries("doc_probe_test", "capability_dispatched")
+	check("audit dispatched entry has args_summary field",
+		ds_entries.size() > 0 and (ds_entries[0].get("detail", {}) as Dictionary).has("args_summary"),
+		"first entry detail: %s" % str(ds_entries[0].get("detail", {}) if ds_entries.size() > 0 else {}))
+
 	print("  (unit tests complete)\n")
+
+
+## Duck-typed editor stub for ownership unit tests. Real Editor instances are
+## tied to scene roots; this stub exposes only the .type and .plugin_id
+## properties the ownership helper reads.
+class _OwnedEditorStub:
+	var type: int
+	var plugin_id: String
+
+	func _init(p_type: int, p_plugin_id: String) -> void:
+		type = p_type
+		plugin_id = p_plugin_id
 
 
 # ---------------------------------------------------------------------------
