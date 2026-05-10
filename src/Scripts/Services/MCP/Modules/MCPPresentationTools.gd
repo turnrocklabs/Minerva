@@ -84,31 +84,31 @@ const INSPECT_CONTENT_CAP_BYTES: int = 8192
 
 
 func get_tool_names() -> Array[String]:
-	# T6 R2 migration: the read-only tools below moved to the off-tree
-	# presentation plugin (~/github/plugins/presentation). They are no
-	# longer registered from core. Migrated:
+	# T6 R2/R3 migration: the tools below moved to the off-tree presentation
+	# plugin (~/github/plugins/presentation). Migrated reads (R2):
 	#   - minerva_presentation_list_slides
 	#   - minerva_presentation_list_tiles
 	#   - minerva_presentation_list_annotations
 	#   - minerva_presentation_list_annotation_kinds
 	#   - minerva_presentation_get_slide
 	#   - minerva_presentation_get_tile
-	# The tool handlers (_list_slides etc) remain in this file because some
-	# helpers (_resolve_target / _slide_at) are still used by the unmigrated
-	# write tools. Helpers will be removed alongside the write-tool migration.
+	# Migrated slide-level mutators (R3):
+	#   - minerva_presentation_add_slide
+	#   - minerva_presentation_set_slide_title
+	#   - minerva_presentation_set_aspect
+	#   - minerva_presentation_move_slide
+	#   - minerva_presentation_remove_slide
+	# Helpers (_resolve_target / _slide_at) remain because the still-unmigrated
+	# tile/spreadsheet/annotation tools use them; will be removed alongside
+	# the next migration round.
 	return [
 		"minerva_presentation_create_deck",
 		"minerva_presentation_open_deck",
-		"minerva_presentation_add_slide",
 		"minerva_presentation_set_slide_background",
 		"minerva_presentation_add_text_tile",
 		"minerva_presentation_add_image_tile",
 		"minerva_presentation_modify_tile",
-		"minerva_presentation_set_slide_title",
-		"minerva_presentation_set_aspect",
-		"minerva_presentation_move_slide",
 		"minerva_presentation_remove_tile",
-		"minerva_presentation_remove_slide",
 		"minerva_presentation_add_annotation",
 		"minerva_presentation_remove_annotation",
 		"minerva_presentation_set_annotation_resolved",
@@ -186,18 +186,7 @@ func register_tools() -> void:
 	# T6 R2: minerva_presentation_list_slides registration removed. Tool now
 	# served by ~/github/plugins/presentation (Go backend, dynamic discovery).
 
-	server._register_tool("minerva_presentation_add_slide",
-		"Append (default) or insert a blank slide. Returns the new slide_index and slide_id.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"position": {"type": "integer", "description": "0-based index to insert at; omit to append."},
-				"title": {"type": "string", "description": "Optional slide title."},
-			},
-		}
-	, "presentation")
+	# T6 R3: minerva_presentation_add_slide migrated to plugin.
 
 	server._register_tool("minerva_presentation_set_slide_background",
 		"Set a slide's background. Provide exactly one of color (hex like #A07A4A), image_path, or image_base64.",
@@ -264,46 +253,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("minerva_presentation_set_slide_title",
-		"Set or clear a slide's title (omit-when-default — empty string removes the field).",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-				"title": {"type": "string"},
-			},
-			"required": ["slide_index", "title"],
-		}
-	, "presentation")
-
-	server._register_tool("minerva_presentation_set_aspect",
-		"Change the deck's aspect ratio. Existing tiles stay in normalized [0,1] coords; only rendering aspect changes. Solid-color image tiles authored at the previous aspect will letterbox — use modify_tile to re-synthesize them if needed.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"aspect": {"type": "string", "description": "16:9 | 4:3 | 1:1"},
-			},
-			"required": ["aspect"],
-		}
-	, "presentation")
-
-	server._register_tool("minerva_presentation_move_slide",
-		"Reorder a slide by index. Tile data is preserved; only the slide's position in the slides[] array changes.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"from_index": {"type": "integer"},
-				"to_index": {"type": "integer"},
-			},
-			"required": ["from_index", "to_index"],
-		}
-	, "presentation")
+	# T6 R3: set_slide_title / set_aspect / move_slide migrated to plugin.
 
 	server._register_tool("minerva_presentation_add_spreadsheet_tile",
 		"Add a spreadsheet tile to a slide. rows × cols grid. cells is a 2D array [[{value, type?, ...formatting}], ...] matching rows × cols — if omitted, fills with empty cells. Cell types: 0=empty, 1=text, 2=number, 3=date, 4=formula. Optional formatting per cell: bold, italic, alignment, text_color, bg_color, formula. Optional header_row / header_col flags style the first row/column.",
@@ -446,18 +396,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("minerva_presentation_remove_slide",
-		"Remove a slide by index. Refuses if it would leave the deck with zero slides — a 0-slide deck is broken state.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-			},
-			"required": ["slide_index"],
-		}
-	, "presentation")
+	# T6 R3: minerva_presentation_remove_slide migrated to plugin.
 
 	# T6 R2: minerva_presentation_list_tiles migrated to plugin.
 	# T6 R2: minerva_presentation_list_annotations migrated to plugin.
@@ -497,30 +436,20 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _create_deck(arguments)
 		"minerva_presentation_open_deck":
 			return _open_deck(arguments)
-		# T6 R2: minerva_presentation_list_slides moved to plugin.
-		"minerva_presentation_add_slide":
-			return _add_slide(arguments)
+		# T6 R2: list_slides / list_tiles / list_annotations / get_tile / get_slide moved to plugin.
+		# T6 R3: add_slide / set_slide_title / set_aspect / move_slide / remove_slide moved to plugin.
 		"minerva_presentation_set_slide_background":
 			return _set_slide_background(arguments)
 		"minerva_presentation_add_text_tile":
 			return _add_text_tile(arguments)
 		"minerva_presentation_add_image_tile":
 			return _add_image_tile(arguments)
-		# T6 R2: list_tiles / list_annotations / get_tile / get_slide moved to plugin.
 		"minerva_presentation_modify_tile":
 			return _modify_tile(arguments)
 		"minerva_presentation_get_state":
 			return _get_state(arguments)
-		"minerva_presentation_set_slide_title":
-			return _set_slide_title(arguments)
-		"minerva_presentation_set_aspect":
-			return _set_aspect(arguments)
-		"minerva_presentation_move_slide":
-			return _move_slide(arguments)
 		"minerva_presentation_remove_tile":
 			return _remove_tile(arguments)
-		"minerva_presentation_remove_slide":
-			return _remove_slide(arguments)
 		"minerva_presentation_add_annotation":
 			return _add_annotation(arguments)
 		"minerva_presentation_remove_annotation":
@@ -633,27 +562,7 @@ func _list_slides(args: Dictionary) -> Dictionary:
 	})
 
 
-func _add_slide(args: Dictionary) -> Dictionary:
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slides: Array = deck.get("slides", []) as Array
-	var insert_at: int
-	if args.has("position") and args["position"] != null:
-		insert_at = clampi(MCPToolUtils.coerce_int(args["position"]), 0, slides.size())
-	else:
-		insert_at = slides.size()
-	var title: String = String(args.get("title", ""))
-	var new_slide := _make_slide(title)
-	slides.insert(insert_at, new_slide)
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({
-		"slide_index": insert_at,
-		"slide_id": str(new_slide["id"]),
-	})
+# T6 R3: _add_slide moved to plugin (~/github/plugins/presentation/main.go toolAddSlide).
 
 
 func _set_slide_background(args: Dictionary) -> Dictionary:
@@ -1184,49 +1093,7 @@ func _get_state(args: Dictionary) -> Dictionary:
 	})
 
 
-func _set_slide_title(args: Dictionary) -> Dictionary:
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slide_v := _slide_at(deck, args)
-	if slide_v is Dictionary and slide_v.has("__error__"):
-		return MCPToolUtils.error(slide_v["__error__"])
-	var slide: Dictionary = slide_v as Dictionary
-
-	if not args.has("title"):
-		return MCPToolUtils.error("title is required (use \"\" to clear)")
-	var title: String = String(args["title"])
-	if title.is_empty():
-		slide.erase("title")
-	else:
-		slide["title"] = title
-
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({
-		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
-		"title": title,
-	})
-
-
-func _set_aspect(args: Dictionary) -> Dictionary:
-	var missing: Variant = MCPToolUtils.check_required(args, ["aspect"])
-	if missing != null:
-		return missing
-	var aspect: String = String(args["aspect"])
-	if not ASPECTS_VALID.has(aspect):
-		return MCPToolUtils.error("aspect must be one of %s" % str(ASPECTS_VALID))
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	deck["aspect"] = aspect
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({"aspect": aspect})
+# T6 R3: _set_slide_title and _set_aspect moved to plugin.
 
 
 func _add_annotation(args: Dictionary) -> Dictionary:
@@ -1777,56 +1644,7 @@ func _remove_tile(args: Dictionary) -> Dictionary:
 	})
 
 
-func _remove_slide(args: Dictionary) -> Dictionary:
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slides: Array = deck.get("slides", []) as Array
-	if not args.has("slide_index"):
-		return MCPToolUtils.error("slide_index is required")
-	var idx: int = MCPToolUtils.coerce_int(args["slide_index"], -1)
-	if idx < 0 or idx >= slides.size():
-		return MCPToolUtils.error("slide_index out of range: %d (deck has %d slides)" % [idx, slides.size()])
-	if slides.size() <= 1:
-		return MCPToolUtils.error("Cannot remove the only slide (would leave deck empty)")
-	var removed_id: String = String((slides[idx] as Dictionary).get("id", ""))
-	slides.remove_at(idx)
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({
-		"slide_index": idx,
-		"slide_id": removed_id,
-		"remaining_slides": slides.size(),
-	})
-
-
-func _move_slide(args: Dictionary) -> Dictionary:
-	var missing: Variant = MCPToolUtils.check_required(args, ["from_index", "to_index"])
-	if missing != null:
-		return missing
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slides: Array = deck.get("slides", []) as Array
-	var from_i: int = MCPToolUtils.coerce_int(args["from_index"], -1)
-	var to_i: int = MCPToolUtils.coerce_int(args["to_index"], -1)
-	if from_i < 0 or from_i >= slides.size():
-		return MCPToolUtils.error("from_index out of range: %d (deck has %d slides)" % [from_i, slides.size()])
-	if to_i < 0 or to_i >= slides.size():
-		return MCPToolUtils.error("to_index out of range: %d (deck has %d slides)" % [to_i, slides.size()])
-	if from_i == to_i:
-		return MCPToolUtils.success({"from_index": from_i, "to_index": to_i, "no_op": true})
-
-	var s: Dictionary = slides[from_i] as Dictionary
-	slides.remove_at(from_i)
-	slides.insert(to_i, s)
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({"from_index": from_i, "to_index": to_i})
+# T6 R3: _remove_slide and _move_slide moved to plugin.
 
 
 # ---------------------------------------------------------------------------
