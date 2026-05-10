@@ -102,7 +102,6 @@ func get_tool_names() -> Array[String]:
 	# tools (modify_tile, add_image_tile, set_slide_background, annotations,
 	# get_state) use them.
 	return [
-		"minerva_presentation_create_deck",
 		"minerva_presentation_open_deck",
 		"minerva_presentation_set_slide_background",
 		"minerva_presentation_add_image_tile",
@@ -154,18 +153,7 @@ const ANNOTATION_AUTHOR_KIND_HUMAN: String = "human"
 
 
 func register_tools() -> void:
-	server._register_tool("minerva_presentation_create_deck",
-		"Create a new .mdeck slide deck file on disk. Use presentation_open_deck afterward to open it as a tab. Returns the path written.",
-		{
-			"type": "object",
-			"properties": {
-				"path": {"type": "string", "description": "Filesystem path to write (e.g. /tmp/foo.mdeck). .mdeck extension is appended if missing."},
-				"title": {"type": "string", "description": "Optional title for the first slide."},
-				"aspect": {"type": "string", "description": "Slide aspect ratio: 16:9 (default), 4:3, or 1:1."},
-			},
-			"required": ["path"],
-		}
-	, "presentation")
+	# T6 R6: minerva_presentation_create_deck migrated to plugin.
 
 	server._register_tool("minerva_presentation_open_deck",
 		"Open an existing .mdeck file as a presentation editor tab. Returns the tab_name to use for follow-up live-mutation calls. If a tab with the same path is already open, focuses it.",
@@ -343,8 +331,7 @@ func register_tools() -> void:
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
-		"minerva_presentation_create_deck":
-			return _create_deck(arguments)
+		# T6 R6: create_deck migrated to plugin.
 		"minerva_presentation_open_deck":
 			return _open_deck(arguments)
 		# T6 R2: list_slides / list_tiles / list_annotations / get_tile / get_slide moved to plugin.
@@ -376,28 +363,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 # Tool handlers
 # ---------------------------------------------------------------------------
 
-func _create_deck(args: Dictionary) -> Dictionary:
-	var missing: Variant = MCPToolUtils.check_required(args, ["path"])
-	if missing != null:
-		return missing
-	var path: String = String(args.get("path", "")).strip_edges()
-	if not path.ends_with(FILE_EXT):
-		path += FILE_EXT
-	var aspect: String = String(args.get("aspect", ASPECT_DEFAULT))
-	if not ASPECTS_VALID.has(aspect):
-		return MCPToolUtils.error("aspect must be one of %s" % str(ASPECTS_VALID))
-	var deck: Dictionary = _make_deck(aspect)
-	var title: String = String(args.get("title", ""))
-	if title != "":
-		(deck["slides"] as Array)[0]["title"] = title
-	var write_err := _write_deck_to_disk(path, deck)
-	if write_err != "":
-		return MCPToolUtils.error(write_err)
-	return MCPToolUtils.success({
-		"path": path,
-		"slide_count": 1,
-		"deck_id": "v%d/%s" % [SCHEMA_VERSION, aspect],
-	})
+# T6 R6: _create_deck moved to plugin.
 
 
 func _open_deck(args: Dictionary) -> Dictionary:
@@ -1498,12 +1464,7 @@ func _read_graphics_editor_as_base64(editor_name: String) -> Dictionary:
 # Schema constructors (mirror slide_model.gd; off-tree means we can't import)
 # ---------------------------------------------------------------------------
 
-func _make_deck(aspect: String = ASPECT_DEFAULT) -> Dictionary:
-	return {
-		"version": SCHEMA_VERSION,
-		"aspect": aspect,
-		"slides": [_make_slide("")],
-	}
+# T6 R6: _make_deck moved to plugin (used only by removed _create_deck).
 
 
 func _make_slide(title: String = "") -> Dictionary:
