@@ -84,18 +84,25 @@ const INSPECT_CONTENT_CAP_BYTES: int = 8192
 
 
 func get_tool_names() -> Array[String]:
+	# T6 R2 migration: the read-only tools below moved to the off-tree
+	# presentation plugin (~/github/plugins/presentation). They are no
+	# longer registered from core. Migrated:
+	#   - minerva_presentation_list_slides
+	#   - minerva_presentation_list_tiles
+	#   - minerva_presentation_list_annotations
+	#   - minerva_presentation_list_annotation_kinds
+	#   - minerva_presentation_get_slide
+	#   - minerva_presentation_get_tile
+	# The tool handlers (_list_slides etc) remain in this file because some
+	# helpers (_resolve_target / _slide_at) are still used by the unmigrated
+	# write tools. Helpers will be removed alongside the write-tool migration.
 	return [
 		"minerva_presentation_create_deck",
 		"minerva_presentation_open_deck",
-		"minerva_presentation_list_slides",
 		"minerva_presentation_add_slide",
 		"minerva_presentation_set_slide_background",
 		"minerva_presentation_add_text_tile",
 		"minerva_presentation_add_image_tile",
-		"minerva_presentation_list_tiles",
-		"minerva_presentation_list_annotations",
-		"minerva_presentation_get_tile",
-		"minerva_presentation_get_slide",
 		"minerva_presentation_modify_tile",
 		"minerva_presentation_set_slide_title",
 		"minerva_presentation_set_aspect",
@@ -105,7 +112,6 @@ func get_tool_names() -> Array[String]:
 		"minerva_presentation_add_annotation",
 		"minerva_presentation_remove_annotation",
 		"minerva_presentation_set_annotation_resolved",
-		"minerva_presentation_list_annotation_kinds",
 		"minerva_presentation_list_open_annotations",
 		"minerva_presentation_add_spreadsheet_tile",
 		"minerva_presentation_modify_spreadsheet_cells",
@@ -177,16 +183,8 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("minerva_presentation_list_slides",
-		"List the slides in an open deck (by tab_name) or on-disk deck (by path). Returns index, id, optional title, and tile_count for each slide.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string", "description": "Name of an open presentation tab (preferred when the deck is open)."},
-				"path": {"type": "string", "description": "Path to a .mdeck file on disk (used when no tab is open)."},
-			},
-		}
-	, "presentation")
+	# T6 R2: minerva_presentation_list_slides registration removed. Tool now
+	# served by ~/github/plugins/presentation (Go backend, dynamic discovery).
 
 	server._register_tool("minerva_presentation_add_slide",
 		"Append (default) or insert a blank slide. Returns the new slide_index and slide_id.",
@@ -421,13 +419,7 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("minerva_presentation_list_annotation_kinds",
-		"List annotation kinds the substrate accepts (callout, arrow_2d, text_2d, freehand, rectangle) plus the lifecycle states. Discoverability for LLMs picking a kind for add_annotation.",
-		{
-			"type": "object",
-			"properties": {},
-		}
-	, "presentation")
+	# T6 R2: minerva_presentation_list_annotation_kinds migrated to plugin.
 
 	server._register_tool("minerva_presentation_list_open_annotations",
 		"Return all annotations across the deck whose lifecycle is 'open' (not resolved/applied/stale). Each entry includes slide_index, annotation_id, kind, and summary. Use this to find work the LLM still needs to address.",
@@ -467,60 +459,10 @@ func register_tools() -> void:
 		}
 	, "presentation")
 
-	server._register_tool("minerva_presentation_list_tiles",
-		"List tiles on a slide. Returns id, kind, x/y/w/h, rotation, and kind-specific summary fields. Image tiles return src_size_bytes (NOT the base64) to keep responses small — use presentation_get_tile with include_src=true to fetch bytes. Text tiles return content (capped at 8 KB; if truncated, the dict has _truncated=true). Spreadsheet tiles return rows and cols (cell data via get_tile).",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-			},
-			"required": ["slide_index"],
-		}
-	, "presentation")
-
-	server._register_tool("minerva_presentation_list_annotations",
-		"List annotations on a slide. Returns id, kind, payload_summary (kind-specific: text content for text/callout kinds, geometry summary otherwise), position (when derivable), and resolved (when present on the envelope; defaults to false). Annotations are kept as opaque envelopes per the substrate contract — full envelope is available via the upcoming get_annotation tool.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-			},
-			"required": ["slide_index"],
-		}
-	, "presentation")
-
-	server._register_tool("minerva_presentation_get_tile",
-		"Fetch a tile dict by id. Default omits image base64 (which can be megabytes); pass include_src=true to include it. Spreadsheet tiles return their full cell grid.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-				"tile_id": {"type": "string"},
-				"include_src": {"type": "boolean", "description": "If true, include image base64 src for image tiles. Default false."},
-			},
-			"required": ["slide_index", "tile_id"],
-		}
-	, "presentation")
-
-	server._register_tool("minerva_presentation_get_slide",
-		"Fetch the full slide dict (id, title, background, tiles, reveal, annotations). Default omits image base64 on tiles; pass include_tile_src=true to include it.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-				"include_tile_src": {"type": "boolean", "description": "If true, include image base64 src on each image tile. Default false."},
-			},
-			"required": ["slide_index"],
-		}
-	, "presentation")
+	# T6 R2: minerva_presentation_list_tiles migrated to plugin.
+	# T6 R2: minerva_presentation_list_annotations migrated to plugin.
+	# T6 R2: minerva_presentation_get_tile migrated to plugin.
+	# T6 R2: minerva_presentation_get_slide migrated to plugin.
 
 	server._register_tool("minerva_presentation_add_image_tile",
 		"Add an image tile to a slide. Coords x/y/w/h are 0..1 normalized. Provide exactly one image source: image_path, image_base64, source_graphics_editor (name of an open graphics editor — pulls layer 0's PNG bytes), or solid_color (hex; generates a small flat-color PNG that scales to fill the tile — handy for HR lines and decorative blocks).",
@@ -555,8 +497,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _create_deck(arguments)
 		"minerva_presentation_open_deck":
 			return _open_deck(arguments)
-		"minerva_presentation_list_slides":
-			return _list_slides(arguments)
+		# T6 R2: minerva_presentation_list_slides moved to plugin.
 		"minerva_presentation_add_slide":
 			return _add_slide(arguments)
 		"minerva_presentation_set_slide_background":
@@ -565,14 +506,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _add_text_tile(arguments)
 		"minerva_presentation_add_image_tile":
 			return _add_image_tile(arguments)
-		"minerva_presentation_list_tiles":
-			return _list_tiles(arguments)
-		"minerva_presentation_list_annotations":
-			return _list_annotations(arguments)
-		"minerva_presentation_get_tile":
-			return _get_tile(arguments)
-		"minerva_presentation_get_slide":
-			return _get_slide(arguments)
+		# T6 R2: list_tiles / list_annotations / get_tile / get_slide moved to plugin.
 		"minerva_presentation_modify_tile":
 			return _modify_tile(arguments)
 		"minerva_presentation_get_state":
@@ -593,8 +527,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _remove_annotation(arguments)
 		"minerva_presentation_set_annotation_resolved":
 			return _set_annotation_resolved(arguments)
-		"minerva_presentation_list_annotation_kinds":
-			return _list_annotation_kinds(arguments)
+		# T6 R2: minerva_presentation_list_annotation_kinds moved to plugin.
 		"minerva_presentation_list_open_annotations":
 			return _list_open_annotations(arguments)
 		"minerva_presentation_add_spreadsheet_tile":
