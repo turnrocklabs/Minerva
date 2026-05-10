@@ -57,6 +57,11 @@ func _initialize() -> void:
 	test_validate_files_path_traversal_normalized_then_rejected()
 	test_validate_files_path_user_prefix_expanded()
 	test_validate_files_path_empty_allowlist_rejects()
+	test_validate_files_path_relative_rejected()
+	test_validate_files_path_dotdot_segment_rejected()
+	test_validate_files_path_prefix_substring_rejected()
+	test_validate_files_path_exact_match_accepted()
+	test_validate_files_path_subdir_accepted()
 
 	# Cleanup
 	_remove_dir_recursive(_tmp_root)
@@ -591,13 +596,15 @@ func test_validate_files_path_out_of_scope() -> void:
 
 
 func test_validate_files_path_traversal_normalized_then_rejected() -> void:
-	# /tmp/../etc/passwd normalizes to /etc/passwd via simplify_path, then
-	# fails the scope check. This is the security-relevant case: a plugin
-	# with /tmp granted cannot escape via traversal.
+	# T5 hardening: explicit `..` segments are rejected as schema_validation_failed
+	# BEFORE simplify_path collapses them. The pre-T5 behavior (normalize then
+	# allowlist-fail) would also have rejected this path, but the new error
+	# class gives a clearer audit signal that the plugin attempted traversal
+	# rather than asking for a known-bad path.
 	var res: Dictionary = _BrokerStatic.validate_files_path(
 		"p", "/tmp/../etc/passwd", ["/tmp"])
-	_check("validate_files_path: traversal normalized then rejected",
-		res.get("error_code", "") == "target_not_allowlisted",
+	_check("validate_files_path: traversal rejected as schema_validation_failed",
+		res.get("error_code", "") == "schema_validation_failed",
 		"got: %s" % str(res))
 
 
@@ -618,3 +625,55 @@ func test_validate_files_path_empty_allowlist_rejects() -> void:
 	_check("validate_files_path: empty allowlist → rejected",
 		res.get("error_code", "") == "target_not_allowlisted",
 		"got: %s" % str(res))
+
+
+# ---------------------------------------------------------------------------
+# T5 hardening: relative-path / `..` / prefix-substring guards
+# ---------------------------------------------------------------------------
+
+func test_validate_files_path_relative_rejected() -> void:
+	# Relative paths can never pass the scope check (allowed_paths are absolute)
+	# and are likely to be a programming error. Reject as schema_validation_failed
+	# so the audit trail is explicit instead of "out of scope" noise.
+	var res: Dictionary = _BrokerStatic.validate_files_path(
+		"p", "tmp/foo.txt", ["/tmp"])
+	_check("validate_files_path: relative path → schema_validation_failed",
+		res.get("error_code", "") == "schema_validation_failed",
+		"got: %s" % str(res))
+
+
+func test_validate_files_path_dotdot_segment_rejected() -> void:
+	# `..` somewhere in the middle of an absolute path also rejected before
+	# normalization. Defense in depth against simplify_path's handling.
+	var res: Dictionary = _BrokerStatic.validate_files_path(
+		"p", "/tmp/scope/../escape", ["/tmp/scope"])
+	_check("validate_files_path: mid-path .. → schema_validation_failed",
+		res.get("error_code", "") == "schema_validation_failed",
+		"got: %s" % str(res))
+
+
+func test_validate_files_path_prefix_substring_rejected() -> void:
+	# /tmp/foobar must NOT be considered in scope of /tmp/foo. Pre-hardening
+	# this leaked because begins_with treats the strings as raw substrings.
+	var res: Dictionary = _BrokerStatic.validate_files_path(
+		"p", "/tmp/foobar/secret.txt", ["/tmp/foo"])
+	_check("validate_files_path: /tmp/foobar/* not in scope of /tmp/foo",
+		res.get("error_code", "") == "target_not_allowlisted",
+		"got: %s" % str(res))
+
+
+func test_validate_files_path_exact_match_accepted() -> void:
+	# A grant for /tmp/foo permits operating on /tmp/foo itself (the file or
+	# directory at that path), not just children.
+	var res: Dictionary = _BrokerStatic.validate_files_path(
+		"p", "/tmp/foo", ["/tmp/foo"])
+	_check("validate_files_path: exact-match scope → accepted",
+		res.get("success", false), "got: %s" % str(res))
+
+
+func test_validate_files_path_subdir_accepted() -> void:
+	# Children of a granted scope are still in scope.
+	var res: Dictionary = _BrokerStatic.validate_files_path(
+		"p", "/tmp/foo/sub/x.txt", ["/tmp/foo"])
+	_check("validate_files_path: subdir of scope → accepted",
+		res.get("success", false), "got: %s" % str(res))

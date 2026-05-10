@@ -164,6 +164,8 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.documents.get_state",
 	"host.documents.set_state",
 	"host.documents.mark_dirty",
+	"host.files.read",
+	"host.files.write",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one
@@ -1035,13 +1037,21 @@ func _any_panel_script_declares(method_name: String) -> bool:
 ##   3. Begins with a prefix in ALLOWED_HOST_CAPABILITY_NAMESPACES AND has at
 ##      least one char after the prefix → ok
 ##   4. Otherwise              → error
+##
+## Cross-check (T5): if any host.files.* capability is declared, the manifest
+## must also set permissions.filesystem.mode = "scoped_paths" with at least
+## one entry in permissions.filesystem.paths. Surface here so install fails
+## loudly rather than runtime returning capability_not_granted on every call.
 func validate_host_capabilities() -> Array[String]:
 	var errors: Array[String] = []
+	var declares_files_cap := false
 	for hcap in host_capabilities:
 		var cap: String = str(hcap)
 		if cap.is_empty():
 			errors.append("host_capability entry must not be empty")
 			continue
+		if cap.begins_with("host.files."):
+			declares_files_cap = true
 		if ALLOWED_HOST_CAPABILITIES.has(cap):
 			continue
 		var matched_ns := false
@@ -1054,6 +1064,22 @@ func validate_host_capabilities() -> Array[String]:
 				"unknown host_capability '%s' (allowed: %s or namespaces: %s)" %
 				[cap, str(ALLOWED_HOST_CAPABILITIES), str(ALLOWED_HOST_CAPABILITY_NAMESPACES)]
 			)
+
+	# Cross-check: declaring host.files.* requires the manifest to enable
+	# scoped filesystem access. Otherwise the broker would have nothing to
+	# validate paths against and every read/write would deny — better to
+	# surface the gap at install time.
+	if declares_files_cap:
+		if filesystem_mode != "scoped_paths":
+			errors.append(
+				"host.files.* declared but permissions.filesystem.mode is '%s' (must be 'scoped_paths')" %
+				filesystem_mode
+			)
+		elif filesystem_paths.is_empty():
+			errors.append(
+				"host.files.* declared with filesystem.mode = 'scoped_paths' but permissions.filesystem.paths is empty"
+			)
+
 	return errors
 
 

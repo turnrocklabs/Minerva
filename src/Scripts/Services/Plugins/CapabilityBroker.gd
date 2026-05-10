@@ -64,30 +64,60 @@ static func _str_or_null(value: String) -> Variant:
 ## Wrap is_path_in_scope with a structured result for capability handlers.
 ##
 ## Returns either {success: true, result: {path: <normalized abs>}} on accept,
-## or a PluginErrors failure dict (schema_validation_failed for empty input,
-## target_not_allowlisted for out-of-scope paths) on reject.
+## or a PluginErrors failure dict on reject (schema_validation_failed for
+## empty input, non-absolute input, or `..` traversal; target_not_allowlisted
+## for out-of-scope paths).
 ##
 ## Centralizes the path-normalization + scope-check + error-wrapping triad so
-## host.files.* handlers (T5) don't reinvent it three times.
+## host.files.* handlers (T5) share one validator.
 ##
-## SECURITY FIXME (deferred to T5): symlink resolution is OS-level and not
-## performed here. A grant for /tmp combined with a symlink /tmp/escape -> /etc
-## defeats the begins_with scope check. T5's host.files.read/write should either
-## resolve real paths before calling this OR document that the host is responsible
-## for ensuring no escape symlinks exist within granted scopes.
+## Defense layers (in order):
+##   1. Empty input rejected.
+##   2. user:// prefix is expanded; everything else must already be absolute.
+##      Rejects relative paths so a future relative entry in allowed_paths can
+##      never match unexpectedly, and so plugins can't bypass scope by working
+##      from the host's CWD.
+##   3. Raw `..` segments in the input are rejected BEFORE simplify_path. This
+##      is defense in depth: simplify_path collapses `/tmp/foo/../etc` to
+##      `/tmp/etc` (or `/etc`), which the scope check would catch — but
+##      treating the explicit traversal attempt as a hard error gives a
+##      clearer audit signal than a silent allowlist miss.
+##   4. simplify_path normalizes the candidate.
+##   5. is_path_in_scope checks prefix-with-trailing-slash so `/tmp/foo` does
+##      NOT match an allowed scope of `/tmp/foobar` (NIT-6 from T4 review).
 ##
-## SECURITY FIXME (deferred to T5): relative paths are accepted today (they fail
-## the scope check accidentally because allowed_paths are absolute, but a future
-## relative entry in allowed_paths could match unexpectedly). T5 should add
-## explicit absolute-path enforcement here.
-##
-## No callers yet — host.files.read/write in T5 wire this in.
+## SECURITY LIMITATION: symlink resolution is not performed here. Godot does
+## not expose realpath() to GDScript without spawning a process. A grant for
+## /tmp combined with an escape symlink /tmp/escape -> /etc still defeats the
+## scope check. Hosts MUST ensure no escape symlinks exist within granted
+## scopes. Plugins gain control over /tmp/escape by writing through this
+## validator, but they cannot CREATE symlinks via host.files.write (which only
+## writes file content). Treat granted scopes as transitive trust.
 static func validate_files_path(plugin_id: String, path: String, allowed_paths: Array) -> Dictionary:
 	if path.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "path must not be empty")
 
-	var abs_path: String = ProjectSettings.globalize_path(path) if path.begins_with("user://") else path
-	abs_path = abs_path.simplify_path()
+	# user:// is the only supported relative-style prefix; expand it then enforce
+	# absolute-path-only for everything else.
+	var raw_path: String = path
+	if raw_path.begins_with("user://"):
+		raw_path = ProjectSettings.globalize_path(raw_path)
+
+	if not raw_path.is_absolute_path():
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "path must be absolute or user://-prefixed (got: '%s')" % path
+		)
+
+	# Reject explicit `..` segments. `/tmp/foo/../bar` is rejected even though
+	# simplify_path would collapse it to `/tmp/bar` — explicit traversal is a
+	# clearer audit signal than a silent allowlist miss.
+	for segment in raw_path.split("/"):
+		if segment == "..":
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "path must not contain '..' segments (got: '%s')" % path
+			)
+
+	var abs_path: String = raw_path.simplify_path()
 
 	if not is_path_in_scope(abs_path, allowed_paths):
 		return PluginErrors.target_not_allowlisted(plugin_id, abs_path)
@@ -96,7 +126,8 @@ static func validate_files_path(plugin_id: String, path: String, allowed_paths: 
 
 
 ## Validate that a requested path is within the allowed scopes.
-## Normalizes both paths before comparison.
+## Normalizes both paths before comparison and uses prefix-with-trailing-slash
+## semantics so /tmp/foo is NOT considered in scope for /tmp/foobar.
 ## Returns true if path is within any of the allowed_paths, false otherwise.
 static func is_path_in_scope(path: String, allowed_paths: Array) -> bool:
 	if allowed_paths.is_empty():
@@ -106,13 +137,17 @@ static func is_path_in_scope(path: String, allowed_paths: Array) -> bool:
 	var abs_path: String = ProjectSettings.globalize_path(path) if path.begins_with("user://") else path
 	abs_path = abs_path.simplify_path()
 
-	# Check against each allowed path
+	# Check against each allowed path with prefix-plus-separator semantics so
+	# `/tmp/foo` does not match an allowed scope `/tmp/foobar`. Exact match is
+	# also accepted (a grant for /tmp/foo allows operating on /tmp/foo itself).
 	for allowed in allowed_paths:
 		var abs_allowed: String = ProjectSettings.globalize_path(str(allowed)) if str(allowed).begins_with("user://") else str(allowed)
 		abs_allowed = abs_allowed.simplify_path()
 
-		# Check if the requested path is within the allowed path
-		if abs_path.begins_with(abs_allowed):
+		if abs_path == abs_allowed:
+			return true
+		var prefix: String = abs_allowed if abs_allowed.ends_with("/") else abs_allowed + "/"
+		if abs_path.begins_with(prefix):
 			return true
 
 	return false
@@ -196,6 +231,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_documents_set_state(plugin_id, args)
 		"host.documents.mark_dirty":
 			named_result = _handle_host_documents_mark_dirty(plugin_id, args)
+		"host.files.read":
+			named_result = _handle_host_files_read(plugin_id, args)
+		"host.files.write":
+			named_result = _handle_host_files_write(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -498,6 +537,183 @@ func _handle_host_documents_mark_dirty(plugin_id: String, args: Dictionary) -> D
 		"kind": _editor_kind_string(ed_type),
 		"plugin_id": _str_or_null(pid),
 	})
+
+
+# ---------------------------------------------------------------------------
+# host.files.* handlers (T5 R1)
+# ---------------------------------------------------------------------------
+
+## Maximum bytes returnable by host.files.read or writable by host.files.write
+## in a single request. 8 MiB chosen to comfortably cover image tiles and
+## small data files without giving plugins a memory-bomb primitive.
+const _FILES_MAX_BYTES := 8 * 1024 * 1024
+
+## Strict allowlists for host.files.* args. Unknown keys are footguns on
+## destructive ops; mirror the host.documents.set_state pattern.
+const _FILES_READ_ALLOWED_ARGS := ["path", "encoding"]
+const _FILES_WRITE_ALLOWED_ARGS := ["path", "content", "encoding", "create_parents"]
+const _FILES_VALID_ENCODINGS := ["text", "base64"]
+
+
+## Read a scoped file as text or base64.
+##
+## Args: {path: String, encoding?: "text"|"base64"} (default "text")
+##
+## On success: {path, encoding, size, content} where size is bytes-on-disk and
+## content is either UTF-8 text (encoding=text) or base64 of the raw bytes.
+##
+## Errors: schema_validation_failed (bad args / non-absolute / `..` traversal),
+##         filesystem_disabled (manifest has filesystem.mode != scoped_paths),
+##         target_not_allowlisted (path outside scope),
+##         payload_too_large (size > _FILES_MAX_BYTES),
+##         io_error (open failure, e.g. file-not-found / permission-denied).
+func _handle_host_files_read(plugin_id: String, args: Dictionary) -> Dictionary:
+	var arg_check := _validate_files_args(plugin_id, args, _FILES_READ_ALLOWED_ARGS)
+	if not arg_check.get("success", false):
+		return arg_check
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.read")
+
+	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	if not path_check.get("success", false):
+		return path_check
+	var abs_path: String = path_check["result"]["path"]
+
+	var encoding: String = str(args.get("encoding", "text"))
+	if encoding not in _FILES_VALID_ENCODINGS:
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "encoding must be one of %s (got: '%s')" % [str(_FILES_VALID_ENCODINGS), encoding]
+		)
+
+	var fa := FileAccess.open(abs_path, FileAccess.READ)
+	if fa == null:
+		var err := FileAccess.get_open_error()
+		return PluginErrors.io_error(plugin_id, abs_path, "open failed: error=%d" % err)
+
+	var size := fa.get_length()
+	if size > _FILES_MAX_BYTES:
+		fa.close()
+		return PluginErrors.payload_too_large(plugin_id, _FILES_MAX_BYTES, size)
+
+	var bytes := fa.get_buffer(size)
+	fa.close()
+
+	var content: String
+	if encoding == "text":
+		content = bytes.get_string_from_utf8()
+	else:
+		content = Marshalls.raw_to_base64(bytes)
+
+	print("[CapabilityBroker] Plugin '%s' read '%s' (%d bytes, %s)" % [plugin_id, abs_path, size, encoding])
+	return PluginErrors.success({
+		"path": abs_path,
+		"encoding": encoding,
+		"size": size,
+		"content": content,
+	})
+
+
+## Write content to a scoped file.
+##
+## Args: {path: String, content: String, encoding?: "text"|"base64",
+##        create_parents?: bool} (defaults: encoding=text, create_parents=false)
+##
+## On success: {path, encoding, bytes_written}
+##
+## Errors mirror read, plus io_error on write/dir-creation failure.
+##
+## NOTE: writes are NOT atomic (no .tmp + rename). T5 R2 may revisit if the
+## presentation plugin needs crash-safe writes; for now plugins should treat
+## host.files.write as best-effort sequential write.
+func _handle_host_files_write(plugin_id: String, args: Dictionary) -> Dictionary:
+	var arg_check := _validate_files_args(plugin_id, args, _FILES_WRITE_ALLOWED_ARGS)
+	if not arg_check.get("success", false):
+		return arg_check
+
+	if not args.has("content"):
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "host.files.write requires 'content'"
+		)
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.write")
+
+	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	if not path_check.get("success", false):
+		return path_check
+	var abs_path: String = path_check["result"]["path"]
+
+	var encoding: String = str(args.get("encoding", "text"))
+	if encoding not in _FILES_VALID_ENCODINGS:
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "encoding must be one of %s (got: '%s')" % [str(_FILES_VALID_ENCODINGS), encoding]
+		)
+
+	# Decode content per encoding before any size check, so the size cap reflects
+	# real bytes-on-disk rather than encoded payload size.
+	var bytes: PackedByteArray
+	if encoding == "text":
+		bytes = str(args["content"]).to_utf8_buffer()
+	else:
+		bytes = Marshalls.base64_to_raw(str(args["content"]))
+		if bytes.is_empty() and not str(args["content"]).is_empty():
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "content is not valid base64"
+			)
+
+	if bytes.size() > _FILES_MAX_BYTES:
+		return PluginErrors.payload_too_large(plugin_id, _FILES_MAX_BYTES, bytes.size())
+
+	# Create parent directories if requested. The validator already confirmed
+	# the path is in-scope, so any parent created is also in-scope.
+	if bool(args.get("create_parents", false)):
+		var parent_dir: String = abs_path.get_base_dir()
+		if not DirAccess.dir_exists_absolute(parent_dir):
+			var mk_err := DirAccess.make_dir_recursive_absolute(parent_dir)
+			if mk_err != OK:
+				return PluginErrors.io_error(
+					plugin_id, abs_path, "mkdir_recursive failed: error=%d on '%s'" % [mk_err, parent_dir]
+				)
+
+	var fa := FileAccess.open(abs_path, FileAccess.WRITE)
+	if fa == null:
+		var err := FileAccess.get_open_error()
+		return PluginErrors.io_error(plugin_id, abs_path, "open failed: error=%d" % err)
+	fa.store_buffer(bytes)
+	fa.close()
+
+	print("[CapabilityBroker] Plugin '%s' wrote '%s' (%d bytes, %s)" % [plugin_id, abs_path, bytes.size(), encoding])
+	return PluginErrors.success({
+		"path": abs_path,
+		"encoding": encoding,
+		"bytes_written": bytes.size(),
+	})
+
+
+## Strict-allowlist arg validator for host.files.*. Returns success({}) on ok
+## or schema_validation_failed on unknown keys / missing required fields.
+func _validate_files_args(plugin_id: String, args: Dictionary, allowed_keys: Array) -> Dictionary:
+	for k in args.keys():
+		if k not in allowed_keys:
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown arg '%s' (allowed: %s)" % [k, str(allowed_keys)]
+			)
+	if not args.has("path"):
+		return PluginErrors.schema_validation_failed(plugin_id, "'path' is required")
+	if str(args["path"]).is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "'path' must not be empty")
+	return PluginErrors.success({})
+
+
+## Resolve a plugin's PluginDefinition via the policy engine's plugin_db.
+## Returns null if policy or plugin_db is unset, or if the id is unknown.
+func _get_plugin_definition(plugin_id: String) -> PluginDefinition:
+	if policy == null or policy.plugin_db == null:
+		return null
+	return policy.plugin_db.get_by_id(plugin_id)
 
 
 # ---------------------------------------------------------------------------

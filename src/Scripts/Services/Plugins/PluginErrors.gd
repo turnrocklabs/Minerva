@@ -22,6 +22,8 @@ const CODE_EDITOR_NOT_FOUND = "editor_not_found"
 const CODE_NOT_BUFFER_CANONICAL = "not_buffer_canonical"
 const CODE_VERSION_CONFLICT = "version_conflict"
 const CODE_OWNERSHIP_REQUIRED = "ownership_required"
+const CODE_IO_ERROR = "io_error"
+const CODE_FILESYSTEM_DISABLED = "filesystem_disabled"
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +178,34 @@ static func ownership_required(plugin_id: String, editor_name: String, owner_plu
 		"plugin_id": plugin_id,
 		"editor_name": editor_name,
 		"owner_plugin_id": owner_plugin_id,
+	}
+
+
+## Filesystem I/O failed (file not found, permission denied at OS level, disk full).
+## The detail field carries the underlying error string for forensics.
+static func io_error(plugin_id: String, path: String, detail: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_IO_ERROR,
+		"error_message": "I/O error on '%s'" % path,
+		"plugin_id": plugin_id,
+		"path": path,
+		"detail": detail,
+	}
+
+
+## Plugin declared a host.files.* capability but its manifest does not enable
+## scoped filesystem access (permissions.filesystem.mode != "scoped_paths" or
+## paths is empty). Distinct from capability_not_granted because the policy
+## may have granted host.files.read in principle but the manifest itself
+## doesn't carry the scoped paths the validator needs.
+static func filesystem_disabled(plugin_id: String, capability: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_FILESYSTEM_DISABLED,
+		"error_message": "Filesystem access not enabled in manifest (permissions.filesystem.mode must be 'scoped_paths')",
+		"plugin_id": plugin_id,
+		"capability": capability,
 	}
 
 

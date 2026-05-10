@@ -101,6 +101,12 @@ func _init() -> void:
 	test_hcap_wired_into_validate()
 	test_hcap_network_none_invalid()
 	test_hcap_round_trip_through_from_dict()
+	test_hcap_files_read_in_registry()
+	test_hcap_files_write_in_registry()
+	test_hcap_files_requires_scoped_paths_mode()
+	test_hcap_files_requires_non_empty_paths()
+	test_hcap_files_satisfied_by_full_filesystem()
+	test_hcap_files_cross_check_runs_alongside_unknown_check()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -845,3 +851,88 @@ func test_hcap_round_trip_through_from_dict() -> void:
 		if "host.bogus.fake" in e:
 			found = true
 	check("round_trip: validate() surfaces bogus cap from parsed manifest", found)
+
+
+# ---------------------------------------------------------------------------
+# Tests: validate_host_capabilities — host.files.* manifest cross-check (T5)
+# ---------------------------------------------------------------------------
+
+## Helper: build a PluginDefinition with both host_capabilities and the
+## permissions.filesystem.{mode,paths} fields set in one call.
+func _def_with_hcaps_and_fs(
+		caps: Array[String], mode: String, paths: Array[String]) -> PluginDefinition_:
+	var def := _def_with_hcaps(caps)
+	def.filesystem_mode = mode
+	def.filesystem_paths = paths
+	return def
+
+
+func test_hcap_files_read_in_registry() -> void:
+	print("test_hcap_files_read_in_registry:")
+	# Registry alone admits the entry, but the cross-check still runs against
+	# filesystem_mode/paths — without them, the cap is "known but unusable."
+	var def := _def_with_hcaps_and_fs(["host.files.read"], "scoped_paths", ["/tmp/testdir"])
+	var errors := def.validate_host_capabilities()
+	check("files.read recognized as a known capability when paired with scoped paths",
+		errors.is_empty())
+
+
+func test_hcap_files_write_in_registry() -> void:
+	print("test_hcap_files_write_in_registry:")
+	var def := _def_with_hcaps_and_fs(["host.files.write"], "scoped_paths", ["/tmp/testdir"])
+	var errors := def.validate_host_capabilities()
+	check("files.write recognized as a known capability when paired with scoped paths",
+		errors.is_empty())
+
+
+func test_hcap_files_requires_scoped_paths_mode() -> void:
+	print("test_hcap_files_requires_scoped_paths_mode:")
+	# Declaring host.files.* with mode != scoped_paths is an install-time error.
+	var def := _def_with_hcaps_and_fs(["host.files.read"], "none", [])
+	var errors := def.validate_host_capabilities()
+	check("files.* with mode=none rejected", errors.size() == 1)
+	if errors.size() == 1:
+		check("error names the mode mismatch",
+			"scoped_paths" in errors[0] and "none" in errors[0])
+
+
+func test_hcap_files_requires_non_empty_paths() -> void:
+	print("test_hcap_files_requires_non_empty_paths:")
+	# scoped_paths but no actual paths declared — still wrong.
+	var def := _def_with_hcaps_and_fs(["host.files.write"], "scoped_paths", [])
+	var errors := def.validate_host_capabilities()
+	check("files.* with empty paths rejected", errors.size() == 1)
+	if errors.size() == 1:
+		check("error names the empty-paths case", "paths is empty" in errors[0])
+
+
+func test_hcap_files_satisfied_by_full_filesystem() -> void:
+	print("test_hcap_files_satisfied_by_full_filesystem:")
+	# Both declared together is the happy path.
+	var def := _def_with_hcaps_and_fs(
+		["host.files.read", "host.files.write"],
+		"scoped_paths",
+		["/tmp/scopeA", "/tmp/scopeB"]
+	)
+	var errors := def.validate_host_capabilities()
+	check("both read+write with two scoped paths: no errors", errors.is_empty())
+
+
+func test_hcap_files_cross_check_runs_alongside_unknown_check() -> void:
+	print("test_hcap_files_cross_check_runs_alongside_unknown_check:")
+	# A bogus cap AND a filesystem cap with no scoped_paths should produce
+	# TWO distinct errors — one per failure mode — not just the first.
+	var def := _def_with_hcaps_and_fs(
+		["host.bogus.fake", "host.files.read"], "none", []
+	)
+	var errors := def.validate_host_capabilities()
+	check("two independent errors surfaced", errors.size() == 2)
+	var has_bogus := false
+	var has_fs := false
+	for e in errors:
+		if "host.bogus.fake" in e:
+			has_bogus = true
+		if "scoped_paths" in e:
+			has_fs = true
+	check("errors include the bogus-cap message", has_bogus)
+	check("errors include the filesystem cross-check message", has_fs)
