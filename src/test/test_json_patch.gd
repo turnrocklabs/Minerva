@@ -230,6 +230,12 @@ func _run_patch_tests() -> void:
 	_test_array_root_add_and_remove()
 	_test_array_root_move()
 
+	# --- review-driven coverage gaps (R0 cold-review notes) ---
+	_test_atomic_rollback_on_test_op_failure()
+	_test_pointer_root_vs_empty_key_distinct()
+	_test_test_int_float_coercion_whole_numbers()
+	_test_test_int_float_rejects_fractional_mismatch()
+
 
 # ---- add ----
 
@@ -528,6 +534,62 @@ func _test_array_root_move() -> void:
 	])
 	_assert("patch array-root: move first element to end",
 			r.success and r.doc[0] == "b" and r.doc[2] == "a")
+
+
+# Cold-review coverage gap: prior tests pinned rollback for op:remove failure.
+# A failing op:test mid-batch must also rollback — same invariant, different
+# failure source. Without this test, the test-op's atomicity is unverified.
+func _test_atomic_rollback_on_test_op_failure() -> void:
+	var doc := {"a": 1, "b": 2}
+	var r: Dictionary = JPA.apply(doc, [
+		{"op": "replace", "path": "/a", "value": 99},
+		{"op": "add",     "path": "/c", "value": 3},
+		{"op": "test",    "path": "/b", "value": 999},
+	])
+	_assert("patch atomic: failure on op:test rolls back prior mutations",
+			not r.success
+			and r.error.get("code", "") == "test_failed"
+			and r.error.get("op_index", -1) == 2
+			and doc.get("a") == 1
+			and doc.get("b") == 2
+			and not doc.has("c"))
+
+
+# Cold-review coverage gap: RFC 6901 distinguishes "" (root) from "/" (key=""
+# at root). Pin the distinction with one assertion pair so a future refactor
+# can't conflate them.
+func _test_pointer_root_vs_empty_key_distinct() -> void:
+	var doc := {"": "empty_key_value", "a": "alpha"}
+	var root_r: Dictionary = JP.resolve(doc, "")
+	var empty_key_r: Dictionary = JP.resolve(doc, "/")
+	_assert("pointer: \"\" resolves to root, \"/\" resolves to key=\"\"",
+			root_r.value == doc
+			and empty_key_r.found == true
+			and empty_key_r.value == "empty_key_value")
+
+
+# Cold-review coverage gap: op:test's deep equality coerces whole-number
+# int/float pairs because GDScript's JSON.parse returns all numbers as float.
+# Verify 1 == 1.0 passes.
+func _test_test_int_float_coercion_whole_numbers() -> void:
+	var doc := {"n": 1.0}
+	var r: Dictionary = JPA.apply(doc, [
+		{"op": "test", "path": "/n", "value": 1},
+	])
+	_assert("patch test: int 1 equals float 1.0 (whole-number coercion)",
+			r.success)
+
+
+# Cold-review coverage gap: int/float coercion must be gated to whole numbers
+# only — 1.5 must not satisfy a test against 1.
+func _test_test_int_float_rejects_fractional_mismatch() -> void:
+	var doc := {"n": 1.5}
+	var r: Dictionary = JPA.apply(doc, [
+		{"op": "test", "path": "/n", "value": 1},
+	])
+	_assert("patch test: float 1.5 does NOT equal int 1 (coercion gate)",
+			not r.success
+			and r.error.get("code", "") == "test_failed")
 
 
 # ---------------------------------------------------------------------------
