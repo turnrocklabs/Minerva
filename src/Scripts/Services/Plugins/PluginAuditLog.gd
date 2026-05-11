@@ -31,6 +31,17 @@ const EVENT_CAPABILITY_DENIED = "capability_denied"
 ## mcp_tool_error, secrets_error, etc.).
 const EVENT_CAPABILITY_FAILED = "capability_failed"
 
+## Fired by PluginScenePanelBroker._store_blob when a new blob is stored in
+## the per-editor blob store. Detail: {editor_name, handle, content_type, bytes_len}.
+const EVENT_BLOB_STORED = "blob_stored"
+## Fired by PluginScenePanelBroker._dec_blob_refcount when a blob's refcount
+## reaches zero and the entry is GC'd. Detail: {editor_name, handle, content_type}.
+const EVENT_BLOB_GC = "blob_gc"
+## Fired by PluginScenePanelBroker._clear_blobs_for_editor when all blobs for
+## an editor are dropped at once (e.g. on editor close).
+## Detail: {editor_name, count_dropped}.
+const EVENT_BLOBS_CLEARED = "blobs_cleared"
+
 
 # ---------------------------------------------------------------------------
 # Configuration and state

@@ -206,6 +206,25 @@ var _pending_panel_state: Dictionary = {}
 ## prefix for easy distinction in audit logs.
 var _next_panel_state_request_id: int = 0
 
+## Per-editor blob store: editor_name -> {handle -> {bytes, content_type, refcount}}
+##
+## Blobs are stored by reference — PackedByteArray is reference-typed in Godot 4,
+## so storing the caller's value without .duplicate() is intentional and saves
+## memory. Callers MUST NOT mutate the bytes after storing.
+##
+## Cleared on editor close via _clear_blobs_for_editor. R2+ will expose this
+## store through host.documents.get_blob / put_blob capabilities.
+var _blob_stores: Dictionary = {}
+
+## Per-editor monotonic handle counter: editor_name -> int (next handle index).
+##
+## This counter is never reset, even after _clear_blobs_for_editor, so handles
+## are never re-used within an editor's lifetime. Collision safety: a blob
+## loaded at startup, GC'd mid-session, then a new blob stored later gets a
+## distinct handle rather than colliding with any handle a plugin may have
+## cached or serialised.
+var _next_blob_handle: Dictionary = {}
+
 
 ## Awaiter for a single panel-state request. Lifetime is bounded by either
 ## the response landing (handle_scene_request emits) or a timeout fallback.
@@ -1346,6 +1365,175 @@ func _validate_registration_args(
 		push_warning("[PluginScenePanelBroker] register_panel: empty panel_name")
 		return false
 	return true
+
+
+# ---------------------------------------------------------------------------
+# Internal blob store (Phase 5 R1 — substrate only; no capabilities wired yet)
+#
+# Keyed by (editor_name, handle). Handles are monotonic per editor ("blob-1",
+# "blob-2", …) and are never reused even after GC. Public capabilities
+# (host.documents.get_blob / put_blob) will be wired in R2+.
+#
+# Thread-safety: inherits the broker's single-threaded invariant (Godot main
+# thread + T2 re-entrancy guard). No locking added here.
+# ---------------------------------------------------------------------------
+
+## Store a blob for the given editor.
+##
+## Pre:  editor_name non-empty; bytes non-null (may be empty); content_type
+##       non-empty (e.g. "image/png").
+## Post: A new entry is created in _blob_stores[editor_name] with refcount = 1.
+##       The returned handle is unique and monotonic for this editor.
+##
+## Bytes are stored by reference (PackedByteArray is reference-typed in
+## Godot 4). The caller MUST NOT mutate the byte array after passing it here.
+##
+## Returns: handle string, e.g. "blob-1".
+##
+## plugin_id is "" while capabilities are not yet wired (R1); R2+ will pass
+## the dispatching plugin's id for audit attribution.
+func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: String) -> String:
+	if not _blob_stores.has(editor_name):
+		_blob_stores[editor_name] = {}
+	if not _next_blob_handle.has(editor_name):
+		_next_blob_handle[editor_name] = 1
+
+	var idx: int = _next_blob_handle[editor_name]
+	_next_blob_handle[editor_name] = idx + 1
+
+	var handle := "blob-%d" % idx
+	_blob_stores[editor_name][handle] = {
+		"bytes": bytes,
+		"content_type": content_type,
+		"refcount": 1,
+	}
+	_audit("", PluginAuditLog.EVENT_BLOB_STORED, {
+		"editor_name": editor_name,
+		"handle": handle,
+		"content_type": content_type,
+		"bytes_len": bytes.size(),
+	})
+	return handle
+
+
+## Fetch a blob record without mutating the refcount.
+##
+## Pre:  editor_name non-empty; handle non-empty.
+## Post: No state is modified.
+##
+## Returns a Dictionary:
+##   {found: true,  bytes: PackedByteArray, content_type: String, refcount: int}
+##   {found: false, bytes: PackedByteArray(), content_type: "", refcount: 0}
+func _get_blob_record(editor_name: String, handle: String) -> Dictionary:
+	if not _blob_stores.has(editor_name):
+		return {"found": false, "bytes": PackedByteArray(), "content_type": "", "refcount": 0}
+	var store: Dictionary = _blob_stores[editor_name]
+	if not store.has(handle):
+		return {"found": false, "bytes": PackedByteArray(), "content_type": "", "refcount": 0}
+	var entry: Dictionary = store[handle]
+	return {
+		"found": true,
+		"bytes": entry["bytes"],
+		"content_type": entry["content_type"],
+		"refcount": entry["refcount"],
+	}
+
+
+## Increment the refcount for a stored blob.
+##
+## Pre:  The blob identified by (editor_name, handle) exists.
+## Post: refcount is incremented by 1.
+##
+## Returns false if the handle is not found (caller's bug to surface upstream).
+## Refcount has no maximum; if an upper bound is needed later, add it here.
+func _inc_blob_refcount(editor_name: String, handle: String) -> bool:
+	if not _blob_stores.has(editor_name):
+		return false
+	var store: Dictionary = _blob_stores[editor_name]
+	if not store.has(handle):
+		return false
+	store[handle]["refcount"] += 1
+	return true
+
+
+## Decrement the refcount for a stored blob. GCs the entry when it reaches 0.
+##
+## Pre:  The blob identified by (editor_name, handle) exists and refcount >= 1.
+## Post: refcount is decremented by 1.
+##       If refcount reaches 0, the entry is erased immediately (GC'd).
+##
+## Returns false if:
+##   - The handle is not found (caller's bug).
+##   - refcount is already 0 (underflow guard — entry is NOT further decremented).
+func _dec_blob_refcount(editor_name: String, handle: String) -> bool:
+	if not _blob_stores.has(editor_name):
+		return false
+	var store: Dictionary = _blob_stores[editor_name]
+	if not store.has(handle):
+		return false
+	var entry: Dictionary = store[handle]
+	if entry["refcount"] <= 0:
+		# Underflow guard: refuse to decrement below zero.
+		push_warning(
+			"[PluginScenePanelBroker] _dec_blob_refcount: handle '%s' in editor '%s' " +
+			"already at refcount 0 — underflow rejected" % [handle, editor_name]
+		)
+		return false
+	entry["refcount"] -= 1
+	if entry["refcount"] == 0:
+		var content_type: String = entry["content_type"]
+		store.erase(handle)
+		_audit("", PluginAuditLog.EVENT_BLOB_GC, {
+			"editor_name": editor_name,
+			"handle": handle,
+			"content_type": content_type,
+		})
+	return true
+
+
+## Drop all blobs for an editor (e.g. on editor close).
+##
+## Pre:  editor_name may or may not have any blobs.
+## Post: All blob entries for the editor are erased. _blob_stores[editor_name]
+##       is removed entirely (not left as an empty dict).
+##       _next_blob_handle[editor_name] is intentionally NOT reset — handles
+##       remain unique across the editor's lifetime even if it is reopened and
+##       new blobs are stored.
+##       Idempotent: calling on a missing or already-empty editor returns 0.
+##
+## Returns: count of blob entries dropped.
+func _clear_blobs_for_editor(editor_name: String) -> int:
+	if not _blob_stores.has(editor_name):
+		return 0
+	var count: int = _blob_stores[editor_name].size()
+	_blob_stores.erase(editor_name)
+	if count > 0:
+		_audit("", PluginAuditLog.EVENT_BLOBS_CLEARED, {
+			"editor_name": editor_name,
+			"count_dropped": count,
+		})
+	return count
+
+
+## Return a snapshot of the editor's blob store for test introspection.
+##
+## Returns a Dictionary of {handle -> {content_type: String, refcount: int}}
+## (bytes are NOT copied — this is for count/refcount inspection only).
+## Returns an empty dict if the editor has no blobs.
+##
+## PRODUCTION CODE MUST NOT DEPEND ON THIS METHOD. It is test-only.
+func _blob_store_snapshot(editor_name: String) -> Dictionary:
+	if not _blob_stores.has(editor_name):
+		return {}
+	var result: Dictionary = {}
+	var store: Dictionary = _blob_stores[editor_name]
+	for handle in store.keys():
+		var entry: Dictionary = store[handle]
+		result[handle] = {
+			"content_type": entry["content_type"],
+			"refcount": entry["refcount"],
+		}
+	return result
 
 
 # ---------------------------------------------------------------------------
