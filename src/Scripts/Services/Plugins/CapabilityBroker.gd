@@ -744,6 +744,16 @@ func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dic
 			if parsed == null or not (parsed is Dictionary or parsed is Array):
 				return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
 			state = parsed
+			# Phase 5 R7 follow-up: the panel-canonical path strips blob
+			# envelopes inside request_panel_state, but the buffer-canonical
+			# path above just parses raw JSON — envelopes survive. Without
+			# this explicit strip, image-heavy decks (.mdeck with 38× 3MB
+			# images) ship the entire base64 inline on the get_node response
+			# and overflow the plugin's stdin bufio.Scanner. Strip is
+			# idempotent — no-op when state has no __blob__ envelopes.
+			var pbroker = _get_panel_broker()
+			if pbroker != null and pbroker.has_method("_strip_blobs_for_outbound"):
+				state = pbroker._strip_blobs_for_outbound(editor_name, state, plugin_id)
 	else:
 		# Host-owned editor (text, graphics, etc.): not navigable via JSON
 		# Pointer. Return not_buffer_canonical so callers can tell "wrong
