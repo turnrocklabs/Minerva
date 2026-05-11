@@ -73,9 +73,12 @@ static func resolve(doc: Variant, pointer: String) -> Dictionary:
 
 		if current is Dictionary:
 			if not current.has(token):
-				return _not_found(current if is_last else null,
-						token if is_last else null,
-						"path_missing",
+				var parent_at_miss: Variant = null
+				var key_at_miss: Variant = null
+				if is_last:
+					parent_at_miss = current
+					key_at_miss = token
+				return _not_found(parent_at_miss, key_at_miss, "path_missing",
 						"Key '%s' not found in object at token index %d" % [token, ti])
 			parent = current
 			last_key = token
@@ -104,9 +107,12 @@ static func resolve(doc: Variant, pointer: String) -> Dictionary:
 
 			var idx: int = int(token)
 			if idx < 0 or idx >= current.size():
-				return _not_found(current if is_last else null,
-						idx if is_last else null,
-						"path_missing",
+				var parent_at_oob: Variant = null
+				var key_at_oob: Variant = null
+				if is_last:
+					parent_at_oob = current
+					key_at_oob = idx
+				return _not_found(parent_at_oob, key_at_oob, "path_missing",
 						"Array index %d out of bounds (size %d) at token index %d" % [idx, current.size(), ti])
 			parent = current
 			last_key = idx

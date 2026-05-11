@@ -927,7 +927,9 @@ func _init_docket() -> void:
 
 func open_docket_tab() -> void:
 	## Open (or switch to) a docket tab in the editor pane.
-	var ep = editor_container.editor_pane if editor_container else null
+	var ep: EditorPane = null
+	if editor_container != null:
+		ep = editor_container.editor_pane
 	if not ep:
 		return
 	# Check if a docket tab already exists — switch to it
@@ -1447,7 +1449,15 @@ func initialize_chats(_chats: ChatPane, chat_histories: Array[ChatHistory] = [])
 #region Editor
 
 @onready var editor_container: EditorContainer = $"/root/RootControl/VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/vboxEditorMain"
-@onready var editor_pane: EditorPane = editor_container.editor_pane if editor_container else null
+@onready var editor_pane: EditorPane = _init_editor_pane()
+
+
+func _init_editor_pane() -> EditorPane:
+	if editor_container == null:
+		return null
+	return editor_container.editor_pane
+
+
 var editors: Array[Editor]
 var Is_code_completed:bool = true
 
@@ -1565,8 +1575,12 @@ func open_file_at_path(path: String) -> Dictionary:
 		editor_kind = "SPREADSHEET"
 	else:
 		# Check plugin registry before falling back to TEXT (design §7.3).
-		var reg = get("plugin_editor_registry") if "plugin_editor_registry" in self else null
-		var panel_info: Dictionary = reg.resolve_extension(ext) if reg != null else {}
+		var reg = null
+		if "plugin_editor_registry" in self:
+			reg = get("plugin_editor_registry")
+		var panel_info: Dictionary = {}
+		if reg != null:
+			panel_info = reg.resolve_extension(ext)
 		if not panel_info.is_empty():
 			p_id = panel_info.get("plugin_id", "")
 			p_name = panel_info.get("panel_name", "")
