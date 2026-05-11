@@ -195,6 +195,11 @@ func _run_tests() -> void:
 	_test_strip_malformed_wrapper_passthrough()
 	_test_rehydrate_no_handle_placeholders_passthrough()
 	_test_rehydrate_error_path_escapes_rfc6901_reserved_chars()
+	_test_strip_string_bytes_creates_handle_with_base64_encoding()
+	_test_rehydrate_emits_string_when_stored_as_base64()
+	_test_rehydrate_emits_pba_when_stored_as_bytes()
+	_test_mixed_encoding_blobs_round_trip_independently()
+	_test_blob_wrapper_survives_json_round_trip()
 
 
 # ---------------------------------------------------------------------------
@@ -575,17 +580,169 @@ func _test_refcount_failed_rehydrate_no_change() -> void:
 func _test_strip_malformed_wrapper_passthrough() -> void:
 	print("\n-- _test_strip_malformed_wrapper_passthrough --")
 	var broker = _make_broker()
-	# Malformed: __blob__ is present but bytes is a String, not PackedByteArray.
+	# Malformations under the post-base64 contract:
+	#   (1) bytes is wrong type entirely (integer, not PBA, not String)
+	#   (2) bytes is empty String (the String acceptance guard rejects empty)
+	#   (3) bytes is invalid base64 (non-empty String that decodes to nothing)
+	#   (4) __blob__ is not truthy
+	#   (5) content_type is not a String
 	var state: Dictionary = {
-		"bad": {"__blob__": true, "content_type": "image/png", "bytes": "not_bytes"},
+		"bad_int":  {"__blob__": true, "content_type": "image/png", "bytes": 42},
+		"bad_empty": {"__blob__": true, "content_type": "image/png", "bytes": ""},
+		"bad_b64":   {"__blob__": true, "content_type": "image/png", "bytes": "@@@@@@@@"},
+		"bad_flag":  {"__blob__": "yes", "content_type": "image/png", "bytes": PackedByteArray([1, 2])},
+		"bad_ct":    {"__blob__": true, "content_type": 42, "bytes": PackedByteArray([1, 2])},
 	}
 	var result: Variant = broker._strip_blobs_for_outbound(TEST_EDITOR, state, TEST_PLUGIN_ID)
 	var d := result as Dictionary
-	# Should pass through unchanged (not-a-blob, wrong type).
-	var bad := d.get("bad", {}) as Dictionary
-	check("malformed wrapper passed through", bad.has("__blob__"))
-	check("malformed wrapper not replaced with handle", not bad.has("__blob_handle__"))
-	check_eq("no blobs stored for malformed", broker._blob_store_snapshot(TEST_EDITOR).size(), 0)
+	for key in ["bad_int", "bad_empty", "bad_b64", "bad_flag", "bad_ct"]:
+		var bad := d.get(key, {}) as Dictionary
+		check("'%s' passed through (has __blob__)" % key, bad.has("__blob__"))
+		check("'%s' not replaced with handle" % key, not bad.has("__blob_handle__"))
+	check_eq("no blobs stored for any malformation", broker._blob_store_snapshot(TEST_EDITOR).size(), 0)
+
+
+# ---------------------------------------------------------------------------
+# Base64-String encoding tests (added with broker patch accepting String bytes)
+#
+# The strip walker now accepts `bytes: String (base64)` in addition to
+# `bytes: PackedByteArray`. This is required so the wrapper survives a
+# JSON.stringify/parse round-trip (see hint godot/json-stringify-packedbytearray-...).
+# The blob store records the source encoding; rehydrate emits in the same
+# encoding the caller sent (per-blob round-trip symmetry).
+# ---------------------------------------------------------------------------
+
+func _test_strip_string_bytes_creates_handle_with_base64_encoding() -> void:
+	print("\n-- _test_strip_string_bytes_creates_handle_with_base64_encoding --")
+	var broker = _make_broker()
+	var raw := PackedByteArray([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])  # PNG magic
+	var b64: String = Marshalls.raw_to_base64(raw)
+	var state: Dictionary = {
+		"img": {"__blob__": true, "content_type": "image/png", "bytes": b64},
+	}
+	var result: Variant = broker._strip_blobs_for_outbound(TEST_EDITOR, state, TEST_PLUGIN_ID)
+	var d := result as Dictionary
+	var img := d.get("img", {}) as Dictionary
+	check("img has __blob_handle__", img.has("__blob_handle__"))
+	check("img has no bytes", not img.has("bytes"))
+	check_eq("content_type preserved", str(img.get("content_type", "")), "image/png")
+	check_eq("one blob in store", broker._blob_store_snapshot(TEST_EDITOR).size(), 1)
+	# Encoding is recorded as "base64" so rehydrate emits base64 back.
+	var snap: Dictionary = broker._blob_store_snapshot(TEST_EDITOR)
+	var handle: String = snap.keys()[0]
+	check_eq("encoding recorded as base64", str((snap[handle] as Dictionary).get("encoding", "")), "base64")
+
+
+func _test_rehydrate_emits_string_when_stored_as_base64() -> void:
+	print("\n-- _test_rehydrate_emits_string_when_stored_as_base64 --")
+	var broker = _make_broker()
+	var raw := PackedByteArray([0xDE, 0xAD, 0xBE, 0xEF])
+	var b64_in: String = Marshalls.raw_to_base64(raw)
+	# Store via the strip path so encoding is recorded as "base64".
+	var state_in: Dictionary = {
+		"img": {"__blob__": true, "content_type": "image/png", "bytes": b64_in},
+	}
+	var stripped: Dictionary = broker._strip_blobs_for_outbound(TEST_EDITOR, state_in, TEST_PLUGIN_ID) as Dictionary
+	var handle: String = ((stripped["img"] as Dictionary)["__blob_handle__"]) as String
+
+	# Now rehydrate via a placeholder pointing at that handle.
+	var state_out_in: Dictionary = {
+		"img": {"__blob_handle__": handle, "content_type": "image/png"},
+	}
+	var result: Dictionary = broker._rehydrate_blobs_for_inbound(TEST_EDITOR, state_out_in, TEST_PLUGIN_ID)
+	check("rehydrate succeeded", result.get("success", false))
+	var rehydrated_img := ((result.get("state", {}) as Dictionary)["img"]) as Dictionary
+	check("has __blob__", rehydrated_img.get("__blob__", false) == true)
+	check("bytes is String (base64)", rehydrated_img["bytes"] is String)
+	check("bytes is not PackedByteArray", not (rehydrated_img["bytes"] is PackedByteArray))
+	check_eq("bytes round-trip equal (base64)", str(rehydrated_img["bytes"]), b64_in)
+
+
+func _test_rehydrate_emits_pba_when_stored_as_bytes() -> void:
+	print("\n-- _test_rehydrate_emits_pba_when_stored_as_bytes --")
+	var broker = _make_broker()
+	var raw := PackedByteArray([0x01, 0x02, 0x03])
+	# Direct _store_blob with default encoding ("bytes") preserves existing
+	# contract — rehydrate must emit PackedByteArray, not base64.
+	var handle: String = broker._store_blob(TEST_EDITOR, raw, "image/png")
+	var state: Dictionary = {
+		"img": {"__blob_handle__": handle, "content_type": "image/png"},
+	}
+	var result: Dictionary = broker._rehydrate_blobs_for_inbound(TEST_EDITOR, state, TEST_PLUGIN_ID)
+	check("rehydrate succeeded", result.get("success", false))
+	var img := ((result.get("state", {}) as Dictionary)["img"]) as Dictionary
+	check("bytes is PackedByteArray", img["bytes"] is PackedByteArray)
+	check("bytes is not String", not (img["bytes"] is String))
+	check("bytes round-trip equal (PBA)", (img["bytes"] as PackedByteArray) == raw)
+
+
+func _test_mixed_encoding_blobs_round_trip_independently() -> void:
+	print("\n-- _test_mixed_encoding_blobs_round_trip_independently --")
+	var broker = _make_broker()
+	var raw_pba := PackedByteArray([0xAA, 0xBB])
+	var raw_b64 := PackedByteArray([0xCC, 0xDD, 0xEE])
+	var b64_str: String = Marshalls.raw_to_base64(raw_b64)
+	var state: Dictionary = {
+		"img_pba": {"__blob__": true, "content_type": "image/png", "bytes": raw_pba},
+		"img_b64": {"__blob__": true, "content_type": "image/jpeg", "bytes": b64_str},
+	}
+	var stripped: Dictionary = broker._strip_blobs_for_outbound(TEST_EDITOR, state, TEST_PLUGIN_ID) as Dictionary
+	var handle_pba: String = ((stripped["img_pba"] as Dictionary)["__blob_handle__"]) as String
+	var handle_b64: String = ((stripped["img_b64"] as Dictionary)["__blob_handle__"]) as String
+
+	var state_in: Dictionary = {
+		"img_pba": {"__blob_handle__": handle_pba, "content_type": "image/png"},
+		"img_b64": {"__blob_handle__": handle_b64, "content_type": "image/jpeg"},
+	}
+	var result: Dictionary = broker._rehydrate_blobs_for_inbound(TEST_EDITOR, state_in, TEST_PLUGIN_ID)
+	check("rehydrate succeeded", result.get("success", false))
+	var out := result.get("state", {}) as Dictionary
+	var img_pba := out["img_pba"] as Dictionary
+	var img_b64 := out["img_b64"] as Dictionary
+	check("PBA blob emits PackedByteArray", img_pba["bytes"] is PackedByteArray)
+	check("PBA bytes equal", (img_pba["bytes"] as PackedByteArray) == raw_pba)
+	check("base64 blob emits String", img_b64["bytes"] is String)
+	check_eq("base64 string round-trip equal", str(img_b64["bytes"]), b64_str)
+
+
+# This is the disk-survival test — proves the post-option-B save shape
+# survives JSON stringify/parse cycle. Critical for the .mdeck on-disk format:
+# panel emits base64-encoded wrapper → JSON written to disk → JSON parsed on
+# load → fed back to broker → strip recognizes it → handle issued. Pre-patch
+# this would silently fail (parsed bytes is String not PBA → walker passes
+# through → 58MB on the wire).
+func _test_blob_wrapper_survives_json_round_trip() -> void:
+	print("\n-- _test_blob_wrapper_survives_json_round_trip --")
+	var broker = _make_broker()
+	var raw := PackedByteArray([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+	var b64: String = Marshalls.raw_to_base64(raw)
+	# Simulate save: build panel state with base64-encoded wrapper, stringify.
+	var save_state: Dictionary = {
+		"slides": [{
+			"tiles": [{
+				"kind": "image",
+				"src": {"__blob__": true, "content_type": "image/png", "bytes": b64},
+			}],
+		}],
+	}
+	var json_text: String = JSON.stringify(save_state)
+	# Simulate load: parse JSON back.
+	var loaded: Variant = JSON.parse_string(json_text)
+	check("JSON parse succeeded", loaded is Dictionary)
+	# Now feed the loaded state through strip — must recognize the wrapper
+	# even though its `bytes` field is now a String (base64), not PBA.
+	var stripped: Variant = broker._strip_blobs_for_outbound(TEST_EDITOR, loaded, TEST_PLUGIN_ID)
+	var loaded_tile := (((stripped as Dictionary)["slides"] as Array)[0] as Dictionary)["tiles"] as Array
+	var src := (loaded_tile[0] as Dictionary)["src"] as Dictionary
+	check("post-JSON wrapper recognized: src has __blob_handle__", src.has("__blob_handle__"))
+	check("post-JSON wrapper recognized: src has no bytes", not src.has("bytes"))
+	check_eq("post-JSON blob stored in broker",
+		broker._blob_store_snapshot(TEST_EDITOR).size(), 1)
+	# And the bytes survived correctly through the store.
+	var handle: String = str(src["__blob_handle__"])
+	var rec: Dictionary = broker._get_blob_record(TEST_EDITOR, handle)
+	check("blob bytes equal original", (rec["bytes"] as PackedByteArray) == raw)
+	check_eq("encoding recorded as base64", str(rec.get("encoding", "")), "base64")
 
 
 func _test_rehydrate_no_handle_placeholders_passthrough() -> void:

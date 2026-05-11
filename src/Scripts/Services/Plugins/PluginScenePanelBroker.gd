@@ -1444,18 +1444,43 @@ func _strip_blobs_for_outbound(editor_name: String, value: Variant, plugin_id: S
 		# Check for blob wrapper: needs all three keys with correct types.
 		# We accept whole-number float for __blob__ because JSON.parse() can
 		# round-trip booleans as floats in Godot 4 (true → 1.0).
+		# `bytes` is accepted in either of two encodings:
+		#   - PackedByteArray (in-process IPC; preserved for backward compat)
+		#   - non-empty String (base64-encoded; required when the wrapper has
+		#     survived a JSON.stringify/parse round-trip — see hint
+		#     godot/json-stringify-packedbytearray-becomes-quoted-string).
+		# The blob store always holds PackedByteArray internally; the original
+		# encoding is recorded so rehydrate can emit the same shape the caller
+		# sent in (symmetric round-trip per blob).
+		var bytes_v: Variant = d.get("bytes", null)
+		var bytes_is_pba: bool = bytes_v is PackedByteArray
+		var bytes_is_b64_string: bool = bytes_v is String and not (bytes_v as String).is_empty()
 		var is_blob_wrapper: bool = (
 			d.has("__blob__") and d.has("content_type") and d.has("bytes")
 			and (d["__blob__"] == true or d["__blob__"] == 1 or d["__blob__"] == 1.0)
 			and d["content_type"] is String
-			and d["bytes"] is PackedByteArray
+			and (bytes_is_pba or bytes_is_b64_string)
 		)
 		if is_blob_wrapper:
-			var bytes: PackedByteArray = d["bytes"] as PackedByteArray
-			var content_type: String = d["content_type"] as String
-			var handle: String = _store_blob(editor_name, bytes, content_type)
-			# _store_blob sets refcount = 1 (the outbound envelope holds it).
-			return {"__blob_handle__": handle, "content_type": content_type}
+			var bytes: PackedByteArray
+			var encoding: String
+			var decode_ok: bool = true
+			if bytes_is_pba:
+				bytes = bytes_v as PackedByteArray
+				encoding = "bytes"
+			else:
+				bytes = Marshalls.base64_to_raw(bytes_v as String)
+				encoding = "base64"
+				# Base64 decode of a non-empty input that yields empty bytes
+				# indicates invalid base64 — fall back to passthrough so junk
+				# strings don't become 0-byte blobs that hide upstream bugs.
+				if bytes.is_empty():
+					decode_ok = false
+			if decode_ok:
+				var content_type: String = d["content_type"] as String
+				var handle: String = _store_blob(editor_name, bytes, content_type, encoding)
+				# _store_blob sets refcount = 1 (the outbound envelope holds it).
+				return {"__blob_handle__": handle, "content_type": content_type}
 		# Not a blob wrapper — recurse into all values.
 		var out: Dictionary = {}
 		for k in d.keys():
@@ -1546,10 +1571,20 @@ func _rehydrate_walk(
 			# Increment refcount: transient reference for the apply call.
 			_inc_blob_refcount(editor_name, handle)
 			resolved_handles.append(handle)
+			# Emit in the encoding the original strip received: PackedByteArray
+			# if the caller sent PBA, base64 String if the caller sent base64.
+			# This keeps per-blob round-trips symmetric so plugins that store
+			# images as base64 strings get strings back without re-encoding.
+			var encoding: String = str(rec.get("encoding", "bytes"))
+			var bytes_out: Variant
+			if encoding == "base64":
+				bytes_out = Marshalls.raw_to_base64(rec["bytes"] as PackedByteArray)
+			else:
+				bytes_out = rec["bytes"] as PackedByteArray
 			return {
 				"__blob__": true,
 				"content_type": rec["content_type"] as String,
-				"bytes": rec["bytes"] as PackedByteArray,
+				"bytes": bytes_out,
 			}
 		# Not a handle placeholder — recurse into all values.
 		# Walk path uses RFC 6901 JSON Pointer escaping so error envelopes
@@ -1602,7 +1637,13 @@ func _rehydrate_walk(
 ##
 ## plugin_id is "" while capabilities are not yet wired (R1); R2+ will pass
 ## the dispatching plugin's id for audit attribution.
-func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: String) -> String:
+## `encoding` records the shape the caller sent bytes in ("bytes" for raw
+## PackedByteArray; "base64" for a base64-encoded String). The store always
+## holds PackedByteArray internally — this field only governs what the
+## rehydrate walker emits back to a consumer, so a plugin that uses
+## base64-strings in its panel state gets strings back rather than PBA.
+func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: String,
+		encoding: String = "bytes") -> String:
 	if not _blob_stores.has(editor_name):
 		_blob_stores[editor_name] = {}
 	if not _next_blob_handle.has(editor_name):
@@ -1616,12 +1657,14 @@ func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: Stri
 		"bytes": bytes,
 		"content_type": content_type,
 		"refcount": 1,
+		"encoding": encoding,
 	}
 	_audit("", PluginAuditLog.EVENT_BLOB_STORED, {
 		"editor_name": editor_name,
 		"handle": handle,
 		"content_type": content_type,
 		"bytes_len": bytes.size(),
+		"encoding": encoding,
 	})
 	return handle
 
@@ -1636,16 +1679,17 @@ func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: Stri
 ##   {found: false, bytes: PackedByteArray(), content_type: "", refcount: 0}
 func _get_blob_record(editor_name: String, handle: String) -> Dictionary:
 	if not _blob_stores.has(editor_name):
-		return {"found": false, "bytes": PackedByteArray(), "content_type": "", "refcount": 0}
+		return {"found": false, "bytes": PackedByteArray(), "content_type": "", "refcount": 0, "encoding": "bytes"}
 	var store: Dictionary = _blob_stores[editor_name]
 	if not store.has(handle):
-		return {"found": false, "bytes": PackedByteArray(), "content_type": "", "refcount": 0}
+		return {"found": false, "bytes": PackedByteArray(), "content_type": "", "refcount": 0, "encoding": "bytes"}
 	var entry: Dictionary = store[handle]
 	return {
 		"found": true,
 		"bytes": entry["bytes"],
 		"content_type": entry["content_type"],
 		"refcount": entry["refcount"],
+		"encoding": entry.get("encoding", "bytes"),
 	}
 
 
@@ -1745,6 +1789,7 @@ func _blob_store_snapshot(editor_name: String) -> Dictionary:
 		result[handle] = {
 			"content_type": entry["content_type"],
 			"refcount": entry["refcount"],
+			"encoding": entry.get("encoding", "bytes"),
 		}
 	return result
 
