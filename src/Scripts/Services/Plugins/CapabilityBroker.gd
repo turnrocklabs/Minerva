@@ -737,23 +737,21 @@ func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dic
 				state = {}
 		else:
 			# Buffer-canonical: parse buffer text as JSON to navigate it.
+			# Reachable only for paired_dsl panels (broker-attached buffers).
 			# Non-JSON buffer (e.g. .mcad DSL plain text) is not navigable —
 			# surface as not_buffer_canonical so callers don't confuse it with
 			# "valid JSON but path missing."
+			#
+			# host_owned_save panels (.mdeck) are unreachable here as of the
+			# _resolve_editor_buffer architectural fix: that function now
+			# returns null for PLUGIN_SCENE editors without a broker-attached
+			# buffer, routing them through the panel-canonical branch above
+			# (where request_panel_state runs the blob-strip walker). The
+			# previous defensive strip call here became dead code.
 			var parsed = JSON.parse_string(buffer.text)
 			if parsed == null or not (parsed is Dictionary or parsed is Array):
 				return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
 			state = parsed
-			# Phase 5 R7 follow-up: the panel-canonical path strips blob
-			# envelopes inside request_panel_state, but the buffer-canonical
-			# path above just parses raw JSON — envelopes survive. Without
-			# this explicit strip, image-heavy decks (.mdeck with 38× 3MB
-			# images) ship the entire base64 inline on the get_node response
-			# and overflow the plugin's stdin bufio.Scanner. Strip is
-			# idempotent — no-op when state has no __blob__ envelopes.
-			var pbroker = _get_panel_broker()
-			if pbroker != null and pbroker.has_method("_strip_blobs_for_outbound"):
-				state = pbroker._strip_blobs_for_outbound(editor_name, state, plugin_id)
 	else:
 		# Host-owned editor (text, graphics, etc.): not navigable via JSON
 		# Pointer. Return not_buffer_canonical so callers can tell "wrong
@@ -1600,18 +1598,33 @@ static func _editor_kind_string(ed_type: int) -> String:
 
 
 ## Resolve the canonical DocumentBuffer for an editor, if any.
-## Order: paired_dsl plugin-scene broker attachment, editor.get_document_buffer(),
-## file-path-keyed registry buffer.
+## Resolve the canonical DocumentBuffer for an editor (or null if the editor
+## is panel-canonical / anonymous / unbacked).
+##
+## For PLUGIN_SCENE editors, ONLY the broker-attached buffer counts (the
+## paired_dsl pattern, attached explicitly via PluginScenePanelBroker
+## .attach_buffer_to_panel). Path-keyed DocumentRegistry lookups are NOT
+## consulted — host_owned_save panels (.mdeck) own state in panel memory
+## and any incidental path-keyed buffer would silently bypass the
+## panel-canonical IPC round-trip (and thus the broker's blob-strip walker)
+## in get_node/get_state/patch_state/set_state. See hint
+## minerva-plugin-platform/host-documents-get-node-buffer-canonical-bypasses-strip
+## for the bypass class this resolution rule closes.
+##
+## For non-PLUGIN_SCENE editors (text, graphics, etc.), the path-keyed
+## registry fallthrough is still in place — that's how MCPDocTools'
+## doc_read/doc_write surface for those editor types.
 func _resolve_editor_buffer(editor) -> DocumentBuffer:
 	var ed_type: int = int(editor.type) if "type" in editor else -1
 	var pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
 	var pname: String = str(editor.panel_name) if "panel_name" in editor else ""
 	var ed_file: String = str(editor.file) if "file" in editor else ""
 
-	# Resolution order mirrors MCPDocTools._resolve_target so reads here see the
-	# same buffer that doc_read/doc_write would. Order: paired_dsl plugin-scene
-	# broker attachment, then path-keyed registry, then anonymous-bound buffer.
 	if ed_type == Editor.Type.PLUGIN_SCENE:
+		# Only the broker-attached buffer (paired_dsl) counts here. Returning
+		# null for plugin-scene editors without an attached buffer routes the
+		# capability handlers through the panel-canonical request_panel_state
+		# path — which is where the strip walker lives.
 		var so_root = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
 		var pbroker = null
 		if so_root != null and "plugin_scene_panel_broker" in so_root:
@@ -1621,6 +1634,10 @@ func _resolve_editor_buffer(editor) -> DocumentBuffer:
 			var attached: DocumentBuffer = pbroker.get_attached_buffer(pid, pname)
 			if attached != null:
 				return attached
+		# No broker-attached buffer → panel-canonical. Do NOT fall through to
+		# the path-keyed registry lookup below (that would create an incidental
+		# buffer and bypass the strip walker).
+		return null
 
 	if not ed_file.is_empty():
 		var reg_r := DocumentRegistry.get_instance().get_or_create_buffer(ed_file)
