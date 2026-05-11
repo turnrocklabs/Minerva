@@ -87,13 +87,8 @@ func check(label: String, ok: bool, detail: String = "") -> void:
 
 
 func _make_broker(PolicyScript, BrokerScript, AuditScript) -> Array:
-	# Returns [broker, policy, audit].
-	# PluginPolicy._init() calls _load() which reads/writes user://plugins/policy.json.
-	# This pollutes the on-disk policy between runs.  We accept this for now — the
-	# nudge hint `minerva-testing/policy-self-pollutes-across-runs` documents the
-	# workaround: clear the policy.json before each run.
 	var audit  = AuditScript.new()
-	var policy = PolicyScript.new(null, audit)
+	var policy = PolicyScript.new(null, audit, false)
 	var broker = BrokerScript.new(policy, audit)
 	return [broker, policy, audit]
 
@@ -322,7 +317,7 @@ func _test_policy_gate(PolicyScript, BrokerScript, AuditScript) -> void:
 	print("\n-- _test_get_node_denied_when_capability_not_granted --")
 	# Fresh broker with no grants — deny-by-default.
 	var audit  = AuditScript.new()
-	var policy = PolicyScript.new(null, audit)
+	var policy = PolicyScript.new(null, audit, false)
 	var broker = BrokerScript.new(policy, audit)
 
 	var r_node: Dictionary = await broker.dispatch("no_grant_plugin",

@@ -130,7 +130,7 @@ func check(label: String, ok: bool, detail: String = "") -> void:
 
 func _make_broker(PolicyScript, BrokerScript, AuditScript) -> Array:
 	var audit  = AuditScript.new()
-	var policy = PolicyScript.new(null, audit)
+	var policy = PolicyScript.new(null, audit, false)
 	var broker = BrokerScript.new(policy, audit)
 	return [broker, policy, audit]
 
@@ -706,7 +706,7 @@ func _test_deny_path(PolicyScript, BrokerScript, AuditScript) -> void:
 	print("\n-- _test_deny_path --")
 	# Fresh broker with no grants — deny-by-default.
 	var audit  = AuditScript.new()
-	var policy = PolicyScript.new(null, audit)
+	var policy = PolicyScript.new(null, audit, false)
 	var broker = BrokerScript.new(policy, audit)
 
 	var patch_op := [{"op": "replace", "path": "/title", "value": "X"}]

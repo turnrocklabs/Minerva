@@ -45,11 +45,23 @@ var _default_rate_limit := {
 }
 
 
-func _init(p_plugin_db: PluginDB = null, p_audit_log: PluginAuditLog = null) -> void:
+## When persist=false, _load/_save become no-ops — used by --script tests so
+## a prior run's grants don't leak into the next run's deny-path assertions
+## (bug minerva 019e19654be7).  Production constructs with persist=true.
+var _persist: bool = true
+
+
+func _init(
+		p_plugin_db: PluginDB = null,
+		p_audit_log: PluginAuditLog = null,
+		p_persist: bool = true
+) -> void:
 	plugin_db = p_plugin_db
 	audit_log = p_audit_log
-	_ensure_data_dir()
-	_load()
+	_persist = p_persist
+	if _persist:
+		_ensure_data_dir()
+		_load()
 
 
 # ---------------------------------------------------------------------------
@@ -364,6 +376,8 @@ func _load() -> void:
 
 
 func _save() -> void:
+	if not _persist:
+		return
 	var grants_out: Dictionary = {}
 	for plugin_id in _grants.keys():
 		grants_out[plugin_id] = _grants[plugin_id].duplicate()

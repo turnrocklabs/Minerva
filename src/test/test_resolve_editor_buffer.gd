@@ -94,7 +94,7 @@ func check(label: String, ok: bool, detail: String = "") -> void:
 
 func _make_broker(BrokerScript, PolicyScript, AuditScript) -> Object:
 	var audit  = AuditScript.new()
-	var policy = PolicyScript.new(null, audit)
+	var policy = PolicyScript.new(null, audit, false)
 	return BrokerScript.new(policy, audit)
 
 

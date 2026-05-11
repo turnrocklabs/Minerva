@@ -126,7 +126,7 @@ func _run_unit_tests() -> void:
 		return
 
 	var audit = AuditLogScript.new()
-	var policy = PolicyScript.new(null, audit)
+	var policy = PolicyScript.new(null, audit, false)
 	var broker = BrokerScript.new(policy, audit)
 
 	policy.grant_capability("doc_probe_test", "host.documents.list_open")
