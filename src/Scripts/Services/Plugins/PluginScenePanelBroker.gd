@@ -949,15 +949,48 @@ func _disconnect_buffer(entry: _PanelEntry) -> void:
 ## Awaitable. Times out after PANEL_STATE_REQUEST_TIMEOUT_SEC if the panel
 ## never responds — never returns null, always a structured dict.
 func request_panel_state(plugin_id: String, panel_name: String) -> Dictionary:
-	return await _request_panel_state_op(plugin_id, panel_name,
+	# Resolve the editor_name for the blob store key. For plugin-scene panels the
+	# panel_name is also the editor tab name (set by PluginScenePanelHost).
+	var editor_name: String = panel_name
+	var raw: Dictionary = await _request_panel_state_op(plugin_id, panel_name,
 		CHANNEL_HOST_OWNED_SAVE_GET_REQUEST, {"op": "get"})
+	if not raw.get("success", false):
+		return raw
+	# Strip any {__blob__: true, content_type, bytes} wrappers from the panel
+	# state and replace them with {__blob_handle__, content_type} placeholders.
+	# Plugins that don't use blob wrappers pass through unchanged.
+	var panel_state: Dictionary = raw.get("state", {})
+	var stripped: Variant = _strip_blobs_for_outbound(editor_name, panel_state, plugin_id)
+	var result := raw.duplicate(true)
+	result["state"] = stripped
+	return result
 
 
 ## Apply a state dict to a plugin-scene panel. Symmetric with request_panel_state.
 ## Used by CapabilityBroker.host.documents.set_state for plugin-scene editors.
 func apply_panel_state(plugin_id: String, panel_name: String, state: Dictionary) -> Dictionary:
-	return await _request_panel_state_op(plugin_id, panel_name,
-		CHANNEL_HOST_OWNED_SAVE_SET_REQUEST, {"op": "set", "state": state})
+	var editor_name: String = panel_name
+	# Rehydrate any {__blob_handle__, content_type} placeholders back to
+	# {__blob__: true, content_type, bytes} before forwarding to the panel.
+	# Atomically fails if any handle is unknown. Plugins that don't use handles
+	# pass through unchanged.
+	var rehydrate_result: Dictionary = _rehydrate_blobs_for_inbound(editor_name, state, plugin_id)
+	if not rehydrate_result.get("success", true):
+		return rehydrate_result
+	var rehydrated_state: Dictionary = rehydrate_result.get("state", state)
+
+	var apply_result: Dictionary = await _request_panel_state_op(plugin_id, panel_name,
+		CHANNEL_HOST_OWNED_SAVE_SET_REQUEST, {"op": "set", "state": rehydrated_state})
+
+	# Transient +1 refs were added during rehydrate. Now that the panel has the
+	# data, decrement them (net 0 change). The panel holds the bytes in its own
+	# memory; the broker no longer needs the extra reference.
+	if rehydrate_result.get("success", false):
+		var resolved_handles: Array = rehydrate_result.get("_resolved_handles", [])
+		for h in resolved_handles:
+			_dec_blob_refcount(editor_name, h)
+
+	return apply_result
 
 
 ## Internal: shared request/await/timeout machinery for both get and set.
@@ -1365,6 +1398,172 @@ func _validate_registration_args(
 		push_warning("[PluginScenePanelBroker] register_panel: empty panel_name")
 		return false
 	return true
+
+
+# ---------------------------------------------------------------------------
+# Blob substitution walkers (Phase 5 R3)
+#
+# Outbound (get_state): strip {__blob__: true, content_type, bytes} wrappers
+#   from the panel-returned state, store bytes in the R1 blob store, and
+#   replace with {__blob_handle__, content_type} placeholders.
+#
+# Inbound (set_state): symmetric — replace {__blob_handle__, content_type}
+#   placeholders with {__blob__: true, content_type, bytes} from the store.
+#   Atomic: if any handle is unknown the entire walk is aborted.
+#
+# Opt-in contract: plugins that don't wrap blobs produce state with no
+# {__blob__: true} dicts, so both walkers are no-ops for them. Malformed
+# wrappers (right keys but wrong types) are treated as plain values and
+# passed through — they were never opted in by the plugin.
+#
+# Refcount model (intentionally simple):
+#   _strip_blobs_for_outbound: each stored blob starts at refcount 1 (the
+#     outbound envelope holds the reference).
+#   _rehydrate_blobs_for_inbound: each resolved handle is inc'd by 1
+#     (transient reference for the apply call), stored in _resolved_handles
+#     so apply_panel_state can dec them after the panel receives the bytes.
+#   Net effect of a set_state round-trip: +1 then -1 → 0 change.
+#   Editor close: _clear_blobs_for_editor drops all blobs regardless of count.
+# ---------------------------------------------------------------------------
+
+## Walk a Variant (Dictionary or Array, recursively) and strip any
+## {__blob__: true, content_type: String, bytes: PackedByteArray} wrappers.
+## Each wrapper is stored in the R1 blob store and replaced with a
+## {__blob_handle__: String, content_type: String} placeholder.
+##
+## "Strip" is done by building a new value (Dictionary/Array) rather than
+## mutating the original in place; this guarantees the panel's own copy is
+## not affected if it's still holding a reference.
+##
+## Returns the transformed value (may be the same type as the input).
+## Plain scalars, unknown shapes, and malformed wrappers (wrong types on the
+## required keys) are returned unchanged.
+func _strip_blobs_for_outbound(editor_name: String, value: Variant, plugin_id: String) -> Variant:
+	if value is Dictionary:
+		var d: Dictionary = value as Dictionary
+		# Check for blob wrapper: needs all three keys with correct types.
+		# We accept whole-number float for __blob__ because JSON.parse() can
+		# round-trip booleans as floats in Godot 4 (true → 1.0).
+		var is_blob_wrapper: bool = (
+			d.has("__blob__") and d.has("content_type") and d.has("bytes")
+			and (d["__blob__"] == true or d["__blob__"] == 1 or d["__blob__"] == 1.0)
+			and d["content_type"] is String
+			and d["bytes"] is PackedByteArray
+		)
+		if is_blob_wrapper:
+			var bytes: PackedByteArray = d["bytes"] as PackedByteArray
+			var content_type: String = d["content_type"] as String
+			var handle: String = _store_blob(editor_name, bytes, content_type)
+			# _store_blob sets refcount = 1 (the outbound envelope holds it).
+			return {"__blob_handle__": handle, "content_type": content_type}
+		# Not a blob wrapper — recurse into all values.
+		var out: Dictionary = {}
+		for k in d.keys():
+			out[k] = _strip_blobs_for_outbound(editor_name, d[k], plugin_id)
+		return out
+	elif value is Array:
+		var arr: Array = value as Array
+		var out_arr: Array = []
+		out_arr.resize(arr.size())
+		for i in arr.size():
+			out_arr[i] = _strip_blobs_for_outbound(editor_name, arr[i], plugin_id)
+		return out_arr
+	# Scalar / other type — pass through untouched.
+	return value
+
+
+## Walk a Variant and rehydrate any {__blob_handle__: String, content_type: String}
+## placeholders back to {__blob__: true, content_type: String, bytes: PackedByteArray}
+## from the blob store.
+##
+## ATOMIC: builds a fully resolved copy before returning. If any handle is
+## unknown the walk is aborted and {success: false, error_code: "unknown_blob_handle",
+## handle: <h>, path: <json-pointer>} is returned. No partial result is ever
+## returned.
+##
+## On success returns {success: true, state: <rehydrated>, _resolved_handles: [...]}
+## where _resolved_handles is the list of handles that were inc'd (so the caller
+## can dec them after the panel has received the bytes).
+##
+## Called by apply_panel_state before forwarding state to the panel.
+func _rehydrate_blobs_for_inbound(editor_name: String, state: Dictionary, plugin_id: String) -> Dictionary:
+	var resolved_handles: Array[String] = []
+	var walk_result: Variant = _rehydrate_walk(editor_name, state, "", resolved_handles)
+	if walk_result is Dictionary and (walk_result as Dictionary).has("__rehydrate_error__"):
+		# Undo any refcount increments made before the failure (atomic guarantee).
+		for h in resolved_handles:
+			_dec_blob_refcount(editor_name, h)
+		var err: Dictionary = walk_result as Dictionary
+		return {
+			"success": false,
+			"error_code": "unknown_blob_handle",
+			"handle": err.get("handle", ""),
+			"path": err.get("path", ""),
+			"error_message": "Unknown blob handle '%s' at path '%s'" % [
+				err.get("handle", ""), err.get("path", ""),
+			],
+		}
+	return {
+		"success": true,
+		"state": walk_result,
+		"_resolved_handles": resolved_handles,
+	}
+
+
+## Internal recursive worker for _rehydrate_blobs_for_inbound.
+## path is a JSON-pointer-style string (e.g. "/slides/2/tiles/0/image") for
+## error messages.  resolved_handles is appended to in place on each inc.
+## Returns a sentinel dict {__rehydrate_error__: true, handle, path} on failure.
+func _rehydrate_walk(
+		editor_name: String,
+		value: Variant,
+		path: String,
+		resolved_handles: Array
+) -> Variant:
+	if value is Dictionary:
+		var d: Dictionary = value as Dictionary
+		# Check for handle placeholder: needs both keys with correct types.
+		var is_handle: bool = (
+			d.has("__blob_handle__") and d.has("content_type")
+			and d["__blob_handle__"] is String
+			and d["content_type"] is String
+			and not (d["__blob_handle__"] as String).is_empty()
+		)
+		if is_handle:
+			var handle: String = d["__blob_handle__"] as String
+			var rec: Dictionary = _get_blob_record(editor_name, handle)
+			if not rec.get("found", false):
+				return {"__rehydrate_error__": true, "handle": handle, "path": path}
+			# Increment refcount: transient reference for the apply call.
+			_inc_blob_refcount(editor_name, handle)
+			resolved_handles.append(handle)
+			return {
+				"__blob__": true,
+				"content_type": rec["content_type"] as String,
+				"bytes": rec["bytes"] as PackedByteArray,
+			}
+		# Not a handle placeholder — recurse into all values.
+		var out: Dictionary = {}
+		for k in d.keys():
+			var child_path: String = path + "/" + str(k)
+			var child_result: Variant = _rehydrate_walk(editor_name, d[k], child_path, resolved_handles)
+			if child_result is Dictionary and (child_result as Dictionary).has("__rehydrate_error__"):
+				return child_result
+			out[k] = child_result
+		return out
+	elif value is Array:
+		var arr: Array = value as Array
+		var out_arr: Array = []
+		out_arr.resize(arr.size())
+		for i in arr.size():
+			var child_path: String = path + "/" + str(i)
+			var child_result: Variant = _rehydrate_walk(editor_name, arr[i], child_path, resolved_handles)
+			if child_result is Dictionary and (child_result as Dictionary).has("__rehydrate_error__"):
+				return child_result
+			out_arr[i] = child_result
+		return out_arr
+	# Scalar — pass through.
+	return value
 
 
 # ---------------------------------------------------------------------------
