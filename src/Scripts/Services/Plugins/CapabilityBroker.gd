@@ -33,6 +33,10 @@ extends RefCounted
 ##   re-entrancy — no two capability requests from the same plugin can overlap
 ##   because the plugin blocks waiting for each response before sending the next.
 
+## JsonPointer — preloaded to avoid class_name scope issues when CapabilityBroker
+## is loaded in isolation (e.g. headless tests). JsonPatch.gd uses the same pattern.
+const _JsonPointer := preload("res://Scripts/Services/Plugins/JsonPointer.gd")
+
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
 
@@ -240,6 +244,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_documents_set_state(plugin_id, args)
 		"host.documents.mark_dirty":
 			named_result = _handle_host_documents_mark_dirty(plugin_id, args)
+		"host.documents.get_node":
+			named_result = await _handle_host_documents_get_node(plugin_id, args)
+		"host.documents.get_blob":
+			named_result = _handle_host_documents_get_blob(plugin_id, args)
 		"host.files.read":
 			named_result = _handle_host_files_read(plugin_id, args)
 		"host.files.write":
@@ -647,6 +655,136 @@ func _handle_host_documents_mark_dirty(plugin_id: String, args: Dictionary) -> D
 		"dirty": true,
 		"kind": _editor_kind_string(ed_type),
 		"plugin_id": _str_or_null(pid),
+	})
+
+
+# ---------------------------------------------------------------------------
+# host.documents.get_node + get_blob handlers (phase 5 R2)
+# ---------------------------------------------------------------------------
+
+## Return the subtree of an editor's panel state at a JSON Pointer path.
+##
+## Args: {editor_name: String, path: String}
+##   path: RFC 6901 JSON Pointer — empty string returns the entire document root,
+##         otherwise must start with '/'. Probing for optional fields is normal;
+##         found=false is a non-error outcome.
+##
+## On success: {editor_name, path, found: bool, value: Variant, key: Variant}
+##   found=true  → value holds the resolved subtree; key is the last Dict key or
+##                 Array index.
+##   found=false → value is null; key is null (path does not exist in doc).
+##
+## Errors: schema_validation_failed (bad args), editor_not_found.
+##
+## NOTE: Blob values are returned as {__blob_handle__, content_type} placeholders
+## when the panel has already used _store_blob. R3 will add outbound state-stripping
+## that substitutes handles automatically before this handler reads the state.
+func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dictionary:
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.get_node requires 'editor_name'")
+
+	var path: String = str(args.get("path", ""))
+	# path must be empty (root) or start with '/'.
+	if not path.is_empty() and not path.begins_with("/"):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.get_node: 'path' must be empty (root) or start with '/' (got: '%s')" % path)
+
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	print("[CapabilityBroker] Plugin '%s' invoking host.documents.get_node (editor='%s', path='%s')" % [plugin_id, editor_name, path])
+
+	# Obtain the panel state the same way get_state does for plugin-scene editors.
+	var state: Variant = null
+	var ed_type: int = int(ed.type) if "type" in ed else -1
+	if ed_type == Editor.Type.PLUGIN_SCENE:
+		var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
+		if buffer == null:
+			# Panel-canonical: round-trip through PluginScenePanelBroker.
+			var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
+			var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+			if owner_pid.is_empty() or pname.is_empty():
+				return PluginErrors.editor_not_found(plugin_id, editor_name)
+			var pbroker = _get_panel_broker()
+			if pbroker != null and pbroker.has_method("request_panel_state"):
+				var resp: Dictionary = await pbroker.request_panel_state(owner_pid, pname)
+				if not resp.get("success", false):
+					return {
+						"success": false,
+						"error_code": str(resp.get("error_code", "panel_state_unavailable")),
+						"error_message": str(resp.get("error_message", "")),
+						"plugin_id": plugin_id,
+						"editor_name": editor_name,
+					}
+				state = resp.get("state", {})
+			else:
+				# Headless / no panel broker — empty doc, nothing to navigate.
+				state = {}
+		else:
+			# Buffer-canonical: parse buffer text as JSON to navigate it.
+			var parsed = JSON.parse_string(buffer.text)
+			state = parsed if parsed != null else {}
+	else:
+		# Host-owned editor (text, graphics, etc.): not navigable via JSON Pointer.
+		# Return found=false at root rather than an error; callers that
+		# erroneously probe non-panel editors get a consistent non-error shape.
+		state = {}
+
+	var r: Dictionary = _JsonPointer.resolve(state, path)
+	return PluginErrors.success({
+		"editor_name": editor_name,
+		"path": path,
+		"found": r.get("found", false),
+		"value": r.get("value", null),
+		"key": r.get("key", null),
+	})
+
+
+## Return blob bytes for a handle stored in an editor's blob store.
+##
+## Args: {editor_name: String, blob_handle: String}
+##
+## On success: {editor_name, blob_handle, content_type: String, bytes_b64: String}
+##   bytes_b64 is the Marshalls.raw_to_base64() encoding of the stored bytes.
+##
+## Errors: schema_validation_failed (bad args), editor_not_found,
+##         blob_not_found (handle unknown or already GC'd).
+func _handle_host_documents_get_blob(plugin_id: String, args: Dictionary) -> Dictionary:
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.get_blob requires 'editor_name'")
+
+	var blob_handle: String = str(args.get("blob_handle", "")).strip_edges()
+	if blob_handle.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.get_blob requires 'blob_handle'")
+
+	# Editor existence check — surface a clear error rather than a confusing
+	# blob_not_found when the editor name is simply wrong.
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	var pbroker = _get_panel_broker()
+	if pbroker == null or not pbroker.has_method("_get_blob_record"):
+		return PluginErrors.blob_not_found(plugin_id, editor_name, blob_handle)
+
+	var rec: Dictionary = pbroker._get_blob_record(editor_name, blob_handle)
+	if not rec.get("found", false):
+		return PluginErrors.blob_not_found(plugin_id, editor_name, blob_handle)
+
+	var bytes: PackedByteArray = rec.get("bytes", PackedByteArray())
+	var content_type: String = str(rec.get("content_type", "application/octet-stream"))
+	print("[CapabilityBroker] Plugin '%s' invoking host.documents.get_blob (editor='%s', handle='%s', %d bytes)" % [plugin_id, editor_name, blob_handle, bytes.size()])
+	return PluginErrors.success({
+		"editor_name": editor_name,
+		"blob_handle": blob_handle,
+		"content_type": content_type,
+		"bytes_b64": Marshalls.raw_to_base64(bytes),
 	})
 
 

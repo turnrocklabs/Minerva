@@ -25,6 +25,7 @@ const CODE_OWNERSHIP_REQUIRED = "ownership_required"
 const CODE_IO_ERROR = "io_error"
 const CODE_FILESYSTEM_DISABLED = "filesystem_disabled"
 const CODE_FORMAT_NOT_SUPPORTED = "format_not_supported"
+const CODE_BLOB_NOT_FOUND = "blob_not_found"
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +208,20 @@ static func format_not_supported(plugin_id: String, editor_name: String, format:
 		"editor_name": editor_name,
 		"format": format,
 		"supported_formats": supported,
+	}
+
+
+## A blob handle was requested but is not present in the editor's blob store.
+## Distinct from editor_not_found: the editor was found but the handle is unknown
+## (was never stored, or was GC'd after its refcount reached zero).
+static func blob_not_found(plugin_id: String, editor_name: String, blob_handle: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_BLOB_NOT_FOUND,
+		"error_message": "Blob handle '%s' not found in editor '%s'" % [blob_handle, editor_name],
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"blob_handle": blob_handle,
 	}
 
 
