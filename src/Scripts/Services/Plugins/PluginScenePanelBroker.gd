@@ -1511,7 +1511,11 @@ func _strip_blobs_for_outbound(editor_name: String, value: Variant, plugin_id: S
 ## can dec them after the panel has received the bytes).
 ##
 ## Called by apply_panel_state before forwarding state to the panel.
-func _rehydrate_blobs_for_inbound(editor_name: String, state: Dictionary, plugin_id: String) -> Dictionary:
+## plugin_id is accepted for API symmetry with _strip_blobs_for_outbound (which
+## threads it through recursion). The rehydrate path doesn't currently audit
+## per-blob — symmetric audit would be redundant with apply_panel_state's
+## outer audit. Leading underscore signals "intentional unused for API parity."
+func _rehydrate_blobs_for_inbound(editor_name: String, state: Dictionary, _plugin_id: String) -> Dictionary:
 	var resolved_handles: Array[String] = []
 	var walk_result: Variant = _rehydrate_walk(editor_name, state, "", resolved_handles)
 	if walk_result is Dictionary and (walk_result as Dictionary).has("__rehydrate_error__"):

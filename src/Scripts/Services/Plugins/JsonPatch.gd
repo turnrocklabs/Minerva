@@ -415,18 +415,27 @@ static func _is_proper_prefix(base: String, candidate: String) -> bool:
 	return candidate.begins_with(base + "/")
 
 
+## op is included in the error response when non-empty so callers can
+## distinguish which patch operation failed. Top-level patch validation
+## passes "" for op (no specific operation context yet).
 static func _fail(op: String, code: String, message: String, op_index: int, original_doc: Variant) -> Dictionary:
+	var err: Dictionary = {
+		"code": code,
+		"message": message,
+		"op_index": op_index,
+	}
+	if not op.is_empty():
+		err["op"] = op
 	return {
 		"success": false,
 		"doc": original_doc,
-		"error": {
-			"code": code,
-			"message": message,
-			"op_index": op_index,
-		},
+		"error": err,
 	}
 
 
+## op identifies the failing operation type (e.g. "add", "remove") and is
+## always recorded in the error dict — per-op failure path is always invoked
+## with a concrete op name (see callers).
 static func _op_fail(op: String, code: String, message: String, op_index: int) -> Dictionary:
 	return {
 		"success": false,
@@ -434,5 +443,6 @@ static func _op_fail(op: String, code: String, message: String, op_index: int) -
 			"code": code,
 			"message": message,
 			"op_index": op_index,
+			"op": op,
 		},
 	}

@@ -335,7 +335,7 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 			RECONCILE_SEED:
 				# Defer to materialize-style create.
 				var unsatisfied = entry.get("unsatisfied", [])
-				var record := build_install_record(_extract_plugin_id(plan, skill), skill, unsatisfied)
+				var record := build_install_record(_extract_plugin_id(skill), skill, unsatisfied)
 				var create_result = _create_and_activate_skill(record, docket_caller)
 				if create_result is Dictionary and not create_result.has("error"):
 					seeded += 1
@@ -415,7 +415,7 @@ static func _apply_overwrite(action_entry: Dictionary, docket_caller) -> void:
 ## non-SEED entry's record's source field.  Falls back to "" if no other action
 ## is present (only happens for a brand-new plugin with skills, which would
 ## normally have gone through materialize() not reconcile()).
-static func _extract_plugin_id(plan: Dictionary, skill: Dictionary) -> String:
+static func _extract_plugin_id(skill: Dictionary) -> String:
 	var manifest_id := str(skill.get("id", ""))
 	# Pattern: "minerva_<plugin_id>_<rest>". Pull plugin id by stripping the
 	# fixed prefix and the trailing rest (everything after the next underscore).
