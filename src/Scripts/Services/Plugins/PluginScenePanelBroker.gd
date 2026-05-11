@@ -1473,10 +1473,13 @@ func _dec_blob_refcount(editor_name: String, handle: String) -> bool:
 		return false
 	var entry: Dictionary = store[handle]
 	if entry["refcount"] <= 0:
-		# Underflow guard: refuse to decrement below zero.
+		# Underflow guard: refuse to decrement below zero. The string is
+		# composed first, then formatted, because `%` binds tighter than `+`
+		# in GDScript and the naive `"a" + "b" % args` form formats only "b".
 		push_warning(
-			"[PluginScenePanelBroker] _dec_blob_refcount: handle '%s' in editor '%s' " +
-			"already at refcount 0 — underflow rejected" % [handle, editor_name]
+			("[PluginScenePanelBroker] _dec_blob_refcount: handle '%s' in editor"
+			+ " '%s' already at refcount 0 — underflow rejected"
+			) % [handle, editor_name]
 		)
 		return false
 	entry["refcount"] -= 1
