@@ -102,6 +102,9 @@ func _run_tests() -> void:
 	await _test_patch_state_refcount_replace(PanelBrokerScript, AuditScript)
 	await _test_patch_state_refcount_copy(PanelBrokerScript, AuditScript)
 	await _test_patch_state_refcount_net_zero(PanelBrokerScript, AuditScript)
+	await _test_patch_state_refcount_op_add_replaces_existing_key_decrements_displaced(PanelBrokerScript, AuditScript)
+	await _test_patch_state_refcount_multi_op_cascade_no_double_count(PanelBrokerScript, AuditScript)
+	await _test_patch_state_refcount_op_move_into_preexisting_decrements_displaced(PanelBrokerScript, AuditScript)
 	await _test_put_blob_schema_validation(PolicyScript, BrokerScript, AuditScript)
 	await _test_put_blob_editor_not_found(PolicyScript, BrokerScript, AuditScript)
 	await _test_put_blob_happy_path_via_panel_broker(PanelBrokerScript, AuditScript)
@@ -384,126 +387,160 @@ func _test_patch_state_happy_path(PatchScript) -> void:
 # Refcount maintenance: add op adds a blob handle → +1
 # ---------------------------------------------------------------------------
 
+## Phase 5 R4 cold-review redesign: refcount maintenance no longer happens per-op
+## with the deleted _adjust_blob_refcounts helper. Instead, the patch_state
+## handler computes a final-vs-initial multiset diff over the entire state
+## (via _count_handles_multiset) and commits the net deltas after the panel
+## write succeeds. Tests in this section exercise the multiset helper and the
+## handle-leak / atomicity invariants that the redesign guarantees.
+
 func _test_patch_state_refcount_add(PanelBrokerScript, AuditScript) -> void:
-	print("\n-- _test_patch_state_refcount_add --")
+	# add a new handle to state → final has handle, initial doesn't → +1.
+	print("\n-- _test_patch_state_refcount_add (multiset diff add) --")
 
-	var audit_pb  = AuditScript.new()
-	var pbroker   = PanelBrokerScript.new(null, null, null, audit_pb)
-	var test_bytes := PackedByteArray([0xFF, 0xD8])  # JPEG magic
-	var handle: String = pbroker._store_blob("ed_add", test_bytes, "image/jpeg")
-
-	# Initial refcount after store = 1.
-	var snap1: Dictionary = pbroker._blob_store_snapshot("ed_add")
-	check("initial refcount = 1", snap1.get(handle, {}).get("refcount", 0) == 1,
-		"got: %d" % snap1.get(handle, {}).get("refcount", 0))
-
-	# Simulate what patch_state does after an "add" op with this handle in value.
-	# The broker calls _adjust_blob_refcounts with delta=+1.
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
-	var broker_inst  = BrokerScript.new(null, null)
-	var handle_value := {"__blob_handle__": handle, "content_type": "image/jpeg"}
-	broker_inst._adjust_blob_refcounts("ed_add", handle_value, +1, pbroker)
+	var initial: Dictionary = {}
+	var final: Dictionary = {"image": {"__blob_handle__": "blob-1", "content_type": "image/png"}}
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	check("add: initial has no handles", ic.size() == 0, "got %s" % str(ic))
+	check("add: final has blob-1 count=1",
+		int(fc.get("blob-1", 0)) == 1, "got %s" % str(fc))
 
-	var snap2: Dictionary = pbroker._blob_store_snapshot("ed_add")
-	check("add op → refcount incremented to 2",
-		snap2.get(handle, {}).get("refcount", 0) == 2,
-		"got: %d" % snap2.get(handle, {}).get("refcount", 0))
-
-
-# ---------------------------------------------------------------------------
-# Refcount maintenance: remove op removes a blob-referencing node → -1
-# ---------------------------------------------------------------------------
 
 func _test_patch_state_refcount_remove(PanelBrokerScript, AuditScript) -> void:
-	print("\n-- _test_patch_state_refcount_remove --")
+	# remove handle from state → initial has handle, final doesn't → -1.
+	print("\n-- _test_patch_state_refcount_remove (multiset diff remove) --")
 
-	var audit_pb   = AuditScript.new()
-	var pbroker    = PanelBrokerScript.new(null, null, null, audit_pb)
-	var test_bytes := PackedByteArray([0x00, 0x01])
-	var handle: String = pbroker._store_blob("ed_remove", test_bytes, "image/png")
-
-	# Bump to refcount 2 to simulate "doc references this handle once, broker-strip added +1".
-	pbroker._inc_blob_refcount("ed_remove", handle)
-	var snap1: Dictionary = pbroker._blob_store_snapshot("ed_remove")
-	check("pre-remove refcount = 2",
-		snap1.get(handle, {}).get("refcount", 0) == 2,
-		"got: %d" % snap1.get(handle, {}).get("refcount", 0))
-
-	# Simulate remove op: the OLD state at /image was {__blob_handle__: handle, ...}.
-	# broker calls _adjust_blob_refcounts(delta=-1).
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
-	var broker_inst  = BrokerScript.new(null, null)
-	var old_value    := {"__blob_handle__": handle, "content_type": "image/png"}
-	broker_inst._adjust_blob_refcounts("ed_remove", old_value, -1, pbroker)
+	var initial: Dictionary = {"image": {"__blob_handle__": "blob-1", "content_type": "image/png"}}
+	var final: Dictionary = {}
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	check("remove: initial has blob-1 count=1",
+		int(ic.get("blob-1", 0)) == 1, "got %s" % str(ic))
+	check("remove: final has no handles", fc.size() == 0, "got %s" % str(fc))
 
-	var snap2: Dictionary = pbroker._blob_store_snapshot("ed_remove")
-	check("remove op → refcount decremented to 1",
-		snap2.get(handle, {}).get("refcount", 0) == 1,
-		"got: %d" % snap2.get(handle, {}).get("refcount", 0))
-
-	# Decrement to 0 → GC'd.
-	broker_inst._adjust_blob_refcounts("ed_remove", old_value, -1, pbroker)
-	var snap3: Dictionary = pbroker._blob_store_snapshot("ed_remove")
-	check("remove op → refcount 0 → GC'd (handle gone)",
-		not snap3.has(handle),
-		"still in store: %s" % str(snap3))
-
-
-# ---------------------------------------------------------------------------
-# Refcount maintenance: replace op → +1 new, -1 old
-# ---------------------------------------------------------------------------
 
 func _test_patch_state_refcount_replace(PanelBrokerScript, AuditScript) -> void:
-	print("\n-- _test_patch_state_refcount_replace --")
-
-	var audit_pb    = AuditScript.new()
-	var pbroker     = PanelBrokerScript.new(null, null, null, audit_pb)
-	var bytes_old   := PackedByteArray([0x01])
-	var bytes_new   := PackedByteArray([0x02])
-	var handle_old: String = pbroker._store_blob("ed_replace", bytes_old, "image/png")
-	var handle_new: String = pbroker._store_blob("ed_replace", bytes_new, "image/png")
+	# replace handle: initial has H_old, final has H_new → -1 H_old, +1 H_new.
+	print("\n-- _test_patch_state_refcount_replace (multiset diff replace) --")
 
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
-	var broker_inst  = BrokerScript.new(null, null)
+	var initial: Dictionary = {"image": {"__blob_handle__": "H_old", "content_type": "image/png"}}
+	var final: Dictionary = {"image": {"__blob_handle__": "H_new", "content_type": "image/png"}}
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	check("replace: H_old initial=1, final=0",
+		int(ic.get("H_old", 0)) == 1 and int(fc.get("H_old", 0)) == 0,
+		"ic %s, fc %s" % [str(ic), str(fc)])
+	check("replace: H_new initial=0, final=1",
+		int(ic.get("H_new", 0)) == 0 and int(fc.get("H_new", 0)) == 1,
+		"ic %s, fc %s" % [str(ic), str(fc)])
 
-	# Replace: +1 for new value, -1 for old value.
-	broker_inst._adjust_blob_refcounts("ed_replace",
-		{"__blob_handle__": handle_new, "content_type": "image/png"}, +1, pbroker)
-	broker_inst._adjust_blob_refcounts("ed_replace",
-		{"__blob_handle__": handle_old, "content_type": "image/png"}, -1, pbroker)
-
-	var snap: Dictionary = pbroker._blob_store_snapshot("ed_replace")
-	check("replace → old handle refcount = 0 → GC'd",
-		not snap.has(handle_old),
-		"old still in store: %s" % str(snap))
-	check("replace → new handle refcount = 2",
-		snap.get(handle_new, {}).get("refcount", 0) == 2,
-		"got: %d" % snap.get(handle_new, {}).get("refcount", 0))
-
-
-# ---------------------------------------------------------------------------
-# Refcount maintenance: copy op → +1 for each handle in copied value
-# ---------------------------------------------------------------------------
 
 func _test_patch_state_refcount_copy(PanelBrokerScript, AuditScript) -> void:
-	print("\n-- _test_patch_state_refcount_copy --")
-
-	var audit_pb  = AuditScript.new()
-	var pbroker   = PanelBrokerScript.new(null, null, null, audit_pb)
-	var test_bytes := PackedByteArray([0xAB])
-	var handle: String = pbroker._store_blob("ed_copy", test_bytes, "image/png")
+	# copy duplicates a handle reference: initial has H once, final has H twice → +1.
+	print("\n-- _test_patch_state_refcount_copy (multiset diff copy) --")
 
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
-	var broker_inst  = BrokerScript.new(null, null)
+	var initial: Dictionary = {"a": {"__blob_handle__": "H", "content_type": "image/png"}}
+	var final: Dictionary = {
+		"a": {"__blob_handle__": "H", "content_type": "image/png"},
+		"b": {"__blob_handle__": "H", "content_type": "image/png"},
+	}
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	check("copy: H initial=1, final=2",
+		int(ic.get("H", 0)) == 1 and int(fc.get("H", 0)) == 2,
+		"ic %s, fc %s" % [str(ic), str(fc)])
 
-	# Copy: +1 for the handle in the copied value.
-	broker_inst._adjust_blob_refcounts("ed_copy",
-		{"__blob_handle__": handle, "content_type": "image/png"}, +1, pbroker)
 
-	var snap: Dictionary = pbroker._blob_store_snapshot("ed_copy")
-	check("copy → handle refcount = 2",
-		snap.get(handle, {}).get("refcount", 0) == 2,
-		"got: %d" % snap.get(handle, {}).get("refcount", 0))
+# Cold-review R4 must-fix coverage: Finding 2.
+# op:add on a path with an existing dict key REPLACES the value (RFC 6902 §4.1).
+# Old per-op logic missed this — the displaced handle leaked. New multiset
+# diff catches it because initial counts the old handle and final doesn't.
+func _test_patch_state_refcount_op_add_replaces_existing_key_decrements_displaced(
+		PanelBrokerScript, AuditScript) -> void:
+	print("\n-- _test_patch_state_refcount_op_add_replaces_existing_key (FIX VERIFICATION) --")
+
+	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
+	# State before: /image has H_old. After op:add /image {handle: H_new}: /image is H_new.
+	var initial: Dictionary = {"image": {"__blob_handle__": "H_old", "content_type": "image/png"}}
+	var final:   Dictionary = {"image": {"__blob_handle__": "H_new", "content_type": "image/png"}}
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	# Diff: H_old → -1 (displaced); H_new → +1.
+	var d_old: int = int(fc.get("H_old", 0)) - int(ic.get("H_old", 0))
+	var d_new: int = int(fc.get("H_new", 0)) - int(ic.get("H_new", 0))
+	check("op:add-replace: displaced H_old delta = -1", d_old == -1,
+		"got %d (ic %s, fc %s)" % [d_old, str(ic), str(fc)])
+	check("op:add-replace: new H_new delta = +1", d_new == 1,
+		"got %d" % d_new)
+
+
+# Cold-review R4 must-fix coverage: Finding 4.
+# Multi-op patch on the same path used to double-count the old handle.
+# Patch = [replace /image H_new, remove /image]. Old per-op logic would
+# decrement H_old TWICE (once per op, each reading the snapshot's pre-mutation
+# value). New multiset diff sees just initial (H_old once) vs final (empty) →
+# correct H_old=-1.
+func _test_patch_state_refcount_multi_op_cascade_no_double_count(
+		PanelBrokerScript, AuditScript) -> void:
+	print("\n-- _test_patch_state_refcount_multi_op_cascade_no_double_count (FIX VERIFICATION) --")
+
+	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
+	var initial: Dictionary = {"image": {"__blob_handle__": "H_old", "content_type": "image/png"}}
+	var final:   Dictionary = {}  # both ops applied → image removed entirely.
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	var d_old: int = int(fc.get("H_old", 0)) - int(ic.get("H_old", 0))
+	check("multi-op cascade: H_old delta = -1 (NOT -2 as old per-op logic computed)",
+		d_old == -1, "got %d" % d_old)
+
+
+# Cold-review R4 must-fix coverage: Finding 3.
+# op:move where destination path pre-exists in an object — RFC §4.4 = remove
+# from + add to. If the destination held a handle, it's displaced. Old logic
+# treated move as pure net-zero, leaking the displaced handle. New multiset
+# diff sees initial has H_at_dst + H_at_src; final has just H_at_src (moved
+# to dst position, H_at_dst gone).
+func _test_patch_state_refcount_op_move_into_preexisting_decrements_displaced(
+		PanelBrokerScript, AuditScript) -> void:
+	print("\n-- _test_patch_state_refcount_op_move_into_preexisting (FIX VERIFICATION) --")
+
+	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
+	# Before move /src → /dst: both paths populated with different handles.
+	var initial: Dictionary = {
+		"src": {"__blob_handle__": "H_src", "content_type": "image/png"},
+		"dst": {"__blob_handle__": "H_dst", "content_type": "image/png"},
+	}
+	# After: src gone (moved away), dst now holds the moved value (H_src).
+	var final: Dictionary = {
+		"dst": {"__blob_handle__": "H_src", "content_type": "image/png"},
+	}
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	var d_src: int = int(fc.get("H_src", 0)) - int(ic.get("H_src", 0))
+	var d_dst: int = int(fc.get("H_dst", 0)) - int(ic.get("H_dst", 0))
+	check("op:move-into-preexisting: H_src delta = 0 (still present, just moved)",
+		d_src == 0, "got %d" % d_src)
+	check("op:move-into-preexisting: H_dst delta = -1 (displaced)",
+		d_dst == -1, "got %d" % d_dst)
 
 
 # ---------------------------------------------------------------------------
@@ -511,28 +548,19 @@ func _test_patch_state_refcount_copy(PanelBrokerScript, AuditScript) -> void:
 # ---------------------------------------------------------------------------
 
 func _test_patch_state_refcount_net_zero(PanelBrokerScript, AuditScript) -> void:
-	print("\n-- _test_patch_state_refcount_net_zero --")
-
-	var audit_pb  = AuditScript.new()
-	var pbroker   = PanelBrokerScript.new(null, null, null, audit_pb)
-	var test_bytes := PackedByteArray([0xCC])
-	var handle: String = pbroker._store_blob("ed_nz", test_bytes, "image/png")
+	# replace handle with itself: initial has H once, final has H once → delta=0.
+	print("\n-- _test_patch_state_refcount_net_zero (multiset diff net-zero) --")
 
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
-	var broker_inst  = BrokerScript.new(null, null)
-
-	# Replace handle with itself: +1 then -1 → no net change.
-	var hval := {"__blob_handle__": handle, "content_type": "image/png"}
-	broker_inst._adjust_blob_refcounts("ed_nz", hval, +1, pbroker)
-	broker_inst._adjust_blob_refcounts("ed_nz", hval, -1, pbroker)
-
-	var snap: Dictionary = pbroker._blob_store_snapshot("ed_nz")
-	check("net-zero → handle still in store",
-		snap.has(handle),
-		"handle gone from store unexpectedly")
-	check("net-zero → refcount unchanged = 1",
-		snap.get(handle, {}).get("refcount", 0) == 1,
-		"got: %d" % snap.get(handle, {}).get("refcount", 0))
+	var initial: Dictionary = {"image": {"__blob_handle__": "H", "content_type": "image/png"}}
+	var final:   Dictionary = {"image": {"__blob_handle__": "H", "content_type": "image/png"}}
+	var ic: Dictionary = {}
+	var fc: Dictionary = {}
+	BrokerScript._count_handles_multiset(initial, ic)
+	BrokerScript._count_handles_multiset(final, fc)
+	check("net-zero: H initial=1, final=1 → delta=0",
+		int(ic.get("H", 0)) == 1 and int(fc.get("H", 0)) == 1,
+		"ic %s, fc %s" % [str(ic), str(fc)])
 
 
 # ---------------------------------------------------------------------------

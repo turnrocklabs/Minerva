@@ -947,47 +947,33 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 
 	var new_state: Variant = patch_result["doc"]
 
-	# --- Refcount maintenance --------------------------------------------------
-	# Applied AFTER successful patch. Walk ops; for each blob handle appearing
-	# in value (add/replace/copy) → +1. For each blob handle at the removed path
-	# in the OLD state (remove) or at the replaced path in the OLD state (replace)
-	# → -1. move is net zero (source removed = -1, dest added = +1 per handle, but
-	# the handle count in the doc doesn't change since move is remove+add of the
-	# same value). copy → +1 per handle in copied value (source unchanged).
+	# --- Refcount delta computation (cold-review R4 redesign) ------------------
+	# Compute deltas as the difference of two whole-state handle multisets:
+	# initial (pre-apply) vs final (post-apply). This is correct under all
+	# patch shapes — op:add that replaces an existing key, op:move into a
+	# pre-existing path, multi-op patches that mutate the same path, etc.
+	# All of those failed under the previous per-op delta scheme.
+	#
+	# Atomicity: the deltas are *computed* here but *committed* only after
+	# the panel-state write below succeeds. If apply_panel_state fails, the
+	# refcounts must not have moved.
+	var blob_deltas: Dictionary = {}  # handle:String -> delta:int (may be negative)
 	if pbroker_for_blobs != null and pbroker_for_blobs.has_method("_inc_blob_refcount"):
-		for i in range(patch.size()):
-			var op_dict: Dictionary = patch[i] as Dictionary
-			var op: String = str(op_dict.get("op", ""))
-
-			match op:
-				"add":
-					# +1 for every handle in the new value.
-					_adjust_blob_refcounts(editor_name, op_dict.get("value"), +1, pbroker_for_blobs)
-				"remove":
-					# -1 for every handle in the OLD state at that path.
-					var rpath: String = str(op_dict.get("path", ""))
-					var old_r: Dictionary = _JsonPointer.resolve(current_state, rpath)
-					if old_r.get("found", false):
-						_adjust_blob_refcounts(editor_name, old_r.get("value"), -1, pbroker_for_blobs)
-				"replace":
-					# +1 for new value handles, -1 for old path handles.
-					_adjust_blob_refcounts(editor_name, op_dict.get("value"), +1, pbroker_for_blobs)
-					var rpath_r: String = str(op_dict.get("path", ""))
-					var old_r2: Dictionary = _JsonPointer.resolve(current_state, rpath_r)
-					if old_r2.get("found", false):
-						_adjust_blob_refcounts(editor_name, old_r2.get("value"), -1, pbroker_for_blobs)
-				"move":
-					# Source value moves to dest — handles stay in the doc, net zero.
-					# No refcount change needed.
-					pass
-				"copy":
-					# +1 for every handle in the copied value (source ref unchanged).
-					var from_path_c: String = str(op_dict.get("from", ""))
-					var fr_c: Dictionary = _JsonPointer.resolve(current_state, from_path_c)
-					if fr_c.get("found", false):
-						_adjust_blob_refcounts(editor_name, fr_c.get("value"), +1, pbroker_for_blobs)
-				"test":
-					pass  # test op does not modify state or refs.
+		var initial_counts: Dictionary = {}
+		_count_handles_multiset(current_state, initial_counts)
+		var final_counts: Dictionary = {}
+		_count_handles_multiset(new_state, final_counts)
+		var all_handles: Dictionary = {}
+		for h_init in initial_counts.keys():
+			all_handles[h_init] = true
+		for h_fin in final_counts.keys():
+			all_handles[h_fin] = true
+		for h in all_handles.keys():
+			var before: int = int(initial_counts.get(h, 0))
+			var after: int = int(final_counts.get(h, 0))
+			var delta: int = after - before
+			if delta != 0:
+				blob_deltas[h] = delta
 
 	# --- Write new state back --------------------------------------------------
 	if not is_buffer_canonical:
@@ -998,6 +984,7 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 		var new_dict: Dictionary = new_state if new_state is Dictionary else {}
 		var resp2: Dictionary = await pbroker2.apply_panel_state(owner_pid, pname, new_dict)
 		if not resp2.get("success", false):
+			# State write failed → refcount deltas NOT committed (atomic guarantee).
 			return {
 				"success": false,
 				"error_code": str(resp2.get("error_code", "panel_state_unavailable")),
@@ -1010,6 +997,20 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 		var new_json: String = JSON.stringify(new_state)
 		buffer.apply_edit(new_json)
 		buffer.mark_dirty()
+
+	# --- Refcount commit (post state-write) -------------------------------------
+	# Only reached when the panel-state write above succeeded. Apply the
+	# deltas computed before the write — multi-step inc/dec per handle as
+	# the multiset diff dictates.
+	if pbroker_for_blobs != null and pbroker_for_blobs.has_method("_inc_blob_refcount"):
+		for h in blob_deltas.keys():
+			var d: int = int(blob_deltas[h])
+			if d > 0:
+				for _i in range(d):
+					pbroker_for_blobs._inc_blob_refcount(editor_name, h)
+			elif d < 0:
+				for _i in range(-d):
+					pbroker_for_blobs._dec_blob_refcount(editor_name, h)
 
 	# Mark dirty (non-canonical path also calls apply_panel_state which handles dirty
 	# internally via CHANNEL_HOST_OWNED_SAVE_SET_REQUEST, but explicit mark here
@@ -1157,31 +1158,30 @@ func _validate_blob_handles_in_value(
 	return {}
 
 
-## Adjust refcounts for all {__blob_handle__} references in a value tree.
-## delta should be +1 or -1.
-## pbroker must expose _inc_blob_refcount / _dec_blob_refcount.
-func _adjust_blob_refcounts(
-		editor_name: String, value: Variant, delta: int, pbroker
-) -> void:
-	if pbroker == null:
-		return
+## Walk a value tree and count blob handles into a multiset.
+##   out_counts: handle (String) -> count (int). Same handle appearing N times
+##   under different paths → count=N. Used by the patch_state refcount
+##   computation: net delta = final_counts[h] - initial_counts[h].
+##
+## Distinct from _collect_blob_handles (set semantics, key->true) which the
+## audit summary uses. The multiset form is necessary because op:add of a
+## value that already exists at the path REPLACES (RFC 6902 §4.1), so the
+## old value's handle leaves the doc and the new value's handle enters —
+## a per-path "did this handle appear" check would miss that.
+static func _count_handles_multiset(value: Variant, out_counts: Dictionary) -> void:
 	if value is Dictionary:
 		var d: Dictionary = value as Dictionary
 		if d.has("__blob_handle__") and d["__blob_handle__"] is String:
-			var handle: String = d["__blob_handle__"] as String
-			if handle.is_empty():
-				return
-			if delta > 0 and pbroker.has_method("_inc_blob_refcount"):
-				pbroker._inc_blob_refcount(editor_name, handle)
-			elif delta < 0 and pbroker.has_method("_dec_blob_refcount"):
-				pbroker._dec_blob_refcount(editor_name, handle)
+			var h: String = d["__blob_handle__"] as String
+			if not h.is_empty():
+				out_counts[h] = int(out_counts.get(h, 0)) + 1
 			return
 		for k in d.keys():
-			_adjust_blob_refcounts(editor_name, d[k], delta, pbroker)
+			_count_handles_multiset(d[k], out_counts)
 	elif value is Array:
 		var arr: Array = value as Array
 		for item in arr:
-			_adjust_blob_refcounts(editor_name, item, delta, pbroker)
+			_count_handles_multiset(item, out_counts)
 
 
 ## Collect all __blob_handle__ strings from a value tree into a set dict
@@ -1748,7 +1748,7 @@ func _check_editor_ownership(plugin_id: String, editor, editor_name: String) -> 
 ## arrays.
 const _AUDIT_REDACT_FIELDS := [
 	# Document-write payload fields (set_state buffer body, raw bytes/data).
-	"buffer_text", "bytes", "data", "content", "value",
+	"buffer_text", "bytes", "bytes_b64", "data", "content", "value",
 	# Credential / auth field names commonly carried by mcp.proxy: tools and
 	# secrets: capability args. Forward-looks at T5+ MCP exposure.
 	"password", "token", "secret", "api_key", "authorization",
