@@ -1597,7 +1597,6 @@ static func _editor_kind_string(ed_type: int) -> String:
 		_: return "unknown"
 
 
-## Resolve the canonical DocumentBuffer for an editor, if any.
 ## Resolve the canonical DocumentBuffer for an editor (or null if the editor
 ## is panel-canonical / anonymous / unbacked).
 ##
@@ -1683,6 +1682,19 @@ func _describe_editor_summary(editor) -> Dictionary:
 
 
 ## Full state record for get_state.
+##
+## INVARIANT: `buffer.text` is emitted raw to the wire with no blob-strip pass.
+## This is safe TODAY because the only producer of buffer-canonical state via
+## `_resolve_editor_buffer` is the paired_dsl pattern (PluginScenePanelBroker
+## .attach_buffer_to_panel), and all paired_dsl plugins in-tree carry plain
+## text (e.g. `.mcad` DSL source). A future paired_dsl plugin emitting JSON
+## with `{__blob__, content_type, bytes}` envelopes WOULD bypass the strip
+## walker here — same R3 coupling class as phase 5 R7's get_node bypass.
+##
+## If such a plugin is added: detect JSON in `buffer.text`, run the strip
+## walker on the parsed value, re-stringify before emitting. Companion
+## docket follow-up tracks this latent gap; the missing paired_dsl
+## `get_state` integration test would have caught it in review.
 func _describe_editor_state(editor) -> Dictionary:
 	var ed_type: int = int(editor.type) if "type" in editor else -1
 	var pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
