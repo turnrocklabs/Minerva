@@ -1510,9 +1510,18 @@ func _rehydrate_blobs_for_inbound(editor_name: String, state: Dictionary, plugin
 	}
 
 
+## RFC 6901 §4 escape: in dictionary keys, `~` → `~0`, `/` → `/`. Order matters
+## (decode is `~1` then `~0`; encode is the reverse — `~` first, then `/`).
+## Used by the rehydrate walker so error paths remain unambiguous when plugin
+## schemas contain keys with reserved characters.
+static func _escape_pointer_token(token: String) -> String:
+	return token.replace("~", "~0").replace("/", "~1")
+
+
 ## Internal recursive worker for _rehydrate_blobs_for_inbound.
 ## path is a JSON-pointer-style string (e.g. "/slides/2/tiles/0/image") for
-## error messages.  resolved_handles is appended to in place on each inc.
+## error messages, RFC 6901 escaped so keys containing `/` or `~` remain
+## unambiguous. resolved_handles is appended to in place on each inc.
 ## Returns a sentinel dict {__rehydrate_error__: true, handle, path} on failure.
 func _rehydrate_walk(
 		editor_name: String,
@@ -1543,9 +1552,11 @@ func _rehydrate_walk(
 				"bytes": rec["bytes"] as PackedByteArray,
 			}
 		# Not a handle placeholder — recurse into all values.
+		# Walk path uses RFC 6901 JSON Pointer escaping so error envelopes
+		# remain unambiguous when plugin schemas contain keys with `/` or `~`.
 		var out: Dictionary = {}
 		for k in d.keys():
-			var child_path: String = path + "/" + str(k)
+			var child_path: String = path + "/" + _escape_pointer_token(str(k))
 			var child_result: Variant = _rehydrate_walk(editor_name, d[k], child_path, resolved_handles)
 			if child_result is Dictionary and (child_result as Dictionary).has("__rehydrate_error__"):
 				return child_result

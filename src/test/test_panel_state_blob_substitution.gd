@@ -194,6 +194,7 @@ func _run_tests() -> void:
 	await _test_refcount_failed_rehydrate_no_change()
 	_test_strip_malformed_wrapper_passthrough()
 	_test_rehydrate_no_handle_placeholders_passthrough()
+	_test_rehydrate_error_path_escapes_rfc6901_reserved_chars()
 
 
 # ---------------------------------------------------------------------------
@@ -599,3 +600,28 @@ func _test_rehydrate_no_handle_placeholders_passthrough() -> void:
 	var out: Dictionary = result.get("state", {})
 	check_eq("version preserved", int(out.get("version", 0)), 3)
 	check_eq("slides preserved", (out.get("slides", []) as Array).size(), 1)
+
+
+# Cold-review R3 follow-up: walk path uses RFC 6901 §4 escaping for `~` and
+# `/` in keys so error envelopes remain unambiguous when plugin schemas
+# contain reserved characters. Previously the raw key was concatenated, so a
+# key `"a/b"` collided with a structural slash.
+func _test_rehydrate_error_path_escapes_rfc6901_reserved_chars() -> void:
+	print("\n-- _test_rehydrate_error_path_escapes_rfc6901_reserved_chars --")
+	var broker = _make_broker()
+	# Place a bad handle under a key that contains BOTH reserved chars.
+	# RFC 6901 encode: `~` → `~0`, `/` → `~1`. Order matters on encode
+	# (must escape `~` first, otherwise `~1` would be double-encoded).
+	var state: Dictionary = {
+		"a/b~c": {
+			"__blob_handle__": "blob-does-not-exist",
+			"content_type": "image/png",
+		},
+	}
+	var result: Dictionary = broker._rehydrate_blobs_for_inbound(TEST_EDITOR, state, TEST_PLUGIN_ID)
+	check("rehydrate path escape: failure surfaced", not result.get("success", true))
+	check_eq("error_code is unknown_blob_handle",
+			result.get("error_code", "") as String, "unknown_blob_handle")
+	# The walk path should be "/a~1b~0c" — RFC 6901 escaped.
+	check_eq("walk path uses RFC 6901 escaping",
+			result.get("path", "") as String, "/a~1b~0c")
