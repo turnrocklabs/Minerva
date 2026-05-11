@@ -248,6 +248,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_documents_get_node(plugin_id, args)
 		"host.documents.get_blob":
 			named_result = _handle_host_documents_get_blob(plugin_id, args)
+		"host.documents.patch_state":
+			named_result = await _handle_host_documents_patch_state(plugin_id, args)
+		"host.documents.put_blob":
+			named_result = _handle_host_documents_put_blob(plugin_id, args)
 		"host.files.read":
 			named_result = _handle_host_files_read(plugin_id, args)
 		"host.files.write":
@@ -799,6 +803,403 @@ func _handle_host_documents_get_blob(plugin_id: String, args: Dictionary) -> Dic
 		"content_type": content_type,
 		"bytes_b64": Marshalls.raw_to_base64(bytes),
 	})
+
+
+# ---------------------------------------------------------------------------
+# host.documents.patch_state + put_blob handlers (phase 5 R4 — write caps)
+# ---------------------------------------------------------------------------
+
+## Apply an RFC 6902 JSON Patch to an editor's panel state, atomically.
+##
+## Args: {editor_name: String, json_patch: Array}
+##   json_patch: non-empty Array of op Dictionaries, each with an "op" key.
+##
+## Behaviour:
+##   1. Resolve editor and obtain current panel state (same logic as get_state).
+##   2. Pre-validate blob handle references in patch ops — any __blob_handle__
+##      value must exist in the editor's blob store BEFORE apply. Unknown handle
+##      → reject atomically with unknown_blob_handle + op_index.
+##   3. Apply patch via JsonPatch.apply (atomic — either all ops succeed or the
+##      original state is returned untouched and patch_failed is returned).
+##   4. After successful apply, walk patch ops and update refcounts:
+##      add/copy → +1 per handle in value; remove → -1 per handle at old path;
+##      replace → +1 for new handle, -1 for old handle; move → net 0 per handle
+##      (source removed, dest added); test → 0.
+##   5. Write new state back to panel (apply_panel_state for plugin-scene
+##      non-canonical editors, or serialize-to-JSON for buffer-canonical).
+##   6. Mark editor dirty.
+##
+## Audit entry carries shape-only summary (no op values, no blob bytes):
+##   patch_op_count, patch_op_kinds, patch_paths, blob_handle_refs.
+##
+## On success: {editor_name, op_count, applied_ops, dirty: true}
+## Errors: schema_validation_failed, editor_not_found, not_buffer_canonical
+##         (host-owned editors), unknown_blob_handle (pre-validation),
+##         patch_failed (apply failure).
+func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> Dictionary:
+	# Schema validation.
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.patch_state requires 'editor_name'")
+
+	var json_patch: Variant = args.get("json_patch", null)
+	if not (json_patch is Array):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.patch_state: 'json_patch' must be a non-empty Array")
+	var patch: Array = json_patch as Array
+	if patch.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.patch_state: 'json_patch' must be a non-empty Array")
+
+	# Each element must be a Dictionary with an "op" key.
+	for i in range(patch.size()):
+		if not (patch[i] is Dictionary):
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.patch_state: json_patch[%d] must be a Dictionary" % i)
+		if not (patch[i] as Dictionary).has("op"):
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.documents.patch_state: json_patch[%d] missing required 'op' key" % i)
+
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	var ownership_err := _check_editor_ownership(plugin_id, ed, editor_name)
+	if not ownership_err.is_empty():
+		return ownership_err
+
+	# Determine editor path (plugin-scene non-canonical vs buffer-canonical).
+	var ed_type: int = int(ed.type) if "type" in ed else -1
+
+	# Host-owned editors (text, graphics, etc.) are not JSON-navigable via patch.
+	if ed_type != Editor.Type.PLUGIN_SCENE:
+		return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+
+	var buffer: DocumentBuffer = _resolve_editor_buffer(ed)
+	var is_buffer_canonical: bool = buffer != null
+
+	# Obtain current panel state for pre-validation and apply.
+	var current_state: Variant = null
+	var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
+	var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+
+	if not is_buffer_canonical:
+		if owner_pid.is_empty() or pname.is_empty():
+			return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+		var pbroker = _get_panel_broker()
+		if pbroker == null or not pbroker.has_method("request_panel_state"):
+			return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+		var resp: Dictionary = await pbroker.request_panel_state(owner_pid, pname)
+		if not resp.get("success", false):
+			return {
+				"success": false,
+				"error_code": str(resp.get("error_code", "panel_state_unavailable")),
+				"error_message": str(resp.get("error_message", "")),
+				"plugin_id": plugin_id,
+				"editor_name": editor_name,
+			}
+		current_state = resp.get("state", {})
+	else:
+		# Buffer-canonical: parse buffer text as JSON.
+		var parsed = JSON.parse_string(buffer.text if buffer.text != "" else "{}")
+		if parsed == null:
+			current_state = {}
+		else:
+			current_state = parsed
+
+	# --- Pre-validate blob handle references -----------------------------------
+	# Walk each op's value / from fields and collect any __blob_handle__ refs.
+	# Any unknown handle → reject the entire patch before touching state.
+	var pbroker_for_blobs = _get_panel_broker()
+	for i in range(patch.size()):
+		var op_dict: Dictionary = patch[i] as Dictionary
+		var op: String = str(op_dict.get("op", ""))
+
+		# Ops that carry a new value: add, replace, test.
+		if op in ["add", "replace", "test"] and op_dict.has("value"):
+			var val_err := _validate_blob_handles_in_value(
+				plugin_id, editor_name, op_dict["value"], i, pbroker_for_blobs)
+			if not val_err.is_empty():
+				return val_err
+
+		# copy op: value comes from the "from" path in the current state.
+		if op == "copy" and op_dict.has("from"):
+			var from_path: String = str(op_dict["from"])
+			var fr: Dictionary = _JsonPointer.resolve(current_state, from_path)
+			if fr.get("found", false):
+				var val_err := _validate_blob_handles_in_value(
+					plugin_id, editor_name, fr.get("value"), i, pbroker_for_blobs)
+				if not val_err.is_empty():
+					return val_err
+
+	# --- Apply patch atomically via JsonPatch.apply ----------------------------
+	const JsonPatchScript := preload("res://Scripts/Services/Plugins/JsonPatch.gd")
+	var patch_result: Dictionary = JsonPatchScript.apply(current_state, patch)
+	if not patch_result.get("success", false):
+		var err: Dictionary = patch_result.get("error", {})
+		return PluginErrors.patch_failed(
+			plugin_id, editor_name,
+			int(err.get("op_index", 0)),
+			str(err.get("code", "unknown")),
+			str(err.get("message", "Patch application failed")),
+		)
+
+	var new_state: Variant = patch_result["doc"]
+
+	# --- Refcount maintenance --------------------------------------------------
+	# Applied AFTER successful patch. Walk ops; for each blob handle appearing
+	# in value (add/replace/copy) → +1. For each blob handle at the removed path
+	# in the OLD state (remove) or at the replaced path in the OLD state (replace)
+	# → -1. move is net zero (source removed = -1, dest added = +1 per handle, but
+	# the handle count in the doc doesn't change since move is remove+add of the
+	# same value). copy → +1 per handle in copied value (source unchanged).
+	if pbroker_for_blobs != null and pbroker_for_blobs.has_method("_inc_blob_refcount"):
+		for i in range(patch.size()):
+			var op_dict: Dictionary = patch[i] as Dictionary
+			var op: String = str(op_dict.get("op", ""))
+
+			match op:
+				"add":
+					# +1 for every handle in the new value.
+					_adjust_blob_refcounts(editor_name, op_dict.get("value"), +1, pbroker_for_blobs)
+				"remove":
+					# -1 for every handle in the OLD state at that path.
+					var rpath: String = str(op_dict.get("path", ""))
+					var old_r: Dictionary = _JsonPointer.resolve(current_state, rpath)
+					if old_r.get("found", false):
+						_adjust_blob_refcounts(editor_name, old_r.get("value"), -1, pbroker_for_blobs)
+				"replace":
+					# +1 for new value handles, -1 for old path handles.
+					_adjust_blob_refcounts(editor_name, op_dict.get("value"), +1, pbroker_for_blobs)
+					var rpath_r: String = str(op_dict.get("path", ""))
+					var old_r2: Dictionary = _JsonPointer.resolve(current_state, rpath_r)
+					if old_r2.get("found", false):
+						_adjust_blob_refcounts(editor_name, old_r2.get("value"), -1, pbroker_for_blobs)
+				"move":
+					# Source value moves to dest — handles stay in the doc, net zero.
+					# No refcount change needed.
+					pass
+				"copy":
+					# +1 for every handle in the copied value (source ref unchanged).
+					var from_path_c: String = str(op_dict.get("from", ""))
+					var fr_c: Dictionary = _JsonPointer.resolve(current_state, from_path_c)
+					if fr_c.get("found", false):
+						_adjust_blob_refcounts(editor_name, fr_c.get("value"), +1, pbroker_for_blobs)
+				"test":
+					pass  # test op does not modify state or refs.
+
+	# --- Write new state back --------------------------------------------------
+	if not is_buffer_canonical:
+		var pbroker2 = _get_panel_broker()
+		if pbroker2 == null or not pbroker2.has_method("apply_panel_state"):
+			return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+		# new_state may be any Variant (root-replace patch); cast defensively.
+		var new_dict: Dictionary = new_state if new_state is Dictionary else {}
+		var resp2: Dictionary = await pbroker2.apply_panel_state(owner_pid, pname, new_dict)
+		if not resp2.get("success", false):
+			return {
+				"success": false,
+				"error_code": str(resp2.get("error_code", "panel_state_unavailable")),
+				"error_message": str(resp2.get("error_message", "")),
+				"plugin_id": plugin_id,
+				"editor_name": editor_name,
+			}
+	else:
+		# Buffer-canonical: serialize new state to JSON and write to buffer.
+		var new_json: String = JSON.stringify(new_state)
+		buffer.apply_edit(new_json)
+		buffer.mark_dirty()
+
+	# Mark dirty (non-canonical path also calls apply_panel_state which handles dirty
+	# internally via CHANNEL_HOST_OWNED_SAVE_SET_REQUEST, but explicit mark here
+	# ensures the editor tab shows the unsaved indicator on buffer-canonical path).
+	if is_buffer_canonical and buffer != null:
+		buffer.mark_dirty()
+
+	# --- Build audit shape-only summary ----------------------------------------
+	var op_kinds_set: Dictionary = {}
+	var paths_set: Dictionary = {}
+	var handle_refs_set: Dictionary = {}
+	for op_d in patch:
+		if not (op_d is Dictionary):
+			continue
+		var op_str: String = str((op_d as Dictionary).get("op", ""))
+		op_kinds_set[op_str] = true
+		for pkey in ["path", "from"]:
+			if (op_d as Dictionary).has(pkey):
+				var tok: String = str((op_d as Dictionary)[pkey])
+				# Top-level path = first two tokens of JSON pointer (e.g. "/slides")
+				var parts: PackedStringArray = tok.split("/", false)
+				paths_set["/" + (parts[0] if parts.size() > 0 else tok)] = true
+		if (op_d as Dictionary).has("value"):
+			_collect_blob_handles((op_d as Dictionary)["value"], handle_refs_set)
+
+	# Inject the shape-only summary into args so _audit_dispatch picks it up.
+	args["patch_op_count"]   = patch.size()
+	args["patch_op_kinds"]   = op_kinds_set.keys()
+	args["patch_paths"]      = paths_set.keys()
+	args["blob_handle_refs"] = handle_refs_set.keys()
+	# Redact the raw json_patch so op values don't appear in the audit log.
+	args.erase("json_patch")
+
+	print("[CapabilityBroker] Plugin '%s' patch_state on editor '%s' (%d ops)" % [
+		plugin_id, editor_name, patch.size()])
+	return PluginErrors.success({
+		"editor_name": editor_name,
+		"op_count": patch.size(),
+		"applied_ops": patch.size(),
+		"dirty": true,
+	})
+
+
+## Upload blob bytes to the per-editor blob store, returning a handle.
+##
+## Args: {editor_name: String, content_type: String, bytes_b64: String}
+##   bytes_b64: Marshalls.raw_to_base64() encoding of the blob bytes.
+##
+## The returned handle may be used in a subsequent patch_state op as a
+## {__blob_handle__: handle, content_type: type} reference in a value field.
+##
+## The blob is stored at refcount=1 immediately. It is NOT referenced by any
+## panel state until a subsequent patch_state adds it. There is a brief window
+## where the store has a refcount-1 entry unreferenced by state — this is
+## intentional and safe. The blob will be GC'd when:
+##   - A patch_state remove/replace op decrements its refcount to 0, OR
+##   - The editor is closed (_clear_blobs_for_editor).
+## There is no automatic timeout. Plugin authors should always follow
+## put_blob with a patch_state that references the returned handle.
+##
+## On success: {editor_name, blob_handle: String, content_type: String}
+## Errors: schema_validation_failed, editor_not_found.
+func _handle_host_documents_put_blob(plugin_id: String, args: Dictionary) -> Dictionary:
+	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if editor_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.put_blob requires 'editor_name'")
+
+	var content_type: String = str(args.get("content_type", "")).strip_edges()
+	if content_type.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.put_blob requires 'content_type'")
+
+	var bytes_b64: String = str(args.get("bytes_b64", "")).strip_edges()
+	if bytes_b64.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.put_blob requires 'bytes_b64'")
+
+	# Editor existence check before spending time on base64 decode.
+	var ed = _find_editor_by_name(editor_name)
+	if ed == null:
+		return PluginErrors.editor_not_found(plugin_id, editor_name)
+
+	# Decode base64 bytes.
+	var bytes: PackedByteArray = Marshalls.base64_to_raw(bytes_b64)
+	if bytes.is_empty() and not bytes_b64.is_empty():
+		# Marshalls.base64_to_raw returns empty on invalid base64.
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.put_blob: 'bytes_b64' is not valid base64 (decoded to empty)")
+
+	var pbroker = _get_panel_broker()
+	if pbroker == null or not pbroker.has_method("_store_blob"):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.documents.put_blob: panel broker not available")
+
+	var handle: String = pbroker._store_blob(editor_name, bytes, content_type)
+
+	print("[CapabilityBroker] Plugin '%s' put_blob on editor '%s' → handle '%s' (%d bytes, %s)" % [
+		plugin_id, editor_name, handle, bytes.size(), content_type])
+	return PluginErrors.success({
+		"editor_name": editor_name,
+		"blob_handle": handle,
+		"content_type": content_type,
+	})
+
+
+# ---------------------------------------------------------------------------
+# patch_state helpers
+# ---------------------------------------------------------------------------
+
+## Walk a value tree and return a non-empty PluginErrors dict if any
+## {__blob_handle__: H} reference is unknown in the editor's blob store.
+## Returns {} (empty) when all handles are valid or none are present.
+## op_index is the patch array index being validated (for error attribution).
+func _validate_blob_handles_in_value(
+		plugin_id: String, editor_name: String,
+		value: Variant, op_index: int, pbroker
+) -> Dictionary:
+	if value is Dictionary:
+		var d: Dictionary = value as Dictionary
+		# Check for a blob handle placeholder.
+		if d.has("__blob_handle__") and d["__blob_handle__"] is String:
+			var handle: String = d["__blob_handle__"] as String
+			if handle.is_empty():
+				return {}  # Empty handle — not a valid placeholder, pass through.
+			if pbroker == null or not pbroker.has_method("_get_blob_record"):
+				return PluginErrors.unknown_blob_handle(plugin_id, editor_name, handle, op_index)
+			var rec: Dictionary = pbroker._get_blob_record(editor_name, handle)
+			if not rec.get("found", false):
+				return PluginErrors.unknown_blob_handle(plugin_id, editor_name, handle, op_index)
+			return {}
+		# Recurse into all dict values.
+		for k in d.keys():
+			var child_err := _validate_blob_handles_in_value(
+				plugin_id, editor_name, d[k], op_index, pbroker)
+			if not child_err.is_empty():
+				return child_err
+	elif value is Array:
+		var arr: Array = value as Array
+		for item in arr:
+			var child_err := _validate_blob_handles_in_value(
+				plugin_id, editor_name, item, op_index, pbroker)
+			if not child_err.is_empty():
+				return child_err
+	return {}
+
+
+## Adjust refcounts for all {__blob_handle__} references in a value tree.
+## delta should be +1 or -1.
+## pbroker must expose _inc_blob_refcount / _dec_blob_refcount.
+func _adjust_blob_refcounts(
+		editor_name: String, value: Variant, delta: int, pbroker
+) -> void:
+	if pbroker == null:
+		return
+	if value is Dictionary:
+		var d: Dictionary = value as Dictionary
+		if d.has("__blob_handle__") and d["__blob_handle__"] is String:
+			var handle: String = d["__blob_handle__"] as String
+			if handle.is_empty():
+				return
+			if delta > 0 and pbroker.has_method("_inc_blob_refcount"):
+				pbroker._inc_blob_refcount(editor_name, handle)
+			elif delta < 0 and pbroker.has_method("_dec_blob_refcount"):
+				pbroker._dec_blob_refcount(editor_name, handle)
+			return
+		for k in d.keys():
+			_adjust_blob_refcounts(editor_name, d[k], delta, pbroker)
+	elif value is Array:
+		var arr: Array = value as Array
+		for item in arr:
+			_adjust_blob_refcounts(editor_name, item, delta, pbroker)
+
+
+## Collect all __blob_handle__ strings from a value tree into a set dict
+## (key→true). Used for the audit summary's blob_handle_refs field.
+static func _collect_blob_handles(value: Variant, out_set: Dictionary) -> void:
+	if value is Dictionary:
+		var d: Dictionary = value as Dictionary
+		if d.has("__blob_handle__") and d["__blob_handle__"] is String:
+			var h: String = d["__blob_handle__"] as String
+			if not h.is_empty():
+				out_set[h] = true
+			return
+		for k in d.keys():
+			_collect_blob_handles(d[k], out_set)
+	elif value is Array:
+		var arr: Array = value as Array
+		for item in arr:
+			_collect_blob_handles(item, out_set)
 
 
 # ---------------------------------------------------------------------------

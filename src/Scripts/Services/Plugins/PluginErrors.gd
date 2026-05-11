@@ -26,6 +26,8 @@ const CODE_IO_ERROR = "io_error"
 const CODE_FILESYSTEM_DISABLED = "filesystem_disabled"
 const CODE_FORMAT_NOT_SUPPORTED = "format_not_supported"
 const CODE_BLOB_NOT_FOUND = "blob_not_found"
+const CODE_UNKNOWN_BLOB_HANDLE = "unknown_blob_handle"
+const CODE_PATCH_FAILED = "patch_failed"
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +224,42 @@ static func blob_not_found(plugin_id: String, editor_name: String, blob_handle: 
 		"plugin_id": plugin_id,
 		"editor_name": editor_name,
 		"blob_handle": blob_handle,
+	}
+
+
+## A blob handle referenced in a patch_state op is not present in the editor's
+## blob store. Reported before the patch is applied (pre-validation pass).
+## op_index is the 0-based index of the offending op in the json_patch array.
+static func unknown_blob_handle(
+		plugin_id: String, editor_name: String, blob_handle: String, op_index: int
+) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_UNKNOWN_BLOB_HANDLE,
+		"error_message": "Unknown blob handle '%s' in patch op %d on editor '%s'" % [
+			blob_handle, op_index, editor_name,
+		],
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"blob_handle": blob_handle,
+		"op_index": op_index,
+	}
+
+
+## JSON Patch application failed. op_index is the 0-based index of the failing
+## op; op_error_code is one of JsonPatch's ERR_* constants.
+static func patch_failed(
+		plugin_id: String, editor_name: String,
+		op_index: int, op_error_code: String, message: String
+) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_PATCH_FAILED,
+		"error_message": "Patch failed at op %d: %s" % [op_index, message],
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"op_index": op_index,
+		"op_error_code": op_error_code,
 	}
 
 
