@@ -698,6 +698,12 @@ func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dic
 	print("[CapabilityBroker] Plugin '%s' invoking host.documents.get_node (editor='%s', path='%s')" % [plugin_id, editor_name, path])
 
 	# Obtain the panel state the same way get_state does for plugin-scene editors.
+	# Error classification (cold-review R2 follow-up): plugin authors must be
+	# able to distinguish "this editor doesn't expose a navigable JSON tree"
+	# from "the path didn't resolve in a navigable tree." So non-navigable
+	# editor configurations return `not_buffer_canonical` (mirroring get_state's
+	# convention at line 466) rather than silently returning `found=false` from
+	# an empty fallback document.
 	var state: Variant = null
 	var ed_type: int = int(ed.type) if "type" in ed else -1
 	if ed_type == Editor.Type.PLUGIN_SCENE:
@@ -707,7 +713,8 @@ func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dic
 			var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
 			var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
 			if owner_pid.is_empty() or pname.is_empty():
-				return PluginErrors.editor_not_found(plugin_id, editor_name)
+				# Matches get_state's behavior at L466 for the same precondition.
+				return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
 			var pbroker = _get_panel_broker()
 			if pbroker != null and pbroker.has_method("request_panel_state"):
 				var resp: Dictionary = await pbroker.request_panel_state(owner_pid, pname)
@@ -718,6 +725,7 @@ func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dic
 						"error_message": str(resp.get("error_message", "")),
 						"plugin_id": plugin_id,
 						"editor_name": editor_name,
+						"path": path,
 					}
 				state = resp.get("state", {})
 			else:
@@ -725,13 +733,18 @@ func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dic
 				state = {}
 		else:
 			# Buffer-canonical: parse buffer text as JSON to navigate it.
+			# Non-JSON buffer (e.g. .mcad DSL plain text) is not navigable —
+			# surface as not_buffer_canonical so callers don't confuse it with
+			# "valid JSON but path missing."
 			var parsed = JSON.parse_string(buffer.text)
-			state = parsed if parsed != null else {}
+			if parsed == null or not (parsed is Dictionary or parsed is Array):
+				return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
+			state = parsed
 	else:
-		# Host-owned editor (text, graphics, etc.): not navigable via JSON Pointer.
-		# Return found=false at root rather than an error; callers that
-		# erroneously probe non-panel editors get a consistent non-error shape.
-		state = {}
+		# Host-owned editor (text, graphics, etc.): not navigable via JSON
+		# Pointer. Return not_buffer_canonical so callers can tell "wrong
+		# editor type" from "valid panel but path missing."
+		return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
 
 	var r: Dictionary = _JsonPointer.resolve(state, path)
 	return PluginErrors.success({
