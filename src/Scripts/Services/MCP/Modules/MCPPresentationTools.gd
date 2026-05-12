@@ -103,7 +103,6 @@ func get_tool_names() -> Array[String]:
 	# get_state) use them.
 	return [
 		"minerva_presentation_open_deck",
-		"minerva_presentation_get_state",
 	]
 
 
@@ -136,16 +135,7 @@ func register_tools() -> void:
 
 	# T6 R5: add_spreadsheet_tile / modify_spreadsheet_cells / resize_spreadsheet migrated to plugin.
 
-	server._register_tool("minerva_presentation_get_state",
-		"Read the live UI state of an open presentation tab — useful for HITL (\"what slide is the user on?\"). Returns selected_slide_index plus slide_count and the title of the selected slide. Tab must be open; this tool does NOT accept a path because state only exists in a live editor.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-			},
-			"required": ["tab_name"],
-		}
-	, "presentation")
+	# T6 tail R5: minerva_presentation_get_state migrated to plugin (panel UI state piggybacks on host_owned_save.get_request via _ui_state sibling key).
 
 	# T6 R2: minerva_presentation_list_annotation_kinds migrated to plugin.
 	# T6 tail: minerva_presentation_{list_open,add,remove,set_resolved}_annotation migrated to plugin.
@@ -177,8 +167,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		# T6 R7: set_slide_background moved to plugin.
 		# T6 tail R4: add_image_tile moved to plugin.
 		# T6 tail R3: modify_tile moved to plugin.
-		"minerva_presentation_get_state":
-			return _get_state(arguments)
+		# T6 tail R5: get_state moved to plugin.
 		# T6 R2: minerva_presentation_list_annotation_kinds moved to plugin.
 		# T6 tail: minerva_presentation_{list_open,add,remove,set_resolved}_annotation moved to plugin.
 		# T6 R5: spreadsheet ops (add_spreadsheet_tile, modify_spreadsheet_cells,
@@ -480,26 +469,7 @@ func _find_tile_in_slide(slide: Dictionary, tile_id: String) -> Dictionary:
 
 ## Reads live UI state from an open presentation tab. Tab-only — there's no
 ## "selected slide" concept for an on-disk file.
-func _get_state(args: Dictionary) -> Dictionary:
-	var tab_name: String = String(args.get("tab_name", "")).strip_edges()
-	if tab_name.is_empty():
-		return MCPToolUtils.error("tab_name is required")
-	var panel: Variant = _find_panel_by_tab_name(tab_name)
-	if panel == null:
-		return MCPToolUtils.error("No open presentation tab named: %s" % tab_name)
-	if not panel.has_method("get_selected_slide_index"):
-		return MCPToolUtils.error("Panel does not expose selected slide (plugin may be out of date)")
-	var deck: Dictionary = panel.get_deck()
-	var slides: Array = deck.get("slides", []) as Array
-	var idx: int = int(panel.get_selected_slide_index())
-	var slide_title: String = ""
-	if idx >= 0 and idx < slides.size():
-		slide_title = String((slides[idx] as Dictionary).get("title", ""))
-	return MCPToolUtils.success({
-		"selected_slide_index": idx,
-		"slide_count": slides.size(),
-		"slide_title": slide_title,
-	})
+# T6 tail R5: _get_state moved to plugin.
 
 
 # T6 R3: _set_slide_title and _set_aspect moved to plugin.
