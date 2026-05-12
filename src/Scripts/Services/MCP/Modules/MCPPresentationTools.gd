@@ -104,7 +104,6 @@ func get_tool_names() -> Array[String]:
 	return [
 		"minerva_presentation_open_deck",
 		"minerva_presentation_add_image_tile",
-		"minerva_presentation_modify_tile",
 		"minerva_presentation_get_state",
 	]
 
@@ -132,33 +131,7 @@ func register_tools() -> void:
 	# T6 R7: minerva_presentation_set_slide_background migrated to plugin.
 
 	# T6 R4: minerva_presentation_add_text_tile migrated to plugin.
-
-	server._register_tool("minerva_presentation_modify_tile",
-		"Modify fields on an existing tile by id. Every field is optional; only specified ones change. Coords clamped to [0,1] when provided. For image tiles, provide AT MOST ONE of image_path, image_base64, solid_color, source_graphics_editor to replace tile.src in place — kind cannot change (remove + add for that). For text tiles, content/text_mode update straightforwardly. font_size sets fixed-font mode (8..200 px); pass 0 to clear and revert to coupled mode (font derived from tile.h). auto_fit=true picks the largest font fitting (w, h) at any viewport (font_size wins if both set); pass auto_fit=false to clear the field.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-				"tile_id": {"type": "string"},
-				"x": {"type": "number"},
-				"y": {"type": "number"},
-				"w": {"type": "number"},
-				"h": {"type": "number"},
-				"rotation": {"type": "number"},
-				"content": {"type": "string"},
-				"text_mode": {"type": "string", "description": "plain | bullet | numbered (text tiles only)"},
-				"font_size": {"type": "integer", "description": "Fixed font size in px (8..200). 0 clears the override (coupled mode). Text tiles only."},
-				"auto_fit": {"type": "boolean", "description": "Text tiles only. true = enable auto-fit; false = clear the field. font_size wins when both set."},
-				"image_path": {"type": "string"},
-				"image_base64": {"type": "string"},
-				"solid_color": {"type": "string"},
-				"source_graphics_editor": {"type": "string"},
-			},
-			"required": ["slide_index", "tile_id"],
-		}
-	, "presentation")
+	# T6 tail R3: minerva_presentation_modify_tile migrated to plugin (source_graphics_editor deferred to a follow-up round).
 
 	# T6 R3: set_slide_title / set_aspect / move_slide migrated to plugin.
 
@@ -225,8 +198,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		# T6 R7: set_slide_background moved to plugin.
 		"minerva_presentation_add_image_tile":
 			return _add_image_tile(arguments)
-		"minerva_presentation_modify_tile":
-			return _modify_tile(arguments)
+		# T6 tail R3: modify_tile moved to plugin.
 		"minerva_presentation_get_state":
 			return _get_state(arguments)
 		# T6 R2: minerva_presentation_list_annotation_kinds moved to plugin.
@@ -600,139 +572,6 @@ func _find_tile_in_slide(slide: Dictionary, tile_id: String) -> Dictionary:
 			return t
 	return {}
 
-
-# ---------------------------------------------------------------------------
-# Modify handlers
-# ---------------------------------------------------------------------------
-# Backed onto the same _resolve_target / _commit_target pattern as authoring.
-# Field-by-field semantics: every property is optional; absent = unchanged.
-
-const _MODIFY_COORD_KEYS: PackedStringArray = ["x", "y", "w", "h"]
-
-
-func _modify_tile(args: Dictionary) -> Dictionary:
-	var missing: Variant = MCPToolUtils.check_required(args, ["tile_id"])
-	if missing != null:
-		return missing
-	var target := _resolve_target(args)
-	if target.has("error"):
-		return target
-	var deck: Dictionary = target["deck"]
-	var slide_v := _slide_at(deck, args)
-	if slide_v is Dictionary and slide_v.has("__error__"):
-		return MCPToolUtils.error(slide_v["__error__"])
-	var slide: Dictionary = slide_v as Dictionary
-
-	var tile_id: String = String(args["tile_id"]).strip_edges()
-	var tile: Dictionary = _find_tile_in_slide(slide, tile_id)
-	if tile.is_empty():
-		return MCPToolUtils.error("tile_id not found on slide %d: %s" % [
-			MCPToolUtils.coerce_int(args["slide_index"]), tile_id
-		])
-	var kind: String = String(tile.get("kind", ""))
-
-	# Stage all mutations into a patch dict so a late-stage failure (e.g. an
-	# invalid solid_color hex) doesn't leave the live tile half-modified.
-	# We compute everything against the staged view, then merge in one shot.
-	var patch: Dictionary = {}
-	var erase_keys: Array[String] = []
-
-	# Coords: validate only when provided; clamp to [0,1].
-	for axis in _MODIFY_COORD_KEYS:
-		if args.has(axis) and args[axis] != null:
-			var v: float = MCPToolUtils.coerce_float(args[axis], -1.0)
-			if v < 0.0 or v > 1.0:
-				return MCPToolUtils.error("%s must be in [0, 1], got %f" % [axis, v])
-			patch[axis] = clampf(v, 0.0, 1.0)
-
-	# Rotation: 0 erases the field (omit-when-default), nonzero sets it.
-	if args.has("rotation") and args["rotation"] != null:
-		var rot: float = MCPToolUtils.coerce_float(args["rotation"], 0.0)
-		if is_zero_approx(rot):
-			erase_keys.append("rotation")
-		else:
-			patch["rotation"] = rot
-
-	# Text-tile fields.
-	if args.has("content") and args["content"] != null:
-		if kind != TILE_TEXT:
-			return MCPToolUtils.error("content can only be set on text tiles (this is %s)" % kind)
-		patch["content"] = String(args["content"])
-	if args.has("text_mode") and args["text_mode"] != null:
-		if kind != TILE_TEXT:
-			return MCPToolUtils.error("text_mode can only be set on text tiles (this is %s)" % kind)
-		var mode: String = String(args["text_mode"])
-		if not TEXT_MODES_VALID.has(mode):
-			return MCPToolUtils.error("text_mode must be one of %s" % str(TEXT_MODES_VALID))
-		patch["text_mode"] = mode
-	if args.has("font_size") and args["font_size"] != null:
-		if kind != TILE_TEXT:
-			return MCPToolUtils.error("font_size can only be set on text tiles (this is %s)" % kind)
-		var fs: int = MCPToolUtils.coerce_int(args["font_size"], 0)
-		if fs == 0:
-			erase_keys.append("font_size")
-		else:
-			if fs < 8 or fs > 200:
-				return MCPToolUtils.error("font_size must be in [8, 200] or 0 to clear, got %d" % fs)
-			patch["font_size"] = fs
-	if args.has("auto_fit") and args["auto_fit"] != null:
-		if kind != TILE_TEXT:
-			return MCPToolUtils.error("auto_fit can only be set on text tiles (this is %s)" % kind)
-		if bool(args["auto_fit"]):
-			patch["auto_fit"] = true
-		else:
-			erase_keys.append("auto_fit")
-
-	# Image-source replacement — at most one of these is allowed.
-	var has_path := args.has("image_path") and not String(args.get("image_path", "")).is_empty()
-	var has_b64 := args.has("image_base64") and not String(args.get("image_base64", "")).is_empty()
-	var has_solid := args.has("solid_color") and not String(args.get("solid_color", "")).is_empty()
-	var has_src_editor := args.has("source_graphics_editor") and not String(args.get("source_graphics_editor", "")).is_empty()
-	var src_count := int(has_path) + int(has_b64) + int(has_solid) + int(has_src_editor)
-	if src_count > 1:
-		return MCPToolUtils.error("Provide at most one of: image_path, image_base64, solid_color, source_graphics_editor")
-	if src_count == 1:
-		if kind != TILE_IMAGE:
-			return MCPToolUtils.error("Image-source fields only apply to image tiles (this is %s)" % kind)
-		var b64: String = ""
-		if has_path:
-			var read := _read_file_as_base64(String(args["image_path"]))
-			if read.has("error"):
-				return MCPToolUtils.error(read["error"])
-			b64 = read["base64"]
-		elif has_b64:
-			b64 = String(args["image_base64"])
-		elif has_src_editor:
-			var pulled := _read_graphics_editor_as_base64(String(args["source_graphics_editor"]))
-			if pulled.has("error"):
-				return MCPToolUtils.error(pulled["error"])
-			b64 = pulled["base64"]
-		else:
-			# Solid color — synthesize at the post-merge w/h so a same-call
-			# resize is reflected in the synthesized aspect.
-			var effective_w: float = float(patch.get("w", tile.get("w", 1.0)))
-			var effective_h: float = float(patch.get("h", tile.get("h", 1.0)))
-			var slide_aspect: float = _parse_aspect_ratio(String(deck.get("aspect", "16:9")))
-			b64 = _make_solid_color_png_base64(
-				String(args["solid_color"]), effective_w, effective_h, slide_aspect
-			)
-			if b64.is_empty():
-				return MCPToolUtils.error("solid_color must be a valid hex color (e.g. #1F4E5A)")
-		patch["src"] = b64
-
-	# All validations passed — apply patch atomically.
-	for k in patch.keys():
-		tile[k] = patch[k]
-	for ek in erase_keys:
-		tile.erase(ek)
-
-	var commit_err := _commit_target(target, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({
-		"slide_index": MCPToolUtils.coerce_int(args["slide_index"]),
-		"tile_id": tile_id,
-	})
 
 
 ## Reads live UI state from an open presentation tab. Tab-only — there's no
