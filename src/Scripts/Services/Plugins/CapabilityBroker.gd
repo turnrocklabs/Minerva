@@ -1589,14 +1589,17 @@ func _handle_host_editors_open(plugin_id: String, args: Dictionary) -> Dictionar
 	if not result.get("ok", false):
 		var errors: Array = result.get("errors", [])
 		var msg: String = ", ".join(errors) if errors.size() > 0 else "open_file_at_path returned ok=false"
-		# Differentiate file-not-found from generic open-fail using the error string.
+		# Differentiate failure modes via the error string. Order matters:
+		# editor_pane is the headless / pre-MainScene case, file_not_found is
+		# the bad-path case, everything else collapses to open_failed.
 		var code: String = "open_failed"
 		for e in errors:
-			if str(e).begins_with("file_not_found"):
+			var es: String = str(e)
+			if es.begins_with("file_not_found") or es.begins_with("not_a_file"):
 				code = "file_not_found"
 				break
-			if str(e).begins_with("not_a_file"):
-				code = "file_not_found"
+			if es.find("editor_pane") >= 0:
+				code = "editor_pane_unavailable"
 				break
 		return {
 			"success": false,
