@@ -260,6 +260,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_editors_list(plugin_id, args)
 		"host.editors.export":
 			named_result = await _handle_host_editors_export(plugin_id, args)
+		"host.editors.open":
+			named_result = _handle_host_editors_open(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -1531,6 +1533,88 @@ func _handle_host_editors_export(plugin_id: String, args: Dictionary) -> Diction
 		"mime": str(raw.get("mime", "application/octet-stream")),
 		"size": bytes.size(),
 		"content": Marshalls.raw_to_base64(bytes),
+	})
+
+
+## Strict args allowlist for host.editors.open.
+const _EDITORS_OPEN_ALLOWED_ARGS := ["path"]
+
+
+## host.editors.open — open a file at an absolute path as an editor tab.
+##
+## Args: {path: String}.  The host dispatches the open via
+## SingletonObject.open_file_at_path which handles idempotency (returns the
+## existing tab if already open) and extension → plugin/editor-type routing.
+##
+## On success returns {tab_name, kind, plugin_id, panel_name, path,
+## was_already_open}.  The was_already_open flag is best-effort: SingletonObject
+## doesn't report it directly, so we infer by checking the editor list before
+## the dispatch.
+##
+## Errors: schema_validation_failed, file_not_found, editor_pane_unavailable,
+## open_failed.
+func _handle_host_editors_open(plugin_id: String, args: Dictionary) -> Dictionary:
+	for k in args.keys():
+		if k not in _EDITORS_OPEN_ALLOWED_ARGS:
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown arg '%s' (allowed: %s)" % [k, str(_EDITORS_OPEN_ALLOWED_ARGS)]
+			)
+
+	var path: String = str(args.get("path", "")).strip_edges()
+	if path.is_empty():
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "host.editors.open requires 'path'"
+		)
+
+	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
+	if so == null or not so.has_method("open_file_at_path"):
+		return {
+			"success": false,
+			"error_code": "editor_pane_unavailable",
+			"error_message": "open_file_at_path not available (headless or pre-MainScene)",
+			"plugin_id": plugin_id,
+		}
+
+	# Best-effort was_already_open detection: scan the editor list for a tab
+	# whose file matches the resolved absolute path BEFORE dispatching.
+	var was_already_open: bool = false
+	var editor_pane = _get_editor_pane()
+	if editor_pane != null and editor_pane.has_method("get_open_editors"):
+		for ed in editor_pane.get_open_editors():
+			if ed != null and "file" in ed and str(ed.file) == path:
+				was_already_open = true
+				break
+
+	var result: Dictionary = so.open_file_at_path(path)
+	if not result.get("ok", false):
+		var errors: Array = result.get("errors", [])
+		var msg: String = ", ".join(errors) if errors.size() > 0 else "open_file_at_path returned ok=false"
+		# Differentiate file-not-found from generic open-fail using the error string.
+		var code: String = "open_failed"
+		for e in errors:
+			if str(e).begins_with("file_not_found"):
+				code = "file_not_found"
+				break
+			if str(e).begins_with("not_a_file"):
+				code = "file_not_found"
+				break
+		return {
+			"success": false,
+			"error_code": code,
+			"error_message": msg,
+			"plugin_id": plugin_id,
+			"path": path,
+		}
+
+	print("[CapabilityBroker] Plugin '%s' opened editor '%s' (already_open=%s)" % [
+		plugin_id, str(result.get("editor_name", "")), str(was_already_open)])
+	return PluginErrors.success({
+		"tab_name": str(result.get("editor_name", "")),
+		"kind": str(result.get("editor_kind", "")).to_lower(),
+		"plugin_id": result.get("plugin_id"),
+		"panel_name": result.get("panel_name"),
+		"path": path,
+		"was_already_open": was_already_open,
 	})
 
 

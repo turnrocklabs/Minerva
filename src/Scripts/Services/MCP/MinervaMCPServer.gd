@@ -113,7 +113,8 @@ func _init_modules() -> void:
 		MCPHttpTools.new(self),
 		MCPAnnotationTools.new(self),
 		MCPCadTools.new(self),
-		MCPPresentationTools.new(self),
+		# T6 tail R6 (2026-05-12): MCPPresentationTools.gd deleted — every
+		# minerva_presentation_* tool now lives in ~/github/plugins/presentation.
 		MCPGeneralTools.new(self),
 		MCPDocTools.new(self),
 		MCPDiskTools.new(self),

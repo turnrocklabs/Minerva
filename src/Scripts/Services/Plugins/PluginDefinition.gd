@@ -172,6 +172,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.files.write",
 	"host.editors.list",
 	"host.editors.export",
+	"host.editors.open",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one
