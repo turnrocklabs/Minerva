@@ -173,6 +173,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.editors.list",
 	"host.editors.export",
 	"host.editors.open",
+	"host.providers.chat",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

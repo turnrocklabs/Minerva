@@ -43,8 +43,13 @@ func _init() -> void:
 	_current_month = _get_month_key()
 	_load_ledger()
 	_load_budgets()
-	# Connect to chat_completed signal to track all API responses
-	SingletonObject.chat_completed.connect(_on_chat_completed)
+	# Connect to chat_completed signal to track all API responses.
+	# Guard with a null check so CostTracker.new() works in headless unit tests
+	# where SingletonObject is not in the scene tree.
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() != null else null
+	var so = root.get_node_or_null("SingletonObject") if root != null else null
+	if so != null and so.has_signal("chat_completed"):
+		so.chat_completed.connect(_on_chat_completed)
 
 
 ## Record a cost entry from a BotResponse (signal handler for non-ChatPane calls)
@@ -200,6 +205,62 @@ func get_spend_for_period(period: String, chat_id: String = "__global__") -> flo
 		if all_chats or entry.get("chat_id", "") == chat_id:
 			total += entry["cost_usd"]
 	return total
+
+
+## Sum cost_usd of ledger entries whose chat_id matches key exactly OR begins
+## with key + "/" (prefix match for hierarchical keys), within the period's
+## rolling window.
+func get_spend_for_key(key: String, period: String) -> float:
+	var cutoff := _get_period_cutoff(period)
+	var prefix := key + "/"
+	var total := 0.0
+	for entry in _ledger:
+		if entry["ts"] < cutoff:
+			continue
+		var cid: String = entry.get("chat_id", "")
+		if cid == key or cid.begins_with(prefix):
+			total += entry["cost_usd"]
+	return total
+
+
+## Walk from most-specific to least-specific plugin budget keys.
+## Keys checked (in order): plugin/<id>/<provider>/<model>, plugin/<id>/<provider>, plugin/<id>.
+## For each level that has a budget set:
+##   - budget_usd == -1.0 → infinity (always passes at this level, continue to parent)
+##   - budget_usd <= 0     → no budget set (skip this level)
+##   - budget_usd > 0     → check spend; if >= budget → return {ok:false, ...}
+## If all levels pass or have no budget → return {ok:true}.
+## If cost_tracker is accessed in headless context before SingletonObject is ready,
+## guards in the caller should catch null; this method itself is safe to call on
+## a fresh CostTracker.new() with no ledger or budgets.
+func check_hierarchical_budget(plugin_id: String, provider: String, model: String) -> Dictionary:
+	var keys: Array[String] = [
+		"plugin/%s/%s/%s" % [plugin_id, provider, model],
+		"plugin/%s/%s" % [plugin_id, provider],
+		"plugin/%s" % plugin_id,
+	]
+	for key in keys:
+		if not _budgets.has(key):
+			continue
+		var budget_info: Dictionary = _budgets[key]
+		var budget_usd: float = float(budget_info.get("budget_usd", 0.0))
+		if budget_usd == -1.0:
+			# Infinity at this level — passes, but do NOT skip parent checks.
+			continue
+		if budget_usd <= 0.0:
+			# No real budget at this level — skip.
+			continue
+		var period: String = str(budget_info.get("period", "day"))
+		var spent: float = get_spend_for_key(key, period)
+		if spent >= budget_usd:
+			return {
+				"ok": false,
+				"which_budget": key,
+				"budget": budget_usd,
+				"spent": spent,
+				"period": period,
+			}
+	return {"ok": true}
 
 
 ## Set a budget for a chat. Returns the previous budget (0 if none).

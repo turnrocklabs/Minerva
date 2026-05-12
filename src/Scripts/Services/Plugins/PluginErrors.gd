@@ -28,6 +28,11 @@ const CODE_FORMAT_NOT_SUPPORTED = "format_not_supported"
 const CODE_BLOB_NOT_FOUND = "blob_not_found"
 const CODE_UNKNOWN_BLOB_HANDLE = "unknown_blob_handle"
 const CODE_PATCH_FAILED = "patch_failed"
+const CODE_MODEL_NOT_AVAILABLE = "model_not_available"
+const CODE_MODEL_AMBIGUOUS = "model_ambiguous"
+const CODE_PROVIDER_DISABLED = "provider_disabled"
+const CODE_BUDGET_EXCEEDED = "budget_exceeded"
+const CODE_PROVIDER_ERROR = "provider_error"
 
 
 # ---------------------------------------------------------------------------
@@ -275,6 +280,71 @@ static func filesystem_disabled(plugin_id: String, capability: String) -> Dictio
 		"error_message": "Filesystem access not enabled in manifest (permissions.filesystem.mode must be 'scoped_paths')",
 		"plugin_id": plugin_id,
 		"capability": capability,
+	}
+
+
+# ---------------------------------------------------------------------------
+# Success helper
+# ---------------------------------------------------------------------------
+
+## Requested model name was not found in any provider.
+static func model_not_available(plugin_id: String, model: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_MODEL_NOT_AVAILABLE,
+		"error_message": "Model '%s' is not available" % model,
+		"plugin_id": plugin_id,
+		"model": model,
+	}
+
+
+## Model name matches multiple providers and no provider hint was given.
+static func model_ambiguous(plugin_id: String, model: String, candidates: Array) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_MODEL_AMBIGUOUS,
+		"error_message": "Model '%s' is available from multiple providers; specify 'provider' to disambiguate" % model,
+		"plugin_id": plugin_id,
+		"model": model,
+		"candidates": candidates,
+	}
+
+
+## Provider exists but is disabled or has no API key configured.
+static func provider_disabled(plugin_id: String, provider: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_PROVIDER_DISABLED,
+		"error_message": "Provider '%s' is disabled or not configured" % provider,
+		"plugin_id": plugin_id,
+		"provider": provider,
+	}
+
+
+## Plugin's hierarchical budget has been exceeded.
+static func budget_exceeded(plugin_id: String, which_budget: String, budget: float, spent: float, period: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_BUDGET_EXCEEDED,
+		"error_message": "Budget '%s' exceeded: spent $%.6f of $%.6f in period '%s'" % [which_budget, spent, budget, period],
+		"plugin_id": plugin_id,
+		"which_budget": which_budget,
+		"budget": budget,
+		"spent": spent,
+		"period": period,
+	}
+
+
+## Provider returned an error during generate_content.
+static func provider_error(plugin_id: String, provider: String, model: String, detail: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_PROVIDER_ERROR,
+		"error_message": "Provider '%s' returned an error for model '%s'" % [provider, model],
+		"plugin_id": plugin_id,
+		"provider": provider,
+		"model": model,
+		"detail": detail,
 	}
 
 

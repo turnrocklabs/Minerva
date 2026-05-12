@@ -262,6 +262,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_editors_export(plugin_id, args)
 		"host.editors.open":
 			named_result = _handle_host_editors_open(plugin_id, args)
+		"host.providers.chat":
+			named_result = await _handle_host_providers_chat(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -1535,6 +1537,345 @@ func _handle_host_editors_export(plugin_id: String, args: Dictionary) -> Diction
 		"content": Marshalls.raw_to_base64(bytes),
 	})
 
+
+# ---------------------------------------------------------------------------
+# host.providers.chat handler
+# ---------------------------------------------------------------------------
+
+## Maximum total image payload size (approximate decoded bytes) per request.
+const _CHAT_MAX_IMAGE_BYTES := 10 * 1024 * 1024  # 10 MB
+
+## Invoke a Minerva provider with a canonical message envelope.
+##
+## Args (required):
+##   messages: Array of {role, text, images?} — mirrors ChatHistoryItem wire format.
+##   model:    String — model name (e.g. "claude-sonnet-4-6") or "default".
+## Args (optional):
+##   provider:    String — disambiguates when model is offered by multiple providers.
+##   max_tokens:  int
+##   temperature: float
+##
+## Returns: PluginErrors.success({model, provider, content, stop_reason, usage}) or error dict.
+func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Dictionary:
+	# --- 1. Validate required args -------------------------------------------
+	if not args.has("messages") or not (args["messages"] is Array):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.providers.chat requires 'messages' (Array)")
+	if not args.has("model"):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.providers.chat requires 'model' (String)")
+	var model_name_req: String = str(args["model"]).strip_edges()
+	if model_name_req.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.providers.chat: 'model' must not be empty")
+
+	var messages_raw: Array = args["messages"] as Array
+	for i in range(messages_raw.size()):
+		if not (messages_raw[i] is Dictionary):
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.providers.chat: messages[%d] must be a Dictionary" % i)
+		var msg: Dictionary = messages_raw[i] as Dictionary
+		if not msg.has("role"):
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.providers.chat: messages[%d] missing 'role'" % i)
+		if not msg.has("text"):
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.providers.chat: messages[%d] missing 'text'" % i)
+
+	var provider_hint: String = str(args.get("provider", "")).strip_edges().to_lower()
+
+	# --- 2. Payload size check (approximate decoded image bytes) -------------
+	var approx_image_bytes: float = 0.0
+	for msg_raw in messages_raw:
+		var msg_d: Dictionary = msg_raw as Dictionary
+		var imgs: Variant = msg_d.get("images", null)
+		if imgs is Array:
+			for b64 in (imgs as Array):
+				approx_image_bytes += float(str(b64).length()) * 0.75
+	if approx_image_bytes > float(_CHAT_MAX_IMAGE_BYTES):
+		return PluginErrors.payload_too_large(plugin_id, _CHAT_MAX_IMAGE_BYTES, int(approx_image_bytes))
+
+	# --- 3. Resolve provider + model via SingletonObject ---------------------
+	var so = _get_singleton_object()
+	if so == null:
+		return PluginErrors.model_not_available(plugin_id, model_name_req)
+
+	# Resolve "default" to the TurnRock/Core provider (free, always available).
+	var resolved_model_id: int = -1
+	var resolved_provider_enum: int = -1
+
+	if model_name_req == "default":
+		# Default → Core/TurnRock
+		var api_model_providers = so.get("API_MODEL_PROVIDERS") if "API_MODEL_PROVIDERS" in so else null
+		if api_model_providers != null and api_model_providers.has("TURNROCK"):
+			resolved_model_id = int(api_model_providers.get("TURNROCK"))
+			resolved_provider_enum = int(so.get("API_PROVIDER").get("TURNROCK", -1)) if "API_PROVIDER" in so else -1
+		else:
+			return PluginErrors.model_not_available(plugin_id, model_name_req)
+	else:
+		# Search all registered model scripts for a match on model_name.
+		# Collect all (model_id, provider_enum) pairs whose model_name matches.
+		var provider_map = so.get("MODEL_TO_PROVIDER") if "MODEL_TO_PROVIDER" in so else null
+		var script_map = so.get("API_MODEL_PROVIDER_SCRIPTS") if "API_MODEL_PROVIDER_SCRIPTS" in so else null
+		var display_names = so.get("PROVIDER_DISPLAY_NAMES") if "PROVIDER_DISPLAY_NAMES" in so else {}
+
+		if script_map == null or provider_map == null:
+			return PluginErrors.model_not_available(plugin_id, model_name_req)
+
+		var candidates: Array = []  # [{model_id, provider_enum, provider_name}]
+
+		# Check built-in (static) models
+		for mid in script_map.keys():
+			var mid_int: int = int(mid)
+			if mid_int < 0:
+				continue
+			var pscript = script_map[mid_int]
+			if pscript == null:
+				continue
+			# Instantiate temporarily to read model_name — only for static models
+			# (dynamic models are handled separately via managers).
+			if mid_int < 10000:  # Below DYNAMIC_MODEL_ID_BASE
+				var inst: BaseProvider = pscript.new() if pscript.can_instantiate() else null
+				if inst == null:
+					continue
+				var inst_model: String = str(inst.model_name) if "model_name" in inst else ""
+				var prov_enum: int = int(provider_map.get(mid_int, -1))
+				var prov_name: String = str(display_names.get(prov_enum, "")).to_lower()
+				if inst_model.to_lower() == model_name_req.to_lower():
+					candidates.append({
+						"model_id": mid_int,
+						"provider_enum": prov_enum,
+						"provider_name": prov_name,
+					})
+				inst.free()
+
+		# Check dynamic models via managers
+		var dyn_map = so.get("_dynamic_provider_map") if "_dynamic_provider_map" in so else {}
+		for id_base in dyn_map.keys():
+			var dyn_info: Dictionary = dyn_map[id_base] as Dictionary
+			var manager = dyn_info.get("manager", null)
+			var prov_e: int = int(dyn_info.get("provider", -1))
+			var prov_n: String = str(display_names.get(prov_e, "")).to_lower()
+			if manager == null:
+				continue
+			for config in manager.models:
+				if not (config is Dictionary):
+					continue
+				var cfg: Dictionary = config as Dictionary
+				var cfg_model: String = str(cfg.get("model_name", "")).to_lower()
+				if cfg_model == model_name_req.to_lower():
+					candidates.append({
+						"model_id": int(cfg.get("id", -1)),
+						"provider_enum": prov_e,
+						"provider_name": prov_n,
+					})
+
+		if candidates.is_empty():
+			return PluginErrors.model_not_available(plugin_id, model_name_req)
+
+		if candidates.size() == 1:
+			resolved_model_id = int(candidates[0]["model_id"])
+			resolved_provider_enum = int(candidates[0]["provider_enum"])
+		else:
+			# Multiple providers — filter by provider_hint if given
+			if not provider_hint.is_empty():
+				var filtered: Array = []
+				for c in candidates:
+					if str(c["provider_name"]).to_lower() == provider_hint:
+						filtered.append(c)
+				if filtered.size() == 1:
+					resolved_model_id = int(filtered[0]["model_id"])
+					resolved_provider_enum = int(filtered[0]["provider_enum"])
+				elif filtered.is_empty():
+					# Hint given but matched nothing → ambiguous (still return all candidates)
+					var cand_names: Array = []
+					for c in candidates:
+						cand_names.append(str(c["provider_name"]))
+					return PluginErrors.model_ambiguous(plugin_id, model_name_req, cand_names)
+				else:
+					# Multiple even after hint — still ambiguous
+					var cand_names2: Array = []
+					for c in filtered:
+						cand_names2.append(str(c["provider_name"]))
+					return PluginErrors.model_ambiguous(plugin_id, model_name_req, cand_names2)
+			else:
+				var cand_names3: Array = []
+				for c in candidates:
+					cand_names3.append(str(c["provider_name"]))
+				return PluginErrors.model_ambiguous(plugin_id, model_name_req, cand_names3)
+
+	# --- Create the provider instance ----------------------------------------
+	var provider: BaseProvider = null
+	var provider_map2 = so.get("MODEL_TO_PROVIDER") if "MODEL_TO_PROVIDER" in so else {}
+	var script_map2 = so.get("API_MODEL_PROVIDER_SCRIPTS") if "API_MODEL_PROVIDER_SCRIPTS" in so else {}
+
+	if resolved_model_id < 0:
+		return PluginErrors.model_not_available(plugin_id, model_name_req)
+
+	if resolved_model_id >= 10000:  # Dynamic model
+		provider = so.create_dynamic_provider(resolved_model_id)
+	elif script_map2.has(resolved_model_id):
+		var pscript = script_map2[resolved_model_id]
+		if pscript != null and pscript.can_instantiate():
+			provider = pscript.new()
+
+	if provider == null:
+		return PluginErrors.model_not_available(plugin_id, model_name_req)
+
+	# Provider must be in the scene tree to use _ready() and timers
+	var so_node = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
+	if so_node != null:
+		so_node.add_child(provider)
+
+	# --- Get actual provider name + check enabled ----------------------------
+	var display_names2: Dictionary = so.get("PROVIDER_DISPLAY_NAMES") if "PROVIDER_DISPLAY_NAMES" in so else {}
+	var actual_provider_enum: int = int(provider_map2.get(resolved_model_id, resolved_provider_enum))
+	var actual_provider_name: String = str(display_names2.get(actual_provider_enum, "Unknown")).to_lower()
+	var actual_model_name: String = str(provider.model_name) if "model_name" in provider else model_name_req
+
+	# Check if provider is enabled
+	if so.has_method("is_provider_enabled"):
+		if not so.is_provider_enabled(actual_provider_enum):
+			provider.queue_free()
+			return PluginErrors.provider_disabled(plugin_id, actual_provider_name)
+	# Check API key (non-free providers only; free providers have empty API_KEY by design)
+	# We check by seeing if input_token_cost > 0 AND API_KEY is empty as a heuristic.
+	# Local/Turnrock always have no key required.
+	var api_key_val: String = str(provider.API_KEY) if "API_KEY" in provider else ""
+	if provider.input_token_cost > 0.0 and api_key_val.is_empty():
+		provider.queue_free()
+		return PluginErrors.provider_disabled(plugin_id, actual_provider_name)
+
+	# --- 4. Hierarchical budget check ----------------------------------------
+	var cost_tracker = so.get("cost_tracker") if "cost_tracker" in so else null
+	if cost_tracker != null and cost_tracker.has_method("check_hierarchical_budget"):
+		var budget_check: Dictionary = cost_tracker.check_hierarchical_budget(
+			plugin_id, actual_provider_name, actual_model_name)
+		if not budget_check.get("ok", true):
+			provider.queue_free()
+			return PluginErrors.budget_exceeded(
+				plugin_id,
+				str(budget_check.get("which_budget", "")),
+				float(budget_check.get("budget", 0.0)),
+				float(budget_check.get("spent", 0.0)),
+				str(budget_check.get("period", "day")),
+			)
+
+	# --- 5. Reconstruct ChatHistoryItems from args.messages[] ----------------
+	var prompt: Array[Variant] = []
+	for msg_raw2 in messages_raw:
+		var msg_d2: Dictionary = msg_raw2 as Dictionary
+		var role_str: String = str(msg_d2.get("role", "user")).to_lower()
+		var text_str: String = str(msg_d2.get("text", ""))
+
+		var chi := ChatHistoryItem.new()
+
+		# Map role string to ChatRole enum
+		match role_str:
+			"system":
+				chi.Role = ChatHistoryItem.ChatRole.SYSTEM
+			"assistant":
+				chi.Role = ChatHistoryItem.ChatRole.ASSISTANT
+			"model":
+				chi.Role = ChatHistoryItem.ChatRole.MODEL
+			"tool":
+				chi.Role = ChatHistoryItem.ChatRole.TOOL
+			_:  # "user" and anything else
+				chi.Role = ChatHistoryItem.ChatRole.USER
+
+		chi.Message = text_str
+		chi.provider = provider
+
+		# Decode base64-PNG images
+		var imgs_raw: Variant = msg_d2.get("images", null)
+		if imgs_raw is Array:
+			var img_arr: Array[Image] = []
+			for b64_str in (imgs_raw as Array):
+				var raw_bytes: PackedByteArray = Marshalls.base64_to_raw(str(b64_str))
+				if not raw_bytes.is_empty():
+					var img := Image.new()
+					if img.load_png_from_buffer(raw_bytes) == OK:
+						img_arr.append(img)
+			chi.Images = img_arr
+
+		prompt.append(chi)
+
+	# --- 6. Set provider chat IDs for cost attribution and stop_all_requests -
+	var chat_id_key: String = "plugin/%s" % plugin_id
+	provider.chat_id = chat_id_key
+	provider.owner_history_id = chat_id_key
+
+	# --- 7. Build additional_params ------------------------------------------
+	var additional_params: Dictionary = {}
+	if args.has("max_tokens"):
+		var mt: Variant = args["max_tokens"]
+		if mt is int or mt is float:
+			additional_params["max_tokens"] = int(mt)
+	if args.has("temperature"):
+		var temp: Variant = args["temperature"]
+		if temp is float or temp is int:
+			additional_params["temperature"] = float(temp)
+
+	# --- 8. Generate content -------------------------------------------------
+	print("[CapabilityBroker] Plugin '%s' invoking host.providers.chat (model=%s, provider=%s)" % [
+		plugin_id, actual_model_name, actual_provider_name])
+
+	var bot_response: BotResponse = await provider.generate_content(prompt, additional_params)
+
+	# Detach from scene tree now that the call is done
+	if provider.get_parent() != null:
+		provider.get_parent().remove_child(provider)
+
+	if bot_response == null:
+		provider.queue_free()
+		return PluginErrors.provider_error(plugin_id, actual_provider_name, actual_model_name,
+			"generate_content returned null")
+
+	if not str(bot_response.error).is_empty():
+		provider.queue_free()
+		return PluginErrors.provider_error(plugin_id, actual_provider_name, actual_model_name,
+			str(bot_response.error))
+
+	# --- 9. Record cost -------------------------------------------------------
+	if cost_tracker != null and cost_tracker.has_method("record_chat_cost"):
+		cost_tracker.record_chat_cost(bot_response, chat_id_key)
+
+	# --- 10. Build response ---------------------------------------------------
+	var input_tok: int = int(bot_response.prompt_tokens)
+	var output_tok: int = int(bot_response.completion_tokens)
+	var cost_usd: float = (
+		float(input_tok) * provider.input_token_cost +
+		float(output_tok) * provider.output_token_cost
+	) / 1_000_000.0
+	var is_free: bool = provider.input_token_cost == 0.0 and provider.output_token_cost == 0.0
+
+	provider.queue_free()
+
+	return PluginErrors.success({
+		"model": actual_model_name,
+		"provider": actual_provider_name,
+		"content": str(bot_response.text),
+		"stop_reason": "end_turn",
+		"usage": {
+			"input_tokens": input_tok,
+			"output_tokens": output_tok,
+			"cost_usd": cost_usd,
+			"free": is_free,
+		},
+	})
+
+
+## Helper to get the SingletonObject node (or null in headless context).
+func _get_singleton_object():
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	return root.get_node_or_null("SingletonObject")
+
+
+# ---------------------------------------------------------------------------
+# host.editors.open handler
+# ---------------------------------------------------------------------------
 
 ## Strict args allowlist for host.editors.open.
 const _EDITORS_OPEN_ALLOWED_ARGS := ["path"]
