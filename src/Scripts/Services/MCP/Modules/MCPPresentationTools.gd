@@ -108,7 +108,6 @@ func get_tool_names() -> Array[String]:
 		"minerva_presentation_add_annotation",
 		"minerva_presentation_remove_annotation",
 		"minerva_presentation_set_annotation_resolved",
-		"minerva_presentation_list_open_annotations",
 		"minerva_presentation_get_state",
 	]
 
@@ -266,17 +265,7 @@ func register_tools() -> void:
 	, "presentation")
 
 	# T6 R2: minerva_presentation_list_annotation_kinds migrated to plugin.
-
-	server._register_tool("minerva_presentation_list_open_annotations",
-		"Return all annotations across the deck whose lifecycle is 'open' (not resolved/applied/stale). Each entry includes slide_index, annotation_id, kind, and summary. Use this to find work the LLM still needs to address.",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-			},
-		}
-	, "presentation")
+	# T6 tail: minerva_presentation_list_open_annotations migrated to plugin.
 
 	# T6 R4: minerva_presentation_remove_tile migrated to plugin.
 
@@ -336,8 +325,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_presentation_set_annotation_resolved":
 			return _set_annotation_resolved(arguments)
 		# T6 R2: minerva_presentation_list_annotation_kinds moved to plugin.
-		"minerva_presentation_list_open_annotations":
-			return _list_open_annotations(arguments)
+		# T6 tail: minerva_presentation_list_open_annotations moved to plugin.
 		# T6 R5: spreadsheet ops (add_spreadsheet_tile, modify_spreadsheet_cells,
 		# resize_spreadsheet) moved to plugin.
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
@@ -1098,29 +1086,7 @@ func _list_annotation_kinds(_args: Dictionary) -> Dictionary:
 	})
 
 
-func _list_open_annotations(args: Dictionary) -> Dictionary:
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slides: Array = deck.get("slides", []) as Array
-	var open_list: Array = []
-	for i in range(slides.size()):
-		var slide: Dictionary = slides[i] as Dictionary
-		if not slide.has("annotations"):
-			continue
-		var anns: Array = slide["annotations"] as Array
-		for a_v in anns:
-			var env: Dictionary = a_v as Dictionary
-			if String(env.get("lifecycle", ANNOTATION_LIFECYCLE_OPEN)) != ANNOTATION_LIFECYCLE_OPEN:
-				continue
-			open_list.append({
-				"slide_index": i,
-				"annotation_id": String(env.get("id", "")),
-				"kind": String(env.get("kind", "")),
-				"summary": String(env.get("summary", "")),
-			})
-	return MCPToolUtils.success({"open": open_list, "count": open_list.size()})
+# T6 tail: _list_open_annotations moved to plugin.
 
 
 
