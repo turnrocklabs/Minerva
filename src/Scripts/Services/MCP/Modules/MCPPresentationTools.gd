@@ -103,7 +103,6 @@ func get_tool_names() -> Array[String]:
 	# get_state) use them.
 	return [
 		"minerva_presentation_open_deck",
-		"minerva_presentation_add_image_tile",
 		"minerva_presentation_get_state",
 	]
 
@@ -160,27 +159,7 @@ func register_tools() -> void:
 	# T6 R2: minerva_presentation_get_tile migrated to plugin.
 	# T6 R2: minerva_presentation_get_slide migrated to plugin.
 
-	server._register_tool("minerva_presentation_add_image_tile",
-		"Add an image tile to a slide. Coords x/y/w/h are 0..1 normalized. Provide exactly one image source: image_path, image_base64, source_graphics_editor (name of an open graphics editor — pulls layer 0's PNG bytes), or solid_color (hex; generates a small flat-color PNG that scales to fill the tile — handy for HR lines and decorative blocks).",
-		{
-			"type": "object",
-			"properties": {
-				"tab_name": {"type": "string"},
-				"path": {"type": "string"},
-				"slide_index": {"type": "integer"},
-				"x": {"type": "number"},
-				"y": {"type": "number"},
-				"w": {"type": "number"},
-				"h": {"type": "number"},
-				"image_path": {"type": "string"},
-				"image_base64": {"type": "string", "description": "Bare base64 PNG/JPEG."},
-				"source_graphics_editor": {"type": "string", "description": "Name of an open graphics editor whose top layer should be embedded."},
-				"solid_color": {"type": "string", "description": "Hex color (e.g. #1F4E5A) to synthesize as a small solid PNG."},
-				"rotation": {"type": "number"},
-			},
-			"required": ["slide_index", "x", "y", "w", "h"],
-		}
-	, "presentation")
+	# T6 tail R4: minerva_presentation_add_image_tile migrated to plugin (source_graphics_editor uses host.editors.export).
 
 
 # ---------------------------------------------------------------------------
@@ -196,8 +175,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		# T6 R3: add_slide / set_slide_title / set_aspect / move_slide / remove_slide moved to plugin.
 		# T6 R4: add_text_tile / remove_tile moved to plugin.
 		# T6 R7: set_slide_background moved to plugin.
-		"minerva_presentation_add_image_tile":
-			return _add_image_tile(arguments)
+		# T6 tail R4: add_image_tile moved to plugin.
 		# T6 tail R3: modify_tile moved to plugin.
 		"minerva_presentation_get_state":
 			return _get_state(arguments)
@@ -287,80 +265,6 @@ func _list_slides(args: Dictionary) -> Dictionary:
 # T6 R7: _set_slide_background moved to plugin.
 # T6 R4: _add_text_tile moved to plugin.
 
-
-func _add_image_tile(args: Dictionary) -> Dictionary:
-	var resolved := _resolve_target(args)
-	if resolved.has("error"):
-		return resolved
-	var deck: Dictionary = resolved["deck"]
-	var slide_v := _slide_at(deck, args)
-	if slide_v is Dictionary and slide_v.has("__error__"):
-		return MCPToolUtils.error(slide_v["__error__"])
-	var slide: Dictionary = slide_v as Dictionary
-
-	var coords_err := _validate_coords(args)
-	if coords_err != "":
-		return MCPToolUtils.error(coords_err)
-
-	var has_path := args.has("image_path") and not String(args.get("image_path", "")).is_empty()
-	var has_b64 := args.has("image_base64") and not String(args.get("image_base64", "")).is_empty()
-	var has_src_editor := args.has("source_graphics_editor") and not String(args.get("source_graphics_editor", "")).is_empty()
-	var has_solid := args.has("solid_color") and not String(args.get("solid_color", "")).is_empty()
-	var sources_set := int(has_path) + int(has_b64) + int(has_src_editor) + int(has_solid)
-	if sources_set != 1:
-		return MCPToolUtils.error("Provide exactly one of: image_path, image_base64, source_graphics_editor, solid_color")
-
-	var b64: String = ""
-	if has_path:
-		var read := _read_file_as_base64(String(args["image_path"]))
-		if read.has("error"):
-			return MCPToolUtils.error(read["error"])
-		b64 = read["base64"]
-	elif has_b64:
-		b64 = String(args["image_base64"])
-	elif has_src_editor:
-		var pulled := _read_graphics_editor_as_base64(String(args["source_graphics_editor"]))
-		if pulled.has("error"):
-			return MCPToolUtils.error(pulled["error"])
-		b64 = pulled["base64"]
-	else:
-		# Synthesize a PNG sized to the tile's RENDERED aspect (which is
-		# normalized w/h × slide aspect), so the plugin's STRETCH_KEEP_ASPECT_CENTERED
-		# renders edge-to-edge. A square source in a wide HR rect would otherwise
-		# show as a centered square box.
-		var slide_aspect: float = _parse_aspect_ratio(String(deck.get("aspect", "16:9")))
-		b64 = _make_solid_color_png_base64(
-			String(args["solid_color"]),
-			float(args["w"]),
-			float(args["h"]),
-			slide_aspect
-		)
-		if b64.is_empty():
-			return MCPToolUtils.error("solid_color must be a valid hex color (e.g. #1F4E5A)")
-
-	var tile: Dictionary = {
-		"id": _gen_id("tile"),
-		"kind": TILE_IMAGE,
-		"x": float(args["x"]),
-		"y": float(args["y"]),
-		"w": float(args["w"]),
-		"h": float(args["h"]),
-		"src": b64,
-	}
-	var rotation: float = MCPToolUtils.coerce_float(args.get("rotation", 0.0))
-	if not is_zero_approx(rotation):
-		tile["rotation"] = rotation
-
-	(slide["tiles"] as Array).append(tile)
-	var commit_err := _commit_target(resolved, deck)
-	if commit_err != "":
-		return MCPToolUtils.error(commit_err)
-	return MCPToolUtils.success({"tile_id": str(tile["id"])})
-
-
-# ---------------------------------------------------------------------------
-# Inspect handlers (read-only)
-# ---------------------------------------------------------------------------
 
 func _list_tiles(args: Dictionary) -> Dictionary:
 	var resolved := _resolve_target(args)
@@ -783,124 +687,6 @@ func _write_deck_to_disk(path: String, deck: Dictionary) -> String:
 	return ""
 
 
-func _read_file_as_base64(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		return MCPToolUtils.error("File not found: %s" % path)
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return MCPToolUtils.error("Could not open file: %s" % path)
-	var bytes := f.get_buffer(f.get_length())
-	f.close()
-	if bytes.size() == 0:
-		return MCPToolUtils.error("Empty file: %s" % path)
-	return {"base64": Marshalls.raw_to_base64(bytes)}
-
-
-# ---------------------------------------------------------------------------
-# Image generation helpers
-# ---------------------------------------------------------------------------
-
-## Create a flat-color PNG sized to match the target tile's RENDERED aspect
-## ratio, then base64-encode it. The rendered aspect is `(w_norm/h_norm) * slide_aspect`
-## because tiles are positioned in normalized 0..1 coords on a slide whose
-## displayed aspect is e.g. 16:9. Aspect-matching is required because the
-## plugin's image renderer uses STRETCH_KEEP_ASPECT_CENTERED — a source whose
-## aspect doesn't match the rect's aspect renders as a smaller centered shape,
-## not a fill.
-##
-## We floor (not round) the short edge so the source aspect comes out slightly
-## MORE extreme than the rect aspect — that biases STRETCH_KEEP_ASPECT_CENTERED
-## to fit-by-the-long-axis (e.g. fill width on a wide HR), with at most one
-## sub-pixel of underfill on the short axis. Rounding-up would invert this and
-## leave a visible side-padding gap on extreme rects (the HR-stub bug).
-##
-## Long edge of 4096 keeps short-edge rounding error <0.5% even at aspect 200:1,
-## so even a 1px tall HR's ideal-short comes out near-integer. Flat-color PNGs
-## RLE-compress to a few KB regardless of dimensions.
-func _make_solid_color_png_base64(hex: String, w_norm: float = 1.0, h_norm: float = 1.0, slide_aspect: float = 16.0 / 9.0) -> String:
-	var s := hex.strip_edges()
-	if s.is_empty():
-		return ""
-	if not s.begins_with("#"):
-		s = "#" + s
-	if not Color.html_is_valid(s):
-		return ""
-	var c := Color.html(s)
-	var w_safe: float = max(w_norm, 0.0001)
-	var h_safe: float = max(h_norm, 0.0001)
-	# Rendered rect aspect = (w_norm × slide_w) / (h_norm × slide_h)
-	#                      = (w_norm / h_norm) × (slide_w / slide_h)
-	var rect_aspect: float = (w_safe / h_safe) * max(slide_aspect, 0.0001)
-	var target_long_px: int = 4096
-	var px_w: int
-	var px_h: int
-	if rect_aspect >= 1.0:
-		px_w = target_long_px
-		# Floor (not round) so source aspect ≥ rect aspect → fill-by-width.
-		px_h = max(1, int(floor(target_long_px / rect_aspect)))
-	else:
-		px_h = target_long_px
-		px_w = max(1, int(floor(target_long_px * rect_aspect)))
-	var img := Image.create(px_w, px_h, false, Image.FORMAT_RGBA8)
-	img.fill(c)
-	return Marshalls.raw_to_base64(img.save_png_to_buffer())
-
-
-## Parse "16:9" / "4:3" / "1:1" → width/height ratio. Falls back to 16/9 on
-## anything unparseable.
-func _parse_aspect_ratio(s: String) -> float:
-	var parts: PackedStringArray = s.split(":")
-	if parts.size() != 2:
-		return 16.0 / 9.0
-	var w: float = float(parts[0])
-	var h: float = float(parts[1])
-	if w <= 0.0 or h <= 0.0:
-		return 16.0 / 9.0
-	return w / h
-
-
-## Pull the top layer's PNG bytes from an open graphics editor. Returns
-## {base64: "..."} on success or {error: "..."}.
-func _read_graphics_editor_as_base64(editor_name: String) -> Dictionary:
-	var editor = MCPToolUtils.find_editor_by_name(editor_name)
-	if editor == null:
-		return MCPToolUtils.error("Graphics editor not found: %s" % editor_name)
-	var editor_script = load("res://Scripts/UI/Controls/Editor.gd")
-	if editor.type != editor_script.Type.GRAPHICS:
-		return MCPToolUtils.error("Editor '%s' is not a graphics editor" % editor_name)
-	if not editor.graphics_editor:
-		return MCPToolUtils.error("Graphics editor '%s' not initialized" % editor_name)
-
-	var ge = editor.graphics_editor
-	# Layers are typically stored on the editor; pick the top non-empty layer.
-	var layers = ge.layers if "layers" in ge else null
-	if layers == null or not (layers is Array) or (layers as Array).is_empty():
-		return MCPToolUtils.error("Graphics editor '%s' has no layers" % editor_name)
-	# Walk top → bottom looking for a layer with a usable image.
-	for i in range((layers as Array).size() - 1, -1, -1):
-		var layer = (layers as Array)[i]
-		if layer == null or not ("image" in layer) or layer.image == null:
-			continue
-		var img: Image = layer.image
-		if img.get_width() <= 0 or img.get_height() <= 0:
-			continue
-		var img_for_export: Image = img.duplicate()
-		if img_for_export.get_format() != Image.FORMAT_RGBA8:
-			img_for_export.convert(Image.FORMAT_RGBA8)
-		var buf: PackedByteArray = img_for_export.save_png_to_buffer()
-		if buf.size() == 0:
-			continue
-		return {"base64": Marshalls.raw_to_base64(buf)}
-	return MCPToolUtils.error("No usable image layer in graphics editor '%s'" % editor_name)
-
-
-# ---------------------------------------------------------------------------
-# Schema constructors (mirror slide_model.gd; off-tree means we can't import)
-# ---------------------------------------------------------------------------
-
-# T6 R6: _make_deck moved to plugin (used only by removed _create_deck).
-
-
 func _make_slide(title: String = "") -> Dictionary:
 	var s: Dictionary = {
 		"id": _gen_id("slide"),
@@ -926,23 +712,6 @@ func _slide_at(deck: Dictionary, args: Dictionary) -> Dictionary:
 		return {"__error__": "slide_index out of range: %d (deck has %d slides)" % [idx, slides.size()]}
 	return slides[idx] as Dictionary
 
-
-func _validate_coords(args: Dictionary) -> String:
-	for axis in ["x", "y", "w", "h"]:
-		if not args.has(axis):
-			return "%s is required" % axis
-		var v: float = MCPToolUtils.coerce_float(args[axis], -1.0)
-		if v < 0.0 or v > 1.0:
-			return "%s must be in [0, 1], got %f" % [axis, v]
-	return ""
-
-
-# T6 R7: _normalize_hex moved to plugin (used only by removed _set_slide_background).
-
-
-# ---------------------------------------------------------------------------
-# ID generation (mirrors slide_model.gd:_gen_id pattern)
-# ---------------------------------------------------------------------------
 
 func _gen_id(prefix: String) -> String:
 	if _id_seed < 0:
