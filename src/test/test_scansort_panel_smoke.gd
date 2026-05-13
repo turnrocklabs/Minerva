@@ -1,5 +1,5 @@
 extends SceneTree
-## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4 + R5 + R6 + R7.
+## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8.
 ##
 ## Run: godot --headless --path src --script test/test_scansort_panel_smoke.gd
 ##
@@ -8,9 +8,10 @@ extends SceneTree
 ##                T7 R2 — view scripts (FileTree, VaultView, StatusPanel)
 ##                T7 R3 — add-document dialog + ingest pipeline
 ##                T7 R4 — CRUD dialogs (EditDetailsDialog, RulesEditorDialog)
-##                T7 R5 — cross-vault registry dialog + settings dialog
+##                T7 R5 — cross-vault registry dialog (settings dialog dropped in R8)
 ##                T7 R6 — checklist dialog
 ##                T7 R7 — get_editor_actions() chrome API (toolbar removed)
+##                T7 R8 — drop settings dialog, inherit chat model via _resolve_chat_model_for_classify
 ##
 ## Layer-1 headless checks (no display required):
 ##   1.  password_dialog.gd loads without parse errors
@@ -44,14 +45,13 @@ const PLUGIN_ADD_DIALOG_GD        := "/home/imran/github/plugins/scansort/ui/add
 const PLUGIN_EDIT_DETAILS_GD      := "/home/imran/github/plugins/scansort/ui/edit_details_dialog.gd"
 const PLUGIN_RULES_EDITOR_GD      := "/home/imran/github/plugins/scansort/ui/rules_editor_dialog.gd"
 const PLUGIN_VAULT_REGISTRY_GD    := "/home/imran/github/plugins/scansort/ui/vault_registry_dialog.gd"
-const PLUGIN_SETTINGS_DIALOG_GD   := "/home/imran/github/plugins/scansort/ui/settings_dialog.gd"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
 
 
 func _init() -> void:
-	print("=== Scansort Panel Substrate Smoke Test (T7 R1-R7) ===\n")
+	print("=== Scansort Panel Substrate Smoke Test (T7 R1-R8) ===\n")
 	await _run_tests()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -554,69 +554,19 @@ func _run_tests() -> void:
 			if is_instance_valid(reg_dlg):
 				reg_dlg.free()
 
-	# --- J87-J96: settings_dialog.gd ---
-	var set_dlg_script = load(PLUGIN_SETTINGS_DIALOG_GD)
-	check("J87: settings_dialog.gd loads (non-null)",
-		set_dlg_script != null,
-		"load() returned null — check parse errors above")
-
-	if set_dlg_script == null:
-		for _i in range(9):
-			_fail_count += 1
-		print("  SKIP J88-J96: settings_dialog script null")
-	else:
-		var set_dlg = set_dlg_script.new()
-		check("J88: SettingsDialog instantiates", set_dlg != null)
-
-		if set_dlg != null:
-			check("J89: extends AcceptDialog",
-				set_dlg is AcceptDialog,
-				"got class: %s" % set_dlg.get_class())
-
-			check("J90: signal 'settings_changed' declared",
-				set_dlg.has_signal("settings_changed"))
-
-			check("J91: signal 'closed' declared",
-				set_dlg.has_signal("closed"))
-
-			check("J92: method 'init' exists",
-				set_dlg.has_method("init"))
-
-			check("J93: method '_read_form' exists",
-				set_dlg.has_method("_read_form"))
-
-			check("J94: method '_populate_from' exists",
-				set_dlg.has_method("_populate_from"))
-
-			# Smoke: init with null conn + empty vault — must not crash.
-			var set_smoke_ok := true
-			set_dlg.init(null, "", "", {})
-			check("J95: init(null, '', '', {}) does not crash", set_smoke_ok)
-
-			# Smoke: _populate_from with a settings dict — must not crash.
-			var pop_smoke_ok := true
-			set_dlg._populate_from({
-				"text_model_id":    "claude-sonnet-4-5",
-				"vision_model_id":  "claude-sonnet-4-5",
-				"max_text_chars":   8000,
-				"default_category": "test",
-			})
-			check("J96: _populate_from(settings_dict) does not crash", pop_smoke_ok)
-
-			if is_instance_valid(set_dlg):
-				set_dlg.free()
-
-	# --- J97-J101: ScansortPanel R5 method presence + _settings cache ---
-	print("\n-- J (panel R5): ScansortPanel --")
+	# --- J97-J103: ScansortPanel R5+R8 method presence ---
+	# R8: settings_dialog.gd deleted; J87-J96 (settings dialog tests) dropped.
+	#     J98/J99/J100/J101/J103 replaced with R8 assertions.
+	print("\n-- J (panel R5+R8): ScansortPanel --")
 	var panel4_packed = load(PLUGIN_PANEL_TSCN)
 	var panel4 = null
 	if panel4_packed != null:
 		panel4 = panel4_packed.instantiate()
 
 	if panel4 == null:
-		for _i in range(5):
+		for _i in range(4):
 			_fail_count += 1
-		print("  SKIP J97-J101: could not instantiate panel for J checks")
+		print("  SKIP J97-J103: could not instantiate panel for J checks")
 	else:
 		root.add_child(panel4)
 		await process_frame
@@ -624,30 +574,26 @@ func _run_tests() -> void:
 		check("J97: panel has method '_on_vault_registry_pressed'",
 			panel4.has_method("_on_vault_registry_pressed"))
 
-		check("J98: panel has method '_on_settings_pressed'",
-			panel4.has_method("_on_settings_pressed"))
+		# R8: settings pressed and load_settings_defaults are gone.
+		check("J98: panel does NOT have '_on_settings_pressed' (R8: removed)",
+			not panel4.has_method("_on_settings_pressed"),
+			"_on_settings_pressed still exists — not fully removed")
 
-		check("J99: panel has method '_load_settings_defaults'",
-			panel4.has_method("_load_settings_defaults"))
+		check("J99: panel does NOT have '_load_settings_defaults' (R8: removed)",
+			not panel4.has_method("_load_settings_defaults"),
+			"_load_settings_defaults still exists — not fully removed")
 
-		check("J100: panel._settings starts as Dictionary",
-			panel4.get("_settings") is Dictionary,
-			"got type: %s" % type_string(typeof(panel4.get("_settings"))))
+		# R8: _settings member var is gone.
+		check("J100: panel._settings member no longer exists (R8: removed)",
+			panel4.get("_settings") == null,
+			"_settings still present — not fully removed")
 
-		# Verify settings_changed signal updates _settings cache.
-		# Simulate what _on_settings_pressed wires: emit settings_changed → _settings updated.
-		var fake_settings := {
-			"text_model_id":    "claude-haiku-4-5",
-			"vision_model_id":  "claude-haiku-4-5",
-			"max_text_chars":   2000,
-			"default_category": "invoices",
-		}
-		panel4.set("_settings", fake_settings)
-		check("J101: _settings cache updated via direct set",
-			panel4.get("_settings").get("text_model_id", "") == "claude-haiku-4-5",
-			"got: %s" % str(panel4.get("_settings").get("text_model_id", "(missing)")))
+		# R8: new helper exists.
+		check("J101: panel has method '_resolve_chat_model_for_classify' (R8: added)",
+			panel4.has_method("_resolve_chat_model_for_classify"),
+			"_resolve_chat_model_for_classify not found")
 
-		# J102/J103: verify menu ids 5 and 6 via get_editor_actions() (R7: toolbar removed).
+		# J102: verify menu id 5 still present via get_editor_actions().
 		var actions_j: Array = panel4.get_editor_actions() if panel4.has_method("get_editor_actions") else []
 		var fmb_j: MenuButton = null
 		if actions_j.size() > 0 and actions_j[0] is MenuButton:
@@ -664,8 +610,8 @@ func _run_tests() -> void:
 					has_id6 = true
 		check("J102: File menu (via get_editor_actions) has id 5 (Vault Registry)",
 			has_id5, "menu id 5 not found")
-		check("J103: File menu (via get_editor_actions) has id 6 (Settings)",
-			has_id6, "menu id 6 not found")
+		check("J103: File menu (via get_editor_actions) does NOT have id 6 (Settings removed)",
+			not has_id6, "menu id 6 still present — Settings item not removed")
 		# Free the returned MenuButton (in headless tests the editor chrome isn't present).
 		if fmb_j != null and is_instance_valid(fmb_j):
 			fmb_j.queue_free()
@@ -773,11 +719,11 @@ func _run_tests() -> void:
 		if menu_l != null:
 			var popup_l: PopupMenu = menu_l.get_popup()
 
-			check("L119: MenuButton popup has >= 8 items",
-				popup_l.item_count >= 8,
+			check("L119: MenuButton popup has >= 7 items",
+				popup_l.item_count >= 7,
 				"got item_count: %d" % popup_l.item_count)
 
-			# Verify all expected ids 0,1,2,3,4,5,6,7 are present.
+			# Verify all expected ids 0,1,2,3,4,5,7 present; id 6 (Settings) gone (R8).
 			var found_ids: Array[int] = []
 			for i: int in range(popup_l.item_count):
 				found_ids.append(popup_l.get_item_id(i))
@@ -786,10 +732,10 @@ func _run_tests() -> void:
 				found_ids.has(0), "id 0 not found in: %s" % str(found_ids))
 			check("L121: popup has id 1 (Open Vault)",
 				found_ids.has(1), "id 1 not found in: %s" % str(found_ids))
-			check("L122: popup has ids 2,3,4,5,6,7 all present",
+			check("L122: popup has ids 2,3,4,5,7 and NOT id 6 (R8: Settings removed)",
 				found_ids.has(2) and found_ids.has(3) and found_ids.has(4) and
-				found_ids.has(5) and found_ids.has(6) and found_ids.has(7),
-				"missing ids from: %s" % str(found_ids))
+				found_ids.has(5) and found_ids.has(7) and not found_ids.has(6),
+				"id mismatch from: %s" % str(found_ids))
 
 			if is_instance_valid(menu_l):
 				menu_l.queue_free()

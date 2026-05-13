@@ -3545,3 +3545,27 @@ func _on_clone_chat_button_pressed() -> void:
 	if %tcChats.current_tab < 0:
 		return
 	clone_chat(%tcChats.current_tab)
+
+
+## Returns the currently-selected chat model descriptor.
+## Used by plugin panels (e.g. scansort) that want their LLM calls to
+## inherit chat's model selection without forcing the user to configure
+## a separate model per plugin.
+##
+## Returns: {model_name: String, provider: String} or {} if no selection.
+## - model_name: the string passed to host.providers.chat (e.g. "claude-opus-4-7", "default")
+## - provider: lowercase provider hint for disambiguation (e.g. "anthropic", "openrouter")
+func get_active_model_descriptor() -> Dictionary:
+	if _provider_option_button == null:
+		return {}
+	var selected_id: int = _provider_option_button.get_selected_id()
+	if selected_id < 0:
+		return {}
+	var provider_obj = _provider_option_button.get_selected_provider()
+	if not is_instance_valid(provider_obj):
+		return {}
+	var model_name: String = str(provider_obj.model_name) if "model_name" in provider_obj else ""
+	if model_name.is_empty():
+		return {}
+	var provider_name: String = str(provider_obj.provider_name).to_lower() if "provider_name" in provider_obj else ""
+	return {"model_name": model_name, "provider": provider_name}

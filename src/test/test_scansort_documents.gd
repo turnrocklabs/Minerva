@@ -367,8 +367,13 @@ func _run_test(manifest_path: String) -> void:
 	)
 	check("wrong_password verify returns Dictionary", wrong_pw is Dictionary,
 		"got type %d" % typeof(wrong_pw))
-	check("wrong_password verify ok == false (not an error)",
-		wrong_pw.get("ok", true) == false,
+	# Post-T7-R7: transport ok stays true on dispatch success; verified is the
+	# semantic mismatch indicator.
+	check("wrong_password verify ok == true (transport succeeded)",
+		wrong_pw.get("ok", false) == true,
+		"got: %s" % str(wrong_pw))
+	check("wrong_password verify verified == false (semantic mismatch)",
+		wrong_pw.get("verified", true) == false,
 		"got: %s" % str(wrong_pw))
 	check("wrong_password verify has no 'error' field",
 		not wrong_pw.has("error"),
