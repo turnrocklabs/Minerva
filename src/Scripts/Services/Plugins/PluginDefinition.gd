@@ -180,6 +180,8 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.editors.export",
 	"host.editors.open",
 	"host.providers.chat",
+	"host.dialogs.file_picker",
+	"host.dialogs.directory_picker",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

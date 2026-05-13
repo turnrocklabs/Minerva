@@ -44,6 +44,12 @@ var policy: PluginPolicy = null
 ## denials are logged in addition to what PluginPolicy already records.
 var audit_log: PluginAuditLog = null
 
+## Test-only one-shot injection. When set to a non-null Variant before a
+## host.dialogs.* dispatch, the handler short-circuits the FileDialog popup
+## and returns this value as the success result, then clears the override.
+## Real plugins never trigger this path.
+static var _test_dialog_override = null
+
 
 func _init(p_policy: PluginPolicy = null, p_audit_log: PluginAuditLog = null) -> void:
 	policy = p_policy
@@ -276,6 +282,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_editors_open(plugin_id, args)
 		"host.providers.chat":
 			named_result = await _handle_host_providers_chat(plugin_id, args)
+		"host.dialogs.file_picker":
+			named_result = await _handle_host_dialogs_file_picker(plugin_id, args)
+		"host.dialogs.directory_picker":
+			named_result = await _handle_host_dialogs_directory_picker(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -2561,6 +2571,183 @@ func _describe_editor_state(editor) -> Dictionary:
 		state["dirty"] = false
 		state["unsupported_reason"] = "panel_state_via_host_owned_save"
 	return state
+
+
+# ---------------------------------------------------------------------------
+# host.dialogs handlers
+# ---------------------------------------------------------------------------
+
+## Strict args allowlists for host.dialogs pickers.
+const _DIALOGS_FILE_PICKER_ALLOWED_ARGS := ["title", "initial_path", "filters", "mode"]
+const _DIALOGS_DIRECTORY_PICKER_ALLOWED_ARGS := ["title", "initial_path"]
+
+
+## host.dialogs.file_picker — pop a FileDialog in file mode and await selection.
+##
+## Args (all optional):
+##   title:        String — dialog title (default "Choose File")
+##   initial_path: String — sets FileDialog.current_path if non-empty
+##   filters:      Array of String — FileDialog filter strings (e.g. "*.txt ; Text Files")
+##   mode:         String — "open" (default) or "save"
+##
+## Returns (success result):
+##   On pick:   {cancelled: false, path: String}
+##   On cancel: {cancelled: true}
+##
+## Errors: schema_validation_failed, dialog_unavailable (headless without override).
+func _handle_host_dialogs_file_picker(plugin_id: String, args: Dictionary) -> Dictionary:
+	# 1. Strict arg allowlist check
+	for k in args.keys():
+		if k not in _DIALOGS_FILE_PICKER_ALLOWED_ARGS:
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown arg '%s' (allowed: %s)" % [k, str(_DIALOGS_FILE_PICKER_ALLOWED_ARGS)]
+			)
+
+	# Validate mode
+	var mode: String = str(args.get("mode", "open")).strip_edges().to_lower()
+	if mode != "open" and mode != "save":
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "host.dialogs.file_picker: 'mode' must be 'open' or 'save' (got: '%s')" % mode
+		)
+
+	# Validate filters — each entry must be a String
+	var raw_filters = args.get("filters", [])
+	if not (raw_filters is Array):
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "host.dialogs.file_picker: 'filters' must be an Array"
+		)
+	for i in range((raw_filters as Array).size()):
+		if not ((raw_filters as Array)[i] is String):
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "host.dialogs.file_picker: filters[%d] must be a String" % i
+			)
+
+	# 2. Test override short-circuit
+	if CapabilityBroker._test_dialog_override != null:
+		var injected = CapabilityBroker._test_dialog_override
+		CapabilityBroker._test_dialog_override = null
+		return PluginErrors.success(injected)
+
+	# 3. Headless guard
+	if DisplayServer.get_name() == "headless":
+		return {
+			"success": false,
+			"error_code": "dialog_unavailable",
+			"error_message": "host.dialogs.* requires a UI session; tests must use _test_dialog_override",
+			"plugin_id": plugin_id,
+		}
+
+	# 4. Build and pop the dialog
+	var title: String = str(args.get("title", "Choose File"))
+	var initial_path: String = str(args.get("initial_path", ""))
+	var filters: Array = raw_filters as Array
+
+	var dialog := FileDialog.new()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE if mode == "save" else FileDialog.FILE_MODE_OPEN_FILE
+	dialog.title = title
+	if not initial_path.is_empty():
+		dialog.current_path = initial_path
+	if not filters.is_empty():
+		dialog.filters = PackedStringArray(filters)
+
+	Engine.get_main_loop().root.add_child(dialog)
+
+	var picked_path: String = ""
+	var was_cancelled: bool = false
+	var done: bool = false
+
+	dialog.file_selected.connect(func(p: String):
+		picked_path = p
+		done = true
+	)
+	dialog.canceled.connect(func():
+		was_cancelled = true
+		done = true
+	)
+
+	dialog.popup_centered(Vector2i(700, 500))
+
+	while not done:
+		await Engine.get_main_loop().process_frame
+
+	dialog.queue_free()
+
+	if was_cancelled:
+		return PluginErrors.success({"cancelled": true})
+	return PluginErrors.success({"cancelled": false, "path": picked_path})
+
+
+## host.dialogs.directory_picker — pop a FileDialog in directory mode and await selection.
+##
+## Args (all optional):
+##   title:        String — dialog title (default "Choose Directory")
+##   initial_path: String — sets FileDialog.current_path if non-empty
+##
+## Returns (success result):
+##   On pick:   {cancelled: false, path: String}
+##   On cancel: {cancelled: true}
+##
+## Errors: schema_validation_failed, dialog_unavailable (headless without override).
+func _handle_host_dialogs_directory_picker(plugin_id: String, args: Dictionary) -> Dictionary:
+	# 1. Strict arg allowlist check
+	for k in args.keys():
+		if k not in _DIALOGS_DIRECTORY_PICKER_ALLOWED_ARGS:
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown arg '%s' (allowed: %s)" % [k, str(_DIALOGS_DIRECTORY_PICKER_ALLOWED_ARGS)]
+			)
+
+	# 2. Test override short-circuit
+	if CapabilityBroker._test_dialog_override != null:
+		var injected = CapabilityBroker._test_dialog_override
+		CapabilityBroker._test_dialog_override = null
+		return PluginErrors.success(injected)
+
+	# 3. Headless guard
+	if DisplayServer.get_name() == "headless":
+		return {
+			"success": false,
+			"error_code": "dialog_unavailable",
+			"error_message": "host.dialogs.* requires a UI session; tests must use _test_dialog_override",
+			"plugin_id": plugin_id,
+		}
+
+	# 4. Build and pop the dialog
+	var title: String = str(args.get("title", "Choose Directory"))
+	var initial_path: String = str(args.get("initial_path", ""))
+
+	var dialog := FileDialog.new()
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	dialog.title = title
+	if not initial_path.is_empty():
+		dialog.current_path = initial_path
+
+	Engine.get_main_loop().root.add_child(dialog)
+
+	var picked_path: String = ""
+	var was_cancelled: bool = false
+	var done: bool = false
+
+	dialog.dir_selected.connect(func(p: String):
+		picked_path = p
+		done = true
+	)
+	dialog.canceled.connect(func():
+		was_cancelled = true
+		done = true
+	)
+
+	dialog.popup_centered(Vector2i(700, 500))
+
+	while not done:
+		await Engine.get_main_loop().process_frame
+
+	dialog.queue_free()
+
+	if was_cancelled:
+		return PluginErrors.success({"cancelled": true})
+	return PluginErrors.success({"cancelled": false, "path": picked_path})
 
 
 # ---------------------------------------------------------------------------
