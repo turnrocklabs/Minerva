@@ -662,6 +662,56 @@ func _run_tests() -> void:
 		check("J103: File menu has id 6 (Settings)",
 			has_id6, "menu id 6 not found")
 
+	# --- K group: R6 — checklist dialog ---
+	const PLUGIN_CHECKLIST_GD := "/home/imran/github/plugins/scansort/ui/checklist_dialog.gd"
+	var checklist_script := load(PLUGIN_CHECKLIST_GD)
+	check("K104: checklist_dialog.gd parses cleanly", checklist_script != null,
+		"load() returned null")
+
+	if checklist_script != null:
+		var instance_signals: Array = checklist_script.get_script_signal_list()
+		var sig_names: Array = []
+		for s: Dictionary in instance_signals:
+			sig_names.append(s.get("name", ""))
+		check("K105: ChecklistDialog has signal 'checklist_changed'",
+			sig_names.has("checklist_changed"),
+			"signals: %s" % str(sig_names))
+		check("K106: ChecklistDialog has signal 'closed'",
+			sig_names.has("closed"),
+			"signals: %s" % str(sig_names))
+
+		var instance: Object = checklist_script.new()
+		check("K107: ChecklistDialog instantiates without crash", instance != null)
+		if instance != null:
+			check("K108: ChecklistDialog has method 'init'",
+				instance.has_method("init"))
+			check("K109: ChecklistDialog has method 'refresh'",
+				instance.has_method("refresh"))
+			check("K110: ChecklistDialog has method '_on_run_check'",
+				instance.has_method("_on_run_check"))
+			check("K111: ChecklistDialog has method '_on_add_auto'",
+				instance.has_method("_on_add_auto"))
+			check("K112: ChecklistDialog has method '_on_delete_item'",
+				instance.has_method("_on_delete_item"))
+			if instance is Node:
+				(instance as Node).queue_free()
+			else:
+				instance.free()
+
+	# Panel-side wire: id 7 menu item + handler method.
+	if panel4 != null and is_instance_valid(panel4):
+		check("K113: panel has method '_on_checklist_pressed'",
+			panel4.has_method("_on_checklist_pressed"))
+		var fmb2: MenuButton = panel4.get("_file_menu_btn")
+		var has_id7: bool = false
+		if fmb2 != null:
+			var pm2: PopupMenu = fmb2.get_popup()
+			for i: int in range(pm2.item_count):
+				if pm2.get_item_id(i) == 7:
+					has_id7 = true
+		check("K114: File menu has id 7 (Checklist)",
+			has_id7, "menu id 7 not found")
+
 		panel4.queue_free()
 		await process_frame
 
