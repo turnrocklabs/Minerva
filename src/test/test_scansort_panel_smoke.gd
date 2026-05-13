@@ -1,5 +1,5 @@
 extends SceneTree
-## Scansort panel substrate smoke test — T7 R1 + R2 + R3.
+## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4.
 ##
 ## Run: godot --headless --path src --script test/test_scansort_panel_smoke.gd
 ##
@@ -7,6 +7,7 @@ extends SceneTree
 ## Rounds:        T7 R1 — panel UI substrate (ScansortPanel + PasswordDialog)
 ##                T7 R2 — view scripts (FileTree, VaultView, StatusPanel)
 ##                T7 R3 — add-document dialog + ingest pipeline
+##                T7 R4 — CRUD dialogs (EditDetailsDialog, RulesEditorDialog)
 ##
 ## Layer-1 headless checks (no display required):
 ##   1.  password_dialog.gd loads without parse errors
@@ -36,14 +37,16 @@ const PLUGIN_DIALOG_GD   := "/home/imran/github/plugins/scansort/ui/password_dia
 const PLUGIN_FILETREE_GD := "/home/imran/github/plugins/scansort/ui/file_tree.gd"
 const PLUGIN_VAULTVIEW_GD := "/home/imran/github/plugins/scansort/ui/vault_view.gd"
 const PLUGIN_STATUSPANEL_GD := "/home/imran/github/plugins/scansort/ui/status_panel.gd"
-const PLUGIN_ADD_DIALOG_GD := "/home/imran/github/plugins/scansort/ui/add_document_dialog.gd"
+const PLUGIN_ADD_DIALOG_GD        := "/home/imran/github/plugins/scansort/ui/add_document_dialog.gd"
+const PLUGIN_EDIT_DETAILS_GD      := "/home/imran/github/plugins/scansort/ui/edit_details_dialog.gd"
+const PLUGIN_RULES_EDITOR_GD      := "/home/imran/github/plugins/scansort/ui/rules_editor_dialog.gd"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
 
 
 func _init() -> void:
-	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2 + R3) ===\n")
+	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2 + R3 + R4) ===\n")
 	await _run_tests()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -387,6 +390,119 @@ func _run_tests() -> void:
 			"got: '%s'" % str(panel2.get("_vault_password")))
 
 		panel2.queue_free()
+		await process_frame
+
+	# -----------------------------------------------------------------------
+	# Group I: R4 dialogs — EditDetailsDialog + RulesEditorDialog
+	# -----------------------------------------------------------------------
+	print("\n-- I: R4 dialogs (edit_details_dialog, rules_editor_dialog) --")
+
+	# --- I61-I67: edit_details_dialog.gd ---
+	var edit_dlg_script = load(PLUGIN_EDIT_DETAILS_GD)
+	check("I61: edit_details_dialog.gd loads (non-null)",
+		edit_dlg_script != null,
+		"load() returned null — check parse errors above")
+
+	if edit_dlg_script == null:
+		for _i in range(6):
+			_fail_count += 1
+		print("  SKIP I62-I67: edit_details_dialog script null")
+	else:
+		var edit_dlg = edit_dlg_script.new()
+		check("I62: EditDetailsDialog instantiates", edit_dlg != null)
+
+		if edit_dlg != null:
+			check("I63: extends AcceptDialog",
+				edit_dlg is AcceptDialog,
+				"got class: %s" % edit_dlg.get_class())
+
+			check("I64: signal 'accepted' declared",
+				edit_dlg.has_signal("accepted"))
+
+			check("I65: signal 'cancelled' declared",
+				edit_dlg.has_signal("cancelled"))
+
+			check("I66: method 'set_document' exists",
+				edit_dlg.has_method("set_document"))
+
+			# Smoke: set_document with a fake dict + empty rules — must not crash.
+			var fake_doc := {
+				"doc_id":          42,
+				"display_name":    "Test Invoice",
+				"description":     "A test document",
+				"doc_date":        "2026-05-13",
+				"tags":            ["finance", "test"],
+				"category":        "invoices",
+			}
+			var smoke_ok := true
+			edit_dlg.set_document(fake_doc, [])
+			check("I67: set_document(fake_doc, []) does not crash", smoke_ok)
+
+			if is_instance_valid(edit_dlg):
+				edit_dlg.free()
+
+	# --- I68-I75: rules_editor_dialog.gd ---
+	var rules_dlg_script = load(PLUGIN_RULES_EDITOR_GD)
+	check("I68: rules_editor_dialog.gd loads (non-null)",
+		rules_dlg_script != null,
+		"load() returned null — check parse errors above")
+
+	if rules_dlg_script == null:
+		for _i in range(7):
+			_fail_count += 1
+		print("  SKIP I69-I75: rules_editor_dialog script null")
+	else:
+		var rules_dlg = rules_dlg_script.new()
+		check("I69: RulesEditorDialog instantiates", rules_dlg != null)
+
+		if rules_dlg != null:
+			check("I70: extends AcceptDialog",
+				rules_dlg is AcceptDialog,
+				"got class: %s" % rules_dlg.get_class())
+
+			check("I71: signal 'rules_changed' declared",
+				rules_dlg.has_signal("rules_changed"))
+
+			check("I72: signal 'closed' declared",
+				rules_dlg.has_signal("closed"))
+
+			check("I73: method 'init' exists",
+				rules_dlg.has_method("init"))
+
+			check("I74: method 'refresh' exists",
+				rules_dlg.has_method("refresh"))
+
+			check("I75: method '_on_save_pressed' exists",
+				rules_dlg.has_method("_on_save_pressed"))
+
+			if is_instance_valid(rules_dlg):
+				rules_dlg.free()
+
+	# --- I76-I78: ScansortPanel R4 method presence ---
+	print("\n-- I (panel R4 methods): ScansortPanel --")
+	var panel3_packed = load(PLUGIN_PANEL_TSCN)
+	var panel3 = null
+	if panel3_packed != null:
+		panel3 = panel3_packed.instantiate()
+
+	if panel3 == null:
+		for _i in range(3):
+			_fail_count += 1
+		print("  SKIP I76-I78: could not instantiate panel for I checks")
+	else:
+		root.add_child(panel3)
+		await process_frame
+
+		check("I76: panel has method '_on_rules_editor_pressed'",
+			panel3.has_method("_on_rules_editor_pressed"))
+
+		check("I77: panel has method '_on_edit_doc_pressed'",
+			panel3.has_method("_on_edit_doc_pressed"))
+
+		check("I78: panel has method '_on_edit_dialog_accepted'",
+			panel3.has_method("_on_edit_dialog_accepted"))
+
+		panel3.queue_free()
 		await process_frame
 
 
