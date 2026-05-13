@@ -165,6 +165,11 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) ->
 		# Don't fail the install, but log a warning
 		push_warning("[PluginManager] Warning creating directories for '%s': %s" % [def.id, create_result["error"]])
 
+	# Default-grant declared capabilities (except privilege-escalation ones).
+	# Install is the trust act; per-capability opt-in is friction the user
+	# can reverse later by revoking specific caps.
+	_auto_grant_declared_capabilities(def)
+
 	print("[PluginManager] Installed plugin '%s' v%s" % [def.id, def.version])
 
 	var result: Dictionary = {"ok": true, "id": def.id}
@@ -474,6 +479,13 @@ func start_plugin(id: String) -> Dictionary:
 			if granted_path not in def.filesystem_paths:
 				def.filesystem_paths.append(granted_path)
 
+	# One-time migration for plugins installed before default-grant landed:
+	# if the policy has no entry at all for this plugin (not even an empty list),
+	# treat as "freshly installed" and auto-grant declared caps. An empty list
+	# means the user explicitly revoked everything — leave it alone.
+	if _policy_ref != null and not _policy_ref._grants.has(def.id):
+		_auto_grant_declared_capabilities(def)
+
 	# Clean up any leftover connection from a previous run.
 	_cleanup_connection(id)
 
@@ -709,6 +721,28 @@ func get_connection(id: String) -> MCPServerConnection:
 var _policy_ref = null  # PluginPolicy
 func get_policy():  # -> PluginPolicy
 	return _policy_ref
+
+
+## Capabilities that REQUIRE explicit user grant — never auto-granted at install
+## time. These let a plugin escalate its own privileges (expand filesystem scope
+## at runtime, etc.) so they bypass the default-on-install policy.
+const _NEVER_AUTO_GRANT: Array[String] = ["host.permissions.grant_scope"]
+
+
+## Default-grant every capability declared in the plugin's manifest, skipping
+## the privilege-escalation denylist. Idempotent: grant_capability is a no-op
+## on already-granted caps. Safe to call at install + as a one-time migration
+## on plugins installed before this behavior landed.
+func _auto_grant_declared_capabilities(def) -> void:
+	if def == null:
+		return
+	if _policy_ref == null:
+		push_warning("[PluginManager] _auto_grant: no PluginPolicy reference; skipping for '%s'" % def.id)
+		return
+	for cap in def.host_capabilities:
+		if cap in _NEVER_AUTO_GRANT:
+			continue
+		_policy_ref.grant_capability(def.id, cap)
 
 
 ## Return the PluginAuditLog instance (used by PluginMCPTools).
