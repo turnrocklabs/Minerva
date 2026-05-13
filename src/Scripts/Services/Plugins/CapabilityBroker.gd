@@ -256,6 +256,18 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_files_read(plugin_id, args)
 		"host.files.write":
 			named_result = _handle_host_files_write(plugin_id, args)
+		"host.files.list":
+			named_result = _handle_host_files_list(plugin_id, args)
+		"host.files.exists":
+			named_result = _handle_host_files_exists(plugin_id, args)
+		"host.files.stat":
+			named_result = _handle_host_files_stat(plugin_id, args)
+		"host.files.mkdir":
+			named_result = _handle_host_files_mkdir(plugin_id, args)
+		"host.files.delete":
+			named_result = _handle_host_files_delete(plugin_id, args)
+		"host.files.move":
+			named_result = _handle_host_files_move(plugin_id, args)
 		"host.editors.list":
 			named_result = _handle_host_editors_list(plugin_id, args)
 		"host.editors.export":
@@ -1228,6 +1240,14 @@ const _FILES_MAX_BYTES := 8 * 1024 * 1024
 const _FILES_READ_ALLOWED_ARGS := ["path", "encoding"]
 const _FILES_WRITE_ALLOWED_ARGS := ["path", "content", "encoding", "create_parents"]
 const _FILES_VALID_ENCODINGS := ["text", "base64"]
+const _FILES_LIST_ALLOWED_ARGS := ["path", "include_hidden"]
+const _FILES_EXISTS_ALLOWED_ARGS := ["path"]
+const _FILES_STAT_ALLOWED_ARGS := ["path"]
+const _FILES_MKDIR_ALLOWED_ARGS := ["path", "parents"]
+const _FILES_DELETE_ALLOWED_ARGS := ["path", "recursive"]
+const _FILES_MOVE_ALLOWED_ARGS := ["source", "dest", "overwrite"]
+## Maximum directory entries returned by host.files.list in a single request.
+const _FILES_LIST_MAX_ENTRIES := 10000
 
 
 ## Read a scoped file as text or base64.
@@ -1366,6 +1386,398 @@ func _handle_host_files_write(plugin_id: String, args: Dictionary) -> Dictionary
 		"encoding": encoding,
 		"bytes_written": bytes.size(),
 	})
+
+
+## List entries in a scoped directory.
+##
+## Args: {path: String, include_hidden?: bool} (default include_hidden=false)
+##
+## On success: {path, entries: [{name, kind, size, modified_unix}, ...], truncated?: true}
+## Errors: schema_validation_failed, filesystem_disabled, target_not_allowlisted,
+##         not_a_directory (inline code), io_error.
+func _handle_host_files_list(plugin_id: String, args: Dictionary) -> Dictionary:
+	var arg_check := _validate_files_args(plugin_id, args, _FILES_LIST_ALLOWED_ARGS)
+	if not arg_check.get("success", false):
+		return arg_check
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.list")
+
+	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	if not path_check.get("success", false):
+		return path_check
+	var abs_path: String = path_check["result"]["path"]
+
+	# A file passed as path is a user error — surface a clear code, not io_error.
+	if FileAccess.file_exists(abs_path):
+		return {
+			"success": false,
+			"error_code": "not_a_directory",
+			"error_message": "Path is a file, not a directory: '%s'" % abs_path,
+			"plugin_id": plugin_id,
+			"path": abs_path,
+		}
+
+	var da := DirAccess.open(abs_path)
+	if da == null:
+		var err := DirAccess.get_open_error()
+		return PluginErrors.io_error(plugin_id, abs_path, "DirAccess.open failed: error=%d" % err)
+
+	var include_hidden: bool = bool(args.get("include_hidden", false))
+	# DirAccess.include_hidden controls whether hidden files (dot-prefix on Linux)
+	# appear in get_next() output. Must be set before list_dir_begin().
+	da.include_hidden = include_hidden
+	var entries: Array = []
+	var truncated := false
+
+	da.list_dir_begin()
+	while true:
+		var name: String = da.get_next()
+		if name.is_empty():
+			break
+		if name == "." or name == "..":
+			continue
+		if not include_hidden and name.begins_with("."):
+			continue
+		if entries.size() >= _FILES_LIST_MAX_ENTRIES:
+			truncated = true
+			break
+		var full: String = abs_path.path_join(name)
+		var is_dir: bool = da.current_is_dir()
+		var kind: String = "dir" if is_dir else "file"
+		var size: int = 0
+		if not is_dir:
+			var fa_tmp := FileAccess.open(full, FileAccess.READ)
+			if fa_tmp != null:
+				size = fa_tmp.get_length()
+				fa_tmp.close()
+		var modified_unix: int = int(FileAccess.get_modified_time(full))
+		entries.append({
+			"name": name,
+			"kind": kind,
+			"size": size,
+			"modified_unix": modified_unix,
+		})
+	da.list_dir_end()
+
+	print("[CapabilityBroker] Plugin '%s' list '%s' (%d entries)" % [plugin_id, abs_path, entries.size()])
+	var result: Dictionary = {"path": abs_path, "entries": entries}
+	if truncated:
+		result["truncated"] = true
+	return PluginErrors.success(result)
+
+
+## Check whether a scoped path exists and what kind it is.
+##
+## Args: {path: String}
+##
+## On success: {path, exists: bool, kind: "file"|"dir"|null}
+## Scope check runs regardless of existence — scope is the trust boundary.
+## Errors: schema_validation_failed, filesystem_disabled, target_not_allowlisted.
+func _handle_host_files_exists(plugin_id: String, args: Dictionary) -> Dictionary:
+	var arg_check := _validate_files_args(plugin_id, args, _FILES_EXISTS_ALLOWED_ARGS)
+	if not arg_check.get("success", false):
+		return arg_check
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.exists")
+
+	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	if not path_check.get("success", false):
+		return path_check
+	var abs_path: String = path_check["result"]["path"]
+
+	var exists_file: bool = FileAccess.file_exists(abs_path)
+	var exists_dir: bool = DirAccess.dir_exists_absolute(abs_path)
+	var exists: bool = exists_file or exists_dir
+	var kind: Variant = null
+	if exists_file:
+		kind = "file"
+	elif exists_dir:
+		kind = "dir"
+
+	print("[CapabilityBroker] Plugin '%s' exists '%s' → %s (%s)" % [plugin_id, abs_path, str(exists), str(kind)])
+	return PluginErrors.success({"path": abs_path, "exists": exists, "kind": kind})
+
+
+## Return metadata for a scoped path.
+##
+## Args: {path: String}
+##
+## On success: {path, kind: "file"|"dir", size: int, modified_unix: int}
+## Errors: schema_validation_failed, filesystem_disabled, target_not_allowlisted, io_error.
+func _handle_host_files_stat(plugin_id: String, args: Dictionary) -> Dictionary:
+	var arg_check := _validate_files_args(plugin_id, args, _FILES_STAT_ALLOWED_ARGS)
+	if not arg_check.get("success", false):
+		return arg_check
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.stat")
+
+	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	if not path_check.get("success", false):
+		return path_check
+	var abs_path: String = path_check["result"]["path"]
+
+	var exists_file: bool = FileAccess.file_exists(abs_path)
+	var exists_dir: bool = DirAccess.dir_exists_absolute(abs_path)
+
+	if not exists_file and not exists_dir:
+		return PluginErrors.io_error(plugin_id, abs_path, "path does not exist")
+
+	var kind: String = "file" if exists_file else "dir"
+	var size: int = 0
+	if exists_file:
+		var fa_tmp := FileAccess.open(abs_path, FileAccess.READ)
+		if fa_tmp != null:
+			size = fa_tmp.get_length()
+			fa_tmp.close()
+	var modified_unix: int = int(FileAccess.get_modified_time(abs_path))
+
+	print("[CapabilityBroker] Plugin '%s' stat '%s' → kind=%s size=%d" % [plugin_id, abs_path, kind, size])
+	return PluginErrors.success({
+		"path": abs_path,
+		"kind": kind,
+		"size": size,
+		"modified_unix": modified_unix,
+	})
+
+
+## Create a scoped directory.
+##
+## Args: {path: String, parents?: bool} (default parents=false)
+##
+## Idempotent: if the path already exists as a directory, returns created=false (success).
+## If it exists as a file, returns io_error.
+## On success: {path, created: bool}
+## Errors: schema_validation_failed, filesystem_disabled, target_not_allowlisted, io_error.
+func _handle_host_files_mkdir(plugin_id: String, args: Dictionary) -> Dictionary:
+	var arg_check := _validate_files_args(plugin_id, args, _FILES_MKDIR_ALLOWED_ARGS)
+	if not arg_check.get("success", false):
+		return arg_check
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.mkdir")
+
+	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	if not path_check.get("success", false):
+		return path_check
+	var abs_path: String = path_check["result"]["path"]
+
+	# Idempotent: already a directory → success with created=false.
+	if DirAccess.dir_exists_absolute(abs_path):
+		print("[CapabilityBroker] Plugin '%s' mkdir '%s' (already exists)" % [plugin_id, abs_path])
+		return PluginErrors.success({"path": abs_path, "created": false})
+
+	# Exists as a file → error.
+	if FileAccess.file_exists(abs_path):
+		return PluginErrors.io_error(plugin_id, abs_path,
+			"path already exists as a file; cannot create directory there")
+
+	var parents: bool = bool(args.get("parents", false))
+	var err: int
+	if parents:
+		err = DirAccess.make_dir_recursive_absolute(abs_path)
+	else:
+		err = DirAccess.make_dir_absolute(abs_path)
+
+	if err != OK:
+		return PluginErrors.io_error(plugin_id, abs_path,
+			"mkdir%s failed: error=%d" % ["_recursive" if parents else "", err])
+
+	print("[CapabilityBroker] Plugin '%s' mkdir '%s' (created, parents=%s)" % [plugin_id, abs_path, str(parents)])
+	return PluginErrors.success({"path": abs_path, "created": true})
+
+
+## Delete a scoped file or directory.
+##
+## Args: {path: String, recursive?: bool} (default recursive=false)
+##
+## Files: removed regardless of recursive flag.
+## Directories: if recursive=false, DirAccess.remove_absolute (fails if non-empty).
+## If recursive=true, walk and remove contents first (with per-path scope checks),
+## then remove the directory itself.
+##
+## On success: {path, removed: true, kind: "file"|"dir", entries_removed?: int}
+## Errors: schema_validation_failed, filesystem_disabled, target_not_allowlisted, io_error.
+func _handle_host_files_delete(plugin_id: String, args: Dictionary) -> Dictionary:
+	var arg_check := _validate_files_args(plugin_id, args, _FILES_DELETE_ALLOWED_ARGS)
+	if not arg_check.get("success", false):
+		return arg_check
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.delete")
+
+	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	if not path_check.get("success", false):
+		return path_check
+	var abs_path: String = path_check["result"]["path"]
+
+	var is_file: bool = FileAccess.file_exists(abs_path)
+	var is_dir: bool = DirAccess.dir_exists_absolute(abs_path)
+
+	if not is_file and not is_dir:
+		return PluginErrors.io_error(plugin_id, abs_path, "path does not exist")
+
+	var kind: String = "file" if is_file else "dir"
+
+	if is_file:
+		var err := DirAccess.remove_absolute(abs_path)
+		if err != OK:
+			return PluginErrors.io_error(plugin_id, abs_path, "remove_absolute failed: error=%d" % err)
+		print("[CapabilityBroker] Plugin '%s' delete '%s' (file)" % [plugin_id, abs_path])
+		return PluginErrors.success({"path": abs_path, "removed": true, "kind": kind})
+
+	# Directory path.
+	var recursive: bool = bool(args.get("recursive", false))
+	if not recursive:
+		var err := DirAccess.remove_absolute(abs_path)
+		if err != OK:
+			return PluginErrors.io_error(plugin_id, abs_path,
+				"remove_absolute failed (directory may be non-empty): error=%d" % err)
+		print("[CapabilityBroker] Plugin '%s' delete '%s' (empty dir)" % [plugin_id, abs_path])
+		return PluginErrors.success({"path": abs_path, "removed": true, "kind": kind})
+
+	# Recursive directory removal with per-path scope checks.
+	# _delete_recursive returns {ok: bool, count: int, error: ...} so we can
+	# propagate the entry count (GDScript ints are pass-by-value, not by ref).
+	var rec_result := _delete_recursive(plugin_id, abs_path, def.filesystem_paths)
+	if not rec_result.get("ok", false):
+		return rec_result.get("error", PluginErrors.io_error(plugin_id, abs_path, "recursive delete failed"))
+
+	var entries_removed: int = int(rec_result.get("count", 0))
+	print("[CapabilityBroker] Plugin '%s' delete '%s' (recursive, %d entries)" % [
+		plugin_id, abs_path, entries_removed])
+	return PluginErrors.success({
+		"path": abs_path,
+		"removed": true,
+		"kind": kind,
+		"entries_removed": entries_removed,
+	})
+
+
+## Recursive delete helper. Walks the tree, removes files and subdirs.
+## Every path is re-validated against allowed_paths before removal.
+## Returns {ok: true, count: int} on success or {ok: false, error: <PluginErrors dict>}
+## on scope violation / io error. Uses a return Dictionary to carry the count because
+## GDScript passes ints by value (not by reference).
+func _delete_recursive(
+		plugin_id: String, dir_path: String, allowed_paths: Array
+) -> Dictionary:
+	var da := DirAccess.open(dir_path)
+	if da == null:
+		return {"ok": false, "error": PluginErrors.io_error(plugin_id, dir_path,
+			"recursive delete: DirAccess.open failed on '%s'" % dir_path)}
+
+	da.include_hidden = true  # Delete everything, including hidden files.
+	da.list_dir_begin()
+	var children: Array[String] = []
+	while true:
+		var name: String = da.get_next()
+		if name.is_empty():
+			break
+		if name == "." or name == "..":
+			continue
+		children.append(name)
+	da.list_dir_end()
+
+	var total_count: int = 0
+
+	for name in children:
+		var child: String = dir_path.path_join(name)
+		# Defense-in-depth: re-validate each child (guards against escape symlinks).
+		if not is_path_in_scope(child, allowed_paths):
+			return {"ok": false, "error": PluginErrors.target_not_allowlisted(plugin_id, child)}
+
+		if DirAccess.dir_exists_absolute(child):
+			var sub_result := _delete_recursive(plugin_id, child, allowed_paths)
+			if not sub_result.get("ok", false):
+				return sub_result
+			total_count += int(sub_result.get("count", 0))
+		else:
+			var err := DirAccess.remove_absolute(child)
+			if err != OK:
+				return {"ok": false, "error": PluginErrors.io_error(plugin_id, child,
+					"recursive delete: remove_absolute failed on '%s': error=%d" % [child, err])}
+			total_count += 1
+
+	# Remove the now-empty directory itself.
+	var err := DirAccess.remove_absolute(dir_path)
+	if err != OK:
+		return {"ok": false, "error": PluginErrors.io_error(plugin_id, dir_path,
+			"recursive delete: remove_absolute failed on dir '%s': error=%d" % [dir_path, err])}
+	total_count += 1
+	return {"ok": true, "count": total_count}
+
+
+## Move/rename a scoped path.
+##
+## Args: {source: String, dest: String, overwrite?: bool} (default overwrite=false)
+##
+## Both source and dest must be within scope. If dest exists and overwrite=false →
+## io_error. If dest exists and overwrite=true → delete dest first (files or empty dirs).
+## On success: {source, dest, overwritten: bool}
+## Errors: schema_validation_failed, filesystem_disabled, target_not_allowlisted, io_error.
+func _handle_host_files_move(plugin_id: String, args: Dictionary) -> Dictionary:
+	# Strict allowlist — note: source+dest replace the standard "path" requirement.
+	for k in args.keys():
+		if k not in _FILES_MOVE_ALLOWED_ARGS:
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown arg '%s' (allowed: %s)" % [k, str(_FILES_MOVE_ALLOWED_ARGS)]
+			)
+	if not args.has("source") or str(args.get("source", "")).is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "'source' is required")
+	if not args.has("dest") or str(args.get("dest", "")).is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "'dest' is required")
+
+	var def: PluginDefinition = _get_plugin_definition(plugin_id)
+	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+		return PluginErrors.filesystem_disabled(plugin_id, "host.files.move")
+
+	# Validate both source and dest independently.
+	var src_check := validate_files_path(plugin_id, str(args["source"]), def.filesystem_paths)
+	if not src_check.get("success", false):
+		return src_check
+	var abs_source: String = src_check["result"]["path"]
+
+	var dst_check := validate_files_path(plugin_id, str(args["dest"]), def.filesystem_paths)
+	if not dst_check.get("success", false):
+		return dst_check
+	var abs_dest: String = dst_check["result"]["path"]
+
+	if not FileAccess.file_exists(abs_source) and not DirAccess.dir_exists_absolute(abs_source):
+		return PluginErrors.io_error(plugin_id, abs_source, "source path does not exist")
+
+	var overwrite: bool = bool(args.get("overwrite", false))
+	var dest_exists_file: bool = FileAccess.file_exists(abs_dest)
+	var dest_exists_dir: bool = DirAccess.dir_exists_absolute(abs_dest)
+	var dest_exists: bool = dest_exists_file or dest_exists_dir
+	var overwritten := false
+
+	if dest_exists:
+		if not overwrite:
+			return PluginErrors.io_error(plugin_id, abs_dest,
+				"dest exists; pass overwrite=true to replace")
+		# overwrite=true: delete dest. Dirs must be empty (no recursive overwrite).
+		var del_err: int = DirAccess.remove_absolute(abs_dest)
+		if del_err != OK:
+			return PluginErrors.io_error(plugin_id, abs_dest,
+				"overwrite: remove_absolute failed on dest: error=%d" % del_err)
+		overwritten = true
+
+	var rename_err := DirAccess.rename_absolute(abs_source, abs_dest)
+	if rename_err != OK:
+		return PluginErrors.io_error(plugin_id, abs_source,
+			"rename_absolute failed: error=%d" % rename_err)
+
+	print("[CapabilityBroker] Plugin '%s' move '%s' → '%s' (overwritten=%s)" % [
+		plugin_id, abs_source, abs_dest, str(overwritten)])
+	return PluginErrors.success({"source": abs_source, "dest": abs_dest, "overwritten": overwritten})
 
 
 ## Strict-allowlist arg validator for host.files.*. Returns success({}) on ok

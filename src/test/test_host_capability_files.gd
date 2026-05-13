@@ -52,7 +52,7 @@ var _scope_dir: String = ""
 
 
 func _init() -> void:
-	print("=== host.files.* Capability Test (T5 R1) ===\n")
+	print("=== host.files.* Capability Test (T5 R1 + T2) ===\n")
 	_clear_policy_for_test()
 	_scope_dir = _make_scope_dir()
 	await _run_tests()
@@ -79,7 +79,11 @@ func _run_tests() -> void:
 
 	var db = DB.new()
 	var def = Def.new(TEST_PLUGIN_ID)
-	var caps: Array[String] = ["host.files.read", "host.files.write"]
+	var caps: Array[String] = [
+		"host.files.read", "host.files.write",
+		"host.files.list", "host.files.exists", "host.files.stat",
+		"host.files.mkdir", "host.files.delete", "host.files.move",
+	]
 	def.host_capabilities = caps
 	def.filesystem_mode = "scoped_paths"
 	var paths: Array[String] = [_scope_dir]
@@ -100,6 +104,12 @@ func _run_tests() -> void:
 
 	policy.grant_capability(TEST_PLUGIN_ID, "host.files.read")
 	policy.grant_capability(TEST_PLUGIN_ID, "host.files.write")
+	policy.grant_capability(TEST_PLUGIN_ID, "host.files.list")
+	policy.grant_capability(TEST_PLUGIN_ID, "host.files.exists")
+	policy.grant_capability(TEST_PLUGIN_ID, "host.files.stat")
+	policy.grant_capability(TEST_PLUGIN_ID, "host.files.mkdir")
+	policy.grant_capability(TEST_PLUGIN_ID, "host.files.delete")
+	policy.grant_capability(TEST_PLUGIN_ID, "host.files.move")
 
 	_test_write_then_read(broker)
 	_test_write_base64_round_trip(broker)
@@ -120,6 +130,37 @@ func _run_tests() -> void:
 	_test_read_directory_path(broker)
 	_test_write_to_directory_path(broker)
 	_test_audit_dispatched_and_failed(audit)
+
+	# T2 new capabilities
+	await _test_list_happy(broker)
+	await _test_list_hidden_filter(broker)
+	await _test_list_not_a_directory(broker)
+	await _test_list_io_error(broker)
+	await _test_list_scope_deny(broker)
+	await _test_list_ungranted(broker, Def, db)
+	await _test_exists_happy_file(broker)
+	await _test_exists_happy_dir(broker)
+	await _test_exists_false(broker)
+	await _test_exists_scope_deny_on_nonexistent(broker)
+	await _test_stat_happy_file(broker)
+	await _test_stat_happy_dir(broker)
+	await _test_stat_io_error(broker)
+	await _test_mkdir_happy(broker)
+	await _test_mkdir_idempotent(broker)
+	await _test_mkdir_file_conflict(broker)
+	await _test_mkdir_parents_true(broker)
+	await _test_mkdir_parents_false_missing_parent(broker)
+	await _test_mkdir_scope_deny(broker)
+	await _test_delete_happy_file(broker)
+	await _test_delete_empty_dir(broker)
+	await _test_delete_nonempty_dir_nonrecursive(broker)
+	await _test_delete_nonempty_dir_recursive(broker)
+	await _test_delete_scope_deny(broker)
+	await _test_move_happy(broker)
+	await _test_move_dest_exists_no_overwrite(broker)
+	await _test_move_dest_exists_overwrite(broker)
+	await _test_move_source_out_of_scope(broker)
+	await _test_move_dest_out_of_scope(broker)
 
 
 func _test_write_then_read(broker) -> void:
@@ -325,6 +366,362 @@ func _test_audit_dispatched_and_failed(audit) -> void:
 
 
 # ---------------------------------------------------------------------------
+# T2: host.files.list tests
+# ---------------------------------------------------------------------------
+
+func _test_list_happy(broker) -> void:
+	var list_dir: String = _scope_dir.path_join("list_happy")
+	DirAccess.make_dir_absolute(list_dir)
+	# Create 2 files and 1 subdir.
+	var fa := FileAccess.open(list_dir.path_join("a.txt"), FileAccess.WRITE)
+	fa.store_string("aaa"); fa.close()
+	fa = FileAccess.open(list_dir.path_join("b.txt"), FileAccess.WRITE)
+	fa.store_string("bb"); fa.close()
+	DirAccess.make_dir_absolute(list_dir.path_join("subdir"))
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.list",
+		{"path": list_dir})
+	check("list happy: success", res.get("success", false), "got: %s" % str(res))
+	var entries: Array = res.get("result", {}).get("entries", [])
+	check_eq("list happy: 3 entries", entries.size(), 3)
+	var kinds: Dictionary = {}
+	for e in entries:
+		kinds[str(e.get("kind", ""))] = true
+	check("list happy: has dir kind", kinds.has("dir"))
+	check("list happy: has file kind", kinds.has("file"))
+	# Verify name is basename only
+	for e in entries:
+		var name: String = str(e.get("name", ""))
+		check("list happy: name has no slash", not name.contains("/"))
+	# Dirs have size=0
+	for e in entries:
+		if str(e.get("kind", "")) == "dir":
+			check_eq("list happy: dir size=0", int(e.get("size", -1)), 0)
+
+
+func _test_list_hidden_filter(broker) -> void:
+	var list_dir: String = _scope_dir.path_join("list_hidden")
+	DirAccess.make_dir_absolute(list_dir)
+	var fa := FileAccess.open(list_dir.path_join("visible.txt"), FileAccess.WRITE)
+	fa.store_string("x"); fa.close()
+	fa = FileAccess.open(list_dir.path_join(".hidden"), FileAccess.WRITE)
+	fa.store_string("h"); fa.close()
+
+	# Without include_hidden: only visible.txt
+	var res1: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.list",
+		{"path": list_dir})
+	check("list hidden filter: success without include_hidden",
+		res1.get("success", false), "got: %s" % str(res1))
+	var entries1: Array = res1.get("result", {}).get("entries", [])
+	check_eq("list hidden filter: 1 entry without include_hidden", entries1.size(), 1)
+	check_eq("list hidden filter: visible entry name",
+		str(entries1[0].get("name", "")), "visible.txt")
+
+	# With include_hidden=true: both entries
+	var res2: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.list",
+		{"path": list_dir, "include_hidden": true})
+	check("list hidden filter: success with include_hidden=true",
+		res2.get("success", false), "got: %s" % str(res2))
+	var entries2: Array = res2.get("result", {}).get("entries", [])
+	check_eq("list hidden filter: 2 entries with include_hidden=true", entries2.size(), 2)
+
+
+func _test_list_not_a_directory(broker) -> void:
+	var p: String = _scope_dir.path_join("hello.txt")
+	# hello.txt was created by an earlier test
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.list",
+		{"path": p})
+	check_eq("list on file → not_a_directory", res.get("error_code", ""), "not_a_directory")
+
+
+func _test_list_io_error(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.list",
+		{"path": _scope_dir.path_join("nonexistent_dir_xyz")})
+	check_eq("list non-existent dir → io_error", res.get("error_code", ""), "io_error")
+
+
+func _test_list_scope_deny(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.list",
+		{"path": "/etc"})
+	check_eq("list /etc → target_not_allowlisted",
+		res.get("error_code", ""), "target_not_allowlisted")
+
+
+func _test_list_ungranted(broker, Def, db) -> void:
+	const UNGRANTED_ID := "files_probe_test_ungranted"
+	var def2 = Def.new(UNGRANTED_ID)
+	var caps2: Array[String] = ["host.files.list"]
+	def2.host_capabilities = caps2
+	def2.filesystem_mode = "scoped_paths"
+	var paths2: Array[String] = [_scope_dir]
+	def2.filesystem_paths = paths2
+	db._plugins[UNGRANTED_ID] = def2
+	# Intentionally do NOT grant capability.
+	var res: Dictionary = await broker.dispatch(UNGRANTED_ID, "host.files.list",
+		{"path": _scope_dir})
+	check_eq("list without grant → capability_not_granted",
+		res.get("error_code", ""), "capability_not_granted")
+	# Cleanup db entry
+	db._plugins.erase(UNGRANTED_ID)
+
+
+# ---------------------------------------------------------------------------
+# T2: host.files.exists tests
+# ---------------------------------------------------------------------------
+
+func _test_exists_happy_file(broker) -> void:
+	var p: String = _scope_dir.path_join("hello.txt")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.exists",
+		{"path": p})
+	check("exists happy file: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("exists happy file: exists=true", bool(res.get("result", {}).get("exists", false)), true)
+	check_eq("exists happy file: kind=file", str(res.get("result", {}).get("kind", "")), "file")
+
+
+func _test_exists_happy_dir(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.exists",
+		{"path": _scope_dir})
+	check("exists happy dir: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("exists happy dir: exists=true", bool(res.get("result", {}).get("exists", false)), true)
+	check_eq("exists happy dir: kind=dir", str(res.get("result", {}).get("kind", "")), "dir")
+
+
+func _test_exists_false(broker) -> void:
+	var p: String = _scope_dir.path_join("definitely_not_here_xyz.txt")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.exists",
+		{"path": p})
+	check("exists false: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("exists false: exists=false", bool(res.get("result", {}).get("exists", true)), false)
+	check_eq("exists false: kind=null", res.get("result", {}).get("kind", "WRONG"), null)
+
+
+func _test_exists_scope_deny_on_nonexistent(broker) -> void:
+	# Scope check runs even for paths that don't exist.
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.exists",
+		{"path": "/etc/no_such_file_ever"})
+	check_eq("exists scope deny on nonexistent → target_not_allowlisted",
+		res.get("error_code", ""), "target_not_allowlisted")
+
+
+# ---------------------------------------------------------------------------
+# T2: host.files.stat tests
+# ---------------------------------------------------------------------------
+
+func _test_stat_happy_file(broker) -> void:
+	var p: String = _scope_dir.path_join("hello.txt")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.stat",
+		{"path": p})
+	check("stat happy file: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("stat happy file: kind=file", str(res.get("result", {}).get("kind", "")), "file")
+	check("stat happy file: size > 0", int(res.get("result", {}).get("size", 0)) > 0)
+	check("stat happy file: modified_unix > 0", int(res.get("result", {}).get("modified_unix", 0)) > 0)
+
+
+func _test_stat_happy_dir(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.stat",
+		{"path": _scope_dir})
+	check("stat happy dir: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("stat happy dir: kind=dir", str(res.get("result", {}).get("kind", "")), "dir")
+	check_eq("stat happy dir: size=0", int(res.get("result", {}).get("size", 0)), 0)
+
+
+func _test_stat_io_error(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.stat",
+		{"path": _scope_dir.path_join("no_such_file.txt")})
+	check_eq("stat missing → io_error", res.get("error_code", ""), "io_error")
+
+
+# ---------------------------------------------------------------------------
+# T2: host.files.mkdir tests
+# ---------------------------------------------------------------------------
+
+func _test_mkdir_happy(broker) -> void:
+	var p: String = _scope_dir.path_join("mkdir_new")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.mkdir",
+		{"path": p})
+	check("mkdir happy: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("mkdir happy: created=true", bool(res.get("result", {}).get("created", false)), true)
+	check("mkdir happy: dir actually exists", DirAccess.dir_exists_absolute(p))
+
+
+func _test_mkdir_idempotent(broker) -> void:
+	# mkdir_new was just created above
+	var p: String = _scope_dir.path_join("mkdir_new")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.mkdir",
+		{"path": p})
+	check("mkdir idempotent: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("mkdir idempotent: created=false", bool(res.get("result", {}).get("created", true)), false)
+
+
+func _test_mkdir_file_conflict(broker) -> void:
+	# hello.txt exists as a file — mkdir on it must fail.
+	var p: String = _scope_dir.path_join("hello.txt")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.mkdir",
+		{"path": p})
+	check_eq("mkdir on file → io_error", res.get("error_code", ""), "io_error")
+
+
+func _test_mkdir_parents_true(broker) -> void:
+	var p: String = _scope_dir.path_join("mkdir_deep/nested/dir")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.mkdir",
+		{"path": p, "parents": true})
+	check("mkdir parents=true: success", res.get("success", false), "got: %s" % str(res))
+	check("mkdir parents=true: dir exists", DirAccess.dir_exists_absolute(p))
+
+
+func _test_mkdir_parents_false_missing_parent(broker) -> void:
+	var p: String = _scope_dir.path_join("nonexistent_parent/child")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.mkdir",
+		{"path": p})
+	check_eq("mkdir parents=false missing parent → io_error",
+		res.get("error_code", ""), "io_error")
+
+
+func _test_mkdir_scope_deny(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.mkdir",
+		{"path": "/etc/minerva_test_dir"})
+	check_eq("mkdir /etc/* → target_not_allowlisted",
+		res.get("error_code", ""), "target_not_allowlisted")
+
+
+# ---------------------------------------------------------------------------
+# T2: host.files.delete tests
+# ---------------------------------------------------------------------------
+
+func _test_delete_happy_file(broker) -> void:
+	var p: String = _scope_dir.path_join("delete_me.txt")
+	var fa := FileAccess.open(p, FileAccess.WRITE)
+	fa.store_string("bye"); fa.close()
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.delete",
+		{"path": p})
+	check("delete file: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("delete file: kind=file", str(res.get("result", {}).get("kind", "")), "file")
+	check_eq("delete file: removed=true", bool(res.get("result", {}).get("removed", false)), true)
+	check("delete file: file gone", not FileAccess.file_exists(p))
+
+
+func _test_delete_empty_dir(broker) -> void:
+	var p: String = _scope_dir.path_join("delete_empty_dir")
+	DirAccess.make_dir_absolute(p)
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.delete",
+		{"path": p})
+	check("delete empty dir: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("delete empty dir: kind=dir", str(res.get("result", {}).get("kind", "")), "dir")
+	check("delete empty dir: dir gone", not DirAccess.dir_exists_absolute(p))
+
+
+func _test_delete_nonempty_dir_nonrecursive(broker) -> void:
+	var p: String = _scope_dir.path_join("delete_nonempty")
+	DirAccess.make_dir_absolute(p)
+	var fa := FileAccess.open(p.path_join("x.txt"), FileAccess.WRITE)
+	fa.store_string("x"); fa.close()
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.delete",
+		{"path": p})
+	check_eq("delete nonempty dir recursive=false → io_error",
+		res.get("error_code", ""), "io_error")
+	# Cleanup manually so later tests work
+	DirAccess.remove_absolute(p.path_join("x.txt"))
+	DirAccess.remove_absolute(p)
+
+
+func _test_delete_nonempty_dir_recursive(broker) -> void:
+	var p: String = _scope_dir.path_join("delete_recursive")
+	DirAccess.make_dir_recursive_absolute(p.path_join("sub"))
+	var fa := FileAccess.open(p.path_join("a.txt"), FileAccess.WRITE)
+	fa.store_string("a"); fa.close()
+	fa = FileAccess.open(p.path_join("sub/b.txt"), FileAccess.WRITE)
+	fa.store_string("b"); fa.close()
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.delete",
+		{"path": p, "recursive": true})
+	check("delete recursive: success", res.get("success", false), "got: %s" % str(res))
+	check("delete recursive: dir gone", not DirAccess.dir_exists_absolute(p))
+	check("delete recursive: entries_removed > 0",
+		int(res.get("result", {}).get("entries_removed", 0)) > 0)
+
+
+func _test_delete_scope_deny(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.delete",
+		{"path": "/tmp/some_other_file"})
+	check_eq("delete out-of-scope → target_not_allowlisted",
+		res.get("error_code", ""), "target_not_allowlisted")
+
+
+# ---------------------------------------------------------------------------
+# T2: host.files.move tests
+# ---------------------------------------------------------------------------
+
+func _test_move_happy(broker) -> void:
+	var src: String = _scope_dir.path_join("move_src.txt")
+	var dst: String = _scope_dir.path_join("move_dst.txt")
+	var fa := FileAccess.open(src, FileAccess.WRITE)
+	fa.store_string("moveme"); fa.close()
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.move",
+		{"source": src, "dest": dst})
+	check("move happy: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("move happy: overwritten=false", bool(res.get("result", {}).get("overwritten", true)), false)
+	check("move happy: dest exists", FileAccess.file_exists(dst))
+	check("move happy: src gone", not FileAccess.file_exists(src))
+
+
+func _test_move_dest_exists_no_overwrite(broker) -> void:
+	var src: String = _scope_dir.path_join("move_src2.txt")
+	var dst: String = _scope_dir.path_join("move_dst2.txt")
+	var fa := FileAccess.open(src, FileAccess.WRITE)
+	fa.store_string("src"); fa.close()
+	fa = FileAccess.open(dst, FileAccess.WRITE)
+	fa.store_string("existing"); fa.close()
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.move",
+		{"source": src, "dest": dst})
+	check_eq("move dest exists no overwrite → io_error",
+		res.get("error_code", ""), "io_error")
+	# Cleanup
+	DirAccess.remove_absolute(src)
+	DirAccess.remove_absolute(dst)
+
+
+func _test_move_dest_exists_overwrite(broker) -> void:
+	var src: String = _scope_dir.path_join("move_src3.txt")
+	var dst: String = _scope_dir.path_join("move_dst3.txt")
+	var fa := FileAccess.open(src, FileAccess.WRITE)
+	fa.store_string("new_content"); fa.close()
+	fa = FileAccess.open(dst, FileAccess.WRITE)
+	fa.store_string("old_content"); fa.close()
+
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.move",
+		{"source": src, "dest": dst, "overwrite": true})
+	check("move overwrite=true: success", res.get("success", false), "got: %s" % str(res))
+	check_eq("move overwrite=true: overwritten=true",
+		bool(res.get("result", {}).get("overwritten", false)), true)
+	check("move overwrite=true: dest exists", FileAccess.file_exists(dst))
+	check("move overwrite=true: src gone", not FileAccess.file_exists(src))
+	# Verify content was replaced
+	var fa2 := FileAccess.open(dst, FileAccess.READ)
+	var content: String = fa2.get_as_text(); fa2.close()
+	check_eq("move overwrite=true: dest content is new", content, "new_content")
+
+
+func _test_move_source_out_of_scope(broker) -> void:
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.move",
+		{"source": "/etc/passwd", "dest": _scope_dir.path_join("stolen.txt")})
+	check_eq("move source out of scope → target_not_allowlisted",
+		res.get("error_code", ""), "target_not_allowlisted")
+
+
+func _test_move_dest_out_of_scope(broker) -> void:
+	var src: String = _scope_dir.path_join("hello.txt")
+	var res: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.files.move",
+		{"source": src, "dest": "/tmp/escaped.txt"})
+	check_eq("move dest out of scope → target_not_allowlisted",
+		res.get("error_code", ""), "target_not_allowlisted")
+
+
+# ---------------------------------------------------------------------------
 # Test infrastructure
 # ---------------------------------------------------------------------------
 
@@ -407,7 +804,7 @@ func _clear_policy_for_test() -> void:
 	if not data is Dictionary:
 		return
 	var grants: Dictionary = (data as Dictionary).get("grants", {})
-	for key in [TEST_PLUGIN_ID, "files_probe_test_no_fs"]:
+	for key in [TEST_PLUGIN_ID, "files_probe_test_no_fs", "files_probe_test_ungranted"]:
 		grants.erase(key)
 	(data as Dictionary)["grants"] = grants
 	fa = FileAccess.open(policy_file, FileAccess.WRITE)
