@@ -182,6 +182,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.providers.chat",
 	"host.dialogs.file_picker",
 	"host.dialogs.directory_picker",
+	"host.permissions.grant_scope",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

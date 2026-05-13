@@ -465,6 +465,15 @@ func start_plugin(id: String) -> Dictionary:
 	if def.state == S_CRASH_LOOP:
 		return {"error": "Plugin '%s' is in crash-loop — reset it first" % id}
 
+	# Merge persisted runtime scope grants into def.filesystem_paths so all
+	# host.files.* validators see user-approved paths from prior sessions.
+	var GrantsClass = load("res://Scripts/Services/Plugins/PluginScopeGrants.gd")
+	if GrantsClass != null:
+		var grants_store = GrantsClass.new()
+		for granted_path in grants_store.get_granted_paths(def.id):
+			if granted_path not in def.filesystem_paths:
+				def.filesystem_paths.append(granted_path)
+
 	# Clean up any leftover connection from a previous run.
 	_cleanup_connection(id)
 

@@ -37,12 +37,19 @@ extends RefCounted
 ## is loaded in isolation (e.g. headless tests). JsonPatch.gd uses the same pattern.
 const _JsonPointer := preload("res://Scripts/Services/Plugins/JsonPointer.gd")
 
+## PluginScopeGrants — preloaded for the same reason (loaded in isolation in tests).
+const _PluginScopeGrants := preload("res://Scripts/Services/Plugins/PluginScopeGrants.gd")
+
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
 
 ## Audit log reference — optional. When set, capability dispatches and
 ## denials are logged in addition to what PluginPolicy already records.
 var audit_log: PluginAuditLog = null
+
+## Scope grants persistence layer — shared instance, loaded once in _init().
+## Holds runtime filesystem scope grants that persist across restarts.
+var _scope_grants = null  # PluginScopeGrants (typed via _PluginScopeGrants const)
 
 ## Test-only one-shot injection. When set to a non-null Variant before a
 ## host.dialogs.* dispatch, the handler short-circuits the FileDialog popup
@@ -54,6 +61,7 @@ static var _test_dialog_override = null
 func _init(p_policy: PluginPolicy = null, p_audit_log: PluginAuditLog = null) -> void:
 	policy = p_policy
 	audit_log = p_audit_log
+	_scope_grants = _PluginScopeGrants.new()
 
 
 # ---------------------------------------------------------------------------
@@ -286,6 +294,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_dialogs_file_picker(plugin_id, args)
 		"host.dialogs.directory_picker":
 			named_result = await _handle_host_dialogs_directory_picker(plugin_id, args)
+		"host.permissions.grant_scope":
+			named_result = await _handle_host_permissions_grant_scope(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -2748,6 +2758,167 @@ func _handle_host_dialogs_directory_picker(plugin_id: String, args: Dictionary) 
 	if was_cancelled:
 		return PluginErrors.success({"cancelled": true})
 	return PluginErrors.success({"cancelled": false, "path": picked_path})
+
+
+# ---------------------------------------------------------------------------
+# host.permissions handler
+# ---------------------------------------------------------------------------
+
+## Strict args allowlist for host.permissions.grant_scope.
+const _PERMISSIONS_GRANT_SCOPE_ALLOWED_ARGS := ["path", "reason"]
+
+
+## host.permissions.grant_scope — request runtime expansion of filesystem_paths.
+##
+## Args:
+##   path:   String (required) — absolute path to grant; must not contain '..'
+##           segments or null bytes.
+##   reason: String (optional) — short human-readable string shown in the
+##           confirmation dialog.
+##
+## Returns (success result):
+##   On grant (new):  {granted: true,  already_granted: false, cancelled: false, path: String}
+##   On short-circuit:{granted: true,  already_granted: true,  cancelled: false, path: String}
+##   On cancel:       {granted: false, already_granted: false, cancelled: true,  path: String}
+##
+## Errors: schema_validation_failed, dialog_unavailable (headless without override).
+func _handle_host_permissions_grant_scope(plugin_id: String, args: Dictionary) -> Dictionary:
+	# 1. Strict arg allowlist
+	for k in args.keys():
+		if k not in _PERMISSIONS_GRANT_SCOPE_ALLOWED_ARGS:
+			return PluginErrors.schema_validation_failed(
+				plugin_id,
+				"unknown arg '%s' (allowed: %s)" % [k, str(_PERMISSIONS_GRANT_SCOPE_ALLOWED_ARGS)]
+			)
+
+	# 2. Path syntactic validation — mirrors validate_files_path's rules but
+	#    intentionally does NOT call it (that would scope-check the path, defeating
+	#    the whole point of this capability).
+	var raw_path: Variant = args.get("path", null)
+	if raw_path == null or not (raw_path is String) or (raw_path as String).is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "path is required and must be a non-empty String")
+
+	var path_str: String = raw_path as String
+
+	# Reject null bytes — silently truncated at libc layer.
+	if path_str.contains(char(0)):
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "path must not contain null bytes"
+		)
+
+	# Must be absolute (no user:// expansion here — grant_scope is for real FS paths)
+	if not path_str.is_absolute_path():
+		return PluginErrors.schema_validation_failed(
+			plugin_id,
+			"path must be absolute (got: '%s')" % path_str
+		)
+
+	# Reject explicit '..' segments.
+	for segment in path_str.split("/"):
+		if segment == "..":
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "path must not contain '..' segments (got: '%s')" % path_str
+			)
+
+	var abs_path: String = path_str.simplify_path()
+
+	# 3. Look up the plugin def to check / mutate filesystem_paths.
+	# We reach the def through the policy engine's plugin_db.
+	var def = null
+	if policy != null and policy.plugin_db != null:
+		def = policy.plugin_db.get_by_id(plugin_id)
+
+	# 4. Short-circuit if already granted.
+	if def != null and abs_path in def.filesystem_paths:
+		return PluginErrors.success({
+			"granted": true,
+			"already_granted": true,
+			"cancelled": false,
+			"path": abs_path,
+		})
+
+	# 5. Test override short-circuit (consume ONE override, like dialogs).
+	#    NOTE: checked AFTER the already-granted short-circuit so tests can
+	#    verify that an already-granted path does NOT consume the override.
+	if CapabilityBroker._test_dialog_override != null:
+		var injected: Dictionary = CapabilityBroker._test_dialog_override
+		CapabilityBroker._test_dialog_override = null
+		var granted: bool = injected.get("granted", false)
+		if granted and def != null:
+			if abs_path not in def.filesystem_paths:
+				def.filesystem_paths.append(abs_path)
+			if _scope_grants != null:
+				_scope_grants.grant_path(plugin_id, abs_path)
+		return PluginErrors.success({
+			"granted": granted,
+			"already_granted": false,
+			"cancelled": injected.get("cancelled", not granted),
+			"path": abs_path,
+		})
+
+	# 6. Headless guard — no dialog possible without a UI session.
+	if DisplayServer.get_name() == "headless":
+		return {
+			"success": false,
+			"error_code": "dialog_unavailable",
+			"error_message": "host.permissions.grant_scope requires a UI session; tests must use _test_dialog_override",
+			"plugin_id": plugin_id,
+		}
+
+	# 7. Build and pop a ConfirmationDialog (yes/no — not a file picker).
+	var reason: String = str(args.get("reason", ""))
+	var dialog_text: String = reason
+	if not dialog_text.is_empty():
+		dialog_text += "\n\n"
+	dialog_text += "This grant persists until you revoke it."
+
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Plugin '%s' wants access to '%s'" % [plugin_id, abs_path]
+	dialog.dialog_text = dialog_text
+	dialog.ok_button_text = "Allow"
+
+	Engine.get_main_loop().root.add_child(dialog)
+
+	var was_confirmed: bool = false
+	var was_cancelled_perm: bool = false
+	var done: bool = false
+
+	dialog.confirmed.connect(func():
+		was_confirmed = true
+		done = true
+	)
+	dialog.canceled.connect(func():
+		was_cancelled_perm = true
+		done = true
+	)
+
+	dialog.popup_centered()
+
+	while not done:
+		await Engine.get_main_loop().process_frame
+
+	dialog.queue_free()
+
+	if was_confirmed:
+		# Mutate def.filesystem_paths and persist the grant.
+		if def != null:
+			if abs_path not in def.filesystem_paths:
+				def.filesystem_paths.append(abs_path)
+		if _scope_grants != null:
+			_scope_grants.grant_path(plugin_id, abs_path)
+		return PluginErrors.success({
+			"granted": true,
+			"already_granted": false,
+			"cancelled": false,
+			"path": abs_path,
+		})
+
+	return PluginErrors.success({
+		"granted": false,
+		"already_granted": false,
+		"cancelled": true,
+		"path": abs_path,
+	})
 
 
 # ---------------------------------------------------------------------------
