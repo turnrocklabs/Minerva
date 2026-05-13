@@ -1158,14 +1158,18 @@ func _apply_plugin_chrome_actions() -> void:
 	var actions: Array = plugin_scene_root.call("get_editor_actions")
 	if not actions is Array:
 		return
-	# Insert in REVERSE order so each move_child(n, 0) preserves declaration order.
-	for i in range(actions.size() - 1, -1, -1):
-		var ctrl = actions[i]
+	# Anchor plugin contributions immediately before Save All — that slot is the
+	# canonical home for plugin-contributed chrome actions. Falls back to
+	# appending if Save All isn't present (defensive — Editor.tscn always has it).
+	var save_all: Node = buttons_row.get_node_or_null("SaveOpenEditorTabsButton")
+	var anchor_index: int = save_all.get_index() if save_all != null else buttons_row.get_child_count()
+	for ctrl in actions:
 		if not ctrl is Control:
 			continue
 		buttons_row.add_child(ctrl)
-		buttons_row.move_child(ctrl, 0)
+		buttons_row.move_child(ctrl, anchor_index)
 		_plugin_contributed_actions.append(ctrl)
+		anchor_index += 1
 
 
 ## Changes the function that runs when user clicks the "save" button
