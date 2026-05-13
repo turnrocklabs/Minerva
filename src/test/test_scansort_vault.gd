@@ -188,11 +188,15 @@ func _run_test(manifest_path: String) -> void:
 	)
 	check("verify_password (correct) returned Dictionary", verify_ok is Dictionary,
 		"got type %d" % typeof(verify_ok))
-	check("verify_password (correct) ok == true",
+	# Transport ok = call dispatched cleanly; verified = semantic match result.
+	check("verify_password (correct) ok == true (transport)",
 		verify_ok.get("ok", false) == true,
 		"got: %s" % str(verify_ok))
+	check("verify_password (correct) verified == true (semantic)",
+		verify_ok.get("verified", false) == true,
+		"got: %s" % str(verify_ok))
 
-	# --- 5. VERIFY PASSWORD (wrong) — must return ok: false, NOT an error ---
+	# --- 5. VERIFY PASSWORD (wrong) — must return ok:true verified:false, NOT an error ---
 	print("\n-- minerva_scansort_verify_password (wrong) --")
 	var verify_wrong: Dictionary = await conn.call_tool(
 		"minerva_scansort_verify_password",
@@ -200,9 +204,12 @@ func _run_test(manifest_path: String) -> void:
 	)
 	check("verify_password (wrong) returned Dictionary", verify_wrong is Dictionary,
 		"got type %d" % typeof(verify_wrong))
-	# ok: false is a valid result (mismatch), NOT an isError/error field
-	check("verify_password (wrong) ok == false (not an error)",
-		verify_wrong.get("ok", true) == false,
+	# Mismatch is a valid dispatch result; ok stays true, verified is false.
+	check("verify_password (wrong) ok == true (transport still succeeded)",
+		verify_wrong.get("ok", false) == true,
+		"got: %s" % str(verify_wrong))
+	check("verify_password (wrong) verified == false (semantic mismatch)",
+		verify_wrong.get("verified", true) == false,
 		"got: %s" % str(verify_wrong))
 	check("verify_password (wrong) has no 'error' field",
 		not verify_wrong.has("error"),
