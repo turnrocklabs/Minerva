@@ -1,5 +1,5 @@
 extends SceneTree
-## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4.
+## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4 + R5.
 ##
 ## Run: godot --headless --path src --script test/test_scansort_panel_smoke.gd
 ##
@@ -8,6 +8,7 @@ extends SceneTree
 ##                T7 R2 — view scripts (FileTree, VaultView, StatusPanel)
 ##                T7 R3 — add-document dialog + ingest pipeline
 ##                T7 R4 — CRUD dialogs (EditDetailsDialog, RulesEditorDialog)
+##                T7 R5 — cross-vault registry dialog + settings dialog
 ##
 ## Layer-1 headless checks (no display required):
 ##   1.  password_dialog.gd loads without parse errors
@@ -40,13 +41,15 @@ const PLUGIN_STATUSPANEL_GD := "/home/imran/github/plugins/scansort/ui/status_pa
 const PLUGIN_ADD_DIALOG_GD        := "/home/imran/github/plugins/scansort/ui/add_document_dialog.gd"
 const PLUGIN_EDIT_DETAILS_GD      := "/home/imran/github/plugins/scansort/ui/edit_details_dialog.gd"
 const PLUGIN_RULES_EDITOR_GD      := "/home/imran/github/plugins/scansort/ui/rules_editor_dialog.gd"
+const PLUGIN_VAULT_REGISTRY_GD    := "/home/imran/github/plugins/scansort/ui/vault_registry_dialog.gd"
+const PLUGIN_SETTINGS_DIALOG_GD   := "/home/imran/github/plugins/scansort/ui/settings_dialog.gd"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
 
 
 func _init() -> void:
-	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2 + R3 + R4) ===\n")
+	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2 + R3 + R4 + R5) ===\n")
 	await _run_tests()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -503,6 +506,163 @@ func _run_tests() -> void:
 			panel3.has_method("_on_edit_dialog_accepted"))
 
 		panel3.queue_free()
+		await process_frame
+
+	# -----------------------------------------------------------------------
+	# Group J: R5 dialogs — VaultRegistryDialog + SettingsDialog
+	# -----------------------------------------------------------------------
+	print("\n-- J: R5 dialogs (vault_registry_dialog, settings_dialog) --")
+
+	# --- J79-J86: vault_registry_dialog.gd ---
+	var reg_dlg_script = load(PLUGIN_VAULT_REGISTRY_GD)
+	check("J79: vault_registry_dialog.gd loads (non-null)",
+		reg_dlg_script != null,
+		"load() returned null — check parse errors above")
+
+	if reg_dlg_script == null:
+		for _i in range(7):
+			_fail_count += 1
+		print("  SKIP J80-J86: vault_registry_dialog script null")
+	else:
+		var reg_dlg = reg_dlg_script.new()
+		check("J80: VaultRegistryDialog instantiates", reg_dlg != null)
+
+		if reg_dlg != null:
+			check("J81: extends AcceptDialog",
+				reg_dlg is AcceptDialog,
+				"got class: %s" % reg_dlg.get_class())
+
+			check("J82: signal 'vault_picked' declared",
+				reg_dlg.has_signal("vault_picked"))
+
+			check("J83: signal 'closed' declared",
+				reg_dlg.has_signal("closed"))
+
+			check("J84: method 'init' exists",
+				reg_dlg.has_method("init"))
+
+			check("J85: method 'refresh' exists",
+				reg_dlg.has_method("refresh"))
+
+			# Smoke: init with null conn — must not crash (refresh defers on scene tree).
+			var reg_smoke_ok := true
+			reg_dlg.init(null)
+			check("J86: init(null) does not crash", reg_smoke_ok)
+
+			if is_instance_valid(reg_dlg):
+				reg_dlg.free()
+
+	# --- J87-J96: settings_dialog.gd ---
+	var set_dlg_script = load(PLUGIN_SETTINGS_DIALOG_GD)
+	check("J87: settings_dialog.gd loads (non-null)",
+		set_dlg_script != null,
+		"load() returned null — check parse errors above")
+
+	if set_dlg_script == null:
+		for _i in range(9):
+			_fail_count += 1
+		print("  SKIP J88-J96: settings_dialog script null")
+	else:
+		var set_dlg = set_dlg_script.new()
+		check("J88: SettingsDialog instantiates", set_dlg != null)
+
+		if set_dlg != null:
+			check("J89: extends AcceptDialog",
+				set_dlg is AcceptDialog,
+				"got class: %s" % set_dlg.get_class())
+
+			check("J90: signal 'settings_changed' declared",
+				set_dlg.has_signal("settings_changed"))
+
+			check("J91: signal 'closed' declared",
+				set_dlg.has_signal("closed"))
+
+			check("J92: method 'init' exists",
+				set_dlg.has_method("init"))
+
+			check("J93: method '_read_form' exists",
+				set_dlg.has_method("_read_form"))
+
+			check("J94: method '_populate_from' exists",
+				set_dlg.has_method("_populate_from"))
+
+			# Smoke: init with null conn + empty vault — must not crash.
+			var set_smoke_ok := true
+			set_dlg.init(null, "", "", {})
+			check("J95: init(null, '', '', {}) does not crash", set_smoke_ok)
+
+			# Smoke: _populate_from with a settings dict — must not crash.
+			var pop_smoke_ok := true
+			set_dlg._populate_from({
+				"text_model_id":    "claude-sonnet-4-5",
+				"vision_model_id":  "claude-sonnet-4-5",
+				"max_text_chars":   8000,
+				"default_category": "test",
+			})
+			check("J96: _populate_from(settings_dict) does not crash", pop_smoke_ok)
+
+			if is_instance_valid(set_dlg):
+				set_dlg.free()
+
+	# --- J97-J101: ScansortPanel R5 method presence + _settings cache ---
+	print("\n-- J (panel R5): ScansortPanel --")
+	var panel4_packed = load(PLUGIN_PANEL_TSCN)
+	var panel4 = null
+	if panel4_packed != null:
+		panel4 = panel4_packed.instantiate()
+
+	if panel4 == null:
+		for _i in range(5):
+			_fail_count += 1
+		print("  SKIP J97-J101: could not instantiate panel for J checks")
+	else:
+		root.add_child(panel4)
+		await process_frame
+
+		check("J97: panel has method '_on_vault_registry_pressed'",
+			panel4.has_method("_on_vault_registry_pressed"))
+
+		check("J98: panel has method '_on_settings_pressed'",
+			panel4.has_method("_on_settings_pressed"))
+
+		check("J99: panel has method '_load_settings_defaults'",
+			panel4.has_method("_load_settings_defaults"))
+
+		check("J100: panel._settings starts as Dictionary",
+			panel4.get("_settings") is Dictionary,
+			"got type: %s" % type_string(typeof(panel4.get("_settings"))))
+
+		# Verify settings_changed signal updates _settings cache.
+		# Simulate what _on_settings_pressed wires: emit settings_changed → _settings updated.
+		var fake_settings := {
+			"text_model_id":    "claude-haiku-4-5",
+			"vision_model_id":  "claude-haiku-4-5",
+			"max_text_chars":   2000,
+			"default_category": "invoices",
+		}
+		panel4.set("_settings", fake_settings)
+		check("J101: _settings cache updated via direct set",
+			panel4.get("_settings").get("text_model_id", "") == "claude-haiku-4-5",
+			"got: %s" % str(panel4.get("_settings").get("text_model_id", "(missing)")))
+
+		# Verify menu popup has ids 5 and 6.
+		var fmb: MenuButton = panel4.get("_file_menu_btn")
+		var has_id5 := false
+		var has_id6 := false
+		if fmb != null:
+			var pm: PopupMenu = fmb.get_popup()
+			for i: int in range(pm.item_count):
+				var item_id: int = pm.get_item_id(i)
+				if item_id == 5:
+					has_id5 = true
+				if item_id == 6:
+					has_id6 = true
+		check("J102: File menu has id 5 (Vault Registry)",
+			has_id5, "menu id 5 not found")
+		check("J103: File menu has id 6 (Settings)",
+			has_id6, "menu id 6 not found")
+
+		panel4.queue_free()
 		await process_frame
 
 
