@@ -1,10 +1,11 @@
 extends SceneTree
-## Scansort panel substrate smoke test — T7 R1.
+## Scansort panel substrate smoke test — T7 R1 + R2.
 ##
 ## Run: godot --headless --path src --script test/test_scansort_panel_smoke.gd
 ##
 ## Tracks docket: minerva 019e1cdb451076ae8c344f6e6ec605e1 (scansort plugin DCR)
-## Round:         T7 R1 — panel UI substrate (ScansortPanel + PasswordDialog)
+## Rounds:        T7 R1 — panel UI substrate (ScansortPanel + PasswordDialog)
+##                T7 R2 — view scripts (FileTree, VaultView, StatusPanel)
 ##
 ## Layer-1 headless checks (no display required):
 ##   1.  password_dialog.gd loads without parse errors
@@ -28,16 +29,19 @@ extends SceneTree
 ##   19. Instantiated panel's _vault_is_open starts false
 ##   20. Instantiated panel's _active_vault_path starts empty
 
-const PLUGIN_PANEL_TSCN := "/home/imran/github/plugins/scansort/ui/ScansortPanel.tscn"
-const PLUGIN_PANEL_GD   := "/home/imran/github/plugins/scansort/ui/ScansortPanel.gd"
-const PLUGIN_DIALOG_GD  := "/home/imran/github/plugins/scansort/ui/password_dialog.gd"
+const PLUGIN_PANEL_TSCN  := "/home/imran/github/plugins/scansort/ui/ScansortPanel.tscn"
+const PLUGIN_PANEL_GD    := "/home/imran/github/plugins/scansort/ui/ScansortPanel.gd"
+const PLUGIN_DIALOG_GD   := "/home/imran/github/plugins/scansort/ui/password_dialog.gd"
+const PLUGIN_FILETREE_GD := "/home/imran/github/plugins/scansort/ui/file_tree.gd"
+const PLUGIN_VAULTVIEW_GD := "/home/imran/github/plugins/scansort/ui/vault_view.gd"
+const PLUGIN_STATUSPANEL_GD := "/home/imran/github/plugins/scansort/ui/status_panel.gd"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
 
 
 func _init() -> void:
-	print("=== Scansort Panel Substrate Smoke Test (T7 R1) ===\n")
+	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2) ===\n")
 	await _run_tests()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -168,6 +172,121 @@ func _run_tests() -> void:
 		check("D21: _active_vault_path starts empty",
 			panel_instance.get("_active_vault_path") == "",
 			"got: '%s'" % str(panel_instance.get("_active_vault_path")))
+
+		# -------------------------------------------------------------------
+		# Group E: R2 view script parse + method presence
+		# -------------------------------------------------------------------
+		print("\n-- E: R2 view scripts (file_tree, vault_view, status_panel) --")
+
+		var ft_script = load(PLUGIN_FILETREE_GD)
+		check("E22: file_tree.gd loads (non-null)",
+			ft_script != null,
+			"load() returned null")
+
+		var vv_script = load(PLUGIN_VAULTVIEW_GD)
+		check("E23: vault_view.gd loads (non-null)",
+			vv_script != null,
+			"load() returned null")
+
+		var sp_script = load(PLUGIN_STATUSPANEL_GD)
+		check("E24: status_panel.gd loads (non-null)",
+			sp_script != null,
+			"load() returned null")
+
+		# file_tree.gd method presence
+		if ft_script != null:
+			var ft = ft_script.new()
+			check("E25: FileTree instantiates", ft != null)
+			if ft != null:
+				check("E26: FileTree has method 'init'",    ft.has_method("init"))
+				check("E27: FileTree has method 'refresh'", ft.has_method("refresh"))
+				check("E28: FileTree has method 'clear_vault'", ft.has_method("clear_vault"))
+				check("E29: FileTree has signal 'document_selected'",
+					ft.has_signal("document_selected"))
+				if is_instance_valid(ft):
+					ft.free()
+		else:
+			for _i in range(5):
+				_fail_count += 1
+			print("  SKIP E25-E29: file_tree script null")
+
+		# vault_view.gd method presence
+		if vv_script != null:
+			var vv = vv_script.new()
+			check("E30: VaultView instantiates", vv != null)
+			if vv != null:
+				check("E31: VaultView has method 'init'",    vv.has_method("init"))
+				check("E32: VaultView has method 'refresh'", vv.has_method("refresh"))
+				check("E33: VaultView has method 'clear'",   vv.has_method("clear"))
+				check("E34: VaultView has method 'on_document_selected'",
+					vv.has_method("on_document_selected"))
+				check("E35: VaultView has method 'on_documents_changed'",
+					vv.has_method("on_documents_changed"))
+				if is_instance_valid(vv):
+					vv.free()
+		else:
+			for _i in range(6):
+				_fail_count += 1
+			print("  SKIP E30-E35: vault_view script null")
+
+		# status_panel.gd method presence
+		if sp_script != null:
+			var sp = sp_script.new()
+			check("E36: StatusPanel instantiates", sp != null)
+			if sp != null:
+				check("E37: StatusPanel has method 'init'",       sp.has_method("init"))
+				check("E38: StatusPanel has method 'set_vault'",  sp.has_method("set_vault"))
+				check("E39: StatusPanel has method 'set_status'", sp.has_method("set_status"))
+				check("E40: StatusPanel has method 'clear'",      sp.has_method("clear"))
+				if is_instance_valid(sp):
+					sp.free()
+		else:
+			for _i in range(5):
+				_fail_count += 1
+			print("  SKIP E36-E40: status_panel script null")
+
+		# -------------------------------------------------------------------
+		# Group F: R2 panel integration — view instances wired into panel
+		# -------------------------------------------------------------------
+		print("\n-- F: R2 panel integration (views wired into ScansortPanel) --")
+
+		check("F41: panel has _file_tree member (non-null after _ready)",
+			panel_instance.get("_file_tree") != null,
+			"_file_tree is null")
+
+		check("F42: panel has _vault_view member (non-null after _ready)",
+			panel_instance.get("_vault_view") != null,
+			"_vault_view is null")
+
+		check("F43: panel has _status_panel member (non-null after _ready)",
+			panel_instance.get("_status_panel") != null,
+			"_status_panel is null")
+
+		# Verify file_tree is a child of LeftPane.
+		var left_pane: Node = panel_instance.get("_left_pane")
+		var ft_member: Node = panel_instance.get("_file_tree")
+		check("F44: _file_tree is child of _left_pane",
+			left_pane != null and ft_member != null and ft_member.get_parent() == left_pane,
+			"parent mismatch")
+
+		# Verify vault_view is a child of RightPane.
+		var right_pane: Node = panel_instance.get("_right_pane")
+		var vv_member: Node = panel_instance.get("_vault_view")
+		check("F45: _vault_view is child of _right_pane",
+			right_pane != null and vv_member != null and vv_member.get_parent() == right_pane,
+			"parent mismatch")
+
+		# Verify file_tree.document_selected is connected to vault_view.on_document_selected.
+		var signal_connected: bool = false
+		if ft_member != null and vv_member != null:
+			var conns: Array = ft_member.get_signal_connection_list("document_selected")
+			for c: Dictionary in conns:
+				if c.get("callable", Callable()).get_object() == vv_member:
+					signal_connected = true
+					break
+		check("F46: file_tree.document_selected connected to vault_view.on_document_selected",
+			signal_connected,
+			"signal not wired")
 
 		panel_instance.queue_free()
 		await process_frame
