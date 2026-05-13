@@ -202,6 +202,10 @@ var _pending_annotation_selection: Dictionary = {}
 ## cleared on successful save.
 var _plugin_scene_modified := false
 
+## Controls contributed by the panel via get_editor_actions(). Added to
+## ButtonsHBoxContainer at tab open; freed on _exit_tree.
+var _plugin_contributed_actions: Array[Control] = []
+
 var supported_text_exts: PackedStringArray
 ## Wether the editor can prompt user to save the content.
 var prompt_save:= true
@@ -643,6 +647,7 @@ func _ready():
 		reload_button.hide()
 		export_area_button.hide()
 		_apply_plugin_chrome_visibility()
+		_apply_plugin_chrome_actions()
 		call_deferred("_try_mount_plugin_annotation_dock")
 	else:
 		mic_button.hide() 
@@ -686,6 +691,11 @@ func _exit_tree() -> void:
 		var pm = _get_plugin_manager_safe()
 		if pm != null:
 			pm.unregister_live_panel(plugin_id, panel_name)
+	# Free any controls contributed by the panel via get_editor_actions().
+	for ctrl in _plugin_contributed_actions:
+		if is_instance_valid(ctrl):
+			ctrl.queue_free()
+	_plugin_contributed_actions.clear()
 
 
 func _sync_annotation_dock_layout() -> void:
@@ -1127,9 +1137,40 @@ func _apply_plugin_chrome_visibility() -> void:
 		inject_toggle.visible = not hide_inject
 
 
+## Inject plugin-contributed Controls into the editor chrome bar.
+##
+## Called immediately after _apply_plugin_chrome_visibility() in the
+## PLUGIN_SCENE _ready() branch.  If the panel script implements
+## get_editor_actions() it is expected to return an Array of Control nodes.
+## Those nodes are inserted at position 0 in ButtonsHBoxContainer (before
+## Save All / Save), so plugin actions appear on the LEFT side of the chrome
+## row.  The nodes become children of this editor and are freed on teardown.
+##
+## Plugins that do NOT implement get_editor_actions() are unaffected.
+func _apply_plugin_chrome_actions() -> void:
+	if plugin_scene_root == null:
+		return
+	if not plugin_scene_root.has_method("get_editor_actions"):
+		return
+	var buttons_row: HBoxContainer = get_node_or_null("VBoxContainer/ButtonsHBoxContainer")
+	if buttons_row == null:
+		return
+	var actions: Array = plugin_scene_root.call("get_editor_actions")
+	if not actions is Array:
+		return
+	# Insert in REVERSE order so each move_child(n, 0) preserves declaration order.
+	for i in range(actions.size() - 1, -1, -1):
+		var ctrl = actions[i]
+		if not ctrl is Control:
+			continue
+		buttons_row.add_child(ctrl)
+		buttons_row.move_child(ctrl, 0)
+		_plugin_contributed_actions.append(ctrl)
+
+
 ## Changes the function that runs when user clicks the "save" button
 ## from the [method prompt_close] to [parameter save_function].[br]
-## To revert back pass the empty [parameter save_function]:[br]
+## To revert back pass the empty [parameter save_function].[br]
 ## [code]override_save(Callable.new())[/code]
 func override_save(save_function: Callable) -> void:
 	_save_override = save_function

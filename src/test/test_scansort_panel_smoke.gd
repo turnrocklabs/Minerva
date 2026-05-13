@@ -1,5 +1,5 @@
 extends SceneTree
-## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4 + R5.
+## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4 + R5 + R6 + R7.
 ##
 ## Run: godot --headless --path src --script test/test_scansort_panel_smoke.gd
 ##
@@ -9,6 +9,8 @@ extends SceneTree
 ##                T7 R3 — add-document dialog + ingest pipeline
 ##                T7 R4 — CRUD dialogs (EditDetailsDialog, RulesEditorDialog)
 ##                T7 R5 — cross-vault registry dialog + settings dialog
+##                T7 R6 — checklist dialog
+##                T7 R7 — get_editor_actions() chrome API (toolbar removed)
 ##
 ## Layer-1 headless checks (no display required):
 ##   1.  password_dialog.gd loads without parse errors
@@ -49,7 +51,7 @@ var _fail_count: int = 0
 
 
 func _init() -> void:
-	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2 + R3 + R4 + R5) ===\n")
+	print("=== Scansort Panel Substrate Smoke Test (T7 R1-R7) ===\n")
 	await _run_tests()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -645,22 +647,28 @@ func _run_tests() -> void:
 			panel4.get("_settings").get("text_model_id", "") == "claude-haiku-4-5",
 			"got: %s" % str(panel4.get("_settings").get("text_model_id", "(missing)")))
 
-		# Verify menu popup has ids 5 and 6.
-		var fmb: MenuButton = panel4.get("_file_menu_btn")
+		# J102/J103: verify menu ids 5 and 6 via get_editor_actions() (R7: toolbar removed).
+		var actions_j: Array = panel4.get_editor_actions() if panel4.has_method("get_editor_actions") else []
+		var fmb_j: MenuButton = null
+		if actions_j.size() > 0 and actions_j[0] is MenuButton:
+			fmb_j = actions_j[0]
 		var has_id5 := false
 		var has_id6 := false
-		if fmb != null:
-			var pm: PopupMenu = fmb.get_popup()
-			for i: int in range(pm.item_count):
-				var item_id: int = pm.get_item_id(i)
+		if fmb_j != null:
+			var pm_j: PopupMenu = fmb_j.get_popup()
+			for i: int in range(pm_j.item_count):
+				var item_id: int = pm_j.get_item_id(i)
 				if item_id == 5:
 					has_id5 = true
 				if item_id == 6:
 					has_id6 = true
-		check("J102: File menu has id 5 (Vault Registry)",
+		check("J102: File menu (via get_editor_actions) has id 5 (Vault Registry)",
 			has_id5, "menu id 5 not found")
-		check("J103: File menu has id 6 (Settings)",
+		check("J103: File menu (via get_editor_actions) has id 6 (Settings)",
 			has_id6, "menu id 6 not found")
+		# Free the returned MenuButton (in headless tests the editor chrome isn't present).
+		if fmb_j != null and is_instance_valid(fmb_j):
+			fmb_j.queue_free()
 
 	# --- K group: R6 — checklist dialog ---
 	const PLUGIN_CHECKLIST_GD := "/home/imran/github/plugins/scansort/ui/checklist_dialog.gd"
@@ -699,20 +707,104 @@ func _run_tests() -> void:
 				instance.free()
 
 	# Panel-side wire: id 7 menu item + handler method.
+	# K114 now fetches the menu via get_editor_actions() (R7: toolbar removed).
 	if panel4 != null and is_instance_valid(panel4):
 		check("K113: panel has method '_on_checklist_pressed'",
 			panel4.has_method("_on_checklist_pressed"))
-		var fmb2: MenuButton = panel4.get("_file_menu_btn")
+		var actions_k: Array = panel4.get_editor_actions() if panel4.has_method("get_editor_actions") else []
+		var fmb_k: MenuButton = null
+		if actions_k.size() > 0 and actions_k[0] is MenuButton:
+			fmb_k = actions_k[0]
 		var has_id7: bool = false
-		if fmb2 != null:
-			var pm2: PopupMenu = fmb2.get_popup()
+		if fmb_k != null:
+			var pm2: PopupMenu = fmb_k.get_popup()
 			for i: int in range(pm2.item_count):
 				if pm2.get_item_id(i) == 7:
 					has_id7 = true
-		check("K114: File menu has id 7 (Checklist)",
+		check("K114: File menu (via get_editor_actions) has id 7 (Checklist)",
 			has_id7, "menu id 7 not found")
+		if fmb_k != null and is_instance_valid(fmb_k):
+			fmb_k.queue_free()
 
 		panel4.queue_free()
+		await process_frame
+
+	# -----------------------------------------------------------------------
+	# Group L: R7 — get_editor_actions() chrome API
+	# -----------------------------------------------------------------------
+	print("\n-- L: get_editor_actions() chrome API (T7 R7) --")
+
+	var panel_l_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_l = null
+	if panel_l_packed != null:
+		panel_l = panel_l_packed.instantiate()
+
+	if panel_l == null:
+		for _i in range(8):
+			_fail_count += 1
+		print("  SKIP L115-L122: could not instantiate panel for L checks")
+	else:
+		root.add_child(panel_l)
+		await process_frame
+
+		check("L115: panel has method 'get_editor_actions'",
+			panel_l.has_method("get_editor_actions"))
+
+		var actions_l: Array = []
+		if panel_l.has_method("get_editor_actions"):
+			actions_l = panel_l.get_editor_actions()
+
+		check("L116: get_editor_actions() returns Array",
+			actions_l is Array,
+			"got type: %s" % type_string(typeof(actions_l)))
+
+		check("L117: returned Array has at least 1 element",
+			actions_l.size() >= 1,
+			"got size: %d" % actions_l.size())
+
+		var menu_l: MenuButton = null
+		if actions_l.size() > 0 and actions_l[0] is MenuButton:
+			menu_l = actions_l[0]
+
+		check("L118: first element is a MenuButton",
+			menu_l != null,
+			"got: %s" % (str(actions_l[0]) if actions_l.size() > 0 else "<empty>"))
+
+		if menu_l != null:
+			var popup_l: PopupMenu = menu_l.get_popup()
+
+			check("L119: MenuButton popup has >= 8 items",
+				popup_l.item_count >= 8,
+				"got item_count: %d" % popup_l.item_count)
+
+			# Verify all expected ids 0,1,2,3,4,5,6,7 are present.
+			var found_ids: Array[int] = []
+			for i: int in range(popup_l.item_count):
+				found_ids.append(popup_l.get_item_id(i))
+
+			check("L120: popup has id 0 (New Vault)",
+				found_ids.has(0), "id 0 not found in: %s" % str(found_ids))
+			check("L121: popup has id 1 (Open Vault)",
+				found_ids.has(1), "id 1 not found in: %s" % str(found_ids))
+			check("L122: popup has ids 2,3,4,5,6,7 all present",
+				found_ids.has(2) and found_ids.has(3) and found_ids.has(4) and
+				found_ids.has(5) and found_ids.has(6) and found_ids.has(7),
+				"missing ids from: %s" % str(found_ids))
+
+			if is_instance_valid(menu_l):
+				menu_l.queue_free()
+		else:
+			for _i in range(4):
+				_fail_count += 1
+			print("  SKIP L119-L122: menu_l is null")
+
+		# Verify internal _file_menu_btn is gone (toolbar removed).
+		var old_btn = panel_l.get("_file_menu_btn")
+		check("L123: _file_menu_btn member no longer exists (toolbar removed)",
+			old_btn == null,
+			"_file_menu_btn still non-null — toolbar not removed")
+
+		panel_l.queue_free()
 		await process_frame
 
 
