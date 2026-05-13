@@ -3569,3 +3569,34 @@ func get_active_model_descriptor() -> Dictionary:
 		return {}
 	var provider_name: String = str(provider_obj.provider_name).to_lower() if "provider_name" in provider_obj else ""
 	return {"model_name": model_name, "provider": provider_name}
+
+
+## Returns the full list of provider/model items currently shown in chat's
+## ProviderOptionButton, suitable for plugin panels that want to mirror the
+## chat dropdown.
+##
+## Returns: Array of Dictionaries, one per dropdown item:
+##   { id: int, display_name: String, spec: Dictionary, selected: bool }
+## where `spec` is the same shape as ProviderOptionButton.get_item_provider_spec()
+## ({kind, ...}), and `selected` is true on the currently-selected item.
+## Returns [] if no chat is initialized or button has no items.
+func get_available_models() -> Array:
+	if _provider_option_button == null:
+		return []
+	var count: int = _provider_option_button.get_item_count()
+	if count <= 0:
+		return []
+	var result: Array = []
+	var selected_index: int = _provider_option_button.get_selected()
+	for i in range(count):
+		var spec: Dictionary = _provider_option_button.get_item_provider_spec(i)
+		# Skip sentinel/separator rows that have no backing provider spec.
+		if spec.is_empty():
+			continue
+		result.append({
+			"id": _provider_option_button.get_item_id(i),
+			"display_name": _provider_option_button.get_item_text(i),
+			"spec": spec,
+			"selected": (i == selected_index),
+		})
+	return result

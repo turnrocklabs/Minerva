@@ -40,6 +40,10 @@ const _JsonPointer := preload("res://Scripts/Services/Plugins/JsonPointer.gd")
 ## PluginScopeGrants — preloaded for the same reason (loaded in isolation in tests).
 const _PluginScopeGrants := preload("res://Scripts/Services/Plugins/PluginScopeGrants.gd")
 
+## CoreProvider — preloaded to allow structured model_spec routing for core_action providers.
+## Using preload (not class_name) so CapabilityBroker loads correctly in headless test contexts.
+const _CoreProvider := preload("res://Scripts/Services/Providers/Core/CoreProvider.gd")
+
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
 
@@ -1979,9 +1983,16 @@ const _CHAT_MAX_IMAGE_BYTES := 10 * 1024 * 1024  # 10 MB
 
 ## Invoke a Minerva provider with a canonical message envelope.
 ##
-## Args (required):
-##   messages: Array of {role, text, images?} — mirrors ChatHistoryItem wire format.
-##   model:    String — model name (e.g. "claude-sonnet-4-6") or "default".
+## Args (required — one of 'model' or 'model_spec' must be present):
+##   messages:    Array of {role, text, images?} — mirrors ChatHistoryItem wire format.
+##   model:       String — model name (e.g. "claude-sonnet-4-6") or "default".
+##                Mutually exclusive with model_spec; if both are present, model_spec wins.
+##   model_spec:  Dictionary — structured provider spec (preferred over model string).
+##                Enables routing to Core-action providers and avoids brittle display-name
+##                string matching. Three supported shapes (mirrors ProviderOptionButton spec):
+##                  {kind: "core_action", service_client_id: String, service_name: String, action_name: String}
+##                  {kind: "dynamic",    model_id: int}   # model_id >= DYNAMIC_MODEL_ID_BASE (10000)
+##                  {kind: "builtin",    model_id: int}   # model_id is a key in API_MODEL_PROVIDER_SCRIPTS
 ## Args (optional):
 ##   provider:    String — disambiguates when model is offered by multiple providers.
 ##   max_tokens:  int
@@ -1993,13 +2004,21 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	if not args.has("messages") or not (args["messages"] is Array):
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"host.providers.chat requires 'messages' (Array)")
-	if not args.has("model"):
+
+	var has_model: bool = args.has("model")
+	var has_spec: bool = args.has("model_spec") and (args["model_spec"] is Dictionary)
+
+	if not has_model and not has_spec:
 		return PluginErrors.schema_validation_failed(plugin_id,
-			"host.providers.chat requires 'model' (String)")
-	var model_name_req: String = str(args["model"]).strip_edges()
-	if model_name_req.is_empty():
-		return PluginErrors.schema_validation_failed(plugin_id,
-			"host.providers.chat: 'model' must not be empty")
+			"host.providers.chat requires 'model' (String) or 'model_spec' (Dictionary)")
+
+	# model_spec takes precedence over model when both are provided.
+	var model_name_req: String = ""
+	if not has_spec:
+		model_name_req = str(args["model"]).strip_edges()
+		if model_name_req.is_empty():
+			return PluginErrors.schema_validation_failed(plugin_id,
+				"host.providers.chat: 'model' must not be empty")
 
 	var messages_raw: Array = args["messages"] as Array
 	for i in range(messages_raw.size()):
@@ -2036,7 +2055,90 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	var resolved_model_id: int = -1
 	var resolved_provider_enum: int = -1
 
-	if model_name_req == "default":
+	# --- 3a. model_spec structured resolution (bypasses string-match loop) ---
+	# When model_spec is present it always wins over the model string.
+	var provider: BaseProvider = null  # may be set directly by core_action path
+	if has_spec:
+		var spec: Dictionary = args["model_spec"] as Dictionary
+		var spec_kind: String = str(spec.get("kind", "")).strip_edges()
+		match spec_kind:
+			"core_action":
+				# Validate required fields
+				if not spec.has("service_client_id") or str(spec.get("service_client_id", "")).is_empty():
+					return PluginErrors.schema_validation_failed(plugin_id,
+						"host.providers.chat model_spec kind='core_action' requires 'service_client_id'")
+				if not spec.has("action_name") or str(spec.get("action_name", "")).is_empty():
+					return PluginErrors.schema_validation_failed(plugin_id,
+						"host.providers.chat model_spec kind='core_action' requires 'action_name'")
+				var svc_client_id: String = str(spec["service_client_id"])
+				var action_name_req: String = str(spec["action_name"])
+				# Look up Core node — same pattern as AgentSpawner._create_core_provider()
+				var core_node = Engine.get_main_loop().root.get_node_or_null("Core") if Engine.get_main_loop() else null
+				if core_node == null:
+					return PluginErrors.model_not_available(plugin_id,
+						"core_action:%s/%s" % [svc_client_id, action_name_req])
+				var matched_service = null
+				var matched_action = null
+				for svc in core_node.services:
+					if svc.client_id == svc_client_id:
+						for act in svc.actions:
+							if act.name == action_name_req:
+								matched_service = svc
+								matched_action = act
+								break
+						if matched_action != null:
+							break
+				if matched_service == null or matched_action == null:
+					return PluginErrors.model_not_available(plugin_id,
+						"core_action:%s/%s" % [svc_client_id, action_name_req])
+				# Construct CoreProvider directly — resolved_model_id stays -1 (no script_map entry)
+				provider = _CoreProvider.new(matched_service, matched_action)
+				model_name_req = str(provider.model_name) if "model_name" in provider else (
+					"%s (%s)" % [svc_client_id, action_name_req])
+				resolved_provider_enum = int(so.get("API_PROVIDER").get("TURNROCK", -1)) if "API_PROVIDER" in so else -1
+
+			"dynamic":
+				# Coerce model_id from float (JSON round-trip) to int.
+				var dyn_id: int = int(spec.get("model_id", -1))
+				if dyn_id < 10000:
+					return PluginErrors.schema_validation_failed(plugin_id,
+						"host.providers.chat model_spec kind='dynamic' requires model_id >= 10000")
+				var dyn_map = so.get("_dynamic_provider_map") if "_dynamic_provider_map" in so else {}
+				if not dyn_map.has(dyn_id):
+					# model_id may be a per-model offset within a base range; check any entry covers it
+					var covered: bool = false
+					for base_id in dyn_map.keys():
+						var dyn_info_d: Dictionary = dyn_map[base_id] as Dictionary
+						var mgr = dyn_info_d.get("manager", null)
+						if mgr == null:
+							continue
+						for cfg_d in mgr.models:
+							if cfg_d is Dictionary and int(cfg_d.get("id", -1)) == dyn_id:
+								covered = true
+								break
+						if covered:
+							break
+					if not covered:
+						return PluginErrors.model_not_available(plugin_id, "dynamic:%d" % dyn_id)
+				resolved_model_id = dyn_id
+				# provider will be created below via the >= 10000 branch
+
+			"builtin":
+				# Coerce model_id from float (JSON round-trip) to int.
+				var builtin_id: int = int(spec.get("model_id", -1))
+				var script_map_b = so.get("API_MODEL_PROVIDER_SCRIPTS") if "API_MODEL_PROVIDER_SCRIPTS" in so else {}
+				if not script_map_b.has(builtin_id):
+					return PluginErrors.model_not_available(plugin_id, "builtin:%d" % builtin_id)
+				resolved_model_id = builtin_id
+				var pm2b = so.get("MODEL_TO_PROVIDER") if "MODEL_TO_PROVIDER" in so else {}
+				resolved_provider_enum = int(pm2b.get(resolved_model_id, -1))
+				# provider will be created below via the script_map2 branch
+
+			_:
+				return PluginErrors.schema_validation_failed(plugin_id,
+					"host.providers.chat model_spec has unknown kind '%s' (expected core_action, dynamic, or builtin)" % spec_kind)
+
+	elif model_name_req == "default":
 		# Default → Core/TurnRock
 		var api_model_providers = so.get("API_MODEL_PROVIDERS") if "API_MODEL_PROVIDERS" in so else null
 		if api_model_providers != null and api_model_providers.has("TURNROCK"):
@@ -2137,19 +2239,20 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 				return PluginErrors.model_ambiguous(plugin_id, model_name_req, cand_names3)
 
 	# --- Create the provider instance ----------------------------------------
-	var provider: BaseProvider = null
+	# provider may already be set (core_action path above); only instantiate when not.
 	var provider_map2 = so.get("MODEL_TO_PROVIDER") if "MODEL_TO_PROVIDER" in so else {}
 	var script_map2 = so.get("API_MODEL_PROVIDER_SCRIPTS") if "API_MODEL_PROVIDER_SCRIPTS" in so else {}
 
-	if resolved_model_id < 0:
-		return PluginErrors.model_not_available(plugin_id, model_name_req)
+	if provider == null:
+		if resolved_model_id < 0:
+			return PluginErrors.model_not_available(plugin_id, model_name_req)
 
-	if resolved_model_id >= 10000:  # Dynamic model
-		provider = so.create_dynamic_provider(resolved_model_id)
-	elif script_map2.has(resolved_model_id):
-		var pscript = script_map2[resolved_model_id]
-		if pscript != null and pscript.can_instantiate():
-			provider = pscript.new()
+		if resolved_model_id >= 10000:  # Dynamic model
+			provider = so.create_dynamic_provider(resolved_model_id)
+		elif script_map2.has(resolved_model_id):
+			var pscript = script_map2[resolved_model_id]
+			if pscript != null and pscript.can_instantiate():
+				provider = pscript.new()
 
 	if provider == null:
 		return PluginErrors.model_not_available(plugin_id, model_name_req)

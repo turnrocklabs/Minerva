@@ -1,5 +1,5 @@
 extends SceneTree
-## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8.
+## Scansort panel substrate smoke test — T7 R1 + R2 + R3 + R4 + R5 + R6 + R7 + R8 + R9.
 ##
 ## Run: godot --headless --path src --script test/test_scansort_panel_smoke.gd
 ##
@@ -12,6 +12,7 @@ extends SceneTree
 ##                T7 R6 — checklist dialog
 ##                T7 R7 — get_editor_actions() chrome API (toolbar removed)
 ##                T7 R8 — drop settings dialog, inherit chat model via _resolve_chat_model_for_classify
+##                T7 R9 — chrome OptionButton for model selection (_model_dropdown)
 ##
 ## Layer-1 headless checks (no display required):
 ##   1.  password_dialog.gd loads without parse errors
@@ -751,6 +752,93 @@ func _run_tests() -> void:
 			"_file_menu_btn still non-null — toolbar not removed")
 
 		panel_l.queue_free()
+		await process_frame
+
+	# -----------------------------------------------------------------------
+	# Group M: R9 — chrome model OptionButton
+	# -----------------------------------------------------------------------
+	print("\n-- M: chrome model OptionButton (T7 R9) --")
+
+	var panel_m_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_m = null
+	if panel_m_packed != null:
+		panel_m = panel_m_packed.instantiate()
+
+	if panel_m == null:
+		for _i in range(6):
+			_fail_count += 1
+		print("  SKIP M124-M129: could not instantiate panel for M checks")
+	else:
+		root.add_child(panel_m)
+		await process_frame
+
+		var actions_m: Array = []
+		if panel_m.has_method("get_editor_actions"):
+			actions_m = panel_m.get_editor_actions()
+
+		check("M124: get_editor_actions() returns Array of size 2",
+			actions_m.size() == 2,
+			"got size: %d" % actions_m.size())
+
+		check("M125: first element is MenuButton (file menu)",
+			actions_m.size() > 0 and actions_m[0] is MenuButton,
+			"got type: %s" % (type_string(typeof(actions_m[0])) if actions_m.size() > 0 else "<empty>"))
+
+		check("M126: second element is OptionButton (model dropdown)",
+			actions_m.size() > 1 and actions_m[1] is OptionButton,
+			"got type: %s" % (type_string(typeof(actions_m[1])) if actions_m.size() > 1 else "<empty>"))
+
+		# Inspect the OptionButton's first item metadata — must be a Dictionary.
+		var has_metadata_dict := false
+		if actions_m.size() > 1 and actions_m[1] is OptionButton:
+			var ob: OptionButton = actions_m[1]
+			if ob.get_item_count() > 0:
+				var meta = ob.get_item_metadata(0)
+				has_metadata_dict = (meta is Dictionary)
+		check("M127: OptionButton metadata at index 0 is a Dictionary (spec wiring)",
+			has_metadata_dict,
+			"metadata not a Dictionary — spec not stored")
+
+		# _resolve_chat_model_for_classify() must return {model_spec: Dictionary}.
+		var resolve_result = null
+		if panel_m.has_method("_resolve_chat_model_for_classify"):
+			resolve_result = panel_m._resolve_chat_model_for_classify()
+		check("M128: _resolve_chat_model_for_classify() returns Dictionary with 'model_spec' key",
+			resolve_result is Dictionary and resolve_result.has("model_spec"),
+			"got: %s" % str(resolve_result))
+
+		# L6: deselect the dropdown — should fall back to {model_spec: {}}.
+		var fallback_result = null
+		var dropdown_m: OptionButton = panel_m.get("_model_dropdown")
+		if dropdown_m != null and is_instance_valid(dropdown_m):
+			dropdown_m.select(-1)
+		if panel_m.has_method("_resolve_chat_model_for_classify"):
+			fallback_result = panel_m._resolve_chat_model_for_classify()
+		check("M129: _resolve_chat_model_for_classify() falls back to {model_spec: {}} when no item selected",
+			fallback_result is Dictionary and
+			fallback_result.has("model_spec") and
+			fallback_result.get("model_spec") is Dictionary and
+			(fallback_result.get("model_spec") as Dictionary).is_empty(),
+			"got: %s" % str(fallback_result))
+
+		# M130: mirror the call-site guard — when spec is empty, classify_args
+		# must NOT include "model_spec" (broker rejects {} as "unknown kind").
+		var fb_spec: Dictionary = {}
+		if fallback_result is Dictionary and fallback_result.get("model_spec") is Dictionary:
+			fb_spec = fallback_result.get("model_spec")
+		var classify_args_m: Dictionary = {"vault_path": "/tmp/x.ssort", "model": "default"}
+		if not fb_spec.is_empty():
+			classify_args_m["model_spec"] = fb_spec
+		check("M130: classify_args omits 'model_spec' when resolver returns empty spec",
+			not classify_args_m.has("model_spec"),
+			"classify_args has model_spec=%s" % str(classify_args_m.get("model_spec")))
+
+		# Free chrome controls returned by get_editor_actions().
+		for ctrl in actions_m:
+			if ctrl != null and is_instance_valid(ctrl):
+				ctrl.queue_free()
+
+		panel_m.queue_free()
 		await process_frame
 
 
