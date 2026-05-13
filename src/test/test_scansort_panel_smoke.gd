@@ -1,11 +1,12 @@
 extends SceneTree
-## Scansort panel substrate smoke test — T7 R1 + R2.
+## Scansort panel substrate smoke test — T7 R1 + R2 + R3.
 ##
 ## Run: godot --headless --path src --script test/test_scansort_panel_smoke.gd
 ##
 ## Tracks docket: minerva 019e1cdb451076ae8c344f6e6ec605e1 (scansort plugin DCR)
 ## Rounds:        T7 R1 — panel UI substrate (ScansortPanel + PasswordDialog)
 ##                T7 R2 — view scripts (FileTree, VaultView, StatusPanel)
+##                T7 R3 — add-document dialog + ingest pipeline
 ##
 ## Layer-1 headless checks (no display required):
 ##   1.  password_dialog.gd loads without parse errors
@@ -35,13 +36,14 @@ const PLUGIN_DIALOG_GD   := "/home/imran/github/plugins/scansort/ui/password_dia
 const PLUGIN_FILETREE_GD := "/home/imran/github/plugins/scansort/ui/file_tree.gd"
 const PLUGIN_VAULTVIEW_GD := "/home/imran/github/plugins/scansort/ui/vault_view.gd"
 const PLUGIN_STATUSPANEL_GD := "/home/imran/github/plugins/scansort/ui/status_panel.gd"
+const PLUGIN_ADD_DIALOG_GD := "/home/imran/github/plugins/scansort/ui/add_document_dialog.gd"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
 
 
 func _init() -> void:
-	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2) ===\n")
+	print("=== Scansort Panel Substrate Smoke Test (T7 R1 + R2 + R3) ===\n")
 	await _run_tests()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -289,6 +291,102 @@ func _run_tests() -> void:
 			"signal not wired")
 
 		panel_instance.queue_free()
+		await process_frame
+
+	# -----------------------------------------------------------------------
+	# Group G: R3 add_document_dialog.gd
+	# -----------------------------------------------------------------------
+	print("\n-- G: add_document_dialog.gd (T7 R3) --")
+
+	var add_dlg_script = load(PLUGIN_ADD_DIALOG_GD)
+	check("G47: add_document_dialog.gd loads (non-null)",
+		add_dlg_script != null,
+		"load() returned null — check parse errors above")
+
+	if add_dlg_script == null:
+		for _i in range(9):
+			_fail_count += 1
+		print("  SKIP G48-G56: add_document_dialog script null")
+	else:
+		var add_dlg = add_dlg_script.new()
+		check("G48: AddDocumentDialog instantiates", add_dlg != null)
+
+		if add_dlg != null:
+			check("G49: extends AcceptDialog",
+				add_dlg is AcceptDialog,
+				"got class: %s" % add_dlg.get_class())
+
+			check("G50: signal 'accepted' declared",
+				add_dlg.has_signal("accepted"))
+
+			check("G51: signal 'cancelled' declared",
+				add_dlg.has_signal("cancelled"))
+
+			check("G52: method 'set_proposal' exists",
+				add_dlg.has_method("set_proposal"))
+
+			check("G53: method '_on_accept_pressed' exists",
+				add_dlg.has_method("_on_accept_pressed"))
+
+			check("G54: method '_on_cancel_pressed' exists",
+				add_dlg.has_method("_on_cancel_pressed"))
+
+			# Smoke: call set_proposal with a fake dict — must not crash.
+			var fake_proposal := {
+				"category":    "invoices",
+				"confidence":  0.87,
+				"sender":      "ACME Corp",
+				"description": "Test invoice",
+				"doc_date":    "2026-05-13",
+				"tags":        ["finance", "2026"],
+				"sha256":      "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
+				"simhash":     "0000000000000001",
+				"dhash":       "0000000000000002",
+				"source_file": "/tmp/test_invoice.pdf",
+			}
+			var set_proposal_ok := true
+			add_dlg.set_proposal(fake_proposal)
+			check("G55: set_proposal(fake_proposal) does not crash", set_proposal_ok)
+
+			if is_instance_valid(add_dlg):
+				add_dlg.free()
+
+	# -----------------------------------------------------------------------
+	# Group H: R3 ScansortPanel pipeline method presence
+	# -----------------------------------------------------------------------
+	print("\n-- H: ScansortPanel R3 methods (T7 R3) --")
+
+	# Re-instantiate the panel for the H checks (panel_instance was freed above).
+	var panel2_packed = load(PLUGIN_PANEL_TSCN)
+	var panel2 = null
+	if panel2_packed != null:
+		panel2 = panel2_packed.instantiate()
+
+	if panel2 == null:
+		for _i in range(5):
+			_fail_count += 1
+		print("  SKIP H56-H60: could not instantiate panel for H checks")
+	else:
+		root.add_child(panel2)
+		await process_frame
+
+		check("H56: panel has method '_on_add_document_pressed'",
+			panel2.has_method("_on_add_document_pressed"))
+
+		check("H57: panel has method '_ingest_pipeline'",
+			panel2.has_method("_ingest_pipeline"))
+
+		check("H58: panel has method '_on_add_dialog_accepted'",
+			panel2.has_method("_on_add_dialog_accepted"))
+
+		check("H59: panel has method '_on_add_dialog_cancelled'",
+			panel2.has_method("_on_add_dialog_cancelled"))
+
+		check("H60: panel._vault_password starts empty",
+			panel2.get("_vault_password") == "",
+			"got: '%s'" % str(panel2.get("_vault_password")))
+
+		panel2.queue_free()
 		await process_frame
 
 
