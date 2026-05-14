@@ -1,121 +1,135 @@
-# Pickup — Scansort plugin T7 R9 (HITL pending)
+# Pickup — Scansort plugin: rules-file separation done, U-series in progress
 
-Last updated: 2026-05-13 (post-compact, R9 WIP committed; awaiting in-app verification)
+Last updated: 2026-05-14 (laptop, end of session — U1 committed, U2 next)
 
 ## Where I left off
 
-Active workstream: **Scansort plugin DCR — T7 panel UI, Round 9** (`minerva:019e1cdc9a41710ab544180f6ddbcd2a`, in_progress).
-Parent DCR: `minerva:019e1cdb451076ae8c344f6e6ec605e1`.
+Active workstream: **Scansort plugin DCR — experiment→plugin parity port**
+(`minerva:019e1cdb451076ae8c344f6e6ec605e1`, "Scansort plugin — functionally-equivalent redesign").
 
-R9 added structured `model_spec` routing to `host.providers.chat` so plugins can target Core-action models (model-chat / TurnRock services) that the old name-string compare couldn't reach. Scansort's chrome bar gained a Model OptionButton next to the File menu, populated from the chat dropdown. Tests green (Layer-1: 188/0 across 4 suites). **WIP commits pushed; in-app HITL test still pending.**
+Three things moved this session. (1) and (2) are **done and committed**; (3) is **in progress**.
 
-## Commits (pushed; pull on laptop)
+### (1) Rules-file separation (R1–R6) — DONE, committed, NOT yet HITL-tested
 
-| Repo | Branch | HEAD | Subject |
-|---|---|---|---|
-| `~/github/Minerva` | `user/imran/experiments/swarm` | `f35f0bb1` | WIP: T7 R9 — broker model_spec + ChatPane.get_available_models |
-| `~/github/plugins` | `main` | `4cd4245` | scansort: model_spec routing for classify (T7 R9) |
+Rules moved out of the `.ssort` vault into an external plaintext JSON file: sibling
+`<vault-stem>.rules.json` first, then a user-level library fallback. The vault keeps a
+per-document `rule_snapshot` blob (+ `snapshot_hash`) so it stays self-describing. Vault
+schema bumped **1.0.0 → 1.1.0** with auto-migration on `open_vault`
+(`schema::migrate` + `rules_file::migrate_embedded_to_sibling`).
 
-## HITL test plan (do this first on the laptop)
+### (2) F&F polish — DONE, committed
 
-The currently-running Minerva booted before R9, so its in-memory broker still uses the old name-string compare and the running scansort binary still sends `model_id`. **Restart Minerva first, then:**
+- Dropped the chrome model picker; model override now lives in the **Settings dialog**
+  (per-plugin, user-level, single model preference — "always a multimodal model").
+- All plugin dialogs honor Minerva's UI scale (`ui_scale.gd`).
+- Fixed 14 real debugger warnings at root cause (lambda-capture bugs in `CapabilityBroker.gd`).
 
-1. Plugin Manager → start scansort → open the panel.
-2. Confirm chrome bar (above panel) shows **[drawer-icon File MenuButton] [Model OptionButton]** to the left of "Save All".
-3. Click the Model OptionButton → pick a **model-chat** entry such as `Model Chat (qwen2.5-vl:7b)`. This is the case that was unrouteable before R9.
-4. Open a vault → File → "Add Document…" → pick a small PDF/text → confirm ingest pipeline runs end-to-end.
-5. **Pass criteria**: status panel reports a classification (e.g. "Classified: <category>"). No "Classification failed: host.providers.chat error: schema_validation_failed".
-6. Sanity: change the chat panel's model selection → close/reopen scansort → confirm the chrome dropdown's default mirrors the new chat selection.
+### (3) U-series — cuteFTP experiment-parity port — IN PROGRESS (U1 done)
 
-If pass → add a `done` comment on T7 docket and the round wraps. If fail → paste the error text into a new round.
+Gap analysis found the T7 port captured the **data layer** faithfully but dropped the
+**interaction layer** (source pane, Process button, per-file actions). The U-series restores it.
+**U1 is committed**; U2–U10 + the full-stack HITL remain.
 
-## Latent bug fixed in R9 (background)
+## Commits (pushed; pull on the other machine)
 
-Scansort's `handle_classify_document` was passing `model_id: "<string>"` to `host.providers.chat`, but `CapabilityBroker._handle_host_providers_chat` validates `args.has("model")` strictly. So **every** classify call since the broker integration landed (T1 R2) was silently returning `schema_validation_failed`. The Rust handler now reads `model` (with `model_id` as deprecated alias) and the broker accepts both `model: String` and `model_spec: Dictionary` (spec wins when both present).
+| Repo | Branch | Notes |
+|---|---|---|
+| `~/github/plugins/scansort` | `main` | HEAD `33d9f04` — U1 scan_tree component. R1-R6 + F&F below it. |
+| `~/github/Minerva` | `user/imran/experiments/swarm` | HEAD has U1 test (`46365da8`, Group N N135-N153) + this session's `.uid` WIP commit. |
 
-The structured spec mirrors `ProviderOptionButton.get_item_provider_spec()`:
-- `{kind: "core_action", service_client_id, action_name}` — Core/model-chat actions.
-- `{kind: "dynamic", model_id}` — model_id ≥ `SingletonObject.DYNAMIC_MODEL_ID_BASE` (10000).
-- `{kind: "builtin", model_id}` — model_id is a key in `API_MODEL_PROVIDER_SCRIPTS`.
+Plugin commit trail: `4c450c4` rules_file module · `44e8d98` schema 1.1.0 · `edcdb09` classify
+reads file · `5f7f08a` R4 MCP rules_path tools · `e530315` R5 migration · `240a473`/`777b12a`
+R6 rules editor UI · `2c23994` drop chrome model picker · `7f61c60`/`762d65f` Settings dialog ·
+`c362562` UI scale · `33d9f04` U1 scan_tree.
 
-Empty spec `{}` is detected at the call site and not forwarded; the broker would otherwise reject with "unknown kind".
+Minerva commit trail: `343cfc0` ChatPane.get_active_model_spec · `092d1b9` lambda-capture fix ·
+`1bf4696` test path portability · `46365da8` U1 Group N tests.
 
-## Files touched (R9)
+## NEXT: U2 — source backend
 
-### Minerva (`~/github/Minerva`)
-- `src/Scripts/Services/Plugins/CapabilityBroker.gd` — added `_CoreProvider` preload (~line 36-44), extended `_handle_host_providers_chat` (~line 1980-2260) with spec-resolution branch before the existing string-match path.
-- `src/Scripts/UI/Views/ChatPane.gd` — added `get_available_models() -> Array` (~line 3573) next to the existing `get_active_model_descriptor()`.
-- `src/test/test_host_capability_chat_spec.gd` (NEW) — 7 cases × multiple assertions = 18/0.
-- `src/test/test_scansort_panel_smoke.gd` — Group M (M124–M130) for chrome OptionButton + spec routing + empty-spec guard. 120/0.
+From nudge `scansort-T7-continuation/round-sequence` and `session-state`:
 
-### Plugins (`~/github/plugins/scansort`)
-- `src/main.rs` — `handle_classify_document` reads `model` (with `model_id` alias) and forwards `model_spec` when non-empty; tool schema declares both, deprecates `model_id`.
-- `ui/ScansortPanel.gd` — `_model_dropdown` member added; `get_editor_actions()` now returns `[MenuButton, OptionButton]`; `_resolve_chat_model_for_classify()` returns `{model_spec}`; classify call site builds args with `model: "default"` and conditionally adds `model_spec`.
-- `scansort-plugin` binary rebuilt + installed via `install -m 0755` (NOT `cp` — see nudge `running-plugin-binary-cp-fails-text-file-busy`).
+> Add MCP tools `set_source_dir(path, recursive)` / `get_source_dir()` / `list_source_files()`
+> to `~/github/plugins/scansort/src/main.rs`. Source state = **transitory** plugin-process
+> memory (module-level state struct), never persisted. `list_source_files` returns supported
+> files under the source dir (recursive optional), each `{path, name, size, sha256, in_vault}`
+> where `in_vault` cross-references the vault's `fingerprints`/`sha256`. Then build
+> `scan_tree_source_provider.gd` (extends `scan_tree_provider.gd`) calling `list_source_files`.
+> Rust unit tests + smoke-test additions. Commit U2 both repos.
 
-## Cold-pickup checklist (laptop)
+Remaining rounds (Tier-1): U3 destination backend · U4 panel layout rewrite (3-column Option A) ·
+U5 Process All pipeline · U6 manual review (drag/mark/export) · U7 vault_and_disk stacked view +
+Settings destination picker + concurrency control · U8 recovery sheet dialog · U9 watch folders
+(design-first) · U10 docs + delete orphaned `vault_view.gd`/`edit_details_dialog.gd`.
 
-1. `git -C ~/github/Minerva fetch && git -C ~/github/Minerva checkout user/imran/experiments/swarm && git pull --ff-only`
-2. `git -C ~/github/plugins fetch && git -C ~/github/plugins checkout main && git pull --ff-only`
-3. **Rebuild the scansort plugin binary** on the laptop — the binary is gitignored, only source is in the repo:
+## HITL — still pending (blocked behind U-series)
+
+Panel-driven HITL of the full stack: 10 test PDFs in `~/Downloads` (8 physics/school, 1
+`receipt.pdf`, 1 WA-ferries doc); test dir `~/scansort-test/` is empty + clean. **Drive through
+the panel UI, not raw MCP** (user constraint). Sightline should confirm 0 new warnings.
+
+Open question: HITL the rules-file work against the *current* pane before the U-series tears it
+out, or one combined HITL after U10. Leaning combined-after.
+
+## Cold-pickup checklist
+
+1. `git -C ~/github/Minerva fetch && git checkout user/imran/experiments/swarm && git pull --ff-only`
+2. `git -C ~/github/plugins fetch && git checkout main && git pull --ff-only`
+3. Rebuild + install the plugin binary (gitignored; source-only in repo):
    ```
    cd ~/github/plugins/scansort && cargo build --release && install -m 0755 target/release/scansort-plugin scansort-plugin
    ```
 4. Smoke-check Layer-1:
    ```
    cd ~/github/Minerva
-   timeout 120 godot --headless --path src --script test/test_scansort_panel_smoke.gd
-   timeout 90 godot --headless --path src --script test/test_host_capability_chat_spec.gd
+   godot --headless --path src --script test/test_scansort_panel_smoke.gd      # expect 160/0
    ```
-   Expect 120/0 and 18/0 respectively.
-5. Run the HITL test plan above.
-6. If pass: comment on `019e1cdc9a41710ab544180f6ddbcd2a` confirming and proceed to the next T7 round (or wrap T7 entirely — depends on remaining R9 followups vs. the T7 success bar).
+   Rust: `cd ~/github/plugins/scansort && cargo test --release`                # expect 45/0
+5. Resume at U2 (above).
 
-## Open work after R9 confirms
+## Build / test commands
 
-R9 followups (filed in the T7 docket comment, deferred — not blocking):
-- Add an integration test that captures `classify_args` on the live wire and asserts `model_spec` is forwarded.
-- Half A reviewer note: T3 (core_action happy path) auto-passes when Core autoload is absent in headless. Add a Core stub or mark the test "human-required".
-- `_dynamic_provider_map` access is a private SingletonObject reach; promote to a public predicate when convenient.
-
-T7 outstanding rounds (none queued — R9 was scope-completing for the model-routing problem). Wrap T7 once HITL passes.
-
-## Local workspace caveats (won't transfer to laptop)
-
-The following pre-R9 working-tree changes were NOT committed and will NOT travel — re-do or re-enable on the laptop if needed:
-
-- `src/project.godot` — `buses/default_bus_layout="uid://ceag6rfsoj1uq"` line added; `addons/sightline_probe/plugin.cfg` enabled.
-- `src/addons/sightline_probe/` — untracked editor addon directory.
-- `vendor/godot_cef` and `vendor/godot_wry` — submodule working-tree dirty markers (no committed changes; safe to ignore).
-- `~/github/plugins/cad/...` and `~/github/plugins/presentation/presentation` — unrelated CAD/presentation work, untouched by R9.
-
-Plus a stack of `.uid` files in `src/test/` that Godot auto-generates from .gd files when the editor opens the project — they'll regenerate on the laptop on first run. Not committing them keeps the diff clean.
-
-## Key nudges saved this session (durable session-scoped)
-
-Check these via `nudge query` before re-discovering:
-- `minerva-plugin-platform/scansort-T7-R9-scope-spec-based-model-routing` — original R9 brief (kept for reference)
-- `minerva-plugin-platform/scansort-classify-uses-wrong-broker-key-model_id-vs-model` — the latent bug R9 fixed
-- `minerva-plugin-platform/core-provider-model-name-is-synthesized-display-string` — why string-compare routing fails for Core actions
-- `minerva-plugin-platform/chatpane-current-model-accessor-via-provider-option-button` — accessor pattern
-- `minerva-plugin-platform/running-plugin-binary-cp-fails-text-file-busy` — use `install`, not `cp`
-- `minerva-plugin-platform/godot-filedialog-default-access-is-resources` — FileDialog UX gotcha
-- `minerva-plugin-platform/scansort-tool-envelopes-tool_ok-doesnt-add-ok-key` — envelope non-uniformity audit
-- `minerva-plugin-platform/scansort-verify-password-ok-overloaded-bug` — earlier R7/R8 fix
-- `minerva-testing/panel-menu-introspection-via-member-not-path` — headless test pattern
+- Rust build: `cd ~/github/plugins/scansort && cargo build --release`
+- Install binary (NOT `cp` — ETXTBSY): `install -m 0755 target/release/scansort-plugin scansort-plugin`
+- Rust tests: `cargo test --release` (45/0)
+- Layer-1 panel smoke: `godot --headless --path src --script test/test_scansort_panel_smoke.gd` (160/0)
+- macOS has no `timeout` command — run `godot` directly.
+- Pick up GD changes: user restarts Minerva (F5 stop+start). Pick up Rust binary: install + restart
+  scansort plugin via `minerva_plugin_restart`.
 
 ## Constraints to carry forward
 
-- Off-tree plugin scripts (under `~/github/plugins/`) must use `preload()` + base-class typing for cross-script types. No `class_name` references.
-- Off-tree plugin `class_name` must start with `<canonical_prefix>_` (PluginDefinition validates at install).
-- Plugin MCP tool names must be `minerva_<plugin_id>_*` (validated at manifest + runtime dispatch).
-- CapabilityBroker dependencies use `const _Foo := preload(...)`, NOT class_name — headless test isolation.
-- GDScript JSON round-trip turns ints into floats; coerce with `int(...)` for any `model_id`-shaped field.
-- Plugin binary rebuild while Minerva is running: use `install -m 0755`, NOT `cp` (ETXTBSY).
-- Layer-1 testing uses targeted SceneTree scripts; `godot --check-only` hangs on Minerva.
+- All testing goes through MCP tools or the panel UI — **do not hand-write rules/vault files** to
+  side-step how Minerva works.
+- Off-tree plugin scripts (`~/github/plugins/`) use `preload()` + base-class typing — no `class_name`
+  for cross-script types. Off-tree `class_name` (where used) must start with `<canonical_prefix>_`.
+- Plugin MCP tool names must be `minerva_<plugin_id>_*`.
+- GDScript JSON round-trip turns ints into floats; coerce with `int(...)`.
+- GDScript `func()` lambdas capture primitives BY VALUE — use a Dictionary for mutable shared state.
+- Plugin binary rebuild while Minerva runs: `install -m 0755`, not `cp` (ETXTBSY).
+
+## Locked design decisions (U-series)
+
+See nudge `scansort-T7-continuation/design-decisions-locked` for the full list. Highlights:
+source dir is transitory; destination is a per-vault setting (`vault_only`/`disk_only`/
+`vault_and_disk`); `vault_and_disk` is curated, not mirrored; export mark and processed mark are
+transitory session state; ONE unified `scan_tree` component for all three panes; no per-doc detail
+panel (`vault_view.gd` gets deleted); Process All is a panel-orchestrated GDScript loop, not a Rust
+tool; concurrency control (1–4 parallel) lives in the Settings dialog.
+
+## Nudge state
+
+Component `scansort-T7-continuation` — keys: `session-state`, `round-sequence`,
+`build-test-commands`, `docket-and-prior-work`, `design-decisions-locked`. Query before
+re-discovering.
+
+## Session housekeeping done
+
+- Sightline probe reverted (`--cleanup`): `src/project.godot` restored, `src/addons/sightline_probe/`
+  and `src/.sightline/` removed.
+- Untracked `.uid` files in `src/test/` committed (Godot tracks `.uid` — 606 already in the repo).
 
 ## Paused workstreams (orthogonal, not picking up)
 
-- **Presentation plugin v2 MCP iteration** — plan `019df419ce567de0b7699b3be7b6c8b5`. Paused at end of buffer-canonical DCR.
-- **CAD Phase B2** — blocked on bug `019dec49988b7091933371908d6bbb00` (callout annotation edge-tracking).
-- **HITL gizmo polish** `019def28e6be7e358a7a80e33014e526` — orthogonal to MCP/plugin work.
+- Presentation plugin v2 MCP iteration — plan `019df419ce567de0b7699b3be7b6c8b5`.
+- CAD Phase B2 — blocked on bug `019dec49988b7091933371908d6bbb00`.
