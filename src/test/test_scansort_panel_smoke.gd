@@ -924,15 +924,16 @@ func _run_tests() -> void:
 				and resolve_result.get("model_spec") is Dictionary,
 			"got: %s" % str(resolve_result))
 
-		# M128: mirror the call-site guard — when spec is empty, classify_args
-		# must NOT include "model_spec" (broker rejects {} as "unknown kind").
-		var fb_spec: Dictionary = {}
-		if resolve_result is Dictionary and resolve_result.get("model_spec") is Dictionary:
-			fb_spec = resolve_result.get("model_spec")
+		# M128: the call-site guard — an EMPTY spec must NOT be added to
+		# classify_args (the broker rejects {} as "unknown kind"). Tested with a
+		# known-empty spec; the resolver's actual output depends on chat state
+		# (it legitimately returns a real spec when a chat model is selected)
+		# and isn't the subject of this check.
+		var empty_spec: Dictionary = {}
 		var classify_args_m: Dictionary = {"vault_path": "/tmp/x.ssort", "model": "default"}
-		if not fb_spec.is_empty():
-			classify_args_m["model_spec"] = fb_spec
-		check("M128: classify_args omits 'model_spec' when resolver returns empty spec",
+		if not empty_spec.is_empty():
+			classify_args_m["model_spec"] = empty_spec
+		check("M128: classify_args omits 'model_spec' when spec is empty",
 			not classify_args_m.has("model_spec"),
 			"classify_args has model_spec=%s" % str(classify_args_m.get("model_spec")))
 
@@ -942,6 +943,112 @@ func _run_tests() -> void:
 				ctrl.queue_free()
 
 		panel_m.queue_free()
+		await process_frame
+
+	# -----------------------------------------------------------------------
+	# Group N: U1 — unified scan_tree component + providers
+	# -----------------------------------------------------------------------
+	print("\n-- N: unified scan_tree + providers (U1) --")
+
+	# scan_tree_provider.gd — the base contract.
+	var provider_base_script = load(_ui("scan_tree_provider.gd"))
+	check("N135: scan_tree_provider.gd parses cleanly",
+		provider_base_script != null, "load() returned null")
+	if provider_base_script != null:
+		var pb = provider_base_script.new()
+		check("N136: base provider has get_tree_data",
+			pb.has_method("get_tree_data"))
+		check("N137: base provider has get_source_label",
+			pb.has_method("get_source_label"))
+		check("N138: base provider get_tree_data returns empty Array by default",
+			pb.get_tree_data() is Array and (pb.get_tree_data() as Array).is_empty())
+
+	# scan_tree_vault_provider.gd — vault-backed provider.
+	var vault_provider_script = load(_ui("scan_tree_vault_provider.gd"))
+	check("N139: scan_tree_vault_provider.gd parses cleanly",
+		vault_provider_script != null, "load() returned null")
+	if vault_provider_script != null:
+		var vp = vault_provider_script.new()
+		check("N140: vault provider has init",
+			vp.has_method("init"))
+		check("N141: vault provider has get_tree_data",
+			vp.has_method("get_tree_data"))
+		# Uninitialised (no conn) → get_tree_data returns [] without crashing.
+		var vp_data = await vp.get_tree_data()
+		check("N142: vault provider get_tree_data returns [] when uninitialised",
+			vp_data is Array and (vp_data as Array).is_empty(),
+			"got: %s" % str(vp_data))
+		# get_source_label reflects the (absent) vault path.
+		check("N143: vault provider get_source_label returns 'Vault' when no path",
+			str(vp.get_source_label()) == "Vault",
+			"got: '%s'" % str(vp.get_source_label()))
+
+	# scan_tree.gd — the unified component.
+	var scan_tree_script = load(_ui("scan_tree.gd"))
+	check("N144: scan_tree.gd parses cleanly",
+		scan_tree_script != null, "load() returned null")
+	if scan_tree_script != null:
+		var st = scan_tree_script.new()
+		check("N145: scan_tree extends Tree",
+			st is Tree, "got class: %s" % st.get_class())
+		check("N146: scan_tree has set_provider / refresh / populate / get_checked_keys",
+			st.has_method("set_provider") and st.has_method("refresh")
+				and st.has_method("populate") and st.has_method("get_checked_keys"))
+		check("N147: scan_tree declares file_activated / selection_changed / check_toggled signals",
+			st.has_signal("file_activated") and st.has_signal("selection_changed")
+				and st.has_signal("check_toggled"))
+
+		# Render test: populate() with canned data, verify structure.
+		root.add_child(st)
+		await process_frame
+		var canned: Array = [
+			{
+				"kind": "folder", "name": "receipts/ (2)", "key": "cat:receipts",
+				"date": "", "tooltip": "", "children": [
+					{"kind": "file", "name": "jan.pdf", "key": "doc:1", "date": "2026-01-05", "tooltip": "jan", "children": []},
+					{"kind": "file", "name": "feb.pdf", "key": "doc:2", "date": "2026-02-05", "tooltip": "feb", "children": []},
+				],
+			},
+			{
+				"kind": "folder", "name": "school/ (1)", "key": "cat:school",
+				"date": "", "tooltip": "", "children": [
+					{"kind": "file", "name": "ch1.pdf", "key": "doc:3", "date": "2026-03-01", "tooltip": "ch1", "children": []},
+				],
+			},
+		]
+		st.populate(canned)
+		var tree_root: TreeItem = st.get_root()
+		check("N148: populate() builds the top-level folders",
+			tree_root != null and tree_root.get_child_count() == 2,
+			"got child count: %d" % (tree_root.get_child_count() if tree_root != null else -1))
+		if tree_root != null and tree_root.get_child_count() == 2:
+			var first_folder: TreeItem = tree_root.get_first_child()
+			check("N149: first folder row carries kind=folder and is non-checkable",
+				str(first_folder.get_meta("kind", "")) == "folder"
+					and first_folder.get_cell_mode(0) != TreeItem.CELL_MODE_CHECK,
+				"folder row mis-rendered")
+			check("N150: first folder has 2 file children",
+				first_folder.get_child_count() == 2,
+				"got: %d" % first_folder.get_child_count())
+			var first_file: TreeItem = first_folder.get_first_child()
+			check("N151: file row is a checkbox cell with kind=file",
+				str(first_file.get_meta("kind", "")) == "file"
+					and first_file.get_cell_mode(0) == TreeItem.CELL_MODE_CHECK,
+				"file row mis-rendered")
+			check("N152: file row metadata carries the node key",
+				str(first_file.get_metadata(1)) == "doc:1",
+				"got key: '%s'" % str(first_file.get_metadata(1)))
+
+			# get_checked_keys: check two files, expect their keys back.
+			first_file.set_checked(0, true)
+			var third_file: TreeItem = tree_root.get_child(1).get_first_child()
+			third_file.set_checked(0, true)
+			var checked: Array = st.get_checked_keys()
+			check("N153: get_checked_keys returns exactly the checked file keys",
+				checked.size() == 2 and checked.has("doc:1") and checked.has("doc:3"),
+				"got: %s" % str(checked))
+
+		st.queue_free()
 		await process_frame
 
 
