@@ -262,15 +262,13 @@ func _run_tests() -> void:
 			print("  SKIP E36-E40: status_panel script null")
 
 		# -------------------------------------------------------------------
-		# Group F: U4 panel integration — 3-column layout wired into panel
+		# Group F: U4 panel integration — 2-column layout + chrome buttons
 		# -------------------------------------------------------------------
-		print("\n-- F: U4 panel integration (3-column layout) --")
+		print("\n-- F: U4 panel integration (2-col layout, chrome buttons) --")
 
 		var src_tree: Node = panel_instance.get("_source_tree")
 		var dst_tree: Node = panel_instance.get("_dest_tree")
 		var stat_panel: Node = panel_instance.get("_status_panel")
-		var proc_btn: Node = panel_instance.get("_process_btn")
-		var stop_btn: Node = panel_instance.get("_stop_btn")
 
 		check("F41: panel has _source_tree member (a Tree, non-null after _ready)",
 			src_tree != null and src_tree is Tree,
@@ -280,9 +278,11 @@ func _run_tests() -> void:
 			dst_tree != null and dst_tree is Tree,
 			"_dest_tree missing or not a Tree")
 
-		check("F43: panel has _status_panel, _process_btn, _stop_btn members",
-			stat_panel != null and proc_btn is Button and stop_btn is Button,
-			"action-column members missing")
+		# Status panel is the bottom bar — a direct child of the root layout VBox.
+		var stat_parent: Node = stat_panel.get_parent() if stat_panel != null else null
+		check("F43: _status_panel is a bottom bar under a VBoxContainer layout",
+			stat_panel != null and stat_parent is VBoxContainer,
+			"status parent: %s" % (str(stat_parent.get_class()) if stat_parent != null else "<null>"))
 
 		# _source_tree lives under a container named SourcePane.
 		var src_parent: Node = src_tree.get_parent() if src_tree != null else null
@@ -296,16 +296,20 @@ func _run_tests() -> void:
 			dst_parent != null and str(dst_parent.name) == "DestPane",
 			"parent: %s" % (str(dst_parent.name) if dst_parent != null else "<null>"))
 
-		# Process/Stop buttons + status panel all live in the ActionColumn.
-		var proc_parent: Node = proc_btn.get_parent() if proc_btn != null else null
-		var stat_parent: Node = stat_panel.get_parent() if stat_panel != null else null
-		check("F46: _process_btn and _status_panel share the 'ActionColumn' container",
-			proc_parent != null and str(proc_parent.name) == "ActionColumn"
-				and stat_parent != null and str(stat_parent.name) == "ActionColumn",
-			"process parent: %s / status parent: %s" % [
-				str(proc_parent.name) if proc_parent != null else "<null>",
-				str(stat_parent.name) if stat_parent != null else "<null>",
-			])
+		# get_editor_actions() contributes [Process, Stop, File] to the chrome
+		# bar — Process/Stop are disabled icon Buttons, File is a MenuButton.
+		var chrome_actions: Array = panel_instance.get_editor_actions()
+		var chrome_ok: bool = chrome_actions.size() == 3 \
+			and chrome_actions[0] is Button and chrome_actions[1] is Button \
+			and chrome_actions[2] is MenuButton \
+			and chrome_actions[0].icon != null and chrome_actions[1].icon != null \
+			and chrome_actions[0].disabled and chrome_actions[1].disabled
+		check("F46: get_editor_actions returns [Process(icon,disabled), Stop(icon,disabled), File menu]",
+			chrome_ok,
+			"got: %s" % str(chrome_actions.map(func(c): return c.get_class() if c != null else "<null>")))
+		for c in chrome_actions:
+			if c != null and is_instance_valid(c):
+				c.queue_free()
 
 		panel_instance.queue_free()
 		await process_frame
@@ -607,9 +611,12 @@ func _run_tests() -> void:
 
 		# J102: verify menu id 5 still present via get_editor_actions().
 		var actions_j: Array = panel4.get_editor_actions() if panel4.has_method("get_editor_actions") else []
+		# U4: get_editor_actions returns [Process, Stop, File menu] — find the menu.
 		var fmb_j: MenuButton = null
-		if actions_j.size() > 0 and actions_j[0] is MenuButton:
-			fmb_j = actions_j[0]
+		for a_j in actions_j:
+			if a_j is MenuButton:
+				fmb_j = a_j
+				break
 		var has_id5 := false
 		var has_id6 := false
 		if fmb_j != null:
@@ -670,9 +677,12 @@ func _run_tests() -> void:
 		check("K113: panel has method '_on_checklist_pressed'",
 			panel4.has_method("_on_checklist_pressed"))
 		var actions_k: Array = panel4.get_editor_actions() if panel4.has_method("get_editor_actions") else []
+		# U4: get_editor_actions returns [Process, Stop, File menu] — find the menu.
 		var fmb_k: MenuButton = null
-		if actions_k.size() > 0 and actions_k[0] is MenuButton:
-			fmb_k = actions_k[0]
+		for a_k in actions_k:
+			if a_k is MenuButton:
+				fmb_k = a_k
+				break
 		var has_id7: bool = false
 		if fmb_k != null:
 			var pm2: PopupMenu = fmb_k.get_popup()
@@ -720,13 +730,16 @@ func _run_tests() -> void:
 			actions_l.size() >= 1,
 			"got size: %d" % actions_l.size())
 
+		# U4: get_editor_actions returns [Process, Stop, File menu] — find the menu.
 		var menu_l: MenuButton = null
-		if actions_l.size() > 0 and actions_l[0] is MenuButton:
-			menu_l = actions_l[0]
+		for a_l in actions_l:
+			if a_l is MenuButton:
+				menu_l = a_l
+				break
 
-		check("L118: first element is a MenuButton",
+		check("L118: actions contain the File MenuButton",
 			menu_l != null,
-			"got: %s" % (str(actions_l[0]) if actions_l.size() > 0 else "<empty>"))
+			"no MenuButton in: %s" % str(actions_l.map(func(c): return c.get_class() if c != null else "<null>")))
 
 		if menu_l != null:
 			var popup_l: PopupMenu = menu_l.get_popup()
@@ -904,13 +917,22 @@ func _run_tests() -> void:
 		if panel_m.has_method("get_editor_actions"):
 			actions_m = panel_m.get_editor_actions()
 
-		check("M124: get_editor_actions() returns Array of size 1 (no per-panel model picker)",
-			actions_m.size() == 1,
+		# U4: get_editor_actions returns [Process, Stop, File menu] — 3 controls.
+		check("M124: get_editor_actions() returns 3 controls (Process, Stop, File menu)",
+			actions_m.size() == 3,
 			"got size: %d" % actions_m.size())
 
-		check("M125: only element is MenuButton (file menu)",
-			actions_m.size() > 0 and actions_m[0] is MenuButton,
-			"got type: %s" % (type_string(typeof(actions_m[0])) if actions_m.size() > 0 else "<empty>"))
+		# No per-panel model picker — exactly one MenuButton, zero OptionButtons.
+		var menu_count_m: int = 0
+		var option_count_m: int = 0
+		for a_m in actions_m:
+			if a_m is MenuButton:
+				menu_count_m += 1
+			elif a_m is OptionButton:
+				option_count_m += 1
+		check("M125: actions hold exactly one MenuButton and no OptionButton (no model picker)",
+			menu_count_m == 1 and option_count_m == 0,
+			"menus: %d, options: %d" % [menu_count_m, option_count_m])
 
 		check("M126: panel no longer holds a _model_dropdown member",
 			panel_m.get("_model_dropdown") == null,
