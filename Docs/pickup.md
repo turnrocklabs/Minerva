@@ -1,78 +1,49 @@
-# Pickup — Scansort plugin: rules-file separation done, U-series in progress
+# Pickup — Scansort plugin U-series (autonomous run: U1–U5 done, U6 next)
 
-Last updated: 2026-05-14 (laptop, end of session — U1 committed, U2 next)
+Last updated: 2026-05-14 (mid autonomous U-series run; compaction point after U5)
 
 ## Where I left off
 
-Active workstream: **Scansort plugin DCR — experiment→plugin parity port**
-(`minerva:019e1cdb451076ae8c344f6e6ec605e1`, "Scansort plugin — functionally-equivalent redesign").
+Active workstream: **Scansort plugin DCR — U-series experiment-parity port**.
+- Parent DCR: `minerva:019e1cdb451076ae8c344f6e6ec605e1` ("Scansort plugin — functionally-equivalent redesign").
+- Gap-analysis bug: `minerva:019e24c57af676bc85e8f76db501e797` (the T7 port dropped the experiment's interaction layer).
+- U-series work_item: `minerva:019e24c5d53876098676f4f66b161222` — **in_progress**. Live round list + locked design decisions live in its description; per-round status in its comments (350–355).
 
-Three things moved this session. (1) and (2) are **done and committed**; (3) is **in progress**.
+**Autonomous run in progress**: U2→U8 via the work-cycle pattern (Sonnet implementer + cold Opus reviewer + Layer-1 structural gate + per-round WIP commit, both repos). No git worktrees — sequential rounds commit directly on the branches. U9 is a design gate (stop). Combined full-stack HITL runs after U8.
 
-### (1) Rules-file separation (R1–R6) — DONE, committed, NOT yet HITL-tested
+**U1–U5 are DONE and committed. U6 is next.**
 
-Rules moved out of the `.ssort` vault into an external plaintext JSON file: sibling
-`<vault-stem>.rules.json` first, then a user-level library fallback. The vault keeps a
-per-document `rule_snapshot` blob (+ `snapshot_hash`) so it stays self-describing. Vault
-schema bumped **1.0.0 → 1.1.0** with auto-migration on `open_vault`
-(`schema::migrate` + `rules_file::migrate_embedded_to_sibling`).
+## Commits (pushed? NO — local only, push before switching machines)
 
-### (2) F&F polish — DONE, committed
-
-- Dropped the chrome model picker; model override now lives in the **Settings dialog**
-  (per-plugin, user-level, single model preference — "always a multimodal model").
-- All plugin dialogs honor Minerva's UI scale (`ui_scale.gd`).
-- Fixed 14 real debugger warnings at root cause (lambda-capture bugs in `CapabilityBroker.gd`).
-
-### (3) U-series — cuteFTP experiment-parity port — IN PROGRESS (U1 done)
-
-Gap analysis found the T7 port captured the **data layer** faithfully but dropped the
-**interaction layer** (source pane, Process button, per-file actions). The U-series restores it.
-**U1 is committed**; U2–U10 + the full-stack HITL remain.
-
-Docket: gap analysis filed as bug `019e24c57af676bc85e8f76db501e797` (parented to the scansort
-DCR `019e1cdb`); the U-series is work_item `019e24c5d53876098676f4f66b161222` (parented to the bug).
-
-## Commits (pushed; pull on the other machine)
-
-| Repo | Branch | Notes |
+| Round | plugins `main` | Minerva `user/imran/experiments/swarm` |
 |---|---|---|
-| `~/github/plugins/scansort` | `main` | HEAD `33d9f04` — U1 scan_tree component. R1-R6 + F&F below it. |
-| `~/github/Minerva` | `user/imran/experiments/swarm` | HEAD has U1 test (`46365da8`, Group N N135-N153) + this session's `.uid` WIP commit. |
+| U1 (pre-run) | `33d9f04` | `46365da8` |
+| U2 source backend | `52b4843` | `a0e2a7a1` |
+| U3 destination backend | `cb8530a` | (plugins-only) |
+| U4 2-col layout + chrome buttons | `fb3d5bf` + `bddb5f8` | `fa5e3396` + `477670f9` |
+| U5 Process All pipeline | `f31a42b` | `ec7eeeaf` |
 
-Plugin commit trail: `4c450c4` rules_file module · `44e8d98` schema 1.1.0 · `edcdb09` classify
-reads file · `5f7f08a` R4 MCP rules_path tools · `e530315` R5 migration · `240a473`/`777b12a`
-R6 rules editor UI · `2c23994` drop chrome model picker · `7f61c60`/`762d65f` Settings dialog ·
-`c362562` UI scale · `33d9f04` U1 scan_tree.
+Current HEADs: plugins `f31a42b`, Minerva `ec7eeeaf`. **Not yet pushed** — `git push` both before moving machines.
 
-Minerva commit trail: `343cfc0` ChatPane.get_active_model_spec · `092d1b9` lambda-capture fix ·
-`1bf4696` test path portability · `46365da8` U1 Group N tests.
+## What landed U2–U5
 
-## NEXT: U2 — source backend
+- **U2 — source backend.** `src/source.rs` (new): transitory thread_local source-dir state (never persisted) + `set_source_dir`/`get_source_dir`/`list_source_files` MCP tools. `list_source_files` returns `{path,name,size,sha256,in_vault}`. `ui/scan_tree_source_provider.gd` (new).
+- **U3 — destination backend.** `src/destination.rs` (new): per-vault destination setting (`vault_only`/`disk_only`/`vault_and_disk`) in the `project` key-value table + `place_on_disk` (templated `{year}`/`{date}` subfolders, `../` sanitised, collision-safe copy). Plugins-only.
+- **U4 — panel layout.** `ScansortPanel._build_ui` rewritten: **2-column HBox (SourcePane | DestPane) + status panel as a bottom bar**. Process All / Stop / File menu live in the **editor chrome bar** via `get_editor_actions()` (not in the panel). Chrome buttons use the chat panel's submit/stop icons. (Started as 3-column "Option A"; reworked to 2-column after the visual checkpoint — user feedback.)
+- **U5 — Process All pipeline.** `_on_process_all_pressed` batch loop: per source file extract→dedup→classify(text/vision)→`insert_document`. Skips in-vault/processed; one bad file continues, never aborts. `_on_stop_pressed` cancel flag; `clear_processed_state()`. `scan_tree_source_provider` shows a `✓ ` prefix on done files. No disk placement yet (U6/U7).
 
-From nudge `scansort-T7-continuation/round-sequence` and `session-state`:
+## NEXT: U6 — manual review + inject-to-chat
 
-> Add MCP tools `set_source_dir(path, recursive)` / `get_source_dir()` / `list_source_files()`
-> to `~/github/plugins/scansort/src/main.rs`. Source state = **transitory** plugin-process
-> memory (module-level state struct), never persisted. `list_source_files` returns supported
-> files under the source dir (recursive optional), each `{path, name, size, sha256, in_vault}`
-> where `in_vault` cross-references the vault's `fingerprints`/`sha256`. Then build
-> `scan_tree_source_provider.gd` (extends `scan_tree_provider.gd`) calling `list_source_files`.
-> Rust unit tests + smoke-test additions. Commit U2 both repos.
+From the U-series work_item description (U6 entry) + docket comment 354:
+- **Manual review**: drag-to-classify (source row → category), drag-to-reclassify (vault file → folder), mark-for-export (transitory session state, NOT a durable column) + an **Export Marked** button.
+- **Inject to Chat** (folded into U6, decided 2026-05-14): a checked-files bulk action — extract the selected source files' contents and feed them to chat via Minerva's plugin inject substrate (`PluginScenePanelHost.invoke_inject_toggle` / the `inject_toggle` chrome action). NOT a parity gap — new scope. Building blocks exist: `scan_tree.get_checked_keys()`, the `extract_text`/`extract_document` MCP tools (T6).
+- U6 is the **heaviest remaining round** — drag-and-drop in `scan_tree` + a new bulk action + chat-injection wiring. Read `scan_tree.gd` (esp. `_on_gui_input` / signals), `ScansortPanel.gd`, and how Minerva's `inject_toggle` substrate works (`Editor.gd` ~line 2303, `PluginScenePanelHost.invoke_inject_toggle`).
 
-Remaining rounds (Tier-1): U3 destination backend · U4 panel layout rewrite (3-column Option A) ·
-U5 Process All pipeline · U6 manual review (drag/mark/export) · U7 vault_and_disk stacked view +
-Settings destination picker + concurrency control · U8 recovery sheet dialog · U9 watch folders
-(design-first) · U10 docs + delete orphaned `vault_view.gd`/`edit_details_dialog.gd`.
+Then: **U7** vault_and_disk (stacked right pane + DiskProvider + Settings destination-mode picker + concurrency spinbox), **U8** recovery sheet dialog, → **combined HITL**, then **U9** watch-folders (DESIGN GATE — stop), **U10** docs + delete orphaned `vault_view.gd`/`edit_details_dialog.gd`.
 
-## HITL — still pending (blocked behind U-series)
+## Combined HITL (blocked behind U8)
 
-Panel-driven HITL of the full stack: 10 test PDFs in `~/Downloads` (8 physics/school, 1
-`receipt.pdf`, 1 WA-ferries doc); test dir `~/scansort-test/` is empty + clean. **Drive through
-the panel UI, not raw MCP** (user constraint). Sightline should confirm 0 new warnings.
-
-Open question: HITL the rules-file work against the *current* pane before the U-series tears it
-out, or one combined HITL after U10. Leaning combined-after.
+Full-stack HITL driven **through the panel UI, not raw MCP** (user constraint): 10 test PDFs in `~/Downloads` (8 physics/school, 1 `receipt.pdf`, 1 WA-ferries doc); test dir `~/scansort-test/` empty + clean. Pass = files flow source → classified → vault, ✓ marks appear, Process All summary is sane, drag-reclassify works, Export Marked + Inject-to-Chat work.
 
 ## Cold-pickup checklist
 
@@ -85,52 +56,29 @@ out, or one combined HITL after U10. Leaning combined-after.
 4. Smoke-check Layer-1:
    ```
    cd ~/github/Minerva
-   godot --headless --path src --script test/test_scansort_panel_smoke.gd      # expect 160/0
+   godot --headless --path src --script test/test_scansort_panel_smoke.gd   # expect 175/0
+   cd ~/github/plugins/scansort && cargo test --release                     # expect 67/0
    ```
-   Rust: `cd ~/github/plugins/scansort && cargo test --release`                # expect 45/0
-5. Resume at U2 (above).
+5. Reload the docket if `minerva.dct` changed underfoot: `docket_project_remove` then `docket_project_add` (the server keeps a stale in-memory copy after a git pull). `docket_get` needs `project: "minerva"` explicitly — the primary project is `docket`, not `minerva`.
+6. Resume at U6.
 
 ## Build / test commands
 
 - Rust build: `cd ~/github/plugins/scansort && cargo build --release`
 - Install binary (NOT `cp` — ETXTBSY): `install -m 0755 target/release/scansort-plugin scansort-plugin`
-- Rust tests: `cargo test --release` (45/0)
-- Layer-1 panel smoke: `godot --headless --path src --script test/test_scansort_panel_smoke.gd` (160/0)
-- macOS has no `timeout` command — run `godot` directly.
-- Pick up GD changes: user restarts Minerva (F5 stop+start). Pick up Rust binary: install + restart
-  scansort plugin via `minerva_plugin_restart`.
+- Rust tests: `cargo test --release` (67/0 after U3)
+- Layer-1 panel smoke: `godot --headless --path src --script test/test_scansort_panel_smoke.gd` (175/0 after U5)
+- macOS has no `timeout` — run `godot` directly.
 
 ## Constraints to carry forward
 
-- All testing goes through MCP tools or the panel UI — **do not hand-write rules/vault files** to
-  side-step how Minerva works.
-- Off-tree plugin scripts (`~/github/plugins/`) use `preload()` + base-class typing — no `class_name`
-  for cross-script types. Off-tree `class_name` (where used) must start with `<canonical_prefix>_`.
+- All testing goes through MCP tools or the panel UI — do not hand-write rules/vault files.
+- Off-tree plugin scripts (`~/github/plugins/`) use `preload()` + base-class typing — no `class_name` for cross-script types. `scan_tree.gd` is the shared component — providers extend `scan_tree_provider.gd` (which `extends RefCounted`, so never `.free()` a provider instance in tests).
 - Plugin MCP tool names must be `minerva_<plugin_id>_*`.
-- GDScript JSON round-trip turns ints into floats; coerce with `int(...)`.
-- GDScript `func()` lambdas capture primitives BY VALUE — use a Dictionary for mutable shared state.
+- GDScript JSON round-trip turns ints into floats — coerce with `int(...)`.
 - Plugin binary rebuild while Minerva runs: `install -m 0755`, not `cp` (ETXTBSY).
-
-## Locked design decisions (U-series)
-
-See nudge `scansort-T7-continuation/design-decisions-locked` for the full list. Highlights:
-source dir is transitory; destination is a per-vault setting (`vault_only`/`disk_only`/
-`vault_and_disk`); `vault_and_disk` is curated, not mirrored; export mark and processed mark are
-transitory session state; ONE unified `scan_tree` component for all three panes; no per-doc detail
-panel (`vault_view.gd` gets deleted); Process All is a panel-orchestrated GDScript loop, not a Rust
-tool; concurrency control (1–4 parallel) lives in the Settings dialog.
-
-## Nudge state
-
-Component `scansort-T7-continuation` — keys: `session-state`, `round-sequence`,
-`build-test-commands`, `docket-and-prior-work`, `design-decisions-locked`. Query before
-re-discovering.
-
-## Session housekeeping done
-
-- Sightline probe reverted (`--cleanup`): `src/project.godot` restored, `src/addons/sightline_probe/`
-  and `src/.sightline/` removed.
-- Untracked `.uid` files in `src/test/` committed (Godot tracks `.uid` — 606 already in the repo).
+- Chrome bar (`get_editor_actions`): returned Controls are inserted before "Save All", in array order; the editor owns + frees them, so guard member refs with `is_instance_valid`. Chat icons: send = `res://assets/icons/send_icons/send_icon_24_no_bg.png`, stop = `res://assets/icons/stop_icons/stop-sign-24.png`.
+- MCP envelope is non-uniform: `extract_text`/`render_pages` return flat `success`; `check_sha256` returns `{found,doc_id}`; `classify_document`/`insert_document` return `{ok,...}`.
 
 ## Paused workstreams (orthogonal, not picking up)
 
