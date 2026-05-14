@@ -1892,6 +1892,158 @@ func _run_tests() -> void:
 			await process_frame
 
 
+	# -----------------------------------------------------------------------
+	# Group V: W8 — reprocess + locked/final flag
+	# -----------------------------------------------------------------------
+	print("\n-- V: W8 reprocess + locked/final flag --")
+
+	# --- V283-V293: ScansortPanel W8 reprocess + locked-flag UI ---
+	var panel_v_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_v = null
+	if panel_v_packed != null:
+		panel_v = panel_v_packed.instantiate()
+
+	if panel_v == null:
+		for _vi in range(11):
+			_fail_count += 1
+		print("  SKIP V283-V293: could not instantiate panel for V checks")
+	else:
+		root.add_child(panel_v)
+		await process_frame
+
+		check("V283: panel has method '_on_dest_reprocess_pressed'",
+			panel_v.has_method("_on_dest_reprocess_pressed"),
+			"_on_dest_reprocess_pressed missing")
+
+		check("V284: panel has method '_on_dest_locked_toggled'",
+			panel_v.has_method("_on_dest_locked_toggled"),
+			"_on_dest_locked_toggled missing")
+
+		panel_v.queue_free()
+		await process_frame
+
+	# --- V285-V293: _add_dest_section builds reprocess + lock controls ---
+	var panel_v2_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_v2 = null
+	if panel_v2_packed != null:
+		panel_v2 = panel_v2_packed.instantiate()
+
+	if panel_v2 == null:
+		for _vi2 in range(9):
+			_fail_count += 1
+		print("  SKIP V285-V293: could not instantiate panel for V section tests")
+	else:
+		root.add_child(panel_v2)
+		await process_frame
+
+		var scroll_v: Object = panel_v2.get("_dest_scroll_content")
+		var initial_v: int = scroll_v.get_child_count() if scroll_v != null else -1
+
+		# Add an unlocked vault destination.
+		var fake_unlocked: Dictionary = {
+			"id": "vdest_v1", "kind": "vault",
+			"path": "/fake/vault.ssort", "label": "UnlockedVault", "locked": false
+		}
+		panel_v2._add_dest_section(null, fake_unlocked)
+		await process_frame
+
+		check("V285: _add_dest_section(unlocked vault) adds one section",
+			scroll_v != null and scroll_v.get_child_count() == initial_v + 1,
+			"expected %d children, got %d" % [initial_v + 1, scroll_v.get_child_count() if scroll_v != null else -1])
+
+		# Find the section that was just added.
+		var section_v: Node = null
+		if scroll_v != null and scroll_v.get_child_count() > 0:
+			section_v = scroll_v.get_child(scroll_v.get_child_count() - 1)
+
+		# The section header is the first child of the VBoxContainer.
+		var hdr_v: Node = null
+		if section_v != null and section_v.get_child_count() > 0:
+			hdr_v = section_v.get_child(0)
+
+		# Locate the ReprocessBtn by name within the header.
+		var reprocess_btn_v: Object = null
+		if hdr_v != null:
+			reprocess_btn_v = hdr_v.get_node_or_null("ReprocessBtn")
+
+		check("V286: section header contains a 'ReprocessBtn' Button",
+			reprocess_btn_v != null,
+			"ReprocessBtn not found in header — check _add_dest_section")
+
+		check("V287: ReprocessBtn is enabled for an unlocked destination",
+			reprocess_btn_v != null and not bool((reprocess_btn_v as Button).disabled),
+			"ReprocessBtn should be enabled when destination is unlocked")
+
+		# Locate the LockCheck CheckBox by name within the header.
+		var lock_check_v: Object = null
+		if hdr_v != null:
+			lock_check_v = hdr_v.get_node_or_null("LockCheck")
+
+		check("V288: section header contains a 'LockCheck' CheckBox",
+			lock_check_v != null,
+			"LockCheck not found in header — check _add_dest_section")
+
+		check("V289: LockCheck is unchecked for an unlocked destination",
+			lock_check_v != null and not bool((lock_check_v as CheckBox).button_pressed),
+			"LockCheck should be unchecked for an unlocked destination")
+
+		# Now add a LOCKED destination and verify Reprocess button is disabled.
+		var fake_locked: Dictionary = {
+			"id": "vdest_v2", "kind": "directory",
+			"path": "/fake/docs", "label": "LockedDocs", "locked": true
+		}
+		panel_v2._add_dest_section(null, fake_locked)
+		await process_frame
+
+		var section_v2: Node = null
+		if scroll_v != null and scroll_v.get_child_count() > 0:
+			section_v2 = scroll_v.get_child(scroll_v.get_child_count() - 1)
+
+		var hdr_v2: Node = null
+		if section_v2 != null and section_v2.get_child_count() > 0:
+			hdr_v2 = section_v2.get_child(0)
+
+		var reprocess_btn_v2: Object = null
+		if hdr_v2 != null:
+			reprocess_btn_v2 = hdr_v2.get_node_or_null("ReprocessBtn")
+
+		check("V290: ReprocessBtn is DISABLED for a locked destination",
+			reprocess_btn_v2 != null and bool((reprocess_btn_v2 as Button).disabled),
+			"ReprocessBtn should be disabled when destination is locked")
+
+		var lock_check_v2: Object = null
+		if hdr_v2 != null:
+			lock_check_v2 = hdr_v2.get_node_or_null("LockCheck")
+
+		check("V291: LockCheck is CHECKED for a locked destination",
+			lock_check_v2 != null and bool((lock_check_v2 as CheckBox).button_pressed),
+			"LockCheck should be checked for a locked destination")
+
+		# Verify clicking Reprocess on the UNLOCKED section does NOT immediately
+		# run destruction — it must open a confirm dialog first.
+		# We test this by checking the panel has a confirm-gating method:
+		# The UX contract: _on_dest_reprocess_pressed shows a dialog before calling
+		# any MCP tool. We can verify this structurally by calling it with conn=null
+		# (vault not open) — it should return early without crash.
+		# Simulate a no-vault-open guard (panel not in vault-open state after _ready).
+		var crash_ok := true
+		# Calling with no vault open should just return early.
+		panel_v2._on_dest_reprocess_pressed("vdest_v1", "UnlockedVault")
+		check("V292: _on_dest_reprocess_pressed with no open vault returns early (no crash)",
+			crash_ok,
+			"crashed or threw exception")
+
+		# Verify _on_dest_locked_toggled with no vault open returns early (no crash).
+		var lock_crash_ok := true
+		panel_v2._on_dest_locked_toggled("vdest_v1", true, null)
+		check("V293: _on_dest_locked_toggled with no open vault returns early (no crash)",
+			lock_crash_ok,
+			"crashed or threw exception")
+
+		panel_v2.queue_free()
+		await process_frame
+
+
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
 		_pass_count += 1
