@@ -1372,6 +1372,95 @@ func _run_tests() -> void:
 		await process_frame
 
 
+	# -----------------------------------------------------------------------
+	# Group S: U8 — recovery sheet dialog
+	# -----------------------------------------------------------------------
+	print("\n-- S: U8 recovery sheet dialog --")
+
+	var PLUGIN_RECOVERY_GD := _ui("recovery_sheet_dialog.gd")
+	var recovery_script = load(PLUGIN_RECOVERY_GD)
+	check("S208: recovery_sheet_dialog.gd parses cleanly",
+		recovery_script != null,
+		"load() returned null — check parse errors above")
+
+	if recovery_script != null:
+		# Check signals via script-level introspection (no instantiation needed).
+		var signal_list: Array = recovery_script.get_script_signal_list()
+		var sig_names: Array = []
+		for s: Dictionary in signal_list:
+			sig_names.append(s.get("name", ""))
+		check("S209: RecoverySheetDialog has signal 'recovery_changed'",
+			sig_names.has("recovery_changed"),
+			"signals: %s" % str(sig_names))
+		check("S210: RecoverySheetDialog has signal 'closed'",
+			sig_names.has("closed"),
+			"signals: %s" % str(sig_names))
+
+		# Instantiate as a Node (AcceptDialog) so we can call has_method.
+		var dlg: Object = recovery_script.new()
+		check("S211: RecoverySheetDialog instantiates without crash", dlg != null)
+
+		if dlg != null:
+			check("S212: RecoverySheetDialog extends AcceptDialog",
+				dlg is AcceptDialog,
+				"got class: %s" % dlg.get_class())
+
+			check("S213: RecoverySheetDialog has method 'init'",
+				dlg.has_method("init"))
+
+			check("S214: RecoverySheetDialog has method '_build_ui'",
+				dlg.has_method("_build_ui"))
+
+			check("S215: RecoverySheetDialog has method '_on_save_pressed'",
+				dlg.has_method("_on_save_pressed"))
+
+			check("S216: RecoverySheetDialog has method '_on_generate_pressed'",
+				dlg.has_method("_on_generate_pressed"))
+
+			# NOTE: dlg extends AcceptDialog (a Node) — use queue_free, not .free().
+			if is_instance_valid(dlg):
+				(dlg as Node).queue_free()
+			await process_frame
+
+	# Panel-side wire: id 13 menu item + handler method.
+	var panel_s_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_s = null
+	if panel_s_packed != null:
+		panel_s = panel_s_packed.instantiate()
+
+	if panel_s == null:
+		for _si in range(2):
+			_fail_count += 1
+		print("  SKIP S217-S218: could not instantiate panel for S checks")
+	else:
+		root.add_child(panel_s)
+		await process_frame
+
+		check("S217: panel has method '_on_recovery_sheet_pressed'",
+			panel_s.has_method("_on_recovery_sheet_pressed"))
+
+		# Verify id 13 is present in the File menu.
+		var actions_s: Array = panel_s.get_editor_actions() if panel_s.has_method("get_editor_actions") else []
+		var fmb_s: MenuButton = null
+		for a_s in actions_s:
+			if a_s is MenuButton:
+				fmb_s = a_s
+				break
+		var has_id13 := false
+		if fmb_s != null:
+			var pm_s: PopupMenu = fmb_s.get_popup()
+			for i: int in range(pm_s.item_count):
+				if pm_s.get_item_id(i) == 13:
+					has_id13 = true
+		check("S218: File menu (via get_editor_actions) has id 13 (Recovery Sheet)",
+			has_id13, "menu id 13 not found")
+
+		if fmb_s != null and is_instance_valid(fmb_s):
+			fmb_s.queue_free()
+		panel_s.queue_free()
+		await process_frame
+
+
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
 		_pass_count += 1
