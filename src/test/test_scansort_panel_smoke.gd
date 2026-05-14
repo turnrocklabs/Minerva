@@ -2913,25 +2913,32 @@ func _run_tests() -> void:
 			dir_btn0 == 0 or dir_btn1 == 0 or dir_btn2 == 0,
 			"remove not found in [%d,%d,%d]" % [dir_btn0, dir_btn1, dir_btn2])
 
-		# --- AA371-AA372: document row with node_role="document" gets 1 [Open] button ---
+		# --- AA371-AA372: document row gets [Open] + [Encrypt] buttons (W5h) ---
 		var doc_node_data: Array = [
 			{
 				"kind": "file", "name": "invoice.pdf", "key": "doc:42",
 				"date": "2026-01-01", "tooltip": "test",
 				"node_role": "document", "vault_path": "/fake/v.ssort",
+				"encrypted": false,
 				"children": [],
 			}
 		]
 		st_aa.populate(doc_node_data)
 		var root_aa3: TreeItem = st_aa.get_root()
 		var doc_row_aa: TreeItem = root_aa3.get_first_child() if root_aa3 != null else null
-		check("AA371: document row has exactly 1 button (Open)",
-			doc_row_aa != null and doc_row_aa.get_button_count(2) == 1,
+		# W5h: document rows now carry 2 buttons — Open + Encrypt/Decrypt toggle.
+		check("AA371: document row has 2 buttons (Open + Encrypt)",
+			doc_row_aa != null and doc_row_aa.get_button_count(2) == 2,
 			"button count: %d" % (doc_row_aa.get_button_count(2) if doc_row_aa != null else -1))
 		var doc_btn_id: int = doc_row_aa.get_button_id(2, 0) if doc_row_aa != null else -1
-		check("AA372: document row button is BTN_ID_OPEN (3)",
+		check("AA372: document row first button is BTN_ID_OPEN (3)",
 			doc_btn_id == 3,
 			"got btn_id: %d" % doc_btn_id)
+		# W5h: second button is the encrypt/decrypt toggle (BTN_ID_ENCRYPT = 5).
+		var doc_enc_btn_id: int = doc_row_aa.get_button_id(2, 1) if doc_row_aa != null else -1
+		check("AA372b: document row second button is BTN_ID_ENCRYPT (5)",
+			doc_enc_btn_id == 5,
+			"got btn_id: %d" % doc_enc_btn_id)
 
 		# --- AA373: [Open] button click emits file_activated(key) ---
 		var activated_aa: Dictionary = {"key": ""}
