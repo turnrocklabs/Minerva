@@ -1158,6 +1158,89 @@ func _run_tests() -> void:
 		panel_p.queue_free()
 		await process_frame
 
+	# -----------------------------------------------------------------------
+	# Group Q: U6 — manual review + inject-to-chat
+	# -----------------------------------------------------------------------
+	print("\n-- Q: U6 manual review + inject-to-chat --")
+
+	# --- scan_tree.gd additions ---
+	var scan_tree_q_script = load(_ui("scan_tree.gd"))
+	check("Q169: scan_tree.gd still parses cleanly after U6 additions",
+		scan_tree_q_script != null, "load() returned null")
+
+	if scan_tree_q_script != null:
+		var st_q = scan_tree_q_script.new()
+		check("Q170: scan_tree has property 'tree_role'",
+			st_q.get("tree_role") != null or "tree_role" in st_q,
+			"tree_role missing")
+		check("Q171: scan_tree.tree_role defaults to empty string",
+			str(st_q.get("tree_role")) == "",
+			"got: '%s'" % str(st_q.get("tree_role")))
+		check("Q172: scan_tree has method '_get_drag_data'",
+			st_q.has_method("_get_drag_data"))
+		check("Q173: scan_tree has method '_can_drop_data'",
+			st_q.has_method("_can_drop_data"))
+		check("Q174: scan_tree has method '_drop_data'",
+			st_q.has_method("_drop_data"))
+		check("Q175: scan_tree has signal 'file_dropped'",
+			st_q.has_signal("file_dropped"))
+		st_q.queue_free()
+		await process_frame
+
+	# --- ScansortPanel.gd additions ---
+	var panel_q_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_q = null
+	if panel_q_packed != null:
+		panel_q = panel_q_packed.instantiate()
+
+	if panel_q == null:
+		for _qi in range(11):
+			_fail_count += 1
+		print("  SKIP Q176-Q186: could not instantiate panel for Q checks")
+	else:
+		root.add_child(panel_q)
+		await process_frame
+
+		check("Q176: panel has method '_on_tree_file_dropped'",
+			panel_q.has_method("_on_tree_file_dropped"))
+		check("Q177: panel has method '_on_export_marked_pressed'",
+			panel_q.has_method("_on_export_marked_pressed"))
+		check("Q178: panel has method '_on_source_check_toggled'",
+			panel_q.has_method("_on_source_check_toggled"))
+		check("Q179: panel has method '_on_panel_create_note_request'",
+			panel_q.has_method("_on_panel_create_note_request"))
+		check("Q180: panel has method '_on_panel_inject_toggle_changed'",
+			panel_q.has_method("_on_panel_inject_toggle_changed"))
+
+		check("Q181: panel._inject_payload_cache exists and is a String",
+			panel_q.get("_inject_payload_cache") != null and panel_q.get("_inject_payload_cache") is String,
+			"got: %s" % str(panel_q.get("_inject_payload_cache")))
+		check("Q182: panel._inject_payload_cache starts empty",
+			str(panel_q.get("_inject_payload_cache")) == "",
+			"got: '%s'" % str(panel_q.get("_inject_payload_cache")))
+		check("Q183: panel._inject_enabled exists and starts false",
+			panel_q.get("_inject_enabled") != null and panel_q.get("_inject_enabled") == false,
+			"got: %s" % str(panel_q.get("_inject_enabled")))
+
+		# _on_panel_create_note_request must be synchronous and return null when cache is empty.
+		var note_result = panel_q._on_panel_create_note_request({})
+		check("Q184: _on_panel_create_note_request returns null when _inject_payload_cache is empty",
+			note_result == null,
+			"got: %s" % str(note_result))
+
+		# Simulate a non-empty cache and verify a text-kind dict is returned.
+		panel_q._inject_payload_cache = "=== test.pdf ===\nHello world\n\n"
+		var note_result2 = panel_q._on_panel_create_note_request({})
+		check("Q185: _on_panel_create_note_request returns a Dict with kind='text' when cache is set",
+			note_result2 is Dictionary and str((note_result2 as Dictionary).get("kind", "")) == "text",
+			"got: %s" % str(note_result2))
+		check("Q186: returned note dict contains non-empty content",
+			note_result2 is Dictionary and not str((note_result2 as Dictionary).get("content", "")).is_empty(),
+			"content was empty")
+
+		panel_q.queue_free()
+		await process_frame
+
 
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
