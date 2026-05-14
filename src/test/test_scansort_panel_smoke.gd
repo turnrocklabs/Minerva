@@ -254,6 +254,17 @@ func _run_tests() -> void:
 				check("E38: StatusPanel has method 'set_vault'",  sp.has_method("set_vault"))
 				check("E39: StatusPanel has method 'set_status'", sp.has_method("set_status"))
 				check("E40: StatusPanel has method 'clear'",      sp.has_method("clear"))
+				# W5e: the status label must CLIP (ellipsis) and EXPAND_FILL so a
+				# long set_status() string can never grow the panel's width.
+				root.add_child(sp)
+				await process_frame
+				var slabel = sp.get("_status_label")
+				check("E40b: StatusPanel _status_label clips + expand-fills (W5e)",
+					slabel != null and slabel is Label \
+						and slabel.clip_text == true \
+						and slabel.size_flags_horizontal == Control.SIZE_EXPAND_FILL,
+					"status label must be clip_text + SIZE_EXPAND_FILL")
+				root.remove_child(sp)
 				if is_instance_valid(sp):
 					sp.free()
 		else:
