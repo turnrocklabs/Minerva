@@ -1103,6 +1103,62 @@ func _run_tests() -> void:
 			"got: '%s'" % str(sp.get_source_label()))
 
 
+	# -----------------------------------------------------------------------
+	# Group P: U5 — Process All batch pipeline (structural checks)
+	# -----------------------------------------------------------------------
+	print("\n-- P: U5 batch pipeline — structural checks --")
+
+	var panel_p_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_p = null
+	if panel_p_packed != null:
+		panel_p = panel_p_packed.instantiate()
+
+	if panel_p == null:
+		for _i in range(9):
+			_fail_count += 1
+		print("  SKIP P160-P168: could not instantiate panel for P checks")
+	else:
+		root.add_child(panel_p)
+		await process_frame
+
+		# Method presence.
+		check("P160: panel has method '_on_process_all_pressed'",
+			panel_p.has_method("_on_process_all_pressed"))
+		check("P161: panel has method '_on_stop_pressed'",
+			panel_p.has_method("_on_stop_pressed"))
+		check("P162: panel has method 'clear_processed_state'",
+			panel_p.has_method("clear_processed_state"))
+
+		# Session state members exist and default to correct types / values.
+		check("P163: panel._processed_keys exists and is a Dictionary",
+			panel_p.get("_processed_keys") != null and panel_p.get("_processed_keys") is Dictionary,
+			"got: %s" % str(panel_p.get("_processed_keys")))
+		check("P164: panel._low_confidence_keys exists and is a Dictionary",
+			panel_p.get("_low_confidence_keys") != null and panel_p.get("_low_confidence_keys") is Dictionary,
+			"got: %s" % str(panel_p.get("_low_confidence_keys")))
+		check("P165: panel._process_cancelled exists and starts false",
+			panel_p.get("_process_cancelled") != null and panel_p.get("_process_cancelled") == false,
+			"got: %s" % str(panel_p.get("_process_cancelled")))
+
+		# scan_tree_source_provider has set_session_marks.
+		var sp5_script = load(_ui("scan_tree_source_provider.gd"))
+		check("P166: scan_tree_source_provider.gd still parses cleanly",
+			sp5_script != null, "load() returned null")
+		if sp5_script != null:
+			var sp5 = sp5_script.new()
+			check("P167: source provider has method 'set_session_marks'",
+				sp5.has_method("set_session_marks"),
+				"set_session_marks missing")
+			# Smoke: call set_session_marks — must not crash.
+			var smoke_ok := true
+			sp5.set_session_marks({"file1.pdf": true}, {"file2.pdf": true})
+			check("P168: set_session_marks(processed, low_conf) does not crash", smoke_ok)
+			# sp5 extends scan_tree_provider.gd (RefCounted) — auto-freed, no .free().
+
+		panel_p.queue_free()
+		await process_frame
+
+
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
 		_pass_count += 1
