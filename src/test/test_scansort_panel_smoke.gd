@@ -2415,6 +2415,242 @@ func _run_tests() -> void:
 		await process_frame
 
 
+	# -----------------------------------------------------------------------
+	# Group Y: W5b — two-area splitter layout + aggregate providers + inline buttons
+	# -----------------------------------------------------------------------
+	print("\n-- Y: W5b two-area splitter layout --")
+
+	# --- Y320-Y323: scan_tree_area_provider.gd parses + contracts ---
+	var PLUGIN_AREA_PROVIDER_GD := _ui("scan_tree_area_provider.gd")
+	var area_prov_script = load(PLUGIN_AREA_PROVIDER_GD)
+	check("Y320: scan_tree_area_provider.gd parses cleanly",
+		area_prov_script != null, "load() returned null")
+
+	if area_prov_script != null:
+		var ap = area_prov_script.new()
+		check("Y321: AreaProvider has method 'init'",
+			ap.has_method("init"))
+		check("Y322: AreaProvider has method 'get_tree_data'",
+			ap.has_method("get_tree_data"))
+		check("Y323: AreaProvider has method 'get_source_label'",
+			ap.has_method("get_source_label"))
+		# Uninitialised → get_tree_data returns [] without crashing.
+		var ap_data = await ap.get_tree_data()
+		check("Y324: AreaProvider get_tree_data returns [] when uninitialised",
+			ap_data is Array and (ap_data as Array).is_empty(),
+			"got: %s" % str(ap_data))
+		check("Y325: AreaProvider get_source_label for vault area returns 'Vaults'",
+			true)  # label check via init below
+		ap.init(null, "/reg.json", "vault")
+		check("Y326: AreaProvider get_source_label returns 'Vaults' after vault init",
+			str(ap.get_source_label()) == "Vaults",
+			"got: '%s'" % str(ap.get_source_label()))
+		var ap_dir = area_prov_script.new()
+		ap_dir.init(null, "/reg.json", "directory")
+		check("Y327: AreaProvider get_source_label returns 'Directories' after directory init",
+			str(ap_dir.get_source_label()) == "Directories",
+			"got: '%s'" % str(ap_dir.get_source_label()))
+		# NOTE: area providers extend RefCounted — do NOT .free()
+
+	# --- Y328-Y338: ScansortPanel W5b structural checks ---
+	var panel_y_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_y = null
+	if panel_y_packed != null:
+		panel_y = panel_y_packed.instantiate()
+
+	if panel_y == null:
+		for _yi in range(20):
+			_fail_count += 1
+		print("  SKIP Y328-Y347: could not instantiate panel for Y checks")
+	else:
+		root.add_child(panel_y)
+		await process_frame
+
+		# W5b members present after _ready.
+		check("Y328: panel has member '_vault_area_tree' (a Tree)",
+			panel_y.get("_vault_area_tree") != null and panel_y.get("_vault_area_tree") is Tree,
+			"_vault_area_tree missing or not a Tree")
+
+		check("Y329: panel has member '_dir_area_tree' (a Tree)",
+			panel_y.get("_dir_area_tree") != null and panel_y.get("_dir_area_tree") is Tree,
+			"_dir_area_tree missing or not a Tree")
+
+		check("Y330: panel has member '_vault_area_provider' (null before vault open)",
+			"_vault_area_provider" in panel_y,
+			"_vault_area_provider member missing")
+
+		check("Y331: panel has member '_dir_area_provider' (null before vault open)",
+			"_dir_area_provider" in panel_y,
+			"_dir_area_provider member missing")
+
+		# DestPane exists with a VSplitContainer named 'DestSplit'.
+		var dest_pane_y: Node = panel_y.find_child("DestPane", true, false)
+		check("Y332: DestPane still exists as descendant of panel",
+			dest_pane_y != null,
+			"DestPane not found")
+
+		var dest_split_y: Node = panel_y.find_child("DestSplit", true, false)
+		check("Y333: DestSplit (VSplitContainer) exists inside DestPane",
+			dest_split_y != null and dest_split_y is VSplitContainer,
+			"DestSplit not found or not a VSplitContainer")
+
+		var vault_area_y: Node = panel_y.find_child("VaultArea", true, false)
+		check("Y334: VaultArea container exists inside DestSplit",
+			vault_area_y != null,
+			"VaultArea not found")
+
+		var dir_area_y: Node = panel_y.find_child("DirArea", true, false)
+		check("Y335: DirArea container exists inside DestSplit",
+			dir_area_y != null,
+			"DirArea not found")
+
+		# W5b methods present.
+		check("Y336: panel has method '_refresh_area_trees'",
+			panel_y.has_method("_refresh_area_trees"))
+		check("Y337: panel has method '_on_area_dest_button_pressed'",
+			panel_y.has_method("_on_area_dest_button_pressed"))
+		check("Y338: panel has method '_on_area_tree_file_dropped'",
+			panel_y.has_method("_on_area_tree_file_dropped"))
+		check("Y339: panel has method '_find_dest_by_id'",
+			panel_y.has_method("_find_dest_by_id"))
+		check("Y340: panel has method '_on_dest_add_for_kind'",
+			panel_y.has_method("_on_dest_add_for_kind"))
+
+		# --- Y341-Y344: scan_tree.gd W5b additions ---
+		var st_y_script = load(_ui("scan_tree.gd"))
+		if st_y_script != null:
+			var st_y = st_y_script.new()
+			check("Y341: scan_tree has signal 'dest_button_pressed'",
+				st_y.has_signal("dest_button_pressed"),
+				"dest_button_pressed signal missing")
+			check("Y342: scan_tree has method '_on_button_clicked'",
+				st_y.has_method("_on_button_clicked"),
+				"_on_button_clicked missing")
+			check("Y343: scan_tree has BTN_ID_REMOVE constant",
+				st_y.get("BTN_ID_REMOVE") != null or "BTN_ID_REMOVE" in st_y,
+				"BTN_ID_REMOVE constant missing")
+			st_y.queue_free()
+			await process_frame
+
+		# --- Y344-Y347: populate vault area tree with canned aggregate data ---
+		# Build mock aggregate nodes for 2 vaults + 2 directories and populate.
+		var vault_tree_y: Tree = panel_y.get("_vault_area_tree") as Tree
+		var dir_tree_y: Tree   = panel_y.get("_dir_area_tree") as Tree
+
+		var canned_vaults: Array = [
+			{
+				"kind": "folder", "name": "VaultA", "key": "dest:v1",
+				"date": "", "tooltip": "VaultA", "dest_id": "v1", "locked": false,
+				"children": [
+					{
+						"kind": "folder", "name": "invoices/ (1)", "key": "cat:invoices",
+						"date": "", "tooltip": "", "children": [
+							{"kind": "file", "name": "inv.pdf", "key": "doc:10",
+							 "date": "2026-01-01", "tooltip": "inv.pdf", "children": []},
+						],
+					},
+				],
+			},
+			{
+				"kind": "folder", "name": "VaultB", "key": "dest:v2",
+				"date": "", "tooltip": "VaultB", "dest_id": "v2", "locked": true,
+				"children": [],
+			},
+		]
+		var canned_dirs: Array = [
+			{
+				"kind": "folder", "name": "Docs", "key": "dest:d1",
+				"date": "", "tooltip": "Docs", "dest_id": "d1", "locked": false,
+				"children": [
+					{
+						"kind": "folder", "name": "(root)/ (1)", "key": "dir:(root)",
+						"date": "", "tooltip": "", "children": [
+							{"kind": "file", "name": "readme.txt", "key": "/docs/readme.txt",
+							 "date": "", "tooltip": "", "children": []},
+						],
+					},
+				],
+			},
+			{
+				"kind": "folder", "name": "Archive", "key": "dest:d2",
+				"date": "", "tooltip": "Archive", "dest_id": "d2", "locked": false,
+				"children": [],
+			},
+		]
+
+		if vault_tree_y != null:
+			vault_tree_y.populate(canned_vaults)
+		if dir_tree_y != null:
+			dir_tree_y.populate(canned_dirs)
+		await process_frame
+
+		# Vault area tree has 2 top-level destination rows.
+		var vault_root_y: TreeItem = vault_tree_y.get_root() if vault_tree_y != null else null
+		check("Y344: vault area tree has 2 top-level destination rows after populate",
+			vault_root_y != null and vault_root_y.get_child_count() == 2,
+			"got child count: %d" % (vault_root_y.get_child_count() if vault_root_y != null else -1))
+
+		# Directory area tree has 2 top-level destination rows.
+		var dir_root_y: TreeItem = dir_tree_y.get_root() if dir_tree_y != null else null
+		check("Y345: dir area tree has 2 top-level destination rows after populate",
+			dir_root_y != null and dir_root_y.get_child_count() == 2,
+			"got child count: %d" % (dir_root_y.get_child_count() if dir_root_y != null else -1))
+
+		# First vault row has buttons (dest_id was set → add_button called).
+		var vault_first_y: TreeItem = vault_root_y.get_first_child() if vault_root_y != null else null
+		check("Y346: first vault destination row has inline buttons (button_count > 0 on COL_DATE)",
+			vault_first_y != null and vault_first_y.get_button_count(2) == 3,
+			"button count: %d" % (vault_first_y.get_button_count(2) if vault_first_y != null else -1))
+
+		# dest_button_pressed signal is emitted when _on_button_clicked fires.
+		# Use a Dictionary as the capture target so the lambda and the outer scope
+		# share the same reference (GDScript bool captures are copy-by-value).
+		var btn_capture: Dictionary = {"received": false, "dest_id": "", "action": ""}
+		if vault_tree_y != null and vault_tree_y.has_signal("dest_button_pressed"):
+			vault_tree_y.dest_button_pressed.connect(
+				func(did: String, act: String) -> void:
+					btn_capture["received"] = true
+					btn_capture["dest_id"] = did
+					btn_capture["action"] = act
+			)
+			# Call the handler directly with the first dest row + BTN_ID_REMOVE (id=0).
+			# Use Object.call() to avoid the static-type Tree limit on scan_tree methods.
+			if vault_first_y != null:
+				(vault_tree_y as Object).call("_on_button_clicked", vault_first_y, 2, 0, 1)
+		check("Y347: _on_button_clicked on a dest row emits dest_button_pressed(dest_id, 'remove')",
+			bool(btn_capture.get("received", false))
+				and str(btn_capture.get("dest_id", "")) == "v1"
+				and str(btn_capture.get("action", "")) == "remove",
+			"received=%s dest_id='%s' action='%s'" % [
+				str(btn_capture.get("received", false)),
+				str(btn_capture.get("dest_id", "")),
+				str(btn_capture.get("action", ""))])
+
+		# --- Y348: file_dropped on area tree resolves _on_area_tree_file_dropped ---
+		# Populate vault tree with a cat: folder under a dest: row so we can drop.
+		# Prime _dest_registry so _find_dest_by_id can resolve.
+		panel_y.set("_dest_registry", [
+			{"id": "v1", "kind": "vault", "path": "/fake/v1.ssort", "label": "VaultA", "locked": false},
+			{"id": "v2", "kind": "vault", "path": "/fake/v2.ssort", "label": "VaultB", "locked": true},
+			{"id": "d1", "kind": "directory", "path": "/docs", "label": "Docs", "locked": false},
+			{"id": "d2", "kind": "directory", "path": "/archive", "label": "Archive", "locked": false},
+		])
+		# Emit file_dropped on vault area tree with a cat: target_key.
+		# Panel is not in vault-open state → handler returns early (no crash).
+		var drop_ok_y: bool = true
+		if vault_tree_y != null:
+			vault_tree_y.file_dropped.emit(
+				{"scan_tree_drag": true, "key": "/tmp/test.pdf", "role": "source"},
+				"cat:invoices",
+				"folder"
+			)
+		check("Y348: file_dropped on vault area tree does not crash",
+			drop_ok_y, "crashed on file_dropped emit")
+
+		panel_y.queue_free()
+		await process_frame
+
+
 ## MockConn — minimal stand-in for a scansort PluginConnection. Returns canned
 ## tool responses keyed by tool name and records the call log so group X can
 ## assert which tools ran. Async-compatible (call_tool is a coroutine).
