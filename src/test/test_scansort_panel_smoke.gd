@@ -2043,6 +2043,111 @@ func _run_tests() -> void:
 		panel_v2.queue_free()
 		await process_frame
 
+	# -----------------------------------------------------------------------
+	# Group W: W9 audit-log settings toggle + path controls
+	# -----------------------------------------------------------------------
+	print("\n-- W: W9 audit-log settings controls --")
+
+	var PLUGIN_SETTINGS_GD := _ui("settings_dialog.gd")
+	var w_settings_script = load(PLUGIN_SETTINGS_GD)
+
+	check("W294: settings_dialog.gd loads without parse errors",
+		w_settings_script != null,
+		"load() returned null — check parse errors above")
+
+	if w_settings_script == null:
+		for _wi in range(13):
+			_fail_count += 1
+		print("  SKIP W295-W306: settings_dialog script null")
+	else:
+		var settings_dlg = w_settings_script.new()
+		check("W295: SettingsDialog instantiates",
+			settings_dlg != null)
+
+		if settings_dlg == null:
+			for _wi in range(12):
+				_fail_count += 1
+			print("  SKIP W296-W306: settings_dlg null")
+		else:
+			# Must extend AcceptDialog.
+			check("W296: SettingsDialog extends AcceptDialog",
+				settings_dlg is AcceptDialog,
+				"got class: %s" % settings_dlg.get_class())
+
+			# Add to tree so _ready fires and _build_ui() creates controls.
+			root.add_child(settings_dlg)
+			await process_frame
+
+			# --- W9 static ScansortSettings methods ---
+			# Verify methods exist on the inner ScansortSettings class
+			# by calling them via the script (static methods).
+			# We test through the GDScript class directly.
+			var ScansortSettings = w_settings_script.ScansortSettings
+
+			check("W297: ScansortSettings.load_audit_log_enabled() exists and returns bool",
+				ScansortSettings != null and (ScansortSettings.load_audit_log_enabled() is bool),
+				"load_audit_log_enabled missing or wrong type")
+
+			check("W298: audit_log_enabled defaults to false (opt-in)",
+				ScansortSettings != null and ScansortSettings.load_audit_log_enabled() == false,
+				"audit_log_enabled default must be false")
+
+			check("W299: ScansortSettings.load_audit_log_path() exists and returns string",
+				ScansortSettings != null and (ScansortSettings.load_audit_log_path() is String),
+				"load_audit_log_path missing or wrong type")
+
+			# --- Persistence round-trip without clobbering other keys ---
+			# Save a known unique value for audit fields, then verify other keys survive.
+			if ScansortSettings != null:
+				# Snapshot existing concurrency value (must survive).
+				var conc_before: int = ScansortSettings.load_concurrency()
+				var simhash_before: int = ScansortSettings.load_simhash_threshold()
+				var dhash_before: int = ScansortSettings.load_dhash_threshold()
+
+				# Write audit fields.
+				ScansortSettings.save_audit_log_enabled(true)
+				ScansortSettings.save_audit_log_path("/tmp/test_audit_w9.csv")
+
+				check("W300: save_audit_log_enabled(true) round-trips",
+					ScansortSettings.load_audit_log_enabled() == true,
+					"enabled did not persist")
+
+				check("W301: save_audit_log_path round-trips",
+					ScansortSettings.load_audit_log_path() == "/tmp/test_audit_w9.csv",
+					"path did not persist: '%s'" % ScansortSettings.load_audit_log_path())
+
+				check("W302: audit save does NOT clobber concurrency",
+					ScansortSettings.load_concurrency() == conc_before,
+					"concurrency changed from %d to %d" % [conc_before, ScansortSettings.load_concurrency()])
+
+				check("W303: audit save does NOT clobber simhash_threshold",
+					ScansortSettings.load_simhash_threshold() == simhash_before,
+					"simhash changed from %d to %d" % [simhash_before, ScansortSettings.load_simhash_threshold()])
+
+				check("W304: audit save does NOT clobber dhash_threshold",
+					ScansortSettings.load_dhash_threshold() == dhash_before,
+					"dhash changed from %d to %d" % [dhash_before, ScansortSettings.load_dhash_threshold()])
+
+				# Restore to OFF so we leave the settings file in its default state.
+				ScansortSettings.save_audit_log_enabled(false)
+				ScansortSettings.save_audit_log_path("")
+
+				check("W305: restore audit_log_enabled to false succeeds",
+					ScansortSettings.load_audit_log_enabled() == false,
+					"restore to false failed")
+			else:
+				for _wi in range(6):
+					_fail_count += 1
+				print("  SKIP W300-W305: ScansortSettings inner class not accessible")
+
+			# --- UI controls wired up ---
+			check("W306: SettingsDialog has method '_on_browse_audit_path_pressed'",
+				settings_dlg.has_method("_on_browse_audit_path_pressed"),
+				"_on_browse_audit_path_pressed missing")
+
+			settings_dlg.queue_free()
+			await process_frame
+
 
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
