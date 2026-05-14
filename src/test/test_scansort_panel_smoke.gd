@@ -1241,6 +1241,136 @@ func _run_tests() -> void:
 		panel_q.queue_free()
 		await process_frame
 
+	# -----------------------------------------------------------------------
+	# Group R: U7 — vault_and_disk (stacked pane + DiskProvider + Settings)
+	# -----------------------------------------------------------------------
+	print("\n-- R: U7 vault_and_disk --")
+
+	# --- R187: scan_tree_disk_provider.gd parses cleanly ---
+	var disk_provider_script = load(_ui("scan_tree_disk_provider.gd"))
+	check("R187: scan_tree_disk_provider.gd parses cleanly",
+		disk_provider_script != null, "load() returned null")
+
+	if disk_provider_script != null:
+		var dp = disk_provider_script.new()
+		check("R188: DiskProvider extends scan_tree_provider.gd (is RefCounted base)",
+			dp.has_method("get_tree_data") and dp.has_method("get_source_label"),
+			"missing provider contract methods")
+		check("R189: DiskProvider has method 'init'",
+			dp.has_method("init"))
+		check("R190: DiskProvider has method 'get_source_label'",
+			dp.has_method("get_source_label"))
+		check("R191: DiskProvider has method 'get_tree_data'",
+			dp.has_method("get_tree_data"))
+		# Uninitialised (no conn) → get_tree_data returns [] without crashing.
+		var dp_data = await dp.get_tree_data()
+		check("R192: DiskProvider get_tree_data returns [] when uninitialised",
+			dp_data is Array and (dp_data as Array).is_empty(),
+			"got: %s" % str(dp_data))
+		check("R193: DiskProvider get_source_label returns a non-empty String",
+			not str(dp.get_source_label()).is_empty(),
+			"got: '%s'" % str(dp.get_source_label()))
+		# NOTE: dp extends RefCounted (via scan_tree_provider.gd) — do NOT .free().
+
+	# --- R194-R197: ScansortPanel has _disk_tree and _disk_provider members ---
+	var panel_r_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_r = null
+	if panel_r_packed != null:
+		panel_r = panel_r_packed.instantiate()
+
+	if panel_r == null:
+		for _ri in range(8):
+			_fail_count += 1
+		print("  SKIP R194-R201: could not instantiate panel for R checks")
+	else:
+		root.add_child(panel_r)
+		await process_frame
+
+		check("R194: panel has member '_disk_tree'",
+			"_disk_tree" in panel_r,
+			"_disk_tree member missing")
+		check("R195: panel has member '_disk_provider'",
+			"_disk_provider" in panel_r,
+			"_disk_provider member missing")
+		check("R196: _disk_tree is a Tree after _ready",
+			panel_r.get("_disk_tree") != null and panel_r.get("_disk_tree") is Tree,
+			"_disk_tree is null or not a Tree")
+		check("R197: panel has method '_process_one_source_file' (concurrency worker)",
+			panel_r.has_method("_process_one_source_file"),
+			"_process_one_source_file missing")
+		check("R198: panel has member '_run_counters' (shared concurrency counters)",
+			"_run_counters" in panel_r,
+			"_run_counters member missing")
+
+		panel_r.queue_free()
+		await process_frame
+
+	# --- R199-R207: settings_dialog.gd — vault-path init + concurrency ---
+	var settings_r_script = load(_ui("settings_dialog.gd"))
+	check("R199: settings_dialog.gd still parses cleanly after U7 edits",
+		settings_r_script != null, "load() returned null")
+
+	if settings_r_script != null:
+		var sdlg = settings_r_script.new()
+		check("R200: settings dialog has method 'init'",
+			sdlg.has_method("init"))
+
+		# ScansortSettings inner class presence.
+		var inner_r = settings_r_script.ScansortSettings
+		check("R201: ScansortSettings inner class still accessible",
+			inner_r != null)
+
+		if inner_r != null:
+			check("R202: ScansortSettings has static method 'load_concurrency'",
+				inner_r.has_method("load_concurrency"))
+			check("R203: ScansortSettings has static method 'save_concurrency'",
+				inner_r.has_method("save_concurrency"))
+			check("R204: ScansortSettings has static method 'load_model_override'",
+				inner_r.has_method("load_model_override"))
+			check("R205: ScansortSettings has static method 'save_model_override'",
+				inner_r.has_method("save_model_override"))
+
+			# Round-trip concurrency: save 3, load back 3.
+			# Back up any existing settings file first.
+			var saved_path_r := str(inner_r.settings_path())
+			var backup_text_r: String = ""
+			var had_backup_r: bool = FileAccess.file_exists(saved_path_r)
+			if had_backup_r:
+				var bf_r := FileAccess.open(saved_path_r, FileAccess.READ)
+				if bf_r != null:
+					backup_text_r = bf_r.get_as_text()
+					bf_r.close()
+
+			inner_r.save_concurrency(3)
+			var loaded_conc: int = inner_r.load_concurrency()
+			check("R206: save_concurrency(3) + load_concurrency() round-trips to 3",
+				loaded_conc == 3,
+				"got: %d" % loaded_conc)
+
+			# Verify that save_concurrency does NOT clobber a saved model_override.
+			var probe_spec: Dictionary = {"kind": "builtin", "model_id": 99}
+			inner_r.save_model_override(probe_spec)
+			inner_r.save_concurrency(2)
+			var override_after: Dictionary = inner_r.load_model_override()
+			check("R207: save_concurrency read-modify-writes — does not clobber model_override",
+				int(override_after.get("model_id", -1)) == 99,
+				"model_override was clobbered: %s" % str(override_after))
+
+			# Restore backup or clean up.
+			if had_backup_r:
+				var rf_r := FileAccess.open(saved_path_r, FileAccess.WRITE)
+				if rf_r != null:
+					rf_r.store_string(backup_text_r)
+					rf_r.close()
+			else:
+				if FileAccess.file_exists(saved_path_r):
+					DirAccess.remove_absolute(saved_path_r)
+
+		# NOTE: sdlg extends AcceptDialog (Node) — must queue_free, not .free().
+		if sdlg != null and is_instance_valid(sdlg):
+			sdlg.queue_free()
+		await process_frame
+
 
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
