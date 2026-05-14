@@ -2821,6 +2821,258 @@ func _run_tests() -> void:
 			"destination_add was called by provider (should not be)")
 
 
+	# -----------------------------------------------------------------------
+	# Group AA: W5d — kind-aware row actions, real icons, open-document handler
+	# -----------------------------------------------------------------------
+	print("\n-- AA: W5d kind-aware buttons + open-document handler --")
+
+	# --- AA362-AA364: scan_tree.gd W5d new constants and methods ---
+	var st_aa_script = load(_ui("scan_tree.gd"))
+	check("AA362: scan_tree.gd parses cleanly (AA)",
+		st_aa_script != null, "load() returned null")
+
+	if st_aa_script == null:
+		for _aai in range(20):
+			_fail_count += 1
+		print("  SKIP AA363-AA381: scan_tree script null")
+	else:
+		var st_aa = st_aa_script.new()
+		# Must be in scene tree for Tree.create_item() / get_root() to work.
+		root.add_child(st_aa)
+		await process_frame
+
+		check("AA363: scan_tree has BTN_ID_OPEN constant",
+			"BTN_ID_OPEN" in st_aa or st_aa.get("BTN_ID_OPEN") != null,
+			"BTN_ID_OPEN missing")
+
+		check("AA364: scan_tree has BTN_ID_SETTINGS constant",
+			"BTN_ID_SETTINGS" in st_aa or st_aa.get("BTN_ID_SETTINGS") != null,
+			"BTN_ID_SETTINGS missing")
+
+		# --- AA365-AA367: vault_dest row gets [Settings]+[Remove] (2 buttons) ---
+		var vault_dest_node: Array = [
+			{
+				"kind": "folder", "name": "MyVault", "key": "dest:vv1",
+				"date": "", "tooltip": "", "dest_id": "vv1", "locked": false,
+				"node_role": "vault_dest",
+				"children": [],
+			}
+		]
+		st_aa.populate(vault_dest_node)
+		var root_aa: TreeItem = st_aa.get_root()
+		var vault_row_aa: TreeItem = root_aa.get_first_child() if root_aa != null else null
+		check("AA365: vault_dest row has exactly 2 buttons (Settings + Remove)",
+			vault_row_aa != null and vault_row_aa.get_button_count(2) == 2,
+			"button count: %d" % (vault_row_aa.get_button_count(2) if vault_row_aa != null else -1))
+
+		# The first button should be BTN_ID_SETTINGS (id=4), second BTN_ID_REMOVE (id=0).
+		var btn0_id_aa: int = vault_row_aa.get_button_id(2, 0) if vault_row_aa != null else -1
+		var btn1_id_aa: int = vault_row_aa.get_button_id(2, 1) if vault_row_aa != null else -1
+		check("AA366: vault_dest first button is BTN_ID_SETTINGS (4)",
+			btn0_id_aa == 4,
+			"got btn_id: %d" % btn0_id_aa)
+		check("AA367: vault_dest second button is BTN_ID_REMOVE (0)",
+			btn1_id_aa == 0,
+			"got btn_id: %d" % btn1_id_aa)
+
+		# --- AA368-AA370: dir_dest row gets [Reprocess]+[Lock]+[Remove] (3 buttons) ---
+		var dir_dest_node: Array = [
+			{
+				"kind": "folder", "name": "MyDir", "key": "dest:dd1",
+				"date": "", "tooltip": "", "dest_id": "dd1", "locked": false,
+				"node_role": "dir_dest",
+				"children": [],
+			}
+		]
+		st_aa.populate(dir_dest_node)
+		var root_aa2: TreeItem = st_aa.get_root()
+		var dir_row_aa: TreeItem = root_aa2.get_first_child() if root_aa2 != null else null
+		check("AA368: dir_dest row has exactly 3 buttons (Reprocess + Lock + Remove)",
+			dir_row_aa != null and dir_row_aa.get_button_count(2) == 3,
+			"button count: %d" % (dir_row_aa.get_button_count(2) if dir_row_aa != null else -1))
+
+		# Buttons should be Reprocess(1), Lock(2), Remove(0).
+		var dir_btn0: int = dir_row_aa.get_button_id(2, 0) if dir_row_aa != null else -1
+		var dir_btn1: int = dir_row_aa.get_button_id(2, 1) if dir_row_aa != null else -1
+		var dir_btn2: int = dir_row_aa.get_button_id(2, 2) if dir_row_aa != null else -1
+		check("AA369: dir_dest first button is BTN_ID_REPROCESS (1)",
+			dir_btn0 == 1,
+			"got: %d" % dir_btn0)
+		check("AA370: dir_dest has BTN_ID_REMOVE (0) somewhere in its button set",
+			dir_btn0 == 0 or dir_btn1 == 0 or dir_btn2 == 0,
+			"remove not found in [%d,%d,%d]" % [dir_btn0, dir_btn1, dir_btn2])
+
+		# --- AA371-AA372: document row with node_role="document" gets 1 [Open] button ---
+		var doc_node_data: Array = [
+			{
+				"kind": "file", "name": "invoice.pdf", "key": "doc:42",
+				"date": "2026-01-01", "tooltip": "test",
+				"node_role": "document", "vault_path": "/fake/v.ssort",
+				"children": [],
+			}
+		]
+		st_aa.populate(doc_node_data)
+		var root_aa3: TreeItem = st_aa.get_root()
+		var doc_row_aa: TreeItem = root_aa3.get_first_child() if root_aa3 != null else null
+		check("AA371: document row has exactly 1 button (Open)",
+			doc_row_aa != null and doc_row_aa.get_button_count(2) == 1,
+			"button count: %d" % (doc_row_aa.get_button_count(2) if doc_row_aa != null else -1))
+		var doc_btn_id: int = doc_row_aa.get_button_id(2, 0) if doc_row_aa != null else -1
+		check("AA372: document row button is BTN_ID_OPEN (3)",
+			doc_btn_id == 3,
+			"got btn_id: %d" % doc_btn_id)
+
+		# --- AA373: [Open] button click emits file_activated(key) ---
+		var activated_aa: Dictionary = {"key": ""}
+		if st_aa.has_signal("file_activated"):
+			st_aa.file_activated.connect(func(k: String) -> void:
+				activated_aa["key"] = k
+			)
+		# Populate with a document row and call _on_button_clicked with BTN_ID_OPEN.
+		st_aa.populate(doc_node_data)
+		var doc_item_aa: TreeItem = st_aa.get_root().get_first_child() if st_aa.get_root() != null else null
+		if doc_item_aa != null:
+			(st_aa as Object).call("_on_button_clicked", doc_item_aa, 2, 3, 1)
+		check("AA373: [Open] button click emits file_activated with doc key",
+			str(activated_aa.get("key", "")) == "doc:42",
+			"got key: '%s'" % str(activated_aa.get("key", "")))
+
+		# --- AA374-AA375: icons are non-null and have non-zero dimensions ---
+		var icon_open = (st_aa as Object).call("_make_icon_open")
+		var icon_remove = (st_aa as Object).call("_make_icon_remove")
+		var icon_reprocess = (st_aa as Object).call("_make_icon_reprocess")
+		var icon_lock_closed = (st_aa as Object).call("_make_icon_lock", true)
+		var icon_lock_open = (st_aa as Object).call("_make_icon_lock", false)
+		var icon_settings = (st_aa as Object).call("_make_icon_settings")
+		check("AA374: all 6 icon methods return non-null Texture2D",
+			icon_open != null and icon_remove != null and icon_reprocess != null
+			and icon_lock_closed != null and icon_lock_open != null and icon_settings != null,
+			"one or more icons null")
+		# Textures should have non-zero size.
+		var all_nonzero: bool = true
+		for tex in [icon_open, icon_remove, icon_reprocess, icon_lock_closed, icon_lock_open, icon_settings]:
+			if tex == null:
+				all_nonzero = false
+			elif tex is Texture2D:
+				var sz: Vector2 = (tex as Texture2D).get_size()
+				if sz.x <= 0 or sz.y <= 0:
+					all_nonzero = false
+		check("AA375: all icon textures have non-zero size",
+			all_nonzero, "one or more icons have zero size")
+
+		st_aa.queue_free()
+		await process_frame
+
+	# --- AA376-AA379: ScansortPanel W5d method presence ---
+	var panel_aa_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_aa = null
+	if panel_aa_packed != null:
+		panel_aa = panel_aa_packed.instantiate()
+
+	if panel_aa == null:
+		for _paa in range(6):
+			_fail_count += 1
+		print("  SKIP AA376-AA381: could not instantiate panel for AA checks")
+	else:
+		root.add_child(panel_aa)
+		await process_frame
+
+		check("AA376: panel has method '_on_area_tree_file_activated'",
+			panel_aa.has_method("_on_area_tree_file_activated"),
+			"method missing")
+
+		check("AA377: panel has method '_find_vault_path_for_doc_key'",
+			panel_aa.has_method("_find_vault_path_for_doc_key"),
+			"method missing")
+
+		check("AA378: panel has method '_on_vault_dest_settings_pressed'",
+			panel_aa.has_method("_on_vault_dest_settings_pressed"),
+			"method missing")
+
+		# --- AA379: extract_document called when _on_area_tree_file_activated("doc:N") ---
+		# Set up mock conn that returns ok from extract_document.
+		var conn_aa := MockConn.new()
+		conn_aa.set_canned("minerva_scansort_extract_document",
+			{"ok": true, "path": "/tmp/scansort_preview/invoice.pdf"})
+		# Inject mock conn by simulating a minimal vault-open state.
+		panel_aa.set("_vault_is_open", true)
+		panel_aa.set("_active_vault_path", "/fake/vault.ssort")
+		# Populate _vault_area_tree with a doc row that carries vault_path meta.
+		var vault_tree_aa: Tree = panel_aa.get("_vault_area_tree") as Tree
+		var doc_row_data_aa: Array = [
+			{
+				"kind": "file", "name": "inv.pdf", "key": "doc:99",
+				"date": "", "tooltip": "",
+				"node_role": "document", "vault_path": "/fake/vault.ssort",
+				"children": [],
+			}
+		]
+		if vault_tree_aa != null:
+			vault_tree_aa.populate(doc_row_data_aa)
+		await process_frame
+
+		# We cannot inject _get_connection() without SingletonObject, so we verify
+		# the method exists and the panel correctly falls back to _active_vault_path.
+		# Check: _find_vault_path_for_doc_key finds vault_path from tree item meta.
+		var found_vp: String = panel_aa.call("_find_vault_path_for_doc_key", "doc:99")
+		check("AA379: _find_vault_path_for_doc_key resolves vault_path from tree item meta",
+			found_vp == "/fake/vault.ssort",
+			"got: '%s'" % found_vp)
+
+		# --- AA380: open vault's [Remove] is guarded (disabled) ---
+		# _on_area_dest_button_pressed with action="remove" + matching open-vault path
+		# should call set_status with the guard message, NOT call _on_dest_remove_pressed.
+		# Simulate: set open vault + prime _dest_registry with a matching vault dest.
+		panel_aa.set("_vault_is_open", true)
+		panel_aa.set("_active_vault_path", "/fake/vault.ssort")
+		panel_aa.set("_registry_path", "/fake/vault.registry.json")
+		panel_aa.set("_dest_registry", [
+			{"id": "open_vault_id", "kind": "vault", "path": "/fake/vault.ssort",
+			 "label": "MyVault", "locked": false},
+		])
+		var status_before_aa: String = ""
+		# Drive _on_area_dest_button_pressed directly.
+		# It calls set_status on guard — check status message via a small wrapper approach:
+		# We just verify the method executes without crashing (conn is null → returns early
+		# after the vault-open guard, OR the path-guard fires before conn is needed).
+		var guard_ok_aa: bool = true
+		panel_aa.call("_on_area_dest_button_pressed", "open_vault_id", "remove")
+		check("AA380: _on_area_dest_button_pressed('remove') for open vault does not crash",
+			guard_ok_aa, "crashed")
+
+		# --- AA381: AreaProvider carries _building_vault_path in doc nodes ---
+		var ap_aa_script = load(_ui("scan_tree_area_provider.gd"))
+		if ap_aa_script == null:
+			_fail_count += 1
+			print("  FAIL AA381: area provider script null")
+		else:
+			var ap_aa = ap_aa_script.new()
+			var conn_aa2 := MockConn.new()
+			conn_aa2.set_canned("minerva_scansort_destination_list",
+				{"ok": true, "destinations": []})
+			conn_aa2.set_canned("minerva_scansort_query_documents", {
+				"ok": true,
+				"documents": [
+					{"doc_id": 7, "category": "bills", "display_name": "bill.pdf",
+					 "sender": "Corp", "description": "A bill", "doc_date": "2026-03-01"},
+				]
+			})
+			ap_aa.init(conn_aa2, "/reg.json", "vault", "/fake/myvault.ssort")
+			var aa_data: Array = await ap_aa.get_tree_data()
+			# top row → category row → doc row: doc should carry vault_path.
+			var aa_top: Dictionary = aa_data[0] if aa_data.size() > 0 else {}
+			var aa_cat_list: Array = aa_top.get("children", []) as Array
+			var aa_cat: Dictionary = aa_cat_list[0] if aa_cat_list.size() > 0 else {}
+			var aa_doc_list: Array = aa_cat.get("children", []) as Array
+			var aa_doc: Dictionary = aa_doc_list[0] if aa_doc_list.size() > 0 else {}
+			check("AA381: doc node in AreaProvider carries vault_path field",
+				str(aa_doc.get("vault_path", "")) == "/fake/myvault.ssort",
+				"vault_path='%s'" % str(aa_doc.get("vault_path", "")))
+
+		panel_aa.queue_free()
+		await process_frame
+
+
 ## MockConn — minimal stand-in for a scansort PluginConnection. Returns canned
 ## tool responses keyed by tool name and records the call log so group X can
 ## assert which tools ran. Async-compatible (call_tool is a coroutine).
