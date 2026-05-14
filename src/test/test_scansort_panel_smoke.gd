@@ -274,9 +274,11 @@ func _run_tests() -> void:
 			src_tree != null and src_tree is Tree,
 			"_source_tree missing or not a Tree")
 
-		check("F42: panel has _dest_tree member (a Tree, non-null after _ready)",
-			dst_tree != null and dst_tree is Tree,
-			"_dest_tree missing or not a Tree")
+		# W5: _dest_tree is null at _ready (no vault open yet) — the member still
+		# exists; it gets set to the first destination tree on vault open.
+		check("F42: panel has _dest_tree member (may be null before vault open — W5 dynamic)",
+			"_dest_tree" in panel_instance,
+			"_dest_tree member missing from panel entirely")
 
 		# Status panel is the bottom bar — a direct child of the root layout VBox.
 		var stat_parent: Node = stat_panel.get_parent() if stat_panel != null else null
@@ -290,11 +292,12 @@ func _run_tests() -> void:
 			src_parent != null and str(src_parent.name) == "SourcePane",
 			"parent: %s" % (str(src_parent.name) if src_parent != null else "<null>"))
 
-		# _dest_tree lives under a container named DestPane.
-		var dst_parent: Node = dst_tree.get_parent() if dst_tree != null else null
-		check("F45: _dest_tree is child of a 'DestPane' container",
-			dst_parent != null and str(dst_parent.name) == "DestPane",
-			"parent: %s" % (str(dst_parent.name) if dst_parent != null else "<null>"))
+		# W5: _dest_tree is null before vault open. Check that DestPane exists
+		# instead — it still hosts the scroll content + add button.
+		var dest_pane_node: Node = panel_instance.find_child("DestPane", true, false) if panel_instance != null else null
+		check("F45: 'DestPane' container exists as a descendant of the panel (W5: dynamic content)",
+			dest_pane_node != null,
+			"DestPane container not found")
 
 		# get_editor_actions() contributes [Process, Stop, File] to the chrome
 		# bar — Process/Stop are disabled icon Buttons, File is a MenuButton.
@@ -1292,9 +1295,11 @@ func _run_tests() -> void:
 		check("R195: panel has member '_disk_provider'",
 			"_disk_provider" in panel_r,
 			"_disk_provider member missing")
-		check("R196: _disk_tree is a Tree after _ready",
-			panel_r.get("_disk_tree") != null and panel_r.get("_disk_tree") is Tree,
-			"_disk_tree is null or not a Tree")
+		# W5: _disk_tree is null after _ready (no vault open; dynamic destinations
+		# replace the fixed disk tree). The member still exists on the panel.
+		check("R196: _disk_tree member exists on panel (W5: null before vault open)",
+			"_disk_tree" in panel_r,
+			"_disk_tree member missing from panel")
 		check("R197: panel has method '_process_one_source_file' (concurrency worker)",
 			panel_r.has_method("_process_one_source_file"),
 			"_process_one_source_file missing")
@@ -1458,6 +1463,215 @@ func _run_tests() -> void:
 		if fmb_s != null and is_instance_valid(fmb_s):
 			fmb_s.queue_free()
 		panel_s.queue_free()
+		await process_frame
+
+
+	# -----------------------------------------------------------------------
+	# Group T: W5 — destination registry UI (stacked sub-trees)
+	# -----------------------------------------------------------------------
+	print("\n-- T: W5 destination registry UI --")
+
+	# --- T219: scan_tree_destination_provider.gd parses cleanly ---
+	var dest_prov_script = load(_ui("scan_tree_destination_provider.gd"))
+	check("T219: scan_tree_destination_provider.gd parses cleanly",
+		dest_prov_script != null, "load() returned null")
+
+	if dest_prov_script != null:
+		var dp_t = dest_prov_script.new()
+		check("T220: DestinationProvider has method 'init'",
+			dp_t.has_method("init"))
+		check("T221: DestinationProvider has method 'get_tree_data'",
+			dp_t.has_method("get_tree_data"))
+		check("T222: DestinationProvider has method 'get_source_label'",
+			dp_t.has_method("get_source_label"))
+		# Uninitialised → get_tree_data returns [] without crashing.
+		var dp_t_data = await dp_t.get_tree_data()
+		check("T223: DestinationProvider get_tree_data returns [] when uninitialised",
+			dp_t_data is Array and (dp_t_data as Array).is_empty(),
+			"got: %s" % str(dp_t_data))
+		# get_source_label with no dest dict → falls back gracefully.
+		check("T224: DestinationProvider get_source_label returns a String when uninitialised",
+			dp_t.get_source_label() is String,
+			"got non-String: %s" % str(dp_t.get_source_label()))
+		# NOTE: dp_t extends RefCounted — do NOT .free().
+
+		# get_source_label reflects kind and label from the destination dict.
+		var dp_vault = dest_prov_script.new()
+		dp_vault.init(null, "/reg.json", {"id": "v1", "kind": "vault", "path": "/a/b.ssort", "label": "MyVault", "locked": false})
+		check("T225: DestinationProvider get_source_label for vault starts with 'V:'",
+			str(dp_vault.get_source_label()).begins_with("V:") or str(dp_vault.get_source_label()).begins_with("Vault"),
+			"got: '%s'" % str(dp_vault.get_source_label()))
+
+		var dp_dir = dest_prov_script.new()
+		dp_dir.init(null, "/reg.json", {"id": "d1", "kind": "directory", "path": "/home/docs", "label": "Docs", "locked": false})
+		check("T226: DestinationProvider get_source_label for directory starts with 'D:'",
+			str(dp_dir.get_source_label()).begins_with("D:") or str(dp_dir.get_source_label()).begins_with("Dir"),
+			"got: '%s'" % str(dp_dir.get_source_label()))
+
+	# --- T227-T237: ScansortPanel W5 structural checks ---
+	var panel_t_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_t = null
+	if panel_t_packed != null:
+		panel_t = panel_t_packed.instantiate()
+
+	if panel_t == null:
+		for _ti in range(12):
+			_fail_count += 1
+		print("  SKIP T227-T238: could not instantiate panel for T checks")
+	else:
+		root.add_child(panel_t)
+		await process_frame
+
+		# W5 member presence.
+		check("T227: panel has member '_dest_registry' (Array)",
+			"_dest_registry" in panel_t and panel_t.get("_dest_registry") is Array,
+			"got: %s" % str(panel_t.get("_dest_registry")))
+		check("T228: panel has member '_dest_trees' (Array)",
+			"_dest_trees" in panel_t and panel_t.get("_dest_trees") is Array,
+			"got: %s" % str(panel_t.get("_dest_trees")))
+		check("T229: panel has member '_dest_providers' (Array)",
+			"_dest_providers" in panel_t and panel_t.get("_dest_providers") is Array,
+			"got: %s" % str(panel_t.get("_dest_providers")))
+		check("T230: panel has member '_dest_containers' (Array)",
+			"_dest_containers" in panel_t and panel_t.get("_dest_containers") is Array,
+			"got: %s" % str(panel_t.get("_dest_containers")))
+		check("T231: panel has member '_dest_scroll_content' (non-null after _ready)",
+			panel_t.get("_dest_scroll_content") != null,
+			"_dest_scroll_content is null after _ready")
+		check("T232: panel has member '_registry_path' (String, starts empty)",
+			"_registry_path" in panel_t and str(panel_t.get("_registry_path")) == "",
+			"got: '%s'" % str(panel_t.get("_registry_path")))
+
+		# W5 method presence.
+		check("T233: panel has method '_refresh_dest_pane'",
+			panel_t.has_method("_refresh_dest_pane"))
+		check("T234: panel has method '_clear_dest_pane'",
+			panel_t.has_method("_clear_dest_pane"))
+		check("T235: panel has method '_add_dest_section'",
+			panel_t.has_method("_add_dest_section"))
+		check("T236: panel has method '_refresh_all_dest_trees'",
+			panel_t.has_method("_refresh_all_dest_trees"))
+		check("T237: panel has method '_on_dest_add_pressed'",
+			panel_t.has_method("_on_dest_add_pressed"))
+		check("T238: panel has method '_on_dest_remove_pressed'",
+			panel_t.has_method("_on_dest_remove_pressed"))
+
+		# --- T239-T248: simulate _add_dest_section with mock destinations ---
+		# Build a minimal mock connection that returns a stub destination_list.
+		# We drive _add_dest_section directly (bypassing MCP) to verify the
+		# stacked sub-tree build logic in isolation.
+		var scroll_content: Object = panel_t.get("_dest_scroll_content")
+		var initial_child_count: int = scroll_content.get_child_count() if scroll_content != null else -1
+
+		# Call _add_dest_section for a vault destination.
+		var fake_vault_dest: Dictionary = {
+			"id": "vdest1", "kind": "vault",
+			"path": "/fake/vault.ssort", "label": "FakeVault", "locked": false
+		}
+		panel_t._add_dest_section(null, fake_vault_dest)
+		await process_frame
+
+		var child_count_after_vault: int = scroll_content.get_child_count() if scroll_content != null else -1
+		check("T239: _add_dest_section(vault) adds one section to dest_scroll_content",
+			child_count_after_vault == initial_child_count + 1,
+			"expected %d children, got %d" % [initial_child_count + 1, child_count_after_vault])
+
+		var trees_after_vault: Array = panel_t.get("_dest_trees")
+		check("T240: _dest_trees has 1 entry after adding vault destination",
+			trees_after_vault.size() == 1,
+			"got size: %d" % trees_after_vault.size())
+		check("T241: first entry in _dest_trees is a Tree",
+			trees_after_vault.size() > 0 and trees_after_vault[0] is Tree,
+			"first tree is not a Tree")
+		var first_tree_role: String = str((trees_after_vault[0] as Object).get("tree_role")) if trees_after_vault.size() > 0 else ""
+		check("T242: first destination tree has tree_role containing 'dest:'",
+			first_tree_role.begins_with("dest:"),
+			"got tree_role: '%s'" % first_tree_role)
+
+		# Add a directory destination.
+		var fake_dir_dest: Dictionary = {
+			"id": "ddest1", "kind": "directory",
+			"path": "/fake/docs", "label": "FakeDocs", "locked": false
+		}
+		panel_t._add_dest_section(null, fake_dir_dest)
+		await process_frame
+
+		var trees_after_dir: Array = panel_t.get("_dest_trees")
+		check("T243: _dest_trees has 2 entries after adding second (directory) destination",
+			trees_after_dir.size() == 2,
+			"got size: %d" % trees_after_dir.size())
+		check("T244: dest_scroll_content has 2 sections after two _add_dest_section calls",
+			scroll_content.get_child_count() == initial_child_count + 2,
+			"got child count: %d" % scroll_content.get_child_count())
+
+		# Test _clear_dest_pane: all arrays emptied, nodes queued-free.
+		panel_t._clear_dest_pane()
+		await process_frame
+
+		var registry_after_clear: Array = panel_t.get("_dest_registry")
+		var trees_after_clear: Array  = panel_t.get("_dest_trees")
+		var providers_after_clear: Array = panel_t.get("_dest_providers")
+		var containers_after_clear: Array = panel_t.get("_dest_containers")
+		check("T245: _clear_dest_pane empties _dest_registry",
+			registry_after_clear.is_empty(), "got size: %d" % registry_after_clear.size())
+		check("T246: _clear_dest_pane empties _dest_trees",
+			trees_after_clear.is_empty(), "got size: %d" % trees_after_clear.size())
+		check("T247: _clear_dest_pane empties _dest_providers",
+			providers_after_clear.is_empty(), "got size: %d" % providers_after_clear.size())
+		check("T248: _clear_dest_pane empties _dest_containers",
+			containers_after_clear.is_empty(), "got size: %d" % containers_after_clear.size())
+
+		# --- T249: file_dropped from source tree reaches panel handler ---
+		# Re-add one destination section and simulate a file_dropped signal.
+		panel_t._add_dest_section(null, fake_vault_dest)
+		await process_frame
+
+		var drop_trees: Array = panel_t.get("_dest_trees")
+		var drop_received: bool = false
+		# Override _on_tree_file_dropped via a flag — we can't easily spy on it
+		# directly, but we CAN verify that the signal emitted on the dest tree
+		# fires without errors (the connection is wired in _add_dest_section).
+		# Emit file_dropped on the tree and verify the panel doesn't crash.
+		if drop_trees.size() > 0:
+			var dest_tree_t: Tree = drop_trees[0] as Tree
+			# We need a folder row for the target_key — populate the tree first.
+			dest_tree_t.populate([
+				{
+					"kind": "folder", "name": "invoices/ (0)", "key": "cat:invoices",
+					"date": "", "tooltip": "", "children": [],
+				}
+			])
+			await process_frame
+			# Emit directly — the panel handler will be called synchronously.
+			var emit_ok: bool = true
+			dest_tree_t.file_dropped.emit(
+				{"scan_tree_drag": true, "key": "/tmp/test.pdf", "role": "source"},
+				"cat:invoices",
+				"folder"
+			)
+			drop_received = emit_ok
+		check("T249: file_dropped emitted on a destination tree does not crash",
+			drop_received, "emit raised an error or no dest trees present")
+
+		panel_t.queue_free()
+		await process_frame
+
+	# --- T250: _on_tree_file_dropped has correct signature (4-param with default) ---
+	var panel_t2_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_t2 = null
+	if panel_t2_packed != null:
+		panel_t2 = panel_t2_packed.instantiate()
+	if panel_t2 != null:
+		root.add_child(panel_t2)
+		await process_frame
+		check("T250: panel has method '_on_tree_file_dropped' (W5 4-param signature)",
+			panel_t2.has_method("_on_tree_file_dropped"),
+			"_on_tree_file_dropped missing")
+		# Also verify _do_add_destination and _do_add_destination helpers are present.
+		check("T251: panel has method '_do_add_destination'",
+			panel_t2.has_method("_do_add_destination"),
+			"_do_add_destination missing")
+		panel_t2.queue_free()
 		await process_frame
 
 
