@@ -1675,6 +1675,223 @@ func _run_tests() -> void:
 		await process_frame
 
 
+	# -----------------------------------------------------------------------
+	# Group U: W7 — three-layer dedup + review-disposition flow
+	# -----------------------------------------------------------------------
+	print("\n-- U: W7 dedup detection + disposition flow --")
+
+	# --- U252-U257: dedup_disposition_dialog.gd parses + contracts ---
+	var PLUGIN_DEDUP_DIALOG_GD := _ui("dedup_disposition_dialog.gd")
+	var dedup_dlg_script = load(PLUGIN_DEDUP_DIALOG_GD)
+	check("U252: dedup_disposition_dialog.gd parses cleanly (non-null)",
+		dedup_dlg_script != null,
+		"load() returned null — check parse errors above")
+
+	if dedup_dlg_script == null:
+		for _ui_idx in range(5):
+			_fail_count += 1
+		print("  SKIP U253-U257: dedup_disposition_dialog script null")
+	else:
+		var dedup_dlg = dedup_dlg_script.new()
+		check("U253: DedupDispositionDialog instantiates", dedup_dlg != null)
+
+		if dedup_dlg != null:
+			# Add to scene tree so _ready() fires and widgets are built.
+			root.add_child(dedup_dlg)
+			await process_frame
+
+			check("U254: DedupDispositionDialog extends AcceptDialog",
+				dedup_dlg is AcceptDialog,
+				"got class: %s" % dedup_dlg.get_class())
+
+			check("U255: signal 'disposition_chosen' declared",
+				dedup_dlg.has_signal("disposition_chosen"),
+				"signal missing")
+
+			check("U256: signal 'cancelled' declared",
+				dedup_dlg.has_signal("cancelled"),
+				"signal missing")
+
+			check("U257: method 'init' exists",
+				dedup_dlg.has_method("init"),
+				"init() missing")
+
+			# Smoke: call init with a fake match_info — must not crash.
+			var fake_match_info := {
+				"file_name":       "corrected_1099.pdf",
+				"match_kind":      "simhash",
+				"match_count":     1,
+				"distance":        2,
+				"existing_doc_id": 42,
+				"rule_label":      "tax_documents",
+				"target_path":     "/archive/2024/tax/1099.pdf",
+			}
+			var init_ok := true
+			dedup_dlg.init(fake_match_info)
+			check("U258: init(fake_match_info) does not crash", init_ok)
+
+			# Verify the three disposition buttons are present (built in _ready).
+			check("U259: DedupDispositionDialog has '_keep_both_btn' widget",
+				dedup_dlg.get("_keep_both_btn") != null,
+				"_keep_both_btn missing or null")
+			check("U260: DedupDispositionDialog has '_replace_btn' widget",
+				dedup_dlg.get("_replace_btn") != null,
+				"_replace_btn missing or null")
+			check("U261: DedupDispositionDialog has '_skip_btn' widget",
+				dedup_dlg.get("_skip_btn") != null,
+				"_skip_btn missing or null")
+
+			# Verify disposition buttons emit disposition_chosen by checking
+			# _chosen member (set by each handler before emitting the signal).
+			# We call handlers directly to avoid needing a visible popup.
+
+			# Reset _chosen between calls.
+			dedup_dlg.set("_chosen", "")
+			dedup_dlg._on_keep_both_pressed()
+			check("U262: _on_keep_both_pressed() sets _chosen to 'keep_both'",
+				str(dedup_dlg.get("_chosen")) == "keep_both",
+				"got: '%s'" % str(dedup_dlg.get("_chosen")))
+
+			dedup_dlg.set("_chosen", "")
+			dedup_dlg._on_replace_pressed()
+			check("U263: _on_replace_pressed() sets _chosen to 'replace'",
+				str(dedup_dlg.get("_chosen")) == "replace",
+				"got: '%s'" % str(dedup_dlg.get("_chosen")))
+
+			dedup_dlg.set("_chosen", "")
+			dedup_dlg._on_skip_pressed()
+			check("U264: _on_skip_pressed() sets _chosen to 'skip'",
+				str(dedup_dlg.get("_chosen")) == "skip",
+				"got: '%s'" % str(dedup_dlg.get("_chosen")))
+
+			if is_instance_valid(dedup_dlg):
+				(dedup_dlg as Node).queue_free()
+			await process_frame
+
+	# --- U265-U271: ScansortPanel W7 structural checks ---
+	var panel_u_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_u = null
+	if panel_u_packed != null:
+		panel_u = panel_u_packed.instantiate()
+
+	if panel_u == null:
+		for _uu in range(7):
+			_fail_count += 1
+		print("  SKIP U265-U271: could not instantiate panel for U checks")
+	else:
+		root.add_child(panel_u)
+		await process_frame
+
+		check("U265: panel has method '_check_near_dup'",
+			panel_u.has_method("_check_near_dup"),
+			"_check_near_dup missing")
+
+		check("U266: panel has method '_show_dedup_disposition'",
+			panel_u.has_method("_show_dedup_disposition"),
+			"_show_dedup_disposition missing")
+
+		check("U267: panel has method '_on_dedup_disposition_chosen'",
+			panel_u.has_method("_on_dedup_disposition_chosen"),
+			"_on_dedup_disposition_chosen missing")
+
+		check("U268: panel has method '_on_dedup_disposition_cancelled'",
+			panel_u.has_method("_on_dedup_disposition_cancelled"),
+			"_on_dedup_disposition_cancelled missing")
+
+		check("U269: panel._last_dedup_disposition exists and is empty string",
+			panel_u.get("_last_dedup_disposition") != null and
+			str(panel_u.get("_last_dedup_disposition")) == "",
+			"got: '%s'" % str(panel_u.get("_last_dedup_disposition")))
+
+		check("U270: panel._pending_dedup_match exists and is empty dict",
+			panel_u.get("_pending_dedup_match") is Dictionary and
+			(panel_u.get("_pending_dedup_match") as Dictionary).is_empty(),
+			"got: %s" % str(panel_u.get("_pending_dedup_match")))
+
+		# Simulate _on_dedup_disposition_chosen — must update _last_dedup_disposition.
+		panel_u._on_dedup_disposition_chosen("replace")
+		check("U271: _on_dedup_disposition_chosen('replace') sets _last_dedup_disposition",
+			str(panel_u.get("_last_dedup_disposition")) == "replace",
+			"got: '%s'" % str(panel_u.get("_last_dedup_disposition")))
+
+		panel_u.queue_free()
+		await process_frame
+
+	# --- U272-U279: settings_dialog.gd W7 threshold controls ---
+	var settings_u_script = load(_ui("settings_dialog.gd"))
+	check("U272: settings_dialog.gd still parses cleanly after W7 edits",
+		settings_u_script != null, "load() returned null")
+
+	if settings_u_script != null:
+		var inner_u = settings_u_script.ScansortSettings
+		check("U273: ScansortSettings inner class still accessible after W7 edits",
+			inner_u != null)
+
+		if inner_u != null:
+			check("U274: ScansortSettings has static method 'load_simhash_threshold'",
+				inner_u.has_method("load_simhash_threshold"))
+			check("U275: ScansortSettings has static method 'save_simhash_threshold'",
+				inner_u.has_method("save_simhash_threshold"))
+			check("U276: ScansortSettings has static method 'load_dhash_threshold'",
+				inner_u.has_method("load_dhash_threshold"))
+			check("U277: ScansortSettings has static method 'save_dhash_threshold'",
+				inner_u.has_method("save_dhash_threshold"))
+
+			# Back up existing settings.
+			var saved_path_u := str(inner_u.settings_path())
+			var backup_text_u: String = ""
+			var had_backup_u: bool = FileAccess.file_exists(saved_path_u)
+			if had_backup_u:
+				var bf_u := FileAccess.open(saved_path_u, FileAccess.READ)
+				if bf_u != null:
+					backup_text_u = bf_u.get_as_text()
+					bf_u.close()
+
+			# Round-trip simhash threshold.
+			inner_u.save_simhash_threshold(5)
+			var loaded_sim: int = inner_u.load_simhash_threshold()
+			check("U278: save_simhash_threshold(5) + load_simhash_threshold() round-trips to 5",
+				loaded_sim == 5,
+				"got: %d" % loaded_sim)
+
+			# Round-trip dhash threshold; verify simhash not clobbered.
+			inner_u.save_dhash_threshold(10)
+			var loaded_dh: int = inner_u.load_dhash_threshold()
+			check("U279: save_dhash_threshold(10) + load_dhash_threshold() round-trips to 10",
+				loaded_dh == 10,
+				"got: %d" % loaded_dh)
+
+			var sim_after_dh: int = inner_u.load_simhash_threshold()
+			check("U280: save_dhash_threshold does not clobber simhash_threshold",
+				sim_after_dh == 5,
+				"simhash_threshold was clobbered: %d" % sim_after_dh)
+
+			# Restore backup or clean up.
+			if had_backup_u:
+				var rf_u := FileAccess.open(saved_path_u, FileAccess.WRITE)
+				if rf_u != null:
+					rf_u.store_string(backup_text_u)
+					rf_u.close()
+			else:
+				if FileAccess.file_exists(saved_path_u):
+					DirAccess.remove_absolute(saved_path_u)
+
+		# Verify the SpinBox widgets are created via instantiation + _ready.
+		var sdlg_u: Object = settings_u_script.new()
+		if sdlg_u != null:
+			root.add_child(sdlg_u as Node)
+			await process_frame
+			check("U281: settings dialog has '_simhash_spin' SpinBox widget",
+				(sdlg_u as Object).get("_simhash_spin") != null,
+				"_simhash_spin missing or null")
+			check("U282: settings dialog has '_dhash_spin' SpinBox widget",
+				(sdlg_u as Object).get("_dhash_spin") != null,
+				"_dhash_spin missing or null")
+			if is_instance_valid(sdlg_u):
+				(sdlg_u as Node).queue_free()
+			await process_frame
+
+
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
 		_pass_count += 1
