@@ -580,10 +580,13 @@ func _run_tests() -> void:
 		check("J97: panel has method '_on_vault_registry_pressed'",
 			panel4.has_method("_on_vault_registry_pressed"))
 
-		# R8: settings pressed and load_settings_defaults are gone.
-		check("J98: panel does NOT have '_on_settings_pressed' (R8: removed)",
-			not panel4.has_method("_on_settings_pressed"),
-			"_on_settings_pressed still exists — not fully removed")
+		# R8 removed an old Settings dialog; F&F (post-R6) restored a new one
+		# whose sole knob is the classification-model override. The old
+		# _load_settings_defaults helper stays gone (defaults live in the
+		# Settings dialog now).
+		check("J98: panel HAS '_on_settings_pressed' (F&F: Settings dialog restored)",
+			panel4.has_method("_on_settings_pressed"),
+			"_on_settings_pressed missing — Settings dialog not wired")
 
 		check("J99: panel does NOT have '_load_settings_defaults' (R8: removed)",
 			not panel4.has_method("_load_settings_defaults"),
@@ -754,6 +757,9 @@ func _run_tests() -> void:
 			check("L122d: popup has id 10 (Use Library Rules)",
 				found_ids.has(10),
 				"id 10 missing from: %s" % str(found_ids))
+			check("L122e: popup has id 11 (Settings)",
+				found_ids.has(11),
+				"id 11 missing from: %s" % str(found_ids))
 
 			if is_instance_valid(menu_l):
 				menu_l.queue_free()
@@ -782,6 +788,8 @@ func _run_tests() -> void:
 			panel_l.has_method("_on_create_vault_rules_pressed"))
 		check("L128: panel has method '_on_use_library_rules_pressed'",
 			panel_l.has_method("_on_use_library_rules_pressed"))
+		check("L128b: panel has method '_on_settings_pressed'",
+			panel_l.has_method("_on_settings_pressed"))
 
 		if panel_l.has_method("_library_rules_path"):
 			var lib_path: String = str(panel_l._library_rules_path())
@@ -814,6 +822,61 @@ func _run_tests() -> void:
 			dlg_r6.has_method("init"))
 		if dlg_r6 != null and is_instance_valid(dlg_r6):
 			dlg_r6.queue_free()
+
+	# Settings dialog (F&F): single classification-model preference.
+	var settings_script = load(_ui("settings_dialog.gd"))
+	check("L135: settings_dialog.gd parses cleanly",
+		settings_script != null,
+		"load() returned null")
+	if settings_script != null:
+		var settings_dlg = settings_script.new()
+		check("L136: settings dialog has method 'init'",
+			settings_dlg.has_method("init"))
+		# ScansortSettings is an inner class on the settings script.
+		var inner = settings_script.ScansortSettings
+		check("L137: settings script exposes ScansortSettings inner class",
+			inner != null)
+		if inner != null:
+			var path: String = str(inner.settings_path())
+			check("L138: settings_path returns non-empty absolute path ending in .json",
+				not path.is_empty() and path.is_absolute_path() and path.ends_with(".json"),
+				"got: '%s'" % path)
+			# Round-trip the override Dict — write, read, assert match.
+			var saved_path := path
+			var backup_text: String = ""
+			var had_backup: bool = FileAccess.file_exists(saved_path)
+			if had_backup:
+				var bf := FileAccess.open(saved_path, FileAccess.READ)
+				if bf != null:
+					backup_text = bf.get_as_text()
+					bf.close()
+			var probe: Dictionary = {"kind": "builtin", "model_id": 42}
+			var save_ok: bool = inner.save_model_override(probe)
+			check("L139: save_model_override returns true",
+				save_ok, "save returned false")
+			var loaded: Dictionary = inner.load_model_override()
+			# JSON round-trip turns ints into floats; coerce for comparison.
+			var loaded_id: int = int(loaded.get("model_id", -1))
+			check("L140: load_model_override round-trips kind and model_id",
+				str(loaded.get("kind", "")) == "builtin" and loaded_id == 42,
+				"got: %s" % str(loaded))
+			# Clear the override (empty Dict → null persistence) and verify load is empty.
+			inner.save_model_override({})
+			var loaded_empty: Dictionary = inner.load_model_override()
+			check("L141: empty save clears the override (load returns {})",
+				loaded_empty.is_empty(),
+				"got: %s" % str(loaded_empty))
+			# Restore backup if there was one, else clean up.
+			if had_backup:
+				var rf := FileAccess.open(saved_path, FileAccess.WRITE)
+				if rf != null:
+					rf.store_string(backup_text)
+					rf.close()
+			else:
+				if FileAccess.file_exists(saved_path):
+					DirAccess.remove_absolute(saved_path)
+		if settings_dlg != null and is_instance_valid(settings_dlg):
+			settings_dlg.queue_free()
 
 	# -----------------------------------------------------------------------
 	# Group M: chrome chrome single-purpose + chat-model inheritance
