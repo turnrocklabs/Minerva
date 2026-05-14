@@ -36,16 +36,21 @@ extends SceneTree
 ##   19. Instantiated panel's _vault_is_open starts false
 ##   20. Instantiated panel's _active_vault_path starts empty
 
-const PLUGIN_PANEL_TSCN  := "/home/imran/github/plugins/scansort/ui/ScansortPanel.tscn"
-const PLUGIN_PANEL_GD    := "/home/imran/github/plugins/scansort/ui/ScansortPanel.gd"
-const PLUGIN_DIALOG_GD   := "/home/imran/github/plugins/scansort/ui/password_dialog.gd"
-const PLUGIN_FILETREE_GD := "/home/imran/github/plugins/scansort/ui/file_tree.gd"
-const PLUGIN_VAULTVIEW_GD := "/home/imran/github/plugins/scansort/ui/vault_view.gd"
-const PLUGIN_STATUSPANEL_GD := "/home/imran/github/plugins/scansort/ui/status_panel.gd"
-const PLUGIN_ADD_DIALOG_GD        := "/home/imran/github/plugins/scansort/ui/add_document_dialog.gd"
-const PLUGIN_EDIT_DETAILS_GD      := "/home/imran/github/plugins/scansort/ui/edit_details_dialog.gd"
-const PLUGIN_RULES_EDITOR_GD      := "/home/imran/github/plugins/scansort/ui/rules_editor_dialog.gd"
-const PLUGIN_VAULT_REGISTRY_GD    := "/home/imran/github/plugins/scansort/ui/vault_registry_dialog.gd"
+# Plugin UI scripts live at $HOME/github/plugins/scansort/ui on every dev box.
+# Derive from $HOME so the suite runs on both Linux desktop and macOS laptop.
+static func _ui(name: String) -> String:
+	return "%s/github/plugins/scansort/ui/%s" % [OS.get_environment("HOME"), name]
+
+var PLUGIN_PANEL_TSCN  := _ui("ScansortPanel.tscn")
+var PLUGIN_PANEL_GD    := _ui("ScansortPanel.gd")
+var PLUGIN_DIALOG_GD   := _ui("password_dialog.gd")
+var PLUGIN_FILETREE_GD := _ui("file_tree.gd")
+var PLUGIN_VAULTVIEW_GD := _ui("vault_view.gd")
+var PLUGIN_STATUSPANEL_GD := _ui("status_panel.gd")
+var PLUGIN_ADD_DIALOG_GD        := _ui("add_document_dialog.gd")
+var PLUGIN_EDIT_DETAILS_GD      := _ui("edit_details_dialog.gd")
+var PLUGIN_RULES_EDITOR_GD      := _ui("rules_editor_dialog.gd")
+var PLUGIN_VAULT_REGISTRY_GD    := _ui("vault_registry_dialog.gd")
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -618,7 +623,7 @@ func _run_tests() -> void:
 			fmb_j.queue_free()
 
 	# --- K group: R6 — checklist dialog ---
-	const PLUGIN_CHECKLIST_GD := "/home/imran/github/plugins/scansort/ui/checklist_dialog.gd"
+	var PLUGIN_CHECKLIST_GD := _ui("checklist_dialog.gd")
 	var checklist_script := load(PLUGIN_CHECKLIST_GD)
 	check("K104: checklist_dialog.gd parses cleanly", checklist_script != null,
 		"load() returned null")
