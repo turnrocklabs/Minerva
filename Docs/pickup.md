@@ -30,6 +30,9 @@ Gap analysis found the T7 port captured the **data layer** faithfully but droppe
 **interaction layer** (source pane, Process button, per-file actions). The U-series restores it.
 **U1 is committed**; U2–U10 + the full-stack HITL remain.
 
+Docket: gap analysis filed as bug `019e24c57af676bc85e8f76db501e797` (parented to the scansort
+DCR `019e1cdb`); the U-series is work_item `019e24c5d53876098676f4f66b161222` (parented to the bug).
+
 ## Commits (pushed; pull on the other machine)
 
 | Repo | Branch | Notes |
