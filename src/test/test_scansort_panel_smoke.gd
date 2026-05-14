@@ -262,47 +262,50 @@ func _run_tests() -> void:
 			print("  SKIP E36-E40: status_panel script null")
 
 		# -------------------------------------------------------------------
-		# Group F: R2 panel integration — view instances wired into panel
+		# Group F: U4 panel integration — 3-column layout wired into panel
 		# -------------------------------------------------------------------
-		print("\n-- F: R2 panel integration (views wired into ScansortPanel) --")
+		print("\n-- F: U4 panel integration (3-column layout) --")
 
-		check("F41: panel has _file_tree member (non-null after _ready)",
-			panel_instance.get("_file_tree") != null,
-			"_file_tree is null")
+		var src_tree: Node = panel_instance.get("_source_tree")
+		var dst_tree: Node = panel_instance.get("_dest_tree")
+		var stat_panel: Node = panel_instance.get("_status_panel")
+		var proc_btn: Node = panel_instance.get("_process_btn")
+		var stop_btn: Node = panel_instance.get("_stop_btn")
 
-		check("F42: panel has _vault_view member (non-null after _ready)",
-			panel_instance.get("_vault_view") != null,
-			"_vault_view is null")
+		check("F41: panel has _source_tree member (a Tree, non-null after _ready)",
+			src_tree != null and src_tree is Tree,
+			"_source_tree missing or not a Tree")
 
-		check("F43: panel has _status_panel member (non-null after _ready)",
-			panel_instance.get("_status_panel") != null,
-			"_status_panel is null")
+		check("F42: panel has _dest_tree member (a Tree, non-null after _ready)",
+			dst_tree != null and dst_tree is Tree,
+			"_dest_tree missing or not a Tree")
 
-		# Verify file_tree is a child of LeftPane.
-		var left_pane: Node = panel_instance.get("_left_pane")
-		var ft_member: Node = panel_instance.get("_file_tree")
-		check("F44: _file_tree is child of _left_pane",
-			left_pane != null and ft_member != null and ft_member.get_parent() == left_pane,
-			"parent mismatch")
+		check("F43: panel has _status_panel, _process_btn, _stop_btn members",
+			stat_panel != null and proc_btn is Button and stop_btn is Button,
+			"action-column members missing")
 
-		# Verify vault_view is a child of RightPane.
-		var right_pane: Node = panel_instance.get("_right_pane")
-		var vv_member: Node = panel_instance.get("_vault_view")
-		check("F45: _vault_view is child of _right_pane",
-			right_pane != null and vv_member != null and vv_member.get_parent() == right_pane,
-			"parent mismatch")
+		# _source_tree lives under a container named SourcePane.
+		var src_parent: Node = src_tree.get_parent() if src_tree != null else null
+		check("F44: _source_tree is child of a 'SourcePane' container",
+			src_parent != null and str(src_parent.name) == "SourcePane",
+			"parent: %s" % (str(src_parent.name) if src_parent != null else "<null>"))
 
-		# Verify file_tree.document_selected is connected to vault_view.on_document_selected.
-		var signal_connected: bool = false
-		if ft_member != null and vv_member != null:
-			var conns: Array = ft_member.get_signal_connection_list("document_selected")
-			for c: Dictionary in conns:
-				if c.get("callable", Callable()).get_object() == vv_member:
-					signal_connected = true
-					break
-		check("F46: file_tree.document_selected connected to vault_view.on_document_selected",
-			signal_connected,
-			"signal not wired")
+		# _dest_tree lives under a container named DestPane.
+		var dst_parent: Node = dst_tree.get_parent() if dst_tree != null else null
+		check("F45: _dest_tree is child of a 'DestPane' container",
+			dst_parent != null and str(dst_parent.name) == "DestPane",
+			"parent: %s" % (str(dst_parent.name) if dst_parent != null else "<null>"))
+
+		# Process/Stop buttons + status panel all live in the ActionColumn.
+		var proc_parent: Node = proc_btn.get_parent() if proc_btn != null else null
+		var stat_parent: Node = stat_panel.get_parent() if stat_panel != null else null
+		check("F46: _process_btn and _status_panel share the 'ActionColumn' container",
+			proc_parent != null and str(proc_parent.name) == "ActionColumn"
+				and stat_parent != null and str(stat_parent.name) == "ActionColumn",
+			"process parent: %s / status parent: %s" % [
+				str(proc_parent.name) if proc_parent != null else "<null>",
+				str(stat_parent.name) if stat_parent != null else "<null>",
+			])
 
 		panel_instance.queue_free()
 		await process_frame
