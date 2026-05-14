@@ -3083,6 +3083,90 @@ func _run_tests() -> void:
 		panel_aa.queue_free()
 		await process_frame
 
+	# -----------------------------------------------------------------------
+	# Group AB: W5f — decrypt-on-extract: open encrypted vault documents
+	# -----------------------------------------------------------------------
+	print("\n-- AB: W5f decrypt-on-extract --")
+
+	# --- AB382-AB384: panel structural — _vault_password member + handler ---
+	var panel_ab_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_ab = null
+	if panel_ab_packed != null:
+		panel_ab = panel_ab_packed.instantiate()
+
+	if panel_ab == null:
+		for _pab in range(3):
+			_fail_count += 1
+		print("  SKIP AB382-AB384: could not instantiate panel for AB checks")
+	else:
+		root.add_child(panel_ab)
+		await process_frame
+
+		check("AB382: panel has '_vault_password' member (String)",
+			panel_ab.get("_vault_password") != null
+				and panel_ab.get("_vault_password") is String,
+			"got: %s" % str(panel_ab.get("_vault_password")))
+
+		check("AB383: panel has method '_on_area_tree_file_activated'",
+			panel_ab.has_method("_on_area_tree_file_activated"),
+			"method missing")
+
+		# Setting + reading _vault_password round-trips (cached on open).
+		panel_ab.set("_vault_password", "s3cret")
+		check("AB384: _vault_password is mutable and round-trips",
+			str(panel_ab.get("_vault_password")) == "s3cret",
+			"got: '%s'" % str(panel_ab.get("_vault_password")))
+
+		panel_ab.queue_free()
+		await process_frame
+
+	# --- AB385-AB390: ScansortPanel.gd source-level W5f wiring ---
+	# _get_connection() needs a real SingletonObject (absent in this harness),
+	# so the extract flow is verified structurally against the panel source.
+	var ab_src: String = ""
+	var ab_f := FileAccess.open(PLUGIN_PANEL_GD, FileAccess.READ)
+	if ab_f != null:
+		ab_src = ab_f.get_as_text()
+		ab_f.close()
+
+	if ab_src == "":
+		for _pab2 in range(6):
+			_fail_count += 1
+		print("  FAIL AB385-AB390: could not read ScansortPanel.gd source")
+	else:
+		# AB385: extract_args dict is built (no longer an inline literal call).
+		check("AB385: _on_area_tree_file_activated builds an extract_args dict",
+			ab_src.contains("var extract_args"),
+			"extract_args dict not found in panel source")
+
+		# AB386: password is conditionally attached to the extract call.
+		check("AB386: extract passes password key when available",
+			ab_src.contains("extract_args[\"password\"] = _vault_password"),
+			"conditional password assignment not found")
+
+		# AB387: password only sent for the currently-open vault (guard on
+		# vault_path == _active_vault_path AND non-empty cached password).
+		check("AB387: password guarded by open-vault + non-empty checks",
+			ab_src.contains("vault_path == _active_vault_path")
+				and ab_src.contains("not _vault_password.is_empty()"),
+			"open-vault / non-empty guard not found")
+
+		# AB388: extract_document is still the tool invoked, now with the dict.
+		check("AB388: extract_document called with the extract_args dict",
+			ab_src.contains("\"minerva_scansort_extract_document\",\n\t\t\textract_args"),
+			"extract_document call with extract_args not found")
+
+		# AB389: clear, actionable status for an encrypted doc in a non-open vault.
+		check("AB389: clear status message for encrypted docs in non-open vaults",
+			ab_src.contains("Open its vault first to unlock it"),
+			"encrypted-doc hint message not found")
+
+		# AB390: the encrypted-doc hint is gated on the doc NOT being in the
+		# open vault (so the password-cached path still surfaces real errors).
+		check("AB390: encrypted-doc hint gated on vault_path != _active_vault_path",
+			ab_src.contains("vault_path != _active_vault_path"),
+			"non-open-vault gate for the hint not found")
+
 
 ## MockConn — minimal stand-in for a scansort PluginConnection. Returns canned
 ## tool responses keyed by tool name and records the call log so group X can
