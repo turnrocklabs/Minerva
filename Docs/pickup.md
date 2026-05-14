@@ -1,58 +1,59 @@
-# Pickup — Scansort filing-engine DCR (design done; implementation starts at W1 + W4)
+# Pickup — Scansort filing-engine DCR (W1–W10 shipped; next is W11, the combined HITL)
 
-Last updated: 2026-05-14 (after the multi-location design pass + DCR decomposition)
+Last updated: 2026-05-14 (after the autonomous W2–W10 run)
 
 ## Where I left off
 
-**Active workstream: Scansort filing-engine redesign — DCR `minerva:019e2787d0e178029cd46b93059f7ed9`** ("Scansort filing engine — two-phase rules + multi-destination routing + semantic dedup + audit log"). Status: **approved**, P0 (docket priority 1).
+**Active workstream: Scansort filing-engine redesign — DCR `minerva:019e2787d0e178029cd46b93059f7ed9`** ("Scansort filing engine — two-phase rules + multi-destination routing + semantic dedup + audit log"). Status: **approved**, P0.
 
-The U-series (U2–U8) is done and committed, but its **combined HITL is paused** — during HITL setup the user identified a structural gap (scansort is single-vault; real filing crosses vaults — tax docs per year, CPAs per client/year). That triggered the P0 DCR. A full design pass was done with the user on 2026-05-14; the DCR description carries the settled design; it's been decomposed into 12 work_items.
+**W1–W10 are all shipped** (10 work-cycle rounds, Sonnet/Opus implementer + cold Opus reviewer + Layer-1 gate + per-round WIP commit, both repos, no worktrees). **NEXT: W11 — the single combined full-stack HITL.** W11 absorbs the paused U-series HITL (`019e24c5`) — do not run that separately; W11's scope covers re-validating the U-series substrate AND the W-series filing engine together.
 
-**NEXT: start implementation at W1 + W4** (the two dependency roots — see build order below).
+## Status of the 12 work_items
 
-## The DCR design (settled spine — full detail in the DCR description)
-
-1. **Two-phase processing** — Phase 1: LLM extracts facts (`year`, `issuer`, `amount`, `confidence`, …) + scores rule matches. Phase 2: deterministic ordered rule walk does the routing (auditable, replayable).
-2. **Rule = category** — a rule bundles a semantic matcher (the LLM-facing instruction — *this defines the category*) + Outlook-style deterministic conditions/exceptions + actions + ordering/`stop_processing`. Extends the existing rule object. Conditions touch only content-derived + file facts, never transport metadata (email etc. = upstream plugins; filesystem is the handoff).
-3. **Destinations** — a destination is a single target (vault file OR directory). A registry of them = the panel's right side (N stacked `scan_tree` sub-trees). A rule's `copy_to` action takes a **list** → fan-out (one doc → many destinations, e.g. car-accident → both litigation vaults). Copy, never move.
-4. **Processed-state** — a destination is its own source of truth: vault → `check_sha256`; directory → content-hash scan rebuilt at run start (`(path,mtime,size)` cache). No central index. Identity = SHA-256 of contents, never filename.
-5. **Reprocess** — directory: clear the folder; vault: explicit reprocess op (delete doc rows) gated by a `locked/final` flag. Default Process All stays additive + dedup-skip.
-6. **Three-layer dedup** — exact SHA-256 (auto-skip) / near-dup `simhash`+`dhash` (flag) / logical-identity template-collision (flag). **Only exact auto-skips** — corrected/amended docs are near-identical *replacements*, not dups. Near-dup `simhash`/`dhash` is a parity restoration (experiment had it; T7 port still computes+stores them but dropped the query layer).
-7. **Audit log** — append-only, user-specified external path, toggleable, one row per placement (fan-out = N rows), CSV-importable, superseded rows on reprocess. An export, never consulted for dedup decisions.
-
-## The 12 work_items (all `backlog` under the DCR)
-
-| | ID (prefix) | Title | Depends on |
+| | ID (prefix) | Title | Status |
 |---|---|---|---|
-| W1 | `019e27b05586` | rule schema v2 + sender→issuer rename | — (root) |
-| W2 | `019e27b067ec` | Phase 1 classification: facts + per-rule match signals | W1 |
-| W3 | `019e27b07ca3` | Phase 2 deterministic rule engine | W1 |
-| W4 | `019e27b0930a` | destination registry (backend) | — (root) |
-| W5 | `019e27b0a831` | destination registry UI (stacked sub-trees) | W4 |
-| W6 | `019e27b0be91` | copy_to fan-out + per-destination processed-state | W4 |
-| W7 | `019e27b0d89a` | three-layer dedup + review-disposition flow | W6, W2 |
-| W8 | `019e27b0ebe6` | reprocess + locked/final flag | W6 |
-| W9 | `019e27b1007c` | audit log | W6, W8 |
-| W10 | `019e27b11549` | Process All integration | W2, W3, W5, W6, W7, W9 |
-| W11 | `019e27b12f7c` | combined full-stack HITL | W10 |
-| W12 | `019e27b13ec0` | docs + cleanup | W10 |
+| W1 | `019e27b05586` | rule schema v2 + sender→issuer rename | **done** |
+| W2 | `019e27b067ec` | Phase 1 classification: facts + per-rule signals | **done** |
+| W3 | `019e27b07ca3` | Phase 2 deterministic rule engine | **done** |
+| W4 | `019e27b0930a` | destination registry (backend) | **done** |
+| W5 | `019e27b0a831` | destination registry UI (stacked sub-trees) | **done** |
+| W6 | `019e27b0be91` | copy_to fan-out + per-destination processed-state | **done** |
+| W7 | `019e27b0d89a` | three-layer dedup + review-disposition flow | **done** |
+| W8 | `019e27b0ebe6` | reprocess + locked/final flag | **done** |
+| W9 | `019e27b1007c` | audit log | **done** |
+| W10 | `019e27b11549` | Process All integration | **done** |
+| W11 | `019e27b12f7c` | combined full-stack HITL | **backlog ← NEXT** |
+| W12 | `019e27b13ec0` | docs + cleanup | backlog (after W11) |
 
-Each work_item description has scope / touches / depends-on / success criteria. W1 (condition grammar), W2 (LLM call shape), W9 (CSV column set) each resolve a deferred design detail inside the round.
+## Current HEADs (both pushed)
 
-**Build order (waves):**
-- Wave 1 (parallel roots): **W1, W4**
-- Wave 2: W2, W3 (after W1) · W5, W6 (after W4)
-- Wave 3: W7 (W6+W2) · W8 (W6) · W9 (W6+W8)
-- Wave 4: W10 (integration — pulls it all together)
-- Wave 5: W11 (HITL) · W12 (docs/cleanup)
+- Plugins `main`: `6ffd750` (W1–W10, 10 WIP commits on top of U8's `d3b6962`).
+- Minerva `user/imran/experiments/swarm`: `619e398c` (5 smoke-test commits for the UI rounds W5/W7/W8/W10 + W9 — W1/W2/W3/W4/W6 were Rust-only).
+- Plugin binary rebuilt + installed (`install -m 0755`, 2026-05-14) — has all the W-series MCP tools.
 
-## State of the code (U2–U8 — the substrate this builds on)
+## Test baselines (as of W10)
 
-U2–U8 committed, cold-reviewed, Layer-1-green. **Not lost** — it's the substrate. Reused largely as-is: U2 source backend, U4 panel shell, U8 recovery sheet, the `scan_tree` component, the extract/classify/insert pipeline tools. Reworked by the DCR: U5 Process All, U6 drag-to-classify/Export Marked, U7 `vault_and_disk` (subsumed by the destination registry).
+- Rust `cargo test --release`: **205/0** (was 71/0 at U8 — W1–W9 added 134 tests).
+- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **326/0** (was 225/0 at U8 — Groups T/U/V/W/X added).
 
-- Current HEADs: plugins `main` `d3b6962`, Minerva `user/imran/experiments/swarm` `dcd4a53` (+ `584134d2` for the prior pickup.md — about to be superseded by this rewrite).
-- **Not yet pushed** — `git push` both before moving machines.
-- Test baselines: Rust `cargo test --release` **71/0**; panel smoke **225/0**.
+## What W11 (the HITL) must cover
+
+W11 is the **one** human-in-the-loop gate for the whole filing-engine + U-series substrate. Its test plan must exercise, through the real panel UI with the real plugin binary:
+
+- **Destination registry** (W4/W5): add/remove vault + directory destinations; the right column renders N stacked sub-trees.
+- **Two-phase Process All** (W2/W3/W6/W10): rules with v2 conditions/exceptions/order/stop_processing; classify → deterministic rule walk → fan-out `copy_to` to multiple destinations; copy-never-move.
+- **Dedup** (W7): exact-SHA auto-skip; near-dup (simhash/dhash) flags a disposition prompt — keep both / replace / skip — and NEVER auto-drops. (Logical-identity layer is NOT wired — see gaps below.)
+- **Reprocess + locked flag** (W8): per-destination reprocess with confirm; a locked destination refuses reprocess.
+- **Audit log** (W9): toggle on, point at an external path, confirm one CSV row per placement.
+- **U-series substrate** (U2–U8): source pane, recovery sheet, inject-to-chat, Export Marked still work.
+
+The combined HITL was paused during U-series setup when the user found the single-vault structural gap (tax docs cross years/vaults; CPAs file per client/year). The realistic test: ask the LLM to create rules, point at real PDFs in `~/Downloads`, drive Process All across multiple destinations.
+
+## Known gaps flagged at the W11 HITL handoff (docket comment 360 on W12)
+
+1. **Logical-identity dedup is unreachable.** `dedup::check_logical_identity` (plugin `src/dedup.rs`) is a tested pure function with NO MCP tool and NO caller. The DCR's three-layer dedup is currently **2 layers wired** (simhash + dhash). Safety is unaffected — the only-exact-SHA-auto-skips HARD CONSTRAINT is fully satisfied. W12 should wire it or descope it in the docs.
+2. **"replace" disposition is place-alongside only.** W10 maps the dialog's "replace" choice to a normal collision-safe placement + an audit row recording intent — it does NOT supersede/delete the existing file (`place_fanout` has no replace mode). Give it real semantics or document the limitation.
+3. **Smoke coverage gaps:** no test for the "replace" disposition path or the no-rule-fired branch in Process All.
 
 ## Cold-pickup checklist
 
@@ -64,36 +65,37 @@ U2–U8 committed, cold-reviewed, Layer-1-green. **Not lost** — it's the subst
    ```
 4. Smoke-check Layer-1:
    ```
-   cd ~/github/Minerva && godot --headless --path src --script test/test_scansort_panel_smoke.gd   # expect 225/0
-   cd ~/github/plugins/scansort && cargo test --release                                            # expect 71/0
+   cd ~/github/Minerva && godot --headless --path src --script test/test_scansort_panel_smoke.gd   # expect 326/0
+   cd ~/github/plugins/scansort && cargo test --release                                            # expect 205/0
    ```
-5. Reload the docket if `minerva.dct` changed underfoot: `docket_project_remove` then `docket_project_add` (the server keeps a stale in-memory copy after a git pull). `docket_get`/`docket_transition`/`docket_create` need `project: "minerva"` explicitly — the primary project is `docket`, not `minerva`.
-6. Read DCR `019e2787` (full design) + work_items W1 (`019e27b05586`) and W4 (`019e27b0930a`). Resume implementation there.
+5. Reload the docket if `minerva.dct` changed underfoot: `docket_project_remove` then `docket_project_add`. `docket_get`/`docket_transition` need `project: "minerva"` explicitly.
+6. Read DCR `019e2787` + work_item W11 (`019e27b12f7c`). Run the combined HITL.
 
 ## How to run implementation
 
-Use the work-cycle pattern (Sonnet implementer + cold Opus reviewer + Layer-1 structural gate + per-round WIP commit, both repos, no worktrees — sequential rounds commit directly on the branches). Each work_item ≈ one or more work-cycle rounds. W1 and W4 are independent — can run as two sequential rounds back-to-back, or W1 first since W2/W3 both wait on it.
+Work-cycle pattern (Sonnet implementer + cold Opus reviewer + Layer-1 structural gate + per-round WIP commit, both repos, no worktrees, sequential rounds). W11 is human-gated — it is NOT a work-cycle round; it is a manual test session with the user. W12 (docs + cleanup) is a work-cycle round AFTER the HITL.
 
 ## Build / test commands
 
 - Rust build: `cd ~/github/plugins/scansort && cargo build --release`
 - Install binary (NOT `cp` — ETXTBSY): `install -m 0755 target/release/scansort-plugin scansort-plugin`
-- Rust tests: `cargo test --release` (71/0 as of U8)
-- Layer-1 panel smoke: `godot --headless --path src --script test/test_scansort_panel_smoke.gd` (225/0 as of U8)
+- Rust tests: `cargo test --release` (205/0 as of W10)
+- Layer-1 panel smoke: `godot --headless --path src --script test/test_scansort_panel_smoke.gd` (326/0 as of W10)
 - macOS has no `timeout` — run `godot` directly.
 
 ## Constraints to carry forward
 
 - All testing goes through MCP tools or the panel UI — do not hand-write rules/vault files.
-- Off-tree plugin scripts (`~/github/plugins/`) use `preload()` + base-class typing — no `class_name` for cross-script types. `scan_tree.gd` providers extend `scan_tree_provider.gd` (`extends RefCounted` — never `.free()` a provider instance in tests).
+- Off-tree plugin scripts (`~/github/plugins/`) use `preload()` + base-class typing — no `class_name`. `scan_tree` providers extend `scan_tree_provider.gd` (`extends RefCounted` — never `.free()` a provider).
 - Plugin MCP tool names must be `minerva_<plugin_id>_*`.
 - GDScript JSON round-trip turns ints into floats — coerce with `int(...)`.
 - Plugin binary rebuild while Minerva runs: `install -m 0755`, not `cp` (ETXTBSY).
-- `_on_panel_create_note_request` MUST be synchronous — the host does not await it. Pre-cache async data on a trigger signal. (`_on_panel_inject_toggle_changed` IS fire-and-forget, can be async.)
-- `update_project_key`'s MCP param is `path`, not `vault_path`. Other tools use `vault_path`.
-- MCP envelope is non-uniform: `extract_text`/`render_pages` return flat `success`; `check_sha256` returns `{found,doc_id}`; `classify_document`/`insert_document`/`get_destination`/`set_destination`/`get_project_keys`/`list_disk_files` return `{ok,...}`.
+- `_on_panel_create_note_request` MUST be synchronous — the host does not await it. (`_on_panel_inject_toggle_changed` IS fire-and-forget, can be async.)
+- The filing-engine rule schema is v2: rules carry `conditions`/`exceptions` (recursive all/any `ConditionNode` tree), `order`, `stop_processing`, `copy_to` (list of destination ids). The document field is `issuer` (was `sender`); `{sender}` still works as a rename-token alias.
+- The destination registry is a host-provided JSON file (`registry_path`); a destination = `{id, kind: vault|directory, path, label, locked}`.
+- New W-series MCP tools: `run_rule_engine`, `destination_{add,list,remove}`, `place_fanout`, `scan_directory_hashes`, `check_simhash`, `check_dhash`, `reprocess_destination`, `set_destination_locked`, `audit_append`.
 
 ## Paused / orthogonal workstreams (not picking up)
 
 - Presentation plugin v2 MCP iteration — plan `019df419ce567de0b7699b3be7b6c8b5`.
-- CAD Phase B2 — blocked on bug `019dec49988b7091933371908d6bbb00`. NOTE: `~/github/plugins/` has uncommitted CAD changes (CADPanel.gd, Cad_GeometryOverlay.gd, evaluator.py) from 2026-05-11 — untouched by scansort work, left as-is.
+- CAD Phase B2 — blocked on bug `019dec49988b7091933371908d6bbb00`. NOTE: `~/github/plugins/` has uncommitted CAD changes (CADPanel.gd, Cad_GeometryOverlay.gd, evaluator.py) + a `presentation/presentation` binary — untouched by the filing-engine work, left as-is.
