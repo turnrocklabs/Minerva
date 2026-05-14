@@ -1724,10 +1724,10 @@ func _delete_recursive(
 				return sub_result
 			total_count += int(sub_result.get("count", 0))
 		else:
-			var err := DirAccess.remove_absolute(child)
-			if err != OK:
+			var child_err := DirAccess.remove_absolute(child)
+			if child_err != OK:
 				return {"ok": false, "error": PluginErrors.io_error(plugin_id, child,
-					"recursive delete: remove_absolute failed on '%s': error=%d" % [child, err])}
+					"recursive delete: remove_absolute failed on '%s': error=%d" % [child, child_err])}
 			total_count += 1
 
 	# Remove the now-empty directory itself.
@@ -2766,29 +2766,36 @@ func _handle_host_dialogs_file_picker(plugin_id: String, args: Dictionary) -> Di
 
 	Engine.get_main_loop().root.add_child(dialog)
 
-	var picked_path: String = ""
-	var was_cancelled: bool = false
-	var done: bool = false
+	# Dialog state lives in a Dictionary so the signal-handler lambdas mutate
+	# the same instance via reference. Plain `var` primitives don't work here:
+	# GDScript lambdas capture primitives by value, so `done = true` inside the
+	# lambda would write to the lambda's local slot and the `while not done`
+	# loop would spin forever.
+	var state: Dictionary = {
+		"picked_path": "",
+		"cancelled": false,
+		"done": false,
+	}
 
 	dialog.file_selected.connect(func(p: String):
-		picked_path = p
-		done = true
+		state.picked_path = p
+		state.done = true
 	)
 	dialog.canceled.connect(func():
-		was_cancelled = true
-		done = true
+		state.cancelled = true
+		state.done = true
 	)
 
 	dialog.popup_centered(Vector2i(700, 500))
 
-	while not done:
+	while not state.done:
 		await Engine.get_main_loop().process_frame
 
 	dialog.queue_free()
 
-	if was_cancelled:
+	if state.cancelled:
 		return PluginErrors.success({"cancelled": true})
-	return PluginErrors.success({"cancelled": false, "path": picked_path})
+	return PluginErrors.success({"cancelled": false, "path": state.picked_path})
 
 
 ## host.dialogs.directory_picker — pop a FileDialog in directory mode and await selection.
@@ -2838,29 +2845,34 @@ func _handle_host_dialogs_directory_picker(plugin_id: String, args: Dictionary) 
 
 	Engine.get_main_loop().root.add_child(dialog)
 
-	var picked_path: String = ""
-	var was_cancelled: bool = false
-	var done: bool = false
+	# See file_picker for why state is a Dictionary: GDScript lambdas capture
+	# primitives by value, so direct `var` mutation in the signal handlers
+	# wouldn't propagate to the await loop.
+	var state: Dictionary = {
+		"picked_path": "",
+		"cancelled": false,
+		"done": false,
+	}
 
 	dialog.dir_selected.connect(func(p: String):
-		picked_path = p
-		done = true
+		state.picked_path = p
+		state.done = true
 	)
 	dialog.canceled.connect(func():
-		was_cancelled = true
-		done = true
+		state.cancelled = true
+		state.done = true
 	)
 
 	dialog.popup_centered(Vector2i(700, 500))
 
-	while not done:
+	while not state.done:
 		await Engine.get_main_loop().process_frame
 
 	dialog.queue_free()
 
-	if was_cancelled:
+	if state.cancelled:
 		return PluginErrors.success({"cancelled": true})
-	return PluginErrors.success({"cancelled": false, "path": picked_path})
+	return PluginErrors.success({"cancelled": false, "path": state.picked_path})
 
 
 # ---------------------------------------------------------------------------
@@ -2982,27 +2994,33 @@ func _handle_host_permissions_grant_scope(plugin_id: String, args: Dictionary) -
 
 	Engine.get_main_loop().root.add_child(dialog)
 
-	var was_confirmed: bool = false
-	var was_cancelled_perm: bool = false
-	var done: bool = false
+	# State is a Dictionary so the signal-handler lambdas can mutate by
+	# reference; primitives captured by `func()` lambdas are by-value, which
+	# would leave the `while not done` loop spinning forever.
+	# `confirmed` is the only state we actually read — a canceled close just
+	# falls through to the deny return at the bottom of the function, so we
+	# don't need a separate cancel flag.
+	var state: Dictionary = {
+		"confirmed": false,
+		"done": false,
+	}
 
 	dialog.confirmed.connect(func():
-		was_confirmed = true
-		done = true
+		state.confirmed = true
+		state.done = true
 	)
 	dialog.canceled.connect(func():
-		was_cancelled_perm = true
-		done = true
+		state.done = true
 	)
 
 	dialog.popup_centered()
 
-	while not done:
+	while not state.done:
 		await Engine.get_main_loop().process_frame
 
 	dialog.queue_free()
 
-	if was_confirmed:
+	if state.confirmed:
 		# Mutate def.filesystem_paths and persist the grant.
 		if def != null:
 			if abs_path not in def.filesystem_paths:
