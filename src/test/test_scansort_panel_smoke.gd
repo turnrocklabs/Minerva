@@ -1051,6 +1051,32 @@ func _run_tests() -> void:
 		st.queue_free()
 		await process_frame
 
+	# -----------------------------------------------------------------------
+	# Group O: U2 — scan_tree_source_provider.gd (source-directory provider)
+	# -----------------------------------------------------------------------
+	print("\n-- O: scan_tree source provider (U2) --")
+
+	var source_provider_script = load(_ui("scan_tree_source_provider.gd"))
+	check("O154: scan_tree_source_provider.gd parses cleanly",
+		source_provider_script != null, "load() returned null")
+	if source_provider_script != null:
+		var sp = source_provider_script.new()
+		check("O155: source provider has init",
+			sp.has_method("init"))
+		check("O156: source provider has get_tree_data",
+			sp.has_method("get_tree_data"))
+		check("O157: source provider has get_source_label",
+			sp.has_method("get_source_label"))
+		# Uninitialised (no conn) → get_tree_data returns [] without crashing.
+		var sp_data = await sp.get_tree_data()
+		check("O158: source provider get_tree_data returns [] when uninitialised",
+			sp_data is Array and (sp_data as Array).is_empty(),
+			"got: %s" % str(sp_data))
+		# get_source_label is 'Source' before any directory is resolved.
+		check("O159: source provider get_source_label returns 'Source' when unset",
+			str(sp.get_source_label()) == "Source",
+			"got: '%s'" % str(sp.get_source_label()))
+
 
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
