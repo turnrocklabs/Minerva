@@ -816,9 +816,10 @@ func _run_tests() -> void:
 			dlg_r6.queue_free()
 
 	# -----------------------------------------------------------------------
-	# Group M: R9 — chrome model OptionButton
+	# Group M: chrome chrome single-purpose + chat-model inheritance
+	# (was T7 R9 OptionButton; replaced by inheritance via ChatPane.get_active_model_spec)
 	# -----------------------------------------------------------------------
-	print("\n-- M: chrome model OptionButton (T7 R9) --")
+	print("\n-- M: chrome single-button + chat-model inheritance --")
 
 	var panel_m_packed := load(PLUGIN_PANEL_TSCN)
 	var panel_m = null
@@ -826,9 +827,9 @@ func _run_tests() -> void:
 		panel_m = panel_m_packed.instantiate()
 
 	if panel_m == null:
-		for _i in range(6):
+		for _i in range(5):
 			_fail_count += 1
-		print("  SKIP M124-M129: could not instantiate panel for M checks")
+		print("  SKIP M124-M128: could not instantiate panel for M checks")
 	else:
 		root.add_child(panel_m)
 		await process_frame
@@ -837,60 +838,38 @@ func _run_tests() -> void:
 		if panel_m.has_method("get_editor_actions"):
 			actions_m = panel_m.get_editor_actions()
 
-		check("M124: get_editor_actions() returns Array of size 2",
-			actions_m.size() == 2,
+		check("M124: get_editor_actions() returns Array of size 1 (no per-panel model picker)",
+			actions_m.size() == 1,
 			"got size: %d" % actions_m.size())
 
-		check("M125: first element is MenuButton (file menu)",
+		check("M125: only element is MenuButton (file menu)",
 			actions_m.size() > 0 and actions_m[0] is MenuButton,
 			"got type: %s" % (type_string(typeof(actions_m[0])) if actions_m.size() > 0 else "<empty>"))
 
-		check("M126: second element is OptionButton (model dropdown)",
-			actions_m.size() > 1 and actions_m[1] is OptionButton,
-			"got type: %s" % (type_string(typeof(actions_m[1])) if actions_m.size() > 1 else "<empty>"))
-
-		# Inspect the OptionButton's first item metadata — must be a Dictionary.
-		var has_metadata_dict := false
-		if actions_m.size() > 1 and actions_m[1] is OptionButton:
-			var ob: OptionButton = actions_m[1]
-			if ob.get_item_count() > 0:
-				var meta = ob.get_item_metadata(0)
-				has_metadata_dict = (meta is Dictionary)
-		check("M127: OptionButton metadata at index 0 is a Dictionary (spec wiring)",
-			has_metadata_dict,
-			"metadata not a Dictionary — spec not stored")
+		check("M126: panel no longer holds a _model_dropdown member",
+			panel_m.get("_model_dropdown") == null,
+			"_model_dropdown still present — duplicate of chat panel's picker")
 
 		# _resolve_chat_model_for_classify() must return {model_spec: Dictionary}.
+		# In headless tests SingletonObject.Chats isn't initialized, so it falls
+		# back to {}; that's the safe path verified here.
 		var resolve_result = null
 		if panel_m.has_method("_resolve_chat_model_for_classify"):
 			resolve_result = panel_m._resolve_chat_model_for_classify()
-		check("M128: _resolve_chat_model_for_classify() returns Dictionary with 'model_spec' key",
-			resolve_result is Dictionary and resolve_result.has("model_spec"),
+		check("M127: _resolve_chat_model_for_classify() returns {model_spec: Dictionary}",
+			resolve_result is Dictionary and resolve_result.has("model_spec")
+				and resolve_result.get("model_spec") is Dictionary,
 			"got: %s" % str(resolve_result))
 
-		# L6: deselect the dropdown — should fall back to {model_spec: {}}.
-		var fallback_result = null
-		var dropdown_m: OptionButton = panel_m.get("_model_dropdown")
-		if dropdown_m != null and is_instance_valid(dropdown_m):
-			dropdown_m.select(-1)
-		if panel_m.has_method("_resolve_chat_model_for_classify"):
-			fallback_result = panel_m._resolve_chat_model_for_classify()
-		check("M129: _resolve_chat_model_for_classify() falls back to {model_spec: {}} when no item selected",
-			fallback_result is Dictionary and
-			fallback_result.has("model_spec") and
-			fallback_result.get("model_spec") is Dictionary and
-			(fallback_result.get("model_spec") as Dictionary).is_empty(),
-			"got: %s" % str(fallback_result))
-
-		# M130: mirror the call-site guard — when spec is empty, classify_args
+		# M128: mirror the call-site guard — when spec is empty, classify_args
 		# must NOT include "model_spec" (broker rejects {} as "unknown kind").
 		var fb_spec: Dictionary = {}
-		if fallback_result is Dictionary and fallback_result.get("model_spec") is Dictionary:
-			fb_spec = fallback_result.get("model_spec")
+		if resolve_result is Dictionary and resolve_result.get("model_spec") is Dictionary:
+			fb_spec = resolve_result.get("model_spec")
 		var classify_args_m: Dictionary = {"vault_path": "/tmp/x.ssort", "model": "default"}
 		if not fb_spec.is_empty():
 			classify_args_m["model_spec"] = fb_spec
-		check("M130: classify_args omits 'model_spec' when resolver returns empty spec",
+		check("M128: classify_args omits 'model_spec' when resolver returns empty spec",
 			not classify_args_m.has("model_spec"),
 			"classify_args has model_spec=%s" % str(classify_args_m.get("model_spec")))
 

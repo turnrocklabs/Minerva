@@ -3571,6 +3571,23 @@ func get_active_model_descriptor() -> Dictionary:
 	return {"model_name": model_name, "provider": provider_name}
 
 
+## Returns the full provider spec for the currently-selected model in chat's
+## ProviderOptionButton — the same shape as get_item_provider_spec() returns
+## ({kind, ...}). Empty Dictionary if no chat is initialized, no selection,
+## or the selected item is a sentinel/separator with no backing spec.
+##
+## Plugins that want to inherit the chat model's exact routing target should
+## use this; get_active_model_descriptor() returns only the model name, which
+## isn't enough to address Core-action / model-chat models.
+func get_active_model_spec() -> Dictionary:
+	if _provider_option_button == null:
+		return {}
+	var idx: int = _provider_option_button.get_selected()
+	if idx < 0:
+		return {}
+	return _provider_option_button.get_item_provider_spec(idx)
+
+
 ## Returns the full list of provider/model items currently shown in chat's
 ## ProviderOptionButton, suitable for plugin panels that want to mirror the
 ## chat dropdown.
