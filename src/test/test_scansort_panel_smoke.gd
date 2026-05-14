@@ -3168,6 +3168,199 @@ func _run_tests() -> void:
 			"non-open-vault gate for the hint not found")
 
 
+	# -----------------------------------------------------------------------
+	# Group AC: W5g — extract vault documents to a directory (mark + drag)
+	# -----------------------------------------------------------------------
+	print("\n-- AC: W5g extract vault docs to directory --")
+
+	# --- AC391-AC397: structural checks on ScansortPanel.gd ---
+	var ac_src: String = ""
+	var ac_f := FileAccess.open(PLUGIN_PANEL_GD, FileAccess.READ)
+	if ac_f != null:
+		ac_src = ac_f.get_as_text()
+		ac_f.close()
+
+	if ac_src == "":
+		for _pac in range(7):
+			_fail_count += 1
+		print("  FAIL AC391-AC397: could not read ScansortPanel.gd source")
+	else:
+		check("AC391: _on_export_marked_pressed collects from _vault_area_tree (not _dest_trees)",
+			ac_src.contains("_vault_area_tree.get_checked_keys()"),
+			"_vault_area_tree.get_checked_keys() not found in panel source")
+
+		check("AC392: empty marked set yields 'No documents marked for extraction'",
+			ac_src.contains("No documents marked for extraction"),
+			"no-documents message not found")
+
+		check("AC393: _ExtractTargetDialog is preloaded",
+			ac_src.contains("_ExtractTargetDialog: Script = preload(\"extract_target_dialog.gd\")"),
+			"_ExtractTargetDialog preload not found")
+
+		check("AC394: _on_export_marked_pressed calls extract_document with dest + password",
+			ac_src.contains("\"minerva_scansort_extract_document\"") and ac_src.contains("\"dest\":"),
+			"extract_document call with dest not found")
+
+		check("AC395: _on_vault_doc_dropped_to_dir exists (drag gesture handler)",
+			ac_src.contains("func _on_vault_doc_dropped_to_dir("),
+			"_on_vault_doc_dropped_to_dir not declared")
+
+		check("AC396: _on_area_tree_file_dropped branches on role == 'dest:vault'",
+			ac_src.contains("role == \"dest:vault\""),
+			"dest:vault role branch not found in _on_area_tree_file_dropped")
+
+		check("AC397: _resolve_dir_path_from_key exists",
+			ac_src.contains("func _resolve_dir_path_from_key("),
+			"_resolve_dir_path_from_key not declared")
+
+	# --- AC398-AC401: extract_target_dialog.gd structure ---
+	var extract_dlg_path: String = _ui("extract_target_dialog.gd")
+	var extract_dlg_script = load(extract_dlg_path)
+
+	if extract_dlg_script == null:
+		for _pac2 in range(4):
+			_fail_count += 1
+		print("  SKIP AC398-AC401: extract_target_dialog.gd failed to load")
+	else:
+		var dlg_inst = extract_dlg_script.new()
+		root.add_child(dlg_inst)
+		await process_frame
+
+		check("AC398: extract_target_dialog.gd instantiates",
+			dlg_inst != null)
+
+		check("AC399: extract_target_dialog extends AcceptDialog",
+			dlg_inst is AcceptDialog,
+			"got class: %s" % dlg_inst.get_class())
+
+		check("AC400: extract_target_dialog has signal 'target_chosen'",
+			dlg_inst.has_signal("target_chosen"),
+			"signal target_chosen not declared")
+
+		check("AC401: extract_target_dialog has method 'set_destinations'",
+			dlg_inst.has_method("set_destinations"),
+			"set_destinations not declared")
+
+		# AC401b: set_destinations populates the list regardless of call order
+		# — a fresh dialog with set_destinations called gets a populated _list.
+		var dlg2 = extract_dlg_script.new()
+		dlg2.set_destinations([
+			{"id": "d1", "path": "/tmp/handoff", "label": "Handoff"},
+			{"id": "d2", "path": "/tmp/archive", "label": "Archive"},
+		])
+		root.add_child(dlg2)
+		await process_frame
+		var dlg2_list = dlg2.get("_list")
+		check("AC401b: set_destinations populates the picker list (call-order safe)",
+			dlg2_list != null and dlg2_list is ItemList and dlg2_list.item_count == 2,
+			"picker list not populated from registered destinations")
+		dlg2.queue_free()
+		await process_frame
+
+		dlg_inst.queue_free()
+		await process_frame
+
+	# --- AC402-AC407: scan_tree + panel structure tests ---
+
+	# AC402: vault area tree get_checked_keys() collects only checked doc rows.
+	var scan_tree_script_ac = load(_ui("scan_tree.gd"))
+	var ac_tree = null
+	if scan_tree_script_ac != null:
+		ac_tree = scan_tree_script_ac.new()
+		root.add_child(ac_tree)
+		await process_frame
+
+	if ac_tree == null:
+		for _pac3 in range(3):
+			_fail_count += 1
+		print("  SKIP AC402-AC404: could not instantiate scan_tree for AC checks")
+	else:
+		# Populate with one folder + one doc row, no checkboxes ticked.
+		ac_tree.call("populate", [
+			{
+				"kind": "folder",
+				"name": "invoices/ (1)",
+				"key": "cat:invoices",
+				"date": "", "tooltip": "", "children": [
+					{
+						"kind": "file",
+						"name": "invoice-001.pdf",
+						"key": "doc:42",
+						"date": "2025-01-01",
+						"tooltip": "invoice",
+						"children": [],
+						"node_role": "document",
+						"vault_path": "/tmp/test.ssort",
+					},
+				],
+				"dest_id": "",
+			},
+		])
+		await process_frame
+
+		check("AC402: unchecked vault tree → get_checked_keys returns empty",
+			(ac_tree.call("get_checked_keys") as Array).is_empty(),
+			"non-empty keys with no checkboxes ticked")
+
+		# Tick the doc row checkbox.
+		var root_item_ac: TreeItem = ac_tree.get_root()
+		var folder_ac: TreeItem    = root_item_ac.get_first_child() if root_item_ac else null
+		var doc_ac: TreeItem       = folder_ac.get_first_child() if folder_ac else null
+		if doc_ac != null:
+			doc_ac.set_checked(0, true)
+		var ac_checked: Array = ac_tree.call("get_checked_keys")
+		check("AC403: checked doc row is returned by get_checked_keys",
+			ac_checked.has("doc:42"),
+			"doc:42 not in checked keys after tick: %s" % str(ac_checked))
+
+		# AC404: vault_path meta is set on the doc row (needed by extract).
+		var found_doc: TreeItem = null
+		if root_item_ac != null:
+			var cat_item: TreeItem = root_item_ac.get_first_child()
+			if cat_item != null:
+				found_doc = cat_item.get_first_child()
+		check("AC404: doc row has vault_path meta set by populate()",
+			found_doc != null and found_doc.has_meta("vault_path")
+				and str(found_doc.get_meta("vault_path")) == "/tmp/test.ssort",
+			"vault_path meta missing or wrong on doc row")
+
+		ac_tree.queue_free()
+		await process_frame
+
+	# AC405: scan_tree._get_drag_data embeds vault_path for doc rows (source check).
+	var scan_tree_src_ac: String = ""
+	var stf_ac := FileAccess.open(_ui("scan_tree.gd"), FileAccess.READ)
+	if stf_ac != null:
+		scan_tree_src_ac = stf_ac.get_as_text()
+		stf_ac.close()
+	check("AC405: scan_tree._get_drag_data embeds vault_path for doc rows",
+		scan_tree_src_ac.contains("vault_path") and scan_tree_src_ac.contains("data[\"vault_path\"]"),
+		"vault_path not embedded in _get_drag_data")
+
+	# AC406: _on_area_tree_file_dropped with dest:vault role routes to
+	# _on_vault_doc_dropped_to_dir (verified via source structure).
+	check("AC406: dest:vault drag routes to _on_vault_doc_dropped_to_dir (await branch)",
+		ac_src.contains("await _on_vault_doc_dropped_to_dir(drag_data, target_key)")
+			and ac_src.contains("return"),
+		"routing to _on_vault_doc_dropped_to_dir not found")
+
+	# AC407: export handler reads _dir_area_provider.last_destinations for dest list.
+	check("AC407: export handler reads _dir_area_provider.last_destinations for target picker",
+		ac_src.contains("_dir_area_provider") and ac_src.contains("last_destinations"),
+		"_dir_area_provider.last_destinations not referenced in panel source")
+
+	# AC408: _resolve_dir_path_from_key returns dest.path for a "dest:<id>" key
+	# and resolves subfolder path for a "dir:<name>" key (source-level check).
+	check("AC408: _resolve_dir_path_from_key handles dest: and dir: key prefixes",
+		ac_src.contains("key.begins_with(\"dest:\")") and ac_src.contains("key.begins_with(\"dir:\")"),
+		"dest:/dir: prefix handling not found in _resolve_dir_path_from_key")
+
+	# AC409: after a successful extract_document in the drag path, dir tree is refreshed.
+	check("AC409: _on_vault_doc_dropped_to_dir refreshes _dir_area_tree after extract",
+		ac_src.contains("_dir_area_tree.refresh()"),
+		"_dir_area_tree.refresh() call missing in drag-extract handler")
+
+
 ## MockConn — minimal stand-in for a scansort PluginConnection. Returns canned
 ## tool responses keyed by tool name and records the call log so group X can
 ## assert which tools ran. Async-compatible (call_tool is a coroutine).
