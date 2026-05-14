@@ -2148,6 +2148,302 @@ func _run_tests() -> void:
 			settings_dlg.queue_free()
 			await process_frame
 
+	# -----------------------------------------------------------------------
+	# Group X: W10 — Process All integration (full filing-engine pipeline)
+	# -----------------------------------------------------------------------
+	# Drives _process_one_source_file directly with a MockConn returning canned
+	# tool responses. Verifies the per-document pipeline (classify →
+	# run_rule_engine → place_fanout → audit), fan-out, the near-dup
+	# disposition flow (HARD CONSTRAINT: never auto-dropped), the audit toggle,
+	# and that Stop halts cleanly mid-run.
+	print("\n-- X: W10 Process All integration --")
+
+	var panel_x_packed := load(PLUGIN_PANEL_TSCN)
+	var panel_x = null
+	if panel_x_packed != null:
+		panel_x = panel_x_packed.instantiate()
+
+	if panel_x == null:
+		for _xi in range(13):
+			_fail_count += 1
+		print("  SKIP X307-X319: could not instantiate panel for X checks")
+	else:
+		root.add_child(panel_x)
+		await process_frame
+
+		# Put the panel into a vault-open state so the pipeline runs.
+		panel_x.set("_vault_is_open", true)
+		panel_x.set("_active_vault_path", "/tmp/x_vault.ssort")
+		panel_x.set("_registry_path", "/tmp/x_vault.registry.json")
+
+		# --- X307: structural — new pipeline members exist ---
+		check("X307: panel has '_dedup_prompt_busy' member (starts false)",
+			panel_x.get("_dedup_prompt_busy") != null and panel_x.get("_dedup_prompt_busy") == false,
+			"got: %s" % str(panel_x.get("_dedup_prompt_busy")))
+
+		# --- X308: a source file flows classify → run_rule_engine → place_fanout ---
+		# MockConn with a single-destination fired rule, no near-dup, audit OFF.
+		var conn1 := MockConn.new()
+		conn1.set_canned("minerva_scansort_extract_text", {
+			"success": true, "sha256": "aaa111", "char_count": 500,
+			"full_text": "invoice body text", "simhash": "1111111111111111",
+			"dhash": "0000000000000000", "size": 1234,
+		})
+		conn1.set_canned("minerva_scansort_classify_document", {
+			"ok": true, "rule_snapshot": "snap1",
+			"classification": {
+				"category": "invoices", "confidence": 0.9, "issuer": "ACME",
+				"description": "an invoice", "doc_date": "2024-03-01",
+				"rule_signals": [{"label": "invoices", "score": 0.9}],
+			},
+		})
+		conn1.set_canned("minerva_scansort_run_rule_engine", {
+			"ok": true, "outcome": {
+				"matched": true, "effective_category": "invoices", "halted": false,
+				"fired": [{
+					"category": "invoices", "copy_to": ["dest_a"],
+					"resolved_subfolder": "2024", "resolved_rename_pattern": "{issuer}",
+					"encrypt": false, "rule": {"label": "invoices"},
+				}],
+			},
+		})
+		conn1.set_canned("minerva_scansort_check_simhash", {"ok": true, "found": false, "matches": [], "count": 0})
+		conn1.set_canned("minerva_scansort_check_dhash", {"ok": true, "found": false, "matches": [], "count": 0})
+		conn1.set_canned("minerva_scansort_place_fanout", {
+			"ok": true, "count": 1, "placements": [{
+				"destination_id": "dest_a", "kind": "directory",
+				"target_path": "/dest_a/2024/ACME.pdf", "doc_id": 0,
+				"status": "placed", "message": "ok",
+			}],
+		})
+
+		panel_x.set("_run_counters", {
+			"processed": 0, "skipped": 0, "failed": 0, "low_conf": 0,
+			"placed": 0, "exact_dup": 0, "user_skip": 0, "flagged": 0, "no_rule": 0,
+		})
+		var per_dest1: Dictionary = {}
+		var batch1: Dictionary = {"n": 1}
+		await panel_x._process_one_source_file(
+			{"path": "/src/inv1.pdf", "name": "inv1.pdf"},
+			conn1, batch1, false, "", per_dest1
+		)
+		var rc1: Dictionary = panel_x.get("_run_counters")
+		check("X308: classify→run_rule_engine→place_fanout produces a placement",
+			int(rc1.get("placed", 0)) == 1 and int(rc1.get("processed", 0)) == 1,
+			"placed=%d processed=%d" % [int(rc1.get("placed", 0)), int(rc1.get("processed", 0))])
+		check("X309: batch_remaining decremented to 0 on the success path",
+			int(batch1.get("n", -1)) == 0,
+			"batch_remaining n=%d" % int(batch1.get("n", -1)))
+		check("X310: per-destination tally records the placement",
+			int(per_dest1.get("dest_a", 0)) == 1,
+			"per_dest dest_a=%d" % int(per_dest1.get("dest_a", 0)))
+		check("X311: classify, run_rule_engine and place_fanout were all called",
+			conn1.was_called("minerva_scansort_classify_document")
+			and conn1.was_called("minerva_scansort_run_rule_engine")
+			and conn1.was_called("minerva_scansort_place_fanout"),
+			"calls: %s" % str(conn1.call_log))
+		check("X312: audit_append NOT called when audit_log_enabled is OFF",
+			not conn1.was_called("minerva_scansort_audit_append"),
+			"audit_append should not be called when audit is off")
+
+		# --- X313-X315: fan-out of 2 destinations → 2 placements / 2 audit rows (audit ON) ---
+		var conn2 := MockConn.new()
+		conn2.set_canned("minerva_scansort_extract_text", {
+			"success": true, "sha256": "bbb222", "char_count": 600,
+			"full_text": "statement text", "simhash": "2222222222222222",
+			"dhash": "0000000000000000", "size": 999,
+		})
+		conn2.set_canned("minerva_scansort_classify_document", {
+			"ok": true, "rule_snapshot": "snap2",
+			"classification": {
+				"category": "statements", "confidence": 0.8, "issuer": "Bank",
+				"description": "", "doc_date": "2024-01-01",
+				"rule_signals": [{"label": "statements", "score": 0.8}],
+			},
+		})
+		conn2.set_canned("minerva_scansort_run_rule_engine", {
+			"ok": true, "outcome": {
+				"matched": true, "effective_category": "statements", "halted": false,
+				"fired": [{
+					"category": "statements", "copy_to": ["dest_a", "dest_b"],
+					"resolved_subfolder": "2024", "resolved_rename_pattern": "",
+					"encrypt": false, "rule": {"label": "statements"},
+				}],
+			},
+		})
+		conn2.set_canned("minerva_scansort_check_simhash", {"ok": true, "found": false, "matches": [], "count": 0})
+		conn2.set_canned("minerva_scansort_check_dhash", {"ok": true, "found": false, "matches": [], "count": 0})
+		conn2.set_canned("minerva_scansort_place_fanout", {
+			"ok": true, "count": 2, "placements": [
+				{"destination_id": "dest_a", "kind": "directory", "target_path": "/dest_a/2024/s.pdf", "doc_id": 0, "status": "placed", "message": "ok"},
+				{"destination_id": "dest_b", "kind": "vault", "target_path": "/dest_b/2024/s.pdf", "doc_id": 7, "status": "placed", "message": "ok"},
+			],
+		})
+		conn2.set_canned("minerva_scansort_audit_append", {"ok": true, "rows_written": 2})
+
+		panel_x.set("_run_counters", {
+			"processed": 0, "skipped": 0, "failed": 0, "low_conf": 0,
+			"placed": 0, "exact_dup": 0, "user_skip": 0, "flagged": 0, "no_rule": 0,
+		})
+		var per_dest2: Dictionary = {}
+		var batch2: Dictionary = {"n": 1}
+		await panel_x._process_one_source_file(
+			{"path": "/src/stmt.pdf", "name": "stmt.pdf"},
+			conn2, batch2, true, "/tmp/x_audit.csv", per_dest2
+		)
+		var rc2: Dictionary = panel_x.get("_run_counters")
+		check("X313: copy_to of 2 destinations yields 2 placements",
+			int(rc2.get("placed", 0)) == 2,
+			"placed=%d" % int(rc2.get("placed", 0)))
+		check("X314: audit_append IS called when audit_log_enabled is ON",
+			conn2.was_called("minerva_scansort_audit_append"),
+			"audit_append should be called when audit is on")
+		check("X315: 2-destination fan-out writes 2 audit rows",
+			conn2.last_audit_row_count() == 2,
+			"audit rows written: %d" % conn2.last_audit_row_count())
+
+		# --- X316-X318: near-dup flagged → disposition dialog → NOT auto-dropped ---
+		# Use the W10 test seam to drive the disposition without a visible popup.
+		var conn3 := MockConn.new()
+		conn3.set_canned("minerva_scansort_extract_text", {
+			"success": true, "sha256": "ccc333", "char_count": 700,
+			"full_text": "corrected 1099 text", "simhash": "3333333333333333",
+			"dhash": "0000000000000000", "size": 555,
+		})
+		conn3.set_canned("minerva_scansort_classify_document", {
+			"ok": true, "rule_snapshot": "snap3",
+			"classification": {
+				"category": "tax", "confidence": 0.95, "issuer": "IRS",
+				"description": "", "doc_date": "2024-04-15",
+				"rule_signals": [{"label": "tax", "score": 0.95}],
+			},
+		})
+		conn3.set_canned("minerva_scansort_run_rule_engine", {
+			"ok": true, "outcome": {
+				"matched": true, "effective_category": "tax", "halted": false,
+				"fired": [{
+					"category": "tax", "copy_to": ["dest_a"],
+					"resolved_subfolder": "2024", "resolved_rename_pattern": "",
+					"encrypt": false, "rule": {"label": "tax"},
+				}],
+			},
+		})
+		# SimHash check FINDS a near-dup → disposition dialog must surface.
+		conn3.set_canned("minerva_scansort_check_simhash", {
+			"ok": true, "found": true, "count": 1,
+			"matches": [{"doc_id": 42, "distance": 2, "existing_hash": "3333333333333330", "hash_kind": "simhash"}],
+		})
+		conn3.set_canned("minerva_scansort_check_dhash", {"ok": true, "found": false, "matches": [], "count": 0})
+		conn3.set_canned("minerva_scansort_place_fanout", {
+			"ok": true, "count": 1, "placements": [{
+				"destination_id": "dest_a", "kind": "directory",
+				"target_path": "/dest_a/2024/1099.pdf", "doc_id": 0,
+				"status": "placed", "message": "ok",
+			}],
+		})
+
+		# Disposition = "skip" → flagged, but NO placement (HARD CONSTRAINT:
+		# not auto-dropped — the user's explicit skip decides).
+		panel_x.set("_test_dedup_auto_disposition", "skip")
+		panel_x.set("_run_counters", {
+			"processed": 0, "skipped": 0, "failed": 0, "low_conf": 0,
+			"placed": 0, "exact_dup": 0, "user_skip": 0, "flagged": 0, "no_rule": 0,
+		})
+		var batch3a: Dictionary = {"n": 1}
+		await panel_x._process_one_source_file(
+			{"path": "/src/1099.pdf", "name": "1099.pdf"},
+			conn3, batch3a, false, "", {}
+		)
+		var rc3a: Dictionary = panel_x.get("_run_counters")
+		check("X316: near-dup surfaces a disposition prompt (flagged counter)",
+			int(rc3a.get("flagged", 0)) == 1,
+			"flagged=%d" % int(rc3a.get("flagged", 0)))
+		check("X317: 'skip' disposition results in NO placement (not auto-dropped, user decides)",
+			int(rc3a.get("placed", 0)) == 0 and int(rc3a.get("user_skip", 0)) == 1
+			and not conn3.was_called("minerva_scansort_place_fanout"),
+			"placed=%d user_skip=%d place_fanout_called=%s" % [
+				int(rc3a.get("placed", 0)), int(rc3a.get("user_skip", 0)),
+				str(conn3.was_called("minerva_scansort_place_fanout"))])
+
+		# Disposition = "keep_both" → flagged AND placed.
+		var conn3b := MockConn.new()
+		conn3b.canned = conn3.canned.duplicate(true)
+		panel_x.set("_test_dedup_auto_disposition", "keep_both")
+		panel_x.set("_run_counters", {
+			"processed": 0, "skipped": 0, "failed": 0, "low_conf": 0,
+			"placed": 0, "exact_dup": 0, "user_skip": 0, "flagged": 0, "no_rule": 0,
+		})
+		var batch3b: Dictionary = {"n": 1}
+		await panel_x._process_one_source_file(
+			{"path": "/src/1099b.pdf", "name": "1099b.pdf"},
+			conn3b, batch3b, false, "", {}
+		)
+		var rc3b: Dictionary = panel_x.get("_run_counters")
+		check("X318: 'keep both' disposition results in a placement",
+			int(rc3b.get("flagged", 0)) == 1 and int(rc3b.get("placed", 0)) == 1
+			and conn3b.was_called("minerva_scansort_place_fanout"),
+			"flagged=%d placed=%d" % [int(rc3b.get("flagged", 0)), int(rc3b.get("placed", 0))])
+		panel_x.set("_test_dedup_auto_disposition", "")
+
+		# --- X319: Stop mid-run halts cleanly ---
+		# Cancel before the per-action loop runs: _process_cancelled is checked
+		# at the top of the fired-actions loop, so no place_fanout happens.
+		var conn4 := MockConn.new()
+		conn4.canned = conn1.canned.duplicate(true)
+		panel_x.set("_process_cancelled", true)
+		panel_x.set("_run_counters", {
+			"processed": 0, "skipped": 0, "failed": 0, "low_conf": 0,
+			"placed": 0, "exact_dup": 0, "user_skip": 0, "flagged": 0, "no_rule": 0,
+		})
+		var batch4: Dictionary = {"n": 1}
+		await panel_x._process_one_source_file(
+			{"path": "/src/cancelled.pdf", "name": "cancelled.pdf"},
+			conn4, batch4, false, "", {}
+		)
+		var rc4: Dictionary = panel_x.get("_run_counters")
+		check("X319: Stop mid-run halts cleanly — no placement, batch drains",
+			int(rc4.get("placed", 0)) == 0
+			and not conn4.was_called("minerva_scansort_place_fanout")
+			and int(batch4.get("n", -1)) == 0,
+			"placed=%d place_called=%s batch_n=%d" % [
+				int(rc4.get("placed", 0)),
+				str(conn4.was_called("minerva_scansort_place_fanout")),
+				int(batch4.get("n", -1))])
+		panel_x.set("_process_cancelled", false)
+
+		panel_x.queue_free()
+		await process_frame
+
+
+## MockConn — minimal stand-in for a scansort PluginConnection. Returns canned
+## tool responses keyed by tool name and records the call log so group X can
+## assert which tools ran. Async-compatible (call_tool is a coroutine).
+class MockConn extends RefCounted:
+	var canned: Dictionary = {}
+	var call_log: Array = []
+	var _last_audit_rows: int = 0
+
+	func set_canned(tool_name: String, response: Dictionary) -> void:
+		canned[tool_name] = response
+
+	func was_called(tool_name: String) -> bool:
+		for entry in call_log:
+			if str(entry.get("tool", "")) == tool_name:
+				return true
+		return false
+
+	func last_audit_row_count() -> int:
+		return _last_audit_rows
+
+	func call_tool(tool_name: String, args: Dictionary) -> Dictionary:
+		call_log.append({"tool": tool_name, "args": args})
+		if tool_name == "minerva_scansort_audit_append":
+			var rows = args.get("rows", [])
+			_last_audit_rows = (rows as Array).size() if rows is Array else 0
+		# Yield once so call_tool behaves like a real coroutine.
+		await Engine.get_main_loop().process_frame
+		return canned.get(tool_name, {"ok": false, "error": "no canned response for %s" % tool_name})
+
 
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
