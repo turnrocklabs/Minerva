@@ -1,6 +1,6 @@
-# Pickup — Path-free agent surface DCR (Phase 1 starting)
+# Pickup — Path-free agent surface DCR (Phase 1 complete, Phase 2 next)
 
-Last updated: 2026-05-15
+Last updated: 2026-05-15 (post-B2)
 
 ## Where I left off
 
@@ -38,7 +38,7 @@ Last updated: 2026-05-15
 | | ID (prefix) | Title | Status |
 |---|---|---|---|
 | B1 | `019e2cca04d9` | Session model + state tool (multi-cardinality, label-addressed) | **done** (Phase 1 round 1) |
-| B2 | `019e2cca4ba8` | Library at OS app-data + `library_*` CRUD | in_progress (Phase 1 round 2) |
+| B2 | `019e2cca4ba8` | Library at OS app-data + `library_*` CRUD | **done** (Phase 1 round 2) |
 | B3 | `019e2ccaa1a9` | Path-free `process()` pipeline | backlog (Phase 2) |
 | B4 | `019e2ccadeac` | Source state manifest `.scansort-state.json` | backlog (Phase 2) |
 | B5 | `019e2ccb1d94` | Sidecar export/import as portable hatch | backlog (Phase 3a) |
@@ -47,15 +47,15 @@ Last updated: 2026-05-15
 
 ## Current HEADs (both pushed)
 
-- Plugins `main`: `f58b4bc` — B1 session model + 7 `session_*` MCP tools.
+- Plugins `main`: `d260861` — B2 library at OS app-data + 7 `library_*` MCP tools.
 - Minerva `user/imran/experiments/swarm`: see this commit.
-- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `f58b4bc` (post-B1).
+- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `d260861` (post-B2).
 
 ## Test baselines
 
-- Rust `cargo test --release` in `~/github/plugins/scansort`: **225/0** (was 211/0; +13 from B1, +1 from W5x commit)
-- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (was 418/0; +15 from B1 Group)
-- Scansort MCP tool count: **61** (was 54 pre-B1; +7 `session_*`)
+- Rust `cargo test --release` in `~/github/plugins/scansort`: **226/0** (+13 from B1, +1 from B2)
+- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (+15 from B1 Group; B2 added no panel tests as the panel doesn't yet call `library_*` — B6 wires those)
+- Scansort MCP tool count: **68** (+7 `session_*` from B1, +7 `library_*` from B2)
 
 Both must be green before any subsequent work-cycle starts.
 
