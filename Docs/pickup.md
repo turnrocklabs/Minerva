@@ -48,15 +48,15 @@ Last updated: 2026-05-15 (post-B5+B7)
 
 ## Current HEADs (both pushed)
 
-- Plugins `main`: `c265bcf` — B5+B7: classifier reads library only; sidecar export/import tools; library hot-reload via stat-on-read.
+- Plugins `main`: `27d4d42` — P0 bug fix on top of B5+B7: rename-pattern resolver now supports `{description}`/`{doc_type}`/`{amount}`/`{category}` tokens (DEFAULT_RENAME_PATTERN was emitting literal `{description}` text in filenames). See bug `019e2d6471` — resolved, awaiting HITL verification.
 - Minerva `user/imran/experiments/swarm`: see this commit.
-- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `c265bcf` (post-B5+B7).
+- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `27d4d42`.
 
 ## Test baselines
 
-- Rust `cargo test --release` in `~/github/plugins/scansort`: **244/0** (B5+B7 sub-scenarios folded into the existing `library_all_tests` mega-test for CACHE isolation; cargo count unchanged but body grew)
+- Rust `cargo test --release` in `~/github/plugins/scansort`: **250/0** (+6 from P0 fix; +5 destination.rs token expansion tests + 1 rule_engine.rs mirror test)
 - Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (+15 from B1 Group only; B6 will add panel tests for the new dialog)
-- Scansort MCP tool count: **71** (+7 `session_*` + +7 `library_*` + +1 `process` + +2 `library_export_to_sidecar`/`library_import_from_sidecar`)
+- Scansort MCP tool count: **71** (+7 `session_*` + +7 `library_*` + +1 `process` + +2 `library_export_to_sidecar`/`library_import_from_sidecar`; P0 added no new tools, only extended `place_fanout` schema with `doc_type`/`amount` optional args)
 
 Both must be green before any subsequent work-cycle starts.
 
