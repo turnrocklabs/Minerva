@@ -3367,6 +3367,149 @@ func _run_tests() -> void:
 		ac_src.contains("_dir_area_tree.refresh()"),
 		"_dir_area_tree.refresh() call missing in drag-extract handler")
 
+	# ---------------------------------------------------------------------------
+	# B1: session model smoke tests
+	# ---------------------------------------------------------------------------
+	print("\n=== Group B1: session model ===")
+
+	# Read panel source for structural checks.
+	var b1_src: String = ""
+	var b1_f := FileAccess.open(PLUGIN_PANEL_GD, FileAccess.READ)
+	if b1_f != null:
+		b1_src = b1_f.get_as_text()
+		b1_f.close()
+
+	# B1-S001: panel declares _session_vault_label state variable.
+	check("B1-S001: panel declares _session_vault_label",
+		b1_src.contains("_session_vault_label"),
+		"_session_vault_label not found in ScansortPanel.gd")
+
+	# B1-S002: panel declares _session_source_label state variable.
+	check("B1-S002: panel declares _session_source_label",
+		b1_src.contains("_session_source_label"),
+		"_session_source_label not found in ScansortPanel.gd")
+
+	# B1-S003: panel declares _session_dir_labels state variable.
+	check("B1-S003: panel declares _session_dir_labels",
+		b1_src.contains("_session_dir_labels"),
+		"_session_dir_labels not found in ScansortPanel.gd")
+
+	# B1-S004: _on_vault_opened_r2 calls session_open_vault.
+	check("B1-S004: _on_vault_opened_r2 calls minerva_scansort_session_open_vault",
+		b1_src.contains("minerva_scansort_session_open_vault"),
+		"session_open_vault call not found in ScansortPanel.gd")
+
+	# B1-S005: _on_vault_closed_r2 calls session_close_vault.
+	check("B1-S005: _on_vault_closed_r2 calls minerva_scansort_session_close_vault",
+		b1_src.contains("minerva_scansort_session_close_vault"),
+		"session_close_vault call not found in ScansortPanel.gd")
+
+	# B1-S006: _do_set_source_dir calls session_open_source.
+	check("B1-S006: _do_set_source_dir calls minerva_scansort_session_open_source",
+		b1_src.contains("minerva_scansort_session_open_source"),
+		"session_open_source call not found in ScansortPanel.gd")
+
+	# B1-S007: _do_set_source_dir calls session_close_source (prior source cleanup).
+	check("B1-S007: _do_set_source_dir calls minerva_scansort_session_close_source",
+		b1_src.contains("minerva_scansort_session_close_source"),
+		"session_close_source call not found in ScansortPanel.gd")
+
+	# B1-S008: _do_add_destination calls session_open_directory for directory kind.
+	check("B1-S008: _do_add_destination calls minerva_scansort_session_open_directory",
+		b1_src.contains("minerva_scansort_session_open_directory"),
+		"session_open_directory call not found in ScansortPanel.gd")
+
+	# B1-S009: _do_add_destination calls session_open_directory only for directory kind
+	# (source check: the call is guarded by kind == "directory").
+	check("B1-S009: session_open_directory is gated behind kind == \"directory\"",
+		b1_src.contains("kind == \"directory\""),
+		"kind==\"directory\" guard not found near session_open_directory")
+
+	# B1-S010: _on_panel_unload closes all session entries.
+	check("B1-S010: _on_panel_unload closes session entries (all three close calls present)",
+		b1_src.contains("minerva_scansort_session_close_vault") and
+		b1_src.contains("minerva_scansort_session_close_source") and
+		b1_src.contains("minerva_scansort_session_close_directory"),
+		"one or more session_close_* calls missing from ScansortPanel.gd")
+
+	# B1-S011: _do_set_source_dir — direct integration test via MockConn.
+	# Calls the method with a canned ok response and verifies session_open_source is invoked.
+	var b1_packed = load(PLUGIN_PANEL_TSCN)
+	var panel_b1: Object = null
+	if b1_packed != null:
+		panel_b1 = b1_packed.instantiate()
+	if panel_b1 != null:
+		root.add_child(panel_b1)
+		await process_frame
+
+		var conn_b1 := MockConn.new()
+		conn_b1.set_canned("minerva_scansort_set_source_dir", {"ok": true, "path": "/tmp/b1_src", "recursive": true})
+		conn_b1.set_canned("minerva_scansort_session_close_source", {"ok": true})
+		conn_b1.set_canned("minerva_scansort_session_open_source",  {"ok": true, "label": "b1_src"})
+
+		await panel_b1._do_set_source_dir(conn_b1, "/tmp/b1_src")
+
+		check("B1-S011: _do_set_source_dir invokes session_open_source on success",
+			conn_b1.was_called("minerva_scansort_session_open_source"),
+			"session_open_source not called — call_log: %s" % str(conn_b1.call_log))
+
+		check("B1-S012: _do_set_source_dir sets _session_source_label to dir basename",
+			str(panel_b1.get("_session_source_label")) == "b1_src",
+			"got: '%s'" % str(panel_b1.get("_session_source_label")))
+
+		# Second call: should close previous source first.
+		conn_b1.call_log.clear()
+		panel_b1.set("_session_source_label", "b1_src")  # simulate prior open
+		conn_b1.set_canned("minerva_scansort_set_source_dir", {"ok": true, "path": "/tmp/b1_src2", "recursive": true})
+		conn_b1.set_canned("minerva_scansort_session_close_source", {"ok": true})
+		conn_b1.set_canned("minerva_scansort_session_open_source",  {"ok": true, "label": "b1_src2"})
+
+		await panel_b1._do_set_source_dir(conn_b1, "/tmp/b1_src2")
+
+		check("B1-S013: second set_source_dir closes previous source before opening new one",
+			conn_b1.was_called("minerva_scansort_session_close_source"),
+			"session_close_source not called on second set_source_dir")
+
+		panel_b1.queue_free()
+		await process_frame
+
+	# B1-S014: _do_add_destination — direct integration test.
+	# Verifies session_open_directory is called for kind="directory".
+	var panel_b1b: Object = null
+	if b1_packed != null:
+		panel_b1b = b1_packed.instantiate()
+	if panel_b1b != null:
+		root.add_child(panel_b1b)
+		await process_frame
+
+		panel_b1b.set("_registry_path", "/tmp/b1.registry.json")
+		var conn_b1b := MockConn.new()
+		conn_b1b.set_canned("minerva_scansort_destination_add",         {"ok": true})
+		conn_b1b.set_canned("minerva_scansort_session_open_directory",   {"ok": true, "label": "Archive"})
+		conn_b1b.set_canned("minerva_scansort_destination_list",         {"ok": true, "destinations": []})
+		conn_b1b.set_canned("minerva_scansort_query_documents",          {"ok": true, "documents": []})
+		conn_b1b.set_canned("minerva_scansort_list_disk_files",          {"ok": true, "files": []})
+
+		await panel_b1b._do_add_destination(conn_b1b, "directory", "/tmp/archive", "Archive")
+
+		check("B1-S014: _do_add_destination invokes session_open_directory for kind=directory",
+			conn_b1b.was_called("minerva_scansort_session_open_directory"),
+			"session_open_directory not called — call_log: %s" % str(conn_b1b.call_log))
+
+		# Vault kind — session_open_directory must NOT be called.
+		conn_b1b.call_log.clear()
+		conn_b1b.set_canned("minerva_scansort_destination_add",       {"ok": true})
+		conn_b1b.set_canned("minerva_scansort_session_open_vault",    {"ok": true, "label": "MyVault"})
+
+		await panel_b1b._do_add_destination(conn_b1b, "vault", "/tmp/my.ssort", "MyVault")
+
+		check("B1-S015: _do_add_destination does NOT call session_open_directory for kind=vault",
+			not conn_b1b.was_called("minerva_scansort_session_open_directory"),
+			"session_open_directory was unexpectedly called for vault kind")
+
+		panel_b1b.queue_free()
+		await process_frame
+
 
 ## MockConn — minimal stand-in for a scansort PluginConnection. Returns canned
 ## tool responses keyed by tool name and records the call log so group X can

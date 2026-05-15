@@ -37,8 +37,8 @@ Last updated: 2026-05-15
 
 | | ID (prefix) | Title | Status |
 |---|---|---|---|
-| B1 | `019e2cca04d9` | Session model + state tool (multi-cardinality, label-addressed) | backlog (Phase 1) |
-| B2 | `019e2cca4ba8` | Library at OS app-data + `library_*` CRUD | backlog (Phase 1) |
+| B1 | `019e2cca04d9` | Session model + state tool (multi-cardinality, label-addressed) | **done** (Phase 1 round 1) |
+| B2 | `019e2cca4ba8` | Library at OS app-data + `library_*` CRUD | in_progress (Phase 1 round 2) |
 | B3 | `019e2ccaa1a9` | Path-free `process()` pipeline | backlog (Phase 2) |
 | B4 | `019e2ccadeac` | Source state manifest `.scansort-state.json` | backlog (Phase 2) |
 | B5 | `019e2ccb1d94` | Sidecar export/import as portable hatch | backlog (Phase 3a) |
@@ -47,16 +47,17 @@ Last updated: 2026-05-15
 
 ## Current HEADs (both pushed)
 
-- Plugins `main`: `997e8ca` — final W5x batch (lazy destination registry + source-pane "+") committed pre-Phase-1.
+- Plugins `main`: `f58b4bc` — B1 session model + 7 `session_*` MCP tools.
 - Minerva `user/imran/experiments/swarm`: see this commit.
-- Plugin binary: in-tree at `~/github/plugins/scansort/scansort-plugin` (gitignored). Current build is from `fa960f2`; no rebuild needed for the W5x commit (GDScript-only).
+- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `f58b4bc` (post-B1).
 
 ## Test baselines
 
-- Rust `cargo test --release` in `~/github/plugins/scansort`: **211/0**
-- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **418/0**
+- Rust `cargo test --release` in `~/github/plugins/scansort`: **225/0** (was 211/0; +13 from B1, +1 from W5x commit)
+- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (was 418/0; +15 from B1 Group)
+- Scansort MCP tool count: **61** (was 54 pre-B1; +7 `session_*`)
 
-Both must be green before any Phase 1 work-cycle starts.
+Both must be green before any subsequent work-cycle starts.
 
 ## Settled design decisions for the new DCR (do NOT re-litigate)
 
