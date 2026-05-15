@@ -1,6 +1,6 @@
-# Pickup — Path-free agent surface DCR (Phase 2 complete, Phase 3a next)
+# Pickup — Path-free agent surface DCR (Phase 3a complete, HITL at B6 next)
 
-Last updated: 2026-05-15 (post-B3+B4)
+Last updated: 2026-05-15 (post-B5+B7)
 
 ## Where I left off
 
@@ -41,22 +41,22 @@ Last updated: 2026-05-15 (post-B3+B4)
 | B2 | `019e2cca4ba8` | Library at OS app-data + `library_*` CRUD | **done** (Phase 1 round 2) |
 | B3 | `019e2ccaa1a9` | Path-free `process()` pipeline | **done** (Phase 2) |
 | B4 | `019e2ccadeac` | Source state manifest `.scansort-state.json` | **done** (Phase 2) |
-| B5 | `019e2ccb1d94` | Sidecar export/import as portable hatch | backlog (Phase 3a) |
-| B6 | `019e2ccb6118` | Retarget Rules Editor dialog at library | backlog (Phase 3b, **HITL stop**) |
-| B7 | `019e2ccbbcd6` | Library hot-reload on mtime change | backlog (Phase 3a) |
-| — | `019e2cfced` | **Follow-up:** B3/B4 quality (test gaps + minor reporting semantics) | backlog (before HITL) |
+| B5 | `019e2ccb1d94` | Sidecar export/import as portable hatch | **done** (Phase 3a) |
+| B6 | `019e2ccb6118` | Retarget Rules Editor dialog at library | backlog (Phase 3b, **HITL — current pickup**) |
+| B7 | `019e2ccbbcd6` | Library hot-reload on mtime change | **done** (Phase 3a) |
+| — | `019e2cfced` | **Follow-up:** B3/B4 quality (test gaps + minor reporting semantics) | backlog (before HITL go-live) |
 
 ## Current HEADs (both pushed)
 
-- Plugins `main`: `2b33de6` — B3+B4: `process()` orchestrator + `.scansort-state.json` manifest.
+- Plugins `main`: `c265bcf` — B5+B7: classifier reads library only; sidecar export/import tools; library hot-reload via stat-on-read.
 - Minerva `user/imran/experiments/swarm`: see this commit.
-- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `2b33de6` (post-B3+B4).
+- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `c265bcf` (post-B5+B7).
 
 ## Test baselines
 
-- Rust `cargo test --release` in `~/github/plugins/scansort`: **244/0** (+13 from B1, +1 from B2, +18 from B3+B4)
-- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (+15 from B1 Group; B2/B3/B4 added no panel tests — B6 wires panel against the new surface)
-- Scansort MCP tool count: **69** (+7 `session_*` + +7 `library_*` + +1 `process`)
+- Rust `cargo test --release` in `~/github/plugins/scansort`: **244/0** (B5+B7 sub-scenarios folded into the existing `library_all_tests` mega-test for CACHE isolation; cargo count unchanged but body grew)
+- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (+15 from B1 Group only; B6 will add panel tests for the new dialog)
+- Scansort MCP tool count: **71** (+7 `session_*` + +7 `library_*` + +1 `process` + +2 `library_export_to_sidecar`/`library_import_from_sidecar`)
 
 Both must be green before any subsequent work-cycle starts.
 
@@ -146,4 +146,18 @@ Every cycle:
    cd ~/github/Minerva && godot --headless --path src --script test/test_scansort_panel_smoke.gd   # expect 418/0
    cd ~/github/plugins/scansort && cargo test --release                                            # expect 211/0
    ```
-5. Read DCR `019e2cc988ec` (article has the full design + audit). Pick the next phase per "Status of DCRs and work items" above. For Phase 1 (B1 + B2): two parallel work-cycles in separate worktrees, each off the current swarm HEAD.
+5. Read DCR `019e2cc988ec` (article has the full design + audit). **B1–B5 + B7 are done**; B6 (Retarget Rules Editor dialog at library; top-level menu) is the **next pickup and is the HITL phase** — direct work-cycle, not autonomous. Before starting B6, consider clearing the B3/B4 quality follow-up `019e2cfced`.
+
+## What works end-to-end after Phase 3a (LLM-callable, path-free)
+
+The LLM can now drive the whole scansort flow with no paths in chat:
+- `minerva_scansort_session_state` — see what's open
+- `minerva_scansort_library_insert_rule` (+ list/get/update/delete/enable/disable) — define rules referencing destination labels
+- `minerva_scansort_process` — run the pipeline; receive a summary `{moved, conflicts, unprocessable, by_rule, by_destination, items}`
+- `minerva_scansort_library_export_to_sidecar(vault_label)` — portable export to the vault's sibling `.rules.json`
+- `minerva_scansort_library_import_from_sidecar(vault_label)` — bring a sidecar back into the library
+- Hand-edits to `<app-data>/Minerva/Scansort/library.rules.json` are picked up automatically (mtime hot-reload)
+
+What's still missing for fully ergonomic UX:
+- B6 — Rules Editor dialog retargeted at the library (top-level menu, no vault required to edit rules)
+- `019e2cfced` — B3/B4 test gaps + by_rule counting fix + dead `EntryKind::Source` cleanup
