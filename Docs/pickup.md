@@ -1,6 +1,6 @@
-# Pickup — Path-free agent surface DCR (Phase 1 complete, Phase 2 next)
+# Pickup — Path-free agent surface DCR (Phase 2 complete, Phase 3a next)
 
-Last updated: 2026-05-15 (post-B2)
+Last updated: 2026-05-15 (post-B3+B4)
 
 ## Where I left off
 
@@ -39,23 +39,24 @@ Last updated: 2026-05-15 (post-B2)
 |---|---|---|---|
 | B1 | `019e2cca04d9` | Session model + state tool (multi-cardinality, label-addressed) | **done** (Phase 1 round 1) |
 | B2 | `019e2cca4ba8` | Library at OS app-data + `library_*` CRUD | **done** (Phase 1 round 2) |
-| B3 | `019e2ccaa1a9` | Path-free `process()` pipeline | backlog (Phase 2) |
-| B4 | `019e2ccadeac` | Source state manifest `.scansort-state.json` | backlog (Phase 2) |
+| B3 | `019e2ccaa1a9` | Path-free `process()` pipeline | **done** (Phase 2) |
+| B4 | `019e2ccadeac` | Source state manifest `.scansort-state.json` | **done** (Phase 2) |
 | B5 | `019e2ccb1d94` | Sidecar export/import as portable hatch | backlog (Phase 3a) |
-| B6 | `019e2ccb6118` | Retarget Rules Editor dialog at library | backlog (Phase 3b, direct) |
+| B6 | `019e2ccb6118` | Retarget Rules Editor dialog at library | backlog (Phase 3b, **HITL stop**) |
 | B7 | `019e2ccbbcd6` | Library hot-reload on mtime change | backlog (Phase 3a) |
+| — | `019e2cfced` | **Follow-up:** B3/B4 quality (test gaps + minor reporting semantics) | backlog (before HITL) |
 
 ## Current HEADs (both pushed)
 
-- Plugins `main`: `d260861` — B2 library at OS app-data + 7 `library_*` MCP tools.
+- Plugins `main`: `2b33de6` — B3+B4: `process()` orchestrator + `.scansort-state.json` manifest.
 - Minerva `user/imran/experiments/swarm`: see this commit.
-- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `d260861` (post-B2).
+- Plugin binary: rebuilt + installed at `~/github/plugins/scansort/scansort-plugin` from `2b33de6` (post-B3+B4).
 
 ## Test baselines
 
-- Rust `cargo test --release` in `~/github/plugins/scansort`: **226/0** (+13 from B1, +1 from B2)
-- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (+15 from B1 Group; B2 added no panel tests as the panel doesn't yet call `library_*` — B6 wires those)
-- Scansort MCP tool count: **68** (+7 `session_*` from B1, +7 `library_*` from B2)
+- Rust `cargo test --release` in `~/github/plugins/scansort`: **244/0** (+13 from B1, +1 from B2, +18 from B3+B4)
+- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (+15 from B1 Group; B2/B3/B4 added no panel tests — B6 wires panel against the new surface)
+- Scansort MCP tool count: **69** (+7 `session_*` + +7 `library_*` + +1 `process`)
 
 Both must be green before any subsequent work-cycle starts.
 
