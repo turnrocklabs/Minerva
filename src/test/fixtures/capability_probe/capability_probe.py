@@ -45,7 +45,7 @@ def handle_tools_call(req_id, name, args):
             "content": [{"type": "text", "text": json.dumps({
                 "success": True,
                 "capability_result": result,
-                "echo": result.get("result", {}).get("echo"),
+                "echo": result.get("echo"),
             })}]
         }})
     elif name == "probe_denied":

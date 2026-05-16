@@ -1,180 +1,99 @@
-# Pickup — Path-free agent surface DCR (Phase 3a complete; HITL stuck on Claude Code MCP catalogue staleness)
+# Pickup — Path-free agent surface DCR HITL: GREEN. Next up: B8 (doc_type normalization)
 
-Last updated: 2026-05-15 (end of session, HITL paused mid-test)
+Last updated: 2026-05-16 (end of session, HITL validated end-to-end across 3 models)
 
 ## TL;DR for cold pickup
 
-- **DCR `019e2cc988ec`** ("Scansort path-free agent surface") — **6 of 7 children done.** B1, B2, B3, B4, B5, B7 shipped + P0 token-expansion fix (`019e2d6471`) shipped. **B6 (Rules Editor dialog retarget) is backlog and is the HITL phase.**
-- **First end-to-end HITL test attempted today and BLOCKED** by a Claude Code MCP-client bug: the deferred-tool catalogue doesn't refresh on `/mcp` reconnect after a plugin manifest change. **The next instance must verify ToolSearch sees the new tools FIRST** — see "Cold-start prerequisite" below.
-- **6 test PDFs staged at `~/temp/scansort-staging/`** waiting for the test to resume.
-- **User has `~/temp/vaults/test.ssort` vault** (panel state was reset when plugin reinstalled; user will need to re-open the panel + vault before testing).
-- **Model for classifier: `gemma4:e4b`** via the "core" provider. NOT in `minerva_list_models` output (filed bug `019e2d8018`).
+- **DCR `019e2cc988ec` HITL is GREEN.** Process pipeline runs end-to-end with the path-free agent surface: session_open_vault + session_open_source + library rule + `process(model_spec={kind:'core_action', service_client_id:'model-chat', action_name:'<model>'})`. Documents land in vault with correct classification, confidence, issuer, date, AND renamed display_name from the rule's rename_pattern.
+- **Six broker/plugin bugs surfaced and fixed during HITL** (see "Bugs resolved this session" below). Each was small, scoped, and validated by re-running the unchanged scenario.
+- **Next pickup: bug `019e2ff19967` (doc_type normalization)** — same rule, same docs, three different display_names across gemma4:e4b / gemma4:26b / qwen2.5vl:7b. This is the B8-class enhancement called out earlier.
+- B6 (Rules Editor dialog retarget at library) is still backlog — not addressed this session.
 
-## Where I left off
+## What ran this session — five HITL iterations with full observe→file→discuss→fix discipline
 
-The user wanted to validate the path-free pipeline end-to-end: insert a tax rule via MCP, register a source via session, call `process()`, see PDFs land in the vault under the `tax` category with names like `imran_w-2_2024.pdf`.
-
-Sequence reached:
-1. Staged 6 PDFs into `~/temp/scansort-staging/` (4 tax positives, 2 negatives — Beneteau, PSEBill).
-2. Tried to call `session_state()` to read the open-vault label.
-3. **Claude Code's ToolSearch could not find the new tools** even though Minerva had them registered. `/mcp` reconnect did not refresh the client-side deferred-tool catalogue.
-4. User attempted a Claude Code "restart" but the catalogue stayed stale — the `/mcp` slash command alone re-establishes the connection without re-handshaking the tool list. **The Claude Code CLI binary must be fully exited and re-launched** (or the user is on a build that doesn't refresh tools on /mcp — separate question).
-
-## Cold-start prerequisite — DO THIS FIRST
-
-Before attempting any new tool call:
-
-```
-# In Claude Code, try:
-ToolSearch query="select:mcp__minerva__minerva_scansort_session_state" max_results=1
-```
-
-Two outcomes:
-- **Returns the tool schema** — catalogue is healthy, proceed to "HITL test plan" below.
-- **"No matching deferred tools found"** — catalogue is stale, ALL the new tools are invisible. Halt. Either:
-  - Ask user to fully exit + relaunch the Claude Code CLI binary (NOT just `/mcp`).
-  - Or proceed with manual panel-driven workaround (see "Fallbacks" below).
-
-## Phase status
-
-| | ID | Title | Status |
+| Iter | Symptom | Root cause | Fix landed |
 |---|---|---|---|
-| B1 | `019e2cca04d9` | Session model + state tool | **done** |
-| B2 | `019e2cca4ba8` | Library at OS app-data + `library_*` CRUD | **done** |
-| B3 | `019e2ccaa1a9` | Path-free `process()` pipeline | **done** |
-| B4 | `019e2ccadeac` | Source state manifest `.scansort-state.json` | **done** |
-| B5 | `019e2ccb1d94` | Sidecar export/import as portable hatch | **done** |
-| B6 | `019e2ccb6118` | Retarget Rules Editor dialog at library | backlog — **HITL phase, next pickup after smoke** |
-| B7 | `019e2ccbbcd6` | Library hot-reload on mtime change | **done** |
-| Q  | `019e2cfced`   | B3/B4 quality follow-up (test gaps + reporting semantics) | backlog (before HITL go-live) |
+| 1 | `provider_disabled` 'turnrock' even though chat UI uses it freely | `is_provider_enabled` is a menu-filter in UI, accidentally an access gate at broker; chat UI bypasses entirely | **Option 4 minimal** — new `is_provider_allowed_for_plugins` flag in singleton_object.gd (defaults true); CapabilityBroker.gd:2275 swapped to use it |
+| 2 | Server: 'GPU dispatch error: dictionary update sequence element #0 has length 1; 2 is required' | Broker called `provider.generate_content(prompt, ...)` with raw `ChatHistoryItem` objects; chat UI does `provider.Format(item)` first | **Fix A** — added Format() bridge after ChatHistoryItem construction in CapabilityBroker.gd, mirroring ChatPane.gd:442-445 |
+| 3 | 'empty LLM response' from plugin | Broker output was flat `{content, ...}` but plugin (and OpenAI standard) reads `choices[0].message.content` | Broker emits OpenAI shape `{choices:[{message:{role,content},finish_reason}], usage:{prompt,completion,total_tokens}, model, provider, cost_usd, free}` |
+| 4 | STILL 'empty LLM response' (model returning valid JSON server-side) | `PluginErrors.success({...})` returned `{success:true, result:payload}` — JSON-RPC then wrapped again → double `result` nesting; plugin's `chat_response.get('choices')` found nothing | **Option 3** — `PluginErrors.success()` now returns payload directly. The `success: true` field was vestigial; error envelope keeps its own shape with `success: false` |
+| 5 | GREEN — gemma4:e4b correctly classified 4/4 tax + 2/2 negatives | — | — |
+| 6 | After GREEN, noticed `display_name == original_filename` for all moved docs (rename_pattern wasn't applied) | placement.rs `fan_out`'s vault branch never used `resolved_rename_pattern`; only the directory branch did. Asymmetric design — vault was treated as "database of bytes," rename was treated as "disk concern" | **Option A** — extracted `resolve_display_name()` + `build_template_context()` helpers in placement.rs; vault branch now mirrors directory branch's resolve+sanitise dance; `insert_document` gained optional `display_name` parameter, threaded through INSERT SQL |
+| Bonus | Replacing an existing vault via UI deleted the old file but didn't create the new one | `vault_lifecycle::create_vault` had destructive error-path cleanup that fired when `db::connect_new` opened a pre-existing file and SCHEMA_SQL conflicted | Added remove_first guard at top of create_vault (Godot's SAVE_FILE dialog already confirms user intent) |
+| Bonus | Source pane in panel stayed empty when source dir was added before vault was opened | `_source_provider` was instantiated only inside `_on_vault_opened_r2`; `_do_set_source_dir` skipped refresh if `_source_provider == null` | Lazy-create `_source_provider` in `_do_set_source_dir` |
 
-### Filing-engine DCR `019e2787` (paused)
-- W1–W10 + W5b–W5h done. **W11 (HITL) blocked** by `019e2cc988ec`. W12 backlog.
+## Model behavior comparison (warm state, 6 fixture PDFs)
 
-### Open bugs filed this session
+| Model | Accuracy | Speed | doc_type quality | doc_date quality |
+|---|---|---|---|---|
+| **gemma4:e4b** | 2-4/4 (non-deterministic) | ~7s | sometimes generic | inconsistent |
+| **gemma4:26b** | 4/4 @ conf 1.0 | ~60s | precise (`1099-DIV`, `W-2`) | missed 2 of 4 (W-2 + Morgan Stanley) → fallback to "unknown" |
+| **qwen2.5vl:7b** | 4/4 @ conf 0.9 | ~28s | generic (`tax`, `tax report`) | populated on all 4 |
 
-| ID | Pri | Title | Status |
-|---|---|---|---|
-| `019e2d6471` | P0 | rename_pattern resolver missing `{description}/{doc_type}/{amount}/{category}` tokens | **resolved** in commit `27d4d42`. Awaits HITL verification → `verified` |
-| `019e2d82ca72` | P2 | `process()` / classifier can't pin to a different model than chat default | new |
-| `019e2d801895` | P3 | `minerva_list_models` omits the "core" provider's catalogue | new |
+See docket insight `019e2ff1d098` for full picks/rationale.
 
-## Current HEADs (both pushed)
+## Bugs resolved this session
 
-- Plugins `main`: **`e228dd7`** — `manifest.json` updated to register all 17 new B1+ tools. P0 fix at `27d4d42` underneath.
-- Minerva `user/imran/experiments/swarm`: see this commit.
-- Plugin binary: at `~/github/plugins/scansort/scansort-plugin` built from `e228dd7`. **Plugin is INSTALLED + RUNNING in Minerva** (uptime grows from 21:31:41 today's reinstall; will reset on Minerva restart).
+| ID | Title | Resolution |
+|---|---|---|
+| `019e2f2ed6bf` | Plugin broker chat gate rejects TURNROCK | Option 4 minimal |
+| `019e2fc65558` | TurnRock model-chat Python dict error | Was broker bug (Format() missing) — fixed there |
+| `019e2fd3ea42` | host.providers.chat flat response shape | Broker emits OpenAI shape |
+| `019e2fd697207c9b` | PluginErrors.success double-wraps | Option 3 — drop the wrap |
+| `019e2fe054e5` | process() places docs with original filenames | Option A |
+| `019e2d82ca72` (pickup-doc reference) | process() can't pin model | handle_process accepts model + model_spec |
 
-## Test baselines
+## Bugs filed this session, NOT fixed (queued)
 
-- Rust `cargo test --release` in `~/github/plugins/scansort`: **250/0** (+13 B1 + +1 B2 + +18 B3+B4 + +6 P0)
-- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0** (+15 B1 Group only; B6 will add panel tests)
-- Scansort MCP tool count in main.rs: **71** (+17 from B1-B7, no new tools in P0)
-- Scansort tools in `manifest.json`: **52** (was 35 pre-B1; the 17-vs-19 delta is intentional — we did NOT add the W-series tools like `set_source_dir`, `destination_add`, etc. to the manifest in this DCR; those remain panel-internal)
+| ID | Pri/Sev | Title |
+|---|---|---|
+| `019e2ff19967` | P3/Sev3 | doc_type token in rename_pattern not normalized (next pickup — B8) |
+| (pickup-doc reference) `019e2d8018` | P3 | minerva_list_models omits core provider |
 
-## HITL test plan (ready to resume)
+## Insights filed
 
-### Pre-conditions
-- Staging: `~/temp/scansort-staging/` (6 PDFs, see "Staged files" below)
-- Vault: `~/temp/vaults/test.ssort` (user creates / re-opens via panel)
-- Panel must be open and vault opened — this auto-registers it in the plugin session via B1's wiring.
+- `019e2ff1d098` — Model selection tradeoffs (gemma vs qwen). Operational guidance for rule authors.
 
-### Steps (path-free, via Claude Code MCP)
+## Hints filed (session-scoped, durable to next conversation via memory)
 
-1. `minerva_scansort_session_state()` — confirm vault label (should be `test` from `test.ssort`'s stem) and confirm staging source isn't yet registered. Panel auto-registers vault on open; source must be added by us.
+- `nudge` scansort: error_envelope_chain_proven_useful
+- `nudge` scansort: handler.extract_arguments_envelope
+- `nudge` scansort: create_vault.destructive_cleanup_on_existing_path
+- `nudge` minerva-broker: missing_provider_format_before_generate_content
+- `nudge` minerva-broker: response_shape_mismatch_with_plugin_expectations
+- `nudge` minerva-broker: success_envelope_double_result_wrapping
+- `nudge` minerva-broker: provider_disabled.false_positive_for_turnrock
+- `nudge` turnrock-model-chat: cold_start_2min_penalty
+- `nudge` claude-code-env: bash.pkill_silently_fails
+- `docket-hint` minerva-broker: chat_ui_bypasses_broker_enabled_check
+- `docket-hint` minerva-broker: success_envelope_double_result_wrapping (also nudge)
 
-2. `minerva_scansort_set_source_dir(path: "/home/imran/temp/scansort-staging", recursive: true)` — set the plugin's source-dir global (B3's `list_source_files_for_path` may or may not use this; safer to set).
+## Files changed (uncommitted at session end — see WIP commits)
 
-3. `minerva_scansort_session_open_source(label: "scansort-staging", path: "/home/imran/temp/scansort-staging")` — register source in session.
+**Minerva (`user/imran/experiments/swarm`):**
+- `src/Scripts/Models/singleton_object.gd` — new `_plugin_allowed_providers` dict + `is_provider_allowed_for_plugins` + `set_provider_allowed_for_plugins`
+- `src/Scripts/Services/Plugins/CapabilityBroker.gd` — gate B keyless-provider exemption, null-service CoreProvider guard, Format() bridge before generate_content, OpenAI-shape response envelope, swap to `is_provider_allowed_for_plugins`
+- `src/Scripts/Services/Plugins/PluginErrors.gd` — `success()` returns payload directly (drop `{success, result}` wrap)
+- `src/test/test_host_capability_channel.gd` — updated assertions for new envelope shape
+- `src/test/fixtures/capability_probe/capability_probe.py` — one-level less unwrap
 
-4. `minerva_scansort_library_insert_rule(...)` with the tax rule:
+**Plugins (`main`):**
+- `scansort/manifest.json` — process tool description updated to mention model + model_spec args
+- `scansort/src/main.rs` — handle_process accepts model + model_spec args; handle_insert_document accepts display_name; inputSchema for process + insert_document updated
+- `scansort/src/process.rs` — model_spec forwarded to chat_args; error envelope detection for `{success:false, error_message, detail}`
+- `scansort/src/documents.rs` — `insert_document` gained `display_name` parameter, INSERT SQL writes the column
+- `scansort/src/reprocess.rs` — test caller updated for new signature
+- `scansort/src/vault_lifecycle.rs` — `create_vault` now replaces existing file at target path
+- `scansort/src/placement.rs` — extracted `resolve_display_name()` + `build_template_context()` helpers; vault branch of fan_out resolves rename_pattern and threads to insert_document
+- `scansort/ui/ScansortPanel.gd` — lazy-create `_source_provider` in `_do_set_source_dir`
 
-```json
-{
-  "label":                "tax",
-  "name":                 "Tax documents",
-  "instruction":          "Tax-related documents including W-2s, 1099s, tax returns, IRS correspondence, property tax statements, and receipts for deductible expenses.",
-  "signals":              ["W-2","1099","tax return","IRS","adjusted gross income","taxable income","withholding","deduction","Schedule C","Form 1040","property tax","estimated tax","EIN","SSN"],
-  "subfolder":            "tax",
-  "rename_pattern":       "imran_{doc_type}_{year}",
-  "confidence_threshold": 0.5,
-  "stop_processing":      true,
-  "order":                100,
-  "enabled":              true,
-  "encrypt":              false,
-  "is_default":           false,
-  "copy_to":              ["test"]
-}
-```
-(`copy_to` must match the actual vault label from step 1 — confirm before inserting.)
+## Test baselines at session end
 
-5. `minerva_scansort_library_list_rules()` — verify the rule is in the library and enabled.
+- Rust `cargo test --release` in `~/github/plugins/scansort`: **250/0**
+- Panel smoke `godot --headless --path src --script test/test_scansort_panel_smoke.gd`: **433/0**
+- (Minerva-side test for capability channel + scene panel broker may need re-running after the PluginErrors.success refactor — DCR follow-up)
 
-6. `minerva_scansort_session_state()` — verify both vault and source are present.
-
-7. **Important**: Per bug `019e2d82ca72`, `process()` uses whatever model is the host default for `host.providers.chat`. The user wants **`gemma4:e4b`** (core provider). **Before calling process(), confirm Minerva's chat default model is set to gemma4:e4b** via the AISettings or chat UI. If a different default is in place, the classifier runs on the wrong model and the test result is moot.
-
-8. `minerva_scansort_process()` — run. This is slow (one LLM call per file via host.providers.chat). For 6 PDFs at ~2-5 sec each, expect 15-30 sec.
-
-### Expected outcome
-
-```jsonc
-{
-  ok: true,
-  summary: { moved: 4, conflicts: 0, unprocessable: 2, skipped_already_processed: 0 },
-  by_rule:        { "tax": 4 },
-  by_destination: { "test": 4 },
-  items: [
-    // 4 moved entries: msft_w2 → imran_w-2_2024.pdf (or similar — depends on what gemma extracts as doc_type),
-    //                  MorganStanley + Consolidated 1099 → imran_1099_2023.pdf collisions handled,
-    //                  0624PEIM 1040 → imran_1040_2024.pdf
-    // 2 unprocessable: Beneteau 373 2004 → no_rule_match,
-    //                  PSEBill → no_rule_match
-  ]
-}
-```
-
-Verify in the panel: opening the vault should show 4 documents under category "tax" with display_name renamed per pattern.
-
-Manifest at `~/temp/scansort-staging/.scansort-state.json` should have 6 entries (4 moved, 2 unprocessable).
-
-### Things that could go wrong (and how to react)
-
-1. **`copy_to` label mismatch** — if `session_state` returns `test.ssort` instead of `test`, update the rule's `copy_to`. The B1 wiring is `path.get_file().get_basename()` which strips `.ssort`, so `test` is expected. Worth checking.
-2. **`gemma4:e4b` scores everything at 0.0** — the score is per-rule; with one rule the LLM should write something ≥0.5 for tax PDFs. If everything fires at 0.0, the prompt isn't being followed (model too small for the scoring schema). Fix: lower threshold to 0.3 or 0.0; rerun. If still no fires, swap to `gemini-3.1-flash-lite-preview` (cheaper API but reliable JSON).
-3. **`doc_type` includes punctuation** — e.g. `"W-2 (wage statement)"` lands in filename as `imran_W-2 (wage statement)_2024.pdf`. The current sanitiser only rejects path separators + traversal; spaces and parens pass through. This is a UX wart, not a P0. Note for follow-up — token-value normalization could be a B8-class enhancement.
-4. **Empty `extract_text` on a scanned PDF** — classifier scores all rules at 0.0 → unprocessable. Real for OCR-poor PDFs. None of the 6 staged PDFs should hit this (all are digital-text).
-5. **The Claude Code tool catalogue is still stale after restart** — the path-free flow can't proceed. Use the panel UI to open the panel + vault, but DO NOT use the Rules Editor dialog (it targets the old sidecar which B5 demoted; the classifier won't see those rules). Best bet: keep restarting Claude Code or wait for the bug fix.
-
-## Staged files
-
-```
-~/temp/scansort-staging/
-├── 0624PEIM 1040, Il-1040, and M1 Tax Returns client copy 2024.pdf   (tax — positive)
-├── 2023-Imran-1478-Consolidated-Form-1099.pdf                         (tax — positive)
-├── 2023-MorganStanley-MSFT-Bonus.pdf                                  (tax — positive)
-├── Beneteau 373 2004.pdf                                              (boat — negative; should not fire)
-├── msft_w2.pdf                                                        (tax — positive, W-2)
-└── PSEBill.pdf                                                        (utility — negative; should not fire)
-```
-
-## Hard-won gotchas discovered today (read before doing anything plugin-related)
-
-1. **`manifest.json` is the source of truth for plugin MCP tools** — see [[plugin-manifest-is-source-of-truth-for-tools]] memory entry. Adding handlers to `main.rs` is necessary but NOT sufficient. The `tools` array in `manifest.json` must list every new tool by name + description, or Minerva's MCP server won't expose it. This caught B1-B5+B7 — the implementer prompts didn't include "update manifest.json" as a step. Fixed in commit `e228dd7` by adding the 17 new entries. **Update the work-cycle skill brief template to require manifest.json updates in the same commit.**
-
-2. **`minerva_plugin_reload` doesn't refresh the MCP client's tool catalogue** — see [[mcp-plugin-reload-doesnt-refresh-tools]]. After a binary rebuild + reload, the new tools aren't visible to Claude Code until `/mcp` reconnect *at minimum* — and possibly until a full CLI restart (still confirming). The deferred-tool catalogue appears to be cached at session-start time.
-
-3. **Plugin remove + install is needed to refresh a cached manifest** — `plugin_reload` restarts the subprocess but Minerva's *manifest cache* (the entry in its plugins table) is set at install time. Manifest changes require `plugin_remove(id)` + `plugin_install(manifest_path)` + `plugin_start(id)`. This is how we got the 17 new tools to register today.
-
-4. **Claude Code CLI deferred-tool catalogue staleness is unresolved** — the user did a `/mcp` reconnect (and possibly a Claude Code restart, unclear) and the new tools still didn't appear in ToolSearch. Minerva-side `plugin_inspect` confirmed all 52 tools are registered. The bug is on the Claude Code side and is **the only thing blocking the HITL test today**. Worth filing as a Claude Code bug with repro: 1) start Claude Code CLI, 2) connect to Minerva with a plugin advertising N tools, 3) remove+reinstall the plugin with N+M tools, 4) `/mcp`, 5) the M new tools are not in ToolSearch.
-
-5. **classifier no longer reads sidecar** — B5 demoted `<vault-stem>.rules.json` to "portable export hatch only." `classify_document` reads only from `library.rules.json` at the OS app-data path. The legacy `insert_rule(rules_path=...)` MCP tool still works for writing to a sidecar — but the rule won't be visible to the classifier. The library is the only source. This breaks Option-2 fallback paths until B6 lands.
-
-6. **`directories` crate sandboxes app-data oddly** — under `~/.local/share/minerva/scansort/library.rules.json` on Linux. If the user clears their app data, the library is gone. Worth noting in B6 documentation.
-
-7. **`{description}` token capped at 60 chars** — by design (P0 fix). `chars().take(60)` not `[..60]` byte slice (would panic on multi-byte boundary). Empty values fall back to `"unknown"` for all 7 tokens including `{year}`, `{date}`.
-
-## Cold-pickup checklist
+## Cold-pickup checklist for next session
 
 1. `git -C ~/github/Minerva fetch && git checkout user/imran/experiments/swarm && git pull --ff-only`
 2. `git -C ~/github/plugins fetch && git checkout main && git pull --ff-only`
@@ -187,25 +106,21 @@ Manifest at `~/temp/scansort-staging/.scansort-state.json` should have 6 entries
    cd ~/github/Minerva && godot --headless --path src --script test/test_scansort_panel_smoke.gd   # expect 433/0
    cd ~/github/plugins/scansort && cargo test --release                                            # expect 250/0
    ```
-5. **Verify Claude Code tool catalogue is healthy** (CRITICAL):
+5. Verify Claude Code tool catalogue (per `project_mcp_plugin_reload_doesnt_refresh_tools.md`):
    ```
-   ToolSearch query="select:mcp__minerva__minerva_scansort_session_state" max_results=1
+   ToolSearch query="select:mcp__minerva__minerva_scansort_process" max_results=1
    ```
-   If empty, ask user to fully restart Claude Code CLI before proceeding.
+   Should return the process tool with model + model_spec args. If empty: full Minerva restart, then `/mcp` in CC.
 
-6. Verify Minerva plugin state:
-   - User: confirm Minerva is running, panel is open, vault `~/temp/vaults/test.ssort` is loaded
-   - Agent: `minerva_plugin_inspect id="scansort"` — confirm 52 tools, plugin RUNNING
-
-7. Decide next step:
-   - **HITL smoke** (recommended first): run the test plan above against the 6 staged PDFs. Verify P0 fix end-to-end, validate classifier behavior on real docs.
+6. Decide next step:
+   - **B8 enhancement** (recommended): `019e2ff19967` — doc_type normalization for stable cross-model rename_pattern output. Three approaches listed in the bug. (c) "doc_type enum in rule schema + prompt constraint" is the most reliable but largest. (b) "post-resolution canonicalisation pass" is smallest. Use rubric.
+   - **B6 (UI retarget)**: HITL phase for the Rules Editor dialog — move rules_editor_dialog.gd from path-driven CRUD to library_* calls. Now that the path-free flow is GREEN, the panel UI is the last surface still pointing at the legacy sidecar path.
    - **B3/B4 quality follow-up** (`019e2cfced`): clear test theater + by_rule counting fix + dead variant cleanup. Small work-cycle.
-   - **B6 (UI retarget)**: HITL phase — direct mode, GDScript dialog work. Move `rules_editor_dialog.gd` from path-driven CRUD to `library_*` calls. Add "Rules Library..." top-level menu item.
 
 ## Settled design decisions (do NOT re-litigate)
 
 1. Session is multi-cardinality, label-addressed. LLM never sees paths.
-2. Rules live in a global library at `<OS-app-data>/Minerva/Scansort/library.rules.json` via `directories` crate.
+2. Rules live in a global library at `<OS-app-data>/Minerva/Scansort/library.rules.json`.
 3. `copy_to` carries user-chosen destination labels, not opaque IDs or paths.
 4. Sidecar `<vault-stem>.rules.json` is portable export-only. Classifier reads only the library.
 5. Unmatched files mark in `<source-dir>/.scansort-state.json`. Re-runs skip cleanly.
@@ -214,22 +129,27 @@ Manifest at `~/temp/scansort-staging/.scansort-state.json` should have 6 entries
 8. No per-vault rule overrides in v1.
 9. `{description}` capped at 60 chars via `chars().take(60)` (multi-byte safe).
 10. Empty token values fall back to literal `"unknown"` (uniform across all 7 tokens).
-11. **No per-rule or per-process classifier-model override yet** — open bug `019e2d82ca72`. Workaround: set Minerva's chat default to `gemma4:e4b` before calling process().
+11. process() accepts model + model_spec args (use model_spec={kind:'core_action', service_client_id:'model-chat', action_name:<model>} for explicit Core service routing).
+12. Plugin chat access is gated by `is_provider_allowed_for_plugins` (defaults true), distinct from the menu-filter `is_provider_enabled`.
+13. Broker emits OpenAI-shape chat responses; PluginErrors.success returns payload directly (no wrap).
+14. Rename_pattern applies symmetrically to vault and directory destinations via `placement::resolve_display_name`.
 
-## Build / test commands (quick ref)
+## Build / test / operate commands (quick ref)
 
 - Rust build: `cd ~/github/plugins/scansort && cargo build --release`
-- Install binary: `install -m 0755 target/release/scansort-plugin scansort-plugin` (NEVER `cp` — ETXTBSY)
-- Rust tests: `cargo test --release` (250/0 today)
-- Panel smoke: `godot --headless --path src --script test/test_scansort_panel_smoke.gd` (433/0 today)
-- Plugin reinstall (after manifest change):
+- Install binary: `install -m 0755 target/release/scansort-plugin scansort-plugin` (NEVER `cp` — ETXTBSY hazard for mmap'd .so even if not for ELF)
+- Rust tests: `cargo test --release` (250/0)
+- Panel smoke: `godot --headless --path src --script test/test_scansort_panel_smoke.gd` (433/0)
+- Launch Minerva (from CC): `godot --path /home/imran/github/Minerva/src` via Bash run_in_background=true
+- Plugin reinstall (after manifest tool-schema change only):
   ```
-  # via Claude Code MCP:
   minerva_plugin_remove id=scansort
   minerva_plugin_install manifest_path=/home/imran/github/plugins/scansort/manifest.json
   minerva_plugin_start id=scansort
   ```
-- macOS has no `timeout` — run `godot` directly.
+- For binary-only changes: `minerva_plugin_reload id=scansort` is enough.
+- After GDScript or schema changes: full Minerva restart needed (no hot-reload).
+- `pkill -f godot...` from CC silently fails (sandbox restriction) — ask user to close Minerva manually.
 
 ## Constraints to carry forward
 
@@ -238,12 +158,11 @@ Manifest at `~/temp/scansort-staging/.scansort-state.json` should have 6 entries
 - Plugin MCP tool names must be `minerva_<plugin_id>_*`.
 - GDScript JSON round-trip turns ints into floats — coerce with `int(...)`.
 - Plugin binary rebuild while Minerva runs: `install -m 0755`, not `cp`.
-- **Any new MCP tool added to `main.rs` MUST also be added to `manifest.json` `tools` array** (the manifest is the gate, not main.rs).
-- **Restart Claude Code CLI fully** (not just `/mcp`) after a plugin manifest change to refresh the deferred-tool catalogue.
-- `_on_panel_create_note_request` MUST be synchronous.
+- **Any new MCP tool added to `main.rs` MUST also be added to `manifest.json` `tools` array.**
+- model-chat has ~2 minute cold-start penalty per model when idle; first call may MCP-timeout while plugin keeps working (poll `.scansort-state.json` for progress).
 
 ## Paused / orthogonal workstreams
 
-- Filing-engine DCR `019e2787` W12 (docs + cleanup) — still applicable post-DCR.
+- Filing-engine DCR `019e2787` W12 (docs + cleanup) — still applicable; HITL no longer blocks.
 - Presentation plugin v2 MCP iteration — plan `019df419ce567de0b7699b3be7b6c8b5`.
-- CAD Phase B2 — blocked. `~/github/plugins/cad/` has uncommitted CAD changes — left as-is.
+- CAD Phase B2 — blocked; `~/github/plugins/cad/` has uncommitted CAD changes — left as-is.

@@ -1813,11 +1813,20 @@ const PROVIDER_DISPLAY_NAMES: Dictionary = {
 ## Enabled state for each provider (all enabled by default)
 var _enabled_providers: Dictionary = {}
 
+## Plugin access state for each provider (all allowed by default).
+## Separate from _enabled_providers because is_provider_enabled is a menu-filter
+## semantic (don't clutter selection UI with unused providers) — plugin gate is
+## a distinct concern. Default permissive matches user expectation: if a
+## provider's services work in the chat UI, plugins can call them too unless
+## the user explicitly opts out per-provider.
+var _plugin_allowed_providers: Dictionary = {}
+
 ## Initialize enabled providers from config or defaults
 func _init_enabled_providers() -> void:
 	# Default all providers to enabled
 	for provider in API_PROVIDER.values():
 		_enabled_providers[provider] = true
+		_plugin_allowed_providers[provider] = true
 
 	# Load saved state from config
 	if config_has_saved_section("EnabledProviders"):
@@ -1826,6 +1835,12 @@ func _init_enabled_providers() -> void:
 			var saved = get_config_file_value("EnabledProviders", provider_name)
 			if saved != null:
 				_enabled_providers[provider] = saved
+	if config_has_saved_section("PluginAllowedProviders"):
+		for provider in API_PROVIDER.values():
+			var provider_name = API_PROVIDER.keys()[provider]
+			var saved = get_config_file_value("PluginAllowedProviders", provider_name)
+			if saved != null:
+				_plugin_allowed_providers[provider] = saved
 
 ## Check if a provider is enabled
 func is_provider_enabled(provider: API_PROVIDER) -> bool:
@@ -1835,6 +1850,17 @@ func is_provider_enabled(provider: API_PROVIDER) -> bool:
 func is_model_enabled(model: int) -> bool:
 	var provider = MODEL_TO_PROVIDER.get(model, API_PROVIDER.LOCAL)
 	return is_provider_enabled(provider)
+
+## Check whether plugins may call host.providers.chat against this provider.
+## Defaults true (permissive) — see _plugin_allowed_providers docstring.
+func is_provider_allowed_for_plugins(provider: API_PROVIDER) -> bool:
+	return _plugin_allowed_providers.get(provider, true)
+
+## Set whether plugins may call host.providers.chat against this provider.
+func set_provider_allowed_for_plugins(provider: API_PROVIDER, allowed: bool) -> void:
+	_plugin_allowed_providers[provider] = allowed
+	var provider_name = API_PROVIDER.keys()[provider]
+	save_to_config_file("PluginAllowedProviders", provider_name, allowed)
 
 ## Set a provider's enabled state
 func set_provider_enabled(provider: API_PROVIDER, enabled: bool) -> void:

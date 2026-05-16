@@ -2029,9 +2029,11 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 		if not msg.has("role"):
 			return PluginErrors.schema_validation_failed(plugin_id,
 				"host.providers.chat: messages[%d] missing 'role'" % i)
-		if not msg.has("text"):
+		# Accept OpenAI-standard "content" as alias for legacy "text".
+		# Either field satisfies the schema; readers fall back content→text below.
+		if not msg.has("text") and not msg.has("content"):
 			return PluginErrors.schema_validation_failed(plugin_id,
-				"host.providers.chat: messages[%d] missing 'text'" % i)
+				"host.providers.chat: messages[%d] missing 'text' (or 'content')" % i)
 
 	var provider_hint: String = str(args.get("provider", "")).strip_edges().to_lower()
 
@@ -2257,6 +2259,15 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	if provider == null:
 		return PluginErrors.model_not_available(plugin_id, model_name_req)
 
+	# Guard: the script_map "default" path instantiates CoreProvider with no
+	# service/action, producing a non-functional provider that would later fail
+	# inside generate_content. Surface the missing context as a clear error
+	# pointing callers at the explicit model_spec path.
+	if provider is CoreProvider and provider.service == null:
+		provider.queue_free()
+		return PluginErrors.model_not_available(plugin_id,
+			"%s — 'default' needs model_spec={kind:'core_action', service_client_id, action_name}" % model_name_req)
+
 	# Provider must be in the scene tree to use _ready() and timers
 	var so_node = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
 	if so_node != null:
@@ -2268,16 +2279,26 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	var actual_provider_name: String = str(display_names2.get(actual_provider_enum, "Unknown")).to_lower()
 	var actual_model_name: String = str(provider.model_name) if "model_name" in provider else model_name_req
 
-	# Check if provider is enabled
-	if so.has_method("is_provider_enabled"):
-		if not so.is_provider_enabled(actual_provider_enum):
+	# Check if plugins are allowed to use this provider. Distinct from
+	# is_provider_enabled (which is a menu-filter for selection UIs); the
+	# plugin gate defaults true so plugins inherit the same access the chat UI
+	# has. Users can opt out per-provider via set_provider_allowed_for_plugins.
+	if so.has_method("is_provider_allowed_for_plugins"):
+		if not so.is_provider_allowed_for_plugins(actual_provider_enum):
 			provider.queue_free()
 			return PluginErrors.provider_disabled(plugin_id, actual_provider_name)
 	# Check API key (non-free providers only; free providers have empty API_KEY by design)
 	# We check by seeing if input_token_cost > 0 AND API_KEY is empty as a heuristic.
-	# Local/Turnrock always have no key required.
+	# Local/Turnrock are exempt — their cost reflects server-side metering, not a
+	# user-supplied key (Core auth is socket-level; Local has no remote at all).
+	var api_provider_const: Variant = so.get("API_PROVIDER") if "API_PROVIDER" in so else null
+	var is_keyless_provider: bool = false
+	if api_provider_const != null:
+		var turnrock_enum: int = int(api_provider_const.get("TURNROCK", -1))
+		var local_enum: int = int(api_provider_const.get("LOCAL", -1))
+		is_keyless_provider = (actual_provider_enum == turnrock_enum) or (actual_provider_enum == local_enum)
 	var api_key_val: String = str(provider.API_KEY) if "API_KEY" in provider else ""
-	if provider.input_token_cost > 0.0 and api_key_val.is_empty():
+	if not is_keyless_provider and provider.input_token_cost > 0.0 and api_key_val.is_empty():
 		provider.queue_free()
 		return PluginErrors.provider_disabled(plugin_id, actual_provider_name)
 
@@ -2301,7 +2322,7 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	for msg_raw2 in messages_raw:
 		var msg_d2: Dictionary = msg_raw2 as Dictionary
 		var role_str: String = str(msg_d2.get("role", "user")).to_lower()
-		var text_str: String = str(msg_d2.get("text", ""))
+		var text_str: String = str(msg_d2.get("text", msg_d2.get("content", "")))
 
 		var chi := ChatHistoryItem.new()
 
@@ -2334,6 +2355,20 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 			chi.Images = img_arr
 
 		prompt.append(chi)
+
+	# Bridge ChatHistoryItem → provider-specific dict shape via provider.Format().
+	# Mirrors the chat UI pattern (ChatPane.gd:442-445, NotesChatTab.gd:80). Without
+	# this, providers that ship `messages: [...]` as a JSON array (e.g., CoreProvider's
+	# OpenAI-compatible path at line 145) serialize the raw RefCounted objects and the
+	# server rejects them — e.g., model-chat returns 'dictionary update sequence
+	# element #0 has length 1; 2 is required' from Python's dict() constructor.
+	if provider.has_method("Format"):
+		var formatted_prompt: Array[Variant] = []
+		for chi_item in prompt:
+			var formatted: Variant = provider.Format(chi_item)
+			if formatted != null:
+				formatted_prompt.append(formatted)
+		prompt = formatted_prompt
 
 	# --- 6. Set provider chat IDs for cost attribution and stop_all_requests -
 	var chat_id_key: String = "plugin/%s" % plugin_id
@@ -2386,17 +2421,30 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 
 	provider.queue_free()
 
+	# Emit OpenAI-shape response so plugins built around the standard shape (e.g.,
+	# reading choices[0].message.content) Just Work. Most LLM providers — and the
+	# model-chat backend in particular — already speak OpenAI shape natively; we
+	# preserve it through the broker rather than flattening and re-inflating.
+	# Provider name + cost summary live alongside the OpenAI fields for callers
+	# that want Minerva-specific context (these are additive, not in conflict).
 	return PluginErrors.success({
 		"model": actual_model_name,
-		"provider": actual_provider_name,
-		"content": str(bot_response.text),
-		"stop_reason": "end_turn",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"content": str(bot_response.text),
+			},
+			"finish_reason": "stop",
+		}],
 		"usage": {
-			"input_tokens": input_tok,
-			"output_tokens": output_tok,
-			"cost_usd": cost_usd,
-			"free": is_free,
+			"prompt_tokens": input_tok,
+			"completion_tokens": output_tok,
+			"total_tokens": input_tok + output_tok,
 		},
+		"provider": actual_provider_name,
+		"cost_usd": cost_usd,
+		"free": is_free,
 	})
 
 

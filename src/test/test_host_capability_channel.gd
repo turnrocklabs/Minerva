@@ -107,14 +107,14 @@ func _run_unit_tests() -> void:
 	# --- Happy path: host.echo returns echo of args ---
 	var echo_result: Dictionary = await broker.dispatch("probe_test", "host.echo",
 		{"msg": "hello", "n": 42})
-	check("host.echo returns success=true", echo_result.get("success", false),
-		"got: %s" % str(echo_result))
-	var inner: Dictionary = echo_result.get("result", {})
-	check("host.echo result has 'echo' key", inner.has("echo"),
-		"result keys: %s" % str(inner.keys()))
+	# Successful broker dispatch returns payload directly (no {success, result} wrap).
+	# Error path still has success=false + error_code; see deny tests below.
+	check("host.echo result has 'echo' key",
+		echo_result.has("echo"),
+		"result keys: %s" % str(echo_result.keys()))
 	check("host.echo echoes args back intact",
-		inner.get("echo", {}).get("msg", "") == "hello",
-		"got echo: %s" % str(inner.get("echo")))
+		echo_result.get("echo", {}).get("msg", "") == "hello",
+		"got echo: %s" % str(echo_result.get("echo")))
 
 	# --- Audit: dispatched event logged ---
 	var dispatched_entries: Array = audit.get_entries("probe_test", "capability_dispatched")

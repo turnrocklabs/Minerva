@@ -353,8 +353,18 @@ static func provider_error(plugin_id: String, provider: String, model: String, d
 # ---------------------------------------------------------------------------
 
 ## Wrap a successful result in the standard response format.
+## Successful capability/tool response.
+##
+## Returns the payload directly. The previous wrapping shape
+## `{success: true, result: payload}` was vestigial — the MCP STDIO bridge
+## (MCPServerConnection._handle_stdio_capability_request) passes the broker's
+## return value verbatim into the JSON-RPC `result` field, so wrapping here
+## produced `{jsonrpc, id, result: {success: true, result: <payload>}}` on the
+## wire — plugins that read fields off the payload directly saw nothing.
+##
+## Error shape is unchanged: `{success: false, error_code, error_message, ...}`.
+## Plugins distinguish errors by `success == false` (still present); successful
+## responses simply lack any `success` field. Callers reading payload fields
+## directly work as expected.
 static func success(result: Dictionary = {}) -> Dictionary:
-	return {
-		"success": true,
-		"result": result,
-	}
+	return result
