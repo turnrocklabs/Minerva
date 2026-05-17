@@ -1,6 +1,6 @@
 # Pickup — scansort rule schema redesign (DCR 019e33bfa10c) — autonomous implementation
 
-STATE: IN_PROGRESS_CHUNK_6
+STATE: AWAITING_HITL
 
 Last updated: 2026-05-16
 
@@ -269,9 +269,10 @@ The agent stops autonomous execution and pings the user when:
 - Chunk 3: W3 + W11 + W12 — landed direct (sub-agent overhead would have exceeded the work for these small items; deviation from pickup's "parallel sub-agents" mode noted). W3 `bb72974`: `library_reorder_rules` MCP tool + 5 sub-tests. W11 `7ba2fa0`: deprecation prefixes + log warnings on 6 legacy tool handlers. W12 `c36c8e8`: switched dropdown source in `ScansortPanel._on_edit_doc_pressed` to `library_list_rules` (call lived in panel, not in `edit_details_dialog.gd` as the docket said). Rust tests 291/1 (1 pre-existing macOS), panel smoke 433/0.
 - Chunk 4: W4 + W8 — landed direct. W4 `9590a22`: `process::dryrun_one` + `minerva_scansort_dryrun_one` MCP tool. Walks rules with `stage_walker::walk` directly so per-rule trace records below-threshold/filtered cases too. Trace log emission deferred (DCR 019e33a2 still unlanded — pickup §"Stop conditions" #8); response shape carries the same data. W8 `267a4a3`: `paste_json_dialog.gd` with new/edit/readonly modes, callable-injection save handler, inline parse + MCP error display, reopen-on-failure. Rust 291/1, panel smoke 433/0.
 - Chunk 5: W6 — `22585e7` (plugins). New `ui/rules_pane.gd` with header/hint/scrollable rows; per-row enable CheckBox wired to library_enable/disable_rule, label + raw template preview + fired-count placeholder + truncated instruction. `ScansortPanel.gd` instantiates the pane between columns and status bar, `init(conn)` after bridge connect. Process slip: committed directly to main without the per-work-item branch hop (hard rule 9) — functionally identical, just bookkeeping. Panel smoke 433/0.
+- Chunk 6: W7 — `work-item/W7-row-menu` @ `ad58750` (plugins). Row [⋮] menu with 6 actions (Test on…, Move up/down, View/Edit JSON, Duplicate, Delete) all wired to library_* + dryrun_one tools. New `ui/dryrun_result_dialog.gd` renders per-rule trace with stage-by-stage breakdown. Caught GDScript inference gotcha (`:=` on `Script.new()`). Panel smoke 433/0. **Phase 1 complete — STATE → AWAITING_HITL.**
 
 **Next:**
-- Chunk 6: W7 — row menu (Test on…, Move up/down, View/Edit JSON, Duplicate, Delete) + dry-run result dialog. **Final autonomous chunk; ends Phase 1 with STATE → AWAITING_HITL and DCR comment summary.**
+- HITL: user validates panel end-to-end (see §"HITL" checklist), then invokes Phase 2 `/goal` for Chunk 7 (W9 skill content + W10 delete-old-UI).
 
 ---
 
