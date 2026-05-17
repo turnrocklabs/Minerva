@@ -1,6 +1,6 @@
 # Pickup — scansort rule schema redesign (DCR 019e33bfa10c) — autonomous implementation
 
-STATE: IN_PROGRESS_CHUNK_2
+STATE: IN_PROGRESS_CHUNK_3
 
 Last updated: 2026-05-16
 
@@ -264,10 +264,11 @@ The agent stops autonomous execution and pings the user when:
 ## What's done / What's next
 
 **Done:**
-- Chunk 1: W1 + W5 — branch `work-item/W1-W5-schema-migration`, commit `2477359` (plugins repo). New schema (stages/classify/keep_when) + library migration on load. 271 tests passing (1 pre-existing macOS reprocess symlink failure documented in §"Carry-forward").
+- Chunk 1: W1 + W5 — `work-item/W1-W5-schema-migration` @ `2477359` (plugins). New schema (stages/classify/keep_when) + library migration on load. 271 tests passing.
+- Chunk 2: W2 — `work-item/W2-engine-adaptation` @ `2b576e2` (plugins). New `stage_walker.rs` (LLM caller trait + walk + folding + filter grammar); `rule_engine::run_with_stages` + slot template resolver; `process::CapabilityLlmCaller` adapter wired into runtime. 291 tests passing.
 
 **Next:**
-- Chunk 2: W2 — engine adaptation (classifier/rule_engine/process to consume `stages` instead of `signals`/`subtypes`). Branch `work-item/W2-engine-adaptation`.
+- Chunk 3: W3 + W11 + W12 — parallel sub-agents in worktrees, Opus reviewers. `library_reorder_rules` MCP tool, deprecate path-driven tools, edit_details dropdown switch.
 
 ---
 
