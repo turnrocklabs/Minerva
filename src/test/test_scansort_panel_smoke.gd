@@ -501,8 +501,8 @@ func _run_tests() -> void:
 			check("I73: method 'init' exists",
 				rules_dlg.has_method("init"))
 
-			check("I74: method 'refresh' exists",
-				rules_dlg.has_method("refresh"))
+			check("I74: method '_load_library' exists (DCR 019e33bf: library-only, no path)",
+				rules_dlg.has_method("_load_library"))
 
 			check("I75: method '_on_save_pressed' exists",
 				rules_dlg.has_method("_on_save_pressed"))
@@ -776,17 +776,17 @@ func _run_tests() -> void:
 				found_ids.has(5) and found_ids.has(7) and not found_ids.has(6),
 				"id mismatch from: %s" % str(found_ids))
 
-			# Rules-file R6: Library Rules Editor (8), Create Vault-Specific
-			# Rules (9), Use Library Rules (10).
-			check("L122b: popup has id 8 (Library Rules Editor)",
-				found_ids.has(8),
-				"id 8 missing from: %s" % str(found_ids))
-			check("L122c: popup has id 9 (Create Vault-Specific Rules)",
-				found_ids.has(9),
-				"id 9 missing from: %s" % str(found_ids))
-			check("L122d: popup has id 10 (Use Library Rules)",
-				found_ids.has(10),
-				"id 10 missing from: %s" % str(found_ids))
+			# DCR 019e33bf: single "Rules…" entry (id 4, library-only).
+			# Sidecar ids 8/9/10 removed.
+			check("L122b: popup no longer has id 8 (Library Rules Editor) — sidecars deleted",
+				not found_ids.has(8),
+				"id 8 still present in: %s" % str(found_ids))
+			check("L122c: popup no longer has id 9 (Create Vault-Specific Rules) — sidecars deleted",
+				not found_ids.has(9),
+				"id 9 still present in: %s" % str(found_ids))
+			check("L122d: popup no longer has id 10 (Use Library Rules) — sidecars deleted",
+				not found_ids.has(10),
+				"id 10 still present in: %s" % str(found_ids))
 			check("L122e: popup has id 11 (Settings)",
 				found_ids.has(11),
 				"id 11 missing from: %s" % str(found_ids))
@@ -812,12 +812,12 @@ func _run_tests() -> void:
 		check("L125: panel has method '_vault_rules_path'",
 			panel_l.has_method("_vault_rules_path"),
 			"missing helper for layer-1 sibling path")
-		check("L126: panel has method '_on_library_rules_editor_pressed'",
-			panel_l.has_method("_on_library_rules_editor_pressed"))
-		check("L127: panel has method '_on_create_vault_rules_pressed'",
-			panel_l.has_method("_on_create_vault_rules_pressed"))
-		check("L128: panel has method '_on_use_library_rules_pressed'",
-			panel_l.has_method("_on_use_library_rules_pressed"))
+		check("L126: panel has no '_on_library_rules_editor_pressed' (DCR 019e33bf: collapsed into _on_rules_editor_pressed)",
+			not panel_l.has_method("_on_library_rules_editor_pressed"))
+		check("L127: panel has no '_on_create_vault_rules_pressed' (DCR 019e33bf: sidecars deleted)",
+			not panel_l.has_method("_on_create_vault_rules_pressed"))
+		check("L128: panel has no '_on_use_library_rules_pressed' (DCR 019e33bf: sidecars deleted)",
+			not panel_l.has_method("_on_use_library_rules_pressed"))
 		check("L128b: panel has method '_on_settings_pressed'",
 			panel_l.has_method("_on_settings_pressed"))
 
@@ -846,9 +846,9 @@ func _run_tests() -> void:
 		"load() returned null")
 	if dialog_script_r6 != null:
 		var dlg_r6 = dialog_script_r6.new()
-		check("L133: dialog has method 'init_with_rules_path'",
-			dlg_r6.has_method("init_with_rules_path"))
-		check("L134: dialog retains legacy 'init' for back-compat",
+		check("L133: dialog has no 'init_with_rules_path' (DCR 019e33bf: library-only API)",
+			not dlg_r6.has_method("init_with_rules_path"))
+		check("L134: dialog has 'init' (single conn arg, library-only)",
 			dlg_r6.has_method("init"))
 		if dlg_r6 != null and is_instance_valid(dlg_r6):
 			dlg_r6.queue_free()

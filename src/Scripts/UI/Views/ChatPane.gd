@@ -3391,27 +3391,73 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 	history.VBox.add_program_message("Changed provider to %s %s" % [provider_.provider_name, provider_.display_name])
 
 
-# when tab changes, set the provider to one that that chat tab is using
+# when tab changes, set the provider picker to the provider that chat tab is using
 func _on_tab_changed(tab: int):
-	var active_provider = _provider_option_button.get_provider_for_tab(tab)
-
-	if is_instance_valid(active_provider):
-		var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
-
-		if item_index >= 0:
-			_provider_option_button.select(item_index)
-		else:
-			# Provider not in dropdown (e.g. MCP-spawned worker with a different model).
-			# Add a temporary entry so the chooser shows the correct model name.
-			var enum_id: int = _resolve_provider_enum_id(active_provider)
-			if enum_id >= 0:
-				_provider_option_button.add_item(active_provider.display_name, enum_id)
-				_provider_option_button.select(_provider_option_button.get_item_count() - 1)
-
-		SingletonObject.last_tab_index = tab
+	sync_provider_picker_to_chat(tab)
 
 	_update_compact_button()
 	_update_stop_button()
+
+
+## Sync the visible model picker to a chat tab without changing that chat's provider.
+## Used by tab changes and MCP-driven provider mutations.
+func sync_provider_picker_to_chat(tab_or_chat_id: Variant = -1) -> void:
+	var tab: int = current_tab
+	if tab_or_chat_id is int:
+		tab = int(tab_or_chat_id)
+	elif tab_or_chat_id is String and not str(tab_or_chat_id).is_empty():
+		tab = -1
+		for i in range(SingletonObject.ChatList.size()):
+			if SingletonObject.ChatList[i].HistoryId == str(tab_or_chat_id):
+				tab = i
+				break
+
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		return
+
+	# The picker describes the currently visible chat. If an MCP call changes a
+	# background chat, the picker will update when that tab becomes active.
+	if tab != current_tab:
+		return
+
+	var history: ChatHistory = SingletonObject.ChatList[tab]
+	var active_provider: BaseProvider = history.provider
+	if not is_instance_valid(active_provider):
+		return
+
+	var item_index = _provider_option_button.get_item_index_for_provider(active_provider)
+	if item_index >= 0:
+		_provider_option_button.select(item_index)
+	else:
+		item_index = _add_temporary_provider_picker_item(active_provider)
+		if item_index >= 0:
+			_provider_option_button.select(item_index)
+
+	SingletonObject.last_tab_index = tab
+	update_token_estimation(active_provider)
+
+
+func _add_temporary_provider_picker_item(active_provider: BaseProvider) -> int:
+	var item_id: int = 100000
+	while _provider_option_button.get_item_index(item_id) != -1:
+		item_id += 1
+
+	_provider_option_button.add_item(active_provider.display_name, item_id)
+	var item_index: int = _provider_option_button.get_item_count() - 1
+
+	if active_provider is CoreProvider:
+		var core_provider := active_provider as CoreProvider
+		if core_provider.service and core_provider.action:
+			_provider_option_button.set_item_metadata(item_index, [core_provider.service, core_provider.action])
+			return item_index
+
+	var enum_id: int = _resolve_provider_enum_id(active_provider)
+	if enum_id >= 0:
+		_provider_option_button.set_item_id(item_index, enum_id)
+		return item_index
+
+	_provider_option_button.remove_item(item_index)
+	return -1
 
 
 ## Resolve a provider's enum ID by matching its script against API_MODEL_PROVIDER_SCRIPTS.

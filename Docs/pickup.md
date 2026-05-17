@@ -2,7 +2,7 @@
 
 STATE: AWAITING_HITL
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 
 ---
 
@@ -344,3 +344,52 @@ DCR 019e33a2 (trace log) phases 1+2 are a soft prerequisite for W4 (dryrun_one p
 - 5-min model-chat cold-start ceiling: timeouts beyond that = bug, not warmup
 - After ~5 identical-args MCP tool failures, broker BLOCKS the tool. Don't poll-retry — fix root cause or change args.
 - Plugin must be explicitly started post-MCP-initialize: `mcp.call("minerva_plugin_start", {"id": "scansort"})`. Install/load is not enough.
+
+---
+
+## HITL session log — 2026-05-17 (desktop)
+
+What landed during HITL (uncommitted at time of writing; WIP — see `git status` in each repo):
+
+**Vision-mode auto-fallback for image-only PDFs** (`plugins/scansort/src/{process,rule_engine,stage_walker,classifier}.rs`):
+- `process::is_image_only()` — detects via `trimmed full_text < 50 chars` OR `image_only_pages == page_count`. File-agnostic, not tied to any specific fixture.
+- `process::run()` — when image-only, calls `render::render_pages(abs_path, 3 max_pages, 100 dpi)`, branches phase-1 messages between `classifier::build_messages_with_strategy` (text) and `classifier::build_vision_messages` (multimodal).
+- `stage_walker::walk_with_images()` — vision-aware variant; `walk()` delegates with `None`. New `build_stage_messages_vision()` mirrors text builder but emits `image_url` content blocks. Backward compat preserved.
+- `rule_engine::run_with_stages_vision()` — same delegate pattern.
+- `process::apply_rule_engine_with_llm_vision()` — runtime entry.
+- **Empty-classify short-circuit** in `stage_walker::walk_with_images()` — a stage with `classify={}` no longer fires a no-op LLM call (caught in cold Opus review).
+- **Per-doc manifest checkpoint** in `process::run()` — `source_state::save` after every doc instead of once per source. Lets external watchdogs measure real per-doc latency and recovers progress on crash.
+
+Test status: cargo 292/292 green. Cold Opus review: "general, not curve-fit". Backward-compat for text path clean.
+
+**Not validated end-to-end.** Text path (6 docs) works; vision path on `GrandmaLizzy_modelsheet.pdf` (the lone image-only fixture) trips an Ollama runner crash on this hardware:
+
+```
+GPU dispatch error: Ollama API error: {"error":"model runner has unexpectedly stopped,
+this may be due to resource limitations or an internal error"}
+```
+
+Symptoms: phase-1 vision call hangs ~30–50s, broker surfaces SERVICE_ERROR, plugin marks doc unprocessable. Image payload is tiny (~600 KB base64 at 100 DPI for a 1100×850 PNG) — verified end-to-end via standalone render probe; same OpenAI-style `image_url` message shape as `LocalProvider.gd`/`CoreProvider.gd`/`OllamaProvider.gd`/`OpenAIProvider.gd`. The crash is environmental (qwen2.5vl:7b runner stability on this GPU), not a code bug.
+
+Other things HITL surfaced and fixed today:
+
+- `PreferencesPopup.get_api_key` crashed on TURNROCK because the PROVIDERS dict only had 4 entries (Anthropic/OpenAI/Google/Ollama). HITL-green commit `22a8d180` shifted the call site to `is_provider_allowed_for_plugins` which exposed the latent crash. **Fix:** added TURNROCK case at `PreferencesPopup.gd:280-285` returning `""` (TURNROCK uses OAuth, no API key). Already merged.
+- Rules-pane on main panel deleted (W6's pane was wrong UX). New `File → Rules…` dialog rewritten in place against library_* + new schema. `rules_pane.gd` + `dryrun_result_dialog.gd` removed; `rules_editor_dialog.gd` rewritten. (W7 row-menu may still want a docket follow-up: dryrun result still uses an inline panel.)
+- Four-layer cache invalidation gotcha when plugin manifest changes (input_schema snake_case vs camelCase, plugins.json disk cache, MCPHttpServer `_tools_list_dirty` never re-set true, Claude Code MCP catalogue). All worked around now.
+- Per-doc 30s ceiling is a real product constraint — once Ollama vision is fixed, the watchdog should pass for the text path (~6s/doc warm; well under).
+
+### Laptop pickup checklist
+
+1. `git -C ~/github/Minerva pull --ff-only` (branch: `user/imran/experiments/swarm`)
+2. `git -C ~/github/plugins pull --ff-only` (branch: `main`)
+3. `git -C ~/github/Minerva submodule update --init --recursive` — vendor/godot_cef and vendor/godot_wry both have local patches (gdcef paste-doubling, wry get_global_position fix)
+4. Rebuild plugin: `cd ~/github/plugins/scansort && cargo build --release && install -m 0755 target/release/scansort-plugin scansort-plugin`
+5. Test PDFs are on **EASTFUN** USB at `/media/imran/EASTFUN/scansort-staging/`. Copy to a local path (NOT into the repo — PII risk, gitignored). The GrandmaLizzy fixture is at `/media/imran/SpinningDisk/bitbucket/art/DriftingGrandma/ModelSheets/ToSubmit/GrandmaLizzy.pdf` if you'd rather pull it fresh.
+6. Vision-mode validation pending — try `harness.py --real` with the staging dir; the text-path 6 docs should land in ≤30s each, but `GrandmaLizzy_modelsheet.pdf` will likely SERVICE_ERROR on most setups. Either investigate Ollama qwen2.5vl:7b runner stability on the laptop's GPU, or wait for a stabler vision provider.
+
+### Open follow-ups (uncommitted to docket as of pickup)
+
+- **Investigate qwen2.5vl:7b vision crash** — not a code bug; could be GPU/VRAM, runner version, ollama config. Look at `~/.ollama/logs` if available.
+- **Trace/processing log** (DCR 019e33a2) still unlanded — `stage_walker` + `process` now have both per-doc checkpoint and per-stage trace data ready to feed it.
+- **Vision-mode payload budget** — `VISION_MAX_PAGES=3` × ~600KB = ~1.8MB per request. Multi-rule fan-out re-serializes per rule. No telemetry knob today.
+- **Plugins repo has cad changes** too (CADPanel.gd / Cad_GeometryOverlay.gd / mcad/evaluator.py) — orthogonal to scansort, will be in the WIP commit but not part of this DCR.

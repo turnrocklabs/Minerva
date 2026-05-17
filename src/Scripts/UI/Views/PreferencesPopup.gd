@@ -280,6 +280,10 @@ func _sync_provider_checkboxes() -> void:
 func get_api_key(provider: SingletonObject.API_PROVIDER) -> String:
 	if provider == SingletonObject.API_PROVIDER.LOCAL:
 		return " "
+	elif provider == SingletonObject.API_PROVIDER.TURNROCK:
+		# TurnRock Core uses socket-level auth (not API keys). Keyless from
+		# this method's perspective; broker's is_keyless gate handles the rest.
+		return ""
 	elif provider == SingletonObject.API_PROVIDER.CHATGPT:
 		# ChatGPT uses OAuth, return the access token
 		var chatgpt_auth := SingletonObject.ChatGPTProviderScript.get_auth()

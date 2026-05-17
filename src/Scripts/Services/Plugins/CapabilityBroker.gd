@@ -44,6 +44,13 @@ const _PluginScopeGrants := preload("res://Scripts/Services/Plugins/PluginScopeG
 ## Using preload (not class_name) so CapabilityBroker loads correctly in headless test contexts.
 const _CoreProvider := preload("res://Scripts/Services/Providers/Core/CoreProvider.gd")
 
+## Observability signals — fired per plugin chat invocation so panels and
+## status surfaces can show what's in flight. Panels subscribe via
+## SingletonObject.plugin_capability_broker. Receivers should filter by
+## plugin_id since one broker serves all plugins.
+signal plugin_chat_invoked(plugin_id: String, provider_name: String, model_name: String)
+signal plugin_chat_completed(plugin_id: String, provider_name: String, model_name: String, duration_ms: int, ok: bool, tokens_in: int, tokens_out: int, error: String)
+
 ## Policy engine reference — required for capability gating.
 var policy: PluginPolicy = null
 
@@ -2389,22 +2396,34 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	# --- 8. Generate content -------------------------------------------------
 	print("[CapabilityBroker] Plugin '%s' invoking host.providers.chat (model=%s, provider=%s)" % [
 		plugin_id, actual_model_name, actual_provider_name])
+	plugin_chat_invoked.emit(plugin_id, actual_provider_name, actual_model_name)
+	var _chat_start_us: int = Time.get_ticks_msec()
 
 	var bot_response: BotResponse = await provider.generate_content(prompt, additional_params)
+
+	var _chat_duration_ms: int = Time.get_ticks_msec() - _chat_start_us
 
 	# Detach from scene tree now that the call is done
 	if provider.get_parent() != null:
 		provider.get_parent().remove_child(provider)
 
 	if bot_response == null:
+		plugin_chat_completed.emit(plugin_id, actual_provider_name, actual_model_name,
+			_chat_duration_ms, false, 0, 0, "generate_content returned null")
 		provider.queue_free()
 		return PluginErrors.provider_error(plugin_id, actual_provider_name, actual_model_name,
 			"generate_content returned null")
 
 	if not str(bot_response.error).is_empty():
+		plugin_chat_completed.emit(plugin_id, actual_provider_name, actual_model_name,
+			_chat_duration_ms, false, 0, 0, str(bot_response.error))
 		provider.queue_free()
 		return PluginErrors.provider_error(plugin_id, actual_provider_name, actual_model_name,
 			str(bot_response.error))
+
+	plugin_chat_completed.emit(plugin_id, actual_provider_name, actual_model_name,
+		_chat_duration_ms, true,
+		int(bot_response.prompt_tokens), int(bot_response.completion_tokens), "")
 
 	# --- 9. Record cost -------------------------------------------------------
 	if cost_tracker != null and cost_tracker.has_method("record_chat_cost"):

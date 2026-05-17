@@ -30,6 +30,7 @@ config/windows_native_icon="res://icon.ico"
 
 [audio]
 
+buses/default_bus_layout="uid://ceag6rfsoj1uq"
 driver/enable_input=true
 
 [autoload]
