@@ -6,16 +6,14 @@ Last updated: 2026-05-18 (post compact; multi-vault chain closed; audit logs shi
 
 ## Mission for next session
 
-**Autonomous cycle on DCR `019e3d678fb873f8ae45515ee0c3b32d`** — add a "Close" menu item to the scansort panel's File menu. Closes the entire session (source + vaults + dirs in-memory), forgets the source manifest, leaves vault `.ssort` files intact, leaves rule library intact.
+**Autonomous cycle on DCR `019e3d678fb873f8ae45515ee0c3b32d`** — add a "Close" menu item to the scansort panel's File menu. Closes the entire session **in-memory only** (source + vaults + dirs), leaves the source manifest (`.scansort-state.json`) on disk so re-opening preserves processing history, leaves vault `.ssort` files intact, leaves rule library intact.
 
 The DCR has full UX + implementation breakdown. Read it first:
 ```
 docket_get id=019e3d678fb873f8ae45515ee0c3b32d
 ```
 
-### Open question to surface before destructive code
-
-User said "Probably forgets the source manifest" — the word "probably" is hedged. **Before shipping the `.scansort-state.json` wipe step, confirm with the user** that destroying processed-file history is intended. Alternative: just clear in-memory session and leave the manifest on disk.
+No open questions — user decided 2026-05-18 to do in-memory clear only.
 
 ## Cycle policy (carry-forward)
 
@@ -81,7 +79,6 @@ Each iter:
 1. `git -C ~/github/plugins log --oneline -5` — confirm `fa4065e` at tip
 2. `git -C ~/github/Minerva log --oneline -3` — confirm `284298d9` at tip
 3. Read this pickup.md
-4. `docket_get id=019e3d678fb873f8ae45515ee0c3b32d` — read the full DCR
+4. `docket_get id=019e3d678fb873f8ae45515ee0c3b32d` — read the full DCR (no open questions)
 5. Verify binary install: `md5sum ~/github/plugins/scansort/scansort-plugin ~/github/plugins/scansort/target/release/scansort-plugin` — if they differ, cp first
-6. Surface the "wipe manifest?" open question to user BEFORE implementing that step
-7. Per cycle policy: snapshot library → wipe → sub-agent dispatch → review → cp binary → R1 + Close-action verification
+6. Per cycle policy: snapshot library → wipe → sub-agent dispatch → review → cp binary → R1 + Close-action verification
