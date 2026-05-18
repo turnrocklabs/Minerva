@@ -1,10 +1,19 @@
-# Pickup — W0 path A (widened): scansort panel-as-view-of-plugin-state
+# Pickup — W0 path A (re-scoped): scansort foreground-mode visibility of MCP config
 
-STATE: PHASE_2_CODE_WRITTEN_UNVERIFIED
+STATE: READY_FOR_TEST_ITERATION
 
-Last updated: 2026-05-17 evening
+Last updated: 2026-05-18
 
 Work item: `019e38d4635970f5b28c940c193350f3` (parent DCR `019e33a2ab2e7581bf0bdcbf5ddf0aeb`)
+
+**Cycle mission (in user's words):** "be able to see the input dir(s), output vault(s), and output dir(s) when asked to run in the foreground/visibly."
+
+No design changes. Same MCP calls, same backend, same Option-A session-scoped state. The only deliverable is: when the panel is open and an LLM configures a run over MCP, the panel must reflect what got configured — input dir(s), active vault, output dir(s) — without the user touching anything.
+
+"Background mode" = MCP calls with no panel open (today's behavior, unchanged).
+"Foreground mode" = MCP calls with panel open → panel mirrors session state live.
+
+Multi-panel "both update" is nice-to-have if time permits, not part of the success bar.
 
 ---
 
@@ -12,14 +21,13 @@ Work item: `019e38d4635970f5b28c940c193350f3` (parent DCR `019e33a2ab2e7581bf0bd
 
 | State | Meaning |
 |---|---|
-| `PHASE_1_DONE` | Instrumentation + autonomous loop established. Plugin emit → broker → panel signal proven end-to-end via `/tmp/scansort-debug.log`. |
-| `PHASE_2_CODE_WRITTEN_UNVERIFIED` | (current) No-vault render gates removed. `_bootstrap_panel_state_if_needed()` added. NOT yet screenshot-verified — restart Minerva and confirm panel renders source + destinations without opening a vault. |
-| `PHASE_2_VERIFIED` | Phase 2 visually confirmed. Ready for Phase 3. |
-| `PHASE_3_IN_PROGRESS` | Wiring MCP-drivable active vault via session state. |
-| `PHASE_4_IN_PROGRESS` | Multi-panel sanity (open 2 panels, fire MCP, both refresh). |
-| `PHASE_5_IN_PROGRESS` | Re-verify live status during Process All (per-file status bar). |
-| `READY_FOR_HITL` | All phases code-complete + autonomously verified. Hand off for visual sign-off. |
-| `SHIPPED` | Commits squashed/landed; PR merged; work_item transitioned to done. |
+| `READY_FOR_TEST_ITERATION` | (current) Phase 1 instrumentation + Phase 2 no-vault rendering code already written and committed. Nothing has been visually verified yet. Next action is a single manual test iteration (see §"Single test iteration"). |
+| `PHASE_2_VERIFIED` | Screenshot proven: with no vault active, panel renders source dir + destinations registry. `set_source_dir` over MCP visibly changes the source pane. `destination_add` over MCP visibly changes the destinations list. |
+| `PHASE_3_BUILDING` | Writing the MCP-drivable active-vault tool + panel listener. |
+| `PHASE_3_VERIFIED` | Screenshot proven: `set_active_vault` (or whatever the tool ends up named) over MCP visibly switches the panel's active-vault display. |
+| `FOREGROUND_VISIBILITY_VERIFIED` | All three primitives (input dir, active vault, output dirs) verified end-to-end via MCP-driven screenshots. Cycle mission satisfied. |
+| `READY_FOR_HITL` | Autonomous verification complete, ready for user visual sign-off. |
+| `SHIPPED` | Commits landed on `user/imran/experiments/swarm` (Minerva) + `main` (plugins); work_item transitioned to done. |
 
 Update this marker at every phase boundary in the same commit that advances the work.
 
@@ -35,26 +43,34 @@ Update this marker at every phase boundary in the same commit that advances the 
 
 ---
 
-## Scope (as widened by user this session)
+## Scope (re-scoped 2026-05-18)
 
-Original W0 was "live per-file status during Process All." Two scope widenings during HITL:
+**In scope:** main pane only. Three MCP-driven primitives must be visible in an open panel:
 
-1. **MCP→panel push refresh.** MCP-driven mutations (set_source_dir, destination_add, …) must update an open panel in real time. (Discovered when MCP setup didn't appear in the visible panel.)
-2. **MCP-drivable vault open + panel-as-view-of-plugin-state.** Even before any vault is opened, panel must reflect whatever state the plugin has. With 1+ scansort tabs open, MCP calls must drive all of them. (User's framing: "open the scansort panel UI, make MCP calls, and update the panel state accordingly.")
+1. **Input dir** — `set_source_dir` reflects in the source pane
+2. **Active vault** — `set_active_vault` (new tool, Phase 3) reflects in the vault display
+3. **Output dirs** — `destination_add`/`destination_remove` reflects in the destinations registry
 
-**Design choice:** Option A — all open panels share the same plugin state (session-scoped). Option B (per-panel vault + panel_id targeting) explicitly deferred.
+**Out of scope this cycle (explicitly deferred):**
+- Live per-file status during Process All (original W0 scope)
+- Multi-panel sanity / "both update" verification — nice-to-have if time permits, not gating
+- Option B (per-panel vault + `panel_id` targeting) — Option A confirmed: one session, all panels are views
+
+**Design unchanged.** Same MCP tools, same backend, same session-scoped state. This cycle only adds the user's ability to *see* it happen.
 
 ---
 
-## Phases
+## Phases (current cycle only)
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | Instrumentation: `notify_state_changed` (plugin) + `_on_plugin_event` (panel), file log `/tmp/scansort-debug.log`, MCP `minerva_plugin_open_panel`, MCPServerConnection async-drain fix | ✅ DONE — emit → recv proven 16ms latency |
-| 2 | Remove no-vault render gates so source + destination panes render whatever plugin state exists | 🟡 CODE WRITTEN, untested visually |
-| 3 | MCP-drivable active vault via session state. New tool e.g. `minerva_scansort_session_set_active_vault`. Panel listens for `state_changed kind=vault`, pulls current from session_state, sets `_active_vault_path`, runs post-open refresh. Panel's UI vault-open button routes through the same MCP tool (single code path). | ⬜ |
-| 4 | Multi-panel sanity. Open 2 panels via curl; fire one MCP call; verify both `[panel:<id>] recv` markers in log AND both screenshots reflect the change. | ⬜ |
-| 5 | Re-verify per-file live status during Process All against `~/temp/scansort-vision-docs` (3 PDFs). | ⬜ |
+| 1 | Instrumentation: `notify_state_changed` (plugin) + `_on_plugin_event` (panel), file log `/tmp/scansort-debug.log`, MCP `minerva_plugin_open_panel`, MCPServerConnection async-drain fix | ✅ Code committed, broker→panel emit→recv proven 16ms in prior session |
+| 2 | Remove no-vault render gates so source + destination panes render whatever plugin state exists | 🟡 Code committed, **not yet screenshot-verified** — gating step for `PHASE_2_VERIFIED` |
+| 3 | MCP-drivable active vault via session state. New tool e.g. `minerva_scansort_session_set_active_vault`. Panel listens for `state_changed kind=vault`, pulls current from session_state, sets `_active_vault_path`, runs post-open refresh. Panel's UI vault-open button routes through the same MCP tool (single code path). | ⬜ To build after Phase 2 verifies |
+
+**Out-of-scope phases (former plan, parked):**
+- ~~Phase 4 — multi-panel sanity~~ → nice-to-have only
+- ~~Phase 5 — per-file live status during Process All~~ → next cycle
 
 ---
 
@@ -78,23 +94,20 @@ until grep -q "HTTP server started on port 9315" /tmp/minerva.log 2>/dev/null; d
 # fire test MCP calls (e.g. set_source_dir, destination_add)
 # tail /tmp/scansort-debug.log for emit + recv markers
 
-# find Minerva window via Quartz
-python3 -c "
-from Quartz import CGWindowListCopyWindowInfo, kCGWindowListOptionAll, kCGNullWindowID
-for w in CGWindowListCopyWindowInfo(kCGWindowListOptionAll, kCGNullWindowID):
-    if w.get('kCGWindowOwnerPID') == $MINERVA_PID and w.get('kCGWindowBounds', {}).get('Width', 0) > 500:
-        print(w.get('kCGWindowNumber')); break
-"
-# screencapture -l <id> -x /tmp/minerva-step.png ; then Read it
+# find Minerva window by PID (Linux/X11)
+WID=$(xdotool search --pid $MINERVA_PID --onlyvisible --name . | head -1)
+# capture (ffmpeg x11grab — scrot/ImageMagick/grim not present on this box)
+ffmpeg -y -loglevel error -f x11grab -window_id $WID -frames:v 1 /tmp/minerva-step.png
+# then Read /tmp/minerva-step.png
 
 # cleanup
 kill -9 $MINERVA_PID
 ```
 
 Gotchas observed:
-- Standalone-launched godot owner string is `'godot'` (lowercase). Editor-launched is `'Godot'`. Filter on PID, not owner name.
 - Plugin reload doesn't re-parse GDScript classes. Restart Minerva after any GDScript change.
 - After the user's editor runtime is killed, only `minerva_create_plugin_editor` (for `editor_items[]`) or my new `minerva_plugin_open_panel` (for `ui.panels[]`) can spawn tabs via MCP.
+- Linux desktop has no scrot/ImageMagick/grim/gnome-screenshot/wmctrl. Use `xdotool search --pid` + `ffmpeg -f x11grab -window_id`. macOS Quartz/`screencapture` block from prior version preserved in git history if you switch hosts.
 
 ---
 
@@ -134,9 +147,61 @@ Test corpora:
 
 ---
 
-## Pickup question for next session
+## Single test iteration (run BEFORE any `/goal`)
 
-Before doing anything else, run the autonomous loop and confirm: with no vault opened, does the panel display the **destinations registry** entries (`test`, `test2`, `test3`, `test4`) and the **current source dir** files? Two screenshots — one immediately after `plugin_open_panel`, one after `set_source_dir` with a different path — should differ.
+One manual pass through the autonomous-loop block. Goal is to validate the loop mechanics + Phase 2 code with eyes-on, then stop and chat with the user about what to automate.
 
-If yes → Phase 2 visually verified → transition STATE to `PHASE_2_VERIFIED` → start Phase 3.
-If no → diagnose via `/tmp/scansort-debug.log` (is `recv state_changed` firing? is `_bootstrap_panel_state_if_needed` being called? does `_refresh_all_dest_trees` return without populating?). Add print() instrumentation as needed.
+### Validated desktop paths (use these verbatim)
+
+| What | Path | Notes |
+|---|---|---|
+| Source corpus | `/home/imran/temp/scansort-staging/` | 7 PDFs, incl. `GrandmaLizzy_modelsheet.pdf` (vision-only). Use for `session_open_source`. |
+| Iteration vault | `/home/imran/temp/iter_W0.ssort` | **Stable name across all iterations of this cycle.** Created on first Phase 3 iteration; deleted at end of every iteration that touched it (see Cleanup). |
+| Destination dirs | `/home/imran/temp/scansort-test-dest/{boat,tax,utility}/` | Pre-existing, already contain classified output from May 17 HITL. Do not delete contents. |
+| Window ID lookup | Godot PID (capture from launch); then `xdotool search --pid $PID --onlyvisible --name .` | Returns Minerva window ID for `xwd -id`. |
+
+### Steps (execute once, then stop)
+
+1. Run the autonomous-loop block above to launch Minerva headlessly + start the scansort plugin via MCP.
+2. Open a panel via `minerva_plugin_open_panel { plugin_id: "scansort" }`.
+3. Capture screenshot A → `/tmp/iter-A-fresh-panel.png`. Expected: source pane + destinations registry both render even though no vault is active.
+4. Fire `minerva_scansort_session_open_source { label: "iter_W0_src", path: "/home/imran/temp/scansort-staging" }`.
+5. Capture screenshot B → `/tmp/iter-B-after-source.png`. Expected: source pane lists the 7 PDFs in `scansort-staging`.
+6. `cat /tmp/scansort-debug.log` for emit/recv markers — confirm `state_changed kind=source` round-trip.
+7. Stop. Report findings (with screenshot paths) and chat with user about Phase 2 verification status, Phase 3 plan, and whether to wrap into a `/goal`.
+
+### Cleanup (run only if iteration touched the iteration vault)
+
+```bash
+# Only if Phase 3+ ran the classifier or created the vault:
+rm -f /home/imran/temp/iter_W0.ssort
+
+# Always safe (idempotent):
+pkill -9 -f "godot --path /home/imran/github/Minerva/src" 2>/dev/null
+```
+
+**Do NOT** touch `~/temp/hitl_test.ssort` (separate fixture from May 17 HITL) or `~/temp/scansort-test-dest/` contents (prior HITL classification output is reference material).
+
+**Do not** advance the STATE marker on this iteration. The whole point is to learn what's actually broken or working before committing to an autonomous loop.
+
+---
+
+## `/goal` text (for future autonomous use, DO NOT INVOKE THIS CYCLE)
+
+Once the single test iteration validates the mechanics, the user may choose to wrap the rest of the cycle in `/goal`. Draft text:
+
+```
+/goal Drive the scansort foreground-mode visibility cycle in /home/imran/github/Minerva/Docs/pickup.md to completion. Goal satisfied when the file contains a line exactly matching "STATE: FOREGROUND_VISIBILITY_VERIFIED" and no line matching "STATE: PHASE_" or "STATE: READY_FOR_TEST_ITERATION". Verification requires three screenshot artifacts at /tmp/iter-{source,vault,dest}.png each showing the panel reflecting the respective MCP-driven state change without HITL action. All hard rules in §"Hard rules" must hold for every commit. Stop after 80 total turns regardless of completion. Surface immediately on any condition in §"Stop conditions".
+```
+
+---
+
+## Stop conditions (surface to user mid-cycle)
+
+1. Single test iteration shows Phase 2 code is not working as written → fix-attempts cap at 3 then surface.
+2. Any test fails after 3 fix attempts on the same test.
+3. Cannot meet a phase's acceptance criterion without scope creep.
+4. Plugin start / `plugin_open_panel` MCP call fails repeatedly — likely cache invalidation (see §"Carry-forward constraints" in earlier pickup; restart Minerva).
+5. Screenshot capture fails for tooling reasons (no `xdotool`/`ffmpeg`) — surface and ask.
+6. Plugin or broker emits an event the panel doesn't recognize → log it and surface.
+7. Anything that would require touching `vendor/` to fix.
