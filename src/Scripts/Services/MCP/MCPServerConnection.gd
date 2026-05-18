@@ -625,6 +625,16 @@ func _connect_stdio() -> Error:
 		_subprocess = null
 		return ERR_CANT_CONNECT
 
+	# Drain plugin-initiated messages (notifications, capability requests
+	# arriving outside a tool call) the moment they land. Without this, plugin
+	# notifications written AFTER a tool response sit in the pipe until the
+	# next tool call's _stdio_request loop happens to read them — which means
+	# panel state_changed events would lag by one MCP roundtrip. _on_async_*
+	# functions self-gate on _in_stdio_request so this signal is harmless when
+	# a tool call is in flight.
+	if _subprocess.has_signal("output_ready") and not _subprocess.output_ready.is_connected(_on_async_output_ready):
+		_subprocess.output_ready.connect(_on_async_output_ready)
+
 	print("[MCP STDIO] Subprocess running, performing MCP handshake...")
 
 	# Perform MCP initialization handshake
@@ -754,10 +764,20 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 						var err = msg.get("error", {})
 						if err is Dictionary:
 							_in_stdio_request = false
+							_drain_pending_async()
 							return {"error": err.get("message", "Unknown error")}
 						_in_stdio_request = false
+						_drain_pending_async()
 						return {"error": str(err)}
 					_in_stdio_request = false
+					# Drain any plugin-initiated notifications that arrived
+					# between writing our response and us reading it. Plugins
+					# emit `minerva/plugin_event` (e.g. scansort's state_changed)
+					# immediately after the tool response; output_ready may have
+					# fired while _in_stdio_request was still true, so its
+					# handler bailed and the buffered data has no fresh signal
+					# to trigger a re-drain. Explicitly poll here.
+					_drain_pending_async()
 					return msg
 
 		await Engine.get_main_loop().create_timer(poll_interval).timeout
@@ -874,6 +894,17 @@ func _normalize_mcp_tool_result(result) -> Dictionary:
 # ---------------------------------------------------------------------------
 # Async output handling (between tool calls)
 # ---------------------------------------------------------------------------
+
+## Synchronously drain any pending plugin-initiated messages (notifications,
+## capability requests). Safe to call after _in_stdio_request is cleared.
+## Mirrors the routing logic in _on_async_output_ready; factored out so
+## _stdio_request can call it explicitly without relying on output_ready
+## re-firing for already-buffered data.
+func _drain_pending_async() -> void:
+	if _in_stdio_request:
+		return
+	_on_async_output_ready()
+
 
 ## Called when SubProcess emits output_ready outside of a tool call.
 ## Drains the output queue and routes messages to appropriate handlers.

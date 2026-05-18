@@ -41,6 +41,7 @@ func get_tool_definitions() -> Array:
 		_get_plugin_inspect_tool_def(),
 		_get_plugin_state_tool_def(),
 		_get_plugin_help_tool_def(),
+		_get_plugin_open_panel_tool_def(),
 	]
 
 
@@ -69,6 +70,8 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return _handle_plugin_state(args)
 		"minerva_plugin_help":
 			return _handle_plugin_help(args)
+		"minerva_plugin_open_panel":
+			return _handle_plugin_open_panel(args)
 		_:
 			return {"error": "Unknown plugin management tool: %s" % tool_name}
 
@@ -543,3 +546,78 @@ func _get_plugin_audit_log() -> Variant:
 ## Return the injected PluginEventBroker reference.
 func _get_event_broker() -> Variant:
 	return _event_broker
+
+
+# ---------------------------------------------------------------------------
+# Tool: minerva_plugin_open_panel
+# ---------------------------------------------------------------------------
+# Opens a plugin's godot_scene panel as an editor tab — the MCP equivalent
+# of the user clicking the panel entry in the Plugin Manager UI. Needed for
+# autonomous testing of panel-side behaviour (broker→signal→panel-handler
+# wiring, multi-panel scenarios) where no human is available to click.
+
+func _get_plugin_open_panel_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_open_panel",
+		"description": "Open a plugin's godot_scene panel as an editor tab — the MCP equivalent of the Plugin Manager's panel-open button. Use for plugins whose UI is a panel (ui.panels[] in the manifest) rather than an editor_item. Returns {success, plugin_id, panel_name, tab_title} or {error}.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"plugin_id": {"type": "string", "description": "Plugin id (e.g. 'scansort')."},
+				"panel_name": {"type": "string", "description": "Panel name as declared in the plugin's manifest ui.panels[]. Defaults to the first godot_scene panel."},
+				"tab_title": {"type": "string", "description": "Optional tab title. Defaults to '<plugin_id> · <panel_name>'."},
+			},
+			"required": ["plugin_id"],
+		},
+	}
+
+
+func _handle_plugin_open_panel(args: Dictionary) -> Dictionary:
+	var plugin_id: String = str(args.get("plugin_id", ""))
+	if plugin_id.is_empty():
+		return {"error": "plugin_id is required"}
+
+	var pm = _get_plugin_manager()
+	if pm == null:
+		return {"error": "Plugin manager not available"}
+	var def = pm.get_db().get_by_id(plugin_id)
+	if def == null:
+		return {"error": "Unknown plugin: %s" % plugin_id}
+
+	# Resolve panel_name: caller-provided OR first godot_scene panel.
+	var panel_name: String = str(args.get("panel_name", ""))
+	if panel_name.is_empty():
+		for pd in def.ui_panels:
+			if pd is Dictionary and pd.get("kind", "") == "godot_scene":
+				panel_name = pd.get("name", "")
+				break
+	if panel_name.is_empty():
+		return {"error": "Plugin '%s' has no godot_scene panel" % plugin_id}
+
+	# Validate the resolved panel exists and is godot_scene.
+	var panel_kind: String = ""
+	for pd in def.ui_panels:
+		if pd is Dictionary and pd.get("name", "") == panel_name:
+			panel_kind = pd.get("kind", "")
+			break
+	if panel_kind != "godot_scene":
+		return {"error": "Panel '%s' on plugin '%s' is not godot_scene (kind=%s)" % [panel_name, plugin_id, panel_kind]}
+
+	var tab_title: String = str(args.get("tab_title", ""))
+	if tab_title.is_empty():
+		tab_title = "%s · %s" % [plugin_id, panel_name]
+
+	var ep = SingletonObject.editor_pane if SingletonObject != null else null
+	if ep == null or not ep.has_method("add_plugin_scene_editor"):
+		return {"error": "EditorPane unavailable"}
+
+	var editor = ep.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
+	if editor == null:
+		return {"error": "add_plugin_scene_editor returned null"}
+
+	return {
+		"success": true,
+		"plugin_id": plugin_id,
+		"panel_name": panel_name,
+		"tab_title": tab_title,
+	}
