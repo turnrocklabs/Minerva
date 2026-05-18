@@ -1,8 +1,8 @@
-# Pickup — scansort multi-vault SHIPPED; R2 background gate next
+# Pickup — scansort multi-vault DCR chain FULLY CLOSED
 
-STATE: `READY_FOR_R2_BACKGROUND_GATE`
+STATE: `READY_FOR_NEXT_MISSION`
 
-Last updated: 2026-05-18 (post-B-fallback ship, R1+S1 foreground both pass)
+Last updated: 2026-05-18 (R1+S1 foreground + R2 background all pass; chain closed)
 
 ## What just shipped this cycle
 
@@ -33,13 +33,18 @@ Last updated: 2026-05-18 (post-B-fallback ship, R1+S1 foreground both pass)
 - 2023-MorganStanley-MSFT-Bonus → tax_2023_vault → 2023_Morgan Stanley Capital Management, LLC._1099.pdf
 - msft_w2 (ambiguous score across years) → tax_2025_vault → 2025_MICROSOFT CORPORATION_W-2.pdf (B-fallback walk fell through 2023→2024→2025 until conditions matched; model extracted year=2025)
 
-## Mission for next cycle
+## R2 result (closed 2026-05-18, same session as R1+S1 ship)
 
-**R2 — single-vault regression, BACKGROUND mode** (the only gate parked from this cycle).
+Single-vault regression with **scansort panel closed** (`minerva_close_editor editor_name="scansort · scansort_panel"`). Process called via MCP, no UI.
 
-Same scenario as R1, but the scansort panel is NOT open. Assertion: `by_destination` + `by_rule` counts match R1 exactly (7 to `test`, broken down as tax=4/boat=1/drawings=1/utility=1). No UI check possible without panel. Events still need to fire from plugin to broker (`document` kind state_changed events) — verify via plugin log or broker tap.
+- `summary: moved=7 unprocessable=0 conflicts=0`
+- `by_destination: {test: 7}` — matches R1 byte-for-byte
+- `by_rule: {boat: 1, drawings: 1, tax: 4, utility: 1}` — matches R1 byte-for-byte
+- 42 `document` state_changed events fired across runs; emission is panel-independent
 
-If R2 passes, the full pickup → A2 → A2-bottombar → B-fallback DCR chain is done and the next mission is whatever feature ships next on the scansort roadmap.
+R2 confirms the plugin emits events regardless of whether anyone is listening, and that the B-fallback engine produces identical routing decisions whether or not the UI is up.
+
+**The full pickup → A2 → A2-bottombar → B-fallback DCR chain is done.** Next mission is whatever ships next on the scansort roadmap.
 
 ## Critical gotcha discovered this cycle (saved as session hint, promote to docket if recurring)
 
@@ -79,10 +84,9 @@ Each iter: snapshot lib → wipe state → restart Minerva → apply iter-config
 - Source is read-only — scansort copies to destinations, never alters source.
 - pkill target is `godot`, not `Minerva` (process name is `godot --path ...`).
 
-## Cold-start procedure for next session (R2 gate)
+## Cold-start procedure for next session
 
 1. `git -C ~/github/plugins log --oneline -5` — confirm `80ddc7e` at tip (B-fallback)
 2. Read this pickup.md in full
 3. Verify binary install: `md5sum ~/github/plugins/scansort/scansort-plugin ~/github/plugins/scansort/target/release/scansort-plugin` — if they differ, cp first
-4. Per cycle policy: snapshot library, wipe state, restart Minerva, apply R2 iter-config (one `test` vault, no panel open), run process, verify counts match R1
-5. If R2 passes, file the close-out for the multi-vault DCR chain and move to next mission
+4. Pick next mission with the user — scansort multi-vault DCR chain is closed
