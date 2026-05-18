@@ -698,6 +698,23 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 		print("[MCP STDIO] Error: Subprocess not running")
 		return {"error": "Subprocess not running"}
 
+	# Serialize concurrent _stdio_request entries on the shared subprocess
+	# stream. Without this, a deferred panel refresh that issues its own MCP
+	# call can begin a second _stdio_request while an outer one is still
+	# polling — both poll the same stdout, each picks up the other's response
+	# as "not my id" and discards it, causing spurious 30s timeouts. The
+	# event/state/notify routing above this function is already deferred for
+	# signal-handler reentry; this guard handles the remaining case where two
+	# tool calls land in flight at once. Bounded wait so a stuck flag can't
+	# deadlock the panel forever.
+	var wait_elapsed := 0.0
+	while _in_stdio_request and wait_elapsed < 30.0:
+		await Engine.get_main_loop().create_timer(0.05).timeout
+		wait_elapsed += 0.05
+	if _in_stdio_request:
+		print("[MCP STDIO] Error: wait for prior _stdio_request exceeded 30s")
+		return {"error": "STDIO concurrent-request wait timed out"}
+
 	_in_stdio_request = true
 
 	var request_id: String = str(request.get("id", ""))
@@ -745,17 +762,27 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 					await _handle_plugin_capability_request(msg)
 					continue
 
-				# Route event/state notifications that arrive during a tool call
+				# Route event/state notifications that arrive during a tool call.
+				# DEFER the dispatch — the signal subscribers (e.g. ScansortPanel
+				# refresh handlers) often issue their own MCP tool calls, which
+				# would reenter _stdio_request from inside our own poll. Two
+				# nested polls reading the same subprocess stream race each other
+				# (each picks up the other's response and discards it), causing
+				# spurious "STDIO request timed out" errors and dropped UI
+				# updates. call_deferred enqueues the handler for the next idle
+				# frame, so any reentrant tool call runs from a clean stack with
+				# no outer poll competing.
 				if msg.has("method") and msg.get("method") == "minerva/plugin_event":
-					_handle_async_plugin_event(msg)
+					call_deferred("_handle_async_plugin_event", msg)
 					continue
 				if msg.has("method") and msg.get("method") == "minerva/plugin_state":
-					_handle_async_plugin_state(msg)
+					call_deferred("_handle_async_plugin_state", msg)
 					continue
 
-				# host.notify: plugin → host notification; no id, no response needed
+				# host.notify: plugin → host notification; no id, no response needed.
+				# Deferred for the same reentry-safety reason as plugin_event above.
 				if msg.has("method") and msg.get("method") == "host.notify" and not msg.has("id"):
-					_handle_host_notify(msg)
+					call_deferred("_handle_host_notify", msg)
 					continue
 
 				# Check if this is our response
@@ -764,20 +791,19 @@ func _stdio_request(request: Dictionary) -> Dictionary:
 						var err = msg.get("error", {})
 						if err is Dictionary:
 							_in_stdio_request = false
-							_drain_pending_async()
+							call_deferred("_drain_pending_async")
 							return {"error": err.get("message", "Unknown error")}
 						_in_stdio_request = false
-						_drain_pending_async()
+						call_deferred("_drain_pending_async")
 						return {"error": str(err)}
 					_in_stdio_request = false
 					# Drain any plugin-initiated notifications that arrived
-					# between writing our response and us reading it. Plugins
-					# emit `minerva/plugin_event` (e.g. scansort's state_changed)
-					# immediately after the tool response; output_ready may have
-					# fired while _in_stdio_request was still true, so its
-					# handler bailed and the buffered data has no fresh signal
-					# to trigger a re-drain. Explicitly poll here.
-					_drain_pending_async()
+					# between writing our response and us reading it. Deferred
+					# for the same reentry-safety reason as the event/state
+					# routing above — if the drained event triggers a panel
+					# refresh that calls back into MCP, we want that call to
+					# start from a clean stack, not from inside this poll.
+					call_deferred("_drain_pending_async")
 					return msg
 
 		await Engine.get_main_loop().create_timer(poll_interval).timeout
