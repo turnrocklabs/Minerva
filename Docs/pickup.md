@@ -1,78 +1,71 @@
-# Pickup — multi-vault tax-year routing scenario (foreground mode)
+# Pickup — scansort multi-vault SHIPPED; R2 background gate next
 
-STATE: `READY_FOR_MULTIVAULT_MISSION`
+STATE: `READY_FOR_R2_BACKGROUND_GATE`
 
-Last updated: 2026-05-18 (post-bottom-bar fix, three iter cycles passed)
+Last updated: 2026-05-18 (post-B-fallback ship, R1+S1 foreground both pass)
 
-## Mission for this cycle
+## What just shipped this cycle
 
-**Foreground-mode classification into multiple year-keyed vaults.** Same source corpus (`~/temp/scansort-staging`), but instead of one `iter_W0_vault`, the user opens N vaults named `tax_<year>.ssort` (e.g. `tax_2023.ssort`, `tax_2024.ssort`, `tax_2025.ssort`). Process should land each tax doc into the vault matching its classified year. Non-tax docs (Beneteau boat, GrandmaLizzy drawings) either stay in source OR route elsewhere — design choice for the cycle.
+| Commit | What |
+|---|---|
+| plugins `80ddc7e` | B-fallback rule engine: walks score-ranked rules in order, runs each rule's stages, evaluates conditions against extracted slot facts, fires-and-stops on first pass. Unblocks year-conditional routing. (DCR `019e3c91cf157ee4b7ebbe1602951731`) |
 
-**Success criteria (strict, screenshot-verifiable):**
-1. Panel's Vaults pane shows ALL `tax_<year>_vault` rows from `session_open_vault` calls
-2. Each vault row auto-expands with its year's tax docs as children
-3. Per-file source row badges show the correct `→ tax_<year>` target
-4. Bottom status bar continues to show "Processing <file>" stably (no flicker)
-5. Vault inventory of each year vault contains ONLY docs of that year
-6. Non-tax docs handled per the chosen design (unclassified in source, or routed elsewhere)
+**Tests:** 299 lib + 4 manifest, all green. **Plugins HEAD:** `80ddc7e`. **Minerva HEAD:** `4b053e3f` (unchanged — change is plugin-side).
 
-## Open design question for the start of next session
+## Gates that passed (foreground, panel visible)
 
-The current `tax` rule has `copy_to: ["test"]` — a static destination label. Routing by year requires a way to choose target based on `classification.year`. Three approaches:
+**R1 — single-vault regression** (baseline 4 rules, copy_to=["test"], one `test` vault):
+- 7/7 routed → tax(4) / boat(1) / drawings(1) / utility(1)
+- All source rows showed green "→ tax/boat/..." badges
+- All vault subfolders auto-expanded with their docs
+- Bottom status bar stable, "Processing <file>" persists
 
-| Option | How | Cost | Trade-off |
-|---|---|---|---|
-| **A. Multiple rules with conditions** | Split into `tax_2023`/`tax_2024`/`tax_2025` rules, each with `conditions: {year == "2023"}` and `copy_to: ["tax_2023_vault"]`. Rule engine picks the matching rule per doc. | S — uses existing rule engine | New rule per year; library bloat |
-| **B. Templated copy_to** | Enhance rule schema: `copy_to: ["tax_{year}_vault"]`. Rule engine substitutes from classification metadata before destination resolution. | M — schema + engine change | One rule, scales to any year |
-| **C. Post-classify routing layer** | Single tax rule with `copy_to: []`; new plugin step inspects classification.year + session.vaults to choose target. | M — new code path | Bypasses rule engine; harder to debug |
+**S1 — multi-vault tax-year** (3 year-conditional rules, 3 year vaults):
+- 4/4 tax docs routed: tax_2023(2), tax_2024(1), tax_2025(1)
+- 3/3 non-tax docs left unprocessable in source (boat/drawings/utility — no rule matched, correct)
+- All 3 tax_<year>_vault rows in Vaults pane, auto-expanded with year-specific docs
+- Source rows for matched tax docs showed "→ tax_2..." badges
+- Bottom bar stable
 
-Lean: **A first** (cheapest, works today), **B as follow-up** if the user wants templating broadly. Bring this to the user at the start of next session.
+**S1 file outcomes (qwen2.5vl:7b):**
+- 0624PEIM 1040 (2024) → tax_2024_vault → 2024_Padgett Business Services_1040.pdf
+- 2023-Imran-1099 → tax_2023_vault → 2023_FIDELITY BROKERAGE SERVICES LLC_1099.pdf
+- 2023-MorganStanley-MSFT-Bonus → tax_2023_vault → 2023_Morgan Stanley Capital Management, LLC._1099.pdf
+- msft_w2 (ambiguous score across years) → tax_2025_vault → 2025_MICROSOFT CORPORATION_W-2.pdf (B-fallback walk fell through 2023→2024→2025 until conditions matched; model extracted year=2025)
+
+## Mission for next cycle
+
+**R2 — single-vault regression, BACKGROUND mode** (the only gate parked from this cycle).
+
+Same scenario as R1, but the scansort panel is NOT open. Assertion: `by_destination` + `by_rule` counts match R1 exactly (7 to `test`, broken down as tax=4/boat=1/drawings=1/utility=1). No UI check possible without panel. Events still need to fire from plugin to broker (`document` kind state_changed events) — verify via plugin log or broker tap.
+
+If R2 passes, the full pickup → A2 → A2-bottombar → B-fallback DCR chain is done and the next mission is whatever feature ships next on the scansort roadmap.
+
+## Critical gotcha discovered this cycle (saved as session hint, promote to docket if recurring)
+
+**Plugin binary install gap.** Scansort manifest's `entrypoint` is `./scansort-plugin` (root of plugin dir) but `cargo build --release` only writes to `target/release/scansort-plugin`. **There is NO automatic copy.** After every cargo build, you MUST `cp target/release/scansort-plugin scansort-plugin` before restarting Minerva, otherwise the running plugin is stale.
+
+Symptom: cargo says "Finished", tests pass, you restart Minerva and the plugin behaves like the OLD code. Burned ~30 minutes this cycle debugging B-fallback that wasn't even loaded. Sequence that works: `cargo build --release` → kill any running scansort-plugin or Minerva (binary must be unlinked) → `cp target/release/scansort-plugin scansort-plugin` → relaunch.
+
+Other gotchas (already saved as session hints):
+- `minerva_plugin_start` / `_state` / `_stop` / `_restart` take `{"id": "..."}`, NOT `{"plugin_id": "..."}`
+- `session_open_vault` only registers label↔path; the `.ssort` file must be `create_vault`'d separately
+- Phase-1 scoring does NOT extract per-rule field facts; only B-fallback runs stages before conditions (NOW the case post `80ddc7e`)
+
+## Cycle policy (carry-forward)
+
+Each iter: snapshot lib → wipe state → restart Minerva → apply iter-config → run gate(s) → screenshot → verify → restore lib → commit if pass, file-bug+fix+retry if not. ALL bugs in ONE fix commit. 3 fix attempts per bug. Per-iter time cap 30min. Sub-agent for the heavier code change with `isolation: worktree`, enumerated file list, 25-30 turn budget.
 
 ## Validated paths
 
 | What | Path | Notes |
 |---|---|---|
-| Source corpus | `/home/imran/temp/scansort-staging` | 7 PDFs — 4 tax-related across 2023/2024/2025, 1 boat, 1 drawings, 1 utility |
-| Year vault dir | `/home/imran/temp/tax_<year>.ssort` | Stable names; delete at cycle end |
-| Library snapshot | `/tmp/lib_snapshot_iter.json` (write at iter start) | Restore at iter end (utility re-enabled, copy_to=["test"]) |
-| Window ID | `xdotool search --name "Minerva"` | Returns inner WID; export DISPLAY=:1 first |
-
-## Cycle policy (carry-forward from autonomous_loop_policy hint `019e3c5b038d`)
-
-Each iter: snapshot lib → wipe state → restart Minerva → apply iter-config (open N vaults + source + rule changes) → run scenario → screenshot → verify → restore lib → commit if pass, file-bug+fix+retry if not. 3 fix attempts per bug. ALL bugs in one fix commit. Per-iter time cap 30min.
-
-## What just shipped (carry-forward)
-
-| Commit | What |
-|---|---|
-| `ccbcf9d` | L1 regression tests (kind-map + manifest validation) |
-| `5ec5686` | A2 — session is truth, kill auto-state-restore + panel live-refresh bundle |
-| `43c7bd5` | Per-file classification status badges in source pane |
-| `11dc9a0` | Bottom status bar stability — "Processing <file>" persists, no chat-call flicker |
-
-**Tests:** 297/0 plugins. **Plugins HEAD:** `11dc9a0`. **Minerva HEAD:** `78b1d22d` (unchanged — A2 fixes were plugin-side).
-
-## Durable hints saved this cycle (find via docket_hint_query)
-
-- `scansort/no_auto_state_restore_design_principle` — registries are Recent-only, never auto-displayed
-- `scansort/panel_live_refresh_three_layer_fix` — 3-layer cohesion (plugin emit + panel route + tree render)
-- `scansort/plugin_emits_state_changed_unconditionally` — headless test pattern
-- `scansort-iteration/autonomous_loop_policy` — ratified cycle policy
-
-## DCRs / bugs filed and resolved this cycle
-
-- DCR `019e3c48f0da` — A2 architectural redesign (SHIPPED)
-- Bug `019e3c590ed3` — chevron missing on vault rows (FIXED in `5ec5686`)
-- Bug `019e3c591b3a` — rows should default-expand (FIXED in `5ec5686`)
-- Bug `019e3c5f0fba` — process didn't emit kind=document (FIXED in `5ec5686`)
-
-## Cold-start procedure for next session
-
-1. `git -C ~/github/plugins fetch && git -C ~/github/plugins log --oneline -5` — confirm `11dc9a0` at tip
-2. Read this pickup.md in full
-3. `docket_get id=<multivault_dcr_id>` (filed at end of this session — see chat)
-4. Decide rule-engine approach (A/B/C above) before implementing
-5. Per cycle policy: snapshot library, apply iter-config, run, verify
+| Source corpus | `/home/imran/temp/scansort-staging` | 7 PDFs — 4 tax-ish across 2023/2024/2025, 1 boat, 1 drawings, 1 utility |
+| Test vault (R1) | `/home/imran/temp/test.ssort` | Created via create_vault; delete at cycle end |
+| Year vaults (S1) | `/home/imran/temp/tax_<year>.ssort` | Same pattern |
+| Library snapshot | `/tmp/lib_snapshot_iter.json` | Write at iter start; restore at iter end |
+| Window ID | `xdotool search --name "Minerva"` | Returns inner WID; export `DISPLAY=:1` first |
+| Minerva log | `/tmp/minerva_<tag>.log` | nohup target; grep "Score how well" vs "Answer the question" for Phase-1 vs stages calls |
 
 ## Hard rules (carry-forward, do not violate)
 
@@ -83,10 +76,13 @@ Each iter: snapshot lib → wipe state → restart Minerva → apply iter-config
 - No force-push.
 - Rubric: reliability → durability → cost (S≤100, M 101-1000, L>1000) → debuggability → discoverable (weight last two heavily).
 - Cycle policy stop conditions: model not available, screenshot tooling failure, plugin won't start after 3 attempts, rebuild compile failure, anything requiring `vendor/`.
+- Source is read-only — scansort copies to destinations, never alters source.
+- pkill target is `godot`, not `Minerva` (process name is `godot --path ...`).
 
-## Known gotchas (for next session ergonomics)
+## Cold-start procedure for next session (R2 gate)
 
-- **Bash `pkill || true` chains exit 1** in this harness — wrap each step or split into separate Bash calls. Several cleanup chains failed silently this session.
-- **MCP catalogue staleness after Minerva restart** — `mcp__minerva__*` tools may disconnect; fall back to `curl http://localhost:9315/mcp`. Saved as hint `claude-code-mcp/tool_catalogue_misses_minerva_side_additions`.
-- **Source manifest persistence**: `~/temp/scansort-staging/.scansort-state.json` carries skip state across runs; wipe between iterations or use a fresh source dir.
-- **Empty input_schema → array args get stringified** by Claude Code MCP client. Use curl for array params. Saved as hint `claude-code-mcp/array_args_become_strings_with_empty_schema`.
+1. `git -C ~/github/plugins log --oneline -5` — confirm `80ddc7e` at tip (B-fallback)
+2. Read this pickup.md in full
+3. Verify binary install: `md5sum ~/github/plugins/scansort/scansort-plugin ~/github/plugins/scansort/target/release/scansort-plugin` — if they differ, cp first
+4. Per cycle policy: snapshot library, wipe state, restart Minerva, apply R2 iter-config (one `test` vault, no panel open), run process, verify counts match R1
+5. If R2 passes, file the close-out for the multi-vault DCR chain and move to next mission
