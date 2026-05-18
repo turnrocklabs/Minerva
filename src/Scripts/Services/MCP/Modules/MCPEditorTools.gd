@@ -17,6 +17,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_graphics_get_capabilities",
 		"minerva_graphics_generate",
 		"minerva_graphics_generate_iterative",
+		"minerva_graphics_export_png",
 	]
 
 
@@ -296,6 +297,24 @@ func register_tools() -> void:
 		}
 	, "editor")
 
+	server._register_tool("minerva_graphics_export_png",
+		"Flatten the graphics editor's layers and write the composite as a PNG file to disk. Use after minerva_graphics_generate_iterative when you need the bytes on disk (e.g. to feed another pipeline). file_path must be absolute; parent dir must exist.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {
+					"type": "string",
+					"description": "Name of the graphics editor tab"
+				},
+				"file_path": {
+					"type": "string",
+					"description": "Absolute output path ending in .png. Parent directory must exist; existing file is overwritten."
+				}
+			},
+			"required": ["editor_name", "file_path"]
+		}
+	, "editor")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
@@ -321,6 +340,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _generate_graphics(arguments)
 		"minerva_graphics_generate_iterative":
 			return await _generate_graphics_iterative(arguments)
+		"minerva_graphics_export_png":
+			return await _export_graphics_png(arguments)
 	return MCPToolUtils.error("Tool '%s' not implemented in MCPEditorTools" % tool_name)
 
 
@@ -835,6 +856,61 @@ func _generate_graphics_iterative(args: Dictionary) -> Dictionary:
 		"iteration": iteration,
 		"max_iterations": max_iterations,
 		"image_visible": true
+	}
+
+
+func _export_graphics_png(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var file_path: String = args.get("file_path", "")
+
+	if editor_name.is_empty():
+		return MCPToolUtils.error("editor_name is required")
+	if file_path.is_empty():
+		return MCPToolUtils.error("file_path is required")
+	if not file_path.is_absolute_path():
+		return MCPToolUtils.error("file_path must be absolute: %s" % file_path)
+
+	var editor = MCPToolUtils.find_editor_by_name(editor_name)
+	if not editor:
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
+
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.GRAPHICS:
+		return MCPToolUtils.error("Not a graphics editor: %s" % editor_name)
+	if not editor.graphics_editor:
+		return MCPToolUtils.error("Graphics editor not initialized")
+
+	# Pick the layer to export. Prefer active_layer if it's an IMAGE; otherwise
+	# the first IMAGE layer in the editor's layers list. compose_final_image()
+	# is intentionally avoided here — it goes through a worker thread + cache +
+	# a popup-progress dialog that don't play well with headless MCP calls.
+	var ge = editor.graphics_editor
+	var picked = null
+	if ge.active_layer and ge.active_layer.type == LayerV2.Type.IMAGE:
+		picked = ge.active_layer
+	else:
+		for l in ge.layers:
+			if l is LayerV2 and l.type == LayerV2.Type.IMAGE:
+				picked = l
+				break
+	if not picked:
+		return MCPToolUtils.error("No IMAGE layer found in editor: %s" % editor_name)
+	var img: Image = picked.image
+	if img == null or img.is_empty():
+		return MCPToolUtils.error("Picked layer has no image data: %s" % picked.name)
+
+	var err: int = img.save_png(file_path)
+	if err != OK:
+		return MCPToolUtils.error("save_png failed: err=%d path=%s" % [err, file_path])
+	if not FileAccess.file_exists(file_path):
+		return MCPToolUtils.error("save_png reported OK but file missing: %s" % file_path)
+
+	return {
+		"success": true,
+		"editor_name": editor_name,
+		"file_path": file_path,
+		"layer_name": picked.name,
+		"bytes": FileAccess.get_file_as_bytes(file_path).size(),
 	}
 
 #endregion

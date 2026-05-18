@@ -2360,6 +2360,13 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 					if img.load_png_from_buffer(raw_bytes) == OK:
 						img_arr.append(img)
 			chi.Images = img_arr
+			# CoreProvider.Format builds its multimodal payload from
+			# InjectedNotes — Images alone gets dropped at Format-time. Mirror
+			# the chat UI pattern (where user-attached image notes flow through
+			# notes_container.to_prompt → InjectedNotes) so plugin-supplied
+			# images actually reach the model.
+			for img in img_arr:
+				chi.InjectedNotes.append(img)
 
 		prompt.append(chi)
 
