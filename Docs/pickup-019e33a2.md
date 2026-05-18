@@ -49,6 +49,57 @@ If STATE is `PLAN_READY` and a `/goal` is already active, start at Chunk 1.
 
 ---
 
+## Verification matrix — what a human checks for each STATE
+
+A `/goal` line on its own says little. Use this to spot-check the agent's claimed STATE from the outside, in any terminal, in seconds. Every cell is something you can `git`/`cargo`/`docket_query` directly.
+
+| STATE | Branch/commit state | Files on disk | Test counts | Docket state | Smoke-test ritual |
+|---|---|---|---|---|---|
+| **PLAN_READY** | `Minerva` main has `Docs/pickup-019e33a2.md`; no `work-item/W*-*` branches on `plugins`. | Pickup file present. | Baseline (no new tests). | DCR 019e33a2 = `designing`; W1–W4 all `backlog`. | n/a |
+| **IN_PROGRESS_CHUNK_1** | `plugins` has branch `work-item/W1-trace-infrastructure`, not yet merged. | WIP `trace.rs`; `audit.rs` still on main. | n/a (WIP) | W1 = `in_progress`. | n/a |
+| **IN_PROGRESS_CHUNK_2** (W1 done) | `plugins` main HEAD has commit `[trace-W1] …`; W1 branch gone or fast-forwarded. | `scansort/src/trace.rs` EXISTS; `scansort/src/audit.rs` GONE; settings keys renamed. | `cargo test --release` ≥ 291 + new trace round-trip tests, all green; `minerva_scansort_trace_append` registered, `minerva_scansort_audit_append` no longer registered. | W1 = `done`; W2 = `in_progress`. | Call `minerva_scansort_trace_append` with a tiny event payload → returns ok; tail the configured JSONL file → see the event. |
+| **IN_PROGRESS_CHUNK_3** (W2 done) | `plugins` main HEAD has commit `[trace-W2] …`. | `scansort/src/trace.rs` has a `Tracer` struct with all event-emit methods; `process.rs` constructs Tracer in `run` and `dryrun_one`. | `cargo test --release` green incl. new W2 integration tests; ProcessResult JSON now contains a `run_id` ULID. | W2 = `done`; W3 + W4 both `in_progress`. | Run `--hitl` against a tiny fixture; capture `result.run_id`; tail the trace JSONL → see `run_started`, `doc_seen × N`, `rule_evaluated`, `placement` or `doc_unprocessable`, `run_completed`; counts in `run_completed` match `result.summary`. |
+| **AWAITING_HITL** (W3 + W4 done) | `plugins` main HEAD has commits `[trace-W3] …` and `[trace-W4] …`. | `scansort/ui/trace_tail.gd` EXISTS; `scansort/ui/ScansortPanel.gd` references it; `scansort/src/main.rs` registers 3 new tools `trace_query`, `trace_list_runs`, `trace_tail`. | `cargo test --release` green incl. W4 tool tests; panel smoke ≥ baseline. | W3 = `done`; W4 = `done`; DCR 019e33a2 = `implementing`. | (a) Open Scansort panel → trigger Process All → watch the bottom status bar tick `Processing X (k/N)…` and the rules-pane fired-counts increment; (b) close the panel → trigger a second Process All via MCP → no UI changes, trace file gets a new run; (c) call `minerva_scansort_trace_list_runs` → see both runs; `minerva_scansort_trace_query {run_id}` → see full event stream for either run. |
+| **SHIPPED** | (no new code commits required beyond `AWAITING_HITL`) | Same as `AWAITING_HITL`. | Same as `AWAITING_HITL`. | All W1–W4 = `done`; DCR 019e33a2 = `shipped`. | n/a — already validated during HITL. |
+
+### One-liner spot checks
+
+Copy-paste verifications you can run in any terminal:
+
+```bash
+# Current STATE line (should match the marker at the top of this file)
+grep '^STATE:' ~/github/Minerva/Docs/pickup-019e33a2.md
+
+# W-item statuses (should track the matrix row)
+for id in 019e389ffd43 019e38a034e7 019e38a06dd5 019e38a09ed1; do
+  echo "=== $id ==="
+  # via docket MCP if available; otherwise via gh/jq or the docket UI
+done
+
+# DCR status
+# mcp__docket__docket_get id=019e33a2 → look at status field
+
+# audit.rs absence (post-W1)
+test -f ~/github/plugins/scansort/src/audit.rs && echo "FAIL: audit.rs still present" || echo "ok: audit.rs gone"
+
+# trace.rs presence (post-W1)
+test -f ~/github/plugins/scansort/src/trace.rs && echo "ok" || echo "FAIL: trace.rs missing"
+
+# trace_tail.gd presence (post-W3)
+test -f ~/github/plugins/scansort/ui/trace_tail.gd && echo "ok" || echo "FAIL: trace_tail.gd missing"
+
+# New MCP tools registered (post-W4) — search the plugin's tool registration
+grep -E 'minerva_scansort_(trace_append|trace_query|trace_list_runs|trace_tail)' \
+  ~/github/plugins/scansort/src/main.rs | sort -u
+
+# Tests green
+cd ~/github/plugins/scansort && cargo test --release 2>&1 | tail -3
+```
+
+If any row of the matrix doesn't line up with the agent's claimed STATE, the agent has cheated/skipped — surface immediately and read the per-chunk detail below.
+
+---
+
 ## Per-chunk detail
 
 ### Chunk 1 — Trace infrastructure (direct)
