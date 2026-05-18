@@ -1,10 +1,30 @@
 # Pickup — W0 path A (re-scoped): scansort foreground-mode visibility of MCP config
 
-STATE: READY_FOR_TEST_ITERATION
+STATE: FOREGROUND_VISIBILITY_VERIFIED — REGRESSION_TESTS_NEXT
 
-Last updated: 2026-05-18
+Last updated: 2026-05-18 (mission hit)
 
 Work item: `019e38d4635970f5b28c940c193350f3` (parent DCR `019e33a2ab2e7581bf0bdcbf5ddf0aeb`)
+
+## Status snapshot
+
+**Mission achieved.** Panel reflects MCP-driven config for all three primitives — source pane, vaults pane, directories pane — verified visually in `/tmp/iter9-mission.png`. Zero STDIO timeouts under stress (3 back-to-back MCP mutations with cascading panel refreshes).
+
+**Six bugs filed and resolved today (all under this work item):**
+
+| ID | Title | Fix location |
+|---|---|---|
+| `019e3c18f602` | STDIO reentrancy race | Minerva `fcdeda02` (MCPServerConnection.gd) |
+| `019e3c18d018` | Vaults pane gates on _open_vault_path | plugins `9e4dc6b` (scan_tree_area_provider.gd) |
+| `019e3c18da01` | Panel ignores kind=vault | plugins `bf8f007` (ScansortPanel.gd) |
+| `019e3c18e677` | session_open_* not bridged to dest_registry | plugins `4ab4382` + `2b02a84` (main.rs) |
+| `019e3c1906e4` | session_open_directory empty input_schema | plugins `5abe2dd` (manifest.json) |
+| `019e3c18ffef` | plugins.json cache stale (was: manifest doesn't declare) | DEFERRED — Minerva-side cleanup |
+
+**What's deferred / next:**
+- Regression test scaffolding (Layer 1+2+3 from the test plan discussed in chat). NOT written this session — manual iteration loop served as the verification harness. Next session priority.
+- `019e3c18ffef` plugins.json cache staleness — Minerva-side fix, not blocking, cosmetic warning.
+- Larger A2 cleanup (panel reads session_state directly, retire the bridges in main.rs that currently write to both stores).
 
 **Cycle mission (in user's words):** "be able to see the input dir(s), output vault(s), and output dir(s) when asked to run in the foreground/visibly."
 
@@ -21,11 +41,13 @@ Multi-panel "both update" is nice-to-have if time permits, not part of the succe
 
 | State | Meaning |
 |---|---|
-| `READY_FOR_TEST_ITERATION` | (current) Phase 1 instrumentation + Phase 2 no-vault rendering code already written and committed. Nothing has been visually verified yet. Next action is a single manual test iteration (see §"Single test iteration"). |
-| `PHASE_2_VERIFIED` | Screenshot proven: with no vault active, panel renders source dir + destinations registry. `set_source_dir` over MCP visibly changes the source pane. `destination_add` over MCP visibly changes the destinations list. |
+| `READY_FOR_TEST_ITERATION` | Phase 1 instrumentation + Phase 2 no-vault rendering code already written and committed. Nothing has been visually verified yet. |
+| `PHASE_2_VERIFIED` | Screenshot proven: with no vault active, panel renders source dir + destinations registry. |
 | `PHASE_3_BUILDING` | Writing the MCP-drivable active-vault tool + panel listener. |
-| `PHASE_3_VERIFIED` | Screenshot proven: `set_active_vault` (or whatever the tool ends up named) over MCP visibly switches the panel's active-vault display. |
+| `PHASE_3_VERIFIED` | Screenshot proven: `set_active_vault` over MCP visibly switches the panel's active-vault display. |
 | `FOREGROUND_VISIBILITY_VERIFIED` | All three primitives (input dir, active vault, output dirs) verified end-to-end via MCP-driven screenshots. Cycle mission satisfied. |
+| `FOREGROUND_VISIBILITY_VERIFIED — REGRESSION_TESTS_NEXT` | (current) Mission hit and committed; regression test scaffolding pending. |
+| `REGRESSION_GUARDED` | Layer 1+2+3 regression tests landed and green; the mission cannot silently regress. |
 | `READY_FOR_HITL` | Autonomous verification complete, ready for user visual sign-off. |
 | `SHIPPED` | Commits landed on `user/imran/experiments/swarm` (Minerva) + `main` (plugins); work_item transitioned to done. |
 
