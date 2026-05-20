@@ -1330,6 +1330,13 @@ func _dispatch_to_plugin_backend(
 	if call_result is Dictionary:
 		if call_result.has("success"):
 			return call_result
+		# A connection-layer failure from call_tool (timeout, subprocess exit,
+		# write failure) surfaces as {error: <human-readable string>} with no
+		# "success" key. Re-shape it to the {success:false, error_code,
+		# error_message} reply contract so the scene sees the real reason
+		# instead of the failure being silently wrapped as a success.
+		if call_result.has("error"):
+			return PluginErrors.backend_error(plugin_id, str(call_result["error"]))
 		return PluginErrors.success(call_result)
 
 	return PluginErrors.success({"raw": call_result})

@@ -33,6 +33,7 @@ const CODE_MODEL_AMBIGUOUS = "model_ambiguous"
 const CODE_PROVIDER_DISABLED = "provider_disabled"
 const CODE_BUDGET_EXCEEDED = "budget_exceeded"
 const CODE_PROVIDER_ERROR = "provider_error"
+const CODE_BACKEND_ERROR = "plugin_backend_error"
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +346,19 @@ static func provider_error(plugin_id: String, provider: String, model: String, d
 		"provider": provider,
 		"model": model,
 		"detail": detail,
+	}
+
+
+## A plugin backend tool call failed at the connection layer — a timeout,
+## subprocess exit, or write failure surfaced by MCPServerConnection. `detail`
+## is the human-readable error string; it is placed directly in error_message
+## so a panel can show the user exactly what went wrong.
+static func backend_error(plugin_id: String, detail: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_BACKEND_ERROR,
+		"error_message": detail,
+		"plugin_id": plugin_id,
 	}
 
 
