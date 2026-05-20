@@ -466,9 +466,9 @@ func _run_integration_tests(manifest_path: String, no_caps_manifest: String) -> 
 	# --- STOP provider_probe ---
 	print("\n-- stop_plugin (provider_probe) --")
 	if conn != null:
-		check("_in_stdio_request false after calls",
-			conn.get("_in_stdio_request") == false,
-			"_in_stdio_request=%s" % str(conn.get("_in_stdio_request")))
+		check("no pending STDIO requests after calls",
+			conn.pending_request_count() == 0,
+			"pending_request_count=%d" % conn.pending_request_count())
 	var stop_result = await pm.stop_plugin("provider_probe")
 	check("stop_plugin ok", stop_result.get("ok", false) == true,
 		"got: %s" % str(stop_result))
@@ -528,9 +528,9 @@ func _run_integration_tests(manifest_path: String, no_caps_manifest: String) -> 
 
 	# re-entrancy guard
 	if conn_nc != null:
-		check("_in_stdio_request false on no_caps conn",
-			conn_nc.get("_in_stdio_request") == false,
-			"_in_stdio_request=%s" % str(conn_nc.get("_in_stdio_request")))
+		check("no pending STDIO requests on no_caps conn",
+			conn_nc.pending_request_count() == 0,
+			"pending_request_count=%d" % conn_nc.pending_request_count())
 
 	# Clean up
 	await pm.stop_plugin("provider_probe_no_caps")

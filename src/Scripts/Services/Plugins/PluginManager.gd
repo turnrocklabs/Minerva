@@ -570,9 +570,11 @@ func start_plugin(id: String) -> Dictionary:
 
 	_transition_state(id, S_RUNNING)
 
-	# Connect async output handler for event/state notifications between tool calls
-	if conn._subprocess and not conn._subprocess.output_ready.is_connected(conn._on_async_output_ready):
-		conn._subprocess.output_ready.connect(conn._on_async_output_ready)
+	# Defensive: ensure the connection's single stdout reader is wired.
+	# connect_to_server() already does this for STDIO; the is_connected guard
+	# makes this a harmless no-op when it is already connected.
+	if conn._subprocess and not conn._subprocess.output_ready.is_connected(conn._drain_stdout):
+		conn._subprocess.output_ready.connect(conn._drain_stdout)
 
 	plugin_started.emit(id)
 	print("[PluginManager] Plugin '%s' is RUNNING" % id)

@@ -6,7 +6,7 @@ extends SceneTree
 ## Covers DCR task 019df8e3514a706a85ec30b978dcdd78 (broker phase 2):
 ##   - Happy path: plugin calls host.echo mid-tool-call; result echoed back
 ##   - Deny path: plugin requests undeclared capability; gets structured error
-##   - Re-entrancy: _in_stdio_request guard handles in-flight capability dispatch
+##   - Re-entrancy: the single stdout reader handles in-flight capability dispatch
 ##   - Audit log: both granted and denied requests are recorded
 ##
 ## NOTE: PluginManager.gd and MCPServerConnection.gd reference SingletonObject
@@ -285,15 +285,14 @@ func _run_integration_tests(manifest_path: String, fixture_dir: String) -> void:
 	else:
 		print("  WARNING: no audit_log available — skipping audit assertions")
 
-	# --- RE-ENTRANCY: verify _in_stdio_request guard ---
-	# The round-trip above already proves re-entrancy works end-to-end: if the
-	# guard were broken, the connection's _on_async_output_ready would double-drain
-	# the pipe and consume the capability request before _stdio_request saw it,
-	# causing the tool call to hang or return garbled data.
-	# We verify the guard state is clean after the call (not stuck = true).
-	check("_in_stdio_request is false after tool call completes (no stuck guard)",
-		conn.get("_in_stdio_request") == false,
-		"_in_stdio_request=%s" % str(conn.get("_in_stdio_request")))
+	# --- RE-ENTRANCY: connection has no stuck in-flight requests ---
+	# The round-trip above proves the bidirectional channel works end-to-end: a
+	# mid-tool-call minerva/capability request is dispatched by the single
+	# stdout reader while the tool call's own response is still pending. Once
+	# the call completes the pending-request map must be empty — nothing stuck.
+	check("no pending STDIO requests after tool call completes",
+		conn.pending_request_count() == 0,
+		"pending_request_count=%d" % conn.pending_request_count())
 
 	# --- STOP ---
 	print("\n-- stop_plugin --")

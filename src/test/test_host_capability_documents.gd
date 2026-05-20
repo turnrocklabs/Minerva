@@ -588,15 +588,15 @@ func _run_integration_tests(manifest_path: String, no_caps_manifest: String) -> 
 	else:
 		print("  WARNING: no audit_log available — skipping audit assertions")
 
-	# --- _in_stdio_request guard health (re-entrancy contract) ---
+	# --- pending-request health (re-entrancy contract) ---
 	if conn != null:
-		check("_in_stdio_request false on happy-path conn after teardown",
-			conn.get("_in_stdio_request") == false,
-			"_in_stdio_request=%s" % str(conn.get("_in_stdio_request")))
+		check("no pending STDIO requests on happy-path conn after teardown",
+			conn.pending_request_count() == 0,
+			"pending_request_count=%d" % conn.pending_request_count())
 	if conn_nc != null:
-		check("_in_stdio_request false on deny-path conn after teardown",
-			conn_nc.get("_in_stdio_request") == false,
-			"_in_stdio_request=%s" % str(conn_nc.get("_in_stdio_request")))
+		check("no pending STDIO requests on deny-path conn after teardown",
+			conn_nc.pending_request_count() == 0,
+			"pending_request_count=%d" % conn_nc.pending_request_count())
 
 	# Clean up no_caps fixture
 	await pm.stop_plugin("document_probe_no_caps")

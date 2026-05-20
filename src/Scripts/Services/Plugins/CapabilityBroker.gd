@@ -23,13 +23,13 @@ extends RefCounted
 ##
 ## Re-entrancy note (bidirectional channel):
 ##   When a plugin calls minerva/capability from WITHIN a tools/call handler,
-##   Minerva's _stdio_request loop (MCPServerConnection.gd) detects the inbound
-##   "method":"minerva/capability" message and dispatches it inline via
-##   _handle_plugin_capability_request → capability_request_handler → broker.dispatch.
-##   The _in_stdio_request guard prevents _on_async_output_ready from double-draining
-##   the stdio pipe while this nested dispatch is in flight.  The plugin's tool
-##   call resumes only after the capability response is written back to its stdin
-##   and it sends its tools/call result.  This is single-threaded cooperative
+##   MCPServerConnection's single always-live stdout reader (_drain_stdout)
+##   detects the inbound "method":"minerva/capability" message and dispatches it
+##   via _handle_plugin_capability_request → capability_request_handler →
+##   broker.dispatch — independently of the tool call's own pending response,
+##   which the reader routes back by JSON-RPC id.  The plugin's tool call
+##   resumes only after the capability response is written back to its stdin and
+##   it sends its tools/call result.  This is single-threaded cooperative
 ##   re-entrancy — no two capability requests from the same plugin can overlap
 ##   because the plugin blocks waiting for each response before sending the next.
 

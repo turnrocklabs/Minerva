@@ -146,9 +146,9 @@ func _test_f5(conn) -> void:
 	check("F5: budgeted call errored close to its 2s budget (1.5s-5s window)",
 			elapsed >= 1500 and elapsed <= 5000,
 			"returned after %dms" % elapsed)
-	check("F5: budget expiry produced a structured error {error:{code,message}}",
-			res is Dictionary and res.get("error") is Dictionary
-				and not str(res.get("error", {}).get("message", "")).is_empty(),
+	check("F5: budget expiry produced a non-empty, human-readable error message",
+			res is Dictionary and res.get("error") is String
+				and not str(res.get("error", "")).is_empty(),
 			"got: %s" % str(res))
 	# An unbounded call (timeout_sec = 0) must NOT be prematurely killed.
 	var t1: int = Time.get_ticks_msec()

@@ -47,8 +47,10 @@ var _websocket: WebSocketPeer = null
 ## SubProcess for STDIO transport (type not specified - GDExtension may not be loaded)
 var _subprocess = null
 
-## Pending requests awaiting responses (for async operations)
-var _pending_requests: Dictionary = {}  # request_id -> {callback, tool_name}
+## In-flight STDIO requests, keyed by JSON-RPC id. Each value is a
+## _PendingRequest whose `resolved` signal fires exactly once — with the
+## plugin's response, a timeout error, or a connection-lost error.
+var _pending: Dictionary = {}  # request_id -> _PendingRequest
 
 ## Active HTTP requests that can be cancelled
 var _active_http_requests: Array[HTTPRequest] = []
@@ -69,10 +71,6 @@ var capability_request_handler: Callable = Callable()
 
 ## Plugin ID associated with this connection (set when used as a plugin connection).
 var plugin_id: String = ""
-
-## True while _stdio_request is actively polling. When true, the async handler
-## defers to the polling loop (which already handles all message types).
-var _in_stdio_request: bool = false
 
 ## Reference to PluginEventBroker for routing async events/state.
 var event_broker = null
@@ -117,8 +115,8 @@ func disconnect_from_server() -> void:
 	print("[MCP %s] Disconnecting..." % server_name)
 	server_connected = false
 
-	# Clear pending requests
-	_pending_requests.clear()
+	# Fail every in-flight request so no caller is left awaiting forever.
+	_fail_all_pending("MCP server '%s' disconnected" % server_name)
 
 	if _websocket:
 		_websocket.close()
@@ -186,15 +184,17 @@ func refresh_tools() -> Error:
 	return OK
 
 
-## Call a tool on the MCP server
-func call_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
+## Call a tool on the MCP server.
+## timeout_sec is the STDIO per-request budget (0 = unbounded); HTTP/WebSocket
+## transports use their own timeouts and ignore it.
+func call_tool(tool_name: String, arguments: Dictionary, timeout_sec: float = 120.0) -> Dictionary:
 	match transport:
 		TransportType.HTTP:
 			return await _call_tool_http(tool_name, arguments)
 		TransportType.WEBSOCKET:
 			return await _call_tool_websocket(tool_name, arguments)
 		TransportType.STDIO:
-			return await _call_tool_stdio(tool_name, arguments)
+			return await _call_tool_stdio(tool_name, arguments, timeout_sec)
 
 	return {"error": "Invalid transport type"}
 
@@ -625,15 +625,15 @@ func _connect_stdio() -> Error:
 		_subprocess = null
 		return ERR_CANT_CONNECT
 
-	# Drain plugin-initiated messages (notifications, capability requests
-	# arriving outside a tool call) the moment they land. Without this, plugin
-	# notifications written AFTER a tool response sit in the pipe until the
-	# next tool call's _stdio_request loop happens to read them — which means
-	# panel state_changed events would lag by one MCP roundtrip. _on_async_*
-	# functions self-gate on _in_stdio_request so this signal is harmless when
-	# a tool call is in flight.
-	if _subprocess.has_signal("output_ready") and not _subprocess.output_ready.is_connected(_on_async_output_ready):
-		_subprocess.output_ready.connect(_on_async_output_ready)
+	# Connect the single always-live stdout reader. Every line the plugin emits
+	# — tool responses, plugin-initiated capability requests, event/state/notify
+	# messages — is dispatched by _drain_stdout; a response is routed to its
+	# waiter by JSON-RPC id (see _stdio_request / _resolve_pending).
+	if _subprocess.has_signal("output_ready") and not _subprocess.output_ready.is_connected(_drain_stdout):
+		_subprocess.output_ready.connect(_drain_stdout)
+	# Low-frequency backstop: re-drain in case an output_ready signal is ever
+	# missed, and fail outstanding requests if the subprocess dies.
+	_backstop_tick()
 
 	print("[MCP STDIO] Subprocess running, performing MCP handshake...")
 
@@ -688,130 +688,90 @@ func _next_request_id() -> String:
 	return str(_request_id_counter)
 
 
-## Send a JSON-RPC request over STDIO and wait for response.
-## Handles interleaved plugin-initiated capability requests (bidirectional channel):
-## while waiting for our response, the plugin may send minerva/capability requests
-## on stdout. We dispatch them through capability_request_handler and write results
-## back on stdin before continuing to poll for our original response.
-func _stdio_request(request: Dictionary) -> Dictionary:
+## Send a JSON-RPC request over STDIO and await its response.
+##
+## The request is written immediately and a _PendingRequest is registered under
+## its JSON-RPC id; the always-live reader (_drain_stdout) routes the matching
+## response back by id. No serialization gate, no polling — any number of
+## requests may be in flight on the one connection at once.
+##
+## timeout_sec is the caller's per-request budget. When it elapses the request
+## resolves with a timeout error; timeout_sec = 0 means unbounded (resolves only
+## on a real response or a connection loss). tool_name, when given, is woven
+## into timeout/error messages for debuggability.
+func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: String = "") -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
-		print("[MCP STDIO] Error: Subprocess not running")
-		return {"error": "Subprocess not running"}
-
-	# Serialize concurrent _stdio_request entries on the shared subprocess
-	# stream. Without this, a deferred panel refresh that issues its own MCP
-	# call can begin a second _stdio_request while an outer one is still
-	# polling — both poll the same stdout, each picks up the other's response
-	# as "not my id" and discards it, causing spurious 30s timeouts. The
-	# event/state/notify routing above this function is already deferred for
-	# signal-handler reentry; this guard handles the remaining case where two
-	# tool calls land in flight at once. Bounded wait so a stuck flag can't
-	# deadlock the panel forever.
-	var wait_elapsed := 0.0
-	while _in_stdio_request and wait_elapsed < 30.0:
-		await Engine.get_main_loop().create_timer(0.05).timeout
-		wait_elapsed += 0.05
-	if _in_stdio_request:
-		print("[MCP STDIO] Error: wait for prior _stdio_request exceeded 30s")
-		return {"error": "STDIO concurrent-request wait timed out"}
-
-	_in_stdio_request = true
+		return _conn_error("MCP server '%s' is not running" % server_name)
 
 	var request_id: String = str(request.get("id", ""))
-	var request_json := JSON.stringify(request) + "\n"
+	var pending := _PendingRequest.new()
+	pending.tool_name = tool_name
+	pending.created_ms = Time.get_ticks_msec()
+	_pending[request_id] = pending
 
-	# Debug: Log request (truncated for readability)
+	var request_json := JSON.stringify(request) + "\n"
 	var log_json := request_json.left(200)
 	if request_json.length() > 200:
 		log_json += "..."
-	print("[MCP STDIO] Sending: %s" % log_json)
+	print("[MCP %s] Sending: %s" % [server_name, log_json])
 
-	# Send request
 	if not _subprocess.write_data(request_json):
-		print("[MCP STDIO] Error: Failed to write to subprocess")
-		_in_stdio_request = false
-		return {"error": "Failed to write to subprocess"}
+		_pending.erase(request_id)
+		return _conn_error("failed to write request to MCP server '%s'" % server_name)
 
-	# Wait for response with matching ID
-	var timeout := 30.0
-	var elapsed := 0.0
-	var poll_interval := 0.01
+	# Arm the caller's timeout. The timer still fires if a real response
+	# resolves the request first — _resolve_pending is idempotent, so the late
+	# tick is a harmless no-op.
+	if timeout_sec > 0.0:
+		var label: String = tool_name if tool_name != "" else ("id " + request_id)
+		var timeout_err := _conn_error("MCP request (%s) to '%s' timed out after %.0fs"
+				% [label, server_name, timeout_sec])
+		Engine.get_main_loop().create_timer(timeout_sec).timeout.connect(
+				_resolve_pending.bind(request_id, timeout_err))
 
-	while elapsed < timeout:
-		if _subprocess.has_output():
-			var line: String = _subprocess.read_line()
-			if line.is_empty():
-				continue
+	var resolved: Dictionary = await pending.resolved
+	return _stdio_finalize(resolved)
 
-			# Debug: Log response (truncated for readability)
-			var log_line: String = line.left(200)
-			if line.length() > 200:
-				log_line += "..."
-			print("[MCP STDIO] Received: %s" % log_line)
 
-			var json := JSON.new()
-			if json.parse(line) == OK and json.data is Dictionary:
-				var msg: Dictionary = json.data
+## Resolve an in-flight request exactly once (first-wins). A real response, a
+## timeout, and a connection loss all funnel through here; whichever reaches a
+## given id first wins, and any later call for that id is a no-op.
+func _resolve_pending(request_id: String, result: Dictionary) -> void:
+	if not _pending.has(request_id):
+		return
+	var pending: _PendingRequest = _pending[request_id]
+	_pending.erase(request_id)
+	pending.resolved.emit(result)
 
-				# Bidirectional channel: detect plugin-initiated capability requests.
-				# A plugin request has a "method" field and is NOT a response to our
-				# pending request (i.e., its id doesn't match request_id, or it has
-				# no matching id in _pending_requests). We specifically handle
-				# "minerva/capability" method.
-				if msg.has("method") and msg.get("method") == "minerva/capability":
-					await _handle_plugin_capability_request(msg)
-					continue
 
-				# Route event/state notifications that arrive during a tool call.
-				# DEFER the dispatch — the signal subscribers (e.g. ScansortPanel
-				# refresh handlers) often issue their own MCP tool calls, which
-				# would reenter _stdio_request from inside our own poll. Two
-				# nested polls reading the same subprocess stream race each other
-				# (each picks up the other's response and discards it), causing
-				# spurious "STDIO request timed out" errors and dropped UI
-				# updates. call_deferred enqueues the handler for the next idle
-				# frame, so any reentrant tool call runs from a clean stack with
-				# no outer poll competing.
-				if msg.has("method") and msg.get("method") == "minerva/plugin_event":
-					call_deferred("_handle_async_plugin_event", msg)
-					continue
-				if msg.has("method") and msg.get("method") == "minerva/plugin_state":
-					call_deferred("_handle_async_plugin_state", msg)
-					continue
+## Fail every outstanding request — used on disconnect / subprocess exit so no
+## caller is left awaiting a response that will never arrive.
+func _fail_all_pending(reason: String) -> void:
+	var err := _conn_error(reason)
+	for request_id in _pending.keys():
+		_resolve_pending(request_id, err)
 
-				# host.notify: plugin → host notification; no id, no response needed.
-				# Deferred for the same reentry-safety reason as plugin_event above.
-				if msg.has("method") and msg.get("method") == "host.notify" and not msg.has("id"):
-					call_deferred("_handle_host_notify", msg)
-					continue
 
-				# Check if this is our response
-				if str(msg.get("id", "")) == request_id:
-					if msg.has("error"):
-						var err = msg.get("error", {})
-						if err is Dictionary:
-							_in_stdio_request = false
-							call_deferred("_drain_pending_async")
-							return {"error": err.get("message", "Unknown error")}
-						_in_stdio_request = false
-						call_deferred("_drain_pending_async")
-						return {"error": str(err)}
-					_in_stdio_request = false
-					# Drain any plugin-initiated notifications that arrived
-					# between writing our response and us reading it. Deferred
-					# for the same reentry-safety reason as the event/state
-					# routing above — if the drained event triggers a panel
-					# refresh that calls back into MCP, we want that call to
-					# start from a clean stack, not from inside this poll.
-					call_deferred("_drain_pending_async")
-					return msg
+## Number of STDIO requests currently awaiting a response (introspection).
+func pending_request_count() -> int:
+	return _pending.size()
 
-		await Engine.get_main_loop().create_timer(poll_interval).timeout
-		elapsed += poll_interval
 
-	print("[MCP STDIO] Error: Request timed out after %.1fs" % timeout)
-	_in_stdio_request = false
-	return {"error": "STDIO request timed out"}
+## Build a connection-layer error result. The message is human-readable so a
+## panel can surface it directly to the user.
+func _conn_error(message: String) -> Dictionary:
+	return {"error": message}
+
+
+## Convert a resolved value into the _stdio_request return contract: success ->
+## the full JSON-RPC message (carries "result"); any error -> {"error": <string>}.
+func _stdio_finalize(resolved: Dictionary) -> Dictionary:
+	if not resolved.has("error"):
+		return resolved
+	var err = resolved["error"]
+	if err is Dictionary:
+		return {"error": str(err.get("message", "Unknown error"))}
+	return {"error": str(err)}
 
 
 ## Handle a plugin-initiated minerva/capability request received mid-execution.
@@ -850,7 +810,7 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 
 
 ## STDIO transport: Call a tool
-func _call_tool_stdio(tool_name: String, arguments: Dictionary) -> Dictionary:
+func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: float = 120.0) -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
 		return {"error": "STDIO transport not connected"}
 
@@ -865,7 +825,7 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary) -> Dictionary:
 			"method": "tools/list",
 			"params": {}
 		}
-		var list_response := await _stdio_request(list_request)
+		var list_response := await _stdio_request(list_request, timeout_sec, "tools/list")
 		if list_response.get("error"):
 			return list_response
 		var inner = list_response.get("result", {})
@@ -884,7 +844,7 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary) -> Dictionary:
 		}
 	}
 
-	var response := await _stdio_request(request)
+	var response := await _stdio_request(request, timeout_sec, tool_name)
 	if response.get("error"):
 		return response
 
@@ -918,27 +878,15 @@ func _normalize_mcp_tool_result(result) -> Dictionary:
 
 
 # ---------------------------------------------------------------------------
-# Async output handling (between tool calls)
+# STDIO stdout reader + dispatcher
 # ---------------------------------------------------------------------------
 
-## Synchronously drain any pending plugin-initiated messages (notifications,
-## capability requests). Safe to call after _in_stdio_request is cleared.
-## Mirrors the routing logic in _on_async_output_ready; factored out so
-## _stdio_request can call it explicitly without relying on output_ready
-## re-firing for already-buffered data.
-func _drain_pending_async() -> void:
-	if _in_stdio_request:
-		return
-	_on_async_output_ready()
-
-
-## Called when SubProcess emits output_ready outside of a tool call.
-## Drains the output queue and routes messages to appropriate handlers.
-func _on_async_output_ready() -> void:
-	# If we're inside _stdio_request, that loop handles draining — don't double-drain.
-	if _in_stdio_request:
-		return
-
+## The single always-live stdout reader. Connected to the subprocess's
+## output_ready signal and also called by the backstop timer. Drains every
+## available line and dispatches it: plugin-initiated messages (capability
+## requests, event/state/notify) go to their handlers; a JSON-RPC response —
+## an "id" with no "method" — is routed to its waiter via _resolve_pending.
+func _drain_stdout() -> void:
 	if not _subprocess or not _subprocess.is_running():
 		return
 
@@ -947,39 +895,65 @@ func _on_async_output_ready() -> void:
 		if line.is_empty():
 			continue
 
+		var log_line: String = line.left(200)
+		if line.length() > 200:
+			log_line += "..."
+		print("[MCP %s] Received: %s" % [server_name, log_line])
+
 		var json := JSON.new()
 		if json.parse(line) != OK or not json.data is Dictionary:
-			push_warning("[MCP STDIO Async] Unparseable line from plugin '%s': %s" % [plugin_id, line.left(200)])
+			push_warning("[MCP %s] Unparseable line from plugin '%s': %s"
+					% [server_name, plugin_id, line.left(200)])
 			continue
 
 		var msg: Dictionary = json.data
-
-		# Route based on method
 		var method: String = str(msg.get("method", ""))
-		match method:
-			"minerva/capability":
-				# Capability request outside a tool call — still dispatch it
-				_handle_plugin_capability_request(msg)
-			"minerva/plugin_event":
-				_handle_async_plugin_event(msg)
-			"minerva/plugin_state":
-				_handle_async_plugin_state(msg)
-			"host.notify":
-				# Plugin → host notification (no id, no response)
-				if not msg.has("id"):
-					_handle_host_notify(msg)
-				else:
-					print("[MCP STDIO Async] Ignoring host.notify with unexpected id from plugin '%s'" % plugin_id)
-			"notifications/tools/list_changed":
-				# go-sdk emits this on startup, safe to ignore
-				pass
-			_:
-				if not method.is_empty():
-					print("[MCP STDIO Async] Unrecognized method from plugin '%s': %s" % [plugin_id, method])
-				# Messages with an "id" but no "method" are responses to requests
-				# we didn't send (or late responses). Log and discard.
-				elif msg.has("id"):
-					print("[MCP STDIO Async] Unexpected response from plugin '%s' (id=%s)" % [plugin_id, str(msg.get("id", ""))])
+
+		if method != "":
+			# Plugin-initiated message.
+			match method:
+				"minerva/capability":
+					# Bidirectional channel — dispatched as a background
+					# coroutine so the reader never blocks on the host's reply.
+					_handle_plugin_capability_request(msg)
+				"minerva/plugin_event":
+					_handle_async_plugin_event(msg)
+				"minerva/plugin_state":
+					_handle_async_plugin_state(msg)
+				"host.notify":
+					if not msg.has("id"):
+						_handle_host_notify(msg)
+					else:
+						print("[MCP %s] Ignoring host.notify with unexpected id from plugin '%s'"
+								% [server_name, plugin_id])
+				"notifications/tools/list_changed":
+					# go-sdk emits this on startup, safe to ignore.
+					pass
+				_:
+					print("[MCP %s] Unrecognized method from plugin '%s': %s"
+							% [server_name, plugin_id, method])
+		elif msg.has("id"):
+			# A JSON-RPC response — route it to its waiter by id. An unmatched
+			# id (a stray frame, or a response to an already-resolved request)
+			# is a harmless no-op inside _resolve_pending.
+			_resolve_pending(str(msg.get("id", "")), msg)
+		else:
+			push_warning("[MCP %s] Discarding frame with neither method nor id from plugin '%s'"
+					% [server_name, plugin_id])
+
+
+## Low-frequency backstop. Re-drains stdout in case an output_ready signal is
+## ever missed, and fails all outstanding requests if the subprocess has died.
+## Self-rearming while the subprocess runs; stops once it exits / disconnects.
+func _backstop_tick() -> void:
+	if not _subprocess:
+		return
+	if not _subprocess.is_running():
+		if not _pending.is_empty():
+			_fail_all_pending("MCP server '%s' process exited" % server_name)
+		return
+	_drain_stdout()
+	Engine.get_main_loop().create_timer(0.25).timeout.connect(_backstop_tick)
 
 
 func _handle_async_plugin_event(msg: Dictionary) -> void:
@@ -1029,3 +1003,12 @@ func _handle_async_plugin_state(msg: Dictionary) -> void:
 		event_broker.handle_plugin_state(plugin_id, state)
 	else:
 		push_warning("[MCP STDIO Async] No event_broker set — dropping state from plugin '%s'" % plugin_id)
+
+
+## One in-flight STDIO request. `resolved` fires exactly once — see
+## _resolve_pending. tool_name / created_ms back the timeout messages and
+## pending-request introspection.
+class _PendingRequest extends RefCounted:
+	signal resolved(result: Dictionary)
+	var tool_name: String = ""
+	var created_ms: int = 0
