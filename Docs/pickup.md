@@ -1,160 +1,100 @@
 # Pickup
 
-STATE: `PLUGIN_SUBSTRATE_FIX — PRE-COMPACTION READY`
+STATE: `PLUGIN_SUBSTRATE_FIX — IMPLEMENTATION COMPLETE, AWAITING W7 HITL`
 
-Last updated 2026-05-20. Pre-compaction handoff for the plugin-substrate
-connection-layer fix (the CAD render-regression remediation). **Design is
-finalized, the docket is set up, all test fixtures are built and reviewed.**
-The next phase is the autonomous implementation loop. Read this whole file
-before acting.
+Last updated 2026-05-20. The CAD render-regression remediation (RCA
+`019e46b5`) is fully implemented, tested, cold-reviewed, and committed. The
+only remaining work is **W7 — human-in-the-loop verification** with the real
+app and real data.
 
 ---
 
-## 1. What this is
+## 1. What this was
 
-The CAD plugin renders no geometry — its canonical T-Beam test produces nothing.
-RCA-traced to Minerva's MCP-over-stdio connection layer, NOT the CAD plugin
-(CAD's own code is unchanged, last commit `8a25497`).
+The CAD plugin rendered no geometry. RCA-traced to Minerva's MCP-over-stdio
+connection layer — commit `fcdeda02`'s serialization gate — NOT the CAD plugin.
+Tracked as remediation on RCA `019e46b5` (now `remediating`; W7 HITL moves it
+to `verified` → `closed`).
 
-This is **not** a narrow CAD patch — it's a connection-layer rewrite that also
-unblocks future provider-plugin and PCB-plugin work. Tracked as **remediation on
-RCA `019e46b5`** — not a DCR (regression remediation rides the RCA workflow:
-`root_caused → remediating → verified → closed`).
+## 2. What shipped — all committed on `user/imran/experiments/swarm`
 
-## 2. Root cause (source-proven)
+| Commit | What |
+|--------|------|
+| `faf0d38d` | Test fixtures (pre-existing) |
+| `1d84fbea` | W4+W5 — the functional test suite (5 test files) |
+| `6bd32f2b` | W1 — the connection-layer fix in `MCPServerConnection.gd` |
+| `0c4e6cf8` | W8 (Minerva) — faithful plugin-error propagation in the broker |
+| `b9761185` | W6 — functional test runner + CI job |
+| `2e1bcbe` (plugins repo) | W8 (cad) — `CADPanel` error banner |
 
-Commit `fcdeda02` added an unconditional 30s **serialization gate** at
-`MCPServerConnection.gd:710-716`; `_stdio_request` then polls stdout. Two
-`_stdio_request` coroutines polling at once each consume the other's response —
-the gate serializes to hide that race. The slow `cad.evaluate` queues behind the
-gate and blows the CAD panel's fixed 30s reply budget → no mesh. Contributing:
-`f2289f04`'s async drainer discards bare id-responses (`:981-982`). Full RCA:
-docket `rca` `019e46b5`.
+- **W1** — replaced the `fcdeda02` gate + poll loop with a single always-live
+  stdout reader (`_drain_stdout`) + a per-id pending-request map. `call_tool`
+  gained a caller-set `timeout_sec`. The 30s hard cap that starved slow CAD
+  evaluations is gone. Connection errors are human-readable strings.
+- **W4** — F1/F2/F4 (`test_mcp_stdio_concurrency.gd`), F5/F6
+  (`test_mcp_stdio_request_budget.gd`). F2 is the fail-first repro.
+- **W5** — F3 CAD geometry guard, presentation deck test, scansort filing e2e.
+- **W8** — `CADPanel` shows a red banner on a failed evaluate (was a silent
+  empty render — the regression's symptom); `PluginErrors.backend_error` + a
+  broker re-shape carry the human-readable reason faithfully to the panel.
+- **W6** — `scripts/run-functional-tests.sh` + a `functional-tests` CI job.
 
-## 3. The fix design — W1 (`019e470b1397`)
+## 3. Verification done (autonomous)
 
-Replace the gate + poll with **a single always-live stdout reader + a
-pending-requests map keyed by JSON-RPC id**:
+- F2 fail-first repro: confirmed RED on pre-W1 code (8349ms starvation),
+  GREEN post-W1.
+- Post-W1 suite: F1/F2/F4 16/0, F5/F6 14/0, F3 12/0, presentation 29/0,
+  scansort skip-clean (model-chat unavailable headless).
+- No regressions: the three host-capability tests' failures are pre-existing
+  (confirmed identical on a pre-W1 `git stash` baseline).
+- W1 diff independently cold-reviewed — no blockers.
+- `scripts/run-functional-tests.sh` verified locally.
 
-- `_pending: Dictionary` — `request_id → _PendingRequest` (a RefCounted with one
-  `signal resolved(result: Dictionary)`).
-- `_stdio_request(request, timeout_sec := 120.0)`: register a `_PendingRequest`,
-  write the request, if `timeout_sec > 0` start a `SceneTreeTimer` →
-  `_resolve_pending(id, timeout-error)`, then `await pending.resolved`. No gate,
-  no poll. `timeout_sec = 0` = unbounded / cancel-only.
-- The `output_ready` handler (`_on_async_output_ready`) becomes THE reader — drop
-  the `_in_stdio_request` gate so it runs always. Per line: `method` present →
-  existing routing (capability/event/state/notify, unchanged); `id` + no
-  `method` → `_resolve_pending(id, msg)`; else log.
-- `_resolve_pending(id, result)`: idempotent first-wins (`if not
-  _pending.has(id): return`; erase; emit). Response / timeout / future-cancel
-  all funnel through it.
-- Fail-all outstanding on subprocess exit/disconnect with a connection-lost error.
-- Delete `_in_stdio_request` (grep ALL refs), the poll loop, `_drain_pending_async`.
+## 4. W7 — HITL verification (the remaining work — YOU)
 
-Rubric improvements folded in (keep change size S):
-- **A reliability** — a ~250ms backstop drain timer per connection; defends
-  against a missed `output_ready` signal stranding a response.
-- **B debuggability** — thread the tool name into `_stdio_request` so
-  timeout/error logs name the tool; add `_pending` introspection.
-- **C discoverable** — rename `_on_async_output_ready` (it is now THE reader);
-  delete the stale gate-rationale (701-709) + `_connect_stdio` async-drain
-  (628-634) comments.
-- **D user-visible** — connection-layer errors are structured with a
-  human-readable `message`: `{error:{code, message}}`.
+Run Minerva and verify:
+1. **CAD regression fixed** — open the CAD plugin panel, evaluate a model.
+   Geometry must RENDER (the bug was a blank panel). The headline check.
+2. **CAD error banner (W8)** — force a failure (invalid DSL, or kill the
+   worker) → a red banner must appear over the views stating the reason.
+3. **scansort still functional** — run a real filing pass; docs classify+file.
+4. **presentation still functional** — open/edit a deck.
+5. Optional — run the scansort e2e test where model-chat is reachable:
+   `godot --headless --path src --script test/test_scansort_filing_e2e.gd`
+   (it skipped headless here; with model-chat up it does the real classify).
 
-**DO NOT** revert `fcdeda02` (it fixed a real concurrent-read race — the
-dispatcher subsumes its intent). **DO NOT** build streaming. Full spec is also
-in W1's docket description.
+When satisfied, transition RCA `019e46b5` → `verified` → `closed`.
 
-## 4. Docket — 8 work-items under RCA `019e46b5`
+## 5. Open follow-ups (NOT blocking W7 — surfaced for a decision)
 
-| ID | Item | Status | Blocked by |
-|----|------|--------|-----------|
-| `019e470b20b9` | W2 — Test data fixtures | **done** | — |
-| `019e470b2a3d` | W3 — Layer-A fixture plugin | **done** | — |
-| `019e470b39f3` | W4 — Substrate functional tests F1/F2/F4/F5/F6 (fail-first) | backlog | W3 ✓ |
-| `019e470b444f` | W5 — Per-plugin tests (CAD F3, scansort, presentation) | backlog | W2 ✓ |
-| `019e470b1397` | W1 — Substrate fix (single dispatcher + per-id routing) | backlog | W4 |
-| `019e470b4e33` | W6 — CI test job + F7 exported-build overlay | backlog | W1 |
-| `019e471a5c62` | W8 — CAD panel surfaces runtime errors to the user | backlog | W1 |
-| `019e470b54c8` | W7 — HITL verification with real data | backlog | W1, W8 |
+- **F7 (exported-build CI)** — deferred. Running the suite against an exported
+  Minerva binary needs a real export environment + answers to open questions
+  (is `res://test/` inside the release `.pck`?). Docket W6, comment 19.
+- **CI Godot version** — `build.yml`'s `build-godot` installs Godot 4.5.1 but
+  the project requires 4.6. The new `functional-tests` job pins 4.6.2;
+  `build-godot` should be reconciled.
+- **Broker capability-handler robustness** — pre-existing (not a W1
+  regression): a broker capability-handler that hard-fails mid-dispatch can
+  leave a plugin awaiting its reply until the 120s timeout. Cold review flagged
+  it. Candidate future bug. Docket W1, comment 18.
+- The `functional-tests` CI job is unverified until a real CI run — it reports
+  status but does not gate the release yet.
 
-W2 and W3 are done, so **W4 and W5 are now unblocked** — they are the entry points.
+## 6. How to run the tests
 
-## 5. Test plan
+```
+scripts/run-functional-tests.sh          # hermetic F1-F6 (fast, no network)
+scripts/run-functional-tests.sh --all    # + per-plugin (CAD/presentation/scansort)
+```
 
-8 functional tests, ALL on the REAL `MCPServerConnection` (not `StubMCPConnection`
-— mock connections are why the regression shipped invisibly). Tests live
-Minerva-side in `src/test/`.
+## 7. Hard rules (carry-forward)
 
-- **F1** — two concurrent `call_tool`s in flight; assert each caller gets its own id's result.
-- **F2** — one `sleep(~15000)` + 5 instant `echo`s concurrent; echoes <1s, sleep returns correct.
-- **F4** — response routed to its waiter by id amid interleaved traffic; a bare/unmatched response doesn't wedge a waiter.
-- **F5** — a caller 2s budget errors at ~2s; a no-budget call waits.
-- **F6** — cancel an in-flight call; the connection still serves the next call.
-- **F3 (CAD)** — spawn real cad-plugin → open T-Beam `.mcad` → `cad.evaluate` → assert mesh triangle count > 0, finite bbox.
-- **scansort** — real model-chat/qwen, NO stubs: fixtures → clear cache → import rule set → fresh vault → `process()` → assert placement.
-- **presentation** — open `test_deck.mdeck` → assert 3 slides / 7 tiles.
-
-F1/F2/F4/F5/F6 = W4 (drive the W3 fixture plugin). F3 + scansort + presentation = W5.
-**Fail-first discipline:** W4's tests and F3 must be confirmed FAILING against
-current code *before* W1 lands, then PASS after.
-
-## 6. Fixtures — built, reviewed, committed (W2 + W3)
-
-- `src/test/fixtures/stdio_timing_probe/` — Layer-A fixture plugin (`manifest.json`
-  + `stdio_timing_probe.py`); asyncio, handles concurrent in-flight requests;
-  tools `echo` / `sleep` / `never_reply` / `emit_stray`. Cold-Opus-reviewed.
-- `src/test/fixtures/scansort-staging/` — 6 synthetic PII-free PDFs +
-  `gen_fixtures.py` + `rules.json` (v2 `RulesFile`) + `expected_placement.json`
-  + `README.md`. All visually verified vision-classifiable; all files verified
-  PII/secret-free.
-- `src/test/fixtures/presentation/test_deck.mdeck` (+ `README.md`) — small
-  schema-valid deck, 3 slides / 7 tiles.
-
-## 7. DONE vs NOT DONE
-
-**DONE (pre-compaction):** RCA + 8 work-items + dependency graph; the fix design
-(captured in W1); W2 + W3 fixtures built and reviewed; this pickup + memory +
-nudge; a WIP commit.
-
-**NOT DONE — the autonomous loop's job:** W4, W5, W1, W6, W8. (W7 HITL = the user.)
-
-## 8. Autonomous loop (post-compaction)
-
-The loop implements W4 → W1 → W6/W8, guarded by the test suite. Order
-(dependency-driven): write W4 + W5 tests **fail-first** (confirm they FAIL on
-current code) → implement W1 → suite goes green → W8 (CAD panel errors) + W6 (CI).
-- **Guardrail tiering:** F1–F6 (fixture plugin, fast, hermetic) run every
-  iteration; per-plugin tests (CAD needs build123d; scansort needs model-chat
-  reachable) run at checkpoints, not every iteration.
-- **Done oracle:** F1–F6 + per-plugin tests green. W7 (HITL, real data) = user.
-- Driver: `/work-cycle` against RCA `019e46b5`'s work-items.
-- A loop that writes its own tests can pass by writing weak ones — W4/W5 specs
-  are tightly defined in their docket descriptions; implement the spec, and keep
-  the fail-first checkpoint.
-
-## 9. Hard rules (carry-forward)
-
-- Per-file / explicit-path `git add` only. No `git add -A` / `git add .`.
-- No `--no-verify`. No `--no-gpg-sign`.
-- No `vendor/` touches. No committing `src/addons/sightline_probe/` or
-  `src/project.godot` while that addon is enabled.
-- No `git reset --hard`, no force-push, no destructive ops without explicit auth.
+- Per-file / explicit-path `git add` only. No `git add -A` / `.`.
+- No `--no-verify`, no `--no-gpg-sign`.
+- No `vendor/` touches. Don't commit `src/addons/sightline_probe/` or
+  `src/project.godot` while that addon is enabled. In the plugins repo, the
+  scansort tree has the user's own uncommitted work — never sweep it up.
+- No `git reset --hard`, no force-push, no push without explicit ask.
 - pkill target is `godot`, not `Minerva`.
-- Source is read-only — scansort copies to destinations, never alters source.
-- PII/HBI: never commit **real** documents / `.ssort` vaults / audit logs /
-  `.scansort-state.json`. NOTE: the **synthetic** PDFs in
-  `src/test/fixtures/scansort-staging/` ARE meant to be committed — they are
-  verified PII-free; the rule targets real documents.
-- Rubric (7 axes): reliability → durability → performance → debuggability →
-  cost → discoverable → user-visible.
+- PII/HBI: never commit real documents / `.ssort` vaults / audit logs.
 - RCA requests → 5-why chain with file:line source proof.
-
-## 10. Cold-start procedure
-
-1. Read this file + the W1 docket item (`019e470b1397`) for the full fix spec.
-2. `git -C ~/github/Minerva log --oneline -3` — confirm the WIP commit at tip.
-3. `git -C ~/github/Minerva status` — the test fixtures should be committed.
-4. Next work = W4 / W5 (unblocked, W2+W3 done). Fail-first, then W1.
