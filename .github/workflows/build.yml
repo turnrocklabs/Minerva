@@ -224,6 +224,56 @@ jobs:
           src/bin/libterminal*
           src/bin/libminerva-vt.so
 
+  # ── Functional regression test suite (RCA 019e46b5) ──────────────────────
+  # CI ran zero tests before this job. Runs the hermetic substrate tier
+  # (F1-F6) — fixture-plugin tests on the real MCPServerConnection. The
+  # per-plugin tier (CAD / presentation / scansort) is heavy/networked and is
+  # left for a manual/nightly run: scripts/run-functional-tests.sh --all.
+  # This job reports status but does not yet gate the release — wire it into
+  # build-godot's `needs` once it has proven green in CI.
+  functional-tests:
+    needs: build-linux
+    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    # The hermetic tests spawn an MCP stdio subprocess, which needs the
+    # SubProcess GDExtension shipped in the terminal-linux artifact.
+    - name: Download terminal extension
+      uses: actions/download-artifact@v4
+      with:
+        name: terminal-linux
+        path: src/bin/
+
+    - name: Install Linux runtime dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libx11-dev libxcursor-dev \
+          libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
+          libdbus-1-dev libudev-dev libxi-dev libxrandr-dev
+
+    - name: Install Godot 4.6
+      run: |
+        GODOT_VERSION="4.6.2"
+        RELEASE="stable"
+        curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64.zip"
+        unzip ./godot.zip
+        sudo mv ./Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64 /usr/local/bin/godot
+        godot --version
+
+    - name: Import project
+      working-directory: src
+      run: |
+        mkdir -p .godot
+        timeout 180s godot --headless --import || true
+
+    - name: Run functional suite (hermetic F1-F6)
+      run: scripts/run-functional-tests.sh
+
   build-macos:
     needs: check-gdextension
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
