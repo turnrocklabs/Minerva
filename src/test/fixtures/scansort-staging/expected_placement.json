@@ -1,0 +1,55 @@
+{
+  "_comment": "Assertion oracle for the scansort functional-regression test. Maps each synthetic input PDF to the rule it should fire and the destination subfolder it should land in. All inputs are dated in tax year 2024 so the {year} rename token resolves to '2024'. The {doc_type} token is a short LLM-produced kebab-case string and is NOT pinned here (vision models are not byte-deterministic) — assert the subfolder and the static rename prefix instead, and treat {doc_type} as a free-form trailing token.",
+  "rules_file": "rules.json",
+  "year": "2024",
+  "placements": [
+    {
+      "input": "w2_wage_statement.pdf",
+      "expected_rule_label": "tax-w2",
+      "expected_subfolder": "Taxes/W-2",
+      "rename_pattern": "{year}_W2_{doc_type}",
+      "expected_renamed_prefix": "2024_W2_",
+      "doc_type_token": "free-form, not asserted (e.g. wage-tax-statement)"
+    },
+    {
+      "input": "electric_utility_bill.pdf",
+      "expected_rule_label": "utility-electric",
+      "expected_subfolder": "Utilities/Electric",
+      "rename_pattern": "{year}_ElectricBill_{doc_type}",
+      "expected_renamed_prefix": "2024_ElectricBill_",
+      "doc_type_token": "free-form, not asserted (e.g. electric-bill)"
+    },
+    {
+      "input": "bank_statement.pdf",
+      "expected_rule_label": "bank-statement",
+      "expected_subfolder": "Banking/Statements",
+      "rename_pattern": "{year}_BankStatement_{doc_type}",
+      "expected_renamed_prefix": "2024_BankStatement_",
+      "doc_type_token": "free-form, not asserted (e.g. account-statement)"
+    },
+    {
+      "input": "pay_stub.pdf",
+      "expected_rule_label": "pay-stub",
+      "expected_subfolder": "Income/PayStubs",
+      "rename_pattern": "{year}_PayStub_{doc_type}",
+      "expected_renamed_prefix": "2024_PayStub_",
+      "doc_type_token": "free-form, not asserted (e.g. earnings-statement)"
+    },
+    {
+      "input": "insurance_eob.pdf",
+      "expected_rule_label": "insurance-eob",
+      "expected_subfolder": "Medical/EOB",
+      "rename_pattern": "{year}_EOB_{doc_type}",
+      "expected_renamed_prefix": "2024_EOB_",
+      "doc_type_token": "free-form, not asserted (e.g. explanation-of-benefits)"
+    },
+    {
+      "input": "vehicle_registration.pdf",
+      "expected_rule_label": "vehicle-registration",
+      "expected_subfolder": "Vehicle/Registration",
+      "rename_pattern": "{year}_VehicleRegistration_{doc_type}",
+      "expected_renamed_prefix": "2024_VehicleRegistration_",
+      "doc_type_token": "free-form, not asserted (e.g. registration-certificate)"
+    }
+  ]
+}

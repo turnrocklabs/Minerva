@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "aspect": "16:9",
+  "slides": [
+    {
+      "id": "slide_fixture_0001",
+      "title": "Test Slide One",
+      "background": {
+        "kind": "color",
+        "value": "#ffffff"
+      },
+      "tiles": [
+        {
+          "id": "tile_fixture_0001",
+          "kind": "text",
+          "x": 0.05,
+          "y": 0.1,
+          "w": 0.9,
+          "h": 0.18,
+          "text_mode": "plain",
+          "content": "Test Slide One",
+          "auto_fit": true
+        },
+        {
+          "id": "tile_fixture_0002",
+          "kind": "text",
+          "x": 0.05,
+          "y": 0.32,
+          "w": 0.9,
+          "h": 0.55,
+          "text_mode": "bullet",
+          "content": "Fixture body text — alpha\nFixture body text — beta\nFixture body text — gamma"
+        }
+      ],
+      "reveal": []
+    },
+    {
+      "id": "slide_fixture_0002",
+      "title": "Test Slide Two",
+      "background": {
+        "kind": "color",
+        "value": "#f4f0e8"
+      },
+      "tiles": [
+        {
+          "id": "tile_fixture_0003",
+          "kind": "text",
+          "x": 0.05,
+          "y": 0.1,
+          "w": 0.9,
+          "h": 0.18,
+          "text_mode": "plain",
+          "content": "Test Slide Two",
+          "auto_fit": true
+        },
+        {
+          "id": "tile_fixture_0004",
+          "kind": "text",
+          "x": 0.05,
+          "y": 0.32,
+          "w": 0.55,
+          "h": 0.55,
+          "text_mode": "numbered",
+          "content": "Fixture body text — delta\nFixture body text — epsilon"
+        },
+        {
+          "id": "tile_fixture_0005",
+          "kind": "text",
+          "x": 0.62,
+          "y": 0.32,
+          "w": 0.33,
+          "h": 0.55,
+          "text_mode": "plain",
+          "content": "Fixture sidebar text — zeta"
+        }
+      ],
+      "reveal": []
+    },
+    {
+      "id": "slide_fixture_0003",
+      "title": "Test Slide Three",
+      "background": {
+        "kind": "color",
+        "value": "#ffffff"
+      },
+      "tiles": [
+        {
+          "id": "tile_fixture_0006",
+          "kind": "text",
+          "x": 0.05,
+          "y": 0.1,
+          "w": 0.9,
+          "h": 0.18,
+          "text_mode": "plain",
+          "content": "Test Slide Three",
+          "auto_fit": true
+        },
+        {
+          "id": "tile_fixture_0007",
+          "kind": "text",
+          "x": 0.05,
+          "y": 0.32,
+          "w": 0.9,
+          "h": 0.55,
+          "text_mode": "plain",
+          "content": "Fixture body text — eta. This deck is a schema-valid regression fixture and contains no real content."
+        }
+      ],
+      "reveal": []
+    }
+  ]
+}

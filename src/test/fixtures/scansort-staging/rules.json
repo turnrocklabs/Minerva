@@ -1,0 +1,206 @@
+{
+  "schema_version": 2,
+  "default_category": "unsorted",
+  "confidence_threshold": 0.6,
+  "rename_pattern": "{date}_{issuer}_{description}",
+  "rules": [
+    {
+      "label": "tax-w2",
+      "name": "W-2 Wage and Tax Statement",
+      "instruction": "A W-2 Wage and Tax Statement. The page is dominated by a large heading reading 'Form W-2' and 'Wage and Tax Statement'. It is a U.S. federal tax form showing an employee's annual wages and the taxes withheld by an employer for a tax year. It contains numbered boxes such as 'Box 1 Wages, tips, other compensation', 'Box 2 Federal income tax withheld', 'Box 3 Social security wages', and 'Box 6 Medicare tax withheld', along with an Employer EIN and an Employee SSN. Match ONLY a W-2 tax form. Do NOT match a pay stub or earnings statement (those cover a single pay period, not a full tax year, and have no numbered W-2 boxes).",
+      "subfolder": "Taxes/W-2",
+      "rename_pattern": "{year}_W2_{doc_type}",
+      "confidence_threshold": 0.6,
+      "encrypt": false,
+      "enabled": true,
+      "is_default": false,
+      "order": 0,
+      "stop_processing": true,
+      "stages": [
+        {
+          "ask": "Is this page a Form W-2 Wage and Tax Statement? Look for the bold heading 'Form W-2', the phrase 'Wage and Tax Statement', numbered boxes (Box 1, Box 2, ...), an Employer EIN, and an Employee SSN.",
+          "classify": {
+            "is_w2": {
+              "description": "yes if this is a W-2 Wage and Tax Statement form, otherwise no",
+              "values": ["yes", "no"]
+            },
+            "doc_type": {
+              "description": "a short kebab-case token naming the document type",
+              "values": "a short kebab-case token, e.g. wage-tax-statement"
+            },
+            "year": {
+              "description": "the 4-digit tax year shown on the form",
+              "values": "a 4-digit year"
+            }
+          },
+          "keep_when": "is_w2 == 'yes'"
+        }
+      ]
+    },
+    {
+      "label": "utility-electric",
+      "name": "Electric Utility Bill",
+      "instruction": "An electric utility bill. The page header names a power/electric company (for example 'Springfield Power & Light') and carries the words 'ELECTRICITY BILL'. It shows a service address, an account number, a billing date, a service period, electricity usage measured in kWh, a charge summary with line items, and a bold 'TOTAL AMOUNT DUE'. Match ONLY a residential electricity/utility bill. Do NOT match a bank statement or an insurance document.",
+      "subfolder": "Utilities/Electric",
+      "rename_pattern": "{year}_ElectricBill_{doc_type}",
+      "confidence_threshold": 0.6,
+      "encrypt": false,
+      "enabled": true,
+      "is_default": false,
+      "order": 10,
+      "stop_processing": true,
+      "stages": [
+        {
+          "ask": "Is this page an electric utility bill? Look for a power/electric company name in the header, the words 'ELECTRICITY BILL', a service address, electricity usage in kWh, and a 'TOTAL AMOUNT DUE'.",
+          "classify": {
+            "is_electric_bill": {
+              "description": "yes if this is an electric utility bill, otherwise no",
+              "values": ["yes", "no"]
+            },
+            "doc_type": {
+              "description": "a short kebab-case token naming the document type",
+              "values": "a short kebab-case token, e.g. electric-bill"
+            },
+            "year": {
+              "description": "the 4-digit year of the billing date",
+              "values": "a 4-digit year"
+            }
+          },
+          "keep_when": "is_electric_bill == 'yes'"
+        }
+      ]
+    },
+    {
+      "label": "bank-statement",
+      "name": "Bank Account Statement",
+      "instruction": "A monthly bank account statement. The header names a bank (for example 'First Sample Bank') and reads 'MONTHLY ACCOUNT STATEMENT'. It shows an account holder, a partly-masked account number (e.g. 'Checking ****0000'), a statement period, a beginning balance, an ending balance, and a dated transaction history table with withdrawal and deposit columns. Match ONLY a bank/checking account statement. Do NOT match a pay stub, an electric bill, or a W-2.",
+      "subfolder": "Banking/Statements",
+      "rename_pattern": "{year}_BankStatement_{doc_type}",
+      "confidence_threshold": 0.6,
+      "encrypt": false,
+      "enabled": true,
+      "is_default": false,
+      "order": 20,
+      "stop_processing": true,
+      "stages": [
+        {
+          "ask": "Is this page a monthly bank account statement? Look for a bank name, 'MONTHLY ACCOUNT STATEMENT', a statement period, beginning and ending balances, and a transaction history table with withdrawal/deposit columns.",
+          "classify": {
+            "is_bank_statement": {
+              "description": "yes if this is a bank account statement, otherwise no",
+              "values": ["yes", "no"]
+            },
+            "doc_type": {
+              "description": "a short kebab-case token naming the document type",
+              "values": "a short kebab-case token, e.g. account-statement"
+            },
+            "year": {
+              "description": "the 4-digit year of the statement period",
+              "values": "a 4-digit year"
+            }
+          },
+          "keep_when": "is_bank_statement == 'yes'"
+        }
+      ]
+    },
+    {
+      "label": "pay-stub",
+      "name": "Pay Stub / Earnings Statement",
+      "instruction": "A pay stub, also called an earnings statement. The page is headed 'EARNINGS STATEMENT' and 'Pay Stub'. It covers a single pay period (e.g. 'Jan 1 - Jan 15') with a pay date and check number, an Earnings section with hours and rate, a Deductions section (federal income tax, social security, Medicare, health insurance), and a bold 'NET PAY' total. Match ONLY a per-pay-period pay stub / earnings statement. Do NOT match a W-2 (a W-2 is an annual tax form with numbered boxes and an EIN/SSN, not a single pay period).",
+      "subfolder": "Income/PayStubs",
+      "rename_pattern": "{year}_PayStub_{doc_type}",
+      "confidence_threshold": 0.6,
+      "encrypt": false,
+      "enabled": true,
+      "is_default": false,
+      "order": 30,
+      "stop_processing": true,
+      "stages": [
+        {
+          "ask": "Is this page a pay stub / earnings statement for a single pay period? Look for the heading 'EARNINGS STATEMENT' and 'Pay Stub', a pay period and pay date, an Earnings section, a Deductions section, and a bold 'NET PAY' total. It must NOT be a W-2 annual tax form.",
+          "classify": {
+            "is_pay_stub": {
+              "description": "yes if this is a per-pay-period pay stub, otherwise no",
+              "values": ["yes", "no"]
+            },
+            "doc_type": {
+              "description": "a short kebab-case token naming the document type",
+              "values": "a short kebab-case token, e.g. earnings-statement"
+            },
+            "year": {
+              "description": "the 4-digit year of the pay date",
+              "values": "a 4-digit year"
+            }
+          },
+          "keep_when": "is_pay_stub == 'yes'"
+        }
+      ]
+    },
+    {
+      "label": "insurance-eob",
+      "name": "Health Insurance Explanation of Benefits",
+      "instruction": "A health insurance Explanation of Benefits (EOB). The header names a health plan/insurer (for example 'Sample Health Plan') and reads 'EXPLANATION OF BENEFITS', usually with the disclaimer 'THIS IS NOT A BILL'. It shows a member name, a member ID, a claim number, a provider, a date of service, and a benefits table with columns 'BILLED', 'PLAN PAID', and 'YOU OWE', ending in a 'TOTAL PATIENT RESPONSIBILITY' amount. Match ONLY a health insurance EOB. Do NOT match a bank statement or a utility bill.",
+      "subfolder": "Medical/EOB",
+      "rename_pattern": "{year}_EOB_{doc_type}",
+      "confidence_threshold": 0.6,
+      "encrypt": false,
+      "enabled": true,
+      "is_default": false,
+      "order": 40,
+      "stop_processing": true,
+      "stages": [
+        {
+          "ask": "Is this page a health insurance Explanation of Benefits (EOB)? Look for a health plan/insurer name, 'EXPLANATION OF BENEFITS', the words 'THIS IS NOT A BILL', a member ID, a claim number, and a benefits table with 'BILLED', 'PLAN PAID' and 'YOU OWE' columns.",
+          "classify": {
+            "is_eob": {
+              "description": "yes if this is a health insurance Explanation of Benefits, otherwise no",
+              "values": ["yes", "no"]
+            },
+            "doc_type": {
+              "description": "a short kebab-case token naming the document type",
+              "values": "a short kebab-case token, e.g. explanation-of-benefits"
+            },
+            "year": {
+              "description": "the 4-digit year of the date of service",
+              "values": "a 4-digit year"
+            }
+          },
+          "keep_when": "is_eob == 'yes'"
+        }
+      ]
+    },
+    {
+      "label": "vehicle-registration",
+      "name": "Vehicle Registration Certificate",
+      "instruction": "A vehicle registration certificate issued by a Department of Motor Vehicles. The page has a decorative certificate border, a 'DEPARTMENT OF MOTOR VEHICLES' line, and a large heading 'VEHICLE REGISTRATION' / 'Certificate of Registration'. It shows a license plate number, a registration year, a registered owner, a VIN, a vehicle make/model, validity dates, and a registration fee. Match ONLY a vehicle/motor-vehicle registration certificate. Do NOT match any financial, tax, medical, or utility document.",
+      "subfolder": "Vehicle/Registration",
+      "rename_pattern": "{year}_VehicleRegistration_{doc_type}",
+      "confidence_threshold": 0.6,
+      "encrypt": false,
+      "enabled": true,
+      "is_default": false,
+      "order": 50,
+      "stop_processing": true,
+      "stages": [
+        {
+          "ask": "Is this page a vehicle registration certificate? Look for a 'DEPARTMENT OF MOTOR VEHICLES' line, the heading 'VEHICLE REGISTRATION', a license plate number, a VIN, a vehicle make/model, and a registration year.",
+          "classify": {
+            "is_vehicle_registration": {
+              "description": "yes if this is a vehicle registration certificate, otherwise no",
+              "values": ["yes", "no"]
+            },
+            "doc_type": {
+              "description": "a short kebab-case token naming the document type",
+              "values": "a short kebab-case token, e.g. registration-certificate"
+            },
+            "year": {
+              "description": "the 4-digit registration year",
+              "values": "a 4-digit year"
+            }
+          },
+          "keep_when": "is_vehicle_registration == 'yes'"
+        }
+      ]
+    }
+  ]
+}
