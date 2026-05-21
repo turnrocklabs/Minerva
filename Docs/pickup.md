@@ -1,112 +1,90 @@
 # Pickup
 
-STATE: `PLUGIN_SUBSTRATE_FIX (RCA 019e46b5) — W7 HITL IN PROGRESS — BUG #2 FOUND, AWAITING FIX-APPROACH DECISION`
+STATE: `PLUGIN_SUBSTRATE_FIX (RCA 019e46b5) — BUG #2 FIXED (Option A), TEST-VERIFIED — AWAITING RE-HITL`
 
-Last updated 2026-05-21. W1/W4/W5/W6/W8 are implemented and committed. W7 HITL
-then revealed the CAD render regression is **not fully fixed** — a second bug,
-masked by the first. **The immediate next step is a user decision: fix
-approach A vs B (section 4).** Read this whole file before acting.
+Last updated 2026-05-21. Bug #2 (broker→panel result-shape mismatch) is fixed
+via **Option A** and verified by the functional suite. The fix is **not yet
+committed** — it awaits a user HITL re-check that the CAD panel renders.
 
 ---
 
 ## 1. Status
 
-RCA `019e46b5` — "CAD plugin renders no geometry." Tracked as remediation on
-that RCA (status `remediating`; do NOT move to `verified` — the regression is
-not resolved).
+RCA `019e46b5` — "CAD plugin renders no geometry." Still `remediating`; move to
+`verified` only after the user confirms the panel renders in a live Minerva run.
 
-W1 (the connection-layer fix) is **correct and necessary** — F2 RED→GREEN, the
-serialization gate is gone. But W7 HITL found W1 is **not sufficient**: there
-is a second, independent bug that W1 *unmasked*.
+W1 (connection-layer fix) shipped earlier. W7 HITL found bug #2 (W1 was
+necessary but not sufficient). Bug #2 is now fixed.
 
-## 2. What shipped — committed on `user/imran/experiments/swarm` (NOT pushed)
+## 2. What changed today — UNCOMMITTED on `user/imran/experiments/swarm`
 
-| Commit | What |
-|--------|------|
-| `faf0d38d` | test fixtures |
-| `1d84fbea` | W4+W5 — functional test suite (5 files) |
-| `6bd32f2b` | W1 — connection-layer fix (`MCPServerConnection.gd`) |
-| `0c4e6cf8` | W8 (Minerva) — broker error propagation (`PluginErrors.backend_error` + broker) |
-| `b9761185` | W6 — `scripts/run-functional-tests.sh` + `build.yml` CI job |
-| `9323abde` | pickup (superseded by this file) |
-| `2e1bcbe` (plugins repo, `main`) | W8 (cad) — `CADPanel` error banner |
+All Minerva-side; the CAD plugin needs no change (its panel already expects the
+wrapped shape — bug #2 was the broker silently dropping the wrap).
 
-Post-W1 suite all green: F1/F2/F4 16/0, F5/F6 14/0, F3 12/0, presentation 29/0,
-scansort skip-clean. The 3 host-capability tests fail but identically pre-W1
-(pre-existing, stash-confirmed). W1 cold-reviewed, no blockers.
+| File | Change |
+|------|--------|
+| `PluginErrors.gd` | + `backend_success(payload)` → `{success:true, result:payload}` — the success half of the broker→scene reply contract, paired with `backend_error()` |
+| `PluginScenePanelBroker.gd` | `_dispatch_to_plugin_backend` rewritten — see §3 |
+| `MCPServerConnection.gd` | W1 follow-up: `_drain_stdout` loop re-guards `is_instance_valid(_subprocess)` per iteration (fixes a shutdown null-deref) |
+| `singleton_object.gd` | `create_toast_notification` no-ops when `main_scene == null` (headless-safe) |
+| `test/test_cad_evaluate_render.gd` | + F3b — drives `cad.evaluate` through `PluginScenePanelBroker._dispatch_to_plugin_backend` (the path F3 bypassed) |
 
-## 3. THE LIVE BUG — #2, broker→panel result-shape mismatch
+## 3. The fix — Option A (broker owns the reply envelope)
 
-W7 HITL: user ran the CAD panel; `cad.evaluate` now COMPLETES (W1 fixed the
-timeout), but the panel still renders nothing and logs
-`[CADPanel] cad.evaluate transport failure: unknown —` (empty message).
+`_dispatch_to_plugin_backend` now, for a Dictionary `call_result`:
+1. has `success` → return verbatim (tool already speaks the envelope).
+2. has `ok` → `backend_success(call_result)` = `{success:true, result:<payload>}`.
+   Checked **before** `error`: a worker-domain error is `{ok:false, error:{…}}`
+   (both keys) and must reach the panel as a worker result so the panel sees
+   `error.kind` (e.g. `cancelled`), not a transport `backend_error`.
+3. has `error` only (no `ok`) → `backend_error` — a connection-layer failure.
+4. neither → `backend_success`.
 
-Mechanics (all confirmed):
-- A successful `cad.evaluate` →  `conn.call_tool("cad.evaluate")` returns the
-  cad payload `{ok:true, result:{shape_name,mesh,edges}}` — **no `success`
-  key** (F3's own run printed `result keys: ["ok","result"]`).
-- `PluginScenePanelBroker._dispatch_to_plugin_backend` success path does
-  `return PluginErrors.success(call_result)` — and `PluginErrors.success()`
-  returns its arg **verbatim** (`PluginErrors.gd:369-370`; the `{success:true,
-  result:...}` wrap was removed long ago as vestigial for the MCP capability
-  bridge). So the broker delivers `{ok:true, result:{...}}` to the panel.
-- `CADPanel._evaluate_and_render` expects `{success:true, result:<payload>}`
-  (its own comment, `CADPanel.gd:568-571`). `CADPanel.gd:550`
-  `if not bool(result.get("success", false))` → no `success` key → treats a
-  SUCCESSFUL eval as a transport failure → blank render; `err_code` defaults
-  to `"unknown"`, `err_message` is empty.
+Why A is safe (blast-radius check, 2026-05-21): `_dispatch_to_plugin_backend`'s
+return is consumed by **exactly one** call site platform-wide — `CADPanel.gd:579`
+`await_reply` on `cad.evaluate`. scansort panels never use the broker scene path
+(they call `conn.call_tool` directly); presentation's only `request.emit` is
+`host_owned_save.response`, special-cased before `_dispatch_to_plugin_backend`.
+And `CADPanel._evaluate_and_render` (lines 612-616) was already written for the
+`{success:true, result:<worker_payload>}` shape — A restores the contract the
+panel already speaks, so the CAD panel needs no change.
 
-Why masked: pre-W1 the gate timed out `cad.evaluate` before any reply reached
-the panel — the panel never parsed a reply, so #2 was invisible. W1 made the
-reply arrive; #2 surfaced. Why tests missed it: F3 calls `call_tool` directly,
-bypassing the broker→panel path. Full record: RCA `019e46b5` comment 20.
+## 4. Test results (2026-05-21)
 
-## 4. DECISION NEEDED — fix approach (the next step)
+`scripts/run-functional-tests.sh --all`: F1/F2/F4 16/0, F5/F6 14/0,
+CAD (F3+F3b) 21/0 with zero SCRIPT ERRORs, presentation 29/0, scansort
+skip-clean (model-chat unavailable headless).
 
-- **A. Fix the broker (recommended).** In `_dispatch_to_plugin_backend`, the
-  success path wraps a non-`success` payload: `return {"success": true,
-  "result": call_result}`. Matches the panel's expectation + completes the
-  reply contract W8 started for errors (`{success:false,...}`). Blast radius:
-  changes the reply shape for every plugin panel whose backend tool returns an
-  `{ok}`-style payload (scansort especially) — **must blast-radius-check the
-  scansort panel first** (does it read wrapped or verbatim broker replies?).
-- **B. Fix the CAD panel only.** Rewrite `CADPanel._evaluate_and_render`'s
-  result handling to read the verbatim shape: `result` IS the worker payload
-  `{ok, result}` (one fewer unwrap layer), plus the W8 error shape
-  `{success:false, error_code, error_message}`. Surgical, zero cross-plugin
-  risk, per-panel patch.
+F3b is the new bug #2 regression guard — its "broker reply has success == true"
+assertion fails pre-fix, passes post-fix.
 
-Recommended path: quick scansort-panel blast-radius check → A if clean, B if
-not. **Either fix MUST ship with a new test that drives the real broker→panel
-reply path** (F3's gap) — e.g. extend the CAD per-plugin test to go through
-`PluginScenePanelBroker`, not just `call_tool`.
+Host-capability tests: channel 10/4, providers 45/0, documents 65/7. The 11
+failures are pre-existing + environmental (`capability_probe` fixture won't
+start) — `git stash` baseline confirmed identical counts with the fix removed,
+so Option A caused zero regressions.
 
-Awaiting the user's A-vs-B call. The user was asked; this pickup is the
-compaction save while that decision is pending.
+## 5. THE NEXT STEP — user HITL
 
-## 5. Other open follow-ups (not blocking)
+Run Minerva, open the CAD panel, evaluate a model. Confirm geometry renders and
+no `transport failure` warning. If good: commit the 5 files (per-file `git add`),
+then RCA `019e46b5` → `verified`. If not: capture the new symptom.
+
+## 6. Other open follow-ups (not blocking)
 
 - **F7 (exported-build CI)** deferred — needs a real export env. Docket W6 c.19.
-- **CI Godot version** — `build.yml` `build-godot` installs 4.5.1; project
-  needs 4.6; the new `functional-tests` job pins 4.6.2. Reconcile.
-- **Broker capability-handler robustness** — pre-existing: a broker handler
-  that hard-fails mid-dispatch wedges a plugin until the 120s timeout. Docket
-  W1 comment 18.
+- **CI Godot version** — `build.yml` `build-godot` installs 4.5.1; project needs
+  4.6; the `functional-tests` job pins 4.6.2. Reconcile.
+- **Broker capability-handler robustness** — pre-existing; docket W1 comment 18.
+- **`capability_probe` fixture won't start headless** — the 11 host-capability
+  failures; pre-existing, unrelated to bug #2.
 - The `functional-tests` CI job is unverified until a real CI run.
-
-## 6. Run the tests
-
-```
-scripts/run-functional-tests.sh          # hermetic F1-F6
-scripts/run-functional-tests.sh --all    # + per-plugin (CAD/presentation/scansort)
-```
 
 ## 7. Hard rules
 
 - Per-file / explicit-path `git add` only. No `-A`/`.`. No `--no-verify`.
-- No `vendor/` touches. Don't commit `src/addons/sightline_probe/` or
-  `src/project.godot`. In the plugins repo, the scansort tree has the user's
-  own uncommitted work — never sweep it up (per-file add only).
+- No `vendor/` touches. Don't commit `src/addons/sightline_probe/`,
+  `src/project.godot`, or the generated `src/test/*.uid` files. In the plugins
+  repo the scansort tree has the user's own uncommitted work — never sweep it up.
 - No `git reset --hard`, no force-push, no push without explicit ask.
 - pkill target is `godot`, not `Minerva`.
 - RCA requests → 5-why with file:line proof.

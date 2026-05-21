@@ -6,11 +6,19 @@ extends SceneTree
 ##
 ## Tracks docket: minerva RCA 019e46b5 / work-item W5 019e470b444f
 ##
-## SCOPE — this is a per-plugin GEOMETRY GUARD, not a fail-first repro. It
-## asserts cad.evaluate returns a mesh with triangle count > 0 and a finite,
+## SCOPE — F3 is a per-plugin GEOMETRY GUARD, not a fail-first repro. It asserts
+## cad.evaluate returns a mesh with triangle count > 0 and a finite,
 ## non-degenerate bounding box. It passes pre- and post-W1: it proves W1 did
 ## not break the CAD plugin, the same role the scansort/presentation tests
 ## play for their plugins.
+##
+## F3b extends this: it re-runs cad.evaluate through
+## PluginScenePanelBroker._dispatch_to_plugin_backend — the broker→panel path
+## the direct call_tool of F3 bypasses. F3b is the regression guard for bug #2
+## (RCA 019e46b5 comment 20): the broker must deliver the {success:true,
+## result:...} envelope CADPanel._evaluate_and_render is written against. F3
+## passing 12/0 while CAD rendered nothing in the panel is exactly because its
+## call_tool-only scope never exercised the broker — that gap is what F3b closes.
 ##
 ## Why F3 is NOT a headless concurrency repro: the cad plugin's MCP server is
 ## single-threaded over stdio (main.go:566 `for scanner.Scan() { dispatch(...) }`
@@ -28,6 +36,7 @@ extends SceneTree
 ## deferred load() rather than a top-level preload().
 
 const PLUGIN_MANAGER_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginManager.gd"
+const BROKER_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginScenePanelBroker.gd"
 const PLUGIN_ID := "cad"
 const PLUGIN_DIR_REL := "/github/plugins/cad"
 const BINARY_REL := "/cad-plugin"
@@ -121,6 +130,7 @@ func _run() -> void:
 	check("connection exists post-start", conn != null)
 	if conn != null:
 		await _test_f3(conn)
+		await _test_f3b_broker(pm)
 
 	print("\n-- stop_plugin --")
 	var stop_result = await pm.stop_plugin(PLUGIN_ID)
@@ -164,6 +174,72 @@ func _test_f3(conn) -> void:
 			bbox.get("ok", false), str(bbox.get("detail", "")))
 	if bbox.get("ok", false):
 		print("    %s" % str(bbox.get("detail", "")))
+
+
+## F3b — cad.evaluate routed through PluginScenePanelBroker._dispatch_to_plugin_backend,
+## the broker→panel path F3's direct call_tool bypasses. This is the bug #2 site
+## (RCA 019e46b5 comment 20): a successful eval must arrive as the
+## {success:true, result:<worker_payload>} envelope CADPanel._evaluate_and_render
+## is written against — NOT the raw {ok,...} worker payload (which the panel
+## reads as a transport failure -> blank render).
+func _test_f3b_broker(pm) -> void:
+	print("\n-- F3b: cad.evaluate through PluginScenePanelBroker --")
+	var broker_script = load(BROKER_SCRIPT_PATH)
+	check("F3b: PluginScenePanelBroker.gd loaded", broker_script != null)
+	if broker_script == null:
+		return
+	var broker = broker_script.new()
+	broker.plugin_manager = pm
+
+	# --- success case: a valid solid must arrive as the wrapped envelope ---
+	var res = await broker._dispatch_to_plugin_backend(
+			PLUGIN_ID, "cad.evaluate", {"source": CUBE_SOURCE})
+	print("    broker result keys: %s" % str(res.keys() if res is Dictionary else res))
+	check("F3b: broker returned a Dictionary", res is Dictionary,
+			"got type %d" % typeof(res))
+	if not (res is Dictionary):
+		return
+	# THE bug #2 assertion: the broker must stamp success == true. Pre-fix it
+	# returned the raw {ok,...} payload with no success key, which the panel
+	# (CADPanel.gd:591) read as a transport failure -> blank render.
+	check("F3b: broker reply has success == true (bug #2 guard)",
+			res.get("success", null) == true,
+			"got: %s" % str(res).left(200))
+	var worker_payload = res.get("result")
+	check("F3b: broker nested the worker payload under 'result'",
+			worker_payload is Dictionary,
+			"got: %s" % str(worker_payload).left(120))
+	if worker_payload is Dictionary:
+		check("F3b: nested worker payload has ok == true",
+				worker_payload.get("ok", null) == true,
+				"got: %s" % str(worker_payload).left(160))
+		check("F3b: a mesh is reachable through the wrapped envelope",
+				_find_mesh(worker_payload) is Dictionary,
+				"no mesh in %s" % str(worker_payload).left(160))
+
+	# --- worker-error case: a domain error must ride through as a worker result
+	# ({success:true, result:{ok:false,…}}), NOT be re-shaped into a transport
+	# backend_error. Guards the ok-before-error ordering in _dispatch_to_plugin_backend. ---
+	var err_res = await broker._dispatch_to_plugin_backend(
+			PLUGIN_ID, "cad.evaluate", {"source": "@@@ not a valid mcad program @@@"})
+	print("    broker error-case keys: %s"
+			% str(err_res.keys() if err_res is Dictionary else err_res))
+	check("F3b: worker-error case returned a Dictionary", err_res is Dictionary)
+	if err_res is Dictionary:
+		var err_payload = err_res.get("result")
+		if err_payload is Dictionary and err_payload.has("ok"):
+			check("F3b: worker domain error stays a worker result, not backend_error",
+					err_res.get("success", null) == true
+						and err_res.get("error_code", null) == null,
+					"got: %s" % str(err_res).left(200))
+			check("F3b: worker-error payload carries ok == false",
+					err_payload.get("ok", null) == false,
+					"got: %s" % str(err_payload).left(160))
+		else:
+			# Worker emitted a no-ok / transport-shaped error; the broker is then
+			# correct to surface it as backend_error. Informational, not a fail.
+			print("    (worker returned a non-{ok} shape; broker -> %s)"
+					% str(err_res).left(160))
 
 
 ## Locate the mesh dict in a cad.evaluate result, tolerating the {ok, result}

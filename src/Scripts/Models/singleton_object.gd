@@ -1681,6 +1681,10 @@ func create_toast_notification(content: String, type: = ToastNotification.Type.I
 
 	var toast: = ToastNotification.create(type, content)
 
+	# No UI tree (headless / --script run, or pre-_ready): the console log above
+	# is the only surface — skip the toast rather than deref a null main_scene.
+	if main_scene == null:
+		return
 	main_scene.add_child(toast)
 
 

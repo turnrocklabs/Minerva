@@ -1328,18 +1328,34 @@ func _dispatch_to_plugin_backend(
 			"Plugin backend returned null for channel '%s'" % channel)
 
 	if call_result is Dictionary:
+		# A backend tool that already speaks the {success:...} reply envelope is
+		# passed through verbatim — no double-wrap.
 		if call_result.has("success"):
 			return call_result
-		# A connection-layer failure from call_tool (timeout, subprocess exit,
-		# write failure) surfaces as {error: <human-readable string>} with no
-		# "success" key. Re-shape it to the {success:false, error_code,
-		# error_message} reply contract so the scene sees the real reason
-		# instead of the failure being silently wrapped as a success.
+		# A worker-domain result carries an "ok" flag (ok:true, or ok:false with
+		# a worker-error dict). The dispatch itself round-tripped, so wrap the
+		# whole worker payload in the {success:true, result:...} scene-reply
+		# envelope and let the panel inspect ok/error/result itself.
+		#
+		# Checked BEFORE "error": a worker-domain error is {ok:false, error:{…}}
+		# — it has BOTH keys — and it must reach the panel as a worker result
+		# (so the panel sees error.kind, e.g. "cancelled"), NOT be re-shaped into
+		# a transport-level backend_error.
+		if call_result.has("ok"):
+			return PluginErrors.backend_success(call_result)
+		# No "ok" but an "error": a connection-layer failure from call_tool
+		# (timeout, subprocess exit, write failure) surfaces as
+		# {error: <human-readable string>}. Re-shape it to the
+		# {success:false, error_code, error_message} reply contract so the scene
+		# sees the real reason instead of it being wrapped as a success.
 		if call_result.has("error"):
 			return PluginErrors.backend_error(plugin_id, str(call_result["error"]))
-		return PluginErrors.success(call_result)
+		# A dict with neither marker — the dispatch round-tripped; report success
+		# and hand the payload through under "result".
+		return PluginErrors.backend_success(call_result)
 
-	return PluginErrors.success({"raw": call_result})
+	# Non-dict result — the dispatch round-tripped; wrap it too.
+	return PluginErrors.backend_success({"raw": call_result})
 
 
 # ---------------------------------------------------------------------------

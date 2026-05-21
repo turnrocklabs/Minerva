@@ -890,7 +890,9 @@ func _drain_stdout() -> void:
 	if not _subprocess or not _subprocess.is_running():
 		return
 
-	while _subprocess.has_output():
+	# Re-guard each iteration: a dispatched message (or engine-exit teardown)
+	# can free _subprocess mid-drain, after which has_output() would deref null.
+	while is_instance_valid(_subprocess) and _subprocess.has_output():
 		var line: String = _subprocess.read_line()
 		if line.is_empty():
 			continue

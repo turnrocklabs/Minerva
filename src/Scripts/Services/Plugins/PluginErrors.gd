@@ -362,6 +362,25 @@ static func backend_error(plugin_id: String, detail: String) -> Dictionary:
 	}
 
 
+## A plugin backend tool call succeeded — the scene-panel reply envelope.
+## `payload` is the raw worker tool result (e.g. the CAD worker's
+## {ok, result|error} dict); it is nested under "result" so the receiving panel
+## inspects ok/error/result itself.
+##
+## Deliberately distinct from success() below. success() returns the payload
+## VERBATIM because the MCP STDIO capability bridge wraps it in the JSON-RPC
+## `result` field itself. The scene-panel path (PluginScenePanelBroker →
+## _deliver_reply → MinervaIPC._reply) hands this dict straight to the panel
+## with no further wrapping, so {success:true, result:...} IS the wire shape the
+## panel reads. Paired with backend_error() — together they are the broker→
+## scene reply contract.
+static func backend_success(payload: Dictionary) -> Dictionary:
+	return {
+		"success": true,
+		"result": payload,
+	}
+
+
 # ---------------------------------------------------------------------------
 # Success helper
 # ---------------------------------------------------------------------------

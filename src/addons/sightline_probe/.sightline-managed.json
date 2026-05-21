@@ -1,0 +1,10 @@
+{
+  "installed_by": "sightline",
+  "purpose": "editor/debugger inspection",
+  "reversible": true,
+  "files": [
+    "addons/sightline_probe/plugin.cfg",
+    "addons/sightline_probe/sightline_probe.gd"
+  ],
+  "source_sha256": "cfd3ca1ffd99b95c90aa68c5e8d25ee3b906decc870ee87a333774dfda56fe7b"
+}
