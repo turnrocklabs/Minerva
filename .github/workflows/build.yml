@@ -24,6 +24,12 @@ on:
     branches:
       - development
 
+# Single source of truth for the Godot version — every job that installs Godot
+# reads these. Keep in sync with the project's config/features in project.godot.
+env:
+  GODOT_VERSION: "4.6.2"
+  GODOT_RELEASE: "stable"
+
 jobs:
   check-gdextension:
     runs-on: ubuntu-latest
@@ -258,11 +264,9 @@ jobs:
 
     - name: Install Godot 4.6
       run: |
-        GODOT_VERSION="4.6.2"
-        RELEASE="stable"
-        curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64.zip"
+        curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64.zip"
         unzip ./godot.zip
-        sudo mv ./Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64 /usr/local/bin/godot
+        sudo mv ./Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64 /usr/local/bin/godot
         godot --version
 
     - name: Import project
@@ -425,21 +429,17 @@ jobs:
         
       - name: Install Godot
         run: |
-          GODOT_VERSION="4.5.1"
-          RELEASE="stable"
-          curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64.zip"
+          curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64.zip"
           unzip ./godot.zip
-          sudo mv ./Godot_v${GODOT_VERSION}-${RELEASE}_linux.x86_64 /usr/local/bin/godot
+          sudo mv ./Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_linux.x86_64 /usr/local/bin/godot
 
       - name: Install Godot Export Templates
         run: |
-          GODOT_VERSION="4.5.1"
-          RELEASE="stable"
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates"
-          curl -L -o ./godot-templates.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${RELEASE}/Godot_v${GODOT_VERSION}-${RELEASE}_export_templates.tpz"
+          curl -L -o ./godot-templates.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_export_templates.tpz"
           unzip ./godot-templates.zip
-          mkdir -p "$TEMPLATE_DIR/${GODOT_VERSION}.${RELEASE}"
-          mv templates/* "$TEMPLATE_DIR/${GODOT_VERSION}.${RELEASE}"
+          mkdir -p "$TEMPLATE_DIR/${GODOT_VERSION}.${GODOT_RELEASE}"
+          mv templates/* "$TEMPLATE_DIR/${GODOT_VERSION}.${GODOT_RELEASE}"
 
       - name: Setup Godot Project Structure
         working-directory: src
