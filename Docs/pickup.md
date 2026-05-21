@@ -1,100 +1,112 @@
 # Pickup
 
-STATE: `PLUGIN_SUBSTRATE_FIX — IMPLEMENTATION COMPLETE, AWAITING W7 HITL`
+STATE: `PLUGIN_SUBSTRATE_FIX (RCA 019e46b5) — W7 HITL IN PROGRESS — BUG #2 FOUND, AWAITING FIX-APPROACH DECISION`
 
-Last updated 2026-05-20. The CAD render-regression remediation (RCA
-`019e46b5`) is fully implemented, tested, cold-reviewed, and committed. The
-only remaining work is **W7 — human-in-the-loop verification** with the real
-app and real data.
+Last updated 2026-05-21. W1/W4/W5/W6/W8 are implemented and committed. W7 HITL
+then revealed the CAD render regression is **not fully fixed** — a second bug,
+masked by the first. **The immediate next step is a user decision: fix
+approach A vs B (section 4).** Read this whole file before acting.
 
 ---
 
-## 1. What this was
+## 1. Status
 
-The CAD plugin rendered no geometry. RCA-traced to Minerva's MCP-over-stdio
-connection layer — commit `fcdeda02`'s serialization gate — NOT the CAD plugin.
-Tracked as remediation on RCA `019e46b5` (now `remediating`; W7 HITL moves it
-to `verified` → `closed`).
+RCA `019e46b5` — "CAD plugin renders no geometry." Tracked as remediation on
+that RCA (status `remediating`; do NOT move to `verified` — the regression is
+not resolved).
 
-## 2. What shipped — all committed on `user/imran/experiments/swarm`
+W1 (the connection-layer fix) is **correct and necessary** — F2 RED→GREEN, the
+serialization gate is gone. But W7 HITL found W1 is **not sufficient**: there
+is a second, independent bug that W1 *unmasked*.
+
+## 2. What shipped — committed on `user/imran/experiments/swarm` (NOT pushed)
 
 | Commit | What |
 |--------|------|
-| `faf0d38d` | Test fixtures (pre-existing) |
-| `1d84fbea` | W4+W5 — the functional test suite (5 test files) |
-| `6bd32f2b` | W1 — the connection-layer fix in `MCPServerConnection.gd` |
-| `0c4e6cf8` | W8 (Minerva) — faithful plugin-error propagation in the broker |
-| `b9761185` | W6 — functional test runner + CI job |
-| `2e1bcbe` (plugins repo) | W8 (cad) — `CADPanel` error banner |
+| `faf0d38d` | test fixtures |
+| `1d84fbea` | W4+W5 — functional test suite (5 files) |
+| `6bd32f2b` | W1 — connection-layer fix (`MCPServerConnection.gd`) |
+| `0c4e6cf8` | W8 (Minerva) — broker error propagation (`PluginErrors.backend_error` + broker) |
+| `b9761185` | W6 — `scripts/run-functional-tests.sh` + `build.yml` CI job |
+| `9323abde` | pickup (superseded by this file) |
+| `2e1bcbe` (plugins repo, `main`) | W8 (cad) — `CADPanel` error banner |
 
-- **W1** — replaced the `fcdeda02` gate + poll loop with a single always-live
-  stdout reader (`_drain_stdout`) + a per-id pending-request map. `call_tool`
-  gained a caller-set `timeout_sec`. The 30s hard cap that starved slow CAD
-  evaluations is gone. Connection errors are human-readable strings.
-- **W4** — F1/F2/F4 (`test_mcp_stdio_concurrency.gd`), F5/F6
-  (`test_mcp_stdio_request_budget.gd`). F2 is the fail-first repro.
-- **W5** — F3 CAD geometry guard, presentation deck test, scansort filing e2e.
-- **W8** — `CADPanel` shows a red banner on a failed evaluate (was a silent
-  empty render — the regression's symptom); `PluginErrors.backend_error` + a
-  broker re-shape carry the human-readable reason faithfully to the panel.
-- **W6** — `scripts/run-functional-tests.sh` + a `functional-tests` CI job.
+Post-W1 suite all green: F1/F2/F4 16/0, F5/F6 14/0, F3 12/0, presentation 29/0,
+scansort skip-clean. The 3 host-capability tests fail but identically pre-W1
+(pre-existing, stash-confirmed). W1 cold-reviewed, no blockers.
 
-## 3. Verification done (autonomous)
+## 3. THE LIVE BUG — #2, broker→panel result-shape mismatch
 
-- F2 fail-first repro: confirmed RED on pre-W1 code (8349ms starvation),
-  GREEN post-W1.
-- Post-W1 suite: F1/F2/F4 16/0, F5/F6 14/0, F3 12/0, presentation 29/0,
-  scansort skip-clean (model-chat unavailable headless).
-- No regressions: the three host-capability tests' failures are pre-existing
-  (confirmed identical on a pre-W1 `git stash` baseline).
-- W1 diff independently cold-reviewed — no blockers.
-- `scripts/run-functional-tests.sh` verified locally.
+W7 HITL: user ran the CAD panel; `cad.evaluate` now COMPLETES (W1 fixed the
+timeout), but the panel still renders nothing and logs
+`[CADPanel] cad.evaluate transport failure: unknown —` (empty message).
 
-## 4. W7 — HITL verification (the remaining work — YOU)
+Mechanics (all confirmed):
+- A successful `cad.evaluate` →  `conn.call_tool("cad.evaluate")` returns the
+  cad payload `{ok:true, result:{shape_name,mesh,edges}}` — **no `success`
+  key** (F3's own run printed `result keys: ["ok","result"]`).
+- `PluginScenePanelBroker._dispatch_to_plugin_backend` success path does
+  `return PluginErrors.success(call_result)` — and `PluginErrors.success()`
+  returns its arg **verbatim** (`PluginErrors.gd:369-370`; the `{success:true,
+  result:...}` wrap was removed long ago as vestigial for the MCP capability
+  bridge). So the broker delivers `{ok:true, result:{...}}` to the panel.
+- `CADPanel._evaluate_and_render` expects `{success:true, result:<payload>}`
+  (its own comment, `CADPanel.gd:568-571`). `CADPanel.gd:550`
+  `if not bool(result.get("success", false))` → no `success` key → treats a
+  SUCCESSFUL eval as a transport failure → blank render; `err_code` defaults
+  to `"unknown"`, `err_message` is empty.
 
-Run Minerva and verify:
-1. **CAD regression fixed** — open the CAD plugin panel, evaluate a model.
-   Geometry must RENDER (the bug was a blank panel). The headline check.
-2. **CAD error banner (W8)** — force a failure (invalid DSL, or kill the
-   worker) → a red banner must appear over the views stating the reason.
-3. **scansort still functional** — run a real filing pass; docs classify+file.
-4. **presentation still functional** — open/edit a deck.
-5. Optional — run the scansort e2e test where model-chat is reachable:
-   `godot --headless --path src --script test/test_scansort_filing_e2e.gd`
-   (it skipped headless here; with model-chat up it does the real classify).
+Why masked: pre-W1 the gate timed out `cad.evaluate` before any reply reached
+the panel — the panel never parsed a reply, so #2 was invisible. W1 made the
+reply arrive; #2 surfaced. Why tests missed it: F3 calls `call_tool` directly,
+bypassing the broker→panel path. Full record: RCA `019e46b5` comment 20.
 
-When satisfied, transition RCA `019e46b5` → `verified` → `closed`.
+## 4. DECISION NEEDED — fix approach (the next step)
 
-## 5. Open follow-ups (NOT blocking W7 — surfaced for a decision)
+- **A. Fix the broker (recommended).** In `_dispatch_to_plugin_backend`, the
+  success path wraps a non-`success` payload: `return {"success": true,
+  "result": call_result}`. Matches the panel's expectation + completes the
+  reply contract W8 started for errors (`{success:false,...}`). Blast radius:
+  changes the reply shape for every plugin panel whose backend tool returns an
+  `{ok}`-style payload (scansort especially) — **must blast-radius-check the
+  scansort panel first** (does it read wrapped or verbatim broker replies?).
+- **B. Fix the CAD panel only.** Rewrite `CADPanel._evaluate_and_render`'s
+  result handling to read the verbatim shape: `result` IS the worker payload
+  `{ok, result}` (one fewer unwrap layer), plus the W8 error shape
+  `{success:false, error_code, error_message}`. Surgical, zero cross-plugin
+  risk, per-panel patch.
 
-- **F7 (exported-build CI)** — deferred. Running the suite against an exported
-  Minerva binary needs a real export environment + answers to open questions
-  (is `res://test/` inside the release `.pck`?). Docket W6, comment 19.
-- **CI Godot version** — `build.yml`'s `build-godot` installs Godot 4.5.1 but
-  the project requires 4.6. The new `functional-tests` job pins 4.6.2;
-  `build-godot` should be reconciled.
-- **Broker capability-handler robustness** — pre-existing (not a W1
-  regression): a broker capability-handler that hard-fails mid-dispatch can
-  leave a plugin awaiting its reply until the 120s timeout. Cold review flagged
-  it. Candidate future bug. Docket W1, comment 18.
-- The `functional-tests` CI job is unverified until a real CI run — it reports
-  status but does not gate the release yet.
+Recommended path: quick scansort-panel blast-radius check → A if clean, B if
+not. **Either fix MUST ship with a new test that drives the real broker→panel
+reply path** (F3's gap) — e.g. extend the CAD per-plugin test to go through
+`PluginScenePanelBroker`, not just `call_tool`.
 
-## 6. How to run the tests
+Awaiting the user's A-vs-B call. The user was asked; this pickup is the
+compaction save while that decision is pending.
+
+## 5. Other open follow-ups (not blocking)
+
+- **F7 (exported-build CI)** deferred — needs a real export env. Docket W6 c.19.
+- **CI Godot version** — `build.yml` `build-godot` installs 4.5.1; project
+  needs 4.6; the new `functional-tests` job pins 4.6.2. Reconcile.
+- **Broker capability-handler robustness** — pre-existing: a broker handler
+  that hard-fails mid-dispatch wedges a plugin until the 120s timeout. Docket
+  W1 comment 18.
+- The `functional-tests` CI job is unverified until a real CI run.
+
+## 6. Run the tests
 
 ```
-scripts/run-functional-tests.sh          # hermetic F1-F6 (fast, no network)
+scripts/run-functional-tests.sh          # hermetic F1-F6
 scripts/run-functional-tests.sh --all    # + per-plugin (CAD/presentation/scansort)
 ```
 
-## 7. Hard rules (carry-forward)
+## 7. Hard rules
 
-- Per-file / explicit-path `git add` only. No `git add -A` / `.`.
-- No `--no-verify`, no `--no-gpg-sign`.
+- Per-file / explicit-path `git add` only. No `-A`/`.`. No `--no-verify`.
 - No `vendor/` touches. Don't commit `src/addons/sightline_probe/` or
-  `src/project.godot` while that addon is enabled. In the plugins repo, the
-  scansort tree has the user's own uncommitted work — never sweep it up.
+  `src/project.godot`. In the plugins repo, the scansort tree has the user's
+  own uncommitted work — never sweep it up (per-file add only).
 - No `git reset --hard`, no force-push, no push without explicit ask.
 - pkill target is `godot`, not `Minerva`.
-- PII/HBI: never commit real documents / `.ssort` vaults / audit logs.
-- RCA requests → 5-why chain with file:line source proof.
+- RCA requests → 5-why with file:line proof.
