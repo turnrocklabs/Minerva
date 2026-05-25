@@ -847,9 +847,24 @@ func _accumulate_cache_telemetry(bot_response: BotResponse, history: ChatHistory
 		history.AgentContextTelemetry = telemetry
 
 
+## Bug 019e5bc8: when a user stops a hung chat and dispatches a new one,
+## _on_audio_stop_1_pressed queue_free's the loading model_msg_node, but
+## the awaiting coroutine in execute_regular_chat / execute_hcp_chat /
+## worker chat keeps a stale reference. Late provider responses then
+## resume the zombie coroutine, which calls update_ui_after_response with
+## freed UI args → exception. Centralize the freed-node check here.
+static func _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node) -> bool:
+	return is_instance_valid(user_history_item) \
+		and is_instance_valid(user_msg_node) \
+		and is_instance_valid(model_msg_node)
+
+
 func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node: Control,
 							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
+	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
+		push_warning("[ChatPane] update_ui_after_response: late response dropped — UI node freed (bug 019e5bc8, likely stop+redispatch)")
+		return
 	if bot_response != null:
 		# Update user message node with input tokens (prompt tokens for this turn)
 		user_history_item.InputTokens = bot_response.prompt_tokens
@@ -888,6 +903,9 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 func update_ui_after_response_no_signal(user_history_item: ChatHistoryItem, user_msg_node: Control,
 							 model_msg_node: Control, chi: ChatHistoryItem,
 							 bot_response, history: ChatHistory) -> void:
+	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
+		push_warning("[ChatPane] update_ui_after_response_no_signal: late response dropped — UI node freed (bug 019e5bc8, likely stop+redispatch)")
+		return
 	if bot_response != null:
 		# Update user message node with input tokens (prompt tokens for this turn)
 		user_history_item.InputTokens = bot_response.prompt_tokens
@@ -1499,6 +1517,11 @@ func execute_hcp_chat():
 
 	var bot_response = await hcp_provider.generate_content(history_list)
 
+	# Bug 019e5bc8: stop+redispatch can free model_msg_node / user_msg_node
+	# during the await above. Guard before touching them directly below.
+	if not _are_ui_args_valid(user_history_item, user_msg_node, model_msg_node):
+		push_warning("[ChatPane] execute_hcp_chat: late response dropped — UI node freed (bug 019e5bc8)")
+		return
 
 	var chi = ChatHistoryItem.new()
 	if bot_response != null:
