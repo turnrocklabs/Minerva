@@ -165,7 +165,10 @@ jobs:
         esac
         curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
         tar xf /tmp/zig.tar.xz -C /tmp
-        echo "/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}" >> $GITHUB_PATH
+        # $GITHUB_PATH only takes effect on subsequent steps; export in-step too so the validation runs.
+        ZIG_DIR="/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}"
+        export PATH="$ZIG_DIR:$PATH"
+        echo "$ZIG_DIR" >> $GITHUB_PATH
         zig version
 
     - name: Cache Zig build
@@ -318,7 +321,10 @@ jobs:
         esac
         curl -L -o /tmp/zig.tar.xz "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.tar.xz"
         tar xf /tmp/zig.tar.xz -C /tmp
-        echo "/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}" >> $GITHUB_PATH
+        # $GITHUB_PATH only takes effect on subsequent steps; export in-step too so the validation runs.
+        ZIG_DIR="/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}"
+        export PATH="$ZIG_DIR:$PATH"
+        echo "$ZIG_DIR" >> $GITHUB_PATH
         zig version
 
     - name: Cache Zig build
