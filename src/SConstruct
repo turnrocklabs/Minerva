@@ -4,16 +4,18 @@ import sys
 
 env = SConscript("godot-cpp/SConstruct")
 
-# Add include paths for both common and terminal root
+# Add include paths for both common and terminal root.
+# The ghostty-shim include path is only added for unix platforms — Windows
+# terminal.cpp doesn't use the shim (it uses native Windows PTY APIs instead).
 env.Append(CPPPATH=[
     "gdextension/terminal/",       # For terminal root
     "gdextension/terminal/common",  # For common interface
-    "gdextension/terminal/ghostty-shim/zig-out/include"  # minerva-vt shim header
 ])
-
-# Link against minerva-vt shim library (ghostty-vt wrapper)
-env.Append(LIBPATH=["gdextension/terminal/ghostty-shim/zig-out/lib"])
-env.Append(LIBS=["minerva-vt"])
+if env["platform"] != "windows":
+    env.Append(CPPPATH=["gdextension/terminal/ghostty-shim/zig-out/include"])
+    # Link against minerva-vt shim library (ghostty-vt wrapper) — unix only.
+    env.Append(LIBPATH=["gdextension/terminal/ghostty-shim/zig-out/lib"])
+    env.Append(LIBS=["minerva-vt"])
 
 # Platform specific sources
 sources = ["gdextension/terminal/register_types.cpp"]
