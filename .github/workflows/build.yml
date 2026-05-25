@@ -123,6 +123,12 @@ jobs:
         name: terminal-windows
         path: src/bin/libterminal*
 
+    - name: Upload godot_wry binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: godot-wry-windows
+        path: src/addons/godot_wry/bin/x86_64-pc-windows-msvc/godot_wry.dll
+
   build-linux:
     needs: check-gdextension
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
@@ -233,6 +239,13 @@ jobs:
         name: terminal-linux
         path: |
           src/bin/libterminal*
+          src/bin/libminerva-vt.so
+
+    - name: Upload godot_wry binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: godot-wry-linux
+        path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/libgodot_wry.so
           src/bin/libminerva-vt.so
 
   # ── Functional regression test suite (RCA 019e46b5) ──────────────────────
@@ -392,6 +405,12 @@ jobs:
           src/bin/libterminal*
           src/bin/libminerva-vt.dylib
 
+    - name: Upload godot_wry binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: godot-wry-macos
+        path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.dylib
+
   build-godot:
     needs: [check-gdextension, build-windows, build-linux, build-macos]
     if: always()
@@ -407,11 +426,35 @@ jobs:
           pattern: terminal-*
           path: src/bin/
           merge-multiple: true
-      
+
+      # godot_wry is built inline in each build-* job but only its host triple's
+      # binary ends up on that runner. build-godot runs on ubuntu-latest and exports
+      # for all three platforms, so it needs the per-platform .dll/.so/.dylib from
+      # the matching upload artifact, placed at the path WRY.gdextension references.
+      - name: Download godot_wry (Windows)
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-wry-windows
+          path: src/addons/godot_wry/bin/x86_64-pc-windows-msvc/
+
+      - name: Download godot_wry (Linux)
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-wry-linux
+          path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
+
+      - name: Download godot_wry (macOS)
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-wry-macos
+          path: src/addons/godot_wry/bin/universal-apple-darwin/
+
       - name: Create and Verify Bin Directory
         run: |
           mkdir -p src/bin
           ls -la src/bin/
+          echo "godot_wry binaries:"
+          find src/addons/godot_wry/bin/ -type f | { head -10; cat >/dev/null; }
 
       - name: Download EIRTeam.FFmpeg
         run: |
