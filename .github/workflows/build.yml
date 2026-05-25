@@ -420,6 +420,43 @@ jobs:
           echo "FFmpeg addon installed"
           ls src/addons/ffmpeg/linux64/ src/addons/ffmpeg/win64/ src/addons/ffmpeg/macos/ 2>/dev/null | head -20
 
+      # godot-cef is built by .github/workflows/godot-cef.yml on its own triggers
+      # (vendor/godot_cef, patches/godot_cef/**, scripts/build-godot-cef.sh, src/addons/godot_cef/**).
+      # FCIB policy keeps binaries out of git, so we pull artifacts from the latest
+      # successful CEF run here. Without this step, exported builds ship without
+      # CEF support and plugins with CEF panels fail to load.
+      - name: Download godot-cef artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=$(gh run list \
+            --workflow=godot-cef.yml \
+            --status=success \
+            --limit=1 \
+            --json databaseId \
+            -q '.[0].databaseId')
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::No successful godot-cef.yml run found. Trigger that workflow manually first."
+            exit 1
+          fi
+
+          echo "Downloading godot-cef artifacts from run $RUN_ID"
+
+          for pair in \
+            "godot-cef-linux-x86_64:x86_64-unknown-linux-gnu" \
+            "godot-cef-macos-universal:universal-apple-darwin" \
+            "godot-cef-windows-x86_64:x86_64-pc-windows-msvc"; do
+            artifact="${pair%%:*}"
+            triple="${pair##*:}"
+            mkdir -p "src/addons/godot_cef/bin/$triple"
+            gh run download "$RUN_ID" --name "$artifact" --dir "src/addons/godot_cef/bin/$triple"
+          done
+
+          echo "CEF artifacts deployed:"
+          find src/addons/godot_cef/bin/ -type f | head -30
+
       - name: Install Linux Build Dependencies
         run: |
           sudo apt-get update
@@ -485,13 +522,19 @@ jobs:
               godot --headless --export-debug "Linux Debug" build/linux-debug/Minerva.x86_64
             fi
 
+          elif [ "$PLATFORM" = "macos" ]; then
+            mkdir -p build/macos
+            godot --headless --export-release "macOS" build/macos/Minerva.app
+
           else
             mkdir -p build/windows
             mkdir -p build/linux
+            mkdir -p build/macos
 
-            # For 'all' option or push events, export both
+            # For 'all' option or push events, export all three
             godot --headless --export-release "Windows Release" build/windows/Minerva.exe
             godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64
+            godot --headless --export-release "macOS" build/macos/Minerva.app
 
             # Build debug versions for development branch
             if [ "$IS_DEV_BRANCH" = "true" ]; then
@@ -521,6 +564,16 @@ jobs:
         with:
           name: Minerva-Linux-Build
           path: src/build/linux/*
+
+      - name: Upload macOS Build
+        if: |
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'macos' ||
+          github.event.inputs.platform == 'all'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minerva-macOS-Build
+          path: src/build/macos/*
 
       - name: Upload Windows Debug Build
         if: |
@@ -583,6 +636,15 @@ jobs:
             ls -lh release-assets/Minerva-Linux.tar.gz
           fi
 
+          # Create macOS ZIP if files exist (zipping the .app bundle preserves the directory structure)
+          if [ -d "downloads/Minerva-macOS-Build" ]; then
+            cd downloads/Minerva-macOS-Build
+            zip -r ../../release-assets/Minerva-macOS.zip *
+            cd ../..
+            echo "Created macOS archive"
+            ls -lh release-assets/Minerva-macOS.zip
+          fi
+
           # Create Windows Debug ZIP if files exist (development branch only)
           if [ -d "downloads/Minerva-Windows-Debug-Build" ]; then
             cd downloads/Minerva-Windows-Debug-Build
@@ -636,6 +698,7 @@ jobs:
             **Release Builds (Optimized):**
             - **Windows**: Download `Minerva-Windows.zip`, extract and run `Minerva.exe`
             - **Linux**: Download `Minerva-Linux.tar.gz`, extract and run `./Minerva.x86_64`
+            - **macOS**: Download `Minerva-macOS.zip`, extract `Minerva.app`. Unsigned build — clear quarantine with `xattr -dr com.apple.quarantine Minerva.app` then open.
 
             **Debug Builds (For Development - includes console output and debug symbols):**
             - **Windows Debug**: Download `Minerva-Windows-Debug.zip`, extract and run `Minerva.exe`
