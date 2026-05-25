@@ -217,7 +217,9 @@ jobs:
       run: zig build -Doptimize=ReleaseFast
 
     - name: Copy shim library to bin
-      run: cp src/gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.so src/bin/
+      run: |
+        mkdir -p src/bin
+        cp src/gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.so src/bin/
 
     - name: Build Extension
       run: |
@@ -373,6 +375,7 @@ jobs:
       run: |
         lipo -create libminerva-vt-arm64.dylib libminerva-vt-x86_64.dylib \
              -output libminerva-vt.dylib
+        mkdir -p ../bin
         cp libminerva-vt.dylib ../bin/
 
     - name: Build Extension
