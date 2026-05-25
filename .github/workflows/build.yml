@@ -128,6 +128,7 @@ jobs:
       with:
         name: godot-wry-windows
         path: src/addons/godot_wry/bin/x86_64-pc-windows-msvc/godot_wry.dll
+        if-no-files-found: error
 
   build-linux:
     needs: check-gdextension
@@ -246,7 +247,7 @@ jobs:
       with:
         name: godot-wry-linux
         path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/libgodot_wry.so
-          src/bin/libminerva-vt.so
+        if-no-files-found: error
 
   # ── Functional regression test suite (RCA 019e46b5) ──────────────────────
   # CI ran zero tests before this job. Runs the hermetic substrate tier
@@ -410,6 +411,7 @@ jobs:
       with:
         name: godot-wry-macos
         path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.dylib
+        if-no-files-found: error
 
   build-godot:
     needs: [check-gdextension, build-windows, build-linux, build-macos]
