@@ -111,6 +111,23 @@ jobs:
         python-version: '3.x'
     - run: pip install scons
 
+    - name: Setup Zig
+      shell: bash
+      run: |
+        ZIG_VERSION="0.15.2"
+        ZIG_PLATFORM="x86_64-windows"
+        curl -L -o /tmp/zig.zip "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_PLATFORM}-${ZIG_VERSION}.zip"
+        7z x /tmp/zig.zip -o/tmp
+        ZIG_DIR="/tmp/zig-${ZIG_PLATFORM}-${ZIG_VERSION}"
+        export PATH="$ZIG_DIR:$PATH"
+        echo "$ZIG_DIR" >> $GITHUB_PATH
+        zig version
+
+    - name: Build ghostty-vt shim
+      shell: bash
+      working-directory: src/gdextension/terminal/ghostty-shim
+      run: zig build -Doptimize=ReleaseFast
+
     - name: Build Extension
       run: |
         cd src

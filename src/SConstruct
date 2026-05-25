@@ -58,12 +58,16 @@ Default(library)
 # The libterminal dylib references @rpath/libminerva-vt.dylib, and @loader_path
 # resolves to the framework directory.
 if env["platform"] == "macos":
-    import shutil
-    minerva_vt_src = "gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.dylib"
     framework_dir = "bin/libterminal.{}.{}.framework".format(env["platform"], env["target"])
     minerva_vt_dst = os.path.join(framework_dir, "libminerva-vt.dylib")
-    if os.path.exists(minerva_vt_src) and os.path.isdir(framework_dir):
-        shutil.copy2(minerva_vt_src, minerva_vt_dst)
+    # Prefer the universal binary (CI lipo's it into bin/) so the framework gets a
+    # multi-arch dylib; fall back to the per-arch zig output for local dev builds.
+    if os.path.exists("bin/libminerva-vt.dylib"):
+        minerva_vt_src = "bin/libminerva-vt.dylib"
+    else:
+        minerva_vt_src = "gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.dylib"
+    # Copy at build time (after the framework exists), not parse time.
+    env.AddPostAction(library, "cp " + minerva_vt_src + " " + minerva_vt_dst)
     # Add @loader_path rpath so libterminal finds libminerva-vt.dylib next to itself
     env.AddPostAction(library, "install_name_tool -add_rpath @loader_path $TARGET 2>/dev/null || true")
     # Re-sign both dylibs (macOS rejects unsigned/invalidated code signatures)
