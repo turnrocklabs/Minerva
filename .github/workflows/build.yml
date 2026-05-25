@@ -429,6 +429,20 @@ jobs:
           echo "FFmpeg addon installed"
           ls src/addons/ffmpeg/linux64/ src/addons/ffmpeg/win64/ src/addons/ffmpeg/macos/ 2>/dev/null | head -20
 
+      # godot-sqlite ships pre-built binaries via upstream releases. scripts/build-extensions.sh
+      # downloads these for local dev; CI does the same here so the addon binaries are present
+      # at export time. Mirror the FFmpeg pattern above.
+      - name: Download godot-sqlite addon
+        run: |
+          SQLITE_VERSION="v4.7"
+          SQLITE_URL="https://github.com/2shady4u/godot-sqlite/releases/download/${SQLITE_VERSION}/bin.zip"
+          curl -fL -o /tmp/sqlite.zip "$SQLITE_URL"
+          unzip -o /tmp/sqlite.zip -d /tmp/sqlite-extract >/dev/null
+          mkdir -p src/addons/godot-sqlite/bin
+          cp -r /tmp/sqlite-extract/bin/* src/addons/godot-sqlite/bin/
+          echo "godot-sqlite ${SQLITE_VERSION} installed"
+          ls src/addons/godot-sqlite/bin/ | head -20
+
       # godot-cef is built by .github/workflows/godot-cef.yml on its own triggers
       # (vendor/godot_cef, patches/godot_cef/**, scripts/build-godot-cef.sh, src/addons/godot_cef/**).
       # FCIB policy keeps binaries out of git, so we pull artifacts from the latest
