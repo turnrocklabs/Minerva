@@ -28,6 +28,7 @@ PLUGIN_TESTS=(
 	test/test_cad_evaluate_render.gd
 	test/test_presentation_deck_render.gd
 	test/test_scansort_filing_e2e.gd
+	test/test_scansort_panel_loop_e2e.gd
 )
 
 tests=("${HERMETIC_TESTS[@]}")
