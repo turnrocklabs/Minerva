@@ -614,10 +614,76 @@ jobs:
             fi
           fi
 
+      # ─── Post-export verification ──────────────────────────────────────
+      # RCA: prior CI builds shipped binaries missing libminerva-vt.so and
+      # CEF runtime data (icudtl.dat, *.pak, locales/), because Godot's
+      # exporter silently drops [dependencies] entries that don't match its
+      # supported shape. These checks are the durable backstop — if a future
+      # extension bump adds a sidecar that the .gdextension manifest doesn't
+      # advertise, the build fails red here instead of in a user's HITL.
+      - name: Verify Linux build assets
+        if: |
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'linux' ||
+          github.event.inputs.platform == 'all'
+        working-directory: src/build/linux
+        run: |
+          required_files=(
+            Minerva.x86_64
+            libterminal.linux.template_release.x86_64.so
+            libminerva-vt.so
+            libcef.so
+            libgdcef.so
+            gdcef_helper
+            v8_context_snapshot.bin
+            vk_swiftshader_icd.json
+            icudtl.dat
+            resources.pak
+            chrome_100_percent.pak
+            chrome_200_percent.pak
+          )
+          required_dirs=(locales)
+          fail=0
+          for f in "${required_files[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: src/build/linux/$f"
+              fail=1
+            fi
+          done
+          for d in "${required_dirs[@]}"; do
+            if [ ! -d "$d" ]; then
+              echo "::error::Missing required directory: src/build/linux/$d"
+              fail=1
+            fi
+          done
+          [ "$fail" -eq 0 ] || exit 1
+          echo "All required Linux runtime assets present"
+
+      - name: Smoke-launch Linux build (extension load only)
+        if: |
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'linux' ||
+          github.event.inputs.platform == 'all'
+        working-directory: src/build/linux
+        run: |
+          chmod +x ./Minerva.x86_64
+          # Headless --quit-after exits after N frames; enough for the
+          # engine to load GDExtensions and dlopen their sidecars. Won't
+          # exercise CEF init (CEF only loads when a panel opens) — file
+          # presence above is the CEF backstop.
+          timeout 30 ./Minerva.x86_64 --headless --quit-after 30 \
+              > minerva-launch.log 2>&1 || true
+          if grep -E "Can't open dynamic library|GDExtension dynamic library not found|Error loading extension" minerva-launch.log; then
+            echo "::error::Extension load error during smoke launch — see log below"
+            cat minerva-launch.log
+            exit 1
+          fi
+          echo "Smoke launch: no extension load errors"
+
       - name: Upload Windows Build
         if: |
-          github.event_name == 'push' || 
-          github.event.inputs.platform == 'windows' || 
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'windows' ||
           github.event.inputs.platform == 'all'
         uses: actions/upload-artifact@v4
         with:

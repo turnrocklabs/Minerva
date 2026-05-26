@@ -20,3 +20,16 @@ linux.editor.x86_64 = "res://bin/libterminal.linux.template_debug.x86_64.so"
 macos.template_debug = "res://bin/libterminal.macos.template_debug.framework"
 macos.template_release = "res://bin/libterminal.macos.template_release.framework"
 macos.editor = "res://bin/libterminal.macos.template_debug.framework"
+
+[dependencies]
+
+; Source paths are relative to this .gdextension file; mirrors the working
+; godot_cef.gdextension pattern. Godot's exporter ignores `res://`-prefixed
+; entries here, so the shim wouldn't ship next to the exported binary.
+linux.x86_64 = {
+    "../../bin/libminerva-vt.so": ""
+}
+
+macos = {
+    "../../bin/libminerva-vt.dylib": ""
+}
