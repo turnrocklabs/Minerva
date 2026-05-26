@@ -90,6 +90,7 @@ var _tools_list: VBoxContainer = null
 # ---------------------------------------------------------------------------
 
 var _install_button: Button = null
+var _browse_button: Button = null
 var _status_label: Label = null
 
 
@@ -401,8 +402,15 @@ func _build_bottom_toolbar() -> HBoxContainer:
 
 	_install_button = Button.new()
 	_install_button.text = "Install Plugin..."
+	_install_button.tooltip_text = "Side-load: pick a manifest.json on disk"
 	_install_button.pressed.connect(_on_install_pressed)
 	hbox.add_child(_install_button)
+
+	_browse_button = Button.new()
+	_browse_button.text = "Browse Marketplace..."
+	_browse_button.tooltip_text = "Fetch the marketplace registry and install a pre-built plugin"
+	_browse_button.pressed.connect(_on_browse_marketplace_pressed)
+	hbox.add_child(_browse_button)
 
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -953,6 +961,19 @@ func _on_install_pressed() -> void:
 		_install_dialog.file_selected.connect(_on_manifest_selected)
 		add_child(_install_dialog)
 	_install_dialog.popup_centered(Vector2i(700, 500))
+
+
+func _on_browse_marketplace_pressed() -> void:
+	var DialogCls = load("res://Scripts/UI/Controls/PluginManagerPanel/MarketplaceBrowseDialog.gd")
+	var dialog = DialogCls.new()
+	dialog.plugin_installed.connect(_on_marketplace_install_complete)
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(800, 520))
+
+
+func _on_marketplace_install_complete(plugin_id: String) -> void:
+	_show_status("Installed '%s' from marketplace." % plugin_id, false)
+	_refresh_plugin_list()
 
 
 func _on_manifest_selected(path: String) -> void:

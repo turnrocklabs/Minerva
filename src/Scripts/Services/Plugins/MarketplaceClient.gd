@@ -90,10 +90,15 @@ func resolve_platform_target() -> String:
 # Install
 # ---------------------------------------------------------------------------
 
-## Install a plugin given a registry entry (dict from registry.json's plugins
-## array). Picks the right URL for the current platform and delegates to
-## install_from_url. Returns the same shape.
-func install_from_registry_entry(entry: Dictionary, plugin_db) -> Dictionary:
+## High-level: install a plugin given a registry entry. Picks the right URL
+## for the current platform, downloads + verifies + extracts, then registers
+## via PluginManager.install_plugin (so capability auto-grant, skill seeding,
+## and runtime setup all run — same code path as side-load).
+##
+## Pass `installer` = SingletonObject.plugin_manager (or null to skip the
+## registration step — useful for tests that only exercise the
+## download/extract/verify path).
+func install_from_registry_entry(entry: Dictionary, installer) -> Dictionary:
 	var target := resolve_platform_target()
 	if target.is_empty():
 		return _err("unsupported_platform", {"os": OS.get_name()})
@@ -101,14 +106,20 @@ func install_from_registry_entry(entry: Dictionary, plugin_db) -> Dictionary:
 	var url: String = downloads.get(target, "")
 	if url.is_empty():
 		return _err("no_binary_for_target", {"target": target, "plugin": entry.get("id")})
-	return await install_from_url(url, plugin_db)
+	return await install_from_url(url, installer)
 
 
 ## Download a plugin release tarball from `tarball_url`, extract, verify
-## SHA256SUMS, and register via PluginDB.install(). Returns:
-##   {ok:true, plugin_id: String, definition: PluginDefinition}
-##   {ok:false, error: String, detail: Dictionary}
-func install_from_url(tarball_url: String, plugin_db) -> Dictionary:
+## SHA256SUMS. If `installer` is a PluginManager (duck-typed via
+## install_plugin method), delegate the final registration to it so the
+## full side-load code path runs. If `installer` exposes a plain `install`
+## method (a PluginDB), call that for a minimal registration (used by
+## tests). If null, stop after staging and return the local manifest path.
+##
+## Returns:
+##   {ok:true, plugin_id, manifest_path, definition?}
+##   {ok:false, error, detail}
+func install_from_url(tarball_url: String, installer) -> Dictionary:
 	_ensure_dir(PLUGINS_DIR)
 	_ensure_dir(STAGING_DIR)
 
@@ -210,29 +221,56 @@ func install_from_url(tarball_url: String, plugin_db) -> Dictionary:
 	# --- 6. Cleanup staging ---
 	_rm_file(staging_file)
 
-	# --- 7. Register via PluginDB ---
+	# --- 7. Register via installer (duck-typed) ---
+	# `installer` may be:
+	#   - null              → stop after staging; caller registers
+	#   - PluginManager     → full install flow (capability grants, runtime,
+	#                         skill seeding, directory creation)
+	#   - PluginDB          → minimal registration (used by headless tests)
 	var final_manifest := "%s/manifest.json" % final_dir
-	var existing = plugin_db.get_by_id(plugin_id)
-	var definition
-	if existing != null:
-		# Update path: parse the new manifest into a definition and replace.
-		var PluginDefinitionCls = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
-		var new_def = PluginDefinitionCls.from_manifest(final_manifest)
-		if new_def == null:
-			return _err("update_parse_failed", {"path": final_manifest})
-		if not plugin_db.update_definition(new_def):
-			return _err("update_definition_failed", {})
-		definition = new_def
-	else:
-		definition = plugin_db.install(final_manifest)
-		if definition == null:
-			return _err("register_failed", plugin_db.get_last_install_error())
 
-	return {
-		"ok": true,
-		"plugin_id": plugin_id,
-		"definition": definition,
-	}
+	if installer == null:
+		return {
+			"ok": true,
+			"plugin_id": plugin_id,
+			"manifest_path": final_manifest,
+		}
+
+	if installer.has_method("install_plugin"):
+		var pm_result: Dictionary = await installer.install_plugin(final_manifest)
+		if pm_result.has("error"):
+			return _err("manager_install_failed", pm_result)
+		return {
+			"ok": true,
+			"plugin_id": plugin_id,
+			"manifest_path": final_manifest,
+			"manager_result": pm_result,
+		}
+
+	if installer.has_method("install"):
+		# PluginDB path — handle install vs update_definition.
+		var definition
+		if installer.has_method("has_plugin") and installer.has_plugin(plugin_id):
+			var PluginDefinitionCls = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
+			var new_def = PluginDefinitionCls.from_manifest(final_manifest)
+			if new_def == null:
+				return _err("update_parse_failed", {"path": final_manifest})
+			if not installer.update_definition(new_def):
+				return _err("update_definition_failed", {})
+			definition = new_def
+		else:
+			definition = installer.install(final_manifest)
+			if definition == null:
+				var last_err = installer.get_last_install_error() if installer.has_method("get_last_install_error") else {}
+				return _err("register_failed", last_err)
+		return {
+			"ok": true,
+			"plugin_id": plugin_id,
+			"manifest_path": final_manifest,
+			"definition": definition,
+		}
+
+	return _err("invalid_installer", {"got": typeof(installer)})
 
 
 # ---------------------------------------------------------------------------
