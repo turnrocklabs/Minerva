@@ -764,7 +764,13 @@ jobs:
           fi
 
           # Create Linux archive if files exist
+          # actions/upload-artifact@v4 strips the executable bit during the
+          # zip/unzip artifact roundtrip; restore it here so users don't have
+          # to chmod after extracting the tarball.
           if [ -d "downloads/Minerva-Linux-Build" ]; then
+            chmod +x downloads/Minerva-Linux-Build/Minerva.x86_64 \
+                     downloads/Minerva-Linux-Build/gdcef_helper \
+                     downloads/Minerva-Linux-Build/chrome-sandbox 2>/dev/null || true
             cd downloads/Minerva-Linux-Build
             tar -czf ../../release-assets/Minerva-Linux.tar.gz *
             cd ../..
@@ -773,7 +779,9 @@ jobs:
           fi
 
           # Create macOS ZIP if files exist (zipping the .app bundle preserves the directory structure)
+          # Same artifact-roundtrip issue — chmod the .app's executable before zipping.
           if [ -d "downloads/Minerva-macOS-Build" ]; then
+            find downloads/Minerva-macOS-Build -path '*/Contents/MacOS/*' -type f -exec chmod +x {} + 2>/dev/null || true
             cd downloads/Minerva-macOS-Build
             zip -r ../../release-assets/Minerva-macOS.zip *
             cd ../..
@@ -792,6 +800,9 @@ jobs:
 
           # Create Linux Debug archive if files exist (development branch only)
           if [ -d "downloads/Minerva-Linux-Debug-Build" ]; then
+            chmod +x downloads/Minerva-Linux-Debug-Build/Minerva.x86_64 \
+                     downloads/Minerva-Linux-Debug-Build/gdcef_helper \
+                     downloads/Minerva-Linux-Debug-Build/chrome-sandbox 2>/dev/null || true
             cd downloads/Minerva-Linux-Debug-Build
             tar -czf ../../release-assets/Minerva-Linux-Debug.tar.gz *
             cd ../..
