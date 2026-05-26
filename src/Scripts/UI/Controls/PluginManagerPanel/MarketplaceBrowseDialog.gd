@@ -114,7 +114,10 @@ func _refresh() -> void:
 	if not (result is Dictionary and result.get("ok") == true):
 		var err: String = str(result.get("error", "unknown"))
 		_status.text = "Failed to fetch registry: %s" % err
-		push_warning("[MarketplaceBrowseDialog] fetch_registry failed: %s" % JSON.stringify(result))
+		SingletonObject.ErrorDisplay(
+			"Marketplace unavailable",
+			"Could not fetch the plugin registry.\n\nError: %s\nDetail: %s" % [err, JSON.stringify(result.get("detail", {}))]
+		)
 		return
 
 	var registry: Dictionary = result.registry
@@ -189,6 +192,10 @@ func _on_install_pressed() -> void:
 	_refresh_btn.disabled = false
 	if result is Dictionary and result.get("ok") == true:
 		_status.text = "Installed %s successfully" % plugin_id
+		SingletonObject.create_toast_notification(
+			"Installed plugin: %s" % plugin_id,
+			ToastNotification.Type.INFO
+		)
 		plugin_installed.emit(plugin_id)
 		# Refresh the selection state so the Install button shows
 		# "Already installed".
@@ -198,21 +205,18 @@ func _on_install_pressed() -> void:
 		var err: String = str(result.get("error", "unknown"))
 		var detail = result.get("detail", null)
 		var detail_str := ""
-		# Surface PluginManager's human-readable message when possible — the
+		# Surface PluginManager's human-readable message when present — the
 		# `manager_install_failed` code alone is opaque. PluginManager.install_plugin
 		# returns {"error": "<message>"} on failure, which becomes our detail dict.
 		if detail is Dictionary and detail.has("error"):
 			detail_str = str(detail["error"])
 		elif detail != null:
-			detail_str = str(detail)
-		if detail_str.is_empty():
-			_status.text = "Install failed: %s" % err
-		else:
-			_status.text = "Install failed (%s): %s" % [err, detail_str]
-		# Mirror full result into the details pane so users can copy the
-		# context to a bug report without having to dig into the console.
-		_details.text = "[b]Install failed[/b]\n[code]%s[/code]" % JSON.stringify(result, "  ")
-		push_warning("[MarketplaceBrowseDialog] install_from_registry_entry failed: %s" % JSON.stringify(result))
+			detail_str = JSON.stringify(detail)
+		_status.text = "Install failed: %s" % err
+		SingletonObject.ErrorDisplay(
+			"Plugin install failed",
+			"Plugin: %s\nError code: %s\n\n%s" % [plugin_id, err, detail_str]
+		)
 
 
 func _is_already_installed(plugin_id: String) -> bool:
