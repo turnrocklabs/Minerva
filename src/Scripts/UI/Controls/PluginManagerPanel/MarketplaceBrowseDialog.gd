@@ -55,16 +55,21 @@ func _build_ui() -> void:
 	_refresh_btn.pressed.connect(func(): await _refresh())
 	header.add_child(_refresh_btn)
 
-	# Split: plugin list (left) + details (right)
+	# Split: plugin list (left) + details (right).
+	# HSplitContainer's `split_offset` is measured from the centre, NOT the
+	# left edge — a positive value moves the divider toward the right child
+	# (giving the LEFT pane more space). Negative shifts left → more space
+	# for the right (details) pane. We want details > list.
 	var split := HSplitContainer.new()
 	split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	split.split_offset = 280
+	split.split_offset = -120
 	root_vbox.add_child(split)
 
 	_list = ItemList.new()
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_list.custom_minimum_size = Vector2(200, 0)
 	_list.item_selected.connect(_on_list_selected)
 	split.add_child(_list)
 
@@ -72,6 +77,7 @@ func _build_ui() -> void:
 	_details.bbcode_enabled = true
 	_details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_details.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_details.custom_minimum_size = Vector2(320, 0)
 	_details.text = "Select a plugin to see details."
 	split.add_child(_details)
 
@@ -190,7 +196,22 @@ func _on_install_pressed() -> void:
 	else:
 		_install_btn.disabled = false
 		var err: String = str(result.get("error", "unknown"))
-		_status.text = "Install failed: %s" % err
+		var detail = result.get("detail", null)
+		var detail_str := ""
+		# Surface PluginManager's human-readable message when possible — the
+		# `manager_install_failed` code alone is opaque. PluginManager.install_plugin
+		# returns {"error": "<message>"} on failure, which becomes our detail dict.
+		if detail is Dictionary and detail.has("error"):
+			detail_str = str(detail["error"])
+		elif detail != null:
+			detail_str = str(detail)
+		if detail_str.is_empty():
+			_status.text = "Install failed: %s" % err
+		else:
+			_status.text = "Install failed (%s): %s" % [err, detail_str]
+		# Mirror full result into the details pane so users can copy the
+		# context to a bug report without having to dig into the console.
+		_details.text = "[b]Install failed[/b]\n[code]%s[/code]" % JSON.stringify(result, "  ")
 		push_warning("[MarketplaceBrowseDialog] install_from_registry_entry failed: %s" % JSON.stringify(result))
 
 
