@@ -1,171 +1,201 @@
 # Pickup
 
-STATE: `PLUGINS MERGED TO MAIN · MINERVA STAYS ON SWARM BRANCH`
+STATE: `DCR1+2+3 CODE-COMPLETE · HITL FAILING · MINERVA DOES NOT RUN FROM CI BUILD`
 
-Last updated 2026-05-26. Two DCRs and three pri-1/2 bugs landed today
-across two remora cycles. Plugins repo is on main. Minerva stays on
-`user/imran/experiments/swarm` per user direction.
-
----
-
-## 0. ONE-LINE SUMMARY ON RESUME
-
-- **Plugins**: `main` at `d25883a` — DCR `019e5068f584` (vault-lifecycle)
-  + DCR `019e564809a9` (scansort agent-UX, 3 cycles) + 2 remora landings
-  all shipped. 33 commits forward of the prior main `bd2251ef`.
-- **Minerva**: `user/imran/experiments/swarm` at `85602b65` — ChatPane
-  freed-node-guard fix + the panel-loop e2e test. Not merged to main per
-  user direction; stays on the swarm branch.
-- **All 4 remora bugs**: closed (verified via HITL 2026-05-26).
+Last updated 2026-05-26 after compaction prep. The plugin marketplace
+end-to-end pipeline is code-complete and pushed. User attempted the HITL
+test (download Minerva from CI, install a plugin from marketplace).
+**Minerva does not run** from the downloaded artifact. Cause unknown;
+that's where work resumes.
 
 ---
 
-## 1. WHERE EVERYTHING LIVES (post-merge)
+## 0. RESUME — read this first
+
+The autonomous chain through 3 DCRs completed and pushed. Then the user
+ran a CI build of Minerva on the swarm branch via workflow_dispatch,
+downloaded the artifact, and Minerva failed to launch. The failure mode
+was NOT captured — that's what we debug next session.
+
+**Most likely root causes** (in rough order):
+1. **Parse error on autoload chain** — my new `MarketplaceBrowseDialog.gd`
+   declares `class_name MarketplaceBrowseDialog`. Class_name registration
+   happens at project import. A class_name collision or a typo would
+   prevent project load. (Local headless boot showed no parse error,
+   but CI export uses a fresh class registry.)
+2. **Missing GDExtension binaries in the CI artifact** — the build flow
+   downloads godot-cef/godot-wry/terminal sibling artifacts; if any
+   download failed silently the .app/.exe would load but crash on first
+   extension use.
+3. **My new `_browse_button` button-add edit to PluginManagerPanel.gd**
+   had a subtle bug (e.g. variable initialised but signal connect on a
+   null) that only fires when PluginManagerPanel actually instantiates.
+4. **GitHub Actions release of Minerva**: the build may have failed
+   outright with my new files included. Check Actions UI.
+
+**Debug starting points:**
+- Open the failed run at https://github.com/turnrocklabs/Minerva/actions
+  — was the build itself red?
+- If build green: download artifact, run from terminal with
+  `Minerva.exe 2>&1 | tee minerva-launch.log` to capture stderr.
+  Look for "SCRIPT ERROR: Parse Error", "Failed to load script", or
+  "Could not find class".
+- Try side-load first (existing "Install Plugin..." button on a local
+  manifest) — if THAT fails, the panel itself is broken.
+- If Browse button works but Install fails, the issue is in
+  MarketplaceClient or PluginManager.install_plugin delegation.
+- If the issue is class_name collision: grep entire codebase for
+  `class_name MarketplaceClient` and `class_name MarketplaceBrowseDialog`.
+
+---
+
+## 1. WHERE EVERYTHING LIVES
 
 ```
-~/github/plugins
-  main            → d25883a fix: scansort handle_process_run offset advancement
-  dcr/scansort-agent-visibility  → same commit (merged-from branch, kept locally)
+~/github/plugins-dcr1/                                    (worktree)
+  branch: dcr/plugins-fcib-ci
+  remote: lab → https://github.com/imrans-lab/minerva-plugins
+  HEAD: a03e4f1 (registry v2 — per-target download URLs)
+  Other recent commits:
+    197405b — DCR1 W9 auto-tag (main=clean, branches=-branch- sentinel)
+    1d8ed4a — DCR1 W4 registry generator + drift-check CI
+    bd19c8a2 ad78ac42 are on the Minerva swarm branch (see below)
 
-~/github/Minerva
-  user/imran/experiments/swarm   → 85602b65 test: add panel-loop e2e
-  main           → unmerged; stays this way per user direction
+~/github/Minerva/                                          (primary)
+  branch: user/imran/experiments/swarm
+  remote: origin → https://github.com/turnrocklabs/Minerva
+  HEAD pushed: bd19c8a2 (DCR3 Phase B Browse Marketplace UI)
+  Other recent:
+    ad78ac42 — DCR3 Phase A MarketplaceClient
+    625bb3ef — pickup: scansort area shipped
 ```
 
-Submodule pointer drift on `vendor/godot_cef` + `vendor/godot_wry` is
-pre-existing; do not touch.
+ipeerbhai/plugins is the dead-end old plugins repo (billing-locked
+personal account); ignore it.
 
 ---
 
-## 2. WHAT SHIPPED TODAY (across the two remora cycles)
+## 2. WHAT'S DONE
 
-### Remora-1 (2026-05-24/25): visibility + chat exception
-- Bug `019e5bc8dae47584a1f9b9fcb9868173` (PRI-0, Minerva) — ChatPane
-  zombie coroutine using freed `model_msg_node` after stop+redispatch.
-  Fix: static helper `_are_ui_args_valid` + guards on
-  `update_ui_after_response` / `_no_signal` + inline guard in
-  `execute_hcp_chat`. Test: `test_chatpane_freed_node_guard.gd` 7/0.
-  Minerva commit `32de4409`.
-- Bug `019e5bc927417448b09ef38f21db0b40` (scansort) — `b.errors[]` not
-  populated. Fix: end-of-run loop pushes `result.items` non-success
-  entries. Plugins `81ce583`.
-- Bug `019e5bc946807b0db2dcfab842670782` (scansort) — audit log silent
-  on failure. Fix: `audit::AuditRow` per failure when audit_enabled.
-  Plugins `81ce583`.
-- Shared regression: `process_pipeline_v2.rs::bug_019e5bc927_and_5bc946_failure_visibility`.
+### DCR 1 — Plugins FCIB + CI + Auto-tag
+Docket: `019e62ad894d` (project=minerva). All 9 work units shipped:
+- W0 smoke harness `scripts/smoke/mcp_smoke.py`
+- W1-W3 per-plugin matrix workflows (`.github/workflows/{scansort,cad,presentation}.yml`)
+- Cold-Opus Quality+DRY reviews
+- W4 `scripts/regen_registry.py` + `.github/workflows/registry-check.yml`
+- W5 tag-driven release publish via softprops/action-gh-release@v2
+- W6 end-to-end real release validated for all 3 plugins
+- W7 binary purge — N/A (binaries were already gitignored, audit was wrong)
+- W8 per-plugin READMEs
+- W9 auto-tag: main → clean version, branch → `-branch-<sanitized>` suffix,
+  registry filter skips `-branch-` tags
 
-### Remora-2 (2026-05-26): offset advancement + filter
-- Bug `019e6269890f7de48fdb689a0e99d9bd` (PRI-1, scansort) —
-  `handle_process_run` hard-coded `offset=0`; panel limit=1 loop walked
-  file[0] N times. Regression-revival of `019e5802d5d8` at the
-  offset-advancement layer. Fix: new accessor
-  `process::current_batch_files_done()` returns `b.files_done()`; used
-  in `handle_process_run` instead of literal 0. Filter blocks also
-  fixed to exclude `"moved"` (success status, not failure).
-- Regression tests:
-  - Cargo: `process_pipeline_v2.rs::bug_offset_advancement_panel_loop_pattern`
-    (3 distinct-content PDFs, asserts DISTINCT rel_paths in errors[]).
-  - Functional: `test_scansort_panel_loop_e2e.gd` — sibling to
-    `test_scansort_filing_e2e.gd`, drives cycle-3 `process_plan +
-    process_run(limit=1, no offset)` pipeline.
-- Plugins commit `d25883a`; Minerva commit `85602b65`.
+6 live releases on imrans-lab/minerva-plugins:
+- scansort-v0.0.0-pre, cad-v0.0.0-pre, presentation-v0.0.0-pre (manual)
+- scansort-v0.0.1-branch-dcr-plugins-fcib-ci (auto, prerelease)
+- cad-v0.1.0-branch-dcr-plugins-fcib-ci (auto, prerelease)
+- presentation-v0.0.1-branch-dcr-plugins-fcib-ci (auto, prerelease)
 
-### HITL verification (2026-05-26)
-User-driven run on 7-PDF source through the panel button:
-- Pre-fix: `placed:1, errored:6, errors:[7 same rel_path]`
-- Post-fix: `placed:7, errored:0, errors:[]`. Vault doc_count climbed
-  1 → 7 across the runs.
+### DCR 2 — Minerva Mac ARM64
+Docket: `019e62adb39d`. **Verified by audit, no code change.**
+- `Minerva-macOS-Build` artifact is 147MB on swarm-branch CI
+- `src/export_presets.cfg:162` has `binary_format/architecture="universal"`
+- `build.yml` lipo's the terminal/wry/cef extensions to universal
+- HITL launch on actual Apple Silicon hardware still deferred
 
----
+### DCR 3 — Marketplace
+Docket: `019e62ade5be`. Phase A + Phase B both shipped.
 
-## 3. TEST GATE (final)
+**Phase A — MarketplaceClient (Node)**: `src/Scripts/Services/Plugins/MarketplaceClient.gd`
+- `fetch_registry(url?)` — GETs registry.json
+- `resolve_platform_target()` — returns linux-x86_64/linux-arm64/macos-universal/windows-x86_64
+- `install_from_url(tarball_url, installer)` — downloads via HTTPRequest+set_download_file (streams to disk), `tar -xzf` extract, `HashingContext` SHA256 verify of every entry in SHA256SUMS, moves to user://plugins/<id>/, chmod +x entrypoint, delegates registration to `installer`
+- `installer` is duck-typed:
+    - null = stop after staging (tests)
+    - PluginManager (has install_plugin) = full flow with cap-grant/skill-seed (production)
+    - PluginDB (has install) = minimal store registration (legacy)
+- `install_from_registry_entry(entry, installer)` — picks target URL from `entry.downloads`, calls install_from_url
+- Headless test: `src/test/test_marketplace_install_from_url.gd` — 3/3 PASS
+  (happy path against fixture HTTP server, 404, SHA mismatch)
 
-- Cargo bin: **387/0** (release)
-- Wire tests, all green:
-  - `mcp_wire_numeric_args` 1/1
-  - `session_describe` 1/1
-  - `dryrun_session` 1/1
-  - `library_path_isolation` 1/1
-  - `vault_label` 1/1
-  - `manifest_validation` 6/0
-  - `process_pipeline_v2` **7/0** (added 2 regression tests this week)
-- Functional suite (`scripts/run-functional-tests.sh --all`): **6/0**
-  (scansort_filing_e2e + scansort_panel_loop_e2e + cad + presentation
-  + 2 hermetic — new panel-loop test SKIPs cleanly without
-  model-chat).
-- Minerva headless ChatPane regression: **7/0**
+**Phase B — Marketplace UI**: `src/Scripts/UI/Controls/PluginManagerPanel/MarketplaceBrowseDialog.gd`
+- Window class with HSplitContainer: ItemList of plugins | RichTextLabel details
+- Footer: status label, Install button, Close button
+- Header: title + Refresh button
+- Items unavailable for the user's platform are disabled with tooltip
+- Already-installed plugins show "Already installed" instead of Install
+- Install delegates to MarketplaceClient.install_from_registry_entry with
+  `SingletonObject.plugin_manager` (full PluginManager.install_plugin path)
+- Emits `plugin_installed(plugin_id)` signal
 
-Binary deployed: `install -m 755 target/release/scansort-plugin ./scansort-plugin`
-in `~/github/plugins/scansort/`.
+PluginManagerPanel.gd was edited to add:
+- `_browse_button: Button` field
+- "Browse Marketplace..." button in `_build_bottom_toolbar`
+- `_on_browse_marketplace_pressed()` opens the dialog
+- `_on_marketplace_install_complete(plugin_id)` refreshes the installed list
 
 ---
 
-## 4. DOCKET CLOSE-OUT
+## 3. THE FAILING HITL
 
-| Item | Type | Final state | Notes |
-|---|---|---|---|
-| `019e5bc8dae47584a1f9b9fcb9868173` | bug | closed | Chat exception, pri-0 |
-| `019e5bc927417448b09ef38f21db0b40` | bug | closed | errors[] propagation |
-| `019e5bc946807b0db2dcfab842670782` | bug | closed | audit-on-failure |
-| `019e6269890f7de48fdb689a0e99d9bd` | bug | closed | offset advancement |
+User triggered workflow_dispatch on `user/imran/experiments/swarm`, got
+the CI build artifact, ran it, **Minerva does not run**. No error details
+captured before compaction.
 
-**Heads up about DCR `019e564809a9` + `019e5068f584`**: these were
-tracked via memory + the in-session task list, NOT formally filed as
-docket items (audited 2026-05-26 — DCR ID lookup returned "not found"
-across all projects). The work is verifiably shipped via the git log on
-main; docket-only audits will miss the multi-cycle history. Session
-nudge `docket-process/memory-vs-docket-tracking-gap` captures this for
-future policy decisions.
+**First debug action on resume:** ask the user for the launch error
+(stderr/stdout from running the Minerva binary directly from terminal).
+If on Linux: `cd Minerva-Linux-Build && ./Minerva 2>&1 | head -40`.
+If on macOS: `Minerva.app/Contents/MacOS/Minerva 2>&1 | head -40`.
+If on Windows: `Minerva.exe 2>&1 | head -40`.
 
----
-
-## 5. STILL-PENDING FOLLOW-UPS (under the same scansort area)
-
-These were filed yesterday + today as deferred items. None are
-blocking; pick up in any order.
-
-From the prior cycle-3 backlog:
-- `019e566ea3eb` — manifest/tools-list codegen
-- `019e5671eea7` — tool_err coverage for session_describe + dryrun_session
-- `019e56720a92` — `tail_rows` O(file_size)
-- `019e57749bcb` — T7 obs (a) state_changed subscription
-- `019e5774c543` — T7 obs (b) vault unlock cross-surface
-- `019e566e5fa5` — extend lax_* helpers
-- `019e58319f75` — delete legacy `process::snapshot_json`
-- `019e5831ae93` — `ProcessPlan::empty(scope)` helper
-- `019e5834a2b7` — panel Stop surface cancel failure
-- `019e5834b518` — process_plan negative-path test coverage
-- `019e5834ce3f` — process_run O(N²) over iterations
-
-From today's reviewer notes (DRY F1/F2/F3, deferred):
-- Task #135 — factor `is_failure` into `ProcessItem::is_failure()` (2 sites in process.rs now duplicate the match)
-- Task #136 — extract `scansort_e2e_common.gd` (the two functional tests duplicate ~250 lines of plumbing)
-- Task #137 — `tests/common::open_source_and_plan` helper (the 2 panel-loop cargo tests duplicate ~30 lines)
-
-The above are caveats only when a 3rd similar consumer surfaces.
+**While waiting for that, useful concurrent checks:**
+- Confirm the CI build itself was green at
+  https://github.com/turnrocklabs/Minerva/actions
+- If green, was Minerva-{platform}-Build artifact non-zero size?
+- Check the latest commit (bd19c8a2) was actually IN the build by
+  examining a previous successful build vs this one
 
 ---
 
-## 6. WHAT TO DO NEXT SESSION
+## 4. TEST GATE — last verified
 
-No active scansort work. Suggested entry points if you come back to
-this area:
-- Knock off any of the §5 follow-ups (each is small + well-scoped).
-- Look at the docket-vs-memory tracking gap noted above — decide
-  whether multi-cycle DCRs should always be explicitly filed up front.
-- The Minerva swarm branch hosts the ChatPane fix + a build.yml CI
-  pipeline thread from the laptop — those are likely targets for the
-  next merge-to-main cycle once you're ready.
+- `test_marketplace_install_from_url.gd` 3/3 (happy, 404, bad-SHA) **local headless on swarm at bd19c8a2**
+- Minerva headless boot with my code present: no SCRIPT ERROR (local check)
+- All plugin CI workflows green on `dcr/plugins-fcib-ci` at a03e4f1
+- 6 GitHub Releases on imrans-lab/minerva-plugins resolve (HEAD 200)
+
+---
+
+## 5. OPEN FOLLOW-UPS (work_items already filed)
+
+| ID | Title | Status |
+|---|---|---|
+| `019e6358cf7a` | Extract pack+upload composite action | backlog |
+| `019e634eae3f` | cad Windows port (worker.go syscall split) | **done in-cycle** |
+
+Plus 3 deferred scansort follow-ups (`019e565b5b85`-style) from earlier DCRs.
+
+---
+
+## 6. AFTER MINERVA-WON'T-RUN IS FIXED
+
+1. Verify the Browse Marketplace button appears in Plugin Manager
+2. Open marketplace, see 3 plugins listed with platform availability
+3. Install scansort from marketplace
+4. Verify it appears in installed list + Plugin's panel works
+5. THIS IS THE END-TO-END HITL — succeeding here means DCR 3 is shippable
+
+After HITL passes, eventual promotion is `swarm → development → main`
+per the Minerva release strategy (the user is NOT ready to merge to
+main yet — keep on swarm).
 
 ---
 
 ## 7. HARD RULES (unchanged)
 
-- Per-file `git add` only — never `-A` or `.`. No `--no-verify`. No
-  `vendor/` touches.
-- scansort source documents are READ-ONLY at runtime.
-- No force-push, no `git reset --hard`, no push without an explicit
-  user ask.
+- Per-file `git add` only — never `-A` or `.`. No `--no-verify`.
+- No `vendor/` touches.
+- No force-push, no `git reset --hard`, no push without an explicit user ask.
 - Never `cp` over a mapped binary — use `install -m 755` (atomic).
 - pkill target is `godot`, not `Minerva`.
 - Co-author trailer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
@@ -173,18 +203,17 @@ this area:
 
 ---
 
-## 8. MEMORY LANDMARKS
+## 8. KEY MEMORY LANDMARKS
 
-- `MEMORY.md` Active Work line — should be retired or pointed at
-  whatever you take up next.
-- `project_active_scansort_agent_visibility_dcr.md` — terminal state
-  reached; the DCR shipped to main today. Memory file kept for
-  reference but no longer "active."
-- Durable docket hints from this work-cycle stack:
-  - `019e57af4a8e` — spawned-binary `#[cfg(test)]` override invisible
-  - `019e5b67e03b` — per-call→per-batch accumulators (+= not =)
-  - `019e5b680716` — scansort-mcp stdio blocks read-only tools mid-run
-- Session nudges (this stack — promote any that recur):
-  - `scansort-testing/distinct-content-per-test-file`
-  - `scansort-process-pipeline/handle-process-run-offset-zero-bug`
-  - `docket-process/memory-vs-docket-tracking-gap`
+- `MEMORY.md` index entries to read:
+  - `project_active_marketplace_dcr3.md` — DCR 3 active state (see below)
+  - `project_plugins_already_fcib_clean.md` — FCIB audit correction
+- Durable hints saved during this work:
+  - `019e63a3bcf4` — minerva-plugin-platform/canonical-install-is-pluginmanager-not-plugindb
+  - `019e634e4a96` — go-cross-platform-plugins/syscall-kill-and-setpgid-are-unix-only
+- Session nudges (promote any that recur):
+  - `docket-mcp/no-unlink-tool`
+  - `github-actions/billing-lock-symptom`
+  - `github-actions/matrix-not-in-job-level-if`
+  - `mcp-spec/server-identity-field-variants`
+  - `scansort-process-pipeline/handle-process-run-offset-zero-bug` (older)
