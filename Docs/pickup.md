@@ -1,8 +1,8 @@
 # Pickup
 
-STATE: `AUTONOMOUS LOOP · MARKETPLACE SCANSORT INSTALL→START GREEN GATE`
+STATE: `MARKETPLACE END-TO-END GREEN` ✅
 
-Last updated 2026-05-27 02:00 UTC, just before compaction.
+Last updated 2026-05-27 09:24 UTC — autonomous loop terminated SUCCESS after 10 iterations.
 
 You are resuming inside an autonomous loop. The user is offline. Your
 budget is bounded — read sections 0–2 fully before any action.
@@ -270,7 +270,7 @@ Each iteration must:
 | 7 | 2026-05-27 | 99087bd4 | **Instrumented initialize_mcp + connect_server.** Iter-7 CI log showed ZERO `[MCP-DEBUG]` lines — initialize_mcp NEVER runs in CI. |
 | 8 | 2026-05-27 | 9b5c628f | **Instrumented SingletonObject._ready + get_mcp_manager.** Iter-8 log: only `[MCP-DEBUG] LAZY get_mcp_manager creating MCPManager` fires; NO `_ready: about to ...` checkpoints. SingletonObject._ready bails BEFORE reaching `initialize_mcp.call_deferred()`. |
 | 9 | 2026-05-27 | 0d977156 | **CI past _ready fix.** Iter-9 log: Minerva fully boots, opens :9315, executes minerva_plugin_marketplace_install. New failure: `{"error": "Unknown minerva tool: minerva_plugin_marketplace_install"}`. plugin_mcp_tools is null because initialize_plugins() never ran. |
-| 10 | 2026-05-27 | (this commit) | **Init order fix.** `await mcp_manager.initialize()` block tries to connect to nudge/cobrowser/codetools — binaries absent in CI, await hangs indefinitely → `initialize_plugins()` after it never runs → plugin_mcp_tools stays null → marketplace tool isn't dispatchable. Moved `initialize_plugins()` + `_wire_plugin_tools_to_mcp()` BEFORE the external-server await (plugins are in-process; no dependency on external MCP). Layer A still 7/0. Saved durable nudge `minerva-singleton/init-plugins-before-external-mcp-connect`. |
+| 10 | 2026-05-27 | b2b8728c | **Init order fix — LOOP COMPLETE.** Moved `initialize_plugins()` + `_wire_plugin_tools_to_mcp()` BEFORE the external-MCP-server connect await (plugins are in-process; no dependency on external MCP). Saved durable nudge `minerva-singleton/init-plugins-before-external-mcp-connect`. **tarball-smoke GREEN** on auto-build-20260527-092547. Both Layer A (hermetic, 7/0) and Layer B (released-tarball + xvfb + marketplace MCP → install → start → RUNNING) pass on every push to development. |
 
 ---
 
