@@ -327,7 +327,10 @@ jobs:
       - name: Install runtime dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0
+          # Runtime libs that Minerva.x86_64 dlopens via GDExtensions: GTK +
+          # WebKit (godot_wry) and Chromium-base (CEF). --headless avoids
+          # needing an X11 display, but the .so's must still be present.
+          sudo apt-get install -y libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
 
       - name: Restore executable bits (mirror create-release)
         run: |
@@ -340,6 +343,14 @@ jobs:
         run: |
           chmod +x scripts/tarball-smoke.sh
           scripts/tarball-smoke.sh downloads/Minerva-Linux-Build
+
+      - name: Upload minerva.log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tarball-smoke-minerva-log
+          path: /tmp/minerva-smoke-final.log
+          if-no-files-found: warn
 
   build-macos:
     needs: check-gdextension

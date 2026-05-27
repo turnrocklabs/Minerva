@@ -30,7 +30,6 @@ STARTUP_TIMEOUT_S="${STARTUP_TIMEOUT_S:-60}"
 LOG_DIR="$(mktemp -d /tmp/minerva-smoke.XXXXXX)"
 MINERVA_LOG="${LOG_DIR}/minerva.log"
 MINERVA_PID=""
-XVFB_PID=""
 
 cleanup() {
     local rc=$?
@@ -40,11 +39,15 @@ cleanup() {
         sleep 1
         kill -KILL "${MINERVA_PID}" 2>/dev/null || true
     fi
-    if [[ -n "${XVFB_PID}" ]]; then
-        kill -TERM "${XVFB_PID}" 2>/dev/null || true
+    # Copy log to a stable path so the workflow's artifact-upload step finds it.
+    if [[ -f "${MINERVA_LOG}" ]]; then
+        cp "${MINERVA_LOG}" /tmp/minerva-smoke-final.log 2>/dev/null || true
+        # Inline-dump always (so the GH UI rendered log shows it even when no
+        # artifact is enabled).  Full content; smoke logs are short.
+        echo "::group::Minerva log (full)"
+        cat "${MINERVA_LOG}" 2>/dev/null || true
+        echo "::endgroup::"
     fi
-    echo "Minerva log (tail):"
-    tail -80 "${MINERVA_LOG}" 2>/dev/null || true
     echo "::endgroup::"
     exit "$rc"
 }
@@ -56,25 +59,31 @@ fail() {
 }
 
 # JSON-RPC 2.0 / MCP helpers --------------------------------------------------
-# Send a tools/call request; print response body. Globals:
-#   _mcp_session_id — must be set after initialize.
+# Minerva's MCP HTTP server is session-less — it advertises Mcp-Session-Id in
+# CORS headers but doesn't emit one in responses, and accepts tools/call
+# without one (verified locally 2026-05-26 via headless probe). So we just
+# initialize once for handshake protocol-compliance, then call tools directly.
 _mcp_id=0
 mcp_initialize() {
     _mcp_id=$((_mcp_id + 1))
     local resp
-    resp=$(curl -sS --max-time 15 -i -X POST "${MCP_URL}" \
+    resp=$(curl -sS --max-time 15 -X POST "${MCP_URL}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json, text/event-stream" \
         -H "MCP-Protocol-Version: 2025-06-18" \
         -d "{\"jsonrpc\":\"2.0\",\"id\":\"${_mcp_id}\",\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"tarball-smoke\",\"version\":\"1.0\"}}}")
-    # Extract MCP session id from response headers (case-insensitive).
-    _mcp_session_id=$(echo "$resp" | tr -d '\r' | awk 'BEGIN{IGNORECASE=1} /^mcp-session-id:/ {print $2; exit}')
-    if [[ -z "${_mcp_session_id:-}" ]]; then
-        echo "Initialize response (no session id):"
-        echo "$resp"
-        fail "MCP initialize did not return a session id"
+    # Sanity-check the handshake returned a valid initialize result; abort
+    # otherwise so we don't paper over a broken server with bogus tool calls.
+    if ! echo "$resp" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+r = d.get('result', {})
+ok = bool(r.get('serverInfo')) and bool(r.get('protocolVersion'))
+sys.exit(0 if ok else 1)" 2>/dev/null; then
+        echo "Initialize raw response: $resp"
+        fail "MCP initialize handshake malformed"
     fi
-    echo "MCP session id: ${_mcp_session_id}"
+    echo "MCP initialize ok ($(echo "$resp" | python3 -c "import json,sys; r=json.load(sys.stdin)['result']; print(r['serverInfo']['name'], 'protocol', r['protocolVersion'])"))"
 }
 
 mcp_call() {
@@ -84,35 +93,36 @@ mcp_call() {
     local body
     body=$(printf '{"jsonrpc":"2.0","id":"%d","method":"tools/call","params":{"name":"%s","arguments":%s}}' \
         "$_mcp_id" "$tool" "$args_json")
-    curl -sS --max-time 60 -X POST "${MCP_URL}" \
+    curl -sS --max-time 120 -X POST "${MCP_URL}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/json, text/event-stream" \
-        -H "MCP-Session-Id: ${_mcp_session_id}" \
         -H "MCP-Protocol-Version: 2025-06-18" \
         -d "$body"
 }
 
 # Boot Minerva ---------------------------------------------------------------
+# Strategy: --headless eliminates window/display dependency entirely. The
+# existing "Smoke-launch Linux build" step in build.yml runs --headless and
+# reaches autoload init, which is exactly what we need: SingletonObject's
+# initialize_mcp() opens :9315 unconditionally regardless of CEF state.
+# xvfb-run was a guess that turned out unnecessary (and was making startup
+# fragile in CI — iteration 2 hung at boot under it).
 boot_minerva() {
     [[ -x "${MINERVA_DIR}/Minerva.x86_64" ]] || fail "Minerva.x86_64 not executable in ${MINERVA_DIR}"
 
-    if ! command -v xvfb-run >/dev/null 2>&1; then
-        fail "xvfb-run not installed — apt install xvfb"
-    fi
-
-    echo "Starting Minerva under xvfb-run (log: ${MINERVA_LOG})"
-    # Use a tiny display surface; we never render anything.  --auto-servernum
-    # picks a free :N to avoid clashes across parallel jobs.
-    xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
-        "${MINERVA_DIR}/Minerva.x86_64" \
+    echo "Starting Minerva --headless (log: ${MINERVA_LOG})"
+    "${MINERVA_DIR}/Minerva.x86_64" --headless \
         >"${MINERVA_LOG}" 2>&1 &
     MINERVA_PID=$!
     echo "Minerva PID: ${MINERVA_PID}"
 
     local deadline=$(( $(date +%s) + STARTUP_TIMEOUT_S ))
+    local last_log_size=0
     while (( $(date +%s) < deadline )); do
         if ! kill -0 "${MINERVA_PID}" 2>/dev/null; then
-            fail "Minerva exited during startup — see log"
+            echo "::error::Minerva exited during startup. Full log:"
+            cat "${MINERVA_LOG}" 2>/dev/null || true
+            fail "Minerva exited during startup — see full log above"
         fi
         if curl -fsS --max-time 2 -o /dev/null \
                 -X POST "${MCP_URL}" \
@@ -121,8 +131,18 @@ boot_minerva() {
             echo "MCP HTTP up at ${MCP_URL}"
             return 0
         fi
+        # Progress indicator: print log size growth so the operator can see
+        # whether Minerva is doing anything during startup.
+        local sz
+        sz=$(stat -c%s "${MINERVA_LOG}" 2>/dev/null || echo 0)
+        if (( sz != last_log_size )); then
+            echo "  (waiting for :${MCP_PORT}; minerva.log size=${sz}B)"
+            last_log_size=$sz
+        fi
         sleep 1
     done
+    echo "::error::Minerva MCP HTTP did not come up within ${STARTUP_TIMEOUT_S}s. Full log:"
+    cat "${MINERVA_LOG}" 2>/dev/null || true
     fail "Minerva MCP HTTP did not come up within ${STARTUP_TIMEOUT_S}s"
 }
 
