@@ -183,6 +183,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.dialogs.file_picker",
 	"host.dialogs.directory_picker",
 	"host.permissions.grant_scope",
+	"host.notify",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

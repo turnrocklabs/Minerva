@@ -307,6 +307,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_dialogs_directory_picker(plugin_id, args)
 		"host.permissions.grant_scope":
 			named_result = await _handle_host_permissions_grant_scope(plugin_id, args)
+		"host.notify":
+			named_result = _handle_host_notify(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -3238,6 +3240,52 @@ func _audit(plugin_id: String, event_type: String, detail: Dictionary) -> void:
 ##   mcp_tool_error, secrets_error, …)
 ##   → EVENT_CAPABILITY_FAILED.
 ## Codes that route to EVENT_CAPABILITY_DENIED (policy-class denials).
+# ---------------------------------------------------------------------------
+# host.notify handler
+# ---------------------------------------------------------------------------
+
+## User-visible toast notification from a backend plugin.
+##
+## args:
+##   message: String   (required, non-empty) — text to display
+##   level:   String   (optional, default "info") — "info"|"warning"|"error"|"success"
+##
+## The displayed text is prefixed with the plugin id so users can tell which
+## plugin emitted the toast. Headless contexts (no main_scene) skip the visual
+## render but still log to the console via SingletonObject.create_toast_notification.
+const _NOTIFY_ALLOWED_LEVELS := {
+	"info": ToastNotification.Type.INFO,
+	"warning": ToastNotification.Type.WARNING,
+	"error": ToastNotification.Type.ERROR,
+	"success": ToastNotification.Type.SUCCESS,
+}
+
+func _handle_host_notify(plugin_id: String, args: Dictionary) -> Dictionary:
+	var raw_message: Variant = args.get("message", null)
+	if raw_message == null or not (raw_message is String) or (raw_message as String).is_empty():
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "message is required and must be a non-empty String"
+		)
+	var message: String = raw_message as String
+
+	var raw_level: Variant = args.get("level", "info")
+	if not (raw_level is String):
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "level must be a String (one of: info|warning|error|success)"
+		)
+	var level: String = (raw_level as String).to_lower()
+	if not _NOTIFY_ALLOWED_LEVELS.has(level):
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "unknown level '%s' (allowed: info|warning|error|success)" % level
+		)
+
+	var toast_type: int = _NOTIFY_ALLOWED_LEVELS[level]
+	var display := "%s: %s" % [plugin_id, message]
+	print("[CapabilityBroker] Plugin '%s' host.notify [%s] %s" % [plugin_id, level, message])
+	SingletonObject.create_toast_notification(display, toast_type)
+	return PluginErrors.success({})
+
+
 ## ownership_required is included because cross-plugin editor mutation is a
 ## permission decision (the plugin lacks rights for THIS target), not a
 ## broker-validation failure — audit consumers should see it as a security event.
