@@ -122,14 +122,21 @@ boot_minerva() {
     fi
 
     echo "Starting Minerva under xvfb-run + --headless (log: ${MINERVA_LOG})"
+    # stdbuf -oL -eL forces line-buffered stdout/stderr. Without it, Godot's
+    # C runtime fully buffers when stdout isn't a terminal, which means
+    # diagnostic prints don't reach the log file until process exit — making
+    # CI failures unreadable. iter-2/3/4 logs were truncated at 771-3837
+    # bytes for exactly this reason; locally where stdout is a tty we see
+    # megabytes of output.
     xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
-        "${MINERVA_DIR}/Minerva.x86_64" --headless \
+        stdbuf -oL -eL "${MINERVA_DIR}/Minerva.x86_64" --headless --verbose \
         >"${MINERVA_LOG}" 2>&1 &
     MINERVA_PID=$!
     echo "Minerva PID: ${MINERVA_PID}"
 
     local deadline=$(( $(date +%s) + STARTUP_TIMEOUT_S ))
     local last_log_size=0
+    local last_tail_dump=0
     while (( $(date +%s) < deadline )); do
         if ! kill -0 "${MINERVA_PID}" 2>/dev/null; then
             echo "::error::Minerva exited during startup. Full log:"
@@ -143,13 +150,21 @@ boot_minerva() {
             echo "MCP HTTP up at ${MCP_URL}"
             return 0
         fi
-        # Progress indicator: print log size growth so the operator can see
-        # whether Minerva is doing anything during startup.
-        local sz
+        # Progress reporting: announce log size growth, and every 15s dump
+        # the latest 30 lines of the log so a hung startup leaves a trail in
+        # the GH UI rather than just one terminal failure at the end.
+        local sz now
         sz=$(stat -c%s "${MINERVA_LOG}" 2>/dev/null || echo 0)
+        now=$(date +%s)
         if (( sz != last_log_size )); then
             echo "  (waiting for :${MCP_PORT}; minerva.log size=${sz}B)"
             last_log_size=$sz
+        fi
+        if (( now - last_tail_dump >= 15 )); then
+            echo "::group::Live minerva.log tail (last 30 lines @ +$(( now - (deadline - STARTUP_TIMEOUT_S) ))s)"
+            tail -30 "${MINERVA_LOG}" 2>/dev/null || true
+            echo "::endgroup::"
+            last_tail_dump=$now
         fi
         sleep 1
     done
