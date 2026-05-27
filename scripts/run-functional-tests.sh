@@ -30,6 +30,7 @@ PLUGIN_TESTS=(
 	test/test_scansort_filing_e2e.gd
 	test/test_scansort_panel_loop_e2e.gd
 	test/test_marketplace_install_start_scansort.gd
+	test/test_marketplace_install_start_cad_evaluate.gd
 )
 
 tests=("${HERMETIC_TESTS[@]}")
