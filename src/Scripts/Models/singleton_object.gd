@@ -421,12 +421,20 @@ var mcp_http_server_port: int = 9315:
 
 ## Initialize MCP manager (call from main scene _ready)
 func initialize_mcp() -> void:
-	if mcp_manager:
-		return
-	mcp_manager = MCPManagerScript.new()
-	add_child(mcp_manager)
+	# Idempotent: a caller may have already lazy-created mcp_manager via
+	# get_mcp_manager() before this deferred init fires (e.g. ChatPane's
+	# _connect_mcp_signals). A blanket early-return here used to skip
+	# connect_minerva_server() + start_http_server() in that case, leaving
+	# Minerva running with MCP totally disabled. Now each step is conditional
+	# and idempotent. (DCR3 marketplace loop iter-6 — the bug that made the
+	# CI smoke fail despite local success.)
+	if not mcp_manager:
+		mcp_manager = MCPManagerScript.new()
+		add_child(mcp_manager)
 
-	# Auto-connect internal Minerva MCP server (always — it's in-process)
+	# Auto-connect internal Minerva MCP server (always — it's in-process).
+	# connect_minerva_server -> MinervaMCPServer.connect_server is itself
+	# idempotent (server_enabled guard) so re-calling is safe.
 	mcp_manager.connect_minerva_server()
 
 	# Always start the HTTP server (Minerva's own MCP server for external clients).
