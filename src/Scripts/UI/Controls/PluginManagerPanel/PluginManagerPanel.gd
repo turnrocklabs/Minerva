@@ -840,7 +840,8 @@ func _on_start_pressed() -> void:
 		return
 	_show_status("Starting %s..." % _selected_plugin_id)
 	_start_button.disabled = true
-	await SingletonObject.plugin_manager.start_plugin(_selected_plugin_id)
+	var result: Dictionary = await SingletonObject.plugin_manager.start_plugin(_selected_plugin_id)
+	_report_lifecycle_result("Start", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
 
@@ -849,7 +850,8 @@ func _on_stop_pressed() -> void:
 		return
 	_show_status("Stopping %s..." % _selected_plugin_id)
 	_stop_button.disabled = true
-	SingletonObject.plugin_manager.stop_plugin(_selected_plugin_id)
+	var result: Dictionary = SingletonObject.plugin_manager.stop_plugin(_selected_plugin_id)
+	_report_lifecycle_result("Stop", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
 
@@ -858,7 +860,8 @@ func _on_restart_pressed() -> void:
 		return
 	_show_status("Restarting %s..." % _selected_plugin_id)
 	_restart_button.disabled = true
-	await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
+	var result: Dictionary = await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
+	_report_lifecycle_result("Restart", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
 
@@ -869,9 +872,31 @@ func _on_reload_pressed() -> void:
 	_reload_button.disabled = true
 	if _files_changed_label:
 		_files_changed_label.visible = false
-	await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
+	var result: Dictionary = await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
 	_reload_button.disabled = false
+	_report_lifecycle_result("Reload", _selected_plugin_id, result)
 	_refresh_plugin_list()
+
+
+## Surface PluginManager lifecycle results via the standard notification
+## surfaces — ErrorDisplay modal on failure, toast on success. Previously
+## the lifecycle handlers awaited the result then discarded it, so users
+## saw the plugin transition to ERROR state with no message anywhere in
+## the UI to explain why.
+func _report_lifecycle_result(action: String, plugin_id: String, result) -> void:
+	if result is Dictionary and result.has("error"):
+		var msg: String = str(result["error"])
+		_show_status("%s failed: %s" % [action.to_lower(), msg])
+		SingletonObject.ErrorDisplay(
+			"%s plugin failed" % action,
+			"Plugin: %s\n\n%s" % [plugin_id, msg]
+		)
+		return
+	_show_status("%s %s succeeded" % [action.to_lower(), plugin_id])
+	SingletonObject.create_toast_notification(
+		"%s: %s" % [action, plugin_id],
+		ToastNotification.Type.INFO
+	)
 
 
 func _on_open_panel_pressed() -> void:
