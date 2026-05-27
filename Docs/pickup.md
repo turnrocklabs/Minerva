@@ -1,219 +1,299 @@
 # Pickup
 
-STATE: `DCR1+2+3 CODE-COMPLETE · HITL FAILING · MINERVA DOES NOT RUN FROM CI BUILD`
+STATE: `AUTONOMOUS LOOP · MARKETPLACE SCANSORT INSTALL→START GREEN GATE`
 
-Last updated 2026-05-26 after compaction prep. The plugin marketplace
-end-to-end pipeline is code-complete and pushed. User attempted the HITL
-test (download Minerva from CI, install a plugin from marketplace).
-**Minerva does not run** from the downloaded artifact. Cause unknown;
-that's where work resumes.
+Last updated 2026-05-27 02:00 UTC, just before compaction.
 
----
-
-## 0. RESUME — read this first
-
-The autonomous chain through 3 DCRs completed and pushed. Then the user
-ran a CI build of Minerva on the swarm branch via workflow_dispatch,
-downloaded the artifact, and Minerva failed to launch. The failure mode
-was NOT captured — that's what we debug next session.
-
-**Most likely root causes** (in rough order):
-1. **Parse error on autoload chain** — my new `MarketplaceBrowseDialog.gd`
-   declares `class_name MarketplaceBrowseDialog`. Class_name registration
-   happens at project import. A class_name collision or a typo would
-   prevent project load. (Local headless boot showed no parse error,
-   but CI export uses a fresh class registry.)
-2. **Missing GDExtension binaries in the CI artifact** — the build flow
-   downloads godot-cef/godot-wry/terminal sibling artifacts; if any
-   download failed silently the .app/.exe would load but crash on first
-   extension use.
-3. **My new `_browse_button` button-add edit to PluginManagerPanel.gd**
-   had a subtle bug (e.g. variable initialised but signal connect on a
-   null) that only fires when PluginManagerPanel actually instantiates.
-4. **GitHub Actions release of Minerva**: the build may have failed
-   outright with my new files included. Check Actions UI.
-
-**Debug starting points:**
-- Open the failed run at https://github.com/turnrocklabs/Minerva/actions
-  — was the build itself red?
-- If build green: download artifact, run from terminal with
-  `Minerva.exe 2>&1 | tee minerva-launch.log` to capture stderr.
-  Look for "SCRIPT ERROR: Parse Error", "Failed to load script", or
-  "Could not find class".
-- Try side-load first (existing "Install Plugin..." button on a local
-  manifest) — if THAT fails, the panel itself is broken.
-- If Browse button works but Install fails, the issue is in
-  MarketplaceClient or PluginManager.install_plugin delegation.
-- If the issue is class_name collision: grep entire codebase for
-  `class_name MarketplaceClient` and `class_name MarketplaceBrowseDialog`.
+You are resuming inside an autonomous loop. The user is offline. Your
+budget is bounded — read sections 0–2 fully before any action.
 
 ---
 
-## 1. WHERE EVERYTHING LIVES
+## 0. THE GOAL
+
+The downloaded `Minerva-Linux.tar.gz` release artifact (from a
+development-branch push to `turnrocklabs/Minerva`) must install scansort
+from the marketplace and **successfully start it** — plugin state ==
+`RUNNING`, MCP probe round-trip works.
+
+Right now the **install succeeds** but `start_plugin` fails with
+`ERR_CANT_CONNECT` ("Subprocess failed to start: Can't connect").
+That's the bug to find and fix.
+
+Critical asymmetry: scansort worked when side-loaded from the editor
+(per memory `project_active_scansort_*`). So the bug is **specific to
+the marketplace install path**, not to scansort or to start_plugin in
+general.
+
+---
+
+## 1. STOP CONDITIONS (loop ends on any)
+
+Loop terminates and reports to the user when ANY of these fires:
+
+### Success
+- **A green**: Layer-A test (headless install+start+probe) passes
+  cleanly
+- **B green**: Layer-B test (tarball roundtrip — xvfb-run the released
+  `.tar.gz`, drive over HTTP MCP) passes
+
+When BOTH A and B are green, exit loop with success report. The user
+can then re-do HITL with confidence.
+
+### Budget
+- **Iteration cap**: 6 autonomous CI cycles. Each push to `development`
+  that triggers a Build Project run counts as 1 iteration. Track in
+  pickup.md edits per iteration.
+- **Wall-clock cap**: 4 hours from loop start.
+- **Stuck-on-judgment**: any architectural question worth the user's
+  input. Examples that MUST pause:
+  - "Should `_chmod_executable` move from MarketplaceClient into
+    PluginDB.install?"
+  - "Should we change the data_directory semantics?"
+  - "Should marketplace tarballs include a `.permissions` manifest?"
+  - Anything that touches more than one component or changes a
+    cross-plugin contract.
+
+Trivial fixes (typos, single-file edits within MarketplaceClient/
+PluginManager that match an existing pattern, test additions) do NOT
+pause.
+
+Whichever cap fires first, write findings to a new
+`Docs/pickup-loop-N.md`, transition this pickup back to
+"AWAITING HITL", and report.
+
+---
+
+## 2. ORDER DISCIPLINE — A BEFORE B
+
+**Do Layer A first.** It's the diagnostic loop and the highest-value
+addition either way.
+
+### Layer A — Headless install+start+probe test
+
+Extend `src/test/test_marketplace_install_from_url.gd` (or add a new
+sibling test) so the test also calls `plugin_manager.start_plugin()`
+and `plugin_manager.stop_plugin()` after install, and asserts:
+- install returned ok
+- state == S_RUNNING after start
+- `host.echo` probe round-trip works (proves MCP handshake completes)
+- state == S_STOPPED after stop, no errors
+
+Run via `scripts/run-functional-tests.sh` and `functional-tests` CI job
+on every dev push. The test should REPRODUCE the current
+`ERR_CANT_CONNECT` failure when run against the live scansort tarball.
+
+Note: a scansort tarball needs to be reachable. The simplest fixture
+path is to download the live scansort tarball from
+`https://github.com/imrans-lab/minerva-plugins/releases/download/scansort-v0.0.0-pre/scansort-0.0.1-linux-x86_64.tar.gz`
+at test setup time and serve it from a localhost http.server (same
+pattern the existing test uses). Don't hardcode the binary content
+into the test.
+
+When Layer A is RED with the current failure → diagnose → fix → push.
+When Layer A is GREEN → proceed to Layer B.
+
+### Layer B — Tarball roundtrip
+
+Add a new CI job (or workflow) that:
+1. Resolves the latest `auto-build-*` release tag from
+   `turnrocklabs/Minerva/releases/latest`
+2. Downloads `Minerva-Linux.tar.gz`
+3. Extracts to a tmp dir
+4. `xvfb-run -a ./Minerva.x86_64 &` (background, with timeout)
+5. Polls `http://127.0.0.1:9315/` until Minerva's MCP HTTP responds
+6. Sends MCP tool calls to:
+   - Install scansort via the marketplace flow
+   - Start scansort
+   - Read plugin status — assert RUNNING
+   - Send `minerva_scansort_probe` — assert ok
+7. Cleanup, kill the background process, report
+
+Known risks for B:
+- CEF init in headless / virtual display — may need `--disable-gpu`
+  or other flags. Check what flags are accepted.
+- Auth on MCP HTTP — may need a token. Check first.
+- `xvfb-run` is usually preinstalled on `ubuntu-latest`, confirm.
+- Test job needs `needs: create-release` so the release exists.
+
+### Existing test (Layer A predecessor)
+
+`src/test/test_marketplace_install_from_url.gd` exists with 3 tests
+(happy path / 404 / sha mismatch). It stops at install — never starts
+the plugin. Extending it is the natural place for Layer A.
+
+---
+
+## 3. KNOWN BUG STATE
+
+### Symptom
+After marketplace-installing scansort, clicking Reload (or Start) in
+PluginManagerPanel shows ErrorDisplay popup: "Subprocess failed to
+start: Can't connect". Source: `PluginManager.gd:566` →
+`error_string(ERR_CANT_CONNECT)`.
+
+### What we know
+- Binary `/tmp/scansort-inspect/scansort-plugin` from the tarball
+  runs fine standalone — exits 0, prints "scansort 0.0.1 starting".
+- Tarball preserves `+x` (verified: `tar -tzvf` shows
+  `-rwxr-xr-x`).
+- `MarketplaceClient._chmod_executable()` at line 365 SHOULD chmod
+  the entrypoint after install. May be silently failing — unverified.
+- The install validation now passes thanks to `host.notify` cap
+  added in commit `6fca1bb4`.
+- The same scansort plugin works when side-loaded from the editor
+  (memory `project_active_scansort_*`).
+
+### Hypotheses ranked
+1. **Working directory mismatch** — SubProcess might inherit a cwd
+   that breaks the binary's data-directory expectations
+2. **Path resolution** — `data_directory` from manifest path may not
+   be globalized correctly in the user:// case
+3. **chmod silently failed** — `OS.execute("chmod"...)` may be a
+   no-op on Linux in some path
+4. **SubProcess can't read the binary** — perms restored on extract
+   but lost on `DirAccess.rename_absolute`
+5. **MCP stdio handshake timeout** — the binary spawns but doesn't
+   respond to initialize within timeout
+
+### First diagnostic step on resume
+
+Run Layer A test against scansort to REPRODUCE the failure in a
+headless context with full debug output. The PluginManager
+`push_error` lines + MCPServerConnection debug logs will surface the
+actual failure mode. Don't fix anything until you have that signal.
+
+---
+
+## 4. WHERE EVERYTHING LIVES
 
 ```
-~/github/plugins-dcr1/                                    (worktree)
-  branch: dcr/plugins-fcib-ci
-  remote: lab → https://github.com/imrans-lab/minerva-plugins
-  HEAD: a03e4f1 (registry v2 — per-target download URLs)
-  Other recent commits:
-    197405b — DCR1 W9 auto-tag (main=clean, branches=-branch- sentinel)
-    1d8ed4a — DCR1 W4 registry generator + drift-check CI
-    bd19c8a2 ad78ac42 are on the Minerva swarm branch (see below)
-
-~/github/Minerva/                                          (primary)
-  branch: user/imran/experiments/swarm
+~/github/Minerva/                                  (you are here)
+  branch: development
   remote: origin → https://github.com/turnrocklabs/Minerva
-  HEAD pushed: bd19c8a2 (DCR3 Phase B Browse Marketplace UI)
-  Other recent:
-    ad78ac42 — DCR3 Phase A MarketplaceClient
-    625bb3ef — pickup: scansort area shipped
+  HEAD: 589f6ee4
+  Recent:
+    589f6ee4 PluginManagerPanel: surface lifecycle errors via ErrorDisplay/toast
+    b1aca740 CI: re-enable auto-release on every development push
+    c50fc1b3 CI: every development push builds; releases gated to workflow_dispatch
+    6fca1bb4 Add host.notify capability — plugin → toast bridge
+    653d5c8e DCR3: marketplace dialog — reuse existing ErrorDisplay/toast surfaces
 ```
 
-ipeerbhai/plugins is the dead-end old plugins repo (billing-locked
-personal account); ignore it.
+Every push to `development` triggers Build Project. Every successful
+build creates an `auto-build-<timestamp>` release with the Linux/Mac/
+Windows tarballs.
+
+Plugins repo: `imrans-lab/minerva-plugins` main branch.
+- `registry.json` — manifest of manifests
+- scansort release: `scansort-v0.0.0-pre` tag, tarball
+  `scansort-0.0.1-linux-x86_64.tar.gz`
 
 ---
 
-## 2. WHAT'S DONE
+## 5. FILES TO TOUCH (likely)
 
-### DCR 1 — Plugins FCIB + CI + Auto-tag
-Docket: `019e62ad894d` (project=minerva). All 9 work units shipped:
-- W0 smoke harness `scripts/smoke/mcp_smoke.py`
-- W1-W3 per-plugin matrix workflows (`.github/workflows/{scansort,cad,presentation}.yml`)
-- Cold-Opus Quality+DRY reviews
-- W4 `scripts/regen_registry.py` + `.github/workflows/registry-check.yml`
-- W5 tag-driven release publish via softprops/action-gh-release@v2
-- W6 end-to-end real release validated for all 3 plugins
-- W7 binary purge — N/A (binaries were already gitignored, audit was wrong)
-- W8 per-plugin READMEs
-- W9 auto-tag: main → clean version, branch → `-branch-<sanitized>` suffix,
-  registry filter skips `-branch-` tags
+For Layer A:
+- `src/test/test_marketplace_install_from_url.gd` (extend or add
+  sibling)
+- `scripts/run-functional-tests.sh` (may need to register the test if
+  it's a new file)
+- Possibly `src/Scripts/Services/Plugins/MarketplaceClient.gd` (if
+  diagnosis points here)
+- Possibly `src/Scripts/Services/Plugins/PluginManager.gd` (if
+  diagnosis points to start_plugin)
 
-6 live releases on imrans-lab/minerva-plugins:
-- scansort-v0.0.0-pre, cad-v0.0.0-pre, presentation-v0.0.0-pre (manual)
-- scansort-v0.0.1-branch-dcr-plugins-fcib-ci (auto, prerelease)
-- cad-v0.1.0-branch-dcr-plugins-fcib-ci (auto, prerelease)
-- presentation-v0.0.1-branch-dcr-plugins-fcib-ci (auto, prerelease)
-
-### DCR 2 — Minerva Mac ARM64
-Docket: `019e62adb39d`. **Verified by audit, no code change.**
-- `Minerva-macOS-Build` artifact is 147MB on swarm-branch CI
-- `src/export_presets.cfg:162` has `binary_format/architecture="universal"`
-- `build.yml` lipo's the terminal/wry/cef extensions to universal
-- HITL launch on actual Apple Silicon hardware still deferred
-
-### DCR 3 — Marketplace
-Docket: `019e62ade5be`. Phase A + Phase B both shipped.
-
-**Phase A — MarketplaceClient (Node)**: `src/Scripts/Services/Plugins/MarketplaceClient.gd`
-- `fetch_registry(url?)` — GETs registry.json
-- `resolve_platform_target()` — returns linux-x86_64/linux-arm64/macos-universal/windows-x86_64
-- `install_from_url(tarball_url, installer)` — downloads via HTTPRequest+set_download_file (streams to disk), `tar -xzf` extract, `HashingContext` SHA256 verify of every entry in SHA256SUMS, moves to user://plugins/<id>/, chmod +x entrypoint, delegates registration to `installer`
-- `installer` is duck-typed:
-    - null = stop after staging (tests)
-    - PluginManager (has install_plugin) = full flow with cap-grant/skill-seed (production)
-    - PluginDB (has install) = minimal store registration (legacy)
-- `install_from_registry_entry(entry, installer)` — picks target URL from `entry.downloads`, calls install_from_url
-- Headless test: `src/test/test_marketplace_install_from_url.gd` — 3/3 PASS
-  (happy path against fixture HTTP server, 404, SHA mismatch)
-
-**Phase B — Marketplace UI**: `src/Scripts/UI/Controls/PluginManagerPanel/MarketplaceBrowseDialog.gd`
-- Window class with HSplitContainer: ItemList of plugins | RichTextLabel details
-- Footer: status label, Install button, Close button
-- Header: title + Refresh button
-- Items unavailable for the user's platform are disabled with tooltip
-- Already-installed plugins show "Already installed" instead of Install
-- Install delegates to MarketplaceClient.install_from_registry_entry with
-  `SingletonObject.plugin_manager` (full PluginManager.install_plugin path)
-- Emits `plugin_installed(plugin_id)` signal
-
-PluginManagerPanel.gd was edited to add:
-- `_browse_button: Button` field
-- "Browse Marketplace..." button in `_build_bottom_toolbar`
-- `_on_browse_marketplace_pressed()` opens the dialog
-- `_on_marketplace_install_complete(plugin_id)` refreshes the installed list
+For Layer B:
+- `.github/workflows/build.yml` — new job `tarball-smoke` that runs
+  after `create-release`
+- May need a new script `scripts/tarball-smoke.sh` if the inline
+  shell gets too gnarly
 
 ---
 
-## 3. THE FAILING HITL
+## 6. HARD RULES (UNCHANGED — DO NOT VIOLATE)
 
-User triggered workflow_dispatch on `user/imran/experiments/swarm`, got
-the CI build artifact, ran it, **Minerva does not run**. No error details
-captured before compaction.
-
-**First debug action on resume:** ask the user for the launch error
-(stderr/stdout from running the Minerva binary directly from terminal).
-If on Linux: `cd Minerva-Linux-Build && ./Minerva 2>&1 | head -40`.
-If on macOS: `Minerva.app/Contents/MacOS/Minerva 2>&1 | head -40`.
-If on Windows: `Minerva.exe 2>&1 | head -40`.
-
-**While waiting for that, useful concurrent checks:**
-- Confirm the CI build itself was green at
-  https://github.com/turnrocklabs/Minerva/actions
-- If green, was Minerva-{platform}-Build artifact non-zero size?
-- Check the latest commit (bd19c8a2) was actually IN the build by
-  examining a previous successful build vs this one
-
----
-
-## 4. TEST GATE — last verified
-
-- `test_marketplace_install_from_url.gd` 3/3 (happy, 404, bad-SHA) **local headless on swarm at bd19c8a2**
-- Minerva headless boot with my code present: no SCRIPT ERROR (local check)
-- All plugin CI workflows green on `dcr/plugins-fcib-ci` at a03e4f1
-- 6 GitHub Releases on imrans-lab/minerva-plugins resolve (HEAD 200)
-
----
-
-## 5. OPEN FOLLOW-UPS (work_items already filed)
-
-| ID | Title | Status |
-|---|---|---|
-| `019e6358cf7a` | Extract pack+upload composite action | backlog |
-| `019e634eae3f` | cad Windows port (worker.go syscall split) | **done in-cycle** |
-
-Plus 3 deferred scansort follow-ups (`019e565b5b85`-style) from earlier DCRs.
-
----
-
-## 6. AFTER MINERVA-WON'T-RUN IS FIXED
-
-1. Verify the Browse Marketplace button appears in Plugin Manager
-2. Open marketplace, see 3 plugins listed with platform availability
-3. Install scansort from marketplace
-4. Verify it appears in installed list + Plugin's panel works
-5. THIS IS THE END-TO-END HITL — succeeding here means DCR 3 is shippable
-
-After HITL passes, eventual promotion is `swarm → development → main`
-per the Minerva release strategy (the user is NOT ready to merge to
-main yet — keep on swarm).
-
----
-
-## 7. HARD RULES (unchanged)
-
-- Per-file `git add` only — never `-A` or `.`. No `--no-verify`.
-- No `vendor/` touches.
-- No force-push, no `git reset --hard`, no push without an explicit user ask.
+- Per-file `git add` only — never `-A` or `.`.
+- No `--no-verify`.
+- No `vendor/` touches (vendor/godot_cef, vendor/godot_wry submodules
+  are off-limits).
+- No force-push, no `git reset --hard`, no push without explicit user
+  consent — **EXCEPTION**: during this autonomous loop, you have
+  pre-authorized consent to push commits to `development` as part of
+  the iteration cycle. Do NOT push to `main`.
 - Never `cp` over a mapped binary — use `install -m 755` (atomic).
 - pkill target is `godot`, not `Minerva`.
-- Co-author trailer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
-- Use MCP for state probes, not filesystem reads.
+- Co-author trailer on every commit:
+  `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
+- Use MCP for state probes when possible, not filesystem reads.
+  EXCEPTION: filesystem reads of `/home/imran/github/` and `/tmp/`
+  are fine. Reads of `~/.local/share/godot/app_userdata/` would
+  reveal the user's HITL state — generally avoid. The user has
+  closed Minerva so the user-data dir is at-rest anyway.
 
 ---
 
-## 8. KEY MEMORY LANDMARKS
+## 7. PER-ITERATION CHECKLIST
 
-- `MEMORY.md` index entries to read:
-  - `project_active_marketplace_dcr3.md` — DCR 3 active state (see below)
-  - `project_plugins_already_fcib_clean.md` — FCIB audit correction
-- Durable hints saved during this work:
-  - `019e63a3bcf4` — minerva-plugin-platform/canonical-install-is-pluginmanager-not-plugindb
-  - `019e634e4a96` — go-cross-platform-plugins/syscall-kill-and-setpgid-are-unix-only
-- Session nudges (promote any that recur):
-  - `docket-mcp/no-unlink-tool`
-  - `github-actions/billing-lock-symptom`
-  - `github-actions/matrix-not-in-job-level-if`
-  - `mcp-spec/server-identity-field-variants`
-  - `scansort-process-pipeline/handle-process-run-offset-zero-bug` (older)
+Each iteration must:
+1. State at start of iteration: "Iteration N of 6 — goal: <one
+   sentence>"
+2. Pre-flight: verify branch == `development`, working tree clean
+   (except `Docs/minerva.dct` and `vendor/*` submodule pointers
+   which are user state, leave alone)
+3. Make minimal code change
+4. Headless verify locally if possible (`scripts/run-functional-tests.sh`)
+5. Per-file `git add` only
+6. Commit with co-author trailer + concise message naming the
+   iteration N
+7. Push to `development`
+8. Schedule wakeup OR poll the CI run
+9. Read results — update this pickup.md with a one-line
+   "Iteration N: <outcome>"
+10. Decide: continue / stop on success / stop on budget
+
+---
+
+## 8. ITERATION LOG
+
+(Each iteration appends a one-line summary here.)
+
+| # | Date | Commit | Outcome |
+|---|------|--------|---------|
+| 0 | 2026-05-27 | 589f6ee4 | Starting state. PluginManagerPanel lifecycle UX shipped; scansort install OK but start fails ERR_CANT_CONNECT. |
+
+---
+
+## 9. KEY MEMORY LANDMARKS
+
+- `MEMORY.md` — first Active Work entry now points to DCR3 on
+  `development` HEAD `c50fc1b3` (slightly behind real HEAD; OK)
+- `project_active_marketplace_dcr3.md` — updated 2026-05-26 with
+  full commit chain
+- Nudge hints in `nudge` (component `github-actions`,
+  `minerva-ui`, `git`, `mcp-spec`) from this session — read via
+  `nudge_query` if scoping suggests they're relevant
+- `feedback_test_at_integration_boundary.md` — Phase 1B 330 unit
+  tests missed 6 wiring bugs; this whole loop is repaying that
+  debt for the marketplace install path. Keep this principle in
+  mind when designing Layer A — boot real Singleton, real broker,
+  real subprocess.
+
+---
+
+## 10. WHEN THE LOOP TERMINATES
+
+On success (both A and B green):
+1. Update this file's STATE header to `MARKETPLACE END-TO-END GREEN`
+2. Transition memory `project_active_marketplace_dcr3.md` status to
+   `shipped`
+3. Report to user: which iterations were used, what was the root
+   cause, what tests now exist
+4. Suggest the next user-driven step (HITL re-test, then promote
+   `development → main` once user is satisfied)
+
+On budget exhaustion (6 iter / 4h / judgment):
+1. Update this file's STATE header to `AWAITING HITL — <reason>`
+2. Write a `Docs/pickup-loop-stopped-<date>.md` with the iteration
+   log + the specific decision that needs human input
+3. Schedule the user-asking prompt
