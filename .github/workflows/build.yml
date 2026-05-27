@@ -299,6 +299,48 @@ jobs:
     - name: Run functional suite (hermetic F1-F6)
       run: scripts/run-functional-tests.sh
 
+  # ── Tarball end-to-end smoke (Layer B for DCR3) ──────────────────────────
+  # Drives the released Linux tarball through the production marketplace flow:
+  # install scansort via MCP, start it, assert RUNNING. Catches regressions
+  # like the 2026-05-26 user://-vs-OS-absolute data_directory bug that escaped
+  # the unit/headless tests because side-load and marketplace install set
+  # data_directory differently — only marketplace exercises the user:// path.
+  #
+  # Runs after build-godot publishes Minerva-Linux-Build (NOT create-release):
+  # smoke fires on every push, not just push events that create releases.
+  tarball-smoke:
+    needs: build-godot
+    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/tarball-smoke.sh
+
+      - name: Download Linux build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Minerva-Linux-Build
+          path: downloads/Minerva-Linux-Build
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0
+
+      - name: Restore executable bits (mirror create-release)
+        run: |
+          chmod +x downloads/Minerva-Linux-Build/Minerva.x86_64 \
+                   downloads/Minerva-Linux-Build/gdcef_helper \
+                   downloads/Minerva-Linux-Build/chrome-sandbox 2>/dev/null || true
+          ls -la downloads/Minerva-Linux-Build/Minerva.x86_64
+
+      - name: Run tarball smoke
+        run: |
+          chmod +x scripts/tarball-smoke.sh
+          scripts/tarball-smoke.sh downloads/Minerva-Linux-Build
+
   build-macos:
     needs: check-gdextension
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')

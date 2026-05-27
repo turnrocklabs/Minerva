@@ -33,6 +33,7 @@ func get_tool_definitions() -> Array:
 	return [
 		_get_plugin_list_tool_def(),
 		_get_plugin_install_tool_def(),
+		_get_plugin_marketplace_install_tool_def(),
 		_get_plugin_remove_tool_def(),
 		_get_plugin_start_tool_def(),
 		_get_plugin_stop_tool_def(),
@@ -54,6 +55,8 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return _handle_plugin_list(args)
 		"minerva_plugin_install":
 			return await _handle_plugin_install(args)
+		"minerva_plugin_marketplace_install":
+			return await _handle_plugin_marketplace_install(args)
 		"minerva_plugin_remove":
 			return await _handle_plugin_remove(args)
 		"minerva_plugin_start":
@@ -109,6 +112,23 @@ func _get_plugin_install_tool_def() -> Dictionary:
 				}
 			},
 			"required": ["manifest_path"]
+		}
+	}
+
+
+func _get_plugin_marketplace_install_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_marketplace_install",
+		"description": "Install a plugin from a marketplace tarball URL. Downloads the .tar.gz, verifies SHA256SUMS, extracts to user://plugins/<id>/, then registers via PluginManager (capability grants + skill seeding run, same as side-load). Returns {ok, plugin_id, manifest_path} on success.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"url": {
+					"type": "string",
+					"description": "HTTPS URL of the plugin tarball (.tar.gz). The archive must contain manifest.json, the platform binary, and SHA256SUMS."
+				}
+			},
+			"required": ["url"]
 		}
 	}
 
@@ -296,6 +316,29 @@ func _handle_plugin_install(args: Dictionary) -> Dictionary:
 	# input before returning.
 	var auto_confirm := bool(args.get("auto_confirm_skills", false))
 	var result = await plugin_manager.install_plugin(manifest_path, auto_confirm)
+	return result
+
+
+func _handle_plugin_marketplace_install(args: Dictionary) -> Dictionary:
+	var url = args.get("url", "")
+	if not (url is String) or (url as String).is_empty():
+		return {"error": "url is required and must be a non-empty String"}
+
+	var plugin_manager = _get_plugin_manager()
+	if plugin_manager == null:
+		return {"error": "Plugin manager not available"}
+
+	# MarketplaceClient is a Node — instantiated, added to the tree, used,
+	# and freed in one shot. Matches the call pattern in
+	# MarketplaceBrowseDialog._on_install_pressed.
+	var MarketplaceClientCls = load("res://Scripts/Services/Plugins/MarketplaceClient.gd")
+	var mc = MarketplaceClientCls.new()
+	var tree = Engine.get_main_loop()
+	if tree != null and tree.root != null:
+		tree.root.add_child(mc)
+	var result: Dictionary = await mc.install_from_url(url, plugin_manager)
+	if mc.is_inside_tree():
+		mc.queue_free()
 	return result
 
 
