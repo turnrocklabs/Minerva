@@ -495,9 +495,12 @@ func start_plugin(id: String) -> Dictionary:
 	# SubProcess doesn't support chdir, so resolve relative script paths to
 	# absolute paths based on the plugin's data_directory.
 	var command: String = def.entrypoint
-	var plugin_dir: String = def.data_directory
-	if plugin_dir.begins_with("res://"):
-		plugin_dir = ProjectSettings.globalize_path(plugin_dir)
+	# Always globalize: marketplace-installed plugins have data_directory =
+	# "user://plugins/<id>" and side-loaded plugins have an OS-absolute path.
+	# SubProcess (fork+exec) needs a real filesystem path either way; an
+	# unresolved user:// or res:// scheme passed to OS.execute fails with
+	# ERR_CANT_CONNECT even though FileAccess.file_exists() understands it.
+	var plugin_dir: String = ProjectSettings.globalize_path(def.data_directory)
 
 	# Resolve relative entrypoint (e.g., "./obs_controller") to absolute path.
 	# This is needed for Go binaries and other executables without file extensions,

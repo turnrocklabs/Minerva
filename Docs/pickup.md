@@ -261,6 +261,7 @@ Each iteration must:
 | # | Date | Commit | Outcome |
 |---|------|--------|---------|
 | 0 | 2026-05-27 | 589f6ee4 | Starting state. PluginManagerPanel lifecycle UX shipped; scansort install OK but start fails ERR_CANT_CONNECT. |
+| 1 | 2026-05-27 | (this commit) | **Layer A GREEN.** New `test_marketplace_install_start_scansort.gd` reproduced the bug, fix identified + applied. Root cause: PluginManager.gd:498 only globalized `data_directory` when prefix=`res://`, leaving `user://plugins/<id>` virtual-path strings to be passed to SubProcess (fork+exec) — `FileAccess.file_exists` understood the scheme, kernel did not. Fix: unconditional `ProjectSettings.globalize_path()`. Functional suite 7/0 (`--all`), Layer A passes install+start+stop in <5s. Next iteration: Layer B (xvfb tarball roundtrip in CI). |
 
 ---
 
