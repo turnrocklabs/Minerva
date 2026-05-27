@@ -101,17 +101,29 @@ mcp_call() {
 }
 
 # Boot Minerva ---------------------------------------------------------------
-# Strategy: --headless eliminates window/display dependency entirely. The
-# existing "Smoke-launch Linux build" step in build.yml runs --headless and
-# reaches autoload init, which is exactly what we need: SingletonObject's
-# initialize_mcp() opens :9315 unconditionally regardless of CEF state.
-# xvfb-run was a guess that turned out unnecessary (and was making startup
-# fragile in CI — iteration 2 hung at boot under it).
+# Strategy (iter-4 — both --headless AND xvfb-run):
+#   --headless tells Godot's DisplayServer not to create a window. That alone
+#   would seem to suffice, but Minerva ships the godot-cef GDExtension which
+#   spawns gdcef_helper CEF subprocesses at startup. Those CHILDREN require a
+#   real X display to init ANGLE/EGL — without one they hang ~15s waiting on
+#   handshakes that never complete, which blocks SingletonObject's _ready
+#   chain *before* it reaches start_http_server(9315). (Confirmed by iter-3
+#   minerva.log artifact: "ANGLE Display::initialize error 12289: Could not
+#   open the default X display" → "Terminating after 15 seconds with no
+#   connection" → log dies before MCP HTTP comes up.)
+# xvfb-run supplies a virtual X server so CEF children's handshakes succeed.
+# Iter-2 had xvfb but no --headless (window creation hung); iter-3 had
+# --headless but no xvfb (CEF stalled). Iter-4 ships both.
 boot_minerva() {
     [[ -x "${MINERVA_DIR}/Minerva.x86_64" ]] || fail "Minerva.x86_64 not executable in ${MINERVA_DIR}"
 
-    echo "Starting Minerva --headless (log: ${MINERVA_LOG})"
-    "${MINERVA_DIR}/Minerva.x86_64" --headless \
+    if ! command -v xvfb-run >/dev/null 2>&1; then
+        fail "xvfb-run not installed — apt install xvfb"
+    fi
+
+    echo "Starting Minerva under xvfb-run + --headless (log: ${MINERVA_LOG})"
+    xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
+        "${MINERVA_DIR}/Minerva.x86_64" --headless \
         >"${MINERVA_LOG}" 2>&1 &
     MINERVA_PID=$!
     echo "Minerva PID: ${MINERVA_PID}"

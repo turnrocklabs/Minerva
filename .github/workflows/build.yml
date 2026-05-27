@@ -328,9 +328,11 @@ jobs:
         run: |
           sudo apt-get update
           # Runtime libs that Minerva.x86_64 dlopens via GDExtensions: GTK +
-          # WebKit (godot_wry) and Chromium-base (CEF). --headless avoids
-          # needing an X11 display, but the .so's must still be present.
-          sudo apt-get install -y libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
+          # WebKit (godot_wry) and Chromium-base (CEF). xvfb provides a
+          # virtual X display so godot-cef's gdcef_helper child processes
+          # can complete their ANGLE/EGL handshake (--headless alone isn't
+          # enough — see scripts/tarball-smoke.sh comments).
+          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
 
       - name: Restore executable bits (mirror create-release)
         run: |
