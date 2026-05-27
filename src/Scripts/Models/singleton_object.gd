@@ -445,7 +445,20 @@ func initialize_mcp() -> void:
 	else:
 		push_warning("[MCP] Failed to start HTTP server: %s" % error_string(err))
 
-	# Auto-start and connect external MCP servers
+	# Initialize plugin system as soon as Minerva's own MCP is up. Plugins are
+	# in-process Godot code; they do NOT depend on external MCP servers
+	# (nudge/cobrowser/codetools) being available. Doing this BEFORE the
+	# external-server auto-connect await keeps plugins available even when
+	# those servers can't reach their binaries (CI, fresh installs).
+	initialize_plugins()
+
+	# Wire plugin tools into MinervaMCPServer.
+	if mcp_manager and mcp_manager.minerva_server and plugin_tool_registry:
+		_wire_plugin_tools_to_mcp()
+
+	# Auto-start and connect external MCP servers (best-effort, non-blocking
+	# for the plugin path above — if these hang/time out we still have a
+	# working plugin marketplace + start_plugin etc.)
 	var auto_servers = mcp_manager.config.get_auto_connect_servers()
 	if not auto_servers.is_empty():
 		var runner := preload("res://Scripts/Services/MCP/MCPServerRunner.gd").new()
@@ -463,13 +476,6 @@ func initialize_mcp() -> void:
 		await get_tree().create_timer(2.0).timeout
 		# Now connect to all auto-connect servers
 		await mcp_manager.initialize()
-
-	# Initialize plugin system after MCP is ready
-	initialize_plugins()
-
-	# Wire plugin tools into MinervaMCPServer
-	if mcp_manager and mcp_manager.minerva_server and plugin_tool_registry:
-		_wire_plugin_tools_to_mcp()
 
 ## Get the MCP manager instance (lazy initialization).
 ##
