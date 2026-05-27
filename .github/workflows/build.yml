@@ -19,8 +19,10 @@ on:
         default: true
         type: boolean
   push:
-    paths:
-      - "src/**"
+    # development is the active integration branch; every push builds.
+    # No `paths:` filter — workflow edits, build scripts, and the docket all
+    # warrant a full validation, and "did this break the build?" should be a
+    # signal we get on every commit, not a per-commit decision.
     branches:
       - development
 
@@ -737,7 +739,10 @@ jobs:
 
   create-release:
     needs: [build-godot]
-    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true') || github.event_name == 'push'
+    # Releases only on explicit workflow_dispatch with create_release=true,
+    # NOT on every development push — otherwise the Releases page floods
+    # with auto-build-<timestamp> tags during active dev.
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
