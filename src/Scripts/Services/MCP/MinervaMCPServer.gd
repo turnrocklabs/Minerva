@@ -210,7 +210,9 @@ func unregister_tools() -> void:
 
 ## Connect (enable) the minerva server
 func connect_server() -> void:
+	print("[MCP-DEBUG] MinervaMCPServer.connect_server entered; enabled=%s" % server_enabled)
 	if server_enabled:
+		print("[MCP-DEBUG] connect_server short-circuit (already enabled)")
 		return
 
 	register_tools()
@@ -218,7 +220,11 @@ func connect_server() -> void:
 
 	# Connect completion routing for sub-agent workers
 	if _agent_module:
+		print("[MCP-DEBUG] calling _agent_module.connect_signals")
 		_agent_module.connect_signals()
+		print("[MCP-DEBUG] _agent_module.connect_signals returned")
+	else:
+		print("[MCP-DEBUG] _agent_module is null, skipping connect_signals")
 
 	print("[MinervaMCPServer] Connected")
 

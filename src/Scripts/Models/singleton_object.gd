@@ -428,18 +428,26 @@ func initialize_mcp() -> void:
 	# Minerva running with MCP totally disabled. Now each step is conditional
 	# and idempotent. (DCR3 marketplace loop iter-6 — the bug that made the
 	# CI smoke fail despite local success.)
+	print("[MCP-DEBUG] initialize_mcp entered; mcp_manager existed=%s" % (mcp_manager != null))
 	if not mcp_manager:
+		print("[MCP-DEBUG] creating MCPManagerScript")
 		mcp_manager = MCPManagerScript.new()
+		print("[MCP-DEBUG] add_child(mcp_manager) about to call")
 		add_child(mcp_manager)
+		print("[MCP-DEBUG] add_child returned")
 
 	# Auto-connect internal Minerva MCP server (always — it's in-process).
 	# connect_minerva_server -> MinervaMCPServer.connect_server is itself
 	# idempotent (server_enabled guard) so re-calling is safe.
+	print("[MCP-DEBUG] about to call connect_minerva_server")
 	mcp_manager.connect_minerva_server()
+	print("[MCP-DEBUG] connect_minerva_server returned")
 
 	# Always start the HTTP server (Minerva's own MCP server for external clients).
 	# The Stop menu action stops it for the current session; next launch starts it again.
+	print("[MCP-DEBUG] about to call start_http_server port=%d" % mcp_http_server_port)
 	var err = mcp_manager.start_http_server(mcp_http_server_port)
+	print("[MCP-DEBUG] start_http_server returned err=%d" % err)
 	if err == OK:
 		print("[MCP] HTTP server started on port %d" % mcp_http_server_port)
 	else:
