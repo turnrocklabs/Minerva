@@ -52,7 +52,8 @@ Branch: `dcr/cad-embedded-python-test` (off `development`, base `f653adf3`).
 
 Commits on the branch:
 - `f6426348` — docket: file DCR 019e6a4bcb0c cad-plugin embedded PBS python runtime
-- (a second commit will be added below with the test file + this pickup before push)
+- `7c9b8652` — W2 RED functional test (in-progress, handoff) + pickup + run-functional-tests entry
+- `<this commit>` — pickup: fill in the prior commit SHA (doc nit)
 
 ### plugins (imrans-lab/minerva-plugins via remote `lab`)
 
