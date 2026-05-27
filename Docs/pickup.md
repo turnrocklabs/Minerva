@@ -1,309 +1,166 @@
 # Pickup
 
-STATE: `MARKETPLACE END-TO-END GREEN` ✅
+STATE: `HITL FOLLOW-ON — cad python worker spawn fails`
 
-Last updated 2026-05-27 09:24 UTC — autonomous loop terminated SUCCESS after 10 iterations.
-
-You are resuming inside an autonomous loop. The user is offline. Your
-budget is bounded — read sections 0–2 fully before any action.
+Last updated 2026-05-27 — written immediately before /compact to preserve
+session state. User is online and active.
 
 ---
 
-## 0. THE GOAL
+## 0. WHAT JUST SHIPPED (don't redo any of this)
 
-The downloaded `Minerva-Linux.tar.gz` release artifact (from a
-development-branch push to `turnrocklabs/Minerva`) must install scansort
-from the marketplace and **successfully start it** — plugin state ==
-`RUNNING`, MCP probe round-trip works.
+### Minerva (turnrocklabs/Minerva, branch `development`)
 
-Right now the **install succeeds** but `start_plugin` fails with
-`ERR_CANT_CONNECT` ("Subprocess failed to start: Can't connect").
-That's the bug to find and fix.
+Autonomous loop 1-10 + handoff commit landed; full chain green:
 
-Critical asymmetry: scansort worked when side-loaded from the editor
-(per memory `project_active_scansort_*`). So the bug is **specific to
-the marketplace install path**, not to scansort or to start_plugin in
-general.
+- `0c168ad6` — PluginManager.start_plugin: unconditional `ProjectSettings.globalize_path(def.data_directory)` (fix ERR_CANT_CONNECT for marketplace installs).
+- `bdbdf19e` — initialize_mcp() idempotent (no longer early-returns on existing mcp_manager).
+- `0d977156` — SingletonObject._ready no longer bails on missing `user://config_file.cfg` (latent fresh-install bug).
+- `b2b8728c` — initialize_plugins() runs BEFORE `await mcp_manager.initialize()` (so plugin_mcp_tools wires up even when external MCP server binaries are absent).
+- `66a018ec` — pickup updated to GREEN.
 
----
+NEW Minerva MCP tool exposed: `minerva_plugin_marketplace_install` (URL → MarketplaceClient.install_from_url → PluginManager).
 
-## 1. STOP CONDITIONS (loop ends on any)
+CI green on every dev push:
+- Layer A: `src/test/test_marketplace_install_start_scansort.gd` in functional-tests.
+- Layer B: `tarball-smoke` job in `.github/workflows/build.yml` runs `scripts/tarball-smoke.sh` against the just-built tarball under xvfb + --headless, drives MCP HTTP :9315 install→start→state=RUNNING.
 
-Loop terminates and reports to the user when ANY of these fires:
+Latest release with the chain: `auto-build-20260527-092547` on turnrocklabs/Minerva. Each subsequent push to `development` creates a new auto-build release containing the same fixes.
 
-### Success
-- **A green**: Layer-A test (headless install+start+probe) passes
-  cleanly
-- **B green**: Layer-B test (tarball roundtrip — xvfb-run the released
-  `.tar.gz`, drive over HTTP MCP) passes
+### Plugins (imrans-lab/minerva-plugins, branch `main`)
 
-When BOTH A and B are green, exit loop with success report. The user
-can then re-do HITL with confidence.
+After Minerva green, HITL surfaced: "Whitelisted script not found: 'user://plugins/scansort/ui/ScansortPanel.gd'". Cause: release tarballs only shipped manifest+binary+SHA256SUMS, no `ui/`. Fixed in:
 
-### Budget
-- **Iteration cap**: 6 autonomous CI cycles. Each push to `development`
-  that triggers a Build Project run counts as 1 iteration. Track in
-  pickup.md edits per iteration.
-- **Wall-clock cap**: 4 hours from loop start.
-- **Stuck-on-judgment**: any architectural question worth the user's
-  input. Examples that MUST pause:
-  - "Should `_chmod_executable` move from MarketplaceClient into
-    PluginDB.install?"
-  - "Should we change the data_directory semantics?"
-  - "Should marketplace tarballs include a `.permissions` manifest?"
-  - Anything that touches more than one component or changes a
-    cross-plugin contract.
+- `3d56b02` — all 3 pack workflows now `cp -r ui $PACKDIR/` and compute SHA256SUMS over every shipped file with `find . -type f ! -name SHA256SUMS | xargs sha256sum | sed 's| \./| |'` (preserves the `<hex>  <relpath>` two-space format Minerva's MarketplaceClient._verify_sha256sums parses).
+- `cf25d61` — regenerated `registry.json` via `scripts/regen_registry.py` so it points at the NEW tags (`scansort-v0.0.1`, `presentation-v0.0.1`, `cad-v0.1.0`). Confirmed via API: registry now resolves to these versions. raw.githubusercontent.com CDN may take ~5 min to refresh.
 
-Trivial fixes (typos, single-file edits within MarketplaceClient/
-PluginManager that match an existing pattern, test additions) do NOT
-pause.
-
-Whichever cap fires first, write findings to a new
-`Docs/pickup-loop-N.md`, transition this pickup back to
-"AWAITING HITL", and report.
+Verified iteration 11 (HITL): user installed CAD from marketplace, panel UI loads, no more "Whitelisted script not found".
 
 ---
 
-## 2. ORDER DISCIPLINE — A BEFORE B
+## 1. THE OPEN BUG (where to resume)
 
-**Do Layer A first.** It's the diagnostic loop and the highest-value
-addition either way.
+User did HITL on CAD plugin from marketplace install. UI shows; clicking evaluate produces:
 
-### Layer A — Headless install+start+probe test
+> CAD evaluation failed: tool error: bridge.Worker.Start: exec: fork/exec /usr/bin/python3: no such file or directory
 
-Extend `src/test/test_marketplace_install_from_url.gd` (or add a new
-sibling test) so the test also calls `plugin_manager.start_plugin()`
-and `plugin_manager.stop_plugin()` after install, and asserts:
-- install returned ok
-- state == S_RUNNING after start
-- `host.echo` probe round-trip works (proves MCP handshake completes)
-- state == S_STOPPED after stop, no errors
+Even though `/usr/bin/python3` DOES exist on the user's host (confirmed via shell: `ls /usr/bin/python3` returned the file, also at `/home/imran/anaconda3/bin/python3`).
 
-Run via `scripts/run-functional-tests.sh` and `functional-tests` CI job
-on every dev push. The test should REPRODUCE the current
-`ERR_CANT_CONNECT` failure when run against the live scansort tarball.
+### Why the error message is misleading
 
-Note: a scansort tarball needs to be reachable. The simplest fixture
-path is to download the live scansort tarball from
-`https://github.com/imrans-lab/minerva-plugins/releases/download/scansort-v0.0.0-pre/scansort-0.0.1-linux-x86_64.tar.gz`
-at test setup time and serve it from a localhost http.server (same
-pattern the existing test uses). Don't hardcode the binary content
-into the test.
+The error format `exec: fork/exec <path>: no such file or directory` is a Go runtime error from `os/exec` (the cad-plugin is Go). "no such file or directory" can mean any of:
+1. The path itself doesn't exist (NOT the case here — `/usr/bin/python3` exists).
+2. The path exists but is a symlink whose target is missing.
+3. The path is correct but the interpreter listed in its shebang doesn't exist.
+4. ENOENT from a missing **shared library** the binary needs.
+5. The path is a script with `#!/usr/bin/env something-missing` shebang.
+6. The Python interpreter itself fails on import (depending on how the bridge spawn-and-test interprets failure).
 
-When Layer A is RED with the current failure → diagnose → fix → push.
-When Layer A is GREEN → proceed to Layer B.
+So "the binary is missing" is almost certainly NOT the actual story. Likeliest: cad-plugin spawns `python3 -m mcad_worker`, the mcad_worker module imports build123d/OCCT, and an .so under it is missing — Go reports that as ENOENT on the python path itself (kernel returns ENOENT from execve when a dynamic loader fails). OR `mcad_worker` package isn't installed in the resolved python's site-packages.
 
-### Layer B — Tarball roundtrip
+### Where the python path comes from (in the cad plugin)
 
-Add a new CI job (or workflow) that:
-1. Resolves the latest `auto-build-*` release tag from
-   `turnrocklabs/Minerva/releases/latest`
-2. Downloads `Minerva-Linux.tar.gz`
-3. Extracts to a tmp dir
-4. `xvfb-run -a ./Minerva.x86_64 &` (background, with timeout)
-5. Polls `http://127.0.0.1:9315/` until Minerva's MCP HTTP responds
-6. Sends MCP tool calls to:
-   - Install scansort via the marketplace flow
-   - Start scansort
-   - Read plugin status — assert RUNNING
-   - Send `minerva_scansort_probe` — assert ok
-7. Cleanup, kill the background process, report
+- `~/github/plugins/cad/main.go` line ~170 calls `runtime.PythonPath(workerDir)`.
+- `~/github/plugins/cad/internal/bridge/worker.go` line 156 calls `exec.CommandContext(ctx, w.pythonPath, "-m", "mcad_worker")`.
+- `runtime.PythonPath` is in `~/github/plugins/cad/internal/runtime/` (didn't read yet — investigate first).
+- main.go's WARNING text says: "mcad_validate will fail until python3 is on PATH or .venv exists" — so the logic is: PATH lookup first, then `<workerDir>/.venv` (probably).
 
-Known risks for B:
-- CEF init in headless / virtual display — may need `--disable-gpu`
-  or other flags. Check what flags are accepted.
-- Auth on MCP HTTP — may need a token. Check first.
-- `xvfb-run` is usually preinstalled on `ubuntu-latest`, confirm.
-- Test job needs `needs: create-release` so the release exists.
+The marketplace tarball **does not include `worker/`** — it only ships `cad-plugin` binary + `manifest.json` + (now) `ui/`. So even though `~/github/plugins/cad/worker/` exists with the mcad_worker Python package and its venv requirements, none of that is in the install dir at `user://plugins/cad/`.
 
-### Existing test (Layer A predecessor)
+### The user's flag (READ THIS BEFORE TOUCHING)
 
-`src/test/test_marketplace_install_from_url.gd` exists with 3 tests
-(happy path / 404 / sha mismatch). It stops at install — never starts
-the plugin. Extending it is the natural place for Layer A.
+Quote: *"Minerva does have a way to reference python, but I'm unsure if it's OS agnostic, available in the plugin substrate, or handles virtual envs correctly."*
 
----
+Translation: there's an existing Python-resolution facility somewhere in Minerva. We should NOT just hardcode a different path in the cad plugin. We should:
 
-## 3. KNOWN BUG STATE
+1. **Discover what that facility is.** Grep candidates: `python_path`, `python_interpreter`, `python_env`, `PythonResolver`, `venv`, references to `OS.execute("python3"...)` or `OS.create_process("python3"...)`. Search both Minerva src/ and the Code Generation / Autocoder / Cell paths since those likely run Python locally.
 
-### Symptom
-After marketplace-installing scansort, clicking Reload (or Start) in
-PluginManagerPanel shows ErrorDisplay popup: "Subprocess failed to
-start: Can't connect". Source: `PluginManager.gd:566` →
-`error_string(ERR_CANT_CONNECT)`.
+2. **Understand its OS-portability.** Minerva ships on Linux/macOS/Windows. Whatever the facility is must (or must not) work cross-platform — we need to know which.
 
-### What we know
-- Binary `/tmp/scansort-inspect/scansort-plugin` from the tarball
-  runs fine standalone — exits 0, prints "scansort 0.0.1 starting".
-- Tarball preserves `+x` (verified: `tar -tzvf` shows
-  `-rwxr-xr-x`).
-- `MarketplaceClient._chmod_executable()` at line 365 SHOULD chmod
-  the entrypoint after install. May be silently failing — unverified.
-- The install validation now passes thanks to `host.notify` cap
-  added in commit `6fca1bb4`.
-- The same scansort plugin works when side-loaded from the editor
-  (memory `project_active_scansort_*`).
+3. **Understand the venv story.** The cad plugin's mcad_worker needs build123d + OCCT — those need a venv. The user is unsure if Minerva's facility "handles virtual envs correctly".
 
-### Hypotheses ranked
-1. **Working directory mismatch** — SubProcess might inherit a cwd
-   that breaks the binary's data-directory expectations
-2. **Path resolution** — `data_directory` from manifest path may not
-   be globalized correctly in the user:// case
-3. **chmod silently failed** — `OS.execute("chmod"...)` may be a
-   no-op on Linux in some path
-4. **SubProcess can't read the binary** — perms restored on extract
-   but lost on `DirAccess.rename_absolute`
-5. **MCP stdio handshake timeout** — the binary spawns but doesn't
-   respond to initialize within timeout
+4. **Decide the routing.** Options to consider (do NOT pick before user input):
+   - A) Expose Minerva's python-resolver via a new host capability (e.g. `host.runtime.python_path`) so plugins ask Minerva for the resolved interpreter.
+   - B) Include the worker/ Python sources in the cad release tarball, and have the plugin auto-create a venv at first start (cost: 50-150 MB tarball, network at first start).
+   - C) Bundle a pinned wheels archive in the tarball and pip-install offline at first start.
+   - D) Add a manifest-declared `python_runtime_required: {packages: [...]}` and Minerva spins up the venv before start_plugin completes.
 
-### First diagnostic step on resume
+5. **Don't fix the symptom in cad alone.** If we hardcode `/usr/bin/python3` (or `python3` via PATH) in cad, every other future Python-needing plugin re-discovers this. Architectural fix > one-plugin patch.
 
-Run Layer A test against scansort to REPRODUCE the failure in a
-headless context with full debug output. The PluginManager
-`push_error` lines + MCPServerConnection debug logs will surface the
-actual failure mode. Don't fix anything until you have that signal.
+### What I had already started
+
+When the token-budget pause hit, I had just read:
+- `internal/bridge/worker.go:88-90` — `func New(pythonPath, workerDir string) *Worker { pythonPath: pythonPath, ... }`
+- `internal/bridge/worker.go:156` — `cmd := exec.CommandContext(ctx, w.pythonPath, "-m", "mcad_worker")`
+- `main.go:170-178` — calls `runtime.PythonPath(workerDir)`, push_warning on failure, still spawns Worker with empty path so Call returns clean error.
+
+Files NOT yet read:
+- `~/github/plugins/cad/internal/runtime/*.go` (the PythonPath logic itself)
+- Minerva's python-resolver (location unknown — grep before assuming)
+
+### Useful repro: do NOT install python3 to "fix" it
+
+The user has python3 on their machine; the error is something subtler. Resist the urge to suggest `sudo apt install python3`. Investigate first.
 
 ---
 
-## 4. WHERE EVERYTHING LIVES
+## 2. RESUMING AFTER /compact
 
-```
-~/github/Minerva/                                  (you are here)
-  branch: development
-  remote: origin → https://github.com/turnrocklabs/Minerva
-  HEAD: 589f6ee4
-  Recent:
-    589f6ee4 PluginManagerPanel: surface lifecycle errors via ErrorDisplay/toast
-    b1aca740 CI: re-enable auto-release on every development push
-    c50fc1b3 CI: every development push builds; releases gated to workflow_dispatch
-    6fca1bb4 Add host.notify capability — plugin → toast bridge
-    653d5c8e DCR3: marketplace dialog — reuse existing ErrorDisplay/toast surfaces
-```
-
-Every push to `development` triggers Build Project. Every successful
-build creates an `auto-build-<timestamp>` release with the Linux/Mac/
-Windows tarballs.
-
-Plugins repo: `imrans-lab/minerva-plugins` main branch.
-- `registry.json` — manifest of manifests
-- scansort release: `scansort-v0.0.0-pre` tag, tarball
-  `scansort-0.0.1-linux-x86_64.tar.gz`
+1. Read the rest of this file.
+2. Read `MEMORY.md` (auto-loaded) — particularly the latest `feedback_mcp_drives_all_minerva_tasks` (the user's stated north star: LLMs do everything via MCP, so any Python-runtime facility should probably be exposed via MCP/host-capability too).
+3. Grep Minerva's src/ for python-resolver patterns:
+   ```bash
+   grep -rnE "python_path|python_interpreter|PythonResolver|venv|python3|python_env" /home/imran/github/Minerva/src --include="*.gd" | head -40
+   grep -rnE "OS\.execute.*python|OS\.create_process.*python" /home/imran/github/Minerva/src --include="*.gd" | head -10
+   ```
+4. Read `~/github/plugins/cad/internal/runtime/` (PythonPath logic).
+5. Reproduce by running the released Minerva from `/home/imran/Downloads/...` (or via the CAD-equivalent of the marketplace install path) and trying CAD evaluate. Capture the worker stderr.
+6. **PAUSE for the user before committing any cross-cutting design** — see section 1.4 options above.
 
 ---
 
-## 5. FILES TO TOUCH (likely)
+## 3. HARD RULES (UNCHANGED)
 
-For Layer A:
-- `src/test/test_marketplace_install_from_url.gd` (extend or add
-  sibling)
-- `scripts/run-functional-tests.sh` (may need to register the test if
-  it's a new file)
-- Possibly `src/Scripts/Services/Plugins/MarketplaceClient.gd` (if
-  diagnosis points here)
-- Possibly `src/Scripts/Services/Plugins/PluginManager.gd` (if
-  diagnosis points to start_plugin)
-
-For Layer B:
-- `.github/workflows/build.yml` — new job `tarball-smoke` that runs
-  after `create-release`
-- May need a new script `scripts/tarball-smoke.sh` if the inline
-  shell gets too gnarly
+- Per-file `git add` only. No `-A`/`.`.
+- No `--no-verify`. No `vendor/` touches.
+- No force-push, no `git reset --hard`.
+- Co-author trailer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
+- Plugins repo `imrans-lab/minerva-plugins`: user has previously authorized direct main pushes during the marketplace push; reconfirm before any new direct push.
+- Minerva `development` branch: pre-authorized for autonomous-loop pushes during prior loops; this is a NEW investigation, ask before pushing.
 
 ---
 
-## 6. HARD RULES (UNCHANGED — DO NOT VIOLATE)
+## 4. NUDGE HINTS WORTH READING
 
-- Per-file `git add` only — never `-A` or `.`.
-- No `--no-verify`.
-- No `vendor/` touches (vendor/godot_cef, vendor/godot_wry submodules
-  are off-limits).
-- No force-push, no `git reset --hard`, no push without explicit user
-  consent — **EXCEPTION**: during this autonomous loop, you have
-  pre-authorized consent to push commits to `development` as part of
-  the iteration cycle. Do NOT push to `main`.
-- Never `cp` over a mapped binary — use `install -m 755` (atomic).
-- pkill target is `godot`, not `Minerva`.
-- Co-author trailer on every commit:
-  `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
-- Use MCP for state probes when possible, not filesystem reads.
-  EXCEPTION: filesystem reads of `/home/imran/github/` and `/tmp/`
-  are fine. Reads of `~/.local/share/godot/app_userdata/` would
-  reveal the user's HITL state — generally avoid. The user has
-  closed Minerva so the user-data dir is at-rest anyway.
+(All saved during the previous loop, still session-cached.)
+
+- `minerva-plugin-platform/subprocess-needs-globalized-path`
+- `minerva-singleton/initialize-mcp-was-not-idempotent`
+- `minerva-singleton/ready-bails-on-missing-config-file`
+- `minerva-singleton/init-plugins-before-external-mcp-connect`
+- `minerva-ci/headless-needs-xvfb-for-cef`
+- `minerva-ci/godot-stdout-buffering`
+- `minerva-mcp-http/no-session-id-header`
+- `minerva-plugins-release/tarball-must-include-ui-dir`
 
 ---
 
-## 7. PER-ITERATION CHECKLIST
+## 5. ITERATION LOG (from prior loop — DO NOT extend without context)
 
-Each iteration must:
-1. State at start of iteration: "Iteration N of 6 — goal: <one
-   sentence>"
-2. Pre-flight: verify branch == `development`, working tree clean
-   (except `Docs/minerva.dct` and `vendor/*` submodule pointers
-   which are user state, leave alone)
-3. Make minimal code change
-4. Headless verify locally if possible (`scripts/run-functional-tests.sh`)
-5. Per-file `git add` only
-6. Commit with co-author trailer + concise message naming the
-   iteration N
-7. Push to `development`
-8. Schedule wakeup OR poll the CI run
-9. Read results — update this pickup.md with a one-line
-   "Iteration N: <outcome>"
-10. Decide: continue / stop on success / stop on budget
-
----
-
-## 8. ITERATION LOG
-
-(Each iteration appends a one-line summary here.)
+The prior 10-iteration autonomous loop log is preserved below for context.
 
 | # | Date | Commit | Outcome |
 |---|------|--------|---------|
 | 0 | 2026-05-27 | 589f6ee4 | Starting state. PluginManagerPanel lifecycle UX shipped; scansort install OK but start fails ERR_CANT_CONNECT. |
-| 1 | 2026-05-27 | 0c168ad6 | **Layer A GREEN.** New `test_marketplace_install_start_scansort.gd` reproduced the bug, fix identified + applied. Root cause: PluginManager.gd:498 only globalized `data_directory` when prefix=`res://`, leaving `user://plugins/<id>` virtual-path strings to be passed to SubProcess (fork+exec) — `FileAccess.file_exists` understood the scheme, kernel did not. Fix: unconditional `ProjectSettings.globalize_path()`. Functional suite 7/0 (`--all`), Layer A passes install+start+stop in <5s. CI: success. |
-| 2 | 2026-05-27 | 1f5ca135 | **Layer B added — failed in CI.** New MCP tool `minerva_plugin_marketplace_install` wraps `MarketplaceClient.install_from_url`. New CI job `tarball-smoke` (needs build-godot) ran but tarball-smoke.sh failed: "Minerva MCP HTTP did not come up within 60s" — Minerva spawned under xvfb but never opened :9315. User-driven judgment call resolved: MCP tool was the right call ("Minerva's goal is to enable LLMs to do all tasks Minerva can do"). Saved as feedback memory `feedback_mcp_drives_all_minerva_tasks`. Layer A still 7/0. |
-| 3 | 2026-05-27 | 7d598edb | **Layer B v2 failed in CI — diagnosed.** Swapped xvfb→--headless; locally everything worked, but CI still failed with "MCP HTTP did not come up". Uploaded minerva.log artifact (1057 bytes) showed the smoking gun: CEF helper (pid 3447) "ANGLE Display::initialize error 12289: Could not open the default X display" → "Terminating after 15s with no connection" → log dies before SingletonObject._ready reaches start_http_server(9315). My local headless test worked only because my workstation has an X server. Iter-2 had xvfb but no --headless; iter-3 had --headless but no xvfb. **Need BOTH.** Saved nudge `minerva-ci/headless-needs-xvfb-for-cef`. |
-| 4 | 2026-05-27 | ac467c46 | **Layer B v3 failed in CI — log truncated.** CI artifact was 771 bytes, ending mid-startup at "MCPDocketTools: DocketManager not available" warning. xvfb fix worked (no more "Could not open default X display"), but a CEF child still timed out ("Terminating after 15s with no connection"). Real failure point invisible due to Godot's full stdout buffering in non-tty CI environment. |
-| 5 | 2026-05-27 | edb5f127 | **Smoke v4 — instrumentation push (CI red, root cause found).** stdbuf + --verbose + live tail surfaced a 36KB CI log showing Minerva DID reach `[MCP] After _ready(), tool_registry has 222 tools` but NEVER printed `[MinervaMCPServer] Connected` or `[MCP HTTP] Server started`. Saved nudge `minerva-ci/godot-stdout-buffering` (durable). |
-| 6 | 2026-05-27 | bdbdf19e | **Idempotency fix shipped — wrong cause.** initialize_mcp's early-return was real, but CI still failed identically. Same 36645-byte log. |
-| 7 | 2026-05-27 | 99087bd4 | **Instrumented initialize_mcp + connect_server.** Iter-7 CI log showed ZERO `[MCP-DEBUG]` lines — initialize_mcp NEVER runs in CI. |
-| 8 | 2026-05-27 | 9b5c628f | **Instrumented SingletonObject._ready + get_mcp_manager.** Iter-8 log: only `[MCP-DEBUG] LAZY get_mcp_manager creating MCPManager` fires; NO `_ready: about to ...` checkpoints. SingletonObject._ready bails BEFORE reaching `initialize_mcp.call_deferred()`. |
-| 9 | 2026-05-27 | 0d977156 | **CI past _ready fix.** Iter-9 log: Minerva fully boots, opens :9315, executes minerva_plugin_marketplace_install. New failure: `{"error": "Unknown minerva tool: minerva_plugin_marketplace_install"}`. plugin_mcp_tools is null because initialize_plugins() never ran. |
-| 10 | 2026-05-27 | b2b8728c | **Init order fix — LOOP COMPLETE.** Moved `initialize_plugins()` + `_wire_plugin_tools_to_mcp()` BEFORE the external-MCP-server connect await (plugins are in-process; no dependency on external MCP). Saved durable nudge `minerva-singleton/init-plugins-before-external-mcp-connect`. **tarball-smoke GREEN** on auto-build-20260527-092547. Both Layer A (hermetic, 7/0) and Layer B (released-tarball + xvfb + marketplace MCP → install → start → RUNNING) pass on every push to development. |
-
----
-
-## 9. KEY MEMORY LANDMARKS
-
-- `MEMORY.md` — first Active Work entry now points to DCR3 on
-  `development` HEAD `c50fc1b3` (slightly behind real HEAD; OK)
-- `project_active_marketplace_dcr3.md` — updated 2026-05-26 with
-  full commit chain
-- Nudge hints in `nudge` (component `github-actions`,
-  `minerva-ui`, `git`, `mcp-spec`) from this session — read via
-  `nudge_query` if scoping suggests they're relevant
-- `feedback_test_at_integration_boundary.md` — Phase 1B 330 unit
-  tests missed 6 wiring bugs; this whole loop is repaying that
-  debt for the marketplace install path. Keep this principle in
-  mind when designing Layer A — boot real Singleton, real broker,
-  real subprocess.
-
----
-
-## 10. WHEN THE LOOP TERMINATES
-
-On success (both A and B green):
-1. Update this file's STATE header to `MARKETPLACE END-TO-END GREEN`
-2. Transition memory `project_active_marketplace_dcr3.md` status to
-   `shipped`
-3. Report to user: which iterations were used, what was the root
-   cause, what tests now exist
-4. Suggest the next user-driven step (HITL re-test, then promote
-   `development → main` once user is satisfied)
-
-On budget exhaustion (6 iter / 4h / judgment):
-1. Update this file's STATE header to `AWAITING HITL — <reason>`
-2. Write a `Docs/pickup-loop-stopped-<date>.md` with the iteration
-   log + the specific decision that needs human input
-3. Schedule the user-asking prompt
+| 1 | 2026-05-27 | 0c168ad6 | Layer A GREEN. PluginManager fix: unconditional globalize_path. |
+| 2 | 2026-05-27 | 1f5ca135 | Layer B added — Smoke v1 (xvfb only). FAILED. |
+| 3 | 2026-05-27 | 7d598edb | Smoke v2 (--headless only). FAILED. |
+| 4 | 2026-05-27 | ac467c46 | Smoke v3 (xvfb + --headless). FAILED — log truncated. |
+| 5 | 2026-05-27 | edb5f127 | Smoke v4 — stdbuf + --verbose + live tail. Diagnostics ready. |
+| 6 | 2026-05-27 | bdbdf19e | initialize_mcp idempotency fix. Still FAILED — wrong cause. |
+| 7 | 2026-05-27 | 99087bd4 | Instrumented initialize_mcp + connect_server. |
+| 8 | 2026-05-27 | 9b5c628f | Instrumented _ready + get_mcp_manager. Saw lazy-create + no _ready prints. |
+| 9 | 2026-05-27 | 0d977156 | REAL fix #1: _ready bailed on missing config_file. CI past that point. |
+| 10 | 2026-05-27 | b2b8728c | REAL fix #2: initialize_plugins() before external-MCP-connect. **CI GREEN.** |
+| HITL #1 | 2026-05-27 | 3d56b02 + cf25d61 (plugins) | Tarball missing ui/ — fixed packaging + registry regen. Scansort panel loads. |
+| HITL #2 | 2026-05-27 | — | CAD evaluate fails with python3 path. Investigation paused for compaction. |
