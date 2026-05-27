@@ -482,6 +482,11 @@ func initialize_mcp() -> void:
 ## Get the MCP manager instance (lazy initialization)
 func get_mcp_manager() -> Node:
 	if not mcp_manager:
+		# Print a stack trace so we know WHO triggered the lazy create —
+		# initialize_mcp shouldn't be skipped because of a stale lazy create.
+		print("[MCP-DEBUG] LAZY get_mcp_manager creating MCPManager. Stack:")
+		for f in get_stack():
+			print("  %s:%s %s" % [f.get("source",""), f.get("line",""), f.get("function","")])
 		mcp_manager = MCPManagerScript.new()
 		add_child(mcp_manager)
 	return mcp_manager
@@ -1276,13 +1281,19 @@ func _ready():
 
 	# Initialize MCP manager (connects to Nudge, etc.)
 	# Defer to avoid add_child errors during scene tree setup
+	print("[MCP-DEBUG] _ready: about to call_deferred initialize_mcp")
 	initialize_mcp.call_deferred()
+	print("[MCP-DEBUG] _ready: call_deferred initialize_mcp returned (queued)")
 
 	# Initialize docket (master + personal dockets, tool registry)
+	print("[MCP-DEBUG] _ready: about to _init_docket")
 	_init_docket()
+	print("[MCP-DEBUG] _ready: _init_docket returned")
 
 	# Initialize agent system (registry + trigger manager)
+	print("[MCP-DEBUG] _ready: about to _init_agent_system")
 	_init_agent_system()
+	print("[MCP-DEBUG] _ready: _init_agent_system returned")
 
 	# Initialize creatable items registry with built-in editor types
 	_init_creatable_items()
