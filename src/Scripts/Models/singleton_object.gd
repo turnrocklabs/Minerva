@@ -428,26 +428,18 @@ func initialize_mcp() -> void:
 	# Minerva running with MCP totally disabled. Now each step is conditional
 	# and idempotent. (DCR3 marketplace loop iter-6 — the bug that made the
 	# CI smoke fail despite local success.)
-	print("[MCP-DEBUG] initialize_mcp entered; mcp_manager existed=%s" % (mcp_manager != null))
 	if not mcp_manager:
-		print("[MCP-DEBUG] creating MCPManagerScript")
 		mcp_manager = MCPManagerScript.new()
-		print("[MCP-DEBUG] add_child(mcp_manager) about to call")
 		add_child(mcp_manager)
-		print("[MCP-DEBUG] add_child returned")
 
 	# Auto-connect internal Minerva MCP server (always — it's in-process).
 	# connect_minerva_server -> MinervaMCPServer.connect_server is itself
 	# idempotent (server_enabled guard) so re-calling is safe.
-	print("[MCP-DEBUG] about to call connect_minerva_server")
 	mcp_manager.connect_minerva_server()
-	print("[MCP-DEBUG] connect_minerva_server returned")
 
 	# Always start the HTTP server (Minerva's own MCP server for external clients).
 	# The Stop menu action stops it for the current session; next launch starts it again.
-	print("[MCP-DEBUG] about to call start_http_server port=%d" % mcp_http_server_port)
 	var err = mcp_manager.start_http_server(mcp_http_server_port)
-	print("[MCP-DEBUG] start_http_server returned err=%d" % err)
 	if err == OK:
 		print("[MCP] HTTP server started on port %d" % mcp_http_server_port)
 	else:
@@ -479,14 +471,14 @@ func initialize_mcp() -> void:
 	if mcp_manager and mcp_manager.minerva_server and plugin_tool_registry:
 		_wire_plugin_tools_to_mcp()
 
-## Get the MCP manager instance (lazy initialization)
+## Get the MCP manager instance (lazy initialization).
+##
+## Race-safe alongside `initialize_mcp()`: this lazy path only creates the
+## manager Node; it does NOT call connect_minerva_server() or
+## start_http_server() — those run in initialize_mcp(), which is now
+## idempotent and re-runs them even if mcp_manager was lazy-created first.
 func get_mcp_manager() -> Node:
 	if not mcp_manager:
-		# Print a stack trace so we know WHO triggered the lazy create —
-		# initialize_mcp shouldn't be skipped because of a stale lazy create.
-		print("[MCP-DEBUG] LAZY get_mcp_manager creating MCPManager. Stack:")
-		for f in get_stack():
-			print("  %s:%s %s" % [f.get("source",""), f.get("line",""), f.get("function","")])
 		mcp_manager = MCPManagerScript.new()
 		add_child(mcp_manager)
 	return mcp_manager
@@ -1239,7 +1231,15 @@ func _ready():
 
 	var err = config_file.load(_config_file_name)
 	if err != OK:
-		return null
+		# Fresh install (no config file yet) or unreadable file: continue
+		# with an empty in-memory ConfigFile rather than bailing the entire
+		# _ready chain. The old `return null` here silently disabled MCP HTTP,
+		# docket init, agent system init, and initialize_mcp — symptoms only
+		# visible when user://config_file.cfg truly didn't exist (CI smoke
+		# surfaced it after 8 iterations of misdirected diagnosis).
+		# Persist an empty config so subsequent loads succeed cleanly.
+		push_warning("[SingletonObject] config_file.load('%s') returned %s — proceeding with defaults" % [_config_file_name, error_string(err)])
+		config_file.save(_config_file_name)
 
 	# Initialize enabled providers from config (must be after config_file.load)
 	_init_enabled_providers()
@@ -1281,19 +1281,13 @@ func _ready():
 
 	# Initialize MCP manager (connects to Nudge, etc.)
 	# Defer to avoid add_child errors during scene tree setup
-	print("[MCP-DEBUG] _ready: about to call_deferred initialize_mcp")
 	initialize_mcp.call_deferred()
-	print("[MCP-DEBUG] _ready: call_deferred initialize_mcp returned (queued)")
 
 	# Initialize docket (master + personal dockets, tool registry)
-	print("[MCP-DEBUG] _ready: about to _init_docket")
 	_init_docket()
-	print("[MCP-DEBUG] _ready: _init_docket returned")
 
 	# Initialize agent system (registry + trigger manager)
-	print("[MCP-DEBUG] _ready: about to _init_agent_system")
 	_init_agent_system()
-	print("[MCP-DEBUG] _ready: _init_agent_system returned")
 
 	# Initialize creatable items registry with built-in editor types
 	_init_creatable_items()
