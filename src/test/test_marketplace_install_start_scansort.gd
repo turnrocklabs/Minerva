@@ -15,20 +15,21 @@ extends SceneTree
 ##   - SKIPs cleanly when the scansort source dir or binary is unavailable.
 ##
 ## Tracks docket / pickup: marketplace install→start green gate (Docs/pickup.md).
+##
+## 2026-05-27 refactor: shell + HTTP-server + PluginManager bootstrap helpers
+## extracted to marketplace_test_helpers.gd for re-use by the cad-evaluate
+## sibling test (DCR 019e6a4bcb0c W2 scope amendment).
 
-const MARKETPLACE_GD := "res://Scripts/Services/Plugins/MarketplaceClient.gd"
-const PLUGIN_MANAGER_GD := "res://Scripts/Services/Plugins/PluginManager.gd"
 const PLUGIN_ID := "scansort"
 const PLUGIN_SRC_REL := "/github/plugins/scansort"
 const BINARY_NAME := "scansort-plugin"
 const PORT := 18766
 
-const S_RUNNING := 2
-const S_STOPPED := 3
+const HELPER_GD := "res://test/marketplace_test_helpers.gd"
 
+var _helper = null  # MarketplaceTestHelpers
+var _pm = null
 var _temp_dir: String = ""
-var _server_pid: int = -1
-var _pm = null  # PluginManager — held for teardown so we can scrub the DB record
 var _pass: int = 0
 var _fail: int = 0
 var _skipped: bool = false
@@ -49,6 +50,13 @@ func _init() -> void:
 
 func _run() -> void:
 	await process_frame
+
+	# Load helpers.
+	var helper_cls = load(HELPER_GD)
+	if helper_cls == null:
+		_skip("could not load %s" % HELPER_GD)
+		return
+	_helper = helper_cls.new(self)
 
 	# --- Platform / fixture gate ---
 	if OS.get_name() != "Linux":
@@ -78,43 +86,19 @@ func _run() -> void:
 
 	var url := "http://127.0.0.1:%d/scansort-fixture.tar.gz" % PORT
 
-	# --- Singleton bootstrap (PluginManager parse-time refs SingletonObject) ---
-	await process_frame
-	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
-	if so != null:
-		var deadline_ms: int = Time.get_ticks_msec() + 10000
-		while so.get("plugin_tool_registry") == null and Time.get_ticks_msec() < deadline_ms:
-			await Engine.get_main_loop().create_timer(0.1).timeout
-
-	# --- Instantiate PluginManager ---
-	var pm_cls = load(PLUGIN_MANAGER_GD)
-	if pm_cls == null:
-		_skip("could not load PluginManager.gd")
+	# --- Bootstrap PluginManager + scrub any prior registration ---
+	_pm = await _helper.bootstrap_plugin_manager()
+	if _pm == null:
+		_skip("PluginManager bootstrap failed")
 		return
-	_pm = pm_cls.new()
-	root.add_child(_pm)
-	await process_frame
-	if _pm._db == null:
-		_skip("PluginManager did not initialise (no _db)")
-		return
-	var pm = _pm  # local alias for readability
-
-	# If a previous run left scansort around, get rid of it before installing.
-	if pm._db.has_plugin(PLUGIN_ID):
-		print("  scrubbing pre-existing scansort registration")
-		if pm._db.get_by_id(PLUGIN_ID).state == S_RUNNING:
-			await pm.stop_plugin(PLUGIN_ID)
-		pm._db.remove(PLUGIN_ID)
-	_rm_dir_recursive("user://plugins/%s" % PLUGIN_ID)
+	await _helper.scrub_plugin(_pm, PLUGIN_ID)
 
 	# --- Instantiate MarketplaceClient ---
-	var mc_cls = load(MARKETPLACE_GD)
-	var mc = mc_cls.new()
-	root.add_child(mc)
+	var mc = _helper.make_marketplace_client()
 
 	# --- Step 1: install via marketplace path ---
 	print("\n-- step 1: install_from_url --")
-	var install_result: Dictionary = await mc.install_from_url(url, pm)
+	var install_result: Dictionary = await mc.install_from_url(url, _pm)
 	if not install_result.get("ok", false):
 		print("FAIL: install_from_url returned: %s" % JSON.stringify(install_result))
 		_fail += 1
@@ -124,7 +108,7 @@ func _run() -> void:
 
 	# Capture install-state forensics — these inform the diagnosis when the
 	# subsequent start fails.
-	var def = pm._db.get_by_id(PLUGIN_ID)
+	var def = _pm._db.get_by_id(PLUGIN_ID)
 	if def == null:
 		print("FAIL: post-install — PluginManager has no scansort definition")
 		_fail += 1
@@ -150,7 +134,7 @@ func _run() -> void:
 
 	# --- Step 2: start_plugin (this is the bug site) ---
 	print("\n-- step 2: start_plugin --")
-	var start_result: Dictionary = await pm.start_plugin(PLUGIN_ID)
+	var start_result: Dictionary = await _pm.start_plugin(PLUGIN_ID)
 	print("  start_result: %s" % JSON.stringify(start_result))
 	if not start_result.get("ok", false):
 		print("FAIL: start_plugin failed — error=%s" % start_result.get("error", "?"))
@@ -159,30 +143,29 @@ func _run() -> void:
 		return
 
 	# --- Step 3: assert RUNNING + connection alive ---
-	var post_state: int = def.state
-	if post_state != S_RUNNING:
-		print("FAIL: expected state S_RUNNING(%d), got %d" % [S_RUNNING, post_state])
+	if def.state != _helper.S_RUNNING:
+		print("FAIL: expected state RUNNING(%d), got %d" % [_helper.S_RUNNING, def.state])
 		_fail += 1
-		await pm.stop_plugin(PLUGIN_ID)
+		await _pm.stop_plugin(PLUGIN_ID)
 		return
-	var conn = pm.get_connection(PLUGIN_ID)
+	var conn = _pm.get_connection(PLUGIN_ID)
 	if conn == null:
 		print("FAIL: no MCP connection after start_plugin")
 		_fail += 1
-		await pm.stop_plugin(PLUGIN_ID)
+		await _pm.stop_plugin(PLUGIN_ID)
 		return
 	print("PASS: install + start (state=RUNNING, conn live)")
 	_pass += 1
 
 	# --- Step 4: clean stop ---
 	print("\n-- step 3: stop_plugin --")
-	var stop_result: Dictionary = await pm.stop_plugin(PLUGIN_ID)
+	var stop_result: Dictionary = await _pm.stop_plugin(PLUGIN_ID)
 	if not stop_result.get("ok", false):
 		print("FAIL: stop_plugin failed: %s" % JSON.stringify(stop_result))
 		_fail += 1
 		return
-	if def.state != S_STOPPED:
-		print("FAIL: expected state S_STOPPED(%d), got %d" % [S_STOPPED, def.state])
+	if def.state != _helper.S_STOPPED:
+		print("FAIL: expected state STOPPED(%d), got %d" % [_helper.S_STOPPED, def.state])
 		_fail += 1
 		return
 	print("PASS: clean stop (state=STOPPED)")
@@ -190,77 +173,55 @@ func _run() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Fixture build
+# Fixture build (scansort-specific — keeps the local-binary tarball flow)
 # ---------------------------------------------------------------------------
 
 func _setup_fixture(src_manifest: String, src_binary: String) -> bool:
 	_temp_dir = "%s/mp_start_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
-	if not _mkdir(_temp_dir):
+	if not _helper.mkdir_recursive(_temp_dir):
 		_fail += 1
 		print("FAIL: could not make temp dir %s" % _temp_dir)
 		return false
 
 	var pack := "%s/pack" % _temp_dir
-	_mkdir(pack)
+	_helper.mkdir_recursive(pack)
 
 	# Copy manifest + binary into the pack dir, preserving permissions on the
 	# binary (cp -p) so the source tarball has +x. The live release tarball
 	# has the same shape (manifest.json + scansort-plugin + SHA256SUMS).
-	if not _run_cmd("cp", ["-p", src_manifest, pack.path_join("manifest.json")]):
+	if not _helper.run_cmd("cp", ["-p", src_manifest, pack.path_join("manifest.json")]):
 		_fail += 1
 		print("FAIL: copy manifest into pack")
 		return false
-	if not _run_cmd("cp", ["-p", src_binary, pack.path_join(BINARY_NAME)]):
+	if not _helper.run_cmd("cp", ["-p", src_binary, pack.path_join(BINARY_NAME)]):
 		_fail += 1
 		print("FAIL: copy binary into pack")
 		return false
 
 	# Generate SHA256SUMS in the same format the marketplace verifier expects.
-	if not _run_cmd("bash", ["-c",
+	if not _helper.run_cmd("bash", ["-c",
 			"cd '%s' && sha256sum %s manifest.json > SHA256SUMS" % [pack, BINARY_NAME]]):
 		_fail += 1
 		print("FAIL: sha256sum")
 		return false
 
 	# Pack into ../scansort-fixture.tar.gz.
-	if not _run_cmd("bash", ["-c",
+	if not _helper.run_cmd("bash", ["-c",
 			"cd '%s' && tar -czf ../scansort-fixture.tar.gz ." % pack]):
 		_fail += 1
 		print("FAIL: tar")
 		return false
 
 	# Spawn http server in _temp_dir (so /scansort-fixture.tar.gz resolves).
-	_server_pid = OS.create_process("python3", [
-		"-m", "http.server", str(PORT),
-		"--directory", _temp_dir,
-		"--bind", "127.0.0.1",
-	])
-	if _server_pid <= 0:
+	if not await _helper.start_http_server(_temp_dir, PORT, 10.0):
 		_fail += 1
-		print("FAIL: could not spawn python http.server")
+		print("FAIL: http.server didn't come up")
 		return false
-
-	# Wait for the server to bind.
-	for i in range(50):
-		await create_timer(0.1).timeout
-		var probe := HTTPRequest.new()
-		probe.timeout = 1.0
-		root.add_child(probe)
-		var err := probe.request("http://127.0.0.1:%d/" % PORT)
-		if err == OK:
-			var result: Array = await probe.request_completed
-			probe.queue_free()
-			if result[1] in [200, 403, 404]:
-				return true
-		else:
-			probe.queue_free()
-	_fail += 1
-	print("FAIL: http.server didn't come up in 5s")
-	return false
+	return true
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Teardown
 # ---------------------------------------------------------------------------
 
 func _skip(reason: String) -> void:
@@ -268,36 +229,11 @@ func _skip(reason: String) -> void:
 	_skip_reason = reason
 
 
-func _mkdir(path: String) -> bool:
-	if path.begins_with("user://") or path.begins_with("res://"):
-		return DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path)) == OK
-	return DirAccess.make_dir_recursive_absolute(path) == OK
-
-
-func _run_cmd(cmd: String, args: Array) -> bool:
-	var out: Array = []
-	var rc := OS.execute(cmd, args, out, true)
-	if rc != 0:
-		print("  cmd %s %s failed (rc=%d): %s" % [cmd, args, rc, "\n".join(out)])
-		return false
-	return true
-
-
-func _rm_dir_recursive(rel_path: String) -> void:
-	var abs := ProjectSettings.globalize_path(rel_path)
-	if not DirAccess.dir_exists_absolute(abs):
-		return
-	OS.execute("rm", ["-rf", abs], [], true)
-
-
 func _teardown() -> void:
-	if _server_pid > 0:
-		OS.kill(_server_pid)
+	if _helper != null:
+		if _pm != null and _pm._db != null and _pm._db.has_plugin(PLUGIN_ID):
+			_pm._db.remove(PLUGIN_ID)
+			_helper.rm_dir_recursive("user://plugins/%s" % PLUGIN_ID)
+		_helper.teardown()
 	if not _temp_dir.is_empty():
 		OS.execute("rm", ["-rf", _temp_dir], [], true)
-	# Scrub the persisted PluginDB record so the next test in the suite (which
-	# may side-load scansort from ~/github/plugins/scansort/) doesn't pick up
-	# our orphan user://plugins/scansort/ pointer.
-	if _pm != null and _pm._db != null and _pm._db.has_plugin(PLUGIN_ID):
-		_pm._db.remove(PLUGIN_ID)
-	_rm_dir_recursive("user://plugins/%s" % PLUGIN_ID)

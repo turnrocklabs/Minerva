@@ -1,166 +1,229 @@
 # Pickup
 
-STATE: `HITL FOLLOW-ON — cad python worker spawn fails`
+STATE: `DCR 019e6a4bcb0c — W2 RED test partially written, RED proof pending on laptop`
 
-Last updated 2026-05-27 — written immediately before /compact to preserve
-session state. User is online and active.
-
----
-
-## 0. WHAT JUST SHIPPED (don't redo any of this)
-
-### Minerva (turnrocklabs/Minerva, branch `development`)
-
-Autonomous loop 1-10 + handoff commit landed; full chain green:
-
-- `0c168ad6` — PluginManager.start_plugin: unconditional `ProjectSettings.globalize_path(def.data_directory)` (fix ERR_CANT_CONNECT for marketplace installs).
-- `bdbdf19e` — initialize_mcp() idempotent (no longer early-returns on existing mcp_manager).
-- `0d977156` — SingletonObject._ready no longer bails on missing `user://config_file.cfg` (latent fresh-install bug).
-- `b2b8728c` — initialize_plugins() runs BEFORE `await mcp_manager.initialize()` (so plugin_mcp_tools wires up even when external MCP server binaries are absent).
-- `66a018ec` — pickup updated to GREEN.
-
-NEW Minerva MCP tool exposed: `minerva_plugin_marketplace_install` (URL → MarketplaceClient.install_from_url → PluginManager).
-
-CI green on every dev push:
-- Layer A: `src/test/test_marketplace_install_start_scansort.gd` in functional-tests.
-- Layer B: `tarball-smoke` job in `.github/workflows/build.yml` runs `scripts/tarball-smoke.sh` against the just-built tarball under xvfb + --headless, drives MCP HTTP :9315 install→start→state=RUNNING.
-
-Latest release with the chain: `auto-build-20260527-092547` on turnrocklabs/Minerva. Each subsequent push to `development` creates a new auto-build release containing the same fixes.
-
-### Plugins (imrans-lab/minerva-plugins, branch `main`)
-
-After Minerva green, HITL surfaced: "Whitelisted script not found: 'user://plugins/scansort/ui/ScansortPanel.gd'". Cause: release tarballs only shipped manifest+binary+SHA256SUMS, no `ui/`. Fixed in:
-
-- `3d56b02` — all 3 pack workflows now `cp -r ui $PACKDIR/` and compute SHA256SUMS over every shipped file with `find . -type f ! -name SHA256SUMS | xargs sha256sum | sed 's| \./| |'` (preserves the `<hex>  <relpath>` two-space format Minerva's MarketplaceClient._verify_sha256sums parses).
-- `cf25d61` — regenerated `registry.json` via `scripts/regen_registry.py` so it points at the NEW tags (`scansort-v0.0.1`, `presentation-v0.0.1`, `cad-v0.1.0`). Confirmed via API: registry now resolves to these versions. raw.githubusercontent.com CDN may take ~5 min to refresh.
-
-Verified iteration 11 (HITL): user installed CAD from marketplace, panel UI loads, no more "Whitelisted script not found".
+Last updated 2026-05-27 — laptop handoff. Workstation is being put down; resume on laptop.
 
 ---
 
-## 1. THE OPEN BUG (where to resume)
+## 0. WHAT THIS DCR IS
 
-User did HITL on CAD plugin from marketplace install. UI shows; clicking evaluate produces:
+**DCR `019e6a4bcb0c71019723011d8f8c8cf1`** — CAD plugin: embedded PBS python runtime (Plan A). Status: `designing`.
 
-> CAD evaluation failed: tool error: bridge.Worker.Start: exec: fork/exec /usr/bin/python3: no such file or directory
+Closes HITL #2 from the prior marketplace push (DCR `019e62ade5be`): cad evaluate fails with
+`bridge.Worker.Start: exec: fork/exec /usr/bin/python3: no such file or directory` because the
+marketplace tarball ships only the cad-plugin binary + manifest + ui/ — no Python, no
+mcad_worker package, no build123d / cadquery-ocp.
 
-Even though `/usr/bin/python3` DOES exist on the user's host (confirmed via shell: `ls /usr/bin/python3` returned the file, also at `/home/imran/anaconda3/bin/python3`).
+Plan A (your choice 2026-05-27): build a per-platform PBS (`python-build-standalone`) bundle
+containing cpython 3.12.x + build123d + cadquery-ocp + mcad_worker, `go:embed` it into the
+cad-plugin Linux binary, extract to `<data_directory>/runtime/<plugin_version>/` on first run.
+Per-plugin isolation, no Minerva-host-python dependency, no network at first start.
 
-### Why the error message is misleading
-
-The error format `exec: fork/exec <path>: no such file or directory` is a Go runtime error from `os/exec` (the cad-plugin is Go). "no such file or directory" can mean any of:
-1. The path itself doesn't exist (NOT the case here — `/usr/bin/python3` exists).
-2. The path exists but is a symlink whose target is missing.
-3. The path is correct but the interpreter listed in its shebang doesn't exist.
-4. ENOENT from a missing **shared library** the binary needs.
-5. The path is a script with `#!/usr/bin/env something-missing` shebang.
-6. The Python interpreter itself fails on import (depending on how the bridge spawn-and-test interprets failure).
-
-So "the binary is missing" is almost certainly NOT the actual story. Likeliest: cad-plugin spawns `python3 -m mcad_worker`, the mcad_worker module imports build123d/OCCT, and an .so under it is missing — Go reports that as ENOENT on the python path itself (kernel returns ENOENT from execve when a dynamic loader fails). OR `mcad_worker` package isn't installed in the resolved python's site-packages.
-
-### Where the python path comes from (in the cad plugin)
-
-- `~/github/plugins/cad/main.go` line ~170 calls `runtime.PythonPath(workerDir)`.
-- `~/github/plugins/cad/internal/bridge/worker.go` line 156 calls `exec.CommandContext(ctx, w.pythonPath, "-m", "mcad_worker")`.
-- `runtime.PythonPath` is in `~/github/plugins/cad/internal/runtime/` (didn't read yet — investigate first).
-- main.go's WARNING text says: "mcad_validate will fail until python3 is on PATH or .venv exists" — so the logic is: PATH lookup first, then `<workerDir>/.venv` (probably).
-
-The marketplace tarball **does not include `worker/`** — it only ships `cad-plugin` binary + `manifest.json` + (now) `ui/`. So even though `~/github/plugins/cad/worker/` exists with the mcad_worker Python package and its venv requirements, none of that is in the install dir at `user://plugins/cad/`.
-
-### The user's flag (READ THIS BEFORE TOUCHING)
-
-Quote: *"Minerva does have a way to reference python, but I'm unsure if it's OS agnostic, available in the plugin substrate, or handles virtual envs correctly."*
-
-Translation: there's an existing Python-resolution facility somewhere in Minerva. We should NOT just hardcode a different path in the cad plugin. We should:
-
-1. **Discover what that facility is.** Grep candidates: `python_path`, `python_interpreter`, `python_env`, `PythonResolver`, `venv`, references to `OS.execute("python3"...)` or `OS.create_process("python3"...)`. Search both Minerva src/ and the Code Generation / Autocoder / Cell paths since those likely run Python locally.
-
-2. **Understand its OS-portability.** Minerva ships on Linux/macOS/Windows. Whatever the facility is must (or must not) work cross-platform — we need to know which.
-
-3. **Understand the venv story.** The cad plugin's mcad_worker needs build123d + OCCT — those need a venv. The user is unsure if Minerva's facility "handles virtual envs correctly".
-
-4. **Decide the routing.** Options to consider (do NOT pick before user input):
-   - A) Expose Minerva's python-resolver via a new host capability (e.g. `host.runtime.python_path`) so plugins ask Minerva for the resolved interpreter.
-   - B) Include the worker/ Python sources in the cad release tarball, and have the plugin auto-create a venv at first start (cost: 50-150 MB tarball, network at first start).
-   - C) Bundle a pinned wheels archive in the tarball and pip-install offline at first start.
-   - D) Add a manifest-declared `python_runtime_required: {packages: [...]}` and Minerva spins up the venv before start_plugin completes.
-
-5. **Don't fix the symptom in cad alone.** If we hardcode `/usr/bin/python3` (or `python3` via PATH) in cad, every other future Python-needing plugin re-discovers this. Architectural fix > one-plugin patch.
-
-### What I had already started
-
-When the token-budget pause hit, I had just read:
-- `internal/bridge/worker.go:88-90` — `func New(pythonPath, workerDir string) *Worker { pythonPath: pythonPath, ... }`
-- `internal/bridge/worker.go:156` — `cmd := exec.CommandContext(ctx, w.pythonPath, "-m", "mcad_worker")`
-- `main.go:170-178` — calls `runtime.PythonPath(workerDir)`, push_warning on failure, still spawns Worker with empty path so Call returns clean error.
-
-Files NOT yet read:
-- `~/github/plugins/cad/internal/runtime/*.go` (the PythonPath logic itself)
-- Minerva's python-resolver (location unknown — grep before assuming)
-
-### Useful repro: do NOT install python3 to "fix" it
-
-The user has python3 on their machine; the error is something subtler. Resist the urge to suggest `sudo apt install python3`. Investigate first.
+Full plan + 5-why analysis + 4-option comparison: see DCR docket article on item
+`019e6a4bcb0c71019723011d8f8c8cf1` (project: minerva). Read with
+`mcp__docket__docket_get id=019e6a4bcb0c project=minerva`.
 
 ---
 
-## 2. RESUMING AFTER /compact
+## 1. DCR TREE (already filed in docket)
 
-1. Read the rest of this file.
-2. Read `MEMORY.md` (auto-loaded) — particularly the latest `feedback_mcp_drives_all_minerva_tasks` (the user's stated north star: LLMs do everything via MCP, so any Python-runtime facility should probably be exposed via MCP/host-capability too).
-3. Grep Minerva's src/ for python-resolver patterns:
+```
+DCR  019e6a4bcb0c  designing — CAD plugin embedded PBS python runtime (Plan A)
+├── W0   019e6a4c30a3  DONE    — branch setup, risk controls, briefing kit
+├── W1a  019e6a4c91cb  backlog — cad/scripts/build-runtime-bundle.sh (linux-x86_64)
+├── W1b  019e6a4cf762  backlog — cad: go:embed + ExtractEmbedded + PythonPath
+├── W1c  019e6a4d422a  backlog — cad: bridge.Worker env + cad-side regression test
+├── W2   019e6a4d96fb  in_progress — Minerva RED functional test (this one needs laptop work)
+├── W3   019e6a4e0455  backlog — cad.yml + v0.1.1 release + smoke evaluate + flip W2 GREEN
+└── W4   019e6a4e37b9  backlog — HITL (single gate at end)
+```
+
+Every item has full description+spec text in the docket article. Use
+`docket_get id=<short> project=minerva` to read.
+
+---
+
+## 2. WHAT'S COMMITTED + PUSHED
+
+### Minerva (turnrocklabs/Minerva)
+
+Branch: `dcr/cad-embedded-python-test` (off `development`, base `f653adf3`).
+
+Commits on the branch:
+- `f6426348` — docket: file DCR 019e6a4bcb0c cad-plugin embedded PBS python runtime
+- `7c9b8652` — W2 RED functional test (in-progress, handoff) + pickup + run-functional-tests entry
+- `<this commit>` — pickup: fill in the prior commit SHA (doc nit)
+
+### plugins (imrans-lab/minerva-plugins via remote `lab`)
+
+Branch: `dcr/cad-embedded-python-linux` (off `main`, base `cf25d61`).
+
+No commits yet on the branch — it was branched but no implementation work has begun in plugins
+repo. The branch is pushed so you can pull it on the laptop and start W1a there.
+
+---
+
+## 3. CURRENT IN-PROGRESS WORK — W2 STATE
+
+### Files on disk (committed below before handoff)
+
+- `~/github/Minerva/src/test/test_marketplace_install_start_cad_evaluate.gd` (NEW, ~310 lines)
+- `~/github/Minerva/src/test/test_marketplace_install_start_cad_evaluate.gd.uid` (Godot auto)
+- `~/github/Minerva/scripts/run-functional-tests.sh` (added entry to PLUGIN_TESTS array)
+
+### What's done in W2
+
+- Test file written, parallels `test_marketplace_install_start_scansort.gd` (DRY check passed —
+  same structure, only deltas: PLUGIN_ID, BINARY_NAME, ui/ copy, randomized port, AND the
+  critical extra step 3 that calls `mcad_validate` via `MCPServerConnection.call_tool()` and
+  asserts a non-error worker response. The scansort sibling stops at state=RUNNING; that gap is
+  what masked HITL #2.
+- Registered in `scripts/run-functional-tests.sh` PLUGIN_TESTS array.
+- Two fixes applied while debugging on workstation:
+  - **Port randomization** — was hardcoded 18767; killed test orphans landed on the port
+    and blocked subsequent runs with `OSError: [Errno 98] Address already in use`. Fixed by
+    `PORT = 30000 + (Time.get_ticks_msec() % 20000)`.
+  - **Two-stage probe** — was a 5s HTTPRequest.request_completed loop (50 iters x 100ms).
+    Replaced with: 15s OS-level TCP socket probe via `exec 3<>/dev/tcp/...` + one HTTPRequest
+    verification once port is up. Reason: full singleton boot starves create_timer +
+    HTTPRequest in cad's test context (more autoload activity than scansort sibling).
+
+### What still needs doing on W2
+
+1. **Confirm RED baseline.** Run on the laptop (fresh boot, before any long-lived Minerva
+   session):
    ```bash
-   grep -rnE "python_path|python_interpreter|PythonResolver|venv|python3|python_env" /home/imran/github/Minerva/src --include="*.gd" | head -40
-   grep -rnE "OS\.execute.*python|OS\.create_process.*python" /home/imran/github/Minerva/src --include="*.gd" | head -10
+   cd ~/github/Minerva
+   timeout 300 stdbuf -oL -eL godot --headless --path src \
+       --script test/test_marketplace_install_start_cad_evaluate.gd 2>&1 \
+       | tee /tmp/cad_w2_red.log
    ```
-4. Read `~/github/plugins/cad/internal/runtime/` (PythonPath logic).
-5. Reproduce by running the released Minerva from `/home/imran/Downloads/...` (or via the CAD-equivalent of the marketplace install path) and trying CAD evaluate. Capture the worker stderr.
-6. **PAUSE for the user before committing any cross-cutting design** — see section 1.4 options above.
+   Expected: test fails with one of these envelope errors at step 3 (mcad_validate):
+   - `bridge.Worker.Start: exec: fork/exec /usr/bin/python3: no such file or directory`
+   - Or any other worker-spawn error containing "fork/exec", "python3", or "no such file"
+   - The test specifically prints `(RED baseline — worker python spawn failure; the bug
+     DCR 019e6a4bcb0c fixes)` when this happens.
+2. If the test PASSES against cad-v0.1.0 (extremely unexpected), the test is broken — likely
+   the cad-v0.1.0 binary on `~/github/plugins/cad/cad-plugin` has been swapped for a newer
+   build. Verify with `sha256sum ~/github/plugins/cad/cad-plugin` and cross-check the
+   imrans-lab cad-v0.1.0 release.
+3. Once RED is confirmed: do NOT change the test. Move to W1a. (The test will turn GREEN
+   automatically after W1a/b/c land and W3 rebuilds the cad binary in
+   `~/github/plugins/cad/cad-plugin` with the embedded python.)
+
+### Why this was slow on the workstation
+
+The workstation had a long-running Minerva session before the test was invoked, with nudge
++ cobrowser + codetools MCP servers alive and gdcef CEF helper processes contending for
+engine main-loop frames during `--headless --script` boot. On a fresh laptop boot this should
+take ~60-90s total (matching the scansort sibling's runtime). If the laptop also shows
+multi-minute setup, kill any background godot/cefclient/mcp-server processes first.
 
 ---
 
-## 3. HARD RULES (UNCHANGED)
+## 4. RESUMING ON THE LAPTOP
+
+### Cross-machine sanity checks (paths differ on the laptop)
+
+The test uses `$HOME + "/github/plugins/cad"` for the cad source tree. Verify on the laptop:
+
+```bash
+echo "HOME=$HOME"
+ls -la $HOME/github/plugins/cad/manifest.json $HOME/github/plugins/cad/cad-plugin $HOME/github/plugins/cad/ui
+```
+
+All three must exist. If they don't, clone:
+- `git clone git@github.com:imrans-lab/minerva-plugins.git $HOME/github/plugins`
+- The cad-plugin binary needs to be built: `cd $HOME/github/plugins/cad && go build .`
+
+### Pull the branches on the laptop
+
+```bash
+# Minerva
+cd $HOME/github/Minerva   # or wherever
+git fetch origin
+git checkout dcr/cad-embedded-python-test
+
+# plugins
+cd $HOME/github/plugins
+git fetch lab            # if you set up imrans-lab as `lab` remote here too
+git checkout dcr/cad-embedded-python-linux
+```
+
+If laptop's plugins remote layout is different (e.g. `origin` points at imrans-lab on laptop
+but `lab` on workstation), use whatever name maps to the imrans-lab/minerva-plugins URL.
+
+### Resume sequence (6 - 1 = 5 iters remaining)
+
+1. **W2 finalize (iter 2)** — run the test on laptop, confirm RED, commit a `pickup` note
+   recording the verbatim RED log; transition W2 to `blocked_by` W1a (or leave in_progress).
+2. **W1a (iter 3)** — implement `cad/scripts/build-runtime-bundle.sh`. Spec in docket item
+   `019e6a4c91cb`. Read with `docket_get id=019e6a4c91cb project=minerva`.
+3. **W1b (iter 4)** — go:embed + ExtractEmbedded + PythonPath. Spec in `019e6a4cf762`.
+4. **W1c (iter 5)** — bridge.Worker env + cad regression test. Spec in `019e6a4d422a`.
+5. **W3 (iter 6)** — cad.yml integrate + release v0.1.1 + Minerva smoke evaluate. Spec in
+   `019e6a4e0455`. **PAUSE for user HITL on direct main push to imrans-lab/minerva-plugins
+   per pickup §6.**
+6. **W4** — single HITL gate. Spec in `019e6a4e37b9`.
+
+### Pre-flight on laptop (same as W0 did on workstation)
+
+```bash
+cd $HOME/github/Minerva && git status -uno && git rev-parse --abbrev-ref HEAD
+cd $HOME/github/plugins && git status -uno && git rev-parse --abbrev-ref HEAD
+```
+
+Assert both branches checked out clean, then start.
+
+---
+
+## 5. NUDGE HINTS WORTH READING (saved this session)
+
+```
+nudge_get_hint component=minerva-plugin-platform key=python-runtime-not-a-host-capability
+nudge_get_hint component=cad-plugin                 key=embed-go-is-not-embedding
+nudge_get_hint component=minerva-testing            key=sceneTree-script-blocks-on-full-autoload
+```
+
+Plus all 8 from the prior autonomous loop (pickup §4 of `f653adf3`).
+
+---
+
+## 6. HARD RULES (UNCHANGED)
 
 - Per-file `git add` only. No `-A`/`.`.
 - No `--no-verify`. No `vendor/` touches.
 - No force-push, no `git reset --hard`.
 - Co-author trailer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
-- Plugins repo `imrans-lab/minerva-plugins`: user has previously authorized direct main pushes during the marketplace push; reconfirm before any new direct push.
-- Minerva `development` branch: pre-authorized for autonomous-loop pushes during prior loops; this is a NEW investigation, ask before pushing.
+- Plugins repo `imrans-lab/minerva-plugins`: user authorization for the cad-v0.1.1 main push
+  in W3 is **NOT carried over from this session** — re-ask before that push.
+- Minerva `development` push: autonomous-loop authorization applies; the new branch
+  `dcr/cad-embedded-python-test` was created so we don't need to push to development until
+  W3 merges back.
 
 ---
 
-## 4. NUDGE HINTS WORTH READING
+## 7. WHAT THE TEST FILE ACTUALLY LOOKS LIKE (quick reference)
 
-(All saved during the previous loop, still session-cached.)
+`src/test/test_marketplace_install_start_cad_evaluate.gd` — key shape:
 
-- `minerva-plugin-platform/subprocess-needs-globalized-path`
-- `minerva-singleton/initialize-mcp-was-not-idempotent`
-- `minerva-singleton/ready-bails-on-missing-config-file`
-- `minerva-singleton/init-plugins-before-external-mcp-connect`
-- `minerva-ci/headless-needs-xvfb-for-cef`
-- `minerva-ci/godot-stdout-buffering`
-- `minerva-mcp-http/no-session-id-header`
-- `minerva-plugins-release/tarball-must-include-ui-dir`
+```
+extends SceneTree
 
----
+const PLUGIN_ID := "cad"
+const PLUGIN_SRC_REL := "/github/plugins/cad"     # joined with $HOME
+const BINARY_NAME := "cad-plugin"
+const VALIDATE_SOURCE := "result = sphere(5)"
+var PORT: int = 30000 + (Time.get_ticks_msec() % 20000)
 
-## 5. ITERATION LOG (from prior loop — DO NOT extend without context)
+func _run():
+    # step 1: install_from_url   (works against cad-v0.1.0)
+    # step 2: start_plugin       (works against cad-v0.1.0)
+    # step 3: mcad_validate      (FAILS against cad-v0.1.0 — this is the RED gate)
+    # step 4: stop_plugin
+```
 
-The prior 10-iteration autonomous loop log is preserved below for context.
-
-| # | Date | Commit | Outcome |
-|---|------|--------|---------|
-| 0 | 2026-05-27 | 589f6ee4 | Starting state. PluginManagerPanel lifecycle UX shipped; scansort install OK but start fails ERR_CANT_CONNECT. |
-| 1 | 2026-05-27 | 0c168ad6 | Layer A GREEN. PluginManager fix: unconditional globalize_path. |
-| 2 | 2026-05-27 | 1f5ca135 | Layer B added — Smoke v1 (xvfb only). FAILED. |
-| 3 | 2026-05-27 | 7d598edb | Smoke v2 (--headless only). FAILED. |
-| 4 | 2026-05-27 | ac467c46 | Smoke v3 (xvfb + --headless). FAILED — log truncated. |
-| 5 | 2026-05-27 | edb5f127 | Smoke v4 — stdbuf + --verbose + live tail. Diagnostics ready. |
-| 6 | 2026-05-27 | bdbdf19e | initialize_mcp idempotency fix. Still FAILED — wrong cause. |
-| 7 | 2026-05-27 | 99087bd4 | Instrumented initialize_mcp + connect_server. |
-| 8 | 2026-05-27 | 9b5c628f | Instrumented _ready + get_mcp_manager. Saw lazy-create + no _ready prints. |
-| 9 | 2026-05-27 | 0d977156 | REAL fix #1: _ready bailed on missing config_file. CI past that point. |
-| 10 | 2026-05-27 | b2b8728c | REAL fix #2: initialize_plugins() before external-MCP-connect. **CI GREEN.** |
-| HITL #1 | 2026-05-27 | 3d56b02 + cf25d61 (plugins) | Tarball missing ui/ — fixed packaging + registry regen. Scansort panel loads. |
-| HITL #2 | 2026-05-27 | — | CAD evaluate fails with python3 path. Investigation paused for compaction. |
+The step-3 failure path explicitly looks for `fork/exec` / `python3` / `no such file or
+directory` in the error text and prints `(RED baseline ...)` so the failure is unambiguously
+the DCR-019e6a4bcb0c bug, not a false-positive.
