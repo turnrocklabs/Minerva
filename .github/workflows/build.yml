@@ -804,33 +804,41 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
-      - name: Strip all signatures from .app
-        # Godot's macOS exporter ad-hoc-signs the .app during export, but
-        # the "Bundle godot-cef framework into exported .app" step above
-        # rsyncs new content into Contents/Frameworks/ AFTER that signing.
-        # The on-disk content no longer matches the recorded signature.
-        # Without intervention, Gatekeeper rejects with "Minerva is damaged
-        # and can't be opened" — worse than the standard "unidentified
-        # developer" because users can't bypass it via right-click → Open.
+      - name: Ad-hoc re-sign outer .app (no --deep)
+        # Two prior attempts here had different failure modes:
         #
-        # Past attempt (commit 913b18a1): `codesign --force --deep --sign -`
+        # Attempt A (commit 913b18a1): `codesign --force --deep --sign -`
         # ad-hoc-signed every nested binary. On modern macOS each ad-hoc-
         # signed CEF subprocess helper triggered its own first-launch
-        # Gatekeeper prompt — users saw a dialog per library on first run.
+        # Gatekeeper prompt — users saw a dialog per library.
         #
-        # Until we wire up real notarization (needs Apple Developer cert),
-        # the cleanest path is to STRIP all signatures recursively. Modern
-        # macOS treats fully-unsigned bundles as "unidentified developer":
-        # ONE Gatekeeper prompt, bypassable via Settings → Privacy &
-        # Security → "Open Anyway", and no per-library dialogs.
+        # Attempt B (commit 4799a64e): `codesign --remove-signature --deep`
+        # stripped ALL signatures, including the main Contents/MacOS/Minerva
+        # binary. Apple Silicon (M-series) Macs require arm64 Mach-O
+        # binaries to have AT LEAST an ad-hoc signature to execute. With
+        # the main binary unsigned, macOS refused to launch the app at all
+        # ("The application 'Minerva' can't be opened").
+        #
+        # This (the middle path): sign the outer .app without --deep.
+        # `codesign --force --sign - Minerva.app`:
+        #   - Re-signs Contents/MacOS/Minerva ad-hoc (Apple Silicon happy)
+        #   - Regenerates Contents/_CodeSignature/CodeResources so the
+        #     manifest matches the rsync'd Contents/Frameworks/ content
+        #     (no "damaged" error)
+        #   - Leaves nested bundles' existing signatures alone (CEF
+        #     helpers, sub-frameworks keep cef-bundler's signatures —
+        #     no per-library Gatekeeper prompts on first run)
         working-directory: src/build/macos
         run: |
-          codesign --remove-signature --deep Minerva.app 2>&1 | tail -10 || true
-          # Sanity check: confirm outer .app has no signature now.
-          if codesign --verify --no-strict Minerva.app 2>/dev/null; then
-            echo "::warning::outer .app still has a valid signature after strip — Gatekeeper may still object"
+          codesign --force --sign - Minerva.app
+          # Verify outer .app signature is internally consistent. Use
+          # --no-deep because we intentionally didn't sign nested bundles
+          # — adding --deep to verify would walk into them and flag any
+          # that have legitimate non-matching signatures.
+          if codesign --verify Minerva.app; then
+            echo "✓ outer .app signature OK"
           else
-            echo "✓ .app signatures stripped"
+            echo "::warning::codesign --verify failed on outer .app"
           fi
 
       - name: Package macOS Build for upload
