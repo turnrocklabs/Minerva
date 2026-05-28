@@ -587,6 +587,18 @@ jobs:
             fi
           done
 
+      - name: Setup Python and SCons (for ffmpeg gdextension build)
+        # macos-latest's system Python rejects `pip install` per PEP 668
+        # (externally-managed environment). scripts/build-ffmpeg.sh calls
+        # `pip3 install scons` unconditionally, so install Python via
+        # actions/setup-python (its venv is not PEP-668-locked) and pre-
+        # install scons here so the script's pip step is a no-op.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - run: pip install scons
+
       - name: Initialize EIRTeam.FFmpeg submodule (macOS from-source)
         # Upstream's autobuild release ships linux64 + win64 only — no
         # macOS framework. We build from source via scripts/build-ffmpeg.sh,
