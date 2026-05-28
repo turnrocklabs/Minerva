@@ -561,22 +561,37 @@ jobs:
           echo "--- ffmpeg.gdextension after strip ---"
           cat "$GDEXT"
 
-      - name: Strip [dependencies] macos block from godot_cef.gdextension
-        # Godot's macOS exporter mangles the CEF framework's internal symlinks
-        # when bundling via [dependencies] — the bundled framework ends up
-        # structurally incomplete (no top-level binary symlink, dyld returns
-        # `(not a file)`). Strip the dependencies block so Godot doesn't try
-        # to bundle the framework; we manually rsync it into the exported .app
-        # after Godot's export pass, preserving the macOS framework symlink
-        # chain (Foo.framework/Foo -> Versions/Current/Foo -> Versions/A/Foo).
-        # Keep the [libraries] macos line so the extension is still loaded
-        # at runtime — dyld will resolve the path against Contents/Frameworks
-        # where we'll have placed the framework manually.
+      - name: Patch godot_cef.gdextension for macOS
+        # The CEF framework `Godot CEF.framework` does NOT follow the standard
+        # macOS framework convention (binary named `Foo` matching the
+        # framework basename). Its `Info.plist` declares
+        # `CFBundleExecutable = libgdcef.dylib` and the actual binary is
+        # `Godot CEF.framework/libgdcef.dylib`. Godot's exporter and dyld
+        # both assume the convention — they look for `Godot CEF.framework/
+        # Godot CEF` and fail with:
+        #   LipO: Can't open file: ".../Godot CEF.framework/Godot CEF"
+        #   dlopen: ... (not a file)
+        # gdcef's own rust code documents the expected load path at
+        # `crates/gdcef/src/utils.rs:62-63`:
+        #   project/addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework/libgdcef.dylib
+        # So the .gdextension is wrong as shipped — it should point at the
+        # dylib directly, not the framework dir. Patch it at CI time.
+        #
+        # Also strip the [dependencies] macos block: Godot's exporter
+        # bundles the whole framework dir into Contents/Frameworks/ and
+        # mangles its internal layout (Info.plist gets regenerated,
+        # symlinks get lost). We rsync the framework + helper app manually
+        # after export, preserving structure faithfully.
         run: |
           GDEXT=src/addons/godot_cef/godot_cef.gdextension
-          # `^macos = \{` requires an open brace, so we don't accidentally
-          # strip the [libraries] `macos          = "..."` line (which has
-          # many spaces and a quoted value).
+          # Step 1: patch [libraries] macos to point at the actual dylib.
+          # The existing line has many spaces between `macos` and `=`, so
+          # match a flexible-whitespace pattern.
+          sed -i.bak -E 's|^macos([[:space:]]*)=([[:space:]]*)"bin/universal-apple-darwin/Godot CEF\.framework"$|macos\1=\2"bin/universal-apple-darwin/Godot CEF.framework/libgdcef.dylib"|' "$GDEXT"
+          rm -f "$GDEXT.bak"
+          # Step 2: strip the multi-line [dependencies] macos block.
+          # `^macos = \{` requires an open brace so we don't match the
+          # [libraries] line above (which has quoted-string value).
           awk '
             /^macos = \{/ { skip = 1; next }
             skip && /^[[:space:]]*\}/ { skip = 0; next }
@@ -584,8 +599,13 @@ jobs:
             { print }
           ' "$GDEXT" > "$GDEXT.new"
           mv "$GDEXT.new" "$GDEXT"
-          echo "--- godot_cef.gdextension after strip ---"
+          echo "--- godot_cef.gdextension after patch ---"
           cat "$GDEXT"
+          # Sanity check: confirm the macos line now points at libgdcef.dylib.
+          if ! grep -q '^macos.*libgdcef\.dylib"$' "$GDEXT"; then
+            echo "::error::[libraries] macos line did not get patched to libgdcef.dylib"
+            exit 1
+          fi
 
       - name: Verify pre-export bin contents
         run: |
@@ -741,19 +761,22 @@ jobs:
           echo "--- Frameworks/$DST_REL/ ---"
           ls -la "$DST_REL/"
 
-      - name: Verify CEF framework binary present
-        # Catch a broken framework BEFORE the smoke launch so the failure
-        # is locatable. dyld's `(not a file)` diagnostic in iter 10 was
-        # opaque — this step makes the structural break visible.
+      - name: Verify CEF dylib present
+        # Catch a broken bundle BEFORE the smoke launch so the failure is
+        # locatable. The actual CEF binary is `libgdcef.dylib` inside the
+        # framework dir (the framework is non-standard — see the "Patch
+        # godot_cef.gdextension" step's comment for the full RCA). We
+        # check the dylib path the .gdextension's patched [libraries]
+        # macos line now resolves to at runtime.
         working-directory: src/build/macos/Minerva.app/Contents/Frameworks
         run: |
           DST_REL="addons/godot_cef/bin/universal-apple-darwin"
           FW="$DST_REL/Godot CEF.framework"
-          BIN="$FW/Godot CEF"
+          BIN="$FW/libgdcef.dylib"
 
           fail=0
           if [ ! -e "$BIN" ]; then
-            echo "::error::CEF framework binary missing at $BIN"
+            echo "::error::CEF dylib missing at $BIN"
             echo "Framework structure:"
             find "$FW" -maxdepth 3 2>&1 | head -30
             fail=1
@@ -761,11 +784,11 @@ jobs:
           if [ "$fail" -eq 0 ]; then
             file "$BIN"
             if ! file "$BIN" | grep -q "Mach-O"; then
-              echo "::error::CEF framework binary is not Mach-O at $BIN"
+              echo "::error::CEF dylib is not Mach-O at $BIN"
               fail=1
             fi
           fi
-          [ "$fail" -eq 0 ] && echo "✓ CEF framework binary OK"
+          [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
       - name: Verify macOS build assets
