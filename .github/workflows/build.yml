@@ -452,6 +452,14 @@ jobs:
         # and SConstruct would fall back to the wrong-arch per-target zig-out lib).
         mkdir -p ../../bin
         cp libminerva-vt.dylib ../../bin/
+        # SConstruct's LIBPATH is ghostty-shim/zig-out/lib/ — at this point
+        # that file is the x86_64 dylib from the last `zig build` above. ld
+        # on macos-latest (arm64) refuses to link against it ("ignoring file
+        # ... built for macOS-x86_64"), and the resulting libterminal
+        # framework binary is missing all minerva-vt symbols. Replace it with
+        # the universal binary so scons links successfully against an arm64
+        # slice and the runtime dlopen finds the symbols.
+        cp libminerva-vt.dylib ghostty-shim/zig-out/lib/libminerva-vt.dylib
 
     - name: Build Extension
       run: |
@@ -596,9 +604,12 @@ jobs:
         working-directory: src
         run: |
           mkdir -p build/macos
-          # `--import` warms the asset cache; some imports legitimately fail on
-          # headless first-run and are recovered during the export pass.
-          timeout 60 godot --headless --import || true
+          # `--import` warms the asset cache; some imports legitimately fail
+          # on headless first-run and are recovered during the export pass.
+          # macos-latest doesn't ship GNU `timeout` in PATH; let `--import`
+          # run to completion (it's bounded; Godot exits when done) or fail,
+          # and rely on `|| true` for non-zero exits.
+          godot --headless --import || true
           godot --headless --export-release "macOS" build/macos/Minerva.app
           echo "Exported .app structure (top 3 levels):"
           find build/macos/Minerva.app -maxdepth 3 -type d | sort
