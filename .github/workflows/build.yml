@@ -539,15 +539,25 @@ jobs:
         # disabled on macOS until FFmpeg-from-source is wired up.
         run: |
           GDEXT=src/addons/ffmpeg/ffmpeg.gdextension
-          # Strip the `macos.debug` and `macos.release` library lines AND
-          # the comment that precedes them. Idempotent (re-running is a
-          # no-op once the lines are gone).
-          sed -i.bak \
-            -e '/macOS: built from source via scripts\/build-ffmpeg.sh/d' \
-            -e '/^macos\.debug = /d' \
-            -e '/^macos\.release = /d' \
-            "$GDEXT"
-          rm -f "$GDEXT.bak"
+          # Two things to strip:
+          #   1. `macos.debug` / `macos.release` lines from [libraries]
+          #      (and the comment line that precedes them)
+          #   2. The entire multi-line `macos = { ... }` block in
+          #      [dependencies] — its inner lines reference libavcodec.dylib
+          #      etc. that don't exist; Godot's bundling loop aborts there.
+          #
+          # awk handles the multi-line block: enter skip mode on `^macos =`
+          # at top of line, stay until we see the closing `}`. Idempotent.
+          awk '
+            /^; macOS: built from source via scripts\/build-ffmpeg\.sh/ { next }
+            /^macos\.debug = / { next }
+            /^macos\.release = / { next }
+            /^macos =/ { skip = 1; next }
+            skip && /^[[:space:]]*\}/ { skip = 0; next }
+            skip { next }
+            { print }
+          ' "$GDEXT" > "$GDEXT.new"
+          mv "$GDEXT.new" "$GDEXT"
           echo "--- ffmpeg.gdextension after strip ---"
           cat "$GDEXT"
 
