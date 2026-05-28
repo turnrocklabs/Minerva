@@ -804,41 +804,38 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
-      - name: Ad-hoc re-sign outer .app (no --deep)
-        # Two prior attempts here had different failure modes:
+      - name: Ad-hoc re-sign .app (with --deep, then strip quarantine)
+        # Codesign iteration history (in build.yml git log):
+        #   - 913b18a1: `--force --deep --sign -` → per-library Gatekeeper
+        #     prompts on first launch (CEF helper subprocess spawns, each
+        #     quarantined → individual prompts)
+        #   - 4799a64e: `--remove-signature --deep` → "can't be opened" on
+        #     Apple Silicon (arm64 binaries require AT LEAST ad-hoc
+        #     signatures to execute)
+        #   - 37457ad5: `--force --sign -` (no --deep) → codesign aborts
+        #     because Godot's export left "Unsigned nested executable
+        #     file" inside Contents/Frameworks/Godot CEF.framework; outer
+        #     signing requires nested code to be in a valid signed state
         #
-        # Attempt A (commit 913b18a1): `codesign --force --deep --sign -`
-        # ad-hoc-signed every nested binary. On modern macOS each ad-hoc-
-        # signed CEF subprocess helper triggered its own first-launch
-        # Gatekeeper prompt — users saw a dialog per library.
+        # Resolution (this commit): use --deep (required to sign nested
+        # unsigned binaries Godot can't handle), and document that users
+        # MUST run `xattr -dr com.apple.quarantine Minerva.app` BEFORE
+        # first launch to strip the quarantine attribute from every
+        # nested file. Without that, each CEF helper subprocess spawn
+        # triggers an independent Gatekeeper check.
         #
-        # Attempt B (commit 4799a64e): `codesign --remove-signature --deep`
-        # stripped ALL signatures, including the main Contents/MacOS/Minerva
-        # binary. Apple Silicon (M-series) Macs require arm64 Mach-O
-        # binaries to have AT LEAST an ad-hoc signature to execute. With
-        # the main binary unsigned, macOS refused to launch the app at all
-        # ("The application 'Minerva' can't be opened").
-        #
-        # This (the middle path): sign the outer .app without --deep.
-        # `codesign --force --sign - Minerva.app`:
-        #   - Re-signs Contents/MacOS/Minerva ad-hoc (Apple Silicon happy)
-        #   - Regenerates Contents/_CodeSignature/CodeResources so the
-        #     manifest matches the rsync'd Contents/Frameworks/ content
-        #     (no "damaged" error)
-        #   - Leaves nested bundles' existing signatures alone (CEF
-        #     helpers, sub-frameworks keep cef-bundler's signatures —
-        #     no per-library Gatekeeper prompts on first run)
+        # We also pre-emptively strip quarantine from the build tree
+        # itself before signing — the runner shouldn't have quarantine
+        # attrs but this is defense in depth in case Godot's export adds
+        # any (the downloaded Godot binary did have quarantine).
         working-directory: src/build/macos
         run: |
-          codesign --force --sign - Minerva.app
-          # Verify outer .app signature is internally consistent. Use
-          # --no-deep because we intentionally didn't sign nested bundles
-          # — adding --deep to verify would walk into them and flag any
-          # that have legitimate non-matching signatures.
-          if codesign --verify Minerva.app; then
-            echo "✓ outer .app signature OK"
+          xattr -cr Minerva.app 2>/dev/null || true
+          codesign --force --deep --sign - Minerva.app
+          if codesign --verify --deep --strict Minerva.app; then
+            echo "✓ .app signature internally consistent"
           else
-            echo "::warning::codesign --verify failed on outer .app"
+            echo "::warning::codesign --verify --deep failed"
           fi
 
       - name: Package macOS Build for upload
@@ -1386,7 +1383,11 @@ jobs:
             **Release Builds (Optimized):**
             - **Windows**: Download `Minerva-Windows.zip`, extract and run `Minerva.exe`
             - **Linux**: Download `Minerva-Linux.tar.gz`, extract and run `./Minerva.x86_64`
-            - **macOS**: Download `Minerva-macOS.zip`, extract `Minerva.app`. Unsigned build — clear quarantine with `xattr -dr com.apple.quarantine Minerva.app` then open.
+            - **macOS**: Download `Minerva-macOS.zip`, extract → `Minerva.app`. The build is ad-hoc-signed (no Apple Developer cert). **Before you double-click the app**, open Terminal and run:
+              ```
+              xattr -dr com.apple.quarantine /path/to/Minerva.app
+              ```
+              This strips the download quarantine from every nested binary. If you launch the app FIRST, macOS caches "untrusted" for each CEF helper subprocess and you'll get a Gatekeeper prompt per helper. After `xattr -dr`, open normally (you'll get one "unidentified developer" prompt; bypass via right-click → Open or Settings → Privacy & Security → "Open Anyway").
 
             **Debug Builds (For Development - includes console output and debug symbols):**
             - **Windows Debug**: Download `Minerva-Windows-Debug.zip`, extract and run `Minerva.exe`
