@@ -1,229 +1,230 @@
 # Pickup
 
-STATE: `DCR 019e6a4bcb0c — W2 RED test partially written, RED proof pending on laptop`
+STATE: `CAD DCR shipped — Minerva macOS/Windows release builds broken, blocks HITL`
 
-Last updated 2026-05-27 — laptop handoff. Workstation is being put down; resume on laptop.
-
----
-
-## 0. WHAT THIS DCR IS
-
-**DCR `019e6a4bcb0c71019723011d8f8c8cf1`** — CAD plugin: embedded PBS python runtime (Plan A). Status: `designing`.
-
-Closes HITL #2 from the prior marketplace push (DCR `019e62ade5be`): cad evaluate fails with
-`bridge.Worker.Start: exec: fork/exec /usr/bin/python3: no such file or directory` because the
-marketplace tarball ships only the cad-plugin binary + manifest + ui/ — no Python, no
-mcad_worker package, no build123d / cadquery-ocp.
-
-Plan A (your choice 2026-05-27): build a per-platform PBS (`python-build-standalone`) bundle
-containing cpython 3.12.x + build123d + cadquery-ocp + mcad_worker, `go:embed` it into the
-cad-plugin Linux binary, extract to `<data_directory>/runtime/<plugin_version>/` on first run.
-Per-plugin isolation, no Minerva-host-python dependency, no network at first start.
-
-Full plan + 5-why analysis + 4-option comparison: see DCR docket article on item
-`019e6a4bcb0c71019723011d8f8c8cf1` (project: minerva). Read with
-`mcp__docket__docket_get id=019e6a4bcb0c project=minerva`.
+Last updated 2026-05-27.
 
 ---
 
-## 1. DCR TREE (already filed in docket)
+## TL;DR
 
-```
-DCR  019e6a4bcb0c  designing — CAD plugin embedded PBS python runtime (Plan A)
-├── W0   019e6a4c30a3  DONE    — branch setup, risk controls, briefing kit
-├── W1a  019e6a4c91cb  backlog — cad/scripts/build-runtime-bundle.sh (linux-x86_64)
-├── W1b  019e6a4cf762  backlog — cad: go:embed + ExtractEmbedded + PythonPath
-├── W1c  019e6a4d422a  backlog — cad: bridge.Worker env + cad-side regression test
-├── W2   019e6a4d96fb  in_progress — Minerva RED functional test (this one needs laptop work)
-├── W3   019e6a4e0455  backlog — cad.yml + v0.1.1 release + smoke evaluate + flip W2 GREEN
-└── W4   019e6a4e37b9  backlog — HITL (single gate at end)
-```
+**CAD plugin DCR `019e6a4bcb0c71019723011d8f8c8cf1` shipped.** cad-v0.1.1 is live on
+imrans-lab/minerva-plugins with embedded PBS python on 3 platforms.
 
-Every item has full description+spec text in the docket article. Use
-`docket_get id=<short> project=minerva` to read.
+**BUT** the user can't HITL because the downloaded **macOS Minerva.app crashes at launch**
+with `Library not loaded: @rpath/libminerva-vt.dylib`. Linux likely works; Windows
+unverified. **Next session picks up DCR `019e5ce2160f76d9868f7a000c41614b`** to fix the
+Minerva build packaging across all three platforms.
 
 ---
 
-## 2. WHAT'S COMMITTED + PUSHED
+## 0. CAD DCR — SHIPPED (status: review needed → done after HITL)
 
-### Minerva (turnrocklabs/Minerva)
+### What landed
 
-Branch: `dcr/cad-embedded-python-test` (off `development`, base `f653adf3`).
+- `imrans-lab/minerva-plugins:main`
+  - Merge `a9af25a` (DCR's W1-W3 combined: cad embedded PBS python runtime)
+  - Registry `6e8fd7e` (registry.json points at cad-v0.1.1)
+  - **Release `cad-v0.1.1`** with 3 platform tarballs (linux-x86_64, macos-universal,
+    windows-x86_64). 150-330MB each — embedded cpython 3.12.13 + build123d 0.10.0 +
+    cadquery-ocp 7.8.1.1.post1 + mcad_worker.
 
-Commits on the branch:
-- `f6426348` — docket: file DCR 019e6a4bcb0c cad-plugin embedded PBS python runtime
-- `7c9b8652` — W2 RED functional test (in-progress, handoff) + pickup + run-functional-tests entry
-- `<this commit>` — pickup: fill in the prior commit SHA (doc nit)
+- `turnrocklabs/Minerva:development`
+  - Merge `5a6b955f` (W2 helpers + W3 tarball-smoke cad gate)
 
-### plugins (imrans-lab/minerva-plugins via remote `lab`)
+### Layer verification (cad fix proven before HITL block)
 
-Branch: `dcr/cad-embedded-python-linux` (off `main`, base `cf25d61`).
+| Layer | Status | Evidence |
+|---|---|---|
+| L1 bundle self-test | ✅ green | macos-arm64 local + all 3 CI legs in run 26551796885 |
+| L2 cad-side Go binary roundtrip | ✅ green | `cad/embedded_python_spawn_test.go` PASS on laptop in 56s |
+| L3 real release tarball | ✅ green | Downloaded cad-0.1.1-macos-universal.tar.gz, mcad_validate sphere(5) returned ok=true in 35s |
+| L4 HITL | ⏸️ BLOCKED | Minerva.app won't launch (separate DCR) |
 
-No commits yet on the branch — it was branched but no implementation work has begun in plugins
-repo. The branch is pushed so you can pull it on the laptop and start W1a there.
+### CAD work remaining (after HITL)
 
----
-
-## 3. CURRENT IN-PROGRESS WORK — W2 STATE
-
-### Files on disk (committed below before handoff)
-
-- `~/github/Minerva/src/test/test_marketplace_install_start_cad_evaluate.gd` (NEW, ~310 lines)
-- `~/github/Minerva/src/test/test_marketplace_install_start_cad_evaluate.gd.uid` (Godot auto)
-- `~/github/Minerva/scripts/run-functional-tests.sh` (added entry to PLUGIN_TESTS array)
-
-### What's done in W2
-
-- Test file written, parallels `test_marketplace_install_start_scansort.gd` (DRY check passed —
-  same structure, only deltas: PLUGIN_ID, BINARY_NAME, ui/ copy, randomized port, AND the
-  critical extra step 3 that calls `mcad_validate` via `MCPServerConnection.call_tool()` and
-  asserts a non-error worker response. The scansort sibling stops at state=RUNNING; that gap is
-  what masked HITL #2.
-- Registered in `scripts/run-functional-tests.sh` PLUGIN_TESTS array.
-- Two fixes applied while debugging on workstation:
-  - **Port randomization** — was hardcoded 18767; killed test orphans landed on the port
-    and blocked subsequent runs with `OSError: [Errno 98] Address already in use`. Fixed by
-    `PORT = 30000 + (Time.get_ticks_msec() % 20000)`.
-  - **Two-stage probe** — was a 5s HTTPRequest.request_completed loop (50 iters x 100ms).
-    Replaced with: 15s OS-level TCP socket probe via `exec 3<>/dev/tcp/...` + one HTTPRequest
-    verification once port is up. Reason: full singleton boot starves create_timer +
-    HTTPRequest in cad's test context (more autoload activity than scansort sibling).
-
-### What still needs doing on W2
-
-1. **Confirm RED baseline.** Run on the laptop (fresh boot, before any long-lived Minerva
-   session):
-   ```bash
-   cd ~/github/Minerva
-   timeout 300 stdbuf -oL -eL godot --headless --path src \
-       --script test/test_marketplace_install_start_cad_evaluate.gd 2>&1 \
-       | tee /tmp/cad_w2_red.log
-   ```
-   Expected: test fails with one of these envelope errors at step 3 (mcad_validate):
-   - `bridge.Worker.Start: exec: fork/exec /usr/bin/python3: no such file or directory`
-   - Or any other worker-spawn error containing "fork/exec", "python3", or "no such file"
-   - The test specifically prints `(RED baseline — worker python spawn failure; the bug
-     DCR 019e6a4bcb0c fixes)` when this happens.
-2. If the test PASSES against cad-v0.1.0 (extremely unexpected), the test is broken — likely
-   the cad-v0.1.0 binary on `~/github/plugins/cad/cad-plugin` has been swapped for a newer
-   build. Verify with `sha256sum ~/github/plugins/cad/cad-plugin` and cross-check the
-   imrans-lab cad-v0.1.0 release.
-3. Once RED is confirmed: do NOT change the test. Move to W1a. (The test will turn GREEN
-   automatically after W1a/b/c land and W3 rebuilds the cad binary in
-   `~/github/plugins/cad/cad-plugin` with the embedded python.)
-
-### Why this was slow on the workstation
-
-The workstation had a long-running Minerva session before the test was invoked, with nudge
-+ cobrowser + codetools MCP servers alive and gdcef CEF helper processes contending for
-engine main-loop frames during `--headless --script` boot. On a fresh laptop boot this should
-take ~60-90s total (matching the scansort sibling's runtime). If the laptop also shows
-multi-minute setup, kill any background godot/cefclient/mcp-server processes first.
+After HITL passes:
+- Transition DCR `019e6a4bcb0c` to `shipped`.
+- File follow-up DCRs:
+  - linux-arm64 cad bundle (cadquery-ocp 7.8.x has no aarch64 wheels; bump build123d or
+    use a private wheel index).
+  - W2 cad-evaluate test install_from_url hang (PluginPolicy + cad capabilities in
+    headless context).
+  - `regen_registry.py` TARGETS list drops linux-arm64 to avoid 404 in marketplace.
 
 ---
 
-## 4. RESUMING ON THE LAPTOP
+## 1. THE BLOCKER — DCR `019e5ce2160f76d9868f7a000c41614b`
 
-### Cross-machine sanity checks (paths differ on the laptop)
+**Title:** "build.yml: latent CI bugs on all three platforms (surfaced by W0+W1
+workflow_dispatch)"
 
-The test uses `$HOME + "/github/plugins/cad"` for the cad source tree. Verify on the laptop:
+**Status:** new (diagnosis written 2026-05-25; no work done)
 
-```bash
-echo "HOME=$HOME"
-ls -la $HOME/github/plugins/cad/manifest.json $HOME/github/plugins/cad/cad-plugin $HOME/github/plugins/cad/ui
+**Pull with:** `mcp__docket__docket_get id=019e5ce2160f project=minerva`
+
+### What the docket already knows
+
+Four items found by W0+W1 swarm. Items #1+#2 are FIXED. Items #3+#4 are OPEN:
+
+**Item #3 — macOS framework copy at parse time (OPEN, root cause of our HITL block).**
+
+`src/SConstruct` lines 60-66 do:
+
+```python
+if env["platform"] == "macos":
+    minerva_vt_src = "gdextension/terminal/ghostty-shim/zig-out/lib/libminerva-vt.dylib"
+    framework_dir = "bin/libterminal.{}.{}.framework".format(env["platform"], env["target"])
+    minerva_vt_dst = os.path.join(framework_dir, "libminerva-vt.dylib")
+    if os.path.exists(minerva_vt_src) and os.path.isdir(framework_dir):  # ← parse-time
+        shutil.copy2(minerva_vt_src, minerva_vt_dst)
 ```
 
-All three must exist. If they don't, clone:
-- `git clone git@github.com:imrans-lab/minerva-plugins.git $HOME/github/plugins`
-- The cad-plugin binary needs to be built: `cd $HOME/github/plugins/cad && go build .`
+The `os.path.isdir(framework_dir)` check runs at SConstruct **parse time**, before
+scons builds the framework. Fresh CI checkout → framework dir doesn't exist yet → copy
+skipped → libminerva-vt.dylib never gets into the .framework → exported .app missing
+the dylib → DYLD lookup fails at launch.
 
-### Pull the branches on the laptop
+Works locally only because devs have leftover framework dirs from prior builds. Docket
+proposes: `env.AddPostAction(library, ...)` instead of parse-time check.
 
-```bash
-# Minerva
-cd $HOME/github/Minerva   # or wherever
-git fetch origin
-git checkout dcr/cad-embedded-python-test
+**Item #4 — Windows missing ghostty-vt build (OPEN, Windows runtime risk).**
 
-# plugins
-cd $HOME/github/plugins
-git fetch lab            # if you set up imrans-lab as `lab` remote here too
-git checkout dcr/cad-embedded-python-linux
-```
+`build-windows` job has no `zig build` step. Terminal extension's SConstruct
+unconditionally links `minerva-vt.lib` → `LINK : fatal error LNK1181: cannot open input
+file 'minerva-vt.lib'`. The docket flags this as an open question: cross-compile shim
+to Windows, or have SConstruct conditionally exclude minerva-vt on Windows?
+`scripts/build-extensions.sh` only handles linux/macos, suggesting the latter was
+original intent.
 
-If laptop's plugins remote layout is different (e.g. `origin` points at imrans-lab on laptop
-but `lab` on workstation), use whatever name maps to the imrans-lab/minerva-plugins URL.
+### What I added to the analysis 2026-05-27
 
-### Resume sequence (6 - 1 = 5 iters remaining)
+Beyond the docket's 2026-05-25 findings, the current build.yml has **post-export
+verification + smoke-launch only on Linux** (build.yml lines 682-746). macOS and
+Windows export steps run but don't gate the artifact. So:
+- Linux: protected by verify+smoke ✅
+- macOS: NO gate — actual macOS .app from a recent CI run is missing libminerva-vt.dylib (confirmed by user's launch crash)
+- Windows: NO gate — unknown if it runs at all from a fresh download
 
-1. **W2 finalize (iter 2)** — run the test on laptop, confirm RED, commit a `pickup` note
-   recording the verbatim RED log; transition W2 to `blocked_by` W1a (or leave in_progress).
-2. **W1a (iter 3)** — implement `cad/scripts/build-runtime-bundle.sh`. Spec in docket item
-   `019e6a4c91cb`. Read with `docket_get id=019e6a4c91cb project=minerva`.
-3. **W1b (iter 4)** — go:embed + ExtractEmbedded + PythonPath. Spec in `019e6a4cf762`.
-4. **W1c (iter 5)** — bridge.Worker env + cad regression test. Spec in `019e6a4d422a`.
-5. **W3 (iter 6)** — cad.yml integrate + release v0.1.1 + Minerva smoke evaluate. Spec in
-   `019e6a4e0455`. **PAUSE for user HITL on direct main push to imrans-lab/minerva-plugins
-   per pickup §6.**
-6. **W4** — single HITL gate. Spec in `019e6a4e37b9`.
+The fix is two layers:
+1. Resolve items #3+#4 (the actual packaging bugs).
+2. Add macOS + Windows equivalents of the Linux verify+smoke block (so this class of bug fails at CI, not at HITL).
 
-### Pre-flight on laptop (same as W0 did on workstation)
+### Proposed plan for the next session
 
-```bash
-cd $HOME/github/Minerva && git status -uno && git rev-parse --abbrev-ref HEAD
-cd $HOME/github/plugins && git status -uno && git rev-parse --abbrev-ref HEAD
-```
+Five rounds:
 
-Assert both branches checked out clean, then start.
+| Round | Work |
+|---|---|
+| R1 | Reproduce + investigate: download the same Minerva.app the user has; inspect what's inside (`unzip -l Minerva.app/Contents/`). Confirm libminerva-vt.dylib is missing. Investigate item #3's SConstruct change locally + confirm the AddPostAction approach. |
+| R2 | Item #3 fix: rewrite the SConstruct framework-copy as a scons builder action (or AddPostAction). Push to dev; CI runs build.yml. |
+| R3 | Add macOS verify+smoke step in build.yml (mirror Linux lines 682-746): check `Minerva.app/Contents/Frameworks/libminerva-vt.dylib` + CEF runtime files, then smoke-launch with `--headless --quit-after 30` to detect dlopen errors. |
+| R4 | Item #4 + Windows verify+smoke: decide cross-compile vs conditional exclude, implement, add Windows verify+smoke step in build.yml. |
+| R5 | Verify all 3 platforms run from a fresh download. Then return to CAD HITL on the now-working Minerva. |
+
+### Acceptance criteria for DCR `019e5ce2`
+
+1. A push to `development` produces Minerva-{Windows,Linux,macOS} artifacts that all
+   pass a post-export `--headless --quit-after 30` smoke launch in CI.
+2. User downloads the macOS .app from a fresh CI run and it launches without dyld errors.
+3. Same for Windows (.exe) and Linux (AppImage or .x86_64).
+4. Then CAD HITL resumes against this build.
 
 ---
 
-## 5. NUDGE HINTS WORTH READING (saved this session)
+## 2. GIT STATE AT HANDOFF
 
-```
-nudge_get_hint component=minerva-plugin-platform key=python-runtime-not-a-host-capability
-nudge_get_hint component=cad-plugin                 key=embed-go-is-not-embedding
-nudge_get_hint component=minerva-testing            key=sceneTree-script-blocks-on-full-autoload
-```
+### Minerva (`turnrocklabs/Minerva`)
 
-Plus all 8 from the prior autonomous loop (pickup §4 of `f653adf3`).
+- HEAD on `development` is `5a6b955f` (CAD's W2+W3 Minerva-side merge — pushed).
+- Local working tree: `Docs/minerva.dct` modified (docket DB drift, pre-existing) +
+  vendor/ submodule modifications (pre-existing). `Docs/pickup.md` (this file)
+  will be modified by next agent at session-start.
+- Stash: there's a `git stash` entry from this session containing `Docs/minerva.dct`
+  pre-merge. Drop it (`git stash drop`) — the merged state is fine.
+
+### Plugins (`imrans-lab/minerva-plugins`)
+
+- HEAD on `main` is `6e8fd7e` (registry regen — pushed). Clean.
+- DCR branch `dcr/cad-embedded-python-linux` is fully merged + can be deleted whenever.
+
+### Tags / Releases
+
+- `cad-v0.1.1` on imrans-lab/minerva-plugins — final release, 3 platform tarballs.
+- `cad-v0.1.1-branch-dcr-cad-embedded-python-linux` — prerelease (can keep or delete).
+- Plus the auto-tagged prereleases from intermediate fix-up commits.
 
 ---
 
-## 6. HARD RULES (UNCHANGED)
+## 3. CONTEXT THAT MUST SURVIVE COMPACTION
 
-- Per-file `git add` only. No `-A`/`.`.
+### Key technical details for the build-fix work
+
+- **SConstruct path bug** is at `src/SConstruct:60-66`. Parse-time `os.path.isdir()`
+  vs build-time `AddPostAction`. Docket DCR has the proposed fix shape.
+- **terminal.gdextension** at `src/bin/terminal.gdextension` declares
+  `[dependencies] macos = { "../../bin/libminerva-vt.dylib": "" }`. The Linux
+  equivalent `linux.x86_64 = { ... }` works. macOS entry is declared but the
+  exporter drops it (Godot exporter `[dependencies]` quirk).
+- **Linux verify block** in `.github/workflows/build.yml:682-746` is the template
+  to copy for macOS + Windows. Has both file-presence check and smoke-launch.
+- **Build-extensions script**: `scripts/build-extensions.sh` (Unix-only, no Windows
+  variant) is one signal the project considers ghostty-vt as Unix-only.
+- **Universal binary build for macOS** is at `build.yml:436-450`. Creates `libminerva-vt-arm64.dylib` + `libminerva-vt-x86_64.dylib`, then lipo to universal `libminerva-vt.dylib`, then `cp` to `src/bin/`. The .dylib EXISTS in `src/bin/`. The SConstruct copy into the framework is what fails.
+
+### Process / tooling notes
+
+- 11-loop CAD DCR autonomous run completed this session. Loop budget format
+  works for self-paced work. User authorized budget extension when Windows
+  fix-ups stretched past planned scope.
+- Reviewer sub-agent pattern (Opus, fresh context, ~50-100 lines of brief)
+  caught real issues in W1a/W1b. Worth re-using.
+- `Monitor` tool with 10-min poll + 35-min stall detect worked well for CI
+  watching. `gh run view --json` is the right API.
+- Docket-update for substantive scope amendments (vs creating new DCRs) kept
+  the work item history coherent. Pattern: append a `## Scope amendment —
+  <date>` section instead of replacing the original description.
+
+### CAD-fix details that aren't blocking but worth knowing
+
+- `cad/internal/runtime/extract.go` is **plugin-agnostic by design**. When a
+  second python-embedded plugin arrives, mechanically move to `pkg/pyembed/`
+  and update import paths in cad/.
+- `scripts/build-python-runtime-bundle.sh` at minerva-plugins repo root is
+  also plugin-agnostic. Reads each plugin's `scripts/runtime-bundle.lock`
+  for pins.
+- `bridge.Worker.readyTimeout` was bumped from 15s to 60s default (with env
+  override `MINERVA_WORKER_READY_TIMEOUT_SEC`) because cold-extract of the
+  embedded bundle takes 30-50s on first start.
+- macOS Gatekeeper: PBS unsigned binaries extracted at runtime DID NOT
+  trigger quarantine for the CAD bundle's python.exe — the L3 verification
+  ran clean without `xattr` cleanup. So gatekeeper hostility may be milder
+  than feared.
+
+---
+
+## 4. HARD RULES (UNCHANGED)
+
+- Per-file `git add` only. No `-A` or `.`.
 - No `--no-verify`. No `vendor/` touches.
 - No force-push, no `git reset --hard`.
-- Co-author trailer: `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`.
-- Plugins repo `imrans-lab/minerva-plugins`: user authorization for the cad-v0.1.1 main push
-  in W3 is **NOT carried over from this session** — re-ask before that push.
-- Minerva `development` push: autonomous-loop authorization applies; the new branch
-  `dcr/cad-embedded-python-test` was created so we don't need to push to development until
-  W3 merges back.
+- Co-author trailer on commits.
+- Plugins repo `imrans-lab/minerva-plugins`: user authorization for any main push
+  is per-instance — re-ask each time.
+- Minerva `development` push: autonomous-loop authorization carries (per
+  this session's Gate C confirmation).
 
 ---
 
-## 7. WHAT THE TEST FILE ACTUALLY LOOKS LIKE (quick reference)
+## 5. FIRST ACTIONS FOR NEXT SESSION
 
-`src/test/test_marketplace_install_start_cad_evaluate.gd` — key shape:
+1. `mcp__docket__docket_get id=019e5ce2160f project=minerva` to read the full DCR.
+2. Read `src/SConstruct` lines 60-66 to confirm the parse-time bug is still there.
+3. Download the same Minerva.app the user hit the crash on (latest macOS build
+   from imrans-lab/turnrocklabs Minerva Actions).
+4. Verify the dylib is missing inside the .app:
+   `unzip -l Minerva.app/Contents/Frameworks/libterminal.macos.template_release.framework/`.
+5. Then propose loop budget to the user and start the implementation rounds above.
 
-```
-extends SceneTree
-
-const PLUGIN_ID := "cad"
-const PLUGIN_SRC_REL := "/github/plugins/cad"     # joined with $HOME
-const BINARY_NAME := "cad-plugin"
-const VALIDATE_SOURCE := "result = sphere(5)"
-var PORT: int = 30000 + (Time.get_ticks_msec() % 20000)
-
-func _run():
-    # step 1: install_from_url   (works against cad-v0.1.0)
-    # step 2: start_plugin       (works against cad-v0.1.0)
-    # step 3: mcad_validate      (FAILS against cad-v0.1.0 — this is the RED gate)
-    # step 4: stop_plugin
-```
-
-The step-3 failure path explicitly looks for `fork/exec` / `python3` / `no such file or
-directory` in the error text and prints `(RED baseline ...)` so the failure is unambiguously
-the DCR-019e6a4bcb0c bug, not a false-positive.
+**Do not start the CAD HITL work in next session** — that's gated on Minerva
+build packaging being fixed first.
