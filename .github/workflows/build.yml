@@ -618,6 +618,16 @@ jobs:
           # The script auto-installs nightly via rustup, but we make sure
           # rustup itself is present (it should be on macos-latest).
           command -v rustup || (echo "::error::rustup missing on macos-latest"; exit 1)
+          # macos-latest is ARM64, but cef-bundler's `xtask bundle` builds a
+          # universal binary by compiling BOTH x86_64-apple-darwin and
+          # aarch64-apple-darwin and lipo'ing them. Each target needs its
+          # rustlib (core/std/etc.) installed in the toolchain. Without
+          # this, cargo emits:
+          #   error[E0463]: can't find crate for `core`
+          # The script installs the nightly toolchain itself, but doesn't
+          # add per-target stdlibs for it — do that here explicitly.
+          rustup install nightly
+          rustup target add --toolchain nightly x86_64-apple-darwin aarch64-apple-darwin
           bash scripts/build-godot-cef.sh macos
           echo "CEF deployed:"
           find src/addons/godot_cef/bin/universal-apple-darwin -maxdepth 4 -type d | head -20
