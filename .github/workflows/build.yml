@@ -804,6 +804,26 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
+      - name: Re-sign .app ad-hoc after framework bundling
+        # Godot's macOS exporter ad-hoc-signs the .app during export, but
+        # the "Bundle godot-cef framework into exported .app" step above
+        # rsyncs new content into Contents/Frameworks/ AFTER that signing.
+        # The on-disk content no longer matches the recorded signature, so
+        # Gatekeeper rejects the .app with "Minerva is damaged and can't be
+        # opened" (a worse error than the usual "unidentified developer" —
+        # users can't bypass it via right-click → Open). Re-sign with
+        # --force --deep so every nested bundle (frameworks, helper .app)
+        # gets a fresh ad-hoc signature matching the current contents.
+        working-directory: src/build/macos
+        run: |
+          codesign --force --deep --sign - Minerva.app
+          # Verify signature is internally consistent (catches any nested
+          # bundle the deep walk couldn't sign for some reason).
+          codesign --verify --deep --strict Minerva.app || {
+            echo "::warning::codesign --verify failed; .app may still open via xattr workaround but Gatekeeper will object"
+          }
+          echo "✓ .app re-signed ad-hoc"
+
       - name: Verify macOS build assets
         working-directory: src/build/macos
         run: |
