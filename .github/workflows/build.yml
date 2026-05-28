@@ -887,7 +887,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-macOS-Build
-          path: src/build/macos/*
+          # Upload only the .app — `src/build/macos/*` glob also captures
+          # `minerva-launch.log` from the smoke step, polluting the user-
+          # facing zip. The smoke log has its own dedicated upload step
+          # (`macos-smoke-log`) for failure inspection.
+          path: src/build/macos/Minerva.app
 
       - name: Upload smoke-launch log on failure
         if: failure()
