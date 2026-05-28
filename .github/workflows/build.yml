@@ -525,42 +525,6 @@ jobs:
           # lands at the path WRY.gdextension references.
           path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework
 
-      - name: Strip macOS entries from ffmpeg.gdextension
-        # The upstream EIRTeam.FFmpeg autobuild zip ships linux64 + win64
-        # binaries only — no macOS .framework. The proper fix is to build
-        # FFmpeg from source via scripts/build-ffmpeg.sh, but that takes
-        # 30-60min and isn't in scope for unblocking the macOS .app build.
-        # Without this strip step, Godot's macOS exporter hits
-        # "Failed to open .../libgdffmpeg.macos.template_release.framework"
-        # during shared-object bundling and aborts the whole copy loop,
-        # leaving Contents/Frameworks/ empty. Removing the macos entries
-        # from the gdextension lets Godot skip FFmpeg for macOS exports
-        # and bundle the rest (terminal, CEF, sqlite). Video playback
-        # disabled on macOS until FFmpeg-from-source is wired up.
-        run: |
-          GDEXT=src/addons/ffmpeg/ffmpeg.gdextension
-          # Two things to strip:
-          #   1. `macos.debug` / `macos.release` lines from [libraries]
-          #      (and the comment line that precedes them)
-          #   2. The entire multi-line `macos = { ... }` block in
-          #      [dependencies] — its inner lines reference libavcodec.dylib
-          #      etc. that don't exist; Godot's bundling loop aborts there.
-          #
-          # awk handles the multi-line block: enter skip mode on `^macos =`
-          # at top of line, stay until we see the closing `}`. Idempotent.
-          awk '
-            /^; macOS: built from source via scripts\/build-ffmpeg\.sh/ { next }
-            /^macos\.debug = / { next }
-            /^macos\.release = / { next }
-            /^macos =/ { skip = 1; next }
-            skip && /^[[:space:]]*\}/ { skip = 0; next }
-            skip { next }
-            { print }
-          ' "$GDEXT" > "$GDEXT.new"
-          mv "$GDEXT.new" "$GDEXT"
-          echo "--- ffmpeg.gdextension after strip ---"
-          cat "$GDEXT"
-
       - name: Patch godot_cef.gdextension for macOS
         # The CEF framework `Godot CEF.framework` does NOT follow the standard
         # macOS framework convention (binary named `Foo` matching the
@@ -623,17 +587,54 @@ jobs:
             fi
           done
 
-      - name: Download EIRTeam.FFmpeg (macOS)
+      - name: Initialize EIRTeam.FFmpeg submodule (macOS from-source)
+        # Upstream's autobuild release ships linux64 + win64 only — no
+        # macOS framework. We build from source via scripts/build-ffmpeg.sh,
+        # which compiles ffmpeg-kit (FFmpeg + x264 + x265 + vpx + opus +
+        # vorbis etc.) targeting arm64 only (M-series Macs are the only
+        # supported macOS target). Cold build is 30-60min; cached after.
         run: |
-          FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/autobuild-2025-11-12-13-44/eirteam-ffmpeg-1.1.4.zip"
-          curl -L -o /tmp/ffmpeg.zip "$FFMPEG_URL"
-          unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg-extract
-          FFMPEG_SRC=$(find /tmp/ffmpeg-extract -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
-          mkdir -p src/addons/ffmpeg/macos
-          cp -r "$FFMPEG_SRC/macos/"* src/addons/ffmpeg/macos/ 2>/dev/null || true
-          cp -r "$FFMPEG_SRC/macos/"*.framework src/addons/ffmpeg/macos/ 2>/dev/null || true
-          echo "FFmpeg macOS addon installed:"
-          ls src/addons/ffmpeg/macos/ 2>/dev/null | head -20
+          git submodule update --init --recursive vendor/EIRTeam.FFmpeg
+
+      - name: Compute EIRTeam.FFmpeg submodule SHA
+        # Use the submodule SHA as the cache key so a submodule bump
+        # invalidates the cache and triggers a rebuild automatically.
+        id: ffmpeg-sha
+        run: |
+          SHA=$(git ls-tree HEAD vendor/EIRTeam.FFmpeg | awk '{print $3}')
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "EIRTeam.FFmpeg submodule SHA: $SHA"
+
+      - name: Cache EIRTeam.FFmpeg built addon (macOS)
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: src/addons/ffmpeg/macos
+          key: ffmpeg-macos-arm64-${{ steps.ffmpeg-sha.outputs.sha }}
+
+      - name: Build EIRTeam.FFmpeg from source (macOS)
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        # Cold build path: ffmpeg-kit + GDExtension wrapper, 30-60min.
+        # The script handles brew deps, CMake 4.x patches for x265,
+        # ad-hoc codesigns the output dylibs/frameworks. Idempotent —
+        # subsequent in-step runs (same submodule SHA) become no-ops.
+        run: |
+          bash scripts/build-ffmpeg.sh macos
+
+      - name: Verify FFmpeg macOS addon
+        run: |
+          if [ -z "$(ls src/addons/ffmpeg/macos/ 2>/dev/null)" ]; then
+            echo "::error::src/addons/ffmpeg/macos/ is empty after cache/build"
+            exit 1
+          fi
+          echo "--- FFmpeg macOS addon ---"
+          ls -la src/addons/ffmpeg/macos/
+          # Confirm at least one Mach-O artifact landed (framework or dylib).
+          if ! find src/addons/ffmpeg/macos -maxdepth 4 \( -name '*.dylib' -o -name 'libgdffmpeg*' \) 2>/dev/null | grep -q .; then
+            echo "::error::No FFmpeg dylib/framework binary found in src/addons/ffmpeg/macos/"
+            find src/addons/ffmpeg/macos -maxdepth 4 | head -30
+            exit 1
+          fi
 
       - name: Download godot-sqlite addon
         run: |
@@ -851,15 +852,11 @@ jobs:
           Minerva.app/Contents/MacOS/Minerva --headless --quit-after 2100 \
               > minerva-launch.log 2>&1 || true
           # Check for the specific failure modes we're guarding against.
-          # Exclude `ffmpeg.gdextension` — its macOS entries are stripped at
-          # CI time (the upstream EIRTeam.FFmpeg autobuild zip ships no
-          # macOS .framework). The proper fix is `scripts/build-ffmpeg.sh`
-          # wired into this workflow, deferred to a follow-up loop. Until
-          # then the ffmpeg load failure is expected and benign — video
-          # playback won't work on macOS, but plugin / chat / editor /
-          # terminal / CEF panels all do.
+          # As of iter 13, FFmpeg is built from source on macOS, so any
+          # ffmpeg load failure is now a real regression (no longer the
+          # expected "no upstream macOS framework" benign error).
           grep -E "Can't open dynamic library|GDExtension dynamic library not found|Error loading extension|Could not find type" minerva-launch.log \
-              | grep -v "ffmpeg.gdextension" > /tmp/smoke-errors.txt || true
+              > /tmp/smoke-errors.txt || true
           if [ -s /tmp/smoke-errors.txt ]; then
             echo "::error::Extension load / type-resolution error during smoke launch"
             echo "--- offending lines ---"
@@ -868,7 +865,7 @@ jobs:
             tail -200 minerva-launch.log
             exit 1
           fi
-          echo "Smoke launch: no extension load errors (ffmpeg excluded — known TODO)"
+          echo "Smoke launch: no extension load errors"
 
       - name: Upload macOS Build
         if: |
