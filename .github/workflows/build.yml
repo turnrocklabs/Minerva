@@ -566,8 +566,15 @@ jobs:
         run: |
           curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_macos.universal.zip"
           unzip ./godot.zip
+          # Strip quarantine xattr — otherwise Gatekeeper kills the unsigned
+          # Godot binary with SIGKILL (exit 137). The release zip isn't
+          # notarized, so the OS treats it as untrusted on first run.
+          xattr -dr com.apple.quarantine Godot.app || true
           chmod +x "Godot.app/Contents/MacOS/Godot"
-          sudo cp "Godot.app/Contents/MacOS/Godot" /usr/local/bin/godot
+          # Run via the .app so the loader keeps relative resource resolution.
+          # Symlink (not copy) so the binary still sees its bundle siblings;
+          # raw copying breaks GDExtension template detection for some setups.
+          sudo ln -sf "$PWD/Godot.app/Contents/MacOS/Godot" /usr/local/bin/godot
           godot --version
 
       - name: Install Godot Export Templates
