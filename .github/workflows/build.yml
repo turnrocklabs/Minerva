@@ -822,11 +822,12 @@ jobs:
           name: godot-wry-linux
           path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
 
-      - name: Download godot_wry (macOS)
-        uses: actions/download-artifact@v4
-        with:
-          name: godot-wry-macos
-          path: src/addons/godot_wry/bin/universal-apple-darwin/
+      # godot_wry (macOS) is no longer needed here — macOS export was moved
+      # to the export-macos job (runs on macos-latest) which downloads its
+      # own godot-wry-macos artifact. Keeping the download here also made
+      # build-godot fail with "Artifact not found for name: godot-wry-macos"
+      # whenever build-macos hadn't finished yet (build-godot no longer
+      # waits on build-macos).
 
       - name: Create and Verify Bin Directory
         run: |
