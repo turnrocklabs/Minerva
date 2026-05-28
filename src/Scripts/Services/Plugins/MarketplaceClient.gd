@@ -16,12 +16,24 @@ const REGISTRY_URL_DEFAULT := "https://raw.githubusercontent.com/imrans-lab/mine
 const STAGING_DIR := "user://plugins/.staging"
 const PLUGINS_DIR := "user://plugins"
 
-# Defensive caps. A plugin binary today is ~20MB; allow generous headroom.
-const MAX_BODY_BYTES := 100 * 1024 * 1024  # 100 MiB
+# Defensive caps on the small registry JSON. Anything beyond a couple
+# hundred KiB suggests something is wrong with the registry, not a
+# legitimate growth — fail fast.
+const REGISTRY_MAX_BODY_BYTES := 4 * 1024 * 1024  # 4 MiB
+const REGISTRY_HTTP_TIMEOUT_SECONDS := 30.0
 
-# How long to wait for an HTTP response. Network failures should fail
-# fast rather than hang the UI.
-const HTTP_TIMEOUT_SECONDS := 60.0
+# Plugin download cap. The CAD plugin alone is 309 MB (embedded Python
+# runtime + build123d + cadquery-ocp), and similar "bundled runtime"
+# plugins are likely. Allow 2 GiB headroom; legitimate plugins with
+# native binaries + interpreter envs can run hundreds of MB. Any
+# legitimate cap below the largest expected plugin is a footgun.
+const DOWNLOAD_MAX_BODY_BYTES := 2 * 1024 * 1024 * 1024  # 2 GiB
+
+# Timeout for the download itself. A 309 MB plugin on a 1 MB/s
+# connection takes ~5 minutes; allow 10 minutes for headroom on
+# slow links. Network failures inside this window still fail fast
+# (cant_connect / tls_handshake fire on the first packet).
+const DOWNLOAD_HTTP_TIMEOUT_SECONDS := 600.0
 
 
 # ---------------------------------------------------------------------------
@@ -38,8 +50,8 @@ func fetch_registry(url: String = "") -> Dictionary:
 
 	var http := HTTPRequest.new()
 	http.use_threads = true
-	http.timeout = HTTP_TIMEOUT_SECONDS
-	http.body_size_limit = MAX_BODY_BYTES
+	http.timeout = REGISTRY_HTTP_TIMEOUT_SECONDS
+	http.body_size_limit = REGISTRY_MAX_BODY_BYTES
 	add_child(http)
 
 	var err := http.request(url)
@@ -131,8 +143,8 @@ func install_from_url(tarball_url: String, installer) -> Dictionary:
 	# --- 1. Download ---
 	var http := HTTPRequest.new()
 	http.use_threads = true
-	http.timeout = HTTP_TIMEOUT_SECONDS
-	http.body_size_limit = MAX_BODY_BYTES
+	http.timeout = DOWNLOAD_HTTP_TIMEOUT_SECONDS
+	http.body_size_limit = DOWNLOAD_MAX_BODY_BYTES
 	http.download_file = staging_file
 	add_child(http)
 
