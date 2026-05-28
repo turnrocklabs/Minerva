@@ -804,25 +804,49 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
-      - name: Re-sign .app ad-hoc after framework bundling
+      - name: Strip all signatures from .app
         # Godot's macOS exporter ad-hoc-signs the .app during export, but
         # the "Bundle godot-cef framework into exported .app" step above
         # rsyncs new content into Contents/Frameworks/ AFTER that signing.
-        # The on-disk content no longer matches the recorded signature, so
-        # Gatekeeper rejects the .app with "Minerva is damaged and can't be
-        # opened" (a worse error than the usual "unidentified developer" —
-        # users can't bypass it via right-click → Open). Re-sign with
-        # --force --deep so every nested bundle (frameworks, helper .app)
-        # gets a fresh ad-hoc signature matching the current contents.
+        # The on-disk content no longer matches the recorded signature.
+        # Without intervention, Gatekeeper rejects with "Minerva is damaged
+        # and can't be opened" — worse than the standard "unidentified
+        # developer" because users can't bypass it via right-click → Open.
+        #
+        # Past attempt (commit 913b18a1): `codesign --force --deep --sign -`
+        # ad-hoc-signed every nested binary. On modern macOS each ad-hoc-
+        # signed CEF subprocess helper triggered its own first-launch
+        # Gatekeeper prompt — users saw a dialog per library on first run.
+        #
+        # Until we wire up real notarization (needs Apple Developer cert),
+        # the cleanest path is to STRIP all signatures recursively. Modern
+        # macOS treats fully-unsigned bundles as "unidentified developer":
+        # ONE Gatekeeper prompt, bypassable via Settings → Privacy &
+        # Security → "Open Anyway", and no per-library dialogs.
         working-directory: src/build/macos
         run: |
-          codesign --force --deep --sign - Minerva.app
-          # Verify signature is internally consistent (catches any nested
-          # bundle the deep walk couldn't sign for some reason).
-          codesign --verify --deep --strict Minerva.app || {
-            echo "::warning::codesign --verify failed; .app may still open via xattr workaround but Gatekeeper will object"
-          }
-          echo "✓ .app re-signed ad-hoc"
+          codesign --remove-signature --deep Minerva.app 2>&1 | tail -10 || true
+          # Sanity check: confirm outer .app has no signature now.
+          if codesign --verify --no-strict Minerva.app 2>/dev/null; then
+            echo "::warning::outer .app still has a valid signature after strip — Gatekeeper may still object"
+          else
+            echo "✓ .app signatures stripped"
+          fi
+
+      - name: Package macOS Build for upload
+        # actions/upload-artifact@v4 treats a single directory path as
+        # "upload contents, drop wrapper", so `path: src/build/macos/Minerva.app`
+        # produces a zip where Contents/, MacOS/, Resources/ appear at the
+        # top level (broken — looks like a folder, not a .app, when users
+        # extract). Use `ditto` to manually create a properly-structured
+        # zip with the .app wrapper preserved. `ditto` is the canonical
+        # macOS bundle archiver: preserves symlinks, extended attributes,
+        # code signatures, resource forks, and executable bits — none of
+        # which plain `zip` reliably handles.
+        working-directory: src/build/macos
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent Minerva.app Minerva-macOS.zip
+          ls -lh Minerva-macOS.zip
 
       - name: Verify macOS build assets
         working-directory: src/build/macos
@@ -907,11 +931,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-macOS-Build
-          # Upload only the .app — `src/build/macos/*` glob also captures
-          # `minerva-launch.log` from the smoke step, polluting the user-
-          # facing zip. The smoke log has its own dedicated upload step
-          # (`macos-smoke-log`) for failure inspection.
-          path: src/build/macos/Minerva.app
+          # Upload the pre-zipped .app. actions/upload-artifact@v4 will
+          # wrap this in its own outer zip, so the user-facing download is
+          # a zip containing a zip — but the inner zip preserves the .app
+          # bundle correctly via ditto. The create-release step extracts
+          # the inner zip directly into the release asset path.
+          path: src/build/macos/Minerva-macOS.zip
 
       - name: Upload smoke-launch log on failure
         if: failure()
@@ -1285,14 +1310,15 @@ jobs:
             ls -lh release-assets/Minerva-Linux.tar.gz
           fi
 
-          # Create macOS ZIP if files exist (zipping the .app bundle preserves the directory structure)
-          # Same artifact-roundtrip issue — chmod the .app's executable before zipping.
-          if [ -d "downloads/Minerva-macOS-Build" ]; then
-            find downloads/Minerva-macOS-Build -path '*/Contents/MacOS/*' -type f -exec chmod +x {} + 2>/dev/null || true
-            cd downloads/Minerva-macOS-Build
-            zip -r ../../release-assets/Minerva-macOS.zip *
-            cd ../..
-            echo "Created macOS archive"
+          # macOS: pass through the pre-built ditto-zipped .app from
+          # export-macos. The artifact contains `Minerva-macOS.zip` as a
+          # file (ditto preserves the .app wrapper + symlinks + exec bits
+          # + extended attrs that plain zip mangles). Just copy it to the
+          # release-assets dir; re-zipping with plain `zip -r` would lose
+          # the bundle structure.
+          if [ -f "downloads/Minerva-macOS-Build/Minerva-macOS.zip" ]; then
+            cp downloads/Minerva-macOS-Build/Minerva-macOS.zip release-assets/Minerva-macOS.zip
+            echo "Copied macOS archive"
             ls -lh release-assets/Minerva-macOS.zip
           fi
 
