@@ -114,10 +114,8 @@ func _refresh() -> void:
 	if not (result is Dictionary and result.get("ok") == true):
 		var err: String = str(result.get("error", "unknown"))
 		_status.text = "Failed to fetch registry: %s" % err
-		SingletonObject.ErrorDisplay(
-			"Marketplace unavailable",
-			"Could not fetch the plugin registry.\n\nError: %s\nDetail: %s" % [err, JSON.stringify(result.get("detail", {}))]
-		)
+		var pretty: String = MarketplaceClient.format_install_error(result)
+		SingletonObject.ErrorDisplay("Marketplace unavailable", pretty)
 		return
 
 	var registry: Dictionary = result.registry
@@ -203,19 +201,17 @@ func _on_install_pressed() -> void:
 	else:
 		_install_btn.disabled = false
 		var err: String = str(result.get("error", "unknown"))
-		var detail = result.get("detail", null)
-		var detail_str := ""
-		# Surface PluginManager's human-readable message when present — the
-		# `manager_install_failed` code alone is opaque. PluginManager.install_plugin
-		# returns {"error": "<message>"} on failure, which becomes our detail dict.
-		if detail is Dictionary and detail.has("error"):
-			detail_str = str(detail["error"])
-		elif detail != null:
-			detail_str = JSON.stringify(detail)
+		# MarketplaceClient.format_install_error translates the raw
+		# {error, detail} dict into a user-readable multi-line message:
+		# friendly title, decoded HTTPRequest enum value or HTTP status
+		# code, the offending URL, and a targeted hint for the specific
+		# failure mode. Falls back to a generic "code: X" line for
+		# unknown error codes.
+		var pretty: String = MarketplaceClient.format_install_error(result)
 		_status.text = "Install failed: %s" % err
 		SingletonObject.ErrorDisplay(
-			"Plugin install failed",
-			"Plugin: %s\nError code: %s\n\n%s" % [plugin_id, err, detail_str]
+			"Plugin install failed: %s" % plugin_id,
+			pretty
 		)
 
 

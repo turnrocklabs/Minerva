@@ -281,6 +281,140 @@ func _err(code: String, detail = {}) -> Dictionary:
 	return {"ok": false, "error": code, "detail": detail}
 
 
+## Translate Godot HTTPRequest.RESULT_* enum to a human label.
+## Returns "Unknown HTTP error (<n>)" for values we don't recognize.
+static func _http_result_label(code: int) -> String:
+	match code:
+		HTTPRequest.RESULT_SUCCESS: return "Success"
+		HTTPRequest.RESULT_CHUNKED_BODY_SIZE_MISMATCH: return "Chunked body size mismatch"
+		HTTPRequest.RESULT_CANT_CONNECT: return "Can't connect (network unreachable, port blocked, or server refused)"
+		HTTPRequest.RESULT_CANT_RESOLVE: return "Can't resolve hostname (DNS failure or no internet)"
+		HTTPRequest.RESULT_CONNECTION_ERROR: return "Connection error (interrupted mid-transfer)"
+		HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR: return "TLS handshake failed (cert / network filtering issue)"
+		HTTPRequest.RESULT_NO_RESPONSE: return "No response from server"
+		HTTPRequest.RESULT_BODY_SIZE_LIMIT_EXCEEDED: return "Response body exceeded size limit"
+		HTTPRequest.RESULT_BODY_DECOMPRESS_FAILED: return "Body decompression failed"
+		HTTPRequest.RESULT_REQUEST_FAILED: return "Request failed"
+		HTTPRequest.RESULT_DOWNLOAD_FILE_CANT_OPEN: return "Can't open download file (path permission / disk full)"
+		HTTPRequest.RESULT_DOWNLOAD_FILE_WRITE_ERROR: return "Write error on download file (disk full?)"
+		HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED: return "Too many redirects (GitHub releases chain often needs >8)"
+		HTTPRequest.RESULT_TIMEOUT: return "Request timed out"
+		_: return "Unknown HTTP error (%d)" % code
+
+
+## Format an install/registry error dict into a user-readable multi-line
+## message. Returns "" if `result` looks like a success or is empty.
+##
+## Use from any UI surface that surfaces install failures so users see
+## what actually went wrong (e.g. "TLS handshake failed" + the URL)
+## instead of an opaque error code like `download_http_result`.
+static func format_install_error(result: Dictionary) -> String:
+	if result.is_empty() or result.get("ok") == true:
+		return ""
+
+	var code: String = str(result.get("error", "unknown"))
+	var detail: Variant = result.get("detail", null)
+	var detail_dict: Dictionary = detail if detail is Dictionary else {}
+
+	var title := ""
+	var cause := ""
+	var hint := ""
+
+	match code:
+		"request_failed", "download_request_failed":
+			title = "Could not start the network request"
+			cause = "Godot rejected the request before it was sent (error %d)" % int(detail_dict.get("godot_err", -1))
+			hint = "Check that the URL is valid and that no firewall is blocking outbound HTTPS."
+		"http_result_not_success", "download_http_result":
+			var http_code: int = int(detail_dict.get("http_result", -1))
+			title = "Download failed before the server responded"
+			cause = _http_result_label(http_code)
+			# Hints tailored to the specific failure mode.
+			match http_code:
+				HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR:
+					hint = "On macOS this often means Godot's bundled TLS roots are out of date. Try again on another network, or update Minerva to a newer build."
+				HTTPRequest.RESULT_CANT_RESOLVE:
+					hint = "Confirm you have internet access — try opening the URL in your browser."
+				HTTPRequest.RESULT_CANT_CONNECT:
+					hint = "The host is reachable in DNS but the connection was refused. Check VPN / proxy settings."
+				HTTPRequest.RESULT_TIMEOUT:
+					hint = "The download didn't complete within the timeout. Slow network or large archive. Retry once more."
+				HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED:
+					hint = "Too many redirects in the download chain. Open the URL in your browser and report the final redirect target."
+				_:
+					hint = "Retry once; if the same code recurs, copy the URL above and try downloading it in a browser to isolate."
+		"bad_response_code", "download_bad_status":
+			var status: int = int(detail_dict.get("code", -1))
+			title = "Server returned HTTP %d" % status
+			match status:
+				404: cause = "The plugin archive was not found at that URL."
+				403: cause = "Access was denied (private repo, expired token, or rate-limited)."
+				429: cause = "Rate-limited by GitHub. Wait a minute and try again."
+				500, 502, 503, 504: cause = "GitHub is having problems. Try again shortly."
+				_: cause = "Server returned a non-2xx status."
+			hint = "Try downloading the URL below in your browser to confirm whether the asset is reachable."
+		"download_no_file":
+			title = "Download finished but the file is missing"
+			cause = "Godot reported success but the file wasn't found at %s" % str(detail_dict.get("path", "?"))
+			hint = "Disk write may have failed silently. Check available space and try again."
+		"extract_failed":
+			title = "Could not extract the plugin archive"
+			cause = "`tar -xzf` returned exit code %d" % int(detail_dict.get("rc", -1))
+			var stderr := str(detail_dict.get("stderr", "")).strip_edges()
+			if not stderr.is_empty():
+				cause += "\n\nstderr:\n%s" % stderr
+			hint = "The archive may be corrupt or truncated. Retry the install."
+		"missing_sha256sums":
+			title = "Plugin archive is missing SHA256SUMS"
+			cause = "The archive extracted, but did not contain the integrity manifest required for verification."
+			hint = "This is a packaging error on the plugin side. Report it to the plugin author."
+		"sha256_mismatch":
+			title = "Plugin integrity check failed"
+			cause = "One or more files in the archive don't match the SHA256SUMS manifest:\n%s" % JSON.stringify(detail_dict)
+			hint = "Archive may have been corrupted in transit, or tampered with. Retry once; if the failure recurs, report to the plugin author."
+		"missing_manifest", "bad_manifest":
+			title = "Plugin manifest is missing or invalid"
+			cause = "The archive does not contain a usable manifest.json at the top level."
+			hint = "This is a packaging error on the plugin side. Report it to the plugin author."
+		"install_move_failed":
+			title = "Could not move the extracted plugin into place"
+			cause = "Godot returned error %d while renaming the staging directory." % int(detail_dict.get("godot_err", -1))
+			hint = "Likely a permission or disk-full issue under user://plugins/."
+		"manager_install_failed":
+			title = "PluginManager refused the install"
+			cause = str(detail_dict.get("error", JSON.stringify(detail_dict)))
+		"unsupported_platform":
+			title = "Plugin doesn't support this OS"
+			cause = "Detected OS: %s" % str(detail_dict.get("os", "?"))
+			hint = "Check the plugin's registry entry — it may need an updated build for this platform."
+		"no_binary_for_target":
+			title = "No matching binary for this platform"
+			cause = "Plugin '%s' has no binary built for target '%s'" % [str(detail_dict.get("plugin", "?")), str(detail_dict.get("target", "?"))]
+			hint = "Wait for the plugin author to publish a build for your platform, or use a side-loaded copy if available."
+		"invalid_installer":
+			title = "Internal error: invalid installer"
+			cause = "Got type %d instead of a PluginManager." % int(detail_dict.get("got", -1))
+		_:
+			title = "Plugin install failed"
+			cause = "Error code: %s" % code
+
+	var url := str(detail_dict.get("url", ""))
+	var lines := PackedStringArray()
+	lines.append(title)
+	if not cause.is_empty():
+		lines.append("")
+		lines.append(cause)
+	if not url.is_empty():
+		lines.append("")
+		lines.append("URL: %s" % url)
+	if not hint.is_empty():
+		lines.append("")
+		lines.append(hint)
+	lines.append("")
+	lines.append("(internal code: %s)" % code)
+	return "\n".join(lines)
+
+
 ## Parse SHA256SUMS and verify every line's hash matches the on-disk file.
 ## Returns {ok: bool, detail: Dictionary}.
 func _verify_sha256sums(extract_dir: String) -> Dictionary:
