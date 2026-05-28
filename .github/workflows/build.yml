@@ -600,26 +600,27 @@ jobs:
           echo "godot-sqlite ${SQLITE_VERSION} installed"
           ls src/addons/godot-sqlite/bin/ | head -20
 
-      - name: Download godot-cef artifacts (macOS)
-        shell: bash
+      - name: Build godot-cef from source (macOS)
+        # The godot-cef.yml CI workflow uploads its macOS framework via
+        # actions/upload-artifact, which strips macOS framework versioning
+        # symlinks (Foo.framework/Foo -> Versions/Current/Foo). The
+        # downloaded artifact lands without its binary, so dyld can't
+        # dlopen it ("not a file" — the path is a directory missing its
+        # Mach-O contents). Bypass the broken artifact pipeline entirely:
+        # run scripts/build-godot-cef.sh on macos-latest, which is the
+        # same script local devs run and produces a fully-formed framework.
+        # The script installs Rust nightly + export-cef-dir + the CEF SDK
+        # bundle if missing (~10-20min cold). Caching is a follow-up
+        # optimization once we know this path produces a working bundle.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RUN_ID=$(gh run list \
-            --workflow=godot-cef.yml \
-            --status=success \
-            --limit=1 \
-            --json databaseId \
-            -q '.[0].databaseId')
-          if [ -z "$RUN_ID" ]; then
-            echo "::error::No successful godot-cef.yml run found. Trigger that workflow manually first."
-            exit 1
-          fi
-          echo "Downloading godot-cef macOS artifact from run $RUN_ID"
-          mkdir -p src/addons/godot_cef/bin/universal-apple-darwin
-          gh run download "$RUN_ID" --name "godot-cef-macos-universal" --dir src/addons/godot_cef/bin/universal-apple-darwin
-          echo "CEF artifacts deployed:"
-          find src/addons/godot_cef/bin/ -maxdepth 5 -type d | head -20
+          # The script auto-installs nightly via rustup, but we make sure
+          # rustup itself is present (it should be on macos-latest).
+          command -v rustup || (echo "::error::rustup missing on macos-latest"; exit 1)
+          bash scripts/build-godot-cef.sh macos
+          echo "CEF deployed:"
+          find src/addons/godot_cef/bin/universal-apple-darwin -maxdepth 4 -type d | head -20
 
       - name: Install Godot for macOS
         run: |
@@ -667,31 +668,13 @@ jobs:
           echo "Total .app size:"
           du -sh build/macos/Minerva.app
 
-      - name: Post-export bundle fixup (CEF library path canonicalization)
-        # godot_cef.gdextension declares its [libraries] macos entry as
-        # `bin/universal-apple-darwin/Godot CEF.framework` (no `res://`).
-        # At runtime Godot prepends the .gdextension dir → looks for
-        # `addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework`.
-        # But Godot's macOS exporter bundles by basename and lands the
-        # framework at `Contents/Frameworks/Godot CEF.framework`. Bridge
-        # the gap with a symlink so dlopen finds it. Same for the helper
-        # .app sidecar.
-        working-directory: src/build/macos/Minerva.app/Contents/Frameworks
-        run: |
-          if [ ! -d "Godot CEF.framework" ]; then
-            echo "::warning::Godot CEF.framework not in Frameworks/ — skipping symlink fixup"
-            exit 0
-          fi
-          mkdir -p addons/godot_cef/bin/universal-apple-darwin
-          # Symlink is relative — 4 levels up from
-          # Frameworks/addons/godot_cef/bin/universal-apple-darwin/ gets us
-          # back to Contents/Frameworks/<basename>.
-          ln -sf "../../../../Godot CEF.framework" \
-                 "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework"
-          ln -sf "../../../../Godot CEF.app" \
-                 "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.app"
-          echo "CEF path symlinks:"
-          ls -la addons/godot_cef/bin/universal-apple-darwin/
+      # Note: prior iterations had a "Post-export bundle fixup (CEF library
+      # path canonicalization)" symlink step here. It's no longer needed:
+      # the from-source CEF build produces a fully-formed framework whose
+      # binary is actually present at Godot CEF.framework/Godot CEF, so
+      # Godot's macOS exporter (which lipo'd + codesigned the binary as
+      # part of bundling — `Can't open file: Godot CEF` errors are gone
+      # when the binary exists) ships a working bundle.
 
       - name: Verify macOS build assets
         working-directory: src/build/macos
