@@ -24,6 +24,12 @@ set -uo pipefail
 
 MINERVA_DIR="${1:?need extract dir}"
 SCANSORT_TARBALL_URL="${SCANSORT_TARBALL_URL:-https://github.com/imrans-lab/minerva-plugins/releases/download/scansort-v0.0.0-pre/scansort-0.0.1-linux-x86_64.tar.gz}"
+# CAD evaluate assertion added per DCR 019e6a4bcb0c W3. Defaults to the final
+# cad-v0.1.1 release; override with CAD_TARBALL_URL for prerelease URLs (e.g.
+# the per-branch prerelease published by minerva-plugins cad.yml on push).
+# Empty string disables the cad-evaluate step.
+CAD_TARBALL_URL="${CAD_TARBALL_URL:-https://github.com/imrans-lab/minerva-plugins/releases/download/cad-v0.1.1/cad-0.1.1-linux-x86_64.tar.gz}"
+CAD_EVALUATE_TIMEOUT_S="${CAD_EVALUATE_TIMEOUT_S:-90}"
 MCP_PORT="${MCP_PORT:-9315}"
 MCP_URL="http://127.0.0.1:${MCP_PORT}/mcp"
 STARTUP_TIMEOUT_S="${STARTUP_TIMEOUT_S:-60}"
@@ -255,5 +261,102 @@ raw=$(mcp_call "minerva_plugin_stop" '{"id":"scansort"}')
 echo "stop result: $raw"
 echo "::endgroup::"
 
-echo "::notice::tarball-smoke PASS — released Minerva tarball installs + starts scansort end-to-end"
+# ----------------------------------------------------------------------------
+# Step 5–8: CAD evaluate gate (DCR 019e6a4bcb0c W3)
+# ----------------------------------------------------------------------------
+# Reproduces the marketplace install→start→evaluate flow for the cad plugin.
+# Asserts a non-error mcad_validate response — proving the embedded PBS python
+# runtime works end-to-end in a production Minerva tarball context. Empty
+# CAD_TARBALL_URL skips this section so older Minerva branches that didn't
+# need it don't break.
+
+if [[ -z "$CAD_TARBALL_URL" ]]; then
+    echo "::notice::tarball-smoke PASS (cad step skipped — CAD_TARBALL_URL empty)"
+    exit 0
+fi
+
+echo "::group::Step 5: marketplace install (cad)"
+echo "cad tarball: $CAD_TARBALL_URL"
+raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${CAD_TARBALL_URL}\"}")
+echo "raw: $raw"
+result=$(echo "$raw" | mcp_unwrap)
+echo "unwrapped: $result"
+ok=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok', False))")
+if [[ "$ok" != "True" ]]; then
+    fail "cad marketplace install failed: $result"
+fi
+echo "::endgroup::"
+
+echo "::group::Step 6: start cad"
+raw=$(mcp_call "minerva_plugin_start" '{"id":"cad"}')
+echo "raw: $raw"
+result=$(echo "$raw" | mcp_unwrap)
+echo "unwrapped: $result"
+ok=$(echo "$result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok', False))")
+if [[ "$ok" != "True" ]]; then
+    fail "cad start_plugin failed: $result"
+fi
+echo "::endgroup::"
+
+echo "::group::Step 7: mcad_validate (DCR 019e6a4bcb0c acceptance)"
+# Invoke the plugin's mcad_validate tool via the Minerva MCP proxy. The
+# expected success envelope is {ok: true, result: {ok: true, errors: []}}.
+# Cold-start budget includes bundle extract + OCCT init.
+raw=$(curl -sS --max-time "$CAD_EVALUATE_TIMEOUT_S" -X POST "${MCP_URL}" \
+    -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
+    -H "MCP-Protocol-Version: 2025-06-18" \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":\"cad-eval\",\"method\":\"tools/call\",\"params\":{\"name\":\"mcad_validate\",\"arguments\":{\"source\":\"result = sphere(5)\"}}}")
+echo "raw: $raw"
+# The cad plugin's main.go wraps its tool result in {ok, result|error}; the
+# MCP envelope wraps that further. Drill through both.
+verdict=$(echo "$raw" | python3 - <<'PY' "$raw"
+import json, sys
+raw = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
+try:
+    env = json.loads(raw)
+except Exception as e:
+    print(f"FAIL: invalid JSON ({e})")
+    sys.exit(1)
+if env.get("error"):
+    print(f"FAIL: jsonrpc error: {json.dumps(env['error'])}")
+    sys.exit(1)
+result = env.get("result", {})
+if result.get("isError"):
+    print(f"FAIL: tool isError envelope: {json.dumps(result)}")
+    sys.exit(1)
+content = result.get("content", [])
+if not content:
+    print(f"FAIL: empty content array: {json.dumps(result)}")
+    sys.exit(1)
+text = content[0].get("text", "")
+try:
+    inner = json.loads(text)
+except Exception:
+    print(f"FAIL: content[0].text not JSON: {text!r}")
+    sys.exit(1)
+if not inner.get("ok", False):
+    err = inner.get("error", {})
+    print(f"FAIL: cad mcad_validate returned ok=false: {json.dumps(err)}")
+    sys.exit(1)
+inner_result = inner.get("result", {})
+if not inner_result.get("ok", False):
+    print(f"FAIL: inner result.ok != true: {json.dumps(inner_result)}")
+    sys.exit(1)
+print("PASS")
+sys.exit(0)
+PY
+)
+echo "$verdict"
+if [[ "$verdict" != PASS* ]]; then
+    fail "cad mcad_validate did not return ok=true: $verdict"
+fi
+echo "::endgroup::"
+
+echo "::group::Step 8: clean stop (cad)"
+raw=$(mcp_call "minerva_plugin_stop" '{"id":"cad"}')
+echo "stop result: $raw"
+echo "::endgroup::"
+
+echo "::notice::tarball-smoke PASS — Minerva tarball installs+starts scansort, then cad install+start+mcad_validate(sphere(5)) end-to-end"
 exit 0
