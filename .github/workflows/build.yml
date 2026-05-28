@@ -430,8 +430,17 @@ jobs:
 
     - name: Install godot_wry binary
       run: |
-        mkdir -p src/addons/godot_wry/bin/universal-apple-darwin
-        cp vendor/godot_wry/rust/target/release/libgodot_wry.dylib src/addons/godot_wry/bin/universal-apple-darwin/
+        # WRY.gdextension references `libgodot_wry.framework` (a macOS
+        # .framework directory), not `libgodot_wry.dylib`. Wrap cargo's
+        # raw .dylib output in the minimal framework structure Godot
+        # expects: `libgodot_wry.framework/libgodot_wry` (binary, no
+        # extension). Without this wrapping, Godot's macOS exporter fails
+        # to open the path during shared-object bundling and the entire
+        # Contents/Frameworks/ copy aborts, leaving the .app extension-less.
+        FW_DIR="src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework"
+        mkdir -p "$FW_DIR"
+        cp vendor/godot_wry/rust/target/release/libgodot_wry.dylib "$FW_DIR/libgodot_wry"
+        codesign --force --sign - "$FW_DIR/libgodot_wry"
 
     - name: Build ghostty-vt shim (universal)
       working-directory: src/gdextension/terminal/ghostty-shim
@@ -479,7 +488,10 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: godot-wry-macos
-        path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.dylib
+        # Upload the framework directory (preserves the libgodot_wry binary
+        # at the expected path inside it). Path is the framework root so
+        # extraction restores .framework/libgodot_wry.
+        path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework
         if-no-files-found: error
 
   # ─── macOS Godot export — runs on macos-latest so Godot's exporter can
@@ -508,7 +520,36 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: godot-wry-macos
-          path: src/addons/godot_wry/bin/universal-apple-darwin/
+          # upload-artifact stripped the leading framework dir; direct
+          # contents back inside libgodot_wry.framework/ so the binary
+          # lands at the path WRY.gdextension references.
+          path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework
+
+      - name: Strip macOS entries from ffmpeg.gdextension
+        # The upstream EIRTeam.FFmpeg autobuild zip ships linux64 + win64
+        # binaries only — no macOS .framework. The proper fix is to build
+        # FFmpeg from source via scripts/build-ffmpeg.sh, but that takes
+        # 30-60min and isn't in scope for unblocking the macOS .app build.
+        # Without this strip step, Godot's macOS exporter hits
+        # "Failed to open .../libgdffmpeg.macos.template_release.framework"
+        # during shared-object bundling and aborts the whole copy loop,
+        # leaving Contents/Frameworks/ empty. Removing the macos entries
+        # from the gdextension lets Godot skip FFmpeg for macOS exports
+        # and bundle the rest (terminal, CEF, sqlite). Video playback
+        # disabled on macOS until FFmpeg-from-source is wired up.
+        run: |
+          GDEXT=src/addons/ffmpeg/ffmpeg.gdextension
+          # Strip the `macos.debug` and `macos.release` library lines AND
+          # the comment that precedes them. Idempotent (re-running is a
+          # no-op once the lines are gone).
+          sed -i.bak \
+            -e '/macOS: built from source via scripts\/build-ffmpeg.sh/d' \
+            -e '/^macos\.debug = /d' \
+            -e '/^macos\.release = /d' \
+            "$GDEXT"
+          rm -f "$GDEXT.bak"
+          echo "--- ffmpeg.gdextension after strip ---"
+          cat "$GDEXT"
 
       - name: Verify pre-export bin contents
         run: |
