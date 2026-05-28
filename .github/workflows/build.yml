@@ -561,6 +561,32 @@ jobs:
           echo "--- ffmpeg.gdextension after strip ---"
           cat "$GDEXT"
 
+      - name: Strip [dependencies] macos block from godot_cef.gdextension
+        # Godot's macOS exporter mangles the CEF framework's internal symlinks
+        # when bundling via [dependencies] — the bundled framework ends up
+        # structurally incomplete (no top-level binary symlink, dyld returns
+        # `(not a file)`). Strip the dependencies block so Godot doesn't try
+        # to bundle the framework; we manually rsync it into the exported .app
+        # after Godot's export pass, preserving the macOS framework symlink
+        # chain (Foo.framework/Foo -> Versions/Current/Foo -> Versions/A/Foo).
+        # Keep the [libraries] macos line so the extension is still loaded
+        # at runtime — dyld will resolve the path against Contents/Frameworks
+        # where we'll have placed the framework manually.
+        run: |
+          GDEXT=src/addons/godot_cef/godot_cef.gdextension
+          # `^macos = \{` requires an open brace, so we don't accidentally
+          # strip the [libraries] `macos          = "..."` line (which has
+          # many spaces and a quoted value).
+          awk '
+            /^macos = \{/ { skip = 1; next }
+            skip && /^[[:space:]]*\}/ { skip = 0; next }
+            skip { next }
+            { print }
+          ' "$GDEXT" > "$GDEXT.new"
+          mv "$GDEXT.new" "$GDEXT"
+          echo "--- godot_cef.gdextension after strip ---"
+          cat "$GDEXT"
+
       - name: Verify pre-export bin contents
         run: |
           ls -la src/bin/
@@ -678,30 +704,69 @@ jobs:
           echo "Total .app size:"
           du -sh build/macos/Minerva.app
 
-      - name: Post-export bundle fixup (CEF library path canonicalization)
-        # godot_cef.gdextension declares its [libraries] macos entry as
-        # `bin/universal-apple-darwin/Godot CEF.framework` (no `res://`).
-        # At runtime Godot prepends the .gdextension dir → dlopen looks
-        # for `addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework`.
-        # But Godot's macOS exporter bundles by basename →
-        # `Contents/Frameworks/Godot CEF.framework`. Build-from-source
-        # produces a fully-formed framework (binary present), but the
-        # path-mismatch persists. Bridge with a symlink so dlopen finds
-        # the framework via the addons/.../bin path. Same for the helper
-        # .app sidecar.
+      - name: Bundle godot-cef framework into exported .app
+        # Godot's macOS exporter mangled the framework's internal symlinks
+        # in iterations 1-10 (the bundled framework had nlink=4, missing
+        # the top-level `Foo.framework/Foo` binary symlink, and dyld
+        # returned `(not a file)`). We stripped [dependencies] macos from
+        # godot_cef.gdextension above so Godot doesn't try to bundle it.
+        # Now manually rsync the framework + helper app from the built
+        # location (scripts/build-godot-cef.sh deployed them earlier) into
+        # the path the .gdextension's [libraries] macos line resolves to
+        # at runtime: addons/godot_cef/bin/universal-apple-darwin/. Also
+        # mirror at the top of Frameworks/ in case the CEF helper-launcher
+        # discovers sibling paths the chromium way (helper.app next to
+        # framework). rsync -aH preserves symlinks AND hardlinks; this is
+        # what the macOS framework versioning convention needs.
         working-directory: src/build/macos/Minerva.app/Contents/Frameworks
         run: |
-          if [ ! -d "Godot CEF.framework" ]; then
-            echo "::warning::Godot CEF.framework not in Frameworks/ — skipping symlink fixup"
-            exit 0
+          SRC="${GITHUB_WORKSPACE}/src/addons/godot_cef/bin/universal-apple-darwin"
+          DST_REL="addons/godot_cef/bin/universal-apple-darwin"
+
+          if [ ! -d "$SRC/Godot CEF.framework" ]; then
+            echo "::error::CEF framework not built at $SRC/Godot CEF.framework"
+            ls -la "$SRC/" || true
+            exit 1
           fi
-          mkdir -p addons/godot_cef/bin/universal-apple-darwin
-          ln -sf "../../../../Godot CEF.framework" \
-                 "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework"
-          ln -sf "../../../../Godot CEF.app" \
-                 "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.app"
-          echo "CEF path symlinks:"
-          ls -la addons/godot_cef/bin/universal-apple-darwin/
+
+          mkdir -p "$DST_REL"
+          rsync -aH "$SRC/Godot CEF.framework" "$DST_REL/"
+          rsync -aH "$SRC/Godot CEF.app"       "$DST_REL/"
+          # Top-of-Frameworks copy: helper-launcher fallback path.
+          rsync -aH "$SRC/Godot CEF.framework" .
+          rsync -aH "$SRC/Godot CEF.app"       .
+
+          echo "--- Frameworks/ top ---"
+          ls -la
+          echo "--- Frameworks/$DST_REL/ ---"
+          ls -la "$DST_REL/"
+
+      - name: Verify CEF framework binary present
+        # Catch a broken framework BEFORE the smoke launch so the failure
+        # is locatable. dyld's `(not a file)` diagnostic in iter 10 was
+        # opaque — this step makes the structural break visible.
+        working-directory: src/build/macos/Minerva.app/Contents/Frameworks
+        run: |
+          DST_REL="addons/godot_cef/bin/universal-apple-darwin"
+          FW="$DST_REL/Godot CEF.framework"
+          BIN="$FW/Godot CEF"
+
+          fail=0
+          if [ ! -e "$BIN" ]; then
+            echo "::error::CEF framework binary missing at $BIN"
+            echo "Framework structure:"
+            find "$FW" -maxdepth 3 2>&1 | head -30
+            fail=1
+          fi
+          if [ "$fail" -eq 0 ]; then
+            file "$BIN"
+            if ! file "$BIN" | grep -q "Mach-O"; then
+              echo "::error::CEF framework binary is not Mach-O at $BIN"
+              fail=1
+            fi
+          fi
+          [ "$fail" -eq 0 ] && echo "✓ CEF framework binary OK"
+          exit "$fail"
 
       - name: Verify macOS build assets
         working-directory: src/build/macos
