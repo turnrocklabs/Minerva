@@ -446,8 +446,12 @@ jobs:
       run: |
         lipo -create libminerva-vt-arm64.dylib libminerva-vt-x86_64.dylib \
              -output libminerva-vt.dylib
-        mkdir -p ../bin
-        cp libminerva-vt.dylib ../bin/
+        # cwd is src/gdextension/terminal, target is src/bin (where SConstruct
+        # looks for the universal lipo'd dylib — see src/SConstruct:67). Need
+        # two `..` to reach src/, not one (which would land in src/gdextension/bin/
+        # and SConstruct would fall back to the wrong-arch per-target zig-out lib).
+        mkdir -p ../../bin
+        cp libminerva-vt.dylib ../../bin/
 
     - name: Build Extension
       run: |
@@ -470,8 +474,217 @@ jobs:
         path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.dylib
         if-no-files-found: error
 
+  # ─── macOS Godot export — runs on macos-latest so Godot's exporter can
+  # bundle GDExtension Frameworks correctly. The previous setup ran the
+  # macOS export from ubuntu-latest in build-godot, which produced a stub
+  # .app missing all Contents/Frameworks/* (libterminal, libminerva-vt,
+  # Godot CEF.framework, libgodot_wry.dylib, libgdsqlite framework, ffmpeg).
+  # That stub crashed in user GDScript after ~30s when scripts dereferenced
+  # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
+  export-macos:
+    needs: [check-gdextension, build-macos]
+    if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Download terminal-macos extension
+        uses: actions/download-artifact@v4
+        with:
+          name: terminal-macos
+          path: src/bin/
+
+      - name: Download godot_wry (macOS)
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-wry-macos
+          path: src/addons/godot_wry/bin/universal-apple-darwin/
+
+      - name: Verify pre-export bin contents
+        run: |
+          ls -la src/bin/
+          # The libterminal.macos.template_release.framework artifact directory
+          # must contain BOTH the dylib AND the libminerva-vt.dylib copied in
+          # via SConstruct's AddPostAction; this is what enables runtime
+          # @rpath resolution from libterminal.
+          for fw in libterminal.macos.template_release.framework libterminal.macos.template_debug.framework; do
+            if [ -d "src/bin/$fw" ]; then
+              echo "Framework $fw contents:"
+              ls -la "src/bin/$fw"
+            else
+              echo "::warning::Framework missing: src/bin/$fw"
+            fi
+          done
+
+      - name: Download EIRTeam.FFmpeg (macOS)
+        run: |
+          FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/autobuild-2025-11-12-13-44/eirteam-ffmpeg-1.1.4.zip"
+          curl -L -o /tmp/ffmpeg.zip "$FFMPEG_URL"
+          unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg-extract
+          FFMPEG_SRC=$(find /tmp/ffmpeg-extract -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
+          mkdir -p src/addons/ffmpeg/macos
+          cp -r "$FFMPEG_SRC/macos/"* src/addons/ffmpeg/macos/ 2>/dev/null || true
+          cp -r "$FFMPEG_SRC/macos/"*.framework src/addons/ffmpeg/macos/ 2>/dev/null || true
+          echo "FFmpeg macOS addon installed:"
+          ls src/addons/ffmpeg/macos/ 2>/dev/null | head -20
+
+      - name: Download godot-sqlite addon
+        run: |
+          SQLITE_VERSION="v4.7"
+          SQLITE_URL="https://github.com/2shady4u/godot-sqlite/releases/download/${SQLITE_VERSION}/bin.zip"
+          curl -fL -o /tmp/sqlite.zip "$SQLITE_URL"
+          unzip -o /tmp/sqlite.zip -d /tmp/sqlite-extract >/dev/null
+          mkdir -p src/addons/godot-sqlite/bin
+          cp -r /tmp/sqlite-extract/bin/* src/addons/godot-sqlite/bin/
+          echo "godot-sqlite ${SQLITE_VERSION} installed"
+          ls src/addons/godot-sqlite/bin/ | head -20
+
+      - name: Download godot-cef artifacts (macOS)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RUN_ID=$(gh run list \
+            --workflow=godot-cef.yml \
+            --status=success \
+            --limit=1 \
+            --json databaseId \
+            -q '.[0].databaseId')
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::No successful godot-cef.yml run found. Trigger that workflow manually first."
+            exit 1
+          fi
+          echo "Downloading godot-cef macOS artifact from run $RUN_ID"
+          mkdir -p src/addons/godot_cef/bin/universal-apple-darwin
+          gh run download "$RUN_ID" --name "godot-cef-macos-universal" --dir src/addons/godot_cef/bin/universal-apple-darwin
+          echo "CEF artifacts deployed:"
+          find src/addons/godot_cef/bin/ -maxdepth 5 -type d | head -20
+
+      - name: Install Godot for macOS
+        run: |
+          curl -L -o ./godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_macos.universal.zip"
+          unzip ./godot.zip
+          chmod +x "Godot.app/Contents/MacOS/Godot"
+          sudo cp "Godot.app/Contents/MacOS/Godot" /usr/local/bin/godot
+          godot --version
+
+      - name: Install Godot Export Templates
+        run: |
+          TEMPLATE_DIR="$HOME/Library/Application Support/Godot/export_templates"
+          curl -L -o ./godot-templates.tpz "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-${GODOT_RELEASE}_export_templates.tpz"
+          unzip ./godot-templates.tpz
+          mkdir -p "$TEMPLATE_DIR/${GODOT_VERSION}.${GODOT_RELEASE}"
+          mv templates/* "$TEMPLATE_DIR/${GODOT_VERSION}.${GODOT_RELEASE}/"
+          ls "$TEMPLATE_DIR/${GODOT_VERSION}.${GODOT_RELEASE}/" | head
+
+      - name: Setup Godot Project Structure
+        working-directory: src
+        run: |
+          mkdir -p .godot/editor
+          chmod -R 777 .godot
+
+      - name: Export Project (macOS)
+        working-directory: src
+        run: |
+          mkdir -p build/macos
+          # `--import` warms the asset cache; some imports legitimately fail on
+          # headless first-run and are recovered during the export pass.
+          timeout 60 godot --headless --import || true
+          godot --headless --export-release "macOS" build/macos/Minerva.app
+          echo "Exported .app structure (top 3 levels):"
+          find build/macos/Minerva.app -maxdepth 3 -type d | sort
+          echo "Total .app size:"
+          du -sh build/macos/Minerva.app
+
+      - name: Verify macOS build assets
+        working-directory: src/build/macos
+        run: |
+          APP=Minerva.app
+          required_files=(
+            "$APP/Contents/MacOS/Minerva"
+            "$APP/Contents/Resources/Minerva.pck"
+            "$APP/Contents/Info.plist"
+          )
+          required_dirs=(
+            "$APP/Contents/Frameworks"
+          )
+          # Critical GDExtension assets that MUST land in Contents/Frameworks/
+          # — the prior bug shipped a Minerva.app with no Frameworks/ at all,
+          # which booted but crashed in user GDScript after ~30s when scripts
+          # dereferenced classes from missing extensions (SQLite, WebView,
+          # Terminal). RCA: build-godot ran macOS export on ubuntu-latest,
+          # which silently skips shared-object bundling for the macos target.
+          #
+          # Keep this list MINIMAL — the smoke-launch step below catches the
+          # broader class of "extension X failed to load" via stdout grep.
+          # Over-specifying here creates false negatives when an addon's
+          # internal layout changes (e.g. wry, cef, sqlite, ffmpeg).
+          required_in_frameworks=(
+            "libterminal.macos.template_release.framework"
+            "libterminal.macos.template_release.framework/libterminal.macos.template_release"
+            "libterminal.macos.template_release.framework/libminerva-vt.dylib"
+          )
+          fail=0
+          for f in "${required_files[@]}"; do
+            if [ ! -e "$f" ]; then echo "::error::Missing $f"; fail=1; fi
+          done
+          for d in "${required_dirs[@]}"; do
+            if [ ! -d "$d" ]; then echo "::error::Missing dir $d"; fail=1; fi
+          done
+          if [ -d "$APP/Contents/Frameworks" ]; then
+            echo "Frameworks contents:"
+            ls -la "$APP/Contents/Frameworks/"
+            for entry in "${required_in_frameworks[@]}"; do
+              if [ ! -e "$APP/Contents/Frameworks/$entry" ]; then
+                echo "::error::Frameworks/ missing: $entry"
+                fail=1
+              fi
+            done
+          fi
+          [ "$fail" -eq 0 ] || exit 1
+          echo "All required macOS bundle entries present"
+
+      - name: Smoke-launch macOS build
+        working-directory: src/build/macos
+        run: |
+          chmod +x Minerva.app/Contents/MacOS/Minerva
+          # Long enough to catch deferred-call crashes that fire ~30s in
+          # (the original user-reported null Array crash). 2100 frames at
+          # 60fps ≈ 35s. We capture stdout/stderr and grep for the
+          # extension-load + script-compile error patterns that signal
+          # missing or mis-bundled GDExtensions.
+          Minerva.app/Contents/MacOS/Minerva --headless --quit-after 2100 \
+              > minerva-launch.log 2>&1 || true
+          # Check for the specific failure modes we're guarding against.
+          if grep -E "Can't open dynamic library|GDExtension dynamic library not found|Error loading extension|Could not find type" minerva-launch.log; then
+            echo "::error::Extension load / type-resolution error during smoke launch"
+            tail -200 minerva-launch.log
+            exit 1
+          fi
+          echo "Smoke launch: no extension load errors"
+
+      - name: Upload macOS Build
+        if: |
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'macos' ||
+          github.event.inputs.platform == 'all'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Minerva-macOS-Build
+          path: src/build/macos/*
+
+      - name: Upload smoke-launch log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-smoke-log
+          path: src/build/macos/minerva-launch.log
+          if-no-files-found: warn
+
   build-godot:
-    needs: [check-gdextension, build-windows, build-linux, build-macos]
+    needs: [check-gdextension, build-windows, build-linux]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -650,18 +863,19 @@ jobs:
             fi
 
           elif [ "$PLATFORM" = "macos" ]; then
-            mkdir -p build/macos
-            godot --headless --export-release "macOS" build/macos/Minerva.app
+            # macOS export now lives in the export-macos job (runs on
+            # macos-latest where Godot's exporter actually bundles
+            # Contents/Frameworks/*). build-godot is a no-op for macos.
+            echo "macOS export handled by export-macos job — nothing to do here."
 
           else
             mkdir -p build/windows
             mkdir -p build/linux
-            mkdir -p build/macos
 
-            # For 'all' option or push events, export all three
+            # For 'all' option or push events, export Windows + Linux here;
+            # macOS export runs in the export-macos job on macos-latest.
             godot --headless --export-release "Windows Release" build/windows/Minerva.exe
             godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64
-            godot --headless --export-release "macOS" build/macos/Minerva.app
 
             # Build debug versions for development branch
             if [ "$IS_DEV_BRANCH" = "true" ]; then
@@ -758,15 +972,9 @@ jobs:
           name: Minerva-Linux-Build
           path: src/build/linux/*
 
-      - name: Upload macOS Build
-        if: |
-          github.event_name == 'push' ||
-          github.event.inputs.platform == 'macos' ||
-          github.event.inputs.platform == 'all'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Minerva-macOS-Build
-          path: src/build/macos/*
+      # Minerva-macOS-Build is uploaded by the export-macos job (macos-latest).
+      # Keeping it here would create a duplicate-artifact name conflict and
+      # would re-upload an empty / Frameworks-less stub.
 
       - name: Upload Windows Debug Build
         if: |
@@ -793,7 +1001,7 @@ jobs:
           path: src/build/linux-debug/*
 
   create-release:
-    needs: [build-godot]
+    needs: [build-godot, export-macos]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
