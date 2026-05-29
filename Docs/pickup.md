@@ -1,245 +1,191 @@
 # Pickup
 
-STATE: `macOS export build mostly fixed, blocked on Godot CEF.framework dlopen path resolution`
+STATE: `Presentation deck round-trip in progress; macOS pipeline + envelope contract + provider defaults all landed`
 
-Last updated 2026-05-28.
+Last updated 2026-05-29.
 
 ---
 
 ## TL;DR
 
-Spent 10 CI iterations on DCR `019e5ce2160f76d9868f7a000c41614b` peeling layers
-of macOS export brokenness. Got the Minerva.app bundle built with all 5
-GDExtensions present (terminal + libminerva-vt + WRY + sqlite + CEF), but
-**the headless smoke launch still fails** because dyld can't resolve the path
-Godot wants to dlopen for CEF.
-
-Next session picks up at **iter 11**: try **move instead of symlink** for the
-CEF path canonicalization. If that doesn't work, strip CEF for macOS (like we
-already did for FFmpeg) to unblock HITL.
-
-Latest commit on `turnrocklabs/Minerva:development` is `d09811b7`. All 10
-iteration commits are pushed.
+The macOS build saga from the previous pickup is **fully closed**. This session built on top of that with three deeper fixes (broker envelope, marketplace size cap, provider defaults), shipped CAD plugin v0.1.2, and is now in the middle of editing a presentation deck via MCP. The user has reviewed an outline doc extracted from a .mdeck file and asked for a "Quantization" slide inserted before slide 8. **Next session's job**: round-trip the outline back to the .mdeck via `minerva_presentation_*` tool calls.
 
 ---
 
-## 0. Current state of DCR `019e5ce2160f`
+## 0. What to do next session (resume here)
 
-### Iteration history (10 push/fix cycles on `build.yml`)
+### Immediate action: add the Quantization slide
 
-| # | Bug found | Fix |
+The user wants slide 8 to be a new "Quantization" slide inserted between current slide 7 ("Cost, Privacy, License") and what was slide 8 ("How Do I Know It's Lying?"). The outline at `/Users/ipeerbhai/temp/llms_overview_outline.md` already reflects the renumbered structure (slide 8 = Quantization, original 8-19 became 9-20).
+
+Bullets the user specified for Quantization:
+- Lets you run models in less VRAM
+- Lowers quality the more you compress
+- Modern 4-bit (aka Q4_K??) is the boundary between acceptable and high degradation
+
+(The user wrote `Q4_K??` as their notation for "checking exact suffix" — common modern picks are `Q4_K_M` / `Q4_K_S`. Leave the `??` or ask.)
+
+### How to do it via MCP
+
+1. **Find the deck tab** — `minerva_presentation_list_open_decks` returns the live `tab_name`. Nudge has it cached as `minerva/deck.tab` = `llms_overview_v1.mdeck`.
+
+2. **Insert slide at position 7** (0-indexed; "before current 8" = at index 7):
+   ```
+   minerva_presentation_add_slide
+     tab_name: "llms_overview_v1.mdeck"
+     position: 7
+     title: "Quantization"
+   ```
+
+3. **Add the title-bar text tile** matching the deck's consistent template (every slide in the deck uses the same 4-tile layout — nudge has the geometry at `minerva/deck.template_pattern`):
+   ```
+   minerva_presentation_add_text_tile
+     tab_name: "llms_overview_v1.mdeck"
+     slide_index: 7
+     x: 0.05, y: 0.13, w: 0.9, h: 0.1
+     content: "[b][color=#1F2A2E]Quantization[/color][/b]"
+     text_mode: "plain"
+     auto_fit: true
+   ```
+
+4. **Add the body bullets tile**:
+   ```
+   minerva_presentation_add_text_tile
+     tab_name: "llms_overview_v1.mdeck"
+     slide_index: 7
+     x: 0.05, y: 0.25, w: 0.5, h: 0.6
+     content: "Lets you run models in less VRAM\nLowers quality the more you compress\nModern 4-bit (aka Q4_K??) is the boundary between acceptable and high degradation"
+     text_mode: "bullet"
+     auto_fit: true
+   ```
+   NOTE: `text_mode: bullet` requires NO leading `-` or `*` — the renderer adds the marker. Bullets are split on newlines.
+
+5. **Verify** via `minerva_presentation_get_slide slide_index: 7` and `minerva_presentation_list_slides`.
+
+6. The user has NOT asked to add side/banner images for the new slide. Leave those out; the user can paste them in via the panel UI later if they want visual parity.
+
+7. **Save** via `minerva_doc_save editor_name: "llms_overview_v1.mdeck"`.
+
+### After Quantization lands
+
+The user may want more outline edits → round-trip again. The general pattern is: edit `/Users/ipeerbhai/temp/llms_overview_outline.md`, compute diff vs. current deck state, apply via `add_slide` / `add_text_tile` / `modify_tile` / `set_slide_title`. No mass `doc_write` on the .mdeck — every change is a typed tool call.
+
+---
+
+## 1. Key files and Minerva tabs
+
+| Where | Path / tab | What |
 |---|---|---|
-| 1 (40efc099) | macOS export running on ubuntu-latest silently skipped Frameworks/ bundling | Split macOS export into its own `export-macos` job on `macos-latest` |
-| 1.5 (40efc099) | CI step copied universal libminerva-vt.dylib to wrong dir (`src/gdextension/bin/` not `src/bin/`) → SConstruct fell back to wrong-arch zig-out lib → ld emitted `warning: ignoring file ... built for macOS-x86_64` | Changed `cp libminerva-vt.dylib ../bin/` to `../../bin/` in build-macos |
-| 2 (9903efaf) | macOS Gatekeeper SIGKILL'd unsigned Godot binary (`Killed: 9` / exit 137) | `xattr -dr com.apple.quarantine Godot.app` before launching |
-| 3 (c3b7ef86) | `timeout` not in macos-latest PATH (failed before `--import` could warm the asset cache) + SConstruct still linking wrong-arch libminerva-vt because zig-out/lib/ was last overwritten with x86_64 | Dropped timeout, also `cp libminerva-vt.dylib ghostty-shim/zig-out/lib/` after lipo so ld sees universal |
-| 4 (b3955939) | Frameworks/ bundling aborted at `Failed to open .../libgdffmpeg.macos.template_release.framework` because EIRTeam.FFmpeg's autobuild zip has no macOS support; also WRY .gdextension expected `.framework` but cargo built `.dylib` | Wrap libgodot_wry.dylib as a .framework in build-macos; strip ffmpeg.gdextension `[libraries] macos.*` lines at CI time |
-| 5 (6e421955) | Frameworks/ still empty — strip from iter 4 only removed `[libraries]` macos.* lines, not the multi-line `[dependencies] macos = { ... }` block which still pointed at libavcodec.dylib etc. | awk-based strip handles the multi-line block |
-| 6 (28d42362) | Frameworks/ FINALLY populated with all 5 extensions, smoke launch fails on CEF dlopen path mismatch (Godot's exporter bundles by basename, runtime looks for full path) + smoke grep over-fires on stripped ffmpeg | Post-export symlink `Contents/Frameworks/addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework -> ../../../../Godot CEF.framework`; filter ffmpeg from smoke grep |
-| 7 (dac9d370) | build-godot tried to download `godot-wry-macos` artifact it doesn't need anymore (race with build-macos since I'd dropped it from `needs`) | Removed the dead download step from build-godot |
-| 8 (6a9a6800) | iter 6's symlink target was hollow — godot-cef.yml's `actions/upload-artifact` step silently drops macOS framework binary symlinks (`Foo.framework/Foo -> Versions/Current/Foo`), so the downloaded artifact has the framework dir but no Mach-O binary | Bypass broken artifact pipeline: run `scripts/build-godot-cef.sh macos` in export-macos (same path local devs use) |
-| 9 (60d31726) | CEF build-from-source failed at `cargo build --bin gdcef_helper --target x86_64-apple-darwin` with `can't find crate for core/std` — macos-latest is ARM64, cef-bundler's universal build needs both targets' rustlib in nightly toolchain | `rustup target add --toolchain nightly x86_64-apple-darwin aarch64-apple-darwin` |
-| 10 (d09811b7) | Verify step passed (all 5 extensions in Frameworks/, CEF binary present), but smoke launch still fails: dyld returns `(not a file)` for the symlinked CEF path | (failed; next iteration's work) |
+| On disk | `/Users/ipeerbhai/temp/llms_overview_v1.mdeck` | The deck (58 MB JSON; 19 slides, will be 20 after Quantization). MIGRATED from version: "1.0" (float) + raw-base64 image src to version: 1 (int) + blob envelopes — backup at `.v1-original.bak`. |
+| On disk | `/Users/ipeerbhai/temp/llms_overview_outline.md` | Markdown outline (v2 — Quantization inserted, slides renumbered). Source of truth for round-trip. |
+| Minerva tab | `llms_overview_v1.mdeck` | Live deck editor. `minerva_list_editors` may show `type: "unknown"` (see Open Bug below) but `minerva_presentation_list_open_decks` confirms `kind: "plugin_scene"` and `plugin_id: "presentation"`. |
+| Minerva tab | `llms outline` | Outline editor. Saved to disk in this session. |
+| On disk only | `/Users/ipeerbhai/temp/presentation_skill_draft.md` | EMPTY (buffer was never path-saved before reload). The draft text is in the prior conversation transcript if needed for restoring; not blocking. |
+| Skill code on disk | `~/github/minerva-plugins/presentation/manifest.json` | Has NO `skills` array. The draft we wrote is reproducible from the conversation — defer until after deck work. |
 
-### What's confirmed working
-
-- ✅ `check-gdextension`, `build-linux`, `build-windows`, `build-macos`, `functional-tests`, `build-godot` (Linux + Windows exports)
-- ✅ macOS export creates Minerva.app
-- ✅ `Contents/Frameworks/` populated with: libterminal framework + libminerva-vt.dylib + libgodot_wry.framework + libgdsqlite framework + Godot CEF.framework (+ Godot CEF.app helper)
-- ✅ CEF framework binary actually exists inside the framework (was missing in iter 6/7 due to artifact upload symlink loss)
-- ✅ `Verify macOS build assets` step passes
-
-### What's currently failing (iter 10's state)
-
-Smoke launch grep flags this from dyld:
-
-```
-ERROR: Can't open dynamic library: addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework.
-Error: dlopen(...): tried:
-  '.../Contents/Frameworks/addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework' (not a file)
-  ...
-```
-
-The path Godot tells dyld to open at runtime is
-`addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework` (Godot
-prepends the .gdextension dir to the [libraries] macos value, which is
-`bin/universal-apple-darwin/Godot CEF.framework` without `res://` prefix). But
-Godot's macOS exporter bundled the framework by basename →
-`Contents/Frameworks/Godot CEF.framework`.
-
-My iter 10 symlink at
-`Contents/Frameworks/addons/godot_cef/bin/universal-apple-darwin/Godot
-CEF.framework` → `../../../../Godot CEF.framework` is in place (verified in
-the build log), but dyld's `(not a file)` diagnostic suggests it sees the
-symlink itself rather than following through to the framework directory.
-Likely lstat() vs stat() in dyld's framework path resolution.
-
-### Next session — first thing to try (iter 11)
-
-**Move instead of symlink.** Replace the post-export symlink fixup with a
-`mv`:
-
-```bash
-# Run in Contents/Frameworks/, after Godot's export
-mkdir -p addons/godot_cef/bin/universal-apple-darwin
-mv "Godot CEF.framework" "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework"
-mv "Godot CEF.app"       "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.app"
-# Re-sign because move may invalidate ad-hoc signatures
-codesign --force --deep --sign - "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework" 2>/dev/null || true
-codesign --force --deep --sign - "addons/godot_cef/bin/universal-apple-darwin/Godot CEF.app" 2>/dev/null || true
-```
-
-This puts a REAL framework directory at the path Godot looks up. No
-symlink-resolution surprises.
-
-Risks:
-- CEF helper app may reference its sibling framework via absolute or
-  hardcoded relative path → may need investigation if the move breaks
-  CEF helper process spawning. The dlopen success is the priority though.
-- Ad-hoc codesign on the bundle might break after the move — try without
-  re-signing first, since the smoke launch we care about ignores Gatekeeper.
-
-### Fallback (if iter 11 fails)
-
-**Strip CEF macOS entries** the same way we did for FFmpeg. App boots without
-plugin webview panels on macOS. Add a follow-up DCR for proper CEF macOS
-support. This unblocks HITL.
+Nudge hints set (TTL: session):
+- `minerva/deck.path`, `minerva/deck.tab`
+- `minerva/outline.path`, `minerva/outline.tab`
+- `minerva/deck.template_pattern` — full geometry of the 4-tile slide template
+- `minerva/next.action` — round-trip plan
 
 ---
 
-## 1. Pre-existing problems we discovered, NOT addressed in this DCR
+## 2. What got fixed this session (don't redo)
 
-### A. `tarball-smoke` failing on every run
+### A. macOS build pipeline — fully green
 
-Fails because Minerva's CI launch tries to connect to external MCP servers
-(cobrowser, codetools) that aren't running on the runner. The tarball-smoke
-script's grep treats their "Can't connect" errors as fatal. Has been failing
-since the CAD merge (commit `5a6b955f`), unrelated to macOS work.
+All iter 11-13.1 changes from previous pickup are landed and verified:
+- `[libraries] macos` patched to `bin/.../Godot CEF.framework/libgdcef.dylib` (per CFBundleExecutable)
+- `[dependencies] macos` stripped from `godot_cef.gdextension`
+- Manual rsync of CEF framework + helper into `Contents/Frameworks/addons/.../`
+- EIRTeam.FFmpeg built from source on macOS arm64 with `actions/cache@v4` keyed on submodule SHA
+- macOS export uses ditto packaging with `--keepParent` so the .app wrapper stays intact in the zip
+- `codesign --force --deep --sign -` after bundling; release-body docs `xattr -dr` instruction (BEFORE first launch)
+- macOS upload step now ships `Minerva-macOS.zip` containing a single `Minerva.app` (was leaking `minerva-launch.log`)
 
-**TODO**: File DCR. Likely fix is in `scripts/tarball-smoke.sh` — its stdout
-grep should exclude expected external-MCP-server "Can't connect" warnings
-(matches `cobrowser` and `codetools` server names).
+Latest macOS build: **`auto-build-20260529-002821`** (commit `63b7baf5`). This is the build the user has installed locally.
 
-### B. EIRTeam.FFmpeg has no macOS framework in upstream releases
+### B. Plugin marketplace fixes
 
-The autobuild release zip `eirteam-ffmpeg-1.1.4.zip` ships linux64 + win64
-binaries only. `src/addons/ffmpeg/macos/` ends up empty after the download.
+- **Size cap** — `MarketplaceClient.gd:DOWNLOAD_MAX_BODY_BYTES` raised 100 MiB → 2 GiB (CAD tarball is 309 MB); timeout 60s → 600s; registry caps split into separate constants
+- **Human-readable errors** — `MarketplaceClient.format_install_error(result)` decodes HTTPRequest.RESULT_* enum + HTTP status codes into friendly cause + URL + targeted hint; `MarketplaceBrowseDialog.gd` uses it
+- These fixes are in `auto-build-20260529-002821` and earlier
 
-**Current state**: We strip `ffmpeg.gdextension`'s macos entries at CI time
-so Godot doesn't try to bundle nonexistent paths. Video playback disabled on
-macOS.
+### C. Broker envelope contract restored — Bug 2
 
-**TODO** (queued for after macOS export green): wire `scripts/build-ffmpeg.sh`
-into export-macos with `actions/cache@v4` keyed on the
-`vendor/EIRTeam.FFmpeg` submodule SHA. Script builds FFmpeg + gdextension
-from source (30-60min first build, fast on cache hit). User authorized this
-in the conversation.
+`PluginErrors.gd:success(result)` reverted to wrap `{success: true, result: payload}`. A previous "vestigial" comment claimed the wrap was unnecessary; that change broke three consumers silently:
+- `CapabilityBroker._audit_dispatch` logged every successful dispatch as `capability_failed reason=unknown`
+- `PluginToolRegistry.handle_tool_call` logged every successful capability call as `policy_deny`
+- Outbound plugin `callCapability` calls received bare dict, unmarshaled into Go struct, got `Success=false` with empty error
 
-### C. `godot-cef.yml` workflow's artifact upload drops symlinks
+After this fix `minerva_presentation_list_open_decks` works correctly (returns the live deck), the audit log is honest, and downstream effects clear.
 
-The macOS Godot CEF.framework's binary is stored at `Versions/A/Godot CEF`
-with a symlink `Godot CEF.framework/Godot CEF -> Versions/Current/Godot
-CEF`. `actions/upload-artifact@v4` doesn't preserve those by default. So the
-downloaded artifact is broken.
+### D. Provider defaults — disabled on fresh install
 
-**Current workaround**: build CEF from source in export-macos (bypasses the
-broken artifact). Heavier (~15-20min in CI) but reliable.
+`singleton_object.gd:_init_enabled_providers()` now starts `_enabled_providers[provider] = false`; `is_provider_enabled` fallback default also `false`. Existing users with a saved `[EnabledProviders]` config section keep their preferences. `_plugin_allowed_providers` stays permissive (separate concern).
 
-**TODO**: File DCR. Possible fixes: `actions/upload-artifact` with `tar`
-preprocessing, OR matrix-build godot-cef.yml per platform on native runners
-so build artifacts don't need the upload roundtrip.
+### E. CAD plugin v0.1.2 released
 
-### D. `libgodot_wry.dylib` vs `libgodot_wry.framework` mismatch
+`imrans-lab/minerva-plugins:cad-v0.1.2`. Bumped `cad.evaluate` timeout 30s → 90s in `CADPanel.gd` to cover macOS ARM cold-start (Python module imports + codesign cache + dyld first-load + OCCT static-init can exceed 30s). Also dropped phantom `linux-arm64` registry URL (build was never published).
 
-Cargo's `cargo build --release` emits `libgodot_wry.dylib`, but
-`WRY.gdextension` declares macOS as `bin/universal-apple-darwin/
-libgodot_wry.framework`. We wrap the .dylib in a minimal framework structure
-in build-macos. Works in CI; should mirror what
-`scripts/build-extensions.sh` does locally (which also wraps + adds Info.plist
-+ install_name_tool).
+### F. Deck migration
 
-**Status**: Working. Could be cleaner if we replicated the local
-build-extensions.sh framework structure exactly (Info.plist + @rpath
-identifier), but dlopen succeeded as is in iter 5+.
+`/Users/ipeerbhai/temp/llms_overview_v1.mdeck`:
+- `version: 1.0` (float) → `1` (int) per slide_model.gd's `SCHEMA_VERSION`
+- Removed top-level `file_path` key (not in schema)
+- All 38 image tile `src: <bare base64>` wrapped as `{__blob__: true, content_type: <sniffed>, bytes: <base64>}`
+- Backup at `~/temp/llms_overview_v1.mdeck.v1-original.bak`
 
-### E. macOS Windows verify+smoke not yet added
-
-The original DCR's items #3 + #4 included adding macOS + Windows verify+smoke
-gates mirroring the Linux block in build.yml. macOS is done (in export-macos
-job). Windows is NOT — `build-godot` still runs on ubuntu-latest and produces
-Windows builds without a verify+smoke gate.
-
-**TODO** (after macOS is green): split Windows export to its own
-`export-windows` job on windows-latest, add verify+smoke gate. Could keep
-build-godot for Linux only (rename to `export-linux`).
+Note: `slide_model.gd:validate_tile` references `scripts/migrate_mdeck_to_blob_contract.gd` but that file doesn't exist in the plugin repo. Our migration was inline Python. Worth filing a follow-up to add the canonical migration script.
 
 ---
 
-## 2. Git state at handoff
+## 3. Open issues
 
-### Minerva (`turnrocklabs/Minerva`)
+### Bug 1 — `minerva_list_editors` reports `type: "unknown"` for the .mdeck tab
 
-- HEAD on `development` is `d09811b7` (iter 10).
-- 10 iteration commits pushed: `40efc099` → `9903efaf` → `c3b7ef86` →
-  `b3955939` → `6e421955` → `28d42362` → `dac9d370` → `6a9a6800` →
-  `60d31726` → `d09811b7`.
-- Working tree clean except for pre-existing `vendor/EIRTeam.FFmpeg` and
-  `vendor/godot_cef` submodule drift (don't touch).
+`minerva_presentation_list_open_decks` correctly reports `kind: "plugin_scene"`. But `minerva_list_editors` shows `type: "unknown"` for the same editor. Two different code paths, two different views of the same editor. Probably a normalizer somewhere that doesn't have a case for `PLUGIN_SCENE` (the `_editor_type_to_string` function in `singleton_object.gd:1660+` does handle it as `"PLUGIN_SCENE"`, so `minerva_list_editors` must use a different mapper).
 
-### Plugins (`imrans-lab/minerva-plugins`)
+This doesn't block the deck work — every plugin tool call uses `tab_name` and reads through `host.documents` which correctly identifies the editor. But the user noticed it, and we should diagnose. Search for the implementation behind `minerva_list_editors` tool and find where it derives the `type` field; add a `PLUGIN_SCENE` case (or lowercase the existing string).
 
-Unchanged this session. `main` at `6e8fd7e` (cad-v0.1.1 release). All CAD
-work shipped previously.
+### Followups deferred from this session
+
+- `tarball-smoke` job still failing on every CI run (Linux MCP-fatal-filter regression; pre-existing)
+- Windows verify+smoke gate not yet added (DCR `019e5ce2160f76d9868f7a000c41614b` item #4)
+- EIRTeam.FFmpeg upstream has no macOS .framework — we build from source; opening a PR with their autobuild flow would help everyone
+- godot-cef.yml's `actions/upload-artifact` drops macOS framework binary symlinks; we bypass by building from source
+- Add `scripts/migrate_mdeck_to_blob_contract.gd` to the presentation plugin so the validator's error message points at a real script
+- Presentation plugin needs a `skills` array — draft was in `/Users/ipeerbhai/temp/presentation_skill_draft.md` but it was an unsaved buffer and is now empty. Reproducible from conversation if user wants it shipped as v0.0.3 after deck work concludes.
 
 ---
 
-## 3. Context that must survive compaction
+## 4. Build / version state
 
-### Key files touched in `build.yml`
+| Component | Version / commit | Notes |
+|---|---|---|
+| Minerva | `auto-build-20260529-002821` (commit `63b7baf5`) | User has this installed |
+| CAD plugin | `cad-v0.1.2` | User installed via marketplace |
+| Presentation plugin | `presentation-v0.0.1` | User installed via marketplace; no skills yet |
 
-- `build-macos` job: added `cp libminerva-vt.dylib ghostty-shim/zig-out/lib/`
-  after lipo. Wrapped libgodot_wry.dylib into a `.framework` directory with
-  codesign. Upload uses `path:` for the framework dir.
-- `export-macos` job (NEW, ~200 lines): runs on `macos-latest`. Sequence:
-  download terminal-macos + godot-wry-macos artifacts, strip
-  ffmpeg.gdextension macOS entries, download other addons, build godot-cef
-  from source, install Godot + templates, export to .app, post-export CEF
-  symlink fixup (CURRENTLY BROKEN), verify, smoke-launch with
-  ffmpeg-tolerant grep.
-- `build-godot` job: macOS export removed (now in export-macos). godot_wry
-  (macOS) download removed. Else unchanged.
-- `create-release`: `needs: [build-godot, export-macos]`.
+---
 
-### Hard rules (unchanged from prior pickup)
+## 5. Hard rules (carried from prior session)
 
 - Per-file `git add` only. No `-A` or `.`.
 - No `--no-verify`. No `vendor/` touches.
 - No force-push, no `git reset --hard`.
 - Co-author trailer on commits.
 - Minerva `development` push: autonomous-loop authorization carries.
+- `imrans-lab/minerva-plugins` `main` push: per-instance user authorization REQUIRED. Re-ask before pushing.
 
 ---
 
-## 4. First actions for next session
+## 6. First actions for next session
 
-1. Open this file. Confirm state matches the run on
-   `https://github.com/turnrocklabs/Minerva/actions/runs/26557616011`
-   (iter 10's run).
-2. Try iter 11 with **move-instead-of-symlink** for CEF (sketch in section 0).
-3. If iter 11 fails: fall back to **strip CEF macOS** (section 0 fallback).
-4. After macOS export green: HITL test (user downloads release, launches
-   Minerva.app, confirms it boots, optionally tests CAD plugin install).
-5. After HITL: queue follow-ups (FFmpeg from source / Windows export native /
-   CEF artifact fix / tarball-smoke regression).
-
----
-
-## 5. Loop budget accounting
-
-- Original budget: 9 loops.
-- Spent: 10 iterations (1 over budget by user-authorized continuation).
-- Reason for overage: each iteration peeled exactly one layer; we ran out
-  before hitting the bottom of the macOS-export-on-cross-OS / artifact-symlink
-  / dyld-framework-search layered cake.
-- Suggestion for next session: declare iter 11 + iter 12 budget upfront, with
-  the fallback strip-CEF path as the explicit floor for "ship something".
+1. Read this file.
+2. Confirm Minerva tab is still open: call `minerva_presentation_list_open_decks`. If empty, the user closed the deck — ask them to reopen `/Users/ipeerbhai/temp/llms_overview_v1.mdeck`.
+3. Execute the Quantization-slide insertion per §0.
+4. Save via `minerva_doc_save editor_name: "llms_overview_v1.mdeck"`.
+5. Confirm slide order via `minerva_presentation_list_slides`; show the user the resulting titles.
+6. Wait for the user's next outline edit. Pattern repeats.
