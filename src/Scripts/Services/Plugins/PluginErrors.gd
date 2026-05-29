@@ -385,19 +385,31 @@ static func backend_success(payload: Dictionary) -> Dictionary:
 # Success helper
 # ---------------------------------------------------------------------------
 
-## Wrap a successful result in the standard response format.
-## Successful capability/tool response.
+## Successful capability/tool response — symmetric envelope with the error path.
 ##
-## Returns the payload directly. The previous wrapping shape
-## `{success: true, result: payload}` was vestigial — the MCP STDIO bridge
-## (MCPServerConnection._handle_stdio_capability_request) passes the broker's
-## return value verbatim into the JSON-RPC `result` field, so wrapping here
-## produced `{jsonrpc, id, result: {success: true, result: <payload>}}` on the
-## wire — plugins that read fields off the payload directly saw nothing.
+## The response wraps the payload in `{success: true, result: payload}` so that
+## consumers can detect success/failure uniformly via the `success` field
+## regardless of branch. The error builders (`permission_denied`, etc.) emit
+## `{success: false, error_code, error_message, plugin_id}` — this contract
+## requires the success branch to set `success: true` too, otherwise:
 ##
-## Error shape is unchanged: `{success: false, error_code, error_message, ...}`.
-## Plugins distinguish errors by `success == false` (still present); successful
-## responses simply lack any `success` field. Callers reading payload fields
-## directly work as expected.
+##   - The audit logger at `CapabilityBroker._audit_dispatch` reads
+##     `result.get("success", false)` and falsely reports EVERY successful
+##     dispatch as `capability_failed reason=unknown`.
+##   - The policy logger at `PluginToolRegistry.handle_tool_call` does the
+##     same `get("success", false)` check and falsely logs `policy_deny`
+##     on every successful capability call.
+##   - Plugins (like presentation) that make outbound `callCapability` calls
+##     unmarshal the JSON-RPC `result` field into a struct expecting
+##     `{success, error_code, error_message, result}` and get an empty
+##     `Success=false` with no diagnostic when the envelope is missing.
+##
+## A previous comment claimed the wrap was "vestigial" and removed it; that
+## change broke all three of the above. The outer JSON-RPC envelope is a
+## separate transport-layer wrapping; the inner `success/result` keys are the
+## broker's contract.
+##
+## Payload semantics: `result` field contains the actual handler return
+## (e.g. `{"documents": [...]}` for `host.documents.list_open`).
 static func success(result: Dictionary = {}) -> Dictionary:
-	return result
+	return {"success": true, "result": result}

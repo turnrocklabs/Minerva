@@ -1847,7 +1847,10 @@ const PROVIDER_DISPLAY_NAMES: Dictionary = {
 	API_PROVIDER.CHATGPT: "ChatGPT",
 }
 
-## Enabled state for each provider (all enabled by default)
+## Enabled state for each provider. Default OFF on fresh installs —
+## users opt in explicitly via AISettings. See `_init_enabled_providers()`
+## for the load-and-default flow; existing users with a saved
+## `[EnabledProviders]` section keep their preferences untouched.
 var _enabled_providers: Dictionary = {}
 
 ## Plugin access state for each provider (all allowed by default).
@@ -1858,14 +1861,24 @@ var _enabled_providers: Dictionary = {}
 ## the user explicitly opts out per-provider.
 var _plugin_allowed_providers: Dictionary = {}
 
-## Initialize enabled providers from config or defaults
+## Initialize enabled providers from config or defaults.
+##
+## Default policy: providers ship DISABLED on a clean install. Rationale: a
+## fresh Minerva install would otherwise advertise every supported provider in
+## the chat picker, including ones the user has no credentials for and has
+## never opted into. Forcing explicit opt-in via AISettings makes the picker
+## reflect what the user actually intends to use. Existing users with a saved
+## `[EnabledProviders]` config section keep their preferences — the per-provider
+## load loop below restores them. The plugin-allowed default remains permissive
+## (separate concern from menu visibility).
 func _init_enabled_providers() -> void:
-	# Default all providers to enabled
+	# Defaults BEFORE config-file overlay: providers off, plugin access on.
+	# Loop only sets keys that don't yet exist; saved values overwrite below.
 	for provider in API_PROVIDER.values():
-		_enabled_providers[provider] = true
+		_enabled_providers[provider] = false
 		_plugin_allowed_providers[provider] = true
 
-	# Load saved state from config
+	# Load saved state from config — preserves existing users' choices.
 	if config_has_saved_section("EnabledProviders"):
 		for provider in API_PROVIDER.values():
 			var provider_name = API_PROVIDER.keys()[provider]
@@ -1879,9 +1892,11 @@ func _init_enabled_providers() -> void:
 			if saved != null:
 				_plugin_allowed_providers[provider] = saved
 
-## Check if a provider is enabled
+## Check if a provider is enabled. The fallback default matches the init
+## policy (off) so providers added to the API_PROVIDER enum after a user's
+## saved config was written stay off until explicitly enabled.
 func is_provider_enabled(provider: API_PROVIDER) -> bool:
-	return _enabled_providers.get(provider, true)
+	return _enabled_providers.get(provider, false)
 
 ## Check if a model's provider is enabled (accepts enum or dynamic int ID)
 func is_model_enabled(model: int) -> bool:
