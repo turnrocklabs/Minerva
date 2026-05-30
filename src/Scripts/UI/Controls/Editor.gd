@@ -544,6 +544,18 @@ func _ready():
 		_annotation_canvas = get_node_or_null("AnnotationCanvas")
 		if _annotation_canvas != null:
 			_annotation_canvas.set_meta("editor_ref", self)
+			# Repaint anchor markers as lines scroll into/out of view. Without this
+			# the canvas only redraws on text/selection/host changes, so an
+			# annotation below the initial fold never paints — get_pos_at_line_column
+			# returns -1 for off-screen lines, and scrolling to it triggered no redraw.
+			if code_edit != null and code_edit.has_method("get_v_scroll_bar"):
+				var _v_scroll: Object = code_edit.get_v_scroll_bar()
+				if _v_scroll != null and not _v_scroll.value_changed.is_connected(_on_code_edit_scrolled):
+					_v_scroll.value_changed.connect(_on_code_edit_scrolled)
+			if code_edit != null and code_edit.has_method("get_h_scroll_bar"):
+				var _h_scroll: Object = code_edit.get_h_scroll_bar()
+				if _h_scroll != null and not _h_scroll.value_changed.is_connected(_on_code_edit_scrolled):
+					_h_scroll.value_changed.connect(_on_code_edit_scrolled)
 		_annotation_sidebar = find_child("AnnotationDockPane", true, false)
 		if _annotation_sidebar != null and annotation_host != null:
 			if _annotation_sidebar.has_method("set_host"):
@@ -554,6 +566,8 @@ func _ready():
 				_annotation_sidebar.repair_requested.connect(_on_sidebar_repair_requested)
 			if _annotation_sidebar.has_signal("add_comment_requested"):
 				_annotation_sidebar.add_comment_requested.connect(_on_sidebar_add_comment_requested)
+			if _annotation_sidebar.has_signal("annotation_selected"):
+				_annotation_sidebar.annotation_selected.connect(_on_annotation_selected_jump)
 			resized.connect(_sync_annotation_dock_layout)
 			call_deferred("_sync_annotation_dock_layout")
 	if file:
@@ -2764,3 +2778,44 @@ func _refresh_annotation_views() -> void:
 func _on_annotation_host_changed() -> void:
 	_refresh_annotation_views()
 	content_changed.emit()
+
+
+## Repaint annotation markers when the text editor scrolls so anchors that were
+## off-screen (and thus unrendered) paint as they enter the viewport.
+func _on_code_edit_scrolled(_value: float) -> void:
+	if _annotation_canvas != null:
+		_annotation_canvas.queue_redraw()
+
+
+## Dock → editor navigation: clicking an annotation's number scrolls the editor
+## to its anchored range, moves the caret, and selects the span. The dock's
+## annotation_selected signal was previously emitted but never consumed.
+func _on_annotation_selected_jump(annotation_id: String) -> void:
+	if annotation_host == null or code_edit == null or annotation_id.is_empty():
+		return
+	var ann: Dictionary = {}
+	if annotation_host.has_method("get_by_id"):
+		ann = annotation_host.get_by_id(annotation_id)
+	if ann.is_empty():
+		return
+	var anchor: Dictionary = ann.get("anchor", {})
+	var id_variant: Variant = anchor.get("id", null)
+	if not id_variant is Dictionary:
+		return
+	var start_v: Variant = (id_variant as Dictionary).get("start", -1)
+	if not start_v is int or (start_v as int) < 0:
+		return
+	var start_lc: Array = annotation_host.offset_to_line_col(start_v as int)
+	var line := int(start_lc[0])
+	var col := int(start_lc[1])
+	code_edit.set_caret_line(line)
+	code_edit.set_caret_column(col)
+	var end_v: Variant = (id_variant as Dictionary).get("end", -1)
+	if end_v is int and (end_v as int) > (start_v as int):
+		var end_lc: Array = annotation_host.offset_to_line_col(end_v as int)
+		code_edit.select(line, col, int(end_lc[0]), int(end_lc[1]))
+	if code_edit.has_method("center_viewport_to_caret"):
+		code_edit.center_viewport_to_caret()
+	code_edit.grab_focus()
+	if _annotation_canvas != null:
+		_annotation_canvas.queue_redraw()

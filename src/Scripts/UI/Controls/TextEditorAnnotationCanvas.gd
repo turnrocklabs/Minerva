@@ -117,7 +117,8 @@ func _draw_healthy(
 	var end_line := end_lc[0] as int
 	var end_col := end_lc[1] as int
 	var badge_drawn := false
-	var badge_leader_x := ce_local.x
+	var badge_after_x := ce_local.x
+	var badge_base_y := ce_local.y
 
 	for line in range(start_line, end_line + 1):
 		var col_a := start_col if line == start_line else 0
@@ -136,11 +137,32 @@ func _draw_healthy(
 		var x2 := float(p_b.x) + ce_local.x
 		draw_line(Vector2(x1, y), Vector2(x2, y), _HEALTHY_COLOR, _UNDERLINE_THICKNESS)
 		if not badge_drawn:
-			badge_leader_x = x2
+			badge_after_x = x2
+			badge_base_y = ce_local.y + float(p_a.y)
 			badge_drawn = true
 
 	if badge_drawn:
-		_draw_badge_for_line(start_line, ce_local, ce_size, line_height, display_index, _HEALTHY_COLOR, badge_slots_by_line, badge_leader_x, true)
+		# Convention: left gutter = line annotations, RIGHT margin = range/highlight.
+		# The badge sits at the right margin with a faint leader from the end of the
+		# underlined text. y derives from the scroll-aware text position
+		# (badge_base_y) — NOT line_idx * line_height, which ignored scroll and
+		# dropped the badge below the viewport ("underline visible, number missing").
+		var slot := _claim_badge_slot(start_line, badge_slots_by_line)
+		var gap := 4.0
+		var right_padding := 8.0
+		var bx := ce_local.x + ce_size.x - right_padding - _BADGE_SIZE.x - float(slot) * (_BADGE_SIZE.x + gap)
+		bx = maxf(ce_local.x + _STRIP_WIDTH + gap, bx)
+		var line_top := badge_base_y - line_height
+		var by := line_top + maxf(0.0, (line_height - _BADGE_SIZE.y) * 0.5)
+		var leader_y := badge_base_y - 2.0
+		if bx - 3.0 > badge_after_x + 3.0:
+			draw_line(
+				Vector2(badge_after_x + 2.0, leader_y),
+				Vector2(bx - 3.0, leader_y),
+				Color(_HEALTHY_COLOR.r, _HEALTHY_COLOR.g, _HEALTHY_COLOR.b, 0.55),
+				1.0
+			)
+		_draw_badge(Vector2(bx, by), display_index, _HEALTHY_COLOR)
 
 
 func _draw_line_marker(
@@ -158,15 +180,21 @@ func _draw_line_marker(
 	var start_v: Variant = (id as Dictionary).get("start", -1)
 	if not start_v is int:
 		return
+	if not code.has_method("get_pos_at_line_column"):
+		return
 	var doc: String = str(code.text) if "text" in code else ""
 	var line_col := _flat_offset_to_line_col(doc, start_v as int)
 	var line_idx := line_col[0] as int
-	var y: float = ce_local.y + line_idx * line_height
-	if y < ce_local.y or y > ce_local.y + ce_size.y:
+	# Scroll-aware: derive the line's pixel y from get_pos_at_line_column (returns
+	# -1 when the line is off-screen) instead of line_idx * line_height, which
+	# ignored scroll and placed the gutter strip at the wrong y / off-screen.
+	var p: Vector2i = code.get_pos_at_line_column(line_idx, 0)
+	if p.x < 0:
 		return
-	draw_rect(Rect2(ce_local.x, y, _STRIP_WIDTH, line_height), _HEALTHY_COLOR, true)
+	var top: float = ce_local.y + float(p.y) - line_height + 1.0
+	draw_rect(Rect2(ce_local.x, top, _STRIP_WIDTH, line_height), _HEALTHY_COLOR, true)
 	_draw_badge(
-		Vector2(ce_local.x + _STRIP_WIDTH + 3.0, y + maxf(0.0, (line_height - _BADGE_SIZE.y) * 0.5)),
+		Vector2(ce_local.x + _STRIP_WIDTH + 3.0, top + maxf(0.0, (line_height - _BADGE_SIZE.y) * 0.5)),
 		display_index,
 		_HEALTHY_COLOR
 	)

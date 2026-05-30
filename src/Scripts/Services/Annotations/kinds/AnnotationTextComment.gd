@@ -46,9 +46,14 @@ func body_view_factory(annotation: Dictionary, _emit_patch: Callable) -> Control
 	var comment_text := str(payload.get("text", ""))
 
 	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var body := Label.new()
 	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Give autowrap a real width floor to flow into; without it the label can
+	# collapse to ~1 char wide when a host container under-reports its width.
+	body.custom_minimum_size = Vector2(180, 0)
 	body.text = comment_text
 	vbox.add_child(body)
 

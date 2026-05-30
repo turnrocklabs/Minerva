@@ -151,12 +151,14 @@ func add_annotation(annotation: Dictionary) -> String:
 ## Build and store a v2 envelope from (start, end, text). Used by Editor.add_comment
 ## (UI path) and the minerva_text_editor_add_comment MCP tool.
 ## Returns the assigned annotation id, or "" on failure.
-func add_comment_at(start: int, end: int, text: String, target_scope: String = "range") -> String:
+func add_comment_at(start: int, end: int, text: String, target_scope: String = "range", author_kind: String = "human") -> String:
 	if start < 0 or end < start:
 		push_warning("[TextEditorAnnotationHost] add_comment_at: invalid range %d..%d" % [start, end])
 		return ""
 	if target_scope != "line":
 		target_scope = "range"
+	if author_kind != "ai":
+		author_kind = "human"
 	var src := _get_text()
 	var snapshot_text := ""
 	if end <= src.length():
@@ -181,7 +183,7 @@ func add_comment_at(start: int, end: int, text: String, target_scope: String = "
 		},
 		"kind_payload": {"text": text, "target_scope": target_scope},
 		"lifecycle": "open",
-		"author": {"kind": "human"},
+		"author": {"kind": author_kind},
 		"view_context": "text",
 		"visible_in_views": ["all"],
 		"summary": text if not text.is_empty() else "(empty comment)",

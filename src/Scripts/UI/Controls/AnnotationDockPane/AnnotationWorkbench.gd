@@ -173,16 +173,35 @@ func _build_ui() -> void:
 	_status_label.hide()
 	add_child(_status_label)
 
+	# The list + expanded body live inside a ScrollContainer so a long annotation
+	# body scrolls within a bounded area instead of growing the pane unbounded —
+	# unbounded growth pushed the dock's collapse chevron off-screen (it lives in
+	# the parent AnnotationDockPane), leaving the pane impossible to close.
+	var content_scroll := ScrollContainer.new()
+	content_scroll.name = "AnnotationScroll"
+	content_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# Real viewport height so the list actually scrolls in BOTTOM dock mode; with
+	# only EXPAND_FILL it collapsed toward 0px and the list was clipped to invisible.
+	content_scroll.custom_minimum_size = Vector2(0, 140)
+	add_child(content_scroll)
+
+	var scroll_body := VBoxContainer.new()
+	scroll_body.add_theme_constant_override("separation", 6)
+	scroll_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content_scroll.add_child(scroll_body)
+
 	_entries_list = VBoxContainer.new()
 	_entries_list.add_theme_constant_override("separation", 4)
-	_entries_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	add_child(_entries_list)
+	_entries_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll_body.add_child(_entries_list)
 
 	_body_view_container = PanelContainer.new()
 	_body_view_container.name = "BodyViewContainer"
 	_body_view_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_body_view_container.hide()
-	add_child(_body_view_container)
+	scroll_body.add_child(_body_view_container)
 
 	_empty_label = Label.new()
 	_empty_label.text = "(no annotations)"

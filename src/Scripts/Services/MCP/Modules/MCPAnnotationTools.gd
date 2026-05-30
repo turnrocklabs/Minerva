@@ -333,9 +333,39 @@ func register_tools() -> void:
 				"document_path": {"type": "string", "description": "Optional sidecar scope."},
 				"lifecycle": {"type": "string", "description": "Target lifecycle: applied, resolved, or open."},
 				"status": {"type": "string", "description": "Alias for lifecycle."},
-				"patch": {"type": "object", "description": "Fields to merge, e.g. applied/resolved objects."},
-				"applied": {"type": "object", "description": "Shortcut for patch.applied."},
-				"resolved": {"type": "object", "description": "Shortcut for patch.resolved."},
+				"patch": {
+					"type": "object",
+					"description": "Fields to merge, e.g. {\"resolved\": {...}} or {\"applied\": {...}}. Prefer the 'resolved'/'applied' shortcuts below.",
+				},
+				"applied": {
+					"type": "object",
+					"description": "Shortcut for patch.applied; REQUIRED when lifecycle='applied'.",
+					"properties": {
+						"links": {
+							"type": "array",
+							"items": {"type": "object"},
+							"description": "Required. Targets this annotation was applied to (edit/commit refs).",
+						},
+					},
+					"required": ["links"],
+				},
+				"resolved": {
+					"type": "object",
+					"description": "Shortcut for patch.resolved; REQUIRED when lifecycle='resolved'.",
+					"properties": {
+						"by": {
+							"type": "object",
+							"description": "Required. Actor that resolved it, as an OBJECT (not a string) — e.g. {\"kind\":\"ai\",\"id\":\"claude-code\"} or {\"kind\":\"human\"}.",
+							"properties": {
+								"kind": {"type": "string", "description": "Actor kind, e.g. 'ai' or 'human'."},
+								"id": {"type": "string", "description": "Optional actor id."},
+							},
+							"required": ["kind"],
+						},
+						"reason": {"type": "string", "description": "Optional human-readable reason."},
+					},
+					"required": ["by"],
+				},
 			},
 		},
 		_TOOL_SET
@@ -386,6 +416,11 @@ func register_tools() -> void:
 				"text": {
 					"type": "string",
 					"description": "Comment text — becomes annotation.kind_payload.text and summary.",
+				},
+				"target_scope": {
+					"type": "string",
+					"enum": ["range", "line"],
+					"description": "Anchor scope. 'range' (default): highlight underline + right-margin badge across [start, end), for a phrase. 'line': left-gutter line marker at the start offset's line, for a whole-line/location note.",
 				},
 			},
 			"required": ["editor_name", "start", "end", "text"],
@@ -438,7 +473,10 @@ func _text_editor_add_comment(args: Dictionary) -> Dictionary:
 	if not host.has_method("add_comment_at"):
 		return _err("editor '%s' is not a text editor (host lacks add_comment_at)" % editor_name)
 
-	var ann_id: String = host.call("add_comment_at", start, end, text)
+	var target_scope: String = str(args.get("target_scope", "range"))
+	if target_scope != "line":
+		target_scope = "range"
+	var ann_id: String = host.call("add_comment_at", start, end, text, target_scope, "ai")
 	if ann_id.is_empty():
 		return _err("add_comment_at returned empty id (validation failed; check log)")
 	var count: int = (host.get_annotations() as Array).size() if host.has_method("get_annotations") else -1
