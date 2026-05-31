@@ -8,7 +8,7 @@ Last updated 2026-05-31.
 
 ## TL;DR
 
-Active initiative: **extract code-intelligence out of Minerva core into one OPTIONAL marketplace plugin, `codetools`**, that turns Minerva into a coding agent only when installed. Governing DCR: `019e7b6609` (docket). Full design + decisions in memory `project_codetools_extraction.md`.
+Active initiative: **extract code-intelligence out of Minerva core into one OPTIONAL marketplace plugin, `codetools`**, that turns Minerva into a coding agent only when installed. Governing DCR: `019e7b6609` (`minerva` docket). Full design + decisions + progress: docket kb `019e7f366d99` (canonical, published) and memory `project_codetools_extraction.md`.
 
 This session shipped the substrate, in order, each behind a cold-Opus review + CI:
 - **P0** — clean baseline: pushed parked commits, fetched tags, registry drift fixed, Minerva `.gd.uid` hygiene.
@@ -51,9 +51,9 @@ Everything through P1.3 and most of P1.4 is machine-verifiable headless. The ONE
 
 ## 2. Discovery anchors (survive compaction)
 
-- **DCR `019e7b6609`** (docket) — design + decisions. Comment 34 = execution playbook/gates; 35 = skills + test decision; 36 = workflow/repo decisions; **37 = open envelope-schema questions (read this — `data` field decision is yours)**.
-- Memory `project_codetools_extraction.md` — names, locations, item map, progress.
-- Docket items: P1 `019e7b8650`; done: P1.1 `019e7b86e4`, P1.2 `019e7b86f2`; **next: P1.3 `019e7b870f`**, then P1.4 `019e7b871b`. Later phases P2 `019e7b8664`, P3 `019e7b867e`, P4 `019e7b8699`, DRY-debt `019e7b86ab`.
+- **DCR `019e7b6609`** (`minerva` docket) — design + decisions. Comment 34 = execution playbook/gates; 35 = skills + test decision; 36 = workflow/repo decisions; **37 = open envelope-schema questions (read this — `data` field decision is yours)**.
+- **Docket kb `019e7f366d99`** (`minerva`, published/active) — canonical reference: design, locked decisions, names, locations, item map, progress. Mirrors memory `project_codetools_extraction.md`.
+- Docket items (ALL now in the `minerva` docket, moved out of `minerva-services` 2026-05-31): P0 `019e7b862f`, P1 `019e7b8650`; done: P1.1 `019e7b86e4`, P1.2 `019e7b86f2`; **next: P1.3 `019e7b870f`**, then P1.4 `019e7b871b`. Later phases P2 `019e7b8664`, P3 `019e7b867e`, P4 `019e7b8699`, DRY-debt `019e7b86ab`. Hints: discovery map `019e7b8804`, repo+branch workflow `019e7b9196`.
 - Plugin API docs: `~/github/minerva-plugins/docs/PLUGIN_DEVELOPER_GUIDE.md` + `PLUGIN_API_COVERAGE.md`.
 
 ## 2a. Open question for the owner (non-blocking)
