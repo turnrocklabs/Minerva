@@ -92,6 +92,11 @@ func _run() -> void:
 		_skip("PluginManager bootstrap failed")
 		return
 	await _helper.scrub_plugin(_pm, PLUGIN_ID)
+	# EnsureRuntime caches the extracted bundle under <data_dir>/runtime/<version>
+	# keyed by VERSION — a same-version worker change would otherwise be masked by
+	# a stale extraction from a prior run. Clear it so each run extracts the bundle
+	# we just built. (No-op on a clean machine / CI runner.)
+	_clear_runtime_cache()
 
 	# --- Step 1: install via the real marketplace path ---
 	print("\n-- step 1: install_from_url --")
@@ -139,19 +144,25 @@ func _run() -> void:
 	var ping_result: Dictionary = await conn.call_tool(
 		"minerva_codetools_ping", {"echo": "mp"}, PING_TIMEOUT)
 	print("  ping_result: %s" % JSON.stringify(ping_result))
-	var inner := _unwrap_envelope(ping_result)
-	if inner.is_empty():
-		print("FAIL: could not extract a worker envelope from ping result")
+	var envl := _unwrap_envelope(ping_result)  # the P1.2 unified result envelope
+	if envl.is_empty():
+		print("FAIL: could not extract a unified envelope from ping result")
 		_fail += 1
-	elif inner.get("pong", false) != true:
-		print("FAIL: ping did not return pong=true; inner=%s" % JSON.stringify(inner))
+	elif envl.get("status") != "ok":
+		print("FAIL: envelope status != ok; envelope=%s" % JSON.stringify(envl))
 		_fail += 1
 	else:
-		if inner.get("echo") != "mp":
-			print("WARN: echo mismatch (got %s)" % str(inner.get("echo")))
-		print("PASS: ping round-trip (pong=true, worker=%s python=%s)"
-				% [inner.get("worker", "?"), inner.get("python", "?")])
-		_pass += 1
+		var arts: Array = envl.get("artifacts", [])
+		var info: Dictionary = arts[0] if arts.size() > 0 and arts[0] is Dictionary else {}
+		if info.get("pong", false) != true:
+			print("FAIL: no pong artifact in envelope; envelope=%s" % JSON.stringify(envl))
+			_fail += 1
+		else:
+			if info.get("echo") != "mp":
+				print("WARN: echo mismatch (got %s)" % str(info.get("echo")))
+			print("PASS: ping round-trip (status=ok, pong=true, worker=%s python=%s)"
+					% [info.get("worker", "?"), info.get("python", "?")])
+			_pass += 1
 
 	# --- Step 4: clean stop ---
 	print("\n-- step 4: stop_plugin --")
@@ -240,6 +251,26 @@ func _host_bundle_triple() -> String:
 	return ""
 
 
+# Resolve the plugin data dir the way the Go shim's runtime.DataDir() does, then
+# remove the extracted-runtime cache under it so the next start re-extracts the
+# freshly-built bundle (defeats the version-keyed EnsureRuntime cache).
+func _clear_runtime_cache() -> void:
+	var data_dir := OS.get_environment("MINERVA_PLUGIN_DATA_DIR")
+	if data_dir == "":
+		var base := ""
+		match OS.get_name():
+			"Windows":
+				base = OS.get_environment("APPDATA")
+			"macOS":
+				base = OS.get_environment("HOME") + "/Library/Application Support"
+			_:
+				var xdg := OS.get_environment("XDG_DATA_HOME")
+				base = xdg if xdg != "" else OS.get_environment("HOME") + "/.local/share"
+		data_dir = "%s/Minerva/plugins/%s" % [base, PLUGIN_ID]
+	if data_dir != "":
+		OS.execute("rm", ["-rf", data_dir + "/runtime"], [], true)
+
+
 func _have_cmd(name: String) -> bool:
 	return OS.execute("bash", ["-c", "command -v %s >/dev/null 2>&1" % name], [], true) == 0
 
@@ -255,28 +286,24 @@ func _file_ge(path: String, min_bytes: int) -> bool:
 	return sz >= min_bytes
 
 
-# Extract the worker's inner {pong,...} dict from whatever envelope shape
-# call_tool returns: the MCP {content:[{text:"<json>"}]} wrapper, the
-# {ok:true,result:{...}} success envelope, or an already-unwrapped result.
+# Dig the P1.2 unified result envelope ({status, summary, artifacts, ...}) out
+# of whatever wrapping call_tool returns: the MCP {content:[{text:"<json>"}]}
+# part, the transport {ok:true, result:<envelope>} wrapper, or the envelope
+# itself. Returns the envelope dict (it carries "status"), or {} if not found.
 func _unwrap_envelope(env: Dictionary) -> Dictionary:
-	# Shape A: MCP content array with a JSON text part.
+	# Already the envelope.
+	if env.has("status") and env.has("artifacts"):
+		return env
+	# MCP content array with a JSON text part.
 	if env.has("content") and typeof(env["content"]) == TYPE_ARRAY and env["content"].size() > 0:
 		var first = env["content"][0]
 		if typeof(first) == TYPE_DICTIONARY and first.has("text"):
 			var parsed = JSON.parse_string(str(first["text"]))
 			if typeof(parsed) == TYPE_DICTIONARY:
 				return _unwrap_envelope(parsed)
-	# Shape B: success envelope {ok:true, result:{...}}.
-	if env.get("ok", false) == true and typeof(env.get("result")) == TYPE_DICTIONARY:
-		return env["result"]
-	# Shape C: result field carries the MCP wrapper.
+	# Transport wrapper {ok:..., result:<envelope-or-deeper-wrapper>}.
 	if env.has("result") and typeof(env["result"]) == TYPE_DICTIONARY:
-		var r: Dictionary = env["result"]
-		if r.has("content") or r.has("ok"):
-			return _unwrap_envelope(r)
-	# Shape D: already the inner dict.
-	if env.has("pong"):
-		return env
+		return _unwrap_envelope(env["result"])
 	return {}
 
 
