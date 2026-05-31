@@ -10,6 +10,11 @@ signal client_connected(session_id: String)
 signal tool_executed(tool_name: String, session_id: String)
 
 const DEFAULT_PORT = 9315
+## Bind to the IPv4 loopback only. The MCP endpoint is unauthenticated, so it
+## must never be reachable off-host; binding "127.0.0.1" (instead of Godot's
+## "*" default = all interfaces) lets the OS reject non-local connections at
+## the socket layer.
+const BIND_ADDRESS = "127.0.0.1"
 const LATEST_PROTOCOL_VERSION = "2025-06-18"
 const SUPPORTED_PROTOCOL_VERSIONS = [
 	"2025-06-18",
@@ -54,7 +59,7 @@ func start_server(port: int = DEFAULT_PORT) -> Error:
 		return ERR_ALREADY_IN_USE
 
 	_tcp_server = TCPServer.new()
-	var err = _tcp_server.listen(port)
+	var err = _tcp_server.listen(port, BIND_ADDRESS)
 
 	if err != OK:
 		push_error("[MCP HTTP] Failed to start server on port %d: %s" % [port, error_string(err)])
@@ -64,7 +69,7 @@ func start_server(port: int = DEFAULT_PORT) -> Error:
 	_port = port
 	_is_running = true
 
-	print("[MCP HTTP] Server started on port %d" % _port)
+	print("[MCP HTTP] Server started on %s:%d" % [BIND_ADDRESS, _port])
 	server_started.emit(_port)
 	return OK
 
