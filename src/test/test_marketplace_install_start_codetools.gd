@@ -164,6 +164,37 @@ func _run() -> void:
 					% [info.get("worker", "?"), info.get("python", "?")])
 			_pass += 1
 
+	# --- Step 3b: code-visualizer round-trip (P1.3 Gate-A) ---
+	# Asserts the install→start→tool path also works for the 9 P1.3 tools, not
+	# just ping. analyze:stats works against an empty SQLite store (returns
+	# zero counts) so we don't need an indexed corpus to prove the round-trip.
+	print("\n-- step 3b: minerva_codetools_analyze (stats) --")
+	# def.data_directory is a Godot URI (`user://...`); the Python worker is an
+	# external process, so we have to globalize before handing the path off.
+	var db_path := "%s/test_visualizer_stats.db" \
+			% ProjectSettings.globalize_path(def.data_directory)
+	var analyze_result: Dictionary = await conn.call_tool(
+		"minerva_codetools_analyze",
+		{"analysis": "stats", "db_path": db_path},
+		PING_TIMEOUT)
+	print("  analyze_result: %s" % JSON.stringify(analyze_result))
+	var an_env := _unwrap_envelope(analyze_result)
+	if an_env.is_empty():
+		print("FAIL: could not extract envelope from analyze result")
+		_fail += 1
+	elif an_env.get("status") != "ok":
+		print("FAIL: analyze envelope status != ok; envelope=%s" % JSON.stringify(an_env))
+		_fail += 1
+	else:
+		var an_arts: Array = an_env.get("artifacts", [])
+		var an_art: Dictionary = an_arts[0] if an_arts.size() > 0 and an_arts[0] is Dictionary else {}
+		if an_art.get("type") != "analysis" or an_art.get("analysis") != "stats":
+			print("FAIL: analyze artifact mismatch; artifact=%s" % JSON.stringify(an_art))
+			_fail += 1
+		else:
+			print("PASS: analyze:stats round-trip (typed artifact ok)")
+			_pass += 1
+
 	# --- Step 4: clean stop ---
 	print("\n-- step 4: stop_plugin --")
 	var stop_result: Dictionary = await _pm.stop_plugin(PLUGIN_ID)
