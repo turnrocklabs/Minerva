@@ -232,7 +232,9 @@ func _host_bundle_triple() -> String:
 		"macOS":
 			return "macos-arm64" if OS.has_feature("arm64") else "macos-amd64"
 		"Linux":
-			return "linux-arm64" if OS.has_feature("arm64") else "linux-x86_64"
+			# codetools ships no linux-arm64 target (no embed_linux_arm64.go),
+			# so an arm64 linux host SKIPs cleanly rather than failing go build.
+			return "" if OS.has_feature("arm64") else "linux-x86_64"
 		"Windows":
 			return "windows-x86_64"
 	return ""
