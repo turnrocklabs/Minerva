@@ -1,6 +1,6 @@
 # Pickup
 
-STATE: `Code Tools extraction — P0 + P1.1 + P1.2 DONE & GREEN; P1.3 (vendor code-visualizer) is next`
+STATE: `Code Tools extraction — P0 + P1.1 + P1.2 + P1.3 DONE & GREEN; P1.4 (godot_scene visualizer panel — HITL gate) is next`
 
 Last updated 2026-05-31.
 
@@ -14,27 +14,28 @@ This session shipped the substrate, in order, each behind a cold-Opus review + C
 - **P0** — clean baseline: pushed parked commits, fetched tags, registry drift fixed, Minerva `.gd.uid` hygiene.
 - **P1.1** — the `codetools` plugin skeleton at `~/github/minerva-plugins/codetools`: Go shim + embedded CPython (cad pattern) + stdio MCP + one health tool `minerva_codetools_ping`. CI green on all 3 targets; **`codetools-v0.1.0` released**.
 - **P1.2** — the unified result envelope `{status, summary, artifacts, evidence_handles, follow_ups, [error]}` + router every subsystem will dispatch through. 22 worker unit tests.
+- **P1.3** — vendored code-visualizer (`code-magic` @ `9cc9403`) under `codetools/worker/vendored/code_visualizer/`; 9 envelope adapters (`query, get_context, stale_check, get_diff, analyze, set_description, describe_symbol, set_tags, undescribed`) wired into `router.ROUTES` + `internal/tools/code_visualizer.go` + `main.go initRegistry`; 22 real-fixture functional tests (real Godot fixture project, real SQLite) green; the Minerva GDScript marketplace test extended with an install→start→analyze:stats round-trip (Gate-A).
 
-Both repos clean and pushed. Nothing is half-done — we paused cleanly at the P1.2→P1.3 boundary.
+Nothing is half-done — we paused cleanly at the P1.3→P1.4 boundary.
 
 ---
 
-## 0. What to do next session — P1.3
+## 0. What to do next session — P1.4 (HITL gate)
 
-**Vendor the code-visualizer subsystem (was "Code Magic") behind the router.** Docket item `019e7b870f`.
+**Ship the code-visualizer panel as a `godot_scene`.** Docket item `019e7b871b`. This is the ONE explicit human-in-the-loop gate of the substrate phase — headless can verify registration + wiring + data flow, but not "does the graph render / is it usable."
 
-- Source PoC: `~/gitlab/ccsandbox/experiments/code-magic` — **pin HEAD @ `9cc9403`** at vendor time (Python + SQLite + a working 10-tool stdio MCP + a Godot viz; ships ZERO tests).
-- Snapshot into `codetools/worker/vendored/` with a `VENDORING.md` recording the SHA; **no local edits** (track any patches separately).
-- Re-namespace its 10 MCP tools to `minerva_codetools_*` and route them through the P1.2 envelope (register handlers in `codetools/worker/codetools_worker/router.py` `ROUTES`; each returns `envelope.ok(...)` with typed artifacts).
-- Its Python deps (tree-sitter wheels etc.) go in `codetools/scripts/runtime-bundle.lock` `PIP_PKGS`; SQLite is stdlib.
-- **Gate A (no stubs):** index a REAL fixture Godot project (real `.gd`/`.tscn`/`.tres`) + real SQLite; author net-new functionals (it has none); cold-Opus review; full regression green.
-- Model plan: **SONNET** for the mechanical vendor + rename, **OPUS** review. Functionals are net-new.
-- DRY watch: code-visualizer's own indexer fs/search temporarily duplicates the future shared `files/` — that debt is tracked by the converge-DRY item and gates P4. Don't silently leave it.
+- Source viz: `~/gitlab/ccsandbox/experiments/code-magic/viz` (and `code-magic-viz/`) at the same pinned SHA `9cc9403`. Vendor like P1.3 did the analyzer.
+- Wire it as a `godot_scene` panel in `codetools/manifest.json` (cad's CAD panel + presentation deck are precedents). Panel queries the worker over MCP for graph data.
+- The "looks right" gate: open the panel in a running Minerva pointed at a real indexed SQLite (the P1.3 fixture works), and confirm: nodes render, edges connect, click-to-jump, basic filter. Owner signs off.
+- Model plan: SONNET for the panel scaffold + MCP wiring, OPUS for review. The human gate replaces the auto-functional-test gate for the visual layer.
 
-First recon step (already teed up): map code-magic's structure / 10 tools / deps before vendoring.
+### Lessons / gotchas captured in docket hints this session
 
-### The deferred HITL gate (the night's destination is P1.4, not P1.3)
-Everything through P1.3 and most of P1.4 is machine-verifiable headless. The ONE thing that needs a human is **P1.4: opening the code-visualizer `godot_scene` panel in a running Minerva and confirming the graph actually renders / is usable.** Headless proves registration + wiring + data flow; it cannot prove "the visualization looks right."
+- `019e7f57218e` — tree-sitter-gdscript NOT on PyPI; install from `vendored/.../vendor/tree-sitter-gdscript`.
+- `019e7f737cc9` — `PYTHONNOUSERSITE=1` required on `build-python-runtime-bundle.sh` pip line or dev user-site leaks into the bundle and silently skips deps.
+- `019e7f738b83` — `def.data_directory` is a Godot URI; globalize via `ProjectSettings.globalize_path()` before handing to external workers.
+- `019e7f5050047` — Go-shim plugins source MCP tools from the Go `Registry`, NOT manifest `tools[]`.
+- `019e7f591b8d` — code-visualizer `analyze:dead_code` never flags class members (class-contains-member edges keep them "alive"); test fixtures should assert on top-level classes.
 
 ---
 
@@ -65,9 +66,9 @@ Envelope primary-payload home: I kept the DCR's 5-field schema and made `type` a
 
 | Component | Version / commit | Notes |
 |---|---|---|
-| minerva-plugins | `main` @ `6083486` (pushed) | codetools P0–P1.2 |
-| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional; not bundled |
-| Minerva | `development` @ `cc3729cb` (pushed) | codetools functional + runner wiring |
+| minerva-plugins | `main` @ `<P1.3 HEAD>` (push pending) | codetools P0–P1.3 |
+| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional; not bundled. P1.3 work is on main but no new tag — P1.4 HITL ships next. |
+| Minerva | `development` @ `<P1.3 HEAD>` (push pending) | codetools functional + analyze:stats round-trip |
 | CAD plugin | `cad-v0.1.2` | unaffected; verified green |
 | Presentation | `presentation-v0.0.3` | prior work |
 
@@ -86,6 +87,6 @@ Known: Minerva `development` CI has a pre-existing, unrelated smoke-test failure
 
 ## 5. First actions for next session
 
-1. Read this file + DCR comment 37 (the `data`-field question).
-2. Resume P1.3: recon `~/gitlab/ccsandbox/experiments/code-magic` @9cc9403 (structure, 10 tools, deps), then vendor → re-namespace → route through envelope → real-fixture functionals. SONNET impl + OPUS review.
-3. Keep the cold-Opus-review-per-item + CI-green discipline. Drive toward the P1.4 visual HITL gate.
+1. Read this file. Envelope `data`-field question is RESOLVED (DCR comment 386 — typed artifacts win; no `data` field). Review hints listed in §0 if you'll touch tree-sitter or the bundle script.
+2. Start P1.4: vendor the Godot viz from `~/gitlab/ccsandbox/experiments/code-magic/{viz,code-magic-viz}` @ `9cc9403`, scaffold the `godot_scene` panel in `manifest.json`, wire it to query the worker via MCP for graph data. Point at the P1.3 fixture's SQLite for a first render.
+3. The HITL gate: owner opens the panel in a running Minerva and confirms graph renders + is usable. No headless gate substitutes for this step.
