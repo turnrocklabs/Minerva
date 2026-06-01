@@ -25,6 +25,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	focus_mode = Control.FOCUS_ALL
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Re-render when our own rect changes (pane resize / layout change) so a
+	# host whose transform derives from the live rect stays aligned.
+	if not resized.is_connected(_on_view_changed):
+		resized.connect(_on_view_changed)
 
 
 func set_host(host: RefCounted) -> void:
@@ -33,11 +37,34 @@ func set_host(host: RefCounted) -> void:
 			_host.annotations_changed.disconnect(_on_annotations_changed)
 		if _host.selection_changed.is_connected(_on_selection_changed):
 			_host.selection_changed.disconnect(_on_selection_changed)
+		if _host.has_signal("view_changed") and _host.view_changed.is_connected(_on_view_changed):
+			_host.view_changed.disconnect(_on_view_changed)
 	_host = host
 	if _host != null:
 		_host.annotations_changed.connect(_on_annotations_changed)
 		_host.selection_changed.connect(_on_selection_changed)
+		# Hosts with a movable/scaled surface emit view_changed on pan/zoom/resize.
+		if _host.has_signal("view_changed") and not _host.view_changed.is_connected(_on_view_changed):
+			_host.view_changed.connect(_on_view_changed)
 	queue_redraw()
+
+
+func _on_view_changed() -> void:
+	queue_redraw()
+
+
+## Document → on-screen (overlay-local) transform from the host; identity for
+## hosts that don't override it, so legacy behavior is unchanged.
+func _view_transform() -> Transform2D:
+	if _host != null and _host.has_method("get_annotation_view_transform"):
+		return _host.get_annotation_view_transform()
+	return Transform2D.IDENTITY
+
+
+func _view_zoom() -> float:
+	if _host != null and _host.has_method("get_annotation_zoom"):
+		return float(_host.get_annotation_zoom())
+	return 1.0
 
 
 func _on_annotations_changed() -> void:
@@ -73,12 +100,13 @@ func _draw() -> void:
 	if _host == null:
 		return
 	var registry: AnnotationRegistry = _host.get_registry()
+	var view_xform := _view_transform()
 	var ctx := AnnotationRenderContext.create(
 		get_canvas_item(),
-		Transform2D.IDENTITY,
+		view_xform,
 		Rect2(Vector2.ZERO, size),
 		theme,
-		1.0,
+		_view_zoom(),
 		_host.get_view_context()
 	)
 	ctx.host = _host
@@ -114,7 +142,7 @@ func _draw() -> void:
 				# Host-owned canvas; the host overlay subclass draws this kind.
 				if not kind.has_visual_render():
 					break
-				var halo_rect: Rect2 = kind.bounds(ann_dict)
+				var halo_rect: Rect2 = view_xform * kind.bounds(ann_dict)
 				if halo_rect.size.length() < 0.5:
 					break
 				draw_rect(halo_rect.grow(_HALO_GROW), _HALO_COLOR, false, 2.0)
@@ -125,17 +153,22 @@ func _gui_input(event: InputEvent) -> void:
 	if _active_tool == null:
 		return
 
+	# Tools work in document space; map overlay-local pointer coords back through
+	# the view transform (identity for legacy hosts → unchanged).
+	var inv := _view_transform().affine_inverse()
+
 	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event
 		var mods := _mods_from_event(mb)
+		var doc_pos: Vector2 = inv * mb.position
 		if mb.pressed:
 			if mb.button_index == MOUSE_BUTTON_LEFT:
 				grab_focus()
-			var consumed := _active_tool.on_pointer_down(mb.position, mb.button_index, mods)
+			var consumed := _active_tool.on_pointer_down(doc_pos, mb.button_index, mods)
 			if consumed:
 				accept_event()
 		else:
-			var consumed_up := _active_tool.on_pointer_up(mb.position, mb.button_index, mods)
+			var consumed_up := _active_tool.on_pointer_up(doc_pos, mb.button_index, mods)
 			if consumed_up:
 				accept_event()
 		queue_redraw()
@@ -143,7 +176,7 @@ func _gui_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseMotion:
 		var mm: InputEventMouseMotion = event
-		_active_tool.on_pointer_move(mm.position)
+		_active_tool.on_pointer_move(inv * mm.position)
 		queue_redraw()
 		return
 
@@ -182,7 +215,10 @@ func get_annotation_badge_position(annotation: Dictionary) -> Vector2:
 	var base_pos: Variant = _annotation_badge_anchor_position(annotation)
 	if base_pos == null:
 		base_pos = Vector2.ZERO
-	return _clamp_badge_position((base_pos as Vector2) + _BADGE_OFFSET)
+	# Badge anchor resolves in document space; map to screen, then add the
+	# pixel offset so the badge gap is constant regardless of view scale.
+	var screen_pos: Vector2 = _view_transform() * (base_pos as Vector2)
+	return _clamp_badge_position(screen_pos + _BADGE_OFFSET)
 
 
 func _draw_annotation_number_badge(annotation: Dictionary) -> void:

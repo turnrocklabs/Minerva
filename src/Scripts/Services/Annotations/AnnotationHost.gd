@@ -31,6 +31,13 @@ const BASE_ANNOTATION_TOOLS := ["select"]
 @warning_ignore("unused_signal")
 signal selection_changed(annotation_id: String)
 
+## Emitted when the host's VIEW changes (pan / zoom / resize / page flip) so the
+## overlay re-renders with the current transform. Hosts with a movable or scaled
+## surface emit this; static hosts (hello/text) never do. Declared on the base so
+## AnnotationOverlay can connect uniformly (guarded by has_signal).
+@warning_ignore("unused_signal")
+signal view_changed()
+
 var _anchor_resolvers: Dictionary = {}
 var resolve_cache: Object = null
 
@@ -414,6 +421,21 @@ func transform_doc_to_screen(p: Vector2) -> Vector2:
 ## Default: identity.
 func transform_screen_to_doc(p: Vector2) -> Vector2:
 	return p
+
+
+## Affine transform mapping DOCUMENT space → on-screen (overlay-local) pixels.
+## AnnotationOverlay uses it to render annotations and to inverse-map pointer
+## input. Default identity (document == screen — hello/text hosts). Hosts with a
+## scaled or scrolled surface (a fit-to-pane raster preview, a CAD/PCB camera)
+## override this and emit view_changed() whenever it changes.
+func get_annotation_view_transform() -> Transform2D:
+	return Transform2D.IDENTITY
+
+
+## Screen-pixels-per-document-unit scale hint; kinds use it to size strokes and
+## glyphs. Default 1.0. Hosts that scale their surface return that scale.
+func get_annotation_zoom() -> float:
+	return 1.0
 
 # ── View context ───────────────────────────────────────────────────────────────
 
