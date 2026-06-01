@@ -6,7 +6,7 @@ The **in-app nametag editor is BUILT + verified**, committed **LOCALLY (NOT push
 
 End-to-end gap analysis (do the WHOLE student scenario inside Minerva, no host shell): need (a) a cross-platform **`.docx` DATA reader**, (b) **nametag richness** — generic front/back faces + free image placement. Filed in the `minerva` docket: **DCR `019e8547775c`** (docx reader) + proof `019e8547f0f6`; plugin gaps **`019e854798`** (generic faces) + **`019e8547b7`** (image placement); plus CAD-leak bug `019e85329a1b`.
 
-**Steps 1–3 of §7 are DONE + committed (docx reader, both plugin gaps, skill update). NEXT = §7 step 4: the in-app acceptance test — needs Minerva LAUNCHED on this branch (it is not running). See §7 "Step 4 launch checklist".**
+**ALL of §7 steps 1–4 are DONE (2026-06-01). The whole "make student name tags from a .docx, inside Minerva, over MCP" scenario passed live acceptance — docx reader + generic back faces + free image placement + skill + the end-to-end run. DCR `019e8547775c` shipped. REMAINING: push the LOCAL commits when ready; optional N3-push / N5 packaging / promote skill to repo master.dct.**
 
 ---
 
@@ -158,9 +158,9 @@ Producing the camp tags used HOST tools (Read/Python/Bash) a production agent do
    - Faces: `build_from_sheet` now takes `shared_back` (one constant back, e.g. a schedule) + `back_mapping` (per-row back). **Plugin `737cf1e`.**
    - Images: `host.pdf` `draw_image` gained `angle` (rotation about center, CW-positive). **Core `3f82c6eb`** (sidecar rebuilt). Plugin `Face.Placed` free placement (inches+rotation), exposed via `faceArgs.images[]` and `build_from_sheet` `icon_path`/`images[]`/`front_images`/`shared_back.images`. **Plugin `c3d23cc`.**
 3. ✅ **Skill update** — "Nametag Maker" skill now lists `minerva_read_document` in `tool_deps`, steps cover the `.docx`→csv→sheet path + two-sided + logo, system_prompt §1/§4 updated. **Plugin `80d269c`.** (Re-seed happens on reinstall — step 4.)
-4. ⏳ **Test within Minerva** — have an **INTERNAL Minerva LLM** run the whole scenario end-to-end (focused chat on "Nametag Maker", or a spawned agent): ingest the `.docx` → spreadsheet → preview ONE draft → annotate → iterate → full batch → save PDF. Acceptance for "the whole thing works inside Minerva."
+4. ✅ **Test within Minerva** — **ACCEPTANCE PASSED live over MCP (2026-06-01).** Drove the whole camp scenario in a running Minerva: `minerva_read_document` on the real `.docx` → 61 students → `minerva_create_spreadsheet_editor(csv)` "Camp Roster 2026" → `get_spreadsheet_data(json)` → `build_from_sheet` (front mapping + `back_mapping` per-row schedule, `preview_first_only`) → 2-page `.mtags` → `minerva_open_file` (nametag_editor panel, live AnnotationHost confirmed) → `nametag_save(rows_path, layout=detailed)` → **16-page** `~/temp3/camp_lanyards_2026.pdf` (no dialog). No host shell/Python anywhere. DCR `019e8547775c` → **shipped**.
 
-### Step 4 launch checklist (Minerva is NOT running)
+### Step 4 launch checklist (for re-runs — was used to bring the app up)
 The core changed (new `minerva_read_document` tool + global class cache + rotated sidecar) AND the plugin manifest changed (new skill deps/steps), so a plain reconnect is not enough:
 1. **Launch Minerva** from the Godot editor on `pdf-print-substrate` (loads the new core — the class cache `src/.godot/global_script_class_cache.cfg` already has `OOXMLReader`/`MCPDocumentTools`; sidecar `src/bin/minerva-host-pdf-linux` already rebuilt; plugin binary `nametag-maker/nametag-maker-plugin` already rebuilt).
 2. **Reinstall** the plugin (manifest changed → reinstall re-seeds the skill): `minerva_plugin_install` with `~/github/minerva-plugins/nametag-maker/manifest.json`, then `minerva_plugin_start` id=`nametag_maker`.
