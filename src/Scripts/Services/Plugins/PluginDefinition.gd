@@ -92,7 +92,10 @@ var host_capabilities: Array[String] = []
 ## Network mode ("none" | "localhost" | "unrestricted")
 var network_mode: String = "none"
 
-## Filesystem access mode ("none" | "scoped_paths")
+## Filesystem access mode ("none" | "scoped_paths" | "unrestricted")
+## "unrestricted" lets a plugin read/write any absolute path the agent supplies —
+## parity with Minerva's core MCP file tools (minerva_disk_write / minerva_doc_*),
+## which enforce no path policy. Opt-in per plugin; install is the trust act.
 var filesystem_mode: String = "none"
 
 ## Paths the plugin is allowed to access (only relevant when filesystem_mode = "scoped_paths")
@@ -1089,12 +1092,12 @@ func validate_host_capabilities() -> Array[String]:
 	# validate paths against and every read/write would deny — better to
 	# surface the gap at install time.
 	if declares_files_cap:
-		if filesystem_mode != "scoped_paths":
+		if filesystem_mode != "scoped_paths" and filesystem_mode != "unrestricted":
 			errors.append(
-				"host.files.* declared but permissions.filesystem.mode is '%s' (must be 'scoped_paths')" %
+				"host.files.* declared but permissions.filesystem.mode is '%s' (must be 'scoped_paths' or 'unrestricted')" %
 				filesystem_mode
 			)
-		elif filesystem_paths.is_empty():
+		elif filesystem_mode == "scoped_paths" and filesystem_paths.is_empty():
 			errors.append(
 				"host.files.* declared with filesystem.mode = 'scoped_paths' but permissions.filesystem.paths is empty"
 			)

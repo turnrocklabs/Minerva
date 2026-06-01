@@ -133,7 +133,12 @@ static func _str_or_null(value: String) -> Variant:
 ## scopes. Plugins gain control over /tmp/escape by writing through this
 ## validator, but they cannot CREATE symlinks via host.files.write (which only
 ## writes file content). Treat granted scopes as transitive trust.
-static func validate_files_path(plugin_id: String, path: String, allowed_paths: Array) -> Dictionary:
+## Syntactic-only path validation shared by validate_files_path and the
+## unrestricted-mode path of _files_scope_check. Enforces non-empty, no null
+## bytes, user:// expansion, absolute-only, and no explicit `..` segments.
+## Returns {success:true, result:{path: abs_path}} or a schema_validation_failed.
+## NOTE: performs NO scope/allowlist check — callers add that when needed.
+static func _validate_files_path_syntax(plugin_id: String, path: String) -> Dictionary:
 	if path.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "path must not be empty")
 
@@ -166,12 +171,42 @@ static func validate_files_path(plugin_id: String, path: String, allowed_paths: 
 				plugin_id, "path must not contain '..' segments (got: '%s')" % path
 			)
 
-	var abs_path: String = raw_path.simplify_path()
+	return PluginErrors.success({"path": raw_path.simplify_path()})
+
+
+static func validate_files_path(plugin_id: String, path: String, allowed_paths: Array) -> Dictionary:
+	var syn := _validate_files_path_syntax(plugin_id, path)
+	if not syn.get("success", false):
+		return syn
+	var abs_path: String = syn["result"]["path"]
 
 	if not is_path_in_scope(abs_path, allowed_paths):
 		return PluginErrors.target_not_allowlisted(plugin_id, abs_path)
 
 	return PluginErrors.success({"path": abs_path})
+
+
+## Whether host.files.* is usable for this plugin given its filesystem_mode.
+##   "unrestricted"  → always enabled (any absolute path; parity with core tools)
+##   "scoped_paths"  → enabled only when at least one allowed path is declared/granted
+##   anything else   → disabled
+static func _files_mode_enabled(def) -> bool:
+	if def == null:
+		return false
+	if def.filesystem_mode == "unrestricted":
+		return true
+	return def.filesystem_mode == "scoped_paths" and not def.filesystem_paths.is_empty()
+
+
+## Resolve + authorize a host.files.* path honoring filesystem_mode.
+##   "unrestricted"  → syntactic validation only (no scope/allowlist check)
+##   otherwise       → full scope check against def.filesystem_paths
+## Returns {success:true, result:{path: abs_path}} or an error dict.
+static func _files_scope_check(plugin_id: String, path: String, def) -> Dictionary:
+	if def != null and def.filesystem_mode == "unrestricted":
+		return _validate_files_path_syntax(plugin_id, path)
+	var allowed: Array = def.filesystem_paths if def != null else []
+	return validate_files_path(plugin_id, path, allowed)
 
 
 ## Validate that a requested path is within the allowed scopes.
@@ -1314,10 +1349,10 @@ func _handle_host_files_read(plugin_id: String, args: Dictionary) -> Dictionary:
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.read")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1379,10 +1414,10 @@ func _handle_host_files_write(plugin_id: String, args: Dictionary) -> Dictionary
 		)
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.write")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1447,10 +1482,10 @@ func _handle_host_files_list(plugin_id: String, args: Dictionary) -> Dictionary:
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.list")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1527,10 +1562,10 @@ func _handle_host_files_exists(plugin_id: String, args: Dictionary) -> Dictionar
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.exists")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1560,10 +1595,10 @@ func _handle_host_files_stat(plugin_id: String, args: Dictionary) -> Dictionary:
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.stat")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1606,10 +1641,10 @@ func _handle_host_files_mkdir(plugin_id: String, args: Dictionary) -> Dictionary
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.mkdir")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1656,10 +1691,10 @@ func _handle_host_files_delete(plugin_id: String, args: Dictionary) -> Dictionar
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.delete")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1692,7 +1727,7 @@ func _handle_host_files_delete(plugin_id: String, args: Dictionary) -> Dictionar
 	# Recursive directory removal with per-path scope checks.
 	# _delete_recursive returns {ok: bool, count: int, error: ...} so we can
 	# propagate the entry count (GDScript ints are pass-by-value, not by ref).
-	var rec_result := _delete_recursive(plugin_id, abs_path, def.filesystem_paths)
+	var rec_result := _delete_recursive(plugin_id, abs_path, def)
 	if not rec_result.get("ok", false):
 		return rec_result.get("error", PluginErrors.io_error(plugin_id, abs_path, "recursive delete failed"))
 
@@ -1713,7 +1748,7 @@ func _handle_host_files_delete(plugin_id: String, args: Dictionary) -> Dictionar
 ## on scope violation / io error. Uses a return Dictionary to carry the count because
 ## GDScript passes ints by value (not by reference).
 func _delete_recursive(
-		plugin_id: String, dir_path: String, allowed_paths: Array
+		plugin_id: String, dir_path: String, def
 ) -> Dictionary:
 	var da := DirAccess.open(dir_path)
 	if da == null:
@@ -1736,12 +1771,15 @@ func _delete_recursive(
 
 	for name in children:
 		var child: String = dir_path.path_join(name)
-		# Defense-in-depth: re-validate each child (guards against escape symlinks).
-		if not is_path_in_scope(child, allowed_paths):
-			return {"ok": false, "error": PluginErrors.target_not_allowlisted(plugin_id, child)}
+		# Defense-in-depth: re-validate each child honoring filesystem_mode
+		# (unrestricted → syntactic-only; scoped_paths → allowlist), guarding
+		# against escape symlinks without denying legitimate unrestricted deletes.
+		var child_check := _files_scope_check(plugin_id, child, def)
+		if not child_check.get("success", false):
+			return {"ok": false, "error": child_check}
 
 		if DirAccess.dir_exists_absolute(child):
-			var sub_result := _delete_recursive(plugin_id, child, allowed_paths)
+			var sub_result := _delete_recursive(plugin_id, child, def)
 			if not sub_result.get("ok", false):
 				return sub_result
 			total_count += int(sub_result.get("count", 0))
@@ -1782,16 +1820,16 @@ func _handle_host_files_move(plugin_id: String, args: Dictionary) -> Dictionary:
 		return PluginErrors.schema_validation_failed(plugin_id, "'dest' is required")
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.move")
 
 	# Validate both source and dest independently.
-	var src_check := validate_files_path(plugin_id, str(args["source"]), def.filesystem_paths)
+	var src_check := _files_scope_check(plugin_id, str(args["source"]), def)
 	if not src_check.get("success", false):
 		return src_check
 	var abs_source: String = src_check["result"]["path"]
 
-	var dst_check := validate_files_path(plugin_id, str(args["dest"]), def.filesystem_paths)
+	var dst_check := _files_scope_check(plugin_id, str(args["dest"]), def)
 	if not dst_check.get("success", false):
 		return dst_check
 	var abs_dest: String = dst_check["result"]["path"]
