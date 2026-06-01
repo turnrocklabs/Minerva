@@ -118,6 +118,7 @@ func _init_modules() -> void:
 		MCPGeneralTools.new(self),
 		MCPDocTools.new(self),
 		MCPDiskTools.new(self),
+		MCPDocumentTools.new(self),
 	]
 
 	# Cache agent module for signal wiring
