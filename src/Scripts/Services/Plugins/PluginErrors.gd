@@ -34,6 +34,13 @@ const CODE_PROVIDER_DISABLED = "provider_disabled"
 const CODE_BUDGET_EXCEEDED = "budget_exceeded"
 const CODE_PROVIDER_ERROR = "provider_error"
 const CODE_BACKEND_ERROR = "plugin_backend_error"
+# host.pdf.generate (§7 of host_pdf_contract.md). These mirror the sidecar's
+# GenError.error_code strings exactly so the broker can route the sidecar's code
+# straight through without a translation table.
+const CODE_FONT_NOT_AVAILABLE = "font_not_available"
+const CODE_UNKNOWN_IMAGE_ID = "unknown_image_id"
+const CODE_IMAGE_DECODE_FAILED = "image_decode_failed"
+const CODE_PDF_GENERATION_FAILED = "pdf_generation_failed"
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +385,60 @@ static func backend_success(payload: Dictionary) -> Dictionary:
 	return {
 		"success": true,
 		"result": payload,
+	}
+
+
+# ---------------------------------------------------------------------------
+# host.pdf.generate error factories (§7 of host_pdf_contract.md)
+# ---------------------------------------------------------------------------
+
+## A draw_text op named a (family, style) pair the sidecar did not bundle.
+## `available` is the list of font names the sidecar ships.
+static func font_not_available(plugin_id: String, family: String, style: String, available: Array) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_FONT_NOT_AVAILABLE,
+		"error_message": "Font '%s' style '%s' is not available" % [family, style],
+		"plugin_id": plugin_id,
+		"family": family,
+		"style": style,
+		"available": available,
+	}
+
+
+## A draw_image op referenced an image_id not present in doc.images.
+## page_index / op_index locate the offending op in the request.
+static func unknown_image_id(plugin_id: String, image_id: String, page_index: int, op_index: int) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_UNKNOWN_IMAGE_ID,
+		"error_message": "Unknown image_id '%s' at page %d, op %d" % [image_id, page_index, op_index],
+		"plugin_id": plugin_id,
+		"image_id": image_id,
+		"page_index": page_index,
+		"op_index": op_index,
+	}
+
+
+## An images[].bytes_b64 was not valid base64 or did not match its declared format.
+static func image_decode_failed(plugin_id: String, image_id: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_IMAGE_DECODE_FAILED,
+		"error_message": "Failed to decode image '%s'" % image_id,
+		"plugin_id": plugin_id,
+		"image_id": image_id,
+	}
+
+
+## gofpdf raised while building or serializing the document.
+static func pdf_generation_failed(plugin_id: String, detail: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_PDF_GENERATION_FAILED,
+		"error_message": "PDF generation failed",
+		"plugin_id": plugin_id,
+		"detail": detail,
 	}
 
 
