@@ -1,6 +1,6 @@
 # Pickup
 
-STATE: `Substrate (P1.0/P1.1/P1.2) DONE. Nametag plugin R1 (backend spine) DONE in minerva-plugins (commit 9b13ac4, main): manifest + Go MCP server + hostClient + ported cardstock layout + nametag_generate tool (rows/CSV + icon → host.pdf.generate). 18 go tests green. NEXT: in-app validation (load plugin, call nametag_generate — validates P1.2 live spawn end-to-end) and/or R2 spreadsheet import / R3 HTML+PDF.js panel. NOTE: the tool returns PDF bytes; a file-output path (download/host.files.write) or the R3 panel is needed before the user holds a printable file.`
+STATE: `Substrate (P1.0/P1.1/P1.2) DONE. Nametag plugin R1+R3 DONE in minerva-plugins (main, commits 9b13ac4 / 0e12e7e): Go backend (nametag_generate + nametag_save) + cardstock layout + HTML+PDF.js panel (CSV+icon → generate → preview → save → HITL print). Save is backend-driven (webview pluginIPC caps at 64 KiB). 20 go tests green. R2 (spreadsheet import via mcp.proxy) SKIPPED for now (panel takes CSV paste). NEXT = IN-APP TEST (3b): run Minerva on pdf-print-substrate, install the plugin, grant caps, open panel, make real tags — this also validates P1.2 live host.pdf spawn end-to-end. Then R4 (build/package/registry).`
 
 Last updated 2026-06-01.
 
