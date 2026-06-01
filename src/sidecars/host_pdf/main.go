@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -43,9 +44,16 @@ func main() {
 // json.RawMessage so we can apply strict (unknown-key-rejecting) decoding via
 // DecodeDoc rather than the SDK's lenient struct unmarshal.
 func registerTools(server *mcp.Server) {
+	// InputSchema MUST be supplied explicitly. The generic AddTool otherwise
+	// infers the schema from the handler's input type (json.RawMessage), which
+	// resolves to a non-object schema and makes the SDK panic at startup
+	// ("input schema must have type object"). We do strict decoding ourselves in
+	// DecodeDoc, so a permissive object schema is exactly right here; setSchema
+	// respects a pre-set InputSchema and skips inference.
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "host_pdf_generate",
 		Description: "Generate a PDF from a declarative document (pages of draw ops). Returns base64 PDF bytes. Implements the host.pdf.generate capability contract.",
+		InputSchema: &jsonschema.Schema{Type: "object"},
 	}, generateHandler)
 }
 
