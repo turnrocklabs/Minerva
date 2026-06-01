@@ -1,6 +1,6 @@
 # Pickup
 
-STATE: `P1.0 + P1.1 + P1.2 DONE. host.pdf.generate is contract-frozen, gofpdf-backed (gate-PASSED), and broker-wired with audit redaction. The substrate is functionally complete. Next: BUILD THE NAMETAG PLUGIN (019e80a0f17a, minerva-plugins) — the original goal + the live-spawn validation point. P1.3 (richer primitives) / P1.4 (full plugin-guide section) are deferrable stubs.`
+STATE: `Substrate (P1.0/P1.1/P1.2) DONE. Nametag plugin R1 (backend spine) DONE in minerva-plugins (commit 9b13ac4, main): manifest + Go MCP server + hostClient + ported cardstock layout + nametag_generate tool (rows/CSV + icon → host.pdf.generate). 18 go tests green. NEXT: in-app validation (load plugin, call nametag_generate — validates P1.2 live spawn end-to-end) and/or R2 spreadsheet import / R3 HTML+PDF.js panel. NOTE: the tool returns PDF bytes; a file-output path (download/host.files.write) or the R3 panel is needed before the user holds a printable file.`
 
 Last updated 2026-06-01.
 
