@@ -135,7 +135,11 @@ Maps to gofpdf `SetXY` + `CellFormat`. `fit` makes the sidecar measure-and-shrin
   "image_id": "icon",              // must exist in doc.images → else unknown_image_id
   "x": 24.5, "y": 30.0,
   "w": 28.8,                       // width in points
-  "h": 0                           // 0 (or omit) → preserve aspect ratio from w
+  "h": 0,                          // 0 (or omit) → preserve aspect ratio from w
+  "angle": 0                       // optional rotation about the image CENTER,
+                                   // degrees CLOCKWISE-positive. omit/0 = none.
+                                   // when h is auto (0) the center is derived
+                                   // from the image's intrinsic aspect.
 }
 ```
 

@@ -59,6 +59,9 @@ type Op struct {
 
 	// draw_image
 	ImageID string `json:"image_id,omitempty"`
+	// Angle rotates the image about its center, degrees CLOCKWISE-positive
+	// (screen convention). Omit / 0 = no rotation.
+	Angle *float64 `json:"angle,omitempty"`
 
 	// draw_line
 	X1    *float64 `json:"x1,omitempty"`

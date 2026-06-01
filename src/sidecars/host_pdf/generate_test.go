@@ -242,3 +242,34 @@ func TestComputeFitSizeNonPositiveStepTerminates(t *testing.T) {
 		t.Fatalf("step=0 guard failed: got %v", got)
 	}
 }
+
+// TestDrawImageRotation: a draw_image with an angle renders without error for
+// both explicit-height and auto-aspect (h=0) cases — the rotation pivot path
+// (center derived from intrinsic aspect when h is auto) must not fault.
+func TestDrawImageRotation(t *testing.T) {
+	png := tinyPNGB64(t)
+	cases := []struct {
+		name string
+		op   Op
+	}{
+		{"explicit-h, 45deg", Op{Kind: "draw_image", ImageID: "icon", X: f64(50), Y: f64(50), W: f64(40), H: f64(40), Angle: f64(45)}},
+		{"auto-h, 90deg", Op{Kind: "draw_image", ImageID: "icon", X: f64(50), Y: f64(150), W: f64(40), Angle: f64(90)}},
+		{"negative angle", Op{Kind: "draw_image", ImageID: "icon", X: f64(50), Y: f64(250), W: f64(40), Angle: f64(-30)}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := Doc{
+				Images: []Image{{ID: "icon", Format: "png", BytesB64: png}},
+				Pages:  []Page{{Ops: []Op{tc.op}}},
+			}
+			res, gErr := Generate(doc)
+			if gErr != nil {
+				t.Fatalf("rotation render errored: %v", gErr)
+			}
+			decoded, err := base64.StdEncoding.DecodeString(res.BytesB64)
+			if err != nil || !bytes.HasPrefix(decoded, []byte("%PDF")) {
+				t.Fatalf("rotated image did not produce a valid PDF")
+			}
+		})
+	}
+}

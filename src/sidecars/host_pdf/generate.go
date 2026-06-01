@@ -311,6 +311,32 @@ func drawImage(pdf *fpdf.Fpdf, op Op, pi, oi int, loc string, registry map[strin
 	if op.H != nil {
 		h = *op.H
 	}
+
+	// Optional rotation about the image center (§5). The contract angle is
+	// CLOCKWISE-positive (screen convention); fpdf's TransformRotate is
+	// counter-clockwise, so negate. When h is auto (0), derive the effective
+	// height from the image's intrinsic aspect so the rotation pivot is the true
+	// center, not the top-left.
+	angle := 0.0
+	if op.Angle != nil {
+		angle = *op.Angle
+	}
+	if angle != 0 {
+		effH := h
+		if effH <= 0 {
+			if info := pdf.GetImageInfo(op.ImageID); info != nil && info.Width() > 0 {
+				effH = *op.W * info.Height() / info.Width()
+			}
+		}
+		cx := *op.X + *op.W/2
+		cy := *op.Y + effH/2
+		pdf.TransformBegin()
+		pdf.TransformRotate(-angle, cx, cy)
+		pdf.ImageOptions(op.ImageID, *op.X, *op.Y, *op.W, h, false, fpdf.ImageOptions{ImageType: strings.ToUpper(img.Format)}, 0, "")
+		pdf.TransformEnd()
+		return nil
+	}
+
 	pdf.ImageOptions(op.ImageID, *op.X, *op.Y, *op.W, h, false, fpdf.ImageOptions{ImageType: strings.ToUpper(img.Format)}, 0, "")
 	return nil
 }
