@@ -184,6 +184,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.dialogs.directory_picker",
 	"host.permissions.grant_scope",
 	"host.notify",
+	"host.pdf.generate",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

@@ -85,6 +85,15 @@ func _run_tests() -> void:
 	check("scripts loaded",
 		DB != null and Policy != null and Audit != null and Broker != null and Def != null)
 
+	# 0. Manifest-validator allowlist: a plugin manifest declaring
+	# host.pdf.generate must pass PluginDefinition validation. The broker
+	# dispatch and the manifest allowlist are SEPARATE gates — a missing
+	# allowlist entry blocks install even though dispatch works (regression
+	# guard: this exact gap surfaced at first in-app install).
+	check("0. host.pdf.generate is in PluginDefinition.ALLOWED_HOST_CAPABILITIES",
+		"host.pdf.generate" in Def.ALLOWED_HOST_CAPABILITIES,
+		"manifest validator would reject host.pdf.generate at install")
+
 	# Clean test seam at start.
 	Broker._test_host_pdf_conn = null
 
