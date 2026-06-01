@@ -1,6 +1,6 @@
 # Pickup
 
-STATE: `P1.0 DONE — host.pdf.* contract FROZEN (Docs/design/host_pdf_contract.md), owner-signed-off + rubric-checked. Next: split into two parallel tracks — work-cycle P1.1 (gofpdf sidecar, Minerva) ‖ nametag plugin non-PDF 90% (minerva-plugins), both coding against the frozen contract.`
+STATE: `P1.0 + P1.1 DONE. Contract FROZEN (Docs/design/host_pdf_contract.md). host.pdf.generate gofpdf sidecar built + GATE-PASSED (src/sidecars/host_pdf/, commits 7b856a67/a06432a3, pushed). Next: P1.2 (wire host.pdf.generate through CapabilityBroker — makes it callable in-app) ‖ nametag plugin now UNBLOCKED (019e80a0f17a, minerva-plugins).`
 
 Last updated 2026-06-01.
 
@@ -18,14 +18,16 @@ The whole plan was designed against the project rubric (reliability → durabili
 
 ---
 
-## 0. What to do next session — two parallel tracks (P1.0 is DONE)
+## 0. What to do next session — P1.2 ‖ nametag plugin (P1.0 + P1.1 DONE)
 
-**P1.0 `019e80a0293d` is DONE.** The contract is FROZEN at `Docs/design/host_pdf_contract.md`: a single stateless declarative-batch capability **`host.pdf.generate(doc)`** (doc → images registry → pages → ops; ops = `draw_text`/`draw_image`/`draw_line`/`draw_rect`). Envelope `{success,result}`, points + top-left origin, color `[r,g,b]`, 8 MB cap. DejaVuSans regular+bold BUNDLED with the sidecar (fixes the `/usr/share/fonts/...` hardcode crash). `fit` on `draw_text` does sidecar-side auto-shrink. §8 maps every `TagRenderer` primitive to an op (zero gaps); §11 carries the rubric rationale. Crop-marks/duplex/registration math lives in the PLUGIN. **Changes require a new docket item.**
+**P1.0 `019e80a0293d` DONE** — contract FROZEN at `Docs/design/host_pdf_contract.md`: stateless declarative-batch **`host.pdf.generate(doc)`** (doc → images registry → pages → ops = `draw_text`/`draw_image`/`draw_line`/`draw_rect`). Envelope `{success,result}`, points + top-left origin, color `[r,g,b]`, 8 MB cap, DejaVu bundled, `fit` sidecar-side auto-shrink. §8 maps every `TagRenderer` primitive; §11 has the rubric rationale. Changes require a new docket item.
 
-Now split into two parallel tracks, both coding against the frozen contract:
+**P1.1 `019e80a0596b` DONE** — pure-Go `go-pdf/fpdf` sidecar at `src/sidecars/host_pdf/` (commits 7b856a67 sidecar+fonts+12 tests, a06432a3 gate; pushed). go-pdf/fpdf **v0.9.0** (v1.4.x retracted — nudge `minerva-host-pdf/gofpdf.module`). Built via `scripts/build-host-pdf.sh` → `src/bin/` (gitignored). **Pixel-diff gate PASSED** vs `generate_tags.py`: overall mean-abs 0.0255, 0.048% pixels differ (AA-only), string widths match to 3 decimals — gofpdf confirmed, no Python fallback. A faithful Go layout port (grid/corner-marks/duplex/icon/fit incl. the legacy `_draw_name` floor/floor-1 quirk) lives in `src/sidecars/host_pdf/cmd/gateharness/harness.go` — reuse as the plugin's layout spec.
 
-1. **work-cycle P1.1 `019e80a0596b`** (Minerva repo, this branch) — the pure-Go `go-pdf/fpdf` MCP sidecar + bundled DejaVu fonts + smoke test + **pixel-diff gate** vs `generate_tags.py` output. No Python subprocess (gofpdf is pure Go); reuse the framing/restart model from `Docs/design/Go-python-bridge-design.md`. If a font/DPI detail won't port → fall back to embedded-Python fpdf2 sidecar; *the contract does not change either way.*
-2. **nametag plugin `019e80a0f17a`** (minerva-plugins repo) — start the non-PDF ~90%: xlsx→spreadsheet→.mtags buffer pipeline (fed by `mcp.proxy:minerva_get_spreadsheet_data`), HTML+PDF.js viewer, HITL physical-print acceptance. Only the last mile (the `host.pdf.generate` call) waits on P1.1 shipping.
+Next, two tracks:
+
+1. **P1.2 `019e80a06854`** (Minerva, this branch) — wire `host.pdf.generate` through `CapabilityBroker` (route to the sidecar; manifest `host_capabilities`; audit; add the 4 new error codes — `font_not_available`/`unknown_image_id`/`image_decode_failed`/`pdf_generation_failed` — to `PluginErrors`). Makes host.pdf callable from a plugin in-app. Open detail: the sidecar reply → `{success,result}` mapping (contract §10; mirror `_handle_mcp_proxy`). Smallest step to make host.pdf real.
+2. **nametag plugin `019e80a0f17a`** (minerva-plugins repo) — now UNBLOCKED. Non-PDF ~90%: xlsx→spreadsheet→.mtags pipeline (`mcp.proxy:minerva_get_spreadsheet_data`), HTML+PDF.js viewer, HITL physical-print acceptance. Last mile = the `host.pdf.generate` call, which needs P1.2 to work in-app.
 
 ---
 
@@ -39,11 +41,11 @@ Now split into two parallel tracks, both coding against the frozen contract:
   - P4 `019e809fe9a3` — Print (`host.print`) — OPT-IN. [stub]
 - P1 grandchildren:
   - **P1.0 `019e80a0293d`** — define host.pdf.* contract. **DONE — FROZEN at `Docs/design/host_pdf_contract.md`.**
-  - **P1.1 `019e80a0596b`** — host.pdf MVP (gofpdf sidecar + nametag primitives + bundled fonts + smoke test + pixel-diff gate). **The plugin's blocker — START NEXT (work-cycle).**
-  - P1.2 `019e80a06854` — broker wiring + audit + permissions. [stub]
+  - **P1.1 `019e80a0596b`** — host.pdf MVP (gofpdf sidecar + bundled fonts + smoke test + pixel-diff gate). **DONE + GATE-PASSED (7b856a67/a06432a3, pushed).**
+  - **P1.2 `019e80a06854`** — broker wiring + audit + permissions. **START NEXT.**
   - P1.3 `019e80a0789e` — richer draw primitives. [stub]
   - P1.4 `019e80a0855e` — plugin-guide section. [stub]
-- **Nametag-maker plugin `019e80a0f17a`** — STANDALONE work_item, `blocked_by P1.1`. Repo `minerva-plugins`. Buffer pipeline (xlsx→spreadsheet→.mtags→PDF), HTML+PDF.js viewer, HITL physical-print acceptance.
+- **Nametag-maker plugin `019e80a0f17a`** — STANDALONE work_item, **UNBLOCKED (P1.1 done)**. Repo `minerva-plugins`. Buffer pipeline (xlsx→spreadsheet→.mtags→PDF), HTML+PDF.js viewer, HITL physical-print acceptance. Layout spec = `src/sidecars/host_pdf/cmd/gateharness/harness.go`.
 
 ---
 
