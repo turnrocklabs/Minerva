@@ -83,3 +83,7 @@ src/sidecars/host_pdf/testdata/nametag_gate/candidate.pdf
 src/sidecars/host_pdf/testdata/nametag_gate/*.png
 # keep the committed icon fixture (the *.png rule above would otherwise ignore it)
 !src/sidecars/host_pdf/testdata/nametag_gate/icon.png
+
+# Spurious Godot editor .import sidecars for the Go host.pdf sidecar assets
+# (the sidecar dir is NOT a Godot resource location — the editor just indexed it)
+src/sidecars/**/*.import

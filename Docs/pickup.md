@@ -1,10 +1,12 @@
 # Pickup
 
-STATE: `Substrate (P1.0/P1.1/P1.2) DONE. Nametag plugin R1+R3 DONE in minerva-plugins (main, commits 9b13ac4 / 0e12e7e): Go backend (nametag_generate + nametag_save) + cardstock layout + HTML+PDF.js panel (CSV+icon → generate → preview → save → HITL print). Save is backend-driven (webview pluginIPC caps at 64 KiB). 20 go tests green. R2 (spreadsheet import via mcp.proxy) SKIPPED for now (panel takes CSV paste). NEXT = IN-APP TEST (3b): run Minerva on pdf-print-substrate, install the plugin, grant caps, open panel, make real tags — this also validates P1.2 live host.pdf spawn end-to-end. Then R4 (build/package/registry).`
+STATE: `Substrate (P1.0/P1.1/P1.2) DONE + LIVE-VALIDATED end-to-end on macOS. Nametag plugin R1+R3 DONE. Drove minerva_nametag_maker_nametag_generate over MCP in a real Minerva session → returned a 2-page %PDF (byte_size 31551) — proving the WHOLE chain: MCP → plugin backend → host.pdf.generate → broker → live sidecar spawn → gofpdf. Three install/runtime bugs found+fixed today (see §6). REMAINING: (a) the HTML PANEL UI click-through (preview/save/HITL) is UNTESTED — only the backend tool was driven via MCP; (b) R2 spreadsheet import (optional — panel uses CSV paste); (c) R4 build/package/registry for marketplace. RESUMING ON LINUX: rebuild BOTH gitignored per-platform binaries FIRST (see §5).`
 
-Last updated 2026-06-01.
+Last updated 2026-06-01 (end of macOS session; resuming on Linux).
 
-> **Unpushed as of this update:** Minerva `d05d665b` (P1.2) + the pickup commit on `pdf-print-substrate`; minerva-plugins `45bbe98` (guide rows) on `main`. (Minerva pushed through `ac045772`.)
+> **THIS FILE IS THE AUTHORITATIVE CROSS-MACHINE RESUME DOC.** The docket DB (`Docs/minerva.dct`) is **gitignored** and local to the macOS machine — docket items/comments may NOT be present on Linux. Everything needed to resume is captured here in pickup.md (which travels via git). Docket IDs are listed for reference if the DB is synced.
+
+> **All work pushed** as of this writing: Minerva `pdf-print-substrate` and minerva-plugins `main` are both pushed to origin. See §6 for the full commit list.
 
 > **Branch-scoped pivot.** This `pickup.md` belongs to the **`pdf-print-substrate`** branch (off `development` @ `73b0c821`). `development` stays focused on **codetools** — its P1.4 (visualizer panel HITL) is PARKED, state preserved in docket kb `019e7f366d99` + memory `project_codetools_extraction.md`. Do NOT merge this pickup back to `development`.
 
@@ -20,16 +22,16 @@ The whole plan was designed against the project rubric (reliability → durabili
 
 ---
 
-## 0. What to do next session — P1.2 ‖ nametag plugin (P1.0 + P1.1 DONE)
+## 0. Status — substrate + plugin backend DONE & LIVE-VALIDATED
 
-**P1.0 `019e80a0293d` DONE** — contract FROZEN at `Docs/design/host_pdf_contract.md`: stateless declarative-batch **`host.pdf.generate(doc)`** (doc → images registry → pages → ops = `draw_text`/`draw_image`/`draw_line`/`draw_rect`). Envelope `{success,result}`, points + top-left origin, color `[r,g,b]`, 8 MB cap, DejaVu bundled, `fit` sidecar-side auto-shrink. §8 maps every `TagRenderer` primitive; §11 has the rubric rationale. Changes require a new docket item.
+The PDF substrate (P1.0 contract → P1.1 gofpdf sidecar → P1.2 broker wiring) is complete, and the nametag plugin's backend + panel (R1 + R3) are built. **The end-to-end path is proven live on macOS:** a real Minerva session ran `minerva_nametag_maker_nametag_generate` over MCP and got back a valid 2-page duplex `%PDF`. That exercises every layer including the previously-unproven P1.2 live sidecar spawn.
 
-**P1.1 `019e80a0596b` DONE** — pure-Go `go-pdf/fpdf` sidecar at `src/sidecars/host_pdf/` (commits 7b856a67 sidecar+fonts+12 tests, a06432a3 gate; pushed). go-pdf/fpdf **v0.9.0** (v1.4.x retracted — nudge `minerva-host-pdf/gofpdf.module`). Built via `scripts/build-host-pdf.sh` → `src/bin/` (gitignored). **Pixel-diff gate PASSED** vs `generate_tags.py`: overall mean-abs 0.0255, 0.048% pixels differ (AA-only), string widths match to 3 decimals — gofpdf confirmed, no Python fallback. A faithful Go layout port (grid/corner-marks/duplex/icon/fit incl. the legacy `_draw_name` floor/floor-1 quirk) lives in `src/sidecars/host_pdf/cmd/gateharness/harness.go` — reuse as the plugin's layout spec.
+**What is NOT yet validated / done (the actual next work):**
+1. **The HTML panel UI click-through** — preview (PDF.js render), the Save flow (file_picker→grant_scope→files.write), and the HITL print-acceptance states have NOT been exercised by a human. Only the *backend tool* was driven via MCP. Open Minerva → Open Panel "nametag_panel" → generate/preview/save and confirm each works (esp. PDF.js render under the active webview, and the save dialog).
+2. **R2 — spreadsheet import** (`mcp.proxy:minerva_get_spreadsheet_data`): optional. The panel currently takes pasted CSV / `rows`; wiring xlsx-from-an-open-spreadsheet is a nice-to-have, not required to make tags.
+3. **R4 — build/package/registry**: cross-compile the plugin per-platform, tarball (binary + manifest + ui/ + SHA256SUMS), add to `registry.json` so it's marketplace-installable. (See `presentation`'s `.github/workflows/presentation.yml` for the packaging recipe.)
 
-Next, two tracks:
-
-1. **P1.2 `019e80a06854`** (Minerva, this branch) — wire `host.pdf.generate` through `CapabilityBroker` (route to the sidecar; manifest `host_capabilities`; audit; add the 4 new error codes — `font_not_available`/`unknown_image_id`/`image_decode_failed`/`pdf_generation_failed` — to `PluginErrors`). Makes host.pdf callable from a plugin in-app. Open detail: the sidecar reply → `{success,result}` mapping (contract §10; mirror `_handle_mcp_proxy`). Smallest step to make host.pdf real.
-2. **nametag plugin `019e80a0f17a`** (minerva-plugins repo) — now UNBLOCKED. Non-PDF ~90%: xlsx→spreadsheet→.mtags pipeline (`mcp.proxy:minerva_get_spreadsheet_data`), HTML+PDF.js viewer, HITL physical-print acceptance. Last mile = the `host.pdf.generate` call, which needs P1.2 to work in-app.
+Done items (docket IDs for reference; DB may be macOS-local): P1.0 `019e80a0293d`, P1.1 `019e80a0596b`, P1.2 `019e80a06854`. Nametag plugin `019e80a0f17a` (in_progress: R1+R3 done).
 
 ---
 
@@ -70,12 +72,13 @@ Next, two tracks:
 
 | Component | State |
 |---|---|
-| Minerva | branch **`pdf-print-substrate`** off `development` @ `73b0c821` (pushed) |
-| minerva-plugins | `main` — nametag plugin not started yet (blocked by P1.1) |
-| Nametag reference | `~/gitlab/minervaservices/experiments/NameTagMaker/generate_tags.py` (pixel-diff reference) |
-| Plugin API docs | `~/github/minerva-plugins/docs/PLUGIN_DEVELOPER_GUIDE.md` + `PLUGIN_API_COVERAGE.md` |
+| Minerva | branch **`pdf-print-substrate`** off `development` @ `73b0c821` (pushed). Sidecar at `src/sidecars/host_pdf/`; broker wiring in `CapabilityBroker.gd`. |
+| minerva-plugins | `main` (pushed). Plugin at `nametag-maker/` (Go backend + `ui/nametag_panel.html`). Plugin id is **`nametag_maker`** (underscore; dir is `nametag-maker`). |
+| **Binaries (gitignored — REBUILD on Linux)** | sidecar `src/bin/minerva-host-pdf-<plat>` (via `scripts/build-host-pdf.sh`); plugin `nametag-maker/nametag-maker-plugin` (via `cd nametag-maker && go build -o nametag-maker-plugin .`). |
+| Nametag reference | `~/gitlab/minervaservices/experiments/NameTagMaker/generate_tags.py` (pixel-diff oracle) |
+| Plugin API docs | `~/github/minerva-plugins/docs/PLUGIN_DEVELOPER_GUIDE.md` + `PLUGIN_API_COVERAGE.md` (both carry a `host.pdf.generate` row now) |
 
-Pre-existing dirty state on the branch (NOT ours, do not commit): `vendor/EIRTeam.FFmpeg`, `vendor/godot_cef`, `src/test/test_marketplace_install_start_codetools.gd.uid`.
+Pre-existing dirty state on the branch (NOT ours, do not commit): `vendor/EIRTeam.FFmpeg`, `vendor/godot_cef`, `*.uid` files under `src/test/`. The docket DB `Docs/minerva.dct*` is gitignored churn.
 
 ---
 
@@ -88,8 +91,38 @@ Pre-existing dirty state on the branch (NOT ours, do not commit): `vendor/EIRTea
 
 ---
 
-## 5. First actions for next session
+## 5. Linux resume — exact steps
 
-1. Read this file + the FROZEN contract `Docs/design/host_pdf_contract.md`. DCR `019e809f` approved; P1.0 done.
-2. Pre-flight (clean tree + correct submodule SHAs + on `pdf-print-substrate`), then work-cycle **P1.1 `019e80a0596b`** (Minerva): gofpdf sidecar implementing `host.pdf.generate`, bundled DejaVu, smoke test, pixel-diff gate vs `generate_tags.py`. Record the base SHA.
-3. In parallel, start the nametag plugin's non-PDF ~90% (minerva-plugins, `019e80a0f17a`) against the frozen contract — only the `host.pdf.generate` call waits on P1.1.
+1. **Pull both repos.** Minerva: `git checkout pdf-print-substrate && git pull`. minerva-plugins: `git checkout main && git pull`.
+2. **Rebuild BOTH binaries** (gitignored, per-platform — they do NOT travel via git):
+   - Sidecar: `cd ~/github/Minerva && scripts/build-host-pdf.sh` → produces `src/bin/minerva-host-pdf-linux`. (Go ≥1.25; `go-pdf/fpdf` resolves to v0.9.0 — do NOT pin v1.4.x, it's retracted.)
+   - Plugin backend: `cd ~/github/minerva-plugins/nametag-maker && go build -o nametag-maker-plugin .`
+   - Sanity: `cd ~/github/Minerva/src/sidecars/host_pdf && go test ./...` and same in the plugin dir — all green.
+3. **Run Minerva** from the editor on `pdf-print-substrate` (the broker resolves the sidecar as `res://bin/minerva-host-pdf-linux` via `OS.get_name()`).
+4. **Install + grant + open the plugin:** install `~/github/minerva-plugins/nametag-maker/manifest.json`; grant its 4 capabilities (`host.pdf.generate`, `host.dialogs.file_picker`, `host.permissions.grant_scope`, `host.files.write`); Open Panel "nametag_panel".
+5. **Do the UI click-through** (the untested part — item §0.1): paste CSV / upload icon → Generate → confirm **PDF.js preview renders** (WRY/WebKit is the likely Linux webview — the panel uses the legacy UMD build specifically for this; first real WebKit confirmation) → Save → confirm the save dialog + write → HITL Accept. Report any failure; fold into a fix round.
+   - Quick backend smoke without the UI: drive `minerva_nametag_maker_nametag_generate` over Minerva's MCP (worked on macOS — returns `{success:true, page_count:2, bytes_b64:"JVBER..."}`).
+6. Then tackle **R4 packaging** (and optionally **R2 import**) per §0.
+
+### Hard rules still apply
+Per-file `git add` only; co-author trailer `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>`; no `vendor/` touches; work on `pdf-print-substrate` (Minerva) and `main` (minerva-plugins, its convention). Don't commit the gitignored binaries or `.import`/`.uid`/`minerva.dct` churn.
+
+---
+
+## 6. Session log (macOS, 2026-06-01) — what got built + bugs fixed
+
+**Commits (all pushed):**
+- Minerva `pdf-print-substrate`: `c4f9e581` P1.0 contract · `7b856a67` P1.1 sidecar+fonts+tests · `a06432a3` P1.1 pixel-diff gate · `d05d665b` P1.2 broker wiring+audit redaction · `8d2f15d2` fix: host.pdf.generate added to PluginDefinition allowlist · `fc2e0c91` fix: sidecar startup-panic (explicit object InputSchema) · plus pickup/docs commits.
+- minerva-plugins `main`: `9b13ac4` R1 backend spine · `0e12e7e` R3 HTML+PDF.js panel + backend-driven save · `e989619` fix: plugin id `nametag-maker`→`nametag_maker` + panel tool prefix · `45bbe98` docs: guide capability rows.
+
+**Three bugs found at first real install/run, all fixed:**
+1. Plugin `id` rejected dashes (`PluginDefinition` requires `[a-z0-9_]`) → renamed id to `nametag_maker` (panel tool name became `minerva_nametag_maker_nametag_generate`). The Go module path / dir / binary keep the dash (filenames are unaffected).
+2. `host.pdf.generate` rejected at install — `PluginDefinition.ALLOWED_HOST_CAPABILITIES` is a SEPARATE allowlist from the broker's dispatch and lacked it. Added + a regression check in `test_host_capability_pdf.gd`.
+3. **Sidecar panicked on startup** (`AddTool: input schema must have type object`) → exited immediately → every spawn was broker "Can't connect". Cause: `mcp.AddTool` inferred a non-object schema from the `json.RawMessage` input type. Fix: explicit `InputSchema: &jsonschema.Schema{Type:"object"}`. Added `server_test.go::TestRegisterToolsNoPanic` (the `Generate()` unit tests bypassed the MCP server, so they never caught it).
+
+**Key design facts to remember:**
+- host.pdf.generate capability `args` ARE the doc directly (top-level `defaults`/`metadata`/`images`/`pages`), NOT wrapped in `{doc:…}`.
+- Save MUST be backend-driven: the webview `pluginIPC` channel caps payloads at 64 KiB (`PluginWebviewBroker.MAX_PAYLOAD_BYTES`), so a real PDF's base64 can't cross it. `nametag_save` regenerates server-side and does file_picker→grant_scope→files.write; `minerva.call` (HTTP) and backend capability calls have no such cap.
+- `host.dialogs.file_picker` wants `filters` as an Array of String in FileDialog format (`"*.pdf ; PDF Files"`), NOT objects.
+- Name shrink uses the contract `fit` (gate-proven to match fpdf2), not the legacy floor/floor-1 quirk — correct for a new tool.
+- gofpdf nuance saved (macOS nudge only; recorded here for Linux): `go-pdf/fpdf@latest` = v0.9.0 (v1.4.x retracted); has all needed APIs.
