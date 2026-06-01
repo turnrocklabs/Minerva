@@ -1,8 +1,10 @@
 # Pickup
 
-STATE: `P1.0 + P1.1 DONE. Contract FROZEN (Docs/design/host_pdf_contract.md). host.pdf.generate gofpdf sidecar built + GATE-PASSED (src/sidecars/host_pdf/, commits 7b856a67/a06432a3, pushed). Next: P1.2 (wire host.pdf.generate through CapabilityBroker — makes it callable in-app) ‖ nametag plugin now UNBLOCKED (019e80a0f17a, minerva-plugins).`
+STATE: `P1.0 + P1.1 + P1.2 DONE. host.pdf.generate is contract-frozen, gofpdf-backed (gate-PASSED), and broker-wired with audit redaction. The substrate is functionally complete. Next: BUILD THE NAMETAG PLUGIN (019e80a0f17a, minerva-plugins) — the original goal + the live-spawn validation point. P1.3 (richer primitives) / P1.4 (full plugin-guide section) are deferrable stubs.`
 
 Last updated 2026-06-01.
+
+> **Unpushed as of this update:** Minerva `d05d665b` (P1.2) + the pickup commit on `pdf-print-substrate`; minerva-plugins `45bbe98` (guide rows) on `main`. (Minerva pushed through `ac045772`.)
 
 > **Branch-scoped pivot.** This `pickup.md` belongs to the **`pdf-print-substrate`** branch (off `development` @ `73b0c821`). `development` stays focused on **codetools** — its P1.4 (visualizer panel HITL) is PARKED, state preserved in docket kb `019e7f366d99` + memory `project_codetools_extraction.md`. Do NOT merge this pickup back to `development`.
 
@@ -42,7 +44,7 @@ Next, two tracks:
 - P1 grandchildren:
   - **P1.0 `019e80a0293d`** — define host.pdf.* contract. **DONE — FROZEN at `Docs/design/host_pdf_contract.md`.**
   - **P1.1 `019e80a0596b`** — host.pdf MVP (gofpdf sidecar + bundled fonts + smoke test + pixel-diff gate). **DONE + GATE-PASSED (7b856a67/a06432a3, pushed).**
-  - **P1.2 `019e80a06854`** — broker wiring + audit + permissions. **START NEXT.**
+  - **P1.2 `019e80a06854`** — broker wiring + audit + permissions. **DONE (d05d665b; guide rows in minerva-plugins 45bbe98).** Residual: literal in-app spawn e2e rides on the first consumer (`--script` can't fork+exec SubProcess — harness limit, not a code gap; broker reuses the production MCPServerConnection path).
   - P1.3 `019e80a0789e` — richer draw primitives. [stub]
   - P1.4 `019e80a0855e` — plugin-guide section. [stub]
 - **Nametag-maker plugin `019e80a0f17a`** — STANDALONE work_item, **UNBLOCKED (P1.1 done)**. Repo `minerva-plugins`. Buffer pipeline (xlsx→spreadsheet→.mtags→PDF), HTML+PDF.js viewer, HITL physical-print acceptance. Layout spec = `src/sidecars/host_pdf/cmd/gateharness/harness.go`.
