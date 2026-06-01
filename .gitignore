@@ -70,3 +70,6 @@ plugins/elgato/node_modules/
 
 # Sightline editor probe output (experimental tool — debugger state snapshots)
 .sightline/
+
+# host.pdf sidecar: stray in-place go build artifact (real binary goes to src/bin/)
+src/sidecars/host_pdf/minerva-host-pdf
