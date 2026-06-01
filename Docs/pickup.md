@@ -1,12 +1,22 @@
 # Pickup
 
+## ⏵ CURRENT PHASE (Session 2 — 2026-06-01, Linux)
+
+The **in-app nametag editor is BUILT + verified**, committed **LOCALLY (NOT pushed)**. This session: N1 spike→rasterize · N2 `.mtags` preview+annotate editor · N2.5 annotation binding (core `AnnotationOverlay` host-transform seam) · N3 live render (`nametag.render` IPC → `host.pdf.generate` → `pdftoppm`) · N4 `build_from_sheet` (spreadsheet→`.mtags`) · N6 shipped skill **"Nametag Maker"** (in manifest `skills[]`).
+
+End-to-end gap analysis (do the WHOLE student scenario inside Minerva, no host shell): need (a) a cross-platform **`.docx` DATA reader**, (b) **nametag richness** — generic front/back faces + free image placement. Filed in the `minerva` docket: **DCR `019e8547775c`** (docx reader) + proof `019e8547f0f6`; plugin gaps **`019e854798`** (generic faces) + **`019e8547b7`** (image placement); plus CAD-leak bug `019e85329a1b`.
+
+**Steps 1–3 of §7 are DONE + committed (docx reader, both plugin gaps, skill update). NEXT = §7 step 4: the in-app acceptance test — needs Minerva LAUNCHED on this branch (it is not running). See §7 "Step 4 launch checklist".**
+
+---
+
 STATE: `Substrate (P1.0/P1.1/P1.2) DONE + LIVE-VALIDATED end-to-end on macOS. Nametag plugin R1+R3 DONE. Drove minerva_nametag_maker_nametag_generate over MCP in a real Minerva session → returned a 2-page %PDF (byte_size 31551) — proving the WHOLE chain: MCP → plugin backend → host.pdf.generate → broker → live sidecar spawn → gofpdf. Three install/runtime bugs found+fixed today (see §6). REMAINING: (a) the HTML PANEL UI click-through (preview/save/HITL) is UNTESTED — only the backend tool was driven via MCP; (b) R2 spreadsheet import (optional — panel uses CSV paste); (c) R4 build/package/registry for marketplace. RESUMING ON LINUX: rebuild BOTH gitignored per-platform binaries FIRST (see §5).`
 
-Last updated 2026-06-01 (end of macOS session; resuming on Linux).
+Last updated 2026-06-01 (Session 2, Linux — in-app editor built; next = docx reader + plugin gaps; see §7). [Session 1 below: end of macOS session.]
 
 > **THIS FILE IS THE AUTHORITATIVE CROSS-MACHINE RESUME DOC.** The docket DB (`Docs/minerva.dct`) is **gitignored** and local to the macOS machine — docket items/comments may NOT be present on Linux. Everything needed to resume is captured here in pickup.md (which travels via git). Docket IDs are listed for reference if the DB is synced.
 
-> **All work pushed** as of this writing: Minerva `pdf-print-substrate` and minerva-plugins `main` are both pushed to origin. See §6 for the full commit list.
+> **Session-1 work pushed**; **Session-2 commits (§7) are LOCAL / NOT pushed** — push when the owner says. (Session-1: Minerva `pdf-print-substrate` + minerva-plugins `main` pushed; see §6.)
 
 > **Branch-scoped pivot.** This `pickup.md` belongs to the **`pdf-print-substrate`** branch (off `development` @ `73b0c821`). `development` stays focused on **codetools** — its P1.4 (visualizer panel HITL) is PARKED, state preserved in docket kb `019e7f366d99` + memory `project_codetools_extraction.md`. Do NOT merge this pickup back to `development`.
 
@@ -126,3 +136,48 @@ Per-file `git add` only; co-author trailer `Co-Authored-By: Claude Opus 4.8 (1M 
 - `host.dialogs.file_picker` wants `filters` as an Array of String in FileDialog format (`"*.pdf ; PDF Files"`), NOT objects.
 - Name shrink uses the contract `fit` (gate-proven to match fpdf2), not the legacy floor/floor-1 quirk — correct for a new tool.
 - gofpdf nuance saved (macOS nudge only; recorded here for Linux): `go-pdf/fpdf@latest` = v0.9.0 (v1.4.x retracted); has all needed APIs.
+
+---
+
+## 7. SESSION 2 (2026-06-01, Linux) — in-app editor built; NEXT = docx reader + plugin gaps
+
+### What got built (committed LOCAL, NOT pushed)
+- **Minerva `pdf-print-substrate`:** `daa5654e` — `AnnotationOverlay` now consumes a host view-transform + zoom + `view_changed` (backward-compatible CORE seam; lets a scaled/scrolled host bind annotations). Ran annotation suites green.
+- **minerva-plugins `main`:** `3c850e1` `.mtags` preview+annotate editor · `0b50d67` live render (`nametag.render` IPC) · `8a18aef` `build_from_sheet` (spreadsheet→`.mtags`) · `fb226b9` ship skill in manifest · `f2fdb98` declare plugin tools in manifest `tools[]` (so the skill's deps resolve) · `8392d0d` rename skill → "Nametag Maker".
+- Memory: `project_nametag_inapp_editor.md`. The editor is a **PREVIEW+ANNOTATE surface (NOT a data form)**: rasterized PDF (pdftoppm; CEF dropped), annotations page-anchored + semantic (`anchored_to: "tag: <name>"`), `.mtags` host_owned doc, data home = a Minerva spreadsheet via `build_from_sheet`.
+
+### The gap (why the scenario isn't fully in-Minerva yet)
+Producing the camp tags used HOST tools (Read/Python/Bash) a production agent doesn't have. To do it ALL over MCP:
+- **DOCX reader** [DCR `019e8547775c`, proof `019e8547f0f6`]: teacher data is `.docx` (a Word TABLE); Minerva imports only csv/tsv/xlsx/.minsheet. DECISION: **core GDScript `ZIPReader`+`XMLParser` → `minerva_read_document` {text,tables,images}** (zero deps, cross-platform; general infra not domain → core OK). VIEWING a docx (needs libreoffice/word) is OUT (not cross-platform) → deferred. [hint `ingest/docx-ingestion-approach`]
+- **nametag generic front/back faces** [`019e854798`]: `build_from_sheet` `back_mode` is only `blank|same` — no distinct back (schedule). Renderer already supports per-row front/back; **EXPOSE it**.
+- **nametag free image placement** [`019e8547b7`]: size/rotate/translate images anywhere; `build_from_sheet` is text-only. Add a placed-image primitive to faces + expose images; **VERIFY `host.pdf` `draw_image` rotation** (add if absent).
+
+### ORDER OF OPERATIONS — steps 1–3 DONE (2026-06-01), step 4 PENDING
+1. ✅ **DOCX work** — DCR `019e8547775c` (→ reviewing) + proof `019e8547f0f6` (→ done). Core `minerva_read_document(path)→{text,tables,images}` via `OOXMLReader.gd` (pure `ZIPReader`+`XMLParser`, zero deps). Each table carries a clean `csv` (collapses Word's wrapped headers) → pipe into `minerva_create_spreadsheet_editor`. 30/30 tests incl. real 61-student roster. **Commit Minerva `cc78d90c`.** Reference: `Docs/design/docx_proof_reference.gd`.
+2. ✅ **Plugin gap fills** — `019e854798` + `019e8547b7` (both → done).
+   - Faces: `build_from_sheet` now takes `shared_back` (one constant back, e.g. a schedule) + `back_mapping` (per-row back). **Plugin `737cf1e`.**
+   - Images: `host.pdf` `draw_image` gained `angle` (rotation about center, CW-positive). **Core `3f82c6eb`** (sidecar rebuilt). Plugin `Face.Placed` free placement (inches+rotation), exposed via `faceArgs.images[]` and `build_from_sheet` `icon_path`/`images[]`/`front_images`/`shared_back.images`. **Plugin `c3d23cc`.**
+3. ✅ **Skill update** — "Nametag Maker" skill now lists `minerva_read_document` in `tool_deps`, steps cover the `.docx`→csv→sheet path + two-sided + logo, system_prompt §1/§4 updated. **Plugin `80d269c`.** (Re-seed happens on reinstall — step 4.)
+4. ⏳ **Test within Minerva** — have an **INTERNAL Minerva LLM** run the whole scenario end-to-end (focused chat on "Nametag Maker", or a spawned agent): ingest the `.docx` → spreadsheet → preview ONE draft → annotate → iterate → full batch → save PDF. Acceptance for "the whole thing works inside Minerva."
+
+### Step 4 launch checklist (Minerva is NOT running)
+The core changed (new `minerva_read_document` tool + global class cache + rotated sidecar) AND the plugin manifest changed (new skill deps/steps), so a plain reconnect is not enough:
+1. **Launch Minerva** from the Godot editor on `pdf-print-substrate` (loads the new core — the class cache `src/.godot/global_script_class_cache.cfg` already has `OOXMLReader`/`MCPDocumentTools`; sidecar `src/bin/minerva-host-pdf-linux` already rebuilt; plugin binary `nametag-maker/nametag-maker-plugin` already rebuilt).
+2. **Reinstall** the plugin (manifest changed → reinstall re-seeds the skill): `minerva_plugin_install` with `~/github/minerva-plugins/nametag-maker/manifest.json`, then `minerva_plugin_start` id=`nametag_maker`.
+3. **`/mcp` reconnect** (new core tool + plugin schema changes — else nested args mis-pass).
+4. Verify: `minerva_read_document` is registered (tool count was 256 at boot) and `minerva_nametag_maker_nametag_build_from_sheet` accepts `shared_back`/`front_images`. Then drive the scenario (the camp `.docx` is at `/home/imran/Downloads/2026 Explorer Family Camp - student info for lanyards.docx`).
+
+### Commits this session (LOCAL, unpushed) — Minerva `pdf-print-substrate`: `cc78d90c` (docx reader), `3f82c6eb` (host.pdf rotation). minerva-plugins `main`: `737cf1e` (faces), `c3d23cc` (images), `80d269c` (skill).
+
+### Gotchas to respect during the work (all saved as docket hints)
+- **BEFORE opening any plugin `godot_scene` panel** after editing its `.gd`: parse-check headless — `godot --headless --path src --check-only --script <abs plugin .gd>` — a parse error **CRASHES the whole app**. [`godot/preflight-parse-check-plugin-scripts`]
+- After a **CORE `.gd` change a plugin references**: **RESTART Minerva** (load new core) BEFORE opening the plugin, else parse-error crash. [`plugin/core-change-restart-before-plugin-that-depends-on-it`]
+- `minerva_open_file` is **IDEMPOTENT**: to load an edited scene script, **CLOSE the tab then reopen**. [`godot/plugin-scene-script-reload-needs-tab-close`]
+- After any plugin **tool-SCHEMA change**: user must **`/mcp` reconnect** or nested args stringify. [`project_nametag_faces_capability`]
+- A plugin **skill whose `tool_deps` reference the plugin's OWN tools** must declare them in `manifest tools[]` or the skill is HIDDEN from the picker. [`plugin/plugin-skill-deps-on-own-tools-need-manifest-tools`]
+- Plugins ship skills in **`manifest.skills[]`** (NOT `minerva_skill_create`, which writes the user's `master.dct`). [`plugin/plugins-ship-skills-in-manifest`]
+- Annotation overlay now reads `get_annotation_view_transform()`/`get_annotation_zoom()`/`view_changed` from the host. [`annotations/host-view-transform-seam`]
+- **Push:** Session-2 commits are LOCAL — push only when the owner says.
+
+### Reference
+Docket epic `019e80a0f17a` (nametag): N1/N2/N2.5/N4/N6 **done**, N3 in_progress (live-render pull done; auto-render-on-load deferred), N5 packaging backlog. New: DCR `019e8547775c` (+proof `019e8547f0f6`), plugin gaps `019e854798`/`019e8547b7`, CAD-leak bug `019e85329a1b`. Memory: `project_nametag_inapp_editor`, `project_editor_pane_grid_is_variable`, `feedback_generated_artifact_editors_are_preview_annotate`.
