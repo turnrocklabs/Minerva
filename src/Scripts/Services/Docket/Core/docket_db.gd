@@ -1311,7 +1311,7 @@ func _build_item_dict(row: Dictionary) -> Dictionary:
 	if opt_raw != null and not str(opt_raw).is_empty():
 		var parsed = JSON.parse_string(str(opt_raw))
 		if parsed is Dictionary:
-			for int_key in ["context_window", "tool_budget", "tool_idle_turns"]:
+			for int_key in ["context_window", "tool_budget", "tool_idle_turns", "max_tool_call_rounds"]:
 				if parsed.has(int_key):
 					parsed[int_key] = int(parsed[int_key])
 			item["optimization"] = parsed
