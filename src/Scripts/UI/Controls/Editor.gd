@@ -1057,16 +1057,13 @@ func _load_kanban_file(filename: String) -> void:
 func _load_spreadsheet_file(filename: String) -> void:
 	if not spreadsheet_editor:
 		return
-	var fa := FileAccess.open(filename, FileAccess.READ)
-	if not fa:
-		SingletonObject.ErrorDisplay("Couldn't open file", error_string(FileAccess.get_open_error()))
-		return
-	var json := JSON.new()
-	if json.parse(fa.get_as_text()) != OK:
-		SingletonObject.ErrorDisplay("Invalid spreadsheet file", json.get_error_message())
-		return
-	if json.data is Dictionary:
-		spreadsheet_editor.deserialize(json.data)
+	# Delegate to the canonical importer (SpreadsheetFileHandler dispatches by
+	# extension: csv / tsv / xlsx / minsheet), via the SAME entry point the
+	# editor's File→Import uses. Previously this method hand-rolled a JSON-only
+	# load and silently produced an empty sheet for a .csv. (bug 019e8a30efec)
+	var err: int = spreadsheet_editor.load_file(filename)
+	if err != OK:
+		SingletonObject.ErrorDisplay("Couldn't open spreadsheet", "%s (error %d)" % [filename.get_file(), err])
 
 
 func _load_webview_file(path: String) -> void:

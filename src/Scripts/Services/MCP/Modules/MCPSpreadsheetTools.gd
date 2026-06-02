@@ -984,11 +984,26 @@ func _create_spreadsheet_editor(args: Dictionary) -> Dictionary:
 	if not csv_content.is_empty() and file_path.is_empty() and editor.spreadsheet_editor:
 		editor.spreadsheet_editor.set_content(csv_content)
 
-	return {
+	var result := {
 		"success": true,
 		"editor_name": editor.tab_title,
 		"message": "Spreadsheet editor created. Use this editor_name for subsequent operations."
 	}
+
+	# W9: an import that yields no data is a SILENT failure — surface it. The bug:
+	# an empty/missing-content import returned plain success on a blank sheet, so
+	# the agent proceeded as if data were loaded and only discovered the gap turns
+	# later (burning its tool-call budget). When a file/CSV import was attempted,
+	# report rows_imported and warn (does NOT block success) if it came up empty.
+	var attempted_import: bool = (not csv_content.is_empty()) or (not file_path.is_empty())
+	if attempted_import and editor.spreadsheet_editor and editor.spreadsheet_editor.spreadsheet_data:
+		var used: Rect2i = editor.spreadsheet_editor.spreadsheet_data.get_used_range()
+		var used_rows: int = max(0, used.size.y)
+		result["rows_imported"] = used_rows
+		if used_rows == 0:
+			result["warning"] = "Import produced 0 rows — the file/CSV had no usable data. Verify the source before continuing; do NOT proceed as if data were loaded."
+
+	return result
 
 
 func _get_spreadsheet_data(args: Dictionary) -> Dictionary:

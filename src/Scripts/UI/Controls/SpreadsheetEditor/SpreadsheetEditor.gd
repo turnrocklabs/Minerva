@@ -1855,12 +1855,14 @@ func _create_export_dialog() -> void:
 	add_child(export_dialog)
 
 
-func _on_import_file_selected(path: String) -> void:
+## Import a spreadsheet file (csv / tsv / xlsx / minsheet) via the canonical
+## SpreadsheetFileHandler and refresh the view. The single entry point shared by
+## File→Import (_on_import_file_selected) and creation-time loading
+## (Editor._load_spreadsheet_file). Returns OK or an Error.
+func load_file(path: String) -> Error:
 	var err := SpreadsheetFileHandlerScript.import_file(path, spreadsheet_data)
 	if err != OK:
-		push_error("Failed to import file: " + path + " (error: " + str(err) + ")")
-		return
-
+		return err
 	# Update UI
 	cells_canvas.set_data(spreadsheet_data)
 	column_headers.set_data(spreadsheet_data)
@@ -1871,6 +1873,12 @@ func _on_import_file_selected(path: String) -> void:
 	_update_scrollbar_ranges()
 	_update_selection_display()
 	content_changed.emit()
+	return OK
+
+
+func _on_import_file_selected(path: String) -> void:
+	if load_file(path) != OK:
+		push_error("Failed to import file: " + path)
 
 
 func _on_export_file_selected(path: String) -> void:
