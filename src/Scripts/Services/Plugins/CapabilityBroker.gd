@@ -68,6 +68,17 @@ var _scope_grants = null  # PluginScopeGrants (typed via _PluginScopeGrants cons
 ## Real plugins never trigger this path.
 static var _test_dialog_override = null
 
+## Lazily-spawned, cached MCPServerConnection to the bundled host.pdf sidecar.
+## Created on first host.pdf.generate dispatch and reused thereafter. Null until
+## the first real spawn. Not used when _test_host_pdf_conn is set.
+var _host_pdf_conn = null
+
+## Test-only injection for host.pdf.generate. When set to a non-null object, the
+## handler routes the tool call through it instead of spawning the real sidecar.
+## The injected object must expose `call_tool(tool_name, args) -> Dictionary`
+## (the MCPServerConnection public API). Mirrors _test_dialog_override.
+static var _test_host_pdf_conn = null
+
 
 func _init(p_policy: PluginPolicy = null, p_audit_log: PluginAuditLog = null) -> void:
 	policy = p_policy
@@ -122,7 +133,12 @@ static func _str_or_null(value: String) -> Variant:
 ## scopes. Plugins gain control over /tmp/escape by writing through this
 ## validator, but they cannot CREATE symlinks via host.files.write (which only
 ## writes file content). Treat granted scopes as transitive trust.
-static func validate_files_path(plugin_id: String, path: String, allowed_paths: Array) -> Dictionary:
+## Syntactic-only path validation shared by validate_files_path and the
+## unrestricted-mode path of _files_scope_check. Enforces non-empty, no null
+## bytes, user:// expansion, absolute-only, and no explicit `..` segments.
+## Returns {success:true, result:{path: abs_path}} or a schema_validation_failed.
+## NOTE: performs NO scope/allowlist check — callers add that when needed.
+static func _validate_files_path_syntax(plugin_id: String, path: String) -> Dictionary:
 	if path.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "path must not be empty")
 
@@ -155,12 +171,42 @@ static func validate_files_path(plugin_id: String, path: String, allowed_paths: 
 				plugin_id, "path must not contain '..' segments (got: '%s')" % path
 			)
 
-	var abs_path: String = raw_path.simplify_path()
+	return PluginErrors.success({"path": raw_path.simplify_path()})
+
+
+static func validate_files_path(plugin_id: String, path: String, allowed_paths: Array) -> Dictionary:
+	var syn := _validate_files_path_syntax(plugin_id, path)
+	if not syn.get("success", false):
+		return syn
+	var abs_path: String = syn["result"]["path"]
 
 	if not is_path_in_scope(abs_path, allowed_paths):
 		return PluginErrors.target_not_allowlisted(plugin_id, abs_path)
 
 	return PluginErrors.success({"path": abs_path})
+
+
+## Whether host.files.* is usable for this plugin given its filesystem_mode.
+##   "unrestricted"  → always enabled (any absolute path; parity with core tools)
+##   "scoped_paths"  → enabled only when at least one allowed path is declared/granted
+##   anything else   → disabled
+static func _files_mode_enabled(def) -> bool:
+	if def == null:
+		return false
+	if def.filesystem_mode == "unrestricted":
+		return true
+	return def.filesystem_mode == "scoped_paths" and not def.filesystem_paths.is_empty()
+
+
+## Resolve + authorize a host.files.* path honoring filesystem_mode.
+##   "unrestricted"  → syntactic validation only (no scope/allowlist check)
+##   otherwise       → full scope check against def.filesystem_paths
+## Returns {success:true, result:{path: abs_path}} or an error dict.
+static func _files_scope_check(plugin_id: String, path: String, def) -> Dictionary:
+	if def != null and def.filesystem_mode == "unrestricted":
+		return _validate_files_path_syntax(plugin_id, path)
+	var allowed: Array = def.filesystem_paths if def != null else []
+	return validate_files_path(plugin_id, path, allowed)
 
 
 ## Validate that a requested path is within the allowed scopes.
@@ -309,6 +355,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_permissions_grant_scope(plugin_id, args)
 		"host.notify":
 			named_result = _handle_host_notify(plugin_id, args)
+		"host.pdf.generate":
+			named_result = await _handle_host_pdf_generate(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -1301,10 +1349,10 @@ func _handle_host_files_read(plugin_id: String, args: Dictionary) -> Dictionary:
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.read")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1366,10 +1414,10 @@ func _handle_host_files_write(plugin_id: String, args: Dictionary) -> Dictionary
 		)
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.write")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1434,10 +1482,10 @@ func _handle_host_files_list(plugin_id: String, args: Dictionary) -> Dictionary:
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.list")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1514,10 +1562,10 @@ func _handle_host_files_exists(plugin_id: String, args: Dictionary) -> Dictionar
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.exists")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1547,10 +1595,10 @@ func _handle_host_files_stat(plugin_id: String, args: Dictionary) -> Dictionary:
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.stat")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1593,10 +1641,10 @@ func _handle_host_files_mkdir(plugin_id: String, args: Dictionary) -> Dictionary
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.mkdir")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1643,10 +1691,10 @@ func _handle_host_files_delete(plugin_id: String, args: Dictionary) -> Dictionar
 		return arg_check
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.delete")
 
-	var path_check := validate_files_path(plugin_id, str(args.get("path", "")), def.filesystem_paths)
+	var path_check := _files_scope_check(plugin_id, str(args.get("path", "")), def)
 	if not path_check.get("success", false):
 		return path_check
 	var abs_path: String = path_check["result"]["path"]
@@ -1679,7 +1727,7 @@ func _handle_host_files_delete(plugin_id: String, args: Dictionary) -> Dictionar
 	# Recursive directory removal with per-path scope checks.
 	# _delete_recursive returns {ok: bool, count: int, error: ...} so we can
 	# propagate the entry count (GDScript ints are pass-by-value, not by ref).
-	var rec_result := _delete_recursive(plugin_id, abs_path, def.filesystem_paths)
+	var rec_result := _delete_recursive(plugin_id, abs_path, def)
 	if not rec_result.get("ok", false):
 		return rec_result.get("error", PluginErrors.io_error(plugin_id, abs_path, "recursive delete failed"))
 
@@ -1700,7 +1748,7 @@ func _handle_host_files_delete(plugin_id: String, args: Dictionary) -> Dictionar
 ## on scope violation / io error. Uses a return Dictionary to carry the count because
 ## GDScript passes ints by value (not by reference).
 func _delete_recursive(
-		plugin_id: String, dir_path: String, allowed_paths: Array
+		plugin_id: String, dir_path: String, def
 ) -> Dictionary:
 	var da := DirAccess.open(dir_path)
 	if da == null:
@@ -1723,12 +1771,15 @@ func _delete_recursive(
 
 	for name in children:
 		var child: String = dir_path.path_join(name)
-		# Defense-in-depth: re-validate each child (guards against escape symlinks).
-		if not is_path_in_scope(child, allowed_paths):
-			return {"ok": false, "error": PluginErrors.target_not_allowlisted(plugin_id, child)}
+		# Defense-in-depth: re-validate each child honoring filesystem_mode
+		# (unrestricted → syntactic-only; scoped_paths → allowlist), guarding
+		# against escape symlinks without denying legitimate unrestricted deletes.
+		var child_check := _files_scope_check(plugin_id, child, def)
+		if not child_check.get("success", false):
+			return {"ok": false, "error": child_check}
 
 		if DirAccess.dir_exists_absolute(child):
-			var sub_result := _delete_recursive(plugin_id, child, allowed_paths)
+			var sub_result := _delete_recursive(plugin_id, child, def)
 			if not sub_result.get("ok", false):
 				return sub_result
 			total_count += int(sub_result.get("count", 0))
@@ -1769,16 +1820,16 @@ func _handle_host_files_move(plugin_id: String, args: Dictionary) -> Dictionary:
 		return PluginErrors.schema_validation_failed(plugin_id, "'dest' is required")
 
 	var def: PluginDefinition = _get_plugin_definition(plugin_id)
-	if def == null or def.filesystem_mode != "scoped_paths" or def.filesystem_paths.is_empty():
+	if not _files_mode_enabled(def):
 		return PluginErrors.filesystem_disabled(plugin_id, "host.files.move")
 
 	# Validate both source and dest independently.
-	var src_check := validate_files_path(plugin_id, str(args["source"]), def.filesystem_paths)
+	var src_check := _files_scope_check(plugin_id, str(args["source"]), def)
 	if not src_check.get("success", false):
 		return src_check
 	var abs_source: String = src_check["result"]["path"]
 
-	var dst_check := validate_files_path(plugin_id, str(args["dest"]), def.filesystem_paths)
+	var dst_check := _files_scope_check(plugin_id, str(args["dest"]), def)
 	if not dst_check.get("success", false):
 		return dst_check
 	var abs_dest: String = dst_check["result"]["path"]
@@ -3284,6 +3335,164 @@ func _handle_host_notify(plugin_id: String, args: Dictionary) -> Dictionary:
 	print("[CapabilityBroker] Plugin '%s' host.notify [%s] %s" % [plugin_id, level, message])
 	SingletonObject.create_toast_notification(display, toast_type)
 	return PluginErrors.success({})
+
+
+# ---------------------------------------------------------------------------
+# host.pdf.generate handler
+# ---------------------------------------------------------------------------
+
+## Generate a PDF via the bundled pure-Go host.pdf MCP sidecar.
+##
+## Thin adapter: the sidecar owns all schema validation, font lookup, image
+## decode, and serialization. This handler only (1) acquires a cached stdio
+## connection to the sidecar (lazy spawn, with a test seam), (2) forwards the
+## whole declarative document as the tool args, and (3) maps the sidecar's reply
+## to the standard capability envelope.
+##
+## Reply mapping (confirmed against src/sidecars/host_pdf):
+##   - success: the sidecar returns the Result JSON verbatim —
+##     {bytes_b64, byte_size, page_count, content_type} (no success/error key) —
+##     which MCPServerConnection parses into that same dict. Wrapped via
+##     PluginErrors.success(result).
+##   - GenError: the sidecar returns {error_code, error_message, ...extra} with
+##     IsError. error_code is already a contract string, so it is routed straight
+##     through into {success:false, error_code, error_message, plugin_id, ...}.
+##   - connection failure (process died / timeout / framing fault):
+##     MCPServerConnection returns {"error": "..."} → PluginErrors.backend_error.
+##
+## Audit redaction is handled by the caller (dispatch → _audit_dispatch) reading
+## the args dict this handler mutates: before returning, raw image bytes are
+## stripped from `args` and a shape-only `pdf_summary` is injected, exactly as
+## _handle_host_documents_patch_state does for json_patch. No PDF bytes (input
+## images or output document) ever reach the audit log.
+func _handle_host_pdf_generate(plugin_id: String, args: Dictionary) -> Dictionary:
+	var conn = await _acquire_host_pdf_conn(plugin_id)
+	if conn is Dictionary:
+		# _acquire_host_pdf_conn returned an error envelope (binary missing /
+		# spawn failed) rather than a connection.
+		_redact_pdf_args(args, {})
+		return conn
+
+	var reply: Dictionary = await conn.call_tool("host_pdf_generate", args)
+
+	# Connection-layer failure surfaced by MCPServerConnection.
+	if reply.has("error") and not reply.has("error_code"):
+		# Auto-recovery: a dead/disconnected sidecar surfaces here (not as a
+		# GenError). Drop the cached connection so the NEXT call respawns it,
+		# rather than reusing a dead process forever. Only invalidate the real
+		# cache — never the injected test seam.
+		if _test_host_pdf_conn == null and conn == _host_pdf_conn:
+			_host_pdf_conn = null
+		_redact_pdf_args(args, {})
+		return PluginErrors.backend_error(plugin_id, str(reply.get("error", "host.pdf sidecar call failed")))
+
+	# Sidecar GenError — error_code is already a contract string; route through.
+	if reply.has("error_code"):
+		var err_out: Dictionary = reply.duplicate(true)
+		err_out["success"] = false
+		err_out["plugin_id"] = plugin_id
+		_redact_pdf_args(args, {})
+		return err_out
+
+	# Success — the sidecar's Result payload.
+	_redact_pdf_args(args, reply)
+	return PluginErrors.success({
+		"bytes_b64": str(reply.get("bytes_b64", "")),
+		"byte_size": int(reply.get("byte_size", 0)),
+		"page_count": int(reply.get("page_count", 0)),
+		"content_type": str(reply.get("content_type", "application/pdf")),
+	})
+
+
+## Acquire (and cache) a connection to the host.pdf sidecar.
+##
+## Returns either a connection-like object (exposing call_tool) or, on failure
+## to obtain one, a PluginErrors failure Dictionary the caller returns as-is.
+##
+## Precedence:
+##   1. _test_host_pdf_conn (test seam) — used directly, never cached/spawned.
+##   2. _host_pdf_conn cache — reused if already spawned.
+##   3. Spawn: resolve the per-platform binary in res://bin/, configure an
+##      MCPServerConnection for STDIO, connect, cache.
+func _acquire_host_pdf_conn(plugin_id: String):
+	if _test_host_pdf_conn != null:
+		return _test_host_pdf_conn
+
+	if _host_pdf_conn != null:
+		return _host_pdf_conn
+
+	var plat: String = ""
+	match OS.get_name():
+		"macOS":
+			plat = "macos"
+		"Linux":
+			plat = "linux"
+		"Windows":
+			plat = "windows.exe"
+		_:
+			return PluginErrors.pdf_generation_failed(plugin_id,
+				"host.pdf sidecar not available for platform '%s'" % OS.get_name())
+
+	var bin_path: String = ProjectSettings.globalize_path("res://bin/minerva-host-pdf-" + plat)
+	if not FileAccess.file_exists(bin_path):
+		return PluginErrors.pdf_generation_failed(plugin_id,
+			"host.pdf sidecar binary not found at '%s' (build with scripts/build-host-pdf.sh)" % bin_path)
+
+	var conn := MCPServerConnection.new("host_pdf", "", MCPServerConnection.TransportType.STDIO)
+	conn.configure_stdio(bin_path, PackedStringArray())
+	var err: Error = await conn.connect_to_server()
+	if err != OK:
+		return PluginErrors.backend_error(plugin_id,
+			"host.pdf sidecar failed to start: %s" % error_string(err))
+
+	_host_pdf_conn = conn
+	return _host_pdf_conn
+
+
+## Strip raw PDF bytes from `args` and inject a shape-only summary for the audit
+## log. Mirrors _handle_host_documents_patch_state's json_patch redaction.
+##
+## `result` is the sidecar's success reply (or {} on the error/no-result paths);
+## its byte_size/page_count/content_type are recorded WITHOUT the bytes_b64 body.
+##
+## After this call, args contains no base64 image bytes and no output PDF bytes,
+## so the args_summary built by _audit_dispatch (which passes Arrays through and
+## only recurses one dict level) cannot leak any byte payload.
+func _redact_pdf_args(args: Dictionary, result: Dictionary) -> void:
+	# Per-page op counts.
+	var op_counts: Array = []
+	var pages_v: Variant = args.get("pages", [])
+	if pages_v is Array:
+		for page in pages_v:
+			if page is Dictionary:
+				var ops_v: Variant = (page as Dictionary).get("ops", [])
+				op_counts.append((ops_v as Array).size() if ops_v is Array else 0)
+			else:
+				op_counts.append(0)
+
+	# Image count + per-image decoded byte sizes; then erase the raw bytes.
+	var image_count: int = 0
+	var image_bytes: Array = []
+	var images_v: Variant = args.get("images", [])
+	if images_v is Array:
+		for img in images_v:
+			if img is Dictionary:
+				image_count += 1
+				var b64: String = str((img as Dictionary).get("bytes_b64", ""))
+				image_bytes.append(Marshalls.base64_to_raw(b64).size())
+				(img as Dictionary).erase("bytes_b64")
+
+	args["pdf_summary"] = {
+		"page_count": op_counts.size(),
+		"op_counts": op_counts,
+		"image_count": image_count,
+		"image_bytes": image_bytes,
+		"output_byte_size": int(result.get("byte_size", 0)),
+		"output_page_count": int(result.get("page_count", 0)),
+		"output_content_type": str(result.get("content_type", "")),
+	}
+	# Defense in depth: drop any top-level raw bytes the request might carry.
+	args.erase("bytes_b64")
 
 
 ## ownership_required is included because cross-plugin editor mutation is a

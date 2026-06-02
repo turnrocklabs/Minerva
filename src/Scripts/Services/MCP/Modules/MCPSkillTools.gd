@@ -106,7 +106,7 @@ func register_tools() -> void:
 				"description": "Exact MCP tool names this skill needs. Auto-activated on skill load.",
 			},
 			"tags": {"type": "array", "items": {"type": "string"}, "description": "Category filters (e.g. 'editor', 'notes', 'tool-suite')."},
-			"optimization": {"type": "object", "description": "Optional runtime profile: {context_window: int, summary_mode: 'deterministic'|'llm', tool_idle_turns: int, tool_budget: int}"},
+			"optimization": {"type": "object", "description": "Optional runtime profile: {context_window: int, summary_mode: 'deterministic'|'llm', tool_idle_turns: int, tool_budget: int (TOKENS), max_tool_call_rounds: int (raises the per-message tool-call ROUND cap for this skill's workflow)}"},
 			"status": {"type": "string", "enum": ["active", "draft"], "description": "Initial status (default 'active')."},
 			"project": {"type": "string", "description": "Target docket project (default 'master')."},
 		},
@@ -816,6 +816,15 @@ func _apply_skill_optimization(optimization: Dictionary) -> void:
 		server.tool_budget_manager.set_budget(int(optimization["tool_budget"]))
 	if optimization.has("tool_idle_turns"):
 		server.tool_budget_manager.set_max_idle_turns(int(optimization["tool_idle_turns"]))
+
+	# Round-cap knob (W10): a skill can raise the per-message tool-call ROUND
+	# limit for its multi-step workflow without touching the global default.
+	# Distinct from tool_budget (which is a TOKEN budget) — this is the
+	# MaxToolCallRounds count enforced in ChatPane.handle_tool_calls.
+	if optimization.has("max_tool_call_rounds"):
+		var rounds_history = MCPToolUtils.find_chat_by_id(server._current_caller_chat_id)
+		if rounds_history and rounds_history is ChatHistory:
+			rounds_history.MaxToolCallRounds = int(optimization["max_tool_call_rounds"])
 
 	# ToolMemoryManager knobs (per-chat)
 	if optimization.has("context_window") or optimization.has("summary_mode"):

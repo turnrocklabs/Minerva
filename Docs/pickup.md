@@ -2,7 +2,9 @@
 
 STATE: `Code Tools extraction — P0 + P1.1 + P1.2 + P1.3 DONE & GREEN; P1.4 (godot_scene visualizer panel — HITL gate) is next`
 
-Last updated 2026-05-31.
+Last updated 2026-06-02.
+
+> **Merge note (2026-06-02):** the `pdf-print-substrate` branch (PDF/printing host capability + docx reader + nametag plugin + spreadsheet/notes fixes, W5–W11) was merged into `development`. That work is **done**; it is additive and does not change the codetools track. This pickup.md was restored to the codetools state below — codetools/code-magic/sightline is the active track and **P1.4 (visualizer panel HITL gate) is still next**.
 
 ---
 

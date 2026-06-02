@@ -69,6 +69,11 @@ func _init() -> void:
 # ---------------------------------------------------------------------------
 
 func _run_tests() -> void:
+	# Let autoloads (SingletonObject) finish registering before load()-ing the
+	# broker; the broker references SingletonObject and won't compile standalone
+	# until the global is live. Mirrors test_host_capability_pdf.
+	await process_frame
+
 	var DB = load(PLUGIN_DB_SCRIPT_PATH)
 	var Policy = load(POLICY_SCRIPT_PATH)
 	var Audit = load(AUDIT_SCRIPT_PATH)
@@ -161,6 +166,9 @@ func _run_tests() -> void:
 	await _test_move_dest_exists_overwrite(broker)
 	await _test_move_source_out_of_scope(broker)
 	await _test_move_dest_out_of_scope(broker)
+
+	# Unrestricted filesystem mode (the mode the nametag-maker plugin uses).
+	await _test_unrestricted_mode_write(Def, db, broker)
 
 
 func _test_write_then_read(broker) -> void:
@@ -722,6 +730,69 @@ func _test_move_dest_out_of_scope(broker) -> void:
 
 
 # ---------------------------------------------------------------------------
+# Unrestricted filesystem mode
+# ---------------------------------------------------------------------------
+
+func _test_unrestricted_mode_write(Def, db, broker) -> void:
+	# A plugin in filesystem_mode "unrestricted" with NO declared paths may
+	# write to any absolute path the agent supplies — parity with core MCP file
+	# tools, and the mode nametag-maker uses so save needs no grant_scope/dialog.
+	const UNRESTRICTED_ID := "files_probe_test_unrestricted"
+	var def_u = Def.new(UNRESTRICTED_ID)
+	var u_caps: Array[String] = ["host.files.write", "host.files.read"]
+	def_u.host_capabilities = u_caps
+	def_u.filesystem_mode = "unrestricted"
+	var u_paths: Array[String] = []
+	def_u.filesystem_paths = u_paths
+	db._plugins[UNRESTRICTED_ID] = def_u
+	def_u.host_capabilities.append("host.files.delete")
+	broker.policy.grant_capability(UNRESTRICTED_ID, "host.files.write")
+	broker.policy.grant_capability(UNRESTRICTED_ID, "host.files.read")
+	broker.policy.grant_capability(UNRESTRICTED_ID, "host.files.delete")
+
+	# Target a path OUTSIDE _scope_dir to prove no allowlist is consulted.
+	var outside: String = "/tmp/files_probe_unrestricted_%d.txt" % Time.get_unix_time_from_system()
+	var w: Dictionary = await broker.dispatch(UNRESTRICTED_ID, "host.files.write",
+		{"path": outside, "content": "free", "encoding": "text"})
+	check("unrestricted write (empty paths, out-of-any-scope): success",
+		w.get("success", false), "got: %s" % str(w))
+	check("unrestricted write: file actually present", FileAccess.file_exists(outside))
+
+	var r: Dictionary = await broker.dispatch(UNRESTRICTED_ID, "host.files.read", {"path": outside})
+	check_eq("unrestricted read back: content matches",
+		str(r.get("result", {}).get("content", "")), "free")
+
+	# Syntactic validation still applies under unrestricted: relative path rejected.
+	var rel: Dictionary = await broker.dispatch(UNRESTRICTED_ID, "host.files.write",
+		{"path": "relative/x.txt", "content": "no"})
+	check_eq("unrestricted still rejects relative path → schema_validation_failed",
+		rel.get("error_code", ""), "schema_validation_failed")
+
+	# Recursive delete of a NON-EMPTY dir out-of-any-scope must succeed under
+	# unrestricted (each child re-validated via _files_scope_check, not an empty
+	# allowlist). Regression for the cold-review delete-recursion finding.
+	var rdir: String = "/tmp/files_probe_unrestricted_rdir_%d" % Time.get_unix_time_from_system()
+	DirAccess.make_dir_recursive_absolute(rdir.path_join("sub"))
+	var fa := FileAccess.open(rdir.path_join("sub/a.txt"), FileAccess.WRITE)
+	fa.store_string("x"); fa.close()
+	var del: Dictionary = await broker.dispatch(UNRESTRICTED_ID, "host.files.delete",
+		{"path": rdir, "recursive": true})
+	check("unrestricted recursive delete of non-empty dir: success",
+		del.get("success", false), "got: %s" % str(del))
+	check("unrestricted recursive delete: dir gone", not DirAccess.dir_exists_absolute(rdir))
+
+	# Cleanup
+	if FileAccess.file_exists(outside):
+		DirAccess.remove_absolute(outside)
+	if DirAccess.dir_exists_absolute(rdir):
+		_rm_rf(rdir)
+	broker.policy.revoke_capability(UNRESTRICTED_ID, "host.files.write")
+	broker.policy.revoke_capability(UNRESTRICTED_ID, "host.files.read")
+	broker.policy.revoke_capability(UNRESTRICTED_ID, "host.files.delete")
+	db._plugins.erase(UNRESTRICTED_ID)
+
+
+# ---------------------------------------------------------------------------
 # Test infrastructure
 # ---------------------------------------------------------------------------
 
@@ -804,7 +875,7 @@ func _clear_policy_for_test() -> void:
 	if not data is Dictionary:
 		return
 	var grants: Dictionary = (data as Dictionary).get("grants", {})
-	for key in [TEST_PLUGIN_ID, "files_probe_test_no_fs", "files_probe_test_ungranted"]:
+	for key in [TEST_PLUGIN_ID, "files_probe_test_no_fs", "files_probe_test_ungranted", "files_probe_test_unrestricted"]:
 		grants.erase(key)
 	(data as Dictionary)["grants"] = grants
 	fa = FileAccess.open(policy_file, FileAccess.WRITE)

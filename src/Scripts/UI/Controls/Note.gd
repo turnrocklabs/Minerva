@@ -470,7 +470,14 @@ static func create_file_note(note_title: String, file_path: String, note_uuid: S
 
 		note = create_audio_note(note_title, audio_stream, note_uuid, register)
 	
-	else: # treat as text file
+	else: # not image/audio — inline real text, but REFERENCE binaries by path
+		if FileReference.looks_binary(file_path):
+			# .docx/.xlsx/.pdf/etc.: don't garbage-decode bytes as text, and
+			# crucially DON'T set note.file (serialize would overwrite the source
+			# with the note's text). A plain text note holds the path so an LLM
+			# knows where to read it. Returns early, before note.file is set below.
+			return create_text_note(note_title, FileReference.reference_text(file_path), note_uuid, register)
+
 		var fa: = FileAccess.open(file_path, FileAccess.READ)
 
 		if fa == null:

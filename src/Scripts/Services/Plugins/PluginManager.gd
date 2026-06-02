@@ -728,10 +728,12 @@ func get_policy():  # -> PluginPolicy
 	return _policy_ref
 
 
-## Capabilities that REQUIRE explicit user grant — never auto-granted at install
-## time. These let a plugin escalate its own privileges (expand filesystem scope
-## at runtime, etc.) so they bypass the default-on-install policy.
-const _NEVER_AUTO_GRANT: Array[String] = ["host.permissions.grant_scope"]
+## Capabilities that REQUIRE explicit user grant — never auto-granted at install.
+## Empty by owner decision: install IS the trust act, so every capability a
+## manifest declares is granted at install (the user can revoke any of them
+## afterward). Kept as a constant so a future cap can be re-quarantined here
+## without touching the grant loop below.
+const _NEVER_AUTO_GRANT: Array[String] = []
 
 
 ## Default-grant every capability declared in the plugin's manifest, skipping
