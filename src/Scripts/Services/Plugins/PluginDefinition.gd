@@ -188,6 +188,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.permissions.grant_scope",
 	"host.notify",
 	"host.pdf.generate",
+	"host.terminal.exec",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

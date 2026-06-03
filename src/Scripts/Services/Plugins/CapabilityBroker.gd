@@ -355,6 +355,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_permissions_grant_scope(plugin_id, args)
 		"host.notify":
 			named_result = _handle_host_notify(plugin_id, args)
+		"host.terminal.exec":
+			named_result = await _handle_host_terminal_exec(plugin_id, args)
 		"host.pdf.generate":
 			named_result = await _handle_host_pdf_generate(plugin_id, args)
 		_:
@@ -3335,6 +3337,160 @@ func _handle_host_notify(plugin_id: String, args: Dictionary) -> Dictionary:
 	print("[CapabilityBroker] Plugin '%s' host.notify [%s] %s" % [plugin_id, level, message])
 	SingletonObject.create_toast_notification(display, toast_type)
 	return PluginErrors.success({})
+
+
+# ---------------------------------------------------------------------------
+# host.terminal.exec handler
+# ---------------------------------------------------------------------------
+#
+# Runs a shell command on the plugin's behalf and returns merged stdout+stderr.
+#
+# Routing:
+#   - When a visible UI terminal is available, the command runs THERE so the user
+#     sees it (routed_through="terminal"). The PTY does not expose $?, so
+#     exit_code is best-effort 0 and exit_code_known=false on that path.
+#   - Otherwise (headless session, or no terminal present), it falls back to a
+#     direct subprocess via OS.execute, which yields a real exit code
+#     (routed_through="headless", exit_code_known=true).
+#
+# Trust model: granting host.terminal.exec IS the authorization to run terminal
+# commands. The broker does NOT re-apply the plugin's own command policy here —
+# the plugin enforces its policy before requesting, and the user's grant is the
+# host-side trust boundary. The grant is checked in dispatch() before this runs.
+#
+# Timeout note: timeout_ms is clamped and accepted, but the synchronous
+# OS.execute fallback cannot be interrupted, so it is advisory on that path
+# (threaded/poll-based enforcement is tracked as a hardening follow-up).
+
+## Test seam: when non-null, the next host.terminal.exec returns this dict
+## (wrapped in success) instead of touching a real terminal/subprocess. Lets the
+## headless test suite exercise the UI-terminal branch. Mirrors
+## _test_dialog_override. Consumed (reset to null) on use.
+static var _test_terminal_exec_override = null
+
+const _TERMINAL_EXEC_ALLOWED_ARGS := ["command", "cwd", "timeout_ms", "terminal_id"]
+const _TERMINAL_EXEC_DEFAULT_TIMEOUT_MS := 120000
+const _TERMINAL_EXEC_MAX_TIMEOUT_MS := 600000
+const _TERMINAL_EXEC_MAX_OUTPUT := 30000
+
+
+func _handle_host_terminal_exec(plugin_id: String, args: Dictionary) -> Dictionary:
+	# 1. Reject unknown argument keys (catch caller typos early).
+	for k in args.keys():
+		if not (k in _TERMINAL_EXEC_ALLOWED_ARGS):
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown argument key '%s'" % str(k))
+
+	# 2. Validate args.
+	var raw_command: Variant = args.get("command", null)
+	if raw_command == null or not (raw_command is String) or (raw_command as String).strip_edges().is_empty():
+		return PluginErrors.schema_validation_failed(
+			plugin_id, "command is required and must be a non-empty String")
+	var command: String = raw_command as String
+
+	var raw_cwd: Variant = args.get("cwd", "")
+	if not (raw_cwd is String):
+		return PluginErrors.schema_validation_failed(plugin_id, "cwd must be a String")
+	var cwd: String = raw_cwd as String
+
+	var terminal_id: String = str(args.get("terminal_id", ""))
+
+	# 3. Test override short-circuit (consumed once).
+	if CapabilityBroker._test_terminal_exec_override != null:
+		var injected = CapabilityBroker._test_terminal_exec_override
+		CapabilityBroker._test_terminal_exec_override = null
+		return PluginErrors.success(injected)
+
+	# 4. Prefer the visible UI terminal so the user can see the command run.
+	var term: TerminalNew = null
+	if DisplayServer.get_name() != "headless":
+		term = _find_exec_terminal(terminal_id)
+
+	if term != null:
+		var t_result: Dictionary = await term.execute_command(command)
+		if not bool(t_result.get("success", false)):
+			# Terminal present but exec failed — degrade to the subprocess path.
+			return _exec_headless(plugin_id, command, cwd)
+		return PluginErrors.success({
+			"stdout": _cap_terminal_output(str(t_result.get("stdout", ""))),
+			"exit_code": 0,
+			"exit_code_known": false,
+			"timed_out": bool(t_result.get("timed_out", false)),
+			"routed_through": "terminal",
+			"terminal_id": str(term.get_instance_id()),
+		})
+
+	# 5. Headless / no-terminal fallback: real subprocess with a true exit code.
+	return _exec_headless(plugin_id, command, cwd)
+
+
+## Find a usable terminal: by explicit id, else first visible+available, else any
+## available. Returns null in headless contexts or when none exist.
+func _find_exec_terminal(terminal_id: String) -> TerminalNew:
+	var loop := Engine.get_main_loop()
+	if loop == null or not (loop is SceneTree):
+		return null
+	var terminals: Array = (loop as SceneTree).get_nodes_in_group("terminal_pane")
+	if not terminal_id.is_empty():
+		var target_id: int = int(terminal_id)
+		for t in terminals:
+			if t is TerminalNew and t.get_instance_id() == target_id and t._terminal_available:
+				return t
+		return null
+	for t in terminals:
+		if t is TerminalNew and t.is_visible_in_tree() and t._terminal_available:
+			return t
+	for t in terminals:
+		if t is TerminalNew and t._terminal_available:
+			return t
+	return null
+
+
+## Run `command` as a subprocess, merging stdout+stderr, returning a real exit
+## code. Used headless or when no UI terminal exists.
+func _exec_headless(plugin_id: String, command: String, cwd: String) -> Dictionary:
+	var effective := command
+	if not cwd.is_empty():
+		# POSIX single-quote escaping for the cd target.
+		var safe_cwd := cwd.replace("'", "'\\''")
+		effective = "cd '%s' && %s" % [safe_cwd, command]
+
+	var shell: String
+	var shell_args: PackedStringArray
+	if OS.get_name() == "Windows":
+		shell = "cmd"
+		shell_args = PackedStringArray(["/c", effective])
+	else:
+		shell = "/bin/sh"
+		shell_args = PackedStringArray(["-c", effective])
+
+	var output: Array = []
+	var exit_code: int = OS.execute(shell, shell_args, output, true)  # read_stderr=true → merged
+	if exit_code == -1:
+		return {
+			"success": false,
+			"error_code": PluginErrors.CODE_IO_ERROR,
+			"error_message": "Failed to start shell for host.terminal.exec",
+			"plugin_id": plugin_id,
+		}
+	var out_str: String = ""
+	if output.size() > 0:
+		out_str = str(output[0])
+	return PluginErrors.success({
+		"stdout": _cap_terminal_output(out_str),
+		"exit_code": exit_code,
+		"exit_code_known": true,
+		"timed_out": false,
+		"routed_through": "headless",
+		"terminal_id": "",
+	})
+
+
+func _cap_terminal_output(s: String) -> String:
+	if s.length() <= _TERMINAL_EXEC_MAX_OUTPUT:
+		return s
+	return s.substr(0, _TERMINAL_EXEC_MAX_OUTPUT) + \
+		"\n... [output truncated at %d chars]" % _TERMINAL_EXEC_MAX_OUTPUT
 
 
 # ---------------------------------------------------------------------------
