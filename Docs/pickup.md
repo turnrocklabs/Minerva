@@ -1,12 +1,12 @@
 # Pickup
 
-STATE: `P1 substrate COMPLETE (codetools plugin: scaffold + envelope/router + vendored code-visualizer + rendering panel — HITL render gate PASSED on Linux). P2 is NEXT (open): extract file primitives (glob/grep/bash/cwd) out of core via HARD removal. Grandchildren P2.1/P2.2/P2.3 filed; not started. Build P2.1+P2.2 BEFORE removing core in P2.3.`
+STATE: `P1 substrate + P2 COMPLETE 2026-06-03. P2 extracted the file primitives (glob/grep/bash/cwd) out of core into the codetools plugin (minerva_codetools_*) via HARD removal; core boots 253 tools (was 257) WITHOUT codetools; no-bleed boundary test + CI guard in place. Next: P3 code-probe (019e7b867e), P4 unify+marketplace (019e7b8699), DRY-debt (019e7b86ab). Open follow-up: Go host-request client 019e8f811497.`
 
 Last updated 2026-06-03 (Linux desktop session).
 
-> **RESUME HERE.** P1 is done and signed off. Next is **P2 `019e7b8664`** — pull file primitives out of Minerva core into the codetools worker. Owner decided **HARD removal** (no deprecation shim). Three grandchildren are filed with full inventory; start with **P2.1** (build the worker replacement) — see §0. Suggested driver: `/work-cycle` (SONNET impl + OPUS review). Nothing is mid-flight; clean start.
+> **RESUME HERE.** P1 + P2 are done and pushed. P2 extracted glob/grep/bash/cwd from core into the codetools plugin (HARD removal); core now boots 253 tools without codetools, enforced by a no-bleed boundary test + CI guard. Next options: **P3 code-probe `019e7b867e`** (Sightline → `minerva_codetools_*` wrapper + remove `src/addons/sightline_probe`), **P4 unify+marketplace `019e7b8699`**, or **DRY-debt `019e7b86ab`** (gates P4). One follow-up is open: **`019e8f811497`** — Go bidirectional host-request client to wire bash→`host.terminal.exec` end-to-end (P2.2 left a tested dormant seam `set_host_exec_hook`).
 >
-> **Repos current & pushed:** Minerva `development` @ `11676f64`; minerva-plugins `main` @ `09e417a`. Pull both before starting.
+> **Repos current & pushed:** Minerva `development` @ `ee56eaf4`; minerva-plugins `main` @ `b62ce9c`. Pull both before starting.
 
 ---
 
@@ -22,9 +22,13 @@ P1.4 surfaced three **backlog follow-ups** (under the DCR, NOT gate blockers): r
 
 ---
 
-## 0. What to do next — P2: extract file primitives (HARD removal)
+## 0. P2 — extract file primitives (HARD removal) — ✅ COMPLETE 2026-06-03
 
-Parent **P2 `019e7b8664`** (open). Owner decision (2026-06-03): **HARD removal — no one-release deprecation shim.** Core Minerva without codetools loses glob/grep/bash/cwd MCP tools entirely (matches the file-access no-bleed contract, DCR comment 410). Grandchildren are chained — **build the replacement before removing core**:
+Parent **P2 `019e7b8664` DONE**. All three grandchildren shipped this session; the per-grandchild detail below is HISTORICAL. Result: core boots 253 tools (was 257) with NO glob/grep/bash/cwd — those live only in the codetools plugin as `minerva_codetools_*`. No-bleed contract enforced (`test_codetools_no_bleed.gd` 10/10 + `scripts/check-no-codetools-bleed.sh` wired into build.yml). Landed: P2.1 plugins `1de5643`; P2.2 Minerva `8e39e5bc` + plugins `b62ce9c`; P2.3 Minerva `ee56eaf4`. Open follow-up `019e8f811497` (Go host-request client to wire bash→host.terminal.exec).
+
+**Rubric-decided forks (this session, for the record):** (1) ActionNormalizer/PolicyEngine `minerva_bash`/`minerva_file_*` patterns KEPT — generic normalization heuristics, not registrations (no-bleed guard targets `_register_tool` only). (2) P2.2 split: core capability + tested dormant worker seam done now; the Go bidirectional host-request client (reusable infra codetools lacks) deferred to follow-up rather than ballooning P2.2. (3) rg = pinned BurntSushi 15.1.0 musl prebuilt, bundled via shared PBS script. (4) bash policy fail-safe = baseline deny-set always on, normal commands allowed when policy.json absent.
+
+**Next:** P3 code-probe `019e7b867e`, P4 unify+marketplace `019e7b8699`, DRY-debt `019e7b86ab`. _(Historical P2 build detail follows.)_
 
 ### P2.1 `019e8f306e` — reimplement file primitives in the worker (FIRST)
 Build glob / grep(via bundled `rg`) / bash / cwd in the worker `files/` subsystem (Python), routed through the P1.2 envelope + router. Tools become `minerva_codetools_*` (NOT `minerva_file_*`/`minerva_bash` — those die with core in P2.3). Behavior parity with the core impls (reference, don't port GDScript verbatim):
@@ -81,9 +85,9 @@ DoD: core BOOTS + full regression green WITHOUT codetools; boundary test + CI gu
 
 | Component | Version / commit | Notes |
 |---|---|---|
-| Minerva | `development` @ `11676f64` (pushed) | P1.4 Gate-A + pickup/docket |
-| minerva-plugins | `main` @ `09e417a` (pushed) | codetools P0–P1.4; get_graph project_name fix `b24f0a9`; db gitignore `09e417a` |
-| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional, not bundled. P1.4 work on main, no new tag yet |
+| Minerva | `development` @ `ee56eaf4` (pushed) | P2.2 host.terminal.exec + P2.3 hard removal (253 tools) |
+| minerva-plugins | `main` @ `b62ce9c` (pushed) | P2.1 file primitives + rg 15.1.0 bundle + P2.2 bash seam |
+| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional, not bundled. smoke tools=15 (P2.1 +4); no new tag yet |
 | CAD plugin | `cad-v0.1.2` | unaffected |
 | Presentation | `presentation-v0.0.3` | prior work |
 
