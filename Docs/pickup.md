@@ -4,9 +4,9 @@ STATE: `P1 substrate + P2 COMPLETE 2026-06-03. P2 extracted the file primitives 
 
 Last updated 2026-06-03 (Linux desktop session).
 
-> **RESUME HERE.** P1 + P2 are done and pushed. P2 extracted glob/grep/bash/cwd from core into the codetools plugin (HARD removal); core now boots 253 tools without codetools, enforced by a no-bleed boundary test + CI guard. Next options: **P3 code-probe `019e7b867e`** (Sightline → `minerva_codetools_*` wrapper + remove `src/addons/sightline_probe`), **P4 unify+marketplace `019e7b8699`**, or **DRY-debt `019e7b86ab`** (gates P4). One follow-up is open: **`019e8f811497`** — Go bidirectional host-request client to wire bash→`host.terminal.exec` end-to-end (P2.2 left a tested dormant seam `set_host_exec_hook`).
+> **RESUME HERE.** P1 + P2 done. **P3 (code-probe `019e7b867e`) IN PROGRESS** — decomposed into 6 grandchildren: **P3.1 vendoring DONE** (sightline @ `8b2baa7` → plugins `d8cd08f`); **P3.2 MCP wrapper (explore/inspect/validate, 3 op-driven `minerva_codetools_*` tools) IN FLIGHT** (Sonnet impl in a worktree → Opus review → land). Then P3.3 (gate X11 visual capture `019e8faa49f4`), P3.4 (remove core `src/addons/sightline_probe` `019e8faa6389`), P3.5 (DRY: collapse code-probe search/files onto shared `files/` `019e8faa7ba7`), P3.6 (probe test harness: Option B replay + schema guard + **Option C live-editor HITL** `019e8faa9745` — the end-of-P3 human checkpoint). Then P4 marketplace `019e7b8699`. Open follow-up: `019e8f811497` (Go host-request client).
 >
-> **Repos current & pushed:** Minerva `development` @ `ee56eaf4`; minerva-plugins `main` @ `b62ce9c`. Pull both before starting.
+> **Repos current & pushed:** Minerva `development` @ `ee56eaf4`; minerva-plugins `main` @ `d8cd08f`. Pull both before starting.
 
 ---
 
