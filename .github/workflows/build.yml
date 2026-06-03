@@ -296,6 +296,9 @@ jobs:
         mkdir -p .godot
         timeout 180s godot --headless --import || true
 
+    - name: No-bleed guard (codetools extraction, DCR 019e7b6609 P2.3)
+      run: scripts/check-no-codetools-bleed.sh
+
     - name: Run functional suite (hermetic F1-F6)
       run: scripts/run-functional-tests.sh
 

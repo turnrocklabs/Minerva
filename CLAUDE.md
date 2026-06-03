@@ -317,13 +317,17 @@ To drive an interactive program (like `claude`):
 5. `terminal_read` — read the screen
 6. Repeat 3-5 for multi-turn conversation
 
-### CodeTools MCP
-File manipulation tools with policy enforcement:
-- `minerva_file_read`, `minerva_file_write`, `minerva_file_edit`
-- `minerva_file_glob`, `minerva_file_grep`
-- `minerva_bash` — executes in terminal PTY when visible, headless fallback
-- `minerva_cwd` — get/set working directory
-- Policy: `~/.codetools/policy.json` with regex deny patterns
+### CodeTools (now the optional `codetools` plugin)
+The file-primitive / code-intelligence tools are NOT part of core Minerva. They
+ship in the optional **`codetools`** marketplace plugin (DCR 019e7b6609). Install
+it to make Minerva a coding agent; without it, core has no glob/grep/bash/cwd.
+When installed the tools are namespaced `minerva_codetools_*`:
+- `minerva_codetools_glob`, `minerva_codetools_grep`
+- `minerva_codetools_bash` — headless subprocess (UI-terminal routing via the
+  `host.terminal.exec` capability when granted)
+- `minerva_codetools_cwd` — get/set working directory
+- Policy: `policy.json` in the plugin data dir, regex deny patterns, fail-safe
+- Buffer-based document editing stays in core: `minerva_doc_*`, `minerva_disk_*`
 
 ### Activity Log
 All MCP tool calls are automatically logged to an "Activity: MCP" editor tab for full traceability.

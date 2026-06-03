@@ -106,7 +106,9 @@ func _init_modules() -> void:
 		MCPModelTools.new(self),
 		MCPSkillTools.new(self),
 		MCPContainerTools.new(self),
-		MCPCodeTools.new(self),
+		# MCPCodeTools removed (DCR 019e7b6609 P2.3): the file-primitive tools
+		# (minerva_file_glob/grep, minerva_bash, minerva_cwd) now live in the
+		# optional `codetools` marketplace plugin as minerva_codetools_*.
 		MCPTerminalTools.new(self),
 		MCPWebviewTools.new(self),
 		MCPDocketTools.new(self),
