@@ -1,10 +1,12 @@
 # Pickup
 
-STATE: `Code Tools extraction — P0 + P1.1 + P1.2 + P1.3 DONE & GREEN; P1.4 (godot_scene visualizer panel — HITL gate) is next`
+STATE: `P1.4 visualizer panel — R1/R2/R3 DONE & GREEN; at the 3b HITL render gate. Two in-app bugs found & FIXED; awaiting visual confirmation. RESUMING ON LINUX.`
 
-Last updated 2026-06-02.
+Last updated 2026-06-02 (mac session end; resume on the desktop Linux box).
 
-> **Merge note (2026-06-02):** the `pdf-print-substrate` branch (PDF/printing host capability + docx reader + nametag plugin + spreadsheet/notes fixes, W5–W11) was merged into `development`. That work is **done**; it is additive and does not change the codetools track. This pickup.md was restored to the codetools state below — codetools/code-magic/sightline is the active track and **P1.4 (visualizer panel HITL gate) is still next**.
+> **RESUME HERE (Linux).** P1.4 is built and reviewed; only the human visual confirmation is left. The mac in-app render check found two real bugs (headless gates couldn't catch them); both are fixed + verified by a direct `get_graph` call (133 nodes), but **not yet visually confirmed**. macOS build artifacts don't cross to Linux — rebuild the bundle+binary for `linux-x86_64`, re-index the DB, install-from-manifest, open the panel. Full recipe in §0. **Unpushed when you read this (owner pushes):** minerva-plugins `main` `261c6a7` (the two HITL fixes) and Minerva `development` (R3 test `ae778bc1` + this docket/pickup commit). Pull both first.
+>
+> **Merge note (2026-06-02):** the `pdf-print-substrate` branch (W5–W11) was merged into `development` earlier; additive, doesn't change the codetools track.
 
 ---
 
@@ -22,14 +24,37 @@ Nothing is half-done — we paused cleanly at the P1.3→P1.4 boundary.
 
 ---
 
-## 0. What to do next session — P1.4 (HITL gate)
+## 0. What to do next — finish the P1.4 HITL gate on Linux
 
-**Ship the code-visualizer panel as a `godot_scene`.** Docket item `019e7b871b`. This is the ONE explicit human-in-the-loop gate of the substrate phase — headless can verify registration + wiring + data flow, but not "does the graph render / is it usable."
+Docket item `019e7b871b` (in_progress). Everything is built/reviewed/committed; the ONLY remaining work is: rebuild for Linux, open the panel, confirm it renders, transition to done.
 
-- Source viz: `~/gitlab/ccsandbox/experiments/code-magic/viz` (and `code-magic-viz/`) at the same pinned SHA `9cc9403`. Vendor like P1.3 did the analyzer.
-- Wire it as a `godot_scene` panel in `codetools/manifest.json` (cad's CAD panel + presentation deck are precedents). Panel queries the worker over MCP for graph data.
-- The "looks right" gate: open the panel in a running Minerva pointed at a real indexed SQLite (the P1.3 fixture works), and confirm: nodes render, edges connect, click-to-jump, basic filter. Owner signs off.
-- Model plan: SONNET for the panel scaffold + MCP wiring, OPUS for review. The human gate replaces the auto-functional-test gate for the visual layer.
+### Where it stands (done this session)
+- **R1** `0739a7b` — vendored the code-visualizer into `codetools/ui/code_graph/` (Level 1+2; class_name-free, relative preloads, `viz_mcp_server.gd` dropped, `load_from_dict` added) + **`minerva_codetools_get_graph`** adapter (`code_visualizer.py` + pure-stdlib `_layout.py`) returning the `code_graph` artifact `{nodes,edges,files,analysis,stats}` with x/y. Worker 79 ok (20 tree-sitter-free `get_graph` tests).
+- **R2** `5678d9e` (pushed) — `code_graph_panel.gd` (extends `MinervaPluginPanel`) + manifest `ui` block (`ipc_messages` + `panels[godot_scene]` w/ full 7-script whitelist, `save_mode "none"`, `editor_items`).
+- **R3** `ae778bc1` (Minerva) — Gate-A functional `test_codetools_panel_gate.gd`: real install→register→mount via `PluginScenePanelHost`; 13/0, regression `test_plugin_scene_panel_host` 38/0; registered in `run-functional-tests.sh`.
+- **HITL fixes** `261c6a7` (NOT pushed) — two bugs the in-app check caught: (a) panel `_ready` reparent crash (label move_child before add); (b) **runtime cache version-keyed only** → stale worker answered `unknown method: get_graph` despite a fresh bundle. Durable fix: `extract.go` stamps the embedded bundle sha and re-extracts on mismatch. Verified by direct call (133 nodes); go vet/test clean. Hint `019e8b3a` — cad/presentation/nametag likely share this latent bug.
+
+### Linux resume recipe
+1. **Pull** minerva-plugins `main` + Minerva `development` (owner pushed `261c6a7` + the Minerva R3/docket commits).
+2. **Build for linux-x86_64** (macOS artifacts don't cross; all gitignored):
+   ```
+   cd ~/github/minerva-plugins && bash scripts/build-python-runtime-bundle.sh codetools linux-x86_64
+   cd codetools && go build -o codetools-plugin .      # output to ROOT — entrypoint ./codetools-plugin; in-place install needs it there
+   python3 scripts/smoke/mcp_smoke.py "$PWD/codetools-plugin"   # expect tools=11
+   ```
+3. **Index a real DB offline** (the gate's test data; no LLM needed):
+   - venv: `python3.12 -m venv /tmp/ctv && /tmp/ctv/bin/pip install "tree-sitter~=0.22" ~/github/minerva-plugins/codetools/worker/vendored/code_visualizer/vendor/tree-sitter-gdscript` (builds parser.c; resolves tree-sitter 0.25.2).
+   - index: `cd ~/github/minerva-plugins/codetools/worker && PYTHONPATH=/tmp/ctv/lib/python3.12/site-packages /tmp/ctv/bin/python -m vendored.code_visualizer.analyzer.index ~/gitlab/ccsandbox/experiments/rich-panel --db /tmp/cg.db --project rich-panel` → 133 symbols / 114 edges.
+   - (the mac-built SQLite is portable if you copied it — but re-indexing is clean.)
+4. **Install**: launch Minerva (development) → **install-from-manifest** → `~/github/minerva-plugins/codetools/manifest.json` (registers in-place; needs the root binary + class_name-clean panel scripts — both done). **Start** the plugin (`autostart` is false).
+5. **Stage the DB at the panel's resolved path** = `globalize(ctx.data_directory)/code_visualizer.db`. On Linux: `${XDG_DATA_HOME:-~/.local/share}/Godot/app_userdata/Minerva/plugins/data/codetools/code_visualizer.db`. (NOTE: this is the GDScript host's `user://` data dir — DIFFERENT from the Go worker's runtime datadir `${XDG_DATA_HOME:-~/.local/share}/Minerva/plugins/codetools`; don't conflate. If the panel ever shows `unknown method`, `rm -rf <worker-datadir>/runtime` to force re-extract — though `261c6a7` makes this self-healing.)
+6. **Open** New → **Code Graph**. Confirm: L1 boundary grid (`ui / core / mcp / test` groupings), L2 spatial graph with `calls/connects/contains/emits/instances` edges, click-to-jump, basic filter.
+7. **On sign-off**: transition `019e7b871b` → done (cite `0739a7b` `5678d9e` `261c6a7` + Minerva `ae778bc1`; worker 79 ok / Gate-A 13-0 / regression 38-0). No new code needed. Then P1 substrate is complete → next is P1's sibling phases (P2 `019e7b8664`) or the new platform item `019e8af5`.
+
+### Architecture decided this session (durable — see docket)
+- **File-access / no-bleed contract** (DCR `019e7b6609` comment 410): agent file *tools* live in the plugin sidecar; only the *generic platform* stays in Minerva core. Boundary test + 5 clauses + CI guard (no `minerva_codetools_*`/`minerva_file_*` in core MCP).
+- **Generic schema-driven plugin-config mechanism** — new item `019e8af5` (won the code rubric: leads reliability+durability). `019e8a27` (CodeTools policy UI) re-scoped onto it (off `config_file.cfg`/AISettings). Interim: codetools policy.json in `<plugin_data_dir>`, sidecar fails safe.
+- **DRY-debt** `019e7b86ab`: extract `build_codetools_fixture()` shared helper (Gate-A test duplicates the sibling's fixture build).
 
 ### Lessons / gotchas captured in docket hints this session
 
