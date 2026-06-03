@@ -1,10 +1,17 @@
 # Pickup
 
-STATE: `P1.4 visualizer panel — R1/R2/R3 DONE & GREEN; at the 3b HITL render gate. Two in-app bugs found & FIXED; awaiting visual confirmation. RESUMING ON LINUX.`
+STATE: `P1.4 visualizer panel — RENDERS REAL DATA in-app on Linux (rich-panel, 133 symbols). Render substrate PROVEN. Awaiting owner click-through of L1/L2 (boundary grid → graph → click-to-jump → filter) to transition 019e7b871b → done. Two follow-up items filed (responsive + real entry-point UX).`
 
-Last updated 2026-06-02 (mac session end; resume on the desktop Linux box).
+Last updated 2026-06-03 (Linux desktop session).
 
-> **RESUME HERE (Linux).** P1.4 is built and reviewed; only the human visual confirmation is left. The mac in-app render check found two real bugs (headless gates couldn't catch them); both are fixed + verified by a direct `get_graph` call (133 nodes), but **not yet visually confirmed**. macOS build artifacts don't cross to Linux — rebuild the bundle+binary for `linux-x86_64`, re-index the DB, install-from-manifest, open the panel. Full recipe in §0. **Unpushed when you read this (owner pushes):** minerva-plugins `main` `261c6a7` (the two HITL fixes) and Minerva `development` (R3 test `ae778bc1` + this docket/pickup commit). Pull both first.
+> **RESUME HERE (Linux, 2026-06-03 session done).** The panel now renders the REAL rich-panel graph in-app (133 symbols). What got it there this session:
+> - Pulled minerva-plugins `main` → `261c6a7`; Minerva `development` already current.
+> - Rebuilt bundle + binary for `linux-x86_64`; smoke tools=11; indexed rich-panel → 133 symbols / 114 edges.
+> - **Fixed `get_graph` to surface `project_name`** in stats (panel splash was titled "Project"); worker 38/0; committed + **pushed** minerva-plugins `main` `b24f0a9`.
+> - **DB-PATH BUG (the real "0 symbols" cause):** the pickup's old step-5 path was WRONG for an in-place install. `install-from-manifest` sets `def.data_directory = manifest base dir = the PLUGIN SOURCE DIR`, so the panel reads `~/github/minerva-plugins/codetools/code_visualizer.db` — NOT `app_userdata/...`. SQLite silently CREATES an empty DB there → "0 files · 0 symbols · 0 edges". Fix: stage the indexed DB at `~/github/minerva-plugins/codetools/code_visualizer.db`. Hint `019e8edf`. (That staged `.db` is untracked in the plugins source dir — do NOT commit it; consider gitignoring.)
+> - **Two follow-ups filed under DCR `019e7b6609`:** responsive panel `019e8f2282` (adopt `ResponsiveContainer`; panel breaks at 1-pane width); real entry-point UX `019e8f2489` (LLM-driven visualize + Open saved graph + index-on-demand; kill the implicit data_directory path convention — P2 of the design discussion).
+>
+> **REMAINING for P1.4 sign-off:** owner clicks the splash → confirms L1 boundary grid (ui/core/mcp/test) + L2 graph w/ edges + click-to-jump + filter. Then transition `019e7b871b` → done (cite `0739a7b`/`5678d9e`/`261c6a7`/`b24f0a9` + Minerva `ae778bc1`; worker 38/0, Gate-A 13/0, regression 38/0). The responsiveness gap is a SEPARATE item, not a gate blocker.
 >
 > **Merge note (2026-06-02):** the `pdf-print-substrate` branch (W5–W11) was merged into `development` earlier; additive, doesn't change the codetools track.
 
@@ -47,7 +54,7 @@ Docket item `019e7b871b` (in_progress). Everything is built/reviewed/committed; 
    - index: `cd ~/github/minerva-plugins/codetools/worker && PYTHONPATH=/tmp/ctv/lib/python3.12/site-packages /tmp/ctv/bin/python -m vendored.code_visualizer.analyzer.index ~/gitlab/ccsandbox/experiments/rich-panel --db /tmp/cg.db --project rich-panel` → 133 symbols / 114 edges.
    - (the mac-built SQLite is portable if you copied it — but re-indexing is clean.)
 4. **Install**: launch Minerva (development) → **install-from-manifest** → `~/github/minerva-plugins/codetools/manifest.json` (registers in-place; needs the root binary + class_name-clean panel scripts — both done). **Start** the plugin (`autostart` is false).
-5. **Stage the DB at the panel's resolved path** = `globalize(ctx.data_directory)/code_visualizer.db`. On Linux: `${XDG_DATA_HOME:-~/.local/share}/Godot/app_userdata/Minerva/plugins/data/codetools/code_visualizer.db`. (NOTE: this is the GDScript host's `user://` data dir — DIFFERENT from the Go worker's runtime datadir `${XDG_DATA_HOME:-~/.local/share}/Minerva/plugins/codetools`; don't conflate. If the panel ever shows `unknown method`, `rm -rf <worker-datadir>/runtime` to force re-extract — though `261c6a7` makes this self-healing.)
+5. **Stage the DB at the panel's resolved path.** For an **in-place `install-from-manifest`** (what we use), `def.data_directory = the manifest's folder = the PLUGIN SOURCE DIR` (PluginDefinition.gd:265-266), so the panel reads `~/github/minerva-plugins/codetools/code_visualizer.db`. Stage there: `cp /tmp/cg.db ~/github/minerva-plugins/codetools/code_visualizer.db`. (The OLD `app_userdata/Minerva/plugins/data/codetools/` path only holds for a marketplace-COPIED install — staging there yields "0 symbols" because SQLite auto-creates an empty DB at the real resolved path. Hint `019e8edf`.) Worker runtime datadir is yet a third path `${XDG_DATA_HOME:-~/.local/share}/Minerva/plugins/codetools`; if the panel shows `unknown method`, `rm -rf <worker-datadir>/runtime` to force re-extract — though `261c6a7` makes this self-healing.
 6. **Open** New → **Code Graph**. Confirm: L1 boundary grid (`ui / core / mcp / test` groupings), L2 spatial graph with `calls/connects/contains/emits/instances` edges, click-to-jump, basic filter.
 7. **On sign-off**: transition `019e7b871b` → done (cite `0739a7b` `5678d9e` `261c6a7` + Minerva `ae778bc1`; worker 79 ok / Gate-A 13-0 / regression 38-0). No new code needed. Then P1 substrate is complete → next is P1's sibling phases (P2 `019e7b8664`) or the new platform item `019e8af5`.
 
