@@ -4,9 +4,9 @@ STATE: `P1 substrate + P2 COMPLETE 2026-06-03. P2 extracted the file primitives 
 
 Last updated 2026-06-03 (Linux desktop session).
 
-> **RESUME HERE.** P1 + P2 done. **P3 (code-probe `019e7b867e`) IN PROGRESS** — decomposed into 6 grandchildren: **P3.1 vendoring DONE** (sightline @ `8b2baa7` → plugins `d8cd08f`); **P3.2 MCP wrapper (explore/inspect/validate, 3 op-driven `minerva_codetools_*` tools) IN FLIGHT** (Sonnet impl in a worktree → Opus review → land). Then P3.3 (gate X11 visual capture `019e8faa49f4`), P3.4 (remove core `src/addons/sightline_probe` `019e8faa6389`), P3.5 (DRY: collapse code-probe search/files onto shared `files/` `019e8faa7ba7`), P3.6 (probe test harness: Option B replay + schema guard + **Option C live-editor HITL** `019e8faa9745` — the end-of-P3 human checkpoint). Then P4 marketplace `019e7b8699`. Open follow-up: `019e8f811497` (Go host-request client).
+> **RESUME HERE.** P1 + P2 done. **P3 (code-probe `019e7b867e`) IN PROGRESS** — 6 grandchildren: **P3.1 vendoring DONE** (plugins `d8cd08f`); **P3.2 MCP wrapper DONE** — 3 op-driven tools `minerva_codetools_{explore,inspect,validate}` wrapping vendored sightline, smoke **18 tools**, 180 worker unittests (plugins `fb562cb`). Remaining: P3.3 (gate X11 visual capture `019e8faa49f4`), P3.4 (remove core `src/addons/sightline_probe` `019e8faa6389`), P3.5 (DRY: collapse code-probe search/files onto shared `files/` `019e8faa7ba7`), P3.6 (probe test harness: Option B replay + schema guard + **Option C live-editor HITL** `019e8faa9745` — the end-of-P3 human checkpoint). Then P4 marketplace `019e7b8699`. Open follow-up: `019e8f811497` (Go host-request client).
 >
-> **Repos current & pushed:** Minerva `development` @ `ee56eaf4`; minerva-plugins `main` @ `d8cd08f`. Pull both before starting.
+> **Repos current & pushed:** Minerva `development` @ `ee56eaf4`; minerva-plugins `main` @ `fb562cb`. Pull both before starting.
 
 ---
 
