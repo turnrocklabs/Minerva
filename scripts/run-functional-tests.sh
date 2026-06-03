@@ -32,6 +32,7 @@ PLUGIN_TESTS=(
 	test/test_marketplace_install_start_scansort.gd
 	test/test_marketplace_install_start_cad_evaluate.gd
 	test/test_marketplace_install_start_codetools.gd
+	test/test_codetools_panel_gate.gd
 )
 
 tests=("${HERMETIC_TESTS[@]}")
