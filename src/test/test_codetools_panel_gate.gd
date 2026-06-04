@@ -69,17 +69,24 @@ func _run() -> void:
 	if not FileAccess.file_exists(src_manifest):
 		_skip("no codetools source at %s" % src_dir)
 		return
-	if not _have_cmd("go"):
+	if not _helper.have_cmd("go"):
 		_skip("go toolchain not on PATH")
 		return
-	var triple := _host_bundle_triple()
+	var triple: String = _helper.host_bundle_triple()
 	if triple == "":
 		_skip("unsupported host %s/arm64=%s" % [OS.get_name(), OS.has_feature("arm64")])
 		return
 
-	# --- Build fixture tarball ---
-	if not await _setup_fixture(src_dir, triple):
-		return  # sets _skip or _fail
+	# --- Build fixture tarball (include_ui: the panel gate mounts ui/ scripts) ---
+	_temp_dir = "%s/cp_gate_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
+	var fx: Dictionary = _helper.build_codetools_fixture(src_dir, triple, _temp_dir, BINARY_NAME, true)
+	if not fx.get("ok", false):
+		if fx.has("skip"):
+			_skip(fx["skip"])
+		else:
+			_fail += 1
+			print("FAIL: fixture build — %s" % fx.get("fail", "?"))
+		return
 
 	var port: int = _helper.random_high_port()
 	if not await _helper.start_http_server(_temp_dir, port, 15.0):
@@ -107,7 +114,7 @@ func _run() -> void:
 	_pm = so.get("plugin_manager")
 	print("  using SingletonObject.plugin_manager (has %d plugin(s))" % _pm._db.get_all().size())
 	await _helper.scrub_plugin(_pm, PLUGIN_ID)
-	_clear_runtime_cache()
+	_helper.clear_runtime_cache(PLUGIN_ID)
 
 	# =========================================================================
 	# Step 1: install via the real marketplace path
@@ -344,65 +351,6 @@ func _run() -> void:
 # Fixture build (mirrors test_marketplace_install_start_codetools.gd exactly)
 # ---------------------------------------------------------------------------
 
-func _setup_fixture(src_dir: String, triple: String) -> bool:
-	var bundle := "%s/internal/runtime/bundle/runtime-bundle-%s.tar.zst" % [src_dir, triple]
-	if not _file_ge(bundle, 1024 * 1024):
-		var repo_root := src_dir.get_base_dir()
-		var build_script := "%s/scripts/build-python-runtime-bundle.sh" % repo_root
-		print("  bundle absent — building %s (cached PBS after first run)…" % triple)
-		if not _helper.run_cmd("bash", [build_script, src_dir, triple]):
-			_skip("could not build embedded bundle for %s" % triple)
-			return false
-		if not _file_ge(bundle, 1024 * 1024):
-			_skip("bundle build produced no usable tarball at %s" % bundle)
-			return false
-
-	_temp_dir = "%s/cp_gate_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
-	if not _helper.mkdir_recursive(_temp_dir):
-		_fail += 1
-		print("FAIL: could not make temp dir %s" % _temp_dir)
-		return false
-	var pack := "%s/pack" % _temp_dir
-	_helper.mkdir_recursive(pack)
-
-	print("  go build %s (embeds %s bundle)…" % [BINARY_NAME, triple])
-	if not _helper.run_cmd("bash", ["-c",
-			"cd '%s' && go build -o '%s/%s' ." % [src_dir, pack, BINARY_NAME]]):
-		_fail += 1
-		print("FAIL: go build")
-		return false
-	if not _helper.run_cmd("cp", ["-p", src_dir + "/manifest.json", pack.path_join("manifest.json")]):
-		_fail += 1
-		print("FAIL: copy manifest")
-		return false
-
-	# Copy the ui/ directory (GDScript + .tscn panel files) so the install has
-	# the panel scripts that PluginScenePanelHost.instantiate_into() will load.
-	# The production tarball includes these; our fixture must too.
-	if DirAccess.dir_exists_absolute(src_dir + "/ui"):
-		if not _helper.run_cmd("cp", ["-r", src_dir + "/ui", pack.path_join("ui")]):
-			_fail += 1
-			print("FAIL: copy ui/ directory")
-			return false
-		print("  copied ui/ directory to fixture")
-	else:
-		print("  WARN: no ui/ directory in source — panel mount will fail (expected for pure-backend plugins)")
-
-	if not _helper.run_cmd("bash", ["-c",
-			"cd '%s' && (command -v sha256sum >/dev/null 2>&1 && sha256sum %s manifest.json || shasum -a 256 %s manifest.json) > SHA256SUMS"
-			% [pack, BINARY_NAME, BINARY_NAME]]):
-		_fail += 1
-		print("FAIL: sha256sum")
-		return false
-
-	if not _helper.run_cmd("bash", ["-c",
-			"cd '%s' && tar -czf ../codetools-fixture.tar.gz ." % pack]):
-		_fail += 1
-		print("FAIL: tar")
-		return false
-	return true
-
-
 # ---------------------------------------------------------------------------
 # Placeholder detection
 # ---------------------------------------------------------------------------
@@ -423,54 +371,6 @@ func _looks_like_placeholder(node: Control) -> bool:
 			if lbl.text.begins_with("[PluginScenePanelHost]"):
 				return true
 	return false
-
-
-# ---------------------------------------------------------------------------
-# Helpers (mirrors test_marketplace_install_start_codetools.gd)
-# ---------------------------------------------------------------------------
-
-func _host_bundle_triple() -> String:
-	match OS.get_name():
-		"macOS":
-			return "macos-arm64" if OS.has_feature("arm64") else "macos-amd64"
-		"Linux":
-			return "" if OS.has_feature("arm64") else "linux-x86_64"
-		"Windows":
-			return "windows-x86_64"
-	return ""
-
-
-func _clear_runtime_cache() -> void:
-	var data_dir := OS.get_environment("MINERVA_PLUGIN_DATA_DIR")
-	if data_dir == "":
-		var base := ""
-		match OS.get_name():
-			"Windows":
-				base = OS.get_environment("APPDATA")
-			"macOS":
-				base = OS.get_environment("HOME") + "/Library/Application Support"
-			_:
-				var xdg := OS.get_environment("XDG_DATA_HOME")
-				base = xdg if xdg != "" else OS.get_environment("HOME") + "/.local/share"
-		data_dir = "%s/Minerva/plugins/%s" % [base, PLUGIN_ID]
-	if data_dir != "":
-		OS.execute("rm", ["-rf", data_dir + "/runtime"], [], true)
-
-
-func _have_cmd(name: String) -> bool:
-	return OS.execute("bash", ["-c", "command -v %s >/dev/null 2>&1" % name], [], true) == 0
-
-
-func _file_ge(path: String, min_bytes: int) -> bool:
-	if not FileAccess.file_exists(path):
-		return false
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return false
-	var sz := f.get_length()
-	f.close()
-	return sz >= min_bytes
-
 
 
 func _skip(reason: String) -> void:

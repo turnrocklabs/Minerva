@@ -66,17 +66,24 @@ func _run() -> void:
 	if not FileAccess.file_exists(src_manifest):
 		_skip("no codetools source at %s" % src_dir)
 		return
-	if not _have_cmd("go"):
+	if not _helper.have_cmd("go"):
 		_skip("go toolchain not on PATH")
 		return
-	var triple := _host_bundle_triple()
+	var triple: String = _helper.host_bundle_triple()
 	if triple == "":
 		_skip("unsupported host %s/arm64=%s" % [OS.get_name(), OS.has_feature("arm64")])
 		return
 
 	# --- Build fixture tarball (real binary + embedded bundle) + serve it ---
-	if not await _setup_fixture(src_dir, triple):
-		return  # _setup_fixture sets _skip / _fail
+	_temp_dir = "%s/mp_codetools_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
+	var fx: Dictionary = _helper.build_codetools_fixture(src_dir, triple, _temp_dir, BINARY_NAME, false)
+	if not fx.get("ok", false):
+		if fx.has("skip"):
+			_skip(fx["skip"])
+		else:
+			_fail += 1
+			print("FAIL: fixture build — %s" % fx.get("fail", "?"))
+		return
 
 	var port: int = _helper.random_high_port()
 	if not await _helper.start_http_server(_temp_dir, port, 15.0):
@@ -96,7 +103,7 @@ func _run() -> void:
 	# keyed by VERSION — a same-version worker change would otherwise be masked by
 	# a stale extraction from a prior run. Clear it so each run extracts the bundle
 	# we just built. (No-op on a clean machine / CI runner.)
-	_clear_runtime_cache()
+	_helper.clear_runtime_cache(PLUGIN_ID)
 
 	# --- Step 1: install via the real marketplace path ---
 	print("\n-- step 1: install_from_url --")
@@ -209,113 +216,6 @@ func _run() -> void:
 # Fixture build — go build the real binary (embedded bundle) + production-shape
 # tarball (binary + manifest + SHA256SUMS), mirroring codetools.yml's pack step.
 # ---------------------------------------------------------------------------
-
-func _setup_fixture(src_dir: String, triple: String) -> bool:
-	# Ensure an embedded bundle exists for this host so go:embed compiles a real
-	# (Tier-1) binary — the exact artifact users install. Build it if absent
-	# (PBS download is cached after the first run).
-	var bundle := "%s/internal/runtime/bundle/runtime-bundle-%s.tar.zst" % [src_dir, triple]
-	if not _file_ge(bundle, 1024 * 1024):
-		var repo_root := src_dir.get_base_dir()  # ~/github/minerva-plugins
-		var build_script := "%s/scripts/build-python-runtime-bundle.sh" % repo_root
-		print("  bundle absent — building %s (cached PBS after first run)…" % triple)
-		if not _helper.run_cmd("bash", [build_script, src_dir, triple]):
-			_skip("could not build embedded bundle for %s" % triple)
-			return false
-		if not _file_ge(bundle, 1024 * 1024):
-			_skip("bundle build produced no usable tarball at %s" % bundle)
-			return false
-
-	_temp_dir = "%s/mp_codetools_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
-	if not _helper.mkdir_recursive(_temp_dir):
-		_fail += 1
-		print("FAIL: could not make temp dir %s" % _temp_dir)
-		return false
-	var pack := "%s/pack" % _temp_dir
-	_helper.mkdir_recursive(pack)
-
-	# go build the real binary (host GOOS/GOARCH, embeds the bundle).
-	print("  go build %s (embeds %s bundle)…" % [BINARY_NAME, triple])
-	if not _helper.run_cmd("bash", ["-c",
-			"cd '%s' && go build -o '%s/%s' ." % [src_dir, pack, BINARY_NAME]]):
-		_fail += 1
-		print("FAIL: go build")
-		return false
-	if not _helper.run_cmd("cp", ["-p", src_dir + "/manifest.json", pack.path_join("manifest.json")]):
-		_fail += 1
-		print("FAIL: copy manifest")
-		return false
-
-	# SHA256SUMS in the marketplace-verifier format (works on Linux + macOS).
-	if not _helper.run_cmd("bash", ["-c",
-			"cd '%s' && (command -v sha256sum >/dev/null 2>&1 && sha256sum %s manifest.json || shasum -a 256 %s manifest.json) > SHA256SUMS"
-			% [pack, BINARY_NAME, BINARY_NAME]]):
-		_fail += 1
-		print("FAIL: sha256sum")
-		return false
-
-	# Pack into ../codetools-fixture.tar.gz (served at the temp dir root).
-	if not _helper.run_cmd("bash", ["-c",
-			"cd '%s' && tar -czf ../codetools-fixture.tar.gz ." % pack]):
-		_fail += 1
-		print("FAIL: tar")
-		return false
-	return true
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-# Map host OS+arch to the embedded-bundle triple (NOT the macos-universal
-# release name — local single-arch builds embed one arch's bundle).
-func _host_bundle_triple() -> String:
-	match OS.get_name():
-		"macOS":
-			return "macos-arm64" if OS.has_feature("arm64") else "macos-amd64"
-		"Linux":
-			# codetools ships no linux-arm64 target (no embed_linux_arm64.go),
-			# so an arm64 linux host SKIPs cleanly rather than failing go build.
-			return "" if OS.has_feature("arm64") else "linux-x86_64"
-		"Windows":
-			return "windows-x86_64"
-	return ""
-
-
-# Resolve the plugin data dir the way the Go shim's runtime.DataDir() does, then
-# remove the extracted-runtime cache under it so the next start re-extracts the
-# freshly-built bundle (defeats the version-keyed EnsureRuntime cache).
-func _clear_runtime_cache() -> void:
-	var data_dir := OS.get_environment("MINERVA_PLUGIN_DATA_DIR")
-	if data_dir == "":
-		var base := ""
-		match OS.get_name():
-			"Windows":
-				base = OS.get_environment("APPDATA")
-			"macOS":
-				base = OS.get_environment("HOME") + "/Library/Application Support"
-			_:
-				var xdg := OS.get_environment("XDG_DATA_HOME")
-				base = xdg if xdg != "" else OS.get_environment("HOME") + "/.local/share"
-		data_dir = "%s/Minerva/plugins/%s" % [base, PLUGIN_ID]
-	if data_dir != "":
-		OS.execute("rm", ["-rf", data_dir + "/runtime"], [], true)
-
-
-func _have_cmd(name: String) -> bool:
-	return OS.execute("bash", ["-c", "command -v %s >/dev/null 2>&1" % name], [], true) == 0
-
-
-func _file_ge(path: String, min_bytes: int) -> bool:
-	if not FileAccess.file_exists(path):
-		return false
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return false
-	var sz := f.get_length()
-	f.close()
-	return sz >= min_bytes
-
 
 # Dig the P1.2 unified result envelope ({status, summary, artifacts, ...}) out
 # of whatever wrapping call_tool returns: the MCP {content:[{text:"<json>"}]}

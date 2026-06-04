@@ -261,6 +261,122 @@ func make_marketplace_client() -> Node:
 
 
 # ---------------------------------------------------------------------------
+# codetools local-bundle fixture
+#
+# Shared by the two codetools functional tests
+# (test_marketplace_install_start_codetools.gd + test_codetools_panel_gate.gd).
+# Both build the SAME artifact a user installs — a host go binary that embeds
+# the PBS runtime bundle, packed with manifest.json + SHA256SUMS into
+# codetools-fixture.tar.gz at the temp-dir root. The only divergence is
+# include_ui, which stages the ui/ panel scripts the panel gate mounts (the
+# pure-backend install test omits them). DRY-debt 019e7b86ab.
+# ---------------------------------------------------------------------------
+
+func have_cmd(name: String) -> bool:
+	return OS.execute("bash", ["-c", "command -v %s >/dev/null 2>&1" % name], [], true) == 0
+
+
+func file_ge(path: String, min_bytes: int) -> bool:
+	if not FileAccess.file_exists(path):
+		return false
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return false
+	var sz := f.get_length()
+	f.close()
+	return sz >= min_bytes
+
+
+# Map host OS+arch to the EMBEDDED-bundle triple (NOT the macos-universal
+# release name — local single-arch builds embed one arch's bundle). Returns ""
+# when the host has no codetools target (e.g. linux-arm64 ships no
+# embed_linux_arm64.go), so callers SKIP cleanly rather than fail go build.
+func host_bundle_triple() -> String:
+	match OS.get_name():
+		"macOS":
+			return "macos-arm64" if OS.has_feature("arm64") else "macos-amd64"
+		"Linux":
+			return "" if OS.has_feature("arm64") else "linux-x86_64"
+		"Windows":
+			return "windows-x86_64"
+	return ""
+
+
+# Resolve the plugin data dir the way the Go shim's runtime.DataDir() does, then
+# remove the extracted-runtime cache under it so the next start re-extracts the
+# freshly-built bundle (defeats the version-keyed EnsureRuntime cache).
+func clear_runtime_cache(plugin_id: String) -> void:
+	var data_dir := OS.get_environment("MINERVA_PLUGIN_DATA_DIR")
+	if data_dir == "":
+		var base := ""
+		match OS.get_name():
+			"Windows":
+				base = OS.get_environment("APPDATA")
+			"macOS":
+				base = OS.get_environment("HOME") + "/Library/Application Support"
+			_:
+				var xdg := OS.get_environment("XDG_DATA_HOME")
+				base = xdg if xdg != "" else OS.get_environment("HOME") + "/.local/share"
+		data_dir = "%s/Minerva/plugins/%s" % [base, plugin_id]
+	if data_dir != "":
+		OS.execute("rm", ["-rf", data_dir + "/runtime"], [], true)
+
+
+# Build the codetools install fixture into temp_dir (caller owns temp_dir
+# lifecycle). Returns {ok: true} on success, {ok: false, skip: <reason>} when
+# the host can't produce a bundle (caller should SKIP), or {ok: false,
+# fail: <reason>} on a real build error (caller should FAIL).
+func build_codetools_fixture(src_dir: String, triple: String, temp_dir: String,
+		binary_name: String, include_ui: bool = false) -> Dictionary:
+	# Ensure an embedded bundle exists so go:embed compiles a real (Tier-1)
+	# binary — the exact artifact users install. Build it if absent (PBS
+	# download is cached after the first run).
+	var bundle := "%s/internal/runtime/bundle/runtime-bundle-%s.tar.zst" % [src_dir, triple]
+	if not file_ge(bundle, 1024 * 1024):
+		var repo_root := src_dir.get_base_dir()  # ~/github/minerva-plugins
+		var build_script := "%s/scripts/build-python-runtime-bundle.sh" % repo_root
+		print("  bundle absent — building %s (cached PBS after first run)…" % triple)
+		if not run_cmd("bash", [build_script, src_dir, triple]):
+			return {"ok": false, "skip": "could not build embedded bundle for %s" % triple}
+		if not file_ge(bundle, 1024 * 1024):
+			return {"ok": false, "skip": "bundle build produced no usable tarball at %s" % bundle}
+
+	if not mkdir_recursive(temp_dir):
+		return {"ok": false, "fail": "could not make temp dir %s" % temp_dir}
+	var pack := "%s/pack" % temp_dir
+	mkdir_recursive(pack)
+
+	# go build the real binary (host GOOS/GOARCH, embeds the bundle).
+	print("  go build %s (embeds %s bundle)…" % [binary_name, triple])
+	if not run_cmd("bash", ["-c",
+			"cd '%s' && go build -o '%s/%s' ." % [src_dir, pack, binary_name]]):
+		return {"ok": false, "fail": "go build"}
+	if not run_cmd("cp", ["-p", src_dir + "/manifest.json", pack.path_join("manifest.json")]):
+		return {"ok": false, "fail": "copy manifest"}
+
+	# Stage the ui/ panel scripts only when the consumer mounts a panel.
+	if include_ui:
+		if DirAccess.dir_exists_absolute(src_dir + "/ui"):
+			if not run_cmd("cp", ["-r", src_dir + "/ui", pack.path_join("ui")]):
+				return {"ok": false, "fail": "copy ui/ directory"}
+			print("  copied ui/ directory to fixture")
+		else:
+			print("  WARN: no ui/ directory in source — panel mount will fail")
+
+	# SHA256SUMS in the marketplace-verifier format (works on Linux + macOS).
+	if not run_cmd("bash", ["-c",
+			"cd '%s' && (command -v sha256sum >/dev/null 2>&1 && sha256sum %s manifest.json || shasum -a 256 %s manifest.json) > SHA256SUMS"
+			% [pack, binary_name, binary_name]]):
+		return {"ok": false, "fail": "sha256sum"}
+
+	# Pack into ../codetools-fixture.tar.gz (served at the temp-dir root).
+	if not run_cmd("bash", ["-c",
+			"cd '%s' && tar -czf ../codetools-fixture.tar.gz ." % pack]):
+		return {"ok": false, "fail": "tar"}
+	return {"ok": true}
+
+
+# ---------------------------------------------------------------------------
 # Teardown
 # ---------------------------------------------------------------------------
 
