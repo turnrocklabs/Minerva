@@ -1,8 +1,46 @@
 # Pickup
 
-STATE: `DCR 019e7b6609 SHIPPED 2026-06-04 — Code Tools extraction COMPLETE. codetools-v0.2.0 published to the marketplace (all 3 targets: linux-x86_64/macos-universal/windows-x86_64; registry.json advertises it, URLs 302, registry-check green). Minerva core = notes/chat app (253 tools, no glob/grep/bash/cwd, no-bleed CI guard); becomes a coding agent only when codetools installed (18 tools + 3 install-seeded skills + code-visualizer panel + code-probe). P0-P4 all done incl. owner sign-off + Option C probe HITL. Repos: Minerva development @ 9c5450d8; plugins main @ 8078eea, tag codetools-v0.2.0 @ 314b3b6. Windows release blocker fixed (PBS install_only has no bin/ → mkdir -p before rg inject). OPEN FOLLOW-UPS (next work): 019e93c4c402 (.sightline→codetools naming rename, UX), 019e93d8f174 (remove-probe leaves stale [editor_plugins] line in project.godot, bug), 019e8f811497 (Go host-request client). Plus older UX/functionality items filed across recent days — query docket for full list.`
+STATE: `DCR 019e7b6609 SHIPPED 2026-06-04 — Code Tools extraction COMPLETE. codetools-v0.2.0 published to the marketplace (all 3 targets: linux-x86_64/macos-universal/windows-x86_64; registry.json advertises it, URLs 302, registry-check green). Minerva core = notes/chat app (253 tools, no glob/grep/bash/cwd, no-bleed CI guard); becomes a coding agent only when codetools installed (18 tools + 3 install-seeded skills + code-visualizer panel + code-probe). P0-P4 all done incl. owner sign-off + Option C probe HITL. Repos: Minerva development @ 9c5450d8; plugins main @ 8078eea, tag codetools-v0.2.0 @ 314b3b6. Windows release blocker fixed (PBS install_only has no bin/ → mkdir -p before rg inject). NEXT WORK = the owner-confirmed codetools UX/functionality follow-up batch (12 items) listed in the "NEXT WORK" section below — investigate + triage post-compaction.`
 
 Last updated 2026-06-04 (Linux desktop session) — codetools SHIPPED.
+
+---
+
+## NEXT WORK — codetools UX/functionality follow-up batch (owner-confirmed 2026-06-04)
+
+The codetools initiative is DONE/shipped. Next: investigate + triage this batch of
+12 follow-ups (filed during the codetools work) in the **minerva** docket. Owner
+confirmed this exact set. Status NOT yet verified per item — first step is a
+`docket_get` on each to confirm open/closed + priority, then plan.
+
+**Docket-query gotchas (cost me two wrong reads — DON'T repeat):**
+- The bulk `docket_query` returns ONLY `id`+`title`, and its status filter did NOT
+  apply (closed items came back). Use per-item `docket_get` for status/type.
+- IDs are mixed: ULID `019e…` (time-sortable) AND legacy manual keys like
+  `DKT-####`. The `DKT-####` items are MARCH autocoder/codegen work in the minerva
+  project (NOT misfiled, NOT recent, many closed) — they only sort to the top
+  because `"DKT"` > digits. Ignore them for this batch. minerva prefix = `MNR`,
+  docket project prefix = `DCK`; there is no "DKT" project.
+- `docket_get <id>` defaults to the PRIMARY project (`docket`/DCK) and fuzzy-
+  matches — always pass `project: minerva` for these.
+
+**UX (6):**
+- `019e8f2489` — Code Graph entry-point + index-on-demand + save/open durable graph (real-usage UX)
+- `019e8f29a2` — Code Graph legibility (contrast, node overlap, zoom-to-fit, L3 AST)
+- `019e8f2282` — Make the Code Graph panel responsive (adopt ResponsiveContainer; narrow/1-pane)
+- `019e8e4a26` — Code Graph opens at a Level-0 splash (click-to-explore) — looks "empty"
+- `019e8a2709` — CodeTools policy.json undiscoverable/uneditable on a binary install (move override to user-config; ties to generic plugin-config 019e8af5)
+- `019e93c4c4` — Rename user-visible `.sightline`/`sightline_probe` → codetools name (adapter copy-seam)
+
+**Functionality (6):**
+- `019e8f8114` — codetools Go shim: bidirectional host-request client + wire bash → host.terminal.exec
+- `019e8f710a` — TerminalNew.execute_command runs a PTY command but can't read exit code or timeout
+- `019e8e4317` — get_graph stats omits project_name → panel title falls back to literal "Project"
+- `019e8af511` — Generic schema-driven plugin-config mechanism (plugins own settings; host renders)
+- `019e89eb89` — host capability to open a file in the OS default app (preview/print) [W11]
+- `019e93d8f1` — inspect op=remove-probe leaves a stale `[editor_plugins]` line in project.godot (bug)
+
+---
 
 > **RESUME HERE.** P1 + P2 + **P3 all DONE.** P3 (code-probe `019e7b867e`) shipped all 6 grandchildren: P3.1 vendor (`d8cd08f`), P3.2 wrapper — 3 tools `minerva_codetools_{explore,inspect,validate}`, plugin now **18 tools / 201 worker tests** (`fb562cb`), P3.3 X11 gate + `prepare`/`remove-probe` (`4fa6c13`), P3.4 remove core `src/addons/sightline_probe` (Minerva `0bfa445e`), P3.5 DRY (rubric scope-reversal, see DRY-debt `019e7b86ab` comment 417), P3.6 replay harness + schema guard + Option C runbook (`e40c996`).
 >
