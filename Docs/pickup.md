@@ -1,16 +1,16 @@
 # Pickup
 
-STATE: `P1 + P2 + P3 COMPLETE 2026-06-03. P3 extracted code-probe (runtime inspection, was Sightline) into the codetools plugin: 3 new MCP tools minerva_codetools_{explore,inspect,validate} (plugin now 18 tools, 201 worker tests); core src/addons/sightline_probe removed (no-bleed guard extended). ONE human step remains: Option C HITL (codetools/docs/probe_capture_runbook.md) to refresh probe fixtures from a live Godot capture at release. Next: P4 unify+marketplace (019e7b8699); DRY-debt (019e7b86ab) gates it. Open follow-up: Go host-request client 019e8f811497.`
+STATE: `P1+P2+P3 COMPLETE; P4 IN PROGRESS (P4.2 skills done). codetools plugin = 18 tools + 3 install-seeded skills + 204 worker tests, LIVE-VALIDATED 2026-06-04 (P2+P3 exercised end-to-end in the running app; old core minerva_bash/file_glob/etc. confirmed GONE; Code Graph panel rendered 133 symbols). A glob '**/' bug was found+fixed LIVE (plugins e5a84d4). Remaining P4: P4.3 unify/dep-checks, P4.4 workflows, DRY-debt 019e7b86ab (gates release), then P4.5 release — OWNER + HITL gated. Pending human: full Option C probe-capture HITL (codetools/docs/probe_capture_runbook.md). Open follow-up: Go host-request client 019e8f811497.`
 
 Last updated 2026-06-03 (Linux desktop session).
 
 > **RESUME HERE.** P1 + P2 + **P3 all DONE.** P3 (code-probe `019e7b867e`) shipped all 6 grandchildren: P3.1 vendor (`d8cd08f`), P3.2 wrapper — 3 tools `minerva_codetools_{explore,inspect,validate}`, plugin now **18 tools / 201 worker tests** (`fb562cb`), P3.3 X11 gate + `prepare`/`remove-probe` (`4fa6c13`), P3.4 remove core `src/addons/sightline_probe` (Minerva `0bfa445e`), P3.5 DRY (rubric scope-reversal, see DRY-debt `019e7b86ab` comment 417), P3.6 replay harness + schema guard + Option C runbook (`e40c996`).
 >
-> **ONE human step pending:** the **Option C HITL** — follow `codetools/docs/probe_capture_runbook.md` to refresh the probe fixture from a live Godot capture (`inspect {op:prepare}` → open editor → `status` loaded → copy/normalize JSON → re-test). Release-time gate; not blocking.
+> **Live HITL done 2026-06-04:** owner reconnected MCP; validated P2+P3 end-to-end in the running app — old core `minerva_bash`/`file_glob`/`file_grep`/`cwd` confirmed GONE; the 18 `minerva_codetools_*` tools work (grep/explore/inspect/bash exercised on real code); the **Code Graph panel opened and rendered** (133 symbols). Caught + fixed a real bug live: `glob '**/*.gd'` returned 0 — P2.1's `**/` regex missed top-level files → fixed to `(?:.*/)?`, re-verified live (plugins `e5a84d4`; DCR comment 419). **Still pending:** the full **Option C** probe-capture HITL (`codetools/docs/probe_capture_runbook.md`) — release-time gate, not blocking.
 >
-> **P4 (unify+marketplace `019e7b8699`) IN PROGRESS** — decomposed into 4 grandchildren + the gating DRY-debt. **P4.2 (3 install-seeded skills) DONE** (plugins `47a1460`; also fixed a P3.3 inspect Go-schema gap — `prepare`/`remove-probe`/`capture-visual` now advertised). Remaining: **P4.3** unify/dep-staleness `019e90b5432b`, **P4.4** combined workflows `019e90b54ff9`, **DRY-debt `019e7b86ab`** (surgical share-the-walk/rg-primitive convergence — GATES release), then **P4.5 release `019e90b566a4` — OWNER + HITL GATED** (do NOT auto-cut: needs DRY closed + the Option C HITL + owner sign-off). Open follow-up: `019e8f811497` (Go host-request client).
+> **P4 (unify+marketplace `019e7b8699`) IN PROGRESS** — decomposed into 4 grandchildren + the gating DRY-debt. **P4.2 (3 install-seeded skills) DONE** (plugins; the 3 skills: `minerva_codetools_understand_code`/`navigate_edit`/`inspect_runtime`). Two follow-up fixes landed + live-validated this session: a P3.3 inspect Go-schema gap (`prepare`/`remove-probe`/`capture-visual` now advertised) and the P2.1 glob `**/` bug (plugins `e5a84d4`). Remaining: **P4.3** unify/dep-staleness `019e90b5432b`, **P4.4** combined workflows `019e90b54ff9`, **DRY-debt `019e7b86ab`** (surgical share-the-walk/rg-primitive convergence — GATES release), then **P4.5 release `019e90b566a4` — OWNER + HITL GATED** (do NOT auto-cut: needs DRY closed + the Option C HITL + owner sign-off). Open follow-up: `019e8f811497` (Go host-request client).
 >
-> **Repos current & pushed:** Minerva `development` @ `0bfa445e`; minerva-plugins `main` @ `e40c996`. Pull both before starting.
+> **Repos current & pushed:** Minerva `development` @ `2e7cc868`; minerva-plugins `main` @ `e5a84d4`. Pull both before starting.
 
 ---
 
@@ -90,7 +90,7 @@ DoD: core BOOTS + full regression green WITHOUT codetools; boundary test + CI gu
 | Component | Version / commit | Notes |
 |---|---|---|
 | Minerva | `development` @ `0bfa445e` (pushed) | P2 hard removal (253 tools) + P3.4 sightline_probe addon removed |
-| minerva-plugins | `main` @ `47a1460` (pushed) | P2 file primitives + P3 code-probe + P4.2 skills + inspect-schema fix |
+| minerva-plugins | `main` @ `e5a84d4` (pushed) | P2+P3+P4.2 skills + inspect-schema fix + glob `**/` fix (live-HITL-found) |
 | **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional, not bundled. smoke **tools=18** + 3 install-seeded skills; 201 worker tests; no new tag yet |
 | CAD plugin | `cad-v0.1.2` | unaffected |
 | Presentation | `presentation-v0.0.3` | prior work |
