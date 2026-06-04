@@ -1,12 +1,16 @@
 # Pickup
 
-STATE: `P1 substrate + P2 COMPLETE 2026-06-03. P2 extracted the file primitives (glob/grep/bash/cwd) out of core into the codetools plugin (minerva_codetools_*) via HARD removal; core boots 253 tools (was 257) WITHOUT codetools; no-bleed boundary test + CI guard in place. Next: P3 code-probe (019e7b867e), P4 unify+marketplace (019e7b8699), DRY-debt (019e7b86ab). Open follow-up: Go host-request client 019e8f811497.`
+STATE: `P1 + P2 + P3 COMPLETE 2026-06-03. P3 extracted code-probe (runtime inspection, was Sightline) into the codetools plugin: 3 new MCP tools minerva_codetools_{explore,inspect,validate} (plugin now 18 tools, 201 worker tests); core src/addons/sightline_probe removed (no-bleed guard extended). ONE human step remains: Option C HITL (codetools/docs/probe_capture_runbook.md) to refresh probe fixtures from a live Godot capture at release. Next: P4 unify+marketplace (019e7b8699); DRY-debt (019e7b86ab) gates it. Open follow-up: Go host-request client 019e8f811497.`
 
 Last updated 2026-06-03 (Linux desktop session).
 
-> **RESUME HERE.** P1 + P2 done. **P3 (code-probe `019e7b867e`) IN PROGRESS** — 6 grandchildren: **P3.1 vendoring DONE** (plugins `d8cd08f`); **P3.2 MCP wrapper DONE** — 3 op-driven tools `minerva_codetools_{explore,inspect,validate}` wrapping vendored sightline, smoke **18 tools**, 180 worker unittests (plugins `fb562cb`). Remaining: P3.3 (gate X11 visual capture `019e8faa49f4`), P3.4 (remove core `src/addons/sightline_probe` `019e8faa6389`), P3.5 (DRY: collapse code-probe search/files onto shared `files/` `019e8faa7ba7`), P3.6 (probe test harness: Option B replay + schema guard + **Option C live-editor HITL** `019e8faa9745` — the end-of-P3 human checkpoint). Then P4 marketplace `019e7b8699`. Open follow-up: `019e8f811497` (Go host-request client).
+> **RESUME HERE.** P1 + P2 + **P3 all DONE.** P3 (code-probe `019e7b867e`) shipped all 6 grandchildren: P3.1 vendor (`d8cd08f`), P3.2 wrapper — 3 tools `minerva_codetools_{explore,inspect,validate}`, plugin now **18 tools / 201 worker tests** (`fb562cb`), P3.3 X11 gate + `prepare`/`remove-probe` (`4fa6c13`), P3.4 remove core `src/addons/sightline_probe` (Minerva `0bfa445e`), P3.5 DRY (rubric scope-reversal, see DRY-debt `019e7b86ab` comment 417), P3.6 replay harness + schema guard + Option C runbook (`e40c996`).
 >
-> **Repos current & pushed:** Minerva `development` @ `ee56eaf4`; minerva-plugins `main` @ `fb562cb`. Pull both before starting.
+> **ONE human step pending:** the **Option C HITL** — follow `codetools/docs/probe_capture_runbook.md` to refresh the probe fixture from a live Godot capture (`inspect {op:prepare}` → open editor → `status` loaded → copy/normalize JSON → re-test). Release-time gate; not blocking.
+>
+> **Next initiative work:** **P4 unify+marketplace `019e7b8699`** (gated by DRY-debt `019e7b86ab`). Open follow-up: `019e8f811497` (Go host-request client for bash→host.terminal.exec).
+>
+> **Repos current & pushed:** Minerva `development` @ `0bfa445e`; minerva-plugins `main` @ `e40c996`. Pull both before starting.
 
 ---
 
@@ -85,9 +89,9 @@ DoD: core BOOTS + full regression green WITHOUT codetools; boundary test + CI gu
 
 | Component | Version / commit | Notes |
 |---|---|---|
-| Minerva | `development` @ `ee56eaf4` (pushed) | P2.2 host.terminal.exec + P2.3 hard removal (253 tools) |
-| minerva-plugins | `main` @ `b62ce9c` (pushed) | P2.1 file primitives + rg 15.1.0 bundle + P2.2 bash seam |
-| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional, not bundled. smoke tools=15 (P2.1 +4); no new tag yet |
+| Minerva | `development` @ `0bfa445e` (pushed) | P2 hard removal (253 tools) + P3.4 sightline_probe addon removed |
+| minerva-plugins | `main` @ `e40c996` (pushed) | P2 file primitives + P3 code-probe (vendor + wrapper + harness) |
+| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional, not bundled. smoke **tools=18** (P2 +4, P3 +3); 201 worker tests; no new tag yet |
 | CAD plugin | `cad-v0.1.2` | unaffected |
 | Presentation | `presentation-v0.0.3` | prior work |
 
