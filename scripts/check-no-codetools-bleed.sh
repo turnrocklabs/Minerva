@@ -22,6 +22,13 @@ if [[ -d "$SRC/Services/CodeTools" ]]; then
 	note "src/Scripts/Services/CodeTools/ still exists (must be deleted)"
 fi
 
+# 1b. The core sightline_probe editor addon must be gone (P3.4): runtime
+#     inspection moved to the codetools plugin (vendored code-probe ships its
+#     own probe at worker/vendored/sightline/godot/probe/addons/sightline_probe).
+if [[ -d "$REPO_ROOT/src/addons/sightline_probe" ]]; then
+	note "src/addons/sightline_probe/ still exists (moved to codetools plugin)"
+fi
+
 # 2. The MCP module that registered the primitives must be gone.
 if [[ -f "$SRC/Services/MCP/Modules/MCPCodeTools.gd" ]]; then
 	note "MCPCodeTools.gd still exists (must be deleted)"
