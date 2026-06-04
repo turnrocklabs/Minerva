@@ -1,8 +1,10 @@
 # Pickup
 
-STATE: `DCR 019e7b6609 SHIPPED 2026-06-04 — Code Tools extraction COMPLETE. codetools-v0.2.0 published to the marketplace (all 3 targets: linux-x86_64/macos-universal/windows-x86_64; registry.json advertises it, URLs 302, registry-check green). Minerva core = notes/chat app (253 tools, no glob/grep/bash/cwd, no-bleed CI guard); becomes a coding agent only when codetools installed (18 tools + 3 install-seeded skills + code-visualizer panel + code-probe). P0-P4 all done incl. owner sign-off + Option C probe HITL. Repos: Minerva development @ 9c5450d8; plugins main @ 8078eea, tag codetools-v0.2.0 @ 314b3b6. Windows release blocker fixed (PBS install_only has no bin/ → mkdir -p before rg inject). NEXT WORK = the owner-confirmed codetools UX/functionality follow-up batch (12 items) listed in the "NEXT WORK" section below — investigate + triage post-compaction.`
+STATE: `DCR 019e7b6609 SHIPPED 2026-06-04 — Code Tools extraction COMPLETE. codetools-v0.2.0 published to the marketplace (all 3 targets: linux-x86_64/macos-universal/windows-x86_64; registry.json advertises it, URLs 302, registry-check green). Minerva core = notes/chat app (253 tools, no glob/grep/bash/cwd, no-bleed CI guard); becomes a coding agent only when codetools installed (18 tools + 3 install-seeded skills + code-visualizer panel + code-probe). P0-P4 all done incl. owner sign-off + Option C probe HITL. Repos: Minerva development; plugins main @ 1aebef4, tag codetools-v0.2.0 @ 314b3b6. NEXT WORK = the owner-confirmed codetools UX/functionality follow-up batch — **2 of 12 DONE** (`019e8e4317`, `019e93d8f1`), 10 remaining, listed in the "NEXT WORK" section below.
 
-Last updated 2026-06-04 (Linux desktop session) — codetools SHIPPED.
+LATEST 2026-06-04 — dual-mode Godot diagnostics shipped (bug `019e93d8f1` → resolved, plugins main `1aebef4`): the codetools probe is no longer HITL-only. RCA found the "stale [editor_plugins] line" was NOT a parser bug — a live Godot editor rewrites project.godot back. Built: `inspect op=run` (mode=headless autonomous via `godot --headless`+stderr-parse → normalized `godot_diagnostics`; mode=editor-assist human-driven via probe scrape → same shape), `op=stop` (cross-platform editor detection + SIGTERM/SIGKILL), editor-aware `remove-probe` (`stop_editor` consent gate). **sightline DE-VENDORED** (first-party/editable; VENDORING.md carve-out — edit `vendored/sightline/` in place). 37 new worker tests (219 total green) + smoke + live `op=run` on voice-capture. Follow-ups filed under `019e93d8f1`: `019e9454a10d` docs/skill dual-mode revision, `019e9454a999` relocate sightline out of vendored/, `019e9454b22d` editor-assist live HITL (verified→ gate), `019e945618` mode=windowed/Xvfb. Reusable facts in nudge (`codetools/probe.*`).
+
+Last updated 2026-06-04 (Linux desktop session) — dual-mode probe shipped; 2/12 batch done.
 
 ---
 
@@ -35,10 +37,10 @@ confirmed this exact set. Status NOT yet verified per item — first step is a
 **Functionality (6):**
 - `019e8f8114` — codetools Go shim: bidirectional host-request client + wire bash → host.terminal.exec
 - `019e8f710a` — TerminalNew.execute_command runs a PTY command but can't read exit code or timeout
-- `019e8e4317` — get_graph stats omits project_name → panel title falls back to literal "Project"
+- ✅ `019e8e4317` — get_graph project_name — **DONE** (code+test already present; confirmed 2026-06-04)
 - `019e8af511` — Generic schema-driven plugin-config mechanism (plugins own settings; host renders)
 - `019e89eb89` — host capability to open a file in the OS default app (preview/print) [W11]
-- `019e93d8f1` — inspect op=remove-probe leaves a stale `[editor_plugins]` line in project.godot (bug)
+- ✅ `019e93d8f1` — ~~remove-probe stale line~~ → **DONE 2026-06-04** as the DUAL-MODE PROBE feature (op=run headless/editor-assist + op=stop + editor-aware remove-probe; sightline de-vendored). plugins `1aebef4`; resolved (editor-assist HITL `019e9454b22d` gates verified)
 
 ---
 
@@ -54,7 +56,7 @@ confirmed this exact set. Status NOT yet verified per item — first step is a
 >
 > **REMAINING: P4.5 release `019e90b566a4` — OWNER + HITL GATED. DO NOT auto-cut.** Preconditions: DRY closed (✅) + Option C live-Godot probe-capture HITL (`codetools/docs/probe_capture_runbook.md`, still pending human) + owner sign-off + Gate-D functionals green. Open follow-up: `019e8f811497` (Go host-request client).
 >
-> **Repos current & pushed:** Minerva `development` @ `a28a3ac0`; minerva-plugins `main` @ `af1a727`. Pull both before starting.
+> **Repos current & pushed:** minerva-plugins `main` @ `1aebef4` (codetools-v0.2.0 shipped + dual-mode probe); Minerva `development` (this pickup commit). Pull both before starting. (NOTE: the P4.5 release block above is historical — codetools-v0.2.0 is SHIPPED; see STATE + LATEST at top.)
 
 ---
 
