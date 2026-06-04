@@ -8,7 +8,7 @@ Last updated 2026-06-03 (Linux desktop session).
 >
 > **ONE human step pending:** the **Option C HITL** — follow `codetools/docs/probe_capture_runbook.md` to refresh the probe fixture from a live Godot capture (`inspect {op:prepare}` → open editor → `status` loaded → copy/normalize JSON → re-test). Release-time gate; not blocking.
 >
-> **Next initiative work:** **P4 unify+marketplace `019e7b8699`** (gated by DRY-debt `019e7b86ab`). Open follow-up: `019e8f811497` (Go host-request client for bash→host.terminal.exec).
+> **P4 (unify+marketplace `019e7b8699`) IN PROGRESS** — decomposed into 4 grandchildren + the gating DRY-debt. **P4.2 (3 install-seeded skills) DONE** (plugins `47a1460`; also fixed a P3.3 inspect Go-schema gap — `prepare`/`remove-probe`/`capture-visual` now advertised). Remaining: **P4.3** unify/dep-staleness `019e90b5432b`, **P4.4** combined workflows `019e90b54ff9`, **DRY-debt `019e7b86ab`** (surgical share-the-walk/rg-primitive convergence — GATES release), then **P4.5 release `019e90b566a4` — OWNER + HITL GATED** (do NOT auto-cut: needs DRY closed + the Option C HITL + owner sign-off). Open follow-up: `019e8f811497` (Go host-request client).
 >
 > **Repos current & pushed:** Minerva `development` @ `0bfa445e`; minerva-plugins `main` @ `e40c996`. Pull both before starting.
 
@@ -90,8 +90,8 @@ DoD: core BOOTS + full regression green WITHOUT codetools; boundary test + CI gu
 | Component | Version / commit | Notes |
 |---|---|---|
 | Minerva | `development` @ `0bfa445e` (pushed) | P2 hard removal (253 tools) + P3.4 sightline_probe addon removed |
-| minerva-plugins | `main` @ `e40c996` (pushed) | P2 file primitives + P3 code-probe (vendor + wrapper + harness) |
-| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional, not bundled. smoke **tools=18** (P2 +4, P3 +3); 201 worker tests; no new tag yet |
+| minerva-plugins | `main` @ `47a1460` (pushed) | P2 file primitives + P3 code-probe + P4.2 skills + inspect-schema fix |
+| **codetools plugin** | **`codetools-v0.1.0`** (released, all 3 targets) | optional, not bundled. smoke **tools=18** + 3 install-seeded skills; 201 worker tests; no new tag yet |
 | CAD plugin | `cad-v0.1.2` | unaffected |
 | Presentation | `presentation-v0.0.3` | prior work |
 
