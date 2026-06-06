@@ -169,7 +169,7 @@ func _draw_line_marker(
 	anchor: Dictionary,
 	code: Object,
 	ce_local: Vector2,
-	ce_size: Vector2,
+	_ce_size: Vector2,
 	line_height: float,
 	display_index: int,
 	_badge_slots_by_line: Dictionary

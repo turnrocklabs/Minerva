@@ -341,7 +341,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_graphics_generate_iterative":
 			return await _generate_graphics_iterative(arguments)
 		"minerva_graphics_export_png":
-			return await _export_graphics_png(arguments)
+			return _export_graphics_png(arguments)
 	return MCPToolUtils.error("Tool '%s' not implemented in MCPEditorTools" % tool_name)
 
 
