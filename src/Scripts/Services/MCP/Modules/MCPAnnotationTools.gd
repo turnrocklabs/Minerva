@@ -1518,6 +1518,16 @@ func _get_registry() -> AnnotationRegistry:
 	if _fallback_registry == null:
 		_fallback_registry = AnnotationRegistry.new()
 		BuiltinKinds.register_all(_fallback_registry)
+		# Also register the text-range comment kind (text_comment) so MCP /
+		# document_path (sidecar) writes can attach code comments to files that
+		# are NOT open in a text editor — and to synthetic docs (e.g. a codetools
+		# changeset). TextEditorAnnotationHost registers the same kind on its
+		# per-editor registry; mirroring it here makes it valid for the global /
+		# sidecar add path. Enables codetools review comments + agents annotating
+		# files via MCP without first opening them.
+		var _TextCommentKind = load("res://Scripts/Services/Annotations/kinds/AnnotationTextComment.gd")
+		if _TextCommentKind != null:
+			_fallback_registry.register_annotation_kind(_TextCommentKind.new())
 	return _fallback_registry
 
 

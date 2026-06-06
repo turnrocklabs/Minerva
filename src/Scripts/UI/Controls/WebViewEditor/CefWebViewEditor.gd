@@ -173,13 +173,36 @@ func _show_fallback(message: String) -> void:
 
 
 func _inject_bridge(source: String) -> String:
-	var bridge_js: String = CefBridge.BRIDGE_JS
+	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js()
 	if source.find("</head>") >= 0:
 		return source.replace("</head>", bridge_js + "</head>")
 	elif source.find("<body") >= 0:
 		return source.replace("<body", bridge_js + "<body")
 	else:
 		return bridge_js + source
+
+
+## Inject `window.__MINERVA_PANEL` so a plugin html panel can learn its own
+## context (plugin id, panel name, OS-absolute data_directory) at load time,
+## without a host→page handshake. The page derives its db/file paths from this.
+func _panel_context_js() -> String:
+	if plugin_id.is_empty():
+		return ""
+	var data_dir: String = ""
+	var sing = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	if sing != null and sing.get("plugin_manager") != null:
+		var def = sing.plugin_manager.get_db().get_by_id(plugin_id)
+		if def != null:
+			# Globalize: side-load data_directory is OS-absolute already;
+			# marketplace is "user://plugins/<id>" → resolve to an OS path the
+			# worker subprocess can open.
+			data_dir = ProjectSettings.globalize_path(def.data_directory)
+	var ctx := {
+		"plugin_id": plugin_id,
+		"panel_name": plugin_panel_name,
+		"data_directory": data_dir,
+	}
+	return "<script>window.__MINERVA_PANEL = %s;</script>" % JSON.stringify(ctx)
 
 
 func _on_ipc_message(msg: String) -> void:

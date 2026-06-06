@@ -161,7 +161,7 @@ func _show_fallback(message: String) -> void:
 
 
 func _inject_bridge(source: String) -> String:
-	var bridge_js: String = MinervaBridge.BRIDGE_JS
+	var bridge_js: String = MinervaBridge.BRIDGE_JS + _panel_context_js()
 	# Insert before </head> if present, otherwise before <body, otherwise prepend
 	if source.find("</head>") >= 0:
 		return source.replace("</head>", bridge_js + "</head>")
@@ -169,6 +169,25 @@ func _inject_bridge(source: String) -> String:
 		return source.replace("<body", bridge_js + "<body")
 	else:
 		return bridge_js + source
+
+
+## Inject `window.__MINERVA_PANEL` so a plugin html panel can learn its own
+## context (plugin id, panel name, OS-absolute data_directory) at load time.
+func _panel_context_js() -> String:
+	if plugin_id.is_empty():
+		return ""
+	var data_dir: String = ""
+	var sing = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	if sing != null and sing.get("plugin_manager") != null:
+		var def = sing.plugin_manager.get_db().get_by_id(plugin_id)
+		if def != null:
+			data_dir = ProjectSettings.globalize_path(def.data_directory)
+	var ctx := {
+		"plugin_id": plugin_id,
+		"panel_name": plugin_panel_name,
+		"data_directory": data_dir,
+	}
+	return "<script>window.__MINERVA_PANEL = %s;</script>" % JSON.stringify(ctx)
 
 
 func _on_ipc_message(msg: String) -> void:
