@@ -90,6 +90,10 @@ var config_file = ConfigFile.new()
 # annotation refs (DCR 019e9f602391 P1). Initialized in _ready after config load.
 var project_identity: ProjectIdentity
 
+# In-memory edit journal backing the code-review diff (work item 019ea01719a2):
+# tracks agent + human edits per file via DocumentRegistry. Init in _ready.
+var change_journal: ChangeJournal
+
 func load_config_file() -> ConfigFile:
 	var err = config_file.load(_config_file_name)
 	if err != OK:
@@ -1257,6 +1261,12 @@ func _ready():
 	# id/seq or mints a fresh one.
 	project_identity = ProjectIdentity.new(config_file, _config_file_name, Callable(self, "generate_UUID"))
 	project_identity.ensure()
+
+	# Edit journal (work item 019ea01719a2): tracks every file's edits (agent +
+	# human) so the code review diff comes from real edits, not git. Connect to
+	# the document registry so new buffers are auto-tracked.
+	change_journal = ChangeJournal.new(project_identity.project_id)
+	DocumentRegistry.get_instance().buffer_created.connect(change_journal.track_buffer)
 
 	# Initialize enabled providers from config (must be after config_file.load)
 	_init_enabled_providers()

@@ -24,6 +24,11 @@ signal external_change_pending(path: String)
 ## the buffer it referenced.
 signal buffer_disposed(path: String)
 
+## Emitted when a new real-path buffer is created. The change journal (work item
+## 019ea01719a2) connects here to start tracking every file's edits. Fires once
+## per path on creation, not on cache hits.
+signal buffer_created(path: String, buffer: DocumentBuffer)
+
 # ── Unbacked buffer support ────────────────────────────────────────────────
 #
 # An "unbacked" buffer is one with no file path — created for anonymous
@@ -116,6 +121,7 @@ func get_or_create_buffer(path: String) -> Dictionary:
 	var buffer := DocumentBuffer.new(abs_path, initial_text)
 	_buffers[abs_path] = buffer
 	_subscribe_to_watcher(abs_path)
+	buffer_created.emit(abs_path, buffer)
 	return {"ok": true, "buffer": buffer}
 
 

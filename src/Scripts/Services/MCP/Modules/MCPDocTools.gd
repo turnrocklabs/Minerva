@@ -24,6 +24,9 @@ func get_tool_names() -> Array[String]:
 		"minerva_doc_edit",
 		"minerva_doc_save",
 		"minerva_doc_save_all",
+		"minerva_journal_mark",
+		"minerva_journal_changes",
+		"minerva_journal_diff",
 	]
 
 
@@ -60,6 +63,23 @@ func register_tools() -> void:
 		"Flush every dirty document buffer to disk. Returns saved_paths and any failures.",
 		{"type": "object", "properties": {}}, "documents")
 
+	server._register_tool("minerva_journal_mark",
+		"Start a new change-journal CHANGESET: re-baseline every tracked file to its current text so subsequent edits are 'what changed since this mark'. Call this before an edit batch you want to review as a unit (work item 019ea01719a2). Returns {label, seq}.",
+		{"type": "object", "properties": {
+			"label": {"type": "string", "description": "Changeset label, e.g. 'fix-auth' or 'turn:7'. Default 'manual'."},
+			"source": {"type": "string", "description": "Who drives this changeset: 'ai' or 'human'. Optional."},
+		}}, "documents")
+
+	server._register_tool("minerva_journal_changes",
+		"Overview of the CURRENT change-journal changeset: the files changed since the last mark, each with add/del counts and attribution (ai/human). The review launcher. Returns {label, source, seq, files:[{path,adds,dels,source}]}.",
+		{"type": "object", "properties": {}}, "documents")
+
+	server._register_tool("minerva_journal_diff",
+		"Structured line diff for ONE file in the current changeset (baseline-vs-current): added line indices + removed {after_index,text} (for ghost rows) + counts + attribution. Backs the native review render. Returns the diff dict.",
+		{"type": "object", "properties": {
+			"path": {"type": "string", "description": "Absolute file path of a changed file (see minerva_journal_changes)."},
+		}, "required": ["path"]}, "documents")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# _doc_write awaits PluginScenePanelHost.invoke_apply_sync (paired_dsl
@@ -71,7 +91,47 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_doc_edit": return _doc_edit(arguments)
 		"minerva_doc_save": return _doc_save(arguments)
 		"minerva_doc_save_all": return _doc_save_all(arguments)
+		"minerva_journal_mark": return _journal_mark(arguments)
+		"minerva_journal_changes": return _journal_changes(arguments)
+		"minerva_journal_diff": return _journal_diff(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
+
+
+# ── Change journal (work item 019ea01719a2) ─────────────────────────────────
+
+func _journal() -> ChangeJournal:
+	return SingletonObject.change_journal if SingletonObject else null
+
+
+func _journal_mark(args: Dictionary) -> Dictionary:
+	var j := _journal()
+	if j == null:
+		return MCPToolUtils.error("change journal unavailable")
+	var label := str(args.get("label", "manual"))
+	j.mark(label, str(args.get("source", "")))
+	var sum := j.changeset_summary()
+	return {"success": true, "label": sum["label"], "seq": sum["seq"]}
+
+
+func _journal_changes(_args: Dictionary) -> Dictionary:
+	var j := _journal()
+	if j == null:
+		return MCPToolUtils.error("change journal unavailable")
+	var sum := j.changeset_summary()
+	sum["success"] = true
+	return sum
+
+
+func _journal_diff(args: Dictionary) -> Dictionary:
+	var j := _journal()
+	if j == null:
+		return MCPToolUtils.error("change journal unavailable")
+	var path := str(args.get("path", "")).strip_edges()
+	if path.is_empty():
+		return MCPToolUtils.error("path is required")
+	var d := j.diff_for(path)
+	d["success"] = true
+	return d
 
 
 # ── Dual-key resolver ──────────────────────────────────────────────────────
@@ -288,6 +348,10 @@ func _doc_write(args: Dictionary) -> Dictionary:
 	match t.kind:
 		KIND_BUFFER:
 			var buf: DocumentBuffer = t.buffer
+			# Attribute this edit to the agent in the change journal (work item
+			# 019ea01719a2); consumed one-shot by the resulting text_changed.
+			if SingletonObject.change_journal:
+				SingletonObject.change_journal.attribute_next_edit_to("ai")
 			buf.apply_edit(text)
 			var write_resp := {
 				"version": buf.version,
@@ -408,6 +472,8 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 	match t.kind:
 		KIND_BUFFER:
 			var buf: DocumentBuffer = t.buffer
+			if SingletonObject.change_journal:
+				SingletonObject.change_journal.attribute_next_edit_to("ai")
 			buf.apply_edit(new_text)
 			return _ok({
 				"version": buf.version,
