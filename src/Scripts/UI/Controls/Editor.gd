@@ -2607,6 +2607,24 @@ func _begin_add_comment_from_shortcut() -> void:
 		_annotation_sidebar.begin_add_comment_flow()
 
 
+## Public entry for external review surfaces (e.g. SideBySideDiff): place the
+## caret on [param line], focus the code editor, and open the NATIVE dock
+## add-comment flow for that line. Routes review comments through the SAME
+## annotation surface (dock + gutter + list) as normal comments — no bespoke UI.
+func begin_add_comment_at_line(line: int) -> bool:
+	if code_edit == null:
+		return false
+	var line_count := int(code_edit.get_line_count())
+	if line_count <= 0:
+		return false
+	line = clampi(line, 0, line_count - 1)
+	code_edit.set_caret_line(line)
+	code_edit.set_caret_column(0)
+	code_edit.grab_focus()
+	_begin_add_comment_from_shortcut()
+	return _has_pending_annotation_selection()
+
+
 func _sync_annotation_add_affordance() -> void:
 	_capture_current_annotation_selection(true)
 	if _annotation_sidebar != null and _annotation_sidebar.has_method("set_can_add_comment"):

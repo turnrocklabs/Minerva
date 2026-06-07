@@ -343,8 +343,21 @@ func get_open_editors() -> Array[Editor]:
 	for child in self.Tabs.get_children():
 		if not child is Editor: continue
 		editors.append(child)
-	
+
 	return editors
+
+
+## Bring an already-open editor's tab to the front. (open_file_at_path's
+## idempotency branch returns the existing editor without focusing it, so review
+## surfaces that hand off to the native annotation dock need this.)
+func focus_editor(editor: Editor) -> bool:
+	if editor == null:
+		return false
+	var idx := Tabs.get_tab_idx_from_control(editor)
+	if idx < 0:
+		return false
+	Tabs.current_tab = idx
+	return true
 
 
 func is_named_being_used(proposed_name: String) -> bool:

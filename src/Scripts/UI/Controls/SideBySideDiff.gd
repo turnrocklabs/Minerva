@@ -17,14 +17,11 @@ var _syncing := false
 var _hunks: Array = []   # row indices that start a change hunk
 var _cur_hunk := -1
 
-# Review-comment context (T5): the real file path + its after-text (for mapping a
-# reviewed right-pane line back to a real char range) + the rendered rows.
+# Review-comment context (T5): the real file path + the rendered rows. Commenting
+# is DELEGATED to the real editor's native annotation dock (Option B) — this
+# widget is a read-only review lens and authors no comments itself.
 var _path: String = ""
-var _after_lines: PackedStringArray = PackedStringArray()
 var _rows: Array = []
-var _dialog: AcceptDialog
-var _input: TextEdit
-var _pending_line := -1
 
 const COL_ADD := Color(0.25, 1.0, 0.25, 0.18)
 const COL_DEL := Color(1.0, 0.30, 0.30, 0.18)
@@ -49,7 +46,7 @@ func _init() -> void:
 	_label.text = "no changes"
 	var cmt := Button.new()
 	cmt.text = "💬 Comment"
-	cmt.tooltip_text = "Comment on the selected AFTER (right) line — creates a citeable C<n> on the real file"
+	cmt.tooltip_text = "Open the selected AFTER (right) line in the editor's annotation dock to comment (creates a citeable C<n> on the real file)"
 	cmt.pressed.connect(_on_comment_pressed)
 	bar.add_child(prev)
 	bar.add_child(next)
@@ -115,10 +112,10 @@ func _mirror(action: Callable) -> void:
 
 ## Render aligned rows from TextLineDiff.aligned_rows(). Both panes end with the
 ## same line count so rows line up.
-## Set the real-file context so review comments can anchor to it (T5).
-func set_review_context(path: String, after_text: String) -> void:
+## Set the real-file context so the comment hand-off can open it (T5). after_text
+## is no longer used here — the native editor computes anchors from its own buffer.
+func set_review_context(path: String, _after_text: String = "") -> void:
 	_path = path
-	_after_lines = after_text.split("\n")
 
 
 func render_rows(rows: Array) -> void:
@@ -219,7 +216,12 @@ func _goto_hunk(dir: int) -> void:
 	_update_label()
 
 
-# ── Review comments (T5): annotate the real file from the AFTER pane ──────────
+# ── Review comments (T5): delegate to the real editor's native dock ──────────
+# Option B (decided 2026-06-07): this widget is a read-only review lens. It does
+# NOT author comments or run a bespoke dialog. The 💬 button opens the reviewed
+# line in the real editor and triggers the NATIVE add-comment flow, so review
+# comments share the same dock + gutter + annotation-list surface as every other
+# comment (and get the same citeable C<n>).
 
 func _on_comment_pressed() -> void:
 	var i := _right.get_caret_line()
@@ -233,74 +235,33 @@ func _on_comment_pressed() -> void:
 	if _path.is_empty():
 		_label.text = "no file path for comments"
 		return
-	_pending_line = rl
-	_ensure_dialog()
-	_input.text = ""
-	_dialog.title = "Comment on %s:%d" % [_path.get_file(), rl + 1]
-	_dialog.popup_centered(Vector2i(440, 200))
-	_input.grab_focus()
-
-
-func _ensure_dialog() -> void:
-	if _dialog != null:
-		return
-	_dialog = AcceptDialog.new()
-	_dialog.ok_button_text = "Comment"
-	_input = TextEdit.new()
-	_input.custom_minimum_size = Vector2(420, 120)
-	_input.placeholder_text = "Comment text — becomes a citeable C<n> on the real file"
-	_dialog.add_child(_input)
-	_dialog.confirmed.connect(_on_comment_confirmed)
-	add_child(_dialog)
-
-
-func _on_comment_confirmed() -> void:
-	var text := _input.text.strip_edges()
-	if text.is_empty() or _pending_line < 0:
-		return
-	_create_comment(_pending_line, text)
-
-
-## Open the real file and author a text_comment via the annotation substrate at
-## the reviewed line — buffered host → stamps C<n>, shows in the dock, citeable in
-## chat. (Anchored to the REAL file, not the review view.)
-func _create_comment(rl: int, text: String) -> void:
-	var rng := _line_offsets(rl)
-	var r: Variant = SingletonObject.open_file_at_path(_path)
-	if not (r is Dictionary) or not (bool((r as Dictionary).get("ok", false)) or bool((r as Dictionary).get("success", false))):
+	var ed: Editor = _open_real_editor()
+	if ed == null:
 		_label.text = "could not open %s" % _path.get_file()
 		return
-	var en := str((r as Dictionary).get("editor_name", ""))
-	var host: AnnotationHost = AnnotationHostRegistry.get_host(en)
-	if host == null or not host.has_method("add_comment_at"):
-		_label.text = "no annotation host for %s" % en
+	if not ed.begin_add_comment_at_line(rl):
+		_label.text = "couldn't start a comment on %s:%d" % [_path.get_file(), rl + 1]
 		return
-	var ann_id := str(host.add_comment_at(rng.x, rng.y, text, "line", "human"))
-	if ann_id.is_empty():
-		_label.text = "comment failed (see log)"
-		return
-	var ref := _ref_for(host, ann_id)
-	_label.text = "Created %s — %s:%d" % [ref if not ref.is_empty() else ann_id, _path.get_file(), rl + 1]
+	_label.text = "commenting %s:%d — type in the editor's annotation dock" % [_path.get_file(), rl + 1]
 
 
-## Char [start, end) of the after-file line, from the after-text.
-func _line_offsets(line: int) -> Vector2i:
-	var start := 0
-	for k in range(min(line, _after_lines.size())):
-		start += _after_lines[k].length() + 1   # +1 for the newline
-	var end := start
-	if line < _after_lines.size():
-		end += _after_lines[line].length()
-	return Vector2i(start, end)
-
-
-func _ref_for(host: AnnotationHost, ann_id: String) -> String:
-	if not host.has_method("get_all_annotations"):
-		return ""
-	for a in host.get_all_annotations():
-		if a is Dictionary and str((a as Dictionary).get("id", "")) == ann_id:
-			return str((a as Dictionary).get("ref", ""))
-	return ""
+## Open (or focus) the real file's editor tab and return its Editor node.
+func _open_real_editor() -> Editor:
+	var r: Variant = SingletonObject.open_file_at_path(_path)
+	if not (r is Dictionary):
+		return null
+	var d := r as Dictionary
+	if not (bool(d.get("ok", false)) or bool(d.get("success", false))):
+		return null
+	var en := str(d.get("editor_name", ""))
+	var ep = SingletonObject.editor_pane
+	if ep == null:
+		return null
+	for ed: Editor in ep.get_open_editors():
+		if ed.tab_title == en:
+			ep.focus_editor(ed)
+			return ed
+	return null
 
 
 ## Per-line foreground highlighter: tints the changed-character columns of each
