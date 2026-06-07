@@ -1,16 +1,22 @@
 extends SceneTree
-## Render-mapping test for SideBySideDiff (work item 019ea06a1413, T2). The
-## visual bits (scroll/tints) are HITL; this locks the row→line mapping (gaps on
-## the correct side). Run: godot --headless --path src --script test/test_side_by_side_diff.gd
+## Render-mapping test for SideBySideDiff (work item 019ea06a1413). The visual
+## bits (scroll/tints/comment dialog) are HITL; this locks the row→line mapping.
+## Deferred to first frame so autoloads register before the widget script (which
+## references SingletonObject for review comments) is loaded.
+## Run: godot --headless --path src --script test/test_side_by_side_diff.gd
 
 var _pass := 0
 var _fail := 0
 
 
 func _init() -> void:
+	process_frame.connect(_run, CONNECT_ONE_SHOT)
+
+
+func _run() -> void:
 	print("=== SideBySideDiff render tests ===")
-	var w := SideBySideDiff.new()
-	# equal, add (right-only), del (left-only), modify (both)
+	var WidgetScript = load("res://Scripts/UI/Controls/SideBySideDiff.gd")
+	var w = WidgetScript.new()
 	w.render_rows([
 		{"op": "equal", "left_text": "a", "right_text": "a"},
 		{"op": "add", "left_line": -1, "left_text": "", "right_text": "b"},

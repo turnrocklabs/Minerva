@@ -627,7 +627,7 @@ func _review_journal(args: Dictionary) -> Dictionary:
 	var rows: Array = SingletonObject.change_journal.aligned_rows_for(path)
 	if not _rows_changed(rows):
 		return MCPToolUtils.error("no journaled changes for %s (run minerva_journal_changes to see changed files)" % path)
-	return _open_review_widget(path, rows)
+	return _open_review_widget(path, rows, SingletonObject.change_journal.current_text(path))
 
 
 func _review_content(args: Dictionary) -> Dictionary:
@@ -642,7 +642,7 @@ func _review_content(args: Dictionary) -> Dictionary:
 	var rows: Array = TextLineDiff.aligned_rows(str(args["before"]), str(args["after"]))
 	if not _rows_changed(rows):
 		return MCPToolUtils.error("before and after are identical for %s" % path)
-	return _open_review_widget(path, rows)
+	return _open_review_widget(path, rows, str(args["after"]))
 
 
 func _rows_changed(rows: Array) -> bool:
@@ -652,7 +652,7 @@ func _rows_changed(rows: Array) -> bool:
 	return false
 
 
-func _open_review_widget(path: String, rows: Array) -> Dictionary:
+func _open_review_widget(path: String, rows: Array, after_text: String) -> Dictionary:
 	if SingletonObject == null or SingletonObject.editor_pane == null:
 		return MCPToolUtils.error("editor pane unavailable")
 	var widget := SideBySideDiff.new()
@@ -661,6 +661,7 @@ func _open_review_widget(path: String, rows: Array) -> Dictionary:
 	var idx: int = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(widget)
 	SingletonObject.editor_pane.Tabs.set_tab_title(idx, title)
 	SingletonObject.editor_pane.Tabs.current_tab = idx
+	widget.set_review_context(path, after_text)   # enables review comments → C<n>
 	widget.render_rows(rows)
 	return {"success": true, "editor_name": title, "rows": rows.size(), "changed": true}
 
