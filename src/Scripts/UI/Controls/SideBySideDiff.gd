@@ -187,8 +187,14 @@ func _goto_hunk(dir: int) -> void:
 		return
 	_cur_hunk = wrapi(_cur_hunk + dir, 0, _hunks.size())
 	var row: int = int(_hunks[_cur_hunk])
-	_left.scroll_vertical = row
-	_right.scroll_vertical = row
+	# Move caret + select the hunk line on both panes so the jump is VISIBLE even
+	# when the content fits without scrolling (read-only selection still renders).
+	for ce: CodeEdit in [_left, _right]:
+		if row < ce.get_line_count():
+			ce.set_caret_line(row)
+			ce.set_caret_column(0)
+			ce.select(row, 0, row, ce.get_line(row).length())
+			ce.center_viewport_to_caret()
 	_update_label()
 
 
