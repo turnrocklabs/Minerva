@@ -107,6 +107,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_annotations_query",
 		"minerva_annotations_update_status",
 		"minerva_annotations_repair_anchor",
+		"minerva_annotations_resolve_ref",
 		"minerva_text_editor_add_comment",
 	]
 
@@ -391,6 +392,24 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
+		"minerva_annotations_resolve_ref",
+		"Resolve a citeable annotation reference ('C7') to its annotation. With "
+		+ "document_path, reads that sidecar; otherwise scans live editor hosts. "
+		+ "Pass ref_project to disambiguate a ref across projects. Returns "
+		+ "{ok, ref, found, annotation?, editor_name?/document_path?}.",
+		{
+			"type": "object",
+			"properties": {
+				"ref": {"type": "string", "description": "The citeable ref, e.g. 'C7'."},
+				"ref_project": {"type": "string", "description": "Optional minting project_id to disambiguate across projects."},
+				"document_path": {"type": "string", "description": "Optional sidecar to search; <path>.annotations.json."},
+			},
+			"required": ["ref"],
+		},
+		_TOOL_SET
+	)
+
+	server._register_tool(
 		"minerva_text_editor_add_comment",
 		"Add a v2 annotation (kind=text, anchor=core/text.range) to a built-in text "
 		+ "editor tab, anchored to a flat character-offset range [start, end). The "
@@ -447,6 +466,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _handle_update_status(arguments)
 		"minerva_annotations_repair_anchor":
 			return _handle_repair_anchor(arguments)
+		"minerva_annotations_resolve_ref":
+			return resolve_ref(arguments)
 		"minerva_text_editor_add_comment":
 			return _text_editor_add_comment(arguments)
 	return _err("Unknown annotation tool: %s" % tool_name)
@@ -526,6 +547,48 @@ func query(filters: Dictionary = {}) -> Dictionary:
 	if source.has("document_path"):
 		result["document_path"] = source["document_path"]
 	return result
+
+
+## Resolve a citeable ref ("C7") to its annotation. With document_path, reads that
+## sidecar; otherwise scans live editor hosts. ref_project disambiguates a ref
+## across projects (DCR 019e9f602391 P2). The chat bridge (P4) builds on this.
+func resolve_ref(args: Dictionary) -> Dictionary:
+	var ref := str(args.get("ref", "")).strip_edges()
+	if ref.is_empty():
+		return _err("'ref' is required (e.g. 'C7')")
+	var want_project := str(args.get("ref_project", ""))
+	var doc_path := str(args.get("document_path", ""))
+
+	if not doc_path.is_empty():
+		var sidecar := AnnotationSidecar.read_sidecar(doc_path)
+		for ann in sidecar.get("annotations", []):
+			if _ref_matches(ann, ref, want_project):
+				return _ok({"ref": ref, "found": true, "document_path": doc_path,
+					"annotation": (ann as Dictionary).duplicate(true)})
+		return _ok({"ref": ref, "found": false})
+
+	for editor_name in AnnotationHostRegistry.list_editor_names():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(str(editor_name))
+		if host == null:
+			continue
+		var anns: Array = host.get_all_annotations() if host.has_method("get_all_annotations") else (
+			host.get_annotations() if host.has_method("get_annotations") else [])
+		for ann in anns:
+			if _ref_matches(ann, ref, want_project):
+				return _ok({"ref": ref, "found": true, "editor_name": str(editor_name),
+					"annotation": (ann as Dictionary).duplicate(true)})
+	return _ok({"ref": ref, "found": false})
+
+
+func _ref_matches(ann: Variant, ref: String, want_project: String) -> bool:
+	if not ann is Dictionary:
+		return false
+	var d := ann as Dictionary
+	if str(d.get("ref", "")) != ref:
+		return false
+	if not want_project.is_empty() and str(d.get("ref_project", "")) != want_project:
+		return false
+	return true
 
 
 func update_status(annotation_id: String, lifecycle: String, patch: Dictionary = {}) -> Dictionary:
@@ -841,6 +904,13 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 
 	var sidecar: Dictionary = _load_or_init_sidecar(doc_path)
 	var annotations: Array = sidecar["annotations"]
+	# Closed-file path: stamp a citeable ref ("C<n>") here since this bypasses the
+	# live host's add_annotation_v2 (DCR 019e9f602391 P2). Reconcile from the target
+	# sidecar first so we never reuse a number already minted on this file.
+	var _pi: ProjectIdentity = ProjectIdentity.current()
+	if _pi != null:
+		_pi.reconcile_floor(AnnotationRef.highest_seq_in_sidecars([doc_path], _pi.project_id))
+		_pi.stamp(annotation)
 	annotations.append(annotation)
 	sidecar["annotations"] = annotations
 
@@ -1250,6 +1320,10 @@ func _matches_query_filters(annotation: Dictionary, filters: Dictionary, stale: 
 	if filters.has("anchor_type") and not _anchor_type_matches(annotation, str(filters["anchor_type"])):
 		return false
 	if filters.has("kind") and str(annotation.get("kind", "")) != str(filters["kind"]):
+		return false
+	if filters.has("ref") and str(annotation.get("ref", "")) != str(filters["ref"]):
+		return false
+	if filters.has("ref_project") and str(annotation.get("ref_project", "")) != str(filters["ref_project"]):
 		return false
 	if filters.has("author") and _author_kind(annotation) != str(filters["author"]):
 		return false

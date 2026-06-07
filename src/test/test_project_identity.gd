@@ -41,6 +41,24 @@ func _init() -> void:
 	print("\n-- write_to_project_data uses the canonical keys --")
 	test_write_to_project_data()
 
+	print("\n-- P2: AnnotationRef parse/format --")
+	test_annotationref_format_parse()
+
+	print("\n-- P2: vend_ref is monotonic + never reused --")
+	test_vend_ref_monotonic()
+
+	print("\n-- P2: stamp is idempotent --")
+	test_stamp_idempotent()
+
+	print("\n-- P2: implicit vend persists, explicit vend does not --")
+	test_vend_persistence_by_implicit_flag()
+
+	print("\n-- P2: mark_explicit flips implicit + clears scratch --")
+	test_mark_explicit()
+
+	print("\n-- P2: current() honours the test override --")
+	test_current_override()
+
 	_clean_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -85,7 +103,7 @@ func _path(name: String) -> String:
 
 func _clean_tmp() -> void:
 	# Remove any temp config files left from a prior run.
-	for name in ["mint", "idem", "restart", "newimpl", "adopt", "adopt2", "adopt3"]:
+	for name in ["mint", "idem", "restart", "newimpl", "adopt", "adopt2", "adopt3", "vend", "vimpl", "vexpl", "markx"]:
 		var p := _path(name)
 		if FileAccess.file_exists(p):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(p))
@@ -199,3 +217,94 @@ func test_write_to_project_data() -> void:
 	pid2.adopt_from_project_data(data)
 	check_eq("adopt reads back the written id", pid2.project_id, pid.project_id)
 	check_eq("adopt reads back the written seq", pid2.annotation_ref_seq, 11)
+
+
+# ── P2: ref allocator + AnnotationRef ─────────────────────────────────────────
+
+func test_annotationref_format_parse() -> void:
+	print("test_annotationref_format_parse:")
+	check_eq("format 7 -> C7", AnnotationRef.format(7), "C7")
+	check_eq("parse C7 -> 7", AnnotationRef.parse_seq("C7"), 7)
+	check_eq("parse C42 -> 42", AnnotationRef.parse_seq("C42"), 42)
+	check_eq("parse '' -> 0", AnnotationRef.parse_seq(""), 0)
+	check_eq("parse 'X9' -> 0 (bad prefix)", AnnotationRef.parse_seq("X9"), 0)
+	check_eq("parse 'C' -> 0 (no digits)", AnnotationRef.parse_seq("C"), 0)
+	check_eq("parse 'Cabc' -> 0 (non-numeric)", AnnotationRef.parse_seq("Cabc"), 0)
+	var anns := [
+		{"ref": "C3", "ref_project": "P1"},
+		{"ref": "C9", "ref_project": "P1"},
+		{"ref": "C50", "ref_project": "OTHER"},  # different project — ignored
+		{"ref": "C5", "ref_project": "P1"},
+	]
+	check_eq("highest_seq_in_list scopes to project_id", AnnotationRef.highest_seq_in_list(anns, "P1"), 9)
+
+
+func test_vend_ref_monotonic() -> void:
+	print("test_vend_ref_monotonic:")
+	var pid := ProjectIdentity.new(ConfigFile.new(), _path("vend"), _make_provider())
+	pid.ensure()
+	check_eq("first vend -> C1", pid.vend_ref(), "C1")
+	check_eq("second vend -> C2", pid.vend_ref(), "C2")
+	check_eq("counter now 2", pid.annotation_ref_seq, 2)
+	# A reconcile floor below current does not let the next vend reuse C2.
+	pid.reconcile_floor(1)
+	check_eq("vend after lower floor -> C3 (never reused)", pid.vend_ref(), "C3")
+
+
+func test_stamp_idempotent() -> void:
+	print("test_stamp_idempotent:")
+	var pid := ProjectIdentity.new(ConfigFile.new(), _path("vend"), _make_provider())
+	pid.ensure()
+	var ann := {"id": "ann_x"}
+	pid.stamp(ann)
+	check_eq("stamp sets ref C1", ann.get("ref"), "C1")
+	check_eq("stamp sets ref_project", ann.get("ref_project"), pid.project_id)
+	pid.stamp(ann)  # second stamp must not re-vend
+	check_eq("re-stamp keeps the first ref", ann.get("ref"), "C1")
+	check_eq("counter not advanced by re-stamp", pid.annotation_ref_seq, 1)
+
+
+func test_vend_persistence_by_implicit_flag() -> void:
+	print("test_vend_persistence_by_implicit_flag:")
+	# Implicit: vend persists the seq to the scratch (crash-safe).
+	var p_imp := _path("vimpl")
+	var cfg_imp := ConfigFile.new()
+	var imp := ProjectIdentity.new(cfg_imp, p_imp, _make_provider())
+	imp.ensure()
+	imp.vend_ref()  # C1
+	imp.vend_ref()  # C2
+	var reload := ConfigFile.new()
+	reload.load(p_imp)
+	check_eq("implicit vend persisted seq=2 to scratch",
+		int(reload.get_value(ProjectIdentity.SCRATCH_SECTION, ProjectIdentity.KEY_REF_SEQ, -1)), 2)
+
+	# Explicit: vend advances in memory but does NOT (re)write the scratch.
+	var p_exp := _path("vexpl")
+	var cfg_exp := ConfigFile.new()
+	var exp := ProjectIdentity.new(cfg_exp, p_exp, _make_provider())
+	exp.adopt_from_project_data({"project_id": "x", "annotation_ref_seq": 0})  # is_implicit=false
+	exp.vend_ref()  # C1, in-memory only
+	check_eq("explicit vend advanced in-memory counter", exp.annotation_ref_seq, 1)
+	check("explicit vend left no scratch section", not cfg_exp.has_section(ProjectIdentity.SCRATCH_SECTION))
+
+
+func test_mark_explicit() -> void:
+	print("test_mark_explicit:")
+	var cfg := ConfigFile.new()
+	var pid := ProjectIdentity.new(cfg, _path("markx"), _make_provider())
+	pid.ensure()  # implicit, scratch written
+	check("implicit before mark_explicit", pid.is_implicit)
+	check("scratch present before mark_explicit", cfg.has_section(ProjectIdentity.SCRATCH_SECTION))
+	pid.mark_explicit()
+	check("not implicit after mark_explicit", not pid.is_implicit)
+	check("scratch cleared after mark_explicit", not cfg.has_section(ProjectIdentity.SCRATCH_SECTION))
+
+
+func test_current_override() -> void:
+	print("test_current_override:")
+	check("current() is null with no override/autoload", ProjectIdentity.current() == null)
+	var pid := ProjectIdentity.new(ConfigFile.new(), _path("vend"), _make_provider())
+	ProjectIdentity._override = pid
+	check("current() returns the override", ProjectIdentity.current() == pid)
+	ProjectIdentity._override = null
+	check("current() null again after clearing override", ProjectIdentity.current() == null)

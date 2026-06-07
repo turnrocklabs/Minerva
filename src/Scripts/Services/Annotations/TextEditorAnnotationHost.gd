@@ -133,6 +133,11 @@ func add_annotation_v2(envelope: Dictionary) -> String:
 		ann_id = "%s%04x" % [_ANN_ID_PREFIX, _id_counter]
 		stored["id"] = ann_id
 	_ensure_display_index(stored)
+	# Stamp a project-scoped citeable ref ("C<n>") for chat citation (DCR
+	# 019e9f602391 P2). No-op when no live project identity (headless tests).
+	var _pi := ProjectIdentity.current()
+	if _pi != null:
+		_pi.stamp(stored)
 	var schema = _SCHEMA.new()
 	var result = schema.validate_with_registry(stored, _registry)
 	if result.has_errors():
@@ -314,6 +319,14 @@ func load_annotations(raw_array: Array) -> void:
 			var display_index := int((ann as Dictionary).get("display_index", 0))
 			if display_index > _display_index_counter:
 				_display_index_counter = display_index
+	# Reconcile the project-scoped ref counter against refs already minted in this
+	# file so a number is never reused after a crash between saves (DCR
+	# 019e9f602391 P2). Only refs minted by THIS project count.
+	var _pi := ProjectIdentity.current()
+	if _pi != null:
+		var highest := AnnotationRef.highest_seq_in_list(_annotations, _pi.project_id)
+		if highest > 0:
+			_pi.reconcile_floor(highest)
 	annotations_changed.emit()
 
 

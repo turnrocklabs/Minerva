@@ -44,6 +44,11 @@ func _initialize() -> void:
 	print("\n-- add: unknown kind rejected at MCP layer --")
 	await test_add_unknown_kind_rejected(tools)
 
+	print("\n-- P2: citeable ref stamping on closed-file add --")
+	await test_ref_stamped_on_closed_file_add(tools)
+	await test_ref_reconciles_from_existing_sidecar(tools)
+	await test_resolve_ref_and_query_filter(tools)
+
 	print("\n-- CRUD lifecycle --")
 	await test_crud_lifecycle(tools)
 
@@ -160,6 +165,68 @@ func _valid_annotation_dict() -> Dictionary:
 		"view_context": "pcb",
 		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [10.0, 5.0]}],
 	}
+
+
+## A ProjectIdentity with a fixed id, injected via the test override so the MCP
+## add path stamps refs (DCR 019e9f602391 P2).
+func _override_identity(project_id: String, seq: int = 0) -> ProjectIdentity:
+	var pid := ProjectIdentity.new(ConfigFile.new(), "user://test_mcp_ref_scratch.cfg")
+	pid.project_id = project_id
+	pid.annotation_ref_seq = seq
+	pid.is_implicit = true
+	ProjectIdentity._override = pid
+	return pid
+
+
+func test_ref_stamped_on_closed_file_add(tools: MCPAnnotationTools) -> void:
+	_override_identity("TESTPROJ")
+	var doc := _doc_path("ref_stamp.txt")
+	var r1 := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": _valid_annotation_dict()})
+	check("add #1 ok", bool(r1.get("success", false)))
+	var r2 := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": _valid_annotation_dict()})
+	check("add #2 ok", bool(r2.get("success", false)))
+	var sidecar := AnnotationSidecar.read_sidecar(doc)
+	var anns: Array = sidecar.get("annotations", [])
+	check_eq("two annotations persisted", anns.size(), 2)
+	check_eq("first annotation ref = C1", str((anns[0] as Dictionary).get("ref", "")), "C1")
+	check_eq("first annotation ref_project = TESTPROJ", str((anns[0] as Dictionary).get("ref_project", "")), "TESTPROJ")
+	check_eq("second annotation ref = C2 (monotonic)", str((anns[1] as Dictionary).get("ref", "")), "C2")
+	ProjectIdentity._override = null
+
+
+func test_ref_reconciles_from_existing_sidecar(tools: MCPAnnotationTools) -> void:
+	# A sidecar already carries C5 for this project, but the counter was lost
+	# (fresh identity at seq 0). The closed-file add must reconcile to 5 and vend C6.
+	_override_identity("RECPROJ", 0)
+	var doc := _doc_path("ref_reconcile.txt")
+	var existing := _valid_annotation_dict()
+	existing["id"] = "ann_seed"
+	existing["ref"] = "C5"
+	existing["ref_project"] = "RECPROJ"
+	_write_raw_sidecar(doc, [existing])
+	var r := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": _valid_annotation_dict()})
+	check("reconcile add ok", bool(r.get("success", false)))
+	var anns: Array = AnnotationSidecar.read_sidecar(doc).get("annotations", [])
+	check_eq("new annotation reconciled to C6 (no reuse)", str((anns[1] as Dictionary).get("ref", "")), "C6")
+	ProjectIdentity._override = null
+
+
+func test_resolve_ref_and_query_filter(tools: MCPAnnotationTools) -> void:
+	_override_identity("QPROJ")
+	var doc := _doc_path("ref_resolve.txt")
+	await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": _valid_annotation_dict()})  # C1
+	# resolve_ref by document_path
+	var rr := await tools.handle("minerva_annotations_resolve_ref", {"ref": "C1", "document_path": doc})
+	check("resolve_ref found C1", bool(rr.get("found", false)))
+	check_eq("resolve_ref returns the right annotation", str((rr.get("annotation", {}) as Dictionary).get("ref", "")), "C1")
+	var miss := await tools.handle("minerva_annotations_resolve_ref", {"ref": "C99", "document_path": doc})
+	check("resolve_ref C99 not found", not bool(miss.get("found", true)))
+	# query ref filter
+	var q := await tools.handle("minerva_annotations_query", {"document_path": doc, "status": "any", "ref": "C1"})
+	check_eq("query ref filter returns 1", int(q.get("count", -1)), 1)
+	var q0 := await tools.handle("minerva_annotations_query", {"document_path": doc, "status": "any", "ref": "C2"})
+	check_eq("query ref filter C2 returns 0", int(q0.get("count", -1)), 0)
+	ProjectIdentity._override = null
 
 
 ## Write a raw sidecar to disk so we can test read-path scenarios.

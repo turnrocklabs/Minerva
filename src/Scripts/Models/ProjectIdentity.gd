@@ -28,6 +28,16 @@ const KEY_REF_SEQ := "annotation_ref_seq"
 var project_id: String = ""
 var annotation_ref_seq: int = 0
 
+# True while this is the in-memory implicit (never-saved) project. Implicit
+# projects keep their id/seq in the user:// scratch (crash-safe); explicit
+# projects keep them in the .minproj and don't re-persist the scratch on vend.
+var is_implicit: bool = true
+
+# Test-only override for current(): lets MCP/host code reach a ProjectIdentity in
+# a headless --script run where the SingletonObject autoload is not a resolved
+# global. Production leaves this null and resolves via the autoload.
+static var _override: ProjectIdentity = null
+
 # Injected dependencies. The caller is responsible for having loaded `_config`
 # from disk before `ensure()` (SingletonObject loads it in _ready); this class
 # never reloads the shared instance, which would clobber other unsaved sections.
@@ -61,13 +71,57 @@ func start_new_implicit() -> void:
 
 
 ## Adopt identity from a loaded .minproj's project_data. Legacy projects (pre-P1)
-## carry no project_id -> mint one so identity is always present. The implicit
-## scratch is cleared: the loaded project is now the explicit context.
+## carry no project_id -> mint one so identity is always present. The loaded
+## project is now the explicit context: clear the implicit scratch and stop
+## treating this as implicit.
 func adopt_from_project_data(data: Dictionary) -> void:
 	var loaded := str(data.get(KEY_PROJECT_ID, ""))
 	project_id = loaded if not loaded.is_empty() else _mint_uuid()
 	annotation_ref_seq = int(data.get(KEY_REF_SEQ, 0))
+	is_implicit = false
 	clear_scratch()
+
+
+## Promote the implicit project to explicit (on Save): identity now lives in the
+## .minproj, so drop the scratch and stop re-persisting it on vend.
+func mark_explicit() -> void:
+	is_implicit = false
+	clear_scratch()
+
+
+## Vend the next citeable ref ("C<n>") for this project and advance the counter.
+## Never reuses a number. Persists the scratch only while implicit (explicit
+## projects persist the seq into the .minproj on Save; a crash between saves is
+## recovered by reconcile-on-load).
+func vend_ref() -> String:
+	annotation_ref_seq += 1
+	if is_implicit:
+		persist_scratch()
+	return AnnotationRef.format(annotation_ref_seq)
+
+
+## Stamp a citeable ref + ref_project onto an annotation envelope if it has none.
+## Idempotent: an annotation keeps its first ref.
+func stamp(annotation: Dictionary) -> void:
+	if str(annotation.get("ref", "")).is_empty():
+		annotation["ref"] = vend_ref()
+		annotation["ref_project"] = project_id
+
+
+## Best-effort handle to the live project identity for code that can't assume the
+## SingletonObject autoload is a resolved global (MCP handlers, annotation hosts,
+## headless --script tests). Returns null when unavailable; callers then skip ref
+## stamping rather than crash.
+static func current() -> ProjectIdentity:
+	if _override != null:
+		return _override
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null or tree.root == null:
+		return null
+	var so := tree.root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	return so.get("project_identity") as ProjectIdentity
 
 
 ## Stamp the current identity into a project_data dict for serialization into a
@@ -107,6 +161,7 @@ func clear_scratch() -> void:
 func _mint_fresh() -> void:
 	project_id = _mint_uuid()
 	annotation_ref_seq = 0
+	is_implicit = true
 	persist_scratch()
 
 

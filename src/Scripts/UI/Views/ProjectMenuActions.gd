@@ -123,9 +123,9 @@ func save_project():
 	SingletonObject.save_recent_project(save_path)
 
 	# Project is now explicit — its identity lives in the .minproj, so drop the
-	# implicit user:// scratch (DCR 019e9f602391 P1).
+	# implicit user:// scratch and stop treating it as implicit (DCR 019e9f602391).
 	if SingletonObject.project_identity:
-		SingletonObject.project_identity.clear_scratch()
+		SingletonObject.project_identity.mark_explicit()
 
 	SingletonObject.save_state(true)
 	SingletonObject.updated_save_state.emit(save_path.get_file(), true)
