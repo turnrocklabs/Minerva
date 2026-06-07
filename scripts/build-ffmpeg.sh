@@ -52,8 +52,13 @@ needs_build() {
     # Verify actual binaries exist
     case "$PLATFORM" in
         macos)
-            if [ ! -d "$ADDON_DIR/macos/libgdffmpeg.macos.template_debug.framework" ] || \
-               ! find "$ADDON_DIR/macos/libgdffmpeg.macos.template_debug.framework" -name '*.dylib' -o -name 'libgdffmpeg*' ! -name '*.plist' 2>/dev/null | grep -q .; then
+            # Verify the actual Mach-O binary inside the framework AND a
+            # representative dependency dylib exist. (A previous bug globbed
+            # `libgdffmpeg*`, which matches the .framework DIRECTORY name itself,
+            # so a hollow framework with no binary read as "built" and never got
+            # repaired.) Mirror build-extensions.sh's ffmpeg_platform_has_binaries.
+            local fw="$ADDON_DIR/macos/libgdffmpeg.macos.template_debug.framework/libgdffmpeg.macos.template_debug"
+            if [ ! -f "$fw" ] || [ ! -f "$ADDON_DIR/macos/libavcodec.dylib" ]; then
                 return 0
             fi
             ;;
