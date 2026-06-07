@@ -602,12 +602,12 @@ func _get_event_broker() -> Variant:
 func _get_plugin_open_panel_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_open_panel",
-		"description": "Open a plugin's godot_scene panel as an editor tab — the MCP equivalent of the Plugin Manager's panel-open button. Use for plugins whose UI is a panel (ui.panels[] in the manifest) rather than an editor_item. Returns {success, plugin_id, panel_name, tab_title} or {error}.",
+		"description": "Open a plugin's UI panel as an editor tab — the MCP equivalent of the Plugin Manager's panel-open button. Works for both godot_scene and html (CEF) panels (ui.panels[] in the manifest). Returns {success, plugin_id, panel_name, panel_kind, tab_title} or {error}.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
-				"plugin_id": {"type": "string", "description": "Plugin id (e.g. 'scansort')."},
-				"panel_name": {"type": "string", "description": "Panel name as declared in the plugin's manifest ui.panels[]. Defaults to the first godot_scene panel."},
+				"plugin_id": {"type": "string", "description": "Plugin id (e.g. 'scansort', 'codetools')."},
+				"panel_name": {"type": "string", "description": "Panel name as declared in the plugin's manifest ui.panels[]. Defaults to the first godot_scene panel, else the first declared panel."},
 				"tab_title": {"type": "string", "description": "Optional tab title. Defaults to '<plugin_id> · <panel_name>'."},
 			},
 			"required": ["plugin_id"],
@@ -627,40 +627,62 @@ func _handle_plugin_open_panel(args: Dictionary) -> Dictionary:
 	if def == null:
 		return {"error": "Unknown plugin: %s" % plugin_id}
 
-	# Resolve panel_name: caller-provided OR first godot_scene panel.
+	# Resolve panel_name: caller-provided OR first godot_scene panel (back-compat),
+	# else the first declared panel of any kind (so an html-only plugin like
+	# codetools opens with no panel_name). Bug 019e9e351353.
 	var panel_name: String = str(args.get("panel_name", ""))
 	if panel_name.is_empty():
 		for pd in def.ui_panels:
 			if pd is Dictionary and pd.get("kind", "") == "godot_scene":
-				panel_name = pd.get("name", "")
+				panel_name = str(pd.get("name", ""))
 				break
+		if panel_name.is_empty():
+			for pd in def.ui_panels:
+				if pd is Dictionary and str(pd.get("name", "")) != "":
+					panel_name = str(pd.get("name", ""))
+					break
 	if panel_name.is_empty():
-		return {"error": "Plugin '%s' has no godot_scene panel" % plugin_id}
+		return {"error": "Plugin '%s' has no UI panels" % plugin_id}
 
-	# Validate the resolved panel exists and is godot_scene.
+	# Resolve the panel kind.
 	var panel_kind: String = ""
 	for pd in def.ui_panels:
 		if pd is Dictionary and pd.get("name", "") == panel_name:
-			panel_kind = pd.get("kind", "")
+			panel_kind = str(pd.get("kind", ""))
 			break
-	if panel_kind != "godot_scene":
-		return {"error": "Panel '%s' on plugin '%s' is not godot_scene (kind=%s)" % [panel_name, plugin_id, panel_kind]}
+	if panel_kind.is_empty():
+		return {"error": "Panel '%s' not found on plugin '%s'" % [panel_name, plugin_id]}
 
 	var tab_title: String = str(args.get("tab_title", ""))
 	if tab_title.is_empty():
 		tab_title = "%s · %s" % [plugin_id, panel_name]
 
-	var ep = SingletonObject.editor_pane if SingletonObject != null else null
-	if ep == null or not ep.has_method("add_plugin_scene_editor"):
+	if SingletonObject == null or SingletonObject.editor_pane == null:
 		return {"error": "EditorPane unavailable"}
 
-	var editor = ep.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
-	if editor == null:
-		return {"error": "add_plugin_scene_editor returned null"}
+	match panel_kind:
+		"godot_scene":
+			var ep = SingletonObject.editor_pane
+			if not ep.has_method("add_plugin_scene_editor"):
+				return {"error": "EditorPane lacks add_plugin_scene_editor"}
+			var editor = ep.add_plugin_scene_editor(plugin_id, panel_name, null, tab_title)
+			if editor == null:
+				return {"error": "add_plugin_scene_editor returned null"}
+		"html":
+			# Route html (CEF) panels through the same path the UI uses
+			# (File→New → _open_plugin_panel_for_editor_item): resolves the html
+			# source, registers the webview broker, injects __MINERVA_PANEL.
+			# Bug 019e9e351353.
+			if not SingletonObject.has_method("_open_plugin_panel_for_editor_item"):
+				return {"error": "html panel open path unavailable"}
+			SingletonObject._open_plugin_panel_for_editor_item(plugin_id, panel_name, tab_title)
+		_:
+			return {"error": "Panel '%s' on plugin '%s' has unsupported kind '%s'" % [panel_name, plugin_id, panel_kind]}
 
 	return {
 		"success": true,
 		"plugin_id": plugin_id,
 		"panel_name": panel_name,
+		"panel_kind": panel_kind,
 		"tab_title": tab_title,
 	}
