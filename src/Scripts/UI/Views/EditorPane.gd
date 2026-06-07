@@ -545,9 +545,11 @@ func _on_tab_container_child_exiting_tree(_node: Node) -> void:
 	if current_tab.get_class() == "ScrollContainer":
 		enable_editor_action_buttons.emit(true)
 		return
-	elif current_tab.type == Editor.Type.TEXT:
+	# Guard for non-Editor tab controls (e.g. SideBySideDiff review panes) — they
+	# have no `type` property. Treat them as a non-text tab (action buttons off).
+	elif current_tab is Editor and current_tab.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
-	else: 
+	else:
 		enable_editor_action_buttons.emit(false)
 
 
@@ -564,9 +566,11 @@ func _on_tab_container_tab_changed(_tab: int) -> void:
 	if current_tab.get_class() == "ScrollContainer":
 		enable_editor_action_buttons.emit(true)
 		return
-	elif current_tab.type == Editor.Type.TEXT:
+	# Guard for non-Editor tab controls (e.g. SideBySideDiff review panes) — they
+	# have no `type` property. Treat them as a non-text tab (action buttons off).
+	elif current_tab is Editor and current_tab.type == Editor.Type.TEXT:
 		enable_editor_action_buttons.emit(true)
-	else: 
+	else:
 		enable_editor_action_buttons.emit(false)
 
 #endregion  Enable Editor Buttons
@@ -592,8 +596,9 @@ func _close_error():
 
 
 func update_current_text_tab(new_title: String, new_text: String) -> void:
-	# Get the currently active tab
-	var active_tab_editor_node: Editor = Tabs.get_current_tab_control()
+	# Get the currently active tab. Untyped: a non-Editor tab control (e.g. a
+	# SideBySideDiff review pane) must not crash the typed assignment here.
+	var active_tab_editor_node = Tabs.get_current_tab_control()
 	var code_edit_node: CodeEdit
 	
 	# If no active tab exists, create a new text editor tab
@@ -606,7 +611,7 @@ func update_current_text_tab(new_title: String, new_text: String) -> void:
 		if !active_tab_editor_node.file:
 			Tabs.set_tab_title(Tabs.get_current_tab(), editor_name_to_use(new_title))
 	# If the active tab is not a text editor, create a new text editor tab
-	elif active_tab_editor_node.type == Editor.Type.GRAPHICS and SingletonObject.experimental_enabled:
+	elif active_tab_editor_node is Editor and active_tab_editor_node.type == Editor.Type.GRAPHICS and SingletonObject.experimental_enabled:
 		active_tab_editor_node = add(Editor.Type.TEXT, null, editor_name_to_use(new_title), null)
 		print("Active tab is not a text editor")
 		if !SingletonObject.experimental_enabled:
