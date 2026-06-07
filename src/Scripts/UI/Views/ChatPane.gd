@@ -1154,14 +1154,23 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached: = true
 	if not append_item and working_memory:
 		append_item = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT, ChatHistoryItem.ChatRole.USER)
 
-	# append the working memory
+	# append the working memory + any cited annotation refs (C7) resolved to their
+	# current re-anchored code + intent (DCR 019e9f602391 P4).
 	if append_item:
-		append_item.InjectedNotes = working_memory
+		append_item.InjectedNotes = working_memory + _resolve_cited_refs(append_item)
 		# also append the new item since it's not in the history yet
 		var item = provider.Format(append_item)
 		if item: history_list.append(item)
 
 	return history_list
+
+
+## Resolve citeable annotation refs ("C7") cited in the message to plain-text
+## reference notes (current code + intent + status). DCR 019e9f602391 P4.
+func _resolve_cited_refs(item: ChatHistoryItem) -> Array:
+	if item == null or not SingletonObject.project_identity:
+		return []
+	return AnnotationRefResolver.resolve_for_chat(str(item.Message), SingletonObject.project_identity.project_id)
 
 
 ## Build request metadata dictionary for debugging display in user message expand block
