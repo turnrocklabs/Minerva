@@ -22,6 +22,7 @@ var _meta: Dictionary = {}        # path -> {edits:int, source:String, version:i
 var _connected: Dictionary = {}   # path -> true (avoid double-connecting a buffer)
 var _changeset: Dictionary = {"label": "session", "source": "", "ts": 0, "seq": 0}
 var _next_source: String = ""     # one-shot attribution for the next edit
+var _reverting: bool = false      # true while revert() writes a baseline back
 
 
 func _init(p_project_id: String = "") -> void:
@@ -51,6 +52,11 @@ func attribute_next_edit_to(source: String) -> void:
 
 func _on_text_changed(text: String, version: int, path: String) -> void:
 	_current[path] = text
+	# A revert writes the baseline back through apply_edit (so it propagates to
+	# the open editor and is itself one undoable step). Don't record that write
+	# as a fresh edit — current is already updated above.
+	if _reverting:
+		return
 	var source := _next_source if not _next_source.is_empty() else "human"
 	_next_source = ""
 	var m: Dictionary = _meta.get(path, {"edits": 0, "source": "", "version": 0, "ts": 0})
@@ -108,6 +114,61 @@ func aligned_rows_for(path: String) -> Array:
 	if not _current.has(path):
 		return []
 	return TextLineDiff.aligned_rows(str(_baselines.get(path, "")), str(_current[path]))
+
+
+## Revert ONE tracked path to its current-changeset baseline. Writes through the
+## buffer's apply_edit() so the change propagates to any open editor AND lands as
+## a single undoable step on the native Undo stack (composes with P1) — and,
+## when save=true, flushes to disk so the reverted file "compiles now".
+##
+## Returns {ok, reverted, path, saved?, error?}. reverted=false means the file
+## already matched its baseline (no-op). (work item 019ea40563137 / DCR 019ea404ffcd P2.)
+func revert(path: String, save: bool = false) -> Dictionary:
+	var reg := DocumentRegistry.get_instance()
+	if reg == null:
+		return {"ok": false, "error": "document registry unavailable"}
+	var r := reg.get_or_create_buffer(path)
+	if not bool(r.get("ok", false)) or r.get("buffer") == null:
+		return {"ok": false, "error": str(r.get("error", "buffer unavailable"))}
+	var buffer = r["buffer"]
+	var key := str(buffer.file_path)   # canonical key matching buffer_created/_baselines
+	if not _baselines.has(key):
+		return {"ok": false, "error": "path not tracked in journal: %s" % key}
+	var baseline := str(_baselines[key])
+	if str(_current.get(key, "")) == baseline:
+		return {"ok": true, "reverted": false, "path": key}
+	_reverting = true
+	buffer.apply_edit(baseline)
+	var saved := false
+	if save:
+		var sr: Dictionary = buffer.save_to_disk()
+		saved = bool(sr.get("ok", false))
+	_reverting = false
+	_current[key] = baseline
+	_meta.erase(key)
+	return {"ok": true, "reverted": true, "path": key, "saved": saved}
+
+
+## Revert EVERY changed path in the current changeset (the "undo the agent's turn"
+## arm). With source_filter (e.g. "ai"), only revert paths whose last edit was by
+## that source — preserving files the human last touched. Note: revert is
+## path-granular (whole file to baseline), so a path the AI touched LAST is
+## reverted wholesale even if the human also edited it earlier in the changeset.
+##
+## Returns {reverted:[paths], skipped:[paths]}.
+func revert_changeset(save: bool = false, source_filter: String = "") -> Dictionary:
+	var reverted: Array = []
+	var skipped: Array = []
+	for path in changed_paths():
+		if not source_filter.is_empty() and str(_meta.get(path, {}).get("source", "")) != source_filter:
+			skipped.append(path)
+			continue
+		var r := revert(path, save)
+		if bool(r.get("ok", false)) and bool(r.get("reverted", false)):
+			reverted.append(path)
+		else:
+			skipped.append(path)
+	return {"reverted": reverted, "skipped": skipped}
 
 
 ## Overview of the current changeset for a review launcher.

@@ -27,6 +27,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_journal_mark",
 		"minerva_journal_changes",
 		"minerva_journal_diff",
+		"minerva_journal_revert",
 	]
 
 
@@ -83,6 +84,14 @@ func register_tools() -> void:
 			"path": {"type": "string", "description": "Absolute file path of a changed file (see minerva_journal_changes)."},
 		}, "required": ["path"]}, "documents")
 
+	server._register_tool("minerva_journal_revert",
+		"UNDO journal changes by restoring the current-changeset BASELINE. Pass `path` for ONE file, or omit it to revert EVERY changed file in the changeset (the 'undo the agent's turn' arm). Optional `source` (e.g. 'ai') reverts only files whose last edit was by that source, preserving files the human last touched. Works on CLOSED files too (the per-editor Undo button can't). Routes through the buffer, so it propagates to any open editor and is itself one undoable step; set `save:true` to also flush to disk. Returns {reverted:[paths], skipped:[paths]}. (work item 019ea40563137 / DCR 019ea404ffcd P2.)",
+		{"type": "object", "properties": {
+			"path": {"type": "string", "description": "Absolute file path of a changed file. Omit to revert all changed files in the changeset."},
+			"source": {"type": "string", "description": "Only revert files whose last edit was by this source, e.g. 'ai'. Ignored when `path` is given."},
+			"save": {"type": "boolean", "description": "Also flush reverted files to disk now (default false)."},
+		}}, "documents")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	# _doc_write awaits PluginScenePanelHost.invoke_apply_sync (paired_dsl
@@ -97,6 +106,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_journal_mark": return _journal_mark(arguments)
 		"minerva_journal_changes": return _journal_changes(arguments)
 		"minerva_journal_diff": return _journal_diff(arguments)
+		"minerva_journal_revert": return _journal_revert(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -135,6 +145,28 @@ func _journal_diff(args: Dictionary) -> Dictionary:
 	var d := j.diff_for(path)
 	d["success"] = true
 	return d
+
+
+func _journal_revert(args: Dictionary) -> Dictionary:
+	var j := _journal()
+	if j == null:
+		return MCPToolUtils.error("change journal unavailable")
+	var save := bool(args.get("save", false))
+	var path := str(args.get("path", "")).strip_edges()
+	if not path.is_empty():
+		var r := j.revert(path, save)
+		if not bool(r.get("ok", false)):
+			return MCPToolUtils.error(str(r.get("error", "revert failed")))
+		var did := bool(r.get("reverted", false))
+		return {
+			"success": true,
+			"reverted": ([str(r.get("path", path))] if did else []),
+			"skipped": ([] if did else [str(r.get("path", path))]),
+			"saved": bool(r.get("saved", false)),
+		}
+	var res := j.revert_changeset(save, str(args.get("source", "")).strip_edges())
+	res["success"] = true
+	return res
 
 
 # ── Dual-key resolver ──────────────────────────────────────────────────────

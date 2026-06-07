@@ -13,6 +13,10 @@ func _init() -> void:
 	test_mark_rebaselines()
 	test_attribution_one_shot()
 	test_changeset_summary_multi_file()
+	test_revert_restores_baseline()
+	test_revert_save_flushes_disk()
+	test_revert_changeset_and_attribution()
+	test_revert_reentrancy_then_edit()
 
 	print("=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
@@ -90,6 +94,97 @@ func test_changeset_summary_multi_file() -> void:
 	_eq("changeset label", sum["label"], "turn:7")
 	_eq("changeset source", sum["source"], "ai")
 	_eq("two files in the changeset", (sum["files"] as Array).size(), 2)
+
+
+# ── P2: revert (DCR 019ea404ffcd) — real DocumentRegistry buffers ─────────────
+
+var _tmp_seq := 0
+
+# Unique temp file under user:// (absolute) seeded with `content`.
+func _tmp_file(content: String) -> String:
+	_tmp_seq += 1
+	var abs := ProjectSettings.globalize_path("user://journal_revert_test_%d.txt" % _tmp_seq)
+	var f := FileAccess.open(abs, FileAccess.WRITE)
+	f.store_string(content)
+	f.close()
+	return abs
+
+func _track_real(j: ChangeJournal, path: String):
+	var reg := DocumentRegistry.get_instance()
+	var r := reg.get_or_create_buffer(path)
+	var buf = r["buffer"]
+	j.track_buffer(buf.file_path, buf)
+	return buf
+
+
+func test_revert_restores_baseline() -> void:
+	print("test_revert_restores_baseline:")
+	var j := ChangeJournal.new("p")
+	var path := _tmp_file("BASE")
+	var buf = _track_real(j, path)
+	j.mark("turn", "ai")
+	buf.apply_edit("BASE\nAGENT EDIT")  # closed-file edit (no editor open in headless)
+	_eq("file is changed", j.changed_paths().has(buf.file_path), true)
+	var r := j.revert(buf.file_path)
+	_eq("revert ok", r.get("ok"), true)
+	_eq("revert reported reverted", r.get("reverted"), true)
+	_eq("buffer text back to baseline", buf.text, "BASE")
+	_eq("no longer changed", j.changed_paths(), [])
+	# no-op revert when already at baseline
+	var r2 := j.revert(buf.file_path)
+	_eq("second revert is a no-op", r2.get("reverted"), false)
+
+
+func test_revert_save_flushes_disk() -> void:
+	print("test_revert_save_flushes_disk:")
+	var j := ChangeJournal.new("p")
+	var path := _tmp_file("DISK BASE")
+	var buf = _track_real(j, path)
+	j.mark("turn")
+	buf.apply_edit("DISK BASE\nedited then saved to disk")
+	buf.save_to_disk()  # disk now has the edit
+	j.revert(buf.file_path, true)  # revert WITH save
+	var on_disk := FileAccess.get_file_as_string(buf.file_path)
+	_eq("disk restored to baseline by save-revert", on_disk, "DISK BASE")
+
+
+func test_revert_changeset_and_attribution() -> void:
+	print("test_revert_changeset_and_attribution:")
+	var j := ChangeJournal.new("p")
+	var pa := _tmp_file("A0")
+	var pb := _tmp_file("B0")
+	var a = _track_real(j, pa)
+	var b = _track_real(j, pb)
+	j.mark("turn", "ai")
+	j.attribute_next_edit_to("ai")
+	a.apply_edit("A0\nai-change")     # a: last edit ai
+	b.apply_edit("B0\nhuman-change")  # b: last edit human (default)
+	# source-filtered revert: only the ai file
+	var res := j.revert_changeset(false, "ai")
+	_eq("ai file reverted", (res["reverted"] as Array).has(a.file_path), true)
+	_eq("human file skipped", (res["skipped"] as Array).has(b.file_path), true)
+	_eq("a back to baseline", a.text, "A0")
+	_eq("b untouched", b.text, "B0\nhuman-change")
+	# now revert the rest (whole changeset)
+	var res2 := j.revert_changeset()
+	_eq("b now reverted", b.text, "B0")
+	_eq("changeset clean", j.changed_paths(), [])
+
+
+func test_revert_reentrancy_then_edit() -> void:
+	print("test_revert_reentrancy_then_edit:")
+	var j := ChangeJournal.new("p")
+	var path := _tmp_file("R0")
+	var buf = _track_real(j, path)
+	j.mark("turn")
+	buf.apply_edit("R0\nx")
+	j.revert(buf.file_path)
+	# the revert write must NOT have been recorded as a fresh changed path
+	_eq("clean after revert (revert not self-recorded)", j.changed_paths(), [])
+	# a normal edit after a revert still records (attribution back to human)
+	buf.apply_edit("R0\ny")
+	_eq("post-revert edit recorded", j.changed_paths().has(buf.file_path), true)
+	_eq("post-revert edit attributed human", j.diff_for(buf.file_path)["source"], "human")
 
 
 # ── Mock buffer (mirrors DocumentBuffer's text_changed(text, version)) ─────────
