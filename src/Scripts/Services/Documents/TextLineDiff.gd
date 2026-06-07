@@ -60,6 +60,64 @@ static func diff(before: String, after: String) -> Dictionary:
 	}
 
 
+## Aligned rows for a SIDE-BY-SIDE (Beyond Compare-style) view: one row per
+## visual line, pairing changed lines left/right. Each row is:
+##   {op: "equal"|"add"|"del"|"modify",
+##    left_line:int,  left_text:String,    # left_line == -1 => gap (no before line)
+##    right_line:int, right_text:String}   # right_line == -1 => gap (no after line)
+## add  -> left gap, right new (green). del -> left old (red), right gap.
+## modify -> a deleted line paired with an added line (changed line, both panes).
+## Line numbers are 0-based into before (left) / after (right).
+static func aligned_rows(before: String, after: String) -> Array:
+	var a := before.split("\n")
+	var b := after.split("\n")
+	var ops := _lcs_ops(a, b)
+	var rows: Array = []
+	var pend_del: Array = []
+	var pend_add: Array = []
+	var li := 0
+	var ri := 0
+	for op in ops:
+		match op[0]:
+			"equal":
+				_flush_block(pend_del, pend_add, rows)
+				rows.append({"op": "equal", "left_line": li, "left_text": a[li], "right_line": ri, "right_text": b[ri]})
+				li += 1
+				ri += 1
+			"del":
+				pend_del.append({"line": li, "text": a[li]})
+				li += 1
+			"add":
+				pend_add.append({"line": ri, "text": b[ri]})
+				ri += 1
+	_flush_block(pend_del, pend_add, rows)
+	return rows
+
+
+## Flush a buffered change block: zip pending deletions with pending additions
+## into paired "modify" rows; surplus on either side becomes "del"/"add" rows.
+static func _flush_block(pend_del: Array, pend_add: Array, rows: Array) -> void:
+	var n := maxi(pend_del.size(), pend_add.size())
+	for k in range(n):
+		var has_left := k < pend_del.size()
+		var has_right := k < pend_add.size()
+		var row := {
+			"left_line": int(pend_del[k]["line"]) if has_left else -1,
+			"left_text": str(pend_del[k]["text"]) if has_left else "",
+			"right_line": int(pend_add[k]["line"]) if has_right else -1,
+			"right_text": str(pend_add[k]["text"]) if has_right else "",
+		}
+		if has_left and has_right:
+			row["op"] = "modify"
+		elif has_right:
+			row["op"] = "add"
+		else:
+			row["op"] = "del"
+		rows.append(row)
+	pend_del.clear()
+	pend_add.clear()
+
+
 ## Edit script for two line arrays via LCS. Returns ordered ops:
 ## ["equal"], ["add", <b line>], ["del", <a line>].
 static func _lcs_ops(a: PackedStringArray, b: PackedStringArray) -> Array:

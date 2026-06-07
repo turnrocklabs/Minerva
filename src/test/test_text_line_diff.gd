@@ -16,6 +16,11 @@ func _init() -> void:
 	test_prefix_suffix_trim()
 	test_empty_before()
 
+	test_aligned_equal()
+	test_aligned_append()
+	test_aligned_delete()
+	test_aligned_modify()
+
 	print("=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
 		printerr("FAILURES: %d" % _fail)
@@ -80,3 +85,46 @@ func test_empty_before() -> void:
 	# acceptable since "".split("\n") == [""]).
 	var d := TextLineDiff.diff("", "alpha\nbeta")
 	_eq("adds both lines", d["adds"], 2)
+
+
+# ── aligned_rows (side-by-side) ───────────────────────────────────────────────
+
+func test_aligned_equal() -> void:
+	print("test_aligned_equal:")
+	var r := TextLineDiff.aligned_rows("a\nb", "a\nb")
+	_eq("2 rows", r.size(), 2)
+	_eq("all equal", _ops(r), ["equal", "equal"])
+
+
+func test_aligned_append() -> void:
+	print("test_aligned_append:")
+	var r := TextLineDiff.aligned_rows("a\nb", "a\nb\nc")
+	_eq("ops", _ops(r), ["equal", "equal", "add"])
+	var last: Dictionary = r[2]
+	_eq("add row: left is a gap", last["left_line"], -1)
+	_eq("add row: right text", last["right_text"], "c")
+
+
+func test_aligned_delete() -> void:
+	print("test_aligned_delete:")
+	var r := TextLineDiff.aligned_rows("a\nb\nc", "a\nc")
+	_eq("ops", _ops(r), ["equal", "del", "equal"])
+	var d: Dictionary = r[1]
+	_eq("del row: left text", d["left_text"], "b")
+	_eq("del row: right is a gap", d["right_line"], -1)
+
+
+func test_aligned_modify() -> void:
+	print("test_aligned_modify:")
+	var r := TextLineDiff.aligned_rows("a\nB\nc", "a\nX\nc")
+	_eq("ops", _ops(r), ["equal", "modify", "equal"])
+	var m: Dictionary = r[1]
+	_eq("modify row: left=before", m["left_text"], "B")
+	_eq("modify row: right=after", m["right_text"], "X")
+
+
+func _ops(rows: Array) -> Array:
+	var out: Array = []
+	for row in rows:
+		out.append(str((row as Dictionary)["op"]))
+	return out
