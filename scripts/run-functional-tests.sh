@@ -24,6 +24,7 @@ HERMETIC_TESTS=(
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
 	test/test_buffer_sync_undo_caret.gd
+	test/test_doc_version_guard.gd
 )
 PLUGIN_TESTS=(
 	test/test_cad_evaluate_render.gd

@@ -13,6 +13,9 @@ extends MCPToolModule
 ## post-save editor_name so the LLM can update its key.
 
 
+const DocVersionGuard := preload("res://Scripts/Services/Documents/DocVersionGuard.gd")
+
+
 func _init(mcp_server = null) -> void:
 	super._init(mcp_server)
 
@@ -45,6 +48,7 @@ func register_tools() -> void:
 		_dual_key_schema({
 			"text": {"type": "string", "description": "Full text content"},
 			"save": {"type": "boolean", "description": "Also flush to disk now (default false = buffered, persist later via minerva_doc_save)."},
+			"if_match_version": {"type": "integer", "description": "Optimistic concurrency: only apply if the buffer's current version equals this (from minerva_doc_read). On mismatch the write is rejected with {error:'version_mismatch', want, got} so you can re-read and retry. Omit for last-write-wins (default)."},
 		}, ["text"]), "documents")
 
 	server._register_tool("minerva_doc_edit",
@@ -54,6 +58,7 @@ func register_tools() -> void:
 			"new_string": {"type": "string", "description": "Replacement string"},
 			"replace_all": {"type": "boolean", "description": "Replace every occurrence instead of requiring a unique match (default false)."},
 			"save": {"type": "boolean", "description": "Also flush to disk now (default false)."},
+			"if_match_version": {"type": "integer", "description": "Optimistic concurrency: only apply if the buffer's current version equals this (from minerva_doc_read). On mismatch the edit is rejected with {error:'version_mismatch', want, got} so you can re-read and retry. Omit for last-write-wins (default)."},
 		}, ["old_string", "new_string"]), "documents")
 
 	server._register_tool("minerva_doc_save",
@@ -371,6 +376,13 @@ func _doc_read(args: Dictionary) -> Dictionary:
 	return _err("unhandled kind: %s" % t.kind)
 
 
+# Optimistic concurrency (DCR 019ea404ffcd P3). Delegates to the dependency-free
+# DocVersionGuard so the decision is unit-testable headless. Only meaningful for
+# real (versioned) buffers; anonymous TEXT editors have no version.
+func _version_guard(args: Dictionary, buf: DocumentBuffer) -> Dictionary:
+	return DocVersionGuard.check(args, buf.version, buf.file_path)
+
+
 func _doc_write(args: Dictionary) -> Dictionary:
 	if not args.has("text"):
 		return _err("text is required")
@@ -383,6 +395,9 @@ func _doc_write(args: Dictionary) -> Dictionary:
 	match t.kind:
 		KIND_BUFFER:
 			var buf: DocumentBuffer = t.buffer
+			var vg := _version_guard(args, buf)
+			if not vg.is_empty():
+				return vg
 			# Attribute this edit to the agent in the change journal (work item
 			# 019ea01719a2); consumed one-shot by the resulting text_changed.
 			if SingletonObject.change_journal:
@@ -502,6 +517,9 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 	var current_text: String = ""
 	match t.kind:
 		KIND_BUFFER:
+			var vg := _version_guard(args, t.buffer as DocumentBuffer)
+			if not vg.is_empty():
+				return vg
 			current_text = (t.buffer as DocumentBuffer).text
 		KIND_TEXT_LOCAL:
 			current_text = t.editor.code_edit.text
