@@ -88,7 +88,9 @@ func _show_rename_tab_dialog(tab_idx: int) -> void:
 func _save_current_tab():
 	if Tabs.get_tab_count() == 0: return
 
-	var editor: Editor = Tabs.get_tab_control(Tabs.current_tab)
+	var ctrl = Tabs.get_tab_control(Tabs.current_tab)
+	if not ctrl is Editor: return   # non-Editor tabs (e.g. SideBySideDiff review) aren't saveable
+	var editor: Editor = ctrl
 
 	editor.save()
 
@@ -178,9 +180,13 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 
 	# check if we're opening a file that's already open or for the same associated_object (except null)
 	# if so just switch to that editor
-	for editor: Editor in Tabs.get_children():
-		if not editor is Editor:
+	# NOTE: untyped loop var — the tab container can also hold non-Editor tabs
+	# (e.g. SideBySideDiff review widgets); a typed `for editor: Editor` would
+	# crash on the assignment before the `is Editor` guard could skip them.
+	for child in Tabs.get_children():
+		if not child is Editor:
 			continue
+		var editor: Editor = child
 		if (file and editor.file == file) or (associated_object != null and editor.associated_object == associated_object):
 			Tabs.current_tab = Tabs.get_tab_idx_from_control(editor)
 			return editor
@@ -284,9 +290,10 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null,
 	# a sibling text editor on the same path (paired_dsl) doesn't shortcut us
 	# into returning the wrong editor.
 	if file != null:
-		for editor: Editor in Tabs.get_children():
-			if not editor is Editor:
+		for child in Tabs.get_children():
+			if not child is Editor:
 				continue
+			var editor: Editor = child
 			if editor.type != Editor.Type.PLUGIN_SCENE:
 				continue
 			if editor.plugin_id != plugin_id or editor.panel_name != panel_name:
@@ -425,7 +432,8 @@ func update_tabs_icon() -> void:
 	counter_for_remove = counter
 	while counter < tab_count:
 		var editor = Tabs.get_tab_control(counter)
-		_on_editor_content_changed(editor) # call the below implementation to update the icon
+		if editor is Editor:   # skip non-Editor tabs (e.g. SideBySideDiff review widgets)
+			_on_editor_content_changed(editor) # call the below implementation to update the icon
 
 		# if not editor.is_content_saved():
 		# 	Tabs.set_tab_icon(counter, _unsaved_changes_icon)
