@@ -96,6 +96,14 @@ func diff_for(path: String) -> Dictionary:
 	return d
 
 
+## Aligned left/right rows (baseline vs current) for the side-by-side review
+## widget (TextLineDiff.aligned_rows). Empty when the file isn't changed/tracked.
+func aligned_rows_for(path: String) -> Array:
+	if not _current.has(path):
+		return []
+	return TextLineDiff.aligned_rows(str(_baselines.get(path, "")), str(_current[path]))
+
+
 ## Overview of the current changeset for a review launcher.
 func changeset_summary() -> Dictionary:
 	var files: Array = []

@@ -14,6 +14,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_editor_exit_review_diff",
 		"minerva_editor_next_change",
 		"minerva_editor_prev_change",
+		"minerva_editor_review_journal",
 		"minerva_save_editor",
 		"minerva_close_editor",
 		"minerva_list_editors",
@@ -360,6 +361,15 @@ func register_tools() -> void:
 		}
 	, "editor")
 
+	server._register_tool("minerva_editor_review_journal",
+		"Open a Beyond Compare-style side-by-side review of a file's CHANGE-JOURNAL diff (baseline vs current) in a new editor tab. Left=before, right=after, aligned + tinted, synced scroll. The file must have changes in the current changeset (see minerva_journal_changes). Returns {editor_name, rows, changed}. (work item 019ea06a1413.)",
+		{
+			"type": "object",
+			"properties": {"path": {"type": "string", "description": "Absolute file path of a changed file."}},
+			"required": ["path"]
+		}
+	, "editor")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
@@ -379,6 +389,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _hunk_nav(arguments, 1)
 		"minerva_editor_prev_change":
 			return _hunk_nav(arguments, -1)
+		"minerva_editor_review_journal":
+			return _review_journal(arguments)
 		"minerva_save_editor":
 			return _save_editor(arguments)
 		"minerva_close_editor":
@@ -588,6 +600,33 @@ func _hunk_nav(args: Dictionary, dir: int) -> Dictionary:
 		return MCPToolUtils.error("Editor has no review-diff capable code_edit")
 	var hunk: int = editor.code_edit.next_change() if dir > 0 else editor.code_edit.prev_change()
 	return {"success": true, "editor_name": editor_name, "hunk": hunk, "total": editor.code_edit.review_change_count()}
+
+
+func _review_journal(args: Dictionary) -> Dictionary:
+	var path: String = str(args.get("path", "")).strip_edges()
+	if path.is_empty():
+		return MCPToolUtils.error("path is required")
+	if SingletonObject == null or SingletonObject.change_journal == null:
+		return MCPToolUtils.error("change journal unavailable")
+	if SingletonObject.editor_pane == null:
+		return MCPToolUtils.error("editor pane unavailable")
+	var rows: Array = SingletonObject.change_journal.aligned_rows_for(path)
+	var changed := false
+	for r in rows:
+		if str((r as Dictionary).get("op", "equal")) != "equal":
+			changed = true
+			break
+	if not changed:
+		return MCPToolUtils.error("no journaled changes for %s (run minerva_journal_changes to see changed files)" % path)
+
+	var widget := SideBySideDiff.new()
+	var title := "Review: " + path.get_file()
+	SingletonObject.editor_pane.Tabs.add_child(widget)
+	var idx: int = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(widget)
+	SingletonObject.editor_pane.Tabs.set_tab_title(idx, title)
+	SingletonObject.editor_pane.Tabs.current_tab = idx
+	widget.render_rows(rows)
+	return {"success": true, "editor_name": title, "rows": rows.size(), "changed": true}
 
 
 func _save_editor(args: Dictionary) -> Dictionary:
