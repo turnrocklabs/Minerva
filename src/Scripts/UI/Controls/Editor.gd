@@ -1006,8 +1006,24 @@ func _detach_document_buffer() -> void:
 func _set_code_edit_text_from_buffer(new_text: String) -> void:
 	if code_edit == null or code_edit.text == new_text:
 		return
+	# Assigning `text` is recorded by Godot (4.6) as a SINGLE undoable step and
+	# preserves prior undo history, so an agent/MCP edit landing here stays
+	# undoable on the existing Undo button. But the assignment resets caret +
+	# scroll, which is disruptive when an agent edits a file the human is
+	# viewing/editing — so we save and restore them (clamped to the new text).
+	var caret_line := code_edit.get_caret_line()
+	var caret_col := code_edit.get_caret_column()
+	var v_scroll := code_edit.scroll_vertical
+	var h_scroll := code_edit.scroll_horizontal
 	_applying_buffer_text = true
 	code_edit.text = new_text
+	var last_line := maxi(0, code_edit.get_line_count() - 1)
+	caret_line = clampi(caret_line, 0, last_line)
+	caret_col = clampi(caret_col, 0, code_edit.get_line(caret_line).length())
+	code_edit.set_caret_line(caret_line)
+	code_edit.set_caret_column(caret_col)
+	code_edit.scroll_vertical = v_scroll
+	code_edit.scroll_horizontal = h_scroll
 	_applying_buffer_text = false
 
 
