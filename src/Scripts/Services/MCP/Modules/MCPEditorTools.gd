@@ -15,6 +15,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_editor_next_change",
 		"minerva_editor_prev_change",
 		"minerva_editor_review_journal",
+		"minerva_editor_review_content",
 		"minerva_save_editor",
 		"minerva_close_editor",
 		"minerva_list_editors",
@@ -370,6 +371,19 @@ func register_tools() -> void:
 		}
 	, "editor")
 
+	server._register_tool("minerva_editor_review_content",
+		"Open a Beyond Compare-style side-by-side review of arbitrary before/after content in a new editor tab (left=before, right=after, aligned + tinted + word-focus, synced scroll, hunk nav). The codetools code-graph panel calls this on a changeset file double-click, passing the file's get_diff before_content/after_content — wiring changeset → native diff. Returns {editor_name, rows, changed}. (work item 019ea06a1413.)",
+		{
+			"type": "object",
+			"properties": {
+				"path": {"type": "string", "description": "File path (used for the tab title)."},
+				"before": {"type": "string", "description": "Before/baseline content."},
+				"after": {"type": "string", "description": "After/current content."},
+			},
+			"required": ["path", "before", "after"]
+		}
+	, "editor")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
@@ -391,6 +405,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _hunk_nav(arguments, -1)
 		"minerva_editor_review_journal":
 			return _review_journal(arguments)
+		"minerva_editor_review_content":
+			return _review_content(arguments)
 		"minerva_save_editor":
 			return _save_editor(arguments)
 		"minerva_close_editor":
@@ -608,17 +624,37 @@ func _review_journal(args: Dictionary) -> Dictionary:
 		return MCPToolUtils.error("path is required")
 	if SingletonObject == null or SingletonObject.change_journal == null:
 		return MCPToolUtils.error("change journal unavailable")
-	if SingletonObject.editor_pane == null:
-		return MCPToolUtils.error("editor pane unavailable")
 	var rows: Array = SingletonObject.change_journal.aligned_rows_for(path)
-	var changed := false
+	if not _rows_changed(rows):
+		return MCPToolUtils.error("no journaled changes for %s (run minerva_journal_changes to see changed files)" % path)
+	return _open_review_widget(path, rows)
+
+
+func _review_content(args: Dictionary) -> Dictionary:
+	# Generic native side-by-side review from arbitrary before/after content — the
+	# codetools panel feeds this its get_diff before_content/after_content per file,
+	# wiring the changeset → native-diff loop (work item 019ea06a1413, task #11).
+	var path: String = str(args.get("path", "")).strip_edges()
+	if path.is_empty():
+		return MCPToolUtils.error("path is required")
+	if not args.has("before") or not args.has("after"):
+		return MCPToolUtils.error("before and after are required")
+	var rows: Array = TextLineDiff.aligned_rows(str(args["before"]), str(args["after"]))
+	if not _rows_changed(rows):
+		return MCPToolUtils.error("before and after are identical for %s" % path)
+	return _open_review_widget(path, rows)
+
+
+func _rows_changed(rows: Array) -> bool:
 	for r in rows:
 		if str((r as Dictionary).get("op", "equal")) != "equal":
-			changed = true
-			break
-	if not changed:
-		return MCPToolUtils.error("no journaled changes for %s (run minerva_journal_changes to see changed files)" % path)
+			return true
+	return false
 
+
+func _open_review_widget(path: String, rows: Array) -> Dictionary:
+	if SingletonObject == null or SingletonObject.editor_pane == null:
+		return MCPToolUtils.error("editor pane unavailable")
 	var widget := SideBySideDiff.new()
 	var title := "Review: " + path.get_file()
 	SingletonObject.editor_pane.Tabs.add_child(widget)

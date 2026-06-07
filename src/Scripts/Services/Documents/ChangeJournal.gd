@@ -96,6 +96,12 @@ func diff_for(path: String) -> Dictionary:
 	return d
 
 
+## Current (after) text for a tracked path — used by the review widget to map a
+## reviewed line back to its real char range when authoring a comment.
+func current_text(path: String) -> String:
+	return str(_current.get(path, ""))
+
+
 ## Aligned left/right rows (baseline vs current) for the side-by-side review
 ## widget (TextLineDiff.aligned_rows). Empty when the file isn't changed/tracked.
 func aligned_rows_for(path: String) -> Array:
