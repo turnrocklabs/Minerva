@@ -12,6 +12,8 @@ func get_tool_names() -> Array[String]:
 		"minerva_update_editor",
 		"minerva_editor_review_diff",
 		"minerva_editor_exit_review_diff",
+		"minerva_editor_next_change",
+		"minerva_editor_prev_change",
 		"minerva_save_editor",
 		"minerva_close_editor",
 		"minerva_list_editors",
@@ -340,6 +342,24 @@ func register_tools() -> void:
 		}
 	, "editor")
 
+	server._register_tool("minerva_editor_next_change",
+		"Jump to the NEXT change hunk in a review-diff editor (wraps); scrolls + parks the caret at the hunk. Returns {hunk, total}. (DCR 019e9f602391 P5.)",
+		{
+			"type": "object",
+			"properties": {"editor_name": {"type": "string", "description": "Editor tab name in review mode."}},
+			"required": ["editor_name"]
+		}
+	, "editor")
+
+	server._register_tool("minerva_editor_prev_change",
+		"Jump to the PREVIOUS change hunk in a review-diff editor (wraps). Returns {hunk, total}. (DCR 019e9f602391 P5.)",
+		{
+			"type": "object",
+			"properties": {"editor_name": {"type": "string", "description": "Editor tab name in review mode."}},
+			"required": ["editor_name"]
+		}
+	, "editor")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
@@ -355,6 +375,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _review_diff(arguments)
 		"minerva_editor_exit_review_diff":
 			return _exit_review_diff(arguments)
+		"minerva_editor_next_change":
+			return _hunk_nav(arguments, 1)
+		"minerva_editor_prev_change":
+			return _hunk_nav(arguments, -1)
 		"minerva_save_editor":
 			return _save_editor(arguments)
 		"minerva_close_editor":
@@ -551,6 +575,19 @@ func _exit_review_diff(args: Dictionary) -> Dictionary:
 	if editor.code_edit and editor.code_edit.has_method("exit_review_diff"):
 		editor.code_edit.exit_review_diff()
 	return {"success": true, "editor_name": editor_name, "review": false}
+
+
+func _hunk_nav(args: Dictionary, dir: int) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	if editor_name.is_empty():
+		return MCPToolUtils.error("editor_name is required")
+	var editor = MCPToolUtils.find_editor_by_name(editor_name)
+	if not editor:
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
+	if not editor.code_edit or not editor.code_edit.has_method("next_change"):
+		return MCPToolUtils.error("Editor has no review-diff capable code_edit")
+	var hunk: int = editor.code_edit.next_change() if dir > 0 else editor.code_edit.prev_change()
+	return {"success": true, "editor_name": editor_name, "hunk": hunk, "total": editor.code_edit.review_change_count()}
 
 
 func _save_editor(args: Dictionary) -> Dictionary:

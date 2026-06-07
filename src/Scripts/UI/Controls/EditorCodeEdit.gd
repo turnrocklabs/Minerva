@@ -147,11 +147,59 @@ func preview_diff(diff: String) -> void:
 func preview_review_diff(diff: String) -> void:
 	preview_diff(diff)
 	editable = false
+	_review_hunk_index = -1
 
 ## Leave review mode: drop the diff preview and restore the editable buffer.
 func exit_review_diff() -> void:
 	clear_diff_preview()
 	editable = true
+	_review_hunk_index = -1
+
+
+# ══════════════════════════════════════════════════════════════════
+# PUBLIC API – Review hunk navigation (DCR 019e9f602391 P5b)
+# Native-owns-file-review: hunk nav lives where the scrollable buffer is, so the
+# codetools panel never has to remote-control the editor's scroll.
+# ══════════════════════════════════════════════════════════════════
+var _review_hunk_index := -1
+
+## Start lines of each change hunk = contiguous runs of highlighted lines. Reuses
+## _preview_highlighted (populated by preview_diff); no extra tracking needed.
+func review_hunk_starts() -> Array:
+	var lines := _preview_highlighted.duplicate()
+	lines.sort()
+	var starts: Array = []
+	var prev := -100
+	for ln in lines:
+		if int(ln) != prev + 1:
+			starts.append(int(ln))
+		prev = int(ln)
+	return starts
+
+func review_change_count() -> int:
+	return review_hunk_starts().size()
+
+## Jump to the next change hunk (wraps). Returns the 1-based hunk number, or 0 if
+## there are no changes. Scrolls + parks the caret at the hunk's first line.
+func next_change() -> int:
+	return _goto_hunk(1)
+
+## Jump to the previous change hunk (wraps).
+func prev_change() -> int:
+	return _goto_hunk(-1)
+
+func _goto_hunk(dir: int) -> int:
+	var starts := review_hunk_starts()
+	if starts.is_empty():
+		_review_hunk_index = -1
+		return 0
+	_review_hunk_index = wrapi(_review_hunk_index + dir, 0, starts.size())
+	var line := int(starts[_review_hunk_index])
+	if line < get_line_count():
+		set_caret_line(line)
+		set_caret_column(0)
+		center_viewport_to_caret()
+	return _review_hunk_index + 1
 
 
 # ══════════════════════════════════════════════════════════════════
