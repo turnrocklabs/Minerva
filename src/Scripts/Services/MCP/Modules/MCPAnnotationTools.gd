@@ -108,6 +108,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_annotations_update_status",
 		"minerva_annotations_repair_anchor",
 		"minerva_annotations_resolve_ref",
+		"minerva_annotations_index",
 		"minerva_text_editor_add_comment",
 	]
 
@@ -410,6 +411,23 @@ func register_tools() -> void:
 	)
 
 	server._register_tool(
+		"minerva_annotations_index",
+		"Browsable index of citeable refs (C1..Cn) with location, summary and "
+		+ "status, sorted by ref number. Scans document_path's sidecar, a named "
+		+ "editor_name live host, or ALL live hosts when neither is given. Pass "
+		+ "ref_project to scope to one project. Use this to answer 'what is C7?'.",
+		{
+			"type": "object",
+			"properties": {
+				"document_path": {"type": "string", "description": "Sidecar to index; <path>.annotations.json."},
+				"editor_name": {"type": "string", "description": "Live editor tab to index."},
+				"ref_project": {"type": "string", "description": "Optional project_id filter."},
+			},
+		},
+		_TOOL_SET
+	)
+
+	server._register_tool(
 		"minerva_text_editor_add_comment",
 		"Add a v2 annotation (kind=text, anchor=core/text.range) to a built-in text "
 		+ "editor tab, anchored to a flat character-offset range [start, end). The "
@@ -468,6 +486,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _handle_repair_anchor(arguments)
 		"minerva_annotations_resolve_ref":
 			return resolve_ref(arguments)
+		"minerva_annotations_index":
+			return list_refs(arguments)
 		"minerva_text_editor_add_comment":
 			return _text_editor_add_comment(arguments)
 	return _err("Unknown annotation tool: %s" % tool_name)
@@ -571,9 +591,7 @@ func resolve_ref(args: Dictionary) -> Dictionary:
 		var host: AnnotationHost = AnnotationHostRegistry.get_host(str(editor_name))
 		if host == null:
 			continue
-		var anns: Array = host.get_all_annotations() if host.has_method("get_all_annotations") else (
-			host.get_annotations() if host.has_method("get_annotations") else [])
-		for ann in anns:
+		for ann in _host_annotations(host):
 			if _ref_matches(ann, ref, want_project):
 				return _ok({"ref": ref, "found": true, "editor_name": str(editor_name),
 					"annotation": (ann as Dictionary).duplicate(true)})
@@ -589,6 +607,103 @@ func _ref_matches(ann: Variant, ref: String, want_project: String) -> bool:
 	if not want_project.is_empty() and str(d.get("ref_project", "")) != want_project:
 		return false
 	return true
+
+
+# ── P3: surface ref (creation echo + browsable index) ────────────────────────
+
+## Build the add-result with a human-readable creation echo so a ref is never
+## shown naked (DCR 019e9f602391 P3): "Created C7 — main.gd:331  <summary>".
+func _creation_echo(annotation: Dictionary, assigned_id: String, editor_name: String, doc_path: String) -> Dictionary:
+	var out := {"id": assigned_id}
+	var ref := str(annotation.get("ref", ""))
+	if not ref.is_empty():
+		out["ref"] = ref
+		out["ref_project"] = str(annotation.get("ref_project", ""))
+		out["echo"] = "Created %s — %s" % [ref, _ref_location_label(annotation, editor_name, doc_path)]
+	return out
+
+
+## "<location>  <summary>" for a ref, best-effort. location = editor/file[:line].
+func _ref_location_label(annotation: Dictionary, editor_name: String, doc_path: String) -> String:
+	var loc := editor_name if not editor_name.is_empty() else doc_path.get_file()
+	var line := _anchor_line(annotation)
+	if line > 0:
+		loc = "%s:%d" % [loc, line]
+	var summary := str(annotation.get("summary", "")).strip_edges().replace("\n", " ")
+	if summary.is_empty():
+		summary = str(annotation.get("kind", "annotation"))
+	if summary.length() > 60:
+		summary = summary.substr(0, 57) + "..."
+	return ("%s  %s" % [loc, summary]) if not loc.is_empty() else summary
+
+
+## 1-based line of a text.range anchor's snapshot position, or 0 if not derivable.
+func _anchor_line(annotation: Dictionary) -> int:
+	var anchor: Variant = annotation.get("anchor", {})
+	if anchor is Dictionary:
+		var snap: Variant = (anchor as Dictionary).get("snapshot", {})
+		if snap is Dictionary:
+			var pos: Variant = (snap as Dictionary).get("position", [])
+			if pos is Array and (pos as Array).size() >= 1:
+				return int((pos as Array)[0]) + 1
+	return 0
+
+
+## Browsable index of refs: C1..Cn with location + summary + status. Scans the
+## given document_path sidecar, a named live host, or ALL live hosts. Sorted by
+## ref sequence. ref_project filters to one project (DCR 019e9f602391 P3).
+func list_refs(args: Dictionary) -> Dictionary:
+	var want_project := str(args.get("ref_project", ""))
+	var doc_path := str(args.get("document_path", ""))
+	var editor_name := str(args.get("editor_name", ""))
+	var rows: Array = []
+
+	if not doc_path.is_empty():
+		var sidecar := AnnotationSidecar.read_sidecar(doc_path)
+		_collect_ref_rows(sidecar.get("annotations", []), want_project, doc_path.get_file(), "", rows)
+	elif not editor_name.is_empty():
+		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			return _err("no live annotation host registered for editor '%s'. Known: %s"
+				% [editor_name, str(AnnotationHostRegistry.list_editor_names())])
+		_collect_ref_rows(_host_annotations(host), want_project, "", editor_name, rows)
+	else:
+		for en in AnnotationHostRegistry.list_editor_names():
+			var h: AnnotationHost = AnnotationHostRegistry.get_host(str(en))
+			if h != null:
+				_collect_ref_rows(_host_annotations(h), want_project, "", str(en), rows)
+
+	rows.sort_custom(func(a, b): return int(a.get("seq", 0)) < int(b.get("seq", 0)))
+	return _ok({"refs": rows, "count": rows.size()})
+
+
+func _collect_ref_rows(annotations: Array, want_project: String, file_label: String, editor_name: String, rows: Array) -> void:
+	for ann_v in annotations:
+		if not ann_v is Dictionary:
+			continue
+		var ann := ann_v as Dictionary
+		var ref := str(ann.get("ref", ""))
+		if ref.is_empty():
+			continue
+		if not want_project.is_empty() and str(ann.get("ref_project", "")) != want_project:
+			continue
+		rows.append({
+			"ref": ref,
+			"seq": AnnotationRef.parse_seq(ref),
+			"ref_project": str(ann.get("ref_project", "")),
+			"id": str(ann.get("id", "")),
+			"location": _ref_location_label(ann, editor_name, file_label),
+			"summary": str(ann.get("summary", "")),
+			"status": str(ann.get("lifecycle", "open")),
+		})
+
+
+func _host_annotations(host: AnnotationHost) -> Array:
+	if host.has_method("get_all_annotations"):
+		return host.get_all_annotations()
+	if host.has_method("get_annotations"):
+		return host.get_annotations()
+	return []
 
 
 func update_status(annotation_id: String, lifecycle: String, patch: Dictionary = {}) -> Dictionary:
@@ -894,20 +1009,26 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 					error_dicts.append({"field_path": "", "message": str(e), "code": "invalid"})
 			return {"ok": false, "errors": error_dicts}
 
+	var _pi: ProjectIdentity = ProjectIdentity.current()
+
 	if not editor_name.is_empty():
 		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
 		if host == null:
 			return _err("no live annotation host registered for editor '%s'. Known: %s"
 				% [editor_name, str(AnnotationHostRegistry.list_editor_names())])
+		# Stamp the citeable ref here (idempotent) so we can echo it; the live host's
+		# add_annotation_v2 sees it present and skips re-stamping. Its counter was
+		# reconciled when the file opened, so no reconcile is needed here.
+		if _pi != null:
+			_pi.stamp(annotation)
 		var assigned_id: String = host.add_annotation(annotation)
-		return _ok({"id": assigned_id})
+		return _ok(_creation_echo(annotation, assigned_id, editor_name, ""))
 
 	var sidecar: Dictionary = _load_or_init_sidecar(doc_path)
 	var annotations: Array = sidecar["annotations"]
 	# Closed-file path: stamp a citeable ref ("C<n>") here since this bypasses the
 	# live host's add_annotation_v2 (DCR 019e9f602391 P2). Reconcile from the target
 	# sidecar first so we never reuse a number already minted on this file.
-	var _pi: ProjectIdentity = ProjectIdentity.current()
 	if _pi != null:
 		_pi.reconcile_floor(AnnotationRef.highest_seq_in_sidecars([doc_path], _pi.project_id))
 		_pi.stamp(annotation)
@@ -918,7 +1039,7 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 	if write_err != OK:
 		return _err("Failed to write sidecar (error %d)" % write_err)
 
-	return _ok({"id": annotation["id"]})
+	return _ok(_creation_echo(annotation, str(annotation["id"]), "", doc_path))
 
 
 func _annotations_update(args: Dictionary) -> Dictionary:

@@ -49,6 +49,10 @@ func _initialize() -> void:
 	await test_ref_reconciles_from_existing_sidecar(tools)
 	await test_resolve_ref_and_query_filter(tools)
 
+	print("\n-- P3: creation echo + browsable ref index --")
+	await test_creation_echo(tools)
+	await test_list_refs_index(tools)
+
 	print("\n-- CRUD lifecycle --")
 	await test_crud_lifecycle(tools)
 
@@ -227,6 +231,37 @@ func test_resolve_ref_and_query_filter(tools: MCPAnnotationTools) -> void:
 	var q0 := await tools.handle("minerva_annotations_query", {"document_path": doc, "status": "any", "ref": "C2"})
 	check_eq("query ref filter C2 returns 0", int(q0.get("count", -1)), 0)
 	ProjectIdentity._override = null
+
+
+func test_creation_echo(tools: MCPAnnotationTools) -> void:
+	_override_identity("ECHOPROJ")
+	var doc := _doc_path("echo.txt")
+	var r := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": _valid_annotation_dict()})
+	check_eq("echo result carries ref C1", str(r.get("ref", "")), "C1")
+	var echo := str(r.get("echo", ""))
+	check("echo mentions the ref", echo.contains("C1"))
+	check("echo mentions the file", echo.contains("echo.txt"))
+	ProjectIdentity._override = null
+
+
+func test_list_refs_index(tools: MCPAnnotationTools) -> void:
+	var doc := _doc_path("index.txt")
+	var a2 := _valid_annotation_dict()
+	a2["id"] = "ann_2"; a2["ref"] = "C2"; a2["ref_project"] = "IDXPROJ"; a2["summary"] = "second"; a2["lifecycle"] = "open"
+	var a1 := _valid_annotation_dict()
+	a1["id"] = "ann_1"; a1["ref"] = "C1"; a1["ref_project"] = "IDXPROJ"; a1["summary"] = "first"; a1["lifecycle"] = "resolved"
+	a1["anchor"] = {"plugin": "core", "type": "text.range", "id": {"start": 0, "end": 1},
+		"snapshot": {"position": [330.0, 4.0], "text": "x", "document_revision": 0, "target_scope": "line"}}
+	_write_raw_sidecar(doc, [a2, a1])  # deliberately out of ref order
+	var r := await tools.handle("minerva_annotations_index", {"document_path": doc})
+	var refs: Array = r.get("refs", [])
+	check_eq("index returns 2 refs", refs.size(), 2)
+	check_eq("index sorted by seq: first row is C1", str((refs[0] as Dictionary).get("ref", "")), "C1")
+	check_eq("C1 status reflects lifecycle", str((refs[0] as Dictionary).get("status", "")), "resolved")
+	check("C1 location carries line 331 (0-based 330 +1)", str((refs[0] as Dictionary).get("location", "")).contains(":331"))
+	check_eq("second row is C2", str((refs[1] as Dictionary).get("ref", "")), "C2")
+	var r2 := await tools.handle("minerva_annotations_index", {"document_path": doc, "ref_project": "OTHER"})
+	check_eq("ref_project filter excludes non-matching project", int(r2.get("count", -1)), 0)
 
 
 ## Write a raw sidecar to disk so we can test read-path scenarios.

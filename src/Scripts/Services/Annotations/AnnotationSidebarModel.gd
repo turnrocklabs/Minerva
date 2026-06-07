@@ -39,6 +39,7 @@ func get_broken_entries() -> Array:
 			continue
 		result.append({
 			"id": str(ann.get("id", "")),
+			"ref": str(ann.get("ref", "")),  # citeable ref (C<n>) — DCR 019e9f602391 P3
 			"summary": str(ann.get("summary", "")),
 			"last_view": str(ann.get("view_context", "")),
 			"display_index": int(ann.get("_display_index", 0)),
