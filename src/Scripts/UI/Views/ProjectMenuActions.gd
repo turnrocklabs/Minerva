@@ -43,7 +43,12 @@ func _new_project():
 	if SingletonObject.ledger_manager:
 		SingletonObject.ledger_manager.clear()
 	save_path = ""
-	
+
+	# Fresh implicit project -> fresh identity + zeroed ref counter (DCR
+	# 019e9f602391 P1), persisted to the scratch so refs survive a restart.
+	if SingletonObject.project_identity:
+		SingletonObject.project_identity.start_new_implicit()
+
 	await get_tree().process_frame
 	SingletonObject.updated_save_state.emit("", true)
 
@@ -116,6 +121,12 @@ func save_project():
 			editor.pcb_editor.is_modified = false
 
 	SingletonObject.save_recent_project(save_path)
+
+	# Project is now explicit — its identity lives in the .minproj, so drop the
+	# implicit user:// scratch (DCR 019e9f602391 P1).
+	if SingletonObject.project_identity:
+		SingletonObject.project_identity.clear_scratch()
+
 	SingletonObject.save_state(true)
 	SingletonObject.updated_save_state.emit(save_path.get_file(), true)
 	SingletonObject.UpdateUnsavedTabIcon.emit()
@@ -181,7 +192,7 @@ func serialize_project() -> Dictionary:
 	if SingletonObject.Notes and SingletonObject.Notes.get_tab_count() > 0:
 		active_notes_index = SingletonObject.Notes.current_tab
 
-	return {
+	var project_data: Dictionary = {
 		"ThreadList": notes,
 		"AgentThreadList": agent_notes,
 		"ChatList": chats,
@@ -197,9 +208,24 @@ func serialize_project() -> Dictionary:
 		"version": "2.0"  # Version for future migration handling
 	}
 
+	# Stamp the stable project identity (project_id + annotation_ref_seq) into the
+	# project_data so it persists into the .minproj (DCR 019e9f602391 P1). Flows
+	# through both the plain-JSON and ProjectPackage zip writers unchanged.
+	if SingletonObject.project_identity:
+		SingletonObject.project_identity.ensure()
+		SingletonObject.project_identity.write_to_project_data(project_data)
+
+	return project_data
+
 func deserialize_project(data: Dictionary) -> int:
 	# Handle legacy and new formats gracefully
 	#var version = data.get("version", "1.0")
+
+	# Adopt the loaded project's stable identity before restoring content (DCR
+	# 019e9f602391 P1). Legacy projects with no project_id get one minted; the
+	# implicit scratch is cleared since this loaded project is now the context.
+	if SingletonObject.project_identity:
+		SingletonObject.project_identity.adopt_from_project_data(data)
 
 	# Deserialize notes container (legacy notes system)
 	SingletonObject.notes_container.deserialize(data.get("ThreadList", []))

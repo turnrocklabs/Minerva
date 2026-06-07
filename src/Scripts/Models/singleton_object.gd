@@ -86,6 +86,10 @@ var GEN_AI_HIST_FILE_PATH: = "user://gen_ai_history.csv"
 var _config_file_name: String = "user://config_file.cfg"
 var config_file = ConfigFile.new()
 
+# Stable per-project identity (project_id + annotation_ref_seq) backing citeable
+# annotation refs (DCR 019e9f602391 P1). Initialized in _ready after config load.
+var project_identity: ProjectIdentity
+
 func load_config_file() -> ConfigFile:
 	var err = config_file.load(_config_file_name)
 	if err != OK:
@@ -1246,6 +1250,13 @@ func _ready():
 		# Persist an empty config so subsequent loads succeed cleanly.
 		push_warning("[SingletonObject] config_file.load('%s') returned %s — proceeding with defaults" % [_config_file_name, error_string(err)])
 		config_file.save(_config_file_name)
+
+	# Establish the implicit project's stable identity (DCR 019e9f602391 P1).
+	# Shares the loaded config_file so the scratch persists consistently; reuses
+	# generate_UUID as the id source. ensure() restores a prior unsaved session's
+	# id/seq or mints a fresh one.
+	project_identity = ProjectIdentity.new(config_file, _config_file_name, Callable(self, "generate_UUID"))
+	project_identity.ensure()
 
 	# Initialize enabled providers from config (must be after config_file.load)
 	_init_enabled_providers()
