@@ -1,0 +1,121 @@
+diff --git a/crates/gdcef/src/cef_texture/mod.rs b/crates/gdcef/src/cef_texture/mod.rs
+index 98906cb..28d0a62 100644
+--- a/crates/gdcef/src/cef_texture/mod.rs
++++ b/crates/gdcef/src/cef_texture/mod.rs
+@@ -861,6 +861,12 @@ impl CefTexture {
+     }
+ 
+     fn get_device_scale_factor(&self) -> f32 {
+-        crate::utils::get_display_scale_factor()
++        // Used only for input mapping: create_mouse_event computes the CEF
++        // coordinate as `position * pixel_scale / device_scale`. The CEF view
++        // rect is the panel's logical size and `input()` already delivers
++        // positions in that same logical space, so keep this equal to the pixel
++        // scale → an identity mapping that is correct regardless of UI zoom,
++        // display DPI or SubViewport oversampling.
++        self.get_pixel_scale_factor()
+     }
+ }
+diff --git a/crates/gdcef/src/cef_texture/rendering.rs b/crates/gdcef/src/cef_texture/rendering.rs
+index d6577e8..873857f 100644
+--- a/crates/gdcef/src/cef_texture/rendering.rs
++++ b/crates/gdcef/src/cef_texture/rendering.rs
+@@ -22,7 +22,20 @@ impl CefTexture {
+ 
+     pub(super) fn handle_size_change(&mut self) -> bool {
+         let logical_size = self.base().get_size();
+-        let dpi = self.get_pixel_scale_factor();
++        // HiDPI crispness: the OSR buffer must match the *physical* pixels the
++        // surface occupies on screen. `get_pixel_scale_factor()` only reflects
++        // the immediate viewport's stretch transform (== 1.0 when this node
++        // lives inside a SubViewport, as Minerva's plugin panels do), so on its
++        // own it misses the host UI zoom + display DPI. The host folds the full
++        // logical->physical ratio into the SubViewport's oversampling factor;
++        // multiply it in so the buffer, device scale and view rect stay
++        // coherent. Top-level usage (oversampling == 1.0) is unchanged.
++        let oversampling = self
++            .base()
++            .get_viewport()
++            .map(|vp| vp.get_oversampling())
++            .unwrap_or(1.0);
++        let dpi = self.get_pixel_scale_factor() * oversampling;
+         let mut last_size = self.last_size;
+         let mut last_dpi = self.last_dpi;
+         let changed = self.with_app(|app| {
+diff --git a/crates/gdcef/src/webrender.rs b/crates/gdcef/src/webrender.rs
+index e2dc1d2..fd4eddf 100644
+--- a/crates/gdcef/src/webrender.rs
++++ b/crates/gdcef/src/webrender.rs
+@@ -141,23 +141,46 @@ fn bgra_to_rgba(bgra: &[u8]) -> Vec<u8> {
+     rgba
+ }
+ 
++/// Resolve the device scale to report to CEF. Prefer the host-computed value
++/// (UI zoom × display DPI × SubViewport oversampling, set in handle_size_change)
++/// so the view rect and screen info stay coherent with the OSR buffer the host
++/// renders into. Fall back to the bare display scale until it is set.
++fn resolve_device_scale(device_scale_factor: &Arc<Mutex<f32>>) -> f32 {
++    let scale = device_scale_factor.lock().map(|s| *s).unwrap_or(0.0);
++    if scale > 0.0 {
++        scale
++    } else {
++        get_display_scale_factor()
++    }
++}
++
+ /// Common helper for view_rect implementation.
+-fn compute_view_rect(size: &Arc<Mutex<PhysicalSize<f32>>>, rect: Option<&mut Rect>) {
++fn compute_view_rect(
++    size: &Arc<Mutex<PhysicalSize<f32>>>,
++    device_scale_factor: &Arc<Mutex<f32>>,
++    rect: Option<&mut Rect>,
++) {
+     if let Some(rect) = rect
+         && let Ok(size) = size.lock()
+         && size.width > 0.0
+         && size.height > 0.0
+     {
+-        let scale = get_display_scale_factor();
++        // CEF view (logical CSS px) = physical buffer / device scale. Using the
++        // host-computed device scale makes the page lay out at the panel's
++        // logical size and render sharp at the buffer resolution.
++        let scale = resolve_device_scale(device_scale_factor);
+         rect.width = (size.width / scale) as i32;
+         rect.height = (size.height / scale) as i32;
+     }
+ }
+ 
+ /// Common helper for screen_info implementation.
+-fn compute_screen_info(screen_info: Option<&mut ScreenInfo>) -> ::std::os::raw::c_int {
++fn compute_screen_info(
++    device_scale_factor: &Arc<Mutex<f32>>,
++    screen_info: Option<&mut ScreenInfo>,
++) -> ::std::os::raw::c_int {
+     if let Some(screen_info) = screen_info {
+-        screen_info.device_scale_factor = get_display_scale_factor();
++        screen_info.device_scale_factor = resolve_device_scale(device_scale_factor);
+         return true as _;
+     }
+     false as _
+@@ -285,7 +308,11 @@ macro_rules! impl_common_render_handler {
+ 
+             impl RenderHandler {
+                 fn view_rect(&self, _browser: Option<&mut Browser>, rect: Option<&mut Rect>) {
+-                    compute_view_rect(&self.handler.size, rect);
++                    compute_view_rect(
++                        &self.handler.size,
++                        &self.handler.device_scale_factor,
++                        rect,
++                    );
+                 }
+ 
+                 fn screen_info(
+@@ -293,7 +320,7 @@ macro_rules! impl_common_render_handler {
+                     _browser: Option<&mut Browser>,
+                     screen_info: Option<&mut ScreenInfo>,
+                 ) -> ::std::os::raw::c_int {
+-                    compute_screen_info(screen_info)
++                    compute_screen_info(&self.handler.device_scale_factor, screen_info)
+                 }
+ 
+                 fn screen_point(

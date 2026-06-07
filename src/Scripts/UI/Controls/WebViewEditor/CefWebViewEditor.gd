@@ -15,6 +15,7 @@ var plugin_id: String = ""
 
 var _cef: Control = null
 var _svc: SubViewportContainer = null
+var _sv: SubViewport = null
 var _fallback_label: Label = null
 var _tmp_html_path: String = ""
 
@@ -27,6 +28,9 @@ func _ready() -> void:
 	_apply_editor_style()
 	_build_ui()
 	SingletonObject.theme_changed.connect(func(_t): _apply_editor_style())
+	# Reapply HiDPI oversampling whenever the pane is resized (also fires when
+	# the UI scale changes, since that reflows control sizes).
+	resized.connect(_apply_oversampling)
 
 
 func _exit_tree() -> void:
@@ -34,6 +38,7 @@ func _exit_tree() -> void:
 		remove_child(_svc)
 		_svc.queue_free()
 		_svc = null
+		_sv = null
 		_cef = null
 	# Clean up the tmp HTML file we wrote.
 	if not _tmp_html_path.is_empty():
@@ -124,6 +129,7 @@ func set_html(source: String) -> void:
 	sv.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	sv.transparent_bg = true
 	svc.add_child(sv)
+	_sv = sv
 
 	sv.add_child(cef)
 	cef.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -139,10 +145,48 @@ func set_html(source: String) -> void:
 
 	_cef = cef
 	_svc = svc
+	_apply_oversampling()
 
 	var file_url := "file://" + abs_path
 	cef.set("url", file_url)
 	content_changed.emit()
+
+
+## Render the CEF panel at physical pixel density so it stays crisp at any UI
+## zoom / display DPI instead of being bitmap-upscaled by the SubViewportContainer.
+##
+## The SubViewport's render target is otherwise sized in *logical* pixels, so the
+## CEF page renders at logical size and gets stretched up by the host's UI scale
+## (content_scale_factor) and the display's HiDPI backing — magnified + soft.
+## Enabling oversampling at the full logical->physical ratio makes the target
+## physical-res; the patched godot-cef binding reads this oversampling factor and
+## renders the OSR buffer + reports CEF's device scale to match, so the page lays
+## out at its logical size and is sampled 1:1. The apparent size is correct even
+## if the factor is imperfect (it only governs sharpness, not layout).
+func _apply_oversampling() -> void:
+	if _sv == null:
+		return
+	var scale := _effective_scale()
+	_sv.set_use_oversampling(true)
+	_sv.set_oversampling_override(scale)
+
+
+## Logical->physical pixel ratio for this surface: the host UI zoom
+## (content_scale_factor) times the display's HiDPI scale. Mirrors the per-OS
+## logic in godot-cef's utils::get_display_scale_factor (screen_get_scale is
+## 1.0 on Windows, so derive from DPI there).
+func _effective_scale() -> float:
+	var ui_scale: float = get_tree().root.content_scale_factor
+	var screen: int = DisplayServer.window_get_current_screen()
+	var display_scale := 1.0
+	if OS.get_name() == "Windows":
+		var dpi: int = DisplayServer.screen_get_dpi(screen)
+		display_scale = maxf(1.0, float(dpi) / 96.0) if dpi > 0 else 1.0
+	else:
+		display_scale = DisplayServer.screen_get_scale(screen)
+	if display_scale <= 0.0:
+		display_scale = 1.0
+	return maxf(1.0, ui_scale * display_scale)
 
 
 func get_html() -> String:
