@@ -43,13 +43,16 @@ func register_tools() -> void:
 		"Replace a document's full text. Pass either `path` or `editor_name` (exactly one). Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. For plugin-scene editors (e.g. cad): plain text is wrapped as {\"source\": text} — pass DSL as-is without JSON-stringifying; pass a JSON object literal if you need fuller control over the Dictionary the plugin receives. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
 		_dual_key_schema({
 			"text": {"type": "string", "description": "Full text content"},
+			"save": {"type": "boolean", "description": "Also flush to disk now (default false = buffered, persist later via minerva_doc_save)."},
 		}, ["text"]), "documents")
 
 	server._register_tool("minerva_doc_edit",
-		"Replace one occurrence of old_string with new_string. Pass either `path` or `editor_name`. old_string must match exactly once. NOT supported on plugin-scene editors (use minerva_doc_write to replace the whole document instead).",
+		"Replace old_string with new_string. Pass either `path` or `editor_name`. Without replace_all, old_string must match exactly once. NOT supported on plugin-scene editors (use minerva_doc_write to replace the whole document instead).",
 		_dual_key_schema({
-			"old_string": {"type": "string", "description": "String to find (must be unique)"},
+			"old_string": {"type": "string", "description": "String to find (must be unique unless replace_all)"},
 			"new_string": {"type": "string", "description": "Replacement string"},
+			"replace_all": {"type": "boolean", "description": "Replace every occurrence instead of requiring a unique match (default false)."},
+			"save": {"type": "boolean", "description": "Also flush to disk now (default false)."},
 		}, ["old_string", "new_string"]), "documents")
 
 	server._register_tool("minerva_doc_save",
@@ -359,6 +362,15 @@ func _doc_write(args: Dictionary) -> Dictionary:
 				"path": t.path,
 				"editor_name": t.editor_name,
 			}
+			# Optional persist-to-disk so a single write lands the file (parity with
+			# the old WriteTool; the codetools file_write alias proxies this with
+			# save=true). DiskAccess.write now mkdir -p's. work item 019ea035bb28.
+			if bool(args.get("save", false)):
+				var sr := buf.save_to_disk()
+				if not sr.get("ok", false):
+					return _err("saved_failed: %s" % str(sr.get("error", "")))
+				write_resp["dirty"] = buf.dirty
+				write_resp["saved"] = true
 			# Paired_dsl plugin scene: await the panel's synchronous-apply hook
 			# (cancels in-flight, skips debounce, awaits worker reply) so the
 			# MCP response carries last_eval. Without this, the agent has to
@@ -444,6 +456,8 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 		return _err("new_string is required")
 	var old_str: String = args.get("old_string", "")
 	var new_str: String = args.get("new_string", "")
+	var replace_all: bool = bool(args.get("replace_all", false))
+	var do_save: bool = bool(args.get("save", false))
 
 	var t := _resolve_target(args, true)
 	if not t.ok:
@@ -463,11 +477,15 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 	var idx := current_text.find(old_str)
 	if idx == -1:
 		return _err("old_string not found in buffer")
-	var second := current_text.find(old_str, idx + old_str.length())
-	if second != -1:
-		return _err("old_string is not unique in buffer (matches at offsets %d and %d)" % [idx, second])
-
-	var new_text := current_text.substr(0, idx) + new_str + current_text.substr(idx + old_str.length())
+	var new_text: String
+	if replace_all:
+		# Parity with the old EditTool: replace every occurrence.
+		new_text = current_text.replace(old_str, new_str)
+	else:
+		var second := current_text.find(old_str, idx + old_str.length())
+		if second != -1:
+			return _err("old_string is not unique in buffer (matches at offsets %d and %d); pass replace_all=true to replace every occurrence" % [idx, second])
+		new_text = current_text.substr(0, idx) + new_str + current_text.substr(idx + old_str.length())
 
 	match t.kind:
 		KIND_BUFFER:
@@ -475,12 +493,19 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 			if SingletonObject.change_journal:
 				SingletonObject.change_journal.attribute_next_edit_to("ai")
 			buf.apply_edit(new_text)
-			return _ok({
+			var resp := {
 				"version": buf.version,
 				"dirty": buf.dirty,
 				"path": t.path,
 				"editor_name": t.editor_name,
-			})
+			}
+			if do_save:
+				var sr := buf.save_to_disk()
+				if not sr.get("ok", false):
+					return _err("saved_failed: %s" % str(sr.get("error", "")))
+				resp["dirty"] = buf.dirty
+				resp["saved"] = true
+			return _ok(resp)
 		KIND_TEXT_LOCAL:
 			t.editor.code_edit.text = new_text
 			t.editor.code_edit.text_changed.emit()

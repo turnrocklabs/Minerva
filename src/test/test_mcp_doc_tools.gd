@@ -39,6 +39,9 @@ func _run_tests() -> void:
 	test_doc_edit_unique_match_replaces(tools)
 	test_doc_edit_no_match_errors(tools)
 	test_doc_edit_non_unique_errors(tools)
+	test_doc_edit_replace_all(tools)
+	test_doc_write_save_persists(tools)
+	test_doc_edit_save_persists(tools)
 
 	test_doc_save_no_buffer_errors(tools)
 	test_doc_save_writes_to_disk_and_clears_dirty(tools)
@@ -235,6 +238,48 @@ func test_doc_edit_non_unique_errors(tools) -> void:
 	})
 	check("success=false on non-unique", r.success == false)
 	check("error mentions unique", "unique" in str(r.get("error", "")))
+
+
+func test_doc_edit_replace_all(tools) -> void:
+	print("test_doc_edit_replace_all")
+	_reset_registry()
+	var path := _temp_path("edit_all.txt")
+	tools.handle("minerva_doc_write", {"path": path, "text": "foo bar foo"})
+	var r: Dictionary = tools.handle("minerva_doc_edit", {
+		"path": path, "old_string": "foo", "new_string": "FOO", "replace_all": true,
+	})
+	check("replace_all success", r.success == true)
+	var read_r: Dictionary = tools.handle("minerva_doc_read", {"path": path})
+	check("every occurrence replaced", read_r.get("text", "") == "FOO bar FOO")
+
+
+func test_doc_write_save_persists(tools) -> void:
+	print("test_doc_write_save_persists")
+	_reset_registry()
+	# nested path also proves mkdir -p end-to-end through doc_save.
+	var path := _temp_path("ws_sub/write_save.txt")
+	var r: Dictionary = tools.handle("minerva_doc_write", {"path": path, "text": "persisted", "save": true})
+	check("write+save success", r.success == true)
+	check("saved flag set", r.get("saved", false) == true)
+	check("file on disk immediately (no separate save)", FileAccess.file_exists(path))
+	check("dirty cleared", r.get("dirty", true) == false)
+	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(_temp_path("ws_sub"))
+
+
+func test_doc_edit_save_persists(tools) -> void:
+	print("test_doc_edit_save_persists")
+	_reset_registry()
+	var path := _temp_path("edit_save.txt")
+	tools.handle("minerva_doc_write", {"path": path, "text": "x OLD y", "save": true})
+	var r: Dictionary = tools.handle("minerva_doc_edit", {
+		"path": path, "old_string": "OLD", "new_string": "NEW", "save": true,
+	})
+	check("edit+save success", r.success == true)
+	check("saved flag set", r.get("saved", false) == true)
+	var f := FileAccess.open(path, FileAccess.READ)
+	check("disk reflects edit", f.get_as_text() == "x NEW y")
+	f.close()
 
 
 # ---------------------------------------------------------------------------

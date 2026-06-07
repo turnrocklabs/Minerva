@@ -16,6 +16,7 @@ func _init() -> void:
 	test_read_missing_file_returns_not_found()
 	test_read_empty_path_errors()
 	test_write_creates_file()
+	test_write_creates_parent_dirs()
 	test_write_overwrites_existing_file()
 	test_exists_true_for_existing()
 	test_exists_false_for_missing()
@@ -96,6 +97,17 @@ func test_write_creates_file() -> void:
 
 	var read_r := DiskAccess.read(path)
 	check("readback matches", read_r.ok and read_r.text == "fresh content")
+
+
+func test_write_creates_parent_dirs() -> void:
+	print("test_write_creates_parent_dirs")
+	var nested := _temp_path("newdir/sub/created.txt")
+	var r := DiskAccess.write(nested, "deep")
+	check("write into nonexistent dirs ok=true (mkdir -p)", r.ok)
+	check("file exists in created dirs", FileAccess.file_exists(nested))
+	DirAccess.remove_absolute(nested)
+	DirAccess.remove_absolute(_temp_path("newdir/sub"))
+	DirAccess.remove_absolute(_temp_path("newdir"))
 
 
 func test_write_overwrites_existing_file() -> void:

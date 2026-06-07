@@ -41,6 +41,13 @@ static func write(path: String, text: String) -> Dictionary:
 		return {"ok": false, "error": resolved.error}
 
 	var abs_path: String = resolved.path
+	# Create parent directories so writing a NEW file in a NEW dir works (parity
+	# with the old WriteTool; benefits doc_save + disk_write). work item 019ea035bb28.
+	var base_dir := abs_path.get_base_dir()
+	if not base_dir.is_empty() and not DirAccess.dir_exists_absolute(base_dir):
+		var mk := DirAccess.make_dir_recursive_absolute(base_dir)
+		if mk != OK:
+			return {"ok": false, "error": "cannot_create_dir: %s (code=%d)" % [base_dir, mk]}
 	var f := FileAccess.open(abs_path, FileAccess.WRITE)
 	if f == null:
 		var code := FileAccess.get_open_error()
