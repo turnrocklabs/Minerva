@@ -137,6 +137,24 @@ func preview_diff(diff: String) -> void:
 
 
 # ══════════════════════════════════════════════════════════════════
+# PUBLIC API – Read-only review diff (DCR 019e9f602391 P5)
+# ══════════════════════════════════════════════════════════════════
+## Show a colored review diff the reviewer cannot edit — the codetools panel
+## double-click handoff opens a file here for review (not the HTML diff). Reuses
+## preview_diff() (autocoder's mechanism); the only difference is the buffer is
+## made non-editable so it reads as a review surface. Restore with
+## exit_review_diff(). preview_diff() itself is untouched (autocoder relies on it).
+func preview_review_diff(diff: String) -> void:
+	preview_diff(diff)
+	editable = false
+
+## Leave review mode: drop the diff preview and restore the editable buffer.
+func exit_review_diff() -> void:
+	clear_diff_preview()
+	editable = true
+
+
+# ══════════════════════════════════════════════════════════════════
 # PUBLIC API – Apply diff programmatically (no preview)
 # ══════════════════════════════════════════════════════════════════
 func apply_diff(diff: String) -> void:

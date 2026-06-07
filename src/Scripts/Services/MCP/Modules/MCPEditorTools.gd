@@ -10,6 +10,8 @@ func get_tool_names() -> Array[String]:
 		"minerva_create_graphics_editor",
 		"minerva_get_editor_content",
 		"minerva_update_editor",
+		"minerva_editor_review_diff",
+		"minerva_editor_exit_review_diff",
 		"minerva_save_editor",
 		"minerva_close_editor",
 		"minerva_list_editors",
@@ -315,6 +317,29 @@ func register_tools() -> void:
 		}
 	, "editor")
 
+	server._register_tool("minerva_editor_review_diff",
+		"Show a READ-ONLY review diff (colored additions/deletions, non-editable buffer) in an open text editor tab — the codetools panel double-click handoff (DCR 019e9f602391 P5). Open the file first with minerva_open_file, then call this with the file's unified diff. Leave with minerva_editor_exit_review_diff.",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {"type": "string", "description": "Editor tab name (from minerva_open_file / minerva_list_editors)."},
+				"diff": {"type": "string", "description": "Unified diff to render as a read-only review preview."},
+			},
+			"required": ["editor_name", "diff"]
+		}
+	, "editor")
+
+	server._register_tool("minerva_editor_exit_review_diff",
+		"Leave review-diff mode in a text editor: drop the colored preview and restore the editable buffer (DCR 019e9f602391 P5).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {"type": "string", "description": "Editor tab name."},
+			},
+			"required": ["editor_name"]
+		}
+	, "editor")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
@@ -326,6 +351,10 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _get_editor_content(arguments)
 		"minerva_update_editor":
 			return _update_editor(arguments)
+		"minerva_editor_review_diff":
+			return _review_diff(arguments)
+		"minerva_editor_exit_review_diff":
+			return _exit_review_diff(arguments)
 		"minerva_save_editor":
 			return _save_editor(arguments)
 		"minerva_close_editor":
@@ -491,6 +520,37 @@ func _update_editor(args: Dictionary) -> Dictionary:
 		"success": true,
 		"message": "Editor content updated"
 	}
+
+
+func _review_diff(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	var diff: String = args.get("diff", "")
+	if editor_name.is_empty():
+		return MCPToolUtils.error("editor_name is required")
+	if diff.is_empty():
+		return MCPToolUtils.error("diff is required")
+	var editor = MCPToolUtils.find_editor_by_name(editor_name)
+	if not editor:
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
+	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
+	if editor.type != EditorGDScript.Type.TEXT:
+		return MCPToolUtils.error("Not a text editor")
+	if not editor.code_edit or not editor.code_edit.has_method("preview_review_diff"):
+		return MCPToolUtils.error("Editor has no review-diff capable code_edit")
+	editor.code_edit.preview_review_diff(diff)
+	return {"success": true, "editor_name": editor_name, "review": true}
+
+
+func _exit_review_diff(args: Dictionary) -> Dictionary:
+	var editor_name: String = args.get("editor_name", "")
+	if editor_name.is_empty():
+		return MCPToolUtils.error("editor_name is required")
+	var editor = MCPToolUtils.find_editor_by_name(editor_name)
+	if not editor:
+		return MCPToolUtils.error("Editor not found: %s" % editor_name)
+	if editor.code_edit and editor.code_edit.has_method("exit_review_diff"):
+		editor.code_edit.exit_review_diff()
+	return {"success": true, "editor_name": editor_name, "review": false}
 
 
 func _save_editor(args: Dictionary) -> Dictionary:
