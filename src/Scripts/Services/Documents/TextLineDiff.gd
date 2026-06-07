@@ -60,6 +60,28 @@ static func diff(before: String, after: String) -> Dictionary:
 	}
 
 
+## Intra-line CHANGED character spans for a modified line pair (Beyond Compare's
+## word-level focus highlight). Trims the common prefix + suffix; the differing
+## middle on each side is the changed span. Returns {left:[[start,end]], right:
+## [[start,end]]} (half-open columns); empty array when a side has no change.
+## v1 = one span per side (the common case: a single localized edit). A
+## multi-span char-LCS is a possible refinement.
+static func char_ranges(a: String, b: String) -> Dictionary:
+	var p := 0
+	while p < a.length() and p < b.length() and a[p] == b[p]:
+		p += 1
+	var s := 0
+	while s < (a.length() - p) and s < (b.length() - p) and a[a.length() - 1 - s] == b[b.length() - 1 - s]:
+		s += 1
+	var left: Array = []
+	var right: Array = []
+	if a.length() - s > p:
+		left.append([p, a.length() - s])
+	if b.length() - s > p:
+		right.append([p, b.length() - s])
+	return {"left": left, "right": right}
+
+
 ## Aligned rows for a SIDE-BY-SIDE (Beyond Compare-style) view: one row per
 ## visual line, pairing changed lines left/right. Each row is:
 ##   {op: "equal"|"add"|"del"|"modify",

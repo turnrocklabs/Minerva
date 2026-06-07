@@ -21,6 +21,8 @@ func _init() -> void:
 	test_aligned_delete()
 	test_aligned_modify()
 
+	test_char_ranges()
+
 	print("=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
 		printerr("FAILURES: %d" % _fail)
@@ -121,6 +123,19 @@ func test_aligned_modify() -> void:
 	var m: Dictionary = r[1]
 	_eq("modify row: left=before", m["left_text"], "B")
 	_eq("modify row: right=after", m["right_text"], "X")
+
+
+func test_char_ranges() -> void:
+	print("test_char_ranges:")
+	var cr := TextLineDiff.char_ranges("return 42", "return 84")
+	_eq("left changed span = the digits", cr["left"], [[7, 9]])
+	_eq("right changed span = the digits", cr["right"], [[7, 9]])
+	var same := TextLineDiff.char_ranges("abc", "abc")
+	_eq("identical: no left span", same["left"], [])
+	_eq("identical: no right span", same["right"], [])
+	var ins := TextLineDiff.char_ranges("ac", "abc")
+	_eq("insertion: nothing on left", ins["left"], [])
+	_eq("insertion: 'b' span on right", ins["right"], [[1, 2]])
 
 
 func _ops(rows: Array) -> Array:
