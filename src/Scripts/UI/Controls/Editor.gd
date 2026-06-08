@@ -2745,22 +2745,24 @@ func _store_line_as_pending_annotation(line: int) -> bool:
 func _line_at_code_edit_position(local_pos: Vector2) -> int:
 	if code_edit == null:
 		return -1
-	if code_edit.has_method("get_line_height"):
-		var first_visible := 0
-		if code_edit.has_method("get_first_visible_line"):
-			first_visible = int(code_edit.call("get_first_visible_line"))
-		var line_height := maxf(1.0, float(code_edit.get_line_height()))
-		var line := first_visible + int(floor(local_pos.y / line_height))
-		if code_edit.has_method("get_line_count"):
-			line = clampi(line, 0, code_edit.get_line_count() - 1)
-		return line
-
+	# Prefer Godot's wrap-aware conversion. get_line_column_at_pos maps a local
+	# pixel position to the LOGICAL line correctly even under soft word-wrap (a
+	# logical line spanning several visual rows). The returned Vector2i is
+	# (x = column, y = LINE) — earlier code read .x as the line, which is actually
+	# the column. The manual first_visible + floor(y/line_height) math (fallback
+	# below) conflates visual wrap-rows with logical lines and mis-targets clicks
+	# below a wrapped paragraph, so it is only used when this API is absent or the
+	# position is out of bounds. (bug 019ea4b62012 / RCA 019ea4c055ad)
 	if code_edit.has_method("get_line_column_at_pos"):
 		var value: Variant = code_edit.call("get_line_column_at_pos", Vector2i(int(local_pos.x), int(local_pos.y)))
 		if value is Vector2i:
-			return clampi((value as Vector2i).x, 0, code_edit.get_line_count() - 1)
-		if value is Vector2:
-			return clampi(int((value as Vector2).x), 0, code_edit.get_line_count() - 1)
+			var lc := value as Vector2i
+			if lc.y >= 0:
+				return clampi(lc.y, 0, code_edit.get_line_count() - 1)
+		elif value is Vector2:
+			var lcf := value as Vector2
+			if int(lcf.y) >= 0:
+				return clampi(int(lcf.y), 0, code_edit.get_line_count() - 1)
 
 	var fallback_first_visible := 0
 	if code_edit.has_method("get_first_visible_line"):

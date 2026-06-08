@@ -125,21 +125,35 @@ func _draw_healthy(
 		var col_b: int = end_col if line == end_line else _line_length(code, line)
 		if col_b <= col_a:
 			continue
-		var p_a: Vector2i = code.get_pos_at_line_column(line, col_a)
-		var p_b: Vector2i = code.get_pos_at_line_column(line, col_b)
-		if p_a.x < 0 or p_b.x < 0:
-			continue
-		# get_pos_at_line_column returns the baseline-ish y in code_edit-local
-		# space; -1px nudges the line just above the API y for an underline
-		# look directly under the text.
-		var y := ce_local.y + float(p_a.y) - 1.0
-		var x1 := float(p_a.x) + ce_local.x
-		var x2 := float(p_b.x) + ce_local.x
-		draw_line(Vector2(x1, y), Vector2(x2, y), _HEALTHY_COLOR, _UNDERLINE_THICKNESS)
-		if not badge_drawn:
-			badge_after_x = x2
-			badge_base_y = ce_local.y + float(p_a.y)
-			badge_drawn = true
+		# A logical line can wrap across several visual rows under soft word-wrap.
+		# Draw one underline per visual row so the highlight doesn't truncate at the
+		# first wrap boundary; get_pos_at_line_column gives each row its own y. Each
+		# segment keeps both endpoints on the SAME visual row. (bug 019ea4d3c94d)
+		for seg in _wrap_segments(code, line, col_a, col_b):
+			var seg_a: int = seg[0]
+			var seg_b: int = seg[1]
+			if seg_b <= seg_a:
+				continue
+			var p_a: Vector2i = code.get_pos_at_line_column(line, seg_a)
+			var p_b: Vector2i = code.get_pos_at_line_column(line, seg_b)
+			# A column at a wrap boundary resolves to the NEXT row's start; if the
+			# end jumped rows, pull it back to the last column on this row so the
+			# underline stays on its own visual row.
+			if p_b.y != p_a.y and seg_b - 1 > seg_a:
+				p_b = code.get_pos_at_line_column(line, seg_b - 1)
+			if p_a.x < 0 or p_b.x < 0:
+				continue
+			# get_pos_at_line_column returns the baseline-ish y in code_edit-local
+			# space; -1px nudges the line just above the API y for an underline
+			# look directly under the text.
+			var y := ce_local.y + float(p_a.y) - 1.0
+			var x1 := float(p_a.x) + ce_local.x
+			var x2 := float(p_b.x) + ce_local.x
+			draw_line(Vector2(x1, y), Vector2(x2, y), _HEALTHY_COLOR, _UNDERLINE_THICKNESS)
+			if not badge_drawn:
+				badge_after_x = x2
+				badge_base_y = ce_local.y + float(p_a.y)
+				badge_drawn = true
 
 	if badge_drawn:
 		# Convention: left gutter = line annotations, RIGHT margin = range/highlight.
@@ -267,6 +281,31 @@ func _line_length(code: Object, line: int) -> int:
 	if code.has_method("get_line"):
 		return str(code.get_line(line)).length()
 	return 0
+
+
+# Split the column range [col_a, col_b) on a logical line into per-visual-row
+# segments so a soft-wrapped line gets one underline per row instead of a single
+# segment that collapses at the first wrap. Each returned [a, b] pair lies within a
+# single visual row. Falls back to one segment when the wrap APIs are unavailable
+# or the line doesn't wrap. (bug 019ea4d3c94d)
+static func _wrap_segments(code: Object, line: int, col_a: int, col_b: int) -> Array:
+	if not code.has_method("get_line_wrap_count") or not code.has_method("get_line_wrapped_text"):
+		return [[col_a, col_b]]
+	if int(code.get_line_wrap_count(line)) <= 0:
+		return [[col_a, col_b]]
+	var rows: PackedStringArray = code.get_line_wrapped_text(line)
+	var segments: Array = []
+	var row_start := 0
+	for r in rows.size():
+		var row_end := row_start + rows[r].length()
+		var seg_a := maxi(col_a, row_start)
+		var seg_b := mini(col_b, row_end)
+		if seg_b > seg_a:
+			segments.append([seg_a, seg_b])
+		row_start = row_end
+	if segments.is_empty():
+		return [[col_a, col_b]]
+	return segments
 
 
 static func _flat_offset_to_line_col(doc: String, offset: int) -> Array:
