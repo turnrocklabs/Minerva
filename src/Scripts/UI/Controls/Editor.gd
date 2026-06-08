@@ -2497,7 +2497,8 @@ func add_comment(text: String) -> String:
 		end = int(_pending_annotation_selection.get("end", -1))
 	var target_scope := str(_pending_annotation_selection.get("target_scope", "range"))
 
-	if start < 0 or end <= start:
+	# Line-scope anchors may be zero-width (blank line); range anchors need a span.
+	if start < 0 or end < start or (target_scope != "line" and end <= start):
 		push_warning("[Editor.add_comment] no valid selection")
 		return ""
 
@@ -2675,13 +2676,17 @@ func _store_pending_annotation_selection(start: int, end: int, target_scope: Str
 		var tmp := start
 		start = end
 		end = tmp
-	if start < 0 or end <= start:
+	var is_line := target_scope == "line"
+	# Range/selection comments need a non-empty span. LINE comments may be
+	# zero-width (a blank line has no characters) — they anchor to the line
+	# position and render as a gutter marker. (bug 019ea5335f03)
+	if start < 0 or (not is_line and end <= start):
 		_pending_annotation_selection.clear()
 		return false
 	_pending_annotation_selection = {
 		"start": start,
 		"end": end,
-		"target_scope": "line" if target_scope == "line" else "range",
+		"target_scope": "line" if is_line else "range",
 	}
 	return true
 
@@ -2691,8 +2696,12 @@ func _has_pending_annotation_selection() -> bool:
 		return false
 	var start := int(_pending_annotation_selection.get("start", -1))
 	var end := int(_pending_annotation_selection.get("end", -1))
+	var is_line := str(_pending_annotation_selection.get("target_scope", "range")) == "line"
 	var text_len := code_edit.text.length() if code_edit != null else 0
-	return start >= 0 and end > start and end <= text_len
+	if start < 0 or end > text_len or end < start:
+		return false
+	# Zero-width is valid for a line anchor (blank line); a range needs a span.
+	return is_line or end > start
 
 
 func _try_begin_line_comment_from_event(event: InputEvent) -> bool:
@@ -2708,9 +2717,13 @@ func _try_begin_line_comment_from_event(event: InputEvent) -> bool:
 	var line := _line_at_code_edit_position(mb.position)
 	if line < 0:
 		return false
+	# Blank lines are commentable: they anchor to the line POSITION (a zero-width
+	# "line"-scope anchor), not a character span — the intent is "add something
+	# here". Only a genuinely degenerate store (no code_edit / empty document)
+	# fails now. (bug 019ea5335f03)
 	if not _store_line_as_pending_annotation(line):
 		if _annotation_sidebar.has_method("show_status"):
-			_annotation_sidebar.show_status("Cannot annotate an empty line")
+			_annotation_sidebar.show_status("Cannot annotate this line")
 		return true
 	if _annotation_sidebar.has_method("set_can_add_comment"):
 		_annotation_sidebar.set_can_add_comment(true)
@@ -2737,8 +2750,8 @@ func _store_line_as_pending_annotation(line: int) -> bool:
 	var line_text := str(code_edit.get_line(line)) if code_edit.has_method("get_line") else ""
 	var start := _line_col_to_flat_offset(doc, line, 0)
 	var end := start + line_text.length()
-	if end <= start:
-		return false
+	# A blank line gives end == start (zero-width). That is a valid LINE anchor —
+	# it pins to the line position and renders as a gutter marker. Do not reject it.
 	return _store_pending_annotation_selection(start, end, "line")
 
 
