@@ -1024,6 +1024,12 @@ func _set_code_edit_text_from_buffer(new_text: String) -> void:
 	code_edit.set_caret_column(caret_col)
 	code_edit.scroll_vertical = v_scroll
 	code_edit.scroll_horizontal = h_scroll
+	# Programmatic `text =` does NOT emit text_changed in Godot 4 (cf _load_text_file
+	# above), so the dirty/note tab glyph + annotation revision never refresh on an
+	# agent/MCP/journal edit. Emit it ourselves so the buffer-sync edit routes through
+	# the same content_changed path human typing uses. The _applying_buffer_text guard
+	# still suppresses the echo-back into the buffer (apply_edit is skipped below).
+	code_edit.text_changed.emit()
 	_applying_buffer_text = false
 
 

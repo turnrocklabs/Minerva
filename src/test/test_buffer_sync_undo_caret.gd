@@ -9,6 +9,12 @@ extends SceneTree
 ##  2. The caret/scroll save→assign→clamp-restore sequence used by
 ##     Editor._set_code_edit_text_from_buffer preserves the caret across an
 ##     agent-driven replace (and clamps when the new text is shorter).
+##  3. The sync path EMITS text_changed. Godot 4 does NOT emit text_changed on a
+##     programmatic `text =` assignment, so the dirty/note tab glyph + annotation
+##     revision (driven by code_edit.text_changed → _on_editor_changed →
+##     content_changed) never refresh on an agent/MCP/journal edit unless the sync
+##     emits it manually. Locks both halves: bare `text =` is silent, the sync
+##     path fires it exactly once.
 ##
 ## Run: godot --headless --path src --script test/test_buffer_sync_undo_caret.gd
 
@@ -21,6 +27,7 @@ func _init() -> void:
 	test_text_assign_is_single_undo_step_preserving_history()
 	test_caret_preserved_across_replace()
 	test_caret_clamped_when_text_shrinks()
+	test_bare_assign_is_silent_but_sync_emits_text_changed()
 	print("=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
 		printerr("FAILURES: %d" % _fail)
@@ -40,8 +47,9 @@ func _eq(desc: String, actual: Variant, expected: Variant) -> void:
 	_check("%s (got %s, want %s)" % [desc, str(actual), str(expected)], actual == expected)
 
 
-# Mirrors Editor._set_code_edit_text_from_buffer's caret/scroll preservation so
-# the contract is testable without booting the full Editor scene.
+# Mirrors Editor._set_code_edit_text_from_buffer's caret/scroll preservation AND
+# the manual text_changed.emit() (Godot is silent on programmatic `text =`), so the
+# contract is testable without booting the full Editor scene.
 func _sync(ce: CodeEdit, new_text: String) -> void:
 	if ce.text == new_text:
 		return
@@ -57,6 +65,24 @@ func _sync(ce: CodeEdit, new_text: String) -> void:
 	ce.set_caret_column(caret_col)
 	ce.scroll_vertical = v_scroll
 	ce.scroll_horizontal = h_scroll
+	ce.text_changed.emit()
+
+
+func test_bare_assign_is_silent_but_sync_emits_text_changed() -> void:
+	print("test_bare_assign_is_silent_but_sync_emits_text_changed:")
+	var ce := CodeEdit.new()
+	get_root().add_child(ce)
+	ce.text = "start"
+	var fired := [0]
+	ce.text_changed.connect(func() -> void: fired[0] += 1)
+	# (a) the Godot gotcha the fix depends on: programmatic `text =` is silent.
+	ce.text = "silent assign"
+	_eq("bare text= does not emit text_changed", fired[0], 0)
+	# (b) the sync path emits it exactly once so the glyph/note/annotation refresh.
+	fired[0] = 0
+	_sync(ce, "after sync")
+	_eq("sync path emits text_changed once", fired[0], 1)
+	ce.queue_free()
 
 
 func test_text_assign_is_single_undo_step_preserving_history() -> void:
