@@ -48,6 +48,8 @@ func _init() -> void:
 	test_resolve_deps_all_satisfied()
 	test_resolve_deps_missing_external()
 	test_resolve_deps_own_plugin_tools_satisfied()
+	test_resolve_deps_own_namespace_satisfied_without_manifest_tools()
+	test_resolve_deps_other_plugin_namespace_not_credited()
 	test_resolve_deps_empty_tool_deps()
 	test_resolve_deps_preserves_skill_order()
 
@@ -199,6 +201,32 @@ func test_resolve_deps_own_plugin_tools_satisfied() -> void:
 	var resolved: Array = PluginSkillSeederScript.resolve_deps(def, {})
 	check("plugin's own tool counts as satisfied",
 		(resolved[0].get("unsatisfied", []) as Array).is_empty())
+
+
+func test_resolve_deps_own_namespace_satisfied_without_manifest_tools() -> void:
+	print("test_resolve_deps_own_namespace_satisfied_without_manifest_tools")
+	# Backend-driven plugin: manifest tools[] is EMPTY, but the skill depends on
+	# the plugin's own minerva_<id>_* tools (published by the backend at runtime).
+	# resolve_deps must credit them via the namespace prefix, not the (empty)
+	# manifest list. Without this, such a plugin's skills seed all-unsatisfied and
+	# stay hidden. (codetools, 2026-06-08.)
+	var def := _make_def("demo",
+		[_skill("demo", "eps", ["minerva_demo_file_read", "minerva_demo_explore"])])
+	# Note: NO tools[] passed -> manifest tools[] is empty; available_tools empty too.
+	var resolved: Array = PluginSkillSeederScript.resolve_deps(def, {})
+	check("own-namespace deps satisfied despite empty manifest tools[]",
+		(resolved[0].get("unsatisfied", []) as Array).is_empty())
+
+
+func test_resolve_deps_other_plugin_namespace_not_credited() -> void:
+	print("test_resolve_deps_other_plugin_namespace_not_credited")
+	# A dep in ANOTHER plugin's namespace is not this plugin's own tool — it must
+	# stay unsatisfied (the namespace credit is scoped to minerva_<this_id>_*).
+	var def := _make_def("demo", [_skill("demo", "zeta", ["minerva_otherplugin_thing"])])
+	var resolved: Array = PluginSkillSeederScript.resolve_deps(def, {})
+	var uns: Array = resolved[0].get("unsatisfied", [])
+	check("foreign-namespace dep stays unsatisfied",
+		uns.size() == 1 and uns[0] == "minerva_otherplugin_thing")
 
 
 func test_resolve_deps_empty_tool_deps() -> void:

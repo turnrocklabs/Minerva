@@ -16,9 +16,13 @@ const PluginSkillRecordScript = preload("res://Scripts/Services/Plugins/PluginSk
 ## Resolve tool_deps for each skill in the manifest against the available tool set.
 ##
 ## available_tools: Dictionary keyed by tool name (any value).  Typically
-## SingletonObject.mcp_manager.tool_registry.  Tools declared in the plugin's
-## own manifest (def.tools[].name) are always considered satisfied — they'll
-## come online when the plugin starts.
+## SingletonObject.mcp_manager.tool_registry.  A plugin's OWN tools are always
+## considered satisfied — they come online when the plugin's backend starts.
+## "Own" means EITHER declared in the manifest (def.tools[].name) OR in the
+## plugin's namespace `minerva_<plugin_id>_*`. The namespace check matters because
+## backend-driven plugins publish their tools via the runtime tools/list and leave
+## the manifest tools[] empty; without it, such a plugin's skills seed with every
+## self-referential dep marked unsatisfied and stay hidden. (codetools, 2026-06-08.)
 ##
 ## Returns: Array of {skill: Dictionary, unsatisfied: Array[String]}, parallel
 ## to def.skills, in the same order.
@@ -28,6 +32,7 @@ static func resolve_deps(def, available_tools: Dictionary) -> Array:
 		var name := str(t.get("name", ""))
 		if not name.is_empty():
 			own_tool_names[name] = true
+	var own_prefix := "minerva_%s_" % str(def.id)
 
 	var resolved: Array = []
 	for skill in def.skills:
@@ -38,8 +43,9 @@ static func resolve_deps(def, available_tools: Dictionary) -> Array:
 				var dep_name := str(dep)
 				if dep_name.is_empty():
 					continue
-				if not (own_tool_names.has(dep_name) or available_tools.has(dep_name)):
-					unsatisfied.append(dep_name)
+				if own_tool_names.has(dep_name) or available_tools.has(dep_name) or dep_name.begins_with(own_prefix):
+					continue
+				unsatisfied.append(dep_name)
 		resolved.append({"skill": skill, "unsatisfied": unsatisfied})
 	return resolved
 
