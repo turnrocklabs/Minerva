@@ -35,7 +35,21 @@ class KnownServer:
 		startup_args = p_startup_args
 
 
-## Registry of all known servers (keyed by server name)
+## Registry of all known servers (keyed by server name).
+##
+## MIGRATION LAND-MINE (read before moving a core server to a plugin):
+## codetools was REMOVED from this registry once it became an installable
+## marketplace plugin. A core "known server" registers its tools independent of
+## any plugin, which (a) violates "no plugin installed => no such tools" and
+## (b) SHADOWS the plugin's `minerva_<id>_*` namespace with stale/older tools, so
+## the plugin's seeded skills can never resolve their tool_deps and stay hidden.
+## nudge and cobrowser are intentionally still core for now, but are slated to
+## become plugins too. When they migrate, deleting the entry here is NECESSARY
+## but NOT SUFFICIENT: ServerConfigs are PERSISTED into user://mcp_config.json and
+## reloaded on launch, so you must ALSO strip the server from existing user
+## configs (and drop any per-server special-casing, e.g. in MCPConfig) — else the
+## stale core server lingers and shadows the new plugin. (codetools incident,
+## 2026-06-08.)
 static var SERVERS: Dictionary = {
 	"nudge": KnownServer.new(
 		"Nudge",
@@ -53,14 +67,6 @@ static var SERVERS: Dictionary = {
 		true, "/mcp", "HumanWeb",
 		"src/Library/cobrowser_service.py", "uvicorn",
 		["src.Library.cobrowser_service:app", "--host", "0.0.0.0"]
-	),
-	"codetools": KnownServer.new(
-		"CodeTools",
-		"Code manipulation and analysis tools",
-		"http", 8700,
-		"https://github.com/ipeerbhai/codetools.git",
-		true, "/", "codetools", "", "codetools",
-		["serve"]
 	),
 }
 

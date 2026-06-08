@@ -176,12 +176,6 @@ func _add_default_servers() -> void:
 		config.mcp_endpoint = known.default_mcp_endpoint
 		config.origin = "known"
 
-		# CodeTools defaults to current working directory
-		if server_name == "codetools":
-			var dir := DirAccess.open(".")
-			if dir:
-				config.working_directory = dir.get_current_dir()
-
 		servers.append(config)
 
 
@@ -384,10 +378,6 @@ func load_config() -> Error:
 			new_config.auto_connect = true  # Try to connect on startup
 			new_config.mcp_endpoint = known.default_mcp_endpoint
 			new_config.origin = "known"
-			if known_name == "codetools":
-				var dir := DirAccess.open(".")
-				if dir:
-					new_config.working_directory = dir.get_current_dir()
 			servers.append(new_config)
 
 	# Migration: Apply required property fixes for existing configs
