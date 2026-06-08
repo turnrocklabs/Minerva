@@ -476,36 +476,36 @@ func _sha256_hex(file_path: String) -> String:
 
 
 func _ensure_dir(rel_path: String) -> void:
-	var abs := ProjectSettings.globalize_path(rel_path)
-	if not DirAccess.dir_exists_absolute(abs):
-		DirAccess.make_dir_recursive_absolute(abs)
+	var abs_path := ProjectSettings.globalize_path(rel_path)
+	if not DirAccess.dir_exists_absolute(abs_path):
+		DirAccess.make_dir_recursive_absolute(abs_path)
 
 
 func _rm_file(rel_path: String) -> void:
-	var abs := ProjectSettings.globalize_path(rel_path)
-	if FileAccess.file_exists(abs):
-		DirAccess.remove_absolute(abs)
+	var abs_path := ProjectSettings.globalize_path(rel_path)
+	if FileAccess.file_exists(abs_path):
+		DirAccess.remove_absolute(abs_path)
 
 
 func _rm_dir_recursive(rel_path: String) -> void:
-	var abs := ProjectSettings.globalize_path(rel_path)
-	var d := DirAccess.open(abs)
+	var abs_path := ProjectSettings.globalize_path(rel_path)
+	var d := DirAccess.open(abs_path)
 	if d == null:
 		return
 	d.list_dir_begin()
 	while true:
-		var name := d.get_next()
-		if name.is_empty():
+		var entry_name := d.get_next()
+		if entry_name.is_empty():
 			break
-		if name == "." or name == "..":
+		if entry_name == "." or entry_name == "..":
 			continue
-		var entry_abs := "%s/%s" % [abs, name]
+		var entry_abs := "%s/%s" % [abs_path, entry_name]
 		if d.current_is_dir():
-			_rm_dir_recursive("%s/%s" % [rel_path, name])
+			_rm_dir_recursive("%s/%s" % [rel_path, entry_name])
 		else:
 			DirAccess.remove_absolute(entry_abs)
 	d.list_dir_end()
-	DirAccess.remove_absolute(abs)
+	DirAccess.remove_absolute(abs_path)
 
 
 func _chmod_executable(abs_path: String) -> void:
