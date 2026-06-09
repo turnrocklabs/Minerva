@@ -3136,9 +3136,17 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 
 	print("[ChatPane] TTS: got %d bytes, playing..." % wav_data.size())
 
+	# The synthesize await above is a real network round-trip; during it the pane
+	# (and its child _tts_player) can be torn down by a project reload / tab close.
+	# Bail out rather than assign .stream on a freed node.
+	if not is_instance_valid(_tts_player):
+		print("[ChatPane] TTS: player freed during synthesis, aborting playback")
+		_tts_busy = false
+		return
+
 	# Collapse after successful synthesis — only in summarize mode
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
-		if msg_node is MessageMarkdown and msg_node._expanded:
+		if is_instance_valid(msg_node) and msg_node is MessageMarkdown and msg_node._expanded:
 			msg_node._expanded = false
 			msg_node.contract_message()
 
