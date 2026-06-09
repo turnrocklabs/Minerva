@@ -613,6 +613,16 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("  ℹ️ Binary header cmd=%s not a response, ignoring." % hdr_cmd)
 					return
 
+				# Always reset binary state before starting a new transfer.
+				# Previous state may be stale if the text completion response
+				# was missed (e.g. entity_type mismatch) or never sent.
+				# NOTE: the reset MUST run BEFORE assigning _binary_transfer_mode —
+				# _reset_binary_transfer_state() clears the mode, so resetting after
+				# the assignment wiped it and broke binary decode (no FILE_END/voice match).
+				if SingletonObject.verbose_logging:
+					print("  ℹ️ New binary stream for request_id=%s. Resetting previous state." % req_id)
+				_reset_binary_transfer_state()
+
 				if hdr_topic.begins_with("media_gen/"):
 					_binary_transfer_mode = "media_gen"
 				elif hdr_topic == "artifact/download":
@@ -624,12 +634,6 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("  ℹ️ Binary header topic=%s not handled, ignoring." % hdr_topic)
 					return
 
-				# Always reset binary state before starting a new transfer.
-				# Previous state may be stale if the text completion response
-				# was missed (e.g. entity_type mismatch) or never sent.
-				if SingletonObject.verbose_logging:
-					print("  ℹ️ New binary stream for request_id=%s. Resetting previous state." % req_id)
-				_reset_binary_transfer_state()
 				_current_binary_request_id = req_id
 
 				_binary_expected_files = num_files
