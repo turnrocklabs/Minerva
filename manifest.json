@@ -1,0 +1,270 @@
+{
+  "id": "agent-relay",
+  "name": "Agent Relay",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "release_targets": ["linux-x86_64", "linux-arm64", "macos-universal", "windows-x86_64"],
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "./agent-relay-plugin",
+    "args": []
+  },
+  "tools": [
+    {
+      "name": "minerva_agent_relay_watch_start",
+      "description": "Arm a watch session on an open terminal tab for a running CLI agent. Once armed, the relay monitors the terminal for turn completion and raises agent_relay.turn_completed events.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "terminal_id": {
+            "type": "string",
+            "description": "ID of the terminal to watch (from minerva_terminal_list)."
+          },
+          "profile": {
+            "type": "string",
+            "description": "CLI agent profile to use for turn detection (e.g. 'claude', 'codex', 'opencode'). Defaults to 'claude'."
+          },
+          "notify_mode": {
+            "type": "string",
+            "enum": ["armed", "all_turns", "none"],
+            "description": "Controls how turn events are surfaced: 'armed' = emit only when armed (default), 'all_turns' = emit on every detected turn, 'none' = detect silently."
+          }
+        },
+        "required": ["terminal_id"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_watch_stop",
+      "description": "Disarm and tear down the watch session for a terminal. Safe to call when no session is active.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "terminal_id": {
+            "type": "string",
+            "description": "ID of the terminal whose watch session to stop."
+          }
+        },
+        "required": ["terminal_id"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_watch_status",
+      "description": "Return the current state of a watch session: armed flag, last detection method, exchange counts, truncation flags.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "terminal_id": {
+            "type": "string",
+            "description": "ID of the terminal to query."
+          }
+        },
+        "required": ["terminal_id"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_send",
+      "description": "Send text input to a watched terminal and arm a one-shot wake (write via host.terminal.write then arm to detect the next turn completion).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "terminal_id": {
+            "type": "string",
+            "description": "ID of the terminal to write to."
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to send. Use \\r for Enter/Return to submit a command."
+          },
+          "arm": {
+            "type": "boolean",
+            "description": "When true (default), arm the watch session for one-shot turn detection after writing."
+          }
+        },
+        "required": ["terminal_id", "text"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_read_clean",
+      "description": "Read terminal output and apply the chrome filter to strip TUI decorations (box-drawing borders, spinners, status bars), returning clean agent text. Optionally applies inline ad-hoc patterns on top of the installed filter rules.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "terminal_id": {
+            "type": "string",
+            "description": "ID of the terminal to read from. If omitted, raw_text must be provided."
+          },
+          "raw_text": {
+            "type": "string",
+            "description": "Raw terminal text to filter. When provided, no terminal read is performed — useful for testing filter rules."
+          },
+          "extra_patterns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional list of additional regex patterns to strip from each line (applied after built-in chrome filter)."
+          }
+        }
+      }
+    },
+    {
+      "name": "minerva_agent_relay_read_turn",
+      "description": "Read the latest agent turn from a terminal and distil it to structured output via host.providers.chat. Returns the distilled content plus the raw cleaned text.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "terminal_id": {
+            "type": "string",
+            "description": "ID of the terminal to read from."
+          },
+          "model_spec": {
+            "type": "object",
+            "description": "Optional structured provider spec for the distillation call. Shape: {kind: 'core_action', service_client_id: '...', action_name: '...'}.",
+            "properties": {
+              "kind": {"type": "string"},
+              "service_client_id": {"type": "string"},
+              "action_name": {"type": "string"}
+            }
+          }
+        },
+        "required": ["terminal_id"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_filter_set",
+      "description": "Install or replace a named chrome-filter rule. Rules are applied by read_clean after the built-in chrome filter.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique rule name."
+          },
+          "pattern": {
+            "type": "string",
+            "description": "Regex pattern to match against each line."
+          },
+          "action": {
+            "type": "string",
+            "enum": ["drop_line", "strip_match"],
+            "description": "'drop_line' removes the entire line when the pattern matches. 'strip_match' removes only the matched portion."
+          }
+        },
+        "required": ["name", "pattern", "action"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_filter_list",
+      "description": "List all installed chrome-filter rules. Returns {ok, rules: [{name, pattern, action}]}.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "minerva_agent_relay_filter_delete",
+      "description": "Remove a named chrome-filter rule. Returns {ok, deleted: bool}.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the rule to delete."
+          }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_profile_get",
+      "description": "Get the detection profile for a specific CLI agent. Returns {ok, profile}.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Profile ID (e.g. 'claude', 'codex', 'opencode')."
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_profile_set",
+      "description": "Create or update a CLI agent detection profile.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Profile ID (e.g. 'claude', 'codex', 'opencode')."
+          },
+          "display_name": {
+            "type": "string",
+            "description": "Human-readable display name."
+          },
+          "detection": {
+            "type": "object",
+            "description": "Detection parameters for this CLI agent.",
+            "properties": {
+              "prompt_box_regex": {
+                "type": "string",
+                "description": "Regex matching the input-ready prompt box (e.g. '╭─\\s*$')."
+              },
+              "spinner_glyphs": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of spinner characters to detect activity."
+              },
+              "alt_screen": {
+                "type": "boolean",
+                "description": "Whether this CLI uses an alternate screen buffer."
+              },
+              "bell_capable": {
+                "type": "boolean",
+                "description": "Whether this CLI rings a terminal bell on turn completion."
+              }
+            }
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_profiles_list",
+      "description": "List all known CLI agent detection profiles. Returns {ok, profiles: [{id, display_name, detection: {prompt_box_regex, spinner_glyphs, alt_screen, bell_capable}}]}.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "editor_items": [],
+  "events": [
+    {
+      "name": "agent_relay.turn_completed",
+      "description": "Emitted when a watched terminal's CLI agent completes a turn. payload: {terminal_id: string, kind: 'turn_completed'|'input_requested'|'agent_exited'|'terminal_closed'|'timed_out', detection: 'bell'|'settle_prompt'|'prompt_marker'|'child_exit'|'timeout'}."
+    }
+  ],
+  "permissions": {
+    "host_capabilities": [
+      "host.terminal.list",
+      "host.terminal.read",
+      "host.terminal.write",
+      "host.terminal.wait",
+      "host.providers.chat",
+      "mcp.proxy:minerva_create_note",
+      "mcp.proxy:minerva_link_note_to_chat",
+      "mcp.proxy:minerva_speak"
+    ],
+    "filesystem": {
+      "mode": "unrestricted"
+    }
+  },
+  "autostart": false,
+  "auto_reload": true
+}
