@@ -443,7 +443,6 @@ fn watch_loop(
                 let current_rows = result.get("total_scrollback_rows")
                     .and_then(|v| v.as_u64());
 
-                // Run the detection pass.
                 if let Some(det) = detector::run(content, bell_rung, shell_exited, &cd) {
                     maybe_emit(
                         &terminal_id,

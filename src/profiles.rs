@@ -120,32 +120,29 @@ pub fn builtin_profiles() -> Vec<Profile> {
             id: "claude".to_string(),
             display_name: "Claude Code".to_string(),
             detection: Detection {
-                // Claude Code renders a bordered input box when ready.
-                // The rounded bottom corner ╰ followed by ─ bars and ╯
-                // signals input-ready. This regex matches that bottom border
-                // as a prompt-box indicator.
-                prompt_box_regex: r"╰[─]+╯".to_string(),
+                // CALIBRATED against live Claude Code 2026-06 (B5 HITL,
+                // tests/fixtures/real/). The input prompt is a `❯` followed
+                // by U+00A0 NO-BREAK SPACE — `\s` (Unicode in Rust regex)
+                // matches both NBSP and the ASCII space of echoed prompts.
+                // The old ╰─╯ box style no longer exists.
+                prompt_box_regex: r"^❯\s".to_string(),
 
                 // Claude Code permission dialogs show a "Do you want to proceed?"
                 // style prompt, or a "run this command?" confirmation box.
-                // Matches common Claude Code permission patterns.
                 permission_dialog_regex: Some(
-                    r"(?i)(?:do you want to|allow claude|proceed|confirm|yes/no|\[y\]|\[y/n\])".to_string()
+                    r"(?i)(?:do you want to|allow claude|proceed\?|yes/no|\[y/n\]|❯ 1\. yes)".to_string()
                 ),
 
-                // Claude Code uses Braille spinner dots while thinking.
-                spinner_glyphs: vec![
-                    "⠋".to_string(), "⠙".to_string(), "⠹".to_string(),
-                    "⠸".to_string(), "⠼".to_string(), "⠴".to_string(),
-                    "⠦".to_string(), "⠧".to_string(), "⠇".to_string(),
-                    "⠏".to_string(),
-                ],
+                // Working indicator: status glyphs like ✻ PERSIST after a turn
+                // ("✻ Baked for 3s"), so glyphs are NOT busy-markers. The only
+                // reliable in-progress marker is the literal interrupt hint.
+                spinner_glyphs: vec!["esc to interrupt".to_string()],
 
-                // Claude Code uses the alternate screen buffer.
-                alt_screen: true,
+                // Claude Code scrolls the PRIMARY screen (scrollback grows).
+                alt_screen: false,
 
-                // Claude Code rings a bell on turn completion (default: bell-on).
-                // This is the CLI default; we never change it (NON-INTERFERENCE).
+                // Claude Code can ring a bell (config-dependent; opportunistic
+                // only). We never change the CLI's config (NON-INTERFERENCE).
                 bell_capable: true,
 
                 // 1.5 seconds settle — Claude Code does final repaints after a

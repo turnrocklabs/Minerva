@@ -278,17 +278,26 @@ mod tests {
     /// Claude Code in idle/prompt-ready state (chrome stripped — detector works
     /// on cleaned output from chrome_filter).
     fn screen_claude_idle() -> &'static str {
+        // Real Claude Code 2026-06 idle layout (tests/fixtures/real/):
+        // the input prompt is `❯` + U+00A0 NO-BREAK SPACE (\u{a0} below) —
+        // a plain-space-only regex misses it (B5 live finding).
         "Here is my answer to your question.\n\
          I recommend using Rust for this task.\n\
          \n\
-         ╰────────────────────────────────────────────╯\n\
-         > _\n"
+         ✻ Baked for 3s\n\
+         \n\
+         \u{276f}\u{a0}\n\
+         ? for shortcuts \u{b7} \u{2190} for agents\n"
     }
 
     /// A screen with an active Braille spinner — agent is still working.
     fn screen_claude_busy() -> &'static str {
-        "⠋ Thinking about your request...\n\
-         Running tool: read_file\n"
+        // Real busy layout: the prompt line stays visible DURING generation;
+        // the reliable busy marker is the literal "esc to interrupt" hint.
+        "✶ Pondering\u{2026} (3s \u{b7} esc to interrupt)\n\
+         Running tool: read_file\n\
+         \n\
+         \u{276f}\u{a0}\n"
     }
 
     /// A screen with a permission dialog.
@@ -306,16 +315,16 @@ mod tests {
     /// 40-line detection window; then the prompt box appears at the bottom.
     fn screen_spinner_above_fold() -> &'static str {
         concat!(
-            "⠋ Previous activity\n",
-            "⠙ More activity\n",
+            "\u{2736} Previous activity (esc to interrupt)\n",
+            "\u{2736} More activity (esc to interrupt)\n",
             // 50 blank lines — ensures spinners are outside the last-40-lines window
             "\n\n\n\n\n\n\n\n\n\n",  // 10
             "\n\n\n\n\n\n\n\n\n\n",  // 20
             "\n\n\n\n\n\n\n\n\n\n",  // 30
             "\n\n\n\n\n\n\n\n\n\n",  // 40
             "\n\n\n\n\n\n\n\n\n\n",  // 50
-            "╰────────────────────────────────────────────╯\n",
-            "> _\n",
+            "\u{276f}\u{a0}\n",
+            "? for shortcuts\n",
         )
     }
 

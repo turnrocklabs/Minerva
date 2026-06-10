@@ -169,17 +169,23 @@ fn send_cap_error(stdin: &mut ChildStdin, id: &Value, message: &str) {
 
 /// Screen with a visible Claude Code prompt box (turn complete state).
 fn idle_screen() -> &'static str {
+    // Real Claude Code 2026-06 layout: `❯` + U+00A0 NBSP prompt line,
+    // persistent "✻ ..." completion glyph (B5 calibration).
     "Here is my answer.\n\
      I recommend Rust for this.\n\
      \n\
-     ╰────────────────────────────────────────────╯\n\
-     > _\n"
+     \u{273b} Baked for 3s\n\
+     \n\
+     \u{276f}\u{a0}\n\
+     ? for shortcuts\n"
 }
 
 /// Screen with an active spinner (agent still working).
 fn busy_screen() -> &'static str {
-    "⠋ Thinking about your request...\n\
-     Running tool: bash\n"
+    "\u{2736} Pondering\u{2026} (3s \u{b7} esc to interrupt)\n\
+     Running tool: bash\n\
+     \n\
+     \u{276f}\u{a0}\n"
 }
 
 /// Screen matching Claude Code permission dialog pattern.
