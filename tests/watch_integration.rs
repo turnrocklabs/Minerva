@@ -1654,3 +1654,162 @@ fn test_sessions_resume_after_restart() {
 
     let _ = std::fs::remove_file(&state_file);
 }
+
+// ---------------------------------------------------------------------------
+// relay_ask test (relay-ux-suite 019eb3616292 + 019eb31f0869)
+// ---------------------------------------------------------------------------
+
+// Test 15: relay_ask = send + arm + block-until-turn + read_turn in ONE call.
+#[test]
+fn test_relay_ask_blocking_composite() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    // Fire relay_ask with NO pre-existing watch — it must auto-start one.
+    let ask_id = next_id();
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": ask_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_relay_ask",
+            "arguments": {"terminal_id": "t-ask", "text": "what is 2+2", "timeout_ms": 30000}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut ask_reply: Option<Value> = None;
+    let mut wait_count = 0u32;
+    let mut turn_read_args: Option<Value> = None;
+
+    for _ in 0..200 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let args = &msg["params"]["args"];
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => send_cap_reply(&mut stdin, &id, json!({"ok": true})),
+                "host.terminal.read" => {
+                    if args.get("start_row").is_some() {
+                        // read_turn's bounded read — the answer window.
+                        turn_read_args = Some(args.clone());
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": "2+2 equals 4.\n",
+                            "rows": 12, "total_scrollback_rows": 55
+                        }));
+                    } else {
+                        // send's pre-write snapshot.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "rows": 12, "total_scrollback_rows": 40
+                        }));
+                    }
+                }
+                "host.terminal.wait" => {
+                    wait_count += 1;
+                    let (content, rows) = match wait_count {
+                        1 => (idle_screen(), 40),  // race window — gated
+                        2 => (busy_screen(), 42),  // agent busy
+                        _ => (idle_screen(), 55),  // turn end
+                    };
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": content,
+                        "timed_out": false, "bell_rung": false, "shell_exited": false,
+                        "rows": 12, "total_scrollback_rows": rows
+                    }));
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("id").map(|v| v == &json!(ask_id)).unwrap_or(false) {
+            ask_reply = Some(msg);
+            break;
+        }
+        // plugin_event notifications pass through silently.
+    }
+
+    let payload = unwrap_tool(&ask_reply.expect("relay_ask replied"));
+    assert_eq!(payload["ok"], true, "relay_ask ok: {payload}");
+    assert_eq!(payload["timed_out"], false, "not timed out: {payload}");
+    assert_eq!(payload["cause"], "turn_completed");
+    let answer = payload["answer"].as_str().unwrap_or("");
+    assert!(answer.contains("2+2 equals 4"), "answer present: {answer:?}");
+    assert!(wait_count >= 3, "blocked across the busy→idle transition (saw {wait_count} waits)");
+    assert!(turn_read_args.is_some(), "read_turn used the bounded row window");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 16: wait_turn times out cleanly when no turn ends.
+#[test]
+fn test_wait_turn_timeout() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-wt", "profile": "claude", "notify_mode": "armed"}
+        }
+    }));
+
+    let wt_id = next_id();
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": wt_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_wait_turn",
+            "arguments": {"terminal_id": "t-wt", "timeout_ms": 1000}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut wt_reply: Option<Value> = None;
+    for _ in 0..40 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+            // Keep the watch loop quiet: idle screen, static rows → gated.
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            send_cap_reply(&mut stdin, &id, json!({
+                "content": idle_screen(),
+                "timed_out": false, "bell_rung": false, "shell_exited": false,
+                "rows": 12, "total_scrollback_rows": 40
+            }));
+        } else if msg.get("id").map(|v| v == &json!(wt_id)).unwrap_or(false) {
+            wt_reply = Some(msg);
+            break;
+        }
+    }
+
+    let payload = unwrap_tool(&wt_reply.expect("wait_turn replied"));
+    assert_eq!(payload["ok"], true);
+    assert_eq!(payload["timed_out"], true, "gated idle screen never counts as a turn: {payload}");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

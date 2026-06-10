@@ -257,8 +257,11 @@ mod tests {
         profiles::init_profiles();
         assert_eq!(profiles::profile_get("claude").unwrap().detection.settle_ms, 1_500);
 
-        let sessions = load();
-        assert!(sessions.is_empty());
+        // NOTE: no assertion on sessions — the watcher registry is a process
+        // global shared with concurrently-running watcher unit tests, so the
+        // saved file may contain their sessions. Session persistence is
+        // covered by test_sessions_resume_after_restart (separate process).
+        let _sessions = load();
         assert_eq!(
             profiles::profile_get("claude").unwrap().detection.settle_ms,
             4_242,

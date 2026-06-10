@@ -176,6 +176,10 @@ struct TurnCache {
     start_row: Option<u64>,
     end_row: Option<u64>,
     event_payload: Option<serde_json::Value>,
+    /// Monotonic count of COUNTED detections (any cause, emitted or not).
+    /// wait_for_turn blocks on this changing — gated phantom screens never
+    /// reach maybe_emit, so a bump always means a real wake-worthy event.
+    detection_serial: u64,
 }
 
 type TurnCacheMap = Arc<Mutex<HashMap<String, TurnCache>>>;
@@ -205,6 +209,7 @@ fn update_turn_cache(
         start_row: None,
         end_row: None,
         event_payload: None,
+        detection_serial: 0,
     });
     if let Some(sr) = start_row {
         entry.start_row = Some(sr);
@@ -214,6 +219,48 @@ fn update_turn_cache(
     }
     if let Some(p) = event_payload {
         entry.event_payload = Some(p);
+    }
+}
+
+/// Current detection serial for a terminal (0 when nothing recorded yet).
+pub fn detection_serial(terminal_id: &str) -> u64 {
+    let cache = get_turn_cache();
+    let map = cache.lock().unwrap();
+    map.get(terminal_id).map(|e| e.detection_serial).unwrap_or(0)
+}
+
+fn bump_detection_serial(terminal_id: &str) {
+    let cache = get_turn_cache();
+    let mut map = cache.lock().unwrap();
+    let entry = map.entry(terminal_id.to_string()).or_insert_with(|| TurnCache {
+        start_row: None,
+        end_row: None,
+        event_payload: None,
+        detection_serial: 0,
+    });
+    entry.detection_serial += 1;
+}
+
+/// Block until the NEXT counted detection on `terminal_id` (any wake cause —
+/// turn_completed, input_requested, agent_exited, terminal_closed, timed_out)
+/// or until `timeout_ms` elapses. Returns (payload, timed_out): on a wake the
+/// payload is the detection's event-shaped payload; on timeout it is None.
+///
+/// Poll-based (100 ms) on the turn cache's detection serial — runs on the
+/// caller's thread; the watch loop thread does the detecting. Safe to call
+/// from the main dispatch thread: capability replies route through the
+/// stdin-reader thread, so blocking here cannot deadlock the watcher.
+pub fn wait_for_turn(terminal_id: &str, timeout_ms: u64) -> (Option<serde_json::Value>, bool) {
+    let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    let baseline = detection_serial(terminal_id);
+    loop {
+        if detection_serial(terminal_id) > baseline {
+            return (last_event_payload(terminal_id), false);
+        }
+        if Instant::now() >= deadline {
+            return (None, true);
+        }
+        thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 
@@ -677,15 +724,17 @@ fn maybe_emit(
         (emit, p, s.turn_start_row, s.turn_end_row)
     };
 
-    // Always update the persistent turn cache with end_row and (if emitting) the
-    // event payload. This ensures read_turn can access them even after the session
-    // is removed from the registry (e.g. after watch_stop).
+    // Always update the persistent turn cache with end_row and the detection
+    // payload — read_turn/wait_for_turn describe the latest COUNTED detection
+    // whether or not an event was emitted (human turns included), and they
+    // keep working after the session is removed from the registry.
     update_turn_cache(
         terminal_id,
         turn_start,
         turn_end,
-        if should_emit { Some(payload.clone()) } else { None },
+        Some(payload.clone()),
     );
+    bump_detection_serial(terminal_id);
 
     if should_emit {
         router.emit_event("agent_relay.turn_completed", payload);
@@ -762,7 +811,7 @@ mod tests {
     fn test_arm_unarmed_does_not_emit() {
         // Build a session with armed=false and notify_mode=Armed.
         let session = Arc::new(Mutex::new({
-            let mut s = WatchSession::new("t1".to_string(), "claude".to_string(), NotifyMode::Armed);
+            let s = WatchSession::new("t1".to_string(), "claude".to_string(), NotifyMode::Armed);
             s
         }));
 
@@ -813,7 +862,7 @@ mod tests {
     #[test]
     fn test_all_turns_always_emits() {
         let session = Arc::new(Mutex::new({
-            let mut s = WatchSession::new("t3".to_string(), "claude".to_string(), NotifyMode::AllTurns);
+            let s = WatchSession::new("t3".to_string(), "claude".to_string(), NotifyMode::AllTurns);
             s
         }));
 
@@ -850,7 +899,7 @@ mod tests {
         // by manually inserting a session into the registry.
         let sessions = get_sessions();
         let session = Arc::new(Mutex::new({
-            let mut s = WatchSession::new("t-arm".to_string(), "claude".to_string(), NotifyMode::Armed);
+            let s = WatchSession::new("t-arm".to_string(), "claude".to_string(), NotifyMode::Armed);
             s
         }));
         {
@@ -923,7 +972,7 @@ mod tests {
         setup();
         let sessions = get_sessions();
         let session = Arc::new(Mutex::new({
-            let mut s = WatchSession::new("t-arm-rows".to_string(), "claude".to_string(), NotifyMode::Armed);
+            let s = WatchSession::new("t-arm-rows".to_string(), "claude".to_string(), NotifyMode::Armed);
             s
         }));
         {

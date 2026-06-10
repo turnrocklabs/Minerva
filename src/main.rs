@@ -200,6 +200,20 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
         return ok_response(id, tool_err("text is required"));
     }
 
+    match send_core(terminal_id, text, do_arm, router) {
+        Err(e) => ok_response(id, tool_err(&e)),
+        Ok(result) => ok_response(id, tool_ok(result)),
+    }
+}
+
+/// The send pipeline shared by handle_send and handle_relay_ask:
+/// normalise → pre-write snapshot → two-write submit → auto-start watch → arm.
+fn send_core(
+    terminal_id: &str,
+    text: &str,
+    do_arm: bool,
+    router: &Arc<Router>,
+) -> Result<Value, String> {
     // Normalise the message body: drop trailing real CR/LF and any trailing
     // LITERAL "\r"/"\n" escape text (clients sometimes deliver the two-char
     // sequence instead of the control char). Enter is sent separately below.
@@ -255,50 +269,47 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
             }))
         });
 
-    match write_result {
-        Err(e) => ok_response(id, tool_err(&format!("terminal write failed: {e}"))),
-        Ok(_) => {
-            let mut armed = false;
-            let mut auto_started = false;
+    write_result.map_err(|e| format!("terminal write failed: {e}"))?;
 
-            if do_arm {
-                // If no watch session exists, auto-start one with the default
-                // profile ("claude") and notify_mode=armed.
-                if watcher::watch_status(terminal_id).is_none() {
-                    match watcher::watch_start(
-                        terminal_id.to_string(),
-                        None, // default profile
-                        watcher::NotifyMode::Armed,
-                        router.clone(),
-                    ) {
-                        Ok(()) => {
-                            auto_started = true;
-                            log::info!("send: auto-started watch for {terminal_id}");
-                        }
-                        Err(e) => {
-                            log::warn!("send: auto-start watch failed for {terminal_id}: {e}");
-                        }
-                    }
+    let mut armed = false;
+    let mut auto_started = false;
+
+    if do_arm {
+        // If no watch session exists, auto-start one with the default
+        // profile ("claude") and notify_mode=armed.
+        if watcher::watch_status(terminal_id).is_none() {
+            match watcher::watch_start(
+                terminal_id.to_string(),
+                None, // default profile
+                watcher::NotifyMode::Armed,
+                router.clone(),
+            ) {
+                Ok(()) => {
+                    auto_started = true;
+                    log::info!("send: auto-started watch for {terminal_id}");
                 }
-
-                // arm() anchors the turn-start boundary on the pre-write
-                // snapshot's last content row (the trailing input-box/chrome
-                // rows get overwritten by the echo + answer).
-                armed = watcher::arm(
-                    terminal_id,
-                    snapshot.as_ref().map(|(c, r)| (c.as_str(), *r)),
-                );
+                Err(e) => {
+                    log::warn!("send: auto-start watch failed for {terminal_id}: {e}");
+                }
             }
-
-            ok_response(id, tool_ok(json!({
-                "ok": true,
-                "terminal_id": terminal_id,
-                "written": body,
-                "armed": armed,
-                "auto_started_watch": auto_started,
-            })))
         }
+
+        // arm() anchors the turn-start boundary on the pre-write
+        // snapshot's last content row (the trailing input-box/chrome
+        // rows get overwritten by the echo + answer).
+        armed = watcher::arm(
+            terminal_id,
+            snapshot.as_ref().map(|(c, r)| (c.as_str(), *r)),
+        );
     }
+
+    Ok(json!({
+        "ok": true,
+        "terminal_id": terminal_id,
+        "written": body,
+        "armed": armed,
+        "auto_started_watch": auto_started,
+    }))
 }
 
 /// B3 IMPLEMENTED: read_clean — reads from live terminal (or raw_text) and
@@ -401,8 +412,83 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 
     let do_distill = args.get("distill").and_then(|v| v.as_bool()).unwrap_or(false);
     let do_redact = args.get("redact").and_then(|v| v.as_bool()).unwrap_or(true);
+    let model = args.get("model").and_then(|v| v.as_str());
     let deliver = args.get("deliver");
 
+    let mut result = match read_turn_core(terminal_id, do_distill, do_redact, model, router) {
+        Err(e) => return ok_response(id, tool_err(&e)),
+        Ok(r) => r,
+    };
+
+    // ── Optional delivery ───────────────────────────────────────────────────
+
+    let output_content = result["content"].as_str().unwrap_or("").to_string();
+    let mut delivery_error: Option<String> = None;
+
+    if let Some(deliver_obj) = deliver {
+        if deliver_obj.get("chat_note").and_then(|v| v.as_bool()).unwrap_or(false) {
+            // Create a note with the content.
+            let note_result = router.call_capability("mcp.proxy:minerva_create_note", json!({
+                "text": output_content,
+            }));
+
+            match note_result {
+                Err(e) => {
+                    delivery_error = Some(format!("create_note failed: {e}"));
+                    log::warn!("read_turn: delivery create_note failed: {e}");
+                }
+                Ok(note_resp) => {
+                    // Link the note to the active chat. The note id is in the response.
+                    let note_id = note_resp.get("id")
+                        .or_else(|| note_resp.get("note_id"))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    if let Some(nid) = note_id {
+                        if let Err(e) = router.call_capability("mcp.proxy:minerva_link_note_to_chat", json!({
+                            "note_id": nid,
+                        })) {
+                            log::warn!("read_turn: link_note_to_chat failed: {e}");
+                            // Non-fatal — note was created; just couldn't link.
+                        }
+                    }
+
+                    // Optional: speak the content.
+                    let do_speak = deliver_obj.get("speak")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if do_speak {
+                        if let Err(e) = router.call_capability("mcp.proxy:minerva_speak", json!({
+                            "text": output_content,
+                        })) {
+                            log::warn!("read_turn: speak failed: {e}");
+                            if delivery_error.is_none() {
+                                delivery_error = Some(format!("speak failed: {e}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(err) = delivery_error {
+        result["delivery_error"] = json!(err);
+    }
+
+    ok_response(id, tool_ok(result))
+}
+
+/// Steps 1–4 + turn metadata of read_turn, shared with relay_ask:
+/// row window → host.terminal.read → clean → optional distill → result JSON
+/// {ok, content, distilled, truncated, omitted_chars, turn}.
+fn read_turn_core(
+    terminal_id: &str,
+    do_distill: bool,
+    do_redact: bool,
+    model: Option<&str>,
+    router: &Arc<Router>,
+) -> Result<Value, String> {
     // ── Step 1: determine row range from watcher's turn-boundary tracking ──
 
     let (start_row, end_row) = watcher::turn_rows(terminal_id);
@@ -421,7 +507,7 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
     // ── Step 2: read raw terminal content ──────────────────────────────────
 
     let raw = match router.call_capability("host.terminal.read", read_args) {
-        Err(e) => return ok_response(id, tool_err(&format!("terminal read failed: {e}"))),
+        Err(e) => return Err(format!("terminal read failed: {e}")),
         Ok(result) => result.get("content")
             .and_then(|v| v.as_str())
             .unwrap_or("")
@@ -447,7 +533,7 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
     // ── Step 4: optional distillation ──────────────────────────────────────
 
     let (distilled_text, distilled) = if do_distill {
-        let model_spec = args.get("model").and_then(|v| v.as_str());
+        let model_spec = model;
 
         // Build messages: system + user with the cleaned terminal content.
         // Frame the content as quoted terminal data (risk #4 hygiene — treat as
@@ -503,61 +589,10 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
         (cleaned_text.clone(), false)
     };
 
-    // Content for delivery and return: prefer distilled if available.
+    // Content for return: prefer distilled if available.
     let output_content = if distilled { &distilled_text } else { &cleaned_text };
 
-    // ── Step 5: optional delivery ───────────────────────────────────────────
-
-    let mut delivery_error: Option<String> = None;
-
-    if let Some(deliver_obj) = deliver {
-        if deliver_obj.get("chat_note").and_then(|v| v.as_bool()).unwrap_or(false) {
-            // Create a note with the content.
-            let note_result = router.call_capability("mcp.proxy:minerva_create_note", json!({
-                "text": output_content,
-            }));
-
-            match note_result {
-                Err(e) => {
-                    delivery_error = Some(format!("create_note failed: {e}"));
-                    log::warn!("read_turn: delivery create_note failed: {e}");
-                }
-                Ok(note_resp) => {
-                    // Link the note to the active chat. The note id is in the response.
-                    let note_id = note_resp.get("id")
-                        .or_else(|| note_resp.get("note_id"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-
-                    if let Some(nid) = note_id {
-                        if let Err(e) = router.call_capability("mcp.proxy:minerva_link_note_to_chat", json!({
-                            "note_id": nid,
-                        })) {
-                            log::warn!("read_turn: link_note_to_chat failed: {e}");
-                            // Non-fatal — note was created; just couldn't link.
-                        }
-                    }
-
-                    // Optional: speak the content.
-                    let do_speak = deliver_obj.get("speak")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    if do_speak {
-                        if let Err(e) = router.call_capability("mcp.proxy:minerva_speak", json!({
-                            "text": output_content,
-                        })) {
-                            log::warn!("read_turn: speak failed: {e}");
-                            if delivery_error.is_none() {
-                                delivery_error = Some(format!("speak failed: {e}"));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Step 6: build turn metadata from last watcher event ────────────────
+    // ── Step 5: build turn metadata from last watcher detection ────────────
 
     let turn_info = watcher::last_event_payload(terminal_id).unwrap_or_else(|| json!({
         "cause": null,
@@ -571,22 +606,121 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
         "turn_at_iso": turn_info.get("turn_at_iso"),
     });
 
-    // ── Step 7: return result — content is ALWAYS present ──────────────────
+    // ── Step 6: return result — content is ALWAYS present ──────────────────
 
-    let mut result = json!({
+    Ok(json!({
         "ok": true,
         "content": output_content,
         "distilled": distilled,
         "truncated": was_truncated,
         "omitted_chars": omitted_chars,
         "turn": turn_meta,
-    });
+    }))
+}
 
-    if let Some(err) = delivery_error {
-        result["delivery_error"] = json!(err);
+/// relay-ux-suite 019eb31f0869: wait_turn — block until the next counted
+/// detection on the terminal (any wake cause) or timeout. The pull-side
+/// primitive for external MCP clients (MCP is pull: the PLUGIN_EVENT push
+/// only wakes Minerva-internal chat LLMs).
+fn handle_wait_turn(params: &Value, id: Value) -> RpcResponse {
+    let args = params.get("arguments").unwrap_or(params);
+    let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
+    if terminal_id.is_empty() {
+        return ok_response(id, tool_err("terminal_id is required"));
+    }
+    let timeout_ms = args.get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(120_000)
+        .clamp(1_000, 600_000);
+
+    if watcher::watch_status(terminal_id).is_none() {
+        return ok_response(id, tool_err(
+            "no watch session for this terminal; call watch_start (or send) first",
+        ));
     }
 
+    let (payload, timed_out) = watcher::wait_for_turn(terminal_id, timeout_ms);
+
+    let mut result = json!({
+        "ok": true,
+        "terminal_id": terminal_id,
+        "timed_out": timed_out,
+    });
+    if let Some(p) = payload {
+        result["cause"] = p.get("cause").cloned().unwrap_or(Value::Null);
+        result["detection_method"] = p.get("detection_method").cloned().unwrap_or(Value::Null);
+        result["turn_at_iso"] = p.get("turn_at_iso").cloned().unwrap_or(Value::Null);
+    }
     ok_response(id, tool_ok(result))
+}
+
+/// relay-ux-suite 019eb3616292: relay_ask — the whole index loop as ONE
+/// blocking call: send + arm → wait for the armed turn end → read_turn.
+/// Composes send_core + watcher::wait_for_turn + read_turn_core.
+fn handle_relay_ask(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
+    let args = params.get("arguments").unwrap_or(params);
+    let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
+    let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    if terminal_id.is_empty() {
+        return ok_response(id, tool_err("terminal_id is required"));
+    }
+    if text.is_empty() {
+        return ok_response(id, tool_err("text is required"));
+    }
+    let timeout_ms = args.get("timeout_ms")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(120_000)
+        .clamp(1_000, 600_000);
+    let do_distill = args.get("distill").and_then(|v| v.as_bool()).unwrap_or(false);
+    let do_redact = args.get("redact").and_then(|v| v.as_bool()).unwrap_or(true);
+    let model = args.get("model").and_then(|v| v.as_str());
+
+    // Send + arm (auto-starts the watch when none exists).
+    if let Err(e) = send_core(terminal_id, text, true, router) {
+        return ok_response(id, tool_err(&e));
+    }
+
+    // Block until the armed turn ends (busy-gate guarantees the next counted
+    // detection is OUR turn, not the pre-existing idle screen).
+    let (payload, timed_out) = watcher::wait_for_turn(terminal_id, timeout_ms);
+
+    if timed_out {
+        // The arm stays set: if the turn finishes later, the one-shot event
+        // still wakes any Minerva-side trigger. We just stop blocking.
+        return ok_response(id, tool_ok(json!({
+            "ok": true,
+            "terminal_id": terminal_id,
+            "timed_out": true,
+            "answer": Value::Null,
+            "cause": Value::Null,
+            "hint": "turn did not complete within timeout_ms; the arm remains set — poll watch_status or call read_turn later",
+        })));
+    }
+
+    let cause = payload.as_ref()
+        .and_then(|p| p.get("cause"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let detection_method = payload.as_ref()
+        .and_then(|p| p.get("detection_method"))
+        .cloned()
+        .unwrap_or(Value::Null);
+
+    match read_turn_core(terminal_id, do_distill, do_redact, model, router) {
+        Err(e) => ok_response(id, tool_err(&format!(
+            "turn completed (cause={cause}) but read failed: {e}"
+        ))),
+        Ok(read) => ok_response(id, tool_ok(json!({
+            "ok": true,
+            "terminal_id": terminal_id,
+            "timed_out": false,
+            "answer": read.get("content").cloned().unwrap_or(Value::Null),
+            "cause": cause,
+            "detection_method": detection_method,
+            "distilled": read.get("distilled").cloned().unwrap_or(json!(false)),
+            "truncated": read.get("truncated").cloned().unwrap_or(json!(false)),
+        }))),
+    }
 }
 
 /// B2 IMPLEMENTED: filter_set — installs or replaces a named filter rule.
@@ -813,6 +947,34 @@ fn tools_list_schema() -> Value {
                 }
             },
             {
+                "name": "minerva_agent_relay_wait_turn",
+                "description": "BLOCK until the next detected turn end on a watched terminal (any wake cause), or timeout. Pull-side primitive for external MCP clients — MCP pushes never reach them. Requires an existing watch session (watch_start or send). Default timeout 120s, max 600s.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "terminal_id": {"type": "string"},
+                        "timeout_ms": {"type": "integer", "description": "How long to block (ms). Default 120000, clamped to [1000, 600000]."}
+                    },
+                    "required": ["terminal_id"]
+                }
+            },
+            {
+                "name": "minerva_agent_relay_relay_ask",
+                "description": "Ask the terminal agent a question as ONE blocking call: send + arm, BLOCK until the armed turn ends (or timeout), then read the turn. Returns {answer, cause, detection_method, timed_out, truncated}. On timeout the arm remains set (a later turn end still fires the one-shot event). Default timeout 120s, max 600s.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "terminal_id": {"type": "string"},
+                        "text": {"type": "string", "description": "Message to send. Enter is handled automatically."},
+                        "timeout_ms": {"type": "integer", "description": "How long to block (ms). Default 120000, clamped to [1000, 600000]."},
+                        "distill": {"type": "boolean", "description": "When true, distil the answer to the conversational reply via host.providers.chat."},
+                        "redact": {"type": "boolean", "description": "Redact secret-shaped strings (default true)."},
+                        "model": {"type": "string", "description": "Optional model for distillation."}
+                    },
+                    "required": ["terminal_id", "text"]
+                }
+            },
+            {
                 "name": "minerva_agent_relay_read_clean",
                 "description": "Read terminal output (live or raw_text) and apply the chrome filter pipeline.",
                 "inputSchema": {
@@ -980,6 +1142,10 @@ fn main() {
                         handle_watch_status(&req.params, req.id),
                     "minerva_agent_relay_send" =>
                         handle_send(&req.params, req.id, &router),
+                    "minerva_agent_relay_wait_turn" =>
+                        handle_wait_turn(&req.params, req.id),
+                    "minerva_agent_relay_relay_ask" =>
+                        handle_relay_ask(&req.params, req.id, &router),
                     "minerva_agent_relay_read_clean" =>
                         handle_read_clean(&req.params, req.id, &router),
                     "minerva_agent_relay_read_turn" =>
