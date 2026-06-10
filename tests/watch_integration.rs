@@ -831,7 +831,7 @@ fn test_send_writes_terminal_and_arms() {
                 }
                 "host.terminal.read" => {
                     read_called = true;
-                    send_cap_reply(&mut stdin, &id, json!({"content": "", "rows": 50, "cols": 80}));
+                    send_cap_reply(&mut stdin, &id, json!({"content": "", "rows": 12, "cols": 80, "total_scrollback_rows": 50}));
                 }
                 "host.terminal.wait" => {
                     send_cap_reply(&mut stdin, &id, json!({
@@ -913,7 +913,7 @@ fn test_index_loop_event_then_read_turn_with_row_range() {
                     send_cap_reply(&mut stdin, &id, json!({
                         "content": busy_screen(),
                         "timed_out": false, "bell_rung": false, "shell_exited": false,
-                        "rows": 30
+                        "rows": 12, "total_scrollback_rows": 30
                     }));
                     break;
                 }
@@ -942,7 +942,7 @@ fn test_index_loop_event_then_read_turn_with_row_range() {
                 send_cap_reply(&mut stdin, &id, json!({
                     "content": idle_screen(),
                     "timed_out": false, "bell_rung": false, "shell_exited": false,
-                    "rows": 55
+                    "rows": 12, "total_scrollback_rows": 55
                 }));
             } else {
                 send_cap_reply(&mut stdin, &id, json!({}));
@@ -1010,7 +1010,7 @@ fn test_index_loop_event_then_read_turn_with_row_range() {
                 terminal_read_args = Some(msg["params"]["args"].clone());
                 send_cap_reply(&mut stdin, &id, json!({
                     "content": "Here is my answer.\nI recommend Rust.\n",
-                    "rows": 55
+                    "rows": 12, "total_scrollback_rows": 55
                 }));
             } else if cap == "host.terminal.wait" {
                 // The watch thread keeps looping — reply timed_out to keep it quiet.
@@ -1102,7 +1102,7 @@ fn test_read_turn_distill_calls_providers_chat() {
                 "host.terminal.read" => {
                     send_cap_reply(&mut stdin, &id, json!({
                         "content": "tool: bash\nRunning...\nHere is the answer!\nRust is great.\n",
-                        "rows": 10
+                        "rows": 10, "total_scrollback_rows": 10
                     }));
                 }
                 "host.providers.chat" => {

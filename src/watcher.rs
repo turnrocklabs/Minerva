@@ -440,7 +440,7 @@ fn watch_loop(
                 }
 
                 // Extract total rows at this settle point (for turn-boundary tracking).
-                let current_rows = result.get("rows")
+                let current_rows = result.get("total_scrollback_rows")
                     .and_then(|v| v.as_u64());
 
                 // Run the detection pass.

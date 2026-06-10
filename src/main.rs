@@ -262,7 +262,7 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
                 // Snapshot current row count before arming (turn-start boundary).
                 let current_rows = router.call_capability("host.terminal.read", json!({
                     "terminal_id": terminal_id,
-                })).ok().and_then(|r| r.get("rows").and_then(|v| v.as_u64()));
+                })).ok().and_then(|r| r.get("total_scrollback_rows").and_then(|v| v.as_u64()));
 
                 armed = watcher::arm(terminal_id, current_rows);
             }
