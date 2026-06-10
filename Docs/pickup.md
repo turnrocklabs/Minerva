@@ -1,6 +1,21 @@
 # Pickup
 
-LATEST 2026-06-10 (session 10c — **B5 LIVE HITL SESSION 1 PASSED: index-scenario core PROVEN on real Claude Code; relay-ux improvement suite filed + owner-approved, implementing next**). **HEAD-OF-LINE.**
+LATEST 2026-06-10 (session 11 — **RELAY-UX-SUITE: ALL 6 ITEMS SHIPPED + HITL-PASSED LIVE**). **HEAD-OF-LINE.**
+
+**THE SUITE LANDED (plugins main, 5 commits local `dae77ea`→`9e4da87`, all docket items done):**
+- **Busy-gate `dae77ea`** — transition-based detection: settle_prompt turn_completed counts only after busy (esc-to-interrupt) or row growth since arm/start; gate closes on arm/watch_start/counted turn. Live: zero phantoms on fresh watches, armed one-shot fires exactly once. Bonus: all_turns no longer spams on idle screens.
+- **Row anchoring `a775751`+`23a5120`** — read_turn now returns EXACTLY the answer. Three boundary bugs: (1) snapshot must be PRE-write — Claude's busy block occupies MORE rows than the final answer layout, so post-write snapshots anchor too low and miss the answer (hint `agent-relay/tui-busy-block-collapses`); (2) host read end_row is INCLUSIVE 0-indexed → end = total−trailing−1 (hint `minerva-terminal/read-row-range-inclusive`); (3) trailing chrome absorbs box border + blanks.
+- **Lifecycle+persistence `cd404f4`** — `state.rs`: one file `<exe_dir>/agent_relay_state.json` (codetools current_exe precedent; `AGENT_RELAY_STATE_FILE` override, empty=off for tests; gitignored). Persists profile OVERRIDES-only (seed calibrations keep applying), filter rules, sessions; saves on every mutation; sessions RESUME on start (survived restart AND remove+reinstall live). Armed sessions never reap; arm + counted detections refresh the reap anchor.
+- **relay_ask + wait_turn `9e4da87`** — the index loop as ONE blocking call. relay_ask = send_core + wait_for_turn (turn-cache detection_serial, 100ms poll, 120s default, [1s,600s] clamp) + read_turn_core; timeout leaves the arm set. wait_turn = monitor-only primitive (any counted detection — caught an unarmed human-style turn live). Manifest 12→14 tools; skill gained FAST PATH + lifecycle notes (no re-watch_start babysitting), fixed stale dashed plugin_id in steps. Live: relay_ask round-tripped "Au/aurum" in ~10s, one call.
+- Tests 118→**129/129**. Turn-cache payload now written for EVERY counted detection (read_turn/wait_turn describe human turns too).
+
+**OPERATIONAL:** plugin reinstalled (manifest changed) + /mcp done; RUNNING with all 14 tools live. Deploy loop unchanged (build → `install` → plugin_restart; manifest change → remove+install+/mcp — note: plugin_install MCP call can time out while still succeeding; check plugin_list). Live-test terminal 852366475208 runs a scratch Claude Code instance; owner's Terminal2 884293517567 untouched (had a human draft — non-interference held all session).
+
+**NEXT:** B5 remaining legs (item `019eafd5683f` in_progress): distill (model_spec) live, note/speak delivery, PLUGIN_EVENT trigger→chat-wake leg (needs a target chat), codex/opencode profile calibration, formal non-interference proof. Then B6 release (owner-gated): push both repos, tag `agent_relay-v0.1.0`, registry regen. Separate: background terminals (MNR `019eb31f25b5`).
+
+---
+
+PREVIOUS 2026-06-10 (session 10c — **B5 LIVE HITL SESSION 1 PASSED: index-scenario core PROVEN on real Claude Code; relay-ux improvement suite filed + owner-approved, implementing next**).
 
 **B5 PROVEN LIVE (owner + agent, real Claude Code in Minerva terminal `884293517567`):** send (two-write submit) → answer → passive detection (settle_prompt) → armed one-shot consumed exactly once → `agent_relay.turn_completed` accepted by Minerva. Human turns detected-but-never-notified (#466 verified live). Final pass ran on SEED calibration — fresh installs detect out of the box. read_clean live. Non-interference exercised continuously (owner typed/drafted in the watched terminal all session).
 
