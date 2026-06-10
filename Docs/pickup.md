@@ -1,6 +1,14 @@
 # Pickup
 
-LATEST 2026-06-09 (session 10 — **agent-relay DCR fully shaped + planned; NO implementation started**). **HEAD-OF-LINE.**
+LATEST 2026-06-09 (session 10b — **agent-relay IMPLEMENTATION UNDERWAY; DCR `019eafbdcfb3` = implementing**). **HEAD-OF-LINE.**
+
+**Done + audited (commits local, NOT pushed):** Minerva `dcr/agent-relay`: A1 bell+shell-exit `7ddbf52f` (LIVE-verified on real headless PTY — forkpty works headless, test_host_capability_terminal_io.gd), A2 host.terminal.{list,read,write,wait} `000ffbba` (thin mappers onto _execute_tool_impl, the mcp.proxy seam; write raw:bool, broker defaults raw=true), A3 CI registration `d55b91f1` (hermetic tier 6/6), A6 PLUGIN_EVENT trigger + consecutive_fire_limit `0f933450` (32/32; CAVEAT: human-reset only re-arms AGENT-chat targets, ChatPane.gd:1707 IsAgentChat gate), A5 docs `2a4f5200`. plugins `main`: B1 scaffold `cefe66f` (12-tool manifest, Rust worker), A5 docs `e7e27d2` + exec-row audit fix `f21b6dc`, B2 filters/redaction/truncation `1cb44ad` (70/70). Bug filed `019eb00489bc`: 3 PRE-EXISTING host.echo failures in test_host_capability_channel.gd (not agent-relay). Hints: minerva-terminal/windows-glue-has-no-ghostty-shim (Windows has NO shim — bell unix-only), minerva-terminal/zig-toolchain-path (zig reinstalled durable at ~/.local/share, build script symlinked /tmp).
+
+**In flight when this was written:** B3 turn-detection work-cycle agent (plugins repo); A4 full regression suite (--all) background run. **Remaining: B4 (send/distill/deliver/skill), A4 close-out, B6 marketplace, B5 = the big HITL with the owner** (restart Minerva → new binaries already in src/bin/, install agent-relay via manifest, live index scenario + non-interference proof + REAL fixture capture to replace synthetic ones). Owner restarted-stopped Minerva mid-session; binaries on disk are current.
+
+---
+
+PREVIOUS (session 10a — shaping record):
 
 **AGENT-RELAY: terminal-agent turn relay.** DCR `019eafbdcfb37c509a578be8a77095df` (minerva docket, `proposed`). Design record = DCR comments #463-472: index scenario (#463), tunable filters/profiles (#464), non-interference invariant (#465), send-armed one-shot notifications (#466), risk register (#467) + ping-pong resolution via trigger consecutive_fire_limit (#468), risk triage incl. two-layer exit detection (#469), UI scope ≈ none, optional watched-badge (#470), A6 fire-limit scope (#471), **execution plan + risk controls (#472 — read this first)**.
 
