@@ -148,6 +148,7 @@ impl FilterRuleSet {
     }
 
     /// Number of installed rules.
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.rules.len()
     }

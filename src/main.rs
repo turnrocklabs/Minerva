@@ -4,43 +4,57 @@
 // output, and distilling agent turns. See manifest.json for the full tool
 // surface and DCR 019eafbdcfb3 for the overall design.
 //
+// ## Architecture (B3 redesign)
+//
+// The B1/B2 synchronous model (main loop = stdin reader = capability caller)
+// is replaced in B3 with an async router so that background watch threads can
+// make host.terminal.wait capability calls concurrently with the main loop
+// handling tool calls.
+//
 // Outer protocol: JSON-RPC 2.0 over stdin/stdout, one message per line.
 // Logging goes to stderr; stdout carries only JSON-RPC traffic.
 //
-// Capability re-entrancy contract (from Minerva broker):
-// While the plugin is handling a tools/call, Minerva will NOT send another
-// tools/call. So when a handler writes a minerva/capability request to stdout,
-// the next line on stdin is guaranteed to be either:
-//   (a) the matching response (correlated by id), or
-//   (b) stdin EOF.
-// The synchronous read pattern below is safe under that guarantee.
+// Thread layout:
+//   stdin-reader thread  — owns stdin; routes replies to pending_map channels,
+//                          tool requests to tool_rx channel.
+//   main thread          — receives tool requests from tool_rx, dispatches,
+//                          writes responses via StdoutWriter.
+//   watch-<tid> threads  — one per active watch; call capability via Router
+//                          (which uses pending_map); emit events via Router.
+//
+// All writes to stdout go through Arc<StdoutWriter> (Mutex<BufWriter<Stdout>>)
+// to avoid line interleaving.
 
 mod chrome_filter;
+mod detector;
 mod filter_rules;
 mod profiles;
+mod router;
+mod watcher;
 
-use std::io::{self, BufRead, Write};
-use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+use serde::Serialize;
 use serde_json::{json, Value};
+
 use filter_rules::{FilterRule, FilterRuleSet, RuleAction};
+use router::Router;
+use watcher::NotifyMode;
 
 // ---------------------------------------------------------------------------
 // Global worker state
 // ---------------------------------------------------------------------------
 
+use std::sync::Mutex;
+
 /// Session-scoped named filter rules, shared across all tool handlers.
-/// Initialised once at startup; handlers lock briefly to read/write.
 static FILTER_RULES: Mutex<Option<FilterRuleSet>> = Mutex::new(None);
 
-/// Initialise the global filter rule set. Called once from main().
 fn init_filter_rules() {
     let mut guard = FILTER_RULES.lock().unwrap();
     *guard = Some(FilterRuleSet::new());
 }
 
-/// Run `f` with a mutable reference to the global FilterRuleSet.
-/// Panics if init_filter_rules() was not called first.
 fn with_filter_rules<R>(f: impl FnOnce(&mut FilterRuleSet) -> R) -> R {
     let mut guard = FILTER_RULES.lock().unwrap();
     f(guard.as_mut().expect("filter rules not initialised"))
@@ -51,19 +65,8 @@ const SERVER_NAME: &str = "agent-relay";
 const SERVER_VERSION: &str = "0.1.0";
 
 // ---------------------------------------------------------------------------
-// JSON-RPC envelope types
+// JSON-RPC envelope types (used for final response serialisation)
 // ---------------------------------------------------------------------------
-
-#[derive(Deserialize, Debug)]
-struct RpcRequest {
-    #[serde(default)]
-    jsonrpc: String,
-    #[serde(default)]
-    id: Value,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
 
 #[derive(Serialize)]
 struct RpcResponse {
@@ -89,28 +92,15 @@ fn err_response(id: Value, code: i64, message: String) -> RpcResponse {
     RpcResponse { jsonrpc: "2.0".into(), id, result: None, error: Some(RpcError { code, message }) }
 }
 
-fn write_line(out: &mut impl Write, v: &impl Serialize) {
-    let s = serde_json::to_string(v).unwrap_or_else(|e| {
-        log::error!("serialize response: {e}");
-        String::new()
-    });
-    if let Err(e) = writeln!(out, "{}", s) {
-        log::error!("write response: {e}");
-    }
-    let _ = out.flush();
-}
-
 // ---------------------------------------------------------------------------
 // Tool content helpers
 // ---------------------------------------------------------------------------
 
-/// Wrap a JSON value as a text content MCP tool result.
 fn tool_ok(payload: Value) -> Value {
     let text = serde_json::to_string(&payload).unwrap_or_else(|_| r#"{"ok":false}"#.into());
     json!({ "content": [{"type": "text", "text": text}] })
 }
 
-/// Return an MCP isError tool result with a message string.
 fn tool_err(message: &str) -> Value {
     let text = serde_json::to_string(&json!({"error": message}))
         .unwrap_or_else(|_| r#"{"error":"serialisation failed"}"#.into());
@@ -118,145 +108,120 @@ fn tool_err(message: &str) -> Value {
 }
 
 // ---------------------------------------------------------------------------
-// Capability round-trip helper
-// ---------------------------------------------------------------------------
-
-/// request_capability sends a minerva/capability request to Minerva and reads
-/// the matching response. Safe only within a tools/call handler (re-entrancy
-/// contract above).
-fn request_capability(
-    out: &mut impl Write,
-    lines: &mut impl Iterator<Item = Result<String, io::Error>>,
-    next_id: &mut u64,
-    capability: &str,
-    args: Value,
-) -> Result<Value, String> {
-    *next_id += 1;
-    let id = format!("cap-{}", next_id);
-
-    let req = json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "method": "minerva/capability",
-        "params": {
-            "capability": capability,
-            "args": args,
-        }
-    });
-    write_line(out, &req);
-    log::debug!("sent capability request id={id} capability={capability}");
-
-    for line_result in lines.by_ref() {
-        let line = line_result.map_err(|e| format!("stdin read error: {e}"))?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        let msg: Value = match serde_json::from_str(trimmed) {
-            Ok(v) => v,
-            Err(e) => {
-                log::warn!("non-JSON line while waiting for capability response: {e}");
-                continue;
-            }
-        };
-        let msg_id = msg.get("id").cloned().unwrap_or(Value::Null);
-        if msg_id.as_str() != Some(&id) {
-            log::warn!("unexpected message id {:?} while waiting for {} (skipped)", msg_id, id);
-            continue;
-        }
-        if let Some(err) = msg.get("error") {
-            return Err(format!("capability error: {err}"));
-        }
-        return Ok(msg.get("result").cloned().unwrap_or(Value::Null));
-    }
-    Err("stdin closed waiting for capability response".into())
-}
-
-// ---------------------------------------------------------------------------
 // Tool handlers
 // ---------------------------------------------------------------------------
 
-/// B1 STUB: watch_start — arms turn detection on a terminal.
-/// Full implementation in B2/B3.
-fn handle_watch_start(params: &Value, id: Value) -> RpcResponse {
+/// B3 IMPLEMENTED: watch_start — start watching a terminal for turn completion.
+fn handle_watch_start(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
     if terminal_id.is_empty() {
         return ok_response(id, tool_err("terminal_id is required"));
     }
-    ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "watch_start is a B2/B3 work item"
-    })))
+
+    let profile_id = args.get("profile")
+        .or_else(|| args.get("profile_id"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let notify_mode_str = args.get("notify_mode").and_then(|v| v.as_str()).unwrap_or("armed");
+    let notify_mode = NotifyMode::from_str(notify_mode_str);
+
+    match watcher::watch_start(terminal_id.to_string(), profile_id, notify_mode, router.clone()) {
+        Ok(()) => ok_response(id, tool_ok(json!({
+            "ok": true,
+            "terminal_id": terminal_id,
+            "message": "watch session started"
+        }))),
+        Err(e) => ok_response(id, tool_err(&e)),
+    }
 }
 
-/// B1 STUB: watch_stop — disarms a watch session.
-/// Full implementation in B2/B3.
+/// B3 IMPLEMENTED: watch_stop — stop watching a terminal.
 fn handle_watch_stop(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
     if terminal_id.is_empty() {
         return ok_response(id, tool_err("terminal_id is required"));
     }
+
+    let was_watching = watcher::watch_stop(terminal_id);
     ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "watch_stop is a B2/B3 work item"
+        "ok": true,
+        "terminal_id": terminal_id,
+        "was_watching": was_watching
     })))
 }
 
-/// B1 STUB: watch_status — reports watch session state.
-/// Full implementation in B2/B3.
+/// B3 IMPLEMENTED: watch_status — report watch session state.
 fn handle_watch_status(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
     if terminal_id.is_empty() {
         return ok_response(id, tool_err("terminal_id is required"));
     }
-    ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "watch_status is a B2/B3 work item"
-    })))
+
+    match watcher::watch_status(terminal_id) {
+        Some(status) => ok_response(id, tool_ok(json!({
+            "ok": true,
+            "terminal_id": terminal_id,
+            "status": status
+        }))),
+        None => ok_response(id, tool_ok(json!({
+            "ok": true,
+            "terminal_id": terminal_id,
+            "status": null,
+            "watching": false
+        }))),
+    }
 }
 
-/// B1 STUB: send — writes to terminal and arms one-shot wake.
-/// Full implementation in B2/B3.
-fn handle_send(params: &Value, id: Value) -> RpcResponse {
+/// B3 IMPLEMENTED: send — write text to terminal and arm one-shot watch.
+/// Full send implementation: writes via host.terminal.write + arms watch.
+fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
     let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let do_arm = args.get("arm").and_then(|v| v.as_bool()).unwrap_or(true);
+
     if terminal_id.is_empty() {
         return ok_response(id, tool_err("terminal_id is required"));
     }
     if text.is_empty() {
         return ok_response(id, tool_err("text is required"));
     }
-    ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "send is a B2/B3 work item"
-    })))
+
+    // Write to the terminal via host capability.
+    let write_result = router.call_capability("host.terminal.write", json!({
+        "terminal_id": terminal_id,
+        "text": text,
+    }));
+
+    match write_result {
+        Err(e) => ok_response(id, tool_err(&format!("terminal write failed: {e}"))),
+        Ok(_) => {
+            let armed = if do_arm {
+                watcher::arm(terminal_id)
+            } else {
+                false
+            };
+            ok_response(id, tool_ok(json!({
+                "ok": true,
+                "terminal_id": terminal_id,
+                "written": text,
+                "armed": armed
+            })))
+        }
+    }
 }
 
-/// B2 IMPLEMENTED: read_clean — applies the chrome filter pipeline:
-///   1. Built-in chrome filter (box-drawing, blank collapse).
-///   2. Named rule-layer (filter_set rules, drop_line / replace).
-///   3. Inline extra_patterns (regex, drop_line only).
-///   4. Redaction pass (on by default, opt-out via redact:false).
-///   5. Honest truncation (tail-keep, MAX_OUTPUT_CHARS cap).
-///
-/// When raw_text is provided, filters it directly (no terminal read needed).
-/// Terminal reads from live terminals remain B3 work; terminal_id alone
-/// returns not_implemented pointing at B3.
-fn handle_read_clean(params: &Value, id: Value) -> RpcResponse {
+/// B3 IMPLEMENTED: read_clean — reads from live terminal (or raw_text) and
+/// applies the full chrome filter pipeline.
+fn handle_read_clean(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
 
     let raw_text = args.get("raw_text").and_then(|v| v.as_str());
     let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
-
-    // redact defaults to true; caller can opt out with redact:false.
     let do_redact = args.get("redact").and_then(|v| v.as_bool()).unwrap_or(true);
 
     let raw = match raw_text {
@@ -265,36 +230,37 @@ fn handle_read_clean(params: &Value, id: Value) -> RpcResponse {
             if terminal_id.is_empty() {
                 return ok_response(id, tool_err("terminal_id or raw_text is required"));
             }
-            // Terminal read from live terminal is B3 work.
-            return ok_response(id, tool_ok(json!({
-                "success": false,
-                "error": "not_implemented",
-                "note": "live terminal reads are implemented in B3; pass raw_text to use the chrome filter now"
-            })));
+            // Read from live terminal via host capability.
+            match router.call_capability("host.terminal.read", json!({
+                "terminal_id": terminal_id,
+            })) {
+                Err(e) => return ok_response(id, tool_err(&format!("terminal read failed: {e}"))),
+                Ok(result) => {
+                    result.get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string()
+                }
+            }
         }
     };
 
-    // Pass 1: built-in chrome filter (box-drawing, border columns, blank collapse).
+    // Pass 1: built-in chrome filter.
     let mut cleaned = chrome_filter::filter(&raw);
 
-    // Pass 2: apply named filter rules from global state.
+    // Pass 2: named filter rules.
     cleaned = with_filter_rules(|rs| rs.apply(&cleaned));
 
-    // Pass 3: inline extra_patterns (regex drop_line).
+    // Pass 3: inline extra_patterns.
     if let Some(patterns) = args.get("extra_patterns").and_then(|v| v.as_array()) {
         for pattern_val in patterns {
             if let Some(pat) = pattern_val.as_str() {
                 match regex::Regex::new(pat) {
                     Ok(re) => {
                         let ends_nl = cleaned.ends_with('\n');
-                        let lines: Vec<&str> = cleaned
-                            .lines()
-                            .filter(|line| !re.is_match(line))
-                            .collect();
+                        let lines: Vec<&str> = cleaned.lines().filter(|l| !re.is_match(l)).collect();
                         cleaned = lines.join("\n");
-                        if ends_nl {
-                            cleaned.push('\n');
-                        }
+                        if ends_nl { cleaned.push('\n'); }
                     }
                     Err(e) => {
                         return ok_response(id, tool_err(
@@ -306,12 +272,12 @@ fn handle_read_clean(params: &Value, id: Value) -> RpcResponse {
         }
     }
 
-    // Pass 4: redaction (default on).
+    // Pass 4: redaction.
     if do_redact {
         cleaned = chrome_filter::redact(&cleaned);
     }
 
-    // Pass 5: honest truncation — keep TAIL, report omitted chars.
+    // Pass 5: honest truncation.
     let trunc = chrome_filter::truncate(&cleaned, chrome_filter::MAX_OUTPUT_CHARS);
 
     ok_response(id, tool_ok(json!({
@@ -338,8 +304,6 @@ fn handle_read_turn(params: &Value, id: Value) -> RpcResponse {
 }
 
 /// B2 IMPLEMENTED: filter_set — installs or replaces a named filter rule.
-/// Validates the regex at set time; bad patterns return a clear error.
-/// Actions: "drop_line", "replace" (or legacy alias "strip_match").
 fn handle_filter_set(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -355,9 +319,9 @@ fn handle_filter_set(params: &Value, id: Value) -> RpcResponse {
     }
 
     let action = match action_str {
-        "drop_line" => RuleAction::DropLine,
-        "replace" => RuleAction::Replace,
-        "strip_match" => RuleAction::StripMatch, // backwards-compat alias
+        "drop_line"  => RuleAction::DropLine,
+        "replace"    => RuleAction::Replace,
+        "strip_match" => RuleAction::StripMatch,
         "" => return ok_response(id, tool_err("action is required")),
         other => return ok_response(id, tool_err(
             &format!("unknown action '{}'; valid values: drop_line, replace, strip_match", other)
@@ -367,11 +331,7 @@ fn handle_filter_set(params: &Value, id: Value) -> RpcResponse {
     match FilterRule::new(name, pattern, action, replacement) {
         Ok(rule) => {
             let updated = with_filter_rules(|rs| rs.set(rule));
-            ok_response(id, tool_ok(json!({
-                "ok": true,
-                "updated": updated,
-                "name": name
-            })))
+            ok_response(id, tool_ok(json!({ "ok": true, "updated": updated, "name": name })))
         }
         Err(e) => ok_response(id, tool_err(&e)),
     }
@@ -380,22 +340,12 @@ fn handle_filter_set(params: &Value, id: Value) -> RpcResponse {
 /// B2 IMPLEMENTED: filter_list — lists all installed filter rules.
 fn handle_filter_list(_params: &Value, id: Value) -> RpcResponse {
     let rules_json = with_filter_rules(|rs| {
-        rs.iter()
-            .map(|r| {
-                let v = r.view();
-                json!({
-                    "name": v.name,
-                    "pattern": v.pattern,
-                    "action": v.action,
-                    "replacement": v.replacement
-                })
-            })
-            .collect::<Vec<_>>()
+        rs.iter().map(|r| {
+            let v = r.view();
+            json!({ "name": v.name, "pattern": v.pattern, "action": v.action, "replacement": v.replacement })
+        }).collect::<Vec<_>>()
     });
-    ok_response(id, tool_ok(json!({
-        "ok": true,
-        "rules": rules_json
-    })))
+    ok_response(id, tool_ok(json!({ "ok": true, "rules": rules_json })))
 }
 
 /// B2 IMPLEMENTED: filter_delete — removes a named filter rule.
@@ -406,52 +356,110 @@ fn handle_filter_delete(params: &Value, id: Value) -> RpcResponse {
         return ok_response(id, tool_err("name is required"));
     }
     let deleted = with_filter_rules(|rs| rs.delete(name));
-    ok_response(id, tool_ok(json!({
-        "ok": true,
-        "deleted": deleted,
-        "name": name
-    })))
+    ok_response(id, tool_ok(json!({ "ok": true, "deleted": deleted, "name": name })))
 }
 
-/// B1 STUB: profile_get — retrieves a CLI agent detection profile.
-/// Full implementation in B3.
+/// B3 IMPLEMENTED: profile_get — retrieves a CLI agent detection profile.
 fn handle_profile_get(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let profile_id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
     if profile_id.is_empty() {
         return ok_response(id, tool_err("id is required"));
     }
-    ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "profile_get is a B3 work item"
-    })))
+    match profiles::profile_get(profile_id) {
+        Some(p) => {
+            match serde_json::to_value(&p) {
+                Ok(v) => ok_response(id, tool_ok(json!({ "ok": true, "profile": v }))),
+                Err(e) => ok_response(id, tool_err(&format!("serialization error: {e}"))),
+            }
+        }
+        None => ok_response(id, tool_err(&format!("profile '{}' not found", profile_id))),
+    }
 }
 
-/// B1 STUB: profile_set — creates or updates a CLI agent detection profile.
-/// Full implementation in B3.
+/// B3 IMPLEMENTED: profile_set — creates or updates a CLI agent detection profile.
 fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let profile_id = args.get("id").and_then(|v| v.as_str()).unwrap_or("");
     if profile_id.is_empty() {
         return ok_response(id, tool_err("id is required"));
     }
-    ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "profile_set is a B3 work item"
-    })))
+
+    // Start from existing profile or create a new minimal one.
+    let mut profile = profiles::profile_get(profile_id).unwrap_or_else(|| {
+        profiles::Profile {
+            id: profile_id.to_string(),
+            display_name: profile_id.to_string(),
+            detection: profiles::Detection {
+                prompt_box_regex: String::new(),
+                permission_dialog_regex: None,
+                spinner_glyphs: vec![],
+                alt_screen: false,
+                bell_capable: false,
+                settle_ms: 1_500,
+                watch_timeout_ms: 600_000,
+            },
+        }
+    });
+
+    // Apply display_name override.
+    if let Some(name) = args.get("display_name").and_then(|v| v.as_str()) {
+        profile.display_name = name.to_string();
+    }
+
+    // Apply detection overrides from nested "detection" object.
+    if let Some(det_obj) = args.get("detection") {
+        if let Some(s) = det_obj.get("prompt_box_regex").and_then(|v| v.as_str()) {
+            // Validate regex before storing.
+            if let Err(e) = regex::Regex::new(s) {
+                return ok_response(id, tool_err(&format!("invalid prompt_box_regex: {e}")));
+            }
+            profile.detection.prompt_box_regex = s.to_string();
+        }
+        if let Some(s) = det_obj.get("permission_dialog_regex").and_then(|v| v.as_str()) {
+            if !s.is_empty() {
+                if let Err(e) = regex::Regex::new(s) {
+                    return ok_response(id, tool_err(&format!("invalid permission_dialog_regex: {e}")));
+                }
+                profile.detection.permission_dialog_regex = Some(s.to_string());
+            } else {
+                profile.detection.permission_dialog_regex = None;
+            }
+        }
+        if let Some(arr) = det_obj.get("spinner_glyphs").and_then(|v| v.as_array()) {
+            profile.detection.spinner_glyphs = arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+        }
+        if let Some(b) = det_obj.get("alt_screen").and_then(|v| v.as_bool()) {
+            profile.detection.alt_screen = b;
+        }
+        if let Some(b) = det_obj.get("bell_capable").and_then(|v| v.as_bool()) {
+            profile.detection.bell_capable = b;
+        }
+        if let Some(n) = det_obj.get("settle_ms").and_then(|v| v.as_u64()) {
+            profile.detection.settle_ms = n;
+        }
+        if let Some(n) = det_obj.get("watch_timeout_ms").and_then(|v| v.as_u64()) {
+            profile.detection.watch_timeout_ms = n;
+        }
+    }
+
+    profiles::profile_set(profile.clone());
+
+    match serde_json::to_value(&profile) {
+        Ok(v) => ok_response(id, tool_ok(json!({ "ok": true, "profile": v }))),
+        Err(e) => ok_response(id, tool_err(&format!("serialization error: {e}"))),
+    }
 }
 
-/// B1 IMPLEMENTED: profiles_list — returns the built-in per-CLI detection profiles.
-/// Returns all three CLIs (claude, codex, opencode) with calibration-pending values.
+/// B3 IMPLEMENTED: profiles_list — returns all known CLI agent detection profiles.
 fn handle_profiles_list(_params: &Value, id: Value) -> RpcResponse {
-    let profiles = profiles::builtin_profiles();
+    let profiles = profiles::profiles_list();
     match serde_json::to_value(&profiles) {
         Ok(v) => ok_response(id, tool_ok(json!({
             "ok": true,
-            "profiles": v,
-            "note": "Detection values are calibration-pending; will be refined in B3."
+            "profiles": v
         }))),
         Err(e) => ok_response(id, tool_err(&format!("serialization error: {e}"))),
     }
@@ -472,7 +480,8 @@ fn tools_list_schema() -> Value {
                     "properties": {
                         "terminal_id": {"type": "string", "description": "ID of the terminal to watch."},
                         "profile": {"type": "string", "description": "CLI agent profile (e.g. 'claude', 'codex', 'opencode')."},
-                        "notify_mode": {"type": "string", "enum": ["armed", "all_turns", "none"]}
+                        "notify_mode": {"type": "string", "enum": ["armed", "all_turns", "none"],
+                            "description": "armed = emit only when armed (default); all_turns = every detected turn; none = silent."}
                     },
                     "required": ["terminal_id"]
                 }
@@ -490,7 +499,7 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_watch_status",
-                "description": "Return the current state of a watch session.",
+                "description": "Return the current state of a watch session (watching, armed, last_wake_cause, last_turn_at, detection_method).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -501,20 +510,20 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_send",
-                "description": "Send text to a watched terminal and arm a one-shot wake.",
+                "description": "Send text to a watched terminal via host.terminal.write and arm a one-shot wake (default arm=true).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "terminal_id": {"type": "string"},
                         "text": {"type": "string", "description": "Text to send. Use \\r for Enter."},
-                        "arm": {"type": "boolean"}
+                        "arm": {"type": "boolean", "description": "When true (default), arm the watch session for one-shot notification."}
                     },
                     "required": ["terminal_id", "text"]
                 }
             },
             {
                 "name": "minerva_agent_relay_read_clean",
-                "description": "Read terminal output and apply the chrome filter to strip TUI decorations.",
+                "description": "Read terminal output (live or raw_text) and apply the chrome filter pipeline.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -527,7 +536,7 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_read_turn",
-                "description": "Read the latest agent turn and distil it via host.providers.chat.",
+                "description": "Read the latest agent turn and distil it via host.providers.chat (B4).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -553,7 +562,7 @@ fn tools_list_schema() -> Value {
                         "name": {"type": "string"},
                         "pattern": {"type": "string"},
                         "action": {"type": "string", "enum": ["drop_line", "replace", "strip_match"]},
-                        "replacement": {"type": "string", "description": "Replacement string for replace/strip_match actions (default empty string)."}
+                        "replacement": {"type": "string"}
                     },
                     "required": ["name", "pattern", "action"]
                 }
@@ -568,9 +577,7 @@ fn tools_list_schema() -> Value {
                 "description": "Remove a named chrome-filter rule.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {
-                        "name": {"type": "string"}
-                    },
+                    "properties": {"name": {"type": "string"}},
                     "required": ["name"]
                 }
             },
@@ -579,9 +586,7 @@ fn tools_list_schema() -> Value {
                 "description": "Get the detection profile for a specific CLI agent.",
                 "inputSchema": {
                     "type": "object",
-                    "properties": {
-                        "id": {"type": "string"}
-                    },
+                    "properties": {"id": {"type": "string"}},
                     "required": ["id"]
                 }
             },
@@ -597,9 +602,12 @@ fn tools_list_schema() -> Value {
                             "type": "object",
                             "properties": {
                                 "prompt_box_regex": {"type": "string"},
+                                "permission_dialog_regex": {"type": "string"},
                                 "spinner_glyphs": {"type": "array", "items": {"type": "string"}},
                                 "alt_screen": {"type": "boolean"},
-                                "bell_capable": {"type": "boolean"}
+                                "bell_capable": {"type": "boolean"},
+                                "settle_ms": {"type": "integer"},
+                                "watch_timeout_ms": {"type": "integer"}
                             }
                         }
                     },
@@ -616,7 +624,7 @@ fn tools_list_schema() -> Value {
 }
 
 // ---------------------------------------------------------------------------
-// main — JSON-RPC dispatch loop
+// main — spawn router, then dispatch tool requests from tool_rx
 // ---------------------------------------------------------------------------
 
 fn main() {
@@ -626,32 +634,24 @@ fn main() {
 
     log::info!("{SERVER_NAME} {SERVER_VERSION} starting");
 
+    // Initialise global state.
     init_filter_rules();
+    profiles::init_profiles();
+    watcher::init_sessions();
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut out = io::BufWriter::new(stdout.lock());
-    let mut lines = stdin.lock().lines();
-    let mut next_id: u64 = 0;
+    // Spawn the async router (stdin-reader thread + shared stdout writer).
+    // tool_rx stays on the main thread (Receiver is not Sync; can't put it in Arc).
+    let (router, tool_rx) = Router::spawn();
 
-    while let Some(line_result) = lines.next() {
-        let line = match line_result {
-            Ok(l) => l,
-            Err(e) => {
-                log::error!("stdin read: {e}");
-                break;
-            }
-        };
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
+    log::info!("{SERVER_NAME} router ready, waiting for tool requests");
 
-        let req: RpcRequest = match serde_json::from_str(trimmed) {
+    // Main dispatch loop — receive tool requests from the router's tool_rx channel.
+    loop {
+        let req = match tool_rx.recv() {
             Ok(r) => r,
-            Err(e) => {
-                log::warn!("malformed request: {e} — {trimmed}");
-                continue;
+            Err(_) => {
+                log::info!("{SERVER_NAME}: tool_rx closed (stdin EOF), exiting");
+                break;
             }
         };
 
@@ -668,8 +668,7 @@ fn main() {
             "tools/list" => ok_response(req.id, tools_list_schema()),
 
             "tools/call" => {
-                let tool_name = req.params
-                    .get("name")
+                let tool_name = req.params.get("name")
                     .and_then(|v| v.as_str())
                     .unwrap_or("");
 
@@ -677,15 +676,15 @@ fn main() {
 
                 match tool_name {
                     "minerva_agent_relay_watch_start" =>
-                        handle_watch_start(&req.params, req.id),
+                        handle_watch_start(&req.params, req.id, &router),
                     "minerva_agent_relay_watch_stop" =>
                         handle_watch_stop(&req.params, req.id),
                     "minerva_agent_relay_watch_status" =>
                         handle_watch_status(&req.params, req.id),
                     "minerva_agent_relay_send" =>
-                        handle_send(&req.params, req.id),
+                        handle_send(&req.params, req.id, &router),
                     "minerva_agent_relay_read_clean" =>
-                        handle_read_clean(&req.params, req.id),
+                        handle_read_clean(&req.params, req.id, &router),
                     "minerva_agent_relay_read_turn" =>
                         handle_read_turn(&req.params, req.id),
                     "minerva_agent_relay_filter_set" =>
@@ -707,14 +706,14 @@ fn main() {
                 }
             }
 
-            // Notifications and unknown methods — no response.
+            // Notifications and unknown methods — no response needed.
             other => {
                 log::debug!("ignoring method: {other}");
                 continue;
             }
         };
 
-        write_line(&mut out, &resp);
+        router.stdout.write_line(&resp);
     }
 
     log::info!("{SERVER_NAME} exiting");
