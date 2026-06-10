@@ -551,7 +551,7 @@ mod tests {
         let res = truncate(text, 15);
         assert!(res.truncated);
         // The kept tail should not start mid-line (should start after a \n).
-        let first_char = res.text.chars().next();
+        let _first_char = res.text.chars().next();
         // Since we split on newline boundary, the kept part starts on a line boundary.
         // Verify it contains complete lines.
         for line in res.text.lines() {

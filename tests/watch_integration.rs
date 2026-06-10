@@ -703,3 +703,591 @@ fn test_input_requested_on_permission_dialog() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+// ---------------------------------------------------------------------------
+// B4 Integration tests
+// ---------------------------------------------------------------------------
+
+// Helper: drain all pending messages, dispatching capability requests to
+// `cap_handler`, until `matcher` returns true. Returns the matched message.
+#[allow(dead_code)]
+fn drain_until<F, H>(
+    stdin: &mut ChildStdin,
+    out: &mut BufReader<ChildStdout>,
+    mut cap_handler: H,
+    mut matcher: F,
+    max_iters: usize,
+) -> Value
+where
+    F: FnMut(&Value) -> bool,
+    H: FnMut(&mut ChildStdin, &Value),
+{
+    for _ in 0..max_iters {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read line");
+        if n == 0 { panic!("EOF waiting for matched message"); }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            cap_handler(stdin, &msg);
+        } else if matcher(&msg) {
+            return msg;
+        }
+    }
+    panic!("drain_until: matcher never satisfied in {max_iters} iterations");
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: send writes via host.terminal.write and arms (state assert)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_send_writes_terminal_and_arms() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    // First start a watch so there's a session to arm.
+    let _watch = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-b4-send", "profile": "claude", "notify_mode": "armed"}
+        }
+    }));
+
+    // Drain the first host.terminal.wait from the watch thread; reply timed_out.
+    {
+        let mut buf = String::new();
+        loop {
+            let n = out.read_line(&mut buf).expect("read");
+            if n == 0 { break; }
+            let trimmed = buf.trim();
+            if trimmed.is_empty() { buf.clear(); continue; }
+            let msg: Value = serde_json::from_str(trimmed).unwrap_or(Value::Null);
+            if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+                let cap = msg["params"]["capability"].as_str().unwrap_or("");
+                let id = msg.get("id").cloned().unwrap_or(Value::Null);
+                if cap == "host.terminal.wait" {
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": "", "timed_out": true, "bell_rung": false, "shell_exited": false
+                    }));
+                    break;
+                }
+            }
+            buf.clear();
+        }
+    }
+
+    // Call send — this will emit host.terminal.write and host.terminal.read (for row snapshot).
+    let send_id = next_id();
+    let send_req = json!({
+        "jsonrpc": "2.0",
+        "id": send_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_send",
+            "arguments": {"terminal_id": "t-b4-send", "text": "hello agent"}
+        }
+    });
+    let req_line = send_req.to_string() + "\n";
+    stdin.write_all(req_line.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    // Handle capability calls from send and collect the reply.
+    let mut write_called = false;
+    let mut read_called = false;
+    let mut send_reply: Option<Value> = None;
+
+    for _ in 0..20 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => {
+                    write_called = true;
+                    let text = msg["params"]["args"]["text"].as_str().unwrap_or("");
+                    assert!(text.ends_with('\r'), "send should append \\r: text={text:?}");
+                    send_cap_reply(&mut stdin, &id, json!({"bytes_sent": text.len()}));
+                }
+                "host.terminal.read" => {
+                    read_called = true;
+                    send_cap_reply(&mut stdin, &id, json!({"content": "", "rows": 50, "cols": 80}));
+                }
+                "host.terminal.wait" => {
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": "", "timed_out": true, "bell_rung": false, "shell_exited": false
+                    }));
+                }
+                _ => { send_cap_reply(&mut stdin, &id, json!({})); }
+            }
+        } else if msg.get("id").map(|v| v == send_id).unwrap_or(false) {
+            send_reply = Some(msg.clone());
+            break;
+        }
+    }
+
+    assert!(write_called, "send should call host.terminal.write");
+    assert!(read_called, "send should call host.terminal.read for row snapshot");
+    assert!(send_reply.is_some(), "send should return a response");
+
+    let payload = unwrap_tool(&send_reply.unwrap());
+    assert_eq!(payload["ok"], true, "send ok");
+    assert_eq!(payload["armed"], true, "session armed after send");
+
+    // Verify arm state via watch_status.
+    let status_reply = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_status",
+            "arguments": {"terminal_id": "t-b4-send"}
+        }
+    }));
+    let status = unwrap_tool(&status_reply);
+    assert_eq!(status["status"]["armed"], true, "watch_status armed flag set");
+    assert_eq!(status["status"]["turn_start_row"], 50, "turn_start_row snapshotted from read");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: full index loop — event fires, read_turn returns cleaned content
+//         with turn-boundary rows from the watch loop
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_index_loop_event_then_read_turn_with_row_range() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    // Start watch with all_turns.
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-b4-loop", "profile": "claude", "notify_mode": "all_turns"}
+        }
+    }));
+
+    // First wait: busy screen (no detection).
+    {
+        let mut buf = String::new();
+        loop {
+            let n = out.read_line(&mut buf).expect("read");
+            if n == 0 { break; }
+            let trimmed = buf.trim();
+            if trimmed.is_empty() { buf.clear(); continue; }
+            let msg: Value = serde_json::from_str(trimmed).unwrap_or(Value::Null);
+            if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+                let cap = msg["params"]["capability"].as_str().unwrap_or("");
+                let id = msg.get("id").cloned().unwrap_or(Value::Null);
+                if cap == "host.terminal.wait" {
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": busy_screen(),
+                        "timed_out": false, "bell_rung": false, "shell_exited": false,
+                        "rows": 30
+                    }));
+                    break;
+                }
+            }
+            buf.clear();
+        }
+    }
+
+    // Second wait: idle screen → turn_completed fires.
+    let mut turn_event: Option<Value> = None;
+    for _ in 0..20 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            if cap == "host.terminal.wait" {
+                send_cap_reply(&mut stdin, &id, json!({
+                    "content": idle_screen(),
+                    "timed_out": false, "bell_rung": false, "shell_exited": false,
+                    "rows": 55
+                }));
+            } else {
+                send_cap_reply(&mut stdin, &id, json!({}));
+            }
+        } else if method == "minerva/plugin_event" {
+            if msg["params"]["event"].as_str() == Some("agent_relay.turn_completed") {
+                turn_event = Some(msg);
+                // Signal watch_stop immediately so the watch thread stops flooding
+                // host.terminal.wait calls before we issue read_turn. We don't wait
+                // for the response here — we drain it in the read_turn loop below.
+                let stop_req = json!({
+                    "jsonrpc": "2.0",
+                    "id": next_id(),
+                    "method": "tools/call",
+                    "params": {
+                        "name": "minerva_agent_relay_watch_stop",
+                        "arguments": {"terminal_id": "t-b4-loop"}
+                    }
+                }).to_string() + "\n";
+                stdin.write_all(stop_req.as_bytes()).unwrap();
+                stdin.flush().unwrap();
+                break;
+            }
+        }
+    }
+
+    assert!(turn_event.is_some(), "turn_completed event should fire");
+
+    // Call read_turn — should issue host.terminal.read with end_row=55 (from detection).
+    let read_id = next_id();
+    let req_line = json!({
+        "jsonrpc": "2.0",
+        "id": read_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_read_turn",
+            "arguments": {"terminal_id": "t-b4-loop", "distill": false}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req_line.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut read_reply: Option<Value> = None;
+    let mut terminal_read_args: Option<Value> = None;
+
+    // The watch thread keeps sending host.terminal.wait capability calls concurrently
+    // with the main thread processing read_turn. We need enough iterations to drain
+    // all pending waits and still catch the tool response for read_turn. 200 is
+    // generous — in practice the response appears within a handful of waits.
+    for _ in 0..200 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            if cap == "host.terminal.read" {
+                terminal_read_args = Some(msg["params"]["args"].clone());
+                send_cap_reply(&mut stdin, &id, json!({
+                    "content": "Here is my answer.\nI recommend Rust.\n",
+                    "rows": 55
+                }));
+            } else if cap == "host.terminal.wait" {
+                // The watch thread keeps looping — reply timed_out to keep it quiet.
+                send_cap_reply(&mut stdin, &id, json!({
+                    "content": "", "timed_out": true, "bell_rung": false, "shell_exited": false
+                }));
+            } else {
+                send_cap_reply(&mut stdin, &id, json!({}));
+            }
+        } else if msg.get("id").map(|v| v == read_id).unwrap_or(false) {
+            read_reply = Some(msg);
+            break;
+        }
+    }
+
+    assert!(read_reply.is_some(), "read_turn should return");
+    let payload = unwrap_tool(&read_reply.unwrap());
+    assert_eq!(payload["ok"], true);
+    assert!(!payload["distilled"].as_bool().unwrap_or(true), "not distilled");
+
+    let content = payload["content"].as_str().unwrap_or("");
+    assert!(content.contains("Here is my answer") || content.contains("Rust"),
+        "cleaned content returned: {content:?}");
+
+    let turn = &payload["turn"];
+    assert_eq!(turn["cause"], "turn_completed", "turn cause propagated");
+
+    if let Some(args) = terminal_read_args {
+        assert_eq!(args["end_row"], 55, "end_row matches turn_end_row from detection");
+    }
+
+    // Stop watch after read_turn (stopping before would remove the session
+    // from the registry and lose last_event_payload / turn_rows).
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_stop",
+            "arguments": {"terminal_id": "t-b4-loop"}
+        }
+    }));
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: distill=true path calls host.providers.chat with data-hygiene framing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_read_turn_distill_calls_providers_chat() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let read_id = next_id();
+    let req_line = json!({
+        "jsonrpc": "2.0",
+        "id": read_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_read_turn",
+            "arguments": {"terminal_id": "t-b4-distill", "distill": true, "redact": false}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req_line.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let canned_distill = "The agent recommends Rust for memory safety reasons.";
+    let mut read_reply: Option<Value> = None;
+    let mut chat_called = false;
+
+    for _ in 0..20 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.read" => {
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": "tool: bash\nRunning...\nHere is the answer!\nRust is great.\n",
+                        "rows": 10
+                    }));
+                }
+                "host.providers.chat" => {
+                    chat_called = true;
+                    let user_text = msg["params"]["args"]["messages"]
+                        .as_array()
+                        .and_then(|arr| arr.iter().find(|m| m["role"] == "user"))
+                        .and_then(|m| m["text"].as_str())
+                        .unwrap_or("");
+                    assert!(
+                        user_text.contains("BEGIN TERMINAL"),
+                        "user message frames content as terminal data: {user_text:?}"
+                    );
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "choices": [{"message": {"role": "assistant", "content": canned_distill}}],
+                        "usage": {"total_tokens": 50}
+                    }));
+                }
+                _ => { send_cap_reply(&mut stdin, &id, json!({})); }
+            }
+        } else if msg.get("id").map(|v| v == read_id).unwrap_or(false) {
+            read_reply = Some(msg);
+            break;
+        }
+    }
+
+    assert!(chat_called, "distill=true should call host.providers.chat");
+    assert!(read_reply.is_some(), "read_turn should return");
+
+    let payload = unwrap_tool(&read_reply.unwrap());
+    assert_eq!(payload["ok"], true);
+    assert_eq!(payload["distilled"], true, "distilled flag set");
+    assert_eq!(payload["content"].as_str().unwrap_or(""), canned_distill,
+        "distilled content returned");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: deliver path calls mcp.proxy create_note + link_note_to_chat
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_read_turn_deliver_calls_create_note_and_link() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let read_id = next_id();
+    let req_line = json!({
+        "jsonrpc": "2.0",
+        "id": read_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_read_turn",
+            "arguments": {
+                "terminal_id": "t-b4-deliver",
+                "distill": false,
+                "deliver": {"chat_note": true}
+            }
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req_line.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut read_reply: Option<Value> = None;
+    let mut create_note_called = false;
+    let mut link_note_called = false;
+
+    for _ in 0..20 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.read" => {
+                    send_cap_reply(&mut stdin, &id, json!({"content": "Agent reply here.\n", "rows": 5}));
+                }
+                "mcp.proxy:minerva_create_note" => {
+                    create_note_called = true;
+                    let text = msg["params"]["args"]["text"].as_str().unwrap_or("");
+                    assert!(!text.is_empty(), "create_note should receive content text");
+                    send_cap_reply(&mut stdin, &id, json!({"id": "note-abc-123", "ok": true}));
+                }
+                "mcp.proxy:minerva_link_note_to_chat" => {
+                    link_note_called = true;
+                    let note_id = msg["params"]["args"]["note_id"].as_str().unwrap_or("");
+                    assert_eq!(note_id, "note-abc-123", "link receives note id from create_note");
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                }
+                _ => { send_cap_reply(&mut stdin, &id, json!({})); }
+            }
+        } else if msg.get("id").map(|v| v == read_id).unwrap_or(false) {
+            read_reply = Some(msg);
+            break;
+        }
+    }
+
+    assert!(create_note_called, "deliver should call mcp.proxy:minerva_create_note");
+    assert!(link_note_called, "deliver should call mcp.proxy:minerva_link_note_to_chat");
+    assert!(read_reply.is_some(), "read_turn should return");
+
+    let payload = unwrap_tool(&read_reply.unwrap());
+    assert_eq!(payload["ok"], true);
+    assert!(payload["content"].as_str().map(|s| !s.is_empty()).unwrap_or(false),
+        "content present after delivery");
+    assert!(payload.get("delivery_error").is_none() || payload["delivery_error"].is_null(),
+        "no delivery_error when delivery succeeds");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// ---------------------------------------------------------------------------
+// Test 11: delivery failure preserves content with delivery_error field
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_read_turn_deliver_failure_preserves_content() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let read_id = next_id();
+    let req_line = json!({
+        "jsonrpc": "2.0",
+        "id": read_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_read_turn",
+            "arguments": {
+                "terminal_id": "t-b4-delerr",
+                "distill": false,
+                "deliver": {"chat_note": true}
+            }
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req_line.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut read_reply: Option<Value> = None;
+
+    for _ in 0..20 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.read" => {
+                    send_cap_reply(&mut stdin, &id, json!({"content": "Valuable content.\n", "rows": 3}));
+                }
+                "mcp.proxy:minerva_create_note" => {
+                    // Simulate delivery failure.
+                    send_cap_error(&mut stdin, &id, "note service unavailable");
+                }
+                _ => { send_cap_reply(&mut stdin, &id, json!({})); }
+            }
+        } else if msg.get("id").map(|v| v == read_id).unwrap_or(false) {
+            read_reply = Some(msg);
+            break;
+        }
+    }
+
+    assert!(read_reply.is_some(), "read_turn returns even when delivery fails");
+    let payload = unwrap_tool(&read_reply.unwrap());
+    assert_eq!(payload["ok"], true, "ok still true on delivery error");
+    assert!(
+        payload["content"].as_str().map(|s| s.contains("Valuable content")).unwrap_or(false),
+        "content preserved when delivery fails: {:?}", payload["content"]
+    );
+    assert!(
+        payload.get("delivery_error").and_then(|v| v.as_str()).is_some(),
+        "delivery_error set when create_note fails: {:?}", payload.get("delivery_error")
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}

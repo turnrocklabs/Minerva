@@ -86,6 +86,21 @@ struct WatchSession {
 
     /// How the last turn was detected (for calibration).
     last_detection_method: Option<String>,
+
+    // ── B4 turn-boundary row tracking ──────────────────────────────────────
+
+    /// Total row count (from host.terminal.wait results) at the moment the
+    /// session was armed (i.e. when send() arms the one-shot gate).
+    /// read_turn uses this as the start_row for host.terminal.read so it
+    /// reads only the output produced during this turn.
+    turn_start_row: Option<u64>,
+
+    /// Total row count at the point the most recent turn was detected
+    /// (turn_end == current rows at detection time).
+    turn_end_row: Option<u64>,
+
+    /// Payload of the last emitted turn_completed event (copied for read_turn).
+    last_event_payload: Option<serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------
@@ -100,10 +115,66 @@ static SESSIONS: Mutex<Option<SessionMap>> = Mutex::new(None);
 pub fn init_sessions() {
     let mut guard = SESSIONS.lock().unwrap();
     *guard = Some(Arc::new(Mutex::new(HashMap::new())));
+    init_turn_cache();
 }
 
 fn get_sessions() -> SessionMap {
     SESSIONS.lock().unwrap().as_ref().expect("sessions not initialised").clone()
+}
+
+// ---------------------------------------------------------------------------
+// Persistent turn cache — survives session cleanup
+//
+// Stores the most recent turn info (rows + event payload) per terminal_id.
+// Written by maybe_emit; read by read_turn and watch_status via turn_rows()
+// and last_event_payload(). This persists AFTER the watch session is removed
+// from the registry so read_turn can still access turn boundaries.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct TurnCache {
+    start_row: Option<u64>,
+    end_row: Option<u64>,
+    event_payload: Option<serde_json::Value>,
+}
+
+type TurnCacheMap = Arc<Mutex<HashMap<String, TurnCache>>>;
+
+static TURN_CACHE: Mutex<Option<TurnCacheMap>> = Mutex::new(None);
+
+fn init_turn_cache() {
+    let mut guard = TURN_CACHE.lock().unwrap();
+    *guard = Some(Arc::new(Mutex::new(HashMap::new())));
+}
+
+fn get_turn_cache() -> TurnCacheMap {
+    TURN_CACHE.lock().unwrap().as_ref()
+        .expect("turn cache not initialised")
+        .clone()
+}
+
+fn update_turn_cache(
+    terminal_id: &str,
+    start_row: Option<u64>,
+    end_row: Option<u64>,
+    event_payload: Option<serde_json::Value>,
+) {
+    let cache = get_turn_cache();
+    let mut map = cache.lock().unwrap();
+    let entry = map.entry(terminal_id.to_string()).or_insert_with(|| TurnCache {
+        start_row: None,
+        end_row: None,
+        event_payload: None,
+    });
+    if let Some(sr) = start_row {
+        entry.start_row = Some(sr);
+    }
+    if let Some(er) = end_row {
+        entry.end_row = Some(er);
+    }
+    if let Some(p) = event_payload {
+        entry.event_payload = Some(p);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -146,6 +217,9 @@ pub fn watch_start(
         last_wake_cause: None,
         last_turn_at: None,
         last_detection_method: None,
+        turn_start_row: None,
+        turn_end_row: None,
+        last_event_payload: None,
     }));
 
     {
@@ -184,18 +258,54 @@ pub fn watch_stop(terminal_id: &str) -> bool {
 
 /// Arm a watch session for one-shot notification (called internally by the
 /// send tool in B4, exposed as pub fn here for B4's use).
+/// `current_rows`: snapshot of total_rows at arm time — used by read_turn as
+/// the turn-start boundary for host.terminal.read.
 /// Returns true if the session exists and was armed.
-pub fn arm(terminal_id: &str) -> bool {
-    let sessions = get_sessions();
-    let map = sessions.lock().unwrap();
-    if let Some(session) = map.get(terminal_id) {
-        let mut s = session.lock().unwrap();
-        s.armed = true;
-        log::debug!("arm: armed {terminal_id}");
-        true
-    } else {
-        false
+pub fn arm(terminal_id: &str, current_rows: Option<u64>) -> bool {
+    let found = {
+        let sessions = get_sessions();
+        let map = sessions.lock().unwrap();
+        if let Some(session) = map.get(terminal_id) {
+            let mut s = session.lock().unwrap();
+            s.armed = true;
+            if let Some(rows) = current_rows {
+                s.turn_start_row = Some(rows);
+            }
+            true
+        } else {
+            false
+        }
+    };
+    if found {
+        if let Some(rows) = current_rows {
+            // Mirror start_row to persistent cache so read_turn can access it
+            // even after the session is cleaned up.
+            update_turn_cache(terminal_id, Some(rows), None, None);
+        }
+        log::debug!("arm: armed {terminal_id} start_row={:?}", current_rows);
     }
+    found
+}
+
+/// Query the turn-boundary rows for the most recent completed turn.
+/// Reads from the persistent turn cache (survives session cleanup).
+/// Returns (start_row, end_row) — both are None if no turn has been recorded yet.
+pub fn turn_rows(terminal_id: &str) -> (Option<u64>, Option<u64>) {
+    let cache = get_turn_cache();
+    let map = cache.lock().unwrap();
+    if let Some(entry) = map.get(terminal_id) {
+        (entry.start_row, entry.end_row)
+    } else {
+        (None, None)
+    }
+}
+
+/// Return the payload of the last emitted turn_completed event (for read_turn).
+/// Reads from the persistent turn cache (survives session cleanup).
+pub fn last_event_payload(terminal_id: &str) -> Option<serde_json::Value> {
+    let cache = get_turn_cache();
+    let map = cache.lock().unwrap();
+    map.get(terminal_id).and_then(|e| e.event_payload.clone())
 }
 
 /// Query the current status of a watch session.
@@ -213,6 +323,8 @@ pub fn watch_status(terminal_id: &str) -> Option<serde_json::Value> {
         "last_wake_cause": s.last_wake_cause,
         "last_turn_at": s.last_turn_at,
         "last_detection_method": s.last_detection_method,
+        "turn_start_row": s.turn_start_row,
+        "turn_end_row": s.turn_end_row,
     }))
 }
 
@@ -259,6 +371,7 @@ fn watch_loop(
                 WakeCause::TimedOut,
                 DetectionMethod::Timeout,
                 &profile.id,
+                None,
                 &session,
                 &router,
             );
@@ -282,6 +395,7 @@ fn watch_loop(
                     WakeCause::TerminalClosed,
                     DetectionMethod::ChildExit,
                     &profile.id,
+                    None,
                     &session,
                     &router,
                 );
@@ -314,6 +428,10 @@ fn watch_loop(
                     continue;
                 }
 
+                // Extract total rows at this settle point (for turn-boundary tracking).
+                let current_rows = result.get("rows")
+                    .and_then(|v| v.as_u64());
+
                 // Run the detection pass.
                 if let Some(det) = detector::run(content, bell_rung, shell_exited, &cd) {
                     maybe_emit(
@@ -321,6 +439,7 @@ fn watch_loop(
                         det.cause.clone(),
                         det.method.clone(),
                         &profile.id,
+                        current_rows,
                         &session,
                         &router,
                     );
@@ -349,25 +468,32 @@ fn watch_loop(
 }
 
 /// Conditionally emit a turn_completed event based on notify_mode and arm state.
-/// Also updates the session's last_* fields.
+/// Also updates the session's last_* fields and turn-boundary rows.
+///
+/// `current_rows`: the total row count from host.terminal.wait at detection time.
+///   Written to turn_end_row so read_turn can bound its host.terminal.read call.
 fn maybe_emit(
     terminal_id: &str,
     cause: WakeCause,
     method: DetectionMethod,
     profile_id: &str,
+    current_rows: Option<u64>,
     session: &Arc<Mutex<WatchSession>>,
     router: &Arc<Router>,
 ) {
     let turn_at = iso_now();
 
     // Update session state and decide whether to emit.
-    let should_emit = {
+    let (should_emit, payload, turn_start, turn_end) = {
         let mut s = session.lock().unwrap();
         s.last_wake_cause = Some(cause.as_str().to_string());
         s.last_turn_at = Some(turn_at.clone());
         s.last_detection_method = Some(method.as_str().to_string());
+        if let Some(rows) = current_rows {
+            s.turn_end_row = Some(rows);
+        }
 
-        match s.notify_mode {
+        let emit = match s.notify_mode {
             NotifyMode::None => false,
             NotifyMode::AllTurns => true,
             NotifyMode::Armed => {
@@ -378,17 +504,34 @@ fn maybe_emit(
                     false
                 }
             }
-        }
-    };
+        };
 
-    if should_emit {
-        let payload = json!({
+        let p = json!({
             "terminal_id": terminal_id,
             "cause": cause.as_str(),
             "detection_method": method.as_str(),
             "profile_id": profile_id,
             "turn_at_iso": turn_at,
         });
+
+        if emit {
+            s.last_event_payload = Some(p.clone());
+        }
+
+        (emit, p, s.turn_start_row, s.turn_end_row)
+    };
+
+    // Always update the persistent turn cache with end_row and (if emitting) the
+    // event payload. This ensures read_turn can access them even after the session
+    // is removed from the registry (e.g. after watch_stop).
+    update_turn_cache(
+        terminal_id,
+        turn_start,
+        turn_end,
+        if should_emit { Some(payload.clone()) } else { None },
+    );
+
+    if should_emit {
         router.emit_event("agent_relay.turn_completed", payload);
         log::info!(
             "maybe_emit: emitted turn_completed terminal={terminal_id} cause={} method={}",
@@ -471,6 +614,9 @@ mod tests {
             last_wake_cause: None,
             last_turn_at: None,
             last_detection_method: None,
+            turn_start_row: None,
+            turn_end_row: None,
+            last_event_payload: None,
         }));
 
         // We can't easily test with a real router in a unit test without spawning
@@ -500,6 +646,9 @@ mod tests {
             last_wake_cause: None,
             last_turn_at: None,
             last_detection_method: None,
+            turn_start_row: None,
+            turn_end_row: None,
+            last_event_payload: None,
         }));
 
         // First check: armed → should emit.
@@ -533,6 +682,9 @@ mod tests {
             last_wake_cause: None,
             last_turn_at: None,
             last_detection_method: None,
+            turn_start_row: None,
+            turn_end_row: None,
+            last_event_payload: None,
         }));
 
         for _ in 0..3 {
@@ -555,6 +707,9 @@ mod tests {
             last_wake_cause: None,
             last_turn_at: None,
             last_detection_method: None,
+            turn_start_row: None,
+            turn_end_row: None,
+            last_event_payload: None,
         }));
 
         let should_emit = {
@@ -581,6 +736,9 @@ mod tests {
             last_wake_cause: None,
             last_turn_at: None,
             last_detection_method: None,
+            turn_start_row: None,
+            turn_end_row: None,
+            last_event_payload: None,
         }));
         {
             let mut map = sessions.lock().unwrap();
@@ -596,7 +754,7 @@ mod tests {
         };
         assert!(!pre_armed, "not armed before arm()");
 
-        let result = arm("t-arm");
+        let result = arm("t-arm", None);
         assert!(result, "arm() returned true for existing session");
 
         let armed = {
@@ -631,6 +789,9 @@ mod tests {
             last_wake_cause: Some("turn_completed".to_string()),
             last_turn_at: Some("2026-06-09T12:00:00Z".to_string()),
             last_detection_method: Some("settle_prompt".to_string()),
+            turn_start_row: Some(42),
+            turn_end_row: Some(75),
+            last_event_payload: None,
         }));
         {
             let mut map = sessions.lock().unwrap();
@@ -642,6 +803,76 @@ mod tests {
         assert_eq!(status["notify_mode"], "all_turns");
         assert_eq!(status["last_wake_cause"], "turn_completed");
         assert_eq!(status["last_detection_method"], "settle_prompt");
+        assert_eq!(status["turn_start_row"], 42);
+        assert_eq!(status["turn_end_row"], 75);
+    }
+
+    // ── Test: arm() with current_rows snapshots turn_start_row ──────────────
+
+    #[test]
+    fn test_arm_fn_snapshots_start_row() {
+        setup();
+        let sessions = get_sessions();
+        let session = Arc::new(Mutex::new(WatchSession {
+            terminal_id: "t-arm-rows".to_string(),
+            profile_id: "claude".to_string(),
+            notify_mode: NotifyMode::Armed,
+            armed: false,
+            stop: false,
+            last_wake_cause: None,
+            last_turn_at: None,
+            last_detection_method: None,
+            turn_start_row: None,
+            turn_end_row: None,
+            last_event_payload: None,
+        }));
+        {
+            let mut map = sessions.lock().unwrap();
+            map.insert("t-arm-rows".to_string(), session);
+        }
+
+        // Arm with a known row count.
+        let result = arm("t-arm-rows", Some(100));
+        assert!(result, "arm() returned true");
+
+        let (start, end) = turn_rows("t-arm-rows");
+        assert_eq!(start, Some(100), "turn_start_row snapshotted");
+        assert_eq!(end, None, "turn_end_row not set yet");
+    }
+
+    // ── Test: arm() without rows leaves start_row unchanged ─────────────────
+
+    #[test]
+    fn test_arm_fn_no_rows_leaves_start_row() {
+        setup();
+        let sessions = get_sessions();
+        let session = Arc::new(Mutex::new(WatchSession {
+            terminal_id: "t-arm-norows".to_string(),
+            profile_id: "claude".to_string(),
+            notify_mode: NotifyMode::Armed,
+            armed: false,
+            stop: false,
+            last_wake_cause: None,
+            last_turn_at: None,
+            last_detection_method: None,
+            turn_start_row: Some(50),
+            turn_end_row: None,
+            last_event_payload: None,
+        }));
+        {
+            let mut map = sessions.lock().unwrap();
+            map.insert("t-arm-norows".to_string(), session);
+        }
+
+        // Pre-populate the persistent turn cache to simulate a prior arm(Some(50)).
+        // turn_rows() reads from the cache, not the session map.
+        update_turn_cache("t-arm-norows", Some(50), None, None);
+
+        // Calling arm with None should NOT overwrite the cache.
+        arm("t-arm-norows", None);
+
+        let (start, _) = turn_rows("t-arm-norows");
+        assert_eq!(start, Some(50), "existing turn_start_row preserved when arm called without rows");
     }
 
     // ── Test: notify_mode parsing ────────────────────────────────────────────

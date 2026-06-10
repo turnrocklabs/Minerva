@@ -209,3 +209,95 @@ fn test_manifest_tools_have_handlers_in_main_rs() {
         missing
     );
 }
+
+// ── Test 7: skill entry present with all required fields ─────────────────────
+
+#[test]
+fn test_skill_entry_present_with_required_fields() {
+    let manifest = load_manifest();
+
+    let skills = manifest.get("skills")
+        .and_then(|v| v.as_array())
+        .expect("manifest.json must have a 'skills' array");
+
+    assert!(
+        !skills.is_empty(),
+        "manifest.json skills array must be non-empty (relay skill required)"
+    );
+
+    // Required fields per PluginDefinition.REQUIRED_SKILL_FIELDS.
+    let required_fields = [
+        "id", "title", "summary", "system_prompt", "outcome",
+        "preconditions", "steps", "tool_deps", "target",
+    ];
+
+    for (i, skill) in skills.iter().enumerate() {
+        for field in &required_fields {
+            assert!(
+                skill.get(field).is_some(),
+                "skill[{}] missing required field '{}': {:?}",
+                i, field, skill.get("id")
+            );
+        }
+
+        // id must match ^minerva_agent_relay_[a-z0-9_]+$
+        let id = skill["id"].as_str().expect("skill id must be a string");
+        assert!(
+            id.starts_with("minerva_agent_relay_"),
+            "skill id '{}' must start with 'minerva_agent_relay_'",
+            id
+        );
+
+        // tool_deps must be an array of strings.
+        let deps = skill["tool_deps"].as_array()
+            .unwrap_or_else(|| panic!("skill '{}' tool_deps must be an array", id));
+        for dep in deps {
+            assert!(
+                dep.as_str().map(|s| !s.is_empty()).unwrap_or(false),
+                "skill '{}' tool_deps must be non-empty strings",
+                id
+            );
+        }
+    }
+}
+
+// ── Test 8: relay skill tool_deps all have valid name format ──────────────────
+
+#[test]
+fn test_relay_skill_tool_deps_valid_format() {
+    let manifest = load_manifest();
+
+    let skills = manifest["skills"]
+        .as_array()
+        .expect("skills array");
+
+    let relay_skill = skills.iter()
+        .find(|s| s["id"].as_str() == Some("minerva_agent_relay_relay"))
+        .expect("minerva_agent_relay_relay skill must be present");
+
+    let deps = relay_skill["tool_deps"]
+        .as_array()
+        .expect("tool_deps must be an array");
+
+    assert!(!deps.is_empty(), "relay skill must have tool_deps");
+
+    for dep in deps {
+        let name = dep.as_str().expect("dep must be a string");
+        assert!(!name.is_empty(), "dep must be non-empty");
+        // All deps must start with minerva_ (own tools) or be core tool names.
+        // Core tool names like minerva_terminal_list, minerva_create_trigger etc. all
+        // start with minerva_.
+        assert!(
+            name.starts_with("minerva_"),
+            "tool_dep '{}' must start with 'minerva_' (either plugin or core tool)",
+            name
+        );
+    }
+
+    // Verify the agent_relay tools themselves are in deps.
+    let dep_strs: Vec<&str> = deps.iter().filter_map(|d| d.as_str()).collect();
+    assert!(dep_strs.contains(&"minerva_agent_relay_send"), "send in deps");
+    assert!(dep_strs.contains(&"minerva_agent_relay_read_turn"), "read_turn in deps");
+    assert!(dep_strs.contains(&"minerva_agent_relay_watch_start"), "watch_start in deps");
+    assert!(dep_strs.contains(&"minerva_create_trigger"), "create_trigger in deps");
+}
