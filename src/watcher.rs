@@ -114,6 +114,12 @@ struct WatchSession {
     /// Row reference for the gate's growth check: rows at arm() time, at the
     /// first wait sample after watch_start, or at the last counted turn.
     gate_ref_rows: Option<u64>,
+
+    /// Last-activity anchor for the idle reap: refreshed by arm() and by any
+    /// counted detection. The watch_timeout_ms reap applies only to UNARMED
+    /// sessions idle past this anchor — an armed session never self-reaps
+    /// mid-turn (lifecycle item 019eb3617c38).
+    reap_anchor: Instant,
 }
 
 impl WatchSession {
@@ -132,6 +138,7 @@ impl WatchSession {
             last_event_payload: None,
             gate_open: false,
             gate_ref_rows: None,
+            reap_anchor: Instant::now(),
         }
     }
 }
@@ -263,22 +270,29 @@ pub fn watch_start(
         .map_err(|e| format!("failed to spawn watch thread: {e}"))?;
 
     log::info!("watch_start: watching terminal {terminal_id} with profile {profile_id}");
+    crate::state::save();
     Ok(())
 }
 
 /// Stop a watch session. The background thread will exit on its next iteration.
 /// Returns true if a session was running, false if no session found.
 pub fn watch_stop(terminal_id: &str) -> bool {
-    let sessions = get_sessions();
-    let map = sessions.lock().unwrap();
-    if let Some(session) = map.get(terminal_id) {
-        let mut s = session.lock().unwrap();
-        s.stop = true;
-        log::info!("watch_stop: signalled {terminal_id}");
-        true
-    } else {
-        false
+    let stopped = {
+        let sessions = get_sessions();
+        let map = sessions.lock().unwrap();
+        if let Some(session) = map.get(terminal_id) {
+            let mut s = session.lock().unwrap();
+            s.stop = true;
+            log::info!("watch_stop: signalled {terminal_id}");
+            true
+        } else {
+            false
+        }
+    };
+    if stopped {
+        crate::state::save();
     }
+    stopped
 }
 
 /// Arm a watch session for one-shot notification (called internally by the
@@ -297,6 +311,9 @@ pub fn arm(terminal_id: &str, snapshot: Option<(&str, u64)>) -> bool {
         if let Some(session) = map.get(terminal_id) {
             let mut s = session.lock().unwrap();
             s.armed = true;
+            // Arming is activity: refresh the reap anchor so an in-flight turn
+            // never gets reaped out from under its one-shot wake.
+            s.reap_anchor = Instant::now();
             // Close the busy-gate: this arm's turn_completed requires a fresh
             // busy screen or row growth past the arm snapshot first.
             s.gate_open = false;
@@ -358,6 +375,26 @@ pub fn last_event_payload(terminal_id: &str) -> Option<serde_json::Value> {
     map.get(terminal_id).and_then(|e| e.event_payload.clone())
 }
 
+/// Snapshot of the live (non-stopped) sessions for persistence:
+/// (terminal_id, profile_id, notify_mode).
+pub fn session_specs() -> Vec<(String, String, String)> {
+    let sessions = get_sessions();
+    let map = sessions.lock().unwrap();
+    map.values()
+        .filter_map(|session| {
+            let s = session.lock().unwrap();
+            if s.stop {
+                return None;
+            }
+            Some((
+                s.terminal_id.clone(),
+                s.profile_id.clone(),
+                s.notify_mode.as_str().to_string(),
+            ))
+        })
+        .collect()
+}
+
 /// Query the current status of a watch session.
 /// Returns None if no session exists.
 pub fn watch_status(terminal_id: &str) -> Option<serde_json::Value> {
@@ -400,22 +437,23 @@ fn watch_loop(
         }
     };
 
-    let start_time = Instant::now();
     let watch_timeout = std::time::Duration::from_millis(cd.watch_timeout_ms);
 
     loop {
-        // Check stop flag.
-        {
+        // Check stop flag and the idle reap. The reap applies only to UNARMED
+        // sessions idle past the reap anchor (arm() and counted detections
+        // refresh it) — an armed session never self-reaps mid-turn.
+        let reap_due = {
             let s = session.lock().unwrap();
             if s.stop {
                 log::info!("watch_loop: stop flag set for {terminal_id}, exiting");
                 break;
             }
-        }
+            !s.armed && s.reap_anchor.elapsed() > watch_timeout
+        };
 
-        // Check arm timeout.
-        if start_time.elapsed() > watch_timeout {
-            log::info!("watch_loop: arm timeout for {terminal_id}");
+        if reap_due {
+            log::info!("watch_loop: idle reap for {terminal_id}");
             maybe_emit(
                 &terminal_id,
                 WakeCause::TimedOut,
@@ -574,9 +612,12 @@ fn watch_loop(
     }
 
     // Clean up: remove session from registry.
-    let sessions = get_sessions();
-    let mut map = sessions.lock().unwrap();
-    map.remove(&terminal_id);
+    {
+        let sessions = get_sessions();
+        let mut map = sessions.lock().unwrap();
+        map.remove(&terminal_id);
+    }
+    crate::state::save();
     log::info!("watch_loop: cleaned up {terminal_id}");
 }
 
@@ -602,6 +643,8 @@ fn maybe_emit(
         s.last_wake_cause = Some(cause.as_str().to_string());
         s.last_turn_at = Some(turn_at.clone());
         s.last_detection_method = Some(method.as_str().to_string());
+        // A counted detection is activity — push the idle reap out.
+        s.reap_anchor = Instant::now();
         if let Some(rows) = current_rows {
             s.turn_end_row = Some(rows);
         }

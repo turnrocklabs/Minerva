@@ -30,6 +30,7 @@ mod detector;
 mod filter_rules;
 mod profiles;
 mod router;
+mod state;
 mod watcher;
 
 use std::sync::Arc;
@@ -616,6 +617,7 @@ fn handle_filter_set(params: &Value, id: Value) -> RpcResponse {
     match FilterRule::new(name, pattern, action, replacement) {
         Ok(rule) => {
             let updated = with_filter_rules(|rs| rs.set(rule));
+            state::save();
             ok_response(id, tool_ok(json!({ "ok": true, "updated": updated, "name": name })))
         }
         Err(e) => ok_response(id, tool_err(&e)),
@@ -641,6 +643,9 @@ fn handle_filter_delete(params: &Value, id: Value) -> RpcResponse {
         return ok_response(id, tool_err("name is required"));
     }
     let deleted = with_filter_rules(|rs| rs.delete(name));
+    if deleted {
+        state::save();
+    }
     ok_response(id, tool_ok(json!({ "ok": true, "deleted": deleted, "name": name })))
 }
 
@@ -731,6 +736,7 @@ fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
     }
 
     profiles::profile_set(profile.clone());
+    state::save();
 
     match serde_json::to_value(&profile) {
         Ok(v) => ok_response(id, tool_ok(json!({ "ok": true, "profile": v }))),
@@ -919,14 +925,20 @@ fn main() {
 
     log::info!("{SERVER_NAME} {SERVER_VERSION} starting");
 
-    // Initialise global state.
+    // Initialise global state, then overlay persisted state (profile
+    // overrides + filter rules; seeds apply when no state file exists).
     init_filter_rules();
     profiles::init_profiles();
     watcher::init_sessions();
+    let persisted_sessions = state::load();
 
     // Spawn the async router (stdin-reader thread + shared stdout writer).
     // tool_rx stays on the main thread (Receiver is not Sync; can't put it in Arc).
     let (router, tool_rx) = Router::spawn();
+
+    // Resume persisted watch sessions — watches survive plugin restarts.
+    // Sessions whose terminals are gone self-heal via terminal_closed.
+    state::resume_sessions(persisted_sessions, &router);
 
     log::info!("{SERVER_NAME} router ready, waiting for tool requests");
 

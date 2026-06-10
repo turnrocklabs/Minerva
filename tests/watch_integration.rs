@@ -30,12 +30,21 @@ fn next_id() -> u64 {
 }
 
 /// Spawn the agent-relay-plugin binary with piped stdio.
+/// Each child gets its OWN temp state file — without this, persistence
+/// (agent_relay_state.json next to the exe) would leak watch sessions
+/// between tests via resume-on-start.
 fn spawn_plugin() -> (Child, ChildStdin, BufReader<ChildStdout>) {
     let bin = env!("CARGO_BIN_EXE_agent-relay-plugin");
+    let state_file = std::env::temp_dir().join(format!(
+        "agent-relay-it-state-{}-{}.json",
+        std::process::id(),
+        next_id(),
+    ));
     let mut child = Command::new(bin)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())  // swallow stderr (log lines)
+        .env("AGENT_RELAY_STATE_FILE", &state_file)
         .spawn()
         .expect("spawn agent-relay-plugin");
     let stdin = child.stdin.take().expect("stdin");
@@ -1535,4 +1544,113 @@ fn test_armed_idle_sample_does_not_consume_arm() {
 
     let _ = child.kill();
     let _ = child.wait();
+}
+
+// ---------------------------------------------------------------------------
+// Lifecycle/persistence tests (relay-ux-suite 019eb3617c38 + 019eb32faa4d)
+// ---------------------------------------------------------------------------
+
+/// Spawn the plugin with an explicit state file (for restart-resume tests).
+fn spawn_plugin_with_state(state_file: &std::path::Path) -> (Child, ChildStdin, BufReader<ChildStdout>) {
+    let bin = env!("CARGO_BIN_EXE_agent-relay-plugin");
+    let mut child = Command::new(bin)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("AGENT_RELAY_STATE_FILE", state_file)
+        .spawn()
+        .expect("spawn agent-relay-plugin");
+    let stdin = child.stdin.take().expect("stdin");
+    let out = BufReader::new(child.stdout.take().expect("stdout"));
+    (child, stdin, out)
+}
+
+// Test 14: a watch session persists across a plugin restart and RESUMES —
+// the restarted process starts calling host.terminal.wait for the watched
+// terminal without any watch_start.
+#[test]
+fn test_sessions_resume_after_restart() {
+    let state_file = std::env::temp_dir().join(format!(
+        "agent-relay-resume-test-{}.json", std::process::id()
+    ));
+    let _ = std::fs::remove_file(&state_file);
+
+    // ── Run 1: start a watch, let the state save, kill the process. ──
+    {
+        let (mut child, mut stdin, mut out) = spawn_plugin_with_state(&state_file);
+        handshake(&mut stdin, &mut out);
+        let reply = rpc(&mut stdin, &mut out, json!({
+            "jsonrpc": "2.0",
+            "id": next_id(),
+            "method": "tools/call",
+            "params": {
+                "name": "minerva_agent_relay_watch_start",
+                "arguments": {"terminal_id": "t-resume", "profile": "codex", "notify_mode": "all_turns"}
+            }
+        }));
+        let payload = unwrap_tool(&reply);
+        assert_eq!(payload["ok"], true, "watch_start ok: {payload}");
+        // watch_start saves synchronously before replying — kill hard now.
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    let raw = std::fs::read_to_string(&state_file).expect("state file written");
+    let doc: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(doc["sessions"][0]["terminal_id"], "t-resume", "session persisted: {doc}");
+    assert_eq!(doc["sessions"][0]["profile_id"], "codex");
+    assert_eq!(doc["sessions"][0]["notify_mode"], "all_turns");
+
+    // ── Run 2: fresh process, same state file — the watch must resume. ──
+    {
+        let (mut child, mut stdin, mut out) = spawn_plugin_with_state(&state_file);
+
+        // WITHOUT any tools/call, the resumed watch thread must start polling
+        // host.terminal.wait for t-resume. Drain plugin output until we see it.
+        let mut resumed_wait_seen = false;
+        for _ in 0..20 {
+            let mut buf = String::new();
+            let n = out.read_line(&mut buf).expect("read");
+            if n == 0 { break; }
+            let trimmed = buf.trim();
+            if trimmed.is_empty() { continue; }
+            let msg: Value = match serde_json::from_str(trimmed) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+                let cap = msg["params"]["capability"].as_str().unwrap_or("");
+                let args = &msg["params"]["args"];
+                if cap == "host.terminal.wait" && args["terminal_id"] == "t-resume" {
+                    resumed_wait_seen = true;
+                    // Reply timed_out so the loop stays quiet, then stop.
+                    let id = msg.get("id").cloned().unwrap_or(Value::Null);
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": "", "timed_out": true, "bell_rung": false, "shell_exited": false
+                    }));
+                    break;
+                }
+            }
+        }
+        assert!(resumed_wait_seen, "restarted plugin resumed the persisted watch session");
+
+        // The resumed session reports through watch_status too.
+        let status = rpc(&mut stdin, &mut out, json!({
+            "jsonrpc": "2.0",
+            "id": next_id(),
+            "method": "tools/call",
+            "params": {
+                "name": "minerva_agent_relay_watch_status",
+                "arguments": {"terminal_id": "t-resume"}
+            }
+        }));
+        let payload = unwrap_tool(&status);
+        assert_eq!(payload["status"]["watching"], true, "resumed session visible: {payload}");
+        assert_eq!(payload["status"]["profile_id"], "codex", "profile survived restart");
+
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+
+    let _ = std::fs::remove_file(&state_file);
 }
