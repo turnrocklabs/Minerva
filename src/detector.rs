@@ -223,6 +223,21 @@ pub fn is_busy(screen: &str, cd: &CompiledDetection) -> bool {
     has_active_spinner(last_n_lines(screen, 40), &cd.spinner_glyphs)
 }
 
+/// Count the trailing rows of `screen` that are input-box chrome rather than
+/// content: everything from the LAST line matching the profile's prompt_box
+/// regex to the end (the live input box, draft rows below it, hint lines).
+/// Falls back to counting trailing blank lines when no prompt is visible.
+/// The watcher subtracts this from total_scrollback_rows so turn boundaries
+/// anchor on the last CONTENT row — the answer renders INTO the rows the
+/// input box occupied at snapshot time (B5 live finding 019eb345d4d9).
+pub fn trailing_noncontent_rows(screen: &str, cd: &CompiledDetection) -> u64 {
+    let lines: Vec<&str> = screen.lines().collect();
+    if let Some(idx) = lines.iter().rposition(|l| cd.prompt_box.is_match(l)) {
+        return (lines.len() - idx) as u64;
+    }
+    lines.iter().rev().take_while(|l| l.trim().is_empty()).count() as u64
+}
+
 /// Return the last N lines of `text` as a &str slice (starting at a
 /// newline boundary). If the text has fewer than N lines, returns all of it.
 fn last_n_lines(text: &str, n: usize) -> &str {
@@ -441,6 +456,35 @@ mod tests {
         assert!(is_busy(screen_claude_busy(), &cd), "esc-to-interrupt screen is busy");
         assert!(!is_busy(screen_claude_idle(), &cd), "idle prompt screen is not busy");
         assert!(!is_busy("", &cd), "empty screen is not busy");
+    }
+
+    // ── Test: trailing_noncontent_rows (row anchoring) ───────────────────────
+
+    #[test]
+    fn test_trailing_noncontent_rows_idle_screen() {
+        let cd = compiled_claude();
+        // screen_claude_idle ends with: ❯+NBSP line, hints line → 2 chrome rows.
+        assert_eq!(trailing_noncontent_rows(screen_claude_idle(), &cd), 2);
+    }
+
+    #[test]
+    fn test_trailing_noncontent_rows_draft_below_prompt() {
+        let cd = compiled_claude();
+        // Multi-row draft + hints + blank below the prompt all count as chrome.
+        let screen = "answer text\n\
+                      \u{276f}\u{a0}first draft row\n\
+                      second draft row\n\
+                      ? for shortcuts\n\
+                      \n";
+        assert_eq!(trailing_noncontent_rows(screen, &cd), 4);
+    }
+
+    #[test]
+    fn test_trailing_noncontent_rows_no_prompt_counts_blanks() {
+        let cd = compiled_claude();
+        assert_eq!(trailing_noncontent_rows("output line\n\n\n", &cd), 2);
+        assert_eq!(trailing_noncontent_rows("output line\n", &cd), 0);
+        assert_eq!(trailing_noncontent_rows("", &cd), 0);
     }
 
     // ── Test: last_n_lines helper ────────────────────────────────────────────

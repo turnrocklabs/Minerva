@@ -283,11 +283,15 @@ pub fn watch_stop(terminal_id: &str) -> bool {
 
 /// Arm a watch session for one-shot notification (called internally by the
 /// send tool in B4, exposed as pub fn here for B4's use).
-/// `current_rows`: snapshot of total_rows at arm time — used by read_turn as
-/// the turn-start boundary for host.terminal.read.
+/// `snapshot`: (screen content, total_rows) at arm time. The turn-start
+/// boundary for read_turn is ANCHORED on the last content row — total rows
+/// minus the trailing input-box/chrome rows of the snapshot screen — because
+/// the answer renders INTO the rows the input box occupied (019eb345d4d9).
+/// The busy-gate's growth reference keeps the RAW row count.
 /// Returns true if the session exists and was armed.
-pub fn arm(terminal_id: &str, current_rows: Option<u64>) -> bool {
-    let found = {
+pub fn arm(terminal_id: &str, snapshot: Option<(&str, u64)>) -> bool {
+    let raw_rows = snapshot.map(|(_, rows)| rows);
+    let (found, anchored_start) = {
         let sessions = get_sessions();
         let map = sessions.lock().unwrap();
         if let Some(session) = map.get(terminal_id) {
@@ -296,24 +300,41 @@ pub fn arm(terminal_id: &str, current_rows: Option<u64>) -> bool {
             // Close the busy-gate: this arm's turn_completed requires a fresh
             // busy screen or row growth past the arm snapshot first.
             s.gate_open = false;
-            s.gate_ref_rows = current_rows;
-            if let Some(rows) = current_rows {
+            s.gate_ref_rows = raw_rows;
+            let anchored = snapshot.map(|(content, rows)| {
+                anchored_rows(&s.profile_id, content, rows)
+            });
+            if let Some(rows) = anchored {
                 s.turn_start_row = Some(rows);
             }
-            true
+            (true, anchored)
         } else {
-            false
+            (false, None)
         }
     };
     if found {
-        if let Some(rows) = current_rows {
+        if let Some(rows) = anchored_start {
             // Mirror start_row to persistent cache so read_turn can access it
             // even after the session is cleaned up.
             update_turn_cache(terminal_id, Some(rows), None, None);
         }
-        log::debug!("arm: armed {terminal_id} start_row={:?}", current_rows);
+        log::debug!(
+            "arm: armed {terminal_id} raw_rows={raw_rows:?} start_row={anchored_start:?}"
+        );
     }
     found
+}
+
+/// Compute the content-anchored row count: `total_rows` minus the trailing
+/// input-box/chrome rows of `content`, per the named profile. Falls back to
+/// the raw count when the profile or its regex is unavailable.
+fn anchored_rows(profile_id: &str, content: &str, total_rows: u64) -> u64 {
+    match profile_get(profile_id)
+        .and_then(|p| CompiledDetection::from_profile(&p).ok())
+    {
+        Some(cd) => total_rows.saturating_sub(detector::trailing_noncontent_rows(content, &cd)),
+        None => total_rows,
+    }
 }
 
 /// Query the turn-boundary rows for the most recent completed turn.
@@ -507,12 +528,19 @@ fn watch_loop(
                         continue;
                     }
 
+                    // Anchor the turn-end row on the last content row: the
+                    // settled screen ends with the (re-rendered) input box +
+                    // hint rows, which belong to the NEXT turn, not this one.
+                    let anchored_end = current_rows.map(|r| {
+                        r.saturating_sub(detector::trailing_noncontent_rows(content, &cd))
+                    });
+
                     maybe_emit(
                         &terminal_id,
                         det.cause.clone(),
                         det.method.clone(),
                         &profile.id,
-                        current_rows,
+                        anchored_end,
                         &session,
                         &router,
                     );
@@ -858,11 +886,11 @@ mod tests {
         }
 
         // Arm with a known row count.
-        let result = arm("t-arm-rows", Some(100));
+        let result = arm("t-arm-rows", Some(("", 100)));
         assert!(result, "arm() returned true");
 
         let (start, end) = turn_rows("t-arm-rows");
-        assert_eq!(start, Some(100), "turn_start_row snapshotted");
+        assert_eq!(start, Some(100), "turn_start_row snapshotted (no trailing chrome)");
         assert_eq!(end, None, "turn_end_row not set yet");
     }
 
@@ -891,6 +919,34 @@ mod tests {
 
         let (start, _) = turn_rows("t-arm-norows");
         assert_eq!(start, Some(50), "existing turn_start_row preserved when arm called without rows");
+    }
+
+    // ── Test: arm() anchors start_row past trailing input-box chrome ────────
+
+    #[test]
+    fn test_arm_anchors_start_row_on_last_content_row() {
+        setup();
+        let sessions = get_sessions();
+        let session = Arc::new(Mutex::new(WatchSession::new(
+            "t-arm-anchor".to_string(),
+            "claude".to_string(),
+            NotifyMode::Armed,
+        )));
+        {
+            let mut map = sessions.lock().unwrap();
+            map.insert("t-arm-anchor".to_string(), session);
+        }
+
+        // Snapshot screen ends with the live input box (❯ + NBSP) and a hint
+        // row — 2 trailing chrome rows that the answer will render into.
+        let screen = "Previous answer text.\n\
+                      \n\
+                      \u{276f}\u{a0}draft being typed\n\
+                      ? for shortcuts\n";
+        assert!(arm("t-arm-anchor", Some((screen, 100))));
+
+        let (start, _) = turn_rows("t-arm-anchor");
+        assert_eq!(start, Some(98), "start anchored 2 rows above raw snapshot");
     }
 
     // ── Test: notify_mode parsing ────────────────────────────────────────────

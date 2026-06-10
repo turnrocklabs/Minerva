@@ -259,12 +259,24 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
                     }
                 }
 
-                // Snapshot current row count before arming (turn-start boundary).
-                let current_rows = router.call_capability("host.terminal.read", json!({
+                // Snapshot screen + row count before arming. arm() anchors the
+                // turn-start boundary on the last content row (the trailing
+                // input-box/chrome rows get overwritten by the answer).
+                let snapshot = router.call_capability("host.terminal.read", json!({
                     "terminal_id": terminal_id,
-                })).ok().and_then(|r| r.get("total_scrollback_rows").and_then(|v| v.as_u64()));
+                })).ok().and_then(|r| {
+                    let rows = r.get("total_scrollback_rows").and_then(|v| v.as_u64())?;
+                    let content = r.get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    Some((content, rows))
+                });
 
-                armed = watcher::arm(terminal_id, current_rows);
+                armed = watcher::arm(
+                    terminal_id,
+                    snapshot.as_ref().map(|(c, r)| (c.as_str(), *r)),
+                );
             }
 
             ok_response(id, tool_ok(json!({
