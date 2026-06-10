@@ -101,6 +101,39 @@ struct WatchSession {
 
     /// Payload of the last emitted turn_completed event (copied for read_turn).
     last_event_payload: Option<serde_json::Value>,
+
+    // ── Busy-gate (transition-based detection) ─────────────────────────────
+
+    /// A settle_prompt turn_completed only counts while the gate is open.
+    /// The gate opens when the loop observes a busy screen or row growth past
+    /// `gate_ref_rows`; it closes on arm(), on watch_start, and after each
+    /// counted turn — so a pre-existing idle screen never registers as a turn
+    /// (phantom turns / arm-consumption race).
+    gate_open: bool,
+
+    /// Row reference for the gate's growth check: rows at arm() time, at the
+    /// first wait sample after watch_start, or at the last counted turn.
+    gate_ref_rows: Option<u64>,
+}
+
+impl WatchSession {
+    fn new(terminal_id: String, profile_id: String, notify_mode: NotifyMode) -> Self {
+        WatchSession {
+            terminal_id,
+            profile_id,
+            notify_mode,
+            armed: false,
+            stop: false,
+            last_wake_cause: None,
+            last_turn_at: None,
+            last_detection_method: None,
+            turn_start_row: None,
+            turn_end_row: None,
+            last_event_payload: None,
+            gate_open: false,
+            gate_ref_rows: None,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -208,19 +241,11 @@ pub fn watch_start(
     }
 
     // Create new session state.
-    let session = Arc::new(Mutex::new(WatchSession {
-        terminal_id: terminal_id.clone(),
-        profile_id: profile_id.clone(),
+    let session = Arc::new(Mutex::new(WatchSession::new(
+        terminal_id.clone(),
+        profile_id.clone(),
         notify_mode,
-        armed: false,
-        stop: false,
-        last_wake_cause: None,
-        last_turn_at: None,
-        last_detection_method: None,
-        turn_start_row: None,
-        turn_end_row: None,
-        last_event_payload: None,
-    }));
+    )));
 
     {
         let mut map = sessions.lock().unwrap();
@@ -268,6 +293,10 @@ pub fn arm(terminal_id: &str, current_rows: Option<u64>) -> bool {
         if let Some(session) = map.get(terminal_id) {
             let mut s = session.lock().unwrap();
             s.armed = true;
+            // Close the busy-gate: this arm's turn_completed requires a fresh
+            // busy screen or row growth past the arm snapshot first.
+            s.gate_open = false;
+            s.gate_ref_rows = current_rows;
             if let Some(rows) = current_rows {
                 s.turn_start_row = Some(rows);
             }
@@ -443,7 +472,41 @@ fn watch_loop(
                 let current_rows = result.get("total_scrollback_rows")
                     .and_then(|v| v.as_u64());
 
+                // Busy-gate bookkeeping: a busy screen or row growth past the
+                // reference opens the gate. First sample after watch_start
+                // seeds the reference (gate stays closed on that sample).
+                let gate_open = {
+                    let mut s = session.lock().unwrap();
+                    if s.gate_ref_rows.is_none() {
+                        s.gate_ref_rows = current_rows;
+                    }
+                    let grew = match (current_rows, s.gate_ref_rows) {
+                        (Some(now), Some(reference)) => now > reference,
+                        _ => false,
+                    };
+                    if grew || detector::is_busy(content, &cd) {
+                        s.gate_open = true;
+                    }
+                    s.gate_open
+                };
+
                 if let Some(det) = detector::run(content, bell_rung, shell_exited, &cd) {
+                    // Gate: a settle_prompt turn_completed on a screen that was
+                    // never seen busy (and never grew) is a pre-existing idle
+                    // prompt, not a turn — skip it entirely (no emit, no last_*).
+                    // Bell, shell markers, dialogs, exits are real signals and
+                    // bypass the gate.
+                    if det.cause == WakeCause::TurnCompleted
+                        && det.method == DetectionMethod::SettlePrompt
+                        && !gate_open
+                    {
+                        log::debug!(
+                            "watch_loop: {terminal_id} settle_prompt gated \
+                             (no busy/growth observed since arm/start)"
+                        );
+                        continue;
+                    }
+
                     maybe_emit(
                         &terminal_id,
                         det.cause.clone(),
@@ -453,6 +516,15 @@ fn watch_loop(
                         &session,
                         &router,
                     );
+
+                    // A counted turn closes the gate: the next turn_completed
+                    // requires a fresh busy→idle transition (also stops
+                    // all_turns re-firing on the same idle screen).
+                    if det.cause == WakeCause::TurnCompleted {
+                        let mut s = session.lock().unwrap();
+                        s.gate_open = false;
+                        s.gate_ref_rows = current_rows;
+                    }
 
                     // terminal_closed and agent_exited (child_exit) are terminal — stop watching.
                     if det.cause == WakeCause::TerminalClosed
@@ -615,18 +687,9 @@ mod tests {
     #[test]
     fn test_arm_unarmed_does_not_emit() {
         // Build a session with armed=false and notify_mode=Armed.
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t1".to_string(),
-            profile_id: "claude".to_string(),
-            notify_mode: NotifyMode::Armed,
-            armed: false,
-            stop: false,
-            last_wake_cause: None,
-            last_turn_at: None,
-            last_detection_method: None,
-            turn_start_row: None,
-            turn_end_row: None,
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t1".to_string(), "claude".to_string(), NotifyMode::Armed);
+            s
         }));
 
         // We can't easily test with a real router in a unit test without spawning
@@ -647,18 +710,10 @@ mod tests {
 
     #[test]
     fn test_arm_armed_emits_once() {
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t2".to_string(),
-            profile_id: "claude".to_string(),
-            notify_mode: NotifyMode::Armed,
-            armed: true, // armed
-            stop: false,
-            last_wake_cause: None,
-            last_turn_at: None,
-            last_detection_method: None,
-            turn_start_row: None,
-            turn_end_row: None,
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t2".to_string(), "claude".to_string(), NotifyMode::Armed);
+            s.armed = true;
+            s
         }));
 
         // First check: armed → should emit.
@@ -683,18 +738,9 @@ mod tests {
 
     #[test]
     fn test_all_turns_always_emits() {
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t3".to_string(),
-            profile_id: "claude".to_string(),
-            notify_mode: NotifyMode::AllTurns,
-            armed: false, // not armed but all_turns overrides
-            stop: false,
-            last_wake_cause: None,
-            last_turn_at: None,
-            last_detection_method: None,
-            turn_start_row: None,
-            turn_end_row: None,
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t3".to_string(), "claude".to_string(), NotifyMode::AllTurns);
+            s
         }));
 
         for _ in 0..3 {
@@ -708,18 +754,10 @@ mod tests {
 
     #[test]
     fn test_notify_mode_none_never_emits() {
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t4".to_string(),
-            profile_id: "claude".to_string(),
-            notify_mode: NotifyMode::None,
-            armed: true, // armed but mode=none
-            stop: false,
-            last_wake_cause: None,
-            last_turn_at: None,
-            last_detection_method: None,
-            turn_start_row: None,
-            turn_end_row: None,
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t4".to_string(), "claude".to_string(), NotifyMode::None);
+            s.armed = true;
+            s
         }));
 
         let should_emit = {
@@ -737,18 +775,9 @@ mod tests {
         // Watch start would normally spawn a thread; we test arm() in isolation
         // by manually inserting a session into the registry.
         let sessions = get_sessions();
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t-arm".to_string(),
-            profile_id: "claude".to_string(),
-            notify_mode: NotifyMode::Armed,
-            armed: false,
-            stop: false,
-            last_wake_cause: None,
-            last_turn_at: None,
-            last_detection_method: None,
-            turn_start_row: None,
-            turn_end_row: None,
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t-arm".to_string(), "claude".to_string(), NotifyMode::Armed);
+            s
         }));
         {
             let mut map = sessions.lock().unwrap();
@@ -790,18 +819,14 @@ mod tests {
     fn test_watch_status_present_for_known() {
         setup();
         let sessions = get_sessions();
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t-status".to_string(),
-            profile_id: "codex".to_string(),
-            notify_mode: NotifyMode::AllTurns,
-            armed: false,
-            stop: false,
-            last_wake_cause: Some("turn_completed".to_string()),
-            last_turn_at: Some("2026-06-09T12:00:00Z".to_string()),
-            last_detection_method: Some("settle_prompt".to_string()),
-            turn_start_row: Some(42),
-            turn_end_row: Some(75),
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t-status".to_string(), "codex".to_string(), NotifyMode::AllTurns);
+            s.last_wake_cause = Some("turn_completed".to_string());
+            s.last_turn_at = Some("2026-06-09T12:00:00Z".to_string());
+            s.last_detection_method = Some("settle_prompt".to_string());
+            s.turn_start_row = Some(42);
+            s.turn_end_row = Some(75);
+            s
         }));
         {
             let mut map = sessions.lock().unwrap();
@@ -823,18 +848,9 @@ mod tests {
     fn test_arm_fn_snapshots_start_row() {
         setup();
         let sessions = get_sessions();
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t-arm-rows".to_string(),
-            profile_id: "claude".to_string(),
-            notify_mode: NotifyMode::Armed,
-            armed: false,
-            stop: false,
-            last_wake_cause: None,
-            last_turn_at: None,
-            last_detection_method: None,
-            turn_start_row: None,
-            turn_end_row: None,
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t-arm-rows".to_string(), "claude".to_string(), NotifyMode::Armed);
+            s
         }));
         {
             let mut map = sessions.lock().unwrap();
@@ -856,18 +872,10 @@ mod tests {
     fn test_arm_fn_no_rows_leaves_start_row() {
         setup();
         let sessions = get_sessions();
-        let session = Arc::new(Mutex::new(WatchSession {
-            terminal_id: "t-arm-norows".to_string(),
-            profile_id: "claude".to_string(),
-            notify_mode: NotifyMode::Armed,
-            armed: false,
-            stop: false,
-            last_wake_cause: None,
-            last_turn_at: None,
-            last_detection_method: None,
-            turn_start_row: Some(50),
-            turn_end_row: None,
-            last_event_payload: None,
+        let session = Arc::new(Mutex::new({
+            let mut s = WatchSession::new("t-arm-norows".to_string(), "claude".to_string(), NotifyMode::Armed);
+            s.turn_start_row = Some(50);
+            s
         }));
         {
             let mut map = sessions.lock().unwrap();

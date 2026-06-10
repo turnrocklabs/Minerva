@@ -215,6 +215,14 @@ pub fn run(
     None
 }
 
+/// Return true when the screen shows an active busy indicator (spinner glyph
+/// within the last 40 lines). Used by the watcher's busy-gate: a settle_prompt
+/// turn_completed only counts after the session has observed a busy screen
+/// (or row growth) since arm()/watch_start — transition-based detection.
+pub fn is_busy(screen: &str, cd: &CompiledDetection) -> bool {
+    has_active_spinner(last_n_lines(screen, 40), &cd.spinner_glyphs)
+}
+
 /// Return the last N lines of `text` as a &str slice (starting at a
 /// newline boundary). If the text has fewer than N lines, returns all of it.
 fn last_n_lines(text: &str, n: usize) -> &str {
@@ -423,6 +431,16 @@ mod tests {
         let r = result.unwrap();
         assert_eq!(r.cause, WakeCause::AgentExited);
         assert_eq!(r.method, DetectionMethod::ShellMarker);
+    }
+
+    // ── Test: is_busy (busy-gate input) ──────────────────────────────────────
+
+    #[test]
+    fn test_is_busy_on_spinner_screen() {
+        let cd = compiled_claude();
+        assert!(is_busy(screen_claude_busy(), &cd), "esc-to-interrupt screen is busy");
+        assert!(!is_busy(screen_claude_idle(), &cd), "idle prompt screen is not busy");
+        assert!(!is_busy("", &cd), "empty screen is not busy");
     }
 
     // ── Test: last_n_lines helper ────────────────────────────────────────────

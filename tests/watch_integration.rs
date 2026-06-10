@@ -1304,3 +1304,232 @@ fn test_read_turn_deliver_failure_preserves_content() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+// ---------------------------------------------------------------------------
+// Busy-gate tests (relay-ux-suite 019eb35d5295): transition-based detection.
+// A settle_prompt turn_completed only counts after the session observed a
+// busy screen (spinner) or row growth since arm()/watch_start.
+// ---------------------------------------------------------------------------
+
+// Test 12: a fresh watch on a PRE-EXISTING idle screen must not register a
+// phantom turn — no event, and no last_turn_at status noise.
+#[test]
+fn test_phantom_idle_screen_gated() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-gate-1", "profile": "claude", "notify_mode": "all_turns"}
+        }
+    }));
+
+    // Feed 3 idle screens with static rows: the old stateless detector fired
+    // turn_completed on the very first one. The gate must suppress all three.
+    let mut event_count = 0u32;
+    let mut idle_replies = 0u32;
+    let status_id = next_id();
+    let mut status_reply: Option<Value> = None;
+
+    for _ in 0..40 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            if cap == "host.terminal.wait" {
+                idle_replies += 1;
+                send_cap_reply(&mut stdin, &id, json!({
+                    "content": idle_screen(),
+                    "timed_out": false, "bell_rung": false, "shell_exited": false,
+                    "rows": 12, "total_scrollback_rows": 40
+                }));
+                if idle_replies == 3 {
+                    // After 3 idle samples, ask for status.
+                    let req = json!({
+                        "jsonrpc": "2.0",
+                        "id": status_id,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "minerva_agent_relay_watch_status",
+                            "arguments": {"terminal_id": "t-gate-1"}
+                        }
+                    }).to_string() + "\n";
+                    stdin.write_all(req.as_bytes()).unwrap();
+                    stdin.flush().unwrap();
+                }
+            } else {
+                send_cap_reply(&mut stdin, &id, json!({}));
+            }
+        } else if method == "minerva/plugin_event" {
+            if msg["params"]["event"].as_str() == Some("agent_relay.turn_completed") {
+                event_count += 1;
+            }
+        } else if msg.get("id").map(|v| v == &json!(status_id)).unwrap_or(false) {
+            status_reply = Some(msg);
+            break;
+        }
+    }
+
+    assert_eq!(event_count, 0, "pre-existing idle screen must not emit phantom turns");
+
+    let status = unwrap_tool(&status_reply.expect("watch_status reply"));
+    assert_eq!(
+        status["status"]["last_turn_at"], Value::Null,
+        "no phantom last_turn_at status noise: {status}"
+    );
+    assert_eq!(
+        status["status"]["last_wake_cause"], Value::Null,
+        "no phantom last_wake_cause: {status}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 13: the arm-consumption race — an idle sample between arm() and the
+// agent going busy must NOT consume the one-shot arm. The event fires exactly
+// once, after a real busy→idle transition.
+#[test]
+fn test_armed_idle_sample_does_not_consume_arm() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-gate-2", "profile": "claude", "notify_mode": "armed"}
+        }
+    }));
+
+    // Drive: send (arms at rows=40) → idle sample rows=40 (the race window:
+    // echo/busy not rendered yet) → busy rows=42 → idle rows=55 (real turn end).
+    let send_id = next_id();
+    let mut send_fired = false;
+    let mut wait_count_after_arm = 0u32;
+    let mut events: Vec<Value> = Vec::new();
+    let mut send_reply: Option<Value> = None;
+
+    for _ in 0..60 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => {
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                }
+                "host.terminal.read" => {
+                    // send's arm snapshot: idle screen at rows=40.
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": idle_screen(),
+                        "rows": 12, "total_scrollback_rows": 40
+                    }));
+                }
+                "host.terminal.wait" => {
+                    if !send_fired {
+                        // First wait (before send): idle, seeds the gate ref.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "timed_out": false, "bell_rung": false, "shell_exited": false,
+                            "rows": 12, "total_scrollback_rows": 40
+                        }));
+                        // Now issue the send that arms the session.
+                        let req = json!({
+                            "jsonrpc": "2.0",
+                            "id": send_id,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "minerva_agent_relay_send",
+                                "arguments": {"terminal_id": "t-gate-2", "text": "what is 2+2"}
+                            }
+                        }).to_string() + "\n";
+                        stdin.write_all(req.as_bytes()).unwrap();
+                        stdin.flush().unwrap();
+                        send_fired = true;
+                    } else if send_reply.is_none() {
+                        // Send still in flight (its write/read caps come through
+                        // this same loop) — keep the watch thread idle-quiet.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "timed_out": false, "bell_rung": false, "shell_exited": false,
+                            "rows": 12, "total_scrollback_rows": 40
+                        }));
+                    } else {
+                        wait_count_after_arm += 1;
+                        match wait_count_after_arm {
+                            // The race window: still-idle screen, rows unchanged
+                            // from the arm snapshot. Must NOT consume the arm.
+                            1 => send_cap_reply(&mut stdin, &id, json!({
+                                "content": idle_screen(),
+                                "timed_out": false, "bell_rung": false, "shell_exited": false,
+                                "rows": 12, "total_scrollback_rows": 40
+                            })),
+                            // Agent goes busy.
+                            2 => send_cap_reply(&mut stdin, &id, json!({
+                                "content": busy_screen(),
+                                "timed_out": false, "bell_rung": false, "shell_exited": false,
+                                "rows": 12, "total_scrollback_rows": 42
+                            })),
+                            // Real turn end.
+                            _ => send_cap_reply(&mut stdin, &id, json!({
+                                "content": idle_screen(),
+                                "timed_out": false, "bell_rung": false, "shell_exited": false,
+                                "rows": 12, "total_scrollback_rows": 55
+                            })),
+                        }
+                    }
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if method == "minerva/plugin_event" {
+            if msg["params"]["event"].as_str() == Some("agent_relay.turn_completed") {
+                events.push(msg.clone());
+                break;
+            }
+        } else if msg.get("id").map(|v| v == &json!(send_id)).unwrap_or(false) {
+            send_reply = Some(msg);
+        }
+    }
+
+    assert!(send_reply.is_some(), "send should have replied");
+    assert_eq!(events.len(), 1, "exactly one turn_completed event");
+    let payload = &events[0]["params"]["payload"];
+    assert_eq!(payload["cause"], "turn_completed");
+
+    // The event must have fired AFTER the busy sample — i.e. the idle sample
+    // in the race window did not consume the arm.
+    assert!(
+        wait_count_after_arm >= 3,
+        "event fired only after busy→idle transition (saw {wait_count_after_arm} waits post-arm)"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
