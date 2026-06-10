@@ -138,11 +138,13 @@ fn read_line(out: &mut BufReader<ChildStdout>) -> Option<Value> {
 }
 
 /// Send a capability reply to the plugin (the fake host responding).
+/// Wraps the payload in the CapabilityBroker's {success, result} envelope —
+/// the REAL wire shape (a flat reply hid the envelope-unwrap bug in B5).
 fn send_cap_reply(stdin: &mut ChildStdin, id: &Value, result: Value) {
     let reply = json!({
         "jsonrpc": "2.0",
         "id": id,
-        "result": result
+        "result": {"success": true, "result": result}
     });
     let line = reply.to_string() + "\n";
     stdin.write_all(line.as_bytes()).expect("write cap reply");

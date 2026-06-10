@@ -430,9 +430,12 @@ fn watch_loop(
                     content.len()
                 );
 
-                // If timed_out from the host side, just loop again — we use our
-                // own arm timeout above for the max-wait behaviour.
-                if timed_out {
+                // A timed-out wait still carries the CURRENT screen. A quiet
+                // terminal (turn finished before/during a missed settle
+                // window) times out forever — so run detection on timeouts
+                // too as long as we have content to evaluate. Only skip when
+                // there is nothing to look at.
+                if timed_out && content.is_empty() {
                     continue;
                 }
 

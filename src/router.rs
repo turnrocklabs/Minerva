@@ -201,7 +201,26 @@ impl Router {
                 if let Some(err) = reply.get("error") {
                     return Err(format!("capability error: {err}"));
                 }
-                Ok(reply.get("result").cloned().unwrap_or(Value::Null))
+                let result = reply.get("result").cloned().unwrap_or(Value::Null);
+                // The CapabilityBroker wraps every reply in a
+                // {success, result|error_message} envelope. Unwrap it so
+                // callers see the capability payload directly. (Replies that
+                // are already flat — no "success" key — pass through, which
+                // keeps test stubs and any future raw paths working.)
+                match result.get("success").and_then(|v| v.as_bool()) {
+                    Some(true) => {
+                        Ok(result.get("result").cloned().unwrap_or(result))
+                    }
+                    Some(false) => Err(format!(
+                        "capability denied: {}",
+                        result
+                            .get("error_message")
+                            .or_else(|| result.get("error_code"))
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| result.to_string())
+                    )),
+                    None => Ok(result),
+                }
             }
             Err(_) => Err(format!("capability channel closed waiting for {capability}")),
         }
