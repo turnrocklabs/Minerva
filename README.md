@@ -7,10 +7,11 @@ output, and (B4) distils agent turns via host.providers.chat.
 ## GDScript class name prefix
 
 For any future GDScript files in this plugin, the `class_name` MUST start with
-`AgentRelay_` (canonical_prefix rule: strip non-alphanumerics from id
-"agent-relay" → "agentrelay", capitalize first → "Agentrelay" — but Minerva's
-rule is strip-underscores + capitalize-first of each word, yielding `AgentRelay`
-as the prefix). Install will fail with `class_name_bad_prefix` otherwise.
+`Agentrelay_` (PluginDefinition.canonical_prefix: strip underscores from the
+manifest id "agent_relay" → "agentrelay", upper-case the first char only →
+"Agentrelay"). Install will fail with `class_name_bad_prefix` otherwise.
+Note the manifest id is `agent_relay` (underscores — ids must be lowercase
+alphanumeric+underscore); only the DIRECTORY is named agent-relay.
 
 No UI panels are included in v1 (B1 scaffold).
 
