@@ -1,6 +1,28 @@
 # Pickup
 
-LATEST 2026-06-07 (session 9 — codetools 3-skill RECUT built into the manifest + annotation word-wrap bugs fixed; **WIP, UNCOMMITTED, awaiting owner docket-close then commit/push**). **HEAD-OF-LINE.**
+LATEST 2026-06-09 (session 10 — **agent-relay DCR fully shaped + planned; NO implementation started**). **HEAD-OF-LINE.**
+
+**AGENT-RELAY: terminal-agent turn relay.** DCR `019eafbdcfb37c509a578be8a77095df` (minerva docket, `proposed`). Design record = DCR comments #463-472: index scenario (#463), tunable filters/profiles (#464), non-interference invariant (#465), send-armed one-shot notifications (#466), risk register (#467) + ping-pong resolution via trigger consecutive_fire_limit (#468), risk triage incl. two-layer exit detection (#469), UI scope ≈ none, optional watched-badge (#470), A6 fire-limit scope (#471), **execution plan + risk controls (#472 — read this first)**.
+
+**Work-item trees (both filed, all backlog):**
+- MNR children of the DCR: A1 bell+PTY-exit `019eafd464a9` · A2 host.terminal.* caps `019eafd48cf1` · A3 substrate tests/CI `019eafd4a11a` · A4 plugin regression gate `019eafbf61fa` · A5 six authoring docs + codetools inline skill `019eafbf8132` · A6 PLUGIN_EVENT trigger + consecutive_fire_limit `019eafc1d9b3`. Test plans inline on each item.
+- PLG (component `agent-relay`, parent `019eafbe3360`): B1 scaffold `019eafd4e714` · B2 filter `019eafd50848` · B3 detection `019eafd52b0c` · B4 send/distill/skill `019eafd54920` · B5 HITL `019eafd5683f` · B6 marketplace `019eafd57c6d`.
+- Milestones: M1 Phase A merged (A1-A6 + A4 green) → M2 index-scenario HITL (B5) → M3 marketplace publish (B6).
+
+**KICKOFF CHECKLIST (next session, in order):**
+1. Transition DCR `019eafbdcfb3` proposed→active (owner call).
+2. Base SHAs AT SHAPING TIME: Minerva `development` @ `2affd1a6`; plugins `main` @ `944987f`. RE-CAPTURE at kickoff (session 9's annotation/codetools WIP may have landed since). Minerva had uncommitted dirt (Docs/minerva.dct + test uid) — resolve BEFORE branching `dcr/agent-relay`.
+3. plugins repo: `docs/plugins.dct` is MODIFIED (holds today's B1-B6 items) — commit via **unload→commit→re-add** (session-9 gotcha), alongside session 9's pending plugins commits.
+4. Capture VT/screen fixtures from real claude/codex/opencode sessions EARLY — they drive B2 golden tests + B3 detection matrix.
+5. First work: A1 + A2-seam DIRECT (per #472); A5/A6 are the first work-cycle candidates.
+
+**Mode split (full table in DCR #472):** DIRECT = A1, A2-seam-design, A3, A4, fixture capture, B5, B6. WORK-CYCLE = A2-impl, A5, A6, B1, B2, B3, B4. Every work-cycle prompt: base branch+SHA verbatim, one item ID, expected-files list, NOT-in-scope lines, named reference implementation; post-flight merge-base + diff-scope audit.
+
+**Key verified facts (hints):** `minerva-terminal/ghostty-bell-architecture` (zero-vendor-patch bell via shim wrapper; PTY dual-feed — legacy parser is back-compat only), `minerva-terminal/exit-detection-layers` (PTY death vs agent-exit-to-shell via [888z markers), `minerva-core/quota-scopes` (MaxToolCallRounds per-turn → cross-turn rail lives in trigger), `plugin-substrate/docs-and-regression-targets` (6 docs + suite locations).
+
+---
+
+LATEST 2026-06-07 (session 9 — codetools 3-skill RECUT built into the manifest + annotation word-wrap bugs fixed; **WIP, UNCOMMITTED, awaiting owner docket-close then commit/push**).
 
 **CODETOOLS SKILLS RECUT — BUILT (uncommitted in plugins repo, `codetools/manifest.json`).** Reframed around **ephemeral vs durable** (owner's skill-1 note: basic = tiny throwaway scripts, not repo work). Three skills, all rewritten + reviewed-by-annotation across several rounds:
 - **`minerva_codetools_basic_coding`** (4 tools) — tiny scripts: write→run→read→deliver. No repo/index/exploration. Tools: file_write/edit/read + bash.
