@@ -16,11 +16,35 @@
 // The synchronous read pattern below is safe under that guarantee.
 
 mod chrome_filter;
+mod filter_rules;
 mod profiles;
 
 use std::io::{self, BufRead, Write};
+use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use filter_rules::{FilterRule, FilterRuleSet, RuleAction};
+
+// ---------------------------------------------------------------------------
+// Global worker state
+// ---------------------------------------------------------------------------
+
+/// Session-scoped named filter rules, shared across all tool handlers.
+/// Initialised once at startup; handlers lock briefly to read/write.
+static FILTER_RULES: Mutex<Option<FilterRuleSet>> = Mutex::new(None);
+
+/// Initialise the global filter rule set. Called once from main().
+fn init_filter_rules() {
+    let mut guard = FILTER_RULES.lock().unwrap();
+    *guard = Some(FilterRuleSet::new());
+}
+
+/// Run `f` with a mutable reference to the global FilterRuleSet.
+/// Panics if init_filter_rules() was not called first.
+fn with_filter_rules<R>(f: impl FnOnce(&mut FilterRuleSet) -> R) -> R {
+    let mut guard = FILTER_RULES.lock().unwrap();
+    f(guard.as_mut().expect("filter rules not initialised"))
+}
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "agent-relay";
@@ -216,14 +240,24 @@ fn handle_send(params: &Value, id: Value) -> RpcResponse {
     })))
 }
 
-/// B1 IMPLEMENTED: read_clean — applies the first-pass chrome filter.
+/// B2 IMPLEMENTED: read_clean — applies the chrome filter pipeline:
+///   1. Built-in chrome filter (box-drawing, blank collapse).
+///   2. Named rule-layer (filter_set rules, drop_line / replace).
+///   3. Inline extra_patterns (regex, drop_line only).
+///   4. Redaction pass (on by default, opt-out via redact:false).
+///   5. Honest truncation (tail-keep, MAX_OUTPUT_CHARS cap).
+///
 /// When raw_text is provided, filters it directly (no terminal read needed).
-/// Terminal reads from live terminals are B2/B3 work.
+/// Terminal reads from live terminals remain B3 work; terminal_id alone
+/// returns not_implemented pointing at B3.
 fn handle_read_clean(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
 
     let raw_text = args.get("raw_text").and_then(|v| v.as_str());
     let terminal_id = args.get("terminal_id").and_then(|v| v.as_str()).unwrap_or("");
+
+    // redact defaults to true; caller can opt out with redact:false.
+    let do_redact = args.get("redact").and_then(|v| v.as_bool()).unwrap_or(true);
 
     let raw = match raw_text {
         Some(t) => t.to_string(),
@@ -231,38 +265,60 @@ fn handle_read_clean(params: &Value, id: Value) -> RpcResponse {
             if terminal_id.is_empty() {
                 return ok_response(id, tool_err("terminal_id or raw_text is required"));
             }
-            // Terminal read from live terminal is B2/B3 work.
+            // Terminal read from live terminal is B3 work.
             return ok_response(id, tool_ok(json!({
                 "success": false,
                 "error": "not_implemented",
-                "note": "live terminal reads are implemented in B2/B3; pass raw_text to use the chrome filter now"
+                "note": "live terminal reads are implemented in B3; pass raw_text to use the chrome filter now"
             })));
         }
     };
 
-    // Apply the built-in chrome filter.
+    // Pass 1: built-in chrome filter (box-drawing, border columns, blank collapse).
     let mut cleaned = chrome_filter::filter(&raw);
 
-    // Apply any extra_patterns from the caller (B3 will expose this more fully).
+    // Pass 2: apply named filter rules from global state.
+    cleaned = with_filter_rules(|rs| rs.apply(&cleaned));
+
+    // Pass 3: inline extra_patterns (regex drop_line).
     if let Some(patterns) = args.get("extra_patterns").and_then(|v| v.as_array()) {
         for pattern_val in patterns {
             if let Some(pat) = pattern_val.as_str() {
-                // Simple line-level contains filter for now — regex in B3.
-                let lines: Vec<&str> = cleaned
-                    .lines()
-                    .filter(|line| !line.contains(pat))
-                    .collect();
-                cleaned = lines.join("\n");
-                if raw.ends_with('\n') {
-                    cleaned.push('\n');
+                match regex::Regex::new(pat) {
+                    Ok(re) => {
+                        let ends_nl = cleaned.ends_with('\n');
+                        let lines: Vec<&str> = cleaned
+                            .lines()
+                            .filter(|line| !re.is_match(line))
+                            .collect();
+                        cleaned = lines.join("\n");
+                        if ends_nl {
+                            cleaned.push('\n');
+                        }
+                    }
+                    Err(e) => {
+                        return ok_response(id, tool_err(
+                            &format!("invalid extra_pattern '{}': {}", pat, e)
+                        ));
+                    }
                 }
             }
         }
     }
 
+    // Pass 4: redaction (default on).
+    if do_redact {
+        cleaned = chrome_filter::redact(&cleaned);
+    }
+
+    // Pass 5: honest truncation — keep TAIL, report omitted chars.
+    let trunc = chrome_filter::truncate(&cleaned, chrome_filter::MAX_OUTPUT_CHARS);
+
     ok_response(id, tool_ok(json!({
         "ok": true,
-        "cleaned": cleaned
+        "cleaned": trunc.text,
+        "truncated": trunc.truncated,
+        "omitted_chars": trunc.omitted_chars
     })))
 }
 
@@ -281,51 +337,79 @@ fn handle_read_turn(params: &Value, id: Value) -> RpcResponse {
     })))
 }
 
-/// B1 STUB: filter_set — installs a named chrome-filter rule.
-/// Full implementation in B3.
+/// B2 IMPLEMENTED: filter_set — installs or replaces a named filter rule.
+/// Validates the regex at set time; bad patterns return a clear error.
+/// Actions: "drop_line", "replace" (or legacy alias "strip_match").
 fn handle_filter_set(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
     let pattern = args.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
-    let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    let action_str = args.get("action").and_then(|v| v.as_str()).unwrap_or("");
+    let replacement = args.get("replacement").and_then(|v| v.as_str()).unwrap_or("");
+
     if name.is_empty() {
         return ok_response(id, tool_err("name is required"));
     }
     if pattern.is_empty() {
         return ok_response(id, tool_err("pattern is required"));
     }
-    if action.is_empty() {
-        return ok_response(id, tool_err("action is required"));
+
+    let action = match action_str {
+        "drop_line" => RuleAction::DropLine,
+        "replace" => RuleAction::Replace,
+        "strip_match" => RuleAction::StripMatch, // backwards-compat alias
+        "" => return ok_response(id, tool_err("action is required")),
+        other => return ok_response(id, tool_err(
+            &format!("unknown action '{}'; valid values: drop_line, replace, strip_match", other)
+        )),
+    };
+
+    match FilterRule::new(name, pattern, action, replacement) {
+        Ok(rule) => {
+            let updated = with_filter_rules(|rs| rs.set(rule));
+            ok_response(id, tool_ok(json!({
+                "ok": true,
+                "updated": updated,
+                "name": name
+            })))
+        }
+        Err(e) => ok_response(id, tool_err(&e)),
     }
-    ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "filter_set is a B3 work item"
-    })))
 }
 
-/// B1 STUB: filter_list — lists installed chrome-filter rules.
-/// Full implementation in B3.
+/// B2 IMPLEMENTED: filter_list — lists all installed filter rules.
 fn handle_filter_list(_params: &Value, id: Value) -> RpcResponse {
+    let rules_json = with_filter_rules(|rs| {
+        rs.iter()
+            .map(|r| {
+                let v = r.view();
+                json!({
+                    "name": v.name,
+                    "pattern": v.pattern,
+                    "action": v.action,
+                    "replacement": v.replacement
+                })
+            })
+            .collect::<Vec<_>>()
+    });
     ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "filter_list is a B3 work item"
+        "ok": true,
+        "rules": rules_json
     })))
 }
 
-/// B1 STUB: filter_delete — removes a named chrome-filter rule.
-/// Full implementation in B3.
+/// B2 IMPLEMENTED: filter_delete — removes a named filter rule.
 fn handle_filter_delete(params: &Value, id: Value) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
     if name.is_empty() {
         return ok_response(id, tool_err("name is required"));
     }
+    let deleted = with_filter_rules(|rs| rs.delete(name));
     ok_response(id, tool_ok(json!({
-        "success": false,
-        "error": "not_implemented",
-        "note": "filter_delete is a B3 work item"
+        "ok": true,
+        "deleted": deleted,
+        "name": name
     })))
 }
 
@@ -436,7 +520,8 @@ fn tools_list_schema() -> Value {
                     "properties": {
                         "terminal_id": {"type": "string"},
                         "raw_text": {"type": "string"},
-                        "extra_patterns": {"type": "array", "items": {"type": "string"}}
+                        "extra_patterns": {"type": "array", "items": {"type": "string"}},
+                        "redact": {"type": "boolean", "description": "Apply built-in redaction pass (default true)."}
                     }
                 }
             },
@@ -467,7 +552,8 @@ fn tools_list_schema() -> Value {
                     "properties": {
                         "name": {"type": "string"},
                         "pattern": {"type": "string"},
-                        "action": {"type": "string", "enum": ["drop_line", "strip_match"]}
+                        "action": {"type": "string", "enum": ["drop_line", "replace", "strip_match"]},
+                        "replacement": {"type": "string", "description": "Replacement string for replace/strip_match actions (default empty string)."}
                     },
                     "required": ["name", "pattern", "action"]
                 }
@@ -539,6 +625,8 @@ fn main() {
         .init();
 
     log::info!("{SERVER_NAME} {SERVER_VERSION} starting");
+
+    init_filter_rules();
 
     let stdin = io::stdin();
     let stdout = io::stdout();

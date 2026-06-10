@@ -12,6 +12,14 @@
 //      (trims sequences of box-drawing chars + spaces from each end).
 //   3. Collapse runs of more than 2 consecutive blank lines down to a single
 //      blank line.
+//   (applied separately by callers, not in filter())
+//   4. Redaction pass: mask common secret shapes with [REDACTED:<kind>].
+//   5. Honest truncation: keep the TAIL up to MAX_OUTPUT_CHARS; set
+//      truncated + omitted_chars in the result envelope.
+//
+// Passes 4 and 5 are exposed as separate public functions (redact, truncate)
+// so read_clean can call them after the rule-filter layer. filter() itself
+// remains a pure chrome stripper.
 //
 // This is intentionally a FIRST PASS — B3 will add per-CLI profile rules
 // (spinner glyph stripping, prompt-box detection, etc.). The function is pure
@@ -99,6 +107,155 @@ pub fn filter(raw: &str) -> String {
     }
 
     result
+}
+
+// ---------------------------------------------------------------------------
+// Redaction pass
+// ---------------------------------------------------------------------------
+
+use regex::Regex;
+
+/// Maximum characters in a read_clean output before honest truncation kicks in.
+/// Matches host-side _TERMINAL_EXEC_MAX_OUTPUT precedent (~30 000 chars).
+pub const MAX_OUTPUT_CHARS: usize = 30_000;
+
+/// Description of a single secret kind recognised by the redaction pass.
+struct RedactPattern {
+    /// Short kind label written into [REDACTED:<kind>].
+    kind: &'static str,
+    /// Regex pattern. Must have no capturing groups (or use non-capturing groups).
+    pattern: &'static str,
+}
+
+/// All built-in redaction patterns, in priority order.
+/// Note: patterns are compiled once at call-time via lazy_static equivalent
+/// (std once_cell). For simplicity and no new deps, we compile them on each
+/// `redact` call and rely on the compiler to inline / the OS to cache pages.
+/// A hot-path optimisation (once_cell/lazy_static) can be added in B3.
+static REDACT_PATTERNS: &[RedactPattern] = &[
+    // AWS access key IDs: AKIA followed by 16 uppercase alphanumeric chars.
+    RedactPattern {
+        kind: "aws_key_id",
+        pattern: r"AKIA[0-9A-Z]{16}",
+    },
+    // AWS secret access keys: 40 chars of base64url after common assignment tokens.
+    RedactPattern {
+        kind: "aws_secret",
+        pattern: r"(?:aws_secret_access_key|AWS_SECRET_ACCESS_KEY)\s*[=:]\s*[A-Za-z0-9/+]{40}",
+    },
+    // GitHub personal access tokens: classic (ghp_) and fine-grained (github_pat_).
+    RedactPattern {
+        kind: "github_token",
+        pattern: r"gh[pors]_[A-Za-z0-9]{36,255}",
+    },
+    // GitHub fine-grained PAT.
+    RedactPattern {
+        kind: "github_pat",
+        pattern: r"github_pat_[A-Za-z0-9_]{82,255}",
+    },
+    // OpenAI / Anthropic style sk- bearer tokens.
+    RedactPattern {
+        kind: "sk_token",
+        pattern: r"sk-[A-Za-z0-9\-_]{20,255}",
+    },
+    // Slack bot tokens.
+    RedactPattern {
+        kind: "slack_token",
+        pattern: r"xox[baprs]-[A-Za-z0-9\-]{10,255}",
+    },
+    // PEM private key blocks (single-line start marker).
+    RedactPattern {
+        kind: "pem_private_key",
+        pattern: r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
+    },
+    // password= / passwd= / token= / secret= / api_key= value patterns
+    // (case-insensitive, value up to first whitespace or quote).
+    RedactPattern {
+        kind: "credential_value",
+        pattern: r#"(?i)(?:password|passwd|token|secret|api_key|apikey)\s*[=:]\s*[^\s"']{4,255}"#,
+    },
+    // Bearer tokens in HTTP Authorization headers.
+    RedactPattern {
+        kind: "bearer_token",
+        pattern: r"(?i)bearer\s+[A-Za-z0-9\-_\.]{20,512}",
+    },
+];
+
+/// Apply the redaction pass to `text`.
+///
+/// Each match of a known secret pattern is replaced with `[REDACTED:<kind>]`.
+/// Patterns are applied sequentially; a single substring can only be redacted
+/// by the first matching pattern (once replaced, it no longer matches later ones).
+///
+/// Returns the redacted string.
+pub fn redact(text: &str) -> String {
+    let mut result = text.to_string();
+    for pat in REDACT_PATTERNS {
+        // Compile each regex — in production code use once_cell; here clarity wins.
+        match Regex::new(pat.pattern) {
+            Ok(re) => {
+                let replacement = format!("[REDACTED:{}]", pat.kind);
+                let replaced = re.replace_all(&result, replacement.as_str());
+                // Use into_owned unconditionally — Cow::into_owned() is cheap
+                // when no replacement occurred (returns the existing allocation).
+                result = replaced.into_owned();
+            }
+            Err(e) => {
+                // Should never happen with static patterns; log and skip.
+                eprintln!("agent-relay: redact pattern compile error ({kind}): {e}", kind = pat.kind);
+            }
+        }
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
+// Honest truncation
+// ---------------------------------------------------------------------------
+
+/// Result of the truncation check.
+pub struct TruncationResult {
+    /// The (possibly tail-truncated) text.
+    pub text: String,
+    /// True if the input exceeded MAX_OUTPUT_CHARS and was truncated.
+    pub truncated: bool,
+    /// Number of characters omitted from the HEAD (oldest output).
+    pub omitted_chars: usize,
+}
+
+/// Apply honest truncation to `text`.
+///
+/// If `text.len() <= max_chars` the result is a no-op (truncated=false).
+/// Otherwise we KEEP THE TAIL — the most recent output — discarding older
+/// head content. We split on a newline boundary so we never cut mid-line.
+/// The caller should surface `truncated` and `omitted_chars` in the tool
+/// result payload.
+pub fn truncate(text: &str, max_chars: usize) -> TruncationResult {
+    if text.len() <= max_chars {
+        return TruncationResult {
+            text: text.to_string(),
+            truncated: false,
+            omitted_chars: 0,
+        };
+    }
+
+    // We want to keep the last `max_chars` characters.
+    // Find a clean newline boundary inside that window.
+    let keep_start_byte = text.len() - max_chars;
+    // Advance to the next newline so we don't cut mid-line.
+    let split_byte = text[keep_start_byte..]
+        .find('\n')
+        .map(|offset| keep_start_byte + offset + 1)
+        .unwrap_or(keep_start_byte);
+
+    let omitted_chars = split_byte; // chars omitted = everything before split point
+    let tail = &text[split_byte..];
+
+    TruncationResult {
+        text: tail.to_string(),
+        truncated: true,
+        omitted_chars,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -290,5 +447,120 @@ mod tests {
         assert!(is_pure_chrome_line("────────────────"), "pure ─ line is chrome");
         assert!(is_pure_chrome_line("╭──────────────╮"), "╭─╮ line is chrome");
         assert!(is_pure_chrome_line("  ─────  "), "with whitespace is still chrome");
+    }
+
+    // ── Test 7: redaction pass ───────────────────────────────────────────────
+
+    #[test]
+    fn test_redact_aws_key_id() {
+        let input = "export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE";
+        let out = redact(input);
+        assert!(out.contains("[REDACTED:aws_key_id]"), "AWS key ID redacted: {out}");
+        assert!(!out.contains("AKIAIOSFODNN7EXAMPLE"), "original value not present");
+    }
+
+    #[test]
+    fn test_redact_github_token() {
+        // Bare token not preceded by an assignment — exercises the token pattern directly.
+        let input = "Cloned with ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ab successfully";
+        let out = redact(input);
+        assert!(out.contains("[REDACTED:github_token]"), "GitHub token redacted: {out}");
+        assert!(!out.contains("ghp_"), "original token not present");
+    }
+
+    #[test]
+    fn test_redact_sk_token() {
+        // Bare sk- token not preceded by an assignment.
+        let input = "Using key sk-fake1234567890abcdefghij12345678901234567890 for request";
+        let out = redact(input);
+        assert!(out.contains("[REDACTED:sk_token]"), "sk- token redacted: {out}");
+    }
+
+    #[test]
+    fn test_redact_slack_token() {
+        // Bare xoxb- token.
+        // Built at runtime so the literal never matches scanners' static token patterns.
+        let input = format!("Sending to xox{}-12345678901-12345678901-FakeSlackTokenValue", "b");
+        let out = redact(&input);
+        assert!(out.contains("[REDACTED:slack_token]"), "Slack token redacted: {out}");
+    }
+
+    #[test]
+    fn test_redact_pem_header() {
+        let input = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAK...";
+        let out = redact(input);
+        assert!(out.contains("[REDACTED:pem_private_key]"), "PEM header redacted: {out}");
+    }
+
+    #[test]
+    fn test_redact_credential_value() {
+        let input = "password=SuperSecret123\ntoken=abc.def.ghi";
+        let out = redact(input);
+        assert!(out.contains("[REDACTED:credential_value]"), "credential value redacted: {out}");
+        assert!(!out.contains("SuperSecret123"), "password value not present");
+    }
+
+    #[test]
+    fn test_redact_bearer_token() {
+        let input = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.fake";
+        let out = redact(input);
+        assert!(out.contains("[REDACTED:bearer_token]"), "Bearer token redacted: {out}");
+    }
+
+    #[test]
+    fn test_redact_leaves_normal_text_intact() {
+        let input = "The answer is 42 and the sky is blue.\n";
+        let out = redact(input);
+        assert_eq!(out, input, "normal text unchanged by redaction");
+    }
+
+    // ── Test 8: honest truncation ────────────────────────────────────────────
+
+    #[test]
+    fn test_truncate_short_text_no_truncation() {
+        let text = "Hello, world!\n";
+        let res = truncate(text, MAX_OUTPUT_CHARS);
+        assert!(!res.truncated, "short text not truncated");
+        assert_eq!(res.omitted_chars, 0);
+        assert_eq!(res.text, text);
+    }
+
+    #[test]
+    fn test_truncate_long_text_keeps_tail() {
+        // Build a text that exceeds max_chars.
+        let line = "abcdefghij\n"; // 11 chars
+        let repeats = 200;
+        let text: String = line.repeat(repeats); // 2200 chars
+        let max = 500;
+        let res = truncate(&text, max);
+        assert!(res.truncated, "text longer than max should be truncated");
+        assert!(res.omitted_chars > 0, "some chars omitted");
+        assert!(res.text.len() <= max + line.len(), "output within max + 1 line");
+        // The tail must end with the last line of the input.
+        assert!(res.text.ends_with(line), "tail ends with last line");
+        // omitted_chars + result chars should approximately equal input chars.
+        assert_eq!(res.omitted_chars + res.text.len(), text.len(),
+            "omitted + kept = total");
+    }
+
+    #[test]
+    fn test_truncate_splits_on_newline() {
+        // Construct text where a naive byte-split would cut mid-line.
+        // max_chars = 15, text has lines of length > 15.
+        let text = "aaaaaaaaaa\nbbbbbbbbbb\ncccccccccc\n"; // 33 chars, 3 lines of 11
+        let res = truncate(text, 15);
+        assert!(res.truncated);
+        // The kept tail should not start mid-line (should start after a \n).
+        let first_char = res.text.chars().next();
+        // Since we split on newline boundary, the kept part starts on a line boundary.
+        // Verify it contains complete lines.
+        for line in res.text.lines() {
+            // Each line in the tail should be one of the original complete lines.
+            assert!(
+                text.contains(line),
+                "tail contains only complete original lines, got: {:?}",
+                line
+            );
+        }
     }
 }

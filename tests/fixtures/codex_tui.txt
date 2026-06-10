@@ -1,0 +1,22 @@
+# synthetic — replace with real captures during B5 HITL
+# Simulates a Codex CLI TUI screen.
+# Characteristics: simple ">" prompt, plain output sections, spinner dots.
+codex 1.0.0  (openai)
+
+  Analyzing repository structure…
+  ⠹
+
+  I found the following relevant files:
+  - src/auth/token.ts
+  - src/cache/key.ts
+  - tests/auth.test.ts
+
+  Proposed change:
+  In src/cache/key.ts, line 42, change:
+    const key = `user:${userId}:${resource}`;
+  to:
+    const key = `tenant:${tenantId}:user:${userId}:${resource}`;
+
+  This ensures cache entries are scoped per tenant.
+
+>

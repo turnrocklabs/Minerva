@@ -85,7 +85,7 @@
     },
     {
       "name": "minerva_agent_relay_read_clean",
-      "description": "Read terminal output and apply the chrome filter to strip TUI decorations (box-drawing borders, spinners, status bars), returning clean agent text. Optionally applies inline ad-hoc patterns on top of the installed filter rules.",
+      "description": "Read terminal output and apply the chrome filter pipeline: (1) built-in box-drawing/chrome stripper, (2) named filter rules (filter_set), (3) inline extra_patterns, (4) redaction of secrets (default on), (5) honest tail-truncation at 30 000 chars. Returns {ok, cleaned, truncated, omitted_chars}.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -102,7 +102,11 @@
             "items": {
               "type": "string"
             },
-            "description": "Optional list of additional regex patterns to strip from each line (applied after built-in chrome filter)."
+            "description": "Optional list of additional regex patterns to strip (drop_line) from each line, applied after named filter rules."
+          },
+          "redact": {
+            "type": "boolean",
+            "description": "Apply the built-in redaction pass (masks AWS keys, bearer tokens, sk-* tokens, GitHub tokens, Slack tokens, PEM headers, and password=/token=/secret= values). Defaults to true. Set to false only when you need raw secrets visible (e.g. debugging a credential pipeline)."
           }
         }
       }
@@ -132,22 +136,26 @@
     },
     {
       "name": "minerva_agent_relay_filter_set",
-      "description": "Install or replace a named chrome-filter rule. Rules are applied by read_clean after the built-in chrome filter.",
+      "description": "Install or replace a named chrome-filter rule. Rules are applied by read_clean after the built-in chrome filter. The regex is validated at set time — bad patterns return an error immediately.",
       "input_schema": {
         "type": "object",
         "properties": {
           "name": {
             "type": "string",
-            "description": "Unique rule name."
+            "description": "Unique rule name (used as key; setting the same name replaces the existing rule)."
           },
           "pattern": {
             "type": "string",
-            "description": "Regex pattern to match against each line."
+            "description": "Regex pattern (Rust regex syntax) to match against each line."
           },
           "action": {
             "type": "string",
-            "enum": ["drop_line", "strip_match"],
-            "description": "'drop_line' removes the entire line when the pattern matches. 'strip_match' removes only the matched portion."
+            "enum": ["drop_line", "replace", "strip_match"],
+            "description": "'drop_line' removes the entire line when the pattern matches anywhere. 'replace' replaces every match with the `replacement` string (default empty). 'strip_match' is an alias for replace with empty replacement."
+          },
+          "replacement": {
+            "type": "string",
+            "description": "Replacement string used by the 'replace' and 'strip_match' actions. Defaults to empty string (removes the matched text). Ignored for 'drop_line'."
           }
         },
         "required": ["name", "pattern", "action"]

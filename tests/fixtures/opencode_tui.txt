@@ -1,0 +1,24 @@
+# synthetic — replace with real captures during B5 HITL
+# Simulates an OpenCode TUI screen.
+# Characteristics: "›" prompt indicator, bordered sections, status line.
+┌─────────────────────────────────────────────────────────────────┐
+│ opencode  v0.3.1  ·  gpt-4o                                     │
+└─────────────────────────────────────────────────────────────────┘
+
+  ⠙ Reading files…
+
+┌─ Assistant ─────────────────────────────────────────────────────┐
+│                                                                  │
+│ The configuration file at config/database.yml has a connection   │
+│ pool size of 5. For your expected load (200 req/s) I recommend  │
+│ increasing it to at least 20.                                    │
+│                                                                  │
+│ Steps:                                                           │
+│   1. Edit config/database.yml                                    │
+│   2. Set pool: 20                                                │
+│   3. Restart the application server                              │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+
+›
