@@ -189,6 +189,10 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.notify",
 	"host.pdf.generate",
 	"host.terminal.exec",
+	"host.terminal.list",
+	"host.terminal.read",
+	"host.terminal.write",
+	"host.terminal.wait",
 ]
 
 ## Namespace prefixes for host_capability values that require at least one

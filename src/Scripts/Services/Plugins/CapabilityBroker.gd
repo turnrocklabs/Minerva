@@ -357,6 +357,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_notify(plugin_id, args)
 		"host.terminal.exec":
 			named_result = await _handle_host_terminal_exec(plugin_id, args)
+		"host.terminal.list", "host.terminal.read", "host.terminal.write", "host.terminal.wait":
+			named_result = await _handle_host_terminal_tool(plugin_id, capability, args)
 		"host.pdf.generate":
 			named_result = await _handle_host_pdf_generate(plugin_id, args)
 		_:
@@ -3337,6 +3339,78 @@ func _handle_host_notify(plugin_id: String, args: Dictionary) -> Dictionary:
 	print("[CapabilityBroker] Plugin '%s' host.notify [%s] %s" % [plugin_id, level, message])
 	SingletonObject.create_toast_notification(display, toast_type)
 	return PluginErrors.success({})
+
+
+# ---------------------------------------------------------------------------
+# host.terminal.{list,read,write,wait} handlers (agent-relay DCR 019eafbdcfb3 A2)
+# ---------------------------------------------------------------------------
+#
+# First-class capabilities (grantable individually, unlike a blanket
+# mcp.proxy:* grant) that delegate to the minerva_terminal_* MCP tool
+# implementations via MinervaMCPServer._execute_tool_impl — the same seam
+# _handle_mcp_proxy uses. No terminal logic lives here; bell_rung /
+# shell_exited from terminal_wait flow through unchanged.
+#
+# host.terminal.write defaults raw=true: plugin SDKs send real control
+# characters in JSON, so the MCP-side c_unescape (meant for LLM-typed
+# escapes) would corrupt literal backslashes in relayed text.
+#
+# Deliberately absent: create/close. v1 plugins observe and converse with
+# terminals; they do not own terminal lifecycle.
+
+const _TERMINAL_TOOL_ALLOWED_ARGS := {
+	"host.terminal.list": [],
+	"host.terminal.read": ["terminal_id", "start_row", "end_row"],
+	"host.terminal.write": ["terminal_id", "text", "raw"],
+	"host.terminal.wait": ["terminal_id", "timeout_ms", "settle_ms"],
+}
+
+const _TERMINAL_TOOL_NAME := {
+	"host.terminal.list": "minerva_terminal_list",
+	"host.terminal.read": "minerva_terminal_read",
+	"host.terminal.write": "minerva_terminal_write",
+	"host.terminal.wait": "minerva_terminal_wait",
+}
+
+## Test seam: when non-null, the next host.terminal.{list,read,write,wait}
+## returns this dict (wrapped in success) instead of touching a real
+## terminal. Mirrors _test_terminal_exec_override. Consumed on use.
+static var _test_terminal_tool_override = null
+
+
+func _handle_host_terminal_tool(plugin_id: String, capability: String, args: Dictionary) -> Dictionary:
+	var allowed: Array = _TERMINAL_TOOL_ALLOWED_ARGS[capability]
+	for k in args.keys():
+		if not (k in allowed):
+			return PluginErrors.schema_validation_failed(
+				plugin_id, "unknown argument key '%s' (allowed: %s)" % [str(k), str(allowed)])
+
+	if CapabilityBroker._test_terminal_tool_override != null:
+		var injected = CapabilityBroker._test_terminal_tool_override
+		CapabilityBroker._test_terminal_tool_override = null
+		return PluginErrors.success(injected)
+
+	var minerva_server = _get_minerva_server()
+	if minerva_server == null:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"%s: MinervaMCPServer is not available" % capability)
+
+	var tool_args: Dictionary = args.duplicate()
+	if capability == "host.terminal.write" and not tool_args.has("raw"):
+		tool_args["raw"] = true
+
+	var result: Dictionary = await minerva_server._execute_tool_impl(
+		_TERMINAL_TOOL_NAME[capability], tool_args)
+
+	if result.get("success", false):
+		return PluginErrors.success(result)
+	return {
+		"success": false,
+		"error_code": "terminal_tool_error",
+		"error_message": result.get("error", "Unknown error from %s" % capability),
+		"plugin_id": plugin_id,
+		"capability": capability,
+	}
 
 
 # ---------------------------------------------------------------------------

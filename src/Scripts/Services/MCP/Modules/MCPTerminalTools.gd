@@ -25,6 +25,7 @@ func register_tools() -> void:
 		{"type": "object", "properties": {
 			"text": {"type": "string", "description": "Text to send. Use \\r at end to submit commands (Enter key). Example: 'echo hello\\r'"},
 			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list). Empty = active terminal."},
+			"raw": {"type": "boolean", "description": "Send text byte-for-byte without unescaping \\r/\\n/\\t etc. Use when the text already contains real control characters (default false)."},
 		}, "required": ["text"]}, "terminal")
 
 	server._register_tool("minerva_terminal_read",
@@ -117,8 +118,11 @@ func _terminal_write(arguments: Dictionary) -> Dictionary:
 	var term: TerminalNew = _find_terminal_by_id(arguments.get("terminal_id", ""))
 	if not term:
 		return {"success": false, "error": "No terminal found"}
-	# Process escape sequences so \r, \n, \t, \x03 etc. become real control chars
-	text = text.c_unescape()
+	# Process escape sequences so \r, \n, \t, \x03 etc. become real control
+	# chars — unless the caller already sends real bytes (raw=true, used by
+	# host.terminal.write where c_unescape would mangle literal backslashes).
+	if not arguments.get("raw", false):
+		text = text.c_unescape()
 	term.terminal.write_input(text)
 	return {"success": true, "bytes_sent": text.length()}
 
