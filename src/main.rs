@@ -199,20 +199,39 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
         return ok_response(id, tool_err("text is required"));
     }
 
-    // Normalise: append \r if the text doesn't already end with \r.
-    let normalised: String = if text.ends_with('\r') {
-        text.to_string()
-    } else {
-        format!("{text}\r")
-    };
+    // Normalise the message body: drop trailing real CR/LF and any trailing
+    // LITERAL "\r"/"\n" escape text (clients sometimes deliver the two-char
+    // sequence instead of the control char). Enter is sent separately below.
+    let mut body: &str = text;
+    loop {
+        let trimmed = body.trim_end_matches(['\r', '\n']);
+        let trimmed = trimmed
+            .strip_suffix("\\r")
+            .or_else(|| trimmed.strip_suffix("\\n"))
+            .unwrap_or(trimmed);
+        if trimmed.len() == body.len() {
+            break;
+        }
+        body = trimmed;
+    }
 
-    // Write to the terminal via host capability (raw=true is the capability default,
-    // but we pass it explicitly to document intent).
-    let write_result = router.call_capability("host.terminal.write", json!({
-        "terminal_id": terminal_id,
-        "text": normalised,
-        "raw": true,
-    }));
+    // Write the text and the Enter as TWO writes with a pause between them.
+    // TUI agents (Claude Code et al.) treat a single fast chunk as a paste:
+    // an embedded CR becomes a newline in the input box and never submits.
+    let write_result = router
+        .call_capability("host.terminal.write", json!({
+            "terminal_id": terminal_id,
+            "text": body,
+            "raw": true,
+        }))
+        .and_then(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            router.call_capability("host.terminal.write", json!({
+                "terminal_id": terminal_id,
+                "text": "\r",
+                "raw": true,
+            }))
+        });
 
     match write_result {
         Err(e) => ok_response(id, tool_err(&format!("terminal write failed: {e}"))),
@@ -251,7 +270,7 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
             ok_response(id, tool_ok(json!({
                 "ok": true,
                 "terminal_id": terminal_id,
-                "written": normalised,
+                "written": body,
                 "armed": armed,
                 "auto_started_watch": auto_started,
             })))

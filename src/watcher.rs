@@ -380,11 +380,19 @@ fn watch_loop(
 
         // Call host.terminal.wait — long-poll, ~20s timeout.
         // settle_ms from profile tells it when to consider output settled.
+        let wait_started = std::time::Instant::now();
         let wait_result = router.call_capability("host.terminal.wait", json!({
             "terminal_id": terminal_id,
             "timeout_ms": 20_000,
             "settle_ms": cd.settle_ms,
         }));
+
+        // The host normally blocks for settle/timeout; if it returns near-
+        // instantly (degraded host, test stub), pace the loop so we don't
+        // spin a hot storm of wait calls.
+        if wait_started.elapsed() < std::time::Duration::from_millis(250) {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
 
         match wait_result {
             Err(e) => {

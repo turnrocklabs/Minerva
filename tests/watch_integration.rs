@@ -801,11 +801,13 @@ fn test_send_writes_terminal_and_arms() {
     stdin.flush().unwrap();
 
     // Handle capability calls from send and collect the reply.
-    let mut write_called = false;
+    // send issues TWO writes: the message body, then a separate "\r" (Enter)
+    // — a single fast chunk reads as a paste to TUI agents and never submits.
+    let mut write_texts: Vec<String> = Vec::new();
     let mut read_called = false;
     let mut send_reply: Option<Value> = None;
 
-    for _ in 0..20 {
+    for _ in 0..60 {
         let mut buf = String::new();
         let n = out.read_line(&mut buf).expect("read");
         if n == 0 { break; }
@@ -821,9 +823,8 @@ fn test_send_writes_terminal_and_arms() {
             let id = msg.get("id").cloned().unwrap_or(Value::Null);
             match cap {
                 "host.terminal.write" => {
-                    write_called = true;
                     let text = msg["params"]["args"]["text"].as_str().unwrap_or("");
-                    assert!(text.ends_with('\r'), "send should append \\r: text={text:?}");
+                    write_texts.push(text.to_string());
                     send_cap_reply(&mut stdin, &id, json!({"bytes_sent": text.len()}));
                 }
                 "host.terminal.read" => {
@@ -843,7 +844,11 @@ fn test_send_writes_terminal_and_arms() {
         }
     }
 
-    assert!(write_called, "send should call host.terminal.write");
+    assert_eq!(
+        write_texts,
+        vec!["hello agent".to_string(), "\r".to_string()],
+        "send should write the body then a separate Enter"
+    );
     assert!(read_called, "send should call host.terminal.read for row snapshot");
     assert!(send_reply.is_some(), "send should return a response");
 
