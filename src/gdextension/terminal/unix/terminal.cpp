@@ -10,6 +10,7 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include <errno.h>
 #include <cstring>
 #include <sys/stat.h>
@@ -93,6 +94,12 @@ void Terminal::_bind_methods()
 
     // Signal emitted when libghostty-vt terminal state changes (for cell-grid rendering)
     ADD_SIGNAL(MethodInfo("vt_state_changed"));
+
+    // Standalone BEL actions (OSC-terminating BELs excluded by the shim parser)
+    ADD_SIGNAL(MethodInfo("bell", PropertyInfo(Variant::INT, "count")));
+
+    // The PTY child (shell) exited on its own — distinct from stop()
+    ADD_SIGNAL(MethodInfo("process_exited", PropertyInfo(Variant::INT, "exit_code")));
 
     // Cell-grid access methods (powered by libghostty-vt)
     ClassDB::bind_method(D_METHOD("get_cell", "col", "row"), &Terminal::get_cell);
@@ -708,6 +715,10 @@ bool Terminal::start(int width, int height)
                 if (_vt_terminal) {
                     minerva_vt_write(_vt_terminal, (const uint8_t*)buffer, (size_t)bytes_read);
                     call_deferred("emit_signal", "vt_state_changed");
+                    uint32_t bells = minerva_vt_take_bell(_vt_terminal);
+                    if (bells > 0) {
+                        call_deferred("emit_signal", "bell", (int)bells);
+                    }
                 }
                 // Also run legacy signal-based parser (kept for backward compat)
                 _process_input(String::utf8((const char*)buffer, bytes_read));
@@ -719,6 +730,23 @@ bool Terminal::start(int width, int height)
             } else {
                 break;
             }
+        }
+
+        // Reaching here while still _running means the read loop broke on
+        // EOF/EIO — the shell exited on its own (stop() clears _running
+        // first, so manual shutdown does not emit). Reap and report,
+        // mirroring Subprocess::process_exited.
+        if (_running && _child_pid > 0) {
+            int status = 0;
+            int exit_code = -1;
+            if (waitpid(_child_pid, &status, 0) == _child_pid) {
+                if (WIFEXITED(status)) {
+                    exit_code = WEXITSTATUS(status);
+                } else if (WIFSIGNALED(status)) {
+                    exit_code = 128 + WTERMSIG(status);
+                }
+            }
+            call_deferred("emit_signal", "process_exited", exit_code);
         }
     });
 

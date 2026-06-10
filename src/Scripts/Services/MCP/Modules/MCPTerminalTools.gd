@@ -48,7 +48,7 @@ func register_tools() -> void:
 		}, "required": ["terminal_id"]}, "terminal")
 
 	server._register_tool("minerva_terminal_wait",
-		"Wait for new output on a terminal, then return the screen content. Waits until output settles (no new data for settle_ms) or timeout.",
+		"Wait for new output on a terminal, then return the screen content. Waits until output settles (no new data for settle_ms) or timeout. Result includes bell_rung (a standalone BEL arrived during the wait) and, if the shell died, shell_exited + shell_exit_code.",
 		{"type": "object", "properties": {
 			"terminal_id": {"type": "string", "description": "Terminal ID. Empty = active terminal."},
 			"timeout_ms": {"type": "integer", "description": "Max wait time in ms (default 30000)"},
@@ -240,6 +240,7 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 	# Wait for output to appear and settle
 	var timed_out: bool = false
 	var got_output: bool = false
+	var bell_serial_start: int = term.bell_serial
 
 	# Use a simple polling approach: check for vt_state_changed via a flag
 	var output_state := {"changed": false}
@@ -267,6 +268,10 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 		if got_output and (Time.get_ticks_msec() - last_change_time) >= settle_ms:
 			break
 
+		# Shell died — nothing further will arrive
+		if term.shell_exit_code != null:
+			break
+
 		# Yield to let the engine process
 		await term.get_tree().process_frame
 
@@ -277,4 +282,9 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 
 	read_result["timed_out"] = timed_out
 	read_result["waited_ms"] = Time.get_ticks_msec() - start_time
+	# Bells that rang during the wait (e.g. an agent CLI signalling turn end).
+	read_result["bell_rung"] = term.bell_serial > bell_serial_start
+	if term.shell_exit_code != null:
+		read_result["shell_exited"] = true
+		read_result["shell_exit_code"] = term.shell_exit_code
 	return read_result

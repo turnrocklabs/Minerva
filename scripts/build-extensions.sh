@@ -103,7 +103,10 @@ cd ..
 
 echo ""
 echo "=== Installing libraries ==="
-cp "$SHIM_LIB" src/bin/
+# install (not cp): cp truncates the destination inode in place, which
+# SIGBUSes a running Minerva that has the .so mmapped. install unlinks
+# first so the old inode survives until the process exits.
+install -m 755 "$SHIM_LIB" src/bin/
 echo "Copied $(basename "$SHIM_LIB") to src/bin/"
 
 # ── Build godot_wry WebView extension (Rust/Cargo) ───────────────────

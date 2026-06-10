@@ -4,9 +4,41 @@ const ghostty = @import("ghostty-vt");
 const Terminal = ghostty.Terminal;
 const Page = ghostty.Page;
 const Style = ghostty.Style;
-const ReadonlyStream = ghostty.ReadonlyStream;
+const StreamAction = ghostty.StreamAction;
 
 const allocator = std.heap.c_allocator;
+
+// ── Handler wrapper ─────────────────────────────────────────────────
+// Wraps ghostty's ReadonlyHandler to observe actions the readonly
+// handler deliberately ignores (currently: .bell). Everything else is
+// forwarded unchanged, so terminal state stays identical to a plain
+// ReadonlyStream and vendor/ghostty stays pristine. Note the parser
+// already disambiguates BEL-as-OSC-terminator from a standalone BEL —
+// only the latter reaches .bell.
+
+const MinervaHandler = struct {
+    inner: ghostty.ReadonlyHandler,
+    bell_count: u32 = 0,
+
+    fn init(terminal: *Terminal) MinervaHandler {
+        return .{ .inner = .init(terminal) };
+    }
+
+    pub fn deinit(self: *MinervaHandler) void {
+        self.inner.deinit();
+    }
+
+    pub fn vt(
+        self: *MinervaHandler,
+        comptime action: StreamAction.Tag,
+        value: StreamAction.Value(action),
+    ) !void {
+        if (comptime action == .bell) self.bell_count +|= 1;
+        try self.inner.vt(action, value);
+    }
+};
+
+const MinervaStream = ghostty.Stream(MinervaHandler);
 
 // ── Terminal wrapper ────────────────────────────────────────────────
 // Wraps the ghostty Terminal with a persistent VT stream (for parser
@@ -15,7 +47,7 @@ const allocator = std.heap.c_allocator;
 
 const TerminalState = struct {
     terminal: *Terminal,
-    stream: ReadonlyStream,
+    stream: MinervaStream,
     mutex: std.Thread.Mutex,
 
     fn init(cols: u16, rows: u16) !*TerminalState {
@@ -26,7 +58,7 @@ const TerminalState = struct {
         const state = try allocator.create(TerminalState);
         state.* = .{
             .terminal = t,
-            .stream = t.vtStream(),
+            .stream = MinervaStream.initAlloc(allocator, .init(t)),
             .mutex = .{},
         };
         return state;
@@ -344,6 +376,18 @@ export fn minerva_vt_scroll_viewport(term: ?*anyopaque, lines: i32) callconv(.c)
     }
 }
 
+/// Returns the number of BEL (bell) actions seen since the last call,
+/// and resets the counter. BEL bytes that terminate OSC sequences do
+/// not count — only standalone bells do.
+export fn minerva_vt_take_bell(term: ?*anyopaque) callconv(.c) u32 {
+    const state: *TerminalState = @ptrCast(@alignCast(term orelse return 0));
+    state.mutex.lock();
+    defer state.mutex.unlock();
+    const count = state.stream.handler.bell_count;
+    state.stream.handler.bell_count = 0;
+    return count;
+}
+
 export fn minerva_vt_encode_key(
     term: ?*anyopaque,
     key_code: c_int,
@@ -435,6 +479,53 @@ test "resize terminal" {
     minerva_vt_get_size(term, &cols, &rows);
     try std.testing.expectEqual(@as(u16, 120), cols);
     try std.testing.expectEqual(@as(u16, 40), rows);
+}
+
+test "bell counted and reset by take" {
+    const term = minerva_vt_new(80, 24) orelse unreachable;
+    defer minerva_vt_free(term);
+
+    minerva_vt_write(term, "\x07", 1);
+    try std.testing.expectEqual(@as(u32, 1), minerva_vt_take_bell(term));
+    // Take resets the counter
+    try std.testing.expectEqual(@as(u32, 0), minerva_vt_take_bell(term));
+}
+
+test "multiple bells accumulate" {
+    const term = minerva_vt_new(80, 24) orelse unreachable;
+    defer minerva_vt_free(term);
+
+    minerva_vt_write(term, "a\x07b\x07c\x07", 6);
+    try std.testing.expectEqual(@as(u32, 3), minerva_vt_take_bell(term));
+}
+
+test "BEL as OSC terminator is not a bell" {
+    const term = minerva_vt_new(80, 24) orelse unreachable;
+    defer minerva_vt_free(term);
+
+    // OSC 0 (title) and OSC 133;A (semantic prompt) terminated by BEL:
+    // the BEL ends the OSC sequence and must not count as a bell.
+    const osc_title = "\x1b]0;my title\x07";
+    minerva_vt_write(term, osc_title.ptr, osc_title.len);
+    const osc_prompt = "\x1b]133;A\x07";
+    minerva_vt_write(term, osc_prompt.ptr, osc_prompt.len);
+    try std.testing.expectEqual(@as(u32, 0), minerva_vt_take_bell(term));
+
+    // A standalone BEL after the OSCs still counts.
+    minerva_vt_write(term, "\x07", 1);
+    try std.testing.expectEqual(@as(u32, 1), minerva_vt_take_bell(term));
+}
+
+test "bell does not modify terminal content" {
+    const term = minerva_vt_new(80, 24) orelse unreachable;
+    defer minerva_vt_free(term);
+
+    minerva_vt_write(term, "A\x07B", 3);
+    var cell: MinervaCellInfo = undefined;
+    try std.testing.expect(minerva_vt_get_cell(term, 0, 0, &cell));
+    try std.testing.expectEqual(@as(u32, 'A'), cell.codepoint);
+    try std.testing.expect(minerva_vt_get_cell(term, 1, 0, &cell));
+    try std.testing.expectEqual(@as(u32, 'B'), cell.codepoint);
 }
 
 test "split escape sequence across writes" {

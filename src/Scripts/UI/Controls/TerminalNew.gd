@@ -5,6 +5,13 @@ extends Control
 ## Used by MCP bash to await command completion.
 signal block_finalized(block: TerminalBlock)
 
+## Standalone BEL from the PTY (OSC-terminating BELs excluded by the
+## ghostty shim). Linux/macOS only — the Windows glue has no shim.
+signal bell_rung(count: int)
+
+## The PTY child (shell) exited on its own — not a stop()/close.
+signal shell_exited(exit_code: int)
+
 const CURSOR_CHAR: = "█"
 
 var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-zA-Z0-9]+[\\\/])*([a-zA-Z0-9\s-]+>)")
@@ -134,6 +141,12 @@ func _ready():
 	terminal.on_shell_prompt_start.connect(_on_prompt_start)
 	terminal.on_shell_prompt_end.connect(_on_prompt_end)
 
+	# Bell + shell-exit (guarded: older extension builds lack these)
+	if terminal.has_signal("bell"):
+		terminal.bell.connect(_on_bell)
+	if terminal.has_signal("process_exited"):
+		terminal.process_exited.connect(_on_shell_exited)
+
 	await get_tree().process_frame
 
 	_recalc_terminal_size()
@@ -156,6 +169,21 @@ func _ready():
 
 
 var _scrollbar_updating: bool = false
+
+## Cumulative bell count since terminal start. Monotonic, so waiters can
+## snapshot it and diff instead of racing the signal.
+var bell_serial: int = 0
+
+## Set once if the shell exits on its own. null until then.
+var shell_exit_code = null
+
+func _on_bell(count: int) -> void:
+	bell_serial += count
+	bell_rung.emit(count)
+
+func _on_shell_exited(exit_code: int) -> void:
+	shell_exit_code = exit_code
+	shell_exited.emit(exit_code)
 
 func _on_vt_state_changed() -> void:
 	text_layer.queue_redraw()

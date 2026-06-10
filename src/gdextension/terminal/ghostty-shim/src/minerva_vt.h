@@ -137,6 +137,13 @@ void minerva_vt_get_scroll_info(MinervaTerminal term, uint32_t* total_rows, uint
  */
 void minerva_vt_scroll_viewport(MinervaTerminal term, int32_t lines);
 
+/**
+ * Return the number of BEL (bell) actions seen since the last call and
+ * reset the counter. BEL bytes terminating OSC sequences do not count;
+ * only standalone bells do.
+ */
+uint32_t minerva_vt_take_bell(MinervaTerminal term);
+
 /* ── Key encoding (ghostty key encoder) ─────────────────────────────── */
 
 /**
