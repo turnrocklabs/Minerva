@@ -233,9 +233,27 @@ pub fn is_busy(screen: &str, cd: &CompiledDetection) -> bool {
 pub fn trailing_noncontent_rows(screen: &str, cd: &CompiledDetection) -> u64 {
     let lines: Vec<&str> = screen.lines().collect();
     if let Some(idx) = lines.iter().rposition(|l| cd.prompt_box.is_match(l)) {
-        return (lines.len() - idx) as u64;
+        // Absorb the input box's top border and separating blanks above the
+        // prompt line — they redraw with the next turn too.
+        let mut first_chrome = idx;
+        while first_chrome > 0 {
+            let above = lines[first_chrome - 1];
+            if above.trim().is_empty() || is_pure_box_line(above) {
+                first_chrome -= 1;
+            } else {
+                break;
+            }
+        }
+        return (lines.len() - first_chrome) as u64;
     }
     lines.iter().rev().take_while(|l| l.trim().is_empty()).count() as u64
+}
+
+/// True when the line is only box-drawing/block codepoints + whitespace
+/// (an input-box border row).
+fn is_pure_box_line(line: &str) -> bool {
+    !line.trim().is_empty()
+        && line.chars().all(|c| matches!(c, '\u{2500}'..='\u{25FF}') || c.is_whitespace())
 }
 
 /// Return the last N lines of `text` as a &str slice (starting at a
@@ -463,8 +481,9 @@ mod tests {
     #[test]
     fn test_trailing_noncontent_rows_idle_screen() {
         let cd = compiled_claude();
-        // screen_claude_idle ends with: ❯+NBSP line, hints line → 2 chrome rows.
-        assert_eq!(trailing_noncontent_rows(screen_claude_idle(), &cd), 2);
+        // screen_claude_idle ends with: blank, ❯+NBSP line, hints line → 3 chrome
+        // rows (the separating blank above the prompt is absorbed).
+        assert_eq!(trailing_noncontent_rows(screen_claude_idle(), &cd), 3);
     }
 
     #[test]

@@ -1045,10 +1045,10 @@ fn test_index_loop_event_then_read_turn_with_row_range() {
     assert_eq!(turn["cause"], "turn_completed", "turn cause propagated");
 
     if let Some(args) = terminal_read_args {
-        // Detection screen reported 55 total rows; idle_screen() ends with the
-        // input box (❯+NBSP) + hints = 2 trailing chrome rows, so the turn end
-        // anchors at 53 (row-anchoring fix 019eb345d4d9).
-        assert_eq!(args["end_row"], 53, "end_row anchored on last content row");
+        // Detection screen reported 55 total rows; idle_screen() ends with
+        // blank + input box (❯+NBSP) + hints = 3 trailing chrome rows, so the
+        // last content row (inclusive end) anchors at 51 (019eb345d4d9).
+        assert_eq!(args["end_row"], 51, "end_row anchored on last content row (inclusive index)");
     }
 
     // Stop watch after read_turn (stopping before would remove the session

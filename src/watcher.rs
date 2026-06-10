@@ -531,8 +531,11 @@ fn watch_loop(
                     // Anchor the turn-end row on the last content row: the
                     // settled screen ends with the (re-rendered) input box +
                     // hint rows, which belong to the NEXT turn, not this one.
+                    // host.terminal.read treats end_row as an INCLUSIVE
+                    // 0-indexed row (range(start, end+1)), so the last content
+                    // row is total − trailing − 1.
                     let anchored_end = current_rows.map(|r| {
-                        r.saturating_sub(detector::trailing_noncontent_rows(content, &cd))
+                        r.saturating_sub(detector::trailing_noncontent_rows(content, &cd) + 1)
                     });
 
                     maybe_emit(
@@ -946,7 +949,7 @@ mod tests {
         assert!(arm("t-arm-anchor", Some((screen, 100))));
 
         let (start, _) = turn_rows("t-arm-anchor");
-        assert_eq!(start, Some(98), "start anchored 2 rows above raw snapshot");
+        assert_eq!(start, Some(97), "start anchored above prompt + separating blank");
     }
 
     // ── Test: notify_mode parsing ────────────────────────────────────────────

@@ -215,6 +215,27 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
         body = trimmed;
     }
 
+    // Snapshot the screen BEFORE writing: the pre-write screen is stable and
+    // the turn's redraw region starts at the input box, so the turn-start
+    // anchor is exact. A post-write snapshot races the TUI's busy block,
+    // which can occupy MORE rows than the final answer layout — the answer
+    // then renders ABOVE the snapshot boundary and read_turn misses it
+    // (live failure mode of 019eb345d4d9).
+    let snapshot = if do_arm {
+        router.call_capability("host.terminal.read", json!({
+            "terminal_id": terminal_id,
+        })).ok().and_then(|r| {
+            let rows = r.get("total_scrollback_rows").and_then(|v| v.as_u64())?;
+            let content = r.get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            Some((content, rows))
+        })
+    } else {
+        None
+    };
+
     // Write the text and the Enter as TWO writes with a pause between them.
     // TUI agents (Claude Code et al.) treat a single fast chunk as a paste:
     // an embedded CR becomes a newline in the input box and never submits.
@@ -259,20 +280,9 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
                     }
                 }
 
-                // Snapshot screen + row count before arming. arm() anchors the
-                // turn-start boundary on the last content row (the trailing
-                // input-box/chrome rows get overwritten by the answer).
-                let snapshot = router.call_capability("host.terminal.read", json!({
-                    "terminal_id": terminal_id,
-                })).ok().and_then(|r| {
-                    let rows = r.get("total_scrollback_rows").and_then(|v| v.as_u64())?;
-                    let content = r.get("content")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    Some((content, rows))
-                });
-
+                // arm() anchors the turn-start boundary on the pre-write
+                // snapshot's last content row (the trailing input-box/chrome
+                // rows get overwritten by the echo + answer).
                 armed = watcher::arm(
                     terminal_id,
                     snapshot.as_ref().map(|(c, r)| (c.as_str(), *r)),
