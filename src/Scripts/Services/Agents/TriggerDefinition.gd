@@ -2,7 +2,7 @@ class_name TriggerDefinition
 extends RefCounted
 ## Data class for an agent trigger.
 
-enum TriggerType { TIMER, EVENT, TIME, DOCKET_POLL }
+enum TriggerType { TIMER, EVENT, TIME, DOCKET_POLL, PLUGIN_EVENT }
 enum EventType { NOTE_CREATED, NOTE_CHANGED, CHAT_COMPLETED, MCP_TOOL_EXECUTED, MCP_TOOL_ABOUT_TO_EXECUTE }
 enum ActionType { SPAWN_NEW, MESSAGE_EXISTING }
 enum ScheduleType { INTERVAL, DAILY, WEEKLY, MONTHLY, YEARLY }
@@ -60,6 +60,13 @@ var hook_tool_name_pattern: String = ""
 var hook_route_table: String = ""
 ## Whether this trigger is pending human approval (agents can't enable directly)
 var pending_approval: bool = false
+## For PLUGIN_EVENT triggers: the plugin_id to match (empty = any plugin)
+var plugin_id: String = ""
+## For PLUGIN_EVENT triggers: the event_name to match (empty = any event)
+var plugin_event_name: String = ""
+## For PLUGIN_EVENT triggers: max consecutive fires before pausing (0 = unlimited).
+## Counter resets when a human message lands in the target chat.
+var consecutive_fire_limit: int = 5
 
 
 func _init(p_id: String = ""):
@@ -102,6 +109,9 @@ func serialize() -> Dictionary:
 		"hook_tool_name_pattern": hook_tool_name_pattern,
 		"hook_route_table": hook_route_table,
 		"pending_approval": pending_approval,
+		"plugin_id": plugin_id,
+		"plugin_event_name": plugin_event_name,
+		"consecutive_fire_limit": consecutive_fire_limit,
 	}
 	return data
 
@@ -144,6 +154,9 @@ static func deserialize(data: Dictionary) -> TriggerDefinition:
 	trig.hook_tool_name_pattern = data.get("hook_tool_name_pattern", "")
 	trig.hook_route_table = data.get("hook_route_table", "")
 	trig.pending_approval = data.get("pending_approval", false)
+	trig.plugin_id = data.get("plugin_id", "")
+	trig.plugin_event_name = data.get("plugin_event_name", "")
+	trig.consecutive_fire_limit = int(data.get("consecutive_fire_limit", 5))
 	# Backward compatibility: older wall-clock schedules were stored as TIMER + non-INTERVAL schedule.
 	if trig.trigger_type == TriggerType.TIMER and trig.schedule_type != ScheduleType.INTERVAL:
 		trig.trigger_type = TriggerType.TIME

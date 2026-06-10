@@ -436,7 +436,7 @@ func _register_trigger_tools() -> void:
 	, "triggers")
 
 	server._register_tool("minerva_create_trigger",
-		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1, TIME=2. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2, MCP_TOOL_EXECUTED=3, MCP_TOOL_ABOUT_TO_EXECUTE=4. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1.",
+		"Create a new trigger definition. Trigger types: TIMER=0, EVENT=1, TIME=2, DOCKET_POLL=3, PLUGIN_EVENT=4. Event types: NOTE_CREATED=0, NOTE_CHANGED=1, CHAT_COMPLETED=2, MCP_TOOL_EXECUTED=3, MCP_TOOL_ABOUT_TO_EXECUTE=4. Action types: SPAWN_NEW=0, MESSAGE_EXISTING=1. For PLUGIN_EVENT: set trigger_type=4, plugin_id, plugin_event_name, and consecutive_fire_limit (default 5; 0=unlimited). The consecutive fire counter resets when a human message lands in the target chat.",
 		{
 			"type": "object",
 			"properties": {
@@ -554,6 +554,18 @@ func _register_trigger_tools() -> void:
 				"pending_approval": {
 					"type": "boolean",
 					"description": "Whether trigger is pending human approval. Read-only for internal agents."
+				},
+				"plugin_id": {
+					"type": "string",
+					"description": "For PLUGIN_EVENT (trigger_type=4): plugin ID to match. Empty = any plugin."
+				},
+				"plugin_event_name": {
+					"type": "string",
+					"description": "For PLUGIN_EVENT (trigger_type=4): event name to match. Empty = any event."
+				},
+				"consecutive_fire_limit": {
+					"type": "integer",
+					"description": "For PLUGIN_EVENT: max consecutive fires before pausing. Default 5. 0 = unlimited. Resets on human message in target chat."
 				}
 			},
 			"required": ["name", "agent_id"]
@@ -561,7 +573,7 @@ func _register_trigger_tools() -> void:
 	, "triggers")
 
 	server._register_tool("minerva_update_trigger",
-		"Update an existing trigger definition. Only provided fields are changed.",
+		"Update an existing trigger definition. Only provided fields are changed. Trigger types: TIMER=0, EVENT=1, TIME=2, DOCKET_POLL=3, PLUGIN_EVENT=4.",
 		{
 			"type": "object",
 			"properties": {
@@ -596,7 +608,10 @@ func _register_trigger_tools() -> void:
 				"hook_fire_probability": { "type": "number", "description": "Probability of firing (0.0-1.0). Default 1.0. Use 0.1 for 10% nudge rate." },
 				"hook_tool_name_pattern": { "type": "string", "description": "Regex pattern matching tool name. Empty = all tools." },
 				"hook_route_table": { "type": "string", "description": "JSON route table for PreToolUse: [[tool_regex, arg_name, arg_match_regex, hint], ...]" },
-				"pending_approval": { "type": "boolean", "description": "Whether trigger is pending human approval. Read-only for internal agents." }
+				"pending_approval": { "type": "boolean", "description": "Whether trigger is pending human approval. Read-only for internal agents." },
+				"plugin_id": { "type": "string", "description": "For PLUGIN_EVENT (trigger_type=4): plugin ID to match. Empty = any plugin." },
+				"plugin_event_name": { "type": "string", "description": "For PLUGIN_EVENT (trigger_type=4): event name to match. Empty = any event." },
+				"consecutive_fire_limit": { "type": "integer", "description": "For PLUGIN_EVENT: max consecutive fires before pausing (0=unlimited, default 5)." }
 			},
 			"required": ["trigger_id"]
 		}
@@ -1345,6 +1360,15 @@ func _list_triggers(_args: Dictionary) -> Dictionary:
 			elif trig.schedule_type == TriggerDefinition.ScheduleType.YEARLY:
 				entry["schedule_day_of_month"] = trig.schedule_day_of_month
 				entry["schedule_month"] = trig.schedule_month
+		elif trig.trigger_type == TriggerDefinition.TriggerType.PLUGIN_EVENT:
+			entry["plugin_id"] = trig.plugin_id
+			entry["plugin_event_name"] = trig.plugin_event_name
+			entry["consecutive_fire_limit"] = trig.consecutive_fire_limit
+			# Include runtime state if available
+			var tm2 = SingletonObject.trigger_manager
+			if tm2:
+				entry["consecutive_fire_count"] = tm2._plugin_event_consecutive_counts.get(trig.id, 0)
+				entry["paused"] = tm2._plugin_event_paused.has(trig.id)
 		else:
 			entry["event_type"] = trig.event_type
 			entry["watched_agent_ids"] = trig.watched_agent_ids
@@ -1399,6 +1423,10 @@ func _create_trigger(args: Dictionary) -> Dictionary:
 	trig.hook_tool_name_pattern = args.get("hook_tool_name_pattern", "")
 	trig.hook_route_table = args.get("hook_route_table", "")
 	trig.pending_approval = args.get("pending_approval", false)
+	# PLUGIN_EVENT fields
+	trig.plugin_id = args.get("plugin_id", "")
+	trig.plugin_event_name = args.get("plugin_event_name", "")
+	trig.consecutive_fire_limit = MCPToolUtils.coerce_int(args.get("consecutive_fire_limit", 5))
 
 	var bp: Array = args.get("batch_params", [])
 	for p in bp:
@@ -1468,6 +1496,10 @@ func _update_trigger(args: Dictionary) -> Dictionary:
 	trig.hook_tool_name_pattern = args.get("hook_tool_name_pattern", existing.hook_tool_name_pattern)
 	trig.hook_route_table = args.get("hook_route_table", existing.hook_route_table)
 	trig.pending_approval = args.get("pending_approval", existing.pending_approval)
+	# PLUGIN_EVENT fields
+	trig.plugin_id = args.get("plugin_id", existing.plugin_id)
+	trig.plugin_event_name = args.get("plugin_event_name", existing.plugin_event_name)
+	trig.consecutive_fire_limit = MCPToolUtils.coerce_int(args.get("consecutive_fire_limit", existing.consecutive_fire_limit))
 
 	if args.has("batch_params"):
 		var bp: Array = args["batch_params"]

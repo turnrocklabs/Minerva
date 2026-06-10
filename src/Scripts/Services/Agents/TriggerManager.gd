@@ -18,6 +18,15 @@ var _timer_nodes: Dictionary = {}
 ## Signal connection state keyed by trigger_id
 var _connected_signals: Dictionary = {}
 
+## PLUGIN_EVENT signal connection state: trigger_id -> true
+var _plugin_event_signal_connected: Dictionary = {}
+
+## Consecutive fire counts for PLUGIN_EVENT triggers: trigger_id -> int
+var _plugin_event_consecutive_counts: Dictionary = {}
+
+## Paused PLUGIN_EVENT triggers: trigger_id -> true (paused after hitting consecutive_fire_limit)
+var _plugin_event_paused: Dictionary = {}
+
 ## Active batch executions keyed by trigger_id
 var _active_batches: Dictionary = {}
 
@@ -58,6 +67,8 @@ func _ready() -> void:
 	# Hook event triggers: connect to MCP tool signals
 	SingletonObject.mcp_tool_executed.connect(_on_hook_tool_executed)
 	SingletonObject.mcp_tool_about_to_execute.connect(_on_hook_tool_about_to_execute)
+	# PLUGIN_EVENT triggers: connect to plugin_event_broker if available
+	_connect_plugin_event_broker()
 
 	# Wall-clock schedule poll timer (checks every 60 seconds)
 	_schedule_check_timer = Timer.new()
@@ -127,6 +138,9 @@ func clear_all() -> void:
 	_pending_single_chains.clear()
 	_docket_signal_connected.clear()
 	_hook_route_shown.clear()
+	_plugin_event_signal_connected.clear()
+	_plugin_event_consecutive_counts.clear()
+	_plugin_event_paused.clear()
 	triggers_changed.emit()
 
 #endregion CRUD
@@ -144,6 +158,8 @@ func _activate_trigger(trig: TriggerDefinition) -> void:
 			_connect_event(trig)
 		TriggerDefinition.TriggerType.DOCKET_POLL:
 			_activate_docket_poll(trig)
+		TriggerDefinition.TriggerType.PLUGIN_EVENT:
+			_activate_plugin_event(trig)
 
 
 func _deactivate_trigger(trig: TriggerDefinition) -> void:
@@ -156,6 +172,8 @@ func _deactivate_trigger(trig: TriggerDefinition) -> void:
 			_disconnect_event(trig)
 		TriggerDefinition.TriggerType.DOCKET_POLL:
 			_deactivate_docket_poll(trig)
+		TriggerDefinition.TriggerType.PLUGIN_EVENT:
+			_deactivate_plugin_event(trig)
 
 
 func _start_timer(trig: TriggerDefinition) -> void:
@@ -274,6 +292,10 @@ func _on_agent_chat_finished(history_id: String, agent_definition_id: String) ->
 				var ctx = _build_completion_context(history_id, agent_definition_id)
 				call_deferred("_fire_trigger", chain_target, ctx, visited)
 			break
+
+	# Check for human-initiated turn to reset PLUGIN_EVENT consecutive counters
+	# (must happen BEFORE _active_trigger_chats cleanup so we can still check)
+	_reset_plugin_event_consecutive_if_human(history_id, agent_definition_id)
 
 	# Clear anti-flood for any trigger whose active chat matches this history
 	for trigger_id in _active_trigger_chats.keys():
@@ -539,6 +561,119 @@ func _on_hook_tool_about_to_execute(tool_name: String, arguments: Dictionary) ->
 			break  # only fire first matching route per event
 
 #endregion Hook Event Handlers
+
+
+#region PLUGIN_EVENT Triggers
+
+## Connect to SingletonObject.plugin_event_broker once after ready.
+## Safe to call multiple times — checks for existing connection.
+func _connect_plugin_event_broker() -> void:
+	var broker = SingletonObject.get("plugin_event_broker")
+	if broker == null:
+		return
+	if not broker.plugin_event.is_connected(_on_plugin_event_broker_signal):
+		broker.plugin_event.connect(_on_plugin_event_broker_signal)
+	print("[TriggerManager] Connected to plugin_event_broker.plugin_event")
+
+
+func _activate_plugin_event(trig: TriggerDefinition) -> void:
+	# Ensure the broker-level signal is connected (idempotent).
+	_connect_plugin_event_broker()
+	_plugin_event_signal_connected[trig.id] = true
+	# Reset consecutive count on (re-)activation so stale counts don't carry over.
+	_plugin_event_consecutive_counts[trig.id] = 0
+	_plugin_event_paused.erase(trig.id)
+	print("[TriggerManager] Activated PLUGIN_EVENT trigger '%s' (plugin_id='%s', event='%s', limit=%d)" % [
+		trig.id, trig.plugin_id, trig.plugin_event_name, trig.consecutive_fire_limit])
+
+
+func _deactivate_plugin_event(trig: TriggerDefinition) -> void:
+	_plugin_event_signal_connected.erase(trig.id)
+	_plugin_event_consecutive_counts.erase(trig.id)
+	_plugin_event_paused.erase(trig.id)
+
+
+## Fired by PluginEventBroker.plugin_event for every plugin event.
+## Fans out to all active PLUGIN_EVENT triggers that match.
+func _on_plugin_event_broker_signal(p_id: String, event_name: String, payload: Dictionary) -> void:
+	if triggers.is_empty():
+		return
+	for trig in triggers:
+		if not trig.enabled:
+			continue
+		if trig.trigger_type != TriggerDefinition.TriggerType.PLUGIN_EVENT:
+			continue
+		if not _plugin_event_signal_connected.has(trig.id):
+			continue
+
+		# Filter by plugin_id (empty = any)
+		if not trig.plugin_id.is_empty() and trig.plugin_id != p_id:
+			continue
+		# Filter by event_name (empty = any)
+		if not trig.plugin_event_name.is_empty() and trig.plugin_event_name != event_name:
+			continue
+
+		# Check consecutive_fire_limit (0 = unlimited)
+		if _plugin_event_paused.has(trig.id):
+			print("[TriggerManager] PLUGIN_EVENT trigger '%s' is paused (hit consecutive_fire_limit=%d)" % [trig.id, trig.consecutive_fire_limit])
+			continue
+
+		# Build context from event payload
+		var context: Dictionary = {
+			"plugin_id": p_id,
+			"event_name": event_name,
+		}
+		# Merge payload keys into context so {terminal_id} etc. work in initial_message
+		for k in payload:
+			context[k] = payload[k]
+
+		# Increment counter before firing so the limit check reflects the pending fire
+		var count: int = _plugin_event_consecutive_counts.get(trig.id, 0) + 1
+		_plugin_event_consecutive_counts[trig.id] = count
+
+		_fire_trigger(trig.id, context)
+
+		# After firing, check if we have now hit the limit
+		var limit: int = trig.consecutive_fire_limit
+		if limit > 0 and count >= limit:
+			_plugin_event_paused[trig.id] = true
+			print("[TriggerManager] PLUGIN_EVENT trigger '%s' paused after %d consecutive fires — awaiting human message in target chat" % [trig.id, count])
+
+
+## Called when agent_chat_finished fires for a history that was NOT in _active_trigger_chats.
+## This indicates a human-initiated turn in the given chat, which re-arms PLUGIN_EVENT triggers
+## whose target agent_definition_id matches.
+func _reset_plugin_event_consecutive_if_human(history_id: String, agent_definition_id: String) -> void:
+	if _plugin_event_paused.is_empty() and _plugin_event_consecutive_counts.is_empty():
+		return
+	# If this history_id was NOT fired by any trigger, it was human-initiated.
+	var was_triggered: bool = false
+	for tid in _active_trigger_chats:
+		if _active_trigger_chats[tid] == history_id:
+			was_triggered = true
+			break
+	if was_triggered:
+		return  # Trigger-initiated turn — don't reset
+
+	# Human turn confirmed: reset consecutive counters for PLUGIN_EVENT triggers
+	# whose agent_id matches the finishing chat's agent_definition_id.
+	var reset_count: int = 0
+	for trig in triggers:
+		if trig.trigger_type != TriggerDefinition.TriggerType.PLUGIN_EVENT:
+			continue
+		if not trig.enabled:
+			continue
+		# Match: either same agent_id, or (for MESSAGE_EXISTING) the agent matches
+		if trig.agent_id == agent_definition_id or agent_definition_id.is_empty():
+			if _plugin_event_paused.has(trig.id) or _plugin_event_consecutive_counts.get(trig.id, 0) > 0:
+				_plugin_event_paused.erase(trig.id)
+				_plugin_event_consecutive_counts[trig.id] = 0
+				reset_count += 1
+				print("[TriggerManager] PLUGIN_EVENT trigger '%s' re-armed after human message in chat '%s'" % [trig.id, history_id])
+	if reset_count > 0:
+		print("[TriggerManager] Reset consecutive counts for %d PLUGIN_EVENT trigger(s)" % reset_count)
+
+#endregion PLUGIN_EVENT Triggers
 
 
 #region Batch Execution
