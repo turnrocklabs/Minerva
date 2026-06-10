@@ -314,6 +314,240 @@ The `hello_scene` plugin ships a smoke-test panel (`responsive_smoke`) that
 demonstrates all three layout modes. Open it from the plugin's editor items list
 and resize the panel to see the layout change in real time.
 
+## Host Terminal Capabilities
+
+Four capabilities let a plugin observe and converse with open terminal tabs without
+owning their lifecycle (create/close remain out of reach for plugins — intentional v1
+scope).
+
+These capabilities delegate to the same `minerva_terminal_*` MCP tool implementations
+that external MCP clients use, so the result shapes are identical. They form the
+**interactive / observational family** alongside the existing `host.terminal.exec`
+(which runs a one-shot command in a subprocess and returns merged stdout+stderr).
+
+Declare each one you need in `permissions.host_capabilities`.
+
+### host.terminal.list
+
+List all open terminal tabs.
+
+**Args:** none
+
+**Returns:**
+```json
+{
+  "success": true,
+  "result": {
+    "success": true,
+    "terminals": [
+      {"id": "12345", "name": "Terminal 1", "visible": true, "cols": 220, "rows": 50}
+    ],
+    "count": 1
+  }
+}
+```
+
+The inner `id` is the Godot instance ID (a string of digits). Pass it to the other
+three capabilities.
+
+### host.terminal.read
+
+Read the visible viewport or a specific scrollback row range.
+
+**Args:**
+
+| Arg | Type | Description |
+|---|---|---|
+| `terminal_id` | string | Terminal ID from `host.terminal.list`. Empty = active terminal. |
+| `start_row` | integer | Start row in scrollback (0 = top of history). Omit for visible viewport. |
+| `end_row` | integer | End row in scrollback. Omit for visible viewport. |
+
+Only `start_row`/`end_row` are allowed arg keys. Unknown keys return
+`error_code: "schema_validation_failed"`.
+
+**Returns (viewport):**
+```json
+{
+  "success": true,
+  "result": {
+    "success": true,
+    "content": "$ ls -la\ntotal 12\n...",
+    "rows": 12,
+    "cols": 220,
+    "total_scrollback_rows": 1024,
+    "viewport_rows": 50
+  }
+}
+```
+
+**Returns (row range):** same shape plus `start_row` and `end_row` echoed back.
+Row indexing is screen-absolute using stable absolute rows from `get_scroll_info()`.
+
+### host.terminal.write
+
+Send text or keystrokes to a terminal PTY. Non-blocking — returns as soon as the
+bytes are queued.
+
+**Args:**
+
+| Arg | Type | Description |
+|---|---|---|
+| `terminal_id` | string | Terminal ID. Empty = active terminal. |
+| `text` | string (required) | Text to send. |
+| `raw` | boolean | Send bytes verbatim without processing escape sequences. **Default: `true`** for this capability (see note below). |
+
+**Platform note:** `host.terminal.write` defaults `raw=true` because plugin SDKs
+(Go, Rust) send real control characters in JSON strings (e.g. a literal `\r` byte),
+and the MCP-side `c_unescape` step — which exists to convert LLM-typed escape strings
+like `\\r` into real bytes — would corrupt those literal backslashes. If your plugin
+builds escape sequences as backslash strings rather than as real bytes, pass `raw=false`.
+
+**Platform availability:** the `bell_rung` counter and `shell_exited`/`shell_exit_code`
+fields from `host.terminal.wait` depend on the ghostty-vt shim (built by
+`scripts/build-extensions.sh`). The shim is compiled only for Unix/macOS; the Windows
+terminal glue has no ghostty shim and `bell_rung` will always be `false` there.
+
+**Returns:**
+```json
+{"success": true, "result": {"success": true, "bytes_sent": 3}}
+```
+
+### host.terminal.wait
+
+Long-poll: block until new output settles (or timeout), then return the screen
+content. The recommended pattern after `host.terminal.write`.
+
+**Args:**
+
+| Arg | Type | Description |
+|---|---|---|
+| `terminal_id` | string | Terminal ID. Empty = active terminal. |
+| `timeout_ms` | integer | Max wait in ms. Default 30000. |
+| `settle_ms` | integer | Wait for output to stop for this many ms before returning. Default 500. |
+
+**Returns:**
+```json
+{
+  "success": true,
+  "result": {
+    "success": true,
+    "content": "$ echo hello\nhello\n$ ",
+    "rows": 3,
+    "cols": 220,
+    "total_scrollback_rows": 1027,
+    "viewport_rows": 50,
+    "timed_out": false,
+    "waited_ms": 612,
+    "bell_rung": false
+  }
+}
+```
+
+Additional fields present only when the shell exits during the wait:
+
+| Field | Type | Description |
+|---|---|---|
+| `bell_rung` | boolean | A standalone BEL character arrived during the wait. Useful as a fast-path turn-completion signal when the CLI agent is bell-capable. Unix/macOS only — always `false` on Windows. |
+| `shell_exited` | boolean | The shell process exited during the wait. |
+| `shell_exit_code` | integer | Exit code (only present when `shell_exited` is true). |
+
+### Error code
+
+All four capabilities share the error code `terminal_tool_error` when the delegated
+`minerva_terminal_*` tool returns a failure:
+
+```json
+{
+  "success": false,
+  "error_code": "terminal_tool_error",
+  "error_message": "No terminal found",
+  "plugin_id": "my_plugin",
+  "capability": "host.terminal.read"
+}
+```
+
+A `schema_validation_failed` error is returned if you pass an unrecognized argument key.
+
+### When to use these vs mcp.proxy:minerva_terminal_*
+
+Use the dedicated capabilities (`host.terminal.list/read/write/wait`) when your plugin
+needs fine-grained individual grants — each is grantable independently. Use
+`mcp.proxy:minerva_terminal_list` (and similar) if you already have a broad
+`mcp.proxy:*` grant and do not need per-capability control. The behavior and result
+shapes are identical; the only difference is the grant mechanism.
+
+`host.terminal.exec` is a separate capability for running a one-shot shell command
+and capturing its output; it does not interact with open terminal tabs.
+
+## PLUGIN_EVENT Trigger Type
+
+Plugins can wake a Minerva agent chat when something significant happens (a CLI agent
+turn completes, a scan finishes, a render is done). The mechanism is:
+
+1. The plugin emits a `minerva/plugin_event` notification on stdout (declare the
+   event in `events[]` in the manifest).
+2. A `PLUGIN_EVENT` trigger (trigger_type=4) subscribes to that event and fires a
+   `MESSAGE_EXISTING` action into the target agent chat.
+
+### Creating a PLUGIN_EVENT trigger
+
+```
+minerva_create_trigger(
+  name: "relay turn → agent chat",
+  agent_id: "<agent-definition-id>",
+  trigger_type: 4,            # PLUGIN_EVENT
+  action_type: 1,             # MESSAGE_EXISTING
+  plugin_id: "agent-relay",   # empty = any plugin
+  plugin_event_name: "agent_relay.turn_completed",  # empty = any event
+  consecutive_fire_limit: 5,  # 0 = unlimited
+  initial_message: "A new agent turn is ready. terminal_id={terminal_id}",
+  enabled: true
+)
+```
+
+Event payload keys are merged into the trigger context, so `{terminal_id}` in
+`initial_message` expands from the event payload.
+
+### consecutive_fire_limit and the agent-chat-only reset caveat
+
+`consecutive_fire_limit` (default 5; 0 = unlimited) prevents runaway loops: after
+the trigger fires N consecutive times, it pauses. The counter and pause reset when a
+human message lands in the target chat — **but only if the target is an agent chat**
+(a chat driven by an agent definition). A paused trigger pointing at a plain
+(non-agent) chat re-arms only via `minerva_update_trigger` (change `enabled` to
+false then true again, or change another field).
+
+This is acceptable for the primary use-case (MESSAGE_EXISTING into an agent chat,
+which is the only action type that meaningfully interacts with a conversation loop).
+
+### Declaring events in the manifest
+
+```json
+"events": [
+  {
+    "name": "my_plugin.thing_done",
+    "description": "Emitted when a long-running operation completes.",
+    "payload_schema": {
+      "type": "object",
+      "properties": {
+        "terminal_id": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    }
+  }
+]
+```
+
+Undeclared event names log a warning but are still delivered. The manifest
+`events[]` shape accepts either `payload_schema` or `description` — both parse.
+
+### agent-relay as a reference consumer
+
+The `agent-relay` plugin (in the plugins repo) is the canonical reference consumer:
+it declares `"host.terminal.list"`, `"host.terminal.read"`, `"host.terminal.write"`,
+`"host.terminal.wait"` in `permissions.host_capabilities`, and emits the
+`agent_relay.turn_completed` event that a PLUGIN_EVENT trigger can subscribe to.
+
 ## Management Tools Reference
 
 | Tool | Description |

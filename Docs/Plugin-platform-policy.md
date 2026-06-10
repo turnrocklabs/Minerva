@@ -70,6 +70,53 @@ Pre-approved defaults for implementation of DCR-1, DCR-2, DCR-3, DCR-4 and relat
 - API-whitelist sandboxing of plugin Godot scenes.
 - Migrating native editors (text, spreadsheet) to plugins.
 
+## Host terminal capability grants (agent-relay DCR 019eafbdcfb3 A2)
+
+Four new capabilities in `ALLOWED_HOST_CAPABILITIES` (PluginDefinition.gd):
+
+- `host.terminal.list` — enumerate open terminal tabs; no args; read-only.
+- `host.terminal.read` — read viewport or scrollback row range; no side-effects.
+- `host.terminal.write` — send keystrokes/bytes to a PTY; defaults `raw=true` (plugin
+  SDKs send real control bytes; the MCP-layer `c_unescape` would corrupt them).
+- `host.terminal.wait` — long-poll for output to settle; returns `bell_rung`
+  (Unix/macOS only; always false on Windows due to no ghostty shim),
+  `shell_exited`, and `shell_exit_code` when the shell exits.
+
+All four delegate to the corresponding `minerva_terminal_*` MCP tool implementations
+via `CapabilityBroker._handle_host_terminal_tool`. Arg allowlists are enforced
+(unknown keys → `schema_validation_failed`). Error code on tool failure:
+`terminal_tool_error`. The broker wraps results in `PluginErrors.success({...})`.
+
+These are the **interactive / observational family** — plugins observe and converse
+with terminals; they do not own terminal lifecycle (create/close remain out of reach
+for v1 plugins).
+
+Grant policy: each is grantable individually (unlike a blanket `mcp.proxy:*`).
+Auto-granted on install like all other host capabilities except
+`host.permissions.grant_scope`. No UI escalation required.
+
+`host.terminal.exec` (pre-existing) runs a one-shot shell command and returns merged
+stdout+stderr — a separate capability with a different trust model (command execution
+vs. observation).
+
+## PLUGIN_EVENT trigger type (agent-relay DCR 019eafbdcfb3 A6)
+
+`TriggerDefinition.TriggerType.PLUGIN_EVENT` (value 4) routes plugin events into the
+agent trigger system. Key fields:
+
+- `plugin_id` — filter by plugin id; empty = any plugin.
+- `plugin_event_name` — filter by event name; empty = any event.
+- `consecutive_fire_limit` — pause after N consecutive fires (default 5; 0 =
+  unlimited). Counter resets on human message in the target agent chat.
+
+Reset seam caveat: `agent_chat_finished` only fires for IsAgentChat histories
+(ChatPane.gd). A PLUGIN_EVENT trigger targeting a plain chat re-arms only via
+`minerva_update_trigger` (toggle enabled) — not via human message. Acceptable for
+the standard use-case (MESSAGE_EXISTING into an agent chat).
+
+Payload keys from the plugin event are merged into the trigger context so they can be
+referenced in `initial_message` templates (e.g. `{terminal_id}`).
+
 ## Verification
 
 - Each task's Definition-of-Done (filed as a comment on the task's docket item) is mandatory for task completion.
