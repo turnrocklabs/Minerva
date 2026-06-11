@@ -30,6 +30,9 @@ func _init() -> void:
 	_build_ui()
 
 func _ready() -> void:
+	# Discoverable by MCPTerminalTools (promote/visible-create) without walking
+	# the tree from a terminal view — works even when the group has zero tabs.
+	add_to_group("terminal_tab_group")
 	visibility_changed.connect(_on_visibility_changed)
 
 
@@ -134,6 +137,27 @@ func close_terminal(tab: int) -> void:
 			var registry = _get_session_registry()
 			if registry:
 				registry.close_session(session.terminal_id)
+		terminal.queue_free()
+
+	terminal_closed.emit(tab)
+
+	if _tab_bar.tab_count == 0:
+		became_empty.emit()
+
+
+## Removes the tab at index *tab* and frees its VIEW without closing the
+## session — the PTY keeps running under the registry (chat-passthrough T2
+## demote). Counterpart of add_terminal(session); close_terminal() remains the
+## tab-close = session-close path.
+func detach_terminal(tab: int) -> void:
+	if tab < 0 or tab >= _tab_bar.tab_count:
+		return
+
+	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
+	_tab_bar.remove_tab(tab)
+	if terminal:
+		if terminal.has_method("detach_session"):
+			terminal.detach_session()
 		terminal.queue_free()
 
 	terminal_closed.emit(tab)
