@@ -720,7 +720,7 @@ func _speak(arguments: Dictionary) -> Dictionary:
 	var chats = SingletonObject.Chats
 	if chats and chats._tts_player:
 		var stream := AudioStreamWAV.new()
-		chats._load_wav_into_stream(stream, wav_data)
+		VoiceServiceClient.load_audio_into_stream(stream, wav_data)
 		chats._tts_player.stream = stream
 		chats._tts_player.volume_db = linear_to_db(cfg.tts_volume)
 		chats._tts_player.play()
