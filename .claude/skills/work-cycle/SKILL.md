@@ -36,19 +36,31 @@ Optional flags (see `Docs/process/work-cycle.md` for full list):
 1. Read the docket task(s) referenced by the input. If freeform scope, identify the matching task(s) by tag/title; if none exists, file one before proceeding.
 2. Decompose into independent units. A unit is one sub-agent's work — small enough that it can be specified concretely in 5-10 sentences.
 3. Identify dependencies. Units in the same round must be independent; sequential dependencies are separate rounds.
-4. Pick a model per unit using `Docs/process/work-cycle.md` "Model Selection". Defaults: implementer = Sonnet, reviewer = Opus, planner = Opus.
-5. Declare the stop condition (3a / 3b / 3c / 3d / 3e). Announce it to the user.
-6. Transition each task in the docket: `backlog → open → in_progress`.
-7. Output a plan summary to the user:
+4. Pick a model per unit (see "Model selection" under Conventions). Defaults: implementer = Sonnet, reviewer = Opus; reviewer = Fable for pattern-establishing rounds; mechanical units = Haiku.
+5. **Write the scope fence**: an explicit path allowlist (files/dirs this round may touch) derived from the work item. The fence goes verbatim into every implementer prompt and into the round plan. Out-of-fence discoveries follow **file, don't fix**: create a docket item immediately, never an inline fix.
+6. Declare the stop condition (3a / 3b / 3c / 3d / 3e). Announce it to the user.
+7. Transition each task in the docket: `backlog → open → in_progress`.
+8. Output a plan summary to the user:
    ```
    /work-cycle plan
      Tasks: <ids and titles>
+     Repos/branches: <repo: branch, per repo touched>
+     Scope fence: <path allowlist>
      Units this round: <N>
      Models: <unit:model list>
      Stop condition: <3a/3b/3c/3d/3e — what triggers it>
      Expected: <what to expect at end of round>
    ```
    Do NOT wait for user confirmation unless the plan looks risky (3e potential, large scope, or pattern-establishing first round).
+
+### Step 0.5 — PREFLIGHT (hard gate; fail-stop, never improvise past it)
+
+Run for EVERY repo the round touches (a round may span Minerva + minerva-plugins):
+
+1. **Branch check**: `git branch --show-current` matches the round's declared branch. Standing policy: Minerva → `development`, minerva-plugins → `main`. Wrong branch = STOP and report; do not switch branches silently.
+2. **Cleanliness check**: `git status --porcelain` empty except the standing allowlist (vendor submodule pointer drift: `vendor/EIRTeam.FFmpeg`, `vendor/godot_cef`; docket cache churn: `Docs/minerva.dct`). Any other dirty path = STOP — it's either someone's WIP (report it) or a prior round's leak (diagnose it).
+3. **Base check**: local branch is not ahead of its upstream with unexpected commits (`git log @{u}..HEAD --oneline`). Unexplained commits ahead = STOP and report.
+4. **Pin the base**: record `git rev-parse HEAD` per repo as a comment on each in-scope docket item at the `in_progress` transition. All reviews and audits this round are against `base..HEAD` — reviewers never review pre-existing code as if it were new.
 
 ### Step 1 — WORK
 
@@ -58,12 +70,14 @@ For each unit in this round, in parallel where independent:
    - Model = unit's selected model
    - Subagent type = `general-purpose` (or `Plan` if first-of-pattern)
    - Prompt = self-contained brief: goal, files to touch, existing patterns to follow, tests to add, success criteria
+   - **Scope fence verbatim**, with the rule: anything needed outside the fence → report it back as a finding (orchestrator files it in docket); do NOT fix inline.
+   - **Reuse scan (blocking, first deliverable)**: before writing code, read the reference implementations named in the work item (most items name them: e.g. `CadAnnotationHost.gd`, `internal/bridge`, `test_cad_plugin_smoke.gd`) and state per major piece: reuse / extend / copy-with-justification. New code that duplicates an existing asset without this declaration is a review reject.
    - Isolation: default unless the unit is large
 
 2. When implementer returns, spawn a Reviewer sub-agent:
-   - Model = Opus (always)
+   - Model = Opus (default) / Fable (pattern-establishing rounds — first-of-kind code that later rounds will copy)
    - Subagent type = `general-purpose`
-   - Prompt = "Review the implementation at <commit/files>. Verify: <unit's success criteria>. Look for: <known gotchas from work-cycle.md anti-patterns + repo-specific gotchas saved in nudge>. Verdict: approve / approve_with_notes / must_fix / reject."
+   - Prompt = "Review the diff `base..HEAD` (base SHA: <pinned>). Verify: <unit's success criteria>. **Score against the rubric, in order: durability → DRY → reliability → well-factored → readability → cost.** DRY trigger: any block >~30 lines substantially duplicating code elsewhere in this repo or a sibling plugin → must_fix (extract or justify in writing). **Scope audit**: list any changed file outside this fence: <fence>; out-of-fence files = must_fix. Look for: <known gotchas from work-cycle.md anti-patterns + repo-specific gotchas saved in nudge>. Verdict: approve / approve_with_notes / must_fix / reject."
    - Reviewer has NO context from the implementer's prompt or memory of this conversation.
 
 3. Reconcile review verdict:
@@ -90,13 +104,14 @@ For each unit in this round, in parallel where independent:
 
 ### Step 3 — WIP COMMIT
 
-1. Stage files explicitly by name (never `git add -A` or `.`).
-2. Compose commit message:
+1. **Diffstat audit (scope-creep gate)**: `git diff --stat <base>..HEAD` (working tree included) vs the scope fence. Any out-of-fence file → resolve as must_fix (revert it or get explicit user approval) BEFORE staging. Never commit out-of-fence changes silently.
+2. Stage files explicitly by name (never `git add -A` or `.`).
+3. Compose commit message:
    - Subject ≤ 70 chars, prefixed `WIP: ` when round is part of an unfinished phase.
-   - Body lists each unit's deliverable and test counts.
-   - Co-author trailer: `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`.
-3. Use HEREDOC for the commit message.
-4. After commit, run `git status` to verify clean.
+   - Body lists each unit's deliverable and test counts, plus the docket item ID(s).
+   - Co-author trailer naming the session's current model, e.g. `Co-Authored-By: Claude <noreply@anthropic.com>`.
+4. Use HEREDOC for the commit message.
+5. After commit, run `git status` to verify clean, then push to the round's declared branch (Minerva → `development`, minerva-plugins → `main`).
 
 ### Step 4 — DOCKET TRANSITION (conditional)
 
@@ -146,6 +161,17 @@ Every sub-agent prompt must be self-contained — the agent has no memory of thi
 - For reviewers: also list known gotchas from `nudge` hints under `minerva-plugin-platform`, `minerva-testing`, etc.
 - Brevity instruction: "Report in under 200 words" for review agents; "Concise summary at end" for implementers.
 
+### Model selection
+
+Leverage is asymmetric: reviewers are where the fence/DRY/rubric gates live and they only read diffs — put the strongest model there.
+
+| Role | Model | Notes |
+|---|---|---|
+| Reviewer | Opus (default); **Fable** for pattern-establishing rounds | First-of-kind code gets copied by every later round; the review that blesses it deserves the top model |
+| Implementer | Sonnet (default), parallelizable | Escalate to Opus for design-heavy units (forensic spikes, shared API surfaces, host/substrate integration) |
+| Mechanical units | Haiku | Renames, fixture generation, migration boilerplate, golden-file plumbing |
+| Spikes / walking skeletons | Sonnet, often inline (no fan-out) | Investigative value is the reasoning trail, not parallel throughput |
+
 ### Model overrides
 
 Recognized in scope text:
@@ -184,6 +210,9 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 6. **Letting Sonnet retry past the cap.** Two must-fix rounds on the same unit → escalate to Opus.
 7. **`git add .` or `git add -A`.** Stage by name; binaries/secrets sneak in otherwise.
 8. **Testing the wrong thing in Layer-1.** Pick targeted suites, not the whole repo. The full suite is for Layer-2 (phase boundary).
+9. **Skipping preflight.** Rounds that start on the wrong branch or a dirty tree produce unreviewable diffs and contaminated commits. The gate is fail-stop: report and wait, never improvise past it.
+10. **Fixing out-of-fence discoveries inline.** Scope creep enters as "while I'm here." File it in docket, don't fix it. The diffstat audit will catch it anyway — cheaper to not write it.
+11. **Writing code before the reuse scan.** Duplicated substrate/bridge/test code is the main DRY failure. Read the named references first; declare reuse/extend/copy before implementing.
 
 ## Reference
 
