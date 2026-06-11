@@ -21,9 +21,10 @@ extends SceneTree
 const PLUGIN_MANAGER_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginManager.gd"
 const PLUGIN_TOOL_REGISTRY_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginToolRegistry.gd"
 
-# Plugin source layout (dev-mode install). Not strictly portable, but matches
-# the data_directory the user's plugins.json already records.
-const CAD_PLUGIN_DIR_REL := "/github/plugins/cad"
+# Plugin source layout (dev-mode install). Canonical home is the
+# minerva-plugins monorepo (ipeerbhai/plugins is a deprecated mirror).
+# Override with MINERVA_CAD_PLUGIN_DIR (absolute path) for CI / other layouts.
+const CAD_PLUGIN_DIR_REL := "/github/minerva-plugins/cad"
 const CAD_BINARY_REL := "/cad-plugin"
 const CAD_MANIFEST_REL := "/manifest.json"
 
@@ -39,13 +40,14 @@ func _init() -> void:
 	print("Purpose: integration-boundary regression baseline for broker DCR 019df8e2.")
 	print("         Spawns the real cad-plugin Go binary — no stubs.\n")
 
-	var home: String = OS.get_environment("HOME")
-	if home == "":
-		printerr("FAIL: $HOME is unset — can't locate plugin source dir.")
-		quit(1)
-		return
-
-	var plugin_dir: String = home + CAD_PLUGIN_DIR_REL
+	var plugin_dir: String = OS.get_environment("MINERVA_CAD_PLUGIN_DIR")
+	if plugin_dir == "":
+		var home: String = OS.get_environment("HOME")
+		if home == "":
+			printerr("FAIL: $HOME is unset — can't locate plugin source dir.")
+			quit(1)
+			return
+		plugin_dir = home + CAD_PLUGIN_DIR_REL
 	var binary_path: String = plugin_dir + CAD_BINARY_REL
 	var manifest_path: String = plugin_dir + CAD_MANIFEST_REL
 
