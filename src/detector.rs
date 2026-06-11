@@ -544,4 +544,68 @@ mod tests {
             assert_eq!(r.cause, WakeCause::TurnCompleted);
         }
     }
+
+    // ── Codex CLI — REAL fixtures, captured live from v0.139.0 (B5 HITL) ────
+    // Byte-true captures in tests/fixtures/real/codex_*.txt (extracted from
+    // the MCP transcript, never retyped — the claude NBSP lesson).
+
+    const CODEX_IDLE: &str = include_str!("../tests/fixtures/real/codex_idle_prompt.txt");
+    const CODEX_BUSY: &str = include_str!("../tests/fixtures/real/codex_busy.txt");
+    const CODEX_DONE: &str = include_str!("../tests/fixtures/real/codex_done.txt");
+    const CODEX_PERMISSION: &str = include_str!("../tests/fixtures/real/codex_permission.txt");
+
+    fn compiled_codex() -> CompiledDetection {
+        let codex = builtin_profiles().into_iter().find(|p| p.id == "codex").unwrap();
+        CompiledDetection::from_profile(&codex).unwrap()
+    }
+
+    #[test]
+    fn test_codex_idle_fires_turn_completed() {
+        // Idle screen: `›` U+203A + space + PLACEHOLDER TEXT — the old
+        // `^\s*[>❯]\s*$` seed matched neither the char nor the non-empty line.
+        let result = run(CODEX_IDLE, false, false, &compiled_codex());
+        let r = result.expect("codex idle prompt must detect turn_completed");
+        assert_eq!(r.cause, WakeCause::TurnCompleted);
+        assert_eq!(r.method, DetectionMethod::SettlePrompt);
+    }
+
+    #[test]
+    fn test_codex_busy_does_not_fire_turn_completed() {
+        // Busy screen shows "◦ Working (9s • esc to interrupt)" while the
+        // prompt line stays visible — the interrupt hint must gate it.
+        let result = run(CODEX_BUSY, false, false, &compiled_codex());
+        assert!(
+            result.as_ref().map(|r| &r.cause) != Some(&WakeCause::TurnCompleted),
+            "busy codex screen must not produce turn_completed: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_codex_done_fires_turn_completed() {
+        // Post-turn screen: working line VANISHED (codex leaves no persistent
+        // status glyph), prompt+placeholder back at the bottom.
+        let result = run(CODEX_DONE, false, false, &compiled_codex());
+        let r = result.expect("codex done screen must detect turn_completed");
+        assert_eq!(r.cause, WakeCause::TurnCompleted);
+        assert_eq!(r.method, DetectionMethod::SettlePrompt);
+    }
+
+    #[test]
+    fn test_codex_permission_dialog_fires_input_requested() {
+        // The approval picker has NO busy marker on screen and its selector
+        // line (`› 1. Yes, proceed (y)`) matches the prompt regex — without
+        // the dialog regex this screen false-fires turn_completed.
+        let result = run(CODEX_PERMISSION, false, false, &compiled_codex());
+        let r = result.expect("codex permission dialog must detect");
+        assert_eq!(r.cause, WakeCause::InputRequested);
+        assert_eq!(r.method, DetectionMethod::PermissionDialog);
+    }
+
+    #[test]
+    fn test_codex_is_primary_screen_profile() {
+        // Scrollback grew 17→23→50 rows across live turns — codex scrolls the
+        // primary screen; the busy-gate's row-growth arm depends on this.
+        let codex = builtin_profiles().into_iter().find(|p| p.id == "codex").unwrap();
+        assert!(!codex.detection.alt_screen, "codex runs on the primary screen");
+    }
 }

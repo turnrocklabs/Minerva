@@ -156,23 +156,36 @@ pub fn builtin_profiles() -> Vec<Profile> {
             id: "codex".to_string(),
             display_name: "OpenAI Codex CLI".to_string(),
             detection: Detection {
-                // Codex CLI uses a ">" prompt prefix when ready.
-                // The input line appears as a plain ">" at the left margin.
-                prompt_box_regex: r"^\s*[>❯]\s*$".to_string(),
+                // CALIBRATED against live Codex CLI v0.139.0 2026-06 (B5 HITL,
+                // tests/fixtures/real/codex_*.txt). The input line is `›`
+                // (U+203A, bytes e2 80 ba) at COLUMN 0 + ASCII space, always
+                // followed by placeholder or typed text — never bare, so a `$`
+                // anchor can never match. Echoed user messages share the same
+                // `› ` prefix (busy-absence is the turn-end discriminator,
+                // same as claude).
+                prompt_box_regex: r"^›\s".to_string(),
 
-                // Codex uses "? (y/N)" style confirms for dangerous actions.
+                // Codex approval dialogs are numbered-option pickers:
+                //   Would you like to run the following command?
+                //   › 1. Yes, proceed (y)
+                //   Press enter to confirm or esc to cancel
+                // No busy marker is on screen during a dialog and the selector
+                // line matches the prompt regex, so this MUST match or dialogs
+                // false-fire turn_completed.
                 permission_dialog_regex: Some(
-                    r"(?i)\?\s*\(y/[Nn]\)|\?\s*\[y/n\]".to_string()
+                    r"(?i)(?:would you like to run|press enter to confirm or esc|› 1\. yes, proceed)".to_string()
                 ),
 
-                spinner_glyphs: vec![
-                    "⠋".to_string(), "⠙".to_string(), "⠹".to_string(),
-                    "⠸".to_string(), "⠼".to_string(), "⠴".to_string(),
-                    "⠦".to_string(), "⠧".to_string(), "⠇".to_string(),
-                    "⠏".to_string(),
-                ],
+                // Busy indicator: "◦ Working (9s • esc to interrupt)". The
+                // working line VANISHES on completion (no persistent glyph),
+                // so the literal interrupt hint is the reliable busy marker —
+                // same pseudo-glyph approach as the claude profile.
+                spinner_glyphs: vec!["esc to interrupt".to_string()],
 
-                alt_screen: true,
+                // Codex scrolls the PRIMARY screen — scrollback grows during
+                // turns (observed 17→23→50 rows live).
+                alt_screen: false,
+
                 bell_capable: false,
                 settle_ms: 1_500,
                 watch_timeout_ms: 600_000,
@@ -210,9 +223,18 @@ pub fn builtin_profiles() -> Vec<Profile> {
 // Unit tests
 // ---------------------------------------------------------------------------
 
+/// Serializes tests that reset/mutate the process-global PROFILES store
+/// (init_profiles + profile_set race across parallel test threads).
+#[cfg(test)]
+pub(crate) static TEST_PROFILES_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lock() -> std::sync::MutexGuard<'static, ()> {
+        TEST_PROFILES_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     #[test]
     fn test_builtin_profiles_non_empty() {
@@ -226,6 +248,7 @@ mod tests {
 
     #[test]
     fn test_init_and_get() {
+        let _g = lock();
         init_profiles();
         let p = profile_get("claude");
         assert!(p.is_some(), "claude profile findable after init");
@@ -234,6 +257,7 @@ mod tests {
 
     #[test]
     fn test_profile_set_override() {
+        let _g = lock();
         init_profiles();
         let mut p = builtin_profiles().into_iter().find(|p| p.id == "claude").unwrap();
         p.detection.settle_ms = 9999;
@@ -244,6 +268,7 @@ mod tests {
 
     #[test]
     fn test_profiles_list_sorted() {
+        let _g = lock();
         init_profiles();
         let list = profiles_list();
         let ids: Vec<&str> = list.iter().map(|p| p.id.as_str()).collect();

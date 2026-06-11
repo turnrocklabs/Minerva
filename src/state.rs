@@ -212,6 +212,11 @@ mod tests {
     // parallel threads and the env var is process-global.
     #[test]
     fn test_state_path_save_load_roundtrip() {
+        // PROFILES is process-global too: profiles tests calling init_profiles()
+        // concurrently reset the override this test asserts on.
+        let _g = crate::profiles::TEST_PROFILES_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // Path resolution: override, disable, exe-dir fallback.
         std::env::set_var("AGENT_RELAY_STATE_FILE", "/tmp/agent_relay_test_state.json");
         assert_eq!(
@@ -261,6 +266,10 @@ mod tests {
         // global shared with concurrently-running watcher unit tests, so the
         // saved file may contain their sessions. Session persistence is
         // covered by test_sessions_resume_after_restart (separate process).
+        // Those same watcher tests trigger save-on-mutation, which can clobber
+        // this temp file between our save() and load() — restore the captured
+        // bytes so load() reads exactly what save() wrote.
+        std::fs::write(&file, &raw).unwrap();
         let _sessions = load();
         assert_eq!(
             profiles::profile_get("claude").unwrap().detection.settle_ms,

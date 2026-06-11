@@ -800,9 +800,16 @@ fn epoch_to_datetime(epoch: u64) -> (u32, u32, u32, u32, u32, u32) {
 mod tests {
     use super::*;
 
-    fn setup() {
+    // Returns the global profiles guard: init_profiles() resets a process-global
+    // store that profiles/state tests mutate-and-assert on — callers must HOLD
+    // the guard for the test body (`let _g = setup();`), not discard it.
+    fn setup() -> std::sync::MutexGuard<'static, ()> {
+        let g = crate::profiles::TEST_PROFILES_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         crate::profiles::init_profiles();
         init_sessions();
+        g
     }
 
     // ── Test: arming state machine ───────────────────────────────────────────
@@ -894,7 +901,7 @@ mod tests {
 
     #[test]
     fn test_arm_fn_sets_flag() {
-        setup();
+        let _g = setup();
         // Watch start would normally spawn a thread; we test arm() in isolation
         // by manually inserting a session into the registry.
         let sessions = get_sessions();
@@ -933,14 +940,14 @@ mod tests {
 
     #[test]
     fn test_watch_status_none_for_unknown() {
-        setup();
+        let _g = setup();
         let status = watch_status("no-such-terminal");
         assert!(status.is_none(), "no status for unknown terminal");
     }
 
     #[test]
     fn test_watch_status_present_for_known() {
-        setup();
+        let _g = setup();
         let sessions = get_sessions();
         let session = Arc::new(Mutex::new({
             let mut s = WatchSession::new("t-status".to_string(), "codex".to_string(), NotifyMode::AllTurns);
@@ -969,7 +976,7 @@ mod tests {
 
     #[test]
     fn test_arm_fn_snapshots_start_row() {
-        setup();
+        let _g = setup();
         let sessions = get_sessions();
         let session = Arc::new(Mutex::new({
             let s = WatchSession::new("t-arm-rows".to_string(), "claude".to_string(), NotifyMode::Armed);
@@ -993,7 +1000,7 @@ mod tests {
 
     #[test]
     fn test_arm_fn_no_rows_leaves_start_row() {
-        setup();
+        let _g = setup();
         let sessions = get_sessions();
         let session = Arc::new(Mutex::new({
             let mut s = WatchSession::new("t-arm-norows".to_string(), "claude".to_string(), NotifyMode::Armed);
@@ -1020,7 +1027,7 @@ mod tests {
 
     #[test]
     fn test_arm_anchors_start_row_on_last_content_row() {
-        setup();
+        let _g = setup();
         let sessions = get_sessions();
         let session = Arc::new(Mutex::new(WatchSession::new(
             "t-arm-anchor".to_string(),
