@@ -1134,6 +1134,18 @@ fn test_read_turn_distill_calls_providers_chat() {
                         user_text.contains("BEGIN TERMINAL"),
                         "user message frames content as terminal data: {user_text:?}"
                     );
+                    // Broker contract: model_spec kinds are core_action/dynamic/builtin
+                    // only — the default path must send model="default" (TurnRock/Core),
+                    // never an invented model_spec kind (live bug, HITL session 3).
+                    let args = &msg["params"]["args"];
+                    assert_eq!(
+                        args["model"].as_str(), Some("default"),
+                        "default distill path sends model=\"default\": {args:?}"
+                    );
+                    assert!(
+                        args.get("model_spec").is_none(),
+                        "no model_spec on the default path: {args:?}"
+                    );
                     send_cap_reply(&mut stdin, &id, json!({
                         "choices": [{"message": {"role": "assistant", "content": canned_distill}}],
                         "usage": {"total_tokens": 50}
@@ -1210,8 +1222,16 @@ fn test_read_turn_deliver_calls_create_note_and_link() {
                 }
                 "mcp.proxy:minerva_create_note" => {
                     create_note_called = true;
-                    let text = msg["params"]["args"]["text"].as_str().unwrap_or("");
-                    assert!(!text.is_empty(), "create_note should receive content text");
+                    // Production contract: minerva_create_note REQUIRES title +
+                    // content. A bare {text} creates a blank "Untitled" note
+                    // (live bug, HITL session 3).
+                    let args = &msg["params"]["args"];
+                    assert!(!args["title"].as_str().unwrap_or("").is_empty(),
+                        "create_note receives a non-empty title: {args:?}");
+                    assert!(!args["content"].as_str().unwrap_or("").is_empty(),
+                        "create_note receives non-empty content: {args:?}");
+                    assert!(args.get("text").is_none(),
+                        "no legacy 'text' field: {args:?}");
                     send_cap_reply(&mut stdin, &id, json!({"id": "note-abc-123", "ok": true}));
                 }
                 "mcp.proxy:minerva_link_note_to_chat" => {
@@ -1812,4 +1832,62 @@ fn test_wait_turn_timeout() {
 
     let _ = child.kill();
     let _ = child.wait();
+}
+
+// ---------------------------------------------------------------------------
+// Schema drift guard: the router's tools/list must mirror manifest.json.
+// (Live bug, HITL session 3: read_turn's Rust schema lagged the manifest, so
+// Minerva validated against the stale shape and STRINGIFIED distill/deliver —
+// the plugin then silently ignored them. "keep in sync" comments don't keep
+// things in sync; tests do.)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_tools_list_schema_mirrors_manifest() {
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/manifest.json"))
+            .expect("read manifest.json"),
+    )
+    .expect("parse manifest.json");
+
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+    let reply = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/list"
+    }));
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let prop_keys = |schema: &Value| -> Vec<String> {
+        let mut keys: Vec<String> = schema["properties"]
+            .as_object()
+            .map(|o| o.keys().cloned().collect())
+            .unwrap_or_default();
+        keys.sort();
+        keys
+    };
+
+    let man_tools = manifest["tools"].as_array().expect("manifest tools");
+    let rust_tools = reply["result"]["tools"].as_array().expect("tools/list tools");
+
+    let man: std::collections::BTreeMap<&str, Vec<String>> = man_tools.iter()
+        .map(|t| (t["name"].as_str().unwrap(), prop_keys(&t["input_schema"])))
+        .collect();
+    let rust: std::collections::BTreeMap<&str, Vec<String>> = rust_tools.iter()
+        .map(|t| (t["name"].as_str().unwrap(), prop_keys(&t["inputSchema"])))
+        .collect();
+
+    let man_names: Vec<&&str> = man.keys().collect();
+    let rust_names: Vec<&&str> = rust.keys().collect();
+    assert_eq!(man_names, rust_names, "tool NAME sets diverge between manifest.json and tools/list");
+
+    for (name, man_props) in &man {
+        assert_eq!(
+            man_props, &rust[name],
+            "tool '{name}' property set diverges: manifest={man_props:?} rust={:?}",
+            rust[name]
+        );
+    }
 }

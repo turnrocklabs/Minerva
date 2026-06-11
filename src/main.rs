@@ -427,9 +427,18 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 
     if let Some(deliver_obj) = deliver {
         if deliver_obj.get("chat_note").and_then(|v| v.as_bool()).unwrap_or(false) {
-            // Create a note with the content.
+            // Create a note with the content. minerva_create_note requires
+            // title + content ({text} alone yields a blank "Untitled" note —
+            // live bug, HITL session 3).
+            let turn_at = result["turn"]["turn_at_iso"].as_str().unwrap_or("");
+            let title = if turn_at.is_empty() {
+                format!("Relay: terminal {terminal_id}")
+            } else {
+                format!("Relay: terminal {terminal_id} @ {turn_at}")
+            };
             let note_result = router.call_capability("mcp.proxy:minerva_create_note", json!({
-                "text": output_content,
+                "title": title,
+                "content": output_content,
             }));
 
             match note_result {
@@ -546,24 +555,25 @@ fn read_turn_core(
              Extract the conversational reply."
         );
 
+        // No max_tokens: the broker forwards it untranslated and the ChatGPT
+        // backend rejects the parameter ("Unsupported parameter: max_tokens",
+        // HITL session 3). Distilled replies are short; provider defaults apply.
         let mut chat_args = json!({
             "messages": [
                 {"role": "system", "text": DISTILL_SYSTEM_PROMPT},
                 {"role": "user",   "text": user_msg},
             ],
-            "max_tokens": 1024,
         });
 
-        // Accept optional model string (e.g. "gpt-4o-mini") or fall back to
-        // the workers convention: provider=chatgpt with no explicit model spec
-        // (host picks the default cheap model).
+        // Accept optional model string (exact model_name match broker-side) or
+        // fall back to model="default" — the broker resolves it to the
+        // TurnRock/Core provider (free, always available; no per-install model
+        // names needed). model_spec kinds are core_action/dynamic/builtin only;
+        // there is no "provider" kind (CapabilityBroker.gd:2130).
         if let Some(model) = model_spec {
             chat_args["model"] = json!(model);
         } else {
-            chat_args["model_spec"] = json!({
-                "kind": "provider",
-                "provider": "chatgpt"
-            });
+            chat_args["model"] = json!("default");
         }
 
         match router.call_capability("host.providers.chat", chat_args) {
@@ -989,17 +999,19 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_read_turn",
-                "description": "Read the latest agent turn and distil it via host.providers.chat (B4).",
+                "description": "Read the latest agent turn, clean it, optionally distil via host.providers.chat, and optionally deliver as note/speech (B4).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "terminal_id": {"type": "string"},
-                        "model_spec": {
+                        "distill": {"type": "boolean"},
+                        "model": {"type": "string"},
+                        "redact": {"type": "boolean"},
+                        "deliver": {
                             "type": "object",
                             "properties": {
-                                "kind": {"type": "string"},
-                                "service_client_id": {"type": "string"},
-                                "action_name": {"type": "string"}
+                                "chat_note": {"type": "boolean"},
+                                "speak": {"type": "boolean"}
                             }
                         }
                     },
