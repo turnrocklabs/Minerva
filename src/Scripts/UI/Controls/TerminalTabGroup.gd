@@ -64,6 +64,19 @@ func _build_ui() -> void:
 	add_child(_panel)
 
 
+## Resolves the TerminalSessionRegistry via the SingletonObject autoload through
+## the tree (NOT the compile-time global) so this file compiles in isolated
+## script-run test harnesses where the autoload identifier isn't yet bound.
+func _get_session_registry():
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var so = tree.root.get_node_or_null("SingletonObject")
+	if so == null or not so.has_method("get_terminal_session_registry"):
+		return null
+	return so.get_terminal_session_registry()
+
+
 ## Adds a button to the header row (next to the TabBar and + button).
 func add_header_button(button: Button) -> void:
 	var header := get_node_or_null("Header")
@@ -73,11 +86,21 @@ func add_header_button(button: Button) -> void:
 
 # ── Public API ────────────────────────────────────────────────────────
 
-## Creates a new terminal, registers it in the tab bar, and returns it.
-func add_terminal() -> TerminalNew:
+## Creates a new terminal view backed by a registry session, registers it in
+## the tab bar, and returns the view. The PTY lives in the session (under the
+## registry) so it survives the view being freed. Pass an existing background
+## session to surface it as a tab without starting a new shell. chat-passthrough T1.
+func add_terminal(session = null) -> TerminalNew:
 	var terminal := TerminalNew.create()
 	terminal.name = "Terminal"
 	terminal.visible = false
+
+	# If a background session was supplied, surface it (no new shell). Otherwise
+	# let the view create its own session from the registry in _ready (the
+	# default path — keeps SingletonObject out of this file's compile surface).
+	if session != null:
+		terminal._auto_create_session = false
+		terminal.attach_session(session)
 
 	_panel.add_child(terminal, true)
 
@@ -93,7 +116,9 @@ func add_terminal() -> TerminalNew:
 	return terminal
 
 
-## Closes the tab at index *tab* and frees the associated terminal.
+## Closes the tab at index *tab*, closes its session (tab close = PTY close, the
+## established UX), and frees the view. Use detach + add_terminal elsewhere to
+## move a session between tabs without killing the shell.
 func close_terminal(tab: int) -> void:
 	if tab < 0 or tab >= _tab_bar.tab_count:
 		return
@@ -101,6 +126,14 @@ func close_terminal(tab: int) -> void:
 	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
 	_tab_bar.remove_tab(tab)
 	if terminal:
+		# Tab close = session close (preserve today's behaviour).
+		var session = terminal.get_session() if terminal.has_method("get_session") else null
+		if terminal.has_method("detach_session"):
+			terminal.detach_session()
+		if session:
+			var registry = _get_session_registry()
+			if registry:
+				registry.close_session(session.terminal_id)
 		terminal.queue_free()
 
 	terminal_closed.emit(tab)

@@ -889,6 +889,19 @@ func _on_terminal_config_changed() -> void:
 	if cfg:
 		terminal_config.save(cfg)
 		cfg.save(_config_file_name)
+
+# Registry of headless TerminalSession objects (PTY + ghostty-vt core). Sessions
+# can exist with NO visible TerminalNew view. Lazy-init + add_child so the
+# sessions (which parent the Terminal extension node) get _process. chat-passthrough T1.
+var terminal_session_registry = null  # TerminalSessionRegistry
+
+func get_terminal_session_registry():
+	if terminal_session_registry == null:
+		var RegistryClass = load("res://Scripts/Services/Terminal/TerminalSessionRegistry.gd")
+		terminal_session_registry = RegistryClass.new()
+		terminal_session_registry.name = "TerminalSessionRegistry"
+		add_child(terminal_session_registry)
+	return terminal_session_registry
 #endregion
 
 #region Voice
