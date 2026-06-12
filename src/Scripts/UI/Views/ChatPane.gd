@@ -681,6 +681,24 @@ func _try_llm_summarize(conversation_parts: PackedStringArray, msg_count: int) -
 	if not history.provider or not is_instance_valid(history.provider):
 		return ""
 
+	var result := await _summarize_conversation_with_provider(
+		history.provider, conversation_parts, msg_count, history.HistoryId)
+
+	if not result.get("ok", false):
+		print("[Compact] LLM summarization failed (%s), falling back to naive" % str(result.get("error", "")))
+		return ""
+
+	var summary_text := str(result.get("text", ""))
+	print("[Compact] LLM summarization succeeded (%d chars)" % summary_text.length())
+	return "### Conversation Summary (LLM) ###\n%s\n### End Summary ###" % summary_text
+
+
+## Shared summarization core — ONE generate_content call over a prepared
+## transcript. Extracted from _try_llm_summarize (compact_chat path) so the
+## summarize-to-note flow (chat-passthrough W6) reuses the exact same engine
+## with a different provider instead of duplicating a parallel path.
+## Returns {ok: bool, text: String, error: String}.
+func _summarize_conversation_with_provider(provider: BaseProvider, conversation_parts: PackedStringArray, msg_count: int, cost_history_id: String = "") -> Dictionary:
 	var prompt_text := "Summarize this conversation segment of %d messages. Preserve: key decisions, facts learned, action items, important code snippets, and any unresolved questions. Be concise but complete.\n\n%s" % [
 		msg_count, "\n".join(conversation_parts)
 	]
@@ -689,40 +707,36 @@ func _try_llm_summarize(conversation_parts: PackedStringArray, msg_count: int) -
 	var prompt_item = ChatHistoryItem.new()
 	prompt_item.Role = ChatHistoryItem.ChatRole.USER
 	prompt_item.Message = prompt_text
-	prompt_item.provider = history.provider
+	prompt_item.provider = provider
 
 	var prompt_list: Array[Variant] = []
-	var formatted = history.provider.Format(prompt_item)
+	var formatted = provider.Format(prompt_item)
 	if formatted:
 		prompt_list.append(formatted)
 
 	if prompt_list.is_empty():
-		return ""
+		return {"ok": false, "text": "", "error": "prompt_format_failed"}
 
-	# Temporarily disable tools for this request
-	var had_tools := false
-	if history.provider.has_method("set_tools"):
-		had_tools = history.provider.tools_enabled
+	# Disable tools for this request — summarization is a plain completion.
+	# (Tools are re-set on the next regular chat call.)
+	if provider.has_method("set_tools"):
 		var empty_tools: Array[Dictionary] = []
-		history.provider.set_tools(empty_tools)
+		provider.set_tools(empty_tools)
 
-	var bot_response = await history.provider.generate_content(prompt_list)
+	var bot_response = await provider.generate_content(prompt_list)
 
-	# Restore tools
-	if had_tools and history.provider.has_method("set_tools"):
-		# Tools will be re-set on next regular chat call
-		pass
+	if not bot_response:
+		return {"ok": false, "text": "", "error": "no_response"}
+	if not bot_response.error.is_empty():
+		return {"ok": false, "text": "", "error": bot_response.error}
+	if bot_response.text.is_empty():
+		return {"ok": false, "text": "", "error": "empty_response_text"}
 
-	if not bot_response or bot_response.text.is_empty():
-		print("[Compact] LLM summarization failed, falling back to naive")
-		return ""
+	# Record cost against the originating chat
+	if SingletonObject.cost_tracker and not cost_history_id.is_empty():
+		SingletonObject.cost_tracker.record_chat_cost(bot_response, cost_history_id)
 
-	# Record cost
-	if SingletonObject.cost_tracker:
-		SingletonObject.cost_tracker.record_chat_cost(bot_response, history.HistoryId)
-
-	print("[Compact] LLM summarization succeeded (%d chars)" % bot_response.text.length())
-	return "### Conversation Summary (LLM) ###\n%s\n### End Summary ###" % bot_response.text
+	return {"ok": true, "text": bot_response.text, "error": ""}
 
 
 ## Check tool arguments for paths and validate against allowed directories.
@@ -1188,6 +1202,149 @@ func _on_passthrough_picker_confirmed() -> void:
 	var entry_key := str(_passthrough_picker_list.get_item_metadata(selected_items[0]))
 	var disp := _passthrough_picker_list.get_item_text(selected_items[0])
 	start_passthrough_chat(entry_key, disp, "")
+
+
+# --- Summarize to note (chat-passthrough W6) --------------------------------
+# Passthrough chats have NO LLM in their transport (DCR comment #479). The
+# summarize-to-note button is THE one deliberate token-spend gesture: a single
+# explicit LLM call that distills the transcript into a note linked to the
+# chat (notes-as-context is the transfer mechanism into other chats). Nothing
+# below may run without that explicit gesture.
+
+## Fixed cheap distill model. NOT the chat's provider — passthrough providers
+## are terminal transports, not LLMs.
+const PASSTHROUGH_DISTILL_MODEL := "gpt-5.4-mini"
+
+## Test seam / future per-user override: when set, summarize_passthrough_to_note
+## uses this provider instead of constructing the fixed distill model.
+var distill_provider_override: BaseProvider = null
+
+## Double-spend guard: history_id -> true while a summarize is in flight.
+var _summarize_in_flight: Dictionary = {}
+
+
+## Is a summarize currently in flight for this chat? (UI busy-state hook.)
+func is_summarize_in_flight(history) -> bool:
+	return history != null and _summarize_in_flight.get(history.HistoryId, false)
+
+
+## Build the attributed transcript for a passthrough chat: "You:" for the user,
+## "<PassthroughName>:" for the other side. Skips empty messages. Partial
+## mid-session transcripts are fine — we summarize whatever exists.
+func _build_passthrough_transcript(history) -> PackedStringArray:
+	var parts: PackedStringArray = []
+	var other_name: String = history.PassthroughName if not history.PassthroughName.is_empty() else "Assistant"
+	for item in history.HistoryItemList:
+		if item.Message.strip_edges().is_empty():
+			continue
+		match item.Role:
+			ChatHistoryItem.ChatRole.USER:
+				parts.append("You: %s" % item.Message)
+			ChatHistoryItem.ChatRole.MODEL, ChatHistoryItem.ChatRole.ASSISTANT:
+				parts.append("%s: %s" % [other_name, item.Message])
+	return parts
+
+
+## Construct the fixed distill provider. Prefers an exact model_name match in
+## the ChatGPT dynamic-model catalog (same resolution the capability broker
+## uses), falling back to the ChatGPT factory with the bare model name.
+## Credentials are NOT touched here — ChatGPTProvider.generate_content fails
+## with a clear "not connected" error that we surface without crashing.
+func _create_passthrough_distill_provider() -> BaseProvider:
+	var dyn_map: Dictionary = SingletonObject.get("_dynamic_provider_map") if "_dynamic_provider_map" in SingletonObject else {}
+	for id_base in dyn_map:
+		var dyn_info: Dictionary = dyn_map[id_base] as Dictionary
+		if int(dyn_info.get("provider", -1)) != SingletonObject.API_MODEL_PROVIDERS.CHATGPT:
+			continue
+		var manager = dyn_info.get("manager", null)
+		if manager == null:
+			continue
+		for config in manager.models:
+			if config is Dictionary and str(config.get("model_name", "")).to_lower() == PASSTHROUGH_DISTILL_MODEL:
+				var dyn_provider := SingletonObject.create_dynamic_provider(int(config.get("id", -1)))
+				if dyn_provider != null:
+					return dyn_provider
+	# Catalog miss (models not refreshed yet) — construct directly via the
+	# ChatGPT factory; auth is checked inside generate_content.
+	return ChatGPTProvider.create_from_config({
+		"model_name": PASSTHROUGH_DISTILL_MODEL,
+		"display_name": "ChatGPT mini (distill)",
+		"short_name": "CG",
+	})
+
+
+## Surface a summarize failure. ErrorDisplay when the popup exists (normal app),
+## error toast otherwise (headless — create_toast_notification logs and bails).
+func _surface_summarize_error(message: String) -> void:
+	if SingletonObject.errorPopup != null:
+		SingletonObject.ErrorDisplay("Summarize failed", message)
+	else:
+		SingletonObject.create_toast_notification("Summarize failed: %s" % message, ToastNotification.Type.ERROR)
+
+
+## W6 engine: distill a passthrough chat's transcript into a note linked to
+## this chat, via ONE explicit LLM call on the fixed cheap distill model.
+## Reuses the compact_chat summarization core (_summarize_conversation_with_provider).
+## provider_override is the injectable seam for tests.
+## Returns {ok: bool, note_id: String, error: String, message: String}.
+func summarize_passthrough_to_note(history, provider_override: BaseProvider = null) -> Dictionary:
+	if history == null:
+		return {"ok": false, "note_id": "", "error": "no_history", "message": ""}
+
+	# Busy guard — no double-spend, even if a second press sneaks through.
+	if _summarize_in_flight.get(history.HistoryId, false):
+		return {"ok": false, "note_id": "", "error": "busy",
+			"message": "A summarize is already in flight for this chat."}
+
+	# Empty transcript → friendly no-op, NO LLM call.
+	var transcript := _build_passthrough_transcript(history)
+	if transcript.is_empty():
+		SingletonObject.create_toast_notification("Nothing to summarize yet — the chat is empty.")
+		return {"ok": false, "note_id": "", "error": "empty_transcript",
+			"message": "Nothing to summarize yet — the chat is empty."}
+
+	var provider: BaseProvider = provider_override if provider_override != null else distill_provider_override
+	var owns_provider := false
+	if provider == null:
+		provider = _create_passthrough_distill_provider()
+		owns_provider = true
+	if provider == null:
+		_surface_summarize_error("Could not construct the distill model (%s)." % PASSTHROUGH_DISTILL_MODEL)
+		return {"ok": false, "note_id": "", "error": "provider_unavailable", "message": ""}
+
+	_summarize_in_flight[history.HistoryId] = true
+	if owns_provider:
+		add_child(provider)  # providers need the tree for timers/auth
+
+	var result: Dictionary = await _summarize_conversation_with_provider(
+		provider, transcript, transcript.size(), history.HistoryId)
+
+	if owns_provider:
+		provider.queue_free()
+	_summarize_in_flight.erase(history.HistoryId)
+
+	if not result.get("ok", false):
+		var err := str(result.get("error", "unknown error"))
+		_surface_summarize_error(err)
+		return {"ok": false, "note_id": "", "error": err, "message": ""}
+
+	# Note creation + linking: same underlying path as minerva_create_note +
+	# minerva_link_note_to_chat (user-visible notes pane = the notes-as-context
+	# bus into other chats; the agent-notes tab is per-chat hidden context, so
+	# _upsert_agent_note is the wrong home for this).
+	var distilled := str(result.get("text", ""))
+	var timestamp := Time.get_datetime_string_from_system(false, true)
+	var note_title := "Passthrough summary: %s — %s" % [history.PassthroughName, timestamp]
+	var note: Note = Note.create_text_note(note_title, distilled)
+	note.link_to_chat(history.HistoryId)
+	if SingletonObject.notes_container != null:
+		SingletonObject.notes_container.add_note(note)
+		if SingletonObject.main_ui and SingletonObject.main_ui.has_method("set_notes_pane_visible"):
+			SingletonObject.main_ui.set_notes_pane_visible(true)
+
+	SingletonObject.create_toast_notification("Summarized to note: %s" % note_title,
+		ToastNotification.Type.SUCCESS)
+	return {"ok": true, "note_id": note.uuid, "error": "", "message": note_title}
 
 #endregion
 
