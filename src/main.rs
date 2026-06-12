@@ -447,7 +447,7 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
     let model = args.get("model").and_then(|v| v.as_str());
     let deliver = args.get("deliver");
 
-    let mut result = match read_turn_core(terminal_id, do_distill, do_redact, model, router) {
+    let mut result = match read_turn_core(terminal_id, do_distill, do_redact, model, None, router) {
         Err(e) => return ok_response(id, tool_err(&e)),
         Ok(r) => r,
     };
@@ -520,6 +520,35 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
     ok_response(id, tool_ok(result))
 }
 
+/// Rows to look back past the arm anchor when echo-anchoring a turn read.
+const ECHO_SEARCH_ROWS: u64 = 120;
+
+/// Re-anchor a wide turn read on the prompt-glyph echo of the text we just
+/// sent. Returns Some(slice) starting just AFTER the echo line, leading
+/// blanks dropped — the chat already shows the user's message, so the echo is
+/// redundant in the answer. Returns None when the echo isn't in `wide` (the
+/// caller falls back to the exact old-anchor window).
+fn slice_from_echo(wide: &str, sent: &str) -> Option<String> {
+    let marker: String = sent.lines().next().unwrap_or("").chars().take(40).collect();
+    if marker.trim().is_empty() {
+        return None;
+    }
+    let lines: Vec<&str> = wide.lines().collect();
+    // Echo lines start with the CLI's prompt glyph (❯ claude, › codex).
+    // Take the LAST glyph-prefixed match (a resend echoes again); answer
+    // lines QUOTING the text don't start with the glyph, so they never
+    // steal the anchor.
+    let echo_idx = lines.iter().rposition(|l| {
+        let t = l.trim_start();
+        (t.starts_with('❯') || t.starts_with('›')) && l.contains(marker.as_str())
+    })?;
+    let mut from = (echo_idx + 1).min(lines.len());
+    while from < lines.len() && lines[from].trim().is_empty() {
+        from += 1;
+    }
+    Some(lines[from..].join("\n"))
+}
+
 /// Steps 1–4 + turn metadata of read_turn, shared with relay_ask:
 /// row window → host.terminal.read → clean → optional distill → result JSON
 /// {ok, content, distilled, truncated, omitted_chars, turn}.
@@ -528,6 +557,7 @@ fn read_turn_core(
     do_distill: bool,
     do_redact: bool,
     model: Option<&str>,
+    echo_hint: Option<&str>,
     router: &Arc<Router>,
 ) -> Result<Value, String> {
     // ── Step 1: determine row range from watcher's turn-boundary tracking ──
@@ -537,8 +567,26 @@ fn read_turn_core(
     // Build host.terminal.read args. If we have row tracking, use it.
     // If turn_start_row is None (send was never called or watcher just started),
     // fall back to reading the full viewport.
+    //
+    // ECHO ANCHORING: the arm-time start_row anchor can land BELOW the turn
+    // content — a TUI's boot/redraw churn appends transient frames to
+    // scrollback, inflating the pre-write row count (W8 HITL: claude's first
+    // turn after boot returned only "✻ Cogitated for 7s"; the answer sat
+    // above the anchor). When the caller tells us what it just sent
+    // (echo_hint), the prompt-glyph echo line of that text is the TRUE turn
+    // start: read a wider window and re-anchor on it. The echo line itself is
+    // stripped from the result (the chat already shows the user's message).
     let mut read_args = json!({ "terminal_id": terminal_id });
-    if let Some(sr) = start_row {
+    let wide_start: Option<u64> = match (echo_hint, end_row) {
+        (Some(_), Some(er)) => {
+            let ws = start_row.unwrap_or(er).min(er.saturating_sub(ECHO_SEARCH_ROWS));
+            Some(ws)
+        }
+        _ => None,
+    };
+    if let Some(ws) = wide_start {
+        read_args["start_row"] = json!(ws);
+    } else if let Some(sr) = start_row {
         read_args["start_row"] = json!(sr);
     }
     if let Some(er) = end_row {
@@ -553,6 +601,33 @@ fn read_turn_core(
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string(),
+    };
+
+    // Re-anchor on the echo line when we have a hint and a wide read. If the
+    // echo is NOT in the wide window, re-read the exact old window instead of
+    // doing offset arithmetic — range reads may trim blank rows, so line
+    // offsets into the wide content are not trustworthy.
+    let raw = match (echo_hint, wide_start) {
+        (Some(sent), Some(_)) => match slice_from_echo(&raw, sent) {
+            Some(sliced) => sliced,
+            None => {
+                let mut old_args = json!({ "terminal_id": terminal_id });
+                if let Some(sr) = start_row {
+                    old_args["start_row"] = json!(sr);
+                }
+                if let Some(er) = end_row {
+                    old_args["end_row"] = json!(er);
+                }
+                match router.call_capability("host.terminal.read", old_args) {
+                    Err(e) => return Err(format!("terminal read failed: {e}")),
+                    Ok(result) => result.get("content")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                }
+            }
+        },
+        _ => raw,
     };
 
     // ── Step 3: B2 cleaning pipeline ───────────────────────────────────────
@@ -774,7 +849,8 @@ fn relay_ask_core(
         .cloned()
         .unwrap_or(Value::Null);
 
-    match read_turn_core(terminal_id, do_distill, do_redact, model, router) {
+    let echo_hint = (mode == SendMode::Submit).then_some(text);
+    match read_turn_core(terminal_id, do_distill, do_redact, model, echo_hint, router) {
         Err(e) => Err(format!("turn completed (cause={cause}) but read failed: {e}")),
         Ok(read) => Ok(json!({
             "ok": true,
@@ -1645,5 +1721,51 @@ mod tests {
             DISTILL_SYSTEM_PROMPT.contains("ONLY") || DISTILL_SYSTEM_PROMPT.contains("only"),
             "prompt instructs returning only the conversational reply"
         );
+    }
+
+    // ── slice_from_echo (W8 HITL fix: boot-churn mis-anchor) ──────────────
+
+    const WIDE: &str = "boot-frame-garbage\nmore boot frames\n❯ hi\n\n● Hi! line one\n  line two\n\n✻ Cogitated for 7s";
+
+    #[test]
+    fn test_slice_from_echo_recovers_answer_above_bad_anchor() {
+        // The old arm anchor pointed at the Cogitated line — the W8 failure.
+        let out = slice_from_echo(WIDE, "hi").expect("echo found");
+        assert!(out.contains("Hi! line one"), "answer recovered: {out:?}");
+        assert!(out.contains("Cogitated"), "turn summary kept: {out:?}");
+        assert!(!out.contains("❯ hi"), "echo stripped: {out:?}");
+        assert!(!out.contains("boot-frame"), "garbage above echo excluded: {out:?}");
+    }
+
+    #[test]
+    fn test_slice_from_echo_none_when_no_echo() {
+        let out = slice_from_echo(WIDE, "completely different text");
+        assert!(out.is_none(), "no echo → None (caller re-reads old window): {out:?}");
+    }
+
+    #[test]
+    fn test_slice_from_echo_quote_does_not_steal_anchor() {
+        let wide = "❯ say MARKER\n\n● you said: say MARKER\n● done";
+        let out = slice_from_echo(wide, "say MARKER").expect("echo found");
+        assert!(out.starts_with("● you said"), "anchored at glyph echo, not the quote: {out:?}");
+    }
+
+    #[test]
+    fn test_slice_from_echo_codex_glyph() {
+        let wide = "noise\n› compute 2+2\n\n2+2 equals 4.";
+        let out = slice_from_echo(wide, "compute 2+2").expect("echo found");
+        assert_eq!(out, "2+2 equals 4.");
+    }
+
+    #[test]
+    fn test_slice_from_echo_empty_marker_is_none() {
+        assert!(slice_from_echo(WIDE, "").is_none(), "empty marker → None");
+    }
+
+    #[test]
+    fn test_slice_from_echo_multiline_send_uses_first_line() {
+        let wide = "junk\n❯ first line of message\n\nanswer body";
+        let out = slice_from_echo(wide, "first line of message\nsecond line").expect("echo found");
+        assert_eq!(out, "answer body");
     }
 }

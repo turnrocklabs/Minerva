@@ -609,3 +609,29 @@ mod tests {
         assert!(!codex.detection.alt_screen, "codex runs on the primary screen");
     }
 }
+
+#[cfg(test)]
+mod claude_v2_anchor_tests {
+    use super::*;
+    use crate::profiles;
+
+    // Byte-true screen captured live 2026-06-12 (Claude Code v2.1.174 under
+    // --dangerously-skip-permissions, after a short "hi" turn). The W8 HITL
+    // failure: the turn window anchored BELOW the answer.
+    const SCREEN: &str = include_str!("../tests/fixtures/real/claude_v2_short_turn_idle.txt");
+
+    #[test]
+    fn test_trailing_rows_on_claude_v2_screen() {
+        let _g = profiles::TEST_PROFILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        profiles::init_profiles();
+        let p = profiles::profile_get("claude").unwrap();
+        let cd = CompiledDetection::from_profile(&p).unwrap();
+        let trailing = trailing_noncontent_rows(SCREEN, &cd);
+        // Box = separator + "❯ NBSP" + separator + status line = 4 rows.
+        // Plus the blank above the box top = 5.
+        assert!(trailing >= 4, "trailing chrome under-counted: {trailing}");
+        let lines: Vec<&str> = SCREEN.lines().collect();
+        let prompt_idx = lines.iter().rposition(|l| cd.prompt_box.is_match(l));
+        assert!(prompt_idx.is_some(), "prompt_box regex must match the idle box prompt line");
+    }
+}
