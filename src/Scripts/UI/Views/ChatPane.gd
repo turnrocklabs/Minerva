@@ -3,6 +3,7 @@ extends TabContainer
 
 const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
 const VoiceGatewayClientScript = preload("res://Scripts/Services/Voice/VoiceGatewayClient.gd")
+const PassthroughLaunchDialogScript = preload("res://Scripts/UI/Controls/PassthroughLaunchDialog.gd")
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -29,10 +30,12 @@ var _showing_archived: bool = false
 ## Focused chat popup (lazy-instantiated)
 var _focused_chat_popup: FocusedChatPopup = null
 
-## Passthrough chat placeholder picker (chat-passthrough W2; W3 replaces with the
-## full launch dialog)
-var _passthrough_picker: ConfirmationDialog = null
-var _passthrough_picker_list: ItemList = null
+## Passthrough launch dialog (chat-passthrough W3 — replaced W2's placeholder
+## picker; lazy-instantiated by the "⇅" top-bar button)
+var _passthrough_launch_dialog: Window = null
+## De-dupe ledger for agent-exit messages: "history_id|terminal_id" → true once
+## the exit message for that (chat, session) pair has been shown.
+var _passthrough_exit_seen: Dictionary = {}
 
 ## TTS playback for voice conversation mode (controlled by Voice Preferences)
 var _tts_player: AudioStreamPlayer
@@ -1160,48 +1163,63 @@ func _update_passthrough_chooser_lock(tab: int) -> void:
 		_provider_option_button.set_locked(false)
 
 
-## Top-bar "new passthrough chat" button handler. This round: a minimal
-## placeholder picker over the registered entries (W3 replaces it with the full
-## launch dialog). Pick-first is not acceptable UX, so the user always chooses.
+## Full launch path behind the W3 dialog: create/bind the chat (W2 core), store
+## the relaunch affordance fields (T3 contract: restart = stored command + cwd
+## into a FRESH session), and wire agent-exit surfacing at bind time.
+func launch_passthrough_chat(entry_key: String, display_name: String,
+		terminal_id: String, command: String = "", cwd: String = "") -> ChatHistory:
+	var history := start_passthrough_chat(entry_key, display_name, terminal_id)
+	if history == null:
+		return null
+	history.PassthroughCommand = command
+	history.PassthroughCwd = cwd
+	_wire_passthrough_exit(history)
+	return history
+
+
+## Wire agent-exit surfacing for a bound passthrough chat. The signal lives on
+## the SESSION object (TerminalSession.shell_exited), so this survives
+## view-less/background terminals — no TerminalNew tab needed. De-duped via
+## _passthrough_exit_seen: one message per (chat, session) exit.
+func _wire_passthrough_exit(history: ChatHistory) -> void:
+	if history == null or history.BoundTerminalId.is_empty():
+		return
+	var registry = SingletonObject.get_terminal_session_registry()
+	if registry == null or not registry.has_session(history.BoundTerminalId):
+		return
+	var session = registry.get_session(history.BoundTerminalId)
+	# Already dead at bind time (raced an instant exit) → surface immediately.
+	if session.shell_exit_code != null:
+		_append_passthrough_exit_message(history, str(session.terminal_id),
+			int(session.shell_exit_code))
+		return
+	var tid := str(session.terminal_id)
+	session.shell_exited.connect(func(exit_code: int):
+		_append_passthrough_exit_message(history, tid, exit_code))
+
+
+## Surface "the terminal agent died" in the bound chat, once per
+## (chat, session) pair, using the program-message idiom (transient label —
+## not saved with the project, same as provider-change notices).
+func _append_passthrough_exit_message(history: ChatHistory, terminal_id: String,
+		exit_code: int) -> void:
+	var dedupe_key := "%s|%s" % [history.HistoryId, terminal_id]
+	if _passthrough_exit_seen.get(dedupe_key, false):
+		return
+	_passthrough_exit_seen[dedupe_key] = true
+	if history.VBox != null and is_instance_valid(history.VBox):
+		history.VBox.add_program_message(
+			"terminal agent exited (code %d) — press ⇅ to relaunch" % exit_code)
+
+
+## Top-bar "new passthrough chat" button handler (chat-passthrough W3): opens
+## the launch dialog (new background session OR bind-to-existing terminal).
 func _on_passthrough_chat_pressed() -> void:
-	var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
-	var entries: Array = cpr.list_entries() if cpr != null and cpr.has_method("list_entries") else []
-	if entries.is_empty():
-		SingletonObject.create_toast_notification(
-			"Passthrough chat requires a terminal provider — install agent-relay")
-		return
-
-	if _passthrough_picker == null:
-		_passthrough_picker = ConfirmationDialog.new()
-		_passthrough_picker.title = "New passthrough chat"
-		_passthrough_picker.ok_button_text = "Start"
-		_passthrough_picker_list = ItemList.new()
-		_passthrough_picker_list.custom_minimum_size = Vector2(360, 180)
-		_passthrough_picker.add_child(_passthrough_picker_list)
-		_passthrough_picker.confirmed.connect(_on_passthrough_picker_confirmed)
-		_passthrough_picker_list.item_activated.connect(func(_idx: int):
-			_passthrough_picker.hide()
-			_on_passthrough_picker_confirmed())
-		add_child(_passthrough_picker)
-
-	_passthrough_picker_list.clear()
-	for entry in entries:
-		var idx: int = _passthrough_picker_list.add_item(str(entry.get("display_name", "Plugin")))
-		_passthrough_picker_list.set_item_metadata(idx, str(entry.get("key", "")))
-	if _passthrough_picker_list.item_count > 0:
-		_passthrough_picker_list.select(0)
-	_passthrough_picker.popup_centered()
-
-
-func _on_passthrough_picker_confirmed() -> void:
-	if _passthrough_picker_list == null:
-		return
-	var selected_items := _passthrough_picker_list.get_selected_items()
-	if selected_items.is_empty():
-		return
-	var entry_key := str(_passthrough_picker_list.get_item_metadata(selected_items[0]))
-	var disp := _passthrough_picker_list.get_item_text(selected_items[0])
-	start_passthrough_chat(entry_key, disp, "")
+	if _passthrough_launch_dialog == null:
+		_passthrough_launch_dialog = PassthroughLaunchDialogScript.new()
+		_passthrough_launch_dialog.chat_starter = launch_passthrough_chat
+		add_child(_passthrough_launch_dialog)
+	_passthrough_launch_dialog.popup_launch()
 
 
 # --- Summarize to note (chat-passthrough W6) --------------------------------

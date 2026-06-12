@@ -147,6 +147,18 @@ var BoundTerminalId: String = "":
 var PassthroughName: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); PassthroughName = value
 
+## Launch command for the bound terminal agent (chat-passthrough W3). Stored so
+## the relaunch affordance can recreate the session after the agent/Minerva
+## dies — terminal sessions are in-memory only (T3 restart semantics), so
+## restart = this command + cwd into a FRESH session. Empty = bare shell.
+var PassthroughCommand: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughCommand = value
+
+## Working directory the launch command runs in (chat-passthrough W3). Empty =
+## whatever the fresh shell starts in.
+var PassthroughCwd: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughCwd = value
+
 ## Why this chat's last agent turn ended. Empty string = not terminated or not an agent chat.
 var termination_reason: String = ""
 ## Human-readable message about termination (error text, quota details, etc.)
@@ -196,6 +208,8 @@ static var SERIALIZER_FIELDS = [
 	"PassthroughMode",
 	"BoundTerminalId",
 	"PassthroughName",
+	"PassthroughCommand",
+	"PassthroughCwd",
 ]
 
 
@@ -350,6 +364,8 @@ func Serialize() -> Dictionary:
 		"PassthroughMode": PassthroughMode,
 		"BoundTerminalId": BoundTerminalId,
 		"PassthroughName": PassthroughName,
+		"PassthroughCommand": PassthroughCommand,
+		"PassthroughCwd": PassthroughCwd,
 	}
 	return save_dict
 
@@ -480,5 +496,9 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.BoundTerminalId = str(data.get("BoundTerminalId", ""))
 	if data.has("PassthroughName"):
 		history.PassthroughName = str(data.get("PassthroughName", ""))
+	if data.has("PassthroughCommand"):
+		history.PassthroughCommand = str(data.get("PassthroughCommand", ""))
+	if data.has("PassthroughCwd"):
+		history.PassthroughCwd = str(data.get("PassthroughCwd", ""))
 
 	return history
