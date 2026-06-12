@@ -7,6 +7,9 @@ const PassthroughLaunchDialogScript = preload("res://Scripts/UI/Controls/Passthr
 # Preload (not the class_name global) so a --script harness that loads ChatPane.gd
 # before the global class cache is built still compiles (W5).
 const PassthroughTurnStatusScript = preload("res://Scripts/Models/PassthroughTurnStatus.gd")
+# W4 (chat-passthrough): reused AS-IS — the card is self-contained (zero
+# autocoder coupling); ChatPane only hosts it and maps label → keystroke.
+const PassthroughQuestionCardScene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamQuestionCard.tscn")
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -2038,6 +2041,10 @@ func execute_regular_chat(text: String) -> void:
 			history.termination_reason = "completed"
 			history.termination_message = ""
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+		# W4 (chat-passthrough): a question turn (terminal agent hit a permission
+		# dialog) gets a clickable option card right under the bot message. No
+		# options parsed → no card; the user just types free text as usual.
+		_passthrough_add_question_card(history, chi, model_msg_node)
 
 	# Notify trigger system that this agent chat is fully done (all tool rounds complete)
 	if history.IsAgentChat:
@@ -2129,6 +2136,111 @@ func _passthrough_end_relay(status, bot_response, model_msg_node: Control,
 	status.finish(disposition)
 	if is_instance_valid(model_msg_node):
 		model_msg_node.loading_append = false
+
+
+## W4 (chat-passthrough): question text shown on the option card. The full
+## terminal dialog is already visible in the bot message right above the card,
+## so the card carries a short action prompt, not a duplicate of the screen.
+const PASSTHROUGH_QUESTION_PROMPT := "The terminal agent is waiting on this dialog — choose an option:"
+
+
+## W4 (chat-passthrough): render a clickable option card under a finalized
+## question turn. Reuses AutocoderStreamQuestionCard AS-IS: the card shows the
+## option LABELS and emits answer_submitted(question_id, answer, session_id);
+## the label → keystroke mapping lives here, bound onto the connection.
+##
+## Persistence choice (v1): cards are live-turn affordances ONLY. They are
+## plain VBox children — never ChatHistoryItems — so project save (which
+## serializes HistoryItemList) never captures them and render_history never
+## rebuilds them. After a reload the card is simply ABSENT: the dialog state
+## on the terminal is likely gone after a restart, and the options still live
+## on the CHI's HcpData if anyone ever wants to resurrect them.
+##
+## Lifecycle: the card is parented to the chat's VBox, so closing the chat
+## frees it; its answer_submitted connection is owned by the card and dies
+## with it (no dangling connections on ChatPane).
+##
+## Returns the card, or null when there are no usable options (req: no card,
+## zero new UI — the user types free text in the normal input).
+func _passthrough_add_question_card(history: ChatHistory, chi: ChatHistoryItem,
+		model_msg_node: Control) -> Control:
+	if history == null or chi == null:
+		return null
+	var raw = chi.HcpData.get("passthrough_question_options", [])
+	if not (raw is Array) or raw.is_empty():
+		return null
+	# Parse {label, keystroke} dicts. Values are JSON round-tripped, so coerce
+	# with str() (survives ints-as-floats etc.). Options without a label are
+	# dropped; an empty keystroke (Cancel per the locked contract) is kept —
+	# the click is then a no-send (see _on_passthrough_question_answered).
+	var labels: Array = []
+	var keystroke_by_label: Dictionary = {}
+	for opt in raw:
+		if not (opt is Dictionary):
+			continue
+		var label := str(opt.get("label", "")).strip_edges()
+		if label.is_empty():
+			continue
+		if not keystroke_by_label.has(label):
+			labels.append(label)
+		keystroke_by_label[label] = str(opt.get("keystroke", ""))
+	if labels.is_empty():
+		return null
+	var vbox = history.VBox
+	if vbox == null or not is_instance_valid(vbox):
+		return null
+	var card = PassthroughQuestionCardScene.instantiate()
+	# add_child BEFORE setup(): the card resolves its %nodes via @onready
+	# (AutocoderActionStream hosts it the same way).
+	vbox.add_child(card)
+	if is_instance_valid(model_msg_node) and model_msg_node.get_parent() == vbox:
+		vbox.move_child(card, model_msg_node.get_index() + 1)
+	# The card prepends each option button (move_child(btn, 0)), which displays
+	# the options REVERSED. Compensate here (read-only reuse — don't touch the
+	# card) so the user sees them in the contract's order: Yes / … / Cancel.
+	var display_labels := labels.duplicate()
+	display_labels.reverse()
+	card.setup(chi.Id, PASSTHROUGH_QUESTION_PROMPT, display_labels, history.HistoryId)
+	# The card owns this connection — it dies when the card is freed with the
+	# VBox, so a closed chat leaves nothing dangling on ChatPane.
+	card.answer_submitted.connect(
+		_on_passthrough_question_answered.bind(history, keystroke_by_label, card))
+	return card
+
+
+## W4: an option was clicked. The card already guards re-submission internally
+## (meta "submitted"); additionally grey out its buttons so the answered state
+## is visible AND unclickable. Then send the mapped keystroke as the next user
+## turn on the ORIGINATING history. Answering a stale card whose terminal
+## dialog is long gone is harmless — the keystroke hits the PTY like any
+## typed text (terminal-honest).
+func _on_passthrough_question_answered(_question_id: String, answer: String, _session_id: String,
+		history: ChatHistory, keystroke_by_label: Dictionary, card: Control) -> void:
+	if is_instance_valid(card):
+		for btn in card.find_children("*", "Button", true, false):
+			btn.disabled = true
+	var keystroke := str(keystroke_by_label.get(answer, ""))
+	# Locked contract: an EMPTY keystroke (Cancel = "" → ESC, handled plugin-
+	# side) is never sent as a user turn — sending "" would be an empty
+	# message; core does nothing special beyond not sending.
+	if keystroke.is_empty():
+		return
+	_passthrough_send_question_answer(history, keystroke)
+
+
+## W4: send a keystroke as a normal user turn on a SPECIFIC history (not
+## whatever tab is current). Mirrors MCPChatTools._send_message: switch to the
+## originating tab, reuse the UNCHANGED send path, restore the tab deferred
+## (execute_regular_chat reads current_tab during setup — switching back too
+## early causes provider mismatch).
+func _passthrough_send_question_answer(history: ChatHistory, keystroke: String) -> void:
+	var tab_idx := SingletonObject.ChatList.find(history)
+	if tab_idx == -1:
+		return  # chat closed under us; its card was freed with the VBox anyway
+	var original_tab := current_tab
+	current_tab = tab_idx
+	execute_regular_chat(keystroke)
+	call_deferred("set_current_tab", original_tab)
 
 
 ## Get the last MODEL/ASSISTANT history item (the one that made the tool calls)
