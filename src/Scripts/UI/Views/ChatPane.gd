@@ -2090,8 +2090,14 @@ func _passthrough_begin_relay(history: ChatHistory, model_msg_node: Control,
 
 
 ## Detached ~1Hz poll loop. Reads the bound session screen, compacts it, and —
-## if it changed — writes it into the in-flight node's history_item and
-## re-renders IN PLACE (no new ChatHistoryItem). Stops the moment polling clears.
+## if it changed — grows the in-flight node IN PLACE (no new ChatHistoryItem)
+## using the agentic-accumulator idiom (handle_tool_calls): drop the wave, grow
+## the content, re-add the ●●● wave at the BOTTOM of the new content, then
+## follow with a bottom-scroll. Order matters twice over: render() rebuilds the
+## label stack (freeing the old wave label), so loading_append must be re-set
+## AFTER it to land under the fresh content; and the scroll must run after a
+## frame so layout has the new height (otherwise the tween chases a stale
+## bottom — the W8 grow-then-scroll-tick jitter). Stops when polling clears.
 func _passthrough_poll_loop(status, history: ChatHistory, model_msg_node: Control,
 		dummy_item: ChatHistoryItem) -> void:
 	while status != null and status.polling:
@@ -2102,7 +2108,17 @@ func _passthrough_poll_loop(status, history: ChatHistory, model_msg_node: Contro
 		if not compact.is_empty():
 			dummy_item.Message = compact
 			if is_instance_valid(model_msg_node) and model_msg_node.has_method("render"):
+				model_msg_node.loading_append = false
 				model_msg_node.render()
+				await get_tree().process_frame
+				# The generate may have resolved while we yielded — the finalize
+				# path owns the node now; re-adding the wave would strand it on
+				# the finished message.
+				if not status.polling or not is_instance_valid(model_msg_node):
+					return
+				model_msg_node.loading_append = true
+				if history.VBox != null and is_instance_valid(history.VBox):
+					history.VBox.ensure_node_bottom_is_visible(model_msg_node)
 		await get_tree().create_timer(PASSTHROUGH_STATUS_POLL_SEC).timeout
 
 
