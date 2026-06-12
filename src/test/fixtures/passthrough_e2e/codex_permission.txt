@@ -1,0 +1,12 @@
+
+
+  Would you like to run the following command?
+
+  Reason: Allow creating the requested empty file at /tmp/codex_cal_test?
+  [… 5 lines] ctrl + a view all
+
+› 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with `touch /tmp/codex_cal_test` (p)
+  3. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel

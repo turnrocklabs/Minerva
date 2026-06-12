@@ -1,0 +1,12 @@
+• Tungsten’s chemical symbol is W. It comes from its historical name, wolfram, derived from the mineral wolframite.
+
+
+› Write a 150-word poem about tungsten. Think carefully about meter and rhyme.
+
+
+◦ Working (9s • esc to interrupt)
+
+
+› Use /skills to list available skills
+
+  gpt-5.5 high · ~/github/Minerva/src
