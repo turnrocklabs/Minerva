@@ -20,6 +20,13 @@ extends RefCounted
 const DEFAULT_MAX_LINES := 3
 const DEFAULT_CAP := 160
 
+## Tail-view tuning (W8 HITL feedback): the in-flight bubble shows a GROWING
+## multi-line view of the turn region, not a one-line status. Re-reading the
+## settled region every tick means in-place spinner animations update in place
+## and never accumulate.
+const VIEW_MAX_LINES := 12
+const VIEW_CAP := 4000
+
 ## True between begin() and finish(): exactly one in-flight marker per turn.
 var in_flight: bool = false
 
@@ -53,13 +60,14 @@ func begin() -> bool:
 	return true
 
 
-## Push a freshly-read screen status. Returns the compact status that should be
-## shown, or "" to leave the plain bubble untouched (empty / unchanged /
+## Push a freshly-read screen. Returns the tail VIEW that should be shown
+## (the last ~12 content rows above the input-box chrome — a growing window
+## onto the turn), or "" to leave the bubble untouched (empty / unchanged /
 ## no-session). Only counts as a mutation when the text actually changes.
 func mark_status(screen_text: String) -> String:
 	if not polling:
 		return ""
-	var compact := compact_status(screen_text)
+	var compact := tail_view(screen_text)
 	if compact.is_empty():
 		# No usable status this tick - keep whatever the bubble shows. Do NOT
 		# clear it (avoids flicker between agent redraws).
@@ -106,6 +114,60 @@ static func compact_status(screen_text: String, max_lines: int = DEFAULT_MAX_LIN
 		# Reserve one char for the ellipsis so the result is exactly <= cap.
 		joined = joined.substr(0, maxi(0, cap - 1)).strip_edges() + "…"
 	return joined
+
+
+## PURE tail view (W8 HITL feedback): the last `max_lines` rows of the screen
+## ABOVE the trailing input-box chrome, multi-line, preserving the agent's own
+## layout. The caller re-reads + replaces the whole view each tick, so
+## in-place spinner animation frames update in place — they never accumulate
+## into a stream of stale glyphs. Empty / chrome-only input → "".
+static func tail_view(screen_text: String, max_lines: int = VIEW_MAX_LINES,
+		cap: int = VIEW_CAP) -> String:
+	if screen_text == null:
+		return ""
+	var lines := screen_text.split("\n")
+	# Walk up past trailing chrome: blank rows, box-drawing separators, the
+	# empty input prompt, and hint/status bars — they belong to the NEXT
+	# turn's input box, not this turn's output.
+	var end := lines.size()
+	while end > 0 and _is_trailing_chrome(lines[end - 1]):
+		end -= 1
+	if end <= 0:
+		return ""
+	var start := maxi(0, end - max_lines)
+	var picked: Array[String] = []
+	for i in range(start, end):
+		picked.append(lines[i])
+	var joined := "\n".join(picked).strip_edges()
+	if joined.length() > cap:
+		# Keep the TAIL — the newest output is what the user is watching.
+		joined = "…" + joined.substr(joined.length() - cap + 1)
+	return joined
+
+
+## True for rows that are input-box/status chrome when found at the BOTTOM of
+## the screen: blanks, pure box-drawing borders, a bare prompt glyph, and the
+## ⏵/shortcut hint bars.
+static func _is_trailing_chrome(line: String) -> bool:
+	var t := _collapse_ws(line)
+	if t.is_empty():
+		return true
+	# Hint/status bars (claude: "⏵⏵ bypass permissions…", "? for shortcuts").
+	if t.begins_with("⏵") or t.begins_with("? for"):
+		return true
+	# Bare input prompt ("❯" / "›" with nothing typed).
+	if t == "❯" or t == "›":
+		return true
+	# Pure box-drawing/border row (─, │, ╭ …; ● never qualifies because answer
+	# bullets carry text, which fails the all-box scan below).
+	for i in line.length():
+		var cp := line.unicode_at(i)
+		if cp <= 0x20 or cp == 0xA0:
+			continue
+		if cp >= 0x2500 and cp <= 0x25FF:
+			continue
+		return false
+	return true
 
 
 ## Collapse all runs of whitespace (incl. tabs / CR / NBSP) into single spaces

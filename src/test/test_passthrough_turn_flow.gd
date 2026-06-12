@@ -59,6 +59,7 @@ func _run() -> void:
 	if Status == null:
 		return
 	_test_status_heuristic(Status)
+	_test_tail_view(Status)
 	_test_turn_bookkeeping(Status)
 	_test_cancel_disposition(Status)
 	_test_question_disposition(Status)
@@ -277,3 +278,61 @@ func _disposition_for(bot) -> String:
 	if bot.hcp_data.has("passthrough_question_options"):
 		return "question"
 	return "answer"
+
+
+# --- W8 HITL feedback: growing multi-line tail view --------------------------
+func _test_tail_view(Status) -> void:
+	print("\n-- tail view (growing turn window) --")
+
+	# Mid-turn claude-style screen: banner, echo, partial answer, spinner,
+	# then the input-box chrome that must NOT appear in the bubble.
+	var mid_turn := "\n".join([
+		"claude banner",
+		"",
+		"❯ hi",
+		"",
+		"● Hi! line one of the answer",
+		"  line two of the answer",
+		"",
+		"✻ Working… (3s · esc to interrupt)",
+		"",
+		"────────────────────────────────",
+		"❯ ",
+		"────────────────────────────────",
+		"  ⏵⏵ bypass permissions on (shift+tab to cycle)",
+	])
+	var v: String = Status.tail_view(mid_turn)
+	check("tail view keeps answer lines", v.contains("line one of the answer")
+		and v.contains("line two of the answer"), v)
+	check("tail view keeps the live spinner line", v.contains("Working"), v)
+	check("tail view is multi-line", v.find("\n") != -1)
+	check("tail view drops separators", not v.contains("────"), v)
+	check("tail view drops the empty prompt", not v.contains("❯ \n")
+		and not v.ends_with("❯"), v)
+	check("tail view drops the ⏵ status bar", not v.contains("⏵"), v)
+
+	# Spinner frames mutate IN PLACE: a later read with a different spinner
+	# char replaces the line — the view must not contain both frames.
+	var later := mid_turn.replace("✻ Working… (3s", "✽ Working… (4s")
+	var v2: String = Status.tail_view(later)
+	check("in-place spinner frame replaced, not accumulated",
+		v2.contains("✽") and not v2.contains("✻"), v2)
+
+	# max_lines window: only the LAST n content rows survive.
+	var long_turn := ""
+	for i in range(40):
+		long_turn += "row %d\n" % i
+	var v3: String = Status.tail_view(long_turn, 12)
+	check("window keeps last rows", v3.contains("row 39") and not v3.contains("row 20"), v3)
+
+	# cap keeps the TAIL with a leading ellipsis.
+	var huge := ""
+	for i in range(400):
+		huge += "filler line %d\n" % i
+	var v4: String = Status.tail_view(huge, 400, 200)
+	check("cap keeps tail w/ ellipsis", v4.begins_with("…") and v4.length() <= 200
+		and v4.contains("filler line 399"), v4.substr(0, 40))
+
+	check("empty screen → empty view", Status.tail_view("") == "")
+	check("chrome-only screen → empty view",
+		Status.tail_view("────\n❯ \n  ⏵⏵ bypass permissions on") == "")
