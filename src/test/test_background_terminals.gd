@@ -403,6 +403,53 @@ func _test_pane_adoption(registry, tools) -> void:
 	await process_frame
 	await process_frame
 
+	await _test_adoption_resizes_grid(registry, tools)
+
+
+## W8 HITL scroll bug: adopting an already-running background session into a
+## REAL-sized pane must reflow the PTY/vt grid to the view's geometry. The
+## session starts at 80×24 in the background; without the resize the view
+## renders a clipped 80×24 grid (content wraps at col 80, scrollback math uses
+## viewport_rows=24 against a much shorter view) and scrolling reads as dead.
+func _test_adoption_resizes_grid(registry, tools) -> void:
+	print("\n-- W8: adoption reflows the PTY grid to the view --")
+
+	var created: Dictionary = await tools.handle("minerva_terminal_create",
+		{"background": true, "name": "adopt-resize"})
+	var tid: String = str(created.get("id", ""))
+	var session = registry.get_session(tid)
+	check("adopt-resize: background session starts 80x24",
+		session != null and session.get_cols() == 80 and session.get_rows() == 24)
+
+	var group = load(TAB_GROUP_SCRIPT_PATH).new()
+	# A real on-screen pane: big enough to clear the degenerate-rect guard.
+	group.custom_minimum_size = Vector2(1200, 400)
+	group.size = Vector2(1200, 400)
+	root.add_child(group)
+	group.visible = true
+	# _ready sync awaits a frame; container layout + a possible resized-signal
+	# sync need a few more.
+	for i in range(5):
+		await process_frame
+
+	var view = _find_view_for(tid)
+	check("adopt-resize: view attached", view != null)
+	if view != null:
+		var expected_cols: int = view._cols
+		var expected_rows: int = view._rows
+		check("adopt-resize: view computed a non-default grid",
+			expected_cols != 80 or expected_rows != 24,
+			"computed %dx%d" % [expected_cols, expected_rows])
+		var info: Dictionary = session.get_scroll_info()
+		check("adopt-resize: vt viewport reflowed to the view's rows",
+			int(info.get("viewport_rows", -1)) == expected_rows,
+			"viewport_rows=%s expected=%d" % [str(info.get("viewport_rows")), expected_rows])
+
+	await tools.handle("minerva_terminal_close", {"terminal_id": tid})
+	group.queue_free()
+	await process_frame
+	await process_frame
+
 
 func _find_view_for(session_id: String):
 	for term in root.get_tree().get_nodes_in_group("terminal_pane"):

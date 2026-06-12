@@ -163,33 +163,59 @@ func _ready():
 
 	await get_tree().process_frame
 
-	_recalc_terminal_size()
-
 	# Start the PTY now that we have real layout geometry (only if not already
 	# started — a pre-existing background session may already be running).
 	if _session and not _session.started:
-		var ok: bool = _session.start(_cols, _rows)
+		_recalc_terminal_size()
+		# Degenerate layout (mid-build, headless harness) must not birth a 1×1
+		# PTY — the shell wraps every line and the grid is useless. Start at
+		# the classic default; the first real resized event corrects it.
+		var start_cols: int = _cols if _layout_is_sane() else 80
+		var start_rows: int = _rows if _layout_is_sane() else 24
+		var ok: bool = _session.start(start_cols, start_rows)
 		if not ok:
 			push_error("[Terminal] Failed to start terminal - forkpty may have failed")
+	elif _session:
+		# Adopted an already-running background session (passthrough chat's
+		# terminal surfacing as a tab). The session's grid still has its
+		# background geometry; sync the PTY to THIS view's real layout or the
+		# view renders a clipped grid with dead scroll (W8 HITL: 80×24 PTY in
+		# a 197×12 view). _recalc alone only rewrites the session's bookkeeping
+		# fields — the PTY itself must reflow.
+		_sync_session_grid()
 
 	resized.connect(
 		func():
-			# Ignore degenerate mid-layout rects (zero/tiny — common while the
-			# pane is being built, and always in headless harnesses): pushing a
-			# 1×1 SIGWINCH reflows the live agent's screen for nothing. The
-			# final layout fires resized again at the real size.
-			var draw_width: float = text_layer.size.x if text_layer else _output_container.size.x
-			var view_height: float = _output_container.size.y
-			if draw_width < char_width * 8.0 or view_height < line_height * 2.0:
-				return
-			_recalc_terminal_size()
-			if _session:
-				_session.resize(_cols, _rows)
-			if text_layer:
-				text_layer.queue_redraw()
-			if cursor_layer:
-				cursor_layer.queue_redraw()
+			if _sync_session_grid():
+				if text_layer:
+					text_layer.queue_redraw()
+				if cursor_layer:
+					cursor_layer.queue_redraw()
 	)
+
+
+## True when the view has real (non-degenerate) layout geometry. Mid-build and
+## headless-harness rects are zero/tiny; pushing those at the PTY reflows the
+## live agent's screen for nothing (a 1×1 SIGWINCH collapses the grid).
+func _layout_is_sane() -> bool:
+	var draw_width: float = text_layer.size.x if text_layer else _output_container.size.x
+	var view_height: float = _output_container.size.y
+	return draw_width >= char_width * 8.0 and view_height >= line_height * 2.0
+
+
+## Recompute the cell grid from the current layout and push it at the PTY when
+## it actually changed. Returns true when the geometry was applied (sane rect),
+## false when skipped (degenerate mid-layout rect — the final layout fires
+## resized again at the real size).
+func _sync_session_grid() -> bool:
+	if not _layout_is_sane():
+		return false
+	var prev_cols: int = _session.get_cols() if _session else -1
+	var prev_rows: int = _session.get_rows() if _session else -1
+	_recalc_terminal_size()
+	if _session and _session.started and (_cols != prev_cols or _rows != prev_rows):
+		_session.resize(_cols, _rows)
+	return true
 
 
 ## Attach this view to a (possibly already-running) headless session. Wires the
