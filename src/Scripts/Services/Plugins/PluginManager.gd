@@ -105,6 +105,13 @@ var _pending_changed_paths: Dictionary = {}
 ## NOTE: Only PluginManager.gd writes to this; callers use the public API below.
 var _live_scene_panels: Dictionary = {}
 
+## Runtime registry of plugin-supplied chat-provider entries (chat-passthrough
+## W1). Held here (not on SingletonObject) so its lifecycle is bound to the
+## manager; stop/crash signals drop the dead plugin's entries. Lazily created in
+## _ready() (load() to avoid parse-order issues), exposed via
+## get_chat_provider_registry().
+var _chat_provider_registry = null  # PluginChatProviderRegistry
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle (Node)
@@ -113,7 +120,19 @@ var _live_scene_panels: Dictionary = {}
 func _ready() -> void:
 	if _db == null:
 		_db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
+	# Chat-provider registry (W1). Drop a plugin's entries when it stops/crashes
+	# so dead providers vanish gracefully from the chooser.
+	if _chat_provider_registry == null:
+		_chat_provider_registry = load("res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd").new()
+	plugin_stopped.connect(_chat_provider_registry.drop_plugin)
+	plugin_crashed.connect(_chat_provider_registry.drop_plugin)
 	print("[PluginManager] Ready — %d plugin(s) in DB" % _db.get_all().size())
+
+
+## Return the PluginChatProviderRegistry (chat-passthrough W1). May be null if
+## accessed before _ready().
+func get_chat_provider_registry():
+	return _chat_provider_registry
 
 
 func _process(delta: float) -> void:

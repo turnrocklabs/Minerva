@@ -257,9 +257,17 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 	if capability.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "capability must not be empty")
 
-	# Gate: check with policy engine before any execution (deny-by-default)
+	# Gate: check with policy engine before any execution (deny-by-default).
+	# host.chat_providers.register and .unregister are gated by the SAME grant
+	# (the manifest declares one capability string, "host.chat_providers.register",
+	# covering both ops). Map the unregister op onto the register grant for the
+	# policy check only — the dispatch match below still routes by the real cap.
+	var gate_capability: String = capability
+	if capability == "host.chat_providers.unregister":
+		gate_capability = "host.chat_providers.register"
+
 	if policy != null:
-		var check := policy.check_capability(plugin_id, capability)
+		var check := policy.check_capability(plugin_id, gate_capability)
 		if not check.get("allowed", false):
 			# Policy already logged the denial via _record_decision; log at
 			# broker level too so capability-request outcomes are queryable
@@ -355,6 +363,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_permissions_grant_scope(plugin_id, args)
 		"host.notify":
 			named_result = _handle_host_notify(plugin_id, args)
+		"host.chat_providers.register":
+			named_result = _handle_host_chat_providers_register(plugin_id, args)
+		"host.chat_providers.unregister":
+			named_result = _handle_host_chat_providers_unregister(plugin_id, args)
 		"host.terminal.exec":
 			named_result = await _handle_host_terminal_exec(plugin_id, args)
 		"host.terminal.list", "host.terminal.read", "host.terminal.write", "host.terminal.wait":
@@ -3339,6 +3351,113 @@ func _handle_host_notify(plugin_id: String, args: Dictionary) -> Dictionary:
 	print("[CapabilityBroker] Plugin '%s' host.notify [%s] %s" % [plugin_id, level, message])
 	SingletonObject.create_toast_notification(display, toast_type)
 	return PluginErrors.success({})
+
+
+# ---------------------------------------------------------------------------
+# host.chat_providers.{register,unregister} handlers (chat-passthrough W1)
+# ---------------------------------------------------------------------------
+#
+# Plugins register chat-provider entries into PluginChatProviderRegistry; the
+# entries surface in the chat provider chooser and, when selected, give the chat
+# a PluginProvider that dispatches turns to the plugin's generate_tool.
+#
+# The registry instance is resolved lazily (SingletonObject.plugin_manager's
+# chat-provider registry) but may be injected for headless tests via
+# chat_provider_registry. A single capability string covers both ops.
+
+## Injectable registry reference for tests. When null, resolved at dispatch time
+## from PluginManager.get_chat_provider_registry().
+var chat_provider_registry = null  # PluginChatProviderRegistry
+
+const _CHAT_PROVIDER_VALID_HISTORY_MODES := ["newest_only", "full"]
+
+
+func _get_chat_provider_registry():
+	if chat_provider_registry != null:
+		return chat_provider_registry
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	var so = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	var pm = so.get("plugin_manager") if "plugin_manager" in so else null
+	if pm == null:
+		return null
+	if pm.has_method("get_chat_provider_registry"):
+		return pm.get_chat_provider_registry()
+	return null
+
+
+## Register/update a plugin chat-provider entry. Idempotent on (plugin_id, entry_id).
+##
+## args: {entry_id, display_name, generate_tool, history_mode,
+##        timeout_sec?, cancel_tool?, metadata?}
+func _handle_host_chat_providers_register(plugin_id: String, args: Dictionary) -> Dictionary:
+	var registry = _get_chat_provider_registry()
+	if registry == null:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers: registry not available")
+
+	var entry_id: String = str(args.get("entry_id", "")).strip_edges()
+	if entry_id.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register requires 'entry_id'")
+	var display_name: String = str(args.get("display_name", "")).strip_edges()
+	if display_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register requires 'display_name'")
+	var generate_tool: String = str(args.get("generate_tool", "")).strip_edges()
+	if generate_tool.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register requires 'generate_tool'")
+	var history_mode: String = str(args.get("history_mode", "")).strip_edges()
+	if history_mode not in _CHAT_PROVIDER_VALID_HISTORY_MODES:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: 'history_mode' must be 'newest_only' or 'full'")
+
+	# Plugins may only register tools they themselves expose (prefix rule). This
+	# is defense-in-depth: the registry never dispatches cross-plugin, but a
+	# clear early error beats a silent runtime dead-end.
+	var tool_prefix: String = "minerva_%s_" % plugin_id
+	if not generate_tool.begins_with(tool_prefix):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: 'generate_tool' must be one of this plugin's own tools (prefix '%s')" % tool_prefix)
+	var cancel_tool: String = str(args.get("cancel_tool", "")).strip_edges()
+	if not cancel_tool.is_empty() and not cancel_tool.begins_with(tool_prefix):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: 'cancel_tool' must be one of this plugin's own tools (prefix '%s')" % tool_prefix)
+
+	var entry: Dictionary = registry.register_entry(plugin_id, args)
+	if entry.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: invalid entry payload")
+
+	print("[CapabilityBroker] Plugin '%s' registered chat provider '%s' (%s)" % [
+		plugin_id, entry_id, entry.get("key", "")])
+	return PluginErrors.success({
+		"key": entry.get("key", ""),
+		"entry_id": entry_id,
+		"display_name": display_name,
+	})
+
+
+## Unregister a plugin chat-provider entry. args: {entry_id}
+func _handle_host_chat_providers_unregister(plugin_id: String, args: Dictionary) -> Dictionary:
+	var registry = _get_chat_provider_registry()
+	if registry == null:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers: registry not available")
+
+	var entry_id: String = str(args.get("entry_id", "")).strip_edges()
+	if entry_id.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.unregister requires 'entry_id'")
+
+	var removed: bool = registry.unregister_entry(plugin_id, entry_id)
+	print("[CapabilityBroker] Plugin '%s' unregistered chat provider '%s' (removed=%s)" % [
+		plugin_id, entry_id, removed])
+	return PluginErrors.success({"entry_id": entry_id, "removed": removed})
 
 
 # ---------------------------------------------------------------------------

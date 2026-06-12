@@ -1,0 +1,20 @@
+{
+  "id": "chatprovider",
+  "name": "Chat Provider Probe",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": ["chat_provider_probe.py"]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": ["host.chat_providers.register"],
+    "network": {"mode": "none"},
+    "filesystem": {"mode": "none", "paths": []}
+  }
+}

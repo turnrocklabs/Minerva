@@ -177,7 +177,15 @@ static var SERIALIZER_FIELDS = [
 	"StaticToolMode",
 	"ConfiguredTools",
 	"ConfiguredSkills",
+	"PluginProviderKey",
 ]
+
+
+## Sentinel int written into "Provider" when the active provider is a
+## PluginProvider (chat-passthrough W1). Old readers (which only know the int
+## field) fall through to the safe default-provider fallback in Deserialize
+## rather than mis-resolving a stale enum value.
+const PLUGIN_PROVIDER_SENTINEL := -1
 
 
 ## Get the API_MODEL_PROVIDERS enum value for a provider instance
@@ -274,10 +282,20 @@ func Serialize() -> Dictionary:
 		var serialized_item = chat_history_item.Serialize()
 		serialized_items.append(serialized_item)
 
+	# Plugin chat-providers (chat-passthrough W1) serialize as a string key in a
+	# NEW optional field; the int "Provider" stays at a safe sentinel so old
+	# readers fall back to the default provider rather than mis-resolving.
+	var plugin_provider_key: String = ""
+	var provider_enum_value: int = _get_provider_enum(provider)
+	if provider != null and "entry_key" in provider and not str(provider.entry_key).is_empty():
+		plugin_provider_key = str(provider.entry_key)
+		provider_enum_value = PLUGIN_PROVIDER_SENTINEL
+
 	var save_dict:Dictionary = {
 		"HistoryId" : HistoryId,
 		"HistoryName" : HistoryName,
-		"Provider": _get_provider_enum(provider),
+		"Provider": provider_enum_value,
+		"PluginProviderKey": plugin_provider_key,
 		"ServiceType": service_type,
 		"HistoryItemList" : serialized_items,
 		"HasUsedSystemPrompt": HasUsedSystemPrompt,
@@ -322,7 +340,22 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	var provider_enum_index = int(data.get("Provider", 0))
 	var provider_obj: BaseProvider
 
-	if provider_enum_index >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+	# Plugin chat-provider (chat-passthrough W1): if a key was serialized AND it
+	# names a currently-registered entry, restore a PluginProvider. If the entry
+	# is absent (plugin not installed/running), fall through to the int-based
+	# default-provider path below — non-fatal, NO error dialog; the chat stays
+	# usable with a default provider.
+	var plugin_provider_key: String = str(data.get("PluginProviderKey", ""))
+	if not plugin_provider_key.is_empty():
+		var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
+		if cpr != null and cpr.has_method("get_entry"):
+			var entry: Dictionary = cpr.get_entry(plugin_provider_key)
+			if not entry.is_empty():
+				var PluginProviderScript = load("res://Scripts/Services/Providers/PluginProvider.gd")
+				provider_obj = PluginProviderScript.new()
+				provider_obj.configure_from_entry(entry)
+
+	if provider_obj == null and provider_enum_index >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
 		provider_obj = SingletonObject.create_dynamic_provider(provider_enum_index)
 	if provider_obj == null and SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
 		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
