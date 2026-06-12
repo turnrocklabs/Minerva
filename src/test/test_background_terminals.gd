@@ -339,6 +339,89 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 
+	await _test_pane_adoption(registry, tools)
+
+
+## W8 HITL: a visible tab group ADOPTS every live session as a regular tab —
+## background terminals are just tabs the pane hasn't rendered yet.
+func _test_pane_adoption(registry, tools) -> void:
+	print("\n-- W8: visible pane adopts background sessions --")
+
+	# Two background sessions exist BEFORE the pane opens.
+	var a: Dictionary = await tools.handle("minerva_terminal_create",
+		{"background": true, "name": "adopt-a"})
+	var b: Dictionary = await tools.handle("minerva_terminal_create",
+		{"background": true, "name": "adopt-b"})
+	var a_id: String = str(a.get("id", ""))
+	var b_id: String = str(b.get("id", ""))
+
+	var group = load(TAB_GROUP_SCRIPT_PATH).new()
+	root.add_child(group)
+	group.visible = true  # entering the tree visible fires visibility sync
+	await process_frame
+	await process_frame
+
+	check("adoption: both sessions got tabs (no bare shell added)",
+		group.tab_count() == 2, "tabs=%d" % group.tab_count())
+	var adopted_a = _find_view_for(a_id)
+	check("adoption: view attached to session a", adopted_a != null)
+	check("adoption: re-sync is idempotent (no duplicate tabs)",
+		_count_views_for(a_id) == 1, "views=%d" % _count_views_for(a_id))
+
+	# A session created WHILE the pane is open appears as a tab (deferred sync).
+	var c: Dictionary = await tools.handle("minerva_terminal_create",
+		{"background": true, "name": "adopt-c"})
+	var c_id: String = str(c.get("id", ""))
+	await process_frame
+	await process_frame
+	check("adoption: session created while visible gets a tab",
+		_count_views_for(c_id) == 1, "views=%d" % _count_views_for(c_id))
+	check("adoption: list reports it visible", bool((await _list_entry(tools, c_id)).get("visible", false)))
+
+	# Adopted tabs are interactive: write through the view's session round-trips.
+	var rt: String = await _round_trip(tools, a_id, "echo adopt-rt-$((40+2))\r", "adopt-rt-42")
+	check("adoption: adopted terminal still round-trips", rt.find("adopt-rt-42") != -1, rt)
+
+	# Demote stays demoted until the NEXT sync event (documented semantics).
+	var dem: Dictionary = await tools.handle("minerva_terminal_demote", {"terminal_id": b_id})
+	check("adoption: demote succeeds", dem.get("success", false))
+	await process_frame
+	check("adoption: demoted tab not instantly re-adopted",
+		_count_views_for(b_id) == 0, "views=%d" % _count_views_for(b_id))
+	group.visible = false
+	await process_frame
+	group.visible = true  # next visibility sync re-adopts
+	await process_frame
+	await process_frame
+	check("adoption: visibility toggle re-adopts the demoted session",
+		_count_views_for(b_id) == 1, "views=%d" % _count_views_for(b_id))
+
+	# Cleanup.
+	for tid in [a_id, b_id, c_id]:
+		await tools.handle("minerva_terminal_close", {"terminal_id": tid})
+	group.queue_free()
+	await process_frame
+	await process_frame
+
+
+func _find_view_for(session_id: String):
+	for term in root.get_tree().get_nodes_in_group("terminal_pane"):
+		if is_instance_valid(term) and term.has_method("get_session"):
+			var s = term.get_session()
+			if s != null and is_instance_valid(s) and str(s.terminal_id) == session_id:
+				return term
+	return null
+
+
+func _count_views_for(session_id: String) -> int:
+	var n := 0
+	for term in root.get_tree().get_nodes_in_group("terminal_pane"):
+		if is_instance_valid(term) and term.has_method("get_session"):
+			var s = term.get_session()
+			if s != null and is_instance_valid(s) and str(s.terminal_id) == session_id:
+				n += 1
+	return n
+
 
 func _clear_policy_for_test() -> void:
 	var policy_file: String = ProjectSettings.globalize_path("user://plugins/policy.json")

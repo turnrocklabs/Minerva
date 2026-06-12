@@ -174,6 +174,14 @@ func _ready():
 
 	resized.connect(
 		func():
+			# Ignore degenerate mid-layout rects (zero/tiny — common while the
+			# pane is being built, and always in headless harnesses): pushing a
+			# 1×1 SIGWINCH reflows the live agent's screen for nothing. The
+			# final layout fires resized again at the real size.
+			var draw_width: float = text_layer.size.x if text_layer else _output_container.size.x
+			var view_height: float = _output_container.size.y
+			if draw_width < char_width * 8.0 or view_height < line_height * 2.0:
+				return
 			_recalc_terminal_size()
 			if _session:
 				_session.resize(_cols, _rows)
