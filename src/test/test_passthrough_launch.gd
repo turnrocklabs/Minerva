@@ -170,9 +170,25 @@ func _test_validation(so) -> void:
 	dialog._on_existing_selected(1)
 	check("bind-to-existing → command field disabled", not dialog._command_edit.editable)
 	check("bind-to-existing → cwd field disabled", not dialog._cwd_edit.editable)
+	check("bind-to-existing → browse button disabled", dialog._cwd_browse_button.disabled)
 	dialog._existing_dropdown.select(0)
 	dialog._on_existing_selected(0)
 	check("back to new-session → command field re-enabled", dialog._command_edit.editable)
+	check("back to new-session → browse button re-enabled", not dialog._cwd_browse_button.disabled)
+
+	# Directory chooser: a pick only FILLS the cwd LineEdit (typed and picked
+	# paths share one validation path). Drive the dialog's signal directly —
+	# popping a real FileDialog headless proves nothing about the picker UI.
+	dialog._on_cwd_browse_pressed()
+	check("browse builds a directory-mode chooser",
+		dialog._cwd_dialog != null
+			and dialog._cwd_dialog.file_mode == FileDialog.FILE_MODE_OPEN_DIR
+			and dialog._cwd_dialog.access == FileDialog.ACCESS_FILESYSTEM)
+	if dialog._cwd_dialog != null:
+		dialog._cwd_dialog.hide()
+		dialog._cwd_dialog.dir_selected.emit("/tmp")
+		check("dir pick fills the cwd field", dialog._cwd_edit.text == "/tmp",
+			dialog._cwd_edit.text)
 
 	registry.close_session(session.terminal_id)
 	dialog.queue_free()

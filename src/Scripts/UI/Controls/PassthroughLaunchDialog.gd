@@ -47,6 +47,8 @@ var chat_starter: Callable = Callable()
 var _name_edit: LineEdit
 var _command_edit: LineEdit
 var _cwd_edit: LineEdit
+var _cwd_browse_button: Button
+var _cwd_dialog: FileDialog
 var _profile_dropdown: OptionButton
 var _existing_dropdown: OptionButton
 var _error_label: Label
@@ -165,12 +167,21 @@ func _build_ui() -> void:
 	_command_edit.text_changed.connect(_on_command_changed)
 	vbox.add_child(_command_edit)
 
-	# Working directory (optional)
+	# Working directory (optional). Typed OR picked: the Browse… button opens a
+	# directory chooser that only FILLS the LineEdit — the text stays the single
+	# source of truth, so both entry styles go through the same validation.
 	vbox.add_child(_label("Working directory (optional):"))
+	var cwd_row := HBoxContainer.new()
+	cwd_row.add_theme_constant_override("separation", 6)
+	vbox.add_child(cwd_row)
 	_cwd_edit = LineEdit.new()
 	_cwd_edit.placeholder_text = "e.g. /home/me/project"
 	_cwd_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_child(_cwd_edit)
+	cwd_row.add_child(_cwd_edit)
+	_cwd_browse_button = Button.new()
+	_cwd_browse_button.text = "Browse…"
+	_cwd_browse_button.pressed.connect(_on_cwd_browse_pressed)
+	cwd_row.add_child(_cwd_browse_button)
 
 	# Profile (auto-inferred from command; manual pick sticks)
 	vbox.add_child(_label("Agent profile:"))
@@ -257,6 +268,32 @@ func _on_existing_selected(idx: int) -> void:
 		_command_edit.editable = not bind_existing
 	if _cwd_edit:
 		_cwd_edit.editable = not bind_existing
+	if _cwd_browse_button:
+		_cwd_browse_button.disabled = bind_existing
+
+
+## Open the directory chooser for the working-directory field. Uses the core
+## directory-picker idiom (menuMain/PreferencesPopup): Godot's own FileDialog
+## with ACCESS_FILESYSTEM — engine-rendered, so it behaves identically on
+## Linux/macOS/Windows. The pick only fills the LineEdit; Start still
+## validates the text like a typed path.
+func _on_cwd_browse_pressed() -> void:
+	if _cwd_dialog == null:
+		_cwd_dialog = FileDialog.new()
+		_cwd_dialog.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+		_cwd_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_cwd_dialog.title = "Choose Working Directory"
+		_cwd_dialog.min_size = Vector2i(600, 400)
+		_cwd_dialog.transient = true
+		_cwd_dialog.dir_selected.connect(func(path: String) -> void:
+			if _cwd_edit:
+				_cwd_edit.text = path)
+		add_child(_cwd_dialog)
+	# Start browsing from the typed path when it points at a real directory.
+	var typed: String = _cwd_edit.text.strip_edges() if _cwd_edit else ""
+	if not typed.is_empty() and DirAccess.dir_exists_absolute(typed):
+		_cwd_dialog.current_dir = typed
+	_cwd_dialog.popup_centered()
 
 
 func _on_command_changed(text: String) -> void:

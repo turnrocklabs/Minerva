@@ -1113,7 +1113,11 @@ func _build_passthrough_history(entry_key: String, display_name: String, bound_t
 	provider_obj.configure_from_entry(entry)
 
 	var history: ChatHistory = ChatHistory.new(provider_obj)
-	history.HistoryName = _next_chat_tab_name()
+	# The chat tab carries the launch dialog's session name — same name as the
+	# terminal session/tab — so the pair is recognisable across panes. Generic
+	# "Chat N" numbering is the no-name fallback only.
+	history.HistoryName = display_name.strip_edges() if not display_name.strip_edges().is_empty() \
+			else _next_chat_tab_name()
 	history.HistoryItemList = []
 	history.SystemPromptEnabled = provider_obj.requires_default_system_prompt
 	history.PassthroughMode = true

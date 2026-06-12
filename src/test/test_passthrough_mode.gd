@@ -147,6 +147,8 @@ func _test_build_passthrough_history(so) -> void:
 		check("PassthroughMode set", history.PassthroughMode == true)
 		check("BoundTerminalId set", history.BoundTerminalId == "term-7", history.BoundTerminalId)
 		check("PassthroughName set", history.PassthroughName == "Claude CLI", history.PassthroughName)
+		check("chat tab named after the session name", history.HistoryName == "Claude CLI",
+			history.HistoryName)
 		check("provider is a PluginProvider for the right entry",
 			history.provider != null and "entry_key" in history.provider
 				and history.provider.entry_key == ENTRY_KEY,
@@ -157,6 +159,9 @@ func _test_build_passthrough_history(so) -> void:
 	check("empty display_name falls back to entry display_name",
 		history2 != null and history2.PassthroughName == "Term Provider",
 		history2.PassthroughName if history2 != null else "<null>")
+	check("empty display_name keeps the generic Chat-N tab name",
+		history2 != null and history2.HistoryName.begins_with("Chat"),
+		history2.HistoryName if history2 != null else "<null>")
 
 	# Unknown entry → null, NO fallback provider (contractual binding).
 	var missing = pane._build_passthrough_history("plugin:nope:none", "X", "")
