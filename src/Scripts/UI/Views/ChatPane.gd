@@ -4,6 +4,9 @@ extends TabContainer
 const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
 const VoiceGatewayClientScript = preload("res://Scripts/Services/Voice/VoiceGatewayClient.gd")
 const PassthroughLaunchDialogScript = preload("res://Scripts/UI/Controls/PassthroughLaunchDialog.gd")
+# Preload (not the class_name global) so a --script harness that loads ChatPane.gd
+# before the global class cache is built still compiles (W5).
+const PassthroughTurnStatusScript = preload("res://Scripts/Models/PassthroughTurnStatus.gd")
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -1984,14 +1987,31 @@ func execute_regular_chat(text: String) -> void:
 	dummy_item.provider = history.provider
 
 	var model_msg_node = create_model_message_node(history, dummy_item)
+
+	# W5 (chat-passthrough): for passthrough chats the generate is a zero-token
+	# plugin transport while the bound terminal's agent works. Relay the agent's
+	# own mechanical status (read straight off the PTY screen) into THIS node so
+	# the turn looks alive, until the generate resolves. The relay reuses the
+	# accumulator idiom: content lives on dummy_item, the wave shows via
+	# loading_append, and the SAME node finalizes below.
+	var _pt_status = _passthrough_begin_relay(history, model_msg_node, dummy_item)
+
 	print("[ChatPane] About to call generate_content_from_provider...")
 	var bot_response = await generate_content_from_provider(history, history_list)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
+
+	# Stop the status relay the instant the generate resolves (success/error/cancel).
+	_passthrough_end_relay(_pt_status, bot_response, model_msg_node, dummy_item)
 
 	# Create history item from bot response
 	print("[ChatPane] Calling process_bot_response...")
 	var chi = process_bot_response(bot_response, history.provider)
 	print("[ChatPane] process_bot_response returned, chi.Message length: %d" % chi.Message.length())
+
+	# W5: carry passthrough question options (W1 contract) onto the finalized CHI
+	# so W4 can render cards on the NEXT round. Nothing here renders cards.
+	if bot_response != null and bot_response.hcp_data.has("passthrough_question_options"):
+		chi.HcpData = {"passthrough_question_options": bot_response.hcp_data["passthrough_question_options"]}
 
 	# Handle tool calls if agent mode is enabled for this chat and response has tool calls
 	print("[ChatPane] Tool call check: AgentModeEnabled=%s, bot_response=%s, has_tool_calls=%s" % [
@@ -2026,6 +2046,89 @@ func execute_regular_chat(text: String) -> void:
 	history.is_request_active = false
 	_update_stop_button()
 	_update_compact_button()
+
+
+## W5 (chat-passthrough): how often to re-read the bound terminal screen while a
+## passthrough turn is in flight. ~1Hz — a SceneTree timer, never per-frame.
+const PASSTHROUGH_STATUS_POLL_SEC := 1.0
+
+
+## Begin the live-status relay for a passthrough turn. Returns a
+## PassthroughTurnStatus bookkeeper (null for non-passthrough chats, so the
+## generic path is untouched). Switches the loading node into loading_append
+## mode (content visible + ●●● wave, like the accumulator) and kicks a ~1Hz
+## SceneTree poll loop that relays the bound session's screen into the node.
+## No bound session (background session died / id empty) → keep the plain ●●●
+## bubble (loading stays true), no relay, no errors.
+func _passthrough_begin_relay(history: ChatHistory, model_msg_node: Control,
+		dummy_item: ChatHistoryItem):
+	if history == null or not history.PassthroughMode:
+		return null
+	var status = PassthroughTurnStatusScript.new()
+	if not status.begin():
+		return null
+	# Switch the bubble from "hide-everything loading" to "content + wave" so the
+	# relayed status text is visible. loading must go false or content is hidden.
+	if is_instance_valid(model_msg_node):
+		model_msg_node.loading = false
+		model_msg_node.loading_append = true
+	# Drive the poll loop as a detached coroutine; it self-terminates when
+	# status.polling clears (set by _passthrough_end_relay) or the node dies.
+	_passthrough_poll_loop(status, history, model_msg_node, dummy_item)
+	return status
+
+
+## Detached ~1Hz poll loop. Reads the bound session screen, compacts it, and —
+## if it changed — writes it into the in-flight node's history_item and
+## re-renders IN PLACE (no new ChatHistoryItem). Stops the moment polling clears.
+func _passthrough_poll_loop(status, history: ChatHistory, model_msg_node: Control,
+		dummy_item: ChatHistoryItem) -> void:
+	while status != null and status.polling:
+		if not is_instance_valid(model_msg_node) or not is_instance_valid(dummy_item):
+			return
+		var screen := _passthrough_read_session_screen(history)
+		var compact: String = status.mark_status(screen)
+		if not compact.is_empty():
+			dummy_item.Message = compact
+			if is_instance_valid(model_msg_node) and model_msg_node.has_method("render"):
+				model_msg_node.render()
+		await get_tree().create_timer(PASSTHROUGH_STATUS_POLL_SEC).timeout
+
+
+## Read the bound terminal's viewport text, or "" when there is no live session.
+## Pure-ish: all the string work lives in PassthroughTurnStatus.compact_status.
+func _passthrough_read_session_screen(history: ChatHistory) -> String:
+	if history == null or history.BoundTerminalId.is_empty():
+		return ""
+	var registry = SingletonObject.get_terminal_session_registry()
+	if registry == null or not registry.has_session(history.BoundTerminalId):
+		return ""
+	var session = registry.get_session(history.BoundTerminalId)
+	if session == null or not session.has_method("read_viewport_text"):
+		return ""
+	return str(session.read_viewport_text())
+
+
+## End the relay when the generate resolves. Stops polling, records the
+## disposition (for the cancelled/answer/question distinction), and drops the
+## append-wave so the SAME node can finalize cleanly via update_ui_after_response.
+func _passthrough_end_relay(status, bot_response, model_msg_node: Control,
+		_dummy_item: ChatHistoryItem) -> void:
+	if status == null:
+		return
+	var disposition := "answer"
+	if bot_response == null:
+		disposition = "error"
+	elif bot_response.error != null and not str(bot_response.error).is_empty():
+		# PluginProvider stamps "Request cancelled." on a stop; any other error
+		# string is a transport/plugin error. Both end the relay; the finalize
+		# path renders the error text like other providers.
+		disposition = "cancelled" if str(bot_response.error).to_lower().find("cancel") != -1 else "error"
+	elif bot_response.hcp_data.has("passthrough_question_options"):
+		disposition = "question"
+	status.finish(disposition)
+	if is_instance_valid(model_msg_node):
+		model_msg_node.loading_append = false
 
 
 ## Get the last MODEL/ASSISTANT history item (the one that made the tool calls)
