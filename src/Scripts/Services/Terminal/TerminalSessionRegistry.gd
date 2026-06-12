@@ -9,6 +9,15 @@ extends Node
 ## A TerminalNew view attaches to a session for rendering and detaches without
 ## killing it; closing a terminal TAB asks the registry to close the session
 ## (preserving today's tab-close = PTY-close UX).
+##
+## v1 restart semantics (chat-passthrough T3 — deliberate; see
+## Docs/Plugin-platform-policy.md "Lifecycle & restart semantics"):
+## sessions are IN-MEMORY ONLY. PTY children die with the Minerva process, the
+## registry has no save/serialize surface and writes no files, and it starts
+## empty on every boot. Terminal ids are per-process (instance-id based) — never
+## store them durably. Consumers wanting re-launch after restart store the
+## COMMAND + CWD and create a fresh session.
+## test_terminal_restart_semantics.gd locks this contract.
 
 signal session_created(session)
 signal session_closed(session_id: String)

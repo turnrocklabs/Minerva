@@ -97,7 +97,28 @@ Auto-granted on install like all other host capabilities except
 
 `host.terminal.exec` (pre-existing) runs a one-shot shell command and returns merged
 stdout+stderr — a separate capability with a different trust model (command execution
-vs. observation).
+vs. observation). Terminal resolution for exec goes through the same
+`TerminalSessionRegistry` path as the four capabilities above (chat-passthrough T3):
+an explicit `terminal_id` resolves to a session (background sessions included); calls
+that name no terminal keep the historical prefer-a-visible-UI-terminal behavior, and
+never land in an unnamed background session.
+
+### Lifecycle & restart semantics (chat-passthrough DCR, v1 — deliberate)
+
+Background terminal sessions are **NOT persisted across a Minerva restart**. PTY
+children are OS children of the Minerva process; they die with it. v1 makes that
+the honest contract instead of pretending otherwise:
+
+- Sessions are **in-memory only**. `TerminalSessionRegistry` has no save/serialize
+  surface and writes no files; the registry starts **empty on every boot**.
+- Terminal ids are **per-process** (derived from instance ids). They are meaningless
+  after a restart and must **never be stored durably** — not in plugin state, not in
+  project files, not in agent notes.
+- A consumer that wants "the same terminal back" after a restart stores the
+  **COMMAND + CWD** it originally launched with and creates a **fresh session**
+  (`minerva_terminal_create background:true` + write the command). That is exactly
+  how the upcoming passthrough-chat relaunch affordance works: the chat remembers
+  what it launched, not which PTY it lived in.
 
 ## PLUGIN_EVENT trigger type (agent-relay DCR 019eafbdcfb3 A6)
 

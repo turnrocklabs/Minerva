@@ -3419,11 +3419,17 @@ func _handle_host_terminal_tool(plugin_id: String, capability: String, args: Dic
 #
 # Runs a shell command on the plugin's behalf and returns merged stdout+stderr.
 #
-# Routing:
-#   - When a visible UI terminal is available, the command runs THERE so the user
-#     sees it (routed_through="terminal"). The PTY does not expose $?, so
-#     exit_code is best-effort 0 and exit_code_known=false on that path.
-#   - Otherwise (headless session, or no terminal present), it falls back to a
+# Routing (chat-passthrough T3: resolution goes through the SAME
+# TerminalSessionRegistry path as host.terminal.{list,read,write,wait}, via
+# MCPTerminalTools.resolve_exec_target — no broker-local terminal scanning):
+#   - Explicit terminal_id → the named session. If it has an attached view the
+#     command runs THERE so the user sees it; a BACKGROUND session (no view)
+#     runs via the session PTY (write → wait, the same primitives the other
+#     host.terminal.* capabilities use). The PTY does not expose $?, so
+#     exit_code is best-effort 0 and exit_code_known=false on both terminal
+#     paths (routed_through="terminal").
+#   - No terminal_id → historical behavior preserved: prefer a visible UI
+#     terminal (never an unnamed background session); otherwise fall back to a
 #     direct subprocess via OS.execute, which yields a real exit code
 #     (routed_through="headless", exit_code_known=true).
 #
@@ -3475,13 +3481,26 @@ func _handle_host_terminal_exec(plugin_id: String, args: Dictionary) -> Dictiona
 		CapabilityBroker._test_terminal_exec_override = null
 		return PluginErrors.success(injected)
 
-	# 4. Prefer the visible UI terminal so the user can see the command run.
-	var term: TerminalNew = null
-	if DisplayServer.get_name() != "headless":
-		term = _find_exec_terminal(terminal_id)
+	# 4. Resolve the target through the SAME registry lookup the other
+	# host.terminal.* capabilities use (T3 — no broker-local terminal scan).
+	# Named ids resolve even headless (background sessions are headless-legit);
+	# the unnamed prefer-a-visible-terminal path keeps the display-server gate.
+	var target: Dictionary = {"session": null, "view": null}
+	if not terminal_id.is_empty():
+		target = _terminal_tools_module().resolve_exec_target(terminal_id)
+	elif DisplayServer.get_name() != "headless":
+		target = _terminal_tools_module().resolve_exec_target("")
+	var session = target.get("session")
+	var view = target.get("view")
+	if session != null and (not bool(session.terminal_available) or not bool(session.is_alive())):
+		# Extension missing or shell already exited — nothing can run there.
+		session = null
+		view = null
 
-	if term != null:
-		var t_result: Dictionary = await term.execute_command(command)
+	if view != null:
+		# Attached view: run there so the user sees it (block-based stdout —
+		# the pre-T3 UI-terminal path, byte-for-byte result shape).
+		var t_result: Dictionary = await view.execute_command(command)
 		if not bool(t_result.get("success", false)):
 			# Terminal present but exec failed — degrade to the subprocess path.
 			return _exec_headless(plugin_id, command, cwd)
@@ -3491,33 +3510,46 @@ func _handle_host_terminal_exec(plugin_id: String, args: Dictionary) -> Dictiona
 			"exit_code_known": false,
 			"timed_out": bool(t_result.get("timed_out", false)),
 			"routed_through": "terminal",
-			"terminal_id": str(term.get_instance_id()),
+			"terminal_id": str(session.terminal_id) if session != null else str(view.get_instance_id()),
+		})
+
+	if session != null:
+		# Named BACKGROUND session: compose the same write→wait primitives the
+		# other host.terminal.* capabilities use (raw=true: command is real
+		# bytes; the trailing \r is a literal carriage return submitting it).
+		var tools = _terminal_tools_module()
+		var timeout_ms: int = clampi(
+			int(args.get("timeout_ms", _TERMINAL_EXEC_DEFAULT_TIMEOUT_MS)),
+			1, _TERMINAL_EXEC_MAX_TIMEOUT_MS)
+		var wr: Dictionary = await tools.handle("minerva_terminal_write",
+			{"terminal_id": str(session.terminal_id), "text": command + "\r", "raw": true})
+		if not bool(wr.get("success", false)):
+			return _exec_headless(plugin_id, command, cwd)
+		var waited: Dictionary = await tools.handle("minerva_terminal_wait",
+			{"terminal_id": str(session.terminal_id),
+			"timeout_ms": timeout_ms, "settle_ms": 500})
+		return PluginErrors.success({
+			"stdout": _cap_terminal_output(str(waited.get("content", ""))),
+			"exit_code": 0,
+			"exit_code_known": false,
+			"timed_out": bool(waited.get("timed_out", false)),
+			"routed_through": "terminal",
+			"terminal_id": str(session.terminal_id),
 		})
 
 	# 5. Headless / no-terminal fallback: real subprocess with a true exit code.
 	return _exec_headless(plugin_id, command, cwd)
 
 
-## Find a usable terminal: by explicit id, else first visible+available, else any
-## available. Returns null in headless contexts or when none exist.
-func _find_exec_terminal(terminal_id: String) -> TerminalNew:
-	var loop := Engine.get_main_loop()
-	if loop == null or not (loop is SceneTree):
-		return null
-	var terminals: Array = (loop as SceneTree).get_nodes_in_group("terminal_pane")
-	if not terminal_id.is_empty():
-		var target_id: int = int(terminal_id)
-		for t in terminals:
-			if t is TerminalNew and t.get_instance_id() == target_id and t._terminal_available:
-				return t
-		return null
-	for t in terminals:
-		if t is TerminalNew and t.is_visible_in_tree() and t._terminal_available:
-			return t
-	for t in terminals:
-		if t is TerminalNew and t._terminal_available:
-			return t
-	return null
+const _TERMINAL_TOOLS_SCRIPT_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+
+
+## Throwaway MCPTerminalTools (RefCounted, null server) used purely for its
+## registry lookup + write/wait primitives — the same test-proven idiom as
+## test_background_terminals.gd. Runtime load() (not preload/class_name) so this
+## file stays parseable in isolated --script harnesses.
+func _terminal_tools_module():
+	return load(_TERMINAL_TOOLS_SCRIPT_PATH).new(null)
 
 
 ## Run `command` as a subprocess, merging stdout+stderr, returning a real exit

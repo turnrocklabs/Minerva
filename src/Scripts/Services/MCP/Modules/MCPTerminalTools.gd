@@ -128,6 +128,31 @@ func _resolve_session(terminal_id: String = ""):
 	return null
 
 
+## Shared lookup for CapabilityBroker's host.terminal.exec (chat-passthrough
+## T3): resolve where a one-shot command should run via the SAME registry path
+## as read/write/wait — the broker must not duplicate resolution logic.
+## Returns {"session": ..., "view": ...}; either value may be null.
+##   - Named id: registry lookup (incl. the stale view-id fallback) + the view
+##     currently attached to that session (null for background sessions).
+##   - Empty id: exec's historical preference — the visible UI terminal, else
+##     any available attached view. NEVER an unnamed background session: a
+##     one-shot exec must not type into an agent-owned background terminal the
+##     caller didn't name (and the subprocess fallback gives a real exit code).
+func resolve_exec_target(terminal_id: String) -> Dictionary:
+	if not terminal_id.is_empty():
+		var session = _resolve_session(terminal_id)
+		return {"session": session, "view": _find_view_for_session(session)}
+	var view := _find_active_view()
+	if view == null:
+		for term in SingletonObject.get_tree().get_nodes_in_group("terminal_pane"):
+			if term is TerminalNew and term._terminal_available:
+				view = term
+				break
+	if view == null:
+		return {"session": null, "view": null}
+	return {"session": view.get_session(), "view": view}
+
+
 func _find_active_view() -> TerminalNew:
 	for term in SingletonObject.get_tree().get_nodes_in_group("terminal_pane"):
 		if term is TerminalNew and term.is_visible_in_tree() and term._terminal_available:

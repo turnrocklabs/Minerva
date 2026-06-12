@@ -36,6 +36,7 @@ const CAPS := [
 	"host.terminal.read",
 	"host.terminal.write",
 	"host.terminal.wait",
+	"host.terminal.exec",  # T3: exec resolves through the same registry path
 ]
 
 var _pass_count: int = 0
@@ -267,6 +268,29 @@ func _run() -> void:
 		check("AC4: host.terminal.read sees marker",
 			str(brd.get("result", {}).get("content", "")).find("marker_bg_broker") != -1,
 			"got: %s" % str(brd))
+
+		# T3: host.terminal.exec named at a BACKGROUND session resolves through
+		# the same registry path and runs IN that session's PTY (write→wait),
+		# not in the subprocess fallback.
+		Broker._test_terminal_exec_override = null
+		var bexec: Dictionary = await broker.dispatch(TEST_PLUGIN_ID, "host.terminal.exec",
+			{"command": "echo exec_bg_t3", "terminal_id": bg_id, "timeout_ms": 8000})
+		check("T3: host.terminal.exec on background session succeeds",
+			bexec.get("success", false), "got: %s" % str(bexec))
+		var bexec_res: Dictionary = bexec.get("result", {})
+		check("T3: exec routed_through == terminal (not headless fallback)",
+			str(bexec_res.get("routed_through", "")) == "terminal",
+			"result=%s" % str(bexec_res))
+		check("T3: exec terminal_id is the SESSION id (registry namespace)",
+			str(bexec_res.get("terminal_id", "")) == bg_id)
+		check("T3: exec stdout contains the marker",
+			str(bexec_res.get("stdout", "")).find("exec_bg_t3") != -1,
+			"stdout=%s" % str(bexec_res.get("stdout", "")))
+		check("T3: exec exit_code_known false on the PTY path",
+			bexec_res.get("exit_code_known", true) == false)
+		# The command actually ran in THAT session: its scrollback has the marker.
+		check("T3: session scrollback shows the exec command ran there",
+			registry.get_session(bg_id).get_plain_text().find("exec_bg_t3") != -1)
 
 	# ── AC5: dead-session hygiene — flagged alive=false, NOT pruned ──────
 	print("\n-- AC5: dead-session flagging --")
