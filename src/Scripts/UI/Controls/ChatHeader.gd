@@ -48,6 +48,15 @@ func setup(history) -> void:
 			focused_label.tooltip_text = "Fixed tool set (no dynamic discovery)"
 		add_child(focused_label)
 
+	# Passthrough chat indicator (chat-passthrough W2) — provider is contractually
+	# bound to a terminal-backed plugin entry for the chat's life.
+	if history.PassthroughMode:
+		var passthrough_label = Label.new()
+		passthrough_label.text = "[Passthrough: %s]" % history.PassthroughName
+		passthrough_label.add_theme_color_override("font_color", Color(0.4, 0.85, 0.6))
+		passthrough_label.tooltip_text = "Passthrough chat — provider is fixed for this chat's life"
+		add_child(passthrough_label)
+
 	# Spacer
 	var spacer = Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL

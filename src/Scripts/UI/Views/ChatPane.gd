@@ -29,6 +29,11 @@ var _showing_archived: bool = false
 ## Focused chat popup (lazy-instantiated)
 var _focused_chat_popup: FocusedChatPopup = null
 
+## Passthrough chat placeholder picker (chat-passthrough W2; W3 replaces with the
+## full launch dialog)
+var _passthrough_picker: ConfirmationDialog = null
+var _passthrough_picker_list: ItemList = null
+
 ## TTS playback for voice conversation mode (controlled by Voice Preferences)
 var _tts_player: AudioStreamPlayer
 
@@ -1049,6 +1054,142 @@ func _on_focused_chat_create(config: Dictionary) -> void:
 
 	if get_tab_count() > 0:
 		buffer_control_chats.hide()
+
+
+#region Passthrough chat (chat-passthrough W2)
+
+## Next "Chat N" tab name, mirroring the numbering used by _on_new_chat.
+func _next_chat_tab_name() -> String:
+	var last_chat_number: int = -1
+	for i in range(get_tab_count() - 1, -1, -1):
+		var tab_title := get_tab_title(i)
+		if tab_title == "Chat":
+			last_chat_number = max(last_chat_number, 0)
+		elif tab_title.begins_with("Chat"):
+			var suffix = tab_title.right(-"Chat".length()).strip_edges()
+			if suffix.is_valid_int():
+				last_chat_number = max(last_chat_number, int(suffix))
+	return "Chat" if last_chat_number == -1 else "Chat %s" % (last_chat_number + 1)
+
+
+## Build (model only, no UI) a passthrough ChatHistory bound to a registered
+## plugin chat-provider entry. Returns null when the entry can't be resolved —
+## the binding is contractual, so there is NO fallback provider here.
+func _build_passthrough_history(entry_key: String, display_name: String, bound_terminal_id: String = "") -> ChatHistory:
+	var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
+	if cpr == null or not cpr.has_method("get_entry"):
+		push_warning("[ChatPane] start_passthrough_chat: no plugin chat-provider registry available")
+		return null
+	var entry: Dictionary = cpr.get_entry(entry_key)
+	if entry.is_empty():
+		push_warning("[ChatPane] start_passthrough_chat: entry '%s' is not registered" % entry_key)
+		return null
+
+	var PluginProviderScript = load("res://Scripts/Services/Providers/PluginProvider.gd")
+	var provider_obj: BaseProvider = PluginProviderScript.new()
+	provider_obj.configure_from_entry(entry)
+
+	var history: ChatHistory = ChatHistory.new(provider_obj)
+	history.HistoryName = _next_chat_tab_name()
+	history.HistoryItemList = []
+	history.SystemPromptEnabled = provider_obj.requires_default_system_prompt
+	history.PassthroughMode = true
+	history.BoundTerminalId = bound_terminal_id
+	history.PassthroughName = display_name if not display_name.is_empty() \
+			else str(entry.get("display_name", "Passthrough"))
+	return history
+
+
+## Create a new passthrough chat bound to a plugin chat-provider entry (W2 stub
+## flow; W3's launch dialog drives this API). The provider chooser ends up
+## showing the bound entry and locked on it; the header shows the badge.
+func start_passthrough_chat(entry_key: String, display_name: String, bound_terminal_id: String = "") -> ChatHistory:
+	var history := _build_passthrough_history(entry_key, display_name, bound_terminal_id)
+	if history == null:
+		SingletonObject.ErrorDisplay("Passthrough unavailable",
+			"Provider entry '%s' is not registered — is the plugin running?" % entry_key)
+		return null
+
+	SingletonObject.ChatList.append(history)
+	render_history(history)
+	current_tab = get_tab_count() - 1
+
+	if history.provider.requires_default_system_prompt:
+		add_new_system_prompt_item(history.provider.default_system_prompt)
+
+	if get_tab_count() > 0:
+		buffer_control_chats.hide()
+
+	# Chooser must show + lock on the bound entry (tab-change glue also covers
+	# later switches back to this tab).
+	_update_passthrough_chooser_lock(current_tab)
+	return history
+
+
+## Lock/unlock the provider chooser based on whether the given tab is a
+## passthrough chat. Called on tab changes and right after passthrough creation.
+func _update_passthrough_chooser_lock(tab: int) -> void:
+	if _provider_option_button == null:
+		return
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		if _provider_option_button.is_locked():
+			_provider_option_button.set_locked(false)
+		return
+	var history = SingletonObject.ChatList[tab]
+	if history.PassthroughMode:
+		var entry_key := ""
+		if history.provider != null and "entry_key" in history.provider:
+			entry_key = str(history.provider.entry_key)
+		_provider_option_button.lock_to_entry(entry_key, history.PassthroughName,
+			"Passthrough chat — provider is fixed for this chat's life")
+	elif _provider_option_button.is_locked():
+		_provider_option_button.set_locked(false)
+
+
+## Top-bar "new passthrough chat" button handler. This round: a minimal
+## placeholder picker over the registered entries (W3 replaces it with the full
+## launch dialog). Pick-first is not acceptable UX, so the user always chooses.
+func _on_passthrough_chat_pressed() -> void:
+	var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
+	var entries: Array = cpr.list_entries() if cpr != null and cpr.has_method("list_entries") else []
+	if entries.is_empty():
+		SingletonObject.create_toast_notification(
+			"Passthrough chat requires a terminal provider — install agent-relay")
+		return
+
+	if _passthrough_picker == null:
+		_passthrough_picker = ConfirmationDialog.new()
+		_passthrough_picker.title = "New passthrough chat"
+		_passthrough_picker.ok_button_text = "Start"
+		_passthrough_picker_list = ItemList.new()
+		_passthrough_picker_list.custom_minimum_size = Vector2(360, 180)
+		_passthrough_picker.add_child(_passthrough_picker_list)
+		_passthrough_picker.confirmed.connect(_on_passthrough_picker_confirmed)
+		_passthrough_picker_list.item_activated.connect(func(_idx: int):
+			_passthrough_picker.hide()
+			_on_passthrough_picker_confirmed())
+		add_child(_passthrough_picker)
+
+	_passthrough_picker_list.clear()
+	for entry in entries:
+		var idx: int = _passthrough_picker_list.add_item(str(entry.get("display_name", "Plugin")))
+		_passthrough_picker_list.set_item_metadata(idx, str(entry.get("key", "")))
+	if _passthrough_picker_list.item_count > 0:
+		_passthrough_picker_list.select(0)
+	_passthrough_picker.popup_centered()
+
+
+func _on_passthrough_picker_confirmed() -> void:
+	if _passthrough_picker_list == null:
+		return
+	var selected_items := _passthrough_picker_list.get_selected_items()
+	if selected_items.is_empty():
+		return
+	var entry_key := str(_passthrough_picker_list.get_item_metadata(selected_items[0]))
+	var disp := _passthrough_picker_list.get_item_text(selected_items[0])
+	start_passthrough_chat(entry_key, disp, "")
+
+#endregion
 
 
 func _connect_mcp_signals() -> void:
@@ -2610,6 +2751,17 @@ func _ready():
 				new_chat_btn.get_parent().add_child(focused_btn)
 				new_chat_btn.get_parent().move_child(focused_btn, new_chat_btn.get_index())
 
+				# "Passthrough Chat" button — chat bound to a terminal-backed plugin
+				# provider (chat-passthrough W2). No vertical-swap icon exists in
+				# assets/, so a "⇅" text glyph stands in this round (W3 may refine).
+				var passthrough_btn := Button.new()
+				passthrough_btn.text = "⇅"
+				passthrough_btn.tooltip_text = "New passthrough chat"
+				passthrough_btn.focus_mode = Control.FOCUS_NONE
+				passthrough_btn.pressed.connect(_on_passthrough_chat_pressed)
+				new_chat_btn.get_parent().add_child(passthrough_btn)
+				new_chat_btn.get_parent().move_child(passthrough_btn, new_chat_btn.get_index())
+
 	# Auto-start voice gateway if always_listening was previously enabled
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.always_listening:
@@ -3418,6 +3570,14 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 
 	var history = SingletonObject.ChatList[current_tab]
 
+	# Passthrough chats are contractually bound to their terminal provider —
+	# the chooser is locked in the UI, and this guard backstops every other
+	# selection route (keyboard, programmatic select, late signals).
+	var bound_key: String = history.provider.entry_key if history.provider is PluginProvider else ""
+	if history.PassthroughMode and not (provider_ is PluginProvider and provider_.entry_key == bound_key):
+		sync_provider_picker_to_chat(history.HistoryId)
+		return
+
 	history.provider = provider_
 	if not provider_.is_inside_tree():
 		history.VBox.add_child(provider_)
@@ -3434,6 +3594,10 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 # when tab changes, set the provider picker to the provider that chat tab is using
 func _on_tab_changed(tab: int):
 	sync_provider_picker_to_chat(tab)
+
+	# Passthrough chats lock the chooser onto their bound entry; switching to a
+	# normal chat unlocks it (chat-passthrough W2).
+	_update_passthrough_chooser_lock(tab)
 
 	_update_compact_button()
 	_update_stop_button()

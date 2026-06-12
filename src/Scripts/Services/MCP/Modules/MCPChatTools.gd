@@ -506,6 +506,9 @@ func _set_chat_model(args: Dictionary) -> Dictionary:
 	if not history:
 		return MCPToolUtils.error("Chat not found: %s" % chat_id)
 
+	if "PassthroughMode" in history and history.PassthroughMode:
+		return MCPToolUtils.error("Chat %s is a passthrough chat — its provider is locked to its bound terminal and cannot be changed" % chat_id)
+
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
 		return MCPToolUtils.error("Chat pane not available")

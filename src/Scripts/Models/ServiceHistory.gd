@@ -132,6 +132,21 @@ var ConfiguredTools: Array[String] = []:
 var ConfiguredSkills: Array[String] = []:
 	set(value): SingletonObject.call_deferred("save_state", false); ConfiguredSkills = value
 
+## Passthrough mode (chat-passthrough W2): when true, this chat is bound to a
+## terminal-backed plugin provider for its whole life — the provider chooser is
+## locked and never auto-falls-back (recovery is W3's relaunch affordance).
+var PassthroughMode: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughMode = value
+
+## Terminal id the passthrough provider is bound to (empty until launch wires it).
+var BoundTerminalId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); BoundTerminalId = value
+
+## Display name of the bound passthrough provider (for the header badge and the
+## locked chooser's offline display — survives the registry entry vanishing).
+var PassthroughName: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughName = value
+
 ## Why this chat's last agent turn ended. Empty string = not terminated or not an agent chat.
 var termination_reason: String = ""
 ## Human-readable message about termination (error text, quota details, etc.)
@@ -178,6 +193,9 @@ static var SERIALIZER_FIELDS = [
 	"ConfiguredTools",
 	"ConfiguredSkills",
 	"PluginProviderKey",
+	"PassthroughMode",
+	"BoundTerminalId",
+	"PassthroughName",
 ]
 
 
@@ -329,6 +347,9 @@ func Serialize() -> Dictionary:
 		"StaticToolMode": StaticToolMode,
 		"ConfiguredTools": ConfiguredTools,
 		"ConfiguredSkills": ConfiguredSkills,
+		"PassthroughMode": PassthroughMode,
+		"BoundTerminalId": BoundTerminalId,
+		"PassthroughName": PassthroughName,
 	}
 	return save_dict
 
@@ -453,5 +474,11 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.ConfiguredTools.assign(data.get("ConfiguredTools", []))
 	if data.has("ConfiguredSkills"):
 		history.ConfiguredSkills.assign(data.get("ConfiguredSkills", []))
+	if data.has("PassthroughMode"):
+		history.PassthroughMode = data.get("PassthroughMode", false)
+	if data.has("BoundTerminalId"):
+		history.BoundTerminalId = str(data.get("BoundTerminalId", ""))
+	if data.has("PassthroughName"):
+		history.PassthroughName = str(data.get("PassthroughName", ""))
 
 	return history

@@ -36,6 +36,18 @@ var _current_set_key: Variant = "default"
 ## Services used to build the current combined set (for rebuilding after provider changes)
 var _current_combined_services: Array = []
 
+## Lock state (chat-passthrough W2): a locked chooser is disabled and pinned to
+## one plugin entry — the chat's provider binding is contractual. When the bound
+## registry entry vanishes the chooser keeps displaying the bound name with an
+## " (offline)" suffix and NEVER auto-falls-back; W3's relaunch affordance owns
+## recovery. Repopulation-driven selection changes are ignored while locked.
+var _locked := false
+var _locked_entry_key := ""
+var _locked_display_name := ""
+
+## Suffix shown on the locked entry when its registry entry is gone.
+const OFFLINE_SUFFIX := " (offline)"
+
 
 func _ready():
 	_setup_default_provider_set()
@@ -68,6 +80,11 @@ func _on_chat_providers_changed() -> void:
 	var had_selection_id := get_selected_id()
 	_setup_default_provider_set()
 	_rebuild_dropdown()
+	# Locked chooser (chat-passthrough W2): the binding is contractual. Re-pin the
+	# locked entry (or its offline placeholder) and NEVER fall back to a default.
+	if _locked:
+		_ensure_locked_entry_displayed()
+		return
 	# If a plugin provider was selected and it's now gone, the selection will
 	# have been dropped by _rebuild_dropdown (no matching item). Restore a sane
 	# default so the chat stays usable.
@@ -78,6 +95,76 @@ func _on_chat_providers_changed() -> void:
 		var prov := _get_provider_from_id(get_selected_id())
 		if prov:
 			provider_selected.emit(prov)
+
+
+#region Lock mechanism (chat-passthrough W2)
+
+## Lock/unlock the chooser. Locking captures the currently-selected plugin entry
+## as the contractual binding (use lock_to_entry when the entry key/name are
+## known explicitly, e.g. on tab switch into a passthrough chat).
+func set_locked(locked: bool, reason_tooltip: String = "") -> void:
+	_locked = locked
+	disabled = locked
+	tooltip_text = reason_tooltip if locked else ""
+	if locked:
+		var idx := selected
+		if idx >= 0 and idx < get_item_count() \
+				and get_item_id(idx) >= SingletonObject.PLUGIN_PROVIDER_ID_BASE:
+			var meta = get_item_metadata(idx)
+			if meta is String:
+				_locked_entry_key = meta
+				_locked_display_name = get_item_text(idx).trim_suffix(OFFLINE_SUFFIX)
+	else:
+		_locked_entry_key = ""
+		_locked_display_name = ""
+
+
+func is_locked() -> bool:
+	return _locked
+
+
+## Lock the chooser onto an explicit plugin entry. Selects the live item when
+## the entry is registered; otherwise shows an offline placeholder. Used by
+## ChatPane when the active tab is a passthrough chat (the entry may already be
+## gone — the bound name still must display).
+func lock_to_entry(entry_key: String, display_name: String, reason_tooltip: String = "") -> void:
+	_locked = true
+	disabled = true
+	tooltip_text = reason_tooltip
+	_locked_entry_key = entry_key
+	_locked_display_name = display_name
+	_ensure_locked_entry_displayed()
+
+
+## Pin the dropdown's visible selection to the locked entry. If the entry is no
+## longer in the dropdown (registry entry vanished), append a display-only
+## placeholder "<name> (offline)" and select it. select() does not emit
+## item_selected, so no provider change is propagated.
+func _ensure_locked_entry_displayed() -> void:
+	if not _locked:
+		return
+	if not _locked_entry_key.is_empty():
+		var idx := _find_item_index_by_key(_locked_entry_key)
+		if idx != -1:
+			select(idx)
+			return
+	# Entry gone (or key unknown) → offline placeholder, never a fallback.
+	var placeholder_text := _locked_display_name + OFFLINE_SUFFIX
+	var placeholder_idx := -1
+	for i in range(get_item_count()):
+		if get_item_text(i) == placeholder_text:
+			placeholder_idx = i
+			break
+	if placeholder_idx == -1:
+		var placeholder_id := SingletonObject.PLUGIN_PROVIDER_ID_BASE
+		while get_item_index(placeholder_id) != -1:
+			placeholder_id += 1
+		add_item(placeholder_text, placeholder_id)
+		placeholder_idx = get_item_count() - 1
+		set_item_metadata(placeholder_idx, _locked_entry_key)
+	select(placeholder_idx)
+
+#endregion
 
 
 ## Handle provider enable/disable changes
