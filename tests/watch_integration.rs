@@ -1589,6 +1589,130 @@ fn test_armed_idle_sample_does_not_consume_arm() {
     let _ = child.wait();
 }
 
+// Test 13b (W8 HITL stall): a SHORT armed turn that redraws in place — rows
+// never grow (the grid isn't full yet) and the busy phase is shorter than the
+// settle window so no busy screen is ever sampled. The only evidence is that
+// the screen CONTENT changed since the arm snapshot. The gate must open on
+// that change (armed sessions only) or the turn stays gated forever and the
+// passthrough generate stalls to its 590s timeout.
+#[test]
+fn test_armed_short_turn_in_place_redraw_detected() {
+    let answer_screen: &str =
+        "\u{276f} hi\n\
+         \n\
+         \u{25cf} Hi! What would you like to work on?\n\
+         \n\
+         \u{273b} Cooked for 5s\n\
+         \n\
+         \u{276f}\u{a0}\n\
+         ? for shortcuts\n";
+
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-gate-3", "profile": "claude", "notify_mode": "armed"}
+        }
+    }));
+
+    // Drive: send (arms; snapshot = idle screen, rows=24) → every later wait
+    // sample is the FINAL answer screen at the SAME row count, never busy.
+    let send_id = next_id();
+    let mut send_fired = false;
+    let mut events: Vec<Value> = Vec::new();
+    let mut send_reply: Option<Value> = None;
+
+    for _ in 0..60 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => {
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                }
+                "host.terminal.read" => {
+                    // send's arm snapshot: idle screen, rows=24 (grid unfilled).
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": idle_screen(),
+                        "rows": 12, "total_scrollback_rows": 24
+                    }));
+                }
+                "host.terminal.wait" => {
+                    if !send_fired {
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "timed_out": false, "bell_rung": false, "shell_exited": false,
+                            "rows": 12, "total_scrollback_rows": 24
+                        }));
+                        let req = json!({
+                            "jsonrpc": "2.0",
+                            "id": send_id,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "minerva_agent_relay_send",
+                                "arguments": {"terminal_id": "t-gate-3", "text": "hi"}
+                            }
+                        }).to_string() + "\n";
+                        stdin.write_all(req.as_bytes()).unwrap();
+                        stdin.flush().unwrap();
+                        send_fired = true;
+                    } else if send_reply.is_none() {
+                        // Send still in flight — keep the watch thread quiet on
+                        // the PRE-turn screen.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "timed_out": false, "bell_rung": false, "shell_exited": false,
+                            "rows": 12, "total_scrollback_rows": 24
+                        }));
+                    } else {
+                        // The whole turn happened inside one settle window:
+                        // changed content, same rows, never busy.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": answer_screen,
+                            "timed_out": false, "bell_rung": false, "shell_exited": false,
+                            "rows": 12, "total_scrollback_rows": 24
+                        }));
+                    }
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if method == "minerva/plugin_event" {
+            if msg["params"]["event"].as_str() == Some("agent_relay.turn_completed") {
+                events.push(msg.clone());
+                break;
+            }
+        } else if msg.get("id").map(|v| v == &json!(send_id)).unwrap_or(false) {
+            send_reply = Some(msg);
+        }
+    }
+
+    assert!(send_reply.is_some(), "send should have replied");
+    assert_eq!(
+        events.len(), 1,
+        "short in-place turn must be detected via the armed content-change gate"
+    );
+    assert_eq!(events[0]["params"]["payload"]["cause"], "turn_completed");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle/persistence tests (relay-ux-suite 019eb3617c38 + 019eb32faa4d)
 // ---------------------------------------------------------------------------

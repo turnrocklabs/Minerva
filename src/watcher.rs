@@ -115,6 +115,16 @@ struct WatchSession {
     /// first wait sample after watch_start, or at the last counted turn.
     gate_ref_rows: Option<u64>,
 
+    /// Content reference for the gate's ARMED change check (W8 HITL stall):
+    /// a TUI that redraws in place inside a not-yet-filled grid grows no rows,
+    /// and a busy phase shorter than settle_ms never appears in a settled
+    /// host.terminal.wait sample — so short turns stayed gated forever. After
+    /// a send (armed), ANY screen change since the arm snapshot is evidence
+    /// the agent acted, so it also opens the gate. Unarmed sessions keep the
+    /// strict busy/growth rule (idle screens with cosmetic changes must not
+    /// fire phantom all_turns events).
+    gate_ref_hash: Option<u64>,
+
     /// Last-activity anchor for the idle reap: refreshed by arm() and by any
     /// counted detection. The watch_timeout_ms reap applies only to UNARMED
     /// sessions idle past this anchor — an armed session never self-reaps
@@ -138,6 +148,7 @@ impl WatchSession {
             last_event_payload: None,
             gate_open: false,
             gate_ref_rows: None,
+            gate_ref_hash: None,
             reap_anchor: Instant::now(),
         }
     }
@@ -362,9 +373,11 @@ pub fn arm(terminal_id: &str, snapshot: Option<(&str, u64)>) -> bool {
             // never gets reaped out from under its one-shot wake.
             s.reap_anchor = Instant::now();
             // Close the busy-gate: this arm's turn_completed requires a fresh
-            // busy screen or row growth past the arm snapshot first.
+            // busy screen, row growth past the arm snapshot, or (armed) any
+            // screen change since the pre-write snapshot.
             s.gate_open = false;
             s.gate_ref_rows = raw_rows;
+            s.gate_ref_hash = snapshot.map(|(content, _)| content_hash(content));
             let anchored = snapshot.map(|(content, rows)| {
                 anchored_rows(&s.profile_id, content, rows)
             });
@@ -387,6 +400,15 @@ pub fn arm(terminal_id: &str, snapshot: Option<(&str, u64)>) -> bool {
         );
     }
     found
+}
+
+/// Hash of a screen dump, for the gate's armed change check. Identity only —
+/// two samples compare equal iff the rendered text is identical.
+fn content_hash(content: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Compute the content-anchored row count: `total_rows` minus the trailing
@@ -634,16 +656,27 @@ fn watch_loop(
                 // Busy-gate bookkeeping: a busy screen or row growth past the
                 // reference opens the gate. First sample after watch_start
                 // seeds the reference (gate stays closed on that sample).
+                // ARMED sessions additionally open on any content change since
+                // the arm snapshot (W8 HITL stall): short in-place turns grow
+                // no rows, and a busy phase shorter than settle_ms is never
+                // present in a settled wait sample — without this, a passthrough
+                // turn whose whole answer fits one settle window gated forever.
                 let gate_open = {
                     let mut s = session.lock().unwrap();
                     if s.gate_ref_rows.is_none() {
                         s.gate_ref_rows = current_rows;
                     }
+                    let hash = content_hash(content);
+                    if s.gate_ref_hash.is_none() {
+                        s.gate_ref_hash = Some(hash);
+                    }
                     let grew = match (current_rows, s.gate_ref_rows) {
                         (Some(now), Some(reference)) => now > reference,
                         _ => false,
                     };
-                    if grew || detector::is_busy(content, &cd) {
+                    let changed_while_armed =
+                        s.armed && s.gate_ref_hash != Some(hash);
+                    if grew || changed_while_armed || detector::is_busy(content, &cd) {
                         s.gate_open = true;
                     }
                     s.gate_open
@@ -693,6 +726,7 @@ fn watch_loop(
                         let mut s = session.lock().unwrap();
                         s.gate_open = false;
                         s.gate_ref_rows = current_rows;
+                        s.gate_ref_hash = Some(content_hash(content));
                     }
 
                     // terminal_closed and agent_exited (child_exit) are terminal — stop watching.
