@@ -99,10 +99,14 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 		return bot
 
 	# Build the dispatch args. chat_id = owner history id; text = newest user
-	# message; messages = full formatted history ONLY for history_mode "full".
+	# message; entry_id tells the plugin WHICH of its registered entries this
+	# generate targets (a plugin watching N terminals would otherwise have to
+	# guess from chat_id); messages = full formatted history ONLY for
+	# history_mode "full".
 	var args: Dictionary = {
 		"chat_id": owner_history_id,
 		"text": _newest_user_text(prompt),
+		"entry_id": entry_id,
 	}
 	if history_mode == "full":
 		args["messages"] = prompt
