@@ -85,6 +85,16 @@ fn rpc_with_notifs(
             continue;
         }
 
+        // Capability request racing our reply (e.g. the watch thread's
+        // chat-provider register, B7): answer generically so the plugin
+        // thread never deadlocks waiting on a reply we'd otherwise stash.
+        if v.get("method").and_then(|m| m.as_str()) == Some("minerva/capability") {
+            let cap_id = v.get("id").cloned().unwrap_or(Value::Null);
+            send_cap_reply(stdin, &cap_id, json!({}));
+            notifications.push(v);
+            continue;
+        }
+
         if v.get("id") == req_id.as_ref() {
             return v;
         }
@@ -271,10 +281,10 @@ fn test_turn_completed_event_emitted_after_settle() {
             // A capability request from the plugin.
             let cap = msg["params"]["capability"].as_str().unwrap_or("");
             let id = msg.get("id").cloned().unwrap_or(Value::Null);
-            cap_call_count += 1;
 
             match cap {
                 "host.terminal.wait" => {
+                    cap_call_count += 1;
                     if cap_call_count == 1 {
                         // First wait: return busy screen (no detection).
                         send_cap_reply(&mut stdin, &id, json!({
@@ -503,6 +513,13 @@ fn test_armed_mode_one_shot() {
         if method == "minerva/capability" {
             let cap = msg["params"]["capability"].as_str().unwrap_or("");
             let id = msg.get("id").cloned().unwrap_or(Value::Null);
+
+            if cap != "host.terminal.wait" {
+                // e.g. the chat-provider register (B7) — reply generically so
+                // the watch thread keeps running.
+                send_cap_reply(&mut stdin, &id, json!({}));
+                continue;
+            }
             cap_replies += 1;
 
             if cap == "host.terminal.wait" {
@@ -796,6 +813,9 @@ fn test_send_writes_terminal_and_arms() {
                         "content": "", "timed_out": true, "bell_rung": false, "shell_exited": false
                     }));
                     break;
+                } else {
+                    // chat-provider register (B7) et al. — generic success.
+                    send_cap_reply(&mut stdin, &id, json!({}));
                 }
             }
             buf.clear();
@@ -931,6 +951,9 @@ fn test_index_loop_event_then_read_turn_with_row_range() {
                         "rows": 12, "total_scrollback_rows": 30
                     }));
                     break;
+                } else {
+                    // chat-provider register (B7) et al. — generic success.
+                    send_cap_reply(&mut stdin, &id, json!({}));
                 }
             }
             buf.clear();
@@ -1641,15 +1664,18 @@ fn test_sessions_resume_after_restart() {
             if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
                 let cap = msg["params"]["capability"].as_str().unwrap_or("");
                 let args = &msg["params"]["args"];
+                let id = msg.get("id").cloned().unwrap_or(Value::Null);
                 if cap == "host.terminal.wait" && args["terminal_id"] == "t-resume" {
                     resumed_wait_seen = true;
                     // Reply timed_out so the loop stays quiet, then stop.
-                    let id = msg.get("id").cloned().unwrap_or(Value::Null);
                     send_cap_reply(&mut stdin, &id, json!({
                         "content": "", "timed_out": true, "bell_rung": false, "shell_exited": false
                     }));
                     break;
                 }
+                // The resumed loop registers its chat-provider entry before
+                // its first wait (B7) — reply generically so it proceeds.
+                send_cap_reply(&mut stdin, &id, json!({}));
             }
         }
         assert!(resumed_wait_seen, "restarted plugin resumed the persisted watch session");
@@ -1890,4 +1916,774 @@ fn test_tools_list_schema_mirrors_manifest() {
             rust[name]
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// B7 chat-passthrough tests (DCR 019eb7f329 #483)
+//
+// Provider-entry lifecycle: register on watch-loop start, unregister on every
+// session-death cleanup; failures tolerated. passthrough_generate = relay_ask
+// core mapped to {kind:"answer"|"question"|"error"}.
+// ---------------------------------------------------------------------------
+
+const CODEX_IDLE_FIX: &str = include_str!("fixtures/real/codex_idle_prompt.txt");
+const CODEX_BUSY_FIX: &str = include_str!("fixtures/real/codex_busy.txt");
+const CODEX_DONE_FIX: &str = include_str!("fixtures/real/codex_done.txt");
+const CODEX_PERMISSION_FIX: &str = include_str!("fixtures/real/codex_permission.txt");
+
+// Test 17: watch_start → fake host receives host.chat_providers.register with
+// the locked contract payload.
+#[test]
+fn test_watch_start_registers_chat_provider() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    // Manual request (NOT rpc — rpc auto-replies capability requests and
+    // would consume the register before we can capture its payload).
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-cp-reg", "profile": "codex", "notify_mode": "armed"}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut register_args: Option<Value> = None;
+    for _ in 0..20 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            if cap == "host.chat_providers.register" {
+                register_args = Some(msg["params"]["args"].clone());
+                send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                break;
+            }
+            // Anything else (shouldn't precede register) — generic success.
+            send_cap_reply(&mut stdin, &id, json!({}));
+        }
+        // watch_start's own response passes through silently.
+    }
+
+    let args = register_args.expect("host.chat_providers.register received");
+    assert_eq!(args["entry_id"], "terminal-t-cp-reg", "contract entry_id");
+    assert_eq!(args["display_name"], "terminal t-cp-reg (codex)", "contract display_name");
+    assert_eq!(
+        args["generate_tool"], "minerva_agent_relay_passthrough_generate",
+        "contract generate_tool"
+    );
+    assert_eq!(args["history_mode"], "newest_only", "contract history_mode");
+    assert_eq!(args["timeout_sec"], 600, "contract timeout_sec");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 18: watch_stop → the session cleanup unregisters the provider entry.
+#[test]
+fn test_watch_stop_unregisters_chat_provider() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-cp-stop", "profile": "claude", "notify_mode": "armed"}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut pending_wait_id: Option<Value> = None;
+    let mut stop_sent = false;
+    let mut unregister_args: Option<Value> = None;
+
+    for _ in 0..40 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.chat_providers.register" => {
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                }
+                "host.chat_providers.unregister" => {
+                    unregister_args = Some(msg["params"]["args"].clone());
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                    break;
+                }
+                "host.terminal.wait" => {
+                    if stop_sent {
+                        // Stop flag already set — let the loop iterate and exit.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": "", "timed_out": true,
+                            "bell_rung": false, "shell_exited": false
+                        }));
+                    } else {
+                        // Hold the wait; first issue watch_stop so the stop
+                        // flag is set before the loop's next iteration.
+                        pending_wait_id = Some(id);
+                        let stop_req = json!({
+                            "jsonrpc": "2.0",
+                            "id": next_id(),
+                            "method": "tools/call",
+                            "params": {
+                                "name": "minerva_agent_relay_watch_stop",
+                                "arguments": {"terminal_id": "t-cp-stop"}
+                            }
+                        }).to_string() + "\n";
+                        stdin.write_all(stop_req.as_bytes()).unwrap();
+                        stdin.flush().unwrap();
+                        stop_sent = true;
+                    }
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("result").is_some() && stop_sent {
+            // watch_stop's tool response arrived — now release the held wait
+            // so the watch loop wakes, sees stop=true, and cleans up.
+            if let Some(wid) = pending_wait_id.take() {
+                send_cap_reply(&mut stdin, &wid, json!({
+                    "content": "", "timed_out": true,
+                    "bell_rung": false, "shell_exited": false
+                }));
+            }
+        }
+    }
+
+    let args = unregister_args.expect("watch_stop cleanup sent host.chat_providers.unregister");
+    assert_eq!(args["entry_id"], "terminal-t-cp-stop");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 19: terminal_closed cleanup (host.terminal.wait errors) unregisters.
+#[test]
+fn test_terminal_closed_cleanup_unregisters_chat_provider() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-cp-closed", "profile": "claude", "notify_mode": "all_turns"}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut unregister_args: Option<Value> = None;
+    for _ in 0..30 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.chat_providers.register" => {
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                }
+                "host.terminal.wait" => {
+                    // Terminal gone — the loop emits terminal_closed and exits.
+                    send_cap_error(&mut stdin, &id, "terminal not found: t-cp-closed");
+                }
+                "host.chat_providers.unregister" => {
+                    unregister_args = Some(msg["params"]["args"].clone());
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                    break;
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        }
+        // tool response + terminal_closed event pass through silently.
+    }
+
+    let args = unregister_args.expect("terminal_closed cleanup sent unregister");
+    assert_eq!(args["entry_id"], "terminal-t-cp-closed");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 20: host rejects register → warning only; the watch session works.
+#[test]
+fn test_chat_provider_register_failure_tolerated() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let start_id = next_id();
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": start_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-cp-regfail", "profile": "claude", "notify_mode": "armed"}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut start_reply: Option<Value> = None;
+    let mut register_rejected = false;
+    let mut wait_after_reject = false;
+
+    for _ in 0..30 {
+        if start_reply.is_some() && register_rejected && wait_after_reject {
+            break;
+        }
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.chat_providers.register" => {
+                    // Older Minerva: capability not granted.
+                    send_cap_error(&mut stdin, &id, "unknown capability: host.chat_providers.register");
+                    register_rejected = true;
+                }
+                "host.terminal.wait" => {
+                    // The watch loop reached its wait — it survived the reject.
+                    wait_after_reject = register_rejected;
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": "", "timed_out": true,
+                        "bell_rung": false, "shell_exited": false
+                    }));
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("id").map(|v| v == &json!(start_id)).unwrap_or(false) {
+            start_reply = Some(msg);
+        }
+    }
+
+    let payload = unwrap_tool(&start_reply.expect("watch_start replied"));
+    assert_eq!(payload["ok"], true, "watch_start succeeds despite register reject: {payload}");
+    assert!(register_rejected, "fake host rejected the register call");
+    assert!(wait_after_reject, "watch loop kept polling after the reject");
+
+    // The session is fully functional: status reports watching.
+    let status = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_status",
+            "arguments": {"terminal_id": "t-cp-regfail"}
+        }
+    }));
+    let status_payload = unwrap_tool(&status);
+    assert_eq!(status_payload["status"]["watching"], true, "{status_payload}");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 21: passthrough_generate happy path — scripted turn returns
+// {kind:"answer", text}. Terminal resolved via the single-session heuristic
+// (the host sends only {chat_id, text} — seam gap, filed).
+#[test]
+fn test_passthrough_generate_answer_happy_path() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-cp-gen", "profile": "claude", "notify_mode": "armed"}
+        }
+    }));
+
+    let gen_id = next_id();
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": gen_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_passthrough_generate",
+            "arguments": {"chat_id": "chat-1", "text": "what is 2+2"}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut gen_reply: Option<Value> = None;
+    let mut wait_count = 0u32;
+
+    for _ in 0..200 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let args = &msg["params"]["args"];
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => send_cap_reply(&mut stdin, &id, json!({"ok": true})),
+                "host.terminal.read" => {
+                    if args.get("start_row").is_some() {
+                        // read_turn's bounded read — the answer window.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": "2+2 equals 4.\n",
+                            "rows": 12, "total_scrollback_rows": 55
+                        }));
+                    } else {
+                        // send's pre-write snapshot.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "rows": 12, "total_scrollback_rows": 40
+                        }));
+                    }
+                }
+                "host.terminal.wait" => {
+                    wait_count += 1;
+                    let (content, rows) = match wait_count {
+                        1 => (idle_screen(), 40),  // race window — gated
+                        2 => (busy_screen(), 42),  // agent busy
+                        _ => (idle_screen(), 55),  // turn end
+                    };
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": content,
+                        "timed_out": false, "bell_rung": false, "shell_exited": false,
+                        "rows": 12, "total_scrollback_rows": rows
+                    }));
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("id").map(|v| v == &json!(gen_id)).unwrap_or(false) {
+            gen_reply = Some(msg);
+            break;
+        }
+    }
+
+    let payload = unwrap_tool(&gen_reply.expect("passthrough_generate replied"));
+    assert_eq!(payload["kind"], "answer", "result kind: {payload}");
+    let text = payload["text"].as_str().unwrap_or("");
+    assert!(text.contains("2+2 equals 4"), "verbatim turn text: {text:?}");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 22: passthrough_generate with NO watch session → {kind:"error"}
+// mentioning watch_start.
+#[test]
+fn test_passthrough_generate_requires_watch_session() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let reply = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_passthrough_generate",
+            "arguments": {"chat_id": "chat-none", "text": "hello?"}
+        }
+    }));
+
+    let payload = unwrap_tool(&reply);
+    assert_eq!(payload["kind"], "error", "no-session result is kind error: {payload}");
+    assert!(
+        payload["text"].as_str().unwrap_or("").contains("watch_start"),
+        "error mentions watch_start: {payload}"
+    );
+
+    // Explicit terminal_id for an unwatched terminal also errors with the
+    // watch_start hint (stale provider entry).
+    let reply2 = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_passthrough_generate",
+            "arguments": {"chat_id": "chat-none", "text": "hello?", "terminal_id": "t-gone"}
+        }
+    }));
+    let payload2 = unwrap_tool(&reply2);
+    assert_eq!(payload2["kind"], "error", "{payload2}");
+    assert!(payload2["text"].as_str().unwrap_or("").contains("watch_start"), "{payload2}");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 22b: entry_id routes among MULTIPLE watched sessions. The host's
+// PluginProvider sends entry_id ("terminal-<tid>") with every generate; with
+// two sessions watched and no chat binding, that alone must disambiguate —
+// and every PTY capability call must target the entry's terminal.
+#[test]
+fn test_passthrough_generate_entry_id_routes_among_sessions() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    for tid in ["t-cp-a", "t-cp-b"] {
+        let _ = rpc(&mut stdin, &mut out, json!({
+            "jsonrpc": "2.0",
+            "id": next_id(),
+            "method": "tools/call",
+            "params": {
+                "name": "minerva_agent_relay_watch_start",
+                "arguments": {"terminal_id": tid, "profile": "claude", "notify_mode": "armed"}
+            }
+        }));
+    }
+
+    let gen_id = next_id();
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": gen_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_passthrough_generate",
+            "arguments": {
+                "chat_id": "chat-fresh",
+                "text": "route me",
+                "entry_id": "terminal-t-cp-b"
+            }
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut gen_reply: Option<Value> = None;
+    let mut wait_count = 0u32;
+    let mut touched_terminals: Vec<String> = Vec::new();
+
+    for _ in 0..200 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let args = &msg["params"]["args"];
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            // Record which terminal each generate-driven PTY call targets.
+            // (The two watch loops poll t-cp-a/t-cp-b with waits of their own;
+            // writes are the generate's unambiguous fingerprint.)
+            if cap == "host.terminal.write" {
+                if let Some(t) = args.get("terminal_id").and_then(|v| v.as_str()) {
+                    touched_terminals.push(t.to_string());
+                }
+            }
+            match cap {
+                "host.terminal.write" => send_cap_reply(&mut stdin, &id, json!({"ok": true})),
+                "host.terminal.read" => {
+                    if args.get("start_row").is_some() {
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": "routed fine\n",
+                            "rows": 12, "total_scrollback_rows": 55
+                        }));
+                    } else {
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "rows": 12, "total_scrollback_rows": 40
+                        }));
+                    }
+                }
+                "host.terminal.wait" => {
+                    let is_target = args.get("terminal_id")
+                        .and_then(|v| v.as_str()) == Some("t-cp-b");
+                    if is_target { wait_count += 1; }
+                    let (content, rows) = if !is_target {
+                        (idle_screen(), 40) // the other session idles forever
+                    } else {
+                        match wait_count {
+                            1 => (idle_screen(), 40),
+                            2 => (busy_screen(), 42),
+                            _ => (idle_screen(), 55),
+                        }
+                    };
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": content,
+                        "timed_out": false, "bell_rung": false, "shell_exited": false,
+                        "rows": 12, "total_scrollback_rows": rows
+                    }));
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("id").map(|v| v == &json!(gen_id)).unwrap_or(false) {
+            gen_reply = Some(msg);
+            break;
+        }
+    }
+
+    let payload = unwrap_tool(&gen_reply.expect("passthrough_generate replied"));
+    assert_eq!(payload["kind"], "answer",
+        "entry_id must disambiguate two watched sessions (no 'pass terminal_id' error): {payload}");
+    assert!(payload["text"].as_str().unwrap_or("").contains("routed fine"), "{payload}");
+    assert!(!touched_terminals.is_empty(), "generate wrote to a PTY");
+    assert!(touched_terminals.iter().all(|t| t == "t-cp-b"),
+        "every generate write targets the entry's terminal, got {touched_terminals:?}");
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 23: input_requested path — the codex permission fixture yields
+// {kind:"question"} with the exact parsed options, and the follow-up dialog
+// answer is written as ONE raw keystroke (no Enter).
+#[test]
+fn test_passthrough_generate_question_options_and_keystroke() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let _ = rpc(&mut stdin, &mut out, json!({
+        "jsonrpc": "2.0",
+        "id": next_id(),
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_watch_start",
+            "arguments": {"terminal_id": "t-cp-q", "profile": "codex", "notify_mode": "armed"}
+        }
+    }));
+
+    // ── Phase 1: message turn ends in a permission dialog ───────────────────
+    let gen_id = next_id();
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": gen_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_passthrough_generate",
+            "arguments": {"chat_id": "chat-q", "text": "create the file", "terminal_id": "t-cp-q"}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut gen_reply: Option<Value> = None;
+    let mut wait_count = 0u32;
+    let mut plain_read_count = 0u32; // host.terminal.read without start_row
+
+    for _ in 0..200 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let args = &msg["params"]["args"];
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => send_cap_reply(&mut stdin, &id, json!({"ok": true})),
+                "host.terminal.read" => {
+                    if args.get("start_row").is_some() {
+                        // read_turn's bounded read (content unused on the
+                        // question path).
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": "", "rows": 12, "total_scrollback_rows": 45
+                        }));
+                    } else {
+                        plain_read_count += 1;
+                        if plain_read_count == 1 {
+                            // send's pre-write snapshot.
+                            send_cap_reply(&mut stdin, &id, json!({
+                                "content": CODEX_IDLE_FIX,
+                                "rows": 12, "total_scrollback_rows": 30
+                            }));
+                        } else {
+                            // The question path's raw screen read.
+                            send_cap_reply(&mut stdin, &id, json!({
+                                "content": CODEX_PERMISSION_FIX,
+                                "rows": 12, "total_scrollback_rows": 45
+                            }));
+                        }
+                    }
+                }
+                "host.terminal.wait" => {
+                    wait_count += 1;
+                    let (content, rows) = match wait_count {
+                        1 => (CODEX_IDLE_FIX, 30),       // pre-existing idle — gated
+                        2 => (CODEX_BUSY_FIX, 33),       // codex working
+                        3 => (CODEX_PERMISSION_FIX, 45), // dialog appears
+                        // Stale waits while the question result is being
+                        // assembled: stay busy-neutral — a repeated dialog
+                        // screen would re-fire input_requested and race
+                        // phase 2's arm.
+                        _ => (CODEX_BUSY_FIX, 45),
+                    };
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": content,
+                        "timed_out": false, "bell_rung": false, "shell_exited": false,
+                        "rows": 12, "total_scrollback_rows": rows
+                    }));
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("id").map(|v| v == &json!(gen_id)).unwrap_or(false) {
+            gen_reply = Some(msg);
+            break;
+        }
+    }
+
+    let payload = unwrap_tool(&gen_reply.expect("passthrough_generate replied"));
+    assert_eq!(payload["kind"], "question", "dialog turn yields a question: {payload}");
+    assert!(
+        payload["text"].as_str().unwrap_or("")
+            .contains("Would you like to run the following command?"),
+        "question text is the dialog region: {payload}"
+    );
+    assert_eq!(
+        payload["options"],
+        json!([
+            {"label": "Yes, proceed", "keystroke": "y"},
+            {"label": "Yes, and don't ask again for commands that start with `touch /tmp/codex_cal_test`", "keystroke": "p"},
+            {"label": "No, and tell Codex what to do differently", "keystroke": "\u{1b}"}
+        ]),
+        "exact parsed options for the byte-true fixture: {payload}"
+    );
+
+    // ── Phase 2: dialog answer "y" goes out as ONE raw keystroke ────────────
+    let ans_id = next_id();
+    let req2 = json!({
+        "jsonrpc": "2.0",
+        "id": ans_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_passthrough_generate",
+            // No terminal_id: the chat-q → t-cp-q binding from phase 1 routes it.
+            "arguments": {"chat_id": "chat-q", "text": "y"}
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req2.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut ans_reply: Option<Value> = None;
+    let mut writes: Vec<String> = Vec::new();
+    let mut wait_count2 = 0u32;
+
+    for _ in 0..200 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let args = &msg["params"]["args"];
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => {
+                    writes.push(args["text"].as_str().unwrap_or("").to_string());
+                    send_cap_reply(&mut stdin, &id, json!({"ok": true}));
+                }
+                "host.terminal.read" => {
+                    if args.get("start_row").is_some() {
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": "File created.\n",
+                            "rows": 12, "total_scrollback_rows": 60
+                        }));
+                    } else {
+                        // Snapshot: the dialog is still on screen pre-keystroke.
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": CODEX_PERMISSION_FIX,
+                            "rows": 12, "total_scrollback_rows": 45
+                        }));
+                    }
+                }
+                "host.terminal.wait" => {
+                    wait_count2 += 1;
+                    let (content, rows) = match wait_count2 {
+                        1 => (CODEX_BUSY_FIX, 46), // command running
+                        _ => (CODEX_DONE_FIX, 60), // turn end
+                    };
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": content,
+                        "timed_out": false, "bell_rung": false, "shell_exited": false,
+                        "rows": 12, "total_scrollback_rows": rows
+                    }));
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("id").map(|v| v == &json!(ans_id)).unwrap_or(false) {
+            ans_reply = Some(msg);
+            break;
+        }
+    }
+
+    let payload2 = unwrap_tool(&ans_reply.expect("dialog answer replied"));
+    assert_eq!(payload2["kind"], "answer", "answered dialog resolves to an answer: {payload2}");
+    assert!(
+        payload2["text"].as_str().unwrap_or("").contains("File created"),
+        "post-dialog turn text: {payload2}"
+    );
+    assert_eq!(
+        writes,
+        vec!["y".to_string()],
+        "dialog keystroke is ONE raw write with NO Enter: {writes:?}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
 }

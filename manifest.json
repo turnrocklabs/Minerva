@@ -1,7 +1,7 @@
 {
   "id": "agent_relay",
   "name": "Agent Relay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "host_api_version": "1",
   "release_targets": [
     "linux-x86_64",
@@ -154,6 +154,35 @@
         },
         "required": [
           "terminal_id",
+          "text"
+        ]
+      }
+    },
+    {
+      "name": "minerva_agent_relay_passthrough_generate",
+      "description": "Chat-provider generate hook (chat-passthrough): service ONE chat turn against the watched terminal bound to this provider entry. Reuses the relay_ask core (send + arm, BLOCK until the turn ends, read the turn) with distill OFF — passthrough is verbatim. Returns JSON {kind:'answer', text} | {kind:'question', text, options:[{label, keystroke}]} when the turn ends in a permission dialog | {kind:'error', text}. After a 'question' result, a single-keystroke text (e.g. 'y', '1', '\\r', ESC) is written raw to the PTY with no Enter. The host calls this automatically for chats bound to a terminal provider entry; it is not meant for direct MCP use (prefer minerva_agent_relay_relay_ask).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Host chat/history id for this turn (binds the chat to a terminal)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Newest user message, or a single dialog-answer keystroke after a 'question' result."
+          },
+          "entry_id": {
+            "type": "string",
+            "description": "Provider entry id ('terminal-<tid>') — sent by the host with every generate; identifies the watched terminal."
+          },
+          "terminal_id": {
+            "type": "string",
+            "description": "Optional explicit terminal override; normally resolved from entry_id, the chat binding, or the single active watch session."
+          }
+        },
+        "required": [
+          "chat_id",
           "text"
         ]
       }
@@ -374,6 +403,7 @@
       "host.terminal.read",
       "host.terminal.write",
       "host.terminal.wait",
+      "host.chat_providers.register",
       "host.providers.chat",
       "mcp.proxy:minerva_create_note",
       "mcp.proxy:minerva_link_note_to_chat",

@@ -463,6 +463,54 @@ pub fn watch_status(terminal_id: &str) -> Option<serde_json::Value> {
 }
 
 // ---------------------------------------------------------------------------
+// Chat-provider registration (chat-passthrough B7, DCR 019eb7f329 #483)
+//
+// Every watch session advertises its terminal as a Minerva chat provider:
+// register on watch-loop start (all notify modes — resumed sessions included),
+// unregister when the loop cleans up (watch_stop, terminal_closed, agent_exited,
+// idle reap — every session-death path funnels through the loop's cleanup).
+// One capability string gates both ops. Registration runs on the WATCH thread,
+// never the main dispatch thread: a blocking capability round-trip inside
+// handle_watch_start would stall tool dispatch until the host replies.
+//
+// Failures are logged and tolerated: the provider entry is an enhancement on
+// top of the watch session, never a dependency (older Minervas without the
+// capability keep full watch functionality).
+// ---------------------------------------------------------------------------
+
+/// The provider-entry id for a terminal (host namespaces it per-plugin).
+fn chat_provider_entry_id(terminal_id: &str) -> String {
+    format!("terminal-{terminal_id}")
+}
+
+fn register_chat_provider(terminal_id: &str, profile_id: &str, router: &Arc<Router>) {
+    let args = json!({
+        "entry_id": chat_provider_entry_id(terminal_id),
+        "display_name": format!("terminal {terminal_id} ({profile_id})"),
+        "generate_tool": "minerva_agent_relay_passthrough_generate",
+        "history_mode": "newest_only",
+        "timeout_sec": 600,
+    });
+    match router.call_capability("host.chat_providers.register", args) {
+        Ok(_) => log::info!(
+            "chat provider registered for terminal {terminal_id} (profile {profile_id})"
+        ),
+        Err(e) => log::warn!(
+            "chat provider registration failed for {terminal_id}: {e} — \
+             watch continues without a provider entry"
+        ),
+    }
+}
+
+fn unregister_chat_provider(terminal_id: &str, router: &Arc<Router>) {
+    let args = json!({ "entry_id": chat_provider_entry_id(terminal_id) });
+    match router.call_capability("host.chat_providers.unregister", args) {
+        Ok(_) => log::info!("chat provider unregistered for terminal {terminal_id}"),
+        Err(e) => log::warn!("chat provider unregister failed for {terminal_id}: {e}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Watch loop (runs in background thread)
 // ---------------------------------------------------------------------------
 
@@ -485,6 +533,11 @@ fn watch_loop(
     };
 
     let watch_timeout = std::time::Duration::from_millis(cd.watch_timeout_ms);
+
+    // Advertise this terminal as a chat provider. Re-issuing watch_start
+    // (e.g. with a new profile) re-registers under the same entry_id —
+    // an idempotent update on the host side.
+    register_chat_provider(&terminal_id, &profile.id, &router);
 
     loop {
         // Check stop flag and the idle reap. The reap applies only to UNARMED
@@ -658,14 +711,28 @@ fn watch_loop(
         }
     }
 
-    // Clean up: remove session from registry.
-    {
+    // Clean up: remove session from registry — but only if the registry still
+    // points at THIS session. A re-issued watch_start replaces the map entry
+    // (and re-registers the provider entry under the same id) while this
+    // superseded loop is still draining; removing/unregistering here would
+    // tear down the NEW session's state (supersede race).
+    let owns_cleanup = {
         let sessions = get_sessions();
         let mut map = sessions.lock().unwrap();
-        map.remove(&terminal_id);
-    }
+        match map.get(&terminal_id) {
+            Some(current) if Arc::ptr_eq(current, &session) => {
+                map.remove(&terminal_id);
+                true
+            }
+            Some(_) => false, // superseded — the newer session owns the entry
+            None => true,     // already removed — still tidy the provider entry
+        }
+    };
     crate::state::save();
-    log::info!("watch_loop: cleaned up {terminal_id}");
+    if owns_cleanup {
+        unregister_chat_provider(&terminal_id, &router);
+    }
+    log::info!("watch_loop: cleaned up {terminal_id} (owned={owns_cleanup})");
 }
 
 /// Conditionally emit a turn_completed event based on notify_mode and arm state.
