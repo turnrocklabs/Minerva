@@ -7,6 +7,7 @@ signal agent_mode_toggled(enabled: bool)
 
 var agent_mode_toggle: CheckButton
 var editor_button: Button
+var summarize_button: Button
 var notes_button: Button
 
 var chat_history  # ChatHistory
@@ -48,6 +49,15 @@ func setup(history) -> void:
 			focused_label.tooltip_text = "Fixed tool set (no dynamic discovery)"
 		add_child(focused_label)
 
+	# Passthrough chat indicator (chat-passthrough W2) — provider is contractually
+	# bound to a terminal-backed plugin entry for the chat's life.
+	if history.PassthroughMode:
+		var passthrough_label = Label.new()
+		passthrough_label.text = "[Passthrough: %s]" % history.PassthroughName
+		passthrough_label.add_theme_color_override("font_color", Color(0.4, 0.85, 0.6))
+		passthrough_label.tooltip_text = "Passthrough chat — provider is fixed for this chat's life"
+		add_child(passthrough_label)
+
 	# Spacer
 	var spacer = Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -62,6 +72,19 @@ func setup(history) -> void:
 		editor_button.icon = code_icon
 	editor_button.pressed.connect(_on_editor_button_pressed)
 	add_child(editor_button)
+
+	# Summarize-to-note button (chat-passthrough W6) — THE deliberate
+	# token-spend gesture for passthrough chats (their transport has no LLM).
+	# Visible ONLY for passthrough chats; one explicit LLM call per press.
+	summarize_button = Button.new()
+	summarize_button.tooltip_text = "Summarize to note"
+	summarize_button.flat = true
+	var summarize_icon = load("res://assets/icons/file/file_24.svg")
+	if summarize_icon:
+		summarize_button.icon = summarize_icon
+	summarize_button.visible = history.PassthroughMode
+	summarize_button.pressed.connect(_on_summarize_button_pressed)
+	add_child(summarize_button)
 
 	# Notes button
 	notes_button = Button.new()
@@ -103,6 +126,25 @@ func _on_editor_button_pressed() -> void:
 	if tab and tab.code_edit:
 		tab.code_edit.text = content
 	ep.update_tabs_icon()
+
+
+## Summarize the passthrough transcript into a linked note (chat-passthrough W6).
+## Delegates to ChatPane's engine (one explicit LLM call on the fixed distill
+## model). Button is disabled while the call is in flight — no double-spend.
+func _on_summarize_button_pressed() -> void:
+	if not chat_history or not chat_history.PassthroughMode:
+		return
+	var pane = SingletonObject.Chats
+	if pane == null or not pane.has_method("summarize_passthrough_to_note"):
+		return
+	# A press while a summarize is in flight is a no-op — returning here keeps
+	# the button disabled (re-enabling is the first flight's job).
+	if pane.has_method("is_summarize_in_flight") and pane.is_summarize_in_flight(chat_history):
+		return
+	summarize_button.disabled = true
+	await pane.summarize_passthrough_to_note(chat_history)
+	if is_instance_valid(summarize_button):
+		summarize_button.disabled = false
 
 
 ## Create notes from each message

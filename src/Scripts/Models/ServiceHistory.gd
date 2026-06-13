@@ -132,6 +132,33 @@ var ConfiguredTools: Array[String] = []:
 var ConfiguredSkills: Array[String] = []:
 	set(value): SingletonObject.call_deferred("save_state", false); ConfiguredSkills = value
 
+## Passthrough mode (chat-passthrough W2): when true, this chat is bound to a
+## terminal-backed plugin provider for its whole life — the provider chooser is
+## locked and never auto-falls-back (recovery is W3's relaunch affordance).
+var PassthroughMode: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughMode = value
+
+## Terminal id the passthrough provider is bound to (empty until launch wires it).
+var BoundTerminalId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); BoundTerminalId = value
+
+## Display name of the bound passthrough provider (for the header badge and the
+## locked chooser's offline display — survives the registry entry vanishing).
+var PassthroughName: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughName = value
+
+## Launch command for the bound terminal agent (chat-passthrough W3). Stored so
+## the relaunch affordance can recreate the session after the agent/Minerva
+## dies — terminal sessions are in-memory only (T3 restart semantics), so
+## restart = this command + cwd into a FRESH session. Empty = bare shell.
+var PassthroughCommand: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughCommand = value
+
+## Working directory the launch command runs in (chat-passthrough W3). Empty =
+## whatever the fresh shell starts in.
+var PassthroughCwd: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); PassthroughCwd = value
+
 ## Why this chat's last agent turn ended. Empty string = not terminated or not an agent chat.
 var termination_reason: String = ""
 ## Human-readable message about termination (error text, quota details, etc.)
@@ -177,7 +204,20 @@ static var SERIALIZER_FIELDS = [
 	"StaticToolMode",
 	"ConfiguredTools",
 	"ConfiguredSkills",
+	"PluginProviderKey",
+	"PassthroughMode",
+	"BoundTerminalId",
+	"PassthroughName",
+	"PassthroughCommand",
+	"PassthroughCwd",
 ]
+
+
+## Sentinel int written into "Provider" when the active provider is a
+## PluginProvider (chat-passthrough W1). Old readers (which only know the int
+## field) fall through to the safe default-provider fallback in Deserialize
+## rather than mis-resolving a stale enum value.
+const PLUGIN_PROVIDER_SENTINEL := -1
 
 
 ## Get the API_MODEL_PROVIDERS enum value for a provider instance
@@ -274,10 +314,20 @@ func Serialize() -> Dictionary:
 		var serialized_item = chat_history_item.Serialize()
 		serialized_items.append(serialized_item)
 
+	# Plugin chat-providers (chat-passthrough W1) serialize as a string key in a
+	# NEW optional field; the int "Provider" stays at a safe sentinel so old
+	# readers fall back to the default provider rather than mis-resolving.
+	var plugin_provider_key: String = ""
+	var provider_enum_value: int = _get_provider_enum(provider)
+	if provider != null and "entry_key" in provider and not str(provider.entry_key).is_empty():
+		plugin_provider_key = str(provider.entry_key)
+		provider_enum_value = PLUGIN_PROVIDER_SENTINEL
+
 	var save_dict:Dictionary = {
 		"HistoryId" : HistoryId,
 		"HistoryName" : HistoryName,
-		"Provider": _get_provider_enum(provider),
+		"Provider": provider_enum_value,
+		"PluginProviderKey": plugin_provider_key,
 		"ServiceType": service_type,
 		"HistoryItemList" : serialized_items,
 		"HasUsedSystemPrompt": HasUsedSystemPrompt,
@@ -311,6 +361,11 @@ func Serialize() -> Dictionary:
 		"StaticToolMode": StaticToolMode,
 		"ConfiguredTools": ConfiguredTools,
 		"ConfiguredSkills": ConfiguredSkills,
+		"PassthroughMode": PassthroughMode,
+		"BoundTerminalId": BoundTerminalId,
+		"PassthroughName": PassthroughName,
+		"PassthroughCommand": PassthroughCommand,
+		"PassthroughCwd": PassthroughCwd,
 	}
 	return save_dict
 
@@ -322,7 +377,22 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	var provider_enum_index = int(data.get("Provider", 0))
 	var provider_obj: BaseProvider
 
-	if provider_enum_index >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
+	# Plugin chat-provider (chat-passthrough W1): if a key was serialized AND it
+	# names a currently-registered entry, restore a PluginProvider. If the entry
+	# is absent (plugin not installed/running), fall through to the int-based
+	# default-provider path below — non-fatal, NO error dialog; the chat stays
+	# usable with a default provider.
+	var plugin_provider_key: String = str(data.get("PluginProviderKey", ""))
+	if not plugin_provider_key.is_empty():
+		var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
+		if cpr != null and cpr.has_method("get_entry"):
+			var entry: Dictionary = cpr.get_entry(plugin_provider_key)
+			if not entry.is_empty():
+				var PluginProviderScript = load("res://Scripts/Services/Providers/PluginProvider.gd")
+				provider_obj = PluginProviderScript.new()
+				provider_obj.configure_from_entry(entry)
+
+	if provider_obj == null and provider_enum_index >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
 		provider_obj = SingletonObject.create_dynamic_provider(provider_enum_index)
 	if provider_obj == null and SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_index):
 		provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_index].new()
@@ -420,5 +490,15 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.ConfiguredTools.assign(data.get("ConfiguredTools", []))
 	if data.has("ConfiguredSkills"):
 		history.ConfiguredSkills.assign(data.get("ConfiguredSkills", []))
+	if data.has("PassthroughMode"):
+		history.PassthroughMode = data.get("PassthroughMode", false)
+	if data.has("BoundTerminalId"):
+		history.BoundTerminalId = str(data.get("BoundTerminalId", ""))
+	if data.has("PassthroughName"):
+		history.PassthroughName = str(data.get("PassthroughName", ""))
+	if data.has("PassthroughCommand"):
+		history.PassthroughCommand = str(data.get("PassthroughCommand", ""))
+	if data.has("PassthroughCwd"):
+		history.PassthroughCwd = str(data.get("PassthroughCwd", ""))
 
 	return history

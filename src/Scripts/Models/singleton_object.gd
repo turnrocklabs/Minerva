@@ -529,6 +529,7 @@ var plugin_mcp_tools = null  # PluginMCPTools
 var plugin_event_broker = null  # PluginEventBroker
 var plugin_webview_broker = null  # PluginWebviewBroker
 var plugin_scene_panel_broker = null  # PluginScenePanelBroker
+var plugin_chat_provider_registry = null  # PluginChatProviderRegistry (chat-passthrough W1)
 
 ## Initialize the plugin system. Call after initialize_mcp().
 ## Uses load() instead of class_name references to avoid autoload parse-order issues.
@@ -563,6 +564,12 @@ func initialize_plugins() -> void:
 
 	# Capability broker (references policy and audit log)
 	plugin_capability_broker = BrokerClass.new(plugin_policy, plugin_audit_log)
+
+	# Chat-provider registry (chat-passthrough W1) is owned by PluginManager
+	# (lifecycle-bound). Wire it into the broker so host.chat_providers.* handlers
+	# reach it directly without a SingletonObject round-trip.
+	plugin_chat_provider_registry = plugin_manager.get_chat_provider_registry()
+	plugin_capability_broker.chat_provider_registry = plugin_chat_provider_registry
 
 	# Tool registry (references manager, policy, audit log, broker)
 	plugin_tool_registry = ToolRegClass.new(plugin_manager, plugin_policy, plugin_audit_log)
@@ -889,6 +896,19 @@ func _on_terminal_config_changed() -> void:
 	if cfg:
 		terminal_config.save(cfg)
 		cfg.save(_config_file_name)
+
+# Registry of headless TerminalSession objects (PTY + ghostty-vt core). Sessions
+# can exist with NO visible TerminalNew view. Lazy-init + add_child so the
+# sessions (which parent the Terminal extension node) get _process. chat-passthrough T1.
+var terminal_session_registry = null  # TerminalSessionRegistry
+
+func get_terminal_session_registry():
+	if terminal_session_registry == null:
+		var RegistryClass = load("res://Scripts/Services/Terminal/TerminalSessionRegistry.gd")
+		terminal_session_registry = RegistryClass.new()
+		terminal_session_registry.name = "TerminalSessionRegistry"
+		add_child(terminal_session_registry)
+	return terminal_session_registry
 #endregion
 
 #region Voice
@@ -1761,6 +1781,10 @@ const OPENAI_MODEL_ID_BASE := 30000
 const GOOGLE_MODEL_ID_BASE := 40000
 const LOCAL_MODEL_ID_BASE := 50000
 const CHATGPT_MODEL_ID_BASE := 60000
+## Provider-chooser id base for plugin chat-provider entries (chat-passthrough W1).
+## Ids >= this map to PluginProvider instances built from the registry entry whose
+## key is stored as the dropdown item metadata. Sits well above the model id bases.
+const PLUGIN_PROVIDER_ID_BASE := 100000
 const ClaudeCodeProviderScript = preload("res://Scripts/Services/Providers/ClaudeCode/ClaudeCodeProvider.gd")
 const ChatGPTProviderScript = preload("res://Scripts/Services/Providers/ChatGPT/ChatGPTProvider.gd")
 const LocalProviderScript = preload("res://Scripts/Services/Providers/LocalProvider.gd")

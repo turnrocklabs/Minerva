@@ -257,9 +257,17 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 	if capability.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "capability must not be empty")
 
-	# Gate: check with policy engine before any execution (deny-by-default)
+	# Gate: check with policy engine before any execution (deny-by-default).
+	# host.chat_providers.register and .unregister are gated by the SAME grant
+	# (the manifest declares one capability string, "host.chat_providers.register",
+	# covering both ops). Map the unregister op onto the register grant for the
+	# policy check only — the dispatch match below still routes by the real cap.
+	var gate_capability: String = capability
+	if capability == "host.chat_providers.unregister":
+		gate_capability = "host.chat_providers.register"
+
 	if policy != null:
-		var check := policy.check_capability(plugin_id, capability)
+		var check := policy.check_capability(plugin_id, gate_capability)
 		if not check.get("allowed", false):
 			# Policy already logged the denial via _record_decision; log at
 			# broker level too so capability-request outcomes are queryable
@@ -355,6 +363,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_permissions_grant_scope(plugin_id, args)
 		"host.notify":
 			named_result = _handle_host_notify(plugin_id, args)
+		"host.chat_providers.register":
+			named_result = _handle_host_chat_providers_register(plugin_id, args)
+		"host.chat_providers.unregister":
+			named_result = _handle_host_chat_providers_unregister(plugin_id, args)
 		"host.terminal.exec":
 			named_result = await _handle_host_terminal_exec(plugin_id, args)
 		"host.terminal.list", "host.terminal.read", "host.terminal.write", "host.terminal.wait":
@@ -3342,6 +3354,113 @@ func _handle_host_notify(plugin_id: String, args: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------------------
+# host.chat_providers.{register,unregister} handlers (chat-passthrough W1)
+# ---------------------------------------------------------------------------
+#
+# Plugins register chat-provider entries into PluginChatProviderRegistry; the
+# entries surface in the chat provider chooser and, when selected, give the chat
+# a PluginProvider that dispatches turns to the plugin's generate_tool.
+#
+# The registry instance is resolved lazily (SingletonObject.plugin_manager's
+# chat-provider registry) but may be injected for headless tests via
+# chat_provider_registry. A single capability string covers both ops.
+
+## Injectable registry reference for tests. When null, resolved at dispatch time
+## from PluginManager.get_chat_provider_registry().
+var chat_provider_registry = null  # PluginChatProviderRegistry
+
+const _CHAT_PROVIDER_VALID_HISTORY_MODES := ["newest_only", "full"]
+
+
+func _get_chat_provider_registry():
+	if chat_provider_registry != null:
+		return chat_provider_registry
+	var root = Engine.get_main_loop().root if Engine.get_main_loop() else null
+	if root == null:
+		return null
+	var so = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	var pm = so.get("plugin_manager") if "plugin_manager" in so else null
+	if pm == null:
+		return null
+	if pm.has_method("get_chat_provider_registry"):
+		return pm.get_chat_provider_registry()
+	return null
+
+
+## Register/update a plugin chat-provider entry. Idempotent on (plugin_id, entry_id).
+##
+## args: {entry_id, display_name, generate_tool, history_mode,
+##        timeout_sec?, cancel_tool?, metadata?}
+func _handle_host_chat_providers_register(plugin_id: String, args: Dictionary) -> Dictionary:
+	var registry = _get_chat_provider_registry()
+	if registry == null:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers: registry not available")
+
+	var entry_id: String = str(args.get("entry_id", "")).strip_edges()
+	if entry_id.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register requires 'entry_id'")
+	var display_name: String = str(args.get("display_name", "")).strip_edges()
+	if display_name.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register requires 'display_name'")
+	var generate_tool: String = str(args.get("generate_tool", "")).strip_edges()
+	if generate_tool.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register requires 'generate_tool'")
+	var history_mode: String = str(args.get("history_mode", "")).strip_edges()
+	if history_mode not in _CHAT_PROVIDER_VALID_HISTORY_MODES:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: 'history_mode' must be 'newest_only' or 'full'")
+
+	# Plugins may only register tools they themselves expose (prefix rule). This
+	# is defense-in-depth: the registry never dispatches cross-plugin, but a
+	# clear early error beats a silent runtime dead-end.
+	var tool_prefix: String = "minerva_%s_" % plugin_id
+	if not generate_tool.begins_with(tool_prefix):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: 'generate_tool' must be one of this plugin's own tools (prefix '%s')" % tool_prefix)
+	var cancel_tool: String = str(args.get("cancel_tool", "")).strip_edges()
+	if not cancel_tool.is_empty() and not cancel_tool.begins_with(tool_prefix):
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: 'cancel_tool' must be one of this plugin's own tools (prefix '%s')" % tool_prefix)
+
+	var entry: Dictionary = registry.register_entry(plugin_id, args)
+	if entry.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.register: invalid entry payload")
+
+	print("[CapabilityBroker] Plugin '%s' registered chat provider '%s' (%s)" % [
+		plugin_id, entry_id, entry.get("key", "")])
+	return PluginErrors.success({
+		"key": entry.get("key", ""),
+		"entry_id": entry_id,
+		"display_name": display_name,
+	})
+
+
+## Unregister a plugin chat-provider entry. args: {entry_id}
+func _handle_host_chat_providers_unregister(plugin_id: String, args: Dictionary) -> Dictionary:
+	var registry = _get_chat_provider_registry()
+	if registry == null:
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers: registry not available")
+
+	var entry_id: String = str(args.get("entry_id", "")).strip_edges()
+	if entry_id.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id,
+			"host.chat_providers.unregister requires 'entry_id'")
+
+	var removed: bool = registry.unregister_entry(plugin_id, entry_id)
+	print("[CapabilityBroker] Plugin '%s' unregistered chat provider '%s' (removed=%s)" % [
+		plugin_id, entry_id, removed])
+	return PluginErrors.success({"entry_id": entry_id, "removed": removed})
+
+
+# ---------------------------------------------------------------------------
 # host.terminal.{list,read,write,wait} handlers (agent-relay DCR 019eafbdcfb3 A2)
 # ---------------------------------------------------------------------------
 #
@@ -3419,11 +3538,17 @@ func _handle_host_terminal_tool(plugin_id: String, capability: String, args: Dic
 #
 # Runs a shell command on the plugin's behalf and returns merged stdout+stderr.
 #
-# Routing:
-#   - When a visible UI terminal is available, the command runs THERE so the user
-#     sees it (routed_through="terminal"). The PTY does not expose $?, so
-#     exit_code is best-effort 0 and exit_code_known=false on that path.
-#   - Otherwise (headless session, or no terminal present), it falls back to a
+# Routing (chat-passthrough T3: resolution goes through the SAME
+# TerminalSessionRegistry path as host.terminal.{list,read,write,wait}, via
+# MCPTerminalTools.resolve_exec_target — no broker-local terminal scanning):
+#   - Explicit terminal_id → the named session. If it has an attached view the
+#     command runs THERE so the user sees it; a BACKGROUND session (no view)
+#     runs via the session PTY (write → wait, the same primitives the other
+#     host.terminal.* capabilities use). The PTY does not expose $?, so
+#     exit_code is best-effort 0 and exit_code_known=false on both terminal
+#     paths (routed_through="terminal").
+#   - No terminal_id → historical behavior preserved: prefer a visible UI
+#     terminal (never an unnamed background session); otherwise fall back to a
 #     direct subprocess via OS.execute, which yields a real exit code
 #     (routed_through="headless", exit_code_known=true).
 #
@@ -3475,13 +3600,26 @@ func _handle_host_terminal_exec(plugin_id: String, args: Dictionary) -> Dictiona
 		CapabilityBroker._test_terminal_exec_override = null
 		return PluginErrors.success(injected)
 
-	# 4. Prefer the visible UI terminal so the user can see the command run.
-	var term: TerminalNew = null
-	if DisplayServer.get_name() != "headless":
-		term = _find_exec_terminal(terminal_id)
+	# 4. Resolve the target through the SAME registry lookup the other
+	# host.terminal.* capabilities use (T3 — no broker-local terminal scan).
+	# Named ids resolve even headless (background sessions are headless-legit);
+	# the unnamed prefer-a-visible-terminal path keeps the display-server gate.
+	var target: Dictionary = {"session": null, "view": null}
+	if not terminal_id.is_empty():
+		target = _terminal_tools_module().resolve_exec_target(terminal_id)
+	elif DisplayServer.get_name() != "headless":
+		target = _terminal_tools_module().resolve_exec_target("")
+	var session = target.get("session")
+	var view = target.get("view")
+	if session != null and (not bool(session.terminal_available) or not bool(session.is_alive())):
+		# Extension missing or shell already exited — nothing can run there.
+		session = null
+		view = null
 
-	if term != null:
-		var t_result: Dictionary = await term.execute_command(command)
+	if view != null:
+		# Attached view: run there so the user sees it (block-based stdout —
+		# the pre-T3 UI-terminal path, byte-for-byte result shape).
+		var t_result: Dictionary = await view.execute_command(command)
 		if not bool(t_result.get("success", false)):
 			# Terminal present but exec failed — degrade to the subprocess path.
 			return _exec_headless(plugin_id, command, cwd)
@@ -3491,33 +3629,46 @@ func _handle_host_terminal_exec(plugin_id: String, args: Dictionary) -> Dictiona
 			"exit_code_known": false,
 			"timed_out": bool(t_result.get("timed_out", false)),
 			"routed_through": "terminal",
-			"terminal_id": str(term.get_instance_id()),
+			"terminal_id": str(session.terminal_id) if session != null else str(view.get_instance_id()),
+		})
+
+	if session != null:
+		# Named BACKGROUND session: compose the same write→wait primitives the
+		# other host.terminal.* capabilities use (raw=true: command is real
+		# bytes; the trailing \r is a literal carriage return submitting it).
+		var tools = _terminal_tools_module()
+		var timeout_ms: int = clampi(
+			int(args.get("timeout_ms", _TERMINAL_EXEC_DEFAULT_TIMEOUT_MS)),
+			1, _TERMINAL_EXEC_MAX_TIMEOUT_MS)
+		var wr: Dictionary = await tools.handle("minerva_terminal_write",
+			{"terminal_id": str(session.terminal_id), "text": command + "\r", "raw": true})
+		if not bool(wr.get("success", false)):
+			return _exec_headless(plugin_id, command, cwd)
+		var waited: Dictionary = await tools.handle("minerva_terminal_wait",
+			{"terminal_id": str(session.terminal_id),
+			"timeout_ms": timeout_ms, "settle_ms": 500})
+		return PluginErrors.success({
+			"stdout": _cap_terminal_output(str(waited.get("content", ""))),
+			"exit_code": 0,
+			"exit_code_known": false,
+			"timed_out": bool(waited.get("timed_out", false)),
+			"routed_through": "terminal",
+			"terminal_id": str(session.terminal_id),
 		})
 
 	# 5. Headless / no-terminal fallback: real subprocess with a true exit code.
 	return _exec_headless(plugin_id, command, cwd)
 
 
-## Find a usable terminal: by explicit id, else first visible+available, else any
-## available. Returns null in headless contexts or when none exist.
-func _find_exec_terminal(terminal_id: String) -> TerminalNew:
-	var loop := Engine.get_main_loop()
-	if loop == null or not (loop is SceneTree):
-		return null
-	var terminals: Array = (loop as SceneTree).get_nodes_in_group("terminal_pane")
-	if not terminal_id.is_empty():
-		var target_id: int = int(terminal_id)
-		for t in terminals:
-			if t is TerminalNew and t.get_instance_id() == target_id and t._terminal_available:
-				return t
-		return null
-	for t in terminals:
-		if t is TerminalNew and t.is_visible_in_tree() and t._terminal_available:
-			return t
-	for t in terminals:
-		if t is TerminalNew and t._terminal_available:
-			return t
-	return null
+const _TERMINAL_TOOLS_SCRIPT_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+
+
+## Throwaway MCPTerminalTools (RefCounted, null server) used purely for its
+## registry lookup + write/wait primitives — the same test-proven idiom as
+## test_background_terminals.gd. Runtime load() (not preload/class_name) so this
+## file stays parseable in isolated --script harnesses.
+func _terminal_tools_module():
+	return load(_TERMINAL_TOOLS_SCRIPT_PATH).new(null)
 
 
 ## Run `command` as a subprocess, merging stdout+stderr, returning a real exit

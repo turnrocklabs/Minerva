@@ -3,6 +3,13 @@ extends TabContainer
 
 const OpenAIImageProviderScript = preload("res://Scripts/Services/Providers/OpenAI/OpenAIImageProvider.gd")
 const VoiceGatewayClientScript = preload("res://Scripts/Services/Voice/VoiceGatewayClient.gd")
+const PassthroughLaunchDialogScript = preload("res://Scripts/UI/Controls/PassthroughLaunchDialog.gd")
+# Preload (not the class_name global) so a --script harness that loads ChatPane.gd
+# before the global class cache is built still compiles (W5).
+const PassthroughTurnStatusScript = preload("res://Scripts/Models/PassthroughTurnStatus.gd")
+# W4 (chat-passthrough): reused AS-IS — the card is self-contained (zero
+# autocoder coupling); ChatPane only hosts it and maps label → keystroke.
+const PassthroughQuestionCardScene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamQuestionCard.tscn")
 
 var closed_chat_data: ChatHistory  # Store the data of the closed chat
 var control: Control  # Store the tab control
@@ -28,6 +35,13 @@ var _compact_button: Button
 var _showing_archived: bool = false
 ## Focused chat popup (lazy-instantiated)
 var _focused_chat_popup: FocusedChatPopup = null
+
+## Passthrough launch dialog (chat-passthrough W3 — replaced W2's placeholder
+## picker; lazy-instantiated by the "⇅" top-bar button)
+var _passthrough_launch_dialog: Window = null
+## De-dupe ledger for agent-exit messages: "history_id|terminal_id" → true once
+## the exit message for that (chat, session) pair has been shown.
+var _passthrough_exit_seen: Dictionary = {}
 
 ## TTS playback for voice conversation mode (controlled by Voice Preferences)
 var _tts_player: AudioStreamPlayer
@@ -676,6 +690,24 @@ func _try_llm_summarize(conversation_parts: PackedStringArray, msg_count: int) -
 	if not history.provider or not is_instance_valid(history.provider):
 		return ""
 
+	var result := await _summarize_conversation_with_provider(
+		history.provider, conversation_parts, msg_count, history.HistoryId)
+
+	if not result.get("ok", false):
+		print("[Compact] LLM summarization failed (%s), falling back to naive" % str(result.get("error", "")))
+		return ""
+
+	var summary_text := str(result.get("text", ""))
+	print("[Compact] LLM summarization succeeded (%d chars)" % summary_text.length())
+	return "### Conversation Summary (LLM) ###\n%s\n### End Summary ###" % summary_text
+
+
+## Shared summarization core — ONE generate_content call over a prepared
+## transcript. Extracted from _try_llm_summarize (compact_chat path) so the
+## summarize-to-note flow (chat-passthrough W6) reuses the exact same engine
+## with a different provider instead of duplicating a parallel path.
+## Returns {ok: bool, text: String, error: String}.
+func _summarize_conversation_with_provider(provider: BaseProvider, conversation_parts: PackedStringArray, msg_count: int, cost_history_id: String = "") -> Dictionary:
 	var prompt_text := "Summarize this conversation segment of %d messages. Preserve: key decisions, facts learned, action items, important code snippets, and any unresolved questions. Be concise but complete.\n\n%s" % [
 		msg_count, "\n".join(conversation_parts)
 	]
@@ -684,40 +716,36 @@ func _try_llm_summarize(conversation_parts: PackedStringArray, msg_count: int) -
 	var prompt_item = ChatHistoryItem.new()
 	prompt_item.Role = ChatHistoryItem.ChatRole.USER
 	prompt_item.Message = prompt_text
-	prompt_item.provider = history.provider
+	prompt_item.provider = provider
 
 	var prompt_list: Array[Variant] = []
-	var formatted = history.provider.Format(prompt_item)
+	var formatted = provider.Format(prompt_item)
 	if formatted:
 		prompt_list.append(formatted)
 
 	if prompt_list.is_empty():
-		return ""
+		return {"ok": false, "text": "", "error": "prompt_format_failed"}
 
-	# Temporarily disable tools for this request
-	var had_tools := false
-	if history.provider.has_method("set_tools"):
-		had_tools = history.provider.tools_enabled
+	# Disable tools for this request — summarization is a plain completion.
+	# (Tools are re-set on the next regular chat call.)
+	if provider.has_method("set_tools"):
 		var empty_tools: Array[Dictionary] = []
-		history.provider.set_tools(empty_tools)
+		provider.set_tools(empty_tools)
 
-	var bot_response = await history.provider.generate_content(prompt_list)
+	var bot_response = await provider.generate_content(prompt_list)
 
-	# Restore tools
-	if had_tools and history.provider.has_method("set_tools"):
-		# Tools will be re-set on next regular chat call
-		pass
+	if not bot_response:
+		return {"ok": false, "text": "", "error": "no_response"}
+	if not bot_response.error.is_empty():
+		return {"ok": false, "text": "", "error": bot_response.error}
+	if bot_response.text.is_empty():
+		return {"ok": false, "text": "", "error": "empty_response_text"}
 
-	if not bot_response or bot_response.text.is_empty():
-		print("[Compact] LLM summarization failed, falling back to naive")
-		return ""
+	# Record cost against the originating chat
+	if SingletonObject.cost_tracker and not cost_history_id.is_empty():
+		SingletonObject.cost_tracker.record_chat_cost(bot_response, cost_history_id)
 
-	# Record cost
-	if SingletonObject.cost_tracker:
-		SingletonObject.cost_tracker.record_chat_cost(bot_response, history.HistoryId)
-
-	print("[Compact] LLM summarization succeeded (%d chars)" % bot_response.text.length())
-	return "### Conversation Summary (LLM) ###\n%s\n### End Summary ###" % bot_response.text
+	return {"ok": true, "text": bot_response.text, "error": ""}
 
 
 ## Check tool arguments for paths and validate against allowed directories.
@@ -1049,6 +1077,304 @@ func _on_focused_chat_create(config: Dictionary) -> void:
 
 	if get_tab_count() > 0:
 		buffer_control_chats.hide()
+
+
+#region Passthrough chat (chat-passthrough W2)
+
+## Next "Chat N" tab name, mirroring the numbering used by _on_new_chat.
+func _next_chat_tab_name() -> String:
+	var last_chat_number: int = -1
+	for i in range(get_tab_count() - 1, -1, -1):
+		var tab_title := get_tab_title(i)
+		if tab_title == "Chat":
+			last_chat_number = max(last_chat_number, 0)
+		elif tab_title.begins_with("Chat"):
+			var suffix = tab_title.right(-"Chat".length()).strip_edges()
+			if suffix.is_valid_int():
+				last_chat_number = max(last_chat_number, int(suffix))
+	return "Chat" if last_chat_number == -1 else "Chat %s" % (last_chat_number + 1)
+
+
+## Build (model only, no UI) a passthrough ChatHistory bound to a registered
+## plugin chat-provider entry. Returns null when the entry can't be resolved —
+## the binding is contractual, so there is NO fallback provider here.
+func _build_passthrough_history(entry_key: String, display_name: String, bound_terminal_id: String = "") -> ChatHistory:
+	var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
+	if cpr == null or not cpr.has_method("get_entry"):
+		push_warning("[ChatPane] start_passthrough_chat: no plugin chat-provider registry available")
+		return null
+	var entry: Dictionary = cpr.get_entry(entry_key)
+	if entry.is_empty():
+		push_warning("[ChatPane] start_passthrough_chat: entry '%s' is not registered" % entry_key)
+		return null
+
+	var PluginProviderScript = load("res://Scripts/Services/Providers/PluginProvider.gd")
+	var provider_obj: BaseProvider = PluginProviderScript.new()
+	provider_obj.configure_from_entry(entry)
+
+	var history: ChatHistory = ChatHistory.new(provider_obj)
+	# The chat tab carries the launch dialog's session name — same name as the
+	# terminal session/tab — so the pair is recognisable across panes. Generic
+	# "Chat N" numbering is the no-name fallback only.
+	history.HistoryName = display_name.strip_edges() if not display_name.strip_edges().is_empty() \
+			else _next_chat_tab_name()
+	history.HistoryItemList = []
+	history.SystemPromptEnabled = provider_obj.requires_default_system_prompt
+	history.PassthroughMode = true
+	history.BoundTerminalId = bound_terminal_id
+	history.PassthroughName = display_name if not display_name.is_empty() \
+			else str(entry.get("display_name", "Passthrough"))
+	return history
+
+
+## Create a new passthrough chat bound to a plugin chat-provider entry (W2 stub
+## flow; W3's launch dialog drives this API). The provider chooser ends up
+## showing the bound entry and locked on it; the header shows the badge.
+func start_passthrough_chat(entry_key: String, display_name: String, bound_terminal_id: String = "") -> ChatHistory:
+	var history := _build_passthrough_history(entry_key, display_name, bound_terminal_id)
+	if history == null:
+		SingletonObject.ErrorDisplay("Passthrough unavailable",
+			"Provider entry '%s' is not registered — is the plugin running?" % entry_key)
+		return null
+
+	SingletonObject.ChatList.append(history)
+	render_history(history)
+	current_tab = get_tab_count() - 1
+
+	if history.provider.requires_default_system_prompt:
+		add_new_system_prompt_item(history.provider.default_system_prompt)
+
+	if get_tab_count() > 0:
+		buffer_control_chats.hide()
+
+	# Chooser must show + lock on the bound entry (tab-change glue also covers
+	# later switches back to this tab).
+	_update_passthrough_chooser_lock(current_tab)
+	return history
+
+
+## Lock/unlock the provider chooser based on whether the given tab is a
+## passthrough chat. Called on tab changes and right after passthrough creation.
+func _update_passthrough_chooser_lock(tab: int) -> void:
+	if _provider_option_button == null:
+		return
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		if _provider_option_button.is_locked():
+			_provider_option_button.set_locked(false)
+		return
+	var history = SingletonObject.ChatList[tab]
+	if history.PassthroughMode:
+		var entry_key := ""
+		if history.provider != null and "entry_key" in history.provider:
+			entry_key = str(history.provider.entry_key)
+		_provider_option_button.lock_to_entry(entry_key, history.PassthroughName,
+			"Passthrough chat — provider is fixed for this chat's life")
+	elif _provider_option_button.is_locked():
+		_provider_option_button.set_locked(false)
+
+
+## Full launch path behind the W3 dialog: create/bind the chat (W2 core), store
+## the relaunch affordance fields (T3 contract: restart = stored command + cwd
+## into a FRESH session), and wire agent-exit surfacing at bind time.
+func launch_passthrough_chat(entry_key: String, display_name: String,
+		terminal_id: String, command: String = "", cwd: String = "") -> ChatHistory:
+	var history := start_passthrough_chat(entry_key, display_name, terminal_id)
+	if history == null:
+		return null
+	history.PassthroughCommand = command
+	history.PassthroughCwd = cwd
+	_wire_passthrough_exit(history)
+	return history
+
+
+## Wire agent-exit surfacing for a bound passthrough chat. The signal lives on
+## the SESSION object (TerminalSession.shell_exited), so this survives
+## view-less/background terminals — no TerminalNew tab needed. De-duped via
+## _passthrough_exit_seen: one message per (chat, session) exit.
+func _wire_passthrough_exit(history: ChatHistory) -> void:
+	if history == null or history.BoundTerminalId.is_empty():
+		return
+	var registry = SingletonObject.get_terminal_session_registry()
+	if registry == null or not registry.has_session(history.BoundTerminalId):
+		return
+	var session = registry.get_session(history.BoundTerminalId)
+	# Already dead at bind time (raced an instant exit) → surface immediately.
+	if session.shell_exit_code != null:
+		_append_passthrough_exit_message(history, str(session.terminal_id),
+			int(session.shell_exit_code))
+		return
+	var tid := str(session.terminal_id)
+	session.shell_exited.connect(func(exit_code: int):
+		_append_passthrough_exit_message(history, tid, exit_code))
+
+
+## Surface "the terminal agent died" in the bound chat, once per
+## (chat, session) pair, using the program-message idiom (transient label —
+## not saved with the project, same as provider-change notices).
+func _append_passthrough_exit_message(history: ChatHistory, terminal_id: String,
+		exit_code: int) -> void:
+	var dedupe_key := "%s|%s" % [history.HistoryId, terminal_id]
+	if _passthrough_exit_seen.get(dedupe_key, false):
+		return
+	_passthrough_exit_seen[dedupe_key] = true
+	if history.VBox != null and is_instance_valid(history.VBox):
+		history.VBox.add_program_message(
+			"terminal agent exited (code %d) — press ⇅ to relaunch" % exit_code)
+
+
+## Top-bar "new passthrough chat" button handler (chat-passthrough W3): opens
+## the launch dialog (new background session OR bind-to-existing terminal).
+func _on_passthrough_chat_pressed() -> void:
+	if _passthrough_launch_dialog == null:
+		_passthrough_launch_dialog = PassthroughLaunchDialogScript.new()
+		_passthrough_launch_dialog.chat_starter = launch_passthrough_chat
+		add_child(_passthrough_launch_dialog)
+	_passthrough_launch_dialog.popup_launch()
+
+
+# --- Summarize to note (chat-passthrough W6) --------------------------------
+# Passthrough chats have NO LLM in their transport (DCR comment #479). The
+# summarize-to-note button is THE one deliberate token-spend gesture: a single
+# explicit LLM call that distills the transcript into a note linked to the
+# chat (notes-as-context is the transfer mechanism into other chats). Nothing
+# below may run without that explicit gesture.
+
+## Fixed cheap distill model. NOT the chat's provider — passthrough providers
+## are terminal transports, not LLMs.
+const PASSTHROUGH_DISTILL_MODEL := "gpt-5.4-mini"
+
+## Test seam / future per-user override: when set, summarize_passthrough_to_note
+## uses this provider instead of constructing the fixed distill model.
+var distill_provider_override: BaseProvider = null
+
+## Double-spend guard: history_id -> true while a summarize is in flight.
+var _summarize_in_flight: Dictionary = {}
+
+
+## Is a summarize currently in flight for this chat? (UI busy-state hook.)
+func is_summarize_in_flight(history) -> bool:
+	return history != null and _summarize_in_flight.get(history.HistoryId, false)
+
+
+## Build the attributed transcript for a passthrough chat: "You:" for the user,
+## "<PassthroughName>:" for the other side. Skips empty messages. Partial
+## mid-session transcripts are fine — we summarize whatever exists.
+func _build_passthrough_transcript(history) -> PackedStringArray:
+	var parts: PackedStringArray = []
+	var other_name: String = history.PassthroughName if not history.PassthroughName.is_empty() else "Assistant"
+	for item in history.HistoryItemList:
+		if item.Message.strip_edges().is_empty():
+			continue
+		match item.Role:
+			ChatHistoryItem.ChatRole.USER:
+				parts.append("You: %s" % item.Message)
+			ChatHistoryItem.ChatRole.MODEL, ChatHistoryItem.ChatRole.ASSISTANT:
+				parts.append("%s: %s" % [other_name, item.Message])
+	return parts
+
+
+## Construct the fixed distill provider. Prefers an exact model_name match in
+## the ChatGPT dynamic-model catalog (same resolution the capability broker
+## uses), falling back to the ChatGPT factory with the bare model name.
+## Credentials are NOT touched here — ChatGPTProvider.generate_content fails
+## with a clear "not connected" error that we surface without crashing.
+func _create_passthrough_distill_provider() -> BaseProvider:
+	var dyn_map: Dictionary = SingletonObject.get("_dynamic_provider_map") if "_dynamic_provider_map" in SingletonObject else {}
+	for id_base in dyn_map:
+		var dyn_info: Dictionary = dyn_map[id_base] as Dictionary
+		if int(dyn_info.get("provider", -1)) != SingletonObject.API_MODEL_PROVIDERS.CHATGPT:
+			continue
+		var manager = dyn_info.get("manager", null)
+		if manager == null:
+			continue
+		for config in manager.models:
+			if config is Dictionary and str(config.get("model_name", "")).to_lower() == PASSTHROUGH_DISTILL_MODEL:
+				var dyn_provider := SingletonObject.create_dynamic_provider(int(config.get("id", -1)))
+				if dyn_provider != null:
+					return dyn_provider
+	# Catalog miss (models not refreshed yet) — construct directly via the
+	# ChatGPT factory; auth is checked inside generate_content.
+	return ChatGPTProvider.create_from_config({
+		"model_name": PASSTHROUGH_DISTILL_MODEL,
+		"display_name": "ChatGPT mini (distill)",
+		"short_name": "CG",
+	})
+
+
+## Surface a summarize failure. ErrorDisplay when the popup exists (normal app),
+## error toast otherwise (headless — create_toast_notification logs and bails).
+func _surface_summarize_error(message: String) -> void:
+	if SingletonObject.errorPopup != null:
+		SingletonObject.ErrorDisplay("Summarize failed", message)
+	else:
+		SingletonObject.create_toast_notification("Summarize failed: %s" % message, ToastNotification.Type.ERROR)
+
+
+## W6 engine: distill a passthrough chat's transcript into a note linked to
+## this chat, via ONE explicit LLM call on the fixed cheap distill model.
+## Reuses the compact_chat summarization core (_summarize_conversation_with_provider).
+## provider_override is the injectable seam for tests.
+## Returns {ok: bool, note_id: String, error: String, message: String}.
+func summarize_passthrough_to_note(history, provider_override: BaseProvider = null) -> Dictionary:
+	if history == null:
+		return {"ok": false, "note_id": "", "error": "no_history", "message": ""}
+
+	# Busy guard — no double-spend, even if a second press sneaks through.
+	if _summarize_in_flight.get(history.HistoryId, false):
+		return {"ok": false, "note_id": "", "error": "busy",
+			"message": "A summarize is already in flight for this chat."}
+
+	# Empty transcript → friendly no-op, NO LLM call.
+	var transcript := _build_passthrough_transcript(history)
+	if transcript.is_empty():
+		SingletonObject.create_toast_notification("Nothing to summarize yet — the chat is empty.")
+		return {"ok": false, "note_id": "", "error": "empty_transcript",
+			"message": "Nothing to summarize yet — the chat is empty."}
+
+	var provider: BaseProvider = provider_override if provider_override != null else distill_provider_override
+	var owns_provider := false
+	if provider == null:
+		provider = _create_passthrough_distill_provider()
+		owns_provider = true
+	if provider == null:
+		_surface_summarize_error("Could not construct the distill model (%s)." % PASSTHROUGH_DISTILL_MODEL)
+		return {"ok": false, "note_id": "", "error": "provider_unavailable", "message": ""}
+
+	_summarize_in_flight[history.HistoryId] = true
+	if owns_provider:
+		add_child(provider)  # providers need the tree for timers/auth
+
+	var result: Dictionary = await _summarize_conversation_with_provider(
+		provider, transcript, transcript.size(), history.HistoryId)
+
+	if owns_provider:
+		provider.queue_free()
+	_summarize_in_flight.erase(history.HistoryId)
+
+	if not result.get("ok", false):
+		var err := str(result.get("error", "unknown error"))
+		_surface_summarize_error(err)
+		return {"ok": false, "note_id": "", "error": err, "message": ""}
+
+	# Note creation + linking: same underlying path as minerva_create_note +
+	# minerva_link_note_to_chat (user-visible notes pane = the notes-as-context
+	# bus into other chats; the agent-notes tab is per-chat hidden context, so
+	# _upsert_agent_note is the wrong home for this).
+	var distilled := str(result.get("text", ""))
+	var timestamp := Time.get_datetime_string_from_system(false, true)
+	var note_title := "Passthrough summary: %s — %s" % [history.PassthroughName, timestamp]
+	var note: Note = Note.create_text_note(note_title, distilled)
+	note.link_to_chat(history.HistoryId)
+	if SingletonObject.notes_container != null:
+		SingletonObject.notes_container.add_note(note)
+		if SingletonObject.main_ui and SingletonObject.main_ui.has_method("set_notes_pane_visible"):
+			SingletonObject.main_ui.set_notes_pane_visible(true)
+
+	SingletonObject.create_toast_notification("Summarized to note: %s" % note_title,
+		ToastNotification.Type.SUCCESS)
+	return {"ok": true, "note_id": note.uuid, "error": "", "message": note_title}
+
+#endregion
 
 
 func _connect_mcp_signals() -> void:
@@ -1668,14 +1994,38 @@ func execute_regular_chat(text: String) -> void:
 	dummy_item.provider = history.provider
 
 	var model_msg_node = create_model_message_node(history, dummy_item)
+
+	# W5 (chat-passthrough): for passthrough chats the generate is a zero-token
+	# plugin transport while the bound terminal's agent works. Relay the agent's
+	# own mechanical status (read straight off the PTY screen) into THIS node so
+	# the turn looks alive, until the generate resolves. The relay reuses the
+	# accumulator idiom: content lives on dummy_item, the wave shows via
+	# loading_append, and the SAME node finalizes below.
+	var _pt_status = _passthrough_begin_relay(history, model_msg_node, dummy_item)
+
 	print("[ChatPane] About to call generate_content_from_provider...")
 	var bot_response = await generate_content_from_provider(history, history_list)
 	print("[ChatPane] generate_content_from_provider returned: %s" % (bot_response != null))
+
+	# Stop the status relay the instant the generate resolves (success/error/cancel).
+	_passthrough_end_relay(_pt_status, bot_response, model_msg_node, dummy_item)
 
 	# Create history item from bot response
 	print("[ChatPane] Calling process_bot_response...")
 	var chi = process_bot_response(bot_response, history.provider)
 	print("[ChatPane] process_bot_response returned, chi.Message length: %d" % chi.Message.length())
+
+	# W5: carry passthrough question options (W1 contract) onto the finalized CHI
+	# so W4 can render cards on the NEXT round. Nothing here renders cards.
+	if bot_response != null and bot_response.hcp_data.has("passthrough_question_options"):
+		chi.HcpData = {"passthrough_question_options": bot_response.hcp_data["passthrough_question_options"]}
+
+	# W8 round 4 (owner request): preserve the flying text. The agent ERASES its
+	# busy/preview output at turn end, so the relay's tail frames are the only
+	# record of what flew by — attach them to the finalized message as a
+	# collapsed tool-call-style block (the agentic idiom; ToolCalls stays empty,
+	# every IsToolCall consumer iterates that, so this is render+persist only).
+	_passthrough_attach_activity_log(chi, _pt_status)
 
 	# Handle tool calls if agent mode is enabled for this chat and response has tool calls
 	print("[ChatPane] Tool call check: AgentModeEnabled=%s, bot_response=%s, has_tool_calls=%s" % [
@@ -1702,6 +2052,10 @@ func execute_regular_chat(text: String) -> void:
 			history.termination_reason = "completed"
 			history.termination_message = ""
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
+		# W4 (chat-passthrough): a question turn (terminal agent hit a permission
+		# dialog) gets a clickable option card right under the bot message. No
+		# options parsed → no card; the user just types free text as usual.
+		_passthrough_add_question_card(history, chi, model_msg_node)
 
 	# Notify trigger system that this agent chat is fully done (all tool rounds complete)
 	if history.IsAgentChat:
@@ -1710,6 +2064,230 @@ func execute_regular_chat(text: String) -> void:
 	history.is_request_active = false
 	_update_stop_button()
 	_update_compact_button()
+
+
+## W5 (chat-passthrough): how often to re-read the bound terminal screen while a
+## passthrough turn is in flight. ~1Hz — a SceneTree timer, never per-frame.
+const PASSTHROUGH_STATUS_POLL_SEC := 1.0
+
+
+## Begin the live-status relay for a passthrough turn. Returns a
+## PassthroughTurnStatus bookkeeper (null for non-passthrough chats, so the
+## generic path is untouched). Switches the loading node into loading_append
+## mode (content visible + ●●● wave, like the accumulator) and kicks a ~1Hz
+## SceneTree poll loop that relays the bound session's screen into the node.
+## No bound session (background session died / id empty) → keep the plain ●●●
+## bubble (loading stays true), no relay, no errors.
+func _passthrough_begin_relay(history: ChatHistory, model_msg_node: Control,
+		dummy_item: ChatHistoryItem):
+	if history == null or not history.PassthroughMode:
+		return null
+	var status = PassthroughTurnStatusScript.new()
+	if not status.begin():
+		return null
+	# Switch the bubble from "hide-everything loading" to "content + wave" so the
+	# relayed status text is visible. loading must go false or content is hidden.
+	if is_instance_valid(model_msg_node):
+		model_msg_node.loading = false
+		model_msg_node.loading_append = true
+	# Drive the poll loop as a detached coroutine; it self-terminates when
+	# status.polling clears (set by _passthrough_end_relay) or the node dies.
+	_passthrough_poll_loop(status, history, model_msg_node, dummy_item)
+	return status
+
+
+## Detached ~1Hz poll loop. Reads the bound session screen, compacts it, and —
+## if it changed — grows the in-flight node IN PLACE (no new ChatHistoryItem)
+## using the agentic-accumulator idiom (handle_tool_calls): drop the wave, grow
+## the content, re-add the ●●● wave at the BOTTOM of the new content, then
+## follow with a bottom-scroll. Order matters twice over: render() rebuilds the
+## label stack (freeing the old wave label), so loading_append must be re-set
+## AFTER it to land under the fresh content; and the scroll must run after a
+## frame so layout has the new height (otherwise the tween chases a stale
+## bottom — the W8 grow-then-scroll-tick jitter). Stops when polling clears.
+func _passthrough_poll_loop(status, history: ChatHistory, model_msg_node: Control,
+		dummy_item: ChatHistoryItem) -> void:
+	while status != null and status.polling:
+		if not is_instance_valid(model_msg_node) or not is_instance_valid(dummy_item):
+			return
+		var screen := _passthrough_read_session_screen(history)
+		var compact: String = status.mark_status(screen)
+		if not compact.is_empty():
+			dummy_item.Message = compact
+			if is_instance_valid(model_msg_node) and model_msg_node.has_method("render"):
+				model_msg_node.loading_append = false
+				model_msg_node.render()
+				await get_tree().process_frame
+				# The generate may have resolved while we yielded — the finalize
+				# path owns the node now; re-adding the wave would strand it on
+				# the finished message.
+				if not status.polling or not is_instance_valid(model_msg_node):
+					return
+				model_msg_node.loading_append = true
+				if history.VBox != null and is_instance_valid(history.VBox):
+					history.VBox.ensure_node_bottom_is_visible(model_msg_node)
+		await get_tree().create_timer(PASSTHROUGH_STATUS_POLL_SEC).timeout
+
+
+## Read the bound terminal's viewport text, or "" when there is no live session.
+## Pure-ish: all the string work lives in PassthroughTurnStatus.compact_status.
+func _passthrough_read_session_screen(history: ChatHistory) -> String:
+	if history == null or history.BoundTerminalId.is_empty():
+		return ""
+	var registry = SingletonObject.get_terminal_session_registry()
+	if registry == null or not registry.has_session(history.BoundTerminalId):
+		return ""
+	var session = registry.get_session(history.BoundTerminalId)
+	if session == null or not session.has_method("read_viewport_text"):
+		return ""
+	return str(session.read_viewport_text())
+
+
+## W8 round 4: attach the turn's flying-text log to the finalized CHI as one
+## ToolExecutions entry (rendered by ToolCallBlock, collapsed). No frames → no
+## block. ToolExecutions is a TYPED Array[Dictionary] — build through a typed
+## local; a plain Array literal fails the property assignment at runtime.
+func _passthrough_attach_activity_log(chi: ChatHistoryItem, status) -> void:
+	if chi == null or status == null:
+		return
+	if not ("frames" in status) or status.frames.is_empty():
+		return
+	var execs: Array[Dictionary] = [{
+		"call_id": "passthrough-live-%s" % str(chi.Id),
+		"tool_name": "Terminal live view (%d frames)" % status.frames.size(),
+		"arguments": {"frames": status.frames.size()},
+		"result": status.activity_log(),
+		"status": "done",
+	}]
+	chi.IsToolCall = true
+	chi.ToolExecutions = execs
+
+
+## End the relay when the generate resolves. Stops polling, records the
+## disposition (for the cancelled/answer/question distinction), and drops the
+## append-wave so the SAME node can finalize cleanly via update_ui_after_response.
+func _passthrough_end_relay(status, bot_response, model_msg_node: Control,
+		_dummy_item: ChatHistoryItem) -> void:
+	if status == null:
+		return
+	var disposition := "answer"
+	if bot_response == null:
+		disposition = "error"
+	elif bot_response.error != null and not str(bot_response.error).is_empty():
+		# PluginProvider stamps "Request cancelled." on a stop; any other error
+		# string is a transport/plugin error. Both end the relay; the finalize
+		# path renders the error text like other providers.
+		disposition = "cancelled" if str(bot_response.error).to_lower().find("cancel") != -1 else "error"
+	elif bot_response.hcp_data.has("passthrough_question_options"):
+		disposition = "question"
+	status.finish(disposition)
+	if is_instance_valid(model_msg_node):
+		model_msg_node.loading_append = false
+
+
+## W4 (chat-passthrough): question text shown on the option card. The full
+## terminal dialog is already visible in the bot message right above the card,
+## so the card carries a short action prompt, not a duplicate of the screen.
+const PASSTHROUGH_QUESTION_PROMPT := "The terminal agent is waiting on this dialog — choose an option:"
+
+
+## W4 (chat-passthrough): render a clickable option card under a finalized
+## question turn. Reuses AutocoderStreamQuestionCard AS-IS: the card shows the
+## option LABELS and emits answer_submitted(question_id, answer, session_id);
+## the label → keystroke mapping lives here, bound onto the connection.
+##
+## Persistence choice (v1): cards are live-turn affordances ONLY. They are
+## plain VBox children — never ChatHistoryItems — so project save (which
+## serializes HistoryItemList) never captures them and render_history never
+## rebuilds them. After a reload the card is simply ABSENT: the dialog state
+## on the terminal is likely gone after a restart, and the options still live
+## on the CHI's HcpData if anyone ever wants to resurrect them.
+##
+## Lifecycle: the card is parented to the chat's VBox, so closing the chat
+## frees it; its answer_submitted connection is owned by the card and dies
+## with it (no dangling connections on ChatPane).
+##
+## Returns the card, or null when there are no usable options (req: no card,
+## zero new UI — the user types free text in the normal input).
+func _passthrough_add_question_card(history: ChatHistory, chi: ChatHistoryItem,
+		model_msg_node: Control) -> Control:
+	if history == null or chi == null:
+		return null
+	var raw = chi.HcpData.get("passthrough_question_options", [])
+	if not (raw is Array) or raw.is_empty():
+		return null
+	# Parse {label, keystroke} dicts. Values are JSON round-tripped, so coerce
+	# with str() (survives ints-as-floats etc.). Options without a label are
+	# dropped; an empty keystroke (Cancel per the locked contract) is kept —
+	# the click is then a no-send (see _on_passthrough_question_answered).
+	var labels: Array = []
+	var keystroke_by_label: Dictionary = {}
+	for opt in raw:
+		if not (opt is Dictionary):
+			continue
+		var label := str(opt.get("label", "")).strip_edges()
+		if label.is_empty():
+			continue
+		if not keystroke_by_label.has(label):
+			labels.append(label)
+		keystroke_by_label[label] = str(opt.get("keystroke", ""))
+	if labels.is_empty():
+		return null
+	var vbox = history.VBox
+	if vbox == null or not is_instance_valid(vbox):
+		return null
+	var card = PassthroughQuestionCardScene.instantiate()
+	# add_child BEFORE setup(): the card resolves its %nodes via @onready
+	# (AutocoderActionStream hosts it the same way).
+	vbox.add_child(card)
+	if is_instance_valid(model_msg_node) and model_msg_node.get_parent() == vbox:
+		vbox.move_child(card, model_msg_node.get_index() + 1)
+	# The card prepends each option button (move_child(btn, 0)), which displays
+	# the options REVERSED. Compensate here (read-only reuse — don't touch the
+	# card) so the user sees them in the contract's order: Yes / … / Cancel.
+	var display_labels := labels.duplicate()
+	display_labels.reverse()
+	card.setup(chi.Id, PASSTHROUGH_QUESTION_PROMPT, display_labels, history.HistoryId)
+	# The card owns this connection — it dies when the card is freed with the
+	# VBox, so a closed chat leaves nothing dangling on ChatPane.
+	card.answer_submitted.connect(
+		_on_passthrough_question_answered.bind(history, keystroke_by_label, card))
+	return card
+
+
+## W4: an option was clicked. The card already guards re-submission internally
+## (meta "submitted"); additionally grey out its buttons so the answered state
+## is visible AND unclickable. Then send the mapped keystroke as the next user
+## turn on the ORIGINATING history. Answering a stale card whose terminal
+## dialog is long gone is harmless — the keystroke hits the PTY like any
+## typed text (terminal-honest).
+func _on_passthrough_question_answered(_question_id: String, answer: String, _session_id: String,
+		history: ChatHistory, keystroke_by_label: Dictionary, card: Control) -> void:
+	if is_instance_valid(card):
+		for btn in card.find_children("*", "Button", true, false):
+			btn.disabled = true
+	var keystroke := str(keystroke_by_label.get(answer, ""))
+	# Locked contract: an EMPTY keystroke (Cancel = "" → ESC, handled plugin-
+	# side) is never sent as a user turn — sending "" would be an empty
+	# message; core does nothing special beyond not sending.
+	if keystroke.is_empty():
+		return
+	_passthrough_send_question_answer(history, keystroke)
+
+
+## W4: send a keystroke as a normal user turn on a SPECIFIC history (not
+## whatever tab is current). Mirrors MCPChatTools._send_message: switch to the
+## originating tab, reuse the UNCHANGED send path, restore the tab deferred
+## (execute_regular_chat reads current_tab during setup — switching back too
+## early causes provider mismatch).
+func _passthrough_send_question_answer(history: ChatHistory, keystroke: String) -> void:
+	var tab_idx := SingletonObject.ChatList.find(history)
+	if tab_idx == -1:
+		return  # chat closed under us; its card was freed with the VBox anyway
+	var original_tab := current_tab
+	current_tab = tab_idx
+	execute_regular_chat(keystroke)
+	call_deferred("set_current_tab", original_tab)
 
 
 ## Get the last MODEL/ASSISTANT history item (the one that made the tool calls)
@@ -2610,6 +3188,17 @@ func _ready():
 				new_chat_btn.get_parent().add_child(focused_btn)
 				new_chat_btn.get_parent().move_child(focused_btn, new_chat_btn.get_index())
 
+				# "Passthrough Chat" button — chat bound to a terminal-backed plugin
+				# provider (chat-passthrough W2). No vertical-swap icon exists in
+				# assets/, so a "⇅" text glyph stands in this round (W3 may refine).
+				var passthrough_btn := Button.new()
+				passthrough_btn.text = "⇅"
+				passthrough_btn.tooltip_text = "New passthrough chat"
+				passthrough_btn.focus_mode = Control.FOCUS_NONE
+				passthrough_btn.pressed.connect(_on_passthrough_chat_pressed)
+				new_chat_btn.get_parent().add_child(passthrough_btn)
+				new_chat_btn.get_parent().move_child(passthrough_btn, new_chat_btn.get_index())
+
 	# Auto-start voice gateway if always_listening was previously enabled
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.always_listening:
@@ -3418,6 +4007,14 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 
 	var history = SingletonObject.ChatList[current_tab]
 
+	# Passthrough chats are contractually bound to their terminal provider —
+	# the chooser is locked in the UI, and this guard backstops every other
+	# selection route (keyboard, programmatic select, late signals).
+	var bound_key: String = history.provider.entry_key if history.provider is PluginProvider else ""
+	if history.PassthroughMode and not (provider_ is PluginProvider and provider_.entry_key == bound_key):
+		sync_provider_picker_to_chat(history.HistoryId)
+		return
+
 	history.provider = provider_
 	if not provider_.is_inside_tree():
 		history.VBox.add_child(provider_)
@@ -3434,6 +4031,10 @@ func _on_provider_option_button_provider_selected(provider_: BaseProvider):
 # when tab changes, set the provider picker to the provider that chat tab is using
 func _on_tab_changed(tab: int):
 	sync_provider_picker_to_chat(tab)
+
+	# Passthrough chats lock the chooser onto their bound entry; switching to a
+	# normal chat unlocks it (chat-passthrough W2).
+	_update_passthrough_chooser_lock(tab)
 
 	_update_compact_button()
 	_update_stop_button()

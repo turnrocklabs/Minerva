@@ -21,9 +21,25 @@ var WINDOWS_CWD_REGEX: = RegEx.create_from_string(r"(\r\n)?[a-zA-Z]:[\\\/](?:[a-
 
 var _output_label_nodes: Array[TextLayer]
 
-# Terminal is from a GDExtension that may not be available
-var terminal = null
-var _terminal_available: bool = false
+# The headless PTY+vt core this view renders. Owned by the
+# TerminalSessionRegistry — survives this Control being freed. chat-passthrough T1.
+# Untyped (duck-typed) to avoid script-run parse-order issues with the
+# TerminalSession global class — same convention SingletonObject uses for plugins.
+var _session = null
+
+# Whether a fresh session should be auto-created in _ready when none is injected.
+# TerminalTabGroup sets this false and supplies a session via attach_session().
+var _auto_create_session: bool = true
+
+# Back-compat passthrough: MCPTerminalTools / CapabilityBroker read `term.terminal`
+# (the Terminal extension node) and `term._terminal_available` directly. Keep
+# them working by delegating to the attached session.
+var terminal:
+	get:
+		return _session.terminal if _session else null
+var _terminal_available: bool:
+	get:
+		return _session != null and _session.terminal_available
 
 var _scrolled_up: bool = false
 
@@ -32,9 +48,26 @@ var cursor_visible: bool = true
 var text_layer: TextLayer
 var cursor_layer: CursorLayer
 
-# Terminal dimensions in cells
-var _cols: int = 80
-var _rows: int = 24
+# Terminal dimensions in cells. Canonical state lives on the session; these
+# delegate so existing readers (MCPTerminalTools) and writers (tests that set
+# term._cols then call term.terminal.resize) keep working. Fallbacks (80x24)
+# apply only before a session is attached.
+var _cols_fallback: int = 80
+var _rows_fallback: int = 24
+var _cols: int:
+	get:
+		return _session.get_cols() if _session else _cols_fallback
+	set(value):
+		_cols_fallback = value
+		if _session:
+			_session._cols = value
+var _rows: int:
+	get:
+		return _session.get_rows() if _session else _rows_fallback
+	set(value):
+		_rows_fallback = value
+		if _session:
+			_session._rows = value
 
 # TODO: use this in subclasses
 var font: Font = preload("res://assets/fonts/CascadiaCode/CascadiaMono.ttf")
@@ -102,14 +135,6 @@ func _apply_terminal_config() -> void:
 func _ready():
 	add_to_group("terminal_pane")
 	SingletonObject.injection_consumed.connect(_on_injection_consumed)
-	# Check if Terminal GDExtension is available
-	if ClassDB.class_exists("Terminal"):
-		terminal = ClassDB.instantiate("Terminal")
-		_terminal_available = true
-		add_child(terminal)
-	else:
-		push_error("Terminal GDExtension not available - terminal functionality disabled")
-		return
 
 	visibility_changed.connect(
 		func():
@@ -127,62 +152,154 @@ func _ready():
 
 	_create_output_container()
 
-	# Connect to libghostty-vt state change signal for cell-grid rendering
-	if terminal.has_signal("vt_state_changed"):
-		terminal.vt_state_changed.connect(_on_vt_state_changed)
-		print("[Terminal] vt_state_changed signal connected — using libghostty-vt cell-grid rendering")
-	else:
-		push_warning("[Terminal] vt_state_changed signal NOT found — libghostty-vt not available")
-
-	# Keep legacy output signal for shell prompt marker detection
-	terminal.output_received.connect(_on_output_received)
-
-	# Shell prompt markers → block detection
-	terminal.on_shell_prompt_start.connect(_on_prompt_start)
-	terminal.on_shell_prompt_end.connect(_on_prompt_end)
-
-	# Bell + shell-exit (guarded: older extension builds lack these)
-	if terminal.has_signal("bell"):
-		terminal.bell.connect(_on_bell)
-	if terminal.has_signal("process_exited"):
-		terminal.process_exited.connect(_on_shell_exited)
+	# Acquire a session. TerminalTabGroup injects one via attach_session() before
+	# add_child; if none was injected (direct create()/old call sites), make a
+	# fresh one from the registry so behaviour is unchanged.
+	if _session == null and _auto_create_session:
+		var registry = SingletonObject.get_terminal_session_registry()
+		if registry:
+			var session = registry.create_session("Terminal", 0, 0)
+			attach_session(session)
 
 	await get_tree().process_frame
 
-	_recalc_terminal_size()
-	print("[Terminal] Container size: %s, self size: %s, cw=%.2f, lh=%.2f" % [_output_container.size, size, char_width, line_height])
-	print("[Terminal] Starting with size: %d cols x %d rows" % [_cols, _rows])
-	print("[Terminal] Font: %s" % font.resource_path)
-	var started = terminal.start(_cols, _rows)
-	if not started:
-		push_error("[Terminal] Failed to start terminal - forkpty may have failed")
-	else:
-		print("[Terminal] Terminal started successfully")
+	# Start the PTY now that we have real layout geometry (only if not already
+	# started — a pre-existing background session may already be running).
+	if _session and not _session.started:
+		_recalc_terminal_size()
+		# Degenerate layout (mid-build, headless harness) must not birth a 1×1
+		# PTY — the shell wraps every line and the grid is useless. Start at
+		# the classic default; the first real resized event corrects it.
+		var start_cols: int = _cols if _layout_is_sane() else 80
+		var start_rows: int = _rows if _layout_is_sane() else 24
+		var ok: bool = _session.start(start_cols, start_rows)
+		if not ok:
+			push_error("[Terminal] Failed to start terminal - forkpty may have failed")
+	elif _session:
+		# Adopted an already-running background session (passthrough chat's
+		# terminal surfacing as a tab). The session's grid still has its
+		# background geometry; sync the PTY to THIS view's real layout or the
+		# view renders a clipped grid with dead scroll (W8 HITL: 80×24 PTY in
+		# a 197×12 view). _recalc alone only rewrites the session's bookkeeping
+		# fields — the PTY itself must reflow.
+		_sync_session_grid()
 
 	resized.connect(
 		func():
-			_recalc_terminal_size()
-			terminal.resize(_cols, _rows)
-			text_layer.queue_redraw()
-			cursor_layer.queue_redraw()
+			if _sync_session_grid():
+				if text_layer:
+					text_layer.queue_redraw()
+				if cursor_layer:
+					cursor_layer.queue_redraw()
 	)
+
+
+## True when the view has real (non-degenerate) layout geometry. Mid-build and
+## headless-harness rects are zero/tiny; pushing those at the PTY reflows the
+## live agent's screen for nothing (a 1×1 SIGWINCH collapses the grid).
+func _layout_is_sane() -> bool:
+	var draw_width: float = text_layer.size.x if text_layer else _output_container.size.x
+	var view_height: float = _output_container.size.y
+	return draw_width >= char_width * 8.0 and view_height >= line_height * 2.0
+
+
+## Recompute the cell grid from the current layout and push it at the PTY when
+## it actually changed. Returns true when the geometry was applied (sane rect),
+## false when skipped (degenerate mid-layout rect — the final layout fires
+## resized again at the real size).
+func _sync_session_grid() -> bool:
+	if not _layout_is_sane():
+		return false
+	var prev_cols: int = _session.get_cols() if _session else -1
+	var prev_rows: int = _session.get_rows() if _session else -1
+	_recalc_terminal_size()
+	if _session and _session.started and (_cols != prev_cols or _rows != prev_rows):
+		_session.resize(_cols, _rows)
+	return true
+
+
+## Attach this view to a (possibly already-running) headless session. Wires the
+## session's signals to the view's rendering/block handlers. Renders existing
+## scrollback immediately. The session keeps running after detach/free.
+func attach_session(session) -> void:
+	if session == null:
+		return
+	if _session == session:
+		return
+	if _session != null:
+		detach_session()
+	_session = session
+
+	# Re-sync grid state to whatever the session currently has.
+	_cols_fallback = session.get_cols()
+	_rows_fallback = session.get_rows()
+
+	# Bridge session signals → view handlers.
+	if not session.vt_state_changed.is_connected(_on_vt_state_changed):
+		session.vt_state_changed.connect(_on_vt_state_changed)
+	if not session.output_received.is_connected(_on_output_received):
+		session.output_received.connect(_on_output_received)
+	if not session.prompt_start.is_connected(_on_prompt_start):
+		session.prompt_start.connect(_on_prompt_start)
+	if not session.prompt_end.is_connected(_on_prompt_end):
+		session.prompt_end.connect(_on_prompt_end)
+	if not session.bell_rung.is_connected(_on_bell):
+		session.bell_rung.connect(_on_bell)
+	if not session.shell_exited.is_connected(_on_shell_exited):
+		session.shell_exited.connect(_on_shell_exited)
+
+	# Render existing scrollback from this session.
+	if text_layer:
+		text_layer.queue_redraw()
+	if cursor_layer:
+		cursor_layer.queue_redraw()
+	_update_scrollbar()
+
+
+## Detach from the current session WITHOUT closing it. The PTY keeps running
+## under the registry. The view stops rendering it.
+func detach_session() -> void:
+	if _session == null:
+		return
+	var s = _session
+	if s.vt_state_changed.is_connected(_on_vt_state_changed):
+		s.vt_state_changed.disconnect(_on_vt_state_changed)
+	if s.output_received.is_connected(_on_output_received):
+		s.output_received.disconnect(_on_output_received)
+	if s.prompt_start.is_connected(_on_prompt_start):
+		s.prompt_start.disconnect(_on_prompt_start)
+	if s.prompt_end.is_connected(_on_prompt_end):
+		s.prompt_end.disconnect(_on_prompt_end)
+	if s.bell_rung.is_connected(_on_bell):
+		s.bell_rung.disconnect(_on_bell)
+	if s.shell_exited.is_connected(_on_shell_exited):
+		s.shell_exited.disconnect(_on_shell_exited)
+	_session = null
+
+
+## Returns the attached session (or null).
+func get_session():
+	return _session
 
 
 var _scrollbar_updating: bool = false
 
 ## Cumulative bell count since terminal start. Monotonic, so waiters can
-## snapshot it and diff instead of racing the signal.
-var bell_serial: int = 0
+## snapshot it and diff instead of racing the signal. Lives on the session.
+var bell_serial: int:
+	get:
+		return _session.bell_serial if _session else 0
 
-## Set once if the shell exits on its own. null until then.
-var shell_exit_code = null
+## Set once if the shell exits on its own. null until then. Lives on the session.
+var shell_exit_code:
+	get:
+		return _session.shell_exit_code if _session else null
 
 func _on_bell(count: int) -> void:
-	bell_serial += count
+	# Re-emit the view-level signal so existing listeners keep working.
 	bell_rung.emit(count)
 
 func _on_shell_exited(exit_code: int) -> void:
-	shell_exit_code = exit_code
 	shell_exited.emit(exit_code)
 
 func _on_vt_state_changed() -> void:
@@ -331,14 +448,11 @@ func _on_redirect_tab_selected(tab_index: int) -> void:
 
 
 func _viewport_to_screen_row(viewport_row: int) -> int:
-	## Convert a viewport-relative row to a screen-absolute row.
-	var info: Dictionary = terminal.get_scroll_info()
-	var total: int = info.get("total_rows", 0)
-	var viewport: int = info.get("viewport_rows", 0)
-	# Screen row = viewport_row + scroll_offset
-	# When at bottom: scroll_offset = total - viewport
-	var scroll_offset: int = maxi(0, total - viewport)
-	return viewport_row + scroll_offset
+	## Convert a viewport-relative row to a screen-absolute row. Delegates to the
+	## session (scrollback access is a PTY/vt concern, not a view concern).
+	if _session:
+		return _session.viewport_to_screen_row(viewport_row)
+	return viewport_row
 
 func _on_prompt_start() -> void:
 	var cursor = terminal.get_cursor()
@@ -359,39 +473,14 @@ func _on_prompt_end() -> void:
 
 func _extract_row_text(row: int) -> String:
 	## Read one row of text from the terminal cells (viewport-relative).
-	var line: String = ""
-	var max_cols: int = maxi(_cols, 256)
-	for col in range(max_cols):
-		var cell: Dictionary = terminal.get_cell(col, row)
-		if cell.is_empty():
-			break  # out of bounds
-		var cp: int = cell.get("codepoint", 0)
-		if cp >= 32:
-			line += char(cp)
-		else:
-			line += " "  # unwritten cell or control char → space
-	return line.rstrip(" ")
+	## Delegates to the session (cell→text extraction moved there in T1).
+	return _session.extract_row_text(row) if _session else ""
 
 func _extract_row_text_screen(screen_row: int) -> String:
 	## Read one row of text using screen-absolute coordinates (scrollback-safe).
-	## Uses a generous max column count because scrollback rows may have been
-	## written at a wider terminal size than the current one.
-	## Does NOT break on codepoint 0 mid-row — programs like ls use cursor
-	## positioning to create columns, leaving gaps of unwritten cells.
-	if not terminal.has_method("get_cell_screen"):
-		return _extract_row_text(screen_row)  # fallback
-	var line: String = ""
-	var max_cols: int = maxi(_cols, 256)
-	for col in range(max_cols):
-		var cell: Dictionary = terminal.get_cell_screen(col, screen_row)
-		if cell.is_empty():
-			break  # out of bounds — end of row
-		var cp: int = cell.get("codepoint", 0)
-		if cp >= 32:
-			line += char(cp)
-		else:
-			line += " "  # unwritten cell or control char → space
-	return line.rstrip(" ")
+	## Delegates to the session. Kept as a method because MCPTerminalTools calls
+	## term._extract_row_text_screen(row) directly (T2 will migrate that caller).
+	return _session.extract_row_text_screen(screen_row) if _session else ""
 
 func _finalize_active_block(next_screen_row: int) -> void:
 	if _blocks.is_empty():

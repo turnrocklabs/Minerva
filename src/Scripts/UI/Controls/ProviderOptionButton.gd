@@ -23,12 +23,30 @@ class ProviderItem:
 	func is_core_provider() -> bool:
 		return metadata is Array and metadata.size() == 2
 
+	## Returns true if this represents a plugin chat-provider entry
+	## (chat-passthrough W1). Plugin items carry the registry key as a String
+	## metadata and an id >= PLUGIN_PROVIDER_ID_BASE.
+	func is_plugin_provider() -> bool:
+		return metadata is String and id >= SingletonObject.PLUGIN_PROVIDER_ID_BASE
+
 ## Dictionary mapping set keys to provider item arrays
 ## Key: "default" (String) for standard providers, or Service object for service-specific sets
 var _provider_sets: Dictionary = {}
 var _current_set_key: Variant = "default"
 ## Services used to build the current combined set (for rebuilding after provider changes)
 var _current_combined_services: Array = []
+
+## Lock state (chat-passthrough W2): a locked chooser is disabled and pinned to
+## one plugin entry — the chat's provider binding is contractual. When the bound
+## registry entry vanishes the chooser keeps displaying the bound name with an
+## " (offline)" suffix and NEVER auto-falls-back; W3's relaunch affordance owns
+## recovery. Repopulation-driven selection changes are ignored while locked.
+var _locked := false
+var _locked_entry_key := ""
+var _locked_display_name := ""
+
+## Suffix shown on the locked entry when its registry entry is gone.
+const OFFLINE_SUFFIX := " (offline)"
 
 
 func _ready():
@@ -41,7 +59,112 @@ func _ready():
 	# Rebuild dropdown when providers are enabled/disabled
 	SingletonObject.provider_enabled_changed.connect(_on_provider_enabled_changed)
 
+	# Rebuild dropdown when plugin chat-provider entries change (chat-passthrough W1)
+	var cpr = _get_chat_provider_registry()
+	if cpr != null and cpr.has_signal("chat_providers_changed"):
+		cpr.chat_providers_changed.connect(_on_chat_providers_changed)
+
 	_load_saved_provider()
+
+
+## Resolve the PluginChatProviderRegistry (may be null pre-init / headless).
+func _get_chat_provider_registry():
+	if "plugin_chat_provider_registry" in SingletonObject:
+		return SingletonObject.plugin_chat_provider_registry
+	return null
+
+
+## Rebuild the default set + dropdown when plugin chat-provider entries change.
+## If the currently-selected entry vanished, fall back to the default selection.
+func _on_chat_providers_changed() -> void:
+	var had_selection_id := get_selected_id()
+	_setup_default_provider_set()
+	_rebuild_dropdown()
+	# Locked chooser (chat-passthrough W2): the binding is contractual. Re-pin the
+	# locked entry (or its offline placeholder) and NEVER fall back to a default.
+	if _locked:
+		_ensure_locked_entry_displayed()
+		return
+	# If a plugin provider was selected and it's now gone, the selection will
+	# have been dropped by _rebuild_dropdown (no matching item). Restore a sane
+	# default so the chat stays usable.
+	if had_selection_id >= SingletonObject.PLUGIN_PROVIDER_ID_BASE \
+			and _find_item_index_by_id(had_selection_id) == -1 \
+			and get_item_count() > 0:
+		select(0)
+		var prov := _get_provider_from_id(get_selected_id())
+		if prov:
+			provider_selected.emit(prov)
+
+
+#region Lock mechanism (chat-passthrough W2)
+
+## Lock/unlock the chooser. Locking captures the currently-selected plugin entry
+## as the contractual binding (use lock_to_entry when the entry key/name are
+## known explicitly, e.g. on tab switch into a passthrough chat).
+func set_locked(locked: bool, reason_tooltip: String = "") -> void:
+	_locked = locked
+	disabled = locked
+	tooltip_text = reason_tooltip if locked else ""
+	if locked:
+		var idx := selected
+		if idx >= 0 and idx < get_item_count() \
+				and get_item_id(idx) >= SingletonObject.PLUGIN_PROVIDER_ID_BASE:
+			var meta = get_item_metadata(idx)
+			if meta is String:
+				_locked_entry_key = meta
+				_locked_display_name = get_item_text(idx).trim_suffix(OFFLINE_SUFFIX)
+	else:
+		_locked_entry_key = ""
+		_locked_display_name = ""
+
+
+func is_locked() -> bool:
+	return _locked
+
+
+## Lock the chooser onto an explicit plugin entry. Selects the live item when
+## the entry is registered; otherwise shows an offline placeholder. Used by
+## ChatPane when the active tab is a passthrough chat (the entry may already be
+## gone — the bound name still must display).
+func lock_to_entry(entry_key: String, display_name: String, reason_tooltip: String = "") -> void:
+	_locked = true
+	disabled = true
+	tooltip_text = reason_tooltip
+	_locked_entry_key = entry_key
+	_locked_display_name = display_name
+	_ensure_locked_entry_displayed()
+
+
+## Pin the dropdown's visible selection to the locked entry. If the entry is no
+## longer in the dropdown (registry entry vanished), append a display-only
+## placeholder "<name> (offline)" and select it. select() does not emit
+## item_selected, so no provider change is propagated.
+func _ensure_locked_entry_displayed() -> void:
+	if not _locked:
+		return
+	if not _locked_entry_key.is_empty():
+		var idx := _find_item_index_by_key(_locked_entry_key)
+		if idx != -1:
+			select(idx)
+			return
+	# Entry gone (or key unknown) → offline placeholder, never a fallback.
+	var placeholder_text := _locked_display_name + OFFLINE_SUFFIX
+	var placeholder_idx := -1
+	for i in range(get_item_count()):
+		if get_item_text(i) == placeholder_text:
+			placeholder_idx = i
+			break
+	if placeholder_idx == -1:
+		var placeholder_id := SingletonObject.PLUGIN_PROVIDER_ID_BASE
+		while get_item_index(placeholder_id) != -1:
+			placeholder_id += 1
+		add_item(placeholder_text, placeholder_id)
+		placeholder_idx = get_item_count() - 1
+		set_item_metadata(placeholder_idx, _locked_entry_key)
+	select(placeholder_idx)
+
+#endregion
 
 
 ## Handle provider enable/disable changes
@@ -122,6 +245,14 @@ func get_item_provider_spec(index: int) -> Dictionary:
 				"service_name": service.name,
 				"action_name": action.name,
 			}
+
+	# Plugin chat-provider entry (chat-passthrough W1): key-addressed so it
+	# survives across rebuilds where the ordinal id changes.
+	if item_id >= SingletonObject.PLUGIN_PROVIDER_ID_BASE and metadata is String:
+		return {
+			"kind": "plugin_provider",
+			"entry_key": metadata,
+		}
 
 	if item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
 		return {
@@ -231,6 +362,22 @@ func _setup_default_provider_set():
 		var item := ProviderItem.new(instance.display_name, key, script, null, "")
 		items.append(item)
 
+	# Append plugin chat-provider entries (chat-passthrough W1). Each entry gets
+	# a stable-within-rebuild id of PLUGIN_PROVIDER_ID_BASE + ordinal; the entry
+	# key string is the metadata, used by _get_provider_from_id to build a
+	# PluginProvider from the registry.
+	var cpr = _get_chat_provider_registry()
+	if cpr != null and cpr.has_method("list_entries"):
+		var plugin_id_counter := SingletonObject.PLUGIN_PROVIDER_ID_BASE
+		for entry in cpr.list_entries():
+			var disp: String = str(entry.get("display_name", "Plugin"))
+			var key_str: String = str(entry.get("key", ""))
+			if key_str.is_empty():
+				continue
+			var pitem := ProviderItem.new(disp, plugin_id_counter, null, key_str, "")
+			items.append(pitem)
+			plugin_id_counter += 1
+
 	_provider_sets["default"] = items
 
 
@@ -285,8 +432,11 @@ func _rebuild_dropdown():
 	var separator_added := false
 
 	for item: ProviderItem in items:
-		# Skip disabled providers (filter at display time for all set types)
-		if not item.is_core_provider() and not SingletonObject.is_model_enabled(item.id):
+		# Skip disabled providers (filter at display time for all set types).
+		# Plugin chat-provider entries are always shown — their lifecycle is the
+		# registry, not the model-enabled config (chat-passthrough W1).
+		if not item.is_core_provider() and not item.is_plugin_provider() \
+				and not SingletonObject.is_model_enabled(item.id):
 			continue
 
 		# Add visual separator before first CoreProvider
@@ -319,8 +469,13 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 	var metadata = get_item_metadata(get_item_index(item_id))
 	var provider: BaseProvider
 
+	# Plugin chat-provider entry (chat-passthrough W1): metadata is the registry
+	# key string. Must be checked BEFORE the dynamic-model branch because plugin
+	# ids are >= DYNAMIC_MODEL_ID_BASE too.
+	if item_id >= SingletonObject.PLUGIN_PROVIDER_ID_BASE and metadata is String:
+		provider = _build_plugin_provider(metadata as String)
 	# CoreProvider: metadata is [Service, Action]
-	if metadata is Array and metadata.size() == 2:
+	elif metadata is Array and metadata.size() == 2:
 		provider = CoreProvider.new.callv(metadata)
 	# Dynamic model: use centralized factory
 	elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
@@ -333,6 +488,22 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 		print("Selected provider: ", provider.model_name)
 	
 	return provider
+
+## Build a PluginProvider from a registry entry key (chat-passthrough W1).
+## Returns null when the registry or entry is gone (entry vanished after the
+## dropdown was built but before selection resolved).
+func _build_plugin_provider(entry_key: String) -> BaseProvider:
+	var cpr = _get_chat_provider_registry()
+	if cpr == null or not cpr.has_method("get_entry"):
+		return null
+	var entry: Dictionary = cpr.get_entry(entry_key)
+	if entry.is_empty():
+		return null
+	var PluginProviderScript = load("res://Scripts/Services/Providers/PluginProvider.gd")
+	var prov = PluginProviderScript.new()
+	prov.configure_from_entry(entry)
+	return prov
+
 
 ## Returns the provider for a specific tab index
 func get_provider_for_tab(tab: int) -> BaseProvider:
@@ -366,9 +537,35 @@ func _load_saved_provider():
 			provider_id = config["id"]
 			SingletonObject.save_to_config_file("Providers", "DefaultProviderId", provider_id)
 
+	# Plugin chat-provider selections persist a stable KEY string alongside the
+	# ordinal int, because the ordinal (PLUGIN_PROVIDER_ID_BASE + registration
+	# order) is unstable across boots and can silently restore the WRONG entry.
+	# When a key is present, resolve it to the CURRENT ordinal; absent key →
+	# fall through to the int path (old configs / non-plugin selections).
+	if int(provider_id) >= SingletonObject.PLUGIN_PROVIDER_ID_BASE:
+		var saved_key = SingletonObject.get_config_file_value("Providers", "DefaultProviderKey")
+		if saved_key != null and str(saved_key) != "":
+			var key_index := _find_item_index_by_key(str(saved_key))
+			if key_index != -1:
+				select(key_index)
+				return
+			# Key no longer resolves (entry vanished) → graceful default fallback.
+			return
+
 	var index := _find_item_index_by_id(provider_id)
 	if index != -1:
 		select(index)
+
+
+## Finds the dropdown index whose plugin entry-key metadata matches (chat-
+## passthrough W1). Returns -1 when no plugin item carries that key.
+func _find_item_index_by_key(key: String) -> int:
+	for i in range(get_item_count()):
+		if get_item_id(i) >= SingletonObject.PLUGIN_PROVIDER_ID_BASE:
+			var meta = get_item_metadata(i)
+			if meta is String and meta == key:
+				return i
+	return -1
 
 
 ## Finds dropdown index by item ID
@@ -388,6 +585,8 @@ func _provider_spec_matches(left: Dictionary, right: Dictionary) -> bool:
 	match str(left.get("kind", "")):
 		"builtin", "dynamic":
 			return int(left.get("model_id", -1)) == int(right.get("model_id", -1))
+		"plugin_provider":
+			return str(left.get("entry_key", "")) == str(right.get("entry_key", ""))
 		"core_action":
 			return str(left.get("service_client_id", "")) == str(right.get("service_client_id", "")) \
 				and str(left.get("action_name", "")) == str(right.get("action_name", ""))
@@ -473,7 +672,19 @@ func _add_service_to_default(service: Service):
 
 ## Signal handler for dropdown item selection
 func _on_provider_option_button_item_selected(index: int):
-	var provider := _get_provider_from_id(get_item_id(index))
+	var item_id := get_item_id(index)
+	# Persist a stable entry-KEY for plugin chat-provider selections so the
+	# correct entry is restored next boot regardless of registration order. Clear
+	# it otherwise so a later builtin/dynamic selection doesn't resurrect a stale
+	# plugin key (chat-passthrough W1, key-based restore).
+	if item_id >= SingletonObject.PLUGIN_PROVIDER_ID_BASE:
+		var meta = get_item_metadata(index)
+		if meta is String:
+			SingletonObject.save_to_config_file("Providers", "DefaultProviderKey", meta)
+	else:
+		SingletonObject.save_to_config_file("Providers", "DefaultProviderKey", "")
+
+	var provider := _get_provider_from_id(item_id)
 	if provider:
 		provider_selected.emit(provider)
 

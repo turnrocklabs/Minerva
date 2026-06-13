@@ -1,0 +1,16 @@
+
+
+╭────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.139.0)                 │
+│                                            │
+│ model:     gpt-5.5 high   /model to change │
+│ directory: ~/github/Minerva/src            │
+╰────────────────────────────────────────────╯
+
+  Tip: Use /skills to list available skills or ask Codex to use one.
+
+
+› Use /skills to list available skills
+
+  gpt-5.5 high · ~/github/Minerva/src
+

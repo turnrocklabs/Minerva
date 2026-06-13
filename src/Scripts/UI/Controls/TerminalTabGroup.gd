@@ -30,7 +30,21 @@ func _init() -> void:
 	_build_ui()
 
 func _ready() -> void:
+	# Discoverable by MCPTerminalTools (promote/visible-create) without walking
+	# the tree from a terminal view — works even when the group has zero tabs.
+	add_to_group("terminal_tab_group")
 	visibility_changed.connect(_on_visibility_changed)
+	# Background sessions are "tabs the pane hasn't shown yet": adopt sessions
+	# created while the pane is open (e.g. a passthrough chat launching its
+	# terminal) so they surface as regular, fully interactive tabs (W8 HITL).
+	var registry = _get_session_registry()
+	if registry != null and registry.has_signal("session_created") \
+			and not registry.session_created.is_connected(_on_registry_session_created):
+		registry.session_created.connect(_on_registry_session_created)
+	# visibility_changed only fires on TOGGLES — a group entering the tree
+	# already visible needs an initial sync (deferred past this add_child).
+	if is_visible_in_tree():
+		call_deferred("_adopt_viewless_sessions")
 
 
 func _build_ui() -> void:
@@ -64,6 +78,19 @@ func _build_ui() -> void:
 	add_child(_panel)
 
 
+## Resolves the TerminalSessionRegistry via the SingletonObject autoload through
+## the tree (NOT the compile-time global) so this file compiles in isolated
+## script-run test harnesses where the autoload identifier isn't yet bound.
+func _get_session_registry():
+	var tree := get_tree()
+	if tree == null:
+		return null
+	var so = tree.root.get_node_or_null("SingletonObject")
+	if so == null or not so.has_method("get_terminal_session_registry"):
+		return null
+	return so.get_terminal_session_registry()
+
+
 ## Adds a button to the header row (next to the TabBar and + button).
 func add_header_button(button: Button) -> void:
 	var header := get_node_or_null("Header")
@@ -73,15 +100,30 @@ func add_header_button(button: Button) -> void:
 
 # ── Public API ────────────────────────────────────────────────────────
 
-## Creates a new terminal, registers it in the tab bar, and returns it.
-func add_terminal() -> TerminalNew:
+## Creates a new terminal view backed by a registry session, registers it in
+## the tab bar, and returns the view. The PTY lives in the session (under the
+## registry) so it survives the view being freed. Pass an existing background
+## session to surface it as a tab without starting a new shell. chat-passthrough T1.
+func add_terminal(session = null) -> TerminalNew:
 	var terminal := TerminalNew.create()
 	terminal.name = "Terminal"
 	terminal.visible = false
 
+	# If a background session was supplied, surface it (no new shell). Otherwise
+	# let the view create its own session from the registry in _ready (the
+	# default path — keeps SingletonObject out of this file's compile surface).
+	if session != null:
+		terminal._auto_create_session = false
+		terminal.attach_session(session)
+
 	_panel.add_child(terminal, true)
 
-	_tab_bar.add_tab(terminal.name)
+	# Surfaced sessions keep their given name (a passthrough chat's session is
+	# named after the chat) so the tab is recognisable.
+	var tab_title: String = terminal.name
+	if session != null and "session_name" in session and not str(session.session_name).is_empty():
+		tab_title = str(session.session_name)
+	_tab_bar.add_tab(tab_title)
 	_tab_bar.set_tab_metadata(_tab_bar.tab_count - 1, terminal)
 
 	_tab_metadata_written.emit()
@@ -93,7 +135,9 @@ func add_terminal() -> TerminalNew:
 	return terminal
 
 
-## Closes the tab at index *tab* and frees the associated terminal.
+## Closes the tab at index *tab*, closes its session (tab close = PTY close, the
+## established UX), and frees the view. Use detach + add_terminal elsewhere to
+## move a session between tabs without killing the shell.
 func close_terminal(tab: int) -> void:
 	if tab < 0 or tab >= _tab_bar.tab_count:
 		return
@@ -101,6 +145,35 @@ func close_terminal(tab: int) -> void:
 	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
 	_tab_bar.remove_tab(tab)
 	if terminal:
+		# Tab close = session close (preserve today's behaviour).
+		var session = terminal.get_session() if terminal.has_method("get_session") else null
+		if terminal.has_method("detach_session"):
+			terminal.detach_session()
+		if session:
+			var registry = _get_session_registry()
+			if registry:
+				registry.close_session(session.terminal_id)
+		terminal.queue_free()
+
+	terminal_closed.emit(tab)
+
+	if _tab_bar.tab_count == 0:
+		became_empty.emit()
+
+
+## Removes the tab at index *tab* and frees its VIEW without closing the
+## session — the PTY keeps running under the registry (chat-passthrough T2
+## demote). Counterpart of add_terminal(session); close_terminal() remains the
+## tab-close = session-close path.
+func detach_terminal(tab: int) -> void:
+	if tab < 0 or tab >= _tab_bar.tab_count:
+		return
+
+	var terminal: TerminalNew = _tab_bar.get_tab_metadata(tab)
+	_tab_bar.remove_tab(tab)
+	if terminal:
+		if terminal.has_method("detach_session"):
+			terminal.detach_session()
 		terminal.queue_free()
 
 	terminal_closed.emit(tab)
@@ -130,8 +203,51 @@ func is_empty() -> bool:
 # ── Internal signal handlers ──────────────────────────────────────────
 
 func _on_visibility_changed() -> void:
-	if is_visible_in_tree() and _tab_bar.tab_count == 0:
+	if not is_visible_in_tree():
+		return
+	# A visible pane shows EVERY live session as a tab — background terminals
+	# are just tabs the pane hadn't rendered yet (W8 HITL expectation). A fresh
+	# bare shell is only created when there is nothing to adopt.
+	_adopt_viewless_sessions()
+	if _tab_bar.tab_count == 0:
 		add_terminal()
+
+
+## A session was created while this group exists (e.g. the passthrough launch
+## dialog starting a terminal with the pane open). Deferred: on the default
+## add_terminal() path the NEW VIEW creates the session and attaches right
+## after — adopting synchronously would race that attach and duplicate the tab.
+func _on_registry_session_created(_session) -> void:
+	if is_visible_in_tree():
+		call_deferred("_adopt_viewless_sessions")
+
+
+## Give every registry session without an attached view a tab in this group.
+## Idempotent: sessions whose view exists anywhere (any tab group) are skipped.
+## Demoted tabs therefore stay demoted until the next visibility change or
+## session creation — demote is "until the pane next syncs", not forever.
+func _adopt_viewless_sessions() -> void:
+	var registry = _get_session_registry()
+	if registry == null:
+		return
+	for session in registry.list_sessions():
+		if session == null or not is_instance_valid(session):
+			continue
+		if _view_exists_for(session):
+			continue
+		add_terminal(session)
+
+
+## True when ANY terminal view (in any tab group) is attached to `session`.
+func _view_exists_for(session) -> bool:
+	var tree := get_tree()
+	if tree == null:
+		return false
+	for term in tree.get_nodes_in_group("terminal_pane"):
+		if is_instance_valid(term) and term.has_method("get_session") \
+				and term.get_session() == session:
+			return true
+	return false
 
 
 func _on_tab_bar_tab_changed(tab: int) -> void:
