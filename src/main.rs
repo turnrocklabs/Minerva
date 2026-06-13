@@ -524,25 +524,62 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
 const ECHO_SEARCH_ROWS: u64 = 120;
 
 /// Re-anchor a wide turn read on the prompt-glyph echo of the text we just
-/// sent. Returns Some(slice) starting just AFTER the echo line, leading
-/// blanks dropped — the chat already shows the user's message, so the echo is
-/// redundant in the answer. Returns None when the echo isn't in `wide` (the
-/// caller falls back to the exact old-anchor window).
+/// sent. Returns Some(slice) starting just AFTER the echo, leading blanks
+/// dropped — the chat already shows the user's message, so the echo is
+/// redundant in the answer. The echoed message can WRAP over multiple rows
+/// (glyph row + indented continuation rows — W8 HITL: the wrapped tail of the
+/// user's message headed the bot answer), so rows past the glyph row are also
+/// consumed while the accumulated echo text is still a prefix of `sent`.
+/// Returns None when the echo isn't in `wide` (the caller falls back to the
+/// exact old-anchor window).
 fn slice_from_echo(wide: &str, sent: &str) -> Option<String> {
     let marker: String = sent.lines().next().unwrap_or("").chars().take(40).collect();
     if marker.trim().is_empty() {
         return None;
     }
     let lines: Vec<&str> = wide.lines().collect();
+    // Whitespace-collapsed comparison throughout: the TUI re-wraps the
+    // message at its own column width, so only the word stream is comparable.
+    let collapse = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+    let target = collapse(sent);
     // Echo lines start with the CLI's prompt glyph (❯ claude, › codex).
     // Take the LAST glyph-prefixed match (a resend echoes again); answer
     // lines QUOTING the text don't start with the glyph, so they never
-    // steal the anchor.
+    // steal the anchor. Match either the 40-char marker (echo row carries
+    // extra text) or a row whose body is a PREFIX of the sent text (the row
+    // wrapped before the marker length — narrow terminals).
     let echo_idx = lines.iter().rposition(|l| {
         let t = l.trim_start();
-        (t.starts_with('❯') || t.starts_with('›')) && l.contains(marker.as_str())
+        if !(t.starts_with('❯') || t.starts_with('›')) {
+            return false;
+        }
+        if l.contains(marker.as_str()) {
+            return true;
+        }
+        let body = collapse(t.trim_start_matches(['❯', '›']));
+        !body.is_empty() && target.starts_with(body.as_str())
     })?;
+
+    // Consume the echo's wrapped continuation rows. A row that stops
+    // extending the prefix is the first NON-echo row (the answer can never
+    // extend it — answers don't start with the unfinished tail of the
+    // user's message).
+    let mut acc = collapse(
+        lines[echo_idx].trim_start().trim_start_matches(['❯', '›']),
+    );
     let mut from = (echo_idx + 1).min(lines.len());
+    while from < lines.len()
+        && !acc.is_empty()
+        && acc.len() < target.len()
+        && target.starts_with(acc.as_str())
+    {
+        let next_acc = collapse(&format!("{} {}", acc, lines[from]));
+        if !target.starts_with(next_acc.as_str()) {
+            break;
+        }
+        acc = next_acc;
+        from += 1;
+    }
     while from < lines.len() && lines[from].trim().is_empty() {
         from += 1;
     }
@@ -1767,5 +1804,40 @@ mod tests {
         let wide = "junk\n❯ first line of message\n\nanswer body";
         let out = slice_from_echo(wide, "first line of message\nsecond line").expect("echo found");
         assert_eq!(out, "answer body");
+    }
+
+    #[test]
+    fn test_slice_from_echo_wrapped_echo_fully_consumed() {
+        // The live W8 round-4 failure screen: the user's message wraps to a
+        // second indented row in claude's transcript; that tail must NOT head
+        // the answer.
+        let wide = "❯ Can you make a tab called pets, then 2 notes: 1 about cats, 1 about dogs?\n\
+                    \u{20}\u{20}Just 1-2 selected fun facts.\n\
+                    \n\
+                    \u{20}\u{20}Called minerva 3 times (ctrl+o to expand)\n\
+                    \n\
+                    ● Done — created a pets tab with two notes:";
+        let sent = "Can you make a tab called pets, then 2 notes: 1 about cats, 1 about dogs? Just 1-2 selected fun facts.";
+        let out = slice_from_echo(wide, sent).expect("echo found");
+        assert!(!out.contains("Just 1-2 selected fun facts"),
+            "wrapped echo tail stripped: {out:?}");
+        assert!(out.starts_with("  Called minerva"), "answer intact: {out:?}");
+        assert!(out.contains("● Done"), "answer body kept: {out:?}");
+    }
+
+    #[test]
+    fn test_slice_from_echo_wrapped_echo_three_rows() {
+        let wide = "❯ alpha beta\n  gamma delta\n  epsilon\n\nthe answer";
+        let out = slice_from_echo(wide, "alpha beta gamma delta epsilon").expect("echo found");
+        assert_eq!(out, "the answer");
+    }
+
+    #[test]
+    fn test_slice_from_echo_answer_repeating_message_not_consumed() {
+        // An answer row that REPEATS the full message verbatim must survive —
+        // consumption stops once the echo is fully accounted for.
+        let wide = "❯ ping\n\nping\npong";
+        let out = slice_from_echo(wide, "ping").expect("echo found");
+        assert_eq!(out, "ping\npong", "answer kept even when it repeats the message");
     }
 }
