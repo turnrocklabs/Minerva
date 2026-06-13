@@ -2025,15 +2025,7 @@ func execute_regular_chat(text: String) -> void:
 	# record of what flew by — attach them to the finalized message as a
 	# collapsed tool-call-style block (the agentic idiom; ToolCalls stays empty,
 	# every IsToolCall consumer iterates that, so this is render+persist only).
-	if _pt_status != null and "frames" in _pt_status and not _pt_status.frames.is_empty():
-		chi.IsToolCall = true
-		chi.ToolExecutions = [{
-			"call_id": "passthrough-live-%s" % str(chi.Id),
-			"tool_name": "Terminal live view (%d frames)" % _pt_status.frames.size(),
-			"arguments": {"frames": _pt_status.frames.size()},
-			"result": _pt_status.activity_log(),
-			"status": "done",
-		}]
+	_passthrough_attach_activity_log(chi, _pt_status)
 
 	# Handle tool calls if agent mode is enabled for this chat and response has tool calls
 	print("[ChatPane] Tool call check: AgentModeEnabled=%s, bot_response=%s, has_tool_calls=%s" % [
@@ -2149,6 +2141,26 @@ func _passthrough_read_session_screen(history: ChatHistory) -> String:
 	if session == null or not session.has_method("read_viewport_text"):
 		return ""
 	return str(session.read_viewport_text())
+
+
+## W8 round 4: attach the turn's flying-text log to the finalized CHI as one
+## ToolExecutions entry (rendered by ToolCallBlock, collapsed). No frames → no
+## block. ToolExecutions is a TYPED Array[Dictionary] — build through a typed
+## local; a plain Array literal fails the property assignment at runtime.
+func _passthrough_attach_activity_log(chi: ChatHistoryItem, status) -> void:
+	if chi == null or status == null:
+		return
+	if not ("frames" in status) or status.frames.is_empty():
+		return
+	var execs: Array[Dictionary] = [{
+		"call_id": "passthrough-live-%s" % str(chi.Id),
+		"tool_name": "Terminal live view (%d frames)" % status.frames.size(),
+		"arguments": {"frames": status.frames.size()},
+		"result": status.activity_log(),
+		"status": "done",
+	}]
+	chi.IsToolCall = true
+	chi.ToolExecutions = execs
 
 
 ## End the relay when the generate resolves. Stops polling, records the

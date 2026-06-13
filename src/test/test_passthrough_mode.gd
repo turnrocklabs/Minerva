@@ -167,6 +167,39 @@ func _test_build_passthrough_history(so) -> void:
 	var missing = pane._build_passthrough_history("plugin:nope:none", "X", "")
 	check("unknown entry → null (no fallback)", missing == null)
 
+	# W8 round 4: flying-text log attaches to a REAL ChatHistoryItem through the
+	# typed ToolExecutions field (live regression: a plain Array literal fails
+	# the Array[Dictionary] property assignment — must go through a typed local).
+	var CHI = load("res://Scripts/Models/ChatHistoryItem.gd")
+	var Status = load("res://Scripts/Models/PassthroughTurnStatus.gd")
+	var chi = CHI.new(CHI.PartType.TEXT, CHI.ChatRole.MODEL, "final answer")
+	var status = Status.new()
+	status.begin()
+	status.mark_status("frame one\n✻ Working…")
+	status.mark_status("frame one\nframe two\n✻ Working… (2s)")
+	status.finish("answer")
+	pane._passthrough_attach_activity_log(chi, status)
+	check("activity log: IsToolCall set", chi.IsToolCall == true)
+	check("activity log: one ToolExecutions entry", chi.ToolExecutions.size() == 1,
+		str(chi.ToolExecutions.size()))
+	if chi.ToolExecutions.size() == 1:
+		var exec: Dictionary = chi.ToolExecutions[0]
+		check("activity log: result carries the frames",
+			str(exec.get("result", "")).contains("frame two"), str(exec.get("result", "")).left(80))
+		check("activity log: titled as live view",
+			str(exec.get("tool_name", "")).begins_with("Terminal live view"))
+		check("activity log: status done", str(exec.get("status", "")) == "done")
+	# No frames → untouched (no empty block).
+	var chi2 = CHI.new(CHI.PartType.TEXT, CHI.ChatRole.MODEL, "instant answer")
+	var status2 = Status.new()
+	status2.begin()
+	status2.finish("answer")
+	pane._passthrough_attach_activity_log(chi2, status2)
+	check("no frames → no block", chi2.IsToolCall == false and chi2.ToolExecutions.is_empty())
+	# Null status (non-passthrough chat) → no-op.
+	pane._passthrough_attach_activity_log(chi2, null)
+	check("null status → no-op", chi2.ToolExecutions.is_empty())
+
 	pane.free()
 	so.plugin_chat_provider_registry = null
 
