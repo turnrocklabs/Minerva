@@ -158,6 +158,31 @@ func _test_turn_bookkeeping(Status) -> void:
 	check("mark after finish returns '' (poll stopped)", st.mark_status(screen2) == "")
 	check("status_updates frozen after finish", st.status_updates == 2)
 
+	# --- Flying-text frame log (W8 round 4) ---
+	check("frames captured one per distinct view", st.frames.size() == 2,
+		str(st.frames.size()))
+	check("frames keep order (newest last)", str(st.frames[1]).contains("5s"))
+	check("activity_log joins frames", st.activity_log().contains("····")
+		and st.activity_log().contains("5s"), st.activity_log().left(120))
+	check("frames frozen after finish", st.frames.size() == 2)
+
+	# Cap: oldest frames drop first, newest survive. Each frame is itself
+	# tail-view-capped at VIEW_CAP (4000), so overflowing the 24k log cap
+	# takes 7 distinct max-size frames.
+	var st2 = Status.new()
+	st2.begin()
+	var big := "x".repeat(9000)
+	for i in range(7):
+		st2.mark_status(big + " frame-%d" % i)
+	check("frame cap drops oldest", st2.frames.size() == 6, str(st2.frames.size()))
+	check("frame cap keeps newest", str(st2.frames[-1]).ends_with("frame-6"))
+	check("frame cap dropped frame-0", not str(st2.frames[0]).ends_with("frame-0"))
+
+	# begin() clears the previous turn's log.
+	st2.finish("answer")
+	st2.begin()
+	check("re-begin clears frame log", st2.frames.is_empty() and st2.activity_log() == "")
+
 
 # --- Acceptance 4: cancel disposition --------------------------------------
 func _test_cancel_disposition(Status) -> void:

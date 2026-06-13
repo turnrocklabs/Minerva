@@ -46,6 +46,15 @@ var last_status: String = ""
 ## relay MUTATES one node rather than appending new ones.
 var status_updates: int = 0
 
+## Flying-text log (owner request, W8 round 4): every distinct in-flight tail
+## frame, in order. The agent ERASES its own busy/preview output at turn end —
+## these frames are the only record of it. The finalize path attaches them to
+## the final message as a collapsed tool-call-style block. Char-capped: oldest
+## frames drop first (the newest frames are closest to the final answer).
+const FRAME_LOG_CHAR_CAP := 24000
+var frames: Array[String] = []
+var _frame_chars: int = 0
+
 
 ## Begin a turn. Idempotent guard: re-begin without finish is a no-op so a
 ## double-send cannot spawn two poll loops on the same marker.
@@ -57,6 +66,8 @@ func begin() -> bool:
 	disposition = ""
 	last_status = ""
 	status_updates = 0
+	frames = []
+	_frame_chars = 0
 	return true
 
 
@@ -76,7 +87,21 @@ func mark_status(screen_text: String) -> String:
 		return ""
 	last_status = compact
 	status_updates += 1
+	frames.append(compact)
+	_frame_chars += compact.length()
+	while _frame_chars > FRAME_LOG_CHAR_CAP and frames.size() > 1:
+		_frame_chars -= (frames[0] as String).length()
+		frames.remove_at(0)
 	return compact
+
+
+## The joined flying-text log for the collapsed activity block: frames in
+## order, separated by a light rule. "" when nothing was captured (instant
+## turns / no usable screens).
+func activity_log() -> String:
+	if frames.is_empty():
+		return ""
+	return "\n\n····\n\n".join(frames)
 
 
 ## Resolve the turn. Stops polling and records the disposition. Idempotent.

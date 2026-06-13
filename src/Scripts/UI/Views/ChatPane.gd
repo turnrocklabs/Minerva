@@ -2020,6 +2020,21 @@ func execute_regular_chat(text: String) -> void:
 	if bot_response != null and bot_response.hcp_data.has("passthrough_question_options"):
 		chi.HcpData = {"passthrough_question_options": bot_response.hcp_data["passthrough_question_options"]}
 
+	# W8 round 4 (owner request): preserve the flying text. The agent ERASES its
+	# busy/preview output at turn end, so the relay's tail frames are the only
+	# record of what flew by — attach them to the finalized message as a
+	# collapsed tool-call-style block (the agentic idiom; ToolCalls stays empty,
+	# every IsToolCall consumer iterates that, so this is render+persist only).
+	if _pt_status != null and "frames" in _pt_status and not _pt_status.frames.is_empty():
+		chi.IsToolCall = true
+		chi.ToolExecutions = [{
+			"call_id": "passthrough-live-%s" % str(chi.Id),
+			"tool_name": "Terminal live view (%d frames)" % _pt_status.frames.size(),
+			"arguments": {"frames": _pt_status.frames.size()},
+			"result": _pt_status.activity_log(),
+			"status": "done",
+		}]
+
 	# Handle tool calls if agent mode is enabled for this chat and response has tool calls
 	print("[ChatPane] Tool call check: AgentModeEnabled=%s, bot_response=%s, has_tool_calls=%s" % [
 		history.AgentModeEnabled,
