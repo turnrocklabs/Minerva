@@ -2441,8 +2441,9 @@ fn test_passthrough_generate_answer_happy_path() {
     let _ = child.wait();
 }
 
-// Test 22: passthrough_generate with NO watch session → {kind:"error"}
-// mentioning watch_start.
+// Test 22: passthrough_generate with no RESOLVABLE terminal (no binding, no
+// sessions, no explicit id) → {kind:"error"} pointing at watch_start. This is
+// the resolve-ladder failure, distinct from a reaped watch (see Test 22c).
 #[test]
 fn test_passthrough_generate_requires_watch_session() {
     let (mut child, mut stdin, mut out) = spawn_plugin();
@@ -2465,20 +2466,149 @@ fn test_passthrough_generate_requires_watch_session() {
         "error mentions watch_start: {payload}"
     );
 
-    // Explicit terminal_id for an unwatched terminal also errors with the
-    // watch_start hint (stale provider entry).
-    let reply2 = rpc(&mut stdin, &mut out, json!({
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 22b: a generate against an explicit terminal that is GONE (closed, not
+// just reaped) → {kind:"error"} "no longer available". The liveness probe
+// (host.terminal.read) erroring is the only thing that should refuse a revive.
+#[test]
+fn test_passthrough_generate_dead_terminal_refuses_revive() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    let gen_id = next_id();
+    let req = json!({
         "jsonrpc": "2.0",
-        "id": next_id(),
+        "id": gen_id,
         "method": "tools/call",
         "params": {
             "name": "minerva_agent_relay_passthrough_generate",
-            "arguments": {"chat_id": "chat-none", "text": "hello?", "terminal_id": "t-gone"}
+            "arguments": {"chat_id": "chat-dead", "text": "hello?", "terminal_id": "t-gone"}
         }
-    }));
-    let payload2 = unwrap_tool(&reply2);
-    assert_eq!(payload2["kind"], "error", "{payload2}");
-    assert!(payload2["text"].as_str().unwrap_or("").contains("watch_start"), "{payload2}");
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut gen_reply: Option<Value> = None;
+    for _ in 0..50 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) { Ok(v) => v, Err(_) => continue };
+        if msg.get("method").and_then(|v| v.as_str()) == Some("minerva/capability") {
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            // The liveness probe: report the terminal is gone.
+            send_cap_error(&mut stdin, &id, "terminal not found");
+        } else if msg.get("id").map(|v| v == &json!(gen_id)).unwrap_or(false) {
+            gen_reply = Some(msg);
+            break;
+        }
+    }
+
+    let payload = unwrap_tool(&gen_reply.expect("generate replied"));
+    assert_eq!(payload["kind"], "error", "{payload}");
+    assert!(
+        payload["text"].as_str().unwrap_or("").contains("no longer available"),
+        "dead terminal → 'no longer available': {payload}"
+    );
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+// Test 22c: AUTO-REVIVE — a generate against an ALIVE terminal whose watch was
+// reaped (idle > watch_timeout_ms) must silently re-establish the watch and
+// service the turn, NOT error. No watch_start is issued by the test; the only
+// difference from the happy path is the missing session. Proves the
+// idle-reap-under-a-live-chat bug is invisible to the user.
+#[test]
+fn test_passthrough_generate_auto_revives_reaped_watch() {
+    let (mut child, mut stdin, mut out) = spawn_plugin();
+    handshake(&mut stdin, &mut out);
+
+    // NOTE: deliberately NO watch_start — simulates a reaped session under a
+    // live passthrough chat. entry_id carries the terminal identity (what the
+    // host's PluginProvider actually sends).
+    let gen_id = next_id();
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": gen_id,
+        "method": "tools/call",
+        "params": {
+            "name": "minerva_agent_relay_passthrough_generate",
+            "arguments": {
+                "chat_id": "chat-revive",
+                "entry_id": "terminal-t-revive",
+                "text": "what is 2+2"
+            }
+        }
+    }).to_string() + "\n";
+    stdin.write_all(req.as_bytes()).unwrap();
+    stdin.flush().unwrap();
+
+    let mut gen_reply: Option<Value> = None;
+    let mut wait_count = 0u32;
+    for _ in 0..200 {
+        let mut buf = String::new();
+        let n = out.read_line(&mut buf).expect("read");
+        if n == 0 { break; }
+        let trimmed = buf.trim();
+        if trimmed.is_empty() { continue; }
+        let msg: Value = match serde_json::from_str(trimmed) { Ok(v) => v, Err(_) => continue };
+        let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
+        if method == "minerva/capability" {
+            let cap = msg["params"]["capability"].as_str().unwrap_or("");
+            let args = &msg["params"]["args"];
+            let id = msg.get("id").cloned().unwrap_or(Value::Null);
+            match cap {
+                "host.terminal.write" => send_cap_reply(&mut stdin, &id, json!({"ok": true})),
+                "host.terminal.read" => {
+                    // Both the liveness probe and the send snapshot read with no
+                    // start_row → a live screen reply (revive proceeds). The
+                    // bounded read (start_row set) is the answer window.
+                    if args.get("start_row").is_some() {
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": "2+2 equals 4.\n",
+                            "rows": 12, "total_scrollback_rows": 55
+                        }));
+                    } else {
+                        send_cap_reply(&mut stdin, &id, json!({
+                            "content": idle_screen(),
+                            "rows": 12, "total_scrollback_rows": 40
+                        }));
+                    }
+                }
+                "host.terminal.wait" => {
+                    wait_count += 1;
+                    let (content, rows) = match wait_count {
+                        1 => (idle_screen(), 40),
+                        2 => (busy_screen(), 42),
+                        _ => (idle_screen(), 55),
+                    };
+                    send_cap_reply(&mut stdin, &id, json!({
+                        "content": content,
+                        "timed_out": false, "bell_rung": false, "shell_exited": false,
+                        "rows": 12, "total_scrollback_rows": rows
+                    }));
+                }
+                _ => send_cap_reply(&mut stdin, &id, json!({})),
+            }
+        } else if msg.get("id").map(|v| v == &json!(gen_id)).unwrap_or(false) {
+            gen_reply = Some(msg);
+            break;
+        }
+    }
+
+    let payload = unwrap_tool(&gen_reply.expect("generate replied"));
+    assert_eq!(payload["kind"], "answer", "auto-revive serviced the turn: {payload}");
+    assert!(
+        payload["text"].as_str().unwrap_or("").contains("2+2 equals 4"),
+        "verbatim turn text after revive: {payload}"
+    );
 
     let _ = child.kill();
     let _ = child.wait();

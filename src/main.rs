@@ -925,6 +925,12 @@ const PASSTHROUGH_TIMEOUT_MS: u64 = 590_000;
 struct PassthroughState {
     bindings: std::collections::HashMap<String, String>, // chat_id → terminal_id
     pending_question: std::collections::HashSet<String>, // terminal_ids
+    // Last-known watch profile per terminal. The idle reap (watch_timeout_ms,
+    // 10 min) tears down an UNARMED watch — and a passthrough chat sits unarmed
+    // between turns, so an idle chat loses its watch. We cache the profile while
+    // the watch is live so auto-revive restores the SAME calibration (codex /
+    // opencode differ from the "claude" default).
+    profiles: std::collections::HashMap<String, String>, // terminal_id → profile_id
 }
 
 static PASSTHROUGH: Mutex<Option<PassthroughState>> = Mutex::new(None);
@@ -989,6 +995,35 @@ fn normalize_keystroke(text: &str) -> Option<String> {
     }
 }
 
+/// Re-establish a watch that the idle reap (or a non-resumed restart) tore
+/// down under a live passthrough chat. Refuses only when the terminal itself
+/// is gone — a reaped watch leaves the PTY alive (Minerva background session),
+/// but a CLOSED terminal makes host.terminal.read error, and reviving a watch
+/// on a dead terminal would just spin to a TerminalClosed detection. Restores
+/// the cached profile so the agent's calibration survives the revive.
+fn revive_passthrough_watch(terminal_id: &str, router: &Arc<Router>) -> Result<(), String> {
+    // Liveness probe: only the terminal-gone case should surface an error.
+    if let Err(e) = router.call_capability(
+        "host.terminal.read", json!({ "terminal_id": terminal_id }),
+    ) {
+        return Err(format!(
+            "terminal {terminal_id} is no longer available ({e}); its agent's \
+             terminal was closed — start a new passthrough chat"
+        ));
+    }
+    let profile = with_passthrough(|s| s.profiles.get(terminal_id).cloned())
+        .unwrap_or_else(|| "claude".to_string());
+    watcher::watch_start(
+        terminal_id.to_string(),
+        Some(profile.clone()),
+        watcher::NotifyMode::Armed,
+        router.clone(),
+    )
+    .map_err(|e| format!("failed to revive watch for terminal {terminal_id}: {e}"))?;
+    log::info!("passthrough: auto-revived reaped watch for {terminal_id} (profile {profile})");
+    Ok(())
+}
+
 /// B7: passthrough_generate — services ONE chat turn for a terminal-backed
 /// chat-provider entry. The relay_ask core does the work (send + arm → block
 /// until turn end → read); this handler only resolves the terminal, picks the
@@ -1026,16 +1061,28 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
         Err(e) => return ok_response(id, tool_ok(json!({"kind": "error", "text": e}))),
     };
 
-    // The provider entry lives and dies with the watch session — a generate
-    // call for an unwatched terminal means the entry is stale.
-    if watcher::watch_status(&terminal_id).is_none() {
-        return ok_response(id, tool_ok(json!({
-            "kind": "error",
-            "text": format!(
-                "no watch session for terminal {terminal_id}; call \
-                 minerva_agent_relay_watch_start to revive this provider entry"
-            ),
-        })));
+    // The watch session is the chat's binding. It can vanish under a live
+    // passthrough chat: the idle reap (watch_timeout_ms, 10 min) tears down an
+    // UNARMED watch, and a chat sits unarmed between turns — so leaving a chat
+    // idle long enough kills its watch (the reap also unregisters the provider
+    // entry). The terminal/PTY itself is a Minerva background session that
+    // outlives our watch thread, so on a missing watch we AUTO-REVIVE: cache
+    // the profile while live, re-establish the watch (which re-registers the
+    // entry) and continue — the user never sees the stale-entry error. We only
+    // refuse when the terminal itself is gone (genuinely closed).
+    match watcher::watch_status(&terminal_id) {
+        Some(status) => {
+            if let Some(prof) = status.get("profile_id").and_then(|v| v.as_str()) {
+                with_passthrough(|s| {
+                    s.profiles.insert(terminal_id.clone(), prof.to_string());
+                });
+            }
+        }
+        None => {
+            if let Err(e) = revive_passthrough_watch(&terminal_id, router) {
+                return ok_response(id, tool_ok(json!({"kind": "error", "text": e})));
+            }
+        }
     }
 
     // Dialog answer? After a "question" result, a single-keystroke text is

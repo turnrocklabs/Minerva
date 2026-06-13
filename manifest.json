@@ -1,7 +1,7 @@
 {
   "id": "agent_relay",
   "name": "Agent Relay",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "host_api_version": "1",
   "release_targets": [
     "linux-x86_64",
