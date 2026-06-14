@@ -82,16 +82,20 @@ func close_connection() -> void:
 	# the request still doesnt cancel and times out after some period of time
 	print("core: cancel auth request")
 	
-	if http_request:
+	# _on_auth_request_completed frees http_request after every auth attempt,
+	# so by the time the user disconnects the node is usually already gone.
+	# Guard on instance validity, not just non-null, before touching it.
+	if is_instance_valid(http_request):
 		http_request.cancel_request()
-	
+		http_request.queue_free()
+	http_request = null
+
 	Core.client.close_connection("User disconnected")
 
 	_connecting = false
 	registered = false
 	_jwt_token = ""
 	_client_id = ""
-	http_request.queue_free()
 
 
 var should_display_error: = true
@@ -127,10 +131,14 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 
 	print("Attempting authentication to: ", auth_endpoint)
 	print("core: starting auth request")
-	if http_request == null:
+	if not is_instance_valid(http_request):
 		http_request = HTTPRequest.new()
 		http_request.use_threads = true
 		add_child(http_request)
+		# _on_auth_request_completed (which sets _jwt_token) and close_connection
+		# both free this node, so a reconnect rebuilds it here — re-wire the
+		# response handler or auth silently never completes.
+		http_request.request_completed.connect(_on_auth_request_completed)
 	var err = http_request.request(auth_endpoint, headers, HTTPClient.METHOD_POST, body)
 
 	

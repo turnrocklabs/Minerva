@@ -3307,7 +3307,15 @@ func _on_btn_test_pressed():
 
 
 func clear_all_chats():
+	# This pane (the tcChats TabContainer) holds the chat tabs AS its children, but
+	# _ready() also parents lifetime-of-pane infrastructure here: the TTS player and
+	# the always-listening voice gateway. Those are created ONCE in _ready and never
+	# rebuilt, so freeing them on a chat wipe (which runs on New/Open/Load Project)
+	# leaves voice TTS and wake-word listening silently dead for the rest of the
+	# session. Wipe only the chat tabs; preserve the infrastructure nodes.
 	for child in get_children():
+		if child == _tts_player or child == _voice_gateway:
+			continue
 		remove_child(child)
 		child.queue_free()
 

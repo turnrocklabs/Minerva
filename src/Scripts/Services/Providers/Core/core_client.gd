@@ -88,6 +88,15 @@ var _binary_transfer_mode: String = "" # "media_gen", "artifact", or "voice"
 # Voice binary transfer: completed audio buffers keyed by request_id
 var _voice_binary_buffers: Dictionary = {}  # request_id -> PackedByteArray
 
+# In-flight voice streams, keyed by the per-frame msg_id (bytes 1..17 of every
+# binary frame — the protocol's stream id). Voice is routed by its own msg_id and
+# kept entirely OUT of the shared media-gen/artifact state below, so a concurrent
+# transfer's NEW_MESSAGE (which flips _binary_transfer_mode and calls
+# _reset_binary_transfer_state(), wiping _binary_files) can never clobber an
+# in-flight voice stream. This is the regression class where TTS audio leaked into
+# the image/file collector and synth hung on "Synthesizing speech…".
+var _voice_streams: Dictionary = {}  # msg_id_hex -> {request_id: String, size: int, buffer: PackedByteArray}
+
 
 ## Get and remove completed voice audio for a request_id. Returns empty if not available.
 func take_voice_binary(request_id: String) -> PackedByteArray:
@@ -201,7 +210,9 @@ func connect_to_core(CORE_WS_URL_param: String) -> bool: # Explicitly type param
 	# Reset connection state
 	_connected = false
 	_auth_retry_attempted = false
-	
+	# Drop any voice streams orphaned by a dropped connection (no FILE_END seen).
+	_voice_streams.clear()
+
 	# Create a new WebSocket peer to ensure clean state
 	_client = WebSocketPeer.new()
 	
@@ -573,6 +584,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 		return
 
 	var frame_type: int = msg[0] # Explicitly type
+	var msg_id_hex: String = msg.slice(1, 17).hex_encode() # per-stream id (bytes 1..16)
 	var payload: PackedByteArray = msg.slice(17) # Explicitly type
 
 	var frame_names: Dictionary = { # Explicitly type
@@ -613,12 +625,29 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("  ℹ️ Binary header cmd=%s not a response, ignoring." % hdr_cmd)
 					return
 
+				# Voice streams are routed by their own msg_id and kept OUT of the
+				# shared media-gen/artifact state. A voice NEW_MESSAGE must NOT reset
+				# that shared state (it would wipe an in-flight image/artifact
+				# transfer), and a later media-gen/artifact NEW_MESSAGE must NOT
+				# clobber this voice stream — hence the dedicated _voice_streams
+				# registry. Handle it first and return before touching globals.
+				if hdr_topic.begins_with("voice/"):
+					_voice_streams[msg_id_hex] = {
+						"request_id": req_id,
+						"size": 0,
+						"buffer": PackedByteArray(),
+					}
+					if SingletonObject.verbose_logging:
+						print("  🎙️ Voice stream registered: msg_id=%s request_id=%s" % [msg_id_hex, req_id])
+					binary_new_message_received.emit(header, num_files)
+					return
+
 				# Always reset binary state before starting a new transfer.
 				# Previous state may be stale if the text completion response
 				# was missed (e.g. entity_type mismatch) or never sent.
 				# NOTE: the reset MUST run BEFORE assigning _binary_transfer_mode —
 				# _reset_binary_transfer_state() clears the mode, so resetting after
-				# the assignment wiped it and broke binary decode (no FILE_END/voice match).
+				# the assignment wiped it and broke binary decode (no FILE_END match).
 				if SingletonObject.verbose_logging:
 					print("  ℹ️ New binary stream for request_id=%s. Resetting previous state." % req_id)
 				_reset_binary_transfer_state()
@@ -627,8 +656,6 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					_binary_transfer_mode = "media_gen"
 				elif hdr_topic == "artifact/download":
 					_binary_transfer_mode = "artifact"
-				elif hdr_topic.begins_with("voice/"):
-					_binary_transfer_mode = "voice"
 				else:
 					if SingletonObject.verbose_logging:
 						print("  ℹ️ Binary header topic=%s not handled, ignoring." % hdr_topic)
@@ -646,7 +673,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				print("❌ NEW_MESSAGE payload data too short for JSON length")
 		
 		FILE_INFO:
-			if _binary_transfer_mode == "voice":
+			if _voice_streams.has(msg_id_hex):
 				# Voice Format A: [path_len(4B)] [file_size(4B u32)] [path_bytes]
 				if payload.size() < 8:
 					print("❌ FILE_INFO (voice) payload too short")
@@ -656,10 +683,9 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				var _path: String = ""
 				if payload.size() >= 8 + path_len:
 					_path = payload.slice(8, 8 + path_len).get_string_from_utf8()
-				_binary_filenames[0] = _path
-				_binary_files[0] = {"size": file_size, "received": 0, "buffer": PackedByteArray()}
+				(_voice_streams[msg_id_hex] as Dictionary)["size"] = file_size
 				if SingletonObject.verbose_logging:
-					print("   📁 FILE_INFO (voice) path=%s size=%s" % [_path, file_size])
+					print("   📁 FILE_INFO (voice) msg_id=%s path=%s size=%s" % [msg_id_hex, _path, file_size])
 			elif _binary_transfer_mode == "artifact":
 				# Artifact format: [file_index(4B)] + [file_size(8B u64)] + [name_len(4B)] + [name]
 				if payload.size() < 16:
@@ -734,6 +760,14 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					print("❌ FILE_INFO payload data too short for name length")
 		
 		FILE_DATA:
+			if _voice_streams.has(msg_id_hex):
+				# Voice: the entire payload is audio chunk data for this stream.
+				var voice_chunk: PackedByteArray = payload.duplicate()
+				if not voice_chunk.is_empty():
+					var vbuf: PackedByteArray = (_voice_streams[msg_id_hex] as Dictionary)["buffer"]
+					vbuf.append_array(voice_chunk)
+					(_voice_streams[msg_id_hex] as Dictionary)["buffer"] = vbuf
+				return
 			if _binary_transfer_mode == "artifact":
 				# Artifact format: [file_index(4B)] + [chunk_data]
 				if payload.size() < 4:
@@ -815,21 +849,22 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("   ⚠️ FILE_DATA for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
 		
 		FILE_END:
-			if _binary_transfer_mode == "voice":
-				# Voice Format A: FILE_END may have empty payload
-				if _binary_files.has(0):
-					var buf: PackedByteArray = (_binary_files[0] as Dictionary)["buffer"]
-					# Fix RIFF header if needed
-					if buf.size() > 8 and buf.slice(4, 8) == "WAVE".to_ascii_buffer() and buf.slice(0, 4) != "RIFF".to_ascii_buffer():
-						var fixed := PackedByteArray()
-						fixed.append_array("RIFF".to_ascii_buffer())
-						fixed.append_array(buf)
-						buf = fixed
-					print("   ✅ FILE_END (voice) size=%s bytes, req_id=%s" % [buf.size(), _current_binary_request_id])
-					_voice_binary_buffers[_current_binary_request_id] = buf
-					voice_binary_received.emit(_current_binary_request_id, buf)
-					_binary_files_completed += 1
-				_reset_binary_transfer_state()
+			if _voice_streams.has(msg_id_hex):
+				# Voice Format A: FILE_END may have empty payload. The audio lives in
+				# this stream's own buffer, untouched by any interleaving transfer.
+				var vstream: Dictionary = _voice_streams[msg_id_hex]
+				var vrequest_id: String = vstream["request_id"]
+				var buf: PackedByteArray = vstream["buffer"]
+				# Fix RIFF header if needed
+				if buf.size() > 8 and buf.slice(4, 8) == "WAVE".to_ascii_buffer() and buf.slice(0, 4) != "RIFF".to_ascii_buffer():
+					var fixed := PackedByteArray()
+					fixed.append_array("RIFF".to_ascii_buffer())
+					fixed.append_array(buf)
+					buf = fixed
+				print("   ✅ FILE_END (voice) size=%s bytes, msg_id=%s req_id=%s" % [buf.size(), msg_id_hex, vrequest_id])
+				_voice_binary_buffers[vrequest_id] = buf
+				voice_binary_received.emit(vrequest_id, buf)
+				_voice_streams.erase(msg_id_hex)
 				return
 
 			if payload.size() < 4:
