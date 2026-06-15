@@ -5,6 +5,11 @@ var client: CoreClient = null
 signal  pass_image_to_editor(filename: String, request_id: String, image: PackedByteArray)
 signal lock_media_gen_ui(lock: bool)
 signal media_gen_request_timeout(request_id: String)
+## Emitted for a non-image media-gen result (3d mesh / movie video). The file is
+## saved to user://temp and opened in the OS default viewer; listeners may react
+## (e.g. a toast). path is the globalized absolute path; kind is a
+## MediaArtifactKind constant.
+signal non_image_artifact_received(path: String, kind: StringName, request_id: String)
 
 const MEDIA_GEN_REQUEST_TIMEOUT_SEC: float = 120.0
 
@@ -56,7 +61,35 @@ func send_media_gen_request(params: Dictionary) -> String:
 func _on_image_response_received(fname: String, request_id: String, buffer: PackedByteArray) -> void:
 	_clear_request_timeout()
 	lock_media_gen_ui.emit(false)
-	pass_image_to_editor.emit(fname, request_id, buffer)
+	# Route by artifact kind (O1). The drawing flavor returns a PNG -> 2D image
+	# layer (unchanged). The 3d flavor returns a GLB mesh and the movie flavor an
+	# mp4 video; those are NOT 2D images, so hand them to a viewer instead of
+	# force-loading as a PNG (which fails with "Failed to load generated image").
+	if MediaArtifactKind.is_image(fname):
+		pass_image_to_editor.emit(fname, request_id, buffer)
+	else:
+		_open_non_image_artifact(fname, request_id, buffer)
+
+
+## Save a non-image artifact (mesh/video) to user://temp and open it in the OS
+## default viewer (Godot can't display mp4 natively, and a GLB viewer is a
+## separate feature). Emits non_image_artifact_received for any UI listener.
+func _open_non_image_artifact(fname: String, request_id: String, buffer: PackedByteArray) -> void:
+	if buffer.is_empty():
+		push_error("Received empty buffer for non-image media-gen result '%s'" % fname)
+		return
+	DirAccess.make_dir_recursive_absolute("user://temp/")
+	var out_path: String = "user://temp/" + fname
+	var file: FileAccess = FileAccess.open(out_path, FileAccess.WRITE)
+	if file == null:
+		push_error("Failed to write media-gen artifact to %s" % out_path)
+		return
+	file.store_buffer(buffer)
+	file.close()
+	var abs_path: String = ProjectSettings.globalize_path(out_path)
+	var kind: StringName = MediaArtifactKind.classify(fname)
+	non_image_artifact_received.emit(abs_path, kind, request_id)
+	OS.shell_open(abs_path)
 
 
 func send_media_edit_request(editing_params: Dictionary, \

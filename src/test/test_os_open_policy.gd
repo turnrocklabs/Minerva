@@ -9,6 +9,7 @@ var _fail := 0
 func _init() -> void:
 	print("=== OSOpenPolicy Tests ===\n")
 	test_default_extensions()
+	test_media_artifact_extensions()
 	test_refusals()
 	test_extra_extensions()
 	test_allowed_binaries()
@@ -33,6 +34,17 @@ func test_default_extensions() -> void:
 	check("pdf allowed", OSOpenPolicy.is_allowed("/home/x/tags.pdf", none, none) == true)
 	check("png allowed", OSOpenPolicy.is_allowed("/home/x/logo.PNG", none, none) == true)  # case-insensitive
 	check("docx allowed", OSOpenPolicy.is_allowed("/a/b/roster.docx", none, none) == true)
+
+
+func test_media_artifact_extensions() -> void:
+	print("test_media_artifact_extensions")
+	var none: PackedStringArray = []
+	# O1: generated movie (video) + 3d (mesh) artifacts open by default.
+	check("mp4 allowed", OSOpenPolicy.is_allowed("/home/x/clip.mp4", none, none) == true)
+	check("webm allowed", OSOpenPolicy.is_allowed("/home/x/clip.WEBM", none, none) == true)
+	check("glb allowed", OSOpenPolicy.is_allowed("/home/x/model.glb", none, none) == true)
+	check("gltf allowed", OSOpenPolicy.is_allowed("/home/x/scene.gltf", none, none) == true)
+	check("stl allowed", OSOpenPolicy.is_allowed("/home/x/part.stl", none, none) == true)
 
 
 func test_refusals() -> void:

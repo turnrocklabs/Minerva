@@ -16,6 +16,10 @@ const DEFAULT_EXTENSIONS: Array[String] = [
 	"txt", "md", "csv", "tsv", "rtf", "log", "json",
 	"html", "htm", "docx", "doc", "xlsx", "xls", "pptx", "ppt",
 	"odt", "ods", "odp",
+	# Generated-media artifacts (O1): movie (video) + 3d (mesh) flavors are
+	# opened in the OS default viewer.
+	"mp4", "webm", "mov", "mkv", "m4v",
+	"glb", "gltf", "obj", "stl", "ply", "usdz",
 ]
 
 

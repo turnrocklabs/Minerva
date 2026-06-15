@@ -27,6 +27,8 @@ HERMETIC_TESTS=(
 	test/test_doc_version_guard.gd
 	test/test_host_capability_terminal.gd
 	test/test_host_capability_terminal_io.gd
+	test/test_media_artifact_kind.gd
+	test/test_os_open_policy.gd
 )
 PLUGIN_TESTS=(
 	test/test_cad_evaluate_render.gd
