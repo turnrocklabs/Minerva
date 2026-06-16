@@ -355,6 +355,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_editors_open(plugin_id, args)
 		"host.providers.chat":
 			named_result = await _handle_host_providers_chat(plugin_id, args)
+		"host.media.credentials":
+			named_result = _handle_host_media_credentials(plugin_id, args)
 		"host.dialogs.file_picker":
 			named_result = await _handle_host_dialogs_file_picker(plugin_id, args)
 		"host.dialogs.directory_picker":
@@ -515,6 +517,27 @@ func _handle_secrets(plugin_id: String, capability: String, args: Dictionary) ->
 func _handle_host_echo(plugin_id: String, args: Dictionary) -> Dictionary:
 	print("[CapabilityBroker] Plugin '%s' invoking host.echo" % plugin_id)
 	return PluginErrors.success({"echo": args})
+
+
+## host.media.credentials — return the live Core session credentials so an
+## authorized plugin can open its OWN Core WebSocket and drive media_gen/* directly.
+## Result: {ws_url, token, client_id}. Read-only, no args. The plugin reuses the
+## host's already-authenticated session instead of logging in itself. Errors with
+## a backend_error when Core is absent or not yet authenticated.
+func _handle_host_media_credentials(plugin_id: String, _args: Dictionary) -> Dictionary:
+	print("[CapabilityBroker] Plugin '%s' invoking host.media.credentials" % plugin_id)
+	var loop := Engine.get_main_loop()
+	var core = null
+	if loop != null and loop is SceneTree:
+		core = (loop as SceneTree).root.get_node_or_null("/root/Core")
+	if core == null or not core.has_method("get_media_credentials"):
+		return PluginErrors.backend_error(plugin_id,
+			"media credentials unavailable — Core not present")
+	var creds: Dictionary = core.get_media_credentials()
+	if creds.is_empty():
+		return PluginErrors.backend_error(plugin_id,
+			"media credentials unavailable — not logged in to Core")
+	return PluginErrors.success(creds)
 
 
 # ---------------------------------------------------------------------------

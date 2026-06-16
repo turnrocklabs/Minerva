@@ -40,6 +40,20 @@ var _jwt_token: String = ""
 var _client_id: String = ""
 
 
+## Live Core session credentials for plugins authorized via the
+## host.media.credentials capability: {ws_url, token, client_id}. Returns an empty
+## Dictionary when not authenticated (no token / client_id yet), letting the broker
+## surface a clean "not logged in" error. Read-only — exposes the existing session,
+## mints nothing.
+func get_media_credentials() -> Dictionary:
+	if _jwt_token.is_empty() or _client_id.is_empty():
+		return {}
+	var ws_url: String = "wss://www.turnrock.ai:27500/connect"
+	if client != null and "CORE_WS_URL" in client:
+		ws_url = client.CORE_WS_URL
+	return {"ws_url": ws_url, "token": _jwt_token, "client_id": _client_id}
+
+
 var _connecting: = false:
 	set(value):
 		_connecting = value
