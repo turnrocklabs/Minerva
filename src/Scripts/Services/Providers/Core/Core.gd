@@ -51,8 +51,11 @@ var _client_id: String = ""
 ## failed). The minted session carries the user's full svc_allow (service-scoped, not
 ## topic-scoped — per-topic scoping is a future Core/auth change).
 func mint_plugin_session() -> Dictionary:
+	# Creds live in the ENCRYPTED preferences file (user://Preferences.agent),
+	# decrypted with the machine's unique id — the SAME source PreferencesPopup
+	# reads. They are NOT in the plaintext user://config_file.cfg.
 	var cfg := ConfigFile.new()
-	if cfg.load("user://config_file.cfg") != OK:
+	if cfg.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id()) != OK:
 		return {}
 	var username: String = str(cfg.get_value("HCP", "username", ""))
 	var password: String = str(cfg.get_value("HCP", "password", ""))
