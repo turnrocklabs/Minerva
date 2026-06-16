@@ -183,7 +183,7 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.editors.export",
 	"host.editors.open",
 	"host.providers.chat",
-	"host.media.credentials",
+	"host.core.session",
 	"host.dialogs.file_picker",
 	"host.dialogs.directory_picker",
 	"host.permissions.grant_scope",

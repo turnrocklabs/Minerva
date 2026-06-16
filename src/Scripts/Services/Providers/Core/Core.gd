@@ -40,18 +40,52 @@ var _jwt_token: String = ""
 var _client_id: String = ""
 
 
-## Live Core session credentials for plugins authorized via the
-## host.media.credentials capability: {ws_url, token, client_id}. Returns an empty
-## Dictionary when not authenticated (no token / client_id yet), letting the broker
-## surface a clean "not logged in" error. Read-only — exposes the existing session,
-## mints nothing.
-func get_media_credentials() -> Dictionary:
-	if _jwt_token.is_empty() or _client_id.is_empty():
+## Mint a NEW, distinct Core session for a plugin (the host.core.session capability).
+## Performs an INDEPENDENT login with the stored HCP credentials — Core mints a fresh
+## session_id (Uuid::new_v4) per login and allows up to 10 concurrent sessions per
+## user — so the plugin can open its OWN Core connection without colliding with
+## Minerva's live session (reusing Minerva's own token yields the SAME session_id and
+## Core rejects the second connection with "Session ID collision"). This does NOT
+## touch Minerva's own _jwt_token / _client_id / socket. Returns
+## {ws_url, token, client_id} on success, or {} on failure (no stored creds / login
+## failed). The minted session carries the user's full svc_allow (service-scoped, not
+## topic-scoped — per-topic scoping is a future Core/auth change).
+func mint_plugin_session() -> Dictionary:
+	var cfg := ConfigFile.new()
+	if cfg.load("user://config_file.cfg") != OK:
 		return {}
-	var ws_url: String = "wss://www.turnrock.ai:27500/connect"
-	if client != null and "CORE_WS_URL" in client:
-		ws_url = client.CORE_WS_URL
-	return {"ws_url": ws_url, "token": _jwt_token, "client_id": _client_id}
+	var username: String = str(cfg.get_value("HCP", "username", ""))
+	var password: String = str(cfg.get_value("HCP", "password", ""))
+	var auth_url: String = str(cfg.get_value("HCP", "auth_base_url", ""))
+	var ws_url: String = str(cfg.get_value("HCP", "url", "wss://www.turnrock.ai:27500/connect"))
+	if username.is_empty() or password.is_empty() or auth_url.is_empty():
+		return {}
+
+	# Independent HTTPRequest so we never clobber Minerva's own auth state.
+	var req := HTTPRequest.new()
+	req.use_threads = true
+	add_child(req)
+	var headers := PackedStringArray(["Content-Type: application/json", "Accept: application/json"])
+	var body := JSON.stringify({"username": username, "password": password})
+	if req.request(auth_url, headers, HTTPClient.METHOD_POST, body) != OK:
+		req.queue_free()
+		return {}
+	var result: Array = await req.request_completed
+	req.queue_free()
+	# result = [result_code, response_code, headers, body]
+	if int(result[1]) != 200:
+		return {}
+	var json = JSON.parse_string((result[3] as PackedByteArray).get_string_from_utf8())
+	if typeof(json) != TYPE_DICTIONARY or not json.has("data"):
+		return {}
+	var data: Dictionary = json["data"]
+	var token: String = str(data.get("token", ""))
+	var client_id: String = ""
+	if data.has("user") and typeof(data["user"]) == TYPE_DICTIONARY:
+		client_id = str((data["user"] as Dictionary).get("id", ""))
+	if token.is_empty() or client_id.is_empty():
+		return {}
+	return {"ws_url": ws_url, "token": token, "client_id": client_id}
 
 
 var _connecting: = false:
