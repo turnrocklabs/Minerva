@@ -253,7 +253,7 @@ func _upload_image_blob(note, key: String) -> Dictionary:
 		"value": {
 			"blob_id": blob_id,
 			"content_type": "image/png",
-			"caption": controls.get("caption", "") if "caption" in controls else ""
+			"caption": controls.caption if "caption" in controls else ""
 		}
 	}
 
