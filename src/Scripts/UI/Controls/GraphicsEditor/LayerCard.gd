@@ -12,6 +12,7 @@ enum ContextMenuItem {
 	REMOVE = 1,
 	MERGE = 2,
 	SAVE_PNG = 3,
+	SEND_NOTE_NEW = 4,
 }
 
 const _scene: = preload("res://Scenes/LayerCard.tscn")
@@ -63,6 +64,7 @@ var layer: LayerV2:
 @onready var drop_below_separator: Control = %DropBelowSeparator
 @onready var context_menu: PopupMenu = %ContextMenu
 @onready var save_button: Button = %SaveButton
+@onready var note_button: Button = %NoteButton
 
 static func create(editor_: GraphicsEditorV2, layer_: LayerV2) -> LayerCard:
 	var lc: LayerCard = _scene.instantiate()
@@ -76,6 +78,7 @@ static func create(editor_: GraphicsEditorV2, layer_: LayerV2) -> LayerCard:
 
 func _ready():
 	_setup_context_menu()
+	_update_note_button_state()
 
 
 func _exit_tree() -> void:
@@ -252,6 +255,7 @@ func _setup_context_menu():
 	context_menu.add_item("Remove", ContextMenuItem.REMOVE)
 	context_menu.add_item("Merge", ContextMenuItem.MERGE)
 	context_menu.add_item("Save as PNG", ContextMenuItem.SAVE_PNG)
+	context_menu.add_item("Send as New Note", ContextMenuItem.SEND_NOTE_NEW)
 
 
 func _on_context_menu_id_pressed(id: int) -> void:
@@ -264,6 +268,8 @@ func _on_context_menu_id_pressed(id: int) -> void:
 			editor.merge_layers(editor.selected_layers.duplicate())
 		ContextMenuItem.SAVE_PNG:
 			_on_save_button_pressed()
+		ContextMenuItem.SEND_NOTE_NEW:
+			await _push_layer_to_note(true)
 
 
 func _on_context_menu_about_to_popup() -> void:
@@ -294,20 +300,30 @@ func delete_layer() -> void:
 	queue_free()
 
 
+## Resolve a single layer's raster to an Image (a fresh copy, safe to keep).
+## Mirrors the per-layer-type handling shared by Save-as-PNG and Send-to-Note.
+## Returns null for layer types that have no rasterizable content.
+func _resolve_layer_image() -> Image:
+	if not layer:
+		return null
+
+	match layer.type:
+		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING, LayerV2.Type.MASK, LayerV2.Type.CONTROL:
+			if not layer.image or layer.image.is_empty():
+				return null
+			return layer.image.duplicate()
+		LayerV2.Type.SPEECH_BUBBLE:
+			var texture = await get_texture(layer.speech_bubble)
+			return texture.get_image() if texture else null
+		_:
+			return null
+
+
 func _on_save_button_pressed() -> void:
 	if not layer:
 		return
 
-	var image_to_save: Image
-
-	match layer.type:
-		LayerV2.Type.IMAGE, LayerV2.Type.DRAWING, LayerV2.Type.MASK:
-			if not layer.image:
-				return
-			image_to_save = layer.image.duplicate()
-		LayerV2.Type.SPEECH_BUBBLE:
-			var texture = await get_texture(layer.speech_bubble)
-			image_to_save = texture.get_image()
+	var image_to_save: Image = await _resolve_layer_image()
 
 	if image_to_save == null:
 		return
@@ -338,3 +354,70 @@ func _on_save_button_pressed() -> void:
 	var error = image_to_save.save_png(path)
 	if error != OK:
 		push_error("Failed to save layer: " + str(error))
+
+
+# ── Send layer to a note ──────────────────────────────────────────────────────
+
+func _on_note_button_pressed() -> void:
+	await _push_layer_to_note(false)
+
+
+## Push this layer's image to a Note. When the layer is already linked to a note
+## (and that note still exists) and force_new is false, the existing note is
+## updated in place; otherwise a fresh note is created and linked.
+func _push_layer_to_note(force_new: bool) -> void:
+	if not layer:
+		return
+
+	var img: Image = await _resolve_layer_image()
+	if img == null:
+		SingletonObject.create_toast_notification(
+			"This layer has no image to send to a note.", ToastNotification.Type.WARNING)
+		return
+
+	# Update path: re-push to the linked note if it still exists.
+	if not force_new and not layer.linked_note_uuid.is_empty():
+		var existing = SingletonObject.get_registered_object(layer.linked_note_uuid)
+		if existing and existing is Note:
+			var controls = existing.get_controls_container()
+			if controls is NoteImageControls:
+				controls.image = img
+				SingletonObject.create_toast_notification(
+					"Updated note: %s" % existing.title, ToastNotification.Type.SUCCESS)
+				_update_note_button_state()
+				return
+		# Linked note is gone — fall through and create a fresh one.
+
+	# Create path: new image note, linked back to this layer.
+	var note: Note = Note.create_image_note(_note_title(), img)
+	if note == null:
+		SingletonObject.create_toast_notification(
+			"Failed to create a note for this layer.", ToastNotification.Type.ERROR)
+		return
+	SingletonObject.notes_container.add_note(note)
+	layer.linked_note_uuid = note.uuid
+
+	await get_tree().process_frame
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+	SingletonObject.create_toast_notification(
+		"Sent layer to note: %s" % note.title, ToastNotification.Type.SUCCESS)
+	_update_note_button_state()
+
+
+## A note title for this layer — its name, falling back to a generic label.
+func _note_title() -> String:
+	if layer and not String(layer.name).is_empty():
+		return String(layer.name)
+	return "Layer"
+
+
+## Reflect the linked/unlinked state on the note button (tooltip + subtle tint).
+func _update_note_button_state() -> void:
+	if not note_button:
+		return
+	var linked := false
+	if layer and not layer.linked_note_uuid.is_empty():
+		var n = SingletonObject.get_registered_object(layer.linked_note_uuid)
+		linked = n != null and n is Note
+	note_button.tooltip_text = "Update linked note" if linked else "Send layer to a note"
+	note_button.modulate = Color(0.6, 1.0, 0.6) if linked else Color.WHITE

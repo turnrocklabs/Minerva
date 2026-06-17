@@ -128,6 +128,11 @@ var lock_color: bool = false
 var mask_color: Color = Color.WHITE
 var mask_color_name: String = "blue"
 
+## UUID of the Note this layer has been pushed to, for update-in-place re-pushes.
+## Session-scoped (not serialized into the project): empty until the layer is
+## first sent to a note. Cleared implicitly when the linked note no longer exists.
+var linked_note_uuid: String = ""
+
 # Control layer properties
 var control_type: ControlType = ControlType.POSE
 var control_strength: float = 1.0
