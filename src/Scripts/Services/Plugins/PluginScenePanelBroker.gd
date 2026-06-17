@@ -136,6 +136,14 @@ const CHANNEL_HOST_OWNED_SAVE_RESPONSE    := "host_owned_save.response"
 ## delays without leaving the broker hung indefinitely.
 const PANEL_STATE_REQUEST_TIMEOUT_SEC := 5.0
 
+## Timeout for panel→backend tool calls. MCPServerConnection.call_tool defaults to
+## 120s, which is far too short for long-running backend work (e.g. media-gen
+## video, which can run 20+ min). Use a generous ceiling that matches the media
+## client's own request budget so the three layers (panel await, host dispatch,
+## backend client) stay aligned; a dead backend still resolves early via
+## connection-loss rather than waiting this out.
+const SCENE_BACKEND_CALL_TIMEOUT_SEC := 1800.0
+
 static func _fs_owner_id(plugin_id: String, panel_name: String) -> String:
 	return "%s:%s:%s" % [_FS_OWNER_PREFIX, plugin_id, panel_name]
 
@@ -1320,8 +1328,9 @@ func _dispatch_to_plugin_backend(
 	if conn == null:
 		return PluginErrors.plugin_not_running(plugin_id)
 
-	# MCP tools/call: tool name = channel, arguments = payload.
-	var call_result = await conn.call_tool(channel, payload)
+	# MCP tools/call: tool name = channel, arguments = payload. Use the generous
+	# scene-backend budget — the default 120s strands long backend jobs.
+	var call_result = await conn.call_tool(channel, payload, SCENE_BACKEND_CALL_TIMEOUT_SEC)
 
 	if call_result == null:
 		return PluginErrors.schema_validation_failed(plugin_id,
