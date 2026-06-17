@@ -80,7 +80,7 @@ func register_tools() -> void:
 	, "notes")
 
 	server._register_tool("minerva_list_notes",
-		"List all notes in a tab or all tabs.",
+		"List all notes in a tab or all tabs. Each entry includes note_id, title, enabled, tab, and type (text/image/audio/video/html/plugin_data). Filter by type==\"image\" to find image notes.",
 		{
 			"type": "object",
 			"properties": {
@@ -150,7 +150,7 @@ func register_tools() -> void:
 	, "notes")
 
 	server._register_tool("minerva_get_note",
-		"Get a note's full content by its ID. Returns title, content, tab, and enabled status. Requires note_id from minerva_list_notes.",
+		"Get a note's full content by its ID. Returns title, content, tab, enabled status, and type. For image-backed notes (image/plugin_data) also returns image_path (a PNG exported to disk), image_width, image_height, and image_format so the actual image can be consumed. Requires note_id from minerva_list_notes.",
 		{
 			"type": "object",
 			"properties": {
@@ -325,6 +325,40 @@ func _note_text_content(note: Note) -> String:
 	return ""
 
 
+func _type_name(note: Note) -> String:
+	if note == null:
+		return "UNKNOWN"
+	return Note.Type.keys()[note.type] if note.type < Note.Type.size() else "UNKNOWN"
+
+
+## For image-backed notes (IMAGE / PLUGIN_DATA / PCB) export the backing image as
+## a PNG to a managed cache dir and return {image_path, image_width, image_height,
+## image_format, caption}. Returns {} for notes without an image. The stable
+## per-uuid path is overwritten on each call so the cache stays bounded.
+func _export_note_image(note: Note) -> Dictionary:
+	if note == null:
+		return {}
+	var controls = note.get_controls_container()
+	if not (controls is NoteImageControls):
+		return {}
+	var img: Image = controls.image
+	if img == null or img.is_empty():
+		return {}
+	var dir_path := OS.get_user_data_dir().path_join("plugin_note_images")
+	DirAccess.make_dir_recursive_absolute(dir_path)
+	var file_path := dir_path.path_join("%s.png" % note.uuid)
+	var err := img.save_png(file_path)
+	if err != OK:
+		return {}
+	return {
+		"image_path": file_path,
+		"image_width": img.get_width(),
+		"image_height": img.get_height(),
+		"image_format": "png",
+		"caption": controls.caption,
+	}
+
+
 func _find_note_tab_name(container: NotesContainer, note_id: String) -> String:
 	if not container:
 		return ""
@@ -430,7 +464,8 @@ func _list_notes(args: Dictionary) -> Dictionary:
 					"note_id": note.uuid,
 					"title": note.title,
 					"enabled": note.enabled,
-					"tab": tab_title
+					"tab": tab_title,
+					"type": _type_name(note),
 				})
 	else:
 		# List notes from specific tab
@@ -445,7 +480,8 @@ func _list_notes(args: Dictionary) -> Dictionary:
 				"note_id": note.uuid,
 				"title": note.title,
 				"enabled": note.enabled,
-				"tab": tab_name
+				"tab": tab_name,
+				"type": _type_name(note),
 			})
 
 	return {
@@ -569,15 +605,26 @@ func _get_note(args: Dictionary) -> Dictionary:
 			if not tab_name.is_empty():
 				break
 
-	return {
+	var result := {
 		"success": true,
 		"note_id": note_id,
 		"title": note.title,
 		"content": content_text,
 		"tab": tab_name,
 		"enabled": note.enabled,
-		"type": Note.Type.keys()[note.type] if note.type < Note.Type.size() else "UNKNOWN"
+		"type": _type_name(note),
 	}
+
+	# For image-backed notes, export the PNG and surface its path + dimensions so
+	# plugins/agents can consume the actual image (e.g. flf2v keyframes), not just
+	# a screenshot. The caption becomes the note's content when there's no text.
+	var image_info := _export_note_image(note)
+	if not image_info.is_empty():
+		result.merge(image_info, true)
+		if content_text.is_empty():
+			result["content"] = image_info.get("caption", "")
+
+	return result
 
 
 func _get_agent_note(args: Dictionary) -> Dictionary:
