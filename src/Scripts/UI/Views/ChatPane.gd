@@ -2053,9 +2053,16 @@ func execute_regular_chat(text: String) -> void:
 			history.termination_message = ""
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
 		# W4 (chat-passthrough): a question turn (terminal agent hit a permission
-		# dialog) gets a clickable option card right under the bot message. No
-		# options parsed → no card; the user just types free text as usual.
-		_passthrough_add_question_card(history, chi, model_msg_node)
+		# dialog or an AskUserQuestion chooser) gets a clickable option card right
+		# under the bot message.
+		var _q_card := _passthrough_add_question_card(history, chi, model_msg_node)
+		# Safety net: the plugin flagged a question (terminal agent is BLOCKED on a
+		# choice) but we couldn't parse clickable options. Never render nothing —
+		# that strands the user silently while the agent waits. Show a visible
+		# notice telling them how to answer (typing the digit/letter still routes
+		# through as a keystroke via the plugin's pending-question state).
+		if _q_card == null and chi.HcpData.has("passthrough_question_options"):
+			_passthrough_add_waiting_notice(history, model_msg_node)
 
 	# Notify trigger system that this agent chat is fully done (all tool rounds complete)
 	if history.IsAgentChat:
@@ -2188,7 +2195,7 @@ func _passthrough_end_relay(status, bot_response, model_msg_node: Control,
 ## W4 (chat-passthrough): question text shown on the option card. The full
 ## terminal dialog is already visible in the bot message right above the card,
 ## so the card carries a short action prompt, not a duplicate of the screen.
-const PASSTHROUGH_QUESTION_PROMPT := "The terminal agent is waiting on this dialog — choose an option:"
+const PASSTHROUGH_QUESTION_PROMPT := "The terminal agent is waiting — click an option, or type your own answer in the message box:"
 
 
 ## W4 (chat-passthrough): render a clickable option card under a finalized
@@ -2253,6 +2260,31 @@ func _passthrough_add_question_card(history: ChatHistory, chi: ChatHistoryItem,
 	card.answer_submitted.connect(
 		_on_passthrough_question_answered.bind(history, keystroke_by_label, card))
 	return card
+
+
+## Safety net for a question turn whose options couldn't be parsed into buttons
+## (an unfamiliar dialog/chooser layout). Without this the chat shows the raw
+## dialog text and nothing else, so the user can't tell the agent is BLOCKED
+## waiting — they have to discover the terminal. This renders a visible, live-turn
+## notice (same parenting/lifecycle as the option card: a plain VBox child, never
+## a ChatHistoryItem, freed with the chat). Typing the digit/letter in the normal
+## message box still answers — the plugin's pending-question state forwards it as
+## a raw keystroke — so the notice tells the user exactly that.
+func _passthrough_add_waiting_notice(history: ChatHistory, model_msg_node: Control) -> Control:
+	if history == null:
+		return null
+	var vbox = history.VBox
+	if vbox == null or not is_instance_valid(vbox):
+		return null
+	var notice := Label.new()
+	notice.text = "⚠ The terminal agent is waiting on a choice. I couldn't turn its options into buttons — type the number or letter of your choice in the message box below, or answer in the terminal."
+	notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	notice.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	notice.add_theme_color_override("font_color", Color(0.96, 0.74, 0.22))
+	vbox.add_child(notice)
+	if is_instance_valid(model_msg_node) and model_msg_node.get_parent() == vbox:
+		vbox.move_child(notice, model_msg_node.get_index() + 1)
+	return notice
 
 
 ## W4: an option was clicked. The card already guards re-submission internally
