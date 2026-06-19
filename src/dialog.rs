@@ -54,6 +54,38 @@ pub fn extract_dialog_region(screen: &str, dialog_re: Option<&Regex>, window: us
     lines[start_window..].join("\n")
 }
 
+/// Extract a Claude Code AskUserQuestion chooser region: from the chooser
+/// header (the `☐` ballot-box line at the top of the box) down through the nav
+/// footer. The chooser's signature is the footer's "enter to select" token —
+/// chooser-unique (a codex permission dialog says "press enter to confirm or
+/// esc to cancel", which does NOT contain it), so a permission dialog yields
+/// None here and the caller falls back to the top-anchored permission path.
+/// The footer can't anchor the region — it sits BELOW the options — so we find
+/// it, then walk UP to the header. When no header is found (long descriptions
+/// can push it out of a viewport read), fall back to a bounded lookback so the
+/// numbered options are still captured.
+pub fn extract_question_region(screen: &str) -> Option<String> {
+    let lines: Vec<&str> = screen.lines().collect();
+    let footer_idx = lines
+        .iter()
+        .rposition(|l| l.to_lowercase().contains("enter to select"))?;
+    let start = lines[..footer_idx]
+        .iter()
+        .rposition(|l| l.contains('\u{2610}')) // ☐ chooser header
+        .unwrap_or_else(|| footer_idx.saturating_sub(20));
+    Some(lines[start..=footer_idx].join("\n"))
+}
+
+/// True for the "Type something…" free-text affordance Claude Code appends to an
+/// AskUserQuestion chooser. Unlike a normal option, selecting it opens a text
+/// editor (which would block the turn), so it's surfaced on the card but a click
+/// is routed to the free-text path — it prompts the user to type a custom answer
+/// instead of navigating to it. ("Chat about this" is NOT special: selecting it
+/// just makes Claude respond conversationally — a normal ↑/↓+Enter selection.)
+pub fn is_type_option(label: &str) -> bool {
+    label.trim().to_lowercase().starts_with("type ")
+}
+
 /// Parse dialog options from a dialog region. `profile_id` is the extension
 /// point for CLI-specific parsers; all current profiles route to the generic
 /// parser (codex-tuned coverage lives in the generic rules + fixture tests).
@@ -75,7 +107,10 @@ pub fn parse_options(profile_id: &str, region: &str) -> Vec<DialogOption> {
 fn parse_generic(region: &str) -> Vec<DialogOption> {
     // Compiled per call: dialogs are rare, human-paced events — clarity over
     // a static cache. The pattern is a constant, so unwrap() cannot fail.
-    let numbered = Regex::new(r"^\s*[›❯>]?\s*(\d+)[.)]\s+(.+?)\s*$").unwrap();
+    // The selection-marker class includes the AskUserQuestion scroll cursors
+    // `↑`/`↓` (an off-edge option row is prefixed with one) alongside the
+    // selected-row `❯`/`›`/`>` so boxed/scrolled option lines still parse.
+    let numbered = Regex::new(r"^\s*[›❯>↑↓]?\s*(\d+)[.)]\s+(.+?)\s*$").unwrap();
 
     let mut options: Vec<DialogOption> = Vec::new();
     for line in region.lines() {
@@ -295,5 +330,61 @@ mod tests {
             ]),
             "exact option set for the codex fixture"
         );
+    }
+
+    // ── AskUserQuestion chooser (Claude Code) — byte-true live capture ───────
+    // Captured 2026-06-18 from terminal 4180446039187 (rule lines width-
+    // normalized). The chooser's marker is the BOTTOM footer, not a top header
+    // phrase, and its scroll cursors `↑`/`↓` prefix off-edge option rows.
+    const CLAUDE_QUESTION: &str = include_str!("../tests/fixtures/real/claude_question.txt");
+
+    #[test]
+    fn test_extract_question_region_some_for_claude_chooser() {
+        assert!(extract_question_region(CLAUDE_QUESTION).is_some());
+    }
+
+    #[test]
+    fn test_extract_question_region_none_for_codex_permission() {
+        // Codex permission says "press enter to confirm or esc to cancel" — must
+        // NOT be mistaken for a chooser (no "enter to select"), or its top-down
+        // region anchoring would break. None here → caller uses permission path.
+        assert!(extract_question_region(CODEX_PERMISSION).is_none());
+    }
+
+    #[test]
+    fn test_extract_question_region_anchors_on_header() {
+        let region = extract_question_region(CLAUDE_QUESTION)
+            .expect("chooser footer present → region extracted");
+        assert!(region.starts_with(" \u{2610} Next build"), "region: {region:?}");
+        assert!(region.contains("Enter to select"));
+        // The prose line ABOVE the chooser must NOT be in the region.
+        assert!(!region.contains("Now, where to take the prototype next"));
+    }
+
+    #[test]
+    fn test_claude_chooser_parses_numbered_options_with_scroll_cursors() {
+        let region = extract_question_region(CLAUDE_QUESTION).unwrap();
+        assert_eq!(
+            parse_options("claude", &region),
+            opts(&[
+                ("Group fair + NetTrans (Recommended)", "1"),
+                ("CSA provider onboarding", "2"),
+                ("Chat about this", "6"),
+            ]),
+            "scroll-cursor (↓) and header rows must not block numbered parsing"
+        );
+    }
+
+    #[test]
+    fn test_is_type_option() {
+        // The free-text affordance → routed to the type path.
+        assert!(is_type_option("Type something."));
+        assert!(is_type_option("  type a custom answer  "));
+        assert!(is_type_option("Type your own answer"));
+        // "Chat about this" is a NORMAL selectable option, not the type path.
+        assert!(!is_type_option("Chat about this"));
+        // Real answers.
+        assert!(!is_type_option("Group fair + NetTrans (Recommended)"));
+        assert!(!is_type_option("Apple"));
     }
 }

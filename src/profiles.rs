@@ -127,10 +127,20 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 // The old ╰─╯ box style no longer exists.
                 prompt_box_regex: r"^❯\s".to_string(),
 
-                // Claude Code permission dialogs show a "Do you want to proceed?"
-                // style prompt, or a "run this command?" confirmation box.
+                // Claude Code blocks for input in two shapes:
+                //   1. Permission dialogs — "Do you want to proceed?" / "run
+                //      this command?" confirmation boxes (marker ABOVE options).
+                //   2. AskUserQuestion choosers — a numbered list with a `❯`
+                //      cursor and the nav footer "Enter to select · ↑/↓ to
+                //      navigate · Esc to cancel" (marker BELOW options). Under
+                //      --dangerously-skip-permissions the chooser is the PRIMARY
+                //      interactive prompt, and its `❯ 1.` cursor line otherwise
+                //      matches prompt_box_regex → false turn_completed. The
+                //      "enter to select" footer token is chooser-unique (codex's
+                //      "press enter to confirm" does NOT contain it), so it fires
+                //      input_requested here without touching the codex profile.
                 permission_dialog_regex: Some(
-                    r"(?i)(?:do you want to|allow claude|proceed\?|yes/no|\[y/n\]|❯ 1\. yes)".to_string()
+                    r"(?i)(?:do you want to|allow claude|proceed\?|yes/no|\[y/n\]|❯ 1\. yes|enter to select)".to_string()
                 ),
 
                 // Working indicator: status glyphs like ✻ PERSIST after a turn

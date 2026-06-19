@@ -218,6 +218,13 @@ enum SendMode {
     /// in ONE write, no normalisation, no trailing Enter — dialog pickers act
     /// on the keypress, and bare control bytes ("\r", ESC) must survive.
     RawKeystroke,
+    /// AskUserQuestion chooser navigation: the body is a run of arrow-key escape
+    /// sequences (ESC[A / ESC[B). Deliver each arrow as its OWN write with a
+    /// short pause, then Enter. Claude Code's TUI coalesces a fast multi-key
+    /// burst (paste detection), so arrows sent in one chunk register as ~0–1
+    /// moves and multi-step selection collapses — one-at-a-time makes each a
+    /// discrete keypress.
+    ChooserNav,
 }
 
 /// The send pipeline shared by handle_send and relay_ask_core:
@@ -283,23 +290,64 @@ fn send_core_with_mode(
     // them. TUI agents (Claude Code et al.) treat a single fast chunk as a
     // paste: an embedded CR becomes a newline in the input box and never
     // submits. RawKeystroke: ONE write, no Enter.
-    let write_result = router
-        .call_capability("host.terminal.write", json!({
-            "terminal_id": terminal_id,
-            "text": body,
-            "raw": true,
-        }))
-        .and_then(|first| {
-            if mode != SendMode::Submit {
-                return Ok(first);
+    //
+    // An EMPTY body is legitimate: selecting the already-highlighted TOP chooser
+    // option means zero Down-arrows, just Enter. But host.terminal.write REJECTS
+    // empty text ("text is required"), which would short-circuit the two-write
+    // chain and drop the Enter — the bug that made "select option 1" fail. So
+    // skip the body write when it's empty and send only the Enter.
+    let write_result = if mode == SendMode::ChooserNav {
+        // Each arrow as its OWN keypress with a pause (defeats paste-coalescing),
+        // then Enter. An empty body (cursor already on the target) → just Enter.
+        let mut last: Result<Value, String> = Ok(json!({"ok": true}));
+        for unit in body.split('\u{1b}').filter(|u| !u.is_empty()) {
+            last = router.call_capability("host.terminal.write", json!({
+                "terminal_id": terminal_id,
+                "text": format!("\u{1b}{unit}"),
+                "raw": true,
+            }));
+            if last.is_err() {
+                break;
             }
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            std::thread::sleep(std::time::Duration::from_millis(70));
+        }
+        last.and_then(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(70));
             router.call_capability("host.terminal.write", json!({
                 "terminal_id": terminal_id,
                 "text": "\r",
                 "raw": true,
             }))
-        });
+        })
+    } else if body.is_empty() {
+        match mode {
+            SendMode::Submit => router.call_capability("host.terminal.write", json!({
+                "terminal_id": terminal_id,
+                "text": "\r",
+                "raw": true,
+            })),
+            // Empty raw keystroke: nothing to send — a successful no-op.
+            _ => Ok(json!({"ok": true})),
+        }
+    } else {
+        router
+            .call_capability("host.terminal.write", json!({
+                "terminal_id": terminal_id,
+                "text": body,
+                "raw": true,
+            }))
+            .and_then(|first| {
+                if mode != SendMode::Submit {
+                    return Ok(first);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                router.call_capability("host.terminal.write", json!({
+                    "terminal_id": terminal_id,
+                    "text": "\r",
+                    "raw": true,
+                }))
+            })
+    };
 
     write_result.map_err(|e| format!("terminal write failed: {e}"))?;
 
@@ -925,6 +973,23 @@ const PASSTHROUGH_TIMEOUT_MS: u64 = 590_000;
 struct PassthroughState {
     bindings: std::collections::HashMap<String, String>, // chat_id → terminal_id
     pending_question: std::collections::HashSet<String>, // terminal_ids
+    // Terminals whose pending question is an AskUserQuestion CHOOSER (vs a
+    // permission dialog). A chooser is driven by ↑/↓ + Enter — a digit TYPES a
+    // custom answer, it does not select (Claude Code v2.1.181) — so its answer
+    // is delivered via Submit (two-write + trailing Enter), not a raw keystroke.
+    pending_is_chooser: std::collections::HashSet<String>, // terminal_ids
+    // Option numbers OFFERED on a pending chooser (real answers only; the meta
+    // affordances are dropped). The card sends a plain number; the send path maps
+    // a number that's in this set to a navigation sequence (Down×(K-1)+Enter) and
+    // treats anything else as a typed custom answer — control bytes are generated
+    // here and written straight to the PTY, never round-tripped through a chat
+    // message (which hangs the turn).
+    pending_chooser_options: std::collections::HashMap<String, Vec<u32>>, // terminal_id → numbers
+    // The "Type something…" option's number on a pending chooser, if present. It
+    // opens a free-text editor rather than being a direct answer, so a click on
+    // it does NOT navigate — it prompts the user to type a custom answer (which
+    // then goes through the free-text path), avoiding the sub-prompt that hangs.
+    pending_type_option: std::collections::HashMap<String, u32>, // terminal_id → option number
     // Last-known watch profile per terminal. The idle reap (watch_timeout_ms,
     // 10 min) tears down an UNARMED watch — and a passthrough chat sits unarmed
     // between turns, so an idle chat loses its watch. We cache the profile while
@@ -1033,6 +1098,40 @@ fn revive_passthrough_watch(terminal_id: &str, router: &Arc<Router>) -> Result<(
 /// Errors are IN-BAND (kind:"error", normal tool content) so the host's
 /// PluginProvider can render them uniformly. distill is OFF: passthrough is
 /// verbatim (no LLM in the transport path — DCR #479 constraint).
+/// Locate the chooser's currently-highlighted option number from the `❯` cursor
+/// line on the screen (the only option row prefixed with the selection glyph).
+/// Returns None when no cursor+number line is visible.
+fn chooser_cursor_option(screen: &str) -> Option<u32> {
+    let re = regex::Regex::new(r"^\s*[❯›>]\s*(\d+)[.)]").ok()?;
+    for line in screen.lines() {
+        if let Some(c) = re.captures(line) {
+            if let Some(n) = c.get(1).and_then(|m| m.as_str().parse::<u32>().ok()) {
+                return Some(n);
+            }
+        }
+    }
+    None
+}
+
+/// Build the arrow-key run to move the chooser cursor from its CURRENT option
+/// (read live from the screen) to the target option K. Using the live cursor —
+/// rather than assuming the top — is robust to scrolling, cancel/retry, and any
+/// prior navigation. Empty string when already on the target (Enter alone
+/// selects). Falls back to assuming the top option if the cursor isn't readable.
+fn chooser_nav_keys(terminal_id: &str, target: u32, router: &Arc<Router>) -> String {
+    let screen = router
+        .call_capability("host.terminal.read", json!({ "terminal_id": terminal_id }))
+        .ok()
+        .and_then(|r| r.get("content").and_then(|v| v.as_str()).map(String::from))
+        .unwrap_or_default();
+    let current = chooser_cursor_option(&screen).unwrap_or(1);
+    if target >= current {
+        "\u{1b}[B".repeat((target - current) as usize) // Down
+    } else {
+        "\u{1b}[A".repeat((current - target) as usize) // Up
+    }
+}
+
 fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
     let args = params.get("arguments").unwrap_or(params);
     let chat_id = args.get("chat_id").and_then(|v| v.as_str()).unwrap_or("");
@@ -1091,10 +1190,68 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
     // alone; the Confirm option carries "\r" itself).
     let pending_question =
         with_passthrough(|s| s.pending_question.contains(&terminal_id));
-    let keystroke = if pending_question { normalize_keystroke(text) } else { None };
-    let (send_text, mode) = match &keystroke {
-        Some(k) => (k.as_str(), SendMode::RawKeystroke),
-        None => (text, SendMode::Submit),
+    let pending_chooser =
+        with_passthrough(|s| s.pending_is_chooser.contains(&terminal_id));
+
+    // "Type something…" click: this option opens a free-text editor — navigating
+    // to it would block the turn waiting on input the card can't supply. So don't
+    // touch the terminal: keep the chooser pending and return a prompt telling the
+    // user to type their custom answer. Their next message is plain text → the
+    // free-text path types it into the chooser and submits it (typing creates a
+    // custom answer without pre-selecting "Type something"). Returning early
+    // leaves the pending state untouched so that next message routes correctly.
+    if pending_question && pending_chooser {
+        let type_n = with_passthrough(|s| s.pending_type_option.get(&terminal_id).copied());
+        if let Some(tn) = type_n {
+            if text.trim().parse::<u32>().ok() == Some(tn) {
+                return ok_response(id, tool_ok(json!({
+                    "kind": "question",
+                    "text": "Type your custom answer in the message box below and send it.",
+                    "options": [],
+                })));
+            }
+        }
+    }
+
+    // Chooser select: the card sends the option NUMBER as a plain chat message.
+    // Translate it to arrow-key navigation HERE — moving from the live cursor
+    // position to option K, delivered one keypress at a time (ChooserNav mode) —
+    // so raw ESC bytes are generated in the plugin and written straight to the
+    // PTY, never round-tripped through a chat message (control bytes in a chat
+    // message hang the turn). Only a number that was actually OFFERED maps to
+    // navigation; anything else (words, or a number that wasn't an option) is a
+    // typed custom answer via the free-text path.
+    let chooser_nav: Option<String> = if pending_question && pending_chooser {
+        let offered = with_passthrough(|s| {
+            s.pending_chooser_options
+                .get(&terminal_id)
+                .cloned()
+                .unwrap_or_default()
+        });
+        text.trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|k| *k >= 1 && offered.contains(k))
+            .map(|k| chooser_nav_keys(&terminal_id, k, router))
+    } else {
+        None
+    };
+
+    // Only a permission-dialog answer is a single raw keystroke (no Enter).
+    let keystroke = if pending_question && !pending_chooser {
+        normalize_keystroke(text)
+    } else {
+        None
+    };
+    // Precedence: chooser navigation (Submit adds Enter) → permission keystroke
+    // (raw, no Enter) → Submit (a normal message OR a chooser custom answer, both
+    // body + Enter).
+    let (send_text, mode): (&str, SendMode) = if let Some(ref nav) = chooser_nav {
+        (nav.as_str(), SendMode::ChooserNav)
+    } else if let Some(ref k) = keystroke {
+        (k.as_str(), SendMode::RawKeystroke)
+    } else {
+        (text, SendMode::Submit)
     };
 
     let outcome = relay_ask_core(
@@ -1140,8 +1297,13 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
     with_passthrough(|s| {
         if result.get("kind").and_then(|k| k.as_str()) == Some("question") {
             s.pending_question.insert(terminal_id.clone());
+            // pending_is_chooser is set by build_question_result (chooser vs
+            // permission); leave it as that call decided.
         } else {
             s.pending_question.remove(&terminal_id);
+            s.pending_is_chooser.remove(&terminal_id);
+            s.pending_chooser_options.remove(&terminal_id);
+            s.pending_type_option.remove(&terminal_id);
         }
     });
 
@@ -1173,12 +1335,62 @@ fn build_question_result(terminal_id: &str, router: &Arc<Router>) -> Value {
         .and_then(|p| p.detection.permission_dialog_regex)
         .and_then(|pat| regex::Regex::new(&pat).ok());
 
-    // Same 20-line window the detector scans for dialogs.
-    let region = dialog::extract_dialog_region(&screen, dialog_re.as_ref(), 20);
-    let options: Vec<Value> = dialog::parse_options(&profile_id, &region)
-        .iter()
-        .map(|o| o.to_json())
-        .collect();
+    // Two block shapes need different region anchoring. A permission dialog
+    // carries its marker ABOVE its options (anchor top-down via the permission
+    // regex). An AskUserQuestion chooser carries its marker — the nav footer —
+    // BELOW its options, so the same regex would anchor on the footer and drop
+    // every option; extract it header-anchored instead. extract_question_region
+    // is chooser-unique ("enter to select"), so the permission path is unchanged.
+    let chooser_region = dialog::extract_question_region(&screen);
+    let is_chooser = chooser_region.is_some();
+    let region = chooser_region
+        .unwrap_or_else(|| dialog::extract_dialog_region(&screen, dialog_re.as_ref(), 20));
+    let parsed = dialog::parse_options(&profile_id, &region);
+    // Keep ALL options on the card. A chooser selects via ↑/↓ + Enter (a digit
+    // TYPES a custom answer, it does not select — Claude Code v2.1.181). The card
+    // keeps the plain option NUMBER as its keystroke; the digit→navigation
+    // translation happens in the SEND path, so raw ESC bytes never round-trip
+    // through a chat message (that hangs the turn). The "Type something…" option
+    // is surfaced too but is NOT navigable (selecting it opens a text editor that
+    // blocks the turn) — its number is remembered separately so a click on it
+    // prompts the user to type a custom answer (free-text path). Every other
+    // option, including "Chat about this", is a normal navigable selection.
+    let mut chooser_numbers: Vec<u32> = Vec::new();
+    let mut type_option: Option<u32> = None;
+    if is_chooser {
+        for o in &parsed {
+            if let Ok(n) = o.keystroke.parse::<u32>() {
+                if dialog::is_type_option(&o.label) {
+                    type_option = Some(n);
+                } else {
+                    chooser_numbers.push(n);
+                }
+            }
+        }
+    }
+    // Record the shape for the NEXT turn's send routing: a navigable number → nav
+    // (Submit two-write + Enter); the type-option number → a "type your answer"
+    // prompt (no terminal action); typed text → custom answer.
+    with_passthrough(|s| {
+        if is_chooser {
+            s.pending_is_chooser.insert(terminal_id.to_string());
+            s.pending_chooser_options
+                .insert(terminal_id.to_string(), chooser_numbers.clone());
+            match type_option {
+                Some(n) => {
+                    s.pending_type_option.insert(terminal_id.to_string(), n);
+                }
+                None => {
+                    s.pending_type_option.remove(terminal_id);
+                }
+            }
+        } else {
+            s.pending_is_chooser.remove(terminal_id);
+            s.pending_chooser_options.remove(terminal_id);
+            s.pending_type_option.remove(terminal_id);
+        }
+    });
+    let options: Vec<Value> = parsed.iter().map(|o| o.to_json()).collect();
 
     json!({"kind": "question", "text": region, "options": options})
 }

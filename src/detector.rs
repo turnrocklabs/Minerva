@@ -635,3 +635,38 @@ mod claude_v2_anchor_tests {
         assert!(prompt_idx.is_some(), "prompt_box regex must match the idle box prompt line");
     }
 }
+
+#[cfg(test)]
+mod askuserquestion_tests {
+    use super::*;
+    use crate::profiles;
+
+    // Byte-true AskUserQuestion chooser captured live 2026-06-18 (terminal
+    // 4180446039187). The bug: the `❯ 1.` cursor line matches prompt_box_regex,
+    // so without the footer signal the detector false-fires turn_completed and
+    // the host never gets a question card.
+    const CHOOSER: &str = include_str!("../tests/fixtures/real/claude_question.txt");
+
+    #[test]
+    fn test_chooser_fires_input_requested_not_turn_completed() {
+        let _g = profiles::TEST_PROFILES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        profiles::init_profiles();
+        let p = profiles::profile_get("claude").unwrap();
+        let cd = CompiledDetection::from_profile(&p).unwrap();
+
+        // The cursor line DOES match the idle prompt regex — proving the
+        // collision the footer signal must beat on precedence.
+        assert!(
+            CHOOSER.lines().any(|l| cd.prompt_box.is_match(l)),
+            "the `❯ 1.` cursor line matches prompt_box — that's the false-positive source"
+        );
+
+        let r = run(CHOOSER, false, false, &cd).expect("chooser must detect");
+        assert_eq!(
+            r.cause,
+            WakeCause::InputRequested,
+            "chooser must be input_requested, not a false turn_completed"
+        );
+        assert_eq!(r.method, DetectionMethod::PermissionDialog);
+    }
+}
