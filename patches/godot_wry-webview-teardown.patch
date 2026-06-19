@@ -1,0 +1,45 @@
+diff --git a/rust/src/lib.rs b/rust/src/lib.rs
+index 75c3838..2f78472 100644
+--- a/rust/src/lib.rs
++++ b/rust/src/lib.rs
+@@ -5,6 +5,7 @@ use godot::global::MouseButtonMask;
+ use godot::init::*;
+ use godot::prelude::*;
+ use godot::classes::{Control, DisplayServer, IControl, Input, InputEventMouseButton, InputEventMouseMotion, InputEventKey, ProjectSettings};
++use godot::classes::notify::ControlNotification;
+ use godot::global::{Key, MouseButton};
+ use lazy_static::lazy_static;
+ use serde_json;
+@@ -110,6 +111,32 @@ impl IControl for WebView {
+     fn process(&mut self, _delta: f64) {
+         self.update_webview();
+     }
++
++    fn on_notification(&mut self, what: ControlNotification) {
++        // Tear the native webview down on destruction. The native surface (a
++        // WebKitGTK child window on Linux) is destroyed lazily and only
++        // finalizes when the GTK event loop is pumped — which otherwise happens
++        // only inside update_webview() of *live* webviews. Deleting the last
++        // webview leaves nothing to pump GTK, so the freed surface lingers
++        // painted over its old location. Here we hide it, drop it, and pump GTK
++        // ourselves so the teardown completes regardless of how many webviews
++        // remain. We use PREDELETE (not EXIT_TREE) so a webview that is merely
++        // hidden or reparented and later returns is not destroyed.
++        if what == ControlNotification::PREDELETE {
++            if let Some(webview) = self.webview.take() {
++                let _ = webview.set_visible(false);
++                drop(webview);
++                #[cfg(target_os = "linux")]
++                {
++                    let mut i = 0;
++                    while gtk::events_pending() && i < 64 {
++                        gtk::main_iteration_do(false);
++                        i += 1;
++                    }
++                }
++            }
++        }
++    }
+ }
+ 
+ #[godot_api]
