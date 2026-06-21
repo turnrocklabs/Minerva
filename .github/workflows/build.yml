@@ -144,8 +144,7 @@ jobs:
       shell: pwsh
       working-directory: src/gdextension/terminal/ghostty-shim
       run: |
-        # Two Windows-specific flags, both required to link into the MSVC
-        # libterminal build:
+        # Two Windows-specific flags:
         #
         # 1. --global-cache-dir on D:  — Zig 0.15.2's
         #    std.Build.Step.Run.convertPathArg panics (assert !isAbsolute)
@@ -153,11 +152,14 @@ jobs:
         #    global cache defaults to C:\...\AppData\Local\zig). Cross-drive
         #    paths can't be made relative on Windows. Keep all caches on D:.
         #
-        # 2. -Dtarget=x86_64-windows-msvc — the native default is the gnu
-        #    (MinGW) ABI, whose import lib drags conflicting CRT defaultlib
-        #    directives into the MSVC link and excludes kernel32 + the UCRT
-        #    (LNK2019 on ceilf/memset/__imp_CreateFileW/...). The MSVC ABI
-        #    produces an import lib that links cleanly against godot-cpp.
+        # 2. -Dtarget=x86_64-windows-msvc — pins the DLL's runtime CRT to the
+        #    OS-provided UCRT (vs the gnu/MinGW msvcrt). NOTE: this does NOT
+        #    make the link work — ghostty-vt is an LLD-built lib, and MSVC
+        #    link.exe cannot consume EITHER ABI's LLD-format import lib (it
+        #    breaks default-lib resolution -> 103 unresolved CRT/kernel32
+        #    externals). The next step regenerates a native MSVC import lib;
+        #    that is the actual fix. (Ghostty itself only ever links libghostty-vt
+        #    via the Zig/clang toolchain, never MSVC.)
         zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows-msvc --global-cache-dir "$env:GITHUB_WORKSPACE\.zig-global-cache"
         Write-Host "--- zig-out tree ---"
         Get-ChildItem -Recurse zig-out | Select-Object FullName
@@ -172,6 +174,42 @@ jobs:
         if (-not $dll) { Write-Error "minerva-vt.dll not produced by zig build"; exit 1 }
         Copy-Item $dll.FullName src/bin/
         Get-ChildItem src/bin
+
+    - name: Regenerate MSVC-native import lib for the shim
+      shell: pwsh
+      run: |
+        # MSVC link.exe cannot consume Zig/LLD's import lib — its directives
+        # break default-library resolution, so godot-cpp's own CRT + kernel32
+        # come back unresolved (103 LNK2019/LNK2001). ghostty-vt is only ever
+        # linked via the Zig/clang toolchain upstream; MSVC consumption is on us.
+        # Fix: regenerate a clean, native MSVC import lib from the DLL's actual
+        # exports (dumpbin -> .def -> lib.exe) and overwrite Zig's lib in place,
+        # so SConstruct's LIBPATH/LIBS resolve a link.exe-friendly archive with
+        # no source or SConstruct change. Auto-generated from the DLL, so the
+        # export list never drifts from the shim's API.
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        $vsPath = & $vswhere -latest -property installationPath
+        Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+        Enter-VsDevShell -VsInstallPath $vsPath -DevCmdArguments "-arch=x64 -host_arch=x64" -SkipAutomaticLocation | Out-Null
+
+        $shim   = "src\gdextension\terminal\ghostty-shim\zig-out"
+        $dll    = Join-Path $shim "bin\minerva-vt.dll"
+        $defOut = Join-Path $shim "lib\minerva-vt.def"
+        $libOut = Join-Path $shim "lib\minerva-vt.lib"
+
+        # Pull the exported C symbols straight from the built DLL (source of truth).
+        $names = & dumpbin /exports $dll | ForEach-Object {
+            if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(minerva_vt\w*)') { $Matches[1] }
+        }
+        if (-not $names) { Write-Error "No minerva_vt* exports found in $dll"; exit 1 }
+        Write-Host "Exports ($($names.Count)): $($names -join ', ')"
+
+        # LIBRARY pins the import lib to minerva-vt.dll (bundled next to the exe
+        # at runtime via terminal.gdextension [dependencies]).
+        @("LIBRARY minerva-vt", "EXPORTS") + $names | Set-Content -Path $defOut -Encoding ascii
+        & lib /def:$defOut /machine:x64 /out:$libOut
+        if (-not (Test-Path $libOut)) { Write-Error "lib.exe did not produce $libOut"; exit 1 }
+        Write-Host "Regenerated MSVC import lib:"; Get-Item $libOut
 
     - name: Build Extension
       run: |
