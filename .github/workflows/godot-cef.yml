@@ -88,17 +88,19 @@ jobs:
           fi
 
       # cef-dll-sys builds CEF's C wrapper via CMake. Without an active MSVC
-      # environment, the cmake/cc crates auto-detect the compiler from the new
-      # VS18 preview (cl 14.51) while CMake's vs_link_exe resolves the linker
-      # from VS2022 (link 14.44) — a mixed toolchain that fails the compiler
-      # test ("not able to compile a simple test program"). Activate a single
-      # consistent VS2022 toolchain so cl and link come from the same toolset.
+      # environment, the cmake/cc crates auto-detect the compiler from the now-
+      # primary VS18 install (cl 14.51) while CMake's vs_link_exe resolves the
+      # linker from a leftover VS2022 toolset dir (link 14.44, whose vcvarsall is
+      # already gone from the runner) — a mixed toolchain that fails the compiler
+      # test ("not able to compile a simple test program"). Activate the complete
+      # VS install (latest — VS18, the same one build.yml's SCons uses) so cl and
+      # link come from a single consistent toolset. Do NOT pin vsversion: 2022 —
+      # it's no longer a complete install and msvc-dev-cmd errors "VS not found".
       - name: Set up MSVC toolchain (Windows)
         if: matrix.platform == 'windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-          vsversion: "2022"
 
       - name: Run build script
         shell: bash
