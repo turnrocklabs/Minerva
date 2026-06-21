@@ -144,14 +144,21 @@ jobs:
       shell: pwsh
       working-directory: src/gdextension/terminal/ghostty-shim
       run: |
-        # Zig 0.15.2's std.Build.Step.Run.convertPathArg panics (assert
-        # !isAbsolute) when the build straddles two drives: the workspace +
-        # local .zig-cache live on D:\a\..., but the GLOBAL cache defaults to
-        # C:\Users\...\AppData\Local\zig. Cross-drive paths can't be made
-        # relative on Windows, so the host unicode-table Run steps
-        # (props-unigen/symbols-unigen) blow up. Pin the global cache onto the
-        # same drive as the workspace (D:) so every path stays single-drive.
-        zig build -Doptimize=ReleaseFast --global-cache-dir "$env:GITHUB_WORKSPACE\.zig-global-cache"
+        # Two Windows-specific flags, both required to link into the MSVC
+        # libterminal build:
+        #
+        # 1. --global-cache-dir on D:  — Zig 0.15.2's
+        #    std.Build.Step.Run.convertPathArg panics (assert !isAbsolute)
+        #    when the build straddles drives (workspace/local cache on D:\a,
+        #    global cache defaults to C:\...\AppData\Local\zig). Cross-drive
+        #    paths can't be made relative on Windows. Keep all caches on D:.
+        #
+        # 2. -Dtarget=x86_64-windows-msvc — the native default is the gnu
+        #    (MinGW) ABI, whose import lib drags conflicting CRT defaultlib
+        #    directives into the MSVC link and excludes kernel32 + the UCRT
+        #    (LNK2019 on ceilf/memset/__imp_CreateFileW/...). The MSVC ABI
+        #    produces an import lib that links cleanly against godot-cpp.
+        zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows-msvc --global-cache-dir "$env:GITHUB_WORKSPACE\.zig-global-cache"
         Write-Host "--- zig-out tree ---"
         Get-ChildItem -Recurse zig-out | Select-Object FullName
 
