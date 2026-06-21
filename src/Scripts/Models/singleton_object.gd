@@ -1847,8 +1847,12 @@ var API_MODEL_PROVIDER_SCRIPTS: = {
 	# Claude Code (Max/Pro)
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: ClaudeCodeProviderScript.Sonnet,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: ClaudeCodeProviderScript.Opus,
-	# ChatGPT (Plus/Pro subscription)
-	API_MODEL_PROVIDERS.CHATGPT: ChatGPTProviderScript,
+	# ChatGPT: no bare-provider entry on purpose. Unlike Anthropic/OpenAI it has
+	# no per-model inner subclasses; registering the bare ChatGPTProviderScript
+	# here would surface the *provider* as a quick-choice item labeled "ChatGPT"
+	# (carrying a hardcoded default model). ChatGPT is purely OAuth-discovery
+	# driven (like OpenRouter) — its models appear as dynamic entries
+	# (CHATGPT_MODEL_ID_BASE+) once browsed/added in Preferences.
 }
 
 ## Maps each model to its parent provider (for enable/disable filtering).
@@ -1876,8 +1880,8 @@ var MODEL_TO_PROVIDER: Dictionary = {
 	# Claude Code
 	API_MODEL_PROVIDERS.CLAUDE_CODE_SONNET: API_PROVIDER.CLAUDE_CODE,
 	API_MODEL_PROVIDERS.CLAUDE_CODE_OPUS: API_PROVIDER.CLAUDE_CODE,
-	# ChatGPT
-	API_MODEL_PROVIDERS.CHATGPT: API_PROVIDER.CHATGPT,
+	# ChatGPT: dynamic models (CHATGPT_MODEL_ID_BASE+) self-register their
+	# provider in _register_all_dynamic_models(); no static entry needed here.
 }
 
 ## User-friendly names for providers (used in menu)

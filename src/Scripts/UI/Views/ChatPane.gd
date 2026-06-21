@@ -1282,7 +1282,7 @@ func _create_passthrough_distill_provider() -> BaseProvider:
 	var dyn_map: Dictionary = SingletonObject.get("_dynamic_provider_map") if "_dynamic_provider_map" in SingletonObject else {}
 	for id_base in dyn_map:
 		var dyn_info: Dictionary = dyn_map[id_base] as Dictionary
-		if int(dyn_info.get("provider", -1)) != SingletonObject.API_MODEL_PROVIDERS.CHATGPT:
+		if int(dyn_info.get("provider", -1)) != SingletonObject.API_PROVIDER.CHATGPT:
 			continue
 		var manager = dyn_info.get("manager", null)
 		if manager == null:
