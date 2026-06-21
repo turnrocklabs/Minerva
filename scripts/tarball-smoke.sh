@@ -209,7 +209,10 @@ boot_minerva
 mcp_initialize
 
 echo "::group::Step 1: marketplace install (scansort)"
-raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${SCANSORT_TARBALL_URL}\"}")
+# auto_confirm_skills=true: this is a headless, programmatic caller — there is no
+# user to dismiss the skill-seed confirmation dialog, and awaiting it would hang
+# the install. (scansort has no skills today, but pass it for consistency.)
+raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${SCANSORT_TARBALL_URL}\",\"auto_confirm_skills\":true}")
 echo "raw: $raw"
 result=$(echo "$raw" | mcp_unwrap)
 echo "unwrapped: $result"
@@ -277,7 +280,9 @@ fi
 
 echo "::group::Step 5: marketplace install (cad)"
 echo "cad tarball: $CAD_TARBALL_URL"
-raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${CAD_TARBALL_URL}\"}")
+# cad DOES declare skills — without auto_confirm_skills the install succeeds then
+# blocks on the interactive seed dialog (the bug this gate was catching).
+raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${CAD_TARBALL_URL}\",\"auto_confirm_skills\":true}")
 echo "raw: $raw"
 result=$(echo "$raw" | mcp_unwrap)
 echo "unwrapped: $result"
@@ -302,11 +307,14 @@ echo "::group::Step 7: mcad_validate (DCR 019e6a4bcb0c acceptance)"
 # Invoke the plugin's mcad_validate tool via the Minerva MCP proxy. The
 # expected success envelope is {ok: true, result: {ok: true, errors: []}}.
 # Cold-start budget includes bundle extract + OCCT init.
+# NOTE: Minerva namespaces every plugin tool to "minerva_<plugin_id>_<name>"
+# (PluginToolRegistry), so the cad plugin's "mcad_validate" is exposed on the
+# MCP surface as "minerva_cad_mcad_validate" — the bare name is "Unknown tool".
 raw=$(curl -sS --max-time "$CAD_EVALUATE_TIMEOUT_S" -X POST "${MCP_URL}" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -H "MCP-Protocol-Version: 2025-06-18" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":\"cad-eval\",\"method\":\"tools/call\",\"params\":{\"name\":\"mcad_validate\",\"arguments\":{\"source\":\"result = sphere(5)\"}}}")
+    -d "{\"jsonrpc\":\"2.0\",\"id\":\"cad-eval\",\"method\":\"tools/call\",\"params\":{\"name\":\"minerva_cad_mcad_validate\",\"arguments\":{\"source\":\"result = sphere(5)\"}}}")
 echo "raw: $raw"
 # The cad plugin's main.go wraps its tool result in {ok, result|error}; the
 # MCP envelope wraps that further. Drill through both.

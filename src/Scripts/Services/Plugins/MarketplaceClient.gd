@@ -110,7 +110,7 @@ func resolve_platform_target() -> String:
 ## Pass `installer` = SingletonObject.plugin_manager (or null to skip the
 ## registration step — useful for tests that only exercise the
 ## download/extract/verify path).
-func install_from_registry_entry(entry: Dictionary, installer) -> Dictionary:
+func install_from_registry_entry(entry: Dictionary, installer, auto_confirm_skills: bool = false) -> Dictionary:
 	var target := resolve_platform_target()
 	if target.is_empty():
 		return _err("unsupported_platform", {"os": OS.get_name()})
@@ -118,7 +118,7 @@ func install_from_registry_entry(entry: Dictionary, installer) -> Dictionary:
 	var url: String = downloads.get(target, "")
 	if url.is_empty():
 		return _err("no_binary_for_target", {"target": target, "plugin": entry.get("id")})
-	return await install_from_url(url, installer)
+	return await install_from_url(url, installer, auto_confirm_skills)
 
 
 ## Download a plugin release tarball from `tarball_url`, extract, verify
@@ -128,10 +128,15 @@ func install_from_registry_entry(entry: Dictionary, installer) -> Dictionary:
 ## method (a PluginDB), call that for a minimal registration (used by
 ## tests). If null, stop after staging and return the local manifest path.
 ##
+## `auto_confirm_skills` is forwarded to PluginManager.install_plugin: when true,
+## skill seeding runs without popping the interactive confirmation dialog. MCP /
+## headless callers MUST pass true — there is no user to dismiss the dialog, and
+## awaiting it deadlocks the install (the install otherwise succeeds, then hangs).
+##
 ## Returns:
 ##   {ok:true, plugin_id, manifest_path, definition?}
 ##   {ok:false, error, detail}
-func install_from_url(tarball_url: String, installer) -> Dictionary:
+func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool = false) -> Dictionary:
 	_ensure_dir(PLUGINS_DIR)
 	_ensure_dir(STAGING_DIR)
 
@@ -249,7 +254,7 @@ func install_from_url(tarball_url: String, installer) -> Dictionary:
 		}
 
 	if installer.has_method("install_plugin"):
-		var pm_result: Dictionary = await installer.install_plugin(final_manifest)
+		var pm_result: Dictionary = await installer.install_plugin(final_manifest, auto_confirm_skills)
 		if pm_result.has("error"):
 			return _err("manager_install_failed", pm_result)
 		return {
