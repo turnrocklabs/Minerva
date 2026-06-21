@@ -209,7 +209,10 @@ boot_minerva
 mcp_initialize
 
 echo "::group::Step 1: marketplace install (scansort)"
-raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${SCANSORT_TARBALL_URL}\"}")
+# auto_confirm_skills=true: this is a headless, programmatic caller — there is no
+# user to dismiss the skill-seed confirmation dialog, and awaiting it would hang
+# the install. (scansort has no skills today, but pass it for consistency.)
+raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${SCANSORT_TARBALL_URL}\",\"auto_confirm_skills\":true}")
 echo "raw: $raw"
 result=$(echo "$raw" | mcp_unwrap)
 echo "unwrapped: $result"
@@ -277,7 +280,9 @@ fi
 
 echo "::group::Step 5: marketplace install (cad)"
 echo "cad tarball: $CAD_TARBALL_URL"
-raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${CAD_TARBALL_URL}\"}")
+# cad DOES declare skills — without auto_confirm_skills the install succeeds then
+# blocks on the interactive seed dialog (the bug this gate was catching).
+raw=$(mcp_call "minerva_plugin_marketplace_install" "{\"url\":\"${CAD_TARBALL_URL}\",\"auto_confirm_skills\":true}")
 echo "raw: $raw"
 result=$(echo "$raw" | mcp_unwrap)
 echo "unwrapped: $result"

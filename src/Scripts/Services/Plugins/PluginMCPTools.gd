@@ -126,6 +126,10 @@ func _get_plugin_marketplace_install_tool_def() -> Dictionary:
 				"url": {
 					"type": "string",
 					"description": "HTTPS URL of the plugin tarball (.tar.gz). The archive must contain manifest.json, the platform binary, and SHA256SUMS."
+				},
+				"auto_confirm_skills": {
+					"type": "boolean",
+					"description": "If true, seed the plugin's skills without showing the interactive confirmation dialog. Pass true from headless/MCP contexts — otherwise a skill-bearing plugin installs but then deadlocks awaiting a dialog. Default: false."
 				}
 			},
 			"required": ["url"]
@@ -331,12 +335,18 @@ func _handle_plugin_marketplace_install(args: Dictionary) -> Dictionary:
 	# MarketplaceClient is a Node — instantiated, added to the tree, used,
 	# and freed in one shot. Matches the call pattern in
 	# MarketplaceBrowseDialog._on_install_pressed.
+	# Thread auto_confirm_skills (same contract as minerva_plugin_install): when
+	# true, skill seeding runs without the interactive dialog. MCP callers driving
+	# a headless Minerva MUST pass true — otherwise a skill-bearing plugin's
+	# install succeeds but then deadlocks awaiting a dialog no one can dismiss.
+	var auto_confirm := bool(args.get("auto_confirm_skills", false))
+
 	var MarketplaceClientCls = load("res://Scripts/Services/Plugins/MarketplaceClient.gd")
 	var mc = MarketplaceClientCls.new()
 	var tree = Engine.get_main_loop()
 	if tree != null and tree.root != null:
 		tree.root.add_child(mc)
-	var result: Dictionary = await mc.install_from_url(url, plugin_manager)
+	var result: Dictionary = await mc.install_from_url(url, plugin_manager, auto_confirm)
 	if mc.is_inside_tree():
 		mc.queue_free()
 	return result

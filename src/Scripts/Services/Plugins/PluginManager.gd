@@ -250,6 +250,14 @@ func _show_skill_seed_dialog(def, resolved: Array) -> bool:
 		push_warning("[PluginManager] Skill seed dialog requested but PluginManager not in SceneTree; declining by default")
 		return false
 
+	# Defense in depth: in a headless build (no display server) there is no user
+	# to dismiss the modal, so popup_centered()+await would hang the install
+	# forever. Decline rather than block. Callers that want seeding in headless
+	# pass auto_confirm_skills=true, which bypasses this dialog entirely.
+	if DisplayServer.get_name() == "headless":
+		push_warning("[PluginManager] Skill seed dialog suppressed in headless mode; declining (pass auto_confirm_skills=true to seed)")
+		return false
+
 	var DialogClass = load("res://Scripts/Services/Plugins/PluginSkillSeedDialog.gd")
 	var dialog = DialogClass.new()
 	add_child(dialog)
