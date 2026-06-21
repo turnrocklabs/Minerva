@@ -135,7 +135,7 @@ func _handle_drag(event: InputEventMouseMotion) -> bool:
 	# Handle endpoint dragging - update preview line
 	if _dragging_endpoint and _endpoint_connector:
 		if _endpoint_preview_line:
-			var cursor_pos = editor.layers_container.get_local_mouse_position()
+			var cursor_pos = editor.last_pointer_pos
 			_endpoint_preview_line.set_point_position(1, cursor_pos)
 		_endpoint_connector.queue_redraw()
 		return true
@@ -216,7 +216,7 @@ func _clear_connector_selection() -> void:
 
 func _get_connector_at_position() -> LayerV2:
 	# Check if mouse is near a connector line (not just in bounds)
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 	var layers = editor.layers_container.get_children()
 	for i in range(layers.size() - 1, -1, -1):
 		var layer = layers[i]
@@ -253,7 +253,7 @@ func _get_layer_at_position() -> LayerV2:
 	# Check layers in reverse order (top layer first)
 	# Use same approach as TextTool: get mouse in layers_container space, then transform to layer space
 	var layers = editor.layers_container.get_children()
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 	for i in range(layers.size() - 1, -1, -1):
 		var layer = layers[i]
 		if layer is LayerV2 and layer.visible:
@@ -268,7 +268,7 @@ func _get_layer_at_position() -> LayerV2:
 func _get_text_layer_at_position() -> LayerV2:
 	# Check layers in reverse order (top layer first) - TEXT layers only
 	var layers = editor.layers_container.get_children()
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 	for i in range(layers.size() - 1, -1, -1):
 		var layer = layers[i]
 		if layer is LayerV2 and layer.type == LayerV2.Type.TEXT and layer.visible:
@@ -281,7 +281,7 @@ func _get_text_layer_at_position() -> LayerV2:
 func _get_text_layer_with_handle_at_position() -> LayerV2:
 	# Check all TEXT layers to see if click is on their underline handle
 	var layers = editor.layers_container.get_children()
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 	for i in range(layers.size() - 1, -1, -1):
 		var layer = layers[i]
 		if layer is LayerV2 and layer.type == LayerV2.Type.TEXT and layer.visible:
@@ -294,7 +294,7 @@ func _get_text_layer_with_handle_at_position() -> LayerV2:
 func _get_diagram_shape_at_position() -> LayerV2:
 	# Check layers in reverse order (top layer first) - DIAGRAM_SHAPE layers only
 	var layers = editor.layers_container.get_children()
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 	for i in range(layers.size() - 1, -1, -1):
 		var layer = layers[i]
 		if layer is LayerV2 and layer.type == LayerV2.Type.DIAGRAM_SHAPE and layer.visible:
@@ -379,7 +379,7 @@ func _on_diagram_text_submitted(_text: String) -> void:
 
 ## Check if mouse is over an endpoint handle (source or target) on any selected connector
 func _get_endpoint_at_position() -> Dictionary:
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 	var endpoint_hit_radius = 15.0  # Larger hit area for endpoints
 
 	for child in editor.layers_container.get_children():
@@ -417,7 +417,7 @@ func _start_endpoint_drag(connector: LayerV2, is_source: bool) -> void:
 		else:
 			fixed_pos = path[0]  # Source is fixed
 
-		var cursor_pos = editor.layers_container.get_local_mouse_position()
+		var cursor_pos = editor.last_pointer_pos
 		_endpoint_preview_line.add_point(fixed_pos)
 		_endpoint_preview_line.add_point(cursor_pos)
 		editor.layers_container.add_child(_endpoint_preview_line)
@@ -434,7 +434,7 @@ func _finish_endpoint_drag() -> void:
 		_dragging_endpoint = false
 		return
 
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 
 	# Check if over an anchor point
 	var hit = _get_anchor_at_position(container_mouse)
@@ -518,7 +518,7 @@ func _reconnect_target(new_layer: LayerV2, new_anchor: LayerV2.AnchorPoint) -> v
 
 ## Check if mouse is over a segment midpoint handle on any selected connector
 func _get_segment_at_position() -> Dictionary:
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 
 	# Check connectors that have transform_rect_visible set (selected)
 	for child in editor.layers_container.get_children():

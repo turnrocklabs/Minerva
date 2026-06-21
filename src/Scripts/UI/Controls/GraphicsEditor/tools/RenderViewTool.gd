@@ -25,7 +25,7 @@ func _reset_state() -> void:
 
 
 func handle_input_event(event: InputEvent) -> bool:
-	var canvas_local_mouse_pos = editor.layers_container.get_local_mouse_position()
+	var canvas_local_mouse_pos = editor.last_pointer_pos
 
 	# Handle Escape key to cancel
 	if event is InputEventKey and event.keycode == KEY_ESCAPE and event.is_pressed():

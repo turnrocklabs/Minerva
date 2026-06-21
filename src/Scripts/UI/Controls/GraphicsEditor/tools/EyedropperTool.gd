@@ -16,9 +16,11 @@ func _on_tool_changed(tool_: BaseTool) -> void:
 func handle_input_event(event: InputEvent) -> bool:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.is_pressed():
-			# Transform position from editor space to viewport container space
-			var viewport_container = editor.input_area_camera.get_viewport().get_parent()
-			var local_pos = viewport_container.get_local_mouse_position()
+			# Sample under the EVENT pointer (pen-correct), not the OS cursor. The
+			# eyedropper reads the SubViewport texture (screen-pixel space), so map the
+			# pointer's world position (last_pointer_pos) through the camera's canvas
+			# transform to get the texture pixel.
+			var local_pos = editor.input_area_camera.get_canvas_transform() * editor.last_pointer_pos
 			_sample_composited_color(local_pos)
 			return true
 	return false

@@ -29,7 +29,7 @@ func _tool_selected() -> void:
 
 
 func handle_input_event(event: InputEvent) -> bool:
-	var canvas_local_mouse_pos = editor.layers_container.get_local_mouse_position()
+	var canvas_local_mouse_pos = editor.last_pointer_pos
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.is_pressed():

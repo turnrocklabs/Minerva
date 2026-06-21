@@ -85,7 +85,7 @@ func _connect_toolbar_signals() -> void:
 
 
 func handle_input_event(event: InputEvent) -> bool:
-	var canvas_local_mouse_pos = editor.layers_container.get_local_mouse_position()
+	var canvas_local_mouse_pos = editor.last_pointer_pos
 
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.is_pressed():
@@ -259,7 +259,7 @@ func _calculate_rect(start: Vector2, end: Vector2) -> Rect2:
 func _get_diagram_shape_at_position() -> LayerV2:
 	# Check layers in reverse order (top layer first) - DIAGRAM_SHAPE layers only
 	var layers = editor.layers_container.get_children()
-	var container_mouse = editor.layers_container.get_local_mouse_position()
+	var container_mouse = editor.last_pointer_pos
 	for i in range(layers.size() - 1, -1, -1):
 		var layer = layers[i]
 		if layer is LayerV2 and layer.type == LayerV2.Type.DIAGRAM_SHAPE and layer.visible:

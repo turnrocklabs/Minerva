@@ -49,7 +49,7 @@ func _tool_selected() -> void:
 
 func handle_input_event(event: InputEvent) -> bool:
 	# Use layers_container local coordinates - this already accounts for camera transform
-	var canvas_local_mouse_pos = editor.layers_container.get_local_mouse_position()
+	var canvas_local_mouse_pos = editor.last_pointer_pos
 
 	# Handle Escape to cancel editing
 	if event is InputEventKey and event.keycode == KEY_ESCAPE and event.is_pressed():

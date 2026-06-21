@@ -39,6 +39,11 @@ signal selection_changed()
 @onready var progress_window_label: Label = %ProgressLabel
 @onready var input_area_camera: Camera2D = %InputAreaCamera
 
+## Latest pointer position in LayersContainer-local space, captured from the input
+## EVENT (pen-correct) rather than get_local_mouse_position() (which returns the OS
+## cursor — a pen never moves it). Tools should read this instead of polling the mouse.
+var last_pointer_pos: Vector2 = Vector2.ZERO
+
 @onready var _tools_option_button: OptionButton = %ToolsOptionButton
 @onready var ai_action_label: Label = %AIActionLabel
 #region tool options containers
@@ -1151,6 +1156,10 @@ var dragging: = false
 var last_mouse_position: Vector2 = Vector2.ZERO
 
 func _on_layers_container_gui_input(event: InputEvent) -> void:
+	# Capture the pointer from the EVENT (works for a pen, which never moves the OS
+	# cursor) so tools can read editor.last_pointer_pos instead of polling the mouse.
+	if event is InputEventMouse or event is InputEventScreenTouch or event is InputEventScreenDrag:
+		last_pointer_pos = event.position
 	_gui_input(event)
 
 func _gui_input(event: InputEvent) -> void:

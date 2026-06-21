@@ -87,3 +87,4 @@ src/sidecars/host_pdf/testdata/nametag_gate/*.png
 # Spurious Godot editor .import sidecars for the Go host.pdf sidecar assets
 # (the sidecar dir is NOT a Godot resource location — the editor just indexed it)
 src/sidecars/**/*.import
+.zig-global-cache/
