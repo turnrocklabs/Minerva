@@ -26,8 +26,9 @@ concurrency:
 env:
   # Cache key only — the binary version actually downloaded is the one
   # pinned inside scripts/build-godot-cef.sh (must match cef-dll-sys in
-  # vendor/godot_cef/Cargo.lock). Keep these in sync so caches hit.
-  CEF_VERSION: "146.0.12"
+  # vendor/godot_cef/Cargo.lock, currently 146.5.0+146.0.10). Keep these in
+  # sync so caches hit and the crate doesn't reject + re-download the archive.
+  CEF_VERSION: "146.0.10"
 
 jobs:
   build:
@@ -85,6 +86,19 @@ jobs:
           if ! command -v export-cef-dir >/dev/null 2>&1; then
             cargo +nightly install export-cef-dir
           fi
+
+      # cef-dll-sys builds CEF's C wrapper via CMake. Without an active MSVC
+      # environment, the cmake/cc crates auto-detect the compiler from the new
+      # VS18 preview (cl 14.51) while CMake's vs_link_exe resolves the linker
+      # from VS2022 (link 14.44) — a mixed toolchain that fails the compiler
+      # test ("not able to compile a simple test program"). Activate a single
+      # consistent VS2022 toolchain so cl and link come from the same toolset.
+      - name: Set up MSVC toolchain (Windows)
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+          vsversion: "2022"
 
       - name: Run build script
         shell: bash

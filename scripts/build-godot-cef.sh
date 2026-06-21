@@ -34,7 +34,7 @@ PLATFORM="${1:-}"
 # submodule, check `grep 'cef-dll-sys' vendor/godot_cef/Cargo.lock` and update
 # here to the matching 146.0.x / 147.0.x / etc. Upstream README's example
 # version string is NOT authoritative.
-CEF_VERSION="146.0.12"
+CEF_VERSION="146.0.10"
 
 # ── Detect platform ───────────────────────────────────────────────────
 
