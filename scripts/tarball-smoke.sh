@@ -307,11 +307,14 @@ echo "::group::Step 7: mcad_validate (DCR 019e6a4bcb0c acceptance)"
 # Invoke the plugin's mcad_validate tool via the Minerva MCP proxy. The
 # expected success envelope is {ok: true, result: {ok: true, errors: []}}.
 # Cold-start budget includes bundle extract + OCCT init.
+# NOTE: Minerva namespaces every plugin tool to "minerva_<plugin_id>_<name>"
+# (PluginToolRegistry), so the cad plugin's "mcad_validate" is exposed on the
+# MCP surface as "minerva_cad_mcad_validate" — the bare name is "Unknown tool".
 raw=$(curl -sS --max-time "$CAD_EVALUATE_TIMEOUT_S" -X POST "${MCP_URL}" \
     -H "Content-Type: application/json" \
     -H "Accept: application/json, text/event-stream" \
     -H "MCP-Protocol-Version: 2025-06-18" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":\"cad-eval\",\"method\":\"tools/call\",\"params\":{\"name\":\"mcad_validate\",\"arguments\":{\"source\":\"result = sphere(5)\"}}}")
+    -d "{\"jsonrpc\":\"2.0\",\"id\":\"cad-eval\",\"method\":\"tools/call\",\"params\":{\"name\":\"minerva_cad_mcad_validate\",\"arguments\":{\"source\":\"result = sphere(5)\"}}}")
 echo "raw: $raw"
 # The cad plugin's main.go wraps its tool result in {ok, result|error}; the
 # MCP envelope wraps that further. Drill through both.
