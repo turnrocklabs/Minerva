@@ -7,7 +7,7 @@
 #   2. Applies every patches/godot_cef/*.patch to the submodule (idempotent:
 #      resets submodule to clean state first).
 #   3. Installs prerequisites if missing: rust nightly, export-cef-dir,
-#      CEF binary bundle (145.0.26).
+#      CMake + Ninja (via pip), CEF binary bundle.
 #   4. Builds with `cargo +nightly xtask bundle --release` inside the submodule.
 #   5. Deploys built artifacts into src/addons/godot_cef/bin/<platform>/.
 #
@@ -123,6 +123,33 @@ else
     export-cef-dir --version "$CEF_VERSION" --force "$CEF_DIR"
     export CEF_PATH="$CEF_DIR"
 fi
+
+# ── Install CMake + Ninja if missing ──────────────────────────────────
+# cef-dll-sys compiles CEF's C wrapper via CMake (Ninja generator). Linux/macOS
+# usually have these from apt/brew; a fresh Windows / Git Bash box does not, and
+# cargo then panics with "is `cmake` not installed?". Install portable wheels via
+# pip when either is absent, and make sure their dir is on PATH for the build.
+if ! command -v cmake &>/dev/null || ! command -v ninja &>/dev/null; then
+    echo "CMake/Ninja not both present — installing via pip..."
+    PIP=""
+    for c in pip pip3 "python -m pip" "python3 -m pip"; do
+        if $c --version &>/dev/null; then PIP="$c"; break; fi
+    done
+    if [ -z "$PIP" ]; then
+        echo "ERROR: cmake + ninja are required but no pip was found. Install them:"
+        echo "  Linux:   sudo apt-get install -y cmake ninja-build"
+        echo "  macOS:   brew install cmake ninja"
+        echo "  Windows: pip install cmake ninja"
+        exit 1
+    fi
+    $PIP install cmake ninja
+    # pip drops the executables in Python's scripts dir, which may not be on PATH.
+    PYBIN="$(python -c 'import sysconfig; print(sysconfig.get_path("scripts"))' 2>/dev/null || true)"
+    [ -n "$PYBIN" ] && [ -d "$PYBIN" ] && export PATH="$PYBIN:$PATH"
+fi
+command -v cmake &>/dev/null || { echo "ERROR: cmake still not found after install"; exit 1; }
+command -v ninja &>/dev/null || { echo "ERROR: ninja still not found after install"; exit 1; }
+echo "Build tools: cmake=$(command -v cmake), ninja=$(command -v ninja)"
 
 # ── Build ─────────────────────────────────────────────────────────────
 
