@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <errno.h>
@@ -821,9 +822,38 @@ bool Terminal::write_input(const String &input)
         return false;
 
     CharString data = input.utf8();
-    ssize_t written = write(_master_fd, data.ptr(), data.length());
+    const char *ptr = data.ptr();
+    // utf8().length() excludes the trailing NUL; that's the byte count we want.
+    size_t total = static_cast<size_t>(data.length());
+    size_t sent = 0;
 
-    return written == data.length();
+    // The master fd is non-blocking (O_NONBLOCK, see start()). A single write()
+    // only accepts what fits in the kernel PTY buffer (~4 KB) and returns early,
+    // so long inputs (pasted paragraphs, relayed agent turns) would be silently
+    // truncated. Loop until the whole buffer is drained, waiting via poll() when
+    // the buffer is full.
+    while (sent < total) {
+        ssize_t written = write(_master_fd, ptr + sent, total - sent);
+        if (written > 0) {
+            sent += static_cast<size_t>(written);
+            continue;
+        }
+        if (written < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                struct pollfd pfd { _master_fd, POLLOUT, 0 };
+                poll(&pfd, 1, 1000); // wait up to 1s for the reader to drain
+                continue;
+            }
+            return false; // real error (EIO, etc.)
+        }
+        // written == 0: nothing accepted, avoid a busy spin
+        struct pollfd pfd { _master_fd, POLLOUT, 0 };
+        poll(&pfd, 1, 1000);
+    }
+
+    return true;
 }
 
 void Terminal::write_to_screen(const String &data)

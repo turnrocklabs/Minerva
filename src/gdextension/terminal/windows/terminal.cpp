@@ -797,9 +797,23 @@ bool Terminal::write_input(const String &input)
         return false;
 
     CharString data = input.utf8();
-    DWORD written;
+    const char *ptr = data.ptr();
+    DWORD total = static_cast<DWORD>(data.length());
+    DWORD sent = 0;
 
-    return WriteFile(_input_write, data.ptr(), data.length(), &written, NULL);
+    // WriteFile to the pipe can accept fewer bytes than requested for large
+    // payloads; loop until the whole buffer is written so long inputs (pasted
+    // paragraphs, relayed agent turns) aren't silently truncated.
+    while (sent < total) {
+        DWORD written = 0;
+        if (!WriteFile(_input_write, ptr + sent, total - sent, &written, NULL))
+            return false;
+        if (written == 0)
+            break; // pipe closed / no progress
+        sent += written;
+    }
+
+    return sent == total;
 }
 
 void Terminal::write_to_screen(const String &data)

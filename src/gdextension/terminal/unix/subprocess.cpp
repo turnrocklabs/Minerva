@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
+#include <poll.h>
 #include <sys/wait.h>
 #include <cstring>
 
@@ -250,9 +251,33 @@ bool SubProcess::write_data(const String &data)
         return false;
 
     CharString utf8 = data.utf8();
-    ssize_t written = write(_stdin_fd, utf8.ptr(), utf8.length());
+    const char *ptr = utf8.ptr();
+    size_t total = static_cast<size_t>(utf8.length());
+    size_t sent = 0;
 
-    return written == utf8.length();
+    // _stdin_fd is a blocking pipe, but write() can still return a partial count
+    // (large payload vs. pipe buffer) or be interrupted (EINTR). Loop until the
+    // whole buffer is written so long inputs aren't silently truncated.
+    while (sent < total) {
+        ssize_t written = write(_stdin_fd, ptr + sent, total - sent);
+        if (written > 0) {
+            sent += static_cast<size_t>(written);
+            continue;
+        }
+        if (written < 0) {
+            if (errno == EINTR)
+                continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                struct pollfd pfd { _stdin_fd, POLLOUT, 0 };
+                poll(&pfd, 1, 1000);
+                continue;
+            }
+            return false; // real error (EPIPE, etc.)
+        }
+        break; // written == 0: shouldn't happen on a pipe, bail out
+    }
+
+    return sent == total;
 }
 
 bool SubProcess::has_output()
