@@ -102,6 +102,16 @@ jobs:
         with:
           arch: x64
 
+      # Git Bash ships /usr/bin/link.exe (GNU coreutils 'link'). Once the MSVC
+      # dev environment is active, the cc/rustc linker invocation uses a bare
+      # `link.exe`, and in the bash shell Git's copy shadows MSVC's on PATH — so
+      # every crate's build-script link fails ("linking with link.exe failed").
+      # Drop it so bare `link.exe` resolves to MSVC's linker.
+      - name: Remove Git's link.exe shim (Windows)
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: rm -f /usr/bin/link.exe
+
       - name: Run build script
         shell: bash
         run: |
