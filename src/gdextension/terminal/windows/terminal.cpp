@@ -1,5 +1,6 @@
 #include "terminal.h"
 #include <regex>
+#include <cstring>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -15,6 +16,7 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("resize", "width", "height"), &Terminal::resize);
     ClassDB::bind_method(D_METHOD("stop"), &Terminal::stop);
     ClassDB::bind_method(D_METHOD("write_input", "input"), &Terminal::write_input);
+    ClassDB::bind_method(D_METHOD("write_to_screen", "data"), &Terminal::write_to_screen);
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
@@ -70,6 +72,26 @@ void Terminal::_bind_methods()
 
     // OSC sequences
     ADD_SIGNAL(MethodInfo("title_changed", PropertyInfo(Variant::STRING, "title")));
+
+    // Signal emitted when libghostty-vt terminal state changes (for cell-grid rendering)
+    ADD_SIGNAL(MethodInfo("vt_state_changed"));
+
+    // Standalone BEL actions (OSC-terminating BELs excluded by the shim parser)
+    ADD_SIGNAL(MethodInfo("bell", PropertyInfo(Variant::INT, "count")));
+
+    // The PTY child (shell) exited on its own — distinct from stop()
+    ADD_SIGNAL(MethodInfo("process_exited", PropertyInfo(Variant::INT, "exit_code")));
+
+    // Cell-grid access methods (powered by libghostty-vt)
+    ClassDB::bind_method(D_METHOD("get_cell", "col", "row"), &Terminal::get_cell);
+    ClassDB::bind_method(D_METHOD("get_cell_screen", "col", "row"), &Terminal::get_cell_screen);
+    ClassDB::bind_method(D_METHOD("get_cursor"), &Terminal::get_cursor);
+    ClassDB::bind_method(D_METHOD("get_plain_text"), &Terminal::get_plain_text);
+    ClassDB::bind_method(D_METHOD("scroll_viewport", "lines"), &Terminal::scroll_viewport);
+    ClassDB::bind_method(D_METHOD("get_scroll_info"), &Terminal::get_scroll_info);
+
+    // Key encoding (powered by ghostty key encoder)
+    ClassDB::bind_method(D_METHOD("encode_key", "ghostty_key", "action", "mods", "utf8_text"), &Terminal::encode_key);
 }
 
 bool Terminal::_process_sequence(const String &seq)
@@ -650,6 +672,14 @@ bool Terminal::start(int width, int height)
         CloseHandle(hProcess);
     }
 
+    // Create libghostty-vt terminal state machine (cell grid / cursor / key
+    // encoding). ConPTY above supplies the PTY; this supplies everything the
+    // renderer reads. Mirrors the unix backend.
+    _vt_terminal = minerva_vt_new((uint16_t)_width, (uint16_t)_height);
+    if (!_vt_terminal) {
+        UtilityFunctions::push_error("[Terminal C++] Failed to create minerva-vt terminal");
+    }
+
     // Start output thread
     _running = true;
     _output_thread = std::thread([this]()
@@ -662,8 +692,31 @@ bool Terminal::start(int width, int height)
                continue;
            }
            if (bytes_read > 0) {
+               // Feed raw bytes to libghostty-vt for the cell-grid renderer.
+               if (_vt_terminal) {
+                   minerva_vt_write(_vt_terminal, (const uint8_t*)buffer, (size_t)bytes_read);
+                   call_deferred("emit_signal", "vt_state_changed");
+                   uint32_t bells = minerva_vt_take_bell(_vt_terminal);
+                   if (bells > 0) {
+                       call_deferred("emit_signal", "bell", (int)bells);
+                   }
+               }
+               // Also run the legacy signal-based parser (kept for back-compat).
                _process_input(String::utf8((const char*)buffer, bytes_read));
            }
+       }
+
+       // Reaching here while still _running means the read loop broke on a
+       // broken pipe — the shell exited on its own (stop() clears _running
+       // first, so manual shutdown does not emit). Report the exit code,
+       // mirroring the unix backend / Subprocess::process_exited.
+       if (_running && _process_info.hProcess) {
+           DWORD code = 0;
+           int exit_code = -1;
+           if (GetExitCodeProcess(_process_info.hProcess, &code)) {
+               exit_code = (code == STILL_ACTIVE) ? -1 : (int)code;
+           }
+           call_deferred("emit_signal", "process_exited", exit_code);
        } });
 
     return true;
@@ -706,6 +759,14 @@ void Terminal::stop()
         CloseHandle(_output_read);
         _output_read = nullptr;
     }
+
+    // Free libghostty-vt terminal state. Safe here: the output thread has
+    // already joined above, so the worker is no longer writing to it.
+    if (_vt_terminal)
+    {
+        minerva_vt_free(_vt_terminal);
+        _vt_terminal = nullptr;
+    }
 }
 
 bool Terminal::resize(int width, int height)
@@ -719,9 +780,14 @@ bool Terminal::resize(int width, int height)
     if (SUCCEEDED(hr)) {
         _width = width;
         _height = height;
+
+        // Keep libghostty-vt's grid in sync with the ConPTY size.
+        if (_vt_terminal) {
+            minerva_vt_resize(_vt_terminal, (uint16_t)width, (uint16_t)height);
+        }
         return true;
     }
-    
+
     return false;
 }
 
@@ -732,6 +798,158 @@ bool Terminal::write_input(const String &input)
 
     CharString data = input.utf8();
     DWORD written;
-    
+
     return WriteFile(_input_write, data.ptr(), data.length(), &written, NULL);
+}
+
+void Terminal::write_to_screen(const String &data)
+{
+    if (!_vt_terminal || data.is_empty())
+        return;
+
+    CharString utf8 = data.utf8();
+    minerva_vt_write(_vt_terminal, (const uint8_t*)utf8.ptr(), utf8.length());
+    emit_signal("vt_state_changed");
+}
+
+// -- Cell-grid access (powered by libghostty-vt) --------------------------
+// These are platform-agnostic and intentionally mirror unix/terminal.cpp.
+// (A future DRY pass could host them on a shared base; kept duplicated here
+//  to avoid refactoring the working unix path.)
+
+Dictionary Terminal::get_cell(int col, int row) const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+
+    MinervaCellInfo info;
+    if (!minerva_vt_get_cell(_vt_terminal, (uint16_t)col, (uint16_t)row, &info)) {
+        return result;
+    }
+
+    result["codepoint"] = (int)info.codepoint;
+    result["wide"] = (int)info.wide;
+    result["has_style"] = info.has_style;
+    result["bold"] = info.bold;
+    result["italic"] = info.italic;
+    result["faint"] = info.faint;
+    result["strikethrough"] = info.strikethrough;
+    result["inverse"] = info.inverse;
+    result["blink"] = info.blink;
+    result["overline"] = info.overline;
+    result["invisible"] = info.invisible;
+    result["underline"] = (int)info.underline;
+
+    if (info.fg.type == MINERVA_COLOR_RGB) {
+        result["fg"] = Color(info.fg.r / 255.0f, info.fg.g / 255.0f, info.fg.b / 255.0f);
+    } else if (info.fg.type == MINERVA_COLOR_PALETTE) {
+        result["fg_palette"] = (int)info.fg.palette_index;
+    }
+
+    if (info.bg.type == MINERVA_COLOR_RGB) {
+        result["bg"] = Color(info.bg.r / 255.0f, info.bg.g / 255.0f, info.bg.b / 255.0f);
+    } else if (info.bg.type == MINERVA_COLOR_PALETTE) {
+        result["bg_palette"] = (int)info.bg.palette_index;
+    }
+
+    return result;
+}
+
+Dictionary Terminal::get_cell_screen(int col, int row) const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+
+    MinervaCellInfo info;
+    if (!minerva_vt_get_cell_screen(_vt_terminal, (uint16_t)col, (uint32_t)row, &info)) {
+        return result;
+    }
+
+    result["codepoint"] = (int)info.codepoint;
+    result["wide"] = (int)info.wide;
+    result["has_style"] = info.has_style;
+    result["bold"] = info.bold;
+    result["italic"] = info.italic;
+
+    if (info.fg.type == MINERVA_COLOR_RGB) {
+        result["fg"] = Color(info.fg.r / 255.0f, info.fg.g / 255.0f, info.fg.b / 255.0f);
+    } else if (info.fg.type == MINERVA_COLOR_PALETTE) {
+        result["fg_palette"] = (int)info.fg.palette_index;
+    }
+    if (info.bg.type == MINERVA_COLOR_RGB) {
+        result["bg"] = Color(info.bg.r / 255.0f, info.bg.g / 255.0f, info.bg.b / 255.0f);
+    } else if (info.bg.type == MINERVA_COLOR_PALETTE) {
+        result["bg_palette"] = (int)info.bg.palette_index;
+    }
+
+    return result;
+}
+
+Dictionary Terminal::get_cursor() const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+
+    MinervaCursorInfo info;
+    minerva_vt_get_cursor(_vt_terminal, &info);
+
+    result["x"] = (int)info.x;
+    result["y"] = (int)info.y;
+    result["visible"] = info.visible;
+    result["style"] = (int)info.style;
+
+    return result;
+}
+
+String Terminal::get_plain_text() const {
+    if (!_vt_terminal) return String();
+
+    char* str = minerva_vt_plain_string(_vt_terminal);
+    if (!str) return String();
+
+    String result = String::utf8(str);
+    minerva_vt_free_string(str);
+    return result;
+}
+
+void Terminal::scroll_viewport(int lines) {
+    if (!_vt_terminal) return;
+    minerva_vt_scroll_viewport(_vt_terminal, (int32_t)lines);
+}
+
+Dictionary Terminal::get_scroll_info() const {
+    Dictionary result;
+    if (!_vt_terminal) return result;
+    uint32_t total = 0, viewport = 0;
+    bool at_bottom = true;
+    minerva_vt_get_scroll_info(_vt_terminal, &total, &viewport, &at_bottom);
+    result["total_rows"] = (int)total;
+    result["viewport_rows"] = (int)viewport;
+    result["is_at_bottom"] = at_bottom;
+    return result;
+}
+
+PackedByteArray Terminal::encode_key(int ghostty_key, int action, int mods, const String &utf8_text) const {
+    PackedByteArray result;
+    if (!_vt_terminal) return result;
+
+    CharString utf8 = utf8_text.utf8();
+    const uint8_t *utf8_ptr = utf8_text.is_empty() ? nullptr : (const uint8_t *)utf8.ptr();
+    size_t utf8_len = utf8_text.is_empty() ? 0 : (size_t)utf8.length();
+
+    uint8_t buf[128];
+    size_t written = minerva_vt_encode_key(
+        _vt_terminal,
+        ghostty_key,
+        action,
+        (uint16_t)mods,
+        utf8_ptr,
+        utf8_len,
+        buf,
+        sizeof(buf)
+    );
+
+    if (written > 0) {
+        result.resize((int)written);
+        memcpy(result.ptrw(), buf, written);
+    }
+
+    return result;
 }
