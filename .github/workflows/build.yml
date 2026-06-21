@@ -144,7 +144,14 @@ jobs:
       shell: pwsh
       working-directory: src/gdextension/terminal/ghostty-shim
       run: |
-        zig build -Doptimize=ReleaseFast
+        # Zig 0.15.2's std.Build.Step.Run.convertPathArg panics (assert
+        # !isAbsolute) when the build straddles two drives: the workspace +
+        # local .zig-cache live on D:\a\..., but the GLOBAL cache defaults to
+        # C:\Users\...\AppData\Local\zig. Cross-drive paths can't be made
+        # relative on Windows, so the host unicode-table Run steps
+        # (props-unigen/symbols-unigen) blow up. Pin the global cache onto the
+        # same drive as the workspace (D:) so every path stays single-drive.
+        zig build -Doptimize=ReleaseFast --global-cache-dir "$env:GITHUB_WORKSPACE\.zig-global-cache"
         Write-Host "--- zig-out tree ---"
         Get-ChildItem -Recurse zig-out | Select-Object FullName
 
