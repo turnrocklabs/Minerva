@@ -1065,10 +1065,18 @@ func localize_input(event: InputEvent):
 
 	match type:
 		Type.IMAGE, Type.DRAWING, Type.MASK, Type.CONTROL, Type.TEXT, Type.DIAGRAM_SHAPE, Type.DIAGRAM_CONNECTOR:
-			# Transform global mouse position to layer's local coordinate space
-			# Using affine_inverse() properly handles rotation, scale, and translation
-			# This ensures hit detection works correctly even when layer is rotated
-			local_event.position = get_global_transform().affine_inverse() * get_global_mouse_position()
+			# Map the pointer into this layer's local space from the EVENT, not from
+			# get_global_mouse_position() (the OS cursor, which a pen never moves — that
+			# was why pens drew nowhere while mouse/touch worked).
+			#
+			# gui_input fires on LayersContainer and this layer is a direct child, so
+			# event.position is already in LayersContainer-local space (Godot's GUI
+			# routing has resolved the SubViewport + InputAreaCamera transform for us).
+			# The layer's own parent-relative transform is therefore the only step left.
+			# Do NOT re-apply the camera's canvas_transform here: that double-counts the
+			# camera and offsets the stroke. Confirmed empirically in DrawingApp4, which
+			# reproduces this exact SubViewport/camera/gui_input paradigm.
+			local_event.position = get_transform().affine_inverse() * event.position
 		Type.SPEECH_BUBBLE:
 			pass
 
