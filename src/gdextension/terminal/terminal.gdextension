@@ -33,3 +33,12 @@ linux.x86_64 = {
 macos = {
     "../../bin/libminerva-vt.dylib": ""
 }
+
+; Windows: Zig emits the shim DLL without a `lib` prefix (minerva-vt.dll).
+; This bundles it next to Minerva.exe at export time. De-risk pass: the
+; Windows terminal.cpp does not yet link/call the shim (that lands with the
+; ghostty-vt rewrite) — wiring the dependency now lets CI prove the shim
+; cross-compiles and packages correctly before the rewrite.
+windows.x86_64 = {
+    "../../bin/minerva-vt.dll": ""
+}

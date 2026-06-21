@@ -113,17 +113,65 @@ jobs:
         python-version: '3.x'
     - run: pip install scons
 
+    # ── ghostty-vt shim (Windows) — DE-RISK STEP ──────────────────────────
+    # The Windows terminal historically shipped without ghostty-vt entirely
+    # (no Zig build here, no shim DLL), while the live renderer drives the
+    # terminal through the ghostty-vt cell-grid API. This step proves the
+    # shim cross-compiles to minerva-vt.dll on windows-latest before we
+    # rewrite windows/terminal.cpp to use it. SConstruct does NOT yet link
+    # the shim on Windows, so this DLL is currently a packaged-but-unused
+    # sidecar — that's intentional for this pass.
+    - name: Setup Zig
+      shell: pwsh
+      run: |
+        $ZigVersion = "0.15.2"
+        $url = "https://ziglang.org/download/$ZigVersion/zig-x86_64-windows-$ZigVersion.zip"
+        Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\zig.zip"
+        Expand-Archive -Path "$env:RUNNER_TEMP\zig.zip" -DestinationPath "$env:RUNNER_TEMP\zig" -Force
+        $zigExe = Get-ChildItem -Recurse -Path "$env:RUNNER_TEMP\zig" -Filter zig.exe | Select-Object -First 1
+        if (-not $zigExe) { Write-Error "zig.exe not found after extraction"; exit 1 }
+        Add-Content -Path $env:GITHUB_PATH -Value $zigExe.Directory.FullName
+        & $zigExe.FullName version
+
+    - name: Cache Zig build
+      uses: actions/cache@v4
+      with:
+        path: src/gdextension/terminal/ghostty-shim/.zig-cache
+        key: zig-windows-x86_64-${{ hashFiles('src/gdextension/terminal/ghostty-shim/build.zig', 'src/gdextension/terminal/ghostty-shim/src/**') }}
+        restore-keys: zig-windows-x86_64-
+
+    - name: Build ghostty-vt shim (Windows)
+      shell: pwsh
+      working-directory: src/gdextension/terminal/ghostty-shim
+      run: |
+        zig build -Doptimize=ReleaseFast
+        Write-Host "--- zig-out tree ---"
+        Get-ChildItem -Recurse zig-out | Select-Object FullName
+
+    - name: Copy shim library to bin
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path src/bin | Out-Null
+        # Zig may place the DLL under zig-out/bin or zig-out/lib depending on
+        # target/ABI — find it wherever it landed.
+        $dll = Get-ChildItem -Recurse -Path src/gdextension/terminal/ghostty-shim/zig-out -Filter minerva-vt.dll | Select-Object -First 1
+        if (-not $dll) { Write-Error "minerva-vt.dll not produced by zig build"; exit 1 }
+        Copy-Item $dll.FullName src/bin/
+        Get-ChildItem src/bin
+
     - name: Build Extension
       run: |
         cd src
         scons platform=windows target=template_release
         scons platform=windows target=template_debug
-        
+
     - name: Upload Extension
       uses: actions/upload-artifact@v4
       with:
         name: terminal-windows
-        path: src/bin/libterminal*
+        path: |
+          src/bin/libterminal*
+          src/bin/minerva-vt.dll
 
     - name: Upload godot_wry binary
       uses: actions/upload-artifact@v4
@@ -1223,6 +1271,36 @@ jobs:
             exit 1
           fi
           echo "Smoke launch: no extension load errors"
+
+      # ── Post-export verification (Windows) ─────────────────────────────
+      # De-risk backstop: confirm Godot's exporter bundled the ghostty-vt
+      # shim DLL next to Minerva.exe via the [dependencies] windows.x86_64
+      # entry. If this fails, the [dependencies] manifest shape is wrong for
+      # Windows and the shim won't ship — caught here, before the rewrite
+      # that will actually depend on it at load time.
+      - name: Verify Windows build assets
+        if: |
+          github.event_name == 'push' ||
+          github.event.inputs.platform == 'windows' ||
+          github.event.inputs.platform == 'all'
+        working-directory: src/build/windows
+        run: |
+          required_files=(
+            Minerva.exe
+            libterminal.windows.template_release.x86_64.dll
+            minerva-vt.dll
+          )
+          fail=0
+          for f in "${required_files[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required file: src/build/windows/$f"
+              fail=1
+            fi
+          done
+          echo "--- src/build/windows contents ---"
+          ls -la
+          [ "$fail" -eq 0 ] || exit 1
+          echo "All required Windows runtime assets present"
 
       - name: Upload Windows Build
         if: |
