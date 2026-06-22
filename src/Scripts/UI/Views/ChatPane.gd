@@ -707,10 +707,15 @@ func _try_llm_summarize(conversation_parts: PackedStringArray, msg_count: int) -
 ## summarize-to-note flow (chat-passthrough W6) reuses the exact same engine
 ## with a different provider instead of duplicating a parallel path.
 ## Returns {ok: bool, text: String, error: String}.
-func _summarize_conversation_with_provider(provider: BaseProvider, conversation_parts: PackedStringArray, msg_count: int, cost_history_id: String = "") -> Dictionary:
-	var prompt_text := "Summarize this conversation segment of %d messages. Preserve: key decisions, facts learned, action items, important code snippets, and any unresolved questions. Be concise but complete.\n\n%s" % [
-		msg_count, "\n".join(conversation_parts)
-	]
+func _summarize_conversation_with_provider(provider: BaseProvider, conversation_parts: PackedStringArray, msg_count: int, cost_history_id: String = "", prompt_override: String = "") -> Dictionary:
+	var transcript := "\n".join(conversation_parts)
+	var prompt_text: String
+	if prompt_override.is_empty():
+		prompt_text = "Summarize this conversation segment of %d messages. Preserve: key decisions, facts learned, action items, important code snippets, and any unresolved questions. Be concise but complete.\n\n%s" % [msg_count, transcript]
+	else:
+		# User-editable prompt: append the transcript instead of %-formatting it,
+		# so a prompt without %d/%s placeholders can't break the call.
+		prompt_text = "%s\n\n%s" % [prompt_override, transcript]
 
 	# Build a minimal prompt for the provider
 	var prompt_item = ChatHistoryItem.new()
@@ -1239,9 +1244,10 @@ func _on_passthrough_chat_pressed() -> void:
 # chat (notes-as-context is the transfer mechanism into other chats). Nothing
 # below may run without that explicit gesture.
 
-## Fixed cheap distill model. NOT the chat's provider — passthrough providers
-## are terminal transports, not LLMs.
-const PASSTHROUGH_DISTILL_MODEL := "gpt-5.4-mini"
+## Built-in default distill model — the fallback when the "core" summarization
+## preference is unset. NOT the chat's provider; passthrough providers are
+## terminal transports, not LLMs.
+const PASSTHROUGH_DISTILL_MODEL := PluginSettingsStore.DEFAULT_SUMMARIZATION_MODEL
 
 ## Test seam / future per-user override: when set, summarize_passthrough_to_note
 ## uses this provider instead of constructing the fixed distill model.
@@ -1273,12 +1279,33 @@ func _build_passthrough_transcript(history) -> PackedStringArray:
 	return parts
 
 
+## Resolved summarization model: the "core" preference, else the built-in default.
+func _distill_model() -> String:
+	var store = SingletonObject.plugin_settings_store
+	if store != null:
+		var m = store.get_value("core", "model")
+		if m != null and str(m) != "":
+			return str(m)
+	return PASSTHROUGH_DISTILL_MODEL
+
+
+## Resolved summarization prompt: the "core" preference, else the built-in default.
+func _summarization_prompt() -> String:
+	var store = SingletonObject.plugin_settings_store
+	if store != null:
+		var p = store.get_value("core", "prompt")
+		if p != null and str(p) != "":
+			return str(p)
+	return PluginSettingsStore.DEFAULT_SUMMARIZATION_PROMPT
+
+
 ## Construct the fixed distill provider. Prefers an exact model_name match in
 ## the ChatGPT dynamic-model catalog (same resolution the capability broker
 ## uses), falling back to the ChatGPT factory with the bare model name.
 ## Credentials are NOT touched here — ChatGPTProvider.generate_content fails
 ## with a clear "not connected" error that we surface without crashing.
 func _create_passthrough_distill_provider() -> BaseProvider:
+	var model_name := _distill_model()
 	var dyn_map: Dictionary = SingletonObject.get("_dynamic_provider_map") if "_dynamic_provider_map" in SingletonObject else {}
 	for id_base in dyn_map:
 		var dyn_info: Dictionary = dyn_map[id_base] as Dictionary
@@ -1288,15 +1315,15 @@ func _create_passthrough_distill_provider() -> BaseProvider:
 		if manager == null:
 			continue
 		for config in manager.models:
-			if config is Dictionary and str(config.get("model_name", "")).to_lower() == PASSTHROUGH_DISTILL_MODEL:
+			if config is Dictionary and str(config.get("model_name", "")).to_lower() == model_name.to_lower():
 				var dyn_provider := SingletonObject.create_dynamic_provider(int(config.get("id", -1)))
 				if dyn_provider != null:
 					return dyn_provider
 	# Catalog miss (models not refreshed yet) — construct directly via the
 	# ChatGPT factory; auth is checked inside generate_content.
 	return ChatGPTProvider.create_from_config({
-		"model_name": PASSTHROUGH_DISTILL_MODEL,
-		"display_name": "ChatGPT mini (distill)",
+		"model_name": model_name,
+		"display_name": "%s (distill)" % model_name,
 		"short_name": "CG",
 	})
 
@@ -1337,15 +1364,16 @@ func summarize_passthrough_to_note(history, provider_override: BaseProvider = nu
 		provider = _create_passthrough_distill_provider()
 		owns_provider = true
 	if provider == null:
-		_surface_summarize_error("Could not construct the distill model (%s)." % PASSTHROUGH_DISTILL_MODEL)
+		_surface_summarize_error("Could not construct the distill model (%s)." % _distill_model())
 		return {"ok": false, "note_id": "", "error": "provider_unavailable", "message": ""}
 
 	_summarize_in_flight[history.HistoryId] = true
 	if owns_provider:
 		add_child(provider)  # providers need the tree for timers/auth
 
+	var prompt_used := _summarization_prompt()
 	var result: Dictionary = await _summarize_conversation_with_provider(
-		provider, transcript, transcript.size(), history.HistoryId)
+		provider, transcript, transcript.size(), history.HistoryId, prompt_used)
 
 	if owns_provider:
 		provider.queue_free()
@@ -1361,9 +1389,12 @@ func summarize_passthrough_to_note(history, provider_override: BaseProvider = nu
 	# bus into other chats; the agent-notes tab is per-chat hidden context, so
 	# _upsert_agent_note is the wrong home for this).
 	var distilled := str(result.get("text", ""))
+	# Stamp provenance so the note records which model and prompt produced it.
+	var prompt_label := "default" if prompt_used == PluginSettingsStore.DEFAULT_SUMMARIZATION_PROMPT else "custom"
+	var note_body := "%s\n\n---\n_Summary model: %s · prompt: %s_" % [distilled, _distill_model(), prompt_label]
 	var timestamp := Time.get_datetime_string_from_system(false, true)
 	var note_title := "Passthrough summary: %s — %s" % [history.PassthroughName, timestamp]
-	var note: Note = Note.create_text_note(note_title, distilled)
+	var note: Note = Note.create_text_note(note_title, note_body)
 	note.link_to_chat(history.HistoryId)
 	if SingletonObject.notes_container != null:
 		SingletonObject.notes_container.add_note(note)

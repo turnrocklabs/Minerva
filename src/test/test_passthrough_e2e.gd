@@ -415,8 +415,9 @@ func _summarize_leg(so, pane, history) -> void:
 	check("note registered + findable", note != null)
 	if note != null:
 		var controls = note.get_controls_container()
-		check("note content == stub distilled text",
-			controls != null and str(controls.content) == "E2E-DISTILLED-SUMMARY",
+		check("note content includes stub distilled text + provenance stamp",
+			controls != null and str(controls.content).begins_with("E2E-DISTILLED-SUMMARY")
+				and str(controls.content).find("Summary model:") != -1,
 			str(controls.content) if controls != null else "<no controls>")
 		check("note linked to the passthrough chat",
 			note.linked_chat_ids.has(history.HistoryId), str(note.linked_chat_ids))

@@ -178,8 +178,9 @@ func _test_summarize_flow(so) -> void:
 		check("title has the contract prefix",
 			str(note.title).begins_with("Passthrough summary: Claude CLI"), str(note.title))
 		var controls = note.get_controls_container()
-		check("note content == distilled text",
-			controls != null and str(controls.content) == "DISTILLED SUMMARY",
+		check("note content includes distilled text + provenance stamp",
+			controls != null and str(controls.content).begins_with("DISTILLED SUMMARY")
+				and str(controls.content).find("Summary model:") != -1,
 			str(controls.content) if controls != null else "<no controls>")
 		check("note linked to THIS chat (link_note_to_chat structure)",
 			note.linked_chat_ids.has("hist-w6-flow"), str(note.linked_chat_ids))
