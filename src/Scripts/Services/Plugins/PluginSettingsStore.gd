@@ -99,8 +99,11 @@ func scope_title(scope: String) -> String:
 		return str((CORE_SCHEMAS[scope] as Dictionary).get("title", scope))
 	if scope.begins_with("plugin:") and _plugin_db != null:
 		var def = _plugin_db.get_by_id(scope.substr(7))
-		if def != null and not str(def.name).is_empty():
-			return str(def.name)
+		if def != null:
+			if not str(def.settings_title).is_empty():
+				return str(def.settings_title)
+			if not str(def.name).is_empty():
+				return str(def.name)
 	return scope
 
 

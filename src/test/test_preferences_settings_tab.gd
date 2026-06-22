@@ -6,7 +6,7 @@ extends SceneTree
 ## The full PreferencesPopup scene cannot boot headless (its _ready loads
 ## encrypted prefs, wires Core signals, and touches the AudioServer), so this
 ## builds a detached PreferencesPopup node — _ready does not fire while it is
-## out of the tree — supplies just the TabContainer path that _create_settings_tab
+## out of the tree — supplies just the TabContainer path that _create_preference_tabs
 ## needs, swaps in a controlled store (in-memory persistence, one fake plugin),
 ## and drives the tab builder + field renderer directly. No real config is touched.
 
@@ -103,7 +103,7 @@ func _run() -> void:
 	var PopupScript := load("res://Scripts/UI/Views/PreferencesPopup.gd")
 	var popup = PopupScript.new()
 
-	# Reproduce just the node path _create_settings_tab walks.
+	# Reproduce just the node path _create_preference_tabs walks.
 	var margin := MarginContainer.new()
 	margin.name = "MarginContainer"
 	popup.add_child(margin)
@@ -114,20 +114,24 @@ func _run() -> void:
 	tab_container.name = "TabContainer"
 	vbox.add_child(tab_container)
 
-	popup._create_settings_tab()
+	popup._create_preference_tabs()
 
-	var settings_tab: Node = null
+	var summ_tab: Node = null
+	var plugin_tab: Node = null
+	var has_generic_settings := false
 	for child in tab_container.get_children():
-		if child.name == "Settings":
-			settings_tab = child
-			break
-	_check(settings_tab != null, "Settings tab node exists")
+		match child.name:
+			"Summarization": summ_tab = child
+			"Demo Plugin": plugin_tab = child
+			"Settings": has_generic_settings = true
+	_check(summ_tab != null, "core renders a 'Summarization' tab (its own name)")
+	_check(plugin_tab != null, "plugin renders its own named tab")
+	_check(not has_generic_settings, "no generic 'Settings' tab")
 
-	if settings_tab != null:
-		_check(_find_label(settings_tab, "Summarization"), "core scope renders Summarization section")
-		_check(_find_label(settings_tab, "Demo Plugin"), "plugin scope renders the store-provided title")
-		_check(_find_label(settings_tab, "Summarization model"), "core string field label present")
-		_check(_find_label(settings_tab, "Mode"), "plugin enum field label present")
+	if summ_tab != null:
+		_check(_find_label(summ_tab, "Summarization model"), "core string field label present in its tab")
+	if plugin_tab != null:
+		_check(_find_label(plugin_tab, "Mode"), "plugin enum field label present in its tab")
 
 	# Drive an actual widget signal and assert the edit routes through the store.
 	var probe := VBoxContainer.new()

@@ -81,6 +81,7 @@ func test_manifest_parse_roundtrip() -> void:
 	var manifest := {
 		"id": "demo", "name": "Demo", "version": "1.0.0",
 		"backend": {"entrypoint": "x"},
+		"settings_title": "Demo Prefs",
 		"settings": [
 			{"key": "flavor", "type": "enum", "label": "Flavor", "default": "a", "options": ["a", "b"]},
 		],
@@ -89,9 +90,11 @@ func test_manifest_parse_roundtrip() -> void:
 	_check(def != null, "from_dict succeeds")
 	_check(def.settings.size() == 1, "settings parsed (1 entry)")
 	_check(str(def.settings[0].get("key", "")) == "flavor", "setting key preserved")
+	_check(def.settings_title == "Demo Prefs", "settings_title parsed")
 	var rt := def.to_dict()
 	_check(rt.has("settings"), "to_dict emits settings")
 	_check(str((rt["settings"][0] as Dictionary).get("type", "")) == "enum", "to_dict preserves type")
+	_check(str(rt.get("settings_title", "")) == "Demo Prefs", "to_dict emits settings_title")
 
 	var no_settings := PluginDefinition.from_dict({"id": "x", "name": "X", "version": "1", "backend": {"entrypoint": "y"}})
 	_check(not no_settings.to_dict().has("settings"), "to_dict omits empty settings")
@@ -167,6 +170,8 @@ func test_store_plugin_scope() -> void:
 	_check(persist.mem.has("Plugin:demo"), "plugin persists under [Plugin:demo]")
 	_check((store.list_scopes() as Array).has("plugin:demo"), "list_scopes includes declaring plugin")
 	_check(store.list_settings("plugin:demo").get("title") == "Demo Plugin", "plugin scope title is the plugin display name")
+	pdef.settings_title = "Relay Settings"
+	_check(store.list_settings("plugin:demo").get("title") == "Relay Settings", "settings_title overrides the plugin name for the tab title")
 
 
 func test_colon_section_roundtrip() -> void:

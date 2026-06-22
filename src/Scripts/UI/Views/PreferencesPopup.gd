@@ -125,7 +125,7 @@ func _ready():
 	call_deferred("_create_agent_context_tab")
 	call_deferred("_create_terminal_tab")
 	call_deferred("_create_containers_tab")
-	call_deferred("_create_settings_tab")
+	call_deferred("_create_preference_tabs")
 
 	# Initialize ChatGPT auth status
 	call_deferred("_init_chatgpt_auth")
@@ -4786,15 +4786,14 @@ func is_agent_context_summary_configured() -> bool:
 #endregion Agent Context Tab
 
 
-#region Settings Tab
+#region Preference Tabs
 
-var _settings_tab: VBoxContainer
 var _settings_tab_loading: bool = false
 
-## Build the declarative Settings tab from the plugin settings store. Every core
-## group and every plugin that declares settings renders one section of labeled
-## rows; all reads and writes flow through the store.
-func _create_settings_tab() -> void:
+## Build one Preferences tab per settings provider (core groups + plugins that
+## declare settings), each named by the provider's own title. All reads and
+## writes flow through the settings store.
+func _create_preference_tabs() -> void:
 	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
 	if not tab_container:
 		return
@@ -4803,8 +4802,22 @@ func _create_settings_tab() -> void:
 	if store == null:
 		return
 
-	_settings_tab = VBoxContainer.new()
-	_settings_tab.name = "Settings"
+	_settings_tab_loading = true
+	for scope in store.list_scopes():
+		var listing: Dictionary = store.list_settings(scope)
+		if not listing.get("success", false):
+			continue
+		var fields: Array = listing.get("fields", [])
+		if fields.is_empty():
+			continue
+		_build_preference_tab(tab_container, scope, str(listing.get("title", scope)), fields)
+	_settings_tab_loading = false
+
+
+## Build a single named tab holding one labeled row per field.
+func _build_preference_tab(tab_container, scope: String, title: String, fields: Array) -> void:
+	var tab := VBoxContainer.new()
+	tab.name = title
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -4812,7 +4825,7 @@ func _create_settings_tab() -> void:
 	margin.add_theme_constant_override("margin_top", 8)
 	margin.add_theme_constant_override("margin_bottom", 8)
 	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_settings_tab.add_child(margin)
+	tab.add_child(margin)
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -4825,39 +4838,14 @@ func _create_settings_tab() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	scroll.add_child(vbox)
 
-	_settings_tab_loading = true
+	for field in fields:
+		if field is Dictionary:
+			_add_setting_field(vbox, scope, field, "_settings_tab_loading")
 
-	var first_section := true
-	for scope in store.list_scopes():
-		var listing: Dictionary = store.list_settings(scope)
-		if not listing.get("success", false):
-			continue
-		var fields: Array = listing.get("fields", [])
-		if fields.is_empty():
-			continue
-
-		if not first_section:
-			vbox.add_child(HSeparator.new())
-		first_section = false
-
-		var header := Label.new()
-		header.text = str(listing.get("title", scope))
-		header.add_theme_font_size_override("font_size", 16)
-		vbox.add_child(header)
-
-		for field in fields:
-			if field is Dictionary:
-				_add_setting_field(vbox, scope, field, "_settings_tab_loading")
-
-	if first_section:
-		var empty := Label.new()
-		empty.text = "No settings available."
-		empty.modulate.a = 0.5
-		vbox.add_child(empty)
-
-	tab_container.add_child(_settings_tab)
-
-	_settings_tab_loading = false
+	tab_container.add_child(tab)
+	# Set the displayed title explicitly so an arbitrary provider name survives
+	# any node-name sanitization.
+	tab_container.set_tab_title(tab_container.get_tab_idx_from_control(tab), title)
 
 
 ## Render one labeled settings row for a field and wire its change signal back
@@ -4963,4 +4951,4 @@ func _add_setting_field(vbox: VBoxContainer, scope: String, field: Dictionary, l
 		help_lbl.modulate.a = 0.6
 		vbox.add_child(help_lbl)
 
-#endregion Settings Tab
+#endregion Preference Tabs

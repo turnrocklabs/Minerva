@@ -88,6 +88,10 @@ var skills: Array[Dictionary] = []
 ## config_file.cfg under [Plugin:<id>]; structural validation is in validate().
 var settings: Array[Dictionary] = []
 
+## Optional title for this plugin's Preferences tab. Defaults to the plugin's
+## display name when empty.
+var settings_title: String = ""
+
 # ---------------------------------------------------------------------------
 # Permissions
 # ---------------------------------------------------------------------------
@@ -337,6 +341,8 @@ func to_dict() -> Dictionary:
 		result["events"] = events.duplicate(true)
 	if not settings.is_empty():
 		result["settings"] = settings.duplicate(true)
+	if not settings_title.is_empty():
+		result["settings_title"] = settings_title
 	if not state_schema.is_empty():
 		result["state"] = {"schema": state_schema}
 	if not class_names.is_empty():
@@ -593,6 +599,7 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	for setting_entry in data.get("settings", []):
 		if setting_entry is Dictionary:
 			def.settings.append(setting_entry.duplicate(true))
+	def.settings_title = str(data.get("settings_title", ""))
 
 	# Permissions
 	var perms: Dictionary = data.get("permissions", {})
