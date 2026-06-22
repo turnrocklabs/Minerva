@@ -82,6 +82,12 @@ var tools: Array[Dictionary] = []
 ## Materialised into user.dct on install with source="plugin:<id>".
 var skills: Array[Dictionary] = []
 
+## Declarative user-editable settings contributed to the host Preferences UI.
+## Each entry: {key, type, label, default?, options? (enum only), help?}.
+## type is one of SETTING_TYPES. Values are host-owned and persisted in
+## config_file.cfg under [Plugin:<id>]; structural validation is in validate().
+var settings: Array[Dictionary] = []
+
 # ---------------------------------------------------------------------------
 # Permissions
 # ---------------------------------------------------------------------------
@@ -212,6 +218,9 @@ const REQUIRED_SKILL_FIELDS := [
 	"preconditions", "steps", "tool_deps", "target",
 ]
 
+## Allowed `type` values for entries in manifest settings[].
+const SETTING_TYPES := ["string", "multiline", "enum", "bool", "number"]
+
 # ---------------------------------------------------------------------------
 # Project-file and project-export hook channels (design §8)
 # ---------------------------------------------------------------------------
@@ -324,6 +333,8 @@ func to_dict() -> Dictionary:
 		result["editor_items"] = editor_items.duplicate(true)
 	if not events.is_empty():
 		result["events"] = events.duplicate(true)
+	if not settings.is_empty():
+		result["settings"] = settings.duplicate(true)
 	if not state_schema.is_empty():
 		result["state"] = {"schema": state_schema}
 	if not class_names.is_empty():
@@ -482,6 +493,32 @@ func validate() -> Array[String]:
 	for e in hcap_errors:
 		errors.append(e)
 
+	# Validate settings declarations: unique non-empty keys, a known type, and
+	# enum entries carrying a non-empty options array.
+	if not settings.is_empty():
+		var seen_setting_keys: Dictionary = {}
+		for idx in settings.size():
+			var setting_entry: Variant = settings[idx]
+			if not (setting_entry is Dictionary):
+				errors.append("settings[%d] must be a Dictionary" % idx)
+				continue
+			var sd: Dictionary = setting_entry as Dictionary
+			var s_key: String = str(sd.get("key", ""))
+			var s_ref: String = s_key if not s_key.is_empty() else "settings[%d]" % idx
+			if s_key.is_empty():
+				errors.append("settings[%d] has empty 'key'" % idx)
+			elif seen_setting_keys.has(s_key):
+				errors.append("manifest_duplicate_setting_key: '%s'" % s_key)
+			else:
+				seen_setting_keys[s_key] = true
+			var s_type: String = str(sd.get("type", ""))
+			if not SETTING_TYPES.has(s_type):
+				errors.append("setting '%s' has invalid type '%s' (allowed: %s)" % [s_ref, s_type, str(SETTING_TYPES)])
+			if s_type == "enum":
+				var opts: Variant = sd.get("options", null)
+				if not (opts is Array) or (opts as Array).is_empty():
+					errors.append("enum setting '%s' requires a non-empty 'options' array" % s_ref)
+
 	return errors
 
 
@@ -548,6 +585,12 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 	for skill_entry in data.get("skills", []):
 		if skill_entry is Dictionary:
 			def.skills.append(skill_entry.duplicate(true))
+
+	# Settings (declarative preferences shown in the host Preferences UI).
+	# Lax parse; structural validation happens in validate().
+	for setting_entry in data.get("settings", []):
+		if setting_entry is Dictionary:
+			def.settings.append(setting_entry.duplicate(true))
 
 	# Permissions
 	var perms: Dictionary = data.get("permissions", {})

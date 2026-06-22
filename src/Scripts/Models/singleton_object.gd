@@ -530,6 +530,7 @@ var plugin_event_broker = null  # PluginEventBroker
 var plugin_webview_broker = null  # PluginWebviewBroker
 var plugin_scene_panel_broker = null  # PluginScenePanelBroker
 var plugin_chat_provider_registry = null  # PluginChatProviderRegistry (chat-passthrough W1)
+var plugin_settings_store = null  # PluginSettingsStore
 
 ## Initialize the plugin system. Call after initialize_mcp().
 ## Uses load() instead of class_name references to avoid autoload parse-order issues.
@@ -577,6 +578,12 @@ func initialize_plugins() -> void:
 
 	# Event/state broker (references DB and audit log)
 	plugin_event_broker = EventBrokerClass.new(plugin_manager.get_db(), plugin_audit_log)
+
+	# Host-owned settings store (core + plugin preferences; references DB for schemas).
+	# Persistence is injected so the store stays free of autoload references.
+	var SettingsStoreClass = load("res://Scripts/Services/Plugins/PluginSettingsStore.gd")
+	var SettingsPersistClass = load("res://Scripts/Services/Plugins/ConfigSettingsPersist.gd")
+	plugin_settings_store = SettingsStoreClass.new(plugin_manager.get_db(), SettingsPersistClass.new())
 
 	# Webview IPC broker (references manager, policy, capability broker, audit log)
 	plugin_webview_broker = WebviewBrokerClass.new(plugin_manager, plugin_policy, plugin_capability_broker, plugin_audit_log)
