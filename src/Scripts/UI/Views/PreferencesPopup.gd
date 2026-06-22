@@ -4841,7 +4841,7 @@ func _create_settings_tab() -> void:
 		first_section = false
 
 		var header := Label.new()
-		header.text = _settings_section_title(scope)
+		header.text = str(listing.get("title", scope))
 		header.add_theme_font_size_override("font_size", 16)
 		vbox.add_child(header)
 
@@ -4858,22 +4858,6 @@ func _create_settings_tab() -> void:
 	tab_container.add_child(_settings_tab)
 
 	_settings_tab_loading = false
-
-
-## Display title for a settings scope: the core section name, or the plugin's
-## display name (falling back to its id).
-func _settings_section_title(scope: String) -> String:
-	if not scope.begins_with("plugin:"):
-		return "Summarization"
-	var plugin_id := scope.substr(7)
-	var pm = SingletonObject.plugin_manager
-	if pm != null:
-		var db = pm.get_db()
-		if db != null:
-			var def = db.get_by_id(plugin_id)
-			if def != null and not str(def.name).is_empty():
-				return str(def.name)
-	return plugin_id
 
 
 ## Render one labeled settings row for a field and wire its change signal back
@@ -4903,11 +4887,14 @@ func _add_setting_field(vbox: VBoxContainer, scope: String, field: Dictionary, l
 			line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			row.add_child(line)
 			line.text = str(value) if value != null else ""
-			line.text_submitted.connect(func(text: String) -> void:
+			# Save on Enter and on focus-exit, so a typed value isn't lost by
+			# clicking away (consistent with the multiline field below).
+			var save_line := func() -> void:
 				if get(loading_flag):
 					return
-				store.set_value(scope, key, text)
-			)
+				store.set_value(scope, key, line.text)
+			line.text_submitted.connect(func(_text: String) -> void: save_line.call())
+			line.focus_exited.connect(save_line)
 		"multiline":
 			var edit := TextEdit.new()
 			edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL

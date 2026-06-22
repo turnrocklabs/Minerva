@@ -52,6 +52,17 @@ func _check(cond: bool, label: String) -> void:
 		print("  FAIL: %s" % label)
 
 
+## First LineEdit under `node`, or null.
+func _first_lineedit(node: Node) -> LineEdit:
+	if node is LineEdit:
+		return node as LineEdit
+	for child in node.get_children():
+		var found := _first_lineedit(child)
+		if found != null:
+			return found
+	return null
+
+
 ## Recursively look for a Label whose text equals `text` under `node`.
 func _find_label(node: Node, text: String) -> bool:
 	if node is Label and (node as Label).text == text:
@@ -74,6 +85,7 @@ func _run() -> void:
 
 	# Controlled store: core "Summarization" group plus one declaring plugin.
 	var plugin := PluginDefinition.new("demo")
+	plugin.name = "Demo Plugin"
 	plugin.settings = [
 		{"key": "mode", "type": "enum", "label": "Mode", "default": "fast", "options": ["fast", "slow"]},
 		{"key": "enabled", "type": "bool", "label": "Enabled", "default": true},
@@ -113,18 +125,22 @@ func _run() -> void:
 
 	if settings_tab != null:
 		_check(_find_label(settings_tab, "Summarization"), "core scope renders Summarization section")
-		# The title path resolves names via the live plugin_manager (not the store's
-		# fake db), so a plugin unknown to it falls back to its id — proving the path ran.
-		_check(_find_label(settings_tab, "demo"), "plugin scope renders a section title (id fallback)")
+		_check(_find_label(settings_tab, "Demo Plugin"), "plugin scope renders the store-provided title")
 		_check(_find_label(settings_tab, "Summarization model"), "core string field label present")
 		_check(_find_label(settings_tab, "Mode"), "plugin enum field label present")
 
-	# The field renderer must persist through the store, not raw config.
-	popup._add_setting_field(vbox, "core", {
+	# Drive an actual widget signal and assert the edit routes through the store.
+	var probe := VBoxContainer.new()
+	popup.add_child(probe)
+	popup._add_setting_field(probe, "core", {
 		"key": "model", "type": "string", "label": "Summarization model", "value": "x",
 	}, "_settings_tab_loading")
-	store.set_value("core", "model", "persisted-via-store")
-	_check(store.get_value("core", "model") == "persisted-via-store", "store.set_value round-trips the value")
+	var line := _first_lineedit(probe)
+	_check(line != null, "string field rendered a LineEdit")
+	if line != null:
+		line.text = "typed-via-widget"
+		line.text_submitted.emit("typed-via-widget")
+		_check(store.get_value("core", "model") == "typed-via-widget", "widget edit persists through the store")
 
 	singleton.plugin_settings_store = saved_store
 	popup.free()

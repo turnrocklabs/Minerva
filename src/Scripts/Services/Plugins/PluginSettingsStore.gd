@@ -19,6 +19,7 @@ const DEFAULT_SUMMARIZATION_PROMPT := "Summarize this conversation. Preserve: ke
 const CORE_SCHEMAS := {
 	"core": {
 		"section": "Summarization",
+		"title": "Summarization",
 		"fields": [
 			{
 				"key": "model",
@@ -88,7 +89,19 @@ func list_settings(scope: String) -> Dictionary:
 		var entry: Dictionary = (field as Dictionary).duplicate(true)
 		entry["value"] = get_value(scope, str(field.get("key", "")))
 		out.append(entry)
-	return {"success": true, "scope": scope, "fields": out}
+	return {"success": true, "scope": scope, "title": scope_title(scope), "fields": out}
+
+
+## Human-readable title for a scope: the core group's title, or the plugin's
+## display name (falling back to its id).
+func scope_title(scope: String) -> String:
+	if CORE_SCHEMAS.has(scope):
+		return str((CORE_SCHEMAS[scope] as Dictionary).get("title", scope))
+	if scope.begins_with("plugin:") and _plugin_db != null:
+		var def = _plugin_db.get_by_id(scope.substr(7))
+		if def != null and not str(def.name).is_empty():
+			return str(def.name)
+	return scope
 
 
 ## Scopes that currently expose settings: core groups plus plugins declaring `settings`.

@@ -135,12 +135,14 @@ func test_store_core() -> void:
 
 	var ls: Dictionary = store.list_settings("core")
 	_check(ls.get("success", false) and (ls.get("fields", []) as Array).size() == 2, "list_settings core has 2 fields")
+	_check(ls.get("title") == "Summarization", "list_settings core carries a title")
 	_check(not store.list_settings("bogus").get("success", false), "list_settings unknown scope errors")
 	_check((store.list_scopes() as Array).has("core"), "list_scopes includes core")
 
 
 func test_store_plugin_scope() -> void:
 	var pdef := PluginDefinition.new("demo")
+	pdef.name = "Demo Plugin"
 	pdef.settings = [
 		{"key": "flavor", "type": "enum", "label": "Flavor", "default": "a", "options": ["a", "b"]},
 		{"key": "enabled", "type": "bool", "label": "Enabled", "default": false},
@@ -164,6 +166,7 @@ func test_store_plugin_scope() -> void:
 
 	_check(persist.mem.has("Plugin:demo"), "plugin persists under [Plugin:demo]")
 	_check((store.list_scopes() as Array).has("plugin:demo"), "list_scopes includes declaring plugin")
+	_check(store.list_settings("plugin:demo").get("title") == "Demo Plugin", "plugin scope title is the plugin display name")
 
 
 func test_colon_section_roundtrip() -> void:
