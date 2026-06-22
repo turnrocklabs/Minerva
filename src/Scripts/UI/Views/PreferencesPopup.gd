@@ -125,6 +125,7 @@ func _ready():
 	call_deferred("_create_agent_context_tab")
 	call_deferred("_create_terminal_tab")
 	call_deferred("_create_containers_tab")
+	call_deferred("_create_settings_tab")
 
 	# Initialize ChatGPT auth status
 	call_deferred("_init_chatgpt_auth")
@@ -4783,3 +4784,196 @@ func is_agent_context_summary_configured() -> bool:
 		and not str(cfg.get("system_prompt", "")).is_empty()
 
 #endregion Agent Context Tab
+
+
+#region Settings Tab
+
+var _settings_tab: VBoxContainer
+var _settings_tab_loading: bool = false
+
+## Build the declarative Settings tab from the plugin settings store. Every core
+## group and every plugin that declares settings renders one section of labeled
+## rows; all reads and writes flow through the store.
+func _create_settings_tab() -> void:
+	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
+	if not tab_container:
+		return
+
+	var store = SingletonObject.plugin_settings_store
+	if store == null:
+		return
+
+	_settings_tab = VBoxContainer.new()
+	_settings_tab.name = "Settings"
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_settings_tab.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 8)
+	scroll.add_child(vbox)
+
+	_settings_tab_loading = true
+
+	var first_section := true
+	for scope in store.list_scopes():
+		var listing: Dictionary = store.list_settings(scope)
+		if not listing.get("success", false):
+			continue
+		var fields: Array = listing.get("fields", [])
+		if fields.is_empty():
+			continue
+
+		if not first_section:
+			vbox.add_child(HSeparator.new())
+		first_section = false
+
+		var header := Label.new()
+		header.text = _settings_section_title(scope)
+		header.add_theme_font_size_override("font_size", 16)
+		vbox.add_child(header)
+
+		for field in fields:
+			if field is Dictionary:
+				_add_setting_field(vbox, scope, field, "_settings_tab_loading")
+
+	if first_section:
+		var empty := Label.new()
+		empty.text = "No settings available."
+		empty.modulate.a = 0.5
+		vbox.add_child(empty)
+
+	tab_container.add_child(_settings_tab)
+
+	_settings_tab_loading = false
+
+
+## Display title for a settings scope: the core section name, or the plugin's
+## display name (falling back to its id).
+func _settings_section_title(scope: String) -> String:
+	if not scope.begins_with("plugin:"):
+		return "Summarization"
+	var plugin_id := scope.substr(7)
+	var pm = SingletonObject.plugin_manager
+	if pm != null:
+		var db = pm.get_db()
+		if db != null:
+			var def = db.get_by_id(plugin_id)
+			if def != null and not str(def.name).is_empty():
+				return str(def.name)
+	return plugin_id
+
+
+## Render one labeled settings row for a field and wire its change signal back
+## through the store. The widget is chosen from field.type; the reentrancy guard
+## named by loading_flag suppresses writes while initial values are applied.
+func _add_setting_field(vbox: VBoxContainer, scope: String, field: Dictionary, loading_flag: String) -> void:
+	var store = SingletonObject.plugin_settings_store
+	if store == null:
+		return
+	var key := str(field.get("key", ""))
+	var type := str(field.get("type", "string"))
+	var label_text := str(field.get("label", key))
+	var value: Variant = field.get("value", field.get("default", null))
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	vbox.add_child(row)
+
+	var lbl := Label.new()
+	lbl.text = label_text
+	lbl.custom_minimum_size = Vector2(160, 0)
+	row.add_child(lbl)
+
+	match type:
+		"string":
+			var line := LineEdit.new()
+			line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(line)
+			line.text = str(value) if value != null else ""
+			line.text_submitted.connect(func(text: String) -> void:
+				if get(loading_flag):
+					return
+				store.set_value(scope, key, text)
+			)
+		"multiline":
+			var edit := TextEdit.new()
+			edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			edit.custom_minimum_size.y = 90
+			edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+			row.add_child(edit)
+			edit.text = str(value) if value != null else ""
+			edit.focus_exited.connect(func() -> void:
+				if get(loading_flag):
+					return
+				store.set_value(scope, key, edit.text)
+			)
+		"enum":
+			var option := OptionButton.new()
+			option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(option)
+			var options: Array = field.get("options", [])
+			for opt in options:
+				option.add_item(str(opt))
+			for i in range(option.item_count):
+				if option.get_item_text(i) == str(value):
+					option.selected = i
+					break
+			option.item_selected.connect(func(idx: int) -> void:
+				if get(loading_flag):
+					return
+				store.set_value(scope, key, option.get_item_text(idx))
+			)
+		"bool":
+			var check := CheckButton.new()
+			check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(check)
+			check.button_pressed = bool(value)
+			check.toggled.connect(func(pressed: bool) -> void:
+				if get(loading_flag):
+					return
+				store.set_value(scope, key, pressed)
+			)
+		"number":
+			var spin := SpinBox.new()
+			spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			spin.min_value = -1000000.0
+			spin.max_value = 1000000.0
+			spin.step = 1.0
+			spin.allow_greater = true
+			spin.allow_lesser = true
+			row.add_child(spin)
+			spin.value = float(value) if value != null else 0.0
+			spin.value_changed.connect(func(val: float) -> void:
+				if get(loading_flag):
+					return
+				store.set_value(scope, key, val)
+			)
+		_:
+			var unknown := Label.new()
+			unknown.text = "(unsupported type '%s')" % type
+			unknown.modulate.a = 0.5
+			row.add_child(unknown)
+
+	var help_text := str(field.get("help", ""))
+	if not help_text.is_empty():
+		var help_lbl := Label.new()
+		help_lbl.text = help_text
+		help_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		help_lbl.add_theme_font_size_override("font_size", 11)
+		help_lbl.modulate.a = 0.6
+		vbox.add_child(help_lbl)
+
+#endregion Settings Tab
