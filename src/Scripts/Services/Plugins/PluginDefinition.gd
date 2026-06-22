@@ -200,6 +200,8 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.notify",
 	"host.settings.get",
 	"host.settings.list",
+	"host.models.list_providers",
+	"host.models.list_models",
 	"host.chat_providers.register",
 	"host.pdf.generate",
 	"host.terminal.exec",
@@ -224,8 +226,10 @@ const REQUIRED_SKILL_FIELDS := [
 	"preconditions", "steps", "tool_deps", "target",
 ]
 
-## Allowed `type` values for entries in manifest settings[].
-const SETTING_TYPES := ["string", "multiline", "enum", "bool", "number"]
+## Allowed `type` values for entries in manifest settings[]. "provider" renders a
+## dropdown of enabled providers; "model" renders the enabled models of the
+## provider named by the field's "provider_key".
+const SETTING_TYPES := ["string", "multiline", "enum", "bool", "number", "provider", "model"]
 
 # ---------------------------------------------------------------------------
 # Project-file and project-export hook channels (design §8)

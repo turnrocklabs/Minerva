@@ -1981,6 +1981,76 @@ func set_provider_enabled(provider: API_PROVIDER, enabled: bool) -> void:
 func get_provider_display_name(provider: API_PROVIDER) -> String:
 	return PROVIDER_DISPLAY_NAMES.get(provider, "Unknown")
 
+## Stable string key for a provider (lowercase enum name). Used by the settings
+## store and the brokered model catalog so values survive model-id reassignment.
+func provider_key(provider: API_PROVIDER) -> String:
+	return str(API_PROVIDER.keys()[provider]).to_lower()
+
+## API_PROVIDER for a stable key, or -1 if unknown.
+func provider_from_key(key: String) -> int:
+	for p in API_PROVIDER.values():
+		if str(API_PROVIDER.keys()[p]).to_lower() == key:
+			return p
+	return -1
+
+## Brokered catalog: enabled providers that expose at least one model.
+## Returns [{key, display}]. Single source for the core settings UI, the
+## host.models.* capability, and the minerva_list_models MCP tool — consumers
+## must call this rather than reading config or rebuilding the list themselves.
+func list_enabled_providers() -> Array:
+	var out: Array = []
+	var seen: Dictionary = {}
+	for id_base in _dynamic_provider_map:
+		var entry: Dictionary = _dynamic_provider_map[id_base]
+		var provider = entry.get("provider", -1)
+		if seen.has(provider) or not is_provider_enabled(provider):
+			continue
+		var manager = entry.get("manager", null)
+		if manager == null or manager.models.is_empty():
+			continue
+		seen[provider] = true
+		out.append({"key": provider_key(provider), "display": get_provider_display_name(provider)})
+	return out
+
+## Brokered catalog: enabled models for a provider key. Returns [{model_name, display}].
+func list_enabled_models(key: String) -> Array:
+	var out: Array = []
+	var target := provider_from_key(key)
+	if target == -1 or not is_provider_enabled(target):
+		return out
+	for id_base in _dynamic_provider_map:
+		var entry: Dictionary = _dynamic_provider_map[id_base]
+		if int(entry.get("provider", -2)) != target:
+			continue
+		var manager = entry.get("manager", null)
+		if manager == null:
+			continue
+		for config in manager.models:
+			if config is Dictionary:
+				var mname := str(config.get("model_name", ""))
+				if not mname.is_empty():
+					out.append({"model_name": mname, "display": str(config.get("display_name", mname))})
+	return out
+
+## Build a live provider for a (provider key, model_name), or null if not found
+## in the enabled catalog. Resolving by name keeps stored settings valid across
+## model-id reassignment.
+func create_provider_for(key: String, model_name: String) -> BaseProvider:
+	var target := provider_from_key(key)
+	if target == -1:
+		return null
+	for id_base in _dynamic_provider_map:
+		var entry: Dictionary = _dynamic_provider_map[id_base]
+		if int(entry.get("provider", -2)) != target:
+			continue
+		var manager = entry.get("manager", null)
+		if manager == null:
+			continue
+		for config in manager.models:
+			if config is Dictionary and str(config.get("model_name", "")).to_lower() == model_name.to_lower():
+				return create_dynamic_provider(int(config.get("id", -1)))
+	return null
+
 ## Model name aliases for backward compatibility with saved projects
 const MODEL_ALIASES: Dictionary = {
 	# Old OpenAI names -> New

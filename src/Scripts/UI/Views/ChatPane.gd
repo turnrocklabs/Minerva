@@ -1289,6 +1289,16 @@ func _distill_model() -> String:
 	return PASSTHROUGH_DISTILL_MODEL
 
 
+## Resolved summarization provider key: the "core" preference, else chatgpt.
+func _distill_provider_key() -> String:
+	var store = SingletonObject.plugin_settings_store
+	if store != null:
+		var p = store.get_value("core", "model_provider")
+		if p != null and str(p) != "":
+			return str(p)
+	return "chatgpt"
+
+
 ## Resolved summarization prompt: the "core" preference, else the built-in default.
 func _summarization_prompt() -> String:
 	var store = SingletonObject.plugin_settings_store
@@ -1299,28 +1309,15 @@ func _summarization_prompt() -> String:
 	return PluginSettingsStore.DEFAULT_SUMMARIZATION_PROMPT
 
 
-## Construct the fixed distill provider. Prefers an exact model_name match in
-## the ChatGPT dynamic-model catalog (same resolution the capability broker
-## uses), falling back to the ChatGPT factory with the bare model name.
-## Credentials are NOT touched here — ChatGPTProvider.generate_content fails
-## with a clear "not connected" error that we surface without crashing.
+## Construct the distill provider for the configured (provider, model) via the
+## brokered catalog. On a catalog miss (e.g. the model isn't discovered yet) it
+## falls back to the ChatGPT factory with the bare model name. Credentials are
+## NOT touched here — generate_content surfaces a clear "not connected" error.
 func _create_passthrough_distill_provider() -> BaseProvider:
 	var model_name := _distill_model()
-	var dyn_map: Dictionary = SingletonObject.get("_dynamic_provider_map") if "_dynamic_provider_map" in SingletonObject else {}
-	for id_base in dyn_map:
-		var dyn_info: Dictionary = dyn_map[id_base] as Dictionary
-		if int(dyn_info.get("provider", -1)) != SingletonObject.API_PROVIDER.CHATGPT:
-			continue
-		var manager = dyn_info.get("manager", null)
-		if manager == null:
-			continue
-		for config in manager.models:
-			if config is Dictionary and str(config.get("model_name", "")).to_lower() == model_name.to_lower():
-				var dyn_provider := SingletonObject.create_dynamic_provider(int(config.get("id", -1)))
-				if dyn_provider != null:
-					return dyn_provider
-	# Catalog miss (models not refreshed yet) — construct directly via the
-	# ChatGPT factory; auth is checked inside generate_content.
+	var provider := SingletonObject.create_provider_for(_distill_provider_key(), model_name)
+	if provider != null:
+		return provider
 	return ChatGPTProvider.create_from_config({
 		"model_name": model_name,
 		"display_name": "%s (distill)" % model_name,
@@ -1391,7 +1388,7 @@ func summarize_passthrough_to_note(history, provider_override: BaseProvider = nu
 	var distilled := str(result.get("text", ""))
 	# Stamp provenance so the note records which model and prompt produced it.
 	var prompt_label := "default" if prompt_used == PluginSettingsStore.DEFAULT_SUMMARIZATION_PROMPT else "custom"
-	var note_body := "%s\n\n---\n_Summary model: %s · prompt: %s_" % [distilled, _distill_model(), prompt_label]
+	var note_body := "%s\n\n---\n_Summary model: %s/%s · prompt: %s_" % [distilled, _distill_provider_key(), _distill_model(), prompt_label]
 	var timestamp := Time.get_datetime_string_from_system(false, true)
 	var note_title := "Passthrough summary: %s — %s" % [history.PassthroughName, timestamp]
 	var note: Note = Note.create_text_note(note_title, note_body)

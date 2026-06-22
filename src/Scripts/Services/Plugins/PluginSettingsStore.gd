@@ -23,11 +23,19 @@ const CORE_SCHEMAS := {
 		"section": "Summarization",
 		"fields": [
 			{
+				"key": "model_provider",
+				"type": "provider",
+				"label": "Provider",
+				"default": "chatgpt",
+				"help": "LLM provider used to distill a conversation into a note.",
+			},
+			{
 				"key": "model",
-				"type": "string",
-				"label": "Summarization model",
+				"type": "model",
+				"label": "Model",
+				"provider_key": "model_provider",
 				"default": DEFAULT_SUMMARIZATION_MODEL,
-				"help": "Model id used to distill a conversation into a note.",
+				"help": "Model from the selected provider.",
 			},
 			{
 				"key": "prompt",
@@ -188,7 +196,9 @@ func _field(scope: String, key: String) -> Dictionary:
 func _coerce(field: Dictionary, value: Variant) -> Dictionary:
 	var t := str(field.get("type", "string"))
 	match t:
-		"string", "multiline":
+		"string", "multiline", "provider", "model":
+			# provider/model are stored as plain strings (provider key + model
+			# name); validity is resolved against the live catalog at use time.
 			return {"ok": true, "value": str(value)}
 		"enum":
 			var v := str(value)

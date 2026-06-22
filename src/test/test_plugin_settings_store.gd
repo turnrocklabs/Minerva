@@ -126,6 +126,9 @@ func test_store_core() -> void:
 	var store = StoreScript.new(null, persist)
 	_check(store.get_value("core", "model") == StoreScript.DEFAULT_SUMMARIZATION_MODEL, "core model default")
 	_check(store.get_value("core", "prompt") == StoreScript.DEFAULT_SUMMARIZATION_PROMPT, "core prompt default")
+	_check(store.get_value("core", "model_provider") == "chatgpt", "core provider default")
+	var rp: Dictionary = store.set_value("core", "model_provider", "openrouter")
+	_check(rp.get("success", false) and store.get_value("core", "model_provider") == "openrouter", "provider round-trips")
 
 	var r: Dictionary = store.set_value("core", "model", "claude-opus-4-8")
 	_check(r.get("success", false), "set core model succeeds")
@@ -137,7 +140,7 @@ func test_store_core() -> void:
 	_check(not store.set_value("plugin:ghost", "k", "v").get("success", false), "unknown scope rejected")
 
 	var ls: Dictionary = store.list_settings("core")
-	_check(ls.get("success", false) and (ls.get("fields", []) as Array).size() == 2, "list_settings core has 2 fields")
+	_check(ls.get("success", false) and (ls.get("fields", []) as Array).size() == 3, "list_settings core has 3 fields")
 	_check(ls.get("tab") == "agent-relay", "core scope tab is agent-relay")
 	_check(ls.get("section") == "Summarization", "core scope section header is Summarization")
 	_check(not store.list_settings("bogus").get("success", false), "list_settings unknown scope errors")

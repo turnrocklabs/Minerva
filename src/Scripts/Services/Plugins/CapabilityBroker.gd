@@ -369,6 +369,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = _handle_host_settings_get(plugin_id, args)
 		"host.settings.list":
 			named_result = _handle_host_settings_list(plugin_id, args)
+		"host.models.list_providers":
+			named_result = _handle_host_models_list_providers(plugin_id, args)
+		"host.models.list_models":
+			named_result = _handle_host_models_list_models(plugin_id, args)
 		"host.chat_providers.register":
 			named_result = _handle_host_chat_providers_register(plugin_id, args)
 		"host.chat_providers.unregister":
@@ -552,6 +556,20 @@ func _handle_host_settings_list(plugin_id: String, _args: Dictionary) -> Diction
 	if not listing.get("success", false):
 		return PluginErrors.backend_error(plugin_id, str(listing.get("error", "no settings for plugin")))
 	return PluginErrors.success({"fields": listing.get("fields", [])})
+
+
+## host.models.list_providers — the enabled LLM providers the user has configured.
+## Reads Minerva's brokered catalog so a plugin never duplicates the model list.
+func _handle_host_models_list_providers(_plugin_id: String, _args: Dictionary) -> Dictionary:
+	return PluginErrors.success({"providers": SingletonObject.list_enabled_providers()})
+
+
+## host.models.list_models — the enabled models for a provider key. Args: {provider}.
+func _handle_host_models_list_models(plugin_id: String, args: Dictionary) -> Dictionary:
+	var key: String = str(args.get("provider", ""))
+	if key.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "host.models.list_models requires 'provider'")
+	return PluginErrors.success({"provider": key, "models": SingletonObject.list_enabled_models(key)})
 
 
 ## host.core.session — mint a NEW, distinct Core session and return its credentials

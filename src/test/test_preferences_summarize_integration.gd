@@ -117,6 +117,9 @@ func _run() -> void:
 	var set_model: Dictionary = tools.handle("minerva_set_preference",
 		{"scope": "core", "key": "model", "value": "integration-model"})
 	check("MCP set model ok", set_model.get("success", false), str(set_model))
+	var set_provider: Dictionary = tools.handle("minerva_set_preference",
+		{"scope": "core", "key": "model_provider", "value": "openai"})
+	check("MCP set provider ok", set_provider.get("success", false), str(set_provider))
 	var set_prompt: Dictionary = tools.handle("minerva_set_preference",
 		{"scope": "core", "key": "prompt", "value": "INTEGRATION PROMPT"})
 	check("MCP set prompt ok", set_prompt.get("success", false), str(set_prompt))
@@ -147,8 +150,8 @@ func _run() -> void:
 	if note != null:
 		var controls = note.get_controls_container()
 		var body := str(controls.content) if controls != null else ""
-		check("note stamps the configured model",
-			body.find("Summary model: integration-model") != -1, body)
+		check("note stamps the configured provider/model",
+			body.find("Summary model: openai/integration-model") != -1, body)
 		check("note marks the prompt as custom", body.find("prompt: custom") != -1, body)
 		check("note keeps the distilled text", body.begins_with("DISTILLED SUMMARY"), body)
 		note.free()

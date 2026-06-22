@@ -17,6 +17,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_get_preference",
 		"minerva_set_preference",
 		"minerva_list_preferences",
+		"minerva_list_models",
 	]
 
 
@@ -42,12 +43,19 @@ func register_tools() -> void:
 			"scope": {"type": "string", "description": "Optional \"core\" or \"plugin:<id>\"; omit to list scopes"},
 		}}, "settings")
 
+	server._register_tool("minerva_list_models",
+		"List the LLM providers and models the user has enabled. With no provider, returns the enabled providers ({key, display}). With a provider key, returns that provider's enabled models ({model_name, display}).",
+		{"type": "object", "properties": {
+			"provider": {"type": "string", "description": "Optional provider key (e.g. \"chatgpt\"); omit to list providers"},
+		}}, "settings")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		"minerva_get_preference": return _get_preference(arguments)
 		"minerva_set_preference": return _set_preference(arguments)
 		"minerva_list_preferences": return _list_preferences(arguments)
+		"minerva_list_models": return _list_models(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -97,6 +105,15 @@ func _list_preferences(args: Dictionary) -> Dictionary:
 	if not listing.get("success", false):
 		return MCPToolUtils.error(str(listing.get("error", "unknown scope '%s'" % scope)))
 	return MCPToolUtils.success({"scope": scope, "fields": listing.get("fields", [])})
+
+
+## With no provider: the enabled providers. With a provider key: its enabled
+## models. Reads Minerva's brokered catalog (the single source of enabled-ness).
+func _list_models(args: Dictionary) -> Dictionary:
+	var provider: String = str(args.get("provider", ""))
+	if provider.is_empty():
+		return MCPToolUtils.success({"providers": SingletonObject.list_enabled_providers()})
+	return MCPToolUtils.success({"provider": provider, "models": SingletonObject.list_enabled_models(provider)})
 
 
 func _get_store():

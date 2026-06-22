@@ -130,7 +130,8 @@ func _run() -> void:
 
 	if relay_tab != null:
 		_check(_find_label(relay_tab, "Summarization"), "Summarization section header present in the agent-relay tab")
-		_check(_find_label(relay_tab, "Summarization model"), "core string field label present in its tab")
+		_check(_find_label(relay_tab, "Provider"), "provider field present in the agent-relay tab")
+		_check(_find_label(relay_tab, "Model"), "model field present in the agent-relay tab")
 	if plugin_tab != null:
 		_check(_find_label(plugin_tab, "Mode"), "plugin enum field label present in its tab")
 

@@ -70,7 +70,7 @@ func _run() -> void:
 	var ls: Dictionary = tools.handle("minerva_list_preferences", {})
 	_check(ls.get("success", false) and (ls.get("scopes", []) as Array).has("core"), "list (no scope) returns scopes")
 	var lc: Dictionary = tools.handle("minerva_list_preferences", {"scope": "core"})
-	_check(lc.get("success", false) and (lc.get("fields", []) as Array).size() == 2, "list (core) returns fields")
+	_check(lc.get("success", false) and (lc.get("fields", []) as Array).size() == 3, "list (core) returns fields")
 	_check(not tools.handle("minerva_list_preferences", {"scope": "bogus"}).get("success", true), "list unknown scope errors")
 
 	_check(not tools.handle("minerva_frobnicate", {}).get("success", true), "unknown tool errors")

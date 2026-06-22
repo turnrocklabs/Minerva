@@ -4865,9 +4865,10 @@ func _build_preference_tab(tab_container, tab_name: String, groups: Array) -> vo
 			header.text = section_name
 			header.add_theme_font_size_override("font_size", 16)
 			vbox.add_child(header)
+		var field_widgets: Dictionary = {}
 		for field in group.get("fields", []):
 			if field is Dictionary:
-				_add_setting_field(vbox, str(group.get("scope", "")), field, "_settings_tab_loading")
+				_add_setting_field(vbox, str(group.get("scope", "")), field, "_settings_tab_loading", field_widgets)
 
 	tab_container.add_child(tab)
 	# Set the displayed title explicitly so an arbitrary provider name survives
@@ -4878,7 +4879,7 @@ func _build_preference_tab(tab_container, tab_name: String, groups: Array) -> vo
 ## Render one labeled settings row for a field and wire its change signal back
 ## through the store. The widget is chosen from field.type; the reentrancy guard
 ## named by loading_flag suppresses writes while initial values are applied.
-func _add_setting_field(vbox: VBoxContainer, scope: String, field: Dictionary, loading_flag: String) -> void:
+func _add_setting_field(vbox: VBoxContainer, scope: String, field: Dictionary, loading_flag: String, field_widgets: Dictionary = {}) -> void:
 	var store = SingletonObject.plugin_settings_store
 	if store == null:
 		return
@@ -4963,6 +4964,48 @@ func _add_setting_field(vbox: VBoxContainer, scope: String, field: Dictionary, l
 					return
 				store.set_value(scope, key, val)
 			)
+		"provider":
+			var prov := OptionButton.new()
+			prov.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(prov)
+			field_widgets[key] = prov
+			_populate_provider_options(prov, str(value) if value != null else "")
+			prov.item_selected.connect(func(idx: int) -> void:
+				if get(loading_flag):
+					return
+				store.set_value(scope, key, str(prov.get_item_metadata(idx)))
+			)
+		"model":
+			var model_opt := OptionButton.new()
+			model_opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(model_opt)
+			field_widgets[key] = model_opt
+			var prov_widget = field_widgets.get(str(field.get("provider_key", "")), null)
+			var cur_provider := ""
+			if prov_widget != null and prov_widget.selected >= 0:
+				cur_provider = str(prov_widget.get_item_metadata(prov_widget.selected))
+			_populate_model_options(model_opt, cur_provider, str(value) if value != null else "")
+			model_opt.item_selected.connect(func(idx: int) -> void:
+				if get(loading_flag):
+					return
+				var meta = model_opt.get_item_metadata(idx)
+				if meta != null and str(meta) != "":
+					store.set_value(scope, key, str(meta))
+			)
+			# When the provider field changes, repopulate models and persist the
+			# new selection so the stored model stays valid for the chosen provider.
+			if prov_widget != null:
+				prov_widget.item_selected.connect(func(_pidx: int) -> void:
+					var pk := ""
+					if prov_widget.selected >= 0:
+						pk = str(prov_widget.get_item_metadata(prov_widget.selected))
+					_populate_model_options(model_opt, pk, "")
+					if get(loading_flag):
+						return
+					var meta = model_opt.get_item_metadata(model_opt.selected) if model_opt.selected >= 0 else null
+					if meta != null and str(meta) != "":
+						store.set_value(scope, key, str(meta))
+				)
 		_:
 			var unknown := Label.new()
 			unknown.text = "(unsupported type '%s')" % type
@@ -4977,5 +5020,42 @@ func _add_setting_field(vbox: VBoxContainer, scope: String, field: Dictionary, l
 		help_lbl.add_theme_font_size_override("font_size", 11)
 		help_lbl.modulate.a = 0.6
 		vbox.add_child(help_lbl)
+
+
+## Fill a provider OptionButton from the brokered catalog; item metadata = key.
+func _populate_provider_options(opt: OptionButton, current_key: String) -> void:
+	opt.clear()
+	var providers: Array = SingletonObject.list_enabled_providers()
+	if providers.is_empty():
+		opt.add_item("(no providers enabled)")
+		opt.set_item_disabled(0, true)
+		return
+	var sel := 0
+	for i in providers.size():
+		var p: Dictionary = providers[i]
+		opt.add_item(str(p.get("display", p.get("key", ""))))
+		opt.set_item_metadata(i, str(p.get("key", "")))
+		if str(p.get("key", "")) == current_key:
+			sel = i
+	opt.selected = sel
+
+
+## Fill a model OptionButton from the brokered catalog for a provider key;
+## item metadata = model_name.
+func _populate_model_options(opt: OptionButton, provider_key: String, current_model: String) -> void:
+	opt.clear()
+	var models: Array = SingletonObject.list_enabled_models(provider_key) if not provider_key.is_empty() else []
+	if models.is_empty():
+		opt.add_item("(no models)")
+		opt.set_item_disabled(0, true)
+		return
+	var sel := 0
+	for i in models.size():
+		var m: Dictionary = models[i]
+		opt.add_item(str(m.get("display", m.get("model_name", ""))))
+		opt.set_item_metadata(i, str(m.get("model_name", "")))
+		if str(m.get("model_name", "")) == current_model:
+			sel = i
+	opt.selected = sel
 
 #endregion Preference Tabs
