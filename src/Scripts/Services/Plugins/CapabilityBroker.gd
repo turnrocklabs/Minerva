@@ -365,6 +365,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_permissions_grant_scope(plugin_id, args)
 		"host.notify":
 			named_result = _handle_host_notify(plugin_id, args)
+		"host.settings.get":
+			named_result = _handle_host_settings_get(plugin_id, args)
+		"host.settings.list":
+			named_result = _handle_host_settings_list(plugin_id, args)
 		"host.chat_providers.register":
 			named_result = _handle_host_chat_providers_register(plugin_id, args)
 		"host.chat_providers.unregister":
@@ -517,6 +521,37 @@ func _handle_secrets(plugin_id: String, capability: String, args: Dictionary) ->
 func _handle_host_echo(plugin_id: String, args: Dictionary) -> Dictionary:
 	print("[CapabilityBroker] Plugin '%s' invoking host.echo" % plugin_id)
 	return PluginErrors.success({"echo": args})
+
+
+## host.settings.get — read one of the CALLING plugin's own settings.
+## Args: {key}. The scope is fixed to "plugin:<plugin_id>", so a plugin can only
+## ever read its own namespace (no arg selects another scope). Returns {key, value}.
+func _handle_host_settings_get(plugin_id: String, args: Dictionary) -> Dictionary:
+	var key: String = str(args.get("key", ""))
+	if key.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "host.settings.get requires 'key'")
+	var store = SingletonObject.plugin_settings_store
+	if store == null:
+		return PluginErrors.backend_error(plugin_id, "settings store unavailable")
+	var scope := "plugin:%s" % plugin_id
+	var listing: Dictionary = store.list_settings(scope)
+	if not listing.get("success", false):
+		return PluginErrors.backend_error(plugin_id, str(listing.get("error", "no settings for plugin")))
+	for field in listing.get("fields", []):
+		if str((field as Dictionary).get("key", "")) == key:
+			return PluginErrors.success({"key": key, "value": store.get_value(scope, key)})
+	return PluginErrors.schema_validation_failed(plugin_id, "unknown setting '%s'" % key)
+
+
+## host.settings.list — list the CALLING plugin's own settings (schema + values).
+func _handle_host_settings_list(plugin_id: String, _args: Dictionary) -> Dictionary:
+	var store = SingletonObject.plugin_settings_store
+	if store == null:
+		return PluginErrors.backend_error(plugin_id, "settings store unavailable")
+	var listing: Dictionary = store.list_settings("plugin:%s" % plugin_id)
+	if not listing.get("success", false):
+		return PluginErrors.backend_error(plugin_id, str(listing.get("error", "no settings for plugin")))
+	return PluginErrors.success({"fields": listing.get("fields", [])})
 
 
 ## host.core.session — mint a NEW, distinct Core session and return its credentials

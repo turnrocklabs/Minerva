@@ -194,6 +194,8 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.dialogs.directory_picker",
 	"host.permissions.grant_scope",
 	"host.notify",
+	"host.settings.get",
+	"host.settings.list",
 	"host.chat_providers.register",
 	"host.pdf.generate",
 	"host.terminal.exec",
