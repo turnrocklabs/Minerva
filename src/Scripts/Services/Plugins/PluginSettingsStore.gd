@@ -18,8 +18,9 @@ const DEFAULT_SUMMARIZATION_PROMPT := "Summarize this conversation. Preserve: ke
 ## list using the same schema shape as a plugin manifest's `settings` array.
 const CORE_SCHEMAS := {
 	"core": {
+		"config_section": "Summarization",
+		"tab": "agent-relay",
 		"section": "Summarization",
-		"title": "Summarization",
 		"fields": [
 			{
 				"key": "model",
@@ -89,14 +90,14 @@ func list_settings(scope: String) -> Dictionary:
 		var entry: Dictionary = (field as Dictionary).duplicate(true)
 		entry["value"] = get_value(scope, str(field.get("key", "")))
 		out.append(entry)
-	return {"success": true, "scope": scope, "title": scope_title(scope), "fields": out}
+	return {"success": true, "scope": scope, "tab": scope_tab(scope), "section": scope_section(scope), "fields": out}
 
 
-## Human-readable title for a scope: the core group's title, or the plugin's
-## display name (falling back to its id).
-func scope_title(scope: String) -> String:
+## Preferences tab a scope appears under: the core group's tab, or the plugin's
+## settings_title / display name (falling back to its id).
+func scope_tab(scope: String) -> String:
 	if CORE_SCHEMAS.has(scope):
-		return str((CORE_SCHEMAS[scope] as Dictionary).get("title", scope))
+		return str((CORE_SCHEMAS[scope] as Dictionary).get("tab", scope))
 	if scope.begins_with("plugin:") and _plugin_db != null:
 		var def = _plugin_db.get_by_id(scope.substr(7))
 		if def != null:
@@ -105,6 +106,14 @@ func scope_title(scope: String) -> String:
 			if not str(def.name).is_empty():
 				return str(def.name)
 	return scope
+
+
+## Section header within the tab (empty = no header). Core groups declare one so
+## distinct systems sharing a tab stay labeled; plugins default to none.
+func scope_section(scope: String) -> String:
+	if CORE_SCHEMAS.has(scope):
+		return str((CORE_SCHEMAS[scope] as Dictionary).get("section", ""))
+	return ""
 
 
 ## Scopes that currently expose settings: core groups plus plugins declaring `settings`.
@@ -157,10 +166,10 @@ func _schema(scope: String) -> Array:
 	return []
 
 
-## config_file.cfg section backing a scope.
+## config_file.cfg section backing a scope (storage, distinct from the display tab/section).
 func _section(scope: String) -> String:
 	if CORE_SCHEMAS.has(scope):
-		return str((CORE_SCHEMAS[scope] as Dictionary).get("section", scope))
+		return str((CORE_SCHEMAS[scope] as Dictionary).get("config_section", scope))
 	if scope.begins_with("plugin:"):
 		return "Plugin:%s" % scope.substr(7)
 	return scope

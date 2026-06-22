@@ -138,7 +138,8 @@ func test_store_core() -> void:
 
 	var ls: Dictionary = store.list_settings("core")
 	_check(ls.get("success", false) and (ls.get("fields", []) as Array).size() == 2, "list_settings core has 2 fields")
-	_check(ls.get("title") == "Summarization", "list_settings core carries a title")
+	_check(ls.get("tab") == "agent-relay", "core scope tab is agent-relay")
+	_check(ls.get("section") == "Summarization", "core scope section header is Summarization")
 	_check(not store.list_settings("bogus").get("success", false), "list_settings unknown scope errors")
 	_check((store.list_scopes() as Array).has("core"), "list_scopes includes core")
 
@@ -169,9 +170,10 @@ func test_store_plugin_scope() -> void:
 
 	_check(persist.mem.has("Plugin:demo"), "plugin persists under [Plugin:demo]")
 	_check((store.list_scopes() as Array).has("plugin:demo"), "list_scopes includes declaring plugin")
-	_check(store.list_settings("plugin:demo").get("title") == "Demo Plugin", "plugin scope title is the plugin display name")
+	_check(store.list_settings("plugin:demo").get("tab") == "Demo Plugin", "plugin tab is the plugin display name")
+	_check(store.list_settings("plugin:demo").get("section") == "", "plugin section header defaults to none")
 	pdef.settings_title = "Relay Settings"
-	_check(store.list_settings("plugin:demo").get("title") == "Relay Settings", "settings_title overrides the plugin name for the tab title")
+	_check(store.list_settings("plugin:demo").get("tab") == "Relay Settings", "settings_title overrides the tab name")
 
 
 func test_colon_section_roundtrip() -> void:

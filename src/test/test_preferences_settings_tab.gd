@@ -116,20 +116,21 @@ func _run() -> void:
 
 	popup._create_preference_tabs()
 
-	var summ_tab: Node = null
+	var relay_tab: Node = null
 	var plugin_tab: Node = null
 	var has_generic_settings := false
 	for child in tab_container.get_children():
 		match child.name:
-			"Summarization": summ_tab = child
+			"agent-relay": relay_tab = child
 			"Demo Plugin": plugin_tab = child
 			"Settings": has_generic_settings = true
-	_check(summ_tab != null, "core renders a 'Summarization' tab (its own name)")
+	_check(relay_tab != null, "core renders an 'agent-relay' tab")
 	_check(plugin_tab != null, "plugin renders its own named tab")
 	_check(not has_generic_settings, "no generic 'Settings' tab")
 
-	if summ_tab != null:
-		_check(_find_label(summ_tab, "Summarization model"), "core string field label present in its tab")
+	if relay_tab != null:
+		_check(_find_label(relay_tab, "Summarization"), "Summarization section header present in the agent-relay tab")
+		_check(_find_label(relay_tab, "Summarization model"), "core string field label present in its tab")
 	if plugin_tab != null:
 		_check(_find_label(plugin_tab, "Mode"), "plugin enum field label present in its tab")
 

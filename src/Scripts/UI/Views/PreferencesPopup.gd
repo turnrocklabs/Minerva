@@ -4790,9 +4790,10 @@ func is_agent_context_summary_configured() -> bool:
 
 var _settings_tab_loading: bool = false
 
-## Build one Preferences tab per settings provider (core groups + plugins that
-## declare settings), each named by the provider's own title. All reads and
-## writes flow through the settings store.
+## Build the Preferences tabs from the settings store. Scopes are grouped by their
+## declared tab (so several settings groups can share one tab); within a tab each
+## group renders an optional section header followed by its fields. All reads and
+## writes flow through the store.
 func _create_preference_tabs() -> void:
 	var tab_container = get_node("MarginContainer/VBoxContainer/TabContainer")
 	if not tab_container:
@@ -4802,7 +4803,9 @@ func _create_preference_tabs() -> void:
 	if store == null:
 		return
 
-	_settings_tab_loading = true
+	# Group scopes by tab, preserving first-seen order.
+	var tab_order: Array[String] = []
+	var groups_by_tab: Dictionary = {}
 	for scope in store.list_scopes():
 		var listing: Dictionary = store.list_settings(scope)
 		if not listing.get("success", false):
@@ -4810,14 +4813,27 @@ func _create_preference_tabs() -> void:
 		var fields: Array = listing.get("fields", [])
 		if fields.is_empty():
 			continue
-		_build_preference_tab(tab_container, scope, str(listing.get("title", scope)), fields)
+		var tab_name := str(listing.get("tab", scope))
+		if not groups_by_tab.has(tab_name):
+			groups_by_tab[tab_name] = []
+			tab_order.append(tab_name)
+		groups_by_tab[tab_name].append({
+			"scope": scope,
+			"section": str(listing.get("section", "")),
+			"fields": fields,
+		})
+
+	_settings_tab_loading = true
+	for tab_name in tab_order:
+		_build_preference_tab(tab_container, tab_name, groups_by_tab[tab_name])
 	_settings_tab_loading = false
 
 
-## Build a single named tab holding one labeled row per field.
-func _build_preference_tab(tab_container, scope: String, title: String, fields: Array) -> void:
+## Build one named tab holding its settings groups, each an optional section
+## header followed by labeled field rows.
+func _build_preference_tab(tab_container, tab_name: String, groups: Array) -> void:
 	var tab := VBoxContainer.new()
-	tab.name = title
+	tab.name = tab_name
 
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", 12)
@@ -4838,14 +4854,25 @@ func _build_preference_tab(tab_container, scope: String, title: String, fields: 
 	vbox.add_theme_constant_override("separation", 8)
 	scroll.add_child(vbox)
 
-	for field in fields:
-		if field is Dictionary:
-			_add_setting_field(vbox, scope, field, "_settings_tab_loading")
+	var first := true
+	for group in groups:
+		if not first:
+			vbox.add_child(HSeparator.new())
+		first = false
+		var section_name := str(group.get("section", ""))
+		if not section_name.is_empty():
+			var header := Label.new()
+			header.text = section_name
+			header.add_theme_font_size_override("font_size", 16)
+			vbox.add_child(header)
+		for field in group.get("fields", []):
+			if field is Dictionary:
+				_add_setting_field(vbox, str(group.get("scope", "")), field, "_settings_tab_loading")
 
 	tab_container.add_child(tab)
 	# Set the displayed title explicitly so an arbitrary provider name survives
 	# any node-name sanitization.
-	tab_container.set_tab_title(tab_container.get_tab_idx_from_control(tab), title)
+	tab_container.set_tab_title(tab_container.get_tab_idx_from_control(tab), tab_name)
 
 
 ## Render one labeled settings row for a field and wire its change signal back
