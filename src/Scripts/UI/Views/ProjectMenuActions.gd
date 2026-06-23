@@ -43,6 +43,7 @@ func _new_project():
 	if SingletonObject.ledger_manager:
 		SingletonObject.ledger_manager.clear()
 	save_path = ""
+	SingletonObject.current_project_path = ""
 
 	# Fresh implicit project -> fresh identity + zeroed ref counter (DCR
 	# 019e9f602391 P1), persisted to the scratch so refs survive a restart.
@@ -121,6 +122,7 @@ func save_project():
 			editor.pcb_editor.is_modified = false
 
 	SingletonObject.save_recent_project(save_path)
+	SingletonObject.current_project_path = save_path
 
 	# Project is now explicit — its identity lives in the .minproj, so drop the
 	# implicit user:// scratch and stop treating it as implicit (DCR 019e9f602391).
@@ -460,6 +462,7 @@ func open_project_given_path(project_path: String) -> int:
 	SingletonObject.save_state(true)
 	SingletonObject.updated_save_state.emit(project_path.get_file(), true)
 	self.save_path = project_path
+	SingletonObject.current_project_path = project_path
 	return OK
 
 func _notification(what):

@@ -2396,6 +2396,11 @@ signal openDrawerNotes
 @warning_ignore("unused_signal")
 signal deleted_drawer_note
 
+## Absolute path of the currently-loaded .minproj ("" for an unsaved/scratch
+## project). Published by ProjectMenu on open/save/new so other systems — e.g.
+## the host.project.* plugin capabilities — can tell which project is active.
+var current_project_path: String = ""
+
 var saved_state = true
 signal updated_save_state(project_name:String,saved: bool)
 func save_state(state: bool): 

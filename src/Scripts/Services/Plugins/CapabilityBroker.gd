@@ -383,6 +383,10 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 			named_result = await _handle_host_terminal_tool(plugin_id, capability, args)
 		"host.pdf.generate":
 			named_result = await _handle_host_pdf_generate(plugin_id, args)
+		"host.project.open":
+			named_result = _handle_host_project_open(plugin_id, args)
+		"host.project.current":
+			named_result = _handle_host_project_current(plugin_id, args)
 		_:
 			named_result = {
 				"success": false,
@@ -593,6 +597,54 @@ func _handle_host_core_session(plugin_id: String, _args: Dictionary) -> Dictiona
 		return PluginErrors.backend_error(plugin_id,
 			"core session unavailable — no stored credentials or login failed")
 	return PluginErrors.success(creds)
+
+
+# ---------------------------------------------------------------------------
+# host.project.* handlers — inspect / load the active project
+# ---------------------------------------------------------------------------
+
+## host.project.current — report the active project's path and whether it has
+## unsaved changes, so a plugin can decide before opening it (or before
+## overwriting it during sync).
+func _handle_host_project_current(plugin_id: String, _args: Dictionary) -> Dictionary:
+	print("[CapabilityBroker] Plugin '%s' invoking host.project.current" % plugin_id)
+	return PluginErrors.success({
+		"path": str(SingletonObject.current_project_path),
+		"dirty": _project_has_unsaved(),
+	})
+
+## host.project.open — load a .minproj into the running Minerva via the same
+## signal the File menu uses. Refuses when the current project has unsaved work
+## unless discard_unsaved is true, so opening can never silently discard it.
+func _handle_host_project_open(plugin_id: String, args: Dictionary) -> Dictionary:
+	var path: String = str(args.get("path", "")).strip_edges()
+	if path.is_empty():
+		return PluginErrors.schema_validation_failed(plugin_id, "path must not be empty")
+	if not path.to_lower().ends_with(".minproj"):
+		return PluginErrors.schema_validation_failed(plugin_id, "path must be a .minproj file")
+	if not FileAccess.file_exists(path):
+		return PluginErrors.backend_error(plugin_id, "project file not found: %s" % path)
+	if not bool(args.get("discard_unsaved", false)) and _project_has_unsaved():
+		return {
+			"success": false,
+			"error_code": "unsaved_changes",
+			"error_message": "The current project has unsaved changes. Save it first, or call with discard_unsaved=true.",
+			"needs_save": true,
+			"plugin_id": plugin_id,
+		}
+	print("[CapabilityBroker] Plugin '%s' invoking host.project.open -> %s" % [plugin_id, path])
+	SingletonObject.OpenProject.emit(path)
+	return PluginErrors.success({"opened": path})
+
+## True when the project flag is dirty or any open editor has unsaved changes.
+## Headless-safe (no editor pane -> only the project flag is consulted).
+func _project_has_unsaved() -> bool:
+	var editor_pane = _get_editor_pane()
+	if editor_pane != null and editor_pane.has_method("unsaved_editors"):
+		var unsaved = editor_pane.unsaved_editors()
+		if unsaved != null and unsaved.size() > 0:
+			return true
+	return not SingletonObject.saved_state
 
 
 # ---------------------------------------------------------------------------

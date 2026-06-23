@@ -194,6 +194,8 @@ const ALLOWED_HOST_CAPABILITIES := [
 	"host.editors.open",
 	"host.providers.chat",
 	"host.core.session",
+	"host.project.open",
+	"host.project.current",
 	"host.dialogs.file_picker",
 	"host.dialogs.directory_picker",
 	"host.permissions.grant_scope",
