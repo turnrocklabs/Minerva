@@ -616,6 +616,8 @@ func _handle_host_project_current(plugin_id: String, _args: Dictionary) -> Dicti
 ## host.project.open — load a .minproj into the running Minerva via the same
 ## signal the File menu uses. Refuses when the current project has unsaved work
 ## unless discard_unsaved is true, so opening can never silently discard it.
+## Success means the open was ACCEPTED (the load runs via the signal) — i.e.
+## "opening", not "loaded"; the signal path has no synchronous result to await.
 func _handle_host_project_open(plugin_id: String, args: Dictionary) -> Dictionary:
 	var path: String = str(args.get("path", "")).strip_edges()
 	if path.is_empty():
