@@ -536,6 +536,12 @@ func start_plugin(id: String) -> Dictionary:
 		var abs_command: String = plugin_dir.path_join(command.substr(2))
 		if FileAccess.file_exists(abs_command) or FileAccess.file_exists(ProjectSettings.localize_path(abs_command)):
 			command = abs_command
+		elif OS.get_name() == "Windows" and (FileAccess.file_exists(abs_command + ".exe") or FileAccess.file_exists(ProjectSettings.localize_path(abs_command + ".exe"))):
+			# Windows builds carry a .exe suffix that the cross-platform manifest
+			# entrypoint omits (e.g. manifest says "./drive-plugin" but the
+			# packaged binary is "drive-plugin.exe"). Resolve the suffix here so
+			# plugins don't need a Windows-specific manifest.
+			command = abs_command + ".exe"
 		else:
 			# Binary not found — plugin probably wasn't compiled for this platform.
 			# Fail early so the UI shows "error" with a clear message instead of
