@@ -23,6 +23,7 @@ sources = ["gdextension/terminal/register_types.cpp"]
 
 if env["platform"] == "windows":
     sources.append("gdextension/terminal/windows/terminal.cpp")
+    sources.append("gdextension/terminal/windows/subprocess.cpp")
     env.Append(CPPDEFINES=["PLATFORM_WINDOWS"])
 elif env["platform"] == "linux":
     sources.append("gdextension/terminal/unix/terminal.cpp")

@@ -2,6 +2,7 @@
 
 #ifdef PLATFORM_WINDOWS
     #include "windows/terminal.h"
+    #include "windows/subprocess.h"
 #endif
 
 #if defined(PLATFORM_LINUX) || defined(PLATFORM_MACOS)
@@ -25,7 +26,7 @@ void initialize_terminal_module(ModuleInitializationLevel p_level) {
         ClassDB::register_class<Terminal>();
     #endif
 
-    #if defined(PLATFORM_LINUX) || defined(PLATFORM_MACOS)
+    #if defined(PLATFORM_WINDOWS) || defined(PLATFORM_LINUX) || defined(PLATFORM_MACOS)
         ClassDB::register_class<SubProcess>();
     #endif
 }
