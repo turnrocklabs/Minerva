@@ -412,7 +412,34 @@ func to_bot_response(data: Variant) -> BotResponse:
 	# Combine all text parts
 	response.text = "\n".join(text_parts)
 
+	extract_reasoning(data, response)
+
 	return response
+
+
+## Extract reasoning from an Anthropic response into the display sequence.
+## Anthropic emits thinking as distinct content blocks (the main text/tool_use
+## loop ignores them, so there is no text-leak risk):
+##   {type: "thinking", thinking: "...", signature: "..."} — visible chain-of-thought
+##   {type: "redacted_thinking", data: "..."} — encrypted, no readable text
+## On display:omitted model generations the thinking block is present but its
+## text is empty; that is treated as a redacted placeholder.
+func extract_reasoning(data: Variant, bot_response: BotResponse) -> void:
+	if not (data is Dictionary): return
+	var content_array = data.get("content", [])
+	if not (content_array is Array): return
+
+	for block in content_array:
+		if not (block is Dictionary): continue
+		var block_type: String = str(block.get("type", ""))
+		if block_type == "thinking":
+			var thinking_text: String = str(block.get("thinking", ""))
+			if thinking_text.is_empty():
+				bot_response.add_reasoning("", "thinking", true)
+			else:
+				bot_response.add_reasoning(thinking_text, "thinking", false)
+		elif block_type == "redacted_thinking":
+			bot_response.add_reasoning("", "thinking", true)
 
 
 # ============================================================================

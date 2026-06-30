@@ -438,8 +438,12 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	bot_response.text = "".join(text_parts)
 	if generated_image != null:
 		bot_response.image = generated_image
-	# Reasoning captured but BotResponse has no reasoning field yet — store for future use
-	#bot_response.reasoning = "".join(reasoning_parts)
+	# Surface the accumulated reasoning summary (OpenAI Responses streams the raw
+	# chain-of-thought only as encrypted_content; the human-readable part is the
+	# reasoning_summary_text deltas) into the display sequence as one summary segment.
+	var reasoning_summary: String = "".join(reasoning_parts)
+	if not reasoning_summary.is_empty():
+		bot_response.add_reasoning(reasoning_summary, "summary", false)
 	bot_response.id = response_id
 	bot_response.prompt_tokens = prompt_tokens
 	bot_response.completion_tokens = completion_tokens

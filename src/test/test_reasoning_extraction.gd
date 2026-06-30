@@ -31,6 +31,14 @@ func _init():
 		test_extract_encrypted_is_redacted()
 		test_extract_no_reasoning_is_empty()
 
+		print("\n-- Anthropic extract_reasoning --")
+		test_anthropic_thinking_block()
+		test_anthropic_redacted_thinking()
+
+		print("\n-- Gemini thought routing --")
+		test_gemini_thought_routes_to_reasoning()
+		test_gemini_thought_does_not_leak_into_text()
+
 	print("\n=== Results: %d passed, %d failed, %d skipped ===" % [_pass_count, _fail_count, _skip_count])
 	quit(1 if _fail_count > 0 else 0)
 
@@ -152,4 +160,79 @@ func test_extract_no_reasoning_is_empty() -> void:
 	var resp = p.to_bot_response(data)
 	_ok(not resp.has_reasoning(), "no reasoning fields -> empty sequence")
 	_ok(resp.text == "Just an answer.", "normal response unaffected")
+	p.free()
+
+
+# ----------------------------------------------------------------------------
+# Anthropic extraction (thinking / redacted_thinking content blocks)
+# ----------------------------------------------------------------------------
+
+func _anthropic_response(content: Array) -> Dictionary:
+	return {
+		"id": "msg_test",
+		"stop_reason": "end_turn",
+		"usage": {"input_tokens": 10, "output_tokens": 20},
+		"content": content
+	}
+
+
+func test_anthropic_thinking_block() -> void:
+	var p = AnthropicProvider.new()
+	var data := _anthropic_response([
+		{"type": "thinking", "thinking": "step by step reasoning", "signature": "sig123"},
+		{"type": "text", "text": "Final answer."}
+	])
+	var resp = p.to_bot_response(data)
+	_ok(resp.reasoning.size() == 1, "anthropic: one thinking segment")
+	_ok(resp.reasoning[0]["kind"] == "thinking" and not resp.reasoning[0]["redacted"], "anthropic: visible thinking not redacted")
+	_ok(resp.reasoning[0]["text"] == "step by step reasoning", "anthropic: thinking text preserved")
+	_ok(resp.text == "Final answer.", "anthropic: text block unaffected by thinking")
+	p.free()
+
+
+func test_anthropic_redacted_thinking() -> void:
+	var p = AnthropicProvider.new()
+	var data := _anthropic_response([
+		{"type": "redacted_thinking", "data": "ENCRYPTED=="},
+		{"type": "thinking", "thinking": "", "signature": "sig"},
+		{"type": "text", "text": "Answer."}
+	])
+	var resp = p.to_bot_response(data)
+	_ok(resp.reasoning.size() == 2, "anthropic: redacted + empty-thinking both recorded")
+	_ok(resp.reasoning[0]["redacted"] and resp.reasoning[1]["redacted"], "anthropic: both flagged redacted")
+	p.free()
+
+
+# ----------------------------------------------------------------------------
+# Gemini extraction (thought:true parts must route to reasoning, not text)
+# ----------------------------------------------------------------------------
+
+func _gemini_response(parts: Array) -> Dictionary:
+	return {
+		"candidates": [{"content": {"parts": parts}, "finishReason": "STOP"}],
+		"usageMetadata": {"promptTokenCount": 10, "candidatesTokenCount": 20}
+	}
+
+
+func test_gemini_thought_routes_to_reasoning() -> void:
+	var p = GoogleProvider.new()
+	var data := _gemini_response([
+		{"text": "internal deliberation", "thought": true},
+		{"text": "Visible answer."}
+	])
+	var resp = p.to_bot_response(data)
+	_ok(resp.reasoning.size() == 1, "gemini: one thought segment")
+	_ok(resp.reasoning[0]["text"] == "internal deliberation", "gemini: thought text captured")
+	p.free()
+
+
+func test_gemini_thought_does_not_leak_into_text() -> void:
+	var p = GoogleProvider.new()
+	var data := _gemini_response([
+		{"text": "secret reasoning", "thought": true},
+		{"text": "Hello user."}
+	])
+	var resp = p.to_bot_response(data)
+	_ok(not resp.text.contains("secret reasoning"), "gemini: thought text NOT in visible message")
+	_ok(resp.text.contains("Hello user."), "gemini: normal text still present")
 	p.free()

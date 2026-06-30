@@ -405,6 +405,14 @@ func to_bot_response(data: Variant) -> BotResponse:
 		for part in content["parts"]:
 			print("[Gemini] part keys: %s" % str(part.keys()))
 			if "text" in part:
+				# Thinking part — Gemini interleaves thought parts in `parts` with
+				# thought:true. Route to the reasoning sequence, NOT the visible
+				# message, else the chain-of-thought leaks into response.text.
+				if part.get("thought", false):
+					var thought_text: String = str(part["text"])
+					if not thought_text.is_empty():
+						response.add_reasoning(thought_text, "thinking", false)
+					continue
 				var text_content: String = part["text"]
 				# Strip leaked tool-call text (call:default_api:...) from Gemini responses
 				if _tool_call_text_regex:
