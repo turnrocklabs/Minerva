@@ -3,6 +3,7 @@ extends HBoxContainer
 
 const ToolCallBlockScript = preload("res://Scripts/UI/Controls/ToolCallBlock.gd")
 const RequestMetadataBlockScript = preload("res://Scripts/UI/Controls/RequestMetadataBlock.gd")
+const ReasoningBlockScript = preload("res://Scripts/UI/Controls/ReasoningBlock.gd")
 
 # Exported variables for UI components and colors
 @export var left_control: Control
@@ -226,6 +227,7 @@ func render() -> void:
 	_request_metadata_block = null
 
 	_create_code_labels()
+	_create_reasoning_blocks()
 	_create_tool_blocks()
 	_create_request_metadata_block()
 	
@@ -865,6 +867,27 @@ func _on_message_text_edit_text_set() -> void:
 		text_message_container.visible = false
 		%SetTextButton.visible = false
 		message_labels_container.visible = false
+
+
+# ============================================================================
+# Reasoning Block Rendering
+# ============================================================================
+
+## Create reasoning/thinking blocks from the history item's Reasoning sequence.
+## v1: rendered at the top of the message (above the response text), in order.
+## message_labels_container is cleared/rebuilt each render by _create_code_labels,
+## so no live-update dictionary is needed here (unlike tool blocks).
+func _create_reasoning_blocks() -> void:
+	if history_item.Reasoning.is_empty():
+		return
+
+	var insert_index := 0
+	for segment in history_item.Reasoning:
+		var block = ReasoningBlockScript.create(segment)
+		message_labels_container.add_child(block)
+		# Move to the top, preserving relative order between segments
+		message_labels_container.move_child(block, insert_index)
+		insert_index += 1
 
 
 # ============================================================================

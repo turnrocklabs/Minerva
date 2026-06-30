@@ -347,7 +347,43 @@ func to_bot_response(data: Variant) -> BotResponse:
 					args
 				)
 
+	extract_reasoning(data, response)
+
 	return response
+
+
+## Extract reasoning from an OpenRouter response into the display sequence.
+## OpenRouter surfaces reasoning in two shapes (no request param needed for
+## models that reason by default):
+##   message.reasoning_details: Array of {type, text|summary, ...} — preferred,
+##     order-preserving, distinguishes summary vs raw vs encrypted.
+##   message.reasoning: String — flat fallback when details are absent.
+func extract_reasoning(data: Variant, bot_response: BotResponse) -> void:
+	if not (data is Dictionary): return
+	var choices = data.get("choices", [])
+	if not (choices is Array) or choices.is_empty(): return
+	var message = choices[0].get("message", {})
+	if not (message is Dictionary): return
+
+	# Preferred: structured, order-preserving reasoning_details
+	var details = message.get("reasoning_details", [])
+	if details is Array and not details.is_empty():
+		for d in details:
+			if not (d is Dictionary): continue
+			var dtype: String = str(d.get("type", ""))
+			var seg_text: String = str(d.get("text", d.get("summary", "")))
+			if dtype.ends_with("encrypted"):
+				# Opaque/signed payload — render a placeholder, no text to show
+				bot_response.add_reasoning("", "thinking", true)
+			elif not seg_text.is_empty():
+				var kind := "summary" if dtype.ends_with("summary") else "thinking"
+				bot_response.add_reasoning(seg_text, kind, false)
+		return
+
+	# Fallback: flat reasoning string
+	var flat = message.get("reasoning", "")
+	if flat is String and not flat.is_empty():
+		bot_response.add_reasoning(flat, "thinking", false)
 
 
 func estimate_tokens(input: String) -> int:

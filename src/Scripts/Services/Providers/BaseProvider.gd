@@ -171,6 +171,18 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 func apply_cache_hints(_system_prompt: Variant, _messages: Array) -> void:
 	pass
 
+## Extract provider-specific reasoning/thinking traces from a raw API response
+## into bot_response.reasoning (the display sequence). Called by to_bot_response.
+## Default: no-op. Override in providers that return reasoning.
+func extract_reasoning(_data: Variant, _bot_response: BotResponse) -> void:
+	pass
+
+## Apply provider-specific reasoning request options (enable/disable + effort
+## level) to the outgoing request params. Default: no-op. Override in providers
+## that support reasoning controls. (Wired into the main chat path in Stage C.)
+func apply_reasoning_options(_params: Dictionary, _level: String, _enabled: bool) -> void:
+	pass
+
 #endregion
 
 func _ready():

@@ -866,6 +866,8 @@ func process_bot_response(bot_response, _history_provider: BaseProvider) -> Chat
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
 		chi.OutputTokens = bot_response.completion_tokens
+		if bot_response.has_reasoning():
+			chi.Reasoning = bot_response.reasoning
 		if bot_response.image:
 			chi.Images = ([bot_response.image] as Array[Image])
 
