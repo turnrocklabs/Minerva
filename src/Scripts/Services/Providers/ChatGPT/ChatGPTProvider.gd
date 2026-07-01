@@ -217,8 +217,14 @@ func _build_reasoning_options() -> Dictionary:
 		reasoning_effort = _default_supported_reasoning_effort()
 	if not reasoning_effort.is_empty():
 		reasoning["effort"] = reasoning_effort
-	var summary := _valid_reasoning_summary(default_reasoning_summary)
-	if supports_reasoning_summaries and not summary.is_empty():
+	# Request a human-readable reasoning summary whenever the model supports one.
+	# The raw chain-of-thought comes back encrypted (reasoning.encrypted_content);
+	# the summary is the only displayable part, so default to "auto" when the
+	# catalog leaves default_reasoning_summary blank.
+	if supports_reasoning_summaries:
+		var summary := _valid_reasoning_summary(default_reasoning_summary)
+		if summary.is_empty():
+			summary = "auto"
 		reasoning["summary"] = summary
 	return reasoning
 
