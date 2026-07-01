@@ -460,7 +460,11 @@ jobs:
   build-macos:
     needs: check-gdextension
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
-    runs-on: macos-latest
+    # Pinned to macos-15: macos-latest moved to macos-26 (Xcode 26 SDK), which
+    # Zig 0.15.2 cannot link against — the ghostty-vt shim fails with undefined
+    # libSystem symbols (_getcwd, _waitpid, _sigaction, ...). Revisit when Zig
+    # is upgraded to a version that supports the macOS 26 SDK.
+    runs-on: macos-15
     steps:
     - uses: actions/checkout@v4
       with:
@@ -607,7 +611,9 @@ jobs:
   export-macos:
     needs: [check-gdextension, build-macos]
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
-    runs-on: macos-latest
+    # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
+    # Zig 0.15.2 ghostty-vt shim link).
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
