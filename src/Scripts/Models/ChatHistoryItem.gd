@@ -167,6 +167,11 @@ var ToolExecutions: Array[Dictionary] = []:
 var Reasoning: Array[Dictionary] = []:
 	set(value): _queue_save_state(); Reasoning = value
 
+## Raw provider reasoning items for same-model replay within the in-flight agent
+## tool loop (e.g. OpenAI Responses reasoning items with encrypted_content).
+## TRANSIENT — deliberately NOT in SERIALIZER_FIELDS (opaque/expiring payloads).
+var ReasoningRaw: Array = []
+
 ## Compact deterministic summary used for prompt projection/dehydration.
 var ToolSummary: String = "":
 	set(value): _queue_save_state(); ToolSummary = value

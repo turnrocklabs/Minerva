@@ -47,6 +47,11 @@ var tool_calls: Array[Dictionary] = []
 ## kind: "thinking" (raw chain-of-thought) | "summary" (provider summary)
 var reasoning: Array[Dictionary] = []
 
+## Raw provider reasoning items for round-trip replay within the in-flight agent
+## tool loop (e.g. OpenAI Responses reasoning items with encrypted_content).
+## Transient — display-only metadata, NOT persisted to .minproj.
+var reasoning_raw: Array = []
+
 ## Whether this response requires tool execution before continuing
 var requires_tool_response: bool:
 	get: return not tool_calls.is_empty()

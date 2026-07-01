@@ -852,6 +852,11 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 		var reasoning_level := history.ReasoningEffort if reasoning_enabled else "medium"
 		history.provider.apply_reasoning_options(optional_params, reasoning_level, reasoning_enabled)
 
+	# Reasoning-summary preference (ChatGPT). Duck-typed so only providers that
+	# expose the field react — no provider-type coupling in ChatPane.
+	if "request_reasoning_summary" in history.provider:
+		history.provider.request_reasoning_summary = history.ReasoningSummary
+
 	bot_response = await history.provider.generate_content(history_list, optional_params)
 
 	# Record cost with chat context
@@ -875,6 +880,8 @@ func process_bot_response(bot_response, _history_provider: BaseProvider) -> Chat
 		chi.OutputTokens = bot_response.completion_tokens
 		if bot_response.has_reasoning():
 			chi.Reasoning = bot_response.reasoning
+		# Transient raw reasoning for same-model replay in the agent tool loop.
+		chi.ReasoningRaw = bot_response.reasoning_raw
 		if bot_response.image:
 			chi.Images = ([bot_response.image] as Array[Image])
 
@@ -2694,6 +2701,11 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.Message = continuation_chi.Message
 		else:
 			model_chi.Message += "\n\n" + continuation_chi.Message
+
+	# Accumulate this round's reasoning onto the accumulator so multi-round agent
+	# thinking all renders (otherwise only round 1's reasoning would show).
+	if not continuation_chi.Reasoning.is_empty():
+		model_chi.Reasoning.append_array(continuation_chi.Reasoning)
 
 	# Check if there are more tool calls
 	if continuation_response.has_tool_calls():

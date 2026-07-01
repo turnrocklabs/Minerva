@@ -641,6 +641,13 @@ func _update_reasoning_settings_visibility(provider: BaseProvider) -> void:
 	var current := current_chat_tab_ref.ReasoningEffort if current_chat_tab_ref else ""
 	_select_reasoning_value(opt, current)
 
+	# Summary toggle: only meaningful for providers that support reasoning summaries
+	var summary_check := _reasoning_settings_container.get_node("ReasoningSummaryCheck") as CheckButton
+	var supports_summary: bool = provider.get("supports_reasoning_summaries") == true
+	summary_check.visible = supports_summary
+	if supports_summary and current_chat_tab_ref:
+		summary_check.button_pressed = current_chat_tab_ref.ReasoningSummary
+
 
 ## Select the OptionButton entry matching the stored effort value.
 func _select_reasoning_value(opt: OptionButton, value: String) -> void:
@@ -683,6 +690,14 @@ func _create_reasoning_settings() -> void:
 	hbox.add_child(opt)
 	_reasoning_settings_container.add_child(hbox)
 
+	# Reasoning-summary toggle (shown only for providers that support summaries)
+	var summary_check := CheckButton.new()
+	summary_check.name = "ReasoningSummaryCheck"
+	summary_check.text = "Request reasoning summary"
+	summary_check.tooltip_text = "Ask the model for a human-readable summary of its reasoning (costs summary tokens). Off = no reasoning collapse."
+	summary_check.toggled.connect(_on_reasoning_summary_toggled)
+	_reasoning_settings_container.add_child(summary_check)
+
 	# Insert after model-chat settings (or after Presence penalty)
 	var model_vbox = %PresenceHBoxContainer.get_parent()
 	var insert_idx = %PresenceHBoxContainer.get_index() + 1
@@ -705,6 +720,14 @@ func _on_reasoning_effort_selected(index: int) -> void:
 		value = str(opt.get_item_metadata(index))
 	if current_chat_tab_ref:
 		current_chat_tab_ref.ReasoningEffort = value
+
+
+## Persist the reasoning-summary toggle onto the current chat.
+func _on_reasoning_summary_toggled(pressed: bool) -> void:
+	if _loading_values:
+		return
+	if current_chat_tab_ref:
+		current_chat_tab_ref.ReasoningSummary = pressed
 
 
 func _on_model_chat_num_ctx_changed(value: float) -> void:
