@@ -503,6 +503,21 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	# chain-of-thought only as encrypted_content; the human-readable part is the
 	# reasoning_summary_text deltas) into the display sequence as one summary segment.
 	var reasoning_summary: String = "".join(reasoning_parts)
+	# Fallback: the Codex backend is inconsistent about streaming
+	# reasoning_summary_text deltas — some turns deliver the same summary only
+	# inside the reasoning item's `summary` array. Pull it from there when the
+	# deltas were absent so the collapse renders regardless of delivery path.
+	if reasoning_summary.is_empty():
+		var summary_texts: PackedStringArray = []
+		for r_item in reasoning_items.values():
+			var summ = r_item.get("summary", [])
+			if summ is Array:
+				for part in summ:
+					if part is Dictionary and part.has("text"):
+						var t := str(part["text"])
+						if not t.is_empty():
+							summary_texts.append(t)
+		reasoning_summary = "\n\n".join(summary_texts)
 	if not reasoning_summary.is_empty():
 		bot_response.add_reasoning(reasoning_summary, "summary", false)
 	# Raw reasoning items (insertion order preserved) for same-model tool-loop replay.
