@@ -386,6 +386,21 @@ func extract_reasoning(data: Variant, bot_response: BotResponse) -> void:
 		bot_response.add_reasoning(flat, "thinking", false)
 
 
+## Show the reasoning-effort picker only for OpenRouter models flagged as
+## reasoning-capable in their catalog config.
+func uses_reasoning_effort_picker() -> bool:
+	return is_reasoning_model
+
+
+## Map the picker's effort onto OpenRouter's unified `reasoning` request field.
+func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
+	if not enabled:
+		params["reasoning"] = {"enabled": false}
+		return
+	var effort := level if level in ["low", "medium", "high"] else "medium"
+	params["reasoning"] = {"effort": effort}
+
+
 func estimate_tokens(input: String) -> int:
 	return roundi(input.get_slice_count(" ") * 1.335)
 

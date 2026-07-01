@@ -449,6 +449,26 @@ func to_bot_response(data: Variant) -> BotResponse:
 	return response
 
 
+## Gemini 3 models think, so always offer the picker.
+func uses_reasoning_effort_picker() -> bool:
+	return true
+
+
+## Map the picker's effort onto Gemini thinkingConfig. Merged at the top level of
+## the request body (generate_content does request_body.merge(additional_params),
+## which currently has no generationConfig), so this adds it cleanly.
+func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
+	var cfg := {"includeThoughts": enabled}
+	if enabled:
+		var budget := 8192
+		match level:
+			"low": budget = 2048
+			"medium": budget = 8192
+			"high": budget = 24576
+		cfg["thinkingBudget"] = budget
+	params["generationConfig"] = {"thinkingConfig": cfg}
+
+
 # ============================================================================
 # Dynamic Model Factory
 # ============================================================================

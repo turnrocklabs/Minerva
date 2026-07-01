@@ -442,6 +442,27 @@ func extract_reasoning(data: Variant, bot_response: BotResponse) -> void:
 			bot_response.add_reasoning("", "thinking", true)
 
 
+## Claude 4.x models support extended thinking, so always offer the picker.
+func uses_reasoning_effort_picker() -> bool:
+	return true
+
+
+## Map the picker's effort onto Anthropic extended thinking. budget_tokens must
+## stay below max_tokens, so cap conservatively.
+func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
+	if not enabled:
+		params["thinking"] = {"type": "disabled"}
+		return
+	var budget := 8192
+	match level:
+		"low": budget = 2048
+		"medium": budget = 8192
+		"high": budget = 16384
+	if budget >= max_tokens:
+		budget = maxi(1024, int(max_tokens / 2.0))
+	params["thinking"] = {"type": "enabled", "budget_tokens": budget}
+
+
 # ============================================================================
 # Dynamic Model Factory
 # ============================================================================

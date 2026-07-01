@@ -179,9 +179,20 @@ func extract_reasoning(_data: Variant, _bot_response: BotResponse) -> void:
 
 ## Apply provider-specific reasoning request options (enable/disable + effort
 ## level) to the outgoing request params. Default: no-op. Override in providers
-## that support reasoning controls. (Wired into the main chat path in Stage C.)
+## that support reasoning controls.
 func apply_reasoning_options(_params: Dictionary, _level: String, _enabled: bool) -> void:
 	pass
+
+## Whether reasoning effort is chosen via the AISettings picker. ChatGPT bakes
+## effort into per-effort model entries instead, so it leaves this false. A
+## provider returns true to have the picker shown for it. Default: false.
+func uses_reasoning_effort_picker() -> bool:
+	return false
+
+## Coarse effort levels the picker offers; apply_reasoning_options maps them to
+## native request params. Default: low/medium/high.
+func reasoning_effort_levels() -> Array:
+	return ["low", "medium", "high"]
 
 #endregion
 

@@ -10,6 +10,9 @@ var _nbp_settings_container: VBoxContainer = null
 # Model-chat settings container (created dynamically)
 var _model_chat_settings_container: VBoxContainer = null
 
+# Reasoning-effort picker container (created dynamically)
+var _reasoning_settings_container: VBoxContainer = null
+
 # Timeout settings container (created dynamically)
 var _timeout_settings_container: VBoxContainer = null
 
@@ -393,6 +396,10 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	var is_model_chat: bool = provider.get("supports_num_ctx") == true
 	_update_model_chat_settings_visibility(is_model_chat, provider)
 
+	# Reasoning-effort picker (Anthropic/OpenRouter/Gemini; ChatGPT uses per-effort
+	# model entries instead, so it leaves uses_reasoning_effort_picker() false)
+	_update_reasoning_settings_visibility(provider)
+
 	# Timeout settings - always visible for all providers
 	_update_timeout_settings_visibility(provider)
 
@@ -605,6 +612,99 @@ func _create_model_chat_settings() -> void:
 		insert_idx = _nbp_settings_container.get_index() + 1
 	model_vbox.add_child(_model_chat_settings_container)
 	model_vbox.move_child(_model_chat_settings_container, insert_idx)
+
+
+## Create or update the reasoning-effort picker for the selected provider.
+## Shown only for providers that use the picker (not ChatGPT's per-effort entries).
+func _update_reasoning_settings_visibility(provider: BaseProvider) -> void:
+	var should_show := provider != null and provider.uses_reasoning_effort_picker()
+	if not should_show:
+		if _reasoning_settings_container:
+			_reasoning_settings_container.visible = false
+		return
+
+	if _reasoning_settings_container == null:
+		_create_reasoning_settings()
+	_reasoning_settings_container.visible = true
+
+	# Rebuild the option list for this provider's advertised levels
+	var opt := _reasoning_settings_container.get_node("ReasoningHBox/ReasoningOptionButton") as OptionButton
+	opt.clear()
+	opt.add_item("Default", 0)   # id 0 → "" (no override, provider default)
+	opt.add_item("Off", 1)       # id 1 → "off"
+	var id := 2
+	for lvl in provider.reasoning_effort_levels():
+		opt.add_item(str(lvl).capitalize(), id)
+		opt.set_item_metadata(opt.get_item_count() - 1, str(lvl))
+		id += 1
+
+	var current := current_chat_tab_ref.ReasoningEffort if current_chat_tab_ref else ""
+	_select_reasoning_value(opt, current)
+
+
+## Select the OptionButton entry matching the stored effort value.
+func _select_reasoning_value(opt: OptionButton, value: String) -> void:
+	if value == "":
+		opt.select(0)
+		return
+	if value == "off":
+		opt.select(1)
+		return
+	for i in range(opt.get_item_count()):
+		if str(opt.get_item_metadata(i)) == value:
+			opt.select(i)
+			return
+	opt.select(0)
+
+
+## Build the reasoning-effort picker UI dynamically (mirrors model-chat settings).
+func _create_reasoning_settings() -> void:
+	_reasoning_settings_container = VBoxContainer.new()
+	_reasoning_settings_container.name = "ReasoningSettingsContainer"
+
+	var sep := HSeparator.new()
+	_reasoning_settings_container.add_child(sep)
+
+	var header := Label.new()
+	header.text = "Reasoning:"
+	header.add_theme_font_size_override("font_size", 14)
+	_reasoning_settings_container.add_child(header)
+
+	var hbox := HBoxContainer.new()
+	hbox.name = "ReasoningHBox"
+	var label := Label.new()
+	label.text = "Thinking effort:"
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.tooltip_text = "Default = provider default. Off disables thinking. Higher effort = deeper reasoning (more tokens/cost)."
+	hbox.add_child(label)
+	var opt := OptionButton.new()
+	opt.name = "ReasoningOptionButton"
+	opt.item_selected.connect(_on_reasoning_effort_selected)
+	hbox.add_child(opt)
+	_reasoning_settings_container.add_child(hbox)
+
+	# Insert after model-chat settings (or after Presence penalty)
+	var model_vbox = %PresenceHBoxContainer.get_parent()
+	var insert_idx = %PresenceHBoxContainer.get_index() + 1
+	if _model_chat_settings_container:
+		insert_idx = _model_chat_settings_container.get_index() + 1
+	model_vbox.add_child(_reasoning_settings_container)
+	model_vbox.move_child(_reasoning_settings_container, insert_idx)
+
+
+## Persist the chosen reasoning effort onto the current chat.
+func _on_reasoning_effort_selected(index: int) -> void:
+	if _loading_values:
+		return
+	var opt := _reasoning_settings_container.get_node("ReasoningHBox/ReasoningOptionButton") as OptionButton
+	var id := opt.get_item_id(index)
+	var value := ""
+	if id == 1:
+		value = "off"
+	elif id >= 2:
+		value = str(opt.get_item_metadata(index))
+	if current_chat_tab_ref:
+		current_chat_tab_ref.ReasoningEffort = value
 
 
 func _on_model_chat_num_ctx_changed(value: float) -> void:
