@@ -21,6 +21,11 @@ var reasoning_effort: String = "medium"
 var supported_reasoning_levels: Array = []
 var supports_reasoning_summaries: bool = true
 var default_reasoning_summary: String = "auto"
+
+## Per-request toggle for asking the backend for a human-readable reasoning
+## summary. Set per-chat by ChatPane from ServiceHistory.ReasoningSummary; when
+## false, no summary is requested (saves summary tokens; the collapse stays empty).
+var request_reasoning_summary: bool = true
 var support_verbosity: bool = false
 var default_verbosity: Variant = null
 var additional_speed_tiers: Array = []
@@ -217,8 +222,15 @@ func _build_reasoning_options() -> Dictionary:
 		reasoning_effort = _default_supported_reasoning_effort()
 	if not reasoning_effort.is_empty():
 		reasoning["effort"] = reasoning_effort
-	var summary := _valid_reasoning_summary(default_reasoning_summary)
-	if supports_reasoning_summaries and not summary.is_empty():
+	# Request a human-readable reasoning summary whenever the model supports one
+	# and the chat hasn't turned it off. The raw chain-of-thought comes back
+	# encrypted (reasoning.encrypted_content); the summary is the only displayable
+	# part, so default to "auto" when the catalog leaves default_reasoning_summary
+	# blank.
+	if supports_reasoning_summaries and request_reasoning_summary:
+		var summary := _valid_reasoning_summary(default_reasoning_summary)
+		if summary.is_empty():
+			summary = "auto"
 		reasoning["summary"] = summary
 	return reasoning
 
@@ -252,6 +264,37 @@ func _valid_reasoning_summary(summary: String) -> String:
 	if normalized in ["concise", "detailed", "auto"]:
 		return normalized
 	return ""
+
+
+## ChatGPT also exposes effort in the gears picker (in addition to the per-effort
+## model entries), so the picker can override effort at request time.
+func uses_reasoning_effort_picker() -> bool:
+	return true
+
+
+## Offer exactly the effort levels this model advertises; fall back to a standard
+## set when the catalog didn't provide any.
+func reasoning_effort_levels() -> Array:
+	var levels: Array = []
+	for preset in supported_reasoning_levels:
+		if preset is Dictionary and preset.has("effort"):
+			levels.append(str(preset["effort"]))
+	if levels.is_empty():
+		return ["low", "medium", "high"]
+	return levels
+
+
+## Override the model-entry effort at request time from the gears picker. gpt-5.x
+## reasoning models can't fully disable thinking, so "off" maps to the lowest
+## advertised effort rather than removing reasoning.
+func apply_reasoning_options(_params: Dictionary, level: String, enabled: bool) -> void:
+	var levels := reasoning_effort_levels()
+	if not enabled:
+		if not levels.is_empty():
+			reasoning_effort = str(levels[0])
+		return
+	if not level.is_empty() and level in levels:
+		reasoning_effort = level
 
 
 ## Parse the SSE response from the ChatGPT backend
@@ -308,6 +351,8 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	# since function_call_arguments.done may have name=null (known OpenAI API bug)
 	var _pending_func_calls: Dictionary = {}  # item_id → {"name": ..., "call_id": ...}
 	var reasoning_parts := PackedStringArray()
+	# Raw reasoning items (id → item) captured for round-trip replay in tool loops.
+	var reasoning_items: Dictionary = {}
 
 	# Split on double newline to get individual events
 	var events := body_text.split("\n\n")
@@ -368,6 +413,12 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 						var image := _image_from_generation_item(item)
 						if image != null:
 							generated_image = image
+					elif item is Dictionary and item.get("type") == "reasoning":
+						# Capture the full reasoning item (id + encrypted_content) so
+						# it can be replayed verbatim in the next tool-loop request.
+						var rid: String = str(item.get("id", ""))
+						if not rid.is_empty():
+							reasoning_items[rid] = item
 
 				"response.function_call_arguments.done":
 					# Individual function call completion — arguments are final here.
@@ -402,6 +453,16 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 						if usage is Dictionary:
 							prompt_tokens = usage.get("input_tokens", usage.get("prompt_tokens", 0))
 							completion_tokens = usage.get("output_tokens", usage.get("completion_tokens", 0))
+
+						# Capture reasoning items from the final output (fallback if the
+						# per-item events were missed) for round-trip replay.
+						var completed_output = resp.get("output", [])
+						if completed_output is Array:
+							for oi in completed_output:
+								if oi is Dictionary and oi.get("type") == "reasoning":
+									var oid: String = str(oi.get("id", ""))
+									if not oid.is_empty():
+										reasoning_items[oid] = oi
 
 						# Extract text from output array if we didn't get deltas
 						if text_parts.is_empty():
@@ -438,8 +499,30 @@ func _parse_sse_response(response: RequestResults) -> BotResponse:
 	bot_response.text = "".join(text_parts)
 	if generated_image != null:
 		bot_response.image = generated_image
-	# Reasoning captured but BotResponse has no reasoning field yet — store for future use
-	#bot_response.reasoning = "".join(reasoning_parts)
+	# Surface the accumulated reasoning summary (OpenAI Responses streams the raw
+	# chain-of-thought only as encrypted_content; the human-readable part is the
+	# reasoning_summary_text deltas) into the display sequence as one summary segment.
+	var reasoning_summary: String = "".join(reasoning_parts)
+	# Fallback: the Codex backend is inconsistent about streaming
+	# reasoning_summary_text deltas — some turns deliver the same summary only
+	# inside the reasoning item's `summary` array. Pull it from there when the
+	# deltas were absent so the collapse renders regardless of delivery path.
+	if reasoning_summary.is_empty():
+		var summary_texts: PackedStringArray = []
+		for r_item in reasoning_items.values():
+			var summ = r_item.get("summary", [])
+			if summ is Array:
+				for part in summ:
+					if part is Dictionary and part.has("text"):
+						var t := str(part["text"])
+						if not t.is_empty():
+							summary_texts.append(t)
+		reasoning_summary = "\n\n".join(summary_texts)
+	if not reasoning_summary.is_empty():
+		bot_response.add_reasoning(reasoning_summary, "summary", false)
+	# Raw reasoning items (insertion order preserved) for same-model tool-loop replay.
+	if not reasoning_items.is_empty():
+		bot_response.reasoning_raw = reasoning_items.values()
 	bot_response.id = response_id
 	bot_response.prompt_tokens = prompt_tokens
 	bot_response.completion_tokens = completion_tokens
@@ -504,6 +587,15 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		# Return individual function_call items for each tool call
 		# The Responses API expects these as separate input items
 		var items: Array = []
+
+		# Replay this turn's raw reasoning items (encrypted_content) so the model
+		# retains its chain of thought across tool calls. Reasoning items must
+		# precede the function_call items. SAME-MODEL ONLY — replaying another
+		# model's reasoning items would 400; ReasoningRaw is transient so it is
+		# empty for reloaded history (only live in-loop turns carry it).
+		if chat_item.ModelName == model_name:
+			for r_item in chat_item.ReasoningRaw:
+				items.append(r_item)
 
 		# Add text content as a message if present
 		if not chat_item.Message.is_empty():

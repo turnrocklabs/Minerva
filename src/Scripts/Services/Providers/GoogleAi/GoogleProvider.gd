@@ -405,6 +405,14 @@ func to_bot_response(data: Variant) -> BotResponse:
 		for part in content["parts"]:
 			print("[Gemini] part keys: %s" % str(part.keys()))
 			if "text" in part:
+				# Thinking part — Gemini interleaves thought parts in `parts` with
+				# thought:true. Route to the reasoning sequence, NOT the visible
+				# message, else the chain-of-thought leaks into response.text.
+				if part.get("thought", false):
+					var thought_text: String = str(part["text"])
+					if not thought_text.is_empty():
+						response.add_reasoning(thought_text, "thinking", false)
+					continue
 				var text_content: String = part["text"]
 				# Strip leaked tool-call text (call:default_api:...) from Gemini responses
 				if _tool_call_text_regex:
@@ -439,6 +447,26 @@ func to_bot_response(data: Variant) -> BotResponse:
 	response.completion_tokens = data["usageMetadata"].get("candidatesTokenCount", 0)
 
 	return response
+
+
+## Gemini 3 models think, so always offer the picker.
+func uses_reasoning_effort_picker() -> bool:
+	return true
+
+
+## Map the picker's effort onto Gemini thinkingConfig. Merged at the top level of
+## the request body (generate_content does request_body.merge(additional_params),
+## which currently has no generationConfig), so this adds it cleanly.
+func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
+	var cfg := {"includeThoughts": enabled}
+	if enabled:
+		var budget := 8192
+		match level:
+			"low": budget = 2048
+			"medium": budget = 8192
+			"high": budget = 24576
+		cfg["thinkingBudget"] = budget
+	params["generationConfig"] = {"thinkingConfig": cfg}
 
 
 # ============================================================================

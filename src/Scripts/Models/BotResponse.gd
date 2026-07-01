@@ -40,6 +40,18 @@ var rate_limit_retry_after: float = -1.0
 ## Each item: {id: String, name: String, arguments: Dictionary}
 var tool_calls: Array[Dictionary] = []
 
+## Reasoning/thinking traces for this response (display-only metadata).
+## Position-aware sequence parallel to ToolExecutions, NOT a single string —
+## models can interleave multiple thinking segments per turn.
+## Each item: {kind: String, text: String, redacted: bool, order: int}
+## kind: "thinking" (raw chain-of-thought) | "summary" (provider summary)
+var reasoning: Array[Dictionary] = []
+
+## Raw provider reasoning items for round-trip replay within the in-flight agent
+## tool loop (e.g. OpenAI Responses reasoning items with encrypted_content).
+## Transient — display-only metadata, NOT persisted to .minproj.
+var reasoning_raw: Array = []
+
 ## Whether this response requires tool execution before continuing
 var requires_tool_response: bool:
 	get: return not tool_calls.is_empty()
@@ -56,6 +68,21 @@ func add_tool_call(tool_id: String, tool_name: String, arguments: Dictionary) ->
 		"id": tool_id,
 		"name": tool_name,
 		"arguments": arguments
+	})
+
+
+## Check if this response carries any reasoning/thinking segments
+func has_reasoning() -> bool:
+	return not reasoning.is_empty()
+
+
+## Append a reasoning/thinking segment, preserving arrival order.
+func add_reasoning(text: String, kind: String = "thinking", redacted: bool = false) -> void:
+	reasoning.append({
+		"kind": kind,
+		"text": text,
+		"redacted": redacted,
+		"order": reasoning.size()
 	})
 
 

@@ -412,7 +412,55 @@ func to_bot_response(data: Variant) -> BotResponse:
 	# Combine all text parts
 	response.text = "\n".join(text_parts)
 
+	extract_reasoning(data, response)
+
 	return response
+
+
+## Extract reasoning from an Anthropic response into the display sequence.
+## Anthropic emits thinking as distinct content blocks (the main text/tool_use
+## loop ignores them, so there is no text-leak risk):
+##   {type: "thinking", thinking: "...", signature: "..."} — visible chain-of-thought
+##   {type: "redacted_thinking", data: "..."} — encrypted, no readable text
+## On display:omitted model generations the thinking block is present but its
+## text is empty; that is treated as a redacted placeholder.
+func extract_reasoning(data: Variant, bot_response: BotResponse) -> void:
+	if not (data is Dictionary): return
+	var content_array = data.get("content", [])
+	if not (content_array is Array): return
+
+	for block in content_array:
+		if not (block is Dictionary): continue
+		var block_type: String = str(block.get("type", ""))
+		if block_type == "thinking":
+			var thinking_text: String = str(block.get("thinking", ""))
+			if thinking_text.is_empty():
+				bot_response.add_reasoning("", "thinking", true)
+			else:
+				bot_response.add_reasoning(thinking_text, "thinking", false)
+		elif block_type == "redacted_thinking":
+			bot_response.add_reasoning("", "thinking", true)
+
+
+## Claude 4.x models support extended thinking, so always offer the picker.
+func uses_reasoning_effort_picker() -> bool:
+	return true
+
+
+## Map the picker's effort onto Anthropic extended thinking. budget_tokens must
+## stay below max_tokens, so cap conservatively.
+func apply_reasoning_options(params: Dictionary, level: String, enabled: bool) -> void:
+	if not enabled:
+		params["thinking"] = {"type": "disabled"}
+		return
+	var budget := 8192
+	match level:
+		"low": budget = 2048
+		"medium": budget = 8192
+		"high": budget = 16384
+	if budget >= max_tokens:
+		budget = maxi(1024, int(max_tokens / 2.0))
+	params["thinking"] = {"type": "enabled", "budget_tokens": budget}
 
 
 # ============================================================================

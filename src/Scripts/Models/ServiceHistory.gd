@@ -78,6 +78,16 @@ var AgentSummarizeThreshold: int = 0:
 var AgentModeEnabled: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); AgentModeEnabled = value
 
+## Per-chat reasoning effort for providers that use the effort picker
+## (Anthropic/OpenRouter/Gemini/ChatGPT). "" = provider default (no override);
+## other values: "off", or a level from the provider's reasoning_effort_levels().
+var ReasoningEffort: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); ReasoningEffort = value
+
+## Whether to request a human-readable reasoning summary (ChatGPT). Default on.
+var ReasoningSummary: bool = true:
+	set(value): SingletonObject.call_deferred("save_state", false); ReasoningSummary = value
+
 ## Whether this chat was spawned by the agent trigger system
 var IsAgentChat: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); IsAgentChat = value
@@ -190,6 +200,8 @@ static var SERIALIZER_FIELDS = [
 	"AgentContextHardLimit",
 	"AgentSummarizeThreshold",
 	"AgentModeEnabled",
+	"ReasoningEffort",
+	"ReasoningSummary",
 	"IsAgentChat",
 	"AgentDefinitionId",
 	"ActiveSkills",
@@ -347,6 +359,8 @@ func Serialize() -> Dictionary:
 		"AgentContextHardLimit": AgentContextHardLimit,
 		"AgentSummarizeThreshold": AgentSummarizeThreshold,
 		"AgentModeEnabled": AgentModeEnabled,
+		"ReasoningEffort": ReasoningEffort,
+		"ReasoningSummary": ReasoningSummary,
 		"IsAgentChat": IsAgentChat,
 		"AgentDefinitionId": AgentDefinitionId,
 		"ActiveSkills": ActiveSkills,
@@ -459,6 +473,10 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgentSummarizeThreshold = int(data.get("AgentSummarizeThreshold", 0))
 	if data.has("AgentModeEnabled"):
 		history.AgentModeEnabled = data.get("AgentModeEnabled", false)
+	if data.has("ReasoningEffort"):
+		history.ReasoningEffort = str(data.get("ReasoningEffort", ""))
+	if data.has("ReasoningSummary"):
+		history.ReasoningSummary = bool(data.get("ReasoningSummary", true))
 	if data.has("IsAgentChat"):
 		history.IsAgentChat = data.get("IsAgentChat", false)
 	if data.has("AgentDefinitionId"):

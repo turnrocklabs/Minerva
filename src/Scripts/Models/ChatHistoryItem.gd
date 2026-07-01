@@ -35,7 +35,8 @@ static var SERIALIZER_FIELDS = [
 	"ToolExecutions",
 	"ToolSummary",
 	"ToolArtifactNoteId",
-	"RequestMetadata"
+	"RequestMetadata",
+	"Reasoning"
 ]
 
 # This signal is to be emitted when new message in the history list is added
@@ -160,6 +161,17 @@ var IsToolCall: bool = false:
 var ToolExecutions: Array[Dictionary] = []:
 	set(value): _queue_save_state(); ToolExecutions = value
 
+## Reasoning/thinking segments for display (mirrors ToolExecutions).
+## Display-only metadata — never enters Format() on a normal turn.
+## Structure: [{kind: String, text: String, redacted: bool, order: int}]
+var Reasoning: Array[Dictionary] = []:
+	set(value): _queue_save_state(); Reasoning = value
+
+## Raw provider reasoning items for same-model replay within the in-flight agent
+## tool loop (e.g. OpenAI Responses reasoning items with encrypted_content).
+## TRANSIENT — deliberately NOT in SERIALIZER_FIELDS (opaque/expiring payloads).
+var ReasoningRaw: Array = []
+
 ## Compact deterministic summary used for prompt projection/dehydration.
 var ToolSummary: String = "":
 	set(value): _queue_save_state(); ToolSummary = value
@@ -276,6 +288,7 @@ func Serialize() -> Dictionary:
 		"SliderContainerId": SliderContainerId,
 		"MultiSliderContainerId": MultiSliderContainerId,
 		"ToolExecutions": ToolExecutions,
+		"Reasoning": Reasoning,
 		# Tool-related fields for agentic mode
 		"ToolCallId": ToolCallId,
 		"ToolName": ToolName,
@@ -362,6 +375,14 @@ static func Deserialize(data: Dictionary) -> ChatHistoryItem:
 				if value is Array:
 					executions.assign(value)
 				value = executions
+
+			"Reasoning":
+				# Convert to typed array for backwards compatibility
+				# (old project files predate the Reasoning field → null)
+				var segments: Array[Dictionary] = []
+				if value is Array:
+					segments.assign(value)
+				value = segments
 
 			"ToolCalls":
 				# Convert to typed array for backwards compatibility

@@ -833,19 +833,31 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 	# Set chat_id on provider for budget enforcement
 	history.provider.chat_id = history.HistoryId
 
-	# Append the optional parameters for OpenAI models, send request and wait for the response
+	# Build request params: OpenAI sampling params (as before) plus per-chat
+	# reasoning options for any provider that supports the effort picker.
+	var optional_params := {}
 	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProviderScript:
-		var optional_params = {
+		optional_params = {
 			"temperature": history.Temperature,
 			"top_p": history.TopP,
 			"presence_penalty": history.PresencePenalty,
 			"frequency_penalty": history.FrequencyPenalty,
 		}
-		bot_response = await history.provider.generate_content(history_list, optional_params)
-		print("[ChatPane] OpenAI generate_content returned")
-	else:
-		bot_response = await history.provider.generate_content(history_list)
-		print("[ChatPane] Non-OpenAI generate_content returned")
+
+	# Per-chat reasoning effort → provider-native request params. Applied only
+	# when the user configured reasoning for this chat (ReasoningEffort != "");
+	# apply_reasoning_options is a no-op for providers without an override.
+	if history.ReasoningEffort != "":
+		var reasoning_enabled := history.ReasoningEffort != "off"
+		var reasoning_level := history.ReasoningEffort if reasoning_enabled else "medium"
+		history.provider.apply_reasoning_options(optional_params, reasoning_level, reasoning_enabled)
+
+	# Reasoning-summary preference (ChatGPT). Duck-typed so only providers that
+	# expose the field react — no provider-type coupling in ChatPane.
+	if "request_reasoning_summary" in history.provider:
+		history.provider.request_reasoning_summary = history.ReasoningSummary
+
+	bot_response = await history.provider.generate_content(history_list, optional_params)
 
 	# Record cost with chat context
 	if bot_response and SingletonObject.cost_tracker:
@@ -866,6 +878,10 @@ func process_bot_response(bot_response, _history_provider: BaseProvider) -> Chat
 		chi.Error = bot_response.error
 		chi.Complete = bot_response.complete
 		chi.OutputTokens = bot_response.completion_tokens
+		if bot_response.has_reasoning():
+			chi.Reasoning = bot_response.reasoning
+		# Transient raw reasoning for same-model replay in the agent tool loop.
+		chi.ReasoningRaw = bot_response.reasoning_raw
 		if bot_response.image:
 			chi.Images = ([bot_response.image] as Array[Image])
 
@@ -2685,6 +2701,11 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 			model_chi.Message = continuation_chi.Message
 		else:
 			model_chi.Message += "\n\n" + continuation_chi.Message
+
+	# Accumulate this round's reasoning onto the accumulator so multi-round agent
+	# thinking all renders (otherwise only round 1's reasoning would show).
+	if not continuation_chi.Reasoning.is_empty():
+		model_chi.Reasoning.append_array(continuation_chi.Reasoning)
 
 	# Check if there are more tool calls
 	if continuation_response.has_tool_calls():

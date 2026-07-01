@@ -171,6 +171,29 @@ func continue_partial_response(_partial_chi: ChatHistoryItem):
 func apply_cache_hints(_system_prompt: Variant, _messages: Array) -> void:
 	pass
 
+## Extract provider-specific reasoning/thinking traces from a raw API response
+## into bot_response.reasoning (the display sequence). Called by to_bot_response.
+## Default: no-op. Override in providers that return reasoning.
+func extract_reasoning(_data: Variant, _bot_response: BotResponse) -> void:
+	pass
+
+## Apply provider-specific reasoning request options (enable/disable + effort
+## level) to the outgoing request params. Default: no-op. Override in providers
+## that support reasoning controls.
+func apply_reasoning_options(_params: Dictionary, _level: String, _enabled: bool) -> void:
+	pass
+
+## Whether reasoning effort is chosen via the AISettings picker. ChatGPT bakes
+## effort into per-effort model entries instead, so it leaves this false. A
+## provider returns true to have the picker shown for it. Default: false.
+func uses_reasoning_effort_picker() -> bool:
+	return false
+
+## Coarse effort levels the picker offers; apply_reasoning_options maps them to
+## native request params. Default: low/medium/high.
+func reasoning_effort_levels() -> Array:
+	return ["low", "medium", "high"]
+
 #endregion
 
 func _ready():
