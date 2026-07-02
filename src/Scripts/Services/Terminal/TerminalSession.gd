@@ -53,6 +53,11 @@ var _rows: int = 24
 # True once start() succeeded.
 var started: bool = false
 
+## True when start() handed the working directory to the extension natively
+## (PTY child spawns there). False → callers wanting a cwd must fall back to
+## writing a `cd` line (older extension binaries without set_start_directory).
+var start_directory_applied: bool = false
+
 ## Cumulative bell count since terminal start. Monotonic, so waiters can
 ## snapshot it and diff instead of racing the signal.
 var bell_serial: int = 0
@@ -101,13 +106,19 @@ func _create_terminal_node() -> void:
 
 
 ## Starts the PTY at the given grid size. Idempotent guard via `started`.
-func start(cols: int, rows: int) -> bool:
+## start_dir (optional) is the child process's working directory — applied
+## natively when the extension binary supports it (has_method guard keeps
+## older binaries working; callers check start_directory_applied).
+func start(cols: int, rows: int, start_dir: String = "") -> bool:
 	if not terminal_available:
 		return false
 	if started:
 		return true
 	_cols = maxi(1, cols)
 	_rows = maxi(1, rows)
+	if not start_dir.is_empty() and terminal.has_method("set_start_directory"):
+		terminal.set_start_directory(start_dir)
+		start_directory_applied = true
 	var ok: bool = terminal.start(_cols, _rows)
 	started = ok
 	return ok

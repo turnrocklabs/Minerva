@@ -34,12 +34,15 @@ var _sessions: Dictionary = {}
 ## optionally starts it at the given grid size. Returns the session.
 ## If cols/rows are <= 0 the caller is expected to start() later (e.g. once a
 ## view supplies real layout geometry).
-func create_session(p_name: String = "Terminal", cols: int = 80, rows: int = 24):
+## start_dir (optional) is the shell's working directory — applied to the PTY
+## spawn natively when the extension supports it (session.start_directory_applied).
+func create_session(p_name: String = "Terminal", cols: int = 80, rows: int = 24,
+		start_dir: String = ""):
 	var session = TerminalSessionScript.new(p_name)
 	add_child(session)  # triggers _ready → builds the Terminal extension node
 	_sessions[session.terminal_id] = session
 	if cols > 0 and rows > 0:
-		session.start(cols, rows)
+		session.start(cols, rows, start_dir)
 	session_created.emit(session)
 	return session
 

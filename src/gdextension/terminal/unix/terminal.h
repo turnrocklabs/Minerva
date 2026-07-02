@@ -49,6 +49,10 @@ private:
     bool _in_escape = false;
     String _escape_buffer;
 
+    // Working directory for the PTY child. Empty → inherit the host process
+    // cwd (legacy behavior). Set BEFORE start().
+    String _start_directory;
+
     // libghostty-vt terminal state
     MinervaTerminal _vt_terminal = nullptr;
 
@@ -91,6 +95,8 @@ public:
     bool start(int width = 100, int height = 100) override;
     bool resize(int width, int height) override;
     void stop() override;
+    void set_start_directory(const String &path);
+    String get_start_directory() const;
     bool write_input(const String &input) override;
     void write_to_screen(const String &data);
     bool is_running() const override { return _running; }

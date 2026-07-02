@@ -119,16 +119,25 @@ func _test_infer_profile() -> void:
 
 
 func _test_quoting() -> void:
-	print("\n-- shell quoting + launch incantation --")
+	print("\n-- shell quoting + launch incantation (both dialects) --")
 	var D = load(DIALOG_PATH)
 	check("shell_quote wraps in single quotes", D.shell_quote("abc") == "'abc'")
 	check("shell_quote escapes embedded single quotes",
 		D.shell_quote("a'b") == "'a'\\''b'", D.shell_quote("a'b"))
-	check("build_launch_line uses exec bash -lc + \\r",
-		D.build_launch_line("claude --x") == "exec bash -lc 'claude --x'\r",
-		D.build_launch_line("claude --x"))
-	check("build_cd_line quotes + \\r", D.build_cd_line("/tmp/a b") == "cd '/tmp/a b'\r",
-		D.build_cd_line("/tmp/a b"))
+	check("build_launch_line posix uses exec bash -lc + \\r",
+		D.build_launch_line("claude --x", false) == "exec bash -lc 'claude --x'\r",
+		D.build_launch_line("claude --x", false))
+	check("build_launch_line windows runs the bare command (cmd has no exec/bash)",
+		D.build_launch_line("claude --x", true) == "claude --x\r",
+		D.build_launch_line("claude --x", true))
+	check("build_cd_line posix single-quotes + \\r",
+		D.build_cd_line("/tmp/a b", false) == "cd '/tmp/a b'\r",
+		D.build_cd_line("/tmp/a b", false))
+	check("build_cd_line windows: cd /d, double quotes, backslashes",
+		D.build_cd_line("C:/github/My Proj", true) == "cd /d \"C:\\github\\My Proj\"\r",
+		D.build_cd_line("C:/github/My Proj", true))
+	check("is_windows_shell matches host OS",
+		D.is_windows_shell() == (OS.get_name() == "Windows"))
 	check("entry key format", D.entry_key_for_terminal("123") == "plugin:agent_relay:terminal-123")
 
 
@@ -225,10 +234,12 @@ func _test_happy_path(so) -> void:
 	# `echo claude-...` keeps profile inference on "claude" without actually
 	# launching a real agent CLI in the test environment.
 	var command := "echo claude-marker-w3"
+	# A directory that exists on every platform ("/tmp" doesn't on Windows).
+	var test_cwd: String = OS.get_user_data_dir()
 	dialog._name_edit.text = "PT Launch Test"
 	dialog._command_edit.text = command
 	dialog._on_command_changed(command)
-	dialog._cwd_edit.text = "/tmp"
+	dialog._cwd_edit.text = test_cwd
 	await dialog._on_start_pressed()
 
 	check("no launch error", dialog.current_error() == "", dialog.current_error())
@@ -249,14 +260,27 @@ func _test_happy_path(so) -> void:
 	check("session named from the form", session != null and session.session_name == "PT Launch Test",
 		session.session_name if session != null else "<null>")
 
-	# The PTY received the cd + exec bash -lc writes (echoed by the shell).
+	# The PTY received the launch write (echoed by the shell) in the host
+	# dialect. The cd line only appears on the fallback path — new extension
+	# binaries take the cwd natively (start_directory_applied).
+	var D = load(DIALOG_PATH)
+	var windows: bool = D.is_windows_shell()
+	var expected_launch: String = D.build_launch_line(command, windows).trim_suffix("\r")
+	var expected_cd: String = D.build_cd_line(test_cwd, windows).trim_suffix("\r")
+	var native_cwd: bool = session != null and session.start_directory_applied
 	var saw_writes: bool = await _wait_until(func() -> bool:
 		if session == null:
 			return false
 		var txt: String = session.get_plain_text()
-		return txt.contains("cd '/tmp'") and txt.contains("exec bash -lc 'echo claude-marker-w3'"))
-	check("PTY received cd + exec bash -lc writes", saw_writes,
+		if not txt.contains(expected_launch):
+			return false
+		return native_cwd or txt.contains(expected_cd))
+	check("PTY received the launch write (+ cd fallback only when not native)", saw_writes,
 		session.get_plain_text().left(400) if session != null else "<null>")
+	if native_cwd:
+		check("native cwd path skips the cd keystrokes",
+			not session.get_plain_text().contains(expected_cd),
+			session.get_plain_text().left(400))
 
 	# Chat created with the full passthrough binding.
 	check("exactly one chat created", pane.presented.size() == 1, str(pane.presented.size()))
@@ -267,7 +291,7 @@ func _test_happy_path(so) -> void:
 			history.BoundTerminalId)
 		check("chat PassthroughCommand stored", history.PassthroughCommand == command,
 			history.PassthroughCommand)
-		check("chat PassthroughCwd stored", history.PassthroughCwd == "/tmp", history.PassthroughCwd)
+		check("chat PassthroughCwd stored", history.PassthroughCwd == test_cwd, history.PassthroughCwd)
 		check("chat PassthroughName from session name", history.PassthroughName == "PT Launch Test",
 			history.PassthroughName)
 	check("dialog closed on success", not dialog.visible)

@@ -99,22 +99,38 @@ static func infer_profile(command: String) -> String:
 	return "claude"
 
 
+## True when the PTY shell on this host is cmd.exe (the Windows ConPTY backend
+## hardcodes it). Drives the launch-line dialect below.
+static func is_windows_shell() -> bool:
+	return OS.get_name() == "Windows"
+
+
 ## Defensive POSIX single-quote wrapping: 'foo' with embedded single quotes
 ## escaped as '\'' — safe to splice into a shell line.
 static func shell_quote(s: String) -> String:
 	return "'" + s.replace("'", "'\\''") + "'"
 
 
-## The exact PTY incantation for the startup command. `exec bash -lc` is the
-## v1 answer to the nvm-PATH gotcha: a bare forkpty shell lacks the user's
-## login PATH (codex died on it); bash -lc sources the login profile, and exec
-## replaces the wrapper shell so the agent owns the PTY + its exit code.
-static func build_launch_line(command: String) -> String:
+## The exact PTY incantation for the startup command, per shell dialect.
+## POSIX: `exec bash -lc` is the v1 answer to the nvm-PATH gotcha: a bare
+## forkpty shell lacks the user's login PATH (codex died on it); bash -lc
+## sources the login profile, and exec replaces the wrapper shell so the agent
+## owns the PTY + its exit code.
+## Windows: the PTY runs cmd.exe — no exec, no bash, no single quotes. cmd
+## resolves .cmd/.exe shims through PATH itself, so the command runs bare.
+static func build_launch_line(command: String, windows: bool) -> String:
+	if windows:
+		return "%s\r" % command
 	return "exec bash -lc %s\r" % shell_quote(command)
 
 
 ## The cd line written before the launch line when a working dir is set.
-static func build_cd_line(cwd: String) -> String:
+## Windows: cmd needs `/d` to switch drives, double quotes (single quotes are
+## literal characters to cmd), and backslashes (Godot's FileDialog hands back
+## forward slashes, which cmd's `cd` rejects in some forms).
+static func build_cd_line(cwd: String, windows: bool) -> String:
+	if windows:
+		return "cd /d \"%s\"\r" % cwd.replace("/", "\\")
 	return "cd %s\r" % shell_quote(cwd)
 
 
@@ -386,7 +402,10 @@ func _do_launch(session_name: String, bind_existing: bool, command: String,
 		cwd = ""
 	else:
 		# --- create the background session (T2 registry path) ---
-		var session = registry.create_session(session_name, 80, 24)
+		# The cwd is applied to the PTY spawn itself (CreateProcessW
+		# lpCurrentDirectory / forkpty-child chdir) when the extension supports
+		# it — quoting-proof and shell-agnostic.
+		var session = registry.create_session(session_name, 80, 24, cwd)
 		if session == null or not session.terminal_available or not session.started:
 			if session != null:
 				registry.close_session(session.terminal_id)
@@ -395,11 +414,13 @@ func _do_launch(session_name: String, bind_existing: bool, command: String,
 		terminal_id = str(session.terminal_id)
 		created_session = true
 
-		# cd first (quoted), then exec the agent under a login-shell env.
-		if not cwd.is_empty():
-			session.write_input(build_cd_line(cwd))
+		# Fallback for older extension binaries without native start-directory
+		# support: cd via keystrokes, in the shell's own dialect.
+		var windows: bool = is_windows_shell()
+		if not cwd.is_empty() and not session.start_directory_applied:
+			session.write_input(build_cd_line(cwd, windows))
 		if not command.is_empty():
-			session.write_input(build_launch_line(command))
+			session.write_input(build_launch_line(command, windows))
 
 	# --- watch seam ---
 	var watch_result: Dictionary = await _call_watch_starter(terminal_id)

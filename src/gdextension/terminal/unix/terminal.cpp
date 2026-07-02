@@ -38,6 +38,8 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("write_input", "input"), &Terminal::write_input);
     ClassDB::bind_method(D_METHOD("write_to_screen", "data"), &Terminal::write_to_screen);
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
+    ClassDB::bind_method(D_METHOD("set_start_directory", "path"), &Terminal::set_start_directory);
+    ClassDB::bind_method(D_METHOD("get_start_directory"), &Terminal::get_start_directory);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
     ADD_SIGNAL(MethodInfo("on_shell_prompt_start"));
@@ -604,6 +606,16 @@ Terminal::~Terminal()
     stop();
 }
 
+void Terminal::set_start_directory(const String &path)
+{
+    _start_directory = path;
+}
+
+String Terminal::get_start_directory() const
+{
+    return _start_directory;
+}
+
 bool Terminal::start(int width, int height)
 {
     if (_running)
@@ -611,6 +623,11 @@ bool Terminal::start(int width, int height)
 
     _width = width;
     _height = height;
+
+    // Materialize the start directory BEFORE forking — Godot String methods
+    // allocate, and allocation between fork and exec is unsafe in a
+    // multithreaded process.
+    CharString start_dir_utf8 = _start_directory.utf8();
 
     // Create PTY
     struct winsize ws = {
@@ -632,6 +649,14 @@ bool Terminal::start(int width, int height)
 
     if (_child_pid == 0) {
         // Child process
+        // Spawn in the configured start directory (empty → inherit). A failed
+        // chdir is non-fatal: the shell starts in the inherited cwd instead.
+        if (start_dir_utf8.length() > 0) {
+            if (chdir(start_dir_utf8.get_data()) != 0) {
+                // Can't safely log from the fork child; the shell prompt will
+                // reveal the fallback cwd.
+            }
+        }
         putenv((char*)"TERM=xterm-256color");
         putenv((char*)"BASH_ENV=");
         putenv((char*)"ENV=");

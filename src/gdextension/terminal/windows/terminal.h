@@ -48,9 +48,18 @@ namespace godot
         std::atomic<bool> _command_running{false};
         std::atomic<bool> _running{false};
         std::thread _output_thread;
+        // Waits on the child process handle: ConPTY's output pipe does NOT
+        // break when the child exits (the open pseudoconsole holds it), so the
+        // reader loop alone can't detect shell exit.
+        std::thread _exit_wait_thread;
+        std::atomic<bool> _exit_emitted{false};
 
         bool _in_escape = false;
         String _escape_buffer;
+
+        // Working directory for the PTY child. Empty → inherit the host
+        // process cwd (legacy behavior). Set BEFORE start().
+        String _start_directory;
 
         // libghostty-vt terminal state (shared with the unix backend via the
         // minerva-vt shim). ConPTY supplies the PTY; ghostty-vt supplies the
@@ -97,6 +106,8 @@ namespace godot
         bool start(int width = 100, int height = 100) override;
         bool resize(int width, int height) override;
         void stop() override;
+        void set_start_directory(const String &path);
+        String get_start_directory() const;
         bool write_input(const String &input) override;
         void write_to_screen(const String &data);
         bool is_running() const override { return _running; }

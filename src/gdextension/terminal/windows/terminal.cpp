@@ -18,6 +18,8 @@ void Terminal::_bind_methods()
     ClassDB::bind_method(D_METHOD("write_input", "input"), &Terminal::write_input);
     ClassDB::bind_method(D_METHOD("write_to_screen", "data"), &Terminal::write_to_screen);
     ClassDB::bind_method(D_METHOD("is_running"), &Terminal::is_running);
+    ClassDB::bind_method(D_METHOD("set_start_directory", "path"), &Terminal::set_start_directory);
+    ClassDB::bind_method(D_METHOD("get_start_directory"), &Terminal::get_start_directory);
 
     ADD_SIGNAL(MethodInfo("output_received", PropertyInfo(Variant::STRING, "content"), PropertyInfo(Variant::INT, "type")));
     ADD_SIGNAL(MethodInfo("on_shell_prompt_start"));
@@ -576,6 +578,16 @@ Terminal::~Terminal()
     stop();
 }
 
+void Terminal::set_start_directory(const String &path)
+{
+    _start_directory = path;
+}
+
+String Terminal::get_start_directory() const
+{
+    return _start_directory;
+}
+
 bool Terminal::start(int width, int height)
 {
     if (_running)
@@ -631,9 +643,25 @@ bool Terminal::start(int width, int height)
         return false;
     }
 
+    // Spawn directory: lpCurrentDirectory wants backslashes; empty → NULL
+    // (inherit the host process cwd, the legacy behavior). A missing directory
+    // would fail CreateProcessW outright, so degrade to inherit + warn.
+    String start_dir = _start_directory.replace("/", "\\");
+    Char16String start_dir_u16 = start_dir.utf16();
+    LPCWSTR spawn_dir = start_dir.is_empty() ? NULL : (LPCWSTR)start_dir_u16.get_data();
+    if (spawn_dir)
+    {
+        DWORD attrs = GetFileAttributesW(spawn_dir);
+        if (attrs == INVALID_FILE_ATTRIBUTES || !(attrs & FILE_ATTRIBUTE_DIRECTORY))
+        {
+            UtilityFunctions::push_warning("[Terminal C++] start_directory does not exist, inheriting cwd: ", start_dir);
+            spawn_dir = NULL;
+        }
+    }
+
     // Create cmd process
     WCHAR cmd[] = L"cmd.exe";
-    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT, NULL, NULL, &si.StartupInfo, &_process_info))
+    if (!CreateProcessW(NULL, cmd, NULL, NULL, FALSE, EXTENDED_STARTUPINFO_PRESENT, NULL, spawn_dir, &si.StartupInfo, &_process_info))
     {
         ClosePseudoConsole(_console);
         HeapFree(GetProcessHeap(), 0, si.lpAttributeList);
@@ -682,6 +710,7 @@ bool Terminal::start(int width, int height)
 
     // Start output thread
     _running = true;
+    _exit_emitted = false;
     _output_thread = std::thread([this]()
                                  {
        char buffer[4096];
@@ -710,7 +739,9 @@ bool Terminal::start(int width, int height)
        // broken pipe — the shell exited on its own (stop() clears _running
        // first, so manual shutdown does not emit). Report the exit code,
        // mirroring the unix backend / Subprocess::process_exited.
-       if (_running && _process_info.hProcess) {
+       // (Belt-and-braces with the exit-wait thread; _exit_emitted keeps the
+       // signal single-shot.)
+       if (_running && _process_info.hProcess && !_exit_emitted.exchange(true)) {
            DWORD code = 0;
            int exit_code = -1;
            if (GetExitCodeProcess(_process_info.hProcess, &code)) {
@@ -718,6 +749,30 @@ bool Terminal::start(int width, int height)
            }
            call_deferred("emit_signal", "process_exited", exit_code);
        } });
+
+    // Exit-wait thread: ConPTY's output pipe does NOT break when the child
+    // exits (the open pseudoconsole holds it), so the reader loop above can't
+    // detect shell exit on its own. Wait on a DUPLICATED process handle so
+    // stop() can close _process_info.hProcess independently.
+    HANDLE wait_handle = nullptr;
+    DuplicateHandle(GetCurrentProcess(), _process_info.hProcess,
+                    GetCurrentProcess(), &wait_handle,
+                    SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, 0);
+    if (wait_handle)
+    {
+        _exit_wait_thread = std::thread([this, wait_handle]()
+                                        {
+            WaitForSingleObject(wait_handle, INFINITE);
+            if (_running && !_exit_emitted.exchange(true)) {
+                DWORD code = 0;
+                int exit_code = -1;
+                if (GetExitCodeProcess(wait_handle, &code)) {
+                    exit_code = (code == STILL_ACTIVE) ? -1 : (int)code;
+                }
+                call_deferred("emit_signal", "process_exited", exit_code);
+            }
+            CloseHandle(wait_handle); });
+    }
 
     return true;
 }
@@ -746,6 +801,13 @@ void Terminal::stop()
     if (_output_thread.joinable())
     {
         _output_thread.join();
+    }
+
+    // TerminateProcess above signals the duplicated wait handle, so this join
+    // is prompt. (_running is already false → the waiter skips the emit.)
+    if (_exit_wait_thread.joinable())
+    {
+        _exit_wait_thread.join();
     }
 
     if (_input_write)
