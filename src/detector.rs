@@ -376,6 +376,37 @@ mod tests {
          \n"
     }
 
+    /// An AskUserQuestion chooser (Windows ASCII caret): numbered options with
+    /// a `>` cursor and the nav footer. Must fire input_requested.
+    fn screen_claude_windows_chooser() -> &'static str {
+        "Which experience should I prototype next?\n\
+         \n\
+         > 1. Group fair + NetTrans (Recommended)\n\
+           2. CSA provider onboarding\n\
+           6. Chat about this\n\
+         \n\
+         Enter to select \u{b7} \u{2191}/\u{2193} to navigate \u{b7} Esc to cancel\n"
+    }
+
+    /// LIVE REGRESSION (2026-07-03): a completed turn whose PROSE ends with a
+    /// conversational "Do you want to …?" question, idle input box below. The
+    /// old phrase-based dialog regex turned this into a phantom choice dialog
+    /// (input_requested) and the passthrough chat stored only the question
+    /// snippet instead of the full answer. Must detect as turn_completed.
+    fn screen_claude_prose_question_idle() -> &'static str {
+        "  So the ladder I'd write down: (1) one character, exact pose, on-model still\n\
+         \n\
+           Do you want to keep pushing on the target picture, or is the next move to look\n\
+           at what you have in hand \u{2014} to see how far rung 1 is from working today?\n\
+         \n\
+         \u{273b} Cooked for 51s\n\
+         \n\
+         \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\
+         >\n\
+         \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\
+         \u{23f5}\u{23f5} bypass permissions on (shift+tab to cycle) \u{b7} \u{2190} for agents\n"
+    }
+
     /// Screen that looks idle but has a spinner further up (should detect as idle
     /// since spinners are only checked in the last 40 lines).
     /// The spinners are at lines 0-1; then 50 blank lines push them above the
@@ -442,6 +473,29 @@ mod tests {
         let r = result.unwrap();
         assert_eq!(r.cause, WakeCause::TurnCompleted);
         assert_eq!(r.method, DetectionMethod::SettlePrompt);
+    }
+
+    #[test]
+    fn test_prose_question_is_turn_completed_not_dialog() {
+        let cd = compiled_claude();
+        let result = run(screen_claude_prose_question_idle(), false, false, &cd);
+        assert!(result.is_some(), "settled prose-question screen should detect");
+        let r = result.unwrap();
+        assert_eq!(
+            r.cause, WakeCause::TurnCompleted,
+            "conversational 'Do you want to …?' prose must NOT read as a dialog"
+        );
+        assert_eq!(r.method, DetectionMethod::SettlePrompt);
+    }
+
+    #[test]
+    fn test_windows_chooser_is_input_requested() {
+        let cd = compiled_claude();
+        let result = run(screen_claude_windows_chooser(), false, false, &cd);
+        assert!(result.is_some(), "chooser screen should detect");
+        let r = result.unwrap();
+        assert_eq!(r.cause, WakeCause::InputRequested);
+        assert_eq!(r.method, DetectionMethod::PermissionDialog);
     }
 
     #[test]

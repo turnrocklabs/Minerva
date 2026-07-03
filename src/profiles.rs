@@ -136,19 +136,27 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 prompt_box_regex: r"^[❯>](?:\s|$)".to_string(),
 
                 // Claude Code blocks for input in two shapes:
-                //   1. Permission dialogs — "Do you want to proceed?" / "run
-                //      this command?" confirmation boxes (marker ABOVE options).
+                //   1. Permission dialogs — "Do you want to proceed?" boxes
+                //      with caret-selected numbered options (`❯ 1. Yes`).
                 //   2. AskUserQuestion choosers — a numbered list with a `❯`
                 //      cursor and the nav footer "Enter to select · ↑/↓ to
                 //      navigate · Esc to cancel" (marker BELOW options). Under
                 //      --dangerously-skip-permissions the chooser is the PRIMARY
                 //      interactive prompt, and its `❯ 1.` cursor line otherwise
-                //      matches prompt_box_regex → false turn_completed. The
-                //      "enter to select" footer token is chooser-unique (codex's
-                //      "press enter to confirm" does NOT contain it), so it fires
-                //      input_requested here without touching the codex profile.
+                //      matches prompt_box_regex → false turn_completed.
+                //
+                // STRUCTURAL TOKENS ONLY (live 2026-07-03 regression): prose
+                // phrases ("do you want to", "proceed?", "yes/no") false-fire
+                // on ordinary answers — Claude routinely ENDS a turn with "Do
+                // you want to …?" as a conversational question, which turned
+                // full replies into phantom choice dialogs. What survives:
+                //   [❯>]\s*\d+\.\s — a caret-SELECTED numbered option (any
+                //     index; `>` covers the Windows ASCII rendering),
+                //   "enter to select" — the chooser nav footer (codex's
+                //     "press enter to confirm" does not contain it),
+                //   (y/n) / [y/n]  — bracketed literal y/n prompts.
                 permission_dialog_regex: Some(
-                    r"(?i)(?:do you want to|allow claude|proceed\?|yes/no|\[y/n\]|[❯>] 1\. yes|enter to select)".to_string()
+                    r"(?i)(?:[❯>]\s*\d+\.\s|enter to select|[\[(]y/n[\])])".to_string()
                 ),
 
                 // Working indicator: status glyphs like ✻ PERSIST after a turn
