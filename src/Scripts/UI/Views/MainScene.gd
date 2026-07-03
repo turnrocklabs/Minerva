@@ -19,7 +19,7 @@ var max_font_size: int
 var current_font_size: int
 # these are for setting upper and lower limits to the font size
 var min_diff_font_size: = 4
-var max_diff_font_size: = 8
+var max_diff_font_size: = 16
 
 func _ready() -> void:
 	if theme:
@@ -31,8 +31,16 @@ func _ready() -> void:
 			min_font_size = ThemeDB.fallback_font_size - min_diff_font_size
 			max_font_size = ThemeDB.fallback_font_size + max_diff_font_size
 			current_font_size =ThemeDB.fallback_font_size
-	
+
 	_default_zoom = current_font_size
+
+	# Restore the persisted text zoom (View → Zoom In/Out Text) and keep it
+	# applied to nodes created later (new chat messages, tabs, dialogs).
+	get_tree().node_added.connect(_on_node_added_apply_text_zoom)
+	var saved_zoom: int = SingletonObject.config_file.get_value("UI", "text_zoom", _default_zoom)
+	if saved_zoom != _default_zoom:
+		current_font_size = clamp(saved_zoom, min_font_size, max_font_size)
+		_recursive_theme_change(self, _set_node_font_size.bind(current_font_size))
 	# _open_drawer_notes()
 
 	#this is for overriding the separation in the open file dialog
@@ -87,7 +95,9 @@ func _recursive_theme_change(node: Control, callback: Callable) -> void:
 
 
 func _set_node_font_size(node: Node, new_size: int) -> void:
-	if node is MarkdownLabel:
+	# RichTextLabel (and its MarkdownLabel subclass — chat message bodies)
+	# ignores the generic "font_size" key; it needs the per-style keys.
+	if node is RichTextLabel:
 		node.add_theme_font_size_override("bold_italics_font_size", new_size)
 		node.add_theme_font_size_override("italics_font_size", new_size)
 		node.add_theme_font_size_override("mono_font_size", new_size)
@@ -98,7 +108,7 @@ func _set_node_font_size(node: Node, new_size: int) -> void:
 		node.add_theme_font_size_override("font_size", new_size)
 
 func _reset_node_font_size(node: Node) -> void:
-	if node is MarkdownLabel:
+	if node is RichTextLabel:
 		node.remove_theme_font_size_override("bold_italics_font_size")
 		node.remove_theme_font_size_override("italics_font_size")
 		node.remove_theme_font_size_override("mono_font_size")
@@ -110,30 +120,27 @@ func _reset_node_font_size(node: Node) -> void:
 
 
 func zoom_ui(factor: int):
-	# print("min_fontsize: " + str(min_font_size))
-	# print("max_fontsize: " + str(max_font_size))
-	# print("current_fontsize: " + str(current_font_size))
-
 	current_font_size = clamp(current_font_size + factor, min_font_size, max_font_size)
-	
+
+	SingletonObject.save_to_config_file("UI", "text_zoom", current_font_size)
 	_recursive_theme_change(self, _set_node_font_size.bind(current_font_size))
-
-
-	# if current_font_size + factor >= min_font_size and current_font_size + factor <= max_font_size:
-	# 	if theme.has_default_font_size():
-	# 		_recursive_theme_change(self, "add_theme_font_size_override", ["font_size", current_font_size + factor])
-	# 		# theme.default_font_size += factor
-	# 		current_font_size = current_font_size + factor
-	# 	else:
-	# 		_recursive_theme_change(self, "add_theme_font_size_override", ["font_size", ThemeDB.fallback_font_size + factor])
-	# 		# theme.default_font_size = ThemeDB.fallback_font_size + factor
-	# 		current_font_size = ThemeDB.fallback_font_size + factor
 
 
 func reset_zoom():
 	current_font_size = _default_zoom
 
-	_recursive_theme_change(self, _set_node_font_size.bind(current_font_size))
+	SingletonObject.save_to_config_file("UI", "text_zoom", current_font_size)
+	# Remove the overrides instead of stamping the default size, so controls
+	# whose theme declares a non-default font size get their theme value back.
+	_recursive_theme_change(self, _reset_node_font_size)
+
+
+## Text zoom must survive restarts AND reach nodes created after the zoom —
+## chat messages instantiate per turn, and a one-shot tree walk misses them
+## (the original "chat text reverts to tiny on every new message" bug).
+func _on_node_added_apply_text_zoom(node: Node) -> void:
+	if current_font_size != _default_zoom and node is Control:
+		_set_node_font_size(node, current_font_size)
 
 
 func _gui_input(event):
