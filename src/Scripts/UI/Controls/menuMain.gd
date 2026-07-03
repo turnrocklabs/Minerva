@@ -1426,9 +1426,9 @@ func _on_project_index_pressed(index):
 func _on_view_id_pressed(id: int):
 	# if zoom items are selected
 	match id:
-		4: SingletonObject.main_scene.zoom_ui(2); return
-		5: SingletonObject.main_scene.zoom_ui(-2); return
-		6: SingletonObject.main_scene.reset_zoom(); return
+		4: SingletonObject.increment_chat_font_size(); return
+		5: SingletonObject.decrement_chat_font_size(); return
+		6: SingletonObject.reset_chat_font_size(); return
 		8: _show_messages()
 		9: _show_notes()
 		11: SingletonObject.set_icon_size_24.emit(); return

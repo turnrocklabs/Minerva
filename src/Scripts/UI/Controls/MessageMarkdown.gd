@@ -124,6 +124,11 @@ var images: Array[ChatImage]:
 
 
 func _ready() -> void:
+	# Chat-scoped text size: applied before the size setup below so the
+	# collapsed-height budgets are already scaled to the font ratio.
+	SingletonObject.chat_font_size_changed.connect(_apply_chat_font_size)
+	_apply_chat_font_size()
+
 	if  history_item.isMerged:
 		%UnsplitButton.visible = true
 	render()
@@ -230,7 +235,53 @@ func render() -> void:
 	_create_reasoning_blocks()
 	_create_tool_blocks()
 	_create_request_metadata_block()
-	
+
+	# Labels created above (text parts, tool/reasoning blocks) must pick up the
+	# chat text size — deferred so children built inside their _ready exist.
+	call_deferred("_apply_chat_font_size")
+
+
+#region Chat text size
+const _RTL_FONT_SIZE_KEYS: Array[String] = ["normal_font_size", "bold_font_size",
+	"italics_font_size", "bold_italics_font_size", "mono_font_size"]
+
+## Ratio the collapsed-height budgets are currently scaled by (1.0 = theme default).
+var _chat_font_ratio: float = 1.0
+
+
+## Apply the chat-scoped text size (View → Chat Text Larger/Smaller/Reset,
+## SingletonObject.chat_font_size) to every RichTextLabel in this message, and
+## scale the collapsed-height budgets by the font ratio so bigger text shows
+## roughly the same number of LINES instead of clipping. Width needs no work —
+## RichTextLabel autowraps to the pane. 0 = remove overrides (theme default).
+func _apply_chat_font_size() -> void:
+	var size: int = SingletonObject.chat_font_size
+	_apply_font_overrides(self, size)
+
+	var default_size: int = SingletonObject.theme_default_font_size()
+	var ratio: float = 1.0
+	if size > 0 and default_size > 0:
+		ratio = float(size) / float(default_size)
+	if not is_equal_approx(ratio, _chat_font_ratio):
+		var factor: float = ratio / _chat_font_ratio
+		custom_starting_size *= factor
+		max_message_size_limit *= factor
+		if resize_scroll_container != null \
+				and resize_scroll_container.custom_minimum_size.y > 0.0:
+			resize_scroll_container.custom_minimum_size.y *= factor
+		_chat_font_ratio = ratio
+
+
+func _apply_font_overrides(node: Node, size: int) -> void:
+	if node is RichTextLabel:
+		for key in _RTL_FONT_SIZE_KEYS:
+			if size > 0:
+				node.add_theme_font_size_override(key, size)
+			else:
+				node.remove_theme_font_size_override(key)
+	for child in node.get_children():
+		_apply_font_overrides(child, size)
+#endregion Chat text size
 
 
 func set_edit(on: = true) -> void:

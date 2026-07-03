@@ -1220,6 +1220,59 @@ func _load_ui_scale() -> void:
 
 #endregion UI Scaling
 
+#region Chat text size
+## Chat-scoped text size (View → Chat Text Larger/Smaller/Reset). Applies ONLY
+## to chat message bubbles (MessageMarkdown listens on the signal) — never to
+## the wider UI, which fixed layouts/popups can't absorb. 0 = theme default
+## (no overrides). Persisted in config "UI"/"chat_font_size".
+
+signal chat_font_size_changed()
+
+var min_chat_font_size: int = 10
+var max_chat_font_size: int = 40
+var chat_font_size_step: int = 2
+var chat_font_size: int = 0
+
+
+## The theme's default font size — the size chat text renders at when no
+## chat_font_size is set, and the base for the bubble-height ratio.
+func theme_default_font_size() -> int:
+	if main_scene != null and main_scene.theme != null \
+			and main_scene.theme.has_default_font_size():
+		return main_scene.theme.default_font_size
+	return ThemeDB.fallback_font_size
+
+
+## The size chat text actually renders at right now.
+func effective_chat_font_size() -> int:
+	return chat_font_size if chat_font_size > 0 else theme_default_font_size()
+
+
+func increment_chat_font_size() -> void:
+	_set_chat_font_size(clampi(effective_chat_font_size() + chat_font_size_step,
+			min_chat_font_size, max_chat_font_size))
+
+
+func decrement_chat_font_size() -> void:
+	_set_chat_font_size(clampi(effective_chat_font_size() - chat_font_size_step,
+			min_chat_font_size, max_chat_font_size))
+
+
+func reset_chat_font_size() -> void:
+	_set_chat_font_size(0)
+
+
+func _set_chat_font_size(size: int) -> void:
+	chat_font_size = size
+	save_to_config_file("UI", "chat_font_size", size)
+	chat_font_size_changed.emit()
+
+
+func _load_chat_font_size() -> void:
+	chat_font_size = int(config_file.get_value("UI", "chat_font_size", 0))
+
+#endregion Chat text size
+
 func _ready():
 	SingletonObject.notes_draw_state_changed.connect(
 		func(state: int):
@@ -1309,6 +1362,7 @@ func _ready():
 
 	# Load UI scale from config
 	_load_ui_scale()
+	_load_chat_font_size()
 
 	var theme_enum = get_theme_enum()
 	if theme_enum > -1:
