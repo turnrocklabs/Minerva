@@ -1817,11 +1817,38 @@ fn main() {
             "tools/call" => {
                 let tool_name = req.params.get("name")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                    .unwrap_or("")
+                    .to_string();
 
                 log::debug!("tool call: {tool_name}");
 
-                match tool_name {
+                // Long-blocking tools (they wait for turn completion, up to
+                // watch_timeout_ms = 10 min) run on their OWN thread: on the
+                // dispatch thread they starve every other call — watch_status
+                // and friends must stay responsive DURING a turn. Responses
+                // are id-matched by the host, so out-of-order writes are fine,
+                // and StdoutWriter is mutexed so lines never interleave.
+                if matches!(tool_name.as_str(),
+                    "minerva_agent_relay_wait_turn"
+                    | "minerva_agent_relay_relay_ask"
+                    | "minerva_agent_relay_passthrough_generate")
+                {
+                    let router2 = Arc::clone(&router);
+                    std::thread::spawn(move || {
+                        let resp = match tool_name.as_str() {
+                            "minerva_agent_relay_wait_turn" =>
+                                handle_wait_turn(&req.params, req.id),
+                            "minerva_agent_relay_relay_ask" =>
+                                handle_relay_ask(&req.params, req.id, &router2),
+                            _ =>
+                                handle_passthrough_generate(&req.params, req.id, &router2),
+                        };
+                        router2.stdout.write_line(&resp);
+                    });
+                    continue;
+                }
+
+                match tool_name.as_str() {
                     "minerva_agent_relay_watch_start" =>
                         handle_watch_start(&req.params, req.id, &router),
                     "minerva_agent_relay_watch_stop" =>
@@ -1830,12 +1857,6 @@ fn main() {
                         handle_watch_status(&req.params, req.id),
                     "minerva_agent_relay_send" =>
                         handle_send(&req.params, req.id, &router),
-                    "minerva_agent_relay_wait_turn" =>
-                        handle_wait_turn(&req.params, req.id),
-                    "minerva_agent_relay_relay_ask" =>
-                        handle_relay_ask(&req.params, req.id, &router),
-                    "minerva_agent_relay_passthrough_generate" =>
-                        handle_passthrough_generate(&req.params, req.id, &router),
                     "minerva_agent_relay_read_clean" =>
                         handle_read_clean(&req.params, req.id, &router),
                     "minerva_agent_relay_read_turn" =>

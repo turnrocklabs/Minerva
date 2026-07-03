@@ -341,6 +341,32 @@ mod tests {
          \u{276f}\u{a0}\n"
     }
 
+    /// Claude Code idle on WINDOWS (ConPTY, live capture 2026-07-03): the
+    /// input box renders as ASCII `> ` between horizontal rules — no `❯`,
+    /// no NBSP (tests/fixtures/real/claude_windows_idle.txt). The prompt line
+    /// is a BARE `>` here: cell extraction right-strips trailing spaces, so an
+    /// empty input box reaches the detector with nothing after the caret.
+    fn screen_claude_windows_idle() -> &'static str {
+        "\u{25cf} What would you like to clarify about those questions?\n\
+         \n\
+         \u{273b} Brewed for 1m 17s\n\
+         \n\
+         \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\
+         >\n\
+         \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\
+         \u{23f5}\u{23f5} bypass permissions on (shift+tab to cycle) \u{b7} \u{2190} for agents\n"
+    }
+
+    /// Claude Code busy on WINDOWS: same ASCII prompt box, but the interrupt
+    /// hint is on screen — must NOT read as turn_completed.
+    fn screen_claude_windows_busy() -> &'static str {
+        "\u{2736} Pondering\u{2026} (3s \u{b7} esc to interrupt)\n\
+         \n\
+         \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n\
+         > \n\
+         \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\n"
+    }
+
     /// A screen with a permission dialog.
     fn screen_permission_dialog() -> &'static str {
         "The agent wants to run a bash command:\n\
@@ -404,6 +430,28 @@ mod tests {
         let r = result.unwrap();
         assert_eq!(r.cause, WakeCause::TurnCompleted);
         assert_eq!(r.method, DetectionMethod::SettlePrompt);
+    }
+
+    // ── Test: Windows ASCII prompt box (`> `, no ❯/NBSP) ─────────────────────
+
+    #[test]
+    fn test_turn_completed_windows_ascii_prompt() {
+        let cd = compiled_claude();
+        let result = run(screen_claude_windows_idle(), false, false, &cd);
+        assert!(result.is_some(), "Windows idle screen should detect turn_completed");
+        let r = result.unwrap();
+        assert_eq!(r.cause, WakeCause::TurnCompleted);
+        assert_eq!(r.method, DetectionMethod::SettlePrompt);
+    }
+
+    #[test]
+    fn test_windows_busy_not_turn_completed() {
+        let cd = compiled_claude();
+        let result = run(screen_claude_windows_busy(), false, false, &cd);
+        assert!(
+            result.is_none() || result.as_ref().map(|r| &r.cause) != Some(&WakeCause::TurnCompleted),
+            "Windows busy screen (esc to interrupt) must not produce turn_completed: {result:?}"
+        );
     }
 
     // ── Test: no false turn-end while spinner present ────────────────────────

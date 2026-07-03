@@ -125,7 +125,15 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 // by U+00A0 NO-BREAK SPACE — `\s` (Unicode in Rust regex)
                 // matches both NBSP and the ASCII space of echoed prompts.
                 // The old ╰─╯ box style no longer exists.
-                prompt_box_regex: r"^❯\s".to_string(),
+                // WINDOWS (live 2026-07, ConPTY): the input box renders as
+                // ASCII `> ` instead of `❯` — without the alternation, turn
+                // completion NEVER fires on Windows and passthrough chats spin
+                // forever. Same exposure as ❯: echoed `> msg` transcript lines
+                // also match, and the busy-gate/settle discriminate, exactly as
+                // on Linux. `(?:\s|$)` instead of `\s`: cell extraction
+                // right-strips trailing spaces, so an EMPTY input box can reach
+                // the detector as a bare `>` line.
+                prompt_box_regex: r"^[❯>](?:\s|$)".to_string(),
 
                 // Claude Code blocks for input in two shapes:
                 //   1. Permission dialogs — "Do you want to proceed?" / "run
@@ -140,7 +148,7 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 //      "press enter to confirm" does NOT contain it), so it fires
                 //      input_requested here without touching the codex profile.
                 permission_dialog_regex: Some(
-                    r"(?i)(?:do you want to|allow claude|proceed\?|yes/no|\[y/n\]|❯ 1\. yes|enter to select)".to_string()
+                    r"(?i)(?:do you want to|allow claude|proceed\?|yes/no|\[y/n\]|[❯>] 1\. yes|enter to select)".to_string()
                 ),
 
                 // Working indicator: status glyphs like ✻ PERSIST after a turn
