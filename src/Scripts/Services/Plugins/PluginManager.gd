@@ -484,6 +484,9 @@ func _get_docket_manager():
 ## State transitions: INSTALLED/STOPPED/ERROR → STARTING → RUNNING or ERROR.
 ## Returns {"ok": true} or {"error": "..."}.
 func start_plugin(id: String) -> Dictionary:
+	if _shutting_down:
+		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
+
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
@@ -802,12 +805,25 @@ func set_auto_reload(id: String, enabled: bool) -> bool:
 	return _db.set_auto_reload(id, enabled)
 
 
+## True once shutdown_all() has run. start_plugin() refuses new starts after
+## this: the sequential autostart loop awaits each plugin in turn, so a slow
+## FAILING plugin (e.g. drive retrying its connect) can hold the loop past the
+## moment the user closes the app — the next iteration then spawned a plugin
+## subprocess INTO the tearing-down tree. That subprocess could never be
+## parented or stopped, and its live pipes/reader threads kept the dying
+## process alive for minutes (the slow-app-close bug, 2026-07-03).
+var _shutting_down: bool = false
+
+
 ## Start all plugins whose autostart flag is true.
 ## Called by Minerva on boot.
 func start_autostart_plugins() -> void:
 	var to_start = _db.get_autostart_plugins()
 	print("[PluginManager] Autostarting %d plugin(s)..." % to_start.size())
 	for def in to_start:
+		if _shutting_down:
+			print("[PluginManager] Autostart aborted — shutting down")
+			return
 		var result := await start_plugin(def.id)
 		if result.get("error"):
 			push_error("[PluginManager] Autostart failed for '%s': %s" % [def.id, result.get("error")])
@@ -816,6 +832,7 @@ func start_autostart_plugins() -> void:
 ## Stop all running plugins.  Called by Minerva on exit.
 func shutdown_all() -> void:
 	print("[PluginManager] Shutting down all plugins...")
+	_shutting_down = true
 	var running = _db.get_by_status(S_RUNNING)
 	var starting = _db.get_by_status(S_STARTING)
 	for def in (running + starting):

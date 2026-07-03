@@ -48,7 +48,7 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 
 	_insert_meta(db, parsed["meta"])
 	_insert_items(db, parsed["items"])
-	_insert_events(db, parsed["events"])
+	var dropped_events := _insert_events(db, parsed["events"])
 	_insert_comments(db, parsed["comments"])
 	_insert_links(db, parsed["links"])
 	_insert_attachments(db, parsed["attachments"])
@@ -61,6 +61,16 @@ static func rebuild_cache(jsonl_path: String, cache_path: String) -> DocketDB:
 	db.set_meta_value("jsonl_hash", fingerprint)
 
 	db._commit()
+
+	# A rebuild reproduces the file's own content — nothing to save back...
+	if dropped_events == 0:
+		db.dirty = false
+	else:
+		# ...UNLESS dedupe dropped redundant event lines. Leaving the DB dirty
+		# makes the next save_all rewrite the JSONL compacted — self-healing
+		# for files bloated by the duplicate-audit-event bug (2026-07-03).
+		print("JSONLCache: dropped %d duplicate event line(s) from %s — will compact on next save" % [
+			dropped_events, jsonl_path.get_file()])
 	return db
 
 
@@ -159,14 +169,21 @@ static func _insert_items(db: DocketDB, items: Array) -> void:
 
 # -- Events -------------------------------------------------------------------
 
-static func _insert_events(db: DocketDB, events: Array) -> void:
+static func _insert_events(db: DocketDB, events: Array) -> int:
 	## Insert events in (item_id, seq) order — the JSONL file guarantees this
 	## ordering already per the spec, but we rely on it for autoincrement ID order.
+	## Returns the number of DUPLICATE events dropped (see dedupe below).
 	# Collect valid item IDs so we can skip orphaned events (FK would fail)
 	var valid_ids := {}
 	var rows = db._exec_select("SELECT id FROM items;", [])
 	for r in rows:
 		valid_ids[str(r.get("id", ""))] = true
+
+	# Dedupe: the duplicate-audit-event bug (2026-07-03) left files with
+	# millions of byte-identical event lines (same item/type/timestamp/note).
+	# An exact-duplicate event carries no audit information — keep the first.
+	var seen := {}
+	var dropped := 0
 
 	for ev in events:
 		var item_id: String = str(ev.get("item_id", ""))
@@ -180,10 +197,16 @@ static func _insert_events(db: DocketDB, events: Array) -> void:
 		if not valid_ids.has(item_id):
 			push_warning("JSONLCache: skipping orphaned event for missing item %s" % item_id)
 			continue
+		var key := "%s\n%s\n%s\n%s\n%s" % [item_id, event_type, actor, timestamp, note]
+		if seen.has(key):
+			dropped += 1
+			continue
+		seen[key] = true
 		db._exec(
 			"INSERT INTO item_events (item_id, event_type, actor, timestamp, note) VALUES (?, ?, ?, ?, ?);",
 			[item_id, event_type, actor, timestamp, note]
 		)
+	return dropped
 
 
 # -- Comments -----------------------------------------------------------------

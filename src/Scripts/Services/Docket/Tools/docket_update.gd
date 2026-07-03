@@ -96,6 +96,20 @@ func execute(args: Dictionary, schema: Dictionary, db: DocketDB) -> Dictionary:
 	changes.erase("id")
 	changes.erase("project")
 
+	# No-op guard: drop keys whose value already matches the stored item, and
+	# skip entirely (no write, no audit event) when nothing actually changes.
+	# Without this, looping callers (plugin hot-reload reconcile, schedulers)
+	# appended an identical "updated" event per call — the master docket grew
+	# to hundreds of MB of duplicate events and app close, which serializes
+	# every docket to JSONL, took minutes (slow-app-close bug, 2026-07-03).
+	var effective := {}
+	for key in changes:
+		if not _values_equal(changes[key], item.get(key)):
+			effective[key] = changes[key]
+	if effective.is_empty():
+		return {"id": id, "status": "unchanged"}
+	changes = effective
+
 	var result = DataModel.update_item(schema, item, changes)
 	if result.has("error"):
 		return result
@@ -108,3 +122,12 @@ func execute(args: Dictionary, schema: Dictionary, db: DocketDB) -> Dictionary:
 		db.add_event(id, "updated", "", "Updated: %s" % ", ".join(changed_keys))
 
 	return {"id": id, "status": "updated"}
+
+
+## Value equality for the no-op guard. JSON-normalized so MCP-parsed args
+## (floats for ints, Arrays/Dictionaries) compare against stored values;
+## numbers compare numerically (JSON args arrive as float, SQLite stores int).
+static func _values_equal(a, b) -> bool:
+	if (a is int or a is float) and (b is int or b is float):
+		return is_equal_approx(float(a), float(b))
+	return JSON.stringify(a) == JSON.stringify(b)

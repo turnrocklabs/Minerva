@@ -604,9 +604,22 @@ func _connect_stdio() -> Error:
 
 	if not Engine.get_main_loop():
 		push_error("Cannot spawn subprocess: no scene tree available")
+		_subprocess.free()
+		_subprocess = null
 		return ERR_CANT_CREATE
 
 	Engine.get_main_loop().root.add_child(_subprocess)
+
+	# During app teardown add_child can FAIL (root busy removing children).
+	# Starting the process anyway would orphan it: the awaits below never
+	# resume once the tree dies, stop() never runs, and the child's live pipes
+	# + reader threads keep the dying Minerva process alive for minutes
+	# (slow-app-close bug, 2026-07-03). Bail out instead.
+	if _subprocess.get_parent() == null:
+		push_error("Cannot spawn subprocess for '%s': scene tree rejected the node (shutting down?)" % stdio_command)
+		_subprocess.free()
+		_subprocess = null
+		return ERR_CANT_CREATE
 
 	# Start the subprocess
 	print("[MCP STDIO] Starting subprocess...")

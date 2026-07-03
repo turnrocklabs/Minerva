@@ -7,6 +7,11 @@ var _db: SQLite
 var _path: String
 var _is_open: bool = false
 
+## True once any mutating statement ran — consumers (DocketManager.save_all)
+## skip the JSONL re-serialize for untouched DBs, so app close doesn't pay
+## for dockets that were only read this session.
+var dirty: bool = false
+
 
 # -- Lifecycle ----------------------------------------------------------------
 
@@ -1163,6 +1168,8 @@ static func _has_column(col_rows: Array, col_name: String) -> bool:
 # -- Internal SQL helpers -----------------------------------------------------
 
 func _exec(sql: String, bindings: Array = []) -> void:
+	if not sql.begins_with("PRAGMA"):
+		dirty = true
 	if bindings.is_empty():
 		_db.query(sql)
 	else:
@@ -1171,6 +1178,8 @@ func _exec(sql: String, bindings: Array = []) -> void:
 
 func _exec_checked(sql: String, bindings: Array = []) -> String:
 	## Like _exec but returns "" on success, error message on failure.
+	if not sql.begins_with("PRAGMA"):
+		dirty = true
 	var ok: bool
 	if bindings.is_empty():
 		ok = _db.query(sql)

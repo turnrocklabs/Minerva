@@ -46,6 +46,7 @@ func _exit_tree() -> void:
 	# Clean up all connections when the app exits
 	print("[MCP] Cleaning up connections on exit...")
 	disconnect_all()
+	print("[MCP] Connections cleaned up")
 
 
 ## Initialize and connect to configured servers
