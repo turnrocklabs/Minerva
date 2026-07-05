@@ -10,6 +10,20 @@
 
 ---
 
+> **Authoritative envelope shape — code wins.** The target envelope is whatever
+> `src/Scripts/Services/Annotations/AnnotationV2Schema.gd` accepts, not the v1
+> shape this document was originally drafted against. The migrated envelope MUST
+> use `kind_payload` (NOT `payload`), a typed `anchor` with
+> `snapshot.position`, a Dictionary `author` `{kind: "human"|"ai"}` (NOT a bare
+> string — the original "already aligned" claim below was wrong), `lifecycle`,
+> `visible_in_views`, `summary`, `schema_version: 2`, and **integer Unix**
+> timestamps (NOT RFC3339 strings). `PcbAnnotationHost.build_route_hint_envelope`
+> (`minerva-plugins/pcb/ui/PcbAnnotationHost.gd`) is the conformant reference for
+> the route-hint envelope. The §3–§4 examples below have been corrected to this
+> shape; treat the validator as the tiebreaker for anything still ambiguous.
+
+---
+
 ## 1. Overview
 
 Today PCB annotations and route-hints are first-class fields on `PCBData`, persisted inline in the `.minpcb` JSON, drawn directly by `PCBCanvas`, and exposed through PCB-specific MCP tools. The merged substrate provides a generic envelope, `AnnotationKind` registry, sidecar I/O (`foo.minpcb.annotations.json`), and platform MCP tools (`minerva_annotations_*`). This document specifies the field mapping, kind names PCB will register, storage migration from inline → sidecar, MCP migration, and execution sequencing for the future DCR. **No code in this task.** Out of scope: substrate changes, anchor repair, route-hint *interpretation* logic (`pcb_interpret_route_hints` keeps its current semantics; only its inputs/outputs are repiped). Outcome: PCB stops owning annotation storage; CRUD goes through the substrate; existing `.minpcb` files load identically; the only on-disk change is annotation/route-hint data moving from `.minpcb` to a sibling sidecar.
@@ -60,19 +74,21 @@ On disk: `PCBData.to_dict().route_hints[id]` carrying every field above as primi
 
 ## 3. Field-by-Field Mapping (PCBAnnotation → Platform)
 
-The platform envelope (substrate §2.1) is `{id, author, kind, view_context, primitives[], payload, created_at, updated_at?}`.
+The platform envelope (substrate §2.1, authoritative) is `{id, kind, schema_version, anchor, kind_payload, lifecycle, author, view_context, visible_in_views, summary, created_at?, updated_at?}`.
 
 | PCB field | Platform field | Notes |
 |---|---|---|
-| `id` (`ann_NNNNNN` decimal) | `id` (`ann_<6-hex>`) | Migration regenerates IDs to substrate format. Old IDs stashed in `payload.legacy_id` for forensic traceability. (References to annotation IDs from elsewhere in the PCB pipeline are limited to MCP returns; nothing else stores them.) |
+| `id` (`ann_NNNNNN` decimal) | `id` (`ann_<hex>`) | Migration regenerates IDs to substrate format. Old IDs stashed in `kind_payload.legacy_id` for forensic traceability. (References to annotation IDs from elsewhere in the PCB pipeline are limited to MCP returns; nothing else stores them.) |
 | `type` (enum) | `kind` (string) | See §5: `ARROW → pcb_annotation_arrow`, `TEXT → pcb_annotation_text`, `REGION → pcb_annotation_region`, `POLYLINE → pcb_annotation_polyline`. |
-| `positions[]` | `primitives[]` | Per-type translation below. Coordinates carry over verbatim — both sides are mm in board space (substrate `view_context = "pcb"` matches `PCBData.board_*`). |
-| `text` | (a) primitive `text.content` for TEXT; (b) `primitives[1] = {kind:"text", at, content}` for ARROW/REGION/POLYLINE when label non-empty; (c) `payload.label` is **not** used — the text primitive is the canonical surface. | |
-| `color` | `payload.color` (only when it differs from author default) | Preserves user overrides; default magenta (human) / cyan (ai) match substrate built-ins so no override is written for unmodified annotations. |
-| `author` | `author` | Closed enum already aligned (`"human"` / `"ai"`). |
-| `created_at` (Unix float) | `created_at` (RFC3339) | Migration converts via `Time.get_datetime_string_from_unix_time(int(t)) + "Z"`. |
-| `associated_component` | `payload.associated_component` | Preserved as opaque PCB-domain reference. |
-| `associated_net` | `payload.associated_net` | Same. |
+| `positions[]` | `anchor` + `kind_payload` geometry | The anchor point becomes `anchor.id`/`anchor.snapshot.position` (mm in board space; `view_context = "pcb"` matches `PCBData.board_*`). Extended geometry (arrow endpoints, region corners, polyline vertices) rides in `kind_payload`. The optional legacy `primitives[]` slot (§2.2) MAY still carry the same geometry for renderers that read it, but it is not part of the required envelope. |
+| `text` | `kind_payload.text` | The kind renders the label from its payload. |
+| `color` | `kind_payload.color` (only when it differs from author default) | Preserves user overrides; default magenta (human) / cyan (ai) match substrate built-ins so no override is written for unmodified annotations. |
+| `author` (bare string) | `author` (**Dictionary** `{kind: "human"\|"ai"}`) | **NOT already aligned** — the substrate `author` is a Dictionary validated by `AnnotationAuthor.gd`, not the v1 bare string. Migration wraps: `"human" → {"kind": "human"}`. |
+| `created_at` (Unix float) | `created_at` (**int Unix seconds**) | Store `int(t)` directly. Every shipped host stores integer Unix time; do NOT convert to RFC3339. |
+| `associated_component` | `kind_payload.associated_component` | Preserved as opaque PCB-domain reference. |
+| `associated_net` | `kind_payload.associated_net` | Same. |
+
+Also required on every migrated envelope (no v1 source field — synthesize): `schema_version: 2`, `lifecycle: "open"`, `visible_in_views: ["all"]`, and a non-empty `summary` (derive from `text` / kind + anchor).
 
 ### 3.1 Per-type primitive translation
 
@@ -99,16 +115,21 @@ Per plan-decision item 6, route-hints become a single PCB-plugin-registered anno
 
 ### 4.1 Envelope
 
+Authoritative shape, matching `PcbAnnotationHost.build_route_hint_envelope`
+(`minerva-plugins/pcb/ui/PcbAnnotationHost.gd`):
+
 ```json
 {
-  "id": "ann_<6-hex>",
-  "author": "human",
+  "id": "ann_<hex>",
   "kind": "pcb_route_hint",
-  "view_context": "pcb",
-  "primitives": [
-    { "kind": "polyline", "points": [[x1,y1], [x2,y2], ...] }
-  ],
-  "payload": {
+  "schema_version": 2,
+  "anchor": {
+    "plugin": "pcb",
+    "type": "board.point",
+    "id": { "x": 12.0, "y": 9.0 },
+    "snapshot": { "position": [12.0, 9.0] }
+  },
+  "kind_payload": {
     "hint_type":     "single_trace",
     "detail_level":  "guided",
     "layer":         "F.Cu",
@@ -117,17 +138,24 @@ Per plan-decision item 6, route-hints become a single PCB-plugin-registered anno
     "source_pins":   ["U1.15"],
     "dest_pins":     ["U2.1"],
     "net_names":     [],
+    "waypoints":     [[12.0, 9.0], [30.0, 9.0]],
     "text":          "",
     "client_id":     "uuid-or-empty",
     "legacy_id":     "rhint_413210"
   },
-  "created_at": "2026-04-24T19:54:00Z"
+  "lifecycle": "open",
+  "author": { "kind": "human" },
+  "view_context": "pcb",
+  "visible_in_views": ["all"],
+  "summary": "Route hint (single_trace, F.Cu)",
+  "created_at": 1745524440,
+  "updated_at": 1745524440
 }
 ```
 
 ### 4.2 Notes
 
-- The `polyline` primitive holds the waypoints. When `waypoints.is_empty()`, `primitives` is `[]`; `pcb_route_hint` declares `primitives_optional: true` so the substrate accepts that case.
+- The waypoints live in `kind_payload.waypoints`. `pcb_route_hint` declares `primitives_optional: true`, so no `primitives[]` array is required (the anchor + payload are the complete geometry); the optional legacy `primitives` slot MAY carry a `polyline` mirror for renderers that read it.
 - Idempotency: `payload.client_id` carries today's `client_id`. The PCB plugin keeps the dedup logic (lookup-then-insert) inside its wrapper around `minerva_annotations_add`, not in the substrate.
 - Self-referencing rejection (`source == dest`) lives in `AnnotationKind.validate()` for `pcb_route_hint`.
 - Color: route-hint defaults (teal human / purple AI) differ from author defaults. Apply at `render()` time; persist `payload.color` only when the user customizes.

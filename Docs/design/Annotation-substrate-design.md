@@ -11,6 +11,18 @@
 
 ---
 
+> **Authoritative envelope shape — code wins.** The shipped validator
+> `src/Scripts/Services/Annotations/AnnotationV2Schema.gd` (`validate()` /
+> `validate_with_registry()`) is the single source of truth for the v2 annotation
+> envelope. Where this document and the validator disagree, the validator is
+> correct and this document is a bug. The v2 envelope carries `kind_payload` +
+> typed `anchor` (NOT the v1 `payload` / `primitives` / `created_at` shape), a
+> Dictionary `author` (NOT a bare string), and integer Unix timestamps (NOT
+> RFC3339 strings). §2.1 below is kept in sync with the validator; §2.2–§2.3
+> describe the optional legacy `primitives` geometry slot only.
+
+---
+
 ## 1. Overview
 
 Annotations are **spatially-anchored, editor-agnostic, persistent overlays** authored by humans or LLMs on top of any visual document. Distinct from Notes (thread-level, free-floating) and from document structure (traces, components, glyphs). Three responsibilities, only three:
@@ -27,33 +39,58 @@ Non-goals decided upstream: ephemeral flag, inheritance-based extensibility, cen
 
 ## 2. Annotation Data Schema
 
-### 2.1 Annotation envelope
+### 2.1 Annotation envelope (v2 — authoritative)
+
+The v2 envelope as enforced by `AnnotationV2Schema.validate()`:
 
 ```json
 {
   "id": "ann_01",
-  "author": "human",
   "kind": "2d_arrow",
+  "schema_version": 2,
+  "anchor": {
+    "plugin": "pcb",
+    "type": "board.point",
+    "id": { "x": 12.0, "y": 9.0 },
+    "snapshot": { "position": [12.0, 9.0] }
+  },
+  "kind_payload": { "text": "move this trace" },
+  "lifecycle": "open",
+  "author": { "kind": "human" },
   "view_context": "pcb",
-  "primitives": [ { ... } ],
-  "payload": { "text": "move this trace" },
-  "created_at": "2026-04-23T14:22:01Z",
-  "updated_at": "2026-04-23T14:25:11Z"
+  "visible_in_views": ["all"],
+  "summary": "move this trace",
+  "created_at": 1745423721,
+  "updated_at": 1745423911
 }
 ```
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `id` | string | yes | Stable within sidecar. Substrate-generated `ann_<6-hex>`. |
-| `author` | `"human"` \| `"ai"` | yes | Closed enum. No free-form authorship. |
+| `id` | string | yes | Stable within sidecar. Substrate-generated `ann_<hex>`. |
 | `kind` | string | yes | Discriminator. Matches a key in the registry or is preserved as unknown. |
-| `view_context` | string | yes | How coordinates are interpreted. See §3. |
-| `primitives` | array | yes | Ordered list of 2D primitive objects. |
-| `payload` | object | no | Kind-specific extra data. Schema defined by the kind. |
-| `created_at` | RFC3339 string | yes | |
-| `updated_at` | RFC3339 string | no | Absent until first `update`. |
+| `schema_version` | int | yes | Must be `2`. |
+| `anchor` | object | yes | Typed anchor: `{plugin, type, id, snapshot:{position}, stable_key?}`. `id` is anchor-type-specific (int / string / dict). See §3 and the kind's resolver. |
+| `kind_payload` | object | yes | Kind-specific data (opaque to the substrate). This is the v2 successor to the v1 `payload` field — the validator requires the `kind_payload` key. |
+| `lifecycle` | string | yes | Closed enum: `open` \| `applied` \| `resolved` \| `stale`. |
+| `author` | object | yes | Dictionary `{kind: "human"\|"ai", id?, model?, session_id?}`. Validated by `AnnotationAuthor.gd`. **Not** a bare string. |
+| `view_context` | string | yes | Non-empty. How coordinates are interpreted. Immutable post-creation. See §3. |
+| `visible_in_views` | array | yes | Views in which the annotation renders; `["all"]` = everywhere. |
+| `summary` | string | yes | Non-empty human/LLM-readable one-liner. |
+| `created_at` | int (Unix seconds) | no | Integer Unix time. Every shipped host stores int, not an RFC3339 string. |
+| `updated_at` | int (Unix seconds) | no | Absent until first `update`. Integer Unix time. |
+| `display_index` | int | no | Persisted, gap-preserving user-facing number (§5.2). |
+| `anchored_to` | string | no | Computed (`{plugin}.{type}:{id}`); stripped on serialize, re-derived on deserialize. |
 
 Unknown top-level fields are preserved on round-trip.
+
+> **v1 → v2 note.** The v1 envelope used a bare-string `author`, a `payload`
+> object, a required `primitives[]` array, and RFC3339 `created_at`/`updated_at`
+> strings. v2 replaces `payload` with `kind_payload`, adds the typed `anchor`,
+> `lifecycle`, `visible_in_views`, and `summary`, promotes `author` to a
+> Dictionary, and stores timestamps as integer Unix seconds. `primitives[]`
+> survives only as the **optional** legacy geometry slot described in §2.2–§2.3;
+> it is not part of the required v2 envelope.
 
 ### 2.2 Built-in 2D primitive sub-schemas
 

@@ -259,7 +259,9 @@ func add_annotation_v2(envelope: Dictionary) -> String:
     return str(envelope.get("id", ""))
 ```
 
-`TextEditorAnnotationHost.add_annotation_v2` is the canonical example.
+**Two conformant references to copy from:** `TextEditorAnnotationHost.add_annotation_v2` (core, `src/Scripts/Services/Annotations/TextEditorAnnotationHost.gd`) and the now-conformant `CadAnnotationHost.add_annotation` (off-tree, `minerva-plugins/cad/ui/CadAnnotationHost.gd`). Both build their own registry in `_init()` (`BuiltinKinds.register_all` + their plugin kind) and run `validate_with_registry` before storing. `CadAnnotationHost` additionally shows the **accept-old-on-read / write-new-always** pattern: its `_normalize_envelope` upgrades legacy `payload`-shaped envelopes (moves `payload → kind_payload`, synthesizes `lifecycle` / `visible_in_views` / `summary` / the Dictionary `author` / `anchor.snapshot`) on load and on write, so old sidecars keep loading while every new write is v2-valid. `PcbAnnotationHost` (`minerva-plugins/pcb/ui/PcbAnnotationHost.gd`) is a third conformant example.
+
+> Historical note: `CadAnnotationHost` originally emitted the v1 `payload` shape and never validated (gap register C-32). It has since been brought into conformance; do not copy pre-conformance CAD snapshots.
 
 ### 4.2 `accepted_anchor_types`
 
@@ -451,6 +453,17 @@ The tool calls `resolve_click(pos, host)` (a static helper in this case) to comp
 ### 7.3 Filtering
 
 Toolbar enumerates `host.get_capabilities().kinds`, filters to those whose `author_ui()` returns non-null, and creates one button per kind. Returning `null` from `author_ui()` opts the kind out of toolbar surfacing while still allowing programmatic / MCP-driven creation.
+
+> **Lesson W-13 — interactive authoring requires an `author_ui()` override.** A
+> conformant, validating host is necessary but **not sufficient** for the user to
+> author a kind from the toolbar. `AnnotationToolbar._try_add_button`
+> (`src/Scripts/Services/Annotations/AnnotationToolbar.gd`, ~lines 417–424) skips
+> any kind whose `author_ui()` returns `null` — so a kind with no `author_ui()`
+> override never gets a toolbar button, even when it is listed in
+> `capabilities.kinds`. If your kind should be human-authorable, override
+> `author_ui()` to return your `AnnotationAuthorTool` (see `cad_edge_number_kind`
+> → `cad_edge_number_tool`). Kinds authored only via MCP / programmatically may
+> leave it `null`.
 
 ---
 
@@ -690,6 +703,8 @@ The Top / Front / Right panes are not 3D rendered scenes — they are 2D x-ray o
 ### 12.3 What the CAD scaffold defers
 
 The current Cad_AnnotationHost stubs identity transforms, returns `""` from `describe_point`, and does not yet implement BVH/edge proximity queries. The full CAD migration — semantic hit-testing, plane resolvers, mesh-face anchors, edge anchors with stable IDs across re-evaluation — is its own work item.
+
+**Envelope conformance is NOT deferred, though:** `Cad_AnnotationHost.add_annotation` now normalizes + `validate_with_registry`-validates before storing, so it emits authoritative v2 envelopes (`kind_payload`, `lifecycle`, `visible_in_views`, `summary`, Dictionary `author`, `anchor.snapshot`) and accepts legacy `payload`-shaped envelopes on read. It is a copyable reference for the write path (§4.1); only the geometry/transform work above remains a scaffold.
 
 ---
 
