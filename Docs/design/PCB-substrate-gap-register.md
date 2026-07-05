@@ -1,0 +1,174 @@
+# PCB → Substrate Gap Register
+
+**Static contract diff: PCBEditor behaviors → substrate capabilities**
+
+- Docket: grandchild `019eb47fd15e` under "Substrate gap audit + walking skeleton" (`019eb47d1941`), DCR `019dc140` (Migrate PCBEditor from in-tree to plugin).
+- Audit date: 2026-07-05. Bases: Minerva `development` @ `6fada82b`; minerva-plugins `main` @ `0665291`.
+- Method: three parallel read-only audits — **A** (MCP tools, broker/save contract, file/editor routing), **B** (canvas interactions, undo/redo, performance envelope), **C** (annotation surface, verifying the 2026-06-10 pre-mapping).
+- Classification: `supported` | `partial` | `missing` | `by-design-different`.
+- Pre-triage (standing rule — "would a second editor want this?"): `platform` (file under substrate DCRs, implement in Minerva core) | `plugin-side` (absorb into pcb plugin children) | `pcb-is-wrong` (pre-substrate idiosyncrasy; change PCB's convention during the port).
+- Triage disposal of these entries is the sibling grandchild `019eb48022`.
+
+## Headline findings
+
+1. **PCBEditor has zero substrate touchpoints today.** `PCBEditor.gd` extends `PanelContainer` directly — not `MinervaPluginPanel` — and implements none of the panel-host hooks. Everything routes through hardcoded `Editor.Type.PCB` branches in `Editor.gd`, `vboxEditor.gd`, `singleton_object.gd`, and `MCPToolUtils.find_pcb()`. Every row below diffs a currently-zero-touchpoint surface against the host contract. (B-1..B-3, A-1..A-5)
+2. **Save-contract recommendation: single-view `host_owned`, not `paired_dsl`.** The broker's paired-DSL mechanism is real and battle-tested for CAD, but it assumes text-is-truth; PCB's truth is a structured object graph and `PCBData.to_yaml()` is one-directional (no YAML→model parser exists). The pcb scaffold manifest already targets single-view `host_owned`. Once the sibling child "Canonical board source (YAML)" (`019eb47d36bb`) builds the YAML round-trip anyway, `paired_dsl` becomes a cheap optional upgrade — decide then, not now. Caveat that conditions this decision: the host-side load path JSON-parses every host_owned file (`Editor.gd:1108`, `_load_plugin_scene_file`) — JSON documents arrive merged as a dict, anything else as `{file_path, raw_text}` — so a YAML serialize format must handle the raw-text load shape (this already bit CAD's `.mcad`). (A-6, A-7, A-14)
+3. **Annotation schema drift blocks annotation work.** The migration doc's target envelope (`payload`/`primitives`/`created_at`) is stale against the shipped `AnnotationV2Schema` validator (`kind_payload`/`anchor`/`lifecycle`/`visible_in_views`/`summary`/`schema_version`). Worse, `CadAnnotationHost` — the cited reference implementation — does not itself produce conformant envelopes; only `TextEditorAnnotationHost` does. Reconcile before writing any PCB annotation code. (C-31, C-32)
+4. **Enum-ordinal tab-restore hazard.** `Editor.Type` serializes as a bare int; deleting `PCB` (ordinal 7 of 15) renumbers every later member and corrupts every saved tab. Platform-level: PCB is merely the first editor to hit it. Mitigation: reserve the slot or remap ordinal 7 → a `PLUGIN_SCENE` tab on load. (A-12)
+5. **`.minpcb` claim is actively defended in core.** `PluginEditorRegistry.CORE_EXTENSIONS` includes `.minpcb` (plugin claims are silently skipped) and `singleton_object.gd` has a hardcoded `.minpcb` branch that runs before the plugin registry is consulted. Both need removal/reordering. "New → PCB" would likewise double-register (`"pcb"` vs `"new_pcb"` don't collide). (A-10, A-11)
+6. **Three missing platform lanes** a second editor would want: incremental undo for structured (non-text-backed) panels (B-9); a cheap synchronous host-capability lane for panels with no backend process (B-12, B-13); layer-aware `view_context` (C-23).
+7. **Tool count correction:** `MCPPCBTools.get_tool_names()` returns **31** tools, not the 29 the DCR says.
+8. **Pre-existing PCB bugs to drop, not port:** change-journal asymmetry (annotations never journaled; route-hint remove/clear not journaled) (C-19); duplicate-node image capture instead of live-viewport read (B-15); bespoke `Note.linked_pcb_data` field duplicating the generic `plugin_data` note mechanism (A-4); parallel annotation system (B-16, C-15..C-18).
+
+---
+
+## Surface A — MCP tools, broker/save contract, file/editor routing
+
+Reuse-scan context: CAD's Go binary is a standalone JSON-RPC stdio MCP server with zero scene-tree access; panel-coupled introspection lives in a *second*, Minerva-core module (`MCPCadTools.gd`) reached via the generic `AnnotationHostRegistry.get_host()` duck-typing seam. The pcb scaffold mirrors CAD's manifest shape but thinner: no `render_mode` (defaults `"single"`), `tools: []`, only `ping` registered.
+
+### A.1 MCP tool surface (31 tools)
+
+All 31 are Minerva-core tools today (`MCPPCBTools.gd`, hard-preloads of PCBEditor/PCBData at `MCPPCBTools.gd:7-13`) reached via `MCPToolUtils.find_pcb()` → `Editor.Type.PCB` lookup (`MCPToolUtils.gd:213-214`).
+
+| ID | Behavior | Substrate capability/seam | Classification | Pre-triage | Evidence |
+|---|---|---|---|---|---|
+| A-1 | **25 pure-data-compute tools**: `set_board_size`, `get_components`, `get_nets`, `get_pin_position`, `add_component`, `move_component`, `rotate_component`, `delete_component`, `connect_net`, `export_csv`, `export_yaml`, `import_csv`, `import_footprint_geometry`, `import_trace_geometry`, `export_trace_geometry`, `add_annotation`, `list_annotations`, `remove_annotation`, `clear_annotations`, `add_route_hint`, `list_route_hints`, `remove_route_hint`, `clear_route_hints`, `interpret_route_hints`, `get_change_journal` | Operate only on `PCBData` dict/array state — structurally identical to CAD's worker-backed pure compute | partial | platform (a board-model-holding plugin backend) — logic is portable exactly as CAD's DSL evaluator is; what's missing is that model existing outside Minerva's Node tree | `MCPPCBTools.gd:1054-2404`; `cad/main.go:214-227`; `pcb/internal/tools/tools.go:7-11` (no worker yet) |
+| A-2 | `spatial_query`, `describe_component`, `move_relative` | Live-instance math on the `PCBEditor` Node, not just its data | missing | platform — CAD's `AnnotationHostRegistry` seam is exactly "live-instance math without full rendering," but PCB type-hints `pcb_editor` directly | `MCPPCBTools.gd:1113-1147`, `:1092-1110`, `:1364-1388`; `AnnotationHostRegistry.gd:45` |
+| A-3 | `get_image` | `canvas.capture_to_base64_png()` — genuine SubViewport render, requires a live panel | missing | platform — CAD's analog (`minerva_cad_snapshot`) is a Minerva-core tool via `AnnotationHostRegistry`; same seam, unbuilt for PCB | `MCPPCBTools.gd:2408-2474`; core `MCPCadTools.gd` (snapshot registration via `AnnotationHostRegistry`) |
+| A-4 | `create_note` | Captures viewport image AND serializes full PCBData into bespoke `Note.linked_pcb_data` for "Edit → restore" | partial | pcb-is-wrong — the substrate's generic `plugin_data` note (`_on_panel_create_note_request` → `Note.create_plugin_data_note`) already covers this; PCB predates it and duplicates the concept | `MCPPCBTools.gd:2477-2520`; `Note.gd:127,383-397,714-737`; `Editor.gd:2076-2197` |
+| A-5 | `minerva_create_pcb_editor` | Calls `editor_pane.add_pcb_editor()` → `Editor.Type.PCB`, bypassing `PluginEditorRegistry`/`CreatableItemRegistry` | by-design-different | pcb-is-wrong — generic `minerva_create_plugin_editor {plugin_id, editor_item_id}` already exists and is what CAD uses | `MCPPCBTools.gd:993-1023`; `MCPGeneralTools.gd:50-75,114-223` |
+
+### A.2 Broker / save contract (.minpcb)
+
+| ID | Behavior | Substrate capability/seam | Classification | Pre-triage | Evidence |
+|---|---|---|---|---|---|
+| A-6 | `paired_dsl` render_mode (YAML as free-editable text half) | Broker fully implements the mechanism (`attach_buffer_to_panel`, `CHANNEL_TEXT_CHANGED`, wired from `SingletonObject._open_paired_dsl`) | missing (mechanism exists; PCB data model doesn't fit) | pcb-is-wrong — PCB's canonical state is a structured graph; `PCBData.to_yaml()` is one-way (no `from_yaml` anywhere). "Text is truth" requires building a YAML→model parser that doesn't exist | `PluginScenePanelBroker.gd:66-137`; `PCBEditor.gd:819-820`; grep: no `from_yaml`/`parse_yaml` in `PCBData.gd` |
+| A-7 | Single-view `host_owned` save | `request_panel_state`/`apply_panel_state` round-trip (5s timeout, anti-spoof ownership check) — proven | supported (mechanism; pcb handlers unimplemented) | platform — exactly what the pcb scaffold manifest targets (`save_mode: "host_owned"`, `pcb.serialize`/`pcb.deserialize`). Caveat: the manifest lists `pcb.serialize`/`pcb.deserialize` but the backend registers only `ping` — channel names require exact-name dual registration (backend MCP tool + `ui.ipc_messages`), see workflow gotchas below | `PluginScenePanelBroker.gd:959-1077`; `pcb/manifest.json:28-54`; `pcb/internal/tools/tools.go:7-11` |
+| A-14 | Host-side load of `host_owned` files | `Editor.gd:1108` (`_load_plugin_scene_file`) JSON-parses every host_owned file before `invoke_load`: JSON arrives merged as a dict, non-JSON as `{file_path, raw_text}` | partial | platform — load-shape asymmetry conditions PCB's serialize-format decision (headline 2); any non-JSON plugin format gets the raw-text shape (already bit CAD's `.mcad`) | `Editor.gd:1108` |
+| A-8 | Today's actual `Type.PCB` save path | Direct synchronous `to_dict()` in `vboxEditor.gd` — no IPC, no broker, no size cap. Broker's `MAX_PAYLOAD_BYTES = 64 KiB` would apply once migrated; a real board's JSON could plausibly exceed it | by-design-different | pcb-is-wrong (pre-substrate) — plus a flagged size-cap risk | `vboxEditor.gd:143-147,449-453`; `PluginScenePanelBroker.gd:157` |
+| A-9 | `project_state` / `project_export` capability declarations | Both manifests declare identical capability sets and channel blocks | supported | platform | `cad/manifest.json:88-100`; `pcb/manifest.json:64-75` |
+
+**Migration-workflow gotchas** (from the project hint store, verified against current code):
+
+- **Channel dual-registration:** every `panels[].ipc_channels` entry must be registered as a backend MCP tool under the *exact* name (periods valid) AND appear in the manifest's `ui.ipc_messages` allowlist, or the broker returns `permission_denied`.
+- **`PluginManager.restart_plugin` does not re-parse `manifest.json`** — the cached `PluginDefinition` (including `ipc_channels`) is set at install time. Adding channels mid-port requires remove + reinstall, not hot-reload. Expect this repeatedly during the migration.
+- Go bridge envelope re-wrap (`{ok, result|error}` stripped by `bridge.Worker.Call`) is already handled in the pcb scaffold (`pcb/main.go:142-144`) — no action needed.
+
+### A.3 File/editor routing
+
+| ID | Behavior | Substrate capability/seam | Classification | Pre-triage | Evidence |
+|---|---|---|---|---|---|
+| A-10 | `.minpcb` extension claim | Hardcoded twice, both ahead of the plugin path: `PluginEditorRegistry.CORE_EXTENSIONS` (plugin claims silently skipped) + `singleton_object.gd` hardcoded `.minpcb` branch before `resolve_extension()` | missing | pcb-is-wrong — core registration actively defends against exactly this override; both guards need removal/reordering | `PluginEditorRegistry.gd:32-41,110-118`; `singleton_object.gd:1699-1704` vs `:1712-1718` |
+| A-11 | "New → PCB" menu item | Hardcoded `CreatableItemRegistry` item `id:"pcb"`; plugin path would add a second item `id:"new_pcb"` — no collision detected, both would appear during a migration window | missing (duplicate, not conflict-detected) | pcb-is-wrong | `singleton_object.gd:1439-1446`, `:767-801`; `pcb/manifest.json:57-62` |
+| A-12 | Legacy saved tabs (`type: 7`) after enum removal | `Editor.Type` serialized as bare int (`vboxEditor.gd:163`); deleting `PCB` (ordinal 7/15) renumbers `VIDEO_EDITOR`, `ACTIVITY_LOG`, `WEBVIEW`, … `PLUGIN_SCENE`. No remap logic exists | missing | platform — any enum-ordinal-serialized editor type has this hazard on removal; PCB is the first to bite. Mitigate: reserve the slot, or remap ordinal 7 → `PLUGIN_SCENE` tab pointing at pcb on load | `Editor.gd:105-121`; `vboxEditor.gd:160-167`; no migration in `deserialize()` |
+| A-13 | PLUGIN_SCENE deserialize pre-pass (plugin-running check) | Exists for the new path; nothing bridges from old `Type.PCB` tabs | supported (future tabs only) | platform | `vboxEditor.gd:173-183` |
+
+---
+
+## Surface B — Canvas interactions, undo/redo, performance envelope
+
+Reuse-scan context: host contract = `PluginScenePanelHost.gd` (mount + hook dispatch: `_on_panel_loaded/_unload/_save_request/_load_request/_apply_sync/_create_note_request/_restore_from_note/_render_for_llm/_inject_toggle_changed`) + `PluginScenePanelBroker.gd` (IPC validation, `host_owned_save.*`, buffer attach/detach) + base class `MinervaPluginPanel.gd`. Reference: `cad/ui/CADPanel.gd`.
+
+| ID | Behavior | Substrate capability/seam | Classification | Pre-triage | Evidence |
+|---|---|---|---|---|---|
+| B-1 | Scene mounting as Control root, full-rect anchoring | `PluginScenePanelHost.instantiate_into` steps 8-9 | supported | plugin-side — PCBEditor already extends PanelContainer; no SubViewport requirement (unlike CAD's 3D views) | `PluginScenePanelHost.gd:164-187`; `PCBEditor.gd:1-3` |
+| B-2 | Save/load lifecycle hooks (`_on_panel_save_request`/`_on_panel_load_request`) | Host-owned save/load dispatch | missing | plugin-side — trivial; `PCBData.to_dict()/load_from_dict()` already match the expected shape | `PluginScenePanelHost.gd:229-303`; `PCBEditor.gd:777-821` (no hook methods) |
+| B-3 | `_on_panel_loaded(ctx)` / `_on_panel_unload()` teardown | Broker registration lifecycle | missing | plugin-side — PCBEditor has no teardown at all today | `PluginScenePanelHost.gd:212-222,399-413` |
+| B-4 | Selection model (single/multi/box-select) | Panel-internal `_gui_input`; host is agnostic | supported | plugin-side | `PCBCanvas.gd:1700-1876` |
+| B-5 | Drag/translate, rotate, layer switching | Panel-internal state machine (`ToolMode`) | supported | plugin-side — host never intercepts input | `PCBCanvas.gd:2174`; `PCBEditor.gd:562-591` |
+| B-6 | Zoom/pan, board-mm↔screen transform | Panel-internal (`zoom`, `pan_offset`, `_zoom_at`) | supported | plugin-side | `PCBCanvas.gd:2000,2829` |
+| B-7 | Bare-keycode shortcuts (Delete/Esc/R/G/N/L/+/-/S…) | Normal focus-chain input; host does not filter | supported | plugin-side — no `InputMap`/`Shortcut` resources used (PCB idiosyncrasy, not a host conflict) | `PCBCanvas.gd:1879-1995` |
+| B-8 | Context menus | Not found in PCBCanvas (no PopupMenu usage) | missing | pcb-is-wrong — feature doesn't exist in-tree; not a migration regression | grep of `PCBCanvas.gd` |
+| B-9 | Bespoke undo/redo stack (`PCBData.history`, `save_to_history`/`undo`/`redo`) | Host has no generic panel-undo primitive; only whole-state snapshot round-trip exists | missing | **platform** — a second structured-data (non-text-backed) editor would want incremental undo; substrate offers only whole-state snapshotting | `PCBData.gd:45-593`; `PluginScenePanelBroker.gd:945-1002` |
+| B-10 | Append-only change journal (`change_journal`, `get_change_journal` tool) | No host equivalent; CAD has no per-mutation audit trail | by-design-different | plugin-side — PCB-specific MCP observability, orthogonal to undo; moves unchanged | `PCBData.gd:648-678`; `MCPPCBTools.gd:828,2377` |
+| B-11 | CAD's undo story (relies on paired DSL text buffer's native undo via `DocumentBuffer`) | `attach_buffer_to_panel`/`text_changed` | by-design-different | platform — CAD's approach only works because its truth is text in a host buffer; PCB's is a structured graph with no text serialization, so it cannot reuse this path | `PluginScenePanelBroker.gd:787-892`; `CADPanel.gd` (no undo hooks) |
+| B-12 | `spatial_query` — direct method call, O(n) linear scan (mislabeled "index") | Direct same-process call today; no serialization, no await | supported today; **partial once migrated** | **platform** — no cheap host-capability lane for read-mostly, no-backend introspection; only options are full state round-trip (5s timeout ceiling) or backend stdio dispatch assuming a worker PCB doesn't have | `MCPPCBTools.gd:1114-1147`; `PCBSpatialIndex.gd:74-91` (plain for-loop); `PluginScenePanelBroker.gd:1004-1077` |
+| B-13 | Latency class of all `minerva_pcb_*` tools post-migration | `handle_scene_request`: `call_deferred` trampoline (≥1 frame) + 64 KiB payload cap + (backend channel) stdio hop | partial | **platform** — microseconds → frame-deferred + serialized round trip; fine for occasional calls, real regression in tight loops | `PluginScenePanelBroker.gd:301-365,583-593,139-145` |
+| B-14 | Canvas rendering: event-driven `_draw()` (queue_redraw, not per-frame) | Panel-internal; no host assumption | supported | plugin-side — already efficient | `PCBCanvas.gd:389` |
+| B-15 | Image capture (`capture_to_base64_png`) for `get_image` / chat-inject | `AnnotationHost.render_content_to_image` / `invoke_render_for_llm` expects a persistent SubViewport texture read (CAD pattern) | partial | pcb-is-wrong — PCB duplicates the entire editor node, spins a temp SubViewport, awaits 2 frames + `frame_post_draw`; refactor toward CAD's live-texture pattern | `PCBCanvas.gd:2900-2967`; `AnnotationHost.gd:477`; `CADPanel.gd:1175-1180` |
+| B-16 | Bespoke `PCBAnnotation` value type + own MCP tools + no dock/list UI | Platform `AnnotationRegistry`/`AnnotationHost`/`AnnotationSidebarModel`/`BuiltinKinds` + `get_annotation_host()` hook, adopted by CAD | missing (parallel system) | pcb-is-wrong — drop the hand-rolled system, adopt the substrate, consolidate `minerva_pcb_*annotation*` into `minerva_annotations_*` | `PCBAnnotation.gd:1-2`; `MCPPCBTools.gd:545-644`; `CADPanel.gd:200-211` |
+| B-17 | Annotation dock UI at scale (hundreds of entries) | `AnnotationSidebarModel` / dock rendering | unknown — needs runtime measurement | n/a (walking-skeleton question) | `AnnotationSidebarModel.gd` (no paging/limit constants found; PCB has no annotation list UI at all today) |
+| B-18 | Manifest/whitelist audit of panel scripts (`_audit_packed_scene`) | Every non-`res://` script in the packed scene must be declared in manifest `scripts[]` | n/a (not yet applicable) | plugin-side — manifest bookkeeping once PCBEditor.tscn moves out of `res://` | `PluginScenePanelHost.gd:483-539` |
+| B-19 | Co-editing / external-sync (`_on_panel_apply_sync`) | Host dispatches `apply_sync` to panels when the document changes outside the panel; PCBEditor has no equivalent concept and no hook | missing | plugin-side — implement alongside the B-2 save/load hooks when the panel is ported | `PluginScenePanelHost.gd` hook dispatch (preamble list); absent in `PCBEditor.gd` |
+
+---
+
+## Surface C — Annotation surface (pre-mapping verification + field-level diff)
+
+### C.1 Pre-mapping verification (2026-06-10 exploration claims vs current code)
+
+| Claim | Verdict | Evidence |
+|---|---|---|
+| Plugin-side: `pcb/*` anchor resolvers (pad, net, component, trace) | **Stale/aspirational** — none exist; `pcb/ui/PCBPanel.gd` is a 51-line placeholder with zero annotation code | `pcb/ui/PCBPanel.gd:1-51` |
+| Plugin-side: `pcb_route_hint` kind | **Stale/aspirational** — designed (`PCB-annotation-migration.md` §4) but not coded anywhere | grep → doc only |
+| Plugin-side: board-mm coordinate transforms | **Stale/aspirational** — no `AnnotationHost` subclass for PCB; `PCBCanvas` does its own `world_to_screen`, unconnected to `transform_doc_to_screen` | `PCBCanvas.gd` local `world_to_screen` |
+| Plugin-side: `describe_point` | **Stale** for PCB (doesn't exist); **confirmed-but-stubbed** for CAD (returns `""`, Round-2 TODO) | `CadAnnotationHost.gd:202-203` (minerva-plugins `cad/ui/`) |
+| Platform soft spot: layer-aware `view_context` | **Confirmed gap** — one flat `"pcb"` string for the whole board; PCB has real per-layer data (`PCBTrace.layer`, `PCBRouteHint.layer`, `PCBComponent.layer`) | `Annotation-substrate-design.md` §3; `AnnotationRenderContext.gd:39` |
+| Platform soft spot: retarget/repair UI | **Confirmed partial** — Repair button + `repair_requested` signal + `minerva_annotations_repair_anchor` tool exist, but capability defaults `false`, no host enables it, no host implements the pick-new-anchor interaction | `AnnotationWorkbench.gd:9,278-279,438-439`; `AnnotationHost.gd:96-102` |
+| Settled: generic PCB annotations port to core `2d_*` kinds | **Wrong** — migration doc explicitly decides the opposite: five PCB-namespaced kinds (`pcb_annotation_arrow/text/region/polyline`, `pcb_route_hint`); registry forbids plugins claiming `2d_*` | `PCB-annotation-migration.md` §5, §5.1 |
+| Settled: route-hints become `pcb_route_hint` kind | **Confirmed** (as design; nothing implements it yet) | `PCB-annotation-migration.md` §4 |
+| Settled: human=magenta / AI=cyan preserved | **Confirmed** — substrate defaults chosen to match PCB; `AnnotationRenderContext.gd` comments "matches legacy PCB convention" | `AnnotationRenderContext.gd:16,205`; `PCBAnnotation.gd:106-110` |
+| Settled: inline → sidecar | **Confirmed as design, not executed** — `PCBData.to_dict()` still writes `annotations`/`route_hints` inline | `PCBData.gd:699-729,790-802` |
+| Settled: legacy inline blobs migrate to v2 sidecar envelopes | **Wrong as stated** — no generic legacy-import hook exists in the substrate (each editor writes its own one-shot translator, per migration doc §6.3/§9); and the doc's target envelope is stale vs shipped `AnnotationV2Schema` (see C-31/C-32) | `AnnotationV2Schema.gd:30-33` vs `PCB-annotation-migration.md` §3/§4.1 |
+
+### C.2 Gap register — PCBAnnotation + PCBRouteHint field/behavior diff
+
+| ID | Behavior | Substrate capability/seam | Classification | Pre-triage | Evidence |
+|---|---|---|---|---|---|
+| C-1 | `PCBAnnotation.id` — decimal `ann_NNNNNN` via `randi() % 1000000` | envelope `id` (substrate format `ann_<6-hex>`) | partial | plugin-side (regenerate ID at migration; stash old) | `PCBAnnotation.gd:17,100-102`; migration doc §3 |
+| C-2 | `type` enum ARROW/TEXT/REGION/POLYLINE selects draw/hit-test | `kind` discriminator string | supported (4 new plugin kinds, not core `2d_*`) | plugin-side | `PCBAnnotation.gd:9-14`; migration doc §5 |
+| C-3 | `positions: Array[Vector2]` (mm, board space); meaning varies by type | `primitives[]` (arrow/text/region/polyline schemas) | supported | plugin-side (region needs 2-corner→4-vertex promotion) | `PCBAnnotation.gd:22-27`; design §2.2; migration doc §3.1 |
+| C-4 | `text` — body for TEXT, label for others | primitive `text.content` or trailing text primitive | supported | plugin-side (label placement is a rendering hint) | `PCBAnnotation.gd:29-30`; migration doc §3 |
+| C-5 | `color` — author default + optional override | `payload.color` (written only when diverging from author default) | supported | plugin-side | `PCBAnnotation.gd:33,106-110`; migration doc §3.2 |
+| C-6 | `author` — flat String `"human"`/`"ai"` | v2 `author` **Dictionary** `{kind, id?, model?, session_id?}` | **missing / doc-stale** | **platform** — schema-shape drift affects every migrating editor; migration doc claims "already aligned" and is wrong | `PCBAnnotation.gd:36`; `AnnotationAuthor.gd:5-11,28-53` |
+| C-7 | `created_at` — Unix float | Shipped hosts store int Unix timestamps, not the RFC3339 strings the design doc specifies | partial / doc-stale | platform — design doc §2.1 vs code disagree; doc's proposed RFC3339 conversion likely unnecessary | `PCBAnnotation.gd:39`; `TextEditorAnnotationHost.gd:195-196,371`; design §2.1 |
+| C-8 | `associated_component` — opaque ref, inert (no rendering effect) | `kind_payload.associated_component` pass-through | supported | plugin-side | `PCBAnnotation.gd:42`; no PCBCanvas usage |
+| C-9 | `associated_net` — same | `kind_payload.associated_net` | supported | plugin-side | `PCBAnnotation.gd:45` |
+| C-10 | `contains_point()` — per-type hit-test (segment distance; point+3px; grown-rect) | `AnnotationKind.hit_test()` — base AABB fallback too coarse for arrow/polyline | supported | plugin-side (4 custom `hit_test` overrides) | `PCBAnnotation.gd:131-178`; `AnnotationKind.gd:79-82` |
+| C-11 | `get_bounding_rect()` | `AnnotationKind.bounds()` | supported | plugin-side | `PCBAnnotation.gd:114-127` |
+| C-12 | `translate()/rotate_around_center()/scale_from_center()` via canvas context actions | `AnnotationKind.transform_annotation()` + `transform_primitives()` helper (caller-supplied `Transform2D`; equivalent but needs thin adapter for center-pivot semantics) | partial | plugin-side | `PCBAnnotation.gd:192-211`; `AnnotationKind.gd:186-191,437-494` |
+| C-13 | `invert_direction()` — ARROW-only swap | No substrate equivalent; PCB-kind-specific `run_action` | missing | plugin-side | `PCBAnnotation.gd:215-219`; `PCBCanvas.gd:274` |
+| C-14 | `get_description()` — one-line LLM summary | `AnnotationKind.summary()` | supported | plugin-side | `PCBAnnotation.gd:275-280`; `AnnotationKind.gd:168-178` |
+| C-15 | Inline `.minpcb` storage of `annotations{}`/`route_hints{}` | Sidecar `<doc>.minpcb.annotations.json` via `AnnotationSidecar` | missing (not started) | plugin-side (migration doc §6 is the plan; zero code) | `PCBData.gd:699-729,790-802`; `AnnotationSidecar.gd` (generic, unused by PCB) |
+| C-16 | Bespoke per-type draw in `PCBCanvas._draw_annotation*` | `AnnotationRegistry.dispatch_render` + per-kind `render()` | missing (not started) | plugin-side | `PCBCanvas.gd:916-1027` |
+| C-17 | Selection / drag-move of annotations | Substrate `AnnotationOverlay`/`AnnotationCanvas` + translate tools | partial | plugin-side — PCB's "smallest-bounding-area wins" pick rule isn't a substrate concept; needs custom hit-test ordering | `PCBCanvas.gd:71-74,1841-1847`; `PCBData.gd:380-396` |
+| C-18 | Bespoke authoring toolbar + fixed shortcuts (A/T/R/P, W, Shift+P) | `AnnotationToolbar` (registry-populated, per-kind `author_ui()`, `preferred_shortcut`) | supported, with shortcut-collision risk | plugin-side, platform note — core reserves `A`/`T`/`R`/`H`/`M` (design §11.4); PCB's namespaced kinds need `preferred_shortcut` fallback | `PCBCanvas.gd:206-226,1957-1990`; design §11.4 |
+| C-19 | Change-journal coverage — `record_change()` called for route-hint add + component/trace mutations, NOT for annotation add/remove/clear nor route-hint remove/clear | Migration doc §11 Q3 recommends subscribing to substrate signals to restore parity | missing / pre-existing inconsistency | pcb-is-wrong — existing PCB bug independent of migration | `PCBData.gd:337-421` vs `:427-463` vs `:472-477,514-533` |
+| C-20 | `PCBRouteHint.id` — decimal `rhint_NNNNNN` | envelope `id` | partial | plugin-side (same as C-1) | `PCBRouteHint.gd:23,155-157` |
+| C-21 | `hint_type` enum (WAYPOINT/SINGLE_TRACE/BUS) | `kind_payload.hint_type` (one `pcb_route_hint` kind, not 3) | supported | plugin-side | `PCBRouteHint.gd:9-13`; migration doc §4.1 |
+| C-22 | `detail_level` enum, auto-derived from waypoint count at creation | `kind_payload.detail_level`, stored not recomputed (migration doc Q2) | supported | plugin-side | `PCBRouteHint.gd:16-20,108-114` |
+| C-23 | `layer` — target KiCAD layer (`F.Cu`, `B.Cu`) | `kind_payload.layer` — but no layer-aware rendering visibility: a `B.Cu` hint renders in the same flat `"pcb"` view_context as `F.Cu`; hiding the bottom layer won't hide its hints | partial | **platform** — the concrete instance of the layer-aware `view_context` soft spot | `PCBRouteHint.gd:32`; design §3 |
+| C-24 | `width` / `bus_spacing` — mm geometry hints | `kind_payload.width` / `.bus_spacing` | supported | plugin-side | `PCBRouteHint.gd:35,38` |
+| C-25 | `source_pins`/`dest_pins`/`net_names` + self-reference validation | `kind_payload.*`; self-ref check → `AnnotationKind.validate()` | supported | plugin-side | `PCBRouteHint.gd:41-47,229-233`; `PCBData.gd:438-453` |
+| C-26 | `waypoints` — mm points, semantics vary by detail_level | `primitives[0] = polyline`, optional when empty | supported | plugin-side | `PCBRouteHint.gd:49-53`; migration doc §4.1 |
+| C-27 | Route-hint author colors (teal/purple) differ from annotation defaults (magenta/cyan) | `kind_payload.color` override only; no built-in per-kind author-color pair — PCB kind special-cases its default at render time | partial | plugin-side | `PCBRouteHint.gd:65,161-165` vs `PCBAnnotation.gd:106-110` |
+| C-28 | `client_id` idempotency key; `add_route_hint` does lookup-then-insert dedup | `kind_payload.client_id`; dedup must live in the plugin's MCP wrapper — substrate has no idempotency-key concept | missing (substrate-side) | plugin-side | `PCBRouteHint.gd:68`; `PCBData.gd:432-436`; migration doc §4.2, §8.2 |
+| C-29 | Route-hint `contains_point()` — waypoint proximity + segment distance, threshold 3.0 | custom `hit_test` override on `pcb_route_hint` | supported | plugin-side | `PCBRouteHint.gd:186-201` |
+| C-30 | `interpret_route_hints` — reads freeform annotations, emits structured hints | Repipe I/O to `minerva_annotations_list` / `minerva_annotations_add(kind=pcb_route_hint)`; no substrate change | by-design-different | plugin-side | `MCPPCBTools.gd:2235`; migration doc §8.2 |
+| C-31 | **Envelope shape drift**: migration doc + design doc show v1-style `payload`/`primitives`/`created_at`; shipped validator requires `kind_payload`/`anchor`/`lifecycle`/`visible_in_views`/`summary`/`schema_version` | `AnnotationV2Schema.validate()` — materially different required-field set than either doc shows | missing (docs stale vs shipped schema) | **platform** — any editor writing to the v2 sidecar needs the real shape, not the doc's example | `AnnotationV2Schema.gd:30-33`; migration doc §4.1 |
+| C-32 | **Reference-implementation drift**: `CadAnnotationHost`/`cad_edge_number_kind` (the cited reference) does NOT produce V2-conformant envelopes — `payload` not `kind_payload`, never sets `lifecycle`/`visible_in_views`/`summary`, never validates. Only `TextEditorAnnotationHost` is conformant | Unclear which pattern PCB should copy | missing / by-design-different | **platform** — blocks a confident "follow the CAD pattern" recommendation | `CadAnnotationHost.gd:111-120` and `cad_edge_number_kind.gd:117,162-164` (both minerva-plugins `cad/ui/`); `TextEditorAnnotationHost.gd:189-194,251-260` (Minerva core) |
+
+---
+
+## Consolidated open questions
+
+Statically undeterminable; most feed the walking skeleton (`019eb47fe8a0`) or the triage grandchild (`019eb48022`).
+
+1. **Envelope reconciliation (blocking for annotation work):** which shape does PCB target — the docs' v1-style envelope or the shipped `AnnotationV2Schema`? Must be settled (and docs/CAD host brought in line or explicitly excused) before PCB annotation code is written. (C-31/C-32)
+2. **`author` field shape:** adopt the v2 `{kind, id?, model?, session_id?}` Dictionary now (as `TextEditorAnnotationHost` does)? (C-6)
+3. **Legacy-import hook:** add a generic inline-blob→sidecar import hook to `AnnotationSidecar` (reusable by future migrations) or keep bespoke per-editor translators? (C-15, pre-mapping row 11)
+4. **Layer-aware `view_context`:** formalize `"pcb:F.Cu"`-style sub-contexts before PCB migrates, or is per-kind filtering sufficient? (C-23)
+5. **Change-journal asymmetry:** fix during migration or document as known pre-existing gap? (C-19)
+6. **Broker latency/timeout in practice:** does `request_panel_state`'s 5s ceiling + `call_deferred` frame-boundary latency matter at realistic agent call rates for `spatial_query`/`get_components`? → walking skeleton. (B-12/B-13)
+7. **Undo transport:** can `PCBData.history` snapshots ride `host_owned_save.get/set_state`, or does the platform need a real incremental-undo primitive? (B-9)
+8. **64 KiB broker payload cap vs real boards:** need a representative `.minpcb` to know whether full-board JSON exceeds `MAX_PAYLOAD_BYTES`. (A-8)
+9. **Annotation dock at scale:** at what count does the dock rebuild get janky; is there lazy-build/paging? → walking skeleton. (B-17)
+10. **Cheap sync host-capability lane:** is there an existing pattern for backend-less panels, or is PCB the first plugin to need one? (B-12)
+11. **Tool count:** DCR says 29; `MCPPCBTools.get_tool_names()` returns 31. Update the DCR figure. (Surface A preamble)
+12. **Blast radius:** exhaustive grep for `Type.PCB`/`PCBEditor` references beyond the audited owners (`Editor.gd`, `vboxEditor.gd`, `singleton_object.gd`, `MCPToolUtils.gd`, `Note.gd`) still outstanding.
+
+## Triage summary (pre-triage counts, final disposal in `019eb48022`)
+
+- **platform** (would-a-second-editor-want-this = yes): A-1, A-2, A-3, A-7, A-9, A-12, A-13, A-14, B-9, B-11, B-12, B-13, C-6, C-7, C-23, C-31, C-32 — clusters: plugin backend board-model lane, live-instance introspection seam, enum-ordinal tab migration, structured-panel undo, cheap sync capability lane, host_owned load-shape asymmetry, layer-aware view_context, annotation schema/docs/reference reconciliation.
+- **plugin-side**: A-1 (tool logic port), B-1..B-7, B-10, B-14, B-18, B-19, C-1..C-5, C-8..C-18 (adoption work), C-20..C-22, C-24..C-30.
+- **pcb-is-wrong**: A-4, A-5, A-6, A-8, A-10, A-11, B-8, B-15, B-16, C-19.
