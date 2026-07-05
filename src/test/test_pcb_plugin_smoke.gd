@@ -73,6 +73,9 @@ func _init() -> void:
 		plugin_dir = home + PCB_PLUGIN_DIR_REL
 	var binary_path: String = plugin_dir + PCB_BINARY_REL
 	var manifest_path: String = plugin_dir + PCB_MANIFEST_REL
+	# Windows builds carry a .exe suffix (same fallback as PluginManager.gd)
+	if not FileAccess.file_exists(binary_path) and FileAccess.file_exists(binary_path + ".exe"):
+		binary_path += ".exe"
 
 	if plugin_dir == "" or not FileAccess.file_exists(binary_path):
 		print("SKIP: pcb-plugin binary not built at '%s'." % binary_path)
