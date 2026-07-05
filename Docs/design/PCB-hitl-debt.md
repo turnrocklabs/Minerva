@@ -20,3 +20,4 @@ Rules:
 | 3 | Route Hint button appears in dock toolbar after plugin install (no stale-script tab) | headless toolbar population can't be probed; kind.author_ui() non-null asserted in smoke | Walking skeleton (W-13) |
 | 4 | Panel port: visual/interaction parity with in-tree PCBEditor (selection, drag, rotate, layer switch, zoom/pan, shortcuts) | harness probes per interaction + render_overlay/vision diffs (to be built in harness round) | Panel port (pending) |
 | 5 | Gerber output opens correctly in a real gerber viewer / fab preflight | golden-file diffs vs gerber-writer reference (spike) | Gerber spike (pending) |
+| 6 | Real `.minpcb` files (macOS baseline, per spike 019eb47cb448) import through pcb.deserialize without data loss | constructed legacy fixtures incl. unknown-field warn lane (go test 16/16) | YAML contract round (b0353ee) |
