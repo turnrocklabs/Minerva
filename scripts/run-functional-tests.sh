@@ -7,11 +7,18 @@
 #
 #   scripts/run-functional-tests.sh           # hermetic tier (F1-F6)
 #   scripts/run-functional-tests.sh --all     # + per-plugin tier
+#   scripts/run-functional-tests.sh --pcb-guard  # PCB-migration regression guard only
 #
 # The per-plugin tier (CAD / presentation / scansort) is heavy and/or networked
 # — it needs built plugin binaries, build123d, and a reachable model-chat
 # service — so it is NOT part of every hermetic CI run. Those tests SKIP
 # cleanly (exit 0) when their environment is unavailable.
+#
+# The --pcb-guard tier is a standalone regression guard for the PCB-migration
+# work: PCB/CAD plugin smoke tests plus the PluginScenePanelHost/Broker unit
+# suites that back host_owned panel plumbing (annotations, save/load hooks,
+# IPC broker). Run in isolation (not folded into --all) so migration rounds
+# can gate on it directly.
 #
 # Exit code: 0 if every test that RAN passed (a SKIP counts as a pass); 1 if
 # any test failed. Relies on the SceneTree tests calling quit(1) on failure.
@@ -41,10 +48,21 @@ PLUGIN_TESTS=(
 	test/test_codetools_panel_gate.gd
 	test/test_passthrough_e2e.gd
 )
+PCB_GUARD_TESTS=(
+	test/test_pcb_plugin_smoke.gd
+	test/test_cad_plugin_smoke.gd
+	test/test_plugin_scene_panel_broker.gd
+	test/test_plugin_scene_panel_broker_host_fs.gd
+	test/test_plugin_scene_panel_broker_progress.gd
+	test/test_plugin_scene_panel_host.gd
+	test/test_plugin_scene_panel_host_hooks.gd
+)
 
 tests=("${HERMETIC_TESTS[@]}")
 if [[ "${1:-}" == "--all" ]]; then
 	tests+=("${PLUGIN_TESTS[@]}")
+elif [[ "${1:-}" == "--pcb-guard" ]]; then
+	tests=("${PCB_GUARD_TESTS[@]}")
 fi
 
 pass=0
