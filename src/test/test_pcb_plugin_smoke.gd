@@ -36,6 +36,7 @@ const PLUGIN_DEFINITION_SCRIPT_PATH := "res://Scripts/Services/Plugins/PluginDef
 # res://../../minerva-plugins == C:/github/minerva-plugins.
 const PCB_HOST_SCRIPT_PATH := "res://../../minerva-plugins/pcb/ui/PcbAnnotationHost.gd"
 const PCB_KIND_SCRIPT_PATH := "res://../../minerva-plugins/pcb/ui/kinds/pcb_route_hint_kind.gd"
+const PCB_PANEL_SCRIPT_PATH := "res://../../minerva-plugins/pcb/ui/PCBPanel.gd"
 
 const PCB_PLUGIN_DIR_REL := "/github/minerva-plugins/pcb"
 const PCB_BINARY_REL := "/pcb-plugin"
@@ -61,6 +62,7 @@ func _init() -> void:
 	_test_envelope_validation()
 	_test_host_registry_roundtrip()
 	_test_sidecar_roundtrip()
+	_test_panel_save_flow()
 	_test_editor_registry_extension_routing()
 
 	# ── Section B: plugin lifecycle (needs built Go binary) ───────────────────
@@ -230,6 +232,47 @@ func _test_sidecar_roundtrip() -> void:
 	# Cleanup.
 	if FileAccess.file_exists(sidecar_path):
 		DirAccess.remove_absolute(sidecar_path)
+
+
+## Regression for W-15 (live 3b failure): the PANEL's own load→annotate→save
+## flow must write the sidecar. The load document mirrors Editor.gd:1117's
+## shape — file_path merged with the JSON body — which the panel's JSON branch
+## previously dropped, leaving _file_path empty and the sidecar never written.
+func _test_panel_save_flow() -> void:
+	print("\n-- Panel load→annotate→save writes the sidecar (W-15) --")
+	var tmp_dir: String = OS.get_environment("TEMP")
+	if tmp_dir == "":
+		tmp_dir = OS.get_environment("TMP")
+	if tmp_dir == "":
+		tmp_dir = OS.get_user_data_dir()
+	var board_dir := tmp_dir.replace("\\", "/") + "/pcb_skel_smoke"
+	DirAccess.make_dir_recursive_absolute(board_dir)
+	var board_path := board_dir + "/flow.pcbskel"
+	var sidecar_path := board_path + ".annotations.json"
+	if FileAccess.file_exists(sidecar_path):
+		DirAccess.remove_absolute(sidecar_path)
+
+	var panel_script: Script = load(PCB_PANEL_SCRIPT_PATH)
+	check("PCBPanel script loads", panel_script != null)
+	if panel_script == null:
+		return
+	var panel: Node = panel_script.new()
+	panel._on_panel_load_request({
+		"file_path": board_path,
+		"version": 1,
+		"kind": "pcbskel_board",
+		"board": {"width_mm": 60.0, "height_mm": 40.0},
+		"components": [],
+	})
+	var host: Variant = panel.get_annotation_host()
+	var hid: String = host.add_route_hint_at(3.0, 3.0, "flow hint")
+	check("panel flow: hint authored after load", hid != "")
+	panel._on_panel_save_request()
+	check("panel flow: save request writes sidecar beside board file",
+			FileAccess.file_exists(sidecar_path))
+	if FileAccess.file_exists(sidecar_path):
+		DirAccess.remove_absolute(sidecar_path)
+	panel.free()
 
 
 func _all_valid(annotations: Array, host: AnnotationHost) -> bool:
