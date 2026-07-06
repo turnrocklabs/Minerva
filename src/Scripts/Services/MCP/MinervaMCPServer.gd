@@ -115,6 +115,12 @@ func _init_modules() -> void:
 		MCPHttpTools.new(self),
 		MCPAnnotationTools.new(self),
 		MCPCadTools.new(self),
+		# Re-homed PCB panel surface (DCR 019dc140). Coexists with the legacy
+		# in-tree MCPPCBTools until cutover — it registers a minerva_pcb_* name
+		# only when that name is absent (i.e. after legacy is removed); see the
+		# NAME-COLLISION GUARD in MCPPcbPanelTools. Sits AFTER legacy so legacy
+		# keeps winning dispatch for the in-tree editor during coexistence.
+		MCPPcbPanelTools.new(self),
 		# T6 tail R6 (2026-05-12): MCPPresentationTools.gd deleted — every
 		# minerva_presentation_* tool now lives in ~/github/plugins/presentation.
 		MCPGeneralTools.new(self),
