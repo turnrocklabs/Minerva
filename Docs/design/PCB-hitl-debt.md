@@ -16,7 +16,7 @@ Rules:
 | # | Deferred check | Automated proxy in place | Source round |
 |---|---|---|---|
 | 1 | Live sidecar write: open `.pcbskel`, author hint via dock, Ctrl+S → `<file>.annotations.json` appears; close/reopen → hint restores with clean glyph | `_test_panel_save_flow` (panel-hook drive, smoke 43/0); W-14 restore-gate logic | Walking skeleton (W-15 fix) |
-| 2 | Route-hint marker lands where the mouse clicked once board/overlay transforms unify | none yet — transforms not unified (W-9); add render_overlay vision check in panel-port round | Walking skeleton (W-9) |
+| 2 | Route-hint markers sit on their board-mm anchors while panning/zooming in the live panel (W-9 fix verification); describe_point labels ("pad:U1.3") match what's under the cursor | transform math byte-exact vs world_to_screen + round-trip tests at zoom/pan (semantics suite 33/0); rotation-correct pin positions reviewer-verified | Annotation host round (8e25f68) |
 | 3 | Route Hint button appears in dock toolbar after plugin install (no stale-script tab) | headless toolbar population can't be probed; kind.author_ui() non-null asserted in smoke | Walking skeleton (W-13) |
 | 4 | Panel port: visual/interaction parity with in-tree PCBEditor (selection, drag, rotate, layer switch, zoom/pan, shortcuts) | harness probes per interaction + render_overlay/vision diffs (to be built in harness round) | Panel port (pending) |
 | 5 | Open `minerva-plugins/pcb/spikes/gerber/golden/*` (6 layers + PTH/NPTH drills) in gerbv or KiCad GerbView: zero warnings, visual + drill-alignment match (checklist in spike REPORT.md) | structural X2/RS-274X validator 20/20 + pygerber round-trip parse, byte-identical across clean venvs | Gerber spike (minerva-plugins 0bd438d) |
