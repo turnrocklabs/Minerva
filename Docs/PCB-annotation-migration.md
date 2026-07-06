@@ -79,7 +79,7 @@ The platform envelope (substrate §2.1, authoritative) is `{id, kind, schema_ver
 | PCB field | Platform field | Notes |
 |---|---|---|
 | `id` (`ann_NNNNNN` decimal) | `id` (`ann_<hex>`) | Migration regenerates IDs to substrate format. Old IDs stashed in `kind_payload.legacy_id` for forensic traceability. (References to annotation IDs from elsewhere in the PCB pipeline are limited to MCP returns; nothing else stores them.) |
-| `type` (enum) | `kind` (string) | See §5: `ARROW → pcb_annotation_arrow`, `TEXT → pcb_annotation_text`, `REGION → pcb_annotation_region`, `POLYLINE → pcb_annotation_polyline`. |
+| `type` (enum) | `kind` (string) | Per the §5 FINAL DECISION (core `2d_*` kinds): `ARROW → 2d_arrow`, `TEXT → 2d_text`, `REGION → 2d_region`, `POLYLINE → 2d_polyline`. *(The original `pcb_annotation_*` mapping is superseded.)* |
 | `positions[]` | `anchor` + `kind_payload` geometry | The anchor point becomes `anchor.id`/`anchor.snapshot.position` (mm in board space; `view_context = "pcb"` matches `PCBData.board_*`). Extended geometry (arrow endpoints, region corners, polyline vertices) rides in `kind_payload`. The optional legacy `primitives[]` slot (§2.2) MAY still carry the same geometry for renderers that read it, but it is not part of the required envelope. |
 | `text` | `kind_payload.text` | The kind renders the label from its payload. |
 | `color` | `kind_payload.color` (only when it differs from author default) | Preserves user overrides; default magenta (human) / cyan (ai) match substrate built-ins so no override is written for unmodified annotations. |
@@ -164,6 +164,21 @@ Authoritative shape, matching `PcbAnnotationHost.build_route_hint_envelope`
 
 ## 5. Kind Names
 
+> **FINAL DECISION (semantic-anchor round, DCRs 019eb4809a95 / 019eb480e4ea — supersedes the earlier five-kind plan below).** PCB registers **exactly one** domain kind, `pcb_route_hint`. Generic annotations (arrow / text / region / polyline) are authored with the **core `2d_*` kinds** — no `pcb_annotation_*` kinds are created.
+>
+> | Kind | Owner | Purpose |
+> |---|---|---|
+> | `pcb_route_hint` | `&"pcb"` | Routing hint (§4) — the one domain kind; upgraded this round with `detail_level` / `width_mm` / `source_pins[]` / `dest_pins[]`, a `pcb/pad` anchor option, layer-tinted zoom-aware rendering, path-based hit-test, and waypoint-click authoring. |
+> | `2d_arrow`, `2d_text`, `2d_region`, `2d_polyline` (core) | `&"core"` | Generic PCB annotations — used as-is. |
+>
+> **Rationale (why NOT the five PCB-specific kinds originally planned in §5.1):**
+> - **DRY.** `PcbAnnotationHost._init()` already calls `BuiltinKinds.register_all(_registry)`, so every core `2d_*` kind is live in the host's registry. Re-implementing `pcb_annotation_arrow/_text/_region/_polyline` would duplicate the core renderers per host for zero behavioural gain.
+> - **Custom hit-test proved unnecessary.** The per-type threshold tuning the old §5.1 justified is subsumed by (a) the substrate's threshold-grown AABB / path hit-tests on the core kinds and (b) `pcb_route_hint`'s own path-based `hit_test` (segment distance, layer-width-aware) for the only case that needed it. No generic PCB annotation needs a bespoke hit region.
+> - **`get_capabilities().kinds` reflects this reality:** `["pcb_route_hint", "2d_arrow", "2d_text", "2d_region", "2d_polyline"]`; author colors (human-magenta / AI-cyan) come from the substrate `AnnotationRenderContext` defaults, not per-kind overrides.
+> - Pin-snapping and `associated_component` halos, if wanted later, ride on `pcb_route_hint`'s semantic anchors (`pcb/pad`, `pcb/component`) and the host's anchor resolvers — not on cloned generic kinds.
+>
+> The pre-decision text below is retained for historical context only.
+
 PCB registers **five** kinds from its plugin startup:
 
 | Kind | Owner | Purpose |
@@ -174,7 +189,7 @@ PCB registers **five** kinds from its plugin startup:
 | `pcb_annotation_polyline` | `&"pcb"` | Open polyline. |
 | `pcb_route_hint` | `&"pcb"` | Routing hint (§4). |
 
-### 5.1 Why PCB-specific kinds, not core `2d_*`?
+### 5.1 Why PCB-specific kinds, not core `2d_*`? *(superseded — see the FINAL DECISION box above)*
 
 Alternative: PCB writes `2d_arrow`, `2d_text`, `2d_region`, `2d_polyline` directly. Pros: less boilerplate. Cons: PCB tunes hit-test thresholds per type (`PCBAnnotation.contains_point`); arrow authoring snaps to component pins (PCB-specific tool); future affordances ("associated_component" halo, layer-aware rendering) need kind ownership; the registry's namespace guard forbids plugins from using `2d_*` regardless. **Decision: register PCB-specific kinds.** Each composes from the core `2d_*` renderer's logic so basic appearance stays consistent; `pcb_route_hint` has no core equivalent.
 
@@ -220,7 +235,7 @@ If `annotations` and `route_hints` are both absent or empty, no sidecar is creat
 
 ### 7.2 Decision: thin-wrapper, deprecate in two releases
 
-Keep all four as **thin wrappers** that translate to `minerva_annotations_*` against the PCB document path. Wrappers accept the existing argument shape, mark themselves deprecated in the tool description ("Use `minerva_annotations_add` with `kind=pcb_annotation_arrow`"), translate per §3, and forward. `clear` becomes `list` + per-id `delete`. Rationale: existing skill prompts reference these names; hard removal breaks them. Two-release deprecation gives skills time to migrate. Per platform policy (tools dispatched in the plugin's own MCP server), the wrappers live in the PCB plugin once it lands.
+Keep all four as **thin wrappers** that translate to `minerva_annotations_*` against the PCB document path. Wrappers accept the existing argument shape, mark themselves deprecated in the tool description ("Use `minerva_annotations_add` with `kind=2d_arrow`" — core kinds per the §5 FINAL DECISION), translate per §3, and forward. `clear` becomes `list` + per-id `delete`. Rationale: existing skill prompts reference these names; hard removal breaks them. Two-release deprecation gives skills time to migrate. Per platform policy (tools dispatched in the plugin's own MCP server), the wrappers live in the PCB plugin once it lands.
 
 ---
 
@@ -245,7 +260,7 @@ Keep all four as **thin wrappers** that translate to `minerva_annotations_*` aga
 
 Ordered steps for the future PCB-as-plugin migration DCR (`019dc140291979a49a8081bf91abe2ff`):
 
-1. **Register PCB kinds** in the PCB plugin's startup. Add `Pcb_AnnotationArrow`, `_Text`, `_Region`, `_Polyline`, `Pcb_RouteHint` extending `AnnotationKind`; implement `render()`/`hit_test()`/`bounds()` (and `validate()` where useful); `owning_plugin = &"pcb"`.
+1. **Register PCB kinds** in the PCB plugin's startup. *(Revised per the §5 FINAL DECISION.)* Register only `pcb_route_hint` (extends `AnnotationKind`, `owning_plugin = &"pcb"`, with `render()`/`hit_test()`/`bounds()`/`validate()`); generic annotations use the core `2d_*` kinds already registered per-host via `BuiltinKinds.register_all` — no `Pcb_AnnotationArrow`/`_Text`/`_Region`/`_Polyline` classes are created.
 2. **One-shot loader** in `PCBData.load_from_dict` post-step: if legacy keys present, translate per §3/§4, write sidecar via `AnnotationSidecar.write_sidecar()`, clear in-memory legacy fields.
 3. **Strip-on-save:** remove `annotations` / `route_hints` from `PCBData.to_dict()`; delete the two fields from `PCBData`.
 4. **Render dispatch:** delete `PCBCanvas._draw_annotations` / `_draw_route_hints`; single overlay pass iterates the substrate's per-document list and calls `AnnotationRegistry.dispatch_render`.
@@ -295,7 +310,7 @@ The future migration DCR is "done" when all of the following hold:
 5. **Empty-board sanity.** A `.minpcb` with no annotations and no route-hints does not produce a sidecar after a load+save cycle.
 6. **Old-Minerva opens new file.** A pre-migration build opens a post-migration `.minpcb` (with sidecar) without errors. (Acceptable: annotations not visible.)
 7. **Color preservation.** A migrated annotation whose original `color` matched the author default has no `payload.color` in the sidecar; one whose color was customized writes `payload.color` and renders identically.
-8. **Substrate registry collision-free.** `AnnotationRegistry.register_annotation_kind` returns `true` for all five `pcb_*` kinds at plugin start; deregister returns `true` on plugin stop.
+8. **Substrate registry collision-free.** `AnnotationRegistry.register_annotation_kind` returns `true` for the one `pcb` kind (`pcb_route_hint`) at plugin start (the core `2d_*` kinds arrive via `BuiltinKinds.register_all` — §5 FINAL DECISION); deregister returns `true` on plugin stop.
 9. **Tests in PCB plugin's test suite** cover: annotation type-by-type migration; route-hint type-by-type migration; idempotent re-load (load → save → load gives identical sidecar); `pcb_interpret_route_hints` end-to-end through the substrate.
 
 ---
