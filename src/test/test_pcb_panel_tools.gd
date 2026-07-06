@@ -69,7 +69,7 @@ func _setup() -> bool:
 	data = panel.get_data()
 	if data == null:
 		return false
-	data.clear()  # start from a blank board (the panel seeds U1/R1 in _init)
+	data.clear()  # start from a known-blank board for deterministic assertions
 
 	AnnotationHostRegistry._reset_for_test()
 	AnnotationHostRegistry.register(EDITOR, host)
