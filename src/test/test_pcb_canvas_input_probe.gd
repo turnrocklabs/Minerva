@@ -45,6 +45,7 @@ func _init() -> void:
 	await _probe_bare()
 	await _probe_with_overlay()
 	await _probe_full_live_mount()
+	await _probe_reparent_after_mount()
 	await _probe_select_tool_boxselect()
 	await _probe_pan_tool_and_gestures()
 	_probe_empty_default_board()
@@ -226,6 +227,61 @@ func _probe_full_live_mount() -> void:
 	var canvas = panel._canvas
 	await _run_input_asserts("full", panel, canvas)
 	row.queue_free()
+	await process_frame
+
+
+## REGRESSION GUARD for bug 019f39164c2e: the real editor builds the panel under
+## one parent (_on_panel_loaded runs), THEN reparents it into the annotation
+## content row (Editor._ensure_annotation_content_row). That reparent fires the
+## canvas's _exit_tree/_enter_tree WITHOUT re-running _ready. If input config is
+## only set in _ready, the reparented canvas is left MOUSE_FILTER_IGNORE and
+## swallows all input (draws fine — the exact "buttons work, canvas dead" bug the
+## earlier probes MISSED because they built the canvas after the final add).
+## This probe reproduces the mount→reparent order and asserts input survives.
+func _probe_reparent_after_mount() -> void:
+	print("\n-- Reparent-after-mount (bug 019f39164c2e regression guard) --")
+	var first_parent := Control.new()
+	first_parent.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	first_parent.size = Vector2(900, 700)
+	get_root().add_child(first_parent)
+
+	# 1. Build the panel + canvas UNDER the first parent (as the plugin host does).
+	var panel = load(PANEL_PATH).new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	first_parent.add_child(panel)
+	panel._on_panel_loaded({"editor": FakeEditor.new(), "file_path": ""})
+	panel.get_data().from_board_dict(_board_with_part())
+	for _i in range(3):
+		await process_frame
+
+	var canvas = panel._canvas
+	check("canvas STOP before reparent", canvas.mouse_filter == Control.MOUSE_FILTER_STOP,
+			"mouse_filter=%d" % canvas.mouse_filter)
+
+	# 2. Reparent the panel into an AnnotationContentRow (as the dock mount does).
+	#    This fires the canvas _exit_tree → _enter_tree.
+	first_parent.remove_child(panel)
+	var row := HBoxContainer.new()
+	row.name = "AnnotationContentRow"
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.size = Vector2(900, 700)
+	get_root().add_child(row)
+	row.add_child(panel)
+	var overlay := AnnotationOverlay.new()
+	overlay.name = "PlatformAnnotationOverlay"
+	panel.add_child(overlay)
+	overlay.set_host(panel.get_annotation_host())
+	for _i in range(5):
+		await process_frame
+
+	# 3. After the reparent the canvas MUST still accept input.
+	check("canvas STOP after reparent (not left IGNORE)",
+			canvas.mouse_filter == Control.MOUSE_FILTER_STOP,
+			"mouse_filter=%d — the reparent left it IGNORE" % canvas.mouse_filter)
+	await _run_input_asserts("reparented", panel, canvas)
+	row.queue_free()
+	first_parent.queue_free()
 	await process_frame
 
 
