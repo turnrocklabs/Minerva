@@ -264,11 +264,27 @@ func test_annotation_dict_shape() -> void:
 
 	var ann: Dictionary = sigs["ready_payload"][0]
 	check_eq("kind == '2d_arrow'",       ann.get("kind"),           "2d_arrow")
-	check_eq("schema_version == 1",      ann.get("schema_version"), 1)
-	check_eq("author == 'human'",        ann.get("author"),         "human")
+	check_eq("schema_version == 2",      ann.get("schema_version"), 2)
+	check_eq("author == {kind: human}",  ann.get("author"),         {"kind": "human"})
 	check_eq("view_context propagated",  ann.get("view_context"),   "pcb")
+	check_eq("lifecycle == 'open'",      ann.get("lifecycle"),      "open")
 	check("annotation has no id (substrate assigns)",         not ann.has("id"))
-	check("annotation has no created_at (substrate assigns)", not ann.has("created_at"))
+	check("annotation stamps created_at (v2 envelope)",       ann.has("created_at"))
+	# Anchor is a core/canvas.point at endpoint A so the annotation renders on
+	# any host (the base AnnotationHost resolves canvas.point).
+	var anchor: Dictionary = ann.get("anchor", {})
+	check_eq("anchor plugin == 'core'",        anchor.get("plugin"), "core")
+	check_eq("anchor type == 'canvas.point'",  anchor.get("type"),   "canvas.point")
+	# The emitted envelope must pass v2 validation (the whole point of the fix).
+	var _schema = load("res://Scripts/Services/Annotations/AnnotationV2Schema.gd").new()
+	var _reg := AnnotationRegistry.new()
+	BuiltinKinds.register_all(_reg)
+	var _stamped := ann.duplicate(true)
+	_stamped["id"] = "ann_test"
+	var _res = _schema.validate_with_registry(_stamped, _reg)
+	if _res.has_errors():
+		printerr("  v2 validation errors: %s" % str(_res.to_error_dicts()))
+	check("emitted 2d_arrow envelope passes v2 validation", not _res.has_errors())
 
 	check("primitives is Array", ann.get("primitives") is Array)
 	var prims: Array = ann["primitives"]

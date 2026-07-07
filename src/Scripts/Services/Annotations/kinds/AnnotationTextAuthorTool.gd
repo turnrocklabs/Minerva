@@ -38,18 +38,20 @@ extends AnnotationAuthorTool
 ##   emitted. The cancelled signal is reserved for explicit user-abort
 ##   (dialog Cancel / Escape).
 ##
-## Annotation Dict shape (canonical payload/anchor form):
+## Annotation Dict shape (v2 canonical payload/anchor form):
 ##   {
 ##     "kind": "2d_text",
-##     "schema_version": 1,
-##     "author": "human",
-##     "view_context": "<host.get_view_context()>",
+##     "schema_version": 2,
 ##     "anchor": core/canvas.point(x, y),
 ##     "kind_payload": {"text": "<typed_string>", "font_size": 14},
-##     "primitives": []
+##     "primitives": [],
+##     "lifecycle": "open",
+##     "author": {"kind": "human"},
+##     "view_context": "<host.get_view_context()>",
+##     "visible_in_views": ["all"], "summary": "<typed_string>"
 ##   }
-## Note: id and created_at are added by the substrate's add_annotation(),
-## not here.
+## Note: id is assigned by the substrate's add_annotation() on accept. A v1
+## envelope (schema_version 1) is REJECTED by AnnotationV2Schema.validate.
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -246,16 +248,25 @@ func _reset_state() -> void:
 
 
 func _build_annotation(at_pos: Vector2, content: String) -> Dictionary:
+	# v2 envelope (schema_version 2). Was schema_version 1, which
+	# AnnotationV2Schema.validate rejects (schema_version must be 2), so the
+	# submitted text was silently dropped by host.add_annotation. Now mirrors the
+	# route_hint / text_comment v2 shape; the host assigns id on accept.
 	var view_ctx := ""
 	if _host != null:
 		view_ctx = _host.get_view_context()
+	var now := int(Time.get_unix_time_from_system())
 	return {
-		"kind":           "2d_text",
-		"schema_version": 1,
-		"author":         "human",
-		"view_context":   view_ctx,
-		"anchor":         CoreAnchors.make_canvas_point(at_pos.x, at_pos.y),
-		"kind_payload":   {"text": content, "font_size": DEFAULT_FONT_SIZE},
-		"summary":        content,
-		"primitives":     [],
+		"kind":            "2d_text",
+		"schema_version":  2,
+		"anchor":          CoreAnchors.make_canvas_point(at_pos.x, at_pos.y),
+		"kind_payload":    {"text": content, "font_size": DEFAULT_FONT_SIZE},
+		"primitives":      [],
+		"lifecycle":       "open",
+		"author":          {"kind": "human"},
+		"view_context":    view_ctx,
+		"visible_in_views": ["all"],
+		"summary":         content,
+		"created_at":      now,
+		"updated_at":      now,
 	}

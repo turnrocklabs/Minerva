@@ -27,15 +27,22 @@ extends AnnotationAuthorTool
 ##   right-click / Escape user action. (See test
 ##   test_switch_tools_mid_author_no_signals.)
 ##
-## Annotation Dict shape (matches AnnotationArrow.render which reads "from"/"to"):
+## Annotation Dict shape (v2 — matches AnnotationArrow.render which reads
+## "from"/"to"):
 ##   {
 ##     "kind": "2d_arrow",
-##     "schema_version": 1,
-##     "author": "human",
+##     "schema_version": 2,
+##     "anchor": core/canvas.point(ax, ay),
+##     "kind_payload": {},
+##     "primitives": [{"kind": "arrow", "from": [ax, ay], "to": [bx, by]}],
+##     "lifecycle": "open",
+##     "author": {"kind": "human"},
 ##     "view_context": "<host.get_view_context()>",
-##     "primitives": [{"kind": "arrow", "from": [ax, ay], "to": [bx, by]}]
+##     "visible_in_views": ["all"], "summary": "Arrow"
 ##   }
-## Note: id and created_at are added by the substrate's add_annotation(), not here.
+## Note: id is assigned by the substrate's add_annotation() on accept. A v1
+## envelope (schema_version 1) is REJECTED by AnnotationV2Schema.validate — that
+## silent rejection is why arrow authoring produced nothing before.
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -155,20 +162,32 @@ func _reset_state() -> void:
 
 
 func _build_annotation(a: Vector2, b: Vector2) -> Dictionary:
-	# Keys "from"/"to" match what AnnotationArrow.render reads (see
-	# AnnotationArrow.gd:_render_arrow). The substrate's add_annotation()
-	# assigns id/created_at on accept.
+	# v2 envelope (schema_version 2) — matches the established authoring pattern
+	# (route_hint / text_comment build v2 directly). The generic kinds anchor to a
+	# core/canvas.point at the first endpoint; the base AnnotationHost resolves
+	# canvas.point so the annotation renders on any host. (A raw v1 envelope is
+	# rejected by AnnotationV2Schema.validate — schema_version must be 2 — which is
+	# why authoring silently produced nothing before.) Keys "from"/"to" match what
+	# AnnotationArrow.render reads. The host assigns id on accept.
 	var view_ctx := ""
 	if _host != null:
 		view_ctx = _host.get_view_context()
+	var now := int(Time.get_unix_time_from_system())
 	return {
-		"kind":           "2d_arrow",
-		"schema_version": 1,
-		"author":         "human",
-		"view_context":   view_ctx,
-		"primitives":     [{
+		"kind":            "2d_arrow",
+		"schema_version":  2,
+		"anchor":          CoreAnchors.make_canvas_point(a.x, a.y),
+		"kind_payload":    {},
+		"primitives":      [{
 			"kind": "arrow",
 			"from": [a.x, a.y],
 			"to":   [b.x, b.y],
 		}],
+		"lifecycle":       "open",
+		"author":          {"kind": "human"},
+		"view_context":    view_ctx,
+		"visible_in_views": ["all"],
+		"summary":         "Arrow",
+		"created_at":      now,
+		"updated_at":      now,
 	}
