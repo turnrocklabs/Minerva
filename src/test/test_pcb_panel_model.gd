@@ -386,22 +386,23 @@ func _test_mounting_holes_roundtrip() -> void:
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-## Rotation-sign regression: a 90/270 component's pin must land at its authored
-## trace endpoint. get_transform() applies +rotation in Y-down screen space; the
-## earlier -rotation put 270-deg parts (e.g. MIC1) off the board and off-trace.
+## Rotation-convention regression: rotation_deg is KiCad-equivalent, so
+## get_transform() applies R(-rotation) (matching the worker's radians(-deg)).
+## MIC1 at its KiCad-sign rotation (90) must land its WS pad on the I2S_WS trace
+## end. A +rotation panel (or a stale-negated 270 in the data) puts it off-board.
 func _test_rotation_sign_lands_on_traces() -> void:
-	print("\n-- rotation sign: 270-deg pin lands on its trace (get_transform) --")
+	print("\n-- rotation convention: KiCad-sign 90-deg pin lands on its trace --")
 	var comp = _PCBComponent.new()
 	comp.id = "MIC1"
 	comp.position = Vector2(40.64, 106.68)   # smart-remote MIC1 placement
-	comp.rotation = 270.0
+	comp.rotation = 90.0                      # KiCad-sign (canonical, corrected)
 	comp.pins = {"4": Vector2(7.62, 5.08)}    # WS pad, footprint-local
 
-	# I2S_WS trace terminates at (45.72, 99.06); +rotation must reach it.
+	# I2S_WS trace terminates at (45.72, 99.06); R(-90) must reach it.
 	var wp: Vector2 = comp.get_pin_world_position("4")
-	check("MIC1.WS (rot270) world pos on I2S_WS trace end (45.72, 99.06)",
+	check("MIC1.WS (rot90, KiCad conv) world pos on I2S_WS trace end (45.72, 99.06)",
 			wp.is_equal_approx(Vector2(45.72, 99.06)),
-			"got %s (expected 45.72,99.06; -rotation would give 35.56,114.3 off-board)" % str(wp))
+			"got %s (a +rotation panel would give 35.56,114.3 off-board)" % str(wp))
 	# And it must be inside the 80x110 board, not hanging off the bottom.
 	check("MIC1.WS world pos is on-board (y <= 110)", wp.y <= 110.0,
 			"got y=%.2f" % wp.y)
