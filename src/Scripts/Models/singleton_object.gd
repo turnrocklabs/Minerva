@@ -1436,14 +1436,8 @@ func _init_creatable_items() -> void:
 		)
 	)
 
-	# PCB Editor (sort_order: 40)
-	creatable_item_registry.register_item(
-		CreatableItemRegistry.CreatableItem.create(
-			"pcb", "PCB Editor",
-			func(): ep.add(Editor.Type.PCB),
-			null, 40
-		)
-	)
+	# PCB "New" item removed at cutover 2026-07-07 — the pcb plugin contributes its
+	# own "New PCB" (untitled.pcbskel) via its manifest editor_items.
 
 	# Video Recorder (sort_order: 50)
 	creatable_item_registry.register_item(
@@ -1699,9 +1693,9 @@ func open_file_at_path(path: String) -> Dictionary:
 	if lower.ends_with(".jpeg") or lower.ends_with(".jpg") or lower.ends_with(".png"):
 		result_editor = editor_pane.add(Editor.Type.GRAPHICS, abs_path)
 		editor_kind = "GRAPHICS"
-	elif lower.ends_with(".minpcb"):
-		result_editor = editor_pane.add(Editor.Type.PCB, abs_path)
-		editor_kind = "PCB"
+	# .minpcb routing removed at cutover 2026-07-07. Until the plugin's legacy
+	# .minpcb importer lands (fast-follow), .minpcb falls through to the plugin
+	# registry → TEXT fallback (its JSON is readable). The pcb plugin owns .pcbskel.
 	elif lower.ends_with(".minkb"):
 		result_editor = editor_pane.add(Editor.Type.KANBAN, abs_path)
 		editor_kind = "KANBAN"

@@ -209,9 +209,7 @@ static func find_spreadsheet(name_: String) -> Variant:
 	return find_typed_editor(name_, _get_editor_type("SPREADSHEET"))
 
 
-## Convenience: find PCB editor panel by name.
-static func find_pcb(name_: String) -> Variant:
-	return find_editor_panel(name_, _get_editor_type("PCB"), "pcb_editor")
+# find_pcb removed at cutover 2026-07-07 (in-tree PCB editor retired).
 
 
 ## Convenience: find video editor panel by name.

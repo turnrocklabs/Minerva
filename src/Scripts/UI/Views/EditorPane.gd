@@ -323,8 +323,8 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null,
 
 
 ## Convenience function to add a PCB editor
-func add_pcb_editor(name_: String = "") -> Editor:
-	return add(Editor.Type.PCB, null, name_, null, true)
+# add_pcb_editor removed at cutover 2026-07-07 (in-tree PCB editor retired; PCB
+# lives in the pcb plugin now).
 
 func add_webview_editor(name_: String = "") -> Editor:
 	return add(Editor.Type.WEBVIEW, null, name_, null, true)

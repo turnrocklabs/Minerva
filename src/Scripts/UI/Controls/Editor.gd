@@ -110,6 +110,8 @@ enum Type {
 	LOGS,
 	KANBAN,
 	SPREADSHEET,
+	## DEPRECATED (cutover 2026-07-07): in-tree PCB editor removed; PCB now lives in
+	## the pcb plugin. Enum slot RETAINED for .minproj ordinal stability — do not delete.
 	PCB,
 	VIDEO_EDITOR,
 	ACTIVITY_LOG,
@@ -399,15 +401,8 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			vbox_container.add_child(new_spreadsheet_editor)
 			editor.spreadsheet_editor = new_spreadsheet_editor
 
-		Editor.Type.PCB:
-			vbox_container.clip_contents = true
-			var pcb_editor_scene = load("res://Scenes/PCBEditor.tscn")
-			var new_pcb_editor = pcb_editor_scene.instantiate()
-			new_pcb_editor.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
-			new_pcb_editor.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
-			vbox_container.add_child(new_pcb_editor)
-			editor.pcb_editor = new_pcb_editor
-			new_pcb_editor.data_changed.connect(func(): SingletonObject.UpdateUnsavedTabIcon.emit())
+		# Editor.Type.PCB construction removed at cutover 2026-07-07 (in-tree PCB
+		# editor retired; PCB lives in the pcb plugin). Enum slot retained.
 
 		Editor.Type.VIDEO_EDITOR:
 			vbox_container.clip_contents = true
@@ -575,7 +570,6 @@ func _ready():
 			Type.TEXT: _load_text_file(file)
 			Type.GRAPHICS: _load_graphics_file(file)
 			Type.VIDEO: video_player.video_path = file
-			Type.PCB: _load_pcb_file(file)
 			Type.KANBAN: _load_kanban_file(file)
 			Type.SPREADSHEET: _load_spreadsheet_file(file)
 			Type.WEBVIEW: _load_webview_file(file)
@@ -1046,19 +1040,6 @@ func _load_graphics_file(filename: String):
 	#_file_saved = true
 	#SingletonObject.UpdateUnsavedTabIcon.emit()
 	# %SaveButton.disabled = false
-
-
-func _load_pcb_file(filename: String) -> void:
-	var fa := FileAccess.open(filename, FileAccess.READ)
-	if not fa:
-		SingletonObject.ErrorDisplay("Couldn't open file", error_string(FileAccess.get_open_error()))
-		return
-	var json := JSON.new()
-	if json.parse(fa.get_as_text()) != OK:
-		SingletonObject.ErrorDisplay("Invalid PCB file", json.get_error_message())
-		return
-	if json.data is Dictionary and pcb_editor:
-		pcb_editor.load_from_dict(json.data)
 
 
 func _load_kanban_file(filename: String) -> void:
