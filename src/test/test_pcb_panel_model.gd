@@ -62,6 +62,7 @@ func _init() -> void:
 	_test_journal_symmetry()
 	_test_spatial_query()
 	_test_mounting_holes_roundtrip()
+	_test_rotation_sign_lands_on_traces()
 
 	_finish()
 
@@ -384,6 +385,27 @@ func _test_mounting_holes_roundtrip() -> void:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+
+## Rotation-sign regression: a 90/270 component's pin must land at its authored
+## trace endpoint. get_transform() applies +rotation in Y-down screen space; the
+## earlier -rotation put 270-deg parts (e.g. MIC1) off the board and off-trace.
+func _test_rotation_sign_lands_on_traces() -> void:
+	print("\n-- rotation sign: 270-deg pin lands on its trace (get_transform) --")
+	var comp = _PCBComponent.new()
+	comp.id = "MIC1"
+	comp.position = Vector2(40.64, 106.68)   # smart-remote MIC1 placement
+	comp.rotation = 270.0
+	comp.pins = {"4": Vector2(7.62, 5.08)}    # WS pad, footprint-local
+
+	# I2S_WS trace terminates at (45.72, 99.06); +rotation must reach it.
+	var wp: Vector2 = comp.get_pin_world_position("4")
+	check("MIC1.WS (rot270) world pos on I2S_WS trace end (45.72, 99.06)",
+			wp.is_equal_approx(Vector2(45.72, 99.06)),
+			"got %s (expected 45.72,99.06; -rotation would give 35.56,114.3 off-board)" % str(wp))
+	# And it must be inside the 80x110 board, not hanging off the bottom.
+	check("MIC1.WS world pos is on-board (y <= 110)", wp.y <= 110.0,
+			"got y=%.2f" % wp.y)
+
 
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:
