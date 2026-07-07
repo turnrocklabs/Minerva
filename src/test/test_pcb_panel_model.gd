@@ -61,6 +61,7 @@ func _init() -> void:
 	_test_undo_redo()
 	_test_journal_symmetry()
 	_test_spatial_query()
+	_test_mounting_holes_roundtrip()
 
 	_finish()
 
@@ -310,6 +311,76 @@ func _test_spatial_query() -> void:
 			"near=%s" % str(near))
 	check("get_nearest_component finds R1 nearest to U1",
 			idx.get_nearest_to_component("U1") == "R1")
+
+
+func _test_mounting_holes_roundtrip() -> void:
+	print("\n-- board-level mounting_holes load + round-trip (mirrors vias) --")
+	var board := {
+		"version": 1,
+		"name": "MountingHoleBoard",
+		"width_mm": 80.0,
+		"height_mm": 110.0,
+		"grid_mm": 2.54,
+		"layers": ["top", "bottom"],
+		"design_rules": {},
+		"components": [],
+		"nets": [],
+		"traces": [],
+		"vias": [],
+		"mounting_holes": [
+			{"x_mm": 5.0, "y_mm": 5.0, "diameter_mm": 3.2, "plated": false},
+			{"x_mm": 75.0, "y_mm": 5.0, "diameter_mm": 3.2, "plated": false},
+			{"x_mm": 5.0, "y_mm": 105.0, "diameter_mm": 3.2, "plated": false},
+			{"x_mm": 75.0, "y_mm": 105.0, "diameter_mm": 3.2, "plated": false},
+		]
+	}
+
+	var data = _PCBData.new()
+	data.from_board_dict(board)
+
+	check("mounting_holes loaded (4 holes)", data.mounting_holes.size() == 4,
+			"got %d" % data.mounting_holes.size())
+
+	var first: Dictionary = data.mounting_holes[0] if data.mounting_holes.size() > 0 else {}
+	check("first hole position is Vector2(5, 5)",
+			first.get("position", null) == Vector2(5.0, 5.0),
+			"got %s" % str(first.get("position", null)))
+	check("first hole diameter preserved (3.2)",
+			is_equal_approx(float(first.get("diameter", 0.0)), 3.2),
+			"got %s" % str(first.get("diameter", null)))
+	check("first hole plated preserved (false)",
+			first.get("plated", true) == false)
+
+	var d2: Dictionary = data.to_board_dict()
+	var out_holes: Array = d2.get("mounting_holes", [])
+	check("to_board_dict round-trips mounting_holes count (4)",
+			out_holes.size() == 4, "got %d" % out_holes.size())
+
+	if out_holes.size() == 4:
+		var h0: Dictionary = out_holes[0]
+		check("round-tripped hole x_mm/y_mm/diameter_mm/plated match input",
+				is_equal_approx(float(h0.get("x_mm", -1.0)), 5.0)
+				and is_equal_approx(float(h0.get("y_mm", -1.0)), 5.0)
+				and is_equal_approx(float(h0.get("diameter_mm", -1.0)), 3.2)
+				and h0.get("plated", true) == false,
+				"h0=%s" % str(h0))
+
+	# Legacy to_dict/load_from_dict path (undo snapshots) must also preserve holes.
+	var snap: Dictionary = data.to_dict()
+	check("legacy to_dict serializes mounting_holes (4)",
+			(snap.get("mounting_holes", []) as Array).size() == 4,
+			"got %d" % (snap.get("mounting_holes", []) as Array).size())
+	var data2 = _PCBData.new()
+	data2.load_from_dict(snap)
+	check("legacy load_from_dict restores mounting_holes (4)",
+			data2.mounting_holes.size() == 4,
+			"got %d" % data2.mounting_holes.size())
+	if data2.mounting_holes.size() == 4:
+		var lh: Dictionary = data2.mounting_holes[0]
+		check("legacy-restored hole position + plated:false preserved",
+				lh.get("position", null) == Vector2(5.0, 5.0)
+				and lh.get("plated", true) == false,
+				"lh=%s" % str(lh))
 
 
 # ──────────────────────────────────────────────────────────────────────────────
