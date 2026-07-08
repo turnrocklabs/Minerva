@@ -50,6 +50,12 @@ func _init() -> void:
 	print("\n-- AnnotationOverlay: pointer coords are RAW (tools own screen→doc) --")
 	test_overlay_passes_raw_pointer_tools_transform()
 
+	print("\n-- AnnotationHost: base selection stores + emits --")
+	test_base_host_selection_stores_and_emits()
+
+	print("\n-- AnnotationTransformTool: gizmo zones scale with zoom --")
+	test_transform_gizmo_zones_scale_with_zoom()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -506,3 +512,59 @@ func test_overlay_passes_raw_pointer_tools_transform() -> void:
 			and is_equal_approx(float(aid.get("y", -1.0)), 10.0))
 
 	overlay.queue_free()
+
+
+# ── Base-host selection + zoom-aware transform gizmo ──────────────────────────
+## set_selected_annotation_id was a silent no-op default — hit-tests succeeded
+## but nothing stuck, so no halo/gizmo ever appeared on hosts that didn't
+## override (PCB, text editor). The base now stores + emits. And the transform
+## gizmo's zone radii are screen px divided by zoom, so the clickable areas
+## stay constant on screen instead of ballooning on mm-unit canvases.
+
+func test_base_host_selection_stores_and_emits() -> void:
+	print("test_base_host_selection_stores_and_emits:")
+	var host := MockHost.new()  # does NOT override selection → base impl
+	var emitted: Array = []
+	host.selection_changed.connect(func(id: String) -> void: emitted.append(id))
+
+	check_eq("initial selection empty", host.get_selected_annotation_id(), "")
+	host.set_selected_annotation_id("ann_1")
+	check_eq("selection stored", host.get_selected_annotation_id(), "ann_1")
+	check_eq("selection_changed emitted once", emitted.size(), 1)
+	host.set_selected_annotation_id("ann_1")
+	check_eq("no re-emit on same id", emitted.size(), 1)
+	host.set_selected_annotation_id("")
+	check_eq("cleared selection", host.get_selected_annotation_id(), "")
+	check_eq("clear emits", emitted.size(), 2)
+
+
+func test_transform_gizmo_zones_scale_with_zoom() -> void:
+	print("test_transform_gizmo_zones_scale_with_zoom:")
+	# Bounds: a 20x10 doc-unit annotation (a typical PCB arrow in mm).
+	var b := Rect2(30.0, 40.0, 20.0, 10.0)
+	var tl := b.position
+
+	# zoom 1 (identity host): 5 doc units from the TL corner is inside the
+	# 12px corner-handle radius → CORNER_TL. Unchanged legacy behavior.
+	check_eq("zoom 1: 5 units from corner = CORNER",
+		AnnotationTransformTool._hit_zone(tl + Vector2(-3.0, -4.0), b, 1.0),
+		AnnotationTransformTool.Zone.CORNER_TL)
+
+	# zoom 8 (PCB): the same 5 doc units is 40 px — far outside the 12px
+	# corner zone (1.5 doc units at zoom 8) AND past the rotate ring
+	# ([1.5, 3.5] doc units) → OUTSIDE. The old doc-unit reading would have
+	# returned CORNER_TL and made the gizmo zones swallow the board.
+	check_eq("zoom 8: 5 units from corner = OUTSIDE (zones shrink)",
+		AnnotationTransformTool._hit_zone(tl + Vector2(-3.0, -4.0), b, 8.0),
+		AnnotationTransformTool.Zone.OUTSIDE)
+
+	# zoom 8: 2 doc units diagonal from the corner (16 px) falls in the
+	# rotate annulus [1.5, 3.5] doc units → ROTATE_TL.
+	check_eq("zoom 8: 2 units from corner = ROTATE ring",
+		AnnotationTransformTool._hit_zone(tl + Vector2(-1.415, -1.415), b, 8.0),
+		AnnotationTransformTool.Zone.ROTATE_TL)
+
+	# zoom 8: a point well inside the bounds translates.
+	check_eq("zoom 8: center = INSIDE (translate)",
+		AnnotationTransformTool._hit_zone(b.get_center(), b, 8.0),
+		AnnotationTransformTool.Zone.INSIDE)

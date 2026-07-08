@@ -392,15 +392,26 @@ func remove_annotation(_annotation_id: String) -> bool:
 	return false
 
 
+## Selected annotation id backing the default selection implementation below.
+var _selected_annotation_id: String = ""
+
+
 ## Track which annotation is currently selected. Empty string = no selection.
-## Subclass MUST emit selection_changed when the value changes. Default no-ops.
-func set_selected_annotation_id(_annotation_id: String) -> void:
-	pass
+## The base implementation stores the id and emits selection_changed on change —
+## the old no-op default silently discarded selection on every host that didn't
+## override (the Select/Transform tools hit-tested fine but nothing stuck, so no
+## halo/gizmo ever appeared). Subclasses with their own selection model may
+## still override; they MUST emit selection_changed when the value changes.
+func set_selected_annotation_id(annotation_id: String) -> void:
+	if annotation_id == _selected_annotation_id:
+		return
+	_selected_annotation_id = annotation_id
+	selection_changed.emit(annotation_id)
 
 
-## Return the current selection id, or "" if none. Default returns "".
+## Return the current selection id, or "" if none.
 func get_selected_annotation_id() -> String:
-	return ""
+	return _selected_annotation_id
 
 
 ## Return the current document's annotation list. Manipulation tools iterate

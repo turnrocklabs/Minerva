@@ -245,6 +245,9 @@ func remove_annotation(annotation_id: String) -> bool:
 	for i in range(_annotations.size()):
 		if _annotations[i].get("id", "") == annotation_id:
 			_annotations.remove_at(i)
+			# Base contract: removing the selected annotation clears selection.
+			if get_selected_annotation_id() == annotation_id:
+				set_selected_annotation_id("")
 			annotations_changed.emit()
 			return true
 	return false

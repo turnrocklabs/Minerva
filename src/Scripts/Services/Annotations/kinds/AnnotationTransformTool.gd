@@ -23,18 +23,24 @@ extends AnnotationAuthorTool
 ## Emits annotation_modified(id, new_dict) only. Never annotation_ready.
 
 # ── Zone constants — tune here for the polish pass ──────────────────────────
+# All sizes are SCREEN pixels; zone math and gizmo drawing divide by the host
+# zoom to get document units, so the gizmo stays a constant on-screen size at
+# any zoom. (On identity-transform hosts zoom is 1.0 — behavior unchanged. The
+# old doc-unit reading made the gizmo zones balloon on mm-unit canvases: a
+# 28"mm" rotate ring at PCB zoom 8 was a 224px monster that swallowed the
+# translate zone. Same bug class as the arrowhead's zoom² scaling.)
 
-## Corner + edge handle hit zone radius, in document units.
+## Corner + edge handle hit zone radius, in screen pixels.
 const HANDLE_HIT_RADIUS_DOC: float = 12.0
 
-## Outer radius of rotate-ring annulus from corner, in document units.
+## Outer radius of rotate-ring annulus from corner, in screen pixels.
 const ROTATE_RING_OUTER_DOC: float = 28.0
 
 ## Inner radius of rotate-ring annulus (= corner hit zone) so zones don't
 ## overlap: corner wins if dist < 12; rotate ring wins if 12 ≤ dist ≤ 28.
 const ROTATE_RING_INNER_DOC: float = 12.0
 
-## Filled-square gizmo size for corner and edge handles, in document units.
+## Filled-square gizmo size for corner and edge handles, in screen pixels.
 const HANDLE_SIZE_DOC: float = 6.0
 
 ## Minimum scale factor — prevents collapsing to zero or mirroring.
@@ -117,6 +123,14 @@ func _reset_drag_state() -> void:
 	_current_angle_rad = 0.0
 
 
+## Screen-pixels-per-document-unit from the host (1.0 for identity hosts).
+## Zone radii and gizmo sizes are screen px; dividing by this yields doc units.
+func _view_zoom() -> float:
+	if _host != null and _host.has_method("get_annotation_zoom"):
+		return maxf(float(_host.get_annotation_zoom()), 0.01)
+	return 1.0
+
+
 # ── Pointer / input ───────────────────────────────────────────────────────────
 
 func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
@@ -158,7 +172,7 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 			var kind := _get_kind(ann)
 			if kind != null:
 				var b: Rect2 = kind.bounds(ann)
-				var zone := _hit_zone(doc_pos, b)
+				var zone := _hit_zone(doc_pos, b, _view_zoom())
 				if zone != Zone.OUTSIDE:
 					return _begin_drag(zone, doc_pos, selected_id, ann, b)
 				# Click was outside the gizmo entirely — fall through to
@@ -206,7 +220,14 @@ func on_pointer_up(_pos: Vector2, button: int, _mods: int) -> bool:
 ##                HANDLE_HIT_RADIUS_DOC of any corner)
 ##   4. INSIDE   (b.has_point(doc_pos))
 ##   5. OUTSIDE
-static func _hit_zone(doc_pos: Vector2, b: Rect2) -> Zone:
+static func _hit_zone(doc_pos: Vector2, b: Rect2, zoom: float = 1.0) -> Zone:
+	# Zone radii are screen px; divide by zoom for doc units so the gizmo's
+	# clickable areas are a constant on-screen size at any zoom.
+	var z := maxf(zoom, 0.01)
+	var handle_r := HANDLE_HIT_RADIUS_DOC / z
+	var ring_inner := ROTATE_RING_INNER_DOC / z
+	var ring_outer := ROTATE_RING_OUTER_DOC / z
+
 	var corners := _corner_positions(b)
 	# corners order: TL=0, TR=1, BL=2, BR=3
 	var corner_zones: Array = [Zone.CORNER_TL, Zone.CORNER_TR, Zone.CORNER_BL, Zone.CORNER_BR]
@@ -215,21 +236,21 @@ static func _hit_zone(doc_pos: Vector2, b: Rect2) -> Zone:
 	# 1. CORNER check
 	for i in corners.size():
 		var dist := doc_pos.distance_to(corners[i])
-		if dist < HANDLE_HIT_RADIUS_DOC:
+		if dist < handle_r:
 			return corner_zones[i]
 
 	# Compact annotations such as short text labels can be smaller than the
 	# combined edge/rotate hit zones. Preserve a usable translate target inside
 	# the bounds; exact corner handles still win above.
 	var inside_bounds := b.has_point(doc_pos)
-	var compact_bounds := b.size.x <= HANDLE_HIT_RADIUS_DOC * 2.5 or b.size.y <= HANDLE_HIT_RADIUS_DOC * 2.5
+	var compact_bounds := b.size.x <= handle_r * 2.5 or b.size.y <= handle_r * 2.5
 	if inside_bounds and compact_bounds:
 		return Zone.INSIDE
 
 	# 2. ROTATE ring check (annulus around each corner)
 	for i in corners.size():
 		var dist := doc_pos.distance_to(corners[i])
-		if dist >= ROTATE_RING_INNER_DOC and dist <= ROTATE_RING_OUTER_DOC:
+		if dist >= ring_inner and dist <= ring_outer:
 			return rotate_zones[i]
 
 	# 3. EDGE midpoint check — guard: must not be within corner hit radius of any corner
@@ -238,11 +259,11 @@ static func _hit_zone(doc_pos: Vector2, b: Rect2) -> Zone:
 	var edge_zones: Array = [Zone.EDGE_T, Zone.EDGE_B, Zone.EDGE_L, Zone.EDGE_R]
 	for i in edge_midpoints.size():
 		var mid: Vector2 = edge_midpoints[i]
-		if doc_pos.distance_to(mid) <= HANDLE_HIT_RADIUS_DOC:
+		if doc_pos.distance_to(mid) <= handle_r:
 			# Guard: must not be within corner hit radius of any corner
 			var near_corner := false
 			for corner in corners:
-				if doc_pos.distance_to(corner) < HANDLE_HIT_RADIUS_DOC:
+				if doc_pos.distance_to(corner) < handle_r:
 					near_corner = true
 					break
 			if not near_corner:
@@ -390,7 +411,8 @@ func _revert_drag() -> void:
 func _do_selection(doc_pos: Vector2) -> bool:
 	var registry := _host.get_registry()
 	var annotations: Array = _host.get_annotations()
-	const HIT_THRESHOLD := 8.0
+	# 8 screen px of slack, converted to doc units for kind.hit_test.
+	var hit_threshold := 8.0 / _view_zoom()
 
 	for i in range(annotations.size() - 1, -1, -1):
 		var ann: Dictionary = annotations[i]
@@ -400,7 +422,7 @@ func _do_selection(doc_pos: Vector2) -> bool:
 			kind = registry.get_annotation_kind(kind_name)
 		if kind == null:
 			continue
-		if kind.hit_test(ann, doc_pos, HIT_THRESHOLD):
+		if kind.hit_test(ann, doc_pos, hit_threshold):
 			_host.set_selected_annotation_id(str(ann.get("id", "")))
 			return true
 
@@ -432,18 +454,24 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 
 	var b: Rect2 = kind.bounds(ann)
 
+	# Gizmo sizes are screen px; geometry below is doc units and ctx applies
+	# the doc→screen transform, so divide by zoom for a constant on-screen
+	# gizmo (mirrors _hit_zone so visuals match the clickable areas).
+	var gz := maxf(ctx.zoom, 0.01)
+	var handle_size := HANDLE_SIZE_DOC / gz
+
 	# 1) Faint bounds outline.
 	ctx.draw_rect(b, BOUNDS_COLOR, false, 1.0)
 
 	# 2) Corner handles (filled squares).
-	var half := HANDLE_SIZE_DOC * 0.5
+	var half := handle_size * 0.5
 	for corner_pos in _corner_positions(b):
-		var r := Rect2(corner_pos - Vector2(half, half), Vector2(HANDLE_SIZE_DOC, HANDLE_SIZE_DOC))
+		var r := Rect2(corner_pos - Vector2(half, half), Vector2(handle_size, handle_size))
 		ctx.draw_rect(r, HANDLE_COLOR, true, 1.0)
 
 	# 3) Edge midpoint handles (filled squares, same style).
 	for mid_pos in _edge_midpoints(b):
-		var r := Rect2(mid_pos - Vector2(half, half), Vector2(HANDLE_SIZE_DOC, HANDLE_SIZE_DOC))
+		var r := Rect2(mid_pos - Vector2(half, half), Vector2(handle_size, handle_size))
 		ctx.draw_rect(r, HANDLE_COLOR, true, 1.0)
 
 	# 4) Rotate-ring visual: small discs just outside each corner.
@@ -458,8 +486,8 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 	]
 	for i in corners.size():
 		var offset_dir: Vector2 = corner_offsets[i].normalized()
-		var ring_pos: Vector2 = corners[i] + offset_dir * ((ROTATE_RING_INNER_DOC + ROTATE_RING_OUTER_DOC) * 0.5)
-		_draw_filled_disc(ctx, ring_pos, ROTATE_DISC_RADIUS, ROTATE_HANDLE_COLOR)
+		var ring_pos: Vector2 = corners[i] + offset_dir * ((ROTATE_RING_INNER_DOC + ROTATE_RING_OUTER_DOC) * 0.5 / gz)
+		_draw_filled_disc(ctx, ring_pos, ROTATE_DISC_RADIUS / gz, ROTATE_HANDLE_COLOR)
 
 	# 5) In-progress rotation arc.
 	if _dragging and _active_zone in [Zone.ROTATE_TL, Zone.ROTATE_TR, Zone.ROTATE_BL, Zone.ROTATE_BR]:
@@ -485,7 +513,8 @@ func _draw_angle_arc(ctx: AnnotationRenderContext, center: Vector2,
 	var delta := _normalise_angle(to_angle - from_angle)
 	if absf(delta) < 0.001:
 		return
-	var radius := (ROTATE_RING_INNER_DOC + ROTATE_RING_OUTER_DOC) * 0.5
+	# Screen-px ring radius → doc units (matches the ring discs in draw_preview).
+	var radius := (ROTATE_RING_INNER_DOC + ROTATE_RING_OUTER_DOC) * 0.5 / maxf(ctx.zoom, 0.01)
 	var pts := PackedVector2Array()
 	pts.resize(ARC_SEGMENTS + 1)
 	for i in ARC_SEGMENTS + 1:
