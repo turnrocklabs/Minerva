@@ -281,7 +281,13 @@ func _render_arrow_segment(
 	ctx.draw_line(a, b, color, 1.0)
 	if a.distance_to(b) < 0.001 or head_style == "none":
 		return
-	var head := head_size * maxf(floor(ctx.zoom), 1.0)
+	# head_size is intended SCREEN pixels. Geometry here is in DOC units and
+	# ctx.draw_polygon applies the doc→screen transform (× zoom), so divide by
+	# zoom for a constant on-screen head (same pattern as MeasureDistance's
+	# TICK_SIZE). The old `* floor(zoom)` double-scaled: screen size grew as
+	# zoom², turning the head into a board-sized triangle on mm-unit canvases
+	# (PCB at 4–10 px/mm) while looking fine at the text editor's zoom 1.
+	var head := head_size / maxf(ctx.zoom, 0.01)
 	_draw_arrowhead(ctx, a, b, head, color)
 	if head_style == "double":
 		_draw_arrowhead(ctx, b, a, head, color)
@@ -303,8 +309,9 @@ func _render_arrow(ctx: AnnotationRenderContext, prim: Dictionary, color: Color)
 	var a := AnnotationKind._to_vec2(prim.get("from", [0, 0]))
 	var b := AnnotationKind._to_vec2(prim.get("to",   [0, 0]))
 	var raw_head := float(prim.get("head_size", 12.0))
-	# Floor zoom so head_size doesn't vanish at very low zoom.
-	var head := raw_head * maxf(floor(ctx.zoom), 1.0)
+	# head_size is SCREEN pixels; geometry is DOC units and ctx applies the
+	# doc→screen transform, so divide by zoom (see _render_arrow_segment).
+	var head := raw_head / maxf(ctx.zoom, 0.01)
 
 	ctx.draw_line(a, b, color, 1.0)
 
