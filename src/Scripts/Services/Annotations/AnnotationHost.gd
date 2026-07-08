@@ -424,10 +424,12 @@ func transform_screen_to_doc(p: Vector2) -> Vector2:
 
 
 ## Affine transform mapping DOCUMENT space → on-screen (overlay-local) pixels.
-## AnnotationOverlay uses it to render annotations and to inverse-map pointer
-## input. Default identity (document == screen — hello/text hosts). Hosts with a
-## scaled or scrolled surface (a fit-to-pane raster preview, a CAD/PCB camera)
-## override this and emit view_changed() whenever it changes.
+## AnnotationOverlay uses it to RENDER annotations. Pointer input is NOT mapped
+## by the overlay — tools receive raw overlay-local pixels and call
+## transform_screen_to_doc themselves (the per-tool contract). Default identity
+## (document == screen — hello/text hosts). Hosts with a scaled or scrolled
+## surface (a fit-to-pane raster preview, a CAD/PCB camera) override this and
+## emit view_changed() whenever it changes.
 func get_annotation_view_transform() -> Transform2D:
 	return Transform2D.IDENTITY
 

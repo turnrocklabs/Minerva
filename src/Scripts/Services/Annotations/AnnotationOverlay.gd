@@ -153,22 +153,28 @@ func _gui_input(event: InputEvent) -> void:
 	if _active_tool == null:
 		return
 
-	# Tools work in document space; map overlay-local pointer coords back through
-	# the view transform (identity for legacy hosts → unchanged).
-	var inv := _view_transform().affine_inverse()
+	# Pass RAW overlay-local pixels. Every tool owns the screen→doc mapping via
+	# _host.transform_screen_to_doc(pos) — that is the documented per-tool
+	# contract (see AnnotationTranslateTool/AnnotationScaleTool headers and every
+	# author tool). The overlay must NOT pre-convert to doc space: on hosts with
+	# a real view transform (e.g. the PCB panel, board-mm ↔ canvas px) that
+	# double-inverts the position — annotations land near the origin instead of
+	# under the cursor. (On identity-transform hosts the two conventions
+	# coincide, which is how the pre-conversion went unnoticed.) This requires
+	# the overlay to be mounted so its local space IS the host transform's
+	# target space — see Editor.gd's get_annotation_overlay_parent duck-typing.
 
 	if event is InputEventMouseButton:
 		var mb: InputEventMouseButton = event
 		var mods := _mods_from_event(mb)
-		var doc_pos: Vector2 = inv * mb.position
 		if mb.pressed:
 			if mb.button_index == MOUSE_BUTTON_LEFT:
 				grab_focus()
-			var consumed := _active_tool.on_pointer_down(doc_pos, mb.button_index, mods)
+			var consumed := _active_tool.on_pointer_down(mb.position, mb.button_index, mods)
 			if consumed:
 				accept_event()
 		else:
-			var consumed_up := _active_tool.on_pointer_up(doc_pos, mb.button_index, mods)
+			var consumed_up := _active_tool.on_pointer_up(mb.position, mb.button_index, mods)
 			if consumed_up:
 				accept_event()
 		queue_redraw()
@@ -176,7 +182,7 @@ func _gui_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseMotion:
 		var mm: InputEventMouseMotion = event
-		_active_tool.on_pointer_move(inv * mm.position)
+		_active_tool.on_pointer_move(mm.position)
 		queue_redraw()
 		return
 

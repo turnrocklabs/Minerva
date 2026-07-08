@@ -781,13 +781,32 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 	if _annotation_sidebar.has_method("set_can_add_comment"):
 		_annotation_sidebar.set_can_add_comment(false)
 
-	var existing_overlay := surface.find_child("PlatformAnnotationOverlay", false, false)
+	# Mount the overlay where the surface says its host-transform target space
+	# lives (duck-typed). The host's view transform maps document coords to
+	# CONTENT-local pixels (e.g. the PCB canvas below the panel toolbar) — if
+	# the overlay were parented to the whole surface, every pointer hit and
+	# rendered annotation would be offset by the toolbar/container inset. The
+	# overlay FULL_RECT-anchors itself to whatever parent it gets.
+	var overlay_parent: Control = surface
+	if surface.has_method("get_annotation_overlay_parent"):
+		var preferred: Variant = surface.call("get_annotation_overlay_parent")
+		if preferred is Control and is_instance_valid(preferred):
+			overlay_parent = preferred
+	# Recursive find so a prior mount on a different parent (e.g. before the
+	# surface's content control existed) is reparented, never duplicated.
+	var existing_overlay := surface.find_child("PlatformAnnotationOverlay", true, false)
 	if existing_overlay == null or not (existing_overlay is AnnotationOverlay):
 		_platform_annotation_overlay = _AnnotationOverlayScript.new()
 		_platform_annotation_overlay.name = "PlatformAnnotationOverlay"
-		surface.add_child(_platform_annotation_overlay)
+		overlay_parent.add_child(_platform_annotation_overlay)
 	else:
 		_platform_annotation_overlay = existing_overlay as AnnotationOverlay
+		if _platform_annotation_overlay.get_parent() != overlay_parent:
+			# keep_global_transform=false + re-apply FULL_RECT: the default
+			# reparent(true) would rewrite the anchors to preserve the OLD
+			# global rect, silently keeping the stale origin offset.
+			_platform_annotation_overlay.reparent(overlay_parent, false)
+			_platform_annotation_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_platform_annotation_overlay.set_host(host)
 
 	if _annotation_sidebar.has_signal("active_tool_changed"):

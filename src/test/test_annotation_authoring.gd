@@ -47,6 +47,9 @@ func _init() -> void:
 	print("\n-- AnnotationToolbar: toggle-off deactivates --")
 	test_toggle_off_active_button_deactivates_tool()
 
+	print("\n-- AnnotationOverlay: pointer coords are RAW (tools own screen→doc) --")
+	test_overlay_passes_raw_pointer_tools_transform()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -429,3 +432,77 @@ func test_toggle_off_active_button_deactivates_tool() -> void:
 	check("get_active_tool() null after toggle-off", tb.get_active_tool() == null)
 
 	tb.queue_free()
+
+
+# ── Overlay pointer-coordinate contract ───────────────────────────────────────
+## The overlay must pass RAW overlay-local pixels to tools; every tool applies
+## _host.transform_screen_to_doc itself (documented per-tool contract). A host
+## with a REAL view transform (zoom 8, origin (400,300) — the PCB panel shape)
+## exposes any double-conversion: the stored doc coords would come out wrong.
+
+class ZoomedHost extends AnnotationHost:
+	var added: Array = []
+	const XFORM := Transform2D(Vector2(8.0, 0.0), Vector2(0.0, 8.0), Vector2(400.0, 300.0))
+
+	func get_annotation_view_transform() -> Transform2D:
+		return XFORM
+
+	func get_annotation_zoom() -> float:
+		return 8.0
+
+	func transform_screen_to_doc(p: Vector2) -> Vector2:
+		return XFORM.affine_inverse() * p
+
+	func transform_doc_to_screen(p: Vector2) -> Vector2:
+		return XFORM * p
+
+	func get_view_context() -> String:
+		return "pcb"
+
+	func add_annotation(annotation: Dictionary) -> String:
+		added.append(annotation)
+		return "ann_zoom01"
+
+
+func test_overlay_passes_raw_pointer_tools_transform() -> void:
+	print("test_overlay_passes_raw_pointer_tools_transform:")
+	var overlay := AnnotationOverlay.new()
+	root.add_child(overlay)
+	var host := ZoomedHost.new()
+	overlay.set_host(host)
+
+	# Real arrow tool wired the way the toolbar wires it.
+	var tool := AnnotationArrowAuthorTool.new()
+	tool.on_activate(host)
+	tool.annotation_ready.connect(func(ann: Dictionary) -> void:
+		host.add_annotation(ann))
+	overlay.set_active_tool(tool)
+
+	# Two synthetic clicks at overlay-local pixels. With the zoom-8/(400,300)
+	# transform: (480,380) → doc (10,10); (560,460) → doc (20,20).
+	for click_pos: Vector2 in [Vector2(480, 380), Vector2(560, 460)]:
+		var ev := InputEventMouseButton.new()
+		ev.button_index = MOUSE_BUTTON_LEFT
+		ev.pressed = true
+		ev.position = click_pos
+		overlay._gui_input(ev)
+
+	check_eq("arrow stored after two clicks", host.added.size(), 1)
+	if host.added.size() == 1:
+		var prim: Dictionary = (host.added[0].get("primitives", [{}]) as Array)[0]
+		var from_v: Vector2 = Vector2(prim["from"][0], prim["from"][1])
+		var to_v: Vector2 = Vector2(prim["to"][0], prim["to"][1])
+		check("arrow 'from' is doc (10,10) — raw px through ONE inverse",
+			from_v.is_equal_approx(Vector2(10.0, 10.0)))
+		check("arrow 'to' is doc (20,20)", to_v.is_equal_approx(Vector2(20.0, 20.0)))
+		# Round-trip: rendering maps the stored doc coords back to the click px.
+		check("doc→screen round-trips to the click position",
+			host.transform_doc_to_screen(from_v).is_equal_approx(Vector2(480.0, 380.0)))
+		# Anchor sits at endpoint A in doc space (core/canvas.point).
+		var anchor: Dictionary = host.added[0].get("anchor", {})
+		var aid: Dictionary = anchor.get("id", {})
+		check("anchor id is doc-space endpoint A",
+			is_equal_approx(float(aid.get("x", -1.0)), 10.0)
+			and is_equal_approx(float(aid.get("y", -1.0)), 10.0))
+
+	overlay.queue_free()
