@@ -882,8 +882,9 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 		if not ann is Dictionary:
 			continue
 
-		# Apply author filter.
-		if not author_filter.is_empty() and str(ann.get("author", "")) != author_filter:
+		# Apply author filter. v1 stored author as a plain string; v2 stores
+		# {kind: "human"|"ai", ...} — _author_kind() normalizes both.
+		if not author_filter.is_empty() and _author_kind(ann) != author_filter:
 			continue
 
 		# Build the enriched entry: start with full annotation (all original fields pass through),
@@ -1797,7 +1798,8 @@ func _render_annotation_placeholder(
 		bounds = Rect2(bounds.position * scale_factor, bounds.size * scale_factor)
 
 	# Choose fill color based on author (design §5 author colors).
-	var author: String = str(ann.get("author", "ai"))
+	# _author_kind() handles both v1 string and v2 {kind} dict authors.
+	var author: String = _author_kind(ann)
 	var fill_color: Color
 	if author == AnnotationSchema.AUTHOR_HUMAN:
 		fill_color = Color(1.0, 0.0, 1.0, 0.3)  # light magenta, semi-transparent

@@ -85,6 +85,7 @@ func _initialize() -> void:
 	await test_list_author_filter_ai(tools)
 	await test_list_author_filter_omitted(tools)
 	await test_list_author_filter_invalid(tools)
+	await test_list_author_filter_v2_dict_author(tools)
 
 	print("\n-- list: editor_name (live in-memory) path --")
 	await test_list_requires_path_or_editor(tools)
@@ -854,6 +855,51 @@ func test_list_author_filter_omitted(tools: MCPAnnotationTools) -> void:
 	check("filter omitted: author_filter is null", result.get("author_filter", "NOT_NULL") == null)
 	var annotations: Array = result.get("annotations", [])
 	check("filter omitted: all 2 annotations returned", annotations.size() == 2)
+
+
+## author filter must also match v2 envelopes, where author is a dict
+## {kind: "human"|"ai", ...} rather than a v1 plain string. Regression:
+## the filter compared str(author) — a stringified dict never equals
+## "human", so v2 human annotations silently vanished from filtered lists.
+func test_list_author_filter_v2_dict_author(tools: MCPAnnotationTools) -> void:
+	print("test_list_author_filter_v2_dict_author:")
+	var doc := _doc_path("filter_v2_dict.txt")
+	var human_v2: Dictionary = {
+		"id": "ann_v2human",
+		"kind": "2d_arrow",
+		"author": {"kind": "human"},
+		"view_context": "pcb",
+		"created_at": "2026-07-13T10:00:00Z",
+		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [10.0, 5.0]}],
+	}
+	var ai_v2: Dictionary = {
+		"id": "ann_v2ai",
+		"kind": "2d_text",
+		"author": {"kind": "ai"},
+		"view_context": "pcb",
+		"created_at": "2026-07-13T10:00:00Z",
+		"primitives": [{"kind": "text", "at": [5.0, 5.0], "content": "ai note"}],
+	}
+	_write_raw_sidecar(doc, [human_v2, ai_v2])
+
+	var result := await tools.handle("minerva_annotations_list", {
+		"document_path": doc,
+		"author": "human",
+	})
+	check("filter v2 human: list succeeds", result.get("success", false))
+	var annotations: Array = result.get("annotations", [])
+	check("filter v2 human: count == 1", annotations.size() == 1)
+	if annotations.size() > 0:
+		check_eq("filter v2 human: id is ann_v2human", annotations[0].get("id", ""), "ann_v2human")
+
+	var result_ai := await tools.handle("minerva_annotations_list", {
+		"document_path": doc,
+		"author": "ai",
+	})
+	var annotations_ai: Array = result_ai.get("annotations", [])
+	check("filter v2 ai: count == 1", annotations_ai.size() == 1)
+	if annotations_ai.size() > 0:
+		check_eq("filter v2 ai: id is ann_v2ai", annotations_ai[0].get("id", ""), "ann_v2ai")
 
 
 ## author filter "invalid" → error result (success=false).
