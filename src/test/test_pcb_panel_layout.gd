@@ -57,6 +57,7 @@ func _init() -> void:
 	await _test_medium_mode()
 	await _test_narrow_mode()
 	await _test_dock_parent_hook()
+	await _test_dock_pane_migrates()
 	await _test_transitions_preserve_board()
 	await _test_properties_panel()
 	await _test_tool_buttons_render()
@@ -196,18 +197,68 @@ func _test_narrow_mode() -> void:
 # ── 5. Dock parent hook (round A contract) ─────────────────────────────────────
 
 func _test_dock_parent_hook() -> void:
-	print("\n-- get_annotation_dock_parent --")
-	var panel := await _mount_panel_at(700.0)
+	print("\n-- get_annotation_dock_parent (mode-dependent slot) --")
 
+	# Medium (3-col HITL note): dock belongs in the BOTTOM strip.
+	var panel := await _mount_panel_at(700.0)
 	check("panel exposes get_annotation_dock_parent",
 		panel.has_method("get_annotation_dock_parent"))
-	if panel.has_method("get_annotation_dock_parent"):
-		var dock_parent: Variant = panel.get_annotation_dock_parent()
-		var sidebar: Control = panel.find_child("RightSidebar", true, false)
-		check("dock parent is a Control", dock_parent is Control)
-		check("dock parent lives inside the sidebar",
-			dock_parent is Control and sidebar != null
-			and (dock_parent == sidebar or sidebar.is_ancestor_of(dock_parent)))
+	var dock_parent: Variant = panel.get_annotation_dock_parent()
+	var bottom: Control = panel.find_child("BottomDockSlot", true, false)
+	check("medium: dock parent is a Control", dock_parent is Control)
+	check("medium: dock parent is the bottom strip",
+		dock_parent is Control and bottom != null
+		and (dock_parent == bottom or bottom.is_ancestor_of(dock_parent)))
+	check("medium: state reports dock at bottom",
+		str(panel.get_layout_state().get("dock_position", "")) == "bottom")
+	_teardown(panel)
+
+	# Wide: dock belongs in the right sidebar.
+	var panel2 := await _mount_panel_at(1100.0)
+	var dock_parent2: Variant = panel2.get_annotation_dock_parent()
+	var sidebar: Control = panel2.find_child("RightSidebar", true, false)
+	check("wide: dock parent lives inside the sidebar",
+		dock_parent2 is Control and sidebar != null
+		and (dock_parent2 == sidebar or sidebar.is_ancestor_of(dock_parent2)))
+	check("wide: state reports dock in sidebar",
+		str(panel2.get_layout_state().get("dock_position", "")) == "sidebar")
+	_teardown(panel2)
+
+
+## A mounted dock pane must MIGRATE between slots as the mode changes, with
+## its internal arrangement following (RIGHT in the sidebar, BOTTOM in the
+## strip) and no active tool stranded.
+func _test_dock_pane_migrates() -> void:
+	print("\n-- dock pane migrates between slots --")
+	const DockPaneScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
+
+	var panel := await _mount_panel_at(1100.0)  # wide: mounts into sidebar
+	var pane: Node = DockPaneScript.new()
+	pane.name = "AnnotationDockPane"
+	(panel.get_annotation_dock_parent() as Control).add_child(pane)
+	pane.set_dock_mode(DockPaneScript.DockMode.RIGHT)  # as the platform mount does
+	for _i in range(3):
+		await process_frame
+
+	var sidebar_slot: Control = panel.find_child("AnnotationDockParent", true, false)
+	var bottom_slot: Control = panel.find_child("BottomDockSlot", true, false)
+	check("wide: pane sits in the sidebar slot", pane.get_parent() == sidebar_slot)
+	check("wide: pane arranged RIGHT",
+		int(pane.get("dock_mode")) == DockPaneScript.DockMode.RIGHT)
+
+	panel.size = Vector2(600.0, 700.0)  # → medium
+	for _i in range(4):
+		await process_frame
+	check("medium: pane migrated to the bottom strip", pane.get_parent() == bottom_slot)
+	check("medium: pane arranged BOTTOM",
+		int(pane.get("dock_mode")) == DockPaneScript.DockMode.BOTTOM)
+
+	panel.size = Vector2(1100.0, 700.0)  # → back to wide
+	for _i in range(4):
+		await process_frame
+	check("back to wide: pane returned to the sidebar", pane.get_parent() == sidebar_slot)
+	check("back to wide: pane arranged RIGHT again",
+		int(pane.get("dock_mode")) == DockPaneScript.DockMode.RIGHT)
 
 	_teardown(panel)
 
