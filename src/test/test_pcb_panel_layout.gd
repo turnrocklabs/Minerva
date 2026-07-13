@@ -58,6 +58,8 @@ func _init() -> void:
 	await _test_narrow_mode()
 	await _test_dock_parent_hook()
 	await _test_transitions_preserve_board()
+	await _test_properties_panel()
+	await _test_tool_buttons_render()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
@@ -251,5 +253,62 @@ func _test_transitions_preserve_board() -> void:
 	var grid_toggle: CheckButton = toggles.get_child(0) as CheckButton if toggles != null and toggles.get_child_count() > 0 else null
 	check("inline Grid toggle re-synced from canvas flag",
 		grid_toggle != null and grid_toggle.button_pressed == false)
+
+	_teardown(panel)
+
+
+# ── 7. Properties section (round C) ────────────────────────────────────────────
+
+func _test_properties_panel() -> void:
+	print("\n-- properties section --")
+	var panel := await _mount_panel_at(1100.0)
+
+	var section: Control = panel.find_child("PropertiesSection", true, false)
+	check("properties section exists in sidebar", section != null)
+	check("wide mode: properties expanded",
+		bool(panel.get_layout_state().get("properties_expanded", false)))
+
+	# Select the only component → fields populate.
+	panel._canvas.selected_components.append("U1")
+	panel._canvas.selection_changed.emit()
+	await process_frame
+	var id_label: Label = panel._prop_labels.get("ID", null)
+	check("ID populates on selection", id_label != null and id_label.text == "U1")
+	var pos_label: Label = panel._prop_labels.get("Position", null)
+	check("Position populates", pos_label != null and pos_label.text.begins_with("(30"))
+
+	# Clear selection → dashes.
+	panel._canvas.selected_components.clear()
+	panel._canvas.selection_changed.emit()
+	await process_frame
+	check("clears to dash on deselect", id_label.text == "-")
+
+	# Medium mode collapses by default.
+	panel.size = Vector2(600.0, 700.0)
+	for _i in range(4):
+		await process_frame
+	check("medium mode: properties collapsed",
+		not bool(panel.get_layout_state().get("properties_expanded", true)))
+
+	_teardown(panel)
+
+
+# ── 8. Tool buttons render (round C icons) ─────────────────────────────────────
+
+func _test_tool_buttons_render() -> void:
+	print("\n-- tool buttons (icon or text, never blank) --")
+	var panel := await _mount_panel_at(700.0)
+
+	var flow: Control = panel.find_child("ToolsFlow", true, false)
+	check("tools flow lives in the sidebar", flow != null)
+	if flow != null:
+		var buttons := 0
+		for child in flow.get_children():
+			if child is Button:
+				buttons += 1
+				var b := child as Button
+				check("tool button has icon or text",
+					b.icon != null or not b.text.is_empty())
+		check("two tool buttons (Select/Pan)", buttons == 2)
 
 	_teardown(panel)
