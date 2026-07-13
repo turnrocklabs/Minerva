@@ -58,7 +58,7 @@ func body_view_factory(annotation: Dictionary, _emit_patch: Callable) -> Control
 	vbox.add_child(body)
 
 	var footer := HBoxContainer.new()
-	var author_kind := str(annotation.get("author", {}).get("kind", ""))
+	var author_kind := AnnotationAuthor.kind_of(annotation.get("author", ""))
 	var author_label := Label.new()
 	author_label.text = author_kind if not author_kind.is_empty() else "unknown"
 	author_label.modulate = Color(0.6, 0.6, 0.6, 1.0)

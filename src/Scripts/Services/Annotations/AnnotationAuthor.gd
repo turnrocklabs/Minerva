@@ -18,6 +18,16 @@ const KIND_HUMAN := "human"
 const KIND_AI    := "ai"
 const VALID_KINDS: PackedStringArray = ["human", "ai"]
 
+
+## Canonical author-kind extractor. Accepts a v2 {kind: ...} dict or a v1
+## plain "human"/"ai" string and returns the kind string ("" when absent).
+## Every consumer that branches on author kind should use this instead of
+## comparing annotation.author directly — v1 and v2 shapes coexist in the wild.
+static func kind_of(author: Variant) -> String:
+	if author is Dictionary:
+		return str((author as Dictionary).get("kind", ""))
+	return str(author)
+
 ## Optional string-or-null fields allowed alongside "kind".
 const OPTIONAL_STRING_FIELDS: PackedStringArray = ["id", "model", "session_id"]
 

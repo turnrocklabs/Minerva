@@ -341,10 +341,7 @@ static func _annotation_color(annotation: Dictionary) -> Color:
 	var payload: Dictionary = annotation.get("payload", {})
 	if payload.has("color"):
 		return Color(str(payload["color"]))
-	var author: Variant = annotation.get("author", "")
-	if author is Dictionary:
-		return AnnotationRenderContext.author_color(str((author as Dictionary).get("kind", "")))
-	return AnnotationRenderContext.author_color(str(author))
+	return AnnotationRenderContext.author_color(annotation.get("author", ""))
 
 
 static func _dist_point_to_segment(p: Vector2, a: Vector2, b: Vector2) -> float:

@@ -113,13 +113,23 @@ static func validate_annotation(
 	_require_string(result, annotation, "view_context", "required")
 	_require_string(result, annotation, "created_at",   "required")
 
-	# author: required, closed enum
+	# author: required. v1 stored a plain "human"/"ai" string; v2 stores a
+	# {kind: "human"|"ai", ...} dict — the canonical shape going forward.
+	# Accept both so v1 sidecars stay readable; dict validation is delegated
+	# to AnnotationAuthor (the v2 author validator).
 	if not annotation.has("author"):
 		result.add_error("author", "Field 'author' is required", "required")
+	elif annotation["author"] is Dictionary:
+		for err in AnnotationAuthor.validate(annotation["author"]):
+			result.add_error(
+				str(err.get("field_path", "author")),
+				str(err.get("message", "")),
+				str(err.get("code", ""))
+			)
 	elif annotation["author"] not in [AUTHOR_HUMAN, AUTHOR_AI]:
 		result.add_error(
 			"author",
-			"'author' must be 'human' or 'ai', got: %s" % str(annotation.get("author")),
+			"'author' must be 'human'/'ai' or a {kind: ...} author dict, got: %s" % str(annotation.get("author")),
 			"enum"
 		)
 

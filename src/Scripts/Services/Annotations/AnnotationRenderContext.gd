@@ -198,10 +198,12 @@ func draw_badge(pos: Vector2) -> void:
 
 # ── Author colour helper ───────────────────────────────────────────────────────
 
-## Returns the default annotation colour for the given author string.
+## Returns the default annotation colour for the given author.
+## Accepts a v1 "human"/"ai" string or a v2 {kind: ...} author dict, so kind
+## renderers can pass annotation.author through unmodified.
 ## Callers should check payload["color"] first and use this as a fallback.
-static func author_color(author: String) -> Color:
-	match author:
+static func author_color(author: Variant) -> Color:
+	match AnnotationAuthor.kind_of(author):
 		"human": return Color(1.0, 0.5, 1.0)   # light magenta — legacy PCB convention
 		"ai":    return Color(0.0, 1.0, 1.0)    # cyan
 		_:       return Color(0.8, 0.8, 0.8)    # neutral grey for unknown / placeholder

@@ -309,11 +309,20 @@ func test_list_no_sidecar(tools: MCPAnnotationTools) -> void:
 	check("annotations is empty array", result.get("annotations", null) is Array and result["annotations"].size() == 0)
 
 
+## Extracts the author kind from a stored annotation regardless of shape:
+## v2 writes {kind: "ai"} dicts; v1 legacy sidecars hold plain strings.
+func _stored_author_kind(ann: Dictionary) -> String:
+	var author: Variant = ann.get("author", "")
+	if author is Dictionary:
+		return str((author as Dictionary).get("kind", ""))
+	return str(author)
+
+
 func test_add_valid_forces_author_ai(tools: MCPAnnotationTools) -> void:
 	print("test_add_valid_forces_author_ai:")
 	var doc := _doc_path("add_ai.txt")
 	var ann := _valid_annotation_dict()
-	# Omit author — should be set to "ai" by the server.
+	# Omit author — should be set to {kind: "ai"} (v2 shape) by the server.
 	var result := await tools.handle("minerva_annotations_add", {"document_path": doc, "annotation": ann})
 	check("add succeeds (success=true)", result.get("success", false))
 	check("id returned", result.has("id") and str(result["id"]).begins_with("ann_"))
@@ -323,7 +332,8 @@ func test_add_valid_forces_author_ai(tools: MCPAnnotationTools) -> void:
 	var annotations: Array = list_result.get("annotations", [])
 	check("one annotation stored", annotations.size() == 1)
 	if annotations.size() > 0:
-		check_eq("author forced to ai", annotations[0].get("author", ""), "ai")
+		check("author stored in v2 dict shape", annotations[0].get("author", null) is Dictionary)
+		check_eq("author forced to ai", _stored_author_kind(annotations[0]), "ai")
 
 
 func test_add_author_human_forced_to_ai(tools: MCPAnnotationTools) -> void:
@@ -337,7 +347,7 @@ func test_add_author_human_forced_to_ai(tools: MCPAnnotationTools) -> void:
 	var list_result := await tools.handle("minerva_annotations_list", {"document_path": doc})
 	var annotations: Array = list_result.get("annotations", [])
 	if annotations.size() > 0:
-		check_eq("author is ai (overwritten from human)", annotations[0].get("author", ""), "ai")
+		check_eq("author is ai (overwritten from human)", _stored_author_kind(annotations[0]), "ai")
 	else:
 		check("annotation stored", false)
 
@@ -462,7 +472,7 @@ func test_crud_lifecycle(tools: MCPAnnotationTools) -> void:
 			updated_ann = a
 	check("lifecycle: view_context updated", updated_ann.get("view_context", "") == "cad:top")
 	check("lifecycle: updated_at is set", updated_ann.has("updated_at"))
-	check("lifecycle: author unchanged after update", updated_ann.get("author", "") == "ai")
+	check("lifecycle: author unchanged after update", _stored_author_kind(updated_ann) == "ai")
 
 	# 6. Delete first annotation.
 	var del1 := await tools.handle("minerva_annotations_delete", {"document_path": doc, "id": id1})
@@ -520,7 +530,7 @@ func test_update_author_immutable(tools: MCPAnnotationTools) -> void:
 	for a in annotations:
 		if str(a.get("id", "")) == ann_id:
 			stored_ann = a
-	check("author is still ai after patch with author=human", stored_ann.get("author", "") == "ai")
+	check("author is still ai after patch with author=human", _stored_author_kind(stored_ann) == "ai")
 
 
 func test_delete_idempotent(tools: MCPAnnotationTools) -> void:

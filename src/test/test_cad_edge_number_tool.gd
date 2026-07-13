@@ -254,7 +254,9 @@ func test_annotation_envelope_shape() -> void:
 
 	var ann: Dictionary = emitted_annotations[0]
 	check("kind is 'cad_edge_number'", ann.get("kind", "") == "cad_edge_number")
-	check("author is 'human'", ann.get("author", "") == "human")
+	var author: Variant = ann.get("author", null)
+	check("author is v2 {kind: human}",
+		author is Dictionary and str((author as Dictionary).get("kind", "")) == "human")
 
 	var payload: Dictionary = ann.get("payload", {})
 	check_eq("payload.edge_id is 2", int(payload.get("edge_id", -1)), 2)

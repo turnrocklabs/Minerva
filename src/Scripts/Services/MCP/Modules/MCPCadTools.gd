@@ -535,7 +535,7 @@ func _cad_annotate_edges(args: Dictionary) -> Dictionary:
 		var annotation: Dictionary = {
 			"kind": "cad_edge_number",
 			"schema_version": 2,
-			"author": "ai",
+			"author": {"kind": "ai"},
 			"view_context": view_context,
 			"anchor": {
 				"plugin": "cad",
@@ -641,7 +641,7 @@ func _cad_list_user_labels(args: Dictionary) -> Dictionary:
 		# agent labels are bookkeeping, not user intent the agent should act on.
 		if str(ann_dict.get("kind", "")) != "cad_edge_number":
 			continue
-		if str(ann_dict.get("author", "")) != "human":
+		if AnnotationAuthor.kind_of(ann_dict.get("author", "")) != "human":
 			continue
 
 		var anchor: Variant = ann_dict.get("anchor", {})

@@ -58,6 +58,7 @@ func _init() -> void:
 	test_missing_created_at_fails()
 	test_missing_author_fails()
 	test_bad_author_enum_fails()
+	test_v2_dict_author_accepted()
 	test_bad_id_format_fails()
 	test_bad_created_at_format_fails()
 	test_bad_updated_at_format_fails()
@@ -299,6 +300,28 @@ func test_bad_author_enum_fails() -> void:
 	var r := AnnotationSchema.validate_annotation(ann)
 	check("bad author → has_errors", r.has_errors())
 	check("bad author → code=enum", _error_code_for(r, "author") == "enum")
+
+
+## v2 {kind} dict authors are the canonical write shape — the v1 validator
+## must accept them (delegated to AnnotationAuthor) and still reject bad kinds.
+func test_v2_dict_author_accepted() -> void:
+	print("test_v2_dict_author_accepted:")
+	var ann := _valid_annotation()
+	ann["author"] = {"kind": "ai"}
+	var r := AnnotationSchema.validate_annotation(ann)
+	check("dict author {kind: ai} → no errors", not r.has_errors())
+
+	ann["author"] = {"kind": "human", "id": "imran"}
+	var r2 := AnnotationSchema.validate_annotation(ann)
+	check("dict author {kind: human, id} → no errors", not r2.has_errors())
+
+	ann["author"] = {"kind": "robot"}
+	var r3 := AnnotationSchema.validate_annotation(ann)
+	check("dict author bad kind → has_errors", r3.has_errors())
+
+	ann["author"] = {}
+	var r4 := AnnotationSchema.validate_annotation(ann)
+	check("dict author missing kind → has_errors", r4.has_errors())
 
 
 func test_bad_id_format_fails() -> void:

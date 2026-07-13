@@ -33,8 +33,10 @@ extends RefCounted
 ##     compositing with a warning and returns an overlay-only PNG.
 ##
 ## Author attribution rule (design §8.1, plan-decision item 5):
-##   All MCP-originated writes set annotation.author = "ai" unconditionally.
-##   "human" is reserved for direct-UI authoring on the Godot editor surface.
+##   All MCP-originated writes set annotation.author = {kind: "ai"} (the v2
+##   author shape) unconditionally. kind "human" is reserved for direct-UI
+##   authoring on the Godot editor surface. v1 plain-string authors in old
+##   sidecars remain readable (_author_kind normalizes both shapes).
 ##
 ## Validation errors are always structured arrays of {field_path, message, code}
 ## dicts — never plain strings. LLMs need structured results to fix problems.
@@ -946,8 +948,10 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 	var raw_ann: Variant = args.get("annotation", {})
 	var annotation: Dictionary = raw_ann if raw_ann is Dictionary else {}
 
-	# Force author=ai for all MCP-originated writes (design §8.1, plan-decision item 5).
-	annotation["author"] = AnnotationSchema.AUTHOR_AI
+	# Force author=ai for all MCP-originated writes (design §8.1, plan-decision
+	# item 5), in the v2 {kind} shape — v2 is canonical for everything we write;
+	# v1 plain strings remain read-compatible.
+	annotation["author"] = {"kind": AnnotationSchema.AUTHOR_AI}
 
 	# Generate id if missing.
 	if not annotation.has("id") or (annotation["id"] is String and (annotation["id"] as String).is_empty()):
@@ -1478,10 +1482,7 @@ func _anchor_type_matches(annotation: Dictionary, expected: String) -> bool:
 
 
 func _author_kind(annotation: Dictionary) -> String:
-	var author: Variant = annotation.get("author", "")
-	if author is Dictionary:
-		return str((author as Dictionary).get("kind", ""))
-	return str(author)
+	return AnnotationAuthor.kind_of(annotation.get("author", ""))
 
 
 func _author_id(annotation: Dictionary) -> String:
