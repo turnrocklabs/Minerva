@@ -178,6 +178,7 @@ var annotation_host: RefCounted = null
 const _TextEditorAnnotationHostScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
 const _AnnotationDockPaneScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
 const _AnnotationOverlayScript = preload("res://Scripts/Services/Annotations/AnnotationOverlay.gd")
+const _AnnotationDockMountScript = preload("res://Scripts/Services/Annotations/AnnotationDockMount.gd")
 const _ANNOTATION_LINE_PICK_WIDTH := 34.0
 const _ANNOTATION_DOCK_RIGHT_BREAKPOINT := 1024.0
 ## Overlay Control that paints broken-anchor indicators for Type.TEXT editors.
@@ -190,6 +191,11 @@ var _annotation_content_row: HBoxContainer = null
 ## Resolved in _ready via $VBoxContainer/AnnotationDockPane.
 var _annotation_sidebar: Node = null
 var _annotation_dock_mode: int = -1
+## True when the plugin surface claimed dock placement via the duck-typed
+## get_annotation_dock_parent() hook. The panel then owns WHERE the dock lives
+## (and its responsive behavior); the platform's width-driven RIGHT/BOTTOM
+## reparenting in _sync_annotation_dock_layout is bypassed entirely.
+var _annotation_dock_panel_owned: bool = false
 ## Platform-owned annotation overlay for plugin-scene editors.
 var _platform_annotation_overlay: AnnotationOverlay = null
 ## Retarget mode state (Round 5b.ii). Empty string = not in retarget mode;
@@ -687,6 +693,8 @@ func _ready():
 func _exit_tree() -> void:
 	if _proxy_note:
 		SingletonObject.detached_note_proxies.erase(_proxy_note)
+	# Panel-owned dock ownership ends with the editor's life.
+	_annotation_dock_panel_owned = false
 	# Annotation host: drop registry entry so a stale RefCounted doesn't linger.
 	if annotation_host != null and not tab_title.is_empty():
 		AnnotationHostRegistry.deregister(tab_title)
@@ -707,6 +715,8 @@ func _exit_tree() -> void:
 
 
 func _sync_annotation_dock_layout() -> void:
+	if _annotation_dock_panel_owned:
+		return
 	if not _annotation_dock_supported() or _annotation_sidebar == null:
 		return
 	var vbox := get_node_or_null("VBoxContainer")
@@ -754,7 +764,12 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 	var vbox := get_node_or_null("VBoxContainer") as VBoxContainer
 	if vbox == null or host == null or surface == null:
 		return
-	_ensure_annotation_content_row(vbox, surface)
+	# Panel-owned dock placement (duck-typed opt-in, contract + resolver in
+	# AnnotationDockMount): the surface may claim WHERE the dock lives.
+	var panel_dock_parent: Control = _AnnotationDockMountScript.resolve_dock_parent(surface)
+	_annotation_dock_panel_owned = panel_dock_parent != null
+	if not _annotation_dock_panel_owned:
+		_ensure_annotation_content_row(vbox, surface)
 
 	if annotation_host != null and annotation_host != host:
 		var old_callable := Callable(self, "_on_annotation_host_changed")
@@ -767,14 +782,41 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 		annotation_host.connect("annotations_changed", changed_callable)
 	_register_annotation_host()
 
+	# A panel-owned dock lives INSIDE the (reloadable) plugin surface, so a
+	# plugin reload frees it together with the old surface — drop the stale
+	# reference and rebuild rather than reusing a freed node.
+	if _annotation_sidebar != null and not is_instance_valid(_annotation_sidebar):
+		_annotation_sidebar = null
 	if _annotation_sidebar == null:
 		_annotation_sidebar = find_child("AnnotationDockPane", true, false)
 	if _annotation_sidebar == null:
 		_annotation_sidebar = _AnnotationDockPaneScript.new()
 		_annotation_sidebar.name = "AnnotationDockPane"
 		_annotation_sidebar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if _annotation_dock_panel_owned:
+			# Inside a panel sidebar the dock is a column member — fill it.
+			_annotation_sidebar.size_flags_vertical = Control.SIZE_EXPAND_FILL
+			panel_dock_parent.add_child(_annotation_sidebar)
+		else:
+			_annotation_sidebar.size_flags_vertical = Control.SIZE_SHRINK_END
+			vbox.add_child(_annotation_sidebar)
+	elif _annotation_dock_panel_owned and _annotation_sidebar.get_parent() != panel_dock_parent:
+		# Existing dock (platform-placed or from a prior surface) moves into the
+		# panel's parent when the panel claims ownership.
+		var old_parent := _annotation_sidebar.get_parent()
+		if old_parent != null:
+			old_parent.remove_child(_annotation_sidebar)
+		_annotation_sidebar.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		panel_dock_parent.add_child(_annotation_sidebar)
+	elif not _annotation_dock_panel_owned and _annotation_sidebar.size_flags_vertical == Control.SIZE_EXPAND_FILL:
+		# owned → non-owned transition with a surviving dock: restore the
+		# platform default so a BOTTOM-mode dock doesn't fill vertically
+		# against the content row.
 		_annotation_sidebar.size_flags_vertical = Control.SIZE_SHRINK_END
-		vbox.add_child(_annotation_sidebar)
+	if _annotation_dock_panel_owned and _annotation_sidebar.has_method("set_dock_mode"):
+		# Sidebar mounting is column-shaped; RIGHT is the pane's column layout.
+		# The panel may override later via its own responsive logic.
+		_annotation_sidebar.set_dock_mode(_AnnotationDockPaneScript.DockMode.RIGHT)
 
 	if _annotation_sidebar.has_method("set_host"):
 		_annotation_sidebar.set_host(annotation_host)
@@ -815,9 +857,16 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 			_annotation_sidebar.active_tool_changed.connect(overlay_callable)
 
 	var layout_callable := Callable(self, "_sync_annotation_dock_layout")
-	if not resized.is_connected(layout_callable):
-		resized.connect(layout_callable)
-	call_deferred("_sync_annotation_dock_layout")
+	if _annotation_dock_panel_owned:
+		# Panel owns placement — the platform's width-driven reparenting must
+		# not fight it (it would yank the dock out of the panel's sidebar on
+		# every editor resize).
+		if resized.is_connected(layout_callable):
+			resized.disconnect(layout_callable)
+	else:
+		if not resized.is_connected(layout_callable):
+			resized.connect(layout_callable)
+		call_deferred("_sync_annotation_dock_layout")
 
 
 func _ensure_annotation_content_row(vbox: VBoxContainer, surface: Control) -> void:
@@ -2823,6 +2872,11 @@ func _cancel_retarget() -> void:
 func _refresh_annotation_views() -> void:
 	if _annotation_canvas != null:
 		_annotation_canvas.queue_redraw()
+	# A panel-owned sidebar (get_annotation_dock_parent mounting) is freed with
+	# a reloading plugin surface, and annotations can still mutate via MCP in
+	# the window before remount — drop the stale reference instead of touching it.
+	if _annotation_sidebar != null and not is_instance_valid(_annotation_sidebar):
+		_annotation_sidebar = null
 	if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
 		_annotation_sidebar.refresh()
 
