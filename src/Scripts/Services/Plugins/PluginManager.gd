@@ -1102,6 +1102,13 @@ func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 				vbox, id, panel_name, editor)
 			# Update registry entry with new root.
 			entry["root"] = new_root
+			# Rebind the owning Editor to the fresh surface: the platform
+			# annotation dock/overlay can live INSIDE the old (now freed) root
+			# when the panel owns dock placement (get_annotation_dock_parent),
+			# so the editor must remount them on the new instance.
+			if editor != null and is_instance_valid(editor) \
+					and editor.has_method("remount_plugin_surface"):
+				editor.remount_plugin_surface(new_root)
 			print(("[PluginManager] hot_reload_tscn_ok: re-instantiated panel '%s' " +
 				"for plugin '%s'") % [panel_name, id])
 		else:

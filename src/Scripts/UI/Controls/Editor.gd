@@ -746,10 +746,24 @@ func _annotation_dock_supported() -> bool:
 	return type == Type.TEXT or type == Type.PLUGIN_SCENE
 
 
+## Rebinds this editor to a re-instantiated plugin surface (tscn hot reload)
+## and remounts the annotation dock + overlay: when the panel owns dock
+## placement (round A), both live INSIDE the old root and were freed with it.
+func remount_plugin_surface(new_root: Control) -> void:
+	if type != Type.PLUGIN_SCENE:
+		return
+	plugin_scene_root = new_root
+	call_deferred("_try_mount_plugin_annotation_dock")
+
+
 func _try_mount_plugin_annotation_dock() -> void:
 	if type != Type.PLUGIN_SCENE or plugin_scene_root == null:
 		return
 	if not plugin_scene_root.has_method("get_annotation_host"):
+		# No annotation host on this surface — any prior panel-owned claim is
+		# void (its dock died with the old surface); let the platform default
+		# resume if a dock is ever mounted again.
+		_annotation_dock_panel_owned = false
 		return
 	var host_value: Variant = plugin_scene_root.call("get_annotation_host")
 	if not (host_value is RefCounted):
