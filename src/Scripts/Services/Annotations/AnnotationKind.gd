@@ -51,6 +51,15 @@ var default_payload: Dictionary = {}
 ## The substrate and sidecar I/O respect this flag (design §2.3).
 var primitives_optional: bool = false
 
+## Workflow-class flag (pcb-ui-native-cluster §4, WC-2). When true, annotations
+## of this kind are WORKING DATA for a domain loop (e.g. pcb_route_hint feeding
+## the route worker) rather than review commentary. The review dock
+## (AnnotationWorkbench / AnnotationSidebarModel) EXCLUDES workflow-class
+## annotations; the WorkflowAnnotationList surface shows ONLY them. MCP read
+## surfaces (annotations_list/query/resolve_ref) are unaffected — the
+## separation is UI-only.
+var workflow_class: bool = false
+
 # ── Required methods ───────────────────────────────────────────────────────────
 
 ## Render the annotation onto ctx.

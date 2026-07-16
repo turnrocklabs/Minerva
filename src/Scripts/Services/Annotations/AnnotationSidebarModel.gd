@@ -6,6 +6,7 @@ signal annotation_repaired(annotation_id: String, new_anchor: Dictionary)
 
 var _annotations: Array = []
 var _anchor_registry: Object = null
+var _kind_registry: Object = null
 var _show_broken_only := false
 
 
@@ -15,6 +16,15 @@ func set_annotations(annotations: Array) -> void:
 
 func set_anchor_registry(registry: Object) -> void:
 	_anchor_registry = registry
+
+
+## Optional kind registry (AnnotationRegistry, duck-typed). When set, the
+## review sidebar excludes workflow-class annotations (AnnotationKind.
+## workflow_class — pcb-ui-native-cluster §4); those list in the separate
+## WorkflowAnnotationList surface instead. Without a registry the model is
+## unchanged (everything passes).
+func set_kind_registry(registry: Object) -> void:
+	_kind_registry = registry
 
 
 func set_show_broken_only(value: bool) -> void:
@@ -35,6 +45,8 @@ func get_broken_entries() -> Array:
 		if not annotation is Dictionary:
 			continue
 		var ann := annotation as Dictionary
+		if _is_workflow_class(ann):
+			continue
 		if not _is_stale(ann):
 			continue
 		result.append({
@@ -51,12 +63,18 @@ func get_broken_entries() -> Array:
 
 
 func get_visible_annotations() -> Array:
-	if not _show_broken_only:
-		return _annotations.duplicate(true)
 	var result: Array = []
 	for annotation in _annotations:
-		if annotation is Dictionary and _is_stale(annotation):
-			result.append((annotation as Dictionary).duplicate(true))
+		if not annotation is Dictionary:
+			if not _show_broken_only:
+				result.append(annotation)
+			continue
+		var ann := annotation as Dictionary
+		if _is_workflow_class(ann):
+			continue
+		if _show_broken_only and not _is_stale(ann):
+			continue
+		result.append(ann.duplicate(true))
 	return result
 
 
@@ -92,3 +110,14 @@ func _find_index(annotation_id: String) -> int:
 
 func _is_stale(annotation: Dictionary) -> bool:
 	return str(annotation.get("lifecycle", "")) == "stale" or bool(annotation.get("stale", false))
+
+
+## True when the annotation's registered kind declares workflow_class.
+## Unknown kinds (or no registry) are NOT workflow-class.
+func _is_workflow_class(annotation: Dictionary) -> bool:
+	if _kind_registry == null or not _kind_registry.has_method("get_annotation_kind"):
+		return false
+	var kind: Variant = _kind_registry.get_annotation_kind(StringName(str(annotation.get("kind", ""))))
+	if kind == null or not (kind is Object):
+		return false
+	return bool((kind as Object).get("workflow_class"))

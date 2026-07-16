@@ -416,6 +416,10 @@ func _do_selection(doc_pos: Vector2) -> bool:
 
 	for i in range(annotations.size() - 1, -1, -1):
 		var ann: Dictionary = annotations[i]
+		# Host visibility veto (WC-2 C3): a hidden annotation (e.g. a route
+		# hint on a filtered-out copper layer) is not hit-testable.
+		if not _host.is_annotation_visible(ann):
+			continue
 		var kind_name := StringName(ann.get("kind", ""))
 		var kind: AnnotationKind = null
 		if registry != null:

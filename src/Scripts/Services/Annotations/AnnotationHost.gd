@@ -414,6 +414,18 @@ func get_selected_annotation_id() -> String:
 	return _selected_annotation_id
 
 
+## Host-owned per-annotation visibility veto (pcb-ui-native-cluster §4, WC-2;
+## C3 bug 019f33d2c9bf). The substrate consults this in the overlay render loop
+## AND in every hit-test path (Select/Transform/Translate tools), so an
+## annotation the host's view state hides — e.g. a pcb route hint whose
+## kind_payload.layer is a copper layer the panel currently filters out — is
+## neither drawn nor clickable. Pure UI gating: MCP read surfaces and the
+## stored annotation list are unaffected.
+## Base: everything visible. Hosts override with view-state-aware logic.
+func is_annotation_visible(_annotation: Dictionary) -> bool:
+	return true
+
+
 ## Return the current document's annotation list. Manipulation tools iterate
 ## this to hit-test, render halos, etc. Concrete subclasses store annotations
 ## internally; the base default returns []. Subclasses override.

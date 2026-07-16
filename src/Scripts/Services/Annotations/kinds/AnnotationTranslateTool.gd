@@ -90,6 +90,10 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 	if ann.is_empty():
 		return false
 
+	# Host visibility veto (WC-2 C3): a hidden annotation can't be dragged.
+	if not _host.is_annotation_visible(ann):
+		return false
+
 	# Hit-test the selected annotation. If the click misses, let the host handle
 	# it (e.g. SelectTool deselects or picks another annotation).
 	var doc_pos := _host.transform_screen_to_doc(pos)

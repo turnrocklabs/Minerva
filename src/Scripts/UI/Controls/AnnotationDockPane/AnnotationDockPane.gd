@@ -18,7 +18,9 @@ var _collapsed := true
 var _host: RefCounted = null
 var _chevron: Button
 const _AnnotationWorkbenchScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationWorkbench.gd")
+const _WorkflowAnnotationListScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/WorkflowAnnotationList.gd")
 var _workbench: Control = null
+var _workflow_list: Control = null
 var _toolbar: AnnotationToolbar = null
 
 const _RIGHT_EXPANDED_MIN := Vector2(260, 0)
@@ -37,6 +39,8 @@ func set_host(host: RefCounted) -> void:
 	_ensure_ui()
 	if _workbench.has_method("set_host"):
 		_workbench.set_host(host)
+	if _workflow_list != null and _workflow_list.has_method("set_host"):
+		_workflow_list.set_host(host)
 	if _toolbar != null and host is AnnotationHost:
 		var ann_host := host as AnnotationHost
 		_toolbar.set_registry(ann_host.get_registry())
@@ -46,6 +50,13 @@ func set_host(host: RefCounted) -> void:
 func get_workbench() -> Control:
 	_ensure_ui()
 	return _workbench
+
+
+## The workflow-annotation listing surface (workflow-class kinds ONLY — the
+## review workbench excludes them; pcb-ui-native-cluster §4).
+func get_workflow_list() -> Control:
+	_ensure_ui()
+	return _workflow_list
 
 
 func get_toolbar() -> AnnotationToolbar:
@@ -136,9 +147,21 @@ func _build_ui() -> void:
 	_workbench.connect("add_comment_requested", func(text: String) -> void: add_comment_requested.emit(text))
 	_workbench.connect("annotation_selected", func(id: String) -> void: annotation_selected.emit(id))
 	add_child(_workbench)
+
+	# Workflow listing (pcb-ui-native-cluster §4): workflow-class annotations
+	# excluded from the review workbench above list HERE, kind-grouped. The
+	# control renders nothing when the host has no workflow annotations.
+	_workflow_list = _WorkflowAnnotationListScript.new()
+	_workflow_list.name = "WorkflowAnnotationList"
+	_workflow_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_workflow_list.connect("annotation_selected", func(id: String) -> void: annotation_selected.emit(id))
+	add_child(_workflow_list)
+
 	_apply_layout_state()
 	if _host != null and _workbench.has_method("set_host"):
 		_workbench.set_host(_host)
+	if _host != null and _workflow_list.has_method("set_host"):
+		_workflow_list.set_host(_host)
 
 
 func _toggle_collapsed() -> void:
@@ -165,6 +188,8 @@ func _apply_layout_state() -> void:
 		_toolbar.visible = not _collapsed
 	if _workbench != null:
 		_workbench.visible = not _collapsed
+	if _workflow_list != null:
+		_workflow_list.visible = not _collapsed
 	if _chevron != null:
 		if dock_mode == DockMode.RIGHT:
 			_chevron.text = "<" if _collapsed else ">"

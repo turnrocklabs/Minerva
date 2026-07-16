@@ -214,8 +214,14 @@ func _decorated_annotations() -> Array:
 	var result: Array = []
 	if _host == null or not _host.has_method("get_annotations"):
 		return result
+	var registry: AnnotationRegistry = _host.get_registry() if _host.has_method("get_registry") else null
 	for a in _host.get_annotations():
 		if not a is Dictionary:
+			continue
+		# Workflow-class kinds (e.g. pcb_route_hint) are working data for a
+		# domain loop, not review commentary — the review dock excludes them
+		# (pcb-ui-native-cluster §4). They list in WorkflowAnnotationList.
+		if _is_workflow_class(a as Dictionary, registry):
 			continue
 		var d: Dictionary = (a as Dictionary).duplicate(true)
 		if _host.has_method("resolve_anchor"):
@@ -231,6 +237,15 @@ func _decorated_annotations() -> Array:
 		d["_anchor_label"] = _annotation_anchor_label(d)
 		result.append(d)
 	return result
+
+
+## True when the annotation's registered kind declares workflow_class
+## (AnnotationKind.workflow_class). Unknown kinds are NOT workflow-class.
+func _is_workflow_class(annotation: Dictionary, registry: AnnotationRegistry) -> bool:
+	if registry == null:
+		return false
+	var kind: AnnotationKind = registry.get_annotation_kind(StringName(str(annotation.get("kind", ""))))
+	return kind != null and kind.workflow_class
 
 
 func _passes_filter(annotation: Dictionary) -> bool:

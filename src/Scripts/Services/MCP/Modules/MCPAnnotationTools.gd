@@ -970,9 +970,26 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 			"errors": [{"field_path": "kind", "message": "Field 'kind' is required", "code": "required"}],
 		}
 
+	# Resolve the live host FIRST (bug 019f6a8d1391, design §1c2): plugin-
+	# contributed kinds (e.g. pcb_route_hint) live in the HOST's registry, not
+	# the global one, so kind check / primitives_optional / dispatch_validate
+	# must all run against host.get_registry() when an editor_name is given —
+	# with the global registry as fallback, mirroring the read path
+	# (_source_from_host / _annotations_list).
+	var host: AnnotationHost = null
+	if not editor_name.is_empty():
+		host = AnnotationHostRegistry.get_host(editor_name)
+		if host == null:
+			return _err("no live annotation host registered for editor '%s'. Known: %s"
+				% [editor_name, str(AnnotationHostRegistry.list_editor_names())])
+
 	# Check if kind is registered — unknown kinds rejected at MCP, preserved on load.
 	# When no registry is available (headless test context), kind check is skipped.
 	var registry: AnnotationRegistry = _get_registry()
+	if host != null and host.has_method("get_registry"):
+		var host_registry: AnnotationRegistry = host.get_registry()
+		if host_registry != null:
+			registry = host_registry
 	if registry != null and not registry.has_kind(StringName(kind_str)):
 		return {
 			"ok": false,
@@ -1016,11 +1033,7 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 
 	var _pi: ProjectIdentity = ProjectIdentity.current()
 
-	if not editor_name.is_empty():
-		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
-		if host == null:
-			return _err("no live annotation host registered for editor '%s'. Known: %s"
-				% [editor_name, str(AnnotationHostRegistry.list_editor_names())])
+	if host != null:
 		# Stamp the citeable ref here (idempotent) so we can echo it; the live host's
 		# add_annotation_v2 sees it present and skips re-stamping. Its counter was
 		# reconciled when the file opened, so no reconcile is needed here.

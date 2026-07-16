@@ -112,6 +112,10 @@ func _draw() -> void:
 	ctx.host = _host
 
 	for ann in _host.get_annotations():
+		# Host visibility veto (e.g. pcb layer filter hiding B.Cu route hints,
+		# WC-2 C3 fix): a hidden annotation is neither rendered nor badged.
+		if ann is Dictionary and not _host_annotation_visible(ann as Dictionary):
+			continue
 		if registry != null:
 			# Host-owned canvas; the host overlay subclass draws this kind.
 			var ann_kind_name := StringName((ann as Dictionary).get("kind", "")) if ann is Dictionary else StringName("")
@@ -135,6 +139,8 @@ func _draw() -> void:
 				if str((ann as Dictionary).get("id", "")) != sel_id:
 					continue
 				var ann_dict: Dictionary = ann as Dictionary
+				if not _host_annotation_visible(ann_dict):
+					break
 				var kind_name := StringName(ann_dict.get("kind", ""))
 				var kind: AnnotationKind = registry.get_annotation_kind(kind_name) if registry != null else null
 				if kind == null:
@@ -151,6 +157,20 @@ func _draw() -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	if _active_tool == null:
+		return
+
+	# Navigation pass-through (pcb-ui-native-cluster §1a): tools only own
+	# LEFT/RIGHT pointer input. MIDDLE-button events, wheel events, pan
+	# gestures, and middle-drag motion are canvas navigation — forwarded to a
+	# duck-typed host method forward_navigation_input(event) (the PCB host
+	# relays to the board canvas's pan/zoom handling) and NEVER given to the
+	# tool. Hosts without the hook simply keep today's behavior (the overlay
+	# consumes the event; tools still never see it).
+	if _is_navigation_event(event):
+		if _host != null and _host.has_method("forward_navigation_input"):
+			_host.forward_navigation_input(event)
+		accept_event()
+		queue_redraw()
 		return
 
 	# Pass RAW overlay-local pixels. Every tool owns the screen→doc mapping via
@@ -202,6 +222,40 @@ func _gui_input(event: InputEvent) -> void:
 				if consumed:
 					accept_event()
 				queue_redraw()
+			elif ek.keycode == KEY_ENTER or ek.keycode == KEY_KP_ENTER:
+				# Enter forwarding (pcb-ui-native-cluster §1b): same pseudo-pointer
+				# convention as Esc/Del above. Numpad Enter surfaces as KEY_ENTER so
+				# tools handle one keycode (mirrors the BACKSPACE→DELETE normalize).
+				var consumed := _active_tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_ENTER)
+				if consumed:
+					accept_event()
+				queue_redraw()
+
+
+## True when the event is canvas navigation (pan/zoom), not tool input:
+## middle button press/release, any wheel button, a trackpad pan gesture, or
+## mouse motion while the middle button is held (a middle-drag pan in
+## progress). Left/right buttons and plain motion remain tool input.
+func _is_navigation_event(event: InputEvent) -> bool:
+	if event is InputEventPanGesture:
+		return true
+	if event is InputEventMouseButton:
+		return (event as InputEventMouseButton).button_index in [
+			MOUSE_BUTTON_MIDDLE,
+			MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN,
+			MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT,
+		]
+	if event is InputEventMouseMotion:
+		return ((event as InputEventMouseMotion).button_mask & MOUSE_BUTTON_MASK_MIDDLE) != 0
+	return false
+
+
+## Host visibility veto for one annotation (duck-typed; hosts without the
+## hook show everything). See AnnotationHost.is_annotation_visible.
+func _host_annotation_visible(annotation: Dictionary) -> bool:
+	if _host == null or not _host.has_method("is_annotation_visible"):
+		return true
+	return bool(_host.is_annotation_visible(annotation))
 
 
 func _mods_from_event(event: InputEventWithModifiers) -> int:
