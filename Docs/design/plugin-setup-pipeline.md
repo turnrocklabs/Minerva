@@ -144,21 +144,36 @@ toolchain's incremental build is the cache. No Minerva-level source-hash skip in
 Fake tools are real executables (shell/py scripts in the fixture dir) spawned by
 the real runner — outermost-boundary fakes, satisfying the functional floor.
 
-| # | fixture | expected terminal state |
-|---|---|---|
-| F1 | copy-only happy path | registered; artifact exists |
-| F2 | go_build happy (fake `go` prints version, writes `output`) | registered |
-| F3 | requires tool absent everywhere | S_NEEDS_BINARY + `toolchain_missing` |
-| F4 | fake go prints `go1.19` vs min 1.22 | S_NEEDS_BINARY + `toolchain_too_old` |
-| F5 | only candidate lives under a `Microsoft/WindowsApps/` fixture dir | S_NEEDS_BINARY + `toolchain_shim_rejected` |
-| F6 | fake tool sleeps > probe timeout | S_NEEDS_BINARY + `toolchain_probe_failed` (within deadline) |
-| F7 | step exits 2 | S_BUILD_FAILED, envelope has exit_code 2 + stderr_tail |
-| F8 | step exits 0, artifact absent | S_BUILD_FAILED with `artifact_expected` |
-| F9 | step exceeds `timeout_s` | S_BUILD_FAILED within deadline |
-| F10 | exec step | argv reaches the fake executable verbatim (echo-argv fixture) |
-| F11 | schema rejects (one per validation code) | load-time typed error, nothing runs |
-| F12 | dry-run golden | rendered plan byte-identical to golden file |
-| F13 | re-run F2 unchanged | registered again; fake go invoked again (always-build proven) |
+Coverage audit (this round, docket C5): every row below names the deepest
+level actually exercised — `schema`/`registry`/`executor`/`SetupPipeline`
+(direct, worker-thread) / `PluginManager` (real install/rebuild path, FakeDB
+backing store). Rows with no `PluginManager`-level test include the reason
+inline (either genuinely untestable at that level, or the propagation
+mechanism is already proven by a sibling row's PluginManager-level test, so a
+second PluginManager fixture would duplicate proof rather than add coverage).
+
+| # | fixture | expected terminal state | covering test(s) | level |
+|---|---|---|---|---|
+| F1 | copy-only happy path | registered; artifact exists | `test_plugin_setup_executors.gd::test_copy_happy_path`; `test_plugin_setup_pipeline.gd::test_f1_copy_only_happy`; `test_plugin_setup_pipeline.gd::test_pm_install_success_registers_after_pipeline` (fixture `pm_install_happy`) | executor + SetupPipeline + **PluginManager** |
+| F2 | go_build happy (fake `go` prints version, writes `output`) | registered | `test_plugin_setup_executors.gd::test_go_build_happy_path`; `test_plugin_setup_pipeline.gd::test_f2_go_build_happy`; `test_setup_matrix.gd::test_f2_pm_install_go_build_happy` (fixture `pm_install_go_build`, gap filled this round) | executor + SetupPipeline + **PluginManager** |
+| F3 | requires tool absent everywhere | S_NEEDS_BINARY + `toolchain_missing` | `test_toolchain_registry.gd::test_missing_envelope`; `test_plugin_setup_pipeline.gd::test_f3_missing_tool`; `test_plugin_setup_pipeline.gd::test_pm_install_missing_tool_sets_needs_binary` (fixture `pm_install_missing_tool`) | registry + SetupPipeline + **PluginManager** |
+| F4 | fake go prints `go1.19` vs min 1.22 | S_NEEDS_BINARY + `toolchain_too_old` | `test_toolchain_registry.gd::test_too_old_envelope`; `test_setup_matrix.gd::test_f4_pm_install_tool_too_old` (fixture `pm_install_tool_too_old`, reuses `fixtures/toolchain/too_old`, gap filled this round) | registry + **PluginManager** |
+| F5 | only candidate lives under a `Microsoft/WindowsApps/` fixture dir | S_NEEDS_BINARY + `toolchain_shim_rejected` | `test_toolchain_registry.gd::test_shim_rejected_without_execution`; `test_setup_matrix.gd::test_f5_pm_install_shim_only_candidate` (fixture `pm_install_tool_shim`, reuses `fixtures/toolchain/shim`, marker-file proof of non-execution carried through the full install path, gap filled this round) | registry + **PluginManager** |
+| F6 | fake tool sleeps > probe timeout | S_NEEDS_BINARY + `toolchain_probe_failed` (within deadline) | `test_toolchain_registry.gd::test_hang_deadline_enforced`; `test_setup_matrix.gd::test_f6_pm_install_hanging_probe` (fixture `pm_install_tool_hang`, reuses `fixtures/toolchain/hang`, asserts the full `install_plugin()` round trip stays under ~7.5s despite the fixture's 8s sleep, gap filled this round) | registry + **PluginManager** (wall-clock bound asserted at both levels) |
+| F7 | step exits 2 | S_BUILD_FAILED, envelope has exit_code 2 + stderr_tail | `test_plugin_setup_executors.gd::test_exec_exit_2_returns_failure_envelope`; `test_plugin_setup_pipeline.gd::test_f7_step_exit_2`; `test_plugin_setup_pipeline.gd::test_pm_install_failure_sets_build_failed_and_envelope` (fixture `pm_install_fail`) | executor + SetupPipeline + **PluginManager** |
+| F8 | step exits 0, artifact absent | S_BUILD_FAILED with `artifact_expected` | `test_plugin_setup_executors.gd::test_exec_exit_0_no_artifact_returns_artifact_expected`; related entrypoint-check variant (§3 amendment, same envelope shape with `step_type: "entrypoint_check"`) at `test_plugin_setup_pipeline.gd::test_entrypoint_artifact_missing_fails_pipeline`. No dedicated PluginManager-level fixture: the `setup_step_failed` → S_BUILD_FAILED propagation from SetupExecutors through SetupPipeline into PluginManager is already proven end-to-end by F7's PluginManager test (identical error code, identical propagation path, only the *reason* for step failure differs) — a second PluginManager fixture would duplicate that proof, not add coverage. Executor level is the deepest level that isolates the `artifact_expected` condition itself. | executor (+ pipeline entrypoint-check variant); PluginManager propagation covered via F7 |
+| F9 | step exceeds `timeout_s` | S_BUILD_FAILED within deadline | `test_plugin_setup_executors.gd::test_exec_timeout_is_enforced`; `test_plugin_setup_pipeline.gd::test_run_async_does_not_block_main_thread` (an actual `timeout_s`-exceeding exec step run through the real worker-thread pipeline, with wall-clock assertions). No dedicated PluginManager-level fixture for the same duplication reason as F8 — see that row. | executor + SetupPipeline; PluginManager propagation covered via F7 |
+| F10 | exec step | argv reaches the fake executable verbatim (echo-argv fixture) | `test_plugin_setup_executors.gd::test_exec_argv_reaches_process_verbatim`, `::test_exec_relative_argv0_resolved_against_plugin_dir`, `::test_dry_run_and_executor_argv_parity`. Exec steps are also exercised end-to-end through the real SetupPipeline in `test_plugin_setup_pipeline.gd::test_approver_approves_exec_step`/`::test_approver_denies_exec_step` (real `/bin/sh`/`/bin/echo` subprocesses) and through PluginManager via F7's `pm_install_fail` fixture (`exec` step type). No dedicated PluginManager-level argv-capture fixture: the verbatim-argv guarantee is a property of `SetupExecutors.run_step()` alone (plugin_dir-relative resolution, no shell) and is identical regardless of caller; executor level is the deepest level that isolates it. | executor (deepest for argv-content assertions) + SetupPipeline + PluginManager (exec-step plumbing only) |
+| F11 | schema rejects (one per validation code) | load-time typed error, nothing runs | `test_plugin_setup_schema.gd` — one test per code: `test_unknown_step_type` (`setup_unknown_step_type`), `test_missing_required_field_names_index_and_field` (`setup_step_missing_field`), `test_absolute_path_rejected`/`test_dotdot_traversal_rejected` (`setup_path_escape`), `test_requires_missing_tool`/`test_requires_missing_min`/`test_requires_bad_min_format` (`setup_bad_requires`), `test_exec_empty_argv_rejected`/`test_exec_non_string_argv_entry_rejected` (`setup_empty_argv`); plus real load-time rejection via `test_from_manifest_rejects_bad_setup_fixture` (fixture `bad_setup_manifest.json`) and `test_plugin_definition_validate_surfaces_setup_errors`. `PluginDefinition.from_manifest()` IS the real production load path a manifest-install goes through before `PluginManager.install_plugin()` ever runs — this is already the deepest sensible level; a bad-schema manifest never reaches `install_plugin()` in production either. | schema unit + **real load-time path** (`PluginDefinition.from_manifest`) |
+| F12 | dry-run golden | rendered plan byte-identical to golden file | `test_plugin_setup_executors.gd::test_dry_run_matches_golden_file`, `::test_dry_run_is_deterministic_across_repeated_calls` | unit (SetupDryRun has no subprocess/filesystem surface of its own — this is the deepest possible level, see that suite's own module comment) |
+| F13 | re-run F2 unchanged | registered again; fake go invoked again (always-build proven) | `test_plugin_setup_pipeline.gd::test_f13_rerun_always_builds` (same `plugin_dir`, two separate `run_async()` calls, invocation-marker asserted == 2). No PluginManager-level equivalent: `PluginManager.rebuild()` is only callable from `S_BUILD_FAILED`/`S_NEEDS_BINARY` (`PluginManager.gd:813`) and `install_plugin()` refuses a duplicate id, so "reinstall an already-`S_INSTALLED` plugin unchanged" is not a reachable PluginManager-level flow in the product — there is nothing deeper to test against. The always-build guarantee is a `SetupPipeline`-level contract (§3) and this is the correct boundary to prove it at. | SetupPipeline (deepest reachable level — see reasoning) |
+
+Gap-filling suite: `src/test/test_setup_matrix.gd` (F2/F4/F5/F6 PluginManager-level
+tests) + `src/test/run_setup_suites.sh` (one-command runner for all five
+suites, CI-ready). New fixtures: `fixtures/setup_pipeline/pm_install_go_build/`,
+`pm_install_tool_too_old/`, `pm_install_tool_shim/`, `pm_install_tool_hang/`
+(each reuses the existing `fixtures/toolchain/{too_old,shim,hang}` fake-tool
+scripts via `search_dirs_override`, no new fake-tool scripts needed).
 
 ## 5. Out of scope (this campaign)
 
