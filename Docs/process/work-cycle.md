@@ -119,6 +119,17 @@ the round runs end-to-end without human input.
 - All **reviewers**.
 - The **planner** in step 0.
 
+## Audible HITL Notification (owner-requested, 2026-07-16)
+
+When the cycle's prescribed tasks are all done and control passes to the human
+(a 3a/3b stop, or a serial plan reaching its human gate), the orchestrator
+plays an audible notification before composing the stop report:
+`paplay /usr/share/sounds/freedesktop/stereo/complete.oga` (fallbacks `aplay`
+/ `spd-say`; prefer `minerva_speak` only when Minerva is running — it often
+isn't). Intermediate 3c rounds that auto-chain into the next round do NOT
+beep — only the stop that needs the human. Fire-and-forget: a failed beep
+never blocks the report.
+
 ## Docket Transition Rules
 
 | Phase | State change |

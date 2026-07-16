@@ -125,6 +125,17 @@ For each unit in this round, in parallel where independent:
 
 ### Step 5 — STOP CONDITION FIRES
 
+0. **Audible notification (owner-requested, 2026-07-16)**: when all prescribed
+   tasks in the cycle are done — i.e. the moment the cycle becomes ready for
+   the human (typically a 3a/3b HITL stop, or the final round of a serial
+   plan reaching its human gate) — play a beep BEFORE composing the report:
+   `paplay /usr/share/sounds/freedesktop/stereo/complete.oga` (fallback:
+   `aplay` or `spd-say "work cycle complete"`; if Minerva is running, prefer
+   `minerva_speak` with a one-line summary). Never let a failed beep block
+   the report — fire-and-forget. Intermediate 3c auto-verified rounds that
+   chain into another round do NOT beep; only the stop that hands control
+   to the human does.
+
 1. Present to the user:
    - WIP commit SHA.
    - What changed (one sentence per unit).
