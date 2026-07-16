@@ -47,6 +47,17 @@ Rules:
   Absolute paths and `..`-escapes are validation errors. **No env-var expansion
   anywhere** — `%X%`/`$X` are literal characters (the stray `pcb/worker/%SystemDrive%`
   dir is the cautionary tale).
+- **Working directory (amended 2026-07-15, R1 review MF1/MF2)**: steps are
+  **cwd-independent** — Godot cannot set a child cwd, and every wrapper that
+  fakes one either breaks a platform (`env -C` is GNU-only; macOS BSD env lacks
+  it) or re-introduces a shell (`cmd.exe /c`). Executors therefore absolutize
+  paths against the plugin dir at argv-build time: `go_build` uses
+  `go build -C <plugin_dir>` (go >= 1.20; declare in `requires`); `cargo_build`
+  uses an absolute `--manifest-path`; `python_venv`/`copy` use absolute paths.
+  `exec` gets **no cwd guarantee**: argv[0] beginning with `./` is resolved
+  against the plugin dir; an exec'd program needing the plugin dir derives it
+  from argv[0] or takes it as an explicit argument. Never wrap argv in a shell
+  or env-relay to simulate cwd.
 - Any step MAY declare `artifact`; the runner verifies existence after the step.
   `go_build`/`cargo_build`/`copy` verify their implicit artifact regardless.
 - `timeout_s` default: 300 per step; probe timeout is separate (5s).
