@@ -9,20 +9,26 @@ extends SceneTree
 ## against the live pcb_data model (one geometry-named pin, one unconnected
 ## pin), and drives the INSPECT_PIN mode with REAL synthetic input
 ## (Viewport.push_input — mouse clicks + a Shift+P key event), exactly like
-## test_pcb_canvas_input_probe.gd. MCP parity (minerva_pcb_pin_info) is called
-## directly against the module's handle() (headless, no server) — the same
-## pattern test_pcb_panel_tools.gd uses.
+## test_pcb_canvas_input_probe.gd. MCP parity (minerva_pcb_pin_info) is
+## dispatched through the REAL PluginToolRegistry.handle_tool_call path
+## (executor "panel", DCR 019f6c3d0e3d C2 round) against the registered panel
+## — headless, no subprocess required for panel-executed tools.
 ##
 ## REUSE SCAN (see work-cycle report): mount pattern copied from
-## test_pcb_canvas_input_probe.gd's _mount_panel/_push_button/_push_motion;
-## MCP-module-direct pattern copied from test_pcb_panel_tools.gd's _setup/tools
-## calling convention. No hit-test logic is reimplemented here — every
-## assertion reads live UI state or calls through the module handle().
+## test_pcb_canvas_input_probe.gd's _mount_panel/_push_button/_push_motion.
+## C2 migration (docket 019f6c45f09e): minerva_pcb_pin_info moved to the pcb
+## plugin's own panel_tools.gd (executor "panel") — MCP parity now dispatches
+## through the REAL PluginToolRegistry.handle_tool_call path (a registered
+## PCBPanel via PluginScenePanelBroker), mirroring test_panel_executed_tools.gd's
+## fixture wiring, instead of calling the old core module's handle() directly.
+## No hit-test logic is reimplemented here — every assertion reads live UI
+## state or calls through the real dispatcher.
 
 const PANEL_PATH := "res://../../minerva-plugins/pcb/ui/PCBPanel.gd"
-const MODULE := preload("res://Scripts/Services/MCP/Modules/MCPPcbPanelTools.gd")
+const REGISTRY_DRIVER := preload("res://test/helpers/panel_tool_registry_driver.gd")
 
 const EDITOR_NAME := "PinInspectorProbe"
+const PCB_PLUGIN_ID := "pcb"
 
 var _pass := 0
 var _fail := 0
@@ -31,7 +37,7 @@ var panel = null
 var canvas = null
 var host = null
 var data = null
-var tools = null
+var registry: PluginToolRegistry = null
 
 ## Captured via canvas.pin_selected — the last emitted info Dictionary.
 var _last_pin_selected: Dictionary = {"__unset__": true}
@@ -99,8 +105,11 @@ func _mount() -> bool:
 	await process_frame
 	canvas.pin_selected.connect(func(info: Dictionary) -> void: _last_pin_selected = info)
 
-	tools = MODULE.new(null)  # server=null — handle() is server-free (mirrors test_pcb_panel_tools.gd).
-	return true
+	# Real PluginToolRegistry + PluginScenePanelBroker rig with `panel`
+	# registered under EDITOR_NAME, owned by "pcb" — the same shape production
+	# dispatch resolves against (contract §2.2/§2.3).
+	registry = REGISTRY_DRIVER.new().build(panel, PCB_PLUGIN_ID, EDITOR_NAME, ["minerva_pcb_pin_info"])
+	return registry != null
 
 
 ## 3 components, 2 nets, one geometry-named pin (U1.15 -> "3V3"), one
@@ -280,7 +289,7 @@ func _test_e2e_1_scenario() -> void:
 
 	# ── D. MCP parity: minerva_pcb_pin_info must match the UI exactly, for all
 	#      three pins, plus net_members. ──
-	var r1: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "U1.1"})
+	var r1: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "U1.1"})
 	check("D: MCP U1.1 succeeds", bool(r1.get("success", false)), "got %s" % str(r1))
 	check("D: MCP U1.1 net matches UI (GND)", str(r1.get("net", "")) == "GND", "got %s" % str(r1))
 	check("D: MCP U1.1 display_name matches UI ('GND')",
@@ -288,7 +297,7 @@ func _test_e2e_1_scenario() -> void:
 	check("D: MCP U1.1 net_members matches UI ([U2.A])",
 		r1.get("net_members", []) == ["U2.A"], "got %s" % str(r1.get("net_members", [])))
 
-	var r15: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "U1.15"})
+	var r15: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "U1.15"})
 	check("D: MCP U1.15 pin_name matches UI ('3V3')",
 		str(r15.get("pin_name", "")) == "3V3", "got %s" % str(r15))
 	check("D: MCP U1.15 display_name = geometry name (wins over net)",
@@ -296,14 +305,14 @@ func _test_e2e_1_scenario() -> void:
 	check("D: MCP U1.15 net_members matches UI ([U3.1])",
 		r15.get("net_members", []) == ["U3.1"], "got %s" % str(r15.get("net_members", [])))
 
-	var r2: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "U1.2"})
+	var r2: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "U1.2"})
 	check("D: MCP U1.2 display_name = '(unconnected)'",
 		str(r2.get("display_name", "")) == "(unconnected)", "got %s" % str(r2))
 	check("D: MCP U1.2 net_members is empty",
 		(r2.get("net_members", []) as Array).is_empty(), "got %s" % str(r2.get("net_members", [])))
 
 	# x_mm/y_mm variant hits the same pad as the ref variant.
-	var r_xy: Dictionary = tools.handle("minerva_pcb_pin_info",
+	var r_xy: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info",
 		{"editor_name": EDITOR_NAME, "x_mm": world_1.x, "y_mm": world_1.y})
 	check("D: MCP x_mm/y_mm resolves the same pin as ref", str(r_xy.get("ref", "")) == "U1.1",
 		"got %s" % str(r_xy))
@@ -320,25 +329,32 @@ func _test_e2e_1_scenario() -> void:
 	check("E: Pin Info section hidden after clear", not panel._pin_info_section.visible,
 		"visible=%s" % str(panel._pin_info_section.visible))
 
-	var r_unknown: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "ZZ9.99"})
+	var r_unknown: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "ZZ9.99"})
 	check("E: MCP unknown ref 'ZZ9.99' -> structured error, not a crash",
 		not bool(r_unknown.get("success", true)) and r_unknown.has("error"), "got %s" % str(r_unknown))
 
-	var r_malformed: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "garbage"})
+	var r_malformed: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": "garbage"})
 	check("E: MCP malformed ref (no dot) -> structured error",
 		not bool(r_malformed.get("success", true)) and r_malformed.has("error"), "got %s" % str(r_malformed))
 
-	var r_empty_ref: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": ""})
+	var r_empty_ref: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME, "ref": ""})
 	check("E: MCP empty-string ref -> structured error",
 		not bool(r_empty_ref.get("success", true)) and r_empty_ref.has("error"), "got %s" % str(r_empty_ref))
 
-	var r_no_args: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME})
+	var r_no_args: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": EDITOR_NAME})
 	check("E: MCP neither ref nor x_mm/y_mm -> structured error",
 		not bool(r_no_args.get("success", true)) and r_no_args.has("error"), "got %s" % str(r_no_args))
 
-	var r_bad_editor: Dictionary = tools.handle("minerva_pcb_pin_info", {"editor_name": "NoSuchEditor", "ref": "U1.1"})
+	# This one crosses the DISPATCHER boundary (unknown editor_name never
+	# reaches panel_tools.gd at all) so the error shape is PluginErrors'
+	# structured editor_not_found, not panel_tools.gd's own _err({"error":…})
+	# shape the other assertions in this scenario check — mechanical fallout
+	# of routing through the real dispatcher (contract §2.2), not a behavior
+	# change: still a structured, non-crashing error naming the bad editor.
+	var r_bad_editor: Dictionary = await registry.handle_tool_call("minerva_pcb_pin_info", {"editor_name": "NoSuchEditor", "ref": "U1.1"})
 	check("E: MCP unknown editor_name -> structured error",
-		not bool(r_bad_editor.get("success", true)) and r_bad_editor.has("error"), "got %s" % str(r_bad_editor))
+		not bool(r_bad_editor.get("success", true)) and r_bad_editor.get("error_code", "") == "editor_not_found",
+		"got %s" % str(r_bad_editor))
 
 	# Bonus: Escape exits the mode; Shift+P toggles both directions. Still in
 	# INSPECT_PIN here — nothing above exited it (clicking empty space only

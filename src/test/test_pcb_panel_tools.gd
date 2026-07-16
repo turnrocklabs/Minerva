@@ -15,10 +15,53 @@ extends SceneTree
 ##
 ## Off-tree: the plugin scripts live outside res://; every panel/host/model ref is
 ## duck-typed and loaded by path (never typed AS a plugin class).
+##
+## C2 migration (docket 019f6c45f09e): the 16 wave-1 tools below moved to the
+## pcb plugin's own panel_tools.gd (executor "panel") and are no longer
+## registered/handled by MODULE. The `h()` dispatch helper routes those names
+## through panel.handle_tool(tool_name, args) directly — the same plugin-side
+## entry point PluginToolRegistry.handle_tool_call forwards to once it has
+## resolved editor_name -> this panel (contract §2.2/§2.3); panel.handle_tool
+## is a plain synchronous call for these tools (no internal await), so this
+## keeps every existing `h(...)` call site in this file unchanged (no `await`
+## threading needed — GDScript's static analyzer only forces "await" on calls
+## it can prove are coroutines, and panel.handle_tool for wave-1 tools isn't
+## one). The two editor_name-validation checks in _run_error_shapes() below
+## are DISPATCHER-boundary behavior now (PluginToolRegistry.handle_tool_call
+## rejects a missing/unknown editor_name before ever reaching panel_tools.gd),
+## so those two specific calls route through the REAL registry instead
+## (test/helpers/panel_tool_registry_driver.gd, mirroring
+## test_panel_executed_tools.gd's fixture wiring) with assertions adjusted to
+## the dispatcher's structured PluginErrors shape (error_message, not the old
+## panel-level _err()'s "error" key) — that one function is async as a result.
+## WAVE-2 tool names still dispatch through MODULE.handle() directly
+## (get_change_journal, export/import_trace_geometry, get_image — unaffected).
 
 const MODULE := preload("res://Scripts/Services/MCP/Modules/MCPPcbPanelTools.gd")
 const PANEL_PATH := "res://../../minerva-plugins/pcb/ui/PCBPanel.gd"
 const DRIVER := preload("res://test/helpers/plugin_panel_driver.gd")
+const REGISTRY_DRIVER := preload("res://test/helpers/panel_tool_registry_driver.gd")
+const PCB_PLUGIN_ID := "pcb"
+
+## The 16 wave-1 tool names — moved to pcb/ui/panel_tools.gd this round.
+const _WAVE1_TOOLS: Array[String] = [
+	"minerva_pcb_set_board_size",
+	"minerva_pcb_get_components",
+	"minerva_pcb_get_nets",
+	"minerva_pcb_get_pin_position",
+	"minerva_pcb_pin_info",
+	"minerva_pcb_add_component",
+	"minerva_pcb_move_component",
+	"minerva_pcb_move_relative",
+	"minerva_pcb_rotate_component",
+	"minerva_pcb_delete_component",
+	"minerva_pcb_connect_net",
+	"minerva_pcb_spatial_query",
+	"minerva_pcb_describe_component",
+	"minerva_pcb_import_csv",
+	"minerva_pcb_export_csv",
+	"minerva_pcb_import_footprint_geometry",
+]
 
 const EDITOR := "PCB1"
 
@@ -29,6 +72,7 @@ var tools
 var panel      # PCBPanel (duck-typed Node)
 var host       # PcbAnnotationHost (duck-typed)
 var data       # pcb_data model (duck-typed)
+var registry: PluginToolRegistry = null
 
 
 func _init() -> void:
@@ -43,7 +87,7 @@ func _init() -> void:
 	_run_queries_and_mutations()
 	_run_golden_parity()
 	_run_roundtrips()
-	_run_error_shapes()
+	await _run_error_shapes()
 	_run_get_image()
 
 	_teardown()
@@ -73,7 +117,9 @@ func _setup() -> bool:
 
 	AnnotationHostRegistry._reset_for_test()
 	AnnotationHostRegistry.register(EDITOR, host)
-	return true
+
+	registry = REGISTRY_DRIVER.new().build(panel, PCB_PLUGIN_ID, EDITOR, _WAVE1_TOOLS)
+	return registry != null
 
 
 func _teardown() -> void:
@@ -111,6 +157,8 @@ func check_keys(desc: String, result: Dictionary, expected: Array) -> void:
 
 
 func h(tool_name: String, args: Dictionary) -> Dictionary:
+	if _WAVE1_TOOLS.has(tool_name):
+		return panel.handle_tool(tool_name, args)
 	return tools.handle(tool_name, args)
 
 
@@ -320,14 +368,26 @@ func _run_roundtrips() -> void:
 
 func _run_error_shapes() -> void:
 	print("\n-- missing editor_name --")
-	var e1 := h("minerva_pcb_get_components", {})
+	# Crosses the DISPATCHER boundary now (PluginToolRegistry.handle_tool_call
+	# rejects a missing/unknown editor_name before ever reaching
+	# panel_tools.gd — contract §2.2), so these two checks route through the
+	# REAL registry instead of the h()/panel.handle_tool shortcut the rest of
+	# this suite uses. Shape is PluginErrors.editor_name_required /
+	# editor_not_found, not panel_tools.gd's own _err(); success=false still
+	# holds, only the message field name changed (error_message, not "error").
+	var e1: Dictionary = await registry.handle_tool_call("minerva_pcb_get_components", {})
 	check("no editor_name → error", e1.get("success", true) == false)
+	check("no editor_name → editor_name_required", e1.get("error_code", "") == "editor_name_required")
 
-	print("\n-- missing host (unknown editor) matches MCPCadTools convention --")
-	var e2 := h("minerva_pcb_get_components", {"editor_name": "GhostBoard"})
+	print("\n-- missing host (unknown editor) matches the dispatcher convention --")
+	# Same "structured error naming the editor + known editors" contract the
+	# old MCPCadTools-style _no_host_error UX gave, just under error_message/
+	# known_editors instead of a single "error" string.
+	var e2: Dictionary = await registry.handle_tool_call("minerva_pcb_get_components", {"editor_name": "GhostBoard"})
 	check("unknown editor → success=false", e2.get("success", true) == false)
-	check("error names the editor", str(e2.get("error", "")).contains("GhostBoard"))
-	check("error lists known editors", str(e2.get("error", "")).contains("no_pcb_host_for_editor"))
+	check("unknown editor → editor_not_found", e2.get("error_code", "") == "editor_not_found")
+	check("error names the editor", str(e2.get("error_message", "")).contains("GhostBoard"))
+	check("error lists known editors", str(e2.get("error_message", "")).contains("Known editors"))
 
 	print("\n-- component not found --")
 	var e3 := h("minerva_pcb_move_component", _args({"component_id": "NOSUCH", "x": 1.0, "y": 1.0}))
