@@ -363,6 +363,6 @@ func _test_tool_buttons_render() -> void:
 		# WC-3 (contract §5) added a fourth button (Trace — the route-flow
 		# cluster's single-trace author tool toggle) to the same ToolsFlow
 		# container, next to Select/Pan/Pin Inspect.
-		check("four tool buttons (Select/Pan/Pin Inspect/Trace)", buttons == 4)
+		check("five tool buttons (Select/Pan/Pin Inspect/Trace/Edit Hint)", buttons == 5)
 
 	_teardown(panel)
