@@ -26,6 +26,28 @@ const _CLEAR_MENU_ITEMS := [
 	["Clear all hints", "all"],
 ]
 
+## Per-annotation Accept/Reject (C5, docket 019f6c465fd8 — explicit-propose UX
+## + proposal lifecycle). Minimal GENERIC extension to this file, mirroring
+## the WC-3 clear_by_author fence-extension precedent above: clear_by_author
+## is a single list-wide right-click menu keyed off ONE duck-typed host
+## method; a per-row action needs a per-row decision, which that single global
+## PopupMenu shape can't host (it has no notion of "which row"), so this adds
+## two small inline row buttons instead of extending the menu.
+##
+## Zero pcb-specific vocabulary here on purpose — the trigger is the
+## SUBSTRATE's own generic "machine-authored" signal (author.kind == "ai",
+## the same convention AnnotationRenderContext.author_color("ai") keys cyan
+## rendering off of — see _is_ai_authored below), gated on the host
+## duck-typing BOTH verbs (accept_annotation_proposal / reject_annotation_
+## proposal), exactly like clear_annotations_by_author's opt-in. Any plugin's
+## workflow-class kind can opt in by (a) stamping author.kind="ai" on its
+## machine-written annotations and (b) implementing the two host methods;
+## pcb (route-hint proposals) is simply the first consumer. Buttons only
+## appear on rows where both conditions hold — a human-authored hint, or a
+## host without the methods, renders exactly as before.
+const _ACCEPT_METHOD := "accept_annotation_proposal"
+const _REJECT_METHOD := "reject_annotation_proposal"
+
 var _host: RefCounted = null
 var _selected_id: String = ""
 
@@ -200,8 +222,23 @@ func _grouped_entries() -> Dictionary:
 			"summary": summary,
 			"lifecycle": str(ann.get("lifecycle", "open")),
 			"display_index": index,
+			"is_ai_authored": _is_ai_authored(ann),
 		})
 	return groups
+
+
+## Generic "is this a machine proposal" signal — accepts both a v1 "human"/"ai"
+## author string and a v2 {kind:...} author dict (same tolerance
+## AnnotationRenderContext.author_color already documents for the identical
+## reason: callers evolve independently of the schema round that introduced
+## the dict form).
+static func _is_ai_authored(annotation: Dictionary) -> bool:
+	var author: Variant = annotation.get("author", null)
+	if author is String:
+		return author == "ai"
+	if author is Dictionary:
+		return str((author as Dictionary).get("kind", "")) == "ai"
+	return false
 
 
 func _make_row(entry: Dictionary) -> Control:
@@ -225,7 +262,48 @@ func _make_row(entry: Dictionary) -> Control:
 	label.clip_text = true
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
+
+	# Per-annotation Accept/Reject — see the class-doc note above
+	# _ACCEPT_METHOD/_REJECT_METHOD for why this is here instead of an
+	# extended context menu.
+	if bool(entry.get("is_ai_authored", false)) and _host != null \
+			and _host.has_method(_ACCEPT_METHOD) and _host.has_method(_REJECT_METHOD):
+		var entry_id := str(entry.get("id", ""))
+
+		var accept_btn := Button.new()
+		accept_btn.name = "AcceptButton"
+		accept_btn.text = "Accept"
+		accept_btn.focus_mode = Control.FOCUS_NONE
+		accept_btn.pressed.connect(_on_accept_pressed.bind(entry_id))
+		row.add_child(accept_btn)
+
+		var reject_btn := Button.new()
+		reject_btn.name = "RejectButton"
+		reject_btn.text = "Reject"
+		reject_btn.focus_mode = Control.FOCUS_NONE
+		reject_btn.pressed.connect(_on_reject_pressed.bind(entry_id))
+		row.add_child(reject_btn)
+
 	return row
+
+
+## Calls the host's generic accept verb (duck-typed — see _ACCEPT_METHOD doc)
+## and refreshes. Coroutine: the pcb host's accept_annotation_proposal awaits
+## panel_tools.gd's tool dispatch; connecting a Button.pressed signal directly
+## to an async func is fine in Godot (fire-and-forget from the signal's
+## perspective — refresh() still runs once the await resolves).
+func _on_accept_pressed(annotation_id: String) -> void:
+	if _host == null or not _host.has_method(_ACCEPT_METHOD):
+		return
+	await _host.call(_ACCEPT_METHOD, annotation_id)
+	refresh()
+
+
+func _on_reject_pressed(annotation_id: String) -> void:
+	if _host == null or not _host.has_method(_REJECT_METHOD):
+		return
+	await _host.call(_REJECT_METHOD, annotation_id)
+	refresh()
 
 
 func _select_annotation(annotation_id: String) -> void:

@@ -362,7 +362,10 @@ func _test_tool_buttons_render() -> void:
 					b.icon != null or not b.text.is_empty())
 		# WC-3 (contract §5) added a fourth button (Trace — the route-flow
 		# cluster's single-trace author tool toggle) to the same ToolsFlow
-		# container, next to Select/Pan/Pin Inspect.
-		check("five tool buttons (Select/Pan/Pin Inspect/Trace/Edit Hint)", buttons == 5)
+		# container, next to Select/Pan/Pin Inspect. C5 (docket 019f6c465fd8)
+		# adds a sixth: Propose (a non-toggle act button, not part of the
+		# route-flow mutual-exclusion set, but rendered in the same
+		# ToolsFlow for discoverability — see PCBPanel.gd's _propose_button).
+		check("six tool buttons (Select/Pan/Pin Inspect/Trace/Edit Hint/Propose)", buttons == 6)
 
 	_teardown(panel)
