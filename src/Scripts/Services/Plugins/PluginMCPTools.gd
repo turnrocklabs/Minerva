@@ -21,6 +21,90 @@ func _init(p_manager = null, p_policy = null, p_audit_log = null, p_event_broker
 	_plugin_policy = p_policy
 	_audit_log = p_audit_log
 	_event_broker = p_event_broker
+	_connect_build_activity_signals()
+
+
+## G4.2 (DCR 019f69428fa0 round R3-UI): route setup-pipeline step boundaries
+## to the visible activity surface. This class — not PluginManagerPanel — owns
+## the routing because it is created once at plugin-system init and lives for
+## the whole session (SingletonObject.plugin_mcp_tools), so MCP-triggered
+## builds get logged even when the Plugin Manager panel was never opened.
+## has_signal() guard: tests construct this class with mocks/null that may not
+## carry the build signals.
+func _connect_build_activity_signals() -> void:
+	if _plugin_manager == null or not (_plugin_manager is Object):
+		return
+	if not (_plugin_manager as Object).has_signal("plugin_build_step_started"):
+		return
+	_plugin_manager.plugin_build_step_started.connect(_on_build_step_started_activity)
+	_plugin_manager.plugin_build_step_finished.connect(_on_build_step_finished_activity)
+
+
+func _on_build_step_started_activity(id: String, step_index: int, step_count: int, step_type: String) -> void:
+	# Echo the step's manifest-declared content (argv for exec, package/output
+	# for go_build, …) — the resolved argv only exists inside the executor and
+	# is surfaced on failure via the envelope's resolved_argv.
+	var step_detail := ""
+	var pm = _get_plugin_manager()
+	if pm != null:
+		var def = pm.get_db().get_by_id(id)
+		if def != null:
+			var steps: Array = def.setup.get("steps", [])
+			if step_index >= 0 and step_index < steps.size():
+				step_detail = JSON.stringify(steps[step_index])
+	_append_build_activity(id, "step %d/%d %s: started%s" % [
+		step_index + 1, step_count, step_type,
+		("  %s" % step_detail) if not step_detail.is_empty() else "",
+	])
+
+
+func _on_build_step_finished_activity(id: String, step_index: int, step_count: int, step_type: String, ok: bool, detail: Dictionary) -> void:
+	if ok:
+		_append_build_activity(id, "step %d/%d %s: OK" % [step_index + 1, step_count, step_type])
+		return
+	var lines := "step %d/%d %s: FAILED (exit=%s)" % [
+		step_index + 1, step_count, step_type, str(detail.get("exit_code", "?")),
+	]
+	var argv: Array = detail.get("resolved_argv", [])
+	if not argv.is_empty():
+		lines += "\n  argv: %s" % JSON.stringify(argv)
+	var stderr_tail: String = str(detail.get("stderr_tail", ""))
+	if not stderr_tail.is_empty():
+		lines += "\n  stderr: %s" % stderr_tail
+	_append_build_activity(id, lines)
+
+
+## Append one entry to the "Activity: Plugin Builds" editor tab. Reuse note:
+## this deliberately copies PluginNotifyRouter._append_to_activity_log's
+## mechanism (EditorPane._get_or_create_activity_log + code_edit append) —
+## that helper is private to host.notify routing and hard-codes its own entry
+## format, so a shared extraction would touch PluginNotifyRouter (out of this
+## round's fence). The tab is a DEDICATED "Plugin Builds" one rather than the
+## shared "Activity: MCP" tab because _get_or_create_activity_log keys tabs by
+## its agent_id string (a distinct key = a distinct tab through the exact same
+## code path, zero new mechanism) and build logs are bursty multi-line blocks
+## that would drown interleaved tool-call traces.
+static func _append_build_activity(plugin_id: String, message: String) -> void:
+	var ep = null
+	if SingletonObject != null and SingletonObject.get("editor_pane") != null:
+		ep = SingletonObject.editor_pane
+	if ep == null or not ep.has_method("_get_or_create_activity_log"):
+		print("[PluginBuild:%s] %s" % [plugin_id, message])
+		return
+
+	var editor = ep._get_or_create_activity_log("Plugin Builds")
+	if editor == null or editor.get("code_edit") == null:
+		print("[PluginBuild:%s] %s" % [plugin_id, message])
+		return
+
+	var t := Time.get_time_dict_from_system()
+	var entry := "── %02d:%02d:%02d  build %s ──\n%s\n" % [t.hour, t.minute, t.second, plugin_id, message]
+	var ce = editor.code_edit
+	if ce.text.is_empty():
+		ce.text = entry
+	else:
+		ce.text += "\n" + entry
+	ce.set_caret_line(ce.get_line_count() - 1)
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +127,8 @@ func get_tool_definitions() -> Array:
 		_get_plugin_state_tool_def(),
 		_get_plugin_help_tool_def(),
 		_get_plugin_open_panel_tool_def(),
+		_get_plugin_build_status_tool_def(),
+		_get_plugin_setup_dry_run_tool_def(),
 	]
 
 
@@ -75,6 +161,10 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 			return _handle_plugin_help(args)
 		"minerva_plugin_open_panel":
 			return _handle_plugin_open_panel(args)
+		"minerva_plugin_build_status":
+			return _handle_plugin_build_status(args)
+		"minerva_plugin_setup_dry_run":
+			return _handle_plugin_setup_dry_run(args)
 		_:
 			return {"error": "Unknown plugin management tool: %s" % tool_name}
 
@@ -695,4 +785,126 @@ func _handle_plugin_open_panel(args: Dictionary) -> Dictionary:
 		"panel_name": panel_name,
 		"panel_kind": panel_kind,
 		"tab_title": tab_title,
+	}
+
+
+# ---------------------------------------------------------------------------
+# Tools: minerva_plugin_build_status / minerva_plugin_setup_dry_run
+# ---------------------------------------------------------------------------
+# G4.3 (DCR 019f69428fa0, Docs/design/plugin-setup-pipeline.md §2/§3): expose
+# the manifest-install setup pipeline's state machine to agents so an install
+# can be polled — state name, live step while S_BUILDING, the full §2/§3
+# failure envelope (incl. the `failures` array and exec_denied detail), and
+# the last build log — all without filesystem access. Plus a side-effect-free
+# dry-run render of any manifest's setup plan.
+
+func _get_plugin_build_status_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_build_status",
+		"description": "Get a plugin's manifest-install setup-pipeline state. Returns state/state_name (BUILDING, BUILD_FAILED, NEEDS_BINARY, or a normal lifecycle state), live progress {step_index, step_count, step_type} while building, the full failure envelope on BUILD_FAILED/NEEDS_BINARY (including the per-tool `failures` array and `detail: exec_denied` when the user declined an exec step), and the step-by-step log of the most recent build. Poll this after minerva_plugin_install returns {building: true}.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "The plugin ID to query"
+				}
+			},
+			"required": ["id"]
+		}
+	}
+
+
+func _get_plugin_setup_dry_run_tool_def() -> Dictionary:
+	return {
+		"name": "minerva_plugin_setup_dry_run",
+		"description": "Render a plugin's `setup` stanza as a deterministic dry-run plan (the exact argv each step would execute) WITHOUT running anything — no subprocesses, no filesystem writes, no toolchain probing. Pass either the id of an installed plugin or the manifest_path of an installable manifest.json. Tool names in the rendered argv appear unresolved (e.g. 'go' rather than an absolute path) because no probe runs.",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"id": {
+					"type": "string",
+					"description": "Installed plugin ID whose setup plan to render (mutually exclusive with manifest_path)"
+				},
+				"manifest_path": {
+					"type": "string",
+					"description": "Absolute path to a manifest.json to render (used when the plugin is not installed yet)"
+				}
+			}
+		}
+	}
+
+
+func _handle_plugin_build_status(args: Dictionary) -> Dictionary:
+	var id: String = str(args.get("id", ""))
+	if id.is_empty():
+		return {"error": "id is required"}
+
+	var plugin_manager = _get_plugin_manager()
+	if plugin_manager == null:
+		return {"error": "Plugin manager not available"}
+
+	var status: Dictionary = plugin_manager.get_plugin_status(id)
+	if status.has("error"):
+		return status
+
+	var result: Dictionary = {
+		"success": true,
+		"id": id,
+		"state": status.get("state", -1),
+		"state_name": status.get("state_name", "UNKNOWN"),
+		"building": int(status.get("state", -1)) == plugin_manager.S_BUILDING,
+	}
+
+	var progress: Dictionary = plugin_manager.get_build_progress(id)
+	if not progress.is_empty():
+		result["progress"] = progress
+
+	var envelope: Dictionary = plugin_manager.get_setup_envelope(id)
+	if not envelope.is_empty():
+		result["envelope"] = envelope
+
+	result["build_log"] = plugin_manager.get_build_log(id)
+	return result
+
+
+func _handle_plugin_setup_dry_run(args: Dictionary) -> Dictionary:
+	var id: String = str(args.get("id", ""))
+	var manifest_path: String = str(args.get("manifest_path", ""))
+	if id.is_empty() and manifest_path.is_empty():
+		return {"error": "Provide either id (installed plugin) or manifest_path"}
+
+	var def = null  # PluginDefinition
+	if not id.is_empty():
+		var plugin_manager = _get_plugin_manager()
+		if plugin_manager == null:
+			return {"error": "Plugin manager not available"}
+		def = plugin_manager.get_db().get_by_id(id)
+		if def == null:
+			return {"error": "Plugin '%s' not found" % id}
+	else:
+		if not FileAccess.file_exists(manifest_path):
+			return {"error": "Manifest not found: %s" % manifest_path}
+		var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
+		def = PluginDef.from_manifest(manifest_path)
+		if def == null:
+			return {"error": "Failed to parse manifest: %s" % manifest_path}
+
+	if def.setup.is_empty():
+		return {
+			"success": true,
+			"id": def.id,
+			"has_setup": false,
+			"plan": "(no setup stanza — plugin ships no native build step)",
+		}
+
+	var plugin_dir: String = ProjectSettings.globalize_path(def.data_directory)
+	# tool_paths deliberately empty: SetupDryRun is contract-bound to be
+	# side-effect-free (no probing), so tool names render unresolved.
+	var plan: String = SetupDryRun.render(def.setup, plugin_dir, {})
+	return {
+		"success": true,
+		"id": def.id,
+		"has_setup": true,
+		"plan": plan,
 	}
