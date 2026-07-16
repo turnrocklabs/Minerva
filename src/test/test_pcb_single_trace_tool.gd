@@ -79,6 +79,7 @@ func _init() -> void:
 	await _test_e2e3_c_agent_routes_it()
 	await _test_e2e3_d_serialize_reload()
 
+	await _test_mutual_exclusion_across_surfaces()
 	await _test_e2e4_a_cancel_mid_draw()
 	await _test_e2e4_b_self_reference_cancel()
 	await _test_e2e4_c_clear_by_author()
@@ -603,6 +604,49 @@ func _test_e2e4_c_clear_by_author() -> void:
 	if FileAccess.file_exists(sidecar_path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(sidecar_path))
 	workflow_list.queue_free()
+	await process_frame
+
+
+# ── cross-surface mutual exclusion (review must_fix regression) ──────────────
+## Arming the Trace tool must release the canvas tool surface (Pan /
+## Pin-Inspect drop to Select, buttons un-press) and vice versa: pressing a
+## canvas tool while tracing deactivates the route-flow cluster.
+func _test_mutual_exclusion_across_surfaces() -> void:
+	print("\n-- mutual exclusion: route-flow cluster vs canvas tool surface --")
+	var canvas = panel._canvas
+	var modes = canvas.ToolMode
+
+	# Pin-Inspect armed, then Trace pressed -> canvas back to SELECT, button off.
+	panel._inspect_pin_button.button_pressed = true
+	panel._on_inspect_pin_button_pressed()
+	await process_frame
+	check("MX: pin-inspect armed (precondition)", canvas.tool_mode == modes.INSPECT_PIN)
+	await _press_trace_button()
+	check("MX: trace activation resets canvas to SELECT", canvas.tool_mode == modes.SELECT,
+		"mode=%d" % canvas.tool_mode)
+	check("MX: pin-inspect button un-pressed", not panel._inspect_pin_button.button_pressed)
+	check("MX: trace tool active", _active_tool() != null)
+
+	# Trace active, then Pan pressed -> route-flow cluster fully released.
+	panel._toggle_tool_mode(modes.PAN)
+	await process_frame
+	check("MX: canvas tool press deactivates trace tool", _active_tool() == null)
+	check("MX: trace button un-pressed after canvas tool press",
+		not (panel._route_flow_buttons["single_trace"] as Button).button_pressed)
+	check("MX: canvas is in PAN", canvas.tool_mode == modes.PAN)
+
+	# Trace active, then Pin-Inspect pressed -> same release path.
+	await _press_trace_button()
+	check("MX: trace re-armed", _active_tool() != null)
+	panel._inspect_pin_button.button_pressed = true
+	panel._on_inspect_pin_button_pressed()
+	await process_frame
+	check("MX: pin-inspect press deactivates trace tool", _active_tool() == null)
+	check("MX: canvas is in INSPECT_PIN", canvas.tool_mode == modes.INSPECT_PIN)
+
+	# Restore a neutral state for the next scenario.
+	panel._inspect_pin_button.button_pressed = false
+	panel._on_inspect_pin_button_pressed()
 	await process_frame
 
 
