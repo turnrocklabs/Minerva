@@ -284,6 +284,7 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) ->
 	_auto_grant_declared_capabilities(def)
 
 	print("[PluginManager] Installed plugin '%s' v%s" % [def.id, def.version])
+	_register_manifest_tools(def.id)
 
 	var result: Dictionary = {"ok": true, "id": def.id}
 
@@ -423,6 +424,8 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false) ->
 
 	if not _db.update_definition(def):
 		return {"error": "Failed to update plugin definition for '%s'" % def.id}
+
+	_register_manifest_tools(def.id)
 
 	var result: Dictionary = {"ok": true, "id": def.id}
 
@@ -794,6 +797,21 @@ func _discover_backend_tools(plugin_id: String, conn) -> void:
 		print("[PluginManager] Backend tool discovery for '%s': %d tool(s) registered" % [
 			plugin_id, result.get("registered", []).size()
 		])
+
+
+## Ensure a plugin's manifest-declared tools are registered NOW (install/update
+## paths — bug 019f6d2dc767: only the app-boot loop used to register them, so
+## a post-boot install/reinstall left panel tools unresolvable until restart).
+## Delegates to PluginToolRegistry.on_plugin_started, which registers manifest
+## tools while merging any already-discovered backend entries.
+func _register_manifest_tools(plugin_id: String) -> void:
+	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
+	if so == null:
+		return
+	var registry = so.get("plugin_tool_registry") if "plugin_tool_registry" in so else null
+	if registry == null or not registry.has_method("on_plugin_started"):
+		return
+	registry.on_plugin_started(plugin_id)
 
 
 ## Stop a running plugin cleanly.

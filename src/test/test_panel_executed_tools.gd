@@ -90,6 +90,11 @@ func _init() -> void:
 	await test_fallback_host_resolution()
 	await test_fallback_without_ownership_is_denied()
 
+	print("\n-- H: lifecycle preserves panel tools (bug 019f6d2dc767) --")
+	await test_stop_preserves_panel_tools()
+	test_started_reregisters_missing_manifest_tools()
+	await test_backend_discovery_empty_preserves_panel_tools()
+
 	_teardown()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -565,3 +570,64 @@ func test_fallback_without_ownership_is_denied() -> void:
 			result.get("owner_plugin_id", "x") == "", str(result))
 
 	AnnotationHostRegistry.deregister("OrphanEd")
+
+
+## H1 — a plugin stop must NOT unregister its manifest panel tools: they run
+## host-side and never need the subprocess. This was the live HITL-caught
+## clobber (bug 019f6d2dc767): stop wiped everything, start's non-empty guard
+## then never restored, so panel tools vanished until an app reboot.
+func test_stop_preserves_panel_tools() -> void:
+	print("test_stop_preserves_panel_tools:")
+	check("panel tool resolvable before stop",
+			_registry.is_plugin_tool("minerva_pxa_panel_echo"))
+	check("backend tool resolvable before stop",
+			_registry.is_plugin_tool("minerva_pxa_backend_echo"))
+
+	_registry.on_plugin_stopped("pxa")
+
+	check("panel tool STILL resolvable after stop",
+			_registry.is_plugin_tool("minerva_pxa_panel_echo"))
+	check("backend tool dropped by stop",
+			not _registry.is_plugin_tool("minerva_pxa_backend_echo"))
+
+	var result: Dictionary = await _registry.handle_tool_call(
+			"minerva_pxa_panel_echo", {"editor_name": "PanelA"})
+	check("panel tool still EXECUTES after stop",
+			result.get("echoed_tool", "") == "minerva_pxa_panel_echo", str(result))
+
+
+## H2 — on_plugin_started must re-register manifest tools whenever any are
+## missing (the old guard bailed on ANY non-empty set, masking the clobber).
+func test_started_reregisters_missing_manifest_tools() -> void:
+	print("test_started_reregisters_missing_manifest_tools:")
+	check("backend tool still missing (precondition)",
+			not _registry.is_plugin_tool("minerva_pxa_backend_echo"))
+
+	_registry.on_plugin_started("pxa")
+
+	check("backend manifest tool restored by started hook",
+			_registry.is_plugin_tool("minerva_pxa_backend_echo"))
+	check("panel tool survived the started re-register",
+			_registry.is_plugin_tool("minerva_pxa_panel_echo"))
+
+
+## H3 — backend discovery with an empty tools/list (the churn moment that
+## killed the live session's panel tools) must preserve panel entries and drop
+## only backend ones.
+func test_backend_discovery_empty_preserves_panel_tools() -> void:
+	print("test_backend_discovery_empty_preserves_panel_tools:")
+	var ConnScript = load("res://Scripts/Services/MCP/MCPServerConnection.gd")
+	if ConnScript == null:
+		check("MCPServerConnection loadable for discovery churn", false)
+		return
+	var conn = ConnScript.new()
+	# A fresh connection reports no tools — exactly the churn shape that used
+	# to trigger the full unregister.
+	var result: Dictionary = await _registry.register_backend_tools("pxa", conn)
+	check("empty backend discovery returns ok", not result.has("error"), str(result))
+	check("panel tool survives empty backend discovery",
+			_registry.is_plugin_tool("minerva_pxa_panel_echo"))
+	check("backend tool dropped by empty discovery",
+			not _registry.is_plugin_tool("minerva_pxa_backend_echo"))
+	if conn != null and conn is Object and not (conn is RefCounted):
+		conn.free()

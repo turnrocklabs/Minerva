@@ -237,6 +237,32 @@ func unregister_plugin_tools(plugin_id: String) -> void:
 	tools_unregistered.emit(plugin_id, removed_names)
 
 
+## Panel-executor entries currently registered for plugin_id. Panel tools are
+## INSTALLATION-owned (they run host-side and never need the subprocess), so
+## subprocess lifecycle events must preserve them — bug 019f6d2dc767: backend
+## discovery and plugin stop used to clobber them.
+func get_panel_tool_entries(plugin_id: String) -> Array:
+	var out: Array = []
+	for entry in _tools_by_plugin.get(plugin_id, []):
+		if entry is Dictionary and str(entry.get("executor", "backend")) == "panel":
+			out.append(entry.duplicate(true))
+	return out
+
+
+## Re-register plugin_id's tools as (current panel entries + extra_entries).
+## Empty combined set = full unregister. register_plugin_tools is an atomic
+## replace, so this is the one safe way to change a plugin's backend tool set
+## without dropping its manifest-declared panel tools.
+func _reregister_preserving_panel(plugin_id: String, extra_entries: Array) -> Dictionary:
+	var combined: Array = get_panel_tool_entries(plugin_id)
+	for e in extra_entries:
+		combined.append(e)
+	if combined.is_empty():
+		unregister_plugin_tools(plugin_id)
+		return {"ok": true, "registered": []}
+	return register_plugin_tools(plugin_id, combined)
+
+
 # ---------------------------------------------------------------------------
 # Queries
 # ---------------------------------------------------------------------------
@@ -692,8 +718,14 @@ func _check_stderr_toast_rate_limit(plugin_id: String) -> bool:
 
 ## Call this when a plugin stops or crashes to clean up its tools.
 ## Typically wired to PluginManager.plugin_stopped and plugin_crashed signals.
+## Backend tools die with the subprocess; manifest panel tools are
+## installation-owned and keep serving (the dispatcher never needs the
+## process — bug 019f6d2dc767).
 func on_plugin_stopped(plugin_id: String) -> void:
-	unregister_plugin_tools(plugin_id)
+	var res := _reregister_preserving_panel(plugin_id, [])
+	if res.get("error"):
+		push_error("[PluginToolRegistry] on_plugin_stopped re-register failed for '%s': %s" % [
+			plugin_id, res.get("error")])
 
 
 ## Call this when a plugin starts successfully to re-register its tools from
@@ -707,11 +739,33 @@ func on_plugin_started(plugin_id: String) -> void:
 	if def == null:
 		return
 
-	if _tools_by_plugin.has(plugin_id) and not _tools_by_plugin[plugin_id].is_empty():
-		# Already registered (e.g., registered at install time and plugin just started).
+	# Re-register when any manifest-declared tool is MISSING. The old
+	# "non-empty ⇒ done" guard masked backend discovery clobbering manifest
+	# panel tools (bug 019f6d2dc767). Non-manifest extras (backend-discovered
+	# entries) are merged in so nothing already serving is dropped.
+	var current: Array = _tools_by_plugin.get(plugin_id, [])
+	var current_names := {}
+	for e in current:
+		if e is Dictionary:
+			current_names[str(e.get("name", ""))] = true
+	var missing := false
+	for t in def.tools:
+		if t is Dictionary and not current_names.has(str(t.get("name", ""))):
+			missing = true
+			break
+	if not missing:
 		return
 
-	var result := register_plugin_tools(plugin_id, def.tools)
+	var manifest_names := {}
+	for t in def.tools:
+		if t is Dictionary:
+			manifest_names[str(t.get("name", ""))] = true
+	var combined: Array = def.tools.duplicate()
+	for e in current:
+		if e is Dictionary and not manifest_names.has(str(e.get("name", ""))):
+			combined.append(e)
+
+	var result := register_plugin_tools(plugin_id, combined)
 	if result.get("error"):
 		push_error("[PluginToolRegistry] Failed to register tools for '%s' on start: %s" % [
 			plugin_id, result.get("error")
@@ -794,11 +848,10 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 	var raw_tools: Array = conn.tools  # Array of MCPToolDefinition objects
 	if raw_tools.is_empty():
 		print("[PluginToolRegistry] No tools reported by backend for plugin '%s'" % plugin_id)
-		# Use the public unregister so tools_unregistered fires for any prior
-		# registration (e.g. manifest tools) that the backend churn supersedes.
-		unregister_plugin_tools(plugin_id)
-		_tools_by_plugin[plugin_id] = []
-		return {"ok": true, "registered": []}
+		# Backend reported nothing — drop prior BACKEND entries only; manifest
+		# panel tools are installation-owned and survive backend churn
+		# (bug 019f6d2dc767: this used to clobber them).
+		return _reregister_preserving_panel(plugin_id, [])
 
 	# Transform each backend tool into a conformant entry dict.
 	var entries: Array[Dictionary] = []
@@ -840,14 +893,12 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 
 	if entries.is_empty():
 		print("[PluginToolRegistry] All backend tools filtered for plugin '%s'" % plugin_id)
-		unregister_plugin_tools(plugin_id)
-		_tools_by_plugin[plugin_id] = []
-		return {"ok": true, "registered": []}
+		return _reregister_preserving_panel(plugin_id, [])
 
-	# Use register_plugin_tools with the already-namespaced entries.
-	# That function enforces the prefix rule again — since we applied the prefix
-	# above, all entries should pass. Build the dict array it expects.
-	var result := register_plugin_tools(plugin_id, entries)
+	# Merge with the plugin's manifest panel tools (installation-owned) and
+	# register atomically. register_plugin_tools enforces the prefix rule
+	# again — since we applied the prefix above, all entries should pass.
+	var result := _reregister_preserving_panel(plugin_id, entries)
 	if result.has("error"):
 		push_error("[PluginToolRegistry] register_backend_tools failed for '%s': %s" % [
 			plugin_id, result.get("error")
