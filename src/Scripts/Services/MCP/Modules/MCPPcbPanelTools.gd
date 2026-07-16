@@ -50,6 +50,7 @@ const _PANEL_LOCAL_TOOLS: Array[String] = [
 	"minerva_pcb_get_components",
 	"minerva_pcb_get_nets",
 	"minerva_pcb_get_pin_position",
+	"minerva_pcb_pin_info",
 	"minerva_pcb_add_component",
 	"minerva_pcb_move_component",
 	"minerva_pcb_move_relative",
@@ -123,6 +124,19 @@ func register_tools() -> void:
 				"pin": {"type": "string", "description": "Pin name or number (e.g., '1', 'VCC', 'SDA')"},
 			},
 			"required": ["editor_name", "component_id", "pin"],
+		})
+
+	_reg("minerva_pcb_pin_info",
+		"Pin inspector parity tool (WC-1): returns the SAME info the panel's Pin Info section shows for a pin — footprint geometry pin name, net, net members, and touching traces — plus display_name computed by the exact display rule the UI uses (geometry pin_name > net > \"(unconnected)\"). Identify the pin either by ref (\"U1.15\") or by a board point (x_mm/y_mm, hit-tests the nearest pad).",
+		{
+			"type": "object",
+			"properties": {
+				"editor_name": {"type": "string", "description": "Name of the PCB editor tab"},
+				"ref": {"type": "string", "description": "Component.Pin reference, e.g. 'U1.15'. Mutually exclusive with x_mm/y_mm."},
+				"x_mm": {"type": "number", "description": "Board X in mm — hit-tests the nearest pad. Requires y_mm. Mutually exclusive with ref."},
+				"y_mm": {"type": "number", "description": "Board Y in mm. Requires x_mm."},
+			},
+			"required": ["editor_name"],
 		})
 
 	_reg("minerva_pcb_add_component",
@@ -363,6 +377,8 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _get_nets(arguments)
 		"minerva_pcb_get_pin_position":
 			return _get_pin_position(arguments)
+		"minerva_pcb_pin_info":
+			return _pin_info(arguments)
 		"minerva_pcb_add_component":
 			return _add_component(arguments)
 		"minerva_pcb_move_component":
@@ -486,6 +502,51 @@ func _get_pin_position(args: Dictionary) -> Dictionary:
 		"pin_name": comp.get_pin_name(pin),
 		"available_pins": available_pins,
 	}
+
+
+## WC-1 pin inspector MCP parity (contract §2/§3): resolves the SAME
+## host.pad_at()/host.pin_info() the canvas's INSPECT_PIN mode drives, then adds
+## display_name via host.pin_display_name() so this tool's answer is byte-for-byte
+## what the panel's Pin Info section shows for the same pin. Duck-typed
+## has_method guards (never a class reference — PcbAnnotationHost is off-tree);
+## a garbage/malformed ref or an x_mm/y_mm miss returns a structured _err, never
+## a crash.
+func _pin_info(args: Dictionary) -> Dictionary:
+	var host: AnnotationHost = _resolve_host(args)
+	if host == null:
+		return _no_host_error(args)
+	if not host.has_method("pad_at") or not host.has_method("pin_info"):
+		return _err("PCB pin inspector not available on this host")
+
+	var component := ""
+	var pin := ""
+	if args.has("ref"):
+		var ref: String = str(args.get("ref", ""))
+		if ref.is_empty():
+			return _err("ref must be a non-empty string")
+		var dot := ref.rfind(".")
+		if dot <= 0 or dot >= ref.length() - 1:
+			return _err("malformed ref '%s' — expected 'Component.Pin'" % ref)
+		component = ref.left(dot)
+		pin = ref.substr(dot + 1)
+	elif args.has("x_mm") and args.has("y_mm"):
+		var x_mm: float = float(args.get("x_mm", 0.0))
+		var y_mm: float = float(args.get("y_mm", 0.0))
+		var hit: Dictionary = host.pad_at(Vector2(x_mm, y_mm))
+		if hit.is_empty():
+			return _err("no pad found near (%.3f, %.3f) mm" % [x_mm, y_mm])
+		component = str(hit.get("component", ""))
+		pin = str(hit.get("pin", ""))
+	else:
+		return _err("either ref (\"Component.Pin\") or x_mm/y_mm is required")
+
+	var info: Dictionary = host.pin_info(component, pin)
+	if info.is_empty():
+		return _err("unknown pin '%s.%s'" % [component, pin])
+
+	var result: Dictionary = info.duplicate(true)
+	result["display_name"] = host.pin_display_name(info) if host.has_method("pin_display_name") else ""
+	return _ok(result)
 
 
 func _add_component(args: Dictionary) -> Dictionary:
