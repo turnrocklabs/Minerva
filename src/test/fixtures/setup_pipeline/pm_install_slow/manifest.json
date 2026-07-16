@@ -1,0 +1,26 @@
+{
+  "id": "setup_pipeline_pm_slow_test",
+  "name": "Setup Pipeline PluginManager Slow-Build Test Fixture",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": ["plugin.py"]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [],
+    "network": {"mode": "none"},
+    "filesystem": {"mode": "none", "paths": []}
+  },
+  "setup": {
+    "requires": [],
+    "steps": [
+      {"type": "exec", "argv": ["./slow.sh"], "timeout_s": 15}
+    ]
+  }
+}

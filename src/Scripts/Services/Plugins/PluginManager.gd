@@ -40,6 +40,23 @@ const S_STOPPED := 3     # S_STOPPED
 const S_ERROR := 4       # S_ERROR
 const S_CRASH_LOOP := 5  # S_CRASH_LOOP
 
+## Manifest-install setup-pipeline states (DCR 019f69428fa0, contract
+## Docs/design/plugin-setup-pipeline.md §3). These are NOT members of
+## PluginDefinition.State — that enum lives in PluginDefinition.gd, which is
+## out of this round's scope fence — so `def.state` (declared as that enum
+## type) is assigned these plain ints exactly the same way the six mirrored
+## constants above already are (PluginDefinition.State is, like every
+## GDScript enum, just a named int; assigning an int outside its named set
+## is legal and already proven by the existing S_* mirror pattern).
+## S_BUILDING     — setup pipeline running (SetupPipeline worker thread active).
+## S_BUILD_FAILED — terminal until rebuild(); carries a §3 step-failure envelope.
+## S_NEEDS_BINARY — preflight failed (missing/too-old/shim/hang toolchain) or,
+##                  for a future marketplace lane (C6, out of scope here), no
+##                  runnable artifact and no setup lane; carries a §2 envelope.
+const S_BUILDING := 6
+const S_BUILD_FAILED := 7
+const S_NEEDS_BINARY := 8
+
 
 # ---------------------------------------------------------------------------
 # Signals
@@ -112,6 +129,37 @@ var _live_scene_panels: Dictionary = {}
 ## get_chat_provider_registry().
 var _chat_provider_registry = null  # PluginChatProviderRegistry
 
+## plugin_id -> SetupPipeline instance, kept alive while S_BUILDING so its
+## `finished`/`step_*` signals (already marshalled to the main thread via
+## call_deferred — see SetupPipeline's THREADING CONTRACT) have somewhere to
+## land. Erased once the pipeline reports its terminal result.
+var _setup_pipelines: Dictionary = {}
+
+## plugin_id -> the §2/§3 envelope for the plugin's current S_BUILD_FAILED /
+## S_NEEDS_BINARY state. Persisted to `setup_state_path` (see below) so a
+## half-built plugin reports honestly after a restart.
+##
+## Reuse note: PluginDefinition.to_dict()/from_dict() (the natural home for
+## this) and PluginDB.gd's own persisted record are OUT of this round's scope
+## fence, so this state rides in a small dedicated sidecar file instead —
+## the same pattern ToolchainRegistry already uses for user://toolchain_paths.cfg
+## (a standalone ConfigFile/JSON store owned by the class that needs it,
+## rather than routing through the shared plugins.json). Flagged for the
+## reviewer: folding this into PluginDefinition's own serialization would be
+## the more conventional home if/when that file is back in scope.
+var _setup_envelopes: Dictionary = {}
+
+## Test seam: override to a scratch user:// path so tests never touch the
+## real sidecar file. Empty default reads/writes DEFAULT_SETUP_STATE_PATH.
+const DEFAULT_SETUP_STATE_PATH := "user://plugins/setup_state.json"
+var setup_state_path: String = DEFAULT_SETUP_STATE_PATH
+
+## Test seam: when set, called with no arguments to obtain a fresh
+## SetupPipeline instance instead of `SetupPipeline.new()` — lets tests inject
+## a pipeline whose `toolchain_registry` points at fixture search dirs instead
+## of the real PATH/well-known install dirs.
+var setup_pipeline_factory: Callable = Callable()
+
 
 # ---------------------------------------------------------------------------
 # Lifecycle (Node)
@@ -126,6 +174,7 @@ func _ready() -> void:
 		_chat_provider_registry = load("res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd").new()
 	plugin_stopped.connect(_chat_provider_registry.drop_plugin)
 	plugin_crashed.connect(_chat_provider_registry.drop_plugin)
+	_load_setup_state()
 	print("[PluginManager] Ready — %d plugin(s) in DB" % _db.get_all().size())
 
 
@@ -192,6 +241,17 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) ->
 	print("[PluginManager] Installed plugin '%s' v%s" % [def.id, def.version])
 
 	var result: Dictionary = {"ok": true, "id": def.id}
+
+	# Manifest-install setup pipeline (DCR 019f69428fa0 §3, always-build rule).
+	# A manifest with no `setup` stanza behaves exactly as before this round —
+	# def.state stays S_INSTALLED and nothing below runs. When a stanza IS
+	# declared, this is the ONLY place that flips the plugin into S_BUILDING;
+	# the pipeline runs on a worker thread and reports back asynchronously via
+	# _on_setup_pipeline_finished, so install_plugin() itself returns without
+	# blocking on the build (contract: UI thread must never be blocked).
+	if not def.setup.is_empty():
+		_start_setup_pipeline(def.id)
+		result["building"] = true
 
 	# Skill seeding (DCR 019df57b T3).
 	if not def.skills.is_empty():
@@ -381,6 +441,18 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 		return {"error": "Plugin '%s' not found" % id}
 
 	var def = _db.get_by_id(id)
+
+	# Setup-pipeline guard (review MF1): while S_BUILDING, _setup_pipelines
+	# holds the manager's ONLY strong reference to the RefCounted SetupPipeline
+	# whose worker thread is still executing (its bound Callables hold ObjectIDs,
+	# not refs) — erasing it mid-build is a use-after-free plus a "Thread
+	# destroyed while running" abort, and delete_data would rm the plugin dir
+	# out from under a live build subprocess. Refuse, mirroring the
+	# running-plugin convention below (this early return also covers the
+	# delete_data branch further down).
+	if def.state == S_BUILDING:
+		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish before removing" % id}
+
 	if def.state in [S_RUNNING, S_STARTING]:
 		var stop_result := stop_plugin(id)
 		if stop_result.get("error"):
@@ -392,6 +464,9 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 	var unseed_result: Dictionary = _unseed_plugin_skills(id)
 
 	_runtime.erase(id)
+	_setup_pipelines.erase(id)
+	if _setup_envelopes.erase(id):
+		_save_setup_state()
 
 	if not _db.remove(id):
 		return {"error": "Failed to remove plugin '%s' from DB" % id}
@@ -499,6 +574,18 @@ func start_plugin(id: String) -> Dictionary:
 
 	if def.state == S_CRASH_LOOP:
 		return {"error": "Plugin '%s' is in crash-loop — reset it first" % id}
+
+	# Setup-pipeline gate (DCR 019f69428fa0 §3): a plugin that is still
+	# building, or that failed to build, has no verified runnable artifact —
+	# refusing here is what makes the old "binary not found" failure below
+	# (originally ~line 549) unreachable for a manifest install with a
+	# `setup` stanza: by the time a plugin can reach S_INSTALLED with a
+	# stanza declared, SetupPipeline has already verified the entrypoint
+	# artifact exists.
+	if def.state == S_BUILDING:
+		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish" % id}
+	if def.state == S_BUILD_FAILED or def.state == S_NEEDS_BINARY:
+		return {"error": "Plugin '%s' has not been built successfully (state=%d) — call rebuild() first" % [id, def.state]}
 
 	# Merge persisted runtime scope grants into def.filesystem_paths so all
 	# host.files.* validators see user-approved paths from prior sessions.
@@ -712,6 +799,136 @@ func restart_plugin(id: String) -> Dictionary:
 
 
 # ---------------------------------------------------------------------------
+# Public API — manifest-install setup pipeline (DCR 019f69428fa0 §3)
+# ---------------------------------------------------------------------------
+
+## Re-run preflight + the setup pipeline for a plugin currently parked in
+## S_BUILD_FAILED or S_NEEDS_BINARY (contract §3: "Rebuild = preflight +
+## pipeline rerun"). Returns immediately; the outcome arrives asynchronously
+## via _on_setup_pipeline_finished, same as install_plugin()'s kickoff.
+func rebuild(id: String) -> Dictionary:
+	var def = _db.get_by_id(id)
+	if def == null:
+		return {"error": "Plugin '%s' not found" % id}
+	if def.state != S_BUILD_FAILED and def.state != S_NEEDS_BINARY:
+		return {"error": "Plugin '%s' is not in a rebuildable state (state=%d)" % [id, def.state]}
+	if def.setup.is_empty():
+		return {"error": "Plugin '%s' has no setup stanza to rebuild" % id}
+	_start_setup_pipeline(id)
+	return {"ok": true, "id": id, "building": true}
+
+
+## The current §2/§3 envelope for a plugin in S_BUILD_FAILED / S_NEEDS_BINARY,
+## or {} if the plugin has no recorded envelope (never built, or built clean).
+func get_setup_envelope(id: String) -> Dictionary:
+	return _setup_envelopes.get(id, {})
+
+
+## Build + start a SetupPipeline for `id`, transition to S_BUILDING, and wire
+## its terminal signal back to _on_setup_pipeline_finished. Shared by
+## install_plugin() and rebuild().
+func _start_setup_pipeline(id: String) -> void:
+	var def = _db.get_by_id(id)
+	if def == null:
+		return
+
+	_transition_state(id, S_BUILDING)
+
+	var plugin_dir: String = ProjectSettings.globalize_path(def.data_directory)
+	# Mirrors start_plugin()'s own "./"-relative entrypoint resolution: only a
+	# relative-to-plugin-dir entrypoint has an artifact SetupPipeline can
+	# verify; a bare interpreter invocation (e.g. "python3") has nothing to
+	# check here (it's resolved against PATH at start_plugin() time, not built).
+	var entrypoint_artifact: String = ""
+	if def.entrypoint.begins_with("./"):
+		entrypoint_artifact = def.entrypoint.substr(2)
+
+	var pipeline: SetupPipeline = setup_pipeline_factory.call() if setup_pipeline_factory.is_valid() else SetupPipeline.new()
+	_setup_pipelines[id] = pipeline
+	pipeline.finished.connect(_on_setup_pipeline_finished.bind(id))
+	pipeline.run_async(id, def.setup, plugin_dir, entrypoint_artifact)
+
+
+## SetupPipeline's terminal-result handler (always called on the main thread —
+## see SetupPipeline's THREADING CONTRACT). Transitions S_BUILDING to its
+## final state and persists the envelope (if any) so a restart reports honestly.
+func _on_setup_pipeline_finished(result: Dictionary, id: String) -> void:
+	_setup_pipelines.erase(id)
+
+	if result.get("ok", false):
+		_setup_envelopes.erase(id)
+		_transition_state(id, S_INSTALLED)
+		_save_setup_state()
+		print("[PluginManager] Setup pipeline succeeded for '%s' — registered" % id)
+		return
+
+	var failed_state: int = S_BUILD_FAILED if str(result.get("state", "")) == "S_BUILD_FAILED" else S_NEEDS_BINARY
+	_setup_envelopes[id] = result.get("envelope", {})
+	_transition_state(id, failed_state)
+	_save_setup_state()
+	push_warning("[PluginManager] Setup pipeline failed for '%s' (state=%d): %s" % [
+		id, failed_state, str(result.get("envelope", {})),
+	])
+
+
+## Load persisted S_BUILD_FAILED / S_NEEDS_BINARY state + envelopes from
+## setup_state_path and overlay them onto the freshly-loaded DB (which always
+## resets every plugin's runtime state to S_INSTALLED — see PluginDB.load_db()).
+## Called from _ready(); tests call it directly after pointing _db and
+## setup_state_path at scratch fixtures.
+func _load_setup_state() -> void:
+	if not FileAccess.file_exists(setup_state_path):
+		return
+	var f := FileAccess.open(setup_state_path, FileAccess.READ)
+	if f == null:
+		return
+	var json := JSON.new()
+	var parse_err := json.parse(f.get_as_text())
+	f.close()
+	if parse_err != OK:
+		push_warning("[PluginManager] Could not parse setup state file '%s'" % setup_state_path)
+		return
+
+	var data: Dictionary = json.data if json.data is Dictionary else {}
+	for pid in data:
+		var rec: Variant = data[pid]
+		if not (rec is Dictionary):
+			continue
+		var saved_state: int = int((rec as Dictionary).get("state", -1))
+		if saved_state != S_BUILD_FAILED and saved_state != S_NEEDS_BINARY:
+			continue
+		if _db == null or _db.get_by_id(str(pid)) == null:
+			continue  # plugin no longer installed — drop the stale entry silently
+		_setup_envelopes[str(pid)] = (rec as Dictionary).get("envelope", {})
+		_transition_state(str(pid), saved_state)
+
+
+## Persist every currently S_BUILD_FAILED / S_NEEDS_BINARY plugin's envelope
+## to setup_state_path. Called after every setup-pipeline terminal failure (and
+## after a success, to drop a now-stale entry).
+func _save_setup_state() -> void:
+	var data: Dictionary = {}
+	for pid in _setup_envelopes:
+		var def = _db.get_by_id(str(pid))
+		if def == null or (def.state != S_BUILD_FAILED and def.state != S_NEEDS_BINARY):
+			continue
+		data[pid] = {"state": def.state, "envelope": _setup_envelopes[pid]}
+
+	var dir_err := DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(setup_state_path.get_base_dir()))
+	if dir_err != OK and dir_err != ERR_ALREADY_EXISTS:
+		push_warning("[PluginManager] Could not ensure setup state directory: %s" % error_string(dir_err))
+
+	var f := FileAccess.open(setup_state_path, FileAccess.WRITE)
+	if f == null:
+		push_warning("[PluginManager] Could not write setup state file '%s': %s" % [
+			setup_state_path, error_string(FileAccess.get_open_error()),
+		])
+		return
+	f.store_string(JSON.stringify(data, "\t"))
+	f.close()
+
+
+# ---------------------------------------------------------------------------
 # Public API — query
 # ---------------------------------------------------------------------------
 
@@ -732,7 +949,10 @@ func get_plugin_status(id: String) -> Dictionary:
 		"name": def.name,
 		"version": def.version,
 		"state": def.state,
-		"state_name": ["INSTALLED","STARTING","RUNNING","STOPPED","ERROR","CRASH_LOOP"][def.state],
+		"state_name": [
+			"INSTALLED", "STARTING", "RUNNING", "STOPPED", "ERROR", "CRASH_LOOP",
+			"BUILDING", "BUILD_FAILED", "NEEDS_BINARY",
+		][def.state],
 		"uptime_sec": uptime,
 		"crash_count": rt.get("crash_count", 0),
 		"running": def.state == S_RUNNING,
