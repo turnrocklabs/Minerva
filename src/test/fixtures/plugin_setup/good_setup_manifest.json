@@ -1,0 +1,29 @@
+{
+  "id": "setup_good_fixture",
+  "name": "Setup Good Fixture",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": ["plugin.py"]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [],
+    "network": {"mode": "none"},
+    "filesystem": {"mode": "none", "paths": []}
+  },
+  "setup": {
+    "requires": [
+      {"tool": "go", "min": "1.22"}
+    ],
+    "steps": [
+      {"type": "go_build", "package": "./", "output": "bin/setup-good-fixture", "timeout_s": 60},
+      {"type": "copy", "from": "assets/policy.json", "to": "bin/policy.json"}
+    ]
+  }
+}
