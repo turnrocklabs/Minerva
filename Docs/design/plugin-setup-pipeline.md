@@ -132,6 +132,10 @@ Build-failure envelope:
 `artifact_expected` present ⇔ failure was the post-step artifact check
 (`exit_code` 0, artifact absent ⇒ manifest bug — say so in the UI string).
 
+Final entrypoint verification (amended 2026-07-15, R2 review): a mismatch between
+the manifest's declared entrypoint and what the steps produced reuses this same
+envelope with `step_type: "entrypoint_check"` and `step_index = steps.size()`.
+
 Always-build rule: the pipeline runs on EVERY manifest install/reinstall; the
 toolchain's incremental build is the cache. No Minerva-level source-hash skip in v1.
 
