@@ -239,3 +239,29 @@ and the skill in the same round. Rules of thumb:
 
 The skill at `.claude/skills/work-cycle/SKILL.md` references this doc for the
 why; itself contains the operational steps.
+
+## Changelog
+
+### 2026-07-15 — campaign mode, functional floor, freshness gate
+
+Four additions landed in SKILL.md (operational steps live there; this is the why):
+
+- **Preflight freshness check**: `git fetch` + behind-count before every round;
+  ff-only pull when clean, STOP on divergence. Motivated by the multi-machine
+  workflow — a round started behind upstream reviews against a stale base and
+  produces conflicting pushes (2026-07-15 session opened on repos 29k lines behind).
+- **Campaign mode (goal loop)**: outer loop over a DCR subtree — re-read live
+  docket each iteration, run rounds until goal predicate / cap / dry-loop / hard
+  stop. Docket is the loop state (checkpoint comment per iteration), so campaigns
+  survive compaction and session restarts. `--defer-hitl=<register.md>` converts
+  3a/3b stops into register entries (each must name its automated proxy) for ONE
+  consolidated acceptance session. Adoption rule: filed discoveries join the
+  candidate set only when explicitly linked as blockers. Formalizes the PCB
+  migration autonomy plan (DCR 019dc140, 17 iterations → single HITL).
+- **Functional floor in Layer-1**: every round touching a runtime surface ends
+  with ≥1 non-mocked functional test green — boot the real stack headless, drive
+  one happy path at the integration boundary. Fake only at the outermost process
+  boundary (fake provider, fake tool executable) when the real dependency is
+  inherently unavailable. Motivated by Phase 1B: 330/0 unit tests, 6 wiring bugs.
+- **New anti-patterns**: campaign auto-adoption (scope creep at loop scale);
+  green-unit-wall-no-functional-proof.

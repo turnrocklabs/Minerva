@@ -1,6 +1,6 @@
 ---
 name: work-cycle
-description: Drive a multi-round work cycle on Minerva tasks with sub-agents (parallel implementers + Opus reviewers), automated Layer-1 verification, smart-batched WIP commits, and explicit stop conditions for human-in-the-loop tests. Use when starting a new round of focused implementation work — typically after a planning conversation or when picking up a docket task. Default scope is one DCR-grandchild task or a small group of sibling tasks.
+description: Drive a multi-round work cycle on Minerva tasks with sub-agents (parallel implementers + Opus reviewers), automated Layer-1 verification incl. a non-mocked functional-test floor, smart-batched WIP commits, and explicit stop conditions for human-in-the-loop tests. Supports campaign mode — an outer goal loop over a DCR subtree with HITL deferred to one consolidated register-burn session. Use when starting a new round of focused implementation work — typically after a planning conversation or when picking up a docket task. Default scope is one DCR-grandchild task or a small group of sibling tasks; campaign mode takes a DCR/parent id.
 ---
 
 ## When to use
@@ -59,8 +59,9 @@ Run for EVERY repo the round touches (a round may span Minerva + minerva-plugins
 
 1. **Branch check**: `git branch --show-current` matches the round's declared branch. Standing policy: Minerva → `development`, minerva-plugins → `main`. Wrong branch = STOP and report; do not switch branches silently.
 2. **Cleanliness check**: `git status --porcelain` empty except the standing allowlist (vendor submodule pointer drift: `vendor/EIRTeam.FFmpeg`, `vendor/godot_cef`; docket cache churn: `Docs/minerva.dct`). Any other dirty path = STOP — it's either someone's WIP (report it) or a prior round's leak (diagnose it).
-3. **Base check**: local branch is not ahead of its upstream with unexpected commits (`git log @{u}..HEAD --oneline`). Unexplained commits ahead = STOP and report.
-4. **Pin the base**: record `git rev-parse HEAD` per repo as a comment on each in-scope docket item at the `in_progress` transition. All reviews and audits this round are against `base..HEAD` — reviewers never review pre-existing code as if it were new.
+3. **Freshness check (behind upstream)**: `git fetch`, then `git rev-list HEAD..@{u} --count`. Non-zero means another machine pushed since this checkout last pulled — a round started here produces conflicts and reviews against a stale base. If the tree is clean, `git pull --ff-only` and continue; if the pull cannot fast-forward (diverged), STOP and report. Never start a round knowingly behind upstream.
+4. **Base check**: local branch is not ahead of its upstream with unexpected commits (`git log @{u}..HEAD --oneline`). Unexplained commits ahead = STOP and report.
+5. **Pin the base**: record `git rev-parse HEAD` per repo as a comment on each in-scope docket item at the `in_progress` transition. All reviews and audits this round are against `base..HEAD` — reviewers never review pre-existing code as if it were new.
 
 ### Step 1 — WORK
 
@@ -94,9 +95,11 @@ For each unit in this round, in parallel where independent:
    ```
    Pick test files that exercise the touched modules. Do not run the full suite unless the change is cross-cutting.
 
-2. Tally `PASS:` / `FAIL:` lines. Green = no FAIL lines.
+2. **Functional floor (non-mocked)**: any round that touches a runtime surface must end with at least one REAL functional test green — boot the actual stack headless (real SingletonObject / real installer / real subprocess / real files on disk) and drive one happy path end-to-end at the integration boundary. Unit tests supplement this; they never substitute for it (Phase 1B: 330 green unit tests missed 6 wiring bugs). Mocks are allowed only where the real dependency is inherently unavailable or non-deterministic (live LLM calls, paid APIs, user dialogs) — and then fake at the OUTERMOST process boundary (e.g. a fake `host.providers.chat` provider, a fake tool executable), never by stubbing internal seams. Rounds with no runtime surface (docs, fixtures) are exempt — say so explicitly in the round report rather than silently skipping.
 
-3. If red:
+3. Tally `PASS:` / `FAIL:` lines. Green = no FAIL lines.
+
+4. If red:
    - Identify failing test by name.
    - If failure is in test fixture (not implementation), fix locally.
    - If failure is in implementation, re-spawn implementer with the failing assertion as context.
@@ -148,6 +151,41 @@ If stop condition was **3c** (auto-verified) and there are more rounds queued in
 If stop condition was **3a / 3b**:
 - Wait for user. Do not loop autonomously.
 
+## Campaign mode (goal loop)
+
+Invocation: `/work-cycle campaign <dcr-or-parent-id> [--max-rounds=N] [--defer-hitl=<register.md>]`
+
+Campaign mode wraps steps 0-6 in an outer loop that drives a docket subtree to a goal instead of running one declared round. Per-round discipline (preflight, fence, cold review, Layer-1, WIP commit) is unchanged — the loop only decides *what the next round is* and *when to stop*. Proven shape: the PCB migration autonomy plan (DCR 019dc140, 17 iterations to a single consolidated HITL).
+
+### Loop body (each iteration)
+
+1. **Re-read the live subtree** (`docket_query` children/grandchildren of the goal item — the docket is the loop state, not conversation memory). Build the candidate set: leaf items that are `backlog`/`open`, unblocked (no `blocks` link from an undone item), and not human-gated.
+2. **Select the next round**: highest-priority independent candidates that fit one round (default 1-2 units; dependencies = later iterations).
+3. Run steps 0-6 on the selection.
+4. **Checkpoint**: append a campaign comment to the goal item — iteration number, items transitioned, commit SHAs, register entries added, candidate set remaining. This makes the campaign resumable across compaction or a new session: re-invoking campaign mode on the same goal id picks up from docket state.
+
+### Adoption rule (campaign-level scope fence)
+
+Rounds file out-of-fence discoveries; campaigns must not auto-adopt them. A newly-filed item joins the candidate set ONLY if it **blocks** a goal-subtree item (link it `blocks` explicitly). Everything else is file-only — it waits for a human to promote it. "The loop found more work" is the campaign-scale version of "while I'm here."
+
+### HITL deferral (`--defer-hitl`)
+
+With the flag, 3a/3b stops do not halt the loop: append the manual test to the named register file instead (entry MUST name the automated proxy that stands in for the human check — no proxy, no deferral; build the probe first) and continue. The campaign's exit report presents the whole register as ONE consolidated acceptance session. Without the flag, 3a/3b halts the loop (default behavior).
+
+### Termination (all explicit; first to fire wins)
+
+| Condition | Result |
+|---|---|
+| Goal predicate: every subtree item done, HITL-deferred, or human-blocked | SUCCESS — exit report + register test plan |
+| 3d (Layer-1 cap) or 3e (judgment must_fix) | HALT — these are never deferrable; a human is the point |
+| Preflight failure | HALT — fail-stop, never improvise past it |
+| Two consecutive no-progress iterations (zero items transitioned) | HALT — dry loop; report why candidates are stuck |
+| `--max-rounds` reached (default 12) | HALT — checkpoint + remaining-work summary |
+
+### Exit report
+
+Goal item gets a final checkpoint comment: iterations run, items done vs remaining, commits per repo, test counts, and — if deferring — the register rendered as an ordered human test plan with expected results (the single HITL session).
+
 ## Conventions
 
 ### Sub-agent prompts
@@ -157,7 +195,7 @@ Every sub-agent prompt must be self-contained — the agent has no memory of thi
 - Concrete files to touch (paths).
 - Existing patterns to follow (with file:line references).
 - Acceptance criteria as a numbered list.
-- Test files to update or add.
+- Test files to update or add — including the round's non-mocked functional test (which real stack to boot, which happy path to drive; see Layer-1 functional floor).
 - For reviewers: also list known gotchas from `nudge` hints under `minerva-plugin-platform`, `minerva-testing`, etc.
 - Brevity instruction: "Report in under 200 words" for review agents; "Concise summary at end" for implementers.
 
@@ -213,6 +251,8 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 9. **Skipping preflight.** Rounds that start on the wrong branch or a dirty tree produce unreviewable diffs and contaminated commits. The gate is fail-stop: report and wait, never improvise past it.
 10. **Fixing out-of-fence discoveries inline.** Scope creep enters as "while I'm here." File it in docket, don't fix it. The diffstat audit will catch it anyway — cheaper to not write it.
 11. **Writing code before the reuse scan.** Duplicated substrate/bridge/test code is the main DRY failure. Read the named references first; declare reuse/extend/copy before implementing.
+12. **Campaign auto-adoption.** A goal loop that pulls every filed discovery into its candidate set is scope creep at campaign scale. Only explicitly-linked blockers join; everything else waits for a human.
+13. **Green unit wall, no functional proof.** A round that ends with only unit tests green has verified its own assumptions, not the wiring (Phase 1B: 330/0 units, 6 wiring bugs). The functional floor is part of Layer-1, not an optional extra; mocking internal seams to make it "pass" defeats it.
 
 ## Reference
 
