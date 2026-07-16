@@ -1,0 +1,28 @@
+{
+  "id": "setup_pipeline_pm_shim_test",
+  "name": "Setup Pipeline PluginManager Shim-Only-Candidate Test Fixture",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "python3",
+    "args": ["plugin.py"]
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [],
+    "network": {"mode": "none"},
+    "filesystem": {"mode": "none", "paths": []}
+  },
+  "setup": {
+    "requires": [
+      {"tool": "go", "min": "1.22"}
+    ],
+    "steps": [
+      {"type": "copy", "from": "assets/never-copied.txt", "to": "bin/never-copied.txt"}
+    ]
+  }
+}
