@@ -73,7 +73,7 @@ For each unit in this round, in parallel where independent:
    - Prompt = self-contained brief: goal, files to touch, existing patterns to follow, tests to add, success criteria
    - **Scope fence verbatim**, with the rule: anything needed outside the fence → report it back as a finding (orchestrator files it in docket); do NOT fix inline.
    - **Reuse scan (blocking, first deliverable)**: before writing code, read the reference implementations named in the work item (most items name them: e.g. `CadAnnotationHost.gd`, `internal/bridge`, `test_cad_plugin_smoke.gd`) and state per major piece: reuse / extend / copy-with-justification. New code that duplicates an existing asset without this declaration is a review reject.
-   - Isolation: default unless the unit is large
+   - Isolation: do NOT use the Agent tool's built-in worktree isolation — it bases on origin/<default-branch> (Minerva: `main`, ~1yr behind `development`; the plugin system doesn't exist there). Create worktrees manually pinned to the round base (`git worktree add -b wc/<round-unit> ~/github/minerva-worktrees/<name> <base-sha>`), pass the absolute path in the prompt, and make the agent's first act `git rev-parse HEAD` == pinned base (fail-stop on mismatch). Remove worktrees after merge-back.
 
 2. When implementer returns, spawn a Reviewer sub-agent:
    - Model = Opus (default) / Fable (pattern-establishing rounds — first-of-kind code that later rounds will copy)
