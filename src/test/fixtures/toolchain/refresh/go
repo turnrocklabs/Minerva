@@ -1,0 +1,8 @@
+#!/bin/sh
+# Fake `go` used by the persistence test to prove invalidate() forces a full
+# re-resolution (as opposed to resolve() silently keeping a stale sticky path).
+if [ "$1" = "version" ]; then
+  echo "go version go1.23.0 linux/amd64"
+  exit 0
+fi
+exit 1

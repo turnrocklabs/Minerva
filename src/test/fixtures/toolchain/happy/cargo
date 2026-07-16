@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fake `cargo` toolchain executable for ToolchainRegistry functional tests.
+if [ "$1" = "--version" ]; then
+  echo "cargo 1.75.0 (1d8b05cdd 2023-11-20)"
+  exit 0
+fi
+exit 1
