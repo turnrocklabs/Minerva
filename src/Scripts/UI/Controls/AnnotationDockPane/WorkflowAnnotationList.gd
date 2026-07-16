@@ -18,11 +18,20 @@ signal annotation_selected(annotation_id: String)
 const _MUTED := Color(1, 1, 1, 0.58)
 const _SELECTED_ROW_COLOR := Color(0.4, 0.55, 0.85, 0.18)
 
+## Clear-by-author (pcb-ui-native-cluster §5, WC-3): the context-menu labels,
+## in display order, and the author_kind value each sends to the host.
+const _CLEAR_MENU_ITEMS := [
+	["Clear human-authored hints", "human"],
+	["Clear AI-authored hints", "ai"],
+	["Clear all hints", "all"],
+]
+
 var _host: RefCounted = null
 var _selected_id: String = ""
 
 var _header: Label
 var _groups_list: VBoxContainer
+var _context_menu: PopupMenu = null
 
 
 func _ready() -> void:
@@ -97,6 +106,11 @@ func _build_ui() -> void:
 	if _groups_list != null:
 		return
 	add_theme_constant_override("separation", 4)
+	# PASS (not the Control default STOP) so a right-click that lands on empty
+	# space between/below rows still reaches _gui_input here instead of being
+	# silently absorbed — rows (Buttons/Labels) still get first look at clicks
+	# that land ON them.
+	mouse_filter = Control.MOUSE_FILTER_PASS
 
 	_header = Label.new()
 	_header.text = "Workflow"
@@ -110,6 +124,50 @@ func _build_ui() -> void:
 	_groups_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_groups_list.visible = false
 	add_child(_groups_list)
+
+	_context_menu = PopupMenu.new()
+	_context_menu.name = "ClearByAuthorMenu"
+	for i in _CLEAR_MENU_ITEMS.size():
+		_context_menu.add_item(str(_CLEAR_MENU_ITEMS[i][0]), i)
+	_context_menu.id_pressed.connect(_on_context_menu_id_pressed)
+	add_child(_context_menu)
+
+
+## Right-click anywhere in the listing opens the clear-by-author menu — but
+## ONLY when the host duck-types clear_annotations_by_author (contract §5:
+## "other hosts without it get no menu entry"). Left-click and everything
+## else falls through untouched (rows own their own left-click selection).
+func _gui_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb: InputEventMouseButton = event
+	if not mb.pressed or mb.button_index != MOUSE_BUTTON_RIGHT:
+		return
+	if _host == null or not _host.has_method("clear_annotations_by_author"):
+		return
+	_context_menu.position = get_screen_position() + mb.position
+	_context_menu.popup()
+	accept_event()
+
+
+func _on_context_menu_id_pressed(id: int) -> void:
+	if id < 0 or id >= _CLEAR_MENU_ITEMS.size():
+		return
+	clear_by_author(str(_CLEAR_MENU_ITEMS[id][1]))
+
+
+## Test-friendly / programmatic entry point (mirrors get_listing()/entry_count()
+## as the accessor tests call directly rather than simulating a right-click +
+## popup selection). author_kind: "human" | "ai" | "all". No-op (returns 0)
+## when the host doesn't support the host-side filter. Refreshes the listing
+## on a real removal so the UI reflects the clear immediately.
+func clear_by_author(author_kind: String) -> int:
+	if _host == null or not _host.has_method("clear_annotations_by_author"):
+		return 0
+	var removed: int = int(_host.clear_annotations_by_author(author_kind))
+	if removed > 0:
+		refresh()
+	return removed
 
 
 ## kind name (String) → Array of entry Dictionaries, in first-seen kind order.

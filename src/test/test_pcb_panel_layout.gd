@@ -360,6 +360,9 @@ func _test_tool_buttons_render() -> void:
 				var b := child as Button
 				check("tool button has icon or text",
 					b.icon != null or not b.text.is_empty())
-		check("three tool buttons (Select/Pan/Pin Inspect)", buttons == 3)
+		# WC-3 (contract §5) added a fourth button (Trace — the route-flow
+		# cluster's single-trace author tool toggle) to the same ToolsFlow
+		# container, next to Select/Pan/Pin Inspect.
+		check("four tool buttons (Select/Pan/Pin Inspect/Trace)", buttons == 4)
 
 	_teardown(panel)
