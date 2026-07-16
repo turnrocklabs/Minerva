@@ -1,0 +1,26 @@
+{
+  "id": "setup_pipeline_pm_test",
+  "name": "Setup Pipeline PluginManager Test Fixture",
+  "version": "0.1.0",
+  "host_api_version": "1",
+  "backend": {
+    "transport": "stdio",
+    "entrypoint": "./bin/plugin.txt",
+    "args": []
+  },
+  "ui": {
+    "panels": [],
+    "ipc_messages": []
+  },
+  "permissions": {
+    "host_capabilities": [],
+    "network": {"mode": "none"},
+    "filesystem": {"mode": "none", "paths": []}
+  },
+  "setup": {
+    "requires": [],
+    "steps": [
+      {"type": "copy", "from": "assets/plugin.txt", "to": "bin/plugin.txt"}
+    ]
+  }
+}

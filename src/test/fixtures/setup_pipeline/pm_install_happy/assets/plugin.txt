@@ -1,0 +1,1 @@
+fake plugin entrypoint artifact for the PluginManager setup-pipeline functional test
