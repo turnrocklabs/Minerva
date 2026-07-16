@@ -1,0 +1,10 @@
+#!/bin/sh
+# Fake Windows "app execution alias" shim. A real shim under
+# .../Microsoft/WindowsApps/ must be rejected BEFORE execution. If the probe
+# ever executes this file, it proves the rejection ran too late — so this
+# script writes a marker file next to itself; the test asserts the marker is
+# ABSENT after resolve() to prove non-execution.
+dir=$(cd "$(dirname "$0")" && pwd)
+touch "$dir/marker_ran.txt"
+echo "go version go1.22.4 linux/amd64"
+exit 0

@@ -1,0 +1,7 @@
+#!/bin/sh
+# Fake `go` that reports a version below the v1 registry's typical min (1.22).
+if [ "$1" = "version" ]; then
+  echo "go version go1.19 linux/amd64"
+  exit 0
+fi
+exit 1

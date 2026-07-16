@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake `go` that hangs past the 5s probe deadline. Used to prove the probe
+# enforces its own hard timeout rather than blocking on the child forever.
+sleep 8
+echo "go version go1.22.4 linux/amd64"
