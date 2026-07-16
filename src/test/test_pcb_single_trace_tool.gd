@@ -84,6 +84,8 @@ func _init() -> void:
 	await _test_e2e4_b_self_reference_cancel()
 	await _test_e2e4_c_clear_by_author()
 
+	await _test_apply_tool_full_mcp_broker_path()
+
 	panel.queue_free()
 	await process_frame
 	AnnotationHostRegistry._reset_for_test()
@@ -647,6 +649,97 @@ func _test_mutual_exclusion_across_surfaces() -> void:
 	# Restore a neutral state for the next scenario.
 	panel._inspect_pin_button.button_pressed = false
 	panel._on_inspect_pin_button_pressed()
+	await process_frame
+
+
+# ── full MCP path through the broker envelope (HITL-2 live-bug regression) ───
+## The live broker (MinervaIPC) wraps the backend reply in {success, result}
+## while the Go side forwards the worker's own {ok, result} envelope verbatim
+## (HandleRouteChannel) — so route_board receives a DOUBLE-wrapped envelope.
+## E2E-3C fed the RoutingResult straight into the write-back helpers and never
+## crossed that hop, which let a live "0 proposals from a routable hint" bug
+## through. This section drives the REAL minerva_pcb_apply_route_hints handle()
+## through a broker-fidelity IPC fake (still calling the REAL worker binary
+## when present).
+class FakeBrokerIpc:
+	extends Node
+	var suite = null
+	var _params: Dictionary = {}
+	var _reply_id: String = ""
+
+	func on_request(channel: String, params: Dictionary, reply_id: String) -> void:
+		if channel == "pcb.route":
+			_params = params
+			_reply_id = reply_id
+
+	## Duck-typed stand-in for MinervaIPC.await_reply — returns the LIVE broker
+	## envelope shape: {success:true, result:<worker's own {ok, result}>}.
+	func await_reply(reply_id: String, _timeout_ms: int = 0) -> Dictionary:
+		if reply_id != _reply_id or suite == null:
+			return {"success": false, "error_code": "timeout", "error_message": "no captured request"}
+		var worker_env: Dictionary = suite.raw_worker_envelope(_params)
+		return {"success": true, "result": worker_env}
+
+
+## Runs the stdio bridge with the exact captured IPC params; returns the
+## worker's own {ok, result} envelope (NOT unwrapped). Canned fallback keeps
+## the same double shape when the binary genuinely isn't built.
+func raw_worker_envelope(params: Dictionary) -> Dictionary:
+	var binary_path := ProjectSettings.globalize_path(PLUGIN_ROOT + "/pcb-plugin")
+	var wrapper_path := ProjectSettings.globalize_path(PLUGIN_ROOT + "/scripts/e2e_route_stdio.py")
+	if FileAccess.file_exists(binary_path) and FileAccess.file_exists(wrapper_path):
+		var req_uri := "user://e2e_broker_route_request.json"
+		var f := FileAccess.open(req_uri, FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(params))
+			f.close()
+			var req_abs := ProjectSettings.globalize_path(req_uri)
+			var output: Array = []
+			var exit_code := OS.execute("python3", [wrapper_path, binary_path, req_abs], output, true)
+			DirAccess.remove_absolute(req_abs)
+			if exit_code == 0 and not output.is_empty():
+				var parsed: Variant = JSON.parse_string(str(output[0]))
+				if parsed is Dictionary and bool((parsed as Dictionary).get("ok", false)):
+					return parsed
+	return {"ok": true, "result": _canned_fallback_result()}
+
+
+func _test_apply_tool_full_mcp_broker_path() -> void:
+	print("\n-- apply tool through the FULL MCP + broker-envelope path --")
+	var traces_before: int = data.get_trace_count()
+
+	# Fresh open hint (host-authored twin of a tool-drawn one).
+	var env: Dictionary = host.build_route_hint_envelope(
+		U1_PIN1.x, U1_PIN1.y, "", "F.Cu", "single_trace",
+		[[U1_PIN1.x, U1_PIN1.y], [U2_PIN1.x, U2_PIN1.y]], "human")
+	var kp: Dictionary = env.get("kind_payload", {})
+	kp["source_pins"] = ["U1.1"]
+	kp["dest_pins"] = ["U2.1"]
+	env["kind_payload"] = kp
+	var hint_id := str(host.add_annotation_v2(env))
+	check("BR: fresh hint added", not hint_id.is_empty())
+
+	# Broker-fidelity IPC fake mounted exactly where route_board looks.
+	var fake := FakeBrokerIpc.new()
+	fake.name = "_MinervaIPC"
+	fake.suite = self
+	panel.add_child(fake)
+	panel.request.connect(fake.on_request)
+
+	var propose_res: Dictionary = await pcb_tools.handle(
+		"minerva_pcb_apply_route_hints", {"editor_name": EDITOR_NAME})
+	check("BR: propose ok through full MCP path", bool(propose_res.get("success", false)), str(propose_res))
+	check("BR: broker double-envelope unwrapped -> >=1 proposal",
+		int(propose_res.get("proposed", 0)) >= 1, str(propose_res))
+
+	var commit_res: Dictionary = await pcb_tools.handle(
+		"minerva_pcb_apply_route_hints", {"editor_name": EDITOR_NAME, "commit": true})
+	check("BR: commit ok through full MCP path", bool(commit_res.get("success", false)), str(commit_res))
+	check("BR: trace added through full MCP path", data.get_trace_count() > traces_before,
+		"before=%d after=%d" % [traces_before, data.get_trace_count()])
+
+	panel.request.disconnect(fake.on_request)
+	fake.queue_free()
 	await process_frame
 
 
