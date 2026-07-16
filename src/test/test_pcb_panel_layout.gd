@@ -360,6 +360,6 @@ func _test_tool_buttons_render() -> void:
 				var b := child as Button
 				check("tool button has icon or text",
 					b.icon != null or not b.text.is_empty())
-		check("two tool buttons (Select/Pan)", buttons == 2)
+		check("three tool buttons (Select/Pan/Pin Inspect)", buttons == 3)
 
 	_teardown(panel)
