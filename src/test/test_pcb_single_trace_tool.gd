@@ -352,12 +352,17 @@ func _test_e2e3_c_agent_routes_it() -> void:
 		check("C: trace reaches U2.1", (t.get_start() as Vector2).is_equal_approx(U2_PIN1)
 			or (t.get_end() as Vector2).is_equal_approx(U2_PIN1), "start=%s end=%s" % [str(t.get_start()), str(t.get_end())])
 
-	# Source hint transitioned open→applied.
-	var applied_ids: Array = commit_res.get("applied_hint_ids", [])
-	check("C: source hint applied", applied_ids.size() == 1)
-	if applied_ids.size() == 1:
-		var updated: Dictionary = host.get_by_id(str(applied_ids[0]))
-		check("C: source hint lifecycle == applied", str(updated.get("lifecycle", "")) == "applied")
+	# Owner-ratified contract (HITL-2): an accepted hint is DELETED once its
+	# real trace exists; proposals answering it are removed with it.
+	var consumed_ids: Array = commit_res.get("consumed_hint_ids", [])
+	check("C: source hint consumed", consumed_ids.size() == 1)
+	if consumed_ids.size() == 1:
+		check("C: source hint DELETED from host", host.get_by_id(str(consumed_ids[0])).is_empty())
+	var removed_props: Array = commit_res.get("removed_proposal_ids", [])
+	check("C: the answering proposal was removed too", removed_props.size() == 1, str(commit_res))
+	for ann in host.get_annotations():
+		var kp2: Dictionary = (ann as Dictionary).get("kind_payload", {})
+		check("C: no proposal residue on the board", not (kp2 is Dictionary and kp2.has("proposal_for")))
 
 
 ## Real-worker-first route call (contract: prefer the real subprocess path).
@@ -457,6 +462,14 @@ func _test_e2e3_d_serialize_reload() -> void:
 	panel._file_path = board_path
 	host.set_document_path(board_path)
 
+	# Post-HITL-2 contract: commit DELETES consumed hints + proposals, so the
+	# board carries no annotations here. Seed a fresh OPEN hint so this
+	# round-trip still proves annotation persistence alongside the trace.
+	var env_d: Dictionary = host.build_route_hint_envelope(
+		U1_PIN1.x, U1_PIN1.y, "", "F.Cu", "single_trace",
+		[[U1_PIN1.x, U1_PIN1.y], [U2_PIN1.x, U2_PIN1.y]], "human")
+	check("D: fresh open hint seeded", not str(host.add_annotation_v2(env_d)).is_empty())
+
 	var trace_count_before: int = data.get_trace_count()
 	var hint_count_before: int = host.get_annotations().size()
 	var hint_ids_before: Array = []
@@ -545,6 +558,13 @@ func _test_e2e4_c_clear_by_author() -> void:
 	await _click_world(U2_PIN1)
 	await _release_trace_button()
 
+	# Post-HITL-2 contract: E2E-3C's proposal was deleted with its consumed
+	# hint, so seed this scenario's own AI-authored proposal to spare.
+	var ai_env: Dictionary = host.build_route_hint_envelope(
+		U1_PIN1.x, U1_PIN1.y, "", "F.Cu", "single_trace",
+		[[U1_PIN1.x, U1_PIN1.y], [U2_PIN1.x, U2_PIN1.y]], "ai")
+	check("4C: AI proposal seeded", not str(host.add_annotation_v2(ai_env)).is_empty())
+
 	var human_ids: Array = []
 	var ai_ids: Array = []
 	for ann in host.get_annotations():
@@ -556,7 +576,7 @@ func _test_e2e4_c_clear_by_author() -> void:
 		elif str(a.get("kind", "")) == "ai":
 			ai_ids.append(str(ann.get("id", "")))
 	check("4C: at least one human hint present pre-clear", human_ids.size() >= 1, "human_ids=%s" % str(human_ids))
-	check("4C: an AI proposal survives from E2E-3C pre-clear", ai_ids.size() >= 1, "ai_ids=%s" % str(ai_ids))
+	check("4C: an AI proposal present pre-clear", ai_ids.size() >= 1, "ai_ids=%s" % str(ai_ids))
 
 	var workflow_list = _WorkflowListScript.new()
 	get_root().add_child(workflow_list)

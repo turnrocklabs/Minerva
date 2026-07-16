@@ -272,12 +272,12 @@ func _run_commit_and_iterate() -> void:
 	data.redo()
 	check_eq("redo re-applies traces (2)", data.get_trace_count(), 2)
 
-	# Source hints transitioned open→applied.
-	for hid in res.get("applied_hint_ids", []):
-		var ann: Dictionary = host.get_by_id(str(hid))
-		check_eq("source hint %s now applied" % hid, ann.get("lifecycle", ""), "applied")
+	# Owner-ratified contract (HITL-2): consumed hints are DELETED on commit
+	# (not kept as lifecycle=applied); answering proposals are removed too.
+	for hid in res.get("consumed_hint_ids", []):
+		check("source hint %s deleted on commit" % hid, host.get_by_id(str(hid)).is_empty())
 
-	# ITERATE: applied hints AND AI proposals are excluded from the default gather,
-	# so a re-run finds no fresh open source hints.
+	# ITERATE: consumed hints are gone and AI proposals are excluded from the
+	# default gather, so a re-run finds no fresh open source hints.
 	var after: Array = tools._gather_route_hints(host, [])
-	check_eq("re-gather excludes applied + proposals", after.size(), 0)
+	check_eq("re-gather finds no fresh open hints", after.size(), 0)

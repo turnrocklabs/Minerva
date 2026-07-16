@@ -1256,22 +1256,50 @@ func _materialize_routes(host, data, result: Dictionary, source_hints: Array) ->
 	if traces_added > 0:
 		data.save_to_history("Apply route hints")
 
-	var applied := 0
-	var applied_ids: Array = []
-	for hint in source_hints:
-		var hid: String = str(hint.get("id", ""))
-		if hid.is_empty():
-			continue
-		if host.has_method("update_annotation_lifecycle"):
-			var res: Dictionary = host.update_annotation_lifecycle(hid, "applied")
-			if bool(res.get("ok", false)):
-				applied += 1
-				applied_ids.append(hid)
+	# Owner-ratified contract (HITL-2, 2026-07-16): an accepted hint is DELETED
+	# once its real trace exists — it was scaffolding, and leaving it (or its
+	# proposals) behind clutters the board. Hints whose nets failed to
+	# materialize stay open for iteration. Proposals answering a consumed hint
+	# (kind_payload.proposal_for) are removed with it.
+	var consumed_ids: Array = []
+	if traces_added > 0 and host.has_method("remove_annotation"):
+		var to_delete: Array = []
+		if failed.is_empty():
+			to_delete = _hint_id_list(source_hints)
+		else:
+			var ok_nets: Array = []
+			for route in result.get("routes", []):
+				if route is Dictionary:
+					ok_nets.append(str(route.get("net", "")))
+			for net in ok_nets:
+				for hid in _source_hint_ids_for_net(source_hints, str(net)):
+					if not (hid in to_delete):
+						to_delete.append(hid)
+		for hid in to_delete:
+			if str(hid).is_empty():
+				continue
+			if host.remove_annotation(str(hid)):
+				consumed_ids.append(str(hid))
+	var removed_proposals: Array = []
+	if not consumed_ids.is_empty() and host.has_method("get_annotations"):
+		for ann in host.get_annotations():
+			if not (ann is Dictionary):
+				continue
+			var kp: Dictionary = ann.get("kind_payload", {}) if ann.get("kind_payload", {}) is Dictionary else {}
+			var links: Array = kp.get("proposal_for", []) if kp.get("proposal_for", []) is Array else []
+			for linked in links:
+				if str(linked) in consumed_ids:
+					var pid := str(ann.get("id", ""))
+					if not pid.is_empty() and host.remove_annotation(pid):
+						removed_proposals.append(pid)
+					break
 	return {
 		"success": true,
 		"committed": true,
-		"applied": applied,
-		"applied_hint_ids": applied_ids,
+		"applied": consumed_ids.size(),
+		"applied_hint_ids": consumed_ids,  # deprecated alias of consumed_hint_ids
+		"consumed_hint_ids": consumed_ids,
+		"removed_proposal_ids": removed_proposals,
 		"traces_added": traces_added,
 		"failed": failed,
 		"unrouted": result.get("unrouted", []),
