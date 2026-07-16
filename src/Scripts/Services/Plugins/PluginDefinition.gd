@@ -137,6 +137,13 @@ var events: Array[Dictionary] = []
 ## State schema from manifest. Describes the shape of the plugin's state updates.
 var state_schema: Dictionary = {}
 
+## Deterministic manifest-install build pipeline stanza (DCR 019f69428fa0,
+## Docs/design/plugin-setup-pipeline.md §1). Raw Dictionary as declared in the
+## manifest — {"requires": [...], "steps": [...]} — lax-parsed here; structural
+## validation happens in validate() via SetupSchema. Empty Dictionary means the
+## plugin ships no native step (GDScript-only plugin).
+var setup: Dictionary = {}
+
 ## Current runtime state (set by PluginDB / supervisor, not persisted in manifest)
 var state: State = State.INSTALLED
 
@@ -351,6 +358,8 @@ func to_dict() -> Dictionary:
 		result["settings_title"] = settings_title
 	if not state_schema.is_empty():
 		result["state"] = {"schema": state_schema}
+	if not setup.is_empty():
+		result["setup"] = setup.duplicate(true)
 	if not class_names.is_empty():
 		result["class_names"] = Array(class_names)
 	if not capabilities.is_empty():
@@ -533,12 +542,46 @@ func validate() -> Array[String]:
 				if not (opts is Array) or (opts as Array).is_empty():
 					errors.append("enum setting '%s' requires a non-empty 'options' array" % s_ref)
 
+	# Validate the `setup` stanza (DCR 019f69428fa0, design §1). A missing/empty
+	# stanza is always valid. When present, every structural problem gets its
+	# own typed error code (see SetupSchema) folded into a formatted string
+	# here so it fails manifest load exactly like every other error above.
+	if not setup.is_empty():
+		for e in SetupSchema.validate_setup(setup):
+			errors.append(SetupSchema.format_error(e))
+	elif _entrypoint_looks_like_compiled_binary(entrypoint):
+		# Best-effort heuristic, non-blocking: an entrypoint that isn't a
+		# recognizable interpreted-script invocation is assumed to be a
+		# compiled artifact with no declared producer. False negatives (a
+		# compiled binary this heuristic doesn't catch) just mean a missed
+		# warning, never a rejected install.
+		push_warning(
+			("[PluginDefinition] Plugin '%s' declares entrypoint '%s' but no 'setup' " +
+			"stanza — no declared producer for its binary.") % [id, entrypoint]
+		)
+
 	return errors
 
 
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+## Heuristic used only for the entrypoint-without-setup load-time WARNING
+## (design §1): entrypoints that invoke a recognizable script interpreter are
+## assumed to have no compiled artifact to declare a `setup` producer for.
+## Everything else (a bare path, "./mybinary", "bin/tool", "bin/tool.exe") is
+## treated as a compiled binary.
+static func _entrypoint_looks_like_compiled_binary(ep: String) -> bool:
+	var e := ep.strip_edges()
+	if e.is_empty():
+		return false
+	var script_markers := [".py", ".js", ".ts", ".gd", ".sh", ".rb"]
+	for marker in script_markers:
+		if e.contains(marker):
+			return false
+	return true
+
 
 ## Shared parsing logic used by both from_manifest and from_dict.
 static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
@@ -628,6 +671,12 @@ static func _from_dict_internal(data: Dictionary) -> PluginDefinition:
 		if ev is Dictionary:
 			def.events.append(ev.duplicate(true))
 	def.state_schema = data.get("state", {}).get("schema", {})
+
+	# Setup stanza (DCR 019f69428fa0). Lax parse — structural validation
+	# happens in validate() via SetupSchema.
+	var setup_raw: Variant = data.get("setup", null)
+	if setup_raw is Dictionary:
+		def.setup = (setup_raw as Dictionary).duplicate(true)
 
 	# Capabilities (top-level, optional).  Reject unknown values at parse time so
 	# install fails loudly rather than silently treating a typo'd capability as a

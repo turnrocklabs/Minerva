@@ -1,0 +1,17 @@
+setup plan for /tmp/fixture-plugin
+requires:
+  - tool=go min=1.22
+  - tool=python min=3.10
+steps: 4
+  [0] type=go_build
+      argv=["/usr/local/go/bin/go","build","-C","/tmp/fixture-plugin","-o","bin/pcb-plugin","./"]
+      expected_artifact=bin/pcb-plugin
+  [1] type=cargo_build
+      argv=["/home/user/.cargo/bin/cargo","build","--manifest-path","/tmp/fixture-plugin/worker/Cargo.toml","--release"]
+      expected_artifact=worker/target/release/worker
+  [2] type=copy
+      op=copy 'assets/policy.json' -> 'bin/policy.json' (no subprocess)
+      expected_artifact=bin/policy.json
+  [3] type=exec
+      argv=["/tmp/fixture-plugin/scripts/postinstall.sh","--flag"]
+      expected_artifact=bin/generated.dat

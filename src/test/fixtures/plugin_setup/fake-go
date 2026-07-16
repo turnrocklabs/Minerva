@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Fake `go` toolchain for setup-executor tests (DCR 019f69428fa0).
+# Only understands the subset of `go build -C <dir> -o <output> <package>`
+# that SetupSteps.build() emits. Like real go >= 1.20, -C changes directory
+# before anything else is resolved, so a relative -o lands under that dir.
+set -euo pipefail
+
+dir=""
+output=""
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		-C)
+			dir="$2"
+			shift 2
+			;;
+		-o)
+			output="$2"
+			shift 2
+			;;
+		build)
+			shift
+			;;
+		*)
+			# package argument (e.g. "./") — ignored by this fake
+			shift
+			;;
+	esac
+done
+
+if [[ -n "$dir" ]]; then
+	cd "$dir"
+fi
+
+if [[ -z "$output" ]]; then
+	echo "fake-go: missing -o" 1>&2
+	exit 1
+fi
+
+mkdir -p "$(dirname "$output")"
+printf 'fake-go binary\n' > "$output"
+exit 0
