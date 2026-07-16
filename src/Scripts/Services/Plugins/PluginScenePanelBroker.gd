@@ -440,6 +440,33 @@ func get_panel_owner(panel_name: String) -> String:
 	return (_panel_registry[panel_name] as _PanelEntry).plugin_id
 
 
+## Returns the live scene-panel root registered under editor_name, or null.
+##
+## For plugin-scene panels the panel_name IS the editor tab name (set by
+## PluginScenePanelHost — see the request_panel_state comment), so this is a
+## direct registry lookup. Returns null when the panel was never registered
+## or its root node has been freed (stale WeakRef).
+##
+## Used by PluginToolRegistry to dispatch panel-executed tools
+## (executor == "panel", DCR 019f6c3d0e3d).
+func get_panel_for_editor(editor_name: String) -> Node:
+	if not _panel_registry.has(editor_name):
+		return null
+	var entry: _PanelEntry = _panel_registry[editor_name]
+	if entry.panel_ref == null:
+		return null
+	var panel = entry.panel_ref.get_ref()
+	if panel == null or not is_instance_valid(panel):
+		return null
+	return panel as Node
+
+
+## Returns the list of editor names (== panel names) currently registered.
+## Used for the editor_not_found error UX — callers list what IS available.
+func list_panel_editor_names() -> Array:
+	return _panel_registry.keys()
+
+
 # ---------------------------------------------------------------------------
 # Outbound: scene -> plugin
 # ---------------------------------------------------------------------------

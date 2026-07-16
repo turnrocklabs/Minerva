@@ -43,6 +43,13 @@ var audit_log: PluginAuditLog = null
 ## CapabilityBroker instance — used to dispatch host capability requests from plugins.
 var capability_broker = null  # CapabilityBroker
 
+## PluginScenePanelBroker instance — used to resolve live scene panels for
+## panel-executed tools (executor == "panel"). Untyped for testability (tests
+## assign it directly). When null, _resolve_scene_panel_broker() falls back to
+## the SingletonObject autoload's `plugin_scene_panel_broker` property (same
+## duck-typed lookup PluginScenePanelHost uses).
+var scene_panel_broker = null  # PluginScenePanelBroker
+
 
 # ---------------------------------------------------------------------------
 # Internal state
@@ -53,6 +60,7 @@ var capability_broker = null  # CapabilityBroker
 ##   description: String
 ##   input_schema: Dictionary
 ##   source: String  ("plugin:<id>")
+##   executor: String  ("panel" | "backend"; absent in manifest ⇒ "backend")
 var _tools_by_plugin: Dictionary = {}
 
 ## Reverse index: tool_name -> plugin_id for fast lookup.
@@ -157,11 +165,24 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 				]
 			}
 
+		# Executor: "panel" tools dispatch host-side to the plugin's live scene
+		# panel; "backend" (default when absent) forwards to the subprocess.
+		# PluginDefinition.validate() already rejects other values — this is
+		# the same defensive re-validation the prefix check above performs.
+		var executor := str(tool_entry.get("executor", "backend"))
+		if executor != "panel" and executor != "backend":
+			return {
+				"error": "tool_executor_invalid:%s (plugin '%s': executor must be 'panel' or 'backend', got '%s')" % [
+					tool_name, plugin_id, executor
+				]
+			}
+
 		var entry := {
 			"name": tool_name,
 			"description": str(tool_entry.get("description", "")),
 			"input_schema": tool_entry.get("input_schema", {"type": "object", "properties": {}}),
 			"source": "plugin:%s" % plugin_id,
+			"executor": executor,
 		}
 		# Preserve _backend_name so handle_tool_call can strip the auto-prefix
 		# before forwarding to the plugin's stdio channel. Backend-discovered
@@ -290,6 +311,14 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 	if plugin_id.is_empty():
 		return PluginErrors.tool_not_found("", tool_name)
 
+	# --- Step 1.5: panel-executed tools (executor == "panel") ---
+	# Panel tools run host-side inside the plugin's live scene panel; the
+	# plugin subprocess is irrelevant, so the RUNNING check below is skipped
+	# (DCR 019f6c3d0e3d contract §2 — this also removes the backend-stopped
+	# failure mode for these tools).
+	if _get_tool_executor(plugin_id, tool_name) == "panel":
+		return await _handle_panel_tool_call(plugin_id, tool_name, args)
+
 	# --- Step 2: verify plugin is running ---
 	if plugin_manager == null:
 		push_error("[PluginToolRegistry] plugin_manager is not set")
@@ -379,6 +408,160 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 					})
 
 	return result
+
+
+# ---------------------------------------------------------------------------
+# Panel-executed tool dispatch (executor == "panel", DCR 019f6c3d0e3d)
+# ---------------------------------------------------------------------------
+
+## Path to AnnotationHostRegistry — loaded lazily (never preloaded) so this
+## file's parse chain stays independent of the annotation substrate.
+const _ANNOTATION_HOST_REGISTRY_PATH := "res://Scripts/Services/Annotations/AnnotationHostRegistry.gd"
+
+
+## Return the executor for a registered tool: "panel" or "backend".
+## Unknown tools resolve to "backend" (the caller has already validated
+## ownership via _plugin_by_tool, so this is just a field read).
+func _get_tool_executor(plugin_id: String, tool_name: String) -> String:
+	for entry in _tools_by_plugin.get(plugin_id, []):
+		if entry.get("name") == tool_name:
+			return str(entry.get("executor", "backend"))
+	return "backend"
+
+
+## Resolve the PluginScenePanelBroker: explicit injection first (tests,
+## future wiring), then the SingletonObject autoload's
+## `plugin_scene_panel_broker` property (production — same duck-typed lookup
+## PluginScenePanelHost._get_broker uses). Returns null when unavailable.
+func _resolve_scene_panel_broker():
+	if scene_panel_broker != null:
+		return scene_panel_broker
+	var loop := Engine.get_main_loop()
+	if not (loop is SceneTree):
+		return null
+	var root: Node = (loop as SceneTree).root
+	if root == null:
+		return null
+	var so: Node = root.get_node_or_null("SingletonObject")
+	if so == null:
+		return null
+	if "plugin_scene_panel_broker" in so:
+		return so.get("plugin_scene_panel_broker")
+	return null
+
+
+## Lazily load AnnotationHostRegistry's script for its static methods.
+## Returns null if the script is missing (annotation substrate absent).
+func _annotation_host_registry():
+	if not ResourceLoader.exists(_ANNOTATION_HOST_REGISTRY_PATH):
+		return null
+	return load(_ANNOTATION_HOST_REGISTRY_PATH)
+
+
+## Dispatch a panel-executed tool to the live scene panel named by
+## args.editor_name. All failures are PluginErrors-structured dictionaries;
+## a successful panel return Dictionary passes through VERBATIM.
+##
+## Resolution order (contract §2.2):
+##   1. Scene-panel broker registry (panel_name == editor tab name).
+##   2. Duck-typed fallback: AnnotationHostRegistry.get_host(editor_name)
+##      → host.get_panel() when the host exposes it.
+##
+## Ownership (contract §2.3): the resolved panel must belong to the calling
+## tool's plugin. Established via broker.get_panel_owner, falling back to a
+## duck-typed `plugin_id` property on the panel itself (fallback-resolved
+## panels the broker doesn't know). Undeterminable ownership is a DENY —
+## fail-safe, a tool must never execute against another plugin's panel.
+func _handle_panel_tool_call(plugin_id: String, tool_name: String, args: Dictionary) -> Dictionary:
+	# --- editor_name is required for panel tools (v1) ---
+	var editor_name := str(args.get("editor_name", ""))
+	if editor_name.is_empty():
+		return PluginErrors.editor_name_required(plugin_id, tool_name)
+
+	# --- Resolve the live panel ---
+	var broker = _resolve_scene_panel_broker()
+	var panel: Object = null
+	if broker != null and broker.has_method("get_panel_for_editor"):
+		panel = broker.get_panel_for_editor(editor_name)
+
+	if panel == null:
+		# Fallback: annotation-substrate hosts that expose their panel.
+		var ahr = _annotation_host_registry()
+		if ahr != null:
+			var host = ahr.get_host(editor_name)
+			if host != null and host.has_method("get_panel"):
+				panel = host.get_panel()
+
+	if panel == null or not is_instance_valid(panel):
+		# Miss: list every editor name we know about (mirrors the
+		# MCPPcbPanelTools._no_host_error UX so callers can self-correct).
+		var known: Array = []
+		if broker != null and broker.has_method("list_panel_editor_names"):
+			known = broker.list_panel_editor_names()
+		var ahr2 = _annotation_host_registry()
+		if ahr2 != null:
+			for n in ahr2.list_editor_names():
+				if not known.has(n):
+					known.append(n)
+		return PluginErrors.editor_not_found(plugin_id, editor_name, known)
+
+	# --- Ownership check ---
+	var owner_id := ""
+	if broker != null and broker.has_method("get_panel_owner"):
+		owner_id = str(broker.get_panel_owner(editor_name))
+	if owner_id.is_empty() and "plugin_id" in panel:
+		owner_id = str(panel.get("plugin_id"))
+	if owner_id != plugin_id:
+		return PluginErrors.panel_not_owned(plugin_id, editor_name, owner_id)
+
+	# --- Policy/audit: same boundary events as backend dispatch ---
+	if audit_log != null:
+		audit_log.log_event(plugin_id, "policy_allow", {
+			"tool": tool_name,
+			"reason": "plugin installed, panel tool dispatch allowed",
+			"executor": "panel",
+		})
+		audit_log.log_event(plugin_id, "tool_call_dispatched", {
+			"tool": tool_name,
+			"args_keys": args.keys(),
+			"executor": "panel",
+		})
+
+	# --- Execute (duck-typed, async-capable) ---
+	if not panel.has_method("handle_tool"):
+		if audit_log != null:
+			audit_log.log_event(plugin_id, "tool_call_result", {
+				"tool": tool_name,
+				"success": false,
+				"executor": "panel",
+				"error_code": PluginErrors.CODE_PANEL_NO_HANDLER,
+			})
+		return PluginErrors.panel_no_handler(plugin_id, editor_name)
+
+	var result: Variant = await panel.handle_tool(tool_name, args)
+
+	if not (result is Dictionary) or (result as Dictionary).is_empty():
+		if audit_log != null:
+			audit_log.log_event(plugin_id, "tool_call_result", {
+				"tool": tool_name,
+				"success": false,
+				"executor": "panel",
+				"error_code": PluginErrors.CODE_TOOL_UNHANDLED,
+			})
+		return PluginErrors.tool_unhandled(plugin_id, tool_name, editor_name)
+
+	var result_dict: Dictionary = result
+	if audit_log != null:
+		audit_log.log_event(plugin_id, "tool_call_result", {
+			"tool": tool_name,
+			"success": not result_dict.has("error"),
+			"executor": "panel",
+		})
+
+	# Contract §2.4: the plugin's Dictionary is the tool result verbatim —
+	# plugins own their envelopes. No capability-request post-processing and
+	# no stderr drain: both are subprocess concerns.
+	return result_dict
 
 
 # ---------------------------------------------------------------------------
@@ -642,6 +825,9 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 			"description": str(tool_def.description) if tool_def.description != null else "",
 			"input_schema": tool_def.input_schema if tool_def.input_schema != null else {"type": "object", "properties": {}},
 			"source": "plugin:%s" % plugin_id,
+			# Backend-discovered tools are by definition served by the plugin
+			# subprocess — they are always executor "backend".
+			"executor": "backend",
 			# Preserve the original backend name for dispatch — _call_tool_stdio
 			# uses the namespaced name and the plugin receives it via tools/call.
 			# The backend must handle the namespaced name OR we strip the prefix

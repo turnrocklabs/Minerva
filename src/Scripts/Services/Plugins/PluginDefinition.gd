@@ -432,6 +432,17 @@ func validate() -> Array[String]:
 			errors.append(
 				"Tool '%s' must start with '%s'" % [tool_name, expected_prefix]
 			)
+		# Optional executor field (panel-executed tools, DCR 019f6c3d0e3d).
+		# "panel" tools dispatch host-side to the plugin's live scene panel;
+		# "backend" (the default when absent) forwards to the plugin subprocess.
+		# Any other value is a manifest error.
+		var executor_raw: Variant = tool_entry.get("executor", "backend")
+		if not (executor_raw is String) or (executor_raw != "panel" and executor_raw != "backend"):
+			errors.append(
+				"tool_executor_invalid:%s (executor must be 'panel' or 'backend', got '%s')" % [
+					tool_name, str(executor_raw)
+				]
+			)
 
 	# Validate skills (DCR 019df57b).
 	# Rules:

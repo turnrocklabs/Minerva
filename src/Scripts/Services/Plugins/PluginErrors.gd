@@ -19,6 +19,11 @@ const CODE_CONFIRMATION_REQUIRED = "confirmation_required"
 const CODE_PLUGIN_NOT_RUNNING = "plugin_not_running"
 const CODE_TOOL_NOT_FOUND = "tool_not_found"
 const CODE_EDITOR_NOT_FOUND = "editor_not_found"
+# Panel-executed tools (executor == "panel", DCR 019f6c3d0e3d)
+const CODE_EDITOR_NAME_REQUIRED = "editor_name_required"
+const CODE_PANEL_NOT_OWNED = "panel_not_owned"
+const CODE_PANEL_NO_HANDLER = "panel_no_handler"
+const CODE_TOOL_UNHANDLED = "tool_unhandled"
 const CODE_NOT_BUFFER_CANONICAL = "not_buffer_canonical"
 const CODE_VERSION_CONFLICT = "version_conflict"
 const CODE_OWNERSHIP_REQUIRED = "ownership_required"
@@ -148,12 +153,72 @@ static func tool_not_found(plugin_id: String, tool_name: String) -> Dictionary:
 
 
 ## Editor with the given tab title was not found.
-static func editor_not_found(plugin_id: String, editor_name: String) -> Dictionary:
+## known_editors (optional): the editor names that ARE currently available —
+## when non-empty they are listed in the message so the caller can
+## self-correct (mirrors the MCPPcbPanelTools._no_host_error UX).
+static func editor_not_found(plugin_id: String, editor_name: String, known_editors: Array = []) -> Dictionary:
+	var message := "Editor '%s' not found" % editor_name
+	if not known_editors.is_empty():
+		message += ". Known editors: %s" % str(known_editors)
 	return {
 		"success": false,
 		"error_code": CODE_EDITOR_NOT_FOUND,
-		"error_message": "Editor '%s' not found" % editor_name,
+		"error_message": message,
 		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"known_editors": known_editors,
+	}
+
+
+## A panel-executed tool (executor == "panel") was called without the
+## required args.editor_name.
+static func editor_name_required(plugin_id: String, tool_name: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_EDITOR_NAME_REQUIRED,
+		"error_message": "Tool '%s' executes in a scene panel and requires 'editor_name' in its arguments" % tool_name,
+		"plugin_id": plugin_id,
+		"tool_name": tool_name,
+	}
+
+
+## A panel-executed tool resolved a live panel, but the panel does not belong
+## to the calling tool's plugin. owner_plugin_id may be "" when ownership
+## could not be established (which is also a deny — fail-safe).
+static func panel_not_owned(plugin_id: String, editor_name: String, owner_plugin_id: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_PANEL_NOT_OWNED,
+		"error_message": "Panel '%s' is owned by plugin '%s', not '%s'" % [
+			editor_name, owner_plugin_id if not owner_plugin_id.is_empty() else "<unknown>", plugin_id
+		],
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+		"owner_plugin_id": owner_plugin_id,
+	}
+
+
+## A panel-executed tool resolved its panel, but the panel does not implement
+## the `handle_tool(tool_name, args)` entry point.
+static func panel_no_handler(plugin_id: String, editor_name: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_PANEL_NO_HANDLER,
+		"error_message": "Panel '%s' does not implement handle_tool(tool_name, args)" % editor_name,
+		"plugin_id": plugin_id,
+		"editor_name": editor_name,
+	}
+
+
+## The panel's handle_tool ran but did not handle the tool: it returned a
+## non-Dictionary or an empty Dictionary.
+static func tool_unhandled(plugin_id: String, tool_name: String, editor_name: String) -> Dictionary:
+	return {
+		"success": false,
+		"error_code": CODE_TOOL_UNHANDLED,
+		"error_message": "Panel '%s' did not handle tool '%s' (handle_tool returned a non-Dictionary or empty result)" % [editor_name, tool_name],
+		"plugin_id": plugin_id,
+		"tool_name": tool_name,
 		"editor_name": editor_name,
 	}
 
