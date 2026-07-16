@@ -28,6 +28,30 @@ var _pending_remove_id: String = ""
 ## Checkbox to delete plugin data directory on removal.
 var _remove_delete_data_check: CheckButton = null
 
+## Test seam (R3-UI): when set, `_pm()` returns this instead of
+## `SingletonObject.plugin_manager`. Headless tests point this at a
+## FakeDB-backed PluginManager (same pattern as test_plugin_setup_pipeline.gd)
+## so driving install/rebuild through the real panel never touches the
+## developer's real user://plugins/plugins.json. Left null in production —
+## `_pm()` then reads the real singleton, matching pre-existing behavior
+## exactly (every call site below used to say `SingletonObject.plugin_manager`
+## directly; this is a mechanical seam, not a behavior change).
+var _pm_override = null  # PluginManager
+
+## Exec-step approval gate (G4.1) — a ConfirmationDialog that bridges
+## SetupPipeline's worker-thread `approver` seam to the main thread. Created
+## once, kept alive for the panel's lifetime, wired into
+## `_pm().exec_approver` in _connect_signals() and unwired in
+## _disconnect_signals()/_exit_tree() so a closed panel never leaves a stale
+## Callable pointing at a freed dialog.
+var _exec_gate: ConfirmationDialog = null
+
+
+## Returns the PluginManager this panel should talk to — see `_pm_override`'s
+## doc comment.
+func _pm():  # -> PluginManager
+	return _pm_override if _pm_override != null else SingletonObject.plugin_manager
+
 
 # ---------------------------------------------------------------------------
 # UI References — left pane
@@ -59,6 +83,15 @@ var _auto_reload_check: CheckButton = null
 var _files_changed_label: Label = null
 var _remove_button: Button = null
 var _panel_button: Button = null
+
+
+# ---------------------------------------------------------------------------
+# UI References — right pane: setup-pipeline status (G4.1)
+# ---------------------------------------------------------------------------
+
+## Holds the S_BUILDING / S_BUILD_FAILED / S_NEEDS_BINARY rendering for the
+## selected plugin. Hidden (no children beyond nothing) for any other state.
+var _setup_status_container: VBoxContainer = null
 
 
 # ---------------------------------------------------------------------------
@@ -203,6 +236,8 @@ func _build_right_pane() -> ScrollContainer:
 
 	_build_detail_header(_detail_panel)
 	_detail_panel.add_child(HSeparator.new())
+	_build_setup_status_section(_detail_panel)
+	_detail_panel.add_child(HSeparator.new())
 	_build_caps_section(_detail_panel)
 	_detail_panel.add_child(HSeparator.new())
 	_build_audit_section(_detail_panel)
@@ -334,6 +369,157 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 	toggle_row.add_child(_files_changed_label)
 
 
+func _build_setup_status_section(parent: VBoxContainer) -> void:
+	_setup_status_container = VBoxContainer.new()
+	_setup_status_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_setup_status_container.visible = false
+	parent.add_child(_setup_status_container)
+
+
+## Renders the manifest-install setup-pipeline state for `plugin_id` (G4.1):
+##   S_BUILDING     — "Building… (step N/M: <type>)", driven by
+##                     PluginManager.get_build_progress() (initial snapshot)
+##                     and kept live by plugin_build_step_started/_finished
+##                     (see _on_plugin_build_step_started/_finished below —
+##                     no polling).
+##   S_BUILD_FAILED — failing step + stderr tail (get_setup_envelope()) + Rebuild.
+##   S_NEEDS_BINARY — every failed toolchain requirement (envelope's `failures`
+##                     array) with found/required/install-hint text + Rebuild.
+## Any other state: section stays empty/hidden.
+func _populate_setup_status(plugin_id: String) -> void:
+	for child in _setup_status_container.get_children():
+		child.queue_free()
+	_setup_status_container.visible = false
+
+	var pm = _pm()
+	if pm == null:
+		return
+	var def = pm.get_db().get_by_id(plugin_id)
+	if def == null:
+		return
+
+	if def.state == pm.S_BUILDING:
+		_setup_status_container.visible = true
+		var progress: Dictionary = pm.get_build_progress(plugin_id)
+		var line := "Building…"
+		if not progress.is_empty():
+			line = "Building… (step %d/%d: %s)" % [
+				int(progress.get("step_index", 0)) + 1,
+				int(progress.get("step_count", 0)),
+				str(progress.get("step_type", "")),
+			]
+		var lbl := Label.new()
+		lbl.text = line
+		lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+		_setup_status_container.add_child(lbl)
+		return
+
+	if def.state == pm.S_BUILD_FAILED or def.state == pm.S_NEEDS_BINARY:
+		_setup_status_container.visible = true
+		_add_build_failure_rows(plugin_id, pm, def.state == pm.S_NEEDS_BINARY)
+		var rebuild_btn := Button.new()
+		rebuild_btn.text = "Rebuild"
+		rebuild_btn.tooltip_text = "Re-run toolchain preflight + the setup pipeline"
+		rebuild_btn.pressed.connect(_on_rebuild_pressed.bind(plugin_id))
+		_setup_status_container.add_child(rebuild_btn)
+
+
+func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> void:
+	var envelope: Dictionary = pm.get_setup_envelope(plugin_id)
+
+	var hdr := Label.new()
+	hdr.text = "Missing toolchain requirements:" if is_needs_binary else "Build failed:"
+	hdr.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
+	hdr.add_theme_font_size_override("font_size", 13)
+	_setup_status_container.add_child(hdr)
+
+	if is_needs_binary:
+		var failures: Array = envelope.get("failures", [])
+		if failures.is_empty() and not envelope.is_empty():
+			failures = [envelope]  # defensive: older/degenerate envelope shape
+		for fe_variant in failures:
+			var fe: Dictionary = fe_variant
+			var row := VBoxContainer.new()
+			_setup_status_container.add_child(row)
+
+			var tool_lbl := Label.new()
+			tool_lbl.text = "%s — %s" % [str(fe.get("tool", "?")), str(fe.get("error", "?"))]
+			row.add_child(tool_lbl)
+
+			var detail_lbl := Label.new()
+			detail_lbl.text = "found: %s (%s)    required: %s" % [
+				_or_dash(str(fe.get("found_path", ""))),
+				_or_dash(str(fe.get("found_version", ""))),
+				_or_dash(str(fe.get("required_min", ""))),
+			]
+			detail_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+			row.add_child(detail_lbl)
+
+			var hint: String = str(fe.get("install_hint", ""))
+			if not hint.is_empty():
+				var hint_lbl := Label.new()
+				hint_lbl.text = "install: %s" % hint
+				hint_lbl.add_theme_color_override("font_color", Color(0.5, 0.7, 0.9))
+				row.add_child(hint_lbl)
+		return
+
+	# S_BUILD_FAILED — one failing step (the pipeline aborts on first failure).
+	var step_lbl := Label.new()
+	step_lbl.text = "step %s: %s (exit=%s)" % [
+		str(envelope.get("step_index", "?")), str(envelope.get("step_type", "?")), str(envelope.get("exit_code", "?")),
+	]
+	_setup_status_container.add_child(step_lbl)
+
+	var detail_str: String = str(envelope.get("detail", ""))
+	if detail_str == "exec_denied" or detail_str == "exec_denied_headless":
+		var denied_lbl := Label.new()
+		if detail_str == "exec_denied_headless":
+			# Unattended fail-closed default (MF1): nobody was there to ask —
+			# render as an action prompt, not as the user's own choice.
+			denied_lbl.text = "Exec step denied automatically (no confirmation dialog was available). Click Rebuild to approve it interactively."
+		else:
+			denied_lbl.text = "You declined this exec step."
+		denied_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		denied_lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
+		_setup_status_container.add_child(denied_lbl)
+		return
+
+	var artifact_expected: String = str(envelope.get("artifact_expected", ""))
+	if not artifact_expected.is_empty() and int(envelope.get("exit_code", -1)) == 0:
+		var bug_lbl := Label.new()
+		bug_lbl.text = "Manifest bug: step exited 0 but declared artifact '%s' is missing." % artifact_expected
+		bug_lbl.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
+		bug_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		_setup_status_container.add_child(bug_lbl)
+
+	var stderr_tail: String = str(envelope.get("stderr_tail", ""))
+	if not stderr_tail.is_empty():
+		var stderr_lbl := Label.new()
+		stderr_lbl.text = stderr_tail
+		stderr_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		stderr_lbl.add_theme_font_size_override("font_size", 11)
+		stderr_lbl.add_theme_color_override("font_color", Color(0.7, 0.5, 0.5))
+		_setup_status_container.add_child(stderr_lbl)
+
+
+func _or_dash(s: String) -> String:
+	return s if not s.is_empty() else "-"
+
+
+func _on_rebuild_pressed(plugin_id: String) -> void:
+	var pm = _pm()
+	if pm == null:
+		return
+	var result: Dictionary = pm.rebuild(plugin_id)
+	if result.has("error"):
+		_show_status("Rebuild failed: %s" % str(result["error"]), true)
+	else:
+		_show_status("Rebuilding %s..." % plugin_id)
+	_refresh_plugin_list()
+	if plugin_id == _selected_plugin_id:
+		_populate_detail_panel(plugin_id)
+
+
 func _build_caps_section(parent: VBoxContainer) -> void:
 	_caps_container = VBoxContainer.new()
 	_caps_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -430,10 +616,10 @@ func _build_bottom_toolbar() -> HBoxContainer:
 
 func _connect_signals() -> void:
 	_ensure_plugin_system()
-	if not SingletonObject.plugin_manager:
+	if not _pm():
 		return
 
-	var pm: PluginManager = SingletonObject.plugin_manager
+	var pm: PluginManager = _pm()
 	if not pm.plugin_state_changed.is_connected(_on_plugin_state_changed):
 		pm.plugin_state_changed.connect(_on_plugin_state_changed)
 	if not pm.plugin_started.is_connected(_on_plugin_event):
@@ -445,6 +631,30 @@ func _connect_signals() -> void:
 	if not pm.plugin_file_changed.is_connected(_on_plugin_file_changed):
 		pm.plugin_file_changed.connect(_on_plugin_file_changed)
 
+	# Setup-pipeline build progress (G4.1) — keeps the list row's "Building…
+	# (step N/M)" and the detail pane's setup-status section live, purely
+	# signal-driven (acceptance: no polling loops).
+	if not pm.plugin_build_step_started.is_connected(_on_plugin_build_step_started):
+		pm.plugin_build_step_started.connect(_on_plugin_build_step_started)
+	if not pm.plugin_build_step_finished.is_connected(_on_plugin_build_step_finished):
+		pm.plugin_build_step_finished.connect(_on_plugin_build_step_finished)
+
+	# Exec-step approval gate (G4.1): while this panel is alive, exec steps in
+	# any setup pipeline are confirmed through a real dialog instead of
+	# SetupPipeline's auto-approve stub. The gate is a child of this panel, so
+	# panel teardown (_exit_tree) force-denies anything pending — see
+	# PluginExecApprovalGate's own CANCELLATION / APP-QUIT doc.
+	if _exec_gate == null:
+		# preload-by-path rather than the bare class_name: a freshly added
+		# class_name only enters the global class cache on the next editor
+		# import pass, so the bare identifier can silently fail to resolve in
+		# headless --script runs. The path is always valid.
+		var GateScript := preload("res://Scripts/UI/Controls/PluginManagerPanel/PluginExecApprovalGate.gd")
+		_exec_gate = GateScript.new()
+		add_child(_exec_gate)
+	if not pm.exec_approver.is_valid():
+		pm.exec_approver = _exec_gate.approve
+
 	if SingletonObject.plugin_audit_log:
 		var al: PluginAuditLog = SingletonObject.plugin_audit_log
 		if not al.entry_added.is_connected(_on_audit_entry_added):
@@ -452,10 +662,10 @@ func _connect_signals() -> void:
 
 
 func _disconnect_signals() -> void:
-	if not SingletonObject.plugin_manager:
+	if not _pm():
 		return
 
-	var pm: PluginManager = SingletonObject.plugin_manager
+	var pm: PluginManager = _pm()
 	if pm.plugin_state_changed.is_connected(_on_plugin_state_changed):
 		pm.plugin_state_changed.disconnect(_on_plugin_state_changed)
 	if pm.plugin_started.is_connected(_on_plugin_event):
@@ -466,6 +676,18 @@ func _disconnect_signals() -> void:
 		pm.plugin_crashed.disconnect(_on_plugin_event)
 	if pm.plugin_file_changed.is_connected(_on_plugin_file_changed):
 		pm.plugin_file_changed.disconnect(_on_plugin_file_changed)
+
+	if pm.plugin_build_step_started.is_connected(_on_plugin_build_step_started):
+		pm.plugin_build_step_started.disconnect(_on_plugin_build_step_started)
+	if pm.plugin_build_step_finished.is_connected(_on_plugin_build_step_finished):
+		pm.plugin_build_step_finished.disconnect(_on_plugin_build_step_finished)
+
+	# Unhook the approver ONLY if it still points at OUR gate — never clobber
+	# an approver someone else installed after us. The gate node itself (a
+	# child of this panel) force-denies + releases any worker blocked on it
+	# in its own _exit_tree, so no thread is left hanging by this teardown.
+	if _exec_gate != null and pm.exec_approver.is_valid() and pm.exec_approver.get_object() == _exec_gate:
+		pm.exec_approver = Callable()
 
 	if SingletonObject.plugin_audit_log:
 		var al: PluginAuditLog = SingletonObject.plugin_audit_log
@@ -484,12 +706,12 @@ func _refresh_plugin_list() -> void:
 	_plugin_list.clear()
 	_ensure_plugin_system()
 
-	if not SingletonObject.plugin_manager:
+	if not _pm():
 		var empty_item := _plugin_list.add_item("(Plugin system unavailable)")
 		_plugin_list.set_item_disabled(empty_item, true)
 		return
 
-	var pm: PluginManager = SingletonObject.plugin_manager
+	var pm: PluginManager = _pm()
 	var plugins: Array = pm.get_all_plugins()
 
 	if plugins.is_empty():
@@ -499,13 +721,33 @@ func _refresh_plugin_list() -> void:
 
 	for status in plugins:
 		var display_name: String = "%s  v%s" % [status.get("name", status.get("id", "?")), status.get("version", "")]
+		var state: int = status.get("state", PluginDefinition.State.INSTALLED)
+		var plugin_id: String = status.get("id", "")
+		# Setup-pipeline states (G4.1): fold live build progress into the row
+		# text so "Building…" is visible without opening the detail pane.
+		if state == pm.S_BUILDING:
+			var progress: Dictionary = pm.get_build_progress(plugin_id)
+			if not progress.is_empty():
+				display_name += "  — Building… (step %d/%d: %s)" % [
+					int(progress.get("step_index", 0)) + 1,
+					int(progress.get("step_count", 0)),
+					str(progress.get("step_type", "")),
+				]
+			else:
+				display_name += "  — Building…"
+		elif state == pm.S_BUILD_FAILED:
+			display_name += "  — Build failed"
+		elif state == pm.S_NEEDS_BINARY:
+			display_name += "  — Needs toolchain"
 		var idx := _plugin_list.add_item(display_name)
-		_plugin_list.set_item_metadata(idx, status.get("id", ""))
-		_apply_state_color(idx, status.get("state", PluginDefinition.State.INSTALLED))
+		_plugin_list.set_item_metadata(idx, plugin_id)
+		_apply_state_color(idx, state)
 
 
 func _ensure_plugin_system() -> void:
-	if SingletonObject.plugin_manager != null:
+	if _pm_override != null:
+		return  # test seam active — never touch the real app-wide plugin system
+	if _pm() != null:
 		return
 	if SingletonObject.has_method("initialize_plugins"):
 		SingletonObject.initialize_plugins()
@@ -524,6 +766,11 @@ func _apply_state_color(item_idx: int, state: int) -> void:
 			color = Color(0.9, 0.3, 0.3)   # red
 		PluginDefinition.State.CRASH_LOOP:
 			color = Color(1.0, 0.2, 0.2)   # bright red
+		6:  # PluginManager.S_BUILDING — not a PluginDefinition.State member (see
+			# PluginManager.gd's own comment on why); plain int literal here too.
+			color = Color(0.9, 0.8, 0.2)   # yellow, same as STARTING
+		7, 8:  # PluginManager.S_BUILD_FAILED, S_NEEDS_BINARY
+			color = Color(0.9, 0.3, 0.3)   # red
 		_:
 			color = Color(0.6, 0.6, 0.6)
 
@@ -535,12 +782,12 @@ func _apply_state_color(item_idx: int, state: int) -> void:
 # ---------------------------------------------------------------------------
 
 func _populate_detail_panel(plugin_id: String) -> void:
-	if plugin_id.is_empty() or not SingletonObject.plugin_manager:
+	if plugin_id.is_empty() or not _pm():
 		_detail_placeholder.visible = true
 		_detail_panel.visible = false
 		return
 
-	var pm: PluginManager = SingletonObject.plugin_manager
+	var pm: PluginManager = _pm()
 	var status: Dictionary = pm.get_plugin_status(plugin_id)
 	if status.has("error"):
 		_detail_placeholder.visible = true
@@ -567,9 +814,16 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var is_running := state == PluginDefinition.State.RUNNING
 	var is_starting := state == PluginDefinition.State.STARTING
 	var is_crash_loop := state == PluginDefinition.State.CRASH_LOOP
-	_start_button.disabled = is_running or is_starting or is_crash_loop
+	# Setup-pipeline states (G4.1) — a plugin mid-build, build-failed, or
+	# missing a toolchain has no runnable artifact; lifecycle buttons would
+	# just bounce off PluginManager's own refusal (start_plugin() rejects
+	# these states), so disable them here instead of letting the user hit that.
+	var is_building := state == pm.S_BUILDING
+	var is_build_failed := state == pm.S_BUILD_FAILED
+	var is_needs_binary := state == pm.S_NEEDS_BINARY
+	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
-	_restart_button.disabled = not (is_running or is_starting)
+	_restart_button.disabled = not (is_running or is_starting) or is_building
 
 	# Show "Open Panel" button only if plugin declares UI panels and is running
 	var def = pm.get_db().get_by_id(plugin_id)
@@ -583,6 +837,9 @@ func _populate_detail_panel(plugin_id: String) -> void:
 			_autostart_check.set_pressed_no_signal(def.autostart)
 		if _auto_reload_check != null:
 			_auto_reload_check.set_pressed_no_signal(def.auto_reload)
+
+	# Setup-pipeline status (G4.1): Building…/failure detail/Rebuild.
+	_populate_setup_status(plugin_id)
 
 	# Capabilities
 	_populate_capabilities(plugin_id)
@@ -750,10 +1007,10 @@ func _populate_tools(plugin_id: String) -> void:
 	for child in _tools_list.get_children():
 		child.queue_free()
 
-	if not SingletonObject.plugin_manager:
+	if not _pm():
 		return
 
-	var pm: PluginManager = SingletonObject.plugin_manager
+	var pm: PluginManager = _pm()
 	var db: PluginDB = pm.get_db()
 	var def: PluginDefinition = db.get_by_id(plugin_id)
 
@@ -824,6 +1081,21 @@ func _on_plugin_event(_id: String) -> void:
 		_populate_detail_panel(_selected_plugin_id)
 
 
+## Setup-pipeline step boundary (G4.1): refresh the list row's "step N/M"
+## suffix and, if the building plugin is the one on screen, its setup-status
+## section. Cheaper than a full _populate_detail_panel per step.
+func _on_plugin_build_step_started(id: String, _step_index: int, _step_count: int, _step_type: String) -> void:
+	_refresh_plugin_list()
+	if id == _selected_plugin_id and _setup_status_container != null:
+		_populate_setup_status(id)
+
+
+func _on_plugin_build_step_finished(id: String, _step_index: int, _step_count: int, _step_type: String, _ok: bool, _detail: Dictionary) -> void:
+	_refresh_plugin_list()
+	if id == _selected_plugin_id and _setup_status_container != null:
+		_populate_setup_status(id)
+
+
 func _on_audit_entry_added(entry: Dictionary) -> void:
 	# Refresh audit section if this event is for the currently-viewed plugin
 	var entry_plugin: String = entry.get("plugin_id", "")
@@ -840,7 +1112,7 @@ func _on_start_pressed() -> void:
 		return
 	_show_status("Starting %s..." % _selected_plugin_id)
 	_start_button.disabled = true
-	var result: Dictionary = await SingletonObject.plugin_manager.start_plugin(_selected_plugin_id)
+	var result: Dictionary = await _pm().start_plugin(_selected_plugin_id)
 	_report_lifecycle_result("Start", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
@@ -850,7 +1122,7 @@ func _on_stop_pressed() -> void:
 		return
 	_show_status("Stopping %s..." % _selected_plugin_id)
 	_stop_button.disabled = true
-	var result: Dictionary = SingletonObject.plugin_manager.stop_plugin(_selected_plugin_id)
+	var result: Dictionary = _pm().stop_plugin(_selected_plugin_id)
 	_report_lifecycle_result("Stop", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
@@ -860,7 +1132,7 @@ func _on_restart_pressed() -> void:
 		return
 	_show_status("Restarting %s..." % _selected_plugin_id)
 	_restart_button.disabled = true
-	var result: Dictionary = await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
+	var result: Dictionary = await _pm().restart_plugin(_selected_plugin_id)
 	_report_lifecycle_result("Restart", _selected_plugin_id, result)
 	_refresh_plugin_list()
 
@@ -872,7 +1144,7 @@ func _on_reload_pressed() -> void:
 	_reload_button.disabled = true
 	if _files_changed_label:
 		_files_changed_label.visible = false
-	var result: Dictionary = await SingletonObject.plugin_manager.restart_plugin(_selected_plugin_id)
+	var result: Dictionary = await _pm().restart_plugin(_selected_plugin_id)
 	_reload_button.disabled = false
 	_report_lifecycle_result("Reload", _selected_plugin_id, result)
 	_refresh_plugin_list()
@@ -902,7 +1174,7 @@ func _report_lifecycle_result(action: String, plugin_id: String, result) -> void
 func _on_open_panel_pressed() -> void:
 	if _selected_plugin_id.is_empty():
 		return
-	var pm = SingletonObject.plugin_manager
+	var pm = _pm()
 	if pm == null:
 		return
 	var def = pm.get_db().get_by_id(_selected_plugin_id)
@@ -956,14 +1228,14 @@ func _on_open_panel_pressed() -> void:
 func _on_autostart_toggled(enabled: bool) -> void:
 	if _selected_plugin_id.is_empty():
 		return
-	SingletonObject.plugin_manager.get_db().set_autostart(_selected_plugin_id, enabled)
+	_pm().get_db().set_autostart(_selected_plugin_id, enabled)
 	_show_status("Auto-start %s for %s" % ["enabled" if enabled else "disabled", _selected_plugin_id])
 
 
 func _on_auto_reload_toggled(enabled: bool) -> void:
 	if _selected_plugin_id.is_empty():
 		return
-	SingletonObject.plugin_manager.set_auto_reload(_selected_plugin_id, enabled)
+	_pm().set_auto_reload(_selected_plugin_id, enabled)
 	_show_status("Auto-reload %s for %s" % ["enabled" if enabled else "disabled", _selected_plugin_id])
 
 
@@ -1002,11 +1274,11 @@ func _on_marketplace_install_complete(plugin_id: String) -> void:
 
 
 func _on_manifest_selected(path: String) -> void:
-	if not SingletonObject.plugin_manager:
+	if not _pm():
 		_show_status("Plugin manager unavailable.", true)
 		return
 
-	var result: Dictionary = await SingletonObject.plugin_manager.install_plugin(path)
+	var result: Dictionary = await _pm().install_plugin(path)
 	if result.has("error"):
 		_show_status("Install failed: %s" % result["error"], true)
 	else:
@@ -1038,8 +1310,8 @@ func _on_remove_pressed() -> void:
 
 	_pending_remove_id = _selected_plugin_id
 	var pm_name := _selected_plugin_id
-	if SingletonObject.plugin_manager:
-		var status = SingletonObject.plugin_manager.get_plugin_status(_selected_plugin_id)
+	if _pm():
+		var status = _pm().get_plugin_status(_selected_plugin_id)
 		pm_name = status.get("name", _selected_plugin_id)
 
 	_remove_confirm.dialog_text = "Remove plugin '%s'?\n\nThis will stop the plugin and remove it from Minerva." % pm_name
@@ -1048,11 +1320,11 @@ func _on_remove_pressed() -> void:
 
 
 func _on_remove_confirmed() -> void:
-	if _pending_remove_id.is_empty() or not SingletonObject.plugin_manager:
+	if _pending_remove_id.is_empty() or not _pm():
 		return
 
 	var delete_data := _remove_delete_data_check.button_pressed if _remove_delete_data_check else false
-	var result: Dictionary = await SingletonObject.plugin_manager.remove_plugin(_pending_remove_id, delete_data)
+	var result: Dictionary = await _pm().remove_plugin(_pending_remove_id, delete_data)
 	if result.has("error"):
 		_show_status("Remove failed: %s" % result["error"], true)
 	else:
@@ -1100,6 +1372,8 @@ func _state_color(state: int) -> Color:
 		PluginDefinition.State.STARTING:  return Color(0.9, 0.8, 0.2)
 		PluginDefinition.State.ERROR:     return Color(0.9, 0.3, 0.3)
 		PluginDefinition.State.CRASH_LOOP: return Color(1.0, 0.2, 0.2)
+		6:      return Color(0.9, 0.8, 0.2)  # PluginManager.S_BUILDING
+		7, 8:   return Color(0.9, 0.3, 0.3)  # S_BUILD_FAILED, S_NEEDS_BINARY
 		_:                                return Color(0.6, 0.6, 0.6)
 
 

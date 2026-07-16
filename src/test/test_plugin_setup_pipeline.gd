@@ -750,6 +750,14 @@ class FakeDB extends RefCounted:
 func _make_pm(db):
 	var pm = _pm_script.new()
 	pm._db = db
+	# R3-UI review MF1: PluginManager now FAILS CLOSED on exec steps when no
+	# approver is wired (unattended installs deny instead of running arbitrary
+	# argv). These Section B tests model the ATTENDED "user approved the step"
+	# flow — pm_install_fail must actually RUN exit2.sh to produce its exit-2
+	# envelope, pm_install_slow must actually sleep — so opt in explicitly,
+	# exactly as the exec-approval gate does when the user clicks Run. The
+	# unattended deny default has its own coverage in test_plugin_build_ui.gd.
+	pm.exec_approver = func(_step: Dictionary, _step_index: int) -> bool: return true
 	return pm
 
 

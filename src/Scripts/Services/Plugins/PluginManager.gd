@@ -68,6 +68,14 @@ signal plugin_crashed(id: String)
 signal plugin_state_changed(id: String, old_state: int, new_state: int)
 signal plugin_file_changed(id: String)
 
+## Setup-pipeline progress (DCR 019f69428fa0 round R3-UI, G4.1/G4.2). Re-emitted,
+## with `id` correlated (SetupPipeline's own signals don't carry it), whenever
+## the SetupPipeline running for `id` reports a step boundary. `step_count` is
+## the plugin's declared `setup.steps[]` length. See get_build_progress()/
+## get_build_log() below for the polling-free UI + MCP surface these back.
+signal plugin_build_step_started(id: String, step_index: int, step_count: int, step_type: String)
+signal plugin_build_step_finished(id: String, step_index: int, step_count: int, step_type: String, ok: bool, detail: Dictionary)
+
 
 # ---------------------------------------------------------------------------
 # Private types
@@ -159,6 +167,43 @@ var setup_state_path: String = DEFAULT_SETUP_STATE_PATH
 ## a pipeline whose `toolchain_registry` points at fixture search dirs instead
 ## of the real PATH/well-known install dirs.
 var setup_pipeline_factory: Callable = Callable()
+
+## Production seam (R3-UI, G4.1): SetupPipeline.approver — Callable(step:
+## Dictionary, step_index: int) -> bool — applied to EVERY setup pipeline this
+## manager starts (install or rebuild), unless a `setup_pipeline_factory`-
+## injected pipeline already set its own `.approver` (tests do this; we never
+## clobber it — see _start_setup_pipeline()). Left unset (default), SetupPipeline
+## falls back to its own documented auto-approve-with-push_warning stub, i.e.
+## zero behavior change for anyone who doesn't wire this. A UI embedder (e.g.
+## PluginManagerPanel) sets this once to a Callable that shows a confirmation
+## dialog and blocks the CALLING (worker) thread on the user's answer — see
+## SetupPipeline.gd's APPROVAL SEAM doc for the marshalling contract.
+var exec_approver: Callable = Callable()
+
+## plugin_id -> {"step_index": int, "step_count": int, "step_type": String} for
+## the setup pipeline CURRENTLY running (S_BUILDING only). Erased once the
+## pipeline reaches a terminal state. Read via get_build_progress().
+var _build_progress: Dictionary = {}
+
+## plugin_id -> Array[String] of human-readable step/build log lines for the
+## MOST RECENT setup-pipeline run (install or rebuild). Reset (not erased) at
+## the start of each new run, so a plugin's last build log survives past the
+## run's own terminal state — "Retain last build log per plugin" (G4.2).
+## In-memory only (unlike _setup_envelopes, not persisted across restart —
+## the envelope's own stderr_tail already covers the "what failed" case after
+## a restart; the full step-by-step log is a live-session convenience).
+var _build_logs: Dictionary = {}
+
+## plugin_id set (Dictionary-as-set) of pipeline runs whose exec steps are
+## being denied by the unattended FAIL-CLOSED default (review MF1): when no
+## exec_approver is wired (headless / MCP-driven install, panel never opened),
+## _start_setup_pipeline plugs a deny-all Callable into the pipeline's approver
+## seam instead of letting SetupPipeline's auto-approve stub run arbitrary
+## argv with zero confirmation (contract §1: exec REQUIRES explicit user
+## confirmation). Tracked per run so _on_setup_pipeline_finished can rewrite
+## the stored envelope's detail to "exec_denied_headless" — distinguishing
+## "the machine had no way to ask" from a user actually clicking Cancel.
+var _unattended_deny_ids: Dictionary = {}
 
 
 # ---------------------------------------------------------------------------
@@ -465,6 +510,9 @@ func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
 
 	_runtime.erase(id)
 	_setup_pipelines.erase(id)
+	_build_progress.erase(id)
+	_build_logs.erase(id)
+	_unattended_deny_ids.erase(id)
 	if _setup_envelopes.erase(id):
 		_save_setup_state()
 
@@ -824,6 +872,23 @@ func get_setup_envelope(id: String) -> Dictionary:
 	return _setup_envelopes.get(id, {})
 
 
+## Live step position while `id` is S_BUILDING, or {} if it isn't currently
+## building. Shape: {"step_index": int, "step_count": int, "step_type": String}.
+## Signal-driven consumers (PluginManagerPanel, MCP) should prefer
+## plugin_build_step_started/plugin_build_step_finished for push updates; this
+## getter exists for the initial snapshot (e.g. MCP polling a state query) and
+## for a UI attaching mid-build.
+func get_build_progress(id: String) -> Dictionary:
+	return _build_progress.get(id, {}).duplicate()
+
+
+## The step-by-step log lines for `id`'s most recent setup-pipeline run
+## (install or rebuild), retained until the NEXT run starts. [] if `id` has
+## never run a setup pipeline this session.
+func get_build_log(id: String) -> Array:
+	return (_build_logs.get(id, []) as Array).duplicate()
+
+
 ## Build + start a SetupPipeline for `id`, transition to S_BUILDING, and wire
 ## its terminal signal back to _on_setup_pipeline_finished. Shared by
 ## install_plugin() and rebuild().
@@ -844,9 +909,77 @@ func _start_setup_pipeline(id: String) -> void:
 		entrypoint_artifact = def.entrypoint.substr(2)
 
 	var pipeline: SetupPipeline = setup_pipeline_factory.call() if setup_pipeline_factory.is_valid() else SetupPipeline.new()
+	# Never clobber an approver a test already wired up via setup_pipeline_factory;
+	# otherwise apply the production seam (see `exec_approver`'s own doc) —
+	# and when NO approver is wired at all, FAIL CLOSED (review MF1): plug a
+	# deny-all Callable into the seam rather than letting SetupPipeline's
+	# auto-approve stub run arbitrary exec argv with zero confirmation on a
+	# headless / MCP-driven install (contract §1). The deny default lives HERE,
+	# per-pipeline, never in the exec_approver field itself — the UI's
+	# "claim the seam only if unclaimed" guard checks that field's validity.
+	_unattended_deny_ids.erase(id)
+	var unattended := false
+	if not pipeline.approver.is_valid():
+		if exec_approver.is_valid():
+			pipeline.approver = exec_approver
+		else:
+			unattended = true
+			_unattended_deny_ids[id] = true
+			pipeline.approver = func(_step: Dictionary, _step_index: int) -> bool: return false
 	_setup_pipelines[id] = pipeline
+	_build_progress.erase(id)
+	_build_logs[id] = []
+	var steps_arr: Array = def.setup.get("steps", [])
+	var step_count: int = steps_arr.size()
+	_append_build_log(id, "build started (%d step%s)" % [step_count, "" if step_count == 1 else "s"])
+	if unattended:
+		var has_exec := false
+		for s in steps_arr:
+			if s is Dictionary and str(s.get("type", "")) == "exec":
+				has_exec = true
+				break
+		if has_exec:
+			_append_build_log(id, "no exec approver wired — exec steps will be DENIED (unattended fail-closed default; open the Plugin Manager panel and Rebuild to approve interactively)")
+	pipeline.step_started.connect(_on_pipeline_step_started.bind(id))
+	pipeline.step_finished.connect(_on_pipeline_step_finished.bind(id))
 	pipeline.finished.connect(_on_setup_pipeline_finished.bind(id))
 	pipeline.run_async(id, def.setup, plugin_dir, entrypoint_artifact)
+
+
+## SetupPipeline.step_started re-broadcast with `id` correlated in (bound at
+## connect time in _start_setup_pipeline — always called on the main thread,
+## per SetupPipeline's own THREADING CONTRACT).
+func _on_pipeline_step_started(step_index: int, step_type: String, id: String) -> void:
+	var def = _db.get_by_id(id)
+	var step_count: int = (def.setup.get("steps", []) as Array).size() if def != null else 0
+	_build_progress[id] = {"step_index": step_index, "step_count": step_count, "step_type": step_type}
+	_append_build_log(id, "step %d/%d %s: started" % [step_index + 1, step_count, step_type])
+	plugin_build_step_started.emit(id, step_index, step_count, step_type)
+
+
+## SetupPipeline.step_finished re-broadcast with `id` correlated in. `detail`
+## is SetupExecutors.run_step()'s result Dictionary — {"ok": true, ...} on
+## success (no captured stdout; SetupExecutors does not retain it for
+## successful steps) or the §3 failure envelope (resolved_argv/exit_code/
+## stderr_tail) on failure.
+func _on_pipeline_step_finished(step_index: int, step_type: String, ok: bool, detail: Dictionary, id: String) -> void:
+	var step_count: int = int(_build_progress.get(id, {}).get("step_count", 0))
+	if ok:
+		_append_build_log(id, "step %d/%d %s: OK" % [step_index + 1, step_count, step_type])
+	else:
+		var exit_code = detail.get("exit_code", -1)
+		var stderr_tail: String = str(detail.get("stderr_tail", ""))
+		var line := "step %d/%d %s: FAILED (exit=%s)" % [step_index + 1, step_count, step_type, str(exit_code)]
+		if not stderr_tail.is_empty():
+			line += "\n%s" % stderr_tail
+		_append_build_log(id, line)
+	plugin_build_step_finished.emit(id, step_index, step_count, step_type, ok, detail)
+
+
+func _append_build_log(id: String, line: String) -> void:
+	if not _build_logs.has(id):
+		_build_logs[id] = []
+	(_build_logs[id] as Array).append(line)
 
 
 ## SetupPipeline's terminal-result handler (always called on the main thread —
@@ -854,18 +987,33 @@ func _start_setup_pipeline(id: String) -> void:
 ## final state and persists the envelope (if any) so a restart reports honestly.
 func _on_setup_pipeline_finished(result: Dictionary, id: String) -> void:
 	_setup_pipelines.erase(id)
+	_build_progress.erase(id)
+	var was_unattended: bool = _unattended_deny_ids.has(id)
+	_unattended_deny_ids.erase(id)
 
 	if result.get("ok", false):
 		_setup_envelopes.erase(id)
 		_transition_state(id, S_INSTALLED)
 		_save_setup_state()
+		_append_build_log(id, "build finished: registered")
 		print("[PluginManager] Setup pipeline succeeded for '%s' — registered" % id)
 		return
 
 	var failed_state: int = S_BUILD_FAILED if str(result.get("state", "")) == "S_BUILD_FAILED" else S_NEEDS_BINARY
-	_setup_envelopes[id] = result.get("envelope", {})
+	var envelope: Dictionary = result.get("envelope", {})
+	# MF1 tail: SetupPipeline stamps every denied exec step detail="exec_denied"
+	# (that string is fixed there; the pipeline is out of this round's fence).
+	# When the denial came from OUR unattended fail-closed default — the only
+	# approver this run had — rewrite the STORED copy to "exec_denied_headless"
+	# so UI/MCP consumers can tell "no one was there to ask" from a real user
+	# clicking Cancel.
+	if was_unattended and str(envelope.get("detail", "")) == "exec_denied":
+		envelope = envelope.duplicate(true)
+		envelope["detail"] = "exec_denied_headless"
+	_setup_envelopes[id] = envelope
 	_transition_state(id, failed_state)
 	_save_setup_state()
+	_append_build_log(id, "build finished: %s" % ("S_BUILD_FAILED" if failed_state == S_BUILD_FAILED else "S_NEEDS_BINARY"))
 	push_warning("[PluginManager] Setup pipeline failed for '%s' (state=%d): %s" % [
 		id, failed_state, str(result.get("envelope", {})),
 	])
