@@ -22,10 +22,15 @@ extends SceneTree
 ## semantic pad anchor override) — not copied via UI clicks, since this suite
 ## is about envelope/render parity, not the click state machine (that's
 ## test_pcb_single_trace_tool.gd's job).
+##
+## C3 migration (docket 019f6c4604ba): this suite never dispatched a
+## minerva_pcb_* tool through the core module (it only used
+## PCB_MODULE.new(null) to instantiate an unused `pcb_tools` var) — that dead
+## reference to the now-DELETED MCPPcbPanelTools.gd is removed; everything
+## else (annotations MCP, host builder calls, panel internals) is unaffected.
 
 const PANEL_PATH := "res://../../minerva-plugins/pcb/ui/PCBPanel.gd"
 const ANN_MODULE := preload("res://Scripts/Services/MCP/Modules/MCPAnnotationTools.gd")
-const PCB_MODULE := preload("res://Scripts/Services/MCP/Modules/MCPPcbPanelTools.gd")
 const _WorkflowListScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/WorkflowAnnotationList.gd")
 
 const EDITOR_NAME := "RouteHintParityProbe"
@@ -37,7 +42,6 @@ var panel = null
 var host = null
 var data = null
 var ann_tools = null
-var pcb_tools = null
 
 const U1_PIN1 := Vector2(15.0, 20.0)
 const U2_PIN1 := Vector2(55.0, 20.0)
@@ -110,7 +114,6 @@ func _mount() -> bool:
 		await process_frame
 
 	ann_tools = ANN_MODULE.new(null)
-	pcb_tools = PCB_MODULE.new(null)
 	AnnotationHostRegistry._reset_for_test()
 	AnnotationHostRegistry.register(EDITOR_NAME, host)
 	return true

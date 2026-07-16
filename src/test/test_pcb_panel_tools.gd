@@ -1,49 +1,48 @@
 extends SceneTree
-## Unit tests for MCPPcbPanelTools — the re-homed PCB plugin-panel MCP surface.
+## Unit tests for the PCB plugin-panel MCP surface (pcb/ui/panel_tools.gd).
 ## Docket: minerva 019eb47e72a7 · DCR 019dc140.
 ##
 ## Run: godot --headless --path src --script test/test_pcb_panel_tools.gd
 ##
-## Drives EVERY panel-local tool through the module's handle() (not the MCP
+## Drives EVERY panel-local tool through panel.handle_tool() (not the MCP
 ## transport) against a REAL PcbAnnotationHost + PCBPanel board model, registered
 ## in AnnotationHostRegistry headless. Asserts args-in / JSON-out / model-state
-## mutation, queries, journal, CSV + geometry round-trips, snapshot null-safety,
-## and the missing-editor error shape. Five tools (add/move/get_components,
-## spatial_query, describe_component) also assert field-by-field GOLDEN PARITY
-## against the legacy MCPPCBTools return shapes (encoded as fixtures) — the DCR
-## acceptance is "identical from the agent's perspective".
+## mutation, queries, journal, CSV + trace geometry round-trips, snapshot
+## null-safety, and the missing-editor error shape. Five tools (add/move/
+## get_components, spatial_query, describe_component) also assert field-by-field
+## GOLDEN PARITY against the legacy MCPPCBTools return shapes (encoded as
+## fixtures) — the DCR acceptance is "identical from the agent's perspective".
 ##
 ## Off-tree: the plugin scripts live outside res://; every panel/host/model ref is
 ## duck-typed and loaded by path (never typed AS a plugin class).
 ##
-## C2 migration (docket 019f6c45f09e): the 16 wave-1 tools below moved to the
-## pcb plugin's own panel_tools.gd (executor "panel") and are no longer
-## registered/handled by MODULE. The `h()` dispatch helper routes those names
-## through panel.handle_tool(tool_name, args) directly — the same plugin-side
-## entry point PluginToolRegistry.handle_tool_call forwards to once it has
-## resolved editor_name -> this panel (contract §2.2/§2.3); panel.handle_tool
-## is a plain synchronous call for these tools (no internal await), so this
-## keeps every existing `h(...)` call site in this file unchanged (no `await`
-## threading needed — GDScript's static analyzer only forces "await" on calls
-## it can prove are coroutines, and panel.handle_tool for wave-1 tools isn't
-## one). The two editor_name-validation checks in _run_error_shapes() below
-## are DISPATCHER-boundary behavior now (PluginToolRegistry.handle_tool_call
-## rejects a missing/unknown editor_name before ever reaching panel_tools.gd),
-## so those two specific calls route through the REAL registry instead
-## (test/helpers/panel_tool_registry_driver.gd, mirroring
-## test_panel_executed_tools.gd's fixture wiring) with assertions adjusted to
-## the dispatcher's structured PluginErrors shape (error_message, not the old
-## panel-level _err()'s "error" key) — that one function is async as a result.
-## WAVE-2 tool names still dispatch through MODULE.handle() directly
-## (get_change_journal, export/import_trace_geometry, get_image — unaffected).
+## C2+C3 migration (docket 019f6c45f09e wave 1, 019f6c4604ba wave 2 + core
+## deletion): ALL 21 tools now live in the pcb plugin's own panel_tools.gd
+## (executor "panel") — Minerva core's MCPPcbPanelTools.gd module is DELETED.
+## The `h()` dispatch helper routes every tool name through
+## panel.handle_tool(tool_name, args) — the same plugin-side entry point
+## PluginToolRegistry.handle_tool_call forwards to once it has resolved
+## editor_name -> this panel (contract §2.2/§2.3). panel.handle_tool is now a
+## COROUTINE end to end (minerva_pcb_apply_route_hints awaits the router
+## bridge, which makes the whole function async per the Godot 4.6
+## coroutine/static-typing landmine — see panel_tools.gd's class doc), so
+## `h()` awaits it and every `h(...)` call site in this file is prefixed with
+## `await` (mechanical edit, C3 round). The two editor_name-validation checks
+## in _run_error_shapes() below are DISPATCHER-boundary behavior
+## (PluginToolRegistry.handle_tool_call rejects a missing/unknown editor_name
+## before ever reaching panel_tools.gd), so those two specific calls route
+## through the REAL registry instead (test/helpers/panel_tool_registry_driver.gd,
+## mirroring test_panel_executed_tools.gd's fixture wiring) with assertions
+## adjusted to the dispatcher's structured PluginErrors shape (error_message,
+## not panel_tools.gd's own _err()'s "error" key).
 
-const MODULE := preload("res://Scripts/Services/MCP/Modules/MCPPcbPanelTools.gd")
 const PANEL_PATH := "res://../../minerva-plugins/pcb/ui/PCBPanel.gd"
 const DRIVER := preload("res://test/helpers/plugin_panel_driver.gd")
 const REGISTRY_DRIVER := preload("res://test/helpers/panel_tool_registry_driver.gd")
 const PCB_PLUGIN_ID := "pcb"
 
-## The 16 wave-1 tool names — moved to pcb/ui/panel_tools.gd this round.
+## The 16 wave-1 tool names, used only to build the registry fixture for the
+## two dispatcher-boundary error-shape checks in _run_error_shapes().
 const _WAVE1_TOOLS: Array[String] = [
 	"minerva_pcb_set_board_size",
 	"minerva_pcb_get_components",
@@ -68,7 +67,6 @@ const EDITOR := "PCB1"
 var _pass := 0
 var _fail := 0
 
-var tools
 var panel      # PCBPanel (duck-typed Node)
 var host       # PcbAnnotationHost (duck-typed)
 var data       # pcb_data model (duck-typed)
@@ -76,19 +74,18 @@ var registry: PluginToolRegistry = null
 
 
 func _init() -> void:
-	print("=== MCPPcbPanelTools Tests ===\n")
-	tools = MODULE.new(null)  # server=null — register_tools() not exercised; handle() is server-free.
+	print("=== PCB Panel-Tools Tests ===\n")
 
 	if not _setup():
 		printerr("SETUP FAILED — cannot load plugin panel; aborting")
 		quit(1)
 		return
 
-	_run_queries_and_mutations()
-	_run_golden_parity()
-	_run_roundtrips()
+	await _run_queries_and_mutations()
+	await _run_golden_parity()
+	await _run_roundtrips()
 	await _run_error_shapes()
-	_run_get_image()
+	await _run_get_image()
 
 	_teardown()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
@@ -156,10 +153,10 @@ func check_keys(desc: String, result: Dictionary, expected: Array) -> void:
 	check("%s — keys %s == %s" % [desc, str(got), str(want)], got == want)
 
 
+## Every tool now routes through panel.handle_tool — a coroutine end to end
+## (see the class doc's C2+C3 migration note), so this helper awaits it.
 func h(tool_name: String, args: Dictionary) -> Dictionary:
-	if _WAVE1_TOOLS.has(tool_name):
-		return panel.handle_tool(tool_name, args)
-	return tools.handle(tool_name, args)
+	return await panel.handle_tool(tool_name, args)
 
 
 func _args(extra: Dictionary = {}) -> Dictionary:
@@ -172,61 +169,61 @@ func _args(extra: Dictionary = {}) -> Dictionary:
 
 func _run_queries_and_mutations() -> void:
 	print("-- set_board_size --")
-	var r := h("minerva_pcb_set_board_size", _args({"width": 100.0, "height": 80.0}))
+	var r := await h("minerva_pcb_set_board_size", _args({"width": 100.0, "height": 80.0}))
 	check("set_board_size ok", r.get("success", false))
 	check_approx("board_width=100", float(r.get("board_width", 0)), 100.0)
 	check_approx("model board_width mutated", data.board_width, 100.0)
 	check_approx("model board_height mutated", data.board_height, 80.0)
 
 	print("\n-- add_component (IC_DIP) --")
-	var add := h("minerva_pcb_add_component", _args({"id": "U9", "footprint": "IC_DIP", "x": 20.0, "y": 10.0}))
+	var add := await h("minerva_pcb_add_component", _args({"id": "U9", "footprint": "IC_DIP", "x": 20.0, "y": 10.0}))
 	check("add ok", add.get("success", false))
 	check_eq("component in model", data.has_component("U9"), true)
 	check("pin_count > 0", int(add.get("pin_count", 0)) > 0)
 
 	print("\n-- add_component (RESISTOR with value) --")
-	var addr := h("minerva_pcb_add_component", _args({"id": "R7", "footprint": "RESISTOR", "x": 40.0, "y": 30.0, "value": "10K"}))
+	var addr := await h("minerva_pcb_add_component", _args({"id": "R7", "footprint": "RESISTOR", "x": 40.0, "y": 30.0, "value": "10K"}))
 	check("add R7 ok", addr.get("success", false))
 	check_eq("R7 value stored", data.get_component("R7").properties.get("value", ""), "10K")
 
 	print("\n-- add_component invalid footprint --")
-	var bad := h("minerva_pcb_add_component", _args({"footprint": "BOGUS", "x": 1.0, "y": 1.0}))
+	var bad := await h("minerva_pcb_add_component", _args({"footprint": "BOGUS", "x": 1.0, "y": 1.0}))
 	check("invalid footprint rejected", bad.get("success", true) == false)
 
 	print("\n-- move_component --")
-	var mv := h("minerva_pcb_move_component", _args({"component_id": "U9", "x": 22.0, "y": 12.0}))
+	var mv := await h("minerva_pcb_move_component", _args({"component_id": "U9", "x": 22.0, "y": 12.0}))
 	check("move ok", mv.get("success", false))
 	var snapped_pos: Vector2 = data.snap_to_grid(Vector2(22.0, 12.0))
 	check_approx("moved x snapped", float(mv.get("x", -1)), snapped_pos.x)
 	check_approx("model x mutated", data.get_component("U9").position.x, snapped_pos.x)
 
 	print("\n-- rotate_component --")
-	var rot := h("minerva_pcb_rotate_component", _args({"component_id": "U9", "degrees": 90}))
+	var rot := await h("minerva_pcb_rotate_component", _args({"component_id": "U9", "degrees": 90}))
 	check("rotate ok", rot.get("success", false))
 	check_approx("model rotation mutated", data.get_component("U9").rotation, 90.0)
 
 	print("\n-- move_relative --")
-	var mr := h("minerva_pcb_move_relative", _args({"component_id": "R7", "direction": "right"}))
+	var mr := await h("minerva_pcb_move_relative", _args({"component_id": "R7", "direction": "right"}))
 	check("move_relative ok", mr.get("success", false))
 	check("interpreted_direction echoed", str(mr.get("interpreted_direction", "")) == "right")
 	check("new_x present", mr.has("new_x"))
 
 	print("\n-- get_pin_position --")
-	var pp := h("minerva_pcb_get_pin_position", _args({"component_id": "U9", "pin": "1"}))
+	var pp := await h("minerva_pcb_get_pin_position", _args({"component_id": "U9", "pin": "1"}))
 	check("pin pos ok", pp.get("success", false))
 	check("world_position present", pp.has("world_position"))
 	check("available_pins array", pp.get("available_pins", null) is Array)
-	var pp_bad := h("minerva_pcb_get_pin_position", _args({"component_id": "U9", "pin": "ZZZ"}))
+	var pp_bad := await h("minerva_pcb_get_pin_position", _args({"component_id": "U9", "pin": "ZZZ"}))
 	check("bad pin rejected", pp_bad.get("success", true) == false)
 	check("bad pin returns available_pins", pp_bad.get("available_pins", null) is Array)
 
 	print("\n-- connect_net + get_nets --")
-	var cn := h("minerva_pcb_connect_net", _args({"net_name": "VCC", "pins": [
+	var cn := await h("minerva_pcb_connect_net", _args({"net_name": "VCC", "pins": [
 		{"component": "U9", "pin": "1"}, {"component": "R7", "pin": "1"}]}))
 	check("connect ok", cn.get("success", false))
 	check_eq("connected_pins count", (cn.get("connected_pins", []) as Array).size(), 2)
 	check_eq("net created in model", data.has_net("VCC"), true)
-	var nets := h("minerva_pcb_get_nets", _args())
+	var nets := await h("minerva_pcb_get_nets", _args())
 	check("get_nets ok", nets.get("success", false))
 	check_eq("net_count=1", int(nets.get("net_count", 0)), 1)
 	var net0: Dictionary = (nets.get("nets", []) as Array)[0]
@@ -234,7 +231,7 @@ func _run_queries_and_mutations() -> void:
 	check("net pins are Comp.Pin strings", (net0.get("pins", []) as Array).has("U9.1"))
 
 	print("\n-- get_change_journal reflects mutations --")
-	var jr := h("minerva_pcb_get_change_journal", _args())
+	var jr := await h("minerva_pcb_get_change_journal", _args())
 	check("journal ok", jr.get("success", false))
 	check("journal has entries", int(jr.get("total_entries", 0)) > 0)
 	var actions: Array = []
@@ -245,7 +242,7 @@ func _run_queries_and_mutations() -> void:
 	check("journal recorded connect_net", actions.has("connect_net"))
 
 	print("\n-- delete_component --")
-	var dl := h("minerva_pcb_delete_component", _args({"component_id": "R7"}))
+	var dl := await h("minerva_pcb_delete_component", _args({"component_id": "R7"}))
 	check("delete ok", dl.get("success", false))
 	check_eq("R7 removed from model", data.has_component("R7"), false)
 
@@ -256,7 +253,7 @@ func _run_golden_parity() -> void:
 	print("\n-- GOLDEN: get_components shape --")
 	# Legacy MCPPCBTools._pcb_get_components → {success, component_count, components}
 	# each component → {id, footprint, x, y, rotation, layer, pins} (+ value?).
-	var gc := h("minerva_pcb_get_components", _args())
+	var gc := await h("minerva_pcb_get_components", _args())
 	check_keys("get_components top-level", gc, ["success", "component_count", "components"])
 	var comps: Array = gc.get("components", [])
 	check("components non-empty", comps.size() > 0)
@@ -269,25 +266,25 @@ func _run_golden_parity() -> void:
 
 	print("\n-- GOLDEN: add_component shape --")
 	# Legacy → {success, component_id, x, y, pin_count}
-	var ga := h("minerva_pcb_add_component", _args({"id": "C3", "footprint": "CAPACITOR", "x": 10.0, "y": 50.0}))
+	var ga := await h("minerva_pcb_add_component", _args({"id": "C3", "footprint": "CAPACITOR", "x": 10.0, "y": 50.0}))
 	check_keys("add_component result", ga, ["success", "component_id", "x", "y", "pin_count"])
 	check_eq("component_id echoed", ga.get("component_id", ""), "C3")
 
 	print("\n-- GOLDEN: move_component shape --")
 	# Legacy → {success, component_id, x, y}
-	var gm := h("minerva_pcb_move_component", _args({"component_id": "C3", "x": 12.0, "y": 52.0}))
+	var gm := await h("minerva_pcb_move_component", _args({"component_id": "C3", "x": 12.0, "y": 52.0}))
 	check_keys("move_component result", gm, ["success", "component_id", "x", "y"])
 
 	print("\n-- GOLDEN: spatial_query shape --")
 	# Legacy → {success, reference, radius_mm, nearby_count, nearby:[{id, relationship}]}
-	var gs := h("minerva_pcb_spatial_query", _args({"reference_component": "U9", "radius_mm": 100.0}))
+	var gs := await h("minerva_pcb_spatial_query", _args({"reference_component": "U9", "radius_mm": 100.0}))
 	check_keys("spatial_query result", gs, ["success", "reference", "radius_mm", "nearby_count", "nearby"])
 	var nearby: Array = gs.get("nearby", [])
 	if nearby.size() > 0:
 		check_keys("nearby entry", nearby[0], ["id", "relationship"])
 		check("relationship is String", nearby[0].get("relationship", null) is String)
 	# empty reference → falls back to get_components shape (legacy behaviour).
-	var gs_empty := h("minerva_pcb_spatial_query", _args())
+	var gs_empty := await h("minerva_pcb_spatial_query", _args())
 	check_keys("spatial_query no-ref → get_components shape", gs_empty,
 		["success", "component_count", "components"])
 
@@ -295,12 +292,12 @@ func _run_golden_parity() -> void:
 	# Legacy → describe_component_context(id) + success. Base keys:
 	# {id, value, position, rotation, footprint, layer, nearby, connected_to, region, pins}
 	# (+ properties when the component has any; success added by the tool).
-	var gd := h("minerva_pcb_describe_component", _args({"component_id": "U9"}))
+	var gd := await h("minerva_pcb_describe_component", _args({"component_id": "U9"}))
 	check("describe ok", gd.get("success", false))
 	for k in ["id", "position", "rotation", "footprint", "layer", "nearby", "connected_to", "region", "pins"]:
 		check("describe has '%s'" % k, gd.has(k))
 	check("describe position is {x,y}", (gd.get("position", {}) as Dictionary).has("x"))
-	var gd_missing := h("minerva_pcb_describe_component", _args({"component_id": "NOPE"}))
+	var gd_missing := await h("minerva_pcb_describe_component", _args({"component_id": "NOPE"}))
 	check("describe missing component → error", gd_missing.get("success", true) == false)
 
 
@@ -308,14 +305,14 @@ func _run_golden_parity() -> void:
 
 func _run_roundtrips() -> void:
 	print("\n-- CSV round-trip --")
-	var ex := h("minerva_pcb_export_csv", _args())
+	var ex := await h("minerva_pcb_export_csv", _args())
 	check("export_csv ok", ex.get("success", false))
 	var csv := str(ex.get("csv", ""))
 	check("csv has header", csv.begins_with("id,footprint,x,y,rotation,layer,value"))
 	check("csv mentions U9", csv.contains("U9"))
 	# Import into a blank board and confirm the component count round-trips.
 	var before_ids: Array = data.get_component_ids()
-	var im := h("minerva_pcb_import_csv", _args({"csv_content": csv}))
+	var im := await h("minerva_pcb_import_csv", _args({"csv_content": csv}))
 	check("import_csv ok", im.get("success", false))
 	check_eq("import restored same count", int(im.get("component_count", -1)), before_ids.size())
 
@@ -334,7 +331,7 @@ func _run_roundtrips() -> void:
 			},
 		},
 	}
-	var fg := h("minerva_pcb_import_footprint_geometry", _args({"geometry": geom}))
+	var fg := await h("minerva_pcb_import_footprint_geometry", _args({"geometry": geom}))
 	check("footprint import ok", fg.get("success", false))
 	check_eq("updated_count=1", int(fg.get("updated_count", 0)), 1)
 	check("U9 has pad geometry", data.get_component("U9").has_pad_geometry)
@@ -349,12 +346,12 @@ func _run_roundtrips() -> void:
 			{"position": {"x": 10.0, "y": 0.0}, "size": 0.8, "drill": 0.4, "net_name": "GND", "layers": ["F.Cu", "B.Cu"]},
 		],
 	}
-	var ti := h("minerva_pcb_import_trace_geometry", _args({"trace_data": tin}))
+	var ti := await h("minerva_pcb_import_trace_geometry", _args({"trace_data": tin}))
 	check("trace import ok", ti.get("success", false))
 	check("traces created", int(ti.get("trace_count", 0)) >= 1)
 	check_eq("one via imported", int(ti.get("via_count", 0)), 1)
 	check("model has traces", data.get_trace_count() >= 1)
-	var te := h("minerva_pcb_export_trace_geometry", _args())
+	var te := await h("minerva_pcb_export_trace_geometry", _args())
 	check("trace export ok", te.get("success", false))
 	var td: Dictionary = te.get("trace_data", {})
 	check("export has traces", (td.get("traces", []) as Array).size() >= 1)
@@ -390,7 +387,7 @@ func _run_error_shapes() -> void:
 	check("error lists known editors", str(e2.get("error_message", "")).contains("Known editors"))
 
 	print("\n-- component not found --")
-	var e3 := h("minerva_pcb_move_component", _args({"component_id": "NOSUCH", "x": 1.0, "y": 1.0}))
+	var e3 := await h("minerva_pcb_move_component", _args({"component_id": "NOSUCH", "x": 1.0, "y": 1.0}))
 	check("missing component → error", e3.get("success", true) == false)
 
 
@@ -398,7 +395,7 @@ func _run_error_shapes() -> void:
 
 func _run_get_image() -> void:
 	print("\n-- get_image (headless null-or-image, no crash) --")
-	var gi := h("minerva_pcb_get_image", _args())
+	var gi := await h("minerva_pcb_get_image", _args())
 	check("get_image returns success", gi.get("success", false))
 	var img = gi.get("image_data", "SENTINEL")
 	check("image_data is null or a base64 String (headless)", img == null or img is String)

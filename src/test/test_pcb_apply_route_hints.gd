@@ -5,32 +5,49 @@ extends SceneTree
 ##
 ## Run: godot --headless --path src --script test/test_pcb_apply_route_hints.gd
 ##
-## Drives the apply flow through the module against a REAL PcbAnnotationHost +
-## PCBPanel board model (same harness as test_pcb_panel_tools.gd). Because the
-## router WORKER is unreachable headless (no IPC channel / no worker binary), the
-## worker `route` call is STUBBED at the boundary: the write-back / materialize /
-## lifecycle logic is exercised directly against a CANNED RoutingResult (the exact
+## Drives the apply flow against a REAL PcbAnnotationHost + PCBPanel board model
+## (same harness as test_pcb_panel_tools.gd). Because the router WORKER is
+## unreachable headless (no IPC channel / no worker binary), the worker `route`
+## call is STUBBED at the boundary: the write-back / materialize / lifecycle
+## logic is exercised directly against a CANNED RoutingResult (the exact
 ## {success, routes[…segments…], unrouted, via_count} shape methods.py._route
 ## returns). The tool-level handle() path is exercised only for its error shapes
 ## (missing/unknown editor) and the worker-unavailable failure-as-feedback shape —
 ## which is what a live headless call actually hits.
 ##
+## C3 migration (docket 019f6c4604ba, wave 2 + core deletion): the core module
+## MCPPcbPanelTools.gd this suite used to construct directly is DELETED. Its
+## internal helpers (_gather_route_hints / _write_back_proposals /
+## _materialize_routes) moved VERBATIM to pcb/ui/panel_tools.gd as static
+## funcs — this suite now calls them there directly (PANEL_TOOLS.<name>(...))
+## instead of on a MODULE instance (mechanical edit; the calls themselves are
+## unchanged aside from the receiver). The two editor_name-validation checks
+## in _run_error_shapes() are DISPATCHER-boundary behavior now
+## (PluginToolRegistry.handle_tool_call rejects a missing/unknown editor_name
+## before ever reaching panel_tools.gd — contract §2.2), so those two route
+## through a REAL registry fixture (test/helpers/panel_tool_registry_driver.gd)
+## with PluginErrors-shaped assertions; the worker-unavailable check (a real,
+## known editor with open hints) calls panel.handle_tool(...) directly —
+## panel_tools.gd's own surface, no dispatcher plumbing needed to prove it.
+##
 ## Off-tree: the plugin scripts live outside res://; every panel/host/model ref is
 ## duck-typed and loaded by path (never typed AS a plugin class).
 
-const MODULE := preload("res://Scripts/Services/MCP/Modules/MCPPcbPanelTools.gd")
+const PANEL_TOOLS := preload("res://../../minerva-plugins/pcb/ui/panel_tools.gd")
 const PANEL_PATH := "res://../../minerva-plugins/pcb/ui/PCBPanel.gd"
 const DRIVER := preload("res://test/helpers/plugin_panel_driver.gd")
+const REGISTRY_DRIVER := preload("res://test/helpers/panel_tool_registry_driver.gd")
+const PCB_PLUGIN_ID := "pcb"
 
 const EDITOR := "PCB1"
 
 var _pass := 0
 var _fail := 0
 
-var tools
 var panel      # PCBPanel (duck-typed Node)
 var host       # PcbAnnotationHost (duck-typed)
 var data       # pcb_data model (duck-typed)
+var registry: PluginToolRegistry = null
 
 
 ## Canned RoutingResult — the worker `route` reply payload for a run that routed
@@ -63,7 +80,6 @@ func _canned_result() -> Dictionary:
 
 func _init() -> void:
 	print("=== minerva_pcb_apply_route_hints Tests ===\n")
-	tools = MODULE.new(null)  # server=null — handle() is server-free for these paths.
 
 	if not _setup():
 		printerr("SETUP FAILED — cannot load plugin panel; aborting")
@@ -99,6 +115,10 @@ func _setup() -> bool:
 
 	AnnotationHostRegistry._reset_for_test()
 	AnnotationHostRegistry.register(EDITOR, host)
+
+	registry = REGISTRY_DRIVER.new().build(panel, PCB_PLUGIN_ID, EDITOR, ["minerva_pcb_apply_route_hints"])
+	if registry == null:
+		return false
 
 	# Two OPEN source hints: GND (0.4mm, U1.1→R1.1) and SIG (0.25mm).
 	_seed_hint("GND", 0.4, ["U1.1"], ["R1.1"])
@@ -165,17 +185,25 @@ func _names(raw) -> Array:
 
 func _run_error_shapes() -> void:
 	print("-- error shapes + worker-unavailable --")
-	var missing: Dictionary = await tools.handle("minerva_pcb_apply_route_hints", {})
+	# DISPATCHER-boundary behavior now (PluginToolRegistry.handle_tool_call
+	# rejects a missing/unknown editor_name before ever reaching
+	# panel_tools.gd — contract §2.2): route through the REAL registry with
+	# PluginErrors-shaped assertions (error_code, not panel_tools.gd's own
+	# _err()'s "error" string).
+	var missing: Dictionary = await registry.handle_tool_call("minerva_pcb_apply_route_hints", {})
 	check("missing editor_name → error", not bool(missing.get("success", true)))
-	check_eq("missing editor_name message", missing.get("error", ""), "editor_name is required")
+	check_eq("missing editor_name → editor_name_required", missing.get("error_code", ""), "editor_name_required")
 
-	var unknown: Dictionary = await tools.handle("minerva_pcb_apply_route_hints", {"editor_name": "NOPE"})
+	var unknown: Dictionary = await registry.handle_tool_call("minerva_pcb_apply_route_hints", {"editor_name": "NOPE"})
 	check("unknown editor → error", not bool(unknown.get("success", true)))
-	check("unknown editor names the miss", str(unknown.get("error", "")).begins_with("no_pcb_host_for_editor"))
+	check_eq("unknown editor → editor_not_found", unknown.get("error_code", ""), "editor_not_found")
 
-	# Open source hints exist → the tool reaches the worker bridge, which is
-	# unreachable headless (no _MinervaIPC) → structured failure-as-feedback.
-	var wu: Dictionary = await tools.handle("minerva_pcb_apply_route_hints", {"editor_name": EDITOR})
+	# Open source hints exist, editor_name is real → the tool itself reaches the
+	# worker bridge, which is unreachable headless (no _MinervaIPC) → structured
+	# failure-as-feedback. This exercises panel_tools.gd's OWN surface directly
+	# (panel.handle_tool, PCBPanel's plugin-side entry point) — no dispatcher
+	# plumbing needed to prove the tool's internal behavior.
+	var wu: Dictionary = await panel.handle_tool("minerva_pcb_apply_route_hints", {"editor_name": EDITOR})
 	check("worker-unavailable → not success", not bool(wu.get("success", true)))
 	check_eq("worker-unavailable error tag", wu.get("error", ""), "route_worker_unavailable")
 	check("worker-unavailable echoes hint_ids", (wu.get("hint_ids", []) as Array).size() == 2)
@@ -186,10 +214,10 @@ func _run_error_shapes() -> void:
 
 func _run_write_back() -> void:
 	print("-- propose (write-back) --")
-	var source_hints: Array = tools._gather_route_hints(host, [])
+	var source_hints: Array = PANEL_TOOLS._gather_route_hints(host, [])
 	check_eq("gather open source hints", source_hints.size(), 2)
 
-	var res: Dictionary = tools._write_back_proposals(host, _canned_result(), source_hints)
+	var res: Dictionary = PANEL_TOOLS._write_back_proposals(host, _canned_result(), source_hints)
 	check("write-back ok", bool(res.get("success", false)))
 	check_eq("proposed count", res.get("proposed", 0), 2)
 	check_eq("not committed", res.get("committed", true), false)
@@ -228,14 +256,14 @@ func _run_write_back() -> void:
 
 func _run_commit_and_iterate() -> void:
 	print("-- commit (materialize) + iterate --")
-	var source_hints: Array = tools._gather_route_hints(host, [])
+	var source_hints: Array = PANEL_TOOLS._gather_route_hints(host, [])
 	check_eq("source hints still open pre-commit", source_hints.size(), 2)
 
 	# Known undo baseline (blank board) so the journal-ordering guard below is
 	# deterministic regardless of prior history depth.
 	data.save_to_history("baseline")
 
-	var res: Dictionary = tools._materialize_routes(host, data, _canned_result(), source_hints)
+	var res: Dictionary = PANEL_TOOLS._materialize_routes(host, data, _canned_result(), source_hints)
 	check("materialize ok", bool(res.get("success", false)))
 	check_eq("committed flag", res.get("committed", false), true)
 	check_eq("two traces added", res.get("traces_added", 0), 2)
@@ -279,5 +307,5 @@ func _run_commit_and_iterate() -> void:
 
 	# ITERATE: consumed hints are gone and AI proposals are excluded from the
 	# default gather, so a re-run finds no fresh open source hints.
-	var after: Array = tools._gather_route_hints(host, [])
+	var after: Array = PANEL_TOOLS._gather_route_hints(host, [])
 	check_eq("re-gather finds no fresh open hints", after.size(), 0)

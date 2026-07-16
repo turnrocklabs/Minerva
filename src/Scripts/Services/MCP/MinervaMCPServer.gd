@@ -114,10 +114,11 @@ func _init_modules() -> void:
 		MCPHttpTools.new(self),
 		MCPAnnotationTools.new(self),
 		MCPCadTools.new(self),
-		# PCB panel surface — the SOLE PCB MCP surface as of cutover 2026-07-07
-		# (in-tree MCPPCBTools removed). MCPPcbPanelTools' NAME-COLLISION GUARD
-		# now registers the minerva_pcb_* panel tools unopposed.
-		MCPPcbPanelTools.new(self),
+		# PCB panel surface — MCPPcbPanelTools.gd deleted (DCR 019f6c3d0e3d, C3
+		# round docket 019f6c4604ba): every minerva_pcb_* tool is now
+		# executor:"panel" in the pcb plugin's own manifest.json, dispatched
+		# through PluginToolRegistry -> pcb/ui/panel_tools.gd. Minerva core is
+		# no longer aware of PCB workflows at all.
 		# T6 tail R6 (2026-05-12): MCPPresentationTools.gd deleted — every
 		# minerva_presentation_* tool now lives in ~/github/plugins/presentation.
 		MCPGeneralTools.new(self),

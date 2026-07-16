@@ -21,7 +21,7 @@ extends SceneTree
 ##
 ## REUSE SCAN: mount/fixture/input conventions copied verbatim from
 ## test_pcb_workflow_kinds.gd (real PCBPanel boot headless, real input via
-## get_root().push_input(), MCP via MODULE.new(null).handle()). The apply/
+## get_root().push_input(), MCP via panel.handle_tool()). The apply/
 ## materialize call sequence for E2E-3C is copied from test_pcb_apply_
 ## route_hints.gd (_gather_route_hints / _write_back_proposals /
 ## _materialize_routes), with the canned RoutingResult REPLACED by a call to
@@ -30,10 +30,25 @@ extends SceneTree
 ## documented canned result ONLY if the binary genuinely isn't built at
 ## <minerva-plugins>/pcb/pcb-plugin (contract-allowed fallback), and always
 ## reports which path ran.
+##
+## C3 migration (docket 019f6c4604ba, wave 2 + core deletion): the core
+## module MCPPcbPanelTools.gd this suite used to construct directly
+## (`pcb_tools = PCB_MODULE.new(null)`) is DELETED. Its wave-2 tool bodies
+## and the whole route-workflow helper cluster moved VERBATIM to
+## pcb/ui/panel_tools.gd (PANEL_TOOLS, static funcs) — internal-helper call
+## sites (_gather_route_hints / _write_back_proposals / _materialize_routes)
+## now call PANEL_TOOLS.<name>(...) directly (mechanical edit, receiver only).
+## Tool-surface calls (get_image, apply_route_hints) now go through
+## panel.handle_tool(tool_name, args) — PCBPanel's plugin-side entry point,
+## the same one PluginToolRegistry forwards to in production — and are
+## AWAITED unconditionally: apply_route_hints awaits the router bridge,
+## which makes panel_tools.gd's handle() (and therefore PCBPanel.handle_tool)
+## a coroutine end to end (Godot 4.6 static-typing landmine — see
+## panel_tools.gd's class doc).
 
 const PANEL_PATH := "res://../../minerva-plugins/pcb/ui/PCBPanel.gd"
 const ANN_MODULE := preload("res://Scripts/Services/MCP/Modules/MCPAnnotationTools.gd")
-const PCB_MODULE := preload("res://Scripts/Services/MCP/Modules/MCPPcbPanelTools.gd")
+const PANEL_TOOLS := preload("res://../../minerva-plugins/pcb/ui/panel_tools.gd")
 const DRIVER := preload("res://test/helpers/plugin_panel_driver.gd")
 const _WorkflowListScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/WorkflowAnnotationList.gd")
 
@@ -52,7 +67,6 @@ var driver = null
 
 var overlay: AnnotationOverlay = null
 var ann_tools = null
-var pcb_tools = null
 
 const U1_PIN1 := Vector2(15.0, 20.0)
 const U2_PIN1 := Vector2(55.0, 20.0)
@@ -140,7 +154,6 @@ func _mount() -> bool:
 	await process_frame
 
 	ann_tools = ANN_MODULE.new(null)   # server=null — handle() is server-free.
-	pcb_tools = PCB_MODULE.new(null)
 	AnnotationHostRegistry._reset_for_test()
 	AnnotationHostRegistry.register(EDITOR_NAME, host)
 	return true
@@ -279,7 +292,7 @@ func _test_e2e3_a_human_hints_it() -> void:
 
 	# Pixel-probe branch: windowed (xvfb-run) gets a real image; a bare
 	# --headless run must get the graceful null envelope (contract §1c).
-	var img_result: Dictionary = pcb_tools.handle("minerva_pcb_get_image", {"editor_name": EDITOR_NAME})
+	var img_result: Dictionary = await panel.handle_tool("minerva_pcb_get_image", {"editor_name": EDITOR_NAME})
 	if DisplayServer.get_name() == "headless":
 		check("A: pcb_get_image ok:true headless", bool(img_result.get("success", false)), str(img_result))
 		check("A: pcb_get_image graceful null envelope headless",
@@ -317,7 +330,7 @@ func _test_e2e3_c_agent_routes_it() -> void:
 	print("-- E2E-3 C: agent routes it (propose → commit → real trace) --")
 	check("C: no traces on the board yet", data.get_trace_count() == 0)
 
-	var source_hints: Array = pcb_tools._gather_route_hints(host, [])
+	var source_hints: Array = PANEL_TOOLS._gather_route_hints(host, [])
 	check("C: gather finds the open source hint", source_hints.size() == 1, "size=%d" % source_hints.size())
 
 	var result := await _route_result(source_hints)
@@ -327,7 +340,7 @@ func _test_e2e3_c_agent_routes_it() -> void:
 	check("C: route result has a SIG route", _has_route_for_net(result, "SIG"), str(result))
 
 	# PROPOSE (write-back): cyan proposal, board unmutated.
-	var propose_res: Dictionary = pcb_tools._write_back_proposals(host, result, source_hints)
+	var propose_res: Dictionary = PANEL_TOOLS._write_back_proposals(host, result, source_hints)
 	check("C: propose ok", bool(propose_res.get("success", false)), str(propose_res))
 	check("C: exactly one proposal", int(propose_res.get("proposed", 0)) == 1, str(propose_res))
 	check("C: board still has 0 traces after propose", data.get_trace_count() == 0)
@@ -338,7 +351,7 @@ func _test_e2e3_c_agent_routes_it() -> void:
 		check("C: proposal author is ai", str((proposal.get("author", {}) as Dictionary).get("kind", "")) == "ai")
 
 	# COMMIT (materialize): REAL trace connecting pin1-pin2 along the hinted line.
-	var commit_res: Dictionary = pcb_tools._materialize_routes(host, data, result, source_hints)
+	var commit_res: Dictionary = PANEL_TOOLS._materialize_routes(host, data, result, source_hints)
 	check("C: materialize ok", bool(commit_res.get("success", false)), str(commit_res))
 	check("C: one trace added", int(commit_res.get("traces_added", 0)) >= 1, str(commit_res))
 	check("C: board now has a trace", data.get_trace_count() >= 1)
@@ -746,13 +759,13 @@ func _test_apply_tool_full_mcp_broker_path() -> void:
 	panel.add_child(fake)
 	panel.request.connect(fake.on_request)
 
-	var propose_res: Dictionary = await pcb_tools.handle(
+	var propose_res: Dictionary = await panel.handle_tool(
 		"minerva_pcb_apply_route_hints", {"editor_name": EDITOR_NAME})
 	check("BR: propose ok through full MCP path", bool(propose_res.get("success", false)), str(propose_res))
 	check("BR: broker double-envelope unwrapped -> >=1 proposal",
 		int(propose_res.get("proposed", 0)) >= 1, str(propose_res))
 
-	var commit_res: Dictionary = await pcb_tools.handle(
+	var commit_res: Dictionary = await panel.handle_tool(
 		"minerva_pcb_apply_route_hints", {"editor_name": EDITOR_NAME, "commit": true})
 	check("BR: commit ok through full MCP path", bool(commit_res.get("success", false)), str(commit_res))
 	check("BR: trace added through full MCP path", data.get_trace_count() > traces_before,
