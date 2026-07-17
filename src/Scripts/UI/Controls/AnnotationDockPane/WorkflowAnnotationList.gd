@@ -238,6 +238,16 @@ func _grouped_entries() -> Dictionary:
 		var kind: AnnotationKind = registry.get_annotation_kind(StringName(kind_name))
 		if kind == null or not kind.workflow_class:
 			continue
+		# Supersession (owner HITL 2026-07-17): an annotation that another
+		# annotation now stands for — e.g. a route hint answered by a proposal
+		# that carries the same geometry plus its rule-check verdict — must not
+		# occupy its own review row: the reviewer would see the same route
+		# twice, with the verdict on the far copy. Duck-typed and generic: a
+		# host that doesn't implement the hook supersedes nothing. Supersession
+		# is UI-only — the superseded annotation still exists (rejecting its
+		# successor brings the row straight back) and MCP reads are unaffected.
+		if _host.has_method("is_annotation_superseded") and _host.is_annotation_superseded(ann):
+			continue
 		if not groups.has(kind_name):
 			groups[kind_name] = []
 		var summary := str(ann.get("summary", "")).strip_edges()

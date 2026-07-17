@@ -428,16 +428,33 @@ func _test_b_propose_creates_proposal() -> void:
 ## _write_back_proposals stamps — not by any pcb kind_payload field name).
 func _test_b2_workflow_list_generic_wiring(proposal: Dictionary) -> void:
 	print("-- B2: WorkflowAnnotationList generic per-row Accept/Reject wiring --")
+	# Supersession contract: the hint this proposal answers is REPRESENTED by
+	# the proposal and must not hold its own row. Seed a second, unanswered
+	# hint so the listing still carries one of each row type (the plain-hint
+	# row is what proves Accept/Reject are proposal-only).
+	var plain_env: Dictionary = host.build_route_hint_envelope(
+		U3_PIN1.x, U3_PIN1.y, "", "F.Cu", "single_trace",
+		[[U3_PIN1.x, U3_PIN1.y], [U3_PIN1.x + 4.0, U3_PIN1.y]], "human")
+	var plain_id := str(host.add_annotation_v2(plain_env))
+	check("B2: unanswered hint seeded", not plain_id.is_empty())
+
 	var wf_list := WorkflowAnnotationList.new()
 	get_root().add_child(wf_list)
 	wf_list.set_host(host)
 	await process_frame
 
 	var listing: Array = wf_list.get_listing()
-	check("B2: listing has 2 entries (hint + proposal)", listing.size() == 2, "got %d" % listing.size())
+	check("B2: listing has 2 entries (proposal + unanswered hint)", listing.size() == 2, "got %d" % listing.size())
+	var listed_ids: Array = []
+	for e in listing:
+		listed_ids.append(str((e as Dictionary).get("id", "")))
+	check("B2: superseded hint has NO row of its own", not (_hint_id in listed_ids), "listed=%s" % str(listed_ids))
+	check("B2: its proposal IS listed", _proposal_id in listed_ids)
+	check("B2: the unanswered hint keeps its row", plain_id in listed_ids)
 
 	var proposal_summary := str(proposal.get("summary", ""))
-	var groups_node := wf_list.get_node_or_null("WorkflowGroups")
+	# Recursive: rows live inside the capped ScrollContainer.
+	var groups_node := wf_list.find_child("WorkflowGroups", true, false)
 	check("B2: WorkflowGroups node mounted", groups_node != null)
 	if groups_node != null:
 		var proposal_row: Control = null
@@ -461,6 +478,10 @@ func _test_b2_workflow_list_generic_wiring(proposal: Dictionary) -> void:
 				hint_row.find_child("AcceptButton", false, false) == null)
 			check("B2: plain hint row has NO Reject button",
 				hint_row.find_child("RejectButton", false, false) == null)
+
+	# Remove the B2-only seeded hint: later scenarios assert exact annotation
+	# counts and consumed-hint ids against the original fixture board.
+	check("B2: seeded hint removed", host.remove_annotation(plain_id))
 
 	wf_list.queue_free()
 	await process_frame
