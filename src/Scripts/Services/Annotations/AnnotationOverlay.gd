@@ -16,6 +16,19 @@ const _BADGE_STROKE := Color(1.0, 0.72, 0.22, 1.0)
 const _BADGE_TEXT := Color.WHITE
 const _HALO_COLOR := Color(1.0, 0.78, 0.30, 0.85)
 const _HALO_GROW := 4.0
+## Selection indicator (owner HITL 2026-07-17): the old bounds RECT covered
+## half the board for long annotations and its 2px border vanished into board
+## noise. Now: a thick fixed-size circle at the annotation's primary anchor —
+## minimal footprint, always visible.
+const _HALO_RADIUS_PX := 16.0
+const _HALO_WIDTH_PX := 4.0
+## Focus markers: kinds may expose focus_points(annotation) -> Array of
+## document-space Vector2 (e.g. rule-violation sites); each gets a small
+## thick ring when the annotation is selected, so "what does this flag refer
+## to" has an on-canvas answer.
+const _FOCUS_COLOR := Color(1.0, 0.35, 0.25, 0.95)
+const _FOCUS_RADIUS_PX := 10.0
+const _FOCUS_WIDTH_PX := 3.0
 
 var _host: RefCounted = null
 var _active_tool: AnnotationAuthorTool = null
@@ -148,10 +161,24 @@ func _draw() -> void:
 				# Host-owned canvas; the host overlay subclass draws this kind.
 				if not kind.has_visual_render():
 					break
-				var halo_rect: Rect2 = view_xform * kind.bounds(ann_dict)
-				if halo_rect.size.length() < 0.5:
-					break
-				draw_rect(halo_rect.grow(_HALO_GROW), _HALO_COLOR, false, 2.0)
+				# Circle at the primary anchor (fallback: bounds center) —
+				# minimal-but-visible, thick enough to read over board noise.
+				var center_doc: Vector2 = kind.primary_anchor_point(ann_dict)
+				if center_doc == Vector2.ZERO:
+					var b: Rect2 = kind.bounds(ann_dict)
+					if b.size.length() < 0.5:
+						break
+					center_doc = b.get_center()
+				draw_arc(view_xform * center_doc, _HALO_RADIUS_PX, 0.0, TAU, 32,
+					_HALO_COLOR, _HALO_WIDTH_PX, true)
+				# Duck-typed focus markers (e.g. DRC violation sites).
+				if kind.has_method("focus_points"):
+					var pts: Variant = kind.focus_points(ann_dict)
+					if pts is Array:
+						for fp in pts:
+							if fp is Vector2:
+								draw_arc(view_xform * (fp as Vector2), _FOCUS_RADIUS_PX,
+									0.0, TAU, 24, _FOCUS_COLOR, _FOCUS_WIDTH_PX, true)
 				break
 
 
