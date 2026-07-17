@@ -366,6 +366,9 @@ func _test_tool_buttons_render() -> void:
 		# adds a sixth: Propose (a non-toggle act button, not part of the
 		# route-flow mutual-exclusion set, but rendered in the same
 		# ToolsFlow for discoverability — see PCBPanel.gd's _propose_button).
-		check("six tool buttons (Select/Pan/Pin Inspect/Trace/Edit Hint/Propose)", buttons == 6)
+		# U4 (DCR 019f7095c395 Stage-2) adds a seventh: Add Via (another
+		# route-flow toggle tool, ViaInsertTool, in the same
+		# _route_flow_buttons mutual-exclusion set as Trace/Edit Hint).
+		check("seven tool buttons (Select/Pan/Pin Inspect/Trace/Edit Hint/Add Via/Propose)", buttons == 7)
 
 	_teardown(panel)

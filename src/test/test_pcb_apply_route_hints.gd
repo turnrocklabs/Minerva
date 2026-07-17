@@ -90,6 +90,7 @@ func _init() -> void:
 	_run_write_back()           # sync: propose → cyan proposals, board unmutated
 	_run_commit_and_iterate()   # sync: materialize traces + open→applied + re-gather
 	_run_lossless_multilayer_via_carry()  # U2: propose→accept carries real layers+vias
+	_run_manual_via_insertion()  # U4: manual via authoring on a proposal
 
 	_teardown()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
@@ -396,3 +397,108 @@ func _run_lossless_multilayer_via_carry() -> void:
 
 	check("VIA2L source hint deleted on accept", host.get_by_id(hid).is_empty())
 	check("VIA2L proposal deleted on accept", host.get_by_id(prop_id).is_empty())
+
+
+# ── U4: manual via insertion — split, layer-run toggle, accept ───────────────
+#
+# The autorouter avoids vias (prefers single-layer detours); U4 lets a human
+# resolve a collision by hand: click a point on a proposed route to split the
+# segment, insert a via, and flip the following run of segments to the
+# opposite copper layer — a second via jumps it back. This scenario starts
+# from a SINGLE-LAYER proposal (all F.Cu, vias:[]) and invokes the shared
+# add-via logic (panel_tools.gd._add_via — the SAME static helper the canvas
+# ViaInsertTool calls, pcb_route_hint_kind.gd.apply_via_at_point) twice,
+# asserting the layer-run toggle at each step, then accepts the proposal and
+# asserts the committed board has real vias + traces on BOTH copper layers.
+func _run_manual_via_insertion() -> void:
+	print("-- U4: manual via insertion (split + layer-run toggle + accept) --")
+
+	var hid: String = _seed_hint("VIAADD", 0.3, [], [])
+	var source_hints: Array = PANEL_TOOLS._gather_route_hints(host, [hid])
+	check_eq("VIAADD source hint gathered", source_hints.size(), 1)
+
+	# Single-layer proposal: one F.Cu segment, no vias.
+	var synth_result := {
+		"success": true,
+		"via_count": 0,
+		"routes": [
+			{
+				"net": "VIAADD",
+				"segments": [
+					{"start": [30.0, 0.0], "end": [40.0, 0.0], "layer": "F.Cu"},
+				],
+				"vias": [],
+			},
+		],
+		"unrouted": [],
+		"warnings": [],
+	}
+	var propose_res: Dictionary = PANEL_TOOLS._write_back_proposals(host, synth_result, source_hints)
+	check("VIAADD write-back ok", bool(propose_res.get("success", false)))
+
+	var prop: Dictionary = _find_proposal("VIAADD")
+	check("VIAADD proposal exists", not prop.is_empty())
+	if prop.is_empty():
+		return
+	var prop_id := str(prop.get("id", ""))
+	var kp0: Dictionary = prop.get("kind_payload", {})
+	check_eq("VIAADD starts with 1 segment", (kp0.get("segments", []) as Array).size(), 1)
+	check_eq("VIAADD starts with 0 vias", (kp0.get("vias", []) as Array).size(), 0)
+
+	# Via #1 at (33, 0) — on the segment (30,0)-(40,0).
+	var add1: Dictionary = PANEL_TOOLS._add_via(host, {"id": prop_id, "x": 33.0, "y": 0.0})
+	check("via #1 insert ok (%s)" % str(add1), bool(add1.get("success", false)))
+	check_eq("via #1 via_count", add1.get("via_count", -1), 1)
+	var segs1: Array = add1.get("segments", [])
+	check_eq("via #1 splits into 2 segments", segs1.size(), 2)
+	if segs1.size() == 2:
+		check_eq("via #1 head stays F.Cu", str((segs1[0] as Dictionary).get("layer", "")), "F.Cu")
+		check_eq("via #1 tail flips to B.Cu", str((segs1[1] as Dictionary).get("layer", "")), "B.Cu")
+
+	# Persisted through host.update_annotation (the shared BendHandleEditTool seam).
+	var prop_after1: Dictionary = host.get_by_id(prop_id)
+	var kp1: Dictionary = prop_after1.get("kind_payload", {})
+	check_eq("VIAADD persisted 1 via", (kp1.get("vias", []) as Array).size(), 1)
+	check_eq("VIAADD persisted 2 segments", (kp1.get("segments", []) as Array).size(), 2)
+
+	# Via #2 at (37, 0) — inside the now-B.Cu tail segment (33,0)-(40,0).
+	var add2: Dictionary = PANEL_TOOLS._add_via(host, {"id": prop_id, "x": 37.0, "y": 0.0})
+	check("via #2 insert ok (%s)" % str(add2), bool(add2.get("success", false)))
+	check_eq("via #2 via_count", add2.get("via_count", -1), 2)
+	var segs2: Array = add2.get("segments", [])
+	check_eq("via #2 splits into 3 segments total", segs2.size(), 3)
+	if segs2.size() == 3:
+		check_eq("segment 0 stays F.Cu", str((segs2[0] as Dictionary).get("layer", "")), "F.Cu")
+		check_eq("segment 1 stays B.Cu", str((segs2[1] as Dictionary).get("layer", "")), "B.Cu")
+		check_eq("segment 2 flips back to F.Cu", str((segs2[2] as Dictionary).get("layer", "")), "F.Cu")
+
+	# A click nowhere near the route is a no-op (structured error, no crash,
+	# nothing persisted).
+	var miss: Dictionary = PANEL_TOOLS._add_via(host, {"id": prop_id, "x": 1000.0, "y": 1000.0})
+	check("far-off click is a no-op error, not a crash", not bool(miss.get("success", true)))
+	var prop_unchanged: Dictionary = host.get_by_id(prop_id)
+	var kp_unchanged: Dictionary = prop_unchanged.get("kind_payload", {})
+	check_eq("no-op leaves via count at 2", (kp_unchanged.get("vias", []) as Array).size(), 2)
+
+	# Accept the proposal — committed board should have real vias + traces on
+	# BOTH copper layers (the collision-resolution payoff).
+	var accept_res: Dictionary = PANEL_TOOLS._proposal_accept(host, {"id": prop_id})
+	check("VIAADD accept ok (%s)" % str(accept_res), bool(accept_res.get("success", false)))
+	check("VIAADD trace_added true", bool(accept_res.get("trace_added", false)))
+
+	var viaadd_traces: Array = data.get_traces_for_net("VIAADD")
+	check_eq("VIAADD committed 3 trace segments (F/B/F non-adjacent same-layer runs stay separate)", viaadd_traces.size(), 3)
+	var layers_seen2 := {}
+	for t in viaadd_traces:
+		layers_seen2[t.layer] = true
+	check("VIAADD has a trace on the top layer (F.Cu) (%s)" % str(layers_seen2), layers_seen2.has("top"))
+	check("VIAADD has a trace on the bottom layer (B.Cu) (%s)" % str(layers_seen2), layers_seen2.has("bottom"))
+
+	var viaadd_via_count := 0
+	for v in data.vias:
+		if str(v.get("net_name", "")) == "VIAADD":
+			viaadd_via_count += 1
+	check_eq("VIAADD committed both vias", viaadd_via_count, 2)
+
+	check("VIAADD source hint deleted on accept", host.get_by_id(hid).is_empty())
+	check("VIAADD proposal deleted on accept", host.get_by_id(prop_id).is_empty())
