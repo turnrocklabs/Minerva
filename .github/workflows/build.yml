@@ -782,8 +782,11 @@ jobs:
         # optimization once we know this path produces a working bundle.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Keep this aligned with .github/workflows/godot-cef.yml and the
+          # default in scripts/build-godot-cef.sh.
+          RUST_TOOLCHAIN: nightly-2026-06-21
         run: |
-          # The script auto-installs nightly via rustup, but we make sure
+          # The script auto-installs the pinned nightly via rustup, but make sure
           # rustup itself is present (it should be on macos-latest).
           command -v rustup || (echo "::error::rustup missing on macos-latest"; exit 1)
           # macos-latest is ARM64, but cef-bundler's `xtask bundle` builds a
@@ -792,10 +795,10 @@ jobs:
           # rustlib (core/std/etc.) installed in the toolchain. Without
           # this, cargo emits:
           #   error[E0463]: can't find crate for `core`
-          # The script installs the nightly toolchain itself, but doesn't
+          # The script installs the pinned nightly toolchain itself, but doesn't
           # add per-target stdlibs for it — do that here explicitly.
-          rustup install nightly
-          rustup target add --toolchain nightly x86_64-apple-darwin aarch64-apple-darwin
+          rustup install "$RUST_TOOLCHAIN"
+          rustup target add --toolchain "$RUST_TOOLCHAIN" x86_64-apple-darwin aarch64-apple-darwin
           bash scripts/build-godot-cef.sh macos
           echo "CEF deployed:"
           find src/addons/godot_cef/bin/universal-apple-darwin -maxdepth 4 -type d | head -20
