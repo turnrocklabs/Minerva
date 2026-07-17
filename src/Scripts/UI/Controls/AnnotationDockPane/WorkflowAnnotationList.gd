@@ -18,6 +18,13 @@ signal annotation_selected(annotation_id: String)
 const _MUTED := Color(1, 1, 1, 0.58)
 const _SELECTED_ROW_COLOR := Color(0.4, 0.55, 0.85, 0.18)
 
+## Height cap for the rows area (owner HITL 2026-07-17: dozens of route hints
+## grew the dock so large its open/close control scrolled out of view). The
+## rows live in a ScrollContainer whose MINIMUM height is content-sized when
+## small and clamped here when large — so the pane never forces the dock past
+## this in either the bottom or sidebar orientation; extra rows scroll.
+const _MAX_LIST_HEIGHT_PX := 220.0
+
 ## Clear-by-author (pcb-ui-native-cluster §5, WC-3): the context-menu labels,
 ## in display order, and the author_kind value each sends to the host.
 const _CLEAR_MENU_ITEMS := [
@@ -53,6 +60,7 @@ var _selected_id: String = ""
 
 var _header: Label
 var _groups_list: VBoxContainer
+var _scroll: ScrollContainer
 var _context_menu: PopupMenu = null
 
 
@@ -123,7 +131,18 @@ func refresh() -> void:
 	# squatting in the dock for hosts that never use workflow kinds).
 	if _header != null:
 		_header.visible = total > 0
-	_groups_list.visible = total > 0
+	if _scroll != null:
+		_scroll.visible = total > 0
+		call_deferred("_clamp_scroll_height")
+
+
+## Deferred (queue_freed rows still inflate minimum size in the refresh frame):
+## content-sized when small, capped at _MAX_LIST_HEIGHT_PX when large.
+func _clamp_scroll_height() -> void:
+	if _scroll == null or _groups_list == null or not is_instance_valid(_scroll):
+		return
+	var content_h := _groups_list.get_combined_minimum_size().y
+	_scroll.custom_minimum_size.y = minf(content_h, _MAX_LIST_HEIGHT_PX)
 
 
 func _build_ui() -> void:
@@ -142,12 +161,19 @@ func _build_ui() -> void:
 	_header.visible = false
 	add_child(_header)
 
+	_scroll = ScrollContainer.new()
+	_scroll.name = "WorkflowScroll"
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_scroll.visible = false
+	add_child(_scroll)
+
 	_groups_list = VBoxContainer.new()
 	_groups_list.name = "WorkflowGroups"
 	_groups_list.add_theme_constant_override("separation", 4)
 	_groups_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_groups_list.visible = false
-	add_child(_groups_list)
+	_scroll.add_child(_groups_list)
 
 	_context_menu = PopupMenu.new()
 	_context_menu.name = "ClearByAuthorMenu"

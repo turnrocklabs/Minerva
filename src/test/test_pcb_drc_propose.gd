@@ -383,7 +383,8 @@ func _test_propose_flags_dirty_and_clean_routes() -> void:
 	wf_list.set_host(host)
 	await process_frame
 
-	var groups_node := wf_list.get_node_or_null("WorkflowGroups")
+	# Recursive: rows moved inside a capped ScrollContainer (dock-size fix).
+	var groups_node := wf_list.find_child("WorkflowGroups", true, false)
 	check("WorkflowGroups node mounted", groups_node != null)
 	if groups_node != null and not dirty_proposal.is_empty() and not clean_proposal.is_empty():
 		var dirty_summary := str(dirty_proposal.get("summary", ""))
