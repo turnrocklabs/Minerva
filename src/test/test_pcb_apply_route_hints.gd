@@ -89,6 +89,7 @@ func _init() -> void:
 	await _run_error_shapes()   # async handle() paths (open hints still present)
 	_run_write_back()           # sync: propose → cyan proposals, board unmutated
 	_run_commit_and_iterate()   # sync: materialize traces + open→applied + re-gather
+	_run_lossless_multilayer_via_carry()  # U2: propose→accept carries real layers+vias
 
 	_teardown()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
@@ -309,3 +310,89 @@ func _run_commit_and_iterate() -> void:
 	# default gather, so a re-run finds no fresh open source hints.
 	var after: Array = PANEL_TOOLS._gather_route_hints(host, [])
 	check_eq("re-gather finds no fresh open hints", after.size(), 0)
+
+
+# ── U2: lossless propose→accept — real per-segment layers + real vias ────────
+#
+# DCR 019f7095c395 Stage-1 crux fix: before this round the two-step PROPOSE→
+# ACCEPT path (unlike bulk commit=true above, which _materialize_routes always
+# handled correctly) flattened multi-layer routes and dropped vias — accepting
+# a via-using route committed SINGLE-LAYER, NO-VIA copper, re-introducing the
+# collision the via resolved. This scenario feeds a SYNTHETIC multi-layer
+# route WITH a via through _write_back_proposals (the same static helper
+# _run_write_back above exercises), asserts the resulting proposal's
+# kind_payload carries the EXACT segments (2, on different layers) + vias (1)
+# verbatim, then _proposal_accept()s it and asserts the committed board has
+# real traces on BOTH layers (top AND bottom) + a real via (not vias:[]).
+func _run_lossless_multilayer_via_carry() -> void:
+	print("-- U2: lossless multi-layer via carry (propose -> accept) --")
+
+	var hid: String = _seed_hint("VIA2L", 0.3, [], [])
+	var source_hints: Array = PANEL_TOOLS._gather_route_hints(host, [hid])
+	check_eq("VIA2L source hint gathered", source_hints.size(), 1)
+
+	# A multi-layer route: F.Cu segment, then a via, then a B.Cu segment —
+	# exactly the shape the worker's route() reply gives (segments carry
+	# per-segment layer; vias are positional [x,y], see pcb_worker.methods
+	# ~394-406).
+	var synth_result := {
+		"success": true,
+		"via_count": 1,
+		"routes": [
+			{
+				"net": "VIA2L",
+				"segments": [
+					{"start": [20.0, 0.0], "end": [25.0, 0.0], "layer": "F.Cu"},
+					{"start": [25.0, 0.0], "end": [25.0, 5.0], "layer": "B.Cu"},
+				],
+				"vias": [[25.0, 0.0]],
+			},
+		],
+		"unrouted": [],
+		"warnings": [],
+	}
+
+	var propose_res: Dictionary = PANEL_TOOLS._write_back_proposals(host, synth_result, source_hints)
+	check("VIA2L write-back ok", bool(propose_res.get("success", false)))
+
+	var prop: Dictionary = _find_proposal("VIA2L")
+	check("VIA2L proposal exists", not prop.is_empty())
+	if prop.is_empty():
+		return
+	var kp: Dictionary = prop.get("kind_payload", {})
+
+	var segs: Array = kp.get("segments", [])
+	check_eq("VIA2L proposal carries the route's 2 segments verbatim", segs.size(), 2)
+	if segs.size() == 2:
+		check_eq("segment 0 keeps its real layer (F.Cu)", str((segs[0] as Dictionary).get("layer", "")), "F.Cu")
+		check_eq("segment 1 keeps its real layer (B.Cu)", str((segs[1] as Dictionary).get("layer", "")), "B.Cu")
+
+	var vias: Array = kp.get("vias", [])
+	check_eq("VIA2L proposal carries the route's 1 via verbatim", vias.size(), 1)
+
+	# Backward-compat fields (waypoints/layer) are KEPT, not removed, for the
+	# renderer + legacy code paths.
+	check_eq("VIA2L waypoints stays the flattened 3-point chain", (kp.get("waypoints", []) as Array).size(), 3)
+	check_eq("VIA2L layer stays the first-segment summary", str(kp.get("layer", "")), "F.Cu")
+
+	var prop_id := str(prop.get("id", ""))
+	var accept_res: Dictionary = PANEL_TOOLS._proposal_accept(host, {"id": prop_id})
+	check("VIA2L accept ok (%s)" % str(accept_res), bool(accept_res.get("success", false)))
+	check("VIA2L trace_added true", bool(accept_res.get("trace_added", false)))
+
+	var via2l_traces: Array = data.get_traces_for_net("VIA2L")
+	check_eq("VIA2L committed exactly 2 traces (one per real layer)", via2l_traces.size(), 2)
+	var layers_seen := {}
+	for t in via2l_traces:
+		layers_seen[t.layer] = true
+	check("VIA2L has a trace on the top layer (F.Cu) (%s)" % str(layers_seen), layers_seen.has("top"))
+	check("VIA2L has a trace on the bottom layer (B.Cu) (%s)" % str(layers_seen), layers_seen.has("bottom"))
+
+	var via2l_via_count := 0
+	for v in data.vias:
+		if str(v.get("net_name", "")) == "VIA2L":
+			via2l_via_count += 1
+	check_eq("VIA2L committed exactly 1 real via (not vias:[])", via2l_via_count, 1)
+
+	check("VIA2L source hint deleted on accept", host.get_by_id(hid).is_empty())
+	check("VIA2L proposal deleted on accept", host.get_by_id(prop_id).is_empty())
