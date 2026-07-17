@@ -24,6 +24,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # godot-cef requires nightly for retour-rs. Pin the last-known-good nightly
+  # instead of following the moving `nightly` alias: newer compilers promote
+  # upstream godot-rust macro warnings to hard errors on macOS and Windows.
+  RUST_TOOLCHAIN: "nightly-2026-06-21"
   # Cache key only — the binary version actually downloaded is the one
   # pinned inside scripts/build-godot-cef.sh (must match cef-dll-sys in
   # vendor/godot_cef/Cargo.lock, currently 146.5.0+146.0.10). Keep these in
@@ -56,13 +60,15 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Rust nightly
+      - name: Setup pinned Rust nightly
         uses: dtolnay/rust-toolchain@nightly
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
 
       - name: Add x86_64 Rust target (macOS universal build)
         if: matrix.platform == 'macos'
         shell: bash
-        run: rustup target add x86_64-apple-darwin --toolchain nightly
+        run: rustup target add x86_64-apple-darwin --toolchain "$RUST_TOOLCHAIN"
 
       - name: Cache Cargo registry and target
         uses: actions/cache@v4
@@ -84,7 +90,7 @@ jobs:
         shell: bash
         run: |
           if ! command -v export-cef-dir >/dev/null 2>&1; then
-            cargo +nightly install export-cef-dir
+            cargo +"$RUST_TOOLCHAIN" install export-cef-dir
           fi
 
       # cef-dll-sys builds CEF's C wrapper via CMake. Without an active MSVC

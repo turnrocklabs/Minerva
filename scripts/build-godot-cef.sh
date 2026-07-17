@@ -6,9 +6,9 @@
 #   1. Ensures vendor/godot_cef submodule is init'd and pinned to v1.13.0.
 #   2. Applies every patches/godot_cef/*.patch to the submodule (idempotent:
 #      resets submodule to clean state first).
-#   3. Installs prerequisites if missing: rust nightly, export-cef-dir,
+#   3. Installs prerequisites if missing: pinned rust nightly, export-cef-dir,
 #      CMake + Ninja (via pip), CEF binary bundle.
-#   4. Builds with `cargo +nightly xtask bundle --release` inside the submodule.
+#   4. Builds with the pinned nightly inside the submodule.
 #   5. Deploys built artifacts into src/addons/godot_cef/bin/<platform>/.
 #
 # Platform mapping:
@@ -35,6 +35,10 @@ PLATFORM="${1:-}"
 # here to the matching 146.0.x / 147.0.x / etc. Upstream README's example
 # version string is NOT authoritative.
 CEF_VERSION="146.0.10"
+# godot-cef needs nightly for retour-rs. Keep this pinned to a compiler known
+# to build the upstream v1.13.0 source on all three platforms; the moving
+# `nightly` alias promoted upstream macro warnings to errors in July 2026.
+RUST_TOOLCHAIN="${RUST_TOOLCHAIN:-nightly-2026-06-21}"
 
 # ── Detect platform ───────────────────────────────────────────────────
 
@@ -84,17 +88,17 @@ if ! command -v rustup &>/dev/null; then
     echo "ERROR: rustup not found. Install via https://rustup.rs/ and re-run."
     exit 1
 fi
-if ! rustup toolchain list | grep -q '^nightly'; then
-    echo "Installing Rust nightly toolchain..."
-    rustup toolchain install nightly
+if ! rustup toolchain list | grep -q "^${RUST_TOOLCHAIN}"; then
+    echo "Installing Rust toolchain: $RUST_TOOLCHAIN..."
+    rustup toolchain install "$RUST_TOOLCHAIN"
 fi
-echo "Rust nightly: $(rustc +nightly --version)"
+echo "Rust nightly: $(rustc +"$RUST_TOOLCHAIN" --version)"
 
 # ── Install export-cef-dir ────────────────────────────────────────────
 
 if ! command -v export-cef-dir &>/dev/null; then
     echo "Installing export-cef-dir (builds CEF binary fetcher)..."
-    cargo +nightly install export-cef-dir
+    cargo +"$RUST_TOOLCHAIN" install export-cef-dir
 fi
 
 # ── Fetch CEF binary bundle ───────────────────────────────────────────
@@ -153,9 +157,9 @@ echo "Build tools: cmake=$(command -v cmake), ninja=$(command -v ninja)"
 
 # ── Build ─────────────────────────────────────────────────────────────
 
-echo "Building godot-cef (cargo +nightly xtask bundle --release)..."
+echo "Building godot-cef (cargo +$RUST_TOOLCHAIN xtask bundle --release)..."
 pushd "$SUBMODULE_DIR" > /dev/null
-cargo +nightly xtask bundle --release
+cargo +"$RUST_TOOLCHAIN" xtask bundle --release
 popd > /dev/null
 
 # ── Deploy ────────────────────────────────────────────────────────────
