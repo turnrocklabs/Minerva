@@ -1040,6 +1040,28 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 		if _pi != null:
 			_pi.stamp(annotation)
 		var assigned_id: String = host.add_annotation(annotation)
+		# Bug 019f6b9221b6: an empty id means the host rejected the write — most
+		# commonly its own AnnotationV2Schema.validate_with_registry() found the
+		# anchor incompatible with the kind (a deeper, per-anchor-type check the
+		# MCP-layer registry.has_kind()/dispatch_validate() pre-checks above do
+		# NOT replicate) — or some other host-internal invariant failed. Either
+		# way, nothing was stored: never build a success echo or mint a ref for
+		# an annotation that doesn't exist. Surface a structured error instead.
+		if assigned_id.is_empty():
+			return {
+				"ok": false,
+				"errors": [{
+					"field_path": "",
+					"message": (
+						"Host for editor '%s' rejected the annotation: add_annotation() "
+						+ "returned an empty id, so nothing was stored. This usually means "
+						+ "the host's own validation (e.g. anchor/kind compatibility) failed "
+						+ "even though the kind is registered — check the Godot log for the "
+						+ "host's validation warning."
+					) % editor_name,
+					"code": "host_rejected",
+				}],
+			}
 		return _ok(_creation_echo(annotation, assigned_id, editor_name, ""))
 
 	var sidecar: Dictionary = _load_or_init_sidecar(doc_path)
