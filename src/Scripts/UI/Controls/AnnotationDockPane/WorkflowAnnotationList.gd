@@ -82,7 +82,9 @@ func set_host(host: RefCounted) -> void:
 ## host order within a group). Tests and MCP-ergonomic callers read this
 ## instead of scraping child controls.
 ## Entry shape: {kind: String, kind_display_name: String, id: String,
-##               summary: String, lifecycle: String}.
+##               summary: String, lifecycle: String, drc_badge: String}.
+## drc_badge is "" when the annotation carries no kind_payload.drc (see
+## _drc_badge_text doc for the "⚠ N" / "⚠ ?" / "" contract).
 func get_listing() -> Array:
 	var groups := _grouped_entries()
 	var flat: Array = []
@@ -223,8 +225,42 @@ func _grouped_entries() -> Dictionary:
 			"lifecycle": str(ann.get("lifecycle", "open")),
 			"display_index": index,
 			"is_ai_authored": _is_ai_authored(ann),
+			"drc_badge": _drc_badge_text(ann),
 		})
 	return groups
+
+
+## DRC-at-propose (docket 019f6f1492e0) row badge. GENERIC extension — zero
+## pcb vocabulary here on purpose, mirroring the C5 Accept/Reject precedent
+## above (_ACCEPT_METHOD/_REJECT_METHOD doc): "drc" (design/rule-check) is
+## cross-domain rule-check vocabulary, not a pcb-specific concept, and this
+## reads it by plain duck-typed key lookup on kind_payload — the SAME
+## substrate contract clear_by_author/accept/reject already opt annotation
+## kinds into. Any plugin's workflow-class kind can carry a
+## kind_payload.drc = {clean: bool|null, violations?: Array, error?: String}
+## shape (pcb route-hint proposals are simply the first consumer, written by
+## panel_tools.gd's _write_back_proposals) and this row will render it with
+## no further wiring. Contract: clean == false -> "⚠ N" (N = violations
+## count); clean == null -> "⚠ ?" (rule check unavailable — e.g. the DRC
+## engine itself faulted, see pcb_worker.methods._attach_route_drc); no
+## "drc" key at all (the pre-existing default for every non-pcb workflow kind,
+## and for a pcb proposal from an older worker) -> "" (no badge, row renders
+## exactly as it did before this round).
+static func _drc_badge_text(annotation: Dictionary) -> String:
+	var kp: Variant = annotation.get("kind_payload", null)
+	if not (kp is Dictionary) or not (kp as Dictionary).has("drc"):
+		return ""
+	var drc: Variant = (kp as Dictionary).get("drc")
+	if not (drc is Dictionary):
+		return ""
+	var clean: Variant = (drc as Dictionary).get("clean", null)
+	if clean == null:
+		return "⚠ ?"
+	if bool(clean):
+		return ""
+	var raw_violations: Variant = (drc as Dictionary).get("violations", [])
+	var violations: Array = raw_violations if raw_violations is Array else []
+	return "⚠ %d" % violations.size()
 
 
 ## Generic "is this a machine proposal" signal — accepts both a v1 "human"/"ai"
@@ -256,6 +292,18 @@ func _make_row(entry: Dictionary) -> Control:
 	select.custom_minimum_size = Vector2(44, 24)
 	select.pressed.connect(_select_annotation.bind(str(entry.get("id", ""))))
 	row.add_child(select)
+
+	# DRC-at-propose badge (see _drc_badge_text doc) — before the summary label
+	# so it reads immediately after the #index, and is skipped entirely (no
+	# child added) when the annotation carries no "drc" key at all.
+	var badge_text := str(entry.get("drc_badge", ""))
+	if not badge_text.is_empty():
+		var badge := Label.new()
+		badge.name = "DrcBadge"
+		badge.text = badge_text
+		badge.tooltip_text = "rule check unavailable" if badge_text == "⚠ ?" else "DRC violations on this route"
+		badge.add_theme_color_override("font_color", Color(1.0, 0.7, 0.2))
+		row.add_child(badge)
 
 	var label := Label.new()
 	label.text = str(entry.get("summary", ""))

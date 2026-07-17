@@ -385,8 +385,16 @@ func _test_b_propose_creates_proposal() -> void:
 
 	check("B: which routing path ran is reported", true,
 		"real_worker=%s (binary at <minerva-plugins>/pcb/pcb-plugin)" % str(_used_real_worker))
-	check("B: status label reports one proposal", panel._status_label.text == "1 proposal",
-		"got '%s'" % panel._status_label.text)
+	# DRC-at-propose (docket 019f6f1492e0): the REAL worker's route() now
+	# attaches drc_summary (the canned stdio-boundary fallback in this suite
+	# does not — see _canned_result_for), and PCBPanel appends a DRC suffix to
+	# the status label when drc_summary is present. The fixture at this point
+	# has exactly one net (SIG, U1<->U2, no existing traces) so a real-worker
+	# run must come back clean.
+	var expected_b_status := "1 proposal — DRC clean" if _used_real_worker else "1 proposal"
+	check("B: status label reports one proposal" + (" (DRC clean)" if _used_real_worker else ""),
+		panel._status_label.text == expected_b_status,
+		"got '%s' expected '%s'" % [panel._status_label.text, expected_b_status])
 	check("B: host now has 2 annotations (hint + proposal)", host.get_annotations().size() == 2,
 		"count=%d" % host.get_annotations().size())
 	check("B: board still unmutated — zero traces", data.get_trace_count() == 0)
@@ -515,8 +523,11 @@ func _test_d_propose_again_then_accept_via_real_dispatch() -> void:
 	panel.request.connect(fake.on_request)
 
 	await _click_propose_button()
-	check("D: status label reports one proposal again", panel._status_label.text == "1 proposal",
-		"got '%s'" % panel._status_label.text)
+	# Same DRC-suffix accommodation as scenario B (see its comment) — still a
+	# single clean net (SIG) at this point.
+	var expected_d_status := "1 proposal — DRC clean" if _used_real_worker else "1 proposal"
+	check("D: status label reports one proposal again", panel._status_label.text == expected_d_status,
+		"got '%s' expected '%s'" % [panel._status_label.text, expected_d_status])
 
 	panel.request.disconnect(fake.on_request)
 	fake.queue_free()
