@@ -59,6 +59,7 @@ func _init() -> void:
 	_test_canonical_field_names()
 	_test_annotation_tolerance()
 	_test_undo_redo()
+	_test_via_undo_restore()
 	_test_journal_symmetry()
 	_test_spatial_query()
 	_test_mounting_holes_roundtrip()
@@ -238,6 +239,37 @@ func _test_undo_redo() -> void:
 	check("redo re-applies the move",
 			data.get_component("R1").position == moved,
 			"got %s want %s" % [str(data.get_component("R1").position), str(moved)])
+
+
+## F1 / Via Correctness GATE INV-1 (Codex 019f70ec149b): undo/redo must restore
+## vias, not orphan them. Before the fix the undo codec omitted vias, so undoing
+## an accepted via route removed its traces but left its vias floating.
+func _test_via_undo_restore() -> void:
+	print("\n-- undo/redo restores vias (F1 / GATE INV-1) --")
+	var data = _build_board()  # _build_board seeds one via at (15, 8)
+	data.save_to_history("baseline")
+	var base_count: int = data.vias.size()
+	check("baseline has one via", base_count == 1, "got %d" % base_count)
+
+	# Simulate accepting a via-bearing route: add a via, then snapshot.
+	data.add_via({
+		"position": Vector2(30.0, 18.0), "drill": 0.4, "size": 0.8,
+		"net_name": "VCC", "from_layer": "top", "to_layer": "bottom"
+	})
+	data.save_to_history("accept via route")
+	check("after accept, two vias", data.vias.size() == 2, "got %d" % data.vias.size())
+
+	# The fix: undo removes the accepted via instead of orphaning it.
+	check("undo() succeeds", data.undo())
+	check("undo restores via count (no orphan)", data.vias.size() == base_count,
+			"got %d want %d" % [data.vias.size(), base_count])
+	var restored_pos = data.vias[0].get("position") if data.vias.size() == 1 else null
+	check("restored via keeps its position", restored_pos == Vector2(15.0, 8.0),
+			"got %s" % str(restored_pos))
+
+	# redo re-adds the accepted via.
+	check("redo() succeeds", data.redo())
+	check("redo re-adds the via", data.vias.size() == 2, "got %d" % data.vias.size())
 
 
 func _test_journal_symmetry() -> void:
