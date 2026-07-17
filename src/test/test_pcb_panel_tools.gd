@@ -400,3 +400,38 @@ func _run_get_image() -> void:
 	var img = gi.get("image_data", "SENTINEL")
 	check("image_data is null or a base64 String (headless)", img == null or img is String)
 	check("metadata present", gi.get("metadata", null) is Dictionary)
+
+	# ── save_to_path (bug 019f6ea4e52a) ───────────────────────────────────────
+	# Inline base64 PNGs poison LLM context (a routing agent stalled 6+ minutes
+	# on one ~150KB payload). save_to_path is the context-friendly mode, mirroring
+	# minerva_annotations_render_overlay's output_path fix (Minerva 4b74971c):
+	# write the PNG to disk, return a path instead of bytes. Headless has no
+	# rendered image either way, so both modes must degrade to a graceful null
+	# envelope — no crash, no partial file.
+	print("\n-- get_image save_to_path (headless null envelope) --")
+	var tmp_path := "/tmp/pcb_get_image_test_%d.png" % Time.get_ticks_usec()
+	var gsp := await h("minerva_pcb_get_image", _args({"save_to_path": tmp_path}))
+	check("save_to_path headless returns success (%s)" % str(gsp), gsp.get("success", false))
+	check("save_to_path headless saved_to is null (%s)" % str(gsp), gsp.get("saved_to", "SENTINEL") == null)
+	check("save_to_path headless response has no image_data key (%s)" % str(gsp), not gsp.has("image_data"))
+	check("save_to_path headless metadata present (%s)" % str(gsp), gsp.get("metadata", null) is Dictionary)
+	check("save_to_path headless does not write a file", not FileAccess.file_exists(tmp_path))
+
+	print("\n-- get_image save_to_path validation (relative path → structured error) --")
+	var rel := await h("minerva_pcb_get_image", _args({"save_to_path": "relative/path.png"}))
+	check("relative save_to_path is a structured error (%s)" % str(rel), rel.get("success", true) == false)
+	check("relative save_to_path error names the offending path (%s)" % str(rel),
+		str(rel.get("error", "")).findn("relative/path.png") != -1)
+
+	print("\n-- get_image save_to_path validation (missing parent dir → structured error) --")
+	var missing_parent := "/tmp/pcb_get_image_test_nonexistent_dir_%d/out.png" % Time.get_ticks_usec()
+	var mp := await h("minerva_pcb_get_image", _args({"save_to_path": missing_parent}))
+	check("missing-parent save_to_path is a structured error (%s)" % str(mp), mp.get("success", true) == false)
+	check("missing-parent error names the offending parent dir (%s)" % str(mp),
+		str(mp.get("error", "")).findn(missing_parent.get_base_dir()) != -1)
+
+	print("\n-- get_image save_to_path empty string behaves like default (no arg) --")
+	var empty_sp := await h("minerva_pcb_get_image", _args({"save_to_path": ""}))
+	check("empty save_to_path returns success (%s)" % str(empty_sp), empty_sp.get("success", false))
+	check("empty save_to_path uses default image_data shape, not saved_to (%s)" % str(empty_sp),
+		empty_sp.has("image_data") and not empty_sp.has("saved_to"))
