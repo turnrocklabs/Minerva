@@ -62,6 +62,45 @@ Run for EVERY repo the round touches (a round may span Minerva + minerva-plugins
 3. **Freshness check (behind upstream)**: `git fetch`, then `git rev-list HEAD..@{u} --count`. Non-zero means another machine pushed since this checkout last pulled — a round started here produces conflicts and reviews against a stale base. If the tree is clean, `git pull --ff-only` and continue; if the pull cannot fast-forward (diverged), STOP and report. Never start a round knowingly behind upstream.
 4. **Base check**: local branch is not ahead of its upstream with unexpected commits (`git log @{u}..HEAD --oneline`). Unexplained commits ahead = STOP and report.
 5. **Pin the base**: record `git rev-parse HEAD` per repo as a comment on each in-scope docket item at the `in_progress` transition. All reviews and audits this round are against `base..HEAD` — reviewers never review pre-existing code as if it were new.
+6. **Premise re-validation** (different oracle from the four checks above — those read repo STATE, this reads the work item's CLAIMS): check every factual assertion in the item description against the repo at the pinned SHA. File:line citations, function behaviour, measured numbers. A tracked item is authored at the moment of peak ignorance and consumed later at the moment of peak consequence, and nobody ever goes back to correct it. Measured stale premises in 2 of 3 consecutive rounds. Not fail-stop: correct the item (comment the correction, do not silently edit history) and continue. **Numbers are the sharpest trap — always ask HOW a number was measured, not just what it was.** A figure produced by an oracle that shares the defect's blind spot looks exactly like ground truth (round C2d: "62 of 3403" was measured with a predicate blind to the very geometry it was counting).
+
+### Step 0.6 — TEST PLAN (advisory; skip only for rounds that add no tests)
+
+Two passes, both cheap, both BEFORE any test is authored. This is the only point in the pipeline that can PREVENT a bad test; every other test gate detects one after the tokens are spent.
+
+1. **Test plan.** For each unit, choose one of three verdicts and NAME THE ORACLE:
+   - **TEST** — an independent oracle exists (or can be sourced). Write it.
+   - **TIP** — no independent oracle, and a miss is recoverable. Instrument and judge from what actually happened. Say who analyses the run and when.
+   - **NEITHER** — spike/exploratory; the knowledge is the deliverable. Say so explicitly in the round report rather than silently skipping.
+
+   Decide with the 2x2 on (independent oracle available?) x (is a miss recoverable?):
+
+   | | Miss recoverable | Miss unrecoverable |
+   |---|---|---|
+   | **Oracle exists** | TEST, keep it cheap | TEST, hard gate |
+   | **No oracle** | **TIP** | **Go MANUFACTURE an oracle — never fake one** |
+
+   That bottom-right cell is the one that matters. The correct move is external ground truth (precedent: pinning rotation correctness by matching pads *by number* against KiCad's own X2 records). The INCORRECT move — and the one that feels natural — is to reach for the nearest production predicate and let the code grade itself.
+
+   **RULE: if you cannot name an independent oracle, do not write the test.** It will be blind by construction. Source an oracle or TIP it.
+
+2. **Test-plan adversary** (cold agent, no context from the plan's author). One question: *"Of these proposed tests, which give the most real feature coverage at the lowest cost?"* Two axes only — **parsimony** and **coverage**. Its output is a list of tests to CUT and gaps to fill. It advises; the orchestrator adjudicates.
+
+### Step 0.75 — BRIEF REVIEW (cold; skip for trivial or purely mechanical rounds)
+
+Send the brief **verbatim** to a cold Opus agent, with the work item and base SHA and no context from its author. Read-only; it must not edit the repo. Target under ~5 minutes.
+
+It checks six things — these are observed failure modes, not a generic checklist:
+- **(a) Factual claims.** Are the brief's file:line facts, signatures and measured outputs true at this SHA?
+- **(b) Prescribed mechanism.** Where the brief says "implement THIS approach", name the assumption it rests on and check it holds.
+- **(c) Fence sufficiency.** Enumerate every file the work plausibly needs. Under-fencing costs a mid-round round-trip and did so in 4 of 5 consecutive rounds.
+- **(d) Acceptance reachability.** Is the exit condition observable — and **can the proposed oracle actually fail?**
+- **(e) Asserted traps.** Are the brief's warnings real, and is a real one missing?
+- **(f) Fail-closed safety.** Could anything prescribed yield a false clean, a silent default, or approximated output?
+
+Verdict: proceed / revise. **It ADVISES; the orchestrator adjudicates** — the brief reviewer has no more claim on truth than the brief's author.
+
+**This must NOT suppress implementer pushback.** An implementer refusing an instruction *with a reason* has been right every time it has happened and remains the last line of defence. Step 0.75 is additive: it catches cheap errors earlier so the implementer's judgement is spent on the hard ones.
 
 ### Step 1 — WORK
 
@@ -73,6 +112,8 @@ For each unit in this round, in parallel where independent:
    - Prompt = self-contained brief: goal, files to touch, existing patterns to follow, tests to add, success criteria
    - **Scope fence verbatim**, with the rule: anything needed outside the fence → report it back as a finding (orchestrator files it in docket); do NOT fix inline.
    - **Reuse scan (blocking, first deliverable)**: before writing code, read the reference implementations named in the work item (most items name them: e.g. `CadAnnotationHost.gd`, `internal/bridge`, `test_cad_plugin_smoke.gd`) and state per major piece: reuse / extend / copy-with-justification. New code that duplicates an existing asset without this declaration is a review reject.
+   - **Mutation proof (required deliverable, FULL *and* HALF)**: before reporting, delete the change under test → the new tests must FAIL. Then WEAKEN it — remove half the condition, check one branch instead of both — and the new tests must STILL FAIL. Report both counts. **A test that survives the half-mutation is not a pin**, and it is the failure mode that looks most like success: it is well-named, asserts on the right thing, and dies under full removal. Measured: an implementer explicitly warned about vacuous tests, working on a round whose subject *was* a blind oracle, still authored one that passed under one half-mutation direction.
+   - **Refusal right (say this verbatim in every brief)**: "If any instruction in this brief is wrong, refuse it and say why. Do not implement something you believe is incorrect because the brief said so." This is structurally unenforceable — you cannot compel disagreement — so it must be stated explicitly and must never be punished.
    - Isolation: do NOT use the Agent tool's built-in worktree isolation — it bases on origin/<default-branch> (Minerva: `main`, ~1yr behind `development`; the plugin system doesn't exist there). Create worktrees manually pinned to the round base (`git worktree add -b wc/<round-unit> ~/github/minerva-worktrees/<name> <base-sha>`), pass the absolute path in the prompt, and make the agent's first act `git rev-parse HEAD` == pinned base (fail-stop on mismatch). Remove worktrees after merge-back.
 
 2. When implementer returns, spawn a Reviewer sub-agent:
@@ -88,6 +129,17 @@ For each unit in this round, in parallel where independent:
    - **reject**: re-spawn implementer with reviewer feedback as additional context. If second rejection on same unit, escalate model (Sonnet→Opus) per the escalation rule. If still rejected, stop and escalate to user.
 
 ### Step 2 — VERIFY-LAYER-1
+
+**Step 2.0 — TEXT + TEST ADVERSARY (runs BEFORE the suite; cheapest gate first).**
+
+Prose is the only artifact with no gate — nobody runs a comment, so a false claim stays green forever. It is the joint-most-frequent defect class, and it now matters more than it used to because agents read a docstring with the same weight as the code beneath it and cannot smell staleness.
+
+- **Mechanical pre-pass** (decidable, no judgment): does every symbol, test name, caller and `file:line` cited in prose actually resolve? A claimed caller relationship is a static call-graph query. Then grep the diff for modal claims — *never, always, cannot happen, guaranteed, by construction* — and surface them. Load-bearing claims cluster in those few sentences.
+- **Judged pass** (cold agent, changed hunks only — not the whole tree): Are the comments correct? Are the test docstrings correct? **Are the tests useful and correct?** A test whose assertion passes while its docstring justifies it with a false claim is worse than no docstring: it answers "is X covered?" wrongly, in green.
+
+Findings here are must_fix before the suite runs, because fixing prose is cheap and re-running the suite is not.
+
+**Step 2.1 — the suite.**
 
 1. Run targeted test suite headless. For Minerva platform work:
    ```
@@ -105,6 +157,14 @@ For each unit in this round, in parallel where independent:
    - If failure is in implementation, re-spawn implementer with the failing assertion as context.
    - Cap at `--cap=N` retries (default 3) on the same problem. Past cap, escalate (3d).
 
+5. **Green here is necessary and never sufficient.** A severity-1 fail-open has shipped green through 1296 tests, `go vet`, `go test`, the gd suite and all five CI jobs. Treat a green suite as "no known regression", never as evidence of correctness.
+
+**Step 2.2 — CODE ADVERSARY** (cold agent; must run AFTER the suite is green — you cannot mutation-test a red suite).
+
+One question: *"What can I break here that nothing notices?"* Tools are mutants and fuzz, not reading. **Fuzz geometry and parsing code specifically** — fuzzing found a real defect after three separate rounds of careful reading over the same file missed it. Survivors are the finding; triage each as (a) real gap → write a test, (b) equivalent mutant → harmless, note it, (c) deliberately untested → document why.
+
+> RUBRIC PENDING. This station's grading rubric is not yet written (a code adversary judges *attacks*, which is a different question from the test rubric's axes). Until it exists, run the station and report survivors without scoring them.
+
 ### Step 3 — WIP COMMIT
 
 1. **Diffstat audit (scope-creep gate)**: `git diff --stat <base>..HEAD` (working tree included) vs the scope fence. Any out-of-fence file → resolve as must_fix (revert it or get explicit user approval) BEFORE staging. Never commit out-of-fence changes silently.
@@ -113,15 +173,18 @@ For each unit in this round, in parallel where independent:
    - Subject ≤ 70 chars, prefixed `WIP: ` when round is part of an unfinished phase.
    - Body lists each unit's deliverable and test counts, plus the docket item ID(s).
    - Co-author trailer naming the session's current model, e.g. `Co-Authored-By: Claude <noreply@anthropic.com>`.
-4. Use HEREDOC for the commit message.
-5. After commit, run `git status` to verify clean, then push to the round's declared branch (Minerva → `development`, minerva-plugins → `main`).
+4. **Commit-message check (pre-commit is the ONLY possible gate — a pushed message is immutable).** Verify against the diff and the tracker: does the message describe what actually changed? Do the cited item IDs exist and are they in a plausible state? Do quoted test counts match what the suite printed? Our commit bodies assert a lot of fact into a permanent record, and unlike a comment they can never be corrected in place.
+5. Use HEREDOC for the commit message.
+6. After commit, run `git status` to verify clean, then push to the round's declared branch (Minerva → `development`, minerva-plugins → `main`).
+7. **CI, where CI exists.** Minerva and the plugins monorepo have it; other work has none. Absence of CI is not a skipped gate — it moves that weight onto the review and adversary stations above, and the round report should say so rather than implying a check ran.
 
-### Step 4 — DOCKET TRANSITION (conditional)
+### Step 4 — CLOSE-OUT + PROVENANCE (conditional)
 
 - If stop condition for this round was **3c** (phase boundary, auto-verified):
   - For each task in scope, transition `in_progress → done` with resolution note citing commit SHA + test counts.
 - Otherwise:
   - Leave tasks `in_progress` until step 5 confirms.
+- **Provenance on every number written into a durable record.** Stamp HOW a figure was measured, not just what it was — `"62 of 3403 (measured via _segment_clear)"`, not `"62 of 3403"`. A number without its oracle looks like ground truth and gets consumed as a premise by later rounds; that exact omission cost a round. Applies to any durable record — tracker item, commit body, or saved hint — not only Docket. Not all work is tracked in a docket; where it is not, the commit body is the durable record and the same rule applies to it.
 
 ### Step 5 — STOP CONDITION FIRES
 
@@ -152,6 +215,16 @@ For each unit in this round, in parallel where independent:
 3. On user reporting failure:
    - Tasks stay `in_progress`.
    - Treat the failure report as the scope input for a follow-up round (loop back to step 0).
+
+### Step 5.5 — DEBRIEF: TIP ANALYSIS (post-HITL; only for units the test plan marked TIP)
+
+A unit routed to **TIP** at step 0.6 has no test standing behind it. Its gate is here, and it fires AFTER the human gate, not before: run the instrumented path, then analyse what the run actually produced.
+
+- The analysis must be **scheduled and owned**, not aspirational. "We'll TIP it" without a named analyst and a trigger degrades into ship-and-hope, which is strictly worse than the test we chose not to write.
+- **Instrumentation is production code and inherits the prose defect class.** A trace line asserting `resolved footprint=X` can be exactly as false as a comment saying so — and it is worse, because under TIP we are trusting it *instead of* a test. Review instrumentation as hard as the code it observes, and ask it the same question: is this reporting what happened, or what its author believed happens?
+- Where the correctness question is **perceptual** (does this label overlap? is this legible?), the human is the oracle and a rating prompt is the cheapest way to capture it. Any automated proxy for a perceptual check is a golden image, which fails re-bless resistance: it goes red, someone re-blesses it, and the defect rides back in.
+
+> INFRASTRUCTURE PENDING. TIP is not yet buildable — see discussion `019fa00980ef` (packaged logging system + separate reader). Until it lands, "TIP" is not a legal verdict at step 0.6; route those units to *manufacture an oracle* or to HITL instead.
 
 ### Step 6 — RUN-AGAIN DECISION
 
@@ -264,6 +337,12 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 11. **Writing code before the reuse scan.** Duplicated substrate/bridge/test code is the main DRY failure. Read the named references first; declare reuse/extend/copy before implementing.
 12. **Campaign auto-adoption.** A goal loop that pulls every filed discovery into its candidate set is scope creep at campaign scale. Only explicitly-linked blockers join; everything else waits for a human.
 13. **Green unit wall, no functional proof.** A round that ends with only unit tests green has verified its own assumptions, not the wiring (Phase 1B: 330/0 units, 6 wiring bugs). The functional floor is part of Layer-1, not an optional extra; mocking internal seams to make it "pass" defeats it.
+14. **Using the code under test as its own oracle.** The natural oracle for "did we emit something illegal?" is the project's own predicate — and that predicate can share the exact blind spot as the defect being hunted, so the measurement looks like ground truth and is not. An oracle must be built from a DIFFERENT representation than the code it judges. For a defect expressed in cells, assert in cells; do not ask whether a sampled chord passed.
+15. **Full-only mutation.** A test that dies under full removal can still pass when the guard is half-removed — checking one branch instead of both. Half-mutate every round, in each direction. This is the vacuous test that looks most like a good one.
+16. **Grading tests by reading them.** Test value is a property of the test-plus-code system — does it fail when the code is wrong — and that is measurable, not inferable from the text. A reading-based grader inherits reading's blind spots, which is the failure being fixed. Measure with mutants; reserve judgment for what cannot be measured (oracle independence, re-bless resistance, intent legibility).
+17. **Treating a golden as a pin.** Goldens detect CHANGE, not correctness: when one goes red the cheap response is to re-bless it, and the defect rides back in. They are not worthless — they are miscategorised. Never count a re-blessable failure as protection.
+18. **Prose with no gate.** Comments, docstrings, commit messages and tracker records are now inputs to an executing system — agents read them with the weight of code and cannot smell staleness. They were advisory when only humans read them, and nothing re-classified them when that changed. Every claim in prose has a cheap oracle (the code, the diff, the repo at a SHA); the defect is that nobody consults it.
+19. **Writing a test with no independent oracle.** If you cannot name one, the test is blind by construction and will pass while the behaviour is wrong. Source external ground truth, or route the unit to TIP — do not write the test and call it covered.
 
 ## Reference
 
