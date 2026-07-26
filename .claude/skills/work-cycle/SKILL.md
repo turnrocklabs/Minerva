@@ -132,6 +132,8 @@ For each unit in this round, in parallel where independent:
 
 **Step 2.0 — TEXT + TEST ADVERSARY (runs BEFORE the suite; cheapest gate first).**
 
+> **SERIALIZE THIS AFTER THE STEP-1 COLD REVIEW. Do not run the two concurrently.** Both are cold agents pointed at the same diff, so in parallel they duplicate the expensive part — re-running the same mutation matrix, the same fuzz, the same reproductions — and converge on the same headline finding. Measured: ~169k tokens across two agents for heavily overlapping work. Run the reviewer first, then hand this station a short digest of what the reviewer already established with "do not re-verify these; find what they missed." Independent convergence IS real evidence, but it is a very expensive way to buy a second opinion; when you want it, spawn one cheap targeted verifier on the specific claim instead of doubling a full pass.
+
 Prose is the only artifact with no gate — nobody runs a comment, so a false claim stays green forever. It is the joint-most-frequent defect class, and it now matters more than it used to because agents read a docstring with the same weight as the code beneath it and cannot smell staleness.
 
 - **Mechanical pre-pass** (decidable, no judgment): does every symbol, test name, caller and `file:line` cited in prose actually resolve? A claimed caller relationship is a static call-graph query. Then grep the diff for modal claims — *never, always, cannot happen, guaranteed, by construction* — and surface them. Load-bearing claims cluster in those few sentences.
