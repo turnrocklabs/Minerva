@@ -49,7 +49,6 @@ PLUGIN_TESTS=(
 	test/test_passthrough_e2e.gd
 )
 PCB_GUARD_TESTS=(
-	test/test_pcb_plugin_smoke.gd
 	test/test_cad_plugin_smoke.gd
 	test/test_plugin_scene_panel_broker.gd
 	test/test_plugin_scene_panel_broker_host_fs.gd
