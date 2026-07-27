@@ -2,18 +2,18 @@
 
 LATEST **2026-07-27** — **PCB E-campaign: C4b SHIPPED. 24 rounds done, D1 next. Two skills authored. DOCKET WAS DOWN when this was written — read this file first.**
 
-## ⚠ FIRST THING TO DEAL WITH: `Docs/minerva.dct` diverged
+## `Docs/minerva.dct` — diverged and MERGED (no action needed)
 
-**Two machines wrote to the docket file and git cannot merge it.** It is SQLite; picking a side silently destroys the other side's work, so nothing was picked.
+Two machines wrote to the docket log. It is **NDJSON, not SQLite**, so a record-level union was possible and was done; Docket does its own cleanup on load.
 
-- **Upstream** (`d264bd10`, `8cc7ace5`) carries a CEF first-party-browser discussion added from another machine.
-- **This machine** carries the 2026-07-27 session: the C4a and C4b rounds, their premise corrections and close-outs, and ~6 items filed against both.
+- Upstream (`d264bd10`, `8cc7ace5`) carried a CEF first-party-browser discussion from another machine.
+- This machine carried the 2026-07-27 session: C4a and C4b, their premise corrections and close-outs, and the items filed against both.
 
-**This machine's version is preserved, untracked, at `Docs/minerva.dct.SESSION-BACKUP-2026-07-27`** (6,639,711 bytes). The tracked `Docs/minerva.dct` is now upstream's.
+**Merged result: 1673 items, 833 comments, 331 links, 5574 events, exactly one `meta` line.** Verified no item is lost from either side (upstream-only kept: 1; this-machine-only kept: 156). 179 records existed on both sides with different content and were resolved by later `updated_at`.
 
-**To recover this session's tracker writes:** open the backup with Docket and merge/export what you need, or swap it in if the CEF discussion is reproducible. Do not `git checkout` one over the other without deciding which side's writes you are discarding.
+Both pre-merge files are preserved untracked in `Docs/` — `minerva.dct.UPSTREAM-BACKUP-2026-07-27` and `minerva.dct.SESSION-BACKUP-2026-07-27` — delete them once Docket has loaded the merged log cleanly.
 
-**Also not yet in Docket** — the A/B result below was never filed because Docket was down mid-write. File it as a durable hint under `work-cycle` when the tracker is back.
+**Still not in Docket:** the A/B result below was never filed (the connection dropped mid-write). File it as a durable hint under `work-cycle`.
 
 ## Where things are
 
