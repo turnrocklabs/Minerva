@@ -1,6 +1,22 @@
 # Pickup
 
-LATEST **2026-07-27** — **PCB E-campaign: C4b SHIPPED. 24 rounds done, D1 next. Two skills authored. DOCKET WAS DOWN when this was written — read this file first.**
+LATEST **2026-07-27 PM** — **PCB E-campaign: D0-expose SHIPPED (`6307238`, CI green). 25 rounds done, D1 next. Docket is UP; the canonical anchor is the docket hint, not this file.**
+
+**Read `docket_hint_get(project="minerva", component="pcb-e-campaign", key="state")` first** — it is the resume anchor and it is current. This file is the human-readable echo.
+
+- **D0-expose was INSERTED before D1 by owner ruling.** Pre-flight on what was billed as a pure-prose round found the tool surface D1 must describe was itself incomplete: the pcb plugin's 11 worker-backed tools were named `pcb_*`, declared in no manifest, and surfaced by Minerva's start-time discovery as double-prefixed `minerva_pcb_pcb_drc`. All 11 are now `minerva_pcb_*` and manifest-declared with the Go specs' schemas and descriptions. Item `019fa486b408`, done.
+- **D1 `019f3e045dac` is next and its own `tool_deps` are wrong, not just its prose.** Six of the seven names it lists now exist; `minerva_pcb_ping` does not — the real tool is bare `ping`, deliberately left unrenamed. Read comments 831 and 836 before briefing.
+- **R7 added to the terminal HITL register** (now 6 checks): after REINSTALL + `/mcp` reconnect, `minerva_plugin_inspect("pcb")` should list the 11 and one should return a real result live. Owner chose to leave it deferred; the automated proxy is the new gd registration test plus the stdio smoke.
+- **The A/B result is filed** as hint `019fa47ec6ff` (VOID by its own canary; the template does the work; ~730k tokens — a 15-run A/B is not cheap).
+- **Two premise corrections this session, both mine, both caught by gates before they reached code.** The overstatement pattern is written up in the anchor and in hint `019fa485d55a`.
+- **New durable hint worth reading before any mutation work:** `019fa4c853c1` — you CANNOT mutation-test the pcb gd suite from a copied or symlinked tree; Godot canonicalizes `res://` through the symlink and reads the real checkout.
+- **Filed not fixed, new:** `019fa4c88f33` (`withDefaultLibDir` injection unpinned; its body carries a live hazard — a swapped library handler binding makes `go test` perform a real network fetch).
+
+The two `minerva.dct.*-BACKUP-2026-07-27` files are still untracked in `Docs/`. Docket has loaded the merged log cleanly all session, so they can be deleted whenever you want — left in place because deleting them is your call.
+
+---
+
+EARLIER **2026-07-27 AM** — **PCB E-campaign: C4b SHIPPED. 24 rounds done. Two skills authored. DOCKET WAS DOWN when this was written.**
 
 ## `Docs/minerva.dct` — diverged and MERGED (no action needed)
 
