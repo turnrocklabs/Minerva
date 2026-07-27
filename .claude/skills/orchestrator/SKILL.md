@@ -7,20 +7,23 @@ description: Manage a body of work — decide what gets worked on next, what suc
 
 This skill covers **what** gets built and **what "done" means**. It does not run the round — work-cycle does.
 
-Concretely, it covers five things:
+Concretely, it covers six things:
 
 1. **Selection** — which work happens next, and what is deferred.
 2. **Acceptance** — what success looks like, written so it cannot be faked.
 3. **The record** — what the tracker says, so a future session can act without this conversation.
 4. **Knowledge** — what gets remembered, where, and when it is read back.
 5. **Escalation** — which calls are yours and which belong to the owner.
+6. **Batching** — how rounds group into epochs, and what verification each boundary carries.
 
 ## Terms
 
 | Term | Means |
 |---|---|
 | **Docket** | The tracker (`docket_*` tools). Items, comments, states, links. The durable record of decisions. |
-| **Round** | One unit of dispatched work — one pass through work-cycle. |
+| **Unit** | One implementer's work — one brief, one fence. |
+| **Round** | One pass through work-cycle: one or more independent units, ending in a commit. |
+| **Epoch** | A batch of rounds sharing one verification boundary. **At most six per codebase.** |
 | **Campaign** | An optional mode: driving a Docket subtree to a goal across many rounds. **Not a prerequisite.** Orchestration applies to a single round just as much; a campaign only adds the outer loop and its termination rules. |
 | **Register** | An ordered list of deferred human checks, burned down in one session. |
 
@@ -174,7 +177,54 @@ You author acceptance; work-cycle enforces it. A criterion satisfiable without d
 
 **Name the discriminating fixture.** A single-element fixture catches a dropped value but not a misassigned one. Identical duplicates catch a dropped value but not a mispaired one.
 
-## 6. Campaigns
+## 6. Epochs
+
+An **epoch** is a batch of rounds sharing one verification boundary. The expensive judged stations run once per epoch instead of once per round; the cheap mechanical gates still run every round.
+
+### The NTE
+
+**A codebase gets at most SIX epochs from inception to completion.** A ceiling, not a target — most work should use fewer.
+
+**Err large.** When a split is arguable, take the larger epoch. The pull is always toward smaller ones, because each feels safer in isolation, and the more common waste is paying a full verification pass for a fraction of the work.
+
+### Composition
+
+- **Units inside an epoch should not build on each other.** Where they must, order them explicitly and accept that a defect found at the boundary unwinds everything downstream of it.
+- **A change to the measurement rig goes first, or alone.** Anything that moves, renames or regenerates the tests other work is judged by must be verified before the work it will judge.
+- **Give each epoch a one-sentence purpose.** If you cannot say what it is for in one sentence, the grouping is arbitrary and the boundary review will be too.
+- **Size by the reviewer, not the writer.** The binding constraint is the largest diff a cold reviewer reads without quality falling off. Where an epoch exceeds it, split the boundary review **by dimension** — one pass for correctness, one for prose and test power — rather than splitting the epoch.
+
+### Risk tier
+
+Two tiers. The criterion is **silent and expensive**, not any particular subsystem.
+
+- **Default** — failure is loud, or cheap to repair late. No mutation proof; tests authored at the boundary.
+- **Careful** — a defect would be silent *and* expensive to repair once other work sits on top of it. Keep the per-unit mutation proof here.
+
+**Name the careful-tier modules explicitly in the campaign anchor, and keep the list short.** An unwritten tier expands until it means everything.
+
+### Cadence
+
+| Runs | What |
+|---|---|
+| Every unit | compile / vet / lint, plus the existing targeted tests for the touched modules; mutation proof if the unit is careful-tier |
+| Every epoch | author this epoch's tests; full suite; text+test adversary; code adversary; human bless for anything checkable by eye; convergence count |
+| Every few epochs, or at a phase boundary | mutation sweep |
+| At acceptance | the deferred-human register; cross-provider review |
+
+### Cross-provider review
+
+A same-family reviewer shares blind spots with the implementer; a different provider does not. That review is scarce — budget **one to three per product**. Spend it where **the definition of correctness changes** — what a golden certifies, what a parity assertion means, what a schema promises — and once at final acceptance. Never on an ordinary feature round.
+
+### Convergence
+
+Batched verification hides drift, so measure it.
+
+**At each unit's close record two counts**: subtree items closed, and new items filed that *block* a subtree item. Aggregate at the epoch boundary — count per unit, not per epoch, or there are too few samples to show a trend before the work ends.
+
+**If filed-blocking meets or exceeds closed across two consecutive epochs, the approach is not converging.** Stop and report rather than opening the next epoch.
+
+## 7. Campaigns
 
 Optional mode: drive a tracker subtree to a goal across rounds.
 
@@ -182,9 +232,10 @@ Optional mode: drive a tracker subtree to a goal across rounds.
 
 1. **Re-read the live subtree.** The tracker is the loop state; conversation memory does not survive compaction.
 2. **Build the candidate set** — leaf items open, unblocked, not human-gated.
-3. **Select** the highest-priority independent candidates that fit one round.
-4. Hand off to work-cycle.
-5. **Checkpoint** on the goal item in the completion-comment format.
+3. **Lay the candidates into epochs** before starting any of them, honouring the NTE and the composition rules in section 6. Give each epoch its one-sentence purpose and name its careful-tier units.
+4. **Select** the highest-priority independent candidates that fit one round inside the current epoch.
+5. Hand off to work-cycle.
+6. **Checkpoint** on the goal item in the completion-comment format, and record the convergence counts at every epoch boundary.
 
 ### Adoption
 
@@ -202,6 +253,8 @@ Split a round when shipping it would leave the feature's *use* costing the user 
 | Judgment-dependent must_fix, or retry cap | HALT — a human is the point |
 | Pre-flight failure | HALT |
 | Two consecutive no-progress iterations | HALT — report why candidates are stuck |
+| Filed-blocking ≥ closed across two consecutive epochs | HALT — the approach is not converging |
+| Sixth epoch closed with work remaining | HALT — the NTE is a ceiling; re-plan rather than opening a seventh |
 | Max rounds reached | HALT — checkpoint + remaining work |
 
 ### Deferral
@@ -221,3 +274,7 @@ Human-gated stops may append to a register instead of halting. **An entry must n
 9. **Acceptance criteria a lazy implementation satisfies.**
 10. **Treating close-out as done.** It is ungated, and unverified claims survive there.
 11. **A number without its oracle.** It is inherited as ground truth by whoever reads it next.
+12. **Erring small on an epoch.** Every argument for splitting sounds prudent in isolation. Splitting buys a full verification pass for a fraction of the work; when the call is close, take the larger epoch.
+13. **An unwritten careful tier.** If the list of silent-and-expensive modules lives in someone's head, it silently expands to everything and the batching saves nothing.
+14. **Spending the cross-provider review on an ordinary round.** It is budgeted per product, not per epoch. Save it for where the definition of correctness changes, and for acceptance.
+15. **Opening the next epoch without the convergence counts.** The counts are the only instrument that can show batching is hiding drift, and they are worthless collected retrospectively.
