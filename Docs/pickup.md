@@ -1,5 +1,67 @@
 # Pickup
 
+LATEST **2026-07-27** — **PCB E-campaign: C4b SHIPPED. 24 rounds done, D1 next. Two skills authored. DOCKET WAS DOWN when this was written — read this file first.**
+
+## Where things are
+
+**minerva-plugins `main` @ `4da474a`, pushed, clean, CI green.** Nothing in flight.
+- `905ce82` C4b — net classes authorable in board YAML (feature).
+- `4da474a` — 4 mutation-corpus entries + a harness fix.
+
+**Campaign: 24 rounds done** — A0a A1 A1a A0c A5 A1b F1a A2+A3 A4 B1 B1a B2 C0 C1 C2a C2b C2c C2d T0 C3a C3b C4a C4b.
+**NEXT = D1**, manifest skill rewrite (`019f3e045dac`). Staffing: Sonnet impl / Opus cold review / **Opus** text+test adversary / Sonnet code adversary — D1 is nearly pure prose, so station 2.0 is the load-bearing gate, not 2.2.
+**Then**: D2, D3, D4, D5, F1a-panel, E1, E3, F1b, A0b. Hard ordering: **D4 before F0**; **F1a-panel before E1**.
+**Then** one terminal HITL session, 5 checks: R3 golden bless · R4 clean-machine marketplace install · R6 mac/win install-only · E2 label de-overlap (`019f97a71218`+`019f97a74633`) · D4v silk legibility.
+
+## Gates (numbers move every round — read them from the suite, never from here)
+
+    worker  cd pcb/worker && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest tests/ -q -p no:cacheprovider    # 1358 passed / 1 skipped at 4da474a
+    gd      bash pcb/scripts/run-gd-tests.sh /home/imran/github/Minerva                                            # ABSOLUTE path; ../../Minerva fails
+    go      cd pcb && go vet ./... && go test -count=1 ./...
+    sweep   pcb/worker/tools/mutants/run_sweep.py --sweep -j 6 --control-passed <current> --control-skipped 1
+
+**Sweep facts that will otherwise cost a round:** corpus is at **44 = the band ceiling** (raise or displace). **SIX survivors is the floor, not zero** — five are real holes (`019fa2502d09`), one is a documented equivalent mutant. **CHECK THE CONTROL IS GREEN before believing any kill set** — a red control makes every mutant look killed. `run_sweep` refuses a dirty tree, so to sweep uncommitted work mirror the tree to a scratch repo and commit *there*.
+
+## Two skills authored this session (committed, not yet exercised)
+
+- **NEW `.claude/skills/orchestrator/SKILL.md`** — PM role: selection, acceptance, the record, knowledge stores, escalation, campaigns, close-out. Owner reviewed an earlier draft with 14 comments; all accepted and applied (strip history, define terms before use, add templates, do/don't format).
+- **MODIFIED `.claude/skills/work-cycle/SKILL.md`** — 8 changes. Campaign mode MOVED OUT to orchestrator. "Memory and hints" rewritten (it pointed at the volatile store, at the wrong moment, and never said to write back). Sub-agent prompts now say *state constraints, point at facts*. New anti-pattern 20.
+- Placement rule: **work-cycle = how to run this round; orchestrator = what the goal is and what success looks like.** Unplaceable rules default to orchestrator.
+
+## A/B test on skill wording — VOID by its own canary, but one usable finding
+
+Pre-registered 3-arm test (persona framing vs scope claim vs canary-with-template-removed), N=5, Sonnet, one frozen fixture, primary metric = word count.
+**Result: VOID.** Canary moved the median 36.8%; the pre-registered validity gate required ≥50%. Nothing is concluded about persona vs scope.
+**The metric was the error** — word count doesn't measure what a template controls. The secondary (labelled-field conformance) separated cleanly: **A 6.0/6 · B 5.6/6 · C 2.6/6**.
+**Usable without more sampling: the template is doing essentially all the work.** Whatever the role sentence adds is too small for 2×5 to separate. Treat the template as load-bearing, the role wording as a style call.
+**Cost was ~48k tokens per run, ~730k total** — an order of magnitude above my estimate. Do not call a 15-run A/B cheap.
+Artifacts under the session scratchpad: `ab-prereg.md`, `ab/skill_{A,B,C}.md`, `ab/fixture.md`, `ab/out/*.txt`.
+
+## Needs the owner — neither blocks anything
+
+1. **Routing and DRC disagree by design** (since C4a). An explicit caller width/clearance outranks a net-class minimum in routing; DRC holds copper to the class floor. So an override can produce copper DRC flags. Documented in `pcb/docs/routing.md`, not changed. If routing should REFUSE such an override, that is a code change needing its own item.
+2. **`019f9fb32de7`** (sev 2, `_segment_clear` corner-permissive for all callers, residue 14/2889). Needs a fix direction — supercover DDA vs swept-rectangle — before it can be scheduled. Open since C2d.
+
+## Filed, not fixed, NOT adopted
+
+`019fa0349a4e` `019fa0718a20` `019fa0d13faa` `019fa075e081` `019fa0f8d575` `019fa109766f` `019fa109b43c` `019fa172dd21` `019fa17326b5` `019fa1cda337` `019fa20b112a` `019fa2502d09` `019fa2c51322` `019fa2eaef03`
+
+Adoption rule: an item joins the campaign candidate set **only if it explicitly blocks a subtree item**.
+`019fa109b43c` is pinned by a test labelled a known bug — **invert that assertion when it lands, never delete it, then RE-MUTATE it** (an inverted assertion inherits no kill power from the original).
+
+**NOT YET FILED — Docket was down.** Record the A/B result above as a durable hint under `work-cycle` when Docket returns.
+
+## Owner rulings — do not reopen
+
+- Guarded parallel fan-out **stays**; concurrency needs a **named qualifier** (disjoint fences / not both driving Godot / reviewer-and-adversary never concurrent). "It feels independent" is not a qualifier. No blanket serial rule.
+- **No region selector** on `minerva_pcb_delete_traces`; exact ids + exact `net_name` is the shape. Revisit home `019fa1cda337`, deferred.
+
+## The failure mode this session kept producing
+
+Five factual errors, all mine, all one shape: **a fact asserted about a file that was never opened** — a false floor value in a brief, a symbol name taken from a sub-agent report, two false claims in a filed item, and a premise about a guard's semantics that an implementer correctly refused. Both new skills exist to close it: briefs point at facts rather than stating them, and tracker writes get opened-and-verified before they are written. The gates caught every instance; none reached the code.
+
+---
+
 LATEST **2026-07-21** — **hermetic-CAM KEYSTONE: K1-parser + K1-types + K2 (compiler) ALL SHIPPED + Sol-APPROVED. K3 (repoint emitters) is NEXT — behind 3 ratified gates.**
 
 **K2 SHIPPED `d8f26e1` (minerva-plugins main) — Sol cold review APPROVED after 4 reconciliation rounds** (question `019f7dade006`, approval comment 632; independently verified 576 passed/1 skipped, clean worktree, both schema guards + annulus/plating conflict detection). **K2 = FootprintDefinition→ResolvedBoard compiler, gated default-OFF by non-wiring** (nothing live imports it; K3 wires it). Delivered: `compile_board.py` (`compile_board()` returns `ResolutionSuccess{board,diagnostics}`|`ResolutionFailure`; `DefaultCapabilityPolicy`) · **NEW `fab_capability.py`** = the neutral shared emitter-capability authority (EMITTED_LAYERS/SUFFIXES + FABRICATION_CRITICAL_OUTPUTS + SUPPORTED_PAD_SHAPES/GRAPHIC_PRIMITIVES/HOLE_SHAPES; K2 + every emitter import it) · additive IR extensions (`ResolvedComponent.value`, `geometry.TRANSFORM_VERSION`, `resolve_footprint(lock=…)` snapshot). Sole constructor of PlacedPad/PlacedGraphic via the ONE PlacementTransform (mirror incl); STRICT/fail-closed/no-invented-geometry; board-namespaced content-derived ids; complete pad+graphic projection parity + board-carriage oracle; compile-census over all 11 seeds. Suite baseline now **576 passed / 1 skipped**.

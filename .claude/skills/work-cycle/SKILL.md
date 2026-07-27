@@ -1,6 +1,6 @@
 ---
 name: work-cycle
-description: Drive a multi-round work cycle on Minerva tasks with sub-agents (parallel implementers + Opus reviewers), automated Layer-1 verification incl. a non-mocked functional-test floor, smart-batched WIP commits, and explicit stop conditions for human-in-the-loop tests. Supports campaign mode — an outer goal loop over a DCR subtree with HITL deferred to one consolidated register-burn session. Use when starting a new round of focused implementation work — typically after a planning conversation or when picking up a docket task. Default scope is one DCR-grandchild task or a small group of sibling tasks; campaign mode takes a DCR/parent id.
+description: Drive a multi-round work cycle on Minerva tasks with sub-agents (parallel implementers + Opus reviewers), automated Layer-1 verification incl. a non-mocked functional-test floor, smart-batched WIP commits, and explicit stop conditions for human-in-the-loop tests. Runs ONE round. For campaigns — deciding which round is next, whether to continue, and what the record says — see the `orchestrator` skill. Use when starting a round of focused implementation work, typically after planning or when picking up a tracked task.
 ---
 
 ## When to use
@@ -14,6 +14,7 @@ Do not invoke for:
 - Open-ended planning conversations (those are pre-cycle; use plain conversation or `/Plan`).
 - One-off file edits (just edit the file).
 - Multi-DCR phase work with many human gates — break that into per-DCR cycles first.
+- Deciding *what* to work on, or managing the tracker / knowledge record — that is the `orchestrator` skill. This skill runs a round someone has already chosen.
 
 ## Inputs
 
@@ -119,7 +120,7 @@ For each unit in this round, in parallel where independent:
 2. When implementer returns, spawn a Reviewer sub-agent:
    - Model = Opus (default) / Fable (pattern-establishing rounds — first-of-kind code that later rounds will copy)
    - Subagent type = `general-purpose`
-   - Prompt = "Review the diff `base..HEAD` (base SHA: <pinned>). Verify: <unit's success criteria>. **Score against the rubric, in order: durability → DRY → reliability → well-factored → readability → cost.** DRY trigger: any block >~30 lines substantially duplicating code elsewhere in this repo or a sibling plugin → must_fix (extract or justify in writing). **Scope audit**: list any changed file outside this fence: <fence>; out-of-fence files = must_fix. Look for: <known gotchas from work-cycle.md anti-patterns + repo-specific gotchas saved in nudge>. Verdict: approve / approve_with_notes / must_fix / reject."
+   - Prompt = "Review the diff `base..HEAD` (base SHA: <pinned>). Verify: <unit's success criteria>. **Score against the rubric, in order: durability → DRY → reliability → well-factored → readability → cost.** DRY trigger: any block >~30 lines substantially duplicating code elsewhere in this repo or a sibling plugin → must_fix (extract or justify in writing). **Scope audit**: list any changed file outside this fence: <fence>; out-of-fence files = must_fix. Look for: <anti-patterns below + hints retrieved at step 0.5 via docket_hint_query>. Verdict: approve / approve_with_notes / must_fix / reject."
    - Reviewer has NO context from the implementer's prompt or memory of this conversation.
 
 3. Reconcile review verdict:
@@ -188,6 +189,9 @@ One question: *"What can I break here that nothing notices?"* Tools are mutants 
   - Leave tasks `in_progress` until step 5 confirms.
 - **Provenance on every number written into a durable record.** Stamp HOW a figure was measured, not just what it was — `"62 of 3403 (measured via _segment_clear)"`, not `"62 of 3403"`. A number without its oracle looks like ground truth and gets consumed as a premise by later rounds; that exact omission cost a round. Applies to any durable record — tracker item, commit body, or saved hint — not only Docket. Not all work is tracked in a docket; where it is not, the commit body is the durable record and the same rule applies to it.
 
+- **What to WRITE at close-out is owned by the `orchestrator` skill.** The completion comment is a PM register — shipped SHA, gates with numbers, what it unblocks, decisions and who may veto, filed-not-fixed, what needs the owner — not a narrative. The technical account belongs in the commit message, which step 3#4 already gates.
+- **Close-out has no reviewer.** Every station above fires before the commit; everything written after it is ungated. Before writing a factual claim here, open the file behind it.
+
 ### Step 5 — STOP CONDITION FIRES
 
 0. **Audible notification (owner-requested, 2026-07-16)**: when all prescribed
@@ -237,53 +241,35 @@ If stop condition was **3c** (auto-verified) and there are more rounds queued in
 If stop condition was **3a / 3b**:
 - Wait for user. Do not loop autonomously.
 
-## Campaign mode (goal loop)
+## Campaigns
 
-Invocation: `/work-cycle campaign <dcr-or-parent-id> [--max-rounds=N] [--defer-hitl=<register.md>]`
-
-Campaign mode wraps steps 0-6 in an outer loop that drives a docket subtree to a goal instead of running one declared round. Per-round discipline (preflight, fence, cold review, Layer-1, WIP commit) is unchanged — the loop only decides *what the next round is* and *when to stop*. Proven shape: the PCB migration autonomy plan (DCR 019dc140, 17 iterations to a single consolidated HITL).
-
-### Loop body (each iteration)
-
-1. **Re-read the live subtree** (`docket_query` children/grandchildren of the goal item — the docket is the loop state, not conversation memory). Build the candidate set: leaf items that are `backlog`/`open`, unblocked (no `blocks` link from an undone item), and not human-gated.
-2. **Select the next round**: highest-priority independent candidates that fit one round (default 1-2 units; dependencies = later iterations).
-3. Run steps 0-6 on the selection.
-4. **Checkpoint**: append a campaign comment to the goal item — iteration number, items transitioned, commit SHAs, register entries added, candidate set remaining. This makes the campaign resumable across compaction or a new session: re-invoking campaign mode on the same goal id picks up from docket state.
-
-### Adoption rule (campaign-level scope fence)
-
-Rounds file out-of-fence discoveries; campaigns must not auto-adopt them. A newly-filed item joins the candidate set ONLY if it **blocks** a goal-subtree item (link it `blocks` explicitly). Everything else is file-only — it waits for a human to promote it. "The loop found more work" is the campaign-scale version of "while I'm here."
-
-### HITL deferral (`--defer-hitl`)
-
-With the flag, 3a/3b stops do not halt the loop: append the manual test to the named register file instead (entry MUST name the automated proxy that stands in for the human check — no proxy, no deferral; build the probe first) and continue. The campaign's exit report presents the whole register as ONE consolidated acceptance session. Without the flag, 3a/3b halts the loop (default behavior).
-
-### Termination (all explicit; first to fire wins)
-
-| Condition | Result |
-|---|---|
-| Goal predicate: every subtree item done, HITL-deferred, or human-blocked | SUCCESS — exit report + register test plan |
-| 3d (Layer-1 cap) or 3e (judgment must_fix) | HALT — these are never deferrable; a human is the point |
-| Preflight failure | HALT — fail-stop, never improvise past it |
-| Two consecutive no-progress iterations (zero items transitioned) | HALT — dry loop; report why candidates are stuck |
-| `--max-rounds` reached (default 12) | HALT — checkpoint + remaining-work summary |
-
-### Exit report
-
-Goal item gets a final checkpoint comment: iterations run, items done vs remaining, commits per repo, test counts, and — if deferring — the register rendered as an ordered human test plan with expected results (the single HITL session).
+Campaign mode lives in the `orchestrator` skill, which owns the loop body, the adoption rule, termination conditions, HITL deferral and the exit report. This skill runs each round the campaign selects; the discipline below is unchanged whether a round was chosen by a human or by a campaign loop.
 
 ## Conventions
 
 ### Sub-agent prompts
 
-Every sub-agent prompt must be self-contained — the agent has no memory of this conversation. Include:
-- Goal in 1-2 sentences.
-- Concrete files to touch (paths).
-- Existing patterns to follow (with file:line references).
-- Acceptance criteria as a numbered list.
-- Test files to update or add — including the round's non-mocked functional test (which real stack to boot, which happy path to drive; see Layer-1 functional floor).
-- For reviewers: also list known gotchas from `nudge` hints under `minerva-plugin-platform`, `minerva-testing`, etc.
-- Brevity instruction: "Report in under 200 words" for review agents; "Concise summary at end" for implementers.
+Every prompt is self-contained — the agent has no memory of this conversation.
+
+**State constraints. Point at facts.**
+
+- A **constraint** is yours to set and cannot be wrong the way a number can: the fence, decisions already taken, process bans, the acceptance *shape*, "assert by identity not count", "mutate FULL and HALF". These earn their length.
+- A **fact** is measurable, so name where it lives instead of restating it. Write *"read the floor from `_V1_MANUFACTURING_FLOOR`"*, never *"the floor is 0.127"*. Cite **symbol names, never file:line** — line numbers measure stale within a round.
+- Prescribe the **invariant**, not the edit. "Make the code and the docs agree across both dimensions" finds every site; "add the predicate here" finds one.
+
+Include:
+- Goal in 1–2 sentences.
+- The fence, verbatim, with the file-don't-fix rule.
+- Symbols to read for existing patterns, in the order they should be read.
+- Acceptance as a numbered list — including the criterion that defeats the lazy implementation (see `orchestrator`, "Acceptance criteria").
+- Which tests to add, including the round's non-mocked functional test.
+- Relevant hints retrieved at step 0.5, as "things to specifically check for."
+- The refusal right, verbatim (step 1).
+- Brevity: "under 200 words" for reviewers; "concise summary at end" for implementers.
+- For every fix cycle and every adversary: a **digest of what earlier stations already established**, with *"do not re-verify these; find what they missed."*
+- For a long-running job: **report the terminal event, not progress.** Each progress ping re-invokes the orchestrator for a full turn and carries no decision.
+
+**Say when the brief may be wrong.** Add: *"If something I state as fact is wrong when you measure it, say so — that is a success, not an embarrassment."* The agents that surface a bad brief are the ones told it is welcome.
 
 ### Model selection
 
@@ -312,15 +298,22 @@ Recognized as flags:
 
 ### Memory and hints
 
-Before spawning a reviewer, check `nudge` for hints under relevant components:
-- `minerva-plugin-platform` — plugin/scene-panel gotchas
-- `minerva-testing` — test fixture and isolation gotchas
-- `minerva-singleton` — SingletonObject quirks
-- `minerva-plugin-platform` — recent regression-class entries
+The `orchestrator` skill owns the stores and the protocol. This skill owns **when the search happens in a round** and **how its results reach an agent**.
 
-Pass relevant hints into the reviewer prompt as "things to specifically check for."
+**At step 0.5 (pre-flight), before the brief is written:**
 
-After the round, save any new gotcha discovered as a nudge hint under the appropriate component. The post-tool-use hook will remind you; act on it.
+```
+docket_hint_query(project=<project>, component=<area this round touches>)
+```
+
+`docket_hint_*` is the DURABLE store. `nudge` does not survive a reboot — use it only for state that should not outlive the session.
+
+- **Scope by component.** An unscoped or tag-only query times out.
+- A retrieved hint is **a claim, not a fact**. It gets the same treatment step 0.5#6 gives the work item's premises: verify before relying on it. Hints go stale exactly like tracker items.
+
+**Into every sub-agent brief** — implementer and reviewer alike — pass the relevant hints as "things to specifically check for." An implementer that knows the trap does not fall into it.
+
+**After the round**, write back what cost real time to learn, including *how it was measured*. The post-tool-use hook will remind you; act on it while the context is fresh.
 
 ## Anti-patterns
 
@@ -345,6 +338,7 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 17. **Treating a golden as a pin.** Goldens detect CHANGE, not correctness: when one goes red the cheap response is to re-bless it, and the defect rides back in. They are not worthless — they are miscategorised. Never count a re-blessable failure as protection.
 18. **Prose with no gate.** Comments, docstrings, commit messages and tracker records are now inputs to an executing system — agents read them with the weight of code and cannot smell staleness. They were advisory when only humans read them, and nothing re-classified them when that changed. Every claim in prose has a cheap oracle (the code, the diff, the repo at a SHA); the defect is that nobody consults it.
 19. **Writing a test with no independent oracle.** If you cannot name one, the test is blind by construction and will pass while the behaviour is wrong. Source external ground truth, or route the unit to TIP — do not write the test and call it covered.
+20. **Asserting in a brief what the agent could measure.** A supplied fact — a floor value, a symbol name, a baseline — is one the agent would have read correctly had the brief pointed instead of stated. The first-order cost is being wrong; the second-order cost is larger, because a brief dense with asserted facts teaches the agent to trust the brief over the repo, which is precisely the verification you are paying it for. Constraints are yours to state; facts are theirs to measure.
 
 ## Reference
 
