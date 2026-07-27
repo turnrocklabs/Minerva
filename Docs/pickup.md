@@ -2,6 +2,19 @@
 
 LATEST **2026-07-27** — **PCB E-campaign: C4b SHIPPED. 24 rounds done, D1 next. Two skills authored. DOCKET WAS DOWN when this was written — read this file first.**
 
+## ⚠ FIRST THING TO DEAL WITH: `Docs/minerva.dct` diverged
+
+**Two machines wrote to the docket file and git cannot merge it.** It is SQLite; picking a side silently destroys the other side's work, so nothing was picked.
+
+- **Upstream** (`d264bd10`, `8cc7ace5`) carries a CEF first-party-browser discussion added from another machine.
+- **This machine** carries the 2026-07-27 session: the C4a and C4b rounds, their premise corrections and close-outs, and ~6 items filed against both.
+
+**This machine's version is preserved, untracked, at `Docs/minerva.dct.SESSION-BACKUP-2026-07-27`** (6,639,711 bytes). The tracked `Docs/minerva.dct` is now upstream's.
+
+**To recover this session's tracker writes:** open the backup with Docket and merge/export what you need, or swap it in if the CEF discussion is reproducible. Do not `git checkout` one over the other without deciding which side's writes you are discarding.
+
+**Also not yet in Docket** — the A/B result below was never filed because Docket was down mid-write. File it as a durable hint under `work-cycle` when the tracker is back.
+
 ## Where things are
 
 **minerva-plugins `main` @ `4da474a`, pushed, clean, CI green.** Nothing in flight.
