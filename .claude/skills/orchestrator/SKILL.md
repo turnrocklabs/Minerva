@@ -125,8 +125,6 @@ NEEDS OWNER    anything awaiting a human
 
 Target ~150 words. The technical account belongs in the commit message; the lessons belong in hints.
 
-This template is load-bearing. Measured: removing it drops labelled-field conformance from 6.0/6 to 2.6/6 while barely changing length — it controls which sections exist, and nothing else in the skill substitutes for it.
-
 ### Routing
 
 | Content | Home |
