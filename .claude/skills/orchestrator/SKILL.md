@@ -51,19 +51,42 @@ Not for the mechanics of running a round — spawning, fencing, reviewing, mutat
 | Store | Lifetime | Holds |
 |---|---|---|
 | **docket hints** (`docket_hint_set/get/query`) | **Durable** — file-backed, git-tracked | Anything a future session needs: resume anchors, process rules, area gotchas, measurement traps |
-| **nudge** (`nudge_set_hint/get_hint`) | **Until reboot** | In-flight state only: a path true for this session, a number true mid-round |
+| **nudge** (`nudge_set_hint/get_hint/query`) | **Until reboot** | In-flight state: agent reports, per-unit findings, running counts — everything an epoch accumulates before its boundary writes the durable record |
 
 **Before writing, ask: would losing this at reboot cost anything?** If yes, it is a docket hint. Resume anchors and process rules are always durable.
 
 **If the tracker is unavailable**, durable state goes to a file in the repo (`Docs/pickup.md` or equivalent) and is committed. A store that is down is not a reason to hold state in conversation memory, which does not survive compaction.
+
+**Do not invent a third store.** Scratch files for single-use intermediate results are the store you already have, minus the query interface, plus cleanup you will forget. Use nudge.
+
+### Nudge as the agent channel
+
+An agent's full output goes to nudge; only a short summary comes back to you.
+
+- Key it `<epoch-or-round>/<unit>.<station>` so a component-scoped query returns the whole epoch at its boundary.
+- **A downstream agent reads the upstream entry ITSELF.** Name the key in its brief instead of pasting a digest. A digest you write by hand costs tokens and is a paraphrase, and paraphrases drift from what was actually established.
+- At the boundary, `nudge_query(component=<epoch>)` collects everything for the close-out. Once the durable record is written the entries are disposable — that is the lifetime nudge exists for.
+- **Name the read point or do not write.** A store nothing reads is worse than a file: invisible rather than merely untidy.
+
+### Your own context holds DECISIONS, not evidence
+
+The same rule that stops you asserting unverified facts also stops your context filling: anything you read only in order to summarise should have been read by an agent. Read what you will **adjudicate**.
+
+- Query `detail: "lean"` by default; fetch a full body only for the item you are about to act on.
+- `docket_context(tags=[…])` returns a curated area briefing — insights, open bugs, recent RCAs, questions — in one call. Prefer it over assembling the same picture from several full queries.
+- `docket_saved_query` cans the lean forms so the cheap query is the default rather than something you have to remember.
+- Write each unit's findings to the tracker **as that unit closes**, not accumulated for the boundary. Then compaction, a handoff, or a crash all cost the same: nothing.
 
 ### Reading
 
 | When | Query |
 |---|---|
 | Campaign or session pickup | `docket_hint_get(component=<campaign>, key="state")` |
-| Round pre-flight, before the brief is written | `docket_hint_query(project=…, component=<area>)` |
-| Before briefing any sub-agent | pass the relevant hints into the brief |
+| Orienting in an unfamiliar area | `docket_context(tags=[…])` — one call, not several |
+| Round pre-flight, before the brief is written | `docket_hint_query(project=…, component=<area>, detail="lean")` |
+| What is waiting on the owner | `docket_query(type="question", status != "answered")` |
+| What human checks are pending | `docket_query(type="test", status="ready")` |
+| Before briefing any sub-agent | name the hint or nudge key in the brief; let the agent read it |
 | On any surprise | query before diagnosing |
 
 Pre-flight is the highest-value moment: a hint records something that has already gone wrong in that area, and pre-flight is while it is still cheap to act on.
@@ -137,6 +160,25 @@ Target ~150 words. The technical account belongs in the commit message; the less
 | A lesson or trap | docket hint |
 | Technical narrative of a change | commit message |
 | Detail someone must act on | tracker item body |
+| An agent's full report, mid-epoch | nudge, keyed for the next agent to read |
+
+### Item type
+
+The tracker has more types than `bug` and `work_item`, and each carries fields the generic types do not. Filing into the wrong type means writing structured content as prose and losing the state chain.
+
+| What you are recording | Type | Why not a bug or a comment |
+|---|---|---|
+| A defect | `bug` | — |
+| A unit of work | `work_item` / `chore` | — |
+| A causal investigation | **`rca`** | Has `why_chain`, `contributing_factors`, `corrected`, `surprise`, and a detected → root_caused → verified chain. A causal chain written as a comment loses all of it. |
+| A deferred human check | **`test`** | Has `test_setup`, `test_steps`, `expected_result` and a draft → ready → passing chain. The acceptance session becomes `docket_query(type=test, status=ready)` instead of a bullet list someone maintains by hand. |
+| An open owner decision | **`question`** | asked → answered. Makes the owner's inbox a query rather than prose buried in a close-out. |
+| An observation about how the system behaves | **`insight`** | Distinct from a hint: a hint is an actionable fact, an insight is something true about the system that shapes later judgment. |
+| Reference material worth keeping | **`kb`** | — |
+
+**`policy` is RESERVED. Do not use it for owner rulings.** In Minerva a policy is a runtime enforcement object with event triggers — "when cobrowser reaches this domain, load that kb article." Filing a ruling as a policy puts a document where an enforcement rule belongs. Owner rulings stay as decisions in tracker comments and in the campaign anchor.
+
+**Link with the relation that is true**: `blocks`, `caused_by`, `follow_up`, `duplicates`, `surfaced`. Selection reads links, not prose.
 
 ## 3. Close-out
 
@@ -259,7 +301,11 @@ Split a round when shipping it would leave the feature's *use* costing the user 
 
 ### Deferral
 
-Human-gated stops may append to a register instead of halting. **An entry must name the automated proxy standing in for the human check** — no proxy, no deferral; build the probe first. The exit report presents the register as one acceptance session.
+Human-gated stops may defer instead of halting. **File each deferred check as a `test` item** — `test_setup`, `test_steps`, `expected_result`, status `ready` — never as a bullet in a prose register, which someone then has to maintain by hand and which goes stale silently.
+
+**An entry must name the automated proxy standing in for the human check** — no proxy, no deferral; build the probe first. Record the proxy in the item, so a reader can tell what is genuinely covered from what is merely deferred.
+
+The acceptance session is then `docket_query(type="test", status="ready")`, and each check transitions as it is run.
 
 ## Anti-patterns
 
@@ -278,3 +324,8 @@ Human-gated stops may append to a register instead of halting. **An entry must n
 13. **An unwritten careful tier.** If the list of silent-and-expensive modules lives in someone's head, it silently expands to everything and the batching saves nothing.
 14. **Spending the cross-provider review on an ordinary round.** It is budgeted per product, not per epoch. Save it for where the definition of correctness changes, and for acceptance.
 15. **Opening the next epoch without the convergence counts.** The counts are the only instrument that can show batching is hiding drift, and they are worthless collected retrospectively.
+16. **Reading an agent's full report into your own context.** It goes to nudge; you take the summary. Reading it yourself is how the orchestrator runs out of room before the reviewer does.
+17. **Hand-writing a digest into a downstream brief.** Name the nudge key and let the agent read the original. Your paraphrase costs tokens and drifts from what was established.
+18. **Filing structured content as prose.** A causal chain in a comment instead of an `rca`, a human check as a bullet instead of a `test`, an owner decision buried in a close-out instead of a `question`. The fields and the state chains exist; prose loses both.
+19. **Everything as `bug` or `work_item`.** Those are the defaults, not the whole vocabulary. Ask what type has the fields you are about to write by hand.
+20. **Pulling full bodies to decide what to read.** Query lean, then fetch the one you will act on.

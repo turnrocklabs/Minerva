@@ -290,8 +290,9 @@ Include:
 - Whether this unit writes a test at all — default tier does not; careful-tier and regression units do, and the brief must say which.
 - Relevant hints retrieved at step 0.5, as "things to specifically check for."
 - The refusal right, verbatim (step 1).
+- **Where the full report goes, and what comes back.** Every station writes its complete output to nudge under `<epoch>/<unit>.<station>` and returns you a short summary — verdict, findings, numbers, refusals. The report is not for your context.
+- For every fix cycle and every adversary: **the nudge key of what earlier stations established**, with *"read it, then find what they missed; do not re-verify it."* Name the key; do not paste a digest you wrote by hand. A paraphrase costs tokens and drifts from what was actually established.
 - Brevity: "under 200 words" for reviewers; "concise summary at end" for implementers.
-- For every fix cycle and every adversary: a **digest of what earlier stations already established**, with *"do not re-verify these; find what they missed."*
 - For a long-running job: **report the terminal event, not progress.** Each progress ping re-invokes the orchestrator for a full turn and carries no decision.
 
 **Say when the brief may be wrong.** Add: *"If something I state as fact is wrong when you measure it, say so — that is a success, not an embarrassment."* The agents that surface a bad brief are the ones told it is welcome.
@@ -328,17 +329,18 @@ The `orchestrator` skill owns the stores and the protocol. This skill owns **whe
 **At step 0.5 (pre-flight), before the brief is written:**
 
 ```
-docket_hint_query(project=<project>, component=<area this round touches>)
+docket_hint_query(project=<project>, component=<area this round touches>, detail="lean")
 ```
 
-`docket_hint_*` is the DURABLE store. `nudge` does not survive a reboot — use it only for state that should not outlive the session.
+`docket_hint_*` is the DURABLE store; `nudge` is the in-flight one. Reach for `docket_context(tags=[…])` when orienting in an unfamiliar area — one curated briefing beats several full queries.
 
 - **Scope by component.** An unscoped or tag-only query times out.
+- **Lean first.** Pull a full body only for the hint you are about to act on; a component can hold a lot of long hints.
 - A retrieved hint is **a claim, not a fact**. It gets the same treatment step 0.5#6 gives the work item's premises: verify before relying on it. Hints go stale exactly like tracker items.
 
-**Into every sub-agent brief** — implementer and reviewer alike — pass the relevant hints as "things to specifically check for." An implementer that knows the trap does not fall into it.
+**Into every sub-agent brief** — implementer and reviewer alike — name the relevant hints as "things to specifically check for," and let the agent read them. An implementer that knows the trap does not fall into it.
 
-**After the round**, write back what cost real time to learn, including *how it was measured*. The post-tool-use hook will remind you; act on it while the context is fresh.
+**As each unit closes**, write its findings to the tracker rather than accumulating them for the boundary. Then a handoff or a compaction at any point loses nothing. Write back what cost real time to learn, including *how it was measured*; the post-tool-use hook will remind you, and the moment to act on it is while the context is fresh.
 
 ## Anti-patterns
 
@@ -367,6 +369,8 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 21. **Deferring a careful-tier pin to the boundary.** The tier exists because a silent defect gets more expensive once other units build on it. Deferring its test is the one deferral this design does not buy back.
 22. **Believing a mutation result without checking the harness.** Plant a mutation that must fail and confirm it does. A rig that reports success while measuring nothing fails in the reassuring direction, and that is the direction nobody investigates.
 23. **Letting an epoch's diff grow past what a reviewer reads well, then reviewing it anyway.** Split the boundary review by dimension. A review that silently degrades is indistinguishable from one that passed.
+24. **Taking an agent's full report into your own context.** It belongs in nudge, keyed for whoever needs it next; you take the summary. This is the difference between an epoch that fits and one that does not.
+25. **Writing a scratch file for a single-use intermediate result.** That is nudge with no query interface and cleanup you will forget.
 
 ## Reference
 
