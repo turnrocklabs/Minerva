@@ -233,7 +233,16 @@ If stop condition was **3a / 3b**:
 
 ## Epoch boundary
 
-Runs ONCE over the epoch's accumulated diff, after its last round has committed. `orchestrator` decides what the epoch contained; this is how the boundary is run.
+Runs ONCE over the epoch's accumulated diff, after its last round has pushed. `orchestrator` decides what the epoch contained; this is how the boundary is run.
+
+**It is a transaction, not a checklist.** Every stage names what it consumes, what it produces, and what happens when it fails. A stage with no stated failure path is where improvisation enters — and improvisation at the boundary is unreviewed by construction, because the boundary is the last station.
+
+**Shared state for the whole boundary:**
+- **Where the work is**: the product branch at the epoch's last pushed SHA. Rounds push as they go, so there is no integration branch and nothing to merge.
+- **Where boundary fixes go**: ordinary commits on that branch, by the orchestrator or a spawned fixer. Commit test changes SEPARATELY from code changes, so a later bisect can tell a behaviour change from a coverage change.
+- **The re-run rule**: any boundary commit re-runs stage 2. A change to a test also re-runs that test's mutation proof. The boundary cannot close on a suite result that predates its last commit.
+- **Findings that are new work get FILED, not fixed** — that is the whole economy of this model. Fix at the boundary only when a finding shows the epoch's own acceptance was never met; then the item reopens rather than a new one being filed.
+- **The boundary does not close while any stage is red.** There is no "note it and move on" at this level.
 
 ### 1. Author the tests
 
@@ -247,11 +256,24 @@ Now, not before — with every implementation visible, and working from the orac
 
 **Every test authored here is mutation-proven before the boundary closes.** This is the compensating control for writing tests after the code, and it is not optional. A test written against an implementation that already exists is shaped by that implementation and will agree with it — including where the implementation is wrong. Break what each new test claims to pin, confirm it goes red, restore. Half-mutate as well as fully: a test that dies under full removal can still pass when the condition is half-removed.
 
+**Runs**: a spawned test author per area — not the implementer who wrote the code, whose tests would agree with it by construction.
+**On failure**: an oracle line that cannot become a test means that unit's behaviour is unverifiable here. File it as a `test` item for a human; never write the blind test to fill the row.
+
 ### 2. Full suite
 
 Everything, not the targeted subset. Record the numbers.
 
-### 3. Text + test adversary
+**On failure**: the boundary HALTS. Fix forward or revert the offending commit — the epoch does not close on a red suite, and a red suite is not something the adversaries can be run "around", since a mutation result measured against a red control is meaningless.
+
+### 3. Boundary review
+
+The correctness pass over the accumulated diff. Cold, no context from any implementer.
+
+**Consumes**: `git diff <epoch-base>` plus `git status --porcelain`. Where the diff exceeds what one reviewer reads well, split it **by dimension** — one pass for correctness, one for prose and test power — not by unit, which would lose exactly the cross-unit interactions the boundary exists to see.
+**Produces**: a verdict plus findings, written to nudge for the next stage to read.
+**On failure**: must_fix is resolved and re-reviewed narrowly before stage 4 starts. Every approve_with_notes note is dispositioned — applied, rejected with a reason, or filed.
+
+### 4. Text + test adversary
 
 **Serialize after the boundary review; never concurrent with it.** Two cold agents on one diff duplicate the expensive part and converge on the same headline finding. Hand this station a digest of what earlier stations established, with *"do not re-verify these; find what they missed."*
 
@@ -260,7 +282,9 @@ Prose is the only artifact with no gate — nobody runs a comment, so a false cl
 - **Mechanical pre-pass** (decidable, no judgment): does every symbol, test name, caller and path cited in changed prose resolve? Then grep the diff for modal claims — *never, always, cannot happen, guaranteed, by construction* — and surface each. Load-bearing claims cluster there.
 - **Judged pass** (changed hunks only): are the comments correct, are the test docstrings correct, and **are the newly authored tests useful and correct?**
 
-### 4. Code adversary
+**On failure**: findings here are must_fix before stage 5, because fixing prose is cheap and re-running everything downstream of it is not.
+
+### 5. Code adversary
 
 One question: *"What can I break here that nothing notices?"* Tools are mutants and fuzz, not reading — the reading stations already ran, and they find a different defect class. Fuzz geometry and parsing code specifically.
 
@@ -268,17 +292,22 @@ Survivors are the finding. Triage each as (a) real gap → write the test, (b) e
 
 **Verify the harness before believing a result.** Plant a mutation that MUST fail and confirm it does. A harness that reports "caught" for a mutation it never applied is worse than no harness.
 
-### 5. Human bless, where the eye is the oracle
+**Restoring the tree is part of the stage, not an afterthought.** Capture a per-file checksum BEFORE the first mutation and verify against it after each restore. `git status` cannot do this job — a file is expected to be dirty mid-cycle, so "modified" carries no information, and a botched restore looks identical to an intended edit.
+**On failure**: survivors are FILED, not fixed — they are coverage gaps, which is new work. Fix in place only where a survivor shows the epoch's acceptance was never met.
+
+### 6. Human bless, where the eye is the oracle
 
 Anything checkable by looking — rendered output, layout, legibility — gets one human pass at the boundary rather than an automated proxy. Walk each artifact against stated intent, and ask the two questions a rendering cannot answer on its own: **what should be present that isn't**, and **what is not visible at all**.
 
-### 6. Convergence count
+### 7. Close
 
-Aggregate the per-unit counts: subtree items closed, and new items filed that *block* a subtree item. Report both. If filed-blocking meets or exceeds closed for two consecutive epochs, stop and report instead of opening the next one.
+Three things, in order:
 
-### Splitting the boundary review
+1. **CI** — wait for every job on the pushed SHA to reach a terminal state. A red job halts the boundary like any other red gate.
+2. **The gate and the instrument** — re-run the campaign's acceptance checks and report how many now pass against the last boundary; report the debt filed this epoch as a trend beside it. `orchestrator` owns what these mean and what halts on them.
+3. **Terminal states** — only now do the epoch's items go done. A boundary finding that is new work is filed and the round stays done; a finding showing a round's acceptance was never met REOPENS that round's item.
 
-When the accumulated diff exceeds what one reviewer reads well, split the review **by dimension** — one pass for correctness, one for prose and test power — rather than splitting the epoch.
+**On failure**: an epoch that cannot close does not silently become the next epoch's problem. Report what is red, what it blocks, and stop.
 
 ## Campaigns
 
@@ -387,6 +416,9 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 23. **Letting an epoch's diff grow past what a reviewer reads well, then reviewing it anyway.** Split the boundary review by dimension. A review that silently degrades is indistinguishable from one that passed.
 24. **Taking an agent's full report into your own context.** It belongs in nudge, keyed for whoever needs it next; you take the summary. This is the difference between an epoch that fits and one that does not.
 25. **Writing a scratch file for a single-use intermediate result.** That is nudge with no query interface and cleanup you will forget.
+26. **Closing a boundary on a suite result that predates its last commit.** Every boundary commit re-runs the suite; a test change also re-runs its mutation proof. Otherwise the epoch closes on evidence about a tree that no longer exists.
+27. **Marking items terminal on round evidence.** Rounds push, but rounds do not verify. Terminal state waits for the boundary.
+28. **Treating a stage's failure as a note.** The boundary has no station after it, so anything waved through there ships unexamined.
 
 ## Reference
 

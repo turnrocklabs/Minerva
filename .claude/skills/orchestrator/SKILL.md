@@ -267,17 +267,35 @@ Two tiers. The criterion is **silent and expensive**, not any particular subsyst
 
 A same-family reviewer shares blind spots with the implementer; a different provider does not. That review is scarce — budget **one to three per product**. Spend it where **the definition of correctness changes** — what a golden certifies, what a parity assertion means, what a schema promises — and once at final acceptance. Never on an ordinary feature round.
 
-### Convergence
+### Convergence, and the debt beside it
 
-Batched verification hides drift, so measure it.
+Batched verification hides drift, so measure two things at every boundary. They look alike and are not, and conflating them is what made the earlier item-counting metric useless.
 
-**At each unit's close record two counts**: subtree items closed, and new items filed that *block* a subtree item. Aggregate at the epoch boundary — count per unit, not per epoch, or there are too few samples to show a trend before the work ends.
+**THE GATE — distance to the goal.** How many of the campaign's acceptance checks pass, sampled at each boundary. The level says whether you are done; the slope says whether you are getting there. Nothing else is the convergence metric: counting items closed against items filed is a proxy that any change in task granularity can move without any change in reality.
 
-**If filed-blocking meets or exceeds closed across two consecutive epochs, the approach is not converging.** Stop and report rather than opening the next epoch.
+**If the passing count has not risen across two consecutive boundaries, stop and report** rather than opening the next epoch. Either the work is not reaching the goal, or the checks are measuring the wrong thing — both need a human.
+
+**THE INSTRUMENT — debt.** Items filed and left unfixed, reported at every boundary as a trend. A campaign can approach its goal monotonically while leaving a large residue behind: every check goes green, the goal is genuinely met, and distance-to-goal is silent about what it cost. That silence is what this number is for.
+
+**Debt is REPORTED and NEVER GATED**, and the reason is not squeamishness. Any metric that counts filed items against you reduces *filing*, not debt — and filing is how a discovery survives a compaction, a handoff, or the end of a session. Penalising it is the worst incentive available here. Report the number, let a human read the trend, and never let it halt anything on its own.
+
+Together they give four readings worth telling apart: closing with flat debt is healthy; closing with rising debt is shipping on credit; stalled with flat debt means something external blocks you; stalled with rising debt is where a campaign should have stopped a while ago.
 
 ## 7. Campaigns
 
 Optional mode: drive a tracker subtree to a goal across rounds. Campaigns have explicit goal state -- a product to be built, a feature to ship, a problem to solve. Those goals may have sub-goals -- libraries to build, ux stories to implement, pre-conditions to the problem, etc. When defining a campaign, make sure it composes to the goal state.
+
+### The goal, before the first round
+
+Write three things on the goal item before any round starts. Without them a campaign can only measure its own queue, and an empty queue is not a met goal.
+
+1. **The goal** — what is true when this is done, stated as an outcome rather than a list of work.
+2. **The non-goals** — what this campaign deliberately does not do. Non-goals are what stop scope arriving disguised as discovery.
+3. **The acceptance checks** — the goal and each sub-goal decomposed into things that can be OBSERVED to pass or fail. File each as a `test` item linked to the goal it serves, status `ready`. Automated where possible; a human check is legitimate, and a perceptual one is expected to stay human.
+
+**Write the checks so a lazy campaign fails them.** Same discipline as section 5: describe the smallest set of work that would let you claim the goal while leaving it unmet, then add the check that catches it.
+
+A check may be revised when the goal genuinely changes — record why, on the goal item. Silently loosening one to make a campaign pass is the failure this mechanism exists to prevent.
 
 ### Loop
 
@@ -290,7 +308,9 @@ Optional mode: drive a tracker subtree to a goal across rounds. Campaigns have e
 
 ### Adoption
 
-**A newly filed item joins the candidate set only if it explicitly blocks a subtree item.** Link it. Everything else waits for a human. A loop that adopts what it finds is scope creep at campaign scale.
+**A newly filed item joins the candidate set if and only if it prevents a named acceptance check from passing.** Link it to that check. Everything else waits for a human.
+
+This is mechanical, not a judgement call, and that is the point — "it feels related to the goal" is how a loop adopts what it finds, which is scope creep at campaign scale. If you cannot name the check an item blocks, it does not block.
 
 ### Splitting
 
@@ -300,13 +320,16 @@ Split a round when shipping it would leave the feature's *use* costing the user 
 
 | Condition | Result |
 |---|---|
-| Every subtree item done, deferred, or human-blocked | SUCCESS — exit report + register |
+| **Every acceptance check passes** | SUCCESS — exit report; the owner declares it, not you |
+| Every subtree item done but a check still fails | HALT — the work breakdown was deficient, not the goal. Report which check and why nothing addressed it |
 | Judgment-dependent must_fix, or retry cap | HALT — a human is the point |
 | Pre-flight failure | HALT |
 | Two consecutive no-progress iterations | HALT — report why candidates are stuck |
-| Filed-blocking ≥ closed across two consecutive epochs | HALT — the approach is not converging |
+| Passing-check count flat across two consecutive boundaries | HALT — not converging, or the checks measure the wrong thing |
 | Sixth epoch closed with work remaining | HALT — the NTE is a ceiling; re-plan rather than opening a seventh |
 | Max rounds reached | HALT — checkpoint + remaining work |
+
+**An empty queue is not success.** It is necessary and nowhere near sufficient: a deficient breakdown reaches 100% with the goal unmet, which is exactly the failure the checks exist to catch. Success is a property of the checks; the queue is bookkeeping.
 
 ### Deferral
 
@@ -340,4 +363,8 @@ The acceptance session is then `docket_query(type="test", status="ready")`, and 
 18. **Filing structured content as prose.** A causal chain in a comment instead of an `rca`, a human check as a bullet instead of a `test`, an owner decision buried in a close-out instead of a `question`. The fields and the state chains exist; prose loses both.
 19. **Everything as `bug` or `work_item`.** Those are the defaults, not the whole vocabulary. Ask what type has the fields you are about to write by hand.
 20. **Pulling full bodies to decide what to read.** Query lean, then fetch the one you will act on.
+21. **Declaring success on an empty queue.** A deficient breakdown reaches 100% with the goal unmet. Success is a property of the acceptance checks; the queue is bookkeeping.
+22. **Loosening a check so a campaign can pass.** A check may change when the GOAL changes, recorded and reasoned. Changing it because it is failing is falsifying the only instrument you have.
+23. **Gating on debt.** Report it, never halt on it. A metric that counts filed items against you suppresses filing, and filing is how a discovery survives the session that found it.
+24. **Starting a campaign without its checks.** They are cheapest to write before the work argues for its own definition of done, and they are what makes "blocks" mechanical rather than a judgement call.
 21. **Adding too much detail.** The orchestrator is not a researcher or implementation agent, but a manager. Do not state how the code works, make claims against existing functionality, etc. Instead, add a nudge hint to the implemented to perform that research. It is too easy to conflate features and capabilities at this level, creating rework. Better to focus on the goal state and success metrics, not the details.
