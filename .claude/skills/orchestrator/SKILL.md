@@ -209,6 +209,12 @@ Decide deliberately, and record the decision where its constraint will be read.
 
 **Loud failure beats silent failure.** When options tie, prefer the one that fails visibly.
 
+**"No current caller" is a measurement; "dead" is a prediction.** A caller census tells you what reaches a symbol *today*. It cannot tell you whether a consumer is coming — and in a part-built system the honest default is that one is, because anything whose consumer is sequenced into an unbuilt phase looks exactly like dead code. A deliberate move toward smaller, more numerous tests widens that blind spot further.
+
+So: report the census as **no current production caller**, never as "dead" or "safe to delete". Deletion needs a *positive* argument — superseded by a named replacement, or ruled out by a recorded decision — and the absence of callers is not one. Test-only is not dead: fixture loaders and harnesses are infrastructure, and deleting them costs the suites that depend on them.
+
+Scope such work by **is it worth building now or later**, never by **is it reachable now**. The cost of deleting something a later phase wants is rebuilding it carrying whatever bug you declined to fix.
+
 **Say who may veto.** A decision you made is a default; a decision the owner ratified is a ruling. Record which.
 
 **Escalate instead of deciding when:**
@@ -369,4 +375,5 @@ The acceptance session is then `docket_query(type="test", status="ready")`, and 
 22. **Loosening a check so a campaign can pass.** A check may change when the GOAL changes, recorded and reasoned. Changing it because it is failing is falsifying the only instrument you have.
 23. **Gating on debt.** Report it, never halt on it. A metric that counts filed items against you suppresses filing, and filing is how a discovery survives the session that found it.
 24. **Starting a campaign without its checks.** They are cheapest to write before the work argues for its own definition of done, and they are what makes "blocks" mechanical rather than a judgement call.
-21. **Adding too much detail.** The orchestrator is not a researcher or implementation agent, but a manager. Do not state how the code works, make claims against existing functionality, etc. Instead, add a nudge hint to the implemented to perform that research. It is too easy to conflate features and capabilities at this level, creating rework. Better to focus on the goal state and success metrics, not the details.
+25. **Proposing a deletion from a caller census.** "Nothing calls it" is a fact about today and an assumption about the future. In a part-built product the consumer is usually sequenced, not absent — and test-only means infrastructure, not dead.
+26. **Adding too much detail.** The orchestrator is not a researcher or implementation agent, but a manager. Do not state how the code works, make claims against existing functionality, etc. Instead, add a nudge hint to the implemented to perform that research. It is too easy to conflate features and capabilities at this level, creating rework. Better to focus on the goal state and success metrics, not the details.
