@@ -45,13 +45,15 @@ Two consequences shape everything below:
 
 ### Step 0 — SCOPE (orchestrator does this; outputs a plan to the user)
 
-1. Read the docket task(s) referenced by the input. If freeform scope, identify the matching task(s) by tag/title; if none exists, file one before proceeding.
+1. Read the docket task(s) and nudge hint(s) referenced by the input. If freeform scope, identify the matching task(s) by tag/title; if none exists, file one before proceeding.
 2. Decompose into independent units. A unit is one sub-agent's work — small enough that it can be specified concretely in 5-10 sentences.
 3. Identify dependencies. Units in the same round must be independent; sequential dependencies are separate rounds.
 4. Pick a model per unit (see "Model selection" under Conventions). Defaults: implementer = Sonnet, reviewer = Opus; reviewer = Fable for pattern-establishing rounds; mechanical units = Haiku.
-5. **Write the scope fence**: an explicit path allowlist (files/dirs this round may touch) derived from the work item. The fence goes verbatim into every implementer prompt and into the round plan. Out-of-fence discoveries follow **file, don't fix**: create a docket item immediately, never an inline fix.
+5. **Write the scope fence**: an explicit path allowlist (files/dirs this round may touch) derived from the work item. The fence goes verbatim into every implementer prompt and into the round plan.
+   Out-of-fence discoveries follow **file, don't fix**: create a docket item immediately, never an inline fix.
+   **But a fence can be wrong, and the answer to a wrong fence is to widen it deliberately, not to work around it.** When a file outside the fence must change for the requested work to be CORRECT — as opposed to merely adjacent, or convenient — the agent stops and asks, naming the file and why the work is incorrect without it. You widen the fence explicitly and record it in the round plan. What is banned is the silent edit, not the conversation.
 6. Declare the stop condition (3a / 3b / 3c / 3d / 3e). Announce it to the user.
-7. Transition each task in the docket: `backlog → open → in_progress`.
+7. Move each task to its in-flight state. **The chain differs by type** — `work_item` runs backlog → open → in_progress, `bug` runs new → triaged → active, `chore` runs open → in_progress. There is no shortcut and no universal path; read the item's type and walk its own chain.
 8. Output a plan summary to the user:
    ```
    /work-cycle plan
@@ -117,17 +119,23 @@ For each unit in this round, in parallel where independent:
      - a **careful-tier unit** (silent *and* expensive to repair late), which authors its test with the code, because deferring the pin is exactly what makes that class expensive.
    - **Mutation proof — careful-tier units and regression tests only, FULL *and* HALF**: before reporting, delete the change under test → the new test must FAIL. Then WEAKEN it — remove half the condition, check one branch instead of both — and it must STILL FAIL. Report both counts. **A test that survives the half-mutation is not a pin**, and it is the failure mode that looks most like success: well-named, asserting on the right thing, and dying under full removal.
    - **Refusal right (say this verbatim in every brief)**: "If any instruction in this brief is wrong, refuse it and say why. Do not implement something you believe is incorrect because the brief said so." This is structurally unenforceable — you cannot compel disagreement — so it must be stated explicitly and must never be punished.
-   - Isolation: do NOT use the Agent tool's built-in worktree isolation — it bases on origin/<default-branch> (Minerva: `main`, ~1yr behind `development`; the plugin system doesn't exist there). Create worktrees manually pinned to the round base (`git worktree add -b wc/<round-unit> ~/github/minerva-worktrees/<name> <base-sha>`), pass the absolute path in the prompt, and make the agent's first act `git rev-parse HEAD` == pinned base (fail-stop on mismatch). Remove worktrees after merge-back.
+   - **No worktrees in a campaign.** Units work in the main tree and are isolated by FENCE, which is what the fence is for. A worktree earns its cost when the work is EXPERIMENTAL — spiking a feature, or comparing two approaches side by side — not when several units are advancing one agreed design. Never use the Agent tool's built-in worktree isolation either: it bases on origin/<default-branch>, which for Minerva is a year behind `development`.
 
 2. When implementer returns, spawn a Reviewer sub-agent:
    - Model = Opus (default) / Fable (pattern-establishing rounds — first-of-kind code that later rounds will copy)
    - Subagent type = `general-purpose`
-   - Prompt = "Review the diff `base..HEAD` (base SHA: <pinned>). Verify: <unit's success criteria>. **Score against the rubric, in order: durability → DRY → reliability → well-factored → readability → cost.** DRY trigger: any block >~30 lines substantially duplicating code elsewhere in this repo or a sibling plugin → must_fix (extract or justify in writing). **Scope audit**: list any changed file outside this fence: <fence>; out-of-fence files = must_fix. Look for: <anti-patterns below + hints retrieved at step 0.5 via docket_hint_query>. Verdict: approve / approve_with_notes / must_fix / reject."
+   - Prompt = "Review the change against base SHA <pinned>. If the work is uncommitted, that is `git diff <base>` plus `git status --porcelain` for new files — not `base..HEAD`, which would show you nothing.
+     **Does it do what the item asked?** Score correctness and goal-fit FIRST; a change can be durable, DRY and well-factored while solving the wrong problem, and no later station asks this question.
+     **Then the rubric, in order: durability → reliability → DRY → well-factored → parsimony → readability → cost.**
+     DRY: substantial duplicated logic → must_fix (extract, or justify in writing). Use judgement on size rather than a line count, and note that duplication ACROSS plugin boundaries is often the correct ownership call rather than a defect — say which you think it is.
+     **Scope audit**: list any changed path outside this fence: <fence>; out-of-fence = must_fix.
+     Look for: <anti-patterns below + hints named at step 0.5>. Verdict: approve / approve_with_notes / must_fix / reject."
    - Reviewer has NO context from the implementer's prompt or memory of this conversation.
 
 3. Reconcile review verdict:
-   - **approve / approve_with_notes**: proceed.
-   - **must_fix (orchestrator can resolve)**: apply fix locally; re-verify with the per-unit gate.
+   - **approve**: proceed.
+   - **approve_with_notes**: proceed, but **disposition every note** — accepted and applied, rejected with a reason, or filed. A note that is neither is a finding you silently dropped.
+   - **must_fix (orchestrator can resolve)**: apply the fix, then **send the resolution back to a cold reviewer**. The reviewer that raised it has not seen the fix, and a fix applied by the adjudicator is the one change in the round nobody independent has looked at. The re-review is narrow: the finding and its resolution, not the whole diff.
    - **must_fix (judgment-dependent)**: STOP cycle, escalate to user (stop condition 3e).
    - **reject**: re-spawn implementer with reviewer feedback as additional context. If second rejection on same unit, escalate model (Sonnet→Opus) per the escalation rule. If still rejected, stop and escalate to user.
 
@@ -154,11 +162,16 @@ If red:
 - If it is in the implementation, re-spawn the implementer with the failing assertion as context.
 - Cap at `--cap=N` retries (default 3) on the same problem. Past the cap, escalate (3d).
 
-**Green here is necessary and nowhere near sufficient.** It means "no known regression in the modules this round touched" and nothing more. A severity-1 fail-open has shipped green through the whole gate stack. The stations that can find silent-wrong run at the boundary.
+**Green here is necessary and nowhere near sufficient — and be precise about why.** These are the tests that existed BEFORE this round, so they can only tell you the round did not break something old. **They know nothing about the behaviour this round added**, which stays unverified until the boundary authors its tests. Green means "no known regression in the modules touched", and it is a category error to report it as evidence the unit works.
+
+State that plainly in the round report. A severity-1 fail-open has shipped green through the whole gate stack.
 
 ### Step 3 — WIP COMMIT
 
-1. **Diffstat audit (scope-creep gate)**: `git diff --stat <base>..HEAD` (working tree included) vs the scope fence. Any out-of-fence file → resolve as must_fix (revert it or get explicit user approval) BEFORE staging. Never commit out-of-fence changes silently.
+1. **Scope audit (scope-creep gate)** — TWO commands, because one is not enough:
+   - `git status --porcelain` — the only thing that shows UNTRACKED files. A new file outside the fence is invisible to any diff.
+   - `git diff --stat <base>` — note the SINGLE ref, not `<base>..HEAD`. The two-dot form compares commit to commit and silently excludes everything still in the working tree, which for an uncommitted round is the entire change.
+   Any out-of-fence path → resolve as must_fix (revert it, or get explicit approval) BEFORE staging. Never commit out-of-fence changes silently.
 2. Stage files explicitly by name (never `git add -A` or `.`).
 3. Compose commit message:
    - Subject ≤ 70 chars, prefixed `WIP: ` when round is part of an unfinished phase.
@@ -167,7 +180,8 @@ If red:
 4. **Commit-message check (pre-commit is the ONLY possible gate — a pushed message is immutable).** Verify against the diff and the tracker: does the message describe what actually changed? Do the cited item IDs exist and are they in a plausible state? Do quoted test counts match what the suite printed? Our commit bodies assert a lot of fact into a permanent record, and unlike a comment they can never be corrected in place.
 5. Use HEREDOC for the commit message.
 6. After commit, run `git status` to verify clean, then push to the round's declared branch (Minerva → `development`, minerva-plugins → `main`).
-7. **CI, where CI exists.** Minerva and the plugins monorepo have it; other work has none. Absence of CI is not a skipped gate — it moves that weight onto the review and adversary stations above, and the round report should say so rather than implying a check ran.
+7. **CI, where CI exists — WAIT FOR IT.** Minerva and the plugins monorepo have it. Do not treat the push as the end of the round: poll until every job for that SHA reaches a terminal state, and report the conclusions. **A red job is a round failure**, handled like any other red gate, not a note in the report.
+   Where there is no CI, say so in the round report. Its absence is not a skipped gate — it shifts that weight onto the review and adversary stations, and the report should state that rather than implying a check ran.
 
 ### Step 4 — CLOSE-OUT + PROVENANCE (conditional)
 
@@ -182,10 +196,8 @@ If red:
 
 ### Step 5 — STOP CONDITION FIRES
 
-0. **Audible notification (owner-requested, 2026-07-16)**: when all prescribed
-   tasks in the cycle are done — i.e. the moment the cycle becomes ready for
-   the human (typically a 3a/3b HITL stop, or the final round of a serial
-   plan reaching its human gate) — play a beep BEFORE composing the report:
+0. **Audible notification (owner-requested)**: when all prescribed
+   tasks in the cycle are done, play a beep BEFORE composing the report:
    `paplay /usr/share/sounds/freedesktop/stereo/complete.oga` (fallback:
    `aplay` or `spd-say "work cycle complete"`; if Minerva is running, prefer
    `minerva_speak` with a one-line summary). Never let a failed beep block
@@ -233,6 +245,8 @@ Now, not before — with every implementation visible, and working from the orac
 
 **Do not write a test whose oracle you could not name.** It will be blind by construction. Route that unit to the human register instead.
 
+**Every test authored here is mutation-proven before the boundary closes.** This is the compensating control for writing tests after the code, and it is not optional. A test written against an implementation that already exists is shaped by that implementation and will agree with it — including where the implementation is wrong. Break what each new test claims to pin, confirm it goes red, restore. Half-mutate as well as fully: a test that dies under full removal can still pass when the condition is half-removed.
+
 ### 2. Full suite
 
 Everything, not the targeted subset. Record the numbers.
@@ -279,7 +293,8 @@ Every prompt is self-contained — the agent has no memory of this conversation.
 **State constraints. Point at facts.**
 
 - A **constraint** is yours to set and cannot be wrong the way a number can: the fence, decisions already taken, process bans, the acceptance *shape*, "assert by identity not count", "mutate FULL and HALF". These earn their length.
-- A **fact** is measurable, so name where it lives instead of restating it. Write *"read the floor from `_V1_MANUFACTURING_FLOOR`"*, never *"the floor is 0.127"*. Cite **symbol names, never file:line** — line numbers measure stale within a round.
+- A **fact** is measurable, so name where it lives instead of restating it. Write *"read the floor from `_V1_MANUFACTURING_FLOOR`"*, never *"the floor is 0.127"*. Cite **symbol names, never file:line** — line numbers go stale within a round.
+  **Treat this as a hard rule, not a preference, and check the brief against it before sending.** Sweep your draft for any sentence stating a value, a signature, a file location or a count, and convert each into a pointer. Every measurable thing you assert is a thing you can be wrong about while sounding authoritative — and the agent will believe you over the repo, which is the opposite of what you are paying it for.
 - Prescribe the **invariant**, not the edit. "Make the code and the docs agree across both dimensions" finds every site; "add the predicate here" finds one.
 
 Include:
@@ -291,7 +306,8 @@ Include:
 - Relevant hints retrieved at step 0.5, as "things to specifically check for."
 - The refusal right, verbatim (step 1).
 - **Where the full report goes, and what comes back.** Every station writes its complete output to nudge under `<epoch>/<unit>.<station>` and returns you a short summary — verdict, findings, numbers, refusals. The report is not for your context.
-- For every fix cycle and every adversary: **the nudge key of what earlier stations established**, with *"read it, then find what they missed; do not re-verify it."* Name the key; do not paste a digest you wrote by hand. A paraphrase costs tokens and drifts from what was actually established.
+- For every fix cycle and every adversary: **the nudge key of what earlier stations established**, with *"read it, then find what they missed. Do not repeat their whole pass — but DO check any premise your own work rests on."* Name the key; never paste a digest you wrote by hand, which costs tokens and drifts from what was established.
+  The distinction matters: telling an agent not to re-verify anything turns a mistaken upstream report into inherited truth. An implementer once found a station's central claim was wrong precisely because it checked instead of accepting. Duplicated effort is the cheap failure; inherited error is the expensive one.
 - Brevity: "under 200 words" for reviewers; "concise summary at end" for implementers.
 - For a long-running job: **report the terminal event, not progress.** Each progress ping re-invokes the orchestrator for a full turn and carries no decision.
 
@@ -374,6 +390,6 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 
 ## Reference
 
-- Full spec, rationale, and examples: `Docs/process/work-cycle.md`
-- Model selection rationale: `Docs/process/work-cycle.md#model-selection`
-- Stop condition table: `Docs/process/work-cycle.md#stop-conditions`
+**This file is the source of truth.** `Docs/process/work-cycle.md` predates the epoch model and disagrees with it — on flag names, on when functional tests run, on reviewer models — so treat it as history, not instruction. Where the two differ, this file wins. Do not cite it to an agent.
+
+Stop conditions: 3a UI-visual HITL · 3b plugin-behaviour HITL · 3c auto-verified, chains to the next round · 3d retry cap reached · 3e judgement-dependent must_fix, escalate to the owner.

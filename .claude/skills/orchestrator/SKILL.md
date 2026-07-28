@@ -75,7 +75,7 @@ The same rule that stops you asserting unverified facts also stops your context 
 - Query `detail: "lean"` by default; fetch a full body only for the item you are about to act on.
 - `docket_context(tags=[…])` returns a curated area briefing — insights, open bugs, recent RCAs, questions — in one call. Prefer it over assembling the same picture from several full queries.
 - `docket_saved_query` cans the lean forms so the cheap query is the default rather than something you have to remember.
-- Write each unit's findings to the tracker **as that unit closes**, not accumulated for the boundary. Then compaction, a handoff, or a crash all cost the same: nothing.
+- Write each unit's **findings and decisions** to the tracker as that unit closes, not accumulated for the boundary. Nudge is volatile, so anything that would have to be re-derived after a reboot belongs in docket the moment it is known. What legitimately stays in nudge is the raw report — recoverable by re-running an agent, expensive but not lost. Say "a reboot costs a re-run, not a decision", never "costs nothing".
 
 ### Reading
 
@@ -182,7 +182,14 @@ The tracker has more types than `bug` and `work_item`, and each carries fields t
 
 ## 3. Close-out
 
-Every gate in work-cycle fires **before** the commit. Everything written after it — comments, filed items, hints, the anchor — is ungated, so it is where unverified claims survive.
+**The cheap gates fire before a round's commit; the expensive stations fire at the epoch boundary, after several rounds have already pushed.** So a round's commit message — which is immutable — is written before the stations that could contradict it have run.
+
+Two consequences, both load-bearing:
+
+- **Claim no more in a commit body than the round's own gates established.** "No regression in the modules touched" is what a per-round green means; "verified", "proven", "guaranteed" are boundary words. An overclaim in a commit body cannot be corrected, only annotated later in the tracker.
+- **A round's items do not go terminal on the round's evidence alone.** Mark them done when the boundary has run. If a boundary finding is NEW work — a coverage gap, a follow-up — file it and the round stays done. If a boundary finding shows the round's own acceptance was never met, REOPEN it; that is not a new item.
+
+Everything written after the last gate — comments, filed items, hints, the anchor — is ungated, and it is where unverified claims survive.
 
 At close-out:
 
@@ -225,7 +232,9 @@ An **epoch** is a batch of rounds sharing one verification boundary. The expensi
 
 ### The NTE
 
-**A codebase gets at most SIX epochs from inception to completion.** A ceiling, not a target — most work should use fewer.
+**A body of work gets at most SIX epochs from inception to completion.** A ceiling, not a target — most work should use fewer.
+
+"Body of work" means the campaign, DCR or goal you are driving — something with a definable done. It is NOT the repository, which for a living codebase never completes and would make the ceiling meaningless. A new campaign starts a new count.
 
 **Err large.** When a split is arguable, take the larger epoch. The pull is always toward smaller ones, because each feels safer in isolation, and the more common waste is paying a full verification pass for a fraction of the work.
 
@@ -268,7 +277,7 @@ Batched verification hides drift, so measure it.
 
 ## 7. Campaigns
 
-Optional mode: drive a tracker subtree to a goal across rounds.
+Optional mode: drive a tracker subtree to a goal across rounds. Campaigns have explicit goal state -- a product to be built, a feature to ship, a problem to solve. Those goals may have sub-goals -- libraries to build, ux stories to implement, pre-conditions to the problem, etc. When defining a campaign, make sure it composes to the goal state.
 
 ### Loop
 
@@ -305,6 +314,8 @@ Human-gated stops may defer instead of halting. **File each deferred check as a 
 
 **An entry must name the automated proxy standing in for the human check** — no proxy, no deferral; build the probe first. Record the proxy in the item, so a reader can tell what is genuinely covered from what is merely deferred.
 
+**PERCEPTUAL checks are the exception, and they are exempt.** Does this label overlap, is this legible, does this render correctly — for those the human IS the oracle, and the only available proxy is a golden image, which fails re-bless resistance: it goes red, someone blesses it, and the defect rides back in. Defer a perceptual check with `test_setup`, `test_steps` and `expected_result` written for a human, and the proxy field recording "none — perceptual" rather than a probe that would manufacture false comfort.
+
 The acceptance session is then `docket_query(type="test", status="ready")`, and each check transitions as it is run.
 
 ## Anti-patterns
@@ -329,3 +340,4 @@ The acceptance session is then `docket_query(type="test", status="ready")`, and 
 18. **Filing structured content as prose.** A causal chain in a comment instead of an `rca`, a human check as a bullet instead of a `test`, an owner decision buried in a close-out instead of a `question`. The fields and the state chains exist; prose loses both.
 19. **Everything as `bug` or `work_item`.** Those are the defaults, not the whole vocabulary. Ask what type has the fields you are about to write by hand.
 20. **Pulling full bodies to decide what to read.** Query lean, then fetch the one you will act on.
+21. **Adding too much detail.** The orchestrator is not a researcher or implementation agent, but a manager. Do not state how the code works, make claims against existing functionality, etc. Instead, add a nudge hint to the implemented to perform that research. It is too easy to conflate features and capabilities at this level, creating rework. Better to focus on the goal state and success metrics, not the details.
