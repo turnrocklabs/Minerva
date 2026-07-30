@@ -18,7 +18,7 @@ extends SceneTree
 ##   - draw_preview with selection (not dragging): handle + connector drawn
 ##   - draw_preview while dragging: also draws angle arc → more draw calls
 ##   - Handle position is computed from the actual bounds rect (not always
-##     top-left — guards against the PCBEditor anchor bug)
+##     top-left)
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -307,7 +307,7 @@ func test_handle_position_uses_actual_bounds_corners() -> void:
 	print("test_handle_position_uses_actual_bounds_corners:")
 	# Build several boundses with non-zero size at different positions and
 	# verify the handle is computed from the actual centre + size.y, NOT the
-	# top-left corner. Ensures the PCBEditor "all-anchors-at-top-left" bug
+	# top-left corner. Ensures the all-anchors-at-top-left bug
 	# does not appear here.
 	var t := AnnotationRotateTool.new()
 

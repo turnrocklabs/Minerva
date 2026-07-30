@@ -193,7 +193,7 @@ func _kind_for(ann: Dictionary) -> AnnotationKind:
 
 func _handle_position(b: Rect2) -> Vector2:
 	# Use bounds.get_center() (real geometric centre) rather than re-deriving
-	# from corners — avoids the PCBEditor "all-anchors-at-top-left" bug.
+	# from corners so every anchor has a distinct position.
 	var center: Vector2 = b.get_center()
 	return center + Vector2(0.0, -b.size.y * 0.5 - HANDLE_OFFSET_DOC)
 

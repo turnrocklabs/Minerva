@@ -759,9 +759,6 @@ func _list_editors(_args: Dictionary) -> Dictionary:
 					editor_type = "graphics"
 				EditorGDScript.Type.SPREADSHEET:
 					editor_type = "spreadsheet"
-				EditorGDScript.Type.PCB:
-					editor_type = "pcb"
-
 		var editor_info: Dictionary = {
 			"name": tab_title,
 			"type": editor_type,

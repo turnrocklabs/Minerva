@@ -114,13 +114,6 @@ func save_project():
 	var save_file = FileAccess.open(save_path, FileAccess.WRITE)
 	save_file.store_line(JSON.stringify(proj_data, "\t"))
 	
-	# Mark PCB editors as saved (their content is now persisted in the project file)
-	var tabs = SingletonObject.editor_pane.Tabs
-	for i in range(tabs.get_tab_count()):
-		var editor: Editor = tabs.get_tab_control(i)
-		if editor.type == Editor.Type.PCB and editor.pcb_editor:
-			editor.pcb_editor.is_modified = false
-
 	SingletonObject.save_recent_project(save_path)
 	SingletonObject.current_project_path = save_path
 

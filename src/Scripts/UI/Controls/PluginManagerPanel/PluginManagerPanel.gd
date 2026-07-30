@@ -6,7 +6,7 @@ extends PanelContainer
 ## Selecting a plugin shows its details on the right: status, start/stop/restart
 ## controls, capability grants, audit log, and tool list.
 ##
-## Follows the PCBEditor pattern: all UI is built in _build_ui(), no complex .tscn tree.
+## All UI is built in _build_ui(), with no complex .tscn tree.
 
 
 # ---------------------------------------------------------------------------

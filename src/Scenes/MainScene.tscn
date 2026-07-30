@@ -54,7 +54,6 @@
 [ext_resource type="Texture2D" uid="uid://bit2mc7dcdd4p" path="res://assets/icons/new_line_icons/new_line_icon_48.png" id="36_hfhsg"]
 [ext_resource type="Texture2D" uid="uid://cu670w2c46b66" path="res://assets/icons/spreadsheet/spreadsheet_icon_white_no_bg_24.png" id="36_w0aut"]
 [ext_resource type="Texture2D" uid="uid://dbcxp7ty3bnc4" path="res://assets/icons/new_line_icons/new_line_icon_68.png" id="37_toq4t"]
-[ext_resource type="Texture2D" uid="uid://c5cxofvkrs71b" path="res://assets/icons/pcb_editor/pcb_icon_24.png" id="37_ukagr"]
 [ext_resource type="Texture2D" uid="uid://1mitt3qfob4s" path="res://assets/icons/create_pencil_icons/pencil_icon_48_no_bg.png" id="38_6qpnt"]
 [ext_resource type="Texture2D" uid="uid://djqrl07g4xxjo" path="res://assets/icons/paperclip_icons/paperclip_icon_48_no_bg.png" id="39_dp74p"]
 [ext_resource type="Texture2D" uid="uid://dpphnihk74dd0" path="res://assets/icons/create_pencil_icons/pencil_icon_64_no_bg.png" id="39_ttovn"]

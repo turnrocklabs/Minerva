@@ -335,7 +335,6 @@ func test_plugin_scene_type_distinct_from_others() -> void:
 		Editor.Type.LOGS,
 		Editor.Type.KANBAN,
 		Editor.Type.SPREADSHEET,
-		Editor.Type.PCB,
 		Editor.Type.VIDEO_EDITOR,
 		Editor.Type.ACTIVITY_LOG,
 		Editor.Type.WEBVIEW,

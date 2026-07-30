@@ -93,8 +93,8 @@ func set_presentation_mode(mode: PresentationMode) -> void:
 ## "scale" has no matching PCB icon; falls back to text label.
 const _TOOL_ICON_UIDS: Dictionary = {
 	"select":    "uid://eckoinneympm",  # graphics_editor/select_tool_icon_24.png
-	"translate": "uid://1q2kkovqy5qk",  # pcb_editor/expand-arrows_white_24.png
-	"rotate":    "uid://c6bt6vccnmejo", # pcb_editor/rotate_24.png
+	"translate": "uid://1q2kkovqy5qk",
+	"rotate":    "uid://c6bt6vccnmejo",
 	"scale":     "",                    # no PCB icon; text fallback
 }
 
@@ -328,7 +328,7 @@ func _ensure_layout_labeled() -> void:
 		var icon_uid: String = _TOOL_ICON_UIDS.get(tool_key, "")
 		if icon_uid != "":
 			btn.icon = load(icon_uid) as Texture2D
-			# No text when an icon is present (matches PCBEditor convention).
+			# No text when an icon is present.
 		else:
 			# Text fallback for tools without a dedicated icon (currently: Scale).
 			btn.text = tool_name

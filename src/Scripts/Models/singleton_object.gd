@@ -1762,7 +1762,6 @@ func _editor_type_to_string(t: int) -> String:
 		Editor.Type.LOGS:            return "LOGS"
 		Editor.Type.KANBAN:          return "KANBAN"
 		Editor.Type.SPREADSHEET:     return "SPREADSHEET"
-		Editor.Type.PCB:             return "PCB"
 		Editor.Type.VIDEO_EDITOR:    return "VIDEO_EDITOR"
 		Editor.Type.ACTIVITY_LOG:    return "ACTIVITY_LOG"
 		Editor.Type.WEBVIEW:         return "WEBVIEW"

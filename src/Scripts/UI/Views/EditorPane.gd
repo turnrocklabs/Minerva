@@ -233,11 +233,6 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
 				editor_node.tab_title = tab_name
 
-			Editor.Type.PCB:
-				var tab_name = "pcb " + str(Tabs.get_tab_count() )
-				Tabs.set_tab_title(Tabs.current_tab, tab_name)
-				editor_node.tab_title = tab_name
-
 			Editor.Type.VIDEO_EDITOR:
 				var tab_name = "video " + str(Tabs.get_tab_count() )
 				Tabs.set_tab_title(Tabs.current_tab, tab_name)
@@ -321,10 +316,6 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null,
 		Tabs.set_tab_tooltip(Tabs.current_tab, str(file))
 	return editor_node
 
-
-## Convenience function to add a PCB editor
-# add_pcb_editor removed at cutover 2026-07-07 (in-tree PCB editor retired; PCB
-# lives in the pcb plugin now).
 
 func add_webview_editor(name_: String = "") -> Editor:
 	return add(Editor.Type.WEBVIEW, null, name_, null, true)

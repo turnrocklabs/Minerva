@@ -58,7 +58,6 @@ var package_editor: PackageEditor
 var logs_viewer  # AutocoderLogsViewer - type annotation removed to avoid circular dependency
 var kanban_board  # AutocoderKanbanBoard - type annotation removed to avoid circular dependency
 var spreadsheet_editor  # SpreadsheetEditor
-var pcb_editor  # PCBEditor - type annotation removed to avoid circular dependency
 var video_editor_panel  # VideoEditorPanel - type annotation removed to avoid circular dependency
 var activity_log_panel  # ActivityLogPanel - type annotation removed to avoid circular dependency
 var webview_editor  # WebViewEditor - type annotation removed to avoid circular dependency
@@ -103,23 +102,20 @@ var plugin_chrome_suppress: Array[String] = []
 @onready var text_is_smaller_and_incoplete = $VBoxContainer/ButtonsHBoxContainer/TextIsSmalleAndIncoplete
 
 enum Type {
-	TEXT,
-	GRAPHICS,
-	VIDEO,
-	PACKAGE,
-	LOGS,
-	KANBAN,
-	SPREADSHEET,
-	## DEPRECATED (cutover 2026-07-07): in-tree PCB editor removed; PCB now lives in
-	## the pcb plugin. Enum slot RETAINED for .minproj ordinal stability — do not delete.
-	PCB,
-	VIDEO_EDITOR,
-	ACTIVITY_LOG,
-	WEBVIEW,
-	PLUGIN_MANAGER,
-	WORKER_STATUS,
-	DOCKET,
-	PLUGIN_SCENE,   ## Native Godot-scene panel contributed by a plugin (design §7.1).
+	TEXT = 0,
+	GRAPHICS = 1,
+	VIDEO = 2,
+	PACKAGE = 3,
+	LOGS = 4,
+	KANBAN = 5,
+	SPREADSHEET = 6,
+	VIDEO_EDITOR = 8,
+	ACTIVITY_LOG = 9,
+	WEBVIEW = 10,
+	PLUGIN_MANAGER = 11,
+	WORKER_STATUS = 12,
+	DOCKET = 13,
+	PLUGIN_SCENE = 14,   ## Native Godot-scene panel contributed by a plugin (design §7.1).
 }
 
 
@@ -407,9 +403,6 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 			vbox_container.add_child(new_spreadsheet_editor)
 			editor.spreadsheet_editor = new_spreadsheet_editor
 
-		# Editor.Type.PCB construction removed at cutover 2026-07-07 (in-tree PCB
-		# editor retired; PCB lives in the pcb plugin). Enum slot retained.
-
 		Editor.Type.VIDEO_EDITOR:
 			vbox_container.clip_contents = true
 			var video_editor_scene = load("res://Scenes/VideoEditorPanel.tscn")
@@ -581,7 +574,7 @@ func _ready():
 			Type.WEBVIEW: _load_webview_file(file)
 			Type.PLUGIN_SCENE: _load_plugin_scene_file(file)
 
-	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.PCB and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW and type != Type.PLUGIN_SCENE
+	_note_check_button.disabled = type != Type.TEXT and type != Type.GRAPHICS and type != Type.KANBAN and type != Type.LOGS and type != Type.SPREADSHEET and type != Type.VIDEO_EDITOR and type != Type.ACTIVITY_LOG and type != Type.WEBVIEW and type != Type.PLUGIN_SCENE
 	
 	#set the text formats that are supported we add a "*" to the start of every ext
 	for ext in SingletonObject.supported_text_formats:
@@ -1287,8 +1280,6 @@ func prompt_close(show_save_file_dialog := false, new_entry:= false, open_in_thi
 	match type:
 		Type.GRAPHICS:
 			$FileDialog.filters = PackedStringArray(["*.png"])
-		Type.PCB:
-			$FileDialog.filters = PackedStringArray(["*.minpcb ; Minerva PCB"])
 		Type.KANBAN:
 			$FileDialog.filters = PackedStringArray(["*.minkb ; Minerva Kanban"])
 		Type.SPREADSHEET:
@@ -1369,9 +1360,6 @@ func save():
 			code_edit.text_changed.emit()
 		Type.GRAPHICS:
 			graphics_editor.saved = true
-		Type.PCB:
-			if pcb_editor:
-				pcb_editor.is_modified = false
 
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 
@@ -1423,10 +1411,6 @@ func get_saved_state() -> int:
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 			else:
 				# TODO: Add proper save tracking for spreadsheet
-				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
-
-		Type.PCB:
-			if not pcb_editor or not pcb_editor.is_modified:
 				state |= FILE_SAVED | ASSOCIATED_OBJECT_SAVED
 
 		Type.KANBAN:
@@ -1566,19 +1550,6 @@ func save_file_to_disc(path: String) -> void:
 			save_file.store_string(serialized_text)
 			logs_viewer.mark_saved_snapshot()
 
-		Type.PCB:
-			if pcb_editor:
-				var dict = pcb_editor.to_dict()
-				var json_string = JSON.stringify(dict, "\t")
-				var save_file = FileAccess.open(path, FileAccess.WRITE)
-				if save_file == null:
-					var error := error_string(FileAccess.get_open_error())
-					push_warning(error)
-					SingletonObject.ErrorDisplay("Couldn't save PCB file", error)
-					return
-				save_file.store_string(json_string)
-				pcb_editor.is_modified = false
-
 		Type.KANBAN:
 			if kanban_board and kanban_board.task_store:
 				var dict = kanban_board.task_store.serialize()
@@ -1711,10 +1682,6 @@ func _on_create_note_button_pressed() -> void:
 		Type.SPREADSHEET:
 			var markdown_content: String = spreadsheet_editor.spreadsheet_data.to_markdown()
 			new_note = Note.create_spreadsheet_note(tab_title, tab_title, markdown_content)
-		Type.PCB:
-			var pcb_image = await pcb_editor.canvas.capture_to_image(800, 600)
-			# Full PCB note with state for Edit button restoration
-			new_note = Note.create_pcb_note(tab_title, pcb_image, pcb_editor.data.to_dict())
 		Type.WEBVIEW:
 			if webview_editor:
 				var html = webview_editor.get_html()
@@ -2036,10 +2003,6 @@ func undo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.undo_command()
-		Type.PCB:
-			if pcb_editor:
-				if pcb_editor.data.undo():
-					pcb_editor.canvas.queue_redraw()
 		Type.SPREADSHEET:
 			if spreadsheet_editor:
 				spreadsheet_editor._perform_undo()
@@ -2053,10 +2016,6 @@ func redo_action():
 		Type.GRAPHICS:
 			if graphics_editor:
 				graphics_editor.redo_command()
-		Type.PCB:
-			if pcb_editor:
-				if pcb_editor.data.redo():
-					pcb_editor.canvas.queue_redraw()
 		Type.SPREADSHEET:
 			if spreadsheet_editor:
 				spreadsheet_editor._perform_redo()
@@ -2081,7 +2040,7 @@ func _on_mic_button_pressed() -> void:
 
 ## Returns whether or not this editor instance can be turned into a [class Note] objects
 func _supports_note():
-	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET, Type.PCB, Type.PLUGIN_SCENE]
+	return type in [Type.TEXT, Type.GRAPHICS, Type.SPREADSHEET, Type.PLUGIN_SCENE]
 
 ## Creates a Note from this Editor.[br]
 ## If [member type] of this editor is not supported `null` is returned.
@@ -2114,12 +2073,6 @@ func _create_note() -> Note:
 			var csv_content = spreadsheet_editor.get_content()
 			note = Note.create_text_note("Spreadsheet Note", csv_content)
 			print("[Editor] Spreadsheet note created: %s" % note)
-		Type.PCB:
-			print("[Editor] Creating PCB image note for LLM...")
-			var image = await pcb_editor.canvas.capture_to_image(800, 600)
-			# Simple image note for LLM context (transient, no Edit needed)
-			note = Note.create_image_note("PCB Note", image)
-			print("[Editor] PCB image note created: %s" % note)
 		Type.PLUGIN_SCENE:
 			note = await _create_plugin_scene_note()
 
@@ -2320,13 +2273,6 @@ func _update_note(note: Note) -> void:
 	elif type == Type.SPREADSHEET:
 		var controls_container = note.get_controls_container() as NoteTextControls
 		controls_container.content = spreadsheet_editor.spreadsheet_data.to_markdown()
-
-	elif type == Type.PCB:
-		var controls_container = note.get_controls_container() as NoteImageControls
-		controls_container.image = await pcb_editor.canvas.capture_to_image(800, 600)
-		# If this is a persistent note (has linked_pcb_data), update the PCB state too
-		if not note.linked_pcb_data.is_empty():
-			note.linked_pcb_data = JSON.stringify(pcb_editor.data.to_dict())
 
 	elif type == Type.WEBVIEW:
 		if webview_editor:

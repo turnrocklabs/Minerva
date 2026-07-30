@@ -2821,7 +2821,6 @@ static func _editor_kind_string(ed_type: int) -> String:
 		Editor.Type.PLUGIN_SCENE: return "plugin_scene"
 		Editor.Type.GRAPHICS: return "graphics"
 		Editor.Type.SPREADSHEET: return "spreadsheet"
-		Editor.Type.PCB: return "pcb"
 		Editor.Type.VIDEO_EDITOR: return "video_editor"
 		Editor.Type.WEBVIEW: return "webview"
 		Editor.Type.DOCKET: return "docket"

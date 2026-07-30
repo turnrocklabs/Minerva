@@ -140,12 +140,6 @@ func serialize() -> Array:
 					}
 				else:
 					content = {"layers": [], "canvas_size_x": 1000, "canvas_size_y": 1000, "selected_layer_names": []}
-			Editor.Type.PCB:
-				if editor.pcb_editor:
-					content = editor.pcb_editor.to_dict()
-				else:
-					content = {}
-
 		# PLUGIN_SCENE editors are serialised via async MCP dispatch below.
 		# We handle them after the match block so we can use await cleanly.
 		if editor.type == Editor.Type.PLUGIN_SCENE:
@@ -445,12 +439,6 @@ static func deserialize(editors_array: Array) -> Array[Editor]:
 							# Connect to shape_moved signal
 							if not created_layer.shape_moved.is_connected(connector_layer._on_connected_shape_moved):
 								created_layer.shape_moved.connect(connector_layer._on_connected_shape_moved)
-
-		elif editor_inst.type == Editor.Type.PCB:
-			if editor_inst.pcb_editor:
-				var content = editor_ser.get("content")
-				if content and content is Dictionary:
-					editor_inst.pcb_editor.load_from_dict(content)
 
 		elif editor_inst.type == Editor.Type.PLUGIN_SCENE:
 			await _deserialize_plugin_scene_editor(editor_inst, editor_ser)
