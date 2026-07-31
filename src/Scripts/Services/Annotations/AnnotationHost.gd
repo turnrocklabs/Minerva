@@ -31,6 +31,19 @@ const BASE_ANNOTATION_TOOLS := ["select"]
 @warning_ignore("unused_signal")
 signal selection_changed(annotation_id: String)
 
+## Emitted when the selection SET changes (A8u1 multi-select). Carries every
+## selected id; empty array = nothing selected. The last entry is NOT the
+## primary — read get_selected_annotation_id() for that.
+##
+## Relationship to selection_changed(String): the multi API is a strict superset
+## layered ON TOP of the single-id API, never beside it. set_selected_annotation_ids()
+## always routes the primary through the (virtual) set_selected_annotation_id(),
+## so hosts that override the single-id pair — Hello / Cad / presentation-tile /
+## nametag — keep working un-edited and keep emitting selection_changed. Consumers
+## that only care about "which one is highlighted" need no change at all.
+@warning_ignore("unused_signal")
+signal selection_set_changed(annotation_ids: PackedStringArray)
+
 ## Emitted when the host's VIEW changes (pan / zoom / resize / page flip) so the
 ## overlay re-renders with the current transform. Hosts with a movable or scaled
 ## surface emit this; static hosts (hello/text) never do. Declared on the base so
@@ -44,6 +57,14 @@ var resolve_cache: Object = null
 
 func _init() -> void:
 	resolve_cache = AnnotationResolveCacheScript.new()
+	# Listen to our OWN selection_changed (A8u1). Every host — base-storage or
+	# overriding — emits it whenever the primary moves; that is the one contract
+	# all of them already honor, including the ones that emit it directly from
+	# remove_annotation() without going through the setter. Subscribing here is
+	# what makes the multi-set invalidate on the WRITE rather than only on the
+	# next read, which is the difference between "usually consistent" and
+	# "cannot hold a ghost". Connected first, so it runs before any consumer.
+	selection_changed.connect(_on_primary_selection_changed)
 
 # ── Registry ───────────────────────────────────────────────────────────────────
 
@@ -402,6 +423,18 @@ var _selected_annotation_id: String = ""
 ## override (the Select/Transform tools hit-tested fine but nothing stuck, so no
 ## halo/gizmo ever appeared). Subclasses with their own selection model may
 ## still override; they MUST emit selection_changed when the value changes.
+##
+## A8u1: this remains the PRIMARY-selection API and its meaning is unchanged —
+## calling it REPLACES the selection with this one id. The multi-selection set
+## below is layered on top and reconciles against whatever this returns, so an
+## overriding host needs no edit to participate.
+##
+## KNOWN EDGE (cold-review R2): the unchanged-id early-return below fires no
+## signal, so an external caller re-selecting the CURRENT primary leaves an
+## existing multi-set standing rather than collapsing it to one. Unreachable
+## from the transform tool (which clears or toggles first); the read-time
+## liveness heal bounds the damage. Revisit if an external caller relies on
+## re-select-to-collapse.
 func set_selected_annotation_id(annotation_id: String) -> void:
 	if annotation_id == _selected_annotation_id:
 		return
@@ -412,6 +445,198 @@ func set_selected_annotation_id(annotation_id: String) -> void:
 ## Return the current selection id, or "" if none.
 func get_selected_annotation_id() -> String:
 	return _selected_annotation_id
+
+
+# ── Multi-selection (A8u1) ────────────────────────────────────────────────────
+#
+# The set is stored on the base class ONLY. Every host — including the four that
+# override the single-id pair with their own backing field — participates without
+# an edit, because the two APIs are kept coherent by reconciliation rather than by
+# shared storage:
+#
+#   * WRITES through set_selected_annotation_ids() record the set AND the primary
+#     they were written with, then call the virtual set_selected_annotation_id().
+#   * WRITES through the plain set_selected_annotation_id() (dock list click, a
+#     kind's own select-one tool, a host clearing selection inside
+#     remove_annotation) move the primary WITHOUT touching the set. The getter
+#     detects the drift and collapses the set to just that primary.
+#
+# So a single-id write always means "replace the selection with this one", which
+# is exactly the pre-A8u1 semantics — no existing call site changes meaning.
+
+## Ids in the current selection set, valid only while _selection_set_primary
+## still matches the host's live primary. See get_selected_annotation_ids().
+var _selected_annotation_ids: PackedStringArray = PackedStringArray()
+
+## The primary at the moment _selected_annotation_ids was last written. A
+## mismatch against the live primary means some single-id call site replaced the
+## selection behind our back, which collapses the set.
+var _selection_set_primary: String = ""
+
+## True only while set_selected_annotation_ids is routing its primary through the
+## virtual single-id setter, so the invalidator below can tell "the set moved the
+## primary" from "something else did".
+var _applying_selection_set: bool = false
+
+
+## Invalidate the multi-set whenever the primary moves by any route OTHER than
+## set_selected_annotation_ids — a dock click, a kind's select-one tool, a host
+## clearing selection inside remove_annotation, an MCP retarget. All of those
+## mean "replace the selection with this one", so the set becomes exactly the new
+## primary (or empty).
+##
+## Why a signal rather than only the read-time check in the getter: two single-id
+## writes with no read between them (…→ H1 → H2) would otherwise land the primary
+## back on the value the set was recorded against, re-validating a set the user
+## abandoned two gestures ago. Delete would then destroy an annotation that was
+## never selected. Invalidating on the write makes that unrepresentable.
+func _on_primary_selection_changed(annotation_id: String) -> void:
+	if _applying_selection_set:
+		return
+	if annotation_id.is_empty():
+		_selected_annotation_ids = PackedStringArray()
+		_selection_set_primary = ""
+		return
+	_selected_annotation_ids = PackedStringArray([annotation_id])
+	_selection_set_primary = annotation_id
+
+
+## Return every selected annotation id. Empty when nothing is selected.
+## The primary (last-clicked) is get_selected_annotation_id() and is always a
+## member when the result is non-empty.
+##
+## SELF-HEALING: every collapse or prune is WRITTEN BACK, never just returned.
+## A read-time-only view would leave the stale array standing, and a later
+## single-id write landing back on the old recorded primary would then
+## RESURRECT the ghost set — after which Delete removes annotations the user
+## never selected. The recorded state must always match what we just reported.
+func get_selected_annotation_ids() -> PackedStringArray:
+	var primary := get_selected_annotation_id()
+
+	if primary.is_empty():
+		# A cleared primary clears the whole selection. Hosts clear the primary
+		# from inside remove_annotation(); treating that as "clear everything"
+		# is what stops a deleted annotation's id from lingering in the set.
+		if not _selected_annotation_ids.is_empty() or not _selection_set_primary.is_empty():
+			_selected_annotation_ids = PackedStringArray()
+			_selection_set_primary = ""
+		return PackedStringArray()
+
+	if _selection_set_primary != primary or not _selected_annotation_ids.has(primary):
+		# Drift: a single-id call site replaced the selection behind our back.
+		_selected_annotation_ids = PackedStringArray([primary])
+		_selection_set_primary = primary
+		return _selected_annotation_ids.duplicate()
+
+	# Liveness: remove_annotation() only clears the PRIMARY (base contract), so
+	# deleting a non-primary member leaves a dead id behind. Left in place it
+	# keeps has_multi_selection() true with one live member — which strands the
+	# single-target kind tools (pcb bend/via, hint undo) disarmed while exactly
+	# one annotation is visibly highlighted, recoverable only by reselecting.
+	var pruned := _prune_dead_selection_ids(_selected_annotation_ids, primary)
+	if pruned.size() != _selected_annotation_ids.size():
+		_selected_annotation_ids = pruned
+	return _selected_annotation_ids.duplicate()
+
+
+## Drop ids that no longer exist in get_annotations(). `primary` is always kept —
+## the host owns it and is authoritative about it. Only runs for real multi-sets,
+## so the common single-selection read stays allocation-free.
+func _prune_dead_selection_ids(ids: PackedStringArray, primary: String) -> PackedStringArray:
+	if ids.size() <= 1:
+		return ids
+	var live: Dictionary = {}
+	for ann in get_annotations():
+		if ann is Dictionary:
+			live[str((ann as Dictionary).get("id", ""))] = true
+	var kept := PackedStringArray()
+	for id in ids:
+		if id == primary or live.has(id):
+			kept.append(id)
+	return kept
+
+
+## Replace the whole selection. `primary` becomes the last-clicked id; when it is
+## empty (or not a member) the last entry of `annotation_ids` is used. Duplicates
+## are dropped, order is otherwise preserved.
+##
+## Emits selection_changed(primary) via the virtual single-id setter (so hosts
+## with their own selection model stay authoritative) and selection_set_changed
+## whenever the SET itself changed — including the case where the primary did not
+## move and the single-id setter therefore stayed silent.
+func set_selected_annotation_ids(annotation_ids: PackedStringArray, primary: String = "") -> void:
+	var unique := PackedStringArray()
+	for id in annotation_ids:
+		var s := str(id)
+		if not s.is_empty() and not unique.has(s):
+			unique.append(s)
+
+	var new_primary := primary
+	if new_primary.is_empty() or not unique.has(new_primary):
+		new_primary = unique[unique.size() - 1] if unique.size() > 0 else ""
+
+	var set_changed: bool = unique != get_selected_annotation_ids()
+	_selected_annotation_ids = unique
+	_selection_set_primary = new_primary
+	# Primary last: listeners woken by selection_changed must already see the
+	# reconciled set when they call get_selected_annotation_ids(). The flag stops
+	# _on_primary_selection_changed from collapsing the set we just recorded.
+	_applying_selection_set = true
+	set_selected_annotation_id(new_primary)
+	_applying_selection_set = false
+	if set_changed:
+		selection_set_changed.emit(_selected_annotation_ids.duplicate())
+
+
+## Add or remove one id (shift-click semantics). The toggled-in id becomes the
+## primary; toggling the primary out promotes the last remaining member.
+func toggle_selected_annotation_id(annotation_id: String) -> void:
+	if annotation_id.is_empty():
+		return
+	var ids := get_selected_annotation_ids()
+	if ids.has(annotation_id):
+		var kept := PackedStringArray()
+		for id in ids:
+			if id != annotation_id:
+				kept.append(id)
+		set_selected_annotation_ids(kept)
+	else:
+		var grown := ids.duplicate()
+		grown.append(annotation_id)
+		set_selected_annotation_ids(grown, annotation_id)
+
+
+## True when more than one annotation is selected. Kind sub-gestures that need a
+## single unambiguous edit target (pcb bend-handle drag, via insert) consult this
+## and disarm rather than pick an arbitrary member.
+func has_multi_selection() -> bool:
+	return get_selected_annotation_ids().size() > 1
+
+
+## THE selected-id read for every consumer outside the host itself — overlays,
+## author tools, dock panes, and off-tree plugin tools. Static and duck-typed so
+## the "multi API if present, single-id otherwise" fallback exists exactly once
+## instead of being retyped in each consumer.
+static func selected_ids_for(host: Object) -> PackedStringArray:
+	if host == null:
+		return PackedStringArray()
+	if host.has_method("get_selected_annotation_ids"):
+		return host.get_selected_annotation_ids()
+	if not host.has_method("get_selected_annotation_id"):
+		return PackedStringArray()
+	var primary := str(host.get_selected_annotation_id())
+	return PackedStringArray() if primary.is_empty() else PackedStringArray([primary])
+
+
+## Companion to selected_ids_for for the disarm predicate. Prefers the host's own
+## has_multi_selection() so a host with a bespoke selection model stays
+## authoritative.
+static func multi_selected_for(host: Object) -> bool:
+	if host == null:
+		return false
+	if host.has_method("has_multi_selection"):
+		return bool(host.has_multi_selection())
+	return AnnotationHost.selected_ids_for(host).size() > 1
 
 
 ## Host-owned per-annotation visibility veto (pcb-ui-native-cluster §4, WC-2;

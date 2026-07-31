@@ -58,6 +58,10 @@ const _REJECT_METHOD := "reject_annotation_proposal"
 var _host: RefCounted = null
 var _selected_id: String = ""
 
+## Every selected id (A8u1 multi-select); _selected_id stays the primary. Rows
+## highlight on set membership so a canvas marquee lights up every swept row.
+var _selected_ids: PackedStringArray = PackedStringArray()
+
 var _header: Label
 var _groups_list: VBoxContainer
 var _scroll: ScrollContainer
@@ -74,14 +78,22 @@ func set_host(host: RefCounted) -> void:
 		_host.disconnect("annotations_changed", Callable(self, "refresh"))
 	if _host != null and _host.has_signal("selection_changed") and _host.is_connected("selection_changed", Callable(self, "_on_selection_changed")):
 		_host.disconnect("selection_changed", Callable(self, "_on_selection_changed"))
+	if _host != null and _host.has_signal("selection_set_changed") and _host.is_connected("selection_set_changed", Callable(self, "_on_selection_set_changed")):
+		_host.disconnect("selection_set_changed", Callable(self, "_on_selection_set_changed"))
 	_host = host
 	_selected_id = ""
+	_selected_ids = PackedStringArray()
 	if _host != null and _host.has_signal("annotations_changed") and not _host.is_connected("annotations_changed", Callable(self, "refresh")):
 		_host.connect("annotations_changed", Callable(self, "refresh"))
 	if _host != null and _host.has_signal("selection_changed") and not _host.is_connected("selection_changed", Callable(self, "_on_selection_changed")):
 		_host.connect("selection_changed", Callable(self, "_on_selection_changed"))
+	# A8u1: the SET can change with the primary unmoved (re-marquee, shift-toggle
+	# of a non-primary), and selection_changed stays silent then.
+	if _host != null and _host.has_signal("selection_set_changed") and not _host.is_connected("selection_set_changed", Callable(self, "_on_selection_set_changed")):
+		_host.connect("selection_set_changed", Callable(self, "_on_selection_set_changed"))
 	if _host != null and _host.has_method("get_selected_annotation_id"):
 		_selected_id = _host.get_selected_annotation_id()
+	_selected_ids = _read_selected_ids()
 	refresh()
 
 
@@ -317,7 +329,7 @@ func _make_row(entry: Dictionary) -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	row.tooltip_text = str(entry.get("summary", ""))
-	if str(entry.get("id", "")) == _selected_id and not _selected_id.is_empty():
+	if _selected_ids.has(str(entry.get("id", ""))):
 		var style := StyleBoxFlat.new()
 		style.bg_color = _SELECTED_ROW_COLOR
 		row.add_theme_stylebox_override("panel", style)
@@ -391,11 +403,28 @@ func _on_reject_pressed(annotation_id: String) -> void:
 
 
 func _select_annotation(annotation_id: String) -> void:
-	if _host != null and _host.has_method("set_selected_annotation_id"):
+	# A list click REPLACES the selection. Route through the multi API when the
+	# host has it: the single-id setter is a no-op when the clicked row is
+	# already primary, which would leave a canvas multi-selection standing.
+	if _host != null and _host.has_method("set_selected_annotation_ids"):
+		_host.set_selected_annotation_ids(PackedStringArray([annotation_id]), annotation_id)
+	elif _host != null and _host.has_method("set_selected_annotation_id"):
 		_host.set_selected_annotation_id(annotation_id)
 	annotation_selected.emit(annotation_id)
 
 
 func _on_selection_changed(annotation_id: String) -> void:
 	_selected_id = annotation_id
+	_selected_ids = _read_selected_ids()
 	refresh()
+
+
+func _on_selection_set_changed(annotation_ids: PackedStringArray) -> void:
+	_selected_ids = annotation_ids.duplicate()
+	refresh()
+
+
+## Every selected id. See AnnotationHost.selected_ids_for for the single-id
+## fallback shared with the overlay and the author tools.
+func _read_selected_ids() -> PackedStringArray:
+	return AnnotationHost.selected_ids_for(_host)

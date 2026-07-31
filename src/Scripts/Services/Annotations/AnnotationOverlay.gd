@@ -50,12 +50,19 @@ func set_host(host: RefCounted) -> void:
 			_host.annotations_changed.disconnect(_on_annotations_changed)
 		if _host.selection_changed.is_connected(_on_selection_changed):
 			_host.selection_changed.disconnect(_on_selection_changed)
+		# Multi-select (A8u1): the SET can change while the primary stays put
+		# (re-marquee, shift-toggle of a non-primary), and selection_changed
+		# stays silent in that case — so the redraw needs its own hook.
+		if _host.has_signal("selection_set_changed") and _host.selection_set_changed.is_connected(_on_selection_set_changed):
+			_host.selection_set_changed.disconnect(_on_selection_set_changed)
 		if _host.has_signal("view_changed") and _host.view_changed.is_connected(_on_view_changed):
 			_host.view_changed.disconnect(_on_view_changed)
 	_host = host
 	if _host != null:
 		_host.annotations_changed.connect(_on_annotations_changed)
 		_host.selection_changed.connect(_on_selection_changed)
+		if _host.has_signal("selection_set_changed") and not _host.selection_set_changed.is_connected(_on_selection_set_changed):
+			_host.selection_set_changed.connect(_on_selection_set_changed)
 		# Hosts with a movable/scaled surface emit view_changed on pan/zoom/resize.
 		if _host.has_signal("view_changed") and not _host.view_changed.is_connected(_on_view_changed):
 			_host.view_changed.connect(_on_view_changed)
@@ -86,6 +93,16 @@ func _on_annotations_changed() -> void:
 
 func _on_selection_changed(_annotation_id: String) -> void:
 	queue_redraw()
+
+
+func _on_selection_set_changed(_annotation_ids: PackedStringArray) -> void:
+	queue_redraw()
+
+
+## Every selected id, primary included. See AnnotationHost.selected_ids_for for
+## the single-id fallback this shares with the tools and the dock panes.
+func _host_selected_ids() -> PackedStringArray:
+	return AnnotationHost.selected_ids_for(_host)
 
 
 func set_active_tool(tool: AnnotationAuthorTool) -> void:
@@ -156,30 +173,33 @@ func _draw() -> void:
 
 	var tool_owns_selection_visual := _active_tool is AnnotationTransformTool
 	if _host != null and not tool_owns_selection_visual:
-		var sel_id: String = _host.get_selected_annotation_id()
-		if not sel_id.is_empty():
+		# One halo per SELECTED annotation (A8u1). With a single selection this is
+		# the same one halo as before; the id set collapses to [primary] on every
+		# host and every call site that only speaks the single-id API.
+		var sel_ids := _host_selected_ids()
+		if not sel_ids.is_empty():
 			for ann in _host.get_annotations():
 				if not ann is Dictionary:
 					continue
-				if str((ann as Dictionary).get("id", "")) != sel_id:
-					continue
 				var ann_dict: Dictionary = ann as Dictionary
+				if not sel_ids.has(str(ann_dict.get("id", ""))):
+					continue
 				if not _host_annotation_visible(ann_dict):
-					break
+					continue
 				var kind_name := StringName(ann_dict.get("kind", ""))
 				var kind: AnnotationKind = registry.get_annotation_kind(kind_name) if registry != null else null
 				if kind == null:
-					break
+					continue
 				# Host-owned canvas; the host overlay subclass draws this kind.
 				if not kind.has_visual_render():
-					break
+					continue
 				# Circle at the primary anchor (fallback: bounds center) —
 				# minimal-but-visible, thick enough to read over board noise.
 				var center_doc: Vector2 = kind.primary_anchor_point(ann_dict)
 				if center_doc == Vector2.ZERO:
 					var b: Rect2 = kind.bounds(ann_dict)
 					if b.size.length() < 0.5:
-						break
+						continue
 					center_doc = b.get_center()
 				draw_arc(view_xform * center_doc, _HALO_RADIUS_PX, 0.0, TAU, 32,
 					_HALO_COLOR, _HALO_WIDTH_PX, true)
@@ -191,7 +211,6 @@ func _draw() -> void:
 							if fp is Vector2:
 								draw_arc(view_xform * (fp as Vector2), _FOCUS_RADIUS_PX,
 									0.0, TAU, 24, _FOCUS_COLOR, _FOCUS_WIDTH_PX, true)
-				break
 
 
 func _gui_input(event: InputEvent) -> void:
