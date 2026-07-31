@@ -159,10 +159,14 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 	var base := AnnotationRenderContext.author_color("human")
 	var faded := Color(base.r, base.g, base.b, 0.5)
 	# Head is pinned at _head (click 1); tail follows the cursor via
-	# _tail_preview — "pin the head, pull out the tail." (Preview is a plain
-	# faded line; no arrowhead glyph is drawn during authoring — the head/tail
-	# triangle rendering lives in AnnotationArrow.render, not here.)
+	# _tail_preview — "pin the head, pull out the tail." The head glyph is
+	# drawn at the pinned point (work item 019fb582a283) with the shared
+	# AnnotationArrow helper at the committed default size, so the preview
+	# reads as the arrow it will become. While the cursor still sits on the
+	# head the direction is degenerate and the helper draws no glyph.
 	ctx.draw_line(_head, _tail_preview, faded, 1.0)
+	var head := AnnotationArrow.DEFAULT_HEAD_SIZE_PX / maxf(ctx.zoom, 0.01)
+	AnnotationArrow.draw_arrowhead(ctx, _tail_preview, _head, head, faded)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

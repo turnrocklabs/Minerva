@@ -9,6 +9,11 @@ extends AnnotationKind
 ##
 ## Design §5 / AnnotationKind contract §4.1.
 
+## Default arrowhead size in SCREEN pixels (a payload "head_size" overrides).
+## Shared with AnnotationArrowAuthorTool's preview so the authoring glyph is
+## the same size the committed render will be.
+const DEFAULT_HEAD_SIZE_PX := 12.0
+
 
 func _init() -> void:
 	name           = &"2d_arrow"
@@ -288,13 +293,20 @@ func _render_arrow_segment(
 	# zoom², turning the head into a board-sized triangle on mm-unit canvases
 	# (PCB at 4–10 px/mm) while looking fine at the text editor's zoom 1.
 	var head := head_size / maxf(ctx.zoom, 0.01)
-	_draw_arrowhead(ctx, a, b, head, color)
+	draw_arrowhead(ctx, a, b, head, color)
 	if head_style == "double":
-		_draw_arrowhead(ctx, b, a, head, color)
+		draw_arrowhead(ctx, b, a, head, color)
 
 
-func _draw_arrowhead(ctx: AnnotationRenderContext, tail: Vector2, tip: Vector2, head: float, color: Color) -> void:
+## Filled triangle head at `tip`, pointing tail→tip. Geometry is DOC units;
+## `head` must already be zoom-compensated (see _render_arrow_segment).
+## STATIC and public on purpose (work item 019fb582a283):
+## AnnotationArrowAuthorTool draws this same glyph in its authoring preview —
+## one head shape, defined once. Degenerate direction draws nothing.
+static func draw_arrowhead(ctx: AnnotationRenderContext, tail: Vector2, tip: Vector2, head: float, color: Color) -> void:
 	var dir := (tip - tail).normalized()
+	if dir == Vector2.ZERO:
+		return
 	var perp := Vector2(-dir.y, dir.x)
 	var base1 := tip - dir * head + perp * (head * 0.4)
 	var base2 := tip - dir * head - perp * (head * 0.4)
@@ -315,17 +327,9 @@ func _render_arrow(ctx: AnnotationRenderContext, prim: Dictionary, color: Color)
 
 	ctx.draw_line(a, b, color, 1.0)
 
-	# Triangle arrowhead pointing from a→b.
-	if a.distance_to(b) < 0.001:
-		return
-	var dir := (b - a).normalized()
-	var perp := Vector2(-dir.y, dir.x)
-	var tip   := b
-	var base1 := b - dir * head + perp * (head * 0.4)
-	var base2 := b - dir * head - perp * (head * 0.4)
-	var pts   := PackedVector2Array([tip, base1, base2])
-	var cols  := PackedColorArray([color, color, color])
-	ctx.draw_polygon(pts, cols)
+	# Triangle arrowhead pointing from a→b — same shared glyph as
+	# _render_arrow_segment (it guards the degenerate direction itself).
+	draw_arrowhead(ctx, a, b, head, color)
 
 
 func _render_text_label(ctx: AnnotationRenderContext, prim: Dictionary, color: Color) -> void:
