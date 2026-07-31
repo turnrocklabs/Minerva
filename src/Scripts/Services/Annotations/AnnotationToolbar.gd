@@ -12,7 +12,8 @@ extends VBoxContainer
 ##   LABELED (default) — VBoxContainer layout with Tools/Annotate header labels,
 ##     FlowContainers for buttons, and a status label.  Unchanged from v1 behavior.
 ##     - Tools Header Label (centered) "Tools"
-##     - FlowContainer (`_tools_flow`) holding Select/Translate/Rotate/Scale buttons
+##     - FlowContainer (`_tools_flow`) holding the single Select button (the
+##       universal manipulation tool — see _construct_tool_for_name)
 ##     - Header Label (centered) showing `header_text` (default "Annotate")
 ##     - FlowContainer (`_button_flow`) holding the icon-only toggle buttons
 ##     - Status Label (`_status_label`) in pink showing the active kind's
@@ -53,8 +54,8 @@ extends VBoxContainer
 signal active_tool_changed(tool: AnnotationAuthorTool)
 
 ## Emitted whenever the active Tools-section button changes.
-## name is the button name ("select", "translate", "rotate", "scale") or ""
-## when the previously-active Tools button was toggled off.
+## name is the button name (currently only "select") or "" when the
+## previously-active Tools button was toggled off.
 signal active_tool_button_changed(name: String)
 
 # ── Presentation mode ──────────────────────────────────────────────────────────
@@ -88,14 +89,16 @@ func set_presentation_mode(mode: PresentationMode) -> void:
 		_rebuild_layout()
 
 # ── Tools-section icons ────────────────────────────────────────────────────────
-## PCB icon UIDs for the Tools-section buttons (Select/Translate/Rotate).
-## Verified by grepping .import files — all three assets exist.
-## "scale" has no matching PCB icon; falls back to text label.
+## Icon UIDs for the Tools-section buttons, keyed by button name.
+##
+## There is exactly ONE Tools-section button — Select — because the single
+## universal manipulation tool (AnnotationTransformTool) does select, move,
+## rotate and scale from one armed state with no mode switching. The former
+## Translate/Rotate/Scale entries were removed with their buttons; re-adding a
+## key here does nothing unless _construct_tool_for_name also learns the name,
+## and a second manipulation button is a design regression — don't.
 const _TOOL_ICON_UIDS: Dictionary = {
-	"select":    "uid://eckoinneympm",  # graphics_editor/select_tool_icon_24.png
-	"translate": "uid://1q2kkovqy5qk",
-	"rotate":    "uid://c6bt6vccnmejo",
-	"scale":     "",                    # no PCB icon; text fallback
+	"select": "uid://eckoinneympm",  # graphics_editor/select_tool_icon_24.png
 }
 
 ## Header label text. Configurable; default "Annotate".
@@ -118,7 +121,7 @@ var _capabilities: Dictionary = {}
 var _buttons: Dictionary = {}
 
 ## name (String) → Button — the Tools-section button table.
-## Keys: "select", "translate", "rotate", "scale".
+## Keys: "select" (the only manipulation button).
 var _tool_buttons: Dictionary = {}
 
 ## The name of the currently-active Tools button, or "" if none.
@@ -330,7 +333,7 @@ func _ensure_layout_labeled() -> void:
 			btn.icon = load(icon_uid) as Texture2D
 			# No text when an icon is present.
 		else:
-			# Text fallback for tools without a dedicated icon (currently: Scale).
+			# Text fallback for a Tools button with no declared icon.
 			btn.text = tool_name
 		# Capture the tool name in an Array wrapper to survive lambda capture.
 		var name_capture: Array = [tool_key]
@@ -406,6 +409,12 @@ func _ensure_layout_compact() -> void:
 
 ## Construct and return a fresh tool instance for the given Tools-section button
 ## name. Returns null for unknown names.
+##
+## THE retirement mechanism: this match is the only way a manipulation tool
+## reaches the UI. "select" builds AnnotationTransformTool — the one universal
+## tool that selects, moves, rotates and scales without mode switching.
+## AnnotationSelectTool / AnnotationTranslateTool / AnnotationRotateTool /
+## AnnotationScaleTool are subsumed by it and deliberately absent here.
 func _construct_tool_for_name(tool_name: String) -> AnnotationAuthorTool:
 	match tool_name:
 		"select": return AnnotationTransformTool.new()
@@ -619,7 +628,7 @@ func _on_tool_button_toggled(tool_name: String, pressed: bool) -> void:
 # ── Internal: manipulation tool helpers ───────────────────────────────────────
 
 ## Deactivate and disconnect the currently-active Tools-section manipulation
-## tool (Select/Translate/Rotate/Scale), if any. Does NOT touch _active_kind_name
+## tool (the universal Select tool), if any. Does NOT touch _active_kind_name
 ## or the Annotate-section state. Does NOT emit active_tool_changed — callers
 ## are responsible for the appropriate follow-up emission.
 func _teardown_active_manipulation_tool() -> void:

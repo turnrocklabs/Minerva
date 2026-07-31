@@ -1,5 +1,13 @@
 class_name AnnotationRotateTool
 extends AnnotationAuthorTool
+## SUBSUMED — retired, not reachable from any UI. Superseded by
+## AnnotationTransformTool, the one universal manipulation tool (select + move +
+## rotate + scale, no mode switching); its Zone.ROTATE_* corner rings are this
+## behavior. AnnotationToolbar._construct_tool_for_name no longer builds this
+## class and nothing else constructs it outside tests. Kept on disk only so its
+## tests and history stay readable; slated for deletion. Do NOT re-list it in a
+## toolbar and do NOT add features here.
+##
 ## Manipulation tool — rotates the selected annotation around its bounds-center
 ## using a visible gizmo handle drawn above the bounds.
 ##

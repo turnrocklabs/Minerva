@@ -1,5 +1,12 @@
 class_name AnnotationSelectTool
 extends AnnotationAuthorTool
+## SUBSUMED — retired, not reachable from any UI. Superseded by
+## AnnotationTransformTool, the one universal manipulation tool (select + move +
+## rotate + scale, no mode switching). AnnotationToolbar._construct_tool_for_name
+## no longer builds this class and nothing else constructs it outside tests.
+## Kept on disk only so its tests and history stay readable; slated for deletion.
+## Do NOT re-list it in a toolbar and do NOT add features here.
+##
 ## First MANIPULATION tool — pattern-establishing for Translate/Rotate/Scale.
 ##
 ## Unlike author tools (arrow, text, …) which CREATE new annotations, Select

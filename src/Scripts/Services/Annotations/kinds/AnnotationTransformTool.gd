@@ -14,7 +14,14 @@ extends AnnotationAuthorTool
 ##   - EDGE_*         → axis-locked scale drag
 ##   - ROTATE_*       → rotation drag around bounds-center
 ##   - INSIDE         → translate drag
-##   - OUTSIDE / no selection → SelectTool semantics (hit-test annotations)
+##   - OUTSIDE / no selection → select semantics (hit-test annotations); a press
+##     that lands on an annotation ALSO arms a translate drag, so press-drag
+##     selects and moves in one gesture (Illustrator/Photoshop feel). See
+##     _do_selection for the jitter threshold that keeps a plain click inert.
+##
+## This is the ONE manipulation tool. AnnotationSelectTool / AnnotationTranslateTool
+## / AnnotationRotateTool / AnnotationScaleTool are subsumed by it and are no
+## longer constructed by AnnotationToolbar — do not re-list them.
 ##
 ## Keyboard:
 ##   - KEY_DELETE     → host.remove_annotation(selected_id)
@@ -45,6 +52,9 @@ const HANDLE_SIZE_DOC: float = 6.0
 
 ## Minimum scale factor — prevents collapsing to zero or mirroring.
 const MIN_SCALE: float = 0.05
+
+## Movement, in SCREEN pixels, a select-armed drag must exceed before it emits.
+const SELECT_DRAG_THRESHOLD_PX: float = 3.0
 
 # ── Visual constants ──────────────────────────────────────────────────────────
 
@@ -96,6 +106,12 @@ var _rotation_center_doc: Vector2 = Vector2.ZERO
 var _drag_start_angle_rad: float = 0.0
 var _current_angle_rad: float = 0.0
 
+## True while a translate drag armed by the select-on-press path is still below
+## the movement threshold. Such a drag emits nothing until the pointer travels
+## far enough to be an intentional move, so a plain click that merely selects
+## never writes a jittered position back to the host. Cleared once exceeded.
+var _translate_pending_threshold: bool = false
+
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -121,6 +137,7 @@ func _reset_drag_state() -> void:
 	_rotation_center_doc = Vector2.ZERO
 	_drag_start_angle_rad = 0.0
 	_current_angle_rad = 0.0
+	_translate_pending_threshold = false
 
 
 ## Screen-pixels-per-document-unit from the host (1.0 for identity hosts).
@@ -334,6 +351,14 @@ func _begin_drag(zone: Zone, doc_pos: Vector2, ann_id: String,
 
 func _apply_translate(doc_pos: Vector2) -> void:
 	var delta := doc_pos - _drag_start_doc
+	# Select-armed drags stay silent until the pointer has clearly moved, so a
+	# click that only selects can't nudge the annotation by a pixel of hand
+	# jitter. Drags started from the INSIDE gizmo zone (the user already had a
+	# selection and deliberately grabbed it) are unthresholded, as before.
+	if _translate_pending_threshold:
+		if delta.length() * _view_zoom() < SELECT_DRAG_THRESHOLD_PX:
+			return
+		_translate_pending_threshold = false
 	var transform := Transform2D(0.0, delta)
 	_emit_transformed_annotation(transform, "translate")
 
@@ -392,15 +417,26 @@ func _emit_transformed_annotation(transform: Transform2D, operation: String) -> 
 
 
 func _revert_drag() -> void:
+	# A select-armed drag still below its movement threshold has emitted nothing,
+	# so there is nothing to revert — skip the pointless write back to the host.
+	if _translate_pending_threshold:
+		_reset_drag_state()
+		return
 	if _drag_id != "" and not _drag_start_annotation.is_empty():
 		annotation_modified.emit(_drag_id, _drag_start_annotation.duplicate(true))
 	_reset_drag_state()
 
 
-# ── SelectTool semantics ──────────────────────────────────────────────────────
+# ── Select semantics ──────────────────────────────────────────────────────────
 
 ## Hit-test all annotations in reverse order (topmost first). Sets or clears
 ## the host's selection. Returns true (always consumes the click).
+##
+## On a hit this also ARMS a translate drag on the freshly-selected annotation,
+## which is what makes the tool feel like Illustrator's arrow: press-and-drag on
+## anything moves it, with no separate "now switch to the move tool" step. The
+## drag is armed with _translate_pending_threshold so a press that never travels
+## SELECT_DRAG_THRESHOLD_PX emits nothing — a plain click remains pure selection.
 ##
 ## Click-empty also deactivates the tool. The overlay holds mouse_filter=STOP
 ## while a tool is active (AnnotationOverlay.set_active_tool flips it), so a
@@ -427,7 +463,11 @@ func _do_selection(doc_pos: Vector2) -> bool:
 		if kind == null:
 			continue
 		if kind.hit_test(ann, doc_pos, hit_threshold):
-			_host.set_selected_annotation_id(str(ann.get("id", "")))
+			var hit_id := str(ann.get("id", ""))
+			_host.set_selected_annotation_id(hit_id)
+			# Arm a threshold-gated translate so the same gesture can move it.
+			_begin_drag(Zone.INSIDE, doc_pos, hit_id, ann, kind.bounds(ann))
+			_translate_pending_threshold = true
 			return true
 
 	# No hit — clear selection AND deactivate the tool so the overlay's
