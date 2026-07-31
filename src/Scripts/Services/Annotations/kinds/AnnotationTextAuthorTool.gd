@@ -71,7 +71,7 @@ extends AnnotationAuthorTool
 ##     "kind": "2d_text",
 ##     "schema_version": 2,
 ##     "anchor": core/canvas.point(x, y),
-##     "kind_payload": {"text": "<typed_string>", "font_size": 14},
+##     "kind_payload": {"text": "<typed_string>", "font_size": <TARGET_SCREEN_FONT_PX / authoring zoom>},
 ##     "primitives": [],
 ##     "lifecycle": "open",
 ##     "author": {"kind": "human"},
@@ -85,7 +85,15 @@ extends AnnotationAuthorTool
 
 enum State { IDLE, TYPING }
 
-const DEFAULT_FONT_SIZE: int = 14
+## Target on-SCREEN glyph height at authoring time, in pixels. The authored
+## annotation's font_size is stored in DOCUMENT units as this value divided by
+## the host zoom at collection start — so new text reads the same size on any
+## host, instead of a fixed 14 doc units (which is 14 *millimeters* on a
+## mm-unit canvas like the PCB panel and rendered as a clamped-64px monster;
+## owner HITL 2026-07-30 — same doc-vs-screen bug class as the transform
+## gizmo's zone sizes). On zoom-1 hosts (text editor canvas) the stored value
+## is 14, identical to the old default.
+const TARGET_SCREEN_FONT_PX: int = 14
 
 ## Content margin baked into the editor's stylebox, in px. The widget is offset
 ## by it so the first glyph lands on the caret point rather than inside the
@@ -115,6 +123,11 @@ var _edit: LineEdit = null
 
 ## Last pixel font size pushed onto _edit; -1 forces a restyle.
 var _edit_font_px: int = -1
+
+## Document-unit font size for the annotation being authored — frozen at
+## collection start (TARGET_SCREEN_FONT_PX / host zoom), so mid-edit zooming
+## rescales the view without silently changing the committed size.
+var _authored_font_size: float = float(TARGET_SCREEN_FONT_PX)
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -228,6 +241,9 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 # ── Collection dispatch ───────────────────────────────────────────────────────
 
 func _begin_collection() -> void:
+	# Freeze the authored size now, from the zoom the user is looking at —
+	# same host duck-type idiom as AnnotationTransformTool._view_zoom.
+	_authored_font_size = clampf(float(TARGET_SCREEN_FONT_PX) / _view_zoom(), 0.05, 400.0)
 	# An injected provider wins: it means a test or a programmatic caller wants
 	# to supply the text without a live widget.
 	if _text_provider.is_valid():
@@ -384,13 +400,21 @@ func _sync_editor_to_view(ctx: AnnotationRenderContext) -> void:
 	_place_editor(ctx.to_screen(_at), ctx.zoom)
 
 
+## Host zoom via the optional accessor — same duck-type guard as
+## AnnotationTransformTool. 1.0 on hosts that don't expose zoom.
+func _view_zoom() -> float:
+	if _host != null and _host.has_method("get_annotation_zoom"):
+		return maxf(float(_host.get_annotation_zoom()), 0.01)
+	return 1.0
+
+
 func _place_editor(screen_pos: Vector2, zoom: float) -> void:
 	if not _has_live_editor():
 		return
 	var target := screen_pos - Vector2(_EDIT_PADDING, _EDIT_PADDING)
 	if not _edit.position.is_equal_approx(target):
 		_edit.position = target
-	var px := int(clampf(float(DEFAULT_FONT_SIZE) * zoom, 8.0, 64.0))
+	var px := int(clampf(_authored_font_size * zoom, 8.0, 64.0))
 	if px != _edit_font_px:
 		_edit_font_px = px
 		_edit.add_theme_font_size_override(&"font_size", px)
@@ -440,7 +464,7 @@ func _build_annotation(at_pos: Vector2, content: String) -> Dictionary:
 		"kind":            "2d_text",
 		"schema_version":  2,
 		"anchor":          CoreAnchors.make_canvas_point(at_pos.x, at_pos.y),
-		"kind_payload":    {"text": content, "font_size": DEFAULT_FONT_SIZE},
+		"kind_payload":    {"text": content, "font_size": _authored_font_size},
 		"primitives":      [],
 		"lifecycle":       "open",
 		"author":          {"kind": "human"},
