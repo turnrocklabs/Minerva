@@ -94,6 +94,9 @@ func _build_body_bbcode(plugin_display_name: String, resolved: Array) -> String:
 
 
 func _ready() -> void:
+	# Sub-windows don't inherit the root's content_scale_factor (Minerva's UI
+	# zoom) — sync on every popup so the dialog's fonts match the app's scale.
+	about_to_popup.connect(func(): content_scale_factor = get_tree().root.content_scale_factor)
 	confirmed.connect(_on_confirmed)
 	canceled.connect(_on_canceled)
 	close_requested.connect(_on_close_requested)

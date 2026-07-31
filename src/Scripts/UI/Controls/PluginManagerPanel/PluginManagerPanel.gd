@@ -249,8 +249,13 @@ func _build_right_pane() -> ScrollContainer:
 
 func _build_detail_header(parent: VBoxContainer) -> void:
 	# Plugin name (large)
+	# The right pane's ScrollContainer has horizontal scrolling DISABLED, which
+	# folds every child's minimum width into the panel's own minimum width —
+	# so every label that can carry unbounded text (ids, errors, paths, hints)
+	# must trim or wrap, or it widens the panel past its pane.
 	_detail_name_label = Label.new()
 	_detail_name_label.text = ""
+	_detail_name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_detail_name_label.add_theme_font_size_override("font_size", 16)
 	parent.add_child(_detail_name_label)
 
@@ -274,6 +279,8 @@ func _build_detail_header(parent: VBoxContainer) -> void:
 
 	_detail_id_label = Label.new()
 	_detail_id_label.text = "-"
+	_detail_id_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_detail_id_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	meta_row.add_child(_detail_id_label)
 
 	# Status row
@@ -410,6 +417,7 @@ func _populate_setup_status(plugin_id: String) -> void:
 			]
 		var lbl := Label.new()
 		lbl.text = line
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		lbl.add_theme_color_override("font_color", Color(0.9, 0.8, 0.2))
 		_setup_status_container.add_child(lbl)
 		return
@@ -444,6 +452,7 @@ func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> vo
 
 			var tool_lbl := Label.new()
 			tool_lbl.text = "%s — %s" % [str(fe.get("tool", "?")), str(fe.get("error", "?"))]
+			tool_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			row.add_child(tool_lbl)
 
 			var detail_lbl := Label.new()
@@ -452,6 +461,7 @@ func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> vo
 				_or_dash(str(fe.get("found_version", ""))),
 				_or_dash(str(fe.get("required_min", ""))),
 			]
+			detail_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			detail_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 			row.add_child(detail_lbl)
 
@@ -459,6 +469,7 @@ func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> vo
 			if not hint.is_empty():
 				var hint_lbl := Label.new()
 				hint_lbl.text = "install: %s" % hint
+				hint_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				hint_lbl.add_theme_color_override("font_color", Color(0.5, 0.7, 0.9))
 				row.add_child(hint_lbl)
 		return
@@ -468,6 +479,7 @@ func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> vo
 	step_lbl.text = "step %s: %s (exit=%s)" % [
 		str(envelope.get("step_index", "?")), str(envelope.get("step_type", "?")), str(envelope.get("exit_code", "?")),
 	]
+	step_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_setup_status_container.add_child(step_lbl)
 
 	var detail_str: String = str(envelope.get("detail", ""))
@@ -598,12 +610,16 @@ func _build_bottom_toolbar() -> HBoxContainer:
 	_browse_button.pressed.connect(_on_browse_marketplace_pressed)
 	hbox.add_child(_browse_button)
 
-	var spacer := Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hbox.add_child(spacer)
-
+	# An unwrapped Label's minimum width is its full text width, and that
+	# minimum propagates through the layout regardless of clip_contents — a
+	# long status message would shove the whole panel wider than its pane.
+	# Expand + ellipsis keeps the toolbar's minimum width text-independent.
 	_status_label = Label.new()
 	_status_label.text = ""
+	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_status_label.mouse_filter = Control.MOUSE_FILTER_STOP
 	_status_label.add_theme_color_override("font_color", Color(0.6, 0.8, 0.6))
 	hbox.add_child(_status_label)
 
@@ -880,8 +896,9 @@ func _populate_capabilities(plugin_id: String) -> void:
 		var display_name: String = cap
 		if cap.begins_with("mcp.proxy:"):
 			display_name = cap.substr("mcp.proxy:".length())
-			toggle.tooltip_text = cap
 		toggle.text = display_name
+		toggle.tooltip_text = cap
+		toggle.clip_text = true
 		toggle.button_pressed = cap in granted
 		toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		# Capture cap in a local variable for the lambda
@@ -911,6 +928,8 @@ func _populate_capabilities(plugin_id: String) -> void:
 
 			var toggle := CheckButton.new()
 			toggle.text = cap + " (extra)"
+			toggle.tooltip_text = cap
+			toggle.clip_text = true
 			toggle.button_pressed = true
 			toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var cap_copy: String = cap
@@ -1045,6 +1064,9 @@ func _populate_tools(plugin_id: String) -> void:
 		var name_label := Label.new()
 		name_label.text = tool_name
 		name_label.custom_minimum_size.x = 200
+		name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		name_label.tooltip_text = tool_name
+		name_label.mouse_filter = Control.MOUSE_FILTER_STOP
 		row.add_child(name_label)
 
 		if not tool_desc.is_empty():
@@ -1257,7 +1279,8 @@ func _on_install_pressed() -> void:
 		_install_dialog.title = "Select Plugin Manifest (manifest.json)"
 		_install_dialog.file_selected.connect(_on_manifest_selected)
 		add_child(_install_dialog)
-	_install_dialog.popup_centered(Vector2i(700, 500))
+	_sync_dialog_scale(_install_dialog)
+	_install_dialog.popup_centered(Vector2i(Vector2(700, 500) * _install_dialog.content_scale_factor))
 
 
 func _on_browse_marketplace_pressed() -> void:
@@ -1265,7 +1288,8 @@ func _on_browse_marketplace_pressed() -> void:
 	var dialog = DialogCls.new()
 	dialog.plugin_installed.connect(_on_marketplace_install_complete)
 	add_child(dialog)
-	dialog.popup_centered(Vector2i(800, 520))
+	_sync_dialog_scale(dialog)
+	dialog.popup_centered(Vector2i(Vector2(800, 520) * dialog.content_scale_factor))
 
 
 func _on_marketplace_install_complete(plugin_id: String) -> void:
@@ -1316,6 +1340,7 @@ func _on_remove_pressed() -> void:
 
 	_remove_confirm.dialog_text = "Remove plugin '%s'?\n\nThis will stop the plugin and remove it from Minerva." % pm_name
 	_remove_delete_data_check.button_pressed = false
+	_sync_dialog_scale(_remove_confirm)
 	_remove_confirm.popup_centered()
 
 
@@ -1350,10 +1375,19 @@ func _on_remove_confirmed() -> void:
 # Helpers
 # ---------------------------------------------------------------------------
 
+## Sub-windows don't inherit the root viewport's content_scale_factor —
+## Minerva's UI zoom lives there — so every dialog must copy it right before
+## popping or its text renders at 1.0 scale while the app renders zoomed
+## (same pattern as PersistentWindow / PreferencesPopup).
+func _sync_dialog_scale(dialog: Window) -> void:
+	dialog.content_scale_factor = get_tree().root.content_scale_factor
+
+
 func _show_status(message: String, is_error: bool = false) -> void:
 	if not _status_label:
 		return
 	_status_label.text = message
+	_status_label.tooltip_text = message
 	if is_error:
 		_status_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
 	else:
@@ -1363,6 +1397,7 @@ func _show_status(message: String, is_error: bool = false) -> void:
 	get_tree().create_timer(5.0).timeout.connect(func():
 		if _status_label and _status_label.text == message:
 			_status_label.text = ""
+			_status_label.tooltip_text = ""
 	)
 
 

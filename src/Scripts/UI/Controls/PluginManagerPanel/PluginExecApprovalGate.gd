@@ -153,7 +153,10 @@ func _process_next_request() -> void:
 	_step_label.text = "Step %d — exec" % step_index
 	_argv_value.text = JSON.stringify(argv)
 
-	popup_centered(Vector2i(560, 220))
+	# Sub-windows don't inherit the root's content_scale_factor (UI zoom) —
+	# copy it before popping so the dialog matches the app's font scale.
+	content_scale_factor = get_tree().root.content_scale_factor
+	popup_centered(Vector2i(Vector2(560, 220) * content_scale_factor))
 
 
 func _on_confirmed() -> void:
