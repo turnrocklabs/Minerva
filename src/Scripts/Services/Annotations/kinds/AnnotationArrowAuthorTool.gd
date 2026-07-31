@@ -5,13 +5,19 @@ extends AnnotationAuthorTool
 ## Pattern-establishing implementation for per-kind AnnotationAuthorTool
 ## subclasses (text, region, polyline, etc. should mirror this shape).
 ##
-## Interaction model (click-click, NOT click-drag):
-##   1. Click 1 (left button)        → store endpoint A, enter first_click_done.
-##   2. Pointer move                 → update preview endpoint B; canvas redraws
-##                                     each frame and calls draw_preview() which
-##                                     reads the latest preview endpoint.
-##   3. Click 2 (left button)        → store endpoint B, build annotation Dict,
-##                                     emit annotation_ready, return to idle.
+## Interaction model (click-click, NOT click-drag), HEAD-FIRST per owner ruling
+## ("humans start from the head" — the point being indicated is placed first):
+##   1. Click 1 (left button)        → store the HEAD position, enter
+##                                     first_click_done.
+##   2. Pointer move                 → update the live TAIL preview position;
+##                                     the head stays fixed at click 1. Canvas
+##                                     redraws each frame and calls
+##                                     draw_preview() which reads the latest
+##                                     tail-preview position.
+##   3. Click 2 (left button)        → store the TAIL position, build
+##                                     annotation Dict (head → "to", tail →
+##                                     "from"), emit annotation_ready, return
+##                                     to idle.
 ##   4. Right-click or Escape        → emit cancelled, return to idle.
 ##
 ## Preview-redraw contract:
@@ -28,13 +34,13 @@ extends AnnotationAuthorTool
 ##   test_switch_tools_mid_author_no_signals.)
 ##
 ## Annotation Dict shape (v2 — matches AnnotationArrow.render which reads
-## "from"/"to"):
+## "from"/"to"; AnnotationArrow's canonical anchor is the head, i.e. "to"):
 ##   {
 ##     "kind": "2d_arrow",
 ##     "schema_version": 2,
-##     "anchor": core/canvas.point(ax, ay),
+##     "anchor": core/canvas.point(hx, hy),   -- the HEAD (click 1)
 ##     "kind_payload": {},
-##     "primitives": [{"kind": "arrow", "from": [ax, ay], "to": [bx, by]}],
+##     "primitives": [{"kind": "arrow", "from": [tx, ty], "to": [hx, hy]}],
 ##     "lifecycle": "open",
 ##     "author": {"kind": "human"},
 ##     "view_context": "<host.get_view_context()>",
@@ -51,15 +57,16 @@ enum State { IDLE, FIRST_CLICK_DONE }
 var _state: int = State.IDLE
 var _host: AnnotationHost = null
 
-## First clicked point in document space (set when leaving IDLE).
-var _a: Vector2 = Vector2.ZERO
+## HEAD position — click 1, the point being indicated. Fixed once set (set
+## when leaving IDLE); does not move during the FIRST_CLICK_DONE preview.
+var _head: Vector2 = Vector2.ZERO
 
-## Final clicked point (only assigned briefly during finalize).
-var _b: Vector2 = Vector2.ZERO
+## TAIL position — click 2 (only assigned briefly during finalize).
+var _tail: Vector2 = Vector2.ZERO
 
-## Live preview endpoint, updated on every pointer move while
-## state == FIRST_CLICK_DONE.
-var _b_preview: Vector2 = Vector2.ZERO
+## Live TAIL preview position, updated on every pointer move while
+## state == FIRST_CLICK_DONE. The head stays pinned at _head.
+var _tail_preview: Vector2 = Vector2.ZERO
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -67,18 +74,18 @@ var _b_preview: Vector2 = Vector2.ZERO
 func on_activate(host: AnnotationHost) -> void:
 	_host = host
 	_state = State.IDLE
-	_a = Vector2.ZERO
-	_b = Vector2.ZERO
-	_b_preview = Vector2.ZERO
+	_head = Vector2.ZERO
+	_tail = Vector2.ZERO
+	_tail_preview = Vector2.ZERO
 
 
 func on_deactivate() -> void:
 	# Per design: clean reset on tool-switch without emitting cancelled.
 	# cancelled is for explicit user-abort (right-click / Escape) only.
 	_state = State.IDLE
-	_a = Vector2.ZERO
-	_b = Vector2.ZERO
-	_b_preview = Vector2.ZERO
+	_head = Vector2.ZERO
+	_tail = Vector2.ZERO
+	_tail_preview = Vector2.ZERO
 	_host = null
 
 
@@ -111,13 +118,15 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 
 	match _state:
 		State.IDLE:
-			_a = doc_pos
-			_b_preview = doc_pos
+			# Click 1 places the HEAD — the point being indicated.
+			_head = doc_pos
+			_tail_preview = doc_pos
 			_state = State.FIRST_CLICK_DONE
 			return true
 		State.FIRST_CLICK_DONE:
-			_b = doc_pos
-			var annotation := _build_annotation(_a, _b)
+			# Click 2 places the TAIL.
+			_tail = doc_pos
+			var annotation := _build_annotation(_head, _tail)
 			_reset_state()
 			annotation_ready.emit(annotation)
 			return true
@@ -131,9 +140,9 @@ func on_pointer_move(pos: Vector2) -> void:
 	if _host == null:
 		return
 	# Preview update only — canvas is expected to queue_redraw() per frame and
-	# call draw_preview() which reads _b_preview. See preview-redraw contract
-	# at the top of this file.
-	_b_preview = _host.transform_screen_to_doc(pos)
+	# call draw_preview() which reads _tail_preview. The head stays pinned at
+	# _head. See preview-redraw contract at the top of this file.
+	_tail_preview = _host.transform_screen_to_doc(pos)
 
 
 func on_pointer_up(_pos: Vector2, _button: int, _mods: int) -> bool:
@@ -149,26 +158,34 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 	# Faded version of the human author colour.
 	var base := AnnotationRenderContext.author_color("human")
 	var faded := Color(base.r, base.g, base.b, 0.5)
-	ctx.draw_line(_a, _b_preview, faded, 1.0)
+	# Head is pinned at _head (click 1); tail follows the cursor via
+	# _tail_preview — "pin the head, pull out the tail." (Preview is a plain
+	# faded line; no arrowhead glyph is drawn during authoring — the head/tail
+	# triangle rendering lives in AnnotationArrow.render, not here.)
+	ctx.draw_line(_head, _tail_preview, faded, 1.0)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 func _reset_state() -> void:
 	_state = State.IDLE
-	_a = Vector2.ZERO
-	_b = Vector2.ZERO
-	_b_preview = Vector2.ZERO
+	_head = Vector2.ZERO
+	_tail = Vector2.ZERO
+	_tail_preview = Vector2.ZERO
 
 
-func _build_annotation(a: Vector2, b: Vector2) -> Dictionary:
+func _build_annotation(head: Vector2, tail: Vector2) -> Dictionary:
 	# v2 envelope (schema_version 2) — matches the established authoring pattern
-	# (route_hint / text_comment build v2 directly). The generic kinds anchor to a
-	# core/canvas.point at the first endpoint; the base AnnotationHost resolves
-	# canvas.point so the annotation renders on any host. (A raw v1 envelope is
-	# rejected by AnnotationV2Schema.validate — schema_version must be 2 — which is
-	# why authoring silently produced nothing before.) Keys "from"/"to" match what
-	# AnnotationArrow.render reads. The host assigns id on accept.
+	# (route_hint / text_comment build v2 directly). Head-first: click 1 is the
+	# HEAD (the point being indicated) and anchors the annotation; click 2 is
+	# the TAIL. This matches AnnotationArrow's canonical anchor, which is the
+	# head (see AnnotationArrow.primary_anchor_point, which reads primitive
+	# "to"). The base AnnotationHost resolves canvas.point so the annotation
+	# renders on any host. (A raw v1 envelope is rejected by
+	# AnnotationV2Schema.validate — schema_version must be 2 — which is why
+	# authoring silently produced nothing before.) Keys "from"/"to" match what
+	# AnnotationArrow.render reads: "to" is the head (arrowhead tip), "from" is
+	# the tail. The host assigns id on accept.
 	var view_ctx := ""
 	if _host != null:
 		view_ctx = _host.get_view_context()
@@ -176,12 +193,12 @@ func _build_annotation(a: Vector2, b: Vector2) -> Dictionary:
 	return {
 		"kind":            "2d_arrow",
 		"schema_version":  2,
-		"anchor":          CoreAnchors.make_canvas_point(a.x, a.y),
+		"anchor":          CoreAnchors.make_canvas_point(head.x, head.y),
 		"kind_payload":    {},
 		"primitives":      [{
 			"kind": "arrow",
-			"from": [a.x, a.y],
-			"to":   [b.x, b.y],
+			"from": [tail.x, tail.y],
+			"to":   [head.x, head.y],
 		}],
 		"lifecycle":       "open",
 		"author":          {"kind": "human"},
