@@ -92,10 +92,22 @@ func set_active_tool(tool: AnnotationAuthorTool) -> void:
 	if _active_tool != null:
 		if _active_tool.annotation_modified.is_connected(_on_tool_annotation_modified):
 			_active_tool.annotation_modified.disconnect(_on_tool_annotation_modified)
+		# Hand the edit surface back (see below).
+		if _active_tool.has_method("attach_edit_surface"):
+			_active_tool.attach_edit_surface(null)
 	_active_tool = tool
 	if _active_tool != null:
 		if not _active_tool.annotation_modified.is_connected(_on_tool_annotation_modified):
 			_active_tool.annotation_modified.connect(_on_tool_annotation_modified)
+		# In-canvas editing surface (duck-typed, opt-in per tool). Author tools
+		# receive only an AnnotationHost — a RefCounted with no Control — so a
+		# tool that needs a real widget on the canvas (the text tool's in-place
+		# LineEdit) has no way to reach one. We are that Control: the overlay's
+		# local space is exactly the space the host's view transform targets, so
+		# a child placed at host.transform_doc_to_screen(p) lands on the document
+		# point p. Tools that need nothing simply don't define the method.
+		if _active_tool.has_method("attach_edit_surface"):
+			_active_tool.attach_edit_surface(self)
 	mouse_filter = Control.MOUSE_FILTER_STOP if _active_tool != null else Control.MOUSE_FILTER_IGNORE
 	active_tool_changed.emit(_active_tool)
 	queue_redraw()

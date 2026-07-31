@@ -5,38 +5,66 @@ extends AnnotationAuthorTool
 ## Second per-kind AnnotationAuthorTool subclass; mirrors the shape established
 ## by AnnotationArrowAuthorTool (state machine + signal contract + freshness).
 ##
-## Interaction model (click → type → commit):
-##   1. Click (left button)        → store caret position, open text dialog,
-##                                   enter TYPING.
-##   2. User types in the dialog   → independent of canvas pointer events.
-##   3. Press Enter / OK in dialog → build annotation Dict with the typed
-##                                   content, emit annotation_ready, return
-##                                   to IDLE.
-##   4. Press Esc / Cancel         → emit cancelled, return to IDLE.
-##   5. Empty content on submit    → treated as a cancel (we never author
-##                                   empty text annotations).
+## Interaction model — in-place editing (Illustrator/Photoshop type tool):
+##   1. Click (left button)  → the click point is stored in document space and a
+##                             LineEdit is parented to the annotation overlay AT
+##                             that point and focused, so a caret blinks on the
+##                             canvas immediately. No dialog, no popup window,
+##                             no focus-stealing.
+##   2. User types           → the LineEdit renders the text live using the same
+##                             font (ThemeDB.fallback_font), the same author
+##                             colour, and the same zoom-scaled pixel size that
+##                             AnnotationText.render() will use, so what is being
+##                             typed reads as the annotation being born.
+##   3. Enter (no Shift)     → commit: build the annotation Dict, emit
+##                             annotation_ready, return to IDLE. Shift+Enter is
+##                             swallowed — 2d_text renders one draw_string line,
+##                             so there is no multi-line form to author.
+##   4. Click elsewhere      → commit the in-progress text (Illustrator) and
+##                             immediately begin a new entry at the new point.
+##                             The tool stays active and stays in TYPING.
+##   5. Escape / right-click → cancel: emit cancelled, return to IDLE.
+##   6. Empty / whitespace   → never authors an annotation. On Enter that is a
+##                             cancel (cancelled emitted, matching the original
+##                             rule); on click-elsewhere it is a SILENT discard,
+##                             because the toolbar tears the tool down when it
+##                             sees cancelled and the whole point of that gesture
+##                             is "keep typing over there".
 ##
-## Why a dialog (option B from the task brief)?
-##   The author-tool pointer/input contract does NOT deliver keystrokes — only
-##   pointer_down/move/up. Inline text-entry would require either a new
-##   on_key_down channel on the base class or an in-canvas LineEdit overlay,
-##   both of which are out of scope for this unit. A modal AcceptDialog is
-##   self-contained inside the tool, uses standard Godot widgets, and keeps
-##   the AnnotationAuthorTool API surface unchanged. The UX trade-off is a
-##   brief modal popup instead of in-place editing — acceptable for the
-##   first text-authoring smoke.
+## Commit-on-focus-loss is deliberately NOT wired — one clean commit semantics.
+## AnnotationOverlay._gui_input calls grab_focus() on itself for every left press
+## before forwarding the event, so a focus_exited commit would race the
+## click-elsewhere commit and double-fire. Click-elsewhere is the single "the
+## user moved on" commit path; losing focus to unrelated chrome (e.g. the
+## toolbar) leaves the entry open and typeable again on re-focus.
 ##
-## Testability: _text_provider is a Callable that takes (Vector2 doc_pos,
-## Callable on_done) and is responsible for collecting text from the user.
-## The default provider opens a real AcceptDialog; tests inject a synchronous
-## stub that immediately invokes on_done with a fixed string (or null to
-## simulate cancel). This avoids needing to drive the SceneTree from a unit
-## test.
+## Where the editor lives (why the overlay grew a hook):
+##   AnnotationAuthorTool is handed only an AnnotationHost — a RefCounted with no
+##   Control anywhere on its API — and the overlay's key forwarding covers only
+##   Esc / Delete / Enter, never character keys. A tool therefore cannot collect
+##   typed text on its own. AnnotationOverlay.set_active_tool() now hands the
+##   active tool its own Control through the duck-typed
+##   attach_edit_surface(parent) (null to hand it back). The overlay's local
+##   space IS the space the host's view transform targets, so the caret's screen
+##   position is just host.transform_doc_to_screen(_at).
+##
+## World anchoring: _at is stored in DOCUMENT space and the widget is
+## repositioned + restyled from draw_preview() on every overlay redraw. The
+## overlay redraws on host view_changed and on resize, so the entry surface
+## tracks pan/zoom while the user is typing.
+##
+## Testability: _text_provider keeps its original shape — a Callable taking
+## (Vector2 at_doc, Callable on_done), where on_done receives a String to submit
+## or null to cancel. What changed is the DEFAULT: it is now an EMPTY Callable,
+## which means "collect in place with a real widget". Tests and programmatic
+## callers assign a synchronous stub exactly as before and no widget is ever
+## created. While a provider is driving collection the tool owns no Control, so
+## canvas clicks during TYPING stay ignored rather than becoming commits.
 ##
 ## Tool-switch semantics (mirrors arrow):
-##   on_deactivate() during TYPING is a SILENT cancel — no cancelled signal
-##   emitted. The cancelled signal is reserved for explicit user-abort
-##   (dialog Cancel / Escape).
+##   on_deactivate() during TYPING is a SILENT cancel — the editor is discarded
+##   and no cancelled signal is emitted. cancelled is reserved for explicit
+##   user-abort (Escape / right-click).
 ##
 ## Annotation Dict shape (v2 canonical payload/anchor form):
 ##   {
@@ -59,26 +87,34 @@ enum State { IDLE, TYPING }
 
 const DEFAULT_FONT_SIZE: int = 14
 
+## Content margin baked into the editor's stylebox, in px. The widget is offset
+## by it so the first glyph lands on the caret point rather than inside the
+## chrome.
+const _EDIT_PADDING: float = 2.0
+const _EDIT_MIN_WIDTH: float = 120.0
+
 var _state: int = State.IDLE
 var _host: AnnotationHost = null
 
 ## Click position in document space (set when leaving IDLE).
 var _at: Vector2 = Vector2.ZERO
 
-## Text-entry provider. Signature: func(at_doc: Vector2, on_done: Callable).
-## on_done receives Variant — a String for submit, null for cancel.
-## See class doc-comment for testability rationale.
+## Optional text-collection override. Signature: func(at_doc: Vector2,
+## on_done: Callable); on_done receives a String for submit, null for cancel.
+## EMPTY by default — empty means "use the in-place editor". See the class
+## doc-comment for the testability rationale.
 var _text_provider: Callable = Callable()
 
-## Reference to the live dialog when the default provider is in use, so
-## on_deactivate() can clean it up silently.
-var _active_dialog: AcceptDialog = null
+## Control the in-place editor is parented to. Supplied by the overlay through
+## attach_edit_surface(); stays null on hosts that never call it (e.g. headless
+## unit tests), in which case only the provider path can collect text.
+var _edit_parent: Control = null
 
+## Live in-place editor, or null when idle / provider-driven.
+var _edit: LineEdit = null
 
-func _init() -> void:
-	# Default to the real-dialog provider. Tests overwrite this field after
-	# construction to inject a stub.
-	_text_provider = Callable(self, "_default_text_provider")
+## Last pixel font size pushed onto _edit; -1 forces a restyle.
+var _edit_font_px: int = -1
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -91,38 +127,70 @@ func on_activate(host: AnnotationHost) -> void:
 
 func on_deactivate() -> void:
 	# Per design: clean reset on tool-switch without emitting cancelled.
-	# cancelled is for explicit user-abort (dialog cancel / Escape) only.
-	_close_dialog_silently()
+	# cancelled is for explicit user-abort (Escape / right-click) only.
+	_discard_editor()
 	_state = State.IDLE
 	_at = Vector2.ZERO
 	_host = null
 
 
+## Duck-typed hook called by AnnotationOverlay.set_active_tool(): hands this tool
+## the Control it may parent an in-canvas editor to, or null to hand it back.
+## Tools that need no Control simply don't define this method.
+func attach_edit_surface(parent: Control) -> void:
+	if parent == _edit_parent:
+		return
+	# The old surface is going away — drop the widget rather than orphan it.
+	_discard_editor()
+	_edit_parent = parent
+
+
 # ── Pointer / input ───────────────────────────────────────────────────────────
 
-func on_pointer_down(pos: Vector2, button: int, _mods: int) -> bool:
-	if button != MOUSE_BUTTON_LEFT:
+func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
+	# Right-click while authoring → explicit user abort.
+	if button == MOUSE_BUTTON_RIGHT:
+		if _state == State.TYPING:
+			_abort()
+			return true
 		return false
 
-	# Already typing → dialog is modal; ignore canvas clicks.
-	if _state == State.TYPING:
+	# The overlay surfaces key events as pseudo-pointer-downs on the mods
+	# channel (AnnotationOverlay._gui_input). These only reach us when the
+	# OVERLAY holds focus — while the in-place editor is focused, Esc/Enter are
+	# handled in _on_edit_gui_input instead. Both paths are kept so the tool
+	# behaves identically with and without a live widget.
+	if mods == KEY_ESCAPE:
+		if _state == State.TYPING:
+			_abort()
+			return true
+		return false
+	if mods == KEY_ENTER:
+		# Only meaningful for the widget path; a provider owns its own submit.
+		if _state == State.TYPING and _has_live_editor():
+			_on_text_provider_done(_edit.text)
+			return true
+		return false
+
+	if button != MOUSE_BUTTON_LEFT:
 		return false
 
 	if _host == null:
 		return false
 
+	if _state == State.TYPING:
+		if not _has_live_editor():
+			# Provider-driven collection owns its own commit UX (and may be a
+			# modal of its own making) — canvas clicks are not ours to read.
+			return false
+		# Illustrator: clicking elsewhere commits what is typed and starts a new
+		# entry at the new point, without leaving TYPING.
+		_commit_for_click(_host.transform_screen_to_doc(pos))
+		return true
+
 	_at = _host.transform_screen_to_doc(pos)
 	_state = State.TYPING
-
-	# Provider is responsible for collecting text. on_done receives the
-	# entered string (or null for cancel) and we finalize accordingly.
-	if _text_provider.is_valid():
-		_text_provider.call(_at, Callable(self, "_on_text_provider_done"))
-	else:
-		# No provider — degenerate path. Treat as cancel so we don't get
-		# stuck in TYPING forever.
-		_on_text_provider_done(null)
-
+	_begin_collection()
 	return true
 
 
@@ -141,8 +209,14 @@ func on_pointer_up(_pos: Vector2, _button: int, _mods: int) -> bool:
 func draw_preview(ctx: AnnotationRenderContext) -> void:
 	if _state != State.TYPING:
 		return
-	# Small caret marker at the click point so the user remembers where text
-	# will land before the dialog paints over the canvas.
+	if _has_live_editor():
+		# The widget IS the preview; keep it pinned to the document-space caret
+		# point and sized to the current zoom. draw_preview is the natural place
+		# for this because the overlay redraws on every view change.
+		_sync_editor_to_view(ctx)
+		return
+	# Provider-driven collection: no widget to look at, so draw a caret marker at
+	# the click point to show where the text will land.
 	var base := AnnotationRenderContext.author_color("human")
 	var faded := Color(base.r, base.g, base.b, 0.5)
 	# Vertical caret bar, 12 doc-units tall.
@@ -151,10 +225,26 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 	ctx.draw_line(top, bot, faded, 1.0)
 
 
-# ── Provider callback ─────────────────────────────────────────────────────────
+# ── Collection dispatch ───────────────────────────────────────────────────────
+
+func _begin_collection() -> void:
+	# An injected provider wins: it means a test or a programmatic caller wants
+	# to supply the text without a live widget.
+	if _text_provider.is_valid():
+		_text_provider.call(_at, Callable(self, "_on_text_provider_done"))
+		return
+	if _edit_parent != null and is_instance_valid(_edit_parent):
+		_open_editor()
+		return
+	# No widget surface and no provider — nothing can collect text. Cancel so we
+	# don't sit in TYPING forever.
+	push_warning("[AnnotationTextAuthorTool] no edit surface and no _text_provider; "
+		+ "text authoring cancelled. The overlay should call attach_edit_surface().")
+	_on_text_provider_done(null)
+
 
 func _on_text_provider_done(result: Variant) -> void:
-	# Provider may fire after on_deactivate() (real dialogs are async). Guard.
+	# A provider may fire after on_deactivate() (async collectors exist). Guard.
 	if _state != State.TYPING:
 		return
 
@@ -175,76 +265,166 @@ func _on_text_provider_done(result: Variant) -> void:
 	annotation_ready.emit(annotation)
 
 
-# ── Default real-dialog provider ──────────────────────────────────────────────
+## Commit-and-continue for a click on empty canvas while typing. Never emits
+## cancelled: an empty entry is discarded silently so the tool survives the
+## gesture (the toolbar deactivates the tool when it sees cancelled).
+func _commit_for_click(new_at: Vector2) -> void:
+	var content := _edit.text.strip_edges()
+	var pending: Variant = null
+	if not content.is_empty():
+		pending = _build_annotation(_at, content)
+	# Move the caret and re-arm the editor BEFORE emitting, so anything the
+	# add_annotation round-trip triggers (redraw, selection change) sees a
+	# consistent tool state.
+	_at = new_at
+	_open_editor()
+	if pending is Dictionary:
+		annotation_ready.emit(pending)
 
-func _default_text_provider(_at_doc: Vector2, on_done: Callable) -> void:
-	# Build a minimal AcceptDialog with a LineEdit. Attach to the SceneTree's
-	# root so it can show even though this tool is a RefCounted with no
-	# parent of its own.
-	var loop := Engine.get_main_loop()
-	if not (loop is SceneTree):
-		on_done.call(null)
-		return
-	var tree: SceneTree = loop
-	var root := tree.root
-	if root == null:
-		on_done.call(null)
-		return
 
-	var dialog := AcceptDialog.new()
-	dialog.title = "Annotation text"
-	dialog.dialog_hide_on_ok = true
-	dialog.add_cancel_button("Cancel")
+## Explicit user abort (Escape / right-click).
+func _abort() -> void:
+	_reset_state()
+	cancelled.emit()
 
-	var line_edit := LineEdit.new()
-	line_edit.placeholder_text = "Enter annotation text…"
-	line_edit.custom_minimum_size = Vector2(240, 0)
-	dialog.add_child(line_edit)
 
-	# Single-shot bookkeeping — guarantee on_done fires exactly once.
-	var fired: Array = [false]
-	var finish := func(result: Variant) -> void:
-		if fired[0]:
+# ── In-place editor ───────────────────────────────────────────────────────────
+
+func _has_live_editor() -> bool:
+	return _edit != null and is_instance_valid(_edit)
+
+
+func _open_editor() -> void:
+	if _edit == null or not is_instance_valid(_edit):
+		_edit = _create_editor()
+		if _edit == null:
 			return
-		fired[0] = true
-		_active_dialog = null
-		dialog.queue_free()
-		on_done.call(result)
+		_edit_parent.add_child(_edit)
+	_edit.text = ""
+	_edit_font_px = -1
+	_place_editor(_host_doc_to_screen(_at), _host_zoom())
+	_edit.visible = true
+	if _edit.is_inside_tree():
+		_edit.grab_focus()
+	_edit.caret_column = 0
 
-	dialog.confirmed.connect(func() -> void:
-		finish.call(line_edit.text)
-	)
-	dialog.canceled.connect(func() -> void:
-		finish.call(null)
-	)
-	# Enter inside the LineEdit submits.
-	line_edit.text_submitted.connect(func(submitted: String) -> void:
-		finish.call(submitted)
-	)
 
-	_active_dialog = dialog
-	root.add_child(dialog)
-	dialog.popup_centered()
-	line_edit.grab_focus()
+func _create_editor() -> LineEdit:
+	if _edit_parent == null or not is_instance_valid(_edit_parent):
+		return null
+	var edit := LineEdit.new()
+	edit.name = "AnnotationTextInPlaceEditor"
+	edit.flat = true
+	edit.expand_to_text_length = true
+	edit.caret_blink = true
+	edit.custom_minimum_size = Vector2(_EDIT_MIN_WIDTH, 0.0)
+	edit.placeholder_text = "Type annotation…"
+
+	# Minimal chrome: just enough backing to read the caret over busy canvas
+	# content, with the padding we compensate for when positioning.
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.35)
+	style.set_corner_radius_all(3)
+	style.content_margin_left = _EDIT_PADDING
+	style.content_margin_right = _EDIT_PADDING
+	style.content_margin_top = _EDIT_PADDING
+	style.content_margin_bottom = _EDIT_PADDING
+	edit.add_theme_stylebox_override(&"normal", style)
+	edit.add_theme_stylebox_override(&"focus", style)
+
+	# Match the committed annotation: AnnotationText.render() draws with a null
+	# font (→ ThemeDB.fallback_font) in the human author colour.
+	var color := AnnotationRenderContext.author_color("human")
+	var font := ThemeDB.fallback_font
+	if font != null:
+		edit.add_theme_font_override(&"font", font)
+	edit.add_theme_color_override(&"font_color", color)
+	edit.add_theme_color_override(&"font_placeholder_color", Color(color, 0.4))
+	edit.add_theme_color_override(&"caret_color", color)
+
+	edit.gui_input.connect(_on_edit_gui_input)
+	edit.text_changed.connect(_on_edit_text_changed)
+	return edit
+
+
+func _on_edit_text_changed(_new_text: String) -> void:
+	# expand_to_text_length only grows the MINIMUM size; a Control outside a
+	# container has to be told to take it.
+	if _has_live_editor():
+		_edit.reset_size()
+
+
+func _on_edit_gui_input(event: InputEvent) -> void:
+	if not (event is InputEventKey):
+		return
+	var key: InputEventKey = event
+	if not key.pressed or key.is_echo():
+		return
+	if not _has_live_editor():
+		return
+
+	match key.keycode:
+		KEY_ESCAPE:
+			# Consume before mutating: accept_event() stops LineEdit's own
+			# handling, and the connected gui_input signal runs before it.
+			_edit.accept_event()
+			_abort()
+		KEY_ENTER, KEY_KP_ENTER:
+			_edit.accept_event()
+			if key.shift_pressed:
+				# 2d_text renders a single draw_string line — swallow rather than
+				# pretend a multi-line entry is being authored.
+				return
+			_on_text_provider_done(_edit.text)
+
+
+## Pin the editor to the document-space caret point and keep its glyph size in
+## step with the zoom, matching AnnotationText._render_payload_text's clamp.
+func _sync_editor_to_view(ctx: AnnotationRenderContext) -> void:
+	_place_editor(ctx.to_screen(_at), ctx.zoom)
+
+
+func _place_editor(screen_pos: Vector2, zoom: float) -> void:
+	if not _has_live_editor():
+		return
+	var target := screen_pos - Vector2(_EDIT_PADDING, _EDIT_PADDING)
+	if not _edit.position.is_equal_approx(target):
+		_edit.position = target
+	var px := int(clampf(float(DEFAULT_FONT_SIZE) * zoom, 8.0, 64.0))
+	if px != _edit_font_px:
+		_edit_font_px = px
+		_edit.add_theme_font_size_override(&"font_size", px)
+		_edit.reset_size()
+
+
+func _discard_editor() -> void:
+	# Tear the widget down without routing its content anywhere — used for silent
+	# tool-switch cleanup and for surface hand-back.
+	if _edit != null:
+		if is_instance_valid(_edit):
+			_edit.queue_free()
+		_edit = null
+	_edit_font_px = -1
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-func _close_dialog_silently() -> void:
-	# Tear down the real dialog (if any) without firing its confirmed/canceled
-	# signals to on_done — used for silent tool-switch cleanup.
-	if _active_dialog != null:
-		var d := _active_dialog
-		_active_dialog = null
-		# Disconnect everything we know about by simply freeing — listeners
-		# on a freed object don't fire.
-		d.queue_free()
+func _host_doc_to_screen(doc_pos: Vector2) -> Vector2:
+	if _host == null:
+		return doc_pos
+	return _host.transform_doc_to_screen(doc_pos)
+
+
+func _host_zoom() -> float:
+	if _host == null:
+		return 1.0
+	return _host.get_annotation_zoom()
 
 
 func _reset_state() -> void:
+	_discard_editor()
 	_state = State.IDLE
 	_at = Vector2.ZERO
-	_active_dialog = null
 
 
 func _build_annotation(at_pos: Vector2, content: String) -> Dictionary:
