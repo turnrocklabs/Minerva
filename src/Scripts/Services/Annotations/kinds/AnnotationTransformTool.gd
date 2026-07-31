@@ -19,9 +19,9 @@ extends AnnotationAuthorTool
 ##     selects and moves in one gesture (Illustrator/Photoshop feel). See
 ##     _do_selection for the jitter threshold that keeps a plain click inert.
 ##
-## This is the ONE manipulation tool. AnnotationSelectTool / AnnotationTranslateTool
-## / AnnotationRotateTool / AnnotationScaleTool are subsumed by it and are no
-## longer constructed by AnnotationToolbar — do not re-list them.
+## This is the ONE manipulation tool. The four single-gesture tools it subsumed
+## (select / translate / rotate / scale) were DELETED outright — owner-ratified
+## chore 019fb59b34ee — so do not resurrect or re-list them.
 ##
 ## Keyboard:
 ##   - KEY_DELETE     → host.remove_annotation(selected_id)

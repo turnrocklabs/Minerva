@@ -100,13 +100,11 @@ func test_set_active_tool_flips_mouse_filter() -> void:
 
 
 func test_halo_guard_with_transform_tool() -> void:
+	# The guard is now a single `is AnnotationTransformTool` check — the old
+	# AnnotationSelectTool half was deleted with the tool (chore 019fb59b34ee).
 	var tool: AnnotationAuthorTool = AnnotationTransformTool.new()
-	var is_select_or_transform: bool = tool is AnnotationSelectTool or tool is AnnotationTransformTool
-	check("AnnotationTransformTool triggers halo suppression guard", is_select_or_transform == true)
-
-	var select_tool: AnnotationAuthorTool = AnnotationSelectTool.new()
-	var select_guard: bool = select_tool is AnnotationSelectTool or select_tool is AnnotationTransformTool
-	check("AnnotationSelectTool triggers halo suppression guard", select_guard == true)
+	check("AnnotationTransformTool triggers halo suppression guard",
+		(tool is AnnotationTransformTool) == true)
 
 
 func test_selection_changed_wrapper_arity() -> void:

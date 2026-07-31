@@ -154,7 +154,7 @@ func _draw() -> void:
 	if _active_tool != null:
 		_active_tool.draw_preview(ctx)
 
-	var tool_owns_selection_visual := _active_tool is AnnotationSelectTool or _active_tool is AnnotationTransformTool
+	var tool_owns_selection_visual := _active_tool is AnnotationTransformTool
 	if _host != null and not tool_owns_selection_visual:
 		var sel_id: String = _host.get_selected_annotation_id()
 		if not sel_id.is_empty():
@@ -214,8 +214,8 @@ func _gui_input(event: InputEvent) -> void:
 
 	# Pass RAW overlay-local pixels. Every tool owns the screen→doc mapping via
 	# _host.transform_screen_to_doc(pos) — that is the documented per-tool
-	# contract (see AnnotationTranslateTool/AnnotationScaleTool headers and every
-	# author tool). The overlay must NOT pre-convert to doc space: on hosts with
+	# contract (see AnnotationTransformTool's header and every author tool).
+	# The overlay must NOT pre-convert to doc space: on hosts with
 	# a real view transform (e.g. the PCB panel, board-mm ↔ canvas px) that
 	# double-inverts the position — annotations land near the origin instead of
 	# under the cursor. (On identity-transform hosts the two conventions

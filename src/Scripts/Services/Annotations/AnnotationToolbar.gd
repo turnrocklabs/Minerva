@@ -412,9 +412,8 @@ func _ensure_layout_compact() -> void:
 ##
 ## THE retirement mechanism: this match is the only way a manipulation tool
 ## reaches the UI. "select" builds AnnotationTransformTool — the one universal
-## tool that selects, moves, rotates and scales without mode switching.
-## AnnotationSelectTool / AnnotationTranslateTool / AnnotationRotateTool /
-## AnnotationScaleTool are subsumed by it and deliberately absent here.
+## tool that selects, moves, rotates and scales without mode switching. The
+## four single-gesture tools it subsumed were deleted (chore 019fb59b34ee).
 func _construct_tool_for_name(tool_name: String) -> AnnotationAuthorTool:
 	match tool_name:
 		"select": return AnnotationTransformTool.new()

@@ -469,7 +469,7 @@ func test_tool_button_toggle_lifecycle() -> void:
 
 
 func test_tool_button_untoggle_kind_button() -> void:
-	# R2.6: "select" button now creates AnnotationTransformTool (not AnnotationSelectTool).
+	# R2.6: "select" button creates the universal AnnotationTransformTool.
 	# Invariant: activating the Tools button clears any active Annotate-section kind.
 	print("test_tool_button_untoggle_kind_button:")
 	var reg  := _make_registry()
