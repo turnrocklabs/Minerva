@@ -612,8 +612,12 @@ func test_click_outside_all_clears_selection() -> void:
 	var tool := AnnotationTransformTool.new()
 	tool.on_activate(host)
 
-	# Click far outside both annotations.
+	# Click far outside both annotations. Under the A8u1 marquee contract an
+	# empty-space PRESS arms the marquee and the clear is decided at RELEASE
+	# with zero travel — a full click is press + release, so the test must
+	# send both (fixture repair for the deliberate contract change).
 	tool.on_pointer_down(Vector2(500, 500), MOUSE_BUTTON_LEFT, 0)
+	tool.on_pointer_up(Vector2(500, 500), MOUSE_BUTTON_LEFT, 0)
 
 	check_eq("selection cleared after outside click",
 		host.get_selected_annotation_id(), "")
