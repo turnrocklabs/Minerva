@@ -33,6 +33,25 @@ const _FOCUS_WIDTH_PX := 3.0
 var _host: RefCounted = null
 var _active_tool: AnnotationAuthorTool = null
 
+## PASSIVE POINTER MODE (B1u3, opt-in, default OFF).
+##
+## Normally an armed tool flips this Control to MOUSE_FILTER_STOP, which is what
+## makes a tool own the pointer — and, because STOP ends Godot's gui propagation
+## walk whether or not the event was accepted, it also means an armed tool CANNOT
+## decline a click and let the surface behind the overlay have it.
+##
+## A passively-armed tool keeps every other piece of the arming contract (its
+## preview is drawn, annotation_modified is wired to the host, attach_edit_surface
+## is handed this Control, the selection halo defers to it) but the overlay stays
+## IGNORE, so the host's OWN canvas keeps owning the pointer and routes annotation
+## gestures back in through its own hooks. That is how the pcb panel offers ONE
+## Select for board entities and annotations alike.
+##
+## Nothing sets this but a caller that passes `passive` to set_active_tool, and
+## every existing caller uses the one-argument form — so every other surface is
+## unchanged.
+var _passive_pointer: bool = false
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -57,6 +76,14 @@ func set_host(host: RefCounted) -> void:
 			_host.selection_set_changed.disconnect(_on_selection_set_changed)
 		if _host.has_signal("view_changed") and _host.view_changed.is_connected(_on_view_changed):
 			_host.view_changed.disconnect(_on_view_changed)
+		# UNBIND the outgoing host's registry (B1u1 cold-review F1). The bind
+		# below stamps a Callable targeting THIS overlay onto the host's kind
+		# instances; without this teardown a host swapped out here keeps that
+		# stamp, so its kinds go on reporting the NEW host's zoom for as long as
+		# anything still queries them (MCP bounds, a second live panel). Handing
+		# back an EMPTY Callable restores the fail-safe 1.0 that kinds use when
+		# nothing is bound — the state they were in before set_host.
+		_unbind_kind_view_zoom(_host)
 	_host = host
 	if _host != null:
 		_host.annotations_changed.connect(_on_annotations_changed)
@@ -92,6 +119,17 @@ func _bind_kind_view_zoom() -> void:
 	if not registry is AnnotationRegistry:
 		return
 	(registry as AnnotationRegistry).set_view_zoom_source(Callable(self, "_view_zoom"))
+
+
+## Reverse of _bind_kind_view_zoom for a host we are letting go of. Takes the
+## host explicitly because it runs while _host is still the OUTGOING one.
+func _unbind_kind_view_zoom(host: RefCounted) -> void:
+	if host == null or not host.has_method("get_registry"):
+		return
+	var registry: Variant = host.get_registry()
+	if not registry is AnnotationRegistry:
+		return
+	(registry as AnnotationRegistry).set_view_zoom_source(Callable())
 
 
 func _on_view_changed() -> void:
@@ -130,7 +168,20 @@ func _host_selected_ids() -> PackedStringArray:
 	return AnnotationHost.selected_ids_for(_host)
 
 
-func set_active_tool(tool: AnnotationAuthorTool) -> void:
+## True on any build that understands set_active_tool's `passive` argument.
+## Callers that want a passively-armed tool MUST probe this first: an older core
+## has the one-argument form only, and calling it with two arguments there is a
+## runtime error, not a graceful decline. See _passive_pointer.
+func supports_passive_pointer() -> bool:
+	return true
+
+
+## Arm `tool`, or clear with null.
+##
+## `passive` (default FALSE — every pre-existing caller) arms the tool for
+## DRAWING and host wiring while leaving the overlay transparent to the pointer,
+## so the surface behind it keeps owning clicks. See _passive_pointer.
+func set_active_tool(tool: AnnotationAuthorTool, passive: bool = false) -> void:
 	if _active_tool != null:
 		if _active_tool.annotation_modified.is_connected(_on_tool_annotation_modified):
 			_active_tool.annotation_modified.disconnect(_on_tool_annotation_modified)
@@ -150,7 +201,10 @@ func set_active_tool(tool: AnnotationAuthorTool) -> void:
 		# point p. Tools that need nothing simply don't define the method.
 		if _active_tool.has_method("attach_edit_surface"):
 			_active_tool.attach_edit_surface(self)
-	mouse_filter = Control.MOUSE_FILTER_STOP if _active_tool != null else Control.MOUSE_FILTER_IGNORE
+	# A cleared tool always resets the passive flag: passivity is a property of
+	# one arming, never a mode the overlay stays in.
+	_passive_pointer = passive and _active_tool != null
+	mouse_filter = Control.MOUSE_FILTER_STOP if (_active_tool != null and not _passive_pointer) else Control.MOUSE_FILTER_IGNORE
 	active_tool_changed.emit(_active_tool)
 	queue_redraw()
 
@@ -240,6 +294,12 @@ func _draw() -> void:
 
 func _gui_input(event: InputEvent) -> void:
 	if _active_tool == null:
+		return
+	# Passively-armed tools never take pointer input from here — the host's own
+	# surface routes to them. Belt-and-braces: MOUSE_FILTER_IGNORE already means
+	# this is not called for pointer events, but a focused overlay can still be
+	# handed KEY events, and those must not reach a tool the host is driving.
+	if _passive_pointer:
 		return
 
 	# Navigation pass-through (pcb-ui-native-cluster §1a): tools only own

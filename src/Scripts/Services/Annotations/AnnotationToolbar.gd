@@ -478,7 +478,23 @@ func _kind_allowed(kind_name: String) -> bool:
 	return true
 
 
+## Is the dock allowed to offer the built-in tool button `tool_name` (lowercase)?
+##
+## `tools` is an ALLOW-list, and an EMPTY one means "allow everything" — that is
+## what every host omitting the key relies on. So the allow-list ALONE cannot
+## express "this surface offers no Select": `"tools": []` SHOWS the button, the
+## exact opposite of the intent (measured, B1u3).
+##
+## `tools_excluded` is the opt-in NEGATIVE channel, and it wins outright. It is
+## absent from every host's capabilities but the pcb panel's, whose canvas owns
+## ONE universal Select of its own and must not offer a second one in the dock;
+## a host that never sets the key sees byte-identical behavior, and a host
+## running against an older core that does not read the key simply keeps its
+## Select button (the degrade path this pairs with).
 func _tool_allowed(tool_name: String) -> bool:
+	var excluded: Variant = _capabilities.get("tools_excluded", [])
+	if excluded is Array and tool_name in (excluded as Array):
+		return false
 	var tools: Variant = _capabilities.get("tools", [])
 	if tools is Array and not (tools as Array).is_empty():
 		return tool_name in tools

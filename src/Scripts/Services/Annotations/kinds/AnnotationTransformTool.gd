@@ -1025,6 +1025,114 @@ func _do_selection(doc_pos: Vector2, additive: bool = false) -> bool:
 	return true
 
 
+# ── Public probes for an external router (B1u3) ───────────────────────────────
+#
+# The pcb panel offers ONE Select: its board canvas owns the click, asks whether
+# this tool claims the point, and drives the tool for the gestures it does claim
+# (see AnnotationOverlay's passive-pointer mode for why the canvas, not the
+# overlay, is the input owner there). These three are the whole surface that
+# router needs; everything else it uses is already the public AnnotationHost API.
+#
+# They are PROBES, not a second implementation: each delegates to the very
+# function the ordinary input path uses, so a router can never drift from what a
+# press would actually do — and, critically, can never lose the host's
+# is_annotation_visible veto or the 8px hit slack by re-rolling the loop.
+
+
+## Topmost visible annotation under `doc_pos`, or "" for none. Public face of
+## _hit_test_topmost.
+func hit_test_topmost(doc_pos: Vector2) -> String:
+	return _hit_test_topmost(doc_pos)
+
+
+## Ids of every visible annotation whose bounds intersect `rect` (document
+## space), in document order. Public face of _annotations_intersecting — the
+## marquee half of the probe surface.
+##
+## ASYMMETRY, stated where a router will read it: this sweeps kind.bounds()
+## AABBs while claims_point/hit_test_topmost use kind.hit_test() ink. That is the
+## tool's own documented marquee grammar (see the class doc), not an accident of
+## this wrapper — but it means a router MUST NOT feed a zero-travel "marquee"
+## through here to answer a click. A degenerate rect matches every AABB that
+## merely contains the point, including annotations whose ink is nowhere near it.
+##
+## Returns IDS. The bounds behind the answer are computed inside and dropped,
+## deliberately: kind.bounds() is ZOOM-DEPENDENT on hosts that wire a view-zoom
+## source, so no caller may cache or persist geometry derived from this call
+## across a pan/zoom.
+func annotations_intersecting(rect: Rect2) -> PackedStringArray:
+	return _annotations_intersecting(rect)
+
+
+## Would a LEFT press at `pos` (RAW host-screen pixels — the same space
+## on_pointer_down takes) be consumed by this tool as an annotation gesture?
+##
+## `mods` is the SAME modifier mask on_pointer_down receives, and it is
+## load-bearing, not decoration: on_pointer_down's behavior BRANCHES on shift
+## before it reaches any of the tests below, so a mods-blind probe cannot mirror
+## it. Concretely — one annotation selected, SHIFT-press inside its gizmo ring
+## but OFF the ink: a mods-blind probe claims (gizmo rung), on_pointer_down takes
+## the additive branch instead, misses the ink, and arms an annotation-ONLY
+## marquee — silently costing that shift+box gesture its board half.
+##
+## So the answer is mods-shaped:
+##   * SHIFT (additive) — claim ON INK ONLY. Shift means "edit set membership",
+##     which on_pointer_down resolves purely by hit-test; the gizmo and the
+##     caption handle are not reachable under shift at all. Shift OFF ink is a
+##     marquee press, and under a unified Select the marquee belongs to the
+##     surface that owns both halves of the selection.
+##   * PLAIN — claim on ink, on the caption sub-handle, on any gizmo zone of the
+##     single selection, or on any member of a multi-selection.
+##   * EITHER, with a caption editor open — always claim: any click elsewhere
+##     COMMITS it, and on_pointer_down does that before it looks at shift.
+## Empty space is never claimed under either.
+##
+## The order below MIRRORS on_pointer_down's own, shift branch included. If a
+## test is added there it must be added here too, or the router will hand this
+## tool a press it declines and the click will vanish between the two.
+func claims_point(pos: Vector2, mods: int = 0) -> bool:
+	if _host == null:
+		return false
+	# An open caption editor owns the next click outright: any click elsewhere
+	# COMMITS it (the text tool's grammar, replayed in on_pointer_down). Letting
+	# the surface behind consume that click would leave the editor floating over
+	# a selection that moved out from under it.
+	if _editor.is_open():
+		return true
+
+	var doc_pos := _host.transform_screen_to_doc(pos)
+
+	# Shift is checked FIRST, exactly as on_pointer_down checks it first: under
+	# shift neither the gizmo nor the caption handle is reachable, so ink is the
+	# whole answer.
+	if (mods & KEY_MASK_SHIFT) != 0:
+		return not _hit_test_topmost(doc_pos).is_empty()
+
+	var selected_ids := _selected_ids()
+
+	# Multi-selection: a press on any MEMBER drags the whole set.
+	if selected_ids.size() > 1:
+		var member_hit := _hit_test_topmost(doc_pos)
+		if member_hit != "" and selected_ids.has(member_hit):
+			return true
+	else:
+		# Single selection: the caption sub-handle, then the gizmo zones. Both
+		# can sit OUTSIDE the annotation's own ink, which is exactly why a
+		# hit_test-only probe would let a press on a scale handle fall through to
+		# the board and leave the gizmo undraggable.
+		var selected_id := _host.get_selected_annotation_id()
+		if selected_id != "":
+			var ann := _find_annotation(selected_id)
+			if not ann.is_empty():
+				if _hit_label_handle(ann, doc_pos):
+					return true
+				var kind := _get_kind(ann)
+				if kind != null and _hit_zone(doc_pos, kind.bounds(ann), _view_zoom()) != Zone.OUTSIDE:
+					return true
+
+	return not _hit_test_topmost(doc_pos).is_empty()
+
+
 ## Topmost (last-drawn) visible annotation under doc_pos, or "" for none.
 func _hit_test_topmost(doc_pos: Vector2) -> String:
 	if _host == null:
