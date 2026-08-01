@@ -72,6 +72,36 @@ extends AnnotationAuthorTool
 ## writes label_offset and nothing else, off the same immutable
 ## _drag_start_annotation snapshot every other drag uses.
 ##
+## ── Label drag is CONSTRAINED to the arrow's axis (B3a, docket 019fbbadc140,
+## owner-ruled: "I can move it anyplace — bad. It should only move along the
+## arrow.") ─────────────────────────────────────────────────────────────────
+## _setup_label_axis_constraint (called from _begin_label_drag) decomposes the
+## drag-start label_offset into an along-axis component and a
+## perpendicular-to-axis component, using the arrow's CURRENT endpoints
+## (endpoints_any — doc space, not screen space, so the constraint is stable
+## under pan/zoom the way kind.bounds() is not). The perpendicular component is
+## CLAMPED INTO [-clearance, clearance] (clearance = AnnotationArrow.
+## default_label_offset's length) on EVERY drag start, not just the first —
+## clampf leaves an already-compliant offset byte-identical (a grab-and-release
+## with zero movement is a no-op at every arrow orientation, not just
+## horizontal — default_label_offset is a fixed straight-up vector, so its true
+## perpendicular projection varies with the arrow's angle, and FORCING the
+## magnitude to clearance instead of clamping into it would teleport a
+## non-horizontal arrow's caption sideways on the very first grab; see F1,
+## cold review 2026-08-01), so clamping is also how an OLD free-dragged offset
+## (from before this constraint existed, or a payload authored by hand/LLM)
+## settles onto the constraint the moment its label is next grabbed, without
+## disturbing a value that was already inside bounds. No migration step exists
+## or is needed: an un-dragged old offset keeps rendering exactly as stored.
+## _apply_label_drag then only ever adds the AXIS-PROJECTED component of the
+## pointer delta (delta.dot(axis)) — the perpendicular component of the mouse
+## movement is discarded outright, which is what keeps the caption's clearance
+## fixed through an arbitrarily sideways drag. The along component is clamped to
+## a small t-range (see _setup_label_axis_constraint) so the label cannot be
+## dragged arbitrarily far past either end of the segment.
+## Degenerate arrows (near-zero-length segment: no meaningful axis) fall back to
+## the pre-B3a free-offset drag rather than pretending a constraint exists.
+##
 ## Both affordances require EXACTLY ONE selection — a caption belongs to one
 ## arrow, and the multi-selection gizmo is deliberately translate-only. With two
 ## or more selected the sub-handle is drawn DISABLED (grey) and a double-click
@@ -228,7 +258,32 @@ var _label_edit_centre: Vector2 = Vector2.ZERO
 var _label_edit_font: float = float(AnnotationInPlaceTextEditor.TARGET_SCREEN_FONT_PX)
 
 ## Caption offset at label-drag start — the immutable value the drag deltas from.
+## Also the fallback drag basis for a degenerate (near-zero-length) arrow, where
+## _drag_label_axis stays ZERO and _apply_label_drag can't project onto an axis.
 var _drag_start_label_offset: Vector2 = Vector2.ZERO
+
+## Unit vector along the arrow's tail→head segment, frozen at label-drag start.
+## Vector2.ZERO means "no axis available" (degenerate arrow) — _apply_label_drag
+## reads that as a signal to fall back to the pre-B3a free-offset drag.
+var _drag_label_axis: Vector2 = Vector2.ZERO
+
+## The frozen perpendicular part of the label offset, ALREADY clamped INTO
+## [-clearance, clearance] — i.e. `perp_unit * clampf(perp_raw, -clearance,
+## clearance)`. Combined with the (re-clamped, re-computed-per-move) along-axis
+## component to form the new offset every move.
+var _drag_label_perp_offset: Vector2 = Vector2.ZERO
+
+## Along-axis component of the label offset at drag start (offset.dot(axis)),
+## already clamped into [_drag_label_along_min, _drag_label_along_max].
+var _drag_label_along_start: float = 0.0
+
+## t=0 (tail) bound on the along-axis component, in the same doc-unit,
+## offset-from-midpoint frame as _drag_label_along_start.
+var _drag_label_along_min: float = 0.0
+
+## t≈1.15 (a little past the head) bound on the along-axis component. See
+## _setup_label_axis_constraint for why 1.15 was picked.
+var _drag_label_along_max: float = 0.0
 
 ## Document point at which to post the "select one arrow" notice, or null.
 ## Set when a double-click is refused because the selection is not exactly one.
@@ -280,6 +335,11 @@ func _reset_drag_state() -> void:
 	_translate_pending_threshold = false
 	_extra_drag_snapshots = {}
 	_drag_start_label_offset = Vector2.ZERO
+	_drag_label_axis = Vector2.ZERO
+	_drag_label_perp_offset = Vector2.ZERO
+	_drag_label_along_start = 0.0
+	_drag_label_along_min = 0.0
+	_drag_label_along_max = 0.0
 
 
 ## Tear down the caption editor without committing anything.
@@ -635,7 +695,9 @@ func _begin_label_drag(doc_pos: Vector2, ann_id: String, ann: Dictionary) -> boo
 	if arrow == null:
 		return false
 	_begin_drag(Zone.LABEL, doc_pos, ann_id, ann, Rect2())
-	_drag_start_label_offset = arrow.label_offset(ann)
+	var offset := arrow.label_offset(ann)
+	_drag_start_label_offset = offset
+	_setup_label_axis_constraint(ann, arrow, offset)
 	# Same jitter gate every select-armed drag uses: a press on the caption that
 	# never travels must write nothing, because the very next event may be the
 	# second half of a double-click asking to EDIT the caption, not move it.
@@ -643,10 +705,99 @@ func _begin_label_drag(doc_pos: Vector2, ann_id: String, ann: Dictionary) -> boo
 	return true
 
 
+## Freeze the along-arrow-axis drag constraint (B3a). Decomposes `offset` (the
+## label_offset at drag start) into an along-axis component and a
+## perpendicular-to-axis component, using the arrow's CURRENT endpoints — doc
+## space, so the constraint holds regardless of view zoom (kind.bounds() and
+## screen geometry are zoom-ephemeral; endpoints_any() is not).
+##
+## The perpendicular component is CLAMPED INTO [-clearance, clearance]
+## (clearance = AnnotationArrow.default_label_offset's length for this
+## caption's font) EVERY time a label drag begins, not only the first — clampf,
+## not a forced magnitude: default_label_offset is a fixed straight-up vector,
+## so a compliant offset's true perpendicular projection is smaller than
+## clearance at any non-horizontal arrow angle, and forcing the magnitude TO
+## clearance instead of clamping INTO it teleports the caption sideways on the
+## very first grab of a vertical or diagonal arrow (measured up to a full
+## clearance's worth — see cold review F1). clampf leaves an already-compliant
+## offset untouched (a grab-and-release with zero movement is a no-op at every
+## orientation), which is exactly how an old free-dragged offset settles onto
+## the constraint the moment it is next grabbed, with no separate migration
+## pass. The along component is clamped to a small t-range so the label can't
+## be dragged arbitrarily far past either end.
+##
+## Leaves _drag_label_axis at Vector2.ZERO for a degenerate (near-zero-length)
+## arrow — _apply_label_drag reads that as "no axis available" and falls back to
+## the pre-B3a free-offset drag rather than pretending a constraint exists.
+func _setup_label_axis_constraint(ann: Dictionary, arrow: AnnotationArrow, offset: Vector2) -> void:
+	_drag_label_axis = Vector2.ZERO
+	_drag_label_perp_offset = offset
+	_drag_label_along_start = 0.0
+	_drag_label_along_min = 0.0
+	_drag_label_along_max = 0.0
+
+	var endpoints := arrow.endpoints_any(null, ann)
+	if endpoints.size() < 2:
+		return
+	var tail: Vector2 = endpoints[0]
+	var head: Vector2 = endpoints[1]
+	var seg := head - tail
+	var seg_len := seg.length()
+	if seg_len < 0.001:
+		return
+
+	var axis := seg / seg_len
+	var perp := Vector2(-axis.y, axis.x)
+	var clearance := AnnotationArrow.default_label_offset(arrow.label_font_size(ann)).length()
+
+	var along := offset.dot(axis)
+	var perp_raw := offset.dot(perp)
+	# CLAMP the perpendicular component into [-clearance, clearance] — do NOT
+	# force it TO clearance. default_label_offset() is always (0, -1.6*font)
+	# STRAIGHT UP regardless of arrow orientation, so a compliant offset's own
+	# perp_raw only equals ±clearance when the arrow happens to be horizontal;
+	# at any other orientation the true perpendicular projection is SMALLER
+	# than clearance (e.g. 45°: clearance*cos(45°)). Forcing the magnitude TO
+	# clearance (the earlier, wrong version of this line) does not reconstruct
+	# the stored offset on a non-horizontal arrow — it TELEPORTS the caption
+	# sideways on the very first grab (measured: a full 16.0-doc-unit jump on a
+	# vertical arrow, 4.69 at 45°, only 0.00 on horizontal — the one
+	# orientation that hid the bug). clampf leaves an already-compliant
+	# |perp_raw| <= clearance untouched (perp*perp_raw + axis*along == offset
+	# exactly, so a grab-and-release with zero mouse movement is a no-op at
+	# every orientation) and only clips a genuinely out-of-bounds old free
+	# offset — which is exactly and only what "clamp to the constraint" means.
+	var perp_clamped := clampf(perp_raw, -clearance, clearance)
+
+	# t-range: the label stays between the tail (t=0) and 15% past the head
+	# (t=1.15) — decided, not measured. `along` is offset-from-MIDPOINT (the
+	# frame label_offset itself uses), so distance-from-tail = 0.5*seg_len +
+	# along, and t = distance-from-tail / seg_len. t=0 lets the label slide all
+	# the way down to the tail; t=1.15 gives it a little clearance past the
+	# arrowhead glyph without letting it drift arbitrarily far beyond the tip.
+	var along_min := -0.5 * seg_len          # t = 0.00
+	var along_max := 0.65 * seg_len          # t = 1.15
+	along = clampf(along, along_min, along_max)
+
+	_drag_label_axis = axis
+	_drag_label_perp_offset = perp * perp_clamped
+	_drag_label_along_start = along
+	_drag_label_along_min = along_min
+	_drag_label_along_max = along_max
+
+
 ## Caption drag: writes label_offset and NOTHING else, off the immutable
 ## drag-start snapshot (so the offset is absolute-from-snapshot, never
 ## cumulative). Endpoints, text, and glyph size are untouched by construction —
 ## AnnotationArrow.with_label_offset only ever sets the one key.
+##
+## Constrained to the arrow's axis (B3a): only the AXIS-PROJECTED component of
+## the pointer delta (delta.dot(axis)) ever reaches the offset. The perpendicular
+## component of the mouse movement is discarded outright — not merely damped —
+## which is what keeps the caption's clearance from the shaft fixed through an
+## arbitrarily sideways drag. See _setup_label_axis_constraint for the frozen
+## basis and the t-range clamp; a degenerate arrow (axis == ZERO) falls back to
+## the pre-B3a unconstrained delta.
 func _apply_label_drag(doc_pos: Vector2) -> void:
 	if _drag_start_annotation.is_empty():
 		return
@@ -658,7 +809,14 @@ func _apply_label_drag(doc_pos: Vector2) -> void:
 		if delta.length() * _view_zoom() < SELECT_DRAG_THRESHOLD_PX:
 			return
 		_translate_pending_threshold = false
-	annotation_modified.emit(_drag_id, arrow.with_label_offset(_drag_start_annotation, _drag_start_label_offset + delta))
+	var new_offset: Vector2
+	if _drag_label_axis == Vector2.ZERO:
+		new_offset = _drag_start_label_offset + delta
+	else:
+		var along := clampf(_drag_label_along_start + delta.dot(_drag_label_axis),
+			_drag_label_along_min, _drag_label_along_max)
+		new_offset = _drag_label_perp_offset + _drag_label_axis * along
+	annotation_modified.emit(_drag_id, arrow.with_label_offset(_drag_start_annotation, new_offset))
 
 
 ## Resolve an armed marquee at release.

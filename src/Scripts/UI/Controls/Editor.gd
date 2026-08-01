@@ -3,6 +3,24 @@ extends Control
 ## Editor node is responsible for acting as a CodeEdit or TextureRect
 ## depending if it handles text or graphics file.
 ## A file path can be associated with it to save the content of the node to it
+##
+## ── Editor.tscn's %VBoxContainer grows END, not BOTH (B3b, docket 019fbbad9dac
+## comment 970) ─────────────────────────────────────────────────────────────
+## %VBoxContainer holds the whole editor column — including the universal
+## button strip (Inject to chat / Save all / Save / To note) at its TOP — under
+## an Editor root with clip_contents = true. Godot clamps an overflowing
+## control's rect UP to its combined minimum size and splits the shortfall
+## according to grow direction; GROW_DIRECTION_BOTH (the prior default) split
+## it 50/50, which pushed position.y NEGATIVE whenever a mounted plugin panel's
+## min-height exceeded its grid cell — clipping the TOP half of the strip
+## first, i.e. the host chrome a user reaches for constantly, while the
+## content that actually overflowed (typically a plugin's own bottom rows)
+## stayed fully visible. GROW_DIRECTION_END spills the SAME overflow entirely
+## DOWNWARD instead: the strip's position.y never goes negative, so host
+## chrome is immune to any panel's min-height regardless of which panel or
+## which of its internal tools is armed (hint minerva-core/grow-both-clips-top-half).
+## This is a one-line change on Editor.tscn's %VBoxContainer node — .tscn files
+## carry no prose of their own, so the rationale lives here instead.
 
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
