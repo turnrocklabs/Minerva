@@ -22,6 +22,14 @@
 #
 # Exit code: 0 if every test that RAN passed (a SKIP counts as a pass); 1 if
 # any test failed. Relies on the SceneTree tests calling quit(1) on failure.
+#
+#   scripts/run-functional-tests.sh --quarantined  # quarantined-flaky tier only
+#
+# The --quarantined tier holds tests that are known-flaky (intermittent native
+# crash or timing race, unrelated to the diff under test) and have been pulled
+# out of HERMETIC_TESTS so their red cannot attribute to an unrelated PR. They
+# still run in CI, in their own step, so a real regression stays visible —
+# see the "quarantined-flaky" step in .github/workflows/build.yml.
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -33,9 +41,16 @@ HERMETIC_TESTS=(
 	test/test_buffer_sync_undo_caret.gd
 	test/test_doc_version_guard.gd
 	test/test_host_capability_terminal.gd
-	test/test_host_capability_terminal_io.gd
+	# test_host_capability_terminal_io.gd: quarantined, bug 019fbd21a8717702931647025aae6be7
+	# (intermittent CI-only SIGABRT/exit 134, not reproduced in 40 local runs
+	# incl. 4x parallel load; 2 CI occurrences, both rerun-green, neither on a
+	# diff touching terminal code). Runs standalone via --quarantined below.
 	test/test_media_artifact_kind.gd
 	test/test_os_open_policy.gd
+)
+QUARANTINED_TESTS=(
+	# bug 019fbd21a8717702931647025aae6be7 — see comment above.
+	test/test_host_capability_terminal_io.gd
 )
 PLUGIN_TESTS=(
 	test/test_cad_evaluate_render.gd
@@ -59,9 +74,13 @@ PCB_GUARD_TESTS=(
 
 tests=("${HERMETIC_TESTS[@]}")
 if [[ "${1:-}" == "--all" ]]; then
-	tests+=("${PLUGIN_TESTS[@]}")
+	# --all must still cover the quarantined set (019fbd21a8) — quarantine
+	# only shields the CI functional gate, it must not shrink a full run.
+	tests+=("${QUARANTINED_TESTS[@]}" "${PLUGIN_TESTS[@]}")
 elif [[ "${1:-}" == "--pcb-guard" ]]; then
 	tests=("${PCB_GUARD_TESTS[@]}")
+elif [[ "${1:-}" == "--quarantined" ]]; then
+	tests=("${QUARANTINED_TESTS[@]}")
 fi
 
 pass=0
