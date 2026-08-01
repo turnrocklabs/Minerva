@@ -55,6 +55,13 @@ func _init() -> void:
 	test_active_tool_button_changed_signal_on_toggle()
 	test_active_tool_button_changed_signal_on_toggle_off()
 
+	print("\n-- tools_excluded is opt-in and absent means unchanged (BT-61, B1u3) --")
+	test_absent_tools_excluded_matches_the_pre_feature_toolbar()
+	test_empty_tools_excluded_is_not_exclude_all()
+	test_tools_excluded_removes_only_the_named_button()
+	test_empty_tools_allow_list_still_shows_select()
+	test_tools_excluded_beats_an_explicit_allow_list()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -560,3 +567,170 @@ func test_active_tool_button_changed_signal_on_toggle_off() -> void:
 	check_eq("signal fired twice total (on + off)", received.size(), 2)
 	check_eq("first signal is 'select'", received[0], "select")
 	check_eq("second signal is '' (cleared)", received[1], "")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BT-61 — `tools_excluded` absent leaves the toolbar byte-equal to pre-feature
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Campaign 2, round B1 unit 3 (universal Select, docket item 019fbb9adc33), core
+# half. The pcb panel owns ONE universal Select on its own canvas and must not be
+# offered a second one in the dock, so it declares `tools_excluded: ["select"]`.
+# Every OTHER host — and every older host running against this core — declares
+# nothing, and for them the dock must be unchanged down to the button list.
+#
+# WHY A NEGATIVE CHANNEL EXISTS AT ALL (measured, B1u3): the `tools` allow-list
+# cannot express "offer no Select", because an EMPTY allow-list means "allow
+# everything" — which is what every host omitting the key relies on. So
+# `"tools": []` SHOWS the button, the exact opposite of the intent. That fact is
+# pinned below too; without it the negative channel looks redundant and someone
+# will delete it.
+#
+# INDEPENDENT REPRESENTATION: the expected list is HAND-WRITTEN from the sources,
+# not read back out of a reference toolbar —
+#   * Tools section: `_ensure_layout_labeled` iterates the literal ["Select"],
+#     lower-cased into _tool_buttons — one entry, "select".
+#   * Annotate section: `_try_add_button` skips any kind whose author_ui()
+#     returns null. Of the nine kinds BuiltinKinds registers, exactly TWO declare
+#     author_ui — AnnotationArrow (2d_arrow) and AnnotationText (2d_text);
+#     grep 'func author_ui' over kinds/ returns those two files and no others.
+# Names are compared SORTED, so this pins the SET rather than the registry's
+# iteration order (which the ordering tests above already own). The absent-vs-
+# empty comparison is done unsorted as well, so ordering cannot drift between
+# the two configurations either.
+#
+# CROSS-REPO: AUTH-PLUG-CANVAS's BT-58 fixture (nudge c2-epochB
+# "boundary.bt58-fixture") confirms the other half of this feature keeps its two
+# selections in two separate stores — an annotation id-set on the AnnotationHost
+# and a board id list on the canvas, never mirrored. Nothing in the dock's button
+# list participates in that, which is exactly why excluding the dock's Select is
+# safe: it removes an affordance, not a selection store.
+
+const _PRE_FEATURE_TOOL_BUTTONS: Array = ["select"]
+const _PRE_FEATURE_KIND_BUTTONS: Array = ["2d_arrow", "2d_text"]
+
+
+## A host that publishes whatever capabilities dict it is handed.
+class CapabilityMockHost extends MockHost:
+	var capabilities: Dictionary = {}
+
+	func get_annotation_capabilities() -> Dictionary:
+		return capabilities
+
+
+## Build a toolbar bound to `capabilities` and the nine built-in kinds.
+## set_host FIRST: it is what latches _capabilities, and the Tools section is
+## constructed during the rebuild it triggers.
+func _toolbar_with_capabilities(capabilities: Dictionary) -> AnnotationToolbar:
+	var tb := AnnotationToolbar.new()
+	root.add_child(tb)
+	var host := CapabilityMockHost.new()
+	host.capabilities = capabilities
+	tb.set_host(host)
+	var registry := AnnotationRegistry.new()
+	BuiltinKinds.register_all(registry)
+	tb.set_registry(registry)
+	return tb
+
+
+func _tool_button_names(tb: AnnotationToolbar, sorted_names: bool = true) -> Array:
+	var out: Array = []
+	for key in tb._tool_buttons.keys():
+		out.append(str(key))
+	if sorted_names:
+		out.sort()
+	return out
+
+
+func _kind_button_names(tb: AnnotationToolbar, sorted_names: bool = true) -> Array:
+	var out: Array = []
+	for key in tb._buttons.keys():
+		out.append(str(key))
+	if sorted_names:
+		out.sort()
+	return out
+
+
+func test_absent_tools_excluded_matches_the_pre_feature_toolbar() -> void:
+	print("test_absent_tools_excluded_matches_the_pre_feature_toolbar:")
+	var tb := _toolbar_with_capabilities({})
+	check_eq("Tools section is the hand-written pre-feature list",
+		_tool_button_names(tb), _PRE_FEATURE_TOOL_BUTTONS)
+	check_eq("Annotate section is the hand-written pre-feature list",
+		_kind_button_names(tb), _PRE_FEATURE_KIND_BUTTONS)
+	_free_toolbar(tb)
+
+	# The degrade path in the same shape: a host with no capabilities method at
+	# all (every host that predates the whole capabilities channel).
+	var plain := AnnotationToolbar.new()
+	root.add_child(plain)
+	plain.set_host(MockHost.new())
+	var registry := AnnotationRegistry.new()
+	BuiltinKinds.register_all(registry)
+	plain.set_registry(registry)
+	check_eq("a host with no capabilities method keeps its Select",
+		_tool_button_names(plain), _PRE_FEATURE_TOOL_BUTTONS)
+	check_eq("...and its kind buttons", _kind_button_names(plain), _PRE_FEATURE_KIND_BUTTONS)
+	_free_toolbar(plain)
+
+
+func test_empty_tools_excluded_is_not_exclude_all() -> void:
+	print("test_empty_tools_excluded_is_not_exclude_all:")
+	# An empty NEGATIVE list must mean "exclude nothing" — the mirror image of the
+	# allow-list's "empty means allow everything". A host that writes the key and
+	# then computes an empty array (no tools to hide on this surface) must get the
+	# full toolbar, not an empty one.
+	var absent := _toolbar_with_capabilities({})
+	var empty := _toolbar_with_capabilities({"tools_excluded": []})
+
+	check_eq("empty tools_excluded keeps the Select button",
+		_tool_button_names(empty), _PRE_FEATURE_TOOL_BUTTONS)
+	check_eq("empty tools_excluded keeps every kind button",
+		_kind_button_names(empty), _PRE_FEATURE_KIND_BUTTONS)
+	# Unsorted, so button ORDER cannot drift between the two configurations either.
+	check_eq("empty and absent produce byte-equal Tools sections",
+		_tool_button_names(empty, false), _tool_button_names(absent, false))
+	check_eq("empty and absent produce byte-equal Annotate sections",
+		_kind_button_names(empty, false), _kind_button_names(absent, false))
+
+	_free_toolbar(absent)
+	_free_toolbar(empty)
+
+
+func test_tools_excluded_removes_only_the_named_button() -> void:
+	print("test_tools_excluded_removes_only_the_named_button:")
+	# The pcb panel's own configuration. Without this leg, everything above is
+	# satisfied by a channel that does nothing whatsoever.
+	var tb := _toolbar_with_capabilities({"tools_excluded": ["select"]})
+	check_eq("the excluded Select button is gone", _tool_button_names(tb), [])
+	check_eq("and nothing else was removed with it",
+		_kind_button_names(tb), _PRE_FEATURE_KIND_BUTTONS)
+	_free_toolbar(tb)
+
+	# A name nobody offers is inert, not an error.
+	var unknown := _toolbar_with_capabilities({"tools_excluded": ["lasso"]})
+	check_eq("excluding an unknown tool changes nothing",
+		_tool_button_names(unknown), _PRE_FEATURE_TOOL_BUTTONS)
+	_free_toolbar(unknown)
+
+
+func test_empty_tools_allow_list_still_shows_select() -> void:
+	print("test_empty_tools_allow_list_still_shows_select:")
+	# The measured fact the negative channel exists BECAUSE of. If this ever
+	# starts failing, `tools_excluded` has become redundant and the reason it was
+	# added has changed — which is a design decision, not a passing test.
+	var tb := _toolbar_with_capabilities({"tools": []})
+	check_eq("an empty allow-list still shows Select (allow-list can't say 'none')",
+		_tool_button_names(tb), _PRE_FEATURE_TOOL_BUTTONS)
+	_free_toolbar(tb)
+
+
+func test_tools_excluded_beats_an_explicit_allow_list() -> void:
+	print("test_tools_excluded_beats_an_explicit_allow_list:")
+	# "It wins outright" — a host that both allows and excludes the same name gets
+	# no button. Anything else leaves the pcb panel's two Selects reachable through
+	# a capabilities dict that names Select positively for some other reason.
+	var tb := _toolbar_with_capabilities({"tools": ["select"], "tools_excluded": ["select"]})
+	check_eq("exclusion wins over an explicit allow-list entry",
+		_tool_button_names(tb), [])
+	_free_toolbar(tb)

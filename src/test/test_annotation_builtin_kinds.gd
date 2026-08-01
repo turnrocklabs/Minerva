@@ -175,6 +175,15 @@ func _init() -> void:
 	test_polyline_bounds_text_box_scales_with_zoom()
 	test_polyline_hit_test_text_box_honest_at_zoom()
 
+	print("\n-- overlay zoom seam: ABSENT branch (BT-50, B1u1 review F2) --")
+	test_overlay_seam_absent_get_annotation_zoom_is_legacy_exact()
+	test_overlay_seam_present_reaches_every_px_kind()
+	test_overlay_seam_swap_back_to_zoomless_host_restores_legacy()
+
+	print("\n-- render head literal vs bounds constant (BT-51, B1u1 review F4) --")
+	test_render_head_default_matches_bounds_default_payload_path()
+	test_render_head_default_matches_bounds_default_primitives_path()
+
 	print("\n-- summary() default and overrides --")
 	test_summary_default_no_anchor()
 	test_summary_default_with_anchor()
@@ -1374,3 +1383,360 @@ func test_polyline_hit_test_text_box_honest_at_zoom() -> void:
 		not zoomed.hit_test(ann, probe, 0.5))
 	check("polyline label box still reaches 30 units unbound",
 		AnnotationPolyline.new().hit_test(ann, probe, 0.5))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BT-50 — the ABSENT half of the overlay zoom seam (B1u1 cold review, F2)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The zoom-honest block above wires `kind.view_zoom_source` DIRECTLY, so every
+# one of its cases exercises the seam's PRESENT branch. Production never does
+# that. The real chain is
+#
+#   AnnotationOverlay.set_host(host)
+#     -> _bind_kind_view_zoom()
+#     -> registry.set_view_zoom_source(Callable(overlay, "_view_zoom"))
+#     -> AnnotationOverlay._view_zoom()
+#     -> host.get_annotation_zoom()          <- DUCK-TYPED, has_method-guarded
+#
+# and its ABSENT branch — a host that does not implement get_annotation_zoom at
+# all (the text editor, the hello panel, every pre-B1u1 host) — must return
+# exactly 1.0, i.e. pixels ARE document units. Review F2's point is that this
+# branch is also where a RENAME or a TYPO in `get_annotation_zoom` silently
+# lands: the pcb bug would come back wearing the fail-safe's clothes and no
+# shipped test would notice.
+#
+# INDEPENDENT REPRESENTATION: the oracle below is NOT px_to_doc arithmetic (that
+# is the code's own predicate). It is a table of legacy-exact rectangles
+# hand-derived from each kind's OWN pixel constants, for five kinds at once. A
+# fallback that quietly returned some other fixed scale would still satisfy
+# px_to_doc and would still miss every number here.
+#
+# ── Hand-derived expectations ────────────────────────────────────────────────
+# Fixture geometry is shared between the two hosts; only the seam differs.
+#
+#   arrow            endpoints (20,40)-(60,40), no head_size, no label
+#                      head px = AnnotationArrow.DEFAULT_HEAD_SIZE_PX = 12
+#                      absent  : grow 12   -> Rect2(  8,  28,  64,  24)
+#                      present : grow 12/6 = 2 -> Rect2( 18,  38,  44,   4)
+#
+#   measure_distance from (0,0) to (30,0)
+#                      tick px = TICK_SIZE = 4
+#                      absent  : grow 4    -> Rect2( -4,  -4,  38,   8)
+#                      present : grow 4/6 = 0.6667 -> Rect2(-0.6667, -0.6667, 31.3333, 1.3333)
+#
+#   measure_angle    a(10,0) b(0,0) c(0,10)
+#                      point AABB = Rect2(0,0,10,10)
+#                      arc_r = max(min(10,10) * 0.25, 4.0) = 4.0   (doc units, NOT px)
+#                      margin px = _LABEL_MARGIN_PX = 20
+#                      absent  : grow 4 + 20      = 24     -> Rect2(-24, -24, 58, 58)
+#                      present : grow 4 + 20/6    = 7.3333 -> Rect2(-7.3333, -7.3333, 24.6667, 24.6667)
+#
+#   measure_radius   center (0,0), edge (10,0)  -> radius 10
+#                      circle rect  = Rect2(-10,-10, 20, 20)
+#                      label anchor = edge + dir*6 + (0,-8) = (16, -8)   [doc units]
+#                      label box px = _LABEL_BOX_PX = (60, 12)
+#                      absent  : label Rect2(16,-8, 60, 12) -> merged Rect2(-10,-10, 86, 20)
+#                      present : label Rect2(16,-8, 10,  2) -> merged Rect2(-10,-10, 36, 20)
+#
+#   polyline         points (0,0)-(20,0) plus a text primitive at (100,100)
+#                      text box px = _TEXT_PRIMITIVE_APPROX_PX = (50, 12)
+#                      absent  : text Rect2(100,100, 50, 12) -> merged Rect2(0,0, 150, 112)
+#                      present : text Rect2(100,100, 8.3333, 2) -> merged Rect2(0,0, 108.3333, 102)
+#
+# Note how NO absent-branch number coincides with its present-branch twin: a
+# fallback hardcoded to 6 px/mm (the plan's HALF mutation) reds all five.
+
+
+## A host that owns a registry but has NO get_annotation_zoom — the absent branch.
+## Deliberately does not declare _init so AnnotationHost's own constructor (which
+## subscribes to selection_changed) runs untouched.
+class SeamHostNoZoom extends AnnotationHost:
+	## AnnotationOverlay.set_host() connects to annotations_changed UNGUARDED,
+	## but the AnnotationHost base does not declare it (selection_set_changed and
+	## view_changed are both has_signal-guarded there; this one is not). Every
+	## concrete host declares it for itself, so a stub must too.
+	signal annotations_changed()
+
+	var seam_registry: AnnotationRegistry = AnnotationRegistry.new()
+
+	func get_registry() -> AnnotationRegistry:
+		return seam_registry
+
+	func get_annotations() -> Array:
+		return []
+
+
+## Same host that OVERRIDES the scale — the present branch.
+class SeamHostWithZoom extends SeamHostNoZoom:
+	var seam_zoom: float = 6.0
+
+	func get_annotation_zoom() -> float:
+		return seam_zoom
+
+
+## MEASURED, not assumed (and the reason SeamHostNoZoom is named for the host's
+## behaviour rather than for the has_method guard): AnnotationHost DECLARES
+## get_annotation_zoom() returning 1.0, so `_host.has_method("get_annotation_zoom")`
+## inside AnnotationOverlay._view_zoom is TRUE for every AnnotationHost subclass
+## and the overlay's own `return 1.0` literal is unreachable from them. The 1.0 a
+## text-editor host reports comes from the BASE METHOD, not from that literal.
+##
+## set_host() is typed RefCounted, though, so an off-tree host that is not an
+## AnnotationHost at all is representable — and that is the only caller which can
+## reach the overlay's literal. This stub is that caller, so BOTH fallbacks are
+## pinned instead of one shadowing the other.
+class SeamDuckHostNoZoom extends RefCounted:
+	signal annotations_changed()
+	signal selection_changed(annotation_id: String)
+
+	var seam_registry: AnnotationRegistry = AnnotationRegistry.new()
+
+	func get_registry() -> AnnotationRegistry:
+		return seam_registry
+
+
+## Build a host of the requested flavour with all nine built-in kinds registered,
+## bound to a live AnnotationOverlay exactly the way a real editor binds one.
+## Returns [host, overlay]; the caller frees the overlay.
+func _seam_bind(with_zoom: bool) -> Array:
+	var host: SeamHostNoZoom = SeamHostWithZoom.new() if with_zoom else SeamHostNoZoom.new()
+	BuiltinKinds.register_all(host.seam_registry)
+	var overlay := AnnotationOverlay.new()
+	root.add_child(overlay)
+	overlay.set_host(host)
+	return [host, overlay]
+
+
+func _seam_kind(host: SeamHostNoZoom, kind_name: StringName) -> AnnotationKind:
+	return host.seam_registry.get_annotation_kind(kind_name)
+
+
+func _seam_release(overlay: AnnotationOverlay) -> void:
+	if overlay.get_parent() != null:
+		overlay.get_parent().remove_child(overlay)
+	overlay.free()
+
+
+## The five fixtures, built once so both branches read the SAME annotation dicts.
+func _seam_arrow() -> Dictionary:
+	return _anchored_arrow(20.0, 40.0, 60.0, 40.0)
+
+
+func _seam_distance() -> Dictionary:
+	return _ann("2d_measure_distance", [_measure_distance_prim(0.0, 0.0, 30.0, 0.0)])
+
+
+func _seam_angle() -> Dictionary:
+	return _ann("2d_measure_angle", [_measure_angle_prim(10.0, 0.0, 0.0, 0.0, 0.0, 10.0)])
+
+
+func _seam_radius() -> Dictionary:
+	return _ann("2d_measure_radius", [_measure_radius_prim(0.0, 0.0, 10.0, 0.0)])
+
+
+func _seam_polyline() -> Dictionary:
+	return _ann("2d_polyline", [_polyline_prim([[0.0, 0.0], [20.0, 0.0]]), _text_prim(100.0, 100.0)])
+
+
+## Compare a Rect2 against four hand-derived floats.
+func check_rect(description: String, actual: Rect2, x: float, y: float, w: float, h: float) -> void:
+	var want := Rect2(x, y, w, h)
+	var ok := absf(actual.position.x - x) <= 0.01 and absf(actual.position.y - y) <= 0.01 \
+		and absf(actual.size.x - w) <= 0.01 and absf(actual.size.y - h) <= 0.01
+	if ok:
+		_pass_count += 1
+		print("  PASS: %s" % description)
+	else:
+		_fail_count += 1
+		printerr("  FAIL: %s — expected %s, got %s" % [description, str(want), str(actual)])
+
+
+func test_overlay_seam_absent_get_annotation_zoom_is_legacy_exact() -> void:
+	print("test_overlay_seam_absent_get_annotation_zoom_is_legacy_exact:")
+	var bound := _seam_bind(false)
+	var host: SeamHostNoZoom = bound[0]
+	var overlay: AnnotationOverlay = bound[1]
+
+	# The seam IS wired (the registry was stamped) — it is the host end that is
+	# absent. That distinction is the whole point: a stamped-but-blind seam is
+	# indistinguishable from an unstamped one unless the numbers are pinned.
+	check("registry was stamped even for a zoom-less host",
+		_seam_kind(host, &"2d_arrow").view_zoom_source.is_valid())
+	check_approx("absent get_annotation_zoom resolves to exactly 1.0",
+		_seam_kind(host, &"2d_arrow").view_zoom(), 1.0)
+
+	check_rect("arrow bounds are legacy-exact (grow 12)",
+		_seam_kind(host, &"2d_arrow").bounds(_seam_arrow()), 8.0, 28.0, 64.0, 24.0)
+	check_rect("measure_distance bounds are legacy-exact (grow 4)",
+		_seam_kind(host, &"2d_measure_distance").bounds(_seam_distance()), -4.0, -4.0, 38.0, 8.0)
+	check_rect("measure_angle bounds are legacy-exact (grow 4 + 20)",
+		_seam_kind(host, &"2d_measure_angle").bounds(_seam_angle()), -24.0, -24.0, 58.0, 58.0)
+	check_rect("measure_radius bounds are legacy-exact (60x12 label box)",
+		_seam_kind(host, &"2d_measure_radius").bounds(_seam_radius()), -10.0, -10.0, 86.0, 20.0)
+	check_rect("polyline bounds are legacy-exact (50x12 text box)",
+		_seam_kind(host, &"2d_polyline").bounds(_seam_polyline()), 0.0, 0.0, 150.0, 112.0)
+
+	_seam_release(overlay)
+
+	# Second fallback, second owner: a host that is not an AnnotationHost at all,
+	# so has_method("get_annotation_zoom") is genuinely false and the overlay's
+	# own literal is what answers. Same legacy-exact numbers, different code path.
+	var duck := SeamDuckHostNoZoom.new()
+	BuiltinKinds.register_all(duck.seam_registry)
+	var duck_overlay := AnnotationOverlay.new()
+	root.add_child(duck_overlay)
+	duck_overlay.set_host(duck)
+
+	var duck_arrow: AnnotationKind = duck.seam_registry.get_annotation_kind(&"2d_arrow")
+	check("off-tree host's registry is stamped too", duck_arrow.view_zoom_source.is_valid())
+	check_approx("host without the method at all also resolves to exactly 1.0",
+		duck_arrow.view_zoom(), 1.0)
+	check_rect("off-tree zoom-less host gets the same legacy 64 x 24 rect",
+		duck_arrow.bounds(_seam_arrow()), 8.0, 28.0, 64.0, 24.0)
+
+	_seam_release(duck_overlay)
+
+
+func test_overlay_seam_present_reaches_every_px_kind() -> void:
+	print("test_overlay_seam_present_reaches_every_px_kind:")
+	# The other half of the pair. Without it "legacy-exact" could be satisfied by
+	# a seam that never conducts anything at all.
+	var bound := _seam_bind(true)
+	var host: SeamHostNoZoom = bound[0]
+	var overlay: AnnotationOverlay = bound[1]
+
+	check_approx("present get_annotation_zoom reaches the kind through the overlay",
+		_seam_kind(host, &"2d_arrow").view_zoom(), _MM_ZOOM)
+
+	check_rect("arrow bounds honour 6 px/mm through the live seam",
+		_seam_kind(host, &"2d_arrow").bounds(_seam_arrow()), 18.0, 38.0, 44.0, 4.0)
+	check_rect("measure_distance bounds honour 6 px/mm through the live seam",
+		_seam_kind(host, &"2d_measure_distance").bounds(_seam_distance()),
+		-4.0 / _MM_ZOOM, -4.0 / _MM_ZOOM, 30.0 + 8.0 / _MM_ZOOM, 8.0 / _MM_ZOOM)
+	check_rect("measure_angle bounds honour 6 px/mm through the live seam",
+		_seam_kind(host, &"2d_measure_angle").bounds(_seam_angle()),
+		-(4.0 + 20.0 / _MM_ZOOM), -(4.0 + 20.0 / _MM_ZOOM),
+		10.0 + 2.0 * (4.0 + 20.0 / _MM_ZOOM), 10.0 + 2.0 * (4.0 + 20.0 / _MM_ZOOM))
+	check_rect("measure_radius bounds honour 6 px/mm through the live seam",
+		_seam_kind(host, &"2d_measure_radius").bounds(_seam_radius()),
+		-10.0, -10.0, 26.0 + 60.0 / _MM_ZOOM, 20.0)
+	check_rect("polyline bounds honour 6 px/mm through the live seam",
+		_seam_kind(host, &"2d_polyline").bounds(_seam_polyline()),
+		0.0, 0.0, 100.0 + 50.0 / _MM_ZOOM, 100.0 + 12.0 / _MM_ZOOM)
+
+	_seam_release(overlay)
+
+
+func test_overlay_seam_swap_back_to_zoomless_host_restores_legacy() -> void:
+	print("test_overlay_seam_swap_back_to_zoomless_host_restores_legacy:")
+	# One overlay, two hosts. The absent branch has to be reachable AFTER a
+	# zoom-bearing host has been through it, or a stale stamp keeps reporting the
+	# old canvas's scale (cold-review F1's scenario, read from the numbers).
+	var mm_host := SeamHostWithZoom.new()
+	BuiltinKinds.register_all(mm_host.seam_registry)
+	var px_host := SeamHostNoZoom.new()
+	BuiltinKinds.register_all(px_host.seam_registry)
+
+	var overlay := AnnotationOverlay.new()
+	root.add_child(overlay)
+
+	overlay.set_host(mm_host)
+	check_rect("mm host reports the honest 44 x 4 rect",
+		_seam_kind(mm_host, &"2d_arrow").bounds(_seam_arrow()), 18.0, 38.0, 44.0, 4.0)
+
+	overlay.set_host(px_host)
+	check_rect("the zoom-less host that follows it reports legacy 64 x 24",
+		_seam_kind(px_host, &"2d_arrow").bounds(_seam_arrow()), 8.0, 28.0, 64.0, 24.0)
+	check_rect("and the outgoing host's kinds are handed back their 1.0 default",
+		_seam_kind(mm_host, &"2d_arrow").bounds(_seam_arrow()), 8.0, 28.0, 64.0, 24.0)
+
+	_seam_release(overlay)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BT-51 — the render literal, pinned against the zoom source (B1u1 review, F4)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# F4: bounds() spells the default arrowhead size DEFAULT_HEAD_SIZE_PX while
+# render() still spells the same quantity as a bare literal 12.0, twice —
+# AnnotationArrow.render()'s payload branch and _render_arrow()'s primitives
+# branch. Two spellings of one number is a drift waiting to happen, and the
+# consequence is the class of bug B1u1 exists to fix: a selection rect that does
+# not enclose what is on screen.
+#
+# INDEPENDENT REPRESENTATION: the drawn GEOMETRY. The arrowhead triangle is
+# captured off a recording render context and its axial length measured from the
+# polygon's own vertices (tip minus the base's projection on the shaft), then
+# compared to the amount bounds() grew by. Neither side is the other's
+# arithmetic: one comes out of draw_polygon, the other out of a Rect2. Both are
+# also checked against the hand-derived 12 / 6 = 2.0 mm so that a drift which
+# moved BOTH spellings together still reds.
+
+
+## Records the polygons render() emits so the arrowhead can be measured.
+class HeadCaptureContext extends MockRenderContext:
+	var polygons: Array = []
+
+	func draw_polygon(points: PackedVector2Array, _colors: PackedColorArray) -> void:
+		polygons.append(points)
+
+
+## Axial length of a captured arrowhead triangle, in document units.
+## draw_arrowhead emits [tip, tip - dir*head + perp*0.4*head, tip - dir*head -
+## perp*0.4*head], so the head length is the distance from the tip to the
+## midpoint of the other two vertices — measured, not assumed.
+func _head_axial_length(points: PackedVector2Array) -> float:
+	if points.size() != 3:
+		return -1.0
+	var base_mid: Vector2 = (points[1] + points[2]) * 0.5
+	return points[0].distance_to(base_mid)
+
+
+func test_render_head_default_matches_bounds_default_payload_path() -> void:
+	print("test_render_head_default_matches_bounds_default_payload_path:")
+	# Anchored arrow, NO head_size key — so the default literal in render() and
+	# the default constant in bounds() are the two things being compared.
+	var ann := _anchored_arrow(20.0, 40.0, 60.0, 40.0)
+	var kind := _at_zoom(AnnotationArrow.new(), _MM_ZOOM) as AnnotationArrow
+
+	var ctx := HeadCaptureContext.new()
+	ctx.zoom = _MM_ZOOM
+	kind.render(ctx, ann)
+
+	check_eq("payload path drew exactly one arrowhead", ctx.polygons.size(), 1)
+	if ctx.polygons.size() != 1:
+		return
+	var drawn := _head_axial_length(ctx.polygons[0])
+
+	# bounds() grew the shaft AABB by the head on every side; the shaft is 40 mm
+	# long and 0 mm tall, so half the height IS the head.
+	var b := kind.bounds(ann)
+	var grown: float = b.size.y * 0.5
+
+	check_approx("rendered head is 12 px / 6 px-per-mm = 2.0 mm", drawn, 2.0)
+	check_approx("bounds grew by the same 2.0 mm", grown, 2.0)
+	check_approx("render literal and bounds constant agree exactly", drawn, grown, 0.0001)
+
+
+func test_render_head_default_matches_bounds_default_primitives_path() -> void:
+	print("test_render_head_default_matches_bounds_default_primitives_path:")
+	# The SECOND spelling: _render_arrow's prim.get("head_size", 12.0) against
+	# bounds()' prim.get("head_size", DEFAULT_HEAD_SIZE_PX). Fixing only one of
+	# the two sites leaves this leg red.
+	var ann := _ann("2d_arrow", [{"kind": "arrow", "from": [0.0, 0.0], "to": [40.0, 0.0]}])
+	var kind := _at_zoom(AnnotationArrow.new(), _MM_ZOOM) as AnnotationArrow
+
+	var ctx := HeadCaptureContext.new()
+	ctx.zoom = _MM_ZOOM
+	kind.render(ctx, ann)
+
+	check_eq("primitives path drew exactly one arrowhead", ctx.polygons.size(), 1)
+	if ctx.polygons.size() != 1:
+		return
+	var drawn := _head_axial_length(ctx.polygons[0])
+	var grown: float = kind.bounds(ann).size.y * 0.5
+
+	check_approx("rendered head is 2.0 mm on the primitives path too", drawn, 2.0)
+	check_approx("bounds grew by 2.0 mm on the primitives path too", grown, 2.0)
+	check_approx("both default spellings agree exactly", drawn, grown, 0.0001)
