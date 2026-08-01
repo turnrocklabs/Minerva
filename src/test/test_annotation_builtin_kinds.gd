@@ -156,6 +156,25 @@ func _init() -> void:
 	test_bounds_from_primitives_at_origin_included()
 	test_points_aabb_4col_delegates()
 
+	print("\n-- screen-px constants in bounds()/hit_test() (round B1 U1, item 019fbb9ee9) --")
+	test_px_zoom_source_fails_safe_when_unbound()
+	test_px_zoom_source_fails_safe_on_bad_values()
+	test_registry_stamps_zoom_source_on_existing_and_late_kinds()
+	test_anchored_arrow_bounds_not_inflated_on_mm_canvas()
+	test_anchored_arrow_bounds_unchanged_at_zoom_1()
+	test_free_arrow_bounds_not_inflated_on_mm_canvas()
+	test_arrow_text_primitive_box_scales_with_zoom()
+	test_arrow_hit_test_text_box_honest_at_zoom()
+	test_arrow_label_aabb_still_participates()
+	test_measure_distance_bounds_tick_scales_with_zoom()
+	test_measure_distance_hit_test_text_box_honest_at_zoom()
+	test_measure_angle_bounds_margin_scales_with_zoom()
+	test_measure_angle_hit_test_label_box_honest_at_zoom()
+	test_measure_radius_bounds_label_scales_with_zoom()
+	test_measure_radius_hit_test_label_box_honest_at_zoom()
+	test_polyline_bounds_text_box_scales_with_zoom()
+	test_polyline_hit_test_text_box_honest_at_zoom()
+
 	print("\n-- summary() default and overrides --")
 	test_summary_default_no_anchor()
 	test_summary_default_with_anchor()
@@ -1045,3 +1064,313 @@ func test_summary_text_truncates_long_content() -> void:
 	# But the truncated form (first 27 chars) should be present
 	check("long text summary contains first 27 chars",
 		long_content.substr(0, 27) in s)
+
+
+# ── Screen-px constants in bounds()/hit_test() ────────────────────────────────
+# Round B1 U1, docket item 019fbb9ee9.
+#
+# THE BUG: render() divides every screen-pixel constant by ctx.zoom; bounds()
+# and hit_test() carry no context and used to consume the SAME constants as
+# DOCUMENT units. Harmless where doc units are pixels (the text editor), wrong
+# on the PCB canvas where doc space is board MILLIMETRES — a 12 px arrowhead
+# grew an anchored arrow's AABB by 12 mm per side, and the transform tool's
+# selection rect, the marquee sweep and dock zoom-to-fit all consumed it.
+#
+# THE FIXTURE below is that bug: a 40 mm arrow on a board viewed at 6 px/mm.
+# Pre-fix bounds were 64 x 24 mm (the 12 mm-per-side inflation); post-fix they
+# are 44 x 4 mm. Every kind that mixes pixel constants into bounds()/hit_test()
+# gets a case here, so weakening the fix at ANY ONE site still fails the suite.
+
+## Board-mm document space viewed at 6 screen pixels per millimetre.
+const _MM_ZOOM := 6.0
+
+## Arrowhead / tick / label constants are SCREEN pixels; at _MM_ZOOM these are
+## the document-unit sizes they must resolve to.
+const _HEAD_PX := 12.0            # AnnotationArrow.DEFAULT_HEAD_SIZE_PX
+const _HEAD_MM := 2.0             # 12 / 6
+
+
+## Wire `kind` to a fixed screen-pixels-per-doc-unit scale, the way
+## AnnotationOverlay.set_host() wires a live host on a real canvas.
+func _at_zoom(kind: AnnotationKind, zoom: float) -> AnnotationKind:
+	kind.view_zoom_source = func() -> float: return zoom
+	return kind
+
+
+## Anchored arrow: endpoints live in kind_payload as inline canvas points, so
+## they resolve with no host — the same path a pcb/board.point anchor takes once
+## the host has resolved it. No label, so the AABB is the shaft plus the head.
+func _anchored_arrow(ax: float, ay: float, bx: float, by: float) -> Dictionary:
+	var ann := _ann("2d_arrow", [])
+	ann["kind_payload"] = {
+		"endpoint_a": {"x": ax, "y": ay},
+		"endpoint_b": {"x": bx, "y": by},
+	}
+	return ann
+
+
+func test_px_zoom_source_fails_safe_when_unbound() -> void:
+	print("test_px_zoom_source_fails_safe_when_unbound:")
+	var kind := AnnotationArrow.new()
+	check("unbound source is invalid", not kind.view_zoom_source.is_valid())
+	check_approx("unbound view_zoom is 1.0", kind.view_zoom(), 1.0)
+	check_approx("unbound px_to_doc is identity", kind.px_to_doc(_HEAD_PX), _HEAD_PX)
+	check("unbound px_to_doc_size is identity",
+		kind.px_to_doc_size(Vector2(50.0, 12.0)) == Vector2(50.0, 12.0))
+
+
+func test_px_zoom_source_fails_safe_on_bad_values() -> void:
+	print("test_px_zoom_source_fails_safe_on_bad_values:")
+	var kind := AnnotationArrow.new()
+
+	# Zero must never reach the divisor.
+	kind.view_zoom_source = func() -> float: return 0.0
+	check_approx("zero zoom falls back to 1.0", kind.view_zoom(), 1.0)
+	check_approx("zero zoom does not divide by zero", kind.px_to_doc(_HEAD_PX), _HEAD_PX)
+
+	kind.view_zoom_source = func() -> float: return -3.0
+	check_approx("negative zoom falls back to 1.0", kind.view_zoom(), 1.0)
+
+	kind.view_zoom_source = func() -> float: return NAN
+	check_approx("NaN zoom falls back to 1.0", kind.view_zoom(), 1.0)
+
+	kind.view_zoom_source = func() -> float: return INF
+	check_approx("infinite zoom falls back to 1.0", kind.view_zoom(), 1.0)
+
+	# A source that reports something that is not a number at all.
+	kind.view_zoom_source = func(): return "not a number"
+	check_approx("non-numeric zoom falls back to 1.0", kind.view_zoom(), 1.0)
+
+	# And the rect never explodes: bounds stay finite under every bad source.
+	kind.view_zoom_source = func() -> float: return 0.0
+	var b := kind.bounds(_anchored_arrow(20.0, 40.0, 60.0, 40.0))
+	check("bad zoom leaves bounds finite", is_finite(b.size.x) and is_finite(b.size.y))
+
+
+func test_registry_stamps_zoom_source_on_existing_and_late_kinds() -> void:
+	print("test_registry_stamps_zoom_source_on_existing_and_late_kinds:")
+	var registry := AnnotationRegistry.new()
+	BuiltinKinds.register_all(registry)
+
+	var arrow_before: AnnotationKind = registry.get_annotation_kind(&"2d_arrow")
+	check_approx("kind is unbound before wiring", arrow_before.view_zoom(), 1.0)
+
+	registry.set_view_zoom_source(func() -> float: return _MM_ZOOM)
+
+	# Kinds already held get stamped...
+	var arrow: AnnotationKind = registry.get_annotation_kind(&"2d_arrow")
+	check_approx("already-registered kind is stamped", arrow.view_zoom(), _MM_ZOOM)
+	var dist: AnnotationKind = registry.get_annotation_kind(&"2d_measure_distance")
+	check_approx("every already-registered kind is stamped", dist.view_zoom(), _MM_ZOOM)
+
+	# ...and so does anything registered afterwards, which is how plugin kinds
+	# (registered long after the host built its overlay) inherit the scale.
+	var late := AnnotationTextComment.new()
+	check("late kind registers", registry.register_annotation_kind(late))
+	check_approx("late-registered kind inherits the source", late.view_zoom(), _MM_ZOOM)
+
+	# Unbinding restores the pixels-are-doc-units default.
+	registry.set_view_zoom_source(Callable())
+	check_approx("unbinding restores 1.0", arrow.view_zoom(), 1.0)
+
+
+func test_anchored_arrow_bounds_not_inflated_on_mm_canvas() -> void:
+	print("test_anchored_arrow_bounds_not_inflated_on_mm_canvas:")
+	# THE BUG FIXTURE: a 40 mm arrow on an 80 mm board at 6 px/mm.
+	var kind := _at_zoom(AnnotationArrow.new(), _MM_ZOOM) as AnnotationArrow
+	var b := kind.bounds(_anchored_arrow(20.0, 40.0, 60.0, 40.0))
+
+	# The head is 12 SCREEN px = 2 mm here, so the AABB is 44 x 4 mm.
+	check_approx("anchored arrow bounds width is shaft + 2 mm per side", b.size.x, 40.0 + 2.0 * _HEAD_MM)
+	check_approx("anchored arrow bounds height is 2 mm per side", b.size.y, 2.0 * _HEAD_MM)
+	check_approx("anchored arrow bounds left edge", b.position.x, 20.0 - _HEAD_MM)
+	check_approx("anchored arrow bounds top edge", b.position.y, 40.0 - _HEAD_MM)
+
+	# The pre-fix rect was 64 x 24 mm — a quarter of the board. Guard the
+	# regression explicitly, not just by arithmetic.
+	check("anchored arrow bounds are nowhere near the pre-fix 64 mm width", b.size.x < 50.0)
+	check("anchored arrow bounds are nowhere near the pre-fix 24 mm height", b.size.y < 10.0)
+
+
+func test_anchored_arrow_bounds_unchanged_at_zoom_1() -> void:
+	print("test_anchored_arrow_bounds_unchanged_at_zoom_1:")
+	# Hosts whose document space IS screen pixels (the text editor, the hello
+	# panel) never set a zoom source. Their numbers must not move at all.
+	var unbound := AnnotationArrow.new()
+	var bound := _at_zoom(AnnotationArrow.new(), 1.0) as AnnotationArrow
+	var ann := _anchored_arrow(20.0, 40.0, 60.0, 40.0)
+
+	var b := unbound.bounds(ann)
+	check_approx("unbound bounds width is the legacy 40 + 2x12", b.size.x, 40.0 + 2.0 * _HEAD_PX)
+	check_approx("unbound bounds height is the legacy 2x12", b.size.y, 2.0 * _HEAD_PX)
+	check("zoom 1 matches unbound exactly", bound.bounds(ann) == b)
+
+
+func test_free_arrow_bounds_not_inflated_on_mm_canvas() -> void:
+	print("test_free_arrow_bounds_not_inflated_on_mm_canvas:")
+	# Legacy primitives path — a SECOND grow(head) site, fixed independently.
+	var kind := _at_zoom(AnnotationArrow.new(), _MM_ZOOM) as AnnotationArrow
+	var ann := _ann("2d_arrow", [_arrow_prim(20.0, 40.0, 60.0, 40.0, _HEAD_PX)])
+	var b := kind.bounds(ann)
+	check_approx("free arrow bounds width is shaft + 2 mm per side", b.size.x, 40.0 + 2.0 * _HEAD_MM)
+	check_approx("free arrow bounds height is 2 mm per side", b.size.y, 2.0 * _HEAD_MM)
+
+	var unbound := AnnotationArrow.new()
+	check_approx("free arrow at zoom 1 keeps the legacy width",
+		unbound.bounds(ann).size.x, 40.0 + 2.0 * _HEAD_PX)
+
+
+func test_arrow_text_primitive_box_scales_with_zoom() -> void:
+	print("test_arrow_text_primitive_box_scales_with_zoom:")
+	# A THIRD site: the 50x12 px glyph-run approximation in the primitives path.
+	var kind := _at_zoom(AnnotationArrow.new(), _MM_ZOOM) as AnnotationArrow
+	var ann := _ann("2d_arrow", [_arrow_prim(0.0, 0.0, 10.0, 0.0, _HEAD_PX), _text_prim(200.0, 200.0)])
+	var b := kind.bounds(ann)
+	# Left edge proves the head fix; width proves the text-box fix.
+	check_approx("arrow+text bounds left edge uses mm head", b.position.x, -_HEAD_MM)
+	check_approx("arrow+text bounds width uses mm text box", b.size.x, 200.0 + 50.0 / _MM_ZOOM + _HEAD_MM)
+
+
+func test_arrow_hit_test_text_box_honest_at_zoom() -> void:
+	print("test_arrow_hit_test_text_box_honest_at_zoom:")
+	var ann := _ann("2d_arrow", [_arrow_prim(0.0, 0.0, 10.0, 0.0, _HEAD_PX), _text_prim(200.0, 200.0)])
+	# 30 mm to the right of the label origin: inside the pre-fix 50 mm-wide box,
+	# far outside the honest 8.3 mm one.
+	var probe := Vector2(230.0, 201.0)
+	var zoomed := _at_zoom(AnnotationArrow.new(), _MM_ZOOM) as AnnotationArrow
+	check("hit_test text box does not reach 30 mm at 6 px/mm", not zoomed.hit_test(ann, probe, 0.5))
+	var unbound := AnnotationArrow.new()
+	check("hit_test text box still reaches 30 units unbound", unbound.hit_test(ann, probe, 0.5))
+
+
+func test_arrow_label_aabb_still_participates() -> void:
+	print("test_arrow_label_aabb_still_participates:")
+	# A8u2 semantics are unchanged: label_font_size is DOCUMENT units by
+	# contract (screen px / authoring zoom), so the caption box is NOT divided
+	# by zoom — it just has to keep merging into bounds after the head fix.
+	var kind := _at_zoom(AnnotationArrow.new(), _MM_ZOOM) as AnnotationArrow
+	var ann := _anchored_arrow(20.0, 40.0, 60.0, 40.0)
+	var payload: Dictionary = ann["kind_payload"]
+	payload["label"] = "NET1"
+	payload["label_font_size"] = 2.0
+	payload["label_offset"] = [0.0, -3.2]
+	ann["kind_payload"] = payload
+
+	var b := kind.bounds(ann)
+	var centre: Variant = kind.label_position(ann, [Vector2(20.0, 40.0), Vector2(60.0, 40.0)])
+	check("label centre resolves", centre is Vector2)
+	check("bounds contain the caption centre", b.has_point(centre as Vector2))
+	# Caption box is 4.4 x 2.4 mm centred at (40, 36.8) → top edge 35.6 mm,
+	# above the shaft's 38 mm, so the merge is what sets the top edge.
+	check_approx("caption sets the top edge of the merged AABB", b.position.y, 35.6)
+	# And the shaft half is still the FIXED width, not the inflated one.
+	check_approx("merged AABB keeps the mm-correct width", b.size.x, 40.0 + 2.0 * _HEAD_MM)
+
+
+func test_measure_distance_bounds_tick_scales_with_zoom() -> void:
+	print("test_measure_distance_bounds_tick_scales_with_zoom:")
+	# TICK_SIZE is documented screen px and render() divides it by zoom; bounds
+	# used to grow by the raw 4.
+	var kind := _at_zoom(AnnotationMeasureDistance.new(), _MM_ZOOM) as AnnotationMeasureDistance
+	var ann := _ann("2d_measure_distance", [_measure_distance_prim(20.0, 40.0, 60.0, 40.0)])
+	var b := kind.bounds(ann)
+	check_approx("measure_distance bounds grow by 4 px in mm", b.size.y, 2.0 * (4.0 / _MM_ZOOM))
+	check_approx("measure_distance bounds width", b.size.x, 40.0 + 2.0 * (4.0 / _MM_ZOOM))
+
+	var unbound := AnnotationMeasureDistance.new()
+	check_approx("measure_distance unbound keeps the legacy 4-unit tick",
+		unbound.bounds(ann).size.y, 8.0)
+
+
+func test_measure_distance_hit_test_text_box_honest_at_zoom() -> void:
+	print("test_measure_distance_hit_test_text_box_honest_at_zoom:")
+	var ann := _ann("2d_measure_distance", [
+		_measure_distance_prim(0.0, 0.0, 10.0, 0.0), _text_prim(200.0, 200.0)])
+	# 35 mm right of the label origin: inside the pre-fix 60 mm box, outside the
+	# honest 10 mm one.
+	var probe := Vector2(235.0, 201.0)
+	var zoomed := _at_zoom(AnnotationMeasureDistance.new(), _MM_ZOOM) as AnnotationMeasureDistance
+	check("measure_distance label box does not reach 35 mm at 6 px/mm",
+		not zoomed.hit_test(ann, probe, 0.5))
+	check("measure_distance label box still reaches 35 units unbound",
+		AnnotationMeasureDistance.new().hit_test(ann, probe, 0.5))
+
+
+func test_measure_angle_bounds_margin_scales_with_zoom() -> void:
+	print("test_measure_angle_bounds_margin_scales_with_zoom:")
+	# arc_r is document space (25 % of the shorter arm, floored at 4); the
+	# extra 20 is a SCREEN-px label margin.
+	var kind := _at_zoom(AnnotationMeasureAngle.new(), _MM_ZOOM) as AnnotationMeasureAngle
+	var ann := _ann("2d_measure_angle", [_measure_angle_prim(20.0, 40.0, 20.0, 20.0, 40.0, 20.0)])
+	var b := kind.bounds(ann)
+	var expected := 20.0 + 2.0 * (5.0 + 20.0 / _MM_ZOOM)   # arms 20 mm, arc_r 5 mm
+	check_approx("measure_angle bounds width", b.size.x, expected)
+	check_approx("measure_angle bounds height", b.size.y, expected)
+	check("measure_angle bounds are far under the pre-fix 70", b.size.x < 45.0)
+
+	check_approx("measure_angle unbound keeps the legacy 70",
+		AnnotationMeasureAngle.new().bounds(ann).size.x, 70.0)
+
+
+func test_measure_angle_hit_test_label_box_honest_at_zoom() -> void:
+	print("test_measure_angle_hit_test_label_box_honest_at_zoom:")
+	var ann := _ann("2d_measure_angle", [_measure_angle_prim(20.0, 40.0, 20.0, 20.0, 40.0, 20.0)])
+	var arc_r := AnnotationMeasureAngle._arc_radius(Vector2(20, 40), Vector2(20, 20), Vector2(40, 20))
+	var label_pos := AnnotationMeasureAngle._label_pos(
+		Vector2(20, 40), Vector2(20, 20), Vector2(40, 20), arc_r)
+	# 10 mm right of the label centre: inside the pre-fix 40x16 box (half-width
+	# 20), outside the honest 6.7x2.7 one — and clear of both arms.
+	var probe := label_pos + Vector2(10.0, 0.0)
+	var zoomed := _at_zoom(AnnotationMeasureAngle.new(), _MM_ZOOM) as AnnotationMeasureAngle
+	check("measure_angle label box does not reach 10 mm at 6 px/mm",
+		not zoomed.hit_test(ann, probe, 0.5))
+	check("measure_angle label box still reaches 10 units unbound",
+		AnnotationMeasureAngle.new().hit_test(ann, probe, 0.5))
+
+
+func test_measure_radius_bounds_label_scales_with_zoom() -> void:
+	print("test_measure_radius_bounds_label_scales_with_zoom:")
+	var kind := _at_zoom(AnnotationMeasureRadius.new(), _MM_ZOOM) as AnnotationMeasureRadius
+	var ann := _ann("2d_measure_radius", [_measure_radius_prim(20.0, 20.0, 40.0, 20.0)])
+	var b := kind.bounds(ann)
+	# Circle rect is (0,0)-(40,40); the label sits at x=46 and is 60 px wide,
+	# so the merged width is 46 + 60/zoom.
+	check_approx("measure_radius bounds width", b.size.x, 46.0 + 60.0 / _MM_ZOOM)
+	check_approx("measure_radius unbound keeps the legacy 106",
+		AnnotationMeasureRadius.new().bounds(ann).size.x, 106.0)
+
+
+func test_measure_radius_hit_test_label_box_honest_at_zoom() -> void:
+	print("test_measure_radius_hit_test_label_box_honest_at_zoom:")
+	var ann := _ann("2d_measure_radius", [_measure_radius_prim(20.0, 20.0, 40.0, 20.0)])
+	# Label origin is (46, 12); probe 30 mm right of it, clear of the circle and
+	# the radial line.
+	var probe := Vector2(76.0, 13.0)
+	var zoomed := _at_zoom(AnnotationMeasureRadius.new(), _MM_ZOOM) as AnnotationMeasureRadius
+	check("measure_radius label box does not reach 30 mm at 6 px/mm",
+		not zoomed.hit_test(ann, probe, 0.5))
+	check("measure_radius label box still reaches 30 units unbound",
+		AnnotationMeasureRadius.new().hit_test(ann, probe, 0.5))
+
+
+func test_polyline_bounds_text_box_scales_with_zoom() -> void:
+	print("test_polyline_bounds_text_box_scales_with_zoom:")
+	var kind := _at_zoom(AnnotationPolyline.new(), _MM_ZOOM) as AnnotationPolyline
+	var ann := _ann("2d_polyline", [
+		_polyline_prim([[0.0, 0.0], [10.0, 0.0]]), _text_prim(200.0, 200.0)])
+	check_approx("polyline bounds width uses mm text box",
+		kind.bounds(ann).size.x, 200.0 + 50.0 / _MM_ZOOM)
+	check_approx("polyline unbound keeps the legacy 250",
+		AnnotationPolyline.new().bounds(ann).size.x, 250.0)
+
+
+func test_polyline_hit_test_text_box_honest_at_zoom() -> void:
+	print("test_polyline_hit_test_text_box_honest_at_zoom:")
+	var ann := _ann("2d_polyline", [
+		_polyline_prim([[0.0, 0.0], [10.0, 0.0]]), _text_prim(200.0, 200.0)])
+	var probe := Vector2(230.0, 201.0)
+	var zoomed := _at_zoom(AnnotationPolyline.new(), _MM_ZOOM) as AnnotationPolyline
+	check("polyline label box does not reach 30 mm at 6 px/mm",
+		not zoomed.hit_test(ann, probe, 0.5))
+	check("polyline label box still reaches 30 units unbound",
+		AnnotationPolyline.new().hit_test(ann, probe, 0.5))
