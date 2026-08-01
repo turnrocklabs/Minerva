@@ -47,6 +47,8 @@ extends AnnotationAuthorTool
 ##   attach_edit_surface(parent) (null to hand it back). The overlay's local
 ##   space IS the space the host's view transform targets, so the caret's screen
 ##   position is just host.transform_doc_to_screen(_at).
+##   The widget itself was FACTORED OUT into AnnotationInPlaceTextEditor (A8u2)
+##   so AnnotationTransformTool can drive the same editor for arrow labels.
 ##
 ## World anchoring: _at is stored in DOCUMENT space and the widget is
 ## repositioned + restyled from draw_preview() on every overlay redraw. The
@@ -95,12 +97,6 @@ enum State { IDLE, TYPING }
 ## is 14, identical to the old default.
 const TARGET_SCREEN_FONT_PX: int = 14
 
-## Content margin baked into the editor's stylebox, in px. The widget is offset
-## by it so the first glyph lands on the caret point rather than inside the
-## chrome.
-const _EDIT_PADDING: float = 2.0
-const _EDIT_MIN_WIDTH: float = 120.0
-
 var _state: int = State.IDLE
 var _host: AnnotationHost = null
 
@@ -113,21 +109,20 @@ var _at: Vector2 = Vector2.ZERO
 ## doc-comment for the testability rationale.
 var _text_provider: Callable = Callable()
 
-## Control the in-place editor is parented to. Supplied by the overlay through
-## attach_edit_surface(); stays null on hosts that never call it (e.g. headless
-## unit tests), in which case only the provider path can collect text.
-var _edit_parent: Control = null
-
-## Live in-place editor, or null when idle / provider-driven.
-var _edit: LineEdit = null
-
-## Last pixel font size pushed onto _edit; -1 forces a restyle.
-var _edit_font_px: int = -1
+## The in-place editor widget. FACTORED OUT into AnnotationInPlaceTextEditor in
+## A8u2 so AnnotationTransformTool can drive the same LineEdit for arrow labels;
+## this tool's behaviour is unchanged, it just no longer owns the Control.
+var _editor: AnnotationInPlaceTextEditor = AnnotationInPlaceTextEditor.new()
 
 ## Document-unit font size for the annotation being authored — frozen at
 ## collection start (TARGET_SCREEN_FONT_PX / host zoom), so mid-edit zooming
 ## rescales the view without silently changing the committed size.
 var _authored_font_size: float = float(TARGET_SCREEN_FONT_PX)
+
+
+func _init() -> void:
+	_editor.submitted.connect(_on_editor_submitted)
+	_editor.aborted.connect(_on_editor_aborted)
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -151,11 +146,9 @@ func on_deactivate() -> void:
 ## the Control it may parent an in-canvas editor to, or null to hand it back.
 ## Tools that need no Control simply don't define this method.
 func attach_edit_surface(parent: Control) -> void:
-	if parent == _edit_parent:
-		return
-	# The old surface is going away — drop the widget rather than orphan it.
-	_discard_editor()
-	_edit_parent = parent
+	# The shared editor drops any live widget when the surface changes rather
+	# than orphaning it.
+	_editor.set_surface(parent)
 
 
 # ── Pointer / input ───────────────────────────────────────────────────────────
@@ -181,7 +174,7 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 	if mods == KEY_ENTER:
 		# Only meaningful for the widget path; a provider owns its own submit.
 		if _state == State.TYPING and _has_live_editor():
-			_on_text_provider_done(_edit.text)
+			_on_text_provider_done(_editor.get_text())
 			return true
 		return false
 
@@ -243,13 +236,13 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 func _begin_collection() -> void:
 	# Freeze the authored size now, from the zoom the user is looking at —
 	# same host duck-type idiom as AnnotationTransformTool._view_zoom.
-	_authored_font_size = clampf(float(TARGET_SCREEN_FONT_PX) / _view_zoom(), 0.05, 400.0)
+	_authored_font_size = AnnotationInPlaceTextEditor.authored_font_size(_view_zoom())
 	# An injected provider wins: it means a test or a programmatic caller wants
 	# to supply the text without a live widget.
 	if _text_provider.is_valid():
 		_text_provider.call(_at, Callable(self, "_on_text_provider_done"))
 		return
-	if _edit_parent != null and is_instance_valid(_edit_parent):
+	if _editor.has_surface():
 		_open_editor()
 		return
 	# No widget surface and no provider — nothing can collect text. Cancel so we
@@ -285,7 +278,7 @@ func _on_text_provider_done(result: Variant) -> void:
 ## cancelled: an empty entry is discarded silently so the tool survives the
 ## gesture (the toolbar deactivates the tool when it sees cancelled).
 func _commit_for_click(new_at: Vector2) -> void:
-	var content := _edit.text.strip_edges()
+	var content := _editor.get_text().strip_edges()
 	var pending: Variant = null
 	if not content.is_empty():
 		pending = _build_annotation(_at, content)
@@ -307,97 +300,27 @@ func _abort() -> void:
 # ── In-place editor ───────────────────────────────────────────────────────────
 
 func _has_live_editor() -> bool:
-	return _edit != null and is_instance_valid(_edit)
+	return _editor.is_open()
 
 
 func _open_editor() -> void:
-	if _edit == null or not is_instance_valid(_edit):
-		_edit = _create_editor()
-		if _edit == null:
-			return
-		_edit_parent.add_child(_edit)
-	_edit.text = ""
-	_edit_font_px = -1
-	_place_editor(_host_doc_to_screen(_at), _host_zoom())
-	_edit.visible = true
-	if _edit.is_inside_tree():
-		_edit.grab_focus()
-	_edit.caret_column = 0
+	_editor.open(_host_doc_to_screen(_at), _host_zoom(), _authored_font_size, "", "Type annotation…")
 
 
-func _create_editor() -> LineEdit:
-	if _edit_parent == null or not is_instance_valid(_edit_parent):
-		return null
-	var edit := LineEdit.new()
-	edit.name = "AnnotationTextInPlaceEditor"
-	edit.flat = true
-	edit.expand_to_text_length = true
-	edit.caret_blink = true
-	edit.custom_minimum_size = Vector2(_EDIT_MIN_WIDTH, 0.0)
-	edit.placeholder_text = "Type annotation…"
-
-	# Minimal chrome: just enough backing to read the caret over busy canvas
-	# content, with the padding we compensate for when positioning.
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.0, 0.0, 0.0, 0.35)
-	style.set_corner_radius_all(3)
-	style.content_margin_left = _EDIT_PADDING
-	style.content_margin_right = _EDIT_PADDING
-	style.content_margin_top = _EDIT_PADDING
-	style.content_margin_bottom = _EDIT_PADDING
-	edit.add_theme_stylebox_override(&"normal", style)
-	edit.add_theme_stylebox_override(&"focus", style)
-
-	# Match the committed annotation: AnnotationText.render() draws with a null
-	# font (→ ThemeDB.fallback_font) in the human author colour.
-	var color := AnnotationRenderContext.author_color("human")
-	var font := ThemeDB.fallback_font
-	if font != null:
-		edit.add_theme_font_override(&"font", font)
-	edit.add_theme_color_override(&"font_color", color)
-	edit.add_theme_color_override(&"font_placeholder_color", Color(color, 0.4))
-	edit.add_theme_color_override(&"caret_color", color)
-
-	edit.gui_input.connect(_on_edit_gui_input)
-	edit.text_changed.connect(_on_edit_text_changed)
-	return edit
+## Enter (no shift) inside the widget — same commit path as the provider's.
+func _on_editor_submitted(text: String) -> void:
+	_on_text_provider_done(text)
 
 
-func _on_edit_text_changed(_new_text: String) -> void:
-	# expand_to_text_length only grows the MINIMUM size; a Control outside a
-	# container has to be told to take it.
-	if _has_live_editor():
-		_edit.reset_size()
-
-
-func _on_edit_gui_input(event: InputEvent) -> void:
-	if not (event is InputEventKey):
-		return
-	var key: InputEventKey = event
-	if not key.pressed or key.is_echo():
-		return
-	if not _has_live_editor():
-		return
-
-	match key.keycode:
-		KEY_ESCAPE:
-			# Consume before mutating: accept_event() stops LineEdit's own
-			# handling, and the connected gui_input signal runs before it.
-			_edit.accept_event()
-			_abort()
-		KEY_ENTER, KEY_KP_ENTER:
-			_edit.accept_event()
-			if key.shift_pressed:
-				# 2d_text renders a single draw_string line — swallow rather than
-				# pretend a multi-line entry is being authored.
-				return
-			_on_text_provider_done(_edit.text)
+## Escape inside the widget — explicit user abort.
+func _on_editor_aborted() -> void:
+	_abort()
 
 
 ## Pin the editor to the document-space caret point and keep its glyph size in
 ## step with the zoom, matching AnnotationText._render_payload_text's clamp.
 func _sync_editor_to_view(ctx: AnnotationRenderContext) -> void:
-	_place_editor(ctx.to_screen(_at), ctx.zoom)
+	_editor.place(ctx.to_screen(_at), ctx.zoom)
 
 
 ## Host zoom via the optional accessor — same duck-type guard as
@@ -408,27 +331,10 @@ func _view_zoom() -> float:
 	return 1.0
 
 
-func _place_editor(screen_pos: Vector2, zoom: float) -> void:
-	if not _has_live_editor():
-		return
-	var target := screen_pos - Vector2(_EDIT_PADDING, _EDIT_PADDING)
-	if not _edit.position.is_equal_approx(target):
-		_edit.position = target
-	var px := int(clampf(_authored_font_size * zoom, 8.0, 64.0))
-	if px != _edit_font_px:
-		_edit_font_px = px
-		_edit.add_theme_font_size_override(&"font_size", px)
-		_edit.reset_size()
-
-
 func _discard_editor() -> void:
 	# Tear the widget down without routing its content anywhere — used for silent
 	# tool-switch cleanup and for surface hand-back.
-	if _edit != null:
-		if is_instance_valid(_edit):
-			_edit.queue_free()
-		_edit = null
-	_edit_font_px = -1
+	_editor.discard()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

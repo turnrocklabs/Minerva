@@ -53,9 +53,32 @@ extends AnnotationAuthorTool
 ##
 ## Keyboard:
 ##   - KEY_DELETE     → host.remove_annotation() for every selected id
-##   - KEY_ESCAPE     → cancel marquee, else revert in-progress drag, else clear
+##   - KEY_ESCAPE     → cancel label edit, else marquee, else revert in-progress
+##                      drag, else clear selection
 ##
 ## Emits annotation_modified(id, new_dict) only. Never annotation_ready.
+##
+## ── Visio-style arrow labels (A8u2, item 019fb5de8c81) ────────────────────────
+## DOUBLE-CLICK a single-selected 2d_arrow → an in-place LineEdit opens at the
+## caption position (AnnotationInPlaceTextEditor, the same widget the 2d_text
+## author tool uses). Enter commits, Escape cancels, a click anywhere else on the
+## canvas commits — the text tool's grammar verbatim. An EMPTY commit CLEARS the
+## caption. A second double-click edits the existing text.
+##
+## The caption is NOT a second annotation: it lives in the arrow's own
+## kind_payload (label / label_offset / label_font_size — see AnnotationArrow) and
+## its position is derived from the arrow midpoint, so it rides along whenever an
+## endpoint moves. Dragging the caption rect is a SUB-HANDLE of this gizmo that
+## writes label_offset and nothing else, off the same immutable
+## _drag_start_annotation snapshot every other drag uses.
+##
+## Both affordances require EXACTLY ONE selection — a caption belongs to one
+## arrow, and the multi-selection gizmo is deliberately translate-only. With two
+## or more selected the sub-handle is drawn DISABLED (grey) and a double-click
+## posts an on-canvas notice instead of opening the editor.
+##
+## No undo: like every other annotation mutation in this substrate (there is no
+## annotation undo stack at all), a label edit or clear is not undoable.
 
 # ── Zone constants — tune here for the polish pass ──────────────────────────
 # All sizes are SCREEN pixels; zone math and gizmo drawing divide by the host
@@ -106,6 +129,17 @@ const MARQUEE_FILL: Color  = Color(0.2, 0.7, 1.0, 0.12)
 ## of the single-selection scale/rotate gizmo.
 const MULTI_SELECT_COLOR: Color = Color(0.2, 0.7, 1.0, 0.9)
 
+## Arrow-label sub-handle: dashed-looking outline + a small centre grip. Grey
+## when disabled (multi-selection) so the affordance is visibly present but off.
+const LABEL_HANDLE_COLOR: Color = Color(0.2, 0.7, 1.0, 0.75)
+const LABEL_HANDLE_DISABLED_COLOR: Color = Color(0.6, 0.6, 0.6, 0.55)
+const LABEL_NOTICE_COLOR: Color = Color(1.0, 0.5, 0.0, 0.95)
+const LABEL_NOTICE_TEXT: String = "Select one arrow to edit its label"
+const LABEL_NOTICE_FONT_PX: int = 13
+const LABEL_GRIP_SIZE_PX: float = 5.0
+## Slack, in screen px, added to the caption rect when hit-testing the handle.
+const LABEL_HANDLE_SLACK_PX: float = 2.0
+
 const ARC_SEGMENTS: int    = 32
 const DISC_SEGMENTS: int   = 16
 const ROTATE_DISC_RADIUS: float = 5.0
@@ -118,6 +152,10 @@ enum Zone {
 	CORNER_TL, CORNER_TR, CORNER_BL, CORNER_BR,
 	EDGE_T, EDGE_B, EDGE_L, EDGE_R,
 	ROTATE_TL, ROTATE_TR, ROTATE_BL, ROTATE_BR,
+	## Arrow-label sub-handle (A8u2). Never returned by _hit_zone — the caption
+	## rect can sit outside the bounds gizmo entirely, so it is tested first, in
+	## on_pointer_down, against the kind's own label_rect.
+	LABEL,
 }
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -168,6 +206,39 @@ var _marquee_current_doc: Vector2 = Vector2.ZERO
 var _marquee_additive: bool = false
 var _marquee_base_ids: PackedStringArray = PackedStringArray()
 
+# ── Arrow-label editing state (A8u2) ─────────────────────────────────────────
+
+## Shared in-place LineEdit, factored out of AnnotationTextAuthorTool so both
+## tools drive one widget. Null surface (headless) simply never opens.
+var _editor: AnnotationInPlaceTextEditor = AnnotationInPlaceTextEditor.new()
+
+## Id of the annotation whose caption is being edited; "" when idle.
+var _label_edit_id: String = ""
+
+## Document point the editor is CENTRED on — the derived label position
+## (midpoint + offset), i.e. exactly where the committed caption will centre.
+## Re-applied on every redraw so the entry tracks pan/zoom like the text tool's,
+## and the widget re-splits itself around it as the text grows, so nothing jumps
+## sideways on commit.
+var _label_edit_centre: Vector2 = Vector2.ZERO
+
+## Glyph size (doc units) FROZEN when the editor opened. Zooming mid-edit must
+## rescale the view without changing what gets committed — the same contract
+## AnnotationTextAuthorTool's _authored_font_size has.
+var _label_edit_font: float = float(AnnotationInPlaceTextEditor.TARGET_SCREEN_FONT_PX)
+
+## Caption offset at label-drag start — the immutable value the drag deltas from.
+var _drag_start_label_offset: Vector2 = Vector2.ZERO
+
+## Document point at which to post the "select one arrow" notice, or null.
+## Set when a double-click is refused because the selection is not exactly one.
+var _label_notice_doc: Variant = null
+
+
+func _init() -> void:
+	_editor.submitted.connect(_on_label_editor_submitted)
+	_editor.aborted.connect(_on_label_editor_aborted)
+
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 
@@ -175,13 +246,24 @@ func on_activate(host: AnnotationHost) -> void:
 	_host = host
 	_reset_drag_state()
 	_reset_marquee()
+	_reset_label_edit()
 
 
 func on_deactivate() -> void:
 	# Silent reset — no revert, no signal. Clean tool-switch.
 	_reset_drag_state()
 	_reset_marquee()
+	_reset_label_edit()
 	_host = null
+
+
+## Duck-typed hook from AnnotationOverlay.set_active_tool(): the Control the
+## in-place caption editor is parented to (null hands it back). Same contract as
+## AnnotationTextAuthorTool's.
+func attach_edit_surface(parent: Control) -> void:
+	_editor.set_surface(parent)
+	if parent == null:
+		_label_edit_id = ""
 
 
 func _reset_drag_state() -> void:
@@ -197,6 +279,16 @@ func _reset_drag_state() -> void:
 	_current_angle_rad = 0.0
 	_translate_pending_threshold = false
 	_extra_drag_snapshots = {}
+	_drag_start_label_offset = Vector2.ZERO
+
+
+## Tear down the caption editor without committing anything.
+func _reset_label_edit() -> void:
+	_editor.discard()
+	_label_edit_id = ""
+	_label_edit_centre = Vector2.ZERO
+	_label_edit_font = float(AnnotationInPlaceTextEditor.TARGET_SCREEN_FONT_PX)
+	_label_notice_doc = null
 
 
 func _reset_marquee() -> void:
@@ -250,8 +342,32 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 	if _host == null:
 		return false
 
-	# Right-click: let host handle.
+	# Right-click: let host handle — except that it aborts a caption edit first,
+	# which is the text tool's "right-click is an explicit abort" rule.
 	if button == MOUSE_BUTTON_RIGHT:
+		if _editor.is_open():
+			_reset_label_edit()
+			return true
+		return false
+
+	# A live caption editor owns the keyboard grammar first. These pseudo-key
+	# pointer-downs only arrive while the OVERLAY holds focus; when the LineEdit
+	# itself is focused its own gui_input handles Enter/Escape. Both paths exist
+	# for the same reason the text tool keeps both.
+	if _editor.is_open():
+		if mods == KEY_ESCAPE:
+			_reset_label_edit()
+			return true
+		if mods == KEY_ENTER:
+			_commit_label_edit()
+			return true
+		if mods == KEY_DELETE:
+			# Never delete annotations out from under an open editor.
+			return true
+	elif mods == KEY_ENTER:
+		# No editor open: Enter is not ours. Returning false matters — falling
+		# through would run the selection path below against the overlay's
+		# Vector2.ZERO pseudo-position and arm a marquee at the origin.
 		return false
 
 	# DELETE: remove EVERY selected annotation (A8u1). Single-selection is the
@@ -284,6 +400,17 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 	if button != MOUSE_BUTTON_LEFT:
 		return false
 
+	# Clicking anywhere else on the canvas COMMITS an open caption edit (the text
+	# tool's grammar). Clicks that land inside the LineEdit never reach us — it is
+	# a child Control on top of the overlay — so anything arriving here is
+	# genuinely "elsewhere". The click then continues into normal selection
+	# handling, so one gesture commits and selects.
+	if _editor.is_open():
+		_commit_label_edit()
+
+	# Any real click clears a stale multi-selection notice.
+	_label_notice_doc = null
+
 	var doc_pos := _host.transform_screen_to_doc(pos)
 	# mods carries a modifier MASK here; the KEY_DELETE / KEY_ESCAPE pseudo-events
 	# above are exact-value comparisons, so they can never reach this test.
@@ -310,6 +437,11 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 	elif selected_id != "":
 		var ann := _find_annotation(selected_id)
 		if not ann.is_empty():
+			# Arrow-label sub-handle wins over every gizmo zone: the caption rect
+			# usually sits inside the bounds box, so testing it after INSIDE would
+			# make it unreachable.
+			if _hit_label_handle(ann, doc_pos):
+				return _begin_label_drag(doc_pos, selected_id, ann)
 			var kind := _get_kind(ann)
 			if kind != null:
 				var b: Rect2 = kind.bounds(ann)
@@ -339,6 +471,8 @@ func on_pointer_move(pos: Vector2) -> void:
 	var doc_pos := _host.transform_screen_to_doc(pos)
 
 	match _active_zone:
+		Zone.LABEL:
+			_apply_label_drag(doc_pos)
 		Zone.INSIDE:
 			_apply_translate(doc_pos)
 		Zone.CORNER_TL, Zone.CORNER_TR, Zone.CORNER_BL, Zone.CORNER_BR:
@@ -362,6 +496,169 @@ func on_pointer_up(_pos: Vector2, button: int, _mods: int) -> bool:
 		_reset_drag_state()
 		return true
 	return false
+
+
+# ── Arrow labels: double-click to edit (A8u2) ────────────────────────────────
+
+## Duck-typed hook called by AnnotationOverlay._gui_input for a LEFT double-click
+## (see the forwarding comment there). Returning false means "not mine" and the
+## overlay hands the same press to on_pointer_down as usual, which is what keeps
+## a double-click behaving like an ordinary second click everywhere else.
+##
+## Godot delivers the second press of a double-click as a single event with
+## double_click = true, so consuming it here is exactly one press-worth of input;
+## the FIRST press already ran the ordinary select path, which is why the arrow
+## is reliably single-selected by the time we get here.
+func on_pointer_double_click(pos: Vector2, button: int, _mods: int) -> bool:
+	if _host == null or button != MOUSE_BUTTON_LEFT:
+		return false
+
+	var doc_pos := _host.transform_screen_to_doc(pos)
+	var ids := _selected_ids()
+
+	# A caption belongs to exactly one arrow. With a multi-selection the editor
+	# stays shut and the canvas says why (the U1 disarm rule: the affordance is
+	# visibly present but off — see draw_preview's greyed sub-handle).
+	if ids.size() > 1:
+		if _hit_test_topmost(doc_pos) != "":
+			_label_notice_doc = doc_pos
+			return true
+		return false
+
+	var target_id := _host.get_selected_annotation_id()
+	if target_id.is_empty() or _hit_test_topmost(doc_pos) != target_id:
+		return false
+
+	var ann := _find_annotation(target_id)
+	var arrow := _arrow_kind(ann)
+	if arrow == null:
+		return false
+	return _begin_label_edit(target_id, ann, arrow)
+
+
+## Open the in-place editor on `ann`'s caption. Returns false when there is no
+## surface (headless) or the arrow has no resolvable segment to hang a label off.
+func _begin_label_edit(ann_id: String, ann: Dictionary, arrow: AnnotationArrow) -> bool:
+	var zoom := _view_zoom()
+	# A caption with no stored size is being authored now, so it gets the same
+	# screen-constant sizing a fresh 2d_text does; an existing one keeps its own.
+	var doc_font: float = arrow.label_font_size(ann) if arrow.has_label(ann) \
+		else AnnotationInPlaceTextEditor.authored_font_size(zoom)
+	var offset: Vector2 = arrow.label_offset(ann) if arrow.has_label(ann) \
+		else AnnotationArrow.default_label_offset(doc_font)
+	var mid: Variant = arrow.label_midpoint(ann)
+	if not mid is Vector2:
+		return false
+
+	# A caption edit is not a transform — drop anything else in flight first.
+	_reset_drag_state()
+	_reset_marquee()
+	_label_notice_doc = null
+
+	# Freeze the size, and CENTRE the widget on the point the committed caption
+	# will centre on — the editor re-splits itself around it as the text grows,
+	# so what is typed sits exactly where it lands on Enter.
+	_label_edit_font = doc_font
+	_label_edit_centre = (mid as Vector2) + offset
+	var text := arrow.label_text(ann)
+
+	if not _editor.open(_host.transform_doc_to_screen(_label_edit_centre), zoom, doc_font,
+			text, "Label…", AnnotationRenderContext.author_color("human"), true):
+		_label_edit_id = ""
+		return false
+	_label_edit_id = ann_id
+	return true
+
+
+## Enter inside the widget: write the caption back. An EMPTY commit CLEARS the
+## label (AnnotationArrow.with_label erases all three keys). Not undoable — the
+## annotation substrate has no undo stack.
+func _commit_label_edit() -> void:
+	if not _editor.is_open() or _label_edit_id.is_empty():
+		_reset_label_edit()
+		return
+	var text := _editor.get_text()
+	var ann := _find_annotation(_label_edit_id)
+	var arrow := _arrow_kind(ann)
+	if arrow == null:
+		_reset_label_edit()
+		return
+	# Clearing a caption that never existed is not an edit. Emitting here would
+	# make the host full-replace the annotation, dirty the sidecar and bump its
+	# revision for a double-click the user simply clicked away from.
+	if text.strip_edges().is_empty() and not arrow.has_label(ann):
+		_reset_label_edit()
+		return
+	# The size the user was LOOKING AT, frozen at open — not re-derived from a
+	# zoom that may have changed mid-edit.
+	var seed_font := _label_edit_font
+	var updated := arrow.with_label(ann, text, AnnotationArrow.default_label_offset(seed_font), seed_font)
+	var target_id := _label_edit_id
+	_reset_label_edit()
+	annotation_modified.emit(target_id, updated)
+
+
+func _on_label_editor_submitted(_text: String) -> void:
+	_commit_label_edit()
+
+
+## Escape inside the widget: close without writing anything back.
+func _on_label_editor_aborted() -> void:
+	_reset_label_edit()
+
+
+## The 2d_arrow kind for `ann`, or null when it is not an arrow.
+func _arrow_kind(ann: Dictionary) -> AnnotationArrow:
+	if ann.is_empty():
+		return null
+	var kind := _get_kind(ann)
+	return kind as AnnotationArrow
+
+
+## Caption rect of `ann` in document space, or null (not an arrow / no caption).
+func _label_rect(ann: Dictionary) -> Variant:
+	var arrow := _arrow_kind(ann)
+	if arrow == null:
+		return null
+	return arrow.label_rect(ann)
+
+
+func _hit_label_handle(ann: Dictionary, doc_pos: Vector2) -> bool:
+	var r: Variant = _label_rect(ann)
+	if not r is Rect2:
+		return false
+	return (r as Rect2).grow(LABEL_HANDLE_SLACK_PX / _view_zoom()).has_point(doc_pos)
+
+
+func _begin_label_drag(doc_pos: Vector2, ann_id: String, ann: Dictionary) -> bool:
+	var arrow := _arrow_kind(ann)
+	if arrow == null:
+		return false
+	_begin_drag(Zone.LABEL, doc_pos, ann_id, ann, Rect2())
+	_drag_start_label_offset = arrow.label_offset(ann)
+	# Same jitter gate every select-armed drag uses: a press on the caption that
+	# never travels must write nothing, because the very next event may be the
+	# second half of a double-click asking to EDIT the caption, not move it.
+	_translate_pending_threshold = true
+	return true
+
+
+## Caption drag: writes label_offset and NOTHING else, off the immutable
+## drag-start snapshot (so the offset is absolute-from-snapshot, never
+## cumulative). Endpoints, text, and glyph size are untouched by construction —
+## AnnotationArrow.with_label_offset only ever sets the one key.
+func _apply_label_drag(doc_pos: Vector2) -> void:
+	if _drag_start_annotation.is_empty():
+		return
+	var arrow := _arrow_kind(_drag_start_annotation)
+	if arrow == null:
+		return
+	var delta := doc_pos - _drag_start_doc
+	if _translate_pending_threshold:
+		if delta.length() * _view_zoom() < SELECT_DRAG_THRESHOLD_PX:
+			return
+		_translate_pending_threshold = false
+	annotation_modified.emit(_drag_id, arrow.with_label_offset(_drag_start_annotation, _drag_start_label_offset + delta))
 
 
 ## Resolve an armed marquee at release.
@@ -560,7 +857,9 @@ func _begin_drag(zone: Zone, doc_pos: Vector2, ann_id: String,
 	var center := b.get_center()
 
 	match zone:
-		Zone.INSIDE:
+		Zone.INSIDE, Zone.LABEL:
+			# LABEL deltas from the press point exactly like a translate does;
+			# what differs is only which payload key the delta lands in.
 			_drag_start_doc = doc_pos
 
 		Zone.CORNER_TL, Zone.CORNER_TR, Zone.CORNER_BL, Zone.CORNER_BR:
@@ -792,6 +1091,17 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 	if _host == null:
 		return
 
+	# Keep the caption editor pinned to its document point and sized to the
+	# current zoom. draw_preview is the natural place for this because the overlay
+	# redraws on every view change (same idiom as AnnotationTextAuthorTool).
+	if _editor.is_open():
+		_editor.place(ctx.to_screen(_label_edit_centre), ctx.zoom)
+
+	# Refused-double-click notice (multi-selection). Cleared by the next click.
+	if _label_notice_doc is Vector2:
+		ctx.draw_string(null, _label_notice_doc as Vector2, LABEL_NOTICE_TEXT,
+			LABEL_NOTICE_COLOR, LABEL_NOTICE_FONT_PX)
+
 	# Marquee is drawn regardless of what is (or is not) selected.
 	if _marquee_active:
 		var m := Rect2(_marquee_start_doc, Vector2.ZERO).expand(_marquee_current_doc)
@@ -816,6 +1126,11 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 				continue
 			var mb: Rect2 = member_kind.bounds(member)
 			ctx.draw_rect(mb.grow(2.0 / gzm), MULTI_SELECT_COLOR, false, 1.0)
+			# Caption sub-handles are drawn DISABLED over a multi-selection: the
+			# affordance stays visible so nothing looks missing, and its grey says
+			# it is off. Same "handles absent/disabled means disarmed" grammar the
+			# multi-select gizmo already uses for scale and rotate.
+			_draw_label_handle(ctx, member, false)
 		return
 
 	var sel := _host.get_selected_annotation_id()
@@ -869,6 +1184,24 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 	# 5) In-progress rotation arc.
 	if _dragging and _active_zone in [Zone.ROTATE_TL, Zone.ROTATE_TR, Zone.ROTATE_BL, Zone.ROTATE_BR]:
 		_draw_angle_arc(ctx, _rotation_center_doc, _drag_start_angle_rad, _current_angle_rad)
+
+	# 6) Arrow-label sub-handle (single selection → armed).
+	_draw_label_handle(ctx, ann, true)
+
+
+## Outline + centre grip over an arrow's caption, marking it as draggable.
+## Draws nothing when `ann` is not a labelled arrow.
+func _draw_label_handle(ctx: AnnotationRenderContext, ann: Dictionary, armed: bool) -> void:
+	var r: Variant = _label_rect(ann)
+	if not r is Rect2:
+		return
+	var rect: Rect2 = r
+	var z := maxf(ctx.zoom, 0.01)
+	var color := LABEL_HANDLE_COLOR if armed else LABEL_HANDLE_DISABLED_COLOR
+	ctx.draw_rect(rect.grow(LABEL_HANDLE_SLACK_PX / z), color, false, 1.0)
+	var grip := LABEL_GRIP_SIZE_PX / z
+	var centre := rect.get_center()
+	ctx.draw_rect(Rect2(centre - Vector2(grip, grip) * 0.5, Vector2(grip, grip)), color, true, 1.0)
 
 
 func _draw_filled_disc(ctx: AnnotationRenderContext, at: Vector2,

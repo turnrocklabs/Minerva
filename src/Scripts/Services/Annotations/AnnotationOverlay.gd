@@ -248,6 +248,21 @@ func _gui_input(event: InputEvent) -> void:
 		if mb.pressed:
 			if mb.button_index == MOUSE_BUTTON_LEFT:
 				grab_focus()
+			# Double-click forwarding (A8u2). Tools used to be blind to it: the
+			# mods channel carries shift/ctrl/alt/meta only, so a kind that wanted
+			# a double-click had to infer one POSITIONALLY from two presses
+			# landing at the same point (see the pcb route-hint kind, which still
+			# does). The hook is duck-typed and OPT-IN, and a tool that declines
+			# it (returns false) — or never defines it, which is every tool that
+			# shipped before this — falls straight through to the ordinary
+			# on_pointer_down below, so those positional detectors still see the
+			# second press exactly as they always did.
+			if mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT \
+					and _active_tool.has_method("on_pointer_double_click"):
+				if bool(_active_tool.on_pointer_double_click(mb.position, mb.button_index, mods)):
+					accept_event()
+					queue_redraw()
+					return
 			var consumed := _active_tool.on_pointer_down(mb.position, mb.button_index, mods)
 			if consumed:
 				accept_event()
