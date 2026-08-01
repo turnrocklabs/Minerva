@@ -12,6 +12,12 @@ extends AnnotationKind
 
 const CIRCLE_SEGMENTS := 48  # polygon segment count for the circle outline
 
+## Radius-label footprint in SCREEN pixels — the label is drawn at a fixed pixel
+## size, so its document-space extent shrinks as the view zooms in.
+## bounds()/hit_test() convert it via px_to_doc_size(); _label_pos is document
+## space and is shared with render(), so it is left alone.
+const _LABEL_BOX_PX := Vector2(60.0, 12.0)
+
 
 func _init() -> void:
 	name           = &"2d_measure_radius"
@@ -51,7 +57,7 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 			return true
 		# Near label.
 		var label_pos := _label_pos(center, edge)
-		if Rect2(label_pos, Vector2(60, 12)).grow(threshold).has_point(point):
+		if Rect2(label_pos, px_to_doc_size(_LABEL_BOX_PX)).grow(threshold).has_point(point):
 			return true
 	return false
 
@@ -67,7 +73,7 @@ func bounds(annotation: Dictionary) -> Rect2:
 		var edge   := AnnotationKind._to_vec2(prim.get("edge",   [0, 0]))
 		var radius := center.distance_to(edge)
 		var circle_rect := Rect2(center - Vector2(radius, radius), Vector2(radius * 2, radius * 2))
-		var label_rect  := Rect2(_label_pos(center, edge), Vector2(60, 12))
+		var label_rect  := Rect2(_label_pos(center, edge), px_to_doc_size(_LABEL_BOX_PX))
 		var r := circle_rect.merge(label_rect)
 		if not initialized:
 			result = r

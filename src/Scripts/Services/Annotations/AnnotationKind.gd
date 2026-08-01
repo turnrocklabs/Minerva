@@ -60,6 +60,70 @@ var primitives_optional: bool = false
 ## separation is UI-only.
 var workflow_class: bool = false
 
+# ── Screen-pixel constants inside bounds() / hit_test() ────────────────────────
+
+## Live screen-pixels-per-document-unit source for THIS kind instance, or an
+## invalid Callable when the kind is not bound to a view.
+##
+## WHY THIS EXISTS: render() gets an AnnotationRenderContext and divides every
+## screen-pixel constant by ctx.zoom (see AnnotationArrow._render_arrow_segment,
+## AnnotationMeasureDistance._render_measure_distance). bounds() and hit_test()
+## carry no context, so they used to consume the SAME pixel constants as document
+## units. That is invisible where doc units ARE pixels (the text editor, the
+## hello panel) and wrong everywhere else: PCB document space is board
+## MILLIMETRES, so a 12 px arrowhead grew an anchored arrow's AABB by 12 mm per
+## side — a quarter of an 80 mm board — and the transform tool's selection rect,
+## the marquee sweep and dock zoom-to-fit all consumed that inflated rect.
+##
+## WHY A STATEFUL PROPERTY IS SAFE: kind instances are PER-HOST. Every host
+## builds its own AnnotationRegistry and BuiltinKinds.register_all() mints fresh
+## instances per call, so there is no shared/global kind instance to race on and
+## no bounds()/hit_test() signature change is required.
+##
+## WIRING: AnnotationRegistry.set_view_zoom_source() stamps this onto every kind
+## it holds (and onto kinds registered later, so plugin kinds inherit it);
+## AnnotationOverlay.set_host() supplies the overlay's own _view_zoom, which
+## reads the host's get_annotation_zoom(). It is a Callable rather than a stored
+## float so it always reports the LIVE zoom regardless of when it was bound, and
+## it targets the overlay (a Node) rather than the host (a RefCounted) so the
+## host → registry → kind → Callable chain cannot close a refcount cycle.
+##
+## UNBOUND IS THE SAFE DEFAULT: view_zoom() returns 1.0, so any host that never
+## sets a source — the text editor, the hello panel, ProjectPackage's throwaway
+## registries, MCPAnnotationTools' fallback registry — behaves exactly as it did
+## before this existed, and agent-visible bounds stay zoom-independent.
+var view_zoom_source: Callable = Callable()
+
+
+## Screen pixels per document unit for this kind's view.
+##
+## ALWAYS finite and strictly positive. Unbound, unusable (freed target),
+## non-numeric, non-finite, zero and negative sources ALL fail safe to 1.0, so
+## px_to_doc() can never divide by zero and can never explode a rect.
+func view_zoom() -> float:
+	if not view_zoom_source.is_valid():
+		return 1.0
+	var raw: Variant = view_zoom_source.call()
+	if not (raw is float or raw is int):
+		return 1.0
+	var zoom := float(raw)
+	if not is_finite(zoom) or zoom <= 0.0001:
+		return 1.0
+	return zoom
+
+
+## Convert a SCREEN-PIXEL constant into document units for bounds()/hit_test().
+## Use this for every pixel-sized quantity those two methods consume; render()
+## keeps using ctx.zoom directly.
+func px_to_doc(px: float) -> float:
+	return px / view_zoom()
+
+
+## Vector form of px_to_doc(), for pixel-sized label approximation boxes.
+func px_to_doc_size(px: Vector2) -> Vector2:
+	return px / view_zoom()
+
+
 # ── Required methods ───────────────────────────────────────────────────────────
 
 ## Render the annotation onto ctx.
@@ -290,6 +354,10 @@ static func _primitive_bounds(p: Dictionary) -> Rect2:
 
 		"text":
 			var at := _to_vec2(p.get("at", [0, 0]))
+			# Deliberately NOT px_to_doc'd: this helper is static (no instance, so
+			# no view_zoom_source) and feeds only the UNKNOWN-KIND placeholder,
+			# whose dashed box AnnotationRegistry draws at these very bounds. The
+			# rect and its render agree, which is the property that matters here.
 			return Rect2(at, Vector2(50, 12))  # approximate; real bounds need font metrics
 
 		"region", "polyline":

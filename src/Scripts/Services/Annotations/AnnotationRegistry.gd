@@ -30,6 +30,13 @@ var _kinds: Dictionary = {}
 ## a plugin installing mid-session resets the "already warned" state for its kinds.
 var _warned_unknown_kinds: Dictionary = {}
 
+## Screen-pixels-per-document-unit source handed to every kind this registry
+## holds, so bounds()/hit_test() can convert their screen-pixel constants into
+## document units (see AnnotationKind.view_zoom_source for the full rationale).
+## Invalid by default: an unbound registry leaves every kind at zoom 1.0, which
+## is exactly the pre-existing behavior.
+var _view_zoom_source: Callable = Callable()
+
 # ── Placeholder rendering constants ───────────────────────────────────────────
 
 ## Default placeholder rect when primitives produce no bounds.
@@ -78,6 +85,11 @@ func register_annotation_kind(kind: AnnotationKind) -> bool:
 		return false
 
 	_kinds[kind.name] = kind
+	# Stamp the view's zoom source onto the newcomer. Registration order is not
+	# fixed — plugin kinds arrive long after the host bound its overlay — so the
+	# stamp happens on BOTH paths: here for late registrations, and in
+	# set_view_zoom_source() for kinds already held.
+	kind.view_zoom_source = _view_zoom_source
 	# A new registration may resolve previously-unknown kinds — reset the
 	# warned-set so that any remaining unknowns get a fresh log entry.
 	_warned_unknown_kinds.clear()
@@ -97,6 +109,23 @@ func deregister_annotation_kind(kind_name: StringName) -> bool:
 	_warned_unknown_kinds.clear()
 	annotation_kind_deregistered.emit(kind_name)
 	return true
+
+
+## Bind the screen-pixels-per-document-unit source for every kind in this
+## registry, present and future. Pass an invalid Callable to unbind (kinds fall
+## back to zoom 1.0, i.e. screen pixels treated as document units).
+##
+## Idempotent. Called by AnnotationOverlay.set_host(); hosts that never get an
+## overlay simply never call it.
+func set_view_zoom_source(source: Callable) -> void:
+	_view_zoom_source = source
+	for kind in _kinds.values():
+		(kind as AnnotationKind).view_zoom_source = source
+
+
+## The currently bound zoom source (invalid Callable when unbound).
+func get_view_zoom_source() -> Callable:
+	return _view_zoom_source
 
 
 ## Returns the registered AnnotationKind for the given name, or null if unknown.

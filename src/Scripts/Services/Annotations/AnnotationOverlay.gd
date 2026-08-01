@@ -66,7 +66,32 @@ func set_host(host: RefCounted) -> void:
 		# Hosts with a movable/scaled surface emit view_changed on pan/zoom/resize.
 		if _host.has_signal("view_changed") and not _host.view_changed.is_connected(_on_view_changed):
 			_host.view_changed.connect(_on_view_changed)
+	_bind_kind_view_zoom()
 	queue_redraw()
+
+
+## Hand the host's kind instances a live screen-px → doc-unit scale.
+##
+## kind.bounds()/hit_test() carry no render context, so a kind that sizes part of
+## its footprint in screen pixels (arrowheads, dimension ticks, label
+## approximation boxes) has no zoom to divide by. The overlay is the one core
+## seam that holds BOTH the host and its registry for every surface — platform
+## editors, plugin panels and tests alike — so it is where the binding lives.
+##
+## The Callable targets THIS overlay, not the host: the host owns the registry
+## which owns the kinds, and a Callable on a RefCounted host would close that
+## chain into an uncollectable reference cycle. Nodes are not refcounted, so
+## this cannot leak, and a freed overlay simply makes the Callable invalid —
+## kinds then fail safe to zoom 1.0.
+func _bind_kind_view_zoom() -> void:
+	if _host == null or not _host.has_method("get_registry"):
+		return
+	# Variant, not a typed local: get_registry() is duck-typed across off-tree
+	# hosts and a typed assignment would hard-error on anything unexpected.
+	var registry: Variant = _host.get_registry()
+	if not registry is AnnotationRegistry:
+		return
+	(registry as AnnotationRegistry).set_view_zoom_source(Callable(self, "_view_zoom"))
 
 
 func _on_view_changed() -> void:

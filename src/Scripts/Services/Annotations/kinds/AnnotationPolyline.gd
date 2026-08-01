@@ -10,6 +10,12 @@ extends AnnotationKind
 ## Added per plan-decision §8 (enables lossless PCB annotation migration).
 ## Design §5 / AnnotationKind contract §4.1.
 
+## Approximate on-screen footprint of the [text] primitive's glyph run, in SCREEN
+## pixels — _render_text_label draws at a fixed pixel size, so the document-space
+## extent shrinks as the view zooms in. bounds()/hit_test() convert it via
+## px_to_doc_size(); only the placement point is document space.
+const _TEXT_PRIMITIVE_APPROX_PX := Vector2(50.0, 12.0)
+
 
 func _init() -> void:
 	name           = &"2d_polyline"
@@ -47,7 +53,7 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 					return true
 			"text":
 				var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
-				if Rect2(at, Vector2(50, 12)).grow(threshold).has_point(point):
+				if Rect2(at, px_to_doc_size(_TEXT_PRIMITIVE_APPROX_PX)).grow(threshold).has_point(point):
 					return true
 	return false
 
@@ -72,7 +78,7 @@ func bounds(annotation: Dictionary) -> Rect2:
 					got_r = true
 			"text":
 				var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
-				r = Rect2(at, Vector2(50, 12))
+				r = Rect2(at, px_to_doc_size(_TEXT_PRIMITIVE_APPROX_PX))
 				got_r = true
 		if got_r:
 			if not initialized:

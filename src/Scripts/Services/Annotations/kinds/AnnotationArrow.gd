@@ -37,6 +37,12 @@ extends AnnotationKind
 ## the same size the committed render will be.
 const DEFAULT_HEAD_SIZE_PX := 12.0
 
+## Approximate on-screen footprint of a legacy [text] primitive's glyph run, in
+## SCREEN pixels — _render_text_label draws it at a fixed pixel size, so its
+## document-space extent shrinks as the view zooms in. bounds()/hit_test() pass
+## it through px_to_doc_size(); only the placement point is document space.
+const _TEXT_PRIMITIVE_APPROX_PX := Vector2(50.0, 12.0)
+
 ## kind_payload keys for the one-annotation label. Named so the tool never
 ## spells them itself.
 const LABEL_KEY := "label"
@@ -424,7 +430,7 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 					return true
 			"text":
 				var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
-				var approx := Rect2(at, Vector2(50, 12)).grow(threshold)
+				var approx := Rect2(at, px_to_doc_size(_TEXT_PRIMITIVE_APPROX_PX)).grow(threshold)
 				if approx.has_point(point):
 					return true
 	return false
@@ -433,7 +439,11 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 func bounds(annotation: Dictionary) -> Rect2:
 	var endpoints: Array = _resolve_payload_endpoints(null, annotation)
 	if not endpoints.is_empty():
-		var head := float(annotation.get("kind_payload", {}).get("head_size", 12.0))
+		# head_size is SCREEN PIXELS (see DEFAULT_HEAD_SIZE_PX and
+		# _render_arrow_segment, which divides by ctx.zoom for exactly this
+		# reason). Growing the AABB by the raw value made an anchored arrow on
+		# the PCB canvas 12 MILLIMETRES fatter per side.
+		var head := px_to_doc(float(annotation.get("kind_payload", {}).get("head_size", DEFAULT_HEAD_SIZE_PX)))
 		var payload_box := Rect2(endpoints[0], Vector2.ZERO).expand(endpoints[1]).grow(head)
 		# Label AABB participates, so zoom-to-fit consumers and the marquee see
 		# the caption. Same reason the render early-return had to go.
@@ -454,11 +464,11 @@ func bounds(annotation: Dictionary) -> Rect2:
 			"arrow":
 				var a := AnnotationKind._to_vec2(prim.get("from", [0, 0]))
 				var b := AnnotationKind._to_vec2(prim.get("to",   [0, 0]))
-				var head := float(prim.get("head_size", 12.0))
+				var head := px_to_doc(float(prim.get("head_size", DEFAULT_HEAD_SIZE_PX)))
 				r = Rect2(a, Vector2.ZERO).expand(b).grow(head)
 			"text":
 				var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
-				r = Rect2(at, Vector2(50, 12))
+				r = Rect2(at, px_to_doc_size(_TEXT_PRIMITIVE_APPROX_PX))
 			_:
 				continue
 		if not initialized:

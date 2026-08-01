@@ -16,6 +16,12 @@ extends AnnotationKind
 
 const TICK_SIZE := 4.0  # screen-space perpendicular tick half-length
 
+## Approximate on-screen footprint of the [text] primitive's glyph run, in SCREEN
+## pixels — _render_text_label draws at a fixed pixel size, so the document-space
+## extent shrinks as the view zooms in. bounds()/hit_test() convert it via
+## px_to_doc_size(); only the placement point is document space.
+const _TEXT_PRIMITIVE_APPROX_PX := Vector2(60.0, 12.0)
+
 
 func _init() -> void:
 	name           = &"2d_measure_distance"
@@ -62,7 +68,7 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 					return true
 			"text":
 				var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
-				if Rect2(at, Vector2(60, 12)).grow(threshold).has_point(point):
+				if Rect2(at, px_to_doc_size(_TEXT_PRIMITIVE_APPROX_PX)).grow(threshold).has_point(point):
 					return true
 	return false
 
@@ -81,11 +87,14 @@ func bounds(annotation: Dictionary) -> Rect2:
 			"measure_distance":
 				var a := AnnotationKind._to_vec2(prim.get("from", [0, 0]))
 				var b := AnnotationKind._to_vec2(prim.get("to",   [0, 0]))
-				r = Rect2(a, Vector2.ZERO).expand(b).grow(TICK_SIZE)
+				# TICK_SIZE is screen pixels — _render_measure_distance divides it
+				# by ctx.zoom for exactly this reason. Growing the AABB by the raw
+				# value inflated it by 4 MILLIMETRES per side on the PCB canvas.
+				r = Rect2(a, Vector2.ZERO).expand(b).grow(px_to_doc(TICK_SIZE))
 				got_r = true
 			"text":
 				var at := AnnotationKind._to_vec2(prim.get("at", [0, 0]))
-				r = Rect2(at, Vector2(60, 12))
+				r = Rect2(at, px_to_doc_size(_TEXT_PRIMITIVE_APPROX_PX))
 				got_r = true
 		if got_r:
 			if not initialized:

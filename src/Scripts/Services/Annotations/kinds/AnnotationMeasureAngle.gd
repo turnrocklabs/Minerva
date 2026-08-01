@@ -13,6 +13,12 @@ extends AnnotationKind
 const ARC_SEGMENTS := 24   # polygon segments used to approximate the arc
 const ARC_RADIUS_FACTOR := 0.25  # arc drawn at 25 % of the shorter arm length
 
+## Angle-label footprint in SCREEN pixels (the label is drawn at a fixed pixel
+## size), and the matching bounds margin. bounds()/hit_test() convert both via
+## px_to_doc*(); the arc radius itself is already document space.
+const _LABEL_BOX_PX := Vector2(40.0, 16.0)
+const _LABEL_MARGIN_PX := 20.0
+
 
 func _init() -> void:
 	name           = &"2d_measure_angle"
@@ -50,7 +56,8 @@ func hit_test(annotation: Dictionary, point: Vector2, threshold: float) -> bool:
 		# Near arc (check label region as approximation).
 		var arc_r := _arc_radius(a, b, c)
 		var label_pos := _label_pos(a, b, c, arc_r)
-		if Rect2(label_pos - Vector2(20, 8), Vector2(40, 16)).grow(threshold).has_point(point):
+		var label_box := px_to_doc_size(_LABEL_BOX_PX)
+		if Rect2(label_pos - label_box * 0.5, label_box).grow(threshold).has_point(point):
 			return true
 	return false
 
@@ -66,8 +73,9 @@ func bounds(annotation: Dictionary) -> Rect2:
 		var b := AnnotationKind._to_vec2(prim.get("b", [0, 0]))
 		var c := AnnotationKind._to_vec2(prim.get("c", [0, 0]))
 		var arc_r := _arc_radius(a, b, c)
-		# Three-point AABB grown by arc radius + small label margin.
-		var r := Rect2(a, Vector2.ZERO).expand(b).expand(c).grow(arc_r + 20.0)
+		# Three-point AABB grown by arc radius (document units) + a small label
+		# margin (SCREEN pixels — the label is drawn at a fixed pixel size).
+		var r := Rect2(a, Vector2.ZERO).expand(b).expand(c).grow(arc_r + px_to_doc(_LABEL_MARGIN_PX))
 		if not initialized:
 			result = r
 			initialized = true
