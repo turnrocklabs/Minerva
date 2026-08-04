@@ -123,8 +123,12 @@ func register_tools() -> void:
 	server._register_tool(
 		"minerva_annotations_list",
 		"List annotations in a document. Returns a flat array; each entry has id, kind, author, "
-		+ "summary (one-line natural-language description), bounds ({x, y, w, h}), "
-		+ "anchored_to (semantic anchor to a domain entity, often empty), plus the original "
+		+ "summary (one-line natural-language description), text (the annotation's words — arrow "
+		+ "caption, text content, comment body — normalized across kinds; absent when the kind "
+		+ "carries none), bounds ({x, y, w, h}), "
+		+ "anchored_to (semantic anchor to a domain entity, often empty), anchor_detail "
+		+ "(structured {kind, id, net, position, distance_mm} when the live host can resolve the "
+		+ "anchored domain entity — e.g. the exact via/pad/trace on a PCB), plus the original "
 		+ "primitives array. Optional author filter ('human' or 'ai') narrows the output. "
 		+ "Use this for token-efficient annotation introspection; call render_overlay if you need vision. "
 		+ "Provide EXACTLY ONE of: editor_name (live in-memory annotations from a running plugin "
@@ -848,6 +852,7 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 	var registry: AnnotationRegistry = _get_registry()
 	var raw_annotations: Array = []
 	var source_label: String = ""
+	var live_host: AnnotationHost = null
 
 	if not editor_name.is_empty():
 		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
@@ -857,6 +862,7 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 				% [editor_name, str(known)])
 		raw_annotations = host.get_annotations()
 		source_label = "live"
+		live_host = host
 		# Live hosts know their own kind registry; prefer it over the fallback
 		# so plugin-contributed kinds resolve correctly.
 		var host_reg: AnnotationRegistry = host.get_registry()
@@ -912,6 +918,23 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 		if kind_obj != null:
 			var b: Rect2 = kind_obj.bounds(ann)
 			entry["bounds"] = {"x": b.position.x, "y": b.position.y, "w": b.size.x, "h": b.size.y}
+
+		# LLM ergonomics (docket 019fcb06ca0b): `text` is the annotation's words,
+		# normalized across kinds — arrow labels, text content, comment bodies —
+		# so agents don't need per-kind payload-key knowledge to read them.
+		if kind_obj != null:
+			var words: String = kind_obj.text_content(ann)
+			if not words.is_empty():
+				entry["text"] = words
+
+		# Structured anchor detail from hosts that can resolve domain entities
+		# (duck-typed, live hosts only; e.g. the PCB host names the exact
+		# via/pad/trace hit with its id, net and distance instead of the lossy
+		# anchored_to string alone).
+		if live_host != null and live_host.has_method("describe_anchor_detail"):
+			var detail: Variant = live_host.describe_anchor_detail(ann)
+			if detail is Dictionary and not (detail as Dictionary).is_empty():
+				entry["anchor_detail"] = detail
 
 		result_annotations.append(entry)
 

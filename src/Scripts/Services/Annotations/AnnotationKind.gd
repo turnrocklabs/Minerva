@@ -251,6 +251,17 @@ func summary(annotation: Dictionary) -> String:
 	return base
 
 
+## The annotation's human-authored words, normalized across kinds (LLM
+## ergonomics, docket 019fcb06ca0b): every text-bearing kind stores its words
+## under a different key (2d_arrow → kind_payload.label, 2d_text → the text
+## primitive's content, text_comment/callout → kind_payload.text), so an
+## agent scanning a list needed per-kind knowledge to find them. Kinds with
+## words override this; the default "" means "this kind carries no free
+## text". Surfaced as the top-level `text` field by minerva_annotations_list.
+func text_content(_annotation: Dictionary) -> String:
+	return ""
+
+
 ## Return a transformed copy of annotation geometry.
 ##
 ## The base implementation handles legacy primitives. Kinds whose editable

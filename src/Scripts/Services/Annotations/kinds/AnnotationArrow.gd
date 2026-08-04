@@ -105,10 +105,20 @@ func summary(annotation: Dictionary) -> String:
 			var b := AnnotationKind._to_vec2(prim.get("to", [0, 0]))
 			var anchor := AnnotationSchema.get_anchored_to(annotation)
 			var base := "arrow from (%.0f, %.0f) to (%.0f, %.0f)" % [a.x, a.y, b.x, b.y]
+			# The caption is the arrow's message — lead with it so a list of
+			# summaries scans as intents, not geometry (docket 019fcb06ca0b).
+			var caption := label_text(annotation).strip_edges()
+			if not caption.is_empty():
+				base = "\"%s\" — %s" % [caption, base]
 			if not anchor.is_empty():
 				return "%s → %s" % [base, anchor]
 			return base
 	return super(annotation)  # fall through to default
+
+
+## The caption IS this kind's free text (see AnnotationKind.text_content).
+func text_content(annotation: Dictionary) -> String:
+	return label_text(annotation).strip_edges()
 
 
 # ── Required overrides ────────────────────────────────────────────────────────
@@ -332,6 +342,20 @@ func with_label(annotation: Dictionary, text: String,
 		out.erase("kind_payload")
 	else:
 		out["kind_payload"] = payload
+	# Refresh the envelope summary at the one label choke point (LLM
+	# ergonomics, docket 019fcb06ca0b): the author tool stamps a static "Arrow"
+	# before any words exist, and minerva_annotations_list prefers the stored
+	# v2 summary — so without this, fifty labelled arrows all scan as "Arrow".
+	# Only REFRESH, never MINT: an envelope with no summary key stays without
+	# one (the no-op byte-identity contract above extends to the whole
+	# envelope), and only a summary this kind's own vocabulary produced
+	# ("Arrow" or a previous summary() result) is rewritten — a caller-authored
+	# custom summary is theirs.
+	if out.has("summary"):
+		var stored := str(out.get("summary", ""))
+		if stored.is_empty() or stored == "Arrow" or stored == display_name \
+				or stored == summary(annotation):
+			out["summary"] = summary(out)
 	return out
 
 

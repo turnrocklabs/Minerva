@@ -41,6 +41,14 @@ func summary(annotation: Dictionary) -> String:
 	return "%s: %s" % [display_name, text]
 
 
+## The comment body IS this kind's free text (see AnnotationKind.text_content).
+func text_content(annotation: Dictionary) -> String:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary:
+		return str((payload as Dictionary).get("text", "")).strip_edges()
+	return ""
+
+
 func body_view_factory(annotation: Dictionary, _emit_patch: Callable) -> Control:
 	var payload: Dictionary = annotation.get("kind_payload", {})
 	var comment_text := str(payload.get("text", ""))

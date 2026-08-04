@@ -50,6 +50,20 @@ func summary(annotation: Dictionary) -> String:
 	return super(annotation)  # fall through to default
 
 
+## The typed words ARE this kind's free text (see AnnotationKind.text_content):
+## payload text (anchored path) first, else the text primitive's content.
+func text_content(annotation: Dictionary) -> String:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary:
+		var t := str((payload as Dictionary).get("text", "")).strip_edges()
+		if not t.is_empty():
+			return t
+	for prim in annotation.get("primitives", []):
+		if prim is Dictionary and prim.get("kind", "") == "text":
+			return str(prim.get("content", "")).strip_edges()
+	return ""
+
+
 # ── Required overrides ────────────────────────────────────────────────────────
 
 ## Text's canonical anchor is the placement point of the label.
