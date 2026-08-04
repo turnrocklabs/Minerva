@@ -680,9 +680,29 @@ func _on_button_toggled(kind_name: StringName, pressed: bool) -> void:
 
 ## Called when the active tool emits annotation_ready.
 ## Forwards to host.add_annotation() as the single call site (design §11.2 comment).
+## Then hands the pointer back to Universal Select (owner HITL ruling, docket
+## 019fcaefb241): authoring is one-shot — the next click (including the second
+## half of a double-click on the fresh annotation) must select/edit, not stack
+## another annotation. Without this the arrow tool stayed armed and every
+## double-click planted a new degenerate head+tail pair.
 func _on_annotation_ready(annotation: Dictionary) -> void:
 	if _host != null:
 		_host.add_annotation(annotation)
+	_return_to_select()
+
+
+## Activate the Tools-section Universal Select button as if the user pressed
+## it. Hosts whose toolbar has no "select" button (kind-buttons-only setups)
+## fall back to a plain disarm — repeated clicks still must not stack
+## annotations.
+func _return_to_select() -> void:
+	if _tool_buttons.has("select"):
+		var btn: Button = _tool_buttons["select"]
+		if is_instance_valid(btn):
+			btn.set_pressed_no_signal(true)
+			_on_tool_button_toggled("select", true)
+			return
+	_on_tool_cancelled()
 
 
 ## Called when the active tool emits cancelled (e.g., user pressed Escape, or
