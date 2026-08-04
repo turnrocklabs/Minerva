@@ -163,8 +163,12 @@ func register_tools() -> void:
 		"Add a new annotation to a document. The annotation is validated against the "
 		+ "substrate schema and the registered kind. Structural errors return "
 		+ "{ok: false, errors: [{field_path, message, code}, ...]}. "
-		+ "author is always forced to 'ai' regardless of the input value. "
-		+ "id and created_at are generated if absent. "
+		+ "Required v2 envelope fields: kind, schema_version (2), anchor, kind_payload, "
+		+ "lifecycle, author, view_context, visible_in_views, summary (id/created_at "
+		+ "generated if absent). author is always forced to 'ai' regardless of the input value. "
+		+ "On success the echo may carry `warnings` — e.g. text_overlap when this annotation's "
+		+ "text area intersects an existing text-bearing annotation (the add stands; reposition "
+		+ "if readability matters). "
 		+ "Provide either editor_name (live in-memory host) OR document_path (on-disk sidecar), not both.",
 		{
 			"type": "object",
@@ -1085,7 +1089,16 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 					"code": "host_rejected",
 				}],
 			}
-		return _ok(_creation_echo(annotation, assigned_id, editor_name, ""))
+		var echo: Dictionary = _creation_echo(annotation, assigned_id, editor_name, "")
+		# Authoring-time collision feedback (docket 019fcb6fe5, owner HITL):
+		# an agent that just wrote text on top of existing text should LEARN
+		# that from the reply — the render can't be read back over MCP, so
+		# this warning is the only overlap signal an LLM gets. Warning, not
+		# refusal: the add stands, the caller decides whether to reposition.
+		var overlap_warnings: Array = _label_overlap_warnings(host, registry, annotation)
+		if not overlap_warnings.is_empty():
+			echo["warnings"] = overlap_warnings
+		return _ok(echo)
 
 	var sidecar: Dictionary = _load_or_init_sidecar(doc_path)
 	var annotations: Array = sidecar["annotations"]
@@ -1103,6 +1116,64 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 		return _err("Failed to write sidecar (error %d)" % write_err)
 
 	return _ok(_creation_echo(annotation, str(annotation["id"]), "", doc_path))
+
+
+## The annotation's words, for overlap purposes: the kind's normalized
+## text_content when it has one, else a duck-typed kind_payload.text peek so
+## plugin kinds (e.g. pcb_route_hint) that predate the text_content contract
+## still count as text-bearing.
+func _overlap_words(kind_obj: AnnotationKind, ann: Dictionary) -> String:
+	if kind_obj != null:
+		var words: String = kind_obj.text_content(ann)
+		if not words.is_empty():
+			return words
+	var payload: Variant = ann.get("kind_payload", {})
+	if payload is Dictionary:
+		return str((payload as Dictionary).get("text", "")).strip_edges()
+	return ""
+
+
+## Overlap warnings for a freshly-added annotation vs the host's existing ones
+## (docket 019fcb6fe5). Only TEXT-BEARING pairs are compared — geometry
+## overlapping geometry is normal board life; words rendered on words is what
+## makes text unreadable. Bounds come from each kind's own bounds() (doc
+## space, the same rects hit-testing uses). Capped at 3 named collisions so a
+## crowded board doesn't flood the reply.
+func _label_overlap_warnings(host: AnnotationHost, registry: AnnotationRegistry, new_ann: Dictionary) -> Array:
+	if host == null or registry == null:
+		return []
+	var new_kind: AnnotationKind = registry.get_annotation_kind(StringName(str(new_ann.get("kind", ""))))
+	if new_kind == null:
+		return []
+	if _overlap_words(new_kind, new_ann).is_empty():
+		return []
+	var new_bounds: Rect2 = new_kind.bounds(new_ann)
+	if new_bounds.size == Vector2.ZERO:
+		return []
+	var new_id: String = str(new_ann.get("id", ""))
+	var warnings: Array = []
+	for existing in _host_annotations(host):
+		if not existing is Dictionary:
+			continue
+		var other: Dictionary = existing
+		if str(other.get("id", "")) == new_id:
+			continue
+		var other_kind: AnnotationKind = registry.get_annotation_kind(StringName(str(other.get("kind", ""))))
+		if other_kind == null:
+			continue
+		if _overlap_words(other_kind, other).is_empty():
+			continue
+		var other_bounds: Rect2 = other_kind.bounds(other)
+		if other_bounds.size == Vector2.ZERO:
+			continue
+		if new_bounds.intersects(other_bounds):
+			var at: Vector2 = other_bounds.get_center()
+			warnings.append(
+				"text_overlap: this annotation's text area intersects %s (%s) near (%.1f, %.1f) — consider repositioning so both stay readable"
+				% [str(other.get("id", "")), str(other.get("kind", "")), at.x, at.y])
+			if warnings.size() >= 3:
+				break
+	return warnings
 
 
 func _annotations_update(args: Dictionary) -> Dictionary:
