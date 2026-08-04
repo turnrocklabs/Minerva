@@ -598,22 +598,24 @@ func test_payload_text_drag_uses_kind_transform() -> void:
 
 # ── Arrow label axis-constraint tests (B3a regression pin, 019fbbadc140) ──────
 ## Owner ruling verbatim: "I can move it anyplace — bad. It should only move
-## along the arrow." The first three tests below use a HORIZONTAL arrow
-## (0,0)->(100,0) — axis=(1,0), perp=(0,1) — where a font-10.0 default offset
-## (0,-16.0) happens to already be exactly perpendicular, which keeps the
+## along the arrow." Tightened by the 2026-08-03 HITL ruling (docket
+## 019fcaefd0e1): the caption now sits centred ON the shaft — the default
+## offset is ZERO (shaft midpoint) and the drag clearance, derived from
+## default_label_offset().length(), is therefore also zero, so the
+## perpendicular component is pinned to 0 at every orientation and the label
+## slides ALONG the line only. The first three tests below use a HORIZONTAL
+## arrow (0,0)->(100,0) — axis=(1,0), perp=(0,1) — which keeps the
 ## along/perpendicular arithmetic easy to hand-verify for the axis-projection
 ## and t-clamp behavior those tests target.
 ##
-## Horizontal is ALSO the one orientation that hides the F1 regression (cold
-## review 2026-08-01): an earlier version of _setup_label_axis_constraint SET
-## the perpendicular component's magnitude to clearance instead of CLAMPING it
-## there, which reconstructs the stored offset only when the arrow happens to
-## be horizontal — every other orientation teleported the caption sideways on
-## the very first grab (measured: 16.0 doc units on a vertical arrow, 4.69 at
-## 45°, both computed below). test_label_drag_vertical_arrow_no_perpendicular_teleport
-## and test_label_drag_45deg_arrow_no_perpendicular_teleport exist specifically
-## to pin that: they are NOT redundant with the horizontal cases above, they
-## cover the orientations horizontal cannot.
+## The vertical and 45° tests remain as orientation pins from the F1
+## regression era (cold review 2026-08-01, SET-vs-CLAMP at drag start). With
+## clearance 0 the historical teleport magnitudes can no longer manifest, but
+## the pins still hold the invariant F1 violated — a drag whose raw delta has
+## zero perpendicular intent must leave the perpendicular projection exactly
+## where it started (now: exactly 0) — so a re-widened clearance or a broken
+## drag-start basis is still caught at the orientations horizontal cannot
+## cover.
 
 func _arrow_label_host(font: float = 10.0, offset: Variant = null,
 		endpoint_b: Vector2 = Vector2(100.0, 0.0)) -> MockHost:
@@ -641,34 +643,36 @@ func test_label_drag_sideways_preserves_perpendicular_clearance() -> void:
 	var host := _arrow_label_host(10.0)
 	var arrow := AnnotationArrow.new()
 	var start_offset := arrow.label_offset(host.get_annotations()[0])
-	check_eq("default label offset for font 10.0", start_offset, Vector2(0.0, -16.0))
+	check_eq("default label offset is ZERO — caption centred on the shaft midpoint",
+		start_offset, Vector2(0.0, 0.0))
 
 	var tool := AnnotationTransformTool.new()
 	var log := _capture_modified(tool)
 	tool.on_activate(host)
 
-	# Caption centre = midpoint(50,0) + offset(0,-16) = (50,-16).
+	# Caption centre = midpoint(50,0) + offset(0,0) = (50,0) — ON the shaft.
 	check("pointer down on caption starts label drag",
-		tool.on_pointer_down(Vector2(50, -16), MOUSE_BUTTON_LEFT, 0))
+		tool.on_pointer_down(Vector2(50, 0), MOUSE_BUTTON_LEFT, 0))
 	# Deliberately WILD sideways drag: dx=30 along the axis, dy=25 purely
-	# perpendicular. A pre-B3a free drag would add BOTH to the offset, landing
-	# at (30, 9) instead of (30, -16).
-	tool.on_pointer_move(Vector2(80, 9))  # delta = (30, 25)
+	# perpendicular. A free drag would add BOTH to the offset, landing at
+	# (30, 25) instead of staying pinned to the line at (30, 0).
+	tool.on_pointer_move(Vector2(80, 25))  # delta = (30, 25)
 
 	check_eq("one label modification emitted", log.size(), 1)
 	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
 	check("along-axis movement applied (x == 30)", is_equal_approx(new_offset.x, 30.0))
-	check("perpendicular clearance preserved (y == -16, default clearance)",
-		is_equal_approx(new_offset.y, -16.0))
+	check("perpendicular component pinned to the shaft (y == 0, zero clearance)",
+		is_zero_approx(new_offset.y))
 
 	tool.on_deactivate()
 
 
 func test_label_drag_old_free_offset_clamps_on_next_drag() -> void:
 	print("test_label_drag_old_free_offset_clamps_on_next_drag:")
-	# A pre-B3a free-dragged offset: perpendicular component (y=40) sits far
-	# past the default clearance (16.0 for font 10.0). No migration ran on
-	# load — the stored value renders untouched until the label is grabbed again.
+	# A legacy free-dragged offset: perpendicular component (y=40) sits far off
+	# the shaft (clearance is now ZERO — docket 019fcaefd0e1). No migration ran
+	# on load — the stored value renders untouched until the label is grabbed
+	# again.
 	var host := _arrow_label_host(10.0, Vector2(5.0, 40.0))
 	var arrow := AnnotationArrow.new()
 	check_eq("stored free offset renders unmigrated",
@@ -685,8 +689,8 @@ func test_label_drag_old_free_offset_clamps_on_next_drag() -> void:
 
 	check_eq("one label modification emitted", log.size(), 1)
 	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
-	check("perpendicular component CLAMPED to default clearance on first drag (40 → 16)",
-		is_equal_approx(new_offset.y, 16.0))
+	check("perpendicular component CLAMPED onto the shaft on first drag (40 → 0)",
+		is_zero_approx(new_offset.y))
 	check("along component preserved + moved (5 + 10 == 15)",
 		is_equal_approx(new_offset.x, 15.0))
 
@@ -702,9 +706,9 @@ func test_label_drag_t_range_clamped_near_tail_and_head() -> void:
 	tool.on_activate(host)
 
 	check("pointer down on caption starts label drag",
-		tool.on_pointer_down(Vector2(50, -16), MOUSE_BUTTON_LEFT, 0))
+		tool.on_pointer_down(Vector2(50, 0), MOUSE_BUTTON_LEFT, 0))
 	# Drag far past the head: along-axis delta of +500 on a length-100 segment.
-	tool.on_pointer_move(Vector2(550, -16))
+	tool.on_pointer_move(Vector2(550, 0))
 
 	check_eq("one label modification emitted", log.size(), 1)
 	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
@@ -712,8 +716,8 @@ func test_label_drag_t_range_clamped_near_tail_and_head() -> void:
 	# documented decision in _setup_label_axis_constraint).
 	check("along component clamped at t≈1.15 past the head (65, not 500)",
 		is_equal_approx(new_offset.x, 65.0))
-	check("perpendicular clearance still preserved at the clamp",
-		is_equal_approx(new_offset.y, -16.0))
+	check("perpendicular component still pinned to the shaft at the clamp",
+		is_zero_approx(new_offset.y))
 
 	tool.on_deactivate()
 
@@ -733,28 +737,29 @@ func test_label_drag_vertical_arrow_no_perpendicular_teleport() -> void:
 	var host := _arrow_label_host(10.0, null, Vector2(0.0, 100.0))
 	var arrow := AnnotationArrow.new()
 	var start_offset := arrow.label_offset(host.get_annotations()[0])
-	check_eq("default label offset for font 10.0", start_offset, Vector2(0.0, -16.0))
+	check_eq("default label offset is ZERO — caption centred on the shaft midpoint",
+		start_offset, Vector2(0.0, 0.0))
 
 	var tool := AnnotationTransformTool.new()
 	var log := _capture_modified(tool)
 	tool.on_activate(host)
 
-	# Caption centre = midpoint(0,50) + offset(0,-16) = (0,34).
+	# Caption centre = midpoint(0,50) + offset(0,0) = (0,50) — ON the shaft.
 	check("pointer down on caption starts label drag",
-		tool.on_pointer_down(Vector2(0, 34), MOUSE_BUTTON_LEFT, 0))
+		tool.on_pointer_down(Vector2(0, 50), MOUSE_BUTTON_LEFT, 0))
 	# Small delta, PURELY along the axis (0,1): (0,5). Zero perpendicular
 	# component in the raw mouse delta itself — any x drift in the result
 	# comes only from how the drag-start basis was constructed, not from this
 	# move, which is exactly what isolates the F1 bug (it fires at drag START,
 	# independent of the delta applied afterward).
-	tool.on_pointer_move(Vector2(0, 39))  # delta = (0, 5)
+	tool.on_pointer_move(Vector2(0, 55))  # delta = (0, 5)
 
 	check_eq("one label modification emitted", log.size(), 1)
 	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
-	check("perpendicular component stays 0 — no sideways teleport (was 16.0 pre-fix)",
+	check("perpendicular component stays 0 — no sideways teleport (was 16.0 pre-F1-fix)",
 		is_equal_approx(new_offset.x, 0.0))
-	check("along-axis component moved by the drag delta (-16 + 5 == -11)",
-		is_equal_approx(new_offset.y, -11.0))
+	check("along-axis component moved by the drag delta (0 + 5 == 5)",
+		is_equal_approx(new_offset.y, 5.0))
 
 	tool.on_deactivate()
 
@@ -774,7 +779,8 @@ func test_label_drag_45deg_arrow_no_perpendicular_teleport() -> void:
 	var host := _arrow_label_host(10.0, null, Vector2(100.0, 100.0))
 	var arrow := AnnotationArrow.new()
 	var start_offset := arrow.label_offset(host.get_annotations()[0])
-	check_eq("default label offset for font 10.0", start_offset, Vector2(0.0, -16.0))
+	check_eq("default label offset is ZERO — caption centred on the shaft midpoint",
+		start_offset, Vector2(0.0, 0.0))
 
 	var axis := Vector2(100.0, 100.0).normalized()
 	var perp := Vector2(-axis.y, axis.x)
@@ -784,20 +790,20 @@ func test_label_drag_45deg_arrow_no_perpendicular_teleport() -> void:
 	var log := _capture_modified(tool)
 	tool.on_activate(host)
 
-	# Caption centre = midpoint(50,50) + offset(0,-16) = (50,34).
+	# Caption centre = midpoint(50,50) + offset(0,0) = (50,50) — ON the shaft.
 	check("pointer down on caption starts label drag",
-		tool.on_pointer_down(Vector2(50, 34), MOUSE_BUTTON_LEFT, 0))
+		tool.on_pointer_down(Vector2(50, 50), MOUSE_BUTTON_LEFT, 0))
 	# Small delta, PURELY along the axis: 5 doc units in the axis direction.
 	# delta.dot(perp) == 0 by construction (axis ⟂ perp), so any change to the
 	# offset's perpendicular projection comes only from how the drag-start
 	# basis was constructed — again isolating the F1 bug from the move itself.
-	var press_pos := Vector2(50, 34)
+	var press_pos := Vector2(50, 50)
 	var target_pos := press_pos + axis * 5.0
 	tool.on_pointer_move(target_pos)
 
 	check_eq("one label modification emitted", log.size(), 1)
 	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
-	check("perpendicular projection unchanged from the stored default (zero deviation, was ~4.69 pre-fix)",
+	check("perpendicular projection unchanged from the stored default (zero deviation, was ~4.69 pre-F1-fix)",
 		is_equal_approx(new_offset.dot(perp), start_perp_projection))
 	check("along-axis projection moved by the drag delta (+5)",
 		is_equal_approx(new_offset.dot(axis), start_offset.dot(axis) + 5.0))

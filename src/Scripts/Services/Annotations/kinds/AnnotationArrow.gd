@@ -53,16 +53,22 @@ const LABEL_FONT_SIZE_KEY := "label_font_size"
 ## explicit size — same default as AnnotationText's kind_payload.font_size.
 const DEFAULT_LABEL_FONT_SIZE := 14.0
 
-## Default midpoint→label offset, in multiples of the glyph height, straight up
-## the y axis. Font-relative rather than a fixed doc-unit constant because doc
-## units are millimetres on the PCB canvas. THE one definition — every seed site
-## goes through default_label_offset().
-const DEFAULT_LABEL_OFFSET_FONTS := 1.6
+## Default midpoint→label offset, in multiples of the glyph height. ZERO since
+## the owner HITL ruling (docket 019fcaefd0e1): a fresh caption sits centred ON
+## the shaft at its midpoint, and — because AnnotationTransformTool's drag
+## clearance is derived from default_label_offset().length() — the caption
+## stays centred on the line and slides ALONG it only. (Was 1.6 fonts straight
+## up, which floated the label off the line and granted perpendicular drag
+## freedom.) Font-relative shape kept so a future nonzero default stays
+## proportional on the millimetre-unit PCB canvas. THE one definition — every
+## seed site goes through default_label_offset().
+const DEFAULT_LABEL_OFFSET_FONTS := 0.0
 
 
-## Offset that puts a fresh caption just clear of the shaft, for glyph height
-## `font`. Single source of truth for the seed: AnnotationTransformTool's open
-## and commit paths call this, and so do label_offset()/with_label() below.
+## Offset for a fresh caption, for glyph height `font` — the shaft midpoint
+## itself (see DEFAULT_LABEL_OFFSET_FONTS). Single source of truth for the
+## seed: AnnotationTransformTool's open and commit paths call this, and so do
+## label_offset()/with_label() below.
 static func default_label_offset(font: float) -> Vector2:
 	return Vector2(0.0, -font * DEFAULT_LABEL_OFFSET_FONTS)
 
