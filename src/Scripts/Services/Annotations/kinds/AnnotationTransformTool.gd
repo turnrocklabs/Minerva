@@ -109,6 +109,64 @@ extends AnnotationAuthorTool
 ##
 ## No undo: like every other annotation mutation in this substrate (there is no
 ## annotation undo stack at all), a label edit or clear is not undoable.
+##
+## ── Path-kind vertex handles (UX1 station 6, docket 019fd09b209e) ────────────
+## A "path" kind (AnnotationKind.manipulation_profile() == "path" — see that
+## method's doc for the full contract) is a polyline, not a box: scale and
+## rotate are geometrically meaningless for it, so the corner/edge/rotate
+## gizmo is replaced entirely by a FILLED-SQUARE HANDLE at each of
+## kind.bend_points(ann) — same size/color constants as the TRS corner
+## handles, so the affordance still reads as "the same kind of handle", just
+## placed at the shape's actual vertices instead of a bounding box's corners.
+## Gated to EXACTLY single-selection (see _is_path_kind) whose kind ALSO
+## implements with_bend_points() and nearest_bend_insertion() — duck-typed via
+## has_method, never a class reference, because this file must stay loadable
+## with zero knowledge of any specific plugin kind (a parse error in core from
+## a dangling off-tree class reference is the known catastrophic failure mode
+## in this codebase: it deregisters the WHOLE kind, not just the gizmo). A
+## kind that declares "path" without the full API silently gets the ordinary
+## TRS gizmo instead of erroring.
+##
+## Click routing (single-selection, path kind only — see
+## _handle_path_pointer_down):
+##   - press ON a bend handle    → BEND drag (below)
+##   - press ON the path itself  → kind.nearest_bend_insertion() inserts a bend
+##                                  there, ONE commit, no drag armed
+##   - press inside kind.bounds()→ the ordinary Zone.INSIDE translate ARMS —
+##                                  see the caveat below, this is NOT the same
+##                                  as saying the body actually moves
+##   - press elsewhere           → falls through to SelectTool semantics,
+##                                  exactly like a TRS OUTSIDE-zone miss
+##   - RIGHT-click a bend handle → deletes that bend, ONE commit
+##
+## Zone.INSIDE's TRANSLATE CAVEAT (Codex review, docket 019fd10557c8): arming
+## the zone and it actually moving the annotation are two different claims.
+## _apply_translate/_transformed call kind.transform_annotation() — the
+## AnnotationKind BASE implementation only rewrites a `primitives` array, so a
+## path kind whose editable geometry lives elsewhere (pcb_route_hint_kind
+## keeps it in kind_payload.waypoints, not primitives) gets back an
+## UNCHANGED annotation from every call unless IT overrides
+## transform_annotation itself. Nothing in this tool guarantees that override
+## exists for a given path kind — it is the kind's own contract to fulfil, the
+## same as it always has been for the TRS profile. Concretely: pcb_route_hint
+## does NOT override transform_annotation today, so dragging a route hint's
+## BODY (as opposed to a bend handle) is a live no-op through this path —
+## the drag reports success but the hint does not move. This is a
+## per-kind gap to close in the kind, not something to route around here.
+##
+## BEND drag is PREVIEW ONLY while the pointer moves — deliberately NOT this
+## tool's usual per-pointer-move emission convention (every other zone emits
+## annotation_modified on every on_pointer_move). A per-frame commit here
+## would push a revision every mouse-move frame onto hosts with per-annotation
+## history (pcb route hints) for nothing; instead exactly ONE
+## annotation_modified fires, in on_pointer_up, via kind.with_bend_points() —
+## the same commit seam every other zone already uses. Escape mid-drag resets
+## silently: unlike a TRS drag (which HAS emitted intermediate states that
+## _revert_drag must undo), a bend drag never emitted anything to revert.
+## This mirrors pcb_route_hint_kind.gd's BendHandleEditTool exactly — see its
+## class doc for why NOT per-move emission — so a route hint's bend behaves
+## identically whether grabbed through the modal "Edit hint" tool or through
+## universal select.
 
 # ── Zone constants — tune here for the polish pass ──────────────────────────
 # All sizes are SCREEN pixels; zone math and gizmo drawing divide by the host
@@ -186,6 +244,12 @@ enum Zone {
 	## rect can sit outside the bounds gizmo entirely, so it is tested first, in
 	## on_pointer_down, against the kind's own label_rect.
 	LABEL,
+	## Path-kind vertex handle (UX1 station 6, docket 019fd09b209e). Like
+	## LABEL, never returned by _hit_zone — a "path" kind's corners come from
+	## kind.bend_points(ann), not the bounds rect, so they are hit-tested
+	## separately in on_pointer_down (see _handle_path_pointer_down) before
+	## _hit_zone is ever consulted for that annotation.
+	BEND,
 }
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -209,6 +273,21 @@ var _drag_start_handle_offset: Vector2 = Vector2.ZERO
 var _rotation_center_doc: Vector2 = Vector2.ZERO
 var _drag_start_angle_rad: float = 0.0
 var _current_angle_rad: float = 0.0
+
+## Bend (path-kind vertex) drag state (UX1 station 6, docket 019fd09b209e).
+## Index into kind.bend_points(ann) at drag start; -1 when idle.
+var _drag_bend_index: int = -1
+
+## Immutable snapshot of kind.bend_points(ann) at drag start — the array
+## _commit_bend_drag() rebuilds from (only the dragged index replaced), so a
+## commit is always relative to the drag-start shape, never cumulative.
+var _drag_bend_start_points: Array = []
+
+## LIVE (uncommitted) position of the dragged bend, doc space. PREVIEW ONLY —
+## see the class doc addendum: unlike every other zone, on_pointer_move does
+## NOT emit annotation_modified for Zone.BEND, so this is the only place the
+## in-progress position exists until on_pointer_up commits it.
+var _drag_bend_live_point: Vector2 = Vector2.ZERO
 
 ## True while a translate drag armed by the select-on-press path is still below
 ## the movement threshold. Such a drag emits nothing until the pointer travels
@@ -340,6 +419,9 @@ func _reset_drag_state() -> void:
 	_drag_label_along_start = 0.0
 	_drag_label_along_min = 0.0
 	_drag_label_along_max = 0.0
+	_drag_bend_index = -1
+	_drag_bend_start_points = []
+	_drag_bend_live_point = Vector2.ZERO
 
 
 ## Tear down the caption editor without committing anything.
@@ -403,10 +485,15 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 		return false
 
 	# Right-click: let host handle — except that it aborts a caption edit first,
-	# which is the text tool's "right-click is an explicit abort" rule.
+	# which is the text tool's "right-click is an explicit abort" rule, and
+	# except that it DELETES a bend handle of a single-selected path kind
+	# (UX1 station 6) — mirrors BendHandleEditTool's right-click-deletes-a-bend
+	# gesture, so a route hint's bend behaves identically under either tool.
 	if button == MOUSE_BUTTON_RIGHT:
 		if _editor.is_open():
 			_reset_label_edit()
+			return true
+		if _try_delete_bend_at(pos):
 			return true
 		return false
 
@@ -504,12 +591,19 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 				return _begin_label_drag(doc_pos, selected_id, ann)
 			var kind := _get_kind(ann)
 			if kind != null:
-				var b: Rect2 = kind.bounds(ann)
-				var zone := _hit_zone(doc_pos, b, _view_zoom())
-				if zone != Zone.OUTSIDE:
-					return _begin_drag(zone, doc_pos, selected_id, ann, b)
-				# Click was outside the gizmo entirely — fall through to
-				# SelectTool semantics so user can click a different annotation.
+				if _is_path_kind(kind):
+					if _handle_path_pointer_down(doc_pos, selected_id, ann, kind):
+						return true
+					# Missed every handle, the path itself, and the bounds box
+					# — fall through to SelectTool semantics, exactly like a
+					# TRS OUTSIDE-zone miss below.
+				else:
+					var b: Rect2 = kind.bounds(ann)
+					var zone := _hit_zone(doc_pos, b, _view_zoom())
+					if zone != Zone.OUTSIDE:
+						return _begin_drag(zone, doc_pos, selected_id, ann, b)
+					# Click was outside the gizmo entirely — fall through to
+					# SelectTool semantics so user can click a different annotation.
 
 	# ── No active gizmo hit: SelectTool semantics ────────────────────────────────
 	return _do_selection(doc_pos, false)
@@ -533,6 +627,8 @@ func on_pointer_move(pos: Vector2) -> void:
 	match _active_zone:
 		Zone.LABEL:
 			_apply_label_drag(doc_pos)
+		Zone.BEND:
+			_apply_bend_drag(doc_pos)
 		Zone.INSIDE:
 			_apply_translate(doc_pos)
 		Zone.CORNER_TL, Zone.CORNER_TR, Zone.CORNER_BL, Zone.CORNER_BR:
@@ -545,7 +641,7 @@ func on_pointer_move(pos: Vector2) -> void:
 			_apply_rotate(doc_pos)
 
 
-func on_pointer_up(_pos: Vector2, button: int, _mods: int) -> bool:
+func on_pointer_up(pos: Vector2, button: int, _mods: int) -> bool:
 	if _marquee_active:
 		if button != MOUSE_BUTTON_LEFT:
 			return false
@@ -553,6 +649,13 @@ func on_pointer_up(_pos: Vector2, button: int, _mods: int) -> bool:
 	if not _dragging:
 		return false
 	if button == MOUSE_BUTTON_LEFT:
+		# BEND is the one zone that commits at RELEASE instead of on every
+		# on_pointer_move — see the class doc addendum and _apply_bend_drag.
+		# `pos` (RELEASE) is what gets committed, not the last on_pointer_move
+		# preview — see _commit_bend_drag's own doc for why a motion-less
+		# click can reach here with no live-point update at all.
+		if _active_zone == Zone.BEND:
+			_commit_bend_drag(_host.transform_screen_to_doc(pos))
 		_reset_drag_state()
 		return true
 	return false
@@ -817,6 +920,228 @@ func _apply_label_drag(doc_pos: Vector2) -> void:
 			_drag_label_along_min, _drag_label_along_max)
 		new_offset = _drag_label_perp_offset + _drag_label_axis * along
 	annotation_modified.emit(_drag_id, arrow.with_label_offset(_drag_start_annotation, new_offset))
+
+
+# ── Path-kind bend handles (UX1 station 6, docket 019fd09b209e) ─────────────
+# See the class doc addendum above for the full click-routing table. Every
+# function here is duck-typed against AnnotationKind.has_method — NEVER a
+# class reference to any specific kind — so this file stays loadable with no
+# knowledge of which plugin (if any) contributes a "path" kind.
+
+## True when `kind` opts into the "path" manipulation profile AND fully
+## implements the vertex-handle API. A kind that declares "path" without all
+## three methods degrades safely to the ordinary TRS gizmo — see
+## AnnotationKind.manipulation_profile()'s doc for why that is the required
+## failure mode (a bare class-reference / preload of an off-tree kind is what
+## turns a missing method into a parse error that deregisters the WHOLE kind;
+## has_method never does that).
+func _is_path_kind(kind: AnnotationKind) -> bool:
+	if kind == null:
+		return false
+	if kind.manipulation_profile() != "path":
+		return false
+	return kind.has_method("bend_points") \
+		and kind.has_method("with_bend_points") \
+		and kind.has_method("nearest_bend_insertion")
+
+
+## Per-ANNOTATION vertex-edit lock for a path kind (Codex 1047 fix round,
+## verdict 1). Duck-typed exactly like the profile gate above — has_method,
+## never a class reference — so this file keeps zero knowledge of any plugin
+## kind: a kind WITHOUT the method is unlocked (absent = default behavior for
+## every existing path kind), and a kind WITH it answers per annotation.
+## pcb_route_hint implements it as "the station-12 supersession marker is
+## present": such a hint's waypoints are inert (its host REFUSES the write),
+## so offering BEND handles — or claiming bend points — would promise an edit
+## that can never land. Locked suppresses ONLY the vertex-edit affordances
+## (BEND drag, bend insert, bend right-click delete, bend claims, bend handle
+## drawing); selection and the ordinary Zone.INSIDE translate arm are
+## untouched, mirroring what _handle_path_pointer_down still consumes.
+func _path_editing_locked(kind: AnnotationKind, ann: Dictionary) -> bool:
+	return kind != null and kind.has_method("path_editing_locked") \
+		and bool(kind.path_editing_locked(ann))
+
+
+## claims_point()'s path-kind probe (UX1 station 6) — same three hit tests as
+## _handle_path_pointer_down, MINUS the mutation: a router asking "would a
+## press here be consumed" must never insert a bend or start a drag as a side
+## effect of asking.
+func _path_claims_point(doc_pos: Vector2, ann: Dictionary, kind: AnnotationKind) -> bool:
+	# Locked path (Codex 1047 fix round, verdict 1): the bend-handle and
+	# bend-insertion probes are OFF — only the bounds interior (the surviving
+	# Zone.INSIDE arm) claims, mirroring exactly what
+	# _handle_path_pointer_down would still consume for this annotation. The
+	# probe and the press MUST share this gate or the router hands the tool a
+	# press it then declines (the "click vanishes between the two" failure the
+	# claims_point doc warns about).
+	if _path_editing_locked(kind, ann):
+		return kind.bounds(ann).has_point(doc_pos)
+	var bends: Array = kind.bend_points(ann)
+	var handle_r := HANDLE_HIT_RADIUS_DOC / _view_zoom()
+	if _hit_bend_point(bends, doc_pos, handle_r) >= 0:
+		return true
+	var insertion: Variant = kind.nearest_bend_insertion(ann, doc_pos, handle_r)
+	if insertion is Dictionary and not (insertion as Dictionary).is_empty():
+		return true
+	return kind.bounds(ann).has_point(doc_pos)
+
+
+## Same hit-radius as the TRS corner handles (HANDLE_HIT_RADIUS_DOC), already
+## converted to doc units by the caller — every zone radius in this file is
+## converted the same way (divide the screen-px constant by _view_zoom()).
+static func _hit_bend_point(bends: Array, doc_pos: Vector2, radius: float) -> int:
+	for i in range(bends.size()):
+		var p: Variant = bends[i]
+		if not p is Vector2:
+			continue
+		if doc_pos.distance_to(p as Vector2) < radius:
+			return i
+	return -1
+
+
+## Route a press against a single-selected path kind's own geometry: bend
+## handle → drag; path (segment) → insert; bounds interior → the ORDINARY
+## Zone.INSIDE translate, unchanged. Returns false when none of those hit, so
+## the caller can fall through to SelectTool semantics exactly like a TRS
+## OUTSIDE-zone miss.
+func _handle_path_pointer_down(doc_pos: Vector2, ann_id: String, ann: Dictionary,
+		kind: AnnotationKind) -> bool:
+	# Locked path (Codex 1047 fix round, verdict 1): vertex editing is refused
+	# at the source, so neither the BEND drag nor the bend insert may arm —
+	# only the ordinary Zone.INSIDE translate (byte-identical to the unlocked
+	# branch's own fall-through) survives. Kept in lockstep with
+	# _path_claims_point's gate above; see _path_editing_locked's doc.
+	if _path_editing_locked(kind, ann):
+		var locked_b: Rect2 = kind.bounds(ann)
+		if locked_b.has_point(doc_pos):
+			return _begin_drag(Zone.INSIDE, doc_pos, ann_id, ann, locked_b)
+		return false
+
+	var bends: Array = kind.bend_points(ann)
+	var handle_r := HANDLE_HIT_RADIUS_DOC / _view_zoom()
+
+	var idx := _hit_bend_point(bends, doc_pos, handle_r)
+	if idx >= 0:
+		_begin_bend_drag(doc_pos, ann_id, ann, idx, bends)
+		return true
+
+	# Insertion threshold reuses the same corner-handle radius, converted the
+	# same way — the spec's "threshold from the corner hit radius converted
+	# via the tool's px→doc conversion".
+	var insertion: Variant = kind.nearest_bend_insertion(ann, doc_pos, handle_r)
+	if insertion is Dictionary and not (insertion as Dictionary).is_empty():
+		var ins: Dictionary = insertion
+		var new_bends: Array = bends.duplicate()
+		new_bends.insert(int(ins.get("insert_at", 0)), ins.get("point", doc_pos))
+		annotation_modified.emit(ann_id, kind.with_bend_points(ann, new_bends))
+		return true
+
+	# Neither a handle nor the path — body drag is still the ordinary
+	# translate zone, byte-identical to what a TRS kind does for INSIDE.
+	var b: Rect2 = kind.bounds(ann)
+	if b.has_point(doc_pos):
+		return _begin_drag(Zone.INSIDE, doc_pos, ann_id, ann, b)
+	return false
+
+
+## Begin a BEND vertex drag. Mirrors _begin_label_drag's pattern: the shared
+## _begin_drag() call seeds the common drag-state (dragging flag, immutable
+## annotation snapshot, id, cleared multi-selection snapshots) with an empty
+## Rect2 (BEND has no bounds-derived geometry, same as LABEL); bend-specific
+## state is set here, after.
+func _begin_bend_drag(doc_pos: Vector2, ann_id: String, ann: Dictionary,
+		idx: int, bends: Array) -> void:
+	_begin_drag(Zone.BEND, doc_pos, ann_id, ann, Rect2())
+	# PRESS position, for the click-vs-drag guard (Codex re-review on
+	# 019fd10557c8): the guard must measure POINTER TRAVEL, not distance from
+	# the bend's centre — a handle hit is valid anywhere in the 12px zone, so
+	# a motionless click 4-11px off-centre would otherwise read as a "drag"
+	# and jump the bend to the pointer. _begin_drag does not seed this for
+	# Zone.BEND's Rect2() path, so it is seeded here explicitly.
+	_drag_start_doc = doc_pos
+	_drag_bend_index = idx
+	_drag_bend_start_points = bends.duplicate()
+	_drag_bend_live_point = bends[idx]
+
+
+## Live-update the dragged bend's position — PREVIEW ONLY. See the class doc
+## addendum: unlike every other zone's on_pointer_move handler, this does NOT
+## call annotation_modified. The one commit happens in on_pointer_up via
+## _commit_bend_drag.
+func _apply_bend_drag(doc_pos: Vector2) -> void:
+	_drag_bend_live_point = doc_pos
+
+
+## ONE commit on release: rebuild the bend array from the drag-start snapshot
+## with only the dragged index replaced, then hand it to kind.with_bend_points
+## — the exact shape BendHandleEditTool's on_pointer_up commits, so undo/
+## history behave identically whether the bend was grabbed through universal
+## select or the modal "Edit hint" tool.
+##
+## `release_doc_pos` — NOT `_drag_bend_live_point` — is what gets committed
+## (Codex review, docket 019fd10557c8 comment 1034, fix F4). on_pointer_move
+## is what keeps _drag_bend_live_point current, but a plain click (press then
+## release with no intervening motion event — the ordinary case for a
+## same-pixel mouse-down/mouse-up) never calls on_pointer_move at all, so
+## _drag_bend_live_point would still read the PRESS position seeded by
+## _begin_bend_drag. Using it here would make the click-vs-drag guard below
+## compare the press position against itself when the mouse genuinely DID
+## move a hair between a real drag's last motion sample and its release —
+## the release position is the only value guaranteed to be "where the
+## pointer actually let go".
+func _commit_bend_drag(release_doc_pos: Vector2) -> void:
+	if _drag_id.is_empty() or _drag_bend_index < 0:
+		return
+	if _drag_bend_index >= _drag_bend_start_points.size():
+		return
+	# A no-move click is not a mutation (Codex review, fix F4 + re-review): the
+	# guard measures PRESS-TO-RELEASE POINTER TRAVEL, never distance from the
+	# bend's centre — a valid handle hit can be up to the hit radius off-centre,
+	# and comparing release-to-centre there would turn a motionless click into
+	# an unintended bend jump. Same SELECT_DRAG_THRESHOLD_PX the marquee's own
+	# zero-travel click uses (_commit_marquee), converted the same way.
+	if (release_doc_pos - _drag_start_doc).length() * _view_zoom() < SELECT_DRAG_THRESHOLD_PX:
+		return
+	var kind := _get_kind(_drag_start_annotation)
+	if kind == null or not kind.has_method("with_bend_points"):
+		return
+	var new_bends: Array = _drag_bend_start_points.duplicate()
+	new_bends[_drag_bend_index] = release_doc_pos
+	annotation_modified.emit(_drag_id, kind.with_bend_points(_drag_start_annotation, new_bends))
+
+
+## Right-click DELETE of a bend handle (UX1 station 6): mirrors
+## BendHandleEditTool's right-click-deletes-a-bend gesture exactly, including
+## its scope — single selection only, path kind only, must actually hit a
+## handle. `pos` is RAW host-screen pixels, the same space on_pointer_down
+## receives; this converts internally so callers never have to.
+func _try_delete_bend_at(pos: Vector2) -> bool:
+	if _host == null:
+		return false
+	if _selected_ids().size() != 1:
+		return false
+	var selected_id := _host.get_selected_annotation_id()
+	if selected_id.is_empty():
+		return false
+	var ann := _find_annotation(selected_id)
+	if ann.is_empty():
+		return false
+	var kind := _get_kind(ann)
+	if not _is_path_kind(kind):
+		return false
+	# Bend delete is a vertex edit — refused on a locked path annotation
+	# (Codex 1047 fix round, verdict 1), same gate as the BEND drag/insert.
+	if _path_editing_locked(kind, ann):
+		return false
+
+	var doc_pos := _host.transform_screen_to_doc(pos)
+	var bends: Array = kind.bend_points(ann)
+	var idx := _hit_bend_point(bends, doc_pos, HANDLE_HIT_RADIUS_DOC / _view_zoom())
+	if idx < 0:
+		return false
+	bends.remove_at(idx)
+	annotation_modified.emit(selected_id, kind.with_bend_points(ann, bends))
+	return true
 
 
 ## Resolve an armed marquee at release.
@@ -1117,6 +1442,13 @@ func _transformed(snapshot: Dictionary, transform: Transform2D, operation: Strin
 
 
 func _revert_drag() -> void:
+	# A BEND drag is PREVIEW ONLY (see _apply_bend_drag) — it never emitted
+	# annotation_modified while dragging, so there is nothing on the host to
+	# revert. Emitting the unchanged snapshot here would be a spurious write,
+	# exactly what "Escape mid-drag cancels with no commit" rules out.
+	if _active_zone == Zone.BEND:
+		_reset_drag_state()
+		return
 	# A select-armed drag still below its movement threshold has emitted nothing,
 	# so there is nothing to revert — skip the pointless write back to the host.
 	if _translate_pending_threshold:
@@ -1285,8 +1617,16 @@ func claims_point(pos: Vector2, mods: int = 0) -> bool:
 				if _hit_label_handle(ann, doc_pos):
 					return true
 				var kind := _get_kind(ann)
-				if kind != null and _hit_zone(doc_pos, kind.bounds(ann), _view_zoom()) != Zone.OUTSIDE:
-					return true
+				if kind != null:
+					if _is_path_kind(kind):
+						# Mirrors _handle_path_pointer_down's own hit tests
+						# (UX1 station 6) — a bend handle, the path itself, or
+						# the bounds interior all claim the press, exactly
+						# like on_pointer_down would.
+						if _path_claims_point(doc_pos, ann, kind):
+							return true
+					elif _hit_zone(doc_pos, kind.bounds(ann), _view_zoom()) != Zone.OUTSIDE:
+						return true
 
 	return not _hit_test_topmost(doc_pos).is_empty()
 
@@ -1412,14 +1752,31 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 
 	var b: Rect2 = kind.bounds(ann)
 
+	# 1) Faint bounds outline. Shared by both profiles — kept identical for a
+	# path kind (class doc addendum: "the bounds outline above ... UNCHANGED").
+	ctx.draw_rect(b, BOUNDS_COLOR, false, 1.0)
+
+	# Path profile (UX1 station 6, docket 019fd09b209e): steps 2-5 below
+	# (corner/edge/rotate) are replaced outright by vertex handles — scale and
+	# rotate are geometrically meaningless for a polyline (see
+	# AnnotationKind.manipulation_profile()'s doc). The arrow-label sub-handle
+	# (step 6) is unaffected and still runs after this branch returns.
+	if _is_path_kind(kind):
+		# A locked path annotation (Codex 1047 fix round, verdict 1) draws NO
+		# bend handles at all — not greyed ones: the host refuses the write,
+		# so there is no disarmed-but-coming-back state to advertise (contrast
+		# the multi-selection grey label handle, which re-arms on reselection).
+		# The bounds outline above still marks it as selected.
+		if not _path_editing_locked(kind, ann):
+			_draw_bend_handles(ctx, ann, kind)
+		_draw_label_handle(ctx, ann, true)
+		return
+
 	# Gizmo sizes are screen px; geometry below is doc units and ctx applies
 	# the doc→screen transform, so divide by zoom for a constant on-screen
 	# gizmo (mirrors _hit_zone so visuals match the clickable areas).
 	var gz := maxf(ctx.zoom, 0.01)
 	var handle_size := HANDLE_SIZE_DOC / gz
-
-	# 1) Faint bounds outline.
-	ctx.draw_rect(b, BOUNDS_COLOR, false, 1.0)
 
 	# 2) Corner handles (filled squares).
 	var half := handle_size * 0.5
@@ -1453,6 +1810,44 @@ func draw_preview(ctx: AnnotationRenderContext) -> void:
 
 	# 6) Arrow-label sub-handle (single selection → armed).
 	_draw_label_handle(ctx, ann, true)
+
+
+## Path-kind vertex handles (UX1 station 6): a filled square at each of
+## kind.bend_points(ann) — same HANDLE_SIZE_DOC/HANDLE_COLOR constants as the
+## TRS corner handles, so the affordance reads as the same family of handle.
+## During an in-progress BEND drag the dragged vertex is drawn at its LIVE
+## (uncommitted) position instead, tinted with ARC_COLOR (reusing the
+## existing "in-progress" tint rather than adding a new constant) — mirrors
+## BendHandleEditTool's own dragged-handle highlight. When ≥2 vertices are
+## on screen a preview polyline connects them (also ARC_COLOR) so the shape
+## reads as continuous while dragging, even though the annotation on the host
+## has not changed yet (BEND is preview-only — see _apply_bend_drag). This
+## connects interior vertices only: AnnotationTransformTool has no generic
+## (duck-typed) access to a path kind's anchor/destination endpoints, only
+## bend_points(), so with 0 or 1 bends there is nothing to connect and only
+## the handle square itself shows the live position.
+func _draw_bend_handles(ctx: AnnotationRenderContext, ann: Dictionary, kind: AnnotationKind) -> void:
+	var bends: Array = kind.bend_points(ann)
+	var points: Array = bends.duplicate()
+	var dragging_here := _dragging and _active_zone == Zone.BEND \
+		and _drag_bend_index >= 0 and _drag_bend_index < points.size()
+	if dragging_here:
+		points[_drag_bend_index] = _drag_bend_live_point
+
+	if points.size() >= 2:
+		var poly := PackedVector2Array()
+		for p in points:
+			poly.append(p)
+		ctx.draw_polyline(poly, ARC_COLOR, 1.0)
+
+	var gz := maxf(ctx.zoom, 0.01)
+	var handle_size := HANDLE_SIZE_DOC / gz
+	var half := handle_size * 0.5
+	for i in range(points.size()):
+		var p: Vector2 = points[i]
+		var color := ARC_COLOR if (dragging_here and i == _drag_bend_index) else HANDLE_COLOR
+		var r := Rect2(p - Vector2(half, half), Vector2(handle_size, handle_size))
+		ctx.draw_rect(r, color, true, 1.0)
 
 
 ## Outline + centre grip over an arrow's caption, marking it as draggable.

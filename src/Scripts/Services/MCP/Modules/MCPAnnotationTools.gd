@@ -1212,6 +1212,20 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 			existing[key] = patch[key]
 		existing["updated_at"] = Time.get_datetime_string_from_system(true) + "Z"
 		if not host.update_annotation(target_id, existing):
+			# Codex 1047 fix round, verdict 3: a host may refuse an update for
+			# POLICY reasons (e.g. the PCB host's superseded-waypoints guard),
+			# not just because the id vanished — collapsing that into
+			# "not_found" was a lie (the annotation is right there). Hosts
+			# that want to say WHY expose a `last_update_refusal` Dictionary
+			# describing the refusal of the call that just returned false
+			# ({} when the failure was not policy). Probed duck-typed via
+			# Object.get so core stays kind-agnostic: hosts without the
+			# property answer null and keep the exact legacy reply.
+			var refusal: Variant = host.get("last_update_refusal")
+			if refusal is Dictionary and not (refusal as Dictionary).is_empty():
+				var reply: Dictionary = (refusal as Dictionary).duplicate(true)
+				reply["ok"] = false
+				return reply
 			return {"ok": false, "error": "not_found"}
 		return _ok({"ok": true})
 
@@ -1230,6 +1244,17 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "not_found"}
 
 	var existing2: Dictionary = annotations[found_idx].duplicate(true)
+
+	# Codex 1047 fix round, verdict 5: the OFFLINE path cannot coordinate live
+	# state (a plugin panel's workspace, host-side guards), so an annotation
+	# whose kind marked fields as live-editor-only must not be silently
+	# patchable here — see _offline_locked_field_violation's own doc for the
+	# generic (kind-agnostic) convention. Refuses BEFORE any mutation; only a
+	# patch that ACTUALLY CHANGES a locked field is refused, so offline edits
+	# to note/lifecycle/position on the same annotation still succeed.
+	var lock_violation: Dictionary = _offline_locked_field_violation(existing2, patch)
+	if not lock_violation.is_empty():
+		return lock_violation
 
 	# Shallow patch: merge provided fields over the top, except author (immutable).
 	for key in patch.keys():
@@ -1252,6 +1277,76 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 		return _err("Failed to write sidecar (error %d)" % write_err)
 
 	return _ok({"ok": true})
+
+
+## Codex 1047 fix round, verdict 5 — the generic offline-lock convention.
+## An annotation whose kind_payload carries `_locked_fields: Array[String]`
+## declares those kind_payload keys LIVE-EDITOR-ONLY: they participate in
+## coordination core cannot see from a sidecar (e.g. the PCB plugin's
+## task-level routing constraints — its _stamp_waypoints_superseded writes
+## `_locked_fields: ["waypoints", "detail_level"]` plus a human-readable
+## `_lock_reason` beside its supersession marker). Core stays completely
+## kind-agnostic: it never knows WHAT the fields mean, only that the
+## annotation's own payload named them.
+##
+## Returns {} (no violation) or the full structured refusal reply:
+## {ok:false, error:"live_editor_required", locked_fields:[...],
+##  lock_reason:"<echoed>", note:"..."}.
+##
+## Semantics, matching the offline patch's own REPLACE behavior: the shallow
+## top-level merge swaps the ENTIRE kind_payload, so a locked field counts as
+## "touched" when its value under the incoming kind_payload differs from the
+## stored one — INCLUDING being omitted (omission deletes it under replace
+## semantics, which is a change). A patch whose kind_payload carries the
+## locked fields byte-identically (or that never touches kind_payload at all)
+## passes. The lock keys THEMSELVES (_locked_fields/_lock_reason) are
+## implicitly locked too — otherwise a two-step offline bypass (strip the
+## lock, then edit the field) would defeat the whole convention, mirroring
+## the live host's own marker re-injection reasoning.
+##
+## KNOWN LIMIT (narrowed by the shipped CX-D load-time reconciliation,
+## panel_tools.reconcile_superseded_waypoint_state): sidecars stamped BEFORE
+## _locked_fields existed carry only the kind-specific marker and are not
+## offline-protected until re-stamped — which now happens automatically the
+## next time the board is OPENED in the live editor (the reconciliation pass
+## backfills the lock keys onto every still-governed stamped hint). Only a
+## sidecar never re-opened live since then remains in the unprotected shape.
+func _offline_locked_field_violation(existing: Dictionary, patch: Dictionary) -> Dictionary:
+	var kp_v: Variant = existing.get("kind_payload", {})
+	if not (kp_v is Dictionary):
+		return {}
+	var kp: Dictionary = kp_v
+	var locked_v: Variant = kp.get("_locked_fields", null)
+	if not (locked_v is Array) or (locked_v as Array).is_empty():
+		return {}
+	if not (patch.get("kind_payload", null) is Dictionary):
+		# The patch never touches kind_payload — locked fields cannot change.
+		return {}
+	var new_kp: Dictionary = patch["kind_payload"]
+	var guarded: Array = []
+	for f in (locked_v as Array):
+		guarded.append(str(f))
+	# The lock keys themselves are implicitly locked (see doc above).
+	for self_key in ["_locked_fields", "_lock_reason"]:
+		if not guarded.has(self_key):
+			guarded.append(self_key)
+	var touched: Array = []
+	for fname in guarded:
+		if JSON.stringify(kp.get(fname, null)) != JSON.stringify(new_kp.get(fname, null)):
+			touched.append(fname)
+	if touched.is_empty():
+		return {}
+	return {
+		"ok": false,
+		"error": "live_editor_required",
+		"locked_fields": touched,
+		"lock_reason": str(kp.get("_lock_reason", "")),
+		"note": "this annotation's kind_payload declares these fields live-editor-only "
+			+ "(_locked_fields) — an offline sidecar patch cannot coordinate the live state "
+			+ "they participate in. Open the document in its editor and use the live path "
+			+ "(editor_name) or the operation named in lock_reason instead. Fields NOT "
+			+ "listed in _locked_fields remain patchable offline.",
+	}
 
 
 func _annotations_delete(args: Dictionary) -> Dictionary:

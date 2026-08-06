@@ -251,6 +251,30 @@ func summary(annotation: Dictionary) -> String:
 	return base
 
 
+## Which manipulation profile universal select offers for this kind.
+##
+## "trs" (default): translate / rotate / scale gizmos — the historical
+## behavior every existing kind keeps getting, byte-for-byte.
+##
+## "path": the kind is a polyline whose shape is edited by VERTEX HANDLES —
+## scale and rotate are geometrically meaningless for a path (there is no
+## "corner" to grab) and are not offered; translate (body drag) remains,
+## since sliding the whole polyline is still meaningful.
+##
+## A "path" kind MUST also implement bend_points(annotation),
+## with_bend_points(annotation, bends) and nearest_bend_insertion(annotation,
+## pos, threshold). AnnotationTransformTool duck-types those three (has_method)
+## rather than calling them unconditionally, and falls back to "trs" when any
+## is missing — so an off-tree kind that declares "path" without the full API
+## degrades safely (TRS gizmo) instead of erroring. See
+## AnnotationTransformTool.gd for the gate and pcb_route_hint_kind.gd
+## (bend_points / with_bend_points / nearest_bend_insertion, docket
+## 019f6c464ff0) for the reference implementation this profile was built to
+## expose through universal select (docket 019fd09b209e).
+func manipulation_profile() -> String:
+	return "trs"
+
+
 ## The annotation's human-authored words, normalized across kinds (LLM
 ## ergonomics, docket 019fcb06ca0b): every text-bearing kind stores its words
 ## under a different key (2d_arrow → kind_payload.label, 2d_text → the text
