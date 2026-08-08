@@ -352,13 +352,18 @@ func _get_plugin_help_tool_def() -> Dictionary:
 func _get_plugin_inspect_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_inspect",
-		"description": "Get detailed information about a plugin: manifest details, granted vs requested capabilities, and recent audit log entries.",
+		"description": "Inspect a plugin. LEAN by default (Epoch UX2 station 7): {id, name, version, status, tool_count, capabilities:{requested,granted}, recent_audit_count} — a large plugin's full manifest + tool schemas ran ~87KB and overflowed callers. Pass include:[\"manifest\",\"tools\",\"audit\"] (any subset, mirroring docket_get's include convention) for the full sections: manifest = the parsed manifest summary, tools = every tool definition with schemas (the big one), audit = the recent audit log entries.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
 				"id": {
 					"type": "string",
 					"description": "The plugin ID to inspect"
+				},
+				"include": {
+					"type": "array",
+					"items": {"type": "string", "enum": ["manifest", "tools", "audit"]},
+					"description": "Detail sections to include beyond the lean summary. Omit for the lean default."
 				}
 			},
 			"required": ["id"]
@@ -553,13 +558,27 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 	if audit_log != null:
 		recent_audit_entries = audit_log.get_entries(id, "", 10)
 
-	return {
+	# LEAN DEFAULT (Epoch UX2 station 7, docket 019fde56e6c3): the full reply
+	# for a large plugin ran ~87KB on one line (74 tool schemas + manifest +
+	# audit) and overflowed the calling agent's tool-result budget. The lean
+	# summary answers "what is this plugin and is it healthy?"; the heavy
+	# sections are opt-in via include (docket_get's include convention).
+	var include: Array = args.get("include", []) if args.get("include", []) is Array else []
+	var reply := {
 		"success": true,
 		"id": id,
 		"name": def.name,
 		"version": def.version,
 		"status": status,
-		"manifest": {
+		"tool_count": (def.tools as Array).size() if def.tools is Array else 0,
+		"capabilities": {
+			"requested": requested_caps,
+			"granted": granted_caps
+		},
+		"recent_audit_count": recent_audit_entries.size(),
+	}
+	if "manifest" in include:
+		reply["manifest"] = {
 			"id": def.id,
 			"name": def.name,
 			"version": def.version,
@@ -571,14 +590,12 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 			"autostart": def.autostart,
 			"network_mode": def.network_mode,
 			"filesystem_mode": def.filesystem_mode,
-		},
-		"tools": def.tools,
-		"capabilities": {
-			"requested": requested_caps,
-			"granted": granted_caps
-		},
-		"recent_audit_log": recent_audit_entries
-	}
+		}
+	if "tools" in include:
+		reply["tools"] = def.tools
+	if "audit" in include:
+		reply["recent_audit_log"] = recent_audit_entries
+	return reply
 
 
 func _handle_plugin_state(args: Dictionary) -> Dictionary:
