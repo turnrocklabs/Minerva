@@ -107,15 +107,72 @@ static func deregister(editor_name: String, expected_host: AnnotationHost = null
 
 
 ## Return the registered host for `editor_name`, or null if none.
+##
+## Broker fallback (LLM ergonomics, docket 019fcb06ca0b): a plugin scene panel
+## registers here at mount under ctx.editor.tab_title — which is captured
+## BEFORE an MCP-created tab's custom title is applied, so this registry can
+## hold a stale default name ("pcb · pcb_panel") while every OTHER tool family
+## resolves the live tab title through the scene-panel broker. When the direct
+## lookup misses, resolve the panel by that same broker path (duck-typed and
+## lazy — no parse dependency on the plugin layer) and ask it for its
+## annotation host, so one editor_name works across all tool families. Names
+## that hit the registry directly behave exactly as before.
 static func get_host(editor_name: String) -> AnnotationHost:
-	return _hosts.get(editor_name, null)
+	var direct: AnnotationHost = _hosts.get(editor_name, null)
+	if direct != null:
+		return direct
+	var panel: Object = _broker_panel(editor_name)
+	if panel != null and panel.has_method("get_annotation_host"):
+		var host: Variant = panel.get_annotation_host()
+		if host is AnnotationHost:
+			return host
+	return null
+
+
+## Resolve a live scene panel by editor tab name through SingletonObject's
+## plugin_scene_panel_broker — the identical duck-typed lookup
+## PluginToolRegistry uses to dispatch panel tools, so the two tool families
+## cannot resolve the same name differently. Null when the broker (or the
+## whole scene tree) is absent, e.g. in headless unit tests.
+static func _broker_panel(editor_name: String) -> Object:
+	if editor_name.is_empty():
+		return null
+	var loop := Engine.get_main_loop()
+	if not (loop is SceneTree):
+		return null
+	var root: Node = (loop as SceneTree).root
+	if root == null:
+		return null
+	var so: Node = root.get_node_or_null("SingletonObject")
+	if so == null or not ("plugin_scene_panel_broker" in so):
+		return null
+	var broker: Variant = so.get("plugin_scene_panel_broker")
+	if broker == null or not (broker as Object).has_method("get_panel_for_editor"):
+		return null
+	var panel: Variant = broker.get_panel_for_editor(editor_name)
+	if panel is Object and is_instance_valid(panel):
+		return panel
+	return null
 
 
 ## Return the list of currently-registered editor names.
 ## Useful for diagnostics and the MCP-tool error path that wants to
 ## suggest valid editor names when the caller's argument doesn't match.
+## Broker panel names are appended (deduplicated) so the "Known:" hint in
+## MCP errors lists every name get_host() can actually resolve.
 static func list_editor_names() -> Array:
-	return _hosts.keys()
+	var names: Array = _hosts.keys()
+	var loop := Engine.get_main_loop()
+	if loop is SceneTree:
+		var root: Node = (loop as SceneTree).root
+		var so: Node = root.get_node_or_null("SingletonObject") if root != null else null
+		if so != null and "plugin_scene_panel_broker" in so:
+			var broker: Variant = so.get("plugin_scene_panel_broker")
+			if broker != null and (broker as Object).has_method("list_panel_editor_names"):
+				for n in broker.list_panel_editor_names():
+					if not names.has(n):
+						names.append(n)
+	return names
 
 
 ## Test-only: drop all registrations. Production code never needs this.

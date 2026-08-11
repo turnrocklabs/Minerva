@@ -55,8 +55,22 @@ const _CLEAR_MENU_ITEMS := [
 const _ACCEPT_METHOD := "accept_annotation_proposal"
 const _REJECT_METHOD := "reject_annotation_proposal"
 
+## Consumed-record filter (Epoch UX2 station 1, owner ruling "once suggestions
+## are applied, the real parts are what matter"): annotations whose lifecycle
+## is "applied" are RECORDS — kept for provenance/citation/undo, no longer
+## day-to-day work items — so the listing hides them by default behind a
+## "Show consumed (N)" toggle. Generic on purpose: "applied" is substrate
+## lifecycle vocabulary (any workflow-class kind may consume), zero pcb
+## wording here, same convention as every other opt-in in this file.
+const _CONSUMED_LIFECYCLE := "applied"
+
 var _host: RefCounted = null
 var _selected_id: String = ""
+
+var _show_consumed: bool = false
+## Count of consumed workflow annotations seen on the LAST _grouped_entries
+## walk (side effect documented there) — feeds the toggle's label/visibility.
+var _consumed_seen: int = 0
 
 ## Every selected id (A8u1 multi-select); _selected_id stays the primary. Rows
 ## highlight on set membership so a canvas marquee lights up every swept row.
@@ -66,6 +80,7 @@ var _header: Label
 var _groups_list: VBoxContainer
 var _scroll: ScrollContainer
 var _context_menu: PopupMenu = null
+var _consumed_toggle: CheckBox = null
 
 
 func _ready() -> void:
@@ -118,6 +133,27 @@ func entry_count() -> int:
 	return get_listing().size()
 
 
+## Consumed-record filter accessors (tests / programmatic callers — same
+## convention as clear_by_author's programmatic entry point above).
+func set_show_consumed(value: bool) -> void:
+	if _show_consumed == value:
+		return
+	_show_consumed = value
+	if _consumed_toggle != null:
+		_consumed_toggle.set_pressed_no_signal(value)
+	refresh()
+
+
+func get_show_consumed() -> bool:
+	return _show_consumed
+
+
+## Consumed workflow annotations currently known (whether or not shown).
+func consumed_count() -> int:
+	_grouped_entries()  # refreshes _consumed_seen
+	return _consumed_seen
+
+
 func refresh() -> void:
 	if _groups_list == null:
 		return
@@ -139,10 +175,19 @@ func refresh() -> void:
 		for entry in entries:
 			_groups_list.add_child(_make_row(entry as Dictionary))
 
+	# Consumed-filter toggle: label carries the hidden-record count, and it
+	# only occupies dock space when there is at least one consumed record.
+	if _consumed_toggle != null:
+		_consumed_toggle.text = "Show consumed (%d)" % _consumed_seen
+		_consumed_toggle.visible = _consumed_seen > 0
+
 	# Zero workflow annotations → the whole surface disappears (no header
-	# squatting in the dock for hosts that never use workflow kinds).
+	# squatting in the dock for hosts that never use workflow kinds). A host
+	# whose ONLY workflow annotations are hidden consumed records keeps the
+	# header + toggle: the record must stay reachable, or the filter would be
+	# a delete in disguise.
 	if _header != null:
-		_header.visible = total > 0
+		_header.visible = total > 0 or _consumed_seen > 0
 	if _scroll != null:
 		_scroll.visible = total > 0
 		call_deferred("_clamp_scroll_height")
@@ -172,6 +217,16 @@ func _build_ui() -> void:
 	_header.add_theme_font_size_override("font_size", 13)
 	_header.visible = false
 	add_child(_header)
+
+	_consumed_toggle = CheckBox.new()
+	_consumed_toggle.name = "ShowConsumedToggle"
+	_consumed_toggle.text = "Show consumed (0)"
+	_consumed_toggle.tooltip_text = "Consumed records: intents already applied to the document. Hidden by default — the real result is what matters now."
+	_consumed_toggle.focus_mode = Control.FOCUS_NONE
+	_consumed_toggle.add_theme_font_size_override("font_size", 11)
+	_consumed_toggle.visible = false
+	_consumed_toggle.toggled.connect(_on_show_consumed_toggled)
+	add_child(_consumed_toggle)
 
 	_scroll = ScrollContainer.new()
 	_scroll.name = "WorkflowScroll"
@@ -218,6 +273,11 @@ func _on_context_menu_id_pressed(id: int) -> void:
 	clear_by_author(str(_CLEAR_MENU_ITEMS[id][1]))
 
 
+func _on_show_consumed_toggled(pressed: bool) -> void:
+	_show_consumed = pressed
+	refresh()
+
+
 ## Test-friendly / programmatic entry point (mirrors get_listing()/entry_count()
 ## as the accessor tests call directly rather than simulating a right-click +
 ## popup selection). author_kind: "human" | "ai" | "all". No-op (returns 0)
@@ -233,8 +293,11 @@ func clear_by_author(author_kind: String) -> int:
 
 
 ## kind name (String) → Array of entry Dictionaries, in first-seen kind order.
+## Side effect (documented on _consumed_seen): recounts consumed workflow
+## annotations on every walk, whether or not they are listed.
 func _grouped_entries() -> Dictionary:
 	var groups := {}
+	_consumed_seen = 0
 	if _host == null or not _host.has_method("get_annotations"):
 		return groups
 	var registry: AnnotationRegistry = _host.get_registry() if _host.has_method("get_registry") else null
@@ -258,7 +321,18 @@ func _grouped_entries() -> Dictionary:
 		# host that doesn't implement the hook supersedes nothing. Supersession
 		# is UI-only — the superseded annotation still exists (rejecting its
 		# successor brings the row straight back) and MCP reads are unaffected.
+		# Consumed-record filter (see _CONSUMED_LIFECYCLE doc): counted always
+		# — the toggle label needs the number, and the count must include
+		# superseded+consumed rows or those records would be invisible AND
+		# uncounted (a delete in disguise) — listed only on opt-in. Sits
+		# AFTER the index increment so #display indices are stable regardless
+		# of the toggle state.
+		var consumed := str(ann.get("lifecycle", "open")) == _CONSUMED_LIFECYCLE
+		if consumed:
+			_consumed_seen += 1
 		if _host.has_method("is_annotation_superseded") and _host.is_annotation_superseded(ann):
+			continue
+		if consumed and not _show_consumed:
 			continue
 		if not groups.has(kind_name):
 			groups[kind_name] = []

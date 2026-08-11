@@ -34,6 +34,14 @@ func summary(annotation: Dictionary) -> String:
 	return "%s [%s]" % [text, anchor_type] if not anchor_type == "/" else text
 
 
+## The callout body IS this kind's free text (see AnnotationKind.text_content).
+func text_content(annotation: Dictionary) -> String:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary:
+		return str((payload as Dictionary).get("text", "")).strip_edges()
+	return ""
+
+
 func to_chat_context(annotation: Dictionary, capabilities: Dictionary) -> Array:
 	var copy := annotation.duplicate(true)
 	if str(copy.get("summary", "")).is_empty():

@@ -123,8 +123,12 @@ func register_tools() -> void:
 	server._register_tool(
 		"minerva_annotations_list",
 		"List annotations in a document. Returns a flat array; each entry has id, kind, author, "
-		+ "summary (one-line natural-language description), bounds ({x, y, w, h}), "
-		+ "anchored_to (semantic anchor to a domain entity, often empty), plus the original "
+		+ "summary (one-line natural-language description), text (the annotation's words — arrow "
+		+ "caption, text content, comment body — normalized across kinds; absent when the kind "
+		+ "carries none), bounds ({x, y, w, h}), "
+		+ "anchored_to (semantic anchor to a domain entity, often empty), anchor_detail "
+		+ "(structured {kind, id, net, position, distance_mm} when the live host can resolve the "
+		+ "anchored domain entity — e.g. the exact via/pad/trace on a PCB), plus the original "
 		+ "primitives array. Optional author filter ('human' or 'ai') narrows the output. "
 		+ "Use this for token-efficient annotation introspection; call render_overlay if you need vision. "
 		+ "Provide EXACTLY ONE of: editor_name (live in-memory annotations from a running plugin "
@@ -159,8 +163,12 @@ func register_tools() -> void:
 		"Add a new annotation to a document. The annotation is validated against the "
 		+ "substrate schema and the registered kind. Structural errors return "
 		+ "{ok: false, errors: [{field_path, message, code}, ...]}. "
-		+ "author is always forced to 'ai' regardless of the input value. "
-		+ "id and created_at are generated if absent. "
+		+ "Required v2 envelope fields: kind, schema_version (2), anchor, kind_payload, "
+		+ "lifecycle, author, view_context, visible_in_views, summary (id/created_at "
+		+ "generated if absent). author is always forced to 'ai' regardless of the input value. "
+		+ "On success the echo may carry `warnings` — e.g. text_overlap when this annotation's "
+		+ "text area intersects an existing text-bearing annotation (the add stands; reposition "
+		+ "if readability matters). "
 		+ "Provide either editor_name (live in-memory host) OR document_path (on-disk sidecar), not both.",
 		{
 			"type": "object",
@@ -848,6 +856,7 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 	var registry: AnnotationRegistry = _get_registry()
 	var raw_annotations: Array = []
 	var source_label: String = ""
+	var live_host: AnnotationHost = null
 
 	if not editor_name.is_empty():
 		var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
@@ -857,6 +866,7 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 				% [editor_name, str(known)])
 		raw_annotations = host.get_annotations()
 		source_label = "live"
+		live_host = host
 		# Live hosts know their own kind registry; prefer it over the fallback
 		# so plugin-contributed kinds resolve correctly.
 		var host_reg: AnnotationRegistry = host.get_registry()
@@ -912,6 +922,23 @@ func _annotations_list(args: Dictionary) -> Dictionary:
 		if kind_obj != null:
 			var b: Rect2 = kind_obj.bounds(ann)
 			entry["bounds"] = {"x": b.position.x, "y": b.position.y, "w": b.size.x, "h": b.size.y}
+
+		# LLM ergonomics (docket 019fcb06ca0b): `text` is the annotation's words,
+		# normalized across kinds — arrow labels, text content, comment bodies —
+		# so agents don't need per-kind payload-key knowledge to read them.
+		if kind_obj != null:
+			var words: String = kind_obj.text_content(ann)
+			if not words.is_empty():
+				entry["text"] = words
+
+		# Structured anchor detail from hosts that can resolve domain entities
+		# (duck-typed, live hosts only; e.g. the PCB host names the exact
+		# via/pad/trace hit with its id, net and distance instead of the lossy
+		# anchored_to string alone).
+		if live_host != null and live_host.has_method("describe_anchor_detail"):
+			var detail: Variant = live_host.describe_anchor_detail(ann)
+			if detail is Dictionary and not (detail as Dictionary).is_empty():
+				entry["anchor_detail"] = detail
 
 		result_annotations.append(entry)
 
@@ -1062,7 +1089,16 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 					"code": "host_rejected",
 				}],
 			}
-		return _ok(_creation_echo(annotation, assigned_id, editor_name, ""))
+		var echo: Dictionary = _creation_echo(annotation, assigned_id, editor_name, "")
+		# Authoring-time collision feedback (docket 019fcb6fe5, owner HITL):
+		# an agent that just wrote text on top of existing text should LEARN
+		# that from the reply — the render can't be read back over MCP, so
+		# this warning is the only overlap signal an LLM gets. Warning, not
+		# refusal: the add stands, the caller decides whether to reposition.
+		var overlap_warnings: Array = _label_overlap_warnings(host, registry, annotation)
+		if not overlap_warnings.is_empty():
+			echo["warnings"] = overlap_warnings
+		return _ok(echo)
 
 	var sidecar: Dictionary = _load_or_init_sidecar(doc_path)
 	var annotations: Array = sidecar["annotations"]
@@ -1080,6 +1116,64 @@ func _annotations_add(args: Dictionary) -> Dictionary:
 		return _err("Failed to write sidecar (error %d)" % write_err)
 
 	return _ok(_creation_echo(annotation, str(annotation["id"]), "", doc_path))
+
+
+## The annotation's words, for overlap purposes: the kind's normalized
+## text_content when it has one, else a duck-typed kind_payload.text peek so
+## plugin kinds (e.g. pcb_route_hint) that predate the text_content contract
+## still count as text-bearing.
+func _overlap_words(kind_obj: AnnotationKind, ann: Dictionary) -> String:
+	if kind_obj != null:
+		var words: String = kind_obj.text_content(ann)
+		if not words.is_empty():
+			return words
+	var payload: Variant = ann.get("kind_payload", {})
+	if payload is Dictionary:
+		return str((payload as Dictionary).get("text", "")).strip_edges()
+	return ""
+
+
+## Overlap warnings for a freshly-added annotation vs the host's existing ones
+## (docket 019fcb6fe5). Only TEXT-BEARING pairs are compared — geometry
+## overlapping geometry is normal board life; words rendered on words is what
+## makes text unreadable. Bounds come from each kind's own bounds() (doc
+## space, the same rects hit-testing uses). Capped at 3 named collisions so a
+## crowded board doesn't flood the reply.
+func _label_overlap_warnings(host: AnnotationHost, registry: AnnotationRegistry, new_ann: Dictionary) -> Array:
+	if host == null or registry == null:
+		return []
+	var new_kind: AnnotationKind = registry.get_annotation_kind(StringName(str(new_ann.get("kind", ""))))
+	if new_kind == null:
+		return []
+	if _overlap_words(new_kind, new_ann).is_empty():
+		return []
+	var new_bounds: Rect2 = new_kind.bounds(new_ann)
+	if new_bounds.size == Vector2.ZERO:
+		return []
+	var new_id: String = str(new_ann.get("id", ""))
+	var warnings: Array = []
+	for existing in _host_annotations(host):
+		if not existing is Dictionary:
+			continue
+		var other: Dictionary = existing
+		if str(other.get("id", "")) == new_id:
+			continue
+		var other_kind: AnnotationKind = registry.get_annotation_kind(StringName(str(other.get("kind", ""))))
+		if other_kind == null:
+			continue
+		if _overlap_words(other_kind, other).is_empty():
+			continue
+		var other_bounds: Rect2 = other_kind.bounds(other)
+		if other_bounds.size == Vector2.ZERO:
+			continue
+		if new_bounds.intersects(other_bounds):
+			var at: Vector2 = other_bounds.get_center()
+			warnings.append(
+				"text_overlap: this annotation's text area intersects %s (%s) near (%.1f, %.1f) — consider repositioning so both stay readable"
+				% [str(other.get("id", "")), str(other.get("kind", "")), at.x, at.y])
+			if warnings.size() >= 3:
+				break
+	return warnings
 
 
 func _annotations_update(args: Dictionary) -> Dictionary:
@@ -1118,6 +1212,20 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 			existing[key] = patch[key]
 		existing["updated_at"] = Time.get_datetime_string_from_system(true) + "Z"
 		if not host.update_annotation(target_id, existing):
+			# Codex 1047 fix round, verdict 3: a host may refuse an update for
+			# POLICY reasons (e.g. the PCB host's superseded-waypoints guard),
+			# not just because the id vanished — collapsing that into
+			# "not_found" was a lie (the annotation is right there). Hosts
+			# that want to say WHY expose a `last_update_refusal` Dictionary
+			# describing the refusal of the call that just returned false
+			# ({} when the failure was not policy). Probed duck-typed via
+			# Object.get so core stays kind-agnostic: hosts without the
+			# property answer null and keep the exact legacy reply.
+			var refusal: Variant = host.get("last_update_refusal")
+			if refusal is Dictionary and not (refusal as Dictionary).is_empty():
+				var reply: Dictionary = (refusal as Dictionary).duplicate(true)
+				reply["ok"] = false
+				return reply
 			return {"ok": false, "error": "not_found"}
 		return _ok({"ok": true})
 
@@ -1136,6 +1244,17 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 		return {"ok": false, "error": "not_found"}
 
 	var existing2: Dictionary = annotations[found_idx].duplicate(true)
+
+	# Codex 1047 fix round, verdict 5: the OFFLINE path cannot coordinate live
+	# state (a plugin panel's workspace, host-side guards), so an annotation
+	# whose kind marked fields as live-editor-only must not be silently
+	# patchable here — see _offline_locked_field_violation's own doc for the
+	# generic (kind-agnostic) convention. Refuses BEFORE any mutation; only a
+	# patch that ACTUALLY CHANGES a locked field is refused, so offline edits
+	# to note/lifecycle/position on the same annotation still succeed.
+	var lock_violation: Dictionary = _offline_locked_field_violation(existing2, patch)
+	if not lock_violation.is_empty():
+		return lock_violation
 
 	# Shallow patch: merge provided fields over the top, except author (immutable).
 	for key in patch.keys():
@@ -1158,6 +1277,76 @@ func _annotations_update(args: Dictionary) -> Dictionary:
 		return _err("Failed to write sidecar (error %d)" % write_err)
 
 	return _ok({"ok": true})
+
+
+## Codex 1047 fix round, verdict 5 — the generic offline-lock convention.
+## An annotation whose kind_payload carries `_locked_fields: Array[String]`
+## declares those kind_payload keys LIVE-EDITOR-ONLY: they participate in
+## coordination core cannot see from a sidecar (e.g. the PCB plugin's
+## task-level routing constraints — its _stamp_waypoints_superseded writes
+## `_locked_fields: ["waypoints", "detail_level"]` plus a human-readable
+## `_lock_reason` beside its supersession marker). Core stays completely
+## kind-agnostic: it never knows WHAT the fields mean, only that the
+## annotation's own payload named them.
+##
+## Returns {} (no violation) or the full structured refusal reply:
+## {ok:false, error:"live_editor_required", locked_fields:[...],
+##  lock_reason:"<echoed>", note:"..."}.
+##
+## Semantics, matching the offline patch's own REPLACE behavior: the shallow
+## top-level merge swaps the ENTIRE kind_payload, so a locked field counts as
+## "touched" when its value under the incoming kind_payload differs from the
+## stored one — INCLUDING being omitted (omission deletes it under replace
+## semantics, which is a change). A patch whose kind_payload carries the
+## locked fields byte-identically (or that never touches kind_payload at all)
+## passes. The lock keys THEMSELVES (_locked_fields/_lock_reason) are
+## implicitly locked too — otherwise a two-step offline bypass (strip the
+## lock, then edit the field) would defeat the whole convention, mirroring
+## the live host's own marker re-injection reasoning.
+##
+## KNOWN LIMIT (narrowed by the shipped CX-D load-time reconciliation,
+## panel_tools.reconcile_superseded_waypoint_state): sidecars stamped BEFORE
+## _locked_fields existed carry only the kind-specific marker and are not
+## offline-protected until re-stamped — which now happens automatically the
+## next time the board is OPENED in the live editor (the reconciliation pass
+## backfills the lock keys onto every still-governed stamped hint). Only a
+## sidecar never re-opened live since then remains in the unprotected shape.
+func _offline_locked_field_violation(existing: Dictionary, patch: Dictionary) -> Dictionary:
+	var kp_v: Variant = existing.get("kind_payload", {})
+	if not (kp_v is Dictionary):
+		return {}
+	var kp: Dictionary = kp_v
+	var locked_v: Variant = kp.get("_locked_fields", null)
+	if not (locked_v is Array) or (locked_v as Array).is_empty():
+		return {}
+	if not (patch.get("kind_payload", null) is Dictionary):
+		# The patch never touches kind_payload — locked fields cannot change.
+		return {}
+	var new_kp: Dictionary = patch["kind_payload"]
+	var guarded: Array = []
+	for f in (locked_v as Array):
+		guarded.append(str(f))
+	# The lock keys themselves are implicitly locked (see doc above).
+	for self_key in ["_locked_fields", "_lock_reason"]:
+		if not guarded.has(self_key):
+			guarded.append(self_key)
+	var touched: Array = []
+	for fname in guarded:
+		if JSON.stringify(kp.get(fname, null)) != JSON.stringify(new_kp.get(fname, null)):
+			touched.append(fname)
+	if touched.is_empty():
+		return {}
+	return {
+		"ok": false,
+		"error": "live_editor_required",
+		"locked_fields": touched,
+		"lock_reason": str(kp.get("_lock_reason", "")),
+		"note": "this annotation's kind_payload declares these fields live-editor-only "
+			+ "(_locked_fields) — an offline sidecar patch cannot coordinate the live state "
+			+ "they participate in. Open the document in its editor and use the live path "
+			+ "(editor_name) or the operation named in lock_reason instead. Fields NOT "
+			+ "listed in _locked_fields remain patchable offline.",
+	}
 
 
 func _annotations_delete(args: Dictionary) -> Dictionary:

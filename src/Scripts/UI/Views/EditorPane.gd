@@ -703,9 +703,14 @@ func _get_or_create_activity_log(agent_id: String) -> Editor:
 	var key: String = agent_id if not agent_id.is_empty() else "__mcp_default__"
 
 	if _activity_log_editors.has(key):
-		var existing: Editor = _activity_log_editors[key]
+		# UNTYPED fetch on purpose (docket 019fe35953b9): assigning a freed
+		# object into a typed `Editor` var raises "Trying to assign invalid
+		# previously freed instance" AT THE ASSIGNMENT — before the validity
+		# guard below can run. The guard was always here; the type annotation
+		# defeated it.
+		var existing: Variant = _activity_log_editors[key]
 		if is_instance_valid(existing):
-			return existing
+			return existing as Editor
 		_activity_log_editors.erase(key)
 
 	var display_name: String = "Activity: %s" % agent_id if not agent_id.is_empty() else "Activity: MCP"

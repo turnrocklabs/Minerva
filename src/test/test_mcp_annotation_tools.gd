@@ -126,6 +126,17 @@ func _initialize() -> void:
 	await test_update_editor_patches_live_annotation(tools)
 	await test_delete_editor_removes_from_live_host(tools)
 
+	print("\n-- update: live host POLICY refusal surfaces structured error (Codex 1047 v3) --")
+	await test_update_editor_policy_refusal_structured(tools)
+	await test_update_editor_nonpolicy_failure_still_not_found(tools)
+
+	print("\n-- update: offline locked-field patches refuse live_editor_required (Codex 1047 v5) --")
+	await test_update_offline_locked_field_refused(tools)
+	await test_update_offline_unlocked_field_succeeds(tools)
+	await test_update_offline_identical_locked_values_pass(tools)
+	await test_update_offline_lock_keys_self_protected(tools)
+	await test_update_offline_without_locked_fields_unaffected(tools)
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -977,6 +988,24 @@ class _FixtureLiveHost extends AnnotationHost:
 		return false
 
 
+## Codex 1047 fix round, verdict 3: a live host that refuses updates for
+## POLICY reasons and says why through the duck-typed `last_update_refusal`
+## side channel — the exact contract the PCB plugin's PcbAnnotationHost
+## implements for its superseded-waypoints guard (core never sees that class;
+## this fixture stands in for ANY host honoring the convention).
+class _RefusingLiveHost extends _FixtureLiveHost:
+	var last_update_refusal: Dictionary = {}
+	## When non-empty, update_annotation refuses and publishes this dict.
+	var refusal_to_publish: Dictionary = {}
+
+	func update_annotation(annotation_id: String, new_annotation: Dictionary) -> bool:
+		last_update_refusal = {}
+		if not refusal_to_publish.is_empty():
+			last_update_refusal = refusal_to_publish.duplicate(true)
+			return false
+		return super.update_annotation(annotation_id, new_annotation)
+
+
 func test_list_requires_path_or_editor(tools: MCPAnnotationTools) -> void:
 	print("test_list_requires_path_or_editor:")
 	var result := await tools.handle("minerva_annotations_list", {})
@@ -1766,3 +1795,205 @@ func test_delete_editor_removes_from_live_host(tools: MCPAnnotationTools) -> voi
 	check("delete live: ok=true", bool(result.get("ok", false)))
 	check("delete live: host is empty", host.get_annotations().is_empty())
 	AnnotationHostRegistry._reset_for_test()
+
+
+# ── Codex 1047 fix round, verdict 3: live POLICY refusal → structured error ───
+
+func test_update_editor_policy_refusal_structured(tools: MCPAnnotationTools) -> void:
+	print("test_update_editor_policy_refusal_structured:")
+	AnnotationHostRegistry._reset_for_test()
+	var host := _RefusingLiveHost.new()
+	host.push({
+		"id": "ann_pol1",
+		"kind": "2d_arrow",
+		"view_context": "pcb",
+		"author": "ai",
+		"primitives": [{"kind": "arrow", "from": [0.0, 0.0], "to": [10.0, 5.0]}],
+	})
+	# The shape PcbAnnotationHost publishes for its superseded-waypoints guard.
+	host.refusal_to_publish = {
+		"error": "waypoints_superseded",
+		"hint_id": "ann_pol1",
+		"constraint_revision": 2,
+		"note": "use minerva_pcb_hint_convert_to_detailed to reclaim the waypoints",
+	}
+	AnnotationHostRegistry.register("PolicyPanel", host)
+	var result := await tools.handle("minerva_annotations_update", {
+		"editor_name": "PolicyPanel",
+		"id": "ann_pol1",
+		"patch": {"summary": "whatever"},
+	})
+	check("policy refusal: ok=false", result.get("ok", true) == false)
+	check("policy refusal: NAMED error, not not_found",
+		str(result.get("error", "")) == "waypoints_superseded")
+	check("policy refusal: constraint_revision surfaced",
+		int(result.get("constraint_revision", -1)) == 2)
+	check("policy refusal: note (naming the conversion tool) surfaced",
+		str(result.get("note", "")).contains("minerva_pcb_hint_convert_to_detailed"))
+	check("policy refusal: annotation untouched on the host",
+		str((host.get_annotations()[0] as Dictionary).get("summary", "")) == "")
+	AnnotationHostRegistry._reset_for_test()
+
+
+func test_update_editor_nonpolicy_failure_still_not_found(tools: MCPAnnotationTools) -> void:
+	print("test_update_editor_nonpolicy_failure_still_not_found:")
+	# A host exposing last_update_refusal that stays EMPTY (a non-policy false
+	# return — e.g. the id raced away) keeps the exact legacy not_found reply,
+	# as does a host without the property at all (the plain fixture, covered
+	# implicitly by every pre-existing update test above).
+	AnnotationHostRegistry._reset_for_test()
+	var host := _RefusingLiveHost.new()
+	AnnotationHostRegistry.register("PolicyPanel2", host)
+	var result := await tools.handle("minerva_annotations_update", {
+		"editor_name": "PolicyPanel2",
+		"id": "ann_gone",
+		"patch": {"summary": "whatever"},
+	})
+	check("non-policy failure: ok=false", result.get("ok", true) == false)
+	check("non-policy failure: error stays not_found",
+		str(result.get("error", "")) == "not_found")
+	AnnotationHostRegistry._reset_for_test()
+
+
+# ── Codex 1047 fix round, verdict 5: offline locked-field patches ─────────────
+
+## The offline fixture: an annotation whose kind_payload declares
+## _locked_fields (the shape the PCB plugin's _stamp_waypoints_superseded
+## writes into a sidecar via the live host + save). Kind is irrelevant to the
+## offline patch path — the convention is kind-agnostic by design.
+func _locked_sidecar_annotation() -> Dictionary:
+	return {
+		"id": "ann_locked",
+		"kind": "pcb_route_hint",
+		"view_context": "pcb",
+		"author": "human",
+		"summary": "guided legacy hint",
+		"kind_payload": {
+			"waypoints": [[0.0, 0.0], [5.0, 0.0]],
+			"detail_level": "guided",
+			"text": "legacy",
+			"waypoints_superseded_by_constraint_revision": 1,
+			"_locked_fields": ["waypoints", "detail_level"],
+			"_lock_reason": "superseded by task constraint revision 1 — use minerva_pcb_hint_convert_to_detailed in the live editor",
+		},
+	}
+
+
+func test_update_offline_locked_field_refused(tools: MCPAnnotationTools) -> void:
+	print("test_update_offline_locked_field_refused:")
+	var doc := _doc_path("locked_refuse.txt")
+	_write_raw_sidecar(doc, [_locked_sidecar_annotation()])
+	var result := await tools.handle("minerva_annotations_update", {
+		"document_path": doc,
+		"id": "ann_locked",
+		"patch": {"kind_payload": {
+			"waypoints": [[0.0, 0.0], [9.0, 9.0]],
+			"detail_level": "guided",
+			"text": "legacy",
+			"waypoints_superseded_by_constraint_revision": 1,
+			"_locked_fields": ["waypoints", "detail_level"],
+			"_lock_reason": "superseded by task constraint revision 1 — use minerva_pcb_hint_convert_to_detailed in the live editor",
+		}},
+	})
+	check("locked-field patch: ok=false", result.get("ok", true) == false)
+	check("locked-field patch: error=live_editor_required",
+		str(result.get("error", "")) == "live_editor_required")
+	check("locked-field patch: names the touched field",
+		"waypoints" in (result.get("locked_fields", []) as Array))
+	check("locked-field patch: echoes _lock_reason",
+		str(result.get("lock_reason", "")).contains("minerva_pcb_hint_convert_to_detailed"))
+	var anns: Array = AnnotationSidecar.read_sidecar(doc).get("annotations", [])
+	var kp: Dictionary = (anns[0] as Dictionary).get("kind_payload", {})
+	check("locked-field patch: sidecar waypoints UNCHANGED",
+		float(((kp.get("waypoints", []) as Array)[1] as Array)[0]) == 5.0)
+
+
+func test_update_offline_unlocked_field_succeeds(tools: MCPAnnotationTools) -> void:
+	print("test_update_offline_unlocked_field_succeeds:")
+	var doc := _doc_path("locked_pass.txt")
+	_write_raw_sidecar(doc, [_locked_sidecar_annotation()])
+	# A patch that never touches kind_payload at all — note/status-class edits
+	# on a stamped hint must still succeed offline.
+	var result := await tools.handle("minerva_annotations_update", {
+		"document_path": doc,
+		"id": "ann_locked",
+		"patch": {"summary": "renamed offline", "lifecycle": "resolved"},
+	})
+	check("unlocked patch: success=true", result.get("success", false))
+	var anns: Array = AnnotationSidecar.read_sidecar(doc).get("annotations", [])
+	var stored: Dictionary = anns[0]
+	check("unlocked patch: summary updated", str(stored.get("summary", "")) == "renamed offline")
+	check("unlocked patch: lifecycle updated", str(stored.get("lifecycle", "")) == "resolved")
+	check("unlocked patch: kind_payload untouched",
+		float((((stored.get("kind_payload", {}) as Dictionary).get("waypoints", []) as Array)[1] as Array)[0]) == 5.0)
+
+
+func test_update_offline_identical_locked_values_pass(tools: MCPAnnotationTools) -> void:
+	print("test_update_offline_identical_locked_values_pass:")
+	# Only ACTUAL changes to locked fields are refused: a kind_payload patch
+	# carrying the locked fields byte-identically while changing an UNLOCKED
+	# payload key passes (the compare-old-vs-new requirement).
+	var doc := _doc_path("locked_identical.txt")
+	_write_raw_sidecar(doc, [_locked_sidecar_annotation()])
+	var patched_kp: Dictionary = (_locked_sidecar_annotation()["kind_payload"] as Dictionary).duplicate(true)
+	patched_kp["text"] = "edited offline"
+	var result := await tools.handle("minerva_annotations_update", {
+		"document_path": doc,
+		"id": "ann_locked",
+		"patch": {"kind_payload": patched_kp},
+	})
+	check("identical locked values: success=true", result.get("success", false))
+	var anns: Array = AnnotationSidecar.read_sidecar(doc).get("annotations", [])
+	var kp: Dictionary = (anns[0] as Dictionary).get("kind_payload", {})
+	check("identical locked values: unlocked payload key changed",
+		str(kp.get("text", "")) == "edited offline")
+	check("identical locked values: locked field carried through",
+		float(((kp.get("waypoints", []) as Array)[1] as Array)[0]) == 5.0)
+
+
+func test_update_offline_lock_keys_self_protected(tools: MCPAnnotationTools) -> void:
+	print("test_update_offline_lock_keys_self_protected:")
+	# The lock keys themselves are implicitly locked: a patch that keeps every
+	# locked field identical but STRIPS _locked_fields (step one of an offline
+	# two-step bypass) is refused.
+	var doc := _doc_path("locked_selfstrip.txt")
+	_write_raw_sidecar(doc, [_locked_sidecar_annotation()])
+	var stripped_kp: Dictionary = (_locked_sidecar_annotation()["kind_payload"] as Dictionary).duplicate(true)
+	stripped_kp.erase("_locked_fields")
+	stripped_kp.erase("_lock_reason")
+	var result := await tools.handle("minerva_annotations_update", {
+		"document_path": doc,
+		"id": "ann_locked",
+		"patch": {"kind_payload": stripped_kp},
+	})
+	check("lock-strip patch: ok=false", result.get("ok", true) == false)
+	check("lock-strip patch: error=live_editor_required",
+		str(result.get("error", "")) == "live_editor_required")
+	check("lock-strip patch: names _locked_fields as touched",
+		"_locked_fields" in (result.get("locked_fields", []) as Array))
+	var anns: Array = AnnotationSidecar.read_sidecar(doc).get("annotations", [])
+	check("lock-strip patch: sidecar lock still present",
+		((anns[0] as Dictionary).get("kind_payload", {}) as Dictionary).has("_locked_fields"))
+
+
+func test_update_offline_without_locked_fields_unaffected(tools: MCPAnnotationTools) -> void:
+	print("test_update_offline_without_locked_fields_unaffected:")
+	# An annotation with NO _locked_fields keeps the exact legacy behavior —
+	# kind_payload replaced wholesale, no refusal.
+	var doc := _doc_path("unlocked_baseline.txt")
+	var ann := _locked_sidecar_annotation()
+	var kp: Dictionary = (ann["kind_payload"] as Dictionary)
+	kp.erase("_locked_fields")
+	kp.erase("_lock_reason")
+	kp.erase("waypoints_superseded_by_constraint_revision")
+	_write_raw_sidecar(doc, [ann])
+	var result := await tools.handle("minerva_annotations_update", {
+		"document_path": doc,
+		"id": "ann_locked",
+		"patch": {"kind_payload": {"waypoints": [[1.0, 1.0]], "detail_level": "detailed"}},
+	})
+	check("no-lock annotation: success=true", result.get("success", false))
+	var anns: Array = AnnotationSidecar.read_sidecar(doc).get("annotations", [])
+	var stored_kp: Dictionary = (anns[0] as Dictionary).get("kind_payload", {})
+	check("no-lock annotation: kind_payload replaced as before",
+		str(stored_kp.get("detail_level", "")) == "detailed")

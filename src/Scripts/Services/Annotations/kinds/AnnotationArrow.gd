@@ -53,16 +53,22 @@ const LABEL_FONT_SIZE_KEY := "label_font_size"
 ## explicit size — same default as AnnotationText's kind_payload.font_size.
 const DEFAULT_LABEL_FONT_SIZE := 14.0
 
-## Default midpoint→label offset, in multiples of the glyph height, straight up
-## the y axis. Font-relative rather than a fixed doc-unit constant because doc
-## units are millimetres on the PCB canvas. THE one definition — every seed site
-## goes through default_label_offset().
-const DEFAULT_LABEL_OFFSET_FONTS := 1.6
+## Default midpoint→label offset, in multiples of the glyph height. ZERO since
+## the owner HITL ruling (docket 019fcaefd0e1): a fresh caption sits centred ON
+## the shaft at its midpoint, and — because AnnotationTransformTool's drag
+## clearance is derived from default_label_offset().length() — the caption
+## stays centred on the line and slides ALONG it only. (Was 1.6 fonts straight
+## up, which floated the label off the line and granted perpendicular drag
+## freedom.) Font-relative shape kept so a future nonzero default stays
+## proportional on the millimetre-unit PCB canvas. THE one definition — every
+## seed site goes through default_label_offset().
+const DEFAULT_LABEL_OFFSET_FONTS := 0.0
 
 
-## Offset that puts a fresh caption just clear of the shaft, for glyph height
-## `font`. Single source of truth for the seed: AnnotationTransformTool's open
-## and commit paths call this, and so do label_offset()/with_label() below.
+## Offset for a fresh caption, for glyph height `font` — the shaft midpoint
+## itself (see DEFAULT_LABEL_OFFSET_FONTS). Single source of truth for the
+## seed: AnnotationTransformTool's open and commit paths call this, and so do
+## label_offset()/with_label() below.
 static func default_label_offset(font: float) -> Vector2:
 	return Vector2(0.0, -font * DEFAULT_LABEL_OFFSET_FONTS)
 
@@ -99,10 +105,20 @@ func summary(annotation: Dictionary) -> String:
 			var b := AnnotationKind._to_vec2(prim.get("to", [0, 0]))
 			var anchor := AnnotationSchema.get_anchored_to(annotation)
 			var base := "arrow from (%.0f, %.0f) to (%.0f, %.0f)" % [a.x, a.y, b.x, b.y]
+			# The caption is the arrow's message — lead with it so a list of
+			# summaries scans as intents, not geometry (docket 019fcb06ca0b).
+			var caption := label_text(annotation).strip_edges()
+			if not caption.is_empty():
+				base = "\"%s\" — %s" % [caption, base]
 			if not anchor.is_empty():
 				return "%s → %s" % [base, anchor]
 			return base
 	return super(annotation)  # fall through to default
+
+
+## The caption IS this kind's free text (see AnnotationKind.text_content).
+func text_content(annotation: Dictionary) -> String:
+	return label_text(annotation).strip_edges()
 
 
 # ── Required overrides ────────────────────────────────────────────────────────
@@ -326,6 +342,20 @@ func with_label(annotation: Dictionary, text: String,
 		out.erase("kind_payload")
 	else:
 		out["kind_payload"] = payload
+	# Refresh the envelope summary at the one label choke point (LLM
+	# ergonomics, docket 019fcb06ca0b): the author tool stamps a static "Arrow"
+	# before any words exist, and minerva_annotations_list prefers the stored
+	# v2 summary — so without this, fifty labelled arrows all scan as "Arrow".
+	# Only REFRESH, never MINT: an envelope with no summary key stays without
+	# one (the no-op byte-identity contract above extends to the whole
+	# envelope), and only a summary this kind's own vocabulary produced
+	# ("Arrow" or a previous summary() result) is rewritten — a caller-authored
+	# custom summary is theirs.
+	if out.has("summary"):
+		var stored := str(out.get("summary", ""))
+		if stored.is_empty() or stored == "Arrow" or stored == display_name \
+				or stored == summary(annotation):
+			out["summary"] = summary(out)
 	return out
 
 
