@@ -144,7 +144,21 @@ static func _is_stale(lock_path: String) -> bool:
 static func _is_pid_running(pid: int) -> bool:
 	## Returns true if the process with `pid` appears to be running.
 	## Uses /proc/<pid>/ on Linux; falls back to OS.execute("kill", ["-0", pid]) on macOS.
-	## On Windows, always returns false (conservative: don't break stale locks).
+	##
+	## On Windows and any unrecognised platform, returns TRUE — "assume alive" —
+	## so staleness falls back to the age timeout alone and a lock is never
+	## broken on a hunch. This docstring previously said it returns FALSE and
+	## called that "conservative"; both halves were wrong. False is the
+	## DANGEROUS answer here: `_is_stale` reads `not _is_pid_running(pid)`, so
+	## returning false declares the holder dead and breaks a lock that may be
+	## actively held, corrupting the write in progress. Wrongly assuming a dead
+	## process is alive only delays acquisition until the timeout, which
+	## recovers on its own.
+	##
+	## The standalone docket repo implements real Windows liveness here via
+	## `tasklist` instead of falling back to the timeout. If these two copies
+	## are ever unified (DCR 019ff33822a9), THAT is the implementation to keep —
+	## this one is safe but weaker.
 	var os_name := OS.get_name()
 
 	if os_name == "Linux":
