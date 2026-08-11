@@ -47,6 +47,7 @@ func _init() -> void:
 
 	print("\n-- annotation Dict shape --")
 	test_annotation_dict_shape()
+	test_authored_font_size_is_screen_px_converted_to_doc_units()
 
 	print("\n-- author_ui factory --")
 	test_text_author_ui_returns_fresh_instance()
@@ -95,6 +96,20 @@ class MockHost extends AnnotationHost:
 
 	func get_view_context() -> String:
 		return view_context_value
+
+
+## A host that REPORTS A ZOOM, which the plain MockHost deliberately does not.
+##
+## The tool duck-types on `has_method("get_annotation_zoom")` and falls back to
+## 1.0, so every test driven by MockHost authors at zoom 1 — where the stored
+## font size is 14 either way, before or after the doc-vs-screen fix. That is
+## why the shape test alone cannot tell the fixed code from the bug (see
+## test_authored_font_size_is_screen_px_converted_to_doc_units).
+class ZoomedMockHost extends MockHost:
+	var zoom: float = 1.0
+
+	func get_annotation_zoom() -> float:
+		return zoom
 
 
 # ── Signal capture helper ─────────────────────────────────────────────────────
@@ -380,8 +395,62 @@ func test_annotation_dict_shape() -> void:
 	check("kind_payload is Dictionary", ann.get("kind_payload") is Dictionary)
 	var payload: Dictionary = ann["kind_payload"]
 	check_eq("payload text == typed string", payload.get("text"), "Annotated!")
-	check_eq("payload font_size == default 14", payload.get("font_size"), AnnotationTextAuthorTool.DEFAULT_FONT_SIZE)
+	# MockHost reports no zoom, so the tool authors at zoom 1 and the stored
+	# DOCUMENT-unit size equals the screen-px target. Read through the
+	# production formula rather than restating 14: the constant this used to
+	# name (DEFAULT_FONT_SIZE) was deleted by 6044ed5f, and hardcoding its old
+	# value here would pin the number while losing what it now means.
+	check_eq("payload font_size == screen target at zoom 1",
+		payload.get("font_size"),
+		AnnotationInPlaceTextEditor.authored_font_size(1.0))
 	check("primitives is empty Array for v1 compatibility", ann.get("primitives") is Array and (ann["primitives"] as Array).is_empty())
+
+
+func test_authored_font_size_is_screen_px_converted_to_doc_units() -> void:
+	## THE CASE THE SHAPE TEST ABOVE STRUCTURALLY CANNOT MAKE.
+	##
+	## Commit 6044ed5f replaced a fixed 14-doc-unit default with a screen-px
+	## TARGET divided by the authoring zoom, because 14 doc units is 14
+	## MILLIMETRES on a mm-unit canvas like the PCB panel and rendered as a
+	## clamped-64px monster (owner HITL 2026-07-30).
+	##
+	## Every other test here drives a MockHost that reports no zoom, so the tool
+	## falls back to zoom 1.0 — where old and new behaviour both store 14 and
+	## are indistinguishable. This test is the only one that separates them: at
+	## zoom 4 the stored DOCUMENT-unit size must be 3.5, and the pre-fix code
+	## would still store 14.
+	print("test_authored_font_size_is_screen_px_converted_to_doc_units:")
+	var zooms: Array = [0.5, 1.0, 4.0]
+	for zoom in zooms:
+		var tool := AnnotationTextAuthorTool.new()
+		var host := ZoomedMockHost.new()
+		host.zoom = zoom
+		var sigs := _capture_signals(tool)
+		var calls: Array = []
+		tool._text_provider = _make_immediate_provider("Zoomed!", calls)
+		tool.on_activate(host)
+
+		tool.on_pointer_down(Vector2(0, 0), MOUSE_BUTTON_LEFT, 0)
+
+		var ann: Dictionary = sigs["ready_payload"][0]
+		var payload: Dictionary = ann["kind_payload"]
+		# ASSERTION 1 — PLUMBING ONLY, and deliberately so. It compares against
+		# the same function the tool calls, so it cannot detect a wrong formula;
+		# what it does pin is that the tool routes the HOST'S zoom into it
+		# rather than a hardcoded 1.0. Measured: mutating the formula to a fixed
+		# 14.0 leaves this assertion green at every zoom.
+		var expected := AnnotationInPlaceTextEditor.authored_font_size(zoom)
+		check_eq("font_size at zoom %s comes from the host zoom" % str(zoom),
+			payload.get("font_size"), expected)
+		# ASSERTION 2 — THE LOAD-BEARING ONE. Stated independently of the
+		# formula: whatever is stored, scaling it back up by the authoring zoom
+		# must land on the on-screen target. This is the one that fails if the
+		# formula regresses — measured against a fixed-14.0 mutation, it failed
+		# at zoom 0.5 (got 7.0) and zoom 4.0 (got 56.0) while zoom 1.0 stayed
+		# green, which is precisely why a zoom-1-only fixture proves nothing.
+		check_eq("stored size * zoom == the screen target at zoom %s" % str(zoom),
+			snappedf(float(payload.get("font_size")) * zoom, 0.0001),
+			float(AnnotationInPlaceTextEditor.TARGET_SCREEN_FONT_PX))
 
 
 # ── Tests: author_ui factory ──────────────────────────────────────────────────
