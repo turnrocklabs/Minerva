@@ -66,6 +66,15 @@ plugins/elgato/node_modules/
 *.dct.cache-wal
 *.dct.lock
 *.dct.tmp.*
+# Hand-made rescue copies of a docket file. These are LOCAL artifacts of a
+# recovery session, routinely multi-megabyte, and they duplicate content that
+# already lives in the tracked .dct. Two of them were swept into the repo by a
+# `git add -A` on 2026-08-11 (cc94d177) and had to be removed again; gitleaks
+# is what caught it. Ignored so the next `add -A` cannot repeat it.
+*.dct.SESSION-BACKUP-*
+*.dct.UPSTREAM-BACKUP-*
+*.dct.bak
+*.dct.backup
 .sconsign.dblite
 
 # Sightline editor probe output (experimental tool — debugger state snapshots)
