@@ -295,7 +295,7 @@ func register_tools() -> void:
 				"sets": {
 					"type": "array",
 					"items": {"type": "string"},
-					"description": "List of tool set names to disable (e.g., ['pcb', 'video'])"
+					"description": "List of tool set names to disable (e.g., ['editor', 'video'])"
 				}
 			},
 			"required": ["sets"]

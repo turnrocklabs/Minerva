@@ -12,16 +12,6 @@ static func get_all() -> Array[SkillDefinition]:
 	general.tool_sets = ["chat", "notes", "editor", "utility"]
 	presets.append(general)
 
-	# PCB Design — specialized for electronics design work
-	var pcb := SkillDefinition.new("pcb_design", "PCB Design",
-		"Electronics design with PCB tools and editor")
-	pcb.origin = "preset"
-	pcb.tool_sets = ["pcb", "editor", "notes", "utility"]
-	pcb.prompt_fragments = [
-		"You are assisting with PCB and electronics design. Focus on schematic review, component selection, layout considerations, and design rule checks. When reviewing designs, be precise about pin assignments, trace widths, and clearances.",
-	]
-	presets.append(pcb)
-
 	# Web Research — browsing and note-taking
 	var web := SkillDefinition.new("web_research", "Web Research",
 		"Web browsing with cobrowser and note-taking")

@@ -80,7 +80,7 @@ func _init(manager = null) -> void:
 		print("[MinervaMCPServer] Registered %d tools (%d indexed for search)" % [get_tool_count(), tool_search_index.get_tool_count()])
 
 		# Auto-activate tool_search in the budget manager
-		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools plus connected external MCP servers. Search to discover and activate. Categories: files, bash, terminal, chat, notes, spreadsheet, webview, PCB, graphics, video, agents, docket, costs. Docket tools: work tracking (create/query/transition items), knowledge (skills, hints, quality scoring), projects. Search 'docket skill' for skill discovery, 'docket' for all work tracking tools.", "input_schema": {
+		var search_schema: Dictionary = {"name": "minerva_tool_search", "description": "This server has 170+ tools plus connected external MCP servers and installed plugins. Search to discover and activate them. Common categories: files, bash, terminal, chat, notes, spreadsheet, webview, graphics, video, agents, docket, costs. Docket tools: work tracking (create/query/transition items), knowledge (skills, hints, quality scoring), projects. Search 'docket skill' for skill discovery, 'docket' for all work tracking tools.", "input_schema": {
 			"type": "object", "properties": {
 				"query": {"type": "string", "description": "Keyword search or exact tool name"},
 				"category": {"type": "string", "description": "Filter by category (optional)"},
@@ -627,10 +627,10 @@ func _check_error_loop(tool_name: String, result: Dictionary, is_error: bool) ->
 
 func _register_tool_search() -> void:
 	_register_tool("minerva_tool_search",
-		"This server has 170+ tools available, plus tools from connected external MCP servers. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), webview (create/update HTML panels), PCB design, graphics, video, agents, automation, models, costs. Connected external servers (e.g., docket, nudge, cobrowser) are also searchable by name. Example: tool_search(query='edit file') or tool_search(query='docket') or tool_search(query='webview panel').",
+		"This server has 170+ tools available, plus tools from installed plugins and connected external MCP servers. Only minerva_tool_search is loaded by default to save tokens. Search by keyword to discover and activate tools. Activated tools can be called directly in subsequent turns. Common categories: files (read/write/edit/glob/grep), bash, terminal (read/write/wait/list), chat (send/list/create), notes, spreadsheet (create/format/chart), webview (create/update HTML panels), graphics, video, agents, automation, models, costs. Plugin-contributed categories and connected external servers (e.g., docket, nudge, cobrowser) are searchable by name. Example: tool_search(query='edit file') or tool_search(query='docket') or tool_search(query='webview panel').",
 		{"type": "object", "properties": {
 			"query": {"type": "string", "description": "Keyword search (e.g., 'edit file', 'docket create', 'cost summary') or exact tool name (e.g., 'minerva_doc_edit')"},
-			"category": {"type": "string", "description": "Filter by category: codetools, terminal, chat, notes, editor, spreadsheet, webview, pcb, video, agents, triggers, autocoder, costs, meta. External server names (e.g., docket, nudge) also work as categories."},
+			"category": {"type": "string", "description": "Filter by a built-in or plugin-contributed category. External server names (e.g., docket, nudge) also work as categories."},
 			"limit": {"type": "integer", "description": "Max results (default 5)"},
 		}, "required": ["query"]}, "meta")
 

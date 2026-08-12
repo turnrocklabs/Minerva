@@ -13,7 +13,7 @@ extends RefCounted
 ## see NOTE at bottom of this file.
 ##
 ## Extension collision rules (design §7.3):
-##   - Core extensions (.md, .py, .gd, .minpcb, etc.) always win;
+##   - Core extensions (.md, .py, .gd, .minkb, etc.) always win;
 ##     a plugin that declares a core extension gets a warning and the
 ##     extension is silently skipped (panel still usable via "New →").
 ##   - Two plugins with the same non-core extension: first-installed wins;
@@ -33,7 +33,7 @@ const CORE_EXTENSIONS: PackedStringArray = [
 	# Graphics
 	".png", ".jpg", ".jpeg",
 	# Typed editors
-	".minpcb", ".minkb", ".minsheet",
+	".minkb", ".minsheet",
 	# Text / code (from supported_text_formats)
 	".txt", ".rs", ".toml", ".md", ".json", ".xml", ".csv", ".log",
 	".py", ".cs", ".minproj", ".gd", ".tscn", ".godot", ".go", ".java",

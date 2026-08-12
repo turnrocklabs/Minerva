@@ -36,6 +36,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GODOT="${GODOT:-godot}"
 
 HERMETIC_TESTS=(
+	test/test_skill_presets.gd
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
 	test/test_buffer_sync_undo_caret.gd
