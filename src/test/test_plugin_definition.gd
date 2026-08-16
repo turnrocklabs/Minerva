@@ -108,6 +108,15 @@ func _init() -> void:
 	test_hcap_files_satisfied_by_full_filesystem()
 	test_hcap_files_cross_check_runs_alongside_unknown_check()
 
+	print("\n-- entrypoint-without-setup advisory (design §1) --")
+	test_compiled_entrypoint_detected()
+	test_interpreter_entrypoint_not_a_binary()
+	test_versioned_interpreter_entrypoint_not_a_binary()
+	test_absolute_interpreter_path_not_a_binary()
+	test_script_arg_rescues_unknown_launcher()
+	test_empty_entrypoint_not_a_binary()
+	test_validate_does_not_emit_the_advisory()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -936,3 +945,80 @@ func test_hcap_files_cross_check_runs_alongside_unknown_check() -> void:
 			has_fs = true
 	check("errors include the bogus-cap message", has_bogus)
 	check("errors include the filesystem cross-check message", has_fs)
+
+
+# ---------------------------------------------------------------------------
+# Tests: entrypoint-without-setup advisory (Docs/design/plugin-setup-pipeline.md §1)
+#
+# The heuristic decides whether an entrypoint names a build product. The
+# canonical interpreted-plugin shape puts the interpreter in `entrypoint` and
+# the script in `args`, so anything reading only `entrypoint` misfires on
+# every interpreted plugin.
+# ---------------------------------------------------------------------------
+
+func _is_binary(ep: String, ep_args: Array[String] = []) -> bool:
+	return PluginDefinition_._entrypoint_looks_like_compiled_binary(ep, ep_args)
+
+
+func test_compiled_entrypoint_detected() -> void:
+	print("test_compiled_entrypoint_detected:")
+	check("./cad-plugin is a binary", _is_binary("./cad-plugin"))
+	check("bin/tool.exe is a binary", _is_binary("bin/tool.exe"))
+	check("bare name is a binary", _is_binary("pcb-plugin"))
+
+
+func test_interpreter_entrypoint_not_a_binary() -> void:
+	print("test_interpreter_entrypoint_not_a_binary:")
+	var script_arg: Array[String] = ["capability_probe.py"]
+	check("python3 + script arg is not a binary", not _is_binary("python3", script_arg))
+	check("node + script arg is not a binary", not _is_binary("node", ["index.js"] as Array[String]))
+	check("bare python3 is not a binary", not _is_binary("python3"))
+	check("bash is not a binary", not _is_binary("bash"))
+
+
+func test_versioned_interpreter_entrypoint_not_a_binary() -> void:
+	print("test_versioned_interpreter_entrypoint_not_a_binary:")
+	check("python3.12 is not a binary", not _is_binary("python3.12"))
+	check("ruby3.3 is not a binary", not _is_binary("ruby3.3"))
+	# A versioned-looking name that isn't an interpreter still counts.
+	check("pythonizer is a binary", _is_binary("pythonizer"))
+
+
+func test_absolute_interpreter_path_not_a_binary() -> void:
+	print("test_absolute_interpreter_path_not_a_binary:")
+	check("/usr/bin/python3 is not a binary", not _is_binary("/usr/bin/python3"))
+	check("python.exe is not a binary", not _is_binary("C:/Python312/python.exe"))
+
+
+func test_script_arg_rescues_unknown_launcher() -> void:
+	print("test_script_arg_rescues_unknown_launcher:")
+	# An unrecognized launcher handed a script is still an interpreted plugin.
+	check(".venv/bin/runner + script arg is not a binary",
+		not _is_binary(".venv/bin/runner", ["worker/main.py"] as Array[String]))
+	check("same launcher with no script arg reads as a binary",
+		_is_binary(".venv/bin/runner"))
+
+
+func test_empty_entrypoint_not_a_binary() -> void:
+	print("test_empty_entrypoint_not_a_binary:")
+	check("empty entrypoint is not a binary", not _is_binary(""))
+	check("whitespace entrypoint is not a binary", not _is_binary("   "))
+
+
+func test_validate_does_not_emit_the_advisory() -> void:
+	print("test_validate_does_not_emit_the_advisory:")
+	# validate() runs on every plugins.json reload; the advisory belongs to
+	# the manifest-install path only (PluginDefinition.from_manifest), so
+	# validate() must stay silent and error-free for a binary entrypoint
+	# without a setup stanza.
+	var manifest := _minimal_manifest()
+	manifest["backend"] = {"transport": "stdio", "entrypoint": "./cad-plugin", "args": []}
+	var def = PluginDefinition_._from_dict_internal(manifest)
+	check("def not null", def != null)
+	if def == null:
+		return
+	check("no setup stanza", def.setup.is_empty())
+	check("binary entrypoint without setup is not a validation error",
+		def.validate().is_empty())
+	check("advisory helper exists on the install path",
+		def.has_method("warn_if_binary_has_no_producer"))

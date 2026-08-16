@@ -79,6 +79,9 @@ func _init() -> void:
 	print("\n-- D: S_NEEDS_BINARY lists BOTH missing tools --")
 	await test_needs_binary_lists_both_tools()
 
+	print("\n-- D2: S_NEEDS_BINARY on the marketplace lane reads as a missing binary, no Rebuild --")
+	await test_marketplace_needs_binary_renders_without_rebuild()
+
 	print("\n-- E: Rebuild button click actually rebuilds (fixed fixture -> success) --")
 	await test_rebuild_button_rebuilds()
 
@@ -224,6 +227,66 @@ func test_needs_binary_lists_both_tools() -> void:
 
 	var rebuild_btn := _find_button(panel._setup_status_container, "Rebuild")
 	check("D Rebuild button present for NEEDS_BINARY too", rebuild_btn != null)
+
+	_teardown(ctx, id)
+
+
+# ---------------------------------------------------------------------------
+# D2 — S_NEEDS_BINARY reached from the MARKETPLACE lane
+#
+# Same state as D, opposite cause: no toolchain was ever consulted, the release
+# simply carried no binary for this platform. Rendering D's toolchain rows here
+# would send the user hunting for a compiler, and its Rebuild button would call
+# a rebuild() that refuses the lane — a dead end.
+# ---------------------------------------------------------------------------
+
+func test_marketplace_needs_binary_renders_without_rebuild() -> void:
+	var ctx := await _make_pm_and_panel()
+	var pm = ctx["pm"]
+	var panel = ctx["panel"]
+	var id := "build_ui_marketplace_nobin"
+
+	# A staged "release" with a manifest and no binary next to it.
+	var dir := ProjectSettings.globalize_path("user://build_ui_scratch").path_join("marketplace_nobin")
+	DirAccess.make_dir_recursive_absolute(dir)
+	_scratch_dirs.append(dir)
+	var mf := FileAccess.open(dir.path_join("manifest.json"), FileAccess.WRITE)
+	mf.store_string(JSON.stringify({
+		"id": id,
+		"name": "Marketplace No Binary",
+		"version": "0.1.0",
+		"host_api_version": "1",
+		"backend": {"transport": "stdio", "entrypoint": "./bin/plugin.bin", "args": []},
+		"ui": {"panels": [], "ipc_messages": []},
+		"permissions": {
+			"host_capabilities": [],
+			"network": {"mode": "none"},
+			"filesystem": {"mode": "none", "paths": []},
+		},
+	}, "\t"))
+	mf.close()
+
+	await pm.install_plugin(dir.path_join("manifest.json"), true, PluginDefinition.LANE_MARKETPLACE)
+
+	var def = pm.get_db().get_by_id(id)
+	check("D2 state is S_NEEDS_BINARY", def != null and def.state == _pm_script.S_NEEDS_BINARY,
+		"got %s" % (str(def.state) if def != null else "<null>"))
+
+	var row_text := _row_text_for(panel, id)
+	check("D2 list row says the binary is missing", row_text.contains("Missing binary"), row_text)
+	check("D2 list row does NOT blame the toolchain", not row_text.contains("Needs toolchain"), row_text)
+
+	_select_plugin_row(panel, id)
+	var status_text := _collect_text(panel._setup_status_container)
+	check("D2 detail names the real problem",
+		status_text.contains("Plugin binary missing for this platform"), status_text)
+	check("D2 detail shows the path that was checked", status_text.contains("bin/plugin.bin"), status_text)
+	check("D2 detail tells the user to reinstall", status_text.to_lower().contains("reinstall"), status_text)
+	check("D2 detail does not list toolchain requirements",
+		not status_text.contains("Missing toolchain requirements"), status_text)
+
+	var rebuild_btn := _find_button(panel._setup_status_container, "Rebuild")
+	check("D2 no Rebuild button — rebuild() refuses this lane", rebuild_btn == null)
 
 	_teardown(ctx, id)
 

@@ -259,9 +259,15 @@ func _process(delta: float) -> void:
 ##   "skills_deferred_to_update": int — content changed; T4 reconciliation handles
 ##   "skills_declined": true — user cancelled the seed dialog (only when not auto-confirmed)
 ##
+## `lane` selects the install lane (Docs/design/plugin-setup-pipeline.md §1):
+## the default manifest/dev lane builds a declared `setup` stanza, while the
+## marketplace lane verifies the shipped artifact instead of building. Only
+## MarketplaceClient passes the marketplace lane.
+##
 ## Returns {"error": "..."} on install failure.
-func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) -> Dictionary:
-	var def = _db.install(manifest_path)
+func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
+		lane: String = PluginDefinition.LANE_MANIFEST) -> Dictionary:
+	var def = _db.install(manifest_path, lane)
 	if def == null:
 		# PluginDB.install already push_error'd; check for duplicate separately.
 		var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
@@ -295,7 +301,16 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false) ->
 	# the pipeline runs on a worker thread and reports back asynchronously via
 	# _on_setup_pipeline_finished, so install_plugin() itself returns without
 	# blocking on the build (contract: UI thread must never be blocked).
-	if not def.setup.is_empty():
+	#
+	# ...on the manifest/dev lane only. The marketplace lane installs the same
+	# manifest.json out of a release tarball, where the source the stanza would
+	# build was never packaged (§1 lane split): building there would fail on a
+	# plugin whose binary is sitting right next to the manifest. That lane
+	# verifies the shipped artifact instead — the check §1/C6 reserved
+	# S_NEEDS_BINARY for.
+	if def.install_lane == PluginDefinition.LANE_MARKETPLACE:
+		result.merge(_verify_release_artifact(def))
+	elif not def.setup.is_empty():
 		_start_setup_pipeline(def.id)
 		result["building"] = true
 
@@ -636,6 +651,10 @@ func start_plugin(id: String) -> Dictionary:
 	if def.state == S_BUILDING:
 		return {"error": "Plugin '%s' is still building — wait for the setup pipeline to finish" % id}
 	if def.state == S_BUILD_FAILED or def.state == S_NEEDS_BINARY:
+		# The repair differs per lane: dev installs rebuild, marketplace
+		# installs reinstall (rebuild() refuses them — there is no source).
+		if def.install_lane == PluginDefinition.LANE_MARKETPLACE:
+			return {"error": "Plugin '%s' has no usable binary for this platform (state=%d) — reinstall or update it from the marketplace" % [id, def.state]}
 		return {"error": "Plugin '%s' has not been built successfully (state=%d) — call rebuild() first" % [id, def.state]}
 
 	# Merge persisted runtime scope grants into def.filesystem_paths so all
@@ -878,6 +897,11 @@ func rebuild(id: String) -> Dictionary:
 		return {"error": "Plugin '%s' not found" % id}
 	if def.state != S_BUILD_FAILED and def.state != S_NEEDS_BINARY:
 		return {"error": "Plugin '%s' is not in a rebuildable state (state=%d)" % [id, def.state]}
+	# Rebuild means "run the producer again", which only the manifest/dev lane
+	# has. A marketplace plugin's producer ran on the publisher's machine; the
+	# user-side repair is a reinstall/update, not a build.
+	if def.install_lane == PluginDefinition.LANE_MARKETPLACE:
+		return {"error": "rebuild_unavailable_marketplace: plugin '%s' was installed from a release artifact — reinstall or update it from the marketplace instead" % id}
 	if def.setup.is_empty():
 		return {"error": "Plugin '%s' has no setup stanza to rebuild" % id}
 	_start_setup_pipeline(id)
@@ -905,6 +929,62 @@ func get_build_progress(id: String) -> Dictionary:
 ## never run a setup pipeline this session.
 func get_build_log(id: String) -> Array:
 	return (_build_logs.get(id, []) as Array).duplicate()
+
+
+## Marketplace-lane counterpart to _start_setup_pipeline(): the release tarball
+## already contains the producer's output, so instead of building we verify the
+## artifact the manifest's entrypoint names actually landed.
+##
+## Present  -> {} (plugin stays S_INSTALLED, exactly as before this change).
+## Absent   -> S_NEEDS_BINARY + a `plugin_binary_missing` envelope, which is
+##             what §1/C6 reserved that state for: "installed but no runnable
+##             artifact for this platform and no setup lane available."
+##             Without this, the failure surfaced much later as a raw spawn
+##             error the first time the user tried to start the plugin.
+func _verify_release_artifact(def) -> Dictionary:
+	if not def.setup.is_empty():
+		# Not an error: the same manifest.json serves both lanes. Say it once
+		# so a publisher reading the log knows the stanza was seen and skipped.
+		print(("[PluginManager] '%s' installed from a release artifact — its `setup` " +
+			"stanza is inert on this lane (no source tree to build from)") % def.id)
+
+	# A PATH-resolved entrypoint ("python3") names no packaged file; start_plugin
+	# resolves it at launch. Only a "./"-relative entrypoint has an artifact.
+	if not def.entrypoint.begins_with("./"):
+		return {}
+
+	var plugin_dir: String = ProjectSettings.globalize_path(def.data_directory)
+	var artifact_abs: String = plugin_dir.path_join(def.entrypoint.substr(2))
+	if _artifact_exists(artifact_abs):
+		return {}
+
+	var envelope := {
+		"error": "plugin_binary_missing",
+		"plugin_id": def.id,
+		"lane": PluginDefinition.LANE_MARKETPLACE,
+		"entrypoint": def.entrypoint,
+		"expected_path": artifact_abs,
+		"platform": OS.get_name(),
+		"install_hint": ("This release did not include a %s build of the plugin binary. " +
+			"Reinstall from the marketplace once a build for this platform is published.") % OS.get_name(),
+	}
+	_setup_envelopes[def.id] = envelope
+	_transition_state(def.id, S_NEEDS_BINARY)
+	_save_setup_state()
+	push_warning("[PluginManager] '%s' installed but its binary is missing: %s" % [def.id, artifact_abs])
+	return {"needs_binary": true, "envelope": envelope}
+
+
+## Does the entrypoint artifact exist at `abs_path`? Mirrors start_plugin()'s
+## own resolution, including the Windows ".exe" suffix a cross-platform manifest
+## entrypoint omits — otherwise every Windows release would verify as missing.
+func _artifact_exists(abs_path: String) -> bool:
+	if FileAccess.file_exists(abs_path) or FileAccess.file_exists(ProjectSettings.localize_path(abs_path)):
+		return true
+	if OS.get_name() == "Windows":
+		return (FileAccess.file_exists(abs_path + ".exe")
+			or FileAccess.file_exists(ProjectSettings.localize_path(abs_path + ".exe")))
+	return false
 
 
 ## Build + start a SetupPipeline for `id`, transition to S_BUILDING, and wire

@@ -253,8 +253,14 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 			"manifest_path": final_manifest,
 		}
 
+	# Every registration below declares the marketplace lane: what landed in
+	# final_dir is a SHA-pinned release artifact, not a source checkout, so a
+	# `setup` stanza in the shipped manifest must not be built (design §1).
+	var LaneCls = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
+	var lane: String = LaneCls.LANE_MARKETPLACE
+
 	if installer.has_method("install_plugin"):
-		var pm_result: Dictionary = await installer.install_plugin(final_manifest, auto_confirm_skills)
+		var pm_result: Dictionary = await installer.install_plugin(final_manifest, auto_confirm_skills, lane)
 		if pm_result.has("error"):
 			return _err("manager_install_failed", pm_result)
 		return {
@@ -272,11 +278,12 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 			var new_def = PluginDefinitionCls.from_manifest(final_manifest)
 			if new_def == null:
 				return _err("update_parse_failed", {"path": final_manifest})
+			new_def.install_lane = lane
 			if not installer.update_definition(new_def):
 				return _err("update_definition_failed", {})
 			definition = new_def
 		else:
-			definition = installer.install(final_manifest)
+			definition = installer.install(final_manifest, lane)
 			if definition == null:
 				var last_err = installer.get_last_install_error() if installer.has_method("get_last_install_error") else {}
 				return _err("register_failed", last_err)

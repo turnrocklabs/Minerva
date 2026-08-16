@@ -683,12 +683,13 @@ class Recorder extends RefCounted:
 class FakeDB extends RefCounted:
 	var _plugins: Dictionary = {}
 
-	func install(manifest_path: String):  # -> PluginDefinition | null
+	func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFEST):  # -> PluginDefinition | null
 		var def = PluginDefinition.from_manifest(manifest_path)
 		if def == null:
 			return null
 		if _plugins.has(def.id):
 			return null
+		def.install_lane = lane
 		_plugins[def.id] = def
 		return def
 

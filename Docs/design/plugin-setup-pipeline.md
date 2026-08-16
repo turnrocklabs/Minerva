@@ -139,6 +139,41 @@ envelope with `step_type: "entrypoint_check"` and `step_index = steps.size()`.
 Always-build rule: the pipeline runs on EVERY manifest install/reinstall; the
 toolchain's incremental build is the cache. No Minerva-level source-hash skip in v1.
 
+### Install lane (amended 2026-08-16)
+
+The lane split in the header is now a recorded field rather than an assumption.
+`PluginDefinition.install_lane` is `"manifest"` (dev / side-load, source present)
+or `"marketplace"` (SHA-pinned release artifact), persisted in `plugins.json` and
+set by whoever installs: `PluginManager.install_plugin(path, auto_confirm, lane)`
+defaults to the manifest lane and only `MarketplaceClient` passes the other.
+Records written before the field migrate once by location — `user://plugins/<id>/`
+is MarketplaceClient's canonical staging root and nothing else installs there.
+
+The lane exists because both lanes register the SAME `manifest.json`: the file
+that declares a `setup` stanza for a dev checkout also ships inside the release
+tarball, where the source it would build was never packaged. Behavior per lane:
+
+| | manifest lane | marketplace lane |
+|---|---|---|
+| `setup` stanza | built (always-build rule above) | inert; logged once, never run |
+| entrypoint artifact | verified by the pipeline | verified at install by `_verify_release_artifact()` |
+| artifact absent | `S_BUILD_FAILED` (`setup_step_failed`) | `S_NEEDS_BINARY` (`plugin_binary_missing`) |
+| repair | `rebuild()` | reinstall/update — `rebuild()` refuses (`rebuild_unavailable_marketplace`) |
+
+`plugin_binary_missing` is the C6 landing state this document reserved:
+```json
+{"error": "plugin_binary_missing", "plugin_id": "cad", "lane": "marketplace",
+ "entrypoint": "./cad-plugin", "expected_path": "/…/user/plugins/cad/cad-plugin",
+ "platform": "Linux", "install_hint": "…"}
+```
+Artifact resolution mirrors `start_plugin()`, Windows `.exe` fallback included,
+so a cross-platform manifest entrypoint does not false-report on Windows.
+
+Consequence for plugin authors: a plugin with a compiled entrypoint SHOULD declare
+its producer in `setup`, and doing so is now safe for a plugin that also publishes
+release tarballs. `minerva_plugin_build_status` returns `install_lane` +
+`rebuildable` so an agent picks the right repair.
+
 ## 4. Fixture matrix (C5 contract)
 
 Fake tools are real executables (shell/py scripts in the fixture dir) spawned by

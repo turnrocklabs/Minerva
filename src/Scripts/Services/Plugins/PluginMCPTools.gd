@@ -818,7 +818,7 @@ func _handle_plugin_open_panel(args: Dictionary) -> Dictionary:
 func _get_plugin_build_status_tool_def() -> Dictionary:
 	return {
 		"name": "minerva_plugin_build_status",
-		"description": "Get a plugin's manifest-install setup-pipeline state. Returns state/state_name (BUILDING, BUILD_FAILED, NEEDS_BINARY, or a normal lifecycle state), live progress {step_index, step_count, step_type} while building, the full failure envelope on BUILD_FAILED/NEEDS_BINARY (including the per-tool `failures` array and `detail: exec_denied` when the user declined an exec step), and the step-by-step log of the most recent build. Poll this after minerva_plugin_install returns {building: true}.",
+		"description": "Get a plugin's manifest-install setup-pipeline state. Returns state/state_name (BUILDING, BUILD_FAILED, NEEDS_BINARY, or a normal lifecycle state), live progress {step_index, step_count, step_type} while building, the full failure envelope on BUILD_FAILED/NEEDS_BINARY (including the per-tool `failures` array and `detail: exec_denied` when the user declined an exec step), and the step-by-step log of the most recent build. Also returns install_lane ('manifest' for a dev/side-load install, 'marketplace' for a release artifact) and rebuildable — a marketplace plugin has no source to rebuild, so a NEEDS_BINARY there (envelope error 'plugin_binary_missing') is fixed by reinstalling, not by rebuilding. Poll this after minerva_plugin_install returns {building: true}.",
 		"input_schema": {
 			"type": "object",
 			"properties": {
@@ -872,6 +872,13 @@ func _handle_plugin_build_status(args: Dictionary) -> Dictionary:
 		"state_name": status.get("state_name", "UNKNOWN"),
 		"building": int(status.get("state", -1)) == plugin_manager.S_BUILDING,
 	}
+
+	# Install lane decides what a caller can DO about a bad build state:
+	# manifest -> rebuild(); marketplace -> reinstall (rebuild refuses).
+	var lane_def = plugin_manager.get_db().get_by_id(id)
+	if lane_def != null:
+		result["install_lane"] = lane_def.install_lane
+		result["rebuildable"] = lane_def.install_lane != PluginDefinition.LANE_MARKETPLACE
 
 	var progress: Dictionary = plugin_manager.get_build_progress(id)
 	if not progress.is_empty():

@@ -108,6 +108,19 @@ static func _run_copy(step: Dictionary, step_index: int, plugin_dir: String) -> 
 	if not FileAccess.file_exists(to_abs):
 		return _failure_artifact_missing("copy", step_index, [], 0, "", to_rel)
 
+	# Mirror the source's mode. DirAccess.copy_absolute() creates the
+	# destination with default permissions (verified: 0775 source -> 0664
+	# copy), which silently strips the executable bit — and the canonical use
+	# of `copy` in a setup stanza is staging a build product where the
+	# toolchain left it (cargo's target/release/<bin>) to the path the
+	# manifest entrypoint names. Without this the pipeline would report a
+	# clean build and the plugin would then fail to spawn.
+	# No-op on Windows (get/set_unix_permissions return ERR_UNAVAILABLE there,
+	# and NTFS has no exec bit to lose).
+	var src_perms := FileAccess.get_unix_permissions(from_abs)
+	if src_perms != 0:
+		FileAccess.set_unix_permissions(to_abs, src_perms)
+
 	return {"ok": true, "step_type": "copy", "step_index": step_index}
 
 

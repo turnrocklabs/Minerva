@@ -37,12 +37,17 @@ var _last_install_error: Dictionary = {}
 func get_last_install_error() -> Dictionary:
 	return _last_install_error
 
-func install(manifest_path: String) -> PluginDefinition:
+## `lane` records which install path produced this plugin (PluginDefinition's
+## LANE_MANIFEST / LANE_MARKETPLACE — see Docs/design/plugin-setup-pipeline.md
+## §1). It defaults to the manifest/dev lane so every existing caller keeps its
+## behavior; MarketplaceClient passes LANE_MARKETPLACE.
+func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFEST) -> PluginDefinition:
 	_last_install_error = {}
 	var def := PluginDefinition.from_manifest(manifest_path)
 	if def == null:
 		push_error("[PluginDB] Failed to parse manifest: %s" % manifest_path)
 		return null
+	def.install_lane = lane if lane in PluginDefinition.INSTALL_LANES else PluginDefinition.LANE_MANIFEST
 
 	if _plugins.has(def.id):
 		push_warning("[PluginDB] Plugin '%s' is already installed — use update_definition() to replace it" % def.id)

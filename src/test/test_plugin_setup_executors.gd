@@ -41,6 +41,7 @@ func _init() -> void:
 
 	print("-- F1: copy-only happy path --")
 	test_copy_happy_path()
+	test_copy_preserves_executable_bit()
 
 	print("\n-- go_build happy path (fake-go fixture) --")
 	test_go_build_happy_path()
@@ -98,6 +99,41 @@ func test_copy_happy_path() -> void:
 		var content := df.get_as_text()
 		df.close()
 		check("copy destination content matches source", content == "hello from setup pipeline test\n", "got: %s" % content)
+
+
+## A `copy` step's canonical job is staging a BUILD PRODUCT where the manifest
+## entrypoint expects it (cargo leaves binaries in target/release/<bin>). A
+## copy that loses the executable bit produces a green build and a plugin that
+## cannot spawn, so the mode has to survive the step.
+func test_copy_preserves_executable_bit() -> void:
+	if OS.get_name() == "Windows":
+		check("copy exec-bit preservation is a no-op on Windows (skipped)", true)
+		return
+
+	var plugin_dir := _fresh_plugin_dir("copy_exec_bit")
+	var src_dir := plugin_dir.path_join("target/release")
+	DirAccess.make_dir_recursive_absolute(src_dir)
+	var src_file := src_dir.path_join("fake-plugin")
+	var f := FileAccess.open(src_file, FileAccess.WRITE)
+	f.store_string("#!/bin/sh\necho plugin\n")
+	f.close()
+	var _out: Array = []
+	OS.execute("chmod", ["755", src_file], _out, true)
+
+	var step := {"type": "copy", "from": "target/release/fake-plugin", "to": "fake-plugin"}
+	var result := SetupExecutors.run_step(step, 0, {"tool_paths": {}, "plugin_dir": plugin_dir})
+	check("copy of a build product returns ok:true", result.get("ok", false) == true, str(result))
+
+	var dest := plugin_dir.path_join("fake-plugin")
+	check("copied artifact exists", FileAccess.file_exists(dest))
+	if not FileAccess.file_exists(dest):
+		return
+	var src_perms := FileAccess.get_unix_permissions(src_file)
+	var dst_perms := FileAccess.get_unix_permissions(dest)
+	check("copied artifact keeps the source's mode", dst_perms == src_perms,
+		"src=%d dst=%d" % [src_perms, dst_perms])
+	# The bit that actually matters: owner-execute (0o100 == 64).
+	check("copied artifact is still executable", (dst_perms & 64) != 0, "perms=%d" % dst_perms)
 
 
 # ---------------------------------------------------------------------------

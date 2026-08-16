@@ -424,12 +424,45 @@ func _populate_setup_status(plugin_id: String) -> void:
 
 	if def.state == pm.S_BUILD_FAILED or def.state == pm.S_NEEDS_BINARY:
 		_setup_status_container.visible = true
+		# Marketplace lane: nothing was built here, so neither the toolchain
+		# rows nor a Rebuild button apply (PluginManager.rebuild() refuses the
+		# lane outright). Show what is actually missing and the real remedy.
+		if def.install_lane == PluginDefinition.LANE_MARKETPLACE:
+			_add_missing_binary_rows(plugin_id, pm)
+			return
 		_add_build_failure_rows(plugin_id, pm, def.state == pm.S_NEEDS_BINARY)
 		var rebuild_btn := Button.new()
 		rebuild_btn.text = "Rebuild"
 		rebuild_btn.tooltip_text = "Re-run toolchain preflight + the setup pipeline"
 		rebuild_btn.pressed.connect(_on_rebuild_pressed.bind(plugin_id))
 		_setup_status_container.add_child(rebuild_btn)
+
+
+## Marketplace-lane failure rows: the release tarball did not carry a binary
+## this platform can run (envelope `plugin_binary_missing`). No Rebuild button —
+## the fix is a reinstall, and offering a build that refuses would be a dead end.
+func _add_missing_binary_rows(plugin_id: String, pm) -> void:
+	var envelope: Dictionary = pm.get_setup_envelope(plugin_id)
+
+	var hdr := Label.new()
+	hdr.text = "Plugin binary missing for this platform"
+	hdr.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
+	hdr.add_theme_font_size_override("font_size", 13)
+	_setup_status_container.add_child(hdr)
+
+	var path_lbl := Label.new()
+	path_lbl.text = "expected: %s" % _or_dash(str(envelope.get("expected_path", "")))
+	path_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	path_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	_setup_status_container.add_child(path_lbl)
+
+	var hint: String = str(envelope.get("install_hint", ""))
+	if not hint.is_empty():
+		var hint_lbl := Label.new()
+		hint_lbl.text = hint
+		hint_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint_lbl.add_theme_color_override("font_color", Color(0.5, 0.7, 0.9))
+		_setup_status_container.add_child(hint_lbl)
 
 
 func _add_build_failure_rows(plugin_id: String, pm, is_needs_binary: bool) -> void:
@@ -754,7 +787,14 @@ func _refresh_plugin_list() -> void:
 		elif state == pm.S_BUILD_FAILED:
 			display_name += "  — Build failed"
 		elif state == pm.S_NEEDS_BINARY:
-			display_name += "  — Needs toolchain"
+			# Same state, two causes: a dev install missing a toolchain, or a
+			# release that shipped no binary for this platform. Naming the
+			# toolchain for the latter would send the user hunting for Go.
+			var nb_def = pm.get_db().get_by_id(plugin_id)
+			if nb_def != null and nb_def.install_lane == PluginDefinition.LANE_MARKETPLACE:
+				display_name += "  — Missing binary"
+			else:
+				display_name += "  — Needs toolchain"
 		var idx := _plugin_list.add_item(display_name)
 		_plugin_list.set_item_metadata(idx, plugin_id)
 		_apply_state_color(idx, state)

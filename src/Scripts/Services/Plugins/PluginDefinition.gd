@@ -18,6 +18,23 @@ enum State {
 }
 
 # ---------------------------------------------------------------------------
+# Install lanes (Docs/design/plugin-setup-pipeline.md §1)
+# ---------------------------------------------------------------------------
+
+## Dev / side-load install from a manifest path in a source checkout.
+const LANE_MANIFEST := "manifest"
+
+## Install from a SHA-pinned marketplace release tarball (prebuilt artifact).
+const LANE_MARKETPLACE := "marketplace"
+
+const INSTALL_LANES := [LANE_MANIFEST, LANE_MARKETPLACE]
+
+## Canonical staging root MarketplaceClient extracts release tarballs into.
+## Used ONLY to migrate pre-lane records (see resolve_install_lane) — new
+## installs always record their lane explicitly.
+const MARKETPLACE_DIR_PREFIX := "user://plugins/"
+
+# ---------------------------------------------------------------------------
 # Identity fields
 # ---------------------------------------------------------------------------
 
@@ -117,6 +134,23 @@ var filesystem_paths: Array[String] = []
 
 ## Absolute path to the directory containing the plugin's manifest.json
 var data_directory: String = ""
+
+## Which install lane produced this plugin (Docs/design/plugin-setup-pipeline.md
+## §1 lane split). The two lanes differ in exactly one way that matters to the
+## setup pipeline:
+##
+##   LANE_MANIFEST    — dev install from a source checkout. Source is present by
+##                      definition, so a `setup` stanza is buildable and the
+##                      always-build rule (§3) applies.
+##   LANE_MARKETPLACE — install from a SHA-pinned release tarball. The binary
+##                      ships prebuilt and there is no source tree; a `setup`
+##                      stanza in the same (shared) manifest.json is inert here,
+##                      and running it would try to compile files that were
+##                      never packaged.
+##
+## Persisted, because the lane outlives the install call: rebuild() and the
+## build UI need it every session, not just at install time.
+var install_lane: String = LANE_MANIFEST
 
 ## Whether Minerva should start this plugin automatically on launch
 var autostart: bool = false
@@ -299,6 +333,9 @@ static func from_manifest(path: String) -> PluginDefinition:
 
 	# Derive data_directory from the manifest path
 	def.data_directory = path.get_base_dir()
+	# Provisional lane from that location; PluginDB.install() overwrites it with
+	# the lane the caller actually installed through.
+	def.install_lane = resolve_install_lane("", def.data_directory)
 
 	# Validate required fields
 	var errors := def.validate()
@@ -306,6 +343,9 @@ static func from_manifest(path: String) -> PluginDefinition:
 		for e in errors:
 			push_error("[PluginDefinition] Validation error in '%s': %s" % [path, e])
 		return null
+
+	# Advisory only on this path — see warn_if_binary_has_no_producer().
+	def.warn_if_binary_has_no_producer()
 
 	return def
 
@@ -343,6 +383,7 @@ func to_dict() -> Dictionary:
 			},
 		},
 		"data_directory": data_directory,
+		"install_lane": install_lane,
 		"autostart": autostart,
 		"auto_reload": auto_reload,
 	}
@@ -383,6 +424,7 @@ static func from_dict(d: Dictionary) -> PluginDefinition:
 	if def == null:
 		return null
 	def.data_directory = d.get("data_directory", "")
+	def.install_lane = resolve_install_lane(d.get("install_lane", ""), def.data_directory)
 	def.autostart = bool(d.get("autostart", false))
 	def.auto_reload = bool(d.get("auto_reload", false))
 	for cn in d.get("class_names", []):
@@ -560,18 +602,51 @@ func validate() -> Array[String]:
 	if not setup.is_empty():
 		for e in SetupSchema.validate_setup(setup):
 			errors.append(SetupSchema.format_error(e))
-	elif _entrypoint_looks_like_compiled_binary(entrypoint):
-		# Best-effort heuristic, non-blocking: an entrypoint that isn't a
-		# recognizable interpreted-script invocation is assumed to be a
-		# compiled artifact with no declared producer. False negatives (a
-		# compiled binary this heuristic doesn't catch) just mean a missed
-		# warning, never a rejected install.
-		push_warning(
-			("[PluginDefinition] Plugin '%s' declares entrypoint '%s' but no 'setup' " +
-			"stanza — no declared producer for its binary.") % [id, entrypoint]
-		)
 
 	return errors
+
+
+## Resolve the install lane for a persisted record.
+##
+## `stored` wins whenever it names a known lane. Records written before the
+## lane existed carry nothing, so they migrate by location: MarketplaceClient
+## extracts every release tarball to `user://plugins/<id>/` and nothing else
+## installs there, while a dev/side-load install keeps its checkout path. The
+## inference runs once — the next _save() writes the resolved lane back.
+static func resolve_install_lane(stored: String, dir: String) -> String:
+	if stored in INSTALL_LANES:
+		return stored
+	if dir.begins_with(MARKETPLACE_DIR_PREFIX):
+		return LANE_MARKETPLACE
+	return LANE_MANIFEST
+
+
+## Emit the design §1 load-time advisory: an entrypoint naming a compiled
+## artifact with no `setup` stanza has no declared producer.
+##
+## Deliberately NOT part of validate(). validate() also runs on every
+## plugins.json reload (PluginDB.load_db), where this advisory is both stale
+## (the manifest already passed it when it was installed) and wrong for the
+## marketplace lane — a SHA-pinned release artifact ships prebuilt and has no
+## source tree to declare a producer for (design §1 lane split). Only the
+## manifest-install path, which by definition has source present, calls this.
+func warn_if_binary_has_no_producer() -> void:
+	if not setup.is_empty():
+		return
+	if install_lane == LANE_MARKETPLACE:
+		# Release artifact: prebuilt by the publisher, no source to build from.
+		return
+	# Best-effort heuristic, non-blocking: an entrypoint that isn't a
+	# recognizable interpreted-script invocation is assumed to be a compiled
+	# artifact with no declared producer. False negatives (a compiled binary
+	# this heuristic doesn't catch) just mean a missed warning, never a
+	# rejected install.
+	if not _entrypoint_looks_like_compiled_binary(entrypoint, args):
+		return
+	push_warning(
+		("[PluginDefinition] Plugin '%s' declares entrypoint '%s' but no 'setup' " +
+		"stanza — no declared producer for its binary.") % [id, entrypoint]
+	)
 
 
 # ---------------------------------------------------------------------------
@@ -583,15 +658,54 @@ func validate() -> Array[String]:
 ## assumed to have no compiled artifact to declare a `setup` producer for.
 ## Everything else (a bare path, "./mybinary", "bin/tool", "bin/tool.exe") is
 ## treated as a compiled binary.
-static func _entrypoint_looks_like_compiled_binary(ep: String) -> bool:
+##
+## `ep_args` matters: the canonical interpreted-plugin shape puts the
+## interpreter in the entrypoint and the script in the args
+## ({"entrypoint": "python3", "args": ["probe.py"]}), so a check that reads
+## only the entrypoint string flags every interpreted plugin as a binary.
+static func _entrypoint_looks_like_compiled_binary(ep: String, ep_args: Array[String] = []) -> bool:
 	var e := ep.strip_edges()
 	if e.is_empty():
 		return false
-	var script_markers := [".py", ".js", ".ts", ".gd", ".sh", ".rb"]
-	for marker in script_markers:
-		if e.contains(marker):
+	if _is_script_interpreter(e):
+		return false
+	if _has_script_marker(e):
+		return false
+	# "interpreter-ish path + script arg" — e.g. "/usr/local/bin/python3.12"
+	# is caught above, but a venv wrapper or launcher named something else
+	# still gives itself away by being handed a script to run.
+	for a in ep_args:
+		if _has_script_marker(str(a)):
 			return false
 	return true
+
+
+## True when the string carries a recognizable interpreted-source extension.
+static func _has_script_marker(s: String) -> bool:
+	for marker in [".py", ".js", ".mjs", ".cjs", ".ts", ".gd", ".sh", ".rb", ".pl", ".lua", ".php"]:
+		if s.contains(marker):
+			return true
+	return false
+
+
+## True when the entrypoint names a known script interpreter rather than a
+## build product. Matches on the basename (so absolute paths work) and
+## tolerates versioned names ("python3", "python3.12", "node22", "ruby3.3").
+static func _is_script_interpreter(ep: String) -> bool:
+	var base := ep.get_file()
+	if base.ends_with(".exe"):
+		base = base.trim_suffix(".exe")
+	base = base.to_lower()
+	for interpreter in ["python", "pythonw", "node", "nodejs", "bun", "deno", "ruby",
+			"perl", "php", "lua", "sh", "bash", "zsh", "dash", "pwsh", "powershell", "osascript"]:
+		if base == interpreter:
+			return true
+		# Versioned variant: interpreter name followed only by digits/dots.
+		if base.begins_with(interpreter):
+			var suffix := base.substr(interpreter.length())
+			if not suffix.is_empty() and suffix.lstrip("0123456789.").is_empty():
+				return true
+	return false
 
 
 ## Shared parsing logic used by both from_manifest and from_dict.

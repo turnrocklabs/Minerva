@@ -37,6 +37,7 @@ SUITES=(
 	test/test_plugin_setup_pipeline.gd
 	test/test_setup_matrix.gd
 	test/test_plugin_build_ui.gd
+	test/test_plugin_install_lane.gd
 )
 
 echo "========================================================"
