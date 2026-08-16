@@ -443,5 +443,25 @@
       ],
       "target": "all"
     }
-  ]
+  ],
+  "setup": {
+    "requires": [
+      {
+        "tool": "cargo",
+        "min": "1.70"
+      }
+    ],
+    "steps": [
+      {
+        "type": "cargo_build",
+        "manifest_dir": ".",
+        "artifact": "target/release/agent-relay-plugin"
+      },
+      {
+        "type": "copy",
+        "from": "target/release/agent-relay-plugin",
+        "to": "agent-relay-plugin"
+      }
+    ]
+  }
 }
