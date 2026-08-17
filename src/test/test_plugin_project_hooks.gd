@@ -576,7 +576,7 @@ func test_serialize_captures_sidecar_paths() -> void:
 func _call_deserialize(
 		editor_ser: Dictionary,
 		stub_mgr: StubPluginManager,
-		stub_conn: StubMCPConnection
+		_stub_conn: StubMCPConnection
 ) -> Dictionary:
 	var result: Dictionary = {
 		"placeholder_shown": false,
@@ -586,7 +586,6 @@ func _call_deserialize(
 	}
 
 	var plugin_id: String = editor_ser.get("plugin_id", "")
-	var panel_name: String = editor_ser.get("panel_name", "")
 	var plugin_state: Dictionary = editor_ser.get("plugin_state", {})
 	var stored_version: String = str(editor_ser.get("plugin_version", ""))
 	var payload: Dictionary = plugin_state.get("payload", {})

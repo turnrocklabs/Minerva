@@ -347,7 +347,7 @@ func _turn_one(so, provider, session) -> void:
 
 
 # ── Turn 2: "trigger-dialog" → question card → answer "y" ──────────────────
-func _turn_two_dialog(so, pane, provider, session, tid: String) -> void:
+func _turn_two_dialog(_so, _pane, provider, session, _tid: String) -> void:
 	print("\n-- (d.2) Turn 2: dialog → question options → answer 'y' --")
 	var bot = await provider.generate_content([{"text": "trigger-dialog"}])
 	check("turn 2 returned a BotResponse", bot != null)

@@ -154,7 +154,7 @@ func _run_unit_tests() -> void:
 # Integration tests — spawn real fixture subprocess
 # ---------------------------------------------------------------------------
 
-func _run_integration_tests(manifest_path: String, fixture_dir: String) -> void:
+func _run_integration_tests(manifest_path: String, _fixture_dir: String) -> void:
 	print("-- Integration: fixture plugin subprocess --")
 
 	var pm_script = load(PLUGIN_MANAGER_SCRIPT_PATH)

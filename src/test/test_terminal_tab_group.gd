@@ -127,12 +127,14 @@ func test_is_empty_lifecycle() -> void:
 func test_became_empty_signal() -> void:
 	print("test_became_empty_signal:")
 	var group := make_group()
-	var fired := false
-	group.became_empty.connect(func() -> void: fired = true)
+	# Array holder: lambdas capture locals by value, so assigning a plain `bool`
+	# inside the lambda would never be visible here. Arrays are reference types.
+	var fired := [false]
+	group.became_empty.connect(func() -> void: fired[0] = true)
 
 	inject_fake_tab(group)
-	check("became_empty not fired after adding a tab", not fired)
+	check("became_empty not fired after adding a tab", not fired[0])
 
 	remove_fake_tab(group, 0)
-	check("became_empty fired when last tab removed", fired)
+	check("became_empty fired when last tab removed", fired[0])
 	group.queue_free()

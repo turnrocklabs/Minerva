@@ -191,7 +191,7 @@ func _run_tests() -> void:
 	await _test_outbound_then_inbound_round_trip_preserves_state()
 	await _test_refcount_lifecycle_strip_sets_refcount_1()
 	await _test_refcount_lifecycle_apply_inbound_net_zero()
-	await _test_refcount_failed_rehydrate_no_change()
+	_test_refcount_failed_rehydrate_no_change()
 	_test_strip_malformed_wrapper_passthrough()
 	_test_rehydrate_no_handle_placeholders_passthrough()
 	_test_rehydrate_error_path_escapes_rfc6901_reserved_chars()
@@ -524,7 +524,6 @@ func _test_refcount_lifecycle_apply_inbound_net_zero() -> void:
 	print("\n-- _test_refcount_lifecycle_apply_inbound_net_zero --")
 	var arr = await _make_panel_broker_with_panel()
 	var broker = arr[0]
-	var panel: StubPanel = arr[1]
 
 	# Pre-store a blob (refcount = 1).
 	var bytes := PackedByteArray([0x11, 0x22, 0x33])

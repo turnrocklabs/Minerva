@@ -187,4 +187,6 @@ func _viewport_has(session, marker: String) -> bool:
 
 
 func _count_orphans() -> int:
-	return Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT)
+	# get_monitor() returns float; the orphan count is a whole number, so round
+	# rather than let the implicit float -> int narrowing truncate it.
+	return roundi(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))

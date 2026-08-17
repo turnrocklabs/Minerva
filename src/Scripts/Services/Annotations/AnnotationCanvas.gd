@@ -109,19 +109,19 @@ func remove_item(item_id: String) -> bool:
 	return false
 
 
-func update_item_position(item_id: String, position: Vector2) -> bool:
+func update_item_position(item_id: String, new_position: Vector2) -> bool:
 	for item_v in _items:
 		var item: Dictionary = item_v
 		if str(item.get("id", "")) != item_id:
 			continue
-		item["position"] = position
-		var bounds: Variant = item.get("bounds", Rect2(position, Vector2.ZERO))
+		item["position"] = new_position
+		var bounds: Variant = item.get("bounds", Rect2(new_position, Vector2.ZERO))
 		if bounds is Rect2:
-			item["bounds"] = Rect2(position, (bounds as Rect2).size)
+			item["bounds"] = Rect2(new_position, (bounds as Rect2).size)
 		else:
-			item["bounds"] = Rect2(position, Vector2.ZERO)
+			item["bounds"] = Rect2(new_position, Vector2.ZERO)
 		queue_redraw()
-		item_moved.emit(item_id, position)
+		item_moved.emit(item_id, new_position)
 		return true
 	return false
 

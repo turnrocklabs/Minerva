@@ -164,15 +164,15 @@ func _test_list_slides(conn, deck_path: String) -> void:
 		return
 	for i in range(EXPECTED_SLIDES.size()):
 		var s = slides[i]
-		var exp = EXPECTED_SLIDES[i]
-		check("slide %d id == %s" % [i, exp["id"]],
-				s is Dictionary and str(s.get("id", "")) == exp["id"],
+		var expected = EXPECTED_SLIDES[i]
+		check("slide %d id == %s" % [i, expected["id"]],
+				s is Dictionary and str(s.get("id", "")) == expected["id"],
 				"got %s" % str(s.get("id", "") if s is Dictionary else s))
-		check("slide %d title == '%s'" % [i, exp["title"]],
-				s is Dictionary and str(s.get("title", "")) == exp["title"],
+		check("slide %d title == '%s'" % [i, expected["title"]],
+				s is Dictionary and str(s.get("title", "")) == expected["title"],
 				"got %s" % str(s.get("title", "") if s is Dictionary else s))
-		check("slide %d tile_count == %d" % [i, exp["tiles"]],
-				s is Dictionary and int(s.get("tile_count", -1)) == exp["tiles"],
+		check("slide %d tile_count == %d" % [i, expected["tiles"]],
+				s is Dictionary and int(s.get("tile_count", -1)) == expected["tiles"],
 				"got %s" % str(s.get("tile_count", "?") if s is Dictionary else s))
 
 

@@ -219,7 +219,6 @@ func test_dehydrate_preserves_latest_round():
 
 
 func test_dehydrate_tool_use_collapse():
-	var tmm := ToolMemoryManager.new()
 	# Test the collapsed message builder
 	var tool_calls: Array[Dictionary] = [
 		{"name": "search_amazon", "arguments": {}},

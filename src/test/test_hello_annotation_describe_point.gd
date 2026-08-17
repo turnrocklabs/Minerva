@@ -96,14 +96,14 @@ func check_eq(description: String, actual: Variant, expected: Variant) -> void:
 ## (i.e. there's no parent viewport to offset against). We position them so
 ## that we can exercise the hit-test logic with known coords.
 func _build_ui_fixture() -> Array:
-	var root := Control.new()
-	root.set_position(Vector2.ZERO)
-	root.set_size(Vector2(800, 600))
+	var panel_root := Control.new()
+	panel_root.set_position(Vector2.ZERO)
+	panel_root.set_size(Vector2(800, 600))
 
 	var vbox := VBoxContainer.new()
 	vbox.set_position(Vector2.ZERO)
 	vbox.set_size(Vector2(800, 600))
-	root.add_child(vbox)
+	panel_root.add_child(vbox)
 
 	var fake_canvas := Control.new()
 	fake_canvas.name = "AnnotationCanvas"
@@ -118,17 +118,17 @@ func _build_ui_fixture() -> Array:
 	label.text = "Hello World"
 	vbox.add_child(label)
 
-	return [root, fake_canvas, label]
+	return [panel_root, fake_canvas, label]
 
 
 ## Build a host with the given canvas+root, optionally with a populated registry.
-func _build_host(canvas: Control, root: Control, with_registry: bool = false) -> Helloscene_AnnotationHost:
+func _build_host(canvas: Control, panel_root: Control, with_registry: bool = false) -> Helloscene_AnnotationHost:
 	var host := Helloscene_AnnotationHost.new()
 	if with_registry:
 		var reg := AnnotationRegistry.new()
 		BuiltinKinds.register_all(reg)
 		host._registry = reg
-	host.set_canvas_and_root(canvas, root)
+	host.set_canvas_and_root(canvas, panel_root)
 	return host
 
 
@@ -145,10 +145,10 @@ func test_describe_point_no_ui_root_returns_empty() -> void:
 func test_describe_point_outside_all_controls_returns_empty() -> void:
 	print("test_describe_point_outside_all_controls_returns_empty:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# doc_pos (700, 500) → canvas_global = canvas.global_position + (700,500)
 	# canvas is at (0,0), so canvas_global = (700,500).
 	# The label is at (0,300)...(400,330) — (700,500) is outside everything.
@@ -161,7 +161,7 @@ func test_describe_point_outside_all_controls_returns_empty() -> void:
 func test_describe_point_inside_label_returns_ui_label() -> void:
 	print("test_describe_point_inside_label_returns_ui_label:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 
@@ -169,7 +169,7 @@ func test_describe_point_inside_label_returns_ui_label() -> void:
 	# and we fall back to "ui:Label". x=399 is well beyond the measured width of "Hi"
 	# with any real font, so _resolve_word returns "" and describe_point returns "ui:Label".
 	label.text = "Hi"
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# canvas at (0,0), so canvas_global = doc_pos.
 	# Label at y=300..330; y=310 is inside. x=399 is inside the rect but past the text.
 	var result := host.describe_point(Vector2(399.0, 310.0))
@@ -180,12 +180,12 @@ func test_describe_point_inside_label_returns_ui_label() -> void:
 func test_describe_point_word_resolution_single_word() -> void:
 	print("test_describe_point_word_resolution_single_word:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = "Hello"
 
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# "Hello" is the only word. Use real font metrics to find a valid x inside it.
 	# label global_position.x = 0; canvas at (0,0), so canvas_global = doc_pos.
 	# Label at y=300..330; y=310 is inside.
@@ -209,12 +209,12 @@ func test_describe_point_word_resolution_single_word() -> void:
 func test_describe_point_word_resolution_second_word() -> void:
 	print("test_describe_point_word_resolution_second_word:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = "Hello World"
 
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# Use real font metrics to find a valid x inside "World".
 	# The prefix "Hello World" width minus half of "World" width gives a click
 	# well inside the second word, regardless of actual font metrics.
@@ -242,12 +242,12 @@ func test_describe_point_word_resolution_second_word() -> void:
 func test_describe_point_word_resolution_empty_label() -> void:
 	print("test_describe_point_word_resolution_empty_label:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = ""
 
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# Empty label text → word resolution returns "" → falls back to "ui:Label".
 	var result := host.describe_point(Vector2(5.0, 310.0))
 	check_eq("empty label text → 'ui:Label'", result, "ui:Label")
@@ -390,12 +390,12 @@ func test_word_resolution_kittens_can_meow_9_points() -> void:
 func test_add_annotation_stamps_anchor_with_registry() -> void:
 	print("test_add_annotation_stamps_anchor_with_registry:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = "Hello"
 
-	var host := _build_host(fake_canvas, root, true)  # with registry
+	var host := _build_host(fake_canvas, panel_root, true)  # with registry
 
 	# 2d_text annotation with "at" landing on "Hello" (x=5, y=310).
 	var ann := {
@@ -436,12 +436,12 @@ func test_add_annotation_no_registry_no_anchor() -> void:
 func test_update_annotation_restamps_anchor() -> void:
 	print("test_update_annotation_restamps_anchor:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = "Hello World"
 
-	var host := _build_host(fake_canvas, root, true)
+	var host := _build_host(fake_canvas, panel_root, true)
 
 	# Add annotation pointing at "Hello" (x=5).
 	var id := host.add_annotation({
@@ -471,12 +471,12 @@ func test_update_annotation_restamps_anchor() -> void:
 func test_set_annotations_refreshes_anchors() -> void:
 	print("test_set_annotations_refreshes_anchors:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = "Hello"
 
-	var host := _build_host(fake_canvas, root, true)
+	var host := _build_host(fake_canvas, panel_root, true)
 
 	# Bulk-load annotations that have a stale anchored_to.
 	var list: Array = [
@@ -513,10 +513,10 @@ func test_set_annotations_refreshes_anchors() -> void:
 func test_set_annotations_empty_list_no_crash() -> void:
 	print("test_set_annotations_empty_list_no_crash:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 
-	var host := _build_host(fake_canvas, root, true)
+	var host := _build_host(fake_canvas, panel_root, true)
 	host.set_annotations([])
 	check_eq("set_annotations([]) results in empty list", host.get_annotations().size(), 0)
 	check("no crash on empty set_annotations", true)
@@ -535,12 +535,12 @@ func test_set_annotations_empty_list_no_crash() -> void:
 func test_describe_point_within_margin_5px_outside_hits() -> void:
 	print("test_describe_point_within_margin_5px_outside_hits:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = ""  # empty text so result is "ui:Label"
 
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# Label bottom edge is at y=330 (position.y=300 + size.y=30).
 	# 5px outside: y = 335. x = 5 is inside the label's x range.
 	var result := host.describe_point(Vector2(5.0, 335.0))
@@ -551,12 +551,12 @@ func test_describe_point_within_margin_5px_outside_hits() -> void:
 func test_describe_point_within_margin_15px_outside_hits() -> void:
 	print("test_describe_point_within_margin_15px_outside_hits:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = ""
 
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# 15px outside bottom edge: y = 345.
 	var result := host.describe_point(Vector2(5.0, 345.0))
 	check("15px outside label rect hits within 16px margin",
@@ -566,12 +566,12 @@ func test_describe_point_within_margin_15px_outside_hits() -> void:
 func test_describe_point_outside_margin_25px_misses() -> void:
 	print("test_describe_point_outside_margin_25px_misses:")
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = ""
 
-	var host := _build_host(fake_canvas, root)
+	var host := _build_host(fake_canvas, panel_root)
 	# 25px outside bottom edge: y = 355. Exceeds _TOLERANCE_MARGIN=16, so miss.
 	var result := host.describe_point(Vector2(5.0, 355.0))
 	check_eq("25px outside label rect misses (beyond 16px margin)", result, "")
@@ -602,12 +602,12 @@ func test_arrow_projection_resolves_widget_past_tip() -> void:
 	## Tail: (5, 200). direction = (0,1). projected = (5, 312) — inside label → HIT.
 
 	var fixture := _build_ui_fixture()
-	var root: Control = fixture[0]
+	var panel_root: Control = fixture[0]
 	var fake_canvas: Control = fixture[1]
 	var label: Label = fixture[2]
 	label.text = ""  # empty text → resolve to "ui:Label" or ""
 
-	var host := _build_host(fake_canvas, root, true)
+	var host := _build_host(fake_canvas, panel_root, true)
 
 	# Arrow from (5, 200) pointing DOWN, head at (5, 280).
 	# head=280 is 20px above label top=300 → outside 16px margin → describe_point("") miss.

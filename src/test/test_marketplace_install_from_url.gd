@@ -224,10 +224,10 @@ func _run_cmd(cmd: String, args: Array) -> bool:
 
 
 func _rm_dir_recursive(rel_path: String) -> void:
-	var abs := ProjectSettings.globalize_path(rel_path)
-	if not DirAccess.dir_exists_absolute(abs):
+	var abs_path := ProjectSettings.globalize_path(rel_path)
+	if not DirAccess.dir_exists_absolute(abs_path):
 		return
-	OS.execute("rm", ["-rf", abs], [], true)
+	OS.execute("rm", ["-rf", abs_path], [], true)
 
 
 func _teardown() -> void:

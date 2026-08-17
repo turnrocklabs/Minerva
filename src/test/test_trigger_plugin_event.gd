@@ -86,8 +86,6 @@ func _run_tests() -> void:
 	root.add_child(mgr)
 	await process_frame
 
-	# Create a minimal spy that counts fires instead of spawning a real agent
-	var fires: Array = []  # records {trigger_id, context}
 
 	# Monkey-patch _fire_trigger to record calls instead of actually spawning
 	# We do this by overriding the agent lookup to fail gracefully (no registry)

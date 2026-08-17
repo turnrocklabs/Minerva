@@ -94,21 +94,23 @@ func test_save_load_roundtrip() -> void:
 func test_signal_emission() -> void:
 	print("test_signal_emission:")
 	var tc := TerminalConfig.new()
-	var count := 0
-	tc.settings_changed.connect(func(): count += 1)
+	# Array holder: lambdas capture locals by value, so a plain `int` would never
+	# be observable out here. Arrays are reference types, so mutation is visible.
+	var count := [0]
+	tc.settings_changed.connect(func(): count[0] += 1)
 
 	tc.theme_name = "nord"
-	_assert_eq(count, 1, "signal after theme_name change")
+	_assert_eq(count[0], 1, "signal after theme_name change")
 
 	tc.font_size = 20
-	_assert_eq(count, 2, "signal after font_size change")
+	_assert_eq(count[0], 2, "signal after font_size change")
 
 	tc.cursor_blink = false
-	_assert_eq(count, 3, "signal after cursor_blink change")
+	_assert_eq(count[0], 3, "signal after cursor_blink change")
 
 	# No signal when setting same value
 	tc.cursor_blink = false
-	_assert_eq(count, 3, "no signal when value unchanged")
+	_assert_eq(count[0], 3, "no signal when value unchanged")
 
 
 func test_theme_presets_valid() -> void:

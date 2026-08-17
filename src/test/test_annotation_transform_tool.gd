@@ -338,11 +338,11 @@ class MockHost extends AnnotationHost:
 
 ## Capture every annotation_modified emission into a list.
 func _capture_modified(tool: AnnotationTransformTool) -> Array:
-	var log: Array = []
+	var call_log: Array = []
 	tool.annotation_modified.connect(func(id: String, ann: Dictionary) -> void:
-		log.append({"id": id, "ann": ann})
+		call_log.append({"id": id, "ann": ann})
 	)
-	return log
+	return call_log
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -518,16 +518,16 @@ func test_drag_inside_translates() -> void:
 	print("test_drag_inside_translates:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Drag from center (140,130) to (160,150) — delta (20,20).
 	tool.on_pointer_down(Vector2(140, 130), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(160, 150))
 
-	check("annotation_modified emitted during translate drag", log.size() >= 1)
-	if log.size() >= 1:
-		var last_ann: Dictionary = log[log.size() - 1]["ann"]
+	check("annotation_modified emitted during translate drag", call_log.size() >= 1)
+	if call_log.size() >= 1:
+		var last_ann: Dictionary = call_log[call_log.size() - 1]["ann"]
 		var prims: Array = last_ann.get("primitives", [])
 		check("primitives present after translate", prims.size() > 0)
 		if prims.size() > 0:
@@ -543,7 +543,7 @@ func test_drag_corner_br_scales_up() -> void:
 	print("test_drag_corner_br_scales_up:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# BR corner is at (180,160). Center is (140,130).
@@ -551,9 +551,9 @@ func test_drag_corner_br_scales_up() -> void:
 	tool.on_pointer_down(Vector2(180, 160), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(220, 200))
 
-	check("annotation_modified emitted during corner drag", log.size() >= 1)
-	if log.size() >= 1:
-		var last_ann: Dictionary = log[log.size() - 1]["ann"]
+	check("annotation_modified emitted during corner drag", call_log.size() >= 1)
+	if call_log.size() >= 1:
+		var last_ann: Dictionary = call_log[call_log.size() - 1]["ann"]
 		var prims: Array = last_ann.get("primitives", [])
 		# "at" was at (100,100). After uniform scale > 1 from center (140,130),
 		# offset (-40,-30) grows → "at" moves further from center (x < 100, y < 100).
@@ -570,7 +570,7 @@ func test_drag_corner_tl_clamps_min_scale() -> void:
 	print("test_drag_corner_tl_clamps_min_scale:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# TL corner is at (100,100). Center is (140,130).
@@ -578,9 +578,9 @@ func test_drag_corner_tl_clamps_min_scale() -> void:
 	tool.on_pointer_down(Vector2(100, 100), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(200, 180))
 
-	check("annotation_modified emitted", log.size() >= 1)
-	if log.size() >= 1:
-		var last_ann: Dictionary = log[log.size() - 1]["ann"]
+	check("annotation_modified emitted", call_log.size() >= 1)
+	if call_log.size() >= 1:
+		var last_ann: Dictionary = call_log[call_log.size() - 1]["ann"]
 		var prims: Array = last_ann.get("primitives", [])
 		check("primitives present after clamped scale", prims.size() > 0)
 		# With MIN_SCALE=0.05, the "at" offset from center is 5% of original.
@@ -598,7 +598,7 @@ func test_drag_edge_r_axis_locked_x() -> void:
 	print("test_drag_edge_r_axis_locked_x:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Right-edge midpoint is (180, 130). Center is (140, 130).
@@ -606,9 +606,9 @@ func test_drag_edge_r_axis_locked_x() -> void:
 	tool.on_pointer_down(Vector2(180, 130), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(200, 130))
 
-	check("annotation_modified emitted for edge-R drag", log.size() >= 1)
-	if log.size() >= 1:
-		var last_ann: Dictionary = log[log.size() - 1]["ann"]
+	check("annotation_modified emitted for edge-R drag", call_log.size() >= 1)
+	if call_log.size() >= 1:
+		var last_ann: Dictionary = call_log[call_log.size() - 1]["ann"]
 		var prims: Array = last_ann.get("primitives", [])
 		check("primitives present after edge-R scale", prims.size() > 0)
 		if prims.size() > 0:
@@ -626,7 +626,7 @@ func test_drag_edge_t_axis_locked_y() -> void:
 	print("test_drag_edge_t_axis_locked_y:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Top-edge midpoint is (140, 100). Center is (140, 130).
@@ -634,9 +634,9 @@ func test_drag_edge_t_axis_locked_y() -> void:
 	tool.on_pointer_down(Vector2(140, 100), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(140, 70))
 
-	check("annotation_modified emitted for edge-T drag", log.size() >= 1)
-	if log.size() >= 1:
-		var last_ann: Dictionary = log[log.size() - 1]["ann"]
+	check("annotation_modified emitted for edge-T drag", call_log.size() >= 1)
+	if call_log.size() >= 1:
+		var last_ann: Dictionary = call_log[call_log.size() - 1]["ann"]
 		var prims: Array = last_ann.get("primitives", [])
 		check("primitives present after edge-T scale", prims.size() > 0)
 		if prims.size() > 0:
@@ -654,7 +654,7 @@ func test_drag_rotate_tl_rotates() -> void:
 	print("test_drag_rotate_tl_rotates:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Use a point in the ROTATE_TL annulus around TL corner (100,100).
@@ -664,9 +664,9 @@ func test_drag_rotate_tl_rotates() -> void:
 	tool.on_pointer_down(Vector2(85, 85), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(200, 85))
 
-	check("annotation_modified emitted during rotate drag", log.size() >= 1)
-	if log.size() >= 1:
-		var last_ann: Dictionary = log[log.size() - 1]["ann"]
+	check("annotation_modified emitted during rotate drag", call_log.size() >= 1)
+	if call_log.size() >= 1:
+		var last_ann: Dictionary = call_log[call_log.size() - 1]["ann"]
 		var prims: Array = last_ann.get("primitives", [])
 		check("primitives present after rotate", prims.size() > 0)
 		# "at" was (100,100). After non-trivial rotation around center (140,130) it must move.
@@ -682,21 +682,21 @@ func test_esc_during_drag_reverts() -> void:
 	print("test_esc_during_drag_reverts:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Start translate drag.
 	tool.on_pointer_down(Vector2(140, 130), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(160, 150))
-	var count_before_esc := log.size()
+	var count_before_esc := call_log.size()
 	check("emission before ESC", count_before_esc >= 1)
 
 	# ESC → revert.
 	tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_ESCAPE)
-	check("another emission on ESC (revert)", log.size() > count_before_esc)
+	check("another emission on ESC (revert)", call_log.size() > count_before_esc)
 	# The revert emission must carry the original annotation state.
-	if log.size() > count_before_esc:
-		var revert_ann: Dictionary = log[log.size() - 1]["ann"]
+	if call_log.size() > count_before_esc:
+		var revert_ann: Dictionary = call_log[call_log.size() - 1]["ann"]
 		var prims: Array = revert_ann.get("primitives", [])
 		if prims.size() > 0:
 			var at_pos = prims[0].get("at", [0.0, 0.0])
@@ -712,17 +712,17 @@ func test_deactivate_during_drag_silent() -> void:
 	print("test_deactivate_during_drag_silent:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Begin drag.
 	tool.on_pointer_down(Vector2(140, 130), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(160, 150))
-	var count_before := log.size()
+	var count_before := call_log.size()
 
 	# Deactivate mid-drag — should be silent (no extra emission).
 	tool.on_deactivate()
-	check("no extra emission on silent deactivate", log.size() == count_before)
+	check("no extra emission on silent deactivate", call_log.size() == count_before)
 	check("host ref dropped after deactivate", tool._host == null)
 
 
@@ -730,17 +730,17 @@ func test_pointer_up_commits_no_extra_emission() -> void:
 	print("test_pointer_up_commits_no_extra_emission:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	tool.on_pointer_down(Vector2(140, 130), MOUSE_BUTTON_LEFT, 0)
 	tool.on_pointer_move(Vector2(160, 150))
-	var count_at_move := log.size()
+	var count_at_move := call_log.size()
 
 	# pointer_up should NOT emit another annotation_modified.
 	var consumed := tool.on_pointer_up(Vector2(160, 150), MOUSE_BUTTON_LEFT, 0)
 	check("pointer_up consumed", consumed)
-	check("no extra emission on pointer_up", log.size() == count_at_move)
+	check("no extra emission on pointer_up", call_log.size() == count_at_move)
 
 	tool.on_deactivate()
 
@@ -749,12 +749,12 @@ func test_right_click_noop() -> void:
 	print("test_right_click_noop:")
 	var host := _make_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	var consumed := tool.on_pointer_down(Vector2(140, 130), MOUSE_BUTTON_RIGHT, 0)
 	check("right-click not consumed", not consumed)
-	check("no emission on right-click", log.size() == 0)
+	check("no emission on right-click", call_log.size() == 0)
 
 	tool.on_deactivate()
 
@@ -771,14 +771,14 @@ func test_payload_text_drag_uses_kind_transform() -> void:
 	})
 	host._selected_id = "ann_payload_text"
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	check("pointer down inside payload text starts drag", tool.on_pointer_down(Vector2(120, 108), MOUSE_BUTTON_LEFT, 0))
 	tool.on_pointer_move(Vector2(130, 128))
 
-	check_eq("one payload text modification", log.size(), 1)
-	var ann: Dictionary = log[0]["ann"]
+	check_eq("one payload text modification", call_log.size(), 1)
+	var ann: Dictionary = call_log[0]["ann"]
 	var anchor: Dictionary = ann.get("anchor", {})
 	var id: Dictionary = anchor.get("id", {})
 	check_eq("payload text anchor x translated", id.get("x"), 110.0)
@@ -843,18 +843,18 @@ func test_bend_drag_commits_one_revision_with_moved_point() -> void:
 	print("test_bend_drag_commits_one_revision_with_moved_point:")
 	var host := _make_path_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	tool.on_pointer_down(Vector2(180, 100), MOUSE_BUTTON_LEFT, 0)  # bend[1]
 	tool.on_pointer_move(Vector2(200, 120))
 	tool.on_pointer_move(Vector2(210, 130))
-	check_eq("no commit while dragging (preview only)", log.size(), 0)
+	check_eq("no commit while dragging (preview only)", call_log.size(), 0)
 
 	tool.on_pointer_up(Vector2(210, 130), MOUSE_BUTTON_LEFT, 0)
-	check_eq("exactly ONE commit on release", log.size(), 1)
+	check_eq("exactly ONE commit on release", call_log.size(), 1)
 
-	var new_ann: Dictionary = log[0]["ann"]
+	var new_ann: Dictionary = call_log[0]["ann"]
 	var new_bends: Array = new_ann.get("bends", [])
 	check_eq("still three bends", new_bends.size(), 3)
 	if new_bends.size() == 3:
@@ -874,19 +874,19 @@ func test_bend_drag_emits_nothing_during_preview() -> void:
 	print("test_bend_drag_emits_nothing_during_preview:")
 	var host := _make_path_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	tool.on_pointer_down(Vector2(180, 160), MOUSE_BUTTON_LEFT, 0)  # bend[2]
-	check_eq("no emission on the initial press", log.size(), 0)
+	check_eq("no emission on the initial press", call_log.size(), 0)
 	tool.on_pointer_move(Vector2(190, 170))
-	check_eq("no emission after first move", log.size(), 0)
+	check_eq("no emission after first move", call_log.size(), 0)
 	tool.on_pointer_move(Vector2(220, 200))
-	check_eq("no emission after second move", log.size(), 0)
+	check_eq("no emission after second move", call_log.size(), 0)
 	check_eq("live point tracks the pointer", tool._drag_bend_live_point, Vector2(220, 200))
 
 	tool.on_pointer_up(Vector2(220, 200), MOUSE_BUTTON_LEFT, 0)
-	check_eq("release commits exactly one", log.size(), 1)
+	check_eq("release commits exactly one", call_log.size(), 1)
 	tool.on_deactivate()
 
 
@@ -895,14 +895,14 @@ func test_bend_right_click_deletes_bend() -> void:
 	print("test_bend_right_click_deletes_bend:")
 	var host := _make_path_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	var consumed := tool.on_pointer_down(Vector2(180, 100), MOUSE_BUTTON_RIGHT, 0)  # bend[1]
 	check("right-click on a bend handle is consumed", consumed)
-	check_eq("exactly one commit from the delete", log.size(), 1)
+	check_eq("exactly one commit from the delete", call_log.size(), 1)
 
-	var new_ann: Dictionary = log[0]["ann"]
+	var new_ann: Dictionary = call_log[0]["ann"]
 	var new_bends: Array = new_ann.get("bends", [])
 	check_eq("two bends remain", new_bends.size(), 2)
 	if new_bends.size() == 2:
@@ -918,17 +918,17 @@ func test_bend_segment_click_inserts_bend() -> void:
 	print("test_bend_segment_click_inserts_bend:")
 	var host := _make_path_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Midpoint of segment bend[0](100,100)->bend[1](180,100): (140,100). Well
 	# clear of both handles' HANDLE_HIT_RADIUS_DOC=12 hit zone (dist=40 each).
 	var consumed := tool.on_pointer_down(Vector2(140, 100), MOUSE_BUTTON_LEFT, 0)
 	check("segment click is consumed", consumed)
-	check_eq("exactly one commit from the insert", log.size(), 1)
+	check_eq("exactly one commit from the insert", call_log.size(), 1)
 	check("insert does not leave the tool mid-drag", not tool._dragging)
 
-	var new_ann: Dictionary = log[0]["ann"]
+	var new_ann: Dictionary = call_log[0]["ann"]
 	var new_bends: Array = new_ann.get("bends", [])
 	check_eq("four bends after insert", new_bends.size(), 4)
 	if new_bends.size() == 4:
@@ -947,15 +947,15 @@ func test_bend_escape_mid_drag_commits_nothing() -> void:
 	print("test_bend_escape_mid_drag_commits_nothing:")
 	var host := _make_path_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	tool.on_pointer_down(Vector2(180, 160), MOUSE_BUTTON_LEFT, 0)  # bend[2]
 	tool.on_pointer_move(Vector2(300, 300))
-	check_eq("no emission during the preview-only drag", log.size(), 0)
+	check_eq("no emission during the preview-only drag", call_log.size(), 0)
 
 	tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_ESCAPE)
-	check_eq("ESCAPE mid bend-drag commits NOTHING", log.size(), 0)
+	check_eq("ESCAPE mid bend-drag commits NOTHING", call_log.size(), 0)
 	check("drag state cleared after escape", not tool._dragging)
 
 	tool.on_deactivate()
@@ -992,13 +992,13 @@ func test_bend_click_without_motion_emits_nothing() -> void:
 	print("test_bend_click_without_motion_emits_nothing:")
 	var host := _make_path_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	tool.on_pointer_down(Vector2(180, 100), MOUSE_BUTTON_LEFT, 0)  # bend[1]
 	# No on_pointer_move — a plain click never fires one.
 	tool.on_pointer_up(Vector2(180, 100), MOUSE_BUTTON_LEFT, 0)
-	check_eq("a no-move click commits nothing", log.size(), 0)
+	check_eq("a no-move click commits nothing", call_log.size(), 0)
 	check("drag state cleared after the click", not tool._dragging)
 
 	tool.on_deactivate()
@@ -1014,17 +1014,17 @@ func test_bend_drag_with_motion_commits_release_position() -> void:
 	print("test_bend_drag_with_motion_commits_release_position:")
 	var host := _make_path_selected_host()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	tool.on_pointer_down(Vector2(180, 100), MOUSE_BUTTON_LEFT, 0)  # bend[1]
 	tool.on_pointer_move(Vector2(200, 120))
-	check_eq("no commit while dragging (preview only)", log.size(), 0)
+	check_eq("no commit while dragging (preview only)", call_log.size(), 0)
 	# Release somewhere OTHER than the last motion sample.
 	tool.on_pointer_up(Vector2(250, 140), MOUSE_BUTTON_LEFT, 0)
-	check_eq("exactly ONE commit on release", log.size(), 1)
+	check_eq("exactly ONE commit on release", call_log.size(), 1)
 
-	var new_ann: Dictionary = log[0]["ann"]
+	var new_ann: Dictionary = call_log[0]["ann"]
 	var new_bends: Array = new_ann.get("bends", [])
 	check_eq("still three bends", new_bends.size(), 3)
 	if new_bends.size() == 3:
@@ -1055,7 +1055,7 @@ func test_locked_path_press_on_bend_arms_translate_not_bend() -> void:
 	print("test_locked_path_press_on_bend_arms_translate_not_bend:")
 	var host := _make_lockable_path_selected_host(true)
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	var kind: AnnotationKind = host.get_registry().get_annotation_kind(&"stub_path_lockable")
@@ -1067,7 +1067,7 @@ func test_locked_path_press_on_bend_arms_translate_not_bend() -> void:
 		tool._active_zone, AnnotationTransformTool.Zone.INSIDE)
 	check_eq("no bend index recorded", tool._drag_bend_index, -1)
 	tool.on_pointer_up(Vector2(100, 100), MOUSE_BUTTON_LEFT, 0)
-	check_eq("click-release on a locked path emits nothing", log.size(), 0)
+	check_eq("click-release on a locked path emits nothing", call_log.size(), 0)
 	tool.on_deactivate()
 
 
@@ -1090,14 +1090,14 @@ func test_locked_path_off_bounds_handle_press_falls_through() -> void:
 
 	var host := _make_lockable_path_selected_host(true)
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 	tool.on_pointer_down(Vector2(91, 100), MOUSE_BUTTON_LEFT, 0)
 	check("locked: the same press arms NO drag zone",
 		tool._active_zone == AnnotationTransformTool.Zone.OUTSIDE and not tool._dragging)
 	check("locked: the miss fell through to marquee (SelectTool semantics)",
 		tool._marquee_active)
-	check_eq("and emitted nothing", log.size(), 0)
+	check_eq("and emitted nothing", call_log.size(), 0)
 	tool.on_deactivate()
 
 
@@ -1108,15 +1108,15 @@ func test_locked_path_segment_click_inserts_nothing() -> void:
 	print("test_locked_path_segment_click_inserts_nothing:")
 	var host := _make_lockable_path_selected_host(true)
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	tool.on_pointer_down(Vector2(140, 100), MOUSE_BUTTON_LEFT, 0)
-	check_eq("locked: segment click commits NO insert", log.size(), 0)
+	check_eq("locked: segment click commits NO insert", call_log.size(), 0)
 	check_eq("locked: segment click arms INSIDE (translate), not an insert",
 		tool._active_zone, AnnotationTransformTool.Zone.INSIDE)
 	tool.on_pointer_up(Vector2(140, 100), MOUSE_BUTTON_LEFT, 0)
-	check_eq("still nothing after release", log.size(), 0)
+	check_eq("still nothing after release", call_log.size(), 0)
 
 	var bends: Array = (host.get_annotations()[0] as Dictionary).get("bends", [])
 	check_eq("bend array untouched (still 3)", bends.size(), 3)
@@ -1129,12 +1129,12 @@ func test_locked_path_right_click_does_not_delete_bend() -> void:
 	print("test_locked_path_right_click_does_not_delete_bend:")
 	var host := _make_lockable_path_selected_host(true)
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	var consumed := tool.on_pointer_down(Vector2(180, 100), MOUSE_BUTTON_RIGHT, 0)  # bend[1]
 	check("locked: right-click on a bend handle is NOT consumed", not consumed)
-	check_eq("locked: no delete committed", log.size(), 0)
+	check_eq("locked: no delete committed", call_log.size(), 0)
 	var bends: Array = (host.get_annotations()[0] as Dictionary).get("bends", [])
 	check_eq("all three bends survive", bends.size(), 3)
 	tool.on_deactivate()
@@ -1251,7 +1251,7 @@ func test_label_drag_sideways_preserves_perpendicular_clearance() -> void:
 		start_offset, Vector2(0.0, 0.0))
 
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Caption centre = midpoint(50,0) + offset(0,0) = (50,0) — ON the shaft.
@@ -1262,8 +1262,8 @@ func test_label_drag_sideways_preserves_perpendicular_clearance() -> void:
 	# (30, 25) instead of staying pinned to the line at (30, 0).
 	tool.on_pointer_move(Vector2(80, 25))  # delta = (30, 25)
 
-	check_eq("one label modification emitted", log.size(), 1)
-	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
+	check_eq("one label modification emitted", call_log.size(), 1)
+	var new_offset: Vector2 = arrow.label_offset(call_log[0]["ann"])
 	check("along-axis movement applied (x == 30)", is_equal_approx(new_offset.x, 30.0))
 	check("perpendicular component pinned to the shaft (y == 0, zero clearance)",
 		is_zero_approx(new_offset.y))
@@ -1283,7 +1283,7 @@ func test_label_drag_old_free_offset_clamps_on_next_drag() -> void:
 		arrow.label_offset(host.get_annotations()[0]), Vector2(5.0, 40.0))
 
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Caption centre = midpoint(50,0) + offset(5,40) = (55,40).
@@ -1291,8 +1291,8 @@ func test_label_drag_old_free_offset_clamps_on_next_drag() -> void:
 		tool.on_pointer_down(Vector2(55, 40), MOUSE_BUTTON_LEFT, 0))
 	tool.on_pointer_move(Vector2(65, 40))  # delta = (10, 0), purely along-axis
 
-	check_eq("one label modification emitted", log.size(), 1)
-	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
+	check_eq("one label modification emitted", call_log.size(), 1)
+	var new_offset: Vector2 = arrow.label_offset(call_log[0]["ann"])
 	check("perpendicular component CLAMPED onto the shaft on first drag (40 → 0)",
 		is_zero_approx(new_offset.y))
 	check("along component preserved + moved (5 + 10 == 15)",
@@ -1306,7 +1306,7 @@ func test_label_drag_t_range_clamped_near_tail_and_head() -> void:
 	var host := _arrow_label_host(10.0)
 	var arrow := AnnotationArrow.new()
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	check("pointer down on caption starts label drag",
@@ -1314,8 +1314,8 @@ func test_label_drag_t_range_clamped_near_tail_and_head() -> void:
 	# Drag far past the head: along-axis delta of +500 on a length-100 segment.
 	tool.on_pointer_move(Vector2(550, 0))
 
-	check_eq("one label modification emitted", log.size(), 1)
-	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
+	check_eq("one label modification emitted", call_log.size(), 1)
+	var new_offset: Vector2 = arrow.label_offset(call_log[0]["ann"])
 	# along_max = 0.65 * seg_len = 0.65 * 100 = 65  (t = 1.15, per the
 	# documented decision in _setup_label_axis_constraint).
 	check("along component clamped at t≈1.15 past the head (65, not 500)",
@@ -1345,7 +1345,7 @@ func test_label_drag_vertical_arrow_no_perpendicular_teleport() -> void:
 		start_offset, Vector2(0.0, 0.0))
 
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Caption centre = midpoint(0,50) + offset(0,0) = (0,50) — ON the shaft.
@@ -1358,8 +1358,8 @@ func test_label_drag_vertical_arrow_no_perpendicular_teleport() -> void:
 	# independent of the delta applied afterward).
 	tool.on_pointer_move(Vector2(0, 55))  # delta = (0, 5)
 
-	check_eq("one label modification emitted", log.size(), 1)
-	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
+	check_eq("one label modification emitted", call_log.size(), 1)
+	var new_offset: Vector2 = arrow.label_offset(call_log[0]["ann"])
 	check("perpendicular component stays 0 — no sideways teleport (was 16.0 pre-F1-fix)",
 		is_equal_approx(new_offset.x, 0.0))
 	check("along-axis component moved by the drag delta (0 + 5 == 5)",
@@ -1391,7 +1391,7 @@ func test_label_drag_45deg_arrow_no_perpendicular_teleport() -> void:
 	var start_perp_projection := start_offset.dot(perp)
 
 	var tool := AnnotationTransformTool.new()
-	var log := _capture_modified(tool)
+	var call_log := _capture_modified(tool)
 	tool.on_activate(host)
 
 	# Caption centre = midpoint(50,50) + offset(0,0) = (50,50) — ON the shaft.
@@ -1405,8 +1405,8 @@ func test_label_drag_45deg_arrow_no_perpendicular_teleport() -> void:
 	var target_pos := press_pos + axis * 5.0
 	tool.on_pointer_move(target_pos)
 
-	check_eq("one label modification emitted", log.size(), 1)
-	var new_offset: Vector2 = arrow.label_offset(log[0]["ann"])
+	check_eq("one label modification emitted", call_log.size(), 1)
+	var new_offset: Vector2 = arrow.label_offset(call_log[0]["ann"])
 	check("perpendicular projection unchanged from the stored default (zero deviation, was ~4.69 pre-F1-fix)",
 		is_equal_approx(new_offset.dot(perp), start_perp_projection))
 	check("along-axis projection moved by the drag delta (+5)",

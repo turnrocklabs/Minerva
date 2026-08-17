@@ -77,10 +77,10 @@ func has_reasoning() -> bool:
 
 
 ## Append a reasoning/thinking segment, preserving arrival order.
-func add_reasoning(text: String, kind: String = "thinking", redacted: bool = false) -> void:
+func add_reasoning(segment_text: String, kind: String = "thinking", redacted: bool = false) -> void:
 	reasoning.append({
 		"kind": kind,
-		"text": text,
+		"text": segment_text,
 		"redacted": redacted,
 		"order": reasoning.size()
 	})

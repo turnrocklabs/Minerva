@@ -91,24 +91,24 @@ func _run_tests() -> void:
 			or PanelBrokerScript == null or PatchScript == null or ErrorsScript == null:
 		return
 
-	await _test_error_code_constants(ErrorsScript)
+	_test_error_code_constants(ErrorsScript)
 	await _test_patch_state_schema_validation(PolicyScript, BrokerScript, AuditScript)
 	await _test_patch_state_editor_not_found(PolicyScript, BrokerScript, AuditScript)
-	await _test_patch_state_blob_prevalidation(PolicyScript, BrokerScript, AuditScript, PanelBrokerScript)
-	await _test_patch_state_apply_failure(PatchScript)
-	await _test_patch_state_happy_path(PatchScript)
-	await _test_patch_state_refcount_add(PanelBrokerScript, AuditScript)
-	await _test_patch_state_refcount_remove(PanelBrokerScript, AuditScript)
-	await _test_patch_state_refcount_replace(PanelBrokerScript, AuditScript)
-	await _test_patch_state_refcount_copy(PanelBrokerScript, AuditScript)
-	await _test_patch_state_refcount_net_zero(PanelBrokerScript, AuditScript)
-	await _test_patch_state_refcount_op_add_replaces_existing_key_decrements_displaced(PanelBrokerScript, AuditScript)
-	await _test_patch_state_refcount_multi_op_cascade_no_double_count(PanelBrokerScript, AuditScript)
-	await _test_patch_state_refcount_op_move_into_preexisting_decrements_displaced(PanelBrokerScript, AuditScript)
+	_test_patch_state_blob_prevalidation(PolicyScript, BrokerScript, AuditScript, PanelBrokerScript)
+	_test_patch_state_apply_failure(PatchScript)
+	_test_patch_state_happy_path(PatchScript)
+	_test_patch_state_refcount_add(PanelBrokerScript, AuditScript)
+	_test_patch_state_refcount_remove(PanelBrokerScript, AuditScript)
+	_test_patch_state_refcount_replace(PanelBrokerScript, AuditScript)
+	_test_patch_state_refcount_copy(PanelBrokerScript, AuditScript)
+	_test_patch_state_refcount_net_zero(PanelBrokerScript, AuditScript)
+	_test_patch_state_refcount_op_add_replaces_existing_key_decrements_displaced(PanelBrokerScript, AuditScript)
+	_test_patch_state_refcount_multi_op_cascade_no_double_count(PanelBrokerScript, AuditScript)
+	_test_patch_state_refcount_op_move_into_preexisting_decrements_displaced(PanelBrokerScript, AuditScript)
 	await _test_put_blob_schema_validation(PolicyScript, BrokerScript, AuditScript)
 	await _test_put_blob_editor_not_found(PolicyScript, BrokerScript, AuditScript)
-	await _test_put_blob_happy_path_via_panel_broker(PanelBrokerScript, AuditScript)
-	await _test_put_blob_bad_base64(PolicyScript, BrokerScript, AuditScript)
+	_test_put_blob_happy_path_via_panel_broker(PanelBrokerScript, AuditScript)
+	_test_put_blob_bad_base64(PolicyScript, BrokerScript, AuditScript)
 	await _test_deny_path(PolicyScript, BrokerScript, AuditScript)
 
 
@@ -394,7 +394,7 @@ func _test_patch_state_happy_path(PatchScript) -> void:
 ## write succeeds. Tests in this section exercise the multiset helper and the
 ## handle-leak / atomicity invariants that the redesign guarantees.
 
-func _test_patch_state_refcount_add(PanelBrokerScript, AuditScript) -> void:
+func _test_patch_state_refcount_add(_PanelBrokerScript, _AuditScript) -> void:
 	# add a new handle to state → final has handle, initial doesn't → +1.
 	print("\n-- _test_patch_state_refcount_add (multiset diff add) --")
 
@@ -410,7 +410,7 @@ func _test_patch_state_refcount_add(PanelBrokerScript, AuditScript) -> void:
 		int(fc.get("blob-1", 0)) == 1, "got %s" % str(fc))
 
 
-func _test_patch_state_refcount_remove(PanelBrokerScript, AuditScript) -> void:
+func _test_patch_state_refcount_remove(_PanelBrokerScript, _AuditScript) -> void:
 	# remove handle from state → initial has handle, final doesn't → -1.
 	print("\n-- _test_patch_state_refcount_remove (multiset diff remove) --")
 
@@ -426,7 +426,7 @@ func _test_patch_state_refcount_remove(PanelBrokerScript, AuditScript) -> void:
 	check("remove: final has no handles", fc.size() == 0, "got %s" % str(fc))
 
 
-func _test_patch_state_refcount_replace(PanelBrokerScript, AuditScript) -> void:
+func _test_patch_state_refcount_replace(_PanelBrokerScript, _AuditScript) -> void:
 	# replace handle: initial has H_old, final has H_new → -1 H_old, +1 H_new.
 	print("\n-- _test_patch_state_refcount_replace (multiset diff replace) --")
 
@@ -445,7 +445,7 @@ func _test_patch_state_refcount_replace(PanelBrokerScript, AuditScript) -> void:
 		"ic %s, fc %s" % [str(ic), str(fc)])
 
 
-func _test_patch_state_refcount_copy(PanelBrokerScript, AuditScript) -> void:
+func _test_patch_state_refcount_copy(_PanelBrokerScript, _AuditScript) -> void:
 	# copy duplicates a handle reference: initial has H once, final has H twice → +1.
 	print("\n-- _test_patch_state_refcount_copy (multiset diff copy) --")
 
@@ -469,7 +469,7 @@ func _test_patch_state_refcount_copy(PanelBrokerScript, AuditScript) -> void:
 # Old per-op logic missed this — the displaced handle leaked. New multiset
 # diff catches it because initial counts the old handle and final doesn't.
 func _test_patch_state_refcount_op_add_replaces_existing_key_decrements_displaced(
-		PanelBrokerScript, AuditScript) -> void:
+		_PanelBrokerScript, _AuditScript) -> void:
 	print("\n-- _test_patch_state_refcount_op_add_replaces_existing_key (FIX VERIFICATION) --")
 
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
@@ -496,7 +496,7 @@ func _test_patch_state_refcount_op_add_replaces_existing_key_decrements_displace
 # value). New multiset diff sees just initial (H_old once) vs final (empty) →
 # correct H_old=-1.
 func _test_patch_state_refcount_multi_op_cascade_no_double_count(
-		PanelBrokerScript, AuditScript) -> void:
+		_PanelBrokerScript, _AuditScript) -> void:
 	print("\n-- _test_patch_state_refcount_multi_op_cascade_no_double_count (FIX VERIFICATION) --")
 
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
@@ -518,7 +518,7 @@ func _test_patch_state_refcount_multi_op_cascade_no_double_count(
 # diff sees initial has H_at_dst + H_at_src; final has just H_at_src (moved
 # to dst position, H_at_dst gone).
 func _test_patch_state_refcount_op_move_into_preexisting_decrements_displaced(
-		PanelBrokerScript, AuditScript) -> void:
+		_PanelBrokerScript, _AuditScript) -> void:
 	print("\n-- _test_patch_state_refcount_op_move_into_preexisting (FIX VERIFICATION) --")
 
 	var BrokerScript = load(CAPABILITY_BROKER_SCRIPT_PATH)
@@ -547,7 +547,7 @@ func _test_patch_state_refcount_op_move_into_preexisting_decrements_displaced(
 # Refcount maintenance: net-zero — replace handle with itself
 # ---------------------------------------------------------------------------
 
-func _test_patch_state_refcount_net_zero(PanelBrokerScript, AuditScript) -> void:
+func _test_patch_state_refcount_net_zero(_PanelBrokerScript, _AuditScript) -> void:
 	# replace handle with itself: initial has H once, final has H once → delta=0.
 	print("\n-- _test_patch_state_refcount_net_zero (multiset diff net-zero) --")
 
@@ -671,7 +671,7 @@ func _test_put_blob_happy_path_via_panel_broker(PanelBrokerScript, AuditScript) 
 func _test_put_blob_bad_base64(PolicyScript, BrokerScript, AuditScript) -> void:
 	print("\n-- _test_put_blob_bad_base64 --")
 	var parts := _make_broker(PolicyScript, BrokerScript, AuditScript)
-	var broker = parts[0]; var policy = parts[1]
+	var policy = parts[1]
 	policy.grant_capability("put_blob_test3", "host.documents.put_blob")
 
 	# "!!NOTBASE64!!" decodes to empty in Marshalls.base64_to_raw.

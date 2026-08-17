@@ -255,13 +255,13 @@ var _chat_font_ratio: float = 1.0
 ## roughly the same number of LINES instead of clipping. Width needs no work —
 ## RichTextLabel autowraps to the pane. 0 = remove overrides (theme default).
 func _apply_chat_font_size() -> void:
-	var size: int = SingletonObject.chat_font_size
-	_apply_font_overrides(self, size)
+	var font_size: int = SingletonObject.chat_font_size
+	_apply_font_overrides(self, font_size)
 
 	var default_size: int = SingletonObject.theme_default_font_size()
 	var ratio: float = 1.0
-	if size > 0 and default_size > 0:
-		ratio = float(size) / float(default_size)
+	if font_size > 0 and default_size > 0:
+		ratio = float(font_size) / float(default_size)
 	if not is_equal_approx(ratio, _chat_font_ratio):
 		var factor: float = ratio / _chat_font_ratio
 		custom_starting_size *= factor
@@ -272,15 +272,15 @@ func _apply_chat_font_size() -> void:
 		_chat_font_ratio = ratio
 
 
-func _apply_font_overrides(node: Node, size: int) -> void:
+func _apply_font_overrides(node: Node, font_size: int) -> void:
 	if node is RichTextLabel:
 		for key in _RTL_FONT_SIZE_KEYS:
-			if size > 0:
-				node.add_theme_font_size_override(key, size)
+			if font_size > 0:
+				node.add_theme_font_size_override(key, font_size)
 			else:
 				node.remove_theme_font_size_override(key)
 	for child in node.get_children():
-		_apply_font_overrides(child, size)
+		_apply_font_overrides(child, font_size)
 #endregion Chat text size
 
 

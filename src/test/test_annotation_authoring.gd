@@ -295,8 +295,6 @@ func test_tool_switch_deactivate_then_activate_order() -> void:
 	var tb   := _make_toolbar()
 	tb.set_registry(reg)
 
-	# Track call order using an Array wrapper.
-	var order: Array = []
 
 	tb._on_button_toggled(&"plug_r", true)
 	var first_tool := kind1.last_tool

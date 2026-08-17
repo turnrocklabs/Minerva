@@ -166,7 +166,6 @@ func _await_call_deferred() -> void:
 
 class StubManager extends RefCounted:
 	var db = null
-	var _db = null  # alternate accessor name some code paths use
 
 	func get_db():
 		return db
@@ -183,12 +182,12 @@ func _run_tests() -> void:
 	await _test_request_state_panel_freed()
 	await _test_apply_state_happy_path()
 	await _test_capability_broker_get_state_routes_to_panel()
-	await _test_capability_broker_get_state_no_broker_falls_back()
+	_test_capability_broker_get_state_no_broker_falls_back()
 	await _test_capability_broker_set_state_panel_state_routes()
 	await _test_capability_broker_set_state_mutual_exclusion()
-	await _test_request_state_timeout()
-	await _test_response_spoofing_rejected()
-	await _test_resolve_unknown_request_id_warns_silently()
+	_test_request_state_timeout()
+	_test_response_spoofing_rejected()
+	_test_resolve_unknown_request_id_warns_silently()
 	await _test_panel_state_size_cap_enforced()
 
 

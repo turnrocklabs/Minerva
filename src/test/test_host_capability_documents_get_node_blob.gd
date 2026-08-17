@@ -133,7 +133,7 @@ func _test_get_node_schema_validation(PolicyScript, BrokerScript, AuditScript) -
 # get_node: resolution
 # ---------------------------------------------------------------------------
 
-func _test_get_node_resolution(PolicyScript, BrokerScript, AuditScript, PanelBrokerScript) -> void:
+func _test_get_node_resolution(PolicyScript, BrokerScript, AuditScript, _PanelBrokerScript) -> void:
 	print("\n-- _test_get_node_returns_editor_not_found_for_bogus_editor --")
 	var parts := _make_broker(PolicyScript, BrokerScript, AuditScript)
 	var broker = parts[0]; var policy = parts[1]

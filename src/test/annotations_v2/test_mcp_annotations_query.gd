@@ -34,6 +34,14 @@ func check(description: String, condition: bool) -> void:
 
 
 func _make_ann(id: String, lifecycle: String, anchor_plugin: String, anchor_type: String, kind: String, author_kind: String, summary: String, created_at: String) -> Dictionary:
+	# These fields are String-or-null by design. A ternary can't express that
+	# (its branches would be mutually incompatible types), so branch explicitly.
+	var author_id: Variant = null
+	if author_kind == "human":
+		author_id = "user_%s" % id
+	var author_model: Variant = null
+	if author_kind == "ai":
+		author_model = "claude-sonnet"
 	return {
 		"id": id,
 		"kind": kind,
@@ -41,7 +49,7 @@ func _make_ann(id: String, lifecycle: String, anchor_plugin: String, anchor_type
 		"anchor": {"plugin": anchor_plugin, "type": anchor_type, "id": 1, "snapshot": {"position": [0.0, 0.0]}},
 		"kind_payload": {"text": summary},
 		"lifecycle": lifecycle,
-		"author": {"kind": author_kind, "id": "user_%s" % id if author_kind == "human" else null, "model": "claude-sonnet" if author_kind == "ai" else null},
+		"author": {"kind": author_kind, "id": author_id, "model": author_model},
 		"view_context": "editor:main",
 		"visible_in_views": ["main"],
 		"summary": summary,

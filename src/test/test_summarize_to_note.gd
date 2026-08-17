@@ -111,7 +111,7 @@ func _run() -> void:
 	if so == null:
 		return
 
-	await _test_button_placement_and_visibility(so)
+	_test_button_placement_and_visibility(so)
 	await _test_summarize_flow(so)
 	await _test_empty_transcript(so)
 	await _test_provider_error(so)
@@ -120,7 +120,7 @@ func _run() -> void:
 
 
 # --- Acceptance 1: button placement + visibility ----------------------------
-func _test_button_placement_and_visibility(so) -> void:
+func _test_button_placement_and_visibility(_so) -> void:
 	print("\n-- ChatHeader: summarize button placement + visibility --")
 	var Header = load(CHAT_HEADER_PATH)
 
@@ -194,7 +194,7 @@ func _test_summarize_flow(so) -> void:
 
 
 # --- Acceptance 3: empty transcript = no-op, zero LLM calls -----------------
-func _test_empty_transcript(so) -> void:
+func _test_empty_transcript(_so) -> void:
 	print("\n-- Engine: empty transcript -> friendly no-op, no LLM call --")
 	var pane = load(CHATPANE_PATH).new()
 	var stub = _make_stub()
@@ -223,7 +223,7 @@ func _test_empty_transcript(so) -> void:
 
 
 # --- Acceptance 4: provider error -> error path, no note --------------------
-func _test_provider_error(so) -> void:
+func _test_provider_error(_so) -> void:
 	print("\n-- Engine: provider error -> surfaced, no note --")
 	var pane = load(CHATPANE_PATH).new()
 	var history = _make_passthrough_history("hist-w6-err")

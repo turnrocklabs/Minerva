@@ -103,11 +103,11 @@ var _tmp_seq := 0
 # Unique temp file under user:// (absolute) seeded with `content`.
 func _tmp_file(content: String) -> String:
 	_tmp_seq += 1
-	var abs := ProjectSettings.globalize_path("user://journal_revert_test_%d.txt" % _tmp_seq)
-	var f := FileAccess.open(abs, FileAccess.WRITE)
+	var abs_path := ProjectSettings.globalize_path("user://journal_revert_test_%d.txt" % _tmp_seq)
+	var f := FileAccess.open(abs_path, FileAccess.WRITE)
 	f.store_string(content)
 	f.close()
-	return abs
+	return abs_path
 
 func _track_real(j: ChangeJournal, path: String):
 	var reg := DocumentRegistry.get_instance()
@@ -166,7 +166,7 @@ func test_revert_changeset_and_attribution() -> void:
 	_eq("a back to baseline", a.text, "A0")
 	_eq("b untouched", b.text, "B0\nhuman-change")
 	# now revert the rest (whole changeset)
-	var res2 := j.revert_changeset()
+	j.revert_changeset()
 	_eq("b now reverted", b.text, "B0")
 	_eq("changeset clean", j.changed_paths(), [])
 

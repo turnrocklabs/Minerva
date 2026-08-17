@@ -28,7 +28,6 @@ const STATUS_ICONS = {
 	FileStatus.UNKNOWN: "?"
 }
 
-@onready var _header_label: Label = %HeaderLabel
 @onready var _file_count_label: Label = %FileCountLabel
 @onready var _tree: Tree = %FileTree
 @onready var _empty_label: Label = %EmptyLabel

@@ -412,9 +412,9 @@ func _delete_dir_recursive(abs_path: String) -> void:
 
 func _cleanup_scratch_files() -> void:
 	for cfg_path in _scratch_configs:
-		var abs := ProjectSettings.globalize_path(cfg_path)
-		if FileAccess.file_exists(abs):
-			DirAccess.remove_absolute(abs)
+		var abs_path := ProjectSettings.globalize_path(cfg_path)
+		if FileAccess.file_exists(abs_path):
+			DirAccess.remove_absolute(abs_path)
 
 
 func _wait_not_building(pm, plugin_id: String, timeout_ms: int = 20000) -> void:

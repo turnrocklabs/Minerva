@@ -37,7 +37,7 @@ func _run_tests() -> void:
 	await test_json_round_trip_preserves_payload_and_image()
 	await test_json_round_trip_preserves_caption_and_uuid()
 	await test_chat_history_round_trips_plugin_data_in_injected_notes()
-	await test_chat_history_handles_empty_injected_notes()
+	test_chat_history_handles_empty_injected_notes()
 	await test_old_text_note_dict_does_not_carry_plugin_payload()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])

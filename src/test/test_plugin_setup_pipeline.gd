@@ -822,13 +822,13 @@ func _cleanup_pm_data_dir(pm, plugin_id: String) -> void:
 
 func _cleanup_scratch_files() -> void:
 	for cfg_path in _scratch_configs:
-		var abs := ProjectSettings.globalize_path(cfg_path)
-		if FileAccess.file_exists(abs):
-			DirAccess.remove_absolute(abs)
+		var abs_path := ProjectSettings.globalize_path(cfg_path)
+		if FileAccess.file_exists(abs_path):
+			DirAccess.remove_absolute(abs_path)
 	for state_path in _scratch_state_files:
-		var abs := ProjectSettings.globalize_path(state_path)
-		if FileAccess.file_exists(abs):
-			DirAccess.remove_absolute(abs)
+		var abs_path := ProjectSettings.globalize_path(state_path)
+		if FileAccess.file_exists(abs_path):
+			DirAccess.remove_absolute(abs_path)
 
 
 ## Waits until a SetupPipeline's terminal `finished` signal has actually been

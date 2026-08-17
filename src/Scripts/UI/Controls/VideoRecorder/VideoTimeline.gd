@@ -159,7 +159,7 @@ func _draw_time_markers(area_size: Vector2) -> void:
 			# Tick mark
 			draw_line(Vector2(x, 0), Vector2(x, HEADER_HEIGHT), color_time_text * Color(1, 1, 1, 0.3), 1.0)
 			# Time label
-			var minutes := int(time_s) / 60
+			var minutes := floori(time_s / 60.0)
 			var seconds := int(time_s) % 60
 			var label := "%d:%02d" % [minutes, seconds]
 			draw_string(ThemeDB.fallback_font, Vector2(x + 2, HEADER_HEIGHT - 6), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, color_time_text)
@@ -327,8 +327,8 @@ func ensure_playhead_visible() -> void:
 
 ## Format time for display
 static func format_time(ms: int) -> String:
-	var total_seconds := ms / 1000
-	var minutes := total_seconds / 60
+	var total_seconds := floori(ms / 1000.0)
+	var minutes := floori(total_seconds / 60.0)
 	var seconds := total_seconds % 60
 	var millis := ms % 1000
 	return "%d:%02d.%03d" % [minutes, seconds, millis]

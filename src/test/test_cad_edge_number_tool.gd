@@ -241,8 +241,8 @@ func test_annotation_envelope_shape() -> void:
 
 	# Simulate a click at (202,198) — on_pointer_down drives the full path.
 	var emitted_annotations: Array = []
-	tool.annotation_ready.connect(func(ann: Dictionary) -> void:
-		emitted_annotations.append(ann.duplicate(true))
+	tool.annotation_ready.connect(func(ready_ann: Dictionary) -> void:
+		emitted_annotations.append(ready_ann.duplicate(true))
 	)
 	var consumed: bool = tool.on_pointer_down(Vector2(202, 198), MOUSE_BUTTON_LEFT, 0)
 
@@ -316,8 +316,8 @@ func test_round_trip_validates() -> void:
 	tool.on_activate(host)
 
 	var emitted: Array = []
-	tool.annotation_ready.connect(func(ann: Dictionary) -> void:
-		emitted.append(ann.duplicate(true))
+	tool.annotation_ready.connect(func(ready_ann: Dictionary) -> void:
+		emitted.append(ready_ann.duplicate(true))
 	)
 	tool.on_pointer_down(Vector2(10, 2), MOUSE_BUTTON_LEFT, 0)
 

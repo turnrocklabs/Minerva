@@ -308,12 +308,12 @@ func _terminal_create(arguments: Dictionary) -> Dictionary:
 		var registry = _get_registry()
 		if registry == null:
 			return {"success": false, "error": "Terminal session registry unavailable"}
-		var session = registry.create_session(
+		var bg_session = registry.create_session(
 			tab_name if not tab_name.is_empty() else "Terminal", 80, 24)
-		if not session.terminal_available or not session.started:
-			registry.close_session(session.terminal_id)
+		if not bg_session.terminal_available or not bg_session.started:
+			registry.close_session(bg_session.terminal_id)
 			return {"success": false, "error": "Failed to start background terminal (extension unavailable or forkpty failed)"}
-		return {"success": true, "id": session.terminal_id, "name": session.session_name, "visible": false}
+		return {"success": true, "id": bg_session.terminal_id, "name": bg_session.session_name, "visible": false}
 
 	# Visible path — unchanged behaviour: requires an existing tab group.
 	var tab_group: TerminalTabGroup = _find_tab_group()

@@ -166,7 +166,7 @@ func test_register_anchor_resolver_callable() -> void:
 	print("test_register_anchor_resolver_callable:")
 	var host := _host()
 	var called := [false]
-	var mock_callable := func(anchor: Dictionary) -> Dictionary:
+	var mock_callable := func(_anchor: Dictionary) -> Dictionary:
 		called[0] = true
 		return {"position": Vector2(99.0, 88.0), "bounds": Rect2(99.0, 88.0, 5.0, 6.0), "stale": false, "view_metadata": {}}
 	host.register_anchor_resolver("core/text.range", mock_callable)

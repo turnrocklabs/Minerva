@@ -65,17 +65,17 @@ func _run() -> void:
 	if so == null:
 		return
 
-	await _test_service_history_roundtrip(so)
-	await _test_old_save_defaults(so)
-	await _test_build_passthrough_history(so)
+	_test_service_history_roundtrip(so)
+	_test_old_save_defaults(so)
+	_test_build_passthrough_history(so)
 	await _test_chooser_lock(so)
 	await _test_chooser_unlocked_keeps_fallback(so)
-	await _test_header_badge(so)
+	_test_header_badge(so)
 	await _test_set_chat_model_guard(so)
 
 
 # --- Acceptance 1 + JSON cycle ---------------------------------------------
-func _test_service_history_roundtrip(so) -> void:
+func _test_service_history_roundtrip(_so) -> void:
 	print("\n-- ServiceHistory: passthrough fields round-trip --")
 	var CH = load(CHAT_HISTORY_PATH)
 	var sh = CH.new(null, "hist-pt-rt")
@@ -106,7 +106,7 @@ func _test_service_history_roundtrip(so) -> void:
 
 
 # --- Acceptance 5 -----------------------------------------------------------
-func _test_old_save_defaults(so) -> void:
+func _test_old_save_defaults(_so) -> void:
 	print("\n-- ServiceHistory: old saves (no new fields) get defaults --")
 	var CH = load(CHAT_HISTORY_PATH)
 	var old_sh = CH.new(null, "hist-old")
@@ -309,7 +309,7 @@ func _test_chooser_unlocked_keeps_fallback(so) -> void:
 
 
 # --- Acceptance 4: header badge ---------------------------------------------
-func _test_header_badge(so) -> void:
+func _test_header_badge(_so) -> void:
 	print("\n-- ChatHeader: [Passthrough: <name>] badge --")
 	var CH = load(CHAT_HISTORY_PATH)
 	var history = CH.new(null, "hist-badge")

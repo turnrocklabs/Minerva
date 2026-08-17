@@ -278,7 +278,6 @@ func _run_tests() -> void:
 		print("\n-- F: U4 panel integration (2-col layout, chrome buttons) --")
 
 		var src_tree: Node = panel_instance.get("_source_tree")
-		var dst_tree: Node = panel_instance.get("_dest_tree")
 		var stat_panel: Node = panel_instance.get("_status_panel")
 
 		check("F41: panel has _source_tree member (a Tree, non-null after _ready)",
@@ -2794,7 +2793,6 @@ func _run_tests() -> void:
 			# a vault provider with that path.
 			panel_z.set("_active_vault_path", "/fake/test.ssort")
 			panel_z.set("_registry_path", "/fake/test.registry.json")
-			var vault_prov_before: Object = panel_z.get("_vault_area_provider")
 			# Can't call _refresh_area_trees without a conn, so just verify state members.
 			check("Z358: panel _active_vault_path set correctly (pre-refresh state)",
 				str(panel_z.get("_active_vault_path")) == "/fake/test.ssort",
@@ -3048,7 +3046,6 @@ func _run_tests() -> void:
 			{"id": "open_vault_id", "kind": "vault", "path": "/fake/vault.ssort",
 			 "label": "MyVault", "locked": false},
 		])
-		var status_before_aa: String = ""
 		# Drive _on_area_dest_button_pressed directly.
 		# It calls set_status on guard — check status message via a small wrapper approach:
 		# We just verify the method executes without crashing (conn is null → returns early

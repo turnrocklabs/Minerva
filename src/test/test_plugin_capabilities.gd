@@ -237,7 +237,7 @@ func test_to_from_dict_round_trip() -> void:
 	_check("round-trip preserves capabilities",
 		def2 != null and def2.capabilities.size() == 1 \
 			and def2.capabilities[0] == "project_state",
-		"got: %s" % str(def2.capabilities if def2 != null else "<null>"))
+		"got: %s" % (str(def2.capabilities) if def2 != null else "<null>"))
 
 
 # ---------------------------------------------------------------------------

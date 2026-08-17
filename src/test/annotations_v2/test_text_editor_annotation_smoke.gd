@@ -118,7 +118,6 @@ func test_annotation_host_is_text_editor_host_subclass() -> void:
 	check("TextEditorAnnotationHost instantiable", host != null)
 	if host == null:
 		return
-	var base_host = _AnnotationHostScript.new()
 	check("TextEditorAnnotationHost is-a AnnotationHost",
 		host is AnnotationHost)
 

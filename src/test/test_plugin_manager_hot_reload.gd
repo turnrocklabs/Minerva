@@ -198,11 +198,7 @@ class TestablePluginManager extends PluginManager:
 		# We can't return stub_broker directly (typed PluginScenePanelBroker) because
 		# StubBroker doesn't inherit from it.  Instead store broker as Variant and
 		# cast in _hot_reload_tscn.  We use the override to set _stub_broker_variant.
-		return null  # Tests that need broker inject it via _stub_broker_var
-
-	## The actual broker variant used by _hot_reload_tscn (untyped for stub duck-typing).
-	## Tests set this directly; _hot_reload_tscn uses it via an override of the call site.
-	var _stub_broker_var = null
+		return null  # Tests that need a broker drive _live_scene_panels directly.
 
 
 ## Build a TestablePluginManager with one plugin in state RUNNING with auto_reload=true.
@@ -221,14 +217,14 @@ func _make_panel_entry(
 		panel_name: String,
 		tscn_path: String,
 		vbox: Control,
-		root: Control,
+		panel_root: Control,
 		editor = null
 ) -> Dictionary:
 	return {
 		"panel_name": panel_name,
 		"tscn_path":  tscn_path,
 		"vbox":       vbox,
-		"root":       root,
+		"root":       panel_root,
 		"editor":     editor,
 	}
 
@@ -241,9 +237,9 @@ func test_register_live_panel_basic() -> void:
 	print("test_register_live_panel_basic:")
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 
-	mgr.register_live_panel("cad", "cad_viewer", "/tmp/p/ui/CadViewer.tscn", vbox, root, null)
+	mgr.register_live_panel("cad", "cad_viewer", "/tmp/p/ui/CadViewer.tscn", vbox, panel_root, null)
 
 	var panels := mgr.get_live_panels("cad")
 	check("one panel registered", panels.size() == 1)
@@ -252,7 +248,7 @@ func test_register_live_panel_basic() -> void:
 		panels[0].get("tscn_path", "") == "/tmp/p/ui/CadViewer.tscn")
 
 	vbox.free()
-	root.free()
+	panel_root.free()
 	mgr.free()
 
 
@@ -260,16 +256,16 @@ func test_unregister_live_panel() -> void:
 	print("test_unregister_live_panel:")
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 
-	mgr.register_live_panel("cad", "cad_viewer", "/tmp/p/ui/CadViewer.tscn", vbox, root, null)
+	mgr.register_live_panel("cad", "cad_viewer", "/tmp/p/ui/CadViewer.tscn", vbox, panel_root, null)
 	mgr.unregister_live_panel("cad", "cad_viewer")
 
 	var panels := mgr.get_live_panels("cad")
 	check("panel removed after unregister", panels.is_empty())
 
 	vbox.free()
-	root.free()
+	panel_root.free()
 	mgr.free()
 
 
@@ -352,10 +348,10 @@ func test_gd_with_live_panels_reload_ok_no_stop_start() -> void:
 	print("test_gd_with_live_panels_reload_ok_no_stop_start:")
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 
 	# Register a live panel so _hot_reload_gd sees panels exist.
-	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, root, null)
+	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, panel_root, null)
 
 	# The .gd path is NOT in ResourceLoader cache (headless test), so reload() is
 	# skipped (treated as "not running, not a failure").  _hot_reload_gd returns true.
@@ -365,7 +361,7 @@ func test_gd_with_live_panels_reload_ok_no_stop_start() -> void:
 		mgr.restart_call_count == 0)
 
 	vbox.free()
-	root.free()
+	panel_root.free()
 	mgr.free()
 
 
@@ -373,17 +369,17 @@ func test_gd_reload_ok_calls_on_hot_reload_on_panels() -> void:
 	print("test_gd_reload_ok_calls_on_hot_reload_on_panels:")
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 
-	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, root, null)
+	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, panel_root, null)
 
 	# .gd not in cache → all_ok stays true → _on_hot_reload() fires.
 	_run_debounce_for_paths(mgr, "cad", ["/tmp/cad/ui/CadViewer.gd"])
 
-	check("_on_hot_reload called on live panel root", root.hot_reload_called)
+	check("_on_hot_reload called on live panel root", panel_root.hot_reload_called)
 
 	vbox.free()
-	root.free()
+	panel_root.free()
 	mgr.free()
 
 
@@ -403,8 +399,8 @@ func test_gd_reload_fail_triggers_stop_start() -> void:
 	# Here we verify the mechanics via direct invocation of _hot_reload_gd fallback:
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
-	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, root, null)
+	var panel_root := StubSceneRoot.new()
+	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, panel_root, null)
 
 	# Manually run _hot_reload_gd with an empty path list — returns true (no failures).
 	# To exercise the false-return path without a real script, verify that
@@ -415,7 +411,7 @@ func test_gd_reload_fail_triggers_stop_start() -> void:
 	# _hot_reload_gd returns false.  We test this by subclassing.
 	# Since inner-class extension isn't trivial, verify indirectly: if changed_paths
 	# contains .gd AND no panel roots are valid, _on_hot_reload is not called.
-	root.queue_free()   # Free before check — root is now invalid.
+	panel_root.queue_free()   # Free before check — root is now invalid.
 	_run_debounce_for_paths(mgr, "cad", ["/tmp/cad/ui/CadViewer.gd"])
 
 	# root is freed — is_instance_valid(root) returns false — _on_hot_reload not called.
@@ -432,9 +428,9 @@ func test_gd_panel_without_on_hot_reload_is_safe() -> void:
 	print("test_gd_panel_without_on_hot_reload_is_safe:")
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRootNoHooks.new()
+	var panel_root := StubSceneRootNoHooks.new()
 
-	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, root, null)
+	mgr.register_live_panel("cad", "cad_viewer", "/tmp/cad/ui/CadViewer.tscn", vbox, panel_root, null)
 	# No _on_hot_reload method — has_method() check in PluginManager guards the call.
 	_run_debounce_for_paths(mgr, "cad", ["/tmp/cad/ui/CadViewer.gd"])
 
@@ -442,7 +438,7 @@ func test_gd_panel_without_on_hot_reload_is_safe() -> void:
 	check("no stop+start triggered", mgr.restart_call_count == 0)
 
 	vbox.free()
-	root.free()
+	panel_root.free()
 	mgr.free()
 
 
@@ -462,13 +458,11 @@ func test_tscn_with_live_panel_calls_unload_and_unregister() -> void:
 	print("test_tscn_with_live_panel_calls_unload_and_unregister:")
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
-	var broker := StubBroker.new()
+	var panel_root := StubSceneRoot.new()
 
-	# Inject broker via the variant field (TestablePluginManager._stub_broker_var).
-	# _get_scene_panel_broker() returns null in the stub, so we override _hot_reload_tscn
-	# is NOT viable without modifying PluginManager.  Instead, we subclass inline via
-	# a workaround: patch _live_scene_panels and check unload was called directly.
+	# Broker injection isn't viable without modifying PluginManager
+	# (_get_scene_panel_broker() returns null in the stub), so instead we patch
+	# _live_scene_panels directly and check that unload was called.
 
 	# Add panel to live registry manually.
 	if not mgr._live_scene_panels.has("cad"):
@@ -478,7 +472,7 @@ func test_tscn_with_live_panel_calls_unload_and_unregister() -> void:
 		"panel_name": "cad_viewer",
 		"tscn_path":  tscn,
 		"vbox":       vbox,
-		"root":       root,
+		"root":       panel_root,
 		"editor":     null,
 	})
 
@@ -487,7 +481,7 @@ func test_tscn_with_live_panel_calls_unload_and_unregister() -> void:
 	# But _on_panel_unload() IS called on the root.
 	_run_debounce_for_paths(mgr, "cad", [tscn])
 
-	check("_on_panel_unload called on old root", root.unload_called)
+	check("_on_panel_unload called on old root", panel_root.unload_called)
 	check("no stop+start for .tscn change", mgr.restart_call_count == 0)
 
 	vbox.free()
@@ -498,7 +492,7 @@ func test_tscn_with_live_panel_frees_old_root() -> void:
 	print("test_tscn_with_live_panel_frees_old_root:")
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 	var tscn := "/tmp/cad/ui/CadViewer.tscn"
 
 	if not mgr._live_scene_panels.has("cad"):
@@ -507,7 +501,7 @@ func test_tscn_with_live_panel_frees_old_root() -> void:
 		"panel_name": "cad_viewer",
 		"tscn_path":  tscn,
 		"vbox":       vbox,
-		"root":       root,
+		"root":       panel_root,
 		"editor":     null,
 	})
 
@@ -525,7 +519,7 @@ func test_tscn_with_live_panel_frees_old_root() -> void:
 	if panels_after.size() > 0:
 		var new_root: Variant = panels_after[0].get("root", null)
 		check("registry entry root was updated after tscn reload",
-			new_root != root)
+			new_root != panel_root)
 	else:
 		check("registry entry root was updated after tscn reload (panel entry missing)", false)
 
@@ -543,8 +537,8 @@ func test_tscn_calls_instantiate_into() -> void:
 	# Add vbox to SceneTree so add_child works.
 	get_root().add_child(vbox)
 
-	var root := StubSceneRoot.new()
-	vbox.add_child(root)
+	var panel_root := StubSceneRoot.new()
+	vbox.add_child(panel_root)
 
 	var tscn := "/tmp/cad/ui/CadViewer.tscn"
 	if not mgr._live_scene_panels.has("cad"):
@@ -553,11 +547,10 @@ func test_tscn_calls_instantiate_into() -> void:
 		"panel_name": "cad_viewer",
 		"tscn_path":  tscn,
 		"vbox":       vbox,
-		"root":       root,
+		"root":       panel_root,
 		"editor":     null,
 	})
 
-	var children_before := vbox.get_child_count()
 	_run_debounce_for_paths(mgr, "cad", [tscn])
 
 	# After reload: old root is queue_freed (still valid this frame but will be freed).
@@ -569,7 +562,7 @@ func test_tscn_calls_instantiate_into() -> void:
 	var root_changed := false
 	if panels.size() > 0:
 		var new_r: Variant = panels[0].get("root", null)
-		root_changed = new_r != root
+		root_changed = new_r != panel_root
 	check("new root added to vbox/registry after tscn hot-reload", root_changed)
 
 	get_root().remove_child(vbox)
@@ -586,10 +579,10 @@ func test_mixed_gd_tscn_both_handled() -> void:
 	# .gd + .tscn changed in one window: .gd in-place reload, then .tscn in-place.
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 	var tscn := "/tmp/cad/ui/CadViewer.tscn"
 
-	mgr.register_live_panel("cad", "cad_viewer", tscn, vbox, root, null)
+	mgr.register_live_panel("cad", "cad_viewer", tscn, vbox, panel_root, null)
 
 	_run_debounce_for_paths(mgr, "cad", [
 		"/tmp/cad/ui/CadViewer.gd",
@@ -599,7 +592,7 @@ func test_mixed_gd_tscn_both_handled() -> void:
 	# No process-ext → no stop+start.
 	check("no stop+start for mixed gd+tscn", mgr.restart_call_count == 0)
 	# .tscn path was processed → _on_panel_unload called.
-	check("_on_panel_unload called (tscn path processed)", root.unload_called)
+	check("_on_panel_unload called (tscn path processed)", panel_root.unload_called)
 
 	vbox.free()
 	mgr.free()
@@ -610,10 +603,10 @@ func test_mixed_process_ext_dominates() -> void:
 	# .py + .gd + .tscn: process ext dominates → stop+start.
 	var mgr := _make_manager("cad")
 	var vbox := Control.new()
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 	var tscn := "/tmp/cad/ui/CadViewer.tscn"
 
-	mgr.register_live_panel("cad", "cad_viewer", tscn, vbox, root, null)
+	mgr.register_live_panel("cad", "cad_viewer", tscn, vbox, panel_root, null)
 
 	_run_debounce_for_paths(mgr, "cad", [
 		"/tmp/cad/obs_controller.py",
@@ -625,8 +618,8 @@ func test_mixed_process_ext_dominates() -> void:
 		mgr.restart_call_count == 1)
 	# Early return before tscn path: unload NOT called.
 	check("_on_panel_unload NOT called (early stop+start return)",
-		not root.unload_called)
+		not panel_root.unload_called)
 
 	vbox.free()
-	root.free()
+	panel_root.free()
 	mgr.free()

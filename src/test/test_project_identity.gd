@@ -281,10 +281,10 @@ func test_vend_persistence_by_implicit_flag() -> void:
 	# Explicit: vend advances in memory but does NOT (re)write the scratch.
 	var p_exp := _path("vexpl")
 	var cfg_exp := ConfigFile.new()
-	var exp := ProjectIdentity.new(cfg_exp, p_exp, _make_provider())
-	exp.adopt_from_project_data({"project_id": "x", "annotation_ref_seq": 0})  # is_implicit=false
-	exp.vend_ref()  # C1, in-memory only
-	check_eq("explicit vend advanced in-memory counter", exp.annotation_ref_seq, 1)
+	var expected := ProjectIdentity.new(cfg_exp, p_exp, _make_provider())
+	expected.adopt_from_project_data({"project_id": "x", "annotation_ref_seq": 0})  # is_implicit=false
+	expected.vend_ref()  # C1, in-memory only
+	check_eq("explicit vend advanced in-memory counter", expected.annotation_ref_seq, 1)
 	check("explicit vend left no scratch section", not cfg_exp.has_section(ProjectIdentity.SCRATCH_SECTION))
 
 

@@ -23,7 +23,7 @@ func _initialize() -> void:
 	_tmp_dir = _make_tmp_dir()
 	AnnotationHostRegistryScript._reset_for_test()
 
-	await _test_register_tools_exposes_render_overlay_schema()
+	_test_register_tools_exposes_render_overlay_schema()
 	await _test_sidecar_render_overlay_async_payload_shapes()
 	await _test_render_overlay_include_kinds_filter()
 	await _test_live_host_render_uses_host_registry_and_position_resolution()

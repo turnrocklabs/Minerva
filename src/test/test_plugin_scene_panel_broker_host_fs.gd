@@ -153,9 +153,9 @@ func test_watch_success_returns_path() -> void:
 	var parts := _fresh_broker("p1", ["panel1"])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	get_root().add_child(root)
-	broker.register_panel(root, "p1", "panel1", PackedStringArray([]))
+	var panel_root := StubSceneRoot.new()
+	get_root().add_child(panel_root)
+	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
 
 	var path := _temp_path("watched.txt")
 	_write(path, "v1")
@@ -164,16 +164,16 @@ func test_watch_success_returns_path() -> void:
 	check("FWS now watching path", FWS.get_instance().is_watched(path))
 	check("FWS owner_count = 1", FWS.get_instance().owner_count(path) == 1)
 
-	root.queue_free()
+	panel_root.queue_free()
 
 
 func test_watch_empty_path_returns_error() -> void:
 	print("test_watch_empty_path_returns_error")
 	var parts := _fresh_broker("p1", ["panel1"])
 	var broker: PluginScenePanelBroker = parts[0]
-	var root := StubSceneRoot.new()
-	get_root().add_child(root)
-	broker.register_panel(root, "p1", "panel1", PackedStringArray([]))
+	var panel_root := StubSceneRoot.new()
+	get_root().add_child(panel_root)
+	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
 
 	# Empty path → handler returns {success:false, error:"path_required"}.
 	# We can't easily inspect the reply without a live MinervaIPC, but we CAN
@@ -182,16 +182,16 @@ func test_watch_empty_path_returns_error() -> void:
 
 	check("no watch registered for empty path", FWS.get_instance().watch_count() == 0)
 
-	root.queue_free()
+	panel_root.queue_free()
 
 
 func test_unwatch_removes_subscription() -> void:
 	print("test_unwatch_removes_subscription")
 	var parts := _fresh_broker("p1", ["panel1"])
 	var broker: PluginScenePanelBroker = parts[0]
-	var root := StubSceneRoot.new()
-	get_root().add_child(root)
-	broker.register_panel(root, "p1", "panel1", PackedStringArray([]))
+	var panel_root := StubSceneRoot.new()
+	get_root().add_child(panel_root)
+	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
 
 	var path := _temp_path("unwatch_me.txt")
 	_write(path, "v1")
@@ -201,73 +201,73 @@ func test_unwatch_removes_subscription() -> void:
 	broker.handle_scene_request("panel1", "host.fs.unwatch", {"path": path}, "r2")
 	check("not watched after unwatch RPC", not FWS.get_instance().is_watched(path))
 
-	root.queue_free()
+	panel_root.queue_free()
 
 
 func test_changed_pushed_to_subscribed_panel() -> void:
 	print("test_changed_pushed_to_subscribed_panel")
 	var parts := _fresh_broker("p1", ["panel1"])
 	var broker: PluginScenePanelBroker = parts[0]
-	var root := StubSceneRoot.new()
-	get_root().add_child(root)
-	broker.register_panel(root, "p1", "panel1", PackedStringArray([]))
+	var panel_root := StubSceneRoot.new()
+	get_root().add_child(panel_root)
+	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
 
 	var path := _temp_path("changes.txt")
 	_write(path, "v1")
 	broker.handle_scene_request("panel1", "host.fs.watch", {"path": path}, "r1")
 
 	# Drop the prior received_calls (the platform may have pushed something).
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	OS.delay_msec(1100)
 	_write(path, "v2_external")
 	FWS.get_instance().tick()
 
 	var fs_changes: Array = []
-	for c in root.received_calls:
+	for c in panel_root.received_calls:
 		if c.channel == "host.fs.changed":
 			fs_changes.append(c)
 	check("scene received exactly one host.fs.changed", fs_changes.size() == 1)
 	if fs_changes.size() > 0:
 		check("payload path matches", fs_changes[0].payload.get("path", "") == path)
 
-	root.queue_free()
+	panel_root.queue_free()
 
 
 func test_changed_not_pushed_after_unwatch() -> void:
 	print("test_changed_not_pushed_after_unwatch")
 	var parts := _fresh_broker("p1", ["panel1"])
 	var broker: PluginScenePanelBroker = parts[0]
-	var root := StubSceneRoot.new()
-	get_root().add_child(root)
-	broker.register_panel(root, "p1", "panel1", PackedStringArray([]))
+	var panel_root := StubSceneRoot.new()
+	get_root().add_child(panel_root)
+	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
 
 	var path := _temp_path("ephem.txt")
 	_write(path, "v1")
 	broker.handle_scene_request("panel1", "host.fs.watch", {"path": path}, "r1")
 	broker.handle_scene_request("panel1", "host.fs.unwatch", {"path": path}, "r2")
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	OS.delay_msec(1100)
 	_write(path, "v2")
 	FWS.get_instance().tick()
 
 	var fs_changes: Array = []
-	for c in root.received_calls:
+	for c in panel_root.received_calls:
 		if c.channel == "host.fs.changed":
 			fs_changes.append(c)
 	check("no host.fs.changed pushed after unwatch", fs_changes.size() == 0)
 
-	root.queue_free()
+	panel_root.queue_free()
 
 
 func test_unregister_panel_auto_unwatches() -> void:
 	print("test_unregister_panel_auto_unwatches")
 	var parts := _fresh_broker("p1", ["panel1"])
 	var broker: PluginScenePanelBroker = parts[0]
-	var root := StubSceneRoot.new()
-	get_root().add_child(root)
-	broker.register_panel(root, "p1", "panel1", PackedStringArray([]))
+	var panel_root := StubSceneRoot.new()
+	get_root().add_child(panel_root)
+	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
 
 	var path := _temp_path("leak_check.txt")
 	_write(path, "v1")
@@ -277,7 +277,7 @@ func test_unregister_panel_auto_unwatches() -> void:
 	broker.unregister_panel("p1", "panel1")
 	check("watch removed when panel unregistered", not FWS.get_instance().is_watched(path))
 
-	root.queue_free()
+	panel_root.queue_free()
 
 
 func test_two_panels_one_path_both_receive() -> void:
@@ -324,24 +324,24 @@ func test_changed_payload_carries_path_mtime_size() -> void:
 	print("test_changed_payload_carries_path_mtime_size")
 	var parts := _fresh_broker("p1", ["panel1"])
 	var broker: PluginScenePanelBroker = parts[0]
-	var root := StubSceneRoot.new()
-	get_root().add_child(root)
-	broker.register_panel(root, "p1", "panel1", PackedStringArray([]))
+	var panel_root := StubSceneRoot.new()
+	get_root().add_child(panel_root)
+	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
 
 	var path := _temp_path("payload.txt")
 	_write(path, "short")
 	broker.handle_scene_request("panel1", "host.fs.watch", {"path": path}, "r1")
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	OS.delay_msec(1100)
 	_write(path, "much_longer_content")
 	FWS.get_instance().tick()
 
-	for c in root.received_calls:
+	for c in panel_root.received_calls:
 		if c.channel == "host.fs.changed":
 			check("payload path", c.payload.get("path", "") == path)
 			check("payload size = new content length",
 				int(c.payload.get("size", -1)) == "much_longer_content".length())
 			check("payload mtime > 0", int(c.payload.get("mtime", 0)) > 0)
 
-	root.queue_free()
+	panel_root.queue_free()

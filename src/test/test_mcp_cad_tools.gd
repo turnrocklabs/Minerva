@@ -251,7 +251,7 @@ func _canned_edges() -> Array:
 # ── cad_get_mesh_info tests ───────────────────────────────────────────────────
 
 func test_mesh_info_empty_host(tools) -> void:
-	var h := _make_host("MyCAD")
+	_make_host("MyCAD")
 	# host has no mesh — default _mesh_data is {}
 	var result: Dictionary = tools.handle("minerva_cad_get_mesh_info", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
@@ -305,7 +305,7 @@ func test_missing_editor_name(tools, tool_name: String) -> void:
 # ── cad_list_edges_live tests ─────────────────────────────────────────────────
 
 func test_list_edges_empty(tools) -> void:
-	var h := _make_host("MyCAD")
+	_make_host("MyCAD")
 	var result: Dictionary = tools.handle("minerva_cad_list_edges_live", {"editor_name": "MyCAD"})
 	check("success=true", bool(result.get("success", false)) == true)
 	var edges: Variant = result.get("edges", null)
@@ -604,7 +604,7 @@ func test_annotate_edges_chord_fallback(tools) -> void:
 	AnnotationHostRegistry._reset_for_test()
 
 
-func _annotate_group(tools, h: _FakeCadHost, edge_ids: Array, group_id: String) -> void:
+func _annotate_group(tools, _h: _FakeCadHost, edge_ids: Array, group_id: String) -> void:
 	tools.handle(
 		"minerva_cad_annotate_edges",
 		{"editor_name": "MyCAD", "edge_ids": edge_ids, "group_id": group_id}

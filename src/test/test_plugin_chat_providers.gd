@@ -123,7 +123,7 @@ func _run() -> void:
 	if so == null:
 		return
 
-	await _test_registry_unit()
+	_test_registry_unit()
 	await _test_provider_generate(so)
 	await _test_provider_question(so)
 	await _test_history_mode(so)
@@ -132,7 +132,7 @@ func _run() -> void:
 	await _test_cancel_mid_flight(so)
 	await _test_stale_reply_after_regenerate(so)
 	await _test_saved_selection_key_restore(so)
-	await _test_service_history_roundtrip(so)
+	_test_service_history_roundtrip(so)
 	await _test_integration_capability_path(so)
 
 
@@ -254,7 +254,7 @@ func _test_history_mode(_so) -> void:
 
 
 # --- Acceptance 6 (transport error / plugin death) + error kind ----------
-func _test_provider_errors(so) -> void:
+func _test_provider_errors(_so) -> void:
 	print("\n-- Provider: error kind + plugin death --")
 	# error kind.
 	var e = {"key": "ke", "plugin_id": PLUGIN_ID, "entry_id": "e", "display_name": "E",
@@ -555,7 +555,6 @@ func _test_service_history_roundtrip(so) -> void:
 
 
 func _new_service_history(prov, hid):
-	var SH = load(SERVICE_HISTORY_PATH)
 	# ServiceHistory subclasses; use ChatHistory which is the CHAT service_type.
 	var CH = load("res://Scripts/Models/ChatHistory.gd")
 	return CH.new(prov, hid)

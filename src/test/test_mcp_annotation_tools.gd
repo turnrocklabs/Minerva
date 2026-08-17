@@ -807,7 +807,7 @@ func test_list_no_bounds_without_registry(tools: MCPAnnotationTools) -> void:
 # ── Author filter tests ───────────────────────────────────────────────────────
 
 ## Build a doc with one human and one ai annotation, shared across filter tests.
-func _setup_mixed_author_doc(tools: MCPAnnotationTools, doc: String) -> void:
+func _setup_mixed_author_doc(_tools: MCPAnnotationTools, doc: String) -> void:
 	var human_ann: Dictionary = {
 		"id": "ann_human1",
 		"kind": "2d_arrow",

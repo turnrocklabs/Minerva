@@ -178,10 +178,10 @@ func _populate_models(models: Array[Dictionary]) -> void:
 func set_models(models: Array[Dictionary]) -> void:
 	_populate_models(models)
 
-func set_artifact(uri: String, name: String) -> void:
+func set_artifact(uri: String, artifact_name: String) -> void:
 	selected_artifact_uri = uri
 	if _artifact_label:
-		_artifact_label.text = name if not name.is_empty() else "No artifact selected"
+		_artifact_label.text = artifact_name if not artifact_name.is_empty() else "No artifact selected"
 
 func clear_artifact() -> void:
 	selected_artifact_uri = ""

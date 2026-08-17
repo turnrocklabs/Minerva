@@ -494,17 +494,17 @@ func test_broker_registered_before_on_panel_loaded() -> void:
 
 	var broker = _make_broker()
 	var vbox := _make_vbox()
-	var root := StubSceneRoot.new()
-	root.test_broker = broker
+	var panel_root := StubSceneRoot.new()
+	panel_root.test_broker = broker
 
 	# Step 9: add root to vbox.
-	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	vbox.add_child(root)
+	panel_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	vbox.add_child(panel_root)
 
 	# Step 10: register_panel BEFORE _on_panel_loaded.
 	var plugin_id := "cad"
 	var panel_name := "cad_viewer"
-	broker.register_panel(root, plugin_id, panel_name, PackedStringArray(["cad.render"]))
+	broker.register_panel(panel_root, plugin_id, panel_name, PackedStringArray(["cad.render"]))
 
 	# Step 11: fire _on_panel_loaded.
 	var ctx := {
@@ -517,19 +517,19 @@ func test_broker_registered_before_on_panel_loaded() -> void:
 		"editor": null,
 		"host_api_version": "1",
 	}
-	if root.has_method("_on_panel_loaded"):
-		root._on_panel_loaded(ctx)
+	if panel_root.has_method("_on_panel_loaded"):
+		panel_root._on_panel_loaded(ctx)
 
-	check("_on_panel_loaded was called", root.on_panel_loaded_called)
+	check("_on_panel_loaded was called", panel_root.on_panel_loaded_called)
 	check("broker was already registered when _on_panel_loaded fired",
-		root.broker_was_registered_before_loaded)
+		panel_root.broker_was_registered_before_loaded)
 
 	# Free in child-first order to avoid dangling parent refs.
 	# The broker attached a MinervaIPC child to root; root is a child of vbox.
 	# Freeing vbox also frees root and its children, but vbox must be done last.
 	# Use queue_free-style manual ordering: remove root from vbox first.
-	vbox.remove_child(root)
-	root.free()
+	vbox.remove_child(panel_root)
+	panel_root.free()
 	vbox.free()
 
 
@@ -537,10 +537,10 @@ func test_on_panel_loaded_receives_ctx_keys() -> void:
 	print("test_on_panel_loaded_receives_ctx_keys:")
 	var broker = _make_broker()
 	var vbox := _make_vbox()
-	var root := StubSceneRoot.new()
-	vbox.add_child(root)
+	var panel_root := StubSceneRoot.new()
+	vbox.add_child(panel_root)
 
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	var ctx := {
 		"plugin_id":        "cad",
@@ -552,25 +552,25 @@ func test_on_panel_loaded_receives_ctx_keys() -> void:
 		"editor":           null,
 		"host_api_version": "1",
 	}
-	if root.has_method("_on_panel_loaded"):
-		root._on_panel_loaded(ctx)
+	if panel_root.has_method("_on_panel_loaded"):
+		panel_root._on_panel_loaded(ctx)
 
 	check("ctx.plugin_id == 'cad'",
-		root.on_panel_loaded_ctx.get("plugin_id", "") == "cad")
+		panel_root.on_panel_loaded_ctx.get("plugin_id", "") == "cad")
 	check("ctx.panel_name == 'cad_viewer'",
-		root.on_panel_loaded_ctx.get("panel_name", "") == "cad_viewer")
+		panel_root.on_panel_loaded_ctx.get("panel_name", "") == "cad_viewer")
 	check("ctx.data_directory set",
-		not root.on_panel_loaded_ctx.get("data_directory", "").is_empty())
+		not panel_root.on_panel_loaded_ctx.get("data_directory", "").is_empty())
 	check("ctx.broker is non-null",
-		root.on_panel_loaded_ctx.get("broker", null) != null)
+		panel_root.on_panel_loaded_ctx.get("broker", null) != null)
 	check("ctx.file_path present",
-		root.on_panel_loaded_ctx.has("file_path"))
+		panel_root.on_panel_loaded_ctx.has("file_path"))
 	check("ctx.host_api_version == '1'",
-		root.on_panel_loaded_ctx.get("host_api_version", "") == "1")
+		panel_root.on_panel_loaded_ctx.get("host_api_version", "") == "1")
 
 	# Free child-first to avoid dangling refs (MinervaIPC child on root).
-	vbox.remove_child(root)
-	root.free()
+	vbox.remove_child(panel_root)
+	panel_root.free()
 	vbox.free()
 
 

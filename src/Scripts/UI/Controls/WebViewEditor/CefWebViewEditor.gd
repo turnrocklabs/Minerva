@@ -42,9 +42,9 @@ func _exit_tree() -> void:
 		_cef = null
 	# Clean up the tmp HTML file we wrote.
 	if not _tmp_html_path.is_empty():
-		var abs := ProjectSettings.globalize_path(_tmp_html_path)
-		if FileAccess.file_exists(abs):
-			DirAccess.remove_absolute(abs)
+		var abs_path := ProjectSettings.globalize_path(_tmp_html_path)
+		if FileAccess.file_exists(abs_path):
+			DirAccess.remove_absolute(abs_path)
 
 
 func _apply_editor_style() -> void:
@@ -166,9 +166,9 @@ func set_html(source: String) -> void:
 func _apply_oversampling() -> void:
 	if _sv == null:
 		return
-	var scale := _effective_scale()
+	var oversampling := _effective_scale()
 	_sv.set_use_oversampling(true)
-	_sv.set_oversampling_override(scale)
+	_sv.set_oversampling_override(oversampling)
 
 
 ## Logical->physical pixel ratio for this surface: the host UI zoom

@@ -150,9 +150,12 @@ func _write_segment_frames(recording_data: VideoRecordingDataScript, start_ms: i
 			image.save_jpg(_temp_dir.path_join(filename), 0.95)
 			frame_number += 1
 
-		# Update progress (frames are 0-60% of total)
-		var progress := float(i - start_frame) / float(max(1, end_frame - start_frame))
-		export_progress.emit(progress * 60.0, "Processing frame %d..." % frame_number)
+		# Update progress (frames are 0-60% of total). `i` is an absolute index into
+		# the source frame_index, so measuring it against the whole recording keeps
+		# progress monotonic across segments — measuring it against this segment's
+		# own span made the bar restart from 0% on every segment.
+		var progress := float(i) / float(max(1, total_frames))
+		export_progress.emit(clampf(progress, 0.0, 1.0) * 60.0, "Processing frame %d..." % frame_number)
 
 		i += step
 
@@ -175,7 +178,7 @@ func _composite_pip(recording_data: VideoRecordingDataScript, base_image: Image,
 	webcam_image.resize(pip_diameter, pip_diameter)
 
 	# Create circular mask and composite
-	var radius := pip_diameter / 2
+	var radius := floori(pip_diameter / 2.0)
 	for y in pip_diameter:
 		for x in pip_diameter:
 			var dx := x - radius
@@ -202,7 +205,7 @@ func _apply_crop(recording_data: VideoRecordingDataScript, image: Image, time_ms
 
 	# Center of crop
 	var center_x := int(crop_x * src_w)
-	var x_start := clampi(center_x - crop_w / 2, 0, src_w - crop_w)
+	var x_start := clampi(center_x - floori(crop_w / 2.0), 0, src_w - crop_w)
 
 	# Extract crop region
 	var cropped := image.get_region(Rect2i(x_start, 0, crop_w, crop_h))

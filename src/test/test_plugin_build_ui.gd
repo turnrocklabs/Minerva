@@ -455,9 +455,9 @@ func test_mcp_build_status_and_dry_run() -> void:
 	var envelope: Dictionary = failed.get("envelope", {})
 	check("H failed status carries the envelope", envelope.get("error", "") == "setup_step_failed", str(envelope))
 	check("H envelope carries exec_denied detail", envelope.get("detail", "") == "exec_denied", str(envelope))
-	var log: Array = failed.get("build_log", [])
-	check("H build_log non-empty", not log.is_empty(), str(log))
-	check("H build_log records the failed step", str(log).contains("step 1/1 exec"), str(log))
+	var call_log: Array = failed.get("build_log", [])
+	check("H build_log non-empty", not call_log.is_empty(), str(call_log))
+	check("H build_log records the failed step", str(call_log).contains("step 1/1 exec"), str(call_log))
 
 	# NEEDS_BINARY envelope surfaces the failures array through MCP.
 	var id2 := "setup_pipeline_pm_two_tools_test"
@@ -541,9 +541,9 @@ func test_unattended_install_denies_exec() -> void:
 	check("I envelope keeps the base §3 shape (error=setup_step_failed)",
 			envelope.get("error", "") == "setup_step_failed", str(envelope))
 
-	var log: Array = pm.get_build_log(id)
+	var call_log: Array = pm.get_build_log(id)
 	check("I build log explains the unattended deny",
-			str(log).contains("unattended fail-closed default"), str(log))
+			str(call_log).contains("unattended fail-closed default"), str(call_log))
 
 	# The marker also flows through the MCP surface.
 	var tools = _mcp_tools_script.new(pm, null, null, null)
@@ -629,9 +629,9 @@ func _cleanup_pm_data_dir(pm, plugin_id: String) -> void:
 
 func _cleanup_scratch() -> void:
 	for p in _scratch_state_files + _scratch_configs:
-		var abs := ProjectSettings.globalize_path(p)
-		if FileAccess.file_exists(abs):
-			DirAccess.remove_absolute(abs)
+		var abs_path := ProjectSettings.globalize_path(p)
+		if FileAccess.file_exists(abs_path):
+			DirAccess.remove_absolute(abs_path)
 
 
 ## Waits until the gate has a request on screen (its worker caller is blocked).

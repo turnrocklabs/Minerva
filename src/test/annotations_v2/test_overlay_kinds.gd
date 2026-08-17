@@ -273,7 +273,6 @@ func _test_callout_resolves_anchor_via_host() -> void:
 	var host: TestHost = TestHost.new()
 	host.live_pos = Vector2(500.0, 500.0)
 	var ctx := _make_ctx(host)
-	var callout: AnnotationCallout = AnnotationCalloutScript.new()
 	var ann := {
 		"id": "c3",
 		"kind": "callout",
@@ -287,7 +286,6 @@ func _test_callout_resolves_anchor_via_host() -> void:
 
 
 func _test_callout_falls_back_to_snapshot_without_host() -> void:
-	var callout: AnnotationCallout = AnnotationCalloutScript.new()
 	var ann := {
 		"id": "c4",
 		"kind": "callout",

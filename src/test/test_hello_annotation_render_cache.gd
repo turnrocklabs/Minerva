@@ -212,6 +212,6 @@ func test_set_canvas_and_root_schedules_refresh() -> void:
 	var host := Helloscene_AnnotationHost.new()
 	check("pending false before set_canvas_and_root", host._cache_refresh_pending == false)
 	var canvas := Control.new()
-	var root := Control.new()
-	host.set_canvas_and_root(canvas, root)
+	var panel_root := Control.new()
+	host.set_canvas_and_root(canvas, panel_root)
 	check("pending true after set_canvas_and_root", host._cache_refresh_pending == true)

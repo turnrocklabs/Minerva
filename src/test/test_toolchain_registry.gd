@@ -85,9 +85,9 @@ func _scratch_config_path(label: String) -> String:
 
 
 func _remove_user_file(user_path: String) -> void:
-	var abs := ProjectSettings.globalize_path(user_path)
-	if FileAccess.file_exists(abs):
-		DirAccess.remove_absolute(abs)
+	var abs_path := ProjectSettings.globalize_path(user_path)
+	if FileAccess.file_exists(abs_path):
+		DirAccess.remove_absolute(abs_path)
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────

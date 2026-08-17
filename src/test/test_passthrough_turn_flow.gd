@@ -187,8 +187,8 @@ func _test_turn_bookkeeping(Status) -> void:
 # --- Acceptance 4: cancel disposition --------------------------------------
 func _test_cancel_disposition(Status) -> void:
 	print("\n-- cancel path --")
-	var BotResponse = load(BOTRESPONSE_PATH)
-	var bot = BotResponse.new()
+	var BotResponseScript = load(BOTRESPONSE_PATH)
+	var bot = BotResponseScript.new()
 	bot.error = "Request cancelled."  # PluginProvider's cancel marker
 	var disp := _disposition_for(bot)
 	check("cancelled bot → 'cancelled' disposition", disp == "cancelled", disp)
@@ -204,10 +204,10 @@ func _test_cancel_disposition(Status) -> void:
 
 
 # --- Acceptance 5: question disposition + options preserved -----------------
-func _test_question_disposition(Status) -> void:
+func _test_question_disposition(_Status) -> void:
 	print("\n-- question path --")
-	var BotResponse = load(BOTRESPONSE_PATH)
-	var bot = BotResponse.new()
+	var BotResponseScript = load(BOTRESPONSE_PATH)
+	var bot = BotResponseScript.new()
 	bot.text = "Which file should I edit?"
 	bot.hcp_data["passthrough_question_options"] = [
 		{"label": "main.rs", "keystroke": "1"},
@@ -232,13 +232,13 @@ func _test_question_disposition(Status) -> void:
 # --- Acceptance 6 (partial): answer + error dispositions -------------------
 func _test_answer_and_error_disposition(_Status) -> void:
 	print("\n-- answer / error dispositions --")
-	var BotResponse = load(BOTRESPONSE_PATH)
+	var BotResponseScript = load(BOTRESPONSE_PATH)
 
-	var ans = BotResponse.new()
+	var ans = BotResponseScript.new()
 	ans.text = "Done — parser implemented."
 	check("answer bot → 'answer' disposition", _disposition_for(ans) == "answer")
 
-	var err = BotResponse.new()
+	var err = BotResponseScript.new()
 	err.error = "Plugin 'x' is not running."
 	check("transport-error bot → 'error' disposition", _disposition_for(err) == "error")
 

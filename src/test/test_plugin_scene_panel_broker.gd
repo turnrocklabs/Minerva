@@ -318,12 +318,12 @@ func test_register_panel_basic() -> void:
 	var parts := _make_broker_with_plugin("cad", ["cad_viewer"], ["cad.render"])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
 
 	check("panel is registered after register_panel", broker.is_panel_registered("cad_viewer"))
 	check("panel owner is correct", broker.get_panel_owner("cad_viewer") == "cad")
-	root.free()
+	panel_root.free()
 
 
 func test_register_panel_attaches_ipc_helper() -> void:
@@ -331,13 +331,13 @@ func test_register_panel_attaches_ipc_helper() -> void:
 	var parts := _make_broker_with_plugin("cad", ["cad_viewer"], ["cad.render"])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
 
-	var helper := root.get_node_or_null(MinervaIPC.HELPER_NODE_NAME)
+	var helper := panel_root.get_node_or_null(MinervaIPC.HELPER_NODE_NAME)
 	check("$_MinervaIPC node is attached to scene root", helper != null)
 	check("attached node is a MinervaIPC", helper is MinervaIPC)
-	root.free()
+	panel_root.free()
 
 
 func test_register_panel_emits_signal() -> void:
@@ -352,12 +352,12 @@ func test_register_panel_emits_signal() -> void:
 		emitted[1] = pname
 	)
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	check("panel_registered emits plugin_id", emitted[0] == "cad")
 	check("panel_registered emits panel_name", emitted[1] == "cad_viewer")
-	root.free()
+	panel_root.free()
 
 
 func test_register_panel_bad_args() -> void:
@@ -370,14 +370,14 @@ func test_register_panel_bad_args() -> void:
 	check("null root: panel not registered", not broker.is_panel_registered("cad_viewer"))
 
 	# Empty plugin_id.
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "", "cad_viewer", PackedStringArray())
 	check("empty plugin_id: panel not registered", not broker.is_panel_registered("cad_viewer"))
 
 	# Empty panel_name.
-	broker.register_panel(root, "cad", "", PackedStringArray())
+	broker.register_panel(panel_root, "cad", "", PackedStringArray())
 	check("empty panel_name: not in registry (no key)", broker.get_panel_owner("") == "")
-	root.free()
+	panel_root.free()
 
 
 func test_register_panel_duplicate_same_owner() -> void:
@@ -443,13 +443,13 @@ func test_unregister_panel() -> void:
 		emitted.append(pid)
 	)
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 	broker.unregister_panel("cad", "cad_viewer")
 
 	check("panel is no longer registered", not broker.is_panel_registered("cad_viewer"))
 	check("panel_unregistered signal emitted", "cad" in emitted)
-	root.free()
+	panel_root.free()
 
 
 func test_unregister_panel_unknown() -> void:
@@ -467,13 +467,13 @@ func test_unregister_panel_wrong_owner() -> void:
 	var parts := _make_broker_with_plugin("cad", ["cad_viewer"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	# Wrong owner should not remove the panel.
 	broker.unregister_panel("wrong_plugin", "cad_viewer")
 	check("panel still registered after wrong-owner unregister", broker.is_panel_registered("cad_viewer"))
-	root.free()
+	panel_root.free()
 
 
 func test_unregister_plugin_panels() -> void:
@@ -516,11 +516,11 @@ func test_is_panel_registered() -> void:
 	check("unregistered panel: is_panel_registered returns false",
 		not broker.is_panel_registered("cad_viewer"))
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 	check("registered panel: is_panel_registered returns true",
 		broker.is_panel_registered("cad_viewer"))
-	root.free()
+	panel_root.free()
 
 
 func test_get_panel_owner() -> void:
@@ -531,11 +531,11 @@ func test_get_panel_owner() -> void:
 	check("unknown panel: get_panel_owner returns empty string",
 		broker.get_panel_owner("cad_viewer") == "")
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 	check("registered panel: get_panel_owner returns correct plugin_id",
 		broker.get_panel_owner("cad_viewer") == "cad")
-	root.free()
+	panel_root.free()
 
 
 # ===========================================================================
@@ -568,9 +568,9 @@ func test_request_channel_not_in_panel_scope() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 	# Panel declares only "cad.render" as its channels.
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
 
 	# Request with a channel NOT in the panel's declared channels.
 	broker.handle_scene_request("cad_viewer", "cad.undeclared_channel", {}, "reply-2")
@@ -580,7 +580,7 @@ func test_request_channel_not_in_panel_scope() -> void:
 	var denied_event := _find_event(audit.events, PluginScenePanelBroker.EVENT_SCENE_DENIED)
 	check("denial reason is channel_not_in_panel_scope",
 		denied_event.get("detail", {}).get("reason", "") == "channel_not_in_panel_scope")
-	root.free()
+	panel_root.free()
 
 
 func test_request_channel_not_declared_in_manifest() -> void:
@@ -592,8 +592,8 @@ func test_request_channel_not_declared_in_manifest() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
 
 	broker.handle_scene_request("cad_viewer", "cad.render", {}, "reply-3")
 
@@ -602,7 +602,7 @@ func test_request_channel_not_declared_in_manifest() -> void:
 	var denied_event := _find_event(audit.events, PluginScenePanelBroker.EVENT_SCENE_DENIED)
 	check("denial reason is channel_not_declared",
 		denied_event.get("detail", {}).get("reason", "") == "channel_not_declared")
-	root.free()
+	panel_root.free()
 
 
 func test_request_payload_too_large() -> void:
@@ -611,8 +611,8 @@ func test_request_payload_too_large() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
 
 	# Build a payload that exceeds 64 KiB when serialised.
 	var big_payload := {"data": "x".repeat(PluginScenePanelBroker.MAX_PAYLOAD_BYTES + 1)}
@@ -623,7 +623,7 @@ func test_request_payload_too_large() -> void:
 	var denied_event := _find_event(audit.events, PluginScenePanelBroker.EVENT_SCENE_DENIED)
 	check("denial reason is payload_too_large",
 		denied_event.get("detail", {}).get("reason", "") == "payload_too_large")
-	root.free()
+	panel_root.free()
 
 
 func test_request_audit_allowed_event() -> void:
@@ -634,8 +634,8 @@ func test_request_audit_allowed_event() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray(["cad.render"]))
 
 	# A valid request with valid channel and small payload.
 	# The async dispatch will fail (no running plugin), but the ALLOWED audit
@@ -644,7 +644,7 @@ func test_request_audit_allowed_event() -> void:
 
 	check("audit: scene_allowed emitted for valid request",
 		audit.has_event_type(PluginScenePanelBroker.EVENT_SCENE_ALLOWED))
-	root.free()
+	panel_root.free()
 
 
 func test_request_panel_ownership_mismatch() -> void:
@@ -658,10 +658,10 @@ func test_request_panel_ownership_mismatch() -> void:
 
 	# We directly manipulate the registry to simulate a mismatch scenario:
 	# register without manifest validation (bypass by inserting a raw entry).
-	var root := StubSceneRoot.new()
+	var panel_root := StubSceneRoot.new()
 	# Register normally — this will succeed registration because register_panel
 	# doesn't check ui_panels at registration time (it checks at request time).
-	broker.register_panel(root, "cad", "unlisted_panel", PackedStringArray(["cad.render"]))
+	broker.register_panel(panel_root, "cad", "unlisted_panel", PackedStringArray(["cad.render"]))
 
 	broker.handle_scene_request("unlisted_panel", "cad.render", {}, "reply-6")
 
@@ -670,7 +670,7 @@ func test_request_panel_ownership_mismatch() -> void:
 	var denied_event := _find_event(audit.events, PluginScenePanelBroker.EVENT_SCENE_DENIED)
 	check("denial reason is panel_ownership_mismatch",
 		denied_event.get("detail", {}).get("reason", "") == "panel_ownership_mismatch")
-	root.free()
+	panel_root.free()
 
 
 # ===========================================================================
@@ -696,15 +696,15 @@ func test_push_panel_wrong_owner() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	var pushed := broker.push_to_panel("different_plugin", "cad_viewer", "cad.update", {})
 
 	check("push_to_panel returns false for wrong owner", not pushed)
 	check("audit: scene_denied emitted for wrong-owner push",
 		audit.has_event_type(PluginScenePanelBroker.EVENT_SCENE_DENIED))
-	root.free()
+	panel_root.free()
 
 
 func test_push_panel_live_no_receive_method() -> void:
@@ -713,15 +713,15 @@ func test_push_panel_live_no_receive_method() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRootNoReceive.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRootNoReceive.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	var pushed := broker.push_to_panel("cad", "cad_viewer", "cad.update", {})
 
 	check("push_to_panel returns false when no receive method", not pushed)
 	check("audit: scene_push_miss emitted for missing receive",
 		audit.has_event_type(PluginScenePanelBroker.EVENT_SCENE_PUSH_MISS))
-	root.free()
+	panel_root.free()
 
 
 func test_push_panel_live_with_receive() -> void:
@@ -730,19 +730,19 @@ func test_push_panel_live_with_receive() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	var test_payload := {"entity_id": "wall-001", "x": 100.0}
 	var pushed := broker.push_to_panel("cad", "cad_viewer", "cad.update", test_payload)
 
 	check("push_to_panel returns true for live panel with receive", pushed)
 	check("audit: scene_push emitted", audit.has_event_type(PluginScenePanelBroker.EVENT_SCENE_PUSH))
-	check("receive was called on scene root", root.received_calls.size() == 1)
-	check("receive got correct channel", root.received_calls[0]["channel"] == "cad.update")
+	check("receive was called on scene root", panel_root.received_calls.size() == 1)
+	check("receive got correct channel", panel_root.received_calls[0]["channel"] == "cad.update")
 	check("receive got correct payload",
-		root.received_calls[0]["payload"].get("entity_id", "") == "wall-001")
-	root.free()
+		panel_root.received_calls[0]["payload"].get("entity_id", "") == "wall-001")
+	panel_root.free()
 
 
 # ===========================================================================
@@ -755,23 +755,23 @@ func test_attach_buffer_pushes_initial_state() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "hello")
 	var ok := broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
 
 	check("attach_buffer returns true on success", ok)
-	check("scene received initial attach_buffer", root.received_calls.size() == 1)
+	check("scene received initial attach_buffer", panel_root.received_calls.size() == 1)
 	check("channel is attach_buffer",
-		root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_ATTACH_BUFFER)
-	var payload: Dictionary = root.received_calls[0]["payload"]
+		panel_root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_ATTACH_BUFFER)
+	var payload: Dictionary = panel_root.received_calls[0]["payload"]
 	check("payload.path matches", payload.get("path", "") == "/tmp/foo.tdsl")
 	check("payload.text matches", payload.get("text", "") == "hello")
 	check("payload.version matches", payload.get("version", -1) == 0)
 	check("audit: buffer_attached emitted",
 		audit.has_event_type(PluginScenePanelBroker.EVENT_BUFFER_ATTACHED))
-	root.free()
+	panel_root.free()
 
 
 func test_attach_buffer_forwards_text_changed() -> void:
@@ -779,29 +779,29 @@ func test_attach_buffer_forwards_text_changed() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "a")
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
 	# Drop the initial attach_buffer push from the assertion target.
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	buffer.apply_edit("ab")
 	buffer.apply_edit("abc")
 
-	check("two text_changed pushes received", root.received_calls.size() == 2)
+	check("two text_changed pushes received", panel_root.received_calls.size() == 2)
 	check("first push channel is text_changed",
-		root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_TEXT_CHANGED)
+		panel_root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_TEXT_CHANGED)
 	check("first push text is ab",
-		root.received_calls[0]["payload"].get("text", "") == "ab")
+		panel_root.received_calls[0]["payload"].get("text", "") == "ab")
 	check("first push version is 1",
-		root.received_calls[0]["payload"].get("version", -1) == 1)
+		panel_root.received_calls[0]["payload"].get("version", -1) == 1)
 	check("second push text is abc",
-		root.received_calls[1]["payload"].get("text", "") == "abc")
+		panel_root.received_calls[1]["payload"].get("text", "") == "abc")
 	check("second push version is 2",
-		root.received_calls[1]["payload"].get("version", -1) == 2)
-	root.free()
+		panel_root.received_calls[1]["payload"].get("version", -1) == 2)
+	panel_root.free()
 
 
 func test_attach_buffer_panel_not_registered() -> void:
@@ -824,8 +824,8 @@ func test_attach_buffer_plugin_mismatch() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
 	var ok := broker.attach_buffer_to_panel("intruder", "dsl_render", buffer)
@@ -833,7 +833,7 @@ func test_attach_buffer_plugin_mismatch() -> void:
 	check("attach_buffer returns false on plugin mismatch", not ok)
 	check("audit: buffer_denied emitted",
 		audit.has_event_type(PluginScenePanelBroker.EVENT_BUFFER_DENIED))
-	root.free()
+	panel_root.free()
 
 
 func test_attach_buffer_null_buffer() -> void:
@@ -841,13 +841,13 @@ func test_attach_buffer_null_buffer() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var ok := broker.attach_buffer_to_panel("dsl", "dsl_render", null)
 
 	check("attach_buffer returns false for null buffer", not ok)
-	root.free()
+	panel_root.free()
 
 
 func test_reattach_replaces_previous_buffer() -> void:
@@ -855,26 +855,26 @@ func test_reattach_replaces_previous_buffer() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buf_a := DocumentBuffer.new("/tmp/a.tdsl", "alpha")
 	var buf_b := DocumentBuffer.new("/tmp/b.tdsl", "bravo")
 
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buf_a)
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buf_b)
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	# After re-attaching, the original buffer's signal must NOT fire pushes.
 	buf_a.apply_edit("alpha2")
-	check("old buffer no longer pushes after re-attach", root.received_calls.size() == 0)
+	check("old buffer no longer pushes after re-attach", panel_root.received_calls.size() == 0)
 
 	# But the new buffer does.
 	buf_b.apply_edit("bravo2")
-	check("new buffer pushes after re-attach", root.received_calls.size() == 1)
+	check("new buffer pushes after re-attach", panel_root.received_calls.size() == 1)
 	check("push payload comes from new buffer",
-		root.received_calls[0]["payload"].get("text", "") == "bravo2")
-	root.free()
+		panel_root.received_calls[0]["payload"].get("text", "") == "bravo2")
+	panel_root.free()
 
 
 func test_reattach_same_buffer_is_no_op() -> void:
@@ -882,20 +882,20 @@ func test_reattach_same_buffer_is_no_op() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	# Same buffer again — should be a no-op: no extra attach_buffer push,
 	# no extra refcount churn.
 	var ok := broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
 	check("re-attach same buffer returns true", ok)
-	check("no redundant attach_buffer push", root.received_calls.size() == 0)
+	check("no redundant attach_buffer push", panel_root.received_calls.size() == 0)
 	check("attached_count stays at 1", buffer.attached_count == 1)
-	root.free()
+	panel_root.free()
 
 
 func test_attach_bumps_buffer_attached_count() -> void:
@@ -903,14 +903,14 @@ func test_attach_bumps_buffer_attached_count() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
 	check("buffer.attached_count starts at 0", buffer.attached_count == 0)
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
 	check("attach_buffer bumps buffer.attached_count to 1", buffer.attached_count == 1)
-	root.free()
+	panel_root.free()
 
 
 func test_detach_decrements_buffer_attached_count() -> void:
@@ -918,8 +918,8 @@ func test_detach_decrements_buffer_attached_count() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
 	# Simulate the text editor side: it has its own attach() in Editor.gd.
@@ -929,7 +929,7 @@ func test_detach_decrements_buffer_attached_count() -> void:
 	broker.detach_buffer_from_panel("dsl", "dsl_render")
 	check("after broker detach, attached_count = 1 (editor still attached)",
 		buffer.attached_count == 1)
-	root.free()
+	panel_root.free()
 
 
 func test_detach_buffer_disconnects_signal() -> void:
@@ -937,17 +937,17 @@ func test_detach_buffer_disconnects_signal() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
 	broker.detach_buffer_from_panel("dsl", "dsl_render")
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	buffer.apply_edit("y")
-	check("text_changed not forwarded after detach", root.received_calls.size() == 0)
-	root.free()
+	check("text_changed not forwarded after detach", panel_root.received_calls.size() == 0)
+	panel_root.free()
 
 
 func test_detach_buffer_pushes_detach_notification() -> void:
@@ -956,23 +956,23 @@ func test_detach_buffer_pushes_detach_notification() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
-	root.received_calls.clear()
+	panel_root.received_calls.clear()
 
 	broker.detach_buffer_from_panel("dsl", "dsl_render")
 
-	check("detach pushed exactly one notification", root.received_calls.size() == 1)
+	check("detach pushed exactly one notification", panel_root.received_calls.size() == 1)
 	check("channel is detach_buffer",
-		root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_DETACH_BUFFER)
+		panel_root.received_calls[0]["channel"] == PluginScenePanelBroker.CHANNEL_DETACH_BUFFER)
 	check("detach payload includes path",
-		root.received_calls[0]["payload"].get("path", "") == "/tmp/foo.tdsl")
+		panel_root.received_calls[0]["payload"].get("path", "") == "/tmp/foo.tdsl")
 	check("audit: buffer_detached emitted",
 		audit.has_event_type(PluginScenePanelBroker.EVENT_BUFFER_DETACHED))
-	root.free()
+	panel_root.free()
 
 
 func test_unregister_panel_disconnects_buffer() -> void:
@@ -980,8 +980,8 @@ func test_unregister_panel_disconnects_buffer() -> void:
 	var parts := _make_broker_with_plugin("dsl", ["dsl_render"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneRoot.new()
-	broker.register_panel(root, "dsl", "dsl_render", PackedStringArray())
+	var panel_root := StubSceneRoot.new()
+	broker.register_panel(panel_root, "dsl", "dsl_render", PackedStringArray())
 
 	var buffer := DocumentBuffer.new("/tmp/foo.tdsl", "x")
 	broker.attach_buffer_to_panel("dsl", "dsl_render", buffer)
@@ -992,7 +992,7 @@ func test_unregister_panel_disconnects_buffer() -> void:
 
 	check("buffer.text_changed has no connections after unregister",
 		buffer.text_changed.get_connections().size() == 0)
-	root.free()
+	panel_root.free()
 
 
 # ===========================================================================

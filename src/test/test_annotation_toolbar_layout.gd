@@ -105,7 +105,7 @@ class MockTool extends AnnotationAuthorTool:
 	var activate_calls: int = 0
 	var deactivate_calls: int = 0
 
-	func on_activate(host: AnnotationHost) -> void:
+	func on_activate(_host: AnnotationHost) -> void:
 		activate_calls += 1
 
 	func on_deactivate() -> void:

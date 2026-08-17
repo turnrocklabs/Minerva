@@ -192,17 +192,17 @@ func test_push_progress_registered_panel() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneWithProgress.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneWithProgress.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	var pushed := broker.push_progress("cad", "cad_viewer", "req_00001", "tessellate", 0.5)
 
 	check("push_progress returns true for live panel with on_progress", pushed)
-	check("on_progress was called on scene root", root.progress_calls.size() == 1)
+	check("on_progress was called on scene root", panel_root.progress_calls.size() == 1)
 	check("audit: scene_progress emitted",
 		audit.has_event_type(PluginScenePanelBroker.EVENT_SCENE_PROGRESS))
 
-	root.free()
+	panel_root.free()
 
 
 func test_push_progress_unregistered_panel() -> void:
@@ -225,8 +225,8 @@ func test_push_progress_wrong_owner() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneWithProgress.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneWithProgress.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	# "impostor_plugin" tries to push progress to a panel it doesn't own.
 	var pushed := broker.push_progress("impostor_plugin", "cad_viewer", "req_00003", "export", 0.9)
@@ -237,9 +237,9 @@ func test_push_progress_wrong_owner() -> void:
 	var denied_ev := _find_event(audit.events, PluginScenePanelBroker.EVENT_SCENE_DENIED)
 	check("denial reason is progress_plugin_mismatch",
 		denied_ev.get("detail", {}).get("reason", "") == "progress_plugin_mismatch")
-	check("on_progress was NOT called", root.progress_calls.is_empty())
+	check("on_progress was NOT called", panel_root.progress_calls.is_empty())
 
-	root.free()
+	panel_root.free()
 
 
 func test_push_progress_no_on_progress_method() -> void:
@@ -248,8 +248,8 @@ func test_push_progress_no_on_progress_method() -> void:
 	var audit: StubAuditLog = parts[2]
 
 	# Scene that does NOT implement on_progress.
-	var root := StubSceneNoProgress.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneNoProgress.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	var pushed := broker.push_progress("cad", "cad_viewer", "req_00004", "validate", 0.3)
 
@@ -260,45 +260,45 @@ func test_push_progress_no_on_progress_method() -> void:
 	check("miss reason is progress_unsupported",
 		miss_ev.get("detail", {}).get("reason", "") == "progress_unsupported")
 
-	root.free()
+	panel_root.free()
 
 
 func test_push_progress_data_passthrough() -> void:
 	var parts := _make_broker_with_plugin("cad", ["cad_viewer"], [])
 	var broker: PluginScenePanelBroker = parts[0]
 
-	var root := StubSceneWithProgress.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneWithProgress.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	# Use boundary-ish fraction values and verify they arrive unchanged.
 	broker.push_progress("cad", "cad_viewer", "req_xyz", "translate", 0.0)
 	broker.push_progress("cad", "cad_viewer", "req_xyz", "tessellate", 1.0)
 	broker.push_progress("cad", "cad_viewer", "req_xyz", "export", 0.42)
 
-	check("three on_progress calls recorded", root.progress_calls.size() == 3)
+	check("three on_progress calls recorded", panel_root.progress_calls.size() == 3)
 
 	# fraction = 0.0 call
 	check("fraction 0.0 passes through",
-		root.progress_calls[0].get("fraction", -1.0) == 0.0)
+		panel_root.progress_calls[0].get("fraction", -1.0) == 0.0)
 	check("phase 'translate' passes through",
-		root.progress_calls[0].get("phase", "") == "translate")
+		panel_root.progress_calls[0].get("phase", "") == "translate")
 
 	# fraction = 1.0 call
 	check("fraction 1.0 passes through",
-		root.progress_calls[1].get("fraction", -1.0) == 1.0)
+		panel_root.progress_calls[1].get("fraction", -1.0) == 1.0)
 	check("phase 'tessellate' passes through",
-		root.progress_calls[1].get("phase", "") == "tessellate")
+		panel_root.progress_calls[1].get("phase", "") == "tessellate")
 
 	# fraction = 0.42 call
 	check("fraction 0.42 passes through (approx)",
-		absf(root.progress_calls[2].get("fraction", -1.0) - 0.42) < 1e-6)
+		absf(panel_root.progress_calls[2].get("fraction", -1.0) - 0.42) < 1e-6)
 
 	# request_id passes through unchanged
 	check("request_id passes through on all calls",
-		root.progress_calls[0].get("request_id", "") == "req_xyz" and
-		root.progress_calls[2].get("request_id", "") == "req_xyz")
+		panel_root.progress_calls[0].get("request_id", "") == "req_xyz" and
+		panel_root.progress_calls[2].get("request_id", "") == "req_xyz")
 
-	root.free()
+	panel_root.free()
 
 
 func test_push_progress_multiple_request_ids() -> void:
@@ -306,8 +306,8 @@ func test_push_progress_multiple_request_ids() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[2]
 
-	var root := StubSceneWithProgress.new()
-	broker.register_panel(root, "cad", "cad_viewer", PackedStringArray())
+	var panel_root := StubSceneWithProgress.new()
+	broker.register_panel(panel_root, "cad", "cad_viewer", PackedStringArray())
 
 	# Interleave progress notifications for two different request ids.
 	broker.push_progress("cad", "cad_viewer", "req_A", "parse", 0.25)
@@ -315,29 +315,29 @@ func test_push_progress_multiple_request_ids() -> void:
 	broker.push_progress("cad", "cad_viewer", "req_A", "tessellate", 0.75)
 	broker.push_progress("cad", "cad_viewer", "req_B", "tessellate", 0.50)
 
-	check("four on_progress calls recorded", root.progress_calls.size() == 4)
+	check("four on_progress calls recorded", panel_root.progress_calls.size() == 4)
 
 	# Verify each call preserved its own request_id independently.
 	check("call 0 belongs to req_A",
-		root.progress_calls[0].get("request_id", "") == "req_A")
+		panel_root.progress_calls[0].get("request_id", "") == "req_A")
 	check("call 1 belongs to req_B",
-		root.progress_calls[1].get("request_id", "") == "req_B")
+		panel_root.progress_calls[1].get("request_id", "") == "req_B")
 	check("call 2 belongs to req_A",
-		root.progress_calls[2].get("request_id", "") == "req_A")
+		panel_root.progress_calls[2].get("request_id", "") == "req_A")
 	check("call 3 belongs to req_B",
-		root.progress_calls[3].get("request_id", "") == "req_B")
+		panel_root.progress_calls[3].get("request_id", "") == "req_B")
 
 	# Verify fractions are not cross-contaminated.
 	check("req_A first fraction is 0.25",
-		absf(root.progress_calls[0].get("fraction", -1.0) - 0.25) < 1e-6)
+		absf(panel_root.progress_calls[0].get("fraction", -1.0) - 0.25) < 1e-6)
 	check("req_B first fraction is 0.10",
-		absf(root.progress_calls[1].get("fraction", -1.0) - 0.10) < 1e-6)
+		absf(panel_root.progress_calls[1].get("fraction", -1.0) - 0.10) < 1e-6)
 
 	# Each call should produce a scene_progress audit event (4 total).
 	check("four scene_progress audit events",
 		audit.events_of_type(PluginScenePanelBroker.EVENT_SCENE_PROGRESS).size() == 4)
 
-	root.free()
+	panel_root.free()
 
 
 # ===========================================================================

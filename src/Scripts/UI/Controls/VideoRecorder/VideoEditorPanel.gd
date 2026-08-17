@@ -278,7 +278,6 @@ func _process(delta: float) -> void:
 
 func _get_effective_time(elapsed_ms: int) -> int:
 	# Map playback elapsed time to source time considering edits
-	var source_ms := 0
 	var remaining := elapsed_ms
 
 	for seg in data.segments:
@@ -329,7 +328,7 @@ func _composite_pip_preview(base: Image, webcam: Image, time_ms: int) -> Image:
 	var pip_center_y := int(pip_pos.y * base.get_height())
 
 	webcam.resize(pip_diameter, pip_diameter)
-	var radius := pip_diameter / 2
+	var radius := floori(pip_diameter / 2.0)
 
 	for y in pip_diameter:
 		for x in pip_diameter:
@@ -414,6 +413,13 @@ func _load_audio() -> void:
 			bits_per_sample = f.get_16()
 			if chunk_size > 16:
 				f.seek(f.get_position() + chunk_size - 16)
+			# AudioStreamWAV only handles uncompressed PCM (format tag 1). The tag
+			# was read but never checked, so float/compressed WAVs were decoded as
+			# PCM and played back as garbage instead of being rejected.
+			if format_tag != 1:
+				push_warning("[VideoEditorPanel] Unsupported WAV format tag %d (expected PCM) in %s" % [format_tag, audio_path])
+				_audio_stream = null
+				return
 		elif chunk_id == "data":
 			var audio_data := f.get_buffer(chunk_size)
 			_audio_stream.data = audio_data
@@ -499,17 +505,17 @@ func _on_context_menu_id_pressed(id: int) -> void:
 	match id:
 		0:  # Mark Cut Start
 			_cut_start_ms = time_ms
-			SingletonObject.create_toast_notification("Cut start marked at %s" % VideoTimelineScript.format_time(time_ms), 0)
+			SingletonObject.create_toast_notification("Cut start marked at %s" % VideoTimelineScript.format_time(time_ms), ToastNotification.Type.INFO)
 		1:  # Mark Cut End
 			if _cut_start_ms >= 0 and time_ms > _cut_start_ms:
 				data.add_cut(_cut_start_ms, time_ms)
 				_cut_start_ms = -1
 				timeline.queue_redraw()
 				data_changed.emit()
-				SingletonObject.create_toast_notification("Cut region added", 0)
+				SingletonObject.create_toast_notification("Cut region added", ToastNotification.Type.INFO)
 		2:  # Mark Speed Start
 			_speed_start_ms = time_ms
-			SingletonObject.create_toast_notification("Speed start marked at %s" % VideoTimelineScript.format_time(time_ms), 0)
+			SingletonObject.create_toast_notification("Speed start marked at %s" % VideoTimelineScript.format_time(time_ms), ToastNotification.Type.INFO)
 		3:  # Speed End 2x
 			_apply_speed_region(time_ms, 2.0)
 		4:  # Speed End 3x
@@ -540,7 +546,7 @@ func _apply_speed_region(end_ms: int, speed: float) -> void:
 		_speed_start_ms = -1
 		timeline.queue_redraw()
 		data_changed.emit()
-		SingletonObject.create_toast_notification("Speed region added (%.1fx)" % speed, 0)
+		SingletonObject.create_toast_notification("Speed region added (%.1fx)" % speed, ToastNotification.Type.INFO)
 
 #endregion
 
@@ -627,7 +633,7 @@ func _on_export_completed(output_path: String) -> void:
 	if _export_dialog:
 		_export_dialog.queue_free()
 		_export_dialog = null
-	SingletonObject.create_toast_notification("Video exported to: %s" % output_path.get_file(), 0)
+	SingletonObject.create_toast_notification("Video exported to: %s" % output_path.get_file(), ToastNotification.Type.INFO)
 	# Offer to open in file browser
 	OS.shell_open(output_path.get_base_dir())
 	_exporter = null

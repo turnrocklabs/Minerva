@@ -61,12 +61,12 @@ func mkdir_recursive(path: String) -> bool:
 
 
 func rm_dir_recursive(rel_path: String) -> void:
-	var abs: String = rel_path
+	var abs_path: String = rel_path
 	if rel_path.begins_with("user://") or rel_path.begins_with("res://"):
-		abs = ProjectSettings.globalize_path(rel_path)
-	if not DirAccess.dir_exists_absolute(abs):
+		abs_path = ProjectSettings.globalize_path(rel_path)
+	if not DirAccess.dir_exists_absolute(abs_path):
 		return
-	OS.execute("rm", ["-rf", abs], [], true)
+	OS.execute("rm", ["-rf", abs_path], [], true)
 
 
 # ---------------------------------------------------------------------------
