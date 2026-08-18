@@ -133,14 +133,22 @@ body{background:var(--bg);color:var(--txt);
    real ones: _BOTTOM_COLLAPSED_MIN 24px / _BOTTOM_EXPANDED_MIN 132px.
    Always present — this dock has no adaptive behaviour, which is the point. */
 .tdock{background:#1e2024;border-radius:4px;margin:0 0 4px;display:flex;flex-direction:column;overflow:hidden;}
-.tdock.col{height:24px;flex:0 0 24px;} .tdock.exp{height:132px;flex:0 0 132px;}
+.tdock.col{height:24px;flex:0 0 24px;}
+/* Cards are now a single 32px row, so the expanded dock is 68px instead of
+   the AnnotationDockPane default 132px: 24 header + 6 pad + 32 card + 6 pad. */
+.tdock.exp{height:68px;flex:0 0 68px;}
 .tdh{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:#8fb2bc;cursor:pointer;}
 .tdh .cv{margin-left:auto;}
-.tdbody{flex:1 1 auto;display:flex;gap:8px;padding:6px 10px;overflow:hidden;}
-.gcard{width:150px;flex:0 0 150px;border-radius:5px;background:#252b34;border-left:4px solid;padding:7px 9px;cursor:pointer;}
+.tdbody{flex:1 1 auto;display:flex;align-items:center;gap:6px;padding:6px 8px;overflow:hidden;}
+.tdscroll{flex:1 1 auto;display:flex;gap:8px;overflow:hidden;scroll-behavior:smooth;}
+.tdarrow{width:20px;height:26px;flex:0 0 20px;display:flex;align-items:center;justify-content:center;
+  color:#cfe4ea;font-size:12px;cursor:pointer;border-radius:3px;background:#161a1f;}
+.tdarrow.off{color:#4a5c63;cursor:default;background:transparent;}
+.gcard{height:32px;flex:0 0 auto;max-width:190px;border-radius:5px;background:#252b34;border-left:4px solid;
+  padding:0 10px 0 8px;cursor:pointer;display:flex;align-items:center;gap:9px;}
 .gcard.on{outline:1px solid var(--accent);}
 .gcard .gt{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.gcard .gs{font-size:12px;color:#8fb2bc;margin-top:3px;}
+.gcard .gs{font-size:12px;color:#8fb2bc;flex:0 0 auto;}
 </style>
 
 <svg style="display:none">
@@ -202,7 +210,11 @@ body{background:var(--bg);color:var(--txt);
     </div>
     <div class="tdock exp" id="tdock">
       <div class="tdh" id="tdh"><span>Groups</span><span class="cv" id="tdcv">&#9650;</span></div>
-      <div class="tdbody" id="tdbody"></div>
+      <div class="tdbody" id="tdbody">
+        <div class="tdarrow" id="tdl">&#9664;</div>
+        <div class="tdscroll" id="tdscroll"></div>
+        <div class="tdarrow" id="tdr">&#9654;</div>
+      </div>
     </div>
     <div class="tabstrip" id="chatTabs"><div class="tabwrap" id="tabwrap"></div><div class="arrows" id="arrows" style="display:none"><span class="ab">&#9664;</span><span class="ab">&#9654;</span></div></div>
     <div class="chat-sub">
@@ -447,20 +459,27 @@ function col(g){return GC[g]||"#5f7f8a";}
 var active=0, view="All", exp=true;
 (function(){var q=new URLSearchParams(location.search);
  if(q.get("view")) view=q.get("view");
- if(q.get("dock")==="collapsed") exp=false;})();
+ if(q.get("dock")==="collapsed") exp=false;
+ var ex=parseInt(q.get("extra")||"0",10);
+ var names=["Pi companion","Scansort vault","Docket UI","Nametag maker","Gpu node",
+            "Outreach","Plugin marketplace","Annotations","CAD exports","Autocoder"];
+ for(var e=0;e<ex && e<names.length;e++){
+   CHATS.push({t:names[e]+" notes",g:names[e]}); CHATS.push({t:names[e]+" plan",g:names[e]}); }})();
 function render(){
   var d=document.getElementById("tdock");
   d.className="tdock "+(exp?"exp":"col");
-  var b=document.getElementById("tdbody"); b.style.display=exp?"flex":"none"; b.innerHTML="";
+  var b=document.getElementById("tdbody"); b.style.display=exp?"flex":"none";
+  var sc=document.getElementById("tdscroll"); sc.innerHTML="";
   document.getElementById("tdcv").innerHTML=exp?"&#9650;":"&#9660;";
   ["All"].concat(groups()).forEach(function(g){
     var c=document.createElement("div"); c.className="gcard"+(view===g?" on":"");
     c.style.borderLeftColor=g==="All"?"#5f7f8a":col(g);
-    c.innerHTML='<div class="gt">'+g+'</div><div class="gs">'
-      +(g==="All"?CHATS.length:countIn(g))+' chats</div>';
+    c.innerHTML='<span class="gt">'+g+'</span><span class="gs">'
+      +(g==="All"?CHATS.length:countIn(g))+'</span>';
     c.addEventListener("click",function(){view=g;render();});
-    b.appendChild(c);
+    sc.appendChild(c);
   });
+  syncArrows();
   var wrap=document.getElementById("tabwrap"); wrap.innerHTML="";
   var shown=[],i;
   for(i=0;i<CHATS.length;i++) if(view==="All"||CHATS[i].g===view) shown.push(i);
@@ -475,11 +494,33 @@ function render(){
   for(i=0;i<k.length;i++){var w=k[i].getBoundingClientRect().width;
     var nx=used+(i?12:0)+w; if(nx<=avail){used=nx;vis++;} else break;}
   document.getElementById("arrows").style.display=(k.length>vis)?"flex":"none";
+  var ncards=document.getElementById("tdscroll").children.length;
+  var nvis=0, sc2=document.getElementById("tdscroll"), sr=sc2.getBoundingClientRect();
+  for(var q2=0;q2<sc2.children.length;q2++){var cb=sc2.children[q2].getBoundingClientRect();
+    if(cb.left>=sr.left-1 && cb.right<=sr.right+1) nvis++;}
   document.getElementById("status").innerHTML=
-    "<b>Option C</b> &#183; top dock <b>"+(exp?"132px expanded":"24px collapsed")+"</b>"
+    "<b>Option C</b> &#183; top dock <b>"+(exp?"68px expanded":"24px collapsed")+"</b>"
+    +" &#183; cards "+nvis+" of "+ncards+(ncards>nvis?" <span class='warn'>(scroll)</span>":"")
     +" (always present) &#183; view "+view+" &#183; tabs "+vis+" of "+k.length
     +" &#183; shows GROUPS, not chats";
 }
+function syncArrows(){
+  var sc=document.getElementById("tdscroll");
+  var over=sc.scrollWidth>sc.clientWidth+1;
+  var l=document.getElementById("tdl"), r=document.getElementById("tdr");
+  l.style.display=over?"flex":"none"; r.style.display=over?"flex":"none";
+  if(!over) return;
+  l.className="tdarrow"+(sc.scrollLeft<=1?" off":"");
+  r.className="tdarrow"+(sc.scrollLeft>=sc.scrollWidth-sc.clientWidth-1?" off":"");
+}
+(function(){
+  var sc=document.getElementById("tdscroll");
+  function step(d){ sc.scrollLeft += d*Math.max(120, sc.clientWidth*0.6); setTimeout(syncArrows,320); }
+  document.getElementById("tdl").addEventListener("click",function(){step(-1);});
+  document.getElementById("tdr").addEventListener("click",function(){step(1);});
+  sc.addEventListener("scroll",syncArrows);
+  sc.addEventListener("wheel",function(e){ if(e.deltaY){ sc.scrollLeft+=e.deltaY; e.preventDefault(); } },{passive:false});
+})();
 document.getElementById("tdh").addEventListener("click",function(){exp=!exp;render();});
 render(); if(document.fonts&&document.fonts.ready)document.fonts.ready.then(render);
 window.addEventListener("resize",render);
