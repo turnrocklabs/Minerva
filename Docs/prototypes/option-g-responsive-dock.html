@@ -136,6 +136,15 @@ body{background:var(--bg);color:var(--txt);
 .pane.notes{width:auto;flex:0 0 clamp(560px,33vw,900px);}
 
 .chiprow{display:flex;align-items:center;gap:7px;height:30px;flex:0 0 30px;padding:0 14px;overflow:hidden;}
+.chip{max-width:172px;}
+.chip .cn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.chipmore{height:22px;border-radius:11px;background:#12303a;border:1px solid #3f9dbd;color:#8fd8f0;
+  font-size:13px;padding:0 9px;display:flex;align-items:center;gap:4px;cursor:pointer;flex:0 0 auto;white-space:nowrap;}
+.menu{position:fixed;z-index:200;background:#12303a;border:1px solid #2b5a68;border-radius:5px;padding:4px 0;
+  min-width:200px;box-shadow:0 8px 26px rgba(0,0,0,.55);font-size:15px;}
+.menu .mi{padding:6px 12px;display:flex;align-items:center;gap:10px;cursor:pointer;white-space:nowrap;}
+.menu .mi:hover{background:#1d4d5c;} .menu .mi.sel{color:#5fd0ff;}
+.menu .mi .n{margin-left:auto;color:#8fb2bc;font-size:13px;}
 .chiprow.hide{display:none;}
 .chip{height:22px;border-radius:11px;background:#12303a;border:1px solid #2b5a68;color:#bfe0ea;
       font-size:13px;padding:0 10px;display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;flex:0 0 auto;}
@@ -482,8 +491,32 @@ var view=ALL, active=0, drawerOpen=false, collapsed={};
 (function(){var q=new URLSearchParams(location.search);
  if(q.get("view")) view=q.get("view");
  if(q.get("drawer")==="open") drawerOpen=true;
- if(q.get("collapse")) q.get("collapse").split(",").forEach(function(g){collapsed[g]=true;});})();
+ if(q.get("collapse")) q.get("collapse").split(",").forEach(function(g){collapsed[g]=true;});
+ // ?extra=N synthesises extra groups, to check the chip row stays bounded
+ var ex=parseInt(q.get("extra")||"0",10);
+ var names=["Pi companion","Scansort vault","Docket UI","Nametag maker","Gpu node",
+            "Outreach","Plugin marketplace","Annotations","CAD exports","Autocoder"];
+ for(var e=0;e<ex && e<names.length;e++){
+   CHATS.push({t:names[e]+" notes", g:names[e]});
+   CHATS.push({t:names[e]+" plan",  g:names[e]});
+ }})();
 
+function closeMenus(){var m=document.querySelectorAll(".menu");for(var i=0;i<m.length;i++)m[i].remove();}
+function openMenu(x,y,items){
+  closeMenus();
+  var d=document.createElement("div"); d.className="menu";
+  items.forEach(function(it){
+    var e=document.createElement("div"); e.className="mi"+(it.sel?" sel":"");
+    e.innerHTML="<span>"+it.label+"</span><span class='n'>"+it.n+"</span>";
+    e.addEventListener("click",function(ev){ev.stopPropagation();closeMenus();it.fn();});
+    d.appendChild(e);
+  });
+  document.body.appendChild(d);
+  var r=d.getBoundingClientRect();
+  d.style.left=Math.min(x,window.innerWidth-r.width-8)+"px";
+  d.style.top=Math.min(y,window.innerHeight-r.height-8)+"px";
+}
+document.addEventListener("click",closeMenus);
 function groups(){var o=[],i;for(i=0;i<CHATS.length;i++)if(o.indexOf(CHATS[i].g)<0)o.push(CHATS[i].g);return o;}
 function countIn(g){return g===ALL?CHATS.length:CHATS.filter(function(c){return c.g===g;}).length;}
 function wide(){return document.getElementById("paneChats").getBoundingClientRect().width>=BREAKPOINT;}
@@ -494,13 +527,46 @@ function render(){
   var cr=document.getElementById("chiprow");
   cr.className="chiprow"+(W?" hide":"");
   cr.innerHTML="";
-  [ALL].concat(groups()).forEach(function(g){
+  var all=[ALL].concat(groups());
+  // Render every chip, measure, then keep only what fits — reserving room for
+  // a "+N" button. The ACTIVE group is always kept visible, swapped in if it
+  // would otherwise fall into the overflow. Cost stays 30px at any group count.
+  var made=all.map(function(g){
     var c=document.createElement("div");
     c.className="chip"+(view===g?" on":"");
-    c.innerHTML=g+'<span class="n">'+countIn(g)+'</span>';
-    c.addEventListener("click",function(){view=g;render();});
-    cr.appendChild(c);
+    c.innerHTML='<span class="cn">'+g+'</span><span class="n">'+countIn(g)+'</span>';
+    c.addEventListener("click",function(ev){ev.stopPropagation();view=g;render();});
+    cr.appendChild(c); return {g:g,el:c};
   });
+  var avail=cr.clientWidth, RESERVE=64, used=0, keep=[], i;
+  for(i=0;i<made.length;i++){
+    var w=made[i].el.getBoundingClientRect().width;
+    var nx=used+(i?7:0)+w;
+    var last=(i===made.length-1);
+    if(nx<=avail-(last?0:RESERVE)){ used=nx; keep.push(made[i]); } else break;
+  }
+  var hidden=made.slice(keep.length);
+  if(hidden.length && keep.every(function(k){return k.g!==view;})){
+    // active group must never be hidden: swap it for the last kept chip
+    var act=null;
+    hidden=hidden.filter(function(h){ if(h.g===view){act=h;return false;} return true; });
+    if(act){ var drop=keep.pop(); if(drop) hidden.unshift(drop); keep.push(act); }
+  }
+  made.forEach(function(m){ if(keep.indexOf(m)<0) m.el.remove(); });
+  if(hidden.length){
+    var more=document.createElement("div");
+    more.className="chipmore";
+    more.innerHTML="+"+hidden.length+" <span>&#9662;</span>";
+    more.addEventListener("click",function(ev){
+      ev.stopPropagation();
+      var r=more.getBoundingClientRect();
+      openMenu(r.left, r.bottom+4, hidden.map(function(h){
+        return {label:h.g, n:countIn(h.g), sel:view===h.g, fn:function(){view=h.g;render();}};
+      }));
+    });
+    cr.appendChild(more);
+  }
+  window.__chips=[keep.length, made.length];
 
   // ---- tab strip, filtered to the chip selection ----
   var wrap=document.getElementById("tabwrap"); wrap.innerHTML="";
@@ -549,7 +615,8 @@ function render(){
     +" (breakpoint "+BREAKPOINT+") &#183; "
     +(W ? "list docked, <span class='good'>"+rows+" chats visible</span>, messages keep "
           +Math.round(document.querySelector('.chatmain').getBoundingClientRect().width)+"px"
-        : "tabs "+vis+" of "+k.length+", drawer "+(open?"<span class='good'>OPEN — overlays, messages keep full width</span>":"closed &#183; 30px chips only"));
+        : "chips "+(window.__chips?window.__chips[0]+"/"+window.__chips[1]:"?")
+          +", tabs "+vis+" of "+k.length+", drawer "+(open?"<span class='good'>OPEN — overlays, messages keep full width</span>":"closed &#183; 30px chips only"));
 }
 document.getElementById("listbtn").addEventListener("click",function(){ if(!wide()){drawerOpen=!drawerOpen;render();} });
 document.getElementById("clclose").addEventListener("click",function(){drawerOpen=false;render();});
