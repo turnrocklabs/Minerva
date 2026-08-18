@@ -125,10 +125,26 @@ body{background:var(--bg);color:var(--txt);
    dump the tab model came from. List width 240px is taken OUT of the 538px
    chat pane, so the message area cost is shown honestly.
    ======================================================================= */
-.chatbody{flex:1 1 auto;display:flex;min-height:0;gap:0;}
-.chatlist{width:240px;flex:0 0 240px;background:#1e2024;border-radius:4px 0 0 4px;
+.chatbody{flex:1 1 auto;display:flex;min-height:0;gap:0;position:relative;}
+.chatlist{background:#1e2024;border-radius:4px 0 0 4px;
           display:flex;flex-direction:column;min-height:0;overflow:hidden;}
-.chatlist.collapsed{width:0;flex:0 0 0;}
+/* Drag handle — Minerva's real panes are HSplitContainers, so the width is
+   the user's to choose rather than a number I guessed. */
+.grip{flex:0 0 5px;cursor:col-resize;background:#161a1f;}
+.grip:hover,.grip.drag{background:#2b6f88;}
+/* Collapsed is a 34px RAIL, not 0px: with no tab strip in this option, a
+   zero-width list would leave no way to switch chats at all. */
+.rail{flex:0 0 34px;background:#1e2024;border-radius:4px 0 0 4px;display:flex;flex-direction:column;
+      align-items:center;padding-top:8px;gap:7px;}
+.rail .rd{width:22px;height:22px;border-radius:6px;background:#2f4a57;color:#cfe8f2;font-size:11px;
+      display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.rail .rd:hover{background:#3f7f99;}
+.rail .rd.on{outline:2px solid var(--accent);}
+.fly{position:absolute;z-index:20;background:#12303a;border:1px solid #2b5a68;border-radius:6px;
+     padding:4px 0;min-width:200px;box-shadow:0 10px 28px rgba(0,0,0,.6);}
+.fly .fh{padding:4px 12px;font-size:12px;color:#8fb2bc;}
+.fly .fi{padding:5px 12px;font-size:15px;cursor:pointer;white-space:nowrap;}
+.fly .fi:hover{background:#1d4d5c;} .fly .fi.on{color:#5fd0ff;}
 .cl-head{display:flex;align-items:center;gap:6px;padding:6px 10px;height:30px;flex:0 0 30px;
          font-size:13px;color:#8fb2bc;}
 .cl-scroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding-bottom:6px;}
@@ -215,6 +231,8 @@ body{background:var(--bg);color:var(--txt);
         <div class="cl-head"><span id="clcount"></span></div>
         <div class="cl-scroll" id="clscroll"></div>
       </div>
+      <div class="grip" id="grip"></div>
+      <div class="rail" id="rail" style="display:none"></div>
       <div class="chatmain">
     <div class="chat-sub">
       <span class="ibtn plain"><svg><use href="#i-gear"/></svg></span>
@@ -453,10 +471,11 @@ var CHATS = [
   {t:"Chat",g:"Ungrouped"},{t:"Scratch",g:"Ungrouped"},
   {t:"PCB epoch NLC",g:"Ungrouped"},{t:"Docket cleanup",g:"Ungrouped"}
 ];
-var active=0, collapsed={}, listOff=false;
+var active=0, collapsed={}, listOff=false, LW=200;   // LW = list width, user-draggable
 (function(){var q=new URLSearchParams(location.search);
   if(q.get("active")) active=parseInt(q.get("active"),10)||0;
   if(q.get("list")==="off") listOff=true;
+  if(q.get("lw")) LW=Math.max(150,Math.min(400,parseInt(q.get("lw"),10)||200));
   if(q.get("collapse")) q.get("collapse").split(",").forEach(function(g){collapsed[g]=true;});
 })();
 
@@ -482,8 +501,38 @@ function render(){
     });
   });
   var cl=document.getElementById("chatlist");
-  cl.className="chatlist"+(listOff?" collapsed":"");
+  cl.style.display=listOff?"none":"flex";
+  cl.style.flex="0 0 "+LW+"px";
+  document.getElementById("grip").style.display=listOff?"none":"block";
   document.getElementById("clcount").textContent=CHATS.length+" chats";
+
+  // ---- collapsed rail: one dot per group, click for a flyout of its chats ----
+  var rail=document.getElementById("rail");
+  rail.style.display=listOff?"flex":"none";
+  rail.innerHTML="";
+  if(listOff){
+    groups().forEach(function(g){
+      var d=document.createElement("div");
+      d.className="rd"+(CHATS[active]&&CHATS[active].g===g?" on":"");
+      d.textContent=g.replace(/[^A-Za-z0-9]/g,"").slice(0,2).toUpperCase();
+      d.title=g;
+      d.addEventListener("click",function(ev){
+        ev.stopPropagation(); killFly();
+        var f=document.createElement("div"); f.className="fly";
+        f.innerHTML='<div class="fh">'+g+'</div>';
+        CHATS.forEach(function(c,i){ if(c.g!==g) return;
+          var it=document.createElement("div"); it.className="fi"+(i===active?" on":"");
+          it.textContent=c.t;
+          it.addEventListener("click",function(){active=i;killFly();render();});
+          f.appendChild(it); });
+        document.body.appendChild(f);
+        var r=d.getBoundingClientRect();
+        f.style.left=(r.right+6)+"px";
+        f.style.top=Math.min(r.top, window.innerHeight-f.getBoundingClientRect().height-8)+"px";
+      });
+      rail.appendChild(d);
+    });
+  }
 
   // how many rows fit without scrolling
   var fit=0, top=sc.getBoundingClientRect().top, bot=sc.getBoundingClientRect().bottom;
@@ -491,13 +540,29 @@ function render(){
     var b=sc.children[i].getBoundingClientRect();
     if(b.top>=top-1 && b.bottom<=bot+1) fit++;
   }
+  var mw=Math.round(document.querySelector(".chatmain").getBoundingClientRect().width);
   var st=document.getElementById("status");
   st.innerHTML= listOff
-    ? "<b>Option E</b> &#183; list collapsed &#183; 0px &#183; "+CHATS.length+" chats total"
-    : "<b>Option E</b> &#183; <b>"+rows+"</b> chat rows shown, "+fit+" list entries fit without scrolling"
-      +" &#183; list costs 240px of the 538px pane &#183; "+CHATS.length+" chats total";
+    ? "<b>Option E</b> &#183; collapsed to a <b>34px rail</b> &#183; messages "+mw
+      +"px &#183; click a group dot to reach any chat &#183; "+CHATS.length+" chats total"
+    : "<b>Option E</b> &#183; list <b>"+LW+"px</b> (drag the divider) &#183; messages <b>"+mw
+      +"px</b> &#183; "+rows+" rows shown, "+fit+" fit without scrolling &#183; "+CHATS.length+" chats total";
 }
-document.getElementById("listbtn").addEventListener("click",function(){listOff=!listOff;render();});
+function killFly(){var f=document.querySelectorAll(".fly");for(var i=0;i<f.length;i++)f[i].remove();}
+document.addEventListener("click",killFly);
+document.getElementById("listbtn").addEventListener("click",function(){listOff=!listOff;killFly();render();});
+
+// drag-to-resize, clamped the way a real HSplitContainer would be
+(function(){
+  var g=document.getElementById("grip"), dragging=false, x0=0, w0=0;
+  g.addEventListener("mousedown",function(e){dragging=true;x0=e.clientX;w0=LW;g.classList.add("drag");e.preventDefault();});
+  window.addEventListener("mousemove",function(e){
+    if(!dragging) return;
+    LW=Math.max(150,Math.min(400,w0+(e.clientX-x0)));
+    render();
+  });
+  window.addEventListener("mouseup",function(){dragging=false;g.classList.remove("drag");});
+})();
 render();
 if(document.fonts&&document.fonts.ready) document.fonts.ready.then(render);
 window.addEventListener("resize",render);
