@@ -139,7 +139,11 @@ body{background:var(--bg);color:var(--txt);
 .tdock.exp{height:68px;flex:0 0 68px;}
 .tdh{height:24px;flex:0 0 24px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;color:#8fb2bc;cursor:pointer;}
 .tdh .cv{margin-left:auto;}
-.tdbody{flex:1 1 auto;display:flex;align-items:center;gap:6px;padding:6px 8px;overflow:hidden;}
+.tdbody{flex:1 1 auto;display:flex;align-items:center;gap:6px;padding:6px 8px;overflow:hidden;position:relative;}
+.fade{position:absolute;top:0;bottom:0;width:26px;pointer-events:none;opacity:0;transition:opacity .12s;}
+.fade.l{left:0;background:linear-gradient(90deg,#1e2024 15%,rgba(30,32,36,0));}
+.fade.r{right:0;background:linear-gradient(270deg,#1e2024 15%,rgba(30,32,36,0));}
+.fade.on{opacity:1;}
 .tdscroll{flex:1 1 auto;display:flex;gap:8px;overflow:hidden;cursor:grab;user-select:none;}
 .tdscroll.grabbing{cursor:grabbing;}
 .tdscroll::-webkit-scrollbar{display:none;}
@@ -213,9 +217,9 @@ body{background:var(--bg);color:var(--txt);
     <div class="tdock exp" id="tdock">
       <div class="tdh" id="tdh"><span>Groups</span><span class="cv" id="tdcv">&#9650;</span></div>
       <div class="tdbody" id="tdbody">
-        <div class="tdarrow" id="tdl">&#9664;</div>
+        <div class="fade l" id="fl"></div>
         <div class="tdscroll" id="tdscroll"></div>
-        <div class="tdarrow" id="tdr">&#9654;</div>
+        <div class="fade r" id="fr"></div>
       </div>
     </div>
     <div class="tabstrip" id="chatTabs"><div class="tabwrap" id="tabwrap"></div><div class="arrows" id="arrows" style="display:none"><span class="ab">&#9664;</span><span class="ab">&#9654;</span></div></div>
@@ -458,7 +462,7 @@ function groups(){var o=[],i;for(i=0;i<CHATS.length;i++)if(o.indexOf(CHATS[i].g)
 function countIn(g){return CHATS.filter(function(c){return c.g===g;}).length;}
 function col(g){return GC[g]||"#5f7f8a";}
 
-var active=0, view="All", exp=true, copyW=0;
+var active=0, view="All", exp=true;
 (function(){var q=new URLSearchParams(location.search);
  if(q.get("view")) view=q.get("view");
  if(q.get("dock")==="collapsed") exp=false;
@@ -473,22 +477,17 @@ function render(){
   var b=document.getElementById("tdbody"); b.style.display=exp?"flex":"none";
   var sc=document.getElementById("tdscroll"); sc.innerHTML="";
   document.getElementById("tdcv").innerHTML=exp?"&#9650;":"&#9660;";
-  // Three identical copies: scrollLeft lives in the middle one and is rebased
-  // whenever it drifts a full copy, so dragging wraps round instead of
-  // hitting a dead stop at either end.
-  var list=["All"].concat(groups());
-  for(var rep=0;rep<3;rep++){
-    list.forEach(function(g){
-      var c=document.createElement("div"); c.className="gcard"+(view===g?" on":"");
-      c.style.borderLeftColor=g==="All"?"#5f7f8a":col(g);
-      c.innerHTML='<span class="gt">'+g+'</span><span class="gs">'
-        +(g==="All"?CHATS.length:countIn(g))+'</span>';
-      c.addEventListener("click",function(){ if(window.__dragged) return; view=g; render(); });
-      sc.appendChild(c);
-    });
-  }
-  copyW = sc.scrollWidth/3;
-  sc.scrollLeft = copyW + (window.__keepOff||0);
+  // One copy. Drag scrolls both ways and STOPS at each end — scrollLeft
+  // clamps itself, so there is nothing to rebase.
+  ["All"].concat(groups()).forEach(function(g){
+    var c=document.createElement("div"); c.className="gcard"+(view===g?" on":"");
+    c.style.borderLeftColor=g==="All"?"#5f7f8a":col(g);
+    c.innerHTML='<span class="gt">'+g+'</span><span class="gs">'
+      +(g==="All"?CHATS.length:countIn(g))+'</span>';
+    c.addEventListener("click",function(){ if(window.__dragged) return; view=g; render(); });
+    sc.appendChild(c);
+  });
+  sc.scrollLeft = window.__keepOff||0;
   syncArrows();
   var wrap=document.getElementById("tabwrap"); wrap.innerHTML="";
   var shown=[],i;
@@ -504,43 +503,40 @@ function render(){
   for(i=0;i<k.length;i++){var w=k[i].getBoundingClientRect().width;
     var nx=used+(i?12:0)+w; if(nx<=avail){used=nx;vis++;} else break;}
   document.getElementById("arrows").style.display=(k.length>vis)?"flex":"none";
-  var ncards=document.getElementById("tdscroll").children.length/3;
+  var ncards=document.getElementById("tdscroll").children.length;
   var nvis=0, sc2=document.getElementById("tdscroll"), sr=sc2.getBoundingClientRect();
   for(var q2=0;q2<sc2.children.length;q2++){var cb=sc2.children[q2].getBoundingClientRect();
     if(cb.left>=sr.left-1 && cb.right<=sr.right+1) nvis++;}
   document.getElementById("status").innerHTML=
     "<b>Option C</b> &#183; top dock <b>"+(exp?"68px expanded":"24px collapsed")+"</b>"
-    +" &#183; cards "+nvis+" of "+ncards+(ncards>nvis?" <span class='good'>(drag to rotate)</span>":"")
+    +" &#183; cards "+nvis+" of "+ncards+(ncards>nvis?" <span class='good'>(drag to scroll)</span>":"")
     +" (always present) &#183; view "+view+" &#183; tabs "+vis+" of "+k.length
     +" &#183; shows GROUPS, not chats";
 }
 function syncArrows(){
-  // The row rotates, so there are no ends to arrive at: the arrows are gone
-  // and drag is the gesture. Wheel still nudges it.
+  // No arrows and no wrap. A fade on each side shows which direction still
+  // has cards, and disappears once you reach that end.
   var sc=document.getElementById("tdscroll");
-  var over=sc.scrollWidth/3>sc.clientWidth+1;
-  document.getElementById("tdl").style.display="none";
-  document.getElementById("tdr").style.display="none";
+  var over=sc.scrollWidth>sc.clientWidth+1;
+  var max=sc.scrollWidth-sc.clientWidth;
+  document.getElementById("fl").className="fade l"+((over&&sc.scrollLeft>1)?" on":"");
+  document.getElementById("fr").className="fade r"+((over&&sc.scrollLeft<max-1)?" on":"");
   sc.style.cursor=over?"grab":"default";
+  window.__keepOff=sc.scrollLeft;
 }
-function rebase(){
-  var sc=document.getElementById("tdscroll");
-  if(!copyW) return;
-  if(sc.scrollLeft < copyW*0.5) sc.scrollLeft += copyW;
-  else if(sc.scrollLeft > copyW*1.5) sc.scrollLeft -= copyW;
-  window.__keepOff = sc.scrollLeft - copyW;
-}
+function rebase(){ syncArrows(); }
 (function(){
   var sc=document.getElementById("tdscroll"), down=false, x0=0, s0=0, moved=0;
   sc.addEventListener("mousedown",function(e){
-    if(sc.scrollWidth/3<=sc.clientWidth+1) return;
+    if(sc.scrollWidth<=sc.clientWidth+1) return;
     down=true; moved=0; x0=e.clientX; s0=sc.scrollLeft;
     window.__dragged=false; sc.classList.add("grabbing"); e.preventDefault();
   });
   window.addEventListener("mousemove",function(e){
     if(!down) return;
     var dx=e.clientX-x0; moved=Math.max(moved,Math.abs(dx));
-    sc.scrollLeft = s0 - dx; rebase();
+    sc.scrollLeft = s0 - dx;   // browser clamps at both ends
+    rebase();
     if(moved>4) window.__dragged=true;
   });
   window.addEventListener("mouseup",function(){
@@ -549,7 +545,7 @@ function rebase(){
     setTimeout(function(){window.__dragged=false;},0);
   });
   sc.addEventListener("wheel",function(e){
-    if(sc.scrollWidth/3<=sc.clientWidth+1) return;
+    if(sc.scrollWidth<=sc.clientWidth+1) return;
     if(e.deltaY){ sc.scrollLeft+=e.deltaY; rebase(); e.preventDefault(); }
   },{passive:false});
 })();
