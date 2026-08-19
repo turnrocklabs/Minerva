@@ -13,6 +13,8 @@ extends SceneTree
 ## autoload global is not registered when this file is compiled), so it is
 ## fetched by node path after the tree comes up.
 
+const ChatGroupCardScript = preload("res://Scripts/UI/Controls/ChatGroupDock/ChatGroupCard.gd")
+
 var _pass := 0
 var _fail := 0
 var _so: Node = null
@@ -64,6 +66,7 @@ func _run() -> void:
 	await test_dock_mount()
 	await test_dock_default_collapse_state()
 	await test_add_group_lives_in_the_header()
+	await test_ungrouping_a_single_chat()
 	await test_tabs_track_chatlist()
 	await test_group_filter_hides_without_reparenting()
 	await test_new_chat_lands_in_the_active_group()
@@ -1108,3 +1111,62 @@ func _scene_hide_dialog() -> void:
 		dlg = _pane.get_tree().root.find_child("EditTitleDialog", true, false)
 	if dlg != null:
 		dlg.hide()
+
+
+func test_ungrouping_a_single_chat() -> void:
+	print("\n[regression] a grouped chat can always be taken back out")
+	_reset()
+	var a = _add_chat("Alpha")
+	var b = _add_chat("Beta")
+	await process_frame
+	var gid: String = _reg.create_group("Market research")
+
+	# One chat grouped, one loose — the Ungrouped card shows either way.
+	_pane.set_chat_group(a, gid)
+	var names: Array = []
+	for c in _pane.build_group_card_snapshot():
+		names.append(str(c["name"]))
+	check("Ungrouped card present while a loose chat exists", names.has("Ungrouped"))
+
+	# Now group EVERYTHING. This is the state the card used to vanish in — and
+	# it is exactly when a drop target for ungrouping is needed, because there
+	# is no other visible way back out.
+	_pane.set_chat_group(b, gid)
+	await process_frame
+	check("no chats are ungrouped", _pane.count_in_group("__ungrouped__") == 0)
+	var names2: Array = []
+	var ungrouped_count: int = -1
+	for c in _pane.build_group_card_snapshot():
+		names2.append(str(c["name"]))
+		if str(c["name"]) == "Ungrouped":
+			ungrouped_count = int(c["count"])
+	check("Ungrouped card STILL present with everything grouped", names2.has("Ungrouped"))
+	check("and reads 0", ungrouped_count == 0)
+
+	# It must accept a drop, or showing it is theatre.
+	var card = ChatGroupCardScript.new()
+	add_test_card(card)
+	card.configure(ChatGroupCardScript.Kind.UNGROUPED, "__ungrouped__", "Ungrouped",
+		Color.WHITE, 0, false)
+	check("the Ungrouped card accepts a chat-tab drop",
+		card._can_drop_data(Vector2.ZERO, {"kind": "chat_tab", "chat_id": str(a.HistoryId)}))
+	card.queue_free()
+
+	# And the drop actually ungroups.
+	_pane._on_dock_chat_dropped("__ungrouped__", str(a.HistoryId))
+	await process_frame
+	check("dropping on Ungrouped took the chat out", str(a.ChatGroupId) == "")
+
+	# The right-click path is the one that always works, so the tab must SAY so.
+	_pane._apply_tab_filters()
+	await process_frame
+	var tip: String = _pane.get_tab_tooltip(_so.ChatList.find(b))
+	check("tab tooltip names the group", tip.find("Market research") >= 0)
+	check("tab tooltip advertises the right-click menu", tip.to_lower().find("right-click") >= 0)
+	var tip_a: String = _pane.get_tab_tooltip(_so.ChatList.find(a))
+	check("an ungrouped tab says so", tip_a.find("Ungrouped") >= 0)
+
+
+## Cards need a parent before their theme lookups work.
+func add_test_card(card) -> void:
+	_pane.get_parent().add_child(card)

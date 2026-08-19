@@ -3819,6 +3819,7 @@ func _apply_tab_filters() -> void:
 			buffer_control_chats.show()
 
 	_set_pane_empty_state(not any_visible)
+	_refresh_tab_tooltips()
 
 
 ## Show the whole tab container, or the empty-state placeholder instead.
@@ -3871,6 +3872,29 @@ func _empty_state_text() -> String:
 ## deferred call in _ready still name the archive filter.
 func _apply_archive_filter() -> void:
 	_apply_tab_filters()
+
+
+## Say which group a tab is in, and that it has a context menu at all.
+##
+## Nothing else advertises the tab right-click, and it is the ONLY affordance
+## that always works for moving a chat between groups — the dock cards can
+## scroll out of view, and before this change the Ungrouped card disappeared
+## entirely once every chat was grouped.
+func _refresh_tab_tooltips() -> void:
+	var n: int = min(get_tab_count(), SingletonObject.ChatList.size())
+	for i in range(n):
+		var history: ServiceHistory = SingletonObject.ChatList[i]
+		if history == null:
+			continue
+		var lines: Array[String] = [str(history.HistoryName)]
+		var gname := SingletonObject.chat_groups.get_name(_effective_group_id(history))
+		if history.Deleted:
+			lines.append("Deleted — right-click to restore")
+		else:
+			lines.append("Group: %s" % (gname if not gname.is_empty() else "Ungrouped"))
+			lines.append("Right-click to move it, ungroup it, or delete it.")
+			lines.append("Or drag it onto a group card.")
+		set_tab_tooltip(i, "\n".join(lines))
 
 
 ## Ids of groups still referenced by a LIVE chat. Deleted chats park their group
@@ -4371,8 +4395,13 @@ func build_group_card_snapshot() -> Array[Dictionary]:
 		"count": count_in_group(ChatGroupRegistry.VIEW_ALL),
 	})
 
+	# Shown whenever ANY group exists, even at count 0. It is the only drop
+	# target for taking a chat back OUT of a group, and gating it on
+	# ungrouped_count > 0 meant it vanished the moment you grouped your last
+	# loose chat — the drag gesture disappeared exactly when it became the one
+	# you needed.
 	var ungrouped_count := count_in_group(ChatGroupRegistry.VIEW_UNGROUPED)
-	if ungrouped_count > 0 and SingletonObject.chat_groups.size() > 0:
+	if SingletonObject.chat_groups.size() > 0:
 		cards.append({
 			"kind": ChatGroupCardScript.Kind.UNGROUPED,
 			"id": ChatGroupRegistry.VIEW_UNGROUPED,
