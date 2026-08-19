@@ -19,6 +19,18 @@ signal card_context_menu_requested(group_id: String, kind: int)
 
 const CardScript = preload("res://Scripts/UI/Controls/ChatGroupDock/ChatGroupCard.gd")
 
+# Stroked chevrons, not glyphs. "^" and "v" were literally the text characters —
+# one of them IS a rotated letter, it sits on the text baseline rather than
+# centred in its box, and the pair is not symmetric. These reuse the geometry of
+# the project's own arrow_*.svg (round caps, 2px stroke) but at full opacity, so
+# the colour is set here instead of baked into the asset.
+const ICON_CHEVRON_UP := preload("res://assets/icons/chevron_up.svg")
+const ICON_CHEVRON_DOWN := preload("res://assets/icons/chevron_down.svg")
+const ICON_CHEVRON_LEFT := preload("res://assets/icons/chevron_left.svg")
+const ICON_CHEVRON_RIGHT := preload("res://assets/icons/chevron_right.svg")
+
+const ICON_COLOR := Color("#dcdcdc")
+
 const COLLAPSED_HEIGHT := 24
 const EXPANDED_HEIGHT := 68
 const HEADER_HEIGHT := 24
@@ -67,6 +79,8 @@ func _build() -> void:
 
 	_chevron = Button.new()
 	_chevron.flat = true
+	_chevron.expand_icon = false
+	_tint_icon(_chevron)
 	_chevron.custom_minimum_size = Vector2(20, 0)
 	_chevron.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_chevron.focus_mode = Control.FOCUS_NONE
@@ -97,7 +111,7 @@ func _build() -> void:
 	_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(_body)
 
-	_btn_left = _make_arrow("<", -1)
+	_btn_left = _make_arrow(ICON_CHEVRON_LEFT, -1)
 	_body.add_child(_btn_left)
 
 	# The scroll row and its fades share one clipped wrapper: the fades must sit
@@ -125,7 +139,7 @@ func _build() -> void:
 	_fade_right = _make_fade(false)
 	_viewport_wrap.add_child(_fade_right)
 
-	_btn_right = _make_arrow(">", 1)
+	_btn_right = _make_arrow(ICON_CHEVRON_RIGHT, 1)
 	_body.add_child(_btn_right)
 
 	if _scroll.get_h_scroll_bar():
@@ -133,9 +147,11 @@ func _build() -> void:
 	_viewport_wrap.resized.connect(_update_edge_affordances)
 
 
-func _make_arrow(glyph: String, direction: int) -> Button:
+func _make_arrow(glyph: Texture2D, direction: int) -> Button:
 	var b := Button.new()
-	b.text = glyph
+	b.icon = glyph
+	b.expand_icon = false
+	_tint_icon(b)
 	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(ARROW_WIDTH, ChatGroupCard.CARD_HEIGHT)
@@ -150,6 +166,15 @@ func _make_arrow(glyph: String, direction: int) -> Button:
 ## a single Button in the header pushed the dock from its 24px header (68px
 ## overall) to 31px (79px) — a fifth taller than spec, in the pane where
 ## vertical space is the whole design constraint.
+## Colour the icon here rather than in the asset: the project's existing
+## arrow_*.svg bake a 45%-opacity stroke, and modulation multiplies, so a
+## half-transparent asset can never be made solid at the use site.
+func _tint_icon(b: Button) -> void:
+	for state in ["icon_normal_color", "icon_hover_color", "icon_pressed_color", "icon_focus_color"]:
+		b.add_theme_color_override(state, ICON_COLOR)
+	b.add_theme_color_override("icon_disabled_color", Color(ICON_COLOR.r, ICON_COLOR.g, ICON_COLOR.b, 0.25))
+
+
 func _strip_button_padding(b: Button) -> void:
 	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		b.add_theme_stylebox_override(state, StyleBoxEmpty.new())
@@ -208,7 +233,7 @@ func _apply_layout_state() -> void:
 	if _body != null:
 		_body.visible = not _collapsed
 	if _chevron != null:
-		_chevron.text = "v" if _collapsed else "^"
+		_chevron.icon = ICON_CHEVRON_DOWN if _collapsed else ICON_CHEVRON_UP
 		_chevron.tooltip_text = "Show chat groups" if _collapsed else "Hide chat groups"
 	custom_minimum_size = Vector2(0, COLLAPSED_HEIGHT if _collapsed else EXPANDED_HEIGHT)
 	if not _collapsed:
