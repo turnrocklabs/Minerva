@@ -639,6 +639,13 @@ func _create_chat(args: Dictionary) -> Dictionary:
 	# If it does, return it with already_existed: true
 	if not name_.is_empty():
 		for existing in SingletonObject.ChatList:
+			# Soft-deleted chats must NOT satisfy create-by-name. Since closing a
+			# chat no longer removes it (DCR 01a017494904), matching one here
+			# would hand back a chat that minerva_list_chats does not show and
+			# that no message can reach — reported as a success. Restoring is an
+			# explicit act: minerva_restore_chat.
+			if existing.Deleted:
+				continue
 			if existing.HistoryName == name_:
 				return {"success": true, "already_existed": true, "chat_id": existing.HistoryId, "name": existing.HistoryName}
 

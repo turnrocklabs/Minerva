@@ -3374,9 +3374,16 @@ func _reorder_chat_tab(at_position: Vector2, payload: Dictionary) -> void:
 	if to_idx == from_idx:
 		return
 	var moving := get_tab_control(from_idx)
-	if moving == null:
+	var target := get_tab_control(to_idx)
+	if moving == null or target == null:
 		return
-	move_child(moving, to_idx)
+	# A tab index is NOT a child index: _ready() also parents lifetime-of-pane
+	# infrastructure here (the TTS player, the voice gateway, the token-estimation
+	# timer), so child N and tab N diverge. Passing the tab index straight to
+	# move_child() drops the chat somewhere among those nodes and leaves the tab
+	# order unchanged. Translate through the TARGET tab's real child index, the
+	# way TabContainer's own rearrange does.
+	move_child(moving, target.get_index())
 	_apply_tab_filters()
 	_refresh_group_dock()
 
@@ -3655,6 +3662,20 @@ func get_active_group_id() -> String:
 	return _active_group_id
 
 
+## Drop all per-project group state.
+##
+## MUST run whenever the project changes. The registry is replaced on load, but
+## _active_group_id and the group-delete snapshot are NOT part of it, and a
+## stale `grp_N` id survives into the next project: it either filters every chat
+## out (the id is absent there) or — worse, because it looks like it worked —
+## silently selects an UNRELATED group that happens to have been minted with the
+## same ordinal. A carried-over undo snapshot can likewise recreate the previous
+## project's group inside this one.
+func reset_group_state() -> void:
+	_active_group_id = ChatGroupRegistry.VIEW_ALL
+	_last_dissolved_group = {}
+
+
 ## Select a group view and re-filter. Unknown ids fall back to All rather than
 ## stranding the user in a view that can never contain a tab.
 func set_active_group(group_id: String) -> void:
@@ -3757,6 +3778,8 @@ func prune_empty_groups() -> void:
 	var removed := SingletonObject.chat_groups.prune_empty(_live_group_ids())
 	if removed.is_empty():
 		return
+	# Pruning changes the registry, which no ServiceHistory setter covers.
+	SingletonObject.save_state(false)
 	if removed.has(_active_group_id):
 		_active_group_id = ChatGroupRegistry.VIEW_ALL
 		_apply_tab_filters()
@@ -3805,6 +3828,10 @@ func create_group(name: String = ChatGroupRegistry.DEFAULT_GROUP_NAME, history: 
 	if history != null:
 		set_chat_group(history, gid)
 	set_active_group(gid)
+	# The registry is not a ServiceHistory, so nothing auto-marks the project
+	# dirty here. Without this an empty group — the one case deliberately kept
+	# alive until explicitly deleted — is lost with no save prompt.
+	SingletonObject.save_state(false)
 	chat_groups_changed.emit()
 	return gid
 
@@ -3835,18 +3862,28 @@ func delete_group(group_id: String, reassign_to: String = ChatGroupRegistry.UNGR
 	for history in SingletonObject.ChatList:
 		if history == null:
 			continue
+		var touched := false
 		# Deleted chats park their membership in PreDeleteGroupId; rewrite that
-		# too, or restoring one later would resurrect a group that is gone.
+		# too, or restoring one later would resurrect a group that is gone. It
+		# must ALSO be recorded — a chat whose only reference was the parked one
+		# would otherwise never be reattached by undo.
 		if str(history.PreDeleteGroupId) == group_id:
 			history.PreDeleteGroupId = reassign_to
+			touched = true
 		if str(history.ChatGroupId) == group_id:
 			history.ChatGroupId = reassign_to
+			touched = true
+		if touched:
 			moved.append(str(history.HistoryId))
 
 	_last_dissolved_group = {
 		"id": group_id,
 		"name": SingletonObject.chat_groups.get_name(group_id),
 		"chat_ids": moved,
+		# Undo must be able to tell "this chat is where the delete left it" from
+		# "the user has since moved it somewhere else".
+		"reassigned_to": reassign_to,
+		"was_populated": SingletonObject.chat_groups.is_populated(group_id),
 	}
 	SingletonObject.chat_groups.remove_group(group_id)
 	if _active_group_id == group_id:
@@ -3857,39 +3894,82 @@ func delete_group(group_id: String, reassign_to: String = ChatGroupRegistry.UNGR
 	return {"ok": true, "group_id": group_id, "reassigned_to": reassign_to, "chat_ids": moved}
 
 
+## Which field currently holds a chat's group membership. A deleted chat's live
+## ChatGroupId is cleared and its membership parked, so the authoritative field
+## depends on the chat's state — and it can change between a delete_group() and
+## its undo, if the chat is deleted or restored in between.
+static func _membership_of(history: ServiceHistory) -> String:
+	if history == null:
+		return ""
+	return str(history.PreDeleteGroupId) if history.Deleted else str(history.ChatGroupId)
+
+
+static func _set_membership(history: ServiceHistory, group_id: String) -> void:
+	if history == null:
+		return
+	if history.Deleted:
+		history.PreDeleteGroupId = group_id
+	else:
+		history.ChatGroupId = group_id
+
+
 ## Undo the last delete_group(): recreate it with its original id and name, and
-## put its members back. Chats moved out of the group by hand since the delete
-## are left where they are — only the ones the delete itself moved come back.
+## put back the members that are still where the delete left them.
+##
+## A chat the user has moved elsewhere since the delete is LEFT ALONE — undoing
+## a group must not silently yank chats out of wherever they now live. The test
+## is whether the chat's current membership still equals the reassign target;
+## that also covers chats deleted or restored in the interim, because
+## _membership_of() follows the state change.
 func undo_group_delete() -> Dictionary:
 	if _last_dissolved_group.is_empty():
 		return {"ok": false, "error": "No group deletion to undo"}
-	var snapshot := _last_dissolved_group.duplicate(true)
-	_last_dissolved_group = {}
 
-	var gid := str(snapshot.get("id", ""))
+	var gid := str(_last_dissolved_group.get("id", ""))
 	if SingletonObject.chat_groups.has_group(gid):
+		# Something has re-minted this id. Keep the snapshot rather than
+		# discarding it on a failed attempt.
 		return {"ok": false, "error": "Group %s already exists" % gid}
+
+	var snapshot: Dictionary = _last_dissolved_group.duplicate(true)
+	_last_dissolved_group = {}
+	var reassigned_to := str(snapshot.get("reassigned_to", ""))
+
 	# forced_id keeps every chat's stored ChatGroupId meaningful without a
 	# rewrite, which is the same reason chats store ids rather than names.
 	var restored := SingletonObject.chat_groups.create_group(str(snapshot.get("name", "")), gid)
-	if not snapshot.get("chat_ids", []).is_empty():
-		SingletonObject.chat_groups.mark_populated(restored)
 
 	var reattached: Array[String] = []
+	var skipped: Array[String] = []
 	for raw_id in snapshot.get("chat_ids", []):
 		var history := find_chat_by_id(str(raw_id))
 		if history == null:
 			continue
-		if history.Deleted:
-			history.PreDeleteGroupId = restored
-		else:
-			history.ChatGroupId = restored
+		if _membership_of(history) != reassigned_to:
+			skipped.append(str(raw_id))
+			continue
+		_set_membership(history, restored)
 		reattached.append(str(raw_id))
 
+	# Restore the prunable-or-not state rather than inferring it: a group that
+	# was populated before the delete stays prunable even if every one of its
+	# chats has since been moved away.
+	if bool(snapshot.get("was_populated", not reattached.is_empty())):
+		SingletonObject.chat_groups.mark_populated(restored)
+
+	# A group that comes back with no members and WAS populated would be pruned
+	# by the next sweep, so run one now rather than leaving a doomed card up.
+	prune_empty_groups()
 	_apply_tab_filters()
 	chat_groups_changed.emit()
 	SingletonObject.save_state(false)
-	return {"ok": true, "group_id": restored, "name": SingletonObject.chat_groups.get_name(restored), "chat_ids": reattached}
+	return {
+		"ok": true,
+		"group_id": restored,
+		"name": SingletonObject.chat_groups.get_name(restored),
+		"chat_ids": reattached,
+		"skipped_chat_ids": skipped,
+	}
 
 
 func can_undo_group_delete() -> bool:
@@ -3953,6 +4033,7 @@ func delete_chat(history: ServiceHistory) -> bool:
 	history.PreDeleteGroupId = str(history.ChatGroupId)
 	history.ChatGroupId = ChatGroupRegistry.UNGROUPED
 	history.DeletedAt = int(Time.get_unix_time_from_system())
+	history.DeletedSeq = _next_delete_seq()
 	history.Deleted = true
 	prune_empty_groups()
 	_apply_tab_filters()
@@ -3971,6 +4052,7 @@ func restore_chat(history: ServiceHistory) -> bool:
 		target = ChatGroupRegistry.UNGROUPED
 	history.Deleted = false
 	history.DeletedAt = 0
+	history.DeletedSeq = 0
 	history.ChatGroupId = target
 	history.PreDeleteGroupId = ""
 	_apply_tab_filters()
@@ -3983,13 +4065,41 @@ func restore_chat(history: ServiceHistory) -> bool:
 	return true
 
 
+## Next monotonic deletion sequence number.
+##
+## Derived from the live set rather than a member counter so it survives project
+## load without a separate restore step: whatever the highest stored sequence
+## is, the next delete beats it.
+func _next_delete_seq() -> int:
+	var highest := 0
+	for history in SingletonObject.ChatList:
+		if history != null and int(history.DeletedSeq) > highest:
+			highest = int(history.DeletedSeq)
+	return highest + 1
+
+
 ## Most-recently-deleted chat first — what Ctrl+Z restores.
+##
+## Ordered by DeletedSeq, NOT DeletedAt: two chats closed in the same second
+## share a timestamp, and an untied sort then picks an arbitrary one. HistoryId
+## breaks any residual tie (chats deleted before DeletedSeq existed all carry 0)
+## so the order is at least stable rather than sort-implementation-defined.
 func list_deleted_chats() -> Array[ServiceHistory]:
 	var out: Array[ServiceHistory] = []
 	for history in SingletonObject.ChatList:
 		if history != null and history.Deleted:
 			out.append(history)
-	out.sort_custom(func(a, b): return int(a.DeletedAt) > int(b.DeletedAt))
+	out.sort_custom(func(a, b):
+		var sa := int(a.DeletedSeq)
+		var sb := int(b.DeletedSeq)
+		if sa != sb:
+			return sa > sb
+		var ta := int(a.DeletedAt)
+		var tb := int(b.DeletedAt)
+		if ta != tb:
+			return ta > tb
+		return str(a.HistoryId) > str(b.HistoryId)
+	)
 	return out
 
 

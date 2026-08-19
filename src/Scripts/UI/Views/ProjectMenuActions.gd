@@ -25,6 +25,8 @@ func _new_project():
 	# Clear all service histories
 	SingletonObject.ChatList.clear()
 	SingletonObject.chat_groups.clear()
+	if SingletonObject.Chats:
+		SingletonObject.Chats.reset_group_state()
 	SingletonObject.NotesList.clear()
 	
 	# Initialize chat pane
@@ -247,6 +249,12 @@ func deserialize_project(data: Dictionary) -> int:
 	# Chat groups must land BEFORE the chats: ChatPane's filter resolves each
 	# chat's ChatGroupId against the registry and treats an unknown id as
 	# ungrouped, so an empty registry here would silently orphan every chat.
+	# Group VIEW state is per-project but does not live in the registry, so it has
+	# to be dropped explicitly — a `grp_N` id from the previous project either
+	# hides every chat here or collides with an unrelated group of the same
+	# ordinal.
+	if SingletonObject.Chats:
+		SingletonObject.Chats.reset_group_state()
 	SingletonObject.chat_groups.deserialize(data.get("ChatGroups", {}))
 
 	# Deserialize chat histories

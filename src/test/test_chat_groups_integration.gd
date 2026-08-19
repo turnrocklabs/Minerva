@@ -71,6 +71,12 @@ func _run() -> void:
 	await test_dock_card_row()
 	await test_group_delete_and_undo()
 	await test_mcp_parity()
+	await test_reorder_uses_child_index_not_tab_index()
+	await test_project_switch_clears_group_state()
+	await test_undo_respects_moves_since_delete()
+	await test_delete_seq_orders_undo()
+	await test_mcp_create_by_name_ignores_deleted()
+	await test_empty_group_marks_project_dirty()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -461,3 +467,243 @@ func test_mcp_parity() -> void:
 	check("every group verb is dispatched in handle()", undispatched.is_empty())
 	if not undispatched.is_empty():
 		printerr("    undispatched: %s" % str(undispatched))
+
+
+# ── Regressions from the Codex review of 5c03678d ─────────────────────
+
+func test_reorder_uses_child_index_not_tab_index() -> void:
+	print("\n[regression] reorder translates tab index -> child index")
+	_reset()
+	_add_chat("Alpha")
+	_add_chat("Beta")
+	_add_chat("Gamma")
+	await process_frame
+
+	# _ready() parents lifetime-of-pane infrastructure (TTS player, voice
+	# gateway, token timer) into this same TabContainer, so child N and tab N
+	# diverge. Passing a TAB index to move_child() drops the chat among those
+	# nodes and leaves the tab order untouched.
+	var non_tab_children: int = _pane.get_child_count() - _pane.get_tab_count()
+	check("the container really does hold non-tab children", non_tab_children > 0)
+
+	var alpha_control = _pane.get_tab_control(0)
+	var beta_control = _pane.get_tab_control(1)
+	check("tab index and child index differ for at least one tab",
+		alpha_control.get_index() != 0 or beta_control.get_index() != 1)
+
+	# Drop Alpha past the right-hand end of the strip. get_tab_idx_at_point()
+	# returns -1 there, which the handler resolves to the LAST tab — a real move
+	# from position 0, unlike a drop on the tab it started from.
+	var far_right := Vector2(100000.0, 0.0)
+	check("the drop point really is past every tab", _pane.get_tab_idx_at_point(far_right) == -1)
+	_pane._reorder_chat_tab(far_right, {"kind": "chat_tab", "chat_id": str(_so.ChatList[0].HistoryId), "tab": 0})
+	await process_frame
+
+	# What matters is that the tab ORDER actually changed and no chat was
+	# orphaned among the infrastructure nodes.
+	check("all three chats are still tabs", _pane.get_tab_count() == 3)
+	check("ChatList still has three entries", _so.ChatList.size() == 3)
+	var titles: Array = []
+	for i in range(_pane.get_tab_count()):
+		titles.append(_pane.get_tab_title(i))
+	check("Alpha moved to the end", titles[titles.size() - 1] == "Alpha")
+	check("Alpha left first position", titles[0] != "Alpha")
+	check("every chat is still reachable as a tab",
+		titles.has("Alpha") and titles.has("Beta") and titles.has("Gamma"))
+	# The bug's signature: ChatList is rebuilt from child order, so a chat parked
+	# among infrastructure nodes drops out of alignment with the tab strip.
+	var aligned := true
+	for i in range(_so.ChatList.size()):
+		if _pane.get_tab_title(i) != _so.ChatList[i].HistoryName:
+			aligned = false
+	check("ChatList stayed aligned with the tab strip", aligned)
+
+
+func test_project_switch_clears_group_state() -> void:
+	print("\n[regression] project switch drops stale group state")
+	_reset()
+	var a = _add_chat("Alpha")
+	await process_frame
+	var g: String = _reg.create_group("Project A group")
+	_pane.set_chat_group(a, g)
+	_pane.set_active_group(g)
+	_pane.delete_group(g, "")
+	check("a group delete is pending undo", _pane.can_undo_group_delete())
+	_pane.set_active_group("__all__")
+	var g2: String = _reg.create_group("Still selected")
+	_pane.set_chat_group(a, g2)
+	_pane.set_active_group(g2)
+	check("a group view is selected", _pane.get_active_group_id() == g2)
+
+	# Simulates the project-load path: registry replaced, view state reset.
+	_pane.reset_group_state()
+	check("active view fell back to All", _pane.get_active_group_id() == "__all__")
+	# A carried-over snapshot could recreate the PREVIOUS project's group inside
+	# the newly opened one.
+	check("the undo snapshot was dropped", not _pane.can_undo_group_delete())
+
+	# And the stale-id hazard itself: a grp_N id from another project either
+	# hides every chat or collides with an unrelated group of the same ordinal.
+	_reset()
+	_add_chat("Chat in project B")
+	await process_frame
+	_pane.set_active_group("grp_1")
+	check("an id absent from this project falls back to All rather than hiding everything",
+		_pane.get_active_group_id() == "__all__")
+	check("the chat is visible", _visible_tab_titles().size() == 1)
+
+
+func test_undo_respects_moves_since_delete() -> void:
+	print("\n[regression] undo leaves chats moved since the delete alone")
+	_reset()
+	var a = _add_chat("Alpha")
+	var b = _add_chat("Beta")
+	await process_frame
+	var doomed: String = _reg.create_group("Doomed")
+	var other: String = _reg.create_group("Other")
+	_pane.set_chat_group(a, doomed)
+	_pane.set_chat_group(b, doomed)
+	# Keep `other` alive so it survives the prune sweeps.
+	var keeper = _add_chat("Keeper")
+	await process_frame
+	_pane.set_chat_group(keeper, other)
+
+	_pane.delete_group(doomed, "")
+	check("both members were ungrouped", str(a.ChatGroupId) == "" and str(b.ChatGroupId) == "")
+
+	# The user moves one of them somewhere else before undoing.
+	_pane.set_chat_group(b, other)
+	var res: Dictionary = _pane.undo_group_delete()
+	await process_frame
+	check("undo succeeded", bool(res.get("ok", false)))
+	check("the untouched chat came back", str(a.ChatGroupId) == doomed)
+	# Undoing a group delete must not yank a chat out of wherever it now lives.
+	check("the moved chat was LEFT where the user put it", str(b.ChatGroupId) == other)
+	check("undo reported it as skipped", res.get("skipped_chat_ids", []).has(str(b.HistoryId)))
+
+	# A chat whose only reference was the PARKED one must also come back.
+	_reset()
+	var c = _add_chat("Gamma")
+	var d = _add_chat("Delta")
+	await process_frame
+	var g: String = _reg.create_group("Parked test")
+	_pane.set_chat_group(c, g)
+	_pane.set_chat_group(d, g)
+	_pane.delete_chat(c)
+	await process_frame
+	check("the deleted chat parked its group", str(c.PreDeleteGroupId) == g)
+	check("the group is alive via the other member", _reg.has_group(g))
+
+	_pane.delete_group(g, "")
+	check("the parked reference was rewritten too", str(c.PreDeleteGroupId) == "")
+	var res2: Dictionary = _pane.undo_group_delete()
+	await process_frame
+	check("undo succeeded", bool(res2.get("ok", false)))
+	check("the live member came back", str(d.ChatGroupId) == g)
+	# This is the case the first implementation dropped: the snapshot only
+	# recorded live ChatGroupId rewrites, so a chat touched ONLY through its
+	# parked field was never reattached and restored ungrouped.
+	check("the deleted member's parked group came back too", str(c.PreDeleteGroupId) == g)
+	_pane.restore_chat(c)
+	await process_frame
+	check("restoring it lands in the recovered group", str(c.ChatGroupId) == g)
+
+
+func test_delete_seq_orders_undo() -> void:
+	print("\n[regression] undo order is deterministic within one second")
+	_reset()
+	var a = _add_chat("First closed")
+	var b = _add_chat("Second closed")
+	var c = _add_chat("Third closed")
+	await process_frame
+
+	_pane.delete_chat(a)
+	_pane.delete_chat(b)
+	_pane.delete_chat(c)
+	await process_frame
+
+	# All three almost certainly share a DeletedAt second, which is exactly the
+	# condition an untied sort resolves arbitrarily.
+	check("the timestamps did collide (the condition under test)",
+		int(a.DeletedAt) == int(c.DeletedAt))
+	check("sequences are strictly increasing",
+		int(a.DeletedSeq) < int(b.DeletedSeq) and int(b.DeletedSeq) < int(c.DeletedSeq))
+
+	var order: Array = _pane.list_deleted_chats()
+	check("most recently closed sorts first", order[0].HistoryName == "Third closed")
+	check("then the second", order[1].HistoryName == "Second closed")
+	check("then the first", order[2].HistoryName == "First closed")
+
+	check("undo restores the most recent", _pane.restore_last_deleted_chat())
+	await process_frame
+	check("it was the right one", not c.Deleted and b.Deleted and a.Deleted)
+	check("restore cleared the sequence", int(c.DeletedSeq) == 0)
+
+	# Sequences keep climbing past restored chats rather than being reused.
+	_pane.delete_chat(c)
+	await process_frame
+	check("a re-deleted chat gets the highest sequence yet",
+		int(c.DeletedSeq) > int(b.DeletedSeq))
+
+
+func test_mcp_create_by_name_ignores_deleted() -> void:
+	print("\n[regression] create-by-name skips soft-deleted chats")
+	_reset()
+	var a = _add_chat("Review")
+	await process_frame
+	_pane.delete_chat(a)
+	await process_frame
+
+	var Mod = load("res://Scripts/Services/MCP/Modules/MCPChatTools.gd")
+	var mod = Mod.new()
+	var listed: Dictionary = mod.handle("minerva_list_chats", {})
+	var listed_names: Array = []
+	for entry in listed.get("chats", []):
+		listed_names.append(str(entry.get("name", "")))
+	check("the deleted chat is not listed", not listed_names.has("Review"))
+
+	var created: Dictionary = mod.handle("minerva_create_chat", {"name": "Review"})
+	await process_frame
+	# The bug: create-by-name matched the hidden deleted chat and reported
+	# success, handing back a chat_id that minerva_list_chats never shows and
+	# that no message can reach.
+	check("create did NOT resolve to the deleted chat",
+		str(created.get("chat_id", "")) != str(a.HistoryId))
+	check("it created a real chat instead", not bool(created.get("already_existed", false)))
+	var after: Dictionary = mod.handle("minerva_list_chats", {})
+	var after_names: Array = []
+	for entry in after.get("chats", []):
+		after_names.append(str(entry.get("name", "")))
+	check("the new chat IS listed", after_names.has("Review"))
+
+	# Idempotence still holds for live chats.
+	var again: Dictionary = mod.handle("minerva_create_chat", {"name": "Review"})
+	check("a second create returns the live one", bool(again.get("already_existed", false)))
+	check("and it is the one that was just created",
+		str(again.get("chat_id", "")) == str(created.get("chat_id", "")))
+
+
+func test_empty_group_marks_project_dirty() -> void:
+	print("\n[regression] registry edits mark the project dirty")
+	_reset()
+	_add_chat("Alpha")
+	await process_frame
+
+	# An empty group is the one thing deliberately kept alive until explicitly
+	# deleted, so losing it to a missing dirty flag is a silent data loss.
+	_so.saved_state = true
+	_pane.create_group("Empty on purpose")
+	check("creating an empty group marks the project dirty", not _so.saved_state)
+
+	_so.saved_state = true
+	_pane.rename_group(_pane.get_active_group_id(), "Renamed")
+	check("renaming marks the project dirty", not _so.saved_state)
+
+	var gid: String = _pane.get_active_group_id()
+	_so.saved_state = true
+	_pane.delete_group(gid, "")
+	check("deleting a group marks the project dirty", not _so.saved_state)
+
+	_so.saved_state = true
+	_pane.undo_group_delete()
+	check("undoing marks the project dirty", not _so.saved_state)

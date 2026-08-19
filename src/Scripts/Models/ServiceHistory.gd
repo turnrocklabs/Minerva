@@ -142,9 +142,18 @@ var Deleted: bool = false:
 var PreDeleteGroupId: String = "":
 	set(value): SingletonObject.call_deferred("save_state", false); PreDeleteGroupId = value
 
-## Unix timestamp of deletion, 0 when live. Feeds the Deleted-group purge.
+## Unix timestamp of deletion, 0 when live. Feeds the Deleted-group purge
+## (which works in days, so second precision is ample). NOT used for undo order
+## — see DeletedSeq.
 var DeletedAt: int = 0:
 	set(value): SingletonObject.call_deferred("save_state", false); DeletedAt = value
+
+## Monotonic deletion sequence, 0 when live. Undo order MUST come from this, not
+## from DeletedAt: closing two chats in the same second gives them identical
+## timestamps, and a sort with no tie-breaker then restores an arbitrary one.
+## Serialised so the ordering survives save/load.
+var DeletedSeq: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); DeletedSeq = value
 
 ## Runtime-only: whether this chat has an active LLM request in flight. Not serialized.
 var is_request_active: bool = false
@@ -394,6 +403,7 @@ func Serialize() -> Dictionary:
 		"Deleted": Deleted,
 		"PreDeleteGroupId": PreDeleteGroupId,
 		"DeletedAt": DeletedAt,
+		"DeletedSeq": DeletedSeq,
 		"termination_reason": termination_reason,
 		"termination_message": termination_message,
 		"StaticToolMode": StaticToolMode,
@@ -530,6 +540,8 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.PreDeleteGroupId = str(data.get("PreDeleteGroupId", ""))
 	if data.has("DeletedAt"):
 		history.DeletedAt = int(data.get("DeletedAt", 0))
+	if data.has("DeletedSeq"):
+		history.DeletedSeq = int(data.get("DeletedSeq", 0))
 	if data.has("termination_reason"):
 		history.termination_reason = data.get("termination_reason", "")
 	if data.has("termination_message"):
