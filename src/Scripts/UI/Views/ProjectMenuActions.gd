@@ -24,6 +24,7 @@ func update_last_save_path(new_path: String) -> void:
 func _new_project():
 	# Clear all service histories
 	SingletonObject.ChatList.clear()
+	SingletonObject.chat_groups.clear()
 	SingletonObject.NotesList.clear()
 	
 	# Initialize chat pane
@@ -191,6 +192,7 @@ func serialize_project() -> Dictionary:
 		"ThreadList": notes,
 		"AgentThreadList": agent_notes,
 		"ChatList": chats,
+		"ChatGroups": SingletonObject.chat_groups.serialize(),
 		"NotesHistories": notes_histories,
 		"Editors": editors,
 		"Triggers": SingletonObject.trigger_manager.serialize() if SingletonObject.trigger_manager else [],
@@ -241,6 +243,11 @@ func deserialize_project(data: Dictionary) -> int:
 	# Clear existing histories
 	SingletonObject.ChatList.clear()
 	SingletonObject.NotesList.clear()
+
+	# Chat groups must land BEFORE the chats: ChatPane's filter resolves each
+	# chat's ChatGroupId against the registry and treats an unknown id as
+	# ungrouped, so an empty registry here would silently orphan every chat.
+	SingletonObject.chat_groups.deserialize(data.get("ChatGroups", {}))
 
 	# Deserialize chat histories
 	var chat_data = data.get("ChatList", [])
@@ -352,6 +359,13 @@ func _initialize_chat_pane():
 		SingletonObject.Chats.render_history(chat_history)
 
 	SingletonObject.Chats._initializing_pane = false
+
+	# Loaded chats carry their own group/archived/deleted state, so the strip
+	# must be re-filtered and the dock re-rendered — _ready's deferred pass only
+	# covers the boot project.
+	SingletonObject.Chats.prune_empty_groups()
+	SingletonObject.Chats._apply_tab_filters()
+	SingletonObject.Chats._refresh_group_dock()
 
 func _initialize_notes_pane():
 	"""Initialize notes pane with existing notes histories"""

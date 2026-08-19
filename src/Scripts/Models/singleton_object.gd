@@ -1156,6 +1156,11 @@ var current_message: MessageMarkdown = null
 var ChatList: Array[ChatHistory]
 var NotesList: Array[NotesServiceHistory]
 
+## Chat groups for the chats pane (DCR 01a017494904). Per-project state:
+## serialised into the .minproj under "ChatGroups" alongside ChatList, and
+## cleared with it. Created eagerly so every caller can assume it exists.
+var chat_groups: ChatGroupRegistry = ChatGroupRegistry.new()
+
 var last_thread_index: int
 var last_tab_index: int
 # var active_chatindex: int just use Chats.current_tab

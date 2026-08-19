@@ -21,6 +21,16 @@ func get_tool_names() -> Array[String]:
 		"minerva_list_ledger_entries",
 		"minerva_get_ledger_entry",
 		"minerva_compact_chat",
+		"minerva_list_chat_groups",
+		"minerva_create_chat_group",
+		"minerva_rename_chat_group",
+		"minerva_set_chat_group",
+		"minerva_delete_chat_group",
+		"minerva_undo_chat_group_delete",
+		"minerva_select_chat_group",
+		"minerva_list_deleted_chats",
+		"minerva_restore_chat",
+		"minerva_purge_deleted_chats",
 	]
 
 
@@ -41,6 +51,10 @@ func register_tools() -> void:
 				"provider_enum_id": {
 					"type": "integer",
 					"description": "Alternative: provider enum ID (e.g. 11=CLAUDE_SONNET, 12=CLAUDE_OPUS, 20=CHATGPT). Use for OpenRouter dynamic models (>=1000). Takes precedence over provider name."
+				},
+				"group": {
+					"type": "string",
+					"description": "Chat group to create this chat in — a group id or an exact group name from minerva_list_chat_groups. Omit to inherit the chats pane's currently selected group."
 				}
 			},
 			"required": ["name"]
@@ -210,16 +224,25 @@ func register_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_list_chats",
-		"List all open chat tabs with their IDs, names, message counts, and agent info.",
+		"List open chat tabs with their IDs, names, message counts, group and agent info. Soft-deleted chats are EXCLUDED unless include_deleted is true — see minerva_list_deleted_chats.",
 		{
 			"type": "object",
-			"properties": {},
+			"properties": {
+				"group": {
+					"type": "string",
+					"description": "Only list chats in this group — a group id or exact group name from minerva_list_chat_groups."
+				},
+				"include_deleted": {
+					"type": "boolean",
+					"description": "Include soft-deleted chats. Default false."
+				}
+			},
 			"required": []
 		}
 	, "chat")
 
 	server._register_tool("minerva_close_chat",
-		"Close a chat tab.",
+		"Close a chat tab. NON-DESTRUCTIVE since DCR 01a017494904: the chat is soft-deleted into the hidden Deleted group and keeps its full history. Use minerva_list_deleted_chats to find it and minerva_restore_chat to bring it back; nothing is purged automatically.",
 		{
 			"type": "object",
 			"properties": {
@@ -229,6 +252,143 @@ func register_tools() -> void:
 				}
 			},
 			"required": ["chat_id"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_list_chat_groups",
+		"List chat groups with their ids, names and live chat counts, plus which group the chats pane is currently filtered to. Group ids — not names — are what minerva_set_chat_group and minerva_create_chat accept.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "chat")
+
+	server._register_tool("minerva_create_chat_group",
+		"Create a chat group and select it in the chats pane. Names are deduplicated, so the returned group_id is authoritative. Groups are destroyed implicitly when their last chat leaves.",
+		{
+			"type": "object",
+			"properties": {
+				"name": {
+					"type": "string",
+					"description": "Display name for the group"
+				}
+			},
+			"required": ["name"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_rename_chat_group",
+		"Rename a chat group. One write — chats store the group id, not its name, so no chat is touched.",
+		{
+			"type": "object",
+			"properties": {
+				"group_id": {
+					"type": "string",
+					"description": "Group id from minerva_list_chat_groups"
+				},
+				"name": {
+					"type": "string",
+					"description": "New display name"
+				}
+			},
+			"required": ["group_id", "name"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_set_chat_group",
+		"Move a chat into a group, or out of every group. Pass an empty group_id to make the chat ungrouped.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The chat UUID from minerva_list_chats"
+				},
+				"group_id": {
+					"type": "string",
+					"description": "Group id from minerva_list_chat_groups, or \"\" for ungrouped"
+				}
+			},
+			"required": ["chat_id", "group_id"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_list_deleted_chats",
+		"List soft-deleted chats, most recently deleted first. These do NOT appear in minerva_list_chats by default.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "chat")
+
+	server._register_tool("minerva_restore_chat",
+		"Restore a soft-deleted chat. It returns to the group it was deleted from, or to Ungrouped if that group no longer exists.",
+		{
+			"type": "object",
+			"properties": {
+				"chat_id": {
+					"type": "string",
+					"description": "The chat UUID from minerva_list_deleted_chats"
+				}
+			},
+			"required": ["chat_id"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_delete_chat_group",
+		"Delete a chat group. Its chats are NOT deleted — they move to reassign_to, or become ungrouped. Undo with minerva_undo_chat_group_delete. (Groups also disappear on their own once their last chat leaves; this is for dissolving a group whose chats you want to keep.)",
+		{
+			"type": "object",
+			"properties": {
+				"group_id": {
+					"type": "string",
+					"description": "Group id or exact name from minerva_list_chat_groups"
+				},
+				"reassign_to": {
+					"type": "string",
+					"description": "Group to move this group's chats into. Omit or pass \"\" to make them ungrouped."
+				}
+			},
+			"required": ["group_id"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_undo_chat_group_delete",
+		"Undo the most recent minerva_delete_chat_group: recreates the group with its original id and name and puts its members back. One level deep.",
+		{
+			"type": "object",
+			"properties": {},
+			"required": []
+		}
+	, "chat")
+
+	server._register_tool("minerva_select_chat_group",
+		"Filter the chats pane to a group — the same action as clicking a card in the group dock. Accepts a group id/name, or the views \"__all__\", \"__ungrouped__\", \"__deleted__\".",
+		{
+			"type": "object",
+			"properties": {
+				"group_id": {
+					"type": "string",
+					"description": "Group id, exact group name, or one of __all__ / __ungrouped__ / __deleted__"
+				}
+			},
+			"required": ["group_id"]
+		}
+	, "chat")
+
+	server._register_tool("minerva_purge_deleted_chats",
+		"PERMANENTLY discard soft-deleted chats and their history. This is the only destructive chat operation and cannot be undone — nothing is ever purged automatically. Omit older_than_days to empty the whole Deleted group.",
+		{
+			"type": "object",
+			"properties": {
+				"older_than_days": {
+					"type": "integer",
+					"description": "Only purge chats deleted at least this many days ago. Omit to purge all of them."
+				}
+			},
+			"required": []
 		}
 	, "chat")
 
@@ -323,6 +483,26 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _get_ledger_entry(arguments)
 		"minerva_compact_chat":
 			return await _compact_chat_mcp(arguments)
+		"minerva_list_chat_groups":
+			return _list_chat_groups(arguments)
+		"minerva_create_chat_group":
+			return _create_chat_group(arguments)
+		"minerva_rename_chat_group":
+			return _rename_chat_group(arguments)
+		"minerva_set_chat_group":
+			return _set_chat_group(arguments)
+		"minerva_list_deleted_chats":
+			return _list_deleted_chats(arguments)
+		"minerva_restore_chat":
+			return _restore_chat(arguments)
+		"minerva_delete_chat_group":
+			return _delete_chat_group(arguments)
+		"minerva_undo_chat_group_delete":
+			return _undo_chat_group_delete(arguments)
+		"minerva_select_chat_group":
+			return _select_chat_group(arguments)
+		"minerva_purge_deleted_chats":
+			return _purge_deleted_chats(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -478,6 +658,15 @@ func _create_chat(args: Dictionary) -> Dictionary:
 	history.HistoryName = name_
 	# Note: HistoryItemList is already initialized in the constructor
 
+	# Group membership (DCR 01a017494904). Set BEFORE render_history, which
+	# otherwise assigns the pane's currently selected group as the default.
+	var requested_group: String = str(args.get("group", ""))
+	if not requested_group.is_empty():
+		var resolved_group := _resolve_group_id(requested_group)
+		if resolved_group.is_empty():
+			return MCPToolUtils.error("Unknown chat group: %s (use minerva_list_chat_groups)" % requested_group)
+		history.ChatGroupId = resolved_group
+
 	# Add to chat list and render
 	SingletonObject.ChatList.append(history)
 	chat_pane.render_history(history)
@@ -493,6 +682,8 @@ func _create_chat(args: Dictionary) -> Dictionary:
 		"chat_id": history.HistoryId,
 		"name": history.HistoryName,
 		"provider": provider_display,
+		"group_id": history.ChatGroupId,
+		"group": SingletonObject.chat_groups.get_name(history.ChatGroupId),
 		"message": "Chat created. Use the chat_id value (not the name) for subsequent operations."
 	}
 
@@ -922,19 +1113,275 @@ func _get_tool_calls(args: Dictionary) -> Dictionary:
 
 
 func _list_chats(_args: Dictionary) -> Dictionary:
+	# Soft-deleted chats are excluded unless explicitly asked for: closing a chat
+	# no longer removes it (DCR 01a017494904), so without this filter every chat
+	# the user ever closed would keep showing up here.
+	var include_deleted: bool = bool(_args.get("include_deleted", false))
+	var group_filter: String = str(_args.get("group", ""))
+	var resolved_filter := ""
+	if not group_filter.is_empty():
+		resolved_filter = _resolve_group_id(group_filter)
+		if resolved_filter.is_empty():
+			return MCPToolUtils.error("Unknown chat group: %s (use minerva_list_chat_groups)" % group_filter)
+
 	var result: Array[Dictionary] = []
 	for history in SingletonObject.ChatList:
+		if history.Deleted and not include_deleted:
+			continue
+		if not resolved_filter.is_empty() and str(history.ChatGroupId) != resolved_filter:
+			continue
 		var entry: Dictionary = {
 			"chat_id": history.HistoryId,
 			"name": history.HistoryName,
 			"message_count": history.HistoryItemList.size(),
 			"is_agent": history.IsAgentChat,
+			"group_id": history.ChatGroupId,
+			"group": SingletonObject.chat_groups.get_name(history.ChatGroupId),
+			"archived": history.Archived,
 		}
+		if history.Deleted:
+			entry["deleted"] = true
 		if history.IsAgentChat:
 			entry["agent_definition_id"] = history.AgentDefinitionId
 			entry["max_tool_rounds"] = history.MaxToolCallRounds
 		result.append(entry)
 	return {"success": true, "chats": result, "count": result.size()}
+
+
+#region Chat group tools (DCR 01a017494904)
+
+## Resolve a caller-supplied group reference — an id, or an exact (case
+## insensitive) group name — to a real group id. Returns "" when unknown, which
+## every caller must treat as an error rather than silently ungrouping a chat.
+func _resolve_group_id(reference: String) -> String:
+	var ref := reference.strip_edges()
+	if ref.is_empty():
+		return ""
+	if SingletonObject.chat_groups.has_group(ref):
+		return ref
+	return SingletonObject.chat_groups.find_by_name(ref)
+
+
+func _list_chat_groups(_args: Dictionary) -> Dictionary:
+	var chat_pane = SingletonObject.Chats
+	var groups: Array[Dictionary] = []
+	for g in SingletonObject.chat_groups.list_groups():
+		var gid := str(g["id"])
+		groups.append({
+			"group_id": gid,
+			"name": str(g["name"]),
+			"chat_count": chat_pane.count_in_group(gid) if chat_pane else 0,
+		})
+	var out: Dictionary = {
+		"success": true,
+		"groups": groups,
+		"count": groups.size(),
+	}
+	if chat_pane:
+		out["active_view"] = chat_pane.get_active_group_id()
+		out["ungrouped_count"] = chat_pane.count_in_group(ChatGroupRegistry.VIEW_UNGROUPED)
+		out["deleted_count"] = chat_pane.count_in_group(ChatGroupRegistry.VIEW_DELETED)
+	return out
+
+
+func _create_chat_group(args: Dictionary) -> Dictionary:
+	var name_: String = str(args.get("name", "")).strip_edges()
+	if name_.is_empty():
+		return MCPToolUtils.error("name is required")
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+
+	var existing := SingletonObject.chat_groups.find_by_name(name_)
+	if not existing.is_empty():
+		return {"success": true, "already_existed": true, "group_id": existing, "name": SingletonObject.chat_groups.get_name(existing)}
+
+	var gid: String = chat_pane.create_group(name_)
+	var final_name := SingletonObject.chat_groups.get_name(gid)
+	SingletonObject.create_toast_notification("Chat group created: %s" % final_name)
+	return {"success": true, "group_id": gid, "name": final_name}
+
+
+func _rename_chat_group(args: Dictionary) -> Dictionary:
+	var gid: String = _resolve_group_id(str(args.get("group_id", "")))
+	if gid.is_empty():
+		return MCPToolUtils.error("Unknown chat group: %s (use minerva_list_chat_groups)" % str(args.get("group_id", "")))
+	var name_: String = str(args.get("name", "")).strip_edges()
+	if name_.is_empty():
+		return MCPToolUtils.error("name is required")
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+	if not chat_pane.rename_group(gid, name_):
+		return MCPToolUtils.error("Rename failed for group: %s" % gid)
+	var final_name := SingletonObject.chat_groups.get_name(gid)
+	SingletonObject.create_toast_notification("Chat group renamed: %s" % final_name)
+	return {"success": true, "group_id": gid, "name": final_name}
+
+
+func _set_chat_group(args: Dictionary) -> Dictionary:
+	var chat_id: String = str(args.get("chat_id", ""))
+	if chat_id.is_empty():
+		return MCPToolUtils.error("chat_id is required")
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+
+	var history = chat_pane.find_chat_by_id(chat_id)
+	if history == null:
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
+
+	# An explicit empty string means "ungrouped"; anything else must resolve, so
+	# a typo cannot silently drop the chat out of its group.
+	var raw_group: String = str(args.get("group_id", ""))
+	var target := ""
+	if not raw_group.strip_edges().is_empty():
+		target = _resolve_group_id(raw_group)
+		if target.is_empty():
+			return MCPToolUtils.error("Unknown chat group: %s (use minerva_list_chat_groups)" % raw_group)
+
+	if not chat_pane.set_chat_group(history, target):
+		return MCPToolUtils.error("Could not move chat %s into group %s" % [chat_id, raw_group])
+
+	var label := SingletonObject.chat_groups.get_name(target)
+	if label.is_empty():
+		label = "Ungrouped"
+	SingletonObject.create_toast_notification("Moved \"%s\" to %s" % [history.HistoryName, label])
+	return {"success": true, "chat_id": chat_id, "group_id": target, "group": label}
+
+
+func _list_deleted_chats(_args: Dictionary) -> Dictionary:
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+	var result: Array[Dictionary] = []
+	for history in chat_pane.list_deleted_chats():
+		result.append({
+			"chat_id": history.HistoryId,
+			"name": history.HistoryName,
+			"message_count": history.HistoryItemList.size(),
+			"deleted_at": history.DeletedAt,
+			"restores_to_group_id": history.PreDeleteGroupId,
+			"restores_to_group": SingletonObject.chat_groups.get_name(history.PreDeleteGroupId),
+		})
+	return {"success": true, "chats": result, "count": result.size()}
+
+
+func _restore_chat(args: Dictionary) -> Dictionary:
+	var chat_id: String = str(args.get("chat_id", ""))
+	if chat_id.is_empty():
+		return MCPToolUtils.error("chat_id is required")
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+	var history = chat_pane.find_chat_by_id(chat_id)
+	if history == null:
+		return MCPToolUtils.error("Chat not found: %s" % chat_id)
+	if not history.Deleted:
+		return {"success": true, "already_restored": true, "chat_id": chat_id}
+	if not chat_pane.restore_chat(history):
+		return MCPToolUtils.error("Restore failed for chat: %s" % chat_id)
+	return {
+		"success": true,
+		"chat_id": chat_id,
+		"name": history.HistoryName,
+		"group_id": history.ChatGroupId,
+		"group": SingletonObject.chat_groups.get_name(history.ChatGroupId),
+	}
+
+func _delete_chat_group(args: Dictionary) -> Dictionary:
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+	var gid: String = _resolve_group_id(str(args.get("group_id", "")))
+	if gid.is_empty():
+		return MCPToolUtils.error("Unknown chat group: %s (use minerva_list_chat_groups)" % str(args.get("group_id", "")))
+
+	var raw_target: String = str(args.get("reassign_to", ""))
+	var target := ""
+	if not raw_target.strip_edges().is_empty():
+		target = _resolve_group_id(raw_target)
+		if target.is_empty():
+			return MCPToolUtils.error("Unknown reassign target: %s" % raw_target)
+
+	var group_name := SingletonObject.chat_groups.get_name(gid)
+	var res: Dictionary = chat_pane.delete_group(gid, target)
+	if not bool(res.get("ok", false)):
+		return MCPToolUtils.error(str(res.get("error", "Delete failed")))
+
+	var where := SingletonObject.chat_groups.get_name(target)
+	if where.is_empty():
+		where = "Ungrouped"
+	SingletonObject.create_toast_notification("Group deleted: %s (chats moved to %s)" % [group_name, where])
+	return {
+		"success": true,
+		"group_id": gid,
+		"name": group_name,
+		"reassigned_to": target,
+		"chat_ids": res.get("chat_ids", []),
+		"message": "Group dissolved; its chats were kept. Undo with minerva_undo_chat_group_delete."
+	}
+
+
+func _undo_chat_group_delete(_args: Dictionary) -> Dictionary:
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+	var res: Dictionary = chat_pane.undo_group_delete()
+	if not bool(res.get("ok", false)):
+		return MCPToolUtils.error(str(res.get("error", "Nothing to undo")))
+	SingletonObject.create_toast_notification("Group restored: %s" % str(res.get("name", "")))
+	return {
+		"success": true,
+		"group_id": res.get("group_id", ""),
+		"name": res.get("name", ""),
+		"chat_ids": res.get("chat_ids", []),
+	}
+
+
+func _select_chat_group(args: Dictionary) -> Dictionary:
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+	var raw: String = str(args.get("group_id", "")).strip_edges()
+	if raw.is_empty():
+		return MCPToolUtils.error("group_id is required (or one of __all__ / __ungrouped__ / __deleted__)")
+
+	var target := raw
+	if not ChatGroupRegistry.is_view_sentinel(raw):
+		target = _resolve_group_id(raw)
+		if target.is_empty():
+			return MCPToolUtils.error("Unknown chat group: %s (use minerva_list_chat_groups)" % raw)
+
+	chat_pane.set_active_group(target)
+	# set_active_group falls back to All rather than stranding the pane, so
+	# report what it actually settled on instead of what was asked for.
+	var settled: String = chat_pane.get_active_group_id()
+	return {
+		"success": true,
+		"active_view": settled,
+		"name": SingletonObject.chat_groups.get_name(settled),
+		"visible_chat_count": chat_pane.count_in_group(settled),
+	}
+
+
+func _purge_deleted_chats(args: Dictionary) -> Dictionary:
+	var chat_pane = SingletonObject.Chats
+	if not chat_pane:
+		return MCPToolUtils.error("Chat pane not available")
+	var older_than: int = int(args.get("older_than_days", -1))
+	var n: int = chat_pane.purge_deleted_chats(older_than)
+	if n > 0:
+		SingletonObject.create_toast_notification("Purged %d deleted chat%s" % [n, "" if n == 1 else "s"])
+	return {
+		"success": true,
+		"purged": n,
+		"remaining": chat_pane.list_deleted_chats().size(),
+		"message": "Purged chats are gone permanently; this cannot be undone." if n > 0 else "Nothing matched."
+	}
+
+
+#endregion Chat group tools
 
 
 func _close_chat(args: Dictionary) -> Dictionary:
@@ -951,10 +1398,15 @@ func _close_chat(args: Dictionary) -> Dictionary:
 	if not chat_pane:
 		return MCPToolUtils.error("Chat pane not available")
 
-	# Close the tab
+	# Close the tab. Since DCR 01a017494904 this soft-deletes: the chat keeps its
+	# history and moves to the hidden Deleted group.
 	chat_pane.get_tab_bar().tab_close_pressed.emit(tab_idx)
 
-	return {"success": true, "message": "Chat closed"}
+	return {
+		"success": true,
+		"deleted": true,
+		"message": "Chat soft-deleted. It keeps its full history and can be brought back with minerva_restore_chat."
+	}
 
 #endregion
 

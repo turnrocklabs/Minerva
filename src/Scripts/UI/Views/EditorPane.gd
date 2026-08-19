@@ -152,10 +152,13 @@ func _input(_event):
 			var last_deleted_tab = SingletonObject.undo.deleted_tabs.keys().back()
 			if last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "middle":
 				restore_deleted_tab(last_deleted_tab)
-			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "left":
-				SingletonObject.Chats.restore_deleted_tab(last_deleted_tab)
 			elif last_deleted_tab and SingletonObject.undo.deleted_tabs[last_deleted_tab]["WhichWindow"] == "right":
 				SingletonObject.notes_container.restore_deleted_tab(last_deleted_tab)
+		elif SingletonObject.Chats:
+			# Chats no longer register with Undo.gd — a closed chat is soft-deleted
+			# and lives in the Deleted group (DCR 01a017494904), so the undo path
+			# for the left pane is now "restore the most recently deleted chat".
+			SingletonObject.Chats.restore_last_deleted_chat()
 
 
 func add_control(item: Node, name_: String) -> Node:

@@ -48,6 +48,8 @@ HERMETIC_TESTS=(
 	# diff touching terminal code). Runs standalone via --quarantined below.
 	test/test_media_artifact_kind.gd
 	test/test_os_open_policy.gd
+	test/test_chat_groups.gd
+	test/test_chat_groups_integration.gd
 )
 QUARANTINED_TESTS=(
 	# bug 019fbd21a8717702931647025aae6be7 — see comment above.

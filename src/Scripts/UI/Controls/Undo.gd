@@ -10,44 +10,12 @@ var deleted_tabs = {}  # Dictionary to store deleted tabs and their data
 #we use it for set up max time after what we remove item in deleted_tabs
 var TimeForRemove = 180.0
 
-# We store data from deleted tabs
-func store_deleted_tab(tab: int, control_: Control, WhichWindow: String):
-	var tab_name = control_.name
-	var history = SingletonObject.ChatList[tab]
-	
-	var timer := Timer.new()
-	add_child(timer)
-	timer.wait_time = TimeForRemove
-	timer.one_shot = true
-	timer.connect("timeout", _on_timer_timeout)
-	
-	deleted_tabs[tab_name] = {
-		"WhichWindow": WhichWindow,
-		"tab": tab,
-		"control": control_,
-		"history": history,
-		"timer": timer
-	}
-	deleted_tabs[tab_name]["timer"].start()
-	
-func store_deleted_tab_right(tab: int, control_: Control, WhichWindow: String):
-	var tab_name = control_.name
-	
-	var timer := Timer.new()
-	add_child(timer)
-	timer.wait_time = TimeForRemove
-	timer.one_shot = true
-	timer.connect("timeout", _on_timer_timeout)
-	
-	deleted_tabs[tab_name] = {
-		"WhichWindow": WhichWindow,
-		"tab": tab,
-		"control": control_,
-		"timer": timer
-	}
-	
-	deleted_tabs[tab_name]["timer"].start()
-	
+# Chat tabs no longer come through here. Closing a chat sets
+# ServiceHistory.Deleted and the chat pane's filter hides it (DCR 01a017494904),
+# which makes chat undo unlimited in time and durable across save/load — neither
+# of which a 180-second timer holding a live Control could give. store_deleted_tab
+# and store_deleted_tab_right retired with that change; editor tabs still use
+# store_deleted_tab_mid below.
 func store_deleted_tab_mid(tab: int, control_: Control, WhichWindow: String):
 	var tab_name = control_.name
 	

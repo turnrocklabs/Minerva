@@ -3140,6 +3140,13 @@ func render_history(chat_history: ChatHistory):
 	scroll_container.add_child(vboxChat)
 	wrapper.add_child(scroll_container)
 
+	# A chat created while a group is selected lands in that group. Otherwise the
+	# filter hides it the instant it appears and the chat looks like it was never
+	# created — worst for agent-spawned chats the user did not initiate.
+	# _initializing_pane marks the load path, where memberships are already set.
+	if not _initializing_pane and str(chat_history.ChatGroupId).is_empty() and not chat_history.Deleted:
+		chat_history.ChatGroupId = default_group_for_new_chat()
+
 	# set the scroll container name and add it to the pane.
 	var _name = chat_history.HistoryName
 	#scroll_container.name = _name
@@ -3183,9 +3190,21 @@ func _ready():
 	self.get_tab_bar().tab_close_display_policy = TabBar.CLOSE_BUTTON_SHOW_ALWAYS
 	self.get_tab_bar().tab_close_pressed.connect(_on_close_tab.bind(self))
 
-	# Allow dropping notes onto chat tabs to link them
+	# The tab bar forwards all three drag callbacks here. The drop side already
+	# handled note-onto-chat linking; the SOURCE slot was empty (Callable()) and
+	# now supplies the chat-tab payload the group dock accepts.
+	#
+	# Supplying custom drag data supersedes TabBar.drag_to_rearrange_enabled, and
+	# reordering is load-bearing — _on_child_order_changed() derives ChatList
+	# from child order. So rather than lose it, the drop side below reimplements
+	# reordering for our own payload: drop on a group card = regroup, drop on the
+	# tab bar = reorder. Both gestures survive.
 	self.get_tab_bar().mouse_filter = MOUSE_FILTER_PASS
-	self.get_tab_bar().set_drag_forwarding(Callable(), _can_drop_note_on_chat, _drop_note_on_chat)
+	self.get_tab_bar().set_drag_forwarding(_get_chat_tab_drag_data, _can_drop_note_on_chat, _drop_note_on_chat)
+
+	# Right-click a tab for group actions. Cleaner than overloading the
+	# double-click timer, which already means "rename this chat".
+	self.get_tab_bar().tab_rmb_clicked.connect(_on_tab_rmb_clicked)
 
 	# SingletonObject.initialize_chats(self)
 	%AISettings.create_system_prompt_message.connect(add_new_system_prompt_item)
@@ -3303,16 +3322,29 @@ func _ready():
 	_token_estimation_timer.timeout.connect(_on_token_estimation_timer_timeout)
 	add_child(_token_estimation_timer)
 
-	# Apply archive filter after all chats are loaded (deferred so tabs exist)
-	call_deferred("_apply_archive_filter")
+	# Apply the group/archive/delete filter after all chats are loaded (deferred
+	# so the tabs exist).
+	call_deferred("_apply_tab_filters")
+
+	# Mount the group dock above the tab strip.
+	call_deferred("_ensure_group_dock")
 
 
-## Accept Note drops on the chat tab bar to link notes to chats.
-func _can_drop_note_on_chat(_at_position: Vector2, data: Variant) -> bool:
-	return data is Note and get_tab_idx_at_point(_at_position) != -1
+## Accept drops on the chat tab bar: a Note (links it to that chat) or a chat
+## tab (reorders it, replacing the built-in rearrange that our drag source
+## supersedes).
+func _can_drop_note_on_chat(at_position: Vector2, data: Variant) -> bool:
+	if data is Note:
+		return get_tab_idx_at_point(at_position) != -1
+	if data is Dictionary and str((data as Dictionary).get("kind", "")) == "chat_tab":
+		return true
+	return false
 
 
 func _drop_note_on_chat(at_position: Vector2, data: Variant) -> void:
+	if data is Dictionary and str((data as Dictionary).get("kind", "")) == "chat_tab":
+		_reorder_chat_tab(at_position, data as Dictionary)
+		return
 	if not data is Note:
 		return
 	var tab_idx: int = get_tab_idx_at_point(at_position)
@@ -3321,6 +3353,32 @@ func _drop_note_on_chat(at_position: Vector2, data: Variant) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[tab_idx]
 	(data as Note).link_to_chat(history.HistoryId)
 	SingletonObject.create_toast_notification("Linked \"%s\" to %s" % [(data as Note).title, history.HistoryName])
+
+
+## Reorder a chat tab dropped back onto the tab bar.
+##
+## Moving the child is what actually reorders: _on_child_order_changed() then
+## rebuilds ChatList from child order, which is why the payload's HistoryId is
+## resolved to a CURRENT index here rather than trusting the index captured when
+## the drag began.
+func _reorder_chat_tab(at_position: Vector2, payload: Dictionary) -> void:
+	var history := find_chat_by_id(str(payload.get("chat_id", "")))
+	if history == null:
+		return
+	var from_idx := SingletonObject.ChatList.find(history)
+	if from_idx < 0 or from_idx >= get_tab_count():
+		return
+	var to_idx: int = get_tab_idx_at_point(at_position)
+	if to_idx < 0:
+		to_idx = get_tab_count() - 1
+	if to_idx == from_idx:
+		return
+	var moving := get_tab_control(from_idx)
+	if moving == null:
+		return
+	move_child(moving, to_idx)
+	_apply_tab_filters()
+	_refresh_group_dock()
 
 
 ## Handle global input - ESC key triggers stop
@@ -3340,35 +3398,24 @@ func _on_note_toggled(_note: Note, _on: bool):
 func _on_note_changed(_note: Note,):
 	update_token_estimation()
 
+## Closing a chat tab soft-deletes it (DCR 01a017494904).
+##
+## Previously this handed the Control to Undo.gd's 180-second timer and called
+## remove_child(), so undo was time-limited, pinned a live Control in memory,
+## and was lost on restart. Now the chat stays in ChatList with Deleted = true
+## and the filter hides it, which makes undo unlimited and save/load-durable.
 func _on_close_tab(tab: int, closed_tab_container: TabContainer):
 	self.control = closed_tab_container.get_tab_control(tab)
-	self.container = closed_tab_container 
-	SingletonObject.undo.store_deleted_tab(tab, control,"left")
-	closed_tab_container.remove_child(control)
-	
-	if get_tab_count() < 1 :
-		buffer_control_chats.show()
-	
-
-# Function to restore a deleted tab
-func restore_deleted_tab(tab_name: String):
-	if tab_name in SingletonObject.undo.deleted_tabs:
-		var data = SingletonObject.undo.deleted_tabs[tab_name]
-		var tab = data["tab"]
-		var control_ = data["control"]
-		#var history = data["history"]
-		data["timer"].stop()
-		#Add the control back to the TabContainer
-		%tcChats.call_deferred("add_child", control_)#add_child(control_)
-		
-		# Set the tab index and restore the history
-		if tab != 0:
-			control_.name = "Chat " + str(tab)
-		else:
-			control_.name = "Chat"
-		set_current_tab(tab)
-		# Clear the deleted tab from the dictionary
-		SingletonObject.undo.deleted_tabs.erase(tab_name)
+	self.container = closed_tab_container
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		# Nothing to soft-delete (index out of step with ChatList) — fall back to
+		# the old removal so a stray tab can still be closed.
+		if self.control:
+			closed_tab_container.remove_child(self.control)
+		if get_tab_count() < 1:
+			buffer_control_chats.show()
+		return
+	delete_chat(SingletonObject.ChatList[tab])
 
 ## Feature development -- create a button and add it to the upper chat vbox?
 func _on_btn_test_pressed():
@@ -3481,7 +3528,9 @@ func _estimate_note_tokens(note: Note) -> float:
 # region Edit provider Title
 
 func show_title_edit_dialog(tab: int):
+	%EditTitleDialog.set_meta("mode", "chat")
 	%EditTitleDialog.set_meta("tab", tab)
+	%EditTitleDialog.title = "Change Chat Title"
 	%LineEdit.text = get_tab_title(tab)
 	%LineEdit.select_all()
 	%LineEdit.call_deferred("grab_focus")
@@ -3489,8 +3538,19 @@ func show_title_edit_dialog(tab: int):
 
 
 func _on_edit_title_dialog_confirmed():
+	# The dialog is shared with group renames; "mode" says which. Absent meta
+	# means a chat retitle, so pre-existing callers keep working unchanged.
+	if str(%EditTitleDialog.get_meta("mode", "chat")) == "group":
+		var gid := str(%EditTitleDialog.get_meta("group_id", ""))
+		var proposed: String = %LineEdit.text
+		if not gid.is_empty() and rename_group(gid, proposed):
+			_refresh_group_dock()
+		return
+
 	var tab = %EditTitleDialog.get_meta("tab")
 	var new_name: String = %LineEdit.text
+	if tab == null or int(tab) < 0 or int(tab) >= SingletonObject.ChatList.size():
+		return
 	set_tab_title(tab, new_name)
 	var history: ChatHistory = SingletonObject.ChatList[tab]
 	history.HistoryName = new_name
@@ -3580,21 +3640,725 @@ func set_show_archived(show_archived: bool) -> void:
 	_apply_archive_filter()
 
 
-func _apply_archive_filter() -> void:
+#region Chat groups + tab filtering (DCR 01a017494904)
+
+## Emitted whenever group membership, the active group, or the deleted set
+## changes — the dock re-renders from this rather than polling.
+signal chat_groups_changed()
+
+## Currently selected group VIEW. Either a ChatGroupRegistry sentinel
+## (VIEW_ALL / VIEW_UNGROUPED / VIEW_DELETED) or a real group id.
+var _active_group_id: String = ChatGroupRegistry.VIEW_ALL
+
+
+func get_active_group_id() -> String:
+	return _active_group_id
+
+
+## Select a group view and re-filter. Unknown ids fall back to All rather than
+## stranding the user in a view that can never contain a tab.
+func set_active_group(group_id: String) -> void:
+	var target := group_id
+	if not ChatGroupRegistry.is_view_sentinel(target) and not SingletonObject.chat_groups.has_group(target):
+		target = ChatGroupRegistry.VIEW_ALL
+	if target == _active_group_id:
+		return
+	_active_group_id = target
+	_apply_tab_filters()
+	chat_groups_changed.emit()
+
+
+## The group a chat effectively belongs to. A ChatGroupId that no longer names a
+## live group (project edited by hand, group pruned mid-flight) resolves to
+## ungrouped instead of leaving the chat unreachable in every view.
+func _effective_group_id(history: ServiceHistory) -> String:
+	if history == null:
+		return ChatGroupRegistry.UNGROUPED
+	var gid := str(history.ChatGroupId)
+	if gid.is_empty() or not SingletonObject.chat_groups.has_group(gid):
+		return ChatGroupRegistry.UNGROUPED
+	return gid
+
+
+## The single visibility predicate. All THREE axes — group, archived, deleted —
+## are combined in ChatGroupRegistry.should_show(), which is static and
+## dependency-free so the full matrix is testable without a live pane.
+func _tab_should_be_visible(history: ServiceHistory) -> bool:
+	if history == null:
+		return false
+	return ChatGroupRegistry.should_show(
+		_active_group_id,
+		_effective_group_id(history),
+		history.Archived,
+		history.Deleted,
+		_showing_archived
+	)
+
+
+## Apply the 3-axis filter to the tab strip.
+##
+## Filters by HIDING, never by reparenting: set_tab_hidden() drops a tab from
+## the strip while its child stays in place, so the ChatList[i] <-> tab i
+## coupling that 58 index sites and _on_child_order_changed() depend on
+## survives untouched.
+func _apply_tab_filters() -> void:
+	var any_visible := false
+	var current_is_visible := false
+	var tab_count := get_tab_count()
 	for i in range(SingletonObject.ChatList.size()):
-		var history: ServiceHistory = SingletonObject.ChatList[i]
-		if i < get_tab_count():
-			# Hide archived tabs unless showing archived
-			if history.Archived and not _showing_archived:
-				set_tab_hidden(i, true)
-			else:
-				set_tab_hidden(i, false)
-	# If current tab is now hidden, switch to first visible tab
-	if current_tab >= 0 and current_tab < get_tab_count() and is_tab_hidden(current_tab):
-		for i in range(get_tab_count()):
+		if i >= tab_count:
+			break
+		var visible_now := _tab_should_be_visible(SingletonObject.ChatList[i])
+		set_tab_hidden(i, not visible_now)
+		if visible_now:
+			any_visible = true
+			if i == current_tab:
+				current_is_visible = true
+
+	if not current_is_visible and any_visible:
+		for i in range(tab_count):
 			if not is_tab_hidden(i):
 				current_tab = i
-				return
+				break
+
+	# The gap inherited from the old archive-only filter: when NOTHING is
+	# visible the "switch to first visible" loop silently did nothing, leaving
+	# the last chat's content on screen under an empty tab strip. An empty group
+	# hits this immediately, so surface the buffer control instead.
+	if buffer_control_chats:
+		if any_visible:
+			buffer_control_chats.hide()
+		else:
+			buffer_control_chats.show()
+
+
+## Back-compat alias. External callers (MainScene's ledger menu) and the
+## deferred call in _ready still name the archive filter.
+func _apply_archive_filter() -> void:
+	_apply_tab_filters()
+
+
+## Ids of groups still referenced by a LIVE chat. Deleted chats park their group
+## in PreDeleteGroupId and so do not keep an empty group alive.
+func _live_group_ids() -> Array:
+	var ids: Array = []
+	for history in SingletonObject.ChatList:
+		if history == null or history.Deleted:
+			continue
+		var gid := str(history.ChatGroupId)
+		if not gid.is_empty() and not ids.has(gid):
+			ids.append(gid)
+	return ids
+
+
+## Drop groups whose last chat has left, then make sure the active view still
+## points at something that exists.
+func prune_empty_groups() -> void:
+	var removed := SingletonObject.chat_groups.prune_empty(_live_group_ids())
+	if removed.is_empty():
+		return
+	if removed.has(_active_group_id):
+		_active_group_id = ChatGroupRegistry.VIEW_ALL
+		_apply_tab_filters()
+
+
+## Move a chat into a group ("" = ungrouped). Returns false if the id names no
+## known group, so a caller cannot silently strand a chat.
+func set_chat_group(history: ServiceHistory, group_id: String) -> bool:
+	if history == null:
+		return false
+	if not group_id.is_empty() and not SingletonObject.chat_groups.has_group(group_id):
+		return false
+	if history.Deleted:
+		# A deleted chat's membership lives in PreDeleteGroupId; writing
+		# ChatGroupId here would resurrect an empty group.
+		history.PreDeleteGroupId = group_id
+	else:
+		history.ChatGroupId = group_id
+	if not group_id.is_empty():
+		# Arms the group for implicit destruction. Until a chat has joined, a new
+		# empty group is left alone so it can be filled by dragging.
+		SingletonObject.chat_groups.mark_populated(group_id)
+	prune_empty_groups()
+	_apply_tab_filters()
+	chat_groups_changed.emit()
+	return true
+
+
+func set_chat_group_by_index(tab_idx: int, group_id: String) -> bool:
+	if tab_idx < 0 or tab_idx >= SingletonObject.ChatList.size():
+		return false
+	return set_chat_group(SingletonObject.ChatList[tab_idx], group_id)
+
+
+func find_chat_by_id(history_id: String) -> ServiceHistory:
+	for history in SingletonObject.ChatList:
+		if history != null and str(history.HistoryId) == history_id:
+			return history
+	return null
+
+
+## Create a group and select it. Optionally moves `history` in as its first
+## member, which is what dropping a tab on the "+" card does.
+func create_group(name: String = ChatGroupRegistry.DEFAULT_GROUP_NAME, history: ServiceHistory = null) -> String:
+	var gid := SingletonObject.chat_groups.create_group(name)
+	if history != null:
+		set_chat_group(history, gid)
+	set_active_group(gid)
+	chat_groups_changed.emit()
+	return gid
+
+
+## Snapshot of the last group dissolved by delete_group(), so the destruction is
+## undoable. Holds {id, name, chat_ids} — one group deep, which is what an
+## accidental delete needs; older ones are recoverable by recreating and
+## reassigning, and keeping a full stack would outlive the ids it references.
+var _last_dissolved_group: Dictionary = {}
+
+
+## Explicitly delete a group. Its chats are NOT deleted — they move to
+## `reassign_to` ("" = ungrouped), which must name a real group if non-empty.
+##
+## Groups also die implicitly when their last chat leaves (prune_empty_groups);
+## this is the deliberate version, for dissolving a group whose chats you want
+## to keep. Undoable via undo_group_delete().
+func delete_group(group_id: String, reassign_to: String = ChatGroupRegistry.UNGROUPED) -> Dictionary:
+	if not SingletonObject.chat_groups.has_group(group_id):
+		return {"ok": false, "error": "Unknown group: %s" % group_id}
+	if not reassign_to.is_empty():
+		if reassign_to == group_id:
+			return {"ok": false, "error": "Cannot reassign a group's chats to itself"}
+		if not SingletonObject.chat_groups.has_group(reassign_to):
+			return {"ok": false, "error": "Unknown reassign target: %s" % reassign_to}
+
+	var moved: Array[String] = []
+	for history in SingletonObject.ChatList:
+		if history == null:
+			continue
+		# Deleted chats park their membership in PreDeleteGroupId; rewrite that
+		# too, or restoring one later would resurrect a group that is gone.
+		if str(history.PreDeleteGroupId) == group_id:
+			history.PreDeleteGroupId = reassign_to
+		if str(history.ChatGroupId) == group_id:
+			history.ChatGroupId = reassign_to
+			moved.append(str(history.HistoryId))
+
+	_last_dissolved_group = {
+		"id": group_id,
+		"name": SingletonObject.chat_groups.get_name(group_id),
+		"chat_ids": moved,
+	}
+	SingletonObject.chat_groups.remove_group(group_id)
+	if _active_group_id == group_id:
+		_active_group_id = ChatGroupRegistry.VIEW_ALL
+	_apply_tab_filters()
+	chat_groups_changed.emit()
+	SingletonObject.save_state(false)
+	return {"ok": true, "group_id": group_id, "reassigned_to": reassign_to, "chat_ids": moved}
+
+
+## Undo the last delete_group(): recreate it with its original id and name, and
+## put its members back. Chats moved out of the group by hand since the delete
+## are left where they are — only the ones the delete itself moved come back.
+func undo_group_delete() -> Dictionary:
+	if _last_dissolved_group.is_empty():
+		return {"ok": false, "error": "No group deletion to undo"}
+	var snapshot := _last_dissolved_group.duplicate(true)
+	_last_dissolved_group = {}
+
+	var gid := str(snapshot.get("id", ""))
+	if SingletonObject.chat_groups.has_group(gid):
+		return {"ok": false, "error": "Group %s already exists" % gid}
+	# forced_id keeps every chat's stored ChatGroupId meaningful without a
+	# rewrite, which is the same reason chats store ids rather than names.
+	var restored := SingletonObject.chat_groups.create_group(str(snapshot.get("name", "")), gid)
+	if not snapshot.get("chat_ids", []).is_empty():
+		SingletonObject.chat_groups.mark_populated(restored)
+
+	var reattached: Array[String] = []
+	for raw_id in snapshot.get("chat_ids", []):
+		var history := find_chat_by_id(str(raw_id))
+		if history == null:
+			continue
+		if history.Deleted:
+			history.PreDeleteGroupId = restored
+		else:
+			history.ChatGroupId = restored
+		reattached.append(str(raw_id))
+
+	_apply_tab_filters()
+	chat_groups_changed.emit()
+	SingletonObject.save_state(false)
+	return {"ok": true, "group_id": restored, "name": SingletonObject.chat_groups.get_name(restored), "chat_ids": reattached}
+
+
+func can_undo_group_delete() -> bool:
+	return not _last_dissolved_group.is_empty()
+
+
+func rename_group(group_id: String, name: String) -> bool:
+	if not SingletonObject.chat_groups.rename_group(group_id, name):
+		return false
+	SingletonObject.save_state(false)
+	chat_groups_changed.emit()
+	return true
+
+
+## Live (non-deleted, non-archived-unless-shown) chat count for a group card.
+func count_in_group(group_id: String) -> int:
+	var n := 0
+	for history in SingletonObject.ChatList:
+		if history == null:
+			continue
+		if group_id == ChatGroupRegistry.VIEW_DELETED:
+			if history.Deleted:
+				n += 1
+			continue
+		if history.Deleted:
+			continue
+		if history.Archived and not _showing_archived:
+			continue
+		if group_id == ChatGroupRegistry.VIEW_ALL:
+			n += 1
+		elif group_id == ChatGroupRegistry.VIEW_UNGROUPED:
+			if _effective_group_id(history) == ChatGroupRegistry.UNGROUPED:
+				n += 1
+		elif _effective_group_id(history) == group_id:
+			n += 1
+	return n
+
+
+## Group a newly created chat should land in.
+##
+## Without this, creating a chat while a group is selected drops it into
+## Ungrouped and the filter hides it instantly — the chat looks like it never
+## appeared. Matters most for agent-spawned chats, which the user did not
+## initiate and would not think to go looking for.
+func default_group_for_new_chat() -> String:
+	if ChatGroupRegistry.is_view_sentinel(_active_group_id):
+		return ChatGroupRegistry.UNGROUPED
+	return _active_group_id
+
+
+#region Delete-as-state
+
+## Soft-delete a chat: hide it and park its group, rather than removing the tab.
+##
+## Nothing leaves ChatList, so _on_child_order_changed() has nothing to rebuild
+## and every index stays valid. Undo is therefore unlimited in time and survives
+## save/load, because the state serialises with the chat like Archived does.
+func delete_chat(history: ServiceHistory) -> bool:
+	if history == null or history.Deleted:
+		return false
+	history.PreDeleteGroupId = str(history.ChatGroupId)
+	history.ChatGroupId = ChatGroupRegistry.UNGROUPED
+	history.DeletedAt = int(Time.get_unix_time_from_system())
+	history.Deleted = true
+	prune_empty_groups()
+	_apply_tab_filters()
+	chat_groups_changed.emit()
+	SingletonObject.create_toast_notification("Chat deleted: %s (restore from the Deleted group)" % history.HistoryName)
+	return true
+
+
+## Restore a soft-deleted chat to the group it came from, or to Ungrouped if
+## that group has since been pruned.
+func restore_chat(history: ServiceHistory) -> bool:
+	if history == null or not history.Deleted:
+		return false
+	var target := str(history.PreDeleteGroupId)
+	if not target.is_empty() and not SingletonObject.chat_groups.has_group(target):
+		target = ChatGroupRegistry.UNGROUPED
+	history.Deleted = false
+	history.DeletedAt = 0
+	history.ChatGroupId = target
+	history.PreDeleteGroupId = ""
+	_apply_tab_filters()
+	chat_groups_changed.emit()
+	SingletonObject.create_toast_notification("Chat restored: %s" % history.HistoryName)
+	# Bring the restored chat back on screen.
+	var idx := SingletonObject.ChatList.find(history)
+	if idx >= 0 and idx < get_tab_count() and not is_tab_hidden(idx):
+		current_tab = idx
+	return true
+
+
+## Most-recently-deleted chat first — what Ctrl+Z restores.
+func list_deleted_chats() -> Array[ServiceHistory]:
+	var out: Array[ServiceHistory] = []
+	for history in SingletonObject.ChatList:
+		if history != null and history.Deleted:
+			out.append(history)
+	out.sort_custom(func(a, b): return int(a.DeletedAt) > int(b.DeletedAt))
+	return out
+
+
+func restore_last_deleted_chat() -> bool:
+	var deleted := list_deleted_chats()
+	if deleted.is_empty():
+		return false
+	return restore_chat(deleted[0])
+
+
+## Permanently drop soft-deleted chats.
+##
+## NOTHING is purged automatically: a deleted chat keeps its full
+## HistoryItemList, so the Deleted group grows the .minproj without bound, but
+## silently discarding a user's chat is the worse failure. Purging is an
+## explicit action; `older_than_days` < 0 empties the whole Deleted group.
+## Returns the number of chats freed.
+func purge_deleted_chats(older_than_days: int = -1) -> int:
+	var cutoff := 0
+	if older_than_days >= 0:
+		cutoff = int(Time.get_unix_time_from_system()) - older_than_days * 86400
+	var doomed: Array[ServiceHistory] = []
+	for history in SingletonObject.ChatList:
+		if history == null or not history.Deleted:
+			continue
+		if older_than_days < 0 or int(history.DeletedAt) <= cutoff:
+			doomed.append(history)
+	if doomed.is_empty():
+		return 0
+	# Remove the tab controls back-to-front so the indices of the not-yet-removed
+	# entries stay valid; _on_child_order_changed then rebuilds ChatList from
+	# what is left.
+	var indices: Array[int] = []
+	for history in doomed:
+		var idx := SingletonObject.ChatList.find(history)
+		if idx >= 0:
+			indices.append(idx)
+	indices.sort()
+	indices.reverse()
+	for idx in indices:
+		if idx < get_tab_count():
+			var tab_control := get_tab_control(idx)
+			if tab_control:
+				remove_child(tab_control)
+				tab_control.queue_free()
+	prune_empty_groups()
+	_apply_tab_filters()
+	chat_groups_changed.emit()
+	SingletonObject.save_state(false)
+	return doomed.size()
+
+#endregion Delete-as-state
+
+
+#region Group dock
+
+const ChatGroupDockScript = preload("res://Scripts/UI/Controls/ChatGroupDock/ChatGroupDock.gd")
+const ChatGroupCardScript = preload("res://Scripts/UI/Controls/ChatGroupDock/ChatGroupCard.gd")
+
+var _group_dock: ChatGroupDock = null
+
+
+## Mount the dock directly above the tab strip, inside the chats pane.
+##
+## Built in code rather than in Chat.tscn so the dock has no scene-order
+## coupling: it is inserted at this TabContainer's own index in its parent, so
+## it lands above the tabs wherever the pane is placed.
+func _ensure_group_dock() -> void:
+	if is_instance_valid(_group_dock):
+		return
+	var host := get_parent()
+	if host == null:
+		return
+	_group_dock = ChatGroupDockScript.new()
+	_group_dock.name = "ChatGroupDock"
+	host.add_child(_group_dock)
+	host.move_child(_group_dock, get_index())
+
+	_group_dock.group_selected.connect(_on_dock_group_selected)
+	_group_dock.group_rename_requested.connect(_on_dock_group_rename_requested)
+	_group_dock.chat_dropped_on_group.connect(_on_dock_chat_dropped)
+	_group_dock.create_group_requested.connect(_on_dock_create_group_requested)
+	_group_dock.card_context_menu_requested.connect(_on_dock_card_context_menu)
+
+	if not chat_groups_changed.is_connected(_refresh_group_dock):
+		chat_groups_changed.connect(_refresh_group_dock)
+	if not SingletonObject.chat_groups.groups_changed.is_connected(_refresh_group_dock):
+		SingletonObject.chat_groups.groups_changed.connect(_refresh_group_dock)
+
+	_refresh_group_dock()
+
+
+func get_group_dock() -> ChatGroupDock:
+	return _group_dock
+
+
+## Build the card row: All, Ungrouped (only when non-empty), every group in
+## creation order, Deleted (only when non-empty), then "+".
+##
+## Ungrouped and Deleted are hidden while empty so the common case — a few
+## chats, no groups — costs no horizontal room beyond "All" and "+".
+func build_group_card_snapshot() -> Array[Dictionary]:
+	var cards: Array[Dictionary] = []
+	cards.append({
+		"kind": ChatGroupCardScript.Kind.ALL,
+		"id": ChatGroupRegistry.VIEW_ALL,
+		"name": "All",
+		"color": ChatGroupRegistry.NEUTRAL_COLOR,
+		"count": count_in_group(ChatGroupRegistry.VIEW_ALL),
+	})
+
+	var ungrouped_count := count_in_group(ChatGroupRegistry.VIEW_UNGROUPED)
+	if ungrouped_count > 0 and SingletonObject.chat_groups.size() > 0:
+		cards.append({
+			"kind": ChatGroupCardScript.Kind.UNGROUPED,
+			"id": ChatGroupRegistry.VIEW_UNGROUPED,
+			"name": "Ungrouped",
+			"color": ChatGroupRegistry.NEUTRAL_COLOR,
+			"count": ungrouped_count,
+		})
+
+	for g in SingletonObject.chat_groups.list_groups():
+		cards.append({
+			"kind": ChatGroupCardScript.Kind.GROUP,
+			"id": str(g["id"]),
+			"name": str(g["name"]),
+			"color": g["color"],
+			"count": count_in_group(str(g["id"])),
+		})
+
+	var deleted_count := count_in_group(ChatGroupRegistry.VIEW_DELETED)
+	if deleted_count > 0:
+		cards.append({
+			"kind": ChatGroupCardScript.Kind.DELETED,
+			"id": ChatGroupRegistry.VIEW_DELETED,
+			"name": "Deleted",
+			"color": Color("#ff7a7a"),
+			"count": deleted_count,
+		})
+
+	cards.append({
+		"kind": ChatGroupCardScript.Kind.ADD,
+		"id": ChatGroupDockScript.ADD_CARD_ID,
+		"name": "+",
+		"color": ChatGroupRegistry.NEUTRAL_COLOR,
+		"count": 0,
+	})
+	return cards
+
+
+func _refresh_group_dock() -> void:
+	if not is_instance_valid(_group_dock):
+		return
+	_group_dock.render_cards(build_group_card_snapshot(), _active_group_id)
+
+
+func _on_dock_group_selected(group_id: String) -> void:
+	set_active_group(group_id)
+	_refresh_group_dock()
+
+
+func _on_dock_group_rename_requested(group_id: String) -> void:
+	show_group_rename_dialog(group_id)
+
+
+func _on_dock_chat_dropped(group_id: String, chat_id: String) -> void:
+	var history := find_chat_by_id(chat_id)
+	if history == null:
+		return
+	var target := group_id
+	if target == ChatGroupRegistry.VIEW_UNGROUPED:
+		target = ChatGroupRegistry.UNGROUPED
+	if set_chat_group(history, target):
+		var label := SingletonObject.chat_groups.get_name(target)
+		SingletonObject.create_toast_notification(
+			"Moved \"%s\" to %s" % [history.HistoryName, label if not label.is_empty() else "Ungrouped"]
+		)
+	_refresh_group_dock()
+
+
+## "+" pressed, or a chat dropped on it. A dropped chat becomes the new group's
+## first member and the rename editor opens immediately, so naming is the next
+## keystroke rather than a separate act.
+func _on_dock_create_group_requested(chat_id: String) -> void:
+	var history := find_chat_by_id(chat_id) if not chat_id.is_empty() else null
+	var gid := create_group(ChatGroupRegistry.DEFAULT_GROUP_NAME, history)
+	_refresh_group_dock()
+	show_group_rename_dialog(gid)
+
+
+## Right-click menu for a dock card. The pane builds it because the available
+## actions depend on pane state the card cannot see (whether a group delete is
+## waiting to be undone).
+var _card_menu: PopupMenu = null
+var _card_menu_group_id: String = ""
+
+const _CARD_MENU_RENAME := 1
+const _CARD_MENU_DELETE := 2
+const _CARD_MENU_UNDO_DELETE := 3
+const _CARD_MENU_PURGE := 4
+
+
+func _on_dock_card_context_menu(group_id: String, kind: int) -> void:
+	_card_menu_group_id = group_id
+	if _card_menu == null:
+		_card_menu = PopupMenu.new()
+		_card_menu.id_pressed.connect(_on_card_menu_selected)
+		add_child(_card_menu)
+	_card_menu.clear()
+
+	if kind == ChatGroupCardScript.Kind.GROUP:
+		_card_menu.add_item("Rename group…", _CARD_MENU_RENAME)
+		_card_menu.add_item("Delete group (keeps its chats)", _CARD_MENU_DELETE)
+	elif kind == ChatGroupCardScript.Kind.DELETED:
+		_card_menu.add_item("Empty Deleted — permanent", _CARD_MENU_PURGE)
+
+	if can_undo_group_delete():
+		if _card_menu.item_count > 0:
+			_card_menu.add_separator()
+		_card_menu.add_item("Undo group delete", _CARD_MENU_UNDO_DELETE)
+
+	if _card_menu.item_count == 0:
+		return
+	_card_menu.popup(Rect2i(get_viewport().get_mouse_position(), Vector2i.ZERO))
+
+
+func _on_card_menu_selected(id: int) -> void:
+	match id:
+		_CARD_MENU_RENAME:
+			show_group_rename_dialog(_card_menu_group_id)
+		_CARD_MENU_DELETE:
+			var group_name := SingletonObject.chat_groups.get_name(_card_menu_group_id)
+			var res := delete_group(_card_menu_group_id, ChatGroupRegistry.UNGROUPED)
+			if bool(res.get("ok", false)):
+				SingletonObject.create_toast_notification(
+					"Group deleted: %s — its chats are now ungrouped (right-click to undo)" % group_name
+				)
+		_CARD_MENU_UNDO_DELETE:
+			var undone := undo_group_delete()
+			if bool(undone.get("ok", false)):
+				SingletonObject.create_toast_notification("Group restored: %s" % str(undone.get("name", "")))
+		_CARD_MENU_PURGE:
+			var n := purge_deleted_chats(-1)
+			if n > 0:
+				SingletonObject.create_toast_notification("Purged %d deleted chat%s — permanently" % [n, "" if n == 1 else "s"])
+	_refresh_group_dock()
+
+
+## Reuse %EditTitleDialog for group renames. The dialog carries a "mode" meta so
+## the shared confirm handler knows whether it is retitling a chat or a group.
+func show_group_rename_dialog(group_id: String) -> void:
+	%EditTitleDialog.set_meta("mode", "group")
+	%EditTitleDialog.set_meta("group_id", group_id)
+	%EditTitleDialog.title = "Rename Group"
+	%LineEdit.text = SingletonObject.chat_groups.get_name(group_id)
+	%LineEdit.select_all()
+	%LineEdit.call_deferred("grab_focus")
+	%EditTitleDialog.popup_centered()
+
+#endregion Group dock
+
+
+#region Chat-tab drag source
+
+## Drag payload for a chat tab. Carries HistoryId, NEVER the tab index — indices
+## shift as the filter hides and shows tabs, so an index would move a different
+## chat than the one the user picked up.
+func _get_chat_tab_drag_data(at_position: Vector2) -> Variant:
+	var tab := get_tab_bar().get_tab_idx_at_point(at_position)
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		return null
+	var history: ServiceHistory = SingletonObject.ChatList[tab]
+	if history == null:
+		return null
+
+	var preview := Label.new()
+	preview.text = get_tab_title(tab)
+	preview.add_theme_color_override("font_color", Color("#eaf6ff"))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("#1e2024")
+	sb.set_corner_radius_all(4)
+	sb.content_margin_left = 8
+	sb.content_margin_right = 8
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 4
+	var wrap := PanelContainer.new()
+	wrap.add_theme_stylebox_override("panel", sb)
+	wrap.add_child(preview)
+	set_drag_preview(wrap)
+
+	return {"kind": "chat_tab", "chat_id": str(history.HistoryId), "tab": tab}
+
+#endregion Chat-tab drag source
+
+
+#region Tab context menu
+
+var _tab_context_menu: PopupMenu = null
+## Menu item id -> group id for the current popup. Rebuilt on every open, since
+## groups come and go.
+var _tab_menu_targets: Dictionary = {}
+var _tab_menu_chat_id: String = ""
+
+const _TAB_MENU_NEW_GROUP := 9000
+const _TAB_MENU_DELETE := 9001
+const _TAB_MENU_RESTORE := 9002
+
+
+func _on_tab_rmb_clicked(tab: int) -> void:
+	if tab < 0 or tab >= SingletonObject.ChatList.size():
+		return
+	var history: ServiceHistory = SingletonObject.ChatList[tab]
+	if history == null:
+		return
+	_tab_menu_chat_id = str(history.HistoryId)
+
+	if _tab_context_menu == null:
+		_tab_context_menu = PopupMenu.new()
+		_tab_context_menu.id_pressed.connect(_on_tab_menu_selected)
+		add_child(_tab_context_menu)
+
+	_tab_context_menu.clear()
+	_tab_menu_targets.clear()
+
+	var current := _effective_group_id(history)
+	var next_id := 0
+	_tab_context_menu.add_radio_check_item("Ungrouped", next_id)
+	_tab_context_menu.set_item_checked(_tab_context_menu.get_item_index(next_id), current == ChatGroupRegistry.UNGROUPED)
+	_tab_menu_targets[next_id] = ChatGroupRegistry.UNGROUPED
+	next_id += 1
+
+	for g in SingletonObject.chat_groups.list_groups():
+		var gid := str(g["id"])
+		_tab_context_menu.add_radio_check_item(str(g["name"]), next_id)
+		_tab_context_menu.set_item_checked(_tab_context_menu.get_item_index(next_id), current == gid)
+		_tab_menu_targets[next_id] = gid
+		next_id += 1
+
+	_tab_context_menu.add_separator()
+	_tab_context_menu.add_item("New group with this chat…", _TAB_MENU_NEW_GROUP)
+	_tab_context_menu.add_separator()
+	if history.Deleted:
+		_tab_context_menu.add_item("Restore chat", _TAB_MENU_RESTORE)
+	else:
+		_tab_context_menu.add_item("Delete chat", _TAB_MENU_DELETE)
+
+	_tab_context_menu.popup(Rect2i(get_viewport().get_mouse_position(), Vector2i.ZERO))
+
+
+func _on_tab_menu_selected(id: int) -> void:
+	var history := find_chat_by_id(_tab_menu_chat_id)
+	if history == null:
+		return
+	match id:
+		_TAB_MENU_NEW_GROUP:
+			_on_dock_create_group_requested(_tab_menu_chat_id)
+		_TAB_MENU_DELETE:
+			delete_chat(history)
+		_TAB_MENU_RESTORE:
+			restore_chat(history)
+		_:
+			if _tab_menu_targets.has(id):
+				set_chat_group(history, str(_tab_menu_targets[id]))
+	_refresh_group_dock()
+
+#endregion Tab context menu
+
+
+#endregion Chat groups + tab filtering
 
 
 
@@ -4306,6 +5070,10 @@ func clone_chat(tab_idx: int) -> void:
 	new_chat_history.StaticToolMode = chat_to_clone.StaticToolMode
 	new_chat_history.ConfiguredTools = chat_to_clone.ConfiguredTools.duplicate()
 	new_chat_history.ConfiguredSkills = chat_to_clone.ConfiguredSkills.duplicate()
+	# A clone belongs beside its original, not in whatever group happens to be
+	# selected — so set membership explicitly rather than letting render_history
+	# apply the active-view default.
+	new_chat_history.ChatGroupId = chat_to_clone.ChatGroupId
 
 	# Deep clone history items
 	for item in chat_to_clone.HistoryItemList:

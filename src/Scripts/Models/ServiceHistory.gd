@@ -126,6 +126,26 @@ var AgentToolMemoryState: Dictionary = {}:
 var Archived: bool = false:
 	set(value): SingletonObject.call_deferred("save_state", false); Archived = value
 
+## Chat-group membership (DCR 01a017494904). Holds a ChatGroupRegistry group id,
+## or "" for ungrouped. Never a display name — renames must not touch chats.
+var ChatGroupId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); ChatGroupId = value
+
+## Soft-delete state. Replaces Undo.gd's 180-second timer: a closed chat is
+## hidden, not removed, so undo is unlimited in time and survives save/load.
+var Deleted: bool = false:
+	set(value): SingletonObject.call_deferred("save_state", false); Deleted = value
+
+## The group this chat was in when it was deleted. Parked here (and cleared from
+## ChatGroupId) so a deleted chat cannot keep an otherwise-empty group alive;
+## restore puts the chat back if that group still exists.
+var PreDeleteGroupId: String = "":
+	set(value): SingletonObject.call_deferred("save_state", false); PreDeleteGroupId = value
+
+## Unix timestamp of deletion, 0 when live. Feeds the Deleted-group purge.
+var DeletedAt: int = 0:
+	set(value): SingletonObject.call_deferred("save_state", false); DeletedAt = value
+
 ## Runtime-only: whether this chat has an active LLM request in flight. Not serialized.
 var is_request_active: bool = false
 
@@ -370,6 +390,10 @@ func Serialize() -> Dictionary:
 		"AgentContextTelemetry": AgentContextTelemetry,
 		"AgentToolMemoryState": AgentToolMemoryState,
 		"Archived": Archived,
+		"ChatGroupId": ChatGroupId,
+		"Deleted": Deleted,
+		"PreDeleteGroupId": PreDeleteGroupId,
+		"DeletedAt": DeletedAt,
 		"termination_reason": termination_reason,
 		"termination_message": termination_message,
 		"StaticToolMode": StaticToolMode,
@@ -498,6 +522,14 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.AgentToolMemoryState = data.get("AgentToolMemoryState", {})
 	if data.has("Archived"):
 		history.Archived = data.get("Archived", false)
+	if data.has("ChatGroupId"):
+		history.ChatGroupId = str(data.get("ChatGroupId", ""))
+	if data.has("Deleted"):
+		history.Deleted = bool(data.get("Deleted", false))
+	if data.has("PreDeleteGroupId"):
+		history.PreDeleteGroupId = str(data.get("PreDeleteGroupId", ""))
+	if data.has("DeletedAt"):
+		history.DeletedAt = int(data.get("DeletedAt", 0))
 	if data.has("termination_reason"):
 		history.termination_reason = data.get("termination_reason", "")
 	if data.has("termination_message"):
