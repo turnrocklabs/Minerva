@@ -27,6 +27,8 @@ func _new_project():
 	SingletonObject.chat_groups.clear()
 	if SingletonObject.Chats:
 		SingletonObject.Chats.reset_group_state()
+		# A blank project has no groups, so the dock collapses out of the way.
+		SingletonObject.Chats.apply_default_dock_state()
 	SingletonObject.NotesList.clear()
 	
 	# Initialize chat pane
@@ -374,6 +376,9 @@ func _initialize_chat_pane():
 	SingletonObject.Chats.prune_empty_groups()
 	SingletonObject.Chats._apply_tab_filters()
 	SingletonObject.Chats._refresh_group_dock()
+	# The loaded project's group count — not the previous project's dock state —
+	# decides whether the dock opens expanded.
+	SingletonObject.Chats.apply_default_dock_state()
 
 func _initialize_notes_pane():
 	"""Initialize notes pane with existing notes histories"""

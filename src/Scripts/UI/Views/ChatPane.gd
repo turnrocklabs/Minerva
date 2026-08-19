@@ -4294,6 +4294,8 @@ func _ensure_group_dock() -> void:
 	_group_dock.create_group_requested.connect(_on_dock_create_group_requested)
 	_group_dock.card_context_menu_requested.connect(_on_dock_card_context_menu)
 
+	apply_default_dock_state()
+
 	if not chat_groups_changed.is_connected(_refresh_group_dock):
 		chat_groups_changed.connect(_refresh_group_dock)
 	if not SingletonObject.chat_groups.groups_changed.is_connected(_refresh_group_dock):
@@ -4304,6 +4306,21 @@ func _ensure_group_dock() -> void:
 
 func get_group_dock() -> ChatGroupDock:
 	return _group_dock
+
+
+## Set the dock's collapse state to suit the project that just opened.
+##
+## A project with no groups gets a COLLAPSED dock: the owner runs 1-3 chats most
+## of the time and wants no grouping chrome at all then, so 68px of a 545px pane
+## should not be spent advertising a feature nothing is using. A project that
+## HAS groups opens expanded, because the groups are the navigation.
+##
+## Called only at project-open boundaries, never on refresh — otherwise it would
+## keep overriding a collapse the user performed by hand.
+func apply_default_dock_state() -> void:
+	if not is_instance_valid(_group_dock):
+		return
+	_group_dock.set_collapsed(SingletonObject.chat_groups.size() == 0)
 
 
 ## Build the card row: All, Ungrouped (only when non-empty), every group in

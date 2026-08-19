@@ -62,6 +62,7 @@ func _run() -> void:
 	_reg = _so.chat_groups
 
 	await test_dock_mount()
+	await test_dock_default_collapse_state()
 	await test_tabs_track_chatlist()
 	await test_group_filter_hides_without_reparenting()
 	await test_new_chat_lands_in_the_active_group()
@@ -128,6 +129,9 @@ func test_dock_mount() -> void:
 		return
 	check("dock is a sibling of the tab container", dock.get_parent() == _pane.get_parent())
 	check("dock sits ABOVE the tab strip", dock.get_index() < _pane.get_index())
+	# The dock now mounts COLLAPSED when the project has no groups, so drive the
+	# state explicitly rather than assuming the mount default.
+	dock.set_collapsed(false)
 	check("expanded min height is 68px", int(dock.custom_minimum_size.y) == 68)
 	dock.set_collapsed(true)
 	check("collapsed min height is 24px", int(dock.custom_minimum_size.y) == 24)
@@ -912,3 +916,50 @@ func test_typing_into_an_empty_group_creates_a_visible_chat() -> void:
 	# would produce a chat that is instantly invisible again.
 	check("the view was moved off Deleted", _pane.get_active_group_id() != "__deleted__")
 	check("the new chat is visible", _pane.visible and not _pane.is_tab_hidden(_pane.current_tab))
+
+
+func test_dock_default_collapse_state() -> void:
+	print("\n[dock] default collapse follows the group count")
+	# A blank project should not spend 68px of a 545px pane advertising a feature
+	# nothing is using — the owner runs 1-3 chats most of the time. A project that
+	# already HAS groups opens expanded, because the groups are the navigation.
+	_reset()
+	var dock = _pane.get_group_dock()
+
+	_pane.apply_default_dock_state()
+	await process_frame
+	check("no groups => dock opens collapsed", dock.is_collapsed())
+	check("collapsed dock costs 24px", int(dock.custom_minimum_size.y) == 24)
+
+	# Simulate opening a project that has groups.
+	_add_chat("Alpha")
+	await process_frame
+	var gid: String = _reg.create_group("Market research")
+	_pane.set_chat_group(_so.ChatList[0], gid)
+	_pane.apply_default_dock_state()
+	await process_frame
+	check("groups present => dock opens expanded", not dock.is_collapsed())
+	check("expanded dock costs 68px", int(dock.custom_minimum_size.y) == 68)
+
+	# A hand collapse must survive ordinary refreshes — the default is applied at
+	# project-open boundaries only, never on every dock render.
+	dock.set_collapsed(true)
+	_pane._refresh_group_dock()
+	_pane._apply_tab_filters()
+	await process_frame
+	check("a manual collapse survives a dock refresh", dock.is_collapsed())
+	var gid2: String = _reg.create_group("Q3 planning")
+	_pane.set_chat_group(_so.ChatList[0], gid2)
+	await process_frame
+	check("and survives a group change", dock.is_collapsed())
+
+	# But opening a project re-decides it — the group still exists here, so it
+	# re-expands. (Moving the chat OUT would prune the group and collapse it,
+	# which is the same rule, not an exception to it.)
+	_pane.apply_default_dock_state()
+	await process_frame
+	check("opening a project with groups re-expands", not dock.is_collapsed())
+	_pane.set_chat_group(_so.ChatList[0], "")
+	_pane.apply_default_dock_state()
+	await process_frame
+	check("opening a project whose last group is gone collapses", dock.is_collapsed())
