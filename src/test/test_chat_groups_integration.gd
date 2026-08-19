@@ -141,6 +141,21 @@ func test_dock_mount() -> void:
 		return
 	check("dock is a sibling of the tab container", dock.get_parent() == _pane.get_parent())
 	check("dock sits ABOVE the tab strip", dock.get_index() < _pane.get_index())
+
+	# The dock must take over BufferControlChats' vertical reserve, not add to
+	# it. That spacer is an empty 27.5px Control; leaving it in place pushed the
+	# chats content box ~28px below the Editor's and Notes', so one of the three
+	# panes visibly started lower and ran shorter than the other two.
+	check("the buffer spacer's reserve is zeroed",
+		_pane.buffer_control_chats.custom_minimum_size.y == 0.0)
+	# Its VISIBILITY is deliberately left to ProjectMenuActions —
+	# owning both here would recreate the two-writer conflict that made the
+	# pane's shading depend on call ordering.
+	await process_frame
+	await process_frame
+	var col_sep: float = float(_pane.get_parent().get_theme_constant("separation"))
+	var gap: float = _pane.global_position.y - (dock.global_position.y + dock.size.y)
+	check("the tab strip starts immediately below the dock", gap <= col_sep + 1.0)
 	# The dock now mounts COLLAPSED when the project has no groups, so drive the
 	# state explicitly rather than assuming the mount default.
 	dock.set_collapsed(false)

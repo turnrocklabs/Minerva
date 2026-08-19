@@ -4295,6 +4295,20 @@ func _ensure_group_dock() -> void:
 	host.add_child(_group_dock)
 	host.move_child(_group_dock, get_index())
 
+	# The dock takes over BufferControlChats' vertical reserve instead of adding
+	# to it. That spacer is an empty 27.5px Control shown when there are no
+	# chats; with the dock above the strip, it was pushing the chats content box
+	# ~28px below the Editor's and Notes' — visibly making one of the three panes
+	# start lower and run shorter than the other two.
+	#
+	# Zeroing its MINIMUM SIZE rather than hiding it is deliberate:
+	# ProjectMenuActions.update_buffer_controls() owns its VISIBILITY, and taking
+	# that over would recreate exactly the two-writer conflict that made the
+	# pane's shading depend on call ordering. Size and visibility stay with
+	# different owners.
+	if buffer_control_chats:
+		buffer_control_chats.custom_minimum_size.y = 0.0
+
 	_empty_group_label = Label.new()
 	_empty_group_label.name = "ChatGroupEmptyState"
 	_empty_group_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
