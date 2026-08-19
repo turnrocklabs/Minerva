@@ -67,8 +67,10 @@ func _build() -> void:
 
 	_chevron = Button.new()
 	_chevron.flat = true
-	_chevron.custom_minimum_size = Vector2(20, HEADER_HEIGHT)
+	_chevron.custom_minimum_size = Vector2(20, 0)
+	_chevron.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_chevron.focus_mode = Control.FOCUS_NONE
+	_strip_button_padding(_chevron)
 	_chevron.pressed.connect(toggle_collapsed)
 	_header.add_child(_chevron)
 
@@ -138,8 +140,19 @@ func _make_arrow(glyph: String, direction: int) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(ARROW_WIDTH, ChatGroupCard.CARD_HEIGHT)
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_strip_button_padding(b)
 	b.pressed.connect(_scroll_by.bind(direction))
 	return b
+
+
+## Remove a Button's stylebox padding so it stops driving its row's minimum
+## height. The theme's button styleboxes carry content margins of their own, and
+## a single Button in the header pushed the dock from its 24px header (68px
+## overall) to 31px (79px) — a fifth taller than spec, in the pane where
+## vertical space is the whole design constraint.
+func _strip_button_padding(b: Button) -> void:
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		b.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 
 
 func _make_fade(from_left: bool) -> TextureRect:

@@ -3154,6 +3154,13 @@ func render_history(chat_history: ChatHistory):
 	var tab_idx = %tcChats.get_tab_idx_from_control(wrapper)
 	%tcChats.set_tab_title(tab_idx, _name)
 
+	# Re-run the filter now that a tab exists. Adding a chat changes what the
+	# strip should show — and, since the pane hides itself when nothing matches,
+	# it is also what brings the pane BACK after the first chat is created.
+	# Deferred so the new tab is fully registered first.
+	call_deferred("_apply_tab_filters")
+	call_deferred("_refresh_group_dock")
+
 	# Eagerly create the agent-notes tab for agent chats so it's visible
 	# before any tool calls happen.
 	if chat_history.AgentModeEnabled or chat_history.IsAgentChat:
@@ -3752,6 +3759,54 @@ func _apply_tab_filters() -> void:
 		else:
 			buffer_control_chats.show()
 
+	_set_pane_empty_state(not any_visible)
+
+
+## Show the whole tab container, or the empty-state placeholder instead.
+##
+## THE BUG THIS FIXES — reported as "making a group loses the chat": create a
+## chat, create a group (which selects the new, empty group), then click All.
+## The tab comes back but the pane under it is blank.
+##
+## Cause: when EVERY tab is hidden, `current_tab` still names one of them, and
+## TabContainer keeps that control on screen — it does not consult the tab's
+## hidden flag. So an empty group leaves the filtered-out chat rendering, and
+## the container's own repaint then races the filter on the way back, resolving
+## the contradiction by showing nothing.
+##
+## Trying to own child visibility directly loses that race: TabContainer
+## re-shows the current tab's control right after. Hiding the CONTAINER is
+## unambiguous, needs no cooperation from the engine's bookkeeping, and reuses
+## the placeholder the pane already had for "no chats".
+func _set_pane_empty_state(is_empty: bool) -> void:
+	if buffer_control_chats:
+		buffer_control_chats.visible = is_empty
+	if _empty_group_label:
+		_empty_group_label.visible = is_empty
+		if is_empty:
+			_empty_group_label.text = _empty_state_text()
+	# Guard the self-hide: an invisible TabContainer stops laying out, so only
+	# toggle when it actually changes.
+	if visible == is_empty:
+		visible = not is_empty
+
+
+## What to say when the strip is empty — an empty GROUP is a very different
+## situation from having no chats at all, and looking identical is what made
+## this read as data loss.
+func _empty_state_text() -> String:
+	if SingletonObject.ChatList.is_empty():
+		return ""
+	if _active_group_id == ChatGroupRegistry.VIEW_DELETED:
+		return "No deleted chats."
+	if _active_group_id == ChatGroupRegistry.VIEW_UNGROUPED:
+		return "Every chat is in a group.  ·  Pick All above to see them."
+	if not ChatGroupRegistry.is_view_sentinel(_active_group_id):
+		return "\"%s\" has no chats yet.\n\nDrag a chat tab onto its card to move it in, or pick All above." % SingletonObject.chat_groups.get_name(_active_group_id)
+	if not _showing_archived:
+		return "Every chat is archived.  ·  Turn on Show Archived to see them."
+	return ""
+
 
 ## Back-compat alias. External callers (MainScene's ledger menu) and the
 ## deferred call in _ready still name the archive filter.
@@ -4160,6 +4215,9 @@ const ChatGroupDockScript = preload("res://Scripts/UI/Controls/ChatGroupDock/Cha
 const ChatGroupCardScript = preload("res://Scripts/UI/Controls/ChatGroupDock/ChatGroupCard.gd")
 
 var _group_dock: ChatGroupDock = null
+## Placeholder shown in place of the tab strip when the active filter matches
+## nothing. Explains WHY it is empty; a blank pane reads as lost data.
+var _empty_group_label: Label = null
 
 
 ## Mount the dock directly above the tab strip, inside the chats pane.
@@ -4177,6 +4235,18 @@ func _ensure_group_dock() -> void:
 	_group_dock.name = "ChatGroupDock"
 	host.add_child(_group_dock)
 	host.move_child(_group_dock, get_index())
+
+	_empty_group_label = Label.new()
+	_empty_group_label.name = "ChatGroupEmptyState"
+	_empty_group_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_empty_group_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_empty_group_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_empty_group_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_empty_group_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_empty_group_label.add_theme_color_override("font_color", Color("#8fb2bc"))
+	_empty_group_label.visible = false
+	host.add_child(_empty_group_label)
+	host.move_child(_empty_group_label, get_index() + 1)
 
 	_group_dock.group_selected.connect(_on_dock_group_selected)
 	_group_dock.group_rename_requested.connect(_on_dock_group_rename_requested)

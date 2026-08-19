@@ -77,6 +77,7 @@ func _run() -> void:
 	await test_delete_seq_orders_undo()
 	await test_mcp_create_by_name_ignores_deleted()
 	await test_empty_group_marks_project_dirty()
+	await test_making_a_group_does_not_blank_the_chat()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -108,7 +109,12 @@ func _reset() -> void:
 	_pane.clear_all_chats()
 	_so.ChatList.clear()
 	_reg.clear()
-	_pane.set_active_group("__all__")
+	_pane.reset_group_state()
+	# Force the filter rather than relying on set_active_group, which returns
+	# early when the view is already All. Without this the pane keeps whatever
+	# visibility the previous test left it in, and a test that asserts "adding a
+	# chat brings the pane back" would pass even if nothing re-ran the filter.
+	_pane._apply_tab_filters()
 
 
 # ── Tests ─────────────────────────────────────────────────────────────
@@ -121,11 +127,25 @@ func test_dock_mount() -> void:
 		return
 	check("dock is a sibling of the tab container", dock.get_parent() == _pane.get_parent())
 	check("dock sits ABOVE the tab strip", dock.get_index() < _pane.get_index())
-	check("expanded height is 68px", int(dock.custom_minimum_size.y) == 68)
+	check("expanded min height is 68px", int(dock.custom_minimum_size.y) == 68)
 	dock.set_collapsed(true)
-	check("collapsed height is 24px", int(dock.custom_minimum_size.y) == 24)
+	check("collapsed min height is 24px", int(dock.custom_minimum_size.y) == 24)
 	dock.set_collapsed(false)
 	check("re-expands to 68px", int(dock.custom_minimum_size.y) == 68)
+
+	# The RENDERED height, not just the requested one. Button styleboxes carry
+	# content margins that silently pushed the header from 24px to 31px and the
+	# dock from 68 to 79 — a fifth taller than spec, in the pane where vertical
+	# space is the entire design constraint.
+	await process_frame
+	await process_frame
+	check("renders at 68px, not just asks for it", int(dock.get_rect().size.y) == 68)
+	dock.set_collapsed(true)
+	await process_frame
+	await process_frame
+	check("renders at 24px collapsed", int(dock.get_rect().size.y) == 24)
+	dock.set_collapsed(false)
+	await process_frame
 
 
 func test_tabs_track_chatlist() -> void:
@@ -707,3 +727,80 @@ func test_empty_group_marks_project_dirty() -> void:
 	_so.saved_state = true
 	_pane.undo_group_delete()
 	check("undoing marks the project dirty", not _so.saved_state)
+
+
+func test_making_a_group_does_not_blank_the_chat() -> void:
+	print("\n[regression] making a group must not blank the chat pane")
+	# Owner repro: start Minerva, new chat, say "hi", add a group "research",
+	# click All(1). The tab came back but the pane under it was blank.
+	#
+	# Cause: with EVERY tab hidden, current_tab still names one of them and
+	# TabContainer keeps that control on screen — it never consults the hidden
+	# flag. So the empty group left the filtered-out chat rendering, and the
+	# container's repaint then raced the filter on the way back and resolved the
+	# contradiction by showing nothing at all.
+	_reset()
+
+	var h = _add_chat("Chat")
+	var ItemScript = load("res://Scripts/Models/ChatHistoryItem.gd")
+	var item = ItemScript.new()
+	item.Message = "hi"
+	h.HistoryItemList.append(item)
+	await process_frame
+	await process_frame
+
+	check("pane is visible with a chat in it", _pane.visible)
+	check("the tab is in the strip", _visible_tab_titles() == ["Chat"])
+	check("the buffer placeholder is hidden", not _pane.buffer_control_chats.visible)
+
+	# Step 3 — the "+" card, which creates the group AND selects it.
+	var gid: String = _pane.create_group("research")
+	await process_frame
+	await process_frame
+
+	check("the new group is selected", _pane.get_active_group_id() == gid)
+	check("no tab matches it", _visible_tab_titles().is_empty())
+	# The core assertion: nothing may be left rendering under an empty strip.
+	check("the pane hides itself rather than leaving stale content", not _pane.visible)
+	check("the placeholder takes its place", _pane.buffer_control_chats.visible)
+	# And it must say WHY it is empty — a blank pane is what read as data loss.
+	var label = _pane.get_parent().find_child("ChatGroupEmptyState", false, false)
+	check("an explanation is shown", label != null and label.visible)
+	if label != null:
+		check("it names the group", label.text.find("research") >= 0)
+		check("it says how to fill it", label.text.to_lower().find("drag") >= 0)
+
+	# Step 4 — click All(1).
+	_pane._on_dock_group_selected("__all__")
+	await process_frame
+	await process_frame
+
+	check("the pane comes back", _pane.visible)
+	check("the tab is in the strip again", _visible_tab_titles() == ["Chat"])
+	check("the placeholder is gone", not _pane.buffer_control_chats.visible)
+	check("the explanation is gone", label == null or not label.visible)
+
+	# The chat itself must be intact — this is what "lost" meant to the owner.
+	var control = _pane.get_tab_control(0)
+	check("the tab control is on screen", control != null and control.visible)
+	check("with a real size", control.get_rect().size.y > 0.0)
+	check("the message survived", h.HistoryItemList.size() == 1)
+	var scroll = null
+	for c in control.get_children():
+		if c is ScrollContainer:
+			scroll = c
+	check("the scroll container is present", scroll != null)
+	if scroll != null and scroll.get_child_count() > 0:
+		check("the rendered message is still in the VBox", scroll.get_child(0).get_child_count() > 0)
+
+	# Invariants that must hold in every filter state, not just this sequence.
+	for view in ["__all__", "__ungrouped__", "__deleted__", gid]:
+		_pane.set_active_group(view)
+		await process_frame
+		var shown: int = _visible_tab_titles().size()
+		check("view %s: pane visibility matches whether any tab shows" % view,
+			_pane.visible == (shown > 0))
+		check("view %s: placeholder is the exact complement" % view,
+			_pane.buffer_control_chats.visible == (shown == 0))
+	_pane.set_active_group("__all__")
+	await process_frame
