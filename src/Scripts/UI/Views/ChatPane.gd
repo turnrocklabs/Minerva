@@ -3506,11 +3506,11 @@ func update_token_estimation(provider: BaseProvider = null):
 
 	if not provider:
 		# if we don't have any chats use the selected provider from the dropdown
-		if SingletonObject.ChatList.is_empty():
-
+		var active := current_chat()
+		if active == null:
 			provider = _provider_option_button.get_selected_provider()
 		else:
-			provider = SingletonObject.ChatList[current_tab].provider
+			provider = active.provider
 
 	# Use fast estimation that avoids expensive base64 encoding
 	var token_count = await _estimate_tokens_fast(provider)
@@ -3529,8 +3529,8 @@ func _estimate_tokens_fast(provider: BaseProvider) -> float:
 	token_count += provider.estimate_tokens(%txtMainUserInput.text)
 
 	# Estimate tokens from chat history (text and images)
-	if not SingletonObject.ChatList.is_empty():
-		var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	var history: ChatHistory = current_chat()
+	if history != null:
 		for chat: ChatHistoryItem in history.HistoryItemList:
 			token_count += provider.estimate_tokens(chat.Message)
 			# Also count images in chat history
@@ -3705,6 +3705,18 @@ signal chat_groups_changed()
 var _active_group_id: String = ChatGroupRegistry.VIEW_ALL
 
 
+## The chat currently ON SCREEN, or null when the filter is showing none.
+##
+## `ChatList.is_empty()` is NOT a substitute: since the strip gained filtering, a
+## populated list can still have nothing selected (current_tab == -1 while every
+## tab is hidden). Every read of ChatList[current_tab] that can run while a
+## filter is active must come through here.
+func current_chat() -> ChatHistory:
+	if current_tab < 0 or current_tab >= SingletonObject.ChatList.size():
+		return null
+	return SingletonObject.ChatList[current_tab]
+
+
 func get_active_group_id() -> String:
 	return _active_group_id
 
@@ -3783,11 +3795,18 @@ func _apply_tab_filters() -> void:
 			if i == current_tab:
 				current_is_visible = true
 
-	if not current_is_visible and any_visible:
-		for i in range(tab_count):
-			if not is_tab_hidden(i):
-				current_tab = i
-				break
+	if not current_is_visible:
+		if any_visible:
+			for i in range(tab_count):
+				if not is_tab_hidden(i):
+					current_tab = i
+					break
+		elif tab_count > 0:
+			# Deselect. TabContainer shows current_tab's control WITHOUT checking
+			# whether that tab is hidden, so leaving a selection here keeps a
+			# filtered-out chat rendering. It accepts -1 only once every tab is
+			# hidden — which the loop above has just done.
+			current_tab = -1
 
 	# The gap inherited from the old archive-only filter: when NOTHING is
 	# visible the "switch to first visible" loop silently did nothing, leaving
@@ -3815,9 +3834,13 @@ func _apply_tab_filters() -> void:
 ## the contradiction by showing nothing.
 ##
 ## Trying to own child visibility directly loses that race: TabContainer
-## re-shows the current tab's control right after. Hiding the CONTAINER is
-## unambiguous, needs no cooperation from the engine's bookkeeping, and reuses
-## the placeholder the pane already had for "no chats".
+## re-shows the current tab's control right after.
+##
+## The fix is to DESELECT (current_tab = -1) in _apply_tab_filters, which the
+## engine accepts once every tab is hidden and which stops the content drawing.
+## This function must NOT touch `visible`: chat.gd's mode switcher already owns
+## tcChats.visible for Chat/Notes/Coco, and a second writer with a different
+## opinion is what made the pane's shading depend on which one ran last.
 func _set_pane_empty_state(is_empty: bool) -> void:
 	if buffer_control_chats:
 		buffer_control_chats.visible = is_empty
@@ -3825,10 +3848,6 @@ func _set_pane_empty_state(is_empty: bool) -> void:
 		_empty_group_label.visible = is_empty
 		if is_empty:
 			_empty_group_label.text = _empty_state_text()
-	# Guard the self-hide: an invisible TabContainer stops laying out, so only
-	# toggle when it actually changes.
-	if visible == is_empty:
-		visible = not is_empty
 
 
 ## What to say when the strip is empty — an empty GROUP is a very different
@@ -4611,10 +4630,10 @@ func _update_stop_button() -> void:
 func _update_compact_button() -> void:
 	if not _compact_button:
 		return
-	if SingletonObject.ChatList.is_empty():
+	var history: ChatHistory = current_chat()
+	if history == null:
 		_compact_button.disabled = true
 		return
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var threshold = history.AgentSummarizeThreshold if history.AgentSummarizeThreshold > 0 else AGENT_SUMMARIZE_THRESHOLD
 	var estimated = estimate_agent_context_size(history) if not history.HistoryItemList.is_empty() else 0
 	_compact_button.disabled = (history.HistoryItemList.size() <= AGENT_KEEP_RECENT_MESSAGES + 1)

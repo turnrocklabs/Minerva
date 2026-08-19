@@ -80,6 +80,7 @@ func _run() -> void:
 	await test_empty_group_marks_project_dirty()
 	await test_making_a_group_does_not_blank_the_chat()
 	await test_typing_into_an_empty_group_creates_a_visible_chat()
+	await test_nothing_selected_window_is_safe()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -97,6 +98,17 @@ func _add_chat(chat_name: String):
 	_so.ChatList.append(history)
 	_pane.render_history(history)
 	return history
+
+
+## How many tab CONTENT controls are currently rendering. The filter's job is to
+## leave exactly one (the selected tab) or none — never a filtered-out chat.
+func _rendered_content_count() -> int:
+	var n := 0
+	for i in range(_pane.get_tab_count()):
+		var c = _pane.get_tab_control(i)
+		if c != null and c.visible:
+			n += 1
+	return n
 
 
 func _visible_tab_titles() -> Array:
@@ -317,6 +329,7 @@ func test_empty_group_surfaces_the_buffer_control() -> void:
 	_pane.set_active_group("__all__")
 	await process_frame
 	check("returning to All hides the buffer control again", not _pane.buffer_control_chats.visible)
+	check("and re-selects a tab", _pane.current_tab >= 0)
 
 
 func test_group_pruning_and_dangling_ids() -> void:
@@ -770,7 +783,7 @@ func test_making_a_group_does_not_blank_the_chat() -> void:
 	await process_frame
 	await process_frame
 
-	check("pane is visible with a chat in it", _pane.visible)
+	check("a chat is selected", _pane.current_tab >= 0)
 	check("the tab is in the strip", _visible_tab_titles() == ["Chat"])
 	check("the buffer placeholder is hidden", not _pane.buffer_control_chats.visible)
 
@@ -782,8 +795,15 @@ func test_making_a_group_does_not_blank_the_chat() -> void:
 	check("the new group is selected", _pane.get_active_group_id() == gid)
 	check("no tab matches it", _visible_tab_titles().is_empty())
 	# The core assertion: nothing may be left rendering under an empty strip.
-	check("the pane hides itself rather than leaving stale content", not _pane.visible)
+	# TabContainer draws current_tab's control without checking whether that tab
+	# is hidden, so the filter must DESELECT rather than rely on the hidden flag.
+	check("nothing is selected", _pane.current_tab == -1)
+	check("no chat content is left rendering", _rendered_content_count() == 0)
 	check("the placeholder takes its place", _pane.buffer_control_chats.visible)
+	# And the filter must not touch the container's own visibility: chat.gd's
+	# Chat/Notes/Coco mode switcher owns tcChats.visible, and a second writer with
+	# a different opinion made the pane's shading depend on which ran last.
+	check("the filter left tcChats.visible alone", _pane.visible)
 	# And it must say WHY it is empty — a blank pane is what read as data loss.
 	var label = _pane.get_parent().find_child("ChatGroupEmptyState", false, false)
 	check("an explanation is shown", label != null and label.visible)
@@ -796,8 +816,9 @@ func test_making_a_group_does_not_blank_the_chat() -> void:
 	await process_frame
 	await process_frame
 
-	check("the pane comes back", _pane.visible)
+	check("a tab is selected again", _pane.current_tab >= 0)
 	check("the tab is in the strip again", _visible_tab_titles() == ["Chat"])
+	check("exactly one chat renders", _rendered_content_count() == 1)
 	check("the placeholder is gone", not _pane.buffer_control_chats.visible)
 	check("the explanation is gone", label == null or not label.visible)
 
@@ -819,10 +840,13 @@ func test_making_a_group_does_not_blank_the_chat() -> void:
 		_pane.set_active_group(view)
 		await process_frame
 		var shown: int = _visible_tab_titles().size()
-		check("view %s: pane visibility matches whether any tab shows" % view,
-			_pane.visible == (shown > 0))
+		check("view %s: selection matches whether any tab shows" % view,
+			(_pane.current_tab >= 0) == (shown > 0))
+		check("view %s: at most one chat renders, and none when empty" % view,
+			_rendered_content_count() == (1 if shown > 0 else 0))
 		check("view %s: placeholder is the exact complement" % view,
 			_pane.buffer_control_chats.visible == (shown == 0))
+		check("view %s: the filter never writes tcChats.visible" % view, _pane.visible)
 	_pane.set_active_group("__all__")
 	await process_frame
 
@@ -843,15 +867,14 @@ func test_typing_into_an_empty_group_creates_a_visible_chat() -> void:
 	var gid: String = _pane.create_group("untitled chats")
 	await process_frame
 	check("the empty group is selected", _pane.get_active_group_id() == gid)
-	check("nothing is on screen", not _pane.visible)
+	check("nothing is selected", _pane.current_tab == -1)
 
 	_pane.ensure_chat_open()
 	await process_frame
 	check("a chat was created", _so.ChatList.size() == 1)
 	check("it landed in the selected group", str(_so.ChatList[0].ChatGroupId) == gid)
 	check("it is visible", _visible_tab_titles().size() == 1)
-	check("the pane came back", _pane.visible)
-	check("current_tab points at it", _pane.current_tab == 0 and not _pane.is_tab_hidden(0))
+	check("it is selected", _pane.current_tab == 0 and not _pane.is_tab_hidden(0))
 
 	# --- A chat exists, but it is filtered out. This is the damaging case.
 	_reset()
@@ -860,7 +883,7 @@ func test_typing_into_an_empty_group_creates_a_visible_chat() -> void:
 	var gid2: String = _pane.create_group("untitled chats")
 	await process_frame
 	check("the pre-existing chat is hidden by the group filter", _pane.is_tab_hidden(0))
-	check("current_tab still names that hidden chat", _pane.current_tab == 0)
+	check("and nothing is selected", _pane.current_tab == -1)
 
 	_pane.ensure_chat_open()
 	await process_frame
@@ -871,7 +894,6 @@ func test_typing_into_an_empty_group_creates_a_visible_chat() -> void:
 	check("in the selected group", str(target.ChatGroupId) == gid2)
 	check("and it is visible", not _pane.is_tab_hidden(_pane.current_tab))
 	check("the old chat was left untouched", old_chat.HistoryItemList.is_empty())
-	check("the pane is showing", _pane.visible)
 
 	# --- A visible chat already exists: reuse it, do not spawn a second.
 	var before: int = _so.ChatList.size()
@@ -909,13 +931,13 @@ func test_typing_into_an_empty_group_creates_a_visible_chat() -> void:
 	_pane.purge_deleted_chats(-1)
 	_pane.set_active_group("__deleted__")
 	await process_frame
-	check("the Deleted view is now empty", not _pane.visible)
+	check("the Deleted view is now empty", _pane.current_tab == -1)
 	_pane.ensure_chat_open()
 	await process_frame
 	# A new chat is never deleted, so creating one without leaving this view
 	# would produce a chat that is instantly invisible again.
 	check("the view was moved off Deleted", _pane.get_active_group_id() != "__deleted__")
-	check("the new chat is visible", _pane.visible and not _pane.is_tab_hidden(_pane.current_tab))
+	check("the new chat is visible", _pane.current_tab >= 0 and not _pane.is_tab_hidden(_pane.current_tab))
 
 
 func test_dock_default_collapse_state() -> void:
@@ -963,3 +985,42 @@ func test_dock_default_collapse_state() -> void:
 	_pane.apply_default_dock_state()
 	await process_frame
 	check("opening a project whose last group is gone collapses", dock.is_collapsed())
+
+
+func test_nothing_selected_window_is_safe() -> void:
+	print("\n[regression] the nothing-selected window must not crash the pane")
+	# Deselecting (current_tab = -1) is what stops a filtered-out chat rendering,
+	# but it opens a window in which ChatList[current_tab] is an out-of-range
+	# read. Several call sites used `ChatList.is_empty()` as a proxy for "there
+	# is a current chat" — true before the strip could be filtered, false now.
+	# This drives the UI work that runs while the user sits in an empty group.
+	_reset()
+	var chat = _add_chat("Somewhere else")
+	await process_frame
+	var gid: String = _pane.create_group("empty on purpose")
+	await process_frame
+
+	check("nothing is selected", _pane.current_tab == -1)
+	check("ChatList is NOT empty — the old proxy would have lied", _so.ChatList.size() == 1)
+	check("current_chat() reports no chat", _pane.current_chat() == null)
+
+	# Each of these runs on ordinary interaction (typing, switching, note toggles)
+	# and each used to index ChatList[current_tab] unguarded.
+	_pane._update_compact_button()
+	_pane._update_stop_button()
+	_pane._on_tab_changed(-1)
+	_pane.update_token_estimation()
+	await process_frame
+	await process_frame
+	check("the pane survived the empty-group interactions", is_instance_valid(_pane))
+	check("still nothing selected", _pane.current_tab == -1)
+	check("still no chat content rendering", _rendered_content_count() == 0)
+
+	# Leaving the empty view re-selects and resumes rendering.
+	_pane.set_active_group("__all__")
+	await process_frame
+	check("a chat is selected again", _pane.current_chat() == chat)
+	check("exactly one chat renders", _rendered_content_count() == 1)
+	_pane.set_active_group(gid)
+	await process_frame
+	check("and deselects again on return to the empty group", _pane.current_tab == -1)
