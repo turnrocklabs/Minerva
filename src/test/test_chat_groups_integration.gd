@@ -78,6 +78,7 @@ func _run() -> void:
 	await test_mcp_create_by_name_ignores_deleted()
 	await test_empty_group_marks_project_dirty()
 	await test_making_a_group_does_not_blank_the_chat()
+	await test_typing_into_an_empty_group_creates_a_visible_chat()
 
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
@@ -804,3 +805,94 @@ func test_making_a_group_does_not_blank_the_chat() -> void:
 			_pane.buffer_control_chats.visible == (shown == 0))
 	_pane.set_active_group("__all__")
 	await process_frame
+
+
+func test_typing_into_an_empty_group_creates_a_visible_chat() -> void:
+	print("\n[regression] typing into an empty group must not write into a hidden chat")
+	# Owner repro: open a new empty group, type a message. A completion was heard
+	# but no chat appeared — in the group or in All.
+	#
+	# Cause: ensure_chat_open() asked only "is ChatList empty?". Once the strip
+	# could be filtered, a non-empty list stopped meaning a chat was on screen,
+	# so the send wrote into whatever chat was still current — in a group the
+	# user was not looking at. Silently delivering a message to the WRONG
+	# conversation is the real damage here; the invisibility was the symptom.
+
+	# --- No chats at all.
+	_reset()
+	var gid: String = _pane.create_group("untitled chats")
+	await process_frame
+	check("the empty group is selected", _pane.get_active_group_id() == gid)
+	check("nothing is on screen", not _pane.visible)
+
+	_pane.ensure_chat_open()
+	await process_frame
+	check("a chat was created", _so.ChatList.size() == 1)
+	check("it landed in the selected group", str(_so.ChatList[0].ChatGroupId) == gid)
+	check("it is visible", _visible_tab_titles().size() == 1)
+	check("the pane came back", _pane.visible)
+	check("current_tab points at it", _pane.current_tab == 0 and not _pane.is_tab_hidden(0))
+
+	# --- A chat exists, but it is filtered out. This is the damaging case.
+	_reset()
+	var old_chat = _add_chat("Old chat")
+	await process_frame
+	var gid2: String = _pane.create_group("untitled chats")
+	await process_frame
+	check("the pre-existing chat is hidden by the group filter", _pane.is_tab_hidden(0))
+	check("current_tab still names that hidden chat", _pane.current_tab == 0)
+
+	_pane.ensure_chat_open()
+	await process_frame
+	var target = _so.ChatList[_pane.current_tab]
+	# THE assertion: the send must not land in the hidden chat.
+	check("the send target is NOT the hidden chat", target != old_chat)
+	check("a new chat was created for it", _so.ChatList.size() == 2)
+	check("in the selected group", str(target.ChatGroupId) == gid2)
+	check("and it is visible", not _pane.is_tab_hidden(_pane.current_tab))
+	check("the old chat was left untouched", old_chat.HistoryItemList.is_empty())
+	check("the pane is showing", _pane.visible)
+
+	# --- A visible chat already exists: reuse it, do not spawn a second.
+	var before: int = _so.ChatList.size()
+	_pane.ensure_chat_open()
+	await process_frame
+	check("an existing visible chat is reused", _so.ChatList.size() == before)
+	check("and stays the target", _so.ChatList[_pane.current_tab] == target)
+
+	# --- Current tab hidden while OTHER tabs are visible: move, do not create.
+	_pane.set_active_group("__all__")
+	await process_frame
+	_pane.current_tab = 1
+	_pane.set_chat_group(_so.ChatList[1], "")
+	_pane.set_active_group(gid2)
+	await process_frame
+	# gid2 is now empty; go somewhere with a visible tab and force a hidden
+	# current_tab to check the "switch, don't spawn" branch.
+	_pane.set_active_group("__all__")
+	await process_frame
+	var count_before: int = _so.ChatList.size()
+	_pane.ensure_chat_open()
+	await process_frame
+	check("no chat spawned when one is already visible", _so.ChatList.size() == count_before)
+
+	# --- The Deleted view cannot host a new chat, so it must be left first.
+	_reset()
+	var doomed = _add_chat("Doomed")
+	await process_frame
+	_pane.delete_chat(doomed)
+	_pane.set_active_group("__deleted__")
+	await process_frame
+	check("the Deleted view shows the deleted chat", _visible_tab_titles() == ["Doomed"])
+	_pane.set_active_group("__all__")
+	await process_frame
+	_pane.purge_deleted_chats(-1)
+	_pane.set_active_group("__deleted__")
+	await process_frame
+	check("the Deleted view is now empty", not _pane.visible)
+	_pane.ensure_chat_open()
+	await process_frame
+	# A new chat is never deleted, so creating one without leaving this view
+	# would produce a chat that is instantly invisible again.
+	check("the view was moved off Deleted", _pane.get_active_group_id() != "__deleted__")
+	check("the new chat is visible", _pane.visible and not _pane.is_tab_hidden(_pane.current_tab))

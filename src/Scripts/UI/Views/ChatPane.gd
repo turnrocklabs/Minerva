@@ -1447,10 +1447,50 @@ func _on_mcp_server_connected(server_name: String) -> void:
 		history.DisabledTools = disabled
 
 
-## Opens a chat tab if one isn't open yet
+## Guarantee there is a chat the user can actually SEE before a send writes to
+## `ChatList[current_tab]`.
+##
+## THE BUG THIS FIXES: this used to ask only "is ChatList empty?". Once the
+## strip could be filtered, a non-empty list stopped meaning there was a chat on
+## screen — so typing into an empty group delivered the message to whichever
+## chat happened to be current, silently, in a group the user was not looking
+## at. They heard the completion and saw nothing appear. Writing into the wrong
+## conversation is worse than showing nothing, which is why this is decided here
+## rather than at the seven call sites.
 func ensure_chat_open() -> void:
 	if SingletonObject.ChatList.is_empty():
-		_on_new_chat()
+		_create_visible_chat()
+		return
+
+	# Prefer an existing VISIBLE chat, moving off a hidden current tab if the
+	# filter left one selected.
+	var first_visible := -1
+	for i in range(get_tab_count()):
+		if not is_tab_hidden(i):
+			first_visible = i
+			break
+	if first_visible >= 0:
+		if current_tab < 0 or current_tab >= get_tab_count() or is_tab_hidden(current_tab):
+			current_tab = first_visible
+		return
+
+	# Nothing is visible: the active view is an empty group (or everything is
+	# archived/deleted). Make a chat the user can see rather than typing into the
+	# dark.
+	_create_visible_chat()
+
+
+## Create a chat and make sure the active view can actually show it.
+##
+## The Deleted view cannot host one — a new chat is never deleted — so creating
+## without leaving it produces a chat that is invisible the moment it exists.
+## Every other view can: a fresh chat is neither archived nor grouped elsewhere,
+## so it shows under All, Ungrouped, or the selected group unaided.
+func _create_visible_chat() -> void:
+	if _active_group_id == ChatGroupRegistry.VIEW_DELETED:
+		set_active_group(ChatGroupRegistry.VIEW_ALL)
+	_on_new_chat()
+	_apply_tab_filters()
 
 ## Generates the full turn prompt using the history of the active chat and the selected provider.
 ## `append_item` will be present in the prompt, but WON'T be added to chat history inside this function.[br]
