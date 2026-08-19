@@ -24,7 +24,6 @@ const CardScript = preload("res://Scripts/UI/Controls/ChatGroupDock/ChatGroupCar
 # centred in its box, and the pair is not symmetric. These reuse the geometry of
 # the project's own arrow_*.svg (round caps, 2px stroke) but at full opacity, so
 # the colour is set here instead of baked into the asset.
-const ICON_CHEVRON_UP := preload("res://assets/icons/chevron_up.svg")
 const ICON_CHEVRON_DOWN := preload("res://assets/icons/chevron_down.svg")
 const ICON_CHEVRON_LEFT := preload("res://assets/icons/chevron_left.svg")
 const ICON_CHEVRON_RIGHT := preload("res://assets/icons/chevron_right.svg")
@@ -78,6 +77,7 @@ func _build() -> void:
 	add_child(_header)
 
 	_chevron = Button.new()
+	_chevron.name = "DockChevron"
 	_chevron.flat = true
 	_chevron.expand_icon = false
 	_tint_icon(_chevron)
@@ -218,6 +218,11 @@ func is_collapsed() -> bool:
 	return _collapsed
 
 
+## Test/inspection hook: the header's disclosure button.
+func get_chevron() -> Button:
+	return _chevron
+
+
 func toggle_collapsed() -> void:
 	set_collapsed(not _collapsed)
 
@@ -233,7 +238,11 @@ func _apply_layout_state() -> void:
 	if _body != null:
 		_body.visible = not _collapsed
 	if _chevron != null:
-		_chevron.icon = ICON_CHEVRON_DOWN if _collapsed else ICON_CHEVRON_UP
+		# Disclosure convention, by where the VERTEX aims: collapsed points RIGHT,
+		# at the content that will open; expanded points DOWN, at the content now
+		# open beneath it. Down/up would be a toggle-arrow — it describes which
+		# way the control moves, not where the content is.
+		_chevron.icon = ICON_CHEVRON_RIGHT if _collapsed else ICON_CHEVRON_DOWN
 		_chevron.tooltip_text = "Show chat groups" if _collapsed else "Hide chat groups"
 	custom_minimum_size = Vector2(0, COLLAPSED_HEIGHT if _collapsed else EXPANDED_HEIGHT)
 	if not _collapsed:

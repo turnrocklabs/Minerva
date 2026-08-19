@@ -148,6 +148,22 @@ func test_dock_mount() -> void:
 	dock.set_collapsed(false)
 	await process_frame
 
+	# Disclosure semantics, by where the VERTEX aims. Collapsed points RIGHT (at
+	# the content that will open); expanded points DOWN (at the content now open
+	# beneath it). A down/up pair would be a toggle arrow instead — it describes
+	# which way the control moves, not where the content is.
+	var chevron = dock.get_chevron()
+	check("the chevron is an icon, not a text glyph",
+		chevron != null and chevron.icon != null and chevron.text.is_empty())
+	if chevron != null and chevron.icon != null:
+		check("expanded points DOWN", str(chevron.icon.resource_path).ends_with("chevron_down.svg"))
+		dock.set_collapsed(true)
+		await process_frame
+		check("collapsed points RIGHT", str(dock.get_chevron().icon.resource_path).ends_with("chevron_right.svg"))
+		dock.set_collapsed(false)
+		await process_frame
+		check("expanding points DOWN again", str(dock.get_chevron().icon.resource_path).ends_with("chevron_down.svg"))
+
 
 func test_tabs_track_chatlist() -> void:
 	print("\n[live] ChatList index == tab index")
