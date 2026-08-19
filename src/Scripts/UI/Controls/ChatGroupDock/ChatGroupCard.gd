@@ -15,8 +15,10 @@ signal context_menu_requested(group_id: String, kind: int)
 
 ## ALL / UNGROUPED / DELETED are pseudo-groups: they are views, not storable
 ## memberships, so they cannot be renamed and are not drop targets (except
-## UNGROUPED, which is how a chat leaves a group). ADD is the trailing "+".
-enum Kind { GROUP, ALL, UNGROUPED, DELETED, ADD }
+## UNGROUPED, which is how a chat leaves a group). Creating a group is NOT a
+## card — it lives in the dock header, so it stays reachable when the row
+## overflows or the dock is collapsed.
+enum Kind { GROUP, ALL, UNGROUPED, DELETED }
 
 const CARD_HEIGHT := 32
 const MAX_NAME_WIDTH := 190
@@ -94,10 +96,7 @@ func _refresh() -> void:
 	var measured := _measure_text(group_name)
 	_name_label.custom_minimum_size.x = min(measured, MAX_NAME_WIDTH)
 
-	if kind == Kind.ADD:
-		_count_label.text = ""
-		tooltip_text = "New group — or drop a chat here to create one"
-	elif kind == Kind.DELETED:
+	if kind == Kind.DELETED:
 		_count_label.text = str(count)
 		tooltip_text = "Deleted chats — select to browse and restore. Nothing is purged automatically."
 	else:
@@ -137,13 +136,6 @@ func _make_stylebox() -> StyleBoxFlat:
 	sb.content_margin_right = 8
 	sb.content_margin_top = 4
 	sb.content_margin_bottom = 4
-	if kind == Kind.ADD:
-		sb.border_width_left = 1
-		sb.border_width_right = 1
-		sb.border_width_top = 1
-		sb.border_width_bottom = 1
-		sb.border_color = Color("#5f7f8a")
-		return sb
 	sb.border_width_left = BAR_WIDTH
 	sb.border_color = bar_color
 	if is_active:
@@ -172,17 +164,12 @@ func _gui_input(event: InputEvent) -> void:
 	if not mb.pressed:
 		return
 	if mb.button_index == MOUSE_BUTTON_RIGHT:
-		if kind != Kind.ADD:
-			context_menu_requested.emit(group_id, kind)
-			accept_event()
+		context_menu_requested.emit(group_id, kind)
+		accept_event()
 		return
 	if mb.button_index != MOUSE_BUTTON_LEFT:
 		return
 	accept_event()
-
-	if kind == Kind.ADD:
-		selected.emit(group_id)
-		return
 
 	# Only real groups can be renamed, so only they need the double-click delay.
 	# Everything else selects on the first click with no latency.
@@ -208,7 +195,7 @@ func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
 		return false
 	# ALL and DELETED are not memberships — dropping there has no meaning.
 	# UNGROUPED is, because it is how a chat leaves a group.
-	return kind == Kind.GROUP or kind == Kind.ADD or kind == Kind.UNGROUPED
+	return kind == Kind.GROUP or kind == Kind.UNGROUPED
 
 
 func _drop_data(_at_position: Vector2, data: Variant) -> void:

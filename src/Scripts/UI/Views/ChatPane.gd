@@ -4400,13 +4400,8 @@ func build_group_card_snapshot() -> Array[Dictionary]:
 			"count": deleted_count,
 		})
 
-	cards.append({
-		"kind": ChatGroupCardScript.Kind.ADD,
-		"id": ChatGroupDockScript.ADD_CARD_ID,
-		"name": "+",
-		"color": ChatGroupRegistry.NEUTRAL_COLOR,
-		"count": 0,
-	})
+	# No trailing "+" card: creating a group moved to the dock header, where it
+	# is reachable whether the row has overflowed or the dock is collapsed.
 	return cards
 
 
@@ -4446,6 +4441,12 @@ func _on_dock_chat_dropped(group_id: String, chat_id: String) -> void:
 func _on_dock_create_group_requested(chat_id: String) -> void:
 	var history := find_chat_by_id(chat_id) if not chat_id.is_empty() else null
 	var gid := create_group(ChatGroupRegistry.DEFAULT_GROUP_NAME, history)
+	# "+" works while collapsed, but a new group is empty and gets selected — so
+	# a collapsed dock would leave the user with an emptied tab strip and no
+	# visible card explaining why. Expand so the new card and the name picker
+	# arrive together.
+	if is_instance_valid(_group_dock):
+		_group_dock.set_collapsed(false)
 	_refresh_group_dock()
 	show_group_rename_dialog(gid)
 

@@ -37,13 +37,13 @@ const ROW_PAD := 6
 const FADE_WIDTH := 26
 const ARROW_WIDTH := 18
 const SCROLL_STEP := 160.0
-const ADD_CARD_ID := "__add__"
 
 var _collapsed := false
 var _header: HBoxContainer = null
 var _chevron: Button = null
 var _title: Label = null
 var _summary: Label = null
+var _add_button: Button = null
 var _body: HBoxContainer = null
 var _viewport_wrap: Control = null
 var _scroll: ScrollContainer = null
@@ -72,8 +72,13 @@ func _build() -> void:
 	size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
 	_header = HBoxContainer.new()
+	_header.name = "DockHeader"
 	_header.custom_minimum_size = Vector2(0, HEADER_HEIGHT)
 	_header.add_theme_constant_override("separation", 6)
+	# The whole row toggles, not just the chevron — the buttons on it consume
+	# their own clicks, and the label and spacer pass through.
+	_header.mouse_filter = Control.MOUSE_FILTER_STOP
+	_header.gui_input.connect(_on_header_gui_input)
 	add_child(_header)
 
 	_chevron = Button.new()
@@ -99,8 +104,28 @@ func _build() -> void:
 	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_header.add_child(spacer)
 
+	# "+" lives here rather than as a trailing card so it is ALWAYS reachable:
+	# as a card it scrolled out of view once the groups overflowed the pane, and
+	# it vanished entirely when the dock was collapsed — which is the default on
+	# a blank project, making the feature undiscoverable exactly where it starts.
+	_add_button = Button.new()
+	_add_button.name = "DockAddGroup"
+	_add_button.text = "+"
+	_add_button.flat = true
+	_add_button.focus_mode = Control.FOCUS_NONE
+	_add_button.custom_minimum_size = Vector2(20, 0)
+	_add_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_add_button.tooltip_text = "New group — or drop a chat here to create one around it"
+	_strip_button_padding(_add_button)
+	_add_button.pressed.connect(func(): create_group_requested.emit(""))
+	# Keep the card's drop behaviour: dragging a chat onto "+" creates a group
+	# with that chat already in it.
+	_add_button.set_drag_forwarding(Callable(), _can_drop_on_add, _drop_on_add)
+	_header.add_child(_add_button)
+
 	_summary = Label.new()
 	_summary.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_summary.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_summary.add_theme_color_override("font_color", Color("#8fb2bc"))
 	_header.add_child(_summary)
@@ -223,6 +248,16 @@ func get_chevron() -> Button:
 	return _chevron
 
 
+## Test/inspection hook: the header's always-present "new group" button.
+func get_add_button() -> Button:
+	return _add_button
+
+
+## Test/inspection hook: the header's group-count indicator.
+func get_summary_label() -> Label:
+	return _summary
+
+
 func toggle_collapsed() -> void:
 	set_collapsed(not _collapsed)
 
@@ -283,23 +318,38 @@ func render_cards(cards: Array[Dictionary], active_group_id: String) -> void:
 	for entry in cards:
 		if int(entry.get("kind", -1)) == ChatGroupCard.Kind.GROUP:
 			group_total += 1
-	_summary.text = "%d" % group_total if group_total > 0 else ""
+	# Always a number, 0 included — a blank label would let "+" sit flush to the
+	# pane edge and then jump left the moment the first group appeared.
+	_summary.text = "%d" % group_total
 
 	call_deferred("_update_edge_affordances")
 
 
 func _on_card_selected(group_id: String) -> void:
-	if group_id == ADD_CARD_ID:
-		create_group_requested.emit("")
-		return
 	group_selected.emit(group_id)
 
 
 func _on_card_chat_dropped(group_id: String, chat_id: String) -> void:
-	if group_id == ADD_CARD_ID:
-		create_group_requested.emit(chat_id)
-		return
 	chat_dropped_on_group.emit(group_id, chat_id)
+
+
+func _can_drop_on_add(_at_position: Vector2, data: Variant) -> bool:
+	return data is Dictionary and str((data as Dictionary).get("kind", "")) == "chat_tab"
+
+
+func _drop_on_add(_at_position: Vector2, data: Variant) -> void:
+	if data is Dictionary:
+		create_group_requested.emit(str((data as Dictionary).get("chat_id", "")))
+
+
+## Click anywhere on the header row to toggle. The chevron and "+" are Buttons
+## and swallow their own clicks before this sees them.
+func _on_header_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			toggle_collapsed()
+			accept_event()
 
 #endregion Rendering
 

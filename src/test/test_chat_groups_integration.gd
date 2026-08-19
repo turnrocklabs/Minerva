@@ -63,6 +63,7 @@ func _run() -> void:
 
 	await test_dock_mount()
 	await test_dock_default_collapse_state()
+	await test_add_group_lives_in_the_header()
 	await test_tabs_track_chatlist()
 	await test_group_filter_hides_without_reparenting()
 	await test_new_chat_lands_in_the_active_group()
@@ -395,9 +396,11 @@ func test_dock_card_row() -> void:
 	for c in cards:
 		kinds.append(int(c["kind"]))
 		names.append(str(c["name"]))
-	# Kind enum: GROUP 0, ALL 1, UNGROUPED 2, DELETED 3, ADD 4.
+	# Kind enum: GROUP 0, ALL 1, UNGROUPED 2, DELETED 3. There is no ADD kind —
+	# creating a group lives in the header, so it stays reachable when the row
+	# overflows or the dock is collapsed.
 	check("row starts with All", kinds[0] == 1)
-	check("row ends with the + card", kinds[kinds.size() - 1] == 4)
+	check("row has no + card", not kinds.has(4))
 	check("the group has a card", names.has("Market research"))
 	check("Ungrouped appears once a group exists", names.has("Ungrouped"))
 	check("Deleted is absent while nothing is deleted", not names.has("Deleted"))
@@ -1039,3 +1042,69 @@ func test_nothing_selected_window_is_safe() -> void:
 	_pane.set_active_group(gid)
 	await process_frame
 	check("and deselects again on return to the empty group", _pane.current_tab == -1)
+
+
+func test_add_group_lives_in_the_header() -> void:
+	print("\n[dock] the + control lives in the header, always")
+	_reset()
+	var dock = _pane.get_group_dock()
+	var add_btn = dock.get_add_button()
+	var summary = dock.get_summary_label()
+
+	check("the header has a + button", add_btn != null)
+	check("it is right of the title", add_btn != null and add_btn.get_index() > 1)
+	check("the count sits to its right", summary != null and add_btn != null and summary.get_index() > add_btn.get_index())
+
+	# The count must always render a number. A blank label would let "+" sit
+	# flush to the pane edge and then jump left when the first group appeared.
+	_pane._refresh_group_dock()
+	await process_frame
+	check("count reads 0 with no groups", summary.text == "0")
+
+	# Reachable while collapsed — as a trailing card it disappeared entirely,
+	# which is the default state on a blank project.
+	_pane.apply_default_dock_state()
+	await process_frame
+	check("dock starts collapsed on a blank project", dock.is_collapsed())
+	check("the + button is still on screen", add_btn.is_visible_in_tree())
+
+	# Creating from a collapsed dock must expand it: the new group is empty and
+	# gets selected, so a collapsed dock would leave an emptied tab strip with no
+	# visible card explaining why.
+	_add_chat("Alpha")
+	await process_frame
+	_pane.apply_default_dock_state()
+	await process_frame
+	check("still collapsed (no groups yet)", dock.is_collapsed())
+	_pane._on_dock_create_group_requested("")
+	await process_frame
+	check("creating expanded the dock", not dock.is_collapsed())
+	check("a group now exists", _reg.size() == 1)
+	_scene_hide_dialog()
+	await process_frame
+	check("count now reads 1", dock.get_summary_label().text == "1")
+
+	# The row must not carry a + card any more.
+	var kinds: Array = []
+	for c in _pane.build_group_card_snapshot():
+		kinds.append(int(c["kind"]))
+	check("no ADD card in the row", not kinds.has(4))
+
+	# Dropping a chat on "+" still creates a group around that chat.
+	var before: int = _reg.size()
+	_pane._on_dock_create_group_requested(str(_so.ChatList[0].HistoryId))
+	await process_frame
+	_scene_hide_dialog()
+	check("dropping a chat on + created another group", _reg.size() == before + 1)
+	check("and moved that chat into it",
+		str(_so.ChatList[0].ChatGroupId) == _pane.get_active_group_id())
+
+
+## The create flow opens the rename dialog; dismiss it so it does not sit modal
+## over the rest of the suite.
+func _scene_hide_dialog() -> void:
+	var dlg = _pane.get_node_or_null("%EditTitleDialog")
+	if dlg == null:
+		dlg = _pane.get_tree().root.find_child("EditTitleDialog", true, false)
+	if dlg != null:
+		dlg.hide()
