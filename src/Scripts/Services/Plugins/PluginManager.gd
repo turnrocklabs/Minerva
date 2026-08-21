@@ -1739,6 +1739,11 @@ func _cleanup_connection(id: String) -> void:
 ## Returns OK on success, or an error code.
 func _delete_directory_recursive(path: String) -> Error:
 	var abs_path := ProjectSettings.globalize_path(path) if path.begins_with("user://") else path
+	# If the path itself is a symlink, unlink it — DirAccess.open would
+	# resolve through it and delete the link target's contents.
+	var parent_dir := DirAccess.open(abs_path.get_base_dir())
+	if parent_dir != null and parent_dir.is_link(abs_path):
+		return parent_dir.remove(abs_path)
 	var dir := DirAccess.open(abs_path)
 	if dir == null:
 		# Maybe it's a file or doesn't exist
@@ -1746,20 +1751,31 @@ func _delete_directory_recursive(path: String) -> Error:
 		if fallback_dir != null:
 			return fallback_dir.remove(abs_path)
 		return DirAccess.get_open_error()
-	# Remove all files and subdirectories first
+	# Remove all files and subdirectories first. DirAccess hides dotfiles by
+	# default; data dirs contain them (.venv, .cache), so include them or the
+	# directory can never be fully removed. Entries are snapshotted before
+	# deleting (unlinking mid-readdir can skip entries), and symlinks are
+	# unlinked, never followed — recursing through one (venvs symlink dirs)
+	# would delete the link target's contents.
+	dir.include_hidden = true
+	var subdirs := PackedStringArray()
+	var files := PackedStringArray()
 	dir.list_dir_begin()
 	var entry := dir.get_next()
 	while not entry.is_empty():
 		if entry == "." or entry == "..":
 			entry = dir.get_next()
 			continue
-		var full := abs_path.path_join(entry)
-		if dir.current_is_dir():
-			_delete_directory_recursive(full)
+		if dir.current_is_dir() and not dir.is_link(entry):
+			subdirs.append(entry)
 		else:
-			dir.remove(full)
+			files.append(entry)
 		entry = dir.get_next()
 	dir.list_dir_end()
+	for file_name in files:
+		dir.remove(abs_path.path_join(file_name))
+	for dir_name in subdirs:
+		_delete_directory_recursive(abs_path.path_join(dir_name))
 	# Now remove the empty directory itself
 	var cleanup_dir := DirAccess.open(abs_path.get_base_dir())
 	if cleanup_dir != null:

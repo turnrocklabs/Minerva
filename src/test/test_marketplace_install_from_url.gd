@@ -18,6 +18,8 @@ var _temp_dir: String = ""
 var _server_pid: int = -1
 var _pass: int = 0
 var _fail: int = 0
+var _sha_cmd: String = ""
+var _skipped: bool = false
 
 
 func _init() -> void:
@@ -31,12 +33,16 @@ func _init() -> void:
 func _run() -> void:
 	await process_frame
 	if not await _setup():
-		_fail += 1
+		if not _skipped:
+			_fail += 1
 		return
 
 	await _test_happy_path()
 	await _test_404()
 	await _test_bad_sha()
+	await _test_reinstall_with_hidden_files()
+	await _test_reinstall_symlink_not_followed()
+	await _test_reserved_id_rejected()
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +50,17 @@ func _run() -> void:
 # ---------------------------------------------------------------------------
 
 func _setup() -> bool:
+	# Base macOS ships shasum, not sha256sum; use whichever exists and SKIP
+	# (not fail) when neither does, like the other hermetic-tier tests.
+	if _run_cmd("bash", ["-c", "command -v sha256sum >/dev/null"]):
+		_sha_cmd = "sha256sum"
+	elif _run_cmd("bash", ["-c", "command -v shasum >/dev/null"]):
+		_sha_cmd = "shasum -a 256"
+	else:
+		print("SKIP: neither sha256sum nor shasum is available")
+		_skipped = true
+		return false
+
 	# Use a unique temp dir under user-data so we don't pollute the real
 	# user://plugins/.
 	_temp_dir = "%s/test_marketplace_%d" % [OS.get_user_data_dir(), Time.get_ticks_msec()]
@@ -72,7 +89,7 @@ func _setup() -> bool:
 	}
 	_write_file("%s/manifest.json" % good_pack, JSON.stringify(manifest))
 	_write_file("%s/test-marketplace-binary" % good_pack, "FAKE_BINARY_PLACEHOLDER")
-	if not _run_cmd("bash", ["-c", "cd '%s' && sha256sum test-marketplace-binary manifest.json > SHA256SUMS" % good_pack]):
+	if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json > SHA256SUMS" % [good_pack, _sha_cmd]]):
 		print("setup FAIL: sha256sum failed")
 		return false
 	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_good.tar.gz ." % good_pack]):
@@ -90,6 +107,40 @@ func _setup() -> bool:
 		return false
 	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_bad.tar.gz ." % bad_pack]):
 		print("setup FAIL: tar bad failed")
+		return false
+
+	# Build hidden-file fixture: like the pcb plugin, ships a dotfile inside a
+	# subdirectory (library/.gitattributes). Regression fixture for
+	# install_move_failed on reinstall.
+	var hidden_pack := "%s/hidden_pack" % _temp_dir
+	_mkdir(hidden_pack)
+	_mkdir("%s/library" % hidden_pack)
+	var hidden_manifest := manifest.duplicate(true)
+	hidden_manifest["id"] = "test_hidden_plugin"
+	hidden_manifest["name"] = "Test Hidden-File Plugin"
+	_write_file("%s/manifest.json" % hidden_pack, JSON.stringify(hidden_manifest))
+	_write_file("%s/test-marketplace-binary" % hidden_pack, "FAKE_BINARY_PLACEHOLDER")
+	_write_file("%s/library/.gitattributes" % hidden_pack, "*.kicad_mod text\n")
+	if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json library/.gitattributes > SHA256SUMS" % [hidden_pack, _sha_cmd]]):
+		print("setup FAIL: sha256sum hidden pack failed")
+		return false
+	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_hidden.tar.gz ." % hidden_pack]):
+		print("setup FAIL: tar hidden failed")
+		return false
+
+	# Build reserved-id fixture: id "data" would alias user://plugins/data/,
+	# the shared per-plugin data root the install path recursively deletes.
+	var reserved_pack := "%s/reserved_pack" % _temp_dir
+	_mkdir(reserved_pack)
+	var reserved_manifest := manifest.duplicate(true)
+	reserved_manifest["id"] = "data"
+	_write_file("%s/manifest.json" % reserved_pack, JSON.stringify(reserved_manifest))
+	_write_file("%s/test-marketplace-binary" % reserved_pack, "FAKE_BINARY_PLACEHOLDER")
+	if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json > SHA256SUMS" % [reserved_pack, _sha_cmd]]):
+		print("setup FAIL: sha256sum reserved pack failed")
+		return false
+	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_reserved.tar.gz ." % reserved_pack]):
+		print("setup FAIL: tar reserved failed")
 		return false
 
 	# Spawn Python http server. --directory points at _temp_dir, so the
@@ -185,6 +236,114 @@ func _test_bad_sha() -> void:
 		_fail += 1
 
 
+## Regression test for install_move_failed on reinstall (docket bug
+## 01a021b14aa4, minerva project): the old install dir contains dotfiles,
+## which MarketplaceClient._rm_dir_recursive must delete (DirAccess defaults
+## include_hidden=false, hiding them from the walk). Before the fix, the
+## second install failed because user://plugins/<id>/ couldn't be removed
+## and the staging rename hit an existing non-empty destination.
+func _test_reinstall_with_hidden_files() -> void:
+	var url := "http://127.0.0.1:%d/test_hidden.tar.gz" % PORT
+	var client = _make_client()
+	# Precondition: a leaked install from an earlier failed test would turn
+	# the "first install" below into a reinstall.
+	_rm_dir_recursive("user://plugins/test_hidden_plugin")
+
+	# First install: no pre-existing destination, must succeed. installer=null
+	# stops after staging — the download/extract/verify/move path is what's
+	# under test, not registration.
+	var first = await client.install_from_url(url, null)
+	if not (first is Dictionary and first.get("ok") == true):
+		print("FAIL: reinstall_hidden — first install failed: %s" % JSON.stringify(first))
+		_fail += 1
+		return
+
+	# Second install over the existing dir with a dotfile in a subdir.
+	var second = await client.install_from_url(url, null)
+	if not (second is Dictionary and second.get("ok") == true):
+		print("FAIL: reinstall_hidden — reinstall over existing install failed: %s" % JSON.stringify(second))
+		_fail += 1
+		_rm_dir_recursive("user://plugins/test_hidden_plugin")
+		return
+	if not FileAccess.file_exists("user://plugins/test_hidden_plugin/library/.gitattributes"):
+		print("FAIL: reinstall_hidden — hidden file missing after reinstall")
+		_fail += 1
+		_rm_dir_recursive("user://plugins/test_hidden_plugin")
+		return
+	print("PASS: reinstall_hidden (reinstall over install containing dotfiles succeeds)")
+	_pass += 1
+	_rm_dir_recursive("user://plugins/test_hidden_plugin")
+
+
+## The old install dir may contain symlinks (venvs, plugin-authored links).
+## The reinstall delete must unlink them, never recurse through them —
+## following a symlinked directory would delete the link TARGET's contents
+## outside the plugin tree.
+func _test_reinstall_symlink_not_followed() -> void:
+	var url := "http://127.0.0.1:%d/test_hidden.tar.gz" % PORT
+	var client = _make_client()
+	_rm_dir_recursive("user://plugins/test_hidden_plugin")
+
+	var first = await client.install_from_url(url, null)
+	if not (first is Dictionary and first.get("ok") == true):
+		print("FAIL: symlink — first install failed: %s" % JSON.stringify(first))
+		_fail += 1
+		return
+
+	# Plant an external dir with a sentinel file, then a dot-named symlink to
+	# it inside the installed plugin (dot-named so only the include_hidden
+	# walk even sees it).
+	var external := "%s/symlink_target" % _temp_dir
+	_mkdir(external)
+	_write_file("%s/sentinel.txt" % external, "must survive reinstall")
+	var plug_abs := ProjectSettings.globalize_path("user://plugins/test_hidden_plugin")
+	if not _run_cmd("ln", ["-s", external, "%s/.linked" % plug_abs]):
+		print("FAIL: symlink — could not create test symlink")
+		_fail += 1
+		_rm_dir_recursive("user://plugins/test_hidden_plugin")
+		return
+
+	var second = await client.install_from_url(url, null)
+	if not (second is Dictionary and second.get("ok") == true):
+		print("FAIL: symlink — reinstall over dir containing symlink failed: %s" % JSON.stringify(second))
+		_fail += 1
+		_rm_dir_recursive("user://plugins/test_hidden_plugin")
+		return
+	if not FileAccess.file_exists("%s/sentinel.txt" % external):
+		print("FAIL: symlink — delete followed the symlink and destroyed the target's contents")
+		_fail += 1
+		_rm_dir_recursive("user://plugins/test_hidden_plugin")
+		return
+	print("PASS: symlink (reinstall unlinks symlinks without touching their targets)")
+	_pass += 1
+	_rm_dir_recursive("user://plugins/test_hidden_plugin")
+
+
+## The manifest id is interpolated into the delete/rename target before
+## registration-time validation runs, so install_from_url must reject bad
+## ids itself. "data" is the sharpest case: user://plugins/data/ is the
+## shared per-plugin data root, and accepting it would wipe and hijack it.
+func _test_reserved_id_rejected() -> void:
+	var url := "http://127.0.0.1:%d/test_reserved.tar.gz" % PORT
+	var client = _make_client()
+
+	# Sentinel inside the data root: must be untouched by the rejected install.
+	_mkdir("user://plugins/data/sentinel_plugin")
+	_write_file(ProjectSettings.globalize_path("user://plugins/data/sentinel_plugin/keep.txt"), "must survive")
+
+	var result = await client.install_from_url(url, null)
+	if not (result is Dictionary and result.get("ok") == false and result.get("error") == "bad_manifest"):
+		print("FAIL: reserved_id — expected error=bad_manifest, got %s" % JSON.stringify(result))
+		_fail += 1
+	elif not FileAccess.file_exists("user://plugins/data/sentinel_plugin/keep.txt"):
+		print("FAIL: reserved_id — install with id \"data\" deleted the shared data root")
+		_fail += 1
+	else:
+		print("PASS: reserved_id (id \"data\" rejected before the destructive delete)")
+		_pass += 1
+	_rm_dir_recursive("user://plugins/data/sentinel_plugin")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -237,3 +396,4 @@ func _teardown() -> void:
 		OS.execute("rm", ["-rf", _temp_dir], [], true)
 	# Also clean any installed test plugin if a test left it behind.
 	_rm_dir_recursive("user://plugins/test_marketplace_plugin")
+	_rm_dir_recursive("user://plugins/test_hidden_plugin")

@@ -50,6 +50,7 @@ HERMETIC_TESTS=(
 	test/test_os_open_policy.gd
 	test/test_chat_groups.gd
 	test/test_chat_groups_integration.gd
+	test/test_marketplace_install_from_url.gd
 )
 QUARANTINED_TESTS=(
 	# bug 019fbd21a8717702931647025aae6be7 — see comment above.

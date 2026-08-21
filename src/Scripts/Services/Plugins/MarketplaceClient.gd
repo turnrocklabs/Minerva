@@ -212,6 +212,19 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		_rm_dir_recursive(extract_dir)
 		return _err("bad_manifest", {"path": manifest_path})
 
+	# Guard before the destructive delete below: a hostile manifest id like
+	# "../.." would aim the delete outside user://plugins/, and registration-
+	# time validation (PluginDefinition) runs too late to protect it. Checked
+	# before the typed assignment — a non-String id would throw there and
+	# strand the staging files. "data" is reserved: user://plugins/data/ is
+	# the shared per-plugin data root, not a plugin slot.
+	var raw_id: Variant = manifest["id"]
+	var PluginDefCls = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
+	if not (raw_id is String) or not PluginDefCls._is_valid_id(raw_id) or raw_id == "data":
+		_rm_file(staging_file)
+		_rm_dir_recursive(extract_dir)
+		return _err("bad_manifest", {"path": manifest_path, "reason": "invalid_id"})
+
 	var plugin_id: String = manifest["id"]
 
 	# --- 5. Move to canonical user://plugins/<id>/ ---
@@ -398,7 +411,10 @@ static func format_install_error(result: Dictionary) -> String:
 			hint = "Archive may have been corrupted in transit, or tampered with. Retry once; if the failure recurs, report to the plugin author."
 		"missing_manifest", "bad_manifest":
 			title = "Plugin manifest is missing or invalid"
-			cause = "The archive does not contain a usable manifest.json at the top level."
+			if str(detail_dict.get("reason", "")) == "invalid_id":
+				cause = "manifest.json exists, but its \"id\" is not a valid plugin id (a lowercase letter followed by lowercase letters, digits, or underscores; \"data\" is reserved)."
+			else:
+				cause = "The archive does not contain a usable manifest.json at the top level."
 			hint = "This is a packaging error on the plugin side. Report it to the plugin author."
 		"install_move_failed":
 			title = "Could not move the extracted plugin into place"
@@ -501,9 +517,25 @@ func _rm_file(rel_path: String) -> void:
 
 func _rm_dir_recursive(rel_path: String) -> void:
 	var abs_path := ProjectSettings.globalize_path(rel_path)
+	# If the path itself is a symlink (e.g. a side-loaded dev checkout linked
+	# into user://plugins/), unlink it — DirAccess.open would resolve through
+	# it and the walk would delete the link target's contents.
+	var parent := DirAccess.open(abs_path.get_base_dir())
+	if parent != null and parent.is_link(abs_path):
+		DirAccess.remove_absolute(abs_path)
+		return
 	var d := DirAccess.open(abs_path)
 	if d == null:
 		return
+	# DirAccess hides dotfiles by default; without this, hidden files survive
+	# the walk, the dir can't be removed, and the install rename fails.
+	d.include_hidden = true
+	# Snapshot entries before deleting — unlinking mid-readdir can skip
+	# entries on some filesystems. Symlinks are unlinked, never followed:
+	# current_is_dir() stats through the link, and recursing would delete
+	# the link target's contents.
+	var subdirs := PackedStringArray()
+	var files := PackedStringArray()
 	d.list_dir_begin()
 	while true:
 		var entry_name := d.get_next()
@@ -511,12 +543,15 @@ func _rm_dir_recursive(rel_path: String) -> void:
 			break
 		if entry_name == "." or entry_name == "..":
 			continue
-		var entry_abs := "%s/%s" % [abs_path, entry_name]
-		if d.current_is_dir():
-			_rm_dir_recursive("%s/%s" % [rel_path, entry_name])
+		if d.current_is_dir() and not d.is_link(entry_name):
+			subdirs.append(entry_name)
 		else:
-			DirAccess.remove_absolute(entry_abs)
+			files.append(entry_name)
 	d.list_dir_end()
+	for file_name in files:
+		DirAccess.remove_absolute("%s/%s" % [abs_path, file_name])
+	for dir_name in subdirs:
+		_rm_dir_recursive("%s/%s" % [rel_path, dir_name])
 	DirAccess.remove_absolute(abs_path)
 
 
