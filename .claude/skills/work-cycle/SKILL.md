@@ -94,7 +94,7 @@ Carry these lines to the boundary. They are what the test author works from.
 
 Read-only, no context from the briefs' author, with the work items and base SHA. It checks six things:
 - **(a) Factual claims.** Are the briefs' cited symbols, signatures and outputs true at this SHA?
-- **(b) Prescribed mechanism.** Where a brief says "implement THIS approach", name the assumption it rests on and check it holds.
+- **(b) Prescribed mechanism — a defect in its own right, not merely a risk to audit.** Where a brief says "implement THIS approach", or names the class to change, the method to add, or what the existing code does today, flag it for removal and say what goal statement should replace it. Only where the orchestrator has *deliberately* retained a mechanism (a decision already taken, recorded as such) does it stay — and then name the assumption it rests on and check it holds. This is the most common revise verdict; treat a brief with no mechanism as the norm rather than the exception.
 - **(c) Fence sufficiency.** Enumerate every file each unit plausibly needs. Under-fencing is the most frequent defect in briefs.
 - **(d) Acceptance reachability.** Is each exit condition observable — and **can the named oracle actually fail?**
 - **(e) Asserted traps.** Are the stated warnings real, and is a real one missing?
@@ -111,7 +111,7 @@ For each unit in this round, in parallel where independent:
 1. Spawn an Implementer sub-agent (`Agent`) with:
    - Model = unit's selected model
    - Subagent type = `general-purpose` (or `Plan` if first-of-pattern)
-   - Prompt = self-contained brief: goal, files to touch, existing patterns to follow, tests to add, success criteria
+   - Prompt = self-contained brief: **goal, constraints, and pointers** — never mechanism (see Conventions). The goal states the outcome; the fence bounds it; symbols are named for the agent to READ, not summarised for it to accept. If your draft says which class to change or which method to add, delete that sentence: it is the implementer's conclusion, written before the implementer looked.
    - **Scope fence verbatim**, with the rule: anything needed outside the fence → report it back as a finding (orchestrator files it in docket); do NOT fix inline.
    - **Reuse scan (blocking, first deliverable)**: before writing code, read the reference implementations named in the work item (most items name them: e.g. `CadAnnotationHost.gd`, `internal/bridge`, `test_cad_plugin_smoke.gd`) and state per major piece: reuse / extend / copy-with-justification. New code that duplicates an existing asset without this declaration is a review reject.
    - **Tests: default tier writes none.** The boundary authors them. Two exceptions, both of which the brief must state explicitly:
@@ -319,12 +319,16 @@ Campaign mode lives in the `orchestrator` skill, which owns the loop body, epoch
 
 Every prompt is self-contained — the agent has no memory of this conversation.
 
-**State constraints. Point at facts.**
+**State constraints. Point at facts. Omit mechanism.** Three categories; only the first belongs in a brief as prose.
 
 - A **constraint** is yours to set and cannot be wrong the way a number can: the fence, decisions already taken, process bans, the acceptance *shape*, "assert by identity not count", "mutate FULL and HALF". These earn their length.
 - A **fact** is measurable, so name where it lives instead of restating it. Write *"read the floor from `_V1_MANUFACTURING_FLOOR`"*, never *"the floor is 0.127"*. Cite **symbol names, never file:line** — line numbers go stale within a round.
   **Treat this as a hard rule, not a preference, and check the brief against it before sending.** Sweep your draft for any sentence stating a value, a signature, a file location or a count, and convert each into a pointer. Every measurable thing you assert is a thing you can be wrong about while sounding authoritative — and the agent will believe you over the repo, which is the opposite of what you are paying it for.
-- Prescribe the **invariant**, not the edit. "Make the code and the docs agree across both dimensions" finds every site; "add the predicate here" finds one.
+- **Mechanism** is HOW the goal is reached — which class to change, which method to add, what the existing code does today, which approach to take. **It does not belong in a brief at all.** Deriving mechanism is the work; a brief that supplies it has done the implementer's thinking before the implementer looked at the repo, and it locks in a conclusion reached at the moment of least information.
+  Prescribe the **invariant**, not the edit: "make the code and the docs agree across both dimensions" finds every site; "add the predicate here" finds one.
+  **This is the most frequent defect in briefs written under this skill** — measured by reviewers invalidating over-prescriptive briefs, repeatedly. The pull toward it is that prescription feels like helpfulness. It is not: the fence is what bounds a unit, and the goal is what directs it.
+
+The distinction that decides a borderline sentence: a constraint is something you are entitled to *decide*; a fact is something the repo already *knows*; mechanism is something the implementer should *conclude*. Never write a conclusion you have not been asked for.
 
 Include:
 - Goal in 1–2 sentences.
@@ -419,6 +423,7 @@ These come from past Phase 1B rounds and are cheaper to avoid than to discover a
 26. **Closing a boundary on a suite result that predates its last commit.** Every boundary commit re-runs the suite; a test change also re-runs its mutation proof. Otherwise the epoch closes on evidence about a tree that no longer exists.
 27. **Marking items terminal on round evidence.** Rounds push, but rounds do not verify. Terminal state waits for the boundary.
 28. **Treating a stage's failure as a note.** The boundary has no station after it, so anything waved through there ships unexamined.
+29. **Prescribing mechanism in a brief.** Naming the class to change, the method to add, or the approach to take hands the agent a conclusion reached before anyone looked at the repo — and the agent will follow it over what it measures. This is the brief defect reviewers invalidate most often. State the goal, set the constraints, point at the symbols; let the implementer conclude. Distinct from anti-pattern 20: that one is about asserting facts you could point at, this one is about supplying answers nobody asked you for.
 
 ## Reference
 
