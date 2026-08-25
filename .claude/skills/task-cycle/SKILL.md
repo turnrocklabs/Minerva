@@ -20,6 +20,7 @@ set. Do not push until the batch closes.
 - The full suite is deferred to its scheduled run.
 - Comments should be salient.
 - Reviews should be at batch end, not item-by-item.
+- Codex runs serially after Fable's rounds close, as the final check.
 
 
 ## Terminology and shared controls
@@ -211,11 +212,18 @@ Retry the same failure at most three times, then escalate.
 
 Do not run the full suite.
 
-### 8. Optional cross-provider review
+### 8. Cross-provider final check (Codex)
 
-After the batch review has closed, run at most one secondary review from a
-different provider. Spend it where the definition of correctness is uncertain.
-Small tasks may be excluded; record which tasks were excluded and why.
+Codex is the final double-check of code Claude believes is finally good. It
+runs SERIALLY, only after every Fable find/fix round has closed and every
+must_fix is folded in — never in parallel with the batch review, and never on
+a diff that still has open findings. Feed it the diff on stdin (it cannot use
+its sandbox on this host); tell it not to run commands.
+
+Disposition its findings the same way as step 6. A must_fix from Codex goes
+back through one Fable-judged fix round, then Codex re-checks the fold; a
+second Codex must_fix escalates to the owner. Small batches may skip Codex;
+record that they were skipped and why.
 
 ### 9. Push and report
 
