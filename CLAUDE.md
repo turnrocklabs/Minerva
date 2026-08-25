@@ -18,6 +18,7 @@ I wanted to share some of my preferences so we can work together more effectivel
 - I have 3 PCs (Linux, Mac, Windows) I frequently switch between. Repos may be out of date -- so always pull when we start and make sure we're in either the "main" or "development" branches before we start. If we're not in one of those branches, warn me -- it may be intentional, or I might have just forgotten.
 - When you run agents that change code, I prefer you run them serially and not in parallel. This reduces the chance that we "stomp" on work-in-progress (a problem we used to hit often). Reading code in parallel is fine, as is doing research, etc. Just code-change agents should be serialized.
 - FCIBs (Foreign Checked-In Binaries) are bad. We shouldn't checkin executable programs or libraries, we should either build them from source, get them from their official or other well-known channels, or vendor them in if we need to patch / modify. Images and audio don't count -- this is about things we can compile. If there is no official or well-known place to get them, let me know and we'll solve that binary-by-binary.
+- Git commit comments should explain project management state when it makes sense. Include things like DCR, bug, or other project-management tracking IDs if it makes sense.
 
 # Coding preferences — Godot-focused
 - The "Any" type is disliked. Sometimes it's the right solution, but often, it's there because we got lazy. It's far better to be strongly typed when possible.
