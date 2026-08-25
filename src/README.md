@@ -21,7 +21,7 @@ Minerva adds a note-taking system and (hopefully) some editors and task runners.
 ## Getting Started ##
 
 ### Prerequisites
-- [Godot Engine 4.4+](https://godotengine.org/download)
+- [Godot Engine 4.6+](https://godotengine.org/download)
 - Git
 
 ### Clone and Build (Linux / macOS)
@@ -30,9 +30,6 @@ Minerva adds a note-taking system and (hopefully) some editors and task runners.
 # Clone with submodules
 git clone --recursive https://github.com/turnrocklabs/Minerva.git
 cd Minerva
-
-# Set up git filters (required — see "Docket Files" section below)
-scripts/setup-git-filters.sh
 
 # Build all C++ extensions (installs Zig and SCons if needed)
 scripts/build-extensions.sh
@@ -59,9 +56,13 @@ Both scripts automatically handle:
 - Godot C++ terminal extension build (SCons)
 - Library installation to `src/bin/`
 
+CEF-hosted panels and the PDF sidecar are built separately — see
+**[Docs/Building.md](Docs/Building.md)** for the complete build reference,
+including per-platform prerequisites and the vendor patch system.
+
 ### Run
 
-Open `src/project.godot` in Godot Editor 4.4+ and press F5.
+Open `src/project.godot` in Godot Editor 4.6+ and press F5.
 
 ### If You Already Cloned Without --recursive
 
@@ -74,33 +75,25 @@ git submodule update --init --recursive
 powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1  # Windows
 ```
 
-## Docket Files (SQLite Clean/Smudge Filters) ##
+## Docket Files ##
 
-Minerva uses [Docket](https://github.com/turnrocklabs/docket) for issue/task tracking. Docket stores data in `.dct` files, which are SQLite databases. Since binary SQLite files corrupt easily when merged across branches or machines (WAL mode conflicts), we use **git clean/smudge filters** to store them as text SQL dumps in git.
+Minerva uses [Docket](https://github.com/turnrocklabs/docket) for issue/task
+tracking. Docket stores data in `.dct` files. Since `17f7778f` these are
+**JSONL text** — line-oriented, diffable, and committed directly. No git
+filter setup is required.
 
-**How it works:**
-- **On commit (clean filter):** SQLite binary → SQL text dump (diffable, mergeable)
-- **On checkout (smudge filter):** SQL text dump → SQLite binary (usable by Docket)
+The SQLite intermediates Docket builds alongside them (`*.dct.cache*`,
+`*.dct-wal`, `*.dct-shm`) are generated locally and gitignored.
 
-**Setup (required once per clone):**
-```bash
-scripts/setup-git-filters.sh
-```
-
-This registers the filters in your local git config. Without it, `.dct` files will be committed as raw binary and may corrupt on pull. The `.gitattributes` file tells git which files use the filter:
-```
-*.dct filter=sqlite3 diff=sqlite3
-```
-
-**Troubleshooting:**
-- If a `.dct` file shows as modified after checkout, that's normal — the smudge filter rebuilds the binary from SQL text, and the binary may differ byte-for-byte from the original.
-- If Docket can't open a `.dct` file after a pull, try: `git checkout -- Docs/minerva.dct` to re-trigger the smudge filter.
+**Never hand-edit a `.dct`.** Go through Docket — its app, or its MCP verbs —
+so the file and its indexes stay consistent. Run a flush before `git add` to
+settle pending writes.
 
 ## External Dependencies ##
 
 | Library | Version | License | Purpose | Acquisition |
 |---------|---------|---------|---------|-------------|
-| [Godot Engine](https://godotengine.org) | 4.4+ | MIT | Application engine | User installs separately |
+| [Godot Engine](https://godotengine.org) | 4.6+ | MIT | Application engine | User installs separately |
 | [godot-cpp](https://github.com/godotengine/godot-cpp) | 4.3 | MIT | C++ GDExtension bindings | Git submodule (`src/godot-cpp`) |
 | [Ghostty / libghostty-vt](https://github.com/ghostty-org/ghostty) | 1.3.1 | MIT | Terminal emulator core (VT parser) | Git submodule (`vendor/ghostty`), built by `build-extensions.sh` via Zig |
 | [EIRTeam.FFmpeg](https://github.com/EIRTeam/EIRTeam.FFmpeg) | 1.1.4 | MIT (wrapper) + LGPL 2.1 (ffmpeg) | Video/audio codec support | Downloaded from GitHub releases by `build-extensions.sh` |
