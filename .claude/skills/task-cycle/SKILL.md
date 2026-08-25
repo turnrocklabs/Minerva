@@ -18,6 +18,9 @@ set. Do not push until the batch closes.
 - Out-of-scope discoveries are filed, not fixed.
 - Nothing is pushed until review and scoped execution finish.
 - The full suite is deferred to its scheduled run.
+- Comments should be salient.
+- Reviews should be at batch end, not item-by-item.
+
 
 ## Terminology and shared controls
 
