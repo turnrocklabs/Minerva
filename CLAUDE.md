@@ -34,3 +34,10 @@ I wanted to share some of my preferences so we can work together more effectivel
 
 # Work tracking
 - I use the Docket work tracker for all work. Even small changes must have an item before changing code. If work is too small to track and has no docket item -- ask me for approval before making code changes. Make sure to use either docket app or minerva's integrated docket via MCP, not directly edit .dct files, when using docket. Prefer using docket app's MCP vs Minerva's when possible.
+
+# Information tracking
+- We have 2 different information tracking mechanisms -- nudge and docket. Nudge is memory backed and lasts until reboot, docket is file backed and lasts forever.
+- Use nudge to have a compaction-resilient scratchpad that helps store useful, surprising, or error-correcting information.
+- Use docket for long-term memory by using KB, Hints, or other information tracking types.
+- A nudge item that is still true at the next startup has outlived "scratch" -- promote it to a docket hint (or KB) and delete it from nudge. Nudge should hold only the current session's working notes, not a backlog.
+- When you startup or after compaction, check if you have any nudge items at all, and if there are any docket knowledge items from today or yesterday (work often crosses midnight).
