@@ -52,6 +52,9 @@ static var spreadsheet_editor_scene: PackedScene:
 
 
 signal content_changed()
+## Emitted when the hosted plugin panel is swapped (reload), so the ribbon can
+## re-read supports_undo() for the current tab.
+signal undo_capability_changed()
 signal save_dialog(dialog_result: DialogResult)
 signal note_ready_for_chat(note: Note)  ## Emitted when "Send to LLM" note is created and ready
 enum DialogResult { SAVE, CANCEL, CLOSE }
@@ -765,6 +768,9 @@ func remount_plugin_surface(new_root: Control) -> void:
 		return
 	plugin_scene_root = new_root
 	call_deferred("_try_mount_plugin_annotation_dock")
+	# A re-instantiated panel may declare a different hook set; the ribbon
+	# re-reads supports_undo() on this signal.
+	undo_capability_changed.emit()
 
 
 func _try_mount_plugin_annotation_dock() -> void:
@@ -2024,6 +2030,10 @@ func undo_action():
 		Type.SPREADSHEET:
 			if spreadsheet_editor:
 				spreadsheet_editor._perform_undo()
+		Type.PLUGIN_SCENE:
+			# The hosted panel owns its history; a reverted step is a content change.
+			if PluginScenePanelHost.invoke_undo(plugin_scene_root):
+				_plugin_scene_modified = true
 
 
 func redo_action():
@@ -2037,6 +2047,20 @@ func redo_action():
 		Type.SPREADSHEET:
 			if spreadsheet_editor:
 				spreadsheet_editor._perform_redo()
+		Type.PLUGIN_SCENE:
+			if PluginScenePanelHost.invoke_redo(plugin_scene_root):
+				_plugin_scene_modified = true
+
+
+## Whether the ribbon shows its Undo/Redo buttons for this tab. Only a
+## PLUGIN_SCENE tab is gated — live iff the hosted panel declares the undo hook
+## pair (PluginScenePanelHost.supports_undo); every other type keeps the
+## buttons exactly as it always has.
+func supports_undo() -> bool:
+	if type != Type.PLUGIN_SCENE:
+		return true
+	return PluginScenePanelHost.supports_undo(plugin_scene_root)
+
 
 func clear_text():
 	if Type.TEXT != type:

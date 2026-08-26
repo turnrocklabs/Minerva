@@ -92,6 +92,9 @@ func _init() -> void:
 	test_broker_registered_before_on_panel_loaded()
 	test_on_panel_loaded_receives_ctx_keys()
 
+	print("\n-- Undo/redo hook dispatch --")
+	test_undo_redo_dispatch()
+
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
 		printerr("FAILURES: %d" % _fail_count)
@@ -178,6 +181,35 @@ class StubSceneRoot extends Control:
 		if test_broker != null:
 			broker_was_registered_before_loaded = test_broker.is_panel_registered(
 				ctx.get("panel_name", ""))
+
+
+## Panel with a real one-slot history: the counters and the stack are the
+## oracle for whether the host actually reached the hooks.
+class StubUndoPanel extends Control:
+	var undo_calls: int = 0
+	var redo_calls: int = 0
+	var history: Array[String] = ["a"]
+	var future: Array[String] = []
+
+	func _on_panel_undo_request() -> bool:
+		undo_calls += 1
+		if history.is_empty():
+			return false
+		future.push_back(history.pop_back())
+		return true
+
+	func _on_panel_redo_request() -> bool:
+		redo_calls += 1
+		if future.is_empty():
+			return false
+		history.push_back(future.pop_back())
+		return true
+
+
+## Declares only half the pair — must read as "no undo capability".
+class StubHalfUndoPanel extends Control:
+	func _on_panel_undo_request() -> bool:
+		return true
 
 
 ## Build a fresh PluginScenePanelBroker with a stub audit log.
@@ -531,6 +563,45 @@ func test_broker_registered_before_on_panel_loaded() -> void:
 	vbox.remove_child(panel_root)
 	panel_root.free()
 	vbox.free()
+
+
+# ===========================================================================
+# Undo/redo hook dispatch
+# ===========================================================================
+
+## Oracle: the stub's own call counters and history stack. The host is wrong
+## if the counters stay at zero when it reports success, if it reports success
+## when the stack was already empty, or if it reports capability for a panel
+## that lacks either hook.
+func test_undo_redo_dispatch() -> void:
+	print("test_undo_redo_dispatch:")
+	var panel := StubUndoPanel.new()
+	check("full pair declares undo capability", PluginScenePanelHost_.supports_undo(panel))
+
+	check("undo returns true and pops the history", PluginScenePanelHost_.invoke_undo(panel)
+		and panel.undo_calls == 1 and panel.history.is_empty() and panel.future == ["a"])
+	check("undo on empty history returns false but still reached the hook",
+		not PluginScenePanelHost_.invoke_undo(panel) and panel.undo_calls == 2)
+	check("redo returns true and restores the step", PluginScenePanelHost_.invoke_redo(panel)
+		and panel.redo_calls == 1 and panel.history == ["a"] and panel.future.is_empty())
+	check("redo with nothing to redo returns false",
+		not PluginScenePanelHost_.invoke_redo(panel) and panel.redo_calls == 2)
+	panel.free()
+
+	var bare := StubSceneRoot.new()
+	check("panel without hooks has no undo capability", not PluginScenePanelHost_.supports_undo(bare))
+	check("undo/redo on hookless panel are harmless and false",
+		not PluginScenePanelHost_.invoke_undo(bare) and not PluginScenePanelHost_.invoke_redo(bare))
+	bare.free()
+
+	var half := StubHalfUndoPanel.new()
+	check("undo without redo does not count as capability", not PluginScenePanelHost_.supports_undo(half))
+	check("half pair is never invoked", not PluginScenePanelHost_.invoke_undo(half))
+	half.free()
+
+	check("null panel has no undo capability", not PluginScenePanelHost_.supports_undo(null))
+	check("null panel undo/redo are false",
+		not PluginScenePanelHost_.invoke_undo(null) and not PluginScenePanelHost_.invoke_redo(null))
 
 
 func test_on_panel_loaded_receives_ctx_keys() -> void:

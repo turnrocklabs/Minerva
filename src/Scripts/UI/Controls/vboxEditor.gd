@@ -14,6 +14,25 @@ func _toggle_enable_action_buttons(enable: bool) -> void:
 		if editor_action_buttons:
 			for button: Button in editor_action_buttons:
 				button.disabled = !enable
+		_update_undo_redo_visibility()
+		# Again once the frame's deferred work has landed: a tab added through
+		# call_deferred is not yet the current control when the signal fires.
+		call_deferred("_update_undo_redo_visibility")
+
+
+## Hide the ribbon's Undo/Redo pair while the current tab says it has no undo
+## (Editor.supports_undo — false only for a plugin-scene tab whose panel
+## declares no undo hooks). Runs on every tab select/close/add and on a plugin
+## reload, all of which arrive through enable_editor_action_buttons.
+func _update_undo_redo_visibility() -> void:
+	if editor_pane == null or editor_pane.Tabs == null:
+		return
+	var current_tab: Control = editor_pane.Tabs.get_current_tab_control()
+	var show_buttons := true
+	if current_tab is Editor:
+		show_buttons = (current_tab as Editor).supports_undo()
+	for button: Button in get_tree().get_nodes_in_group("editor_undo_redo_button"):
+		button.visible = show_buttons
 
 
 func serialize() -> Array:

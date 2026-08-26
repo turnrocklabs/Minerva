@@ -520,7 +520,7 @@ tooltip_text = "clears all the text in the current tab"
 icon = ExtResource("21_akf3o")
 script = ExtResource("21_rnx1y")
 
-[node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=131727324]
+[node name="UndoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=131727324 groups=["editor_undo_redo_button"]]
 layout_mode = 2
 tooltip_text = "Undo (Returns Editor to previous state)"
 icon = ExtResource("11_srtkx")
@@ -529,7 +529,7 @@ icon_24 = ExtResource("11_srtkx")
 icon_48 = ExtResource("29_rqudt")
 icon_68 = ExtResource("30_i8mta")
 
-[node name="RedoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=1075632333]
+[node name="RedoButton" type="Button" parent="VBoxRoot/VSplitContainer/MainUI/HSplitContainer/HSplitContainer2/MiddlePane/VBoxContainer/HBoxContainer" unique_id=1075632333 groups=["editor_undo_redo_button"]]
 layout_mode = 2
 tooltip_text = "Redo (Restores previously undone action)"
 icon = ExtResource("68_redo1")

@@ -197,6 +197,7 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 	var editor_node = Editor.create(type, file, name_, associated_object, initial_setup)
 	
 	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
+	editor_node.undo_capability_changed.connect(_on_editor_undo_capability_changed)
 
 	Tabs.add_child(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count()-1
@@ -308,6 +309,7 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null,
 
 	var editor_node: Editor = Editor.create_plugin_scene(plugin_id, panel_name, file, title)
 	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
+	editor_node.undo_capability_changed.connect(_on_editor_undo_capability_changed)
 	Tabs.add_child(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count() - 1
 	if Tabs.get_tab_count() > 0:
@@ -536,6 +538,14 @@ func _on_editor_content_changed(editor: Editor):
 
 #region  Enable Editor Buttons
 signal enable_editor_action_buttons(enable)
+
+
+## A plugin tab's panel was swapped (reload): re-run the current tab's button
+## evaluation so the ribbon re-reads its undo capability.
+func _on_editor_undo_capability_changed() -> void:
+	if Tabs == null:
+		return
+	_on_tab_container_tab_changed(Tabs.current_tab)
 
 func _on_tab_container_tab_selected(_tab: int) -> void:
 	var current_control = Tabs.get_current_tab_control()

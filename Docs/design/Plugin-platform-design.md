@@ -210,6 +210,12 @@ func _on_panel_save_request() -> Dictionary
 
 # Optional: called when Minerva asks the panel to load a document.
 func _on_panel_load_request(document: Dictionary) -> void
+
+# Optional pair: the editor ribbon's Undo/Redo buttons route here. Return true
+# when a history step was applied. Declare both or neither — the ribbon shows
+# the buttons only when both exist and hides them for panels without history.
+func _on_panel_undo_request() -> bool
+func _on_panel_redo_request() -> bool
 ```
 
 ### 5.2 `ctx` shape

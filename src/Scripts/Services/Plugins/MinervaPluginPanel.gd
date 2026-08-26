@@ -31,6 +31,14 @@ extends Control
 ##                                   _on_panel_save_request.  Called for both
 ##                                   host_owned file open and project-state
 ##                                   restore.
+##   _on_panel_undo_request()      — revert one step of the panel's own
+##   _on_panel_redo_request()        history; return true when a step was
+##                                   applied.  Declare BOTH or NEITHER: the
+##                                   editor ribbon shows its Undo/Redo buttons
+##                                   only when both exist, and hides them
+##                                   otherwise.  Not defined on this base class
+##                                   on purpose — a default would make every
+##                                   panel look undo-capable.
 ##   receive(channel, payload)     — broker-side push from the plugin server.
 ##                                   Override to handle named messages.
 ##   on_progress(rid, phase, frac) — receive progress events for in-flight

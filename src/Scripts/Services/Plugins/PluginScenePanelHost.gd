@@ -396,6 +396,36 @@ static func invoke_inject_toggle(panel_root: Node, enabled: bool) -> void:
 	panel_root._on_panel_inject_toggle_changed(enabled)
 
 
+## True when `panel_root` declares the undo hook pair. The editor ribbon hides
+## its Undo/Redo buttons for panels that return false here, so a panel that
+## has no history never shows live-looking buttons that do nothing.
+## Both hooks are required together: a panel that can undo can redo.
+static func supports_undo(panel_root: Node) -> bool:
+	if panel_root == null:
+		return false
+	return panel_root.has_method("_on_panel_undo_request") \
+		and panel_root.has_method("_on_panel_redo_request")
+
+
+## Call `_on_panel_undo_request()` on `panel_root`. Returns the hook's bool
+## (true = a step was reverted). Returns false when the panel is null or does
+## not declare the hook pair — the ribbon should never reach this path for
+## such panels because supports_undo() gates the buttons, but the guard keeps
+## a stray call harmless.
+static func invoke_undo(panel_root: Node) -> bool:
+	if not supports_undo(panel_root):
+		return false
+	return bool(panel_root._on_panel_undo_request())
+
+
+## Call `_on_panel_redo_request()` on `panel_root`. Mirror of invoke_undo:
+## returns the hook's bool (true = a step was re-applied), false when absent.
+static func invoke_redo(panel_root: Node) -> bool:
+	if not supports_undo(panel_root):
+		return false
+	return bool(panel_root._on_panel_redo_request())
+
+
 ## Call `_on_panel_unload()` on `panel_root` if the method exists.
 ##
 ## Named wrapper for the inline pattern already used in instantiate_into —
