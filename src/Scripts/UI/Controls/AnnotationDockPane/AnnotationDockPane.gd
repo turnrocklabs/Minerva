@@ -332,9 +332,8 @@ func _refresh_height_budget() -> void:
 ##
 ## The pane is SHRINK_END in BOTTOM mode, so its on-screen height is its
 ## COMBINED MINIMUM — a custom_minimum_size alone cannot shrink it below what
-## its contents demand, which is how a long annotation list used to push the
-## dock past the document. The height therefore has to be spent, not merely
-## capped: everything except the grip and the chevron lives in one
+## its contents demand, so a long annotation list pushes the dock past the
+## document unless the height is SPENT rather than merely capped: everything except the grip and the chevron lives in one
 ## ScrollContainer, and that scroll's minimum height is the whole budget.
 ## Extra rows (and extra toolbar rows) scroll inside it instead of growing the
 ## pane.

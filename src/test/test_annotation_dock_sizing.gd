@@ -6,15 +6,15 @@ extends SceneTree
 ## Boots a REAL AnnotationDockPane in the shape an editor tab mounts it in — a
 ## column with the document above and the dock pinned to the bottom — against a
 ## real AnnotationHost holding long-summary review annotations and workflow
-## annotations. Two properties are checked at the narrow width where the dock
-## used to misbehave (554 px, the PCB tab's bottom strip) and at a wide one:
+## annotations. Two properties are checked at a narrow width (554 px, the PCB
+## tab's bottom strip) and at a wide one:
 ##
 ##   HEIGHT  opens at about a third of the tab, never past half — on open,
 ##           after a grip drag, after the tab shrinks — and the dragged size is
 ##           remembered while it fits.
-##   REACH   every row's trailing controls are inside the viewport, or the
-##           surface reports horizontal overflow with a scrollbar; at 1200 px
-##           nothing scrolls at all.
+##   REACH   no row's trailing controls sit off-screen with no way to scroll to
+##           them, and a horizontal scrollbar shows exactly when the content is
+##           wider than the dock; at 1200 px the content is not wider at all.
 
 const DockPaneScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
 const SizingScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockSizing.gd")
@@ -22,7 +22,10 @@ const SizingScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/Anno
 const NARROW_WIDTH := 554.0
 const WIDE_WIDTH := 1200.0
 const TALL_HEIGHT := 900.0
-const SHORT_HEIGHT := 400.0
+## Short enough that HALF of it is BELOW the size the grip drag leaves behind
+## (200 px), so the re-clamp on resize has to actually move the pane. At 400 the
+## cap would be exactly 200 and the assertion would pass without it.
+const SHORT_HEIGHT := 300.0
 ## Slack for container separations and theme metrics — the assertions are about
 ## thirds and halves of the tab, not exact pixels.
 const SLACK := 12.0
@@ -206,6 +209,11 @@ func _test_grip_drag_is_capped() -> void:
 
 func _test_resize_keeps_the_document_half() -> void:
 	print("\n-- window resize re-clamps, memory survives it --")
+	# The pane arrives here at the 200 px the previous drag left it at, and half
+	# of SHORT_HEIGHT is less than that — so this only passes if the resize
+	# genuinely re-clamps rather than leaving the pane where it was.
+	check("the pane starts this case ABOVE the cap it will have to fall to",
+		_pane.size.y > SHORT_HEIGHT * 0.5 + 1.0)
 	_tab.size = Vector2(NARROW_WIDTH, SHORT_HEIGHT)
 	await _settle()
 	check("dock re-clamps to half the shorter tab (got %.0f)" % _pane.size.y,
@@ -227,24 +235,47 @@ func _test_rows_stay_reachable_when_narrow() -> void:
 	check("workbench rows live in a ScrollContainer", scroll != null)
 	if scroll == null:
 		return
+	var content := scroll.get_node_or_null("ScrollBody") as Control
+	check("the scroll has a content body to measure", content != null)
+	if content == null:
+		return
+	var h_bar := scroll.get_h_scroll_bar()
 	var viewport_right := scroll.get_global_rect().end.x
-	var overflowing := bool(_workbench().is_scrolling_horizontally())
-	var all_reachable := true
+	var content_right := content.get_global_rect().end.x
+	# WIDER THAN THE DOCK is measured from the two rects, not read back off the
+	# scrollbar — otherwise "is the bar right?" would be asking the bar.
+	var content_wider := content.size.x > scroll.size.x + 1.0
+	# Can the user actually travel to the far edge? Only if horizontal scrolling
+	# is enabled AND the bar has room left to move.
+	var can_scroll := scroll.horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED \
+		and (h_bar.max_value - h_bar.page) > 1.0
+
+	# A row FAILS when its trailing control is off-screen and no amount of
+	# scrolling brings it back: either it sits outside the scrollable content
+	# altogether (clipped, not scrolled) or the content cannot be travelled.
+	var stranded := 0
 	var all_shrunk := true
 	for row in _entry_rows():
 		var control := row as Control
 		if control == null or control.get_child_count() == 0:
 			continue
 		var trailing := control.get_child(control.get_child_count() - 1) as Control
-		if trailing != null and trailing.get_global_rect().end.x > viewport_right + 1.0:
-			all_reachable = false
+		if trailing != null:
+			var trailing_right := trailing.get_global_rect().end.x
+			var on_screen := trailing_right <= viewport_right + 1.0
+			var inside_content := trailing_right <= content_right + 1.0
+			if not on_screen and not (inside_content and can_scroll):
+				stranded += 1
 		if control.size.x > scroll.size.x + 1.0:
 			all_shrunk = false
-	check("every row's trailing control is inside the viewport, or the surface reports overflow",
-		all_reachable or overflowing)
-	check("rows shrink to the dock width before any scrolling", all_shrunk or overflowing)
-	check("a horizontal scrollbar is visible exactly when the rows overflow",
-		scroll.get_h_scroll_bar().visible == overflowing)
+	check("no row's trailing control is off-screen with no way to scroll to it (%d stranded)"
+		% stranded, stranded == 0)
+	check("rows shrink to the dock width unless the content really is wider",
+		all_shrunk or content_wider)
+	check("content wider than the dock can be scrolled to",
+		can_scroll or not content_wider)
+	check("a horizontal scrollbar is visible exactly when the content is wider than the dock",
+		h_bar.visible == content_wider)
 
 
 func _test_nothing_scrolls_when_wide() -> void:
