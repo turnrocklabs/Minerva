@@ -35,6 +35,10 @@ var _comment_input: LineEdit
 var _status_label: Label
 var _entries_list: VBoxContainer
 var _body_view_container: PanelContainer
+## Horizontal-only viewport for the rows. Vertical scrolling belongs to the
+## dock pane's single scroll region — this surface reports its full content
+## height and lets the pane's budget decide how much of it is on screen.
+var _content_scroll: ScrollContainer = null
 var _current_body_view: Control = null
 var _empty_label: Label
 
@@ -84,6 +88,7 @@ func show_status(message: String) -> void:
 	if _status_label == null:
 		return
 	_status_label.text = message
+	_status_label.tooltip_text = message
 	_status_label.visible = not message.is_empty()
 
 
@@ -120,6 +125,14 @@ func refresh() -> void:
 		_entries_list.add_child(_make_row(entry))
 	if _empty_label != null:
 		_empty_label.visible = visible_entries.is_empty()
+
+
+## True while the row content is wider than the viewport — the state in which
+## the horizontal scrollbar is the user's only way to the right-hand controls.
+func is_scrolling_horizontally() -> bool:
+	if _content_scroll == null:
+		return false
+	return _content_scroll.get_h_scroll_bar().visible
 
 
 func _build_ui() -> void:
@@ -182,29 +195,43 @@ func _build_ui() -> void:
 	_status_label = Label.new()
 	_status_label.add_theme_color_override("font_color", _BROKEN_COLOR)
 	_status_label.add_theme_font_size_override("font_size", 12)
+	# Elide rather than widen: this label sits OUTSIDE the scroll, so a long
+	# status would otherwise set the whole dock's minimum width. Full text stays
+	# reachable in the tooltip.
+	_status_label.clip_text = true
+	_status_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_status_label.hide()
 	add_child(_status_label)
 
-	# The list + expanded body live inside a ScrollContainer so a long annotation
-	# body scrolls within a bounded area instead of growing the pane unbounded —
-	# unbounded growth pushed the dock's collapse chevron off-screen (it lives in
-	# the parent AnnotationDockPane), leaving the pane impossible to close.
+	# The list + expanded body live inside a ScrollContainer that scrolls
+	# SIDEWAYS only. Growing tall is safe now: the dock pane caps its own height
+	# and scrolls this whole surface vertically, so a long list can no longer
+	# push the pane's collapse chevron off-screen.
 	var content_scroll := ScrollContainer.new()
 	content_scroll.name = "AnnotationScroll"
 	content_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	content_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	content_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	# Real viewport height so the list actually scrolls in BOTTOM dock mode; with
-	# only EXPAND_FILL it collapsed toward 0px and the list was clipped to invisible.
-	content_scroll.custom_minimum_size = Vector2(0, 140)
+	# Horizontal AUTO: with horizontal scrolling DISABLED the scroll's own
+	# minimum width is the widest row's, so a narrow dock could neither shrink
+	# the rows nor reach what hung outside it. AUTO keeps rows shrink-to-fit
+	# while they fit (the container only falls back to content width once the
+	# row minimum overflows) and shows a scrollbar exactly when it does not —
+	# wheel and shift+wheel pan it, which ScrollContainer handles itself.
+	# Vertical DISABLED: the dock pane owns the one vertical scroll, so this
+	# surface reports its true content height rather than nesting a second
+	# wheel target inside the first.
+	content_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	content_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	add_child(content_scroll)
+	_content_scroll = content_scroll
 
 	var scroll_body := VBoxContainer.new()
+	scroll_body.name = "ScrollBody"
 	scroll_body.add_theme_constant_override("separation", 6)
 	scroll_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	content_scroll.add_child(scroll_body)
 
 	_entries_list = VBoxContainer.new()
+	_entries_list.name = "EntriesList"
 	_entries_list.add_theme_constant_override("separation", 4)
 	_entries_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll_body.add_child(_entries_list)
@@ -295,7 +322,11 @@ func _make_row(annotation: Dictionary) -> Control:
 
 	var label := Label.new()
 	label.text = _row_text(annotation)
+	# Clip + ellipsis drops the label's minimum width to nothing, so the row
+	# shrinks to the dock instead of the dock stretching to the summary — and
+	# the lifecycle buttons after it stay pinned at the right edge.
 	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	if bool(annotation.get("stale", false)):
 		label.add_theme_color_override("font_color", _BROKEN_COLOR)

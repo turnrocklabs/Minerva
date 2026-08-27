@@ -18,13 +18,6 @@ signal annotation_selected(annotation_id: String)
 const _MUTED := Color(1, 1, 1, 0.58)
 const _SELECTED_ROW_COLOR := Color(0.4, 0.55, 0.85, 0.18)
 
-## Height cap for the rows area (owner HITL 2026-07-17: dozens of route hints
-## grew the dock so large its open/close control scrolled out of view). The
-## rows live in a ScrollContainer whose MINIMUM height is content-sized when
-## small and clamped here when large — so the pane never forces the dock past
-## this in either the bottom or sidebar orientation; extra rows scroll.
-const _MAX_LIST_HEIGHT_PX := 220.0
-
 ## Clear-by-author (pcb-ui-native-cluster §5, WC-3): the context-menu labels,
 ## in display order, and the author_kind value each sends to the host.
 const _CLEAR_MENU_ITEMS := [
@@ -190,16 +183,13 @@ func refresh() -> void:
 		_header.visible = total > 0 or _consumed_seen > 0
 	if _scroll != null:
 		_scroll.visible = total > 0
-		call_deferred("_clamp_scroll_height")
 
 
-## Deferred (queue_freed rows still inflate minimum size in the refresh frame):
-## content-sized when small, capped at _MAX_LIST_HEIGHT_PX when large.
-func _clamp_scroll_height() -> void:
-	if _scroll == null or _groups_list == null or not is_instance_valid(_scroll):
-		return
-	var content_h := _groups_list.get_combined_minimum_size().y
-	_scroll.custom_minimum_size.y = minf(content_h, _MAX_LIST_HEIGHT_PX)
+## True while the row content is wider than the viewport.
+func is_scrolling_horizontally() -> bool:
+	if _scroll == null:
+		return false
+	return _scroll.get_h_scroll_bar().visible
 
 
 func _build_ui() -> void:
@@ -230,8 +220,12 @@ func _build_ui() -> void:
 
 	_scroll = ScrollContainer.new()
 	_scroll.name = "WorkflowScroll"
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	# Horizontal AUTO / vertical DISABLED — see AnnotationWorkbench's scroll for
+	# both halves: rows shrink to the dock first with the scrollbar (wheel /
+	# shift+wheel) as the fallback that keeps the right-hand row controls
+	# reachable, and the dock pane owns the single vertical scroll.
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_scroll.visible = false
 	add_child(_scroll)
@@ -429,7 +423,10 @@ func _make_row(entry: Dictionary) -> Control:
 
 	var label := Label.new()
 	label.text = str(entry.get("summary", ""))
+	# Zero minimum width (clip + ellipsis) so the row shrinks to the dock and
+	# the Accept/Reject buttons stay pinned at the right edge.
 	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(label)
 

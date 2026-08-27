@@ -5,6 +5,12 @@ extends VBoxContainer
 ## The pane owns the visibility affordance and mounts a substrate workbench.
 ## Editors/plugins can reparent this node into right or bottom split areas; the
 ## pane keeps its host and visibility state stable across that move.
+##
+## Height (BOTTOM mode): the pane opens at a third of the editor tab's height
+## and never takes more than half of it — on open, on a grip drag, and on a
+## window resize — so the document always keeps the other half. The policy
+## numbers live in AnnotationDockSizing; _apply_height_budget explains why the
+## budget has to be spent on a scroll region rather than merely capped.
 
 signal repair_requested(annotation_id: String)
 signal add_comment_requested(text: String)
@@ -22,12 +28,34 @@ const _WorkflowAnnotationListScript = preload("res://Scripts/UI/Controls/Annotat
 var _workbench: Control = null
 var _workflow_list: Control = null
 var _toolbar: AnnotationToolbar = null
+const _AnnotationDockSizingScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockSizing.gd")
+
+## Grip along the pane's top edge in BOTTOM mode. Dragging it up/down is the
+## only way the user resizes the dock, so it is the sole writer of
+## _preferred_height.
+var _resize_handle: HSeparator = null
+## Height the user last dragged this pane to, in pixels; 0 = never dragged, use
+## the opening third. Per-tab memory comes for free: one pane per editor tab,
+## and Editor reuses the same pane across plugin-surface reloads.
+var _preferred_height: float = 0.0
+## The Control whose height the pane budgets against — the editor tab, set by
+## the host at mount time. Never written by the pane; only read.
+var _height_source: Control = null
+## The pane's single scrolling region: toolbar + both lists live inside it, so
+## the pane's height is a number we set, not a sum of whatever the lists grew
+## to. Only the grip and the chevron sit outside it.
+var _dock_scroll: ScrollContainer = null
+var _dock_body: VBoxContainer = null
+var _dragging_height: bool = false
+var _drag_start_pointer_y: float = 0.0
+var _drag_start_height: float = 0.0
 
 const _RIGHT_EXPANDED_MIN := Vector2(260, 0)
 const _RIGHT_COLLAPSED_MIN := Vector2(30, 0)
 const _BOTTOM_EXPANDED_MIN := Vector2(0, 132)
 const _BOTTOM_COLLAPSED_MIN := Vector2(0, 24)
 const _CHEVRON_SIZE := Vector2(24, 20)
+const _HANDLE_SIZE := Vector2(0, 8)
 
 
 func _ready() -> void:
@@ -45,6 +73,42 @@ func set_host(host: RefCounted) -> void:
 		var ann_host := host as AnnotationHost
 		_toolbar.set_registry(ann_host.get_registry())
 		_toolbar.set_host(ann_host)
+	# Row count drives how much of the budget the workflow strip asks for, so
+	# the split is recomputed after every list refresh. Deferred: the lists are
+	# connected first (above) and re-clamp their own scrolls deferred too.
+	var budget_callable := Callable(self, "_refresh_height_budget")
+	if _host != null and _host.has_signal("annotations_changed") \
+			and not _host.is_connected("annotations_changed", budget_callable):
+		_host.connect("annotations_changed", budget_callable)
+	_refresh_height_budget()
+
+
+## The editor tab whose vertical space the dock is allowed a share of. Hosts
+## call this at mount time; without it the pane falls back to the viewport,
+## which is only right for a full-window editor.
+func set_available_height_source(source: Control) -> void:
+	if _height_source == source:
+		return
+	var resized_callable := Callable(self, "_refresh_height_budget")
+	if _height_source != null and is_instance_valid(_height_source) \
+			and _height_source.resized.is_connected(resized_callable):
+		_height_source.resized.disconnect(resized_callable)
+	_height_source = source
+	if _height_source != null and not _height_source.resized.is_connected(resized_callable):
+		_height_source.resized.connect(resized_callable)
+	_apply_height_budget()
+
+
+## User-set dock height (the drag's only entry point, and the one tests drive).
+## Clamped to the 50 % cap before it is remembered, so a stored size can never
+## reappear oversized after a window resize.
+func set_preferred_height(height: float) -> void:
+	_preferred_height = _AnnotationDockSizingScript.clamp_height(height, _available_height())
+	_apply_height_budget()
+
+
+func get_preferred_height() -> float:
+	return _preferred_height
 
 
 func get_workbench() -> Control:
@@ -68,6 +132,17 @@ func clear_active_tool() -> void:
 	_ensure_ui()
 	if _toolbar != null:
 		_toolbar.clear_active_tool()
+
+
+## Expand/collapse from outside the pane — the chevron's own path, exposed so
+## hosts and tests drive the real state change instead of poking the button.
+func set_collapsed(value: bool) -> void:
+	_ensure_ui()
+	_set_collapsed(value)
+
+
+func is_collapsed() -> bool:
+	return _collapsed
 
 
 func set_dock_mode(mode: DockMode) -> void:
@@ -122,8 +197,23 @@ func _build_ui() -> void:
 		return
 	add_theme_constant_override("separation", 4)
 
+	# Top-edge grip (BOTTOM mode only — a RIGHT-docked pane fills its column and
+	# has no height of its own to give away).
+	_resize_handle = HSeparator.new()
+	_resize_handle.name = "ResizeHandle"
+	_resize_handle.custom_minimum_size = _HANDLE_SIZE
+	_resize_handle.mouse_filter = Control.MOUSE_FILTER_STOP
+	_resize_handle.mouse_default_cursor_shape = Control.CURSOR_VSPLIT
+	_resize_handle.tooltip_text = "Drag to resize the annotations dock"
+	_resize_handle.gui_input.connect(_on_resize_handle_input)
+	add_child(_resize_handle)
+
 	_chevron = Button.new()
+	_chevron.name = "ToggleButton"
 	_chevron.text = "v"
+	# The pane's OWN open/close control: it lives inside the pane in every
+	# layout, so a dock is always closable even when a host's sidebar (which
+	# may carry its own toggle) is scrolled out of reach.
 	_chevron.tooltip_text = "Toggle annotations"
 	_chevron.focus_mode = Control.FOCUS_NONE
 	_chevron.custom_minimum_size = _CHEVRON_SIZE
@@ -132,12 +222,26 @@ func _build_ui() -> void:
 	_chevron.pressed.connect(_toggle_collapsed)
 	add_child(_chevron)
 
+	_dock_scroll = ScrollContainer.new()
+	_dock_scroll.name = "DockScroll"
+	_dock_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_dock_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_dock_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_dock_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	add_child(_dock_scroll)
+
+	_dock_body = VBoxContainer.new()
+	_dock_body.name = "DockBody"
+	_dock_body.add_theme_constant_override("separation", 4)
+	_dock_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_dock_scroll.add_child(_dock_body)
+
 	_toolbar = AnnotationToolbar.new()
 	_toolbar.name = "AnnotationToolbar"
 	_toolbar.presentation_mode = AnnotationToolbar.PresentationMode.COMPACT
 	_toolbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_toolbar.active_tool_changed.connect(func(tool: AnnotationAuthorTool) -> void: active_tool_changed.emit(tool))
-	add_child(_toolbar)
+	_dock_body.add_child(_toolbar)
 
 	_workbench = _AnnotationWorkbenchScript.new()
 	_workbench.name = "AnnotationWorkbench"
@@ -146,7 +250,7 @@ func _build_ui() -> void:
 	_workbench.connect("repair_requested", func(id: String) -> void: repair_requested.emit(id))
 	_workbench.connect("add_comment_requested", func(text: String) -> void: add_comment_requested.emit(text))
 	_workbench.connect("annotation_selected", func(id: String) -> void: annotation_selected.emit(id))
-	add_child(_workbench)
+	_dock_body.add_child(_workbench)
 
 	# Workflow listing (pcb-ui-native-cluster §4): workflow-class annotations
 	# excluded from the review workbench above list HERE, kind-grouped. The
@@ -155,7 +259,7 @@ func _build_ui() -> void:
 	_workflow_list.name = "WorkflowAnnotationList"
 	_workflow_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_workflow_list.connect("annotation_selected", func(id: String) -> void: annotation_selected.emit(id))
-	add_child(_workflow_list)
+	_dock_body.add_child(_workflow_list)
 
 	_apply_layout_state()
 	if _host != null and _workbench.has_method("set_host"):
@@ -184,6 +288,10 @@ func _set_collapsed(value: bool) -> void:
 
 
 func _apply_layout_state() -> void:
+	if _resize_handle != null:
+		_resize_handle.visible = not _collapsed and dock_mode == DockMode.BOTTOM
+	if _dock_scroll != null:
+		_dock_scroll.visible = not _collapsed
 	if _toolbar != null:
 		_toolbar.visible = not _collapsed
 	if _workbench != null:
@@ -203,3 +311,75 @@ func _apply_layout_state() -> void:
 		custom_minimum_size = _BOTTOM_COLLAPSED_MIN if _collapsed else _BOTTOM_EXPANDED_MIN
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		size_flags_vertical = Control.SIZE_SHRINK_END
+	_apply_height_budget()
+
+
+## Height of the editor tab this dock shares. Zero means "unknown" — the pane
+## then leaves the lists' own defaults alone rather than budgeting off a guess.
+func _available_height() -> float:
+	if _height_source != null and is_instance_valid(_height_source) and _height_source.size.y > 0.0:
+		return _height_source.size.y
+	if is_inside_tree():
+		return get_viewport_rect().size.y
+	return 0.0
+
+
+func _refresh_height_budget() -> void:
+	call_deferred("_apply_height_budget")
+
+
+## Sizes the pane, and the scrolling region inside it, from the editor's height.
+##
+## The pane is SHRINK_END in BOTTOM mode, so its on-screen height is its
+## COMBINED MINIMUM — a custom_minimum_size alone cannot shrink it below what
+## its contents demand, which is how a long annotation list used to push the
+## dock past the document. The height therefore has to be spent, not merely
+## capped: everything except the grip and the chevron lives in one
+## ScrollContainer, and that scroll's minimum height is the whole budget.
+## Extra rows (and extra toolbar rows) scroll inside it instead of growing the
+## pane.
+func _apply_height_budget() -> void:
+	if _dock_scroll == null or _collapsed:
+		return
+	var available := _available_height()
+	if available <= 0.0:
+		return
+	if dock_mode != DockMode.BOTTOM:
+		# A RIGHT-docked pane is a column member: its height is the column's, so
+		# it must not force one of its own beyond a usable floor.
+		_dock_scroll.custom_minimum_size.y = _AnnotationDockSizingScript.MIN_LIST_HEIGHT
+		return
+	var wanted := _preferred_height
+	if wanted <= 0.0:
+		wanted = available * _AnnotationDockSizingScript.OPEN_FRACTION
+	var target := _AnnotationDockSizingScript.clamp_height(wanted, available)
+	custom_minimum_size.y = target
+	_dock_scroll.custom_minimum_size.y = maxf(
+		target - _fixed_chrome_height(), _AnnotationDockSizingScript.MIN_LIST_HEIGHT)
+
+
+## The pane's non-scrolling frame: the grip, the chevron, and the separations
+## around them. Everything else is inside _dock_scroll and costs nothing.
+func _fixed_chrome_height() -> float:
+	var separation := float(get_theme_constant(&"separation"))
+	var chrome := separation  # gap between the frame and the scrolling region
+	if _resize_handle != null and _resize_handle.visible:
+		chrome += _resize_handle.get_combined_minimum_size().y + separation
+	if _chevron != null and _chevron.visible:
+		chrome += _chevron.get_combined_minimum_size().y
+	return chrome
+
+
+## The dock hangs off the bottom edge, so dragging the grip UP grows it.
+func _on_resize_handle_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var button := event as InputEventMouseButton
+		if button.button_index != MOUSE_BUTTON_LEFT:
+			return
+		_dragging_height = button.pressed
+		if _dragging_height:
+			_drag_start_pointer_y = button.global_position.y
+			_drag_start_height = size.y
+	elif event is InputEventMouseMotion and _dragging_height:
+		var motion := event as InputEventMouseMotion
+		set_preferred_height(_drag_start_height + (_drag_start_pointer_y - motion.global_position.y))

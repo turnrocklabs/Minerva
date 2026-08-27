@@ -583,6 +583,9 @@ func _ready():
 				_annotation_sidebar.add_comment_requested.connect(_on_sidebar_add_comment_requested)
 			if _annotation_sidebar.has_signal("annotation_selected"):
 				_annotation_sidebar.annotation_selected.connect(_on_annotation_selected_jump)
+			# This tab IS the vertical space the dock budgets its height against.
+			if _annotation_sidebar.has_method("set_available_height_source"):
+				_annotation_sidebar.set_available_height_source(self)
 			resized.connect(_sync_annotation_dock_layout)
 			call_deferred("_sync_annotation_dock_layout")
 	if file:
@@ -849,6 +852,11 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 		# The panel may override later via its own responsive logic.
 		_annotation_sidebar.set_dock_mode(_AnnotationDockPaneScript.DockMode.RIGHT)
 
+	# Panel-owned or platform-placed, the dock's height ceiling is this tab's
+	# height — the panel only owns WHERE the dock sits, not how much of the
+	# document it may cover.
+	if _annotation_sidebar.has_method("set_available_height_source"):
+		_annotation_sidebar.set_available_height_source(self)
 	if _annotation_sidebar.has_method("set_host"):
 		_annotation_sidebar.set_host(annotation_host)
 	if _annotation_sidebar.has_method("set_can_add_comment"):
