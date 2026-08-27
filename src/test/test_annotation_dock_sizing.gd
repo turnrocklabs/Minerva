@@ -26,6 +26,10 @@ const TALL_HEIGHT := 900.0
 ## (200 px), so the re-clamp on resize has to actually move the pane. At 400 the
 ## cap would be exactly 200 and the assertion would pass without it.
 const SHORT_HEIGHT := 300.0
+## Shorter than twice the pane's own floors: half of it (60) is below the chrome
+## plus MIN_LIST_HEIGHT, so the cap and the floors are in direct conflict and
+## the cap has to win.
+const TINY_HEIGHT := 120.0
 ## Slack for container separations and theme metrics — the assertions are about
 ## thirds and halves of the tab, not exact pixels.
 const SLACK := 12.0
@@ -127,6 +131,21 @@ func _settle() -> void:
 	await process_frame
 
 
+## Shrink the tab to `height`, the way a shrinking window does it.
+##
+## A Control never goes below its own combined minimum, so ONE assignment only
+## gets as far as the pane's CURRENT floors allow; the budget then recomputes
+## against that height and the floors drop, which lets the next assignment go
+## further. A real window resize repeats the same push every frame — this is
+## that push, run until it stops moving.
+func _shrink_tab_to(height: float) -> void:
+	for _i in 5:
+		_tab.size = Vector2(NARROW_WIDTH, height)
+		await _settle()
+		if absf(_tab.size.y - height) <= 1.0:
+			return
+
+
 ## The platform BOTTOM mount: document fills, dock shrinks to the bottom edge,
 ## and the tab itself is the height the dock budgets against.
 func _build_tab() -> void:
@@ -220,6 +239,21 @@ func _test_resize_keeps_the_document_half() -> void:
 		_pane.size.y <= SHORT_HEIGHT * 0.5 + 1.0)
 	check("document keeps its half of the shorter tab",
 		_document.size.y >= SHORT_HEIGHT * 0.5 - SLACK)
+
+	# A TAB TOO SHORT FOR THE PANE'S OWN FLOORS. Half of 120 is 60, which is
+	# less than the chrome plus the list's 44 px floor — so the floors and the
+	# cap fight, and the CAP has to win or the document keeps less than half of
+	# an already tiny tab. Measured on the real pane, whose on-screen height in
+	# BOTTOM mode is its COMBINED minimum, not the number it was handed.
+	await _shrink_tab_to(TINY_HEIGHT)
+	check("the tab really is that short (a Control only shrinks once its "
+		+ "contents let it, so this is the pane's own floors having given way)",
+		absf(_tab.size.y - TINY_HEIGHT) <= 1.0)
+	check("dock never overruns the cap on a tab too short for its floors (got %.0f, want <= %.0f)"
+		% [_pane.size.y, TINY_HEIGHT * 0.5],
+		_pane.size.y <= TINY_HEIGHT * 0.5 + 1.0)
+	check("the document still keeps half of the tiny tab (got %.0f)" % _document.size.y,
+		_document.size.y >= TINY_HEIGHT * 0.5 - SLACK)
 
 	_tab.size = Vector2(NARROW_WIDTH, TALL_HEIGHT)
 	await _settle()

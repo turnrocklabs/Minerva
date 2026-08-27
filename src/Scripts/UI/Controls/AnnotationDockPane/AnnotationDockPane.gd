@@ -354,8 +354,14 @@ func _apply_height_budget() -> void:
 		wanted = available * _AnnotationDockSizingScript.OPEN_FRACTION
 	var target := _AnnotationDockSizingScript.clamp_height(wanted, available)
 	custom_minimum_size.y = target
-	_dock_scroll.custom_minimum_size.y = maxf(
-		target - _fixed_chrome_height(), _AnnotationDockSizingScript.MIN_LIST_HEIGHT)
+	# SPEND THE BUDGET, and no more: the list gets whatever the target leaves
+	# after the chrome. Holding it to MIN_LIST_HEIGHT when the budget is smaller
+	# than that made the pane's COMBINED minimum overrun the cap — on a 120 px
+	# tab the cap is 60 but chrome + the 44 px floor forced ~80, and the
+	# document lost more than half. The cap is the promise (see
+	# AnnotationDockSizing.clamp_height); the list floor is a preference, and it
+	# is already satisfied by every target big enough to hold it.
+	_dock_scroll.custom_minimum_size.y = maxf(0.0, target - _fixed_chrome_height())
 
 
 ## The pane's non-scrolling frame: the grip, the chevron, and the separations
