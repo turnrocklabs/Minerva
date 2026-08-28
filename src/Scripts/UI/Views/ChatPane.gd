@@ -3961,8 +3961,8 @@ func find_chat_by_id(history_id: String) -> ServiceHistory:
 
 ## Create a group and select it. Optionally moves `history` in as its first
 ## member, which is what dropping a tab on the "+" card does.
-func create_group(name: String = ChatGroupRegistry.DEFAULT_GROUP_NAME, history: ServiceHistory = null) -> String:
-	var gid := SingletonObject.chat_groups.create_group(name)
+func create_group(group_name: String = ChatGroupRegistry.DEFAULT_GROUP_NAME, history: ServiceHistory = null) -> String:
+	var gid := SingletonObject.chat_groups.create_group(group_name)
 	if history != null:
 		set_chat_group(history, gid)
 	set_active_group(gid)
@@ -4114,8 +4114,8 @@ func can_undo_group_delete() -> bool:
 	return not _last_dissolved_group.is_empty()
 
 
-func rename_group(group_id: String, name: String) -> bool:
-	if not SingletonObject.chat_groups.rename_group(group_id, name):
+func rename_group(group_id: String, group_name: String) -> bool:
+	if not SingletonObject.chat_groups.rename_group(group_id, group_name):
 		return false
 	SingletonObject.save_state(false)
 	chat_groups_changed.emit()
@@ -4575,10 +4575,10 @@ func _get_chat_tab_drag_data(at_position: Vector2) -> Variant:
 	sb.content_margin_right = 8
 	sb.content_margin_top = 4
 	sb.content_margin_bottom = 4
-	var wrap := PanelContainer.new()
-	wrap.add_theme_stylebox_override("panel", sb)
-	wrap.add_child(preview)
-	set_drag_preview(wrap)
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", sb)
+	frame.add_child(preview)
+	set_drag_preview(frame)
 
 	return {"kind": "chat_tab", "chat_id": str(history.HistoryId), "tab": tab}
 

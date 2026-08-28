@@ -1160,8 +1160,8 @@ func _list_chats(_args: Dictionary) -> Dictionary:
 ## Resolve a caller-supplied group reference — an id, or an exact (case
 ## insensitive) group name — to a real group id. Returns "" when unknown, which
 ## every caller must treat as an error rather than silently ungrouping a chat.
-func _resolve_group_id(reference: String) -> String:
-	var ref := reference.strip_edges()
+func _resolve_group_id(group_ref: String) -> String:
+	var ref := group_ref.strip_edges()
 	if ref.is_empty():
 		return ""
 	if SingletonObject.chat_groups.has_group(ref):

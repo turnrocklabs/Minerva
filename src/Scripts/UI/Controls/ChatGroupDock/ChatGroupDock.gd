@@ -219,22 +219,23 @@ func _make_fade(from_left: bool) -> TextureRect:
 	tex.fill_from = Vector2(0, 0)
 	tex.fill_to = Vector2(1, 0)
 
-	var tr := TextureRect.new()
-	tr.texture = tex
-	tr.stretch_mode = TextureRect.STRETCH_SCALE
-	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fade := TextureRect.new()
+	fade.texture = tex
+	fade.stretch_mode = TextureRect.STRETCH_SCALE
+	fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# The wide presets pin the fade to its edge and stretch it top-to-bottom, so
+	# its opposite vertical anchors differ and the layout — not an assigned size —
+	# owns the rect. Width therefore comes from the free horizontal offset; setting
+	# `size` here would be overwritten right after _ready() anyway.
 	if from_left:
-		tr.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
+		fade.set_anchors_and_offsets_preset(Control.PRESET_LEFT_WIDE)
+		fade.offset_right = FADE_WIDTH
 	else:
-		tr.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
-	tr.custom_minimum_size = Vector2(FADE_WIDTH, 0)
-	tr.size = Vector2(FADE_WIDTH, tr.size.y)
-	if not from_left:
-		tr.offset_left = -FADE_WIDTH
-	else:
-		tr.offset_right = FADE_WIDTH
-	tr.modulate.a = 0.0
-	return tr
+		fade.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
+		fade.offset_left = -FADE_WIDTH
+	fade.custom_minimum_size = Vector2(FADE_WIDTH, 0)
+	fade.modulate.a = 0.0
+	return fade
 
 
 #region Collapse
