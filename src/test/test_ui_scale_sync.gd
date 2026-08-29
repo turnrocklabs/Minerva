@@ -22,6 +22,11 @@ func check(desc: String, ok: bool) -> void:
 func _initialize() -> void:
 	print("[tags: unit,ui,scale]")
 	print("=== test_ui_scale_sync ===\n")
+	# _initialize() runs before the SceneTree attaches its root: root.get_tree()
+	# is still null there and anything parented to root reports is_inside_tree()
+	# == false, so UiScaleSync.sync() correctly declines to stamp it. One frame
+	# gives the rig the live tree the product is installed into.
+	await process_frame
 	root.content_scale_factor = 1.5
 	UiScaleSyncScript.install(self)
 
