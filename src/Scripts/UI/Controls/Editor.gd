@@ -721,6 +721,7 @@ func _exit_tree() -> void:
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
 		PluginScenePanelHost.invoke_unload(plugin_scene_root)
+		PluginScenePanelHost.unregister_from_broker(plugin_id, panel_name)
 		var pm = _get_plugin_manager_safe()
 		if pm != null:
 			pm.unregister_live_panel(plugin_id, panel_name)
@@ -1501,8 +1502,12 @@ func _on_save_dialog_confirmed():
 
 func _on_close_dialog_custom_action(action: StringName):
 	if action == "close":
-		save_dialog.emit(DialogResult.CLOSE)
+		# Hide FIRST: the emit resumes prompt_close's awaiter, which may pull
+		# this editor out of the tree (tab close, project switch, app exit) —
+		# and a Window that has left the tree no longer has a native window
+		# to hide.
 		$CloseDialog.hide()
+		save_dialog.emit(DialogResult.CLOSE)
 
 
 func _on_file_dialog_file_selected(path: String):

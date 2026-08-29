@@ -636,14 +636,17 @@ static func _deserialize_plugin_scene_editor(
 	_restore_panel_state(editor_inst, payload)
 
 	# Server-side deserialize is best-effort: only fires when the plugin is
-	# running AND declares a deserialize_channel.  Both branches log a warning
-	# and continue — the panel UI restore above is the load-bearing step.
+	# running AND declares a deserialize_channel. A plugin with no channel and
+	# no server-side payload (panel-state only, like drive) has nothing to
+	# restore here; a warning is owed only when there IS a payload that cannot
+	# be delivered — the panel UI restore above is the load-bearing step.
 	if def.project_file_deserialize_channel.is_empty():
-		push_warning(
-			("[EditorContainer] deserialize: plugin '%s' has no " +
-			"project_file.deserialize_channel — server-side state not restored.") %
-			plugin_id
-		)
+		if not payload.is_empty():
+			push_warning(
+				("[EditorContainer] deserialize: plugin '%s' carries server-side " +
+				"state but declares no project_file.deserialize_channel — not restored.") %
+				plugin_id
+			)
 		return
 
 	var conn: MCPServerConnection = _get_plugin_connection_static(plugin_id)
