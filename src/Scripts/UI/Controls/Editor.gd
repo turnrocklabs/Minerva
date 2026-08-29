@@ -1981,6 +1981,16 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 
 #endregion code editor action commands
 
+## A plugin tab's content was persisted by Project → Save (its panel state
+## went into the .minproj), so it no longer reads as unsaved. File → Save
+## clears the same flag after writing the tab's own file.
+func mark_plugin_scene_saved() -> void:
+	if type != Type.PLUGIN_SCENE:
+		return
+	_plugin_scene_modified = false
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+
+
 func _on_editor_changed(text: String = ""):
 	# Buffer-canonical: push code_edit's new text into the attached buffer
 	# unless we're mid-pull from the buffer (reentrancy guard). apply_edit

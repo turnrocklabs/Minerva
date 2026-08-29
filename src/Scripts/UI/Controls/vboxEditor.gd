@@ -497,6 +497,11 @@ func _serialize_plugin_scene_editor(editor: Editor, tab_title: String) -> Dictio
 		var panel_state = panel_root._on_panel_save_request()
 		if panel_state is Dictionary:
 			tab_state["__panel_state"] = panel_state
+			# The tab's content is now in the project (owner ruling, bug
+			# 01a04bf0f16f): that IS a save for a plugin tab, so it stops
+			# reading as unsaved. The tab's own file is NOT written here —
+			# File → Save does that — so the file may lag the project.
+			editor.mark_plugin_scene_saved()
 
 	if def == null or def.project_file_serialize_channel.is_empty():
 		# No project_file hook declared for this plugin — skip MCP dispatch.
@@ -641,7 +646,11 @@ static func _deserialize_plugin_scene_editor(
 	# restore here; a warning is owed only when there IS a payload that cannot
 	# be delivered — the panel UI restore above is the load-bearing step.
 	if def.project_file_deserialize_channel.is_empty():
-		if not payload.is_empty():
+		# __panel_state is the platform's, restored above; only what is left
+		# would have needed the plugin's own channel.
+		var server_side: Dictionary = payload.duplicate()
+		server_side.erase("__panel_state")
+		if not server_side.is_empty():
 			push_warning(
 				("[EditorContainer] deserialize: plugin '%s' carries server-side " +
 				"state but declares no project_file.deserialize_channel — not restored.") %
