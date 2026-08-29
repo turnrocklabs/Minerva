@@ -274,6 +274,7 @@ func _decorated_annotations() -> Array:
 			display_index = result.size() + 1
 		d["display_index"] = display_index
 		d["_anchor_label"] = _annotation_anchor_label(d)
+		d["_row_words"] = _annotation_words(d, registry)
 		result.append(d)
 	return result
 
@@ -388,14 +389,31 @@ func _annotation_prefix(annotation: Dictionary) -> String:
 	return "#%d" % index if index > 0 else "#?"
 
 
+## The row is the HUMAN'S words — the caption, the comment, the text — and
+## nothing else. Geometry and the resolved anchor are the envelope's `summary`
+## and `anchored_to`; agents read those as structured fields from
+## minerva_annotations_list, and a person gets them in the row's tooltip.
+## An annotation with no words shows its kind's name.
 func _row_text(annotation: Dictionary) -> String:
+	var words := str(annotation.get("_row_words", "")).strip_edges()
+	if words.is_empty():
+		words = str(annotation.get("kind", "annotation")).capitalize()
 	var anchor_label := str(annotation.get("_anchor_label", ""))
-	var summary := str(annotation.get("summary", "")).strip_edges()
-	if summary.is_empty():
-		summary = str(annotation.get("kind", "annotation"))
 	if not anchor_label.is_empty():
-		return "%s  %s" % [anchor_label, summary]
-	return summary
+		return "%s  %s" % [anchor_label, words]
+	return words
+
+
+## The kind's own reading of the annotation's free text (AnnotationKind
+## .text_content) — "" for a kind with no words or one the registry does not
+## know.
+func _annotation_words(annotation: Dictionary, registry) -> String:
+	if registry == null:
+		return ""
+	var kind = registry.get_annotation_kind(StringName(str(annotation.get("kind", ""))))
+	if kind == null:
+		return ""
+	return str(kind.text_content(annotation)).replace("\n", " ").strip_edges()
 
 
 func _annotation_anchor_label(annotation: Dictionary) -> String:
@@ -418,8 +436,10 @@ func _annotation_anchor_label(annotation: Dictionary) -> String:
 		scope = str((payload as Dictionary).get("target_scope", ""))
 	if scope == "line" and line_num > 0:
 		return "Line %d" % line_num
+	# No snapshot text means the anchor is a point or region on a canvas, and a
+	# label saying so ("Range") tells the reader nothing the row needs.
 	if text.is_empty():
-		return "Range"
+		return ""
 	text = text.replace("\n", " ").strip_edges()
 	if text.length() > 32:
 		text = text.substr(0, 29) + "..."
