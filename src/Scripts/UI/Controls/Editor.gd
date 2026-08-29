@@ -1524,15 +1524,12 @@ func _hide_dialog_if_live(dialog: Window) -> void:
 	if not dialog.is_embedded() \
 			and not DisplayServer.get_window_list().has(dialog.get_window_id()):
 		return
-	# Diagnostic for bug 019fe35966 (temporary): the guard above passes and
-	# hide() still trips window_get_flag on macOS, so the window the server
-	# lacks is not the dialog's own. Name every id in play at the moment.
-	var parent_window: Window = dialog.get_parent().get_window() if dialog.get_parent() != null else null
-	print("[Editor] hide %s: id=%d embedded=%s transient=%s parent_window=%s parent_id=%d server=%s" % [
-		dialog.name, dialog.get_window_id(), str(dialog.is_embedded()), str(dialog.transient),
-		str(parent_window.name) if parent_window != null else "<none>",
-		parent_window.get_window_id() if parent_window != null else -99,
-		str(DisplayServer.get_window_list())])
+	# Measured 2026-08-28 (bug 019fe35966): with the dialog's and the root's ids
+	# both present in the server's list, hide() still logs
+	# '!windows.has(p_window)' on macOS — it comes from inside
+	# delete_sub_window's pointer re-entry after the NSWindow closes, i.e. the
+	# engine, and only while the pointer rests on the closing dialog (which it
+	# always does after a button click). Cosmetic; nothing here can avoid it.
 	dialog.hide()
 
 
