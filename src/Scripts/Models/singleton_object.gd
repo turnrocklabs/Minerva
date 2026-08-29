@@ -1186,32 +1186,31 @@ var scaling_factor: float = 0.04
 func increment_scale_ui() -> void:
 	var ui_scale: float = get_tree().root.content_scale_factor
 	if ui_scale < max_ui_scale:
-		var new_scale: float = minf(ui_scale + scaling_factor, max_ui_scale)
-		get_tree().root.content_scale_factor = new_scale
-		_save_ui_scale(new_scale)
-		main_scene.queue_redraw()
+		_apply_ui_scale(minf(ui_scale + scaling_factor, max_ui_scale))
 
 
 func decrement_ui_scale() -> void:
 	var ui_scale: float = get_tree().root.content_scale_factor
 	if ui_scale > min_ui_scale:
-		var new_scale: float = maxf(ui_scale - scaling_factor, min_ui_scale)
-		get_tree().root.content_scale_factor = new_scale
-		_save_ui_scale(new_scale)
-		main_scene.queue_redraw()
+		_apply_ui_scale(maxf(ui_scale - scaling_factor, min_ui_scale))
 
 
 func reset_ui_scale() -> void:
-	get_tree().root.content_scale_factor = 1.0
-	_save_ui_scale(1.0)
-	main_scene.queue_redraw()
+	_apply_ui_scale(1.0)
 
 
 func set_ui_scale(new_scale: float) -> void:
 	if new_scale >= min_ui_scale and new_scale <= max_ui_scale:
-		get_tree().root.content_scale_factor = new_scale
-		_save_ui_scale(new_scale)
-		main_scene.queue_redraw()
+		_apply_ui_scale(new_scale)
+
+
+## The one place the zoom changes: root, every open sub-window (UiScaleSync),
+## the saved preference, and a redraw.
+func _apply_ui_scale(new_scale: float) -> void:
+	get_tree().root.content_scale_factor = new_scale
+	UiScaleSync.resync_all(get_tree())
+	_save_ui_scale(new_scale)
+	main_scene.queue_redraw()
 
 
 func _save_ui_scale(scale: float) -> void:
@@ -1222,6 +1221,7 @@ func _load_ui_scale() -> void:
 	var saved_scale: float = config_file.get_value("UI", "scale", 1.0)
 	if saved_scale >= min_ui_scale and saved_scale <= max_ui_scale:
 		get_tree().root.content_scale_factor = saved_scale
+		UiScaleSync.resync_all(get_tree())
 
 #endregion UI Scaling
 
@@ -1279,6 +1279,8 @@ func _load_chat_font_size() -> void:
 #endregion Chat text size
 
 func _ready():
+	# Sub-windows follow the UI zoom from here on (chore 019fb90972).
+	UiScaleSync.install(get_tree())
 	SingletonObject.notes_draw_state_changed.connect(
 		func(state: int):
 			notes_draw_state = state
