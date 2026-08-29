@@ -195,15 +195,8 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 			return editor
 	
 	var editor_node = Editor.create(type, file, name_, associated_object, initial_setup)
-	
-	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
-	editor_node.undo_capability_changed.connect(_on_editor_undo_capability_changed)
-
-	Tabs.add_child(editor_node)
+	adopt_editor(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count()-1
-	
-	if Tabs.get_tab_count() > 0:
-		buffer_control_editor.hide()
 	if name_: 
 		var tab_name = editor_name_to_use(name_)
 		Tabs.set_tab_title(Tabs.current_tab, tab_name)
@@ -283,6 +276,23 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 ## Sets plugin_id and panel_name on the Editor BEFORE instantiation so that
 ## Editor.create_plugin_scene() can pass them to PluginScenePanelHost.
 ## `file` is the associated file path (may be null for new untitled editors).
+## THE one way an Editor joins the tab strip — add(), add_plugin_scene_editor()
+## and project restore all come through here, so every tab gets the pane's
+## listeners: the unsaved-marker render on content_changed and the ribbon's
+## undo re-evaluation. A tab added straight to Tabs never showed the marker
+## (bug 01a04bf44dc5). Idempotent on the connections, so a tab that leaves and
+## returns (Undo restore) is not double-wired.
+func adopt_editor(editor_node: Editor) -> void:
+	var on_changed := _on_editor_content_changed.bind(editor_node)
+	if not editor_node.content_changed.is_connected(on_changed):
+		editor_node.content_changed.connect(on_changed)
+	if not editor_node.undo_capability_changed.is_connected(_on_editor_undo_capability_changed):
+		editor_node.undo_capability_changed.connect(_on_editor_undo_capability_changed)
+	Tabs.add_child(editor_node)
+	if Tabs.get_tab_count() > 0:
+		buffer_control_editor.hide()
+
+
 func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null, name_: String = "") -> Editor:
 	# Check if a plugin-scene editor for the same plugin/panel/file is already open.
 	# Match by (type, plugin_id, panel_name, file) — not by file alone — so that
@@ -308,12 +318,8 @@ func add_plugin_scene_editor(plugin_id: String, panel_name: String, file = null,
 			title = editor_name_to_use(fname)
 
 	var editor_node: Editor = Editor.create_plugin_scene(plugin_id, panel_name, file, title)
-	editor_node.content_changed.connect(_on_editor_content_changed.bind(editor_node))
-	editor_node.undo_capability_changed.connect(_on_editor_undo_capability_changed)
-	Tabs.add_child(editor_node)
+	adopt_editor(editor_node)
 	Tabs.current_tab = Tabs.get_tab_count() - 1
-	if Tabs.get_tab_count() > 0:
-		buffer_control_editor.hide()
 	if title:
 		Tabs.set_tab_title(Tabs.current_tab, title)
 		editor_node.tab_title = title
