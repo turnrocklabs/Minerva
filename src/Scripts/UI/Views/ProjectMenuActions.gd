@@ -294,7 +294,7 @@ func deserialize_project(data: Dictionary) -> int:
 		editor_nodes = await EditorContainer.deserialize(data.get("Editors", []))
 	
 	for editor in editor_nodes:
-		SingletonObject.editor_pane.Tabs.add_child(editor)
+		SingletonObject.editor_pane.adopt_editor(editor)
 		var tab_idx = SingletonObject.editor_pane.Tabs.get_tab_idx_from_control(editor)
 		SingletonObject.editor_pane.Tabs.set_tab_title(tab_idx, editor.tab_title)
 		if editor.file:

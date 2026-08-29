@@ -708,6 +708,11 @@ func _ready():
 
 
 func _exit_tree() -> void:
+	# Any dialog still up leaves with its editor, while its native window is
+	# still the tree's to close — after this point a teardown may have dropped
+	# it (see _hide_dialog_if_live).
+	_hide_dialog_if_live(get_node_or_null("CloseDialog"))
+	_hide_dialog_if_live(get_node_or_null("FileDialog"))
 	if _proxy_note:
 		SingletonObject.detached_note_proxies.erase(_proxy_note)
 	# Panel-owned dock ownership ends with the editor's life.
@@ -721,6 +726,7 @@ func _exit_tree() -> void:
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
 		PluginScenePanelHost.invoke_unload(plugin_scene_root)
+		PluginScenePanelHost.unregister_from_broker(plugin_id, panel_name)
 		var pm = _get_plugin_manager_safe()
 		if pm != null:
 			pm.unregister_live_panel(plugin_id, panel_name)
@@ -1501,8 +1507,30 @@ func _on_save_dialog_confirmed():
 
 func _on_close_dialog_custom_action(action: StringName):
 	if action == "close":
+		# Hide FIRST: the emit resumes prompt_close's awaiter, which may pull
+		# this editor out of the tree (tab close, project switch, app exit).
+		_hide_dialog_if_live($CloseDialog)
 		save_dialog.emit(DialogResult.CLOSE)
-		$CloseDialog.hide()
+
+
+## hide() only while the DisplayServer still has the dialog's native window.
+## A plugin panel teardown (plugin_remove, hot reload) can drop that window
+## while the Window node keeps its stale id; hiding then makes the engine
+## query a window it no longer tracks (bug 019fe35966). Already-hidden or
+## out-of-tree dialogs need nothing.
+func _hide_dialog_if_live(dialog: Window) -> void:
+	if dialog == null or not dialog.is_inside_tree() or not dialog.visible:
+		return
+	if not dialog.is_embedded() \
+			and not DisplayServer.get_window_list().has(dialog.get_window_id()):
+		return
+	# Measured 2026-08-28 (bug 019fe35966): with the dialog's and the root's ids
+	# both present in the server's list, hide() still logs
+	# '!windows.has(p_window)' on macOS — it comes from inside
+	# delete_sub_window's pointer re-entry after the NSWindow closes, i.e. the
+	# engine, and only while the pointer rests on the closing dialog (which it
+	# always does after a button click). Cosmetic; nothing here can avoid it.
+	dialog.hide()
 
 
 func _on_file_dialog_file_selected(path: String):
@@ -1975,6 +2003,16 @@ func _on_jump_to_line_edit_text_submitted(new_text: String) -> void:
 		jump_to_line_label.text += "\nINPUT PROVIDED WAS NOT VALID." 
 
 #endregion code editor action commands
+
+## A plugin tab's content was persisted by Project → Save (its panel state
+## went into the .minproj), so it no longer reads as unsaved. File → Save
+## clears the same flag after writing the tab's own file.
+func mark_plugin_scene_saved() -> void:
+	if type != Type.PLUGIN_SCENE:
+		return
+	_plugin_scene_modified = false
+	SingletonObject.UpdateUnsavedTabIcon.emit()
+
 
 func _on_editor_changed(text: String = ""):
 	# Buffer-canonical: push code_edit's new text into the attached buffer

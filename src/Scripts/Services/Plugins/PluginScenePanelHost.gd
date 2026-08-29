@@ -443,6 +443,17 @@ static func invoke_unload(panel_root: Node) -> void:
 	panel_root._on_panel_unload()
 
 
+## Drop the broker registration made by instantiate_into — the other half of
+## a mount, called when the owning editor leaves the tree. A panel the broker
+## no longer lists under this plugin (its plugin was stopped, which already
+## unregistered it) is left alone rather than warned about.
+static func unregister_from_broker(plugin_id: String, panel_name: String) -> void:
+	var broker: PluginScenePanelBroker = _get_broker()
+	if broker == null or broker.get_panel_owner(panel_name) != plugin_id:
+		return
+	broker.unregister_panel(plugin_id, panel_name)
+
+
 # ---------------------------------------------------------------------------
 # Path resolution
 # ---------------------------------------------------------------------------
