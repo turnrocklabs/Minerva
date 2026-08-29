@@ -708,6 +708,11 @@ func _ready():
 
 
 func _exit_tree() -> void:
+	# Any dialog still up leaves with its editor, while its native window is
+	# still the tree's to close — after this point a teardown may have dropped
+	# it (see _hide_dialog_if_live).
+	_hide_dialog_if_live(get_node_or_null("CloseDialog"))
+	_hide_dialog_if_live(get_node_or_null("FileDialog"))
 	if _proxy_note:
 		SingletonObject.detached_note_proxies.erase(_proxy_note)
 	# Panel-owned dock ownership ends with the editor's life.
@@ -1503,11 +1508,23 @@ func _on_save_dialog_confirmed():
 func _on_close_dialog_custom_action(action: StringName):
 	if action == "close":
 		# Hide FIRST: the emit resumes prompt_close's awaiter, which may pull
-		# this editor out of the tree (tab close, project switch, app exit) —
-		# and a Window that has left the tree no longer has a native window
-		# to hide.
-		$CloseDialog.hide()
+		# this editor out of the tree (tab close, project switch, app exit).
+		_hide_dialog_if_live($CloseDialog)
 		save_dialog.emit(DialogResult.CLOSE)
+
+
+## hide() only while the DisplayServer still has the dialog's native window.
+## A plugin panel teardown (plugin_remove, hot reload) can drop that window
+## while the Window node keeps its stale id; hiding then makes the engine
+## query a window it no longer tracks (bug 019fe35966). Already-hidden or
+## out-of-tree dialogs need nothing.
+func _hide_dialog_if_live(dialog: Window) -> void:
+	if dialog == null or not dialog.is_inside_tree() or not dialog.visible:
+		return
+	if not dialog.is_embedded() \
+			and not DisplayServer.get_window_list().has(dialog.get_window_id()):
+		return
+	dialog.hide()
 
 
 func _on_file_dialog_file_selected(path: String):
