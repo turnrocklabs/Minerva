@@ -21,18 +21,28 @@ var _fail: int = 0
 
 
 ## Stands in for a real provider: converts the two note kinds every provider
-## implements and records each result in call order.
-class StubProvider extends BaseProvider:
-	var handed: Array[Variant] = []
+## implements and records each result in call order. Built from source at run
+## time, after the autoloads exist: naming BaseProvider or Note at this
+## script's own compile time would pull them in before SingletonObject is
+## registered, and the whole suite would fail to load.
+const STUB_PROVIDER_SOURCE := """
+extends "res://Scripts/Services/Providers/BaseProvider.gd"
+const NoteScript := preload("res://Scripts/UI/Controls/Note.gd")
+var handed: Array = []
 
-	func wrap_memory(item: Note) -> Variant:
-		var wrapped: Variant = null
-		if item.type == Note.Type.TEXT:
-			wrapped = (item.get_controls_container() as NoteTextControls).content
-		elif item.type == Note.Type.IMAGE:
-			wrapped = (item.get_controls_container() as NoteImageControls).image
-		handed.append(wrapped)
-		return wrapped
+func wrap_memory(item) -> Variant:
+	var wrapped: Variant = null
+	if item.type == NoteScript.Type.TEXT:
+		wrapped = item.get_controls_container().content
+	elif item.type == NoteScript.Type.IMAGE:
+		wrapped = item.get_controls_container().image
+	handed.append(wrapped)
+	return wrapped
+"""
+
+var NoteScript: Script = null
+var NotesContainerScript: Script = null
+var StubProvider: GDScript = null
 
 
 func _init() -> void:
@@ -41,10 +51,18 @@ func _init() -> void:
 
 func _run_tests() -> void:
 	print("=== plugin_data notes reach the provider (NotesContainer.wrap_notes) ===\n")
+	NoteScript = load("res://Scripts/UI/Controls/Note.gd")
+	NotesContainerScript = load("res://Scenes/note/NotesContainer.gd")
+	StubProvider = GDScript.new()
+	StubProvider.source_code = STUB_PROVIDER_SOURCE
+	StubProvider.reload()
 
 	test_plugin_data_becomes_text_then_image()
 	test_halves_the_note_lacks_are_omitted()
 
+	if _pass == 0:
+		_fail += 1
+		printerr("  FAIL: no assertion ran — the suite did not reach its checks")
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
 		printerr("FAILURES: %d" % _fail)
@@ -75,8 +93,13 @@ func _same_pixels(a: Variant, b: Image) -> bool:
 	return img.get_size() == b.get_size() and img.get_data() == b.get_data()
 
 
-func _make_plugin_data_note(preview: Image, alt_text: String) -> Note:
-	return Note.create_plugin_data_note(
+## A typed Array[Note] built without naming Note at compile time.
+func _notes(raw: Array) -> Array:
+	return Array(raw, TYPE_OBJECT, &"Node", NoteScript)
+
+
+func _make_plugin_data_note(preview: Image, alt_text: String) -> Node:
+	return NoteScript.create_plugin_data_note(
 		"Deck",
 		"presentation",
 		"SlideEditorPanel",
@@ -88,7 +111,7 @@ func _make_plugin_data_note(preview: Image, alt_text: String) -> Note:
 	)
 
 
-func _release(notes: Array[Note], provider: StubProvider) -> void:
+func _release(notes: Array, provider: Object) -> void:
 	for note in notes:
 		var controls: Control = note.get_controls_container()
 		if controls != null and controls.get_parent() == null:
@@ -105,14 +128,14 @@ func test_plugin_data_becomes_text_then_image() -> void:
 	var preview: Image = _make_image(Color(0.1, 0.4, 0.7, 1.0))
 	var photo: Image = _make_image(Color(0.9, 0.2, 0.2, 1.0))
 
-	var notes: Array[Note] = [
+	var notes: Array = _notes([
 		_make_plugin_data_note(preview, ALT_TEXT),
-		Note.create_image_note("Photo", photo, "a photo", "", false),
-		Note.create_text_note("Prose", TEXT_NOTE_CONTENT, "", false),
-	]
+		NoteScript.create_image_note("Photo", photo, "a photo", "", false),
+		NoteScript.create_text_note("Prose", TEXT_NOTE_CONTENT, "", false),
+	])
 
-	var provider: StubProvider = StubProvider.new()
-	var output: Array[Variant] = NotesContainer.wrap_notes(provider, notes)
+	var provider: Object = StubProvider.new()
+	var output: Array = NotesContainerScript.wrap_notes(provider, notes)
 
 	_check("provider is handed 4 items for 3 notes", provider.handed.size() == 4)
 	if provider.handed.size() == 4:
@@ -142,13 +165,13 @@ func test_halves_the_note_lacks_are_omitted() -> void:
 
 	var preview: Image = _make_image(Color(0.2, 0.8, 0.3, 1.0))
 
-	var notes: Array[Note] = [
+	var notes: Array = _notes([
 		_make_plugin_data_note(Image.new(), ALT_TEXT),
 		_make_plugin_data_note(preview, ""),
-	]
+	])
 
-	var provider: StubProvider = StubProvider.new()
-	NotesContainer.wrap_notes(provider, notes)
+	var provider: Object = StubProvider.new()
+	NotesContainerScript.wrap_notes(provider, notes)
 
 	_check("two half-empty notes yield 2 items, not 4", provider.handed.size() == 2)
 	if provider.handed.size() == 2:
