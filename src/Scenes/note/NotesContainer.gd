@@ -319,8 +319,6 @@ func _update_adapter_info():
 ## in the notes and drawer notes container, and returns an array of all the return values.[br]
 ## If [param refresh_detached] is `true`, detached notes will be regenerated to match current editor content.
 func to_prompt(provider: BaseProvider, refresh_detached: = false, history_id: String = "") -> Array[Variant]:
-	var output: Array[Variant] = []
-
 	var notes: Array[Note]
 
 	for i in SingletonObject.notes_container.get_tab_count():
@@ -349,17 +347,66 @@ func to_prompt(provider: BaseProvider, refresh_detached: = false, history_id: St
 
 	# notes are filtered for enabled ones, except for detached note
 	# if detached notes are present
+	return wrap_notes(provider, notes)
+
+
+## Wraps each note in [param notes] through [param provider].wrap_memory and returns
+## the results in order.[br]
+## Note kinds no provider implements are first expanded into the kinds every provider
+## does, so this stays the only place that has to know about them.
+static func wrap_notes(provider: BaseProvider, notes: Array[Note]) -> Array[Variant]:
+	var output: Array[Variant] = []
+
 	print("[NotesContainer] Wrapping %d notes for prompt" % notes.size())
 	for note in notes:
-		var wrapped = provider.wrap_memory(note)
-		print("[NotesContainer] Wrapped note type=%s, result_type=%s" % [note.type, typeof(wrapped)])
-		# Skip null/invalid wrapped results (e.g., from empty images)
-		if wrapped == null:
-			push_warning("[NotesContainer] Skipping null wrapped note (type=%s)" % note.type)
-			continue
-		output.append(wrapped)
+		for wrappable in _expand_for_wrapping(note):
+			var wrapped: Variant = provider.wrap_memory(wrappable)
+			print("[NotesContainer] Wrapped note type=%s, result_type=%s" % [wrappable.type, typeof(wrapped)])
+			if wrappable != note:
+				_free_stand_in(wrappable)
+			# Skip null/invalid wrapped results (e.g., from empty images)
+			if wrapped == null:
+				push_warning("[NotesContainer] Skipping null wrapped note (type=%s)" % note.type)
+				continue
+			output.append(wrapped)
 
 	return output
+
+
+## A plugin_data note already carries its own summary - alt text plus a preview image -
+## but no provider knows that kind, so it stands in as a text note followed by an image
+## note. Either half is dropped when the note doesn't carry it. All other kinds pass
+## through untouched.
+static func _expand_for_wrapping(note: Note) -> Array[Note]:
+	var wrappables: Array[Note] = []
+
+	if note.type != Note.Type.PLUGIN_DATA:
+		wrappables.append(note)
+		return wrappables
+
+	var controls: = note.get_controls_container() as NoteImageControls
+	if controls == null:
+		push_warning("[NotesContainer] plugin_data note has no image controls to wrap")
+		return wrappables
+
+	var alt_text: String = controls.caption
+	if not alt_text.is_empty():
+		wrappables.append(Note.create_text_note(note.title, alt_text, "", false))
+
+	var preview: Image = controls.image
+	if preview != null and not preview.is_empty():
+		wrappables.append(Note.create_image_note(note.title, preview, alt_text, "", false))
+
+	return wrappables
+
+
+## Stand-in notes never enter the scene tree, so their controls are orphans as well
+## and have to be released alongside them.
+static func _free_stand_in(note: Note) -> void:
+	var controls: = note.get_controls_container()
+	if controls != null and controls.get_parent() == null:
+		controls.free()
+	note.free()
 
 
 static var _agent_tab_icon: Texture2D = preload("res://assets/icons/robot_AI_48.png")
