@@ -2198,7 +2198,7 @@ func _create_plugin_scene_note() -> Note:
 
 	var payload: Variant = null
 	if plugin_scene_root != null:
-		payload = PluginScenePanelHost.invoke_create_note(plugin_scene_root, ctx)
+		payload = await PluginScenePanelHost.invoke_create_note(plugin_scene_root, ctx)
 
 	if payload != null:
 		# Backfill missing preview_image on plugin_data shapes via a host
@@ -2383,7 +2383,7 @@ func _update_note(note: Note) -> void:
 			"panel_name": panel_name,
 			"tab_title":  tab_title,
 		}
-		var payload2: Variant = PluginScenePanelHost.invoke_create_note(plugin_scene_root, ctx2)
+		var payload2: Variant = await PluginScenePanelHost.invoke_create_note(plugin_scene_root, ctx2)
 		if not (payload2 is Dictionary):
 			return
 		var d2: Dictionary = payload2 as Dictionary

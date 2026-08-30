@@ -311,6 +311,11 @@ static func invoke_load(panel_root: Node, document: Variant) -> bool:
 ## implement the hook — callers are expected to fall back to the platform
 ## default (screenshot-to-image-note).
 ##
+## The hook may be a coroutine (a panel that renders its preview off-screen
+## has to yield a frame), so the call is awaited; awaiting a plain return
+## value yields it unchanged, so a synchronous hook costs nothing. Callers
+## must await this function.
+##
 ## Same error-semantics caveat as invoke_save: GDScript has no try/catch.
 static func invoke_create_note(panel_root: Node, ctx: Dictionary) -> Variant:
 	if panel_root == null:
@@ -319,7 +324,7 @@ static func invoke_create_note(panel_root: Node, ctx: Dictionary) -> Variant:
 	if not panel_root.has_method("_on_panel_create_note_request"):
 		# Not an error — the platform falls back to screenshot-to-image-note.
 		return null
-	return panel_root._on_panel_create_note_request(ctx)
+	return await panel_root._on_panel_create_note_request(ctx)
 
 
 ## Call `_on_panel_restore_from_note(payload)` on `panel_root` if the method
