@@ -121,7 +121,8 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary = {}
 		return bot_response
 
 	# Build Responses API input array (flatten arrays from Format())
-	# Also convert standard "text" content type to ChatGPT-specific input_text/output_text
+	# Also convert standard content types to ChatGPT-specific ones:
+	# text -> input_text/output_text, image_url -> input_image
 	var input_items: Array = []
 	for item in prompt:
 		if item is Array:
@@ -627,8 +628,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		return items
 
 	# Build content based on role
-	# Use standard "text" content type for cross-provider compatibility.
-	# The ChatGPT-specific input_text/output_text conversion happens in generate_content().
+	# Use standard "text"/"image_url" content types for cross-provider compatibility.
+	# The ChatGPT-specific conversion happens in generate_content().
 	var role: String
 
 	match chat_item.Role:
@@ -642,11 +643,15 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		_:
 			role = "user"
 
-	# Collect text notes
+	# Collect text and image notes separately: text is folded into one block,
+	# images ride beside it as their own content parts.
 	var text_notes := PackedStringArray()
+	var image_notes: Array[Image] = []
 	for note: Variant in chat_item.InjectedNotes:
 		if note is String:
 			text_notes.append(note)
+		elif note is Image:
+			image_notes.append(note)
 
 	var notes_section := ""
 	if not text_notes.is_empty():
@@ -657,15 +662,35 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 	var full_text := "%s%s" % [notes_section, chat_item.Message]
 	full_text = full_text.strip_edges()
 
+	var content: Array = [{"type": "text", "text": full_text}]
+
+	# Images use the standard "image_url" block for cross-provider consistency;
+	# _convert_content_types() turns it into the Responses API "input_image" part
+	# at request time. Only an input (user) message may carry image parts — the
+	# API rejects them inside an assistant message, whose parts are output_text.
+	if role == "user":
+		for img: Image in image_notes:
+			content.append({
+				"type": "image_url",
+				"image_url": {"url": _png_data_url(img)}
+			})
+
 	return {
 		"type": "message",
 		"role": role,
-		"content": [{"type": "text", "text": full_text}]
+		"content": content
 	}
 
 
-## Convert standard "text" content types to ChatGPT Responses API-specific types.
-## Format() uses "text" for cross-provider compatibility; this converts at API call time.
+## Encode an image as a PNG base64 data URL, the form the Responses API accepts
+## for inline image input.
+func _png_data_url(img: Image) -> String:
+	return "data:image/png;base64,%s" % Marshalls.raw_to_base64(img.save_png_to_buffer())
+
+
+## Convert standard "text"/"image_url" content types to ChatGPT Responses
+## API-specific types. Format() uses the standard spellings for cross-provider
+## compatibility; this converts at API call time.
 func _convert_content_types(item: Variant) -> Variant:
 	if not item is Dictionary:
 		return item
@@ -681,6 +706,12 @@ func _convert_content_types(item: Variant) -> Variant:
 	for block in content:
 		if block is Dictionary and block.get("type", "") == "text":
 			new_content.append({"type": target_type, "text": block.get("text", "")})
+		elif block is Dictionary and block.get("type", "") == "image_url":
+			# The Responses API takes the data URL as a bare string under
+			# "image_url", not the nested {"url": ...} object other APIs use.
+			var url_field: Variant = block.get("image_url", "")
+			var data_url: String = str(url_field.get("url", "")) if url_field is Dictionary else str(url_field)
+			new_content.append({"type": "input_image", "image_url": data_url})
 		else:
 			new_content.append(block)
 	var result: Dictionary = item.duplicate()
