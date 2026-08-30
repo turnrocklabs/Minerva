@@ -1728,7 +1728,9 @@ func _on_save_button_pressed():
 func _on_create_note_button_pressed() -> void:
 	
 	if is_instance_valid(associated_object) and associated_object is Note:
-		_update_note(associated_object)
+		# The refresh can yield (an off-screen preview capture), and the tab
+		# icon must describe the note as it is after the refresh, not before.
+		await _update_note(associated_object)
 		SingletonObject.UpdateUnsavedTabIcon.emit()
 		return
 	
