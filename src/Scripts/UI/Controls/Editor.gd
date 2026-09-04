@@ -215,6 +215,13 @@ var _annotation_dock_mode: int = -1
 var _annotation_dock_panel_owned: bool = false
 ## Platform-owned annotation overlay for plugin-scene editors.
 var _platform_annotation_overlay: AnnotationOverlay = null
+## Plugin surface currently paired with the platform annotation overlay. Kept
+## so the active-tool bridge can ask for surface-specific, actionable status
+## without teaching the annotation substrate about CAD or another plugin.
+var _annotation_plugin_surface: Control = null
+## True only while the annotation dock is showing a status supplied by the
+## plugin surface; prevents clearing an unrelated workbench status later.
+var _plugin_tool_status_visible: bool = false
 ## Retarget mode state (Round 5b.ii). Empty string = not in retarget mode;
 ## otherwise the annotation_id whose anchor is being repaired.
 var _retarget_in_progress: String = ""
@@ -790,6 +797,12 @@ func _try_mount_plugin_annotation_dock() -> void:
 		# void (its dock died with the old surface); let the platform default
 		# resume if a dock is ever mounted again.
 		_annotation_dock_panel_owned = false
+		_annotation_plugin_surface = null
+		if _plugin_tool_status_visible:
+			if _annotation_sidebar != null and is_instance_valid(_annotation_sidebar) \
+					and _annotation_sidebar.has_method("show_status"):
+				_annotation_sidebar.show_status("")
+			_plugin_tool_status_visible = false
 		return
 	var host_value: Variant = plugin_scene_root.call("get_annotation_host")
 	if not (host_value is RefCounted):
@@ -817,6 +830,7 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 			annotation_host.disconnect("annotations_changed", old_callable)
 
 	annotation_host = host
+	_annotation_plugin_surface = surface
 	var changed_callable := Callable(self, "_on_annotation_host_changed")
 	if annotation_host.has_signal("annotations_changed") and not annotation_host.is_connected("annotations_changed", changed_callable):
 		annotation_host.connect("annotations_changed", changed_callable)
@@ -897,9 +911,18 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 	_platform_annotation_overlay.set_host(host)
 
 	if _annotation_sidebar.has_signal("active_tool_changed"):
-		var overlay_callable := Callable(_platform_annotation_overlay, "set_active_tool")
-		if not _annotation_sidebar.active_tool_changed.is_connected(overlay_callable):
-			_annotation_sidebar.active_tool_changed.connect(overlay_callable)
+		var direct_callable := Callable(_platform_annotation_overlay, "set_active_tool")
+		if _annotation_sidebar.active_tool_changed.is_connected(direct_callable):
+			_annotation_sidebar.active_tool_changed.disconnect(direct_callable)
+		var bridge_callable := Callable(self, "_on_plugin_annotation_tool_changed")
+		if not _annotation_sidebar.active_tool_changed.is_connected(bridge_callable):
+			_annotation_sidebar.active_tool_changed.connect(bridge_callable)
+		# A platform-owned dock survives plugin hot reload. Re-evaluate its
+		# already-active tool for the new surface instead of waiting for the user
+		# to toggle the tool twice before the warning becomes accurate.
+		var toolbar: AnnotationToolbar = _annotation_sidebar.get_toolbar()
+		_on_plugin_annotation_tool_changed(
+			toolbar.get_active_tool() if toolbar != null else null)
 
 	var layout_callable := Callable(self, "_sync_annotation_dock_layout")
 	if _annotation_dock_panel_owned:
@@ -912,6 +935,29 @@ func _mount_annotation_dock_for_surface(host: RefCounted, surface: Control) -> v
 		if not resized.is_connected(layout_callable):
 			resized.connect(layout_callable)
 		call_deferred("_sync_annotation_dock_layout")
+
+
+## Forward the dock's active tool to the overlay and give the plugin surface a
+## chance to explain a surface-specific input constraint. CAD uses this to
+## avoid the silent "armed overlay swallowed the reference click" failure.
+func _on_plugin_annotation_tool_changed(tool: AnnotationAuthorTool) -> void:
+	if _platform_annotation_overlay != null \
+			and is_instance_valid(_platform_annotation_overlay):
+		_platform_annotation_overlay.set_active_tool(tool)
+
+	var status := ""
+	if _annotation_plugin_surface != null \
+			and is_instance_valid(_annotation_plugin_surface) \
+			and _annotation_plugin_surface.has_method("get_annotation_tool_status"):
+		status = str(_annotation_plugin_surface.call("get_annotation_tool_status", tool))
+	if not status.is_empty():
+		if _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
+			_annotation_sidebar.show_status(status)
+			_plugin_tool_status_visible = true
+	elif _plugin_tool_status_visible:
+		if _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
+			_annotation_sidebar.show_status("")
+		_plugin_tool_status_visible = false
 
 
 func _ensure_annotation_content_row(vbox: VBoxContainer, surface: Control) -> void:

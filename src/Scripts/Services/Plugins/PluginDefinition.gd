@@ -120,9 +120,10 @@ var host_capabilities: Array[String] = []
 var network_mode: String = "none"
 
 ## Filesystem access mode ("none" | "scoped_paths" | "unrestricted")
-## "unrestricted" lets a plugin read/write any absolute path the agent supplies —
-## parity with Minerva's core MCP file tools (minerva_disk_write / minerva_doc_*),
-## which enforce no path policy. Opt-in per plugin; install is the trust act.
+## This gates brokered host.files.* calls from the out-of-process backend. It
+## does NOT sandbox direct FileAccess used by a Godot-scene panel, which runs
+## in Minerva's process; installing such a panel is the trust act for its UI
+## code. "unrestricted" lets the backend read/write any absolute path supplied.
 var filesystem_mode: String = "none"
 
 ## Paths the plugin is allowed to access (only relevant when filesystem_mode = "scoped_paths")

@@ -2,6 +2,14 @@
 
 Plugins are supervised out-of-process programs that communicate with Minerva via stdio MCP (JSON-RPC over stdin/stdout). Any language that can read stdin and write stdout works: Go, Python, Node.js, Rust, etc.
 
+Godot-scene UI panels are the exception to that process boundary: they run
+inside Minerva and therefore carry the same operating-system access as the
+host process. `permissions.filesystem` governs only brokered `host.files.*`
+capability calls made by plugin backends; it is not a sandbox or a disclosure
+of direct `FileAccess` calls made by an in-process scene panel. Installing a
+plugin with a Godot-scene panel is therefore a trust decision about that panel
+code as well as its backend manifest permissions.
+
 ## Creating a Plugin
 
 A plugin is a directory containing at minimum:
@@ -57,6 +65,7 @@ my_plugin/
 - **Relative entrypoints** like `./my_binary` are resolved to absolute paths from the plugin directory
 - **stdout** is the MCP transport — ONLY write JSON-RPC messages to stdout
 - **stderr** is for logging — Minerva captures it and shows warnings/errors as toasts
+- **filesystem permissions** apply to brokered `host.files.*` calls; in-process Godot scene panels are trusted host code and are not sandboxed by this field
 
 ### Protocol
 
