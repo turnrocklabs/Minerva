@@ -67,6 +67,8 @@ func _init() -> void:
 	print("\n-- a name means the same thing whichever entry holds it --")
 	test_bare_file_name_outranks_a_manifest_name()
 	test_manifest_name_reaches_the_only_tab_and_refuses_two()
+	test_unregister_by_manifest_name_refuses_a_dead_twin()
+	test_a_literal_bracketed_title_is_its_own_panel()
 	test_blob_store_is_not_shared_through_the_file_name()
 	await test_reply_after_reregistration_is_dropped()
 
@@ -406,6 +408,10 @@ func test_manifest_name_reaches_the_only_tab_and_refuses_two() -> void:
 
 	check("get_attached_buffer by the manifest name finds the only tab's buffer",
 		broker.get_attached_buffer("cad", MANIFEST_PANEL) == buffer)
+	# ctx.panel_name handed to a plugin's hooks IS the manifest name, and an
+	# unchanged plugin asks about it by that name.
+	check("is_panel_registered by the manifest name is true for the only tab",
+		broker.is_panel_registered(MANIFEST_PANEL))
 
 	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]), MANIFEST_PANEL)
 	check("and is refused once a second tab of that panel is live",
@@ -413,6 +419,61 @@ func test_manifest_name_reaches_the_only_tab_and_refuses_two() -> void:
 
 	panel_a.free()
 	panel_b.free()
+
+
+## A tab closed without unregistering leaves a dead entry under the same
+## plugin+name as the tab still open. A manifest-name unregister that skipped
+## the dead one would remove the LIVE tab, so with two registrations carrying
+## the name — live or dead — it must refuse.
+func test_unregister_by_manifest_name_refuses_a_dead_twin() -> void:
+	print("test_unregister_by_manifest_name_refuses_a_dead_twin:")
+	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key_a := "cad_panel#701"
+	var key_b := "cad_panel#702"
+	var panel_a := StubSceneRoot.new()
+	var panel_b := StubSceneRoot.new()
+	broker.register_panel(panel_a, "cad", key_a, PackedStringArray([CHANNEL]), MANIFEST_PANEL)
+	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]), MANIFEST_PANEL)
+	panel_a.free()   # A is dead, still registered
+
+	broker.unregister_panel("cad", MANIFEST_PANEL)
+	check("unregister by the manifest name leaves the live tab registered while a dead twin exists",
+		broker.is_panel_registered(key_b) and broker.is_panel_registered(key_a),
+		"b registered = %s, a registered = %s" % [
+			str(broker.is_panel_registered(key_b)), str(broker.is_panel_registered(key_a))])
+
+	panel_b.free()
+
+
+## The "<title> [<key>]" form is what list_panel_editor_names prints, and a
+## caller may also open a tab whose title literally looks like it. That tab is
+## addressed by its own title; the key in its brackets must not redirect the
+## call to the other panel.
+func test_a_literal_bracketed_title_is_its_own_panel() -> void:
+	print("test_a_literal_bracketed_title_is_its_own_panel:")
+	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key_b := "cad_panel#901"
+	var key_c := "cad_panel#902"
+	var panel_b := StubSceneRoot.new()
+	var panel_c := StubSceneRoot.new()
+	# Held: the broker keeps only a weakref to the editor.
+	var editor_b := StubEditor.new("Report", "")
+	var editor_c := StubEditor.new("Report [%s]" % key_b, "")
+	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, editor_b)
+	broker.register_panel(panel_c, "cad", key_c, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, editor_c)
+
+	check("a panel titled '<other title> [<other key>]' resolves to itself, not to the other",
+		broker.resolve_editor_key("Report [%s]" % key_b) == key_c,
+		"resolved to '%s'" % broker.resolve_editor_key("Report [%s]" % key_b))
+
+	panel_b.free()
+	panel_c.free()
 
 
 ## The paired text editor is titled with the document's file name, which is
@@ -450,7 +511,7 @@ func test_reply_after_reregistration_is_dropped() -> void:
 	var broker: PluginScenePanelBroker = parts[0]
 	var audit: StubAuditLog = parts[1]
 
-	var key := "cad_panel#801"
+	var key := "cad_panel#901"
 	var panel_old := StubSceneRoot.new()
 	broker.register_panel(panel_old, "cad", key, PackedStringArray([CAPABILITY_CHANNEL]),
 			MANIFEST_PANEL)

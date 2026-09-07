@@ -390,7 +390,7 @@ func register_panel(
 ## Called by PluginScenePanelHost when a tab is closed or a plugin is stopped.
 ## Should be called inside the _on_panel_unload hook, before queue_free.
 func unregister_panel(plugin_id: String, panel_name: String) -> void:
-	panel_name = _panel_key_for(plugin_id, panel_name)
+	panel_name = _panel_key_for(plugin_id, panel_name, false)
 	if not _panel_registry.has(panel_name):
 		push_warning(
 			"[PluginScenePanelBroker] unregister_panel: panel '%s' is not registered" % panel_name
@@ -449,9 +449,12 @@ func unregister_plugin_panels(plugin_id: String) -> void:
 # Query helpers
 # ---------------------------------------------------------------------------
 
-## Returns true if panel_key is registered with any plugin.
-func is_panel_registered(panel_key: String) -> bool:
-	return _panel_registry.has(panel_key)
+## Returns true if a registration answers to panel_name: its registry key, or
+## the manifest panel name of exactly one live tab (of plugin_id when given,
+## of any plugin otherwise), the same way every other name-keyed entry point
+## resolves it.
+func is_panel_registered(panel_name: String, plugin_id: String = "") -> bool:
+	return _panel_registry.has(_panel_key_for(plugin_id, panel_name))
 
 
 ## Returns the plugin_id that owns a panel, or "" if not resolvable.
@@ -516,32 +519,41 @@ func _entry_display_name(entry: _PanelEntry) -> String:
 ## The registry key behind a name a plugin passes to a name-keyed entry point
 ## (push_to_panel, get_attached_buffer, unregister_panel, ...). A registry key
 ## is returned as it is. Anything else is taken as the manifest panel name and
-## resolved to the live panel of `plugin_id` declared under it — a plugin that
-## has one tab open may keep addressing it by that name. Zero live matches
-## return the name unchanged, so the caller's own not-registered path runs and
-## quotes what it was given; more than one refuses the same way an ambiguous
-## editor name does, since picking one would silently serve the wrong tab.
-func _panel_key_for(plugin_id: String, panel_name: String) -> String:
+## resolved to the one panel of `plugin_id` (any plugin when "") declared under
+## it — a plugin that has one tab open may keep addressing it by that name.
+## Zero matches return the name unchanged, so the caller's own not-registered
+## path runs and quotes what it was given; more than one refuses the same way
+## an ambiguous editor name does, since picking one would silently serve the
+## wrong tab.
+##
+## live_only=true (queries, pushes) considers live entries. Destructive
+## callers (unregister, detach) pass false: a dead entry with the same
+## plugin+name still occupies the registry, and resolving past it would remove
+## the live tab instead of the one that was closed.
+func _panel_key_for(plugin_id: String, panel_name: String, live_only: bool = true) -> String:
 	if _panel_registry.has(panel_name):
 		return panel_name
 	var matches: Array = []
 	for key in _panel_registry.keys():
 		var entry: _PanelEntry = _panel_registry[key]
-		if entry.plugin_id == plugin_id and entry.panel_name == panel_name \
-				and _is_panel_alive(entry):
+		if (plugin_id.is_empty() or entry.plugin_id == plugin_id) \
+				and entry.panel_name == panel_name \
+				and (not live_only or _is_panel_alive(entry)):
 			matches.append(key)
 	if matches.size() == 1:
 		return str(matches[0])
 	if matches.size() > 1:
-		_warn_ambiguous_name(panel_name, matches)
+		_warn_ambiguous_name(panel_name, matches, live_only)
 	return panel_name
 
 
-func _warn_ambiguous_name(editor_name: String, matches: Array) -> void:
+func _warn_ambiguous_name(editor_name: String, matches: Array, live_only: bool = true) -> void:
 	push_warning(
-		("[PluginScenePanelBroker] '%s' names %d live panels (%s); address one by its "
+		("[PluginScenePanelBroker] '%s' names %d %s (%s); address one by its "
 		+ "registry key, or by the '<title> [<key>]' form list_panel_editor_names prints")
-		% [editor_name, matches.size(), str(matches)]
+		% [editor_name, matches.size(),
+			"live panels" if live_only else "registrations (some closed without unregistering)",
+			str(matches)]
 	)
 
 
@@ -559,13 +571,12 @@ func _warn_ambiguous_name(editor_name: String, matches: Array) -> void:
 ##
 ## The disambiguated form list_panel_editor_names prints for a tied title —
 ## "<title> [<key>]" — is also accepted, so a caller can paste back the exact
-## string the refusal offered them.
+## string the refusal offered them. It is tried only after no alias matched:
+## a panel literally titled that way is addressed by its title, never by the
+## key in its brackets.
 func resolve_editor_key(editor_name: String) -> String:
 	if editor_name.is_empty():
 		return ""
-	var hinted_key := _key_from_display_name(editor_name)
-	if not hinted_key.is_empty():
-		return hinted_key
 	var best_tier: int = -1
 	var matches: Array = []
 	for key in _panel_registry.keys():
@@ -584,13 +595,15 @@ func resolve_editor_key(editor_name: String) -> String:
 		return str(matches[0])
 	if matches.size() > 1:
 		_warn_ambiguous_name(editor_name, matches)
-	return ""
+		return ""
+	return _key_from_display_name(editor_name)
 
 
 ## The registry key inside a disambiguated display name ("<title> [<key>]"), or
-## "" when the string is not that form or names no live panel. Only a key that
-## is currently live is honoured, so a stale paste falls through to the normal
-## alias ranking rather than resolving to a dead entry.
+## "" when the string is not exactly what list_panel_editor_names would print
+## for a live entry: that entry's current display name + " [" + its key + "]".
+## Any other bracketed string — a stale paste, a title that merely ends in a
+## bracketed key — is not this form.
 func _key_from_display_name(editor_name: String) -> String:
 	if not editor_name.ends_with("]"):
 		return ""
@@ -600,7 +613,10 @@ func _key_from_display_name(editor_name: String) -> String:
 	var key: String = editor_name.substr(open_at + 2, editor_name.length() - open_at - 3)
 	if key.is_empty() or not _panel_registry.has(key):
 		return ""
-	return key if _is_panel_alive(_panel_registry[key]) else ""
+	var entry: _PanelEntry = _panel_registry[key]
+	if not _is_panel_alive(entry):
+		return ""
+	return key if editor_name == "%s [%s]" % [_entry_display_name(entry), key] else ""
 
 
 ## Returns the live scene-panel root addressed by editor_name, or null.
@@ -1175,7 +1191,7 @@ func attach_buffer_to_panel(
 ## notification.  No-op if the panel is not registered or has no attached
 ## buffer.  Spoof-checks plugin_id against the panel owner.
 func detach_buffer_from_panel(plugin_id: String, panel_name: String) -> void:
-	panel_name = _panel_key_for(plugin_id, panel_name)
+	panel_name = _panel_key_for(plugin_id, panel_name, false)
 	if not _panel_registry.has(panel_name):
 		return
 
