@@ -452,9 +452,14 @@ func unregister_plugin_panels(plugin_id: String) -> void:
 ## Returns true if a registration answers to panel_name: its registry key, or
 ## the manifest panel name of exactly one live tab (of plugin_id when given,
 ## of any plugin otherwise), the same way every other name-keyed entry point
-## resolves it.
+## resolves it. A non-empty plugin_id must own the registration found — the
+## other entry points spoof-check after resolving, and this one is no laxer.
 func is_panel_registered(panel_name: String, plugin_id: String = "") -> bool:
-	return _panel_registry.has(_panel_key_for(plugin_id, panel_name))
+	var key := _panel_key_for(plugin_id, panel_name)
+	if not _panel_registry.has(key):
+		return false
+	return plugin_id.is_empty() \
+		or (_panel_registry[key] as _PanelEntry).plugin_id == plugin_id
 
 
 ## Returns the plugin_id that owns a panel, or "" if not resolvable.
@@ -518,8 +523,10 @@ func _entry_display_name(entry: _PanelEntry) -> String:
 
 ## The registry key behind a name a plugin passes to a name-keyed entry point
 ## (push_to_panel, get_attached_buffer, unregister_panel, ...). A registry key
-## is returned as it is. Anything else is taken as the manifest panel name and
-## resolved to the one panel of `plugin_id` (any plugin when "") declared under
+## is returned as it is when it belongs to `plugin_id` (any plugin when "");
+## another plugin's key is not this plugin's address for anything and is
+## treated like any other string. Anything else is taken as the manifest panel
+## name and resolved to the one panel of `plugin_id` (any plugin when "") under
 ## it — a plugin that has one tab open may keep addressing it by that name.
 ## Zero matches return the name unchanged, so the caller's own not-registered
 ## path runs and quotes what it was given; more than one refuses the same way
@@ -531,7 +538,8 @@ func _entry_display_name(entry: _PanelEntry) -> String:
 ## plugin+name still occupies the registry, and resolving past it would remove
 ## the live tab instead of the one that was closed.
 func _panel_key_for(plugin_id: String, panel_name: String, live_only: bool = true) -> String:
-	if _panel_registry.has(panel_name):
+	if _panel_registry.has(panel_name) and (plugin_id.is_empty()
+			or (_panel_registry[panel_name] as _PanelEntry).plugin_id == plugin_id):
 		return panel_name
 	var matches: Array = []
 	for key in _panel_registry.keys():
@@ -647,6 +655,11 @@ func get_panel_for_editor(editor_name: String) -> Node:
 ## the key being the one alias that is unique — and resolve_editor_key accepts
 ## that form back verbatim.
 ##
+## Every string printed is checked to resolve back to the entry it was made
+## for: a live tab may be titled exactly like another entry's bracketed form
+## (or like its key), and the title tier would then capture the paste. Such
+## an entry is printed as its bare key, which only ever resolves to itself.
+##
 ## Used for the editor_not_found error UX — callers list what IS available, so
 ## a registration whose scene root has been freed must not appear here.
 func list_panel_editor_names() -> Array:
@@ -665,6 +678,8 @@ func list_panel_editor_names() -> Array:
 		var display: String = str(displays[key])
 		if int(display_counts.get(display, 0)) > 1:
 			display = "%s [%s]" % [display, str(key)]
+		if resolve_editor_key(display) != str(key):
+			display = str(key)
 		if not names.has(display):
 			names.append(display)
 	return names

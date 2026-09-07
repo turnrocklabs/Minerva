@@ -412,6 +412,9 @@ func test_manifest_name_reaches_the_only_tab_and_refuses_two() -> void:
 	# unchanged plugin asks about it by that name.
 	check("is_panel_registered by the manifest name is true for the only tab",
 		broker.is_panel_registered(MANIFEST_PANEL))
+	# An exact key is still owned: asking on behalf of another plugin is false.
+	check("is_panel_registered by the exact key is false for a plugin that does not own it",
+		not broker.is_panel_registered(key_a, "pcb"))
 
 	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]), MANIFEST_PANEL)
 	check("and is refused once a second tab of that panel is live",
@@ -450,19 +453,25 @@ func test_unregister_by_manifest_name_refuses_a_dead_twin() -> void:
 ## The "<title> [<key>]" form is what list_panel_editor_names prints, and a
 ## caller may also open a tab whose title literally looks like it. That tab is
 ## addressed by its own title; the key in its brackets must not redirect the
-## call to the other panel.
+## call to the other panel. The listing, in turn, must not offer B the very
+## string that C's title captures — B is then offered by its bare key.
 func test_a_literal_bracketed_title_is_its_own_panel() -> void:
 	print("test_a_literal_bracketed_title_is_its_own_panel:")
 	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
 	var broker: PluginScenePanelBroker = parts[0]
 
+	var key_a := "cad_panel#900"
 	var key_b := "cad_panel#901"
 	var key_c := "cad_panel#902"
+	var panel_a := StubSceneRoot.new()
 	var panel_b := StubSceneRoot.new()
 	var panel_c := StubSceneRoot.new()
 	# Held: the broker keeps only a weakref to the editor.
+	var editor_a := StubEditor.new("Report", "")
 	var editor_b := StubEditor.new("Report", "")
 	var editor_c := StubEditor.new("Report [%s]" % key_b, "")
+	broker.register_panel(panel_a, "cad", key_a, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, editor_a)
 	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]),
 			MANIFEST_PANEL, editor_b)
 	broker.register_panel(panel_c, "cad", key_c, PackedStringArray([CHANNEL]),
@@ -472,6 +481,18 @@ func test_a_literal_bracketed_title_is_its_own_panel() -> void:
 		broker.resolve_editor_key("Report [%s]" % key_b) == key_c,
 		"resolved to '%s'" % broker.resolve_editor_key("Report [%s]" % key_b))
 
+	var offered: Array = broker.list_panel_editor_names()
+	var reached: Array = []
+	for name in offered:
+		var key: String = broker.resolve_editor_key(str(name))
+		if not reached.has(key):
+			reached.append(key)
+	reached.sort()
+	check("every offered name resolves to the panel it was generated for",
+		reached == [key_a, key_b, key_c],
+		"offered = %s, reached = %s" % [str(offered), str(reached)])
+
+	panel_a.free()
 	panel_b.free()
 	panel_c.free()
 
