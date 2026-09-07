@@ -26,6 +26,13 @@ extends SceneTree
 ##      to the reader and its refcount never falls to zero — a silent leak.
 ##      Both halves are exercised against one store here.
 ##
+##   3. One slot per plugin meant a second tab re-registered over the first,
+##      taking its attached buffer with it, and closing the second erased the
+##      slot the first still answered to. Two tabs of one plugin are driven
+##      here, and the survivor is checked through every alias a caller can
+##      reach it by — including the "<title> [<key>]" tie-breaker that is the
+##      only usable name when two file-less tabs share a title.
+##
 ## Everything below is the real broker. The plugin manager, audit log and scene
 ## root are stubs of the same shape the sibling broker suites use.
 
@@ -50,6 +57,11 @@ func _init() -> void:
 	print("\n-- the blob store has one identity --")
 	await test_blob_written_by_key_is_readable_by_tab_title()
 	await test_blob_refcount_reaches_zero_across_both_names()
+
+	print("\n-- two tabs of one plugin are two registrations --")
+	test_closing_one_tab_leaves_the_other_intact()
+	test_every_alias_tier_reaches_the_panel()
+	test_a_tied_title_is_offered_with_its_key()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -196,6 +208,136 @@ func test_blob_refcount_reaches_zero_across_both_names() -> void:
 		"record = %s" % str(broker._get_blob_record(PANEL_KEY, handle)))
 
 	_teardown_blob_rig(rig)
+
+
+# ===========================================================================
+# 3. Two tabs of one plugin are two independent registrations
+# ===========================================================================
+
+## The headline regression: with one registry slot per plugin, opening a second
+## tab detached the first tab's buffer, and closing the second erased the slot
+## the first was still addressed by. Two tabs are registered here under their
+## own keys, the second is closed, and the first is checked through every route
+## a caller reaches a panel by.
+func test_closing_one_tab_leaves_the_other_intact() -> void:
+	print("test_closing_one_tab_leaves_the_other_intact:")
+	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key_a := "cad_panel#101"
+	var key_b := "cad_panel#202"
+	var panel_a := StubSceneRoot.new()
+	var panel_b := StubSceneRoot.new()
+	broker.register_panel(panel_a, "cad", key_a, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, StubEditor.new("bracket-a.mcad", "/tmp/bracket-a.mcad"))
+	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, StubEditor.new("bracket-b.mcad", "/tmp/bracket-b.mcad"))
+
+	var buffer_a := DocumentBuffer.new("/tmp/bracket-a.mcad", "A")
+	var buffer_b := DocumentBuffer.new("/tmp/bracket-b.mcad", "B")
+	broker.attach_buffer_to_panel("cad", key_a, buffer_a)
+	broker.attach_buffer_to_panel("cad", key_b, buffer_b)
+
+	# Close the second tab.
+	broker.unregister_panel("cad", key_b)
+
+	check("the surviving panel still resolves by its own key",
+		broker.resolve_editor_key(key_a) == key_a,
+		"resolved to '%s'" % broker.resolve_editor_key(key_a))
+	check("and by the tab title it is displayed under",
+		broker.resolve_editor_key("bracket-a.mcad") == key_a,
+		"resolved to '%s'" % broker.resolve_editor_key("bracket-a.mcad"))
+	check("it kept the buffer that was attached to it",
+		broker.get_attached_buffer("cad", key_a) == buffer_a)
+
+	var before: int = panel_a.received_calls.size()
+	var pushed: bool = broker.push_to_panel("cad", key_a, CHANNEL, {"n": 1})
+	check("a push to its key still reaches it",
+		pushed and panel_a.received_calls.size() == before + 1,
+		"pushed = %s, calls %d -> %d" % [str(pushed), before, panel_a.received_calls.size()])
+
+	check("the closed tab's key resolves to nothing",
+		broker.resolve_editor_key(key_b).is_empty(),
+		"resolved to '%s'" % broker.resolve_editor_key(key_b))
+	check("its buffer is gone with it",
+		broker.get_attached_buffer("cad", key_b) == null)
+	check("and a push addressed to it is refused",
+		not broker.push_to_panel("cad", key_b, CHANNEL, {"n": 2}))
+
+	panel_a.free()
+	panel_b.free()
+
+
+## Every name a caller may hold for one panel — the tab title, the document's
+## absolute path, its bare file name, and the manifest panel name when only one
+## tab is open — must land on the same registration.
+func test_every_alias_tier_reaches_the_panel() -> void:
+	print("test_every_alias_tier_reaches_the_panel:")
+	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key := "cad_panel#303"
+	var panel := StubSceneRoot.new()
+	broker.register_panel(panel, "cad", key, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL,
+			StubEditor.new("enclosure-rev4.mcad (1)", "/tmp/enclosure-rev4.mcad"))
+
+	check("the tab title reaches it",
+		broker.resolve_editor_key("enclosure-rev4.mcad (1)") == key)
+	check("the document's absolute path reaches it",
+		broker.resolve_editor_key("/tmp/enclosure-rev4.mcad") == key)
+	check("its bare file name reaches it",
+		broker.resolve_editor_key("enclosure-rev4.mcad") == key)
+	check("and the manifest panel name reaches it while it is the only tab",
+		broker.resolve_editor_key(MANIFEST_PANEL) == key)
+
+	panel.free()
+
+
+## Two file-less tabs of one plugin are both titled with the manifest panel
+## name (EditorPane.add_plugin_scene_editor), so that title is a tie and
+## resolves to neither. The names offered to the caller must therefore carry
+## the one alias that IS unique — the registry key — and that offered string
+## must resolve.
+func test_a_tied_title_is_offered_with_its_key() -> void:
+	print("test_a_tied_title_is_offered_with_its_key:")
+	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key_a := "cad_panel#401"
+	var key_b := "cad_panel#402"
+	var panel_a := StubSceneRoot.new()
+	var panel_b := StubSceneRoot.new()
+	# File-less tabs: the title IS the manifest panel name, for both of them.
+	broker.register_panel(panel_a, "cad", key_a, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, StubEditor.new(MANIFEST_PANEL, ""))
+	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, StubEditor.new(MANIFEST_PANEL, ""))
+
+	check("the shared title resolves to neither panel",
+		broker.resolve_editor_key(MANIFEST_PANEL).is_empty(),
+		"resolved to '%s'" % broker.resolve_editor_key(MANIFEST_PANEL))
+
+	var offered: Array = broker.list_panel_editor_names()
+	var offer_a := "%s [%s]" % [MANIFEST_PANEL, key_a]
+	var offer_b := "%s [%s]" % [MANIFEST_PANEL, key_b]
+	check("both panels are offered with the key that tells them apart",
+		offered.has(offer_a) and offered.has(offer_b),
+		"offered = %s" % str(offered))
+	check("the offered string resolves to the panel it names",
+		broker.resolve_editor_key(offer_a) == key_a,
+		"resolved to '%s'" % broker.resolve_editor_key(offer_a))
+	check("and the other one to the other panel",
+		broker.resolve_editor_key(offer_b) == key_b,
+		"resolved to '%s'" % broker.resolve_editor_key(offer_b))
+
+	var refusal: Dictionary = PluginErrors.editor_not_found("cad", MANIFEST_PANEL, offered)
+	check("the refusal tells the caller to pass the bracketed string",
+		str(refusal.get("error_message", "")).contains("bracketed key"),
+		"message = %s" % str(refusal.get("error_message", "")))
+
+	panel_a.free()
+	panel_b.free()
 
 
 # ===========================================================================

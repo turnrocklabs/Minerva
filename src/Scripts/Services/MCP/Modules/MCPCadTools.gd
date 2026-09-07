@@ -921,8 +921,6 @@ func _cad_snapshot(args: Dictionary) -> Dictionary:
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-## Resolve editor_name → AnnotationHost via the registry.
-## Returns null on missing host or missing editor_name arg.
 ## Resolve args.editor_name to the CAD panel's annotation host.
 ##
 ## Every name that reaches a live CAD panel is accepted: the render tab's own
@@ -950,8 +948,11 @@ func _resolve_host(args: Dictionary) -> AnnotationHost:
 
 
 ## Build a structured error for a missing host, listing the names that DO
-## resolve and, separately, any registration whose panel never came up — a name
-## the caller cannot use, and the reason it cannot.
+## resolve and, separately, any registration whose panel root has been freed —
+## a name the caller cannot use, and the reason it cannot.
+##
+## A title two open panels share is listed as "<title> [<key>]" and only that
+## whole string resolves, so the message spells that out when one appears.
 func _no_host_error(args: Dictionary) -> Dictionary:
 	var editor_name: String = str(args.get("editor_name", ""))
 	if editor_name.is_empty():
@@ -959,9 +960,12 @@ func _no_host_error(args: Dictionary) -> Dictionary:
 	var known: Array = AnnotationHostRegistry.list_editor_names()
 	var dead: Array = AnnotationHostRegistry.list_dead_editor_names()
 	var msg := "no_cad_host_for_editor: '%s'. Known editors: %s" % [editor_name, str(known)]
+	if PluginErrors.has_disambiguated_name(known):
+		msg += (". A name listed as \"<title> [<key>]\" is shared by more than one open "
+			+ "panel — pass that whole string, including the bracketed key")
 	if not dead.is_empty():
-		msg += (". Registered but unreachable — panel failed to instantiate — "
-			+ "see the Minerva log: %s") % str(dead)
+		msg += (". Registered but unreachable — the panel's scene root was freed without "
+			+ "unregistering — see the Minerva log: %s") % str(dead)
 	return _err(msg)
 
 

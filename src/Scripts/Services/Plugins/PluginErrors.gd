@@ -156,13 +156,18 @@ static func tool_not_found(plugin_id: String, tool_name: String) -> Dictionary:
 ## known_editors (optional): the editor names that ARE currently available —
 ## when non-empty they are listed in the message so the caller can
 ## self-correct (mirrors the MCPPcbPanelTools._no_host_error UX).
+## A name two live panels share is listed in the disambiguated
+## "<title> [<key>]" form (PluginScenePanelBroker.list_panel_editor_names), and
+## that whole string is what the caller must send back — the bare title
+## resolves to neither panel — so the message says so whenever one appears.
 ##
-## dead_editors (optional): names that ARE registered but whose panel scene is
-## gone, so nothing can be dispatched to them. They are deliberately kept out
-## of known_editors — listing a name the caller cannot use sends them round the
-## same failing call again — and named separately with the one thing that
-## explains the difference: the panel never came up, and the reason is in the
-## Minerva log rather than in this reply.
+## dead_editors (optional): names that ARE registered but whose panel scene
+## root has been freed without the panel unregistering, so nothing can be
+## dispatched to them. They are deliberately kept out of known_editors —
+## listing a name the caller cannot use sends them round the same failing call
+## again — and named separately with the one thing that explains the
+## difference: the tab behind the name is gone, and the Minerva log carries
+## what happened to it.
 static func editor_not_found(
 		plugin_id: String,
 		editor_name: String,
@@ -172,9 +177,12 @@ static func editor_not_found(
 	var message := "Editor '%s' not found" % editor_name
 	if not known_editors.is_empty():
 		message += ". Known editors: %s" % str(known_editors)
+		if has_disambiguated_name(known_editors):
+			message += (". A name listed as \"<title> [<key>]\" is shared by more than one "
+				+ "open panel — pass that whole string, including the bracketed key")
 	if not dead_editors.is_empty():
-		message += (". Registered but unreachable — panel failed to instantiate "
-			+ "— see the Minerva log: %s") % str(dead_editors)
+		message += (". Registered but unreachable — the panel's scene root was freed "
+			+ "without unregistering — see the Minerva log: %s") % str(dead_editors)
 	return {
 		"success": false,
 		"error_code": CODE_EDITOR_NOT_FOUND,
@@ -184,6 +192,15 @@ static func editor_not_found(
 		"known_editors": known_editors,
 		"dead_editors": dead_editors,
 	}
+
+
+## True when any listed editor name carries the "<title> [<key>]" tie-breaker,
+## i.e. at least one title is shared by two open panels.
+static func has_disambiguated_name(editor_names: Array) -> bool:
+	for n in editor_names:
+		if str(n).ends_with("]") and str(n).contains(" ["):
+			return true
+	return false
 
 
 ## A panel-executed tool (executor == "panel") was called without the

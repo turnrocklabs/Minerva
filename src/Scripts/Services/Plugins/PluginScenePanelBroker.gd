@@ -499,9 +499,16 @@ func _entry_aliases(entry: _PanelEntry) -> Array:
 ##
 ## Dead entries (freed scene root) are skipped, so a panel whose scene failed
 ## to stay alive is never "found".
+##
+## The disambiguated form list_panel_editor_names prints for a tied title —
+## "<title> [<key>]" — is also accepted, so a caller can paste back the exact
+## string the refusal offered them.
 func resolve_editor_key(editor_name: String) -> String:
 	if editor_name.is_empty():
 		return ""
+	var hinted_key := _key_from_display_name(editor_name)
+	if not hinted_key.is_empty():
+		return hinted_key
 	var best_rank: int = -1
 	var matches: Array = []
 	for key in _panel_registry.keys():
@@ -520,10 +527,27 @@ func resolve_editor_key(editor_name: String) -> String:
 		return str(matches[0])
 	if matches.size() > 1:
 		push_warning(
-			"[PluginScenePanelBroker] '%s' names %d live panels (%s); address one by tab title"
+			("[PluginScenePanelBroker] '%s' names %d live panels (%s); address one by its "
+			+ "registry key, or by the '<title> [<key>]' form list_panel_editor_names prints")
 			% [editor_name, matches.size(), str(matches)]
 		)
 	return ""
+
+
+## The registry key inside a disambiguated display name ("<title> [<key>]"), or
+## "" when the string is not that form or names no live panel. Only a key that
+## is currently live is honoured, so a stale paste falls through to the normal
+## alias ranking rather than resolving to a dead entry.
+func _key_from_display_name(editor_name: String) -> String:
+	if not editor_name.ends_with("]"):
+		return ""
+	var open_at: int = editor_name.rfind(" [")
+	if open_at < 0:
+		return ""
+	var key: String = editor_name.substr(open_at + 2, editor_name.length() - open_at - 3)
+	if key.is_empty() or not _panel_registry.has(key):
+		return ""
+	return key if _is_panel_alive(_panel_registry[key]) else ""
 
 
 ## Returns the live scene-panel root addressed by editor_name, or null.
@@ -546,26 +570,46 @@ func get_panel_for_editor(editor_name: String) -> Node:
 
 ## Returns the names a caller can actually address right now: for each LIVE
 ## panel, the editor tab title when one is known, otherwise the registry key.
+##
+## Two file-less tabs of one plugin are titled with the same manifest panel name
+## (EditorPane.add_plugin_scene_editor), so that title resolves to neither of
+## them. Listing it twice would send the caller straight back into the tie, so a
+## title more than one live panel answers to is printed as "<title> [<key>]" —
+## the key being the one alias that is unique — and resolve_editor_key accepts
+## that form back verbatim.
+##
 ## Used for the editor_not_found error UX — callers list what IS available, so
 ## a registration whose scene root has been freed must not appear here.
 func list_panel_editor_names() -> Array:
-	var names: Array = []
+	var displays: Dictionary = {}   # registry key -> display name
+	var display_counts: Dictionary = {}
 	for key in _panel_registry.keys():
 		var entry: _PanelEntry = _panel_registry[key]
 		if not _is_panel_alive(entry):
 			continue
 		var aliases: Array = _entry_aliases(entry)
 		var display: String = str(aliases[1]) if aliases.size() > 1 else str(aliases[0])
+		displays[key] = display
+		display_counts[display] = int(display_counts.get(display, 0)) + 1
+
+	var names: Array = []
+	for key in displays.keys():
+		var display: String = str(displays[key])
+		if int(display_counts.get(display, 0)) > 1:
+			display = "%s [%s]" % [display, str(key)]
 		if not names.has(display):
 			names.append(display)
 	return names
 
 
-## Returns the names of registrations whose scene root is gone — a panel that
-## failed to instantiate, or one freed without unregistering. These are NOT
-## known editors: nothing can be dispatched to them. They are reported
-## separately so a caller who addressed one is told why it cannot be reached
-## instead of being told the name is unknown.
+## Returns the names of registrations whose scene root is gone. Registration
+## happens only after the scene instantiates (PluginScenePanelHost step 10), so
+## an entry can only be here because its root was freed without the panel
+## unregistering — a closed tab or a stopped plugin that skipped its teardown
+## hook, never a panel that failed to load. These are NOT known editors:
+## nothing can be dispatched to them. They are reported separately so a caller
+## who addressed one is told why it cannot be reached instead of being told the
+## name is unknown.
 func list_dead_panel_editor_names() -> Array:
 	var names: Array = []
 	for key in _panel_registry.keys():
@@ -1112,8 +1156,9 @@ func _disconnect_buffer(entry: _PanelEntry) -> void:
 ## Awaitable. Times out after PANEL_STATE_REQUEST_TIMEOUT_SEC if the panel
 ## never responds — never returns null, always a structured dict.
 func request_panel_state(plugin_id: String, panel_name: String) -> Dictionary:
-	# Resolve the editor_name for the blob store key. For plugin-scene panels the
-	# panel_name is also the editor tab name (set by PluginScenePanelHost).
+	# The blob store is keyed by the panel's registry key; the argument here IS
+	# that key (CapabilityBroker passes Editor.plugin_panel_key), and
+	# _blob_store_key normalises anything else onto the same store.
 	var editor_name: String = panel_name
 	var raw: Dictionary = await _request_panel_state_op(plugin_id, panel_name,
 		CHANNEL_HOST_OWNED_SAVE_GET_REQUEST, {"op": "get"})
@@ -1814,6 +1859,20 @@ func _rehydrate_walk(
 # thread + T2 re-entrancy guard). No locking added here.
 # ---------------------------------------------------------------------------
 
+## The identity every blob-store operation is keyed by: the panel's registry
+## key. Callers arrive holding different names for the same panel — the key
+## itself from the panel-state path, the editor tab title from a capability
+## call — and unless both land on the same store, a blob written by one is
+## invisible to the other and its refcount never reaches zero. A name no live
+## panel answers to is used as it stands, so editors that are not scene panels
+## (and headless tests with no registry) keep a store of their own.
+func _blob_store_key(editor_name: String) -> String:
+	if _panel_registry.has(editor_name):
+		return editor_name
+	var key := resolve_editor_key(editor_name)
+	return key if not key.is_empty() else editor_name
+
+
 ## Store a blob for the given editor.
 ##
 ## Pre:  editor_name non-empty; bytes non-null (may be empty); content_type
@@ -1833,20 +1892,6 @@ func _rehydrate_walk(
 ## holds PackedByteArray internally — this field only governs what the
 ## rehydrate walker emits back to a consumer, so a plugin that uses
 ## base64-strings in its panel state gets strings back rather than PBA.
-## The identity every blob-store operation is keyed by: the panel's registry
-## key. Callers arrive holding different names for the same panel — the key
-## itself from the panel-state path, the editor tab title from a capability
-## call — and unless both land on the same store, a blob written by one is
-## invisible to the other and its refcount never reaches zero. A name no live
-## panel answers to is used as it stands, so editors that are not scene panels
-## (and headless tests with no registry) keep a store of their own.
-func _blob_store_key(editor_name: String) -> String:
-	if _panel_registry.has(editor_name):
-		return editor_name
-	var key := resolve_editor_key(editor_name)
-	return key if not key.is_empty() else editor_name
-
-
 func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: String,
 		encoding: String = "bytes") -> String:
 	# Normalise to the one identity the store is keyed by (see _blob_store_key).
