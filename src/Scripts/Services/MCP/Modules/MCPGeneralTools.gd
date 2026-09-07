@@ -195,7 +195,7 @@ func _create_plugin_editor(args: Dictionary) -> Dictionary:
 			return MCPToolUtils.error("render_editor_creation_failed")
 		var broker = SingletonObject.plugin_scene_panel_broker
 		if broker != null:
-			broker.attach_buffer_to_panel(plugin_id, panel_name, unbacked_buf)
+			broker.attach_buffer_to_panel(plugin_id, render_editor.plugin_panel_key, unbacked_buf)
 		else:
 			push_warning("[minerva_create_plugin_editor] plugin_scene_panel_broker missing; text_changed will not flow to render panel")
 

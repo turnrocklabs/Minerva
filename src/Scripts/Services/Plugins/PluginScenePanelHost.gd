@@ -41,6 +41,10 @@ extends RefCounted
 ##   plugin_id  — owning plugin's id (e.g. "cad").
 ##   panel_name — name as declared in the manifest's panels[].name.
 ##   editor     — the Editor wrapper node (used to build ctx for _on_panel_loaded).
+##   panel_key  — the broker registry key, unique per open tab. Defaults to
+##                panel_name, which collapses every tab showing this panel onto
+##                one registration; callers that mount one panel per editor
+##                must pass Editor.plugin_panel_key.
 ##
 ## Returns the mounted scene root on success, or a diagnostic placeholder Control
 ## on any failure.  The placeholder is always added as a child of vbox.
@@ -50,7 +54,8 @@ static func instantiate_into(
 		vbox: Control,
 		plugin_id: String,
 		panel_name: String,
-		editor  # Editor — untyped to avoid circular dependency
+		editor,  # Editor — untyped to avoid circular dependency
+		panel_key: String = ""
 ) -> Control:
 	# -----------------------------------------------------------------------
 	# Step 1: Resolve plugin definition.
@@ -189,13 +194,16 @@ static func instantiate_into(
 	# -----------------------------------------------------------------------
 	# Step 10: Wire broker — MUST happen before _on_panel_loaded (§5.3).
 	# -----------------------------------------------------------------------
+	var reg_key: String = panel_key if not panel_key.is_empty() else panel_name
 	var broker: PluginScenePanelBroker = _get_broker()
 	if broker != null:
 		broker.register_panel(
 			root_ctrl,
 			plugin_id,
+			reg_key,
+			PackedStringArray(declared_channels),
 			panel_name,
-			PackedStringArray(declared_channels)
+			editor
 		)
 	else:
 		push_warning(
@@ -210,7 +218,7 @@ static func instantiate_into(
 	# case so scene scripts can safely use child-node refs initialised there.
 	# -----------------------------------------------------------------------
 	if root_ctrl.has_method("_on_panel_loaded"):
-		var ctx := _build_ctx(plugin_id, panel_name, data_dir, broker, editor)
+		var ctx := _build_ctx(plugin_id, panel_name, data_dir, broker, editor, reg_key)
 		if root_ctrl.is_node_ready():
 			root_ctrl._on_panel_loaded(ctx)
 		else:
@@ -452,11 +460,11 @@ static func invoke_unload(panel_root: Node) -> void:
 ## a mount, called when the owning editor leaves the tree. A panel the broker
 ## no longer lists under this plugin (its plugin was stopped, which already
 ## unregistered it) is left alone rather than warned about.
-static func unregister_from_broker(plugin_id: String, panel_name: String) -> void:
+static func unregister_from_broker(plugin_id: String, panel_key: String) -> void:
 	var broker: PluginScenePanelBroker = _get_broker()
-	if broker == null or broker.get_panel_owner(panel_name) != plugin_id:
+	if broker == null or broker.get_panel_owner(panel_key) != plugin_id:
 		return
-	broker.unregister_panel(plugin_id, panel_name)
+	broker.unregister_panel(plugin_id, panel_key)
 
 
 # ---------------------------------------------------------------------------
@@ -651,7 +659,8 @@ static func _build_ctx(
 		panel_name: String,
 		data_dir: String,
 		broker: PluginScenePanelBroker,
-		editor  # Editor — untyped to avoid circular dependency
+		editor,  # Editor — untyped to avoid circular dependency
+		panel_key: String = ""
 ) -> Dictionary:
 	var file_path: String = ""
 	var associated_object: Variant = null
@@ -664,6 +673,9 @@ static func _build_ctx(
 	return {
 		"plugin_id":        plugin_id,
 		"panel_name":       panel_name,
+		# The key every broker call addressing THIS panel must use; panel_name
+		# alone names the manifest panel, which several tabs may share.
+		"panel_key":        panel_key if not panel_key.is_empty() else panel_name,
 		"data_directory":   data_dir,
 		"broker":           broker,
 		"file_path":        file_path,

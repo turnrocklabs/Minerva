@@ -529,7 +529,14 @@ func _handle_panel_tool_call(plugin_id: String, tool_name: String, args: Diction
 			for n in ahr2.list_editor_names():
 				if not known.has(n):
 					known.append(n)
-		return PluginErrors.editor_not_found(plugin_id, editor_name, known)
+		# A registration whose panel scene is gone answers no call, so it is
+		# reported apart from the names that do work rather than among them.
+		var dead: Array = []
+		if broker != null and broker.has_method("list_dead_panel_editor_names"):
+			for n in broker.list_dead_panel_editor_names():
+				if not known.has(n) and not dead.has(n):
+					dead.append(n)
+		return PluginErrors.editor_not_found(plugin_id, editor_name, known, dead)
 
 	# --- Ownership check ---
 	var owner_id := ""

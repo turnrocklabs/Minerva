@@ -1543,6 +1543,7 @@ func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 			continue
 
 		var panel_name: String = entry.get("panel_name", "")
+		var panel_key: String = str(entry.get("panel_key", panel_name))
 		var vbox: Control = entry.get("vbox", null)
 		var old_root: Control = entry.get("root", null)
 		var editor = entry.get("editor", null)
@@ -1554,7 +1555,7 @@ func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 
 		# Step 2: Unregister old panel from broker.
 		if broker != null:
-			broker.unregister_panel(id, panel_name)
+			broker.unregister_panel(id, panel_key)
 
 		# Step 3: Free the old scene.
 		if old_root != null and is_instance_valid(old_root):
@@ -1565,7 +1566,7 @@ func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 		# and fires _on_panel_loaded(ctx) itself.
 		if vbox != null and is_instance_valid(vbox):
 			var new_root: Control = PluginScenePanelHost.instantiate_into(
-				vbox, id, panel_name, editor)
+				vbox, id, panel_name, editor, panel_key)
 			# Update registry entry with new root.
 			entry["root"] = new_root
 			# Rebind the owning Editor to the fresh surface: the platform
@@ -1593,18 +1594,23 @@ func _hot_reload_tscn(id: String, tscn_path: String) -> void:
 ## Called by Editor.create() (or equivalent) after a PLUGIN_SCENE panel is
 ## successfully mounted.  `tscn_path` is the absolute path to the .tscn file
 ## so _hot_reload_tscn can match changed paths to live instances.
+## `panel_key` is the broker registry key for this mount — unique per open tab,
+## where panel_name is shared by every tab showing the same manifest panel.
+## Entries are removed by key so closing one tab cannot drop another's record.
 func register_live_panel(
 		plugin_id: String,
 		panel_name: String,
 		tscn_path: String,
 		vbox: Control,
 		root: Control,
-		editor  # Editor — untyped to avoid circular dep
+		editor,  # Editor — untyped to avoid circular dep
+		panel_key: String = ""
 ) -> void:
 	if not _live_scene_panels.has(plugin_id):
 		_live_scene_panels[plugin_id] = []
 	var entry := {
 		"panel_name": panel_name,
+		"panel_key":  panel_key if not panel_key.is_empty() else panel_name,
 		"tscn_path":  tscn_path,
 		"vbox":       vbox,
 		"root":       root,
@@ -1614,12 +1620,18 @@ func register_live_panel(
 
 
 ## Unregister a live scene panel (called on tab close or plugin stop).
-func unregister_live_panel(plugin_id: String, panel_name: String) -> void:
+##
+## Matched on the entry's key ONLY. The manifest panel name is shared by every
+## tab showing that panel, so accepting it here would let one tab closing drop
+## every other tab's record — the record hot-reload needs to find them by.
+func unregister_live_panel(plugin_id: String, panel_key: String) -> void:
 	if not _live_scene_panels.has(plugin_id):
 		return
 	var panels: Array = _live_scene_panels[plugin_id]
 	for i in range(panels.size() - 1, -1, -1):
-		if panels[i].get("panel_name", "") == panel_name:
+		var entry: Dictionary = panels[i]
+		var key: String = str(entry.get("panel_key", entry.get("panel_name", "")))
+		if key == panel_key:
 			panels.remove_at(i)
 
 

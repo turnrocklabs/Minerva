@@ -156,10 +156,25 @@ static func tool_not_found(plugin_id: String, tool_name: String) -> Dictionary:
 ## known_editors (optional): the editor names that ARE currently available —
 ## when non-empty they are listed in the message so the caller can
 ## self-correct (mirrors the MCPPcbPanelTools._no_host_error UX).
-static func editor_not_found(plugin_id: String, editor_name: String, known_editors: Array = []) -> Dictionary:
+##
+## dead_editors (optional): names that ARE registered but whose panel scene is
+## gone, so nothing can be dispatched to them. They are deliberately kept out
+## of known_editors — listing a name the caller cannot use sends them round the
+## same failing call again — and named separately with the one thing that
+## explains the difference: the panel never came up, and the reason is in the
+## Minerva log rather than in this reply.
+static func editor_not_found(
+		plugin_id: String,
+		editor_name: String,
+		known_editors: Array = [],
+		dead_editors: Array = []
+) -> Dictionary:
 	var message := "Editor '%s' not found" % editor_name
 	if not known_editors.is_empty():
 		message += ". Known editors: %s" % str(known_editors)
+	if not dead_editors.is_empty():
+		message += (". Registered but unreachable — panel failed to instantiate "
+			+ "— see the Minerva log: %s") % str(dead_editors)
 	return {
 		"success": false,
 		"error_code": CODE_EDITOR_NOT_FOUND,
@@ -167,6 +182,7 @@ static func editor_not_found(plugin_id: String, editor_name: String, known_edito
 		"plugin_id": plugin_id,
 		"editor_name": editor_name,
 		"known_editors": known_editors,
+		"dead_editors": dead_editors,
 	}
 
 

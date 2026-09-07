@@ -235,7 +235,7 @@ func _resolve_target(args: Dictionary, require_existing: bool) -> Dictionary:
 	if ed_type == Editor.Type.PLUGIN_SCENE:
 		var pbroker = SingletonObject.plugin_scene_panel_broker
 		var ed_pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
-		var ed_pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+		var ed_pname: String = str(editor.plugin_panel_key) if "plugin_panel_key" in editor else ""
 		if pbroker != null and not ed_pid.is_empty() and not ed_pname.is_empty():
 			var attached: DocumentBuffer = pbroker.get_attached_buffer(ed_pid, ed_pname)
 			if attached != null:

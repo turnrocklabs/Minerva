@@ -175,6 +175,45 @@ static func list_editor_names() -> Array:
 	return names
 
 
+## Resolve the annotation host of the live SCENE PANEL that answers to
+## `editor_name`, ignoring the name-keyed registry entirely.
+##
+## The registry is keyed by tab title, and a paired document has two tabs on one
+## file: the text tab under the bare file name and the render tab under the
+## uniquified "(1)" name. A caller naming the document — by bare file name or by
+## path — means the surface that renders it, and the registry would hand back
+## the text buffer's host instead. The broker resolves a document to the panel
+## showing it, so panel-only tool families ask here.
+static func get_panel_host(editor_name: String) -> AnnotationHost:
+	var panel: Object = _broker_panel(editor_name)
+	if panel == null or not panel.has_method("get_annotation_host"):
+		return null
+	var host: Variant = panel.get_annotation_host()
+	return host as AnnotationHost if host is AnnotationHost else null
+
+
+## Names that are registered with the scene-panel broker but whose panel scene
+## is gone. Nothing can be dispatched to them, so they are NOT in
+## list_editor_names(); callers report them apart, as unreachable.
+static func list_dead_editor_names() -> Array:
+	var loop := Engine.get_main_loop()
+	if not (loop is SceneTree):
+		return []
+	var root: Node = (loop as SceneTree).root
+	var so: Node = root.get_node_or_null("SingletonObject") if root != null else null
+	if so == null or not ("plugin_scene_panel_broker" in so):
+		return []
+	var broker: Variant = so.get("plugin_scene_panel_broker")
+	if broker == null or not (broker as Object).has_method("list_dead_panel_editor_names"):
+		return []
+	var live: Array = list_editor_names()
+	var dead: Array = []
+	for n in broker.list_dead_panel_editor_names():
+		if not live.has(n) and not dead.has(n):
+			dead.append(n)
+	return dead
+
+
 ## Test-only: drop all registrations. Production code never needs this.
 static func _reset_for_test() -> void:
 	_hosts.clear()

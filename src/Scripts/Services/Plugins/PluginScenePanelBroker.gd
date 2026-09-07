@@ -289,9 +289,18 @@ func _init(
 ## Parameters:
 ##   panel_root         — root Control node of the plugin scene.
 ##   plugin_id          — owning plugin's id (e.g. "cad").
-##   panel_name         — name as declared in the manifest's panels[].name.
+##   panel_key          — the REGISTRY KEY: unique per open panel instance.
+##                        Callers that mount one panel per editor tab pass a
+##                        per-editor key (Editor.plugin_panel_key); a caller
+##                        with only a manifest name may pass that instead, at
+##                        the cost of one registration per plugin.
 ##   declared_channels  — channels this panel is allowed to use, from
 ##                        the manifest's panels[].ipc_channels field.
+##   manifest_panel_name — panels[].name from the manifest; defaults to
+##                        panel_key when the caller has nothing better.
+##   editor             — the owning Editor wrapper, held weakly so
+##                        get_panel_for_editor can resolve by the tab title and
+##                        file path the editor has RIGHT NOW.
 ##
 ## Attaches a MinervaIPC helper node as "$_MinervaIPC" on the panel root.
 ## Wires panel_root's `request` signal to handle_scene_request.
@@ -301,25 +310,28 @@ func _init(
 func register_panel(
 		panel_root: Node,
 		plugin_id: String,
-		panel_name: String,
-		declared_channels: PackedStringArray
+		panel_key: String,
+		declared_channels: PackedStringArray,
+		manifest_panel_name: String = "",
+		editor: Object = null
 ) -> void:
-	if not _validate_registration_args(panel_root, plugin_id, panel_name):
+	if not _validate_registration_args(panel_root, plugin_id, panel_key):
 		return
+	var panel_name: String = manifest_panel_name if not manifest_panel_name.is_empty() else panel_key
 
-	if _panel_registry.has(panel_name):
-		var existing: _PanelEntry = _panel_registry[panel_name]
+	if _panel_registry.has(panel_key):
+		var existing: _PanelEntry = _panel_registry[panel_key]
 		var existing_owner: String = existing.plugin_id
 		if existing_owner != plugin_id:
 			push_warning(
 				"[PluginScenePanelBroker] Panel '%s' was owned by '%s', re-assigning to '%s'" % [
-					panel_name, existing_owner, plugin_id
+					panel_key, existing_owner, plugin_id
 				]
 			)
 		else:
 			push_warning(
 				"[PluginScenePanelBroker] Panel '%s' is already registered for plugin '%s'; re-registering" % [
-					panel_name, plugin_id
+					panel_key, plugin_id
 				]
 			)
 		# Detach the old buffer + helper before overwriting.
@@ -335,10 +347,12 @@ func register_panel(
 	var entry := _PanelEntry.new()
 	entry.panel_ref   = weakref(panel_root)
 	entry.plugin_id   = plugin_id
+	entry.panel_key   = panel_key
 	entry.panel_name  = panel_name
 	entry.channels    = declared_channels
 	entry.ipc_helper  = ipc_helper
-	_panel_registry[panel_name] = entry
+	entry.editor_ref  = weakref(editor) if editor != null else null
+	_panel_registry[panel_key] = entry
 
 	# Wire the scene's outbound `request` signal to the broker.
 	# We use call_deferred so any `request` emitted during _ready() is
@@ -348,21 +362,21 @@ func register_panel(
 			func(channel: String, payload: Dictionary, reply_id: String) -> void:
 				call_deferred(
 					"handle_scene_request",
-					panel_name, channel, payload, reply_id
+					panel_key, channel, payload, reply_id
 				)
 		)
 	else:
 		push_warning(
 			("[PluginScenePanelBroker] Panel '%s' (plugin '%s') has no `request` signal; " +
-			"outbound IPC will not work") % [panel_name, plugin_id]
+			"outbound IPC will not work") % [panel_key, plugin_id]
 		)
 
 	print(
 		"[PluginScenePanelBroker] Registered panel '%s' -> plugin '%s' (%d channel(s))" % [
-			panel_name, plugin_id, declared_channels.size()
+			panel_key, plugin_id, declared_channels.size()
 		]
 	)
-	panel_registered.emit(plugin_id, panel_name)
+	panel_registered.emit(plugin_id, panel_key)
 
 
 ## Unregister a single panel.
@@ -428,43 +442,140 @@ func unregister_plugin_panels(plugin_id: String) -> void:
 # Query helpers
 # ---------------------------------------------------------------------------
 
-## Returns true if panel_name is registered with any plugin.
-func is_panel_registered(panel_name: String) -> bool:
-	return _panel_registry.has(panel_name)
+## Returns true if panel_key is registered with any plugin.
+func is_panel_registered(panel_key: String) -> bool:
+	return _panel_registry.has(panel_key)
 
 
-## Returns the plugin_id that owns a panel, or "" if not registered.
-func get_panel_owner(panel_name: String) -> String:
-	if not _panel_registry.has(panel_name):
+## Returns the plugin_id that owns a panel, or "" if not resolvable.
+## Accepts anything get_panel_for_editor accepts, so an ownership check and the
+## panel lookup that precedes it can never disagree about which panel is meant.
+func get_panel_owner(panel_key: String) -> String:
+	# Exact key first, and without a liveness test: teardown asks who owns a
+	# registration precisely when the scene root has just been freed, and a
+	# dead entry must still be unregisterable by its owner.
+	if _panel_registry.has(panel_key):
+		return (_panel_registry[panel_key] as _PanelEntry).plugin_id
+	var key := resolve_editor_key(panel_key)
+	if key.is_empty():
 		return ""
-	return (_panel_registry[panel_name] as _PanelEntry).plugin_id
+	return (_panel_registry[key] as _PanelEntry).plugin_id
 
 
-## Returns the live scene-panel root registered under editor_name, or null.
+## Every name a caller may legitimately use to address `entry`, most precise
+## first: the registry key, the editor's current tab title, the document's
+## absolute path, and finally its bare file name. The editor is read at call
+## time — never cached — so renaming a tab or saving to a new path cannot leave
+## a stale alias behind.
+func _entry_aliases(entry: _PanelEntry) -> Array:
+	var aliases: Array = [entry.panel_key]
+	var editor: Object = entry.editor_ref.get_ref() if entry.editor_ref != null else null
+	if editor != null and is_instance_valid(editor):
+		if "tab_title" in editor:
+			var title := str(editor.get("tab_title"))
+			if not title.is_empty() and not aliases.has(title):
+				aliases.append(title)
+		if "file" in editor:
+			var path := str(editor.get("file"))
+			if not path.is_empty():
+				if not aliases.has(path):
+					aliases.append(path)
+				var base := path.get_file()
+				if not base.is_empty() and not aliases.has(base):
+					aliases.append(base)
+	if not aliases.has(entry.panel_name):
+		aliases.append(entry.panel_name)
+	return aliases
+
+
+## Resolve any name a caller may address a live panel by to its registry key,
+## or "" when nothing live answers to it.
 ##
-## For plugin-scene panels the panel_name IS the editor tab name (set by
-## PluginScenePanelHost — see the request_panel_state comment), so this is a
-## direct registry lookup. Returns null when the panel was never registered
-## or its root node has been freed (stale WeakRef).
+## Aliases are ranked (see _entry_aliases) and the most precise tier that has
+## candidates wins, so a manifest panel name never outranks the tab title of a
+## different document. A name that two live panels answer to at the same tier
+## is AMBIGUOUS and resolves to "" — the caller then gets editor_not_found with
+## both names listed rather than a coin flip between two documents.
+##
+## Dead entries (freed scene root) are skipped, so a panel whose scene failed
+## to stay alive is never "found".
+func resolve_editor_key(editor_name: String) -> String:
+	if editor_name.is_empty():
+		return ""
+	var best_rank: int = -1
+	var matches: Array = []
+	for key in _panel_registry.keys():
+		var entry: _PanelEntry = _panel_registry[key]
+		if not _is_panel_alive(entry):
+			continue
+		var rank: int = _entry_aliases(entry).find(editor_name)
+		if rank < 0:
+			continue
+		if best_rank < 0 or rank < best_rank:
+			best_rank = rank
+			matches = [key]
+		elif rank == best_rank:
+			matches.append(key)
+	if matches.size() == 1:
+		return str(matches[0])
+	if matches.size() > 1:
+		push_warning(
+			"[PluginScenePanelBroker] '%s' names %d live panels (%s); address one by tab title"
+			% [editor_name, matches.size(), str(matches)]
+		)
+	return ""
+
+
+## Returns the live scene-panel root addressed by editor_name, or null.
+##
+## editor_name may be the registry key, the editor's tab title (including the
+## "(1)" Minerva appends to a second tab on the same file), the document's
+## absolute path, its bare file name, or the manifest panel name when only one
+## instance of that panel is open. Returns null when nothing live answers, when
+## the name is ambiguous, or when the registered scene root has been freed.
 ##
 ## Used by PluginToolRegistry to dispatch panel-executed tools
 ## (executor == "panel", DCR 019f6c3d0e3d).
 func get_panel_for_editor(editor_name: String) -> Node:
-	if not _panel_registry.has(editor_name):
+	var key := resolve_editor_key(editor_name)
+	if key.is_empty():
 		return null
-	var entry: _PanelEntry = _panel_registry[editor_name]
-	if entry.panel_ref == null:
-		return null
-	var panel = entry.panel_ref.get_ref()
-	if panel == null or not is_instance_valid(panel):
-		return null
-	return panel as Node
+	var entry: _PanelEntry = _panel_registry[key]
+	return entry.panel_ref.get_ref() as Node
 
 
-## Returns the list of editor names (== panel names) currently registered.
-## Used for the editor_not_found error UX — callers list what IS available.
+## Returns the names a caller can actually address right now: for each LIVE
+## panel, the editor tab title when one is known, otherwise the registry key.
+## Used for the editor_not_found error UX — callers list what IS available, so
+## a registration whose scene root has been freed must not appear here.
 func list_panel_editor_names() -> Array:
-	return _panel_registry.keys()
+	var names: Array = []
+	for key in _panel_registry.keys():
+		var entry: _PanelEntry = _panel_registry[key]
+		if not _is_panel_alive(entry):
+			continue
+		var aliases: Array = _entry_aliases(entry)
+		var display: String = str(aliases[1]) if aliases.size() > 1 else str(aliases[0])
+		if not names.has(display):
+			names.append(display)
+	return names
+
+
+## Returns the names of registrations whose scene root is gone — a panel that
+## failed to instantiate, or one freed without unregistering. These are NOT
+## known editors: nothing can be dispatched to them. They are reported
+## separately so a caller who addressed one is told why it cannot be reached
+## instead of being told the name is unknown.
+func list_dead_panel_editor_names() -> Array:
+	var names: Array = []
+	for key in _panel_registry.keys():
+		var entry: _PanelEntry = _panel_registry[key]
+		if _is_panel_alive(entry):
+			continue
+		for alias in _entry_aliases(entry):
+			if not names.has(alias):
+				names.append(alias)
+	return names
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +585,10 @@ func list_panel_editor_names() -> Array:
 ## Handle a request emitted by a plugin scene panel.
 ##
 ## Parameters:
-##   panel_name — the registered name of the panel that emitted the signal.
+##   panel_key  — the registry key of the panel that emitted the signal. The
+##                manifest's name for that panel is read off the entry; the two
+##                differ, and only the manifest name may be checked against the
+##                manifest.
 ##   channel    — the declared channel, e.g. "cad.render_request" or
 ##                "capability:notes.create".
 ##   payload    — a Dictionary of call-specific arguments.
@@ -491,15 +605,15 @@ func list_panel_editor_names() -> Array:
 ##   7. Dispatch to CapabilityBroker or plugin backend.
 ##   8. Deliver reply via $_MinervaIPC._reply().
 func handle_scene_request(
-		panel_name: String,
+		panel_key: String,
 		channel: String,
 		payload: Dictionary,
 		reply_id: String
 ) -> void:
 
 	# --- 1. Basic input validation -------------------------------------------
-	if panel_name.is_empty():
-		push_warning("[PluginScenePanelBroker] handle_scene_request: empty panel_name")
+	if panel_key.is_empty():
+		push_warning("[PluginScenePanelBroker] handle_scene_request: empty panel_key")
 		return
 
 	if channel.is_empty():
@@ -507,30 +621,38 @@ func handle_scene_request(
 		return
 
 	# --- 2. Resolve panel -> plugin -------------------------------------------
-	if not _panel_registry.has(panel_name):
+	if not _panel_registry.has(panel_key):
+		# Nothing is registered under this key, so there is no manifest name to
+		# report; the key is all the audit can name it by.
 		_audit("", EVENT_SCENE_DENIED, {
-			"panel_name": panel_name,
+			"panel_name": panel_key,
+			"panel_key": panel_key,
 			"channel": channel,
 			"reason": "panel_not_registered",
 		})
-		_deliver_error(panel_name, reply_id,
+		_deliver_error(panel_key, reply_id,
 			PluginErrors.permission_denied("",
-				"Panel '%s' is not registered with any plugin" % panel_name))
+				"Panel '%s' is not registered with any plugin" % panel_key))
 		return
 
-	var entry: _PanelEntry = _panel_registry[panel_name]
+	var entry: _PanelEntry = _panel_registry[panel_key]
 	var plugin_id: String = entry.plugin_id
+	# The manifest's name for this panel. The registry key is unique per open
+	# tab and is NOT in the manifest, so every manifest-facing check and every
+	# message that quotes "the panel the plugin declared" uses this.
+	var manifest_panel: String = entry.panel_name
 
 	# Guard: check that the panel root is still alive (weak ref).
 	if not _is_panel_alive(entry):
 		_audit(plugin_id, EVENT_SCENE_DENIED, {
-			"panel_name": panel_name,
+			"panel_name": manifest_panel,
+			"panel_key": panel_key,
 			"channel": channel,
 			"reason": "panel_root_freed",
 		})
 		# No live panel to deliver to; log and return.
 		push_warning(
-			"[PluginScenePanelBroker] handle_scene_request: panel root for '%s' has been freed" % panel_name
+			"[PluginScenePanelBroker] handle_scene_request: panel root for '%s' has been freed" % panel_key
 		)
 		return
 
@@ -538,68 +660,71 @@ func handle_scene_request(
 	# These are platform capabilities; bypass the manifest channel allowlist
 	# and dispatch directly. Same justification as attach_buffer/text_changed.
 	if channel == CHANNEL_HOST_FS_WATCH:
-		var fs_result := _handle_host_fs_watch(plugin_id, panel_name, payload)
+		var fs_result := _handle_host_fs_watch(plugin_id, panel_key, payload)
 		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
-			"panel_name": panel_name, "channel": channel,
+			"panel_name": manifest_panel, "panel_key": panel_key, "channel": channel,
 			"scene_success": fs_result.get("success", false),
 		})
-		_deliver_reply(panel_name, reply_id, fs_result)
+		_deliver_reply(panel_key, reply_id, fs_result)
 		return
 	if channel == CHANNEL_HOST_FS_UNWATCH:
-		var fs_result := _handle_host_fs_unwatch(plugin_id, panel_name, payload)
+		var fs_result := _handle_host_fs_unwatch(plugin_id, panel_key, payload)
 		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
-			"panel_name": panel_name, "channel": channel,
+			"panel_name": manifest_panel, "panel_key": panel_key, "channel": channel,
 			"scene_success": fs_result.get("success", false),
 		})
-		_deliver_reply(panel_name, reply_id, fs_result)
+		_deliver_reply(panel_key, reply_id, fs_result)
 		return
 	if channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE:
 		# Panel responding to a broker-initiated panel-state request. No
 		# reply expected (panel is responding, not requesting); just resolve
 		# the matching awaiter and audit the dispatch. Pass the resolved
-		# plugin_id + panel_name so _resolve_panel_state_response can verify
+		# plugin_id + panel_key so _resolve_panel_state_response can verify
 		# the responder owns the request (anti-spoofing).
 		_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
-			"panel_name": panel_name, "channel": channel,
+			"panel_name": manifest_panel, "panel_key": panel_key, "channel": channel,
 			"request_id": str(payload.get("request_id", "")),
 		})
-		_resolve_panel_state_response(plugin_id, panel_name, payload)
+		_resolve_panel_state_response(plugin_id, panel_key, payload)
 		return
 
 	# --- 3. Validate panel ownership against manifest -------------------------
-	if not _validate_panel_ownership(plugin_id, panel_name):
+	if not _validate_panel_ownership(plugin_id, manifest_panel):
 		_audit(plugin_id, EVENT_SCENE_DENIED, {
-			"panel_name": panel_name,
+			"panel_name": manifest_panel,
+			"panel_key": panel_key,
 			"channel": channel,
 			"reason": "panel_ownership_mismatch",
 		})
-		_deliver_error(panel_name, reply_id,
+		_deliver_error(panel_key, reply_id,
 			PluginErrors.permission_denied(plugin_id,
-				"Panel '%s' is not declared in the manifest of plugin '%s'" % [panel_name, plugin_id]))
+				"Panel '%s' is not declared in the manifest of plugin '%s'" % [manifest_panel, plugin_id]))
 		return
 
 	# --- 4. Validate channel is in this panel's declared_channels -------------
 	if not channel.begins_with("capability:") and not (channel in entry.channels):
 		_audit(plugin_id, EVENT_SCENE_DENIED, {
-			"panel_name": panel_name,
+			"panel_name": manifest_panel,
+			"panel_key": panel_key,
 			"channel": channel,
 			"reason": "channel_not_in_panel_scope",
 		})
-		_deliver_error(panel_name, reply_id,
+		_deliver_error(panel_key, reply_id,
 			PluginErrors.permission_denied(plugin_id,
 				"Channel '%s' is not in the declared ipc_channels for panel '%s'" % [
-					channel, panel_name
+					channel, manifest_panel
 				]))
 		return
 
 	# --- 5. Validate channel against manifest's global ipc_messages allowlist --
 	if not _validate_channel_declared(plugin_id, channel):
 		_audit(plugin_id, EVENT_SCENE_DENIED, {
-			"panel_name": panel_name,
+			"panel_name": manifest_panel,
+			"panel_key": panel_key,
 			"channel": channel,
 			"reason": "channel_not_declared",
 		})
-		_deliver_error(panel_name, reply_id,
+		_deliver_error(panel_key, reply_id,
 			PluginErrors.permission_denied(plugin_id,
 				"Channel '%s' is not declared in the manifest of plugin '%s'" % [
 					channel, plugin_id
@@ -610,18 +735,20 @@ func handle_scene_request(
 	var payload_json := JSON.stringify(payload)
 	if payload_json.length() > MAX_PAYLOAD_BYTES:
 		_audit(plugin_id, EVENT_SCENE_DENIED, {
-			"panel_name": panel_name,
+			"panel_name": manifest_panel,
+			"panel_key": panel_key,
 			"channel": channel,
 			"reason": "payload_too_large",
 			"scene_size": payload_json.length(),
 		})
-		_deliver_error(panel_name, reply_id,
+		_deliver_error(panel_key, reply_id,
 			PluginErrors.payload_too_large(plugin_id, MAX_PAYLOAD_BYTES, payload_json.length()))
 		return
 
 	# --- 7. Dispatch ----------------------------------------------------------
 	_audit(plugin_id, EVENT_SCENE_ALLOWED, {
-		"panel_name": panel_name,
+		"panel_name": manifest_panel,
+		"panel_key": panel_key,
 		"channel": channel,
 	})
 
@@ -632,13 +759,14 @@ func handle_scene_request(
 		result = await _dispatch_to_plugin_backend(plugin_id, channel, payload)
 
 	_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
-		"panel_name": panel_name,
+		"panel_name": manifest_panel,
+		"panel_key": panel_key,
 		"channel": channel,
 		"scene_success": result.get("success", false),
 	})
 
 	# --- 8. Deliver reply back to scene via $_MinervaIPC ----------------------
-	_deliver_reply(panel_name, reply_id, result)
+	_deliver_reply(panel_key, reply_id, result)
 
 
 # ---------------------------------------------------------------------------
@@ -1445,7 +1573,7 @@ func _detach_ipc_helper(entry: _PanelEntry) -> void:
 
 ## Validate arguments to register_panel before proceeding.
 func _validate_registration_args(
-		panel_root: Node, plugin_id: String, panel_name: String
+		panel_root: Node, plugin_id: String, panel_key: String
 ) -> bool:
 	if panel_root == null or not is_instance_valid(panel_root):
 		push_warning("[PluginScenePanelBroker] register_panel: panel_root is null or freed")
@@ -1453,8 +1581,8 @@ func _validate_registration_args(
 	if plugin_id.is_empty():
 		push_warning("[PluginScenePanelBroker] register_panel: empty plugin_id")
 		return false
-	if panel_name.is_empty():
-		push_warning("[PluginScenePanelBroker] register_panel: empty panel_name")
+	if panel_key.is_empty():
+		push_warning("[PluginScenePanelBroker] register_panel: empty panel_key")
 		return false
 	return true
 
@@ -1705,8 +1833,24 @@ func _rehydrate_walk(
 ## holds PackedByteArray internally — this field only governs what the
 ## rehydrate walker emits back to a consumer, so a plugin that uses
 ## base64-strings in its panel state gets strings back rather than PBA.
+## The identity every blob-store operation is keyed by: the panel's registry
+## key. Callers arrive holding different names for the same panel — the key
+## itself from the panel-state path, the editor tab title from a capability
+## call — and unless both land on the same store, a blob written by one is
+## invisible to the other and its refcount never reaches zero. A name no live
+## panel answers to is used as it stands, so editors that are not scene panels
+## (and headless tests with no registry) keep a store of their own.
+func _blob_store_key(editor_name: String) -> String:
+	if _panel_registry.has(editor_name):
+		return editor_name
+	var key := resolve_editor_key(editor_name)
+	return key if not key.is_empty() else editor_name
+
+
 func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: String,
 		encoding: String = "bytes") -> String:
+	# Normalise to the one identity the store is keyed by (see _blob_store_key).
+	editor_name = _blob_store_key(editor_name)
 	if not _blob_stores.has(editor_name):
 		_blob_stores[editor_name] = {}
 	if not _next_blob_handle.has(editor_name):
@@ -1741,6 +1885,8 @@ func _store_blob(editor_name: String, bytes: PackedByteArray, content_type: Stri
 ##   {found: true,  bytes: PackedByteArray, content_type: String, refcount: int}
 ##   {found: false, bytes: PackedByteArray(), content_type: "", refcount: 0}
 func _get_blob_record(editor_name: String, handle: String) -> Dictionary:
+	# Normalise to the one identity the store is keyed by (see _blob_store_key).
+	editor_name = _blob_store_key(editor_name)
 	if not _blob_stores.has(editor_name):
 		return {"found": false, "bytes": PackedByteArray(), "content_type": "", "refcount": 0, "encoding": "bytes"}
 	var store: Dictionary = _blob_stores[editor_name]
@@ -1764,6 +1910,8 @@ func _get_blob_record(editor_name: String, handle: String) -> Dictionary:
 ## Returns false if the handle is not found (caller's bug to surface upstream).
 ## Refcount has no maximum; if an upper bound is needed later, add it here.
 func _inc_blob_refcount(editor_name: String, handle: String) -> bool:
+	# Normalise to the one identity the store is keyed by (see _blob_store_key).
+	editor_name = _blob_store_key(editor_name)
 	if not _blob_stores.has(editor_name):
 		return false
 	var store: Dictionary = _blob_stores[editor_name]
@@ -1783,6 +1931,8 @@ func _inc_blob_refcount(editor_name: String, handle: String) -> bool:
 ##   - The handle is not found (caller's bug).
 ##   - refcount is already 0 (underflow guard — entry is NOT further decremented).
 func _dec_blob_refcount(editor_name: String, handle: String) -> bool:
+	# Normalise to the one identity the store is keyed by (see _blob_store_key).
+	editor_name = _blob_store_key(editor_name)
 	if not _blob_stores.has(editor_name):
 		return false
 	var store: Dictionary = _blob_stores[editor_name]
@@ -1823,6 +1973,8 @@ func _dec_blob_refcount(editor_name: String, handle: String) -> bool:
 ##
 ## Returns: count of blob entries dropped.
 func _clear_blobs_for_editor(editor_name: String) -> int:
+	# Normalise to the one identity the store is keyed by (see _blob_store_key).
+	editor_name = _blob_store_key(editor_name)
 	if not _blob_stores.has(editor_name):
 		return 0
 	var count: int = _blob_stores[editor_name].size()
@@ -1843,6 +1995,8 @@ func _clear_blobs_for_editor(editor_name: String) -> int:
 ##
 ## PRODUCTION CODE MUST NOT DEPEND ON THIS METHOD. It is test-only.
 func _blob_store_snapshot(editor_name: String) -> Dictionary:
+	# Normalise to the one identity the store is keyed by (see _blob_store_key).
+	editor_name = _blob_store_key(editor_name)
 	if not _blob_stores.has(editor_name):
 		return {}
 	var result: Dictionary = {}
@@ -1876,7 +2030,10 @@ class _PanelEntry extends RefCounted:
 	var panel_ref: WeakRef = null
 	## Owning plugin id.
 	var plugin_id: String = ""
-	## Panel name as declared in the manifest.
+	## Registry key: unique per OPEN panel instance, so two editors on the same
+	## manifest panel each keep their own channels, IPC helper and buffer.
+	var panel_key: String = ""
+	## Panel name as declared in the manifest. Shared by every instance of it.
 	var panel_name: String = ""
 	## Channels this panel is allowed to use (from manifest panels[].ipc_channels).
 	var channels: PackedStringArray = PackedStringArray()
@@ -1889,3 +2046,7 @@ class _PanelEntry extends RefCounted:
 	## Callable connected to attached_buffer.text_changed; held so detach can
 	## disconnect the exact same handle.
 	var _buffer_text_changed_handler: Callable = Callable()
+	## WeakRef to the owning Editor wrapper, or null when the caller did not
+	## supply one. Read (never written) to answer "which document is this
+	## panel showing" at lookup time, so a tab rename cannot go stale.
+	var editor_ref: WeakRef = null

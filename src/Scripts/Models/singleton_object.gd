@@ -744,13 +744,16 @@ func _push_to_plugin_panels(p_plugin_id: String, push_type: String, event_name: 
 
 	if plugin_scene_panel_broker != null and plugin_manager != null:
 		for entry in plugin_manager.get_live_panels(p_plugin_id):
-			var panel_name: String = entry.get("panel_name", "")
-			if panel_name.is_empty():
+			# Address the broker by the per-tab registration key: every tab
+			# showing this panel gets the push, not just whichever one the
+			# shared manifest name happens to resolve to.
+			var panel_key: String = str(entry.get("panel_key", entry.get("panel_name", "")))
+			if panel_key.is_empty():
 				continue
 			if push_type == "event":
-				plugin_scene_panel_broker.push_to_panel(p_plugin_id, panel_name, event_name, data)
+				plugin_scene_panel_broker.push_to_panel(p_plugin_id, panel_key, event_name, data)
 			elif push_type == "state":
-				plugin_scene_panel_broker.push_to_panel(p_plugin_id, panel_name, "state", data)
+				plugin_scene_panel_broker.push_to_panel(p_plugin_id, panel_key, "state", data)
 
 
 func _find_webview_editor(node: Node):
@@ -1618,7 +1621,8 @@ func _open_paired_dsl(abs_path: String, p_id: String, p_name: String) -> Editor:
 		var reg := DocumentRegistry.get_instance()
 		var br := reg.get_or_create_buffer(abs_path)
 		if br.ok:
-			plugin_scene_panel_broker.attach_buffer_to_panel(p_id, p_name, br.buffer)
+			plugin_scene_panel_broker.attach_buffer_to_panel(
+				p_id, render_editor.plugin_panel_key, br.buffer)
 		else:
 			push_warning(
 				"[open_file_at_path] paired_dsl buffer unavailable for '%s': %s" % [

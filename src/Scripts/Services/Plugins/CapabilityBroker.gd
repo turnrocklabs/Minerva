@@ -710,7 +710,7 @@ func _handle_host_documents_get_state(plugin_id: String, args: Dictionary) -> Di
 			# Panel-canonical: state lives in panel UI memory. Round-trip
 			# through PluginScenePanelBroker.
 			var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
-			var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+			var pname: String = str(ed.plugin_panel_key) if "plugin_panel_key" in ed else ""
 			if owner_pid.is_empty() or pname.is_empty():
 				return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
 			var pbroker = _get_panel_broker()
@@ -804,7 +804,7 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 		# above (before editor lookup); raw_state is therefore safe to read.
 		var raw_state: Dictionary = args["panel_state"] as Dictionary
 		var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
-		var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+		var pname: String = str(ed.plugin_panel_key) if "plugin_panel_key" in ed else ""
 		if owner_pid.is_empty() or pname.is_empty():
 			return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
 		var pbroker = _get_panel_broker()
@@ -960,7 +960,7 @@ func _handle_host_documents_get_node(plugin_id: String, args: Dictionary) -> Dic
 		if buffer == null:
 			# Panel-canonical: round-trip through PluginScenePanelBroker.
 			var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
-			var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+			var pname: String = str(ed.plugin_panel_key) if "plugin_panel_key" in ed else ""
 			if owner_pid.is_empty() or pname.is_empty():
 				# Matches get_state's behavior at L466 for the same precondition.
 				return PluginErrors.not_buffer_canonical(plugin_id, editor_name)
@@ -1135,7 +1135,7 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 	# Obtain current panel state for pre-validation and apply.
 	var current_state: Variant = null
 	var owner_pid: String = str(ed.plugin_id) if "plugin_id" in ed else ""
-	var pname: String = str(ed.panel_name) if "panel_name" in ed else ""
+	var pname: String = str(ed.plugin_panel_key) if "plugin_panel_key" in ed else ""
 
 	if not is_buffer_canonical:
 		if owner_pid.is_empty() or pname.is_empty():
@@ -2853,7 +2853,7 @@ static func _editor_kind_string(ed_type: int) -> String:
 func _resolve_editor_buffer(editor) -> DocumentBuffer:
 	var ed_type: int = int(editor.type) if "type" in editor else -1
 	var pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
-	var pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+	var pname: String = str(editor.plugin_panel_key) if "plugin_panel_key" in editor else ""
 	var ed_file: String = str(editor.file) if "file" in editor else ""
 
 	if ed_type == Editor.Type.PLUGIN_SCENE:

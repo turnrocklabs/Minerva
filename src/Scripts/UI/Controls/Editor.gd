@@ -89,6 +89,13 @@ var plugin_scene_root: Control  ## Mounted scene root for PLUGIN_SCENE editors.
 ## Set by caller before Editor.create(Type.PLUGIN_SCENE) to identify the panel.
 var plugin_id: String = ""
 var panel_name: String = ""
+## The key this editor's mounted panel is registered under with
+## PluginScenePanelBroker. panel_name identifies the panel in the MANIFEST and
+## is therefore shared by every tab showing that panel; this is unique per open
+## tab, so two documents rendered by the same plugin panel keep separate IPC
+## helpers, channels and attached buffers. Every broker call that addresses
+## "this editor's panel" must pass this, never panel_name.
+var plugin_panel_key: String = ""
 ## save_mode mirrors the manifest's panel save_mode ("host_owned" | "plugin_owned").
 ## Set during create() from the panel definition; defaults to "host_owned".
 var plugin_save_mode: String = "host_owned"
@@ -276,6 +283,10 @@ static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name
 	editor.type = Type.PLUGIN_SCENE
 	editor.plugin_id = p_id
 	editor.panel_name = p_name
+	# The instance id is unique for the editor's whole life and, unlike the tab
+	# title, survives a rename — nothing addressed through the broker can go
+	# stale because the user renamed a tab.
+	editor.plugin_panel_key = "%s#%d" % [p_name, editor.get_instance_id()]
 	editor.associated_object = associated_object_
 	if name_:
 		editor.tab_title = name_
@@ -306,7 +317,7 @@ static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name
 						editor.plugin_chrome_suppress = cs_list
 						break
 		var root: Control = PluginScenePanelHost.instantiate_into(
-			vbox_container, p_id, p_name, editor
+			vbox_container, p_id, p_name, editor, editor.plugin_panel_key
 		)
 		editor.plugin_scene_root = root
 		if root != null and root.has_signal("content_changed"):
@@ -323,7 +334,10 @@ static func create_plugin_scene(p_id: String, p_name: String, file_ = null, name
 						if not entry_rel.is_empty() and not data_dir.is_empty():
 							tscn_path = data_dir.path_join(entry_rel).simplify_path()
 						break
-			pm.register_live_panel(p_id, p_name, tscn_path, vbox_container, root, editor)
+			pm.register_live_panel(
+				p_id, p_name, tscn_path, vbox_container, root, editor,
+				editor.plugin_panel_key
+			)
 
 	return editor
 
@@ -733,10 +747,10 @@ func _exit_tree() -> void:
 	# PLUGIN_SCENE cleanup: fire unload hook, unregister from broker and PluginManager.
 	if type == Type.PLUGIN_SCENE and not plugin_id.is_empty() and not panel_name.is_empty():
 		PluginScenePanelHost.invoke_unload(plugin_scene_root)
-		PluginScenePanelHost.unregister_from_broker(plugin_id, panel_name)
+		PluginScenePanelHost.unregister_from_broker(plugin_id, plugin_panel_key)
 		var pm = _get_plugin_manager_safe()
 		if pm != null:
-			pm.unregister_live_panel(plugin_id, panel_name)
+			pm.unregister_live_panel(plugin_id, plugin_panel_key)
 	# Free any controls contributed by the panel via get_editor_actions().
 	for ctrl in _plugin_contributed_actions:
 		if is_instance_valid(ctrl):

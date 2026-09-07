@@ -73,6 +73,7 @@ PCB_GUARD_TESTS=(
 	test/test_plugin_scene_panel_broker.gd
 	test/test_plugin_scene_panel_broker_host_fs.gd
 	test/test_plugin_scene_panel_broker_progress.gd
+	test/test_plugin_scene_panel_keying.gd
 	test/test_plugin_scene_panel_host.gd
 	test/test_plugin_scene_panel_host_hooks.gd
 )

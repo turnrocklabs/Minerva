@@ -697,7 +697,7 @@ func _cad_export(args: Dictionary) -> Dictionary:
 	var pbroker = SingletonObject.plugin_scene_panel_broker
 	if pbroker != null:
 		var ed_pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
-		var ed_pname: String = str(editor.panel_name) if "panel_name" in editor else ""
+		var ed_pname: String = str(editor.plugin_panel_key) if "plugin_panel_key" in editor else ""
 		if not ed_pid.is_empty() and not ed_pname.is_empty():
 			var attached: DocumentBuffer = pbroker.get_attached_buffer(ed_pid, ed_pname)
 			if attached != null:
@@ -923,22 +923,46 @@ func _cad_snapshot(args: Dictionary) -> Dictionary:
 
 ## Resolve editor_name → AnnotationHost via the registry.
 ## Returns null on missing host or missing editor_name arg.
+## Resolve args.editor_name to the CAD panel's annotation host.
+##
+## Every name that reaches a live CAD panel is accepted: the render tab's own
+## title (including the "(1)" Minerva appends when a second tab opens on one
+## file), the document's bare file name, and its absolute path. The name-keyed
+## registry is consulted first, but a paired document registers TWO hosts on one
+## file — the text tab's plain buffer host under the bare name, the render tab's
+## CAD host under the "(1)" name — so a host that cannot answer a CAD question
+## is not the one the caller meant: the scene-panel broker, which resolves a
+## document to the panel rendering it, is asked before giving up.
 func _resolve_host(args: Dictionary) -> AnnotationHost:
 	var editor_name: String = str(args.get("editor_name", ""))
 	if editor_name.is_empty():
 		return null
-	return AnnotationHostRegistry.get_host(editor_name)
+	# get_mesh_data is the CAD host's discriminator: CadAnnotationHost (the cad
+	# plugin's AnnotationHost subclass, which every verb below calls into)
+	# declares it and a plain text-buffer host does not.
+	var host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+	if host != null and host.has_method("get_mesh_data"):
+		return host
+	var panel_host: AnnotationHost = AnnotationHostRegistry.get_panel_host(editor_name)
+	if panel_host != null:
+		return panel_host
+	return host
 
 
-## Build a structured error for a missing host, including known editor names.
+## Build a structured error for a missing host, listing the names that DO
+## resolve and, separately, any registration whose panel never came up — a name
+## the caller cannot use, and the reason it cannot.
 func _no_host_error(args: Dictionary) -> Dictionary:
 	var editor_name: String = str(args.get("editor_name", ""))
 	if editor_name.is_empty():
 		return _err("editor_name is required")
 	var known: Array = AnnotationHostRegistry.list_editor_names()
-	return _err(
-		"no_cad_host_for_editor: '%s'. Known editors: %s" % [editor_name, str(known)]
-	)
+	var dead: Array = AnnotationHostRegistry.list_dead_editor_names()
+	var msg := "no_cad_host_for_editor: '%s'. Known editors: %s" % [editor_name, str(known)]
+	if not dead.is_empty():
+		msg += (". Registered but unreachable — panel failed to instantiate — "
+			+ "see the Minerva log: %s") % str(dead)
+	return _err(msg)
 
 
 ## Build a success response. Mirrors MCPToolUtils.success() so the module is
