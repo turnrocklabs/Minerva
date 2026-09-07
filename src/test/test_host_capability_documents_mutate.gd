@@ -344,12 +344,17 @@ class _StubPluginEditor:
 	var type: int = _PLUGIN_SCENE_TYPE
 	var plugin_id: String
 	var panel_name: String
+	## Broker registration key. A real Editor keys per open tab
+	## ("<panel_name>#<instance_id>"); this suite registers the panel under the
+	## bare manifest name, so the key is that name.
+	var plugin_panel_key: String
 	var file: String = ""
 
 	func _init(p_tab_title: String, p_plugin_id: String, p_panel_name: String) -> void:
 		tab_title = p_tab_title
 		plugin_id = p_plugin_id
 		panel_name = p_panel_name
+		plugin_panel_key = p_panel_name
 
 
 # Subclasses EditorPane so the typed `editor_pane: EditorPane` var on
@@ -364,7 +369,8 @@ class _StubEditorPane extends "res://Scripts/UI/Views/EditorPane.gd":
 
 	# Override the typed Array[Editor] return with Array — the duck-typed
 	# stubs above are not Editor subclasses, and CapabilityBroker only reads
-	# duck-typed fields (tab_title, type, plugin_id, panel_name, file).
+	# duck-typed fields (tab_title, type, plugin_id, panel_name,
+	# plugin_panel_key, file).
 	@warning_ignore("native_method_override")
 	func get_open_editors() -> Array:
 		return _stub_editors

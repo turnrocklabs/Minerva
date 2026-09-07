@@ -228,10 +228,14 @@ func test_closing_one_tab_leaves_the_other_intact() -> void:
 	var key_b := "cad_panel#202"
 	var panel_a := StubSceneRoot.new()
 	var panel_b := StubSceneRoot.new()
+	# Held for the test's whole life: the broker keeps only a weakref, and a
+	# temporary would be collected before the first alias lookup.
+	var editor_a := StubEditor.new("bracket-a.mcad", "/tmp/bracket-a.mcad")
+	var editor_b := StubEditor.new("bracket-b.mcad", "/tmp/bracket-b.mcad")
 	broker.register_panel(panel_a, "cad", key_a, PackedStringArray([CHANNEL]),
-			MANIFEST_PANEL, StubEditor.new("bracket-a.mcad", "/tmp/bracket-a.mcad"))
+			MANIFEST_PANEL, editor_a)
 	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]),
-			MANIFEST_PANEL, StubEditor.new("bracket-b.mcad", "/tmp/bracket-b.mcad"))
+			MANIFEST_PANEL, editor_b)
 
 	var buffer_a := DocumentBuffer.new("/tmp/bracket-a.mcad", "A")
 	var buffer_b := DocumentBuffer.new("/tmp/bracket-b.mcad", "B")
@@ -278,9 +282,10 @@ func test_every_alias_tier_reaches_the_panel() -> void:
 
 	var key := "cad_panel#303"
 	var panel := StubSceneRoot.new()
+	# Held: the broker keeps only a weakref to the editor.
+	var editor := StubEditor.new("enclosure-rev4.mcad (1)", "/tmp/enclosure-rev4.mcad")
 	broker.register_panel(panel, "cad", key, PackedStringArray([CHANNEL]),
-			MANIFEST_PANEL,
-			StubEditor.new("enclosure-rev4.mcad (1)", "/tmp/enclosure-rev4.mcad"))
+			MANIFEST_PANEL, editor)
 
 	check("the tab title reaches it",
 		broker.resolve_editor_key("enclosure-rev4.mcad (1)") == key)
@@ -309,10 +314,13 @@ func test_a_tied_title_is_offered_with_its_key() -> void:
 	var panel_a := StubSceneRoot.new()
 	var panel_b := StubSceneRoot.new()
 	# File-less tabs: the title IS the manifest panel name, for both of them.
+	# Held: the broker keeps only a weakref to the editor.
+	var editor_a := StubEditor.new(MANIFEST_PANEL, "")
+	var editor_b := StubEditor.new(MANIFEST_PANEL, "")
 	broker.register_panel(panel_a, "cad", key_a, PackedStringArray([CHANNEL]),
-			MANIFEST_PANEL, StubEditor.new(MANIFEST_PANEL, ""))
+			MANIFEST_PANEL, editor_a)
 	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]),
-			MANIFEST_PANEL, StubEditor.new(MANIFEST_PANEL, ""))
+			MANIFEST_PANEL, editor_b)
 
 	check("the shared title resolves to neither panel",
 		broker.resolve_editor_key(MANIFEST_PANEL).is_empty(),
@@ -444,6 +452,8 @@ class StubAuditLog extends PluginAuditLog:
 
 ## Stands in for Minerva's Editor wrapper: the broker reads only these two
 ## fields off it, at lookup time.
+## Editor stand-in. The broker holds only a weakref to it, so every caller must
+## keep the instance alive for as long as the registration is queried.
 class StubEditor extends RefCounted:
 	var tab_title: String = ""
 	var file: String = ""

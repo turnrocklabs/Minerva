@@ -157,7 +157,7 @@ func _run_happy_path() -> void:
 
 	var got_keys := r.keys()
 	got_keys.sort()
-	var want_keys := ["active_viewport_id", "camera", "is_narrow_layout", "projection_preset", "success", "width_class"]
+	var want_keys := ["active_viewport_id", "camera", "is_narrow_layout", "pane_projections", "projection_preset", "success", "width_class"]
 	want_keys.sort()
 	check("result shape — keys %s == %s" % [str(got_keys), str(want_keys)], got_keys == want_keys)
 
