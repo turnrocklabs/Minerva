@@ -1043,7 +1043,7 @@ func _handle_host_documents_get_blob(plugin_id: String, args: Dictionary) -> Dic
 	if pbroker == null or not pbroker.has_method("_get_blob_record"):
 		return PluginErrors.blob_not_found(plugin_id, editor_name, blob_handle)
 
-	var rec: Dictionary = pbroker._get_blob_record(editor_name, blob_handle)
+	var rec: Dictionary = pbroker._get_blob_record(_blob_store_name(ed, editor_name), blob_handle)
 	if not rec.get("found", false):
 		return PluginErrors.blob_not_found(plugin_id, editor_name, blob_handle)
 
@@ -1165,6 +1165,7 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 	# Walk each op's value / from fields and collect any __blob_handle__ refs.
 	# Any unknown handle → reject the entire patch before touching state.
 	var pbroker_for_blobs = _get_panel_broker()
+	var blob_store_name: String = _blob_store_name(ed, editor_name)
 	for i in range(patch.size()):
 		var op_dict: Dictionary = patch[i] as Dictionary
 		var op: String = str(op_dict.get("op", ""))
@@ -1172,7 +1173,7 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 		# Ops that carry a new value: add, replace, test.
 		if op in ["add", "replace", "test"] and op_dict.has("value"):
 			var val_err := _validate_blob_handles_in_value(
-				plugin_id, editor_name, op_dict["value"], i, pbroker_for_blobs)
+				plugin_id, editor_name, blob_store_name, op_dict["value"], i, pbroker_for_blobs)
 			if not val_err.is_empty():
 				return val_err
 
@@ -1182,7 +1183,7 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 			var fr: Dictionary = _JsonPointer.resolve(current_state, from_path)
 			if fr.get("found", false):
 				var val_err := _validate_blob_handles_in_value(
-					plugin_id, editor_name, fr.get("value"), i, pbroker_for_blobs)
+					plugin_id, editor_name, blob_store_name, fr.get("value"), i, pbroker_for_blobs)
 				if not val_err.is_empty():
 					return val_err
 
@@ -1260,10 +1261,10 @@ func _handle_host_documents_patch_state(plugin_id: String, args: Dictionary) -> 
 			var d: int = int(blob_deltas[h])
 			if d > 0:
 				for _i in range(d):
-					pbroker_for_blobs._inc_blob_refcount(editor_name, h)
+					pbroker_for_blobs._inc_blob_refcount(blob_store_name, h)
 			elif d < 0:
 				for _i in range(-d):
-					pbroker_for_blobs._dec_blob_refcount(editor_name, h)
+					pbroker_for_blobs._dec_blob_refcount(blob_store_name, h)
 
 	# Mark dirty (non-canonical path also calls apply_panel_state which handles dirty
 	# internally via CHANNEL_HOST_OWNED_SAVE_SET_REQUEST, but explicit mark here
@@ -1359,7 +1360,7 @@ func _handle_host_documents_put_blob(plugin_id: String, args: Dictionary) -> Dic
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"host.documents.put_blob: panel broker not available")
 
-	var handle: String = pbroker._store_blob(editor_name, bytes, content_type)
+	var handle: String = pbroker._store_blob(_blob_store_name(ed, editor_name), bytes, content_type)
 
 	print("[CapabilityBroker] Plugin '%s' put_blob on editor '%s' → handle '%s' (%d bytes, %s)" % [
 		plugin_id, editor_name, handle, bytes.size(), content_type])
@@ -1378,8 +1379,10 @@ func _handle_host_documents_put_blob(plugin_id: String, args: Dictionary) -> Dic
 ## {__blob_handle__: H} reference is unknown in the editor's blob store.
 ## Returns {} (empty) when all handles are valid or none are present.
 ## op_index is the patch array index being validated (for error attribution).
+## editor_name is what errors quote; store_name (see _blob_store_name) is
+## what the store is looked up by.
 func _validate_blob_handles_in_value(
-		plugin_id: String, editor_name: String,
+		plugin_id: String, editor_name: String, store_name: String,
 		value: Variant, op_index: int, pbroker
 ) -> Dictionary:
 	if value is Dictionary:
@@ -1391,21 +1394,21 @@ func _validate_blob_handles_in_value(
 				return {}  # Empty handle — not a valid placeholder, pass through.
 			if pbroker == null or not pbroker.has_method("_get_blob_record"):
 				return PluginErrors.unknown_blob_handle(plugin_id, editor_name, handle, op_index)
-			var rec: Dictionary = pbroker._get_blob_record(editor_name, handle)
+			var rec: Dictionary = pbroker._get_blob_record(store_name, handle)
 			if not rec.get("found", false):
 				return PluginErrors.unknown_blob_handle(plugin_id, editor_name, handle, op_index)
 			return {}
 		# Recurse into all dict values.
 		for k in d.keys():
 			var child_err := _validate_blob_handles_in_value(
-				plugin_id, editor_name, d[k], op_index, pbroker)
+				plugin_id, editor_name, store_name, d[k], op_index, pbroker)
 			if not child_err.is_empty():
 				return child_err
 	elif value is Array:
 		var arr: Array = value as Array
 		for item in arr:
 			var child_err := _validate_blob_handles_in_value(
-				plugin_id, editor_name, item, op_index, pbroker)
+				plugin_id, editor_name, store_name, item, op_index, pbroker)
 			if not child_err.is_empty():
 				return child_err
 	return {}
@@ -2811,6 +2814,20 @@ func _find_editor_by_name(editor_name: String):
 			if ed != null and "tab_title" in ed and str(ed.tab_title) == editor_name:
 				return ed
 	return null
+
+
+## The name an editor's blob store is keyed by. PluginScenePanelBroker keys a
+## scene panel's store by its registry key (Editor.plugin_panel_key), never by
+## the tab title a plugin addresses the editor with, so a plugin-scene editor
+## is translated to that key here; any other editor keeps the name it was
+## addressed by, which is the store name its own path used.
+func _blob_store_name(ed, editor_name: String) -> String:
+	var ed_type: int = int(ed.type) if ed != null and "type" in ed else -1
+	if ed_type == Editor.Type.PLUGIN_SCENE and "plugin_panel_key" in ed:
+		var key: String = str(ed.plugin_panel_key)
+		if not key.is_empty():
+			return key
+	return editor_name
 
 
 ## Stable string for an Editor.Type int. Decoupled from the enum so plugins

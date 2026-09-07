@@ -67,6 +67,7 @@ func _run_tests() -> void:
 	await _test_get_node_resolution(PolicyScript, BrokerScript, AuditScript, PanelBrokerScript)
 	await _test_get_blob_schema_validation(PolicyScript, BrokerScript, AuditScript)
 	await _test_get_blob_store(PolicyScript, BrokerScript, AuditScript, PanelBrokerScript)
+	await _test_get_blob_reaches_the_panel_store_by_key(PolicyScript, BrokerScript, AuditScript)
 	await _test_policy_gate(PolicyScript, BrokerScript, AuditScript)
 
 
@@ -312,6 +313,90 @@ func _test_get_blob_store(PolicyScript, BrokerScript, AuditScript, PanelBrokerSc
 # ---------------------------------------------------------------------------
 # Policy gate: both caps denied when not granted
 # ---------------------------------------------------------------------------
+
+## The panel broker keys a scene panel's blob store by the registry key; a
+## plugin addresses the editor by its tab title. get_blob must translate the
+## title to the key of the editor it resolved, not hand the title to the store
+## — two open tabs of one panel share a title, and the store cannot fold a
+## title two live panels answer to.
+func _test_get_blob_reaches_the_panel_store_by_key(PolicyScript, BrokerScript, AuditScript) -> void:
+	print("\n-- _test_get_blob_reaches_the_panel_store_by_key --")
+	var so_node = root.get_node_or_null("SingletonObject")
+	var deadline_ms: int = Time.get_ticks_msec() + 10000
+	while so_node != null and so_node.get("plugin_scene_panel_broker") == null \
+			and Time.get_ticks_msec() < deadline_ms:
+		await process_frame
+	var pbroker = so_node.get("plugin_scene_panel_broker") if so_node != null else null
+	check("SingletonObject.plugin_scene_panel_broker available", pbroker != null)
+	if pbroker == null:
+		return
+
+	var title := "part.mcad"
+	var key_first := "cad_panel#901"
+	var key_second := "cad_panel#902"
+	var panel_first := Node.new()
+	var panel_second := Node.new()
+	var editor_first := _StubPluginEditor.new(title, "cad", key_first)
+	var editor_second := _StubPluginEditor.new(title, "cad", key_second)
+	pbroker.register_panel(panel_first, "cad", key_first, PackedStringArray(), "cad_panel", editor_first)
+	pbroker.register_panel(panel_second, "cad", key_second, PackedStringArray(), "cad_panel", editor_second)
+	var pane := _StubEditorPane.new()
+	pane.set_editors([editor_first, editor_second])
+	var prior_pane = so_node.get("editor_pane")
+	so_node.set("editor_pane", pane)
+
+	var bytes := PackedByteArray([7, 7, 7])
+	var handle: String = pbroker._store_blob(key_first, bytes, "image/png")
+
+	var parts := _make_broker(PolicyScript, BrokerScript, AuditScript)
+	var broker = parts[0]; var policy = parts[1]
+	policy.grant_capability("blob_key_test", "host.documents.get_blob")
+	var r: Dictionary = await broker.dispatch("blob_key_test", "host.documents.get_blob",
+		{"editor_name": title, "blob_handle": handle})
+	check("get_blob by tab title reaches the resolved editor's own store",
+		r.get("success", false)
+			and Marshalls.base64_to_raw(str((r.get("result", {}) as Dictionary).get("bytes_b64", ""))) == bytes,
+		"got: %s" % str(r))
+
+	so_node.set("editor_pane", prior_pane)
+	pbroker._clear_blobs_for_editor(key_first)
+	pbroker.unregister_panel("cad", key_first)
+	pbroker.unregister_panel("cad", key_second)
+	panel_first.free()
+	panel_second.free()
+
+
+# Editor.Type.PLUGIN_SCENE = 14 (Editor.gd). Hardcoded because Editor.gd's
+# tab_title setter dereferences the editor pane's tabs, which do not exist
+# headless, so the stub cannot subclass Editor.
+const _PLUGIN_SCENE_TYPE := 14
+
+
+class _StubPluginEditor:
+	var tab_title: String
+	var type: int = _PLUGIN_SCENE_TYPE
+	var plugin_id: String
+	var plugin_panel_key: String
+	var file: String = ""
+
+	func _init(p_tab_title: String, p_plugin_id: String, p_panel_key: String) -> void:
+		tab_title = p_tab_title
+		plugin_id = p_plugin_id
+		plugin_panel_key = p_panel_key
+
+
+## Subclasses EditorPane so SingletonObject's typed editor_pane accepts it.
+## Never added to the tree, so only get_open_editors is ever used.
+class _StubEditorPane extends "res://Scripts/UI/Views/EditorPane.gd":
+	var _stub_editors: Array = []
+
+	func set_editors(p_editors: Array) -> void:
+		_stub_editors = p_editors
+
+	@warning_ignore("native_method_override")
+	func get_open_editors() -> Array:
+		return _stub_editors
+
 
 func _test_policy_gate(PolicyScript, BrokerScript, AuditScript) -> void:
 	print("\n-- _test_get_node_denied_when_capability_not_granted --")

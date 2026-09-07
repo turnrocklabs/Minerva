@@ -41,6 +41,7 @@ extends SceneTree
 const PANEL_KEY := "cad_panel#40197"
 const MANIFEST_PANEL := "cad_panel"
 const CHANNEL := "cad.render"
+const CAPABILITY_CHANNEL := "capability:notes.create"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -62,6 +63,12 @@ func _init() -> void:
 	test_closing_one_tab_leaves_the_other_intact()
 	test_every_alias_tier_reaches_the_panel()
 	test_a_tied_title_is_offered_with_its_key()
+
+	print("\n-- a name means the same thing whichever entry holds it --")
+	test_bare_file_name_outranks_a_manifest_name()
+	test_manifest_name_reaches_the_only_tab_and_refuses_two()
+	test_blob_store_is_not_shared_through_the_file_name()
+	await test_reply_after_reregistration_is_dropped()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -349,6 +356,148 @@ func test_a_tied_title_is_offered_with_its_key() -> void:
 
 
 # ===========================================================================
+# 4. Alias precision is a property of the name's kind; the manifest name is
+#    a working address for a lone tab; blob stores and replies stay with the
+#    registration they belong to
+# ===========================================================================
+
+## An entry with no editor has only two aliases, so its manifest name sits
+## early in any per-entry list; an entry with a title and a file has its bare
+## file name last. If precision were list position, the manifest name of the
+## bare entry would beat the file name of the other — the wrong document.
+func test_bare_file_name_outranks_a_manifest_name() -> void:
+	print("test_bare_file_name_outranks_a_manifest_name:")
+	var parts := _make_broker([MANIFEST_PANEL, "part.mcad"], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key_bare := "part.mcad#501"
+	var key_file := "cad_panel#502"
+	var panel_bare := StubSceneRoot.new()
+	var panel_file := StubSceneRoot.new()
+	# Held: the broker keeps only a weakref to the editor.
+	var editor_file := StubEditor.new("Render", "/work/part.mcad")
+	broker.register_panel(panel_bare, "cad", key_bare, PackedStringArray([CHANNEL]), "part.mcad")
+	broker.register_panel(panel_file, "cad", key_file, PackedStringArray([CHANNEL]),
+			MANIFEST_PANEL, editor_file)
+
+	check("a document's bare file name outranks another panel's manifest name",
+		broker.resolve_editor_key("part.mcad") == key_file,
+		"resolved to '%s'" % broker.resolve_editor_key("part.mcad"))
+
+	panel_bare.free()
+	panel_file.free()
+
+
+## A plugin that never learned about per-tab keys still calls the name-keyed
+## entry points with its manifest panel name. That must reach the one live tab
+## of that panel, and must be refused — not coin-flipped — once there are two.
+func test_manifest_name_reaches_the_only_tab_and_refuses_two() -> void:
+	print("test_manifest_name_reaches_the_only_tab_and_refuses_two:")
+	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key_a := "cad_panel#601"
+	var key_b := "cad_panel#602"
+	var panel_a := StubSceneRoot.new()
+	var panel_b := StubSceneRoot.new()
+	broker.register_panel(panel_a, "cad", key_a, PackedStringArray([CHANNEL]), MANIFEST_PANEL)
+	var buffer := DocumentBuffer.new("/tmp/lone.mcad", "lone")
+	broker.attach_buffer_to_panel("cad", key_a, buffer)
+
+	check("get_attached_buffer by the manifest name finds the only tab's buffer",
+		broker.get_attached_buffer("cad", MANIFEST_PANEL) == buffer)
+
+	broker.register_panel(panel_b, "cad", key_b, PackedStringArray([CHANNEL]), MANIFEST_PANEL)
+	check("and is refused once a second tab of that panel is live",
+		broker.get_attached_buffer("cad", MANIFEST_PANEL) == null)
+
+	panel_a.free()
+	panel_b.free()
+
+
+## The paired text editor is titled with the document's file name, which is
+## also the render panel's bare-file-name alias. If the blob store folded that
+## alias, the two editors would share one store and clearing either would
+## empty both. Only the key and the exact tab title may reach a panel's store.
+func test_blob_store_is_not_shared_through_the_file_name() -> void:
+	print("test_blob_store_is_not_shared_through_the_file_name:")
+	var parts := _make_broker([MANIFEST_PANEL], [CHANNEL])
+	var broker: PluginScenePanelBroker = parts[0]
+
+	var key := "cad_panel#701"
+	var panel := StubSceneRoot.new()
+	# Held: the broker keeps only a weakref to the editor.
+	var editor := StubEditor.new("Render", "/work/part.mcad")
+	broker.register_panel(panel, "cad", key, PackedStringArray([CHANNEL]), MANIFEST_PANEL, editor)
+
+	var handle: String = broker._store_blob(key, PackedByteArray([9, 8, 7]), "image/png")
+	check("a blob stored under the render panel's key is invisible under the bare file name",
+		not broker._get_blob_record("part.mcad", handle).get("found", false))
+	check("while the tab title still reaches it",
+		broker._get_blob_record("Render", handle).get("found", false))
+
+	panel.free()
+
+
+## The backend call is awaited. A hot reload re-registers the same key with a
+## new scene root and helper in the meantime. The old reply must not land on
+## the new helper, where a reused reply id would be waiting for a different
+## answer.
+func test_reply_after_reregistration_is_dropped() -> void:
+	print("test_reply_after_reregistration_is_dropped:")
+	var capabilities := StubCapabilityBroker.new()
+	var parts := _make_broker([MANIFEST_PANEL], [CAPABILITY_CHANNEL], capabilities)
+	var broker: PluginScenePanelBroker = parts[0]
+	var audit: StubAuditLog = parts[1]
+
+	var key := "cad_panel#801"
+	var panel_old := StubSceneRoot.new()
+	broker.register_panel(panel_old, "cad", key, PackedStringArray([CAPABILITY_CHANNEL]),
+			MANIFEST_PANEL)
+
+	panel_old.request.emit(CAPABILITY_CHANNEL, {}, "reply-hot-1")
+	await process_frame
+	await process_frame
+	check("the request is parked in the backend", capabilities.pending == 1,
+		"pending = %d, denials: %s" % [capabilities.pending, str(audit.reasons())])
+
+	# The hot reload: same key, new scene root, new helper. The new helper lives
+	# in the tree so its await_reply can arm its timeout.
+	var panel_new := StubSceneRoot.new()
+	root.add_child(panel_new)
+	broker.register_panel(panel_new, "cad", key, PackedStringArray([CAPABILITY_CHANNEL]),
+			MANIFEST_PANEL)
+	var helper_new: MinervaIPC = panel_new.get_node(MinervaIPC.HELPER_NODE_NAME)
+	var sink: Dictionary = {}
+	_collect_reply(helper_new, "reply-hot-1", sink)
+
+	capabilities.release.emit({"success": true, "result": {"from": "the old request"}})
+	await process_frame
+	await process_frame
+
+	check("the replacement helper received nothing for the reused reply id",
+		sink.is_empty(), "sink = %s" % str(sink))
+	var dropped := audit.first_event(PluginScenePanelBroker.EVENT_SCENE_STALE_REGISTRATION)
+	check("the audit names the dropped reply",
+		str((dropped.get("detail", {}) as Dictionary).get("reply_id", "")) == "reply-hot-1",
+		"event = %s" % str(dropped))
+
+	# Release the collector so nothing is left awaiting at quit.
+	helper_new._reply("reply-hot-1", {"success": false, "error_code": "test_teardown"})
+	await process_frame
+	root.remove_child(panel_new)
+	panel_new.free()
+	panel_old.free()
+
+
+## Runs as a coroutine without being awaited: parks on the helper until a
+## reply lands, then records it.
+func _collect_reply(helper: MinervaIPC, reply_id: String, sink: Dictionary) -> void:
+	var result: Dictionary = await helper.await_reply(reply_id, 2000)
+	sink["result"] = result
+
+
+# ===========================================================================
 # Test helpers / stubs
 # ===========================================================================
 
@@ -419,6 +568,19 @@ class StubManager extends RefCounted:
 
 	func get_connection(_id: String):  # -> null (no live connection in tests)
 		return null
+
+
+## CapabilityBroker stand-in whose dispatch parks until the test releases it,
+## so a scene request can be caught mid-await.
+class StubCapabilityBroker extends CapabilityBroker:
+	signal release(result: Dictionary)
+	var pending: int = 0
+
+	func dispatch(_plugin_id: String, _capability: String, _args: Dictionary) -> Dictionary:
+		pending += 1
+		var result: Dictionary = await release
+		pending -= 1
+		return result
 
 
 ## PluginAuditLog stub: captures events.
@@ -529,7 +691,8 @@ func _make_def(plugin_id: String, panel_names: Array, ipc_messages: Array) -> Pl
 
 ## Build a broker pre-wired with a "cad" plugin definition.
 ## Returns [broker, stub_audit].
-func _make_broker(panel_names: Array, ipc_messages: Array) -> Array:
+func _make_broker(panel_names: Array, ipc_messages: Array,
+		capabilities: CapabilityBroker = null) -> Array:
 	var def := _make_def("cad", panel_names, ipc_messages)
 	if def == null:
 		push_error("_make_broker: failed to create PluginDefinition")
@@ -545,7 +708,7 @@ func _make_broker(panel_names: Array, ipc_messages: Array) -> Array:
 	var broker := PluginScenePanelBroker.new(
 		mgr,    # duck-typed stub; broker calls get_db() and get_connection()
 		null,   # no policy needed for these tests
-		null,   # no capability broker needed here
+		capabilities,   # null unless a test needs to catch a request mid-await
 		audit as PluginAuditLog
 	)
 	return [broker, audit]

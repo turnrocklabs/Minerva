@@ -55,6 +55,9 @@ const EVENT_SCENE_PUSH_MISS  := "scene_push_miss"
 const EVENT_SCENE_PROGRESS   := "scene_progress"
 ## push_progress: panel not live, wrong owner, or scene lacks on_progress.
 const EVENT_SCENE_PROGRESS_MISS := "scene_progress_miss"
+## A reply or request outlived the registration it belonged to (the key was
+## re-registered while the backend was busy) and was dropped, not redirected.
+const EVENT_SCENE_STALE_REGISTRATION := "scene_stale_registration"
 ## attach_buffer_to_panel: panel subscribed to a DocumentBuffer.
 const EVENT_BUFFER_ATTACHED  := "buffer_attached"
 ## detach_buffer_from_panel: panel unsubscribed.
@@ -356,13 +359,16 @@ func register_panel(
 
 	# Wire the scene's outbound `request` signal to the broker.
 	# We use call_deferred so any `request` emitted during _ready() is
-	# delivered after _on_panel_loaded returns (§5.3 trampoline).
+	# delivered after _on_panel_loaded returns (§5.3 trampoline). The wiring
+	# carries this registration's generation so a request that lands after the
+	# key has been re-registered is dropped rather than served to the newcomer.
 	if panel_root.has_signal("request"):
+		var generation: int = _entry_generation(entry)
 		panel_root.request.connect(
 			func(channel: String, payload: Dictionary, reply_id: String) -> void:
 				call_deferred(
 					"handle_scene_request",
-					panel_key, channel, payload, reply_id
+					panel_key, channel, payload, reply_id, generation
 				)
 		)
 	else:
@@ -384,6 +390,7 @@ func register_panel(
 ## Called by PluginScenePanelHost when a tab is closed or a plugin is stopped.
 ## Should be called inside the _on_panel_unload hook, before queue_free.
 func unregister_panel(plugin_id: String, panel_name: String) -> void:
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	if not _panel_registry.has(panel_name):
 		push_warning(
 			"[PluginScenePanelBroker] unregister_panel: panel '%s' is not registered" % panel_name
@@ -462,30 +469,80 @@ func get_panel_owner(panel_key: String) -> String:
 	return (_panel_registry[key] as _PanelEntry).plugin_id
 
 
-## Every name a caller may legitimately use to address `entry`, most precise
-## first: the registry key, the editor's current tab title, the document's
-## absolute path, and finally its bare file name. The editor is read at call
-## time — never cached — so renaming a tab or saving to a new path cannot leave
-## a stale alias behind.
-func _entry_aliases(entry: _PanelEntry) -> Array:
-	var aliases: Array = [entry.panel_key]
+## Precision tiers for the names a panel answers to. The tier is a property of
+## the KIND of name, not of its position in any list, so an entry that lacks a
+## title (or whose title equals its file name) does not promote its remaining
+## aliases: a bare file name is tier FILE_NAME on every entry.
+enum _AliasTier { KEY, TITLE, PATH, FILE_NAME, MANIFEST }
+
+
+## Every name a caller may legitimately use to address `entry`, mapped to its
+## _AliasTier: the registry key, the editor's current tab title, the document's
+## absolute path, its bare file name, and the manifest panel name. A string
+## that is several of these at once keeps its most precise tier. The editor is
+## read at call time — never cached — so renaming a tab or saving to a new path
+## cannot leave a stale alias behind.
+func _entry_aliases(entry: _PanelEntry) -> Dictionary:
+	var aliases: Dictionary = {entry.panel_key: _AliasTier.KEY}
 	var editor: Object = entry.editor_ref.get_ref() if entry.editor_ref != null else null
 	if editor != null and is_instance_valid(editor):
 		if "tab_title" in editor:
 			var title := str(editor.get("tab_title"))
 			if not title.is_empty() and not aliases.has(title):
-				aliases.append(title)
+				aliases[title] = _AliasTier.TITLE
 		if "file" in editor:
 			var path := str(editor.get("file"))
 			if not path.is_empty():
 				if not aliases.has(path):
-					aliases.append(path)
+					aliases[path] = _AliasTier.PATH
 				var base := path.get_file()
 				if not base.is_empty() and not aliases.has(base):
-					aliases.append(base)
+					aliases[base] = _AliasTier.FILE_NAME
 	if not aliases.has(entry.panel_name):
-		aliases.append(entry.panel_name)
+		aliases[entry.panel_name] = _AliasTier.MANIFEST
 	return aliases
+
+
+## The one name of `entry` a caller sees in a listing: its tab title when the
+## editor has one, otherwise the registry key.
+func _entry_display_name(entry: _PanelEntry) -> String:
+	var aliases: Dictionary = _entry_aliases(entry)
+	for alias in aliases.keys():
+		if int(aliases[alias]) == _AliasTier.TITLE:
+			return str(alias)
+	return entry.panel_key
+
+
+## The registry key behind a name a plugin passes to a name-keyed entry point
+## (push_to_panel, get_attached_buffer, unregister_panel, ...). A registry key
+## is returned as it is. Anything else is taken as the manifest panel name and
+## resolved to the live panel of `plugin_id` declared under it — a plugin that
+## has one tab open may keep addressing it by that name. Zero live matches
+## return the name unchanged, so the caller's own not-registered path runs and
+## quotes what it was given; more than one refuses the same way an ambiguous
+## editor name does, since picking one would silently serve the wrong tab.
+func _panel_key_for(plugin_id: String, panel_name: String) -> String:
+	if _panel_registry.has(panel_name):
+		return panel_name
+	var matches: Array = []
+	for key in _panel_registry.keys():
+		var entry: _PanelEntry = _panel_registry[key]
+		if entry.plugin_id == plugin_id and entry.panel_name == panel_name \
+				and _is_panel_alive(entry):
+			matches.append(key)
+	if matches.size() == 1:
+		return str(matches[0])
+	if matches.size() > 1:
+		_warn_ambiguous_name(panel_name, matches)
+	return panel_name
+
+
+func _warn_ambiguous_name(editor_name: String, matches: Array) -> void:
+	push_warning(
+		("[PluginScenePanelBroker] '%s' names %d live panels (%s); address one by its "
+		+ "registry key, or by the '<title> [<key>]' form list_panel_editor_names prints")
+		% [editor_name, matches.size(), str(matches)]
+	)
 
 
 ## Resolve any name a caller may address a live panel by to its registry key,
@@ -509,28 +566,24 @@ func resolve_editor_key(editor_name: String) -> String:
 	var hinted_key := _key_from_display_name(editor_name)
 	if not hinted_key.is_empty():
 		return hinted_key
-	var best_rank: int = -1
+	var best_tier: int = -1
 	var matches: Array = []
 	for key in _panel_registry.keys():
 		var entry: _PanelEntry = _panel_registry[key]
 		if not _is_panel_alive(entry):
 			continue
-		var rank: int = _entry_aliases(entry).find(editor_name)
-		if rank < 0:
+		var tier: int = int(_entry_aliases(entry).get(editor_name, -1))
+		if tier < 0:
 			continue
-		if best_rank < 0 or rank < best_rank:
-			best_rank = rank
+		if best_tier < 0 or tier < best_tier:
+			best_tier = tier
 			matches = [key]
-		elif rank == best_rank:
+		elif tier == best_tier:
 			matches.append(key)
 	if matches.size() == 1:
 		return str(matches[0])
 	if matches.size() > 1:
-		push_warning(
-			("[PluginScenePanelBroker] '%s' names %d live panels (%s); address one by its "
-			+ "registry key, or by the '<title> [<key>]' form list_panel_editor_names prints")
-			% [editor_name, matches.size(), str(matches)]
-		)
+		_warn_ambiguous_name(editor_name, matches)
 	return ""
 
 
@@ -587,8 +640,7 @@ func list_panel_editor_names() -> Array:
 		var entry: _PanelEntry = _panel_registry[key]
 		if not _is_panel_alive(entry):
 			continue
-		var aliases: Array = _entry_aliases(entry)
-		var display: String = str(aliases[1]) if aliases.size() > 1 else str(aliases[0])
+		var display: String = _entry_display_name(entry)
 		displays[key] = display
 		display_counts[display] = int(display_counts.get(display, 0)) + 1
 
@@ -616,7 +668,7 @@ func list_dead_panel_editor_names() -> Array:
 		var entry: _PanelEntry = _panel_registry[key]
 		if _is_panel_alive(entry):
 			continue
-		for alias in _entry_aliases(entry):
+		for alias in _entry_aliases(entry).keys():
 			if not names.has(alias):
 				names.append(alias)
 	return names
@@ -638,6 +690,12 @@ func list_dead_panel_editor_names() -> Array:
 ##   payload    — a Dictionary of call-specific arguments.
 ##   reply_id   — caller-generated ID; result is delivered to the scene's
 ##                $_MinervaIPC._reply(reply_id, result).
+##   generation — the registration the request was emitted under (see
+##                _entry_generation), or 0 to accept whatever is registered
+##                now. The reply is delivered only to that same registration:
+##                a hot reload re-registers the key with a fresh helper while
+##                the backend is still busy, and the old reply must not
+##                satisfy a reused reply id on the new panel.
 ##
 ## Validation order (mirrors PluginWebviewBroker.handle_ipc_message):
 ##   1. Basic input validation.
@@ -652,7 +710,8 @@ func handle_scene_request(
 		panel_key: String,
 		channel: String,
 		payload: Dictionary,
-		reply_id: String
+		reply_id: String,
+		generation: int = 0
 ) -> void:
 
 	# --- 1. Basic input validation -------------------------------------------
@@ -685,6 +744,19 @@ func handle_scene_request(
 	# tab and is NOT in the manifest, so every manifest-facing check and every
 	# message that quotes "the panel the plugin declared" uses this.
 	var manifest_panel: String = entry.panel_name
+
+	# A request wired under an earlier registration of this key belongs to a
+	# helper that no longer exists; the panel now under the key never asked.
+	if generation != 0 and _entry_generation(entry) != generation:
+		_audit(plugin_id, EVENT_SCENE_STALE_REGISTRATION, {
+			"panel_name": manifest_panel,
+			"panel_key": panel_key,
+			"channel": channel,
+			"reply_id": reply_id,
+			"reason": "request_from_superseded_registration",
+		})
+		return
+	generation = _entry_generation(entry)
 
 	# Guard: check that the panel root is still alive (weak ref).
 	if not _is_panel_alive(entry):
@@ -810,7 +882,9 @@ func handle_scene_request(
 	})
 
 	# --- 8. Deliver reply back to scene via $_MinervaIPC ----------------------
-	_deliver_reply(panel_key, reply_id, result)
+	# The await above may have outlived the registration; deliver only to the
+	# generation that asked.
+	_deliver_reply(panel_key, reply_id, result, generation)
 
 
 # ---------------------------------------------------------------------------
@@ -831,6 +905,7 @@ func push_to_panel(
 		channel: String,
 		payload: Dictionary
 ) -> bool:
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	if not _panel_registry.has(panel_name):
 		_audit(plugin_id, EVENT_SCENE_PUSH_MISS, {
 			"panel_name": panel_name,
@@ -924,6 +999,7 @@ func push_progress(
 		fraction: float
 ) -> bool:
 	# --- panel not registered ------------------------------------------------
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	if not _panel_registry.has(panel_name):
 		_audit(plugin_id, EVENT_SCENE_PROGRESS_MISS, {
 			"panel_name": panel_name,
@@ -994,6 +1070,7 @@ func push_progress(
 ## Returns null if the panel isn't registered, has no buffer attached, or the
 ## plugin_id spoof-check fails.
 func get_attached_buffer(plugin_id: String, panel_name: String) -> DocumentBuffer:
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	if not _panel_registry.has(panel_name):
 		return null
 	var entry: _PanelEntry = _panel_registry[panel_name]
@@ -1027,6 +1104,7 @@ func attach_buffer_to_panel(
 		})
 		return false
 
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	if not _panel_registry.has(panel_name):
 		_audit(plugin_id, EVENT_BUFFER_DENIED, {
 			"panel_name": panel_name,
@@ -1097,6 +1175,7 @@ func attach_buffer_to_panel(
 ## notification.  No-op if the panel is not registered or has no attached
 ## buffer.  Spoof-checks plugin_id against the panel owner.
 func detach_buffer_from_panel(plugin_id: String, panel_name: String) -> void:
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	if not _panel_registry.has(panel_name):
 		return
 
@@ -1156,9 +1235,10 @@ func _disconnect_buffer(entry: _PanelEntry) -> void:
 ## Awaitable. Times out after PANEL_STATE_REQUEST_TIMEOUT_SEC if the panel
 ## never responds — never returns null, always a structured dict.
 func request_panel_state(plugin_id: String, panel_name: String) -> Dictionary:
-	# The blob store is keyed by the panel's registry key; the argument here IS
-	# that key (CapabilityBroker passes Editor.plugin_panel_key), and
-	# _blob_store_key normalises anything else onto the same store.
+	# The blob store is keyed by the panel's registry key. CapabilityBroker
+	# passes that key (Editor.plugin_panel_key); a plugin passing its manifest
+	# panel name lands on the same store once _panel_key_for resolves it.
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	var editor_name: String = panel_name
 	var raw: Dictionary = await _request_panel_state_op(plugin_id, panel_name,
 		CHANNEL_HOST_OWNED_SAVE_GET_REQUEST, {"op": "get"})
@@ -1177,6 +1257,7 @@ func request_panel_state(plugin_id: String, panel_name: String) -> Dictionary:
 ## Apply a state dict to a plugin-scene panel. Symmetric with request_panel_state.
 ## Used by CapabilityBroker.host.documents.set_state for plugin-scene editors.
 func apply_panel_state(plugin_id: String, panel_name: String, state: Dictionary) -> Dictionary:
+	panel_name = _panel_key_for(plugin_id, panel_name)
 	var editor_name: String = panel_name
 	# Rehydrate any {__blob_handle__, content_type} placeholders back to
 	# {__blob__: true, content_type, bytes} before forwarding to the panel.
@@ -1571,14 +1652,31 @@ func _dispatch_to_plugin_backend(
 # Reply delivery helpers
 # ---------------------------------------------------------------------------
 
-## Deliver a successful result to the scene's MinervaIPC helper.
-func _deliver_reply(panel_name: String, reply_id: String, result: Dictionary) -> void:
+## Deliver a successful result to the scene's MinervaIPC helper. A non-zero
+## `generation` names the registration the reply belongs to; when the key now
+## holds a different one, the reply is dropped and audited rather than handed
+## to a panel that never sent the request.
+func _deliver_reply(panel_name: String, reply_id: String, result: Dictionary,
+		generation: int = 0) -> void:
 	if reply_id.is_empty():
 		return  # No reply requested — fire-and-forget call from the scene.
 
 	var entry: _PanelEntry = _panel_registry.get(panel_name, null)
 	if entry == null:
 		return  # Panel was unregistered before reply arrived.
+
+	if generation != 0 and _entry_generation(entry) != generation:
+		_audit(entry.plugin_id, EVENT_SCENE_STALE_REGISTRATION, {
+			"panel_name": entry.panel_name,
+			"panel_key": panel_name,
+			"reply_id": reply_id,
+			"reason": "reply_for_superseded_registration",
+		})
+		push_warning(
+			("[PluginScenePanelBroker] _deliver_reply: panel '%s' was re-registered while " +
+			"reply '%s' was in flight; reply dropped") % [panel_name, reply_id]
+		)
+		return
 
 	var helper: MinervaIPC = entry.ipc_helper
 	if helper == null or not is_instance_valid(helper):
@@ -1592,8 +1690,9 @@ func _deliver_reply(panel_name: String, reply_id: String, result: Dictionary) ->
 
 
 ## Deliver an error result to the scene's MinervaIPC helper (same path).
-func _deliver_error(panel_name: String, reply_id: String, error: Dictionary) -> void:
-	_deliver_reply(panel_name, reply_id, error)
+func _deliver_error(panel_name: String, reply_id: String, error: Dictionary,
+		generation: int = 0) -> void:
+	_deliver_reply(panel_name, reply_id, error, generation)
 
 
 # ---------------------------------------------------------------------------
@@ -1604,6 +1703,16 @@ func _deliver_error(panel_name: String, reply_id: String, error: Dictionary) -> 
 func _is_panel_alive(entry: _PanelEntry) -> bool:
 	var ref = entry.panel_ref.get_ref()
 	return ref != null and is_instance_valid(ref as Object)
+
+
+## The generation of a registration: its MinervaIPC helper's instance id. Every
+## register_panel call creates a fresh helper, so the id changes exactly when
+## the key is re-registered. 0 once the helper is gone.
+func _entry_generation(entry: _PanelEntry) -> int:
+	var helper: MinervaIPC = entry.ipc_helper
+	if helper == null or not is_instance_valid(helper):
+		return 0
+	return helper.get_instance_id()
 
 
 ## Detach and free the MinervaIPC helper attached to an entry, if still valid.
@@ -1863,14 +1972,28 @@ func _rehydrate_walk(
 ## key. Callers arrive holding different names for the same panel — the key
 ## itself from the panel-state path, the editor tab title from a capability
 ## call — and unless both land on the same store, a blob written by one is
-## invisible to the other and its refcount never reaches zero. A name no live
-## panel answers to is used as it stands, so editors that are not scene panels
-## (and headless tests with no registry) keep a store of their own.
+## invisible to the other and its refcount never reaches zero. Only those two
+## names are folded: a registry key, or the exact current tab title of one live
+## panel. Looser aliases are deliberately NOT honoured here — a paired text
+## editor is titled with the document's file name, which is also the render
+## panel's bare-file-name alias, and folding it would hand two editors one
+## store so that clearing either empties both. Any other name keeps a store of
+## its own, which also covers editors that are not scene panels and headless
+## tests with no registry.
 func _blob_store_key(editor_name: String) -> String:
 	if _panel_registry.has(editor_name):
 		return editor_name
-	var key := resolve_editor_key(editor_name)
-	return key if not key.is_empty() else editor_name
+	var titled: String = ""
+	for key in _panel_registry.keys():
+		var entry: _PanelEntry = _panel_registry[key]
+		if not _is_panel_alive(entry):
+			continue
+		if int(_entry_aliases(entry).get(editor_name, -1)) != _AliasTier.TITLE:
+			continue
+		if not titled.is_empty():
+			return editor_name   # two live tabs share the title: neither owns it
+		titled = str(key)
+	return titled if not titled.is_empty() else editor_name
 
 
 ## Store a blob for the given editor.

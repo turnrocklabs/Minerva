@@ -278,7 +278,7 @@ func _test_patch_state_blob_prevalidation(
 
 	# Unknown handle in value → returns non-empty PluginErrors dict.
 	var err1: Dictionary = broker._validate_blob_handles_in_value(
-		"plug", "test_ed", {"__blob_handle__": "blob-999", "content_type": "image/png"},
+		"plug", "test_ed", "test_ed", {"__blob_handle__": "blob-999", "content_type": "image/png"},
 		0, pbroker)
 	check("unknown handle → non-empty error dict", not err1.is_empty(),
 		"got: %s" % str(err1))
@@ -291,14 +291,14 @@ func _test_patch_state_blob_prevalidation(
 
 	# Known handle in value → returns empty dict (no error).
 	var err2: Dictionary = broker._validate_blob_handles_in_value(
-		"plug", "test_ed", {"__blob_handle__": handle, "content_type": "image/png"},
+		"plug", "test_ed", "test_ed", {"__blob_handle__": handle, "content_type": "image/png"},
 		1, pbroker)
 	check("known handle → empty dict (no error)", err2.is_empty(),
 		"got: %s" % str(err2))
 
 	# No handles in value (plain dict) → empty dict.
 	var err3: Dictionary = broker._validate_blob_handles_in_value(
-		"plug", "test_ed", {"title": "Hello", "count": 3},
+		"plug", "test_ed", "test_ed", {"title": "Hello", "count": 3},
 		0, pbroker)
 	check("no handles in value → empty dict", err3.is_empty(),
 		"got: %s" % str(err3))
@@ -309,7 +309,7 @@ func _test_patch_state_blob_prevalidation(
 		{"image": {"__blob_handle__": "blob-999", "content_type": "image/png"}},
 	]
 	var err4: Dictionary = broker._validate_blob_handles_in_value(
-		"plug", "test_ed", nested_val, 2, pbroker)
+		"plug", "test_ed", "test_ed", nested_val, 2, pbroker)
 	check("nested unknown handle in array → unknown_blob_handle",
 		err4.get("error_code", "") == "unknown_blob_handle",
 		"got: '%s'" % err4.get("error_code", ""))
