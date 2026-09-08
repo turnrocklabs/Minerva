@@ -1,6 +1,11 @@
 extends RefCounted
 ## Consecutive-call and repeated-error accounting shared by HTTP and internal MCP.
 
+## Statuses a result can carry to say the work it describes has not finished.
+## A tool opts out of loop accounting by shaping its own result this way; the
+## host never learns which tool or which field is which.
+const NONTERMINAL_STATUSES: Array[String] = ["pending", "running"]
+
 ## Duplicate call detection
 var _last_call_hash: String = ""
 var _consecutive_count: int = 0
@@ -126,10 +131,34 @@ static func _is_pending(tool_name: String, result: Dictionary) -> bool:
 			return true
 	if _is_error(payload):
 		return false
-	if payload.get("status", "") not in ["pending", "running"]:
+	# A wait that expired with the work still unfinished is a continuation the
+	# result itself asked for, not a retry of a settled call. Both halves are
+	# required: an expired wait alone can be a terminal give-up, and a status
+	# alone is often domain data (a work item that is "pending").
+	if payload.get("timed_out", false) == true and _declares_nonterminal_status(payload):
+		return true
+	# A poll on an operation: a non-terminal status plus the handle that names
+	# the operation still being worked on.
+	if payload.get("status", "") not in NONTERMINAL_STATUSES:
 		return false
 	for key in ["job_id", "ticket"]:
 		var handle = payload.get(key)
 		if handle is String and not handle.is_empty():
+			return true
+	return false
+
+
+## Any field named `status` or `<something>_status` carrying a non-terminal
+## value. The suffix form lets a result name the thing that is still running
+## without the host knowing what that thing is.
+static func _declares_nonterminal_status(payload: Dictionary) -> bool:
+	for key in payload.keys():
+		if not (key is String):
+			continue
+		var field: String = key
+		if field != "status" and not field.ends_with("_status"):
+			continue
+		var value = payload[field]
+		if value is String and NONTERMINAL_STATUSES.has(value):
 			return true
 	return false

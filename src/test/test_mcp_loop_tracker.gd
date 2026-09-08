@@ -50,5 +50,49 @@ func _init() -> void:
 	for i in range(5):
 		reply = tracker.check("export", {}, {"status": "pending", "job_id": "a", "error": "terminal error"})
 	check("pending label never hides an explicit terminal error", reply.get("blocked", false))
+	# A wait that expired with the work still unfinished: the caller was told to
+	# ask again, so the identical follow-up is a continuation, not a loop.
+	tracker = Tracker.new()
+	var awaiting := {"success": true, "timed_out": true, "waited_ms": 30000,
+		"timeout_ms": 30000, "stale": true, "evaluation_status": "pending"}
+	var clean_await := true
+	for i in range(3):
+		reply = tracker.check("panel_await", {"editor_name": "shape"}, awaiting.duplicate(true))
+		clean_await = clean_await and not reply.has("warning") and not reply.has("retry_hint")
+	reply = tracker.check("panel_await", {"editor_name": "shape"},
+		{"success": true, "timed_out": false, "evaluation_status": "ok"})
+	check("an expired wait resumed to completion carries no loop warning",
+		clean_await and not reply.has("warning") and tracker._consecutive_error_count == 0)
+	# Suppression is opt-in: the result must say BOTH that its wait expired and
+	# that the work is unfinished.
+	tracker = Tracker.new()
+	for i in range(2):
+		reply = tracker.check("panel_await", {}, {"success": true, "timed_out": true})
+		if i == 1:
+			check("an expired wait alone is still a repeated call", reply.has("warning"))
+	tracker = Tracker.new()
+	for i in range(2):
+		reply = tracker.check("panel_await", {}, {"success": true, "item_status": "closed"})
+		if i == 1:
+			check("a terminal status is still a repeated call", reply.has("warning"))
+	# The plain `status` field, with no handle beside it.
+	tracker = Tracker.new()
+	var clean_plain := true
+	for i in range(3):
+		reply = tracker.check("panel_await", {}, {"success": true, "timed_out": true, "status": "pending"})
+		clean_plain = clean_plain and not reply.has("warning")
+	check("an expired wait with a plain pending status needs no handle", clean_plain)
+	# A status outside the non-terminal set is accounted for as before, handle
+	# or no handle.
+	tracker = Tracker.new()
+	for i in range(2):
+		reply = tracker.check("export", {}, {"status": "queued", "job_id": "a"})
+	check("the handle path still accepts only pending and running", reply.has("warning"))
+	# The pending exemption is scoped to the tool it came from.
+	tracker = Tracker.new()
+	tracker.check("alpha", {"a": 1}, {"error": "boom"})
+	tracker.check("panel_await", {}, {"success": true, "timed_out": true, "evaluation_status": "pending"})
+	reply = tracker.check("alpha", {"a": 2}, {"error": "boom"})
+	check("a pending reply elsewhere leaves another tool's error streak intact", reply.has("retry_hint"))
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])
 	quit(1 if failed else 0)
