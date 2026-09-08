@@ -249,35 +249,21 @@ func register_tools() -> void:
 
 	server._register_tool(
 		"minerva_cad_export",
-		"Export the geometry of a live CAD editor to a file. "
-		+ "Resolves the editor's current DSL source via DocumentRegistry, then "
-		+ "dispatches to the cad plugin's worker which re-evaluates the DSL and "
-		+ "writes the file. Supported formats: 'stl' (binary STL — build123d default), "
-		+ "'step' or 'stp' (STEP AP214 — OCCT default), '3mf' (build123d Mesher). "
-		+ "Path is absolute as-is; ~-prefixed paths are expanded; bare relative "
-		+ "paths resolve against the user's home directory. "
-		+ "Returns {path, bytes_written, format} on success. DSL parse/translate "
-		+ "errors are surfaced verbatim — the user can fix them and retry.",
+		"Export a live document's current shared DSL buffer, optionally a named solid part. "
+		+ "Returns geometry reuse, source version/digest and output path. Slow exports return "
+		+ "status=pending and job_id; collect with job_id alone, even after editing or closing the document. "
+		+ "Repeated collection never rewrites the file. wait_ms bounds each call (0..20000).",
 		{
 			"type": "object",
 			"properties": {
-				"editor_name": {
-					"type": "string",
-					"description": "Editor tab title (as returned by minerva_list_editors). "
-					+ "Must match a live CAD panel.",
-				},
-				"format": {
-					"type": "string",
-					"enum": ["stl", "step", "stp", "3mf"],
-					"description": "Output format. STL is binary by default.",
-				},
-				"path": {
-					"type": "string",
-					"description": "Absolute, ~-prefixed, or bare relative path. "
-					+ "Bare relative paths resolve against the user's home directory.",
-				},
+				"editor_name": {"type": "string", "description": "Text or CAD render tab title."},
+				"part": {"type": "string", "description": "Optional solid binding, such as door."},
+				"format": {"type": "string", "enum": ["stl", "step", "stp", "3mf", "glb"]},
+				"path": {"type": "string", "description": "Absolute or home-relative output path."},
+				"job_id": {"type": "string", "description": "Collect an existing export without an editor or source."},
+				"wait_ms": {"type": "integer", "minimum": 0, "maximum": 20000},
 			},
-			"required": ["editor_name", "format", "path"],
+			"anyOf": [{"required": ["job_id"]}, {"required": ["editor_name", "format", "path"]}],
 		},
 		"cad"
 	)
@@ -672,24 +658,46 @@ func _cad_list_user_labels(args: Dictionary) -> Dictionary:
 ## delegates to the cad plugin's `cad.export` MCP tool (which forwards to the
 ## Python worker via cad-plugin → bridge → mcad_worker).
 func _cad_export(args: Dictionary) -> Dictionary:
-	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
+	if SingletonObject.plugin_manager == null:
+		return _err("plugin_manager not initialised")
+	var conn = SingletonObject.plugin_manager.get_connection("cad")
+	if conn == null:
+		return _err("cad plugin not running")
+	var plugin_args: Dictionary
+	if not str(args.get("job_id", "")).is_empty():
+		plugin_args = {"job_id": args["job_id"]}
+	else:
+		plugin_args = _export_document_args(args)
+		if plugin_args.has("error"):
+			return plugin_args
+	if args.has("wait_ms"):
+		plugin_args["wait_ms"] = args["wait_ms"]
+	var reply: Dictionary = await conn.call_tool("cad.export", plugin_args)
+	# Keep the operation's structured error/status and provenance intact.
+	if reply.has("error"):
+		return {"success": false, "error": reply["error"]}
+	if not reply.get("ok", false):
+		return _err("cad_export_failed: %s" % JSON.stringify(reply))
+	var payload = reply.get("result", reply)
+	if not payload is Dictionary:
+		return _err("cad_export_failed: unexpected payload")
+	return _ok(payload)
+
+
+func _export_document_args(args: Dictionary) -> Dictionary:
+	var editor_name := str(args.get("editor_name", "")).strip_edges()
 	if editor_name.is_empty():
 		return _err("editor_name is required")
-
-	var fmt: String = str(args.get("format", "")).strip_edges().to_lower()
-	const _SUPPORTED := ["stl", "step", "stp", "3mf"]
-	if fmt.is_empty():
-		return _err("format is required (one of: stl, step, stp, 3mf)")
-	if not _SUPPORTED.has(fmt):
-		return _err("unsupported format '%s' (supported: %s)" % [fmt, str(_SUPPORTED)])
-
-	var path: String = str(args.get("path", "")).strip_edges()
+	var fmt := str(args.get("format", "")).strip_edges().to_lower()
+	if fmt not in ["stl", "step", "stp", "3mf", "glb"]:
+		return _err("unsupported export format: " + fmt)
+	var path := str(args.get("path", "")).strip_edges()
 	if path.is_empty():
-		return _err("path is required (absolute, ~-prefixed, or bare relative resolved against home)")
-
+		return _err("path is required")
 	# Resolve editor → DocumentBuffer source. CAD panels are paired_dsl plugin
 	# scenes; the broker holds the canonical buffer attached to the panel.
 	var source: String = ""
+	var version: int = 0
 	var editor: Variant = MCPToolUtils.find_editor_by_name(editor_name)
 	if editor == null:
 		return _err("editor_not_found: %s" % editor_name)
@@ -702,10 +710,12 @@ func _cad_export(args: Dictionary) -> Dictionary:
 			var attached: DocumentBuffer = pbroker.get_attached_buffer(ed_pid, ed_pname)
 			if attached != null:
 				source = attached.text
+				version = attached.version
 	if source.is_empty() and editor.has_method("get_document_buffer"):
 		var ed_buf: DocumentBuffer = editor.get_document_buffer()
 		if ed_buf != null:
 			source = ed_buf.text
+			version = ed_buf.version
 	if source.is_empty():
 		return _err(
 			"no_source_for_editor: '%s' has no DocumentBuffer attached. "
@@ -713,46 +723,8 @@ func _cad_export(args: Dictionary) -> Dictionary:
 			+ "Ensure the panel is open and the DSL has been entered."
 		)
 
-	# Dispatch to cad plugin's `cad.export` MCP tool.
-	if SingletonObject.plugin_manager == null:
-		return _err("plugin_manager not initialised")
-	var conn = SingletonObject.plugin_manager.get_connection("cad")
-	if conn == null:
-		return _err("cad plugin not running — start it via PluginManager UI or minerva_plugin_start")
-
-	var plugin_args := {
-		"source": source,
-		"format": fmt,
-		"path": path,
-	}
-	var plugin_result: Dictionary = await conn.call_tool("cad.export", plugin_args)
-
-	# The plugin returns {ok: true, result: {...}} or {ok: false, error: {...}}
-	# wrapped in the MCP envelope. MCPServerConnection._normalize_mcp_tool_result
-	# already unwraps the {content:[{text}]} envelope to return the inner dict.
-	if plugin_result.has("error"):
-		var err_field: Variant = plugin_result["error"]
-		if err_field is Dictionary:
-			var err_d: Dictionary = err_field
-			return _err(
-				"cad_export_failed (kind=%s): %s"
-				% [str(err_d.get("kind", "unknown")), str(err_d.get("message", ""))]
-			)
-		return _err("cad_export_failed: %s" % str(err_field))
-
-	if not plugin_result.get("ok", false):
-		return _err("cad_export_failed: %s" % JSON.stringify(plugin_result))
-
-	var result_payload: Variant = plugin_result.get("result", plugin_result)
-	if not (result_payload is Dictionary):
-		return _err("cad_export_failed: unexpected payload shape: %s" % JSON.stringify(plugin_result))
-	var rd: Dictionary = result_payload as Dictionary
-
-	return _ok({
-		"path": str(rd.get("path", path)),
-		"bytes_written": int(rd.get("bytes_written", 0)),
-		"format": str(rd.get("format", fmt)),
-	})
+	return {"source": source, "source_version": version, "part": args.get("part", ""),
+		"format": fmt, "path": path}
 
 
 ## Capture a PNG snapshot of the requested CAD viewport via
