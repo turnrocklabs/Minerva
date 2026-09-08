@@ -27,6 +27,8 @@ extends MCPToolModule
 ## (units: "mm"). No conversion is performed here.
 
 
+const _Evaluation := preload("MCPCadEvaluation.gd")
+
 func get_tool_names() -> Array[String]:
 	return [
 		"minerva_cad_get_mesh_info",
@@ -42,7 +44,7 @@ func get_tool_names() -> Array[String]:
 
 
 func register_tools() -> void:
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_get_mesh_info",
 		"Return geometry summary for a live CAD editor: vertex count, face count, "
 		+ "axis-aligned bounding box, and whether any geometry exists. "
@@ -63,7 +65,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_list_edges_live",
 		"Return the full edge registry from a live CAD editor as an array of edge dicts. "
 		+ "Each dict has at minimum: id (int), kind (string: 'straight' or 'circle'). "
@@ -83,7 +85,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_get_edge",
 		"Return a single edge dict from a live CAD editor by integer id. "
 		+ "Returns {ok: true, edge: null} when the id is not found (not an error). "
@@ -105,7 +107,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_get_selected_edge",
 		"Return the currently selected edge id and its full dict from a live CAD editor. "
 		+ "selected_edge_id is -1 and edge is null when no edge is selected. "
@@ -124,7 +126,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_annotate_edges",
 		"Create one cad_edge_number annotation per resolved edge on a live CAD panel. "
 		+ "Exactly one selector must be supplied: either edge_ids (explicit list of integer edge ids) "
@@ -168,7 +170,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_clear_edge_annotations",
 		"Remove cad_edge_number annotations from a live CAD panel. "
 		+ "Exactly one predicate must be supplied: "
@@ -199,7 +201,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_snapshot",
 		"Capture a PNG snapshot of a live CAD editor's 3-D viewport so vision-capable "
 		+ "models can SEE the geometry instead of just reading mesh/edge metadata. "
@@ -247,7 +249,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_export",
 		"Export a live document's current shared DSL buffer, optionally a named solid part. "
 		+ "Returns geometry reuse, source version/digest and output path. Slow exports return "
@@ -268,7 +270,7 @@ func register_tools() -> void:
 		"cad"
 	)
 
-	server._register_tool(
+	_register_cad_tool(
 		"minerva_cad_list_user_labels",
 		"Return the list of cad_edge_number annotations the USER has authored on a live CAD panel. "
 		+ "Use this whenever the user references 'the edges I labeled' (or 'pinned', 'tagged', "
@@ -296,7 +298,28 @@ func register_tools() -> void:
 
 
 
+func _register_cad_tool(name_: String, description: String, schema: Dictionary, category: String) -> void:
+	server._register_tool(name_, description, _Evaluation.schema(schema), category)
+
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+	arguments = arguments.duplicate(true)
+	arguments.erase("_cad_host")
+	arguments.erase("_evaluated_document")
+	if tool_name == "minerva_cad_export" and not str(arguments.get("job_id", "")).is_empty():
+		return await _dispatch(tool_name, arguments)
+	var located: Dictionary = _Evaluation.locate(arguments)
+	if not located.get("success", false):
+		return located
+	var context: Dictionary = _Evaluation.begin(_resolve_host(arguments), arguments,
+		tool_name == "minerva_cad_export")
+	if not context.get("success", false) or context.has("measured"):
+		return context
+	if context.has("document"):
+		arguments["_evaluated_document"] = context.document
+	return _Evaluation.finish(await _dispatch(tool_name, arguments), context)
+
+
+func _dispatch(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
 		"minerva_cad_get_mesh_info":
 			return _cad_get_mesh_info(arguments)
@@ -685,46 +708,7 @@ func _cad_export(args: Dictionary) -> Dictionary:
 
 
 func _export_document_args(args: Dictionary) -> Dictionary:
-	var editor_name := str(args.get("editor_name", "")).strip_edges()
-	if editor_name.is_empty():
-		return _err("editor_name is required")
-	var fmt := str(args.get("format", "")).strip_edges().to_lower()
-	if fmt not in ["stl", "step", "stp", "3mf", "glb"]:
-		return _err("unsupported export format: " + fmt)
-	var path := str(args.get("path", "")).strip_edges()
-	if path.is_empty():
-		return _err("path is required")
-	# Resolve editor → DocumentBuffer source. CAD panels are paired_dsl plugin
-	# scenes; the broker holds the canonical buffer attached to the panel.
-	var source: String = ""
-	var version: int = 0
-	var editor: Variant = MCPToolUtils.find_editor_by_name(editor_name)
-	if editor == null:
-		return _err("editor_not_found: %s" % editor_name)
-
-	var pbroker = SingletonObject.plugin_scene_panel_broker
-	if pbroker != null:
-		var ed_pid: String = str(editor.plugin_id) if "plugin_id" in editor else ""
-		var ed_pname: String = str(editor.plugin_panel_key) if "plugin_panel_key" in editor else ""
-		if not ed_pid.is_empty() and not ed_pname.is_empty():
-			var attached: DocumentBuffer = pbroker.get_attached_buffer(ed_pid, ed_pname)
-			if attached != null:
-				source = attached.text
-				version = attached.version
-	if source.is_empty() and editor.has_method("get_document_buffer"):
-		var ed_buf: DocumentBuffer = editor.get_document_buffer()
-		if ed_buf != null:
-			source = ed_buf.text
-			version = ed_buf.version
-	if source.is_empty():
-		return _err(
-			"no_source_for_editor: '%s' has no DocumentBuffer attached. "
-			% editor_name
-			+ "Ensure the panel is open and the DSL has been entered."
-		)
-
-	return {"source": source, "source_version": version, "part": args.get("part", ""),
-		"format": fmt, "path": path}
+	return _Evaluation.export_document_args(args)
 
 
 ## Capture a PNG snapshot of the requested CAD viewport via
@@ -904,6 +888,8 @@ func _cad_snapshot(args: Dictionary) -> Dictionary:
 ## is not the one the caller meant: the scene-panel broker, which resolves a
 ## document to the panel rendering it, is asked before giving up.
 func _resolve_host(args: Dictionary) -> AnnotationHost:
+	if args.has("_cad_host"):
+		return args["_cad_host"]
 	var editor_name: String = str(args.get("editor_name", ""))
 	if editor_name.is_empty():
 		return null

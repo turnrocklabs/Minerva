@@ -21,7 +21,7 @@ extends SceneTree
 ## Preload is required for newly-added scripts that don't yet have a .uid file
 ## in the project cache. class_name resolution depends on uid indexing which only
 ## happens after the Godot editor imports the script; preload works without it.
-const MCPCadToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPCadTools.gd")
+const MCP_CAD_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPCadTools.gd"
 
 var _pass_count: int = 0
 var _fail_count: int = 0
@@ -32,7 +32,8 @@ func _init() -> void:
 
 	# MCPCadTools.new(null) — server=null is fine; register_tools() is not called
 	# in these tests (it requires a live server). handle() has no server dependency.
-	var tools = MCPCadToolsScript.new(null)
+	await process_frame
+	var tools = load(MCP_CAD_TOOLS_PATH).new(null)
 
 	print("-- cad_get_mesh_info: empty host --")
 	test_mesh_info_empty_host(tools)
