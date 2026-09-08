@@ -40,6 +40,7 @@ HERMETIC_TESTS=(
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
 	test/test_mcp_loop_tracker.gd
+	test/test_plugin_inspect_lean.gd
 	test/test_buffer_sync_undo_caret.gd
 	test/test_doc_version_guard.gd
 	test/test_host_capability_terminal.gd

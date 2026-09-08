@@ -14,13 +14,15 @@ var _plugin_manager = null  # PluginManager
 var _plugin_policy = null   # PluginPolicy
 var _audit_log = null       # PluginAuditLog
 var _event_broker = null    # PluginEventBroker
+var _tool_registry = null   # PluginToolRegistry
 
 
-func _init(p_manager = null, p_policy = null, p_audit_log = null, p_event_broker = null) -> void:
+func _init(p_manager = null, p_policy = null, p_audit_log = null, p_event_broker = null, p_tool_registry = null) -> void:
 	_plugin_manager = p_manager
 	_plugin_policy = p_policy
 	_audit_log = p_audit_log
 	_event_broker = p_event_broker
+	_tool_registry = p_tool_registry
 	_connect_build_activity_signals()
 
 
@@ -558,6 +560,13 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 	if audit_log != null:
 		recent_audit_entries = audit_log.get_entries(id, "", 10)
 
+	# The same effective schemas used for discovery and dispatch. Backend
+	# tools/list is refreshed on start/restart; panel schemas remain manifest-owned.
+	var registry = _tool_registry if _tool_registry != null else SingletonObject.plugin_tool_registry
+	var effective_tools: Array = registry.get_plugin_tools(id) if registry != null else []
+	for tool: Dictionary in effective_tools:
+		tool["schema_source"] = "backend_tools_list" if tool.has("_backend_name") else "manifest"
+
 	# LEAN DEFAULT (Epoch UX2 station 7, docket 019fde56e6c3): the full reply
 	# for a large plugin ran ~87KB on one line (74 tool schemas + manifest +
 	# audit) and overflowed the calling agent's tool-result budget. The lean
@@ -570,7 +579,9 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 		"name": def.name,
 		"version": def.version,
 		"status": status,
-		"tool_count": (def.tools as Array).size() if def.tools is Array else 0,
+		"tool_count": effective_tools.size(),
+		"tools_source": "registry" if registry != null else "unavailable",
+		"manifest_tool_count": (def.tools as Array).size() if def.tools is Array else 0,
 		"capabilities": {
 			"requested": requested_caps,
 			"granted": granted_caps
@@ -590,9 +601,10 @@ func _handle_plugin_inspect(args: Dictionary) -> Dictionary:
 			"autostart": def.autostart,
 			"network_mode": def.network_mode,
 			"filesystem_mode": def.filesystem_mode,
+			"tools": def.tools,
 		}
 	if "tools" in include:
-		reply["tools"] = def.tools
+		reply["tools"] = effective_tools
 	if "audit" in include:
 		reply["recent_audit_log"] = recent_audit_entries
 	return reply

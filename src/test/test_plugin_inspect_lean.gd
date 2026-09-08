@@ -93,7 +93,9 @@ func _init() -> void:
 	db.def = def
 	var manager := FakeManager.new()
 	manager.db = db
-	var mcp = MCPTools.new(manager, FakePolicy.new(), FakeAudit.new())
+	var registry = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd").new()
+	registry.register_plugin_tools("pcb", def.tools)
+	var mcp = MCPTools.new(manager, FakePolicy.new(), FakeAudit.new(), null, registry)
 
 	# ── lean default ──
 	var lean: Dictionary = mcp._handle_plugin_inspect({"id": "pcb"})
@@ -137,6 +139,23 @@ func _init() -> void:
 		{"id": "pcb", "include": "tools"})
 	check("non-array include degrades to lean (no crash, no sections)",
 		bool(bad_include.get("success", false)) and not bad_include.has("tools"))
+
+	# A runtime refresh replaces stale backend schemas without changing the
+	# install-time manifest. Inspection must describe that same effective set.
+	var runtime_tools := [{"name": "minerva_pcb_a", "_backend_name": "a",
+		"input_schema": {"type": "object", "properties": {"enabled": {"type": "boolean"}}}}]
+	registry.register_plugin_tools("pcb", runtime_tools)
+	var refreshed: Dictionary = mcp._handle_plugin_inspect({"id": "pcb", "include": ["tools", "manifest"]})
+	check("inspection uses refreshed registry schemas with explicit provenance",
+		refreshed.tool_count == 1 and refreshed.manifest_tool_count == 3
+		and refreshed.tools_source == "registry"
+		and refreshed.tools[0].input_schema == runtime_tools[0].input_schema
+		and refreshed.tools[0].schema_source == "backend_tools_list"
+		and refreshed.manifest.tools == def.tools)
+	registry.unregister_plugin_tools("pcb")
+	var stopped: Dictionary = mcp._handle_plugin_inspect({"id": "pcb", "include": ["tools"]})
+	check("empty registry does not resurrect installed schemas as live tools",
+		stopped.tool_count == 0 and stopped.tools.is_empty() and stopped.manifest_tool_count == 3)
 
 	# ── unknown plugin unchanged ──
 	db.def = null
