@@ -1171,8 +1171,10 @@ func attach_buffer_to_panel(
 	# against later panel re-registration.
 	var captured_panel_name: String = panel_name
 	var captured_plugin_id: String = plugin_id
+	var captured_document_id := buffer.document_id
 	var handler := func(text: String, version: int) -> void:
 		push_to_panel(captured_plugin_id, captured_panel_name, CHANNEL_TEXT_CHANGED, {
+			"document_id": captured_document_id,
 			"text": text,
 			"version": version,
 		})
@@ -1188,6 +1190,7 @@ func attach_buffer_to_panel(
 	# subsequent text_changed pushes.
 	push_to_panel(plugin_id, panel_name, CHANNEL_ATTACH_BUFFER, {
 		"path":    buffer.file_path,
+		"document_id": buffer.document_id,
 		"text":    buffer.text,
 		"version": buffer.version,
 	})

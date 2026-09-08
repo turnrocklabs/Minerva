@@ -65,6 +65,7 @@ static func reset_instance() -> void:
 
 ## absolute_path -> DocumentBuffer
 var _buffers: Dictionary = {}
+var _buffers_by_id: Dictionary[String, DocumentBuffer] = {}
 
 ## absolute_path -> bool. True while a Reload/Keep prompt is open for that
 ## buffer. Coalesces multiple external-change events so the user sees one
@@ -120,6 +121,7 @@ func get_or_create_buffer(path: String) -> Dictionary:
 
 	var buffer := DocumentBuffer.new(abs_path, initial_text)
 	_buffers[abs_path] = buffer
+	_buffers_by_id[buffer.document_id] = buffer
 	_subscribe_to_watcher(abs_path)
 	buffer_created.emit(abs_path, buffer)
 	return {"ok": true, "buffer": buffer}
@@ -141,6 +143,7 @@ func create_unbacked_buffer() -> Dictionary:
 		synthetic = _UNBACKED_PREFIX + uid
 	var buf := DocumentBuffer.new(synthetic, "")
 	_buffers[synthetic] = buf
+	_buffers_by_id[buf.document_id] = buf
 	# Intentionally NOT subscribed to FileWatcherService — no real file.
 	return {"ok": true, "buffer": buf}
 
@@ -184,6 +187,11 @@ func rebind_buffer(old_path: String, new_path: String) -> Dictionary:
 	return {"ok": true, "buffer": buf}
 
 
+## Resolve a live handle without loading disk or guessing a replacement.
+func get_buffer_by_id(document_id: String) -> DocumentBuffer:
+	return _buffers_by_id.get(document_id)
+
+
 ## Whether a buffer currently exists for path.
 func has_buffer(path: String) -> bool:
 	if is_unbacked_path(path):
@@ -208,6 +216,8 @@ func dispose_buffer(path: String) -> void:
 		if not resolved.ok:
 			return
 		abs_path = resolved.path
+	if _buffers.has(abs_path):
+		_buffers_by_id.erase((_buffers[abs_path] as DocumentBuffer).document_id)
 	_buffers.erase(abs_path)
 	_prompt_open.erase(abs_path)
 	if not is_unbacked_path(abs_path):

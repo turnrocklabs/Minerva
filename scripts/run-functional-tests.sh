@@ -44,6 +44,7 @@ HERMETIC_TESTS=(
 	test/test_plugin_inspect_lean.gd
 	test/test_buffer_sync_undo_caret.gd
 	test/test_doc_version_guard.gd
+	test/test_document_identity.gd
 	test/test_host_capability_terminal.gd
 	# test_host_capability_terminal_io.gd: quarantined, bug 019fbd21a8717702931647025aae6be7
 	# (intermittent CI-only SIGABRT/exit 134, not reproduced in 40 local runs

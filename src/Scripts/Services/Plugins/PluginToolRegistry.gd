@@ -177,10 +177,13 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 				]
 			}
 
+		var input_schema: Dictionary = tool_entry.get("input_schema", {"type": "object", "properties": {}})
+		if executor == "panel":
+			input_schema = DocumentIdentity.panel_schema(input_schema)
 		var entry := {
 			"name": tool_name,
 			"description": str(tool_entry.get("description", "")),
-			"input_schema": tool_entry.get("input_schema", {"type": "object", "properties": {}}),
+			"input_schema": input_schema,
 			"source": "plugin:%s" % plugin_id,
 			"executor": executor,
 		}
@@ -499,6 +502,16 @@ func _annotation_host_registry():
 ## panels the broker doesn't know). Undeterminable ownership is a DENY —
 ## fail-safe, a tool must never execute against another plugin's panel.
 func _handle_panel_tool_call(plugin_id: String, tool_name: String, args: Dictionary) -> Dictionary:
+	if args.has("document_id") or args.has("view_id"):
+		if not str(args.get("editor_name", "")).is_empty():
+			return {"error": "use document_id/view_id or editor_name, not both"}
+		var pane = SingletonObject.editor_pane
+		var views: Array = pane.get_open_editors() if pane != null else []
+		var located := DocumentIdentity.resolve(args, views, _resolve_scene_panel_broker(), plugin_id)
+		if not located.ok:
+			return located
+		args = args.duplicate(true)
+		args["editor_name"] = str(located.editor.plugin_panel_key)
 	# --- editor_name is required for panel tools (v1) ---
 	var editor_name := str(args.get("editor_name", ""))
 	if editor_name.is_empty():

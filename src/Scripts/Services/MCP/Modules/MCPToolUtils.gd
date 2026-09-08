@@ -170,17 +170,15 @@ static func find_editor_by_name(name_: String) -> Variant:
 
 	var clean_name := name_.strip_edges()
 
-	# Exact match first
-	for editor in editor_pane.get_open_editors():
-		if editor.tab_title == clean_name:
-			return editor
-
-	# Also check tab titles directly (covers tabs not in get_open_editors)
+	var matches: Array = []
 	for i in range(editor_pane.Tabs.get_tab_count()):
+		var editor = editor_pane.Tabs.get_tab_control(i)
+		if DocumentIdentity.handle(editor, "view") == clean_name:
+			return editor
 		if editor_pane.Tabs.get_tab_title(i) == clean_name:
-			return editor_pane.Tabs.get_tab_control(i)
-
-	return null
+			matches.append(editor)
+	# A duplicate title must not silently select the first document.
+	return matches[0] if matches.size() == 1 else null
 
 
 ## Find an editor of a specific type by name. Returns the Editor node or null.

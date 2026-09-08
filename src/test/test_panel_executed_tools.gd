@@ -273,7 +273,7 @@ func _build_fixture_stack() -> bool:
 
 	# Real broker. It only needs a manager for scene-request dispatch, which
 	# this suite never exercises — registration/ownership paths take null.
-	_broker = PluginScenePanelBroker.new(null, null, null, null)
+	_broker = load("res://Scripts/Services/Plugins/PluginScenePanelBroker.gd").new(null, null, null, null)
 
 	# Real registry wired to the real manager + broker.
 	var reg_script = load(PLUGIN_TOOL_REGISTRY_SCRIPT_PATH)
@@ -621,13 +621,17 @@ func test_backend_discovery_empty_preserves_panel_tools() -> void:
 		check("MCPServerConnection loadable for discovery churn", false)
 		return
 	var conn = ConnScript.new()
-	# A fresh connection reports no tools — exactly the churn shape that used
-	# to trigger the full unregister.
+	# A disconnected connection cannot refresh discovery. Failure must keep
+	# the last advertised tool set rather than treating it as an empty reply.
 	var result: Dictionary = await _registry.register_backend_tools("pxa", conn)
-	check("empty backend discovery returns ok", not result.has("error"), str(result))
-	check("panel tool survives empty backend discovery",
-			_registry.is_plugin_tool("minerva_pxa_panel_echo"))
-	check("backend tool dropped by empty discovery",
-			not _registry.is_plugin_tool("minerva_pxa_backend_echo"))
+	check("disconnected backend discovery reports failure", result.has("error"), str(result))
+	check("panel tool survives failed discovery", _registry.is_plugin_tool("minerva_pxa_panel_echo"))
+	check("backend tool survives failed discovery", _registry.is_plugin_tool("minerva_pxa_backend_echo"))
+	# A successful empty discovery uses the same atomic merge as nonempty
+	# replies; this exercises its removal semantics without a fake transport.
+	result = _registry._reregister_preserving_panel("pxa", [])
+	check("empty backend replacement returns ok", not result.has("error"), str(result))
+	check("panel tool survives empty backend replacement", _registry.is_plugin_tool("minerva_pxa_panel_echo"))
+	check("backend tool dropped by empty replacement", not _registry.is_plugin_tool("minerva_pxa_backend_echo"))
 	if conn != null and conn is Object and not (conn is RefCounted):
 		conn.free()

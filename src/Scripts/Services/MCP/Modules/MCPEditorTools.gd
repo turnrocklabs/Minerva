@@ -765,6 +765,8 @@ func _list_editors(_args: Dictionary) -> Dictionary:
 			"index": i
 		}
 
+		editor_info.merge(DocumentIdentity.describe(editor, SingletonObject.plugin_scene_panel_broker))
+
 		# Add file path if available
 		if "file" in editor and editor.file:
 			editor_info["file_path"] = editor.file

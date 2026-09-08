@@ -20,6 +20,9 @@ signal external_change_detected
 ## Emitted after save_to_disk() succeeds.
 signal saved
 
+## Stable while this canonical buffer lives, including registry rebinds.
+var document_id: String = DocumentIdentity.handle(self, "document")
+
 var file_path: String = ""
 var text: String = ""
 var version: int = 0

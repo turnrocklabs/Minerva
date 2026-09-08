@@ -2,15 +2,15 @@ class_name MCPDocTools
 extends MCPToolModule
 ## MCP tool module for document-canonical read/write/edit/save.
 ##
-## Each tool accepts either `path` or `editor_name` as the buffer key (exactly
-## one). Path-keyed calls route through DocumentRegistry. Editor-keyed calls
+## Tools accept live document/view handles or legacy path/name locators.
+## Document and path lookups route through DocumentRegistry. Editor-keyed calls
 ## resolve the editor by tab_title and dispatch to:
 ##   - DocumentRegistry buffer when the editor has a bound file path (TEXT)
 ##   - editor.code_edit.text directly for anonymous TEXT editors
 ##   - (Slice 2) plugin-scene IPC channels for PLUGIN_SCENE editors
 ##
-## After Save-As, the editor's tab_title changes; doc_save returns the
-## post-save editor_name so the LLM can update its key.
+## Handles survive title changes and buffer rebinds; a new buffer or reopened
+## view gets a new handle. Paths remain the durable locator across sessions.
 
 
 const DocVersionGuard := preload("res://Scripts/Services/Documents/DocVersionGuard.gd")
@@ -36,7 +36,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_doc_read",
-		"Read a document's text. Pass either `path` (absolute file path) or `editor_name` (the tab title). Path-keyed reads load from disk into the registry on first access. Editor-keyed reads return the visible text of an editor tab — works for both path-bound and anonymous (unsaved) editors. Returns not_found when neither buffer, file, nor named editor exists.",
+		"Read a document's text. Pass `document_id`, `view_id`, `path` (absolute file path), or an unambiguous `editor_name`. Path-keyed reads load from disk into the registry on first access. Editor-keyed reads return the visible text of an editor tab — works for both path-bound and anonymous (unsaved) editors. Returns not_found when neither buffer, file, nor named editor exists.",
 		_dual_key_schema({
 			"text": {"type": "string"},
 			"version": {"type": "integer"},
@@ -44,7 +44,7 @@ func register_tools() -> void:
 		}, []), "documents")
 
 	server._register_tool("minerva_doc_write",
-		"Replace a document's full text. Pass either `path` or `editor_name` (exactly one). Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. For plugin-scene editors (e.g. cad): plain text is wrapped as {\"source\": text} — pass DSL as-is without JSON-stringifying; pass a JSON object literal if you need fuller control over the Dictionary the plugin receives. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
+		"Replace a document's full text. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. For plugin-scene editors (e.g. cad): plain text is wrapped as {\"source\": text} — pass DSL as-is without JSON-stringifying; pass a JSON object literal if you need fuller control over the Dictionary the plugin receives. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
 		_dual_key_schema({
 			"text": {"type": "string", "description": "Full text content"},
 			"save": {"type": "boolean", "description": "Also flush to disk now (default false = buffered, persist later via minerva_doc_save)."},
@@ -52,7 +52,7 @@ func register_tools() -> void:
 		}, ["text"]), "documents")
 
 	server._register_tool("minerva_doc_edit",
-		"Replace old_string with new_string. Pass either `path` or `editor_name`. Without replace_all, old_string must match exactly once. NOT supported on plugin-scene editors (use minerva_doc_write to replace the whole document instead).",
+		"Replace old_string with new_string. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Without replace_all, old_string must match exactly once. NOT supported on plugin-scene editors (use minerva_doc_write to replace the whole document instead).",
 		_dual_key_schema({
 			"old_string": {"type": "string", "description": "String to find (must be unique unless replace_all)"},
 			"new_string": {"type": "string", "description": "Replacement string"},
@@ -62,8 +62,10 @@ func register_tools() -> void:
 		}, ["old_string", "new_string"]), "documents")
 
 	server._register_tool("minerva_doc_save",
-		"Flush a document to disk. Pass either `path` or `editor_name`. With editor_name, an optional `path` argument performs Save-As (binds the editor to that path). For an unbound (anonymous) editor `path` is REQUIRED. Returns {path, editor_name} after save — note that Save-As renames the tab, so the returned editor_name may differ from the one passed in.",
+		"Flush a document to disk. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. With editor_name, an optional `path` argument performs Save-As (binds the editor to that path). For an unbound (anonymous) editor `path` is REQUIRED. Returns {path, editor_name} after save — note that Save-As renames the tab, so the returned editor_name may differ from the one passed in.",
 		{"type": "object", "properties": {
+			"document_id": {"type": "string", "description": "Live document handle; path is an optional Save-As destination."},
+			"view_id": {"type": "string", "description": "Live view handle; required for Save-As when a document has paired views."},
 			"path": {"type": "string", "description": "Absolute file path. Required for path-keyed save. Optional for editor_name save (triggers Save-As when present)."},
 			"editor_name": {"type": "string", "description": "Tab title of the editor. Alternative key to path."},
 		}}, "documents")
@@ -191,6 +193,22 @@ const KIND_PLUGIN_SCENE := "plugin_scene"  # editor-keyed; PLUGIN_SCENE (Slice 2
 ## we promote it to KIND_BUFFER so reads/writes go through the registry —
 ## anything attached to that path stays in sync.
 func _resolve_target(args: Dictionary, require_existing: bool) -> Dictionary:
+	var document_id := str(args.get("document_id", ""))
+	var view_id := str(args.get("view_id", ""))
+	if not document_id.is_empty() or not view_id.is_empty():
+		if not str(args.get("editor_name", "")).is_empty() or not str(args.get("path", "")).is_empty():
+			return {"ok": false, "error": "use document_id/view_id or path/editor_name, not both"}
+		if view_id.is_empty():
+			var identified := DocumentRegistry.get_instance().get_buffer_by_id(document_id)
+			if identified != null:
+				return {"ok": true, "kind": KIND_BUFFER, "buffer": identified,
+					"editor": null, "path": identified.file_path, "editor_name": ""}
+		var pane = SingletonObject.editor_pane
+		var views: Array = pane.get_open_editors() if pane != null else []
+		var resolved := DocumentIdentity.resolve(args, views, SingletonObject.plugin_scene_panel_broker)
+		if not resolved.ok:
+			return resolved
+		args = {"editor_name": resolved.identity.view_id}
 	var path: String = str(args.get("path", "")).strip_edges()
 	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
 
@@ -221,7 +239,7 @@ func _resolve_target(args: Dictionary, require_existing: bool) -> Dictionary:
 	# Editor-keyed
 	var editor: Variant = MCPToolUtils.find_editor_by_name(editor_name)
 	if editor == null:
-		return {"ok": false, "error": "editor_not_found: %s" % editor_name}
+		return {"ok": false, "error": "editor_not_found_or_ambiguous: %s (use view_id from minerva_list_editors)" % editor_name}
 
 	var ed_type: int = -1
 	if "type" in editor:
@@ -308,6 +326,8 @@ func _resolve_target(args: Dictionary, require_existing: bool) -> Dictionary:
 ## checked in _resolve_target).
 static func _dual_key_schema(extra_props: Dictionary, extra_required: Array) -> Dictionary:
 	var props := {
+		"document_id": {"type": "string", "description": "Live canonical document handle from minerva_list_editors or minerva_doc_read."},
+		"view_id": {"type": "string", "description": "Optional view handle; selects a particular editor without relying on its title."},
 		"path": {"type": "string", "description": "Absolute file path (alternative to editor_name)"},
 		"editor_name": {"type": "string", "description": "Tab title of the editor (alternative to path)"},
 	}
@@ -328,6 +348,7 @@ func _doc_read(args: Dictionary) -> Dictionary:
 			var read_ok := {
 				"text": buf.text,
 				"version": buf.version,
+				"document_id": buf.document_id,
 				"dirty": buf.dirty,
 				"path": t.path,
 				"editor_name": t.editor_name,
@@ -405,6 +426,7 @@ func _doc_write(args: Dictionary) -> Dictionary:
 			buf.apply_edit(text)
 			var write_resp := {
 				"version": buf.version,
+				"document_id": buf.document_id,
 				"dirty": buf.dirty,
 				"path": t.path,
 				"editor_name": t.editor_name,
@@ -448,6 +470,7 @@ func _doc_write(args: Dictionary) -> Dictionary:
 							"error": "%s: %s" % [err_kind, err_msg],
 							"last_eval": le,
 							"version": buf.version,
+							"document_id": buf.document_id,
 							"dirty": buf.dirty,
 							"path": t.path,
 							"editor_name": t.editor_name,
@@ -545,6 +568,7 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 			buf.apply_edit(new_text)
 			var resp := {
 				"version": buf.version,
+				"document_id": buf.document_id,
 				"dirty": buf.dirty,
 				"path": t.path,
 				"editor_name": t.editor_name,
@@ -569,6 +593,25 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 
 
 func _doc_save(args: Dictionary) -> Dictionary:
+	if args.has("document_id") or args.has("view_id"):
+		var locator := args.duplicate()
+		locator.erase("path") # With handles, path is the Save-As destination.
+		var target := _resolve_target(locator, true)
+		if not target.ok:
+			return _err(target.error)
+		var destination := str(args.get("path", ""))
+		if target.kind == KIND_BUFFER:
+			var buffer: DocumentBuffer = target.buffer
+			if destination.is_empty() or destination == buffer.file_path:
+				if DocumentRegistry.is_unbacked_path(buffer.file_path):
+					return _err("an unsaved document requires path and view_id for Save-As")
+				var saved := buffer.save_to_disk()
+				if not saved.ok:
+					return _err(saved.error)
+				return _ok({"path": buffer.file_path, "document_id": buffer.document_id})
+		if target.editor == null:
+			return _err("Save-As requires view_id so the owning editor can rebind the document")
+		args = {"editor_name": DocumentIdentity.handle(target.editor, "view"), "path": destination}
 	var path_arg: String = str(args.get("path", "")).strip_edges()
 	var editor_name: String = str(args.get("editor_name", "")).strip_edges()
 	var have_path := not path_arg.is_empty()
@@ -588,12 +631,12 @@ func _doc_save(args: Dictionary) -> Dictionary:
 		var save_r := (r.buffer as DocumentBuffer).save_to_disk()
 		if not save_r.ok:
 			return _err(save_r.error)
-		return _ok({"path": path_arg, "editor_name": ""})
+		return _ok({"path": path_arg, "editor_name": "", "document_id": r.buffer.document_id})
 
 	# Editor-keyed save (with optional path for Save-As).
 	var editor: Variant = MCPToolUtils.find_editor_by_name(editor_name)
 	if editor == null:
-		return _err("editor_not_found: %s" % editor_name)
+		return _err("editor_not_found_or_ambiguous: %s (use view_id from minerva_list_editors)" % editor_name)
 
 	var ed_type: int = int(editor.type) if "type" in editor else -1
 	var ed_file: String = str(editor.file) if "file" in editor else ""
@@ -611,7 +654,7 @@ func _doc_save(args: Dictionary) -> Dictionary:
 			return _err("editor '%s' is anonymous; pass `path` to bind via Save-As" % editor_name)
 		var save_target_p := path_arg if have_path else ed_file
 		editor.save_file_to_disc(save_target_p)
-		return _ok({"path": save_target_p, "editor_name": str(editor.tab_title)})
+		return _ok({"path": save_target_p, "editor_name": str(editor.tab_title)}.merged(DocumentIdentity.describe(editor, SingletonObject.plugin_scene_panel_broker)))
 
 	# Anonymous editor: path is required to bind it (Save-As).
 	if ed_file.is_empty() and not have_path:
@@ -626,7 +669,7 @@ func _doc_save(args: Dictionary) -> Dictionary:
 				var save_r2 := (r2.buffer as DocumentBuffer).save_to_disk()
 				if not save_r2.ok:
 					return _err(save_r2.error)
-				return _ok({"path": ed_file, "editor_name": str(editor.tab_title)})
+				return _ok({"path": ed_file, "editor_name": str(editor.tab_title)}.merged(DocumentIdentity.describe(editor, SingletonObject.plugin_scene_panel_broker)))
 		# No buffer? Fall through to editor.save_file_to_disc.
 
 	# Heavy path: Save-As (or first-save of anonymous), or no buffer for ed_file.
@@ -635,7 +678,7 @@ func _doc_save(args: Dictionary) -> Dictionary:
 	var save_target := path_arg if have_path else ed_file
 	editor.save_file_to_disc(save_target)
 	# tab_title may have changed; return the post-save value.
-	return _ok({"path": save_target, "editor_name": str(editor.tab_title)})
+	return _ok({"path": save_target, "editor_name": str(editor.tab_title)}.merged(DocumentIdentity.describe(editor, SingletonObject.plugin_scene_panel_broker)))
 
 
 func _doc_save_all(_args: Dictionary) -> Dictionary:
