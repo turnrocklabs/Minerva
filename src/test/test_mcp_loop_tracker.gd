@@ -16,7 +16,7 @@ func _init() -> void:
 	var reply: Dictionary
 	for i in range(6):
 		reply = tracker.check("export", {"path": str(i)}, {"error": "bad path"})
-	check("distinct failing requests are not counted as identical", tracker._consecutive_error_count == 1 and not reply.has("blocked") and not reply.has("warning"))
+	check("distinct failing requests are not counted as identical", tracker._streaks["export"].consecutive_error_count == 1 and not reply.has("blocked") and not reply.has("warning"))
 	check("same-tool error loop still recognizes identical errors across arguments", reply.has("retry_hint"))
 	tracker = Tracker.new()
 	for i in range(5):
@@ -26,7 +26,7 @@ func _init() -> void:
 	check("fifth identical failure blocks", reply.get("blocked", false))
 	tracker.check("export", {}, {"success": true})
 	tracker.check("export", {}, {"error": "bad source"})
-	check("success resets error streak", tracker._consecutive_error_count == 1)
+	check("success resets error streak", tracker._streaks["export"].consecutive_error_count == 1)
 	for pending in [
 		{"status": "pending", "job_id": "export-1"},
 		{"success": true, "result": {"status": "running", "ticket": "design-1"}},
@@ -41,7 +41,7 @@ func _init() -> void:
 		check("polling through completion carries no loop warning", clean and not reply.has("warning"))
 	tracker.check("export", {}, {"status": "pending", "job_id": "a"})
 	reply = tracker.check("export", {}, {"error": "disk full"})
-	check("pending to terminal failure starts a fresh error streak", tracker._consecutive_error_count == 1 and not reply.has("warning"))
+	check("pending to terminal failure starts a fresh error streak", tracker._streaks["export"].consecutive_error_count == 1 and not reply.has("warning"))
 	tracker = Tracker.new()
 	for i in range(5):
 		reply = tracker.check("unrelated", {}, {"ok": false, "error": {"kind": "running"}})
@@ -62,7 +62,7 @@ func _init() -> void:
 	reply = tracker.check("panel_await", {"editor_name": "shape"},
 		{"success": true, "timed_out": false, "evaluation_status": "ok"})
 	check("an expired wait resumed to completion carries no loop warning",
-		clean_await and not reply.has("warning") and tracker._consecutive_error_count == 0)
+		clean_await and not reply.has("warning") and tracker._streaks["panel_await"].consecutive_error_count == 0)
 	# Suppression is opt-in: the result must say BOTH that its wait expired and
 	# that the work is unfinished.
 	tracker = Tracker.new()
@@ -102,5 +102,17 @@ func _init() -> void:
 	tracker.check("panel_await", {}, {"success": true, "timed_out": true, "evaluation_status": "pending"})
 	reply = tracker.check("alpha", {"a": 2}, {"error": "boom"})
 	check("a pending reply elsewhere leaves another tool's error streak intact", reply.has("retry_hint"))
+	# Interleaving another tool neither resets nor advances this tool's streak.
+	for other_result in [{"status": "pending", "job_id": "other"}, {"ok": true}, {"error": "other failure"}]:
+		tracker = Tracker.new()
+		for i in range(5):
+			tracker.check("beta", {}, other_result.duplicate(true))
+			reply = tracker.check("alpha", {}, {"error": "boom"})
+			if i == 2:
+				check("third alpha failure warns despite interleaving", str(reply.get("warning", "")).begins_with("STOP:"))
+		check("fifth alpha failure blocks despite interleaving", reply.get("blocked", false))
+		tracker.check("alpha", {}, {"status": "pending", "job_id": "alpha-job"})
+		reply = tracker.check("alpha", {}, {"error": "boom"})
+		check("alpha continuation resets only alpha's counters", not reply.has("warning") and not reply.has("retry_hint"))
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])
 	quit(1 if failed else 0)

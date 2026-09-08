@@ -6,24 +6,26 @@ extends RefCounted
 ## host never learns which tool or which field is which.
 const NONTERMINAL_STATUSES: Array[String] = ["pending", "running"]
 
-## Duplicate call detection
-var _last_call_hash: String = ""
-var _consecutive_count: int = 0
-var _consecutive_error_count: int = 0
+## Independent streaks prevent a continuation or success on another tool
+## from erasing repeated failures. All counters have the same lifetime.
+class ToolStreak extends RefCounted:
+	var last_call_hash := ""
+	var consecutive_count := 0
+	var consecutive_error_count := 0
+	var error_hash := 0
+	var error_count := 0
 
-## Error-loop detection: tracks last error hash per tool name
-## Format: { tool_name: { "error_hash": int, "count": int } }
-var _error_tracker: Dictionary = {}
+var _streaks: Dictionary[String, ToolStreak] = {}
 
 ## Check for duplicate calls and inject warning if detected
 func check(tool_name: String, arguments: Dictionary, result: Dictionary) -> Dictionary:
 	# Pending is a nonterminal protocol result, not an unsuccessful attempt.
 	if _is_pending(tool_name, result):
-		_last_call_hash = ""
-		_consecutive_count = 0
-		_consecutive_error_count = 0
-		_error_tracker.erase(tool_name)
+		_streaks.erase(tool_name)
 		return result
+	if not _streaks.has(tool_name):
+		_streaks[tool_name] = ToolStreak.new()
+	var streak: ToolStreak = _streaks[tool_name]
 
 	# Translate nested cobrowser errors into top-level errors with prescriptive messages.
 	# Cobrowser wraps errors as {"success": true, "result": {"error": "...", "success": false}}.
@@ -42,69 +44,53 @@ func check(tool_name: String, arguments: Dictionary, result: Dictionary) -> Dict
 				result["error"] = inner_error
 
 	var call_hash: String = (tool_name + JSON.stringify(arguments)).sha256_text()
-	var same_call := call_hash == _last_call_hash
+	var same_call := call_hash == streak.last_call_hash
 	if same_call:
-		_consecutive_count += 1
-		if _consecutive_count >= 3:
-			result["warning"] = "This tool has been called %d times with identical arguments. You are likely stuck in a loop. Stop and reassess your plan." % (_consecutive_count + 1)
-		elif _consecutive_count >= 1:
+		streak.consecutive_count += 1
+		if streak.consecutive_count >= 3:
+			result["warning"] = "This tool has been called %d times with identical arguments. You are likely stuck in a loop. Stop and reassess your plan." % (streak.consecutive_count + 1)
+		elif streak.consecutive_count >= 1:
 			result["warning"] = "Identical call repeated. Consider advancing to the next step in your plan."
 	else:
-		_consecutive_count = 0
-	_last_call_hash = call_hash
+		streak.consecutive_count = 0
+	streak.last_call_hash = call_hash
 
 	# Track consecutive errors on repeated calls (now sees cobrowser errors too)
 	var payload := _payload(result)
 	var is_error: bool = _is_error(result) or _is_error(payload)
 	if is_error:
-		_consecutive_error_count = _consecutive_error_count + 1 if same_call else 1
+		streak.consecutive_error_count = streak.consecutive_error_count + 1 if same_call else 1
 	else:
-		_consecutive_error_count = 0
+		streak.consecutive_error_count = 0
+
+	# Hash the actual error before escalation adds a synthetic message.
+	_check_error_loop(streak, result, is_error)
 
 	# Escalate based on consecutive error count
-	if _consecutive_error_count >= 5:
-		result["error"] = "BLOCKED: This tool has been called %d times with identical arguments and failed every time. This approach does not work. Try a completely different tool or approach, or report that you are blocked." % _consecutive_error_count
+	if streak.consecutive_error_count >= 5:
+		result["error"] = "BLOCKED: This tool has been called %d times with identical arguments and failed every time. This approach does not work. Try a completely different tool or approach, or report that you are blocked." % streak.consecutive_error_count
 		result["blocked"] = true
-	elif _consecutive_error_count >= 3:
-		result["warning"] = "STOP: You have called this tool %d times with identical arguments and it failed each time. Do NOT retry. Try a different approach immediately." % _consecutive_error_count
+	elif streak.consecutive_error_count >= 3:
+		result["warning"] = "STOP: You have called this tool %d times with identical arguments and it failed each time. Do NOT retry. Try a different approach immediately." % streak.consecutive_error_count
 
-	# Error-loop detection: same tool, same error message, different (or same) arguments
-	_check_error_loop(tool_name, result, is_error)
 
 	return result
 
 
 ## Detect when the same tool keeps returning the same error (regardless of arguments).
 ## Injects a "retry_hint" key to nudge the LLM toward a different approach.
-func _check_error_loop(tool_name: String, result: Dictionary, is_error: bool) -> void:
-	if is_error:
-		var error_msg: String = str(_payload(result).get("error", result.get("error", "unsuccessful result")))
-		var error_hash: int = error_msg.hash()
-
-		if _error_tracker.has(tool_name):
-			var entry: Dictionary = _error_tracker[tool_name]
-			if entry["error_hash"] == error_hash:
-				entry["count"] += 1
-				_error_tracker[tool_name] = entry
-				var count: int = entry["count"]
-				if count >= 3:
-					result["retry_hint"] = "STOP: This tool keeps failing. Review your available tools and choose a different approach entirely."
-				elif count >= 2:
-					result["retry_hint"] = "This tool has failed 2 times with the same error. Try a different tool or approach."
-			else:
-				# Different error — reset counter for this tool
-				_error_tracker[tool_name] = {"error_hash": error_hash, "count": 1}
-		else:
-			_error_tracker[tool_name] = {"error_hash": error_hash, "count": 1}
-	else:
-		# Tool succeeded — clear its error tracking entry
-		if _error_tracker.has(tool_name):
-			_error_tracker.erase(tool_name)
-		# Also clear entries for other tools when a different tool succeeds,
-		# since the agent has adapted and is no longer stuck.
-		for other_tool in _error_tracker.keys():
-			if other_tool != tool_name:
-				_error_tracker.erase(other_tool)
+func _check_error_loop(streak: ToolStreak, result: Dictionary, is_error: bool) -> void:
+	if not is_error:
+		streak.error_count = 0
+		return
+	var error_msg: String = str(_payload(result).get("error", result.get("error", "unsuccessful result")))
+	var error_hash := error_msg.hash()
+	streak.error_count = streak.error_count + 1 if streak.error_hash == error_hash else 1
+	streak.error_hash = error_hash
+	if streak.error_count >= 3:
+		result["retry_hint"] = "STOP: This tool keeps failing. Review your available tools and choose a different approach entirely."
+	elif streak.error_count >= 2:
+		result["retry_hint"] = "This tool has failed 2 times with the same error. Try a different tool or approach."
 
 
 ## Plugin handlers can wrap the operation result in successful transport envelopes.
