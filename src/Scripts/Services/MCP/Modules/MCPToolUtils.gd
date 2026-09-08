@@ -123,7 +123,10 @@ static func coerce_object(value, default: Dictionary = {}) -> Dictionary:
 ## and integers as floats. This function uses the tool's input_schema to fix these
 ## before forwarding to external MCP servers that expect correct types.
 static func coerce_args_to_schema(arguments: Dictionary, schema: Dictionary) -> Dictionary:
-	var properties: Dictionary = schema.get("properties", {})
+	# Tool discovery stores the Anthropic wrapper; direct callers also pass
+	# bare JSON Schema. Normalize once at this shared boundary.
+	var input_schema: Dictionary = schema.get("input_schema", schema)
+	var properties: Dictionary = input_schema.get("properties", {})
 	if properties.is_empty():
 		return arguments
 	for key in arguments.keys():
@@ -133,15 +136,24 @@ static func coerce_args_to_schema(arguments: Dictionary, schema: Dictionary) -> 
 		var value = arguments[key]
 		match declared_type:
 			"object":
-				arguments[key] = coerce_object(value)
+				if value is String:
+					var parsed = JSON.parse_string(value)
+					if parsed is Dictionary:
+						arguments[key] = parsed
 			"integer":
-				if not (value is int):
-					arguments[key] = coerce_int(value)
+				# Leave invalid values for the tool's validator; never silently
+				# turn a fractional dimension or malformed input into zero.
+				if value is float and is_finite(value) and float(int(value)) == value:
+					arguments[key] = int(value)
+				elif value is String and value.is_valid_int():
+					arguments[key] = value.to_int()
 			"number":
-				if not (value is float) and not (value is int):
-					arguments[key] = coerce_float(value)
+				if value is String and value.is_valid_float():
+					arguments[key] = value.to_float()
 			"boolean":
-				if not (value is bool):
+				if value is String and value.to_lower() in ["true", "false"]:
+					arguments[key] = coerce_bool(value)
+				elif (value is int or value is float) and value in [0, 1]:
 					arguments[key] = coerce_bool(value)
 	return arguments
 
