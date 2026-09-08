@@ -259,7 +259,8 @@ func register_tools() -> void:
 			"type": "object",
 			"properties": {
 				"editor_name": {"type": "string", "description": "Text or CAD render tab title."},
-				"part": {"type": "string", "description": "Optional solid binding, such as door."},
+				"part": {"type": "string", "description": "Optional evaluated object selector; alias of selection."},
+				"selection": {"type": "string"}, "configuration": {"type": "string"},
 				"format": {"type": "string", "enum": ["stl", "step", "stp", "3mf", "glb"]},
 				"path": {"type": "string", "description": "Absolute or home-relative output path."},
 				"job_id": {"type": "string", "description": "Collect an existing export without an editor or source."},

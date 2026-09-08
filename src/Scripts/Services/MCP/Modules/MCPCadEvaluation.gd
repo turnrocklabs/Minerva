@@ -84,4 +84,6 @@ static func export_document_args(args: Dictionary) -> Dictionary:
 	return {"source": source, "source_version": version,
 		"document_id": document.get("document_id", ""),
 		"evaluation_provenance": document.get("provenance", {}), "part": args.get("part", ""),
+		"selection": args.get("selection", args.get("part", document.get("model", {}).get("selection", ""))),
+		"configuration": args.get("configuration", document.get("model", {}).get("configuration", "")),
 		"format": fmt, "path": path}
