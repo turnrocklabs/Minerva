@@ -82,6 +82,14 @@ func _init() -> void:
 		reply = tracker.check("panel_await", {}, {"success": true, "timed_out": true, "status": "pending"})
 		clean_plain = clean_plain and not reply.has("warning")
 	check("an expired wait with a plain pending status needs no handle", clean_plain)
+	tracker = Tracker.new()
+	for i in range(2):
+		reply = tracker.check("panel_await", {}, {"timed_out": true, "status": "completed", "item_status": "pending"})
+	check("terminal operation status takes precedence over domain status", reply.has("warning"))
+	tracker = Tracker.new()
+	for i in range(2):
+		reply = tracker.check("panel_await", {}, {"evaluation_status": "pending"})
+	check("domain status alone is not a continuation", reply.has("warning"))
 	# A status outside the non-terminal set is accounted for as before, handle
 	# or no handle.
 	tracker = Tracker.new()

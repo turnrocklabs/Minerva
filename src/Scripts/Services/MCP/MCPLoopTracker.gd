@@ -152,6 +152,9 @@ static func _is_pending(tool_name: String, result: Dictionary) -> bool:
 ## value. The suffix form lets a result name the thing that is still running
 ## without the host knowing what that thing is.
 static func _declares_nonterminal_status(payload: Dictionary) -> bool:
+	# An explicit operation status outranks domain-specific status fields.
+	if payload.has("status"):
+		return payload["status"] is String and NONTERMINAL_STATUSES.has(payload["status"])
 	for key in payload.keys():
 		if not (key is String):
 			continue
