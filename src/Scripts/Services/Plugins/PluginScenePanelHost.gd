@@ -234,6 +234,26 @@ static func instantiate_into(
 # Save / load / unload dispatch helpers (design §5.1, §7.5)
 # ---------------------------------------------------------------------------
 
+## The file lane uses canonical source when paired with a text document.
+## Project/note snapshots still use invoke_save and retain the panel's rich state.
+static func save_file(editor: Object, path: String, broker: Object) -> Dictionary:
+	var buffer := DocumentIdentity.buffer_for(editor, broker)
+	if buffer != null:
+		return DocumentRegistry.get_instance().save_buffer_as(buffer, path)
+	var payload: Variant = invoke_save(editor.plugin_scene_root, {})
+	if not payload is Dictionary:
+		return {"ok": false, "error": "Plugin panel must return a Dictionary save payload."}
+	if payload.get("_bytes") is PackedByteArray:
+		var output := FileAccess.open(path, FileAccess.WRITE)
+		if output == null:
+			return {"ok": false, "error": error_string(FileAccess.get_open_error())}
+		output.store_buffer(payload._bytes)
+		output.flush()
+		var error := output.get_error()
+		return {"ok": error == OK, "error": error_string(error)}
+	return DiskAccess.write(path, JSON.stringify(payload, "\t"))
+
+
 ## Call `_on_panel_save_request()` on `panel_root` if the method exists.
 ##
 ## Returns the Dictionary returned by the hook on success.

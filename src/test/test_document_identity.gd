@@ -11,6 +11,9 @@ class View extends Control:
 class IdentityPanel extends Control:
 	signal request(channel: String, payload: Dictionary, reply_id: String)
 	var last_document_id := ""
+	var snapshot := {"source": "stale panel source", "build_mode": "manual"}
+	func _on_panel_save_request() -> Dictionary:
+		return snapshot
 	func receive(_channel: String, payload: Dictionary) -> void:
 		last_document_id = str(payload.get("document_id", ""))
 	func handle_tool(_tool: String, args: Dictionary) -> Dictionary:
@@ -105,6 +108,8 @@ func _panel_route() -> void:
 	host.plugin_scene_panel_broker = broker
 	var panel := IdentityPanel.new()
 	root.add_child(panel)
+	render_view.plugin_scene_root = panel
+	render_view.plugin_save_mode = "host_owned"
 	broker.register_panel(panel, "identity", "identity-panel", PackedStringArray(), "model", render_view)
 	broker.attach_buffer_to_panel("identity", "identity-panel", buffer)
 	check("buffer attachment carries canonical document identity", panel.last_document_id == buffer.document_id)
@@ -126,7 +131,56 @@ func _panel_route() -> void:
 	check("editor listing exposes paired document and distinct view handles",
 		listed.editors[0].document_id == listed.editors[1].document_id
 		and listed.editors[0].view_id != listed.editors[1].view_id)
+	var panel_host = load("res://Scripts/Services/Plugins/PluginScenePanelHost.gd")
+	var documents := DocumentRegistry.get_instance()
+	var destination := ProjectSettings.globalize_path("user://paired-save-test.mcad")
+	var next_destination := ProjectSettings.globalize_path("user://paired-save-as-test.mcad")
+	var source := "part = cube(12)\npart\n"
+	buffer.apply_edit(source)
+	var identity := buffer.document_id
+	var version := buffer.version
+	var saved: Dictionary = await doc.handle("minerva_doc_save", {
+		"view_id": DocumentIdentity.handle(render_view, "view"), "path": destination})
+	check("render Save As writes canonical DSL rather than panel JSON",
+		saved.get("success", false) and FileAccess.get_file_as_string(destination) == source)
+	check("render Save As preserves shared buffer identity and source revision",
+		documents.get_buffer_by_id(identity) == buffer and buffer.version == version
+		and text_view.get_document_buffer() == buffer and broker.get_attached_buffer("identity", "identity-panel") == buffer)
+	check("render save updates both paired wrappers and the text saved snapshot",
+		text_view.file == destination and render_view.file == destination
+		and text_view.code_edit.saved_content == source and not buffer.dirty)
+	check("project snapshots retain rich plugin state", panel_host.invoke_save(panel, {}) == panel.snapshot)
+	var edited_source := source.replace("12", "14")
+	buffer.apply_edit(edited_source)
+	check("text Save As succeeds through real editor", await text_view.save_file_to_disc(next_destination))
+	check("text Save As retains the pair and updates both paths",
+		buffer.file_path == next_destination and render_view.file == next_destination
+		and text_view.file == next_destination and buffer.document_id == identity
+		and FileAccess.get_file_as_string(next_destination) == edited_source
+		and FileAccess.get_file_as_string(destination) == source)
+	var occupied: DocumentBuffer = documents.get_or_create_buffer(destination).buffer
+	var rejected := documents.save_buffer_as(buffer, destination)
+	check("Save As refuses another live document without changing either buffer",
+		not rejected.ok and buffer.file_path == next_destination and occupied.text == source)
+	var failed_save := documents.save_buffer_as(buffer, next_destination + "/child.mcad")
+	check("failed disk write restores the original shared binding",
+		not failed_save.ok and buffer.file_path == next_destination and text_view.file == next_destination)
+	documents.dispose_buffer(destination)
 	broker.unregister_panel("identity", "identity-panel")
+	text_view._detach_document_buffer()
+	var reopened: DocumentBuffer = documents.get_or_create_buffer(next_destination).buffer
+	check("closing and reopening reads plain DSL with a new live identity",
+		reopened.text == edited_source and reopened.document_id != identity)
+	documents.dispose_buffer(next_destination)
+	# Standalone plugins keep their existing JSON and byte-exact file contract.
+	check("unpaired plugin saves JSON", panel_host.save_file(render_view, destination, broker).ok
+		and JSON.parse_string(FileAccess.get_file_as_string(destination)) == panel.snapshot)
+	panel.snapshot = {"_bytes": PackedByteArray([0, 255, 13, 10])}
+	check("unpaired plugin saves raw bytes", panel_host.save_file(render_view, destination, broker).ok
+		and FileAccess.get_file_as_bytes(destination) == panel.snapshot._bytes)
+	DirAccess.remove_absolute(destination)
+	DirAccess.remove_absolute(next_destination)
+
 	text_view._detach_document_buffer()
 	host.editor_pane = old_pane
 	host.plugin_scene_panel_broker = old_broker

@@ -1153,6 +1153,7 @@ func _attach_document_buffer(path: String) -> void:
 	_document_buffer = r.buffer
 	_document_buffer.attach()
 	_document_buffer.text_changed.connect(_on_buffer_text_changed)
+	_document_buffer.saved.connect(_on_shared_buffer_saved)
 
 
 ## Detach from current buffer. If refcount reaches 0, dispose from the registry
@@ -1162,10 +1163,29 @@ func _detach_document_buffer() -> void:
 		return
 	if _document_buffer.text_changed.is_connected(_on_buffer_text_changed):
 		_document_buffer.text_changed.disconnect(_on_buffer_text_changed)
+	if _document_buffer.saved.is_connected(_on_shared_buffer_saved):
+		_document_buffer.saved.disconnect(_on_shared_buffer_saved)
 	var remaining := _document_buffer.detach()
 	if remaining == 0:
 		DocumentRegistry.get_instance().dispose_buffer(_document_buffer.file_path)
 	_document_buffer = null
+
+
+## Saves from either paired view update both wrappers without replacing text or history.
+func _on_shared_buffer_saved() -> void:
+	var buffer := DocumentIdentity.buffer_for(self, SingletonObject.plugin_scene_panel_broker)
+	if buffer == null:
+		return
+	file = buffer.file_path
+	tab_title = file.get_file()
+	_file_saved = true
+	file_saved_in_disc = true
+	if type == Type.TEXT and code_edit != null:
+		code_edit.tag_saved_version()
+		code_edit.saved_content = buffer.text
+	elif type == Type.PLUGIN_SCENE:
+		_plugin_scene_modified = false
+	SingletonObject.UpdateUnsavedTabIcon.emit()
 
 
 ## Set code_edit.text from a buffer-side string, with reentrancy guarded so the
@@ -1597,34 +1617,18 @@ func _on_file_dialog_file_selected(path: String):
 	save_file_to_disc(path)
 
 
-func save_file_to_disc(path: String) -> void:
-	file = path
+func save_file_to_disc(path: String) -> bool:
 	match type:
 		Type.TEXT:
-			# Buffer-canonical: route saves through DocumentRegistry. Save As
-			# (path != current buffer's file_path) re-attaches to a buffer for
-			# the new path, mirrors current visible text into it, then flushes.
-			if _document_buffer == null or _document_buffer.file_path != path:
+			if _document_buffer == null:
 				_attach_document_buffer(path)
-			if _document_buffer != null:
-				# Mirror current visible text into the buffer in case the editor
-				# diverged from the buffer (untitled save, Save As). apply_edit
-				# is a no-op when equal.
-				_document_buffer.apply_edit(code_edit.text)
-				var save_r: Dictionary = _document_buffer.save_to_disk()
-				if not save_r.ok:
-					push_warning(save_r.error)
-					SingletonObject.ErrorDisplay("Couldn't save file", save_r.error)
-					return
-			else:
-				# Registry refused the path; fall back to direct write so save still works.
-				var save_file = FileAccess.open(path, FileAccess.WRITE)
-				if save_file == null:
-					var error: = error_string(FileAccess.get_open_error())
-					push_warning(error)
-					SingletonObject.ErrorDisplay("Couldn't save file", error)
-					return
-				save_file.store_string(code_edit.text)
+			if _document_buffer == null:
+				return false
+			_document_buffer.apply_edit(code_edit.text)
+			var save_r := DocumentRegistry.get_instance().save_buffer_as(_document_buffer, path)
+			if not save_r.ok:
+				SingletonObject.ErrorDisplay("Couldn't save file", save_r.error)
+				return false
 			code_edit.tag_saved_version()
 			code_edit.saved_content = code_edit.text
 			_save_annotations_sidecar(path)
@@ -1645,7 +1649,7 @@ func save_file_to_disc(path: String) -> void:
 				if err != OK:
 					push_warning("Failed to save image: " + error_string(err))
 					SingletonObject.ErrorDisplay("Save Failed", "Couldn't save image to " + path)
-					return
+					return false
 				
 				dialog.filters = original_filters  # Restore original filters
 				
@@ -1659,14 +1663,14 @@ func save_file_to_disc(path: String) -> void:
 			push_warning("Video saving not implemented")
 		Type.LOGS:
 			if logs_viewer == null:
-				return
+				return false
 			var serialized_text: String = logs_viewer.export_text()
 			var save_file = FileAccess.open(path, FileAccess.WRITE)
 			if save_file == null:
 				var error_log := error_string(FileAccess.get_open_error())
 				push_warning(error_log)
 				SingletonObject.ErrorDisplay("Couldn't save file", error_log)
-				return
+				return false
 			save_file.store_string(serialized_text)
 			logs_viewer.mark_saved_snapshot()
 
@@ -1679,7 +1683,7 @@ func save_file_to_disc(path: String) -> void:
 					var error := error_string(FileAccess.get_open_error())
 					push_warning(error)
 					SingletonObject.ErrorDisplay("Couldn't save Kanban file", error)
-					return
+					return false
 				save_file.store_string(json_string)
 
 		Type.SPREADSHEET:
@@ -1691,7 +1695,7 @@ func save_file_to_disc(path: String) -> void:
 					var error := error_string(FileAccess.get_open_error())
 					push_warning(error)
 					SingletonObject.ErrorDisplay("Couldn't save spreadsheet file", error)
-					return
+					return false
 				save_file.store_string(json_string)
 
 		Type.WEBVIEW:
@@ -1701,7 +1705,7 @@ func save_file_to_disc(path: String) -> void:
 					var error := error_string(FileAccess.get_open_error())
 					push_warning(error)
 					SingletonObject.ErrorDisplay("Couldn't save HTML file", error)
-					return
+					return false
 				save_file.store_string(webview_editor.get_html())
 				webview_editor.mark_saved()
 
@@ -1710,7 +1714,7 @@ func save_file_to_disc(path: String) -> void:
 
 		Type.PLUGIN_SCENE:
 			if plugin_save_mode == "none":
-				return
+				return false
 			if plugin_save_mode == "plugin_owned":
 				# TODO: dispatch capability:editor.request_save when capability
 				# framework is wired (task 019dc125834f72e987ffdaf88fc152a7).
@@ -1719,47 +1723,15 @@ func save_file_to_disc(path: String) -> void:
 					"Plugin '%s' panel '%s' — file NOT written by Minerva.") %
 					[plugin_id, panel_name]
 				)
-				return
-			# host_owned: call _on_panel_save_request, serialise, write.
-			var ctx: Dictionary = {}
-			var payload: Variant = PluginScenePanelHost.invoke_save(plugin_scene_root, ctx)
-			if payload == null:
-				SingletonObject.ErrorDisplay(
-					"Save failed",
-					("Plugin '%s' panel '%s' did not return a save payload.") %
-					[plugin_id, panel_name]
-				)
-				return
-			if not payload is Dictionary:
-				SingletonObject.ErrorDisplay(
-					"Save failed",
-					("Plugin '%s' panel '%s' _on_panel_save_request must return a Dictionary.") %
-					[plugin_id, panel_name]
-				)
-				return
-			var payload_dict: Dictionary = payload as Dictionary
-			# If the dict contains a "_bytes" key with PackedByteArray, write raw bytes.
-			if payload_dict.has("_bytes") and payload_dict["_bytes"] is PackedByteArray:
-				var raw_bytes: PackedByteArray = payload_dict["_bytes"]
-				var f_raw := FileAccess.open(path, FileAccess.WRITE)
-				if f_raw == null:
-					var err_raw := error_string(FileAccess.get_open_error())
-					push_warning(err_raw)
-					SingletonObject.ErrorDisplay("Couldn't save plugin file", err_raw)
-					return
-				f_raw.store_buffer(raw_bytes)
-			else:
-				var json_str: String = JSON.stringify(payload_dict, "\t")
-				var f_json := FileAccess.open(path, FileAccess.WRITE)
-				if f_json == null:
-					var err_json := error_string(FileAccess.get_open_error())
-					push_warning(err_json)
-					SingletonObject.ErrorDisplay("Couldn't save plugin file", err_json)
-					return
-				f_json.store_string(json_str)
+				return false
+			var save_r := PluginScenePanelHost.save_file(self, path, SingletonObject.plugin_scene_panel_broker)
+			if not save_r.ok:
+				SingletonObject.ErrorDisplay("Couldn't save plugin file", save_r.error)
+				return false
 			_plugin_scene_modified = false
 
-	# Update editor state
+	# Update editor state only after a successful write.
+	file = path
 	_file_saved = true
 	file_saved_in_disc = true
 	SingletonObject.UpdateLastSavePath.emit(path.get_base_dir())
@@ -1779,6 +1751,7 @@ func save_file_to_disc(path: String) -> void:
 	# Notify changes
 	SingletonObject.UpdateUnsavedTabIcon.emit()
 	content_changed.emit()
+	return true
 #region bottom of the pane buttons
 
 func _on_save_button_pressed():

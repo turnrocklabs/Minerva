@@ -101,14 +101,12 @@ func register_tools() -> void:
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
-	# _doc_write awaits PluginScenePanelHost.invoke_apply_sync (paired_dsl
-	# plugin scenes) so it must be called with `await`. The other ops are
-	# synchronous; awaiting them is cheap and keeps the match arm uniform.
+	# Writes and editor saves may await plugin or graphics work.
 	match tool_name:
 		"minerva_doc_read": return _doc_read(arguments)
 		"minerva_doc_write": return await _doc_write(arguments)
 		"minerva_doc_edit": return _doc_edit(arguments)
-		"minerva_doc_save": return _doc_save(arguments)
+		"minerva_doc_save": return await _doc_save(arguments)
 		"minerva_doc_save_all": return _doc_save_all(arguments)
 		"minerva_journal_mark": return _journal_mark(arguments)
 		"minerva_journal_changes": return _journal_changes(arguments)
@@ -653,7 +651,8 @@ func _doc_save(args: Dictionary) -> Dictionary:
 		if ed_file.is_empty() and not have_path:
 			return _err("editor '%s' is anonymous; pass `path` to bind via Save-As" % editor_name)
 		var save_target_p := path_arg if have_path else ed_file
-		editor.save_file_to_disc(save_target_p)
+		if not await editor.save_file_to_disc(save_target_p):
+			return _err("save_failed: %s" % save_target_p)
 		return _ok({"path": save_target_p, "editor_name": str(editor.tab_title)}.merged(DocumentIdentity.describe(editor, SingletonObject.plugin_scene_panel_broker)))
 
 	# Anonymous editor: path is required to bind it (Save-As).
@@ -676,7 +675,8 @@ func _doc_save(args: Dictionary) -> Dictionary:
 	# Editor.save_file_to_disc handles binding `file`, attaching the buffer,
 	# mirroring code_edit.text into it, persisting, AND renaming tab_title.
 	var save_target := path_arg if have_path else ed_file
-	editor.save_file_to_disc(save_target)
+	if not await editor.save_file_to_disc(save_target):
+		return _err("save_failed: %s" % save_target)
 	# tab_title may have changed; return the post-save value.
 	return _ok({"path": save_target, "editor_name": str(editor.tab_title)}.merged(DocumentIdentity.describe(editor, SingletonObject.plugin_scene_panel_broker)))
 

@@ -187,6 +187,19 @@ func rebind_buffer(old_path: String, new_path: String) -> Dictionary:
 	return {"ok": true, "buffer": buf}
 
 
+## Save As preserves the shared buffer and refuses another live document's path.
+## Failed writes restore the old binding without publishing a saved event.
+func save_buffer_as(buffer: DocumentBuffer, path: String) -> Dictionary:
+	var old_path := buffer.file_path
+	var rebound := rebind_buffer(old_path, path)
+	if not rebound.ok:
+		return rebound
+	var result := buffer.save_to_disk()
+	if not result.ok and buffer.file_path != old_path:
+		rebind_buffer(buffer.file_path, old_path)
+	return result
+
+
 ## Resolve a live handle without loading disk or guessing a replacement.
 func get_buffer_by_id(document_id: String) -> DocumentBuffer:
 	return _buffers_by_id.get(document_id)

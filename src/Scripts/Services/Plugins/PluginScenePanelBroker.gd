@@ -1184,6 +1184,11 @@ func attach_buffer_to_panel(
 	buffer.attach()
 	entry.attached_buffer = buffer
 	entry._buffer_text_changed_handler = handler
+	var editor: Object = entry.editor_ref.get_ref() if entry.editor_ref != null else null
+	if editor != null and editor.has_method("_on_shared_buffer_saved"):
+		entry._buffer_saved_handler = editor._on_shared_buffer_saved
+		buffer.saved.connect(entry._buffer_saved_handler)
+
 
 	# Push the initial attach_buffer notification with the current buffer state.
 	# Goes through push_to_panel so audit + alive-check are consistent with
@@ -1247,6 +1252,9 @@ func _disconnect_buffer(entry: _PanelEntry) -> void:
 	if entry._buffer_text_changed_handler.is_valid():
 		if entry.attached_buffer.text_changed.is_connected(entry._buffer_text_changed_handler):
 			entry.attached_buffer.text_changed.disconnect(entry._buffer_text_changed_handler)
+	if entry._buffer_saved_handler.is_valid() and entry.attached_buffer.saved.is_connected(entry._buffer_saved_handler):
+		entry.attached_buffer.saved.disconnect(entry._buffer_saved_handler)
+	entry._buffer_saved_handler = Callable()
 	# Balance the attach() bump from attach_buffer_to_panel.
 	entry.attached_buffer.detach()
 	entry.attached_buffer = null
@@ -2255,6 +2263,7 @@ class _PanelEntry extends RefCounted:
 	## Callable connected to attached_buffer.text_changed; held so detach can
 	## disconnect the exact same handle.
 	var _buffer_text_changed_handler: Callable = Callable()
+	var _buffer_saved_handler: Callable = Callable()
 	## WeakRef to the owning Editor wrapper, or null when the caller did not
 	## supply one. Read (never written) to answer "which document is this
 	## panel showing" at lookup time, so a tab rename cannot go stale.
