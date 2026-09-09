@@ -23,6 +23,8 @@ class_name FileWatcherService extends RefCounted
 ## - On first appearance of a non-existent watched path: emitted with current mtime/size.
 ## - On disappearance: NOT emitted (silent re-baseline to {0,0}).
 signal file_changed(path: String, mtime: int, size: int)
+## Separate from file_changed so existing reload consumers retain their contract.
+signal file_removed(path: String)
 
 # ── Singleton ──────────────────────────────────────────────────────────────
 
@@ -167,9 +169,10 @@ func _check_one(abs_path: String) -> bool:
 	entry.mtime = snap.mtime
 	entry.size = snap.size
 
-	# Suppress emission for disappearance (mtime drops to 0). Watchers care
-	# about replacement / external edits, not deletion (out of T7 DoD scope).
+	# Removal is a separate event; legacy file_changed consumers never see
+	# an unreadable file as replacement content.
 	if snap.mtime == 0:
+		file_removed.emit(abs_path)
 		return false
 
 	file_changed.emit(abs_path, snap.mtime, snap.size)

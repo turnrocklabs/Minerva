@@ -10,6 +10,7 @@ var _temp_dir: String = "/tmp/file_watcher_service_test"
 
 
 func _init() -> void:
+	await process_frame
 	print("=== FileWatcherService Tests ===\n")
 
 	_setup()
@@ -51,6 +52,8 @@ func _setup() -> void:
 
 
 func _teardown() -> void:
+	# Release the final service and its test callbacks before SceneTree teardown.
+	FWS.reset_instance()
 	var d := DirAccess.open(_temp_dir)
 	if d == null:
 		return
@@ -237,13 +240,16 @@ func test_disappearance_does_not_emit() -> void:
 	_write(path, "exists")
 	fw.watch(path, "owner_a")
 
-	var fired := {"count": 0}
+	var fired := {"count": 0, "removed": 0}
+	fw.file_removed.connect(func(_p): fired.removed += 1)
 	fw.file_changed.connect(func(_p, _m, _s): fired.count += 1)
 
 	DirAccess.remove_absolute(path)
 	fw.tick()
-	check("disappearance does not emit (out of DoD scope)", fired.count == 0)
+	check("disappearance does not emit file_changed", fired.count == 0)
 	check("watch survives disappearance", fw.is_watched(path))
+	fw.tick()
+	check("removal is emitted once on its separate signal", fired.removed == 1)
 
 	# Re-baseline absorbs the deletion. Re-create with new content.
 	_write(path, "back")

@@ -19,6 +19,7 @@ var _temp_dir: String = "/tmp/host_fs_broker_test"
 func _init() -> void:
 	print("=== host.fs.* Broker Tests ===\n")
 
+	await process_frame
 	_setup()
 
 	test_watch_success_returns_path()
@@ -29,6 +30,7 @@ func _init() -> void:
 	test_unregister_panel_auto_unwatches()
 	test_two_panels_one_path_both_receive()
 	test_changed_payload_carries_path_mtime_size()
+	test_deletion_is_opt_in()
 
 	_teardown()
 
@@ -135,7 +137,7 @@ func _fresh_broker(plugin_id: String, panels: Array) -> Array:
 	mgr._db = db
 
 	var audit := StubAuditLog.new()
-	var broker := PluginScenePanelBroker.new(mgr, null, null, audit as PluginAuditLog)
+	var broker = load("res://Scripts/Services/Plugins/PluginScenePanelBroker.gd").new(mgr, null, null, audit as PluginAuditLog)
 	return [broker, audit]
 
 
@@ -151,7 +153,7 @@ func _fresh_broker(plugin_id: String, panels: Array) -> Array:
 func test_watch_success_returns_path() -> void:
 	print("test_watch_success_returns_path")
 	var parts := _fresh_broker("p1", ["panel1"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 
 	var panel_root := StubSceneRoot.new()
 	get_root().add_child(panel_root)
@@ -170,7 +172,7 @@ func test_watch_success_returns_path() -> void:
 func test_watch_empty_path_returns_error() -> void:
 	print("test_watch_empty_path_returns_error")
 	var parts := _fresh_broker("p1", ["panel1"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 	var panel_root := StubSceneRoot.new()
 	get_root().add_child(panel_root)
 	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
@@ -188,7 +190,7 @@ func test_watch_empty_path_returns_error() -> void:
 func test_unwatch_removes_subscription() -> void:
 	print("test_unwatch_removes_subscription")
 	var parts := _fresh_broker("p1", ["panel1"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 	var panel_root := StubSceneRoot.new()
 	get_root().add_child(panel_root)
 	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
@@ -207,7 +209,7 @@ func test_unwatch_removes_subscription() -> void:
 func test_changed_pushed_to_subscribed_panel() -> void:
 	print("test_changed_pushed_to_subscribed_panel")
 	var parts := _fresh_broker("p1", ["panel1"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 	var panel_root := StubSceneRoot.new()
 	get_root().add_child(panel_root)
 	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
@@ -237,7 +239,7 @@ func test_changed_pushed_to_subscribed_panel() -> void:
 func test_changed_not_pushed_after_unwatch() -> void:
 	print("test_changed_not_pushed_after_unwatch")
 	var parts := _fresh_broker("p1", ["panel1"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 	var panel_root := StubSceneRoot.new()
 	get_root().add_child(panel_root)
 	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
@@ -264,7 +266,7 @@ func test_changed_not_pushed_after_unwatch() -> void:
 func test_unregister_panel_auto_unwatches() -> void:
 	print("test_unregister_panel_auto_unwatches")
 	var parts := _fresh_broker("p1", ["panel1"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 	var panel_root := StubSceneRoot.new()
 	get_root().add_child(panel_root)
 	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
@@ -283,7 +285,7 @@ func test_unregister_panel_auto_unwatches() -> void:
 func test_two_panels_one_path_both_receive() -> void:
 	print("test_two_panels_one_path_both_receive")
 	var parts := _fresh_broker("p1", ["panel_a", "panel_b"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 	var root_a := StubSceneRoot.new()
 	var root_b := StubSceneRoot.new()
 	get_root().add_child(root_a)
@@ -323,7 +325,7 @@ func test_two_panels_one_path_both_receive() -> void:
 func test_changed_payload_carries_path_mtime_size() -> void:
 	print("test_changed_payload_carries_path_mtime_size")
 	var parts := _fresh_broker("p1", ["panel1"])
-	var broker: PluginScenePanelBroker = parts[0]
+	var broker: Object = parts[0]
 	var panel_root := StubSceneRoot.new()
 	get_root().add_child(panel_root)
 	broker.register_panel(panel_root, "p1", "panel1", PackedStringArray([]))
@@ -345,3 +347,37 @@ func test_changed_payload_carries_path_mtime_size() -> void:
 			check("payload mtime > 0", int(c.payload.get("mtime", 0)) > 0)
 
 	panel_root.queue_free()
+
+
+func test_deletion_is_opt_in() -> void:
+	var parts := _fresh_broker("p1", ["default", "dependencies"])
+	var broker: Object = parts[0]
+	var ordinary := StubSceneRoot.new()
+	var dependencies := StubSceneRoot.new()
+	root.add_child(ordinary)
+	root.add_child(dependencies)
+	broker.register_panel(ordinary, "p1", "default", PackedStringArray([]))
+	broker.register_panel(dependencies, "p1", "dependencies", PackedStringArray([]))
+	var path := _temp_path("deleted.txt")
+	_write(path, "geometry")
+	broker.handle_scene_request("default", "host.fs.watch", {"path": path}, "ra")
+	broker.handle_scene_request("dependencies", "host.fs.watch", {"path": path, "deletions": true}, "rb")
+	ordinary.received_calls.clear()
+	dependencies.received_calls.clear()
+	DirAccess.remove_absolute(path)
+	FWS.get_instance().tick()
+	FWS.get_instance().tick()
+	var old_events := ordinary.received_calls.filter(func(c): return c.channel == "host.fs.changed")
+	var events := dependencies.received_calls.filter(func(c): return c.channel == "host.fs.changed")
+	check("default subscription still suppresses deletion", old_events.is_empty())
+	check("opted-in panel receives one removal with exists=false", events.size() == 1
+		and not events[0].payload.exists and events[0].payload.path == path)
+	_write(path, "restored geometry")
+	FWS.get_instance().tick()
+	events = dependencies.received_calls.filter(func(c): return c.channel == "host.fs.changed")
+	check("recreation reports exists=true", events.size() == 2 and events[1].payload.exists)
+	broker.unregister_panel("p1", "default")
+	broker.unregister_panel("p1", "dependencies")
+	check("panel cleanup removes dependency subscriptions", not FWS.get_instance().is_watched(path))
+	ordinary.queue_free()
+	dependencies.queue_free()

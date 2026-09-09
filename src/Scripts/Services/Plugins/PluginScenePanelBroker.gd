@@ -1463,6 +1463,7 @@ func _ensure_fs_signal_connected() -> void:
 	if _fs_signal_connected:
 		return
 	FileWatcherService.get_instance().file_changed.connect(_on_fs_file_changed)
+	FileWatcherService.get_instance().file_removed.connect(_on_fs_file_removed)
 	_fs_signal_connected = true
 
 
@@ -1487,7 +1488,7 @@ func _handle_host_fs_watch(plugin_id: String, panel_name: String, payload: Dicti
 	# Update the reverse map so file_changed can find the panel.
 	if not _fs_path_subscribers.has(abs_path):
 		_fs_path_subscribers[abs_path] = {}
-	_fs_path_subscribers[abs_path][panel_name] = true
+	_fs_path_subscribers[abs_path][panel_name] = bool(payload.get("deletions", false))
 	return {"success": true, "path": abs_path}
 
 
@@ -1512,6 +1513,10 @@ func _handle_host_fs_unwatch(plugin_id: String, panel_name: String, payload: Dic
 	return {"success": true, "path": abs_path}
 
 
+func _on_fs_file_removed(path: String) -> void:
+	_on_fs_file_changed(path, 0, 0)
+
+
 func _on_fs_file_changed(path: String, mtime: int, size: int) -> void:
 	if not _fs_path_subscribers.has(path):
 		return
@@ -1519,9 +1524,11 @@ func _on_fs_file_changed(path: String, mtime: int, size: int) -> void:
 	# Iterate keys snapshot — receive() may dispatch into plugin code that
 	# unsubscribes synchronously, mutating the map.
 	var panel_names: Array = subscribers.keys()
-	var payload := {"path": path, "mtime": mtime, "size": size}
+	var payload := {"path": path, "mtime": mtime, "size": size, "exists": mtime != 0}
 	for panel_name_v in panel_names:
 		var panel_name: String = str(panel_name_v)
+		if mtime == 0 and not bool(subscribers.get(panel_name_v, false)):
+			continue
 		if not _panel_registry.has(panel_name):
 			continue
 		var entry: _PanelEntry = _panel_registry[panel_name]
