@@ -125,7 +125,8 @@ static func _is_pending(tool_name: String, result: Dictionary) -> bool:
 		return true
 	# A poll on an operation: a non-terminal status plus the handle that names
 	# the operation still being worked on.
-	if payload.get("status", "") not in NONTERMINAL_STATUSES:
+	var status: Variant = payload.get("status", "")
+	if not (status is String) or status not in NONTERMINAL_STATUSES:
 		return false
 	for key in ["job_id", "ticket"]:
 		var handle = payload.get(key)

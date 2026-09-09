@@ -14,6 +14,9 @@ func check(label: String, condition: bool) -> void:
 func _init() -> void:
 	var tracker = Tracker.new()
 	var reply: Dictionary
+	for status in [{"running": true}, ["pending"], null, 2]:
+		check("structured domain status is not an operation continuation",
+			not Tracker._is_pending("inspect", {"success": true, "status": status, "ticket": "domain-id"}))
 	for i in range(6):
 		reply = tracker.check("export", {"path": str(i)}, {"error": "bad path"})
 	check("distinct failing requests are not counted as identical", tracker._streaks["export"].consecutive_error_count == 1 and not reply.has("blocked") and not reply.has("warning"))
