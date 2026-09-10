@@ -1329,11 +1329,18 @@ func _summarization_prompt() -> String:
 ## brokered catalog. On a catalog miss (e.g. the model isn't discovered yet) it
 ## falls back to the ChatGPT factory with the bare model name. Credentials are
 ## NOT touched here — generate_content surfaces a clear "not connected" error.
+## A TurnRock selection gets NO fallback: its model names are Core action names,
+## and a miss means Core has not fetched that action, so the ChatGPT factory
+## would silently answer as a ChatGPT model wearing a Core action's name. The
+## caller turns null into a visible "could not construct the distill model".
 func _create_passthrough_distill_provider() -> BaseProvider:
 	var model_name := _distill_model()
-	var provider := SingletonObject.create_provider_for(_distill_provider_key(), model_name)
+	var provider_key := _distill_provider_key()
+	var provider := SingletonObject.create_provider_for(provider_key, model_name)
 	if provider != null:
 		return provider
+	if provider_key == SingletonObject.provider_key(SingletonObject.API_PROVIDER.TURNROCK):
+		return null
 	return ChatGPTProvider.create_from_config({
 		"model_name": model_name,
 		"display_name": "%s (distill)" % model_name,

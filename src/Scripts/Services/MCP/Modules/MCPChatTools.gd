@@ -600,18 +600,16 @@ func _resolve_provider_from_model_spec(spec: Dictionary) -> Dictionary:
 			if action_name.is_empty():
 				return {"error": "model_spec kind='core_action' requires action_name"}
 
-			var core_node = SingletonObject.get_tree().root.get_node_or_null("Core")
+			# Resolution goes through the one Core-action enumerator — the same
+			# one that produced this spec in the chooser or in list_models.
+			var core_node := CoreActionCatalog.core_node()
 			if not core_node:
 				return {"error": "Core autoload not found"}
 
-			for service in core_node.services:
-				if service.client_id != service_client_id:
-					continue
-				for action in service.actions:
-					if action.name == action_name:
-						return {"provider": CoreProvider.new(service, action)}
-
-			return {"error": "Core service/action not found: %s/%s" % [service_client_id, action_name]}
+			var provider_obj := CoreActionCatalog.create_provider(service_client_id, action_name, core_node)
+			if provider_obj == null:
+				return {"error": "Core service/action not found: %s/%s" % [service_client_id, action_name]}
+			return {"provider": provider_obj}
 
 		"dynamic":
 			var model_id: int = MCPToolUtils.coerce_int(spec.get("model_id", -1), -1)

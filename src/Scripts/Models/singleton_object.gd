@@ -2068,13 +2068,36 @@ func list_enabled_providers() -> Array:
 			continue
 		seen[provider] = true
 		out.append({"key": provider_key(provider), "display": get_provider_display_name(provider)})
+	# TurnRock/Core has no model manager to be found in the loop above, but it
+	# does have models — the live service actions. List it whenever it would
+	# answer list_enabled_models with something, so a consumer walking
+	# list_providers → list_models reaches Core the same way it reaches
+	# everything else.
+	if is_provider_enabled(API_PROVIDER.TURNROCK) and CoreActionCatalog.has_actions():
+		out.append({
+			"key": provider_key(API_PROVIDER.TURNROCK),
+			"display": get_provider_display_name(API_PROVIDER.TURNROCK),
+		})
 	return out
 
-## Brokered catalog: enabled models for a provider key. Returns [{model_name, display}].
+## Brokered catalog: enabled models for a provider key. Returns [{model_name, display}],
+## plus a `model_spec` field for providers whose models are not a static list.
 func list_enabled_models(key: String) -> Array:
 	var out: Array = []
 	var target := provider_from_key(key)
 	if target == -1 or not is_provider_enabled(target):
+		return out
+	# TurnRock/Core keeps no model manager: its models ARE the live service
+	# actions, so they come from the one Core-action enumerator and carry the
+	# model_spec a caller must send back to reach that action. Core absent (or
+	# its services not fetched yet) simply yields no models.
+	if target == API_PROVIDER.TURNROCK:
+		for entry in CoreActionCatalog.list_actions():
+			out.append({
+				"model_name": str(entry["action_name"]),
+				"display": str(entry["display"]),
+				"model_spec": entry["model_spec"],
+			})
 		return out
 	for id_base in _dynamic_provider_map:
 		var entry: Dictionary = _dynamic_provider_map[id_base]
@@ -2096,6 +2119,16 @@ func list_enabled_models(key: String) -> Array:
 func create_provider_for(key: String, model_name: String) -> BaseProvider:
 	var target := provider_from_key(key)
 	if target == -1:
+		return null
+	# TurnRock/Core has no manager to search: the name is a Core action name, so
+	# resolve it against the live actions. Action names can repeat across
+	# services — the spec, not the name, is the unique key — so the first match
+	# in Core.services order wins.
+	if target == API_PROVIDER.TURNROCK:
+		for entry in CoreActionCatalog.list_actions():
+			if str(entry["action_name"]).to_lower() == model_name.to_lower():
+				return CoreActionCatalog.create_provider(
+					str(entry["service_client_id"]), str(entry["action_name"]))
 		return null
 	for id_base in _dynamic_provider_map:
 		var entry: Dictionary = _dynamic_provider_map[id_base]

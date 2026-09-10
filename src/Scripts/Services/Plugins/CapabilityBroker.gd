@@ -569,6 +569,13 @@ func _handle_host_models_list_providers(_plugin_id: String, _args: Dictionary) -
 
 
 ## host.models.list_models — the enabled models for a provider key. Args: {provider}.
+## Each model is {model_name, display}. Providers whose models are not a static
+## list add `model_spec` — the structured dictionary host.providers.chat accepts
+## in place of the `model` string. Today that is the "turnrock" key, whose models
+## are Core's live service actions: model_name is the action name (which can
+## repeat across services), display is "<service> (<action>)", and model_spec is
+## {kind:"core_action", service_client_id, service_name, action_name}. Callers
+## that intend to chat should send model_spec back verbatim rather than the name.
 func _handle_host_models_list_models(plugin_id: String, args: Dictionary) -> Dictionary:
 	var key: String = str(args.get("provider", ""))
 	if key.is_empty():
@@ -2202,6 +2209,7 @@ const _CHAT_MAX_IMAGE_BYTES := 10 * 1024 * 1024  # 10 MB
 ##                Enables routing to Core-action providers and avoids brittle display-name
 ##                string matching. Three supported shapes (mirrors ProviderOptionButton spec):
 ##                  {kind: "core_action", service_client_id: String, service_name: String, action_name: String}
+##                  (host.models.list_models("turnrock") hands out exactly this dictionary per action)
 ##                  {kind: "dynamic",    model_id: int}   # model_id >= DYNAMIC_MODEL_ID_BASE (10000)
 ##                  {kind: "builtin",    model_id: int}   # model_id is a key in API_MODEL_PROVIDER_SCRIPTS
 ## Args (optional):
@@ -2285,27 +2293,15 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 						"host.providers.chat model_spec kind='core_action' requires 'action_name'")
 				var svc_client_id: String = str(spec["service_client_id"])
 				var action_name_req: String = str(spec["action_name"])
-				# Look up Core node — same pattern as AgentSpawner._create_core_provider()
-				var core_node = Engine.get_main_loop().root.get_node_or_null("Core") if Engine.get_main_loop() else null
-				if core_node == null:
-					return PluginErrors.model_not_available(plugin_id,
-						"core_action:%s/%s" % [svc_client_id, action_name_req])
-				var matched_service = null
-				var matched_action = null
-				for svc in core_node.services:
-					if svc.client_id == svc_client_id:
-						for act in svc.actions:
-							if act.name == action_name_req:
-								matched_service = svc
-								matched_action = act
-								break
-						if matched_action != null:
-							break
-				if matched_service == null or matched_action == null:
+				# The one Core-action enumerator does the lookup — the same one
+				# that handed this spec out through host.models.list_models. Core
+				# absent and action-not-found are one answer to the caller.
+				var matched: Dictionary = CoreActionCatalog.find_action(svc_client_id, action_name_req)
+				if matched.is_empty():
 					return PluginErrors.model_not_available(plugin_id,
 						"core_action:%s/%s" % [svc_client_id, action_name_req])
 				# Construct CoreProvider directly — resolved_model_id stays -1 (no script_map entry)
-				provider = _CoreProvider.new(matched_service, matched_action)
+				provider = _CoreProvider.new(matched["service"], matched["action"])
 				model_name_req = str(provider.model_name) if "model_name" in provider else (
 					"%s (%s)" % [svc_client_id, action_name_req])
 				resolved_provider_enum = int(so.get("API_PROVIDER").get("TURNROCK", -1)) if "API_PROVIDER" in so else -1

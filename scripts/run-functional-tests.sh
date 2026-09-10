@@ -54,6 +54,7 @@ HERMETIC_TESTS=(
 	test/test_media_artifact_kind.gd
 	test/test_os_open_policy.gd
 	test/test_chat_groups.gd
+	test/test_core_action_catalog.gd
 	test/test_chat_groups_integration.gd
 	test/test_marketplace_install_from_url.gd
 	test/test_ui_scale_sync.gd

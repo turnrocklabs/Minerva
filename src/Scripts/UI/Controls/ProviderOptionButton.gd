@@ -236,15 +236,12 @@ func get_item_provider_spec(index: int) -> Dictionary:
 	var item_id := get_item_id(index)
 	var metadata = get_item_metadata(index)
 	if metadata is Array and metadata.size() == 2:
-		var service: Service = metadata[0]
-		var action: Action = metadata[1]
-		if service and action:
-			return {
-				"kind": "core_action",
-				"service_client_id": service.client_id,
-				"service_name": service.name,
-				"action_name": action.name,
-			}
+		# Core action: the spec shape belongs to the one Core-action enumerator,
+		# so the chooser, the MCP resolver and host.models.list_models all hand
+		# out the same dictionary for the same action.
+		var spec: Dictionary = CoreActionCatalog.spec_for(metadata[0], metadata[1])
+		if not spec.is_empty():
+			return spec
 
 	# Plugin chat-provider entry (chat-passthrough W1): key-addressed so it
 	# survives across rebuilds where the ordinal id changes.
