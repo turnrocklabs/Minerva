@@ -13,11 +13,13 @@ const BROKER_PATH := "res://Scripts/Services/Plugins/CapabilityBroker.gd"
 
 var _pass: int = 0
 var _fail: int = 0
+var _completed: bool = false
 
 
 func _init() -> void:
 	print("=== Core Action Catalog Test ===\n")
 	await _run()
+	check("the full catalog scenario completed", _completed)
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -59,6 +61,13 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 
+	# Load provider scripts only after autoload names are registered. Static
+	# references here compile their dependencies before SingletonObject/Core
+	# exist and poison the same scripts the host needs during startup.
+	var catalog = load("res://Scripts/Services/Providers/Core/CoreActionCatalog.gd")
+	var provider_script = load("res://Scripts/Services/Providers/Core/CoreProvider.gd")
+	var chooser_script = load("res://Scripts/UI/Controls/ProviderOptionButton.gd")
+	var tools_script = load("res://Scripts/Services/MCP/Modules/MCPChatTools.gd")
 	var singleton = root.get_node_or_null("SingletonObject")
 	var core = root.get_node_or_null("Core")
 	check("SingletonObject autoload present", singleton != null)
@@ -81,7 +90,7 @@ func _run() -> void:
 
 	# --- 1. the enumerator lists exactly the stub, and nothing else ----------
 	# Oracle: the stub Service/Action objects built above.
-	var entries: Array = CoreActionCatalog.list_actions()
+	var entries: Array = catalog.list_actions()
 	check("catalog lists exactly the stub's three actions", entries.size() == 3,
 		"got %d" % entries.size())
 	if entries.size() == 3:
@@ -99,7 +108,7 @@ func _run() -> void:
 	var display_ok := true
 	for i in range(stub.size()):
 		for action in stub[i].actions:
-			var probe := CoreProvider.new(stub[i], action)
+			var probe = provider_script.new(stub[i], action)
 			var want: String = str(probe.model_name)
 			probe.free()
 			var found := false
@@ -120,7 +129,7 @@ func _run() -> void:
 	# metadata contract, not the spec's field set. The independent check on the
 	# field set is the hand-mirrored broker validation further down, which
 	# spells out what host.providers.chat requires.
-	var chooser := ProviderOptionButton.new()
+	var chooser = chooser_script.new()
 	chooser.add_item("qwen3", 1000)
 	chooser.set_item_metadata(0, [stub[0], stub[0].actions[0]])
 	var chooser_spec: Dictionary = chooser.get_item_provider_spec(0)
@@ -176,14 +185,14 @@ func _run() -> void:
 	# Oracle: ProviderOptionButton._get_provider_from_id — the chooser's own
 	# construction path for the selected dropdown item.
 	var chooser_provider = chooser._get_provider_from_id(1000)
-	var tools := MCPChatTools.new(null)
+	var tools = tools_script.new(null)
 	var resolved: Dictionary = tools._resolve_provider_from_model_spec(catalog_spec)
 	var resolved_provider = resolved.get("provider", null)
 	check("model_spec resolves to a provider", resolved_provider != null,
 		str(resolved.get("error", "")))
 	if resolved_provider != null and chooser_provider != null:
 		check("resolved provider is a CoreProvider on the same service/action",
-			resolved_provider is CoreProvider \
+			resolved_provider.get_script() == provider_script \
 				and resolved_provider.service == chooser_provider.service \
 				and resolved_provider.action == chooser_provider.action)
 		check("resolved provider reports the listed display name",
@@ -193,7 +202,7 @@ func _run() -> void:
 	# resolves through exactly this call (CapabilityBroker.gd, model_spec
 	# kind="core_action"), so asserting it here covers the same resolution.
 	# Oracle: the chooser's provider, built from the dropdown metadata.
-	var broker_match: Dictionary = CoreActionCatalog.find_action(
+	var broker_match: Dictionary = catalog.find_action(
 		str(catalog_spec.get("service_client_id", "")),
 		str(catalog_spec.get("action_name", "")))
 	if chooser_provider != null:
@@ -213,7 +222,7 @@ func _run() -> void:
 	# Oracle: the stub's own Service/Action objects.
 	var by_name = singleton.create_provider_for("turnrock", "llama4")
 	check("create_provider_for resolves a Core action by name",
-		by_name != null and by_name is CoreProvider \
+		by_name != null and by_name.get_script() == provider_script \
 			and by_name.service == stub[0] and by_name.action == stub[0].actions[1])
 	if by_name != null:
 		by_name.free()
@@ -271,7 +280,7 @@ func _run() -> void:
 	# Oracle: the empty stub — a plugin must see an empty list, never "Unknown".
 	var empty_services: Array[Service] = []
 	core.services = empty_services
-	check("no services -> empty catalog", CoreActionCatalog.list_actions().is_empty())
+	check("no services -> empty catalog", catalog.list_actions().is_empty())
 	check("no services -> empty turnrock model list",
 		singleton.list_enabled_models("turnrock").is_empty())
 	var empty_listed := false
@@ -282,7 +291,7 @@ func _run() -> void:
 	# A node without a `services` property stands in for Core being absent.
 	var bare := Node.new()
 	check("node without services -> empty catalog",
-		CoreActionCatalog.list_actions(bare).is_empty())
+		catalog.list_actions(bare).is_empty())
 	bare.free()
 
 	# --- restore -------------------------------------------------------------
@@ -292,3 +301,4 @@ func _run() -> void:
 	else:
 		singleton._enabled_providers.erase(turnrock)
 	chooser.free()
+	_completed = true
