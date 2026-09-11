@@ -1,0 +1,100 @@
+{
+  "cmd": "register",
+  "entity_type": "service",
+  "topic": "system",
+  "params": {
+    "client_id": "model-chat",
+    "auth": "test-token",
+    "request_id": "fixture-request",
+    "name": "Model Chat Service",
+    "description": "Provides chat completion using various language models, leveraging GPU dispatch for load balancing and resource management.",
+    "actions": [
+      {
+        "name": "qwen3:8b",
+        "topic": "model-chat/qwen3:8b",
+        "chat_model": true,
+        "generation_options": {
+          "temperature": {
+            "type": "number",
+            "default": 0.7,
+            "minimum": 0,
+            "maximum": 2
+          },
+          "max_tokens": {
+            "type": "integer",
+            "default": 4000,
+            "minimum": 1
+          },
+          "num_ctx": {
+            "type": "integer",
+            "default": 40000,
+            "minimum": 1
+          },
+          "num_gpu": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Performs chat completion using the qwen3:8b model via the GPU dispatch service.",
+        "input_parameters": {
+          "messages": {
+            "type": "array",
+            "required": true,
+            "display_name": "Chat Messages",
+            "description": "An array of message objects with 'role' and 'content' fields, following the OpenAI chat completion format (e.g., [{'role': 'user', 'content': 'Hello!'}])."
+          }
+        },
+        "output_parameters": {
+          "choices": {
+            "type": "array",
+            "display_name": "Choices",
+            "description": "An array of completion choices, each containing a 'message' object, in OpenAI format."
+          }
+        }
+      },
+      {
+        "name": "library/model:latest",
+        "topic": "model-chat/library/model:latest",
+        "chat_model": true,
+        "generation_options": {
+          "temperature": {
+            "type": "number",
+            "default": 0.7,
+            "minimum": 0,
+            "maximum": 2
+          },
+          "max_tokens": {
+            "type": "integer",
+            "default": 4000,
+            "minimum": 1
+          },
+          "num_ctx": {
+            "type": "integer",
+            "default": 40000,
+            "minimum": 1
+          },
+          "num_gpu": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "Performs chat completion using the library/model:latest model via the GPU dispatch service.",
+        "input_parameters": {
+          "messages": {
+            "type": "array",
+            "required": true,
+            "display_name": "Chat Messages",
+            "description": "An array of message objects with 'role' and 'content' fields, following the OpenAI chat completion format (e.g., [{'role': 'user', 'content': 'Hello!'}])."
+          }
+        },
+        "output_parameters": {
+          "choices": {
+            "type": "array",
+            "display_name": "Choices",
+            "description": "An array of completion choices, each containing a 'message' object, in OpenAI format."
+          }
+        }
+      }
+    ]
+  }
+}

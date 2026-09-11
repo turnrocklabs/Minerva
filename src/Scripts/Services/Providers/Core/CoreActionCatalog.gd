@@ -1,20 +1,8 @@
 class_name CoreActionCatalog
 extends RefCounted
 
-## The one enumeration of TurnRock/Core service actions.
-##
-## Core has no static model list: its "models" are the live actions of the
-## services the session is allowed to use (/root/Core.services[].actions[]).
-## Every consumer that needs those actions — the provider chooser's spec
-## builder, the MCP model_spec resolver, and the brokered model catalog behind
-## host.models.list_models("turnrock") — goes through here, so the display
-## string and the `model_spec` dictionary have a single definition.
-##
-## An entry is {service_client_id, service_name, action_name, display,
-## model_spec}, where `model_spec` is exactly what host.providers.chat and
-## minerva_set_chat_model accept for that action. With no Core node — or with
-## Core present but no services fetched yet — the listing is empty; there is no
-## placeholder entry.
+## Generic Core service actions, including storage, voice and other operations.
+## Chat callers use CoreModelCatalog, which adds model eligibility and policy.
 
 
 ## The live Core autoload, or null when it is absent (headless tools, tests).
@@ -49,6 +37,18 @@ static func display_for(service: Service, action: Action) -> String:
 ## Pass `core` to enumerate a specific node (tests); omit it for the autoload.
 static func list_actions(core: Node = null) -> Array:
 	var out: Array = []
+	for pair in action_pairs(core):
+		var service: Service = pair.service
+		var action: Action = pair.action
+		out.append({"service_client_id": service.client_id, "service_name": service.name,
+			"action_name": action.name, "display": display_for(service, action),
+			"model_spec": spec_for(service, action)})
+	return out
+
+
+## Raw pairs are also used to detect duplicate identities before filtering models.
+static func action_pairs(core: Node = null) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
 	var node: Node = core if core != null else core_node()
 	if node == null or not ("services" in node):
 		return out
@@ -56,16 +56,19 @@ static func list_actions(core: Node = null) -> Array:
 		if service == null:
 			continue
 		for action: Action in service.actions:
-			if action == null:
-				continue
-			out.append({
-				"service_client_id": service.client_id,
-				"service_name": service.name,
-				"action_name": action.name,
-				"display": display_for(service, action),
-				"model_spec": spec_for(service, action),
-			})
+			if action != null:
+				out.append({"service": service, "action": action})
 	return out
+
+
+static func find_matches(service_client_id: String, action_name: String, core: Node = null) -> Array[Dictionary]:
+	var matches: Array[Dictionary] = []
+	if service_client_id.is_empty() or action_name.is_empty():
+		return matches
+	for pair in action_pairs(core):
+		if pair.service.client_id == service_client_id and pair.action.name == action_name:
+			matches.append(pair)
+	return matches
 
 
 ## Whether Core exposes at least one action, for callers that only need the
@@ -79,16 +82,8 @@ static func has_actions(core: Node = null) -> bool:
 ## Resolve a (service_client_id, action_name) pair to the live Core objects.
 ## Returns {service, action}, or {} when Core is absent or nothing matches.
 static func find_action(service_client_id: String, action_name: String, core: Node = null) -> Dictionary:
-	var node: Node = core if core != null else core_node()
-	if node == null or not ("services" in node):
-		return {}
-	for service: Service in node.services:
-		if service == null or service.client_id != service_client_id:
-			continue
-		for action: Action in service.actions:
-			if action != null and action.name == action_name:
-				return {"service": service, "action": action}
-	return {}
+	var matches := find_matches(service_client_id, action_name, core)
+	return matches[0] if matches.size() == 1 else {}
 
 
 ## Build the CoreProvider for an action, or null when it cannot be resolved.

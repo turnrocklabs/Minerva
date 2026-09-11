@@ -67,10 +67,15 @@ var supports_num_ctx: bool = false
 ## Whether this provider supports configuring GPU layer count (for Ollama)
 var supports_num_gpu: bool = false
 
+## Persistence identity. Display names remain the default for ordinary providers.
+func get_model_settings_key() -> String:
+	return model_name
+
+
 ## Get effective timeout - checks per-model override first, then falls back to default
 func get_effective_timeout() -> float:
-	# Check per-model timeout override (keyed by model_name)
-	var model_timeout: float = SingletonObject.get_model_timeout(model_name)
+	# Check per-model timeout override (keyed by provider identity)
+	var model_timeout: float = SingletonObject.get_model_timeout(get_model_settings_key())
 	if model_timeout > 0:
 		return model_timeout
 	# Use per-instance override if set
@@ -84,8 +89,8 @@ var default_context: int = 0
 
 ## Get effective context window - checks per-model override first, then falls back to default
 func get_effective_context() -> int:
-	# Check per-model context override (keyed by model_name)
-	var model_context: int = SingletonObject.get_model_context(model_name)
+	# Check per-model context override (keyed by provider identity)
+	var model_context: int = SingletonObject.get_model_context(get_model_settings_key())
 	if model_context > 0:
 		return model_context
 	# Fall back to default
@@ -96,8 +101,8 @@ var default_num_gpu: int = -1
 
 ## Get effective num_gpu - checks per-model override first, then falls back to default
 func get_effective_num_gpu() -> int:
-	# Check per-model num_gpu override (keyed by model_name)
-	var model_num_gpu: int = SingletonObject.get_model_num_gpu(model_name)
+	# Check per-model num_gpu override (keyed by provider identity)
+	var model_num_gpu: int = SingletonObject.get_model_num_gpu(get_model_settings_key())
 	if model_num_gpu >= 0:
 		return model_num_gpu
 	# Fall back to default

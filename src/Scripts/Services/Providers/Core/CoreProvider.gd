@@ -3,6 +3,8 @@ extends BaseProvider
 
 var service: Service
 var action: Action
+## Catalog-created chat providers revalidate their identity before every invocation.
+var requires_chat_model: bool = false
 
 ## System prompt to send with the request (set by ChatPane)
 var system_prompt: String
@@ -34,13 +36,27 @@ func _init(service_: Service = null, action_: Action = null):
 	if service and service.client_id == "model-chat":
 		default_timeout = 1800.0  # Chat models (30 min)
 
-	# Enable context window setting for OpenAI-compatible services (model-chat)
-	if service and service.client_id == "model-chat":
-		supports_num_ctx = true
-		default_context = 40000  # Default context window for model-chat
-		# model-chat proxies to Ollama, so it supports GPU layer offloading
-		supports_num_gpu = true
-		default_num_gpu = -1  # -1 means use Ollama default (full GPU)
+	_apply_model_descriptor()
+
+
+func _apply_model_descriptor() -> void:
+	var descriptor := CoreModelDescriptor.describe(service, action)
+	var options: Dictionary = descriptor.generation_options if descriptor.valid else {}
+	supports_temperature = options.has("temperature")
+	supports_top_p = false
+	supports_num_ctx = options.has("num_ctx")
+	supports_num_gpu = options.has("num_gpu")
+	default_context = int(options.get("num_ctx", {}).get("default", 0))
+	default_num_gpu = int(options.get("num_gpu", {}).get("default", -1))
+
+
+func get_model_settings_key() -> String:
+	var spec := CoreActionCatalog.spec_for(service, action)
+	var key := CoreModelCatalog.settings_key(spec)
+	if key.is_empty() or not CoreModelDescriptor.describe(service, action).eligible:
+		return model_name
+	CoreModelPreferences.ensure_migrated(spec)
+	return key
 
 
 ## Set available tools for agentic mode
@@ -113,6 +129,18 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
+	if requires_chat_model:
+		var resolved := CoreModelCatalog.resolve(CoreActionCatalog.spec_for(service, action))
+		if not resolved.success:
+			var failure := BotResponse.new()
+			failure.provider = self
+			failure.error = resolved.error_message
+			failure.set_meta("error_code", resolved.error_code)
+			return failure
+		# A refresh can replace service objects while preserving the selected tuple.
+		service = resolved.service
+		action = resolved.action
+		_apply_model_descriptor()
 	# If a notes adapter can handle this, delegate it to it
 	if service.client_id in SingletonObject.notes_sync_manger.service_adapters:
 		var adapter: = SingletonObject.notes_sync_manger.service_adapters[service.client_id]
@@ -198,21 +226,8 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 		return chat_item.HcpData
 
 func _is_openai_compatible_service() -> bool:
-	"""Check if service expects OpenAI-compatible message format"""
-	if not service:
-		return false
-
-	# Explicit check for known OpenAI-compatible services
-	if service.client_id == "model-chat":
-		return true
-
-	# Check if any action has OpenAI-style output parameters
-	for act in service.actions:
-		var output = act.output_parameters
-		if output.has("choices") and output.has("model") and output.has("usage"):
-			return true
-
-	return false
+	var descriptor := CoreModelDescriptor.describe(service, action)
+	return descriptor.eligible and descriptor.valid
 
 func _format_openai_message(chat_item: ChatHistoryItem) -> Dictionary:
 	"""Format a chat history item as an OpenAI-compatible message"""
