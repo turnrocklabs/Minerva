@@ -1,4 +1,5 @@
 #include "subprocess.h"
+#include "common/utf8_line_buffer.h"
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -245,24 +246,16 @@ void SubProcess::stop()
 void SubProcess::_read_loop()
 {
     char buffer[4096];
-    String line_buffer;
+    Utf8LineBuffer line_buffer;
 
     while (_running) {
         DWORD bytes_read = 0;
         BOOL ok = ReadFile(_stdout_rd, buffer, sizeof(buffer) - 1, &bytes_read, nullptr);
 
         if (ok && bytes_read > 0) {
-            String chunk = String::utf8(buffer, static_cast<int>(bytes_read));
-            line_buffer += chunk;
-
-            int newline_pos;
-            while ((newline_pos = line_buffer.find("\n")) != -1) {
-                String line = line_buffer.substr(0, newline_pos);
-                // Strip a trailing CR so CRLF-terminated lines parse as clean
-                // JSON-RPC (the unix pipe never sees CR; a Windows child might).
-                if (!line.is_empty() && line[line.length() - 1] == '\r')
-                    line = line.substr(0, line.length() - 1);
-                line_buffer = line_buffer.substr(newline_pos + 1);
+            line_buffer.append(buffer, bytes_read);
+            String line;
+            while (line_buffer.pop_line(line, true)) {
 
                 {
                     std::lock_guard<std::mutex> lock(_output_mutex);
@@ -295,22 +288,16 @@ void SubProcess::_read_loop()
 void SubProcess::_stderr_read_loop()
 {
     char buffer[4096];
-    String line_buffer;
+    Utf8LineBuffer line_buffer;
 
     while (_running) {
         DWORD bytes_read = 0;
         BOOL ok = ReadFile(_stderr_rd, buffer, sizeof(buffer) - 1, &bytes_read, nullptr);
 
         if (ok && bytes_read > 0) {
-            String chunk = String::utf8(buffer, static_cast<int>(bytes_read));
-            line_buffer += chunk;
-
-            int newline_pos;
-            while ((newline_pos = line_buffer.find("\n")) != -1) {
-                String line = line_buffer.substr(0, newline_pos);
-                if (!line.is_empty() && line[line.length() - 1] == '\r')
-                    line = line.substr(0, line.length() - 1);
-                line_buffer = line_buffer.substr(newline_pos + 1);
+            line_buffer.append(buffer, bytes_read);
+            String line;
+            while (line_buffer.pop_line(line, true)) {
 
                 {
                     std::lock_guard<std::mutex> lock(_stderr_mutex);
@@ -325,9 +312,10 @@ void SubProcess::_stderr_read_loop()
     }
 
     // Flush any remaining partial line.
-    if (!line_buffer.is_empty()) {
+    String tail = line_buffer.take_tail();
+    if (!tail.is_empty()) {
         std::lock_guard<std::mutex> lock(_stderr_mutex);
-        _stderr_queue.push(line_buffer);
+        _stderr_queue.push(tail);
         call_deferred("emit_signal", "stderr_ready");
     }
 }

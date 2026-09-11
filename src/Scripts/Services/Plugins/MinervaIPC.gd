@@ -39,6 +39,51 @@ const DEFAULT_TIMEOUT_MS := 10000
 ## Reference is kept here to prevent GC before the coroutine resumes.
 var _pending: Dictionary = {}
 
+var _bulk_broker: WeakRef
+var _bulk_panel_key: String = ""
+var _bulk_sequence: int = 0
+
+
+## Explicit bulk route for snapshots. Feature-detect this method on older hosts.
+## The limit covers the whole request dictionary and the whole reply envelope.
+func get_bulk_payload_limit() -> int:
+	return PluginPayloadLimits.BULK_BYTES
+
+
+## Uses the same declared channels and permissions as the ordinary request signal.
+## Closing the panel settles the await; a timeout does not undo backend mutations.
+func request_bulk(channel: String, payload: Dictionary,
+		timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dictionary:
+	if not is_inside_tree() or _bulk_broker == null or _bulk_broker.get_ref() == null:
+		return _panel_closed_error()
+	if channel.is_empty():
+		return PluginErrors.schema_validation_failed("", "Bulk request requires a channel")
+	var size := PluginPayloadLimits.size_bytes(payload)
+	if size > get_bulk_payload_limit():
+		return PluginErrors.payload_too_large("", get_bulk_payload_limit(), size)
+	_bulk_sequence += 1
+	var reply_id := "bulk:%d:%d" % [get_instance_id(), _bulk_sequence]
+	_bulk_broker.get_ref().call_deferred("handle_scene_request",
+		_bulk_panel_key, channel, payload, reply_id, get_instance_id(), true)
+	return await await_reply(reply_id, timeout_ms)
+
+
+## Broker-only binding; weak ownership avoids a broker/helper reference cycle.
+func configure_bulk(broker: RefCounted, panel_key: String) -> void:
+	_bulk_broker = weakref(broker)
+	_bulk_panel_key = panel_key
+
+
+func _exit_tree() -> void:
+	_bulk_broker = null
+	for observer: _ReplyObserver in _pending.values():
+		observer._fire(_panel_closed_error())
+
+
+func _panel_closed_error() -> Dictionary:
+	return {"success": false, "error_code": "panel_unloading",
+		"error_message": "The panel is no longer registered", "panel_key": _bulk_panel_key}
+
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -79,7 +124,7 @@ func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict
 	# Schedule a timeout that fires the observer with a timeout sentinel if
 	# the real reply has not arrived first.
 	var timer := get_tree().create_timer(timeout_ms / 1000.0)
-	timer.timeout.connect(func() -> void:
+	var on_timeout := func() -> void:
 		if _pending.get(reply_id) == observer:
 			observer._fire({
 				"success": false,
@@ -87,10 +132,12 @@ func await_reply(reply_id: String, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict
 				"error_message": "No reply received within %d ms" % timeout_ms,
 				"reply_id": reply_id,
 			})
-	, CONNECT_ONE_SHOT)
+	timer.timeout.connect(on_timeout, CONNECT_ONE_SHOT)
 
 	# Await the observer's one-shot signal. _pending holds the ref alive.
 	var result: Dictionary = await observer.resolved
+	if timer.timeout.is_connected(on_timeout):
+		timer.timeout.disconnect(on_timeout)
 
 	# Clean up: erase only if still ours (re-entrancy guard).
 	if _pending.get(reply_id) == observer:

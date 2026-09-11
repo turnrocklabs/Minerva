@@ -1,4 +1,5 @@
 #include "subprocess.h"
+#include "common/utf8_line_buffer.h"
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -141,22 +142,15 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
 void SubProcess::_read_loop()
 {
     char buffer[4096];
-    String line_buffer;
+    Utf8LineBuffer line_buffer;
 
     while (_running) {
         ssize_t bytes_read = read(_stdout_fd, buffer, sizeof(buffer) - 1);
 
         if (bytes_read > 0) {
-            buffer[bytes_read] = '\0';
-            String chunk = String::utf8(buffer, bytes_read);
-
-            // Split into lines
-            line_buffer += chunk;
-
-            int newline_pos;
-            while ((newline_pos = line_buffer.find("\n")) != -1) {
-                String line = line_buffer.substr(0, newline_pos);
-                line_buffer = line_buffer.substr(newline_pos + 1);
+            line_buffer.append(buffer, bytes_read);
+            String line;
+            while (line_buffer.pop_line(line)) {
 
                 {
                     std::lock_guard<std::mutex> lock(_output_mutex);
@@ -313,21 +307,15 @@ String SubProcess::read_all()
 void SubProcess::_stderr_read_loop()
 {
     char buffer[4096];
-    String line_buffer;
+    Utf8LineBuffer line_buffer;
 
     while (_running) {
         ssize_t bytes_read = read(_stderr_fd, buffer, sizeof(buffer) - 1);
 
         if (bytes_read > 0) {
-            buffer[bytes_read] = '\0';
-            String chunk = String::utf8(buffer, bytes_read);
-
-            line_buffer += chunk;
-
-            int newline_pos;
-            while ((newline_pos = line_buffer.find("\n")) != -1) {
-                String line = line_buffer.substr(0, newline_pos);
-                line_buffer = line_buffer.substr(newline_pos + 1);
+            line_buffer.append(buffer, bytes_read);
+            String line;
+            while (line_buffer.pop_line(line)) {
 
                 {
                     std::lock_guard<std::mutex> lock(_stderr_mutex);
@@ -349,9 +337,10 @@ void SubProcess::_stderr_read_loop()
     }
 
     // Flush any remaining partial line
-    if (!line_buffer.is_empty()) {
+    String tail = line_buffer.take_tail();
+    if (!tail.is_empty()) {
         std::lock_guard<std::mutex> lock(_stderr_mutex);
-        _stderr_queue.push(line_buffer);
+        _stderr_queue.push(tail);
         call_deferred("emit_signal", "stderr_ready");
     }
 }

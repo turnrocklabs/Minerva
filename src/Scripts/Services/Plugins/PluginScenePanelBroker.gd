@@ -345,6 +345,7 @@ func register_panel(
 	var ipc_helper := MinervaIPC.new()
 	ipc_helper.name = MinervaIPC.HELPER_NODE_NAME
 	panel_root.add_child(ipc_helper)
+	ipc_helper.configure_bulk(self, panel_key)
 
 	# Build registry entry.
 	var entry := _PanelEntry.new()
@@ -737,12 +738,15 @@ func list_dead_panel_editor_names() -> Array:
 ##   6. Validate payload size.
 ##   7. Dispatch to CapabilityBroker or plugin backend.
 ##   8. Deliver reply via $_MinervaIPC._reply().
+## `bulk` is selected by MinervaIPC.request_bulk and bounds the entire request
+## and reply in UTF-8 bytes. It does not bypass any channel or permission checks.
 func handle_scene_request(
 		panel_key: String,
 		channel: String,
 		payload: Dictionary,
 		reply_id: String,
-		generation: int = 0
+		generation: int = 0,
+		bulk: bool = false
 ) -> void:
 
 	# --- 1. Basic input validation -------------------------------------------
@@ -880,16 +884,18 @@ func handle_scene_request(
 
 	# --- 6. Validate payload size ---------------------------------------------
 	var payload_json := JSON.stringify(payload)
-	if payload_json.length() > MAX_PAYLOAD_BYTES:
+	var payload_size := payload_json.to_utf8_buffer().size() if bulk else payload_json.length()
+	var payload_limit := PluginPayloadLimits.BULK_BYTES if bulk else MAX_PAYLOAD_BYTES
+	if payload_size > payload_limit:
 		_audit(plugin_id, EVENT_SCENE_DENIED, {
 			"panel_name": manifest_panel,
 			"panel_key": panel_key,
 			"channel": channel,
 			"reason": "payload_too_large",
-			"scene_size": payload_json.length(),
+			"scene_size": payload_size,
 		})
 		_deliver_error(panel_key, reply_id,
-			PluginErrors.payload_too_large(plugin_id, MAX_PAYLOAD_BYTES, payload_json.length()))
+			PluginErrors.payload_too_large(plugin_id, payload_limit, payload_size))
 		return
 
 	# --- 7. Dispatch ----------------------------------------------------------
@@ -904,6 +910,10 @@ func handle_scene_request(
 		result = await _dispatch_to_capability_broker(plugin_id, channel, payload)
 	else:
 		result = await _dispatch_to_plugin_backend(plugin_id, channel, payload)
+	if bulk:
+		var reply_size := PluginPayloadLimits.size_bytes(result)
+		if reply_size > payload_limit:
+			result = PluginErrors.payload_too_large(plugin_id, payload_limit, reply_size)
 
 	_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
 		"panel_name": manifest_panel,

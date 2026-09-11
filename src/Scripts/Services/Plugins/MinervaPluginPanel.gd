@@ -56,6 +56,9 @@ extends Control
 ## reply_id is a unique-per-panel string; the broker routes the result back via
 ## $_MinervaIPC._reply(reply_id, result).  Use $_MinervaIPC.await_reply(reply_id)
 ## in your handler to coroutine-await the result.
+## For document-sized exchanges, feature-detect and call
+## $_MinervaIPC.request_bulk(channel, payload, timeout_ms). See
+## Docs/design/plugin-bulk-snapshots.md for its bounds and lifecycle.
 ## Subclass plugin panels emit this; the parser can't see usage from this base file.
 @warning_ignore("unused_signal")
 signal request(channel: String, payload: Dictionary, reply_id: String)
