@@ -140,8 +140,14 @@ func _on_core_connected():
 		await _load_session_history()
 		# Now refresh child views (sessions, models, etc.)
 		_refresh_child_views()
+		await _restore_session_subscriptions()
 	else:
 		info("⚠️ Autocoder service not found in discovered services")
+
+
+func _restore_session_subscriptions() -> void:
+	for session_id in _monitoring_sessions.duplicate():
+		await _subscribe_to_session(session_id)
 
 
 func _on_core_disconnected():
@@ -449,7 +455,6 @@ func _subscribe_to_session(session_id: String) -> void:
 		info("Successfully subscribed to session-changed topic")
 
 	# Setup global handlers for wildcard notifications
-	_clear_notification_handlers()
 	info("=== SETTING UP MESSAGE HANDLERS ===")
 
 	var iteration_awaiter = Core.await_message()
@@ -476,7 +481,7 @@ func _subscribe_to_session(session_id: String) -> void:
 	print("DEBUG: Created catch-all message handler")
 
 	# Handle iteration publications (from wildcard)
-	iteration_awaiter.with_cmd("publication").receive_all().connect(
+	iteration_awaiter.with_topic(iteration_topic).with_cmd("publication").receive_all().connect(
 		func(msg: Dictionary):
 			var topic = msg.get("topic", "")
 
@@ -496,7 +501,7 @@ func _subscribe_to_session(session_id: String) -> void:
 	)
 
 	# Handle LLM traffic publications (from wildcard)
-	telemetry_awaiter.with_cmd("publication").receive_all().connect(
+	telemetry_awaiter.with_topic(llm_topic).with_cmd("publication").receive_all().connect(
 		func(msg: Dictionary):
 			var topic = msg.get("topic", "")
 			if not topic.begins_with("autocoder-orchestrator/llm-traffic/"):
@@ -517,7 +522,7 @@ func _subscribe_to_session(session_id: String) -> void:
 	# Handle actions publications (hierarchical action stream)
 	var actions_awaiter = Core.await_message()
 	_notification_message_handlers.append(actions_awaiter)
-	actions_awaiter.with_cmd("publication").receive_all().connect(
+	actions_awaiter.with_topic(actions_topic).with_cmd("publication").receive_all().connect(
 		func(msg: Dictionary):
 			var topic = msg.get("topic", "")
 			if not topic.begins_with("autocoder-orchestrator/actions/"):
@@ -538,7 +543,7 @@ func _subscribe_to_session(session_id: String) -> void:
 	# Handle planning publications (planning mode updates)
 	var planning_awaiter = Core.await_message()
 	_notification_message_handlers.append(planning_awaiter)
-	planning_awaiter.with_cmd("publication").receive_all().connect(
+	planning_awaiter.with_topic(planning_topic).with_cmd("publication").receive_all().connect(
 		func(msg: Dictionary):
 			var topic = msg.get("topic", "")
 			if not topic.begins_with("autocoder-orchestrator/planning/"):
@@ -569,7 +574,7 @@ func _subscribe_to_session(session_id: String) -> void:
 	# Handle session-changed publications (planning->coder transitions)
 	var session_changed_awaiter = Core.await_message()
 	_notification_message_handlers.append(session_changed_awaiter)
-	session_changed_awaiter.with_cmd("publication").receive_all().connect(
+	session_changed_awaiter.with_topic(session_changed_topic).with_cmd("publication").receive_all().connect(
 		func(msg: Dictionary):
 			var topic = msg.get("topic", "")
 			if not topic.begins_with("autocoder-orchestrator/session-changed/"):
@@ -590,7 +595,7 @@ func _subscribe_to_session(session_id: String) -> void:
 	# Handle LLM traffic redirect (when session changes mid-stream)
 	var llm_redirect_awaiter = Core.await_message()
 	_notification_message_handlers.append(llm_redirect_awaiter)
-	llm_redirect_awaiter.with_cmd("publication").receive_all().connect(
+	llm_redirect_awaiter.with_topic(llm_topic).with_cmd("publication").receive_all().connect(
 		func(msg: Dictionary):
 			var topic = msg.get("topic", "")
 			if not topic.begins_with("autocoder-orchestrator/llm-traffic/"):

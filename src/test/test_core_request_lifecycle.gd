@@ -286,6 +286,27 @@ func _run() -> void:
 	check("provider tree exit releases active Core request", output.has("result") and output.result.get_meta("error_code") == "cancelled" and client._pending_requests.is_empty())
 	provider.free()
 
+	var saved_manager = singleton.autocoder_manager
+	var manager = load("res://Scripts/UI/Controls/Autocoder/manager/AutocoderManager.gd").new()
+	manager._monitoring_sessions = PackedStringArray(["session-a", "session-b"])
+	client.behavior = "subscribe"
+	client.client_id = "test-client"
+	await manager._restore_session_subscriptions()
+	var watched: int = manager._notification_message_handlers.size()
+	check("both monitored sessions restore their subscription handlers", watched == 14)
+	var topic_counts := {}
+	for handler in manager._notification_message_handlers:
+		if not handler.topic.is_empty():
+			topic_counts[handler.topic] = int(topic_counts.get(handler.topic, 0)) + 1
+	check("restored handlers are isolated to ten exact session topics", topic_counts.size() == 10 and topic_counts.keys().all(func(topic): return topic_counts[topic] == (2 if "/llm-traffic/" in topic else 1)))
+	manager._on_core_disconnected()
+	check("disconnect releases every monitoring handler", manager._notification_message_handlers.is_empty())
+	await manager._restore_session_subscriptions()
+	check("reconnect restores handlers without accumulating copies", manager._notification_message_handlers.size() == watched)
+	manager._clear_notification_handlers()
+	manager.free()
+	singleton.autocoder_manager = saved_manager
+
 	core.client = old_client
 	core.registered = old_registered
 	core.services.assign(old_services)
