@@ -50,6 +50,8 @@ class PTTRequest:
 ## The currently active PTT request, if start_ptt initiated the recording. Consulted by
 ## _finish_transcription to choose insertion behaviour. Null for legacy call sites.
 var _active_ptt_req: PTTRequest = null
+var _voice_operation: VoiceOperation
+var _voice_generation := 0
 ## True if the most recent start_ptt called voice_gateway.ptt_down(). Gates stop_ptt's
 ## ptt_up() call so stop_ptt is idempotent.
 var _ptt_gateway_down: bool = false
@@ -72,13 +74,24 @@ func _start_mic():
 
 
 func _stop_mic():
+	if not is_instance_valid(mic_player):
+		return
 	if mic_player.playing:
 		mic_player.stop()
 	mic_player.stream = null
 
 
 func _exit_tree():
+	_cancel_voice_transcription()
 	_stop_mic()
+
+
+func _cancel_voice_transcription() -> void:
+	_voice_generation += 1
+	var operation := _voice_operation
+	_voice_operation = null
+	if operation != null:
+		operation.cancel()
 
 
 ## Canonical PTT state transition. All visual updates flow from ptt_state_changed;
@@ -102,15 +115,15 @@ func _set_ptt_state(new_state: int, info: Dictionary = {}) -> void:
 ## Unified PTT entry point. Owns legacy-field assignment, gateway sequencing, button
 ## state, and recording start. Returns OK on success, or an error code on failure.
 func start_ptt(req: PTTRequest) -> int:
-	if req == null or req.target == null:
+	if req == null or not is_instance_valid(req.target):
 		push_warning("AudioToText.start_ptt: req.target is required")
 		return ERR_INVALID_PARAMETER
+	_cancel_voice_transcription()
 
 	# Cancel any in-flight TTS before binding the mic. Output stream must end before
 	# the driver renegotiates for input, otherwise the mic capture comes up zombied.
-	# Non-blocking: cancel_tts() stops playback synchronously and flags in-flight
-	# synthesis to bail at its next checkpoint; the flag stays set through the
-	# WebSocket round-trip and is cleared by the next _voice_speak_response.
+	# Non-blocking: cancel_tts() stops playback and its owned local Core await.
+	# Future speech operations are independent of this cancellation.
 	var chats := SingletonObject.Chats
 	if chats != null and chats.has_method("cancel_tts"):
 		chats.cancel_tts()
@@ -229,14 +242,20 @@ func _read_wav_file() -> PackedByteArray:
 
 ## STT via voice-service (Core WebSocket).
 func _start_voice_service_stt(wav_bytes: PackedByteArray, voice_config: VoiceConfig) -> void:
+	_cancel_voice_transcription()
+	var generation := _voice_generation
+	var operation := VoiceOperation.new()
+	_voice_operation = operation
 	_set_ptt_state(PTTState.TRANSCRIBING, {"mic_button": _btn, "target": _field_for_filling})
 	if _btn_stop != null:
 		_btn_stop.disabled = false
 
 	var client := SingletonObject.get_voice_client()
-	var text := await client.transcribe_auto(wav_bytes, voice_config)
-
-	_finish_transcription(text)
+	var outcome := await client.transcribe_auto_result(wav_bytes, voice_config, operation)
+	if generation != _voice_generation or _voice_operation != operation:
+		return
+	_voice_operation = null
+	_finish_transcription(outcome.get("text", ""), outcome.success, outcome.get("error_message", ""))
 
 
 ## STT via OpenAI Whisper REST API (original path).
@@ -275,8 +294,9 @@ func _start_whisper_stt(wav_bytes: PackedByteArray) -> void:
 
 
 func _StopConverting():
+	_cancel_voice_transcription()
 	stop_signal = true
-	if effect.is_recording_active():
+	if effect != null and effect.is_recording_active():
 		effect.set_recording_active(false)
 		print("Recording stopped")
 	_stop_mic()
@@ -310,22 +330,24 @@ func _move_caret_to_end(ctrl: Control) -> void:
 
 
 ## Shared completion handler — fills text field and emits signal.
-func _finish_transcription(text: String) -> void:
+func _finish_transcription(text: String, successful_empty: bool = false, error_message: String = "") -> void:
 	var active_req := _active_ptt_req
 
-	if text.is_empty():
-		_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Transcription failed"})
-		SingletonObject.ErrorDisplay("Transcription Failed", "No text returned from STT provider")
+	if text.is_empty() and not successful_empty:
+		var reason := error_message if not error_message.is_empty() else "No text returned from STT provider"
+		_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": reason})
+		SingletonObject.ErrorDisplay("Transcription Failed", reason)
 	else:
 		_set_ptt_state(PTTState.READY, {"mic_button": _btn})
 		print("Transcription:", text)
 		var target: Control = null
 		if active_req != null:
-			target = active_req.target
-		else:
+			if is_instance_valid(active_req.target):
+				target = active_req.target
+		elif is_instance_valid(_field_for_filling):
 			target = _field_for_filling
 
-		if target != null:
+		if is_instance_valid(target) and not text.is_empty():
 			var mode: int = active_req.insert_mode if active_req != null else InsertMode.APPEND
 			if active_req != null and mode == InsertMode.REPLACE:
 				target.text = text
@@ -340,7 +362,8 @@ func _finish_transcription(text: String) -> void:
 			if target.has_method("grab_focus"):
 				target.grab_focus()
 
-	SingletonObject.transcription_notification_player.play()
+	if is_instance_valid(SingletonObject.transcription_notification_player):
+		SingletonObject.transcription_notification_player.play()
 	transcription_completed.emit(text)
 	_active_ptt_req = null
 

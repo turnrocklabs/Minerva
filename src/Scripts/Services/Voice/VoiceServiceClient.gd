@@ -4,119 +4,158 @@ extends RefCounted
 ## Uses the standard Core.send_message() / AwaitMessage pattern.
 
 const VOICE_SERVICE_ID := "voice-service"
-## Last deterministic summary fallback reason; inspectable without repeated chunk warnings.
-var summary_unavailable_reason: String = ""
+## Successful discovery is cached per exact backend filter and connection lifetime.
+var _voice_inventories: Dictionary = {}
+var _inventory_client: CoreClient
+var _inventory_epoch := 0
+var _query_sequence := 0
+var _query_versions: Dictionary = {}
+var _inventory_versions: Dictionary = {}
 
+static func failure(code: String, message: String) -> Dictionary:
+	return {"success": false, "error_code": code, "error_message": message, "error": message}
 
-## Transcribe audio via voice-service STT.
-## Returns the transcribed text, or "" on error.
-func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper", model: String = "") -> String:
-	var service := _get_voice_service()
-	if not service:
-		push_error("[VoiceServiceClient] voice-service not available")
-		return ""
+func _clear_inventory() -> void:
+	_inventory_epoch += 1
+	_voice_inventories.clear()
+	_query_versions.clear()
+	_inventory_versions.clear()
 
-	var action := Action.new({"topic": "voice/stt/transcribe"})
-	var data := {
-		"audio_base64": Marshalls.raw_to_base64(audio_wav),
-		"language": language,
-		"backend": backend,
-	}
+func _bind_inventory_connection() -> void:
+	if _inventory_client == Core.client:
+		return
+	if is_instance_valid(_inventory_client) and _inventory_client.connection_closed.is_connected(_clear_inventory):
+		_inventory_client.connection_closed.disconnect(_clear_inventory)
+	_clear_inventory()
+	_inventory_client = Core.client
+	if is_instance_valid(_inventory_client):
+		_inventory_client.connection_closed.connect(_clear_inventory)
+
+func _call(topic: String, data: Dictionary, mode: String, timeout: float, operation: VoiceOperation = null, service: Service = null) -> Dictionary:
+	if operation != null and not operation.can_start():
+		return failure("cancelled", "Voice operation cancelled locally.")
+	if operation != null and operation.is_busy():
+		return failure("operation_busy", "Voice operation already has an active request.")
+	if service == null:
+		service = _get_voice_service()
+	if service == null:
+		return failure("core_offline", "Voice service requires a connected Core session.")
+	var request := Core.send_message(service, Action.new({"topic": topic}), data, mode, timeout)
+	var completed: Dictionary = await operation.receive(request) if operation != null else await request.receive_result()
+	if not completed.success:
+		completed["error"] = completed.error_message
+		return completed
+	if completed.kind == "binary":
+		return {"success": true, "audio": completed.binary, "request_id": completed.request_id, "transport": "binary"}
+	var params: Variant = completed.json.get("params", {})
+	var body: Variant = params.get("result") if params is Dictionary else null
+	if not body is Dictionary:
+		return failure("invalid_voice_response", "Voice service returned a non-object result.")
+	return {"success": true, "value": body, "request_id": completed.request_id, "transport": "json"}
+
+func transcribe_result(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper", model: String = "", operation: VoiceOperation = null) -> Dictionary:
+	var data := {"audio_base64": Marshalls.raw_to_base64(audio_wav), "language": language, "backend": backend}
 	if not model.is_empty():
 		data["model"] = model
+	var result := await _call("voice/stt/transcribe", data, "json", 120.0, operation)
+	if result.success:
+		if not result.value.get("text") is String:
+			return failure("invalid_voice_response", "Transcription response is missing text.")
+		result["text"] = result.value.text
+	return result
 
-	var awaiter := Core.send_message(service, action, data)
-	var response = await awaiter.with_timeout(120.0).receive()
-
-	if not response:
-		push_error("[VoiceServiceClient] STT request timed out")
-		return ""
-
-	var result: Dictionary = response.get("params", {}).get("result", {})
-	if result.has("error"):
-		push_error("[VoiceServiceClient] STT error: %s" % result.get("error"))
-		return ""
-
+func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper", model: String = "") -> String:
+	var result := await transcribe_result(audio_wav, language, backend, model)
 	return result.get("text", "")
 
+func _inventory_for(backend: String) -> Dictionary:
+	_bind_inventory_connection()
+	var key := backend
+	if _voice_inventories.has("") and int(_inventory_versions.get("", -1)) > int(_inventory_versions.get(key, -1)):
+		key = ""
+	return {"voices": _voice_inventories[key]} if _voice_inventories.has(key) else {}
 
-## Synthesize text to speech via voice-service TTS.
-## Returns WAV audio as PackedByteArray, or empty on error.
+func _check_known_voice(voice: String, backend: String) -> Dictionary:
+	var inventory := _inventory_for(backend)
+	if voice.is_empty() or inventory.is_empty():
+		return {"success": true, "metadata_mode": "legacy"}
+	var voices: Array = inventory.voices
+	var has_name := false
+	for entry: Dictionary in voices:
+		if entry.get("name") == voice:
+			has_name = true
+	return VoiceSelection.resolve(voices, voice if has_name else "", "" if has_name else voice, backend)
+
+func synthesize_result(text: String, voice: String = "", backend: String = "kokoro", operation: VoiceOperation = null) -> Dictionary:
+	var selection := _check_known_voice(voice, backend)
+	if not selection.success:
+		return selection
+	var data := {"text": text, "backend": backend}
+	if not voice.is_empty():
+		data["voice_id"] = voice
+	var result := await _call("voice/tts/synthesize", data, "either", 120.0, operation)
+	if not result.success:
+		return result
+	if result.transport == "json":
+		var encoded: Variant = result.value.get("audio_base64")
+		if not encoded is String:
+			return failure("invalid_voice_response", "Synthesis response is missing audio.")
+		result["audio"] = Marshalls.base64_to_raw(encoded)
+	if result.audio.is_empty():
+		return failure("empty_audio", "Synthesis returned no audio.")
+	if decode_audio(result.audio) == null:
+		return failure("invalid_audio", "Synthesis audio could not be decoded.")
+	result["metadata_mode"] = selection.get("metadata_mode", "legacy")
+	return result
+
 func synthesize(text: String, voice_id: String = "", backend: String = "kokoro") -> PackedByteArray:
-	var service := _get_voice_service()
-	if not service:
-		push_error("[VoiceServiceClient] voice-service not available")
-		return PackedByteArray()
+	var result := await synthesize_result(text, voice_id, backend)
+	return result.get("audio", PackedByteArray())
 
-	var action := Action.new({"topic": "voice/tts/synthesize"})
-	var data := {
-		"text": text,
-		"backend": backend,
-	}
-	if not voice_id.is_empty():
-		data["voice_id"] = voice_id
+func list_voices_result(backend: String = "", operation: VoiceOperation = null) -> Dictionary:
+	_bind_inventory_connection()
+	var connected_client := Core.client
+	var epoch := _inventory_epoch
+	_query_sequence += 1
+	var sequence := _query_sequence
+	_query_versions[backend] = sequence
+	var data := {} if backend.is_empty() else {"backend": backend}
+	var result := await _call("voice/voices/list", data, "json", 30.0, operation)
+	if not result.success:
+		return result
+	var voices: Variant = result.value.get("voices")
+	if not voices is Array:
+		return failure("invalid_voice_response", "Voice discovery response is missing its voice list.")
+	for voice: Variant in voices:
+		if not voice is Dictionary or not voice.get("id") is String or not voice.get("name") is String:
+			return failure("invalid_voice_response", "Voice discovery contains a malformed identity.")
+	if connected_client == Core.client and Core.client._connected and epoch == _inventory_epoch and _query_versions.get(backend) == sequence:
+		_voice_inventories[backend] = voices.duplicate(true)
+		_inventory_versions[backend] = sequence
+	return {"success": true, "voices": voices, "count": voices.size(), "backend_filter": backend}
 
-	print("[VoiceServiceClient] TTS: sending request (text=%d chars, voice=%s, backend=%s)" % [text.length(), voice_id, backend])
-
-	# Audio and JSON are alternative terminal results owned before sending.
-	var awaiter := Core.send_message(service, action, data, "either", 120.0)
-	var completed := await awaiter.receive_result()
-	if not completed.success:
-		push_error("[VoiceServiceClient] TTS: %s" % completed.error_message)
-		return PackedByteArray()
-	if completed.kind == "binary":
-		return completed.binary
-	var result: Dictionary = completed.json.get("params", {}).get("result", {})
-	return Marshalls.base64_to_raw(str(result.get("audio_base64", "")))
-
-
-## List available voices from voice-service.
-## Returns array of voice dictionaries [{id, name, backend_family, capabilities}, ...].
 func list_voices(backend: String = "") -> Array:
-	var service := _get_voice_service()
-	if not service:
-		push_error("[VoiceServiceClient] voice-service not available")
-		return []
-
-	var action := Action.new({"topic": "voice/voices/list"})
-	var data := {}
-	if not backend.is_empty():
-		data["backend"] = backend
-
-	var awaiter := Core.send_message(service, action, data)
-	var response = await awaiter.with_timeout(30.0).receive()
-
-	if not response:
-		push_error("[VoiceServiceClient] Voice list request timed out")
-		return []
-
-	var result: Dictionary = response.get("params", {}).get("result", {})
+	var result := await list_voices_result(backend)
 	return result.get("voices", [])
 
+func get_status_result(operation: VoiceOperation = null) -> Dictionary:
+	var result := await _call("voice/manage/status", {}, "json", 15.0, operation)
+	if result.success:
+		result["status"] = result.value
+	return result
 
-## Get voice-service health status.
 func get_status() -> Dictionary:
-	var service := _get_voice_service()
-	if not service:
-		return {"error": "voice-service not available"}
-
-	var action := Action.new({"topic": "voice/manage/status"})
-	var awaiter := Core.send_message(service, action, {})
-	var response = await awaiter.with_timeout(15.0).receive()
-
-	if not response:
-		return {"error": "status request timed out"}
-
-	return response.get("params", {}).get("result", {})
+	var result := await get_status_result()
+	return result.status if result.success else result
 
 
 ## Transcribe audio using OpenAI Whisper REST API directly (fallback).
 ## Returns transcribed text, or "" on error.
-func transcribe_whisper(audio_wav: PackedByteArray) -> String:
+func transcribe_whisper_result(audio_wav: PackedByteArray) -> Dictionary:
 	var api_key := SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI)
 	if api_key.is_empty():
 		push_error("[VoiceServiceClient] No OpenAI API key for Whisper fallback")
-		return ""
+		return failure("whisper_failed", "OpenAI Whisper transcription failed.")
 
 	var http := HTTPRequest.new()
 	http.use_threads = true
@@ -142,7 +181,10 @@ func transcribe_whisper(audio_wav: PackedByteArray) -> String:
 		"Content-Type: multipart/form-data; boundary=%s" % boundary,
 	])
 
-	http.request_raw("https://api.openai.com/v1/audio/transcriptions", headers, HTTPClient.METHOD_POST, form_data)
+	var send_error := http.request_raw("https://api.openai.com/v1/audio/transcriptions", headers, HTTPClient.METHOD_POST, form_data)
+	if send_error != OK:
+		http.queue_free()
+		return failure("send_failed", "Could not send Whisper transcription request.")
 
 	var result: Array = await http.request_completed
 	http.queue_free()
@@ -153,51 +195,64 @@ func transcribe_whisper(audio_wav: PackedByteArray) -> String:
 	if response_code != 200:
 		var err_text := body.get_string_from_utf8()
 		push_error("[VoiceServiceClient] Whisper API error %d: %s" % [response_code, err_text])
-		return ""
+		return failure("whisper_failed", "OpenAI Whisper transcription failed.")
 
 	var json = JSON.parse_string(body.get_string_from_utf8())
-	if json and json.has("text"):
-		return json["text"]
+	if json is Dictionary and json.get("text") is String:
+		return {"success": true, "text": json.text}
 
 	push_error("[VoiceServiceClient] Unexpected Whisper response format")
-	return ""
+	return failure("whisper_failed", "OpenAI Whisper transcription failed.")
+
+
+func transcribe_whisper(audio_wav: PackedByteArray) -> String:
+	var result := await transcribe_whisper_result(audio_wav)
+	return result.get("text", "")
 
 
 ## Transcribe using the configured provider (with automatic fallback).
+func transcribe_auto_result(audio_wav: PackedByteArray, voice_config: VoiceConfig, operation: VoiceOperation = null) -> Dictionary:
+	if operation != null and not operation.can_start():
+		return failure("cancelled", "Transcription cancelled locally.")
+	if operation != null and operation.is_busy():
+		return failure("operation_busy", "Voice operation already has an active request.")
+	if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE:
+		var result := await transcribe_result(audio_wav, "en", voice_config.stt_backend, voice_config.stt_model, operation)
+		if result.success or result.get("error_code") in ["cancelled", "operation_busy"] or not voice_config.whisper_fallback:
+			return result
+		return await transcribe_whisper_result(audio_wav)
+	return await transcribe_whisper_result(audio_wav)
+
 func transcribe_auto(audio_wav: PackedByteArray, voice_config: VoiceConfig) -> String:
-	var provider := voice_config.get_effective_stt_provider()
+	var result := await transcribe_auto_result(audio_wav, voice_config)
+	return result.get("text", "")
 
-	if provider == VoiceConfig.STTProvider.VOICE_SERVICE:
-		var result := await transcribe(audio_wav, "en", voice_config.stt_backend, voice_config.stt_model)
-		if result.is_empty() and voice_config.whisper_fallback:
-			push_warning("[VoiceServiceClient] Voice-service STT failed, falling back to Whisper")
-			return await transcribe_whisper(audio_wav)
-		return result
-	else:
-		return await transcribe_whisper(audio_wav)
+func synthesize_auto_result(text: String, voice_config: VoiceConfig, operation: VoiceOperation = null) -> Dictionary:
+	if voice_config.tts_provider != VoiceConfig.TTSProvider.VOICE_SERVICE:
+		return failure("voice_disabled", "Speech synthesis is disabled.")
+	var voice: String = voice_config.voice_name if not voice_config.voice_name.is_empty() else voice_config.voice_id
+	var inventory := _inventory_for(voice_config.tts_backend)
+	if not inventory.is_empty() and (not voice_config.voice_name.is_empty() or not voice_config.voice_id.is_empty()):
+		var selection := VoiceSelection.resolve(inventory.voices, voice_config.voice_name, voice_config.voice_id, voice_config.tts_backend)
+		if not selection.success:
+			return selection
+	return await synthesize_result(text, voice, voice_config.tts_backend, operation)
 
-
-## Synthesize using the configured provider. Returns WAV bytes or empty.
 func synthesize_auto(text: String, voice_config: VoiceConfig) -> PackedByteArray:
-	var provider := voice_config.get_effective_tts_provider()
-
-	if provider == VoiceConfig.TTSProvider.VOICE_SERVICE:
-		# Send voice name (stable across restarts) instead of UUID (ephemeral)
-		var voice: String = voice_config.voice_name if not voice_config.voice_name.is_empty() else voice_config.voice_id
-		return await synthesize(text, voice, voice_config.tts_backend)
-	else:
-		return PackedByteArray()
+	var result := await synthesize_auto_result(text, voice_config)
+	return result.get("audio", PackedByteArray())
 
 
 ## Summarize a user+response exchange into a single spoken sentence using a fast model via model-chat.
 ## Returns the summary text, or the original response (truncated) on failure.
-func summarize_for_speech(user_text: String, response_text: String, model_name: String, timeout: float = 30.0) -> String:
+func summarize_for_speech_result(user_text: String, response_text: String, model_name: String, timeout: float = 30.0, operation: VoiceOperation = null) -> Dictionary:
+	if operation != null and not operation.can_start():
+		return failure("cancelled", "Speech summary cancelled locally.")
+	if operation != null and operation.is_busy():
+		return failure("operation_busy", "Voice operation already has an active request.")
 	var matched := CoreModelCatalog.resolve({"kind": "core_action", "service_client_id": "model-chat", "action_name": model_name})
 	if not matched.success:
-		if summary_unavailable_reason != matched.error_code:
-			push_warning("[VoiceServiceClient] Speech summary fallback: %s" % matched.error_message)
-		summary_unavailable_reason = matched.error_code
-		return response_text.substr(0, 200)
+		return _summary_fallback(response_text, matched)
 	var model_chat_svc: Service = matched.service
 	var model_action: Action = matched.action
 
@@ -219,29 +274,23 @@ func summarize_for_speech(user_text: String, response_text: String, model_name: 
 	var prepared := provider.build_chat_payload(messages, msg_data)
 	provider.free()
 	if not prepared.success:
-		if summary_unavailable_reason != prepared.error_code:
-			push_warning("[VoiceServiceClient] Speech summary fallback: %s" % prepared.error_message)
-		summary_unavailable_reason = prepared.error_code
-		return response_text.substr(0, 200)
-	summary_unavailable_reason = ""
-	var awaiter := Core.send_message(model_chat_svc, model_action, prepared.payload)
-	var response = await awaiter.with_timeout(timeout).receive()
+		return _summary_fallback(response_text, prepared)
+	var result := await _call(model_action.topic, prepared.payload, "json", timeout, operation, model_chat_svc)
+	if not result.success:
+		return result if result.get("error_code") in ["cancelled", "operation_busy"] else _summary_fallback(response_text, result)
+	var choices: Variant = result.value.get("choices")
+	if choices is Array and not choices.is_empty() and choices[0] is Dictionary:
+		var message: Variant = choices[0].get("message")
+		if message is Dictionary and message.get("content") is String and not message.content.is_empty():
+			return {"success": true, "text": message.content}
+	return _summary_fallback(response_text, failure("invalid_summary", "Summary model returned no text."))
 
-	if not response:
-		push_warning("[VoiceServiceClient] Summarization timed out")
-		return response_text.substr(0, 200)
+func _summary_fallback(response_text: String, cause: Dictionary) -> Dictionary:
+	return {"success": true, "text": response_text.substr(0, 200), "fallback_reason": cause.get("error_code", "summary_unavailable"), "fallback_message": cause.get("error_message", cause.get("error", "Summary unavailable."))}
 
-	var result: Dictionary = response.get("params", {}).get("result", {})
-	if result.has("choices"):
-		var choices: Array = result.get("choices", [])
-		if not choices.is_empty():
-			var message: Dictionary = choices[0].get("message", {})
-			var content: String = message.get("content", "")
-			if not content.is_empty():
-				return content
-
-	push_warning("[VoiceServiceClient] Summarization returned unexpected format")
-	return response_text.substr(0, 200)
+func summarize_for_speech(user_text: String, response_text: String, model_name: String, timeout: float = 30.0) -> String:
+	var result := await summarize_for_speech_result(user_text, response_text, model_name, timeout)
+	return result.get("text", "")
 
 
 ## Find or create a Service object for voice-service
@@ -260,6 +309,11 @@ func _get_voice_service() -> Service:
 
 ## Load audio bytes (WAV or raw PCM) into an AudioStreamWAV.
 ## Handles both RIFF WAV containers and raw s16le PCM from voice-container.
+static func decode_audio(audio_bytes: PackedByteArray) -> AudioStreamWAV:
+	var stream := AudioStreamWAV.new()
+	load_audio_into_stream(stream, audio_bytes)
+	return stream if not stream.data.is_empty() else null
+
 static func load_audio_into_stream(stream: AudioStreamWAV, audio_bytes: PackedByteArray) -> void:
 	if audio_bytes.size() < 4:
 		return

@@ -699,34 +699,36 @@ func _speak(arguments: Dictionary) -> Dictionary:
 	if text.is_empty():
 		return MCPToolUtils.error("text is required")
 
-	if not Core.client._connected:
-		return MCPToolUtils.error("Core not connected — cannot use voice-service")
-
 	var cfg := SingletonObject.get_voice_config()
 	var voice_id: String = arguments.get("voice_id", "")
 	if voice_id.is_empty():
-		voice_id = cfg.voice_id
+		voice_id = cfg.voice_name if not cfg.voice_name.is_empty() else cfg.voice_id
 	var backend: String = arguments.get("backend", "")
 	if backend.is_empty():
 		backend = cfg.tts_backend
 
 	var client := SingletonObject.get_voice_client()
-	var wav_data: PackedByteArray = await client.synthesize(text, voice_id, backend)
+	var outcome := await client.synthesize_result(text, voice_id, backend)
+	if not outcome.success:
+		return outcome
+	var wav_data: PackedByteArray = outcome.audio
 
-	if wav_data.is_empty():
-		return MCPToolUtils.error("TTS synthesis failed")
-
-	# Play via the ChatPane TTS player if available
+	# The pane supplies playback availability; MCP owns a separate player.
 	var chats = SingletonObject.Chats
-	if chats and chats._tts_player:
-		var stream := AudioStreamWAV.new()
-		VoiceServiceClient.load_audio_into_stream(stream, wav_data)
-		chats._tts_player.stream = stream
-		chats._tts_player.volume_db = linear_to_db(cfg.tts_volume)
-		chats._tts_player.play()
+	if is_instance_valid(chats) and is_instance_valid(chats._tts_player):
+		var stream := VoiceServiceClient.decode_audio(wav_data)
+		if stream == null:
+			return VoiceServiceClient.failure("invalid_audio", "Speech audio could not be decoded.")
+		# MCP playback owns its player, independent of an in-flight chat speech.
+		var player := AudioStreamPlayer.new()
+		chats.add_child(player)
+		player.stream = stream
+		player.volume_db = linear_to_db(cfg.tts_volume)
+		player.finished.connect(player.queue_free, CONNECT_ONE_SHOT)
+		player.play()
 	else:
 		push_warning("[MCPSkillTools] No TTS player available for minerva_speak")
-		return MCPToolUtils.error("No audio player available")
+		return VoiceServiceClient.failure("no_audio_player", "No audio player available")
 
 	return {
 		"success": true,
@@ -738,17 +740,8 @@ func _speak(arguments: Dictionary) -> Dictionary:
 
 
 func _list_voices(arguments: Dictionary) -> Dictionary:
-	if not Core.client._connected:
-		return MCPToolUtils.error("Core not connected — cannot query voice-service")
-
 	var backend: String = arguments.get("backend", "")
-	var client := SingletonObject.get_voice_client()
-	var voices: Array = await client.list_voices(backend)
-
-	if voices.is_empty():
-		return {"voices": [], "count": 0, "message": "No voices available (voice-service may not be running)", "success": true}
-
-	return {"voices": voices, "count": voices.size(), "success": true}
+	return await SingletonObject.get_voice_client().list_voices_result(backend)
 
 
 ## Query docket for hints/insights relevant to a skill, filtered by model targeting.

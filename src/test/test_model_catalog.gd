@@ -214,8 +214,8 @@ func _core_surfaces(singleton, server, broker) -> void:
 	check("agent editor retains unavailable model identity", agent._core_model_map[agent.agent_model_dropdown.selected] == spec and agent.agent_model_dropdown.is_item_disabled(agent.agent_model_dropdown.selected))
 
 	var voice = load("res://Scripts/Services/Voice/VoiceServiceClient.gd").new()
-	var summary: String = await voice.summarize_for_speech("question", "answer".repeat(100), spec.action_name)
-	check("disabled summary uses deterministic fallback with a reason", summary == "answer".repeat(100).substr(0, 200) and voice.summary_unavailable_reason == "provider_disabled")
+	var summary: Dictionary = await voice.summarize_for_speech_result("question", "answer".repeat(100), spec.action_name)
+	check("disabled summary uses deterministic fallback with a reason", summary.text == "answer".repeat(100).substr(0, 200) and summary.fallback_reason == "provider_disabled")
 	check("voice service discovery remains independent of chat enable", voice._get_voice_service() != null)
 	var preferences = load("res://Scripts/UI/Views/PreferencesPopup.gd").new()
 	preferences._summary_model_option = OptionButton.new()

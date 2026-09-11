@@ -2701,6 +2701,7 @@ var _voice_tab: MarginContainer
 var _stt_provider_option: OptionButton
 var _stt_backend_option: OptionButton
 var _tts_provider_option: OptionButton
+var _voice_refresh_generation := 0
 var _voice_selector: OptionButton
 var _voice_preview_btn: Button
 var _tts_backend_option: OptionButton
@@ -3072,19 +3073,9 @@ func _voice_load_ui_from_config() -> void:
 			_tts_provider_option.select(i)
 			break
 
-	# STT backend
-	match cfg.stt_backend:
-		"qwen3-asr": _stt_backend_option.select(1)
-		_: _stt_backend_option.select(0)
+	VoiceSelection.show_saved_option(_stt_backend_option, cfg.stt_backend, {"faster-whisper": 0, "qwen3-asr": 1})
 	_stt_backend_option.disabled = cfg.stt_provider != VoiceConfig.STTProvider.VOICE_SERVICE
-
-	# TTS backend
-	match cfg.tts_backend:
-		"kokoro": _tts_backend_option.select(1)
-		"qwen3-base": _tts_backend_option.select(2)
-		"qwen3-customvoice": _tts_backend_option.select(3)
-		"gpt-sovits": _tts_backend_option.select(4)
-		_: _tts_backend_option.select(0)
+	VoiceSelection.show_saved_option(_tts_backend_option, cfg.tts_backend, {"": 0, "kokoro": 1, "qwen3-base": 2, "qwen3-customvoice": 3, "gpt-sovits": 4})
 
 	_whisper_fallback_check.button_pressed = cfg.whisper_fallback
 	_auto_send_check.button_pressed = cfg.auto_send_transcription
@@ -3093,7 +3084,7 @@ func _voice_load_ui_from_config() -> void:
 	# STT model
 	var stt_model_map := {"tiny.en": 0, "small.en": 1, "medium.en": 2, "large-v3-turbo": 3, "distil-large-v3": 4}
 	if _stt_model_option:
-		_stt_model_option.select(stt_model_map.get(cfg.stt_model, 1))
+		VoiceSelection.show_saved_option(_stt_model_option, cfg.stt_model, stt_model_map)
 
 	# VAD silence duration
 	if _vad_silence_slider:
@@ -3218,12 +3209,19 @@ func _on_tts_backend_changed(idx: int) -> void:
 
 
 func _on_voice_selected(idx: int) -> void:
-	if idx < 0 or idx >= _voices_cache.size():
+	if idx < 0 or idx >= _voice_selector.item_count:
+		return
+	var voice: Variant = _voice_selector.get_item_metadata(idx)
+	if not voice is Dictionary:
 		return
 	var cfg := SingletonObject.get_voice_config()
-	var voice: Dictionary = _voices_cache[idx]
+	var selected := VoiceSelection.resolve(_voices_cache, str(voice.get("name", "")), str(voice.get("id", "")), cfg.tts_backend)
+	if not selected.success:
+		_voice_status_label.text = selected.error_message
+		VoiceSelection.populate(_voice_selector, _voices_cache, cfg)
+		return
 	cfg.voice_id = voice.get("id", "")
-	cfg.voice_name = voice.get("name", voice.get("id", ""))
+	cfg.voice_name = voice.get("name", "")
 	cfg.save()
 
 
@@ -3435,52 +3433,33 @@ func _on_tts_volume_changed(value: float) -> void:
 
 
 func _on_voice_refresh_pressed() -> void:
-	if not Core.client._connected:
-		_voice_status_label.text = "Voice service status: Core not connected"
-		return
-
+	_voice_refresh_generation += 1
+	var generation := _voice_refresh_generation
 	_voice_refresh_btn.disabled = true
 	_voice_refresh_btn.text = "Loading..."
-
 	var client := SingletonObject.get_voice_client()
 	var cfg := SingletonObject.get_voice_config()
 	var backend_filter: String = cfg.tts_backend
-
-	var voices: Array = await client.list_voices(backend_filter)
-
-	_voices_cache = voices
-	_voice_selector.clear()
-
-	if voices.is_empty():
-		_voice_selector.add_item("(no voices available)")
-		_voice_selector.disabled = true
-	else:
-		var selected_idx := 0
-		for i in voices.size():
-			var v: Dictionary = voices[i]
-			var display: String = v.get("name", v.get("id", "unknown"))
-			var backend_family: String = v.get("backend_family", "")
-			if not backend_family.is_empty():
-				display += " (%s)" % backend_family
-			_voice_selector.add_item(display)
-			if v.get("id", "") == cfg.voice_id:
-				selected_idx = i
-		_voice_selector.select(selected_idx)
-		_voice_selector.disabled = false
-		# Update config if selection changed
-		if selected_idx < voices.size():
-			cfg.voice_id = voices[selected_idx].get("id", "")
-			cfg.voice_name = voices[selected_idx].get("name", "")
-			cfg.save()
-
+	var outcome := await client.list_voices_result(backend_filter)
+	if generation != _voice_refresh_generation or backend_filter != cfg.tts_backend or not is_instance_valid(_voice_selector):
+		return
 	_voice_refresh_btn.disabled = false
 	_voice_refresh_btn.text = "Refresh"
-	_voice_status_label.text = "Voice service: %d voices loaded" % voices.size()
+	if not outcome.success:
+		_voices_cache = []
+		VoiceSelection.populate(_voice_selector, [], cfg)
+		_voice_status_label.text = "Voice discovery failed: %s" % outcome.error_message
+		return
+	_voices_cache = outcome.voices
+	var selection := VoiceSelection.populate(_voice_selector, _voices_cache, cfg)
+	_voice_status_label.text = "Voice service: %d voices loaded" % _voices_cache.size()
+	if not selection.success and (not cfg.voice_name.is_empty() or not cfg.voice_id.is_empty()):
+		_voice_status_label.text += "; %s" % selection.error_message
 
 
 func _on_voice_preview_pressed() -> void:
 	var cfg := SingletonObject.get_voice_config()
-	if cfg.voice_id.is_empty():
+	if cfg.voice_id.is_empty() and cfg.voice_name.is_empty():
 		_voice_status_label.text = "Select a voice first"
 		return
 
@@ -3493,23 +3472,26 @@ func _on_voice_preview_pressed() -> void:
 	_voice_status_label.text = "Generating preview..."
 
 	var client := SingletonObject.get_voice_client()
-	var voice: String = cfg.voice_name if not cfg.voice_name.is_empty() else cfg.voice_id
-	var wav_data: PackedByteArray = await client.synthesize(
+	var outcome := await client.synthesize_auto_result(
 		"Hello! This is a preview of the selected voice.",
-		voice,
-		cfg.tts_backend
+		cfg
 	)
 
-	if wav_data.is_empty():
-		_voice_status_label.text = "Preview failed — check voice service"
+	if not outcome.success:
+		_voice_status_label.text = "Preview failed: %s" % outcome.error_message
 		_voice_preview_btn.disabled = false
 		_voice_preview_btn.text = "Preview"
 		return
 
+	var wav_data: PackedByteArray = outcome.audio
 	# Play the WAV audio
 	print("[Preview] WAV data: %d bytes, header: %s" % [wav_data.size(), wav_data.slice(0, 4).get_string_from_ascii()])
-	var stream := AudioStreamWAV.new()
-	VoiceServiceClient.load_audio_into_stream(stream, wav_data)
+	var stream := VoiceServiceClient.decode_audio(wav_data)
+	if stream == null:
+		_voice_status_label.text = "Preview failed: audio could not be decoded"
+		_voice_preview_btn.disabled = false
+		_voice_preview_btn.text = "Preview"
+		return
 	print("[Preview] Stream: rate=%d, stereo=%s, format=%d, data=%d bytes" % [stream.mix_rate, stream.stereo, stream.format, stream.data.size()])
 
 	var player := AudioStreamPlayer.new()

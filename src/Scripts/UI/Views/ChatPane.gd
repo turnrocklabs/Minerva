@@ -3284,8 +3284,6 @@ func _ready():
 		_lazy_pre_warm()
 	)
 
-	# TTS finished → notify gateway
-	_tts_player.finished.connect(_on_tts_playback_finished)
 
 	# Always-listening toggle switch with state label — top bar
 	var listen_hbox := HBoxContainer.new()
@@ -4766,25 +4764,25 @@ func _create_voice_status_label(msg_node: Control) -> RichTextLabel:
 
 ## Speak the assistant's response via TTS based on Voice Preferences speak mode.
 ## Serialized: only one TTS at a time. New requests cancel the pending one.
-var _tts_busy := false
-var _tts_cancel := false
+var _speech_operation: SpeechOperation
+var _gateway_transcriptions: Array[VoiceOperation] = []
+var _gateway_generation := 0
+var _gateway_stopped := false
+var _voice_tearing_down := false
+var _tts_busy: bool:
+	get: return _speech_operation != null and not _speech_operation.done
 
-
-## Cancel any in-flight TTS (synthesis or playback). Non-blocking.
-## Public entry so PTT surfaces can call it before binding the mic — ending
-## output playback before mic capture starts avoids the audio-driver duplex-entry
-## race that leaves mic streams zombied until app restart.
-##
-## Sets _tts_cancel so in-flight _voice_speak_response bails at its next checkpoint,
-## and stops the player immediately if playing. The flag stays set until the NEXT
-## _voice_speak_response clears it on entry — that ensures a slow synthesize_auto
-## WebSocket round-trip still sees the cancel when it wakes up.
-## Only cancels CURRENT work; future TTS requests play normally.
+## Stop only this pane's current summary/synthesis/playback operation.
 func cancel_tts() -> void:
-	if _tts_busy:
-		_tts_cancel = true
-	if _tts_player:
-		_tts_player.stop()  # no-op if not playing; fires finished → _tts_busy = false
+	var active := _speech_operation
+	_speech_operation = null
+	if active != null:
+		active.cancel()
+
+func _exit_tree() -> void:
+	_voice_tearing_down = true
+	_cancel_gateway_transcriptions()
+	cancel_tts()
 
 
 ## Dismiss a status label with a terminal message; auto-free after hold_seconds.
@@ -4793,6 +4791,9 @@ func _dismiss_status_label(label: RichTextLabel, final_text: String, hold_second
 	if not is_instance_valid(label):
 		return
 	label.text = final_text
+	if not is_inside_tree():
+		label.queue_free()
+		return
 	var timer := get_tree().create_timer(hold_seconds)
 	timer.timeout.connect(func():
 		if is_instance_valid(label):
@@ -4800,119 +4801,69 @@ func _dismiss_status_label(label: RichTextLabel, final_text: String, hold_second
 	, CONNECT_ONE_SHOT)
 
 func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null) -> void:
+	if _voice_tearing_down:
+		return
 	var cfg := SingletonObject.get_voice_config()
-	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF:
+	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF or cfg.tts_provider == VoiceConfig.TTSProvider.NONE:
 		_voice_on_response_complete()
 		return
-
-	var effective_tts := cfg.get_effective_tts_provider()
-	if effective_tts == VoiceConfig.TTSProvider.NONE:
-		_voice_on_response_complete()
-		return
-
-	# Cancel any in-flight TTS and wait for it to finish
-	if _tts_busy:
-		print("[ChatPane] TTS busy — cancelling previous, queuing new")
-		_tts_cancel = true
-		while _tts_busy:
-			await get_tree().create_timer(0.1).timeout
-	# Always clear — handles external cancel_tts() that left the flag set.
-	# Without this, a slow-synth cancel by PTT would stick the flag and silently
-	# suppress every future summary.
-	_tts_cancel = false
-
-	_tts_busy = true
-
-	# Create inline status label on the message node
-	var status_label: RichTextLabel = null
-	if msg_node:
-		status_label = _create_voice_status_label(msg_node)
-
-	var text_to_speak := response_text
-	var summary_fallback := ""
+	cancel_tts()
+	var operation := SpeechOperation.new()
+	_speech_operation = operation
+	var status_label: RichTextLabel = _create_voice_status_label(msg_node) if is_instance_valid(msg_node) else null
+	var context := {"status": status_label, "summary": cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE, "text": response_text}
+	operation.finished.connect(_finish_speech.bind(operation, context), CONNECT_ONE_SHOT)
+	var voice_client := SingletonObject.get_voice_client()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
 		if cfg.summary_model.is_empty():
-			push_warning("[ChatPane] Summarize mode active but no summary model configured")
-			_dismiss_status_label(status_label, "Voice: No summary model configured", 3.0)
-			_tts_busy = false
+			operation.finish(VoiceServiceClient.failure("summary_unconfigured", "No summary model configured."))
 			return
-		if status_label:
+		if is_instance_valid(status_label):
 			status_label.text = "Voice: Summarizing via %s..." % cfg.summary_model
-		print("[ChatPane] TTS: summarizing via %s..." % cfg.summary_model)
-		var client := SingletonObject.get_voice_client()
-		text_to_speak = await client.summarize_for_speech(user_text, response_text, cfg.summary_model, cfg.summary_timeout)
-		summary_fallback = client.summary_unavailable_reason
-		if _tts_cancel:
-			print("[ChatPane] TTS: cancelled after summarize")
-			_dismiss_status_label(status_label, "Voice: cancelled", 1.5)
-			_tts_busy = false
+		var summary := await voice_client.summarize_for_speech_result(user_text, response_text, cfg.summary_model, cfg.summary_timeout, operation)
+		if operation.done:
 			return
-		print("[ChatPane] TTS: summary ready: %s" % text_to_speak.substr(0, 80))
-
-	if status_label:
-		status_label.text = "Voice: Using shortened response (%s); synthesizing..." % summary_fallback if not summary_fallback.is_empty() else "Voice: Synthesizing speech..."
-	print("[ChatPane] TTS: synthesizing %d chars..." % text_to_speak.length())
-	var voice_client := SingletonObject.get_voice_client()
-	var wav_data: PackedByteArray = await voice_client.synthesize_auto(text_to_speak, cfg)
-
-	if _tts_cancel:
-		print("[ChatPane] TTS: cancelled after synthesize")
-		_dismiss_status_label(status_label, "Voice: cancelled", 1.5)
-		_tts_busy = false
+		if not summary.success:
+			operation.finish(summary)
+			return
+		context.text = summary.text
+		context["fallback"] = summary.get("fallback_reason", "")
+		context["status_text"] = "Voice: Shortened response (%s): %s" % [context.fallback, context.text] if not context.fallback.is_empty() else "Voice: %s" % context.text
+	if is_instance_valid(status_label):
+		status_label.text = "Voice: Using shortened response (%s); synthesizing..." % context.fallback if not context.get("fallback", "").is_empty() else "Voice: Synthesizing speech..."
+	var synthesized := await voice_client.synthesize_auto_result(context.text, cfg, operation)
+	if operation.done:
 		return
-
-	if wav_data.is_empty():
-		print("[ChatPane] TTS: synthesis returned empty audio!")
-		_dismiss_status_label(status_label, "Voice: TTS synthesis failed", 3.0)
-		_tts_busy = false
-		_voice_on_response_complete()
+	if not synthesized.success:
+		operation.finish(synthesized)
 		return
-
-	print("[ChatPane] TTS: got %d bytes, playing..." % wav_data.size())
-
-	# The synthesize await above is a real network round-trip; during it the pane
-	# (and its child _tts_player) can be torn down by a project reload / tab close.
-	# Bail out rather than assign .stream on a freed node.
-	if not is_instance_valid(_tts_player):
-		print("[ChatPane] TTS: player freed during synthesis, aborting playback")
-		_tts_busy = false
-		return
-
-	# Collapse after successful synthesis — only in summarize mode
-	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
-		if is_instance_valid(msg_node) and msg_node is MessageMarkdown and msg_node._expanded:
+	if operation.play(_tts_player, synthesized.audio, cfg.tts_volume) and not operation.done:
+		if is_instance_valid(_voice_gateway):
+			_voice_gateway.notify_tts_started()
+		if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE and is_instance_valid(msg_node) and msg_node is MessageMarkdown and msg_node._expanded:
 			msg_node._expanded = false
 			msg_node.contract_message()
+		if is_instance_valid(status_label):
+			status_label.text = context.status_text if context.summary else "Voice: Speaking..."
 
-	var stream := AudioStreamWAV.new()
-	VoiceServiceClient.load_audio_into_stream(stream, wav_data)
-	_tts_player.stream = stream
-	_tts_player.volume_db = linear_to_db(cfg.tts_volume)
-	_tts_player.play()
-	# Notify gateway: TTS playing (barge-in detection active)
-	if _voice_gateway:
-		_voice_gateway.notify_tts_started()
-
-	# Release TTS busy flag and voice conversation gate when playback finishes
-	_tts_player.finished.connect(func():
-		_tts_busy = false
-		_voice_on_response_complete()
-	, CONNECT_ONE_SHOT)
-
-	if status_label:
-		if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
-			status_label.text = "Voice: %s" % text_to_speak
+func _finish_speech(outcome: Dictionary, operation: SpeechOperation, context: Dictionary) -> void:
+	if _speech_operation == operation:
+		_speech_operation = null
+	var status: RichTextLabel = context.status if is_instance_valid(context.status) else null
+	if not outcome.success:
+		_dismiss_status_label(status, "Voice: %s" % outcome.error_message, 2.0)
+	elif is_instance_valid(status):
+		if context.summary and not _voice_tearing_down:
+			status.text = context.status_text
 		else:
-			status_label.text = "Voice: Speaking..."
-		_tts_player.finished.connect(func():
-			if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
-				status_label.text = "Voice: %s" % text_to_speak
-			else:
-				status_label.queue_free()
-		, CONNECT_ONE_SHOT)
+			status.queue_free()
+	if is_instance_valid(_voice_gateway):
+		_voice_gateway.notify_tts_finished()
+	if _voice_tearing_down:
+		_voice_llm_busy = false
+	else:
+		_voice_on_response_complete()
 
-
-## Load raw WAV bytes into an AudioStreamWAV resource.
 
 ## Toggle always-listening mode via CheckButton
 func _on_engagement_toggle_changed(enabled: bool) -> void:
@@ -4985,16 +4936,28 @@ func _on_engagement_changed(state: String) -> void:
 
 ## Voice gateway: VAD-endpointed audio ready for STT
 func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
-	if audio_wav.is_empty():
+	if audio_wav.is_empty() or _voice_tearing_down or _gateway_stopped:
 		return
 
 	_lazy_pre_warm()
 
 	var cfg := SingletonObject.get_voice_config()
 	var client := SingletonObject.get_voice_client()
+	var generation := _gateway_generation
+	var operation := VoiceOperation.new()
+	_gateway_transcriptions.append(operation)
 
 	# Send to STT
-	var text: String = await client.transcribe_auto(audio_wav, cfg)
+	var outcome := await client.transcribe_auto_result(audio_wav, cfg, operation)
+	_gateway_transcriptions.erase(operation)
+	if generation != _gateway_generation or _voice_tearing_down:
+		return
+	if not outcome.success:
+		if is_instance_valid(_engagement_state_label):
+			_engagement_state_label.text = "Voice: %s" % outcome.error_message
+		push_warning("Voice transcription failed: %s" % outcome.error_message)
+		return
+	var text: String = outcome.text
 	if text.is_empty():
 		return
 
@@ -5028,14 +4991,9 @@ func _voice_on_response_complete() -> void:
 		_voice_send_utterance(next_text)
 
 
-## TTS playback finished — notify gateway for idle timer
-func _on_tts_playback_finished() -> void:
-	if _voice_gateway:
-		_voice_gateway.notify_tts_finished()
-
-
 ## Start the voice gateway (called when always-listening is enabled)
 func start_voice_gateway() -> void:
+	_gateway_stopped = false
 	if _voice_gateway:
 		if _engagement_state_label:
 			_engagement_state_label.text = "Connecting..."
@@ -5080,12 +5038,23 @@ func _lazy_pre_warm() -> void:
 
 ## Stop the voice gateway
 func stop_voice_gateway() -> void:
+	_cancel_gateway_transcriptions()
 	if _voice_gateway:
 		_voice_gateway.stop()
 		if _engagement_state_label:
 			_engagement_state_label.text = "Voice Off"
 			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		print("[ChatPane] Voice gateway stopped")
+
+
+func _cancel_gateway_transcriptions() -> void:
+	_gateway_stopped = true
+	_gateway_generation += 1
+	_voice_utterance_queue.clear()
+	var operations := _gateway_transcriptions.duplicate()
+	_gateway_transcriptions.clear()
+	for operation in operations:
+		operation.cancel()
 
 
 func _on_child_order_changed():
