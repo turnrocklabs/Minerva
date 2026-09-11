@@ -430,20 +430,10 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		provider_obj = ModelResolver.restore_core(core_spec if not core_spec.is_empty() else {
 			"kind": "core_action", "service_client_id": "", "action_name": ""})
 
-	# Plugin chat-provider (chat-passthrough W1): if a key was serialized AND it
-	# names a currently-registered entry, restore a PluginProvider. If the entry
-	# is absent (plugin not installed/running), fall through to the int-based
-	# default-provider path below — non-fatal, NO error dialog; the chat stays
-	# usable with a default provider.
+	# Restore the exact plugin identity even before registration or after unload.
 	var plugin_provider_key: String = str(data.get("PluginProviderKey", ""))
 	if not plugin_provider_key.is_empty():
-		var cpr = SingletonObject.plugin_chat_provider_registry if "plugin_chat_provider_registry" in SingletonObject else null
-		if cpr != null and cpr.has_method("get_entry"):
-			var entry: Dictionary = cpr.get_entry(plugin_provider_key)
-			if not entry.is_empty():
-				var PluginProviderScript = load("res://Scripts/Services/Providers/PluginProvider.gd")
-				provider_obj = PluginProviderScript.new()
-				provider_obj.configure_from_entry(entry)
+		provider_obj = ModelResolver.restore_plugin(plugin_provider_key)
 
 	if provider_obj == null and provider_enum_index >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
 		provider_obj = SingletonObject.create_dynamic_provider(provider_enum_index)

@@ -3,8 +3,23 @@ extends RefCounted
 ## Shared chat model construction. Explicit selections never fall back to another model.
 
 
+static func selection_schema() -> Dictionary:
+	return {"type": "object", "description": "Stable model_spec from minerva_list_models. Kinds: builtin/dynamic with model_id; core_action with service_client_id/action_name; plugin_provider with entry_key (plugin:<plugin_id>:<entry_id>). Plugin alias: {kind:plugin,plugin_id,entry_id}. Takes precedence over provider name/enum."}
+
+
 static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
 	var provider: BaseProvider
+	if spec.get("kind") in ["plugin_provider", "plugin"]:
+		if for_plugin:
+			return _failure("provider_disabled", "Plugin chat providers cannot be used as plugin member models", spec)
+		var identity := plugin_identity(spec)
+		if not identity.success:
+			return identity
+		var entry := plugin_entry(identity.model_spec.entry_key)
+		if entry.is_empty():
+			return _failure("model_not_available", "Plugin chat entry is not registered", identity.model_spec)
+		provider = PluginProvider.new().configure_from_entry(entry)
+		return {"success": true, "provider": provider, "model_spec": identity.model_spec}
 	if spec.get("kind") == "core_action":
 		var result := CoreModelCatalog.create_provider(spec)
 		if not result.success:
@@ -36,6 +51,8 @@ static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
 
 
 static func create_by_name(provider_key: String, model_name: String, for_plugin: bool = false) -> Dictionary:
+	if model_name.begins_with("plugin:"):
+		return create({"kind": "plugin_provider", "entry_key": model_name}, for_plugin)
 	var matches: Array[Dictionary] = []
 	var requested := model_name.to_lower()
 	var target := SingletonObject.provider_from_key(provider_key) if not provider_key.is_empty() else -1
@@ -78,6 +95,8 @@ static func create_by_name(provider_key: String, model_name: String, for_plugin:
 static func spec_for(provider: BaseProvider) -> Dictionary:
 	if provider == null:
 		return {}
+	if provider is PluginProvider:
+		return {"kind": "plugin_provider", "entry_key": provider.entry_key}
 	if provider is CoreProvider:
 		return provider.get_model_spec()
 	if provider.has_meta("dynamic_model_id"):
@@ -92,6 +111,45 @@ static func spec_for(provider: BaseProvider) -> Dictionary:
 static func restore_core(spec: Dictionary) -> CoreProvider:
 	var provider := CoreProvider.new()
 	provider.set_chat_model_spec(spec)
+	return provider
+
+
+## Canonicalize aliases once; entry IDs may contain colons, plugin IDs may not.
+static func plugin_identity(spec: Dictionary) -> Dictionary:
+	var key: Variant = spec.get("entry_key", "")
+	if spec.get("kind") == "plugin":
+		var plugin: Variant = spec.get("plugin_id")
+		var entry: Variant = spec.get("entry_id")
+		if not plugin is String or not entry is String or plugin.is_empty() or entry.is_empty() or ":" in plugin:
+			return _failure("invalid_model_spec", "Plugin selection requires plugin_id and entry_id", spec)
+		key = PluginChatProviderRegistry.make_key(plugin, entry)
+	if not key is String:
+		return _failure("invalid_model_spec", "Plugin entry_key must be a string", spec)
+	var parts: PackedStringArray = key.split(":", true, 2)
+	if parts.size() != 3 or parts[0] != "plugin" or parts[1].is_empty() or parts[2].is_empty():
+		return _failure("invalid_model_spec", "Expected plugin:<plugin_id>:<entry_id>", spec)
+	return {"success": true, "model_spec": {"kind": "plugin_provider", "entry_key": key},
+		"plugin_id": parts[1], "entry_id": parts[2]}
+
+
+static func plugin_entry(key: String) -> Dictionary:
+	var registry = SingletonObject.plugin_chat_provider_registry
+	return registry.get_entry(key) if registry != null else {}
+
+
+## Saved identity remains addressable while its registration is absent.
+static func restore_plugin(key: String) -> PluginProvider:
+	var provider := PluginProvider.new()
+	var entry := plugin_entry(key)
+	if not entry.is_empty():
+		return provider.configure_from_entry(entry)
+	provider.entry_key = key
+	provider.model_name = key
+	provider.display_name = key
+	var identity := plugin_identity({"kind": "plugin_provider", "entry_key": key})
+	if identity.success:
+		provider.plugin_id = identity.plugin_id
+		provider.entry_id = identity.entry_id
 	return provider
 
 
@@ -144,6 +202,15 @@ static func catalog_providers() -> Array:
 
 
 static func list_models(key: String, for_plugin: bool = false) -> Array:
+	if key == "plugin":
+		if for_plugin or SingletonObject.plugin_chat_provider_registry == null:
+			return []
+		var rows: Array = []
+		for entry in SingletonObject.plugin_chat_provider_registry.list_entries():
+			rows.append({"model_name": entry.key, "display": entry.display_name, "provider": "plugin",
+				"plugin_id": entry.plugin_id, "entry_id": entry.entry_id,
+				"model_spec": {"kind": "plugin_provider", "entry_key": entry.key}})
+		return rows
 	var target := SingletonObject.provider_from_key(key)
 	if for_plugin and (target < 0 or not SingletonObject.is_provider_allowed_for_plugins(target)):
 		return []
@@ -155,6 +222,8 @@ static func list_providers(for_plugin: bool = false) -> Array:
 	for entry in catalog_providers():
 		if not for_plugin or SingletonObject.is_provider_allowed_for_plugins(SingletonObject.provider_from_key(entry.key)):
 			out.append(entry)
+	if not for_plugin and not list_models("plugin").is_empty():
+		out.append({"key": "plugin", "display": "Plugins"})
 	return out
 
 

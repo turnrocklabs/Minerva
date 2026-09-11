@@ -44,9 +44,10 @@ func register_tools() -> void:
 					"type": "string",
 					"description": "Display name for the chat tab"
 				},
+				"model_spec": ModelResolver.selection_schema(),
 				"provider": {
 					"type": "string",
-					"description": "Model provider. Use enum name (e.g. claude_sonnet, claude_opus, gpt_standard, gpt_deep, gemini_flash, chatgpt_default) or 'current' to use the calling chat's provider. Case-insensitive. Default: current UI selection."
+					"description": "Model provider. Use enum name (e.g. claude_sonnet, claude_opus, gpt_standard, gpt_deep, gemini_flash, chatgpt_default) or 'current' to use the calling chat's provider. Native names are case-insensitive. Plugin entry: plugin:<plugin_id>:<entry_id> (exact). Default: current UI selection."
 				},
 				"provider_enum_id": {
 					"type": "integer",
@@ -70,9 +71,10 @@ func register_tools() -> void:
 					"type": "string",
 					"description": "Display name for the chat tab"
 				},
+				"model_spec": ModelResolver.selection_schema(),
 				"provider": {
 					"type": "string",
-					"description": "Model provider (e.g. claude_sonnet, gpt_standard, chatgpt). Default: current UI selection."
+					"description": "Model provider (e.g. claude_sonnet, gpt_standard, chatgpt), or exact plugin:<plugin_id>:<entry_id>. Default: current UI selection."
 				},
 				"provider_enum_id": {
 					"type": "integer",
@@ -98,7 +100,7 @@ func register_tools() -> void:
 	, "chat")
 
 	server._register_tool("minerva_set_chat_model",
-		"Set the model/provider for an existing normal chat. Supports structured model_spec for Core/model-chat actions. Use this before minerva_send_message when the desired model is a Core service action such as Qwen via model-chat.",
+		"Set the model/provider for an existing normal chat. Use a model_spec from minerva_list_models, including Core actions and registered plugin chat entries (list provider=plugin).",
 		{
 			"type": "object",
 			"properties": {
@@ -106,13 +108,10 @@ func register_tools() -> void:
 					"type": "string",
 					"description": "The UUID returned from minerva_create_chat"
 				},
-				"model_spec": {
-					"type": "object",
-					"description": "Structured model target. For model-chat/Qwen use {\"kind\":\"core_action\",\"service_client_id\":\"model-chat\",\"action_name\":\"qwen...\"}. Also supports {\"kind\":\"builtin\",\"model_id\":...} and {\"kind\":\"dynamic\",\"model_id\":...}."
-				},
+				"model_spec": ModelResolver.selection_schema(),
 				"provider": {
 					"type": "string",
-					"description": "Fallback model provider enum name such as claude_sonnet, gpt_standard, gemini_flash, or current."
+					"description": "Native model provider name, current, or exact plugin:<plugin_id>:<entry_id>."
 				},
 				"provider_enum_id": {
 					"type": "integer",

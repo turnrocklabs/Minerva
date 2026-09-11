@@ -76,26 +76,15 @@ func _get_chat_provider_registry():
 
 
 ## Rebuild the default set + dropdown when plugin chat-provider entries change.
-## If the currently-selected entry vanished, fall back to the default selection.
+## Preserve a vanished selection by its stable key until it registers again.
 func _on_chat_providers_changed() -> void:
-	var had_selection_id := get_selected_id()
-	_setup_default_provider_set()
-	_rebuild_dropdown()
+	clear_combined_provider_sets()
+	_on_core_catalog_changed()
 	# Locked chooser (chat-passthrough W2): the binding is contractual. Re-pin the
 	# locked entry (or its offline placeholder) and NEVER fall back to a default.
 	if _locked:
 		_ensure_locked_entry_displayed()
 		return
-	# If a plugin provider was selected and it's now gone, the selection will
-	# have been dropped by _rebuild_dropdown (no matching item). Restore a sane
-	# default so the chat stays usable.
-	if had_selection_id >= SingletonObject.PLUGIN_PROVIDER_ID_BASE \
-			and _find_item_index_by_id(had_selection_id) == -1 \
-			and get_item_count() > 0:
-		select(0)
-		var prov := _get_provider_from_id(get_selected_id())
-		if prov:
-			provider_selected.emit(prov)
 
 
 #region Lock mechanism (chat-passthrough W2)
@@ -280,6 +269,7 @@ func get_item_index_for_provider(provider: BaseProvider) -> int:
 		for index in range(get_item_count()):
 			if _provider_spec_matches(get_item_provider_spec(index), spec):
 				return index
+		return -1
 	for i in range(get_item_count()):
 		var item_id := get_item_id(i)
 		var metadata = get_item_metadata(get_item_index(item_id))
@@ -372,12 +362,12 @@ func _setup_default_provider_set():
 			var key_str: String = str(entry.get("key", ""))
 			if key_str.is_empty():
 				continue
-			var pitem := ProviderItem.new(disp, plugin_id_counter, null, key_str, "")
+			var pitem := ProviderItem.new(disp, plugin_id_counter, null, key_str, key_str)
 			items.append(pitem)
 			plugin_id_counter += 1
 
 	for entry in CoreModelCatalog.list_models():
-		items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, ""))
+		items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, "%s / %s" % [entry.model_spec.service_client_id, entry.model_spec.action_name]))
 	_provider_sets["default"] = items
 
 
@@ -386,7 +376,7 @@ func _create_service_set(service: Service):
 	var items: Array[ProviderItem] = []
 	for entry in CoreModelCatalog.list_models():
 		if entry.model_spec.service_client_id == service.client_id:
-			items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, service.name))
+			items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, "%s / %s" % [entry.model_spec.service_client_id, entry.model_spec.action_name]))
 	_provider_sets[service] = items
 
 
@@ -401,7 +391,7 @@ func _create_combined_set(services: Array, key: String, include_standard: bool):
 		service_ids.append(service.client_id)
 	for entry in CoreModelCatalog.list_models():
 		if entry.model_spec.service_client_id in service_ids:
-			items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, ""))
+			items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, "%s / %s" % [entry.model_spec.service_client_id, entry.model_spec.action_name]))
 	_provider_sets[key] = items
 
 
@@ -450,8 +440,25 @@ func _rebuild_dropdown():
 		if item.tooltip != "":
 			set_item_tooltip(item_index, item.tooltip)
 	
-	if not current_spec.is_empty() and not select_provider_spec(current_spec) and current_spec.get("kind") == "core_action":
-		_show_unavailable_core(current_spec, previous_label)
+	if not current_spec.is_empty() and not select_provider_spec(current_spec):
+		if current_spec.get("kind") == "core_action":
+			_show_unavailable_core(current_spec, previous_label)
+		elif current_spec.get("kind") == "plugin_provider":
+			_show_plugin_selection(current_spec.entry_key, previous_label)
+
+
+func _show_plugin_selection(key: String, label: String) -> void:
+	var entry := ModelResolver.plugin_entry(key)
+	var unavailable := entry.is_empty()
+	var id := SingletonObject.PLUGIN_PROVIDER_ID_BASE
+	while get_item_index(id) != -1:
+		id += 1
+	add_item(label.trim_suffix(" (unavailable)") + (" (unavailable)" if unavailable else ""), id)
+	var index := item_count - 1
+	set_item_metadata(index, key)
+	set_item_disabled(index, unavailable)
+	set_item_tooltip(index, "Plugin chat entry is not registered: %s" % key if unavailable else key)
+	select(index)
 
 
 func _show_unavailable_core(spec: Dictionary, label: String) -> void:
@@ -496,19 +503,10 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 	return provider
 
 ## Build a PluginProvider from a registry entry key (chat-passthrough W1).
-## Returns null when the registry or entry is gone (entry vanished after the
-## dropdown was built but before selection resolved).
+## A vanished entry remains an unavailable provider carrying the exact key.
 func _build_plugin_provider(entry_key: String) -> BaseProvider:
-	var cpr = _get_chat_provider_registry()
-	if cpr == null or not cpr.has_method("get_entry"):
-		return null
-	var entry: Dictionary = cpr.get_entry(entry_key)
-	if entry.is_empty():
-		return null
-	var PluginProviderScript = load("res://Scripts/Services/Providers/PluginProvider.gd")
-	var prov = PluginProviderScript.new()
-	prov.configure_from_entry(entry)
-	return prov
+	var result := ModelResolver.create({"kind": "plugin_provider", "entry_key": entry_key})
+	return result.provider if result.success else ModelResolver.restore_plugin(entry_key)
 
 
 ## Returns the provider for a specific tab index
@@ -529,6 +527,10 @@ const _LEGACY_OR_IDS := {
 ## Loads previously saved provider selection from config
 func _load_saved_provider():
 	var saved_spec: Variant = SingletonObject.get_config_file_value("Providers", "DefaultModelSpec")
+	if saved_spec is Dictionary and saved_spec.get("kind") == "plugin_provider":
+		if not select_provider_spec(saved_spec):
+			_show_plugin_selection(str(saved_spec.get("entry_key", "")), str(saved_spec.get("entry_key", "Plugin")))
+		return
 	if saved_spec is Dictionary and saved_spec.get("kind") == "core_action":
 		if not select_provider_spec(saved_spec):
 			_show_unavailable_core(saved_spec, str(saved_spec.get("action_name", "TurnRock")))
@@ -560,7 +562,7 @@ func _load_saved_provider():
 			if key_index != -1:
 				select(key_index)
 				return
-			# Key no longer resolves (entry vanished) → graceful default fallback.
+			_show_plugin_selection(str(saved_key), str(saved_key))
 			return
 
 	var index := _find_item_index_by_id(provider_id)

@@ -27,7 +27,7 @@ func get_tool_names() -> Array[String]:
 func register_tools() -> void:
 	# Model management tools
 	server._register_tool("minerva_list_models",
-		"List enabled chat providers, or enabled models for a provider. Core models include their stable model_spec and generation schema.",
+		"List enabled chat providers, or enabled models for a provider. Core models include their stable model_spec and generation schema. Use provider=plugin for registered plugin chat entries.",
 		{"type": "object", "properties": {"provider": {"type": "string", "description": "Provider key; omit to list providers"}}}, "models")
 
 	server._register_tool("minerva_add_model",

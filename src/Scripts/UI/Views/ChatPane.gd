@@ -5205,6 +5205,9 @@ func sync_provider_picker_to_chat(tab_or_chat_id: Variant = -1) -> void:
 
 
 func _add_temporary_provider_picker_item(active_provider: BaseProvider) -> int:
+	if active_provider is PluginProvider:
+		_provider_option_button._show_plugin_selection(active_provider.entry_key, active_provider.display_name)
+		return _provider_option_button.selected
 	if active_provider is CoreProvider and not CoreModelCatalog.resolve(active_provider.get_model_spec()).success:
 		_provider_option_button._show_unavailable_core(active_provider.get_model_spec(), active_provider.display_name)
 		return _provider_option_button.selected

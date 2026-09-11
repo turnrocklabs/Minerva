@@ -161,6 +161,7 @@ func _core_surfaces(singleton, server, broker) -> void:
 	chooser._setup_default_provider_set()
 	chooser.switch_to_provider_set("default")
 	check("GUI can select the advertised spec", chooser.select_provider_spec(spec))
+	check("Core tooltip exposes exact service/action identity", chooser.get_item_tooltip(chooser.selected) == "%s / %s" % [spec.service_client_id, spec.action_name])
 	var provider = chooser.get_selected_provider()
 	check("GUI constructs the exact Core identity", resolver.spec_for(provider) == spec and provider.requires_chat_model)
 	var history = history_script.new(provider, "core-catalog-test-chat")

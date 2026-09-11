@@ -14,7 +14,7 @@ extends SceneTree
 ##   6. plugin stop mid-chat: entry vanishes via lifecycle signal; in-flight
 ##      generate resolves to BotResponse.error; no crash; history intact.
 ##   7. ServiceHistory round-trip: PluginProvider restored when entry present;
-##      default-provider fallback when entry absent (no error dialog).
+##      exact unavailable plugin identity retained when entry absent.
 ##
 ## NOTE: class_name globals are invisible to --script runs; load() + duck-type.
 ## SingletonObject autoload registers lazily; resolve at runtime.
@@ -35,11 +35,13 @@ const S_STOPPED := 3
 
 var _pass := 0
 var _fail := 0
+var _completed := false
 
 
 func _init() -> void:
 	print("=== W1 plugin chat-provider seam test ===\n")
 	await _run()
+	check("whole plugin scenario completed", _completed)
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
 		printerr("FAILURES: %d" % _fail)
@@ -98,7 +100,11 @@ class StubManager extends RefCounted:
 func _make_provider(entry: Dictionary, conn, manager) -> Object:
 	var P = load(PROVIDER_PATH)
 	var prov = P.new()
-	prov.configure_from_entry(entry)
+	var so = root.get_node("SingletonObject")
+	if so.plugin_chat_provider_registry == null:
+		so.plugin_chat_provider_registry = load(REGISTRY_PATH).new()
+	var registered: Dictionary = so.plugin_chat_provider_registry.register_entry(entry.plugin_id, entry)
+	prov.configure_from_entry(registered)
 	prov._test_plugin_manager = manager
 	manager.conn = conn
 	# Add to tree so _ready() wires the stop signal (cancellation path).
@@ -134,6 +140,8 @@ func _run() -> void:
 	await _test_saved_selection_key_restore(so)
 	_test_service_history_roundtrip(so)
 	await _test_integration_capability_path(so)
+	await _test_mcp_plugin_lifecycle(so)
+	_completed = true
 
 
 # --- Acceptance 5 (registry) + idempotent update --------------------------
@@ -512,6 +520,7 @@ func _test_saved_selection_key_restore(so) -> void:
 	btn2.queue_free()
 	# Clean up persisted config so it doesn't leak into other suites.
 	so.save_to_config_file("Providers", "DefaultProviderKey", "")
+	so.save_to_config_file("Providers", "DefaultModelSpec", {})
 	so.plugin_chat_provider_registry = null
 
 
@@ -543,14 +552,12 @@ func _test_service_history_roundtrip(so) -> void:
 			and restored.provider.entry_key == "plugin:chatprovider:main",
 		str(restored.provider.get_script().resource_path) if restored.provider else "<null>")
 
-	# Deserialize WITHOUT entry → default-provider fallback, no error.
+	# Deserialize WITHOUT entry retains identity for later re-registration.
 	reg.drop_plugin(PLUGIN_ID)
 	var restored2 = SH.Deserialize(serialized)
-	check("Deserialize (entry absent) falls back to a non-null provider", restored2.provider != null)
-	check("fallback provider is NOT a PluginProvider",
-		restored2.provider != null and not ("entry_key" in restored2.provider
-			and not str(restored2.provider.entry_key).is_empty()),
-		restored2.provider.get_script().resource_path if restored2.provider else "<null>")
+	check("Deserialize (entry absent) retains exact plugin identity",
+		restored2.provider != null and "entry_key" in restored2.provider
+			and restored2.provider.entry_key == "plugin:chatprovider:main")
 	so.plugin_chat_provider_registry = null
 
 
@@ -596,6 +603,7 @@ func _test_integration_capability_path(so) -> void:
 
 	# Wire the real registry on the broker so the capability handler reaches it.
 	var registry = pm.get_chat_provider_registry()
+	so.plugin_chat_provider_registry = registry
 	check("PluginManager exposes chat-provider registry", registry != null)
 	var broker = so.get("plugin_capability_broker")
 	if broker != null:
@@ -657,3 +665,101 @@ func _test_integration_capability_path(so) -> void:
 	var bot2 = await prov2.generate_content([{"text": "pong"}])
 	check("generate after stop → BotResponse.error (no crash)", not bot2.error.is_empty(), bot2.error)
 	prov2.queue_free()
+
+
+func _test_mcp_plugin_lifecycle(so) -> void:
+	print("\n-- MCP: exact plugin identity across unregister/re-register --")
+	var resolver = load("res://Scripts/Services/Providers/ModelResolver.gd")
+	var reg = load(REGISTRY_PATH).new()
+	var saved_registry = so.plugin_chat_provider_registry
+	var saved_chats = so.ChatList.duplicate()
+	var saved_pane = so.Chats
+	so.plugin_chat_provider_registry = reg
+	so.ChatList.clear()
+	var pane = load("res://test/fixtures/plugin_catalog_chat_pane.gd").new()
+	so.Chats = pane
+	var server = so.get_mcp_manager().minerva_server
+	var a: Dictionary = reg.register_entry("council", {"entry_id": "seat:main", "display_name": "Same Label",
+		"generate_tool": "generate_old", "history_mode": "newest_only", "timeout_sec": 45, "metadata": {"old": true}})
+	reg.register_entry("council", {"entry_id": "sibling", "display_name": "Same Label", "generate_tool": "generate_sibling", "history_mode": "full"})
+	var spec := {"kind": "plugin_provider", "entry_key": "plugin:council:seat:main"}
+	var providers: Dictionary = await server.execute_tool_for_http("minerva_list_models", {})
+	var plugin_group := false
+	for item in providers.get("providers", []):
+		plugin_group = plugin_group or item.key == "plugin"
+	check("MCP discovers the plugin provider group", plugin_group)
+	var models: Dictionary = await server.execute_tool_for_http("minerva_list_models", {"provider": "plugin"})
+	check("MCP lists same-label entries with distinct stable keys", models.models.size() == 2 and models.models[0].model_spec == spec and models.models[1].model_spec != spec)
+	var created: Dictionary = await server.execute_tool_for_http("minerva_create_chat", {"name": "MCP Plugin Lifecycle", "model_spec": spec})
+	check("public MCP create selects the canonical plugin spec", created.get("success", false) and so.ChatList.size() == 1 and resolver.spec_for(so.ChatList[0].provider) == spec)
+	var history = so.ChatList[0]
+	var first_provider = history.provider
+	var selected: Dictionary = await server.execute_tool_for_http("minerva_set_chat_model", {"chat_id": history.HistoryId,
+		"model_spec": {"kind": "plugin", "plugin_id": "council", "entry_id": "seat:main"}})
+	check("public MCP set accepts the alias without losing entry suffix", selected.get("success", false) and history.provider.entry_id == "seat:main" and resolver.spec_for(history.provider) == spec)
+	first_provider.free()
+	first_provider = history.provider
+	var named: Dictionary = await server.execute_tool_for_http("minerva_set_chat_model", {"chat_id": history.HistoryId, "provider": "plugin:council:seat:main"})
+	check("public MCP provider key selects the exact entry", named.get("success", false) and history.provider.entry_key == a.key)
+	first_provider.free()
+	var provider = history.provider
+	var conn = StubConnection.new()
+	conn.scripted_result = _answer_envelope("old")
+	var manager = StubManager.new()
+	manager.conn = conn
+	provider._test_plugin_manager = manager
+	var initial = await provider.generate_content([{"text": "hello"}])
+	check("MCP-created provider dispatches its registered tool", initial.text == "old" and conn.last_tool == "generate_old" and not conn.last_args.has("messages"))
+	var saved: Dictionary = history.Serialize()
+	var chooser = load(PROVIDER_OPTION_BUTTON_PATH).new()
+	chooser._setup_default_provider_set()
+	chooser.switch_to_provider_set("default")
+	check("GUI and MCP share the same canonical selection", chooser.select_provider_spec(spec) and chooser.get_selected_provider_spec() == spec)
+	check("same-label entries expose exact identity in the GUI tooltip", chooser.get_item_tooltip(chooser.selected) == spec.entry_key)
+	var gui_provider = chooser.get_selected_provider()
+	check("GUI builds the same plugin provider", resolver.spec_for(gui_provider) == resolver.spec_for(provider))
+	gui_provider.free()
+
+	var service_script = load("res://Scripts/Services/Providers/Core/scripts/service.gd")
+	var internal = service_script.new({"client_id": service_script.INTERNAL_CHAT_SERVICE_ID})
+	chooser.switch_to_provider_set_for_services([internal])
+	chooser.select_provider_spec(spec)
+	chooser._create_combined_set([internal], "combined_stale_cache", true)
+	reg.unregister_entry("council", "seat:main")
+	chooser._on_chat_providers_changed()
+	check("plugin lifecycle invalidates inactive combined-set caches", not chooser._provider_sets.has("combined_stale_cache"))
+	check("GUI retains unavailable key even with same-label sibling", chooser.get_selected_provider_spec() == spec and chooser.is_item_disabled(chooser.selected))
+	var before: int = conn.generate_calls
+	var unavailable = await provider.generate_content([{"text": "blocked"}])
+	check("unregistered entry cannot dispatch through its still-live connection", not unavailable.error.is_empty() and conn.generate_calls == before)
+	var restored = load(SERVICE_HISTORY_PATH).Deserialize(saved)
+	check("restart retains unavailable plugin identity and colon suffix", restored.provider.entry_key == a.key and restored.provider.entry_id == "seat:main")
+	restored.provider._test_plugin_manager = manager
+	var absent = await restored.provider.generate_content([{"text": "blocked after restart"}])
+	check("restored absent entry does not substitute its sibling", not absent.error.is_empty() and conn.generate_calls == before)
+	var missing: Dictionary = await server.execute_tool_for_http("minerva_set_chat_model", {"chat_id": history.HistoryId, "model_spec": spec})
+	check("public MCP reports missing exact identity without changing history", missing.get("error_code") == "model_not_available" and history.provider == provider)
+
+	reg.register_entry("council", {"entry_id": "seat:main", "display_name": "Updated", "generate_tool": "generate_new", "history_mode": "full"})
+	conn.scripted_result = _answer_envelope("fresh")
+	var updated = await provider.generate_content([{"text": "a"}, {"text": "b"}])
+	check("re-registration refreshes tool and history mode", updated.text == "fresh" and conn.last_tool == "generate_new" and conn.last_args.messages.size() == 2)
+	check("re-registration clears stale metadata and resets timeout", provider.entry_metadata.is_empty() and provider.request_timeout == 600 and provider.display_name == "Updated")
+	var after_restore = await restored.provider.generate_content([{"text": "restored"}])
+	check("restored identity becomes usable when its exact entry returns", after_restore.text == "fresh" and conn.last_args.entry_id == "seat:main")
+	chooser._on_chat_providers_changed()
+	check("GUI reselects exact key after registry order changes", chooser.get_selected_provider_spec() == spec and not chooser.is_item_disabled(chooser.selected) and chooser.get_item_text(chooser.selected) == "Updated")
+
+	var broker = load(BROKER_PATH).new(null, null)
+	check("plugin member catalog excludes plugin chat providers", broker._handle_host_models_list_models("council", {"provider": "plugin"}).result.models.is_empty())
+	var recursion: Dictionary = await broker._handle_host_providers_chat("council", {"model_spec": spec, "messages": [{"role": "user", "text": "no recursion"}]})
+	check("plugin chat member invocation refuses recursive plugin specs", recursion.get("error_code") == "provider_disabled" and conn.last_args.text != "no recursion")
+	check("malformed alias is rejected", resolver.create({"kind": "plugin", "plugin_id": "council", "entry_id": null}).get("error_code") == "invalid_model_spec")
+
+	so.ChatList.assign(saved_chats)
+	so.Chats = saved_pane
+	so.plugin_chat_provider_registry = saved_registry
+	provider.free()
+	restored.provider.free()
+	chooser.free()
+	pane.free()

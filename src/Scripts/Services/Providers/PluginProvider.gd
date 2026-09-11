@@ -63,11 +63,11 @@ func configure_from_entry(entry: Dictionary) -> PluginProvider:
 	generate_tool = str(entry.get("generate_tool", ""))
 	history_mode = str(entry.get("history_mode", "newest_only"))
 	cancel_tool = str(entry.get("cancel_tool", ""))
+	entry_metadata = {}
 	if entry.get("metadata", null) is Dictionary:
 		entry_metadata = (entry["metadata"] as Dictionary).duplicate(true)
-	var t: int = int(entry.get("timeout_sec", int(default_timeout)))
-	if t > 0:
-		request_timeout = float(t)
+	var t: int = int(entry.get("timeout_sec", PluginChatProviderRegistry.DEFAULT_TIMEOUT_SEC))
+	request_timeout = float(t if t > 0 else PluginChatProviderRegistry.DEFAULT_TIMEOUT_SEC)
 	model_name = str(entry.get("display_name", "plugin"))
 	display_name = str(entry.get("display_name", "plugin"))
 	return self
@@ -84,6 +84,13 @@ func generate_content(prompt: Array[Variant], _additional_params: Dictionary = {
 	var generation: int = _call_generation
 	var bot := BotResponse.new()
 	bot.provider = self
+	# A running connection does not imply this particular entry still exists.
+	var entry := ModelResolver.plugin_entry(entry_key)
+	if entry.is_empty():
+		bot.error = "Plugin chat entry '%s' is not registered." % entry_key
+		SingletonObject.chat_completed.emit(bot)
+		return bot
+	configure_from_entry(entry)
 
 	# Resolve the plugin connection.
 	var pm = _get_plugin_manager()
