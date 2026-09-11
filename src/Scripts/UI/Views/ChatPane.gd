@@ -396,7 +396,7 @@ func _create_agent_context_summary_provider(provider_spec: Dictionary, settings:
 		provider.system_prompt = str(settings.get("system_prompt", ""))
 	if ToolMemoryManager._provider_has_property(provider, "reasoning_effort"):
 		provider.reasoning_effort = str(settings.get("reasoning_effort", ""))
-	if provider.supports_num_ctx and int(settings.get("context_size", 0)) > 0:
+	if not provider is CoreProvider and provider.supports_num_ctx and int(settings.get("context_size", 0)) > 0:
 		provider.default_context = int(settings.get("context_size", 0))
 	provider.request_timeout = float(settings.get("summary_timeout", 30.0))
 	return {"provider": provider, "error": "", "provider_label": provider.model_name}
@@ -424,7 +424,9 @@ func _call_agent_context_summary_provider(provider_spec: Dictionary, settings: D
 
 	var additional_params: Dictionary = {}
 	if provider.supports_temperature:
-		additional_params["temperature"] = float(settings.get("temperature", 0.2))
+		additional_params["temperature"] = settings.get("temperature", 0.2)
+	if provider is CoreProvider and settings.get("context_size", 0) != 0:
+		additional_params["num_ctx"] = settings.context_size
 
 	var response: BotResponse = await provider.generate_content(prompt, additional_params)
 	provider.queue_free()
@@ -790,23 +792,16 @@ func create_model_message_node(history: ChatHistory, dummy_item: ChatHistoryItem
 	return model_msg_node
 
 # Generate content from provider
-func generate_content_from_provider(history: ChatHistory, history_list: Array) -> Variant:
-	print("[ChatPane] generate_content_from_provider called, provider: %s" % history.provider.provider_name)
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
+	var provider: BaseProvider = provider_override if provider_override != null else history.provider
+	print("[ChatPane] generate_content_from_provider called, provider: %s" % provider.provider_name)
 	var bot_response
 
 	# Set chat_id on provider for budget enforcement
-	history.provider.chat_id = history.HistoryId
+	provider.chat_id = history.HistoryId
 
-	# Build request params: OpenAI sampling params (as before) plus per-chat
-	# reasoning options for any provider that supports the effort picker.
-	var optional_params := {}
-	if history.provider.PROVIDER == SingletonObject.API_PROVIDER.OPENAI and not history.provider is OpenAIImageProviderScript:
-		optional_params = {
-			"temperature": history.Temperature,
-			"top_p": history.TopP,
-			"presence_penalty": history.PresencePenalty,
-			"frequency_penalty": history.FrequencyPenalty,
-		}
+	var request: Dictionary = GenerationOptions.request_from_history(history) if request_options == null else request_options
+	var optional_params := GenerationOptions.chat_params(history, provider, request)
 
 	# Per-chat reasoning effort → provider-native request params. Applied only
 	# when the user configured reasoning for this chat (ReasoningEffort != "");
@@ -814,14 +809,18 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array) -
 	if history.ReasoningEffort != "":
 		var reasoning_enabled := history.ReasoningEffort != "off"
 		var reasoning_level := history.ReasoningEffort if reasoning_enabled else "medium"
-		history.provider.apply_reasoning_options(optional_params, reasoning_level, reasoning_enabled)
+		provider.apply_reasoning_options(optional_params, reasoning_level, reasoning_enabled)
 
 	# Reasoning-summary preference (ChatGPT). Duck-typed so only providers that
 	# expose the field react — no provider-type coupling in ChatPane.
-	if "request_reasoning_summary" in history.provider:
-		history.provider.request_reasoning_summary = history.ReasoningSummary
+	if "request_reasoning_summary" in provider:
+		provider.request_reasoning_summary = history.ReasoningSummary
 
-	bot_response = await history.provider.generate_content(history_list, optional_params)
+	bot_response = await provider.generate_content(history_list, optional_params)
+	if bot_response and not str(bot_response.error).is_empty():
+		var was_cancelled := str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
+		history.termination_reason = "cancelled" if was_cancelled else "error"
+		history.termination_message = str(bot_response.error)
 
 	# Record cost with chat context
 	if bot_response and SingletonObject.cost_tracker:
@@ -1555,7 +1554,7 @@ func _resolve_cited_refs(item: ChatHistoryItem) -> Array:
 
 
 ## Build request metadata dictionary for debugging display in user message expand block
-func _build_request_metadata(history: ChatHistory, history_list: Array[Variant]) -> Dictionary:
+func _build_request_metadata(history: ChatHistory, history_list: Array[Variant], request_options: Dictionary = {}) -> Dictionary:
 	var metadata: Dictionary = {}
 
 	# Model info
@@ -1576,7 +1575,13 @@ func _build_request_metadata(history: ChatHistory, history_list: Array[Variant])
 		metadata["tool_count"] = 0
 
 	# Generation parameters (if available)
-	if history.Temperature > 0:
+	if history.provider is CoreProvider:
+		var resolved := GenerationOptions.for_provider(history.provider, GenerationOptions.chat_params(history, history.provider, request_options))
+		if resolved.success:
+			metadata["generation_options"] = resolved.values
+			if resolved.values.has("temperature"):
+				metadata["temperature"] = resolved.values.temperature
+	else:
 		metadata["temperature"] = history.Temperature
 
 	if not history.AgentContextTelemetry.is_empty():
@@ -1747,7 +1752,7 @@ func regenerate_response(chi: ChatHistoryItem):
 		history.provider.set_tools(filtered_tools)
 		print("[regenerate] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
-	var history_list = await create_prompt(chi, false, null, predicate)
+	var history_list = await create_prompt(chi, false, history.provider, predicate, history)
 
 	# Track this request so the stop button works
 	history.is_request_active = true
@@ -1759,13 +1764,17 @@ func regenerate_response(chi: ChatHistoryItem):
 	if existing_response.rendered_node:
 		existing_response.rendered_node.loading = true
 
-	var bot_response = await history.provider.generate_content(history_list)
+	var bot_response = await generate_content_from_provider(history, history_list)
 
 	# if there was an error with the request
 	if not bot_response:
 		history.is_request_active = false
 		_update_stop_button()
 		return
+
+	if history.AgentModeEnabled and str(bot_response.error).is_empty() and not bot_response.has_tool_calls():
+		history.termination_reason = "completed"
+		history.termination_message = ""
 
 	if bot_response.id: existing_response.Id = bot_response.id
 	existing_response.Role = ChatHistoryItem.ChatRole.MODEL
@@ -1944,7 +1953,7 @@ func execute_hcp_chat():
 	else:
 		model_msg_node.queue_free()
 
-func execute_regular_chat(text: String) -> void:
+func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> void:
 	print("[ChatPane] execute_regular_chat called, text length: %d" % text.length())
 	var _history = SingletonObject.ChatList[current_tab]
 	print("[ChatPane] current_tab=%d, AgentModeEnabled=%s, provider=%s" % [current_tab, _history.AgentModeEnabled, _history.provider.provider_name if _history.provider else "null"])
@@ -2034,7 +2043,8 @@ func execute_regular_chat(text: String) -> void:
 	user_history_item.EstimatedTokenCost = int(history.provider.estimate_tokens_from_prompt(history_list))
 
 	# Capture request metadata for debugging expandable block
-	user_history_item.RequestMetadata = _build_request_metadata(history, history_list)
+	user_history_item.RequestMetadata = _build_request_metadata(history, history_list, generation_options)
+	user_history_item.RequestMetadata["generation_options_request"] = generation_options.duplicate(true)
 
 	# rerender the message since we changed the history item
 	var user_msg_node: = history.VBox.add_history_item(user_history_item)
@@ -2103,7 +2113,7 @@ func execute_regular_chat(text: String) -> void:
 		await handle_tool_calls(history, bot_response.tool_calls, 0, chi, user_history_item)
 	else:
 		print("[ChatPane] NOT entering tool call branch - skipping tool execution")
-		if history.AgentModeEnabled:
+		if history.AgentModeEnabled and bot_response != null and str(bot_response.error).is_empty():
 			history.termination_reason = "completed"
 			history.termination_message = ""
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
@@ -2995,22 +3005,31 @@ func get_separated_messages(input: String) -> Array[String]:
 ## merging the new and the initial response into one and returning it.
 func continue_response(partial_chi: ChatHistoryItem) -> ChatHistoryItem:
 	# make a chat request with temporary chat history item
-	var temp_chi = partial_chi.provider.continue_partial_response(partial_chi)
+	var history: ChatHistory = null
+	for candidate in SingletonObject.ChatList:
+		if partial_chi in candidate.HistoryItemList:
+			history = candidate
+			break
+	if history == null:
+		return partial_chi
+	var provider := partial_chi.provider if partial_chi.provider != null else history.provider
+	var request := GenerationOptions.request_from_history(history, partial_chi)
+	var temp_chi = provider.continue_partial_response(partial_chi)
+	var history_list: Array[Variant] = await create_prompt(temp_chi, true, provider, Callable(), history)
+	var bot_response = await generate_content_from_provider(history, history_list, request, provider)
 
-	var history_list: Array[Variant] = await SingletonObject.Chats.create_prompt(temp_chi)
-	
-	# remove_chat_history_item(partial_chi, SingletonObject.ChatList[current_tab])
-
-	var bot_response = await partial_chi.provider.generate_content(history_list)
-
-	# if there was an error just return the partial response
-	if not bot_response: return partial_chi
+	if not bot_response:
+		return partial_chi
+	if not str(bot_response.error).is_empty():
+		SingletonObject.create_toast_notification(str(bot_response.error), ToastNotification.Type.WARNING)
+		return partial_chi
 
 	partial_chi.Message += " %s" % bot_response.text
 	partial_chi.Complete = bot_response.complete
 
 	# set the history item for the rendered node so it gets rerendered
-	partial_chi.rendered_node.history_item = partial_chi
+	if is_instance_valid(partial_chi.rendered_node):
+		partial_chi.rendered_node.history_item = partial_chi
 
 	# var chi = ChatHistoryItem.new()
 	# chi.Role = ChatHistoryItem.ChatRole.MODEL
@@ -5336,11 +5355,15 @@ func _on_audio_stop_1_pressed() -> void:
 func clone_chat(tab_idx: int) -> void:
 	var chat_to_clone: ChatHistory = SingletonObject.ChatList[tab_idx]
 
-	# Clone using the live provider reference, not serialization
-	var new_provider = chat_to_clone.provider.get_script().new()
+	var selection := ModelResolver.copy_selection(chat_to_clone.provider)
+	if not selection.success:
+		SingletonObject.create_toast_notification(selection.error_message, ToastNotification.Type.WARNING)
+		return
+	var new_provider: BaseProvider = selection.provider
 	var new_chat_history: ChatHistory = ChatHistory.new(new_provider)
 	new_chat_history.HistoryName = chat_to_clone.HistoryName + " clone"
 	new_chat_history.Temperature = chat_to_clone.Temperature
+	new_chat_history.GenerationOverrides = chat_to_clone.GenerationOverrides.duplicate(true)
 	new_chat_history.TopP = chat_to_clone.TopP
 	new_chat_history.PresencePenalty = chat_to_clone.PresencePenalty
 	new_chat_history.FrequencyPenalty = chat_to_clone.FrequencyPenalty
@@ -5359,7 +5382,7 @@ func clone_chat(tab_idx: int) -> void:
 
 	# Deep clone history items
 	for item in chat_to_clone.HistoryItemList:
-		var serialized = item.Serialize()
+		var serialized = item.Serialize().duplicate(true)
 		var cloned_item = ChatHistoryItem.Deserialize(serialized)
 		new_chat_history.HistoryItemList.append(cloned_item)
 

@@ -3,6 +3,8 @@
 [ext_resource type="Script" uid="uid://bqthneinxvcib" path="res://Scripts/UI/Views/AISettings.gd" id="1_2377q"]
 [ext_resource type="Texture2D" uid="uid://tnfspe5uvm7o" path="res://assets/icons/mic_icons/microphone_24.png" id="2_bfm0p"]
 
+[ext_resource type="PackedScene" path="res://Scenes/controls/CoreGenerationSettings.tscn" id="3_core_generation"]
+
 [node name="AISettings" type="Window" unique_id=1767940973]
 oversampling_override = 1.0
 initial_position = 4
@@ -49,6 +51,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 theme_override_constants/separation = 10
+
+[node name="CoreGenerationSettings" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" instance=ExtResource("3_core_generation")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
 
 [node name="ProviderHBox" type="HBoxContainer" parent="MarginContainer/MainVBox/TabContainer/Model/ModelVBox" unique_id=1651668266]
 layout_mode = 2

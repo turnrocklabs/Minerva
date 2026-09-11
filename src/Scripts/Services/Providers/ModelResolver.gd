@@ -107,6 +107,15 @@ static func spec_for(provider: BaseProvider) -> Dictionary:
 	return {}
 
 
+static func copy_selection(provider: BaseProvider) -> Dictionary:
+	var spec := spec_for(provider)
+	if spec.get("kind") == "core_action":
+		return {"success": true, "provider": restore_core(spec)}
+	if spec.get("kind") == "plugin_provider":
+		return {"success": true, "provider": restore_plugin(spec.entry_key)}
+	return create(spec)
+
+
 ## Restore identity even if discovery/authentication has not completed yet.
 static func restore_core(spec: Dictionary) -> CoreProvider:
 	var provider := CoreProvider.new()

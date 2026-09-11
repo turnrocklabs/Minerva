@@ -144,6 +144,31 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 	return bot_response
 
 
+## Shared, inspectable construction used by every Core chat invocation.
+func build_chat_payload(prompt: Array[Variant], params: Dictionary = {}) -> Dictionary:
+	var resolved := GenerationOptions.for_provider(self, params)
+	if not resolved.success:
+		return resolved
+	var messages: Array = []
+	if not system_prompt.is_empty() and supports_system_prompt:
+		messages.append({"role": "system", "content": system_prompt})
+	messages.append_array(prompt)
+	resolved.payload["messages"] = messages
+	if tools_enabled and not available_tools.is_empty():
+		resolved.payload["tools"] = format_tools_for_request()
+	return resolved
+
+
+func get_effective_context() -> int:
+	var resolved := GenerationOptions.for_provider(self)
+	return int(resolved.values.get("num_ctx", 0)) if resolved.success else 0
+
+
+func get_effective_num_gpu() -> int:
+	var resolved := GenerationOptions.for_provider(self)
+	return int(resolved.values.get("num_gpu", -1)) if resolved.success else -1
+
+
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	if requires_chat_model:
 		var resolved := CoreModelCatalog.resolve(get_model_spec())
@@ -173,39 +198,14 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	var msg_data: Dictionary
 
 	if _is_openai_compatible_service():
-		# Build Ollama options
-		var ollama_options: Dictionary = {
-			"num_ctx": additional_params.get("num_ctx", get_effective_context())
-		}
-		# Only include num_gpu if explicitly set (>= 0), otherwise let Ollama use its default
-		var effective_num_gpu = get_effective_num_gpu()
-		if effective_num_gpu >= 0:
-			ollama_options["num_gpu"] = effective_num_gpu
-
-		# Prepend system prompt if set (same pattern as OpenAIProvider)
-		var messages: Array = []
-		if not system_prompt.is_empty() and supports_system_prompt:
-			messages.append({"role": "system", "content": system_prompt})
-		messages.append_array(prompt)
-
-		# OpenAI format: wrap messages in data object with parameters
-		msg_data = {
-			"messages": messages,
-			"temperature": additional_params.get("temperature", 0.7),
-			"max_tokens": additional_params.get("max_tokens", 4000),
-			# Ollama options - backend will parse and forward these
-			"options": ollama_options
-		}
-		# Include any other additional params
-		for key in additional_params:
-			if key not in ["temperature", "max_tokens"]:
-				msg_data[key] = additional_params[key]
-
-		# Add tools if enabled (for agent mode)
-		print("[CoreProvider] generate_content: tools_enabled=%s, available_tools.size=%d" % [tools_enabled, available_tools.size()])
-		if tools_enabled and not available_tools.is_empty():
-			msg_data["tools"] = format_tools_for_request()
-			print("[CoreProvider] Added %d tools to request" % msg_data["tools"].size())
+		var prepared := build_chat_payload(prompt, additional_params)
+		if not prepared.success:
+			var failure := BotResponse.new()
+			failure.provider = self
+			failure.error = prepared.error_message
+			failure.set_meta("error_code", prepared.error_code)
+			return failure
+		msg_data = prepared.payload
 	else:
 		# HCP format: send last message as-is
 		var last_msg = prompt.back() if not prompt.is_empty() else {}

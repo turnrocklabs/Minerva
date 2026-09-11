@@ -368,7 +368,7 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 		return
 
 	# Temperature section visibility
-	%TemperatureHBoxContainer.visible = provider.supports_temperature
+	%TemperatureHBoxContainer.visible = provider.supports_temperature and not provider is CoreProvider
 	if provider.temperature_warning and not provider.temperature_warning.is_empty():
 		%TemperatureWarning.text = provider.temperature_warning
 		%TemperatureWarning.visible = true
@@ -393,8 +393,11 @@ func update_ui_for_provider(provider: BaseProvider) -> void:
 	_update_nbp_settings_visibility(is_nbp)
 
 	# Model-chat settings (context window)
-	var is_model_chat: bool = provider.get("supports_num_ctx") == true
+	var is_model_chat: bool = provider.get("supports_num_ctx") == true and not provider is CoreProvider
 	_update_model_chat_settings_visibility(is_model_chat, provider)
+	%CoreGenerationSettings.visible = provider is CoreProvider
+	if provider is CoreProvider:
+		%CoreGenerationSettings.configure(provider, current_chat_tab_ref)
 
 	# Reasoning-effort picker (Anthropic/OpenRouter/Gemini; ChatGPT uses per-effort
 	# model entries instead, so it leaves uses_reasoning_effort_picker() false)
@@ -731,6 +734,8 @@ func _on_reasoning_summary_toggled(pressed: bool) -> void:
 
 
 func _on_model_chat_num_ctx_changed(value: float) -> void:
+	if _loading_values:
+		return
 	var provider: BaseProvider = null
 	if current_chat_tab_ref and current_chat_tab_ref.provider:
 		provider = current_chat_tab_ref.provider
@@ -744,6 +749,8 @@ func _on_model_chat_num_ctx_changed(value: float) -> void:
 
 
 func _on_num_gpu_changed(value: float) -> void:
+	if _loading_values:
+		return
 	var provider: BaseProvider = null
 	if current_chat_tab_ref and current_chat_tab_ref.provider:
 		provider = current_chat_tab_ref.provider
@@ -795,6 +802,7 @@ func _create_timeout_settings() -> void:
 	timeout_spin.name = "TimeoutSpinBox"
 	timeout_spin.min_value = 10
 	timeout_spin.max_value = 600
+	timeout_spin.allow_greater = true
 	timeout_spin.step = 10
 	timeout_spin.suffix = "s"
 	timeout_spin.value_changed.connect(_on_timeout_changed)
@@ -813,6 +821,8 @@ func _create_timeout_settings() -> void:
 
 
 func _on_timeout_changed(value: float) -> void:
+	if _loading_values:
+		return
 	var provider: BaseProvider = null
 	if current_chat_tab_ref and current_chat_tab_ref.provider:
 		provider = current_chat_tab_ref.provider
@@ -866,6 +876,8 @@ func _on_presence_h_slider_value_changed(value: float) -> void:
 
 
 func update_current_tab_param(param_enum: int, value: float) -> void:
+	if _loading_values:
+		return
 	if current_chat_tab_ref:
 		
 		match param_enum:

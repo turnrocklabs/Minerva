@@ -2279,6 +2279,13 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 		resolution["plugin_id"] = plugin_id
 		return resolution
 	var provider: BaseProvider = resolution.provider
+	var generation := GenerationOptions.broker_params(provider, args)
+	if not generation.success:
+		provider.free()
+		generation["plugin_id"] = plugin_id
+		return generation
+	var additional_params: Dictionary = generation.values
+
 	var actual_provider_enum: int = provider.PROVIDER
 	var actual_provider_name: String = so.get_provider_display_name(actual_provider_enum).to_lower()
 	var actual_model_name: String = provider.model_name
@@ -2380,17 +2387,6 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	provider.chat_id = chat_id_key
 	provider.owner_history_id = chat_id_key
 
-	# --- 7. Build additional_params ------------------------------------------
-	var additional_params: Dictionary = {}
-	if args.has("max_tokens"):
-		var mt: Variant = args["max_tokens"]
-		if mt is int or mt is float:
-			additional_params["max_tokens"] = int(mt)
-	if args.has("temperature"):
-		var temp: Variant = args["temperature"]
-		if temp is float or temp is int:
-			additional_params["temperature"] = float(temp)
-
 	# --- 8. Generate content -------------------------------------------------
 	print("[CapabilityBroker] Plugin '%s' invoking host.providers.chat (model=%s, provider=%s)" % [
 		plugin_id, actual_model_name, actual_provider_name])
@@ -2416,6 +2412,10 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 		plugin_chat_completed.emit(plugin_id, actual_provider_name, actual_model_name,
 			_chat_duration_ms, false, 0, 0, str(bot_response.error))
 		provider.queue_free()
+		if bot_response.has_meta("error_code"):
+			var refusal := GenerationOptions.failure(str(bot_response.get_meta("error_code")), str(bot_response.error))
+			refusal["plugin_id"] = plugin_id
+			return refusal
 		return PluginErrors.provider_error(plugin_id, actual_provider_name, actual_model_name,
 			str(bot_response.error))
 

@@ -247,7 +247,6 @@ func summarize_for_speech(user_text: String, response_text: String, model_name: 
 			push_warning("[VoiceServiceClient] Speech summary fallback: %s" % matched.error_message)
 		summary_unavailable_reason = matched.error_code
 		return response_text.substr(0, 200)
-	summary_unavailable_reason = ""
 	var model_chat_svc: Service = matched.service
 	var model_action: Action = matched.action
 
@@ -265,7 +264,16 @@ func summarize_for_speech(user_text: String, response_text: String, model_name: 
 		"options": {"num_ctx": 4000},
 	}
 
-	var awaiter := Core.send_message(model_chat_svc, model_action, msg_data)
+	var provider := CoreProvider.new(model_chat_svc, model_action)
+	var prepared := provider.build_chat_payload(messages, msg_data)
+	provider.free()
+	if not prepared.success:
+		if summary_unavailable_reason != prepared.error_code:
+			push_warning("[VoiceServiceClient] Speech summary fallback: %s" % prepared.error_message)
+		summary_unavailable_reason = prepared.error_code
+		return response_text.substr(0, 200)
+	summary_unavailable_reason = ""
+	var awaiter := Core.send_message(model_chat_svc, model_action, prepared.payload)
 	var response = await awaiter.with_timeout(timeout).receive()
 
 	if not response:

@@ -97,6 +97,7 @@ func _init_modules() -> void:
 		MCPAgentTools.new(self),
 		MCPAutocoderTools.new(self),
 		MCPModelTools.new(self),
+		MCPGenerationTools.new(self),
 		MCPSkillTools.new(self),
 		MCPContainerTools.new(self),
 		# MCPCodeTools removed (DCR 019e7b6609 P2.3): the file-primitive tools

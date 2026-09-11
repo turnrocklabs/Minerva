@@ -28,8 +28,16 @@ var HasUsedSystemPrompt: bool = false:
 var SystemPromptEnabled: bool = true:
 	set(value): SingletonObject.call_deferred("save_state", false); SystemPromptEnabled = value
 
+## Explicit options only; an empty map inherits model defaults/preferences.
+var GenerationOverrides: Dictionary = {}:
+	set(value): SingletonObject.call_deferred("save_state", false); GenerationOverrides = value
+
 var Temperature: float = 1:
-	set(value): SingletonObject.call_deferred("save_state", false); Temperature = value
+	set(value):
+		Temperature = value
+		GenerationOverrides = GenerationOverrides.duplicate(true)
+		GenerationOverrides["temperature"] = value
+		SingletonObject.call_deferred("save_state", false)
 
 var TopP: float = 1:
 	set(value): SingletonObject.call_deferred("save_state", false); TopP = value
@@ -375,6 +383,7 @@ func Serialize() -> Dictionary:
 		"HasUsedSystemPrompt": HasUsedSystemPrompt,
 		"SystemPromptEnabled": SystemPromptEnabled,
 		"Temperature": Temperature,
+		"GenerationOptions": GenerationOverrides.duplicate(true),
 		"TopP": TopP,
 		"FrequencyPenalty": FrequencyPenalty,
 		"PresencePenalty": PresencePenalty,
@@ -462,8 +471,14 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 		history.HistoryItemList.append(chi)
 	
 	# Check if these params exist in the project (added after initial creation)
-	if data.get("Temperature"):
-		history.Temperature = data.get("Temperature")
+	if data.has("Temperature") and (data.Temperature is int or data.Temperature is float):
+		history.Temperature = data.Temperature
+	# Modern map presence owns provenance, including an intentionally empty map.
+	# Legacy histories treat a present temperature (including 0/1) as intent.
+	if data.has("GenerationOptions"):
+		history.GenerationOverrides = data.GenerationOptions.duplicate(true) if data.GenerationOptions is Dictionary else {"invalid_saved_options": data.GenerationOptions}
+	elif data.has("Temperature"):
+		history.GenerationOverrides = {"temperature": data.Temperature}
 	if data.get("TopP"):
 		history.TopP = data.get("TopP")
 	if data.get("FrequencyPenalty"):
