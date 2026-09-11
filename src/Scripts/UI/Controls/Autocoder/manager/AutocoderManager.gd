@@ -8,6 +8,7 @@ var submit_job_manager: Node  # Will be cast to AutocoderSubmitJobManager in _re
 
 var _monitoring_sessions: PackedStringArray
 var _subscribed_sessions: Dictionary = {}
+var _subscription_epoch: int = 0
 var _latest_archive_by_session: Dictionary = {}  # session_id -> archive_uri
 var _latest_patch_by_session: Dictionary = {}  # session_id -> patch_uri
 var _session_events: Dictionary = {}  # session_id -> Array[Dictionary] — buffered notifications for MCP polling
@@ -382,6 +383,7 @@ func _show_resume_sessions_notification(active_sessions: Array[Dictionary]) -> v
 
 
 func _clear_notification_handlers() -> void:
+	_subscription_epoch += 1
 	for handler in _notification_message_handlers:
 		handler.cancel()
 	_notification_message_handlers.clear()
@@ -400,6 +402,7 @@ func _subscribe_to_session(session_id: String) -> void:
 		return
 
 	_subscribed_sessions[session_id] = true
+	var epoch := _subscription_epoch
 
 	# Subscribe to session-specific iteration topic (NO wildcards)
 	var iteration_topic = "autocoder-orchestrator/iteration/%s/%s" % [user_id, session_id]
@@ -410,10 +413,13 @@ func _subscribe_to_session(session_id: String) -> void:
 	print("Timestamp: %s" % Time.get_datetime_string_from_system())
 
 	var success = await Core.subscribe(iteration_topic)
+	if epoch != _subscription_epoch:
+		return
 
 	info("Subscription result: %s" % ("SUCCESS" if success else "FAILED"))
 
 	if not success:
+		_subscribed_sessions.erase(session_id)
 		SingletonObject.ErrorDisplay("Subscription Failed", "Failed to subscribe to iteration updates")
 		return
 
@@ -424,7 +430,10 @@ func _subscribe_to_session(session_id: String) -> void:
 	info("Subscribing to LLM topic: %s" % llm_topic)
 
 	success = await Core.subscribe(llm_topic)
+	if epoch != _subscription_epoch:
+		return
 	if not success:
+		_subscribed_sessions.erase(session_id)
 		SingletonObject.ErrorDisplay("Subscription Failed", "Failed to subscribe to LLM traffic")
 		return
 
@@ -435,6 +444,8 @@ func _subscribe_to_session(session_id: String) -> void:
 	info("Subscribing to actions topic: %s" % actions_topic)
 
 	success = await Core.subscribe(actions_topic)
+	if epoch != _subscription_epoch:
+		return
 	if not success:
 		info("Warning: Failed to subscribe to actions topic (may not be available)")
 	else:
@@ -445,6 +456,8 @@ func _subscribe_to_session(session_id: String) -> void:
 	info("Subscribing to planning topic: %s" % planning_topic)
 
 	success = await Core.subscribe(planning_topic)
+	if epoch != _subscription_epoch:
+		return
 	if not success:
 		info("Warning: Failed to subscribe to planning topic (may not be available)")
 	else:
@@ -455,6 +468,8 @@ func _subscribe_to_session(session_id: String) -> void:
 	info("Subscribing to session-changed topic: %s" % session_changed_topic)
 
 	success = await Core.subscribe(session_changed_topic)
+	if epoch != _subscription_epoch:
+		return
 	if not success:
 		info("Warning: Failed to subscribe to session-changed topic")
 	else:

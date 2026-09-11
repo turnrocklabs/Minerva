@@ -17,6 +17,7 @@ signal http_connection_changed(active: bool)
 @onready var dynamic_ui_generator: = DynamicUIGenerator.new()
 
 # Flag to track if the client successfully registered with the core
+var _registration_retry: Timer
 var registered: = false
 
 # The WebSocket client instance
@@ -143,6 +144,8 @@ func close_connection() -> void:
 		http_request.queue_free()
 	http_request = null
 
+	if is_instance_valid(_registration_retry):
+		_registration_retry.stop()
 	Core.client.close_connection("User disconnected")
 
 	_connecting = false
@@ -468,7 +471,7 @@ func _get_http_result_string(result_enum: int) -> String:
 ## Registration listens before send and correlates errors without requiring readiness.
 ## Initial authentication owns its registration; a socket retry must do so too.
 func _on_socket_reconnected() -> void:
-	if _connecting or registered or _jwt_token.is_empty() or _client_id.is_empty():
+	if client == null or not client._connected or _connecting or registered or _jwt_token.is_empty() or _client_id.is_empty():
 		return
 	_connecting = true
 	await _register_client()
@@ -486,6 +489,16 @@ func _register_client() -> bool:
 func _on_registration_completed(completed: Dictionary) -> void:
 	registered = completed.success
 	_connecting = false
+	if is_instance_valid(_registration_retry):
+		_registration_retry.stop()
+	if not completed.success and str(completed.get("error_code", "")) in ["timeout", "send_failed"] and client._connected:
+		if not is_instance_valid(_registration_retry):
+			_registration_retry = Timer.new()
+			_registration_retry.one_shot = true
+			_registration_retry.wait_time = 5.0
+			_registration_retry.timeout.connect(_on_socket_reconnected)
+			add_child(_registration_retry)
+		_registration_retry.start()
 
 
 # Sends a message via the WebSocket client and returns an AwaitMessage object

@@ -127,7 +127,11 @@ func _run() -> void:
 	check("reconnect registration has a bounded deadline", stalled.timeout == 30.0)
 	stalled._on_timeout()
 	check("registration timeout releases the connecting state", not core._connecting and not core.registered)
-	core.registered = true
+	check("registration timeout schedules one retry", is_instance_valid(core._registration_retry) and not core._registration_retry.is_stopped())
+	client.behavior = "registration"
+	core._registration_retry.timeout.emit()
+	await process_frame
+	check("retry registers on the still-open socket and stops the timer", core.registered and core._registration_retry.is_stopped())
 	core._jwt_token = saved_token
 	core._client_id = saved_client_id
 	client.behavior = "hold"
@@ -320,6 +324,16 @@ func _run() -> void:
 	check("disconnect releases every monitoring handler", manager._notification_message_handlers.is_empty())
 	await manager._restore_session_subscriptions()
 	check("reconnect restores handlers without accumulating copies", manager._notification_message_handlers.size() == watched)
+	manager._clear_notification_handlers()
+	client.behavior = "hold"
+	manager._subscribe_to_session("interrupted-subscription")
+	var subscription_id = client._pending_requests.keys()[0]
+	manager._clear_notification_handlers()
+	client.reply(subscription_id, {"success": true})
+	check("an interrupted subscription cannot install stale handlers", manager._notification_message_handlers.is_empty() and not manager._subscribed_sessions.has("interrupted-subscription"))
+	client.behavior = "subscribe"
+	await manager._subscribe_to_session("interrupted-subscription")
+	check("interrupted subscription can be retried", manager._notification_message_handlers.size() == 7)
 	manager._clear_notification_handlers()
 	manager.free()
 	singleton.autocoder_manager = saved_manager
