@@ -106,8 +106,10 @@ func release_voice_request(request_id: String) -> void:
 			_voice_streams.erase(stream_id)
 
 func _drop_connection_state() -> void:
+	var had_connection := _connected or not _pending_requests.is_empty()
 	_connected = false
-	connection_closed.emit()
+	if had_connection:
+		connection_closed.emit()
 	_voice_streams.clear()
 	_reset_binary_transfer_state()
 
@@ -203,7 +205,6 @@ func connect_to_core(CORE_WS_URL_param: String) -> bool: # Explicitly type param
 		await get_tree().process_frame
 	
 	# Reset connection state
-	_connected = false
 	_auth_retry_attempted = false
 	# Drop any voice streams orphaned by a dropped connection (no FILE_END seen).
 	_drop_connection_state()
@@ -249,6 +250,7 @@ func _process(_delta):
 		WebSocketPeer.STATE_OPEN:
 			if not _connected:
 				_connected = true
+				_is_reconnecting = false
 				connection_established.emit()
 				_heartbeat_timer.start()
 			
@@ -286,7 +288,6 @@ func _process(_delta):
 			pass
 		WebSocketPeer.STATE_CLOSED:
 			if _connected:
-				_connected = false
 				_heartbeat_timer.stop()
 				_drop_connection_state()
 				if SingletonObject.verbose_logging:

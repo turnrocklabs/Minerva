@@ -40,6 +40,7 @@ func _run() -> void:
 	check("invalid, fractional, nonfinite and unsupported explicit options are rejected", rejected)
 	check("unsupported advertised option refuses explicit zero", gen.resolve({}, {}, {}, {"temperature": 0}).get("error_code") == "unsupported_generation_option")
 
+	check("invalid saved options name their layer in the user error", "Model generation options" in gen.resolve(schema, {"temperature": "bad"}).error_message)
 	var so = root.get_node("SingletonObject")
 	var core = root.get_node("Core")
 	var saved_services = core.services.duplicate()

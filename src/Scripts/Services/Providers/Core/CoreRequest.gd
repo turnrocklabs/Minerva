@@ -92,7 +92,8 @@ func _on_message(data: Dictionary) -> void:
 		return
 	var params: Dictionary = data.get("params", {}) if data.get("params", {}) is Dictionary else {}
 	var body: Dictionary = params.get("result", {}) if params.get("result", {}) is Dictionary else {}
-	if data.get("cmd") == "error" or not str(body.get("error", "")).is_empty():
+	var body_error: Variant = body.get("error")
+	if data.get("cmd") == "error" or (body_error != null and not str(body_error).is_empty()):
 		_json = data
 		_remote_error = true
 		fail(str(params.get("error_code", body.get("error_code", "core_error"))), str(params.get("error", body.get("error", "Core request failed."))))

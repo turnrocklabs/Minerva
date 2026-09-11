@@ -113,6 +113,7 @@ func _ready() -> void:
 	add_child(cn)
 	client = cn # Assign the client instance
 	client.connection_closed.connect(func(): registered = false)
+	client.connection_established.connect(_on_socket_reconnected)
 
 	# Add the HTTPRequest node to the scene tree to make it process
 	http_request.use_threads = true
@@ -465,6 +466,14 @@ func _get_http_result_string(result_enum: int) -> String:
 
 
 ## Registration listens before send and correlates errors without requiring readiness.
+## Initial authentication owns its registration; a socket retry must do so too.
+func _on_socket_reconnected() -> void:
+	if _connecting or registered or _jwt_token.is_empty() or _client_id.is_empty():
+		return
+	_connecting = true
+	await _register_client()
+
+
 func _register_client() -> bool:
 	var pending := await_message().with_request_id(UUIDGen.v7()).with_topic("system").with_cmd("registration_confirmed")
 	pending.finished.connect(_on_registration_completed)

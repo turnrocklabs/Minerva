@@ -57,6 +57,7 @@ static func resolve(schema: Dictionary, saved: Variant = {}, chat: Variant = {},
 		var normalized := normalize(checked.options, layers[layer], layer == "request")
 		if not normalized.success:
 			normalized["layer"] = layer
+			normalized["error_message"] = "%s generation options: %s" % [layer.capitalize(), normalized.error_message]
 			return normalized
 		for name in normalized.values:
 			values[name] = normalized.values[name]

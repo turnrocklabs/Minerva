@@ -111,7 +111,30 @@ func _run() -> void:
 	client.behavior = "discovery"
 	check("Core discovery catches synchronous empty inventory", (await core.fetch_services(false)).is_empty() and not core._services_fetch_in_flight and client.owner_present_at_send)
 
+	var saved_token: String = core._jwt_token
+	var saved_client_id: String = core._client_id
+	core._jwt_token = "test"
+	core._client_id = "client"
+	core.registered = false
+	core._connecting = false
+	client.behavior = "registration"
+	await core._on_socket_reconnected()
+	check("socket reconnect registers before allowing service work", core.registered and not core._connecting)
+	core._jwt_token = saved_token
+	core._client_id = saved_client_id
 	client.behavior = "hold"
+	var nullable = core.send_message(service, action, {})
+	client.reply(nullable.request_id, {"error": null, "text": "ok"})
+	check("null error field is a successful reply", nullable.result.success)
+	var closed_events := []
+	var record_close = func(): closed_events.append(true)
+	client.connection_closed.connect(record_close)
+	client._drop_connection_state()
+	client._drop_connection_state()
+	check("already-closed transport does not emit a false disconnect", closed_events.size() == 1)
+	client.connection_closed.disconnect(record_close)
+	client._connected = true
+	core.registered = true
 	var first = core.send_message(service, action, {})
 	var second = core.send_message(service, action, {})
 	client.reply(first.request_id, {"progress": 1}, "publication")
@@ -163,9 +186,9 @@ func _run() -> void:
 	cancelled.cancel()
 	check("cancellation clears admitted audio immediately", cancelled.result.error_code == "cancelled" and client._voice_streams.is_empty())
 	check("cancel after announcement stays nullable for legacy callers", await cancelled.receive() == null)
-	var timed = core.send_message(service, action, {}, "binary", 0.01)
+	var timed = core.send_message(service, action, {}, "binary", 0.05)
 	_begin(client, timed.request_id, _id(101))
-	await create_timer(0.03).timeout
+	await create_timer(0.2).timeout
 	check("timeout reclaims admitted stream and request", timed.result.error_code == "timeout" and client._pending_requests.is_empty() and client._voice_streams.is_empty())
 	var disconnected = core.send_message(service, action, {}, "binary")
 	_begin(client, disconnected.request_id, _id(102))
@@ -224,10 +247,10 @@ func _run() -> void:
 	var subscription_change = core.send_message(service, action, {})
 	subscription_change.receive_all()
 	check("active requests cannot become unbounded subscriptions", subscription_change.result.error_code == "invalid_request" and client._pending_requests.is_empty())
-	var subscription = core.await_message().with_topic("events").with_timeout(0.01)
+	var subscription = core.await_message().with_topic("events").with_timeout(0.05)
 	var publications := []
 	subscription.receive_all().connect(func(message): publications.append(message))
-	await create_timer(0.03).timeout
+	await create_timer(0.2).timeout
 	client._handle_message({"cmd": "publication", "topic": "events", "params": {}})
 	client._handle_message({"cmd": "publication", "topic": "events", "params": {}})
 	check("publication subscriptions remain live without request timeout", publications.size() == 2 and subscription._timer == null)

@@ -4779,6 +4779,9 @@ func cancel_tts() -> void:
 	if active != null:
 		active.cancel()
 
+func _enter_tree() -> void:
+	_voice_tearing_down = false
+
 func _exit_tree() -> void:
 	_voice_tearing_down = true
 	_cancel_gateway_transcriptions()
