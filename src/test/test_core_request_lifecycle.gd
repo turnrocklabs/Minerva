@@ -120,6 +120,14 @@ func _run() -> void:
 	client.behavior = "registration"
 	await core._on_socket_reconnected()
 	check("socket reconnect registers before allowing service work", core.registered and not core._connecting)
+	core.registered = false
+	client.behavior = "hold"
+	core._on_socket_reconnected()
+	var stalled = client._pending_requests.values()[0]
+	check("reconnect registration has a bounded deadline", stalled.timeout == 30.0)
+	stalled._on_timeout()
+	check("registration timeout releases the connecting state", not core._connecting and not core.registered)
+	core.registered = true
 	core._jwt_token = saved_token
 	core._client_id = saved_client_id
 	client.behavior = "hold"
@@ -299,6 +307,15 @@ func _run() -> void:
 		if not handler.topic.is_empty():
 			topic_counts[handler.topic] = int(topic_counts.get(handler.topic, 0)) + 1
 	check("restored handlers are isolated to ten exact session topics", topic_counts.size() == 10 and topic_counts.keys().all(func(topic): return topic_counts[topic] == (2 if "/llm-traffic/" in topic else 1)))
+	manager._handle_session_changed("session-a", "session-c", "planning complete")
+	await process_frame
+	check("redirect installs handlers and persists the new monitored session", manager._notification_message_handlers.size() == watched + 7 and manager._monitoring_sessions.has("session-c"))
+	await manager._subscribe_to_new_session_llm("session-c")
+	check("repeated redirects do not duplicate handlers", manager._notification_message_handlers.size() == watched + 7)
+	for channel in ["iteration", "actions", "llm-traffic"]:
+		client._handle_message({"cmd": "publication", "topic": "autocoder-orchestrator/%s/test-client/session-c" % channel, "params": {"data": {"status": "running", "type": "test"}}})
+	check("redirected publications reach the new session event buffer", manager.get_session_events("session-c").size() == 2 and manager.get_session_events("session-b").is_empty())
+	watched += 7
 	manager._on_core_disconnected()
 	check("disconnect releases every monitoring handler", manager._notification_message_handlers.is_empty())
 	await manager._restore_session_subscriptions()

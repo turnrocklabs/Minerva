@@ -7,6 +7,7 @@ var autocoder_adapter: AutocoderAdapter
 var submit_job_manager: Node  # Will be cast to AutocoderSubmitJobManager in _ready()
 
 var _monitoring_sessions: PackedStringArray
+var _subscribed_sessions: Dictionary = {}
 var _latest_archive_by_session: Dictionary = {}  # session_id -> archive_uri
 var _latest_patch_by_session: Dictionary = {}  # session_id -> patch_uri
 var _session_events: Dictionary = {}  # session_id -> Array[Dictionary] — buffered notifications for MCP polling
@@ -384,16 +385,21 @@ func _clear_notification_handlers() -> void:
 	for handler in _notification_message_handlers:
 		handler.cancel()
 	_notification_message_handlers.clear()
+	_subscribed_sessions.clear()
 
 func _exit_tree() -> void:
 	_clear_notification_handlers()
 
 
 func _subscribe_to_session(session_id: String) -> void:
+	if session_id.is_empty() or _subscribed_sessions.has(session_id):
+		return
 	var user_id = Core.client.client_id
 	if user_id.is_empty():
 		print("DEBUG: Cannot subscribe to sessions - user_id is empty")
 		return
+
+	_subscribed_sessions[session_id] = true
 
 	# Subscribe to session-specific iteration topic (NO wildcards)
 	var iteration_topic = "autocoder-orchestrator/iteration/%s/%s" % [user_id, session_id]
@@ -1057,20 +1063,8 @@ func _handle_session_changed(old_session_id: String, new_session_id: String, rea
 	"""When backend creates a new OpenCode session from a planning session, resubscribe to new topics"""
 	info("🔄 Handling session change: %s -> %s (reason: %s)" % [old_session_id, new_session_id, reason])
 	
-	# Subscribe to new session's LLM traffic topic
 	_subscribe_to_new_session_llm(new_session_id)
-	
-	# Subscribe to new session's iteration topic
-	var user_id = Core.client.client_id
-	var iteration_topic = "autocoder-orchestrator/iteration/%s/%s" % [user_id, new_session_id]
-	Core.subscribe(iteration_topic)
-	info("Subscribed to new iteration topic: %s" % iteration_topic)
-	
-	# Subscribe to new session's actions topic
-	var actions_topic = "autocoder-orchestrator/actions/%s/%s" % [user_id, new_session_id]
-	Core.subscribe(actions_topic)
-	info("Subscribed to new actions topic: %s" % actions_topic)
-	
+
 	# Notify submit job manager about the session change
 	if submit_job_manager and submit_job_manager.has_method("on_session_id_changed"):
 		submit_job_manager.on_session_id_changed(old_session_id, new_session_id)
@@ -1078,11 +1072,11 @@ func _handle_session_changed(old_session_id: String, new_session_id: String, rea
 
 ## Subscribe to a new session's LLM traffic topic
 func _subscribe_to_new_session_llm(new_session_id: String) -> void:
-	"""Subscribe to LLM traffic for a new/different session"""
-	var user_id = Core.client.client_id
-	var new_llm_topic = "autocoder-orchestrator/llm-traffic/%s/%s" % [user_id, new_session_id]
-	info("📡 Subscribing to new LLM traffic topic: %s" % new_llm_topic)
-	Core.subscribe(new_llm_topic)
+	if new_session_id.is_empty():
+		return
+	if not _monitoring_sessions.has(new_session_id):
+		_monitoring_sessions.append(new_session_id)
+	await _subscribe_to_session(new_session_id)
 
 
 ## Handle planning notification for a specific session

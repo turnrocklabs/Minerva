@@ -475,7 +475,7 @@ func _on_socket_reconnected() -> void:
 
 
 func _register_client() -> bool:
-	var pending := await_message().with_request_id(UUIDGen.v7()).with_topic("system").with_cmd("registration_confirmed")
+	var pending := await_message().with_request_id(UUIDGen.v7()).with_topic("system").with_cmd("registration_confirmed").with_timeout(30.0)
 	pending.finished.connect(_on_registration_completed)
 	pending.start()
 	if client.register_with_core(_jwt_token, _client_id, pending.request_id) != OK:
