@@ -369,6 +369,7 @@ func Serialize() -> Dictionary:
 		"HistoryName" : HistoryName,
 		"Provider": provider_enum_value,
 		"PluginProviderKey": plugin_provider_key,
+		"CoreModelSpec": ModelResolver.spec_for(provider) if service_type == ServiceType.CHAT and provider is CoreProvider else {},
 		"ServiceType": service_type,
 		"HistoryItemList" : serialized_items,
 		"HasUsedSystemPrompt": HasUsedSystemPrompt,
@@ -424,6 +425,10 @@ static func Deserialize(data: Dictionary) -> ServiceHistory:
 	# will be float if loaded from json, cast it to int
 	var provider_enum_index = int(data.get("Provider", 0))
 	var provider_obj: BaseProvider
+	var core_spec: Dictionary = data.get("CoreModelSpec", {})
+	if service_type_value == ServiceType.CHAT and (not core_spec.is_empty() or provider_enum_index == SingletonObject.API_MODEL_PROVIDERS.TURNROCK):
+		provider_obj = ModelResolver.restore_core(core_spec if not core_spec.is_empty() else {
+			"kind": "core_action", "service_client_id": "", "action_name": ""})
 
 	# Plugin chat-provider (chat-passthrough W1): if a key was serialized AND it
 	# names a currently-registered entry, restore a PluginProvider. If the entry

@@ -4,6 +4,8 @@ extends RefCounted
 ## Uses the standard Core.send_message() / AwaitMessage pattern.
 
 const VOICE_SERVICE_ID := "voice-service"
+## Last deterministic summary fallback reason; inspectable without repeated chunk warnings.
+var summary_unavailable_reason: String = ""
 
 
 ## Transcribe audio via voice-service STT.
@@ -239,15 +241,15 @@ func synthesize_auto(text: String, voice_config: VoiceConfig) -> PackedByteArray
 ## Summarize a user+response exchange into a single spoken sentence using a fast model via model-chat.
 ## Returns the summary text, or the original response (truncated) on failure.
 func summarize_for_speech(user_text: String, response_text: String, model_name: String, timeout: float = 30.0) -> String:
-	if not Core.client._connected:
+	var matched := CoreModelCatalog.resolve({"kind": "core_action", "service_client_id": "model-chat", "action_name": model_name})
+	if not matched.success:
+		if summary_unavailable_reason != matched.error_code:
+			push_warning("[VoiceServiceClient] Speech summary fallback: %s" % matched.error_message)
+		summary_unavailable_reason = matched.error_code
 		return response_text.substr(0, 200)
-
-	var matched := CoreActionCatalog.find_action("model-chat", model_name)
-	if matched.is_empty():
-		push_warning("[VoiceServiceClient] model-chat model '%s' not found for summarization" % model_name)
-		return response_text.substr(0, 200)
-	var model_chat_svc: Service = matched["service"]
-	var model_action: Action = matched["action"]
+	summary_unavailable_reason = ""
+	var model_chat_svc: Service = matched.service
+	var model_action: Action = matched.action
 
 	var cfg := SingletonObject.get_voice_config()
 	var system_prompt: String = cfg.summary_prompt if not cfg.summary_prompt.is_empty() else VoiceConfig.DEFAULT_SUMMARY_PROMPT

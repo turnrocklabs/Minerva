@@ -9,16 +9,17 @@ extends SceneTree
 ## enables a provider in-memory and injects a fake model into its manager, then
 ## restores both (no config writes, no real model added permanently).
 
-const MCP_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPPreferenceTools.gd"
 const BROKER_PATH := "res://Scripts/Services/Plugins/CapabilityBroker.gd"
 
 var _pass: int = 0
 var _fail: int = 0
+var _completed := false
 
 
 func _init() -> void:
 	print("=== Model Catalog Broker Test ===\n")
 	await _run()
+	check("whole production catalog scenario completed", _completed)
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 
@@ -83,10 +84,15 @@ func _run() -> void:
 		singleton.list_enabled_models("nope").is_empty())
 
 	# (b) the MCP tool (flat success envelope: data at top level)
-	var tools = load(MCP_TOOLS_PATH).new(null)
-	var lp: Dictionary = tools.handle("minerva_list_models", {})
+	var tools = singleton.get_mcp_manager().minerva_server
+	var owners := 0
+	for module in tools._modules:
+		if module.can_handle("minerva_list_models"):
+			owners += 1
+	check("exactly one production module owns minerva_list_models", owners == 1)
+	var lp: Dictionary = await tools.execute_tool_for_http("minerva_list_models", {})
 	check("MCP list providers ok", lp.get("success", false) and _has(lp.get("providers", []), "key", "chatgpt"))
-	var lm: Dictionary = tools.handle("minerva_list_models", {"provider": "chatgpt"})
+	var lm: Dictionary = await tools.execute_tool_for_http("minerva_list_models", {"provider": "chatgpt"})
 	check("MCP list models returns the model",
 		lm.get("success", false) and _has(lm.get("models", []), "model_name", "catalog-test-model"))
 
@@ -101,9 +107,152 @@ func _run() -> void:
 	check("capability requires a provider arg",
 		not broker._handle_host_models_list_models("tester", {}).get("success", true))
 
+	var resolver = load("res://Scripts/Services/Providers/ModelResolver.gd")
+	for model in lm.get("models", []):
+		if model.model_name == "catalog-test-model":
+			var resolved: Dictionary = resolver.create(model.model_spec)
+			check("listed dynamic spec constructs the requested model", resolved.get("success", false) and resolved.provider.model_name == "catalog-test-model")
+			if resolved.has("provider"):
+				resolved.provider.free()
+	await _core_surfaces(singleton, tools, broker)
+	_completed = true
+
 	# Restore: original models array + original enabled state (no residue).
 	manager.models = saved_models
 	if had_enabled:
 		singleton._enabled_providers[chatgpt] = was_enabled
 	else:
 		singleton._enabled_providers.erase(chatgpt)
+
+
+func _core_surfaces(singleton, server, broker) -> void:
+	var core = root.get_node("Core")
+	var resolver = load("res://Scripts/Services/Providers/ModelResolver.gd")
+	var service_script = load("res://Scripts/Services/Providers/Core/scripts/service.gd")
+	var history_script = load("res://Scripts/Models/ChatHistory.gd")
+	var saved_services = core.services.duplicate()
+	var saved_connected: bool = core.client._connected
+	var saved_registered: bool = core.registered
+	var turnrock: int = singleton.provider_from_key("turnrock")
+	var saved_enabled: Dictionary = singleton._enabled_providers.duplicate()
+	var saved_permissions: Dictionary = singleton._plugin_allowed_providers.duplicate()
+	var saved_chats = singleton.ChatList.duplicate()
+	var saved_pane = singleton.Chats
+	var fixture: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://test/fixtures/model_chat_registration.json"))
+	var service = service_script.new(fixture.params)
+	core.services.assign([service])
+	core.client._connected = true
+	core.registered = true
+	singleton._enabled_providers[turnrock] = true
+	singleton._plugin_allowed_providers[turnrock] = true
+
+	var listed: Dictionary = await server.execute_tool_for_http("minerva_list_models", {"provider": "turnrock"})
+	var host_models: Array = singleton.list_enabled_models("turnrock")
+	check("production MCP and host expose the same concrete Core models", listed.get("models", []) == host_models and host_models.size() == 2)
+	var spec: Dictionary = host_models[0].model_spec
+	var plugin_models: Dictionary = broker._handle_host_models_list_models("tester", {"provider": "turnrock"})
+	check("plugin catalog matches the same offerings", plugin_models.result.models == host_models)
+	singleton._plugin_allowed_providers[turnrock] = false
+	check("plugin permission filters discovery independently", broker._handle_host_models_list_models("tester", {"provider": "turnrock"}).result.models.is_empty() and singleton.list_enabled_models("turnrock").size() == 2)
+	check("plugin permission also refuses explicit construction", resolver.create(spec, true).get("error_code") == "provider_disabled")
+	singleton._plugin_allowed_providers[turnrock] = true
+
+	var chooser = load("res://Scripts/UI/Controls/ProviderOptionButton.gd").new()
+	chooser._setup_default_provider_set()
+	chooser.switch_to_provider_set("default")
+	check("GUI can select the advertised spec", chooser.select_provider_spec(spec))
+	var provider = chooser.get_selected_provider()
+	check("GUI constructs the exact Core identity", resolver.spec_for(provider) == spec and provider.requires_chat_model)
+	var history = history_script.new(provider, "core-catalog-test-chat")
+	history.HistoryName = "Core catalog test"
+	var serialized: Dictionary = history.Serialize()
+	check("history persists the full Core tuple", serialized.CoreModelSpec == spec)
+
+	# Real module dispatch, with an unmounted real pane so no UI/application is launched.
+	var pane = load("res://Scripts/UI/Views/ChatPane.gd").new()
+	pane.add_child(Control.new())
+	pane._provider_option_button = chooser
+	singleton.Chats = pane
+	singleton.ChatList.assign([history])
+	var chat_tools = load("res://Scripts/Services/MCP/Modules/MCPChatTools.gd").new(server)
+	var current: Dictionary = chat_tools._resolve_chat_provider({"provider": "current"}, pane, false)
+	check("current Core selection survives resolution without Node duplication", current.get("success", false) and resolver.spec_for(current.provider) == spec)
+	if current.has("provider"):
+		current.provider.free()
+	var authoritative: Dictionary = chat_tools._resolve_chat_provider({"model_spec": spec, "provider": "unknown"}, pane, false)
+	check("explicit structured identity is authoritative", authoritative.get("success", false) and authoritative.model_spec == spec)
+	if authoritative.has("provider"):
+		authoritative.provider.free()
+	check("fractional enum is rejected before conversion", chat_tools._resolve_chat_provider({"provider_enum_id": 1.5}, pane, false).get("error_code") == "invalid_model_spec")
+	check("bare TurnRock enum cannot create an unbound chat provider", resolver.create({"kind": "builtin", "model_id": singleton.API_MODEL_PROVIDERS.TURNROCK}).get("error_code") == "invalid_model_spec")
+	var unknown: Dictionary = await server.execute_tool_for_http("minerva_create_chat", {"name": "Unknown explicit selection test", "provider": "not-a-real-model"})
+	check("public MCP create refuses an explicit unknown model", unknown.get("error_code") == "model_not_available" and singleton.ChatList.size() == 1)
+
+	singleton._enabled_providers[turnrock] = false
+	chooser._on_provider_enabled_changed(turnrock, false)
+	check("disabled GUI selection retains its tuple as an unavailable row", chooser.get_selected_provider_spec() == spec and chooser.is_item_disabled(chooser.selected))
+	var pending = chooser.get_selected_provider()
+	check("disabled GUI selection retains Core provider identity", resolver.spec_for(pending) == spec)
+	pending.free()
+	var denied: Dictionary = await server.execute_tool_for_http("minerva_set_chat_model", {"chat_id": history.HistoryId, "model_spec": spec})
+	check("public MCP set retains structured refusal and requested identity", denied.get("error_code") == "provider_disabled" and denied.get("model_spec") == spec and history.provider == provider)
+	chooser.switch_to_provider_set_for_service(service)
+	singleton._enabled_providers[turnrock] = true
+	chooser._on_provider_enabled_changed(turnrock, true)
+	check("service-specific chooser repopulates when TurnRock is enabled", chooser.select_provider_spec(spec) and not chooser.is_item_disabled(chooser.selected))
+
+	var agent = load("res://Scripts/UI/Windows/AgentManagerWindow.gd").new()
+	agent.agent_provider_dropdown = OptionButton.new()
+	agent.agent_model_dropdown = OptionButton.new()
+	agent.agent_provider_dropdown.add_item("TurnRock")
+	agent.agent_provider_dropdown.set_item_metadata(0, turnrock)
+	agent._populate_model_dropdown(turnrock)
+	agent._select_core_model(spec)
+	singleton._enabled_providers[turnrock] = false
+	agent._refresh_core_models()
+	check("agent editor retains unavailable model identity", agent._core_model_map[agent.agent_model_dropdown.selected] == spec and agent.agent_model_dropdown.is_item_disabled(agent.agent_model_dropdown.selected))
+
+	var voice = load("res://Scripts/Services/Voice/VoiceServiceClient.gd").new()
+	var summary: String = await voice.summarize_for_speech("question", "answer".repeat(100), spec.action_name)
+	check("disabled summary uses deterministic fallback with a reason", summary == "answer".repeat(100).substr(0, 200) and voice.summary_unavailable_reason == "provider_disabled")
+	check("voice service discovery remains independent of chat enable", voice._get_voice_service() != null)
+	var preferences = load("res://Scripts/UI/Views/PreferencesPopup.gd").new()
+	preferences._summary_model_option = OptionButton.new()
+	var voice_config = singleton.get_voice_config()
+	var saved_summary: String = voice_config.summary_model
+	voice_config.summary_model = spec.action_name
+	preferences._populate_summary_models()
+	check("summary preferences retain unavailable selection", voice_config.summary_model == spec.action_name and preferences._summary_model_option.is_item_disabled(preferences._summary_model_option.selected))
+	voice_config.summary_model = saved_summary
+
+	core.services.clear()
+	core.client._connected = false
+	core.registered = false
+	singleton._enabled_providers[turnrock] = true
+	var restored = history_script.Deserialize(JSON.parse_string(JSON.stringify(serialized)))
+	check("offline history restores the same Core tuple without substitution", resolver.spec_for(restored.provider) == spec and restored.provider.requires_chat_model)
+	check("offline explicit resolution exposes the reason", resolver.create(spec).get("error_code") == "core_offline")
+	core.services.assign([service])
+	core.client._connected = true
+	core.registered = true
+	var reconnected: Dictionary = resolver.create(resolver.spec_for(restored.provider))
+	check("retained identity resolves on reconnect", reconnected.get("success", false) and resolver.spec_for(reconnected.provider) == spec)
+	if reconnected.has("provider"):
+		reconnected.provider.free()
+
+	core.services.assign(saved_services)
+	core.client._connected = saved_connected
+	core.registered = saved_registered
+	singleton._enabled_providers = saved_enabled
+	singleton._plugin_allowed_providers = saved_permissions
+	singleton.ChatList.assign(saved_chats)
+	singleton.Chats = saved_pane
+	restored.provider.free()
+	provider.free()
+	chooser.free()
+	pane.free()
+	agent.agent_provider_dropdown.free()
+	agent.agent_model_dropdown.free()
+	agent.free()
+	preferences._summary_model_option.free()
+	preferences.free()

@@ -40,10 +40,6 @@ const _JsonPointer := preload("res://Scripts/Services/Plugins/JsonPointer.gd")
 ## PluginScopeGrants — preloaded for the same reason (loaded in isolation in tests).
 const _PluginScopeGrants := preload("res://Scripts/Services/Plugins/PluginScopeGrants.gd")
 
-## CoreProvider — preloaded to allow structured model_spec routing for core_action providers.
-## Using preload (not class_name) so CapabilityBroker loads correctly in headless test contexts.
-const _CoreProvider := preload("res://Scripts/Services/Providers/Core/CoreProvider.gd")
-
 ## Observability signals — fired per plugin chat invocation so panels and
 ## status surfaces can show what's in flight. Panels subscribe via
 ## SingletonObject.plugin_capability_broker. Receivers should filter by
@@ -565,7 +561,7 @@ func _handle_host_settings_list(plugin_id: String, _args: Dictionary) -> Diction
 ## host.models.list_providers — the enabled LLM providers the user has configured.
 ## Reads Minerva's brokered catalog so a plugin never duplicates the model list.
 func _handle_host_models_list_providers(_plugin_id: String, _args: Dictionary) -> Dictionary:
-	return PluginErrors.success({"providers": SingletonObject.list_enabled_providers()})
+	return PluginErrors.success({"providers": ModelResolver.list_providers(true)})
 
 
 ## host.models.list_models — the enabled models for a provider key. Args: {provider}.
@@ -580,7 +576,7 @@ func _handle_host_models_list_models(plugin_id: String, args: Dictionary) -> Dic
 	var key: String = str(args.get("provider", ""))
 	if key.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "host.models.list_models requires 'provider'")
-	return PluginErrors.success({"provider": key, "models": SingletonObject.list_enabled_models(key)})
+	return PluginErrors.success({"provider": key, "models": ModelResolver.list_models(key, true)})
 
 
 ## host.core.session — mint a NEW, distinct Core session and return its credentials
@@ -2226,6 +2222,8 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 
 	var has_model: bool = args.has("model")
 	var has_spec: bool = args.has("model_spec") and (args["model_spec"] is Dictionary)
+	if args.has("model_spec") and not has_spec:
+		return PluginErrors.schema_validation_failed(plugin_id, "model_spec must be a Dictionary")
 
 	if not has_model and not has_spec:
 		return PluginErrors.schema_validation_failed(plugin_id,
@@ -2272,228 +2270,22 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 	if so == null:
 		return PluginErrors.model_not_available(plugin_id, model_name_req)
 
-	# Resolve "default" to the TurnRock/Core provider (free, always available).
-	var resolved_model_id: int = -1
-	var resolved_provider_enum: int = -1
-
-	# --- 3a. model_spec structured resolution (bypasses string-match loop) ---
-	# When model_spec is present it always wins over the model string.
-	var provider: BaseProvider = null  # may be set directly by core_action path
+	var resolution: Dictionary
 	if has_spec:
-		var spec: Dictionary = args["model_spec"] as Dictionary
-		var spec_kind: String = str(spec.get("kind", "")).strip_edges()
-		match spec_kind:
-			"core_action":
-				# Validate required fields
-				if not spec.has("service_client_id") or str(spec.get("service_client_id", "")).is_empty():
-					return PluginErrors.schema_validation_failed(plugin_id,
-						"host.providers.chat model_spec kind='core_action' requires 'service_client_id'")
-				if not spec.has("action_name") or str(spec.get("action_name", "")).is_empty():
-					return PluginErrors.schema_validation_failed(plugin_id,
-						"host.providers.chat model_spec kind='core_action' requires 'action_name'")
-				var svc_client_id: String = str(spec["service_client_id"])
-				var action_name_req: String = str(spec["action_name"])
-				# The one Core-action enumerator does the lookup — the same one
-				# that handed this spec out through host.models.list_models. Core
-				# absent and action-not-found are one answer to the caller.
-				var matched: Dictionary = CoreActionCatalog.find_action(svc_client_id, action_name_req)
-				if matched.is_empty():
-					return PluginErrors.model_not_available(plugin_id,
-						"core_action:%s/%s" % [svc_client_id, action_name_req])
-				# Construct CoreProvider directly — resolved_model_id stays -1 (no script_map entry)
-				provider = _CoreProvider.new(matched["service"], matched["action"])
-				model_name_req = str(provider.model_name) if "model_name" in provider else (
-					"%s (%s)" % [svc_client_id, action_name_req])
-				resolved_provider_enum = int(so.get("API_PROVIDER").get("TURNROCK", -1)) if "API_PROVIDER" in so else -1
-
-			"dynamic":
-				# Coerce model_id from float (JSON round-trip) to int.
-				var dyn_id: int = int(spec.get("model_id", -1))
-				if dyn_id < 10000:
-					return PluginErrors.schema_validation_failed(plugin_id,
-						"host.providers.chat model_spec kind='dynamic' requires model_id >= 10000")
-				var dyn_map = so.get("_dynamic_provider_map") if "_dynamic_provider_map" in so else {}
-				if not dyn_map.has(dyn_id):
-					# model_id may be a per-model offset within a base range; check any entry covers it
-					var covered: bool = false
-					for base_id in dyn_map.keys():
-						var dyn_info_d: Dictionary = dyn_map[base_id] as Dictionary
-						var mgr = dyn_info_d.get("manager", null)
-						if mgr == null:
-							continue
-						for cfg_d in mgr.models:
-							if cfg_d is Dictionary and int(cfg_d.get("id", -1)) == dyn_id:
-								covered = true
-								break
-						if covered:
-							break
-					if not covered:
-						return PluginErrors.model_not_available(plugin_id, "dynamic:%d" % dyn_id)
-				resolved_model_id = dyn_id
-				# provider will be created below via the >= 10000 branch
-
-			"builtin":
-				# Coerce model_id from float (JSON round-trip) to int.
-				var builtin_id: int = int(spec.get("model_id", -1))
-				var script_map_b = so.get("API_MODEL_PROVIDER_SCRIPTS") if "API_MODEL_PROVIDER_SCRIPTS" in so else {}
-				if not script_map_b.has(builtin_id):
-					return PluginErrors.model_not_available(plugin_id, "builtin:%d" % builtin_id)
-				resolved_model_id = builtin_id
-				var pm2b = so.get("MODEL_TO_PROVIDER") if "MODEL_TO_PROVIDER" in so else {}
-				resolved_provider_enum = int(pm2b.get(resolved_model_id, -1))
-				# provider will be created below via the script_map2 branch
-
-			_:
-				return PluginErrors.schema_validation_failed(plugin_id,
-					"host.providers.chat model_spec has unknown kind '%s' (expected core_action, dynamic, or builtin)" % spec_kind)
-
-	elif model_name_req == "default":
-		# Default → Core/TurnRock
-		var api_model_providers = so.get("API_MODEL_PROVIDERS") if "API_MODEL_PROVIDERS" in so else null
-		if api_model_providers != null and api_model_providers.has("TURNROCK"):
-			resolved_model_id = int(api_model_providers.get("TURNROCK"))
-			resolved_provider_enum = int(so.get("API_PROVIDER").get("TURNROCK", -1)) if "API_PROVIDER" in so else -1
-		else:
-			return PluginErrors.model_not_available(plugin_id, model_name_req)
+		resolution = ModelResolver.create(args.model_spec, true)
 	else:
-		# Search all registered model scripts for a match on model_name.
-		# Collect all (model_id, provider_enum) pairs whose model_name matches.
-		var provider_map = so.get("MODEL_TO_PROVIDER") if "MODEL_TO_PROVIDER" in so else null
-		var script_map = so.get("API_MODEL_PROVIDER_SCRIPTS") if "API_MODEL_PROVIDER_SCRIPTS" in so else null
-		var display_names = so.get("PROVIDER_DISPLAY_NAMES") if "PROVIDER_DISPLAY_NAMES" in so else {}
-
-		if script_map == null or provider_map == null:
-			return PluginErrors.model_not_available(plugin_id, model_name_req)
-
-		var candidates: Array = []  # [{model_id, provider_enum, provider_name}]
-
-		# Check built-in (static) models
-		for mid in script_map.keys():
-			var mid_int: int = int(mid)
-			if mid_int < 0:
-				continue
-			var pscript = script_map[mid_int]
-			if pscript == null:
-				continue
-			# Instantiate temporarily to read model_name — only for static models
-			# (dynamic models are handled separately via managers).
-			if mid_int < 10000:  # Below DYNAMIC_MODEL_ID_BASE
-				var inst: BaseProvider = pscript.new() if pscript.can_instantiate() else null
-				if inst == null:
-					continue
-				var inst_model: String = str(inst.model_name) if "model_name" in inst else ""
-				var prov_enum: int = int(provider_map.get(mid_int, -1))
-				var prov_name: String = str(display_names.get(prov_enum, "")).to_lower()
-				if inst_model.to_lower() == model_name_req.to_lower():
-					candidates.append({
-						"model_id": mid_int,
-						"provider_enum": prov_enum,
-						"provider_name": prov_name,
-					})
-				inst.free()
-
-		# Check dynamic models via managers
-		var dyn_map = so.get("_dynamic_provider_map") if "_dynamic_provider_map" in so else {}
-		for id_base in dyn_map.keys():
-			var dyn_info: Dictionary = dyn_map[id_base] as Dictionary
-			var manager = dyn_info.get("manager", null)
-			var prov_e: int = int(dyn_info.get("provider", -1))
-			var prov_n: String = str(display_names.get(prov_e, "")).to_lower()
-			if manager == null:
-				continue
-			for config in manager.models:
-				if not (config is Dictionary):
-					continue
-				var cfg: Dictionary = config as Dictionary
-				var cfg_model: String = str(cfg.get("model_name", "")).to_lower()
-				if cfg_model == model_name_req.to_lower():
-					candidates.append({
-						"model_id": int(cfg.get("id", -1)),
-						"provider_enum": prov_e,
-						"provider_name": prov_n,
-					})
-
-		if candidates.is_empty():
-			return PluginErrors.model_not_available(plugin_id, model_name_req)
-
-		if candidates.size() == 1:
-			resolved_model_id = int(candidates[0]["model_id"])
-			resolved_provider_enum = int(candidates[0]["provider_enum"])
-		else:
-			# Multiple providers — filter by provider_hint if given
-			if not provider_hint.is_empty():
-				var filtered: Array = []
-				for c in candidates:
-					if str(c["provider_name"]).to_lower() == provider_hint:
-						filtered.append(c)
-				if filtered.size() == 1:
-					resolved_model_id = int(filtered[0]["model_id"])
-					resolved_provider_enum = int(filtered[0]["provider_enum"])
-				elif filtered.is_empty():
-					# Hint given but matched nothing → ambiguous (still return all candidates)
-					var cand_names: Array = []
-					for c in candidates:
-						cand_names.append(str(c["provider_name"]))
-					return PluginErrors.model_ambiguous(plugin_id, model_name_req, cand_names)
-				else:
-					# Multiple even after hint — still ambiguous
-					var cand_names2: Array = []
-					for c in filtered:
-						cand_names2.append(str(c["provider_name"]))
-					return PluginErrors.model_ambiguous(plugin_id, model_name_req, cand_names2)
-			else:
-				var cand_names3: Array = []
-				for c in candidates:
-					cand_names3.append(str(c["provider_name"]))
-				return PluginErrors.model_ambiguous(plugin_id, model_name_req, cand_names3)
-
-	# --- Create the provider instance ----------------------------------------
-	# provider may already be set (core_action path above); only instantiate when not.
-	var provider_map2 = so.get("MODEL_TO_PROVIDER") if "MODEL_TO_PROVIDER" in so else {}
-	var script_map2 = so.get("API_MODEL_PROVIDER_SCRIPTS") if "API_MODEL_PROVIDER_SCRIPTS" in so else {}
-
-	if provider == null:
-		if resolved_model_id < 0:
-			return PluginErrors.model_not_available(plugin_id, model_name_req)
-
-		if resolved_model_id >= 10000:  # Dynamic model
-			provider = so.create_dynamic_provider(resolved_model_id)
-		elif script_map2.has(resolved_model_id):
-			var pscript = script_map2[resolved_model_id]
-			if pscript != null and pscript.can_instantiate():
-				provider = pscript.new()
-
-	if provider == null:
-		return PluginErrors.model_not_available(plugin_id, model_name_req)
-
-	# Guard: the script_map "default" path instantiates CoreProvider with no
-	# service/action, producing a non-functional provider that would later fail
-	# inside generate_content. Surface the missing context as a clear error
-	# pointing callers at the explicit model_spec path.
-	if provider is CoreProvider and provider.service == null:
-		provider.queue_free()
-		return PluginErrors.model_not_available(plugin_id,
-			"%s — 'default' needs model_spec={kind:'core_action', service_client_id, action_name}" % model_name_req)
-
-	# Provider must be in the scene tree to use _ready() and timers
-	var so_node = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
+		resolution = ModelResolver.create_by_name(provider_hint, model_name_req, true)
+	if not resolution.success:
+		resolution["plugin_id"] = plugin_id
+		return resolution
+	var provider: BaseProvider = resolution.provider
+	var actual_provider_enum: int = provider.PROVIDER
+	var actual_provider_name: String = so.get_provider_display_name(actual_provider_enum).to_lower()
+	var actual_model_name: String = provider.model_name
+	var so_node := CoreModelCatalog.settings_host()
 	if so_node != null:
 		so_node.add_child(provider)
 
-	# --- Get actual provider name + check enabled ----------------------------
-	var display_names2: Dictionary = so.get("PROVIDER_DISPLAY_NAMES") if "PROVIDER_DISPLAY_NAMES" in so else {}
-	var actual_provider_enum: int = int(provider_map2.get(resolved_model_id, resolved_provider_enum))
-	var actual_provider_name: String = str(display_names2.get(actual_provider_enum, "Unknown")).to_lower()
-	var actual_model_name: String = str(provider.model_name) if "model_name" in provider else model_name_req
-
-	# Check if plugins are allowed to use this provider. Distinct from
-	# is_provider_enabled (which is a menu-filter for selection UIs); the
-	# plugin gate defaults true so plugins inherit the same access the chat UI
-	# has. Users can opt out per-provider via set_provider_allowed_for_plugins.
-	if so.has_method("is_provider_allowed_for_plugins"):
-		if not so.is_provider_allowed_for_plugins(actual_provider_enum):
-			provider.queue_free()
-			return PluginErrors.provider_disabled(plugin_id, actual_provider_name)
 	# Check API key (non-free providers only; free providers have empty API_KEY by design)
 	# We check by seeing if input_token_cost > 0 AND API_KEY is empty as a heuristic.
 	# Local/Turnrock are exempt — their cost reflects server-side metering, not a
@@ -2504,8 +2296,7 @@ func _handle_host_providers_chat(plugin_id: String, args: Dictionary) -> Diction
 		var turnrock_enum: int = int(api_provider_const.get("TURNROCK", -1))
 		var local_enum: int = int(api_provider_const.get("LOCAL", -1))
 		is_keyless_provider = (actual_provider_enum == turnrock_enum) or (actual_provider_enum == local_enum)
-	var api_key_val: String = str(provider.API_KEY) if "API_KEY" in provider else ""
-	if not is_keyless_provider and provider.input_token_cost > 0.0 and api_key_val.is_empty():
+	if not is_keyless_provider and provider.input_token_cost > 0.0 and str(provider.API_KEY).is_empty():
 		provider.queue_free()
 		return PluginErrors.provider_disabled(plugin_id, actual_provider_name)
 

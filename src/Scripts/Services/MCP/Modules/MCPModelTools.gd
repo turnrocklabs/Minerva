@@ -27,23 +27,8 @@ func get_tool_names() -> Array[String]:
 func register_tools() -> void:
 	# Model management tools
 	server._register_tool("minerva_list_models",
-		"List all registered AI models (built-in and user-added dynamic models), optionally filtered by provider. Returns model IDs, names, pricing, and whether each model is dynamic.",
-		{
-			"type": "object",
-			"properties": {
-				"provider": {
-					"type": "string",
-					"enum": ["anthropic", "openai", "google", "openrouter", "local", "chatgpt"],
-					"description": "Filter to only show models from this provider"
-				},
-				"dynamic_only": {
-					"type": "boolean",
-					"description": "If true, only show user-added dynamic models (default: false)"
-				}
-			},
-			"required": []
-		}
-	, "models")
+		"List enabled chat providers, or enabled models for a provider. Core models include their stable model_spec and generation schema.",
+		{"type": "object", "properties": {"provider": {"type": "string", "description": "Provider key; omit to list providers"}}}, "models")
 
 	server._register_tool("minerva_add_model",
 		"Add a new dynamic model to a provider. The model will be available for use in chats immediately and persists across restarts.",
@@ -404,80 +389,10 @@ func _get_manager_for_provider_string(provider: String):
 
 
 func _list_models(args: Dictionary) -> Dictionary:
-	var provider_filter: String = args.get("provider", "")
-	var dynamic_only: bool = args.get("dynamic_only", false)
-	var results: Array = []
-
-	# Collect built-in models (unless dynamic_only is set)
-	if not dynamic_only:
-		for model_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
-			if model_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-				continue
-			var provider_enum = SingletonObject.MODEL_TO_PROVIDER.get(model_id)
-			if provider_enum == null:
-				continue
-			var provider_name: String = _get_provider_name_for_enum(provider_enum)
-			if not provider_filter.is_empty() and provider_name != provider_filter:
-				continue
-			# Create a temporary provider instance to read its fields
-			var script = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id]
-			if script == null:
-				continue
-			var provider_instance = script.new()
-			results.append({
-				"id": model_id,
-				"name": provider_instance.display_name,
-				"provider": provider_name,
-				"model_name": provider_instance.model_name,
-				"is_dynamic": false,
-			})
-
-	# Collect dynamic models from all managers
-	var managers: Dictionary = {
-		"anthropic": SingletonObject.anthropic_model_manager,
-		"openai": SingletonObject.openai_model_manager,
-		"google": SingletonObject.google_model_manager,
-		"openrouter": SingletonObject.openrouter_model_manager,
-		"local": SingletonObject.local_model_manager,
-		"chatgpt": SingletonObject.chatgpt_model_manager,
-	}
-	for prov_name in managers:
-		if not provider_filter.is_empty() and prov_name != provider_filter:
-			continue
-		var manager = managers[prov_name]
-		if manager == null:
-			continue
-		for config in manager.models:
-			var entry := {
-				"id": config.get("id", -1),
-				"name": config.get("display_name", config.get("model_name", config.get("api_model_id", ""))),
-				"provider": prov_name,
-				"model_name": config.get("model_name", config.get("api_model_id", "")),
-				"is_dynamic": true,
-			}
-			if config.has("provider_kind"):
-				entry["provider_kind"] = config.get("provider_kind", "")
-			if prov_name == "chatgpt":
-				entry["reasoning_effort"] = config.get("reasoning_effort", "")
-				entry["supported_reasoning_levels"] = config.get("supported_reasoning_levels", [])
-				entry["reasoning_description"] = config.get("reasoning_description", "")
-				entry["supports_reasoning_summaries"] = config.get("supports_reasoning_summaries", false)
-				entry["default_reasoning_summary"] = config.get("default_reasoning_summary", "")
-				entry["support_verbosity"] = config.get("support_verbosity", false)
-				entry["default_verbosity"] = config.get("default_verbosity", null)
-				entry["additional_speed_tiers"] = config.get("additional_speed_tiers", [])
-				entry["input_modalities"] = config.get("input_modalities", [])
-				entry["supports_image_generation"] = "image" in config.get("input_modalities", [])
-				entry["supports_parallel_tool_calls"] = config.get("supports_parallel_tool_calls", false)
-				entry["supports_search_tool"] = config.get("supports_search_tool", false)
-				entry["web_search_tool_type"] = config.get("web_search_tool_type", "")
-				entry["apply_patch_tool_type"] = config.get("apply_patch_tool_type", null)
-				entry["experimental_supported_tools"] = config.get("experimental_supported_tools", [])
-				entry["priority"] = config.get("priority", 0)
-				entry["catalog_key"] = config.get("catalog_key", "")
-			results.append(entry)
-
-	return {"success": true, "models": results, "count": results.size()}
+	var key: String = str(args.get("provider", ""))
+	if key.is_empty():
+		return MCPToolUtils.success({"providers": ModelResolver.list_providers()})
+	return MCPToolUtils.success({"provider": key, "models": ModelResolver.list_models(key)})
 
 
 func _refresh_chatgpt_models() -> Dictionary:

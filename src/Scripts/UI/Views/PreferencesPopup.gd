@@ -83,6 +83,8 @@ var config_file = ConfigFile.new()
 
 
 func _ready():
+	ModelResolver.watch_core_changes(_populate_summary_models)
+	SingletonObject.provider_enabled_changed.connect(_populate_summary_models.unbind(2))
 	super()
 	var res_code = config_file.load_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 	match res_code:
@@ -3274,12 +3276,14 @@ func _update_summary_controls_visible() -> void:
 
 
 func _populate_summary_models() -> void:
+	if _summary_model_option == null:
+		return
 	_summary_model_option.clear()
 	var cfg := SingletonObject.get_voice_config()
 
-	for entry in CoreActionCatalog.list_actions():
-		if entry["service_client_id"] == "model-chat":
-			_summary_model_option.add_item(entry["action_name"])
+	for entry in CoreModelCatalog.list_models():
+		if entry.model_spec.service_client_id == "model-chat":
+			_summary_model_option.add_item(entry.model_spec.action_name)
 
 	# Select the saved model if present
 	if not cfg.summary_model.is_empty():
@@ -3288,7 +3292,14 @@ func _populate_summary_models() -> void:
 				_summary_model_option.select(i)
 				return
 
-	# If no saved model or not found, select first and save it
+	if not cfg.summary_model.is_empty():
+		_summary_model_option.add_item(cfg.summary_model + " (unavailable)")
+		var index := _summary_model_option.item_count - 1
+		_summary_model_option.set_item_disabled(index, true)
+		_summary_model_option.select(index)
+		return
+
+	# Only an omitted selection may choose the first available model.
 	if _summary_model_option.item_count > 0:
 		_summary_model_option.select(0)
 		cfg.summary_model = _summary_model_option.get_item_text(0)

@@ -384,37 +384,13 @@ func _store_tool_artifact(history: ChatHistory, tool_name: String, tool_args: Di
 
 
 func _create_agent_context_summary_provider(provider_spec: Dictionary, settings: Dictionary) -> Dictionary:
-	var kind := str(provider_spec.get("kind", ""))
-	var provider: BaseProvider = null
-	var provider_label := ""
-
-	match kind:
-		"builtin", "dynamic":
-			var model_id := int(provider_spec.get("model_id", -1))
-			if model_id == SingletonObject.API_MODEL_PROVIDERS.HUMAN:
-				return {"provider": null, "error": "human_provider_not_supported", "provider_label": "human"}
-			if kind == "dynamic":
-				provider = SingletonObject.create_dynamic_provider(model_id)
-			elif SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(model_id):
-				provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id].new()
-			provider_label = str(model_id)
-		"core_action":
-			var service_client_id := str(provider_spec.get("service_client_id", ""))
-			var action_name := str(provider_spec.get("action_name", ""))
-			provider = CoreActionCatalog.create_provider(service_client_id, action_name)
-			if provider:
-				provider_label = "%s:%s" % [service_client_id, action_name]
-			else:
-				return {
-					"provider": null,
-					"error": "core_action_not_found:%s:%s" % [service_client_id, action_name],
-					"provider_label": "%s:%s" % [service_client_id, action_name],
-				}
-		_:
-			return {"provider": null, "error": "invalid_provider_spec", "provider_label": ""}
-
-	if not provider:
-		return {"provider": null, "error": "provider_creation_failed", "provider_label": provider_label}
+	var result := ModelResolver.create(provider_spec)
+	if not result.success:
+		return {"provider": null, "error": result.error_message, "provider_label": ""}
+	var provider: BaseProvider = result.provider
+	if provider_spec.get("model_id", -1) == SingletonObject.API_MODEL_PROVIDERS.HUMAN:
+		provider.free()
+		return {"provider": null, "error": "human_provider_not_supported", "provider_label": "human"}
 
 	if ToolMemoryManager._provider_has_property(provider, "system_prompt"):
 		provider.system_prompt = str(settings.get("system_prompt", ""))
@@ -4834,6 +4810,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		status_label = _create_voice_status_label(msg_node)
 
 	var text_to_speak := response_text
+	var summary_fallback := ""
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
 		if cfg.summary_model.is_empty():
 			push_warning("[ChatPane] Summarize mode active but no summary model configured")
@@ -4845,6 +4822,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		print("[ChatPane] TTS: summarizing via %s..." % cfg.summary_model)
 		var client := SingletonObject.get_voice_client()
 		text_to_speak = await client.summarize_for_speech(user_text, response_text, cfg.summary_model, cfg.summary_timeout)
+		summary_fallback = client.summary_unavailable_reason
 		if _tts_cancel:
 			print("[ChatPane] TTS: cancelled after summarize")
 			_dismiss_status_label(status_label, "Voice: cancelled", 1.5)
@@ -4853,7 +4831,7 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		print("[ChatPane] TTS: summary ready: %s" % text_to_speak.substr(0, 80))
 
 	if status_label:
-		status_label.text = "Voice: Synthesizing speech..."
+		status_label.text = "Voice: Using shortened response (%s); synthesizing..." % summary_fallback if not summary_fallback.is_empty() else "Voice: Synthesizing speech..."
 	print("[ChatPane] TTS: synthesizing %d chars..." % text_to_speak.length())
 	var voice_client := SingletonObject.get_voice_client()
 	var wav_data: PackedByteArray = await voice_client.synthesize_auto(text_to_speak, cfg)
@@ -5227,6 +5205,9 @@ func sync_provider_picker_to_chat(tab_or_chat_id: Variant = -1) -> void:
 
 
 func _add_temporary_provider_picker_item(active_provider: BaseProvider) -> int:
+	if active_provider is CoreProvider and not CoreModelCatalog.resolve(active_provider.get_model_spec()).success:
+		_provider_option_button._show_unavailable_core(active_provider.get_model_spec(), active_provider.display_name)
+		return _provider_option_button.selected
 	var item_id: int = 100000
 	while _provider_option_button.get_item_index(item_id) != -1:
 		item_id += 1
@@ -5236,9 +5217,12 @@ func _add_temporary_provider_picker_item(active_provider: BaseProvider) -> int:
 
 	if active_provider is CoreProvider:
 		var core_provider := active_provider as CoreProvider
-		if core_provider.service and core_provider.action:
-			_provider_option_button.set_item_metadata(item_index, [core_provider.service, core_provider.action])
-			return item_index
+		_provider_option_button.set_item_metadata(item_index, core_provider.get_model_spec())
+		var availability := CoreModelCatalog.resolve(core_provider.get_model_spec())
+		if not availability.success:
+			_provider_option_button.set_item_disabled(item_index, true)
+			_provider_option_button.set_item_tooltip(item_index, availability.error_message)
+		return item_index
 
 	var enum_id: int = _resolve_provider_enum_id(active_provider)
 	if enum_id >= 0:

@@ -539,7 +539,7 @@ func _update_model_chat_settings_visibility(should_show: bool, provider: BasePro
 	# Update context value from per-model setting or provider default
 	var ctx_spin = _model_chat_settings_container.get_node("NumCtxHBox/NumCtxSpinBox") as SpinBox
 	if ctx_spin and provider:
-		var context = SingletonObject.get_model_context(provider.model_name)
+		var context = SingletonObject.get_model_context(provider.get_model_settings_key())
 		if context > 0:
 			ctx_spin.value = context
 		elif provider.default_context > 0:
@@ -550,7 +550,7 @@ func _update_model_chat_settings_visibility(should_show: bool, provider: BasePro
 	# Update num_gpu value from per-model setting or provider default
 	var gpu_spin = _model_chat_settings_container.get_node("NumGpuHBox/NumGpuSpinBox") as SpinBox
 	if gpu_spin and provider:
-		var num_gpu = SingletonObject.get_model_num_gpu(provider.model_name)
+		var num_gpu = SingletonObject.get_model_num_gpu(provider.get_model_settings_key())
 		gpu_spin.value = num_gpu
 
 
@@ -739,7 +739,7 @@ func _on_model_chat_num_ctx_changed(value: float) -> void:
 		provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
 
 	if provider:
-		SingletonObject.set_model_context(provider.model_name, int(value))
+		SingletonObject.set_model_context(provider.get_model_settings_key(), int(value))
 		print("Model context for '%s': %d" % [provider.model_name, int(value)])
 
 
@@ -752,7 +752,7 @@ func _on_num_gpu_changed(value: float) -> void:
 		provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
 
 	if provider:
-		SingletonObject.set_model_num_gpu(provider.model_name, int(value))
+		SingletonObject.set_model_num_gpu(provider.get_model_settings_key(), int(value))
 		print("Model num_gpu for '%s': %d" % [provider.model_name, int(value)])
 
 
@@ -766,7 +766,7 @@ func _update_timeout_settings_visibility(provider: BaseProvider) -> void:
 	# Update value from singleton or provider default (keyed by model_name)
 	var spin = _timeout_settings_container.get_node("TimeoutHBox/TimeoutSpinBox") as SpinBox
 	if spin:
-		var timeout = SingletonObject.get_model_timeout(provider.model_name)
+		var timeout = SingletonObject.get_model_timeout(provider.get_model_settings_key())
 		if timeout > 0:
 			spin.value = timeout
 		else:
@@ -821,7 +821,7 @@ func _on_timeout_changed(value: float) -> void:
 		provider = SingletonObject.Chats._provider_option_button.get_selected_provider()
 
 	if provider:
-		SingletonObject.set_model_timeout(provider.model_name, value)
+		SingletonObject.set_model_timeout(provider.get_model_settings_key(), value)
 		print("Model timeout for '%s': %ds" % [provider.model_name, int(value)])
 
 

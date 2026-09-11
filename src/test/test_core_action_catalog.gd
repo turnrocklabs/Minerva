@@ -87,6 +87,10 @@ func _run() -> void:
 	singleton._enabled_providers[turnrock] = true
 	var stub := _stub_services()
 	core.services = stub
+	var old_connected: bool = core.client._connected
+	var old_registered: bool = core.registered
+	core.client._connected = true
+	core.registered = true
 
 	# --- 1. the enumerator lists exactly the stub, and nothing else ----------
 	# Oracle: the stub Service/Action objects built above.
@@ -143,14 +147,14 @@ func _run() -> void:
 	var broker = load(BROKER_PATH).new(null, null)
 	var reply: Dictionary = broker._handle_host_models_list_models("tester", {"provider": "turnrock"})
 	var models: Array = (reply.get("result", {}) as Dictionary).get("models", [])
-	check("capability lists three turnrock models",
-		reply.get("success", false) and models.size() == 3, "got %d" % models.size())
-	if models.size() == 3:
+	check("capability lists only the two chat offerings",
+		reply.get("success", false) and models.size() == 2, "got %d" % models.size())
+	if models.size() == 2:
 		var shape_ok := true
-		for i in range(3):
+		for i in range(2):
 			var m: Dictionary = models[i]
 			var e: Dictionary = entries[i]
-			if m.keys().size() != 3 \
+			if not m.has("generation_options") \
 					or str(m.get("model_name", "")) != str(e.get("action_name", "")) \
 					or str(m.get("display", "")) != str(e.get("display", "")) \
 					or m.get("model_spec", {}) != e.get("model_spec", {}):
@@ -161,11 +165,7 @@ func _run() -> void:
 			if str((m as Dictionary).get("model_name", "")) == "Unknown":
 				placeholder = true
 		check("no 'Unknown' placeholder among the models", not placeholder)
-		# Oracle: the stub's duplicated action name — same model_name, different
-		# service, so only the spec can tell the two apart.
-		check("same-named actions on different services stay distinct",
-			str((models[0] as Dictionary).get("model_name", "")) == str((models[2] as Dictionary).get("model_name", "")) \
-				and (models[0] as Dictionary).get("model_spec", {}) != (models[2] as Dictionary).get("model_spec", {}))
+		check("generic same-named operation is excluded from chat models", models[0].model_spec.service_client_id == "model-chat")
 
 	# --- 4b. the provider listing carries turnrock so list_providers ->
 	# list_models reaches Core ------------------------------------------------
@@ -226,13 +226,10 @@ func _run() -> void:
 			and by_name.service == stub[0] and by_name.action == stub[0].actions[1])
 	if by_name != null:
 		by_name.free()
-	# A duplicated name resolves to the first match in service order — the order
-	# the chooser lists them in.
-	var dupe = singleton.create_provider_for("turnrock", "qwen3")
-	check("a name on two services resolves to the first in service order",
-		dupe != null and dupe.service == stub[0])
-	if dupe != null:
-		dupe.free()
+	# Same display/name cannot authorize first-match selection across eligible identities.
+	stub[1].actions[0].model_metadata = {"chat_model": true, "generation_options": {}}
+	check("same-named eligible identities require model_spec", singleton.create_provider_for("turnrock", "qwen3") == null)
+	stub[1].actions[0].model_metadata.clear()
 	check("a name no service has resolves to null",
 		singleton.create_provider_for("turnrock", "no-such-action") == null)
 
@@ -271,9 +268,9 @@ func _run() -> void:
 		for m in other_models:
 			var keys: Array = (m as Dictionary).keys()
 			keys.sort()
-			if keys != ["display", "model_name"]:
+			if not m.has("display") or not m.has("model_name") or not m.has("model_spec"):
 				cg_ok = false
-		check("non-turnrock models (%s) keep the {model_name, display} shape" % other_key,
+		check("non-turnrock models (%s) retain labels and usable model_spec" % other_key,
 			cg_ok, str(other_models))
 
 	# --- 7. Core with no services yields nothing, not a placeholder ---------
@@ -296,6 +293,8 @@ func _run() -> void:
 
 	# --- restore -------------------------------------------------------------
 	core.services = saved_services
+	core.client._connected = old_connected
+	core.registered = old_registered
 	if had_enabled:
 		singleton._enabled_providers[turnrock] = was_enabled
 	else:

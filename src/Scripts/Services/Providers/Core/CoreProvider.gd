@@ -5,6 +5,7 @@ var service: Service
 var action: Action
 ## Catalog-created chat providers revalidate their identity before every invocation.
 var requires_chat_model: bool = false
+var _selected_model_spec: Dictionary = {}
 
 ## System prompt to send with the request (set by ChatPane)
 var system_prompt: String
@@ -50,10 +51,25 @@ func _apply_model_descriptor() -> void:
 	default_num_gpu = int(options.get("num_gpu", {}).get("default", -1))
 
 
+func get_model_spec() -> Dictionary:
+	return _selected_model_spec.duplicate(true) if not _selected_model_spec.is_empty() else CoreActionCatalog.spec_for(service, action)
+
+
+func set_chat_model_spec(spec: Dictionary) -> void:
+	_selected_model_spec = spec.duplicate(true)
+	requires_chat_model = true
+	model_name = "%s (%s)" % [spec.get("service_name", spec.get("service_client_id", "TurnRock")), spec.get("action_name", "selection required")]
+	var resolved := CoreModelCatalog.resolve(spec)
+	if resolved.success:
+		service = resolved.service
+		action = resolved.action
+		_apply_model_descriptor()
+
+
 func get_model_settings_key() -> String:
-	var spec := CoreActionCatalog.spec_for(service, action)
+	var spec := get_model_spec()
 	var key := CoreModelCatalog.settings_key(spec)
-	if key.is_empty() or not CoreModelDescriptor.describe(service, action).eligible:
+	if key.is_empty() or (not requires_chat_model and not CoreModelDescriptor.describe(service, action).eligible):
 		return model_name
 	CoreModelPreferences.ensure_migrated(spec)
 	return key
@@ -130,7 +146,7 @@ func _parse_request_results(response: Dictionary) -> BotResponse:
 
 func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	if requires_chat_model:
-		var resolved := CoreModelCatalog.resolve(CoreActionCatalog.spec_for(service, action))
+		var resolved := CoreModelCatalog.resolve(get_model_spec())
 		if not resolved.success:
 			var failure := BotResponse.new()
 			failure.provider = self
@@ -227,7 +243,7 @@ func Format(chat_item: ChatHistoryItem) -> Variant:
 
 func _is_openai_compatible_service() -> bool:
 	var descriptor := CoreModelDescriptor.describe(service, action)
-	return descriptor.eligible and descriptor.valid
+	return requires_chat_model or (descriptor.eligible and descriptor.valid)
 
 func _format_openai_message(chat_item: ChatHistoryItem) -> Dictionary:
 	"""Format a chat history item as an OpenAI-compatible message"""

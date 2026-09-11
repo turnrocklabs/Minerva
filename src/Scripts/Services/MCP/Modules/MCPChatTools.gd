@@ -509,125 +509,37 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 #region Chat Tool Implementations
 
 func _resolve_chat_provider(args: Dictionary, chat_pane, allow_ui_fallback: bool) -> Dictionary:
-	var provider_obj: BaseProvider = null
-
 	if args.has("model_spec"):
-		var spec: Dictionary = MCPToolUtils.coerce_object(args.get("model_spec"), {})
-		if spec.is_empty():
-			return {"error": "model_spec must be a Dictionary"}
-		var spec_result := _resolve_provider_from_model_spec(spec)
-		if spec_result.has("error"):
-			return spec_result
-		return spec_result
-
-	var provider_name: String = str(args.get("provider", ""))
-	var provider_enum_id = args.get("provider_enum_id", -1)
-
-	if provider_name == "current":
-		# Use the calling chat's provider.
-		if chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
-			var caller_history = SingletonObject.ChatList[chat_pane.current_tab]
-			if caller_history and caller_history.provider:
-				provider_obj = caller_history.provider.duplicate() if caller_history.provider.has_method("duplicate") else caller_history.provider
-				if not provider_obj:
-					# Can't duplicate, create new instance of same type.
-					var script = caller_history.provider.get_script()
-					if script:
-						provider_obj = script.new()
-				print("[MCPChatTools] Using current chat's provider")
-
-	if not provider_obj and int(provider_enum_id) >= 0:
-		# Accept raw enum ID (covers OpenRouter dynamic models, ChatGPT, etc.).
-		var eid: int = int(provider_enum_id)
-		if eid >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-			provider_obj = SingletonObject.create_dynamic_provider(eid)
-		elif SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(eid):
-			provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[eid].new()
-		if provider_obj:
-			print("[MCPChatTools] Using provider enum ID: %d" % eid)
-
-	if not provider_obj and not provider_name.is_empty():
-		# Build friendly name map dynamically from the enum.
-		var name_map: Dictionary = {}
-		for eid in SingletonObject.API_MODEL_PROVIDERS.values():
-			var ename: String = SingletonObject.API_MODEL_PROVIDERS.find_key(eid)
-			if ename:
-				name_map[ename.to_lower()] = eid
-		# Try exact match first, then common aliases.
-		var lookup_name := provider_name.to_lower().replace("-", "_").replace(" ", "_")
-		var aliases := {
-			"anthropic": "claude_sonnet",
-			"claude": "claude_sonnet",
-			"google": "gemini_flash",
-			"gemini": "gemini_flash",
-			"chatgpt": "chatgpt",
-		}
-		if not name_map.has(lookup_name) and aliases.has(lookup_name):
-			lookup_name = aliases[lookup_name]
-		if name_map.has(lookup_name):
-			var eid: int = name_map[lookup_name]
-			if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(eid):
-				provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[eid].new()
-				print("[MCPChatTools] Using provider: %s (enum: %d)" % [provider_name, eid])
-
-	# Fall back to current selected provider in UI for chat creation only.
-	if not provider_obj and allow_ui_fallback:
-		if not provider_name.is_empty():
-			var valid_names: PackedStringArray = []
-			for eid in SingletonObject.API_MODEL_PROVIDERS.values():
-				var ename: String = SingletonObject.API_MODEL_PROVIDERS.find_key(eid)
-				if ename:
-					valid_names.append(ename.to_lower())
-			push_warning("[MCPChatTools] Provider '%s' not found. Valid names: %s. Falling back to UI selection." % [provider_name, ", ".join(valid_names)])
-		provider_obj = chat_pane._provider_option_button.get_selected_provider()
-		if not provider_obj:
-			provider_obj = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[SingletonObject.API_MODEL_PROVIDERS.GPT_NANO].new()
-
-	if not provider_obj:
-		return {"error": "Could not resolve provider; use provider, provider_enum_id, or model_spec"}
-
-	return {"provider": provider_obj}
+		var spec: Dictionary = MCPToolUtils.coerce_object(args.model_spec, {})
+		return ModelResolver.create(spec)
+	if args.has("provider_enum_id"):
+		var id: Variant = args.provider_enum_id
+		return ModelResolver.create({"kind": "dynamic" if (id is int or id is float) and id >= SingletonObject.DYNAMIC_MODEL_ID_BASE else "builtin", "model_id": id})
+	if args.has("provider"):
+		var name: String = str(args.provider)
+		if name == "current":
+			if chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
+				return ModelResolver.create(ModelResolver.spec_for(SingletonObject.ChatList[chat_pane.current_tab].provider))
+			return {"error": "No current chat provider", "error_code": "model_not_available"}
+		var aliases := {"anthropic": "claude_sonnet", "claude": "claude_sonnet", "google": "gemini_flash", "gemini": "gemini_flash"}
+		var lookup := name.to_lower().replace("-", "_").replace(" ", "_")
+		lookup = aliases.get(lookup, lookup)
+		for key in SingletonObject.API_MODEL_PROVIDERS:
+			if str(key).to_lower() == lookup:
+				return ModelResolver.create({"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS[key]})
+		return ModelResolver.create_by_name("", name)
+	if allow_ui_fallback:
+		var chosen: BaseProvider = chat_pane._provider_option_button.get_selected_provider()
+		if chosen != null:
+			var spec := ModelResolver.spec_for(chosen)
+			chosen.free()
+			return ModelResolver.create(spec)
+		return ModelResolver.create({"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.GPT_NANO})
+	return {"error": "Specify provider, provider_enum_id or model_spec", "error_code": "invalid_model_spec"}
 
 
 func _resolve_provider_from_model_spec(spec: Dictionary) -> Dictionary:
-	var kind: String = str(spec.get("kind", "")).strip_edges()
-	match kind:
-		"core_action":
-			var service_client_id: String = str(spec.get("service_client_id", "")).strip_edges()
-			var action_name: String = str(spec.get("action_name", "")).strip_edges()
-			if service_client_id.is_empty():
-				return {"error": "model_spec kind='core_action' requires service_client_id"}
-			if action_name.is_empty():
-				return {"error": "model_spec kind='core_action' requires action_name"}
-
-			# Resolution goes through the one Core-action enumerator — the same
-			# one that produced this spec in the chooser or in list_models.
-			var core_node := CoreActionCatalog.core_node()
-			if not core_node:
-				return {"error": "Core autoload not found"}
-
-			var provider_obj := CoreActionCatalog.create_provider(service_client_id, action_name, core_node)
-			if provider_obj == null:
-				return {"error": "Core service/action not found: %s/%s" % [service_client_id, action_name]}
-			return {"provider": provider_obj}
-
-		"dynamic":
-			var model_id: int = MCPToolUtils.coerce_int(spec.get("model_id", -1), -1)
-			if model_id < SingletonObject.DYNAMIC_MODEL_ID_BASE:
-				return {"error": "model_spec kind='dynamic' requires model_id >= %d" % SingletonObject.DYNAMIC_MODEL_ID_BASE}
-			var provider_obj: BaseProvider = SingletonObject.create_dynamic_provider(model_id)
-			if not provider_obj:
-				return {"error": "Dynamic model not found: %d" % model_id}
-			return {"provider": provider_obj}
-
-		"builtin":
-			var model_id: int = MCPToolUtils.coerce_int(spec.get("model_id", -1), -1)
-			if not SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(model_id):
-				return {"error": "Builtin model not found: %d" % model_id}
-			return {"provider": SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id].new()}
-
-		_:
-			return {"error": "model_spec kind must be core_action, dynamic, or builtin"}
+	return ModelResolver.create(spec)
 
 
 func _create_chat(args: Dictionary) -> Dictionary:
@@ -654,7 +566,7 @@ func _create_chat(args: Dictionary) -> Dictionary:
 
 	var provider_result := _resolve_chat_provider(args, chat_pane, true)
 	if provider_result.has("error"):
-		return MCPToolUtils.error(str(provider_result["error"]))
+		return provider_result
 	var provider_obj: BaseProvider = provider_result.get("provider", null) as BaseProvider
 
 	# Create new chat history
@@ -711,7 +623,7 @@ func _set_chat_model(args: Dictionary) -> Dictionary:
 
 	var provider_result := _resolve_chat_provider(args, chat_pane, false)
 	if provider_result.has("error"):
-		return MCPToolUtils.error(str(provider_result["error"]))
+		return provider_result
 
 	var provider_obj: BaseProvider = provider_result.get("provider", null) as BaseProvider
 	if not provider_obj:

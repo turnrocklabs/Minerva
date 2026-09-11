@@ -103,6 +103,8 @@ func _init(manager_mode: ManagerMode = ManagerMode.AGENTS):
 func _ready() -> void:
 	content_scale_factor = get_tree().root.content_scale_factor
 	_build_ui()
+	ModelResolver.watch_core_changes(_refresh_core_models)
+	SingletonObject.provider_enabled_changed.connect(_refresh_core_models.unbind(2))
 	if _manager_mode == ManagerMode.AGENTS:
 		_refresh_agent_list()
 	else:
@@ -697,25 +699,36 @@ func _populate_model_dropdown(provider_id: int) -> void:
 
 
 func _populate_core_models() -> void:
-	var core_node = Engine.get_singleton("Core") if Engine.has_singleton("Core") else null
-	if not core_node:
-		core_node = SingletonObject.get_tree().root.get_node_or_null("Core")
-	if not core_node:
-		agent_model_dropdown.add_item("(Core not connected)")
-		_model_id_map.append(-1)
-		return
-
-	var svc_list: Array = core_node.services
-	if svc_list.is_empty():
-		agent_model_dropdown.add_item("(No Core services discovered)")
-		_model_id_map.append(-1)
-		return
-
-	for entry in CoreActionCatalog.list_actions(core_node):
-		var matched := CoreActionCatalog.find_action(entry["service_client_id"], entry["action_name"], core_node)
-		agent_model_dropdown.add_item(entry["display"])
+	for entry in CoreModelCatalog.list_models():
+		agent_model_dropdown.add_item(entry.display)
 		_model_id_map.append(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
-		_core_model_map.append([matched["service"], matched["action"]])
+		_core_model_map.append(entry.model_spec)
+
+
+func _select_core_model(spec: Dictionary) -> void:
+	for index in _core_model_map.size():
+		if CoreModelCatalog.settings_key(_core_model_map[index]) == CoreModelCatalog.settings_key(spec):
+			agent_model_dropdown.select(index)
+			return
+	var reason := CoreModelCatalog.resolve(spec)
+	agent_model_dropdown.add_item("%s (unavailable)" % str(spec.get("action_name", "TurnRock")))
+	var index := agent_model_dropdown.item_count - 1
+	_core_model_map.append(spec.duplicate(true))
+	_model_id_map.append(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
+	agent_model_dropdown.set_item_disabled(index, true)
+	agent_model_dropdown.set_item_tooltip(index, reason.get("error_message", "Model unavailable"))
+	agent_model_dropdown.select(index)
+
+
+func _refresh_core_models() -> void:
+	if agent_provider_dropdown == null or agent_provider_dropdown.selected < 0 \
+			or agent_provider_dropdown.get_item_metadata(agent_provider_dropdown.selected) != SingletonObject.API_PROVIDER.TURNROCK:
+		return
+	var index := agent_model_dropdown.selected
+	var spec: Dictionary = _core_model_map[index] if index >= 0 and index < _core_model_map.size() else {}
+	_populate_model_dropdown(SingletonObject.API_PROVIDER.TURNROCK)
+	if not spec.is_empty():
+		_select_core_model(spec)
 
 
 func _populate_agent_options() -> void:
@@ -890,13 +903,7 @@ func _on_agent_selected(index: int) -> void:
 			break
 	# Select model in model dropdown
 	if agent.provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
-		# Match Core model by service_id + action_name
-		var matched := CoreActionCatalog.find_action(agent.core_service_id, agent.core_action_name)
-		for i in _core_model_map.size():
-			var pair = _core_model_map[i]
-			if pair[0] == matched.get("service") and pair[1] == matched.get("action"):
-				agent_model_dropdown.select(i)
-				break
+		_select_core_model({"kind": "core_action", "service_client_id": agent.core_service_id, "action_name": agent.core_action_name})
 	else:
 		for i in _model_id_map.size():
 			if _model_id_map[i] == agent.provider_enum_id:
@@ -926,15 +933,18 @@ func _on_agent_save() -> void:
 		return
 
 	var model_idx = agent_model_dropdown.selected
+	if model_idx < 0 or model_idx >= _model_id_map.size():
+		SingletonObject.create_toast_notification("Select an available model before saving the agent", ToastNotification.Type.WARNING)
+		return
 	var provider_enum_id = _model_id_map[model_idx] if model_idx >= 0 and model_idx < _model_id_map.size() else 0
 
 	# Extract Core service/action info if this is a TurnRock model
 	var core_svc_id := ""
 	var core_act_name := ""
 	if provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK and model_idx >= 0 and model_idx < _core_model_map.size():
-		var pair = _core_model_map[model_idx]
-		core_svc_id = pair[0].client_id
-		core_act_name = pair[1].name
+		var spec: Dictionary = _core_model_map[model_idx]
+		core_svc_id = spec.get("service_client_id", "")
+		core_act_name = spec.get("action_name", "")
 
 	var saved_id: String = ""
 

@@ -97,39 +97,17 @@ static func spawn_agent(agent_def: AgentDefinition, initial_message: String = ""
 
 
 static func _create_provider(agent_def: AgentDefinition) -> BaseProvider:
-	var provider_enum_id: int = agent_def.provider_enum_id
-
-	# Handle dynamic models (any provider)
-	if provider_enum_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-		return SingletonObject.create_dynamic_provider(provider_enum_id)
-
-	# Handle Core/TurnRock: needs Service + Action from runtime discovery
-	if provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
+	if agent_def.provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
 		return _create_core_provider(agent_def.core_service_id, agent_def.core_action_name)
-
-	# Standard provider
-	if SingletonObject.API_MODEL_PROVIDER_SCRIPTS.has(provider_enum_id):
-		return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[provider_enum_id].new()
-
-	return null
+	var id := agent_def.provider_enum_id
+	return ModelResolver.create({"kind": "dynamic" if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE else "builtin", "model_id": id}).get("provider")
 
 
 static func _create_core_provider(service_id: String, action_name: String) -> BaseProvider:
-	if service_id.is_empty() or action_name.is_empty():
-		push_error("[AgentSpawner] Core agent missing service_id or action_name")
-		return null
-
-	var core_node = SingletonObject.get_tree().root.get_node_or_null("Core")
-	if not core_node:
-		push_error("[AgentSpawner] Core autoload not found")
-		return null
-
-	var provider := CoreActionCatalog.create_provider(service_id, action_name, core_node)
-	if provider:
-		return provider
-
-	push_error("[AgentSpawner] Core service '%s' action '%s' not found" % [service_id, action_name])
-	return null
+	var result := ModelResolver.create({"kind": "core_action", "service_client_id": service_id, "action_name": action_name})
+	if not result.success:
+		push_warning("[AgentSpawner] %s" % result.error_message)
+	return result.get("provider")
 
 
 ## Find MCPSkillTools module through the singleton chain.

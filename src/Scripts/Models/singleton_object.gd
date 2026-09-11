@@ -2056,91 +2056,16 @@ func provider_from_key(key: String) -> int:
 ## host.models.* capability, and the minerva_list_models MCP tool — consumers
 ## must call this rather than reading config or rebuilding the list themselves.
 func list_enabled_providers() -> Array:
-	var out: Array = []
-	var seen: Dictionary = {}
-	for id_base in _dynamic_provider_map:
-		var entry: Dictionary = _dynamic_provider_map[id_base]
-		var provider = entry.get("provider", -1)
-		if seen.has(provider) or not is_provider_enabled(provider):
-			continue
-		var manager = entry.get("manager", null)
-		if manager == null or manager.models.is_empty():
-			continue
-		seen[provider] = true
-		out.append({"key": provider_key(provider), "display": get_provider_display_name(provider)})
-	# TurnRock/Core has no model manager to be found in the loop above, but it
-	# does have models — the live service actions. List it whenever it would
-	# answer list_enabled_models with something, so a consumer walking
-	# list_providers → list_models reaches Core the same way it reaches
-	# everything else.
-	if is_provider_enabled(API_PROVIDER.TURNROCK) and CoreActionCatalog.has_actions():
-		out.append({
-			"key": provider_key(API_PROVIDER.TURNROCK),
-			"display": get_provider_display_name(API_PROVIDER.TURNROCK),
-		})
-	return out
+	return ModelResolver.catalog_providers()
 
-## Brokered catalog: enabled models for a provider key. Returns [{model_name, display}],
-## plus a `model_spec` field for providers whose models are not a static list.
+## Brokered catalog: enabled models with display names and a resolvable model_spec.
 func list_enabled_models(key: String) -> Array:
-	var out: Array = []
-	var target := provider_from_key(key)
-	if target == -1 or not is_provider_enabled(target):
-		return out
-	# TurnRock/Core keeps no model manager: its models ARE the live service
-	# actions, so they come from the one Core-action enumerator and carry the
-	# model_spec a caller must send back to reach that action. Core absent (or
-	# its services not fetched yet) simply yields no models.
-	if target == API_PROVIDER.TURNROCK:
-		for entry in CoreActionCatalog.list_actions():
-			out.append({
-				"model_name": str(entry["action_name"]),
-				"display": str(entry["display"]),
-				"model_spec": entry["model_spec"],
-			})
-		return out
-	for id_base in _dynamic_provider_map:
-		var entry: Dictionary = _dynamic_provider_map[id_base]
-		if int(entry.get("provider", -2)) != target:
-			continue
-		var manager = entry.get("manager", null)
-		if manager == null:
-			continue
-		for config in manager.models:
-			if config is Dictionary:
-				var mname := str(config.get("model_name", ""))
-				if not mname.is_empty():
-					out.append({"model_name": mname, "display": str(config.get("display_name", mname))})
-	return out
+	return ModelResolver.catalog_models(key)
 
 ## Build a live provider for a (provider key, model_name), or null if not found
-## in the enabled catalog. Resolving by name keeps stored settings valid across
-## model-id reassignment.
+## in the enabled catalog. Ambiguous names require an explicit model_spec.
 func create_provider_for(key: String, model_name: String) -> BaseProvider:
-	var target := provider_from_key(key)
-	if target == -1:
-		return null
-	# TurnRock/Core has no manager to search: the name is a Core action name, so
-	# resolve it against the live actions. Action names can repeat across
-	# services — the spec, not the name, is the unique key — so the first match
-	# in Core.services order wins.
-	if target == API_PROVIDER.TURNROCK:
-		for entry in CoreActionCatalog.list_actions():
-			if str(entry["action_name"]).to_lower() == model_name.to_lower():
-				return CoreActionCatalog.create_provider(
-					str(entry["service_client_id"]), str(entry["action_name"]))
-		return null
-	for id_base in _dynamic_provider_map:
-		var entry: Dictionary = _dynamic_provider_map[id_base]
-		if int(entry.get("provider", -2)) != target:
-			continue
-		var manager = entry.get("manager", null)
-		if manager == null:
-			continue
-		for config in manager.models:
-			if config is Dictionary and str(config.get("model_name", "")).to_lower() == model_name.to_lower():
-				return create_dynamic_provider(int(config.get("id", -1)))
-	return null
+	return ModelResolver.create_by_name(key, model_name).get("provider")
 
 ## Model name aliases for backward compatibility with saved projects
 const MODEL_ALIASES: Dictionary = {

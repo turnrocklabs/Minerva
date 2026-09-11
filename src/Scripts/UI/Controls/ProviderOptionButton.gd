@@ -10,7 +10,7 @@ class ProviderItem:
 	var id: int
 	var tooltip: String
 	var provider_script: Script  ## Script reference for standard providers
-	var metadata: Variant  ## [Service, Action] array for CoreProviders, null for standard
+	var metadata: Variant  ## Core model_spec (legacy arrays accepted), plugin key, or null for standard
 	
 	func _init(name: String, item_id: int, script: Script = null, meta: Variant = null, tip: String = ""):
 		display_name = name
@@ -21,7 +21,7 @@ class ProviderItem:
 	
 	## Returns true if this represents a CoreProvider (service action wrapper)
 	func is_core_provider() -> bool:
-		return metadata is Array and metadata.size() == 2
+		return (metadata is Array and metadata.size() == 2) or (metadata is Dictionary and metadata.get("kind") == "core_action")
 
 	## Returns true if this represents a plugin chat-provider entry
 	## (chat-passthrough W1). Plugin items carry the registry key as a String
@@ -58,6 +58,7 @@ func _ready():
 
 	# Rebuild dropdown when providers are enabled/disabled
 	SingletonObject.provider_enabled_changed.connect(_on_provider_enabled_changed)
+	ModelResolver.watch_core_changes(_on_core_catalog_changed)
 
 	# Rebuild dropdown when plugin chat-provider entries change (chat-passthrough W1)
 	var cpr = _get_chat_provider_registry()
@@ -169,12 +170,7 @@ func _ensure_locked_entry_displayed() -> void:
 
 ## Handle provider enable/disable changes
 func _on_provider_enabled_changed(_provider: SingletonObject.API_PROVIDER, _enabled: bool) -> void:
-	_setup_default_provider_set()
-	# Rebuild the active combined set with fresh default data (preserves core providers)
-	if not _current_combined_services.is_empty() and _current_set_key is String and (_current_set_key as String).begins_with("combined_"):
-		var has_internal_chat := _contains_internal_chat_service(_current_combined_services)
-		_create_combined_set(_current_combined_services, _current_set_key, has_internal_chat)
-	_rebuild_dropdown()
+	_on_core_catalog_changed()
 
 
 ## Switches to the appropriate provider set for a single service
@@ -235,6 +231,8 @@ func get_item_provider_spec(index: int) -> Dictionary:
 
 	var item_id := get_item_id(index)
 	var metadata = get_item_metadata(index)
+	if metadata is Dictionary:
+		return metadata.duplicate(true)
 	if metadata is Array and metadata.size() == 2:
 		# Core action: the spec shape belongs to the one Core-action enumerator,
 		# so the chooser, the MCP resolver and host.models.list_models all hand
@@ -277,6 +275,11 @@ func select_provider_spec(spec: Dictionary) -> bool:
 
 ## Returns the dropdown index for a given provider (for programmatic selection)
 func get_item_index_for_provider(provider: BaseProvider) -> int:
+	var spec := ModelResolver.spec_for(provider)
+	if not spec.is_empty():
+		for index in range(get_item_count()):
+			if _provider_spec_matches(get_item_provider_spec(index), spec):
+				return index
 	for i in range(get_item_count()):
 		var item_id := get_item_id(i)
 		var metadata = get_item_metadata(get_item_index(item_id))
@@ -335,8 +338,6 @@ func _setup_default_provider_set():
 	)
 
 	# Add TURNROCK and HUMAN at the end (they're special/local providers)
-	if SingletonObject.is_model_enabled(SingletonObject.API_MODEL_PROVIDERS.TURNROCK):
-		sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
 	if SingletonObject.is_model_enabled(SingletonObject.API_MODEL_PROVIDERS.HUMAN):
 		sorted_keys.append(SingletonObject.API_MODEL_PROVIDERS.HUMAN)
 
@@ -375,53 +376,48 @@ func _setup_default_provider_set():
 			items.append(pitem)
 			plugin_id_counter += 1
 
+	for entry in CoreModelCatalog.list_models():
+		items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, ""))
 	_provider_sets["default"] = items
 
 
 ## Creates a provider set for a specific service (all its actions as CoreProviders)
 func _create_service_set(service: Service):
 	var items: Array[ProviderItem] = []
-	
-	var item_id := 1000
-	for action in service.actions:
-		var item_name := _truncate_name(action.name)
-		var item := ProviderItem.new(item_name, item_id, null, [service, action], service.name)
-		items.append(item)
-		item_id += 1
-	
+	for entry in CoreModelCatalog.list_models():
+		if entry.model_spec.service_client_id == service.client_id:
+			items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, service.name))
 	_provider_sets[service] = items
 
 
-## Creates a combined set from multiple services
 func _create_combined_set(services: Array, key: String, include_standard: bool):
 	var items: Array[ProviderItem] = []
-	
-	# Include standard providers if internal chat service is present
 	if include_standard:
-		var default_items: Array = _provider_sets.get("default", [])
-		for item in default_items:
+		for item: ProviderItem in _provider_sets.get("default", []):
 			if not item.is_core_provider():
-				var copy := ProviderItem.new(item.display_name, item.id, item.provider_script, null, item.tooltip)
-				items.append(copy)
-	
-	# Add all service actions as CoreProviders
-	var next_id := 1000
-	for service in services:
-		for action in service.actions:
-			if _action_exists(action, items):
-				continue
-			
-			var item_name := _truncate_name(action.name)
-			var item := ProviderItem.new(item_name, next_id, null, [service, action], service.name)
-			items.append(item)
-			next_id += 1
-	
+				items.append(item)
+	var service_ids: Array[String] = []
+	for service: Service in services:
+		service_ids.append(service.client_id)
+	for entry in CoreModelCatalog.list_models():
+		if entry.model_spec.service_client_id in service_ids:
+			items.append(ProviderItem.new(entry.display, 1000 + items.size(), null, entry.model_spec, ""))
 	_provider_sets[key] = items
+
+
+func _on_core_catalog_changed() -> void:
+	_setup_default_provider_set()
+	if _current_set_key is Service:
+		_create_service_set(_current_set_key)
+	elif not _current_combined_services.is_empty():
+		_create_combined_set(_current_combined_services, _current_set_key, _contains_internal_chat_service(_current_combined_services))
+	_rebuild_dropdown()
 
 
 func _rebuild_dropdown():
 	# Store current selection before rebuilding
-	var current_provider = get_selected_provider()
+	var current_spec := get_selected_provider_spec()
+	var previous_label := get_item_text(selected) if selected >= 0 else "TurnRock"
 
 	clear()
 
@@ -429,6 +425,10 @@ func _rebuild_dropdown():
 	var separator_added := false
 
 	for item: ProviderItem in items:
+		if item.is_core_provider():
+			var spec: Dictionary = item.metadata if item.metadata is Dictionary else CoreActionCatalog.spec_for(item.metadata[0], item.metadata[1])
+			if not CoreModelCatalog.resolve(spec).success:
+				continue
 		# Skip disabled providers (filter at display time for all set types).
 		# Plugin chat-provider entries are always shown — their lifecycle is the
 		# registry, not the model-enabled config (chat-passthrough W1).
@@ -450,12 +450,18 @@ func _rebuild_dropdown():
 		if item.tooltip != "":
 			set_item_tooltip(item_index, item.tooltip)
 	
-	# Restore previous selection if it still exists
-	if current_provider:
-		var provider_index = get_item_index_for_provider(current_provider)
-		if provider_index != -1:
-			select(provider_index)
-		
+	if not current_spec.is_empty() and not select_provider_spec(current_spec) and current_spec.get("kind") == "core_action":
+		_show_unavailable_core(current_spec, previous_label)
+
+
+func _show_unavailable_core(spec: Dictionary, label: String) -> void:
+	var result := CoreModelCatalog.resolve(spec)
+	add_item(label.trim_suffix(" (unavailable)") + " (unavailable)", 999)
+	var index := item_count - 1
+	set_item_metadata(index, spec.duplicate(true))
+	set_item_disabled(index, true)
+	set_item_tooltip(index, result.get("error_message", "Model unavailable"))
+	select(index)
 
 
 ## Converts dropdown item ID back to actual provider instance
@@ -472,8 +478,11 @@ func _get_provider_from_id(item_id: int) -> BaseProvider:
 	if item_id >= SingletonObject.PLUGIN_PROVIDER_ID_BASE and metadata is String:
 		provider = _build_plugin_provider(metadata as String)
 	# CoreProvider: metadata is [Service, Action]
-	elif metadata is Array and metadata.size() == 2:
-		provider = CoreProvider.new.callv(metadata)
+	elif (metadata is Array and metadata.size() == 2) or (metadata is Dictionary and metadata.get("kind") == "core_action"):
+		var spec: Dictionary = metadata if metadata is Dictionary else CoreActionCatalog.spec_for(metadata[0], metadata[1])
+		provider = ModelResolver.create(spec).get("provider")
+		if provider == null:
+			provider = ModelResolver.restore_core(spec)
 	# Dynamic model: use centralized factory
 	elif item_id >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
 		provider = SingletonObject.create_dynamic_provider(item_id)
@@ -519,6 +528,11 @@ const _LEGACY_OR_IDS := {
 
 ## Loads previously saved provider selection from config
 func _load_saved_provider():
+	var saved_spec: Variant = SingletonObject.get_config_file_value("Providers", "DefaultModelSpec")
+	if saved_spec is Dictionary and saved_spec.get("kind") == "core_action":
+		if not select_provider_spec(saved_spec):
+			_show_unavailable_core(saved_spec, str(saved_spec.get("action_name", "TurnRock")))
+		return
 	if not SingletonObject.config_has_saved_section("Providers"):
 		return
 
@@ -600,14 +614,6 @@ func _create_combined_key(services: Array) -> String:
 	return "combined_" + "_".join(service_ids)
 
 
-## Checks if action already exists in items array
-func _action_exists(action: Action, items: Array) -> bool:
-	for item: ProviderItem in items:
-		if item.is_core_provider() and item.metadata[1] == action:
-			return true
-	return false
-
-
 ## Checks if internal chat service is in services array
 func _contains_internal_chat_service(services: Array) -> bool:
 	for service in services:
@@ -648,28 +654,14 @@ func _on_service_selected(service: Service):
 
 
 ## Adds service actions to default set (for internal chat service)
-func _add_service_to_default(service: Service):
-	var default_items: Array = _provider_sets["default"]
-	
-	var next_id := 1000
-	# Find the highest CoreProvider ID already in default
-	for item in default_items:
-		if item.is_core_provider() and item.id >= next_id:
-			next_id = item.id + 1
-
-	for action in service.actions:
-		if _action_exists(action, default_items):
-			continue
-		
-		var item_name := _truncate_name(action.name)
-		var item := ProviderItem.new(item_name, next_id, null, [service, action], service.name)
-		default_items.append(item)
-		next_id += 1
+func _add_service_to_default(_service: Service):
+	_setup_default_provider_set()
 
 
 ## Signal handler for dropdown item selection
 func _on_provider_option_button_item_selected(index: int):
 	var item_id := get_item_id(index)
+	SingletonObject.save_to_config_file("Providers", "DefaultModelSpec", get_item_provider_spec(index))
 	# Persist a stable entry-KEY for plugin chat-provider selections so the
 	# correct entry is restored next boot regardless of registration order. Clear
 	# it otherwise so a later builtin/dynamic selection doesn't resurrect a stale
