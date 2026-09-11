@@ -401,20 +401,8 @@ func _create_agent_context_summary_provider(provider_spec: Dictionary, settings:
 		"core_action":
 			var service_client_id := str(provider_spec.get("service_client_id", ""))
 			var action_name := str(provider_spec.get("action_name", ""))
-			var matched_service: Service = null
-			var matched_action: Action = null
-			for service in Core.services:
-				if service.client_id != service_client_id:
-					continue
-				matched_service = service
-				for action in service.actions:
-					if action.name == action_name:
-						matched_action = action
-						break
-				if matched_action:
-					break
-			if matched_service and matched_action:
-				provider = CoreProvider.new(matched_service, matched_action)
+			provider = CoreActionCatalog.create_provider(service_client_id, action_name)
+			if provider:
 				provider_label = "%s:%s" % [service_client_id, action_name]
 			else:
 				return {

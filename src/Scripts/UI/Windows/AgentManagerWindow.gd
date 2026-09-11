@@ -711,12 +711,11 @@ func _populate_core_models() -> void:
 		_model_id_map.append(-1)
 		return
 
-	for service in svc_list:
-		for action in service.actions:
-			var display = "%s (%s)" % [service.name, action.name]
-			agent_model_dropdown.add_item(display)
-			_model_id_map.append(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
-			_core_model_map.append([service, action])
+	for entry in CoreActionCatalog.list_actions(core_node):
+		var matched := CoreActionCatalog.find_action(entry["service_client_id"], entry["action_name"], core_node)
+		agent_model_dropdown.add_item(entry["display"])
+		_model_id_map.append(SingletonObject.API_MODEL_PROVIDERS.TURNROCK)
+		_core_model_map.append([matched["service"], matched["action"]])
 
 
 func _populate_agent_options() -> void:
@@ -892,9 +891,10 @@ func _on_agent_selected(index: int) -> void:
 	# Select model in model dropdown
 	if agent.provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
 		# Match Core model by service_id + action_name
+		var matched := CoreActionCatalog.find_action(agent.core_service_id, agent.core_action_name)
 		for i in _core_model_map.size():
 			var pair = _core_model_map[i]
-			if pair[0].client_id == agent.core_service_id and pair[1].name == agent.core_action_name:
+			if pair[0] == matched.get("service") and pair[1] == matched.get("action"):
 				agent_model_dropdown.select(i)
 				break
 	else:

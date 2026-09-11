@@ -242,21 +242,12 @@ func summarize_for_speech(user_text: String, response_text: String, model_name: 
 	if not Core.client._connected:
 		return response_text.substr(0, 200)
 
-	# Find model-chat service and the matching action for the requested model
-	var model_chat_svc: Service = null
-	var model_action: Action = null
-	for svc in Core.services:
-		if svc.client_id == "model-chat":
-			model_chat_svc = svc
-			for act in svc.actions:
-				if act.name == model_name:
-					model_action = act
-					break
-			break
-
-	if not model_chat_svc or not model_action:
+	var matched := CoreActionCatalog.find_action("model-chat", model_name)
+	if matched.is_empty():
 		push_warning("[VoiceServiceClient] model-chat model '%s' not found for summarization" % model_name)
 		return response_text.substr(0, 200)
+	var model_chat_svc: Service = matched["service"]
+	var model_action: Action = matched["action"]
 
 	var cfg := SingletonObject.get_voice_config()
 	var system_prompt: String = cfg.summary_prompt if not cfg.summary_prompt.is_empty() else VoiceConfig.DEFAULT_SUMMARY_PROMPT

@@ -3277,12 +3277,9 @@ func _populate_summary_models() -> void:
 	_summary_model_option.clear()
 	var cfg := SingletonObject.get_voice_config()
 
-	# Find model-chat service and list its actions as available models
-	for svc in Core.services:
-		if svc.client_id == "model-chat":
-			for act in svc.actions:
-				_summary_model_option.add_item(act.name)
-			break
+	for entry in CoreActionCatalog.list_actions():
+		if entry["service_client_id"] == "model-chat":
+			_summary_model_option.add_item(entry["action_name"])
 
 	# Select the saved model if present
 	if not cfg.summary_model.is_empty():

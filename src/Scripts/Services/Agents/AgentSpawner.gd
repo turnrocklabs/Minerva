@@ -124,11 +124,9 @@ static func _create_core_provider(service_id: String, action_name: String) -> Ba
 		push_error("[AgentSpawner] Core autoload not found")
 		return null
 
-	for service in core_node.services:
-		if service.client_id == service_id:
-			for action in service.actions:
-				if action.name == action_name:
-					return CoreProvider.new(service, action)
+	var provider := CoreActionCatalog.create_provider(service_id, action_name, core_node)
+	if provider:
+		return provider
 
 	push_error("[AgentSpawner] Core service '%s' action '%s' not found" % [service_id, action_name])
 	return null
