@@ -70,6 +70,27 @@ func _run_tests() -> void:
 		method_found,
 		"method absent from list — has_method() would return false")
 
+	# Real host tab ownership: activity is transient, and unsaved state wins.
+	var pane = load("res://Scripts/UI/Views/EditorPane.gd").new()
+	pane.Tabs = TabContainer.new()
+	pane.add_child(pane.Tabs)
+	pane.buffer_control_editor = Control.new()
+	pane.add_child(pane.buffer_control_editor)
+	var editor = load("res://Scripts/UI/Controls/Editor.gd").new()
+	editor.type = editor.Type.PLUGIN_SCENE
+	pane.adopt_editor(editor)
+	var changes := []
+	editor.content_changed.connect(func(): changes.append(true))
+	editor.set_activity_status("Council round in progress")
+	check("host renders activity without marking the document dirty", pane.Tabs.get_tab_icon(0) != null and changes.is_empty() and not editor._plugin_scene_modified)
+	editor._plugin_scene_modified = true
+	editor.content_changed.emit()
+	var dirty_icon = pane.Tabs.get_tab_icon(0)
+	check("unsaved icon takes priority while tooltip retains activity", dirty_icon == pane._unsaved_changes_icon and "Council" in pane.Tabs.get_tab_tooltip(0))
+	editor.set_activity_status("")
+	check("completion preserves the current unsaved icon", pane.Tabs.get_tab_icon(0) == dirty_icon and not "Council" in pane.Tabs.get_tab_tooltip(0))
+	pane.free()
+
 
 func check(description: String, condition: bool, detail: String = "") -> void:
 	if condition:

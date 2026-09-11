@@ -8,6 +8,7 @@ extends Control
 
 enum LAYOUT {HORIZONTAL, VERTICAL}
 
+static var _activity_icon: Texture2D
 static var _unsaved_changes_icon: = preload("res://assets/icons/slider_grabber.svg")
 static var _unsaved_changes_file_icon: = preload("res://assets/icons/half_circle_left.svg")
 static var _unsaved_changes_associated_icon: = preload("res://assets/icons/half_circle_right.svg")
@@ -284,6 +285,8 @@ func add(type: Editor.Type, file = null, name_ = null, associated_object = null,
 ## returns (Undo restore) is not double-wired.
 func adopt_editor(editor_node: Editor) -> void:
 	var on_changed := _on_editor_content_changed.bind(editor_node)
+	if not editor_node.activity_changed.is_connected(on_changed):
+		editor_node.activity_changed.connect(on_changed)
 	if not editor_node.content_changed.is_connected(on_changed):
 		editor_node.content_changed.connect(on_changed)
 	if not editor_node.undo_capability_changed.is_connected(_on_editor_undo_capability_changed):
@@ -536,6 +539,16 @@ func _on_editor_content_changed(editor: Editor):
 				else:
 					tooltip = "Content unsaved"
 					icon = _unsaved_changes_icon
+
+	if not editor.activity_status.is_empty():
+		tooltip += "\n" + editor.activity_status
+		# Saved-state icons keep priority; activity remains available in the tooltip.
+		if icon == null:
+			if _activity_icon == null:
+				var pixels := Image.create(12, 12, false, Image.FORMAT_RGBA8)
+				pixels.fill(Color("46b77e"))
+				_activity_icon = ImageTexture.create_from_image(pixels)
+			icon = _activity_icon
 
 	var tab_idx: = Tabs.get_tab_idx_from_control(editor)
 	if tab_idx >= 0 and tab_idx < Tabs.get_tab_count():

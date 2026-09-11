@@ -52,6 +52,17 @@ static var spreadsheet_editor_scene: PackedScene:
 
 
 signal content_changed()
+signal activity_changed()
+
+var activity_status: String = ""
+
+## Transient activity is presentation state, never a document edit.
+func set_activity_status(message: String) -> void:
+	if activity_status == message:
+		return
+	activity_status = message
+	activity_changed.emit()
+
 ## Emitted when the hosted plugin panel is swapped (reload), so the ribbon can
 ## re-read supports_undo() for the current tab.
 signal undo_capability_changed()
