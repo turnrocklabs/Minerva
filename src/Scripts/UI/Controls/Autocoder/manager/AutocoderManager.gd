@@ -145,6 +145,7 @@ func _on_core_connected():
 
 
 func _on_core_disconnected():
+	_clear_notification_handlers()
 	info("Core disconnected")
 
 func _on_core_message_received(data):
@@ -373,6 +374,15 @@ func _show_resume_sessions_notification(active_sessions: Array[Dictionary]) -> v
 	SingletonObject.create_toast_notification(message, ToastNotification.Type.INFO)
 
 
+func _clear_notification_handlers() -> void:
+	for handler in _notification_message_handlers:
+		handler.cancel()
+	_notification_message_handlers.clear()
+
+func _exit_tree() -> void:
+	_clear_notification_handlers()
+
+
 func _subscribe_to_session(session_id: String) -> void:
 	var user_id = Core.client.client_id
 	if user_id.is_empty():
@@ -439,6 +449,7 @@ func _subscribe_to_session(session_id: String) -> void:
 		info("Successfully subscribed to session-changed topic")
 
 	# Setup global handlers for wildcard notifications
+	_clear_notification_handlers()
 	info("=== SETTING UP MESSAGE HANDLERS ===")
 
 	var iteration_awaiter = Core.await_message()

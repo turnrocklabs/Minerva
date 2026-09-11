@@ -85,9 +85,6 @@ var _binary_files_completed: int = 0
 var _current_binary_request_id: String = "" # request_id associated with the *currently streaming* binary data
 var _binary_transfer_mode: String = "" # "media_gen", "artifact", or "voice"
 
-# Voice binary transfer: completed audio buffers keyed by request_id
-var _voice_binary_buffers: Dictionary = {}  # request_id -> PackedByteArray
-
 # In-flight voice streams, keyed by the per-frame msg_id (bytes 1..17 of every
 # binary frame — the protocol's stream id). Voice is routed by its own msg_id and
 # kept entirely OUT of the shared media-gen/artifact state below, so a concurrent
@@ -98,24 +95,21 @@ var _voice_binary_buffers: Dictionary = {}  # request_id -> PackedByteArray
 var _voice_streams: Dictionary = {}  # msg_id_hex -> {request_id: String, size: int, buffer: PackedByteArray}
 
 
-## Get and remove completed voice audio for a request_id. Returns empty if not available.
-func take_voice_binary(request_id: String) -> PackedByteArray:
-	if _voice_binary_buffers.has(request_id):
-		var buf: PackedByteArray = _voice_binary_buffers[request_id]
-		_voice_binary_buffers.erase(request_id)
-		return buf
-	return PackedByteArray()
+## Active requests own completion, voice admission and all retained response data.
+var _pending_requests: Dictionary = {}
+var _binary_stream_id: String = ""
+var _voice_receiver: RefCounted
 
+func release_voice_request(request_id: String) -> void:
+	for stream_id in _voice_streams.keys():
+		if _voice_streams[stream_id].request_id == request_id:
+			_voice_streams.erase(stream_id)
 
-# Stash for JSON responses that arrive while polling (used by VoiceServiceClient)
-var _stashed_responses: Dictionary = {}  # request_id -> Dictionary
-
-func take_response(request_id: String) -> Dictionary:
-	if _stashed_responses.has(request_id):
-		var resp: Dictionary = _stashed_responses[request_id]
-		_stashed_responses.erase(request_id)
-		return resp
-	return {}
+func _drop_connection_state() -> void:
+	_connected = false
+	connection_closed.emit()
+	_voice_streams.clear()
+	_reset_binary_transfer_state()
 
 
 func _ready():
@@ -143,6 +137,7 @@ func _notification(what):
 		_clean()
 
 func _clean():
+	_drop_connection_state()
 	for msg_id in _active_transfers.keys():
 		var t: Transfer = _active_transfers[msg_id]
 
@@ -211,7 +206,7 @@ func connect_to_core(CORE_WS_URL_param: String) -> bool: # Explicitly type param
 	_connected = false
 	_auth_retry_attempted = false
 	# Drop any voice streams orphaned by a dropped connection (no FILE_END seen).
-	_voice_streams.clear()
+	_drop_connection_state()
 
 	# Create a new WebSocket peer to ensure clean state
 	_client = WebSocketPeer.new()
@@ -229,6 +224,7 @@ func connect_to_core(CORE_WS_URL_param: String) -> bool: # Explicitly type param
 
 
 func close_connection(reason: String = "") -> void:
+	_drop_connection_state()
 	_auth_retry_attempted = false
 	_connected = false
 	if _heartbeat_timer:
@@ -292,7 +288,7 @@ func _process(_delta):
 			if _connected:
 				_connected = false
 				_heartbeat_timer.stop()
-				connection_closed.emit()
+				_drop_connection_state()
 				if SingletonObject.verbose_logging:
 					print("connection closed !!!")
 				# If we have queued messages and weren't intentionally closing, reconnect
@@ -345,16 +341,21 @@ func parse_json_packet(packet_str):
 		return null
 
 var _max_chunk_length: = 400
-func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
-	var cmd: String = data.get("cmd", "") # Explicitly type
-	var entity_type: String = data.get("entity_type", "") # Explicitly type
+func _handle_message(data: Variant) -> void:
+	if not data is Dictionary:
+		return
+	var params: Dictionary = data.get("params", {}) if data.get("params", {}) is Dictionary else {}
+	var cmd: String = str(data.get("cmd", "")) # Explicitly type
+	var entity_type: String = str(data.get("entity_type", "")) # Explicitly type
 	var request_id: String = ""
 	# Handle authentication errors
 	if cmd == "error" and entity_type == "core":
-		var error_code: String = data.get("params", {}).get("error_code", "") # Explicitly type
-		var error_msg: String = data.get("params", {}).get("error", "") # Explicitly type
+		var error_code: String = str(params.get("error_code", ""))
+		var error_msg: String = str(params.get("error", ""))
 		
 		if error_code == "AUTH_FAILED_PROFILE_CMD_ERROR" or "token" in error_msg.to_lower():
+			# Deliver terminal errors before the auth-recovery early return.
+			message_received.emit(data)
 			push_warning("Authentication failed: %s" % error_msg)
 
 			# Only attempt auto-login once per connection
@@ -368,22 +369,28 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 				return
 	
 	elif cmd == "registration_confirmed" and entity_type == "core":
+		# Readiness must be committed before earlier registration listeners resume
+		# and immediately request discovery/subscriptions.
+		var owner: RefCounted = _pending_requests.get(params.get("request_id", ""))
+		if owner != null and owner.cmd == "registration_confirmed":
+			owner._on_message(data)
 		_auth_retry_attempted = false  # Reset on successful registration
 		registered_with_core.emit()
 		# Send any queued messages after successful registration
 		if _message_queue.size() > 0:
 			_send_queued_messages()
 	elif cmd == "notification": 
-		var _text: String = ((data.get("params", "")as Dictionary).get("data","") as Dictionary).get("message", "")
+		var notification: Dictionary = params.get("data", {}) if params.get("data", {}) is Dictionary else {}
+		var _text: String = str(notification.get("message", ""))
 		if !_text.is_empty() and not _text.to_lower().contains("ComfyUI".to_lower()) :
 			var toast: = ToastNotification.create(ToastNotification.Type.INFO, _text)
 			SingletonObject.main_scene.add_child(toast)
 	elif cmd == "response":
-		request_id = data.get("params", {}).get("request_id", "") # Explicitly type
+		request_id = params.get("request_id", "") if params.get("request_id", "") is String else ""
 		
 		# Check if this is a discovery response
-		var result: Dictionary = data.get("params", {}).get("result", {}) # Explicitly type
-		var services: Array = result.get("services", []) # Explicitly type
+		var result: Dictionary = params.get("result", {}) if params.get("result", {}) is Dictionary else {} # Explicitly type
+		var services: Array = result.get("services", []) if result.get("services", []) is Array else [] # Explicitly type
 		
 		if services.size() > 0:
 			# This is a discovery response
@@ -404,12 +411,8 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 					print("  ⚠️ Received final response but only %s/%s files completed for request %s" % [_binary_files_completed, _binary_expected_files, request_id])
 				_reset_binary_transfer_state() # Reset anyway to prevent stale state
 		
-		# Stash response for polling (VoiceServiceClient uses this)
-		if not request_id.is_empty():
-			_stashed_responses[request_id] = data
-
 		# Always emit the response_received signal
-		response_received.emit(data)
+		response_received.emit(data, null)
 
 	# Always emit the general message_received signal
 	message_received.emit(data)
@@ -428,7 +431,7 @@ func _handle_message(data: Dictionary) -> void: # Explicitly type parameter
 			await get_tree().process_frame
 
 
-func register_with_core(auth_token: String, client_id_: String):
+func register_with_core(auth_token: String, client_id_: String, request_id_: String = "") -> Error:
 	client_id = client_id_
 	var register_msg = {
 		"cmd": "register",
@@ -437,14 +440,14 @@ func register_with_core(auth_token: String, client_id_: String):
 		"params": {
 			"client_id": client_id,
 			"auth": auth_token,
-			"request_id": UUIDGen.v7()
+			"request_id": request_id_ if not request_id_.is_empty() else UUIDGen.v7()
 		}
 	}
-	send_text_message_to_core(register_msg)
+	return send_text_message_to_core(register_msg)
 
 
-func request_connections() -> String:
-	var req_id: = UUIDGen.v7()
+func request_connections(request_id_: String = "") -> String:
+	var req_id: String = request_id_ if not request_id_.is_empty() else UUIDGen.v7()
 	var request_msg = {
 		"cmd": "request",
 		"entity_type": "client",
@@ -456,9 +459,7 @@ func request_connections() -> String:
 			"data": {}
 		}
 	}
-	send_text_message_to_core(request_msg)
-
-	return req_id
+	return req_id if send_text_message_to_core(request_msg) == OK else ""
 
 
 func send_request(service_topic, user_input):
@@ -476,15 +477,17 @@ func send_request(service_topic, user_input):
 	send_text_message_to_core(message)
 
 
-func send_text_message_to_core(message):
+func send_text_message_to_core(message: Dictionary) -> Error:
+	if _client.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return ERR_CONNECTION_ERROR
 	var json_string = JSON.stringify(message)
 	if SingletonObject.verbose_logging:
 		print("Sending message: ", json_string)
-	_client.send_text(json_string)
+	return _client.send_text(json_string)
 
 
-func subscribe(topic: String) -> String:
-	var request_id = UUIDGen.v7()
+func subscribe(topic: String, request_id_: String = "") -> String:
+	var request_id: String = request_id_ if not request_id_.is_empty() else UUIDGen.v7()
 	var message = {
 		"cmd": "subscribe",
 		"topic": "subscription",
@@ -495,13 +498,10 @@ func subscribe(topic: String) -> String:
 		}
 	}
 
-	var json_string = JSON.stringify(message)
-	_client.send_text(json_string)
+	return request_id if send_text_message_to_core(message) == OK else ""
 
-	return request_id
-
-func send_text_message(service: Service, action: Action, data: Dictionary, auth_token: String = "") -> String:
-	var request_id = UUIDGen.v7()
+func send_text_message(service: Service, action: Action, data: Dictionary, auth_token: String = "", request_id_: String = "") -> String:
+	var request_id: String = request_id_ if not request_id_.is_empty() else UUIDGen.v7()
 	var message = {
 		"cmd": "request",
 		"topic": action.topic,
@@ -516,10 +516,7 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 		}
 	}
 	
-	var json_string = JSON.stringify(message)
-	_client.send_text(json_string)
-	
-	return request_id
+	return request_id if send_text_message_to_core(message) == OK else ""
 
 
 # Add this helper function to handle packet sending with backpressure
@@ -549,6 +546,7 @@ func send_heartbeat():
 
 #region Cuauh's media gen code
 func _reset_binary_transfer_state() -> void:
+	_binary_stream_id = ""
 	_binary_files.clear()
 	_binary_filenames.clear()
 	_binary_pending_chunks.clear()
@@ -586,6 +584,14 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 	var frame_type: int = msg[0] # Explicitly type
 	var msg_id_hex: String = msg.slice(1, 17).hex_encode() # per-stream id (bytes 1..16)
 	var payload: PackedByteArray = msg.slice(17) # Explicitly type
+	if frame_type != NEW_MESSAGE and not _voice_streams.has(msg_id_hex) and msg_id_hex != _binary_stream_id:
+		return
+	if _voice_receiver == null:
+		_voice_receiver = preload("res://Scripts/Services/Providers/Core/CoreVoiceTransfers.gd").new(self)
+	if frame_type != NEW_MESSAGE and _voice_streams.has(msg_id_hex):
+		_voice_receiver.receive_frame(frame_type, msg_id_hex, payload)
+		return
+
 
 	var frame_names: Dictionary = { # Explicitly type
 		NEW_MESSAGE: "NEW_MESSAGE",
@@ -606,10 +612,15 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 			var json_len: int = payload.decode_u32(0) # little-endian (Explicitly type)
 			var num_files: int = payload.decode_u32(4) # little-endian (Explicitly type)
 			
-			if payload.size() >= 8 + json_len:
+			if payload.size() == 8 + json_len:
 				var header_bytes: PackedByteArray = payload.slice(8, 8 + json_len) # Explicitly type
 				var header_json_str: String = header_bytes.get_string_from_utf8() # Explicitly type
-				var header: Dictionary = parse_json_packet(header_json_str) # Explicitly type
+				var parsed: Variant = parse_json_packet(header_json_str)
+				if not parsed is Dictionary or not parsed.get("params") is Dictionary:
+					return
+				if not parsed.params.get("request_id") is String or not parsed.get("cmd") is String or not parsed.get("topic") is String:
+					return
+				var header: Dictionary = parsed
 
 				if SingletonObject.verbose_logging:
 					print("   📋 Binary header: %s files" % num_files)
@@ -632,14 +643,12 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				# clobber this voice stream — hence the dedicated _voice_streams
 				# registry. Handle it first and return before touching globals.
 				if hdr_topic.begins_with("voice/"):
-					_voice_streams[msg_id_hex] = {
-						"request_id": req_id,
-						"size": 0,
-						"buffer": PackedByteArray(),
-					}
-					if SingletonObject.verbose_logging:
-						print("  🎙️ Voice stream registered: msg_id=%s request_id=%s" % [msg_id_hex, req_id])
-					binary_new_message_received.emit(header, num_files)
+					_voice_receiver.begin(msg_id_hex, header, num_files)
+					return
+				if not hdr_topic.begins_with("media_gen/") and hdr_topic != "artifact/download":
+					return
+				if _voice_streams.has(msg_id_hex):
+					push_warning("Ignoring nonvoice header reusing an active voice stream ID.")
 					return
 
 				# Always reset binary state before starting a new transfer.
@@ -661,6 +670,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("  ℹ️ Binary header topic=%s not handled, ignoring." % hdr_topic)
 					return
 
+				_binary_stream_id = msg_id_hex
 				_current_binary_request_id = req_id
 
 				_binary_expected_files = num_files
@@ -673,20 +683,7 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				print("❌ NEW_MESSAGE payload data too short for JSON length")
 		
 		FILE_INFO:
-			if _voice_streams.has(msg_id_hex):
-				# Voice Format A: [path_len(4B)] [file_size(4B u32)] [path_bytes]
-				if payload.size() < 8:
-					print("❌ FILE_INFO (voice) payload too short")
-					return
-				var path_len: int = payload.decode_u32(0)
-				var file_size: int = payload.decode_u32(4)
-				var _path: String = ""
-				if payload.size() >= 8 + path_len:
-					_path = payload.slice(8, 8 + path_len).get_string_from_utf8()
-				(_voice_streams[msg_id_hex] as Dictionary)["size"] = file_size
-				if SingletonObject.verbose_logging:
-					print("   📁 FILE_INFO (voice) msg_id=%s path=%s size=%s" % [msg_id_hex, _path, file_size])
-			elif _binary_transfer_mode == "artifact":
+			if _binary_transfer_mode == "artifact":
 				# Artifact format: [file_index(4B)] + [file_size(8B u64)] + [name_len(4B)] + [name]
 				if payload.size() < 16:
 					print("❌ FILE_INFO (artifact) payload too short")
@@ -760,14 +757,6 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					print("❌ FILE_INFO payload data too short for name length")
 		
 		FILE_DATA:
-			if _voice_streams.has(msg_id_hex):
-				# Voice: the entire payload is audio chunk data for this stream.
-				var voice_chunk: PackedByteArray = payload.duplicate()
-				if not voice_chunk.is_empty():
-					var vbuf: PackedByteArray = (_voice_streams[msg_id_hex] as Dictionary)["buffer"]
-					vbuf.append_array(voice_chunk)
-					(_voice_streams[msg_id_hex] as Dictionary)["buffer"] = vbuf
-				return
 			if _binary_transfer_mode == "artifact":
 				# Artifact format: [file_index(4B)] + [chunk_data]
 				if payload.size() < 4:
@@ -849,24 +838,6 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 						print("   ⚠️ FILE_DATA for unknown file index %s - buffering %s bytes" % [file_index, current_chunk.size()])
 		
 		FILE_END:
-			if _voice_streams.has(msg_id_hex):
-				# Voice Format A: FILE_END may have empty payload. The audio lives in
-				# this stream's own buffer, untouched by any interleaving transfer.
-				var vstream: Dictionary = _voice_streams[msg_id_hex]
-				var vrequest_id: String = vstream["request_id"]
-				var buf: PackedByteArray = vstream["buffer"]
-				# Fix RIFF header if needed
-				if buf.size() > 8 and buf.slice(4, 8) == "WAVE".to_ascii_buffer() and buf.slice(0, 4) != "RIFF".to_ascii_buffer():
-					var fixed := PackedByteArray()
-					fixed.append_array("RIFF".to_ascii_buffer())
-					fixed.append_array(buf)
-					buf = fixed
-				print("   ✅ FILE_END (voice) size=%s bytes, msg_id=%s req_id=%s" % [buf.size(), msg_id_hex, vrequest_id])
-				_voice_binary_buffers[vrequest_id] = buf
-				voice_binary_received.emit(vrequest_id, buf)
-				_voice_streams.erase(msg_id_hex)
-				return
-
 			if payload.size() < 4:
 				print("❌ FILE_END payload too short")
 				return
@@ -880,6 +851,8 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 					print("   ✅ FILE_END (artifact) idx=%s name=%s size=%s bytes, emitting signal with req_id=%s" % [file_index, fname, buf.size(), _current_binary_request_id])
 					artifact_binary_received.emit(_current_binary_request_id, fname, buf)
 					_binary_files_completed += 1
+					if _binary_files_completed == _binary_expected_files:
+						_binary_stream_id = ""
 				else:
 					print("   ⚠️ FILE_END (artifact) for unknown index %s (files=%s, filenames=%s)" % [file_index, _binary_files.keys(), _binary_filenames.keys()])
 				# Don't reset state here — let the text completion handler do it

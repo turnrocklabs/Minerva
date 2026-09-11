@@ -1,6 +1,21 @@
 class_name CoreProvider
 extends BaseProvider
 
+var _active_core_requests: Array[Core.AwaitMessage] = []
+
+func cancel_active_resquests() -> void:
+	for request in _active_core_requests.duplicate():
+		request.cancel()
+	super.cancel_active_resquests()
+
+func _exit_tree() -> void:
+	cancel_active_resquests()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		cancel_active_resquests()
+
+
 var service: Service
 var action: Action
 ## Catalog-created chat providers revalidate their identity before every invocation.
@@ -211,16 +226,17 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 		var last_msg = prompt.back() if not prompt.is_empty() else {}
 		msg_data = last_msg
 
-	# Use configurable timeout for requests
-	var awaiter = Core.send_message(service, action, msg_data)
-	awaiter.with_timeout(get_effective_timeout())
-
-	var msg = await awaiter.receive()
-
-	if not msg:
-		var bot_response:= BotResponse.new()
-		bot_response.error = "No response received (timeout after %d seconds)" % int(awaiter.timeout)
-		return bot_response
+	var awaiter := Core.send_message(service, action, msg_data, "json", get_effective_timeout())
+	_active_core_requests.append(awaiter)
+	var completed := await awaiter.receive_result()
+	_active_core_requests.erase(awaiter)
+	if not completed.success:
+		var failure := BotResponse.new()
+		failure.provider = self
+		failure.error = completed.error_message
+		failure.set_meta("error_code", completed.error_code)
+		return failure
+	var msg: Dictionary = completed.json
 
 	print("\n\nRESPONSE:")
 	print(msg)

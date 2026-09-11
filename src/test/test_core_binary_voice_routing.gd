@@ -12,7 +12,7 @@ extends SceneTree
 ##   and (b) calls _reset_binary_transfer_state(), wiping _binary_files[0]. The
 ##   voice FILE_END then falls through to the media-gen branch and the audio is
 ##   written to disk / dropped instead of landing in _voice_binary_buffers.
-##   take_voice_binary() returns empty -> synth hangs on "Synthesizing speech…".
+##   the awaiting request receives no audio -> synth hangs on "Synthesizing speech…".
 ##   Prefs preview works because nothing else is transferring; chat breaks because
 ##   transfers interleave.
 ##
@@ -21,7 +21,7 @@ extends SceneTree
 ## registry that the shared media-gen/artifact state can never clobber.
 ##
 ## Acceptance:
-##   1. Happy path: a clean voice transfer -> take_voice_binary() returns the WAV.
+##   1. Happy path: a clean voice transfer -> the owned request returns the WAV.
 ##   2. INTERLEAVE (the bug): a media-gen NEW_MESSAGE arrives mid-voice-stream;
 ##      the voice audio STILL lands in the voice buffer intact. (Red on old code.)
 ##   3. No regression: a media-gen transfer still emits image_received with the
@@ -44,6 +44,8 @@ var _fail := 0
 
 func _init() -> void:
 	print("=== Core binary voice-routing test ===\n")
+	await process_frame
+	await process_frame
 	await _run()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
 	if _fail > 0:
@@ -139,11 +141,21 @@ func _run() -> void:
 	_test_missing_new_message_failsafe(CC)
 
 
-## 1. Clean voice transfer -> audio in voice buffer.
+func _own_voice(client, request_id: String):
+	root.add_child(client)
+	var owner = load("res://Scripts/Services/Providers/Core/CoreRequest.gd").new(client)
+	owner.request_id = request_id
+	owner.completion = "binary"
+	owner.start()
+	return owner
+
+
+## 1. Clean voice transfer -> audio in the owned request result.
 func _test_happy_path(CC) -> void:
 	var client = CC.new()
 	var V := _id(0xA1)
 	var rid := "voice-req-happy"
+	var owner = _own_voice(client, rid)
 	var audio := PackedByteArray([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
 
 	client._handle_binary_frame(_frame(NEW_MESSAGE, V, _new_message_payload(
@@ -152,8 +164,8 @@ func _test_happy_path(CC) -> void:
 	client._handle_binary_frame(_frame(FILE_DATA, V, audio))
 	client._handle_binary_frame(_frame(FILE_END, V, PackedByteArray()))
 
-	var got: PackedByteArray = client.take_voice_binary(rid)
-	check("happy path: voice audio lands in voice buffer", got == audio,
+	var got: PackedByteArray = owner.result.get("binary", PackedByteArray())
+	check("happy path: voice audio lands in owned request result", got == audio,
 		"expected %s got %s" % [audio, got])
 	client.free()
 
@@ -165,6 +177,7 @@ func _test_interleaved_transfer(CC) -> void:
 	var V := _id(0xA1)   # voice stream
 	var M := _id(0xB2)   # media-gen stream
 	var rid := "voice-req-interleaved"
+	var owner = _own_voice(client, rid)
 	var chunk1 := PackedByteArray([0x11, 0x22, 0x33])
 	var chunk2 := PackedByteArray([0x44, 0x55, 0x66, 0x77])
 	var full := chunk1 + chunk2
@@ -183,7 +196,7 @@ func _test_interleaved_transfer(CC) -> void:
 	client._handle_binary_frame(_frame(FILE_DATA, V, chunk2))
 	client._handle_binary_frame(_frame(FILE_END, V, PackedByteArray()))
 
-	var got: PackedByteArray = client.take_voice_binary(rid)
+	var got: PackedByteArray = owner.result.get("binary", PackedByteArray())
 	check("interleave: voice audio intact despite mid-stream media-gen NEW_MESSAGE",
 		got == full, "expected %s got %s" % [full, got])
 	client.free()
@@ -230,5 +243,5 @@ func _test_missing_new_message_failsafe(CC) -> void:
 
 	check("failsafe: orphan voice frames not misrouted to image collector", not img_fired["v"])
 	check("failsafe: orphan voice frames produce no voice buffer entry",
-		client.take_voice_binary("anything").is_empty())
+		client._voice_streams.is_empty() and client._pending_requests.is_empty())
 	client.free()

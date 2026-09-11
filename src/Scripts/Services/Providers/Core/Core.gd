@@ -112,6 +112,7 @@ func _ready() -> void:
 	cn.set_script(_client_script)
 	add_child(cn)
 	client = cn # Assign the client instance
+	client.connection_closed.connect(func(): registered = false)
 
 	# Add the HTTPRequest node to the scene tree to make it process
 	http_request.use_threads = true
@@ -271,19 +272,8 @@ func start(core_ws_url: String, auth_http_base_url: String, username: String, pa
 	)
 
 	# --- 4. Register with Core using the obtained JWT ---
-	client.register_with_core(_jwt_token, _client_id) # Use the JWT token for registration
-	
-	var registration_message = await (
-		Core
-		.await_message()
-		.with_topic("system")
-		.with_cmd("registration_confirmed")
-		.receive()
-	)
-	
-	if not registration_message: return false
-
-	registered = true
+	if not await _register_client():
+		return false
 
 	print("Core registration initiated with token.")
 	
@@ -474,41 +464,48 @@ func _get_http_result_string(result_enum: int) -> String:
 		_: return "Unknown HTTP Request Result (%d)" % result_enum
 
 
-# Sends a message via the WebSocket client and returns an AwaitMessage object
-func send_message(service: Service, action: Action, msg: Dictionary) -> AwaitMessage:
-	if not client._connected:
-		push_warning("Attempted to send message while not connected to Core.")
-		# Return an AwaitMessage that will likely time out? Or handle differently?
-		var awaiter = AwaitMessage.new(client)
-		awaiter.timeout = 0.1 # Make it timeout quickly
-		return awaiter
+## Registration listens before send and correlates errors without requiring readiness.
+func _register_client() -> bool:
+	var pending := await_message().with_request_id(UUIDGen.v7()).with_topic("system").with_cmd("registration_confirmed")
+	pending.finished.connect(_on_registration_completed)
+	pending.start()
+	if client.register_with_core(_jwt_token, _client_id, pending.request_id) != OK:
+		pending.fail("send_failed", "Core registration could not be sent.")
+	var completed := await pending.receive_result()
+	return completed.success
 
-	var request_id: String = client.send_text_message(service, action, msg)
-	return await_message().with_request_id(request_id)
+func _on_registration_completed(completed: Dictionary) -> void:
+	registered = completed.success
+	_connecting = false
+
+
+# Sends a message via the WebSocket client and returns an AwaitMessage object
+func send_message(service: Service, action: Action, msg: Dictionary, completion: String = "json", timeout: float = 10000.0) -> AwaitMessage:
+	var awaiter := await_message().with_request_id(UUIDGen.v7()).with_cmd("response").with_completion(completion).with_timeout(timeout)
+	if not client._connected or not registered:
+		awaiter.fail("core_offline", "Core is not connected and registered.")
+		return awaiter
+	if service == null or action == null:
+		awaiter.fail("invalid_request", "Core service and action are required.")
+		return awaiter
+	awaiter.start()
+	if awaiter.result.is_empty() and client.send_text_message(service, action, msg, "", awaiter.request_id).is_empty():
+		awaiter.fail("send_failed", "Core could not send the request.")
+	return awaiter
 
 func subscribe(topic: String) -> bool:
-
-	var request_id: = client.subscribe(topic)
-
-	if not request_id:
+	if not client._connected or not registered:
 		return false
-
-	var msg = await (
-		await_message()
-		.with_request_id(request_id)
-		.with_cmd("response")
-		.receive()
-	)
-
-	if not msg:
+	var awaiter := await_message().with_request_id(UUIDGen.v7()).with_cmd("response")
+	awaiter.start()
+	if client.subscribe(topic, awaiter.request_id).is_empty():
+		awaiter.fail("send_failed", "Core could not send the subscription request.")
+	var completed := await awaiter.receive_result()
+	if not completed.success:
 		return false
-	
-	var status = msg.get("params", {}).get("result", {}).get("status", "")
-
-	if status != "subscribed":
-		return false
-
-	return true
+	var params: Variant = completed.json.get("params", {})
+	var body: Variant = params.get("result", {}) if params is Dictionary else null
+	return body is Dictionary and body.get("status", "") == "subscribed"
 
 
 ## Updates the [member _services_cache_timeout].
@@ -525,8 +522,8 @@ func invalidate_services_cache() -> void:
 ## if they were fetched in the last [member _services_cache_timeout] seconds.
 ## Concurrent calls are deduplicated — only one request is sent to the server.
 func fetch_services(use_cache: = true) -> Array[Service]:
-	if not client._connected:
-		push_warning("Attempted to fetch services while not connected.")
+	if not client._connected or not registered:
+		push_warning("Attempted to fetch services while not connected and registered.")
 		return []
 
 	if use_cache and Time.get_unix_time_from_system() - _services_last_fetch < _services_cache_timeout:
@@ -540,12 +537,13 @@ func fetch_services(use_cache: = true) -> Array[Service]:
 
 	_services_fetch_in_flight = true
 
-	var req_id: = client.request_connections() # Send the request to the core
-
-	# Wait for the response message
-	var msg = await await_message().with_request_id(req_id).receive()
-
-	if not msg:
+	var awaiter := await_message().with_request_id(UUIDGen.v7()).with_cmd("response")
+	awaiter.start()
+	if client.request_connections(awaiter.request_id).is_empty():
+		awaiter.fail("send_failed", "Core could not send discovery request.")
+	var completed := await awaiter.receive_result()
+	var msg: Dictionary = completed.get("json", {})
+	if not completed.success:
 		push_error("Did not receive response for skills/discovery or timed out.")
 		_services_fetch_in_flight = false
 		_services_fetch_completed.emit()
@@ -553,8 +551,10 @@ func fetch_services(use_cache: = true) -> Array[Service]:
 
 	# Check structure and extract services array
 	var services_array: Array = []
-	if msg.has("params") and msg["params"].has("result") and msg["params"]["result"].has("services"):
-		services_array = msg["params"]["result"]["services"]
+	var params: Variant = msg.get("params", {})
+	var body: Variant = params.get("result", {}) if params is Dictionary else null
+	if body is Dictionary and body.get("services") is Array:
+		services_array = body.services
 	else:
 		push_error("Received skills/discovery response in unexpected format: ", msg)
 		_services_fetch_in_flight = false
@@ -577,152 +577,10 @@ func fetch_services(use_cache: = true) -> Array[Service]:
 
 
 # --- AwaitMessage Class (Helper for handling asynchronous responses) ---
-class AwaitMessage extends RefCounted:
-	var topic: String
-	var cmd: String
-	var request_id: String
-	var timeout: float = 10000.0 # Default timeout in seconds
-
-	var client: CoreClient # Reference to the WebSocket client
-
-	var _received_message = null # Stores the received message if matched
-	var _stop: bool = false      # Flag to stop waiting (e.g., on timeout)
-	var _timer: SceneTreeTimer = null # Timer node for timeout
-	var _signal_connection: Callable # Stores the signal connection for later disconnect
-
-	# Signal emitted for receive_all() functionality
-	signal message_received(msg: Dictionary)
-
-	func _init(client_: CoreClient) -> void:
-		if not is_instance_valid(client_):
-			push_error("AwaitMessage initialized with invalid CoreClient!")
-			# How to handle this? Maybe set a flag?
-			return
-		client = client_
-
-	# Checks if incoming data matches the specified filters (topic, cmd, request_id)
-	func _check_message(data: Dictionary) -> bool:
-		if not cmd.is_empty():
-			var msg_cmd = data.get("cmd")
-			if cmd != msg_cmd:
-				#prints("Cmd mismatch:", cmd, msg_cmd) # Debug
-				return false
-
-		if not topic.is_empty():
-			var msg_topic = data.get("topic")
-			if topic != msg_topic:
-				#prints("Topic mismatch:", topic, msg_topic) # Debug
-				return false
-
-		if not request_id.is_empty():
-			# Ensure params exists and is a dictionary before checking request_id
-			var params = data.get("params", {})
-			if typeof(params) == TYPE_DICTIONARY:
-				var msg_request_id = params.get("request_id")
-				if request_id != msg_request_id:
-					#prints("Request ID mismatch:", request_id, msg_request_id) # Debug
-					return false
-			else: # If params isn't a dictionary, it can't contain the request_id we need
-				return false
-
-		# If all checks passed (or weren't applicable)
-		return true
-
-	# Internal handler connected to the client's message_received signal
-	func _on_client_message(data: Dictionary):
-		if _check_message(data):
-			_received_message = data
-			# For receive(), we found our message, stop the timer and disconnect
-			if is_instance_valid(_timer):
-				_timer.disconnect("timeout", _on_timeout) # Prevent timeout signal
-				_timer = null
-			if _signal_connection.is_valid():
-				client.message_received.disconnect(_signal_connection)
-			_stop = true # Stop the await loop in receive()
-
-	# Internal handler connected to the client's message_received signal for receive_all
-	func _on_client_message_for_all(data: Dictionary):
-		if _check_message(data):
-			message_received.emit(data) # Emit the signal for external listeners
-
-	# Handler for the timeout timer
-	func _on_timeout():
-		print("AwaitMessage: Timeout reached after %d seconds" % int(timeout))
-		_stop = true
-		if _signal_connection.is_valid():
-			client.message_received.disconnect(_signal_connection)
-		_timer = null # Timer is done
-
-	# Handler for connection closed
-	func _on_connection_closed():
-		print("AwaitMessage: Connection closed, cancelling wait")
-		_stop = true
-		if _signal_connection.is_valid():
-			client.message_received.disconnect(_signal_connection)
-		if is_instance_valid(_timer):
-			_timer.timeout.disconnect(_on_timeout)
-			_timer = null
-
-	# Waits for a single message matching the criteria or times out.
-	func receive():
-		if not is_instance_valid(client):
-			push_error("Cannot receive message, CoreClient is invalid.")
-			return null
-
-		_received_message = null
-		_stop = false
-
-		# Store the callable for disconnecting later
-		_signal_connection = Callable(self, "_on_client_message")
-		client.message_received.connect(_signal_connection)
-
-		# Monitor connection state - cancel if disconnected
-		var connection_callback = Callable(self, "_on_connection_closed")
-		client.connection_closed.connect(connection_callback)
-
-		# Setup timeout timer
-		_timer = client.get_tree().create_timer(timeout)
-		_timer.timeout.connect(_on_timeout)
-
-		# Wait until stopped (by message received, timeout, or disconnection)
-		while not _stop:
-			await client.get_tree().process_frame # Use process_frame for non-physics waiting
-
-		# Disconnect signals if they weren't already disconnected
-		if _signal_connection.is_valid() and client.message_received.is_connected(_signal_connection):
-			client.message_received.disconnect(_signal_connection)
-
-		if client.connection_closed.is_connected(connection_callback):
-			client.connection_closed.disconnect(connection_callback)
-
-		# Clean up timer if it still exists (e.g., message arrived before timeout)
-		if is_instance_valid(_timer):
-			_timer.timeout.disconnect(_on_timeout)
-			_timer.queue_free()
-			_timer = null
-
-		return _received_message # Return the found message or null if timed out
-
-	# Connects to the client's signal and returns a signal that emits *all* matching messages.
-	# Note: Does not automatically disconnect. Caller needs to manage the returned signal connection.
-	func receive_all() -> Signal:
-		if not is_instance_valid(client):
-			push_error("Cannot receive_all messages, CoreClient is invalid.")
-			# Return a dummy signal? Or handle error? For now, proceed but warn.
-			return message_received # Return the internal signal, might never emit
-
-		# Store callable for potential (manual) disconnect later if needed, though typically not for 'receive_all'
-		_signal_connection = Callable(self, "_on_client_message_for_all")
-		client.message_received.connect(_signal_connection)
-
-		# No timeout for receive_all by default; it just forwards messages.
-		# If a timeout mechanism is needed for 'receive_all', it would need custom implementation.
-		return message_received
-
-
-	# --- Builder Methods ---
+class AwaitMessage extends "res://Scripts/Services/Providers/Core/CoreRequest.gd":
 	func with_timeout(timeout_: float) -> AwaitMessage:
 		timeout = timeout_
+		reset_timeout()
 		return self
 
 	func with_topic(topic_: String) -> AwaitMessage:
@@ -735,6 +593,10 @@ class AwaitMessage extends RefCounted:
 
 	func with_cmd(cmd_: String) -> AwaitMessage:
 		cmd = cmd_
+		return self
+
+	func with_completion(mode: String) -> AwaitMessage:
+		completion = mode
 		return self
 
 
