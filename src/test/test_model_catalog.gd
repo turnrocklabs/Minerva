@@ -126,6 +126,11 @@ func _run() -> void:
 	check("dynamic display name resolves without substituting identity", named.get("success", false) and named.provider.model_name == "catalog-test-model")
 	if named.has("provider"):
 		named.provider.free()
+	manager.models.append({"id": 69998, "model_name": "different-catalog-model", "display_name": "catalog-test-model"})
+	var collision: Dictionary = resolver.create_by_name("chatgpt", "catalog-test-model")
+	check("canonical model name wins over another model display label", collision.get("success", false) and collision.provider.model_name == "catalog-test-model")
+	if collision.has("provider"):
+		collision.provider.free()
 	await _core_surfaces(singleton, tools, broker)
 	_completed = true
 
@@ -180,7 +185,7 @@ func _core_surfaces(singleton, server, broker) -> void:
 	singleton._plugin_allowed_providers[turnrock] = false
 	check("plugin permission filters discovery independently", broker._handle_host_models_list_models("tester", {"provider": "turnrock"}).result.models.is_empty() and singleton.list_enabled_models("turnrock").size() == 2)
 	check("plugin permission also refuses explicit construction", resolver.create(spec, true).get("error_code") == "provider_disabled")
-	check("plugin refusal displays actionable provider dialog", popup.visible and "TurnRock" in singleton.errorText.text and "Preferences" in singleton.errorText.text)
+	check("plugin refusal stays structured without opening a modal", not popup.visible)
 	popup.hide()
 	singleton._plugin_allowed_providers[turnrock] = true
 
@@ -224,15 +229,22 @@ func _core_surfaces(singleton, server, broker) -> void:
 	pending.free()
 	var denied: Dictionary = await server.execute_tool_for_http("minerva_set_chat_model", {"chat_id": history.HistoryId, "model_spec": spec})
 	check("public MCP set retains structured refusal and requested identity", denied.get("error_code") == "provider_disabled" and denied.get("model_spec") == spec and history.provider == provider)
-	check("MCP refusal displays actionable provider dialog", popup.visible and "TurnRock" in singleton.errorText.text and "Preferences" in singleton.errorText.text)
+	check("MCP resolution does not open a modal", not popup.visible)
 	popup.hide()
 	var refused = await provider.generate_content([])
-	check("saved Core chat refuses before transport and displays dialog", refused.get_meta("error_code") == "provider_disabled" and popup.visible)
+	check("direct Core refusal stays structured for background callers", refused.get_meta("error_code") == "provider_disabled" and not popup.visible)
 	popup.hide()
 	var builtin_id: int = singleton.API_MODEL_PROVIDERS.GPT_NANO
 	singleton._enabled_providers[singleton.API_PROVIDER.OPENAI] = false
 	var builtin_denied: Dictionary = resolver.create({"kind": "builtin", "model_id": builtin_id})
-	check("builtin refusal names provider in visible dialog", builtin_denied.error_code == "provider_disabled" and popup.visible and "OpenAI" in singleton.errorText.text)
+	check("builtin resolution refuses without a modal", builtin_denied.error_code == "provider_disabled" and not popup.visible)
+	var retained: Dictionary = resolver.create({"kind": "builtin", "model_id": builtin_id}, false, true)
+	check("disabled builtin can be retained for an empty chat", retained.success)
+	retained.provider.free()
+	var background = await pane.generate_content_from_provider(history, [], null, provider)
+	check("background generation refuses without a modal", background.get_meta("error_code") == "provider_disabled" and not popup.visible)
+	var interactive = await pane.generate_content_from_provider(history, [])
+	check("interactive chat refusal displays actionable dialog", interactive.get_meta("error_code") == "provider_disabled" and popup.visible and "TurnRock" in singleton.errorText.text and "Preferences" in singleton.errorText.text)
 	popup.hide()
 	chooser.switch_to_provider_set_for_service(service)
 	singleton._enabled_providers[turnrock] = true

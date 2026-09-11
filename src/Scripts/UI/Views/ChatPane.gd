@@ -816,8 +816,16 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	if "request_reasoning_summary" in provider:
 		provider.request_reasoning_summary = history.ReasoningSummary
 
-	bot_response = await provider.generate_content(history_list, optional_params)
+	if not provider is PluginProvider and not SingletonObject.is_provider_enabled(provider.PROVIDER):
+		bot_response = BotResponse.new()
+		bot_response.provider = provider
+		bot_response.error = "%s is disabled" % SingletonObject.get_provider_display_name(provider.PROVIDER)
+		bot_response.set_meta("error_code", "provider_disabled")
+	else:
+		bot_response = await provider.generate_content(history_list, optional_params)
 	if bot_response and not str(bot_response.error).is_empty():
+		if provider_override == null:
+			ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
 		var was_cancelled := str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
 		history.termination_reason = "cancelled" if was_cancelled else "error"
 		history.termination_message = str(bot_response.error)

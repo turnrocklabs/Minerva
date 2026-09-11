@@ -668,31 +668,10 @@ func _populate_model_dropdown(provider_id: int) -> void:
 			agent_model_dropdown.select(0)
 		return
 
-	for model_key in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
-		if model_key == SingletonObject.API_MODEL_PROVIDERS.HUMAN:
-			continue
-		# Skip TURNROCK from standard iteration (handled above)
-		if model_key == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
-			continue
-		# Only include models belonging to this provider
-		var model_provider: int = SingletonObject.MODEL_TO_PROVIDER.get(model_key, -1)
-		if model_provider != provider_id:
-			continue
-		if not SingletonObject.is_model_enabled(model_key):
-			continue
-
-		var display_name: String
-		if model_key >= SingletonObject.DYNAMIC_MODEL_ID_BASE:
-			var dynamic_instance = SingletonObject.create_dynamic_provider(model_key)
-			if dynamic_instance:
-				display_name = dynamic_instance.display_name
-			else:
-				display_name = "Model %d" % model_key
-		else:
-			var instance: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_key].new()
-			display_name = instance.display_name if instance else "Model %d" % model_key
-		agent_model_dropdown.add_item(display_name)
-		_model_id_map.append(model_key)
+	for model in ModelResolver.catalog_models(SingletonObject.provider_key(provider_id)):
+		if SingletonObject.is_model_enabled(int(model.id)):
+			agent_model_dropdown.add_item(str(model.display))
+			_model_id_map.append(int(model.id))
 
 	if agent_model_dropdown.item_count > 0:
 		agent_model_dropdown.select(0)

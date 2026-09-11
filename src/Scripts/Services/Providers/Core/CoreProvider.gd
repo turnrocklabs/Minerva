@@ -188,7 +188,6 @@ func generate_content(prompt: Array[Variant], additional_params: Dictionary={}):
 	if requires_chat_model:
 		var resolved := CoreModelCatalog.resolve(get_model_spec())
 		if not resolved.success:
-			ModelResolver.show_provider_refusal(resolved.error_code, resolved.error_message)
 			var failure := BotResponse.new()
 			failure.provider = self
 			failure.error = resolved.error_message

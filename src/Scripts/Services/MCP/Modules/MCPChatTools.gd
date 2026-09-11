@@ -511,30 +511,30 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 func _resolve_chat_provider(args: Dictionary, chat_pane, allow_ui_fallback: bool) -> Dictionary:
 	if args.has("model_spec"):
 		var spec: Dictionary = MCPToolUtils.coerce_object(args.model_spec, {})
-		return ModelResolver.create(spec)
+		return ModelResolver.create(spec, false, allow_ui_fallback)
 	if args.has("provider_enum_id"):
 		var id: Variant = args.provider_enum_id
-		return ModelResolver.create({"kind": "dynamic" if (id is int or id is float) and id >= SingletonObject.DYNAMIC_MODEL_ID_BASE else "builtin", "model_id": id})
+		return ModelResolver.create({"kind": "dynamic" if (id is int or id is float) and id >= SingletonObject.DYNAMIC_MODEL_ID_BASE else "builtin", "model_id": id}, false, allow_ui_fallback)
 	if args.has("provider"):
 		var name: String = str(args.provider)
 		if name == "current":
 			if chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
-				return ModelResolver.create(ModelResolver.spec_for(SingletonObject.ChatList[chat_pane.current_tab].provider))
+				return ModelResolver.create(ModelResolver.spec_for(SingletonObject.ChatList[chat_pane.current_tab].provider), false, allow_ui_fallback)
 			return {"error": "No current chat provider", "error_code": "model_not_available"}
 		var aliases := {"anthropic": "claude_sonnet", "claude": "claude_sonnet", "google": "gemini_flash", "gemini": "gemini_flash"}
 		var lookup := name.to_lower().replace("-", "_").replace(" ", "_")
 		lookup = aliases.get(lookup, lookup)
 		for key in SingletonObject.API_MODEL_PROVIDERS:
 			if str(key).to_lower() == lookup:
-				return ModelResolver.create({"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS[key]})
-		return ModelResolver.create_by_name("", name)
+				return ModelResolver.create({"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS[key]}, false, allow_ui_fallback)
+		return ModelResolver.create_by_name("", name, false, allow_ui_fallback)
 	if allow_ui_fallback:
 		var chosen: BaseProvider = chat_pane._provider_option_button.get_selected_provider()
 		if chosen != null:
 			var spec := ModelResolver.spec_for(chosen)
 			chosen.free()
-			return ModelResolver.create(spec)
-		return ModelResolver.create({"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.GPT_NANO})
+			return ModelResolver.create(spec, false, allow_ui_fallback)
+		return ModelResolver.create({"kind": "builtin", "model_id": SingletonObject.API_MODEL_PROVIDERS.GPT_NANO}, false, allow_ui_fallback)
 	return {"error": "Specify provider, provider_enum_id or model_spec", "error_code": "invalid_model_spec"}
 
 

@@ -100,7 +100,11 @@ static func _create_provider(agent_def: AgentDefinition) -> BaseProvider:
 	if agent_def.provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
 		return _create_core_provider(agent_def.core_service_id, agent_def.core_action_name)
 	var id := agent_def.provider_enum_id
-	return ModelResolver.create({"kind": "dynamic" if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE else "builtin", "model_id": id}).get("provider")
+	var provider: BaseProvider = ModelResolver.create({"kind": "dynamic" if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE else "builtin", "model_id": id}).get("provider")
+	if provider != null and not provider.supports_chat:
+		provider.free()
+		return null
+	return provider
 
 
 static func _create_core_provider(service_id: String, action_name: String) -> BaseProvider:

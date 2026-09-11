@@ -7,7 +7,7 @@ static func selection_schema() -> Dictionary:
 	return {"type": "object", "description": "Stable model_spec from minerva_list_models. Kinds: builtin/dynamic with model_id; core_action with service_client_id/action_name; plugin_provider with entry_key (plugin:<plugin_id>:<entry_id>). Plugin alias: {kind:plugin,plugin_id,entry_id}. Takes precedence over provider name/enum."}
 
 
-static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
+static func create(spec: Dictionary, for_plugin: bool = false, allow_disabled: bool = false) -> Dictionary:
 	var provider: BaseProvider
 	if spec.get("kind") in ["plugin_provider", "plugin"]:
 		if for_plugin:
@@ -22,6 +22,8 @@ static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
 		return {"success": true, "provider": provider, "model_spec": identity.model_spec}
 	if spec.get("kind") == "core_action":
 		var result := CoreModelCatalog.create_provider(spec)
+		if not result.success and allow_disabled and result.error_code == "provider_disabled":
+			return {"success": true, "provider": restore_core(spec), "model_spec": spec.duplicate(true)}
 		if not result.success:
 			return _failure(result.error_code, result.error_message, spec)
 		provider = result.provider
@@ -44,7 +46,7 @@ static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
 	if for_plugin and not provider.supports_chat:
 		provider.free()
 		return _failure("not_chat_model", "The selected model is not a conversational model", spec)
-	if not SingletonObject.is_provider_enabled(provider.PROVIDER):
+	if not allow_disabled and not SingletonObject.is_provider_enabled(provider.PROVIDER):
 		var label := SingletonObject.get_provider_display_name(provider.PROVIDER)
 		provider.free()
 		return _failure("provider_disabled", "%s is disabled" % label, spec)
@@ -55,18 +57,21 @@ static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
 	return {"success": true, "provider": provider, "model_spec": spec.duplicate(true)}
 
 
-static func create_by_name(provider_key: String, model_name: String, for_plugin: bool = false) -> Dictionary:
+static func create_by_name(provider_key: String, model_name: String, for_plugin: bool = false, allow_disabled: bool = false) -> Dictionary:
 	if model_name.begins_with("plugin:"):
-		return create({"kind": "plugin_provider", "entry_key": model_name}, for_plugin)
+		return create({"kind": "plugin_provider", "entry_key": model_name}, for_plugin, allow_disabled)
 	var matches: Array[Dictionary] = []
+	var display_matches: Array[Dictionary] = []
 	var requested := model_name.to_lower()
 	var target := SingletonObject.provider_from_key(provider_key) if not provider_key.is_empty() else -1
 	if not provider_key.is_empty() and target < 0:
 		return _failure("model_not_available", "Unknown provider: %s" % provider_key)
 	if provider_key.is_empty() or target == SingletonObject.API_PROVIDER.TURNROCK:
 		for entry in CoreModelCatalog.list_models(null, null, true):
-			if str(entry.model_name).to_lower() == requested or str(entry.display).to_lower() == requested:
+			if str(entry.model_name).to_lower() == requested:
 				matches.append(entry.model_spec)
+			elif str(entry.display).to_lower() == requested:
+				display_matches.append(entry.model_spec)
 	for id_base in SingletonObject._dynamic_provider_map:
 		var entry: Dictionary = SingletonObject._dynamic_provider_map[id_base]
 		if target >= 0 and int(entry.get("provider", -1)) != target:
@@ -75,17 +80,23 @@ static func create_by_name(provider_key: String, model_name: String, for_plugin:
 		if manager == null:
 			continue
 		for config in manager.models:
-			if str(config.get("model_name", "")).to_lower() == requested or str(config.get("display_name", "")).to_lower() == requested:
+			if str(config.get("model_name", "")).to_lower() == requested:
 				matches.append({"kind": "dynamic", "model_id": int(config.get("id", -1))})
+			elif str(config.get("display_name", "")).to_lower() == requested:
+				display_matches.append({"kind": "dynamic", "model_id": int(config.get("id", -1))})
 	for id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
 			continue
 		if target >= 0 and SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target:
 			continue
 		var candidate: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[id].new()
-		if candidate.model_name.to_lower() == requested or candidate.display_name.to_lower() == requested:
+		if candidate.model_name.to_lower() == requested:
 			matches.append({"kind": "builtin", "model_id": id})
+		elif candidate.display_name.to_lower() == requested:
+			display_matches.append({"kind": "builtin", "model_id": id})
 		candidate.free()
+	if matches.is_empty():
+		matches = display_matches
 	if matches.size() > 1:
 		return _failure("model_ambiguous", "Multiple models match this name; use model_spec")
 	if matches.is_empty():
@@ -94,7 +105,7 @@ static func create_by_name(provider_key: String, model_name: String, for_plugin:
 			if not reason.is_empty():
 				return _failure(reason.code, reason.message)
 		return _failure("model_not_available", "Model is not available: %s" % model_name)
-	return create(matches[0], for_plugin)
+	return create(matches[0], for_plugin, allow_disabled)
 
 
 static func spec_for(provider: BaseProvider) -> Dictionary:
@@ -271,5 +282,4 @@ static func show_provider_refusal(code: String, message: String) -> void:
 
 
 static func _failure(code: String, message: String, spec: Dictionary = {}) -> Dictionary:
-	show_provider_refusal(code, message)
 	return {"success": false, "error_code": code, "error_message": message, "error": message, "model_spec": spec}
