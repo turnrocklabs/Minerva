@@ -42,11 +42,13 @@ static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
 		if provider == null:
 			return _failure("model_not_available", "The selected model is not registered", spec)
 	if not SingletonObject.is_provider_enabled(provider.PROVIDER):
+		var label := SingletonObject.get_provider_display_name(provider.PROVIDER)
 		provider.free()
-		return _failure("provider_disabled", "The selected model provider is disabled", spec)
+		return _failure("provider_disabled", "%s is disabled" % label, spec)
 	if for_plugin and not SingletonObject.is_provider_allowed_for_plugins(provider.PROVIDER):
+		var label := SingletonObject.get_provider_display_name(provider.PROVIDER)
 		provider.free()
-		return _failure("provider_disabled", "Plugin use of the selected provider is disabled", spec)
+		return _failure("provider_disabled", "Plugin use of %s is disabled. Allow this provider for plugins in Preferences." % label, spec)
 	return {"success": true, "provider": provider, "model_spec": spec.duplicate(true)}
 
 
@@ -252,5 +254,16 @@ static func watch_core_changes(callback: Callable) -> void:
 				source.connect(definition.name, adapted, CONNECT_DEFERRED)
 
 
+## Actual request refusals must reach the user as well as the calling tool.
+## Reuse the single error window; catalog discovery does not call this method.
+static func show_provider_refusal(code: String, message: String) -> void:
+	if code != "provider_disabled":
+		return
+	if not is_instance_valid(SingletonObject.errorPopup) or not is_instance_valid(SingletonObject.errorTitle) or not is_instance_valid(SingletonObject.errorText):
+		return # UI is not mounted in headless tools or during startup.
+	SingletonObject.ErrorDisplay("Provider unavailable", "%s\n\nCheck the provider settings in Preferences, then try again." % message)
+
+
 static func _failure(code: String, message: String, spec: Dictionary = {}) -> Dictionary:
+	show_provider_refusal(code, message)
 	return {"success": false, "error_code": code, "error_message": message, "error": message, "model_spec": spec}
