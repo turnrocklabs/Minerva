@@ -46,6 +46,11 @@ func _run() -> void:
 		quit(1)
 		return
 
+	# Chat token estimates also read the two note docks. Mount real empty
+	# containers in this partial UI fixture rather than leaving null services.
+	var notes_script = load("res://Scenes/note/NotesContainer.gd")
+	_so.notes_container = notes_script.new()
+	_so.drawer_notes_container = notes_script.new()
 	var scn = load("res://Scenes/Chat.tscn")
 	if scn == null:
 		printerr("FATAL: Chat.tscn failed to load")
@@ -86,6 +91,8 @@ func _run() -> void:
 	await test_typing_into_an_empty_group_creates_a_visible_chat()
 	await test_nothing_selected_window_is_safe()
 
+	_so.notes_container.free()
+	_so.drawer_notes_container.free()
 	print("\n=== %d passed, %d failed ===" % [_pass, _fail])
 	quit(1 if _fail > 0 else 0)
 

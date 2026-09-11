@@ -777,10 +777,9 @@ func _handle_host_documents_set_state(plugin_id: String, args: Dictionary) -> Di
 		if not (raw_state_pre is Dictionary):
 			return PluginErrors.schema_validation_failed(plugin_id,
 				"host.documents.set_state: 'panel_state' must be a Dictionary")
-		var serialized_pre: String = JSON.stringify(raw_state_pre)
-		var state_bytes := serialized_pre.to_utf8_buffer().size()
-		if state_bytes > _FILES_MAX_BYTES:
-			return PluginErrors.payload_too_large(plugin_id, _FILES_MAX_BYTES, state_bytes)
+		var size_error := PluginPayloadLimits.check(raw_state_pre, plugin_id, _FILES_MAX_BYTES)
+		if not size_error.is_empty():
+			return size_error
 
 	var ed = _find_editor_by_name(editor_name)
 	if ed == null:
