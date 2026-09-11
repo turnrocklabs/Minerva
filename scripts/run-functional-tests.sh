@@ -46,6 +46,7 @@ TURNROCK_TESTS=(
 	test/test_plugin_bulk_snapshot.gd
 	test/test_chatpane_active_model.gd
 	test/test_host_capability_core_session.gd
+	test/test_utf8_line_bytes.cpp
 	test/test_plugin_bridge_limits.js
 )
 HERMETIC_TESTS=(
@@ -120,7 +121,12 @@ for t in "${tests[@]}"; do
 	echo "========================================================"
 	echo "RUN: $t"
 	echo "========================================================"
-	if [[ "$t" == *.js ]]; then
+	if [[ "$t" == *.cpp ]]; then
+		native_test=$(mktemp)
+		"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror "$REPO_ROOT/src/$t" -o "$native_test" && "$native_test"
+		rc=$?
+		rm -f "$native_test"
+	elif [[ "$t" == *.js ]]; then
 		node "$REPO_ROOT/src/$t"
 		rc=$?
 	else
