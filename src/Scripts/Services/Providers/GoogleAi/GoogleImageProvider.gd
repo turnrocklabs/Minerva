@@ -11,6 +11,7 @@ var is_nano_banana_pro: bool = true
 
 
 func _init():
+	supports_chat = false
 	provider_name = "Google Imagen"
 	BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 	PROVIDER = SingletonObject.API_PROVIDER.GOOGLE

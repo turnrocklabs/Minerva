@@ -11,6 +11,7 @@ var supports_response_format: bool = true
 
 
 func _init():
+	supports_chat = false
 	provider_name = "OpenAI Images"
 	BASE_URL = "https://api.openai.com/v1/images"
 	PROVIDER = SingletonObject.API_PROVIDER.OPENAI

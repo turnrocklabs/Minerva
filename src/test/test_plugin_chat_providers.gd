@@ -693,6 +693,12 @@ func _test_mcp_plugin_lifecycle(so) -> void:
 	var created: Dictionary = await server.execute_tool_for_http("minerva_create_chat", {"name": "MCP Plugin Lifecycle", "model_spec": spec})
 	check("public MCP create selects the canonical plugin spec", created.get("success", false) and so.ChatList.size() == 1 and resolver.spec_for(so.ChatList[0].provider) == spec)
 	var history = so.ChatList[0]
+	var initial_provider = history.provider
+	var replacement = resolver.create(spec).provider
+	history.provider = replacement
+	check("direct GUI-style provider assignment binds owning chat", replacement.owner_history_id == history.HistoryId)
+	history.provider = initial_provider
+	replacement.free()
 	var first_provider = history.provider
 	var selected: Dictionary = await server.execute_tool_for_http("minerva_set_chat_model", {"chat_id": history.HistoryId,
 		"model_spec": {"kind": "plugin", "plugin_id": "council", "entry_id": "seat:main"}})

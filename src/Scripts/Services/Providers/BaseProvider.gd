@@ -37,6 +37,9 @@ var token_cost: float:
 ## Chat ID for budget enforcement (set by ChatPane before generate_content)
 var chat_id: String = ""
 
+## Eligible for automated conversational model catalogs (not image or human tools).
+var supports_chat: bool = true
+
 ## Model capability flags - override in subclasses as needed
 var supports_temperature: bool = true
 var supports_top_p: bool = true

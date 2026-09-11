@@ -41,6 +41,9 @@ static func create(spec: Dictionary, for_plugin: bool = false) -> Dictionary:
 			provider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[model_id].new()
 		if provider == null:
 			return _failure("model_not_available", "The selected model is not registered", spec)
+	if for_plugin and not provider.supports_chat:
+		provider.free()
+		return _failure("not_chat_model", "The selected model is not a conversational model", spec)
 	if not SingletonObject.is_provider_enabled(provider.PROVIDER):
 		var label := SingletonObject.get_provider_display_name(provider.PROVIDER)
 		provider.free()
@@ -72,7 +75,7 @@ static func create_by_name(provider_key: String, model_name: String, for_plugin:
 		if manager == null:
 			continue
 		for config in manager.models:
-			if str(config.get("model_name", "")).to_lower() == requested:
+			if str(config.get("model_name", "")).to_lower() == requested or str(config.get("display_name", "")).to_lower() == requested:
 				matches.append({"kind": "dynamic", "model_id": int(config.get("id", -1))})
 	for id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
 		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
@@ -80,7 +83,7 @@ static func create_by_name(provider_key: String, model_name: String, for_plugin:
 		if target >= 0 and SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target:
 			continue
 		var candidate: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[id].new()
-		if candidate.model_name.to_lower() == requested:
+		if candidate.model_name.to_lower() == requested or candidate.display_name.to_lower() == requested:
 			matches.append({"kind": "builtin", "model_id": id})
 		candidate.free()
 	if matches.size() > 1:
@@ -176,6 +179,9 @@ static func catalog_models(key: String) -> Array:
 		if id >= SingletonObject.DYNAMIC_MODEL_ID_BASE or SingletonObject.MODEL_TO_PROVIDER.get(id, -1) != target:
 			continue
 		var provider: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[id].new()
+		if not provider.supports_chat:
+			provider.free()
+			continue
 		rows.append({"id": id, "name": provider.display_name, "display": provider.display_name,
 			"provider": key, "model_name": provider.model_name, "is_dynamic": false,
 			"model_spec": {"kind": "builtin", "model_id": id}})

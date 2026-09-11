@@ -212,7 +212,11 @@ var termination_reason: String = ""
 var termination_message: String = ""
 
 var VBox: VBoxChat
-var provider: BaseProvider
+var provider: BaseProvider:
+	set(value):
+		provider = value
+		if is_instance_valid(provider):
+			provider.owner_history_id = HistoryId
 
 static var SERIALIZER_FIELDS = [
 	"HistoryId",

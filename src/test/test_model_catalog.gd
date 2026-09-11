@@ -33,9 +33,9 @@ func check(label: String, ok: bool, detail: String = "") -> void:
 		printerr("FAIL: %s%s" % [label, (" — " + detail) if detail != "" else ""])
 
 
-func _has(list: Array, field: String, want: String) -> bool:
+func _has(list: Array, field: String, want: Variant) -> bool:
 	for e in list:
-		if e is Dictionary and str(e.get(field, "")) == want:
+		if e is Dictionary and str(e.get(field, "")) == str(want):
 			return true
 	return false
 
@@ -55,6 +55,15 @@ func _run() -> void:
 	check("unknown provider key is -1", singleton.provider_from_key("nope") == -1)
 	if chatgpt == -1:
 		return
+
+	var resolver = load("res://Scripts/Services/Providers/ModelResolver.gd")
+	var enabled_before: Dictionary = singleton._enabled_providers.duplicate()
+	for model_id in [singleton.API_MODEL_PROVIDERS.HUMAN, singleton.API_MODEL_PROVIDERS.GPT_IMAGE_15, singleton.API_MODEL_PROVIDERS.NANO_BANANA_PRO]:
+		var provider_id: int = singleton.MODEL_TO_PROVIDER[model_id]
+		singleton._enabled_providers[provider_id] = true
+		check("non-chat builtin excluded from catalog: %s" % model_id, not _has(resolver.catalog_models(singleton.provider_key(provider_id)), "id", model_id))
+		check("non-chat builtin refuses plugin construction: %s" % model_id, resolver.create({"kind": "builtin", "model_id": model_id}, true).get("error_code") == "not_chat_model")
+	singleton._enabled_providers = enabled_before
 
 	# Find the chatgpt manager and snapshot state.
 	var manager = null
@@ -107,13 +116,16 @@ func _run() -> void:
 	check("capability requires a provider arg",
 		not broker._handle_host_models_list_models("tester", {}).get("success", true))
 
-	var resolver = load("res://Scripts/Services/Providers/ModelResolver.gd")
 	for model in lm.get("models", []):
 		if model.model_name == "catalog-test-model":
 			var resolved: Dictionary = resolver.create(model.model_spec)
 			check("listed dynamic spec constructs the requested model", resolved.get("success", false) and resolved.provider.model_name == "catalog-test-model")
 			if resolved.has("provider"):
 				resolved.provider.free()
+	var named: Dictionary = resolver.create_by_name("chatgpt", "Catalog test model")
+	check("dynamic display name resolves without substituting identity", named.get("success", false) and named.provider.model_name == "catalog-test-model")
+	if named.has("provider"):
+		named.provider.free()
 	await _core_surfaces(singleton, tools, broker)
 	_completed = true
 

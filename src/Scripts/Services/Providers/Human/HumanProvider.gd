@@ -2,6 +2,7 @@ class_name HumanProvider
 extends BaseProvider
 
 func _init():
+	supports_chat = false
 	provider_name = "Human"
 
 	model_name = "human"
