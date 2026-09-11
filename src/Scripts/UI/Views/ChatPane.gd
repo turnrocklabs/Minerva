@@ -824,7 +824,7 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	else:
 		bot_response = await provider.generate_content(history_list, optional_params)
 	if bot_response and not str(bot_response.error).is_empty():
-		if provider_override == null:
+		if provider_override == null or provider_override == history.provider:
 			ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
 		var was_cancelled := str(bot_response.get_meta("error_code", "")) == "cancelled" or str(bot_response.error) == "Request cancelled."
 		history.termination_reason = "cancelled" if was_cancelled else "error"
@@ -1923,6 +1923,8 @@ func execute_hcp_chat():
 	var hcp_provider: CoreProvider = history.provider
 
 	var bot_response = await hcp_provider.generate_content(history_list)
+	if bot_response != null:
+		ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
 
 	# Bug 019e5bc8: stop+redispatch can free model_msg_node / user_msg_node
 	# during the await above. Guard before touching them directly below.

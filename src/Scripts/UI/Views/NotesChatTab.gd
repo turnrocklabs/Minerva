@@ -122,6 +122,8 @@ func execute_notes_action():
 
 	var hcp_provider: CoreProvider = history.provider
 	var bot_response = await hcp_provider.generate_content(history_list)
+	if bot_response != null:
+		ModelResolver.show_provider_refusal(str(bot_response.get_meta("error_code", "")), str(bot_response.error))
 
 	var chi = ChatHistoryItem.new()
 	if bot_response != null: 

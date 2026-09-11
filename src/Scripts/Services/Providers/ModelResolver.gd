@@ -203,6 +203,13 @@ static func catalog_models(key: String) -> Array:
 			continue
 		for config in entry.manager.models:
 			var id := int(config.get("id", -1))
+			var candidate := SingletonObject.create_dynamic_provider(id)
+			if candidate == null:
+				continue
+			var conversational: bool = candidate.supports_chat
+			candidate.free()
+			if not conversational:
+				continue
 			var name: String = str(config.get("model_name", config.get("api_model_id", "")))
 			if name.is_empty():
 				continue

@@ -873,13 +873,33 @@ func _on_agent_selected(index: int) -> void:
 	agent_pres_penalty_spin.value = agent.presence_penalty
 	agent_max_rounds_spin.value = agent.max_tool_call_rounds
 
+	_select_saved_agent_model(agent)
+
+	_populate_tools_checkboxes(agent.enabled_tools)
+
+	agent_memory_tab_edit.text = agent.memory_tab_name
+	agent_drawer_tab_edit.text = agent.drawer_tab_name
+
+
+func _select_saved_agent_model(agent: AgentDefinition) -> void:
 	# Select provider dropdown, then populate and select model
 	var model_provider: int = SingletonObject.MODEL_TO_PROVIDER.get(agent.provider_enum_id, -1)
+	var provider_found := false
 	for i in agent_provider_dropdown.item_count:
 		if agent_provider_dropdown.get_item_metadata(i) == model_provider:
+			provider_found = true
 			agent_provider_dropdown.select(i)
 			_populate_model_dropdown(model_provider)
 			break
+	if not provider_found:
+		agent_provider_dropdown.add_item("Saved provider (unavailable)")
+		var unavailable_provider := agent_provider_dropdown.item_count - 1
+		agent_provider_dropdown.set_item_metadata(unavailable_provider, model_provider)
+		agent_provider_dropdown.set_item_disabled(unavailable_provider, true)
+		agent_provider_dropdown.select(unavailable_provider)
+		_populate_model_dropdown(model_provider)
+	# Never let an unavailable saved selection become the first available model.
+	agent_model_dropdown.select(-1)
 	# Select model in model dropdown
 	if agent.provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
 		_select_core_model({"kind": "core_action", "service_client_id": agent.core_service_id, "action_name": agent.core_action_name})
@@ -889,10 +909,14 @@ func _on_agent_selected(index: int) -> void:
 				agent_model_dropdown.select(i)
 				break
 
-	_populate_tools_checkboxes(agent.enabled_tools)
-
-	agent_memory_tab_edit.text = agent.memory_tab_name
-	agent_drawer_tab_edit.text = agent.drawer_tab_name
+	if agent_model_dropdown.selected < 0:
+		agent_model_dropdown.add_item("Saved model (unavailable)")
+		var missing_index := agent_model_dropdown.item_count - 1
+		_model_id_map.append(agent.provider_enum_id)
+		if agent.provider_enum_id == SingletonObject.API_MODEL_PROVIDERS.TURNROCK:
+			_core_model_map.append({"kind": "core_action", "service_client_id": agent.core_service_id, "action_name": agent.core_action_name})
+		agent_model_dropdown.set_item_disabled(missing_index, true)
+		agent_model_dropdown.select(missing_index)
 
 
 func _on_agent_new() -> void:
@@ -995,8 +1019,7 @@ func _on_agent_instance() -> void:
 		return
 
 	var agent = registry.agents[_selected_agent_idx]
-	AgentSpawner.spawn_agent(agent, "")
-	hide()
+	_spawn_selected_agent(agent, "")
 
 
 func _on_agent_test_spawn() -> void:
@@ -1006,8 +1029,14 @@ func _on_agent_test_spawn() -> void:
 		return
 
 	var agent = registry.agents[_selected_agent_idx]
-	AgentSpawner.spawn_agent(agent, "Hello, I'm testing your agent configuration.")
+	_spawn_selected_agent(agent, "Hello, I'm testing your agent configuration.")
+
+func _spawn_selected_agent(agent: AgentDefinition, prompt: String) -> void:
+	if AgentSpawner.spawn_agent(agent, prompt) == null:
+		SingletonObject.create_toast_notification("Agent could not start. Check its model and provider settings.", ToastNotification.Type.WARNING)
+		return
 	hide()
+
 
 #endregion Agent Callbacks
 

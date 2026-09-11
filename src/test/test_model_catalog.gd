@@ -241,10 +241,15 @@ func _core_surfaces(singleton, server, broker) -> void:
 	var retained: Dictionary = resolver.create({"kind": "builtin", "model_id": builtin_id}, false, true)
 	check("disabled builtin can be retained for an empty chat", retained.success)
 	retained.provider.free()
-	var background = await pane.generate_content_from_provider(history, [], null, provider)
+	var background_provider = resolver.restore_core(spec)
+	var background = await pane.generate_content_from_provider(history, [], null, background_provider)
+	background_provider.free()
 	check("background generation refuses without a modal", background.get_meta("error_code") == "provider_disabled" and not popup.visible)
 	var interactive = await pane.generate_content_from_provider(history, [])
 	check("interactive chat refusal displays actionable dialog", interactive.get_meta("error_code") == "provider_disabled" and popup.visible and "TurnRock" in singleton.errorText.text and "Preferences" in singleton.errorText.text)
+	popup.hide()
+	var continued = await pane.generate_content_from_provider(history, [], null, provider)
+	check("Continue with the chat provider still displays a refusal", continued.get_meta("error_code") == "provider_disabled" and popup.visible)
 	popup.hide()
 	chooser.switch_to_provider_set_for_service(service)
 	singleton._enabled_providers[turnrock] = true
@@ -256,6 +261,11 @@ func _core_surfaces(singleton, server, broker) -> void:
 	agent.agent_model_dropdown = OptionButton.new()
 	agent.agent_provider_dropdown.add_item("TurnRock")
 	agent.agent_provider_dropdown.set_item_metadata(0, turnrock)
+	var unavailable_agent = load("res://Scripts/Services/Agents/AgentDefinition.gd").new()
+	unavailable_agent.provider_enum_id = singleton.API_MODEL_PROVIDERS.GPT_IMAGE_15
+	agent._select_saved_agent_model(unavailable_agent)
+	check("unavailable agent model is retained rather than selecting another model", agent._model_id_map[agent.agent_model_dropdown.selected] == unavailable_agent.provider_enum_id and agent.agent_model_dropdown.is_item_disabled(agent.agent_model_dropdown.selected))
+	agent.agent_provider_dropdown.select(0)
 	agent._populate_model_dropdown(turnrock)
 	agent._select_core_model(spec)
 	singleton._enabled_providers[turnrock] = false

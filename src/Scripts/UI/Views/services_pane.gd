@@ -111,6 +111,8 @@ func _on_send_button_pressed() -> void:
 	print(data)
 
 	var response: BotResponse = await provider.generate_content([data])
+	if response != null:
+		ModelResolver.show_provider_refusal(str(response.get_meta("error_code", "")), str(response.error))
 
 	Core.dynamic_ui_generator.set_output(_dynamic_ui_container, {"notes": []})
 
