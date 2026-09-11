@@ -35,7 +35,21 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GODOT="${GODOT:-godot}"
 
+TURNROCK_TESTS=(
+	test/test_core_model_catalog.gd
+	test/test_model_catalog.gd
+	test/test_plugin_chat_providers.gd
+	test/test_generation_options.gd
+	test/test_core_request_lifecycle.gd
+	test/test_core_binary_voice_routing.gd
+	test/test_voice_contracts.gd
+	test/test_plugin_bulk_snapshot.gd
+	test/test_chatpane_active_model.gd
+	test/test_host_capability_core_session.gd
+	test/test_plugin_bridge_limits.js
+)
 HERMETIC_TESTS=(
+	"${TURNROCK_TESTS[@]}"
 	test/test_skill_presets.gd
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
@@ -89,6 +103,8 @@ if [[ "${1:-}" == "--all" ]]; then
 	# --all must still cover the quarantined set (019fbd21a8) — quarantine
 	# only shields the CI functional gate, it must not shrink a full run.
 	tests+=("${QUARANTINED_TESTS[@]}" "${PLUGIN_TESTS[@]}")
+elif [[ "${1:-}" == "--turnrock" ]]; then
+	tests=("${TURNROCK_TESTS[@]}")
 elif [[ "${1:-}" == "--pcb-guard" ]]; then
 	tests=("${PCB_GUARD_TESTS[@]}")
 elif [[ "${1:-}" == "--quarantined" ]]; then
@@ -104,8 +120,17 @@ for t in "${tests[@]}"; do
 	echo "========================================================"
 	echo "RUN: $t"
 	echo "========================================================"
-	"$GODOT" --headless --path "$REPO_ROOT/src" --script "$t"
-	rc=$?
+	if [[ "$t" == *.js ]]; then
+		node "$REPO_ROOT/src/$t"
+		rc=$?
+	else
+		log_file=$(mktemp)
+		{ "$GODOT" --headless --path "$REPO_ROOT/src" --script "$t" --check-only &&
+			"$GODOT" --headless --path "$REPO_ROOT/src" --script "$t"; } 2>&1 | tee "$log_file"
+		rc=${PIPESTATUS[0]}
+		if grep -q 'SCRIPT ERROR:' "$log_file"; then rc=1; fi
+		rm -f "$log_file"
+	fi
 	if (( rc == 0 )); then
 		echo "  -> PASS ($t)"
 		pass=$((pass + 1))

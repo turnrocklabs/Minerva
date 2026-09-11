@@ -2,7 +2,8 @@
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const source = fs.readFileSync('src/Scripts/UI/Controls/WebViewEditor/minerva_bridge.gd', 'utf8')
+const path = require('node:path');
+const source = fs.readFileSync(path.join(__dirname, '../Scripts/UI/Controls/WebViewEditor/minerva_bridge.gd'), 'utf8')
   .split('"""')[1].replace('<script>', '').replace('</script>', '');
 
 (async () => {

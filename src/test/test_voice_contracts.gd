@@ -49,7 +49,7 @@ func _run() -> void:
 	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging}
 	so.verbose_logging = false
 	so.config_file = ConfigFile.new()
-	so._config_file_name = "/tmp/minerva-t8-voice.cfg"
+	so._config_file_name = ProjectSettings.globalize_path("user://minerva-t8-voice.cfg")
 	var transport = load("res://test/fixtures/core_lifecycle_client.gd").new()
 	root.add_child(transport)
 	core.client = transport
