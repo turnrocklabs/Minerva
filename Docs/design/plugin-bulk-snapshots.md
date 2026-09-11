@@ -2,7 +2,7 @@
 
 Scene panels can use their registered `_MinervaIPC` helper's
 `request_bulk(channel, payload, timeout_ms)` for document-sized exchanges with
-their own backend or a granted host capability. This is an explicit route over
+their own backend. Granted host capabilities retain the 64 KiB control limit. This is an explicit route over
 the existing broker and MCP connection. It creates no files, blob handles or
 second copy of durable document state.
 
@@ -21,6 +21,10 @@ uploading a snapshot and requesting an export: the chosen route also determines
 the reply limit. Channel names still have to appear in the panel's
 `ipc_channels` and manifest's `ui.ipc_messages`. Host capability grants are
 checked normally. A bulk request cannot address another panel's registration.
+
+Available starting with host commit `fbadd8d6`; hosts must also include the
+capability-bound corrections from the TurnRock review (01a0926114f9).
+Feature-detect the helper method rather than comparing display versions.
 
 ## Bounds and lifetime
 

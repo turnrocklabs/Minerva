@@ -110,6 +110,10 @@ func _scenario() -> void:
 	_check(denied.get("error_code") == "permission_denied", "bulk keeps channel allowlists")
 	denied = await helper.request_bulk("capability:host.documents.get_blob", {}, 1000)
 	_check(denied.get("error_code") == "capability_not_granted", "bulk keeps host capability grants")
+	var wide_capability: Dictionary = await helper.request_bulk("capability:host.documents.get_blob", {"text": "界".repeat(24000)}, 1000)
+	_check(wide_capability.get("error_code") == "payload_too_large", "bulk cannot widen control capability envelope")
+	var state_refusal: Dictionary = await capabilities._handle_host_documents_set_state("bulk_probe", {"editor_name": "absent", "panel_state": {"text": "界".repeat(3000000)}})
+	_check(state_refusal.get("error_code") == "payload_too_large", "panel state is capped in UTF-8 before editor lookup")
 	var too_large: Dictionary = await helper.request_bulk("echo", {"snapshot": "x".repeat(8 * 1024 * 1024)}, 1000)
 	_check(too_large.get("error_code") == "payload_too_large", "oversize request explicitly rejected")
 	too_large = await helper.request_bulk("expand", {}, 5000)
@@ -119,7 +123,7 @@ func _scenario() -> void:
 	await create_timer(0.15).timeout
 	_check(helper._pending.is_empty(), "late reply leaves no observer")
 	_wait_for_close(helper)
-	await process_frame
+	_check(not helper._pending.is_empty(), "close test has an outstanding request")
 	broker.unregister_panel("bulk_probe", "bulk-tab")
 	_check(_closed_result.get("error_code") == "panel_unloading", "closing panel resolves outstanding await")
 	var replacement := SnapshotPanel.new()

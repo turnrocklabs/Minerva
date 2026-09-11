@@ -816,7 +816,8 @@ func handle_scene_request(
 		return
 
 	# Validate before reserved channels can mutate watches or resolve state.
-	var payload_limit := PluginPayloadLimits.BULK_BYTES if bulk or channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE else MAX_PAYLOAD_BYTES
+	var backend_bulk := bulk and not channel.begins_with("capability:") and not channel.begins_with("host.") and not channel.begins_with("host_owned_save.")
+	var payload_limit := PluginPayloadLimits.BULK_BYTES if backend_bulk or channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE else MAX_PAYLOAD_BYTES
 	var size_error := PluginPayloadLimits.check(payload, plugin_id, payload_limit)
 	if not size_error.is_empty():
 		_audit(plugin_id, EVENT_SCENE_DENIED, {"panel_key": panel_key, "channel": channel, "reason": "payload_too_large"})
@@ -914,7 +915,6 @@ func handle_scene_request(
 		result = await _dispatch_to_capability_broker(plugin_id, channel, payload)
 	else:
 		result = await _dispatch_to_plugin_backend(plugin_id, channel, payload)
-	result = PluginPayloadLimits.bound_reply(result, plugin_id, payload_limit)
 
 	_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
 		"panel_name": manifest_panel,
