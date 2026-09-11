@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Run Minerva's functional regression test suite (RCA 019e46b5).
 #
-# Default — the hermetic substrate tier (F1-F6): fixture-plugin tests on the
+# Default — hermetic substrate and provider contracts: fixture-plugin tests on the
 # real MCPServerConnection that need only python3 + Godot. Safe and fast enough
 # to run on every CI build.
 #
 #   scripts/run-functional-tests.sh           # hermetic tier (F1-F6)
+#   scripts/run-functional-tests.sh --turnrock  # provider, bridge and UTF-8 contracts
 #   scripts/run-functional-tests.sh --all     # + per-plugin tier
 #   scripts/run-functional-tests.sh --pcb-guard  # PCB-migration regression guard only
 #
