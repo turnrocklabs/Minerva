@@ -702,6 +702,7 @@ static func _build_ctx(
 		"associated_object": associated_object,
 		"editor":           editor,
 		"host_api_version": "1",
+		"project_id": SingletonObject.project_identity.project_id if SingletonObject.project_identity != null else "",
 	}
 
 
