@@ -31,6 +31,17 @@ func _init(p_plugin_db = null, p_audit_log = null) -> void:
 ## Validates event name against manifest declarations.
 ## Returns {"ok": true} or {"error": "..."}.
 func handle_plugin_event(plugin_id: String, event_name: String, payload: Dictionary) -> Dictionary:
+	var route_error := PluginPayloadLimits.check({"event_name": event_name}, plugin_id, PluginPayloadLimits.ROUTING_BYTES)
+	if not route_error.is_empty():
+		push_warning("[PluginEventBroker] %s" % route_error.error_message)
+		return route_error
+	var size_error := PluginPayloadLimits.check(payload, plugin_id)
+	if not size_error.is_empty():
+		push_warning("[PluginEventBroker] %s" % size_error.error_message)
+		if _audit_log != null:
+			_audit_log.log_event(plugin_id, "payload_too_large", size_error)
+		return size_error
+
 	# Validate plugin exists
 	if _plugin_db != null:
 		var def = _plugin_db.get_by_id(plugin_id)
@@ -64,6 +75,13 @@ func handle_plugin_event(plugin_id: String, event_name: String, payload: Diction
 ## Stores the latest state and emits signal.
 ## Returns {"ok": true} or {"error": "..."}.
 func handle_plugin_state(plugin_id: String, state: Dictionary) -> Dictionary:
+	var size_error := PluginPayloadLimits.check(state, plugin_id)
+	if not size_error.is_empty():
+		push_warning("[PluginEventBroker] %s" % size_error.error_message)
+		if _audit_log != null:
+			_audit_log.log_event(plugin_id, "payload_too_large", size_error)
+		return size_error
+
 	if _plugin_db != null:
 		var def = _plugin_db.get_by_id(plugin_id)
 		if def == null:

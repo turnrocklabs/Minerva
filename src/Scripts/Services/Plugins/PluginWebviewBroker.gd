@@ -39,7 +39,7 @@ const EVENT_IPC_DISPATCHED := "ipc_dispatched"
 # ---------------------------------------------------------------------------
 
 ## Maximum byte size of a serialised payload Dictionary (JSON form).
-const MAX_PAYLOAD_BYTES := 65536  # 64 KiB
+const MAX_PAYLOAD_BYTES := PluginPayloadLimits.CONTROL_BYTES
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +162,10 @@ func handle_ipc_message(
 		return PluginErrors.schema_validation_failed("",
 			"handle_ipc_message: message_type must not be empty")
 
+	var route_error := PluginPayloadLimits.check({"message_type": message_type}, "", PluginPayloadLimits.ROUTING_BYTES)
+	if not route_error.is_empty():
+		return route_error
+
 	# --- 2. Resolve panel -> plugin -------------------------------------------
 	var plugin_id: String = get_panel_owner(panel_name)
 	if plugin_id.is_empty():
@@ -197,15 +201,15 @@ func handle_ipc_message(
 			])
 
 	# --- 5. Validate payload size ---------------------------------------------
-	var payload_json := JSON.stringify(payload)
-	if payload_json.length() > MAX_PAYLOAD_BYTES:
+	var payload_size := PluginPayloadLimits.size_bytes(payload)
+	if payload_size > MAX_PAYLOAD_BYTES:
 		_audit(plugin_id, EVENT_IPC_DENIED, {
 			"panel_name": panel_name,
 			"message_type": message_type,
 			"reason": "payload_too_large",
-			"size": payload_json.length(),
+			"size": payload_size,
 		})
-		return PluginErrors.payload_too_large(plugin_id, MAX_PAYLOAD_BYTES, payload_json.length())
+		return PluginErrors.payload_too_large(plugin_id, MAX_PAYLOAD_BYTES, payload_size)
 
 	# --- 6. Dispatch -----------------------------------------------------------
 	_audit(plugin_id, EVENT_IPC_ALLOWED, {
@@ -219,6 +223,7 @@ func handle_ipc_message(
 	else:
 		result = await _dispatch_to_plugin_backend(plugin_id, message_type, payload)
 
+	result = PluginPayloadLimits.bound_reply(result, plugin_id)
 	_audit(plugin_id, EVENT_IPC_DISPATCHED, {
 		"panel_name": panel_name,
 		"message_type": message_type,

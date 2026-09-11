@@ -5,6 +5,35 @@ extends RefCounted
 const BRIDGE_JS: String = """
 <script>
 (function() {
+	const CONTROL_BYTES = 65536;
+	function encodeBounded(value) {
+		const encoded = JSON.stringify(value);
+		if (new TextEncoder().encode(encoded).length > CONTROL_BYTES) {
+			throw new Error('payload_too_large: control messages are limited to 65536 UTF-8 bytes; use the scene bulk route for documents');
+		}
+		return encoded;
+	}
+	async function readBoundedJSON(resp) {
+		const reader = resp.body.getReader();
+		const chunks = [];
+		let size = 0;
+		try {
+			while (true) {
+				const part = await reader.read();
+				if (part.done) break;
+				size += part.value.byteLength;
+				if (size > CONTROL_BYTES) {
+					await reader.cancel();
+					throw new Error('payload_too_large: MCP response exceeds 65536 UTF-8 bytes');
+				}
+				chunks.push(part.value);
+			}
+		} finally { reader.releaseLock(); }
+		const bytes = new Uint8Array(size);
+		let offset = 0;
+		for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+		return JSON.parse(new TextDecoder().decode(bytes));
+	}
 	// Minerva Bridge -- allows webview panels to call MCP tools
 	window.minerva = {
 		_port: 9315,
@@ -19,10 +48,10 @@ const BRIDGE_JS: String = """
 			};
 			const resp = await fetch('http://localhost:' + this._port, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload)
+				headers: { 'Content-Type': 'application/json', 'X-Minerva-Control': '1' },
+				body: encodeBounded(payload)
 			});
-			const json = await resp.json();
+			const json = await readBoundedJSON(resp);
 			if (json.error) throw new Error(json.error.message);
 			// MCP tool errors arrive as a resolved result with isError:true; throw
 			// so callers see them in .catch() rather than silently swallowing.
@@ -58,6 +87,8 @@ const BRIDGE_JS: String = """
 		// Plugin IPC -- sends message through WRY ipc_message signal to Minerva broker
 		pluginIPC: function(messageType, payload) {
 			return new Promise(function(resolve, reject) {
+				encodeBounded(payload || {});
+				if (new TextEncoder().encode(messageType).length > 1024) throw new Error('IPC message type too long');
 				var id = '' + Date.now() + Math.random();
 				window._minervaIPCPending = window._minervaIPCPending || {};
 				window._minervaIPCPending[id] = { resolve: resolve, reject: reject };
@@ -67,6 +98,17 @@ const BRIDGE_JS: String = """
 					payload: payload || {}
 				}));
 			});
+		},
+
+		onIPCError: function(callback) {
+			window._minervaIPCErrorHandlers = window._minervaIPCErrorHandlers || [];
+			window._minervaIPCErrorHandlers.push(callback);
+		},
+		_dispatchIPCError: function(error) {
+			console.error('Minerva IPC delivery failed:', error);
+			for (const callback of (window._minervaIPCErrorHandlers || [])) {
+				try { callback(error); } catch (e) { console.error(e); }
+			}
 		},
 
 		// Register handler for plugin events pushed from Minerva

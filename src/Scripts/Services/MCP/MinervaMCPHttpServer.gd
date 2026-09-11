@@ -198,6 +198,12 @@ func _handle_request(conn, request: Dictionary) -> void:
 		_send_error(conn, 404, "Not found")
 		return
 
+	# Browser control calls are bounded before tool execution can mutate state.
+	if request.get("headers", {}).get("x-minerva-control", "") == "1" \
+			and str(body).to_utf8_buffer().size() > PluginPayloadLimits.CONTROL_BYTES:
+		_send_jsonrpc_error(conn, null, -32000, "payload_too_large: MCP request exceeds 65536 UTF-8 bytes")
+		return
+
 	# Parse JSON body
 	var json = JSON.new()
 	var parse_result = json.parse(body)
@@ -388,6 +394,9 @@ func _send_jsonrpc_result(conn, request_id, result: Dictionary, extra_headers: D
 	}
 
 	var body = JSON.stringify(response)
+	if conn.is_browser_control() and body.to_utf8_buffer().size() > PluginPayloadLimits.CONTROL_BYTES:
+		_send_jsonrpc_error(conn, request_id, -32000, "payload_too_large: MCP response exceeds 65536 UTF-8 bytes")
+		return
 	conn.send_response(200, extra_headers, body)
 
 

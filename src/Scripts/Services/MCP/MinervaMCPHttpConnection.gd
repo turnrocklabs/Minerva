@@ -147,6 +147,13 @@ func _build_request_dict() -> Dictionary:
 func send_response(status_code: int, headers: Dictionary, body: String) -> void:
 	# Encode body to UTF-8 bytes first so Content-Length is accurate
 	var body_bytes := body.to_utf8_buffer()
+	# The injected browser bridge opts into a bounded control transport. General
+	# MCP clients retain their existing larger response contract.
+	if is_browser_control() and body_bytes.size() > PluginPayloadLimits.CONTROL_BYTES:
+		body_bytes = JSON.stringify({"jsonrpc": "2.0", "id": null, "error": {
+			"code": -32000, "message": "payload_too_large: MCP response exceeds 65536 UTF-8 bytes"
+		}}).to_utf8_buffer()
+		headers.erase("Content-Length")
 	var header_str := _format_http_headers(status_code, headers, body_bytes.size())
 	var header_bytes := header_str.to_utf8_buffer()
 
@@ -170,7 +177,7 @@ func _format_http_headers(status_code: int, headers: Dictionary, body_byte_size:
 	# Add CORS headers for browser clients
 	headers["Access-Control-Allow-Origin"] = "*"
 	headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-	headers["Access-Control-Allow-Headers"] = "Content-Type, MCP-Session-Id, MCP-Protocol-Version"
+	headers["Access-Control-Allow-Headers"] = "Content-Type, MCP-Session-Id, MCP-Protocol-Version, X-Minerva-Control"
 
 	for key in headers:
 		response += "%s: %s\r\n" % [key, headers[key]]
@@ -219,3 +226,7 @@ func is_peer_connected() -> bool:
 ## Close the connection.
 func close() -> void:
 	stream_peer.disconnect_from_host()
+
+
+func is_browser_control() -> bool:
+	return _headers.get("x-minerva-control", "") == "1"

@@ -40,7 +40,7 @@ connection loss or its existing 1,800-second scene request timeout.
 | Hop | Contract |
 | --- | --- |
 | Page ↔ scene wrapper | A custom embedded page bridge is plugin-owned. It must explicitly support and bound bulk JSON in both directions, preserve request IDs, and reject oversized data. It must not put the full record back through a small control route. |
-| Scene wrapper ↔ host broker | `request_bulk` enforces the 8 MiB limits above. Ordinary requests retain the legacy 65,536-character check until E3 changes control-message accounting to UTF-8 bytes. |
+| Scene wrapper ↔ host broker | `request_bulk` enforces the 8 MiB limits above. Ordinary requests and replies are limited to 65,536 UTF-8 bytes per serialized dictionary. |
 | Host ↔ plugin stdio backend | Existing newline-delimited MCP `tools/call`; no smaller frame cap in the Minerva connection. Native readers assemble bytes before UTF-8 decoding. JSON-RPC and MCP text wrapping can make the wire frame larger than the dictionary limit. The bulk limit is an application boundary, not a limit on allocation by the underlying reader. |
 | Backend domain validation | Plugin-owned; its own record/envelope ceiling may be smaller and must be updated deliberately. Transport success does not mean the backend accepted a mutation. |
 | Save/restore | `PluginScenePanelHost.invoke_save` / `invoke_load` pass the complete dictionary directly through the native panel hooks; no 64 KiB request signal. Persist the record, not a temporary IPC reference. File-capability routes have their own 8 MiB file limit. |
@@ -69,3 +69,34 @@ subprocess, an unescaped Unicode snapshot over 70 KB, deliberate splitting insid
 a UTF-8 character, native save/load hooks, size refusals, permission refusals,
 timeout cleanup and panel replacement. Page JSON serialization is covered;
 installed Council/CEF behavior remains part of the Council integration gate.
+
+## Control messages and browser calls
+
+Scene and webview plugin IPC budget the complete JSON payload dictionary at
+65,536 UTF-8 bytes in each direction. Reply success/error wrappers count;
+routing and correlation fields are separate (4 KiB), so adding the browser's
+reply `id` does not consume the result budget twice. Dictionary serialization,
+including JSON escaping, determines the count; character counts are not bytes.
+The public browser helper also rejects message types over 1,024 UTF-8 bytes.
+
+Plugin event/state notifications are checked before state storage or delivery.
+Oversized updates preserve the last accepted state and log a bounded failure.
+Direct webview push rejection calls `window.minerva.onIPCError` handlers;
+scene push rejection calls the optional `on_ipc_error(channel, error)` hook.
+Errors are never passed to a normal state handler as if they were a new state.
+Existing complete-document scene channels (`attach_buffer`, `text_changed`,
+`host_owned_save.set_request` and its response) use the 8 MiB document budget.
+Oversized state requests fail their original waiter; an initial oversized buffer
+attachment leaves the prior attachment intact. Later oversized document changes
+leave the canonical buffer intact and report delivery failure to the panel.
+Native save/load hooks retain their existing direct dictionary contract.
+
+`window.minerva.call()` uses a different framing contract: the **entire HTTP
+JSON-RPC body**, including MCP text escaping, must fit 65,536 UTF-8 bytes for
+both request and response. The shared WRY/CEF helper checks requests before
+fetch, sends `X-Minerva-Control: 1`, and bounds streamed responses before parsing.
+The host checks that marked request before executing a tool and bounds its reply.
+General MCP clients retain their existing transport contract. This header selects
+a transport budget; it is not authentication or a permission grant. A tool may
+already have completed when its reply exceeds the budget: reconcile state before
+retrying a mutation. Use the explicit scene bulk route for large documents.

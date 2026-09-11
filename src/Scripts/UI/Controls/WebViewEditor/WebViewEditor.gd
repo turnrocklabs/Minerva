@@ -203,6 +203,11 @@ func _on_ipc_message(msg: String) -> void:
 	var ipc_id = data.get("id", "")
 	var message_type: String = str(data.get("type", ""))
 	var payload: Dictionary = data.get("payload", {})
+	var route_error := PluginPayloadLimits.check({"id": ipc_id, "type": message_type}, plugin_id, PluginPayloadLimits.ROUTING_BYTES)
+	if not route_error.is_empty():
+		_send_ipc_reply(ipc_id, route_error)
+		return
+
 
 	# Check if this is a plugin panel
 	if not plugin_panel_name.is_empty():
@@ -227,7 +232,13 @@ func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary) -> vo
 func _send_ipc_reply(ipc_id, result: Dictionary) -> void:
 	if _webview == null:
 		return
-	var reply := result.duplicate()
+	var reply := PluginPayloadLimits.bound_reply(result, plugin_id).duplicate()
+	# Correlation/framing has its own small budget, outside the result dictionary.
+	var routing := {"id": ipc_id}
+	var route_error := PluginPayloadLimits.check(routing, "", PluginPayloadLimits.ROUTING_BYTES)
+	if not route_error.is_empty():
+		_webview.call_deferred("eval", "window.minerva._dispatchIPCError(%s)" % JSON.stringify(route_error))
+		return
 	reply["id"] = ipc_id
 	var reply_json := JSON.stringify(reply)
 	# Defer: the IPC handler runs inside WebView's mutable borrow (emitted from
@@ -245,6 +256,14 @@ func _get_webview_broker():
 
 ## Push a plugin event to the webview JS.
 func push_plugin_event(event_name: String, payload: Dictionary) -> void:
+	var size_error := PluginPayloadLimits.check({"event_name": event_name}, plugin_id, PluginPayloadLimits.ROUTING_BYTES)
+	if size_error.is_empty():
+		size_error = PluginPayloadLimits.check(payload, plugin_id)
+	if not size_error.is_empty():
+		push_warning("[PluginWebview] %s" % size_error.error_message)
+		if _webview != null:
+			_webview.call_deferred("eval", "window.minerva._dispatchIPCError(%s)" % JSON.stringify(size_error))
+		return
 	if _webview == null:
 		return
 	var js := "window.minerva._dispatchPluginEvent(%s, %s)" % [
@@ -255,6 +274,12 @@ func push_plugin_event(event_name: String, payload: Dictionary) -> void:
 
 ## Push a plugin state update to the webview JS.
 func push_plugin_state(state: Dictionary) -> void:
+	var size_error := PluginPayloadLimits.check(state, plugin_id)
+	if not size_error.is_empty():
+		push_warning("[PluginWebview] %s" % size_error.error_message)
+		if _webview != null:
+			_webview.call_deferred("eval", "window.minerva._dispatchIPCError(%s)" % JSON.stringify(size_error))
+		return
 	if _webview == null:
 		return
 	var js := "window.minerva._dispatchPluginState(%s)" % JSON.stringify(state)

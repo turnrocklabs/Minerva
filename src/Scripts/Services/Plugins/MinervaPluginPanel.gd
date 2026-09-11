@@ -124,3 +124,8 @@ func on_progress(_request_id: String, _phase: String, _fraction: float) -> void:
 ## Minerva's shared dock/workbench around the plugin surface.
 func get_annotation_host() -> RefCounted:
 	return null
+
+
+## A pushed update could not be delivered. The previous state is preserved.
+func on_ipc_error(channel: String, error: Dictionary) -> void:
+	push_warning("[%s] %s: %s" % [name, channel, error.get("error_message", "IPC error")])

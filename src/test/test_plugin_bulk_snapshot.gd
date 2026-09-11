@@ -3,18 +3,42 @@ extends SceneTree
 
 var _failures: int = 0
 var _completed: bool = false
+var _control_completed: bool = false
 var _closed_result: Dictionary = {}
 
 
 class SnapshotPanel extends Control:
 	signal request(channel: String, payload: Dictionary, reply_id: String)
 	var snapshot: Dictionary = {}
+	var pushes: int = 0
+	var delivery_errors: int = 0
+
+	func receive(channel: String, payload: Dictionary) -> void:
+		pushes += 1
+		if channel == "host_owned_save.get_request":
+			request.emit.call_deferred("host_owned_save.response", {"request_id": payload.request_id,
+				"success": true, "state": snapshot}, "")
+		elif channel == "host_owned_save.set_request":
+			snapshot = payload.state
+			request.emit.call_deferred("host_owned_save.response", {"request_id": payload.request_id,
+				"success": true}, "")
+
+	func on_ipc_error(_channel: String, _error: Dictionary) -> void:
+		delivery_errors += 1
 
 	func _on_panel_save_request() -> Dictionary:
 		return snapshot.duplicate(true)
 
 	func _on_panel_load_request(document: Dictionary) -> void:
 		snapshot = document.duplicate(true)
+
+
+class HTTPReply extends RefCounted:
+	var body: Dictionary = {}
+	func is_browser_control() -> bool:
+		return true
+	func send_response(_status: int, _headers: Dictionary, text: String) -> void:
+		body = JSON.parse_string(text)
 
 
 func _init() -> void:
@@ -57,6 +81,8 @@ func _scenario() -> void:
 	broker.register_panel(panel, "bulk_probe", "bulk-tab", ["echo", "expand", "wait", "capability:host.documents.get_blob"], "snapshot")
 	var helper = panel.get_node("_MinervaIPC")
 	_check(helper.get_bulk_payload_limit() == 8 * 1024 * 1024, "host advertises bounded bulk route")
+	await _control_boundaries(manager, broker, panel, helper)
+	_check(_control_completed, "whole control boundary scenario completed")
 	var snapshot := {"id": "document-a", "revision": 7, "body": "界🙂é\n".repeat(18000)}
 	var encoded := JSON.stringify(snapshot)
 	_check(encoded.to_utf8_buffer().size() > 70000, "fixture exceeds 70 KB UTF-8")
@@ -126,3 +152,72 @@ func _check(ok: bool, label: String) -> void:
 	if not ok:
 		_failures += 1
 	print("%s: %s" % ["PASS" if ok else "FAIL", label])
+
+
+func _control_boundaries(manager: Node, broker: RefCounted, panel: Control, helper: Node) -> void:
+	var limits = load("res://Scripts/Services/Plugins/PluginPayloadLimits.gd")
+	var web = load("res://Scripts/Services/Plugins/PluginWebviewBroker.gd").new(manager)
+	web.register_plugin_panel("bulk_probe", "snapshot")
+	for character in ["x", "🙂"]:
+		var empty_size: int = limits.size_bytes({"ignored": ""})
+		var byte_count := 65536 - empty_size
+		var text: String = character.repeat(byte_count / character.to_utf8_buffer().size())
+		text += "x".repeat(byte_count - text.to_utf8_buffer().size())
+		var boundary := {"ignored": text}
+		_check(limits.size_bytes(boundary) == 65536, "exact serialized UTF-8 control boundary")
+		panel.request.emit("echo", boundary, "boundary")
+		var reply: Dictionary = await helper.await_reply("boundary", 5000)
+		_check(reply.get("success", false), "scene accepts exact boundary " + character)
+		reply = await web.handle_ipc_message("snapshot", "echo", boundary)
+		_check(reply.get("success", false), "webview accepts exact boundary " + character)
+		boundary.ignored += "x"
+		panel.request.emit("echo", boundary, "over-boundary")
+		reply = await helper.await_reply("over-boundary", 1000)
+		_check(reply.get("error_code") == "payload_too_large", "scene rejects one UTF-8 byte over " + character)
+		reply = await web.handle_ipc_message("snapshot", "echo", boundary)
+		_check(reply.get("error_code") == "payload_too_large", "webview rejects one UTF-8 byte over " + character)
+	var large := {"body": "🙂".repeat(20000)}
+	_check(not broker.push_to_panel("bulk_probe", "bulk-tab", "event", large), "scene rejects oversized control push")
+	_check(panel.pushes == 0 and panel.delivery_errors == 1, "push failure preserves state and notifies error hook")
+	_check(broker.push_to_panel("bulk_probe", "bulk-tab", "text_changed", large), "existing document push uses bulk budget")
+	var event_broker = load("res://Scripts/Services/Plugins/PluginEventBroker.gd").new()
+	event_broker.handle_plugin_state("bulk_probe", {"revision": 1})
+	var rejected: Dictionary = event_broker.handle_plugin_state("bulk_probe", large)
+	_check(rejected.get("error_code") == "payload_too_large", "oversized state rejects before storage")
+	_check(event_broker.get_plugin_state("bulk_probe") == {"revision": 1}, "last accepted state survives rejected update")
+	rejected = event_broker.handle_plugin_event("bulk_probe", "event", large)
+	_check(rejected.get("error_code") == "payload_too_large", "oversized event explicitly rejects")
+	rejected = event_broker.handle_plugin_event("bulk_probe", "x".repeat(5000), {})
+	_check(rejected.get("error_code") == "payload_too_large", "oversized event routing rejects even with small payload")
+	_check(not broker.push_to_panel("bulk_probe", "bulk-tab", "x".repeat(5000), {}), "oversized scene push routing rejects")
+	panel.request.emit("expand", {}, "large-reply")
+	var reply: Dictionary = await helper.await_reply("large-reply", 5000)
+	_check(reply.get("error_code") == "payload_too_large", "ordinary scene reply is bounded")
+	reply = await web.handle_ipc_message("snapshot", "expand", {})
+	_check(reply.get("error_code") == "payload_too_large", "webview reply is bounded")
+	panel.request.emit("host.fs.watch", large, "large-reserved")
+	reply = await helper.await_reply("large-reserved", 1000)
+	_check(reply.get("error_code") == "payload_too_large", "reserved requests validate size before dispatch")
+	panel.snapshot = large.duplicate(true)
+	var state_reply: Dictionary = await broker.request_panel_state("bulk_probe", "bulk-tab")
+	_check(state_reply.get("state") == large, "reserved state response preserves more than 64 KiB")
+	state_reply = await broker.apply_panel_state("bulk_probe", "bulk-tab", large)
+	_check(state_reply.get("success", false) and panel.snapshot == large, "reserved state apply preserves more than 64 KiB")
+	panel.snapshot = {"body": "x".repeat(8 * 1024 * 1024)}
+	state_reply = await broker.request_panel_state("bulk_probe", "bulk-tab")
+	_check(state_reply.get("error_code") == "payload_too_large", "oversized reserved response resolves original waiter")
+	_check(broker._pending_panel_state.is_empty(), "reserved response releases state waiter")
+	var http = load("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd").new()
+	var capture := HTTPReply.new()
+	await http._handle_request(capture, {"method": "POST", "path": "/mcp",
+		"headers": {"x-minerva-control": "1"}, "body": JSON.stringify(large)})
+	_check(str(capture.body.get("error", {}).get("message", "")).begins_with("payload_too_large"), "direct HTTP rejects before tool dispatch")
+	http._send_jsonrpc_result(capture, "request-7", large)
+	_check(capture.body.get("id") == "request-7" and capture.body.has("error"), "direct HTTP oversized reply preserves request correlation")
+	http.free()
+	var too_large := {"state": {"body": "x".repeat(8 * 1024 * 1024)}}
+	var apply_result: Dictionary = await broker.apply_panel_state("bulk_probe", "bulk-tab", too_large.state)
+	_check(apply_result.get("error_code") == "payload_too_large", "oversize state apply fails immediately")
+	_check(broker._pending_panel_state.is_empty(), "oversize state apply releases waiter")
+
+	_control_completed = true

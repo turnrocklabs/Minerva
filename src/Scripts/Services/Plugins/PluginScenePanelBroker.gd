@@ -157,7 +157,7 @@ static func _fs_owner_id(plugin_id: String, panel_name: String) -> String:
 
 ## Maximum byte size of a serialised payload Dictionary (JSON form).
 ## Matches PluginWebviewBroker.MAX_PAYLOAD_BYTES.
-const MAX_PAYLOAD_BYTES := 65536  # 64 KiB
+const MAX_PAYLOAD_BYTES := PluginPayloadLimits.CONTROL_BYTES
 
 
 # ---------------------------------------------------------------------------
@@ -807,6 +807,26 @@ func handle_scene_request(
 		)
 		return
 
+	var route_error := PluginPayloadLimits.check({"channel": channel, "reply_id": reply_id}, plugin_id, PluginPayloadLimits.ROUTING_BYTES)
+	if not route_error.is_empty():
+		if PluginPayloadLimits.check({"reply_id": reply_id}, "", PluginPayloadLimits.ROUTING_BYTES).is_empty():
+			_deliver_error(panel_key, reply_id, route_error, generation)
+		else:
+			_report_payload_error(entry, channel, route_error)
+		return
+
+	# Validate before reserved channels can mutate watches or resolve state.
+	var payload_limit := PluginPayloadLimits.BULK_BYTES if bulk or channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE else MAX_PAYLOAD_BYTES
+	var size_error := PluginPayloadLimits.check(payload, plugin_id, payload_limit)
+	if not size_error.is_empty():
+		_audit(plugin_id, EVENT_SCENE_DENIED, {"panel_key": panel_key, "channel": channel, "reason": "payload_too_large"})
+		if channel == CHANNEL_HOST_OWNED_SAVE_RESPONSE:
+			size_error["request_id"] = payload.get("request_id", "")
+			_resolve_panel_state_response(plugin_id, panel_key, size_error)
+		else:
+			_deliver_error(panel_key, reply_id, size_error, generation)
+		return
+
 	# --- 2.5. Platform-reserved host.fs.* channels (DCR §T7.5) ----------------
 	# These are platform capabilities; bypass the manifest channel allowlist
 	# and dispatch directly. Same justification as attach_buffer/text_changed.
@@ -882,22 +902,6 @@ func handle_scene_request(
 				]))
 		return
 
-	# --- 6. Validate payload size ---------------------------------------------
-	var payload_json := JSON.stringify(payload)
-	var payload_size := payload_json.to_utf8_buffer().size() if bulk else payload_json.length()
-	var payload_limit := PluginPayloadLimits.BULK_BYTES if bulk else MAX_PAYLOAD_BYTES
-	if payload_size > payload_limit:
-		_audit(plugin_id, EVENT_SCENE_DENIED, {
-			"panel_name": manifest_panel,
-			"panel_key": panel_key,
-			"channel": channel,
-			"reason": "payload_too_large",
-			"scene_size": payload_size,
-		})
-		_deliver_error(panel_key, reply_id,
-			PluginErrors.payload_too_large(plugin_id, payload_limit, payload_size))
-		return
-
 	# --- 7. Dispatch ----------------------------------------------------------
 	_audit(plugin_id, EVENT_SCENE_ALLOWED, {
 		"panel_name": manifest_panel,
@@ -910,10 +914,7 @@ func handle_scene_request(
 		result = await _dispatch_to_capability_broker(plugin_id, channel, payload)
 	else:
 		result = await _dispatch_to_plugin_backend(plugin_id, channel, payload)
-	if bulk:
-		var reply_size := PluginPayloadLimits.size_bytes(result)
-		if reply_size > payload_limit:
-			result = PluginErrors.payload_too_large(plugin_id, payload_limit, reply_size)
+	result = PluginPayloadLimits.bound_reply(result, plugin_id, payload_limit)
 
 	_audit(plugin_id, EVENT_SCENE_DISPATCHED, {
 		"panel_name": manifest_panel,
@@ -925,7 +926,7 @@ func handle_scene_request(
 	# --- 8. Deliver reply back to scene via $_MinervaIPC ----------------------
 	# The await above may have outlived the registration; deliver only to the
 	# generation that asked.
-	_deliver_reply(panel_key, reply_id, result, generation)
+	_deliver_reply(panel_key, reply_id, result, generation, payload_limit)
 
 
 # ---------------------------------------------------------------------------
@@ -991,12 +992,30 @@ func push_to_panel(
 		})
 		return false
 
+	var route_error := PluginPayloadLimits.check({"channel": channel}, plugin_id, PluginPayloadLimits.ROUTING_BYTES)
+	if not route_error.is_empty():
+		_report_payload_error(entry, channel, route_error)
+		return false
+
+	var size_error := PluginPayloadLimits.check(payload, plugin_id, PluginPayloadLimits.scene_push_limit(channel))
+	if not size_error.is_empty():
+		_report_payload_error(entry, channel, size_error)
+		return false
+
 	_audit(plugin_id, EVENT_SCENE_PUSH, {
 		"panel_name": panel_name,
 		"channel": channel,
 	})
 	panel_root.receive(channel, payload)
 	return true
+
+
+func _report_payload_error(entry: _PanelEntry, channel: String, error: Dictionary) -> void:
+	_audit(entry.plugin_id, EVENT_SCENE_DENIED, {"channel": channel.left(256), "reason": "payload_too_large"})
+	push_warning("[PluginScenePanelBroker] %s: %s" % [channel.left(256), error.error_message])
+	var panel_root: Node = entry.panel_ref.get_ref() as Node
+	if panel_root != null and panel_root.has_method("on_ipc_error"):
+		panel_root.on_ipc_error(channel.left(256), error)
 
 
 ## Push a progress notification from the plugin backend to a specific panel.
@@ -1089,6 +1108,11 @@ func push_progress(
 		)
 		return false
 
+	var size_error := PluginPayloadLimits.check({"request_id": request_id, "phase": phase, "fraction": fraction}, plugin_id)
+	if not size_error.is_empty():
+		_report_payload_error(entry, "progress", size_error)
+		return false
+
 	# --- deliver ---------------------------------------------------------------
 	_audit(plugin_id, EVENT_SCENE_PROGRESS, {
 		"panel_name": panel_name,
@@ -1171,6 +1195,13 @@ func attach_buffer_to_panel(
 	if entry.attached_buffer == buffer:
 		return true
 
+	var initial_payload := {"path": buffer.file_path, "document_id": buffer.document_id,
+		"text": buffer.text, "version": buffer.version}
+	var size_error := PluginPayloadLimits.check(initial_payload, plugin_id, PluginPayloadLimits.BULK_BYTES)
+	if not size_error.is_empty():
+		_report_payload_error(entry, CHANNEL_ATTACH_BUFFER, size_error)
+		return false
+
 	# If already attached (to a different buffer), tear it down first so signal
 	# handles stay one-to-one.
 	if entry.attached_buffer != null:
@@ -1203,12 +1234,7 @@ func attach_buffer_to_panel(
 	# Push the initial attach_buffer notification with the current buffer state.
 	# Goes through push_to_panel so audit + alive-check are consistent with
 	# subsequent text_changed pushes.
-	push_to_panel(plugin_id, panel_name, CHANNEL_ATTACH_BUFFER, {
-		"path":    buffer.file_path,
-		"document_id": buffer.document_id,
-		"text":    buffer.text,
-		"version": buffer.version,
-	})
+	push_to_panel(plugin_id, panel_name, CHANNEL_ATTACH_BUFFER, initial_payload)
 
 	_audit(plugin_id, EVENT_BUFFER_ATTACHED, {
 		"panel_name": panel_name,
@@ -1375,6 +1401,11 @@ func _request_panel_state_op(
 
 	var payload := extra_payload.duplicate(true)
 	payload["request_id"] = request_id
+
+	var size_error := PluginPayloadLimits.check(payload, plugin_id, PluginPayloadLimits.scene_push_limit(channel))
+	if not size_error.is_empty():
+		_pending_panel_state.erase(request_id)
+		return size_error
 
 	# Push to the panel. push_to_panel handles the alive-check + audit; if it
 	# returns false (panel went away mid-flight), resolve immediately with
@@ -1716,7 +1747,7 @@ func _dispatch_to_plugin_backend(
 ## holds a different one, the reply is dropped and audited rather than handed
 ## to a panel that never sent the request.
 func _deliver_reply(panel_name: String, reply_id: String, result: Dictionary,
-		generation: int = 0) -> void:
+		generation: int = 0, payload_limit: int = MAX_PAYLOAD_BYTES) -> void:
 	if reply_id.is_empty():
 		return  # No reply requested — fire-and-forget call from the scene.
 
@@ -1745,7 +1776,7 @@ func _deliver_reply(panel_name: String, reply_id: String, result: Dictionary,
 		)
 		return
 
-	helper._reply(reply_id, result)
+	helper._reply(reply_id, PluginPayloadLimits.bound_reply(result, entry.plugin_id, payload_limit))
 
 
 ## Deliver an error result to the scene's MinervaIPC helper (same path).
