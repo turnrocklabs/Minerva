@@ -149,7 +149,7 @@ func _ready():
 	Core.client.connection_established.connect(
 		func():
 			connection_label.text = "You are connected to core"
-			connection_texture_rect.texture = preload("res://.godot/imported/check_mark16.webp-ee4b5638509d469382c7cad2d0cf364b.ctex")
+			connection_texture_rect.texture = preload("res://assets/icons/check_mark16.webp")
 			connect_button.text = "Disconnect"
 			connect_button.tooltip_text = "Disconnect from the Core"
 			_on_core_connection_changed(true)
@@ -158,7 +158,7 @@ func _ready():
 	Core.client.connection_error.connect(
 		func(error: int):
 			connection_label.text = "Core WS Error (%s)" % error_string(error)
-			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
+			connection_texture_rect.texture = preload("res://assets/icons/close.svg")
 			connect_button.text = "Connect"
 			connect_button.tooltip_text = "Connect to the Core"
 			_on_core_connection_changed(false)
@@ -167,7 +167,7 @@ func _ready():
 	Core.client.connection_closed.connect(
 		func():
 			connection_label.text = "You are not connected to core"
-			connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
+			connection_texture_rect.texture = preload("res://assets/icons/close.svg")
 			connect_button.text = "Connect"
 			connect_button.tooltip_text = "Connect to the Core"
 			_on_core_connection_changed(false)
@@ -177,7 +177,7 @@ func _ready():
 		func(_active: bool):
 			if not Core.connected:
 				connection_label.text = "You are not connected to core"
-				connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
+				connection_texture_rect.texture = preload("res://assets/icons/close.svg")
 			
 			connect_button.text = "Disconnect" if Core.connected else "Connect"
 			connect_button.tooltip_text = "Disconnect from the Core" if Core.connected else "Connect to the Core"
@@ -422,7 +422,7 @@ func _on_core_connet_button_pressed(display_error: = true) -> void:
 		# If Core.start returns false, it means authentication or WS connection failed.
 		# The Core.start function should ideally push a more specific error message.
 		connection_label.text = "Failed to connect/authenticate"
-		connection_texture_rect.texture = preload("res://.godot/imported/close.svg-a39d6ec6a963366ce69cbdb73008bf4d.ctex")
+		connection_texture_rect.texture = preload("res://assets/icons/close.svg")
 		
 		logs_window.add_log_line(
 			"Authentication or WebSocket connection failed. Check URLs and credentials",

@@ -376,6 +376,51 @@ jobs:
         name: terminal-linux
         path: src/bin/
 
+    # The suites run the real host chain (Docket → godot-sqlite, editors →
+    # godot_wry / godot_cef, media → FFmpeg). Without these GDExtensions the
+    # dependent scripts fail to compile and every suite prints SCRIPT ERROR
+    # lines, which the runner treats as a failure. Fetch them exactly as
+    # build-godot does, so the functional tier sees the project a build sees.
+    - name: Download godot_wry (Linux)
+      uses: actions/download-artifact@v4
+      with:
+        name: godot-wry-linux
+        path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
+
+    - name: Download godot-sqlite addon
+      run: |
+        SQLITE_VERSION="v4.7"
+        SQLITE_URL="https://github.com/2shady4u/godot-sqlite/releases/download/${SQLITE_VERSION}/bin.zip"
+        curl -fL -o /tmp/sqlite.zip "$SQLITE_URL"
+        unzip -o /tmp/sqlite.zip -d /tmp/sqlite-extract >/dev/null
+        mkdir -p src/addons/godot-sqlite/bin
+        cp -r /tmp/sqlite-extract/bin/* src/addons/godot-sqlite/bin/
+        ls src/addons/godot-sqlite/bin/ | head -20
+
+    - name: Download EIRTeam.FFmpeg
+      run: |
+        FFMPEG_URL="https://github.com/EIRTeam/EIRTeam.FFmpeg/releases/download/autobuild-2025-11-12-13-44/eirteam-ffmpeg-1.1.4.zip"
+        curl -L -o /tmp/ffmpeg.zip "$FFMPEG_URL"
+        unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg-extract >/dev/null
+        FFMPEG_SRC=$(find /tmp/ffmpeg-extract -name "ffmpeg.gdextension" -exec dirname {} \; | head -1)
+        mkdir -p src/addons/ffmpeg/linux64
+        cp -r "$FFMPEG_SRC/linux64/"* src/addons/ffmpeg/linux64/
+        ls src/addons/ffmpeg/linux64/ | head -20
+
+    - name: Download godot-cef artifacts (Linux)
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        RUN_ID=$(gh run list --workflow=godot-cef.yml --status=success --limit=1 --json databaseId -q '.[0].databaseId')
+        if [ -z "$RUN_ID" ]; then
+          echo "::error::No successful godot-cef.yml run found. Trigger that workflow manually first."
+          exit 1
+        fi
+        mkdir -p src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
+        gh run download "$RUN_ID" --name godot-cef-linux-x86_64 --dir src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
+        find src/addons/godot_cef/bin/ -type f | { head -10; cat >/dev/null; }
+
     - name: Install Linux runtime dependencies
       run: |
         sudo apt-get update
@@ -394,7 +439,12 @@ jobs:
       working-directory: src
       run: |
         mkdir -p .godot
-        timeout 180s godot --headless --import || true
+        # Two passes: the first registers extensions and global classes, the
+        # second imports everything those made loadable. A failed import is a
+        # failed job — the suites would only report it as SCRIPT ERROR noise.
+        timeout 600s godot --headless --import --path .
+        timeout 600s godot --headless --import --path .
+        test -n "$(ls .godot/imported 2>/dev/null)" || { echo "::error::import produced no resources"; exit 1; }
 
     - name: No-bleed guard (codetools extraction, DCR 019e7b6609 P2.3)
       run: scripts/check-no-codetools-bleed.sh
