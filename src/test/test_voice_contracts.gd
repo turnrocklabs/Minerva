@@ -100,6 +100,54 @@ func _run() -> void:
 	ptt._start_voice_service_stt(bytes, config)
 	transport.reply(_last_id(transport), {"text": ""})
 	check("PTT silence returns READY without changing target text", ptt.ptt_state == ptt.PTTState.READY and target.text == "keep existing text" and voice.whisper_calls == 0)
+	var capture = load("res://test/fixtures/voice_audio_capture.gd").new()
+	root.add_child(capture)
+	capture.file_path = "user://voice-audio-conversion-test.wav"
+	var native_recording := AudioStreamWAV.new()
+	native_recording.format = AudioStreamWAV.FORMAT_16_BITS
+	var native_rate := int(AudioServer.get_mix_rate())
+	native_recording.mix_rate = native_rate
+	native_recording.stereo = true
+	var native_pcm := PackedByteArray()
+	var native_frames := roundi(native_rate * 0.1)
+	native_pcm.resize(native_frames * 4)
+	var normalization_frames := PackedVector2Array()
+	normalization_frames.resize(native_frames)
+	for sample_index in range(native_frames):
+		var sample := roundi(12000.0 * sin(TAU * 1000.0 * sample_index / native_rate))
+		native_pcm.encode_s16(sample_index * 4, sample)
+		native_pcm.encode_s16(sample_index * 4 + 2, sample)
+		normalization_frames[sample_index] = Vector2(sample / 32768.0, sample / 32768.0)
+	native_recording.data = native_pcm
+	capture.effect = capture.CaptureEffect.new(native_recording)
+	capture._normalization_capture = capture.NormalizationCapture.new()
+	var capture_target := LineEdit.new()
+	capture.add_child(capture_target)
+	var capture_req = capture.PTTRequest.new()
+	capture_req.target = capture_target
+	capture.start_ptt(capture_req)
+	# Most audio is processed during LISTENING; the final sub-256 fragment is drained on Stop.
+	capture._normalization_capture.frames = normalization_frames.slice(0, normalization_frames.size() - 100)
+	capture._drain_normalization_capture()
+	capture._normalization_capture.frames = normalization_frames.slice(normalization_frames.size() - 100)
+	capture.start_ptt(capture_req)
+	check("both public PTT presses preserve capture through canonical 16 kHz mono dispatch", capture.submitted.size() == 3244 and capture.submitted.slice(0, 4).get_string_from_ascii() == "RIFF" and capture.submitted.decode_u16(22) == 1 and capture.submitted.decode_u32(24) == 16000 and capture.submitted.decode_u32(40) == 3200)
+	capture._normalization_capture.frames = normalization_frames
+	capture._cancel_voice_transcription()
+	capture.start_ptt(capture_req)
+	check("cancelled capture cannot leak buffered samples into the next PTT", capture._normalized_pcm.is_empty() and capture._normalization_capture.get_frames_available() == 0)
+	var submitted_before_overflow: PackedByteArray = capture.submitted
+	capture._normalized_pcm.resize(capture.MAX_NORMALIZED_CAPTURE_BYTES)
+	capture._normalization_capture.frames = normalization_frames
+	capture._drain_normalization_capture()
+	capture.start_ptt(capture_req)
+	check("capture overflow fails visibly without submitting partial audio", capture.ptt_state == capture.PTTState.ERROR and capture.submitted == submitted_before_overflow)
+	capture.start_ptt(capture_req)
+	capture._normalization_capture.frames = normalization_frames
+	capture._normalization_capture.discarded += 1
+	capture.start_ptt(capture_req)
+	check("capture ring loss fails visibly without submitting partial audio", capture.ptt_state == capture.PTTState.ERROR and capture.submitted == submitted_before_overflow)
+	capture.free()
 	var completed_text: Array[String] = []
 	ptt.transcription_completed.connect(func(text: String): completed_text.append(text))
 	ptt._start_voice_service_stt(bytes, config)

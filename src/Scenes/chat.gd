@@ -42,8 +42,6 @@ func _ready() -> void:
 
 	_setup_chats_service()
 
-	Core.client.connection_established.connect(_on_core_connected)
-
 	Core.service_selected.connect(_on_hcp_service_selected)
 	Core.service_deselected.connect(_on_hcp_service_deselected)
 
@@ -52,24 +50,6 @@ func _ready() -> void:
 	# Core.client.connection_closed.connect(_on_core_disconnected)
 	# Core.client.message_received.connect(_on_core_message_received)
 
-
-func _on_core_connected():
-	var registration_message = await (
-		Core
-		.await_message()
-		.with_topic("system")
-		.with_cmd("registration_confirmed")
-		.receive()
-	)
-
-	if not registration_message:
-		push_error("No registration message received")
-		return
-	
-	# let the services in preferences pane trigger service selection
-	# var services: = await Core.fetch_services()
-	# for service in services:
-	# 	_on_hcp_service_selected(service)
 
 func _initialize_services_by_type():
 	services_by_type[ServiceHistory.ServiceType.CHAT] = []

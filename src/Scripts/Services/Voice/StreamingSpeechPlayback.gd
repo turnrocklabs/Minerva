@@ -120,7 +120,7 @@ func _push_pcm() -> void:
 	if not is_instance_valid(_player):
 		_fail("no_audio_player", "Speech player is unavailable.")
 		return
-	var frames := mini(_playback.get_frames_available(), int(_pending.size() / 2))
+	var frames := mini(_playback.get_frames_available(), floori(float(_pending.size()) / 2.0))
 	for index in range(frames):
 		var offset := index * 2
 		var sample := _pending.decode_s16(offset) / 32768.0

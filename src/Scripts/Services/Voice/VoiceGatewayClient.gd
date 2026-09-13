@@ -21,6 +21,8 @@ const ENGAGEMENT_IDLE_TIMEOUT := 20.0
 const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
 const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
 const TARGET_SAMPLE_RATE := 16000  # gateway expects 16kHz
+const CAPTURE_DIAGNOSTIC_INTERVAL_MSEC := 2000
+const AudioConverter = preload("res://Scripts/Services/Voice/AudioInputConverter.gd")
 
 var engagement_state: String = "STANDBY"
 
@@ -32,12 +34,14 @@ var _mic_player: AudioStreamPlayer = null
 var _capture_effect: AudioEffectCapture = null
 var _capture_bus_idx: int = -1
 var _capture_timer: Timer = null
+var _input_converter: AudioConverter.StreamResampler = null
 
 # Recording state
 var _recording := false
 var _audio_buffer: PackedByteArray = PackedByteArray()
 var _pre_vad_buffer: Array[PackedByteArray] = []
 var _vad_active := false
+var _recording_conversion_usec := 0
 
 # TTS playback tracking
 var _tts_playing := false
@@ -53,6 +57,13 @@ var _ptt_saved_engagement: String = ""
 var _reconnect_timer: Timer = null
 var _should_connect := false
 var _health_retries := 0
+var _session_generation := 0
+var _diagnostic_started_msec := 0
+var _diagnostic_input_frames := 0
+var _diagnostic_output_frames := 0
+var _diagnostic_peak := 0.0
+var _diagnostic_send_failures := 0
+var _diagnostic_discarded_start := 0
 
 
 func _ready() -> void:
@@ -78,22 +89,39 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	if _ws:
-		_ws.poll()
-		var state: int = _ws.get_ready_state()
+		var polled_ws := _ws
+		var generation := _session_generation
+		polled_ws.poll()
+		var state: int = polled_ws.get_ready_state()
 		if state == WebSocketPeer.STATE_OPEN:
 			if not _connected:
+				# Drop audio accumulated during health polling/reconnect before this socket owns capture.
+				_capture_effect.clear_buffer()
+				_input_converter = null
+				_pre_vad_buffer.clear()
+				_reset_capture_diagnostics()
 				_connected = true
 				connected_to_gateway.emit()
+				if _ws != polled_ws or generation != _session_generation:
+					return
 				print("[VoiceGateway] Connected to gateway")
-			while _ws.get_available_packet_count() > 0:
-				var packet: PackedByteArray = _ws.get_packet()
+			while _ws == polled_ws and generation == _session_generation and polled_ws.get_available_packet_count() > 0:
+				var packet: PackedByteArray = polled_ws.get_packet()
 				_handle_gateway_message(packet)
 		elif state == WebSocketPeer.STATE_CLOSED:
-			if _connected:
-				_connected = false
-				disconnected_from_gateway.emit()
-				print("[VoiceGateway] Disconnected from gateway")
+			if _ws != polled_ws or generation != _session_generation:
+				return
+			var was_connected := _connected
+			_connected = false
 			_ws = null
+			_reset_capture_session("gateway disconnected")
+			if generation != _session_generation:
+				return
+			if was_connected:
+				disconnected_from_gateway.emit()
+				if generation != _session_generation:
+					return
+				print("[VoiceGateway] Disconnected from gateway")
 			if _should_connect:
 				_reconnect_timer.start()
 
@@ -127,16 +155,19 @@ func _setup_capture_bus() -> void:
 # ── Connection ──────────────────────────────────────────────────────────
 
 func start() -> void:
+	_session_generation += 1
+	var generation := _session_generation
 	_should_connect = true
+	_reset_capture_diagnostics()
 	_start_mic_capture()
 	_capture_timer.start()
 	_health_retries = 0
-	_poll_gateway_health()
+	_poll_gateway_health(generation)
 	print("[VoiceGateway] Started (polling gateway health)")
 
 
-func _poll_gateway_health() -> void:
-	if not _should_connect:
+func _poll_gateway_health(generation: int) -> void:
+	if not _should_connect or generation != _session_generation:
 		return
 	var http := HTTPRequest.new()
 	http.timeout = 3.0
@@ -144,6 +175,8 @@ func _poll_gateway_health() -> void:
 	http.request_completed.connect(
 		func(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray):
 			http.queue_free()
+			if not _should_connect or generation != _session_generation:
+				return
 			if result == HTTPRequest.RESULT_SUCCESS and code == 200:
 				print("[VoiceGateway] Gateway healthy after %d poll(s)" % (_health_retries + 1))
 				_send_gateway_config()
@@ -152,12 +185,14 @@ func _poll_gateway_health() -> void:
 				_health_retries += 1
 				if _health_retries >= MAX_HEALTH_RETRIES:
 					push_warning("[VoiceGateway] Gateway not reachable after %d attempts" % _health_retries)
+					_should_connect = false
+					_capture_timer.stop()
+					_stop_mic_capture()
+					_reset_capture_session("gateway unavailable")
 					gateway_start_failed.emit("Gateway not responding after %d health checks" % _health_retries)
 					return
-				if not _should_connect:
-					return
 				get_tree().create_timer(HEALTH_POLL_INTERVAL).timeout.connect(
-					_poll_gateway_health, CONNECT_ONE_SHOT
+					_poll_gateway_health.bind(generation), CONNECT_ONE_SHOT
 				)
 	)
 	http.request(HEALTH_URL)
@@ -175,6 +210,7 @@ func _send_gateway_config() -> void:
 
 
 func stop() -> void:
+	_session_generation += 1
 	_should_connect = false
 	_capture_timer.stop()
 	_stop_mic_capture()
@@ -183,11 +219,34 @@ func stop() -> void:
 		_ws.close()
 		_ws = null
 	_connected = false
+	_reset_capture_session("gateway stopped")
 	print("[VoiceGateway] Stopped")
 
 
+func _reset_capture_session(reason: String) -> void:
+	_recording = false
+	_vad_active = false
+	_ptt_active = false
+	_ptt_saved_engagement = ""
+	_audio_buffer.clear()
+	_pre_vad_buffer.clear()
+	_input_converter = null
+	_cancel_idle_timer()
+	_reset_capture_diagnostics()
+	_set_engagement("STANDBY", reason)
+
+
+func _reset_capture_diagnostics() -> void:
+	_diagnostic_started_msec = Time.get_ticks_msec()
+	_diagnostic_input_frames = 0
+	_diagnostic_output_frames = 0
+	_diagnostic_peak = 0.0
+	_diagnostic_send_failures = 0
+	_diagnostic_discarded_start = _capture_effect.get_discarded_frames() if _capture_effect != null else 0
+
+
 func _try_connect() -> void:
-	if _connected or _ws != null:
+	if not _should_connect or _connected or _ws != null:
 		return
 	_ws = WebSocketPeer.new()
 	var err: int = _ws.connect_to_url(GATEWAY_URL)
@@ -218,6 +277,7 @@ func _stop_mic_capture() -> void:
 	# Drain any remaining captured audio
 	if _capture_effect:
 		_capture_effect.clear_buffer()
+	_input_converter = null
 
 
 func _on_capture_tick() -> void:
@@ -226,39 +286,30 @@ func _on_capture_tick() -> void:
 
 	var frames_available: int = _capture_effect.get_frames_available()
 	if frames_available < 256:
+		_log_capture_diagnostics()
 		return
 
-	# Get captured audio as Vector2 frames (stereo float) at native mix rate
+	# Keep one converter across ticks so rational resampling phase and FIR history survive.
 	var frames: PackedVector2Array = _capture_effect.get_buffer(frames_available)
+	_diagnostic_input_frames += frames.size()
+	for index in range(0, frames.size(), 16):
+		_diagnostic_peak = maxf(_diagnostic_peak, maxf(absf(frames[index].x), absf(frames[index].y)))
 	var native_rate: int = int(AudioServer.get_mix_rate())
-
-	# Convert stereo float to mono float array
-	var mono := PackedFloat32Array()
-	mono.resize(frames.size())
-	for i in range(frames.size()):
-		mono[i] = (frames[i].x + frames[i].y) * 0.5
-
-	# Resample from native rate (44100/48000) to 16kHz
-	if native_rate != TARGET_SAMPLE_RATE:
-		var ratio: float = float(TARGET_SAMPLE_RATE) / float(native_rate)
-		var new_len: int = int(mono.size() * ratio)
-		var resampled := PackedFloat32Array()
-		resampled.resize(new_len)
-		for i in range(new_len):
-			var src_idx: float = float(i) / ratio
-			var idx: int = mini(int(src_idx), mono.size() - 1)
-			resampled[i] = mono[idx]
-		mono = resampled
-
-	# Convert float [-1,1] to s16le PCM bytes
-	var pcm := PackedByteArray()
-	pcm.resize(mono.size() * 2)
-	for i in range(mono.size()):
-		var s16: int = clampi(int(mono[i] * 32767.0), -32768, 32767)
-		pcm.encode_s16(i * 2, s16)
+	if _input_converter == null or _input_converter.source_rate != native_rate:
+		_input_converter = AudioConverter.StreamResampler.new(native_rate)
+	var conversion_started_usec := Time.get_ticks_usec()
+	var pcm: PackedByteArray = _input_converter.append_frames(frames)
+	if _recording:
+		_recording_conversion_usec += Time.get_ticks_usec() - conversion_started_usec
+	if pcm.is_empty():
+		_log_capture_diagnostics()
+		return
+	_diagnostic_output_frames += floori(float(pcm.size()) / 2.0)
 
 	# Send to gateway
-	_ws.send(pcm, WebSocketPeer.WRITE_MODE_BINARY)
+	if _ws.send(pcm, WebSocketPeer.WRITE_MODE_BINARY) != OK:
+		_diagnostic_send_failures += 1
+	_log_capture_diagnostics()
 
 	# Manage pre-VAD buffer
 	_pre_vad_buffer.append(pcm)
@@ -274,6 +325,19 @@ func _on_capture_tick() -> void:
 		_audio_buffer.append_array(pcm)
 
 
+func _log_capture_diagnostics() -> void:
+	var now := Time.get_ticks_msec()
+	var window_msec := now - _diagnostic_started_msec
+	if window_msec < CAPTURE_DIAGNOSTIC_INTERVAL_MSEC:
+		return
+	var discarded := _capture_effect.get_discarded_frames() - _diagnostic_discarded_start
+	# This sampled peak separates capture/send stalls; detector endpointing remains server-owned.
+	print("[VoiceGateway] stage=capture_health window_ms=%d source_rate=%d input_frames=%d output_frames=%d sampled_peak=%.4f discarded_frames=%d send_failures=%d connected=%s engagement=%s vad_active=%s recording=%s" % [
+		window_msec, int(AudioServer.get_mix_rate()), _diagnostic_input_frames, _diagnostic_output_frames, _diagnostic_peak, discarded,
+		_diagnostic_send_failures, _connected, engagement_state, _vad_active, _recording])
+	_reset_capture_diagnostics()
+
+
 # ── Gateway Events ──────────────────────────────────────────────────────
 
 func _handle_gateway_message(packet: PackedByteArray) -> void:
@@ -286,7 +350,10 @@ func _handle_gateway_message(packet: PackedByteArray) -> void:
 	match event_type:
 		"wake_word":
 			var confidence: float = parsed.get("confidence", 0.0)
+			var generation := _session_generation
 			wake_word_detected.emit(confidence)
+			if generation != _session_generation or not _should_connect:
+				return
 			_handle_wake_word(confidence)
 		"vad_start":
 			_handle_vad_start()
@@ -300,19 +367,24 @@ func _handle_wake_word(confidence: float) -> void:
 		_set_engagement("ENGAGED", "wake word barge-in")
 		_cancel_idle_timer()
 		_pre_vad_buffer.clear()
-		return
-
-	if engagement_state == "STANDBY":
+	elif engagement_state == "STANDBY":
 		print("[VoiceGateway] Wake word in STANDBY (%.3f) — engaging" % confidence)
 		_set_engagement("ENGAGED", "wake word")
 		_cancel_idle_timer()
 		_pre_vad_buffer.clear()
+	# VAD can lead wake-word classification from the same audio. Admit recording
+	# here because the detector will not emit a second vad_start edge.
+	if _vad_active:
+		_begin_recording_if_admitted()
 
 
 func _handle_vad_start() -> void:
 	_vad_active = true
 	vad_started.emit()
+	_begin_recording_if_admitted()
 
+
+func _begin_recording_if_admitted() -> void:
 	if _ptt_active:
 		return  # PTT: AudioToText handles recording, not gateway
 	if engagement_state != "ENGAGED":
@@ -322,6 +394,7 @@ func _handle_vad_start() -> void:
 
 	if not _recording:
 		_recording = true
+		_recording_conversion_usec = 0
 		_audio_buffer = PackedByteArray()
 		for chunk in _pre_vad_buffer:
 			_audio_buffer.append_array(chunk)
@@ -336,7 +409,9 @@ func _handle_vad_end() -> void:
 
 	if _recording:
 		_recording = false
-		print("[VoiceGateway] Recording stopped (%d bytes)" % _audio_buffer.size())
+		# Gateway capture has no client operation identity until this WAV is handed off.
+		print("[VoiceGateway] stage=vad_boundary audio_bytes=%d sample_rate=%d channels=1 conversion_ms=%.3f" % [
+			_audio_buffer.size(), TARGET_SAMPLE_RATE, _recording_conversion_usec / 1000.0])
 		# Minimum 0.5s at 16kHz s16le = 16000 bytes
 		if _audio_buffer.size() > 16000 and _has_speech_energy(_audio_buffer):
 			var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
@@ -425,33 +500,4 @@ func _has_speech_energy(pcm: PackedByteArray) -> bool:
 
 
 func _pcm_to_wav(pcm: PackedByteArray) -> PackedByteArray:
-	var sample_rate: int = 16000
-	var channels: int = 1
-	var bits_per_sample: int = 16
-	var bytes_per_sample: int = bits_per_sample >> 3
-	var byte_rate: int = sample_rate * channels * bytes_per_sample
-	var block_align: int = channels * bytes_per_sample
-	var data_size: int = pcm.size()
-	var file_size: int = 36 + data_size
-
-	var wav := PackedByteArray()
-	wav.resize(44 + data_size)
-
-	wav[0] = 0x52; wav[1] = 0x49; wav[2] = 0x46; wav[3] = 0x46
-	wav.encode_u32(4, file_size)
-	wav[8] = 0x57; wav[9] = 0x41; wav[10] = 0x56; wav[11] = 0x45
-	wav[12] = 0x66; wav[13] = 0x6D; wav[14] = 0x74; wav[15] = 0x20
-	wav.encode_u32(16, 16)
-	wav.encode_u16(20, 1)
-	wav.encode_u16(22, channels)
-	wav.encode_u32(24, sample_rate)
-	wav.encode_u32(28, byte_rate)
-	wav.encode_u16(32, block_align)
-	wav.encode_u16(34, bits_per_sample)
-	wav[36] = 0x64; wav[37] = 0x61; wav[38] = 0x74; wav[39] = 0x61
-	wav.encode_u32(40, data_size)
-
-	for i in range(data_size):
-		wav[44 + i] = pcm[i]
-
-	return wav
+	return AudioConverter.pcm16_to_wav(pcm)

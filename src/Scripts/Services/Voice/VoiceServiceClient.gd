@@ -61,6 +61,9 @@ func transcribe_result(audio_wav: PackedByteArray, language: String = "en", back
 	var data := {"audio_base64": Marshalls.raw_to_base64(audio_wav), "language": language, "backend": backend}
 	if not model.is_empty():
 		data["model"] = model
+	# This marks local enqueue only; Core does not expose upload receipt separately.
+	print("[VoiceSTT] operation=%s stage=dispatch audio_bytes=%d backend=%s model=%s" % [
+		diagnostic_id, audio_wav.size(), backend, model if not model.is_empty() else "default"])
 	var result := await _call("voice/stt/transcribe", data, "json", 120.0, operation)
 	if result.success:
 		if not result.value.get("text") is String:
