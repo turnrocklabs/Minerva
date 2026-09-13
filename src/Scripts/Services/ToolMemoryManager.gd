@@ -572,14 +572,15 @@ func _project_history_for_prompt(history: ServiceHistory) -> Array:
 			collapsed_tool_result_items += 1
 			chars_removed += maxi(0, item.Message.length() - compact_message.length())
 
-			if item.Role == ChatHistoryItem.ChatRole.TOOL and i == latest_tool_idx and not floating_summary_text.is_empty():
-				if not mutated:
-					prompt_item = item.duplicate_for_prompt()
-					mutated = true
-				_set_prompt_item_fields(prompt_item, {
-					"Message": "[tm]\n%s\n\n[cur]\n%s" % [floating_summary_text, prompt_item.Message],
-				})
+		# The latest tool result is deliberately retained above. Attach prior tool
+		# memory here so it reaches the model without changing the live history item.
+		if item.Role == ChatHistoryItem.ChatRole.TOOL and i == latest_tool_idx and not floating_summary_text.is_empty():
+			if not mutated:
+				prompt_item = item.duplicate_for_prompt()
 				mutated = true
+			_set_prompt_item_fields(prompt_item, {
+				"Message": "[tm]\n%s\n\n[cur]\n%s" % [floating_summary_text, prompt_item.Message],
+			})
 
 		projected.append(prompt_item)
 

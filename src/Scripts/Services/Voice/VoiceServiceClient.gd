@@ -11,6 +11,8 @@ var _inventory_epoch := 0
 var _query_sequence := 0
 var _query_versions: Dictionary = {}
 var _inventory_versions: Dictionary = {}
+var _stt_sequence := 0
+var _tts_sequence := 0
 
 static func failure(code: String, message: String) -> Dictionary:
 	return {"success": false, "error_code": code, "error_message": message, "error": message}
@@ -53,15 +55,20 @@ func _call(topic: String, data: Dictionary, mode: String, timeout: float, operat
 		return failure("invalid_voice_response", "Voice service returned a non-object result.")
 	return {"success": true, "value": body, "request_id": completed.request_id, "transport": "json"}
 
-func transcribe_result(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper", model: String = "", operation: VoiceOperation = null) -> Dictionary:
+func transcribe_result(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper", model: String = "", operation: VoiceOperation = null, diagnostic_id: String = "") -> Dictionary:
+	var started_msec := Time.get_ticks_msec()
+	diagnostic_id = _ensure_stt_diagnostic_id(operation, diagnostic_id)
 	var data := {"audio_base64": Marshalls.raw_to_base64(audio_wav), "language": language, "backend": backend}
 	if not model.is_empty():
 		data["model"] = model
 	var result := await _call("voice/stt/transcribe", data, "json", 120.0, operation)
 	if result.success:
 		if not result.value.get("text") is String:
-			return failure("invalid_voice_response", "Transcription response is missing text.")
+			result = failure("invalid_voice_response", "Transcription response is missing text.")
+			_log_stt_result(diagnostic_id, "core", started_msec, audio_wav.size(), backend, model, result)
+			return result
 		result["text"] = result.value.text
+	_log_stt_result(diagnostic_id, "core", started_msec, audio_wav.size(), backend, model, result)
 	return result
 
 func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: String = "faster-whisper", model: String = "") -> String:
@@ -212,16 +219,49 @@ func transcribe_whisper(audio_wav: PackedByteArray) -> String:
 
 ## Transcribe using the configured provider (with automatic fallback).
 func transcribe_auto_result(audio_wav: PackedByteArray, voice_config: VoiceConfig, operation: VoiceOperation = null) -> Dictionary:
+	var started_msec := Time.get_ticks_msec()
+	var diagnostic_id := _ensure_stt_diagnostic_id(operation)
 	if operation != null and not operation.can_start():
-		return failure("cancelled", "Transcription cancelled locally.")
+		var cancelled := failure("cancelled", "Transcription cancelled locally.")
+		_log_stt_result(diagnostic_id, "total", started_msec, audio_wav.size(), voice_config.stt_backend, voice_config.stt_model, cancelled)
+		return cancelled
 	if operation != null and operation.is_busy():
-		return failure("operation_busy", "Voice operation already has an active request.")
+		var busy := failure("operation_busy", "Voice operation already has an active request.")
+		_log_stt_result(diagnostic_id, "total", started_msec, audio_wav.size(), voice_config.stt_backend, voice_config.stt_model, busy)
+		return busy
 	if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE:
-		var result := await transcribe_result(audio_wav, "en", voice_config.stt_backend, voice_config.stt_model, operation)
+		var result := await transcribe_result(audio_wav, "en", voice_config.stt_backend, voice_config.stt_model, operation, diagnostic_id)
 		if result.success or result.get("error_code") in ["cancelled", "operation_busy"] or not voice_config.whisper_fallback:
+			_log_stt_result(diagnostic_id, "total", started_msec, audio_wav.size(), voice_config.stt_backend, voice_config.stt_model, result)
 			return result
-		return await transcribe_whisper_result(audio_wav)
-	return await transcribe_whisper_result(audio_wav)
+		var fallback := await transcribe_whisper_result(audio_wav)
+		fallback["fallback_from"] = result.get("error_code", "core_stt_failed")
+		_log_stt_result(diagnostic_id, "total_after_fallback", started_msec, audio_wav.size(), "openai", "whisper-1", fallback)
+		return fallback
+	var whisper := await transcribe_whisper_result(audio_wav)
+	_log_stt_result(diagnostic_id, "whisper", started_msec, audio_wav.size(), "openai", "whisper-1", whisper)
+	return whisper
+
+
+func _ensure_stt_diagnostic_id(operation: VoiceOperation, existing: String = "") -> String:
+	if not existing.is_empty():
+		return existing
+	if operation != null and not operation.diagnostic_id.is_empty():
+		return operation.diagnostic_id
+	_stt_sequence += 1
+	var assigned := "stt-%d" % _stt_sequence
+	if operation != null:
+		operation.diagnostic_id = assigned
+	return assigned
+
+
+## Content-free timing landmark for diagnosing capture-to-transcript latency.
+func _log_stt_result(diagnostic_id: String, stage: String, started_msec: int, audio_bytes: int, backend: String, model: String, outcome: Dictionary) -> void:
+	var elapsed_msec := Time.get_ticks_msec() - started_msec
+	var status := "success" if outcome.get("success", false) else str(outcome.get("error_code", "error"))
+	print("[VoiceSTT] operation=%s stage=%s elapsed_ms=%d audio_bytes=%d backend=%s model=%s status=%s fallback_from=%s" % [
+		diagnostic_id, stage, elapsed_msec, audio_bytes, backend, model if not model.is_empty() else "default", status,
+		str(outcome.get("fallback_from", "none"))])
 
 func transcribe_auto(audio_wav: PackedByteArray, voice_config: VoiceConfig) -> String:
 	var result := await transcribe_auto_result(audio_wav, voice_config)
@@ -237,6 +277,88 @@ func synthesize_auto_result(text: String, voice_config: VoiceConfig, operation: 
 		if not selection.success:
 			return selection
 	return await synthesize_result(text, voice, voice_config.tts_backend, operation)
+
+func synthesize_auto_playback_result(text: String, voice_config: VoiceConfig, operation: SpeechOperation, player: AudioStreamPlayer) -> Dictionary:
+	if voice_config.tts_provider != VoiceConfig.TTSProvider.VOICE_SERVICE:
+		return failure("voice_disabled", "Speech synthesis is disabled.")
+	if not operation.can_start():
+		return failure("cancelled", "Speech operation is already cancelled.")
+	if operation.is_busy():
+		return failure("operation_busy", "Speech operation already owns a request.")
+	if not is_instance_valid(player):
+		return failure("no_audio_player", "Speech player is unavailable.")
+	var voice: String = voice_config.voice_name if not voice_config.voice_name.is_empty() else voice_config.voice_id
+	var inventory := _inventory_for(voice_config.tts_backend)
+	if not inventory.is_empty() and not voice.is_empty():
+		var selection := VoiceSelection.resolve(inventory.voices, voice_config.voice_name, voice_config.voice_id, voice_config.tts_backend)
+		if not selection.success:
+			return selection
+	# The streaming backend requires an explicit voice. Preserve the legacy
+	# server-default path through the existing one-shot request when it is empty.
+	if voice.is_empty():
+		return await _play_one_shot(text, voice, voice_config.tts_backend, operation, player, voice_config.tts_volume)
+	var service := _get_voice_service()
+	if service == null:
+		return failure("core_offline", "Voice service requires a connected Core session.")
+	var action: Action
+	for candidate: Action in service.actions:
+		if candidate.topic == "voice/tts/stream":
+			action = candidate
+			break
+	if action == null:
+		_tts_sequence += 1
+		_log_tts("tts-%d" % _tts_sequence, "not_advertised", Time.get_ticks_msec(), voice_config.tts_backend, "oneshot")
+		return await _play_one_shot(text, voice, voice_config.tts_backend, operation, player, voice_config.tts_volume)
+	var data := {"text": text, "voice_id": voice, "backend": voice_config.tts_backend}
+	var request = Core.prepare_audio_stream(service, action, 120.0)
+	_tts_sequence += 1
+	var diagnostic_id := "tts-%d" % _tts_sequence
+	var started_msec := Time.get_ticks_msec()
+	var metrics := {"first": false, "bytes": 0, "rate": 0, "format": "unknown"}
+	_log_tts(diagnostic_id, "request", started_msec, voice_config.tts_backend, "pending")
+	var prepared: Dictionary = operation.prepare_stream(request, player, voice_config.tts_volume)
+	if not prepared.success:
+		request.fail(str(prepared.get("error_code", "operation_rejected")), str(prepared.get("error_message", "Speech operation rejected streaming.")))
+		return prepared
+	var on_open := func(meta: Dictionary):
+		metrics.rate = int(meta.sample_rate)
+		metrics.format = str(meta.format)
+		_log_tts(diagnostic_id, "open", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
+	var on_chunk := func(audio: PackedByteArray):
+		metrics.bytes += audio.size()
+		if not metrics.first:
+			metrics.first = true
+			_log_tts(diagnostic_id, "first_chunk", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
+	var on_end := func(): _log_tts(diagnostic_id, "input_end", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
+	var on_playback := func(): _log_tts(diagnostic_id, "playback", started_msec, voice_config.tts_backend, "success", metrics.bytes, metrics.rate, metrics.format)
+	request.stream_opened.connect(on_open, CONNECT_ONE_SHOT)
+	request.stream_chunk.connect(on_chunk)
+	request.stream_ended.connect(on_end, CONNECT_ONE_SHOT)
+	operation.playback_began.connect(on_playback, CONNECT_ONE_SHOT)
+	operation.finished.connect(func(outcome: Dictionary): _log_tts(diagnostic_id, "done", started_msec, voice_config.tts_backend, "success" if outcome.get("success", false) else str(outcome.get("error_code", "error")), metrics.bytes, metrics.rate, metrics.format), CONNECT_ONE_SHOT)
+	# Every consumer is attached before send; local transports may reply inline.
+	Core.send_prepared_audio_stream(request, service, action, data)
+	var result: Dictionary = await operation.receive_prepared_stream(request)
+	for pair in [[request.stream_opened, on_open], [request.stream_chunk, on_chunk], [request.stream_ended, on_end], [operation.playback_began, on_playback]]:
+		if pair[0].is_connected(pair[1]):
+			pair[0].disconnect(pair[1])
+	if result.success:
+		return {"success": true, "streaming": true}
+	if request.header_id.is_empty() and not operation.playback_started and result.get("error_code") in ["UNKNOWN_TOPIC", "UNKNOWN_ACTION"] and operation.can_start():
+		_log_tts(diagnostic_id, "fallback_unsupported", started_msec, voice_config.tts_backend, str(result.error_code))
+		return await _play_one_shot(text, voice, voice_config.tts_backend, operation, player, voice_config.tts_volume)
+	return result
+
+func _play_one_shot(text: String, voice: String, backend: String, operation: SpeechOperation, player: AudioStreamPlayer, volume: float) -> Dictionary:
+	var synthesized := await synthesize_result(text, voice, backend, operation)
+	if not synthesized.success:
+		return synthesized
+	if not operation.play(player, synthesized.audio, volume):
+		return failure("playback_failed", "Speech playback could not start.")
+	return {"success": true, "streaming": false}
+
+func _log_tts(diagnostic_id: String, stage: String, started_msec: int, backend: String, status: String, audio_bytes := 0, sample_rate := 0, audio_format := "unknown") -> void:
+	print("[VoiceTTS] operation=%s stage=%s elapsed_ms=%d audio_bytes=%d sample_rate=%d format=%s backend=%s status=%s" % [diagnostic_id, stage, Time.get_ticks_msec() - started_msec, audio_bytes, sample_rate, audio_format, backend, status])
 
 func synthesize_auto(text: String, voice_config: VoiceConfig) -> PackedByteArray:
 	var result := await synthesize_auto_result(text, voice_config)
@@ -348,43 +470,3 @@ static func load_audio_into_stream(stream: AudioStreamWAV, audio_bytes: PackedBy
 		stream.mix_rate = 16000
 		stream.stereo = false
 		stream.format = AudioStreamWAV.FORMAT_16_BITS
-
-
-## Send pre-warm request to gpu-dispatch to load STT/TTS/LLM models.
-## Eliminates cold start on first voice interaction.
-func pre_warm(keep_warm_seconds: int = 3600) -> bool:
-	if not Core.client._connected:
-		push_warning("[VoiceServiceClient] Cannot pre-warm: Core not connected")
-		return false
-
-	var gpu_dispatch := Service.new({"client_id": "gpu-dispatch", "name": "GPU Dispatch"})
-	var action := Action.new({"topic": "gpu-dispatch/session/reserve"})
-	var cfg := SingletonObject.get_voice_config()
-	var data := {
-		"job_types": ["voice", "chat"],
-		"containers": ["voice", "ollama"],
-		"models": {
-			"stt": {"model": cfg.stt_model, "backend": cfg.stt_backend},
-			"tts": {"backend": cfg.tts_backend},
-			"llm": {},
-		},
-		"keep_warm_seconds": keep_warm_seconds,
-	}
-
-	print("[VoiceServiceClient] Sending pre-warm request to gpu-dispatch...")
-	var awaiter := Core.send_message(gpu_dispatch, action, data)
-	var response = await awaiter.with_timeout(30.0).receive()
-
-	if response:
-		var result: Dictionary = response.get("params", {}).get("result", {})
-		var node_id: String = result.get("node_id", "")
-		if not node_id.is_empty():
-			print("[VoiceServiceClient] Pre-warm reserved node: %s" % node_id)
-			return true
-		var error: String = result.get("error", response.get("params", {}).get("error", ""))
-		if not error.is_empty():
-			push_warning("[VoiceServiceClient] Pre-warm failed: %s" % error)
-	else:
-		push_warning("[VoiceServiceClient] Pre-warm request timed out")
-
-	return false

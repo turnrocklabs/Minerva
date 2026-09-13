@@ -3,6 +3,7 @@ extends CoreClient
 var behavior := "hold"
 var sent: Array[Dictionary] = []
 var owner_present_at_send := false
+var on_send: Callable
 
 func _ready() -> void:
 	_connected = true
@@ -12,6 +13,8 @@ func send_text_message_to_core(message: Dictionary) -> Error:
 	sent.append(message.duplicate(true))
 	var request_id: String = message.get("params", {}).get("request_id", "")
 	owner_present_at_send = _pending_requests.has(request_id)
+	if on_send.is_valid():
+		on_send.call(message)
 	if behavior == "failure":
 		return ERR_CONNECTION_ERROR
 	if behavior == "json":

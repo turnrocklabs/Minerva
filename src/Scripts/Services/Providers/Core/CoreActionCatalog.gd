@@ -30,6 +30,8 @@ static func spec_for(service: Service, action: Action) -> Dictionary:
 static func display_for(service: Service, action: Action) -> String:
 	if action == null:
 		return ""
+	if service != null and service.client_id == "model-chat":
+		return action.name
 	return "%s (%s)" % [service.name if service != null else "Core", action.name]
 
 

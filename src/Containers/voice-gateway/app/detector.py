@@ -1,10 +1,11 @@
-"""Tiered voice detector: energy gate → VAD → wake word.
+"""Tiered voice detector: energy gate → packaged VAD → wake word.
 
 Tier 1 (energy gate): skip silent frames. Near-zero CPU cost.
-Tier 2 (VAD): Silero VAD detects speech activity. ~2ms/frame.
-Tier 3 (wake word): openWakeWord embeddings + custom ONNX classifier. ~5ms/frame.
+Tier 2 (VAD): openWakeWord's packaged Silero model detects speech activity.
+Tier 3 (wake word): openWakeWord embeddings + custom ONNX classifier.
 
-Only runs expensive tiers when cheaper tiers indicate activity.
+The energy gate avoids VAD work for quiet frames. Wake-word feature extraction
+still runs continuously so speech can engage the detector from standby.
 """
 
 import time
@@ -12,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
-import torch
+from openwakeword.vad import VAD
 
 SAMPLE_RATE = 16000
 # openWakeWord processes 80ms chunks (1280 samples at 16kHz)
@@ -36,12 +37,9 @@ class VoiceDetector:
         self.ready = False
         self.start_time = time.time()
 
-        # Tier 2: Silero VAD
-        self._vad_model, self._vad_utils = torch.hub.load(
-            "snakers4/silero-vad", "silero_vad", trust_repo=True
-        )
-        (self._get_speech_timestamps, _, _, _, _) = self._vad_utils
-        self._vad_state = None
+        # openWakeWord ships this Silero model with the package, keeping gateway
+        # startup independent of torch.hub and network availability.
+        self._vad_model = VAD()
         self._vad_active = False
         self._vad_silence_frames = 0
         self._vad_silence_threshold = int(VAD_MIN_SILENCE_MS / (VAD_CHUNK_SAMPLES / SAMPLE_RATE * 1000))
@@ -53,7 +51,7 @@ class VoiceDetector:
         # Custom classifier
         self._classifier = ort.InferenceSession(
             model_path,
-            providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
+            providers=["CPUExecutionProvider"],
         )
         self._classifier_input_name = self._classifier.get_inputs()[0].name
 
@@ -74,7 +72,7 @@ class VoiceDetector:
         self._vad_active = False
         self._vad_silence_frames = 0
         self._wake_word_cooldown_until = 0.0
-        # Reset VAD iterator state
+        # Reset the packaged Silero recurrent state.
         self._vad_model.reset_states()
 
     def process_audio(self, pcm_bytes: bytes) -> list[dict]:
@@ -121,10 +119,7 @@ class VoiceDetector:
             return events
 
         # Tier 2: Silero VAD
-        audio_float = chunk.astype(np.float32) / 32768.0
-        audio_tensor = torch.from_numpy(audio_float)
-
-        speech_prob = self._vad_model(audio_tensor, SAMPLE_RATE).item()
+        speech_prob = float(self._vad_model.predict(chunk, frame_size=VAD_CHUNK_SAMPLES))
 
         if speech_prob > 0.5:
             self._vad_silence_frames = 0
@@ -141,7 +136,7 @@ class VoiceDetector:
         return events
 
     def _process_wakeword_chunk(self, chunk: np.ndarray) -> dict | None:
-        """Tier 3: wake word detection (only when VAD is active or recently active)."""
+        """Tier 3: continuous wake-word detection with a post-detection cooldown."""
         # Cooldown check
         if time.time() < self._wake_word_cooldown_until:
             return None

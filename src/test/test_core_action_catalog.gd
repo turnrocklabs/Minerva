@@ -124,6 +124,11 @@ func _run() -> void:
 			if not found:
 				display_ok = false
 	check("every entry's display equals CoreProvider.model_name", display_ok)
+	if entries.size() == 3:
+		check("model-chat entries use the model name alone",
+			entries[0].display == "qwen3" and entries[1].display == "llama4")
+		check("generic Core action keeps its service-qualified label",
+			entries[2].display == "Notes (qwen3)")
 
 	# --- 3. the spec is byte-identical to the chooser's ----------------------
 	# Oracle: ProviderOptionButton.get_item_provider_spec on a dropdown item

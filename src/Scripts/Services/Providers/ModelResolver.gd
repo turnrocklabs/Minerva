@@ -273,7 +273,8 @@ static func watch_core_changes(callback: Callable) -> void:
 		for definition in source.get_signal_list():
 			if definition.name not in ["service_connected", "_services_fetch_completed", "http_connection_changed", "connection_closed", "connection_established"]:
 				continue
-			var adapted := callback.unbind(definition.args.size())
+			var signal_arg_count: int = definition.args.size()
+			var adapted := callback if signal_arg_count == 0 else callback.unbind(signal_arg_count)
 			if not source.is_connected(definition.name, adapted):
 				source.connect(definition.name, adapted, CONNECT_DEFERRED)
 

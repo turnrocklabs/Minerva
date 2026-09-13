@@ -515,6 +515,25 @@ func send_message(service: Service, action: Action, msg: Dictionary, completion:
 		awaiter.fail("send_failed", "Core could not send the request.")
 	return awaiter
 
+func prepare_audio_stream(service: Service, action: Action, timeout: float = 120.0):
+	var request = load("res://Scripts/Services/Providers/Core/CoreAudioStreamRequest.gd").new(client)
+	request.request_id = UUIDGen.v7()
+	request.cmd = "response"
+	request.topic = action.topic if action != null else ""
+	request.timeout = timeout
+	if not client._connected or not registered:
+		request.fail("core_offline", "Core is not connected and registered.")
+		return request
+	if service == null or action == null:
+		request.fail("invalid_request", "Core service and action are required.")
+		return request
+	request.start()
+	return request
+
+func send_prepared_audio_stream(request, service: Service, action: Action, msg: Dictionary) -> void:
+	if request.result.is_empty() and client.send_text_message(service, action, msg, "", request.request_id).is_empty():
+		request.fail("send_failed", "Core could not send the audio stream request.")
+
 func subscribe(topic: String) -> bool:
 	if not client._connected or not registered:
 		return false

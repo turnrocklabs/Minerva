@@ -52,7 +52,6 @@ var _voice_gateway: Node = null
 ## Voice conversation flow control: one utterance → one response
 var _voice_llm_busy := false
 var _voice_utterance_queue: Array[String] = []
-var _gpu_pre_warmed := false
 var _engagement_toggle: CheckButton = null
 var _engagement_state_label: Label = null
 
@@ -904,7 +903,7 @@ func update_ui_after_response(user_history_item: ChatHistoryItem, user_msg_node:
 		model_msg_node.first_time_message = true
 
 		# Voice mode: speak the response via TTS (if enabled in Voice Preferences)
-		if chi and not chi.Message.is_empty():
+		if chi and not chi.Message.is_empty() and not SingletonObject.is_cancelled(history.HistoryId):
 			_voice_speak_response(chi.Message, user_history_item.Message, model_msg_node)
 	else:
 		model_msg_node.queue_free()
@@ -2797,7 +2796,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# Use continuation_chi.Message (clean final text) not model_chi.Message
 		# (which has accumulated tool block markers from all rounds)
 		var final_text: String = continuation_chi.Message if continuation_chi else model_chi.Message
-		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node):
+		if not final_text.is_empty() and is_instance_valid(model_chi.rendered_node) and not SingletonObject.is_cancelled(history.HistoryId):
 			var user_text := user_history_item.Message if user_history_item else ""
 			_voice_speak_response(final_text, user_text, model_chi.rendered_node)
 
@@ -3291,7 +3290,6 @@ func _ready():
 	_voice_gateway.gateway_start_failed.connect(_on_gateway_start_failed)
 	_voice_gateway.wake_word_detected.connect(func(conf: float):
 		print("[ChatPane] Wake word detected (%.3f)" % conf)
-		_lazy_pre_warm()
 	)
 
 
@@ -4660,13 +4658,18 @@ func _on_tab_menu_selected(id: int) -> void:
 
 
 
-## Update stop button state based on current tab's active request status.
+## Stop owns the current text request plus this pane's capture and speech work.
 func _update_stop_button() -> void:
+	if not is_instance_valid(audio_stop_1):
+		return
+	var voice_active := _tts_busy or not _gateway_transcriptions.is_empty() or not _voice_utterance_queue.is_empty()
+	if is_instance_valid(SingletonObject.AtT):
+		voice_active = voice_active or SingletonObject.AtT.ptt_state != SingletonObject.AtT.PTTState.READY
 	if current_tab >= 0 and current_tab < SingletonObject.ChatList.size():
 		var h: ChatHistory = SingletonObject.ChatList[current_tab]
-		audio_stop_1.disabled = not h.is_request_active
+		audio_stop_1.disabled = not h.is_request_active and not voice_active
 	else:
-		audio_stop_1.disabled = true
+		audio_stop_1.disabled = not voice_active
 
 
 func _update_compact_button() -> void:
@@ -4779,6 +4782,7 @@ var _gateway_transcriptions: Array[VoiceOperation] = []
 var _gateway_generation := 0
 var _gateway_stopped := false
 var _voice_tearing_down := false
+@warning_ignore("unused_private_class_variable") # Read by voice lifecycle tests.
 var _tts_busy: bool:
 	get: return _speech_operation != null and not _speech_operation.done
 
@@ -4788,6 +4792,7 @@ func cancel_tts() -> void:
 	_speech_operation = null
 	if active != null:
 		active.cancel()
+	_update_stop_button()
 
 func _enter_tree() -> void:
 	_voice_tearing_down = false
@@ -4823,9 +4828,11 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 	cancel_tts()
 	var operation := SpeechOperation.new()
 	_speech_operation = operation
+	_update_stop_button()
 	var status_label: RichTextLabel = _create_voice_status_label(msg_node) if is_instance_valid(msg_node) else null
 	var context := {"status": status_label, "summary": cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE, "text": response_text}
 	operation.finished.connect(_finish_speech.bind(operation, context), CONNECT_ONE_SHOT)
+	operation.playback_began.connect(_on_speech_playback_began.bind(operation, cfg, msg_node, context), CONNECT_ONE_SHOT)
 	var voice_client := SingletonObject.get_voice_client()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE:
 		if cfg.summary_model.is_empty():
@@ -4844,20 +4851,24 @@ func _voice_speak_response(response_text: String, user_text: String = "", msg_no
 		context["status_text"] = "Voice: Shortened response (%s): %s" % [context.fallback, context.text] if not context.fallback.is_empty() else "Voice: %s" % context.text
 	if is_instance_valid(status_label):
 		status_label.text = "Voice: Using shortened response (%s); synthesizing..." % context.fallback if not context.get("fallback", "").is_empty() else "Voice: Synthesizing speech..."
-	var synthesized := await voice_client.synthesize_auto_result(context.text, cfg, operation)
+	var synthesized := await voice_client.synthesize_auto_playback_result(context.text, cfg, operation, _tts_player)
 	if operation.done:
 		return
 	if not synthesized.success:
 		operation.finish(synthesized)
 		return
-	if operation.play(_tts_player, synthesized.audio, cfg.tts_volume) and not operation.done:
-		if is_instance_valid(_voice_gateway):
-			_voice_gateway.notify_tts_started()
-		if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE and is_instance_valid(msg_node) and msg_node is MessageMarkdown and msg_node._expanded:
-			msg_node._expanded = false
-			msg_node.contract_message()
-		if is_instance_valid(status_label):
-			status_label.text = context.status_text if context.summary else "Voice: Speaking..."
+
+func _on_speech_playback_began(operation: SpeechOperation, cfg: VoiceConfig, msg_node: Control, context: Dictionary) -> void:
+	if operation.done or _speech_operation != operation:
+		return
+	if is_instance_valid(_voice_gateway):
+		_voice_gateway.notify_tts_started()
+	if cfg.speak_mode == VoiceConfig.SpeakMode.SUMMARIZE and is_instance_valid(msg_node) and msg_node is MessageMarkdown and msg_node._expanded:
+		msg_node._expanded = false
+		msg_node.contract_message()
+	var status_label: RichTextLabel = context.get("status")
+	if is_instance_valid(status_label):
+		status_label.text = context.status_text if context.summary else "Voice: Speaking..."
 
 func _finish_speech(outcome: Dictionary, operation: SpeechOperation, context: Dictionary) -> void:
 	if _speech_operation == operation:
@@ -4876,6 +4887,7 @@ func _finish_speech(outcome: Dictionary, operation: SpeechOperation, context: Di
 		_voice_llm_busy = false
 	else:
 		_voice_on_response_complete()
+	_update_stop_button()
 
 
 ## Toggle always-listening mode via CheckButton
@@ -4899,10 +4911,6 @@ func _on_engagement_toggle_changed(enabled: bool) -> void:
 		cfg.always_listening = true
 		cfg.save()
 		start_voice_gateway()
-		# Pre-warm gpu-node: load STT/TTS/LLM models to eliminate cold start
-		var voice_client := SingletonObject.get_voice_client()
-		voice_client.pre_warm()
-		_gpu_pre_warmed = true
 	else:
 		cfg.always_listening = false
 		cfg.save()
@@ -4951,8 +4959,6 @@ func _on_engagement_changed(state: String) -> void:
 func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
 	if audio_wav.is_empty() or _voice_tearing_down or _gateway_stopped:
 		return
-
-	_lazy_pre_warm()
 
 	var cfg := SingletonObject.get_voice_config()
 	var client := SingletonObject.get_voice_client()
@@ -5034,19 +5040,6 @@ func _auto_start_voice() -> void:
 						return
 				break
 	start_voice_gateway()
-
-
-## Lazy GPU pre-warm: reserves GPU on first voice interaction, not at startup.
-func _lazy_pre_warm() -> void:
-	if _gpu_pre_warmed:
-		return
-	_gpu_pre_warmed = true
-	if not Core.client._connected:
-		_gpu_pre_warmed = false
-		return
-	await Core.fetch_services(true)
-	var voice_client := SingletonObject.get_voice_client()
-	voice_client.pre_warm()
 
 
 ## Stop the voice gateway
@@ -5284,10 +5277,22 @@ func get_first_chat_item() -> ChatHistoryItem:
 #endregion Add New HistoryItem
 
 func _on_audio_stop_1_pressed() -> void:
+	# Clear queued/in-flight voice work before cancel_tts: speech completion is
+	# synchronous and otherwise advances the hands-free utterance queue.
+	_voice_utterance_queue.clear()
+	_gateway_generation += 1
+	var voice_operations := _gateway_transcriptions.duplicate()
+	_gateway_transcriptions.clear()
+	for operation: VoiceOperation in voice_operations:
+		operation.cancel()
+	cancel_tts()
+	_voice_llm_busy = false
+	if is_instance_valid(SingletonObject.AtT):
+		SingletonObject.AtT._StopConverting()
 	if current_tab >= 0 and current_tab < SingletonObject.ChatList.size():
 		var history: ChatHistory = SingletonObject.ChatList[current_tab]
 		if not history.is_request_active:
-			SingletonObject.AtT._StopConverting()
+			_update_stop_button()
 			return
 
 		# Track this history as cancelled so agentic loops can check
@@ -5331,6 +5336,8 @@ func _on_audio_stop_1_pressed() -> void:
 					registry.update_worker_status(worker.worker_id, "cancelled", "Parent supervisor stopped")
 					print("[ChatPane] Cascade stop: cancelled worker '%s'" % worker.worker_name)
 
+		_update_stop_button()
+	else:
 		_update_stop_button()
 
 

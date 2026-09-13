@@ -43,6 +43,32 @@ func _deliver_binary(client, request_id: String, audio: PackedByteArray) -> void
 	client._handle_binary_frame(PackedByteArray([2]) + stream + audio)
 	client._handle_binary_frame(PackedByteArray([3]) + stream)
 
+func _deliver_stream_open(client, request_id: String, stream: PackedByteArray, rate := 24000) -> void:
+	var id := stream.hex_encode()
+	var header := {"cmd": "response", "topic": "voice/tts/stream", "params": {"request_id": request_id, "client_id": "minerva", "service_id": "voice-service"},
+		"binary_framing": {"data": "raw", "completion": "stream_end", "mode": "stream", "stream": {"conversation_id": request_id, "turn_id": request_id, "stream_id": id, "format": "pcm_s16le", "sample_rate": rate, "direction": "out"}}}
+	var json := JSON.stringify(header).to_utf8_buffer()
+	var sizes := PackedByteArray()
+	sizes.resize(8)
+	sizes.encode_u32(0, json.size())
+	sizes.encode_u32(4, 1)
+	client._handle_binary_frame(PackedByteArray([0]) + stream + sizes + json)
+
+func _deliver_stream_data(client, stream: PackedByteArray, sequence: int, audio: PackedByteArray) -> void:
+	var seq := PackedByteArray()
+	seq.resize(4)
+	seq.encode_u32(0, sequence)
+	client._handle_binary_frame(PackedByteArray([2]) + stream + seq + audio)
+
+func _deliver_stream_end(client, stream: PackedByteArray) -> void:
+	client._handle_binary_frame(PackedByteArray([3]) + stream)
+
+func _stream_id(seed: int) -> PackedByteArray:
+	var id := PackedByteArray()
+	id.resize(16)
+	id.encode_u32(0, seed)
+	return id
+
 func _run() -> void:
 	var core = root.get_node("Core")
 	var so = root.get_node("SingletonObject")
@@ -100,12 +126,12 @@ func _run() -> void:
 	output.clear()
 	_capture(voice, "transcribe_auto_result", [bytes, config], output)
 	transport.reply(_last_id(transport), {"error": "backend failed"})
-	check("configured Whisper fallback still handles actual STT failure", output.result.success and output.result.text == "fallback" and voice.whisper_calls == 1)
+	check("configured Whisper fallback attributes the exact Core failure", output.result.success and output.result.text == "fallback" and output.result.fallback_from == "core_error" and voice.whisper_calls == 1)
 	output.clear()
 	var stt_scope = scope_script.new()
 	_capture(voice, "transcribe_auto_result", [bytes, config, stt_scope], output)
 	stt_scope.cancel()
-	check("cancelled STT never invokes fallback", output.result.error_code == "cancelled" and voice.whisper_calls == 1)
+	check("cancelled STT keeps its operation identity and never invokes fallback", output.result.error_code == "cancelled" and not stt_scope.diagnostic_id.is_empty() and voice.whisper_calls == 1)
 	output.clear()
 	_capture(voice, "get_status_result", [], output)
 	transport.reply(_last_id(transport), {})
@@ -225,6 +251,115 @@ func _run() -> void:
 	var gateway = load("res://test/fixtures/voice_gateway_capture.gd").new()
 	pane.add_child(gateway)
 	pane._voice_gateway = gateway
+	var voice_service = load("res://Scripts/Services/Providers/Core/scripts/service.gd").new({"client_id": "voice-service", "name": "Voice Service", "actions": [{"name": "Voice TTS Stream", "topic": "voice/tts/stream"}]})
+	core.services.assign([model_service, voice_service])
+	config.speak_mode = config.SpeakMode.FULL
+	var inline_frame_id := _stream_id(900)
+	transport.on_send = func(message: Dictionary):
+		if message.topic == "voice/tts/stream":
+			_deliver_stream_open(transport, message.params.request_id, inline_frame_id)
+			var inline_pcm := PackedByteArray()
+			inline_pcm.resize(9600)
+			_deliver_stream_data(transport, inline_frame_id, 0, inline_pcm)
+	pane._voice_speak_response("inline stream response")
+	transport.on_send = Callable()
+	check("stream handlers own synchronous OPEN and first chunk during send", player.playing and pane._tts_busy and gateway.starts == 1)
+	pane.cancel_tts()
+	check("synchronous stream remains immediately cancellable", not pane._tts_busy and gateway.finishes == 1)
+	gateway.starts = 0
+	gateway.finishes = 0
+
+	pane._voice_speak_response("stream cancellation")
+	var streaming_id := _last_id(transport)
+	var streaming_frame_id := _stream_id(901)
+	_deliver_stream_open(transport, streaming_id, streaming_frame_id)
+	var active_pcm := PackedByteArray()
+	active_pcm.resize(9600)
+	_deliver_stream_data(transport, streaming_frame_id, 0, active_pcm)
+	pane._voice_utterance_queue.append("must not restart")
+	var pending_gateway_scope = scope_script.new()
+	pane._gateway_transcriptions.append(pending_gateway_scope)
+	var gateway_generation_before_stop: int = pane._gateway_generation
+	var queue_empty_at_finish := {"value": false}
+	pane._speech_operation.finished.connect(func(_outcome: Dictionary): queue_empty_at_finish.value = pane._voice_utterance_queue.is_empty())
+	pane._update_stop_button()
+	check("actual Stop button stays enabled throughout streamed playback", player.playing and pane._tts_busy and gateway.starts == 1 and not pane.audio_stop_1.disabled)
+	pane._on_audio_stop_1_pressed()
+	check("actual Stop handler clears queue and pending voice work before owned cancellation", queue_empty_at_finish.value and pane._voice_utterance_queue.is_empty() and pending_gateway_scope.cancelled and pane._gateway_transcriptions.is_empty() and pane._gateway_generation == gateway_generation_before_stop + 1 and not player.playing and not pane._tts_busy and gateway.finishes == 1 and transport.sent.back().topic == "stream/cancel" and transport.sent.back().params.request_id == streaming_id and pane.audio_stop_1.disabled)
+	gateway.starts = 0
+	gateway.finishes = 0
+
+	pane._voice_speak_response("natural stream completion")
+	var natural_id := _last_id(transport)
+	var natural_frame_id := _stream_id(903)
+	_deliver_stream_open(transport, natural_id, natural_frame_id)
+	var short_pcm := PackedByteArray()
+	short_pcm.resize(960)
+	_deliver_stream_data(transport, natural_frame_id, 0, short_pcm)
+	_deliver_stream_end(transport, natural_frame_id)
+	var busy_after_input_end: bool = pane._tts_busy
+	var natural_deadline := Time.get_ticks_msec() + 2000
+	while pane._tts_busy and Time.get_ticks_msec() < natural_deadline:
+		await process_frame
+	check("stream END drains playback before exact-once gateway finish", busy_after_input_end and not pane._tts_busy and gateway.starts == 1 and gateway.finishes == 1)
+	gateway.starts = 0
+	gateway.finishes = 0
+
+	pane._voice_speak_response("error after playable audio")
+	var played_error_id := _last_id(transport)
+	var played_error_frame_id := _stream_id(904)
+	_deliver_stream_open(transport, played_error_id, played_error_frame_id)
+	_deliver_stream_data(transport, played_error_frame_id, 0, active_pcm)
+	var sends_before_played_error: int = transport.sent.size()
+	transport._handle_message({"cmd": "error", "topic": "voice/tts/stream", "params": {"request_id": played_error_id, "msg_id": played_error_frame_id.hex_encode(), "error_code": "UNKNOWN_TOPIC", "error": "late"}})
+	check("explicit unsupported after playable audio fails without replay", transport.sent.size() == sends_before_played_error + 1 and not pane._tts_busy and gateway.starts == 1 and gateway.finishes == 1 and transport.sent.back().topic == "stream/cancel")
+	gateway.starts = 0
+	gateway.finishes = 0
+
+	pane._voice_speak_response("player disappears")
+	var missing_player_id := _last_id(transport)
+	var missing_player_frame_id := _stream_id(905)
+	_deliver_stream_open(transport, missing_player_id, missing_player_frame_id)
+	player.free()
+	_deliver_stream_data(transport, missing_player_frame_id, 0, active_pcm)
+	check("player loss during prebuffer cancels upstream and finishes visibly", not pane._tts_busy and gateway.starts == 0 and gateway.finishes == 1 and transport.sent.back().topic == "stream/cancel")
+	player = AudioStreamPlayer.new()
+	pane.add_child(player)
+	pane._tts_player = player
+	gateway.starts = 0
+	gateway.finishes = 0
+
+	pane._voice_speak_response("unsupported stream fallback")
+	var unsupported_id := _last_id(transport)
+	transport._handle_message({"cmd": "error", "topic": "voice/tts/stream", "params": {"request_id": unsupported_id, "error_code": "UNKNOWN_TOPIC", "error": "unsupported"}})
+	var fallback_id := _last_id(transport)
+	var fallback_pcm := PackedByteArray()
+	fallback_pcm.resize(32000)
+	_deliver_binary(transport, fallback_id, fallback_pcm)
+	check("explicit pre-audio unsupported stream falls back once to one-shot", fallback_id != unsupported_id and player.playing and gateway.starts == 1)
+	pane.cancel_tts()
+	check("fallback playback retains exact-once gateway cleanup", gateway.finishes == 1 and not pane._tts_busy)
+
+	var sends_before_failure: int = transport.sent.size()
+	pane._voice_speak_response("stream contract failure")
+	var failed_stream_id := _last_id(transport)
+	transport._handle_message({"cmd": "error", "topic": "voice/tts/stream", "params": {"request_id": failed_stream_id, "error_code": "STREAM_CONTRACT_VIOLATION", "error": "invalid"}})
+	check("stream contract failure before audio is visible and never replayed", transport.sent.size() == sends_before_failure + 1 and not pane._tts_busy and gateway.finishes == 2)
+
+	pane._voice_speak_response("cancel before stream open")
+	var preopen_id := _last_id(transport)
+	var preopen_request = transport._pending_requests[preopen_id]
+	pane.cancel_tts()
+	check("pre-OPEN cancel returns caller and detaches adapter signals immediately", preopen_request.caller_result.get("error_code") == "cancelled" and preopen_request.stream_opened.get_connections().is_empty() and preopen_request.stream_chunk.get_connections().is_empty() and preopen_request.stream_ended.get_connections().is_empty())
+	var sends_before_late_open: int = transport.sent.size()
+	var late_frame_id := _stream_id(902)
+	_deliver_stream_open(transport, preopen_id, late_frame_id)
+	check("cancel before OPEN ends UI immediately then cancels late producer", not pane._tts_busy and gateway.finishes == 3 and transport.sent.size() == sends_before_late_open + 1 and transport.sent.back().topic == "stream/cancel" and transport.sent.back().params.request_id == preopen_id)
+	core.services.assign([model_service])
+	gateway.starts = 0
+	gateway.finishes = 0
+	pane.released = 0
+	config.speak_mode = config.SpeakMode.SUMMARIZE
 	pane._on_gateway_transcription_ready(bytes)
 	var stopped_gateway_id := _last_id(transport)
 	pane._on_gateway_transcription_ready(bytes)

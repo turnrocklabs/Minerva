@@ -3,7 +3,10 @@ extends RefCounted
 ## Cancellation belongs to one caller, even when the voice adapter is shared.
 
 var cancelled := false
-var _request: Core.AwaitMessage
+const CoreRequestBase = preload("res://Scripts/Services/Providers/Core/CoreRequest.gd")
+var _request: CoreRequestBase
+## Content-free correlation key used only by voice timing logs.
+var diagnostic_id := ""
 
 func can_start() -> bool:
 	return not cancelled
@@ -20,7 +23,7 @@ func cancel() -> void:
 	if pending != null:
 		pending.cancel()
 
-func receive(request: Core.AwaitMessage) -> Dictionary:
+func receive(request: CoreRequestBase) -> Dictionary:
 	if cancelled:
 		request.cancel()
 	if _request != null:

@@ -39,7 +39,7 @@ func _init(service_: Service = null, action_: Action = null):
 	PROVIDER = SingletonObject.API_PROVIDER.TURNROCK
 
 	if action:
-		model_name = "%s (%s)" % [service.name if service else "Core", action.name]
+		model_name = CoreActionCatalog.display_for(service, action)
 
 	short_name = service.name[0] if service else "C"
 
@@ -73,7 +73,7 @@ func get_model_spec() -> Dictionary:
 func set_chat_model_spec(spec: Dictionary) -> void:
 	_selected_model_spec = spec.duplicate(true)
 	requires_chat_model = true
-	model_name = "%s (%s)" % [spec.get("service_name", spec.get("service_client_id", "TurnRock")), spec.get("action_name", "selection required")]
+	model_name = str(spec.get("action_name", "selection required")) if spec.get("service_client_id") == "model-chat" else "%s (%s)" % [spec.get("service_name", spec.get("service_client_id", "TurnRock")), spec.get("action_name", "selection required")]
 	var resolved := CoreModelCatalog.resolve(spec)
 	if resolved.success:
 		service = resolved.service

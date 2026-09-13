@@ -63,7 +63,10 @@ static func validate_options(raw: Variant) -> Dictionary:
 				valid = false
 		if valid:
 			var lower: float = definition.get("minimum", LEGACY_OPTIONS[name].minimum)
-			var upper: float = definition.get("maximum", 2 if name == "temperature" else INF)
+			var default_upper := INF
+			if name == "temperature":
+				default_upper = 2.0
+			var upper: float = definition.get("maximum", default_upper)
 			if lower < LEGACY_OPTIONS[name].minimum or lower > upper:
 				valid = false
 			if name == "temperature" and upper > 2:

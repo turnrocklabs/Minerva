@@ -52,6 +52,13 @@ class PTTRequest:
 var _active_ptt_req: PTTRequest = null
 var _voice_operation: VoiceOperation
 var _voice_generation := 0
+var _ptt_capture_started_msec := 0
+var _ptt_submit_started_msec := 0
+var _ptt_sequence := 0
+var _ptt_diagnostic_id := ""
+var _whisper_started_msec := 0
+var _whisper_audio_bytes := 0
+var _whisper_fallback_from := "none"
 ## True if the most recent start_ptt called voice_gateway.ptt_down(). Gates stop_ptt's
 ## ptt_up() call so stop_ptt is idempotent.
 var _ptt_gateway_down: bool = false
@@ -176,6 +183,10 @@ func stop_ptt() -> void:
 func _StartConverting():
 	stop_signal = false
 	if effect.is_recording_active():
+		var prepare_started_msec := Time.get_ticks_msec()
+		_ptt_submit_started_msec = prepare_started_msec
+		_ptt_sequence += 1
+		_ptt_diagnostic_id = "ptt-%d" % _ptt_sequence
 		# Stop recording and get WAV data
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
@@ -204,6 +215,14 @@ func _StartConverting():
 		# Route to appropriate STT backend
 		var voice_config := SingletonObject.get_voice_config()
 		var provider := voice_config.get_effective_stt_provider()
+		var capture_msec := prepare_started_msec - _ptt_capture_started_msec if _ptt_capture_started_msec > 0 else 0
+		var sample_rate := int(wav_bytes.decode_u32(24)) if wav_bytes.size() >= 28 else int(AudioServer.get_mix_rate())
+		var channels := int(wav_bytes.decode_u16(22)) if wav_bytes.size() >= 24 else 0
+		_whisper_fallback_from = "core_disconnected" if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE and provider == VoiceConfig.STTProvider.OPENAI_WHISPER else "none"
+		print("[VoiceSTT] operation=%s stage=prepared prepare_ms=%d capture_ms=%d audio_bytes=%d sample_rate=%d channels=%d backend=%s model=%s fallback_from=%s" % [
+			_ptt_diagnostic_id, Time.get_ticks_msec() - prepare_started_msec, capture_msec, wav_bytes.size(), sample_rate, channels,
+			voice_config.stt_backend if provider == VoiceConfig.STTProvider.VOICE_SERVICE else "openai",
+			voice_config.stt_model if provider == VoiceConfig.STTProvider.VOICE_SERVICE else "whisper-1", _whisper_fallback_from])
 
 		if provider == VoiceConfig.STTProvider.VOICE_SERVICE:
 			# Fire-and-forget: runs async, _StartConverting returns OK immediately
@@ -211,6 +230,7 @@ func _StartConverting():
 		else:
 			_start_whisper_stt(wav_bytes)
 	else:
+		_ptt_capture_started_msec = Time.get_ticks_msec()
 		_start_mic()
 		effect.set_recording_active(true)
 		_set_ptt_state(PTTState.LISTENING, {"mic_button": _btn, "target": _field_for_filling})
@@ -245,6 +265,7 @@ func _start_voice_service_stt(wav_bytes: PackedByteArray, voice_config: VoiceCon
 	_cancel_voice_transcription()
 	var generation := _voice_generation
 	var operation := VoiceOperation.new()
+	operation.diagnostic_id = _ptt_diagnostic_id
 	_voice_operation = operation
 	_set_ptt_state(PTTState.TRANSCRIBING, {"mic_button": _btn, "target": _field_for_filling})
 	if _btn_stop != null:
@@ -255,12 +276,21 @@ func _start_voice_service_stt(wav_bytes: PackedByteArray, voice_config: VoiceCon
 	if generation != _voice_generation or _voice_operation != operation:
 		return
 	_voice_operation = null
+	if _ptt_submit_started_msec > 0:
+		var status := "success" if outcome.get("success", false) else str(outcome.get("error_code", "error"))
+		print("[VoiceSTT] operation=%s stage=ptt_total elapsed_ms=%d status=%s fallback_from=%s" % [
+			operation.diagnostic_id, Time.get_ticks_msec() - _ptt_submit_started_msec, status,
+			str(outcome.get("fallback_from", "none"))])
+		_ptt_submit_started_msec = 0
 	_finish_transcription(outcome.get("text", ""), outcome.success, outcome.get("error_message", ""))
 
 
 ## STT via OpenAI Whisper REST API (original path).
 func _start_whisper_stt(wav_bytes: PackedByteArray) -> void:
+	_whisper_started_msec = Time.get_ticks_msec()
+	_whisper_audio_bytes = wav_bytes.size()
 	if SingletonObject.preferences_popup.get_api_key(SingletonObject.API_PROVIDER.OPENAI).is_empty():
+		_log_whisper_terminal("missing_api_key")
 		SingletonObject.ErrorDisplay("No API Key", "Missing OpenAI API key for Whisper service")
 		return
 
@@ -302,6 +332,7 @@ func _StopConverting():
 	_stop_mic()
 
 	if http_request:
+		_log_whisper_terminal("cancelled")
 		http_request.disconnect("request_completed", self._on_request_completed)
 		remove_child(http_request)
 		http_request.queue_free()
@@ -372,6 +403,7 @@ func _on_request_completed(_result, response_code, _headers, body):
 	if response_code == 200:
 		var response_json = JSON.parse_string(body.get_string_from_utf8())
 		if response_json and response_json.has("text"):
+			_log_whisper_terminal("success")
 			_finish_transcription(response_json["text"])
 			return
 
@@ -382,5 +414,16 @@ func _on_request_completed(_result, response_code, _headers, body):
 			err_msg = error_json["error"]["message"]
 		print("Error:", response_code, "Response:", body.get_string_from_utf8())
 
+	_log_whisper_terminal("http_error" if response_code != 200 else "invalid_response")
 	_finish_transcription("")
 	SingletonObject.ErrorDisplay("STT Error", err_msg)
+
+
+func _log_whisper_terminal(status: String) -> void:
+	if _whisper_started_msec <= 0:
+		return
+	var total_started_msec := _ptt_submit_started_msec if _ptt_submit_started_msec > 0 else _whisper_started_msec
+	print("[VoiceSTT] operation=%s stage=ptt_total elapsed_ms=%d audio_bytes=%d backend=openai model=whisper-1 status=%s fallback_from=%s" % [
+		_ptt_diagnostic_id, Time.get_ticks_msec() - total_started_msec, _whisper_audio_bytes, status, _whisper_fallback_from])
+	_whisper_started_msec = 0
+	_ptt_submit_started_msec = 0

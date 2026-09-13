@@ -38,7 +38,10 @@ static func normalize(schema: Dictionary, raw: Variant, allow_protocol: bool = f
 				or (rule.type == "integer" and value is float and value >= 9223372036854775808.0) \
 				or value < rule.get("minimum", -INF) or value > rule.get("maximum", INF):
 			return failure("invalid_generation_option", "Invalid %s: expected a finite %s in the advertised range" % [name, rule.type])
-		values[name] = int(value) if rule.type == "integer" else float(value)
+		if rule.type == "integer":
+			values[name] = int(value)
+		else:
+			values[name] = float(value)
 	return {"success": true, "values": values}
 
 
@@ -194,5 +197,8 @@ static func broker_params(provider: BaseProvider, args: Dictionary) -> Dictionar
 	var values: Dictionary = {}
 	for name in ["temperature", "max_tokens"]:
 		if raw.has(name) and (raw[name] is int or raw[name] is float):
-			values[name] = int(raw[name]) if name == "max_tokens" else float(raw[name])
+			if name == "max_tokens":
+				values[name] = int(raw[name])
+			else:
+				values[name] = float(raw[name])
 	return {"success": true, "values": values}

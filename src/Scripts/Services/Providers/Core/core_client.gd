@@ -19,6 +19,7 @@ signal binary_file_progress(file_index: int, received: int, total_size: int, pro
 signal binary_transfer_complete(request_id: String) # Emitted when the final text response confirms all files for a request are saved.
 signal image_received(filename: String, request_id: String, image_buffer: PackedByteArray) # Renamed parameter for clarity
 signal artifact_binary_received(request_id: String, filename: String, buffer: PackedByteArray)
+@warning_ignore("unused_signal") # Emitted by CoreVoiceTransfers for compatibility consumers.
 signal voice_binary_received(request_id: String, audio_buffer: PackedByteArray)
 
 enum EntityType {
@@ -99,6 +100,11 @@ var _voice_streams: Dictionary = {}  # msg_id_hex -> {request_id: String, size: 
 var _pending_requests: Dictionary = {}
 var _binary_stream_id: String = ""
 var _voice_receiver: RefCounted
+var _audio_stream_receiver: RefCounted
+var _audio_streams: Dictionary = {}
+var _audio_stream_ids: Dictionary = {}
+var _stream_cancel_tombstones: Dictionary = {}
+var _connection_epoch := 0
 
 func release_voice_request(request_id: String) -> void:
 	for stream_id in _voice_streams.keys():
@@ -110,7 +116,13 @@ func _drop_connection_state() -> void:
 	_connected = false
 	if had_connection:
 		connection_closed.emit()
+	if _audio_stream_receiver != null:
+		_audio_stream_receiver.close_all()
 	_voice_streams.clear()
+	_audio_streams.clear()
+	_audio_stream_ids.clear()
+	_stream_cancel_tombstones.clear()
+	_audio_stream_receiver = null
 	_reset_binary_transfer_state()
 
 
@@ -249,6 +261,7 @@ func _process(_delta):
 			pass
 		WebSocketPeer.STATE_OPEN:
 			if not _connected:
+				_connection_epoch += 1
 				_connected = true
 				_is_reconnecting = false
 				connection_established.emit()
@@ -281,7 +294,8 @@ func _process(_delta):
 							_message_buffer = ""
 				else:
 					# It's a binary packet
-					print("🔶 BINARY FRAME RECEIVED: %s bytes" % packet_buffer.size())
+					if SingletonObject.verbose_logging:
+						print("🔶 BINARY FRAME RECEIVED: %s bytes" % packet_buffer.size())
 					_handle_binary_frame(packet_buffer)
 		WebSocketPeer.STATE_CLOSING:
 			# Keep polling to achieve proper close
@@ -372,17 +386,17 @@ func _handle_message(data: Variant) -> void:
 	elif cmd == "registration_confirmed" and entity_type == "core":
 		# Readiness must be committed before earlier registration listeners resume
 		# and immediately request discovery/subscriptions.
-		var owner: RefCounted = _pending_requests.get(params.get("request_id", ""))
-		if owner != null and owner.cmd == "registration_confirmed":
-			owner._on_message(data)
+		var request_owner: RefCounted = _pending_requests.get(params.get("request_id", ""))
+		if request_owner != null and request_owner.cmd == "registration_confirmed":
+			request_owner._on_message(data)
 		_auth_retry_attempted = false  # Reset on successful registration
 		registered_with_core.emit()
 		# Send any queued messages after successful registration
 		if _message_queue.size() > 0:
 			_send_queued_messages()
 	elif cmd == "notification": 
-		var notification: Dictionary = params.get("data", {}) if params.get("data", {}) is Dictionary else {}
-		var _text: String = str(notification.get("message", ""))
+		var notification_data: Dictionary = params.get("data", {}) if params.get("data", {}) is Dictionary else {}
+		var _text: String = str(notification_data.get("message", ""))
 		if !_text.is_empty() and not _text.to_lower().contains("ComfyUI".to_lower()) :
 			var toast: = ToastNotification.create(ToastNotification.Type.INFO, _text)
 			SingletonObject.main_scene.add_child(toast)
@@ -585,6 +599,9 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 	var frame_type: int = msg[0] # Explicitly type
 	var msg_id_hex: String = msg.slice(1, 17).hex_encode() # per-stream id (bytes 1..16)
 	var payload: PackedByteArray = msg.slice(17) # Explicitly type
+	if frame_type != NEW_MESSAGE and _audio_streams.has(msg_id_hex):
+		_audio_stream_receiver.receive_frame(frame_type, msg_id_hex, payload)
+		return
 	if frame_type != NEW_MESSAGE and not _voice_streams.has(msg_id_hex) and msg_id_hex != _binary_stream_id:
 		return
 	if _voice_receiver == null:
@@ -602,7 +619,8 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 	}
 
 	var frame_name: String = frame_names.get(frame_type, "UNKNOWN(%d)" % frame_type)
-	print("🔷 Binary frame: %s, size: %s bytes, transfer_mode=%s, expected_req=%s" % [frame_name, msg.size(), _binary_transfer_mode, _current_binary_request_id])
+	if SingletonObject.verbose_logging:
+		print("🔷 Binary frame: %s, size: %s bytes, transfer_mode=%s, expected_req=%s" % [frame_name, msg.size(), _binary_transfer_mode, _current_binary_request_id])
 	
 	match frame_type:
 		NEW_MESSAGE:
@@ -622,6 +640,15 @@ func _handle_binary_frame(msg: PackedByteArray) -> void: # Explicitly type param
 				if not parsed.params.get("request_id") is String or not parsed.get("cmd") is String or not parsed.get("topic") is String:
 					return
 				var header: Dictionary = parsed
+				var framing: Variant = header.get("binary_framing", {})
+				if header.get("cmd") == "response" and str(header.get("topic", "")).begins_with("voice/") and framing is Dictionary and framing.get("mode") == "stream":
+					if _audio_stream_receiver == null:
+						_audio_stream_receiver = load("res://Scripts/Services/Providers/Core/CoreAudioStreamReceiver.gd").new(self)
+					_audio_stream_receiver.begin(msg_id_hex, header, num_files)
+					return
+				if _audio_streams.has(msg_id_hex) or _audio_stream_ids.has(msg_id_hex):
+					push_warning("Ignoring binary OPEN whose ID belongs to an active audio stream.")
+					return
 
 				if SingletonObject.verbose_logging:
 					print("   📋 Binary header: %s files" % num_files)

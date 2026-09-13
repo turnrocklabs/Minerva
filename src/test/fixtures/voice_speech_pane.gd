@@ -23,10 +23,6 @@ func _init() -> void:
 
 func _ready() -> void:
 	pass
-
-func _lazy_pre_warm() -> void:
-	pass
-
 func _voice_send_utterance(text: String) -> void:
 	sent_utterances.append(text)
 	_voice_llm_busy = true

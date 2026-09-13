@@ -171,7 +171,9 @@ func receive():
 	if not completed.success and not completed.get("remote_error", false):
 		return null
 	var json: Dictionary = completed.get("json", {})
-	return json if not json.is_empty() else null
+	if json.is_empty():
+		return null
+	return json
 
 
 func receive_all() -> Signal:
