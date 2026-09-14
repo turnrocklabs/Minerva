@@ -36,8 +36,8 @@ static func register_operation(operation: VoiceOperation) -> void:
 	if operation == null:
 		return
 	_prune()
-	for reference: WeakRef in _operations:
-		if reference.get_ref() == operation:
+	for operation_ref: WeakRef in _operations:
+		if operation_ref.get_ref() == operation:
 			return
 	_operations.append(weakref(operation))
 
@@ -52,15 +52,15 @@ static func set_enabled(enabled: bool) -> void:
 static func cancel_active() -> void:
 	var references := _operations
 	_operations = []
-	for reference: WeakRef in references:
-		var operation: VoiceOperation = reference.get_ref()
+	for operation_ref: WeakRef in references:
+		var operation: VoiceOperation = operation_ref.get_ref()
 		if operation != null and operation.voice_owner == "turnrock" and operation.can_start():
 			operation.cancel()
 
 
 static func _prune() -> void:
 	var live: Array[WeakRef] = []
-	for reference: WeakRef in _operations:
-		if reference.get_ref() != null:
-			live.append(reference)
+	for operation_ref: WeakRef in _operations:
+		if operation_ref.get_ref() != null:
+			live.append(operation_ref)
 	_operations = live
