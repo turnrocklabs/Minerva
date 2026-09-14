@@ -33,6 +33,43 @@ env:
   GODOT_RELEASE: "stable"
 
 jobs:
+  build-voice-runtimes:
+    name: Voice runtime (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-latest
+          - target: windows-x86_64
+            runner: windows-latest
+          - target: macos-arm64
+            runner: macos-15
+          - target: macos-amd64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build pinned voice runtime
+        shell: bash
+        run: src/plugins/voice/scripts/build-runtime.sh "${{ matrix.target }}"
+      - name: Test extracted voice runtime
+        shell: bash
+        run: src/plugins/voice/scripts/test-runtime.sh "${{ matrix.target }}"
+      - name: Upload immutable voice runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: minerva-voice-${{ matrix.target }}
+          path: |
+            src/plugins/voice/dist/minerva-voice-${{ matrix.target }}.tar.gz
+            src/plugins/voice/dist/minerva-voice-${{ matrix.target }}.tar.gz.sha256
+          if-no-files-found: error
+
   check-gdextension:
     runs-on: ubuntu-latest
     outputs:
@@ -505,17 +542,19 @@ jobs:
           # enough — see scripts/tarball-smoke.sh comments).
           sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
 
-      - name: Restore executable bits (mirror create-release)
+      - name: Extract release archive
         run: |
-          chmod +x downloads/Minerva-Linux-Build/Minerva.x86_64 \
-                   downloads/Minerva-Linux-Build/gdcef_helper \
-                   downloads/Minerva-Linux-Build/chrome-sandbox 2>/dev/null || true
-          ls -la downloads/Minerva-Linux-Build/Minerva.x86_64
+          mkdir -p downloads/Minerva-Linux-Build/extracted
+          tar -xzf downloads/Minerva-Linux-Build/Minerva-Linux.tar.gz \
+            -C downloads/Minerva-Linux-Build/extracted
+          test -x downloads/Minerva-Linux-Build/extracted/Minerva.x86_64
+          test -x downloads/Minerva-Linux-Build/extracted/builtin-plugins/voice/bin/python3
+          ls -la downloads/Minerva-Linux-Build/extracted/Minerva.x86_64
 
       - name: Run tarball smoke
         run: |
           chmod +x scripts/tarball-smoke.sh
-          scripts/tarball-smoke.sh downloads/Minerva-Linux-Build
+          scripts/tarball-smoke.sh downloads/Minerva-Linux-Build/extracted
 
       - name: Upload minerva.log on failure
         if: failure()
@@ -677,7 +716,7 @@ jobs:
   # That stub crashed in user GDScript after ~30s when scripts dereferenced
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
-    needs: [check-gdextension, build-macos]
+    needs: [check-gdextension, build-macos, build-voice-runtimes]
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
     # Zig 0.15.2 ghostty-vt shim link).
@@ -686,6 +725,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: 'true'
+          lfs: true
+
+      - name: Download bundled voice runtimes
+        uses: actions/download-artifact@v4
+        with:
+          pattern: minerva-voice-macos-*
+          path: voice-runtimes
 
       - name: Download terminal-macos extension
         uses: actions/download-artifact@v4
@@ -954,6 +1000,20 @@ jobs:
           echo "--- Frameworks/$DST_REL/ ---"
           ls -la "$DST_REL/"
 
+      - name: Stage bundled voice runtimes
+        working-directory: src
+        run: |
+          ROOT=build/macos/Minerva.app/Contents/Resources/builtin-plugins/voice
+          for target in macos-arm64 macos-amd64; do
+            archive="${GITHUB_WORKSPACE}/voice-runtimes/minerva-voice-${target}/minerva-voice-${target}.tar.gz"
+            checksum="${archive}.sha256"
+            expected=$(cat "$checksum")
+            actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+            [ "$actual" = "$expected" ] || { echo "::error::Voice runtime checksum mismatch: $target"; exit 1; }
+            mkdir -p "$ROOT/$target"
+            tar -xzf "$archive" -C "$ROOT/$target"
+          done
+
       - name: Verify CEF dylib present
         # Catch a broken bundle BEFORE the smoke launch so the failure is
         # locatable. The actual CEF binary is `libgdcef.dylib` inside the
@@ -984,7 +1044,7 @@ jobs:
           [ "$fail" -eq 0 ] && echo "✓ CEF dylib OK"
           exit "$fail"
 
-      - name: Ad-hoc re-sign .app (with --deep, then strip quarantine)
+      - name: Ad-hoc sign app and seal bundled voice manifests
         # Codesign iteration history (in build.yml git log):
         #   - 913b18a1: `--force --deep --sign -` → per-library Gatekeeper
         #     prompts on first launch (CEF helper subprocess spawns, each
@@ -1011,12 +1071,29 @@ jobs:
         working-directory: src/build/macos
         run: |
           xattr -cr Minerva.app 2>/dev/null || true
+          VOICE_ROOT=Minerva.app/Contents/Resources/builtin-plugins/voice
+          while IFS= read -r -d '' candidate; do
+            if file "$candidate" | grep -q 'Mach-O'; then
+              codesign --force --sign - "$candidate"
+            fi
+          done < <(find "$VOICE_ROOT" -type f -print0)
+
+          # The existing deep pass may rewrite nested Mach-O signatures. Seal
+          # payload hashes only after that mutation, then reseal the outer app
+          # without another deep traversal.
           codesign --force --deep --sign - Minerva.app
-          if codesign --verify --deep --strict Minerva.app; then
-            echo "✓ .app signature internally consistent"
-          else
-            echo "::warning::codesign --verify --deep failed"
-          fi
+          for target in macos-arm64 macos-amd64; do
+            runtime="$VOICE_ROOT/$target"
+            (cd "$runtime" && find . -type f ! -name manifest.sha256 -print | LC_ALL=C sort | while read -r path; do
+              echo "$(shasum -a 256 "$path" | cut -d' ' -f1)  ${path#./}"
+            done > manifest.sha256)
+          done
+          codesign --force --sign - Minerva.app
+          codesign --verify --deep --strict Minerva.app
+          for target in macos-arm64 macos-amd64; do
+            (cd "$VOICE_ROOT/$target" && shasum -a 256 -c manifest.sha256)
+          done
+          echo "✓ .app signatures and bundled voice payloads verified"
 
       - name: Package macOS Build for upload
         # actions/upload-artifact@v4 treats a single directory path as
@@ -1044,6 +1121,8 @@ jobs:
           )
           required_dirs=(
             "$APP/Contents/Frameworks"
+            "$APP/Contents/Resources/builtin-plugins/voice/macos-arm64"
+            "$APP/Contents/Resources/builtin-plugins/voice/macos-amd64"
           )
           # Critical GDExtension assets that MUST land in Contents/Frameworks/
           # — the prior bug shipped a Minerva.app with no Frameworks/ at all,
@@ -1132,13 +1211,20 @@ jobs:
           if-no-files-found: warn
 
   build-godot:
-    needs: [check-gdextension, build-windows, build-linux]
-    if: always()
+    needs: [check-gdextension, build-windows, build-linux, build-voice-runtimes]
+    if: always() && needs.build-voice-runtimes.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:  
           submodules: 'true'
+          lfs: true
+
+      - name: Download bundled voice runtimes
+        uses: actions/download-artifact@v4
+        with:
+          pattern: minerva-voice-*-x86_64
+          path: voice-runtimes
       
       - name: Download Current Artifacts
         uses: actions/download-artifact@v4
@@ -1277,63 +1363,55 @@ jobs:
         working-directory: src
         run: |
           mkdir -p build
-
           timeout 20s godot --headless --import || true
-
-          # Determine which platforms to build
           PLATFORM="${{ github.event.inputs.platform }}"
-
-          # For push events, build all platforms
-          if [ "${{ github.event_name }}" = "push" ]; then
-            PLATFORM="all"
-          fi
-
-          # Check if this is the development branch
+          if [ "${{ github.event_name }}" = "push" ]; then PLATFORM="all"; fi
           IS_DEV_BRANCH="${{ github.ref == 'refs/heads/development' }}"
 
           if [ "$PLATFORM" = "windows" ]; then
             mkdir -p build/windows
             godot --headless --export-release "Windows Release" build/windows/Minerva.exe
-
-            # Build debug version for development branch
             if [ "$IS_DEV_BRANCH" = "true" ]; then
               mkdir -p build/windows-debug
               godot --headless --export-debug "Windows Debug" build/windows-debug/Minerva.exe
             fi
-
           elif [ "$PLATFORM" = "linux" ]; then
             mkdir -p build/linux
             godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64
-
-            # Build debug version for development branch
             if [ "$IS_DEV_BRANCH" = "true" ]; then
               mkdir -p build/linux-debug
               godot --headless --export-debug "Linux Debug" build/linux-debug/Minerva.x86_64
             fi
-
           elif [ "$PLATFORM" = "macos" ]; then
-            # macOS export now lives in the export-macos job (runs on
-            # macos-latest where Godot's exporter actually bundles
-            # Contents/Frameworks/*). build-godot is a no-op for macos.
-            echo "macOS export handled by export-macos job — nothing to do here."
-
+            echo "macOS export handled by export-macos job"
           else
-            mkdir -p build/windows
-            mkdir -p build/linux
-
-            # For 'all' option or push events, export Windows + Linux here;
-            # macOS export runs in the export-macos job on macos-latest.
+            mkdir -p build/windows build/linux
             godot --headless --export-release "Windows Release" build/windows/Minerva.exe
             godot --headless --export-release "Linux Release" build/linux/Minerva.x86_64
-
-            # Build debug versions for development branch
             if [ "$IS_DEV_BRANCH" = "true" ]; then
-              mkdir -p build/windows-debug
-              mkdir -p build/linux-debug
+              mkdir -p build/windows-debug build/linux-debug
               godot --headless --export-debug "Windows Debug" build/windows-debug/Minerva.exe
               godot --headless --export-debug "Linux Debug" build/linux-debug/Minerva.x86_64
             fi
           fi
+
+      - name: Stage bundled voice runtimes
+        working-directory: src
+        run: |
+          stage_voice() {
+            target="$1"
+            destination="$2/builtin-plugins/voice"
+            archive="${GITHUB_WORKSPACE}/voice-runtimes/minerva-voice-${target}/minerva-voice-${target}.tar.gz"
+            expected=$(cat "${archive}.sha256")
+            actual=$(sha256sum "$archive" | cut -d' ' -f1)
+            [ "$actual" = "$expected" ] || { echo "::error::Voice runtime checksum mismatch: $target"; exit 1; }
+            mkdir -p "$destination"
+            tar -xzf "$archive" -C "$destination"
+          }
+          [ ! -d build/linux ] || stage_voice linux-x86_64 build/linux
+          [ ! -d build/linux-debug ] || stage_voice linux-x86_64 build/linux-debug
+          [ ! -d build/windows ] || stage_voice windows-x86_64 build/windows
+          [ ! -d build/windows-debug ] || stage_voice windows-x86_64 build/windows-debug
 
       # ─── Post-export verification ──────────────────────────────────────
       # RCA: prior CI builds shipped binaries missing libminerva-vt.so and
@@ -1362,8 +1440,11 @@ jobs:
             resources.pak
             chrome_100_percent.pak
             chrome_200_percent.pak
+            builtin-plugins/voice/bin/python3
+            builtin-plugins/voice/manifest.sha256
           )
           required_dirs=(locales)
+          required_dirs+=(builtin-plugins/voice)
           fail=0
           for f in "${required_files[@]}"; do
             if [ ! -f "$f" ]; then
@@ -1418,6 +1499,8 @@ jobs:
             Minerva.exe
             libterminal.windows.template_release.x86_64.dll
             minerva-vt.dll
+            builtin-plugins/voice/python.exe
+            builtin-plugins/voice/manifest.sha256
           )
           fail=0
           for f in "${required_files[@]}"; do
@@ -1431,6 +1514,14 @@ jobs:
           [ "$fail" -eq 0 ] || exit 1
           echo "All required Windows runtime assets present"
 
+      - name: Archive exported desktop builds
+        working-directory: src
+        run: |
+          if [ -d build/linux ]; then tar -czf build/Minerva-Linux.tar.gz -C build/linux .; fi
+          if [ -d build/linux-debug ]; then tar -czf build/Minerva-Linux-Debug.tar.gz -C build/linux-debug .; fi
+          if [ -d build/windows ]; then (cd build/windows && zip -qr ../Minerva-Windows.zip .); fi
+          if [ -d build/windows-debug ]; then (cd build/windows-debug && zip -qr ../Minerva-Windows-Debug.zip .); fi
+
       - name: Upload Windows Build
         if: |
           github.event_name == 'push' ||
@@ -1439,7 +1530,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Windows-Build
-          path: src/build/windows/*
+          path: src/build/Minerva-Windows.zip
           
       - name: Upload Linux Build
         if: |
@@ -1449,7 +1540,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Build
-          path: src/build/linux/*
+          path: src/build/Minerva-Linux.tar.gz
 
       # Minerva-macOS-Build is uploaded by the export-macos job (macos-latest).
       # Keeping it here would create a duplicate-artifact name conflict and
@@ -1465,7 +1556,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Windows-Debug-Build
-          path: src/build/windows-debug/*
+          path: src/build/Minerva-Windows-Debug.zip
 
       - name: Upload Linux Debug Build
         if: |
@@ -1477,14 +1568,103 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Minerva-Linux-Debug-Build
-          path: src/build/linux-debug/*
+          path: src/build/Minerva-Linux-Debug.tar.gz
+
+  verify-packaged-voice:
+    name: Packaged voice (${{ matrix.target }})
+    needs: [build-godot, export-macos]
+    if: always()
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            platform: linux
+            runner: ubuntu-latest
+            artifact: Minerva-Linux-Build
+          - target: windows-x86_64
+            platform: windows
+            runner: windows-latest
+            artifact: Minerva-Windows-Build
+          - target: macos-arm64
+            platform: macos
+            runner: macos-15
+            artifact: Minerva-macOS-Build
+          - target: macos-amd64
+            platform: macos
+            runner: macos-15-intel
+            artifact: Minerva-macOS-Build
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Select requested platform
+        id: selected
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = push ] || [ "${{ github.event.inputs.platform }}" = all ] || [ "${{ github.event.inputs.platform }}" = "${{ matrix.platform }}" ]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.selected.outputs.value == 'true'
+      - uses: actions/download-artifact@v4
+        if: steps.selected.outputs.value == 'true'
+        with:
+          name: ${{ matrix.artifact }}
+          path: packaged
+      - name: Verify final packaged voice runtime
+        if: steps.selected.outputs.value == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          case "${{ matrix.platform }}" in
+            linux)
+              tar -xzf packaged/Minerva-Linux.tar.gz -C extracted
+              src/plugins/voice/scripts/test-runtime-root.sh linux-x86_64 extracted/builtin-plugins/voice
+              ;;
+            windows)
+              unzip -q packaged/Minerva-Windows.zip -d extracted
+              src/plugins/voice/scripts/test-runtime-root.sh windows-x86_64 extracted/builtin-plugins/voice
+              ;;
+            macos)
+              ditto -x -k packaged/Minerva-macOS.zip extracted
+              src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" \
+                "extracted/Minerva.app/Contents/Resources/builtin-plugins/voice/${{ matrix.target }}"
+              ;;
+          esac
+      - name: Download debug build when published
+        if: steps.selected.outputs.value == 'true' && github.ref == 'refs/heads/development' && matrix.platform != 'macos'
+        uses: actions/download-artifact@v4
+        with:
+          name: Minerva-${{ matrix.platform == 'windows' && 'Windows' || 'Linux' }}-Debug-Build
+          path: packaged-debug
+      - name: Verify final packaged debug voice runtime
+        if: steps.selected.outputs.value == 'true' && github.ref == 'refs/heads/development' && matrix.platform != 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extracted-debug
+          if [ "${{ matrix.platform }}" = windows ]; then
+            unzip -q packaged-debug/Minerva-Windows-Debug.zip -d extracted-debug
+          else
+            tar -xzf packaged-debug/Minerva-Linux-Debug.tar.gz -C extracted-debug
+          fi
+          src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" extracted-debug/builtin-plugins/voice
 
   create-release:
-    needs: [build-godot, export-macos]
+    needs: [build-godot, export-macos, verify-packaged-voice]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
-    if: (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true') || github.event_name == 'push'
+    if: |
+      always() &&
+      needs.verify-packaged-voice.result == 'success' &&
+      ((github.event_name == 'push' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success') ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' &&
+        ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success') ||
+         (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') ||
+         ((github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'windows') && needs.build-godot.result == 'success'))))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -1501,29 +1681,12 @@ jobs:
         run: |
           mkdir -p release-assets
 
-          # Create Windows ZIP if files exist
-          if [ -d "downloads/Minerva-Windows-Build" ]; then
-            cd downloads/Minerva-Windows-Build
-            zip -r ../../release-assets/Minerva-Windows.zip *
-            cd ../..
-            echo "Created Windows archive"
-            ls -lh release-assets/Minerva-Windows.zip
-          fi
-
-          # Create Linux archive if files exist
-          # actions/upload-artifact@v4 strips the executable bit during the
-          # zip/unzip artifact roundtrip; restore it here so users don't have
-          # to chmod after extracting the tarball.
-          if [ -d "downloads/Minerva-Linux-Build" ]; then
-            chmod +x downloads/Minerva-Linux-Build/Minerva.x86_64 \
-                     downloads/Minerva-Linux-Build/gdcef_helper \
-                     downloads/Minerva-Linux-Build/chrome-sandbox 2>/dev/null || true
-            cd downloads/Minerva-Linux-Build
-            tar -czf ../../release-assets/Minerva-Linux.tar.gz *
-            cd ../..
-            echo "Created Linux archive"
-            ls -lh release-assets/Minerva-Linux.tar.gz
-          fi
+          # Desktop artifacts are already archived before upload so executable
+          # bits and sidecar symlinks survive the Actions artifact roundtrip.
+          for archive in Minerva-Windows.zip Minerva-Linux.tar.gz; do
+            found=$(find downloads -name "$archive" -type f -print -quit)
+            [ -z "$found" ] || cp "$found" "release-assets/$archive"
+          done
 
           # macOS: pass through the pre-built ditto-zipped .app from
           # export-macos. The artifact contains `Minerva-macOS.zip` as a
@@ -1537,26 +1700,10 @@ jobs:
             ls -lh release-assets/Minerva-macOS.zip
           fi
 
-          # Create Windows Debug ZIP if files exist (development branch only)
-          if [ -d "downloads/Minerva-Windows-Debug-Build" ]; then
-            cd downloads/Minerva-Windows-Debug-Build
-            zip -r ../../release-assets/Minerva-Windows-Debug.zip *
-            cd ../..
-            echo "Created Windows Debug archive"
-            ls -lh release-assets/Minerva-Windows-Debug.zip
-          fi
-
-          # Create Linux Debug archive if files exist (development branch only)
-          if [ -d "downloads/Minerva-Linux-Debug-Build" ]; then
-            chmod +x downloads/Minerva-Linux-Debug-Build/Minerva.x86_64 \
-                     downloads/Minerva-Linux-Debug-Build/gdcef_helper \
-                     downloads/Minerva-Linux-Debug-Build/chrome-sandbox 2>/dev/null || true
-            cd downloads/Minerva-Linux-Debug-Build
-            tar -czf ../../release-assets/Minerva-Linux-Debug.tar.gz *
-            cd ../..
-            echo "Created Linux Debug archive"
-            ls -lh release-assets/Minerva-Linux-Debug.tar.gz
-          fi
+          for archive in Minerva-Windows-Debug.zip Minerva-Linux-Debug.tar.gz; do
+            found=$(find downloads -name "$archive" -type f -print -quit)
+            [ -z "$found" ] || cp "$found" "release-assets/$archive"
+          done
 
           echo "Final release assets:"
           ls -la release-assets/
@@ -1573,7 +1720,7 @@ jobs:
           echo "Generated tag: $TAG"
           
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: "Minerva Development Build ${{ steps.tag.outputs.tag }}"

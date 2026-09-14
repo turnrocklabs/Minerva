@@ -5,10 +5,15 @@ var failed := 0
 
 func _init() -> void:
 	await process_frame
+	var base_gateway = load("res://Scripts/Services/Voice/VoiceGatewayClient.gd").new()
+	var bundled_adapter = base_gateway._create_detector_adapter()
+	check("voice gateway defaults to the bundled detector adapter", bundled_adapter.get_script() == load("res://Scripts/Services/Voice/BundledVoiceDetectorAdapter.gd"))
+	bundled_adapter.free()
+	base_gateway.free()
 	var gateway = load("res://test/fixtures/voice_gateway_lifecycle.gd").new()
 	root.add_child(gateway)
 	gateway.start()
-	var first_generation: int = gateway.health_generations.back()
+	var first_generation: int = gateway._session_generation
 	gateway.engagement_state = "ENGAGED"
 	gateway._recording = true
 	gateway._vad_active = true
@@ -24,26 +29,40 @@ func _init() -> void:
 	check("stop invalidates the previous health generation", gateway._session_generation != first_generation and not gateway._should_connect)
 	gateway._tts_playing = false
 	gateway.start()
-	check("restart allocates a new health generation and capture owner", gateway.health_generations.back() != first_generation and gateway.mic_starts == 2 and gateway.mic_stops == 1)
-	gateway._connected = true
+	check("restart allocates a new detector session and capture owner", gateway._session_generation != first_generation and gateway.detector.starts == 2 and gateway.mic_starts == 2 and gateway.mic_stops == 1)
+	gateway.detector.emit_connected()
 	gateway._recording = true
 	gateway._vad_active = true
 	gateway._audio_buffer = PackedByteArray([9, 9])
-	gateway._ws = WebSocketPeer.new()
-	gateway._process(0.0)
+	gateway.detector.emit_disconnected()
 	check("socket close resets capture state before automatic reconnect", not gateway._connected and not gateway._recording and not gateway._vad_active and gateway._audio_buffer.is_empty() and gateway.engagement_state == "STANDBY")
+	gateway.detector.emit_connected()
 	gateway._pre_vad_buffer.assign([PackedByteArray([7, 8])])
 	gateway._handle_vad_start()
 	check("VAD before wake stays idle in standby", gateway._vad_active and not gateway._recording)
 	gateway.wake_word_detected.connect(func(_confidence: float): gateway.stop(), CONNECT_ONE_SHOT)
-	gateway._handle_gateway_message(JSON.stringify({"type": "wake_word", "confidence": 0.99}).to_utf8_buffer())
+	gateway.detector.emit_event({"type": "wake_word", "confidence": 0.99})
 	check("a synchronous wake listener can stop without stale handler resurrection", not gateway._should_connect and gateway.engagement_state == "STANDBY" and not gateway._recording)
 	gateway.start()
+	gateway.detector.emit_connected()
 	gateway._handle_vad_start()
 	gateway._handle_wake_word(0.99)
 	check("wake after VAD initializes a fresh recording", gateway.engagement_state == "ENGAGED" and gateway._recording)
 	gateway.stop()
 	gateway.free()
+	var adapter = load("res://Scripts/Services/Voice/DockerVoiceDetectorAdapter.gd").new()
+	root.add_child(adapter)
+	adapter._generation = 2
+	adapter._should_connect = false
+	adapter._handle_health_result(1, HTTPRequest.RESULT_CANT_CONNECT, 0)
+	check("stale health completion after stop cannot restart detector", not adapter._should_connect and adapter._health_retries == 0 and adapter._ws == null)
+	var failures: Array[String] = []
+	adapter.start_failed.connect(func(reason: String): failures.append(reason))
+	adapter._should_connect = true
+	adapter._health_retries = adapter.MAX_HEALTH_RETRIES - 1
+	adapter._handle_health_result(adapter._generation, HTTPRequest.RESULT_CANT_CONNECT, 0)
+	check("final health failure is terminal once and audio remains unavailable", failures.size() == 1 and not adapter._should_connect and adapter.send_audio(PackedByteArray([1, 2])) == ERR_CONNECTION_ERROR)
+	adapter.free()
 	print("Voice gateway lifecycle: %d passed, %d failed" % [passed, failed])
 	quit(0 if failed == 0 else 1)
 

@@ -1,6 +1,9 @@
 class_name PreferencesPopup
 extends PersistentWindow
 
+const VoiceFeature = preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
+const VoicePrompt = preload("res://Scripts/Services/Voice/VoiceDeactivationPrompt.gd")
+
 
 @onready var output_device_button: OptionButton = %OutputDeviceButton
 
@@ -240,6 +243,8 @@ func _set_connection_options_visibility(on: bool):
 	_core_connection_advanced_separator.visible = on
 
 func _on_btn_save_prefs_pressed():
+	if not await _confirm_voice_deactivation():
+		return
 	config_file.set_value("USER", "first_name", _fields["first_name"].text)
 	config_file.set_value("USER", "last_name", _fields["last_name"].text)
 
@@ -256,6 +261,7 @@ func _on_btn_save_prefs_pressed():
 	config_file.set_value("HCP", "auto_connect", _fields["hcp_auto_connect"].button_pressed)
 	config_file.set_value("HCP", "selected_services", service_selection_window.get_selected_service_data())
 	_apply_staged_stt_transport()
+	_apply_staged_voice_enabled()
 
 	_save_agent_context_summary_preferences()
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
@@ -264,6 +270,8 @@ func _on_btn_save_prefs_pressed():
 
 func _on_about_to_popup():
 	set_field_values()
+	if is_instance_valid(_voice_tab):
+		_voice_load_ui_from_config()
 	theme_option_button.selected = SingletonObject.get_theme_enum()
 	set_microphone_option_menu(SingletonObject.get_microphone())
 	_load_agent_context_summary_preferences()
@@ -2700,6 +2708,11 @@ func _on_remove_selected_skill() -> void:
 #region Voice Tab
 
 var _voice_tab: MarginContainer
+var _voice_enabled_check: CheckButton
+var _staged_voice_enabled := true
+var _voice_enabled_loaded := false
+var _voice_preview_operation: VoiceOperation
+var _voice_preview_player: AudioStreamPlayer
 var _stt_provider_option: OptionButton
 var _stt_backend_option: OptionButton
 var _stt_transport_option: OptionButton
@@ -2767,6 +2780,13 @@ func _create_voice_tab() -> void:
 	stt_header.text = "Speech-to-Text (STT)"
 	stt_header.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(stt_header)
+
+	_voice_enabled_check = CheckButton.new()
+	_voice_enabled_check.text = "Enable TurnRock Voice"
+	_voice_enabled_check.tooltip_text = "Allows Minerva to start the bundled voice detector and use Core voice services."
+	_voice_enabled_check.toggled.connect(_stage_voice_enabled)
+	vbox.add_child(_voice_enabled_check)
+	vbox.add_child(HSeparator.new())
 
 	var stt_grid := _voice_grid()
 	vbox.add_child(stt_grid)
@@ -3072,6 +3092,10 @@ func _create_voice_tab() -> void:
 
 func _voice_load_ui_from_config() -> void:
 	var cfg := SingletonObject.get_voice_config()
+	_staged_voice_enabled = VoiceFeature.is_enabled()
+	_voice_enabled_loaded = true
+	if is_instance_valid(_voice_enabled_check):
+		_voice_enabled_check.set_pressed_no_signal(_staged_voice_enabled)
 	_staged_stt_transport = cfg.stt_transport
 
 	# STT provider
@@ -3123,6 +3147,7 @@ func _voice_load_ui_from_config() -> void:
 
 	# Update TTS section visibility
 	_update_tts_section_enabled()
+	_refresh_voice_enablement_ui()
 
 	# Stream Deck settings
 	if _streamdeck_enable_check:
@@ -3145,7 +3170,7 @@ func _update_tts_section_enabled() -> void:
 	var core_connected: bool = Core.client._connected
 
 	# TTS controls need both TTS enabled AND Core connected (Voice Service requires Core)
-	var tts_usable := tts_enabled and core_connected
+	var tts_usable := tts_enabled and core_connected and _staged_voice_enabled
 	_tts_backend_option.disabled = not tts_usable
 	_voice_selector.disabled = not tts_usable
 	_voice_preview_btn.disabled = not tts_usable
@@ -3194,8 +3219,7 @@ func _on_stt_provider_changed(idx: int) -> void:
 	cfg.stt_provider = _stt_provider_option.get_item_id(idx) as VoiceConfig.STTProvider
 	var is_voice_service: bool = cfg.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE
 	_whisper_fallback_check.visible = is_voice_service
-	_stt_backend_option.disabled = not is_voice_service
-	_stt_transport_option.disabled = not is_voice_service
+	_refresh_voice_enablement_ui()
 	cfg.save()
 
 
@@ -3365,11 +3389,9 @@ func _on_vad_silence_changed(value: float) -> void:
 	cfg.save()
 	if _vad_silence_value_label:
 		_vad_silence_value_label.text = "%.1fs" % value
-	# Update running gateway if connected
+	# The gateway decides whether its current detector can accept a live update.
 	if SingletonObject.Chats and is_instance_valid(SingletonObject.Chats):
-		var gateway: Node = SingletonObject.Chats._voice_gateway
-		if gateway and gateway._connected:
-			gateway._send_gateway_config()
+		SingletonObject.Chats.update_voice_detector_configuration()
 
 
 func _on_streamdeck_enable_toggled(enabled: bool) -> void:
@@ -3501,6 +3523,7 @@ func _on_voice_refresh_pressed() -> void:
 
 
 func _on_voice_preview_pressed() -> void:
+	_cancel_voice_preview()
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.voice_id.is_empty() and cfg.voice_name.is_empty():
 		_voice_status_label.text = "Select a voice first"
@@ -3515,10 +3538,16 @@ func _on_voice_preview_pressed() -> void:
 	_voice_status_label.text = "Generating preview..."
 
 	var client := SingletonObject.get_voice_client()
+	var operation := VoiceOperation.new()
+	_voice_preview_operation = operation
 	var outcome := await client.synthesize_auto_result(
 		"Hello! This is a preview of the selected voice.",
-		cfg
+		cfg,
+		operation
 	)
+	if _voice_preview_operation != operation:
+		return
+	_voice_preview_operation = null
 
 	if not outcome.success:
 		_voice_status_label.text = "Preview failed: %s" % outcome.error_message
@@ -3538,15 +3567,75 @@ func _on_voice_preview_pressed() -> void:
 	print("[Preview] Stream: rate=%d, stereo=%s, format=%d, data=%d bytes" % [stream.mix_rate, stream.stereo, stream.format, stream.data.size()])
 
 	var player := AudioStreamPlayer.new()
+	_voice_preview_player = player
 	player.stream = stream
 	player.volume_db = linear_to_db(cfg.tts_volume)
 	add_child(player)
 	player.play()
-	player.finished.connect(func(): player.queue_free())
+	player.finished.connect(func():
+		if _voice_preview_player == player:
+			_voice_preview_player = null
+		player.queue_free()
+	)
 
 	_voice_status_label.text = "Playing preview..."
 	_voice_preview_btn.disabled = false
 	_voice_preview_btn.text = "Preview"
+
+
+func _cancel_voice_preview() -> void:
+	var operation := _voice_preview_operation
+	_voice_preview_operation = null
+	if operation != null:
+		operation.cancel()
+	var player := _voice_preview_player
+	_voice_preview_player = null
+	if is_instance_valid(player):
+		player.stop()
+		player.queue_free()
+
+
+func _stage_voice_enabled(enabled: bool) -> void:
+	_staged_voice_enabled = enabled
+	_refresh_voice_enablement_ui()
+
+
+func _refresh_voice_enablement_ui() -> void:
+	if not is_instance_valid(_voice_tab):
+		return
+	var cfg := SingletonObject.get_voice_config()
+	var voice_stt := cfg.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE
+	_stt_backend_option.disabled = not voice_stt or not _staged_voice_enabled
+	_stt_transport_option.disabled = not voice_stt or not _staged_voice_enabled
+	_update_tts_section_enabled()
+
+
+func _confirm_voice_deactivation() -> bool:
+	if VoiceFeature.is_enabled() and not _staged_voice_enabled:
+		var prompt := VoicePrompt.new()
+		add_child(prompt)
+		var accepted: bool = await prompt.ask(self)
+		prompt.queue_free()
+		return accepted
+	return true
+
+
+func _apply_staged_voice_enabled() -> void:
+	if not _voice_enabled_loaded:
+		return
+	var disabling := VoiceFeature.is_enabled() and not _staged_voice_enabled
+	VoiceFeature.set_enabled(_staged_voice_enabled)
+	if not disabling:
+		return
+	if SingletonObject.Chats and SingletonObject.Chats.has_method("deactivate_turnrock_voice"):
+		SingletonObject.Chats.deactivate_turnrock_voice()
+	if SingletonObject.AtT and SingletonObject.AtT.has_method("deactivate_turnrock_voice"):
+		SingletonObject.AtT.deactivate_turnrock_voice()
+	_cancel_voice_preview()
+	VoiceFeature.cancel_active()
+	var manager = SingletonObject.plugin_manager
+	if manager != null:
+		manager.stop_plugin("voice")
 
 
 func _on_voice_status_pressed() -> void:

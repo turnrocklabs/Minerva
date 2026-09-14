@@ -4824,6 +4824,9 @@ func _dismiss_status_label(label: RichTextLabel, final_text: String, hold_second
 func _voice_speak_response(response_text: String, user_text: String = "", msg_node: Control = null) -> void:
 	if _voice_tearing_down:
 		return
+	if not preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
+		_voice_on_response_complete()
+		return
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.speak_mode == VoiceConfig.SpeakMode.OFF or cfg.tts_provider == VoiceConfig.TTSProvider.NONE:
 		_voice_on_response_complete()
@@ -5078,6 +5081,30 @@ func stop_voice_gateway() -> void:
 			_engagement_state_label.text = "Voice Off"
 			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		print("[ChatPane] Voice gateway stopped")
+
+
+## Disable TurnRock-owned voice work without disturbing chat or OpenAI STT.
+func deactivate_turnrock_voice() -> void:
+	_voice_utterance_queue.clear()
+	if is_instance_valid(_voice_gateway):
+		_voice_gateway.cancel_active_transcription()
+		_voice_gateway.stop()
+	var operations: Array[VoiceOperation] = _gateway_transcriptions.duplicate()
+	for operation: VoiceOperation in operations:
+		if operation.voice_owner == "turnrock":
+			_gateway_transcriptions.erase(operation)
+			_gateway_stream_generations.erase(operation)
+			operation.cancel()
+	cancel_tts()
+	if is_instance_valid(_engagement_toggle):
+		_engagement_toggle.set_pressed_no_signal(false)
+	if is_instance_valid(_engagement_state_label):
+		_engagement_state_label.text = "Voice Off"
+
+
+func update_voice_detector_configuration() -> void:
+	if is_instance_valid(_voice_gateway):
+		_voice_gateway.update_detector_configuration()
 
 
 func _cancel_gateway_transcriptions() -> void:

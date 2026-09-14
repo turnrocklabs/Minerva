@@ -97,3 +97,7 @@ src/sidecars/host_pdf/testdata/nametag_gate/*.png
 # (the sidecar dir is NOT a Godot resource location — the editor just indexed it)
 src/sidecars/**/*.import
 .zig-global-cache/
+
+# Generated bundled voice runtimes. Sources, pins, and packaging tests remain tracked.
+src/plugins/voice/runtime-build/
+src/plugins/voice/dist/

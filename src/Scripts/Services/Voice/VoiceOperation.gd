@@ -7,6 +7,9 @@ const CoreRequestBase = preload("res://Scripts/Services/Providers/Core/CoreReque
 var _request: CoreRequestBase
 ## Content-free correlation key used only by voice timing logs.
 var diagnostic_id := ""
+## Provider ownership follows the active request. A Core failure deliberately
+## transfers ownership before an OpenAI fallback begins.
+var voice_owner := ""
 
 func can_start() -> bool:
 	return not cancelled

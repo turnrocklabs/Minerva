@@ -213,6 +213,8 @@ var _unattended_deny_ids: Dictionary = {}
 func _ready() -> void:
 	if _db == null:
 		_db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
+	if _db.register_builtin():
+		_ensure_runtime("voice")
 	# Chat-provider registry (W1). Drop a plugin's entries when it stops/crashes
 	# so dead providers vanish gracefully from the chooser.
 	if _chat_provider_registry == null:
@@ -434,6 +436,8 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false) ->
 	var def = PluginDef.from_manifest(manifest_path)
 	if def == null:
 		return {"error": "Failed to parse manifest: %s" % manifest_path}
+	if def.id == "voice":
+		return {"error": "Plugin 'voice' is managed by Minerva"}
 	if not _db.has_plugin(def.id):
 		return {"error": "Plugin '%s' not installed; use install_plugin first" % def.id}
 
@@ -500,6 +504,8 @@ func _show_skill_update_dialog(def, existing_record: Dictionary, new_skill: Dict
 ## If delete_data is true, also remove the plugin's data directory.
 ## Returns {"ok": true} or {"error": "..."}.
 func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
+	if id == "voice":
+		return {"error": "Plugin 'voice' is managed by Minerva"}
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
@@ -627,6 +633,9 @@ func _get_docket_manager():
 func start_plugin(id: String) -> Dictionary:
 	if _shutting_down:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
+
+	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
+		return {"error": "TurnRock Voice is disabled in Preferences"}
 
 	var def = _db.get_by_id(id)
 	if def == null:
@@ -757,6 +766,8 @@ func start_plugin(id: String) -> Dictionary:
 	print("[PluginManager] Starting plugin '%s': %s %s" % [id, command, str(def.args)])
 
 	var err: Error = await conn.connect_to_server()
+	if not _owns_runtime_connection(id, conn):
+		return {"error": "Plugin '%s' start was cancelled" % id}
 
 	if err != OK:
 		push_error("[PluginManager] Failed to start plugin '%s': %s" % [id, error_string(err)])
@@ -784,8 +795,15 @@ func start_plugin(id: String) -> Dictionary:
 	# backend discovery then supersedes them via the registry's purge-and-emit
 	# path.
 	await _discover_backend_tools(id, conn)
+	if not _owns_runtime_connection(id, conn):
+		return {"error": "Plugin '%s' start was cancelled" % id}
 
 	return {"ok": true}
+
+
+func _owns_runtime_connection(id: String, connection) -> bool:
+	var rt: Dictionary = _runtime.get(id, {})
+	return rt.get("connection") == connection and not rt.get("stopping", false)
 
 
 ## Discover and register the plugin backend's tools.
@@ -892,6 +910,8 @@ func restart_plugin(id: String) -> Dictionary:
 ## pipeline rerun"). Returns immediately; the outcome arrives asynchronously
 ## via _on_setup_pipeline_finished, same as install_plugin()'s kickoff.
 func rebuild(id: String) -> Dictionary:
+	if id == "voice":
+		return {"error": "Plugin 'voice' is shipped by Minerva and cannot be rebuilt here"}
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
@@ -1268,6 +1288,8 @@ func get_audit_log():  # -> PluginAuditLog
 ## When enabled, the plugin is restarted automatically when files in its
 ## data_directory change (2s poll, 500ms debounce).
 func set_auto_reload(id: String, enabled: bool) -> bool:
+	if id == "voice":
+		return false
 	return _db.set_auto_reload(id, enabled)
 
 
@@ -1425,6 +1447,8 @@ func _run_file_watch_checks() -> void:
 ##   multiple extensions changed → union; tscn always in-place
 func _on_reload_debounce_expired(id: String) -> void:
 	_reload_pending.erase(id)
+	if id == "voice":
+		return
 
 	# Collect and clear the accumulated changed paths for this plugin.
 	var changed_paths: Array = _pending_changed_paths.get(id, [])

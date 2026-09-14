@@ -15,10 +15,6 @@ signal connected_to_gateway()
 signal disconnected_from_gateway()
 signal gateway_start_failed(reason: String)
 
-const GATEWAY_URL := "ws://localhost:8090/audio"
-const HEALTH_URL := "http://localhost:8090/health"
-const MAX_HEALTH_RETRIES := 20
-const HEALTH_POLL_INTERVAL := 1.5
 const ENGAGEMENT_IDLE_TIMEOUT := 20.0
 const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
 const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
@@ -26,10 +22,12 @@ const TARGET_SAMPLE_RATE := 16000  # gateway expects 16kHz
 const CAPTURE_DIAGNOSTIC_INTERVAL_MSEC := 2000
 const MAX_UTTERANCE_BYTES := 16000 * 2 * 300
 const AudioConverter = preload("res://Scripts/Services/Voice/AudioInputConverter.gd")
+const DetectorAdapter = preload("res://Scripts/Services/Voice/BundledVoiceDetectorAdapter.gd")
+const VoiceFeature = preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 
 var engagement_state: String = "STANDBY"
 
-var _ws: WebSocketPeer = null
+var _detector: Node
 var _connected := false
 
 # Mic capture: separate AudioStreamPlayer + AudioEffectCapture (no conflict with AudioToText)
@@ -61,9 +59,7 @@ var _ptt_active := false
 var _ptt_saved_engagement: String = ""
 
 # Reconnection
-var _reconnect_timer: Timer = null
 var _should_connect := false
-var _health_retries := 0
 var _session_generation := 0
 var _diagnostic_started_msec := 0
 var _diagnostic_input_frames := 0
@@ -85,52 +81,22 @@ func _ready() -> void:
 	_idle_timer.timeout.connect(_on_idle_timeout)
 	add_child(_idle_timer)
 
-	_reconnect_timer = Timer.new()
-	_reconnect_timer.wait_time = 3.0
-	_reconnect_timer.timeout.connect(_try_connect)
-	add_child(_reconnect_timer)
+	_setup_detector()
 
 	# Create a dedicated audio bus for voice gateway capture
 	_setup_capture_bus()
 
 
-func _process(_delta: float) -> void:
-	if _ws:
-		var polled_ws := _ws
-		var generation := _session_generation
-		polled_ws.poll()
-		var state: int = polled_ws.get_ready_state()
-		if state == WebSocketPeer.STATE_OPEN:
-			if not _connected:
-				# Drop audio accumulated during health polling/reconnect before this socket owns capture.
-				_capture_effect.clear_buffer()
-				_input_converter = null
-				_pre_vad_buffer.clear()
-				_reset_capture_diagnostics()
-				_connected = true
-				connected_to_gateway.emit()
-				if _ws != polled_ws or generation != _session_generation:
-					return
-				print("[VoiceGateway] Connected to gateway")
-			while _ws == polled_ws and generation == _session_generation and polled_ws.get_available_packet_count() > 0:
-				var packet: PackedByteArray = polled_ws.get_packet()
-				_handle_gateway_message(packet)
-		elif state == WebSocketPeer.STATE_CLOSED:
-			if _ws != polled_ws or generation != _session_generation:
-				return
-			var was_connected := _connected
-			_connected = false
-			_ws = null
-			_reset_capture_session("gateway disconnected")
-			if generation != _session_generation:
-				return
-			if was_connected:
-				disconnected_from_gateway.emit()
-				if generation != _session_generation:
-					return
-				print("[VoiceGateway] Disconnected from gateway")
-			if _should_connect:
-				_reconnect_timer.start()
+func _setup_detector() -> void:
+	_detector = _create_detector_adapter()
+	add_child(_detector)
+	_detector.connected.connect(_on_detector_connected)
+	_detector.disconnected.connect(_on_detector_disconnected)
+	_detector.event_received.connect(_on_detector_event)
+	_detector.start_failed.connect(_on_detector_start_failed)
+
+func _create_detector_adapter() -> Node:
+	return DetectorAdapter.new()
 
 
 # ── Audio Bus Setup ─────────────────────────────────────────────────────
@@ -162,58 +128,26 @@ func _setup_capture_bus() -> void:
 # ── Connection ──────────────────────────────────────────────────────────
 
 func start() -> void:
+	if not VoiceFeature.is_enabled():
+		gateway_start_failed.emit("TurnRock Voice is disabled in Preferences")
+		return
 	_session_generation += 1
-	var generation := _session_generation
 	_should_connect = true
 	_reset_capture_diagnostics()
 	_start_mic_capture()
 	_capture_timer.start()
-	_health_retries = 0
-	_poll_gateway_health(generation)
+	_detector.start(_detector_configuration())
 	print("[VoiceGateway] Started (polling gateway health)")
 
 
-func _poll_gateway_health(generation: int) -> void:
-	if not _should_connect or generation != _session_generation:
-		return
-	var http := HTTPRequest.new()
-	http.timeout = 3.0
-	add_child(http)
-	http.request_completed.connect(
-		func(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray):
-			http.queue_free()
-			if not _should_connect or generation != _session_generation:
-				return
-			if result == HTTPRequest.RESULT_SUCCESS and code == 200:
-				print("[VoiceGateway] Gateway healthy after %d poll(s)" % (_health_retries + 1))
-				_send_gateway_config()
-				_try_connect()
-			else:
-				_health_retries += 1
-				if _health_retries >= MAX_HEALTH_RETRIES:
-					push_warning("[VoiceGateway] Gateway not reachable after %d attempts" % _health_retries)
-					_should_connect = false
-					_capture_timer.stop()
-					_stop_mic_capture()
-					_reset_capture_session("gateway unavailable")
-					gateway_start_failed.emit("Gateway not responding after %d health checks" % _health_retries)
-					return
-				get_tree().create_timer(HEALTH_POLL_INTERVAL).timeout.connect(
-					_poll_gateway_health.bind(generation), CONNECT_ONE_SHOT
-				)
-	)
-	http.request(HEALTH_URL)
-
-
-func _send_gateway_config() -> void:
+func _detector_configuration() -> Dictionary:
 	var cfg: RefCounted = SingletonObject.get_voice_config()
-	var silence_ms: int = int(cfg.vad_silence_duration * 1000)
-	var http := HTTPRequest.new()
-	add_child(http)
-	http.request("http://localhost:8090/config",
-		["Content-Type: application/json"], HTTPClient.METHOD_POST,
-		JSON.stringify({"vad_silence_ms": silence_ms}))
-	http.request_completed.connect(func(_r, _c, _h, _b): http.queue_free())
+	return {"vad_silence_ms": int(cfg.vad_silence_duration * 1000)}
+
+
+func update_detector_configuration() -> void:
+	if is_instance_valid(_detector):
+		_detector.update_config(_detector_configuration())
 
 
 func stop() -> void:
@@ -221,10 +155,8 @@ func stop() -> void:
 	_should_connect = false
 	_capture_timer.stop()
 	_stop_mic_capture()
-	_reconnect_timer.stop()
-	if _ws:
-		_ws.close()
-		_ws = null
+	if is_instance_valid(_detector):
+		_detector.stop()
 	_connected = false
 	_reset_capture_session("gateway stopped")
 	print("[VoiceGateway] Stopped")
@@ -265,17 +197,6 @@ func _reset_capture_diagnostics() -> void:
 	_diagnostic_peak = 0.0
 	_diagnostic_send_failures = 0
 	_diagnostic_discarded_start = _capture_effect.get_discarded_frames() if _capture_effect != null else 0
-
-
-func _try_connect() -> void:
-	if not _should_connect or _connected or _ws != null:
-		return
-	_ws = WebSocketPeer.new()
-	var err: int = _ws.connect_to_url(GATEWAY_URL)
-	if err != OK:
-		_ws = null
-		if _should_connect:
-			_reconnect_timer.start()
 
 
 # ── Mic Capture ─────────────────────────────────────────────────────────
@@ -342,7 +263,7 @@ func _process_captured_frames(frames: PackedVector2Array, native_rate: int, disc
 	_diagnostic_output_frames += floori(float(pcm.size()) / 2.0)
 
 	# Send to gateway
-	if _ws.send(pcm, WebSocketPeer.WRITE_MODE_BINARY) != OK:
+	if not is_instance_valid(_detector) or _detector.send_audio(pcm) != OK:
 		_diagnostic_send_failures += 1
 	_log_capture_diagnostics()
 
@@ -381,10 +302,46 @@ func _log_capture_diagnostics() -> void:
 
 # ── Gateway Events ──────────────────────────────────────────────────────
 
-func _handle_gateway_message(packet: PackedByteArray) -> void:
-	var text: String = packet.get_string_from_utf8()
-	var parsed: Variant = JSON.parse_string(text)
-	if not parsed is Dictionary:
+func _on_detector_connected() -> void:
+	if not _should_connect:
+		return
+	var generation := _session_generation
+	# Drop audio accumulated during startup/reconnect before this detector owns capture.
+	if _capture_effect != null:
+		_capture_effect.clear_buffer()
+	_input_converter = null
+	_pre_vad_buffer.clear()
+	_reset_capture_diagnostics()
+	_connected = true
+	connected_to_gateway.emit()
+	if generation != _session_generation or not _should_connect:
+		return
+	print("[VoiceGateway] Connected to gateway")
+
+
+func _on_detector_disconnected() -> void:
+	var generation := _session_generation
+	_connected = false
+	_reset_capture_session("gateway disconnected")
+	if generation != _session_generation:
+		return
+	disconnected_from_gateway.emit()
+	print("[VoiceGateway] Disconnected from gateway")
+
+
+func _on_detector_start_failed(reason: String) -> void:
+	if not _should_connect:
+		return
+	_should_connect = false
+	_capture_timer.stop()
+	_stop_mic_capture()
+	_reset_capture_session("gateway unavailable")
+	push_warning("[VoiceGateway] %s" % reason)
+	gateway_start_failed.emit(reason)
+
+
+func _on_detector_event(parsed: Dictionary) -> void:
+	if not _should_connect or not _connected:
 		return
 
 	var event_type: String = parsed.get("type", "")

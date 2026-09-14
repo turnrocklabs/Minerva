@@ -47,6 +47,9 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 	if def == null:
 		push_error("[PluginDB] Failed to parse manifest: %s" % manifest_path)
 		return null
+	if _is_reserved(def.id):
+		push_error("[PluginDB] '%s' is a host-owned plugin identity" % def.id)
+		return null
 	def.install_lane = lane if lane in PluginDefinition.INSTALL_LANES else PluginDefinition.LANE_MANIFEST
 
 	if _plugins.has(def.id):
@@ -96,6 +99,8 @@ func install(manifest_path: String, lane: String = PluginDefinition.LANE_MANIFES
 
 ## Remove a plugin by id. Returns true if it was found and removed.
 func remove(plugin_id: String) -> bool:
+	if _is_reserved(plugin_id):
+		return false
 	if not _plugins.has(plugin_id):
 		return false
 	_unregister_class_names(plugin_id)
@@ -163,6 +168,8 @@ func update_state(plugin_id: String, new_state: PluginDefinition.State) -> bool:
 ## Replace the stored definition for an already-installed plugin.
 ## Use this to apply manifest changes after an upgrade.
 func update_definition(def: PluginDefinition) -> bool:
+	if _is_reserved(def.id):
+		return false
 	if not _plugins.has(def.id):
 		push_warning("[PluginDB] Cannot update unknown plugin '%s' — install it first" % def.id)
 		return false
@@ -176,6 +183,8 @@ func update_definition(def: PluginDefinition) -> bool:
 
 ## Set the autostart flag for a plugin and persist the change.
 func set_autostart(plugin_id: String, enabled: bool) -> bool:
+	if _is_reserved(plugin_id):
+		return false
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
 	if def == null:
 		return false
@@ -188,6 +197,8 @@ func set_autostart(plugin_id: String, enabled: bool) -> bool:
 ## When true, PluginManager will restart this plugin automatically when
 ## its source files change (hot reload for development).
 func set_auto_reload(plugin_id: String, enabled: bool) -> bool:
+	if _is_reserved(plugin_id):
+		return false
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
 	if def == null:
 		return false
@@ -227,6 +238,8 @@ func load_db() -> Error:
 		if def == null:
 			push_warning("[PluginDB] Skipping invalid plugin record: %s" % JSON.stringify(record))
 			continue
+		if _is_reserved(def.id):
+			continue
 		# Reject persisted records that fail validation. Same contract as
 		# from_manifest at install time: an invalid definition does not register.
 		# Otherwise stale or now-disallowed manifests survive a Minerva restart
@@ -246,6 +259,21 @@ func load_db() -> Error:
 	return OK
 
 
+## Built-ins are reconstructed here from trusted host paths and never accept a
+## caller-supplied definition.
+func register_builtin(_ignored_definition = null) -> bool:
+	var def = load("res://Scripts/Services/Voice/BuiltinVoicePlugin.gd").definition()
+	if def == null:
+		return false
+	_plugins[def.id] = def
+	plugins_changed.emit()
+	return true
+
+
+static func _is_reserved(plugin_id: String) -> bool:
+	return plugin_id == "voice"
+
+
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
@@ -253,6 +281,8 @@ func load_db() -> Error:
 func _save() -> void:
 	var records: Array = []
 	for def in _plugins.values():
+		if _is_reserved(def.id):
+			continue
 		records.append(def.to_dict())
 
 	var data := {

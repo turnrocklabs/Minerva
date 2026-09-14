@@ -13,6 +13,7 @@ var _query_versions: Dictionary = {}
 var _inventory_versions: Dictionary = {}
 var _stt_sequence := 0
 var _tts_sequence := 0
+const VoiceFeature = preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 
 static func failure(code: String, message: String) -> Dictionary:
 	return {"success": false, "error_code": code, "error_message": message, "error": message}
@@ -34,6 +35,10 @@ func _bind_inventory_connection() -> void:
 		_inventory_client.connection_closed.connect(_clear_inventory)
 
 func _call(topic: String, data: Dictionary, mode: String, timeout: float, operation: VoiceOperation = null, service: Service = null) -> Dictionary:
+	if topic.begins_with("voice/"):
+		var admission := VoiceFeature.admit(operation)
+		if not admission.success:
+			return admission
 	if operation != null and not operation.can_start():
 		return failure("cancelled", "Voice operation cancelled locally.")
 	if operation != null and operation.is_busy():
@@ -82,6 +87,9 @@ func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: St
 ## Prepare and locally enqueue one v1.1 microphone stream. The shipped voice
 ## service implements this stable topic even when older discovery metadata omits it.
 func begin_transcription_stream(voice_config: VoiceConfig, operation: VoiceOperation, diagnostic_id: String = "") -> Dictionary:
+	var admission := VoiceFeature.admit(operation)
+	if not admission.success:
+		return admission
 	if voice_config.stt_provider != VoiceConfig.STTProvider.VOICE_SERVICE:
 		return failure("streaming_unavailable", "Streamed STT requires Voice Service via Core.")
 	if operation == null or not operation.can_start() or operation.is_busy():
@@ -330,13 +338,17 @@ func transcribe_auto_result(audio_wav: PackedByteArray, voice_config: VoiceConfi
 		return busy
 	if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE:
 		var result := await transcribe_result(audio_wav, "en", voice_config.stt_backend, voice_config.stt_model, operation, diagnostic_id)
-		if result.success or result.get("error_code") in ["cancelled", "operation_busy"] or not voice_config.whisper_fallback:
+		if result.success or result.get("error_code") in ["cancelled", "operation_busy", VoiceFeature.DISABLED_CODE] or not voice_config.whisper_fallback:
 			_log_stt_result(diagnostic_id, "total", started_msec, audio_wav.size(), voice_config.stt_backend, voice_config.stt_model, result)
 			return result
+		if operation != null:
+			operation.voice_owner = "openai"
 		var fallback := await transcribe_whisper_result(audio_wav)
 		fallback["fallback_from"] = result.get("error_code", "core_stt_failed")
 		_log_stt_result(diagnostic_id, "total_after_fallback", started_msec, audio_wav.size(), "openai", "whisper-1", fallback)
 		return fallback
+	if operation != null:
+		operation.voice_owner = "openai"
 	var whisper := await transcribe_whisper_result(audio_wav)
 	_log_stt_result(diagnostic_id, "whisper", started_msec, audio_wav.size(), "openai", "whisper-1", whisper)
 	return whisper
@@ -378,6 +390,9 @@ func synthesize_auto_result(text: String, voice_config: VoiceConfig, operation: 
 	return await synthesize_result(text, voice, voice_config.tts_backend, operation)
 
 func synthesize_auto_playback_result(text: String, voice_config: VoiceConfig, operation: SpeechOperation, player: AudioStreamPlayer) -> Dictionary:
+	var admission := VoiceFeature.admit(operation)
+	if not admission.success:
+		return admission
 	if voice_config.tts_provider != VoiceConfig.TTSProvider.VOICE_SERVICE:
 		return failure("voice_disabled", "Speech synthesis is disabled.")
 	if not operation.can_start():

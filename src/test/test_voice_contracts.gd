@@ -85,8 +85,23 @@ func _run() -> void:
 	var config = load("res://Scripts/Services/Voice/VoiceConfig.gd").new()
 	so.voice_config = config
 	var scope_script = load("res://Scripts/Services/Voice/VoiceOperation.gd")
+	var voice_feature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	var selection = load("res://Scripts/Services/Voice/VoiceSelection.gd")
 	var bytes := PackedByteArray([0, 1, 2, 3])
+	var owned_scope = scope_script.new()
+	check("TurnRock operation is admitted while bundled voice is enabled", voice_feature.admit(owned_scope).success and owned_scope.voice_owner == "turnrock")
+	var openai_scope = scope_script.new()
+	openai_scope.voice_owner = "openai"
+	voice_feature.register_operation(openai_scope)
+	voice_feature.set_enabled(false)
+	voice_feature.cancel_active()
+	var sends_while_disabled: int = transport.sent.size()
+	var disabled_stt: Dictionary = await voice.transcribe_auto_result(bytes, config, scope_script.new())
+	var disabled_tts: Dictionary = await voice.synthesize_result("disabled", "", "kokoro", scope_script.new())
+	var disabled_stream: Dictionary = voice.begin_transcription_stream(config, scope_script.new())
+	check("disabled TurnRock entrypoints fail before Core and never invoke Whisper fallback", disabled_stt.error_code == voice_feature.DISABLED_CODE and disabled_tts.error_code == voice_feature.DISABLED_CODE and disabled_stream.error_code == voice_feature.DISABLED_CODE and transport.sent.size() == sends_while_disabled and voice.whisper_calls == 0)
+	check("deactivation cancels pinned TurnRock work without cancelling OpenAI work", owned_scope.cancelled and not openai_scope.cancelled)
+	voice_feature.set_enabled(true)
 	var output := {}
 	_capture(voice, "transcribe_auto_result", [bytes, config], output)
 	transport.reply(_last_id(transport), {"text": ""})
@@ -147,6 +162,17 @@ func _run() -> void:
 	capture._normalization_capture.discarded += 1
 	capture.start_ptt(capture_req)
 	check("capture ring loss fails visibly without submitting partial audio", capture.ptt_state == capture.PTTState.ERROR and capture.submitted == submitted_before_overflow)
+	voice_feature.set_enabled(true)
+	config.stt_provider = config.STTProvider.VOICE_SERVICE
+	capture.start_ptt(capture_req)
+	capture.deactivate_turnrock_voice()
+	var turnrock_capture_stopped: bool = not capture.effect.is_recording_active()
+	config.stt_provider = config.STTProvider.OPENAI_WHISPER
+	capture.start_ptt(capture_req)
+	capture.deactivate_turnrock_voice()
+	check("deactivation stops buffered TurnRock capture but preserves OpenAI capture", turnrock_capture_stopped and capture.effect.is_recording_active())
+	capture._StopConverting()
+	config.stt_provider = config.STTProvider.VOICE_SERVICE
 	capture.free()
 	var completed_text: Array[String] = []
 	ptt.transcription_completed.connect(func(text: String): completed_text.append(text))
@@ -240,8 +266,9 @@ func _run() -> void:
 	check("older same-filter reply cannot overwrite a newer cache", voice._voice_inventories["qwen3-base"].is_empty() and voice._inventory_for("qwen3-base").voices.is_empty())
 	var option := OptionButton.new()
 	var original_name: String = config.voice_name
+	var config_before_placeholder: String = so.config_file.encode_to_text()
 	selection.populate(option, [{"id": "other", "name": "Other"}], config)
-	check("missing saved voice is an unavailable placeholder without config writes", option.get_item_text(option.selected).contains("Unavailable") and config.voice_name == original_name and not so.config_file.has_section("Voice"))
+	check("missing saved voice is an unavailable placeholder without config writes", option.get_item_text(option.selected).contains("Unavailable") and config.voice_name == original_name and so.config_file.encode_to_text() == config_before_placeholder)
 	selection.populate(option, [], config)
 	check("valid empty list retains saved identity", option.disabled and config.voice_name == original_name)
 	selection.populate(option, [advertised], config)
@@ -253,6 +280,13 @@ func _run() -> void:
 	option.free()
 
 	var prefs = load("res://Scripts/UI/Views/PreferencesPopup.gd").new()
+	voice_feature.set_enabled(false)
+	prefs._apply_staged_voice_enabled()
+	check("Save before deferred Voice UI cannot overwrite saved disabled state", not voice_feature.is_enabled())
+	voice_feature.set_enabled(true)
+	prefs._stage_voice_enabled(false)
+	check("voice enablement remains unchanged until Preferences Save applies it", voice_feature.is_enabled())
+	prefs._stage_voice_enabled(true)
 	prefs._voice_selector = OptionButton.new()
 	prefs._voice_status_label = Label.new()
 	prefs._voice_refresh_btn = Button.new()
@@ -302,6 +336,36 @@ func _run() -> void:
 	var voice_service = load("res://Scripts/Services/Providers/Core/scripts/service.gd").new({"client_id": "voice-service", "name": "Voice Service", "actions": [{"name": "Voice TTS Stream", "topic": "voice/tts/stream"}]})
 	core.services.assign([model_service, voice_service])
 	config.speak_mode = config.SpeakMode.FULL
+	voice_feature.set_enabled(false)
+	var sends_before_disabled_speech: int = transport.sent.size()
+	pane._voice_speak_response("disabled speech")
+	check("disabled speech is rejected before summary or synthesis", transport.sent.size() == sends_before_disabled_speech and not pane._tts_busy)
+	voice_feature.set_enabled(true)
+	var pending_openai = scope_script.new()
+	pending_openai.voice_owner = "openai"
+	pane._gateway_transcriptions.append(pending_openai)
+	var openai_gateway_generation: int = pane._gateway_generation
+	pane._voice_speak_response("turnrock teardown")
+	var teardown_request_id: String = _last_id(transport)
+	pane._voice_utterance_queue.append("must not restart")
+	var queue_empty_on_cancel := {"value": false}
+	pane._speech_operation.finished.connect(func(_outcome: Dictionary): queue_empty_on_cancel.value = pane._voice_utterance_queue.is_empty(), CONNECT_ONE_SHOT)
+	voice_feature.set_enabled(false)
+	pane.deactivate_turnrock_voice()
+	voice_feature.cancel_active()
+	var teardown_stream_id := _stream_id(899)
+	var sends_before_teardown_open: int = transport.sent.size()
+	_deliver_stream_open(transport, teardown_request_id, teardown_stream_id)
+	pane._handle_gateway_transcription_outcome(pending_openai, {"success": true, "text": "openai survives"}, openai_gateway_generation)
+	check("deactivation clears queues, cancels late TurnRock producer and preserves pending OpenAI outcome", queue_empty_on_cancel.value and not pending_openai.cancelled and pane.sent_utterances == ["openai survives"] and not transport._pending_requests.has(teardown_request_id) and transport.sent.size() == sends_before_teardown_open + 1 and transport.sent.back().topic == "stream/cancel" and transport.sent.back().params.request_id == teardown_request_id and transport.sent.back().params.data.stream_id == teardown_stream_id.hex_encode())
+	pane.sent_utterances.clear()
+	pane._voice_llm_busy = false
+	pane._gateway_transcriptions.erase(pending_openai)
+	voice_feature.set_enabled(true)
+	gateway.starts = 0
+	gateway.finishes = 0
+	gateway.transcription_cancels = 0
+	pane.released = 0
 	var inline_frame_id := _stream_id(900)
 	transport.on_send = func(message: Dictionary):
 		if message.topic == "voice/tts/stream":

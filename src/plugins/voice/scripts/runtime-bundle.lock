@@ -1,0 +1,17 @@
+# Immutable inputs for the bundled voice detector runtime.
+PBS_TAG="20260510"
+CPYTHON="3.12.13"
+PBS_BASE_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20260510"
+PBS_SHA256_LINUX_X86_64="e7332b4b4bb85006deb48d251c786a04c14de104c9b3a006b33457a4a604b8bc"
+PBS_SHA256_LINUX_ARM64="87097de12bc212e41ea8409efd0083fe06465d725e35d130e4007a4bf7e4f1c8"
+PBS_SHA256_MACOS_ARM64="5a30271f8d345a5b02b0c9e4e31e0f1e1455a8e4a04fba95cd9762472abc3b17"
+PBS_SHA256_MACOS_AMD64="cd369e76973c3179bc578230d8615ab621968ed758c5e32f636eecef4ad79894"
+PBS_SHA256_WINDOWS_X86_64="346dfbcb95171dd6d1275e6f8cb2e656cc15cb054c399ae54db57bfad4b1a60f"
+
+# Direct and transitive runtime dependencies and their allowed wheel hashes
+# live in requirements-runtime.lock. The builder refuses sdists and any wheel
+# whose bytes are absent from that lock.
+REQUIREMENTS_LOCK="scripts/requirements-runtime.lock"
+
+MODEL_SHA256="efa77d2fc3d6debc66e0f9941215a810643620e6fd82db46e1ce21a696c1268e"
+MODEL_DATA_SHA256="f4f8edb0dedf97a3ede213269b2abe4c7ca0681fd42bbe116fd5d41d40b9fe5e"

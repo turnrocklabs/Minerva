@@ -2,6 +2,7 @@ class_name AudioToTexts
 extends Node
 
 const AudioConverter = preload("res://Scripts/Services/Voice/AudioInputConverter.gd")
+const VoiceFeature = preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 
 var effect
 var recording
@@ -73,6 +74,7 @@ var _whisper_fallback_from := "none"
 ## True if the most recent start_ptt called voice_gateway.ptt_down(). Gates stop_ptt's
 ## ptt_up() call so stop_ptt is idempotent.
 var _ptt_gateway_down: bool = false
+var _ptt_turnrock_owned := false
 
 
 func _ready():
@@ -120,7 +122,14 @@ func _cancel_voice_transcription(discard_capture: bool = true) -> void:
 	if operation != null:
 		operation.cancel()
 	if discard_capture:
+		_ptt_turnrock_owned = false
 		_reset_normalization_capture()
+
+
+## Stop only capture/request work that was admitted through TurnRock Voice.
+func deactivate_turnrock_voice() -> void:
+	if _ptt_turnrock_owned or (_voice_operation != null and _voice_operation.voice_owner == "turnrock"):
+		_StopConverting()
 
 
 func _begin_normalization_capture() -> bool:
@@ -373,6 +382,7 @@ func _StartConverting():
 		# Route to appropriate STT backend
 		var voice_config := SingletonObject.get_voice_config()
 		var provider := voice_config.get_effective_stt_provider()
+		_ptt_turnrock_owned = provider == VoiceConfig.STTProvider.VOICE_SERVICE
 		var capture_msec := prepare_started_msec - _ptt_capture_started_msec if _ptt_capture_started_msec > 0 else 0
 		_whisper_fallback_from = "core_disconnected" if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE and provider == VoiceConfig.STTProvider.OPENAI_WHISPER else "none"
 		print("[VoiceSTT] operation=%s stage=prepared prepare_ms=%d capture_ms=%d audio_bytes=%d sample_rate=%d channels=%d backend=%s model=%s fallback_from=%s" % [
@@ -388,12 +398,16 @@ func _StartConverting():
 	else:
 		_ptt_capture_started_msec = Time.get_ticks_msec()
 		_ptt_diagnostic_id = ""
+		var voice_config: VoiceConfig = SingletonObject.get_voice_config()
+		if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE and not VoiceFeature.is_enabled():
+			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "TurnRock Voice is disabled in Preferences"})
+			return ERR_UNAVAILABLE
 		if not _begin_normalization_capture():
 			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Audio normalization is unavailable"})
 			return ERR_CANT_CREATE
 		_start_mic()
 		effect.set_recording_active(true)
-		var voice_config: VoiceConfig = SingletonObject.get_voice_config()
+		_ptt_turnrock_owned = voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE
 		if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE and voice_config.stt_transport == VoiceConfig.STTTransport.STREAMED:
 			_ptt_sequence += 1
 			_ptt_diagnostic_id = "ptt-%d" % _ptt_sequence
@@ -551,6 +565,7 @@ func _move_caret_to_end(ctrl: Control) -> void:
 
 ## Shared completion handler — fills text field and emits signal.
 func _finish_transcription(text: String, successful_empty: bool = false, error_message: String = "") -> void:
+	_ptt_turnrock_owned = false
 	var active_req := _active_ptt_req
 	var insertion_status := "empty"
 

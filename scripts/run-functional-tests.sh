@@ -44,6 +44,10 @@ TURNROCK_TESTS=(
 	test/test_core_request_lifecycle.gd
 	test/test_core_binary_voice_routing.gd
 	test/test_voice_contracts.gd
+	test/test_builtin_voice_catalog.gd
+	test/test_bundled_voice_detector_adapter.gd
+	test/test_voice_deactivation_prompt.gd
+	test/test_voice_gateway_lifecycle.gd
 	test/test_plugin_bulk_snapshot.gd
 	test/test_chatpane_active_model.gd
 	test/test_host_capability_core_session.gd
