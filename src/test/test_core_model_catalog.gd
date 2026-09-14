@@ -80,8 +80,10 @@ func _scenario() -> void:
 	_check(generic_provider != null and not generic_provider._is_openai_compatible_service(), "generic provider remains usable without output-shape guessing")
 	generic_provider.free()
 	var entries: Array[Dictionary] = catalog.list_models(core, singleton, true)
-	_check(entries[0].display == entries[2].display and entries[0].settings_key != entries[2].settings_key,
-		"identical display labels retain distinct public identities")
+	_check(entries[0].display == "qwen3:8b", "model-chat chooser keeps the current model-only label")
+	_check(entries[0].display == "qwen3:8b" and entries[2].display == "Model Chat Service (qwen3:8b)"
+		and entries[0].settings_key != entries[2].settings_key,
+		"model-chat cleanup changes only its label and retains distinct public identities")
 
 	var legacy := _service("model-chat", "Legacy", [{"name": "legacy", "topic": "chat/legacy"}])
 	_check(descriptor.describe(legacy, legacy.actions[0]).eligible, "only absent model-chat metadata gets legacy fallback")
@@ -118,7 +120,7 @@ func _scenario() -> void:
 	_check(raw.find_action(service.client_id, action.name, core).is_empty(), "generic resolver also never chooses first duplicate")
 	core.services.erase(other)
 	var duplicate_config := ConfigFile.new()
-	duplicate_config.set_value("Models", "Contexts", {raw.display_for(service, action): 4096})
+	duplicate_config.set_value("Models", "Contexts", {"Model Chat Service (qwen3:8b)": 4096})
 	var duplicate_path := "user://core-model-duplicate-test.cfg"
 	var duplicate_migration: Dictionary = preferences.migrate(duplicate_config, duplicate_path, spec, catalog.list_models(core, singleton, true))
 	_check(duplicate_migration.status == "blocked_ambiguous" and not duplicate_config.get_value("Models", "Contexts").has(key),
@@ -147,10 +149,10 @@ func _scenario() -> void:
 	# Use a real temp config and reload it to prove markers and copied settings persist.
 	var config := ConfigFile.new()
 	var path := "user://core-model-migration-test.cfg"
-	var display: String = raw.display_for(service, action)
-	config.set_value("Models", "Timeouts", {display: 180.0})
-	config.set_value("Models", "Contexts", {display: 8192})
-	config.set_value("Models", "NumGpu", {display: 0})
+	var historical_display := "Model Chat Service (qwen3:8b)"
+	config.set_value("Models", "Timeouts", {historical_display: 180.0})
+	config.set_value("Models", "Contexts", {historical_display: 8192})
+	config.set_value("Models", "NumGpu", {historical_display: 0})
 	entries = catalog.list_models(core, singleton, true)
 	var migrated: Dictionary = preferences.migrate(config, path, spec, entries)
 	_check(migrated.status == "blocked_ambiguous", "ambiguous old display preferences never apply")
@@ -167,9 +169,9 @@ func _scenario() -> void:
 	migrated = preferences.migrate(config, path, spec, catalog.list_models(core, singleton, true))
 	_check(migrated.status == "blocked_ambiguous", "later service disappearance cannot reactivate ambiguous legacy settings")
 	config.clear()
-	config.set_value("Models", "Timeouts", {display: 180.0, key: 300.0})
-	config.set_value("Models", "Contexts", {display: 8192})
-	config.set_value("Models", "NumGpu", {display: 0})
+	config.set_value("Models", "Timeouts", {historical_display: 180.0, key: 300.0})
+	config.set_value("Models", "Contexts", {historical_display: 8192})
+	config.set_value("Models", "NumGpu", {historical_display: 0})
 	migrated = preferences.migrate(config, path, spec, catalog.list_models(core, singleton, true))
 	_check(migrated.status == "complete", "unambiguous legacy preferences migrate")
 	var restored := ConfigFile.new()
@@ -183,11 +185,11 @@ func _scenario() -> void:
 	restored.save(path)
 	preferences.migrate(restored, path, spec, catalog.list_models(core, singleton, true))
 	_check(not restored.get_value("Models", "Contexts").has(key), "clearing new settings never reapplies legacy preferences")
-	_check(restored.get_value("Models", "Contexts").has(display), "legacy entries retained for explicit reselection")
+	_check(restored.get_value("Models", "Contexts").has(historical_display), "legacy entries retained for explicit reselection")
 	config.clear()
-	config.set_value("Models", "Timeouts", {display: 0})
-	config.set_value("Models", "Contexts", {display: 0})
-	config.set_value("Models", "NumGpu", {display: -1})
+	config.set_value("Models", "Timeouts", {historical_display: 0})
+	config.set_value("Models", "Contexts", {historical_display: 0})
+	config.set_value("Models", "NumGpu", {historical_display: -1})
 	preferences.migrate(config, path, spec, catalog.list_models(core, singleton, true))
 	_check(not config.get_value("Models", "Timeouts").has(key) and not config.get_value("Models", "Contexts").has(key)
 		and not config.get_value("Models", "NumGpu").has(key), "legacy omission sentinels remain omitted")

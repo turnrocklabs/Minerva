@@ -29,10 +29,12 @@ static func migrate(config: ConfigFile, path: String, spec: Dictionary, candidat
 	# Remember every encountered ambiguous identity, even one not selected yet.
 	var labels: Dictionary = {}
 	for candidate in candidates:
-		labels[candidate.display] = labels.get(candidate.display, 0) + 1
+		var legacy_display := _legacy_display(candidate)
+		labels[legacy_display] = labels.get(legacy_display, 0) + 1
 	for candidate in candidates:
+		var legacy_display := _legacy_display(candidate)
 		if not candidate.settings_key.is_empty() and not markers.has(candidate.settings_key) \
-				and (labels[candidate.display] > 1 or candidate.unavailable_reason == "model_ambiguous"):
+				and (labels[legacy_display] > 1 or candidate.unavailable_reason == "model_ambiguous"):
 			markers[candidate.settings_key] = "blocked_ambiguous"
 	if markers.has(key) and markers == old_markers:
 		return {"status": markers[key], "changed": false}
@@ -43,9 +45,10 @@ static func migrate(config: ConfigFile, path: String, spec: Dictionary, candidat
 	if matches.is_empty():
 		return {"status": "unavailable"}
 	var selected: Dictionary = matches[0]
+	var selected_legacy_display := _legacy_display(selected)
 	var count := 0
 	for candidate in candidates:
-		if candidate.display == selected.display:
+		if _legacy_display(candidate) == selected_legacy_display:
 			count += 1
 	var ambiguous: bool = matches.size() != 1 or count != 1 or selected.unavailable_reason == "model_ambiguous"
 	var status: String = markers.get(key, "blocked_ambiguous" if ambiguous else "complete")
@@ -59,8 +62,8 @@ static func migrate(config: ConfigFile, path: String, spec: Dictionary, candidat
 	if not ambiguous and not old_markers.has(key):
 		for field in FIELDS:
 			var values: Dictionary = updated.get_value("Models", field, {}).duplicate(true)
-			if not values.has(key) and values.has(selected.display) and _valid_legacy(field, values[selected.display]):
-				values[key] = values[selected.display]
+			if not values.has(key) and values.has(selected_legacy_display) and _valid_legacy(field, values[selected_legacy_display]):
+				values[key] = values[selected_legacy_display]
 			updated.set_value("Models", field, values)
 	markers = markers.duplicate(true)
 	markers[key] = status
@@ -73,6 +76,14 @@ static func migrate(config: ConfigFile, path: String, spec: Dictionary, candidat
 		config.set_value("Models", field, updated.get_value("Models", field, {}))
 	config.set_value("Models", MIGRATIONS, markers)
 	return {"status": status, "changed": true}
+
+
+## Labels used before model-chat choosers switched to model-only text. This is
+## migration input only; public labels remain the catalog's current display.
+static func _legacy_display(candidate: Dictionary) -> String:
+	var spec: Dictionary = candidate.get("model_spec", {})
+	var service_name := str(spec.get("service_name", spec.get("service_client_id", "Core")))
+	return "%s (%s)" % [service_name, str(spec.get("action_name", candidate.get("model_name", "")))]
 
 
 static func _valid_legacy(field: String, value: Variant) -> bool:
