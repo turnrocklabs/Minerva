@@ -2083,7 +2083,10 @@ func _on_editor_changed(text: String = ""):
 	# the new text. The resolve cache is keyed by revision; bump → next resolve
 	# call is a miss → _resolve_text_range re-evaluates against current document.
 	if type == Type.TEXT and annotation_host != null:
-		annotation_host.bump_revision()
+		if code_edit != null and annotation_host.has_method("track_text_change"):
+			annotation_host.track_text_change(code_edit.text, code_edit.get_version())
+		else:
+			annotation_host.bump_revision()
 		if _annotation_canvas != null:
 			_annotation_canvas.queue_redraw()
 		if _annotation_sidebar != null and _annotation_sidebar.has_method("refresh"):
@@ -2756,6 +2759,8 @@ func _on_sidebar_add_comment_requested(text: String) -> void:
 			_annotation_sidebar.show_status("Select text or click a line indicator first")
 		return
 	var ann_id := add_comment(text)
+	if _annotation_sidebar != null and _annotation_sidebar.has_method("complete_add_comment"):
+		_annotation_sidebar.complete_add_comment(not ann_id.is_empty())
 	if ann_id.is_empty() and _annotation_sidebar != null and _annotation_sidebar.has_method("show_status"):
 		_annotation_sidebar.show_status("Could not add comment")
 	else:

@@ -1,5 +1,6 @@
 class_name AnnotationTextAuthorTool
 extends AnnotationAuthorTool
+const TextBoxLayout = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxLayout.gd")
 ## Authoring tool for the built-in 2d_text annotation kind.
 ##
 ## Second per-kind AnnotationAuthorTool subclass; mirrors the shape established
@@ -7,19 +8,16 @@ extends AnnotationAuthorTool
 ##
 ## Interaction model — in-place editing (Illustrator/Photoshop type tool):
 ##   1. Click (left button)  → the click point is stored in document space and a
-##                             LineEdit is parented to the annotation overlay AT
+##                             TextEdit is parented to the annotation overlay AT
 ##                             that point and focused, so a caret blinks on the
 ##                             canvas immediately. No dialog, no popup window,
 ##                             no focus-stealing.
-##   2. User types           → the LineEdit renders the text live using the same
+##   2. User types           → the TextEdit renders wrapped text live using the same
 ##                             font (ThemeDB.fallback_font), the same author
 ##                             colour, and the same zoom-scaled pixel size that
 ##                             AnnotationText.render() will use, so what is being
 ##                             typed reads as the annotation being born.
-##   3. Enter (no Shift)     → commit: build the annotation Dict, emit
-##                             annotation_ready, return to IDLE. Shift+Enter is
-##                             swallowed — 2d_text renders one draw_string line,
-##                             so there is no multi-line form to author.
+##   3. Ctrl/Cmd+Enter       → commit; Enter inserts a newline.
 ##   4. Click elsewhere      → commit the in-progress text (Illustrator) and
 ##                             immediately begin a new entry at the new point.
 ##                             The tool stays active and stays in TYPING.
@@ -73,7 +71,8 @@ extends AnnotationAuthorTool
 ##     "kind": "2d_text",
 ##     "schema_version": 2,
 ##     "anchor": core/canvas.point(x, y),
-##     "kind_payload": {"text": "<typed_string>", "font_size": <TARGET_SCREEN_FONT_PX / authoring zoom>},
+##     "kind_payload": {"text": "<typed_string>", "font_size": <TARGET_SCREEN_FONT_PX / authoring zoom>,
+##                      "box_size": [width, content-fitting height]},
 ##     "primitives": [],
 ##     "lifecycle": "open",
 ##     "author": {"kind": "human"},
@@ -110,7 +109,7 @@ var _at: Vector2 = Vector2.ZERO
 var _text_provider: Callable = Callable()
 
 ## The in-place editor widget. FACTORED OUT into AnnotationInPlaceTextEditor in
-## A8u2 so AnnotationTransformTool can drive the same LineEdit for arrow labels;
+## A8u2 so AnnotationTransformTool can drive the same TextEdit for arrow labels;
 ## this tool's behaviour is unchanged, it just no longer owns the Control.
 var _editor: AnnotationInPlaceTextEditor = AnnotationInPlaceTextEditor.new()
 
@@ -304,7 +303,9 @@ func _has_live_editor() -> bool:
 
 
 func _open_editor() -> void:
-	_editor.open(_host_doc_to_screen(_at), _host_zoom(), _authored_font_size, "", "Type annotation…")
+	_editor.open(_host_doc_to_screen(_at), _host_zoom(), _authored_font_size, "",
+		"Type annotation…", Color(0, 0, 0, 0), false,
+		TextBoxLayout.default_size(_authored_font_size))
 
 
 ## Enter (no shift) inside the widget — same commit path as the provider's.
@@ -370,7 +371,9 @@ func _build_annotation(at_pos: Vector2, content: String) -> Dictionary:
 		"kind":            "2d_text",
 		"schema_version":  2,
 		"anchor":          CoreAnchors.make_canvas_point(at_pos.x, at_pos.y),
-		"kind_payload":    {"text": content, "font_size": _authored_font_size},
+		"kind_payload":    {"text": content, "font_size": _authored_font_size,
+			"box_size": _size_array(TextBoxLayout.layout(content, _authored_font_size,
+				1.0, TextBoxLayout.default_size(_authored_font_size))["size"])},
 		"primitives":      [],
 		"lifecycle":       "open",
 		"author":          {"kind": "human"},
@@ -380,3 +383,7 @@ func _build_annotation(at_pos: Vector2, content: String) -> Dictionary:
 		"created_at":      now,
 		"updated_at":      now,
 	}
+
+
+static func _size_array(value: Vector2) -> Array:
+	return [value.x, value.y]

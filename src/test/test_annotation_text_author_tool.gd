@@ -23,7 +23,11 @@ var _pass_count: int = 0
 var _fail_count: int = 0
 
 
-func _init() -> void:
+func _initialize() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
 	print("=== AnnotationTextAuthorTool Tests ===\n")
 
 	print("-- lifecycle --")
@@ -48,6 +52,11 @@ func _init() -> void:
 	print("\n-- annotation Dict shape --")
 	test_annotation_dict_shape()
 	test_authored_font_size_is_screen_px_converted_to_doc_units()
+	test_multiline_and_long_word_use_measured_box_layout()
+	test_legacy_primitive_and_payload_boxes_share_bounds()
+	test_multiline_editor_key_grammar()
+	test_editing_preserves_raw_whitespace_and_effective_scale()
+	test_scaled_payload_editor_uses_live_render_origin()
 
 	print("\n-- author_ui factory --")
 	test_text_author_ui_returns_fresh_instance()
@@ -110,6 +119,13 @@ class ZoomedMockHost extends MockHost:
 
 	func get_annotation_zoom() -> float:
 		return zoom
+
+
+class LiveAnchorHost extends ZoomedMockHost:
+	var resolved_position := Vector2(75.0, 85.0)
+
+	func resolve_position_source(_source: Variant) -> Variant:
+		return resolved_position
 
 
 # ── Signal capture helper ─────────────────────────────────────────────────────
@@ -395,6 +411,8 @@ func test_annotation_dict_shape() -> void:
 	check("kind_payload is Dictionary", ann.get("kind_payload") is Dictionary)
 	var payload: Dictionary = ann["kind_payload"]
 	check_eq("payload text == typed string", payload.get("text"), "Annotated!")
+	check("new text persists a resizable layout box",
+		payload.get("box_size") is Array and (payload.get("box_size") as Array).size() == 2)
 	# MockHost reports no zoom, so the tool authors at zoom 1 and the stored
 	# DOCUMENT-unit size equals the screen-px target. Read through the
 	# production formula rather than restating 14: the constant this used to
@@ -453,6 +471,116 @@ func test_authored_font_size_is_screen_px_converted_to_doc_units() -> void:
 			float(AnnotationInPlaceTextEditor.TARGET_SCREEN_FONT_PX))
 
 
+func test_multiline_and_long_word_use_measured_box_layout() -> void:
+	print("test_multiline_and_long_word_use_measured_box_layout:")
+	var layout = load("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxLayout.gd")
+	var result: Dictionary = layout.layout("first line\nSupercalifragilisticexpialidocious",
+		14.0, 1.0, Vector2(70.0, 1.0))
+	check("explicit newline plus a long word produces several measured lines",
+		(result["lines"] as Array).size() >= 3)
+	check("height grows rather than clipping wrapped content",
+		(result["size"] as Vector2).y >= float(result["line_height"]) * (result["lines"] as Array).size())
+	var spaced: Dictionary = layout.layout("  kept   spaces\tand tabs", 14.0, 1.0,
+		Vector2(300.0, 20.0))
+	check_eq("measured wrapping preserves significant spaces and tabs",
+		(spaced["lines"] as Array)[0], "  kept   spaces\tand tabs")
+
+
+func test_legacy_primitive_and_payload_boxes_share_bounds() -> void:
+	print("test_legacy_primitive_and_payload_boxes_share_bounds:")
+	var kind := AnnotationText.new()
+	var payload := {"kind": "2d_text", "anchor": CoreAnchors.make_canvas_point(20.0, 30.0),
+		"kind_payload": {"text": "same wrapped text", "font_size": 12.0,
+			"box_size": [64.0, 12.0]}, "primitives": []}
+	var primitive := {"kind": "2d_text", "primitives": [{"kind": "text", "at": [20.0, 30.0],
+		"content": "same wrapped text", "size": 12.0, "box_size": [64.0, 12.0]}]}
+	check_eq("payload and legacy primitive storage use identical measured bounds",
+		kind.bounds(payload), kind.bounds(primitive))
+	var rotated := payload.duplicate(true)
+	rotated["kind_payload"]["rotation_rad"] = PI * 0.25
+	check("rotation uses the wrapped box corners for its AABB",
+		not kind.bounds(rotated).size.is_equal_approx(kind.bounds(payload).size))
+
+
+func test_multiline_editor_key_grammar() -> void:
+	print("test_multiline_editor_key_grammar:")
+	var editor := AnnotationInPlaceTextEditor.new()
+	var surface := Control.new()
+	root.add_child(surface)
+	editor.set_surface(surface)
+	var editor_text := "line one with enough words to wrap\nline two"
+	check("production multiline editor opens on a live surface",
+		editor.open(Vector2(20, 20), 1.0, 14.0, editor_text,
+			"Text…", Color.WHITE, false, Vector2(90, 50)))
+	var width_em_at_one := (editor._edit.size.x - AnnotationInPlaceTextEditor.PADDING * 2.0) \
+		/ float(editor._font_px)
+	editor.place(Vector2(20, 20), 3.0)
+	var width_em_at_three := (editor._edit.size.x - AnnotationInPlaceTextEditor.PADDING * 2.0) \
+		/ float(editor._font_px)
+	check("native editor keeps the same width-to-glyph ratio across view zoom",
+		is_equal_approx(width_em_at_three, width_em_at_one))
+	var submitted: Array = []
+	var aborted: Array = []
+	editor.submitted.connect(func(text: String) -> void: submitted.append(text))
+	editor.aborted.connect(func() -> void: aborted.append(true))
+	var enter := InputEventKey.new()
+	enter.pressed = true
+	enter.keycode = KEY_ENTER
+	editor._on_edit_gui_input(enter)
+	check_eq("plain Enter remains available for a newline", submitted.size(), 0)
+	var commit := InputEventKey.new()
+	commit.pressed = true
+	commit.keycode = KEY_ENTER
+	commit.ctrl_pressed = true
+	editor._on_edit_gui_input(commit)
+	check_eq("Ctrl/Cmd+Enter submits all lines", submitted, [editor_text])
+	var escape := InputEventKey.new()
+	escape.pressed = true
+	escape.keycode = KEY_ESCAPE
+	editor._on_edit_gui_input(escape)
+	check_eq("Escape cancels the text and geometry draft", aborted.size(), 1)
+	editor.discard()
+	root.remove_child(surface)
+	surface.queue_free()
+
+
+func test_editing_preserves_raw_whitespace_and_effective_scale() -> void:
+	print("test_editing_preserves_raw_whitespace_and_effective_scale:")
+	var kind := AnnotationText.new()
+	var annotation := {"kind": "2d_text", "anchor": CoreAnchors.make_canvas_point(0, 0),
+		"kind_payload": {"text": "  leading\ntrailing  \n", "font_size": 7.0,
+			"scale": 2.0, "box_size": [100.0, 40.0]}, "primitives": []}
+	check_eq("raw edit accessor preserves boundary whitespace and newline",
+		kind.raw_text(annotation), "  leading\ntrailing  \n")
+	check_eq("editor glyph size includes the stored text scale",
+		kind.text_effective_font_size(annotation), 14.0)
+	var layout = load("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxLayout.gd")
+	check("non-finite and non-numeric box metadata are rejected safely",
+		layout.decode_size([INF, 20.0]) == null and layout.decode_size(["wide", 20.0]) == null)
+
+
+func test_scaled_payload_editor_uses_live_render_origin() -> void:
+	print("test_scaled_payload_editor_uses_live_render_origin:")
+	var host := LiveAnchorHost.new()
+	var surface := Control.new()
+	root.add_child(surface)
+	var editor := AnnotationInPlaceTextEditor.new()
+	editor.set_surface(surface)
+	var annotation := {"kind": "2d_text", "anchor": CoreAnchors.make_canvas_point(1, 2),
+		"kind_payload": {"text": "scaled", "font_size": 7.0, "scale": 2.0,
+			"box_size": [100.0, 40.0]}, "primitives": []}
+	var helper = load("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxResize.gd")
+	var state: Dictionary = helper.open_text_editor(editor, host, annotation,
+		AnnotationText.new(), 1.0)
+	check("production edit helper opens the scaled payload", bool(state.get("opened", false)))
+	check_eq("editor uses the same live resolved top-left as rendering",
+		state.get("position"), host.resolved_position)
+	check_eq("editor uses effective scaled glyph size", editor._font_px, 14)
+	editor.discard()
+	root.remove_child(surface)
+	surface.queue_free()
+
+
 # ── Tests: author_ui factory ──────────────────────────────────────────────────
 
 func test_text_author_ui_returns_fresh_instance() -> void:
@@ -495,7 +623,10 @@ func test_draw_preview_in_typing_does_not_crash() -> void:
 	tool.on_pointer_down(Vector2(5, 6), MOUSE_BUTTON_LEFT, 0)
 	check_eq("now in TYPING", tool._state, AnnotationTextAuthorTool.State.TYPING)
 
-	# RenderingServer with an invalid canvas_item RID is tolerated by Godot.
+	# Exercise the actual preview draw against an owned CanvasItem, then release
+	# it so this focused suite does not add a renderer leak diagnostic.
 	var ctx := AnnotationRenderContext.new()
+	ctx.canvas_item = RenderingServer.canvas_item_create()
 	tool.draw_preview(ctx)
 	check("draw_preview in TYPING did not crash", true)
+	RenderingServer.free_rid(ctx.canvas_item)

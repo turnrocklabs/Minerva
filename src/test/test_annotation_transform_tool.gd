@@ -67,6 +67,9 @@ func _init() -> void:
 	test_pointer_up_commits_no_extra_emission()
 	test_right_click_noop()
 	test_payload_text_drag_uses_kind_transform()
+	test_boxed_text_right_edge_reflows_without_scaling_font()
+	test_boxed_text_resize_escape_restores_geometry()
+	test_rotated_box_resize_uses_local_pointer_delta()
 
 	print("\n-- path-kind bend handles (UX1 station 6, docket 019fd09b209e) --")
 	test_trs_kind_still_shows_trs_zones_regression_fence()
@@ -94,6 +97,8 @@ func _init() -> void:
 	test_label_drag_t_range_clamped_near_tail_and_head()
 	test_label_drag_vertical_arrow_no_perpendicular_teleport()
 	test_label_drag_45deg_arrow_no_perpendicular_teleport()
+	test_arrow_bounds_corner_still_scales_whole_arrow()
+	test_caption_corner_resizes_only_caption_box()
 
 	print("\n-- selection / deselection --")
 	test_no_selection_click_on_annotation_selects()
@@ -423,6 +428,77 @@ func _make_two_box_host() -> MockHost:
 		"primitives": [{"type": "anchor", "pos": [200.0, 200.0]}],
 	})
 	return host
+
+
+func _make_boxed_text_host() -> MockHost:
+	var host := MockHost.new()
+	host._registry.register_annotation_kind(AnnotationText.new())
+	host.add_annotation({
+		"id": "boxed_text", "kind": "2d_text", "schema_version": 2,
+		"anchor": CoreAnchors.make_canvas_point(100.0, 100.0),
+		"kind_payload": {"text": "A long wrapped annotation caption", "font_size": 10.0,
+			"box_size": [140.0, 40.0]}, "primitives": [],
+	})
+	host._selected_id = "boxed_text"
+	return host
+
+
+func test_boxed_text_right_edge_reflows_without_scaling_font() -> void:
+	print("test_boxed_text_right_edge_reflows_without_scaling_font:")
+	var host := _make_boxed_text_host()
+	var tool := AnnotationTransformTool.new()
+	var changes := _capture_modified(tool)
+	tool.on_activate(host)
+	var kind := AnnotationText.new()
+	var start: Rect2 = kind.bounds(host._annotations[0])
+	tool.on_pointer_down(Vector2(start.end.x, start.get_center().y), MOUSE_BUTTON_LEFT, 0)
+	check_eq("right-edge grip routes to horizontal box resize", tool._active_zone,
+		AnnotationTransformTool.Zone.EDGE_R)
+	tool.on_pointer_move(Vector2(start.end.x + 50.0, start.get_center().y))
+	check("right edge emits a box mutation", not changes.is_empty())
+	if not changes.is_empty():
+		var payload: Dictionary = changes.back()["ann"]["kind_payload"]
+		var width := float(payload["box_size"][0])
+		check("width grows by the dragged distance (got %.9f)" % width,
+			is_equal_approx(width, 190.0))
+		check_eq("box resize does not scale glyphs", payload.get("font_size"), 10.0)
+	tool.on_deactivate()
+
+
+func test_boxed_text_resize_escape_restores_geometry() -> void:
+	print("test_boxed_text_resize_escape_restores_geometry:")
+	var host := _make_boxed_text_host()
+	var original: Dictionary = host._annotations[0].duplicate(true)
+	var tool := AnnotationTransformTool.new()
+	var changes := _capture_modified(tool)
+	tool.on_activate(host)
+	var start: Rect2 = AnnotationText.new().bounds(original)
+	tool.on_pointer_down(start.end, MOUSE_BUTTON_LEFT, 0)
+	tool.on_pointer_move(start.end + Vector2(30.0, 20.0))
+	tool.on_pointer_down(Vector2.ZERO, MOUSE_BUTTON_LEFT, KEY_ESCAPE)
+	check("Escape emits the immutable pre-resize annotation last",
+		not changes.is_empty() and changes.back()["ann"] == original)
+	tool.on_deactivate()
+
+
+func test_rotated_box_resize_uses_local_pointer_delta() -> void:
+	print("test_rotated_box_resize_uses_local_pointer_delta:")
+	var host := _make_boxed_text_host()
+	host._annotations[0]["kind_payload"]["rotation_rad"] = PI * 0.25
+	var annotation: Dictionary = host._annotations[0]
+	var tool := AnnotationTransformTool.new()
+	var changes := _capture_modified(tool)
+	tool.on_activate(host)
+	var bounds := AnnotationText.new().bounds(annotation)
+	tool.on_pointer_down(bounds.end, MOUSE_BUTTON_LEFT, 0)
+	var delta := Vector2(20.0, 0.0).rotated(PI * 0.25)
+	tool.on_pointer_move(bounds.end + delta)
+	check("displayed rotated corner routes through box resize", not changes.is_empty())
+	var payload: Dictionary = changes.back()["ann"]["kind_payload"]
+	check("rotated horizontal handle grows width by its local-axis movement",
+		is_equal_approx(float(payload["box_size"][0]), 160.0))
+	check_eq("rotated resize preserves the text rotation", payload.get("rotation_rad"), PI * 0.25)
+	tool.on_deactivate()
 
 
 # ── Hit-zone tests ────────────────────────────────────────────────────────────
@@ -1240,6 +1316,43 @@ func _arrow_label_host(font: float = 10.0, offset: Variant = null,
 	})
 	host._selected_id = "ann_arrow"
 	return host
+
+
+func test_arrow_bounds_corner_still_scales_whole_arrow() -> void:
+	print("test_arrow_bounds_corner_still_scales_whole_arrow:")
+	var host := _arrow_label_host()
+	var arrow := AnnotationArrow.new()
+	var tool := AnnotationTransformTool.new()
+	var changes := _capture_modified(tool)
+	tool.on_activate(host)
+	var bounds := arrow.bounds(host._annotations[0])
+	tool.on_pointer_down(bounds.end, MOUSE_BUTTON_LEFT, 0)
+	tool.on_pointer_move(bounds.end + Vector2(20.0, 20.0))
+	check("ordinary arrow corner still mutates whole-arrow geometry", not changes.is_empty()
+		and arrow.endpoints_any(null, changes.back()["ann"])[1] != Vector2(100.0, 0.0))
+	check("ordinary arrow scale does not mint caption box metadata",
+		not changes.is_empty() and not changes.back()["ann"]["kind_payload"].has("label_box_size"))
+	tool.on_deactivate()
+
+
+func test_caption_corner_resizes_only_caption_box() -> void:
+	print("test_caption_corner_resizes_only_caption_box:")
+	var host := _arrow_label_host()
+	var arrow := AnnotationArrow.new()
+	var original_endpoints := arrow.endpoints_any(null, host._annotations[0])
+	var tool := AnnotationTransformTool.new()
+	var changes := _capture_modified(tool)
+	tool.on_activate(host)
+	var caption: Rect2 = arrow.label_rect(host._annotations[0])
+	tool.on_pointer_down(caption.end, MOUSE_BUTTON_LEFT, 0)
+	check_eq("caption corner arms the dedicated resize zone", tool._active_zone,
+		AnnotationTransformTool.Zone.LABEL_RESIZE)
+	tool.on_pointer_move(caption.end + Vector2(12.0, 8.0))
+	check("caption resize persists a larger layout box", not changes.is_empty()
+		and changes.back()["ann"]["kind_payload"].has("label_box_size"))
+	check_eq("caption resize leaves arrow endpoints exact",
+		arrow.endpoints_any(null, changes.back()["ann"]), original_endpoints)
+	tool.on_deactivate()
 
 
 func test_label_drag_sideways_preserves_perpendicular_clearance() -> void:

@@ -1,5 +1,7 @@
 class_name TextEditorAnnotationHost
 extends AnnotationHost
+
+const _CommentThreadScript = preload("res://Scripts/Services/Annotations/AnnotationCommentThread.gd")
 ## Annotation host for the built-in code / text editor (Design §11.2, Round 5a).
 ##
 ## Owns a list of v2 annotation envelopes anchored to char-offset ranges in the
@@ -22,6 +24,7 @@ const _SCHEMA := preload("res://Scripts/Services/Annotations/AnnotationV2Schema.
 const _SidecarIOScript := preload("res://Scripts/Services/Annotations/AnnotationSidecarIO.gd")
 const _LifecycleScript := preload("res://Scripts/Services/Annotations/AnnotationLifecycle.gd")
 const _AnnotationTextCommentScript = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextComment.gd")
+const _TextAnchorHistoryScript = preload("res://Scripts/Services/Annotations/TextAnchorHistory.gd")
 
 # ── Back-reference to the live text source ────────────────────────────────────
 
@@ -46,6 +49,9 @@ var _document_path: String = ""
 
 ## Per-host kind registry (built-in kinds registered eagerly).
 var _registry: AnnotationRegistry = null
+var _anchor_history: RefCounted = _TextAnchorHistoryScript.new()
+var _anchor_generations: Dictionary = {}
+var _tracked_text := ""
 
 # ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -73,15 +79,15 @@ func get_capabilities() -> Dictionary:
 			"reopen": true,
 			"delete": true,
 			"repair": true,
-			"apply": true,
+			"apply": false,
 		},
 		"authoring": {
 			"add": true,
 			"domain_pickers": true,
 		},
 		"panes": false,
-		"body_views": false,
-		"filters": ["all", "open", "applied", "resolved", "broken"],
+		"body_views": true,
+		"filters": ["open", "resolved", "all"],
 	}
 
 
@@ -100,9 +106,14 @@ func get_document_identity() -> Dictionary:
 ## validates ranges against the live text.
 func set_code_edit(code_edit: Object) -> void:
 	_code_edit = code_edit
+	_tracked_text = _get_text()
+	_anchor_history.reset(_tracked_text, _code_edit_version(), _anchor_records())
 
 
 func set_document_path(path: String) -> void:
+	if path != _document_path and not _document_path.is_empty():
+		_tracked_text = _get_text()
+		_anchor_history.reset(_tracked_text, _code_edit_version(), _anchor_records())
 	_document_path = path
 
 
@@ -110,6 +121,8 @@ func set_document_path(path: String) -> void:
 func set_text(text: String) -> void:
 	_fallback_text = text
 	if _code_edit == null:
+		_tracked_text = text
+		_anchor_history.reset(text, 0, _anchor_records())
 		bump_revision()
 
 
@@ -144,6 +157,8 @@ func add_annotation_v2(envelope: Dictionary) -> String:
 		push_warning("[TextEditorAnnotationHost] add_annotation_v2: validation errors: %s" % str(result.to_error_dicts()))
 		return ""
 	_annotations.append(stored)
+	_bump_anchor_generation(ann_id)
+	_anchor_history.record_anchor_state(_get_text(), _code_edit_version(), _anchor_records())
 	annotations_changed.emit()
 	return ann_id
 
@@ -227,7 +242,10 @@ func update_annotation(annotation_id: String, new_annotation: Dictionary) -> boo
 		if _annotations[i].get("id", "") == annotation_id:
 			var updated := new_annotation.duplicate(true)
 			updated["id"] = annotation_id
+			if (_annotations[i] as Dictionary).get("anchor", {}) != updated.get("anchor", {}):
+				_bump_anchor_generation(annotation_id)
 			_annotations[i] = updated
+			_anchor_history.record_anchor_state(_get_text(), _code_edit_version(), _anchor_records())
 			annotations_changed.emit()
 			return true
 	return false
@@ -245,12 +263,44 @@ func remove_annotation(annotation_id: String) -> bool:
 	for i in range(_annotations.size()):
 		if _annotations[i].get("id", "") == annotation_id:
 			_annotations.remove_at(i)
+			_anchor_history.record_anchor_state(_get_text(), _code_edit_version(), _anchor_records())
 			# Base contract: removing the selected annotation clears selection.
 			if get_selected_annotation_id() == annotation_id:
 				set_selected_annotation_id("")
 			annotations_changed.emit()
 			return true
 	return false
+
+
+func add_comment_reply(annotation_id: String, text: String, author: Dictionary,
+		parent_id: String = "") -> Dictionary:
+	var current := get_by_id(annotation_id)
+	if current.is_empty():
+		return {"ok": false, "error": "annotation not found: %s" % annotation_id}
+	var result: Dictionary = _CommentThreadScript.add_reply(current, text, author, parent_id)
+	if bool(result.get("ok", false)) and not update_annotation(annotation_id, result.get("annotation", {})):
+		return {"ok": false, "error": "annotation could not be updated"}
+	return result
+
+
+func edit_comment_reply(annotation_id: String, reply_id: String, text: String) -> Dictionary:
+	var current := get_by_id(annotation_id)
+	if current.is_empty():
+		return {"ok": false, "error": "annotation not found: %s" % annotation_id}
+	var result: Dictionary = _CommentThreadScript.edit_reply(current, reply_id, text)
+	if bool(result.get("ok", false)) and not update_annotation(annotation_id, result.get("annotation", {})):
+		return {"ok": false, "error": "annotation could not be updated"}
+	return result
+
+
+func delete_comment_reply(annotation_id: String, reply_id: String) -> Dictionary:
+	var current := get_by_id(annotation_id)
+	if current.is_empty():
+		return {"ok": false, "error": "annotation not found: %s" % annotation_id}
+	var result: Dictionary = _CommentThreadScript.delete_reply(current, reply_id)
+	if bool(result.get("ok", false)) and not update_annotation(annotation_id, result.get("annotation", {})):
+		return {"ok": false, "error": "annotation could not be updated"}
+	return result
 
 
 ## Round 5b.ii: re-anchor a stale annotation to a new [start, end) range in the
@@ -275,15 +325,18 @@ func retarget_annotation(annotation_id: String, start: int, end: int) -> bool:
 		var anchor: Dictionary = (ann.get("anchor", {}) as Dictionary).duplicate(true)
 		anchor["id"] = {"start": start, "end": end}
 		var snap: Dictionary = (anchor.get("snapshot", {}) as Dictionary).duplicate(true)
+		snap.erase("tracking_state")
 		snap["position"] = [float(line_col[0]), float(line_col[1])]
 		snap["text"] = snapshot_text
 		snap["document_revision"] = get_revision()
 		anchor["snapshot"] = snap
 		ann["anchor"] = anchor
+		_bump_anchor_generation(annotation_id)
 		ann["lifecycle"] = "open"
 		ann["updated_at"] = int(Time.get_unix_time_from_system())
 		_ensure_display_index(ann)
 		_annotations[i] = ann
+		_anchor_history.record_anchor_state(_get_text(), _code_edit_version(), _anchor_records())
 		bump_revision()
 		annotations_changed.emit()
 		return true
@@ -300,6 +353,7 @@ func load_annotations(raw_array: Array) -> void:
 	var io = _SidecarIOScript.new()
 	var result := io.process_annotations(raw_array)
 	_annotations = result.get("annotations", [])
+	_anchor_generations.clear()
 	# JSON.parse_string returns Variant::FLOAT for all numerics; coerce
 	# integer-valued anchor fields back to int so resolve_anchor's `is int`
 	# guards behave the same on reload as on first author.
@@ -308,6 +362,7 @@ func load_annotations(raw_array: Array) -> void:
 			_migrate_text_to_text_comment(ann as Dictionary)
 			_coerce_envelope_ints(ann as Dictionary)
 			_ensure_display_index(ann as Dictionary)
+			_bump_anchor_generation(str((ann as Dictionary).get("id", "")))
 	# Bump _id_counter past any loaded "ann_XXXX" id so newly-generated ids
 	# don't collide with persisted ones.
 	for ann in _annotations:
@@ -330,6 +385,8 @@ func load_annotations(raw_array: Array) -> void:
 		var highest := AnnotationRef.highest_seq_in_list(_annotations, _pi.project_id)
 		if highest > 0:
 			_pi.reconcile_floor(highest)
+	_tracked_text = _get_text()
+	_anchor_history.reset(_tracked_text, _code_edit_version(), _anchor_records())
 	annotations_changed.emit()
 
 
@@ -413,6 +470,12 @@ func restore_state_snapshot(snapshot: Variant) -> bool:
 		_fallback_text = str(d["text"])
 	if d.has("annotations") and d["annotations"] is Array:
 		_annotations = (d["annotations"] as Array).duplicate(true)
+	_anchor_generations.clear()
+	for annotation in _annotations:
+		if annotation is Dictionary:
+			_bump_anchor_generation(str((annotation as Dictionary).get("id", "")))
+	_tracked_text = _get_text()
+	_anchor_history.reset(_tracked_text, _code_edit_version(), _anchor_records())
 	return true
 
 
@@ -433,6 +496,10 @@ func _resolve_text_range(anchor: Dictionary) -> Dictionary:
 		snap_pos = Vector2(float((pos_array as Array)[0]), float((pos_array as Array)[1]))
 	elif pos_array is Vector2:
 		snap_pos = pos_array
+	var tracking_state := str(snapshot.get("tracking_state", ""))
+	if not tracking_state.is_empty():
+		return {"position": snap_pos, "bounds": Rect2(snap_pos, Vector2.ZERO), "stale": true,
+			"view_metadata": {"reason": "Text removed" if tracking_state == "text_removed" else "Anchor needs repair"}}
 
 	# If id is not a valid {start, end} dict, mark stale.
 	if not id is Dictionary:
@@ -449,10 +516,9 @@ func _resolve_text_range(anchor: Dictionary) -> Dictionary:
 	if (start as int) < 0 or (end as int) > text_len or (start as int) > (end as int):
 		return {"position": snap_pos, "bounds": Rect2(snap_pos, Vector2.ZERO), "stale": true, "view_metadata": {}}
 
-	# Snapshot-text equality (Round 5b): the live substring at [start, end) must
-	# match what the user originally selected. Any divergence — insert, retype,
-	# whitespace shift — marks the anchor stale so broken-anchor UX kicks in.
-	# Skipped when the snapshot has no text (older or migrated annotations).
+	# Snapshot text follows ordinary edits through track_text_change(). A mismatch
+	# here therefore means an untracked/external reset or an older sidecar that
+	# could not be reconciled, and safely enters the repair flow.
 	var snap_text: String = str(snapshot.get("text", ""))
 	if not snap_text.is_empty():
 		var live: String = src_text.substr(start as int, (end as int) - (start as int))
@@ -471,6 +537,51 @@ func get_text_content() -> String:
 	return _get_text()
 
 
+## Called from Editor's text_changed boundary after CodeEdit has recorded the
+## operation. CodeEdit's version identifies undo/redo states; buffer revisions
+## do not, because they only increase.
+func track_text_change(text: String, code_edit_version: int) -> void:
+	if text == _tracked_text:
+		return
+	var moved: Dictionary = _anchor_history.transition(
+		_tracked_text, text, code_edit_version, _anchor_records())
+	_tracked_text = text
+	bump_revision()
+	var changed := false
+	for i in range(_annotations.size()):
+		var annotation: Dictionary = _annotations[i]
+		var annotation_id := str(annotation.get("id", ""))
+		if not moved.has(annotation_id):
+			continue
+		var record: Dictionary = moved[annotation_id]
+		var anchor_v: Variant = annotation.get("anchor", {})
+		if not anchor_v is Dictionary:
+			continue
+		var anchor: Dictionary = (anchor_v as Dictionary).duplicate(true)
+		anchor["id"] = {"start": int(record.get("start", 0)), "end": int(record.get("end", 0))}
+		var snapshot_v: Variant = anchor.get("snapshot", {})
+		var snapshot: Dictionary = (snapshot_v as Dictionary).duplicate(true) if snapshot_v is Dictionary else {}
+		var record_state := str(record.get("tracking_state", ""))
+		if not record_state.is_empty():
+			snapshot["tracking_state"] = record_state
+		else:
+			snapshot.erase("tracking_state")
+			var start := int(record.get("start", 0))
+			var end := int(record.get("end", start))
+			snapshot["text"] = text.substr(start, end - start)
+			var line_col := _offset_to_line_col_for(text, start)
+			snapshot["position"] = [float(line_col[0]), float(line_col[1])]
+		snapshot["document_revision"] = get_revision()
+		anchor["snapshot"] = snapshot
+		if annotation.get("anchor", {}) != anchor:
+			annotation["anchor"] = anchor
+			_annotations[i] = annotation
+			changed = true
+	_anchor_history.record_anchor_state(text, code_edit_version, _anchor_records())
+	if changed:
+		annotations_changed.emit()
+
+
 ## Convert a flat char offset to [line, col].  Public version for Editor.gd.
 func offset_to_line_col(offset: int) -> Array:
 	return _offset_to_line_col(offset)
@@ -484,8 +595,55 @@ func _get_text() -> String:
 	return _fallback_text
 
 
+func _code_edit_version() -> int:
+	if _code_edit != null and _code_edit.has_method("get_version"):
+		return int(_code_edit.call("get_version"))
+	return 0
+
+
+func _bump_anchor_generation(annotation_id: String) -> void:
+	if annotation_id.is_empty():
+		return
+	_anchor_generations[annotation_id] = int(_anchor_generations.get(annotation_id, 0)) + 1
+
+
+func _anchor_records() -> Dictionary:
+	var records := {}
+	for annotation_v in _annotations:
+		if not annotation_v is Dictionary:
+			continue
+		var annotation: Dictionary = annotation_v
+		var annotation_id := str(annotation.get("id", ""))
+		var anchor_v: Variant = annotation.get("anchor", {})
+		if annotation_id.is_empty() or not anchor_v is Dictionary:
+			continue
+		var id_v: Variant = (anchor_v as Dictionary).get("id", {})
+		if not id_v is Dictionary:
+			continue
+		var snapshot_v: Variant = (anchor_v as Dictionary).get("snapshot", {})
+		var snapshot: Dictionary = snapshot_v as Dictionary if snapshot_v is Dictionary else {}
+		var record_state := str(snapshot.get("tracking_state", ""))
+		var start := int((id_v as Dictionary).get("start", 0))
+		var end := int((id_v as Dictionary).get("end", 0))
+		if record_state.is_empty():
+			var expected := str(snapshot.get("text", ""))
+			if start < 0 or end < start or end > _tracked_text.length() \
+					or (not expected.is_empty() and _tracked_text.substr(start, end - start) != expected):
+				continue
+		records[annotation_id] = {
+			"generation": int(_anchor_generations.get(annotation_id, 1)),
+			"start": start,
+			"end": end,
+			"tracking_state": record_state,
+		}
+	return records
+
+
 func _offset_to_line_col(offset: int) -> Array:
-	var text := _get_text()
+	return _offset_to_line_col_for(_get_text(), offset)
+
+
+static func _offset_to_line_col_for(text: String, offset: int) -> Array:
 	var line := 0
 	var col := 0
 	var i := 0

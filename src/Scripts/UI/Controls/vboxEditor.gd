@@ -942,7 +942,7 @@ func _on_redo_button_pressed():
 
 func _on_add_file_editor_pressed() -> void:
 	## Show a popup menu of all registered creatable items near the mouse cursor.
-	var items := SingletonObject.creatable_item_registry.get_all_items()
+	var items := SingletonObject.creatable_item_registry.get_items_alphabetical()
 	if items.is_empty():
 		return
 
@@ -953,11 +953,17 @@ func _on_add_file_editor_pressed() -> void:
 			popup.add_icon_item(item.icon, item.display_name)
 		else:
 			popup.add_item(item.display_name)
+		popup.set_item_metadata(popup.item_count - 1, item.id)
 
 	popup.index_pressed.connect(func(index: int) -> void:
-		var current_items := SingletonObject.creatable_item_registry.get_all_items()
-		if index >= 0 and index < current_items.size():
-			current_items[index].create_callback.call()
+		if index < 0 or index >= popup.item_count:
+			return
+		var item_id := str(popup.get_item_metadata(index))
+		var current_item = SingletonObject.creatable_item_registry.get_item(item_id)
+		# A plugin may unregister while its popup is open. Resolve the stable ID
+		# at click time so another item can never inherit the stale row's action.
+		if current_item != null:
+			current_item.create_callback.call()
 	)
 	popup.popup_hide.connect(popup.queue_free)
 

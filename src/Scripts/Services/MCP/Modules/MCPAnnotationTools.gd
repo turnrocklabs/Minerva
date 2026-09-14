@@ -2,7 +2,9 @@ class_name MCPAnnotationTools
 extends RefCounted
 ## MCP tool module for annotation CRUD and overlay rendering.
 ##
-## Implements five tools over the annotation substrate (design §8.1-8.2):
+## Implements the core annotation tools over the annotation substrate (design §8.1-8.2).
+## Text-comment reply registration lives in the focused MCPAnnotationReplyTools;
+## its mutations delegate back here so live/sidecar source ownership stays shared.
 ##   minerva_annotations_list         — list all annotations from sidecar
 ##   minerva_annotations_add          — validate + add annotation, force author=ai
 ##   minerva_annotations_update       — shallow patch top-level fields
@@ -59,6 +61,7 @@ const _TOOL_SET := "annotations"
 ## taller than this are downsampled before compositing to keep PNG encoding fast.
 const _MAX_OUTPUT_EDGE: int = 1024
 const _DEFAULT_QUERY_STATUSES: PackedStringArray = ["open", "applied"]
+const _CommentThreadScript = preload("res://Scripts/Services/Annotations/AnnotationCommentThread.gd")
 
 
 func _init(mcp_server = null) -> void:
@@ -501,6 +504,36 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_text_editor_add_comment":
 			return _text_editor_add_comment(arguments)
 	return _err("Unknown annotation tool: %s" % tool_name)
+
+
+func mutate_comment_reply(args: Dictionary, operation: String) -> Dictionary:
+	var annotation_id := str(args.get("annotation_id", "")).strip_edges()
+	if annotation_id.is_empty():
+		return _err("'annotation_id' is required")
+	var source := _resolve_annotation_source(args, true, annotation_id)
+	if not bool(source.get("ok", false)):
+		return _err(str(source.get("error", "annotation not found")))
+	var current: Dictionary = source.get("annotation", {})
+	var result: Dictionary
+	match operation:
+		"add":
+			result = _CommentThreadScript.add_reply(current, str(args.get("text", "")), {"kind": "ai"}, str(args.get("parent_id", "")))
+		"edit":
+			result = _CommentThreadScript.edit_reply(current, str(args.get("reply_id", "")), str(args.get("text", "")))
+		"delete":
+			result = _CommentThreadScript.delete_reply(current, str(args.get("reply_id", "")))
+		_:
+			return _err("unknown reply operation")
+	if not bool(result.get("ok", false)):
+		return _err(str(result.get("error", "reply mutation failed")))
+	var updated: Dictionary = result.get("annotation", {})
+	var write_result := _write_annotation_to_source(source, updated)
+	if not bool(write_result.get("ok", false)):
+		return write_result
+	var response := {"ok": true, "success": true, "annotation": updated}
+	if result.has("reply"):
+		response["reply"] = result["reply"]
+	return response
 
 
 # ── minerva_text_editor_add_comment ───────────────────────────────────────────

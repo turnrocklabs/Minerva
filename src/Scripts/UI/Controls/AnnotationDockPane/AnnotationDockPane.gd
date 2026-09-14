@@ -54,6 +54,7 @@ var _dock_body: VBoxContainer = null
 var _dragging_height: bool = false
 var _drag_start_pointer_y: float = 0.0
 var _drag_start_height: float = 0.0
+var _reveal_serial := 0
 
 const _RIGHT_EXPANDED_MIN := Vector2(260, 0)
 const _RIGHT_COLLAPSED_MIN := Vector2(30, 0)
@@ -65,6 +66,11 @@ const _HANDLE_SIZE := Vector2(0, 8)
 
 func _ready() -> void:
 	_build_ui()
+
+
+func _exit_tree() -> void:
+	# Invalidate layout continuations before their target controls are detached.
+	_reveal_serial += 1
 
 
 func set_host(host: RefCounted) -> void:
@@ -168,6 +174,11 @@ func begin_add_comment_flow() -> void:
 		_workbench.begin_add_comment_flow()
 
 
+func complete_add_comment(success: bool) -> void:
+	if _workbench != null and _workbench.has_method("complete_add_comment"):
+		_workbench.complete_add_comment(success)
+
+
 func show_status(message: String) -> void:
 	_ensure_ui()
 	if _workbench.has_method("show_status"):
@@ -258,6 +269,7 @@ func _build_ui() -> void:
 	_workbench.connect("repair_requested", func(id: String) -> void: repair_requested.emit(id))
 	_workbench.connect("add_comment_requested", func(text: String) -> void: add_comment_requested.emit(text))
 	_workbench.connect("annotation_selected", func(id: String) -> void: annotation_selected.emit(id))
+	_workbench.connect("reveal_requested", _on_reveal_requested)
 	_dock_body.add_child(_workbench)
 
 	# Workflow listing (pcb-ui-native-cluster §4): workflow-class annotations
@@ -276,12 +288,43 @@ func _build_ui() -> void:
 		_workflow_list.set_host(_host)
 
 
+func _on_reveal_requested(target: Control, annotation_id: String, host_epoch: int) -> void:
+	_reveal_serial += 1
+	_reveal_after_layout(target, annotation_id, host_epoch, _reveal_serial)
+
+
+func _reveal_after_layout(target: Control, annotation_id: String, host_epoch: int,
+		request_serial: int) -> void:
+	# Controls gain their final minimum size one layout pass after a composer or
+	# thread opens. Reveal only explicit user actions, never passive refreshes.
+	if not is_inside_tree():
+		return
+	var scene_tree := get_tree()
+	await scene_tree.process_frame
+	if not is_inside_tree() or request_serial != _reveal_serial:
+		return
+	await scene_tree.process_frame
+	if not is_inside_tree() or request_serial != _reveal_serial or _collapsed \
+			or not is_instance_valid(target) or not is_instance_valid(_dock_scroll) \
+			or not is_instance_valid(_workbench) \
+			or not _workbench.has_method("is_reveal_target_current") \
+			or not bool(_workbench.call("is_reveal_target_current", target, annotation_id, host_epoch)):
+		return
+	var inner_scroll := _workbench.get_node_or_null("AnnotationScroll") as ScrollContainer
+	var horizontal_position := inner_scroll.scroll_horizontal if inner_scroll != null else 0
+	_dock_scroll.ensure_control_visible(target)
+	if inner_scroll != null:
+		inner_scroll.scroll_horizontal = horizontal_position
+
+
 func _toggle_collapsed() -> void:
 	_set_collapsed(not _collapsed)
 
 
 func _set_collapsed(value: bool) -> void:
 	_collapsed = value
+	if _collapsed:
+		_reveal_serial += 1
 	# Collapsing the dock removes the only visible affordance for an active
 	# tool (the toolbar buttons go invisible) — leaving a tool active in that
 	# state strands the user: the AnnotationOverlay above the editor surface

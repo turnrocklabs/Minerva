@@ -18,6 +18,7 @@ extends SceneTree
 
 const DockPaneScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockPane.gd")
 const SizingScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockSizing.gd")
+const TextCommentScript := preload("res://Scripts/Services/Annotations/kinds/AnnotationTextComment.gd")
 
 const NARROW_WIDTH := 554.0
 const WIDE_WIDTH := 1200.0
@@ -93,6 +94,44 @@ class _DockHost extends AnnotationHost:
 		}
 
 
+class _CommentDockHost extends AnnotationHost:
+	signal annotations_changed()
+
+	var _registry: AnnotationRegistry = null
+	var _annotations: Array = []
+
+	func _init() -> void:
+		super()
+		_registry = AnnotationRegistry.new()
+		_registry.register_annotation_kind(TextCommentScript.new())
+		for index in 10:
+			_annotations.append({
+				"id": "comment_%d" % index, "kind": "text_comment", "lifecycle": "open",
+				"display_index": index + 1, "kind_payload": {"text": "Comment %d" % index},
+				"anchor": {"snapshot": {"text": "selected text %d" % index}},
+				"author": {"kind": "human"},
+			})
+
+	func get_registry() -> AnnotationRegistry:
+		return _registry
+
+	func get_annotations() -> Array:
+		return _annotations.duplicate(true)
+
+	func get_by_id(annotation_id: String) -> Dictionary:
+		for annotation in _annotations:
+			if str((annotation as Dictionary).get("id", "")) == annotation_id:
+				return (annotation as Dictionary).duplicate(true)
+		return {}
+
+	func get_capabilities() -> Dictionary:
+		return {"filters": ["open", "resolved", "all"],
+			"lifecycle": {"resolve": true, "reopen": true, "delete": true}}
+
+	func resolve_anchor(_anchor: Dictionary) -> Dictionary:
+		return {"stale": false}
+
+
 func check(desc: String, ok: bool) -> void:
 	if ok:
 		_pass += 1
@@ -114,6 +153,7 @@ func _init() -> void:
 	await _test_resize_preserves_preference()
 	_test_rows_stay_reachable_when_narrow()
 	await _test_nothing_scrolls_when_wide()
+	await _test_reply_composer_is_revealed_without_passive_scroll_jumps()
 	await _test_pane_carries_its_own_close_control()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
@@ -291,7 +331,11 @@ func _test_rows_stay_reachable_when_narrow() -> void:
 		var control := row as Control
 		if control == null or control.get_child_count() == 0:
 			continue
-		var trailing := control.get_child(control.get_child_count() - 1) as Control
+		# Comment rows use a PanelContainer so the selected background really
+		# paints; measure the inner action row so that wrapper cannot mask a
+		# stranded trailing button.
+		var row_content := control.get_child(0) as Control if control is PanelContainer else control
+		var trailing := row_content.get_child(row_content.get_child_count() - 1) as Control
 		if trailing != null:
 			var trailing_right := trailing.get_global_rect().end.x
 			var on_screen := trailing_right <= viewport_right + 1.0
@@ -318,6 +362,59 @@ func _test_nothing_scrolls_when_wide() -> void:
 		not bool(_workbench().is_scrolling_horizontally()))
 	check("workflow list does not scroll horizontally when the dock is wide",
 		not bool(_workflow_list().is_scrolling_horizontally()))
+
+
+func _test_reply_composer_is_revealed_without_passive_scroll_jumps() -> void:
+	print("\n-- intentional comment controls scroll into view --")
+	var comment_host := _CommentDockHost.new()
+	_pane.set_host(comment_host)
+	_tab.size = Vector2(NARROW_WIDTH, TALL_HEIGHT)
+	_pane.set_preferred_height(200.0)
+	await _settle()
+	var workbench := _workbench()
+	workbench._select_annotation("comment_9")
+	await _settle()
+	var view: Control = workbench._current_body_view
+	var reply := view.get_node("ThreadHeader/Reply") as Button
+	var dock_scroll := _pane.get_node("DockScroll") as ScrollContainer
+	var inner_scroll := workbench.get_node("AnnotationScroll") as ScrollContainer
+	var horizontal_before := inner_scroll.scroll_horizontal
+	reply.pressed.emit()
+	await _settle()
+	# ensure_control_visible applies after the reveal coroutine's own two layout
+	# frames; give that queued scroll update its following layout boundary.
+	await process_frame
+	var composer := view.get_node("ReplyComposer") as TextEdit
+	var viewport := dock_scroll.get_global_rect()
+	var composer_rect := composer.get_global_rect()
+	check("opening Reply reveals the first composer within the capped dock "
+		+ "(viewport=%s composer=%s scroll=%d)" % [viewport, composer_rect, dock_scroll.scroll_vertical],
+		composer.is_visible_in_tree() and composer_rect.position.y >= viewport.position.y - 1.0
+		and composer_rect.end.y <= viewport.end.y + 1.0)
+	check("vertical reveal preserves the annotation list's horizontal position",
+		inner_scroll.scroll_horizontal == horizontal_before)
+	(view.get_node("ReplyActions/CancelReply") as Button).pressed.emit()
+	var edit_comment := _button_with_tooltip(view, "Edit comment")
+	edit_comment.pressed.emit()
+	await _settle()
+	dock_scroll.scroll_vertical = 0
+	await _settle()
+	comment_host.annotations_changed.emit()
+	await _settle()
+	check("a passive refresh restores an active edit without jumping the dock",
+		dock_scroll.scroll_vertical == 0 and workbench._current_body_view._active_edit != null)
+
+
+# ── Test lookup helper ────────────────────────────────────────────────────────
+
+func _button_with_tooltip(node: Node, tooltip: String) -> Button:
+	if node is Button and (node as Button).tooltip_text == tooltip:
+		return node as Button
+	for child in node.get_children():
+		var found := _button_with_tooltip(child, tooltip)
+		if found != null:
+			return found
+	return null
 
 
 # ── Close affordance ──────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 class_name AnnotationArrow
 extends AnnotationKind
+const TextBoxLayout = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxLayout.gd")
 ## Built-in 2D annotation kind: 2d_arrow.
 ##
 ## Primitives: [arrow] or [arrow, text]
@@ -11,7 +12,7 @@ extends AnnotationKind
 ##
 ## ── Visio-style label (A8u2, item 019fb5de8c81) ───────────────────────────────
 ## An arrow plus its caption is ONE annotation, never two. The caption lives in
-## kind_payload as three keys and its position is DERIVED, never stored absolute:
+## kind_payload; its position is DERIVED, never stored absolute:
 ##
 ##   "label"            String    the caption text ("" / absent = no label)
 ##   "label_offset"     [x, y]    doc-space offset from the ARROW MIDPOINT to the
@@ -21,6 +22,7 @@ extends AnnotationKind
 ##                                kind_payload.font_size (screen px ÷ authoring
 ##                                zoom, so it is not 14 *millimetres* on a
 ##                                mm-unit canvas).
+##   "label_box_size"   [w, h]    optional wrapped layout box in doc units.
 ##
 ## Everything about the label works on BOTH endpoint storage paths — the
 ## kind_payload endpoint_a/endpoint_b anchor path AND the legacy [arrow, …]
@@ -48,6 +50,7 @@ const _TEXT_PRIMITIVE_APPROX_PX := Vector2(50.0, 12.0)
 const LABEL_KEY := "label"
 const LABEL_OFFSET_KEY := "label_offset"
 const LABEL_FONT_SIZE_KEY := "label_font_size"
+const LABEL_BOX_SIZE_KEY := "label_box_size"
 
 ## Doc-unit fallback glyph height when a payload carries a label without an
 ## explicit size — same default as AnnotationText's kind_payload.font_size.
@@ -224,6 +227,12 @@ func transform_annotation(annotation: Dictionary, transform: Transform2D, operat
 			if absf(label_delta - 1.0) > 0.0001:
 				payload[LABEL_FONT_SIZE_KEY] = float(
 					payload.get(LABEL_FONT_SIZE_KEY, DEFAULT_LABEL_FONT_SIZE)) * label_delta
+				if payload.has(LABEL_BOX_SIZE_KEY):
+					var stored: Variant = TextBoxLayout.optional_size(payload, LABEL_BOX_SIZE_KEY,
+						float(payload[LABEL_FONT_SIZE_KEY]) / label_delta)
+					if stored is Vector2:
+						payload[LABEL_BOX_SIZE_KEY] = [(stored as Vector2).x * label_delta,
+							(stored as Vector2).y * label_delta]
 				changed = true
 
 	if changed:
@@ -300,7 +309,7 @@ func label_rect(annotation: Dictionary, endpoints: Array = []) -> Variant:
 	var centre: Variant = label_position(annotation, endpoints)
 	if not centre is Vector2:
 		return null
-	var box := label_box_size(text, label_font_size(annotation))
+	var box := label_box_size_for(annotation)
 	return Rect2((centre as Vector2) - box * 0.5, box)
 
 
@@ -310,6 +319,16 @@ func label_rect(annotation: Dictionary, endpoints: Array = []) -> Variant:
 ## arithmetic the committed render will use.
 static func label_box_size(text: String, font: float) -> Vector2:
 	return Vector2(maxf(float(text.length()) * font * 0.55, font), font * 1.2)
+
+
+func label_box_size_for(annotation: Dictionary) -> Vector2:
+	var payload: Dictionary = annotation.get("kind_payload", {})
+	var font := label_font_size(annotation)
+	var requested: Variant = TextBoxLayout.optional_size(payload, LABEL_BOX_SIZE_KEY, font)
+	if not requested is Vector2:
+		return label_box_size(label_text(annotation), font)
+	var measured: Dictionary = TextBoxLayout.layout(label_text(annotation), font, 1.0, requested)
+	return measured["size"]
 
 
 ## Copy of `annotation` with the caption set to `text`. An EMPTY text CLEARS the
@@ -327,6 +346,7 @@ func with_label(annotation: Dictionary, text: String,
 		payload.erase(LABEL_KEY)
 		payload.erase(LABEL_OFFSET_KEY)
 		payload.erase(LABEL_FONT_SIZE_KEY)
+		payload.erase(LABEL_BOX_SIZE_KEY)
 	else:
 		payload[LABEL_KEY] = clean
 		if not payload.has(LABEL_FONT_SIZE_KEY):
@@ -370,6 +390,26 @@ func with_label_offset(annotation: Dictionary, offset: Vector2) -> Dictionary:
 	return out
 
 
+func with_label_box_width(annotation: Dictionary, width: float) -> Dictionary:
+	var out := annotation.duplicate(true)
+	var payload: Dictionary = out.get("kind_payload", {}).duplicate(true)
+	payload = TextBoxLayout.resized(payload, LABEL_BOX_SIZE_KEY, width,
+		label_text(annotation), label_font_size(annotation))
+	out["kind_payload"] = payload
+	return out
+
+
+func with_label_box_size(annotation: Dictionary, requested: Vector2) -> Dictionary:
+	var out := annotation.duplicate(true)
+	var payload: Dictionary = out.get("kind_payload", {}).duplicate(true)
+	var measured: Dictionary = TextBoxLayout.layout(label_text(annotation),
+		label_font_size(annotation), 1.0, requested)
+	var size: Vector2 = measured["size"]
+	payload[LABEL_BOX_SIZE_KEY] = [size.x, size.y]
+	out["kind_payload"] = payload
+	return out
+
+
 ## Endpoints from the legacy primitives path, or [].
 func _primitive_endpoints(annotation: Dictionary) -> Array:
 	var prims: Variant = annotation.get("primitives", [])
@@ -400,10 +440,18 @@ func _render_payload_label(ctx: AnnotationRenderContext, annotation: Dictionary,
 		return
 	var rect: Rect2 = r
 	var font := label_font_size(annotation)
-	var px := int(clampf(font * ctx.zoom, 8.0, 64.0))
-	# draw_string takes a BASELINE; the rect is a top-left box (same convention
-	# as AnnotationText._baseline_position).
-	ctx.draw_string(null, rect.position + Vector2(0.0, font), label_text(annotation), color, px)
+	var payload: Dictionary = annotation.get("kind_payload", {})
+	var requested: Variant = TextBoxLayout.optional_size(payload, LABEL_BOX_SIZE_KEY, font)
+	if requested is Vector2:
+		var measured: Dictionary = TextBoxLayout.layout(label_text(annotation), font, 1.0, requested)
+		var baseline := float(measured["ascent"])
+		var px := maxi(1, int(round(font * ctx.zoom)))
+		for line: String in measured["lines"]:
+			ctx.draw_string(null, rect.position + Vector2(0.0, baseline), line, color, px)
+			baseline += float(measured["line_height"])
+	else:
+		var px := int(clampf(font * ctx.zoom, 8.0, 64.0))
+		ctx.draw_string(null, rect.position + Vector2(0.0, font), label_text(annotation), color, px)
 
 
 func render(ctx: AnnotationRenderContext, annotation: Dictionary) -> void:

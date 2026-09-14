@@ -71,19 +71,23 @@ func _on_recording_completed(recording_data) -> void:
 ## Called once during _ready and again whenever items_changed fires.
 func _rebuild_new_submenu() -> void:
 	file_submenu.clear()
-	var items := SingletonObject.creatable_item_registry.get_all_items()
+	var items := SingletonObject.creatable_item_registry.get_items_alphabetical()
 	for item in items:
 		if item.icon:
 			file_submenu.add_icon_item(item.icon, item.display_name)
 		else:
 			file_submenu.add_item(item.display_name)
+		file_submenu.set_item_metadata(file_submenu.item_count - 1, item.id)
 
 
 func _on_new_submenu_index_pressed(index: int) -> void:
 	## Dispatch to the selected item's create_callback.
-	var items := SingletonObject.creatable_item_registry.get_all_items()
-	if index >= 0 and index < items.size():
-		items[index].create_callback.call()
+	if index < 0 or index >= file_submenu.item_count:
+		return
+	var item_id := str(file_submenu.get_item_metadata(index))
+	var item = SingletonObject.creatable_item_registry.get_item(item_id)
+	if item != null:
+		item.create_callback.call()
 			
 
 

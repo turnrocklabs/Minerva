@@ -29,13 +29,18 @@ var _fail_count: int = 0
 var _tmp_dir: String = ""
 
 
-func _init() -> void:
+func _initialize() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
 	print("=== Annotation Arrow-Label Boundary Tests ===\n")
 	_tmp_dir = _make_tmp_dir()
 
 	print("-- BT-38: sidecar round-trip keeps all three label keys --")
 	test_sidecar_round_trip_preserves_the_three_label_keys()
 	test_sidecar_round_trip_preserves_the_derived_caption_rect()
+	test_wrapped_box_round_trip_preserves_midpoint_and_endpoints()
 
 	print("\n-- BT-39: empty-commit matrix --")
 	test_empty_commit_on_unlabelled_arrow_is_byte_identical()
@@ -329,6 +334,27 @@ func test_sidecar_round_trip_preserves_the_derived_caption_rect() -> void:
 		mid is Vector2 and not rect.has_point(mid as Vector2))
 
 
+func test_wrapped_box_round_trip_preserves_midpoint_and_endpoints() -> void:
+	print("test_wrapped_box_round_trip_preserves_midpoint_and_endpoints:")
+	var kind := _kind()
+	var original := _labelled_arrow()
+	original = kind.with_label(original, "first line\nsecond line with a long word")
+	original = kind.with_label_box_size(original, Vector2(56.0, 10.0))
+	var before_endpoints := kind.endpoints_any(null, original)
+	var before_position: Vector2 = kind.label_position(original)
+	var reloaded := _write_and_reread(original, "wrapped_box.test")
+	var payload: Dictionary = reloaded.get("kind_payload", {})
+	check("wrapped dimensions survive sidecar JSON", payload.has(AnnotationArrow.LABEL_BOX_SIZE_KEY))
+	check_eq("caption text keeps its explicit newline", kind.label_text(reloaded),
+		"first line\nsecond line with a long word")
+	check_vec("resizing does not move midpoint-relative caption", kind.label_position(reloaded),
+		before_position)
+	check_eq("resizing does not alter either endpoint", kind.endpoints_any(null, reloaded),
+		before_endpoints)
+	var rect: Rect2 = kind.label_rect(reloaded)
+	check("height grows to display every wrapped line", rect.size.y > 10.0)
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # BT-39 — the empty-commit matrix
 # ══════════════════════════════════════════════════════════════════════════════
@@ -359,14 +385,16 @@ func test_empty_commit_erases_payload_only_when_label_was_sole_content() -> void
 	var kind := _kind()
 	var bare := _arrow("ann_sole", 0.0, 0.0, 100.0, 0.0)
 	var labelled := kind.with_label(bare, "NET", AnnotationArrow.default_label_offset(_LABEL_FONT), _LABEL_FONT)
+	labelled = kind.with_label_box_size(labelled, Vector2(80.0, 24.0))
 	check("the labelled form does carry a payload", labelled.has("kind_payload"))
 
 	var cleared := kind.with_label(labelled, "")
 	var p: Dictionary = cleared.get("kind_payload", {})
-	check("all three label keys are gone",
+	check("all caption keys are gone",
 		not p.has(AnnotationArrow.LABEL_KEY)
 		and not p.has(AnnotationArrow.LABEL_OFFSET_KEY)
-		and not p.has(AnnotationArrow.LABEL_FONT_SIZE_KEY))
+		and not p.has(AnnotationArrow.LABEL_FONT_SIZE_KEY)
+		and not p.has(AnnotationArrow.LABEL_BOX_SIZE_KEY))
 	check("the payload carries no residual content at all", p.is_empty())
 	check_eq("everything OUTSIDE kind_payload is identical to the pre-label arrow",
 		_without_payload(cleared), _without_payload(bare))
@@ -416,6 +444,7 @@ func test_empty_commit_keeps_every_other_payload_key() -> void:
 	check("label key is gone", not p.has(AnnotationArrow.LABEL_KEY))
 	check("label_offset key is gone", not p.has(AnnotationArrow.LABEL_OFFSET_KEY))
 	check("label_font_size key is gone", not p.has(AnnotationArrow.LABEL_FONT_SIZE_KEY))
+	check("label_box_size key is gone", not p.has(AnnotationArrow.LABEL_BOX_SIZE_KEY))
 
 
 func test_tool_does_not_emit_for_an_empty_commit_on_an_unlabelled_arrow() -> void:

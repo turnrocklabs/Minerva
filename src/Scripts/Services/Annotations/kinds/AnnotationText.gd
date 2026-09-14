@@ -1,5 +1,6 @@
 class_name AnnotationText
 extends AnnotationKind
+const TextBoxLayout = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxLayout.gd")
 ## Built-in 2D annotation kind: 2d_text.
 ##
 ## Primitives: [text]
@@ -53,15 +54,110 @@ func summary(annotation: Dictionary) -> String:
 ## The typed words ARE this kind's free text (see AnnotationKind.text_content):
 ## payload text (anchored path) first, else the text primitive's content.
 func text_content(annotation: Dictionary) -> String:
+	return raw_text(annotation).strip_edges()
+
+
+func raw_text(annotation: Dictionary) -> String:
 	var payload: Variant = annotation.get("kind_payload", {})
 	if payload is Dictionary:
-		var t := str((payload as Dictionary).get("text", "")).strip_edges()
-		if not t.is_empty():
+		var t := str((payload as Dictionary).get("text", ""))
+		if (payload as Dictionary).has("text"):
 			return t
 	for prim in annotation.get("primitives", []):
 		if prim is Dictionary and prim.get("kind", "") == "text":
-			return str(prim.get("content", "")).strip_edges()
+			return str(prim.get("content", ""))
 	return ""
+
+
+func text_font_size(annotation: Dictionary) -> float:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and (payload as Dictionary).has("text"):
+		return float((payload as Dictionary).get("font_size", 14.0))
+	for primitive: Variant in annotation.get("primitives", []):
+		if primitive is Dictionary and str((primitive as Dictionary).get("kind", "")) == "text":
+			return float((primitive as Dictionary).get("size", 14.0))
+	return 14.0
+
+
+func text_effective_font_size(annotation: Dictionary) -> float:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and (payload as Dictionary).has("text"):
+		return text_font_size(annotation) * float((payload as Dictionary).get("scale", 1.0))
+	for primitive: Variant in annotation.get("primitives", []):
+		if primitive is Dictionary and str((primitive as Dictionary).get("kind", "")) == "text":
+			return text_font_size(annotation) * float((primitive as Dictionary).get("scale", 1.0))
+	return text_font_size(annotation)
+
+
+func text_rotation(annotation: Dictionary) -> float:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and (payload as Dictionary).has("text"):
+		return float((payload as Dictionary).get("rotation_rad", 0.0))
+	for primitive: Variant in annotation.get("primitives", []):
+		if primitive is Dictionary and str((primitive as Dictionary).get("kind", "")) == "text":
+			return float((primitive as Dictionary).get("rotation_rad", 0.0))
+	return 0.0
+
+
+func editing_origin(annotation: Dictionary, host: Object = null) -> Vector2:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and (payload as Dictionary).has("text"):
+		var anchor: Variant = annotation.get("anchor", {})
+		if anchor is Dictionary and host != null and host.has_method("resolve_position_source"):
+			var resolved: Variant = host.resolve_position_source(anchor)
+			if resolved is Vector2:
+				return resolved
+		if anchor is Dictionary:
+			var snapshot: Variant = (anchor as Dictionary).get("snapshot", {})
+			if snapshot is Dictionary and (snapshot as Dictionary).has("position"):
+				return AnnotationKind._to_vec2((snapshot as Dictionary).get("position"))
+	for primitive: Variant in annotation.get("primitives", []):
+		if primitive is Dictionary and str((primitive as Dictionary).get("kind", "")) == "text":
+			return AnnotationKind._to_vec2((primitive as Dictionary).get("at", [0, 0]))
+	return primary_anchor_point(annotation)
+
+
+func text_box_size(annotation: Dictionary) -> Vector2:
+	var payload: Variant = annotation.get("kind_payload", {})
+	if payload is Dictionary and (payload as Dictionary).has("text"):
+		var font := float((payload as Dictionary).get("font_size", 14.0))
+		var requested: Variant = TextBoxLayout.optional_size(payload, "box_size", font,
+			float((payload as Dictionary).get("scale", 1.0)))
+		return (requested as Vector2) if requested is Vector2 else TextBoxLayout.default_size(font)
+	for primitive: Variant in annotation.get("primitives", []):
+		if primitive is Dictionary and str((primitive as Dictionary).get("kind", "")) == "text":
+			var font := float((primitive as Dictionary).get("size", 14.0))
+			var requested: Variant = TextBoxLayout.optional_size(primitive, "box_size", font,
+				float((primitive as Dictionary).get("scale", 1.0)))
+			return (requested as Vector2) if requested is Vector2 else TextBoxLayout.default_size(font)
+	return TextBoxLayout.default_size(14.0)
+
+
+func with_text_box(annotation: Dictionary, text: String, requested: Vector2) -> Dictionary:
+	var out := annotation.duplicate(true)
+	var payload_v: Variant = out.get("kind_payload", {})
+	if payload_v is Dictionary and (payload_v as Dictionary).has("text"):
+		var payload: Dictionary = (payload_v as Dictionary).duplicate(true)
+		payload["text"] = text
+		var measured: Dictionary = TextBoxLayout.layout(text, float(payload.get("font_size", 14.0)),
+			float(payload.get("scale", 1.0)), requested)
+		var size: Vector2 = measured["size"]
+		payload["box_size"] = [size.x, size.y]
+		out["kind_payload"] = payload
+		return out
+	var primitives: Array = out.get("primitives", []).duplicate(true)
+	for index in primitives.size():
+		if primitives[index] is Dictionary and str(primitives[index].get("kind", "")) == "text":
+			var primitive: Dictionary = primitives[index].duplicate(true)
+			primitive["content"] = text
+			var measured: Dictionary = TextBoxLayout.layout(text, float(primitive.get("size", 14.0)),
+				float(primitive.get("scale", 1.0)), requested)
+			var size: Vector2 = measured["size"]
+			primitive["box_size"] = [size.x, size.y]
+			primitives[index] = primitive
+			break
+	out["primitives"] = primitives
+	return out
 
 
 # ── Required overrides ────────────────────────────────────────────────────────
@@ -133,6 +229,18 @@ func transform_annotation(annotation: Dictionary, transform: Transform2D, operat
 	var out: Dictionary = super(annotation, transform, operation)
 	var payload_v: Variant = out.get("kind_payload", {})
 	if not (payload_v is Dictionary and (payload_v as Dictionary).has("text")):
+		if operation == "scale":
+			var delta := AnnotationKind.transform_uniform_scale_delta(transform)
+			var primitives: Array = out.get("primitives", []).duplicate(true)
+			for index in primitives.size():
+				if primitives[index] is Dictionary and primitives[index].get("kind", "") == "text" \
+						and primitives[index].has("box_size"):
+					var primitive: Dictionary = primitives[index].duplicate(true)
+					var raw: Variant = primitive.get("box_size")
+					if raw is Array and (raw as Array).size() >= 2:
+						primitive["box_size"] = [float(raw[0]) * delta, float(raw[1]) * delta]
+						primitives[index] = primitive
+			out["primitives"] = primitives
 		return out
 	if not out.has("anchor"):
 		return out
@@ -147,6 +255,12 @@ func transform_annotation(annotation: Dictionary, transform: Transform2D, operat
 		var scale_delta := AnnotationKind.transform_uniform_scale_delta(transform)
 		if absf(scale_delta - 1.0) > 0.0001:
 			payload["scale"] = float(payload.get("scale", 1.0)) * scale_delta
+			if payload.has("box_size"):
+				var stored: Variant = TextBoxLayout.optional_size(payload, "box_size",
+					float(payload.get("font_size", 14.0)), float(payload.get("scale", 1.0)) / scale_delta)
+				if stored is Vector2:
+					payload["box_size"] = [(stored as Vector2).x * scale_delta,
+						(stored as Vector2).y * scale_delta]
 	out["kind_payload"] = payload
 	return out
 
@@ -181,6 +295,10 @@ func _render_payload_text(ctx: AnnotationRenderContext, pos: Vector2, payload: D
 	var base_size := float(payload.get("font_size", 14.0))
 	var scale_factor := float(payload.get("scale", 1.0))
 	var rotation_rad := float(payload.get("rotation_rad", 0.0))
+	var box_size: Variant = TextBoxLayout.optional_size(payload, "box_size", base_size, scale_factor)
+	if box_size is Vector2:
+		_render_wrapped(ctx, pos, text, base_size, scale_factor, rotation_rad, box_size, color)
+		return
 	var px_size := int(clampf(base_size * scale_factor * ctx.zoom, 8.0, 64.0))
 	ctx.draw_string_rotated(null, _baseline_position(pos, base_size, scale_factor, rotation_rad), text, color, px_size, rotation_rad)
 
@@ -193,6 +311,10 @@ func _payload_text_aabb(pos: Vector2, payload_v: Variant) -> Rect2:
 	var base := float(payload.get("font_size", 14.0))
 	var scale_factor := float(payload.get("scale", 1.0))
 	var rotation_rad := float(payload.get("rotation_rad", 0.0))
+	var box_size: Variant = TextBoxLayout.optional_size(payload, "box_size", base, scale_factor)
+	if box_size is Vector2:
+		var measured: Dictionary = TextBoxLayout.layout(content, base, scale_factor, box_size)
+		return TextBoxLayout.rotated_aabb(pos, measured["size"], rotation_rad)
 	var w := content.length() * base * scale_factor * 0.55
 	var h := base * scale_factor * 1.2
 	if absf(rotation_rad) < 0.0001:
@@ -221,6 +343,10 @@ func _render_text(ctx: AnnotationRenderContext, prim: Dictionary, color: Color) 
 	var base_size := float(prim.get("size", 14.0))
 	var scale_factor := float(prim.get("scale", 1.0))
 	var rotation_rad := float(prim.get("rotation_rad", 0.0))
+	var box_size: Variant = TextBoxLayout.optional_size(prim, "box_size", base_size, scale_factor)
+	if box_size is Vector2:
+		_render_wrapped(ctx, at, text, base_size, scale_factor, rotation_rad, box_size, color)
+		return
 	var px_size := int(clampf(base_size * scale_factor * ctx.zoom, 8.0, 64.0))
 	ctx.draw_string_rotated(null, _baseline_position(at, base_size, scale_factor, rotation_rad), text, color, px_size, rotation_rad)
 
@@ -240,6 +366,10 @@ static func _text_aabb(prim: Dictionary) -> Rect2:
 	var base := float(prim.get("size", 14.0))
 	var scale_factor := float(prim.get("scale", 1.0))
 	var rotation_rad := float(prim.get("rotation_rad", 0.0))
+	var box_size: Variant = TextBoxLayout.optional_size(prim, "box_size", base, scale_factor)
+	if box_size is Vector2:
+		var measured: Dictionary = TextBoxLayout.layout(content, base, scale_factor, box_size)
+		return TextBoxLayout.rotated_aabb(at, measured["size"], rotation_rad)
 	var w := content.length() * base * scale_factor * 0.55
 	var h := base * scale_factor * 1.2
 	if absf(rotation_rad) < 0.0001:
@@ -256,6 +386,20 @@ static func _text_aabb(prim: Dictionary) -> Rect2:
 	var max_x := maxf(maxf(c0.x, c1.x), maxf(c2.x, c3.x))
 	var max_y := maxf(maxf(c0.y, c1.y), maxf(c2.y, c3.y))
 	return Rect2(at + Vector2(min_x, min_y), Vector2(max_x - min_x, max_y - min_y))
+
+
+static func _render_wrapped(ctx: AnnotationRenderContext, top_left: Vector2, text: String,
+		font_size: float, scale_factor: float, rotation_rad: float,
+		box_size: Vector2, color: Color) -> void:
+	var measured: Dictionary = TextBoxLayout.layout(text, font_size, scale_factor, box_size)
+	var line_height: float = measured["line_height"]
+	var px_size := maxi(1, int(round(font_size * scale_factor * ctx.zoom)))
+	var baseline := float(measured["ascent"])
+	for line: String in measured["lines"]:
+		var local_baseline := Vector2(0.0, baseline)
+		var position := top_left + Transform2D(rotation_rad, Vector2.ZERO) * local_baseline
+		ctx.draw_string_rotated(null, position, line, color, px_size, rotation_rad)
+		baseline += line_height
 
 
 static func _annotation_color(annotation: Dictionary) -> Color:

@@ -1,6 +1,7 @@
 class_name AnnotationInPlaceTextEditor
 extends RefCounted
-## Shared in-canvas single-line text editor for annotation tools.
+const TextBoxLayout = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxLayout.gd")
+## Shared in-canvas multiline text editor for annotation tools.
 ##
 ## FACTORED OUT of AnnotationTextAuthorTool (core commit 6044ed5f, epoch 6) in
 ## A8u2 so a SECOND tool — AnnotationTransformTool's Visio-style arrow-label
@@ -8,15 +9,15 @@ extends RefCounted
 ## behaviour here is the text tool's behaviour verbatim; only the ownership moved.
 ##
 ## What it owns:
-##   - The LineEdit itself: creation, minimal stylebox chrome, author-coloured
-##     glyphs, caret, expand-to-text sizing, teardown.
+##   - The TextEdit itself: creation, minimal stylebox chrome, author-coloured
+##     glyphs, wrapped box sizing, teardown.
 ##   - Zoom-aware placement: the caller supplies a SCREEN point plus the current
 ##     zoom on every redraw; the widget is pinned there and its pixel font size
 ##     is (document font size × zoom), clamped 8…64 — the same clamp
 ##     AnnotationText._render_payload_text uses, so what is typed reads as the
 ##     annotation being born / edited.
-##   - Key grammar: Enter → `submitted(text)`, Escape → `aborted()`,
-##     Shift+Enter → swallowed (every consumer is single-line).
+##   - Key grammar: Enter inserts a newline, Ctrl/Cmd+Enter submits, and Escape
+##     aborts the complete text-and-box draft.
 ##
 ## What it does NOT own: the tool's state machine, where the doc point comes
 ## from, or what the committed string means. Consumers connect the two signals.
@@ -43,11 +44,12 @@ const TARGET_SCREEN_FONT_PX: int = 14
 ## Content margin baked into the stylebox, in px. The widget is offset by it so
 ## the first glyph lands on the caret point rather than inside the chrome.
 const PADDING: float = 2.0
-const MIN_WIDTH: float = 120.0
 
 var _parent: Control = null
-var _edit: LineEdit = null
+var _edit: TextEdit = null
 var _font_px: int = -1
+var _box_doc_size: Vector2 = Vector2.ZERO
+var _rotation_rad: float = 0.0
 
 ## Last placement, replayed whenever the widget resizes (see _on_edit_text_changed).
 var _anchor_screen: Vector2 = Vector2.ZERO
@@ -98,6 +100,8 @@ func open(
 	placeholder: String = "Type annotation…",
 	color: Color = Color(0, 0, 0, 0),
 	centred: bool = false,
+	box_doc_size: Variant = null,
+	rotation_rad: float = 0.0,
 ) -> bool:
 	if not has_surface():
 		return false
@@ -110,13 +114,18 @@ func open(
 		_edit.placeholder_text = placeholder
 	_doc_font_size = doc_font_size
 	_centred = centred
+	_box_doc_size = (box_doc_size as Vector2) if box_doc_size is Vector2 \
+		else TextBoxLayout.default_size(doc_font_size)
+	_rotation_rad = rotation_rad
+	_edit.rotation = rotation_rad
 	_edit.text = initial_text
 	_font_px = -1
 	place(screen_pos, zoom)
 	_edit.visible = true
 	if _edit.is_inside_tree():
 		_edit.grab_focus()
-	_edit.caret_column = initial_text.length()
+	_edit.set_caret_line(_edit.get_line_count() - 1)
+	_edit.set_caret_column(_edit.get_line(_edit.get_caret_line()).length())
 	return true
 
 
@@ -126,11 +135,11 @@ func place(screen_pos: Vector2, zoom: float) -> void:
 	if not is_open():
 		return
 	_anchor_screen = screen_pos
-	var px := int(clampf(_doc_font_size * zoom, 8.0, 64.0))
+	var px := maxi(1, int(round(_doc_font_size * zoom)))
 	if px != _font_px:
 		_font_px = px
 		_edit.add_theme_font_size_override(&"font_size", px)
-		_edit.reset_size()
+	_edit.size = _box_doc_size * maxf(zoom, 0.01) + Vector2.ONE * PADDING * 2.0
 	_reposition()
 
 
@@ -139,13 +148,19 @@ func place(screen_pos: Vector2, zoom: float) -> void:
 func _reposition() -> void:
 	if not is_open():
 		return
-	var target := _anchor_screen - (_edit.size * 0.5 if _centred else Vector2(PADDING, PADDING))
+	_edit.pivot_offset = _edit.size * 0.5 if _centred else Vector2.ZERO
+	var target := _anchor_screen - (_edit.size * 0.5 if _centred \
+		else Transform2D(_rotation_rad, Vector2.ZERO) * Vector2(PADDING, PADDING))
 	if not _edit.position.is_equal_approx(target):
 		_edit.position = target
 
 
 func get_text() -> String:
 	return _edit.text if is_open() else ""
+
+
+func get_box_doc_size() -> Vector2:
+	return _box_doc_size
 
 
 ## Tear the widget down without routing its content anywhere — silent cleanup for
@@ -160,15 +175,14 @@ func discard() -> void:
 
 # ── Widget ────────────────────────────────────────────────────────────────────
 
-func _create_editor(placeholder: String, color: Color) -> LineEdit:
+func _create_editor(placeholder: String, color: Color) -> TextEdit:
 	if not has_surface():
 		return null
-	var edit := LineEdit.new()
+	var edit := TextEdit.new()
 	edit.name = "AnnotationTextInPlaceEditor"
-	edit.flat = true
-	edit.expand_to_text_length = true
 	edit.caret_blink = true
-	edit.custom_minimum_size = Vector2(MIN_WIDTH, 0.0)
+	edit.wrap_mode = TextEdit.LINE_WRAPPING_BOUNDARY
+	edit.scroll_fit_content_height = false
 	edit.placeholder_text = placeholder
 
 	# Minimal chrome: just enough backing to read the caret over busy canvas
@@ -201,13 +215,8 @@ func _create_editor(placeholder: String, color: Color) -> LineEdit:
 	return edit
 
 
-func _on_edit_text_changed(_new_text: String) -> void:
-	# expand_to_text_length only grows the MINIMUM size; a Control outside a
-	# container has to be told to take it.
+func _on_edit_text_changed() -> void:
 	if is_open():
-		_edit.reset_size()
-		# Re-anchor: in centred mode the new width must be re-split around the
-		# anchor point. Top-left mode re-computes the same target and no-ops.
 		_reposition()
 
 
@@ -222,14 +231,11 @@ func _on_edit_gui_input(event: InputEvent) -> void:
 
 	match key.keycode:
 		KEY_ESCAPE:
-			# Consume before emitting: accept_event() stops LineEdit's own
+			# Consume before emitting: accept_event() stops TextEdit's own
 			# handling, and the connected gui_input signal runs before it.
 			_edit.accept_event()
 			aborted.emit()
 		KEY_ENTER, KEY_KP_ENTER:
-			_edit.accept_event()
-			if key.shift_pressed:
-				# Every consumer renders one draw_string line — swallow rather
-				# than pretend a multi-line entry is being authored.
-				return
-			submitted.emit(_edit.text)
+			if key.ctrl_pressed or key.meta_pressed:
+				_edit.accept_event()
+				submitted.emit(_edit.text)

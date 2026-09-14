@@ -89,6 +89,24 @@ func get_all_items() -> Array[CreatableItem]:
 	return result
 
 
+## Name-first snapshot for user-facing New-item choosers. The registry's
+## established sort_order remains available through get_all_items().
+func get_items_alphabetical() -> Array[CreatableItem]:
+	var result := get_all_items()
+	result.sort_custom(func(a: CreatableItem, b: CreatableItem) -> bool:
+		var a_name := a.display_name
+		var b_name := b.display_name
+		var a_folded := a_name.to_lower()
+		var b_folded := b_name.to_lower()
+		if a_folded != b_folded:
+			return a_folded < b_folded
+		if a_name != b_name:
+			return a_name < b_name
+		return a.id < b.id
+	)
+	return result
+
+
 ## Returns item by id, or null if not found.
 func get_item(id: String) -> CreatableItem:
 	return _items.get(id, null)

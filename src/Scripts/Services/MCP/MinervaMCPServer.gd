@@ -6,6 +6,7 @@ extends RefCounted
 ## duplicate call detection, tool search, and plugin routing.
 
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
+const _MCPAnnotationReplyToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPAnnotationReplyTools.gd")
 
 ## Reference to the MCPManager for tool registration
 var mcp_manager
@@ -87,6 +88,7 @@ func _init(manager = null) -> void:
 #region Module Lifecycle
 
 func _init_modules() -> void:
+	var annotation_tools := MCPAnnotationTools.new(self)
 	_modules = [
 		MCPChatTools.new(self),
 		MCPNotesTools.new(self),
@@ -107,7 +109,8 @@ func _init_modules() -> void:
 		MCPWebviewTools.new(self),
 		MCPDocketTools.new(self),
 		MCPHttpTools.new(self),
-		MCPAnnotationTools.new(self),
+		annotation_tools,
+		_MCPAnnotationReplyToolsScript.new(self, annotation_tools),
 		MCPCadTools.new(self),
 		# PCB panel surface — MCPPcbPanelTools.gd deleted (DCR 019f6c3d0e3d, C3
 		# round docket 019f6c4604ba): every minerva_pcb_* tool is now

@@ -9,6 +9,7 @@ extends AnnotationOverlay
 const _BROKEN_COLOR := Color(1.0, 0.55, 0.05, 0.85)
 const _BROKEN_FILL := Color(1.0, 0.55, 0.05, 0.18)
 const _HEALTHY_COLOR := Color(0.40, 0.70, 1.0, 0.85)
+const _SELECTED_COLOR := Color(0.45, 0.82, 1.0, 1.0)
 const _STRIP_WIDTH := 4.0
 const _UNDERLINE_THICKNESS := 1.5
 const _BADGE_SIZE := Vector2(18.0, 16.0)
@@ -44,6 +45,7 @@ func _draw() -> void:
 		ce_local = code.global_position - global_position
 	var ce_size: Vector2 = code.size if "size" in code else Vector2.ZERO
 	var badge_slots_by_line := {}
+	var selected_id := str(host.get_selected_annotation_id()) if host.has_method("get_selected_annotation_id") else ""
 
 	for ann in anns:
 		if not ann is Dictionary:
@@ -56,9 +58,11 @@ func _draw() -> void:
 		if bool(resolved.get("stale", false)):
 			_draw_broken(resolved, ce_local, ce_size, line_height, display_index, badge_slots_by_line)
 		elif _is_line_annotation(ann as Dictionary):
-			_draw_line_marker(anchor, code, ce_local, ce_size, line_height, display_index, badge_slots_by_line)
+			_draw_line_marker(anchor, code, ce_local, ce_size, line_height, display_index,
+				badge_slots_by_line, str((ann as Dictionary).get("id", "")) == selected_id)
 		else:
-			_draw_healthy(anchor, code, ce_local, ce_size, line_height, display_index, badge_slots_by_line)
+			_draw_healthy(anchor, code, ce_local, ce_size, line_height, display_index,
+				badge_slots_by_line, str((ann as Dictionary).get("id", "")) == selected_id)
 
 
 func _draw_broken(
@@ -76,6 +80,10 @@ func _draw_broken(
 		return
 	var strip := Rect2(ce_local.x, y, _STRIP_WIDTH, line_height)
 	draw_rect(strip, _BROKEN_COLOR, true)
+	if str(resolved.get("view_metadata", {}).get("reason", "")) == "Text removed":
+		_draw_badge_for_line(line_idx, ce_local, ce_size, line_height, display_index,
+			_BROKEN_COLOR, badge_slots_by_line, ce_local.x + _STRIP_WIDTH, false)
+		return
 	var fill := Rect2(ce_local.x + _STRIP_WIDTH, y, ce_size.x - _STRIP_WIDTH, line_height)
 	draw_rect(fill, _BROKEN_FILL, true)
 	_draw_badge_for_line(line_idx, ce_local, ce_size, line_height, display_index, _BROKEN_COLOR, badge_slots_by_line, ce_local.x + _STRIP_WIDTH, true)
@@ -88,7 +96,8 @@ func _draw_healthy(
 	ce_size: Vector2,
 	line_height: float,
 	display_index: int,
-	badge_slots_by_line: Dictionary
+	badge_slots_by_line: Dictionary,
+	selected: bool
 ) -> void:
 	# Underline the actual character range so the user can see what's annotated.
 	# Multi-line ranges get one underline segment per line (full-width middle
@@ -119,6 +128,8 @@ func _draw_healthy(
 	var badge_drawn := false
 	var badge_after_x := ce_local.x
 	var badge_base_y := ce_local.y
+	var range_color := _SELECTED_COLOR if selected else _HEALTHY_COLOR
+	var thickness := _UNDERLINE_THICKNESS + 1.5 if selected else _UNDERLINE_THICKNESS
 
 	for line in range(start_line, end_line + 1):
 		var col_a := start_col if line == start_line else 0
@@ -149,7 +160,7 @@ func _draw_healthy(
 			var y := ce_local.y + float(p_a.y) - 1.0
 			var x1 := float(p_a.x) + ce_local.x
 			var x2 := float(p_b.x) + ce_local.x
-			draw_line(Vector2(x1, y), Vector2(x2, y), _HEALTHY_COLOR, _UNDERLINE_THICKNESS)
+			draw_line(Vector2(x1, y), Vector2(x2, y), range_color, thickness)
 			if not badge_drawn:
 				badge_after_x = x2
 				badge_base_y = ce_local.y + float(p_a.y)
@@ -176,7 +187,7 @@ func _draw_healthy(
 				Color(_HEALTHY_COLOR.r, _HEALTHY_COLOR.g, _HEALTHY_COLOR.b, 0.55),
 				1.0
 			)
-		_draw_badge(Vector2(bx, by), display_index, _HEALTHY_COLOR)
+		_draw_badge(Vector2(bx, by), display_index, range_color)
 
 
 func _draw_line_marker(
@@ -186,7 +197,8 @@ func _draw_line_marker(
 	_ce_size: Vector2,
 	line_height: float,
 	display_index: int,
-	_badge_slots_by_line: Dictionary
+	_badge_slots_by_line: Dictionary,
+	selected: bool
 ) -> void:
 	var id: Variant = anchor.get("id", null)
 	if not id is Dictionary:
@@ -206,11 +218,12 @@ func _draw_line_marker(
 	if p.x < 0:
 		return
 	var top: float = ce_local.y + float(p.y) - line_height + 1.0
-	draw_rect(Rect2(ce_local.x, top, _STRIP_WIDTH, line_height), _HEALTHY_COLOR, true)
+	var marker_color := _SELECTED_COLOR if selected else _HEALTHY_COLOR
+	draw_rect(Rect2(ce_local.x, top, _STRIP_WIDTH + (2.0 if selected else 0.0), line_height), marker_color, true)
 	_draw_badge(
 		Vector2(ce_local.x + _STRIP_WIDTH + 3.0, top + maxf(0.0, (line_height - _BADGE_SIZE.y) * 0.5)),
 		display_index,
-		_HEALTHY_COLOR
+		marker_color
 	)
 
 

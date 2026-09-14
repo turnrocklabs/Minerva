@@ -5,6 +5,7 @@ extends SceneTree
 
 const _TEAHScript = preload("res://Scripts/Services/Annotations/TextEditorAnnotationHost.gd")
 const _TextCommentScript = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextComment.gd")
+const _ThreadScript = preload("res://Scripts/Services/Annotations/AnnotationCommentThread.gd")
 
 var _pass_count := 0
 var _fail_count := 0
@@ -32,6 +33,8 @@ func _initialize() -> void:
 	test_load_does_not_migrate_text_with_other_target_scope()
 	test_body_view_factory_returns_control_with_text()
 	test_summary_includes_comment_text()
+	test_reply_thread_round_trip_and_export()
+	test_resolved_thread_reopens_on_reply()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -50,6 +53,11 @@ func test_kind_registers_at_host_init() -> void:
 	check("get_annotation_kind returns non-null", kind != null)
 	if kind != null:
 		check("display_name == Comment", kind.display_name == "Comment")
+	var capabilities: Dictionary = host.get_capabilities()
+	check("text comments expose only Open, Resolved, and All filters",
+		capabilities.get("filters", []) == ["open", "resolved", "all"])
+	check("text comment threads do not expose the Applied lifecycle action",
+		not bool(capabilities.get("lifecycle", {}).get("apply", true)))
 
 
 # ── Test 2: add_comment_at stamps text_comment ────────────────────────────────
@@ -162,6 +170,60 @@ func test_summary_includes_comment_text() -> void:
 	var result := kind.summary(envelope)
 	check("summary starts with display_name", result.begins_with("Comment"))
 	check("summary contains comment text", "this is a test comment" in result)
+
+
+func test_reply_thread_round_trip_and_export() -> void:
+	print("test_reply_thread_round_trip_and_export:")
+	var annotation := {
+		"id": "ann_thread", "kind": "text_comment", "lifecycle": "open",
+		"kind_payload": {"text": "Root words"}, "author": {"kind": "human"},
+	}
+	var first: Dictionary = _ThreadScript.add_reply(annotation, "First reply", {"kind": "human"})
+	check("reply receives a stable id and author metadata", bool(first.get("ok", false))
+		and not str(first.get("reply", {}).get("id", "")).is_empty()
+		and first.get("reply", {}).get("author", {}).get("kind") == "human")
+	var reply_id := str(first.get("reply", {}).get("id", ""))
+	var edited: Dictionary = _ThreadScript.edit_reply(first.get("annotation", {}), reply_id, "Edited reply")
+	check("text export includes root and edited reply", bool(edited.get("ok", false))
+		and _TextCommentScript.new().text_content(edited.get("annotation", {})) == "Root words\n\nEdited reply")
+	var chat_blocks: Array = _TextCommentScript.new().to_chat_context(edited.get("annotation", {}),
+		{"supported_block_types": ["text"]})
+	var exported_reply := false
+	for block in chat_blocks:
+		if block is Dictionary and str((block as Dictionary).get("type_name", "")) == "TEXT":
+			exported_reply = str((block as Dictionary).get("content", "")).contains("Edited reply")
+	check("non-structured chat context includes the complete thread",
+		exported_reply)
+	var stale_annotation: Dictionary = (edited.get("annotation", {}) as Dictionary).duplicate(true)
+	stale_annotation["lifecycle"] = "stale"
+	var stale_blocks: Array = _TextCommentScript.new().to_chat_context(stale_annotation,
+		{"supported_block_types": ["text"]})
+	var stale_text := ""
+	for block in stale_blocks:
+		if block is Dictionary and str((block as Dictionary).get("type_name", "")) == "TEXT":
+			stale_text = str((block as Dictionary).get("content", ""))
+	check("text-only thread export retains the broken-anchor warning",
+		stale_text.begins_with("[BROKEN]"))
+	var encoded := JSON.stringify(edited.get("annotation", {}))
+	var reloaded: Variant = JSON.parse_string(encoded)
+	check("thread reply metadata survives JSON sidecar shape", reloaded is Dictionary
+		and _ThreadScript.replies(reloaded as Dictionary).size() == 1)
+	var deleted: Dictionary = _ThreadScript.delete_reply(edited.get("annotation", {}), reply_id)
+	check("reply delete preserves the root comment", bool(deleted.get("ok", false))
+		and _TextCommentScript.new().text_content(deleted.get("annotation", {})) == "Root words")
+
+
+func test_resolved_thread_reopens_on_reply() -> void:
+	print("test_resolved_thread_reopens_on_reply:")
+	var annotation := {
+		"id": "ann_resolved", "kind": "text_comment", "lifecycle": "resolved",
+		"kind_payload": {"text": "Done"}, "author": {"kind": "human"},
+		"resolved": {"by": {"kind": "human"}},
+	}
+	var result: Dictionary = _ThreadScript.add_reply(annotation, "One more thing", {"kind": "human"})
+	check("replying reopens a resolved thread without discarding resolution history",
+		bool(result.get("ok", false)) and result.get("annotation", {}).get("lifecycle") == "open"
+		and result.get("annotation", {}).has("resolved"))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

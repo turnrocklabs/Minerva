@@ -1,5 +1,7 @@
 class_name AnnotationTextComment
 extends AnnotationKind
+const _ThreadScript = preload("res://Scripts/Services/Annotations/AnnotationCommentThread.gd")
+const _ThreadViewScene = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationCommentThreadView.tscn")
 ## Built-in annotation kind: text_comment.
 ##
 ## Represents an inline code/text comment anchored to a core/text.range.
@@ -43,47 +45,22 @@ func summary(annotation: Dictionary) -> String:
 
 ## The comment body IS this kind's free text (see AnnotationKind.text_content).
 func text_content(annotation: Dictionary) -> String:
-	var payload: Variant = annotation.get("kind_payload", {})
-	if payload is Dictionary:
-		return str((payload as Dictionary).get("text", "")).strip_edges()
-	return ""
+	return _ThreadScript.export_text(annotation)
 
 
-func body_view_factory(annotation: Dictionary, _emit_patch: Callable) -> Control:
-	var payload: Dictionary = annotation.get("kind_payload", {})
-	var comment_text := str(payload.get("text", ""))
+func to_chat_context(annotation: Dictionary, capabilities: Dictionary) -> Array:
+	var blocks := super(annotation, capabilities)
+	var thread_text := text_content(annotation)
+	if thread_text.length() > 2000:
+		thread_text = thread_text.substr(0, 1997) + "..."
+	for block in blocks:
+		if block is Dictionary and str((block as Dictionary).get("type_name", "")) == "TEXT":
+			var stale := str(annotation.get("lifecycle", "")) == "stale" or bool(annotation.get("stale", false))
+			(block as Dictionary)["content"] = "[BROKEN] %s" % thread_text if stale else thread_text
+	return blocks
 
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	var body := Label.new()
-	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	# Give autowrap a real width floor to flow into; without it the label can
-	# collapse to ~1 char wide when a host container under-reports its width.
-	body.custom_minimum_size = Vector2(180, 0)
-	body.text = comment_text
-	vbox.add_child(body)
-
-	var footer := HBoxContainer.new()
-	var author_kind := AnnotationAuthor.kind_of(annotation.get("author", ""))
-	var author_label := Label.new()
-	author_label.text = author_kind if not author_kind.is_empty() else "unknown"
-	author_label.modulate = Color(0.6, 0.6, 0.6, 1.0)
-	footer.add_child(author_label)
-
-	var lifecycle := str(annotation.get("lifecycle", "open"))
-	var lifecycle_label := Label.new()
-	lifecycle_label.text = lifecycle
-	lifecycle_label.modulate = Color(0.6, 0.6, 0.6, 1.0)
-	footer.add_child(lifecycle_label)
-	vbox.add_child(footer)
-
-	var reply_btn := Button.new()
-	reply_btn.text = "Reply…"
-	reply_btn.disabled = true
-	reply_btn.tooltip_text = "Replies coming soon"
-	# Reply behavior tracked in docket task 019de68e4667.
-	vbox.add_child(reply_btn)
-
-	return vbox
+func body_view_factory(annotation: Dictionary, emit_patch: Callable) -> Control:
+	var view: Control = _ThreadViewScene.instantiate()
+	view.call("setup", annotation, emit_patch)
+	return view

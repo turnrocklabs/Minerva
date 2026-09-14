@@ -1,5 +1,7 @@
 class_name AnnotationTransformTool
 extends AnnotationAuthorTool
+const TextBoxResize = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxResize.gd")
+const TextBoxLayout = preload("res://Scripts/Services/Annotations/kinds/AnnotationTextBoxLayout.gd")
 ## Unified transform tool — collapses Select / Translate / Rotate / Scale into
 ## one gizmo with zone-routed drag semantics.
 ##
@@ -59,11 +61,9 @@ extends AnnotationAuthorTool
 ## Emits annotation_modified(id, new_dict) only. Never annotation_ready.
 ##
 ## ── Visio-style arrow labels (A8u2, item 019fb5de8c81) ────────────────────────
-## DOUBLE-CLICK a single-selected 2d_arrow → an in-place LineEdit opens at the
-## caption position (AnnotationInPlaceTextEditor, the same widget the 2d_text
-## author tool uses). Enter commits, Escape cancels, a click anywhere else on the
-## canvas commits — the text tool's grammar verbatim. An EMPTY commit CLEARS the
-## caption. A second double-click edits the existing text.
+## Double-click a selected text box or arrow caption to edit it in place.
+## Enter adds a line; Ctrl/Cmd+Enter or clicking elsewhere commits; Escape
+## cancels. Committing an empty arrow caption clears it.
 ##
 ## The caption is NOT a second annotation: it lives in the arrow's own
 ## kind_payload (label / label_offset / label_font_size — see AnnotationArrow) and
@@ -244,6 +244,7 @@ enum Zone {
 	## rect can sit outside the bounds gizmo entirely, so it is tested first, in
 	## on_pointer_down, against the kind's own label_rect.
 	LABEL,
+	LABEL_RESIZE,
 	## Path-kind vertex handle (UX1 station 6, docket 019fd09b209e). Like
 	## LABEL, never returned by _hit_zone — a "path" kind's corners come from
 	## kind.bend_points(ann), not the bounds rect, so they are hit-tested
@@ -268,6 +269,7 @@ var _drag_start_doc: Vector2 = Vector2.ZERO
 ## Scale: center + start handle offset.
 var _scale_center_doc: Vector2 = Vector2.ZERO
 var _drag_start_handle_offset: Vector2 = Vector2.ZERO
+var _drag_start_bounds: Rect2 = Rect2()
 
 ## Rotate: center + start angle.
 var _rotation_center_doc: Vector2 = Vector2.ZERO
@@ -317,7 +319,7 @@ var _marquee_base_ids: PackedStringArray = PackedStringArray()
 
 # ── Arrow-label editing state (A8u2) ─────────────────────────────────────────
 
-## Shared in-place LineEdit, factored out of AnnotationTextAuthorTool so both
+## Shared in-place TextEdit, factored out of AnnotationTextAuthorTool so both
 ## tools drive one widget. Null surface (headless) simply never opens.
 var _editor: AnnotationInPlaceTextEditor = AnnotationInPlaceTextEditor.new()
 
@@ -335,6 +337,7 @@ var _label_edit_centre: Vector2 = Vector2.ZERO
 ## rescale the view without changing what gets committed — the same contract
 ## AnnotationTextAuthorTool's _authored_font_size has.
 var _label_edit_font: float = float(AnnotationInPlaceTextEditor.TARGET_SCREEN_FONT_PX)
+var _editing_text_box: bool = false
 
 ## Caption offset at label-drag start — the immutable value the drag deltas from.
 ## Also the fallback drag basis for a degenerate (near-zero-length) arrow, where
@@ -408,6 +411,7 @@ func _reset_drag_state() -> void:
 	_drag_start_doc = Vector2.ZERO
 	_scale_center_doc = Vector2.ZERO
 	_drag_start_handle_offset = Vector2.ZERO
+	_drag_start_bounds = Rect2()
 	_rotation_center_doc = Vector2.ZERO
 	_drag_start_angle_rad = 0.0
 	_current_angle_rad = 0.0
@@ -430,6 +434,7 @@ func _reset_label_edit() -> void:
 	_label_edit_id = ""
 	_label_edit_centre = Vector2.ZERO
 	_label_edit_font = float(AnnotationInPlaceTextEditor.TARGET_SCREEN_FONT_PX)
+	_editing_text_box = false
 	_label_notice_doc = null
 
 
@@ -498,7 +503,7 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 		return false
 
 	# A live caption editor owns the keyboard grammar first. These pseudo-key
-	# pointer-downs only arrive while the OVERLAY holds focus; when the LineEdit
+	# pointer-downs only arrive while the OVERLAY holds focus; when the TextEdit
 	# itself is focused its own gui_input handles Enter/Escape. Both paths exist
 	# for the same reason the text tool keeps both.
 	if _editor.is_open():
@@ -548,7 +553,7 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 		return false
 
 	# Clicking anywhere else on the canvas COMMITS an open caption edit (the text
-	# tool's grammar). Clicks that land inside the LineEdit never reach us — it is
+	# tool's grammar). Clicks that land inside the TextEdit never reach us — it is
 	# a child Control on top of the overlay — so anything arriving here is
 	# genuinely "elsewhere". The click then continues into normal selection
 	# handling, so one gesture commits and selects.
@@ -587,6 +592,11 @@ func on_pointer_down(pos: Vector2, button: int, mods: int) -> bool:
 			# Arrow-label sub-handle wins over every gizmo zone: the caption rect
 			# usually sits inside the bounds box, so testing it after INSIDE would
 			# make it unreachable.
+			var label_bounds_v: Variant = _label_rect(ann)
+			if label_bounds_v is Rect2 and TextBoxResize.resize_handle_hit(label_bounds_v,
+					doc_pos, HANDLE_HIT_RADIUS_DOC / _view_zoom()):
+				var label_bounds: Rect2 = label_bounds_v
+				return _begin_drag(Zone.LABEL_RESIZE, doc_pos, selected_id, ann, label_bounds)
 			if _hit_label_handle(ann, doc_pos):
 				return _begin_label_drag(doc_pos, selected_id, ann)
 			var kind := _get_kind(ann)
@@ -625,6 +635,8 @@ func on_pointer_move(pos: Vector2) -> void:
 	var doc_pos := _host.transform_screen_to_doc(pos)
 
 	match _active_zone:
+		Zone.LABEL_RESIZE:
+			_apply_text_box_resize(doc_pos, 1, 1)
 		Zone.LABEL:
 			_apply_label_drag(doc_pos)
 		Zone.BEND:
@@ -632,11 +644,16 @@ func on_pointer_move(pos: Vector2) -> void:
 		Zone.INSIDE:
 			_apply_translate(doc_pos)
 		Zone.CORNER_TL, Zone.CORNER_TR, Zone.CORNER_BL, Zone.CORNER_BR:
-			_apply_uniform_scale(doc_pos)
+			var horizontal := -1 if _active_zone in [Zone.CORNER_TL, Zone.CORNER_BL] else 1
+			var vertical := -1 if _active_zone in [Zone.CORNER_TL, Zone.CORNER_TR] else 1
+			if not _apply_text_box_resize(doc_pos, horizontal, vertical):
+				_apply_uniform_scale(doc_pos)
 		Zone.EDGE_T, Zone.EDGE_B:
-			_apply_axis_scale(doc_pos, false, true)   # Y-locked
+			if not _apply_text_box_resize(doc_pos, 0, -1 if _active_zone == Zone.EDGE_T else 1):
+				_apply_axis_scale(doc_pos, false, true)   # Y-locked
 		Zone.EDGE_L, Zone.EDGE_R:
-			_apply_axis_scale(doc_pos, true, false)   # X-locked
+			if not _apply_text_box_resize(doc_pos, -1 if _active_zone == Zone.EDGE_L else 1, 0):
+				_apply_axis_scale(doc_pos, true, false)   # X-locked
 		Zone.ROTATE_TL, Zone.ROTATE_TR, Zone.ROTATE_BL, Zone.ROTATE_BR:
 			_apply_rotate(doc_pos)
 
@@ -694,9 +711,26 @@ func on_pointer_double_click(pos: Vector2, button: int, _mods: int) -> bool:
 
 	var ann := _find_annotation(target_id)
 	var arrow := _arrow_kind(ann)
-	if arrow == null:
+	if arrow != null:
+		return _begin_label_edit(target_id, ann, arrow)
+	var text_kind := _get_kind(ann) as AnnotationText
+	if text_kind != null:
+		return _begin_text_box_edit(target_id, ann, text_kind)
+	return false
+
+
+func _begin_text_box_edit(ann_id: String, ann: Dictionary, text_kind: AnnotationText) -> bool:
+	_reset_drag_state()
+	_reset_marquee()
+	var state: Dictionary = TextBoxResize.open_text_editor(_editor, _host, ann, text_kind, _view_zoom())
+	if not bool(state.get("opened", false)):
+		_reset_label_edit()
 		return false
-	return _begin_label_edit(target_id, ann, arrow)
+	_label_edit_font = float(state["font"])
+	_label_edit_centre = state["position"]
+	_editing_text_box = true
+	_label_edit_id = ann_id
+	return true
 
 
 ## Open the in-place editor on `ann`'s caption. Returns false when there is no
@@ -724,9 +758,16 @@ func _begin_label_edit(ann_id: String, ann: Dictionary, arrow: AnnotationArrow) 
 	_label_edit_font = doc_font
 	_label_edit_centre = (mid as Vector2) + offset
 	var text := arrow.label_text(ann)
+	var label_box: Variant = null
+	var payload: Dictionary = ann.get("kind_payload", {})
+	if payload.has(AnnotationArrow.LABEL_BOX_SIZE_KEY):
+		label_box = TextBoxLayout.optional_size(payload,
+			AnnotationArrow.LABEL_BOX_SIZE_KEY, doc_font)
+	else:
+		label_box = TextBoxLayout.default_size(doc_font)
 
 	if not _editor.open(_host.transform_doc_to_screen(_label_edit_centre), zoom, doc_font,
-			text, "Label…", AnnotationRenderContext.author_color("human"), true):
+			text, "Label…", AnnotationRenderContext.author_color("human"), true, label_box):
 		_label_edit_id = ""
 		return false
 	_label_edit_id = ann_id
@@ -734,7 +775,7 @@ func _begin_label_edit(ann_id: String, ann: Dictionary, arrow: AnnotationArrow) 
 
 
 ## Enter inside the widget: write the caption back. An EMPTY commit CLEARS the
-## label (AnnotationArrow.with_label erases all three keys). Not undoable — the
+## label (AnnotationArrow.with_label erases all caption keys). Not undoable — the
 ## annotation substrate has no undo stack.
 func _commit_label_edit() -> void:
 	if not _editor.is_open() or _label_edit_id.is_empty():
@@ -742,6 +783,16 @@ func _commit_label_edit() -> void:
 		return
 	var text := _editor.get_text()
 	var ann := _find_annotation(_label_edit_id)
+	if _editing_text_box:
+		var text_kind := _get_kind(ann) as AnnotationText
+		if text_kind == null or text.strip_edges().is_empty():
+			_reset_label_edit()
+			return
+		var text_updated := text_kind.with_text_box(ann, text, _editor.get_box_doc_size())
+		var text_target := _label_edit_id
+		_reset_label_edit()
+		annotation_modified.emit(text_target, text_updated)
+		return
 	var arrow := _arrow_kind(ann)
 	if arrow == null:
 		_reset_label_edit()
@@ -756,6 +807,8 @@ func _commit_label_edit() -> void:
 	# zoom that may have changed mid-edit.
 	var seed_font := _label_edit_font
 	var updated := arrow.with_label(ann, text, AnnotationArrow.default_label_offset(seed_font), seed_font)
+	if not text.strip_edges().is_empty():
+		updated = arrow.with_label_box_size(updated, _editor.get_box_doc_size())
 	var target_id := _label_edit_id
 	_reset_label_edit()
 	annotation_modified.emit(target_id, updated)
@@ -1241,8 +1294,9 @@ func _annotations_intersecting(rect: Rect2) -> PackedStringArray:
 ## Classify a document-space point against the bounding-box gizmo of `b`.
 ## Priority (highest first):
 ##   1. CORNER_* (dist from corner < HANDLE_HIT_RADIUS_DOC)
-##   2. ROTATE_* (dist from corner in [ROTATE_RING_INNER_DOC, ROTATE_RING_OUTER_DOC])
-##   3. EDGE_*   (dist from edge midpoint ≤ HANDLE_HIT_RADIUS_DOC AND not within
+##   2. EDGE_*   (visible on-bounds grip; wins any overlap with a rotate ring)
+##   3. ROTATE_* (dist from corner in [ROTATE_RING_INNER_DOC, ROTATE_RING_OUTER_DOC])
+##                EDGE requires distance ≤ HANDLE_HIT_RADIUS_DOC AND not within
 ##                HANDLE_HIT_RADIUS_DOC of any corner)
 ##   4. INSIDE   (b.has_point(doc_pos))
 ##   5. OUTSIDE
@@ -1269,6 +1323,15 @@ static func _hit_zone(doc_pos: Vector2, b: Rect2, zoom: float = 1.0) -> Zone:
 	# combined edge/rotate hit zones. Preserve a usable translate target inside
 	# the bounds; exact corner handles still win above.
 	var inside_bounds := b.has_point(doc_pos)
+	var edge_midpoints := _edge_midpoints(b)
+	var edge_zones: Array = [Zone.EDGE_T, Zone.EDGE_B, Zone.EDGE_L, Zone.EDGE_R]
+	# The grip is a square centred on the boundary, so its clickable area spans
+	# both sides of Rect2 (whose right/bottom edges are exclusive). It remains
+	# higher priority than an overlapping rotate annulus because it is visibly
+	# drawn at this exact point; corner handles already won above.
+	for i in edge_midpoints.size():
+		if doc_pos.distance_to(edge_midpoints[i]) <= handle_r:
+			return edge_zones[i]
 	var compact_bounds := b.size.x <= handle_r * 2.5 or b.size.y <= handle_r * 2.5
 	if inside_bounds and compact_bounds:
 		return Zone.INSIDE
@@ -1278,22 +1341,6 @@ static func _hit_zone(doc_pos: Vector2, b: Rect2, zoom: float = 1.0) -> Zone:
 		var dist := doc_pos.distance_to(corners[i])
 		if dist >= ring_inner and dist <= ring_outer:
 			return rotate_zones[i]
-
-	# 3. EDGE midpoint check — guard: must not be within corner hit radius of any corner
-	var edge_midpoints := _edge_midpoints(b)
-	# edge order: T=0, B=1, L=2, R=3
-	var edge_zones: Array = [Zone.EDGE_T, Zone.EDGE_B, Zone.EDGE_L, Zone.EDGE_R]
-	for i in edge_midpoints.size():
-		var mid: Vector2 = edge_midpoints[i]
-		if doc_pos.distance_to(mid) <= handle_r:
-			# Guard: must not be within corner hit radius of any corner
-			var near_corner := false
-			for corner in corners:
-				if doc_pos.distance_to(corner) < handle_r:
-					near_corner = true
-					break
-			if not near_corner:
-				return edge_zones[i]
 
 	# 4. INSIDE
 	if inside_bounds:
@@ -1334,6 +1381,8 @@ func _begin_drag(zone: Zone, doc_pos: Vector2, ann_id: String,
 	_active_zone = zone
 	_drag_start_annotation = ann.duplicate(true)
 	_drag_id = ann_id
+	_drag_start_bounds = b
+	_drag_start_doc = doc_pos
 	# Single-annotation drag by default; _begin_multi_drag repopulates this
 	# immediately after calling us.
 	_extra_drag_snapshots = {}
@@ -1389,6 +1438,17 @@ func _apply_uniform_scale(doc_pos: Vector2) -> void:
 	s = maxf(s, MIN_SCALE)
 	var transform := _build_scale_transform(_scale_center_doc, s, s)
 	_emit_transformed_annotation(transform, "scale")
+
+
+func _apply_text_box_resize(doc_pos: Vector2, horizontal_side: int, vertical_side: int) -> bool:
+	if str(_drag_start_annotation.get("kind", "")) == "2d_arrow" \
+			and _active_zone != Zone.LABEL_RESIZE:
+		return false
+	if not TextBoxResize.supports(_drag_start_annotation):
+		return false
+	annotation_modified.emit(_drag_id, TextBoxResize.resize(_drag_start_annotation,
+		_drag_start_bounds, doc_pos - _drag_start_doc, horizontal_side, vertical_side))
+	return true
 
 
 func _apply_axis_scale(doc_pos: Vector2, lock_x: bool, lock_y: bool) -> void:
@@ -1863,6 +1923,7 @@ func _draw_label_handle(ctx: AnnotationRenderContext, ann: Dictionary, armed: bo
 	var grip := LABEL_GRIP_SIZE_PX / z
 	var centre := rect.get_center()
 	ctx.draw_rect(Rect2(centre - Vector2(grip, grip) * 0.5, Vector2(grip, grip)), color, true, 1.0)
+	ctx.draw_rect(Rect2(rect.end - Vector2(grip, grip) * 0.5, Vector2(grip, grip)), color, true, 1.0)
 
 
 func _draw_filled_disc(ctx: AnnotationRenderContext, at: Vector2,
