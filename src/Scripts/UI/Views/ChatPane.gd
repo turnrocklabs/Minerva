@@ -37,7 +37,7 @@ var _showing_archived: bool = false
 var _focused_chat_popup: FocusedChatPopup = null
 
 ## Passthrough launch dialog (chat-passthrough W3 — replaced W2's placeholder
-## picker; lazy-instantiated by the "⇅" top-bar button)
+## picker; lazy-instantiated by the horizontal-arrows top-bar button)
 var _passthrough_launch_dialog: Window = null
 ## De-dupe ledger for agent-exit messages: "history_id|terminal_id" → true once
 ## the exit message for that (chat, session) pair has been shown.
@@ -1210,7 +1210,7 @@ func _append_passthrough_exit_message(history: ChatHistory, terminal_id: String,
 	_passthrough_exit_seen[dedupe_key] = true
 	if history.VBox != null and is_instance_valid(history.VBox):
 		history.VBox.add_program_message(
-			"terminal agent exited (code %d) — press ⇅ to relaunch" % exit_code)
+			"terminal agent exited (code %d) — use the passthrough chat button to relaunch" % exit_code)
 
 
 ## Top-bar "new passthrough chat" button handler (chat-passthrough W3): opens
@@ -3333,13 +3333,22 @@ func _ready():
 				new_chat_btn.get_parent().add_child(focused_btn)
 				new_chat_btn.get_parent().move_child(focused_btn, new_chat_btn.get_index())
 
-				# "Passthrough Chat" button — chat bound to a terminal-backed plugin
-				# provider (chat-passthrough W2). No vertical-swap icon exists in
-				# assets/, so a "⇅" text glyph stands in this round (W3 may refine).
-				var passthrough_btn := Button.new()
-				passthrough_btn.text = "⇅"
+				# "Passthrough Chat" button — chat bound to a terminal-backed plugin.
+				var passthrough_btn := IconsButton.new()
+				# Match New Chat's layout and themed button states; only the icon and
+				# action differ.
+				passthrough_btn.flat = new_chat_btn.flat
+				passthrough_btn.size_flags_horizontal = new_chat_btn.size_flags_horizontal
+				passthrough_btn.size_flags_vertical = new_chat_btn.size_flags_vertical
+				passthrough_btn.custom_minimum_size = new_chat_btn.custom_minimum_size
+				passthrough_btn.theme = new_chat_btn.theme
+				passthrough_btn.theme_type_variation = new_chat_btn.theme_type_variation
+				passthrough_btn.icon_24 = load("res://assets/icons/horizontal_arrows_24.svg") as Texture2D
+				passthrough_btn.icon_48 = load("res://assets/icons/horizontal_arrows_48.svg") as Texture2D
+				passthrough_btn.icon_68 = load("res://assets/icons/horizontal_arrows_68.svg") as Texture2D
+				passthrough_btn.icon = passthrough_btn.icon_24
 				passthrough_btn.tooltip_text = "New passthrough chat"
-				passthrough_btn.focus_mode = Control.FOCUS_NONE
+				passthrough_btn.focus_mode = new_chat_btn.focus_mode
 				passthrough_btn.pressed.connect(_on_passthrough_chat_pressed)
 				new_chat_btn.get_parent().add_child(passthrough_btn)
 				new_chat_btn.get_parent().move_child(passthrough_btn, new_chat_btn.get_index())

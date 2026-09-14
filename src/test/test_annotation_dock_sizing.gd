@@ -9,9 +9,9 @@ extends SceneTree
 ## annotations. Two properties are checked at a narrow width (554 px, the PCB
 ## tab's bottom strip) and at a wide one:
 ##
-##   HEIGHT  opens at about a third of the tab, never past half — on open,
-##           after a grip drag, after the tab shrinks — and the dragged size is
-##           remembered while it fits.
+##   HEIGHT  opens at about a third of the tab, accepts deliberate drags beyond
+##           half while retaining a document strip, re-clamps after the tab
+##           shrinks, and restores the remembered size when space returns.
 ##   REACH   no row's trailing controls sit off-screen with no way to scroll to
 ##           them, and a horizontal scrollbar shows exactly when the content is
 ##           wider than the dock; at 1200 px the content is not wider at all.
@@ -22,16 +22,14 @@ const SizingScript := preload("res://Scripts/UI/Controls/AnnotationDockPane/Anno
 const NARROW_WIDTH := 554.0
 const WIDE_WIDTH := 1200.0
 const TALL_HEIGHT := 900.0
-## Short enough that HALF of it is BELOW the size the grip drag leaves behind
-## (200 px), so the re-clamp on resize has to actually move the pane. At 400 the
-## cap would be exactly 200 and the assertion would pass without it.
-const SHORT_HEIGHT := 300.0
-## Shorter than twice the pane's own floors: half of it (60) is below the chrome
-## plus MIN_LIST_HEIGHT, so the cap and the floors are in direct conflict and
-## the cap has to win.
-const TINY_HEIGHT := 120.0
+## Short enough that 85% is BELOW the size the grip drag leaves behind (200px),
+## so the re-clamp on resize has to actually move the pane.
+const SHORT_HEIGHT := 180.0
+## Its 85% cap is below the 110px policy floor but above the real pane's ~80px
+## chrome/scroll floor, so the policy conflict is real and physically feasible.
+const TINY_HEIGHT := 110.0
 ## Slack for container separations and theme metrics — the assertions are about
-## thirds and halves of the tab, not exact pixels.
+## proportional budgets, not exact pixels.
 const SLACK := 12.0
 
 var _pass := 0
@@ -112,8 +110,8 @@ func _init() -> void:
 	await _settle()
 
 	_test_opens_at_a_third()
-	await _test_grip_drag_is_capped()
-	await _test_resize_keeps_the_document_half()
+	await _test_grip_drag_uses_most_of_the_tab()
+	await _test_resize_preserves_preference()
 	_test_rows_stay_reachable_when_narrow()
 	await _test_nothing_scrolls_when_wide()
 	await _test_pane_carries_its_own_close_control()
@@ -191,7 +189,7 @@ func _entry_rows() -> Array:
 # ── Height ────────────────────────────────────────────────────────────────────
 
 func _test_opens_at_a_third() -> void:
-	print("-- opens at a third of the tab, never past half --")
+	print("-- opens at a third of the tab --")
 	var third := TALL_HEIGHT * SizingScript.OPEN_FRACTION
 	check("rows are actually listed (the checks below are not vacuous)",
 		_entry_rows().size() >= 3)
@@ -199,13 +197,12 @@ func _test_opens_at_a_third() -> void:
 		int(_workflow_list().entry_count()) == 3)
 	check("dock height is about a third of the tab (got %.0f, want ~%.0f)" % [_pane.size.y, third],
 		absf(_pane.size.y - third) <= SLACK)
-	check("dock is inside the 50% cap", _pane.size.y <= TALL_HEIGHT * 0.5 + 1.0)
 	check("document keeps the rest of the tab",
 		_document.size.y >= TALL_HEIGHT - _pane.size.y - SLACK)
 
 
-func _test_grip_drag_is_capped() -> void:
-	print("\n-- grip drag is capped, and a smaller drag is remembered --")
+func _test_grip_drag_uses_most_of_the_tab() -> void:
+	print("\n-- grip drag can pass half while retaining a document strip --")
 	var handle := _pane.get_node_or_null("ResizeHandle") as Control
 	check("pane has a drag grip in BOTTOM mode", handle != null and handle.visible)
 	if handle == null:
@@ -213,12 +210,14 @@ func _test_grip_drag_is_capped() -> void:
 
 	_drag(handle, 1000.0)
 	await _settle()
-	check("dragging the grip far up stops at half the tab (got %.0f)" % _pane.size.y,
-		_pane.size.y <= TALL_HEIGHT * 0.5 + 1.0)
+	check("dragging the grip can move beyond the old half-tab cap (got %.0f)" % _pane.size.y,
+		_pane.size.y > TALL_HEIGHT * 0.5 + 1.0)
+	check("dragging the grip stops at the usable-height cap (got %.0f)" % _pane.size.y,
+		_pane.size.y <= TALL_HEIGHT * SizingScript.MAX_FRACTION + 1.0)
 	check("the remembered size is the clamped one, not the requested one",
-		float(_pane.get_preferred_height()) <= TALL_HEIGHT * 0.5 + 1.0)
-	check("document still keeps half the tab",
-		_document.size.y >= TALL_HEIGHT * 0.5 - SLACK)
+		float(_pane.get_preferred_height()) <= TALL_HEIGHT * SizingScript.MAX_FRACTION + 1.0)
+	check("document retains the remaining strip",
+		_document.size.y >= TALL_HEIGHT * (1.0 - SizingScript.MAX_FRACTION) - SLACK)
 
 	_drag(handle, -(_pane.size.y - 200.0))
 	await _settle()
@@ -226,34 +225,33 @@ func _test_grip_drag_is_capped() -> void:
 		absf(_pane.size.y - 200.0) <= SLACK)
 
 
-func _test_resize_keeps_the_document_half() -> void:
+func _test_resize_preserves_preference() -> void:
 	print("\n-- window resize re-clamps, memory survives it --")
-	# The pane arrives here at the 200 px the previous drag left it at, and half
+	# The pane arrives here at the 200 px the previous drag left it at, and 85%
 	# of SHORT_HEIGHT is less than that — so this only passes if the resize
 	# genuinely re-clamps rather than leaving the pane where it was.
 	check("the pane starts this case ABOVE the cap it will have to fall to",
-		_pane.size.y > SHORT_HEIGHT * 0.5 + 1.0)
-	_tab.size = Vector2(NARROW_WIDTH, SHORT_HEIGHT)
-	await _settle()
-	check("dock re-clamps to half the shorter tab (got %.0f)" % _pane.size.y,
-		_pane.size.y <= SHORT_HEIGHT * 0.5 + 1.0)
-	check("document keeps its half of the shorter tab",
-		_document.size.y >= SHORT_HEIGHT * 0.5 - SLACK)
+		_pane.size.y > SHORT_HEIGHT * SizingScript.MAX_FRACTION + 1.0)
+	await _shrink_tab_to(SHORT_HEIGHT)
+	check("dock re-clamps to the shorter tab's usable cap (got %.0f)" % _pane.size.y,
+		_pane.size.y <= SHORT_HEIGHT * SizingScript.MAX_FRACTION + 1.0)
+	check("document keeps a visible strip in the shorter tab",
+		_document.size.y >= SHORT_HEIGHT * (1.0 - SizingScript.MAX_FRACTION) - SLACK)
 
-	# A TAB TOO SHORT FOR THE PANE'S OWN FLOORS. Half of 120 is 60, which is
-	# less than the chrome plus the list's 44 px floor — so the floors and the
-	# cap fight, and the CAP has to win or the document keeps less than half of
-	# an already tiny tab. Measured on the real pane, whose on-screen height in
-	# BOTTOM mode is its COMBINED minimum, not the number it was handed.
+	# The fractional cap is below the policy MIN_HEIGHT but above the pane's
+	# measured physical floor. This exercises cap precedence without asking the
+	# layout engine to fit controls into an impossible rectangle.
+	check("tiny-host cap is below the ordinary dock policy floor",
+		TINY_HEIGHT * SizingScript.MAX_FRACTION < SizingScript.MIN_HEIGHT)
 	await _shrink_tab_to(TINY_HEIGHT)
 	check("the tab really is that short (a Control only shrinks once its "
-		+ "contents let it, so this is the pane's own floors having given way)",
+		+ "contents let it, so this confirms the physical floor still fits)",
 		absf(_tab.size.y - TINY_HEIGHT) <= 1.0)
-	check("dock never overruns the cap on a tab too short for its floors (got %.0f, want <= %.0f)"
-		% [_pane.size.y, TINY_HEIGHT * 0.5],
-		_pane.size.y <= TINY_HEIGHT * 0.5 + 1.0)
-	check("the document still keeps half of the tiny tab (got %.0f)" % _document.size.y,
-		_document.size.y >= TINY_HEIGHT * 0.5 - SLACK)
+	check("dock never overruns the cap below its policy floor (got %.0f, want <= %.0f)"
+		% [_pane.size.y, TINY_HEIGHT * SizingScript.MAX_FRACTION],
+		_pane.size.y <= TINY_HEIGHT * SizingScript.MAX_FRACTION + 1.0)
+	check("the document still keeps a strip in the tiny tab (got %.0f)" % _document.size.y,
+		_document.size.y >= TINY_HEIGHT * (1.0 - SizingScript.MAX_FRACTION) - SLACK)
 
 	_tab.size = Vector2(NARROW_WIDTH, TALL_HEIGHT)
 	await _settle()
@@ -331,11 +329,16 @@ func _test_pane_carries_its_own_close_control() -> void:
 	if toggle == null:
 		return
 	check("toggle is visible while the dock is open", toggle.visible)
+	var remembered_height: float = _pane.size.y
 	toggle.pressed.emit()
 	await _settle()
 	check("pressing it collapses the dock", bool(_pane.is_collapsed()))
 	check("a collapsed dock takes almost no height (got %.0f)" % _pane.size.y,
 		_pane.size.y <= 40.0)
+	toggle.pressed.emit()
+	await _settle()
+	check("reopening restores the session height (got %.0f, want %.0f)" % [_pane.size.y, remembered_height],
+		absf(_pane.size.y - remembered_height) <= SLACK)
 
 
 # ── Input helpers ─────────────────────────────────────────────────────────────

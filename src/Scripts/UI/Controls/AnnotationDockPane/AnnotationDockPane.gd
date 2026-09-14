@@ -7,8 +7,8 @@ extends VBoxContainer
 ## pane keeps its host and visibility state stable across that move.
 ##
 ## Height (BOTTOM mode): the pane opens at a third of the editor tab's height
-## and never takes more than half of it — on open, on a grip drag, and on a
-## window resize — so the document always keeps the other half. The policy
+## and can be dragged up to 85% of it — on open, on a grip drag, and on a
+## window resize — so a visible document strip remains. The policy
 ## numbers live in AnnotationDockSizing; _apply_height_budget explains why the
 ## budget has to be spent on a scroll region rather than merely capped.
 
@@ -29,6 +29,11 @@ var _workbench: Control = null
 var _workflow_list: Control = null
 var _toolbar: AnnotationToolbar = null
 const _AnnotationDockSizingScript = preload("res://Scripts/UI/Controls/AnnotationDockPane/AnnotationDockSizing.gd")
+const _ICON_CHEVRON_DOWN := preload("res://assets/icons/annotation_chevron_down.svg")
+const _ICON_CHEVRON_UP := preload("res://assets/icons/annotation_chevron_up.svg")
+const _ICON_CHEVRON_LEFT := preload("res://assets/icons/chevron_left.svg")
+const _ICON_CHEVRON_RIGHT := preload("res://assets/icons/chevron_right.svg")
+const _ICON_COLOR := Color("#dcdcdc")
 
 ## Grip along the pane's top edge in BOTTOM mode. Dragging it up/down is the
 ## only way the user resizes the dock, so it is the sole writer of
@@ -100,7 +105,7 @@ func set_available_height_source(source: Control) -> void:
 
 
 ## User-set dock height (the drag's only entry point, and the one tests drive).
-## Clamped to the 50 % cap before it is remembered, so a stored size can never
+## Clamped to the usable-height cap before it is remembered, so a stored size can never
 ## reappear oversized after a window resize.
 func set_preferred_height(height: float) -> void:
 	_preferred_height = _AnnotationDockSizingScript.clamp_height(height, _available_height())
@@ -210,7 +215,10 @@ func _build_ui() -> void:
 
 	_chevron = Button.new()
 	_chevron.name = "ToggleButton"
-	_chevron.text = "v"
+	_chevron.flat = true
+	_chevron.expand_icon = false
+	_tint_icon(_chevron)
+	_strip_button_padding(_chevron)
 	# The pane's OWN open/close control: it lives inside the pane in every
 	# layout, so a dock is always closable even when a host's sidebar (which
 	# may carry its own toggle) is scrolled out of reach.
@@ -300,9 +308,9 @@ func _apply_layout_state() -> void:
 		_workflow_list.visible = not _collapsed
 	if _chevron != null:
 		if dock_mode == DockMode.RIGHT:
-			_chevron.text = "<" if _collapsed else ">"
+			_chevron.icon = _ICON_CHEVRON_LEFT if _collapsed else _ICON_CHEVRON_RIGHT
 		else:
-			_chevron.text = "^" if _collapsed else "v"
+			_chevron.icon = _ICON_CHEVRON_UP if _collapsed else _ICON_CHEVRON_DOWN
 	if dock_mode == DockMode.RIGHT:
 		custom_minimum_size = _RIGHT_COLLAPSED_MIN if _collapsed else _RIGHT_EXPANDED_MIN
 		size_flags_horizontal = Control.SIZE_SHRINK_END
@@ -312,6 +320,17 @@ func _apply_layout_state() -> void:
 		size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		size_flags_vertical = Control.SIZE_SHRINK_END
 	_apply_height_budget()
+
+
+func _tint_icon(button: Button) -> void:
+	for state in [&"icon_normal_color", &"icon_hover_color", &"icon_pressed_color", &"icon_focus_color"]:
+		button.add_theme_color_override(state, _ICON_COLOR)
+	button.add_theme_color_override(&"icon_disabled_color", Color(_ICON_COLOR.r, _ICON_COLOR.g, _ICON_COLOR.b, 0.25))
+
+
+func _strip_button_padding(button: Button) -> void:
+	for state in [&"normal", &"hover", &"pressed", &"focus", &"disabled"]:
+		button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 
 
 ## Height of the editor tab this dock shares. Zero means "unknown" — the pane
@@ -356,10 +375,8 @@ func _apply_height_budget() -> void:
 	custom_minimum_size.y = target
 	# SPEND THE BUDGET, and no more: the list gets whatever the target leaves
 	# after the chrome. Holding it to MIN_LIST_HEIGHT when the budget is smaller
-	# than that made the pane's COMBINED minimum overrun the cap — on a 120 px
-	# tab the cap is 60 but chrome + the 44 px floor forced ~80, and the
-	# document lost more than half. The cap is the promise (see
-	# AnnotationDockSizing.clamp_height); the list floor is a preference, and it
+	# than that made the pane's COMBINED minimum overrun the cap. The cap is the
+	# promise (see AnnotationDockSizing.clamp_height); the list floor is a preference, and it
 	# is already satisfied by every target big enough to hold it.
 	_dock_scroll.custom_minimum_size.y = maxf(0.0, target - _fixed_chrome_height())
 
