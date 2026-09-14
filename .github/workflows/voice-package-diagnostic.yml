@@ -1,0 +1,47 @@
+name: Voice Package Diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Completed Build Project run with a successful export-macos job
+        required: true
+        type: string
+
+jobs:
+  verify-signed-intel-runtime:
+    runs-on: macos-15-intel
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download the explicit signed application artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          source_state=$(gh run view "$SOURCE_RUN_ID" --json headSha,status --jq '.headSha + " " + .status')
+          workflow_name=$(gh run view "$SOURCE_RUN_ID" --json workflowName --jq '.workflowName')
+          echo "artifact_source_run=$SOURCE_RUN_ID artifact_source=$source_state"
+          echo "diagnostic_test_sha=${GITHUB_SHA}"
+          [ "$workflow_name" = "Build Project" ] || { echo "::error::Source run is not Build Project"; exit 1; }
+          [ "${source_state##* }" = completed ] || { echo "::error::Source run is not completed"; exit 1; }
+          export_result=$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${SOURCE_RUN_ID}/jobs?filter=latest" \
+            --jq '.jobs[] | select(.name == "export-macos") | .conclusion' | tail -1)
+          [ "$export_result" = success ] || { echo "::error::Source export-macos job was not successful"; exit 1; }
+          mkdir -p packaged
+          gh run download "$SOURCE_RUN_ID" --name Minerva-macOS-Build --dir packaged
+          echo "artifact_zip_sha256=$(shasum -a 256 packaged/Minerva-macOS.zip | cut -d' ' -f1)"
+      - name: Verify signed Intel voice sidecar
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          ditto -x -k packaged/Minerva-macOS.zip extracted
+          src/plugins/voice/scripts/test-runtime-root.sh macos-amd64 \
+            extracted/Minerva.app/Contents/Resources/builtin-plugins/voice/macos-amd64
+
+# This workflow diagnoses an already-built artifact. It never uploads or
+# promotes that artifact and is not a substitute for the release workflow.

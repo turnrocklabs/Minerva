@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import unittest
 
 import websockets
@@ -154,16 +155,56 @@ class WorkerContractTest(unittest.IsolatedAsyncioTestCase):
         initialize = json.dumps({"jsonrpc": "2.0", "id": 7, "method": "initialize"})
         environment = dict(os.environ)
         environment["PYTHONNOUSERSITE"] = "1"
-        completed = await asyncio.to_thread(
-            subprocess.run,
+        process = subprocess.Popen(
             [sys.executable, "-B", "-I", "-m", "minerva_voice_worker"],
-            input=("x" * (64 * 1024 + 1)) + initialize + "\n" + initialize + "\n",
-            text=True, capture_output=True, timeout=5, check=True, env=environment,
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, env=environment,
         )
-        replies = [json.loads(line) for line in completed.stdout.splitlines()]
-        self.assertEqual(len(replies), 2)
-        self.assertEqual({reply.get("id") for reply in replies}, {None, 7})
-        self.assertTrue(all(line.startswith("{") for line in completed.stdout.splitlines()))
+        started = time.monotonic()
+        phase = "startup/recovery"
+        try:
+            assert process.stdin is not None
+            assert process.stdout is not None
+            request_text = ("x" * (64 * 1024 + 1)) + initialize + "\n" + initialize + "\n"
+
+            def write_requests() -> None:
+                process.stdin.write(request_text)
+                process.stdin.flush()
+
+            # Bound process startup, imports, request delivery, and recovery as
+            # one phase. EOF shutdown gets its own tighter deadline below.
+            async with asyncio.timeout(120):
+                await asyncio.to_thread(write_requests)
+                lines = [
+                    await asyncio.to_thread(process.stdout.readline),
+                    await asyncio.to_thread(process.stdout.readline),
+                ]
+            replies = [json.loads(line) for line in lines]
+            self.assertEqual({reply.get("id") for reply in replies}, {None, 7})
+            self.assertTrue(all(line.startswith("{") for line in lines))
+            print(f"stdio startup/recovery completed in {time.monotonic() - started:.3f}s")
+
+            phase = "EOF shutdown"
+            started = time.monotonic()
+            process.stdin.close()
+            return_code = await asyncio.wait_for(asyncio.to_thread(process.wait), 5)
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            self.assertEqual(return_code, 0, stderr)
+            self.assertEqual(process.stdout.read(), "", "worker emitted unexpected extra stdout")
+            print(f"stdio EOF shutdown completed in {time.monotonic() - started:.3f}s")
+        except (asyncio.TimeoutError, json.JSONDecodeError) as error:
+            if process.poll() is None:
+                process.kill()
+                await asyncio.to_thread(process.wait)
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            self.fail(f"stdio worker {phase} failed after {time.monotonic() - started:.3f}s: {error!r}\n{stderr}")
+        finally:
+            if process.poll() is None:
+                process.kill()
+                await asyncio.to_thread(process.wait)
+            for pipe in (process.stdin, process.stdout, process.stderr):
+                if pipe is not None and not pipe.closed:
+                    pipe.close()
 
         bad_params = await self.worker.dispatch({
             "jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": [],
