@@ -9,6 +9,8 @@ signal vad_started()
 signal vad_ended()
 signal wake_word_detected(confidence: float)
 signal transcription_ready(audio_wav: PackedByteArray)
+signal transcription_stream_started(operation: VoiceOperation)
+signal transcription_stream_finished(operation: VoiceOperation, outcome: Dictionary)
 signal connected_to_gateway()
 signal disconnected_from_gateway()
 signal gateway_start_failed(reason: String)
@@ -22,6 +24,7 @@ const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
 const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
 const TARGET_SAMPLE_RATE := 16000  # gateway expects 16kHz
 const CAPTURE_DIAGNOSTIC_INTERVAL_MSEC := 2000
+const MAX_UTTERANCE_BYTES := 16000 * 2 * 300
 const AudioConverter = preload("res://Scripts/Services/Voice/AudioInputConverter.gd")
 
 var engagement_state: String = "STANDBY"
@@ -42,6 +45,10 @@ var _audio_buffer: PackedByteArray = PackedByteArray()
 var _pre_vad_buffer: Array[PackedByteArray] = []
 var _vad_active := false
 var _recording_conversion_usec := 0
+var _stt_stream_session: Dictionary = {}
+var _stt_stream_operation: VoiceOperation
+var _pending_stt_streams: Dictionary = {} # VoiceOperation -> immutable session snapshot
+var _recording_discarded_start := 0
 
 # TTS playback tracking
 var _tts_playing := false
@@ -223,7 +230,22 @@ func stop() -> void:
 	print("[VoiceGateway] Stopped")
 
 
+func cancel_active_transcription() -> void:
+	var operations: Array = _pending_stt_streams.keys()
+	if _stt_stream_operation != null:
+		operations.append(_stt_stream_operation)
+	_stt_stream_operation = null
+	_stt_stream_session = {}
+	_recording = false
+	_audio_buffer.clear()
+	_pending_stt_streams.clear()
+	for operation: VoiceOperation in operations:
+		operation.cancel()
+		transcription_stream_finished.emit(operation, {"success": false, "error_code": "cancelled", "error_message": "Voice transcription cancelled locally."})
+
+
 func _reset_capture_session(reason: String) -> void:
+	cancel_active_transcription()
 	_recording = false
 	_vad_active = false
 	_ptt_active = false
@@ -291,10 +313,23 @@ func _on_capture_tick() -> void:
 
 	# Keep one converter across ticks so rational resampling phase and FIR history survive.
 	var frames: PackedVector2Array = _capture_effect.get_buffer(frames_available)
+	if frames.size() != frames_available:
+		if not _stt_stream_session.is_empty():
+			_fail_active_stt_stream("capture_read_failed", "Voice capture could not read buffered audio.")
+		return
+	_process_captured_frames(frames, int(AudioServer.get_mix_rate()), _capture_effect.get_discarded_frames())
+
+
+func _process_captured_frames(frames: PackedVector2Array, native_rate: int, discarded_frames: int) -> void:
+	if not _stt_stream_session.is_empty() and discarded_frames != _recording_discarded_start:
+		_fail_active_stt_stream("capture_overflow", "Voice capture lost audio before transcription.")
+		return
 	_diagnostic_input_frames += frames.size()
 	for index in range(0, frames.size(), 16):
 		_diagnostic_peak = maxf(_diagnostic_peak, maxf(absf(frames[index].x), absf(frames[index].y)))
-	var native_rate: int = int(AudioServer.get_mix_rate())
+	if not _stt_stream_session.is_empty() and _input_converter != null and _input_converter.source_rate != native_rate:
+		_fail_active_stt_stream("capture_rate_changed", "Audio input rate changed during voice capture.")
+		return
 	if _input_converter == null or _input_converter.source_rate != native_rate:
 		_input_converter = AudioConverter.StreamResampler.new(native_rate)
 	var conversion_started_usec := Time.get_ticks_usec()
@@ -322,7 +357,13 @@ func _on_capture_tick() -> void:
 
 	# Accumulate if recording
 	if _recording:
+		if _audio_buffer.size() + pcm.size() > MAX_UTTERANCE_BYTES:
+			_fail_active_stt_stream("audio_too_large", "Voice utterance exceeded the five-minute limit.")
+			return
 		_audio_buffer.append_array(pcm)
+		if not _stt_stream_session.is_empty():
+			if SingletonObject.get_voice_client().append_transcription_stream(_stt_stream_session, pcm) != OK:
+				_fail_active_stt_stream("stream_send_failed", "Microphone streaming stopped. Select Buffered transport and retry.")
 
 
 func _log_capture_diagnostics() -> void:
@@ -395,10 +436,33 @@ func _begin_recording_if_admitted() -> void:
 	if not _recording:
 		_recording = true
 		_recording_conversion_usec = 0
+		_recording_discarded_start = _capture_effect.get_discarded_frames() if _capture_effect != null else 0
 		_audio_buffer = PackedByteArray()
+		var recording_prefix: Array[PackedByteArray] = []
+		recording_prefix.assign(_pre_vad_buffer)
 		for chunk in _pre_vad_buffer:
 			_audio_buffer.append_array(chunk)
 		_pre_vad_buffer.clear()
+		var cfg: VoiceConfig = SingletonObject.get_voice_config()
+		if cfg.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE and cfg.stt_transport == VoiceConfig.STTTransport.STREAMED:
+			_stt_stream_operation = VoiceOperation.new()
+			transcription_stream_started.emit(_stt_stream_operation)
+			_stt_stream_session = SingletonObject.get_voice_client().begin_transcription_stream(cfg, _stt_stream_operation)
+			if not _stt_stream_session.success:
+				var failed_operation := _stt_stream_operation
+				var failed_outcome := _stt_stream_session
+				_stt_stream_operation = null
+				_stt_stream_session = {}
+				_recording = false
+				_audio_buffer.clear()
+				transcription_stream_finished.emit(failed_operation, failed_outcome)
+				return
+			var stream_request = _stt_stream_session.request
+			stream_request.finished.connect(_on_gateway_stream_terminal.bind(stream_request), CONNECT_ONE_SHOT)
+			for chunk in recording_prefix:
+				if SingletonObject.get_voice_client().append_transcription_stream(_stt_stream_session, chunk) != OK:
+					_fail_active_stt_stream("stream_send_failed", "Microphone streaming stopped. Select Buffered transport and retry.")
+					return
 		_cancel_idle_timer()
 		print("[VoiceGateway] Recording started (with %d bytes pre-VAD)" % _audio_buffer.size())
 
@@ -408,17 +472,66 @@ func _handle_vad_end() -> void:
 	vad_ended.emit()
 
 	if _recording:
+		if not _stt_stream_session.is_empty() and _capture_effect != null and _capture_effect.get_discarded_frames() != _recording_discarded_start:
+			_fail_active_stt_stream("capture_overflow", "Voice capture lost audio before transcription.")
+			return
+		var current_rate := int(AudioServer.get_mix_rate())
+		if not _stt_stream_session.is_empty() and _input_converter != null and _input_converter.source_rate != current_rate:
+			_fail_active_stt_stream("capture_rate_changed", "Audio input rate changed during voice capture.")
+			return
 		_recording = false
-		# Gateway capture has no client operation identity until this WAV is handed off.
+		# This boundary is local; streamed captures already have an operation ID in adapter logs.
 		print("[VoiceGateway] stage=vad_boundary audio_bytes=%d sample_rate=%d channels=1 conversion_ms=%.3f" % [
 			_audio_buffer.size(), TARGET_SAMPLE_RATE, _recording_conversion_usec / 1000.0])
 		# Minimum 0.5s at 16kHz s16le = 16000 bytes
 		if _audio_buffer.size() > 16000 and _has_speech_energy(_audio_buffer):
-			var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
-			transcription_ready.emit(wav)
+			if not _stt_stream_session.is_empty():
+				_finish_active_stt_stream()
+			else:
+				var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
+				transcription_ready.emit(wav)
 		else:
 			print("[VoiceGateway] Discarded recording (too short or below energy threshold)")
+			if _stt_stream_operation != null:
+				var rejected := _stt_stream_operation
+				_stt_stream_operation = null
+				_stt_stream_session = {}
+				rejected.cancel()
+				transcription_stream_finished.emit(rejected, {"success": false, "error_code": "not_speech", "error_message": "Voice capture was too short or quiet."})
 		_audio_buffer = PackedByteArray()
+
+
+func _finish_active_stt_stream() -> void:
+	var operation := _stt_stream_operation
+	var session := _stt_stream_session
+	if operation == null:
+		return
+	_stt_stream_operation = null
+	_stt_stream_session = {}
+	_pending_stt_streams[operation] = session
+	var outcome: Dictionary = await SingletonObject.get_voice_client().finish_transcription_stream(session, operation)
+	if _pending_stt_streams.get(operation) != session:
+		return
+	_pending_stt_streams.erase(operation)
+	transcription_stream_finished.emit(operation, outcome)
+
+
+func _on_gateway_stream_terminal(outcome: Dictionary, request) -> void:
+	if _stt_stream_session.get("request") != request or not _recording:
+		return
+	var visible: Dictionary = SingletonObject.get_voice_client().normalize_stream_failure(outcome)
+	_fail_active_stt_stream(str(visible.get("error_code", "stream_failed")), str(visible.get("error_message", "Microphone streaming stopped.")))
+
+
+func _fail_active_stt_stream(code: String, message: String) -> void:
+	var operation := _stt_stream_operation
+	_stt_stream_operation = null
+	_stt_stream_session = {}
+	_recording = false
+	_audio_buffer.clear()
+	if operation != null:
+		operation.cancel()
+		transcription_stream_finished.emit(operation, {"success": false, "error_code": code, "error_message": message})
 
 
 # ── Engagement State Machine ────────────────────────────────────────────

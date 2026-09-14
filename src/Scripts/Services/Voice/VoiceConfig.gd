@@ -3,6 +3,7 @@ extends RefCounted
 ## Persists voice preferences (STT/TTS provider, voice selection, audio settings).
 
 enum STTProvider { VOICE_SERVICE, OPENAI_WHISPER }
+enum STTTransport { BUFFERED, STREAMED }
 enum TTSProvider { VOICE_SERVICE, NONE }
 enum SpeakMode { OFF, FULL, SUMMARIZE }
 
@@ -11,6 +12,8 @@ var stt_provider: STTProvider = STTProvider.VOICE_SERVICE
 
 ## STT backend for voice-service (e.g. "faster-whisper", "qwen3-asr")
 var stt_backend: String = "faster-whisper"
+## Buffered is the compatibility default; streamed sends normalized PCM while recording.
+var stt_transport: STTTransport = STTTransport.BUFFERED
 
 ## Current TTS provider selection
 var tts_provider: TTSProvider = TTSProvider.VOICE_SERVICE
@@ -62,6 +65,7 @@ var stt_model: String = "small.en"
 func save() -> void:
 	SingletonObject.save_to_config_file("Voice", "stt_provider", stt_provider)
 	SingletonObject.save_to_config_file("Voice", "stt_backend", stt_backend)
+	SingletonObject.save_to_config_file("Voice", "stt_transport", stt_transport)
 	SingletonObject.save_to_config_file("Voice", "tts_provider", tts_provider)
 	SingletonObject.save_to_config_file("Voice", "voice_id", voice_id)
 	SingletonObject.save_to_config_file("Voice", "voice_name", voice_name)
@@ -85,6 +89,7 @@ func load_from_config() -> void:
 
 	stt_provider = SingletonObject.config_file.get_value("Voice", "stt_provider", STTProvider.VOICE_SERVICE)
 	stt_backend = SingletonObject.config_file.get_value("Voice", "stt_backend", "faster-whisper")
+	stt_transport = SingletonObject.config_file.get_value("Voice", "stt_transport", STTTransport.BUFFERED) as STTTransport
 	tts_provider = SingletonObject.config_file.get_value("Voice", "tts_provider", TTSProvider.VOICE_SERVICE)
 	voice_id = SingletonObject.config_file.get_value("Voice", "voice_id", "")
 	voice_name = SingletonObject.config_file.get_value("Voice", "voice_name", "")

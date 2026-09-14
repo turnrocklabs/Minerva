@@ -333,7 +333,7 @@ func _run() -> void:
 	pane._update_stop_button()
 	check("actual Stop button stays enabled throughout streamed playback", player.playing and pane._tts_busy and gateway.starts == 1 and not pane.audio_stop_1.disabled)
 	pane._on_audio_stop_1_pressed()
-	check("actual Stop handler clears queue and pending voice work before owned cancellation", queue_empty_at_finish.value and pane._voice_utterance_queue.is_empty() and pending_gateway_scope.cancelled and pane._gateway_transcriptions.is_empty() and pane._gateway_generation == gateway_generation_before_stop + 1 and not player.playing and not pane._tts_busy and gateway.finishes == 1 and transport.sent.back().topic == "stream/cancel" and transport.sent.back().params.request_id == streaming_id and pane.audio_stop_1.disabled)
+	check("actual Stop handler clears queue and pending voice work before owned cancellation", queue_empty_at_finish.value and pane._voice_utterance_queue.is_empty() and pending_gateway_scope.cancelled and pane._gateway_transcriptions.is_empty() and pane._gateway_generation == gateway_generation_before_stop + 1 and gateway.transcription_cancels == 1 and not player.playing and not pane._tts_busy and gateway.finishes == 1 and transport.sent.back().topic == "stream/cancel" and transport.sent.back().params.request_id == streaming_id and pane.audio_stop_1.disabled)
 	gateway.starts = 0
 	gateway.finishes = 0
 

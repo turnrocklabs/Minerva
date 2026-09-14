@@ -61,6 +61,7 @@ class PTTRequest:
 ## _finish_transcription to choose insertion behaviour. Null for legacy call sites.
 var _active_ptt_req: PTTRequest = null
 var _voice_operation: VoiceOperation
+var _stt_stream_session: Dictionary = {}
 var _voice_generation := 0
 var _ptt_capture_started_msec := 0
 var _ptt_submit_started_msec := 0
@@ -139,21 +140,43 @@ func _begin_normalization_capture() -> bool:
 func _drain_normalization_capture() -> void:
 	if _normalization_capture == null or _normalization_converter == null or not _normalization_error.is_empty():
 		return
+	if not _stt_stream_session.is_empty() and _normalization_capture.get_discarded_frames() != _normalization_discarded_start:
+		_abort_streaming_capture("Voice capture overflowed before transcription.")
+		return
 	if int(AudioServer.get_mix_rate()) != _normalization_rate:
-		_normalization_error = "Audio input rate changed during capture."
+		_abort_streaming_capture("Audio input rate changed during capture.")
 		return
 	var available: int = _normalization_capture.get_frames_available()
 	if available <= 0:
 		return
 	var frames: PackedVector2Array = _normalization_capture.get_buffer(available)
 	if frames.size() != available:
-		_normalization_error = "Voice capture could not read buffered audio."
+		_abort_streaming_capture("Voice capture could not read buffered audio.")
 		return
 	var chunk: PackedByteArray = _normalization_converter.append_frames(frames)
+	if not _stt_stream_session.is_empty() and not chunk.is_empty():
+		if SingletonObject.get_voice_client().append_transcription_stream(_stt_stream_session, chunk) != OK:
+			_abort_streaming_capture("Microphone streaming stopped before transcription. Select Buffered transport and retry.")
+		return
 	if _normalized_pcm.size() + chunk.size() > MAX_NORMALIZED_CAPTURE_BYTES:
 		_normalization_error = "Voice capture exceeded the five-minute limit."
 		return
 	_normalized_pcm.append_array(chunk)
+
+
+func _abort_streaming_capture(message: String) -> void:
+	_normalization_error = message
+	if _stt_stream_session.is_empty():
+		return
+	if effect != null and effect.is_recording_active():
+		effect.set_recording_active(false)
+	_stop_mic()
+	var operation := _voice_operation
+	_voice_operation = null
+	if operation != null:
+		operation.cancel()
+	_reset_normalization_capture()
+	_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": message})
 
 
 func _finish_normalization_capture() -> Dictionary:
@@ -164,12 +187,20 @@ func _finish_normalization_capture() -> Dictionary:
 		_normalization_error = "Voice capture overflowed before transcription."
 	if _normalization_error.is_empty():
 		var tail: PackedByteArray = _normalization_converter.flush()
-		if _normalized_pcm.size() + tail.size() > MAX_NORMALIZED_CAPTURE_BYTES:
+		if not _stt_stream_session.is_empty() and not tail.is_empty():
+			if SingletonObject.get_voice_client().append_transcription_stream(_stt_stream_session, tail) != OK:
+				_normalization_error = "Microphone streaming stopped before transcription. Select Buffered transport and retry."
+		elif _normalized_pcm.size() + tail.size() > MAX_NORMALIZED_CAPTURE_BYTES:
 			_normalization_error = "Voice capture exceeded the five-minute limit."
 		else:
 			_normalized_pcm.append_array(tail)
 	if not _normalization_error.is_empty():
 		return {"success": false, "error_message": _normalization_error}
+	if not _stt_stream_session.is_empty():
+		var request = _stt_stream_session.get("request")
+		if request == null or request.audio_bytes <= 0:
+			return {"success": false, "error_message": "No audio was captured for transcription."}
+		return {"success": true, "streaming": true, "audio_bytes": request.audio_bytes}
 	if _normalized_pcm.is_empty():
 		return {"success": false, "error_message": "No audio was captured for transcription."}
 	return {"success": true, "wav": AudioConverter.pcm16_to_wav(_normalized_pcm)}
@@ -182,6 +213,7 @@ func _reset_normalization_capture() -> void:
 	_normalization_error = ""
 	if _normalization_capture != null:
 		_normalization_capture.clear_buffer()
+	_stt_stream_session = {}
 
 
 func _remove_normalization_capture() -> void:
@@ -221,9 +253,10 @@ func start_ptt(req: PTTRequest) -> int:
 		push_warning("AudioToText.start_ptt: req.target is required")
 		return ERR_INVALID_PARAMETER
 	# A second press ends the active recording; keep its locally normalized PCM
-	# until _StartConverting performs the final drain and buffered dispatch.
+	# until _StartConverting performs the final drain and buffered dispatch or stream END.
 	var stopping_recording: bool = effect != null and effect.is_recording_active()
-	_cancel_voice_transcription(not stopping_recording)
+	if not stopping_recording:
+		_cancel_voice_transcription()
 
 	# Cancel any in-flight TTS before binding the mic. Output stream must end before
 	# the driver renegotiates for input, otherwise the mic capture comes up zombied.
@@ -283,8 +316,9 @@ func _StartConverting():
 	if effect.is_recording_active():
 		var prepare_started_msec := Time.get_ticks_msec()
 		_ptt_submit_started_msec = prepare_started_msec
-		_ptt_sequence += 1
-		_ptt_diagnostic_id = "ptt-%d" % _ptt_sequence
+		if _ptt_diagnostic_id.is_empty():
+			_ptt_sequence += 1
+			_ptt_diagnostic_id = "ptt-%d" % _ptt_sequence
 		# Stop recording and get the in-memory PCM captured by AudioEffectRecord.
 		recording = effect.get_recording()
 		effect.set_recording_active(false)
@@ -297,11 +331,13 @@ func _StartConverting():
 			push_warning("AudioToText: no audio captured (PTT tap too fast or mic not primed)")
 			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "No audio captured"})
 			_reset_normalization_capture()
+			_cancel_voice_transcription()
 			return ERR_INVALID_DATA
 
 		# Freeze the upload payload before artifact I/O can allow unrelated capture frames in.
 		var conversion_started_msec := Time.get_ticks_msec()
 		var converted := _finish_normalization_capture()
+		var completed_stream_session := _stt_stream_session
 		var conversion_msec := Time.get_ticks_msec() - conversion_started_msec
 		_reset_normalization_capture()
 
@@ -318,7 +354,13 @@ func _StartConverting():
 		if not converted.success:
 			push_warning("[VoiceSTT] operation=%s stage=conversion elapsed_ms=%d status=invalid_capture" % [_ptt_diagnostic_id, conversion_msec])
 			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": converted.error_message})
+			_cancel_voice_transcription()
 			return ERR_INVALID_DATA
+		if converted.get("streaming", false):
+			print("[VoiceSTT] operation=%s stage=stream_prepared elapsed_ms=%d audio_bytes=%d sample_rate=%d channels=1" % [
+				_ptt_diagnostic_id, conversion_msec, int(converted.audio_bytes), AudioConverter.TARGET_RATE])
+			_finish_voice_service_stream(completed_stream_session)
+			return OK
 		var wav_bytes: PackedByteArray = converted.wav
 		print("[VoiceSTT] operation=%s stage=converted elapsed_ms=%d audio_bytes=%d sample_rate=%d channels=1 status=success" % [
 			_ptt_diagnostic_id, conversion_msec, wav_bytes.size(), AudioConverter.TARGET_RATE])
@@ -345,14 +387,65 @@ func _StartConverting():
 			_start_whisper_stt(wav_bytes)
 	else:
 		_ptt_capture_started_msec = Time.get_ticks_msec()
+		_ptt_diagnostic_id = ""
 		if not _begin_normalization_capture():
 			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Audio normalization is unavailable"})
 			return ERR_CANT_CREATE
 		_start_mic()
 		effect.set_recording_active(true)
+		var voice_config: VoiceConfig = SingletonObject.get_voice_config()
+		if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE and voice_config.stt_transport == VoiceConfig.STTTransport.STREAMED:
+			_ptt_sequence += 1
+			_ptt_diagnostic_id = "ptt-%d" % _ptt_sequence
+			var operation := VoiceOperation.new()
+			operation.diagnostic_id = _ptt_diagnostic_id
+			var session: Dictionary = SingletonObject.get_voice_client().begin_transcription_stream(voice_config, operation, _ptt_diagnostic_id)
+			if not session.success:
+				effect.set_recording_active(false)
+				_stop_mic()
+				_reset_normalization_capture()
+				_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": session.error_message})
+				return ERR_CANT_CONNECT
+			_voice_operation = operation
+			_stt_stream_session = session
+			var stream_request = session.request
+			stream_request.finished.connect(_on_ptt_stream_terminal.bind(stream_request), CONNECT_ONE_SHOT)
 		_set_ptt_state(PTTState.LISTENING, {"mic_button": _btn, "target": _field_for_filling})
 
 	return OK
+
+
+func _finish_voice_service_stream(session: Dictionary) -> void:
+	var operation := _voice_operation
+	if operation == null:
+		return
+	var generation := _voice_generation
+	_set_ptt_state(PTTState.TRANSCRIBING, {"mic_button": _btn, "target": _field_for_filling})
+	if _btn_stop != null:
+		_btn_stop.disabled = false
+	var outcome: Dictionary = await SingletonObject.get_voice_client().finish_transcription_stream(session, operation)
+	if generation != _voice_generation or _voice_operation != operation:
+		return
+	_voice_operation = null
+	if _ptt_submit_started_msec > 0:
+		print("[VoiceSTT] operation=%s stage=ptt_total elapsed_ms=%d status=%s fallback_from=none" % [
+			operation.diagnostic_id, Time.get_ticks_msec() - _ptt_submit_started_msec,
+			"success" if outcome.get("success", false) else str(outcome.get("error_code", "error"))])
+	_finish_transcription(outcome.get("text", ""), outcome.success, outcome.get("error_message", ""))
+
+
+func _on_ptt_stream_terminal(outcome: Dictionary, request) -> void:
+	if _stt_stream_session.get("request") != request or effect == null or not effect.is_recording_active():
+		return
+	effect.set_recording_active(false)
+	_stop_mic()
+	_reset_normalization_capture()
+	var operation := _voice_operation
+	_voice_operation = null
+	if operation != null:
+		operation.cancel()
+	var visible: Dictionary = SingletonObject.get_voice_client().normalize_stream_failure(outcome)
+	_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": visible.get("error_message", "Microphone streaming stopped.")})
 
 
 ## STT via voice-service (Core WebSocket).

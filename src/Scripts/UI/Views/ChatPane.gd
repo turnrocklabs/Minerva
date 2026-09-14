@@ -3285,6 +3285,8 @@ func _ready():
 	add_child(_voice_gateway)
 	_voice_gateway.engagement_changed.connect(_on_engagement_changed)
 	_voice_gateway.transcription_ready.connect(_on_gateway_transcription_ready)
+	_voice_gateway.transcription_stream_started.connect(_on_gateway_transcription_stream_started)
+	_voice_gateway.transcription_stream_finished.connect(_on_gateway_transcription_stream_finished)
 	_voice_gateway.connected_to_gateway.connect(_on_gateway_connected)
 	_voice_gateway.disconnected_from_gateway.connect(_on_gateway_disconnected)
 	_voice_gateway.gateway_start_failed.connect(_on_gateway_start_failed)
@@ -4779,6 +4781,7 @@ func _create_voice_status_label(msg_node: Control) -> RichTextLabel:
 ## Serialized: only one TTS at a time. New requests cancel the pending one.
 var _speech_operation: SpeechOperation
 var _gateway_transcriptions: Array[VoiceOperation] = []
+var _gateway_stream_generations: Dictionary = {}
 var _gateway_generation := 0
 var _gateway_stopped := false
 var _voice_tearing_down := false
@@ -4969,9 +4972,33 @@ func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
 	# Send to STT
 	var outcome := await client.transcribe_auto_result(audio_wav, cfg, operation)
 	_gateway_transcriptions.erase(operation)
+	_handle_gateway_transcription_outcome(operation, outcome, generation)
+
+
+func _on_gateway_transcription_stream_started(operation: VoiceOperation) -> void:
+	if operation == null or _voice_tearing_down or _gateway_stopped:
+		if operation != null:
+			operation.cancel()
+		return
+	_gateway_transcriptions.append(operation)
+	_gateway_stream_generations[operation] = _gateway_generation
+	_update_stop_button()
+
+
+func _on_gateway_transcription_stream_finished(operation: VoiceOperation, outcome: Dictionary) -> void:
+	_gateway_transcriptions.erase(operation)
+	var generation: int = int(_gateway_stream_generations.get(operation, -1))
+	_gateway_stream_generations.erase(operation)
+	_update_stop_button()
+	_handle_gateway_transcription_outcome(operation, outcome, generation)
+
+
+func _handle_gateway_transcription_outcome(_operation: VoiceOperation, outcome: Dictionary, generation: int) -> void:
 	if generation != _gateway_generation or _voice_tearing_down:
 		return
 	if not outcome.success:
+		if outcome.get("error_code") in ["not_speech", "cancelled"]:
+			return
 		if is_instance_valid(_engagement_state_label):
 			_engagement_state_label.text = "Voice: %s" % outcome.error_message
 		push_warning("Voice transcription failed: %s" % outcome.error_message)
@@ -5059,6 +5086,7 @@ func _cancel_gateway_transcriptions() -> void:
 	_voice_utterance_queue.clear()
 	var operations := _gateway_transcriptions.duplicate()
 	_gateway_transcriptions.clear()
+	_gateway_stream_generations.clear()
 	for operation in operations:
 		operation.cancel()
 
@@ -5281,8 +5309,11 @@ func _on_audio_stop_1_pressed() -> void:
 	# synchronous and otherwise advances the hands-free utterance queue.
 	_voice_utterance_queue.clear()
 	_gateway_generation += 1
+	if is_instance_valid(_voice_gateway):
+		_voice_gateway.cancel_active_transcription()
 	var voice_operations := _gateway_transcriptions.duplicate()
 	_gateway_transcriptions.clear()
+	_gateway_stream_generations.clear()
 	for operation: VoiceOperation in voice_operations:
 		operation.cancel()
 	cancel_tts()

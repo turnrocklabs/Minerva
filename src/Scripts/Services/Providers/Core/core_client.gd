@@ -534,11 +534,12 @@ func send_text_message(service: Service, action: Action, data: Dictionary, auth_
 	return request_id if send_text_message_to_core(message) == OK else ""
 
 
-# Add this helper function to handle packet sending with backpressure
-func send_packet(packet: PackedByteArray) -> void:
-	# while _client.get_current_outbound_buffered_amount() > 0:
-	# 	await get_tree().create_timer(0.1).timeout
-	_client.put_packet(packet)
+# Binary send success means the packet entered the local WebSocket queue; Core
+# does not acknowledge microphone chunks individually.
+func send_packet(packet: PackedByteArray) -> Error:
+	if _client.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return ERR_CONNECTION_ERROR
+	return _client.put_packet(packet)
 
 
 func merge_dictionaries(dict1, dict2):

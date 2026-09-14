@@ -255,6 +255,7 @@ func _on_btn_save_prefs_pressed():
 	config_file.set_value("HCP", "password", _fields["hcp_password"].text)
 	config_file.set_value("HCP", "auto_connect", _fields["hcp_auto_connect"].button_pressed)
 	config_file.set_value("HCP", "selected_services", service_selection_window.get_selected_service_data())
+	_apply_staged_stt_transport()
 
 	_save_agent_context_summary_preferences()
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
@@ -266,6 +267,7 @@ func _on_about_to_popup():
 	theme_option_button.selected = SingletonObject.get_theme_enum()
 	set_microphone_option_menu(SingletonObject.get_microphone())
 	_load_agent_context_summary_preferences()
+	_reload_stt_transport_selection()
 	populate_output_devices_button()
 	_sync_provider_checkboxes()
 	_populate_openrouter_models()
@@ -2700,6 +2702,8 @@ func _on_remove_selected_skill() -> void:
 var _voice_tab: MarginContainer
 var _stt_provider_option: OptionButton
 var _stt_backend_option: OptionButton
+var _stt_transport_option: OptionButton
+var _staged_stt_transport: int = VoiceConfig.STTTransport.BUFFERED
 var _tts_provider_option: OptionButton
 var _voice_refresh_generation := 0
 var _voice_selector: OptionButton
@@ -2773,6 +2777,14 @@ func _create_voice_tab() -> void:
 	_stt_provider_option.add_item("OpenAI Whisper (REST)", VoiceConfig.STTProvider.OPENAI_WHISPER)
 	_stt_provider_option.item_selected.connect(_on_stt_provider_changed)
 	stt_grid.add_child(_stt_provider_option)
+
+	stt_grid.add_child(_voice_label("STT Transport:"))
+	_stt_transport_option = _voice_option()
+	_stt_transport_option.add_item("Buffered", VoiceConfig.STTTransport.BUFFERED)
+	_stt_transport_option.add_item("Streamed", VoiceConfig.STTTransport.STREAMED)
+	_stt_transport_option.tooltip_text = "Streamed uploads audio while recording; recognition still starts when you press Transcribe or speech ends."
+	_stt_transport_option.item_selected.connect(_on_stt_transport_changed)
+	stt_grid.add_child(_stt_transport_option)
 
 	stt_grid.add_child(_voice_label("STT Backend:"))
 	_stt_backend_option = _voice_option()
@@ -3060,6 +3072,7 @@ func _create_voice_tab() -> void:
 
 func _voice_load_ui_from_config() -> void:
 	var cfg := SingletonObject.get_voice_config()
+	_staged_stt_transport = cfg.stt_transport
 
 	# STT provider
 	for i in _stt_provider_option.item_count:
@@ -3075,6 +3088,11 @@ func _voice_load_ui_from_config() -> void:
 
 	VoiceSelection.show_saved_option(_stt_backend_option, cfg.stt_backend, {"faster-whisper": 0, "qwen3-asr": 1})
 	_stt_backend_option.disabled = cfg.stt_provider != VoiceConfig.STTProvider.VOICE_SERVICE
+	for i in _stt_transport_option.item_count:
+		if _stt_transport_option.get_item_id(i) == cfg.stt_transport:
+			_stt_transport_option.select(i)
+			break
+	_stt_transport_option.disabled = cfg.stt_provider != VoiceConfig.STTProvider.VOICE_SERVICE
 	VoiceSelection.show_saved_option(_tts_backend_option, cfg.tts_backend, {"": 0, "kokoro": 1, "qwen3-base": 2, "qwen3-customvoice": 3, "gpt-sovits": 4})
 
 	_whisper_fallback_check.button_pressed = cfg.whisper_fallback
@@ -3177,6 +3195,7 @@ func _on_stt_provider_changed(idx: int) -> void:
 	var is_voice_service: bool = cfg.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE
 	_whisper_fallback_check.visible = is_voice_service
 	_stt_backend_option.disabled = not is_voice_service
+	_stt_transport_option.disabled = not is_voice_service
 	cfg.save()
 
 
@@ -3186,6 +3205,30 @@ func _on_stt_backend_changed(idx: int) -> void:
 		0: cfg.stt_backend = "faster-whisper"
 		1: cfg.stt_backend = "qwen3-asr"
 	cfg.save()
+
+
+func _on_stt_transport_changed(idx: int) -> void:
+	_staged_stt_transport = _stt_transport_option.get_item_id(idx)
+
+
+func _apply_staged_stt_transport() -> void:
+	if not is_instance_valid(_stt_transport_option):
+		return
+	var cfg := SingletonObject.get_voice_config()
+	cfg.stt_transport = _staged_stt_transport as VoiceConfig.STTTransport
+	# Keep the existing Voice config key as the durable source read at startup.
+	cfg.save()
+
+
+func _reload_stt_transport_selection() -> void:
+	if not is_instance_valid(_stt_transport_option):
+		return
+	var cfg := SingletonObject.get_voice_config()
+	_staged_stt_transport = cfg.stt_transport
+	for index in _stt_transport_option.item_count:
+		if _stt_transport_option.get_item_id(index) == _staged_stt_transport:
+			_stt_transport_option.select(index)
+			break
 
 
 func _on_tts_provider_changed(idx: int) -> void:

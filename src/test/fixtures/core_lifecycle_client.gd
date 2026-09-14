@@ -4,6 +4,8 @@ var behavior := "hold"
 var sent: Array[Dictionary] = []
 var owner_present_at_send := false
 var on_send: Callable
+var on_packet: Callable
+var sent_packets: Array[PackedByteArray] = []
 
 func _ready() -> void:
 	_connected = true
@@ -27,6 +29,14 @@ func send_text_message_to_core(message: Dictionary) -> Error:
 		_handle_message({"cmd": "error", "entity_type": "core", "topic": "system", "params": {"request_id": request_id, "error_code": "AUTH_FAILED_PROFILE_CMD_ERROR", "error": "token rejected"}})
 	elif behavior == "discovery":
 		reply(request_id, {"services": []})
+	return OK
+
+func send_packet(packet: PackedByteArray) -> Error:
+	sent_packets.append(packet.duplicate())
+	if on_packet.is_valid():
+		on_packet.call(packet)
+	if behavior == "failure":
+		return ERR_CONNECTION_ERROR
 	return OK
 
 func reply(request_id: String, body: Variant, command: String = "response") -> void:

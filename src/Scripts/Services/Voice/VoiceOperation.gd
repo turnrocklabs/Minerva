@@ -24,12 +24,24 @@ func cancel() -> void:
 		pending.cancel()
 
 func receive(request: CoreRequestBase) -> Dictionary:
+	var prepared := prepare(request)
+	if not prepared.success:
+		return prepared
+	return await receive_prepared(request)
+
+
+func prepare(request: CoreRequestBase) -> Dictionary:
 	if cancelled:
 		request.cancel()
+		return {"success": false, "error_code": "cancelled", "error_message": "Voice operation is already cancelled."}
 	if _request != null:
 		request.cancel()
 		return {"success": false, "error_code": "operation_busy", "error_message": "Voice operation already has an active request."}
 	_request = request
+	return {"success": true}
+
+
+func receive_prepared(request: CoreRequestBase) -> Dictionary:
 	var result := await request.receive_result()
 	if _request == request:
 		_request = null

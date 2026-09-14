@@ -1,6 +1,7 @@
 extends Node
 var starts := 0
 var finishes := 0
+var transcription_cancels := 0
 
 func start() -> void:
 	pass
@@ -16,3 +17,6 @@ func notify_tts_started() -> void:
 
 func notify_tts_finished() -> void:
 	finishes += 1
+
+func cancel_active_transcription() -> void:
+	transcription_cancels += 1

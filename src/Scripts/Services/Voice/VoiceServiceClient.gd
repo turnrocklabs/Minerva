@@ -78,6 +78,102 @@ func transcribe(audio_wav: PackedByteArray, language: String = "en", backend: St
 	var result := await transcribe_result(audio_wav, language, backend, model)
 	return result.get("text", "")
 
+
+## Prepare and locally enqueue one v1.1 microphone stream. The shipped voice
+## service implements this stable topic even when older discovery metadata omits it.
+func begin_transcription_stream(voice_config: VoiceConfig, operation: VoiceOperation, diagnostic_id: String = "") -> Dictionary:
+	if voice_config.stt_provider != VoiceConfig.STTProvider.VOICE_SERVICE:
+		return failure("streaming_unavailable", "Streamed STT requires Voice Service via Core.")
+	if operation == null or not operation.can_start() or operation.is_busy():
+		return failure("operation_busy", "Voice operation cannot start microphone streaming.")
+	var service := _get_voice_service()
+	if service == null or not Core.client._connected or not Core.registered:
+		return failure("core_offline", "Voice service requires a connected Core session.")
+	var action_source := "contract"
+	for action: Action in service.actions:
+		if action.topic == "voice/stt/stream":
+			action_source = "advertised"
+			break
+	var request = load("res://Scripts/Services/Providers/Core/CoreMicStreamRequest.gd").new(Core.client)
+	request.request_id = UUIDGen.v7()
+	request.cmd = "response"
+	request.topic = "voice/stt/stream"
+	request.start()
+	var prepared := operation.prepare(request)
+	if not prepared.success:
+		return prepared
+	diagnostic_id = _ensure_stt_diagnostic_id(operation, diagnostic_id)
+	var data := {"language": "en", "backend": voice_config.stt_backend}
+	if not voice_config.stt_model.is_empty():
+		data["model"] = voice_config.stt_model
+	var started_msec := Time.get_ticks_msec()
+	var opened: Error = request.open(service, data)
+	if opened != OK:
+		var open_failure: Dictionary = request.result if not request.result.is_empty() else failure("send_failed", "Core could not open microphone streaming.")
+		operation.cancel()
+		return normalize_stream_failure(open_failure)
+	print("[VoiceSTT] operation=%s stage=stream_open_local action_source=%s backend=%s model=%s status=success" % [
+		diagnostic_id, action_source, voice_config.stt_backend,
+		voice_config.stt_model if not voice_config.stt_model.is_empty() else "default"])
+	return {"success": true, "request": request, "diagnostic_id": diagnostic_id,
+		"started_msec": started_msec, "end_msec": 0, "first_chunk": true,
+		"backend": voice_config.stt_backend, "model": voice_config.stt_model}
+
+
+func finish_transcription_stream(session: Dictionary, operation: VoiceOperation) -> Dictionary:
+	var request = session.get("request")
+	if request == null:
+		return failure("invalid_stream", "Microphone stream is unavailable.")
+	var end_error: Error = request.end_stream()
+	if end_error == OK:
+		session.end_msec = Time.get_ticks_msec()
+		_log_microphone_stream(session, "stream_end_local", "success")
+	var completed: Dictionary = await operation.receive_prepared(request)
+	if not completed.success:
+		completed = normalize_stream_failure(completed)
+		_log_microphone_stream(session, "stream_result", str(completed.get("error_code", "error")))
+		return completed
+	var params: Dictionary = completed.json.get("params", {}) if completed.json.get("params") is Dictionary else {}
+	var body: Dictionary = params.get("result", {}) if params.get("result") is Dictionary else {}
+	if not body.get("text") is String:
+		var invalid := failure("invalid_voice_response", "Transcription response is missing text.")
+		_log_microphone_stream(session, "stream_result", invalid.error_code)
+		return invalid
+	var outcome := {"success": true, "text": body.text, "value": body, "request_id": completed.request_id}
+	_log_microphone_stream(session, "stream_result", "success")
+	return outcome
+
+
+func normalize_stream_failure(outcome: Dictionary) -> Dictionary:
+	if outcome.get("error_code") in ["UNKNOWN_TOPIC", "UNKNOWN_ACTION"]:
+		var visible := outcome.duplicate()
+		visible["error_message"] = "Streamed STT is unavailable. Select Buffered transport and retry."
+		visible["error"] = visible.error_message
+		return visible
+	return outcome
+
+
+func append_transcription_stream(session: Dictionary, pcm: PackedByteArray) -> Error:
+	var request = session.get("request")
+	if request == null:
+		return ERR_UNCONFIGURED
+	var error: Error = request.append_audio(pcm)
+	if error == OK and session.get("first_chunk", false):
+		session.first_chunk = false
+		_log_microphone_stream(session, "stream_first_chunk_local", "success")
+	return error
+
+
+func _log_microphone_stream(session: Dictionary, stage: String, status: String) -> void:
+	var request = session.get("request")
+	var end_msec: int = int(session.get("end_msec", 0))
+	var after_end_msec := Time.get_ticks_msec() - end_msec if end_msec > 0 else 0
+	print("[VoiceSTT] operation=%s stage=%s elapsed_ms=%d after_end_ms=%d audio_bytes=%d backend=%s model=%s status=%s" % [
+		str(session.get("diagnostic_id", "stt-unknown")), stage,
+		Time.get_ticks_msec() - int(session.get("started_msec", Time.get_ticks_msec())),
+		after_end_msec, request.audio_bytes if request != null else 0,
+		str(session.get("backend", "default")), str(session.get("model", "default")), status])
+
 func _inventory_for(backend: String) -> Dictionary:
 	_bind_inventory_connection()
 	var key := backend
