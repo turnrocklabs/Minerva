@@ -1,4 +1,4 @@
-# Bundled voice detector runtime
+# Voice Support runtime
 
 Minerva ships the wake-word and VAD worker as an immutable Python sidecar. It
 does not use the system Python, invoke pip, or download models at application

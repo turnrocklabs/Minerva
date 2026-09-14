@@ -7,7 +7,7 @@ func _init() -> void:
 	await process_frame
 	var base_gateway = load("res://Scripts/Services/Voice/VoiceGatewayClient.gd").new()
 	var bundled_adapter = base_gateway._create_detector_adapter()
-	check("voice gateway defaults to the bundled detector adapter", bundled_adapter.get_script() == load("res://Scripts/Services/Voice/BundledVoiceDetectorAdapter.gd"))
+	check("Voice Support defaults to the bundled detector adapter", bundled_adapter.get_script() == load("res://Scripts/Services/Voice/BundledVoiceDetectorAdapter.gd"))
 	bundled_adapter.free()
 	base_gateway.free()
 	var gateway = load("res://test/fixtures/voice_gateway_lifecycle.gd").new()

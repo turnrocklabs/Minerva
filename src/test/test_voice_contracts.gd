@@ -4,6 +4,18 @@ var _passed := 0
 var _failed := 0
 var _completed := false
 
+class DockerAdmissionProbe extends RefCounted:
+	var calls := 0
+	func is_available() -> bool:
+		calls += 1
+		return true
+	func get_definitions() -> Array:
+		return [{"image_name": "minerva-voice-gateway"}]
+	func is_running(_definition) -> bool:
+		return false
+	func is_image_built(_definition) -> bool:
+		return false
+
 func _init() -> void:
 	await process_frame
 	await process_frame
@@ -72,7 +84,7 @@ func _stream_id(seed: int) -> PackedByteArray:
 func _run() -> void:
 	var core = root.get_node("Core")
 	var so = root.get_node("SingletonObject")
-	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging}
+	var saved := {"client": core.client, "registered": core.registered, "services": core.services.duplicate(), "voice": so.voice_client, "config": so.voice_config, "enabled": so._enabled_providers.duplicate(), "file": so.config_file, "path": so._config_file_name, "chats": so.Chats, "verbose": so.verbose_logging, "docker": so.docker_manager}
 	so.verbose_logging = false
 	so.config_file = ConfigFile.new()
 	so._config_file_name = ProjectSettings.globalize_path("user://minerva-t8-voice.cfg")
@@ -89,7 +101,7 @@ func _run() -> void:
 	var selection = load("res://Scripts/Services/Voice/VoiceSelection.gd")
 	var bytes := PackedByteArray([0, 1, 2, 3])
 	var owned_scope = scope_script.new()
-	check("TurnRock operation is admitted while bundled voice is enabled", voice_feature.admit(owned_scope).success and owned_scope.voice_owner == "turnrock")
+	check("Voice Support operation is admitted while the feature is enabled", voice_feature.admit(owned_scope).success and owned_scope.voice_owner == "turnrock")
 	var openai_scope = scope_script.new()
 	openai_scope.voice_owner = "openai"
 	voice_feature.register_operation(openai_scope)
@@ -485,7 +497,16 @@ func _run() -> void:
 	transport.reply(second_gateway_id, {"text": "another stale gateway"})
 	check("gateway stop cancels all owned transcripts and queued effects only", pane._gateway_transcriptions.is_empty() and pane._voice_utterance_queue.is_empty() and pane.sent_utterances.is_empty() and transport._pending_requests.size() == 1 and transport._pending_requests.has(independent_id))
 	transport.reply(independent_id, {"audio_base64": Marshalls.raw_to_base64(bytes)})
-	pane.start_voice_gateway()
+	var docker_probe := DockerAdmissionProbe.new()
+	so.docker_manager = docker_probe
+	var starts_before_engagement: int = gateway.start_calls
+	pane._on_engagement_toggle_changed(true)
+	check("always-listening starts Voice Support without Docker admission", config.always_listening and gateway.start_calls == starts_before_engagement + 1 and docker_probe.calls == 0)
+	pane.stop_voice_gateway()
+	var starts_before_auto: int = gateway.start_calls
+	pane._auto_start_voice()
+	check("saved always-listening auto-start uses Voice Support directly", gateway.start_calls == starts_before_auto + 1 and docker_probe.calls == 0)
+	so.docker_manager = saved.docker
 	pane._on_gateway_transcription_ready(bytes)
 	transport.reply(_last_id(transport), {"text": "fresh gateway"})
 	check("gateway restart admits a fresh transcript", pane.sent_utterances == ["fresh gateway"] and output.result.success)
@@ -555,5 +576,6 @@ func _run() -> void:
 	so._config_file_name = saved.path
 	so.Chats = saved.chats
 	so.verbose_logging = saved.verbose
+	so.docker_manager = saved.docker
 	transport.free()
 	_completed = true

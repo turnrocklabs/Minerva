@@ -1,6 +1,6 @@
 class_name VoiceFeatureControl
 extends RefCounted
-## Owns the saved TurnRock Voice admission decision and active Core voice work.
+## Owns the saved Voice Support admission decision and active Core voice work.
 
 const SECTION := "Voice"
 const ENABLED_KEY := "turnrock_enabled"
@@ -18,8 +18,8 @@ static func is_enabled() -> bool:
 
 static func disabled_failure() -> Dictionary:
 	return {"success": false, "error_code": DISABLED_CODE,
-		"error_message": "TurnRock Voice is disabled in Preferences.",
-		"error": "TurnRock Voice is disabled in Preferences."}
+		"error_message": "Voice Support is disabled in Preferences.",
+		"error": "Voice Support is disabled in Preferences."}
 
 
 static func admit(operation: VoiceOperation = null) -> Dictionary:

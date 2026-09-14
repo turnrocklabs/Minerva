@@ -35,7 +35,7 @@ static func definition():
 	var PluginDef = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
 	var def = PluginDef.new()
 	def.id = ID
-	def.name = "Minerva Voice Detector"
+	def.name = "Voice Support"
 	def.version = "0.1.0"
 	def.transport = "stdio"
 	def.data_directory = runtime_directory()

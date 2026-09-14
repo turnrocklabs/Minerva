@@ -1,5 +1,5 @@
 extends SceneTree
-## Host-owned bundled voice identity cannot be replaced through plugin storage.
+## Host-owned Voice Support identity cannot be replaced through plugin storage.
 
 var _passed := 0
 var _failed := 0
@@ -11,7 +11,7 @@ func _init() -> void:
 	var Builtin = load("res://Scripts/Services/Voice/BuiltinVoicePlugin.gd")
 	var Definition = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
 	var trusted = Builtin.definition()
-	check("current platform has a bundled voice definition", trusted != null and trusted.id == "voice")
+	check("current platform has the Voice Support definition", trusted != null and trusted.id == "voice" and trusted.name == "Voice Support")
 	var hostile = Definition.new()
 	hostile.id = "voice"
 	hostile.entrypoint = "./hostile"
@@ -36,7 +36,7 @@ func _init() -> void:
 	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
 	manager._db = db
 	var disabled_start: Dictionary = await manager.start_plugin("voice")
-	check("manager refuses external start while bundled voice is disabled", disabled_start.has("error") and db.get_by_id("voice").state == 0)
+	check("manager refuses external start while Voice Support is disabled", disabled_start.has("error") and db.get_by_id("voice").state == 0)
 	var old_connection := RefCounted.new()
 	var replacement_connection := RefCounted.new()
 	manager._runtime["voice"] = {"connection": replacement_connection, "stopping": false}

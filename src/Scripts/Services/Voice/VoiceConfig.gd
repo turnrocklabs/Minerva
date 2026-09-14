@@ -52,7 +52,7 @@ var auto_send_transcription: bool = false
 ## Fallback to OpenAI Whisper when Core disconnected (only relevant when stt_provider == VOICE_SERVICE)
 var whisper_fallback: bool = true
 
-## Always-listening mode: uses voice gateway container for wake word + VAD
+## Always-listening mode uses the local detector for wake word and VAD.
 var always_listening: bool = false
 
 ## VAD silence duration before utterance is considered complete (seconds)

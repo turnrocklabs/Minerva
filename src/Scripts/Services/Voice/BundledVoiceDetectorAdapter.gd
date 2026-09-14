@@ -1,6 +1,6 @@
 class_name BundledVoiceDetectorAdapter
 extends Node
-## Detector adapter backed by the trusted bundled voice worker.
+## Detector adapter backed by the trusted Voice Support worker.
 
 signal connected
 signal disconnected
@@ -23,7 +23,7 @@ func start(configuration: Dictionary) -> void:
 func _start_worker(generation: int) -> void:
 	var manager = _get_manager()
 	if manager == null:
-		_terminal_failure(generation, "Bundled voice worker is unavailable", false)
+		_terminal_failure(generation, "Voice Support is unavailable", false)
 		return
 	var connection = manager.get_connection(BuiltinVoice.ID)
 	if connection == null:
@@ -35,20 +35,20 @@ func _start_worker(generation: int) -> void:
 			return
 		connection = manager.get_connection(BuiltinVoice.ID)
 	if connection == null:
-		_terminal_failure(generation, "Bundled voice worker did not create a control connection")
+		_terminal_failure(generation, "Voice Support did not create a control connection")
 		return
 	var configured: Dictionary = await connection.call_tool("minerva_voice_configure", _configuration)
 	if generation != _generation:
 		return
 	if configured.has("error"):
-		_terminal_failure(generation, "Bundled voice worker rejected its configuration")
+		_terminal_failure(generation, "Voice Support rejected its configuration")
 		return
 	var response: Dictionary = await connection.call_tool("minerva_voice_start", {})
 	if generation != _generation:
 		return
 	var endpoint: Dictionary = response
 	if not endpoint.get("ready", false):
-		_terminal_failure(generation, "Bundled voice detector did not become ready")
+		_terminal_failure(generation, "Voice Support did not become ready")
 		return
 	_connect_endpoint(endpoint, generation)
 
@@ -57,13 +57,13 @@ func _connect_endpoint(endpoint: Dictionary, generation: int) -> void:
 	if generation != _generation:
 		return
 	if int(endpoint.get("port", 0)) <= 0 or str(endpoint.get("token", "")).is_empty():
-		_terminal_failure(generation, "Bundled voice detector returned an invalid endpoint")
+		_terminal_failure(generation, "Voice Support returned an invalid endpoint")
 		return
 	_ws = WebSocketPeer.new()
 	var url := "ws://127.0.0.1:%d%s?token=%s" % [int(endpoint.get("port", 0)), str(endpoint.get("path", "/audio")), str(endpoint.get("token", ""))]
 	if _ws.connect_to_url(url) != OK:
 		_ws = null
-		_terminal_failure(generation, "Could not connect to bundled voice detector")
+		_terminal_failure(generation, "Could not connect to Voice Support")
 
 
 func _reconnect_audio(generation: int) -> void:
@@ -71,13 +71,13 @@ func _reconnect_audio(generation: int) -> void:
 	var connection = manager.get_connection(BuiltinVoice.ID) if manager != null else null
 	if connection == null:
 		if generation == _generation:
-			_terminal_failure(generation, "Bundled voice worker stopped unexpectedly")
+			_terminal_failure(generation, "Voice Support stopped unexpectedly")
 		return
 	var endpoint: Dictionary = await connection.call_tool("minerva_voice_start", {})
 	if generation != _generation:
 		return
 	if not endpoint.get("ready", false):
-		_terminal_failure(generation, "Bundled voice detector could not reconnect")
+		_terminal_failure(generation, "Voice Support could not reconnect")
 		return
 	_connect_endpoint(endpoint, generation)
 
@@ -106,7 +106,7 @@ func update_config(configuration: Dictionary) -> void:
 	if connection != null:
 		var configured: Dictionary = await connection.call_tool("minerva_voice_configure", _configuration)
 		if generation == _generation and configured.has("error"):
-			_terminal_failure(generation, "Bundled voice worker rejected its configuration")
+			_terminal_failure(generation, "Voice Support rejected its configuration")
 
 
 func send_audio(pcm: PackedByteArray) -> Error:

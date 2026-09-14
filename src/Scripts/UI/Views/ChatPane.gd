@@ -46,7 +46,7 @@ var _passthrough_exit_seen: Dictionary = {}
 ## TTS playback for voice conversation mode (controlled by Voice Preferences)
 var _tts_player: AudioStreamPlayer
 
-## Voice gateway client for always-listening mode (wake word + VAD + state machine)
+## Local Voice Support client for always-listening wake word and VAD.
 var _voice_gateway: Node = null
 
 ## Voice conversation flow control: one utterance → one response
@@ -3280,7 +3280,7 @@ func _ready():
 	# Connect transcription signal for voice mode auto-send + TTS
 	SingletonObject.AtT.transcription_completed.connect(_on_voice_transcription_completed)
 
-	# Voice gateway client (always-listening mode)
+	# Local Voice Support client (always-listening mode).
 	_voice_gateway = VoiceGatewayClientScript.new()
 	add_child(_voice_gateway)
 	_voice_gateway.engagement_changed.connect(_on_engagement_changed)
@@ -3344,7 +3344,7 @@ func _ready():
 				new_chat_btn.get_parent().add_child(passthrough_btn)
 				new_chat_btn.get_parent().move_child(passthrough_btn, new_chat_btn.get_index())
 
-	# Auto-start voice gateway if always_listening was previously enabled
+	# Auto-start Voice Support if always_listening was previously enabled.
 	var cfg := SingletonObject.get_voice_config()
 	if cfg.always_listening:
 		_engagement_toggle.set_pressed_no_signal(true)
@@ -3423,7 +3423,7 @@ func _reorder_chat_tab(at_position: Vector2, payload: Dictionary) -> void:
 	if moving == null or target == null:
 		return
 	# A tab index is NOT a child index: _ready() also parents lifetime-of-pane
-	# infrastructure here (the TTS player, the voice gateway, the token-estimation
+	# infrastructure here (the TTS player, Voice Support, the token-estimation
 	# timer), so child N and tab N diverge. Passing the tab index straight to
 	# move_child() drops the chat somewhere among those nodes and leaves the tab
 	# order unchanged. Translate through the TARGET tab's real child index, the
@@ -3489,7 +3489,7 @@ func _on_btn_test_pressed():
 func clear_all_chats():
 	# This pane (the tcChats TabContainer) holds the chat tabs AS its children, but
 	# _ready() also parents lifetime-of-pane infrastructure here: the TTS player and
-	# the always-listening voice gateway. Those are created ONCE in _ready and never
+	# always-listening Voice Support. Those are created ONCE in _ready and never
 	# rebuilt, so freeing them on a chat wipe (which runs on New/Open/Load Project)
 	# leaves voice TTS and wake-word listening silently dead for the rest of the
 	# session. Wipe only the chat tabs; preserve the infrastructure nodes.
@@ -4900,20 +4900,6 @@ func _finish_speech(outcome: Dictionary, operation: SpeechOperation, context: Di
 func _on_engagement_toggle_changed(enabled: bool) -> void:
 	var cfg := SingletonObject.get_voice_config()
 	if enabled:
-		# Ensure voice gateway container is running
-		var manager: RefCounted = SingletonObject.get_docker_manager()
-		if manager.is_available():
-			var defs: Array = manager.get_definitions()
-			for def in defs:
-				if def.image_name == "minerva-voice-gateway":
-					if not manager.is_running(def):
-						if manager.is_image_built(def):
-							manager.start_container(def)
-						else:
-							push_warning("[ChatPane] Voice gateway image not built")
-							_engagement_toggle.set_pressed_no_signal(false)
-							return
-					break
 		cfg.always_listening = true
 		cfg.save()
 		start_voice_gateway()
@@ -4923,7 +4909,7 @@ func _on_engagement_toggle_changed(enabled: bool) -> void:
 		stop_voice_gateway()
 
 
-## Voice gateway: connection state
+## Voice Support detector connection state.
 func _on_gateway_connected() -> void:
 	if _engagement_state_label:
 		_engagement_state_label.text = "STANDBY"
@@ -4932,18 +4918,18 @@ func _on_gateway_connected() -> void:
 
 func _on_gateway_disconnected() -> void:
 	if _engagement_state_label:
-		_engagement_state_label.text = "No Gateway"
+		_engagement_state_label.text = "Voice Offline"
 		_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
 
 
-## Voice gateway: failed to connect after max retries
+## Voice Support detector startup failed.
 func _on_gateway_start_failed(reason: String) -> void:
-	push_warning("[ChatPane] Voice gateway failed: %s" % reason)
+	push_warning("[ChatPane] Voice Support failed: %s" % reason)
 	if _engagement_state_label:
 		_engagement_state_label.text = "Failed"
 		_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
 	SingletonObject.create_toast_notification(
-		"Voice gateway failed: %s" % reason, ToastNotification.Type.ERROR)
+		"Voice Support failed: %s" % reason, ToastNotification.Type.ERROR)
 	_engagement_toggle.set_pressed_no_signal(false)
 	var cfg := SingletonObject.get_voice_config()
 	cfg.always_listening = false
@@ -4951,7 +4937,7 @@ func _on_gateway_start_failed(reason: String) -> void:
 	stop_voice_gateway()
 
 
-## Voice gateway: engagement state changed
+## Voice Support engagement state changed.
 func _on_engagement_changed(state: String) -> void:
 	if _engagement_state_label:
 		_engagement_state_label.text = state
@@ -4961,7 +4947,7 @@ func _on_engagement_changed(state: String) -> void:
 			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 
 
-## Voice gateway: VAD-endpointed audio ready for STT
+## Voice Support produced VAD-endpointed audio for STT.
 func _on_gateway_transcription_ready(audio_wav: PackedByteArray) -> void:
 	if audio_wav.is_empty() or _voice_tearing_down or _gateway_stopped:
 		return
@@ -5040,7 +5026,7 @@ func _voice_on_response_complete() -> void:
 		_voice_send_utterance(next_text)
 
 
-## Start the voice gateway (called when always-listening is enabled)
+## Start local Voice Support when always-listening is enabled.
 func start_voice_gateway() -> void:
 	_gateway_stopped = false
 	if _voice_gateway:
@@ -5048,31 +5034,14 @@ func start_voice_gateway() -> void:
 			_engagement_state_label.text = "Connecting..."
 			_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 		_voice_gateway.start()
-		print("[ChatPane] Voice gateway started")
+		print("[ChatPane] Voice Support started")
 
 
 func _auto_start_voice() -> void:
-	# Ensure gateway container is running on auto-start
-	var manager: RefCounted = SingletonObject.get_docker_manager()
-	if manager.is_available():
-		var defs: Array = manager.get_definitions()
-		for def in defs:
-			if def.image_name == "minerva-voice-gateway":
-				if not manager.is_running(def):
-					if manager.is_image_built(def):
-						manager.start_container(def)
-					else:
-						push_warning("[ChatPane] Voice gateway image not built — skipping auto-start")
-						_engagement_toggle.set_pressed_no_signal(false)
-						if _engagement_state_label:
-							_engagement_state_label.text = "Not Built"
-							_engagement_state_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
-						return
-				break
 	start_voice_gateway()
 
 
-## Stop the voice gateway
+## Stop local Voice Support.
 func stop_voice_gateway() -> void:
 	_cancel_gateway_transcriptions()
 	if _voice_gateway:
@@ -5080,10 +5049,10 @@ func stop_voice_gateway() -> void:
 		if _engagement_state_label:
 			_engagement_state_label.text = "Voice Off"
 			_engagement_state_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
-		print("[ChatPane] Voice gateway stopped")
+		print("[ChatPane] Voice Support stopped")
 
 
-## Disable TurnRock-owned voice work without disturbing chat or OpenAI STT.
+## Disable Voice Support-owned work without disturbing chat or OpenAI STT.
 func deactivate_turnrock_voice() -> void:
 	_voice_utterance_queue.clear()
 	if is_instance_valid(_voice_gateway):

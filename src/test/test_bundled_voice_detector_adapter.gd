@@ -56,7 +56,7 @@ func _init() -> void:
 	await process_frame
 	check("live configuration rejection is visible and terminal", failures.size() == 3 and manager.connection == null)
 	adapter.free()
-	print("Bundled voice adapter: %d passed, %d failed" % [passed, failed])
+	print("Voice Support adapter: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)
 
 

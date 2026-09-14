@@ -635,7 +635,7 @@ func start_plugin(id: String) -> Dictionary:
 		return {"error": "Minerva is shutting down — refusing to start plugin '%s'" % id}
 
 	if id == "voice" and not load("res://Scripts/Services/Voice/VoiceFeatureControl.gd").is_enabled():
-		return {"error": "TurnRock Voice is disabled in Preferences"}
+		return {"error": "Voice Support is disabled in Preferences"}
 
 	var def = _db.get_by_id(id)
 	if def == null:

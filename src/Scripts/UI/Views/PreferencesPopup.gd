@@ -2782,8 +2782,8 @@ func _create_voice_tab() -> void:
 	vbox.add_child(stt_header)
 
 	_voice_enabled_check = CheckButton.new()
-	_voice_enabled_check.text = "Enable TurnRock Voice"
-	_voice_enabled_check.tooltip_text = "Allows Minerva to start the bundled voice detector and use Core voice services."
+	_voice_enabled_check.text = "Enable Voice Support"
+	_voice_enabled_check.tooltip_text = "Allows Minerva to detect speech locally and use Core voice services."
 	_voice_enabled_check.toggled.connect(_stage_voice_enabled)
 	vbox.add_child(_voice_enabled_check)
 	vbox.add_child(HSeparator.new())
@@ -3788,7 +3788,7 @@ func _rebuild_container_cards() -> void:
 
 	if definitions.is_empty():
 		var empty_label := Label.new()
-		empty_label.text = "No containers registered. Enable features that require containers (e.g., Voice Gateway)."
+		empty_label.text = "No containers registered."
 		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		_container_cards_vbox.add_child(empty_label)

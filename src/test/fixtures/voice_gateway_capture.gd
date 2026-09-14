@@ -2,9 +2,10 @@ extends Node
 var starts := 0
 var finishes := 0
 var transcription_cancels := 0
+var start_calls := 0
 
 func start() -> void:
-	pass
+	start_calls += 1
 
 func stop() -> void:
 	pass

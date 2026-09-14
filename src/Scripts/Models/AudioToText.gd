@@ -126,7 +126,7 @@ func _cancel_voice_transcription(discard_capture: bool = true) -> void:
 		_reset_normalization_capture()
 
 
-## Stop only capture/request work that was admitted through TurnRock Voice.
+## Stop only capture/request work that was admitted through Voice Support.
 func deactivate_turnrock_voice() -> void:
 	if _ptt_turnrock_owned or (_voice_operation != null and _voice_operation.voice_owner == "turnrock"):
 		_StopConverting()
@@ -400,7 +400,7 @@ func _StartConverting():
 		_ptt_diagnostic_id = ""
 		var voice_config: VoiceConfig = SingletonObject.get_voice_config()
 		if voice_config.stt_provider == VoiceConfig.STTProvider.VOICE_SERVICE and not VoiceFeature.is_enabled():
-			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "TurnRock Voice is disabled in Preferences"})
+			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Voice Support is disabled in Preferences"})
 			return ERR_UNAVAILABLE
 		if not _begin_normalization_capture():
 			_set_ptt_state(PTTState.ERROR, {"mic_button": _btn, "error_message": "Audio normalization is unavailable"})

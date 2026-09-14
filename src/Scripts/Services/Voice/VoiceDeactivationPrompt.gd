@@ -8,7 +8,7 @@ var dialog: ConfirmationDialog
 
 func ask(parent: Node) -> bool:
 	dialog = ConfirmationDialog.new()
-	dialog.title = "Disable TurnRock Voice?"
+	dialog.title = "Disable Voice Support?"
 	dialog.dialog_text = "This stops active TurnRock transcription and speech. OpenAI transcription and chat remain available."
 	parent.add_child(dialog)
 	dialog.confirmed.connect(func(): decided.emit(true), CONNECT_ONE_SHOT)

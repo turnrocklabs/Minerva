@@ -84,5 +84,5 @@ func check(label: String, condition: bool) -> void:
 
 
 func _finish() -> void:
-	print("Bundled voice production bridge: %d passed, %d failed" % [passed, failed])
+	print("Voice Support production bridge: %d passed, %d failed" % [passed, failed])
 	quit(1 if failed else 0)

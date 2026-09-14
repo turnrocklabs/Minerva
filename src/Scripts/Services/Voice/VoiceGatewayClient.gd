@@ -1,6 +1,6 @@
 class_name VoiceGatewayClient
 extends Node
-## Connects to the local voice gateway container via WebSocket.
+## Owns local voice detection, microphone capture, and hands-free speech state.
 ## Streams mic audio, receives wake word + VAD events.
 ## Manages STANDBY/ENGAGED state machine.
 
@@ -18,7 +18,7 @@ signal gateway_start_failed(reason: String)
 const ENGAGEMENT_IDLE_TIMEOUT := 20.0
 const PRE_VAD_BUFFER_MAX_BYTES := 32000  # ~1 second at 16kHz s16le
 const CAPTURE_POLL_HZ := 30  # how often we grab mic audio
-const TARGET_SAMPLE_RATE := 16000  # gateway expects 16kHz
+const TARGET_SAMPLE_RATE := 16000  # Detector input is 16 kHz mono PCM.
 const CAPTURE_DIAGNOSTIC_INTERVAL_MSEC := 2000
 const MAX_UTTERANCE_BYTES := 16000 * 2 * 300
 const AudioConverter = preload("res://Scripts/Services/Voice/AudioInputConverter.gd")
@@ -83,7 +83,7 @@ func _ready() -> void:
 
 	_setup_detector()
 
-	# Create a dedicated audio bus for voice gateway capture
+	# Create a dedicated audio bus for local voice capture.
 	_setup_capture_bus()
 
 
@@ -129,7 +129,7 @@ func _setup_capture_bus() -> void:
 
 func start() -> void:
 	if not VoiceFeature.is_enabled():
-		gateway_start_failed.emit("TurnRock Voice is disabled in Preferences")
+		gateway_start_failed.emit("Voice Support is disabled in Preferences")
 		return
 	_session_generation += 1
 	_should_connect = true
@@ -137,7 +137,7 @@ func start() -> void:
 	_start_mic_capture()
 	_capture_timer.start()
 	_detector.start(_detector_configuration())
-	print("[VoiceGateway] Started (polling gateway health)")
+	print("[VoiceSupport] Started (waiting for detector readiness)")
 
 
 func _detector_configuration() -> Dictionary:
@@ -158,8 +158,8 @@ func stop() -> void:
 	if is_instance_valid(_detector):
 		_detector.stop()
 	_connected = false
-	_reset_capture_session("gateway stopped")
-	print("[VoiceGateway] Stopped")
+	_reset_capture_session("voice support stopped")
+	print("[VoiceSupport] Stopped")
 
 
 func cancel_active_transcription() -> void:
@@ -209,7 +209,7 @@ func _start_mic_capture() -> void:
 	_mic_player.stream = AudioStreamMicrophone.new()
 	add_child(_mic_player)
 	_mic_player.play()
-	print("[VoiceGateway] Mic capture started on VoiceCapture bus")
+	print("[VoiceSupport] Mic capture started on VoiceCapture bus")
 
 
 func _stop_mic_capture() -> void:
@@ -262,7 +262,7 @@ func _process_captured_frames(frames: PackedVector2Array, native_rate: int, disc
 		return
 	_diagnostic_output_frames += floori(float(pcm.size()) / 2.0)
 
-	# Send to gateway
+	# Send to the active local detector.
 	if not is_instance_valid(_detector) or _detector.send_audio(pcm) != OK:
 		_diagnostic_send_failures += 1
 	_log_capture_diagnostics()
@@ -294,13 +294,13 @@ func _log_capture_diagnostics() -> void:
 		return
 	var discarded := _capture_effect.get_discarded_frames() - _diagnostic_discarded_start
 	# This sampled peak separates capture/send stalls; detector endpointing remains server-owned.
-	print("[VoiceGateway] stage=capture_health window_ms=%d source_rate=%d input_frames=%d output_frames=%d sampled_peak=%.4f discarded_frames=%d send_failures=%d connected=%s engagement=%s vad_active=%s recording=%s" % [
+	print("[VoiceSupport] stage=capture_health window_ms=%d source_rate=%d input_frames=%d output_frames=%d sampled_peak=%.4f discarded_frames=%d send_failures=%d connected=%s engagement=%s vad_active=%s recording=%s" % [
 		window_msec, int(AudioServer.get_mix_rate()), _diagnostic_input_frames, _diagnostic_output_frames, _diagnostic_peak, discarded,
 		_diagnostic_send_failures, _connected, engagement_state, _vad_active, _recording])
 	_reset_capture_diagnostics()
 
 
-# ── Gateway Events ──────────────────────────────────────────────────────
+# ── Detector Events ─────────────────────────────────────────────────────
 
 func _on_detector_connected() -> void:
 	if not _should_connect:
@@ -316,17 +316,17 @@ func _on_detector_connected() -> void:
 	connected_to_gateway.emit()
 	if generation != _session_generation or not _should_connect:
 		return
-	print("[VoiceGateway] Connected to gateway")
+	print("[VoiceSupport] Detector connected")
 
 
 func _on_detector_disconnected() -> void:
 	var generation := _session_generation
 	_connected = false
-	_reset_capture_session("gateway disconnected")
+	_reset_capture_session("detector disconnected")
 	if generation != _session_generation:
 		return
 	disconnected_from_gateway.emit()
-	print("[VoiceGateway] Disconnected from gateway")
+	print("[VoiceSupport] Detector disconnected")
 
 
 func _on_detector_start_failed(reason: String) -> void:
@@ -335,8 +335,8 @@ func _on_detector_start_failed(reason: String) -> void:
 	_should_connect = false
 	_capture_timer.stop()
 	_stop_mic_capture()
-	_reset_capture_session("gateway unavailable")
-	push_warning("[VoiceGateway] %s" % reason)
+	_reset_capture_session("voice support unavailable")
+	push_warning("[VoiceSupport] %s" % reason)
 	gateway_start_failed.emit(reason)
 
 
@@ -361,12 +361,12 @@ func _on_detector_event(parsed: Dictionary) -> void:
 
 func _handle_wake_word(confidence: float) -> void:
 	if _tts_playing:
-		print("[VoiceGateway] Wake word during playback (%.3f) — barge-in" % confidence)
+		print("[VoiceSupport] Wake word during playback (%.3f) — barge-in" % confidence)
 		_set_engagement("ENGAGED", "wake word barge-in")
 		_cancel_idle_timer()
 		_pre_vad_buffer.clear()
 	elif engagement_state == "STANDBY":
-		print("[VoiceGateway] Wake word in STANDBY (%.3f) — engaging" % confidence)
+		print("[VoiceSupport] Wake word in STANDBY (%.3f) — engaging" % confidence)
 		_set_engagement("ENGAGED", "wake word")
 		_cancel_idle_timer()
 		_pre_vad_buffer.clear()
@@ -384,7 +384,7 @@ func _handle_vad_start() -> void:
 
 func _begin_recording_if_admitted() -> void:
 	if _ptt_active:
-		return  # PTT: AudioToText handles recording, not gateway
+		return  # PTT: AudioToText owns recording.
 	if engagement_state != "ENGAGED":
 		return  # STANDBY: ignore speech
 	if _tts_playing:
@@ -421,7 +421,7 @@ func _begin_recording_if_admitted() -> void:
 					_fail_active_stt_stream("stream_send_failed", "Microphone streaming stopped. Select Buffered transport and retry.")
 					return
 		_cancel_idle_timer()
-		print("[VoiceGateway] Recording started (with %d bytes pre-VAD)" % _audio_buffer.size())
+		print("[VoiceSupport] Recording started (with %d bytes pre-VAD)" % _audio_buffer.size())
 
 
 func _handle_vad_end() -> void:
@@ -438,7 +438,7 @@ func _handle_vad_end() -> void:
 			return
 		_recording = false
 		# This boundary is local; streamed captures already have an operation ID in adapter logs.
-		print("[VoiceGateway] stage=vad_boundary audio_bytes=%d sample_rate=%d channels=1 conversion_ms=%.3f" % [
+		print("[VoiceSupport] stage=vad_boundary audio_bytes=%d sample_rate=%d channels=1 conversion_ms=%.3f" % [
 			_audio_buffer.size(), TARGET_SAMPLE_RATE, _recording_conversion_usec / 1000.0])
 		# Minimum 0.5s at 16kHz s16le = 16000 bytes
 		if _audio_buffer.size() > 16000 and _has_speech_energy(_audio_buffer):
@@ -448,7 +448,7 @@ func _handle_vad_end() -> void:
 				var wav: PackedByteArray = _pcm_to_wav(_audio_buffer)
 				transcription_ready.emit(wav)
 		else:
-			print("[VoiceGateway] Discarded recording (too short or below energy threshold)")
+			print("[VoiceSupport] Discarded recording (too short or below energy threshold)")
 			if _stt_stream_operation != null:
 				var rejected := _stt_stream_operation
 				_stt_stream_operation = null
@@ -502,7 +502,7 @@ func _set_engagement(new_state: String, reason: String = "") -> void:
 		return
 	var old: String = engagement_state
 	engagement_state = new_state
-	print("[VoiceGateway] %s → %s (%s)" % [old, new_state, reason])
+	print("[VoiceSupport] %s → %s (%s)" % [old, new_state, reason])
 	engagement_changed.emit(new_state)
 
 

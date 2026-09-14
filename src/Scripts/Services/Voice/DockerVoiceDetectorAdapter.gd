@@ -1,5 +1,5 @@
 extends Node
-## Default detector transport for the localhost Docker voice gateway.
+## Legacy detector transport for the localhost Docker voice gateway.
 
 signal connected
 signal disconnected
