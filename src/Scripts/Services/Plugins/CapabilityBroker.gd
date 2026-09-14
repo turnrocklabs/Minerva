@@ -1,9 +1,11 @@
 class_name CapabilityBroker
 extends RefCounted
+
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## Host capability broker for the Minerva plugin system.
 ##
 ## Routes capability requests to host services, gated by PluginPolicy:
-##   - mcp.proxy:<tool_name> → MinervaMCPServer._execute_tool_impl()
+##   - mcp.proxy:<tool_name> → MinervaMCPServer.call_tool()
 ##   - secrets:<op>:<handle> → docket vault (per-plugin namespaced)
 ##
 ## Return format (all public methods):
@@ -242,11 +244,20 @@ static func is_path_in_scope(path: String, allowed_paths: Array) -> bool:
 ## Steps:
 ## 1. Validate inputs.
 ## 2. Ask PluginPolicy whether the capability is granted.
-## 3. For mcp.proxy:<tool>, call MinervaMCPServer._execute_tool_impl().
+## 3. For mcp.proxy:<tool>, call MinervaMCPServer.call_tool().
 ## 4. For other capabilities, return not_implemented.
 ##
 ## Returns {"success": true, "result": {...}} or a PluginErrors failure dict.
-func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictionary:
+func dispatch(plugin_id: String, capability: String, args: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	# Legacy asynchronous callbacks have no parent request token. Give them an
+	# explicit plugin identity, never whichever chat happens to be awaiting.
+	if context == null:
+		context = ExecutionContext.create("plugin")
+	context = context.for_plugin(plugin_id)
+	return await context.run(_dispatch_with_context.bind(plugin_id, capability, args, context))
+
+
+func _dispatch_with_context(plugin_id: String, capability: String, args: Dictionary, context: ExecutionContext) -> Dictionary:
 	if plugin_id.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id, "plugin_id must not be empty")
 
@@ -290,13 +301,13 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 
 	# Route mcp.proxy:<tool_name> to MinervaMCPServer
 	if capability.begins_with("mcp.proxy:"):
-		var mcp_result := await _handle_mcp_proxy(plugin_id, capability, args)
+		var mcp_result := await _handle_mcp_proxy(plugin_id, capability, args, context)
 		_audit_dispatch(plugin_id, capability, args, mcp_result)
 		return mcp_result
 
 	# Route secrets:<op>:<handle> to docket vault, namespaced per plugin.
 	if capability.begins_with("secrets:"):
-		var sec_result := await _handle_secrets(plugin_id, capability, args)
+		var sec_result := await _handle_secrets(plugin_id, capability, args, context)
 		_audit_dispatch(plugin_id, capability, args, sec_result)
 		return sec_result
 
@@ -376,7 +387,7 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 		"host.terminal.exec":
 			named_result = await _handle_host_terminal_exec(plugin_id, args)
 		"host.terminal.list", "host.terminal.read", "host.terminal.write", "host.terminal.wait":
-			named_result = await _handle_host_terminal_tool(plugin_id, capability, args)
+			named_result = await _handle_host_terminal_tool(plugin_id, capability, args, context)
 		"host.pdf.generate":
 			named_result = await _handle_host_pdf_generate(plugin_id, args)
 		"host.project.open":
@@ -399,8 +410,8 @@ func dispatch(plugin_id: String, capability: String, args: Dictionary) -> Dictio
 # mcp.proxy handler
 # ---------------------------------------------------------------------------
 
-## Route an mcp.proxy:<tool_name> capability to MinervaMCPServer._execute_tool_impl().
-func _handle_mcp_proxy(plugin_id: String, capability: String, args: Dictionary) -> Dictionary:
+## Route an mcp.proxy:<tool_name> capability to MinervaMCPServer.call_tool().
+func _handle_mcp_proxy(plugin_id: String, capability: String, args: Dictionary, context: ExecutionContext) -> Dictionary:
 	var tool_name: String = capability.substr("mcp.proxy:".length())
 
 	if tool_name.is_empty():
@@ -414,7 +425,7 @@ func _handle_mcp_proxy(plugin_id: String, capability: String, args: Dictionary) 
 
 	print("[CapabilityBroker] Plugin '%s' invoking mcp.proxy:%s" % [plugin_id, tool_name])
 
-	var result: Dictionary = await minerva_server._execute_tool_impl(tool_name, args)
+	var result: Dictionary = await minerva_server.call_tool(tool_name, args, context)
 
 	# Wrap the MCP tool result in our standard success/failure format.
 	# MinervaMCPServer tools return {"success": true/false, ...} or {"error": "..."}.
@@ -448,7 +459,9 @@ func _handle_mcp_proxy(plugin_id: String, capability: String, args: Dictionary) 
 ## Args:
 ##   secrets:get / secrets:delete — no required args.
 ##   secrets:set — args.value is the secret value to store.
-func _handle_secrets(plugin_id: String, capability: String, args: Dictionary) -> Dictionary:
+func _handle_secrets(plugin_id: String, capability: String, args: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = ExecutionContext.create("plugin").for_plugin(plugin_id)
 	var rest: String = capability.substr("secrets:".length())
 	var sep: int = rest.find(":")
 	if sep == -1:
@@ -488,7 +501,7 @@ func _handle_secrets(plugin_id: String, capability: String, args: Dictionary) ->
 
 	print("[CapabilityBroker] Plugin '%s' invoking secrets:%s on handle '%s'" % [plugin_id, op, handle_suffix])
 
-	var result: Dictionary = await minerva_server._execute_tool_impl(tool_name, tool_args)
+	var result: Dictionary = await minerva_server.call_tool(tool_name, tool_args, context)
 
 	if result.has("error"):
 		# Distinguish "secret not found" (a normal "not yet set" state for plugins)
@@ -3401,7 +3414,7 @@ func _handle_host_chat_providers_unregister(plugin_id: String, args: Dictionary)
 #
 # First-class capabilities (grantable individually, unlike a blanket
 # mcp.proxy:* grant) that delegate to the minerva_terminal_* MCP tool
-# implementations via MinervaMCPServer._execute_tool_impl — the same seam
+# implementations via MinervaMCPServer.call_tool — the same seam
 # _handle_mcp_proxy uses. No terminal logic lives here; bell_rung /
 # shell_exited from terminal_wait flow through unchanged.
 #
@@ -3432,7 +3445,9 @@ const _TERMINAL_TOOL_NAME := {
 static var _test_terminal_tool_override = null
 
 
-func _handle_host_terminal_tool(plugin_id: String, capability: String, args: Dictionary) -> Dictionary:
+func _handle_host_terminal_tool(plugin_id: String, capability: String, args: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = ExecutionContext.create("plugin").for_plugin(plugin_id)
 	var allowed: Array = _TERMINAL_TOOL_ALLOWED_ARGS[capability]
 	for k in args.keys():
 		if not (k in allowed):
@@ -3453,8 +3468,8 @@ func _handle_host_terminal_tool(plugin_id: String, capability: String, args: Dic
 	if capability == "host.terminal.write" and not tool_args.has("raw"):
 		tool_args["raw"] = true
 
-	var result: Dictionary = await minerva_server._execute_tool_impl(
-		_TERMINAL_TOOL_NAME[capability], tool_args)
+	var result: Dictionary = await minerva_server.call_tool(
+		_TERMINAL_TOOL_NAME[capability], tool_args, context)
 
 	if result.get("success", false):
 		return PluginErrors.success(result)

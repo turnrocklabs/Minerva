@@ -1,5 +1,7 @@
 class_name MCPServerConnection
 extends RefCounted
+
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## Base class for MCP server connections.
 ## Handles communication with MCP servers over various transports.
 
@@ -199,6 +201,22 @@ func call_tool(tool_name: String, arguments: Dictionary, timeout_sec: float = 12
 	return {"error": "Invalid transport type"}
 
 
+## Explicit native lifetime; the existing call_tool API remains unchanged.
+func call_tool_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
+	return await context.run(_call_with_context.bind(tool_name, arguments, context))
+
+
+func _call_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
+	match transport:
+		TransportType.STDIO:
+			return await _call_tool_stdio(tool_name, arguments, context.remaining_seconds(), context)
+		TransportType.HTTP:
+			return await _call_tool_http(tool_name, arguments, context)
+		TransportType.WEBSOCKET:
+			return await _call_tool_websocket(tool_name, arguments, context)
+	return {"error": "Invalid transport type"}
+
+
 ## Set the working directory for file operations on the server
 ## This can be called at any time to change the context for subsequent tool calls
 func set_working_directory(directory: String) -> Dictionary:
@@ -378,7 +396,7 @@ func _http_initialize() -> Dictionary:
 
 
 ## HTTP transport: Call a tool via HTTP POST (JSON-RPC format)
-func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
+func _call_tool_http(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	var http := HTTPRequest.new()
 
 	# Need to add to scene tree for HTTPRequest to work
@@ -428,7 +446,18 @@ func _call_tool_http(tool_name: String, arguments: Dictionary) -> Dictionary:
 		return {"error": "HTTP request failed: %s" % error_string(err)}
 
 	# Wait for response
-	var response: Array = await http.request_completed
+	var response: Array
+	if context == null:
+		response = await http.request_completed
+	else:
+		var received: Dictionary = await context.run(_wait_http.bind(http))
+		if context.is_stopped():
+			if is_instance_valid(http):
+				http.cancel_request()
+				_active_http_requests.erase(http)
+				http.queue_free()
+			return context.stopped_result()
+		response = received.get("response", [])
 
 	# Guard against cancelled requests: if cancel_active_requests() queue_free()'d
 	# this HTTPRequest during the await, the node is freed and we must bail out.
@@ -530,7 +559,11 @@ func _connect_websocket() -> Error:
 
 
 ## WebSocket transport: Call a tool
-func _call_tool_websocket(tool_name: String, arguments: Dictionary) -> Dictionary:
+func _wait_http(http: HTTPRequest) -> Dictionary:
+	return {"response": await http.request_completed}
+
+
+func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	if not _websocket or _websocket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return {"error": "WebSocket not connected"}
 
@@ -553,6 +586,10 @@ func _call_tool_websocket(tool_name: String, arguments: Dictionary) -> Dictionar
 	var timeout := 30.0
 	var elapsed := 0.0
 	while elapsed < timeout:
+		if context != null and context.is_stopped():
+			return context.stopped_result()
+		if not is_instance_valid(_websocket):
+			return {"error": "WebSocket disconnected"}
 		_websocket.poll()
 		while _websocket.get_available_packet_count() > 0:
 			var packet := _websocket.get_packet().get_string_from_utf8()
@@ -712,15 +749,20 @@ func _next_request_id() -> String:
 ## resolves with a timeout error; timeout_sec = 0 means unbounded (resolves only
 ## on a real response or a connection loss). tool_name, when given, is woven
 ## into timeout/error messages for debuggability.
-func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: String = "") -> Dictionary:
+func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: String = "", context: ExecutionContext = null) -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
 		return _conn_error("MCP server '%s' is not running" % server_name)
 
+	if context != null and context.is_stopped():
+		return context.stopped_result()
 	var request_id: String = str(request.get("id", ""))
 	var pending := _PendingRequest.new()
 	pending.tool_name = tool_name
 	pending.created_ms = Time.get_ticks_msec()
 	_pending[request_id] = pending
+	var on_cancel := func() -> void: _resolve_pending(request_id, context.stopped_result())
+	if context != null:
+		context.lifetime.cancelled.connect(on_cancel)
 
 	var request_json := JSON.stringify(request) + "\n"
 	var log_json := request_json.left(200)
@@ -730,20 +772,29 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 
 	if not _subprocess.write_data(request_json):
 		_pending.erase(request_id)
+		if context != null and context.lifetime.cancelled.is_connected(on_cancel):
+			context.lifetime.cancelled.disconnect(on_cancel)
 		return _conn_error("failed to write request to MCP server '%s'" % server_name)
 
-	# Arm the caller's timeout. The timer still fires if a real response
-	# resolves the request first — _resolve_pending is idempotent, so the late
-	# tick is a harmless no-op.
-	if timeout_sec > 0.0:
+	# Disconnect the timer on completion so it cannot retain an old connection
+	# or request lifetime until a long default timeout eventually elapses.
+	var timer: SceneTreeTimer = null
+	var on_timeout: Callable
+	if timeout_sec > 0.0 and not pending.done:
 		var label: String = tool_name if tool_name != "" else ("id " + request_id)
 		var timeout_err := _conn_error("MCP request (%s) to '%s' timed out after %.0fs"
 				% [label, server_name, timeout_sec])
-		Engine.get_main_loop().create_timer(timeout_sec).timeout.connect(
-				_resolve_pending.bind(request_id, timeout_err))
+		on_timeout = _resolve_pending.bind(request_id, timeout_err)
+		timer = Engine.get_main_loop().create_timer(timeout_sec)
+		timer.timeout.connect(on_timeout)
 
-	var resolved: Dictionary = await pending.resolved
-	return _stdio_finalize(resolved)
+	if not pending.done:
+		await pending.resolved
+	if timer != null and timer.timeout.is_connected(on_timeout):
+		timer.timeout.disconnect(on_timeout)
+	if context != null and context.lifetime.cancelled.is_connected(on_cancel):
+		context.lifetime.cancelled.disconnect(on_cancel)
+	return _stdio_finalize(pending.result)
 
 
 ## Resolve an in-flight request exactly once (first-wins). A real response, a
@@ -754,6 +805,8 @@ func _resolve_pending(request_id: String, result: Dictionary) -> void:
 		return
 	var pending: _PendingRequest = _pending[request_id]
 	_pending.erase(request_id)
+	pending.done = true
+	pending.result = result
 	pending.resolved.emit(result)
 
 
@@ -823,7 +876,7 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 
 
 ## STDIO transport: Call a tool
-func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: float = 120.0) -> Dictionary:
+func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: float = 120.0, context: ExecutionContext = null) -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
 		return {"error": "STDIO transport not connected"}
 
@@ -838,7 +891,7 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: flo
 			"method": "tools/list",
 			"params": {}
 		}
-		var list_response := await _stdio_request(list_request, timeout_sec, "tools/list")
+		var list_response := await _stdio_request(list_request, timeout_sec, "tools/list", context)
 		if list_response.get("error"):
 			return list_response
 		var inner = list_response.get("result", {})
@@ -857,7 +910,7 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: flo
 		}
 	}
 
-	var response := await _stdio_request(request, timeout_sec, tool_name)
+	var response := await _stdio_request(request, timeout_sec, tool_name, context)
 	if response.get("error"):
 		return response
 
@@ -1024,6 +1077,8 @@ func _handle_async_plugin_state(msg: Dictionary) -> void:
 ## _resolve_pending. tool_name / created_ms back the timeout messages and
 ## pending-request introspection.
 class _PendingRequest extends RefCounted:
+	var done := false
+	var result: Dictionary = {}
 	signal resolved(result: Dictionary)
 	var tool_name: String = ""
 	var created_ms: int = 0

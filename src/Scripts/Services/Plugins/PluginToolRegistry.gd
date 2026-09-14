@@ -1,5 +1,7 @@
 class_name PluginToolRegistry
 extends RefCounted
+
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## Bridges plugin tools into Minerva's MCP tool system.
 ##
 ## Maintains a registry of tools contributed by installed plugins and handles
@@ -334,7 +336,14 @@ func get_tool_count() -> int:
 ##
 ## NOTE: This method is async (uses await internally). The caller inside
 ## MinervaMCPServer._execute_tool_impl() must use "return await".
-func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
+func handle_tool_call(tool_name: String, args: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = ExecutionContext.create("plugin_tool")
+	context = context.for_provider(str(_plugin_by_tool.get(tool_name, "")))
+	return await context.run(_handle_tool_with_context.bind(tool_name, args, context))
+
+
+func _handle_tool_with_context(tool_name: String, args: Dictionary, context: ExecutionContext) -> Dictionary:
 	# --- Step 1: resolve owning plugin ---
 	var plugin_id: String = _plugin_by_tool.get(tool_name, "")
 	if plugin_id.is_empty():
@@ -394,7 +403,9 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 				dispatch_name = backend_name
 			break
 
-	var result: Dictionary = await conn.call_tool(dispatch_name, args)
+	var result: Dictionary = await conn.call_tool_with_context(dispatch_name, args, context)
+	if context.is_stopped():
+		return context.stopped_result()
 
 	if audit_log != null:
 		var succeeded := not result.has("error")
@@ -407,7 +418,7 @@ func handle_tool_call(tool_name: String, args: Dictionary) -> Dictionary:
 	# If the plugin's response includes "capability_requests", dispatch each
 	# through the CapabilityBroker. This lets plugins request host actions
 	# (e.g. notes.create) as part of their tool response.
-	result = await _process_capability_requests(plugin_id, tool_name, result)
+	result = await _process_capability_requests(plugin_id, tool_name, result, context)
 
 	# --- Step 6: drain stderr to Minerva's error display ---
 	# Plugin stderr is diagnostic output, not tool results. Route it to
@@ -621,7 +632,7 @@ func _handle_panel_tool_call(plugin_id: String, tool_name: String, args: Diction
 ##   ]}
 ## Minerva dispatches each through CapabilityBroker (policy-checked) and appends
 ## the outcomes to the result.
-func _process_capability_requests(plugin_id: String, tool_name: String, result: Dictionary) -> Dictionary:
+func _process_capability_requests(plugin_id: String, tool_name: String, result: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	if capability_broker == null:
 		return result
 
@@ -649,6 +660,8 @@ func _process_capability_requests(plugin_id: String, tool_name: String, result: 
 	# Dispatch each capability request through the broker
 	var broker_results: Array = []
 	for req in cap_requests:
+		if context != null and context.is_stopped():
+			return context.stopped_result()
 		if not req is Dictionary:
 			continue
 		var capability: String = str(req.get("capability", ""))
@@ -660,7 +673,7 @@ func _process_capability_requests(plugin_id: String, tool_name: String, result: 
 				"capability": capability,
 			})
 
-		var broker_result: Dictionary = await capability_broker.dispatch(plugin_id, capability, cap_args)
+		var broker_result: Dictionary = await capability_broker.dispatch(plugin_id, capability, cap_args, context)
 		broker_results.append({
 			"capability": capability,
 			"result": broker_result,

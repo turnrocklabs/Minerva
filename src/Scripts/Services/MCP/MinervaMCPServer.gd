@@ -35,9 +35,7 @@ var policy_engine: PolicyEngine
 const _LoopTracker = preload("res://Scripts/Services/MCP/MCPLoopTracker.gd")
 var _loop_tracker := _LoopTracker.new()
 
-## Caller identity (threaded through tool dispatch chain)
-var _current_caller_chat_id: String = ""
-var _current_agent_id: String = ""
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 
 ## Domain modules
 var _modules: Array = []
@@ -247,40 +245,41 @@ func disconnect_server() -> void:
 #region Tool Execution
 
 ## Execute a minerva_* tool (requires internal connection to be enabled)
-func execute_tool(tool_name: String, arguments: Dictionary, caller_chat_id: String = "") -> Dictionary:
+func execute_tool(tool_name: String, arguments: Dictionary, caller_chat_id: String = "",
+		context: ExecutionContext = null) -> Dictionary:
 	if not server_enabled:
 		return {"error": "Minerva server not connected", "success": false}
-	var previous_caller_chat_id := _current_caller_chat_id
-	var previous_agent_id := _current_agent_id
-	_current_caller_chat_id = caller_chat_id
-	_current_agent_id = ""
-	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
-	_current_caller_chat_id = previous_caller_chat_id
-	_current_agent_id = previous_agent_id
-	_maybe_capture_chat_knowledge(tool_name, result, caller_chat_id)
+	if context == null:
+		context = ExecutionContext.create("internal", caller_chat_id)
+	var result: Dictionary = await context.run(_execute_tool_impl.bind(tool_name, arguments, context))
+	if context.is_stopped():
+		return result
+	_maybe_capture_chat_knowledge(tool_name, result, context.caller_chat_id)
 	return _check_duplicate_call(tool_name, arguments, result)
 
 
-## Execute a minerva_* tool for HTTP/external access (does not require internal connection)
-func execute_tool_for_http(tool_name: String, arguments: Dictionary, agent_id: String = "") -> Dictionary:
-	var previous_caller_chat_id := _current_caller_chat_id
-	var previous_agent_id := _current_agent_id
-	_current_caller_chat_id = ""
-	_current_agent_id = agent_id
-	var result: Dictionary = await _execute_tool_impl(tool_name, arguments)
-	_current_caller_chat_id = previous_caller_chat_id
-	_current_agent_id = previous_agent_id
-	return _check_duplicate_call(tool_name, arguments, result)
+## HTTP deliberately does not require the internal connection to be enabled.
+func execute_tool_for_http(tool_name: String, arguments: Dictionary, agent_id: String = "",
+		context: ExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = ExecutionContext.create("http", "", agent_id)
+	var result: Dictionary = await context.run(_execute_tool_impl.bind(tool_name, arguments, context))
+	return result if context.is_stopped() else _check_duplicate_call(tool_name, arguments, result)
 
 
-## Cross-module tool dispatch. Modules call this when they need to invoke
-## another module's tool (e.g., MCPAgentTools calling minerva_create_chat).
-func call_tool(tool_name: String, arguments: Dictionary) -> Dictionary:
-	return await _execute_tool_impl(tool_name, arguments)
+## Nested native calls retain their explicit parent lifetime and identity.
+func call_tool(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = ExecutionContext.create("module")
+	return await context.run(_execute_tool_impl.bind(tool_name, arguments, context))
 
 
 ## Internal tool execution — routes to modules, plugins, or tool search
-func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
+func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = ExecutionContext.create("module")
+	if context.is_stopped():
+		return context.stopped_result()
 	print("[MinervaMCPServer] Executing: %s" % tool_name)
 
 	# Policy override tool — handled before policy check so it can't be blocked
@@ -296,11 +295,11 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	var pending_observations: Array = []
 	var pending_injections: Array = []
 	if policy_engine:
-		var policy_result := policy_engine.evaluate(tool_name, arguments, _current_caller_chat_id)
+		var policy_result := policy_engine.evaluate(tool_name, arguments, context.caller_chat_id)
 		if not policy_result["allowed"]:
 			# Pre-activate tools the agent needs to comply with the policy
 			_activate_policy_tools(policy_result)
-			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, _current_agent_id)
+			SingletonObject.emit_mcp_tool_blocked(tool_name, arguments, policy_result, context.agent_id)
 			return policy_result
 		pending_observations = policy_result.get("observations", [])
 		pending_injections = policy_result.get("injections", [])
@@ -325,6 +324,9 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 		if not schema_for_coerce.is_empty():
 			arguments = MCPToolUtils.coerce_args_to_schema(arguments, schema_for_coerce)
 
+	if context.is_stopped():
+		return context.stopped_result()
+
 	# Dispatch to the appropriate handler and collect the result
 	var dispatch_result: Dictionary = {}
 	var dispatched := false
@@ -338,7 +340,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	if not dispatched and tool_name == "minerva_tool_memory_search":
 		if not _tool_memory_optimization_enabled():
 			return {"error": "Tool memory optimization is disabled", "success": false}
-		var history = MCPToolUtils.find_chat_by_id(_current_caller_chat_id)
+		var history = MCPToolUtils.find_chat_by_id(context.caller_chat_id)
 		if history and history is ChatHistory and history.tool_memory_manager:
 			dispatch_result = history.tool_memory_manager.handle_recall(arguments)
 		else:
@@ -349,14 +351,17 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 	if not dispatched:
 		for module in _modules:
 			if module.can_handle(tool_name):
-				dispatch_result = await module.handle(tool_name, arguments)
+				if module.has_method("handle_with_context"):
+					dispatch_result = await module.handle_with_context(tool_name, arguments, context)
+				else:
+					dispatch_result = await module.handle(tool_name, arguments)
 				dispatched = true
 				break
 
 	# Plugin-contributed tools (minerva_<plugin_id>_*) — check first since
 	# is_plugin_tool() is an exact-match lookup and avoids prefix collisions.
 	if not dispatched and SingletonObject.plugin_tool_registry != null and SingletonObject.plugin_tool_registry.is_plugin_tool(tool_name):
-		dispatch_result = await SingletonObject.plugin_tool_registry.handle_tool_call(tool_name, arguments)
+		dispatch_result = await SingletonObject.plugin_tool_registry.handle_tool_call(tool_name, arguments, context)
 		dispatched = true
 
 	# Plugin management tools (minerva_plugin_list, etc.)
@@ -370,6 +375,9 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary) -> Dictionary:
 			dispatch_result = {"error": "Tool '%s' is not loaded. Call minerva_tool_search('%s') to activate it." % [tool_name, tool_name], "success": false}
 		else:
 			dispatch_result = {"error": "Unknown minerva tool: %s" % tool_name, "success": false}
+
+	if context.is_stopped():
+		return context.stopped_result()
 
 	# POST-DISPATCH: drain observation telemetry (best-effort, non-blocking)
 	if not pending_observations.is_empty():

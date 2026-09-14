@@ -1,5 +1,7 @@
 class_name MCPSkillTools
 extends MCPToolModule
+
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## MCP tool module for Skill management and Voice tools.
 ## Combines _register_skill_tools and _register_voice_tools from MinervaMCPServer.
 
@@ -193,12 +195,16 @@ func register_tools() -> void:
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+	return await handle_with_context(tool_name, arguments, ExecutionContext.create("module"))
+
+
+func handle_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	match tool_name:
 		"minerva_list_skills": return _skill_list(arguments)
-		"minerva_get_skill": return _skill_get(arguments)
+		"minerva_get_skill": return _skill_get(arguments, context)
 		"minerva_skill_create": return _skill_create(arguments)
 		"minerva_skill_update": return _skill_update(arguments)
-		"minerva_activate_skill": return await _skill_activate(arguments)
+		"minerva_activate_skill": return await _skill_activate(arguments, context)
 		"minerva_deactivate_skill": return _skill_deactivate(arguments)
 		"minerva_update_skill_instructions": return _skill_update_instructions(arguments)
 		"minerva_speak": return await _speak(arguments)
@@ -359,7 +365,7 @@ func _matches_filters(entry: Dictionary, query_text: String, filter_tags: Array)
 	return true
 
 
-func _skill_get(arguments: Dictionary) -> Dictionary:
+func _skill_get(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	var skill_id: String = arguments.get("skill_id", "")
 	var title: String = arguments.get("title", "")
 	var project_hint: String = arguments.get("project", "")
@@ -422,11 +428,11 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 				# Apply skill optimization profile if present
 				var optimization: Dictionary = docket_result.get("optimization", {})
 				if not optimization.is_empty():
-					_apply_skill_optimization(optimization)
+					_apply_skill_optimization(optimization, context)
 					result["optimization_applied"] = optimization
 
 				# Surface model-targeted insights/hints for this skill's domain
-				var targeted := _query_targeted_knowledge(dm, proj_name, docket_result, server._current_caller_chat_id)
+				var targeted := _query_targeted_knowledge(dm, proj_name, docket_result, context.caller_chat_id)
 				if not targeted.is_empty():
 					result["insights"] = targeted
 					var msg: String = result.get("message", "")
@@ -470,7 +476,7 @@ func _skill_get(arguments: Dictionary) -> Dictionary:
 	return data
 
 
-func _skill_activate(arguments: Dictionary) -> Dictionary:
+func _skill_activate(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	var skill_manager = SingletonObject.get_skill_manager()
 	if not skill_manager:
 		return MCPToolUtils.error("Skill manager not available")
@@ -482,7 +488,7 @@ func _skill_activate(arguments: Dictionary) -> Dictionary:
 	var skill = skill_manager.get_skill(skill_id)
 	if not skill:
 		# Fall through to docket — activate_skill should work for docket skills too
-		var docket_result := _skill_get(arguments)
+		var docket_result := _skill_get(arguments, context)
 		if docket_result.get("success", false):
 			return docket_result
 		return MCPToolUtils.error("Skill not found: %s" % skill_id)
@@ -803,7 +809,7 @@ func _query_targeted_knowledge(dm: DocketManager, proj_name: String, skill_data:
 
 ## Apply optimization knobs from a skill's "optimization" dict.
 ## Adjusts ToolBudgetManager and ToolMemoryManager settings for the calling chat.
-func _apply_skill_optimization(optimization: Dictionary) -> void:
+func _apply_skill_optimization(optimization: Dictionary, context: ExecutionContext) -> void:
 	# Tool budget knobs
 	if optimization.has("tool_budget"):
 		server.tool_budget_manager.set_budget(int(optimization["tool_budget"]))
@@ -815,13 +821,13 @@ func _apply_skill_optimization(optimization: Dictionary) -> void:
 	# Distinct from tool_budget (which is a TOKEN budget) — this is the
 	# MaxToolCallRounds count enforced in ChatPane.handle_tool_calls.
 	if optimization.has("max_tool_call_rounds"):
-		var rounds_history = MCPToolUtils.find_chat_by_id(server._current_caller_chat_id)
+		var rounds_history = MCPToolUtils.find_chat_by_id(context.caller_chat_id)
 		if rounds_history and rounds_history is ChatHistory:
 			rounds_history.MaxToolCallRounds = int(optimization["max_tool_call_rounds"])
 
 	# ToolMemoryManager knobs (per-chat)
 	if optimization.has("context_window") or optimization.has("summary_mode"):
-		var history = MCPToolUtils.find_chat_by_id(server._current_caller_chat_id)
+		var history = MCPToolUtils.find_chat_by_id(context.caller_chat_id)
 		if history and history is ChatHistory and history.tool_memory_manager:
 			var tmm = history.tool_memory_manager
 			if optimization.has("context_window"):

@@ -1,5 +1,7 @@
 class_name MCPAgentTools
 extends MCPToolModule
+
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## MCP tool module for the Agent, Worker, and Trigger domains.
 ## Handles agent registry CRUD, worker spawning/tracking, and trigger management.
 
@@ -43,6 +45,10 @@ func register_tools() -> void:
 
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
+	return await handle_with_context(tool_name, arguments, ExecutionContext.create("module"))
+
+
+func handle_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	match tool_name:
 		# Agent registry tools
 		"minerva_list_agents":
@@ -57,7 +63,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 			return _spawn_agent(arguments)
 		# Worker tools
 		"minerva_spawn_worker":
-			return await _spawn_worker(arguments)
+			return await _spawn_worker(arguments, context)
 		"minerva_check_worker":
 			return _check_worker(arguments)
 		"minerva_list_workers":
@@ -834,7 +840,7 @@ func _spawn_agent(args: Dictionary) -> Dictionary:
 
 #region Worker Handler Implementations
 
-func _spawn_worker(args: Dictionary) -> Dictionary:
+func _spawn_worker(args: Dictionary, context: ExecutionContext) -> Dictionary:
 	# 1. Validate required fields
 	var worker_name: String = args.get("name", "")
 	var system_prompt: String = args.get("system_prompt", "")
@@ -859,8 +865,8 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 		return MCPToolUtils.error("Chat pane not available")
 
 	var parent_chat_id: String = ""
-	if not server._current_caller_chat_id.is_empty():
-		parent_chat_id = server._current_caller_chat_id
+	if not context.caller_chat_id.is_empty():
+		parent_chat_id = context.caller_chat_id
 	elif chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
 		parent_chat_id = SingletonObject.ChatList[chat_pane.current_tab].HistoryId
 
@@ -888,7 +894,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 	if args.has("provider_enum_id"):
 		create_args["provider_enum_id"] = args["provider_enum_id"]
 
-	var create_result: Dictionary = await server.call_tool("minerva_create_chat", create_args)
+	var create_result: Dictionary = await server.call_tool("minerva_create_chat", create_args, context)
 	if not create_result.get("success", false):
 		return create_result
 
@@ -926,7 +932,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 			static_tool_mode = true
 
 	# 4b. Set system prompt (potentially with skill instructions prepended)
-	var prompt_result: Dictionary = await server.call_tool("minerva_set_system_prompt", {"chat_id": chat_id, "prompt": system_prompt})
+	var prompt_result: Dictionary = await server.call_tool("minerva_set_system_prompt", {"chat_id": chat_id, "prompt": system_prompt}, context)
 	if not prompt_result.get("success", false):
 		return prompt_result
 
@@ -935,7 +941,7 @@ func _spawn_worker(args: Dictionary) -> Dictionary:
 		"chat_id": chat_id,
 		"enabled": true,
 		"max_rounds": max_tool_rounds,
-	})
+	}, context)
 	if not agent_result.get("success", false):
 		return agent_result
 

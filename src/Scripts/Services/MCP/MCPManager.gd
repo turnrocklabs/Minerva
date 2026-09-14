@@ -1,5 +1,7 @@
 class_name MCPManager
 extends Node
+
+const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## Central manager for MCP (Model Context Protocol) server connections.
 ## Handles server registration, tool discovery, and tool execution.
 
@@ -408,7 +410,15 @@ func _find_agent_def(agent_id: String):
 
 
 ## Execute a tool by name
-func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id: String = "") -> Dictionary:
+func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id: String = "",
+		context: ExecutionContext = null) -> Dictionary:
+	if context == null:
+		context = ExecutionContext.create("internal", caller_chat_id)
+	return await context.run(_execute_tool_with_context.bind(tool_name, arguments, context))
+
+
+func _execute_tool_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
+	var caller_chat_id: String = context.caller_chat_id
 	print("[MCP] execute_tool called: %s" % tool_name)
 
 	if not tool_registry.has(tool_name):
@@ -453,7 +463,9 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 		if not minerva_server or not minerva_server.server_enabled:
 			return {"error": "Minerva server not connected", "success": false}
 
-		var minerva_result = await minerva_server.execute_tool(tool_name, arguments, caller_chat_id)
+		var minerva_result = await minerva_server.execute_tool(tool_name, arguments, caller_chat_id, context)
+		if context.is_stopped():
+			return context.stopped_result()
 
 		# Normalize result
 		if not minerva_result.has("success"):
@@ -509,7 +521,11 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 	if tool_registry.has(tool_name):
 		arguments = MCPToolUtils.coerce_args_to_schema(arguments, tool_registry[tool_name].input_schema)
 
-	var result = await connection.call_tool(tool_name, arguments)
+	if context.is_stopped():
+		return context.stopped_result()
+	var result: Dictionary = await connection.call_tool_with_context(tool_name, arguments, context)
+	if context.is_stopped():
+		return context.stopped_result()
 
 	# Normalize result
 	if not result.has("success"):
