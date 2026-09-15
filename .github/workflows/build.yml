@@ -33,6 +33,11 @@ env:
   GODOT_RELEASE: "stable"
 
 jobs:
+  build-godot-cef:
+    uses: ./.github/workflows/godot-cef.yml
+    with:
+      skip_macos: true
+
   build-mcp-schema-helpers:
     name: MCP schema helper (${{ matrix.target }})
     strategy:
@@ -436,7 +441,7 @@ jobs:
   # per-plugin tier (CAD / presentation / scansort) is heavy/networked and is
   # left for a manual/nightly run: scripts/run-functional-tests.sh --all.
   functional-tests:
-    needs: [build-linux, build-mcp-schema-helpers]
+    needs: [build-linux, build-mcp-schema-helpers, build-godot-cef]
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
     runs-on: ubuntu-latest
     steps:
@@ -502,18 +507,10 @@ jobs:
         ls src/addons/ffmpeg/linux64/ | head -20
 
     - name: Download godot-cef artifacts (Linux)
-      shell: bash
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        RUN_ID=$(gh run list --workflow=godot-cef.yml --status=success --limit=1 --json databaseId -q '.[0].databaseId')
-        if [ -z "$RUN_ID" ]; then
-          echo "::error::No successful godot-cef.yml run found. Trigger that workflow manually first."
-          exit 1
-        fi
-        mkdir -p src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
-        gh run download "$RUN_ID" --name godot-cef-linux-x86_64 --dir src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
-        find src/addons/godot_cef/bin/ -type f | { head -10; cat >/dev/null; }
+      uses: actions/download-artifact@v4
+      with:
+        name: godot-cef-linux-x86_64
+        path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
 
     - name: Install Linux runtime dependencies
       run: |
@@ -1323,8 +1320,12 @@ jobs:
           if-no-files-found: warn
 
   build-godot:
-    needs: [check-gdextension, build-windows, build-linux, build-voice-runtimes, build-mcp-schema-helpers]
-    if: always() && needs.build-voice-runtimes.result == 'success' && needs.build-mcp-schema-helpers.result == 'success'
+    needs: [check-gdextension, build-windows, build-linux, build-voice-runtimes, build-mcp-schema-helpers, build-godot-cef]
+    if: >-
+      always() &&
+      needs.build-voice-runtimes.result == 'success' &&
+      needs.build-mcp-schema-helpers.result == 'success' &&
+      needs.build-godot-cef.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1410,43 +1411,18 @@ jobs:
           echo "godot-sqlite ${SQLITE_VERSION} installed"
           ls src/addons/godot-sqlite/bin/ | head -20
 
-      # godot-cef is built by .github/workflows/godot-cef.yml on its own triggers
-      # (vendor/godot_cef, patches/godot_cef/**, scripts/build-godot-cef.sh, src/addons/godot_cef/**).
-      # FCIB policy keeps binaries out of git, so we pull artifacts from the latest
-      # successful CEF run here. Without this step, exported builds ship without
-      # CEF support and plugins with CEF panels fail to load.
-      - name: Download godot-cef artifacts
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          RUN_ID=$(gh run list \
-            --workflow=godot-cef.yml \
-            --status=success \
-            --limit=1 \
-            --json databaseId \
-            -q '.[0].databaseId')
-
-          if [ -z "$RUN_ID" ]; then
-            echo "::error::No successful godot-cef.yml run found. Trigger that workflow manually first."
-            exit 1
-          fi
-
-          echo "Downloading godot-cef artifacts from run $RUN_ID"
-
-          for pair in \
-            "godot-cef-linux-x86_64:x86_64-unknown-linux-gnu" \
-            "godot-cef-macos-universal:universal-apple-darwin" \
-            "godot-cef-windows-x86_64:x86_64-pc-windows-msvc"; do
-            artifact="${pair%%:*}"
-            triple="${pair##*:}"
-            mkdir -p "src/addons/godot_cef/bin/$triple"
-            gh run download "$RUN_ID" --name "$artifact" --dir "src/addons/godot_cef/bin/$triple"
-          done
-
-          echo "CEF artifacts deployed:"
-          # `find ... | head` would trip pipefail on SIGPIPE; collect first then truncate.
-          find src/addons/godot_cef/bin/ -type f | { head -30; cat >/dev/null; }
+      # The same workflow run builds these source artifacts before packaging.
+      # macOS builds directly in export-macos to preserve framework symlinks.
+      - name: Download godot-cef Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-cef-linux-x86_64
+          path: src/addons/godot_cef/bin/x86_64-unknown-linux-gnu
+      - name: Download godot-cef Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: godot-cef-windows-x86_64
+          path: src/addons/godot_cef/bin/x86_64-pc-windows-msvc
 
       - name: Install Linux Build Dependencies
         run: |
