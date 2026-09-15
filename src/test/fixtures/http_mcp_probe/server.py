@@ -73,7 +73,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         if method == "tools/list":
-            self.reply(result({"resultType": "complete", "tools": [
+            self.reply(result({"resultType": "complete", "ttlMs": 0,
+                               "cacheScope": "private", "tools": [
                 {"name": "echo", "inputSchema": {"type": "object", "properties": {
                     "nested": {"type": "object", "properties": {
                         "value": {"type": "string", "x-mcp-header": "Value"}}},

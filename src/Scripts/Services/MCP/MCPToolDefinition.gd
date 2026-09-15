@@ -49,6 +49,24 @@ func to_anthropic_format() -> Dictionary:
 	}
 
 
+## Consumer schemas may be narrowed for an LLM API. Protocol validation and
+## re-export always use the peer's original schemas.
+func native_input_schema() -> Variant:
+	if original_definition.has("inputSchema"):
+		return _duplicate_variant(original_definition.inputSchema)
+	return input_schema.duplicate(true)
+
+
+func native_output_schema() -> Variant:
+	if original_definition.has("outputSchema"):
+		return _duplicate_variant(original_definition.outputSchema)
+	return output_schema.duplicate(true)
+
+
+static func _duplicate_variant(value: Variant) -> Variant:
+	return value.duplicate(true) if value is Dictionary or value is Array else value
+
+
 ## Create a tool definition from a dictionary (e.g., from MCP server response)
 static func from_dict(data: Dictionary, server: String = ""):
 	var script = load("res://Scripts/Services/MCP/MCPToolDefinition.gd")

@@ -59,6 +59,20 @@ func _run() -> void:
 	check("raw numeric guard covers RPC error data before application exposure",
 		changed_error_data.has("error") and changed_error_data.error != "fixture error"
 		and envelopes.size() == envelope_count)
+	var nested_number: Dictionary = await modern.call_tool("nested_precision_loss", {}, 5.0)
+	check("JSON embedded in legacy text is numerically validated before exposure",
+		nested_number.get("error_code") == "unsupported_number"
+		and envelopes.size() == envelope_count + 1)
+	var scalar_number: Dictionary = await modern.call_tool("scalar_precision_loss", {}, 5.0)
+	check("a scalar JSON text result cannot bypass the nested numeric boundary",
+		scalar_number.get("error_code") == "unsupported_number"
+		and envelopes.size() == envelope_count + 2)
+	var interaction = await modern.call_tool_outcome("input_required", {}, 5.0)
+	check("input_required is classified before content adaptation and preserves request state",
+		interaction.envelope.result_type == "input_required"
+		and interaction.application.get("error_code") == "input_required"
+		and interaction.application.get("requestState", {}).get("opaque")
+		and not interaction.application.has("text"))
 
 	var context = context_script.create("profile-test", "", "", 10.0)
 	var cancelled_results: Array = []
@@ -194,6 +208,36 @@ func _run() -> void:
 		await invalid.connect_to_server() != OK)
 	invalid.disconnect_from_server()
 
+	var paginated = connection_script.new("paginated-fixture")
+	paginated.configure_stdio("python3", PackedStringArray([fixture, "--profile", "paginated"]))
+	check("bounded tools/list pagination atomically collects every page",
+		await paginated.connect_to_server() == OK and await paginated.refresh_tools() == OK
+		and paginated.tools.size() == 20
+		and not paginated.has_tool("invalid_input_root")
+		and not paginated.has_tool("invalid_output_root"))
+	paginated.disconnect_from_server()
+
+	var repeated = connection_script.new("repeated-cursor-fixture")
+	repeated.configure_stdio("python3", PackedStringArray([fixture, "--profile", "repeat_cursor"]))
+	check("repeated pagination cursor fails without replacing the prior catalog",
+		await repeated.connect_to_server() == OK and await _seed_then_fail_refresh(repeated) \
+		and repeated.tools.size() == 1 and repeated.tools[0].name == "kept")
+	repeated.disconnect_from_server()
+
+	var partial = connection_script.new("partial-page-fixture")
+	partial.configure_stdio("python3", PackedStringArray([fixture, "--profile", "second_page_error"]))
+	check("later-page failure cannot publish a partial catalog",
+		await partial.connect_to_server() == OK and await _seed_then_fail_refresh(partial) \
+		and partial.tools.size() == 1 and partial.tools[0].name == "kept")
+	partial.disconnect_from_server()
+
+	var duplicate = connection_script.new("duplicate-tool-fixture")
+	duplicate.configure_stdio("python3", PackedStringArray([fixture, "--profile", "duplicate_tools"]))
+	check("duplicate names cannot silently retarget an atomically published catalog",
+		await duplicate.connect_to_server() == OK and await _seed_then_fail_refresh(duplicate) \
+		and duplicate.tools.size() == 1 and duplicate.tools[0].name == "kept")
+	duplicate.disconnect_from_server()
+
 	print("\n=== Results: %d passed, %d failed ===" % [passed, failed])
 	quit(1 if failed else 0)
 
@@ -220,6 +264,13 @@ func _wait_for_validation(wire_adapter, timeout_ms: int) -> bool:
 	while wire_adapter._active_validations == 0 and Time.get_ticks_msec() < deadline:
 		await process_frame
 	return wire_adapter._active_validations > 0
+
+
+func _seed_then_fail_refresh(connection) -> bool:
+	var definition = load("res://Scripts/Services/MCP/MCPToolDefinition.gd").from_dict(
+		{"name": "kept", "inputSchema": {"type": "object"}}, "fixture")
+	connection.tools = [definition]
+	return await connection.refresh_tools() != OK
 
 
 func check(label: String, condition: bool, detail: String = "") -> void:

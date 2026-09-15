@@ -164,9 +164,19 @@ func compare_application_numbers(original_raw: String, application_value: Varian
 
 
 func release(handle: SchemaHandle) -> Dictionary:
-	_handles.erase(handle)
 	if handle != null and handle.generation == _generation and _process != null:
-		return await _request({"op": "release", "handle": handle.native_id})
+		var process = _process
+		var process_generation := _generation
+		var result: Dictionary = await _request(
+			{"op": "release", "handle": handle.native_id}, process, process_generation)
+		if result.get("ok", false):
+			_handles.erase(handle)
+		elif process == _process and process_generation == _generation:
+			# A rejected release leaves an unreachable native handle. Retire only
+			# its exact helper generation so repeated contention cannot exhaust it.
+			_invalidate_process(process, process_generation, "validator handle release failed")
+		return result
+	_handles.erase(handle)
 	return {"ok": true}
 
 

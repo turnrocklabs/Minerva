@@ -60,6 +60,9 @@ HERMETIC_TESTS=(
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
 	test/test_mcp_stdio_profiles.gd
+	test/test_mcp_definition_preservation.gd
+	test/test_mcp_catalog_ownership.gd
+	test/test_mcp_plugin_result_boundaries.gd
 	test/test_mcp_loop_tracker.gd
 	test/test_mcp_schema_coercion.gd
 	test/test_mcp_cad_tools.gd

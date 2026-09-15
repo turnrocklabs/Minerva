@@ -81,6 +81,16 @@ func _run() -> void:
 	check("chunked multiline SSE preserves split UTF8 and complete raw envelope", not streamed.has("error")
 		and envelopes.size() == 1 and envelopes[0].to_mcp_format().get("future", false)
 		and envelopes[0].wire_value.raw_utf8.contains("世界"))
+	var envelope_cancel_context = context_script.create("http-envelope-cancel")
+	var application_emissions: Array = []
+	modern.tool_result_received.connect(func(_name: String, _result: Dictionary) -> void:
+		application_emissions.append(true))
+	modern.tool_result_envelope_received.connect(
+		func(_name: String, _envelope) -> void: envelope_cancel_context.cancel(), CONNECT_ONE_SHOT)
+	var envelope_cancelled = await modern.call_tool_outcome_with_context(
+		"sse", {}, envelope_cancel_context)
+	check("synchronous HTTP envelope cancellation suppresses the stale application signal",
+		envelope_cancelled.application.has("error") and application_emissions.is_empty())
 	var progress: Array = []
 	modern.http_notification_received.connect(func(message: Dictionary, request_id: Variant): progress.append([message, request_id]))
 	var progressed: Dictionary = await modern._http_transport.request_method("tools/call", {"name": "sse-progress", "arguments": {}, "_meta": {"progressToken": "owned"}})

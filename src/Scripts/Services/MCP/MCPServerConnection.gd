@@ -9,6 +9,8 @@ const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const WireValue = preload("res://Scripts/Services/MCP/MCPWireValue.gd")
 const ToolResultEnvelope = preload("res://Scripts/Services/MCP/MCPToolResult.gd")
+const ToolCallOutcome = preload("res://Scripts/Services/MCP/MCPToolCallOutcome.gd")
+const ToolResultAdapter = preload("res://Scripts/Services/MCP/MCPToolResultAdapter.gd")
 const Protocol = preload("res://Scripts/Services/MCP/MCPProtocol.gd")
 const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const StdioNegotiation = preload("res://Scripts/Services/MCP/MCPStdioNegotiation.gd")
@@ -16,12 +18,14 @@ const WireAdapter = preload("res://Scripts/Services/MCP/MCPWireAdapter.gd")
 const HttpTransport = preload("res://Scripts/Services/MCP/MCPHttpTransport.gd")
 const HttpHeaders = preload("res://Scripts/Services/MCP/MCPHttpHeaders.gd")
 const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
+const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 
 signal connected()
 signal disconnected()
 signal http_notification_received(message: Dictionary, request_id: Variant)
 signal tool_result_received(tool_name: String, result: Dictionary)
 signal tool_result_envelope_received(tool_name: String, result)
+signal tools_list_changed()
 
 enum TransportType { HTTP, WEBSOCKET, STDIO }
 
@@ -54,6 +58,10 @@ var working_directory: String = ""
 
 ## Available tools from this server
 var tools: Array = []
+var _tools_refresh_epoch := 0
+var catalog_conformance_errors: Array[String] = []
+const MAX_TOOL_PAGES := 32
+const MAX_DISCOVERED_TOOLS := 10000
 
 ## WebSocket client for persistent connections
 var _websocket: WebSocketPeer = null
@@ -135,6 +143,7 @@ func connect_to_server() -> Error:
 func disconnect_from_server() -> void:
 	print("[MCP %s] Disconnecting..." % server_name)
 	server_connected = false
+	_tools_refresh_epoch += 1
 	var disconnected_http = _http_transport
 	_http_transport = null
 	if disconnected_http != null:
@@ -201,54 +210,163 @@ func refresh_tools() -> Error:
 		print("[MCP] Skipping tool discovery (REST API mode)")
 		return OK
 
-	var result = await call_tool("tools/list", {})
-	print("[MCP] tools/list returned: %s" % str(result).left(200))
-
-	if result.get("error"):
-		push_error("Failed to list tools: %s" % result.get("error"))
-		return ERR_QUERY_FAILED
-
-	print("[MCP] tools/list result keys: %s" % str(result.keys()))
-
-	tools.clear()
-	var tools_data = result.get("tools", [])
-	if tools_data is Array:
-		print("[MCP] Found %d tools" % tools_data.size())
-		for tool_data in tools_data:
-			if transport == TransportType.HTTP and protocol_profile.era == Profile.Era.MODERN_2026_07_28 and tool_data is Dictionary:
-				if not tool_data.get("inputSchema") is Dictionary or tool_data.inputSchema.get("type") != "object":
-					push_warning("Excluded MCP tool with invalid inputSchema root")
+	_tools_refresh_epoch += 1
+	var refresh_epoch := _tools_refresh_epoch
+	var owner_generation: int = protocol_profile.generation
+	var owner_transport = _http_transport if transport == TransportType.HTTP else (
+		_subprocess if transport == TransportType.STDIO else _websocket)
+	var candidates: Array = []
+	var candidate_names := {}
+	var candidate_conformance_errors: Array[String] = []
+	var seen_cursors := {}
+	var cursor := ""
+	for page in range(MAX_TOOL_PAGES):
+		var params := {} if cursor.is_empty() else {"cursor": cursor}
+		var result: Dictionary = await call_tool("tools/list", params)
+		if not _owns_catalog_refresh(refresh_epoch, owner_generation, owner_transport):
+			return ERR_BUSY
+		if result.get("error"):
+			push_error("Failed to list tools: %s" % result.get("error"))
+			return ERR_QUERY_FAILED
+		if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
+			if not result.has("resultType"):
+				if "Modern tools/list omitted resultType" not in candidate_conformance_errors:
+					candidate_conformance_errors.append("Modern tools/list omitted resultType")
+			elif result.get("resultType") != "complete":
+				push_error("Modern tools/list resultType must be complete")
+				return ERR_INVALID_DATA
+			var ttl: Variant = result.get("ttlMs")
+			if (not ttl is int and not ttl is float) or not is_finite(float(ttl)) \
+					or float(ttl) < 0.0 or float(ttl) > Protocol.MAX_SAFE_INTEGER \
+					or result.get("cacheScope") not in ["public", "private"]:
+				push_error("Modern tools/list returned invalid cache hints")
+				return ERR_INVALID_DATA
+		var tools_data: Variant = result.get("tools", [])
+		if not tools_data is Array:
+			push_error("tools/list tools must be an Array")
+			return ERR_INVALID_DATA
+		if candidates.size() + tools_data.size() > MAX_DISCOVERED_TOOLS:
+			push_error("tools/list exceeded the %d-tool catalog limit" % MAX_DISCOVERED_TOOLS)
+			return ERR_OUT_OF_MEMORY
+		for tool_data: Variant in tools_data:
+			if not tool_data is Dictionary:
+				push_warning("Excluded non-object MCP tool definition")
+				continue
+			var input_root: Variant = tool_data.get("inputSchema")
+			if not input_root is Dictionary or input_root.get("type") != "object":
+				push_warning("Excluded MCP tool with non-object inputSchema root")
+				continue
+			if tool_data.has("outputSchema"):
+				var output_root: Variant = tool_data.outputSchema
+				if not output_root is Dictionary:
+					push_warning("Excluded MCP tool with non-object outputSchema root")
 					continue
+			if transport == TransportType.HTTP \
+					and protocol_profile.era == Profile.Era.MODERN_2026_07_28:
 				var header_check := HttpHeaders.annotations(tool_data.get("inputSchema", {}))
 				if not header_check.error.is_empty():
 					push_warning("Excluded MCP tool %s: %s" % [tool_data.get("name", ""), header_check.error])
 					continue
-			var tool = MCPToolDefinitionScript.from_dict(tool_data, server_name)
-			tools.append(tool)
-	else:
-		print("[MCP] WARNING: tools_data is not an Array: %s" % typeof(tools_data))
+			var tool_name_value: Variant = tool_data.get("name")
+			if not tool_name_value is String or tool_name_value.is_empty():
+				push_warning("Excluded MCP tool with empty name")
+				continue
+			var tool_name: String = tool_name_value
+			if candidate_names.has(tool_name):
+				push_error("tools/list returned duplicate tool name: %s" % tool_name)
+				return ERR_INVALID_DATA
+			var native_input: Variant = tool_data.get("inputSchema", {})
+			var schema_check: Dictionary = await ToolSchemaRuntime.check_schema(native_input)
+			if not _owns_catalog_refresh(refresh_epoch, owner_generation, owner_transport):
+				return ERR_BUSY
+			if not schema_check.get("ok", false):
+				var schema_code := str(schema_check.get("error", {}).get("code", ""))
+				if schema_code in ["validator_unavailable", "process_lost", "deadline_exceeded", "queue_full"]:
+					push_error("MCP schema validator unavailable during tools/list")
+					return ERR_CANT_ACQUIRE_RESOURCE
+				push_warning("Excluded MCP tool %s with invalid inputSchema" % tool_name)
+				continue
+			if tool_data.has("outputSchema"):
+				var output_check: Dictionary = await ToolSchemaRuntime.check_schema(tool_data.outputSchema)
+				if not _owns_catalog_refresh(refresh_epoch, owner_generation, owner_transport):
+					return ERR_BUSY
+				if not output_check.get("ok", false):
+					var output_code := str(output_check.get("error", {}).get("code", ""))
+					if output_code in ["validator_unavailable", "process_lost", "deadline_exceeded", "queue_full"]:
+						return ERR_CANT_ACQUIRE_RESOURCE
+					push_warning("Excluded MCP tool %s with invalid outputSchema" % tool_name)
+					continue
+			candidate_names[tool_name] = true
+			candidates.append(MCPToolDefinitionScript.from_dict(tool_data, server_name))
+		var next_value: Variant = result.get("nextCursor", "")
+		if next_value == null or next_value == "":
+			tools = candidates
+			catalog_conformance_errors = candidate_conformance_errors
+			print("[MCP] Found %d tools across %d page(s)" % [tools.size(), page + 1])
+			return OK
+		if not next_value is String or seen_cursors.has(next_value):
+			push_error("tools/list returned an invalid or repeated cursor")
+			return ERR_INVALID_DATA
+		cursor = next_value
+		seen_cursors[cursor] = true
+	push_error("tools/list exceeded the %d-page limit" % MAX_TOOL_PAGES)
+	return ERR_OUT_OF_MEMORY
 
-	return OK
+
+func _owns_catalog_refresh(epoch: int, generation: int, transport_owner) -> bool:
+	var current_owner = _http_transport if transport == TransportType.HTTP else (
+		_subprocess if transport == TransportType.STDIO else _websocket)
+	return epoch == _tools_refresh_epoch and generation == protocol_profile.generation \
+		and transport_owner != null and transport_owner == current_owner
 
 
 ## Call a tool on the MCP server.
 ## timeout_sec is the STDIO per-request budget (0 = unbounded); HTTP/WebSocket
 ## transports use their own timeouts and ignore it.
 func call_tool(tool_name: String, arguments: Dictionary, timeout_sec: float = 120.0) -> Dictionary:
+	if transport == TransportType.WEBSOCKET:
+		return await _call_tool_websocket(tool_name, arguments)
+	var outcome = await call_tool_outcome(tool_name, arguments, timeout_sec)
+	return outcome.application
+
+
+func call_tool_outcome(tool_name: String, arguments: Dictionary,
+		timeout_sec: float = 120.0):
 	match transport:
 		TransportType.HTTP:
-			return await _call_tool_http(tool_name, arguments)
+			return await _call_tool_http_outcome(tool_name, arguments)
 		TransportType.WEBSOCKET:
-			return await _call_tool_websocket(tool_name, arguments)
+			var websocket_outcome = ToolCallOutcome.new()
+			websocket_outcome.application = await _call_tool_websocket(tool_name, arguments)
+			return websocket_outcome
 		TransportType.STDIO:
-			return await _call_tool_stdio(tool_name, arguments, timeout_sec)
+			return await _call_tool_stdio_outcome(tool_name, arguments, timeout_sec)
 
-	return {"error": "Invalid transport type"}
+	return ToolCallOutcome.failure("Invalid transport type")
 
 
 ## Explicit native lifetime; the existing call_tool API remains unchanged.
 func call_tool_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	return await context.run(_call_with_context.bind(tool_name, arguments, context))
+
+
+func call_tool_outcome_with_context(tool_name: String, arguments: Dictionary,
+		context: ExecutionContext):
+	if context.is_stopped():
+		var stopped = ToolCallOutcome.new()
+		stopped.application = context.stopped_result()
+		return stopped
+	match transport:
+		TransportType.HTTP:
+			return await _call_tool_http_outcome(tool_name, arguments, context)
+		TransportType.STDIO:
+			return await _call_tool_stdio_outcome(tool_name, arguments,
+				context.remaining_seconds(), context)
+		TransportType.WEBSOCKET:
+			var websocket_outcome = ToolCallOutcome.new()
+			websocket_outcome.application = await _call_tool_websocket(tool_name, arguments, context)
+			return websocket_outcome
+	return ToolCallOutcome.failure("Result-aware transport is unavailable")
 
 
 func _call_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
@@ -365,8 +483,14 @@ func _on_http_notification(message: Dictionary, request_id: Variant) -> void:
 
 ## HTTP transport owns profile negotiation, bounded streaming and cancellation.
 func _call_tool_http(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	var outcome = await _call_tool_http_outcome(tool_name, arguments, context)
+	return outcome.application
+
+
+func _call_tool_http_outcome(tool_name: String, arguments: Dictionary,
+		context: ExecutionContext = null):
 	if _http_transport == null:
-		return {"error": "HTTP transport is not connected"}
+		return ToolCallOutcome.failure("HTTP transport is not connected")
 	var method := tool_name
 	var params := arguments
 	var schema: Variant = {}
@@ -380,24 +504,33 @@ func _call_tool_http(tool_name: String, arguments: Dictionary, context: Executio
 	var owner_generation: int = owner.generation
 	var response: Dictionary = await owner.request_method(method, params, schema, context)
 	if owner != _http_transport or owner.generation != owner_generation:
-		return {"error": "HTTP connection superseded"}
+		return ToolCallOutcome.failure("HTTP connection superseded")
 	if response.has("error"):
-		return response
+		return ToolCallOutcome.from_error(response)
 	if context != null and context.is_stopped():
-		return context.stopped_result()
-	var raw_result: Dictionary = response.get("result", {})
+		var stopped = ToolCallOutcome.new()
+		stopped.application = context.stopped_result()
+		return stopped
+	var raw_result_value: Variant = response.get("result", {})
+	if not raw_result_value is Dictionary:
+		return ToolCallOutcome.failure("MCP result was not an object")
+	var raw_result: Dictionary = raw_result_value
 	if method == "tools/list":
-		return raw_result
+		var list_outcome = ToolCallOutcome.new()
+		list_outcome.application = raw_result
+		return list_outcome
 	var envelope = ToolResultEnvelope.from_mcp(raw_result,
 		owner.profile.era == Profile.Era.MODERN_2026_07_28, response.get("wire"))
+	var outcome = await ToolResultAdapter.adapt(envelope)
+	if owner != _http_transport or owner.generation != owner_generation \
+			or (context != null and context.is_stopped()):
+		return ToolCallOutcome.failure("HTTP request cancelled during result delivery")
 	tool_result_envelope_received.emit(tool_name, envelope)
-	if owner.generation != owner_generation or (context != null and context.is_stopped()):
-		return {"error": "HTTP request cancelled during result delivery"}
-	var result: Dictionary = envelope.to_application_result()
-	if envelope.result_type == "complete":
-		result = _normalize_mcp_tool_result(result)
-	tool_result_received.emit(tool_name, result)
-	return result
+	if owner != _http_transport or owner.generation != owner_generation \
+			or (context != null and context.is_stopped()):
+		return ToolCallOutcome.failure("HTTP request cancelled after result envelope delivery")
+	tool_result_received.emit(tool_name, outcome.application)
+	return outcome
 
 
 ## WebSocket transport: Connect to server
@@ -690,7 +823,10 @@ func _write_stdio_notification(notification: Dictionary, generation: int) -> boo
 	var process = _subprocess
 	if process == null or generation != _process_generation or not process.is_running():
 		return false
-	if process.write_data(JSON.stringify(notification) + "\n"):
+	var encoded := JsonSerialization.encode(notification)
+	if not encoded.get("ok", false):
+		return false
+	if process.write_data(str(encoded.raw) + "\n"):
 		return true
 	_on_stdio_io_failure(process)
 	return false
@@ -906,7 +1042,12 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 		"id": cap_id,
 		"result": result_payload,
 	}
-	var response_json := JSON.stringify(response) + "\n"
+	var encoded_response := JsonSerialization.encode(response)
+	if not encoded_response.get("ok", false):
+		push_warning("[MCP STDIO] Capability result contains unsupported JSON values")
+		_on_stdio_io_failure(origin_process)
+		return
+	var response_json: String = encoded_response.raw + "\n"
 	print("[MCP STDIO] Writing capability result back: %s" % response_json.left(200))
 	if origin_process == null or origin_process != _subprocess:
 		return
@@ -917,18 +1058,24 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 
 ## STDIO transport: Call a tool
 func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: float = 120.0, context: ExecutionContext = null) -> Dictionary:
+	var outcome = await _call_tool_stdio_outcome(tool_name, arguments, timeout_sec, context)
+	return outcome.application
+
+
+func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
+		timeout_sec: float = 120.0, context: ExecutionContext = null):
 	if not _subprocess or not _subprocess.is_running():
-		return {"error": "STDIO transport not connected"}
+		return ToolCallOutcome.failure("STDIO transport not connected")
 	if protocol_profile.era == Profile.Era.MODERN_2026_07_28 \
 			and not protocol_profile.supports("tools"):
-		return {"error": "Modern MCP server does not advertise the tools capability"}
+		return ToolCallOutcome.failure("Modern MCP server does not advertise the tools capability")
 
 	# For tools/list, use that method directly. Unwrap the JSON-RPC envelope
 	# so callers (refresh_tools) see {tools: [...]} at the top level — matches
 	# the post-`rpc_response.get("result")` shape contract used by the other
 	# transports and by STDIO profile negotiation.
 	if tool_name == "tools/list":
-		var list_request := _stdio_method_request("tools/list", {})
+		var list_request := _stdio_method_request("tools/list", arguments)
 		var list_generation := _process_generation
 		var list_response := await _stdio_request(list_request, timeout_sec,
 			"tools/list", context, list_generation)
@@ -936,17 +1083,21 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: flo
 		if list_wire != null:
 			var list_numeric: Dictionary = await WireAdapter.validate_for_application(list_wire)
 			if list_generation != _process_generation:
-				return {"error": "MCP process changed while validating tools/list"}
+				return ToolCallOutcome.failure("MCP process changed while validating tools/list")
 			if not list_numeric.get("ok", false):
-				return {"error": _wire_validation_message(list_numeric)}
+				return ToolCallOutcome.failure(_wire_validation_message(list_numeric))
 		if context != null and context.is_stopped():
-			return context.stopped_result()
+			var stopped = ToolCallOutcome.new()
+			stopped.application = context.stopped_result()
+			return stopped
 		if list_response.get("error"):
-			return {"error": str(list_response.error)}
+			return ToolCallOutcome.from_error(list_response)
 		var inner = list_response.get("result", {})
 		if inner is Dictionary:
-			return inner
-		return {"error": "tools/list response 'result' was not a Dictionary (got type=%d, value=%s)" % [typeof(inner), str(inner).left(120)]}
+			var list_outcome = ToolCallOutcome.new()
+			list_outcome.application = inner
+			return list_outcome
+		return ToolCallOutcome.failure("tools/list response 'result' was not a Dictionary (got type=%d, value=%s)" % [typeof(inner), str(inner).left(120)])
 
 	# For regular tool calls, use tools/call with wrapped params
 	var request := _stdio_method_request("tools/call", {
@@ -961,22 +1112,29 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: flo
 	if source_wire != null:
 		var numeric_check: Dictionary = await WireAdapter.validate_for_application(source_wire)
 		if call_generation != _process_generation:
-			return {"error": "MCP process changed while validating tool result"}
+			return ToolCallOutcome.failure("MCP process changed while validating tool result")
 		if not numeric_check.get("ok", false):
-			return {"error": _wire_validation_message(numeric_check)}
+			return ToolCallOutcome.failure(_wire_validation_message(numeric_check))
 	if context != null and context.is_stopped():
-		return context.stopped_result()
+		var stopped = ToolCallOutcome.new()
+		stopped.application = context.stopped_result()
+		return stopped
 	if response.get("error"):
-		return {"error": str(response.error)}
+		return ToolCallOutcome.from_error(response)
 
 	var raw_result: Variant = response.get("result", {})
-	if raw_result is Dictionary:
-		tool_result_envelope_received.emit(tool_name,
-			ToolResultEnvelope.from_mcp(raw_result,
-				protocol_profile.era == Profile.Era.MODERN_2026_07_28, source_wire))
-	var result = _normalize_mcp_tool_result(raw_result)
-	tool_result_received.emit(tool_name, result)
-	return result
+	if not raw_result is Dictionary:
+		return ToolCallOutcome.failure("MCP tool result must be an object")
+	var envelope = ToolResultEnvelope.from_mcp(raw_result,
+		protocol_profile.era == Profile.Era.MODERN_2026_07_28, source_wire)
+	var outcome = await ToolResultAdapter.adapt(envelope)
+	if call_generation != _process_generation or (context != null and context.is_stopped()):
+		return ToolCallOutcome.failure("MCP request cancelled during result delivery")
+	tool_result_envelope_received.emit(tool_name, envelope)
+	if call_generation != _process_generation or (context != null and context.is_stopped()):
+		return ToolCallOutcome.failure("MCP request cancelled after result envelope delivery")
+	tool_result_received.emit(tool_name, outcome.application)
+	return outcome
 
 
 func _normalize_mcp_tool_result(result) -> Dictionary:
@@ -1066,8 +1224,8 @@ func _drain_stdout(expected_process = null) -> void:
 						print("[MCP %s] Ignoring host.notify with unexpected id from plugin '%s'"
 								% [server_name, plugin_id])
 				"notifications/tools/list_changed":
-					# go-sdk emits this on startup, safe to ignore.
-					pass
+					if protocol_profile.era == Profile.Era.INITIALIZED_LEGACY:
+						tools_list_changed.emit()
 				_:
 					print("[MCP %s] Unrecognized method from plugin '%s': %s"
 							% [server_name, plugin_id, method])

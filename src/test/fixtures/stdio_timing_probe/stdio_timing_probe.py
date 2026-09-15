@@ -93,6 +93,54 @@ TOOLS = [
     {"name": "large_numeric",
      "description": "Returns enough numeric data to keep raw validation observable.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "nested_precision_loss",
+     "description": "Returns a lossy number only inside a JSON text part.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "scalar_precision_loss",
+     "description": "Returns an unsafe integer as the entire JSON text part.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "input_required",
+     "description": "Returns a modern elicitation result.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "typed_input",
+     "description": "Requires a native integer argument.",
+     "inputSchema": {"type": "object", "properties": {
+         "count": {"type": "integer"}}, "required": ["count"]}},
+    {"name": "requires_output",
+     "description": "Declares structured output the fixture does not satisfy.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []},
+     "outputSchema": {"type": "object", "properties": {
+         "ok": {"type": "boolean"}}, "required": ["ok"]}},
+    {"name": "invalid_input_root",
+     "description": "Uses a Boolean root where Tool requires an object schema.",
+     "inputSchema": True},
+    {"name": "invalid_output_root",
+     "description": "Uses a Boolean output root where Tool requires an object schema.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []},
+     "outputSchema": True},
+    {"name": "capability_direct",
+     "description": "Returns one directly adapted capability request.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "capability_nested",
+     "description": "Returns a capability request inside a second JSON string.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "capability_two",
+     "description": "Returns two capability requests for ownership tests.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "valid_output",
+     "description": "Returns structured output matching its declaration.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []},
+     "outputSchema": {"type": "object", "properties": {
+         "ok": {"type": "boolean"}}, "required": ["ok"]}},
+    {"name": "valid_array_output",
+     "description": "Returns structured array output allowed by Tool.outputSchema.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []},
+     "outputSchema": {"type": "array", "items": {"type": "integer"}}},
+    {"name": "error_missing_output",
+     "description": "Returns isError without structured output.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []},
+     "outputSchema": {"type": "object", "properties": {
+         "ok": {"type": "boolean"}}, "required": ["ok"]}},
 ]
 
 
@@ -171,6 +219,57 @@ async def handle_tools_call(req_id, name, args):
                        '{"code":-32000,"message":"fixture error","data":'
                        '{"n":0.10000000000000001}}}' % json.dumps(req_id))
 
+    elif name == "nested_precision_loss":
+        await send_raw('{"jsonrpc":"2.0","id":%s,"result":'
+                       '{"resultType":"complete","content":[{"type":"text",'
+                       '"text":"{\\"n\\":0.10000000000000001}"}]}}'
+                       % json.dumps(req_id))
+
+    elif name == "scalar_precision_loss":
+        await send_raw('{"jsonrpc":"2.0","id":%s,"result":'
+                       '{"resultType":"complete","content":[{"type":"text",'
+                       '"text":"9007199254740993"}]}}'
+                       % json.dumps(req_id))
+
+    elif name == "input_required":
+        await send({"jsonrpc": "2.0", "id": req_id, "result": {
+            "resultType": "input_required", "requestState": {"opaque": True},
+            "content": [{"type": "text", "text": "must not be adapted"}]}})
+
+    elif name in ("typed_input", "requires_output"):
+        await send(_text_result(req_id, {"success": True}))
+
+    elif name == "capability_direct":
+        await send(_text_result(req_id, {"success": True, "capability_requests": [
+            {"capability": "notes.create", "args": {"title": "direct"}}]}))
+
+    elif name == "capability_nested":
+        await send(_text_result(req_id, {"success": True, "content": [{
+            "type": "text", "text": json.dumps({"capability_requests": [
+                {"capability": "notes.create", "args": {"title": "nested"}}]})}]}))
+
+    elif name == "capability_two":
+        await send(_text_result(req_id, {"success": True, "capability_requests": [
+            {"capability": "notes.create", "args": {"index": 1}},
+            {"capability": "notes.create", "args": {"index": 2}}]}))
+
+    elif name == "valid_output":
+        await send({"jsonrpc": "2.0", "id": req_id, "result": {
+            "resultType": "complete", "content": [{"type": "text",
+                "text": json.dumps({"success": True})}],
+            "structuredContent": {"ok": True}}})
+
+    elif name == "valid_array_output":
+        await send({"jsonrpc": "2.0", "id": req_id, "result": {
+            "resultType": "complete", "content": [{"type": "text",
+                "text": json.dumps({"success": True})}],
+            "structuredContent": [1, 2, 3]}})
+
+    elif name == "error_missing_output":
+        await send({"jsonrpc": "2.0", "id": req_id, "result": {
+            "resultType": "complete", "isError": True,
+            "content": [{"type": "text", "text": "expected failure"}]}})
+
     else:
         await send({"jsonrpc": "2.0", "id": req_id,
                     "error": {"code": -32601,
@@ -200,7 +299,8 @@ async def dispatch(msg):
                         "supportedVersions": ["2026-07-28"],
                         "capabilities": {"tools": {}}}})
                 asyncio.create_task(late_reply())
-        elif MODE == "modern":
+        elif MODE in ("modern", "paginated", "repeat_cursor", "second_page_error",
+                      "duplicate_tools"):
             meta = msg.get("params", {}).get("_meta", {})
             if (meta.get("io.modelcontextprotocol/protocolVersion") != "2026-07-28"
                     or meta.get("io.modelcontextprotocol/clientCapabilities") != {}
@@ -229,8 +329,32 @@ async def dispatch(msg):
             "serverInfo": {"name": "stdio_timing_probe", "version": "0.1.0"}
         }})
     elif method == "tools/list":
+        # Modern list results carry the core result discriminator; initialized
+        # legacy peers retain their historical result shape.
+        listed = {"tools": TOOLS}
+        if MODE in ("modern", "paginated", "repeat_cursor", "second_page_error",
+                    "duplicate_tools"):
+            listed.update({"resultType": "complete", "ttlMs": 0,
+                           "cacheScope": "private"})
+        cursor = msg.get("params", {}).get("cursor", "")
+        if MODE == "paginated":
+            listed["tools"] = TOOLS[:2] if not cursor else TOOLS[2:]
+            if not cursor:
+                listed["nextCursor"] = "page-2"
+        elif MODE == "repeat_cursor":
+            listed["tools"] = TOOLS[:1]
+            listed["nextCursor"] = "same"
+        elif MODE == "second_page_error" and cursor:
+            await send({"jsonrpc": "2.0", "id": req_id, "error": {
+                "code": -32000, "message": "second page failed"}})
+            return
+        elif MODE == "second_page_error":
+            listed["tools"] = TOOLS[:1]
+            listed["nextCursor"] = "page-2"
+        elif MODE == "duplicate_tools":
+            listed["tools"] = [TOOLS[0], dict(TOOLS[0])]
         await send({"jsonrpc": "2.0", "id": req_id,
-                    "result": {"tools": TOOLS}})
+                    "result": listed})
     elif method == "tools/call":
         params = msg.get("params", {})
         if MODE == "modern":

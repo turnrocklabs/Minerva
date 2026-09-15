@@ -70,3 +70,7 @@ static func _shared_validator():
 	_validator.name = "MCPWireNumericValidator"
 	tree.root.add_child(_validator)
 	return _validator
+
+
+static func validator_client():
+	return _shared_validator()

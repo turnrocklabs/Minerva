@@ -8,6 +8,7 @@ const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const MCPServerConnectionScript := preload("res://Scripts/Services/MCP/MCPServerConnection.gd")
 const MCPConfigScript := preload("res://Scripts/Services/MCP/MCPConfig.gd")
+const ToolSchemaRuntime := preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 const MinervaMCPServerScript := preload("res://Scripts/Services/MCP/MinervaMCPServer.gd")
 const MinervaMCPHttpServerScript := preload("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd")
 
@@ -15,13 +16,16 @@ signal server_connected(server_name: String)
 signal server_disconnected(server_name: String)
 signal server_error(server_name: String, error: String)
 signal tool_executed(server_name: String, tool_name: String, result: Dictionary)
+signal tool_outcome_executed(server_name: String, tool_name: String, outcome)
 signal tools_refreshed()
 
 ## Connected server instances
 var servers: Dictionary = {}  # server_name -> MCPServerConnection
+var _connecting_servers: Dictionary = {}
 
 ## Registry of all available tools across all servers
 var tool_registry: Dictionary = {}  # tool_name -> MCPToolDefinition
+var _tool_connection_owners: Dictionary = {}
 
 ## Configuration for MCP servers
 var config = null
@@ -72,6 +76,8 @@ func connect_server(server_name: String) -> Error:
 	if servers.has(server_name):
 		# Already connected
 		return OK
+	if _connecting_servers.has(server_name):
+		return ERR_BUSY
 
 	var transport = MCPConfigScript.transport_type_from_string(server_config.type)
 	var connection = MCPServerConnectionScript.new(
@@ -95,32 +101,39 @@ func connect_server(server_name: String) -> Error:
 		connection.working_directory = server_config.working_directory
 
 	# Connect signals
-	connection.connected.connect(_on_server_connected.bind(server_name))
-	connection.disconnected.connect(_on_server_disconnected.bind(server_name))
-	connection.tool_result_received.connect(_on_tool_result.bind(server_name))
+	connection.disconnected.connect(_on_server_disconnected.bind(server_name, connection))
+	connection.tools_list_changed.connect(_on_tools_list_changed.bind(server_name, connection))
+	_connecting_servers[server_name] = connection
 
 	var err: Error = await connection.connect_to_server()
+	if _connecting_servers.get(server_name) != connection:
+		connection.disconnect_from_server()
+		return ERR_BUSY
 	if err != OK:
+		_connecting_servers.erase(server_name)
 		var msg := "Failed to connect to %s: %s" % [server_name, error_string(err)]
 		push_error("[MCP] " + msg)
 		server_error.emit(server_name, msg)
 		SingletonObject.create_toast_notification(msg, ToastNotification.Type.ERROR)
 		return err
 
-	servers[server_name] = connection
-
 	# Refresh tools — rollback connection if this fails
 	var refresh_err := await connection.refresh_tools()
+	if _connecting_servers.get(server_name) != connection:
+		connection.disconnect_from_server()
+		return ERR_BUSY
 	if refresh_err is int and refresh_err != OK:
+		_connecting_servers.erase(server_name)
 		push_warning("[MCP] Tool refresh failed for %s, rolling back connection" % server_name)
 		connection.disconnect_from_server()
-		servers.erase(server_name)
 		var msg := "%s connected but tool discovery failed — disconnected" % server_name
 		server_error.emit(server_name, msg)
 		SingletonObject.create_toast_notification(msg, ToastNotification.Type.ERROR)
 		return ERR_CANT_ACQUIRE_RESOURCE
 
-	_register_server_tools(connection)
+	servers[server_name] = connection
+	_connecting_servers.erase(server_name)
+	_replace_server_tools(connection)
 
 	# Debug: Log registered tools
 	print("[MCP] Registered %d tools from %s:" % [connection.tools.size(), server_name])
@@ -133,18 +146,24 @@ func connect_server(server_name: String) -> Error:
 
 ## Disconnect from a server
 func disconnect_server(server_name: String) -> void:
-	if not servers.has(server_name):
+	var connection = servers.get(server_name, _connecting_servers.get(server_name))
+	if connection == null:
 		return
-
-	var connection = servers[server_name]
+	_connecting_servers.erase(server_name)
+	if servers.get(server_name) == connection:
+		servers.erase(server_name)
 	connection.disconnect_from_server()
-	_unregister_server_tools(server_name)
-	servers.erase(server_name)
+	_unregister_server_tools(server_name, connection)
+	server_disconnected.emit(server_name)
 
 
 ## Disconnect from all servers
 func disconnect_all() -> void:
-	for server_name in servers.keys():
+	var names: Array = servers.keys()
+	for server_name in _connecting_servers.keys():
+		if server_name not in names:
+			names.append(server_name)
+	for server_name in names:
 		disconnect_server(server_name)
 
 	# Also disconnect the Minerva server
@@ -515,26 +534,66 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 		ext_injections = policy_result.get("injections", [])
 
 	var connection = servers[server_name]
+	if _tool_connection_owners.get(tool_name) != connection:
+		return {"error": "Tool catalog owner no longer matches the live server connection",
+			"success": false}
 
 	# Coerce argument types to match the tool's declared schema.
 	# LLMs often send objects as JSON strings, integers as strings, etc.
-	if tool_registry.has(tool_name):
-		arguments = MCPToolUtils.coerce_args_to_schema(arguments, tool_registry[tool_name].input_schema)
+	if tool != null:
+		var native_input: Variant = tool.native_input_schema()
+		if native_input is Dictionary:
+			arguments = MCPToolUtils.coerce_args_to_schema(arguments, native_input)
+		var input_check: Dictionary = await ToolSchemaRuntime.validate(
+			tool.native_input_schema(), arguments)
+		if servers.get(server_name) != connection:
+			return {"error": "Server connection changed during input validation", "success": false}
+		if context.is_stopped():
+			return context.stopped_result()
+		if not input_check.get("ok", false):
+			return {"error": "Tool arguments do not match the native MCP schema",
+				"error_code": str(input_check.get("error", {}).get("code", "invalid_arguments")),
+				"success": false}
 
 	if context.is_stopped():
 		return context.stopped_result()
-	var result: Dictionary = await connection.call_tool_with_context(tool_name, arguments, context)
+	var outcome = await connection.call_tool_outcome_with_context(tool_name, arguments, context)
 	if context.is_stopped():
 		return context.stopped_result()
+	if servers.get(server_name) != connection:
+		return {"error": "Server connection changed during tool execution", "success": false}
+	var result: Dictionary = outcome.application
+	if outcome.envelope != null and outcome.envelope.result_type == "complete" \
+			and outcome.application.get("success", not outcome.application.has("error")) \
+			and tool.original_definition.has("outputSchema"):
+		if not outcome.envelope.original_result.has("structuredContent"):
+			outcome.application = {"error":
+				"Tool result omitted structuredContent required by outputSchema",
+				"error_code": "invalid_result", "success": false}
+		else:
+			var output_check: Dictionary = await ToolSchemaRuntime.validate(
+				tool.native_output_schema(),
+				outcome.envelope.original_result.structuredContent)
+			if servers.get(server_name) != connection:
+				return {"error": "Server connection changed during output validation", "success": false}
+			if context.is_stopped():
+				return context.stopped_result()
+			if not output_check.get("ok", false):
+				outcome.application = {"error":
+					"Tool structured result does not match its MCP outputSchema",
+					"error_code": str(output_check.get("error", {}).get("code", "invalid_result")),
+					"success": false}
+	result = outcome.application
 
 	# Normalize result
 	if not result.has("success"):
 		result["success"] = not result.has("error")
 
 	# If tool execution failed with a connection error, clean up the dead connection
-	if not result.get("success", false) and not connection.server_connected:
+	if not result.get("success", false) and not connection.server_connected \
+			and servers.get(server_name) == connection:
 		push_warning("[MCP] Server %s disconnected during tool execution — cleaning up" % server_name)
-		_unregister_server_tools(server_name)
+		_unregister_server_tools(server_name, connection)
 		servers.erase(server_name)
 		server_disconnected.emit(server_name)
 
@@ -545,6 +604,7 @@ func _execute_tool_with_context(tool_name: String, arguments: Dictionary, contex
 			result["_injected_knowledge"] = resolved
 
 	tool_executed.emit(server_name, tool_name, result)
+	tool_outcome_executed.emit(server_name, tool_name, outcome)
 	return result
 
 
@@ -640,12 +700,23 @@ func get_connected_servers() -> Array[String]:
 
 ## Refresh tools from all connected servers
 func refresh_all_tools() -> void:
-	tool_registry.clear()
-	for server_name in servers:
-		var connection = servers[server_name]
-		await connection.refresh_tools()
-		_register_server_tools(connection)
+	for server_name in servers.keys():
+		var connection = servers.get(server_name)
+		if connection == null:
+			continue
+		var refreshed: Error = await connection.refresh_tools()
+		if refreshed == OK and servers.get(server_name) == connection:
+			_replace_server_tools(connection)
 	tools_refreshed.emit()
+
+
+func _replace_server_tools(connection) -> void:
+	if servers.get(connection.server_name) != connection:
+		return
+	# This live owner is the only connection allowed to replace its server's
+	# prior catalog; stale callbacks use the exact-owner unregister path.
+	_unregister_server_tools(connection.server_name)
+	_register_server_tools(connection)
 
 
 ## Register tools from a server connection
@@ -667,9 +738,10 @@ func _register_server_tools(connection) -> void:
 					tool.name, connection.server_name])
 				collision_count += 1
 				continue
-			push_warning("Tool name collision: %s (from %s, replacing %s)" % [
+			push_warning("Tool name collision: %s (from %s, already owned by %s)" % [
 				tool.name, connection.server_name, existing_server])
 			collision_count += 1
+			continue
 		# Use server name as tool_set for external tools so they pass category filters
 		if tool.tool_set.is_empty() and connection.server_name != "minerva":
 			tool.tool_set = connection.server_name
@@ -680,6 +752,7 @@ func _register_server_tools(connection) -> void:
 			tool.tool_set = "cobrowser-native"
 
 		tool_registry[tool.name] = tool
+		_tool_connection_owners[tool.name] = connection
 
 		# Always index connected external tools for search-based discovery
 		if minerva_server and minerva_server.tool_search_index:
@@ -696,31 +769,40 @@ func _register_server_tools(connection) -> void:
 		)
 	if collision_count > 0:
 		SingletonObject.create_toast_notification(
-			"%s: %d tool name collision(s) — later server wins" % [connection.server_name, collision_count],
+			"%s: %d tool name collision(s) — existing owners kept" % [connection.server_name, collision_count],
 			ToastNotification.Type.WARNING
 		)
 
 
 ## Unregister tools from a server
-func _unregister_server_tools(server_name: String) -> void:
+func _unregister_server_tools(server_name: String, expected_connection = null) -> void:
 	var to_remove: Array[String] = []
 	for tool_name in tool_registry:
-		if tool_registry[tool_name].server_name == server_name:
+		if tool_registry[tool_name].server_name == server_name \
+				and (expected_connection == null \
+				or _tool_connection_owners.get(tool_name) == expected_connection):
 			to_remove.append(tool_name)
 
 	for tool_name in to_remove:
 		tool_registry.erase(tool_name)
+		_tool_connection_owners.erase(tool_name)
 
 
 ## Signal handlers
-func _on_server_connected(server_name: String) -> void:
-	server_connected.emit(server_name)
-
-
-func _on_server_disconnected(server_name: String) -> void:
-	_unregister_server_tools(server_name)
+func _on_server_disconnected(server_name: String, connection) -> void:
+	if _connecting_servers.get(server_name) == connection:
+		_connecting_servers.erase(server_name)
+	if servers.get(server_name) != connection:
+		return
+	servers.erase(server_name)
+	_unregister_server_tools(server_name, connection)
 	server_disconnected.emit(server_name)
 
 
-func _on_tool_result(tool_name: String, result: Dictionary, server_name: String) -> void:
-	tool_executed.emit(server_name, tool_name, result)
+func _on_tools_list_changed(server_name: String, connection) -> void:
+	if servers.get(server_name) != connection:
+		return
+	var refreshed: Error = await connection.refresh_tools()
+	if refreshed == OK and servers.get(server_name) == connection:
+		_replace_server_tools(connection)
+		tools_refreshed.emit()

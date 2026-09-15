@@ -2,6 +2,9 @@ class_name PluginToolRegistry
 extends RefCounted
 
 const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
+const MCPProfile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
+const ToolCallOutcome = preload("res://Scripts/Services/MCP/MCPToolCallOutcome.gd")
+const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 ## Bridges plugin tools into Minerva's MCP tool system.
 ##
 ## Maintains a registry of tools contributed by installed plugins and handles
@@ -224,6 +227,7 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 			"name": tool_name,
 			"description": str(tool_entry.get("description", "")),
 			"input_schema": input_schema,
+			"llm_input_schema": input_schema.duplicate(true),
 			"source": "plugin:%s" % plugin_id,
 			"executor": executor,
 			"mcp_definition": mcp_definition,
@@ -376,17 +380,40 @@ func get_tool_count() -> int:
 ## NOTE: This method is async (uses await internally). The caller inside
 ## MinervaMCPServer._execute_tool_impl() must use "return await".
 func handle_tool_call(tool_name: String, args: Dictionary, context: ExecutionContext = null) -> Dictionary:
+	var outcome = await handle_tool_call_outcome(tool_name, args, context)
+	return outcome.application
+
+
+func handle_tool_call_outcome(tool_name: String, args: Dictionary,
+		context: ExecutionContext = null):
 	if context == null:
 		context = ExecutionContext.create("plugin_tool")
 	context = context.for_provider(str(_plugin_by_tool.get(tool_name, "")))
-	return await context.run(_handle_tool_with_context.bind(tool_name, args, context))
+	var holder := {}
+	var gate: Dictionary = await context.run(
+		_capture_outcome.bind(tool_name, args, context, holder))
+	if holder.has("outcome"):
+		return holder.outcome
+	return ToolCallOutcome.from_error(gate)
+
+
+func _capture_outcome(tool_name: String, args: Dictionary, context: ExecutionContext,
+		holder: Dictionary) -> Dictionary:
+	holder["outcome"] = await _handle_tool_outcome_with_context(tool_name, args, context)
+	return {"ok": true}
 
 
 func _handle_tool_with_context(tool_name: String, args: Dictionary, context: ExecutionContext) -> Dictionary:
+	var outcome = await _handle_tool_outcome_with_context(tool_name, args, context)
+	return outcome.application
+
+
+func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
+		context: ExecutionContext):
 	# --- Step 1: resolve owning plugin ---
 	var plugin_id: String = _plugin_by_tool.get(tool_name, "")
 	if plugin_id.is_empty():
-		return PluginErrors.tool_not_found("", tool_name)
+		return ToolCallOutcome.from_error(PluginErrors.tool_not_found("", tool_name))
 
 	# --- Step 1.5: panel-executed tools (executor == "panel") ---
 	# Panel tools run host-side inside the plugin's live scene panel; the
@@ -394,19 +421,21 @@ func _handle_tool_with_context(tool_name: String, args: Dictionary, context: Exe
 	# (DCR 019f6c3d0e3d contract §2 — this also removes the backend-stopped
 	# failure mode for these tools).
 	if _get_tool_executor(plugin_id, tool_name) == "panel":
-		return await _handle_panel_tool_call(plugin_id, tool_name, args)
+		var panel_outcome = ToolCallOutcome.new()
+		panel_outcome.application = await _handle_panel_tool_call(plugin_id, tool_name, args)
+		return panel_outcome
 
 	# --- Step 2: verify plugin is running ---
 	if plugin_manager == null:
 		push_error("[PluginToolRegistry] plugin_manager is not set")
-		return PluginErrors.plugin_not_running(plugin_id)
+		return ToolCallOutcome.from_error(PluginErrors.plugin_not_running(plugin_id))
 
 	var status := plugin_manager.get_plugin_status(plugin_id)
 	if status.get("error"):
-		return PluginErrors.plugin_not_running(plugin_id)
+		return ToolCallOutcome.from_error(PluginErrors.plugin_not_running(plugin_id))
 
 	if not status.get("running", false):
-		return PluginErrors.plugin_not_running(plugin_id)
+		return ToolCallOutcome.from_error(PluginErrors.plugin_not_running(plugin_id))
 
 	# --- Step 3: policy check ---
 	# Plugin tools are callable if the plugin is running. Host capability checks
@@ -422,7 +451,7 @@ func _handle_tool_with_context(tool_name: String, args: Dictionary, context: Exe
 	var conn: MCPServerConnection = plugin_manager.get_connection(plugin_id)
 	if conn == null:
 		push_error("[PluginToolRegistry] No connection for running plugin '%s'" % plugin_id)
-		return PluginErrors.plugin_not_running(plugin_id)
+		return ToolCallOutcome.from_error(PluginErrors.plugin_not_running(plugin_id))
 
 	if audit_log != null:
 		audit_log.log_event(plugin_id, "tool_call_dispatched", {
@@ -435,16 +464,51 @@ func _handle_tool_with_context(tool_name: String, args: Dictionary, context: Exe
 	# was applied). Look it up from the stored "_backend_name" field. If absent
 	# (manifest-declared tools always use the exact name), use tool_name as-is.
 	var dispatch_name := tool_name
+	var registered_entry: Dictionary = {}
 	for entry in _tools_by_plugin.get(plugin_id, []):
 		if entry.get("name") == tool_name:
+			registered_entry = entry
 			var backend_name: String = entry.get("_backend_name", "")
 			if not backend_name.is_empty():
 				dispatch_name = backend_name
 			break
-
-	var result: Dictionary = await conn.call_tool_with_context(dispatch_name, args, context)
+	var native_definition: Dictionary = registered_entry.get("mcp_definition", {})
+	var input_schema: Variant = native_definition.get("inputSchema",
+		registered_entry.get("input_schema", {}))
+	var input_check: Dictionary = await ToolSchemaRuntime.validate(input_schema, args)
+	if plugin_manager.get_connection(plugin_id) != conn:
+		return ToolCallOutcome.failure("Plugin connection changed during input validation")
 	if context.is_stopped():
-		return context.stopped_result()
+		return ToolCallOutcome.from_error(context.stopped_result())
+	if not input_check.get("ok", false):
+		return ToolCallOutcome.failure("Plugin tool arguments do not match its native MCP schema",
+			str(input_check.get("error", {}).get("code", "invalid_arguments")))
+
+	var outcome = await conn.call_tool_outcome_with_context(dispatch_name, args, context)
+	if context.is_stopped():
+		return ToolCallOutcome.from_error(context.stopped_result())
+	if plugin_manager.get_connection(plugin_id) != conn:
+		return ToolCallOutcome.failure("Plugin connection changed during tool execution")
+	var result: Dictionary = outcome.application
+	if outcome.envelope != null and outcome.envelope.result_type == "complete" \
+			and outcome.application.get("success", not outcome.application.has("error")) \
+			and native_definition.has("outputSchema"):
+		if not outcome.envelope.original_result.has("structuredContent"):
+			outcome.application = ToolCallOutcome.failure(
+				"Plugin result omitted structuredContent required by outputSchema",
+				"invalid_result").application
+			return outcome
+		var output_check: Dictionary = await ToolSchemaRuntime.validate(
+			native_definition.outputSchema, outcome.envelope.original_result.structuredContent)
+		if plugin_manager.get_connection(plugin_id) != conn:
+			return ToolCallOutcome.failure("Plugin connection changed during output validation")
+		if context.is_stopped():
+			return ToolCallOutcome.from_error(context.stopped_result())
+		if not output_check.get("ok", false):
+			outcome.application = ToolCallOutcome.failure(
+				"Plugin result does not match its MCP outputSchema",
+				str(output_check.get("error", {}).get("code", "invalid_result"))).application
+			return outcome
 
 	if audit_log != null:
 		var succeeded := not result.has("error")
@@ -457,7 +521,19 @@ func _handle_tool_with_context(tool_name: String, args: Dictionary, context: Exe
 	# If the plugin's response includes "capability_requests", dispatch each
 	# through the CapabilityBroker. This lets plugins request host actions
 	# (e.g. notes.create) as part of their tool response.
-	result = await _process_capability_requests(plugin_id, tool_name, result, context)
+	if outcome.envelope == null or outcome.envelope.result_type != "complete" \
+			or not result.get("success", not result.has("error")):
+		return outcome
+	# Result-embedded capability requests belong only to the initialized legacy
+	# plugin lane. Modern peers use the separate negotiated control channel.
+	if conn.protocol_profile.era != MCPProfile.Era.INITIALIZED_LEGACY:
+		return outcome
+	result = await _process_capability_requests(plugin_id, tool_name, result, context, conn)
+	if context.is_stopped():
+		return ToolCallOutcome.from_error(context.stopped_result())
+	if plugin_manager.get_connection(plugin_id) != conn:
+		return ToolCallOutcome.failure("Plugin connection changed during capability processing")
+	outcome.application = result
 
 	# --- Step 6: drain stderr to Minerva's error display ---
 	# Plugin stderr is diagnostic output, not tool results. Route it to
@@ -486,7 +562,7 @@ func _handle_tool_with_context(tool_name: String, args: Dictionary, context: Exe
 						"output_preview": stderr_output.left(100)
 					})
 
-	return result
+	return outcome
 
 
 # ---------------------------------------------------------------------------
@@ -671,7 +747,8 @@ func _handle_panel_tool_call(plugin_id: String, tool_name: String, args: Diction
 ##   ]}
 ## Minerva dispatches each through CapabilityBroker (policy-checked) and appends
 ## the outcomes to the result.
-func _process_capability_requests(plugin_id: String, tool_name: String, result: Dictionary, context: ExecutionContext = null) -> Dictionary:
+func _process_capability_requests(plugin_id: String, tool_name: String, result: Dictionary,
+		context: ExecutionContext = null, expected_connection = null) -> Dictionary:
 	if capability_broker == null:
 		return result
 
@@ -679,19 +756,10 @@ func _process_capability_requests(plugin_id: String, tool_name: String, result: 
 	# from the inner text payload if present.
 	var cap_requests: Array = []
 
-	# Check direct field first
-	if result.has("capability_requests"):
+	# The result adapter has already validated and unwrapped JSON text. Never
+	# parse the protocol content again at this privileged capability boundary.
+	if result.get("capability_requests") is Array:
 		cap_requests = result["capability_requests"]
-	else:
-		# Parse from MCP content text (the plugin serializes JSON inside "text")
-		var content = result.get("content", [])
-		if content is Array and content.size() > 0:
-			var first = content[0]
-			if first is Dictionary and first.get("type") == "text":
-				var inner_text: String = first.get("text", "")
-				var json := JSON.new()
-				if json.parse(inner_text) == OK and json.data is Dictionary:
-					cap_requests = json.data.get("capability_requests", [])
 
 	if cap_requests.is_empty():
 		return result
@@ -701,10 +769,17 @@ func _process_capability_requests(plugin_id: String, tool_name: String, result: 
 	for req in cap_requests:
 		if context != null and context.is_stopped():
 			return context.stopped_result()
+		if expected_connection != null \
+				and (plugin_manager == null \
+				or plugin_manager.get_connection(plugin_id) != expected_connection):
+			return ToolCallOutcome.failure("Plugin connection changed during capability processing").application
 		if not req is Dictionary:
 			continue
 		var capability: String = str(req.get("capability", ""))
-		var cap_args: Dictionary = req.get("args", {})
+		var args_value: Variant = req.get("args", {})
+		if not args_value is Dictionary:
+			continue
+		var cap_args: Dictionary = args_value
 
 		if audit_log != null:
 			audit_log.log_event(plugin_id, "capability_request", {
@@ -713,6 +788,8 @@ func _process_capability_requests(plugin_id: String, tool_name: String, result: 
 			})
 
 		var broker_result: Dictionary = await capability_broker.dispatch(plugin_id, capability, cap_args, context)
+		if expected_connection != null and plugin_manager.get_connection(plugin_id) != expected_connection:
+			return ToolCallOutcome.failure("Plugin connection changed during capability processing").application
 		broker_results.append({
 			"capability": capability,
 			"result": broker_result,
@@ -911,6 +988,8 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 
 	# Refresh the tools list from the backend.
 	var refresh_err: int = await conn.refresh_tools()
+	if plugin_manager != null and plugin_manager.get_connection(plugin_id) != conn:
+		return {"error": "Plugin connection changed during tool discovery"}
 	if refresh_err != OK:
 		push_warning("[PluginToolRegistry] tools/list refresh failed for plugin '%s' (err=%d)" % [
 			plugin_id, refresh_err
