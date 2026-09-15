@@ -26,6 +26,6 @@ cp "$SOURCE/LICENSE" "$DIST/jsoncons-LICENSE"
 ARTIFACTS="$ROOT/src/native/json_schema_helper/artifacts"
 mkdir -p "$ARTIFACTS"
 ARCHIVE="$ARTIFACTS/minerva-json-schema-helper-$TARGET.tar.gz"
-tar -czf "$ARCHIVE" -C "$DIST" .
+(cd "$ARTIFACTS" && tar -czf "$(basename "$ARCHIVE")" -C "$DIST" .)
 python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' \
   "$ARCHIVE" > "$ARCHIVE.sha256"
