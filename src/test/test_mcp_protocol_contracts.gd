@@ -71,6 +71,15 @@ func _run() -> void:
 		StdioNegotiation.classify_discovery({"error": "unknown",
 			"rpc_error": {"code": -32601, "message": "unknown"}}).get("fallback")
 		and StdioNegotiation.classify_discovery({"error": "timeout"}).get("fallback"))
+	var owned_legacy := StdioNegotiation.validate_legacy_initialize({"result": {
+		"protocolVersion": "2025-06-18", "capabilities": {},
+		"serverName": "scansort", "serverVersion": "0.0.1"}}, true)
+	check("hosted legacy plugins retain typed serverName identity compatibility",
+		not owned_legacy.has("error")
+		and owned_legacy.result.serverInfo == {"name": "scansort", "version": "0.0.1"}
+		and StdioNegotiation.validate_legacy_initialize({"result": {
+			"protocolVersion": "2025-06-18", "capabilities": {},
+			"serverName": "scansort", "serverVersion": "0.0.1"}}).has("error"))
 	var raw_definition := "{\"name\":\"probe\",\"inputSchema\":{},\"outputSchema\":{\"type\":\"integer\"},\"future\":7}"
 	var definition_value: Dictionary = JSON.parse_string(raw_definition)
 	var definition = Definition.from_dict(definition_value, "peer")

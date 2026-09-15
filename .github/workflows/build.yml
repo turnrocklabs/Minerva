@@ -1787,7 +1787,7 @@ jobs:
           python3 scripts/verify-packaged-mcp-app.py "$executable"
 
   create-release:
-    needs: [build-godot, export-macos, verify-packaged-voice, functional-tests]
+    needs: [build-godot, export-macos, verify-packaged-voice, functional-tests, tarball-smoke]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
@@ -1795,6 +1795,7 @@ jobs:
       always() &&
       needs.verify-packaged-voice.result == 'success' &&
       needs.functional-tests.result == 'success' &&
+      (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) &&
       ((github.event_name == 'push' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success') ||
        (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' &&
         ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success') ||

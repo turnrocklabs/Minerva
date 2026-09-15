@@ -93,7 +93,8 @@ static func classify_discovery(response: Dictionary) -> Dictionary:
 	return {"modern": true, "fallback": false, "result": result}
 
 
-static func validate_legacy_initialize(response: Dictionary) -> Dictionary:
+static func validate_legacy_initialize(response: Dictionary,
+		allow_hosted_plugin_identity_aliases: bool = false) -> Dictionary:
 	if response.has("error"):
 		return {"error": str(response.error)}
 	var result_value: Variant = response.get("result")
@@ -105,7 +106,16 @@ static func validate_legacy_initialize(response: Dictionary) -> Dictionary:
 	var version: String = result.protocolVersion
 	if version not in LEGACY_VERSIONS:
 		return {"error": "initialize returned unsupported protocolVersion '%s'" % version}
-	if not result.get("capabilities") is Dictionary or not result.get("serverInfo") is Dictionary:
+	if not result.get("capabilities") is Dictionary:
+		return {"error": "initialize result is missing capabilities or serverInfo"}
+	if not result.get("serverInfo") is Dictionary and allow_hosted_plugin_identity_aliases:
+		var legacy_name: Variant = result.get("serverName")
+		var legacy_version: Variant = result.get("serverVersion")
+		if legacy_name is String and not String(legacy_name).is_empty() \
+				and legacy_version is String and not String(legacy_version).is_empty():
+			result = result.duplicate(true)
+			result["serverInfo"] = {"name": legacy_name, "version": legacy_version}
+	if not result.get("serverInfo") is Dictionary:
 		return {"error": "initialize result is missing capabilities or serverInfo"}
 	var server_info: Dictionary = result.serverInfo
 	if not server_info.get("name") is String or String(server_info.name).is_empty() \

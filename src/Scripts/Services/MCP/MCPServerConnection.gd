@@ -799,7 +799,7 @@ func _negotiate_stdio(generation: int, startup_deadline_ms: int) -> Dictionary:
 			return _conn_error("MCP process changed while validating initialization")
 		if not init_numeric.get("ok", false):
 			return _conn_error(_wire_validation_message(init_numeric))
-	var validated := StdioNegotiation.validate_legacy_initialize(init)
+	var validated := StdioNegotiation.validate_legacy_initialize(init, not plugin_id.is_empty())
 	if validated.has("error"):
 		return validated
 	var initialized: Dictionary = validated.result
