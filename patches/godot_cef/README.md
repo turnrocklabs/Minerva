@@ -30,3 +30,7 @@ Keep CEF initialized for the extension lifetime, track every created browser,
 and close and drain them during Scene-stage extension teardown before the one
 final `CefShutdown`. If browser close callbacks cannot complete within the
 bounded drain, terminate instead of unloading `libcef` with live callbacks.
+On Windows, retain the exact loaded `libcef.dll` module for the remaining host
+process lifetime after verifying the raw `cef_initialize` export's module
+identity. The packaged-helper probe emits shutdown phases so CI proves browser
+drain and `CefShutdown` completed before a clean process exit.

@@ -1,8 +1,20 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index a5352a5..4ae3136 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -33,6 +33,7 @@ windows = { version = "0.62", features = [
+ ] }
+ windows-sys = { version = "0.61", features = [
+     "Win32_Foundation",
++    "Win32_System_LibraryLoader",
+     "Win32_UI_WindowsAndMessaging"
+ ] }
+ objc2 = "0.6"
 diff --git a/crates/gdcef/src/cef_init.rs b/crates/gdcef/src/cef_init.rs
-index 6818bfb..db9e3d8 100644
+index 6818bfb..1a9a1b5 100644
 --- a/crates/gdcef/src/cef_init.rs
 +++ b/crates/gdcef/src/cef_init.rs
-@@ -1,7 +1,11 @@
+@@ -1,7 +1,19 @@
  use cef::Settings;
 +use cef::{Browser, ImplBrowser, ImplBrowserHost};
  use godot::classes::{Engine, Os};
@@ -11,20 +23,32 @@ index 6818bfb..db9e3d8 100644
 +use std::collections::HashMap;
  use std::sync::{Mutex, MutexGuard};
 +use std::time::{Duration, Instant};
++
++#[cfg(target_os = "windows")]
++use std::path::Path;
++#[cfg(target_os = "windows")]
++use windows_sys::Win32::System::LibraryLoader::{
++    GetModuleFileNameW, GetModuleHandleExW, GetModuleHandleW, GetProcAddress,
++    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
++};
  
  #[cfg(target_os = "macos")]
  use crate::utils::get_framework_path;
-@@ -14,13 +18,21 @@ use crate::settings;
+@@ -14,13 +26,25 @@ use crate::settings;
  struct CefState {
      ref_count: usize,
      initialized: bool,
 +    finalizing: bool,
++    #[cfg(target_os = "windows")]
++    module_retained: bool,
  }
  
  static CEF_STATE: Mutex<CefState> = Mutex::new(CefState {
      ref_count: 0,
      initialized: false,
 +    finalizing: false,
++    #[cfg(target_os = "windows")]
++    module_retained: false,
  });
  
 +thread_local! {
@@ -36,7 +60,67 @@ index 6818bfb..db9e3d8 100644
  fn lock_cef_state() -> MutexGuard<'static, CefState> {
      match CEF_STATE.lock() {
          Ok(state) => state,
-@@ -36,7 +48,11 @@ fn lock_cef_state() -> MutexGuard<'static, CefState> {
+@@ -33,11 +57,77 @@ fn lock_cef_state() -> MutexGuard<'static, CefState> {
+     }
+ }
+ 
++#[cfg(target_os = "windows")]
++fn retain_loaded_cef_module() -> CefResult<()> {
++    // The Windows loader releases gdcef's imported libcef dependency when the
++    // extension unloads. Keep one additional process-lifetime reference so
++    // delayed callbacks cannot enter libcef after the ordered shutdown below.
++    let module_name: Vec<u16> = "libcef.dll\0".encode_utf16().collect();
++    let module = unsafe { GetModuleHandleW(module_name.as_ptr()) };
++    if module.is_null() {
++        return Err(CefError::InitializationFailed(
++            "loaded libcef.dll module was not found".into(),
++        ));
++    }
++
++    let mut module_path = [0_u16; 32_768];
++    let path_len = unsafe {
++        GetModuleFileNameW(module, module_path.as_mut_ptr(), module_path.len() as u32)
++    } as usize;
++    if path_len == 0 || path_len >= module_path.len() {
++        return Err(CefError::InitializationFailed(
++            "loaded CEF module path could not be resolved".into(),
++        ));
++    }
++    let path = String::from_utf16_lossy(&module_path[..path_len]);
++    let is_libcef = Path::new(&path)
++        .file_name()
++        .and_then(|name| name.to_str())
++        .is_some_and(|name| name.eq_ignore_ascii_case("libcef.dll"));
++    if !is_libcef {
++        return Err(CefError::InitializationFailed(format!(
++            "CEF export resolved to unexpected module: {path}"
++        )));
++    }
++
++    let export = unsafe { GetProcAddress(module, c"cef_initialize".as_ptr().cast()) }
++        .ok_or_else(|| CefError::InitializationFailed("cef_initialize export was not found".into()))?;
++    let mut retained = std::ptr::null_mut();
++    let retained_ok = unsafe {
++        GetModuleHandleExW(
++            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
++            export as *const () as *const u16,
++            &mut retained,
++        )
++    };
++    if retained_ok == 0 || retained != module {
++        return Err(CefError::InitializationFailed(
++            "could not retain the loaded libcef.dll module".into(),
++        ));
++    }
++
++    // Deliberately do not FreeLibrary(retained): this reference belongs to the
++    // host process and must outlive gdcef's extension-library teardown.
++    if std::env::var("MINERVA_PACKAGED_MCP_HELPER_PROBE").as_deref() == Ok("1") {
++        eprintln!("[GodotCef] Retained module: libcef.dll");
++    }
++    Ok(())
++}
++
  pub fn cef_retain() -> CefResult<()> {
      let mut state = lock_cef_state();
  
@@ -47,9 +131,15 @@ index 6818bfb..db9e3d8 100644
 +
 +    if !state.initialized {
          load_cef_framework()?;
++        #[cfg(target_os = "windows")]
++        if !state.module_retained {
++            retain_loaded_cef_module()?;
++            state.module_retained = true;
++        }
          cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
          initialize_cef()?;
-@@ -59,10 +75,77 @@ pub fn cef_release() {
+         state.initialized = true;
+@@ -59,10 +149,77 @@ pub fn cef_release() {
  
      state.ref_count -= 1;
  
@@ -101,7 +191,7 @@ index 6818bfb..db9e3d8 100644
 +        if let Some(host) = browser.host() {
 +            host.close_browser(true as _);
 +        }
-     }
++    }
 +    drop(browsers);
 +
 +    if diagnostic {
@@ -116,7 +206,7 @@ index 6818bfb..db9e3d8 100644
 +            std::process::abort();
 +        }
 +        std::thread::sleep(Duration::from_millis(1));
-+    }
+     }
 +    if diagnostic {
 +        eprintln!("[GodotCef] Finalize after drain: browsers=0");
 +        eprintln!("[GodotCef] Finalize before CefShutdown");

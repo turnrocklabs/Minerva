@@ -158,12 +158,27 @@ def main() -> int:
         r"|Failed to initialize CEF",
         combined)
     marker_found = "PACKAGED_MCP_HELPER_OK" in stdout
-    passed = process.returncode == 0 and marker_found and fatal is None
+    missing_cef_phases = []
+    if os.name == "nt":
+        required_cef_phases = (
+            "[GodotCef] Retained module: libcef.dll",
+            "[GodotCef] Finalize entry: initialized=true",
+            "[GodotCef] Finalize after drain: browsers=0",
+            "[GodotCef] Finalize after CefShutdown",
+        )
+        missing_cef_phases = [phase for phase in required_cef_phases if phase not in combined]
+    passed = (
+        process.returncode == 0
+        and marker_found
+        and fatal is None
+        and not missing_cef_phases
+    )
     if not passed:
         print(
             "exported MCP helper probe failed: "
             f"elapsed_seconds={elapsed_seconds:.1f}, returncode={process.returncode}, "
-            f"marker={marker_found}, fatal_log={fatal is not None}",
+            f"marker={marker_found}, fatal_log={fatal is not None}, "
+            f"missing_cef_phases={missing_cef_phases}",
             file=sys.stderr)
     else:
         print(f"exported MCP helper probe passed in {elapsed_seconds:.1f}s")
