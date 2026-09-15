@@ -38,3 +38,13 @@ Minerva uses the following third-party libraries. All use permissive licenses.
 - **License:** MIT
 - **Copyright:** Oven (Jarred Sumner)
 - **Source:** https://bun.sh
+
+## jsoncons
+- **License:** Boost Software License 1.0
+- **Copyright:** Daniel Parker and contributors
+- **Source:** https://github.com/danielaparker/jsoncons (v1.9.0; exact commit and archive hash in `src/native/json_schema_helper/dependency-lock.json`)
+
+## Model Context Protocol schema
+- **License:** MIT
+- **Copyright:** Anthropic, PBC
+- **Source:** https://github.com/modelcontextprotocol/modelcontextprotocol (exact commit and artifact hashes in `src/native/json_schema_helper/dependency-lock.json`)

@@ -1,0 +1,41 @@
+--- a/include/jsoncons_ext/jsonschema/common/keyword_validator.hpp
++++ b/include/jsoncons_ext/jsonschema/common/keyword_validator.hpp
+@@ -1947,9 +1947,7 @@
+ 
+         static bool is_multiple_of(double x, double multiple_of) 
+         {
+-            double rem = std::remainder(x, multiple_of);
+-            double eps = std::nextafter(x, 0) - x;
+-            return std::fabs(rem) < std::fabs(eps);
++            return std::fmod(x, multiple_of) == 0.0;
+         }
+ 
+         walk_state do_walk(const eval_context<Json>& /*context*/, const Json& instance,
+--- a/include/jsoncons_ext/jsonschema/common/keyword_validator_factory.hpp
++++ b/include/jsoncons_ext/jsonschema/common/keyword_validator_factory.hpp
+@@ -7,5 +7,6 @@
+ #define JSONCONS_EXT_JSONSCHEMA_COMMON_KEYWORD_VALIDATOR_FACTORY_HPP
+ 
++#include <cmath>
+ #include <cstddef>
+ #include <functional>
+ #include <memory>
+@@ -223,7 +224,18 @@
+                 const std::string message("multipleOf must be a number value");
+                 JSONCONS_THROW(schema_error(schema_location.string() + ": " + message));
+             }
+             auto value = sch.template as<double>();
++            if (!std::isfinite(value) || value <= 0.0)
++            {
++                JSONCONS_THROW(schema_error(schema_location.string() +
++                    ": [minerva_invalid_schema] multipleOf must be positive"));
++            }
++            if (std::trunc(value) != value ||
++                    std::fabs(value) > 9007199254740991.0)
++            {
++                JSONCONS_THROW(schema_error(schema_location.string() +
++                    ": [minerva_unsupported_number] multipleOf must be a safe-range integer"));
++            }
+             return jsoncons::make_unique<multiple_of_validator<Json>>(parent, schema_location, 
+                 context.get_custom_message("multipleOf"), value);
+         }

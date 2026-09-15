@@ -101,3 +101,6 @@ src/sidecars/**/*.import
 # Generated bundled voice runtimes. Sources, pins, and packaging tests remain tracked.
 src/plugins/voice/runtime-build/
 src/plugins/voice/dist/
+src/native/vendor/
+src/native/json_schema_helper/*.o
+.dependency-cache/

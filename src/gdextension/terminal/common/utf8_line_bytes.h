@@ -9,6 +9,8 @@ class Utf8LineBytes {
     size_t scanned = 0;
 public:
     void append(const char *data, size_t size) { bytes.append(data, size); }
+    size_t size() const { return bytes.size(); }
+    void clear() { bytes.clear(); scanned = 0; }
     template<class Consumer> bool pop_line(Consumer consume, bool strip_cr = false) {
         const size_t end = bytes.find('\n', scanned);
         if (end == std::string::npos) { scanned = bytes.size(); return false; }

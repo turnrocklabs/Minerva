@@ -179,15 +179,54 @@ func register_plugin_tools(plugin_id: String, tools: Array) -> Dictionary:
 				]
 			}
 
-		var input_schema: Dictionary = tool_entry.get("input_schema", {"type": "object", "properties": {}})
+		var input_value: Variant = tool_entry.get("input_schema", tool_entry.get("inputSchema",
+			{"type": "object", "properties": {}}))
+		if not input_value is Dictionary:
+			return {"error": "Tool '%s' input schema must be a Dictionary" % tool_name}
+		var input_schema: Dictionary = input_value.duplicate(true)
 		if executor == "panel":
 			input_schema = DocumentIdentity.panel_schema(input_schema)
+		var mcp_definition := {}
+		var preserved_value: Variant = tool_entry.get("_mcp_definition", tool_entry.get("mcp_definition", null))
+		if preserved_value != null:
+			if not preserved_value is Dictionary:
+				return {"error": "Tool '%s' preserved MCP definition must be a Dictionary" % tool_name}
+			mcp_definition = preserved_value.duplicate(true)
+		else:
+			mcp_definition = {"name": tool_name, "description": str(tool_entry.get("description", "")),
+				"inputSchema": input_schema.duplicate(true)}
+			for field in ["outputSchema", "annotations", "icons", "execution"]:
+				if tool_entry.has(field):
+					var optional: Variant = tool_entry[field]
+					if field == "icons" and not optional is Array:
+						return {"error": "Tool '%s' icons must be an Array" % tool_name}
+					if field != "icons" and not optional is Dictionary:
+						return {"error": "Tool '%s' %s must be a Dictionary" % [tool_name, field]}
+					mcp_definition[field] = optional.duplicate(true)
+		for field in ["outputSchema", "annotations", "execution"]:
+			if mcp_definition.has(field) and not mcp_definition[field] is Dictionary:
+				return {"error": "Tool '%s' %s must be a Dictionary" % [tool_name, field]}
+		if mcp_definition.has("icons"):
+			if not mcp_definition.icons is Array:
+				return {"error": "Tool '%s' icons must be an Array" % tool_name}
+			for icon in mcp_definition.icons:
+				if not icon is Dictionary:
+					return {"error": "Tool '%s' icons entries must be Dictionaries" % tool_name}
+		# The host namespace is deliberate; every other peer field stays intact.
+		mcp_definition["name"] = tool_name
+		if preserved_value == null:
+			mcp_definition["description"] = str(tool_entry.get("description", ""))
+			mcp_definition["inputSchema"] = input_schema.duplicate(true)
+		elif executor == "panel":
+			# Panel identity augmentation is an explicit host schema adaptation.
+			mcp_definition["inputSchema"] = input_schema.duplicate(true)
 		var entry := {
 			"name": tool_name,
 			"description": str(tool_entry.get("description", "")),
 			"input_schema": input_schema,
 			"source": "plugin:%s" % plugin_id,
 			"executor": executor,
+			"mcp_definition": mcp_definition,
 		}
 		# Preserve _backend_name so handle_tool_call can strip the auto-prefix
 		# before forwarding to the plugin's stdio channel. Backend-discovered
@@ -921,6 +960,7 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 			# own name from tools/list, so it will recognise the prefixed name if
 			# it declared it, or the stripped name if it declared the short form).
 			"_backend_name": raw_name,
+			"_mcp_definition": _namespaced_definition(tool_def, namespaced_name),
 		}
 		entries.append(entry)
 
@@ -937,6 +977,14 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 			plugin_id, result.get("error")
 		])
 	return result
+
+
+static func _namespaced_definition(tool_def, namespaced_name: String) -> Dictionary:
+	var definition: Dictionary = tool_def.to_mcp_format() if tool_def.has_method("to_mcp_format") else {
+		"name": str(tool_def.name), "description": str(tool_def.description),
+		"inputSchema": tool_def.input_schema.duplicate(true)}
+	definition["name"] = namespaced_name
+	return definition
 
 
 # ---------------------------------------------------------------------------

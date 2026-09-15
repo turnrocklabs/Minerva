@@ -306,11 +306,7 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 					if not enabled_sets.is_empty():
 						if tool.tool_set != "meta" and tool.tool_set not in enabled_sets:
 							continue
-					_cached_tools_list.append({
-						"name": tool.name,
-						"description": tool.description,
-						"inputSchema": tool.input_schema
-					})
+					_cached_tools_list.append(tool.to_mcp_format())
 			_tools_list_dirty = false
 		tools = _cached_tools_list
 

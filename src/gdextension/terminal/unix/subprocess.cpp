@@ -18,6 +18,9 @@ void SubProcess::_bind_methods()
     ClassDB::bind_method(D_METHOD("start", "command", "args"), &SubProcess::start, DEFVAL(PackedStringArray()));
     ClassDB::bind_method(D_METHOD("stop"), &SubProcess::stop);
     ClassDB::bind_method(D_METHOD("write_data", "data"), &SubProcess::write_data);
+    ClassDB::bind_method(D_METHOD("has_io_overflow"), &SubProcess::has_io_overflow);
+    ClassDB::bind_method(D_METHOD("_emit_output_ready"), &SubProcess::_emit_output_ready);
+    ClassDB::bind_method(D_METHOD("_emit_stderr_ready"), &SubProcess::_emit_stderr_ready);
     ClassDB::bind_method(D_METHOD("is_running"), &SubProcess::is_running);
     ClassDB::bind_method(D_METHOD("has_output"), &SubProcess::has_output);
     ClassDB::bind_method(D_METHOD("read_line"), &SubProcess::read_line);
@@ -29,6 +32,7 @@ void SubProcess::_bind_methods()
     ADD_SIGNAL(MethodInfo("output_ready"));
     ADD_SIGNAL(MethodInfo("stderr_ready"));
     ADD_SIGNAL(MethodInfo("process_exited", PropertyInfo(Variant::INT, "exit_code")));
+    ADD_SIGNAL(MethodInfo("io_overflow"));
 }
 
 SubProcess::SubProcess()
@@ -127,6 +131,26 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
     fcntl(_stderr_fd, F_SETFL, err_flags | O_NONBLOCK);
 
     _running = true;
+	_io_overflow = false;
+	_output_notification_pending = false;
+	_stderr_notification_pending = false;
+	{
+		std::lock_guard<std::mutex> lock(_write_mutex);
+		while (!_write_queue.empty()) _write_queue.pop();
+		_queued_write_bytes = 0;
+	}
+	{
+		std::lock_guard<std::mutex> lock(_output_mutex);
+		while (!_output_queue.empty()) _output_queue.pop();
+		_queued_output_bytes = 0;
+	}
+	{
+		std::lock_guard<std::mutex> lock(_stderr_mutex);
+		while (!_stderr_queue.empty()) _stderr_queue.pop();
+		_queued_stderr_bytes = 0;
+	}
+	int in_flags = fcntl(_stdin_fd, F_GETFL);
+	fcntl(_stdin_fd, F_SETFL, in_flags | O_NONBLOCK);
 
     // Start read threads for stdout and stderr
     _read_thread = std::thread([this]() {
@@ -135,6 +159,7 @@ bool SubProcess::start(const String &command, const PackedStringArray &args)
     _stderr_thread = std::thread([this]() {
         _stderr_read_loop();
     });
+    _write_thread = std::thread([this]() { _write_loop(); });
 
     return true;
 }
@@ -149,15 +174,24 @@ void SubProcess::_read_loop()
 
         if (bytes_read > 0) {
             line_buffer.append(buffer, bytes_read);
+            if (line_buffer.size() > MAX_QUEUED_BYTES) { line_buffer.clear(); _record_overflow(); }
             String line;
             while (line_buffer.pop_line(line)) {
 
+                bool queued = false;
                 {
                     std::lock_guard<std::mutex> lock(_output_mutex);
-                    _output_queue.push(line);
+                    size_t bytes = static_cast<size_t>(line.utf8().length());
+                    if (_output_queue.size() >= MAX_QUEUED_LINES || _queued_output_bytes + bytes > MAX_QUEUED_BYTES) {
+                        _record_overflow();
+                    } else {
+                        _queued_output_bytes += bytes;
+                        _output_queue.push(line);
+                        queued = true;
+                    }
                 }
-
-                call_deferred("emit_signal", "output_ready");
+                if (queued && !_output_notification_pending.exchange(true))
+                    call_deferred("_emit_output_ready");
             }
         } else if (bytes_read == 0) {
             // EOF - process closed stdout
@@ -190,6 +224,10 @@ void SubProcess::stop()
         return;
 
     _running = false;
+	_write_ready.notify_all();
+	if (_write_thread.joinable()) {
+		_write_thread.join();
+	}
 
     // Close stdin to signal EOF to child
     if (_stdin_fd >= 0) {
@@ -245,33 +283,42 @@ bool SubProcess::write_data(const String &data)
         return false;
 
     CharString utf8 = data.utf8();
-    const char *ptr = utf8.ptr();
-    size_t total = static_cast<size_t>(utf8.length());
-    size_t sent = 0;
-
-    // _stdin_fd is a blocking pipe, but write() can still return a partial count
-    // (large payload vs. pipe buffer) or be interrupted (EINTR). Loop until the
-    // whole buffer is written so long inputs aren't silently truncated.
-    while (sent < total) {
-        ssize_t written = write(_stdin_fd, ptr + sent, total - sent);
-        if (written > 0) {
-            sent += static_cast<size_t>(written);
-            continue;
-        }
-        if (written < 0) {
-            if (errno == EINTR)
-                continue;
-            if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                struct pollfd pfd { _stdin_fd, POLLOUT, 0 };
-                poll(&pfd, 1, 1000);
-                continue;
-            }
-            return false; // real error (EPIPE, etc.)
-        }
-        break; // written == 0: shouldn't happen on a pipe, bail out
+    std::string bytes(utf8.ptr(), static_cast<size_t>(utf8.length()));
+    {
+        std::lock_guard<std::mutex> lock(_write_mutex);
+        if (_write_queue.size() >= MAX_QUEUED_LINES || _queued_write_bytes + bytes.size() > MAX_QUEUED_WRITE_BYTES)
+            return false;
+        _queued_write_bytes += bytes.size();
+        _write_queue.push(std::move(bytes));
     }
+    _write_ready.notify_one();
+    return true;
+}
 
-    return sent == total;
+void SubProcess::_write_loop()
+{
+    while (_running) {
+        std::string data;
+        {
+            std::unique_lock<std::mutex> lock(_write_mutex);
+            _write_ready.wait(lock, [this]() { return !_running || !_write_queue.empty(); });
+            if (!_running) break;
+            data = std::move(_write_queue.front());
+            _queued_write_bytes -= data.size();
+            _write_queue.pop();
+        }
+        size_t sent = 0;
+        while (_running && sent < data.size()) {
+            ssize_t written = write(_stdin_fd, data.data() + sent, data.size() - sent);
+            if (written > 0) sent += static_cast<size_t>(written);
+            else if (written < 0 && errno == EINTR) continue;
+            else if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                struct pollfd pfd {_stdin_fd, POLLOUT, 0};
+                poll(&pfd, 1, 50);
+            } else break;
+        }
+        if (_running && sent != data.size()) _record_overflow();
+    }
 }
 
 bool SubProcess::has_output()
@@ -288,6 +335,7 @@ String SubProcess::read_line()
 
     String line = _output_queue.front();
     _output_queue.pop();
+    _queued_output_bytes -= static_cast<size_t>(line.utf8().length());
     return line;
 }
 
@@ -299,6 +347,7 @@ String SubProcess::read_all()
         if (!result.is_empty())
             result += "\n";
         result += _output_queue.front();
+        _queued_output_bytes -= static_cast<size_t>(_output_queue.front().utf8().length());
         _output_queue.pop();
     }
     return result;
@@ -314,15 +363,24 @@ void SubProcess::_stderr_read_loop()
 
         if (bytes_read > 0) {
             line_buffer.append(buffer, bytes_read);
+            if (line_buffer.size() > MAX_QUEUED_BYTES) { line_buffer.clear(); _record_overflow(); }
             String line;
             while (line_buffer.pop_line(line)) {
 
+                bool queued = false;
                 {
                     std::lock_guard<std::mutex> lock(_stderr_mutex);
-                    _stderr_queue.push(line);
+                    size_t bytes = static_cast<size_t>(line.utf8().length());
+                    if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) {
+                        _record_overflow();
+                    } else {
+                        _queued_stderr_bytes += bytes;
+                        _stderr_queue.push(line);
+                        queued = true;
+                    }
                 }
-
-                call_deferred("emit_signal", "stderr_ready");
+                if (queued && !_stderr_notification_pending.exchange(true))
+                    call_deferred("_emit_stderr_ready");
             }
         } else if (bytes_read == 0) {
             // EOF
@@ -340,8 +398,13 @@ void SubProcess::_stderr_read_loop()
     String tail = line_buffer.take_tail();
     if (!tail.is_empty()) {
         std::lock_guard<std::mutex> lock(_stderr_mutex);
-        _stderr_queue.push(tail);
-        call_deferred("emit_signal", "stderr_ready");
+        size_t bytes = static_cast<size_t>(tail.utf8().length());
+        if (_stderr_queue.size() >= MAX_QUEUED_LINES || _queued_stderr_bytes + bytes > MAX_QUEUED_BYTES) _record_overflow();
+        else {
+            _queued_stderr_bytes += bytes;
+            _stderr_queue.push(tail);
+            if (!_stderr_notification_pending.exchange(true)) call_deferred("_emit_stderr_ready");
+        }
     }
 }
 
@@ -359,7 +422,26 @@ String SubProcess::read_stderr_line()
 
     String line = _stderr_queue.front();
     _stderr_queue.pop();
+    _queued_stderr_bytes -= static_cast<size_t>(line.utf8().length());
     return line;
+}
+
+void SubProcess::_record_overflow()
+{
+    if (!_io_overflow.exchange(true))
+        call_deferred("emit_signal", "io_overflow");
+}
+
+void SubProcess::_emit_output_ready()
+{
+    _output_notification_pending = false;
+    emit_signal("output_ready");
+}
+
+void SubProcess::_emit_stderr_ready()
+{
+    _stderr_notification_pending = false;
+    emit_signal("stderr_ready");
 }
 
 String SubProcess::read_all_stderr()
@@ -370,6 +452,7 @@ String SubProcess::read_all_stderr()
         if (!result.is_empty())
             result += "\n";
         result += _stderr_queue.front();
+        _queued_stderr_bytes -= static_cast<size_t>(_stderr_queue.front().utf8().length());
         _stderr_queue.pop();
     }
     return result;

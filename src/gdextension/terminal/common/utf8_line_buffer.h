@@ -8,6 +8,8 @@ class Utf8LineBuffer {
     Utf8LineBytes bytes;
 public:
     void append(const char *data, size_t size) { bytes.append(data, size); }
+    size_t size() const { return bytes.size(); }
+    void clear() { bytes.clear(); }
     bool pop_line(godot::String &line, bool strip_cr = false) {
         return bytes.pop_line([&](const char *data, size_t size) {
             line = godot::String::utf8(data, size);

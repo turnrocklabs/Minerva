@@ -7,6 +7,8 @@
 #include <atomic>
 #include <mutex>
 #include <queue>
+#include <condition_variable>
+#include <string>
 #include <windows.h>
 
 namespace godot {
@@ -32,6 +34,7 @@ private:
     std::atomic<bool> _running{false};
     std::thread _read_thread;
     std::thread _stderr_thread;
+    std::thread _write_thread;
 
     std::mutex _output_mutex;
     std::queue<String> _output_queue;
@@ -39,8 +42,26 @@ private:
     std::mutex _stderr_mutex;
     std::queue<String> _stderr_queue;
 
+    std::mutex _write_mutex;
+    std::condition_variable _write_ready;
+    std::queue<std::string> _write_queue;
+    size_t _queued_write_bytes = 0;
+    size_t _queued_output_bytes = 0;
+    size_t _queued_stderr_bytes = 0;
+    std::atomic<bool> _io_overflow{false};
+    std::atomic<bool> _output_notification_pending{false};
+    std::atomic<bool> _stderr_notification_pending{false};
+
+    static constexpr size_t MAX_QUEUED_LINES = 32;
+    static constexpr size_t MAX_QUEUED_BYTES = 40u * 1024u * 1024u;
+    static constexpr size_t MAX_QUEUED_WRITE_BYTES = 72u * 1024u * 1024u;
+
     void _read_loop();
     void _stderr_read_loop();
+    void _write_loop();
+    void _record_overflow();
+    void _emit_output_ready();
+    void _emit_stderr_ready();
 
 protected:
     static void _bind_methods();
@@ -55,8 +76,9 @@ public:
     /// Stop the subprocess
     void stop();
 
-    /// Write data to subprocess stdin
+    /// Admit data to the bounded stdin writer without blocking the caller.
     bool write_data(const String &data);
+    bool has_io_overflow() const { return _io_overflow; }
 
     /// Check if subprocess is running
     bool is_running() const { return _running; }

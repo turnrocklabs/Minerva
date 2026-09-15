@@ -1,0 +1,51 @@
+extends SceneTree
+## Real native pipe ownership. This uses the host Python executable only as a
+## deterministic child that can fill stdin and emit output; no network access.
+
+var passed := 0
+var failed := 0
+
+func _initialize() -> void:
+	_run.call_deferred()
+
+func check(label: String, condition: bool) -> void:
+	if condition:
+		passed += 1
+	else:
+		failed += 1
+		printerr("FAIL: ", label)
+
+func _run() -> void:
+	if not ClassDB.class_exists("SubProcess"):
+		printerr("SubProcess GDExtension is required")
+		quit(2)
+		return
+	var python := OS.get_environment("PYTHON")
+	if python.is_empty():
+		python = "python3"
+	var process = ClassDB.instantiate("SubProcess")
+	root.add_child(process)
+	check("blocking-child fixture starts", process.start(python,
+		PackedStringArray(["-c", "import time; time.sleep(60)"])))
+	check("large write is admitted without blocking the Godot caller",
+		process.write_data("x".repeat(1024 * 1024)))
+	await process_frame
+	var stop_started := Time.get_ticks_msec()
+	process.stop()
+	check("full child stdin is interrupted and owned process stops within bound",
+		Time.get_ticks_msec() - stop_started < 3000 and not process.is_running())
+
+	var notifications := {"ready": 0, "overflow": 0}
+	process.output_ready.connect(func(): notifications.ready += 1)
+	process.io_overflow.connect(func(): notifications.overflow += 1)
+	check("same native owner restarts after interrupted write", process.start(python,
+		PackedStringArray(["-c", "import sys; [print(i) for i in range(100)]; sys.stdout.flush()"])))
+	var until := Time.get_ticks_msec() + 3000
+	while notifications.overflow == 0 and Time.get_ticks_msec() < until:
+		await create_timer(0.01).timeout
+	check("discarded output coalesces readiness and reports one fatal overflow",
+		notifications.overflow == 1 and notifications.ready <= 2 and process.has_io_overflow())
+	process.stop()
+	process.queue_free()
+	print("\n=== Results: %d passed, %d failed ===" % [passed, failed])
+	quit(1 if failed else 0)

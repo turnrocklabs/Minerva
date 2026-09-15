@@ -1,0 +1,17 @@
+import os
+from pathlib import Path
+from SCons.Script import ARGUMENTS, Environment
+
+jsoncons_include = os.environ.get("MINERVA_JSONCONS_INCLUDE", "#native/vendor/jsoncons/include")
+platform = ARGUMENTS.get("platform", "linux")
+helper_env = Environment(ENV=os.environ)
+helper_env.Append(CPPPATH=[jsoncons_include])
+compiler = Path(str(helper_env.subst("$CXX"))).name.lower()
+if platform == "windows" and (helper_env.get("MSVC_VERSION") or compiler in ("cl", "cl.exe")):
+    helper_env.Append(CXXFLAGS=["/std:c++17", "/EHsc"])
+else:
+    helper_env.Append(CXXFLAGS=["-std=c++17"])
+suffix = ".exe" if platform == "windows" else ""
+helper = helper_env.Program("#bin/minerva-json-schema-helper" + suffix,
+    ["#native/json_schema_helper/main.cpp"])
+Alias("json-schema-helper", helper)

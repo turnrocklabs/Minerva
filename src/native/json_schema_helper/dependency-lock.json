@@ -1,0 +1,17 @@
+{
+  "jsoncons": {
+    "version": "1.9.0",
+    "commit": "bcb44594c50c495ee1e690602cdd71455942ad0e",
+    "archive_url": "https://github.com/danielaparker/jsoncons/archive/bcb44594c50c495ee1e690602cdd71455942ad0e.tar.gz",
+    "archive_sha256": "44742915ad9fa93fa33680be56cadd77ee2c81c2740d790f538a93c084fe6f6a",
+    "license": "Boost-1.0",
+    "bundled_meta_schema": "include/jsoncons_ext/jsonschema/draft202012/schema_draft202012.hpp",
+    "integral_multiple_of_patch_sha256": "ca0bbbd45e7e0e3e60ca68efb3f9467efb1aebddcd58dd4027230a76801b6ce3"
+  },
+  "mcp": {
+    "commit": "2997f33bf6e4aab3db48d755fc877c8feab32c71",
+    "schema_ts_sha256": "742750af0bb8c716e7030c4977c992b55d1adc4407e9e66997db5846baedc2cd",
+    "schema_json_sha256": "ef70b61f99b6d2e5e3b46863822eab08dff6a45bedc7a08914e0e5b133f40203",
+    "license_sha256": "0382b0057770ca05e9c350a50aa3b1c1fea84da0bc81d723bf00b9aa841be58a"
+  }
+}

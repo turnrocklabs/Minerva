@@ -6,10 +6,13 @@ const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext
 ## Handles communication with MCP servers over various transports.
 
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
+const WireValue = preload("res://Scripts/Services/MCP/MCPWireValue.gd")
+const ToolResultEnvelope = preload("res://Scripts/Services/MCP/MCPToolResult.gd")
 
 signal connected()
 signal disconnected()
 signal tool_result_received(tool_name: String, result: Dictionary)
+signal tool_result_envelope_received(tool_name: String, result)
 
 enum TransportType { HTTP, WEBSOCKET, STDIO }
 
@@ -53,6 +56,7 @@ var _subprocess = null
 ## _PendingRequest whose `resolved` signal fires exactly once — with the
 ## plugin's response, a timeout error, or a connection-lost error.
 var _pending: Dictionary = {}  # request_id -> _PendingRequest
+var _completed_wire_results: Dictionary = {}
 
 ## Active HTTP requests that can be cancelled
 var _active_http_requests: Array[HTTPRequest] = []
@@ -498,35 +502,13 @@ func _call_tool_http(tool_name: String, arguments: Dictionary, context: Executio
 		return {"error": str(rpc_error)}
 
 	# Extract result from JSON-RPC response
-	var result = rpc_response.get("result", {})
-
-	# MCP tool results are wrapped in content array: {content: [{type, text}]}
-	# Extract and parse the actual result from content[0].text
-	if result is Dictionary and result.has("content"):
-		var content_raw = result.get("content", [])
-		# Handle case where content is a string instead of array
-		if content_raw is String:
-			result = {"text": content_raw, "success": true}
-		elif content_raw is Array and content_raw.size() > 0 and content_raw[0] is Dictionary:
-			var content: Array = content_raw
-			var content_item: Dictionary = content[0]
-			if content_item.get("type") == "text":
-				var text_content: String = content_item.get("text", "{}")
-				var inner_json := JSON.new()
-				var inner_err := inner_json.parse(text_content)
-				if inner_err == OK and inner_json.data is Dictionary:
-					result = inner_json.data
-				elif inner_err == OK:
-					result = {"result": inner_json.data, "success": true}
-				else:
-					# If parsing fails, return the raw text
-					result = {"text": text_content, "success": true}
-
-	if result is Dictionary:
-		tool_result_received.emit(tool_name, result)
-		return result
-	# Handle non-dict results (wrap them)
-	return {"result": result, "success": true}
+	var raw_result: Variant = rpc_response.get("result", {})
+	if raw_result is Dictionary:
+		tool_result_envelope_received.emit(tool_name, ToolResultEnvelope.from_mcp(
+			raw_result, false, WireValue.create(response_str, rpc_response)))
+	var result := _normalize_mcp_tool_result(raw_result)
+	tool_result_received.emit(tool_name, result)
+	return result
 
 
 ## WebSocket transport: Connect to server
@@ -597,7 +579,11 @@ func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: Exe
 			if json.parse(packet) == OK and json.data is Dictionary:
 				var response: Dictionary = json.data
 				if response.get("id") == request_id:
-					var result: Dictionary = response.get("result", {})
+					var raw_result: Variant = response.get("result", {})
+					if raw_result is Dictionary:
+						tool_result_envelope_received.emit(tool_name, ToolResultEnvelope.from_mcp(
+							raw_result, false, WireValue.create(packet, response)))
+					var result := _normalize_mcp_tool_result(raw_result)
 					tool_result_received.emit(tool_name, result)
 					return result
 
@@ -679,11 +665,14 @@ func _connect_stdio() -> Error:
 	# — tool responses, plugin-initiated capability requests, event/state/notify
 	# messages — is dispatched by _drain_stdout; a response is routed to its
 	# waiter by JSON-RPC id (see _stdio_request / _resolve_pending).
-	if _subprocess.has_signal("output_ready") and not _subprocess.output_ready.is_connected(_drain_stdout):
-		_subprocess.output_ready.connect(_drain_stdout)
+	var connected_process = _subprocess
+	if connected_process.has_signal("output_ready"):
+		connected_process.output_ready.connect(_drain_stdout.bind(connected_process))
+	if connected_process.has_signal("io_overflow"):
+		connected_process.io_overflow.connect(_on_stdio_io_failure.bind(connected_process))
 	# Low-frequency backstop: re-drain in case an output_ready signal is ever
 	# missed, and fail outstanding requests if the subprocess dies.
-	_backstop_tick()
+	_backstop_tick(connected_process)
 
 	print("[MCP STDIO] Subprocess running, performing MCP handshake...")
 
@@ -727,7 +716,9 @@ func _mcp_initialize() -> Dictionary:
 		"jsonrpc": "2.0",
 		"method": "notifications/initialized"
 	}
-	_subprocess.write_data(JSON.stringify(init_notification) + "\n")
+	if not _subprocess.write_data(JSON.stringify(init_notification) + "\n"):
+		_on_stdio_io_failure()
+		return _conn_error("failed to write initialized notification to MCP server '%s'" % server_name)
 
 	return response.get("result", {})
 
@@ -740,7 +731,7 @@ func _next_request_id() -> String:
 
 ## Send a JSON-RPC request over STDIO and await its response.
 ##
-## The request is written immediately and a _PendingRequest is registered under
+## The request is admitted to the bounded native writer and a _PendingRequest is registered under
 ## its JSON-RPC id; the always-live reader (_drain_stdout) routes the matching
 ## response back by id. No serialization gate, no polling — any number of
 ## requests may be in flight on the one connection at once.
@@ -759,6 +750,7 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	var pending := _PendingRequest.new()
 	pending.tool_name = tool_name
 	pending.created_ms = Time.get_ticks_msec()
+	pending.capture_wire = tool_name != "" and tool_name != "tools/list"
 	_pending[request_id] = pending
 	var on_cancel := func() -> void: _resolve_pending(request_id, context.stopped_result())
 	if context != null:
@@ -774,6 +766,7 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 		_pending.erase(request_id)
 		if context != null and context.lifetime.cancelled.is_connected(on_cancel):
 			context.lifetime.cancelled.disconnect(on_cancel)
+		_on_stdio_io_failure()
 		return _conn_error("failed to write request to MCP server '%s'" % server_name)
 
 	# Disconnect the timer on completion so it cannot retain an old connection
@@ -800,14 +793,30 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 ## Resolve an in-flight request exactly once (first-wins). A real response, a
 ## timeout, and a connection loss all funnel through here; whichever reaches a
 ## given id first wins, and any later call for that id is a no-op.
-func _resolve_pending(request_id: String, result: Dictionary) -> void:
+func _resolve_pending(request_id: String, result: Dictionary, wire_value = null) -> void:
 	if not _pending.has(request_id):
 		return
 	var pending: _PendingRequest = _pending[request_id]
 	_pending.erase(request_id)
+	if wire_value != null and pending.capture_wire:
+		_completed_wire_results[request_id] = wire_value
 	pending.done = true
 	pending.result = result
 	pending.resolved.emit(result)
+
+
+func _on_stdio_io_failure(expected_process = null) -> void:
+	if _subprocess == null or (expected_process != null and expected_process != _subprocess):
+		return
+	var failed_process = _subprocess
+	_subprocess = null
+	server_connected = false
+	_completed_wire_results.clear()
+	_fail_all_pending("MCP server '%s' exceeded a subprocess I/O bound or lost its input pipe" % server_name)
+	failed_process.stop()
+	if failed_process is Node and is_instance_valid(failed_process):
+		failed_process.queue_free()
+	disconnected.emit()
 
 
 ## Fail every outstanding request — used on disconnect / subprocess exit so no
@@ -844,6 +853,7 @@ func _stdio_finalize(resolved: Dictionary) -> Dictionary:
 ## Dispatches through capability_request_handler (if set), writes the result
 ## back to the plugin's stdin, and returns.
 func _handle_plugin_capability_request(msg: Dictionary) -> void:
+	var origin_process = _subprocess
 	var cap_id = msg.get("id", null)
 	var params: Dictionary = msg.get("params", {})
 	var capability: String = str(params.get("capability", ""))
@@ -871,8 +881,11 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 	}
 	var response_json := JSON.stringify(response) + "\n"
 	print("[MCP STDIO] Writing capability result back: %s" % response_json.left(200))
-	if not _subprocess.write_data(response_json):
+	if origin_process == null or origin_process != _subprocess:
+		return
+	if not origin_process.write_data(response_json):
 		push_warning("[MCP STDIO] Failed to write capability result back to plugin '%s'" % plugin_id)
+		_on_stdio_io_failure()
 
 
 ## STDIO transport: Call a tool
@@ -911,10 +924,17 @@ func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: flo
 	}
 
 	var response := await _stdio_request(request, timeout_sec, tool_name, context)
+	var response_id := str(request.id)
+	var source_wire = _completed_wire_results.get(response_id, null)
+	_completed_wire_results.erase(response_id)
 	if response.get("error"):
 		return response
 
-	var result = _normalize_mcp_tool_result(response.get("result", {}))
+	var raw_result: Variant = response.get("result", {})
+	if raw_result is Dictionary:
+		tool_result_envelope_received.emit(tool_name,
+			ToolResultEnvelope.from_mcp(raw_result, false, source_wire))
+	var result = _normalize_mcp_tool_result(raw_result)
 	tool_result_received.emit(tool_name, result)
 	return result
 
@@ -952,14 +972,16 @@ func _normalize_mcp_tool_result(result) -> Dictionary:
 ## available line and dispatches it: plugin-initiated messages (capability
 ## requests, event/state/notify) go to their handlers; a JSON-RPC response —
 ## an "id" with no "method" — is routed to its waiter via _resolve_pending.
-func _drain_stdout() -> void:
-	if not _subprocess or not _subprocess.is_running():
+func _drain_stdout(expected_process = null) -> void:
+	var process = _subprocess
+	if process == null or (expected_process != null and expected_process != process) \
+			or not process.is_running():
 		return
 
 	# Re-guard each iteration: a dispatched message (or engine-exit teardown)
 	# can free _subprocess mid-drain, after which has_output() would deref null.
-	while is_instance_valid(_subprocess) and _subprocess.has_output():
-		var line: String = _subprocess.read_line()
+	while process == _subprocess and is_instance_valid(process) and process.has_output():
+		var line: String = process.read_line()
 		if line.is_empty():
 			continue
 
@@ -1004,7 +1026,7 @@ func _drain_stdout() -> void:
 			# A JSON-RPC response — route it to its waiter by id. An unmatched
 			# id (a stray frame, or a response to an already-resolved request)
 			# is a harmless no-op inside _resolve_pending.
-			_resolve_pending(str(msg.get("id", "")), msg)
+			_resolve_pending(str(msg.get("id", "")), msg, WireValue.create(line, msg))
 		else:
 			push_warning("[MCP %s] Discarding frame with neither method nor id from plugin '%s'"
 					% [server_name, plugin_id])
@@ -1013,15 +1035,14 @@ func _drain_stdout() -> void:
 ## Low-frequency backstop. Re-drains stdout in case an output_ready signal is
 ## ever missed, and fails all outstanding requests if the subprocess has died.
 ## Self-rearming while the subprocess runs; stops once it exits / disconnects.
-func _backstop_tick() -> void:
-	if not _subprocess:
+func _backstop_tick(expected_process = null) -> void:
+	if not _subprocess or (expected_process != null and expected_process != _subprocess):
 		return
 	if not _subprocess.is_running():
-		if not _pending.is_empty():
-			_fail_all_pending("MCP server '%s' process exited" % server_name)
+		_on_stdio_io_failure(expected_process)
 		return
-	_drain_stdout()
-	Engine.get_main_loop().create_timer(0.25).timeout.connect(_backstop_tick)
+	_drain_stdout(_subprocess)
+	Engine.get_main_loop().create_timer(0.25).timeout.connect(_backstop_tick.bind(_subprocess))
 
 
 func _handle_async_plugin_event(msg: Dictionary) -> void:
@@ -1082,3 +1103,4 @@ class _PendingRequest extends RefCounted:
 	signal resolved(result: Dictionary)
 	var tool_name: String = ""
 	var created_ms: int = 0
+	var capture_wire := false

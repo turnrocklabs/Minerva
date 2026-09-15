@@ -658,10 +658,8 @@ func _wire_plugin_tools_to_mcp() -> void:
 	plugin_tool_registry.tools_registered.connect(
 		func(p_plugin_id: String, _tool_names: Array) -> void:
 			for entry in plugin_tool_registry.get_plugin_tools(p_plugin_id):
-				var tool_def = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd").new()
-				tool_def.name = entry["name"]
-				tool_def.description = entry["description"]
-				tool_def.input_schema = entry["input_schema"]
+				var ToolDefinition = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
+				var tool_def = ToolDefinition.from_dict(entry.get("mcp_definition", {}), "minerva")
 				tool_def.server_name = "minerva"  # Must be "minerva" to pass discovery filters
 				tool_def.tool_set = ""  # Empty = default set, visible in all presets
 				mcp_manager.tool_registry[entry["name"]] = tool_def
