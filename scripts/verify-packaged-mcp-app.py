@@ -9,8 +9,11 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
-TIMEOUT_SECONDS = 30
+# Match the established tarball smoke allowance for a cold application start.
+# Helper operations retain their independent two-second native deadlines.
+TIMEOUT_SECONDS = 60
 
 
 def _seed_profile(root: Path, env: dict[str, str]) -> None:
@@ -86,6 +89,7 @@ def main() -> int:
         if sys.platform.startswith("linux"):
             command = ["stdbuf", "-oL", "-eL", *command]
         with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+            started_at = time.monotonic()
             process = subprocess.Popen(
                 command, cwd=str(executable.parent), env=env,
                 stdout=stdout_file, stderr=stderr_file, **kwargs)
@@ -101,6 +105,7 @@ def main() -> int:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 pass
+        elapsed_seconds = time.monotonic() - started_at
         stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
         stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
         if timed_out:
@@ -110,7 +115,8 @@ def main() -> int:
             last_phase = phases[-1] if phases else "not-entered"
             print(
                 "exported MCP helper probe timed out: "
-                f"returncode={process.returncode}, last_phase={last_phase}",
+                f"elapsed_seconds={elapsed_seconds:.1f}, returncode={process.returncode}, "
+                f"last_phase={last_phase}",
                 file=sys.stderr)
             return 1
 
@@ -127,8 +133,11 @@ def main() -> int:
     if not passed:
         print(
             "exported MCP helper probe failed: "
-            f"returncode={process.returncode}, marker={marker_found}, fatal_log={fatal is not None}",
+            f"elapsed_seconds={elapsed_seconds:.1f}, returncode={process.returncode}, "
+            f"marker={marker_found}, fatal_log={fatal is not None}",
             file=sys.stderr)
+    else:
+        print(f"exported MCP helper probe passed in {elapsed_seconds:.1f}s")
     return 0 if passed else 1
 
 

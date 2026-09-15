@@ -115,6 +115,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
+      - name: Enable Windows native crash dumps
+        if: steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $dumpDirectory = Join-Path $env:RUNNER_TEMP 'minerva-dumps'
+          New-Item -ItemType Directory -Force -Path $dumpDirectory | Out-Null
+          $dumpKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\Minerva.exe'
+          New-Item -Force -Path $dumpKey | Out-Null
+          New-ItemProperty -Path $dumpKey -Name DumpFolder -PropertyType ExpandString `
+            -Value $dumpDirectory -Force | Out-Null
+          New-ItemProperty -Path $dumpKey -Name DumpType -PropertyType DWord `
+            -Value 2 -Force | Out-Null
       - name: Verify final packaged native runtimes
         if: steps.selected.outputs.value == 'true'
         shell: bash
@@ -175,3 +187,21 @@ jobs:
           else
             python3 scripts/verify-packaged-mcp-app.py "$executable"
           fi
+      - name: Report Windows native crash events
+        if: failure() && steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $cutoff = (Get-Date).AddMinutes(-15)
+          Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001; StartTime=$cutoff} `
+            -ErrorAction SilentlyContinue |
+            Where-Object { $_.Message -match 'Minerva(\.exe)?' } |
+            Select-Object -First 10 |
+            Format-List TimeCreated, Id, ProviderName, Message
+      - name: Upload Windows native crash dumps
+        if: failure() && steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: minerva-windows-crash-dump-${{ github.run_id }}
+          path: ${{ runner.temp }}/minerva-dumps/*.dmp
+          if-no-files-found: warn
+          retention-days: 7
