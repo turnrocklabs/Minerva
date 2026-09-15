@@ -70,24 +70,37 @@ def main() -> int:
         print(f"exported Minerva executable is missing: {executable}", file=sys.stderr)
         return 1
 
-    with tempfile.TemporaryDirectory(prefix="minerva-packaged-mcp-") as temporary:
+    with tempfile.TemporaryDirectory(
+            prefix="minerva-packaged-mcp-",
+            ignore_cleanup_errors=os.name == "nt") as temporary:
+        temporary_root = Path(temporary)
         env = os.environ.copy()
-        _seed_profile(Path(temporary), env)
+        _seed_profile(temporary_root, env)
         env["MINERVA_PACKAGED_MCP_HELPER_PROBE"] = "1"
         kwargs = {"start_new_session": True} if os.name != "nt" else {
             "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
-        process = subprocess.Popen(
-            [str(executable), "--headless"], cwd=str(executable.parent), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            encoding="utf-8", errors="replace", **kwargs)
-        try:
-            stdout, stderr = process.communicate(timeout=TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
+        stdout_path = temporary_root / "minerva.stdout.log"
+        stderr_path = temporary_root / "minerva.stderr.log"
+        timed_out = False
+        with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+            process = subprocess.Popen(
+                [str(executable), "--headless"], cwd=str(executable.parent), env=env,
+                stdout=stdout_file, stderr=stderr_file, **kwargs)
+            try:
+                process.wait(timeout=TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+            # Unix can retire the app's process group after leader exit.
+            # taskkill is best-effort once a Windows leader has exited; the
+            # Actions runner performs final job-wide process cleanup.
             _terminate_tree(process)
             try:
-                stdout, stderr = process.communicate(timeout=5)
+                process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                stdout, stderr = "", ""
+                pass
+        stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
+        stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
+        if timed_out:
             sys.stdout.write(stdout)
             sys.stderr.write(stderr)
             print("exported MCP helper probe timed out", file=sys.stderr)

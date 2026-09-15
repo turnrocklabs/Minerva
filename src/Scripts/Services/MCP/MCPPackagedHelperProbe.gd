@@ -6,8 +6,6 @@ const Client = preload("res://Scripts/Services/MCP/JSONSchemaValidatorClient.gd"
 
 func run() -> void:
 	print("PACKAGED_MCP_HELPER_PHASE=entry")
-	await get_tree().process_frame
-	print("PACKAGED_MCP_HELPER_PHASE=frame")
 	var client := Client.new()
 	add_child(client)
 	var resolved_path: String = client._resolved_helper_path()
