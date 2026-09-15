@@ -59,6 +59,7 @@ HERMETIC_TESTS=(
 	test/test_skill_presets.gd
 	test/test_mcp_stdio_concurrency.gd
 	test/test_mcp_stdio_request_budget.gd
+	test/test_mcp_stdio_profiles.gd
 	test/test_mcp_loop_tracker.gd
 	test/test_mcp_schema_coercion.gd
 	test/test_mcp_cad_tools.gd

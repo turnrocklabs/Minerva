@@ -8,6 +8,11 @@ const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const WireValue = preload("res://Scripts/Services/MCP/MCPWireValue.gd")
 const ToolResultEnvelope = preload("res://Scripts/Services/MCP/MCPToolResult.gd")
+const Protocol = preload("res://Scripts/Services/MCP/MCPProtocol.gd")
+const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
+const StdioNegotiation = preload("res://Scripts/Services/MCP/MCPStdioNegotiation.gd")
+const WireAdapter = preload("res://Scripts/Services/MCP/MCPWireAdapter.gd")
+const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
 
 signal connected()
 signal disconnected()
@@ -52,11 +57,17 @@ var _websocket: WebSocketPeer = null
 ## SubProcess for STDIO transport (type not specified - GDExtension may not be loaded)
 var _subprocess = null
 
-## In-flight STDIO requests, keyed by JSON-RPC id. Each value is a
+## In-flight STDIO requests, keyed by MCPProtocol's typed JSON-RPC identity.
+## String "7" and integer 7 therefore remain separate. Each value is a
 ## _PendingRequest whose `resolved` signal fires exactly once — with the
 ## plugin's response, a timeout error, or a connection-lost error.
-var _pending: Dictionary = {}  # request_id -> _PendingRequest
+var _pending: Dictionary = {}  # typed request key -> _PendingRequest
 var _completed_wire_results: Dictionary = {}
+var protocol_profile = Profile.new()
+var _process_generation := 0
+
+var stdio_startup_budget_sec := 12.0
+var stdio_discovery_budget_sec := 1.0
 
 ## Active HTTP requests that can be cancelled
 var _active_http_requests: Array[HTTPRequest] = []
@@ -120,26 +131,33 @@ func connect_to_server() -> Error:
 func disconnect_from_server() -> void:
 	print("[MCP %s] Disconnecting..." % server_name)
 	server_connected = false
+	var disconnected_pending: Array = _pending.values()
+	var disconnected_process = _subprocess
+	_subprocess = null
+	var disconnected_websocket = _websocket
+	_websocket = null
+	_process_generation += 1
+	protocol_profile = Profile.new()
+	_completed_wire_results.clear()
+	disconnected.emit()
 
-	# Fail every in-flight request so no caller is left awaiting forever.
-	_fail_all_pending("MCP server '%s' disconnected" % server_name)
+	# Detach transport ownership before waking callers: a failed waiter may
+	# synchronously reconnect and must never join the process being retired.
+	_fail_pending_requests(disconnected_pending, "MCP server '%s' disconnected" % server_name)
 
-	if _websocket:
-		_websocket.close()
-		_websocket = null
-	if _subprocess:
+	if disconnected_websocket:
+		disconnected_websocket.close()
+	if disconnected_process:
 		print("[MCP %s] Stopping subprocess..." % server_name)
 		# Just stop the subprocess - don't try to free it.
 		# The subprocess destructor will call stop() again (safely, as it checks _running).
 		# Godot will clean up the node when the scene tree is destroyed.
-		_subprocess.stop()
+		disconnected_process.stop()
 		# Note: We intentionally don't queue_free() here because during shutdown,
 		# the subprocess read thread may have pending deferred calls that would
 		# crash if the object is freed too soon.
-		_subprocess = null
 
 	print("[MCP %s] Disconnected" % server_name)
-	disconnected.emit()
 
 
 ## Cancel all active HTTP requests (called when user presses stop)
@@ -150,6 +168,17 @@ func cancel_active_requests() -> void:
 				request.cancel_request()
 			request.queue_free()
 	_active_http_requests.clear()
+	if transport == TransportType.STDIO:
+		var pending_requests: Array = _pending.values()
+		for pending_value: Variant in pending_requests:
+			var pending: _PendingRequest = pending_value
+			if pending.context != null:
+				pending.context.cancel()
+			elif _pending.has(Protocol.request_id_key(pending.request_id)):
+				if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
+					_write_modern_cancel(pending.request_id, pending.generation)
+				_resolve_pending(pending.request_id,
+					_conn_error("MCP request was cancelled"), null, pending.generation)
 
 
 ## List available tools from the server
@@ -286,6 +315,7 @@ func _verify_http_connection() -> Error:
 			return ERR_CANT_CONNECT
 
 		print("[MCP HTTP] Connected (REST API mode)")
+		protocol_profile = Profile.custom(_process_generation)
 		server_connected = true
 		connected.emit()
 		return OK
@@ -535,6 +565,7 @@ func _connect_websocket() -> Error:
 		_websocket = null
 		return ERR_CANT_CONNECT
 
+	protocol_profile = Profile.custom(_process_generation)
 	server_connected = true
 	connected.emit()
 	return OK
@@ -614,6 +645,7 @@ func has_tool(tool_name: String) -> bool:
 func _connect_stdio() -> Error:
 	print("[MCP STDIO] Connecting via STDIO transport...")
 	print("[MCP STDIO] Command: %s %s" % [stdio_command, str(stdio_args)])
+	var startup_deadline_ms := Time.get_ticks_msec() + int(stdio_startup_budget_sec * 1000.0)
 
 	if stdio_command.is_empty():
 		push_error("STDIO transport requires command to be set")
@@ -623,7 +655,12 @@ func _connect_stdio() -> Error:
 	if not ClassDB.class_exists("SubProcess"):
 		push_error("SubProcess GDExtension not available - STDIO transport not supported")
 		return ERR_UNAVAILABLE
+	_process_generation += 1
+	var connection_generation: int = _process_generation
+	protocol_profile = Profile.new()
+	protocol_profile.generation = connection_generation
 	_subprocess = ClassDB.instantiate("SubProcess")
+	var created_process = _subprocess
 
 	if not Engine.get_main_loop():
 		push_error("Cannot spawn subprocess: no scene tree available")
@@ -646,16 +683,22 @@ func _connect_stdio() -> Error:
 
 	# Start the subprocess
 	print("[MCP STDIO] Starting subprocess...")
-	if not _subprocess.start(stdio_command, stdio_args):
+	if not created_process.start(stdio_command, stdio_args):
 		push_error("Failed to start MCP server subprocess: %s" % stdio_command)
 		_subprocess.queue_free()
 		_subprocess = null
 		return ERR_CANT_CREATE
 
-	# Give process time to start
-	await Engine.get_main_loop().create_timer(0.1).timeout
+	# Give the child a short unscaled startup turn within the shared deadline.
+	var startup_delay := minf(0.1, _remaining_startup_seconds(startup_deadline_ms))
+	if startup_delay <= 0.0:
+		disconnect_from_server()
+		return ERR_TIMEOUT
+	await Engine.get_main_loop().create_timer(startup_delay, true, false, true).timeout
+	if connection_generation != _process_generation or created_process != _subprocess:
+		return ERR_CANT_CONNECT
 
-	if not _subprocess.is_running():
+	if not created_process.is_running():
 		push_error("MCP server subprocess exited immediately")
 		_subprocess.queue_free()
 		_subprocess = null
@@ -665,7 +708,7 @@ func _connect_stdio() -> Error:
 	# — tool responses, plugin-initiated capability requests, event/state/notify
 	# messages — is dispatched by _drain_stdout; a response is routed to its
 	# waiter by JSON-RPC id (see _stdio_request / _resolve_pending).
-	var connected_process = _subprocess
+	var connected_process = created_process
 	if connected_process.has_signal("output_ready"):
 		connected_process.output_ready.connect(_drain_stdout.bind(connected_process))
 	if connected_process.has_signal("io_overflow"):
@@ -676,13 +719,17 @@ func _connect_stdio() -> Error:
 
 	print("[MCP STDIO] Subprocess running, performing MCP handshake...")
 
-	# Perform MCP initialization handshake
-	var init_result := await _mcp_initialize()
+	# Probe modern MCP first, then use the initialized legacy lane only when the
+	# peer gives no recognized modern response. Both phases share one deadline.
+	var init_result := await _negotiate_stdio(connection_generation, startup_deadline_ms)
+	if connection_generation != _process_generation or connected_process != _subprocess:
+		return ERR_CANT_CONNECT
 	if init_result.get("error"):
 		push_error("MCP initialization failed: %s" % init_result.get("error"))
-		_subprocess.stop()
-		_subprocess.queue_free()
+		var failed_process = _subprocess
 		_subprocess = null
+		failed_process.stop()
+		failed_process.queue_free()
 		return ERR_CANT_CONNECT
 
 	print("[MCP STDIO] Handshake successful!")
@@ -692,35 +739,111 @@ func _connect_stdio() -> Error:
 
 
 ## Send MCP initialize request
-func _mcp_initialize() -> Dictionary:
-	var request := {
-		"jsonrpc": "2.0",
-		"id": _next_request_id(),
-		"method": "initialize",
-		"params": {
-			"protocolVersion": MCP_PROTOCOL_VERSION,
-			"capabilities": {},
-			"clientInfo": {
-				"name": "Minerva",
-				"version": "1.0.0"
-			}
-		}
-	}
+func _negotiate_stdio(generation: int, startup_deadline_ms: int) -> Dictionary:
+	var probe_id: String = _next_request_id()
+	var startup_remaining := _remaining_startup_seconds(startup_deadline_ms)
+	if startup_remaining <= 0.0:
+		return _conn_error("MCP startup budget expired before discovery")
+	var probe_budget := minf(stdio_discovery_budget_sec, startup_remaining)
+	var probe := await _stdio_request(StdioNegotiation.discovery_request(probe_id),
+		probe_budget, "server/discover", null, generation)
+	if generation != _process_generation:
+		return _conn_error("MCP process changed during discovery")
+	var probe_wire = _take_completed_wire(probe_id)
+	if probe_wire != null:
+		var validation_budget := _remaining_startup_seconds(startup_deadline_ms)
+		if validation_budget <= 0.0:
+			return _conn_error("MCP startup budget expired before discovery validation")
+		var numeric_check: Dictionary = await WireAdapter.validate_for_application(
+			probe_wire, validation_budget)
+		if generation != _process_generation:
+			return _conn_error("MCP process changed while validating discovery")
+		if not numeric_check.get("ok", false):
+			return _conn_error(_wire_validation_message(numeric_check))
+	var classified := StdioNegotiation.classify_discovery(probe)
+	if classified.modern:
+		if classified.has("error"):
+			# A specified modern protocol error proves the peer's era. It is not
+			# permission to retry the request through legacy initialization.
+			protocol_profile = Profile.modern({}, generation)
+			return _conn_error(classified.error)
+		var discovered: Dictionary = classified.result
+		protocol_profile = Profile.modern(discovered.capabilities, generation)
+		if Time.get_ticks_msec() > startup_deadline_ms:
+			return _conn_error("MCP startup budget expired during discovery validation")
+		return discovered
 
-	var response := await _stdio_request(request)
-	if response.get("error"):
-		return response
-
-	# Send initialized notification (no response expected)
-	var init_notification := {
-		"jsonrpc": "2.0",
-		"method": "notifications/initialized"
-	}
-	if not _subprocess.write_data(JSON.stringify(init_notification) + "\n"):
-		_on_stdio_io_failure()
+	var remaining := _remaining_startup_seconds(startup_deadline_ms)
+	if remaining <= 0.0:
+		return _conn_error("MCP startup budget expired before legacy initialization")
+	var init_id := _next_request_id()
+	var init := await _stdio_request(StdioNegotiation.legacy_initialize_request(
+		init_id, working_directory), remaining, "initialize", null, generation)
+	if generation != _process_generation:
+		return _conn_error("MCP process changed during initialization")
+	var init_wire = _take_completed_wire(init_id)
+	if init_wire != null:
+		var init_validation_budget := _remaining_startup_seconds(startup_deadline_ms)
+		if init_validation_budget <= 0.0:
+			return _conn_error("MCP startup budget expired before initialization validation")
+		var init_numeric: Dictionary = await WireAdapter.validate_for_application(
+			init_wire, init_validation_budget)
+		if generation != _process_generation:
+			return _conn_error("MCP process changed while validating initialization")
+		if not init_numeric.get("ok", false):
+			return _conn_error(_wire_validation_message(init_numeric))
+	var validated := StdioNegotiation.validate_legacy_initialize(init)
+	if validated.has("error"):
+		return validated
+	var initialized: Dictionary = validated.result
+	if Time.get_ticks_msec() > startup_deadline_ms:
+		return _conn_error("MCP startup budget expired during initialization validation")
+	protocol_profile = Profile.legacy(initialized.protocolVersion,
+		initialized.capabilities, generation)
+	if not _write_stdio_notification({"jsonrpc": Protocol.JSON_RPC_VERSION,
+			"method": "notifications/initialized"}, generation):
 		return _conn_error("failed to write initialized notification to MCP server '%s'" % server_name)
+	return initialized
 
-	return response.get("result", {})
+
+func _remaining_startup_seconds(deadline_ms: int) -> float:
+	return maxf(0.0, float(deadline_ms - Time.get_ticks_msec()) / 1000.0)
+
+
+func _take_completed_wire(request_id: Variant):
+	var key := Protocol.request_id_key(request_id)
+	var wire_value = _completed_wire_results.get(key)
+	_completed_wire_results.erase(key)
+	return wire_value
+
+
+func _wire_validation_message(result: Dictionary) -> String:
+	var error_value: Variant = result.get("error", {})
+	return str(error_value.get("message", "MCP response changed during numeric conversion")) \
+		if error_value is Dictionary else str(error_value)
+
+
+func _stdio_method_request(method: String, params: Dictionary) -> Dictionary:
+	var request_id: String = _next_request_id()
+	if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
+		return StdioNegotiation.modern_request(method, request_id, params)
+	return {"jsonrpc": Protocol.JSON_RPC_VERSION, "id": request_id,
+		"method": method, "params": params}
+
+
+func _write_stdio_notification(notification: Dictionary, generation: int) -> bool:
+	var process = _subprocess
+	if process == null or generation != _process_generation or not process.is_running():
+		return false
+	if process.write_data(JSON.stringify(notification) + "\n"):
+		return true
+	_on_stdio_io_failure(process)
+	return false
+
+
+func _write_modern_cancel(request_id: Variant, generation: int) -> void:
+	_write_stdio_notification({"jsonrpc": Protocol.JSON_RPC_VERSION,
+		"method": "notifications/cancelled", "params": {"requestId": request_id}}, generation)
 
 
 ## Generate next request ID
@@ -740,19 +863,31 @@ func _next_request_id() -> String:
 ## resolves with a timeout error; timeout_sec = 0 means unbounded (resolves only
 ## on a real response or a connection loss). tool_name, when given, is woven
 ## into timeout/error messages for debuggability.
-func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: String = "", context: ExecutionContext = null) -> Dictionary:
+func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: String = "", context: ExecutionContext = null, generation: int = -1) -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
 		return _conn_error("MCP server '%s' is not running" % server_name)
 
 	if context != null and context.is_stopped():
 		return context.stopped_result()
-	var request_id: String = str(request.get("id", ""))
+	var request_id: Variant = request.get("id")
+	var request_key := Protocol.request_id_key(request_id)
+	if request_key.is_empty() or _pending.has(request_key):
+		return _conn_error("MCP request id is invalid or already outstanding")
+	var owned_generation: int = _process_generation if generation < 0 else generation
+	if owned_generation != _process_generation:
+		return _conn_error("MCP process changed before request dispatch")
 	var pending := _PendingRequest.new()
 	pending.tool_name = tool_name
 	pending.created_ms = Time.get_ticks_msec()
-	pending.capture_wire = tool_name != "" and tool_name != "tools/list"
-	_pending[request_id] = pending
-	var on_cancel := func() -> void: _resolve_pending(request_id, context.stopped_result())
+	pending.capture_wire = true
+	pending.request_id = request_id
+	pending.generation = owned_generation
+	pending.context = context
+	_pending[request_key] = pending
+	var on_cancel := func() -> void:
+		if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
+			_write_modern_cancel(request_id, owned_generation)
+		_resolve_pending(request_id, context.stopped_result(), null, owned_generation)
 	if context != null:
 		context.lifetime.cancelled.connect(on_cancel)
 
@@ -763,28 +898,22 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	print("[MCP %s] Sending: %s" % [server_name, log_json])
 
 	if not _subprocess.write_data(request_json):
-		_pending.erase(request_id)
+		_pending.erase(request_key)
 		if context != null and context.lifetime.cancelled.is_connected(on_cancel):
 			context.lifetime.cancelled.disconnect(on_cancel)
 		_on_stdio_io_failure()
 		return _conn_error("failed to write request to MCP server '%s'" % server_name)
 
-	# Disconnect the timer on completion so it cannot retain an old connection
-	# or request lifetime until a long default timeout eventually elapses.
-	var timer: SceneTreeTimer = null
-	var on_timeout: Callable
 	if timeout_sec > 0.0 and not pending.done:
-		var label: String = tool_name if tool_name != "" else ("id " + request_id)
-		var timeout_err := _conn_error("MCP request (%s) to '%s' timed out after %.0fs"
+		var label: String = tool_name if tool_name != "" else ("id " + str(request_id))
+		pending.deadline_error = _conn_error("MCP request (%s) to '%s' timed out after %.0fs"
 				% [label, server_name, timeout_sec])
-		on_timeout = _resolve_pending.bind(request_id, timeout_err)
-		timer = Engine.get_main_loop().create_timer(timeout_sec)
-		timer.timeout.connect(on_timeout)
+		pending.deadline_timeout_sec = timeout_sec
+		_arm_pending_deadline(pending)
 
 	if not pending.done:
 		await pending.resolved
-	if timer != null and timer.timeout.is_connected(on_timeout):
-		timer.timeout.disconnect(on_timeout)
+	_cancel_pending_deadline(pending)
 	if context != null and context.lifetime.cancelled.is_connected(on_cancel):
 		context.lifetime.cancelled.disconnect(on_cancel)
 	return _stdio_finalize(pending.result)
@@ -793,38 +922,74 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 ## Resolve an in-flight request exactly once (first-wins). A real response, a
 ## timeout, and a connection loss all funnel through here; whichever reaches a
 ## given id first wins, and any later call for that id is a no-op.
-func _resolve_pending(request_id: String, result: Dictionary, wire_value = null) -> void:
-	if not _pending.has(request_id):
+func _resolve_pending(request_id: Variant, result: Dictionary, wire_value = null, generation: int = -1) -> void:
+	var request_key := Protocol.request_id_key(request_id)
+	if not _pending.has(request_key):
 		return
-	var pending: _PendingRequest = _pending[request_id]
-	_pending.erase(request_id)
+	var pending: _PendingRequest = _pending[request_key]
+	if generation >= 0 and pending.generation != generation:
+		return
+	_pending.erase(request_key)
 	if wire_value != null and pending.capture_wire:
-		_completed_wire_results[request_id] = wire_value
+		_completed_wire_results[request_key] = wire_value
 	pending.done = true
 	pending.result = result
+	_cancel_pending_deadline(pending)
 	pending.resolved.emit(result)
+
+
+func _arm_pending_deadline(pending: _PendingRequest) -> void:
+	if pending.done or not _pending.has(Protocol.request_id_key(pending.request_id)):
+		return
+	pending.deadline = MonotonicDeadline.new()
+	pending.deadline_callback = _resolve_pending.bind(pending.request_id,
+		pending.deadline_error, null, pending.generation)
+	pending.deadline.expired.connect(pending.deadline_callback)
+	if not pending.deadline.start(float(pending.deadline_timeout_sec)):
+		_resolve_pending(pending.request_id,
+			_conn_error("MCP request deadline is unavailable"), null, pending.generation)
+
+
+func _cancel_pending_deadline(pending: _PendingRequest) -> void:
+	if pending.deadline != null:
+		pending.deadline.cancel()
+		if pending.deadline_callback.is_valid() \
+				and pending.deadline.expired.is_connected(pending.deadline_callback):
+			pending.deadline.expired.disconnect(pending.deadline_callback)
+	pending.deadline = null
+	pending.deadline_callback = Callable()
 
 
 func _on_stdio_io_failure(expected_process = null) -> void:
 	if _subprocess == null or (expected_process != null and expected_process != _subprocess):
 		return
 	var failed_process = _subprocess
+	var failed_pending: Array = _pending.values()
 	_subprocess = null
 	server_connected = false
+	_process_generation += 1
+	protocol_profile = Profile.new()
 	_completed_wire_results.clear()
-	_fail_all_pending("MCP server '%s' exceeded a subprocess I/O bound or lost its input pipe" % server_name)
+	disconnected.emit()
+	_fail_pending_requests(failed_pending,
+		"MCP server '%s' exceeded a subprocess I/O bound or lost its input pipe" % server_name)
 	failed_process.stop()
 	if failed_process is Node and is_instance_valid(failed_process):
 		failed_process.queue_free()
-	disconnected.emit()
 
 
 ## Fail every outstanding request — used on disconnect / subprocess exit so no
 ## caller is left awaiting a response that will never arrive.
 func _fail_all_pending(reason: String) -> void:
+	var pending_requests: Array = _pending.values()
+	_fail_pending_requests(pending_requests, reason)
+
+
+func _fail_pending_requests(pending_requests: Array, reason: String) -> void:
 	var err := _conn_error(reason)
-	for request_id in _pending.keys():
-		_resolve_pending(request_id, err)
+	for pending_value: Variant in pending_requests:
+		var pending: _PendingRequest = pending_value
+		_resolve_pending(pending.request_id, err, null, pending.generation)
 
 
 ## Number of STDIO requests currently awaiting a response (introspection).
@@ -845,7 +1010,8 @@ func _stdio_finalize(resolved: Dictionary) -> Dictionary:
 		return resolved
 	var err = resolved["error"]
 	if err is Dictionary:
-		return {"error": str(err.get("message", "Unknown error"))}
+		return {"error": str(err.get("message", "Unknown error")),
+			"rpc_error": err.duplicate(true)}
 	return {"error": str(err)}
 
 
@@ -853,6 +1019,9 @@ func _stdio_finalize(resolved: Dictionary) -> Dictionary:
 ## Dispatches through capability_request_handler (if set), writes the result
 ## back to the plugin's stdin, and returns.
 func _handle_plugin_capability_request(msg: Dictionary) -> void:
+	if protocol_profile.era != Profile.Era.INITIALIZED_LEGACY:
+		push_warning("[MCP STDIO] Ignoring proprietary capability request outside the legacy profile")
+		return
 	var origin_process = _subprocess
 	var cap_id = msg.get("id", null)
 	var params: Dictionary = msg.get("params", {})
@@ -892,48 +1061,61 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 func _call_tool_stdio(tool_name: String, arguments: Dictionary, timeout_sec: float = 120.0, context: ExecutionContext = null) -> Dictionary:
 	if not _subprocess or not _subprocess.is_running():
 		return {"error": "STDIO transport not connected"}
+	if protocol_profile.era == Profile.Era.MODERN_2026_07_28 \
+			and not protocol_profile.supports("tools"):
+		return {"error": "Modern MCP server does not advertise the tools capability"}
 
 	# For tools/list, use that method directly. Unwrap the JSON-RPC envelope
 	# so callers (refresh_tools) see {tools: [...]} at the top level — matches
-	# the post-`rpc_response.get("result")` shape contract that _call_tool_http
-	# and _mcp_initialize already implement on this connection.
+	# the post-`rpc_response.get("result")` shape contract used by the other
+	# transports and by STDIO profile negotiation.
 	if tool_name == "tools/list":
-		var list_request := {
-			"jsonrpc": "2.0",
-			"id": _next_request_id(),
-			"method": "tools/list",
-			"params": {}
-		}
-		var list_response := await _stdio_request(list_request, timeout_sec, "tools/list", context)
+		var list_request := _stdio_method_request("tools/list", {})
+		var list_generation := _process_generation
+		var list_response := await _stdio_request(list_request, timeout_sec,
+			"tools/list", context, list_generation)
+		var list_wire = _take_completed_wire(list_request.id)
+		if list_wire != null:
+			var list_numeric: Dictionary = await WireAdapter.validate_for_application(list_wire)
+			if list_generation != _process_generation:
+				return {"error": "MCP process changed while validating tools/list"}
+			if not list_numeric.get("ok", false):
+				return {"error": _wire_validation_message(list_numeric)}
+		if context != null and context.is_stopped():
+			return context.stopped_result()
 		if list_response.get("error"):
-			return list_response
+			return {"error": str(list_response.error)}
 		var inner = list_response.get("result", {})
 		if inner is Dictionary:
 			return inner
 		return {"error": "tools/list response 'result' was not a Dictionary (got type=%d, value=%s)" % [typeof(inner), str(inner).left(120)]}
 
 	# For regular tool calls, use tools/call with wrapped params
-	var request := {
-		"jsonrpc": "2.0",
-		"id": _next_request_id(),
-		"method": "tools/call",
-		"params": {
+	var request := _stdio_method_request("tools/call", {
 			"name": tool_name,
 			"arguments": arguments
-		}
-	}
+		})
 
-	var response := await _stdio_request(request, timeout_sec, tool_name, context)
-	var response_id := str(request.id)
-	var source_wire = _completed_wire_results.get(response_id, null)
-	_completed_wire_results.erase(response_id)
+	var call_generation := _process_generation
+	var response := await _stdio_request(request, timeout_sec, tool_name, context,
+		call_generation)
+	var source_wire = _take_completed_wire(request.id)
+	if source_wire != null:
+		var numeric_check: Dictionary = await WireAdapter.validate_for_application(source_wire)
+		if call_generation != _process_generation:
+			return {"error": "MCP process changed while validating tool result"}
+		if not numeric_check.get("ok", false):
+			return {"error": _wire_validation_message(numeric_check)}
+	if context != null and context.is_stopped():
+		return context.stopped_result()
 	if response.get("error"):
-		return response
+		return {"error": str(response.error)}
 
 	var raw_result: Variant = response.get("result", {})
 	if raw_result is Dictionary:
 		tool_result_envelope_received.emit(tool_name,
-			ToolResultEnvelope.from_mcp(raw_result, false, source_wire))
+			ToolResultEnvelope.from_mcp(raw_result,
+				protocol_profile.era == Profile.Era.MODERN_2026_07_28, source_wire))
 	var result = _normalize_mcp_tool_result(raw_result)
 	tool_result_received.emit(tool_name, result)
 	return result
@@ -1005,14 +1187,23 @@ func _drain_stdout(expected_process = null) -> void:
 				"minerva/capability":
 					# Bidirectional channel — dispatched as a background
 					# coroutine so the reader never blocks on the host's reply.
-					_handle_plugin_capability_request(msg)
+					if protocol_profile.era == Profile.Era.INITIALIZED_LEGACY:
+						_validate_legacy_message_then_dispatch(line, msg,
+							_process_generation, _handle_plugin_capability_request)
+					else:
+						_reject_modern_server_request(msg, _process_generation)
 				"minerva/plugin_event":
-					_handle_async_plugin_event(msg)
+					if protocol_profile.era == Profile.Era.INITIALIZED_LEGACY:
+						_validate_legacy_message_then_dispatch(line, msg,
+							_process_generation, _handle_async_plugin_event)
 				"minerva/plugin_state":
-					_handle_async_plugin_state(msg)
+					if protocol_profile.era == Profile.Era.INITIALIZED_LEGACY:
+						_validate_legacy_message_then_dispatch(line, msg,
+							_process_generation, _handle_async_plugin_state)
 				"host.notify":
-					if not msg.has("id"):
-						_handle_host_notify(msg)
+					if protocol_profile.era == Profile.Era.INITIALIZED_LEGACY and not msg.has("id"):
+						_validate_legacy_message_then_dispatch(line, msg,
+							_process_generation, _handle_host_notify)
 					else:
 						print("[MCP %s] Ignoring host.notify with unexpected id from plugin '%s'"
 								% [server_name, plugin_id])
@@ -1026,10 +1217,54 @@ func _drain_stdout(expected_process = null) -> void:
 			# A JSON-RPC response — route it to its waiter by id. An unmatched
 			# id (a stray frame, or a response to an already-resolved request)
 			# is a harmless no-op inside _resolve_pending.
-			_resolve_pending(str(msg.get("id", "")), msg, WireValue.create(line, msg))
+			_route_stdio_response(line, msg, _process_generation)
 		else:
 			push_warning("[MCP %s] Discarding frame with neither method nor id from plugin '%s'"
 					% [server_name, plugin_id])
+
+
+func _route_stdio_response(raw_line: String, message: Dictionary, generation: int) -> void:
+	var request_id: Variant = message.get("id")
+	var request_key := Protocol.request_id_key(request_id)
+	if not _pending.has(request_key):
+		return
+	var pending: _PendingRequest = _pending[request_key]
+	if pending.generation != generation:
+		return
+	var shape_error := Protocol.validate_response(message, pending.request_id)
+	if not shape_error.is_empty():
+		_resolve_pending(pending.request_id,
+			_conn_error("Invalid MCP response: %s" % shape_error), null, generation)
+		return
+	_resolve_pending(request_id, message, WireValue.create(raw_line, message), generation)
+
+
+func _validate_legacy_message_then_dispatch(raw_line: String, message: Dictionary,
+		generation: int, handler: Callable) -> void:
+	if protocol_profile.era != Profile.Era.INITIALIZED_LEGACY:
+		return
+	var shape_error := Protocol.validate_request(message)
+	if not shape_error.is_empty():
+		push_warning("[MCP STDIO] Rejected malformed legacy callback: %s" % shape_error)
+		return
+	var numeric_check: Dictionary = await WireAdapter.validate_for_application(
+		WireValue.create(raw_line, message))
+	if generation != _process_generation or protocol_profile.generation != generation:
+		return
+	if not numeric_check.get("ok", false):
+		push_warning("[MCP STDIO] Rejected legacy callback: %s" %
+			_wire_validation_message(numeric_check))
+		return
+	handler.call(message)
+
+
+func _reject_modern_server_request(message: Dictionary, generation: int) -> void:
+	if protocol_profile.era != Profile.Era.MODERN_2026_07_28 or not message.has("id") \
+			or not Protocol.validate_request(message).is_empty():
+		return
+	_write_stdio_notification({"jsonrpc": Protocol.JSON_RPC_VERSION, "id": message.id,
+		"error": {"code": -32601,
+			"message": "Proprietary server callbacks are unavailable in modern MCP"}}, generation)
 
 
 ## Low-frequency backstop. Re-drains stdout in case an output_ready signal is
@@ -1104,3 +1339,10 @@ class _PendingRequest extends RefCounted:
 	var tool_name: String = ""
 	var created_ms: int = 0
 	var capture_wire := false
+	var request_id: Variant
+	var generation := 0
+	var context: ExecutionContext = null
+	var deadline_timeout_sec := 0.0
+	var deadline_error: Dictionary = {}
+	var deadline
+	var deadline_callback: Callable

@@ -57,7 +57,8 @@ static func validate_response(message: Dictionary, expected_id: Variant) -> Stri
 
 static func modern_meta(version: String, capabilities: Dictionary) -> Dictionary:
 	return {"io.modelcontextprotocol/protocolVersion": version,
-		"io.modelcontextprotocol/clientCapabilities": capabilities.duplicate(true)}
+		"io.modelcontextprotocol/clientCapabilities": capabilities.duplicate(true),
+		"io.modelcontextprotocol/clientInfo": {"name": "Minerva", "version": "1.0.0"}}
 
 
 static func _valid_error_code(value: Variant) -> bool:

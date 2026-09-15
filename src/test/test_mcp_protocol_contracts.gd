@@ -6,6 +6,7 @@ const Definition = preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const ToolResult = preload("res://Scripts/Services/MCP/MCPToolResult.gd")
 const WireValue = preload("res://Scripts/Services/MCP/MCPWireValue.gd")
 const RequestIds = preload("res://Scripts/Services/MCP/MCPRequestIds.gd")
+const StdioNegotiation = preload("res://Scripts/Services/MCP/MCPStdioNegotiation.gd")
 
 var passed := 0
 var failed := 0
@@ -50,10 +51,26 @@ func _run() -> void:
 	check("modern profile pins era version capability and generation",
 		profile.era == Profile.Era.MODERN_2026_07_28 and profile.protocol_version == "2026-07-28"
 		and profile.supports("tools") and profile.generation == 4)
-	var meta := Protocol.modern_meta("2026-07-28", {"tools": {}})
+	var meta := Protocol.modern_meta("2026-07-28", {})
 	check("modern metadata uses namespaced keys and an object capability map",
 		meta.has("io.modelcontextprotocol/protocolVersion")
-		and meta["io.modelcontextprotocol/clientCapabilities"] is Dictionary)
+		and meta["io.modelcontextprotocol/clientCapabilities"] is Dictionary
+		and meta.get("io.modelcontextprotocol/clientInfo", {}).get("name") == "Minerva")
+	var discover := StdioNegotiation.classify_discovery({"result": {
+		"resultType": "complete", "ttlMs": 0, "cacheScope": "private",
+		"supportedVersions": ["2026-07-28"], "capabilities": {"tools": {}}}})
+	check("stdio discovery validates the pinned modern result shape",
+		discover.get("modern") and not discover.has("error")
+		and discover.result.capabilities.get("tools") is Dictionary)
+	check("recognized modern errors never request legacy fallback",
+		[-32020, -32021, -32022].all(func(code: int) -> bool:
+			var classification := StdioNegotiation.classify_discovery({"error": "modern",
+				"rpc_error": {"code": code, "message": "modern"}})
+			return classification.get("modern") and not classification.get("fallback")))
+	check("method-not-found and probe timeout are legacy fallback evidence",
+		StdioNegotiation.classify_discovery({"error": "unknown",
+			"rpc_error": {"code": -32601, "message": "unknown"}}).get("fallback")
+		and StdioNegotiation.classify_discovery({"error": "timeout"}).get("fallback"))
 	var raw_definition := "{\"name\":\"probe\",\"inputSchema\":{},\"outputSchema\":{\"type\":\"integer\"},\"future\":7}"
 	var definition_value: Dictionary = JSON.parse_string(raw_definition)
 	var definition = Definition.from_dict(definition_value, "peer")

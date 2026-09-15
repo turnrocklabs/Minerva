@@ -2,7 +2,9 @@
 """Minimal MCP stdio fixture for connection-layer concurrency testing.
 
 This fixture exercises Minerva's MCP-over-stdio connection layer when several
-tool calls are in flight on a single connection at once. Tools:
+tool calls are in flight on a single connection at once. Its --profile modes
+also exercise modern discovery, legacy fallback, late replies, and startup
+budget exhaustion. Tools:
 
   echo         returns its arguments immediately.
   sleep        waits "ms" milliseconds, then replies with a confirmation.
@@ -38,17 +40,28 @@ NO blocking sleep ever sits on the reader path: the reader only awaits the
 thread-pooled readline, and `sleep` uses `asyncio.sleep`, never `time.sleep`.
 """
 import asyncio
+import argparse
 import json
 import sys
 
 # stdout is shared; serialize all writes so frames never interleave.
 _write_lock = asyncio.Lock()
+MODE = "legacy"
+CANCELLED_IDS = []
+INITIALIZE_PARAMS = {}
 
 
 async def send(msg):
     """Write one JSON-RPC frame to stdout under a lock (newline-delimited)."""
     async with _write_lock:
         sys.stdout.write(json.dumps(msg) + "\n")
+        sys.stdout.flush()
+
+
+async def send_raw(line):
+    """Write an intentional raw-number fixture without Python float coercion."""
+    async with _write_lock:
+        sys.stdout.write(line + "\n")
         sys.stdout.flush()
 
 
@@ -65,14 +78,32 @@ TOOLS = [
     {"name": "emit_stray",
      "description": "Emits an unmatched-id response, then replies normally.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "cancellations",
+     "description": "Returns the modern request IDs cancelled by the client.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "session",
+     "description": "Returns legacy initialization state.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "precision_loss",
+     "description": "Returns a decimal Godot cannot decode losslessly.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "error_precision_loss",
+     "description": "Returns an RPC error with a lossy decimal in error data.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "large_numeric",
+     "description": "Returns enough numeric data to keep raw validation observable.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []}},
 ]
 
 
 def _text_result(req_id, payload):
     """Build a standard MCP tools/call result envelope."""
-    return {"jsonrpc": "2.0", "id": req_id, "result": {
-        "content": [{"type": "text", "text": json.dumps(payload)}]
-    }}
+    result = {"content": [{"type": "text", "text": json.dumps(payload)}]}
+    if MODE == "modern":
+        result.update({"resultType": "complete",
+                       "structuredContent": {"fixture": "preserved"},
+                       "futureField": {"kept": True}})
+    return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
 async def handle_tools_call(req_id, name, args):
@@ -103,6 +134,10 @@ async def handle_tools_call(req_id, name, args):
         # pending forever so the host's timeout path can be exercised.
         return
 
+    elif name == "large_numeric":
+        await send(_text_result(req_id, {
+            "success": True, "values": list(range(100000))}))
+
     elif name == "emit_stray":
         # First emit an unsolicited response whose id matches no pending
         # request. A well-behaved host must ignore it and not wedge.
@@ -116,6 +151,26 @@ async def handle_tools_call(req_id, name, args):
         await send(_text_result(req_id, {
             "success": True, "emitted_stray": True}))
 
+    elif name == "cancellations":
+        await asyncio.sleep(0.05)
+        await send(_text_result(req_id, {
+            "success": True, "cancelled_ids": list(CANCELLED_IDS)}))
+
+    elif name == "session":
+        await send(_text_result(req_id, {
+            "success": True,
+            "working_directory": INITIALIZE_PARAMS.get("workingDirectory", "")}))
+
+    elif name == "precision_loss":
+        await send_raw('{"jsonrpc":"2.0","id":%s,"result":'
+                       '{"resultType":"complete","content":[],"structuredContent":'
+                       '{"n":0.10000000000000001}}}' % json.dumps(req_id))
+
+    elif name == "error_precision_loss":
+        await send_raw('{"jsonrpc":"2.0","id":%s,"error":'
+                       '{"code":-32000,"message":"fixture error","data":'
+                       '{"n":0.10000000000000001}}}' % json.dumps(req_id))
+
     else:
         await send({"jsonrpc": "2.0", "id": req_id,
                     "error": {"code": -32601,
@@ -127,7 +182,47 @@ async def dispatch(msg):
     method = msg.get("method", "")
     req_id = msg.get("id")
 
-    if method == "initialize":
+    if method == "server/discover":
+        if MODE == "modern_error":
+            await send({"jsonrpc": "2.0", "id": req_id, "error": {
+                "code": -32021, "message": "Required capability is missing"}})
+        elif MODE == "invalid_modern":
+            await send({"jsonrpc": "2.0", "id": req_id, "result": {
+                "resultType": "complete", "ttlMs": 0, "cacheScope": "private",
+                "supportedVersions": ["2099-01-01"], "capabilities": {}}})
+        elif MODE in ("probe_timeout", "late_probe", "all_timeout"):
+            if MODE == "late_probe":
+                async def late_reply():
+                    await asyncio.sleep(1.5)
+                    await send({"jsonrpc": "2.0", "id": req_id, "result": {
+                        "resultType": "complete", "ttlMs": 0,
+                        "cacheScope": "private",
+                        "supportedVersions": ["2026-07-28"],
+                        "capabilities": {"tools": {}}}})
+                asyncio.create_task(late_reply())
+        elif MODE == "modern":
+            meta = msg.get("params", {}).get("_meta", {})
+            if (meta.get("io.modelcontextprotocol/protocolVersion") != "2026-07-28"
+                    or meta.get("io.modelcontextprotocol/clientCapabilities") != {}
+                    or meta.get("io.modelcontextprotocol/clientInfo", {}).get("name") != "Minerva"):
+                await send({"jsonrpc": "2.0", "id": req_id, "error": {
+                    "code": -32602, "message": "Missing modern metadata"}})
+            else:
+                await send({"jsonrpc": "2.0", "id": req_id, "result": {
+                    "resultType": "complete", "ttlMs": 0,
+                    "cacheScope": "private",
+                    "supportedVersions": ["2026-07-28"],
+                    "capabilities": {"tools": {}},
+                    "_meta": {"io.modelcontextprotocol/serverInfo": {
+                        "name": "stdio_timing_probe", "version": "0.2.0"}}}})
+        else:
+            await send({"jsonrpc": "2.0", "id": req_id, "error": {
+                "code": -32601, "message": "Unknown method: server/discover"}})
+    elif method == "initialize":
+        if MODE == "all_timeout":
+            return
+        global INITIALIZE_PARAMS
+        INITIALIZE_PARAMS = msg.get("params", {})
         await send({"jsonrpc": "2.0", "id": req_id, "result": {
             "protocolVersion": "2024-11-05",
             "capabilities": {"tools": {}},
@@ -138,8 +233,16 @@ async def dispatch(msg):
                     "result": {"tools": TOOLS}})
     elif method == "tools/call":
         params = msg.get("params", {})
+        if MODE == "modern":
+            meta = params.get("_meta", {})
+            if meta.get("io.modelcontextprotocol/protocolVersion") != "2026-07-28":
+                await send({"jsonrpc": "2.0", "id": req_id, "error": {
+                    "code": -32602, "message": "Missing per-request metadata"}})
+                return
         await handle_tools_call(req_id, params.get("name", ""),
                                 params.get("arguments", {}))
+    elif method == "notifications/cancelled":
+        CANCELLED_IDS.append(msg.get("params", {}).get("requestId"))
     elif method == "notifications/initialized":
         pass  # notification: no response
     else:
@@ -181,6 +284,10 @@ async def reader_loop():
 
 
 def main():
+    global MODE
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--profile", default="legacy")
+    MODE = parser.parse_args().profile
     asyncio.run(reader_loop())
 
 

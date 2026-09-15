@@ -5,6 +5,8 @@ extends Node
 
 signal helper_failed(reason: String)
 
+const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
+
 const MAX_PENDING := 32
 const DEADLINE_SECONDS := 2.0
 
@@ -18,9 +20,8 @@ class Pending extends RefCounted:
 	signal finished
 	var done := false
 	var result: Dictionary = {}
-	var deadline_ms := 0
 	var deadline_error: Dictionary = {}
-	var deadline_timer: SceneTreeTimer
+	var deadline
 	var deadline_callback: Callable
 	func finish(value: Dictionary) -> void:
 		if done:
@@ -147,6 +148,14 @@ func validate_for_application(handle: SchemaHandle, instance_raw: String,
 	return result if numeric.get("ok", false) else numeric
 
 
+func compare_application_numbers(original_raw: String, application_value: Variant) -> Dictionary:
+	var ready := await start()
+	if ready != OK:
+		return _failure("validator_unavailable", "JSON Schema validator is unavailable")
+	return await _request({"op": "compare_numbers", "original_raw": original_raw,
+		"adapted_raw": JSON.stringify(application_value)})
+
+
 func release(handle: SchemaHandle) -> Dictionary:
 	_handles.erase(handle)
 	if handle != null and handle.generation == _generation and _process != null:
@@ -170,7 +179,6 @@ func _request(fields: Dictionary, expected_process = null, expected_generation: 
 		_pending.erase(id)
 		return _failure("queue_full", "JSON Schema validator input queue is full")
 	if DEADLINE_SECONDS > 0.0 and not pending.done:
-		pending.deadline_ms = Time.get_ticks_msec() + int(ceil(DEADLINE_SECONDS * 1000.0))
 		pending.deadline_error = _failure("deadline_exceeded",
 			"JSON Schema validation exceeded 2 seconds")
 		_arm_deadline(id, pending)
@@ -183,27 +191,20 @@ func _request(fields: Dictionary, expected_process = null, expected_generation: 
 
 func _arm_deadline(id: String, pending: Pending) -> void:
 	_cancel_deadline(pending)
-	var remaining_ms := maxi(pending.deadline_ms - Time.get_ticks_msec(), 1)
-	pending.deadline_timer = get_tree().create_timer(
-		float(remaining_ms) / 1000.0, true, false, true)
-	pending.deadline_callback = _on_deadline_wake.bind(id, pending)
-	pending.deadline_timer.timeout.connect(pending.deadline_callback)
-
-
-func _on_deadline_wake(id: String, pending: Pending) -> void:
-	if pending.done or _pending.get(id) != pending:
-		return
-	if Time.get_ticks_msec() < pending.deadline_ms:
-		_arm_deadline(id, pending)
-		return
-	_resolve(id, pending.deadline_error)
+	pending.deadline = MonotonicDeadline.new()
+	pending.deadline_callback = _resolve.bind(id, pending.deadline_error)
+	pending.deadline.expired.connect(pending.deadline_callback)
+	if not pending.deadline.start(DEADLINE_SECONDS):
+		_resolve(id, _failure("deadline_unavailable", "validator deadline is unavailable"))
 
 
 func _cancel_deadline(pending: Pending) -> void:
-	if pending.deadline_timer != null and pending.deadline_callback.is_valid() \
-			and pending.deadline_timer.timeout.is_connected(pending.deadline_callback):
-		pending.deadline_timer.timeout.disconnect(pending.deadline_callback)
-	pending.deadline_timer = null
+	if pending.deadline != null:
+		pending.deadline.cancel()
+		if pending.deadline_callback.is_valid() \
+				and pending.deadline.expired.is_connected(pending.deadline_callback):
+			pending.deadline.expired.disconnect(pending.deadline_callback)
+	pending.deadline = null
 	pending.deadline_callback = Callable()
 
 

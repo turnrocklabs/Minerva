@@ -22,5 +22,21 @@ static func modern(peer_capabilities: Dictionary, process_generation: int):
 	return profile
 
 
+static func legacy(version: String, peer_capabilities: Dictionary, process_generation: int):
+	var profile = load("res://Scripts/Services/MCP/MCPProfile.gd").new()
+	profile.era = Era.INITIALIZED_LEGACY
+	profile.protocol_version = version
+	profile.capabilities = peer_capabilities.duplicate(true)
+	profile.generation = process_generation
+	return profile
+
+
+static func custom(process_generation: int):
+	var profile = load("res://Scripts/Services/MCP/MCPProfile.gd").new()
+	profile.era = Era.CUSTOM
+	profile.generation = process_generation
+	return profile
+
+
 func supports(capability: String) -> bool:
 	return capabilities.has(capability)
