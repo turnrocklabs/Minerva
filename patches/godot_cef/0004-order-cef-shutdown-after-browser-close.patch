@@ -1,5 +1,5 @@
 diff --git a/crates/gdcef/src/cef_init.rs b/crates/gdcef/src/cef_init.rs
-index 6818bfb..5646ccb 100644
+index 6818bfb..db9e3d8 100644
 --- a/crates/gdcef/src/cef_init.rs
 +++ b/crates/gdcef/src/cef_init.rs
 @@ -1,7 +1,11 @@
@@ -49,7 +49,7 @@ index 6818bfb..5646ccb 100644
          load_cef_framework()?;
          cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
          initialize_cef()?;
-@@ -59,10 +75,58 @@ pub fn cef_release() {
+@@ -59,10 +75,77 @@ pub fn cef_release() {
  
      state.ref_count -= 1;
  
@@ -80,22 +80,34 @@ index 6818bfb..5646ccb 100644
 +}
 +
 +pub fn finalize_cef() {
++    let diagnostic = std::env::var("MINERVA_PACKAGED_MCP_HELPER_PROBE").as_deref() == Ok("1");
 +    {
 +        let mut state = lock_cef_state();
++        if diagnostic {
++            let live = LIVE_BROWSERS.with(|browsers| browsers.borrow().len());
++            eprintln!(
++                "[GodotCef] Finalize entry: initialized={}, finalizing={}, refs={}, browsers={}",
++                state.initialized, state.finalizing, state.ref_count, live
++            );
++        }
 +        if !state.initialized || state.finalizing {
 +            return;
 +        }
 +        state.finalizing = true;
-     }
++    }
 +
 +    let browsers = LIVE_BROWSERS.with(|live| live.borrow().values().cloned().collect::<Vec<_>>());
 +    for browser in &browsers {
 +        if let Some(host) = browser.host() {
 +            host.close_browser(true as _);
 +        }
-+    }
+     }
 +    drop(browsers);
 +
++    if diagnostic {
++        let live = LIVE_BROWSERS.with(|browsers| browsers.borrow().len());
++        eprintln!("[GodotCef] Finalize before drain: browsers={live}");
++    }
 +    let deadline = Instant::now() + Duration::from_secs(5);
 +    while LIVE_BROWSERS.with(|live| !live.borrow().is_empty()) {
 +        cef::do_message_loop_work();
@@ -105,7 +117,14 @@ index 6818bfb..5646ccb 100644
 +        }
 +        std::thread::sleep(Duration::from_millis(1));
 +    }
++    if diagnostic {
++        eprintln!("[GodotCef] Finalize after drain: browsers=0");
++        eprintln!("[GodotCef] Finalize before CefShutdown");
++    }
 +    cef::shutdown();
++    if diagnostic {
++        eprintln!("[GodotCef] Finalize after CefShutdown");
++    }
 +    let mut state = lock_cef_state();
 +    state.initialized = false;
  }
