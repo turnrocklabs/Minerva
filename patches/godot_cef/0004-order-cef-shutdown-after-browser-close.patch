@@ -1,0 +1,227 @@
+diff --git a/crates/gdcef/src/cef_init.rs b/crates/gdcef/src/cef_init.rs
+index 6818bfb..5646ccb 100644
+--- a/crates/gdcef/src/cef_init.rs
++++ b/crates/gdcef/src/cef_init.rs
+@@ -1,7 +1,11 @@
+ use cef::Settings;
++use cef::{Browser, ImplBrowser, ImplBrowserHost};
+ use godot::classes::{Engine, Os};
+ use godot::prelude::*;
++use std::cell::RefCell;
++use std::collections::HashMap;
+ use std::sync::{Mutex, MutexGuard};
++use std::time::{Duration, Instant};
+ 
+ #[cfg(target_os = "macos")]
+ use crate::utils::get_framework_path;
+@@ -14,13 +18,21 @@ use crate::settings;
+ struct CefState {
+     ref_count: usize,
+     initialized: bool,
++    finalizing: bool,
+ }
+ 
+ static CEF_STATE: Mutex<CefState> = Mutex::new(CefState {
+     ref_count: 0,
+     initialized: false,
++    finalizing: false,
+ });
+ 
++thread_local! {
++    // external_message_pump delivers lifecycle callbacks on the same UI thread
++    // that performs extension teardown, so browser handles stay thread-local.
++    static LIVE_BROWSERS: RefCell<HashMap<i32, Browser>> = RefCell::new(HashMap::new());
++}
++
+ fn lock_cef_state() -> MutexGuard<'static, CefState> {
+     match CEF_STATE.lock() {
+         Ok(state) => state,
+@@ -36,7 +48,11 @@ fn lock_cef_state() -> MutexGuard<'static, CefState> {
+ pub fn cef_retain() -> CefResult<()> {
+     let mut state = lock_cef_state();
+ 
+-    if state.ref_count == 0 {
++    if state.finalizing {
++        return Err(CefError::InitializationFailed("CEF is shutting down".into()));
++    }
++
++    if !state.initialized {
+         load_cef_framework()?;
+         cef::api_hash(cef::sys::CEF_API_VERSION_LAST, 0);
+         initialize_cef()?;
+@@ -59,10 +75,58 @@ pub fn cef_release() {
+ 
+     state.ref_count -= 1;
+ 
+-    if state.ref_count == 0 && state.initialized {
+-        cef::shutdown();
+-        state.initialized = false;
++}
++
++pub fn cef_is_usable() -> bool {
++    let state = lock_cef_state();
++    state.initialized && !state.finalizing
++}
++
++pub fn cef_is_finalizing() -> bool {
++    lock_cef_state().finalizing
++}
++
++pub fn browser_opened(browser: &Browser) {
++    LIVE_BROWSERS.with(|browsers| {
++        browsers.borrow_mut().insert(browser.identifier(), browser.clone());
++    });
++}
++
++pub fn browser_closed(browser: &Browser) {
++    LIVE_BROWSERS.with(|browsers| {
++        browsers.borrow_mut().remove(&browser.identifier());
++    });
++}
++
++pub fn finalize_cef() {
++    {
++        let mut state = lock_cef_state();
++        if !state.initialized || state.finalizing {
++            return;
++        }
++        state.finalizing = true;
+     }
++
++    let browsers = LIVE_BROWSERS.with(|live| live.borrow().values().cloned().collect::<Vec<_>>());
++    for browser in &browsers {
++        if let Some(host) = browser.host() {
++            host.close_browser(true as _);
++        }
++    }
++    drop(browsers);
++
++    let deadline = Instant::now() + Duration::from_secs(5);
++    while LIVE_BROWSERS.with(|live| !live.borrow().is_empty()) {
++        cef::do_message_loop_work();
++        if Instant::now() >= deadline {
++            eprintln!("[GodotCef] Fatal: browsers did not close before CEF unload");
++            std::process::abort();
++        }
++        std::thread::sleep(Duration::from_millis(1));
++    }
++    cef::shutdown();
++    let mut state = lock_cef_state();
++    state.initialized = false;
+ }
+ 
+ /// Loads the CEF framework library (macOS-specific)
+diff --git a/crates/gdcef/src/cef_texture/backend.rs b/crates/gdcef/src/cef_texture/backend.rs
+index bd2e604..7ca6c50 100644
+--- a/crates/gdcef/src/cef_texture/backend.rs
++++ b/crates/gdcef/src/cef_texture/backend.rs
+@@ -328,6 +328,9 @@ pub(crate) fn try_create_browser(
+     app: &mut App,
+     params: &BackendCreateParams,
+ ) -> Result<(), CefError> {
++    if !crate::cef_init::cef_is_usable() {
++        return Err(CefError::BrowserCreationFailed("CEF is shutting down".into()));
++    }
+     if app.state.is_some() {
+         return Ok(());
+     }
+@@ -423,6 +426,17 @@ pub(crate) fn try_create_browser(
+ }
+ 
+ pub(crate) fn cleanup_runtime(app: &mut App, popup_texture_2d_rd: Option<&mut Gd<Texture2Drd>>) {
++    if !crate::cef_init::cef_is_usable() {
++        // A survivor released after finalization must not drop CEF wrappers
++        // after libcef shutdown. The exiting process reclaims this state.
++        if let Some(state) = app.state.take() {
++            std::mem::forget(state);
++        }
++        app.clear_runtime_state();
++        app.release_cef_if_retained();
++        app.mark_browser_closed();
++        return;
++    }
+     if app.state.is_none() {
+         app.mark_browser_closed();
+         app.release_cef_if_retained();
+diff --git a/crates/gdcef/src/cef_texture/mod.rs b/crates/gdcef/src/cef_texture/mod.rs
+index 98906cb..2ef9ab2 100644
+--- a/crates/gdcef/src/cef_texture/mod.rs
++++ b/crates/gdcef/src/cef_texture/mod.rs
+@@ -274,6 +274,9 @@ impl CefTexture {
+ 
+     #[func]
+     fn on_process(&mut self) {
++        if crate::cef_init::cef_is_finalizing() {
++            return;
++        }
+         // Lazy browser creation: if browser doesn't exist yet (e.g., size was 0 in on_ready
+         // because we're inside a Container), try to create it now that layout may be complete.
+         if self.with_app(|app| app.state.is_none()) {
+diff --git a/crates/gdcef/src/cef_texture2d/lifecycle.rs b/crates/gdcef/src/cef_texture2d/lifecycle.rs
+index 8449dd3..e2a0f65 100644
+--- a/crates/gdcef/src/cef_texture2d/lifecycle.rs
++++ b/crates/gdcef/src/cef_texture2d/lifecycle.rs
+@@ -80,6 +80,9 @@ impl CefTexture2D {
+     }
+ 
+     pub(super) fn tick(&mut self) {
++        if crate::cef_init::cef_is_finalizing() {
++            return;
++        }
+         if !self.runtime.runtime_enabled() {
+             if Engine::singleton().is_editor_hint() {
+                 return;
+diff --git a/crates/gdcef/src/cef_texture2d/runtime.rs b/crates/gdcef/src/cef_texture2d/runtime.rs
+index 0ec1814..09e3c09 100644
+--- a/crates/gdcef/src/cef_texture2d/runtime.rs
++++ b/crates/gdcef/src/cef_texture2d/runtime.rs
+@@ -120,6 +120,9 @@ impl CefTextureRuntime {
+     }
+ 
+     pub(crate) fn message_loop_and_begin_frame(&self) {
++        if !crate::cef_init::cef_is_usable() {
++            return;
++        }
+         if self.app.state.is_some() {
+             cef::do_message_loop_work();
+         }
+diff --git a/crates/gdcef/src/lib.rs b/crates/gdcef/src/lib.rs
+index 524d979..06e5181 100644
+--- a/crates/gdcef/src/lib.rs
++++ b/crates/gdcef/src/lib.rs
+@@ -46,6 +46,12 @@ unsafe impl ExtensionLibrary for GodotCef {
+             _ => {}
+         }
+     }
++
++    fn on_stage_deinit(level: InitStage) {
++        if level == InitStage::Scene {
++            cef_init::finalize_cef();
++        }
++    }
+ }
+ 
+ // Re-export CefTexture for convenience
+diff --git a/crates/gdcef/src/webrender.rs b/crates/gdcef/src/webrender.rs
+index e2dc1d2..6b4b7fd 100644
+--- a/crates/gdcef/src/webrender.rs
++++ b/crates/gdcef/src/webrender.rs
+@@ -696,6 +696,18 @@ wrap_life_span_handler! {
+     }
+ 
+     impl LifeSpanHandler {
++        fn on_after_created(&self, browser: Option<&mut Browser>) {
++            if let Some(browser) = browser {
++                crate::cef_init::browser_opened(browser);
++            }
++        }
++
++        fn on_before_close(&self, browser: Option<&mut Browser>) {
++            if let Some(browser) = browser {
++                crate::cef_init::browser_closed(browser);
++            }
++        }
++
+         fn on_before_popup(
+             &self,
+             browser: Option<&mut Browser>,

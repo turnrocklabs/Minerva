@@ -23,3 +23,10 @@ subprocess use the same resolved bundle root.
 **Upstream status:** Consultant RCA confirmed on 2026-04-21 (Minerva docket discussion `019db0ba`). PR to `dsh0416/godot-cef` is a pending follow-up — when it merges and `vendor/godot_cef` is bumped past it, remove this patch.
 
 **Trade-off:** This is Option A (tactical). The cleaner long-term fix (Option B) is to restrict the IME proxy to real composition/preedit/candidate-window integration rather than using it as a generic paste sink — but that needs CJK/IME validation which we don't currently have the environment for.
+
+## 0004-order-cef-shutdown-after-browser-close.patch
+
+Keep CEF initialized for the extension lifetime, track every created browser,
+and close and drain them during Scene-stage extension teardown before the one
+final `CefShutdown`. If browser close callbacks cannot complete within the
+bounded drain, terminate instead of unloading `libcef` with live callbacks.

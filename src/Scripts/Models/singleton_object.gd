@@ -1291,11 +1291,9 @@ func _ready():
 	add_child(undo)
 	add_child(streamdeck_server)
 
-	# Pin a hidden CefTexture for the life of the process. gdcef refcounts CEF's
-	# lifecycle (cef_retain in cef_init.rs:251); if the last CefTexture is freed
-	# the refcount hits 0 and CefShutdown fires. Creating another CefTexture then
-	# crashes deep in libcef (ChromeContentBrowserClient::SetSamplingProfiler)
-	# because CEF is call-once-per-process. The pin keeps refcount >= 1 forever.
+	# Keep a hidden CefTexture as a compatibility pin for older gdcef builds.
+	# Patched builds keep CEF initialized until extension teardown, while older
+	# builds still use the retain count to avoid an unsupported process reinit.
 	# Tracked under DCR 019dac8d.
 	if ClassDB.class_exists("CefTexture"):
 		var cef_pin: Node = ClassDB.instantiate("CefTexture")

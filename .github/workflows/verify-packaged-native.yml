@@ -14,6 +14,10 @@ on:
         required: false
         default: false
         type: boolean
+      capture_windows_dump:
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
     inputs:
       build_run_id:
@@ -26,6 +30,11 @@ on:
         default: all
         type: choice
         options: [all, windows, linux, macos]
+      capture_windows_dump:
+        description: Attach verified Microsoft ProcDump during Windows verification
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -116,7 +125,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
       - name: Install Microsoft ProcDump
-        if: steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
+        if: steps.selected.outputs.value == 'true' && matrix.platform == 'windows' && inputs.capture_windows_dump
         shell: pwsh
         run: |
           $archive = Join-Path $env:RUNNER_TEMP 'Procdump.zip'
@@ -194,7 +203,7 @@ jobs:
             python3 scripts/verify-packaged-mcp-app.py "$executable"
           fi
       - name: Report Windows native crash events
-        if: failure() && steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
+        if: failure() && steps.selected.outputs.value == 'true' && matrix.platform == 'windows' && inputs.capture_windows_dump
         shell: pwsh
         run: |
           $cutoff = (Get-Date).AddMinutes(-15)
@@ -204,7 +213,7 @@ jobs:
             Select-Object -First 10 |
             Format-List TimeCreated, Id, ProviderName, Message
       - name: Upload Windows native crash dumps
-        if: failure() && steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
+        if: failure() && steps.selected.outputs.value == 'true' && matrix.platform == 'windows' && inputs.capture_windows_dump
         uses: actions/upload-artifact@v4
         with:
           name: minerva-windows-crash-dump-${{ github.run_id }}
