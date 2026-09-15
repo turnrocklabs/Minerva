@@ -1390,7 +1390,7 @@ func _ready():
 	toggle_experimental_actions(config_file.get_value("Experimental","enabled",false))
 
 	# Load verbose logging setting
-	set_verbose_logging(config_file.get_value("Logging", "verbose", false))
+	set_verbose_logging(config_file.get_value("Logging", "verbose", false), false)
 
 	syntax_manager = SyntaxManager.new()
 	add_child(syntax_manager)
@@ -1801,20 +1801,20 @@ func ErrorDisplay(error_title:String, error_message: String, on_close_focus: Nod
 	if on_close_focus and on_close_focus.has_method("grab_focus"):
 		errorPopup.close_requested.connect(func(): on_close_focus.grab_focus())
 
-func create_toast_notification(content: String, type: = ToastNotification.Type.INFO):
-	# Also log to console for debugging
-	match type:
-		ToastNotification.Type.ERROR:
-			push_error("[Toast] %s" % content)
-		ToastNotification.Type.WARNING:
-			push_warning("[Toast] %s" % content)
-		_:
-			print("[Toast] %s" % content)
+func create_toast_notification(content: String, type: = ToastNotification.Type.INFO,
+		echo_to_console: bool = true):
+	if echo_to_console:
+		match type:
+			ToastNotification.Type.ERROR:
+				push_error("[Toast] %s" % content)
+			ToastNotification.Type.WARNING:
+				push_warning("[Toast] %s" % content)
+			_:
+				print("[Toast] %s" % content)
 
 	var toast: = ToastNotification.create(type, content)
 
-	# No UI tree (headless / --script run, or pre-_ready): the console log above
-	# is the only surface — skip the toast rather than deref a null main_scene.
+	# No UI tree (headless / --script run, or pre-_ready): skip the toast.
 	if main_scene == null:
 		return
 	main_scene.add_child(toast)
@@ -2611,9 +2611,10 @@ func toggle_experimental_actions(enable: bool) -> void:
 
 
 ## Set verbose logging state and save to config
-func set_verbose_logging(enable: bool) -> void:
+func set_verbose_logging(enable: bool, persist: bool = true) -> void:
 	verbose_logging = enable
-	save_to_config_file("Logging", "verbose", enable)
+	if persist:
+		save_to_config_file("Logging", "verbose", enable)
 	toggle_verbose_logging.emit(enable)
 
 #region Output Device

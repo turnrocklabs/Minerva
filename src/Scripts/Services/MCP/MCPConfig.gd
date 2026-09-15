@@ -193,8 +193,15 @@ func set_server(config: ServerConfig) -> void:
 	if existing:
 		existing.type = config.type
 		existing.url = config.url
+		existing.command = config.command
+		existing.args = config.args.duplicate()
 		existing.enabled = config.enabled
 		existing.auto_connect = config.auto_connect
+		existing.skip_mcp_init = config.skip_mcp_init
+		existing.working_directory = config.working_directory
+		existing.mcp_endpoint = config.mcp_endpoint
+		existing.origin = config.origin
+		existing.persistent = config.persistent
 	else:
 		servers.append(config)
 

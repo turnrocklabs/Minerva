@@ -222,7 +222,7 @@ func _ready() -> void:
 	plugin_stopped.connect(_chat_provider_registry.drop_plugin)
 	plugin_crashed.connect(_chat_provider_registry.drop_plugin)
 	_load_setup_state()
-	print("[PluginManager] Ready — %d plugin(s) in DB" % _db.get_all().size())
+	SingletonObject.verbose_log("[PluginManager] Ready — %d plugin(s) in DB" % _db.get_all().size())
 
 
 ## Return the PluginChatProviderRegistry (chat-passthrough W1). May be null if
@@ -763,7 +763,7 @@ func start_plugin(id: String) -> Dictionary:
 	if not conn.disconnected.is_connected(_on_plugin_disconnected.bind(id)):
 		conn.disconnected.connect(_on_plugin_disconnected.bind(id))
 
-	print("[PluginManager] Starting plugin '%s': %s %s" % [id, command, str(def.args)])
+	SingletonObject.verbose_log("[PluginManager] Starting plugin id=%s transport=stdio" % id)
 
 	var err: Error = await conn.connect_to_server()
 	if not _owns_runtime_connection(id, conn):
@@ -784,7 +784,7 @@ func start_plugin(id: String) -> Dictionary:
 		conn._subprocess.output_ready.connect(conn._drain_stdout)
 
 	plugin_started.emit(id)
-	print("[PluginManager] Plugin '%s' is RUNNING" % id)
+	SingletonObject.verbose_log("[PluginManager] Plugin '%s' is RUNNING" % id)
 
 	# Dynamic tool discovery: query the backend's tools/list and register the
 	# results into PluginToolRegistry with the auto-prefix policy (Option B).
@@ -827,11 +827,11 @@ func _discover_backend_tools(plugin_id: String, conn) -> void:
 			plugin_id, result.get("error")
 		])
 	elif result.get("skipped"):
-		print("[PluginManager] Backend tool discovery skipped for '%s': %s" % [
+		SingletonObject.verbose_log("[PluginManager] Backend tool discovery skipped for '%s': %s" % [
 			plugin_id, result.get("skipped")
 		])
 	else:
-		print("[PluginManager] Backend tool discovery for '%s': %d tool(s) registered" % [
+		SingletonObject.verbose_log("[PluginManager] Backend tool discovery for '%s': %d tool(s) registered" % [
 			plugin_id, result.get("registered", []).size()
 		])
 
@@ -870,7 +870,7 @@ func stop_plugin(id: String) -> Dictionary:
 	_reload_pending.erase(id)
 	_pending_changed_paths.erase(id)
 
-	print("[PluginManager] Stopping plugin '%s'..." % id)
+	SingletonObject.verbose_log("[PluginManager] Stopping plugin '%s'..." % id)
 
 	_cleanup_connection(id)
 	_transition_state(id, S_STOPPED)
@@ -878,7 +878,7 @@ func stop_plugin(id: String) -> Dictionary:
 	rt["start_time"] = 0.0
 
 	plugin_stopped.emit(id)
-	print("[PluginManager] Plugin '%s' STOPPED" % id)
+	SingletonObject.verbose_log("[PluginManager] Plugin '%s' STOPPED" % id)
 	return {"ok": true}
 
 
@@ -888,7 +888,7 @@ func restart_plugin(id: String) -> Dictionary:
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
-	print("[PluginManager] Restarting plugin '%s'..." % id)
+	SingletonObject.verbose_log("[PluginManager] Restarting plugin '%s'..." % id)
 
 	var stop_result := stop_plugin(id)
 	if stop_result.get("error"):
@@ -1307,10 +1307,10 @@ var _shutting_down: bool = false
 ## Called by Minerva on boot.
 func start_autostart_plugins() -> void:
 	var to_start = _db.get_autostart_plugins()
-	print("[PluginManager] Autostarting %d plugin(s)..." % to_start.size())
+	SingletonObject.verbose_log("[PluginManager] Autostarting %d plugin(s)..." % to_start.size())
 	for def in to_start:
 		if _shutting_down:
-			print("[PluginManager] Autostart aborted — shutting down")
+			SingletonObject.verbose_log("[PluginManager] Autostart aborted — shutting down")
 			return
 		var result := await start_plugin(def.id)
 		if result.get("error"):
@@ -1319,13 +1319,13 @@ func start_autostart_plugins() -> void:
 
 ## Stop all running plugins.  Called by Minerva on exit.
 func shutdown_all() -> void:
-	print("[PluginManager] Shutting down all plugins...")
+	SingletonObject.verbose_log("[PluginManager] Shutting down all plugins...")
 	_shutting_down = true
 	var running = _db.get_by_status(S_RUNNING)
 	var starting = _db.get_by_status(S_STARTING)
 	for def in (running + starting):
 		stop_plugin(def.id)
-	print("[PluginManager] All plugins stopped")
+	SingletonObject.verbose_log("[PluginManager] All plugins stopped")
 
 
 # ---------------------------------------------------------------------------

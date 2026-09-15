@@ -284,7 +284,7 @@ async def dispatch(msg):
     if method == "server/discover":
         if MODE == "modern_error":
             await send({"jsonrpc": "2.0", "id": req_id, "error": {
-                "code": -32021, "message": "Required capability is missing"}})
+                "code": -32021, "message": "SECRET_PEER_RESPONSE"}})
         elif MODE == "invalid_modern":
             await send({"jsonrpc": "2.0", "id": req_id, "result": {
                 "resultType": "complete", "ttlMs": 0, "cacheScope": "private",

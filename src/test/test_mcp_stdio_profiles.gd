@@ -1,6 +1,7 @@
 extends SceneTree
 ## Real-child dual-era STDIO coverage. One dispatcher negotiates each process;
 ## no transport mock stands in for probe timing, late frames, or cancellation.
+## The Manager removal case writes MCP config; use isolated user data.
 
 const CONNECTION_PATH := "res://Scripts/Services/MCP/MCPServerConnection.gd"
 const CONTEXT_PATH := "res://Scripts/Services/MCP/MCPExecutionContext.gd"
@@ -8,6 +9,9 @@ const PROFILE_PATH := "res://Scripts/Services/MCP/MCPProfile.gd"
 const WIRE_ADAPTER_PATH := "res://Scripts/Services/MCP/MCPWireAdapter.gd"
 const WIRE_VALUE_PATH := "res://Scripts/Services/MCP/MCPWireValue.gd"
 const FIXTURE_REL := "res://test/fixtures/stdio_timing_probe/stdio_timing_probe.py"
+const LOG_CAPTURE_PATH := "res://test/helpers/log_capture.gd"
+const MANAGER_PATH := "res://Scripts/Services/MCP/MCPManager.gd"
+const CONFIG_PATH := "res://Scripts/Services/MCP/MCPConfig.gd"
 
 var passed := 0
 var failed := 0
@@ -28,6 +32,11 @@ func _run() -> void:
 	var wire_adapter = load(WIRE_ADAPTER_PATH)
 	var wire_value = load(WIRE_VALUE_PATH)
 	var fixture := ProjectSettings.globalize_path(FIXTURE_REL)
+	var capture = load(LOG_CAPTURE_PATH).new()
+	OS.add_logger(capture)
+	var singleton = root.get_node("SingletonObject")
+	var saved_verbose: bool = singleton.verbose_logging
+	singleton.verbose_logging = false
 
 	var modern = connection_script.new("modern-fixture")
 	modern.configure_stdio("python3", PackedStringArray([fixture, "--profile", "modern"]))
@@ -43,6 +52,17 @@ func _run() -> void:
 		and envelopes[0].wire_value != null
 		and envelopes[0].to_mcp_format().get("futureField", {}).get("kept", false)
 		and envelopes[0].wire_value.raw_utf8.contains("structuredContent"))
+	var quiet_log: String = capture.combined()
+	singleton.verbose_logging = true
+	var log_start: int = capture.size()
+	var secret_marker := "SECRET_TRANSPORT_ARGUMENT"
+	var logged_echo: Dictionary = await modern.call_tool("echo", {"marker": secret_marker}, 5.0)
+	var verbose_log: String = capture.since(log_start)
+	check("transport logging is quiet by default and metadata-only when verbose",
+		logged_echo.get("echo", {}).get("marker") == secret_marker
+		and "Sending method=tools/call" not in quiet_log
+		and "Sending method=tools/call" in verbose_log and "Received kind=" in verbose_log
+		and secret_marker not in verbose_log)
 	var precise: Dictionary = await modern.call_tool("echo", {"precise": 0.12345678901234566, "canonical": 0.1}, 5.0)
 	check("STDIO shared serialization preserves finite native float precision",
 		precise.get("echo", {}).get("precise") == 0.12345678901234566
@@ -201,6 +221,9 @@ func _run() -> void:
 		await modern_error.connect_to_server() != OK
 		and modern_error.protocol_profile.era == profile_script.Era.MODERN_2026_07_28)
 	modern_error.disconnect_from_server()
+	var error_log: String = capture.combined()
+	check("peer error logging exposes a code and never its response payload",
+		"peer error code" in error_log and "SECRET_PEER_RESPONSE" not in error_log)
 
 	var invalid = connection_script.new("invalid-modern-fixture")
 	invalid.configure_stdio("python3", PackedStringArray([fixture, "--profile", "invalid_modern"]))
@@ -238,7 +261,32 @@ func _run() -> void:
 		and duplicate.tools.size() == 1 and duplicate.tools[0].name == "kept")
 	duplicate.disconnect_from_server()
 
+	var manager = load(MANAGER_PATH).new()
+	var config_script = load(CONFIG_PATH)
+	manager.config = config_script.new()
+	manager.config.servers.clear()
+	var managed = config_script.ServerConfig.create_stdio("managed", "python3",
+		PackedStringArray([fixture, "--profile", "modern"]))
+	managed.origin = "user"
+	managed.persistent = false
+	manager.config.set_server(managed)
+	check("manager publishes negotiated diagnostics from a real child",
+		await manager.connect_server("managed") == OK
+		and manager.get_server_diagnostic("managed").era == "modern")
+	manager.disconnect_server("managed")
+	managed.args = PackedStringArray([fixture, "--profile", "modern_error"])
+	check("manager records an actionable real peer rejection without remaining connecting",
+		await manager.connect_server("managed") != OK
+		and manager.get_server_diagnostic("managed").state == "failed"
+		and "peer error code -32021" in manager.get_server_diagnostic("managed").failure)
+	manager.remove_server_at_runtime("managed")
+	check("manager removal clears the real attempt diagnostic",
+		not manager._connection_diagnostics.has("managed"))
+	manager.free()
+
 	print("\n=== Results: %d passed, %d failed ===" % [passed, failed])
+	singleton.verbose_logging = saved_verbose
+	OS.remove_logger(capture)
 	quit(1 if failed else 0)
 
 

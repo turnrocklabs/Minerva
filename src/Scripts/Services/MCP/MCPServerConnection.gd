@@ -19,6 +19,7 @@ const HttpTransport = preload("res://Scripts/Services/MCP/MCPHttpTransport.gd")
 const HttpHeaders = preload("res://Scripts/Services/MCP/MCPHttpHeaders.gd")
 const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
 const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
+const Diagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnostics.gd")
 
 signal connected()
 signal disconnected()
@@ -46,6 +47,7 @@ var stdio_args: PackedStringArray = []
 
 ## Whether the server is currently connected
 var server_connected: bool = false
+var last_failure_reason: String = ""
 
 ## Skip MCP protocol initialization (for REST APIs that don't support it)
 var skip_mcp_init: bool = false
@@ -62,6 +64,17 @@ var _tools_refresh_epoch := 0
 var catalog_conformance_errors: Array[String] = []
 const MAX_TOOL_PAGES := 32
 const MAX_DISCOVERED_TOOLS := 10000
+
+
+func _safe_peer_error_category(error_value: Variant) -> String:
+	if error_value is Dictionary:
+		var code: Variant = error_value.get("code")
+		if code is int:
+			return "peer error code %d" % code
+		if code is float and is_finite(code) and code == floor(code) \
+				and abs(code) <= 9007199254740991.0:
+			return "peer error code %d" % int(code)
+	return "peer error"
 
 ## WebSocket client for persistent connections
 var _websocket: WebSocketPeer = null
@@ -128,6 +141,7 @@ func configure_stdio(command: String, args: PackedStringArray = []) -> void:
 
 ## Connect to the MCP server
 func connect_to_server() -> Error:
+	last_failure_reason = ""
 	match transport:
 		TransportType.HTTP:
 			# HTTP is stateless, just verify the server is reachable
@@ -141,7 +155,7 @@ func connect_to_server() -> Error:
 
 ## Disconnect from the server
 func disconnect_from_server() -> void:
-	print("[MCP %s] Disconnecting..." % server_name)
+	SingletonObject.verbose_log("[MCP %s] Disconnecting..." % server_name)
 	server_connected = false
 	_tools_refresh_epoch += 1
 	var disconnected_http = _http_transport
@@ -165,7 +179,7 @@ func disconnect_from_server() -> void:
 	if disconnected_websocket:
 		disconnected_websocket.close()
 	if disconnected_process:
-		print("[MCP %s] Stopping subprocess..." % server_name)
+		SingletonObject.verbose_log("[MCP %s] Stopping subprocess..." % server_name)
 		# Just stop the subprocess - don't try to free it.
 		# The subprocess destructor will call stop() again (safely, as it checks _running).
 		# Godot will clean up the node when the scene tree is destroyed.
@@ -174,7 +188,7 @@ func disconnect_from_server() -> void:
 		# the subprocess read thread may have pending deferred calls that would
 		# crash if the object is freed too soon.
 
-	print("[MCP %s] Disconnected" % server_name)
+	SingletonObject.verbose_log("[MCP %s] Disconnected" % server_name)
 
 
 ## Cancel all active HTTP requests (called when user presses stop)
@@ -203,11 +217,11 @@ func list_tools() -> Array:
 
 ## Refresh the list of available tools from the server
 func refresh_tools() -> Error:
-	print("[MCP] Refreshing tools from %s (connected=%s)..." % [server_name, server_connected])
+	SingletonObject.verbose_log("[MCP] Refreshing tools from %s (connected=%s)..." % [server_name, server_connected])
 
 	# Skip tool discovery for REST APIs that don't support MCP protocol
 	if skip_mcp_init:
-		print("[MCP] Skipping tool discovery (REST API mode)")
+		SingletonObject.verbose_log("[MCP] Skipping tool discovery (REST API mode)")
 		return OK
 
 	_tools_refresh_epoch += 1
@@ -226,7 +240,9 @@ func refresh_tools() -> Error:
 		if not _owns_catalog_refresh(refresh_epoch, owner_generation, owner_transport):
 			return ERR_BUSY
 		if result.get("error"):
-			push_error("Failed to list tools: %s" % result.get("error"))
+			last_failure_reason = ("Tool discovery rejected by peer (%s). "
+				+ "Check server compatibility.") % _safe_peer_error_category(result.get("error"))
+			push_error(last_failure_reason)
 			return ERR_QUERY_FAILED
 		if protocol_profile.era == Profile.Era.MODERN_2026_07_28:
 			if not result.has("resultType"):
@@ -302,7 +318,7 @@ func refresh_tools() -> Error:
 		if next_value == null or next_value == "":
 			tools = candidates
 			catalog_conformance_errors = candidate_conformance_errors
-			print("[MCP] Found %d tools across %d page(s)" % [tools.size(), page + 1])
+			SingletonObject.verbose_log("[MCP] Found %d tools across %d page(s)" % [tools.size(), page + 1])
 			return OK
 		if not next_value is String or seen_cursors.has(next_value):
 			push_error("tools/list returned an invalid or repeated cursor")
@@ -405,7 +421,7 @@ func set_working_directory(directory: String) -> Dictionary:
 func _verify_http_connection() -> Error:
 	server_connected = false
 	protocol_profile = Profile.new()
-	print("[MCP HTTP] Connecting to %s..." % base_url)
+	SingletonObject.verbose_log("[MCP HTTP] Connecting server=%s transport=http" % server_name)
 
 	# Skip MCP protocol init for REST APIs that don't support it
 	if skip_mcp_init:
@@ -421,7 +437,7 @@ func _verify_http_connection() -> Error:
 		var health_ok := false
 
 		for health_url in health_endpoints:
-			print("[MCP HTTP] Health check: %s" % health_url)
+			SingletonObject.verbose_log("[MCP HTTP] Health probe server=%s" % server_name)
 			var err := http.request(health_url, [], HTTPClient.METHOD_GET)
 			if err != OK:
 				continue
@@ -435,18 +451,18 @@ func _verify_http_connection() -> Error:
 			var response_code: int = response[1]
 
 			if result_code == HTTPRequest.RESULT_SUCCESS and response_code >= 200 and response_code < 300:
-				print("[MCP HTTP] Health check OK at %s" % health_url)
+				SingletonObject.verbose_log("[MCP HTTP] Health check passed server=%s" % server_name)
 				health_ok = true
 				break
 
 		http.queue_free()
 
 		if not health_ok:
-			print("[MCP HTTP] Health check failed")
+			SingletonObject.verbose_log("[MCP HTTP] Health check failed")
 			server_connected = false
 			return ERR_CANT_CONNECT
 
-		print("[MCP HTTP] Connected (REST API mode)")
+		SingletonObject.verbose_log("[MCP HTTP] Connected (REST API mode)")
 		protocol_profile = Profile.custom(_process_generation)
 		if _http_transport == null:
 			_http_transport = HttpTransport.new()
@@ -631,8 +647,7 @@ func has_tool(tool_name: String) -> bool:
 
 ## STDIO transport: Connect by spawning subprocess and performing MCP handshake
 func _connect_stdio() -> Error:
-	print("[MCP STDIO] Connecting via STDIO transport...")
-	print("[MCP STDIO] Command: %s %s" % [stdio_command, str(stdio_args)])
+	SingletonObject.verbose_log("[MCP STDIO] Connecting server=%s" % server_name)
 	var startup_deadline_ms := Time.get_ticks_msec() + int(stdio_startup_budget_sec * 1000.0)
 
 	if stdio_command.is_empty():
@@ -664,15 +679,15 @@ func _connect_stdio() -> Error:
 	# + reader threads keep the dying Minerva process alive for minutes
 	# (slow-app-close bug, 2026-07-03). Bail out instead.
 	if _subprocess.get_parent() == null:
-		push_error("Cannot spawn subprocess for '%s': scene tree rejected the node (shutting down?)" % stdio_command)
+		push_error("Cannot spawn MCP subprocess: scene tree rejected the node (shutting down?)")
 		_subprocess.free()
 		_subprocess = null
 		return ERR_CANT_CREATE
 
 	# Start the subprocess
-	print("[MCP STDIO] Starting subprocess...")
+	SingletonObject.verbose_log("[MCP STDIO] Starting subprocess...")
 	if not created_process.start(stdio_command, stdio_args):
-		push_error("Failed to start MCP server subprocess: %s" % stdio_command)
+		push_error("Failed to start MCP server subprocess for '%s'" % server_name)
 		_subprocess.queue_free()
 		_subprocess = null
 		return ERR_CANT_CREATE
@@ -705,7 +720,7 @@ func _connect_stdio() -> Error:
 	# missed, and fail outstanding requests if the subprocess dies.
 	_backstop_tick(connected_process)
 
-	print("[MCP STDIO] Subprocess running, performing MCP handshake...")
+	SingletonObject.verbose_log("[MCP STDIO] Subprocess running, performing MCP handshake...")
 
 	# Probe modern MCP first, then use the initialized legacy lane only when the
 	# peer gives no recognized modern response. Both phases share one deadline.
@@ -713,14 +728,16 @@ func _connect_stdio() -> Error:
 	if connection_generation != _process_generation or connected_process != _subprocess:
 		return ERR_CANT_CONNECT
 	if init_result.get("error"):
-		push_error("MCP initialization failed: %s" % init_result.get("error"))
+		last_failure_reason = ("Handshake rejected by peer (%s). "
+			+ "Check protocol compatibility.") % _safe_peer_error_category(init_result.get("error"))
+		push_error(last_failure_reason)
 		var failed_process = _subprocess
 		_subprocess = null
 		failed_process.stop()
 		failed_process.queue_free()
 		return ERR_CANT_CONNECT
 
-	print("[MCP STDIO] Handshake successful!")
+	SingletonObject.verbose_log("[MCP STDIO] Handshake successful!")
 	server_connected = true
 	connected.emit()
 	return OK
@@ -754,6 +771,8 @@ func _negotiate_stdio(generation: int, startup_deadline_ms: int) -> Dictionary:
 			# A specified modern protocol error proves the peer's era. It is not
 			# permission to retry the request through legacy initialization.
 			protocol_profile = Profile.modern({}, generation)
+			if classified.has("error_code"):
+				return {"error": {"code": classified.error_code}}
 			return _conn_error(classified.error)
 		var discovered: Dictionary = classified.result
 		protocol_profile = Profile.modern(discovered.capabilities, generation)
@@ -886,10 +905,8 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 		context.lifetime.cancelled.connect(on_cancel)
 
 	var request_json: String = serialized.raw + "\n"
-	var log_json := request_json.left(200)
-	if request_json.length() > 200:
-		log_json += "..."
-	print("[MCP %s] Sending: %s" % [server_name, log_json])
+	SingletonObject.verbose_log("[MCP %s] Sending method=%s id_type=%d" % [
+		server_name, str(request.get("method", "")), typeof(request.get("id"))])
 
 	if not _subprocess.write_data(request_json):
 		_pending.erase(request_key)
@@ -900,8 +917,8 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 
 	if timeout_sec > 0.0 and not pending.done:
 		var label: String = tool_name if tool_name != "" else ("id " + str(request_id))
-		pending.deadline_error = _conn_error("MCP request (%s) to '%s' timed out after %.0fs"
-				% [label, server_name, timeout_sec])
+		pending.deadline_error = _conn_error("MCP request (%s) to '%s' timed out after %s"
+				% [label, server_name, Diagnostics.timeout_text(timeout_sec)])
 		pending.deadline_timeout_sec = timeout_sec
 		_arm_pending_deadline(pending)
 
@@ -1022,7 +1039,8 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 	var capability: String = str(params.get("capability", ""))
 	var args: Dictionary = params.get("args", {})
 
-	print("[MCP STDIO] Plugin capability request: %s (id=%s)" % [capability, str(cap_id)])
+	SingletonObject.verbose_log("[MCP STDIO] Capability request plugin=%s name=%s id_type=%d" % [
+		plugin_id, capability, typeof(cap_id)])
 
 	var result_payload: Dictionary
 	if capability_request_handler.is_valid():
@@ -1048,7 +1066,8 @@ func _handle_plugin_capability_request(msg: Dictionary) -> void:
 		_on_stdio_io_failure(origin_process)
 		return
 	var response_json: String = encoded_response.raw + "\n"
-	print("[MCP STDIO] Writing capability result back: %s" % response_json.left(200))
+	SingletonObject.verbose_log("[MCP STDIO] Writing capability result server=%s id_type=%d" % [
+		server_name, typeof(cap_id)])
 	if origin_process == null or origin_process != _subprocess:
 		return
 	if not origin_process.write_data(response_json):
@@ -1183,19 +1202,16 @@ func _drain_stdout(expected_process = null) -> void:
 		if line.is_empty():
 			continue
 
-		var log_line: String = line.left(200)
-		if line.length() > 200:
-			log_line += "..."
-		print("[MCP %s] Received: %s" % [server_name, log_line])
-
 		var json := JSON.new()
 		if json.parse(line) != OK or not json.data is Dictionary:
-			push_warning("[MCP %s] Unparseable line from plugin '%s': %s"
-					% [server_name, plugin_id, line.left(200)])
+			push_warning("[MCP %s] Plugin '%s' sent an unparseable frame"
+					% [server_name, plugin_id])
 			continue
 
 		var msg: Dictionary = json.data
 		var method: String = str(msg.get("method", ""))
+		SingletonObject.verbose_log("[MCP %s] Received kind=%s id_type=%d" % [server_name,
+			"request" if not method.is_empty() else "response", typeof(msg.get("id"))])
 
 		if method != "":
 			# Plugin-initiated message.
@@ -1221,13 +1237,13 @@ func _drain_stdout(expected_process = null) -> void:
 						_validate_legacy_message_then_dispatch(line, msg,
 							_process_generation, _handle_host_notify)
 					else:
-						print("[MCP %s] Ignoring host.notify with unexpected id from plugin '%s'"
+						SingletonObject.verbose_log("[MCP %s] Ignoring host.notify with unexpected id from plugin '%s'"
 								% [server_name, plugin_id])
 				"notifications/tools/list_changed":
 					if protocol_profile.era == Profile.Era.INITIALIZED_LEGACY:
 						tools_list_changed.emit()
 				_:
-					print("[MCP %s] Unrecognized method from plugin '%s': %s"
+					SingletonObject.verbose_log("[MCP %s] Unrecognized method from plugin '%s': %s"
 							% [server_name, plugin_id, method])
 		elif msg.has("id"):
 			# A JSON-RPC response — route it to its waiter by id. An unmatched
@@ -1305,7 +1321,7 @@ func _handle_async_plugin_event(msg: Dictionary) -> void:
 		push_warning("[MCP STDIO Async] Plugin '%s' sent event with empty name" % plugin_id)
 		return
 
-	print("[MCP STDIO Async] Plugin '%s' event: %s" % [plugin_id, event_name])
+	SingletonObject.verbose_log("[MCP STDIO Async] Plugin '%s' event: %s" % [plugin_id, event_name])
 
 	if event_broker != null:
 		event_broker.handle_plugin_event(plugin_id, event_name, payload)
@@ -1317,11 +1333,8 @@ func _handle_async_plugin_event(msg: Dictionary) -> void:
 ## Delegates to PluginNotifyRouter (no response is sent — this is a one-way channel).
 func _handle_host_notify(msg: Dictionary) -> void:
 	var params: Dictionary = msg.get("params", {})
-	print("[MCP STDIO] host.notify from plugin '%s': level=%s message=%s" % [
-		plugin_id,
-		str(params.get("level", "?")),
-		str(params.get("message", "")).left(120)
-	])
+	SingletonObject.verbose_log("[MCP STDIO] host.notify plugin=%s level=%s" % [
+		plugin_id, str(params.get("level", "?"))])
 	var RouterScript = load("res://Scripts/Services/Plugins/PluginNotifyRouter.gd")
 	if RouterScript:
 		RouterScript.route(plugin_id, params)
@@ -1337,7 +1350,7 @@ func _handle_async_plugin_state(msg: Dictionary) -> void:
 		push_warning("[MCP STDIO Async] Plugin '%s' sent empty state update" % plugin_id)
 		return
 
-	print("[MCP STDIO Async] Plugin '%s' state update (keys: %s)" % [plugin_id, str(state.keys())])
+	SingletonObject.verbose_log("[MCP STDIO Async] Plugin '%s' state update key_count=%d" % [plugin_id, state.size()])
 
 	if event_broker != null:
 		event_broker.handle_plugin_state(plugin_id, state)

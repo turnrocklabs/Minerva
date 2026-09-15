@@ -33,7 +33,8 @@ static func route(plugin_id: String, params: Dictionary) -> void:
 		"error":
 			toast_type = 2  # ToastNotification.Type.ERROR
 		_:
-			push_warning("[PluginNotifyRouter] plugin '%s' sent unknown level '%s' — treating as info" % [plugin_id, raw_level])
+			push_warning("[PluginNotifyRouter] plugin '%s' sent an unknown level — treating as info" % plugin_id)
+			raw_level = "info"
 			toast_type = 0  # fallback to INFO
 
 	# --- toast ---
@@ -42,16 +43,9 @@ static func route(plugin_id: String, params: Dictionary) -> void:
 	# We call via the stable public API; dynamic integer cast avoids the off-tree
 	# class_name dependency.
 	if SingletonObject and SingletonObject.has_method("create_toast_notification"):
-		SingletonObject.call("create_toast_notification", message, toast_type)
+		SingletonObject.call("create_toast_notification", message, toast_type, false)
 	else:
-		# Fallback: at least log to console
-		match toast_type:
-			2:
-				push_error("[Plugin:%s] %s" % [plugin_id, message])
-			1:
-				push_warning("[Plugin:%s] %s" % [plugin_id, message])
-			_:
-				print("[Plugin:%s] %s" % [plugin_id, message])
+		_console_notice(plugin_id, raw_level, "toast surface unavailable")
 
 	# --- Activity:MCP log ---
 	_append_to_activity_log(plugin_id, raw_level, message, details)
@@ -68,16 +62,13 @@ static func _append_to_activity_log(plugin_id: String, level: String, message: S
 		ep = SingletonObject.editor_pane
 
 	if ep == null or not ep.has_method("_get_or_create_activity_log"):
-		# Activity surface not ready — log to console only.
-		print("[PluginNotifyRouter] Activity surface unavailable; [%s] plugin=%s level=%s: %s" % [
-			_timestamp(), plugin_id, level, message])
+		_console_notice(plugin_id, level, "activity surface unavailable")
 		return
 
 	var editor = ep._get_or_create_activity_log("")  # "" → "Activity: MCP" tab
 
 	if editor == null or editor.get("code_edit") == null:
-		print("[PluginNotifyRouter] Activity editor/code_edit missing; [%s] plugin=%s level=%s: %s" % [
-			_timestamp(), plugin_id, level, message])
+		_console_notice(plugin_id, level, "activity editor unavailable")
 		return
 
 	var lines: PackedStringArray = []
@@ -105,3 +96,8 @@ static func _append_to_activity_log(plugin_id: String, level: String, message: S
 static func _timestamp() -> String:
 	var t := Time.get_time_dict_from_system()
 	return "%02d:%02d:%02d" % [t.hour, t.minute, t.second]
+
+
+static func _console_notice(plugin_id: String, level: String, category: String) -> void:
+	var notice := "[PluginNotifyRouter] %s; plugin=%s level=%s" % [category, plugin_id, level]
+	print(notice)

@@ -3,6 +3,7 @@ extends PersistentWindow
 
 const VoiceFeature = preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 const VoicePrompt = preload("res://Scripts/Services/Voice/VoiceDeactivationPrompt.gd")
+const MCPServerDiagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnostics.gd")
 
 
 @onready var output_device_button: OptionButton = %OutputDeviceButton
@@ -83,6 +84,7 @@ const AUTH_PRESET_CUSTOM_IDX = 2 # Index of the "Custom" option in the OptionBut
 }
 
 var config_file = ConfigFile.new()
+var _staged_verbose_logging := false
 
 
 func _ready():
@@ -140,10 +142,7 @@ func _ready():
 		_on_experimental_check_button_toggled(enable_exp)
 		%ExperimentalCheckButton.button_pressed = enable_exp
 
-	# Load verbose logging setting
-	if SingletonObject.config_has_saved_section("Logging"):
-		var enable_verbose: bool = SingletonObject.config_file.get_value("Logging", "verbose", false)
-		%VerboseLoggingCheckButton.button_pressed = enable_verbose
+	_load_verbose_logging_setting(%VerboseLoggingCheckButton)
 
 	# Defer to next frame to avoid AudioServer race condition crash
 	call_deferred("populate_output_devices_button")
@@ -245,6 +244,12 @@ func _set_connection_options_visibility(on: bool):
 func _on_btn_save_prefs_pressed():
 	if not await _confirm_voice_deactivation():
 		return
+	_apply_staged_verbose_logging()
+	_save_confirmed_preferences()
+	hide()
+
+
+func _save_confirmed_preferences() -> void:
 	config_file.set_value("USER", "first_name", _fields["first_name"].text)
 	config_file.set_value("USER", "last_name", _fields["last_name"].text)
 
@@ -266,10 +271,9 @@ func _on_btn_save_prefs_pressed():
 	_save_agent_context_summary_preferences()
 	config_file.save_encrypted_pass("user://Preferences.agent", OS.get_unique_id())
 
-	hide()
-
 func _on_about_to_popup():
 	set_field_values()
+	_load_verbose_logging_setting(%VerboseLoggingCheckButton)
 	if is_instance_valid(_voice_tab):
 		_voice_load_ui_from_config()
 	theme_option_button.selected = SingletonObject.get_theme_enum()
@@ -379,7 +383,16 @@ func _on_experimental_check_button_toggled(toggled_on: bool) -> void:
 
 
 func _on_verbose_logging_check_button_toggled(toggled_on: bool) -> void:
-	SingletonObject.set_verbose_logging(toggled_on)
+	_staged_verbose_logging = toggled_on
+
+
+func _load_verbose_logging_setting(button: BaseButton) -> void:
+	_staged_verbose_logging = SingletonObject.config_file.get_value("Logging", "verbose", false)
+	button.set_pressed_no_signal(_staged_verbose_logging)
+
+
+func _apply_staged_verbose_logging() -> void:
+	SingletonObject.set_verbose_logging(_staged_verbose_logging)
 
 
 func populate_output_devices_button() -> void:
@@ -1677,6 +1690,9 @@ var _server_path_edits: Dictionary = {}  # server_name -> LineEdit
 var _server_port_spins: Dictionary = {}  # server_name -> SpinBox
 var _server_auto_connect_checks: Dictionary = {}  # server_name -> CheckButton
 var _server_status_labels: Dictionary = {}  # server_name -> Label
+var _server_connection_buttons: Dictionary = {}
+var _server_installation_labels: Dictionary = {}
+var _server_status_manager = null
 var _tool_set_checks_container: VBoxContainer
 var _auto_tool_check: CheckButton
 var _tool_budget_spin: SpinBox
@@ -1867,13 +1883,14 @@ func _load_tools_settings() -> void:
 		if server_cfg:
 			_server_auto_connect_checks[server_name].button_pressed = server_cfg.auto_connect
 
-		# Status
-		if config.is_server_installed(server_name):
-			_server_status_labels[server_name].text = "Installed"
-			_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
-		else:
-			_server_status_labels[server_name].text = "Not installed"
-			_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.8, 0.4, 0.4))
+		# Installation is separate from live transport state.
+		if _server_installation_labels.has(server_name):
+			if config.is_server_installed(server_name):
+				_server_installation_labels[server_name].text = "Installed"
+				_server_installation_labels[server_name].add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+			else:
+				_server_installation_labels[server_name].text = "Not installed"
+				_server_installation_labels[server_name].add_theme_color_override("font_color", Color(0.8, 0.4, 0.4))
 
 	# Auto tool management
 	if _auto_tool_check:
@@ -1902,8 +1919,11 @@ func _rebuild_server_list(config: MCPConfig) -> void:
 	_server_port_spins.clear()
 	_server_auto_connect_checks.clear()
 	_server_status_labels.clear()
+	_server_connection_buttons.clear()
+	_server_installation_labels.clear()
 
 	var mcp = SingletonObject.mcp_manager
+	_ensure_server_status_signals(mcp)
 
 	for server_cfg in config.servers:
 		var server_name: String = server_cfg.name
@@ -1925,6 +1945,10 @@ func _rebuild_server_list(config: MCPConfig) -> void:
 		# Connection status
 		var connected = mcp and mcp.is_server_connected(server_name)
 		var status_label := Label.new()
+		var diagnostic: Dictionary = mcp.get_server_diagnostic(server_name, server_cfg.type) \
+			if mcp and mcp.has_method("get_server_diagnostic") else {
+				"state": "connected" if connected else "disconnected", "transport": server_cfg.type}
+		status_label.text = MCPServerDiagnostics.status_text(diagnostic)
 		status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		header_hbox.add_child(status_label)
 		_server_status_labels[server_name] = status_label
@@ -1932,8 +1956,9 @@ func _rebuild_server_list(config: MCPConfig) -> void:
 		# Connect/Disconnect button
 		var conn_btn := Button.new()
 		conn_btn.text = "Disconnect" if connected else "Connect"
-		conn_btn.pressed.connect(_on_server_connect_toggle.bind(server_name, conn_btn))
+		conn_btn.pressed.connect(_on_server_connect_toggle.bind(server_name, conn_btn, status_label))
 		header_hbox.add_child(conn_btn)
+		_server_connection_buttons[server_name] = conn_btn
 
 		# Remove button (user servers only)
 		if is_user:
@@ -1958,6 +1983,13 @@ func _rebuild_server_list(config: MCPConfig) -> void:
 			info_label.text = "  %s: %s" % [type_prefix, server_cfg.url]
 		info_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		info_hbox.add_child(info_label)
+
+		if is_known and MCPKnownServers.is_installable(server_name):
+			var installation_label := Label.new()
+			installation_label.text = "Installed" if config.is_server_installed(server_name) else "Not installed"
+			installation_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+			info_hbox.add_child(installation_label)
+			_server_installation_labels[server_name] = installation_label
 
 		# Known servers get installation path, port, browse controls
 		if is_known and MCPKnownServers.is_installable(server_name):
@@ -2017,7 +2049,7 @@ func _rebuild_server_list(config: MCPConfig) -> void:
 
 
 ## Handle connect/disconnect toggle from preferences
-func _on_server_connect_toggle(server_name: String, btn: Button) -> void:
+func _on_server_connect_toggle(server_name: String, btn: Button, status_label: Label) -> void:
 	var mcp = SingletonObject.mcp_manager
 	if not mcp:
 		return
@@ -2025,10 +2057,49 @@ func _on_server_connect_toggle(server_name: String, btn: Button) -> void:
 		mcp.disconnect_server(server_name)
 		btn.text = "Connect"
 	else:
+		status_label.text = MCPServerDiagnostics.status_text(
+			{"state": "connecting", "transport": mcp.config.get_server(server_name).type})
 		var err = await mcp.connect_server(server_name)
+		if not is_instance_valid(btn) or not is_instance_valid(status_label) \
+				or _server_status_labels.get(server_name) != status_label:
+			return
 		if err == OK:
 			btn.text = "Disconnect"
-	_load_tools_settings()
+	_refresh_server_status_label(server_name)
+
+
+func _ensure_server_status_signals(mcp) -> void:
+	if _server_status_manager == mcp:
+		return
+	if is_instance_valid(_server_status_manager):
+		for signal_name in [&"server_connected", &"server_disconnected", &"server_error"]:
+			var callback := Callable(self, "_on_server_status_signal")
+			if _server_status_manager.is_connected(signal_name, callback):
+				_server_status_manager.disconnect(signal_name, callback)
+	_server_status_manager = mcp
+	if not is_instance_valid(mcp):
+		return
+	for signal_name in [&"server_connected", &"server_disconnected", &"server_error"]:
+		mcp.connect(signal_name, Callable(self, "_on_server_status_signal"))
+
+
+func _on_server_status_signal(server_name: String, _detail: String = "") -> void:
+	_refresh_server_status_label(server_name)
+
+
+func _refresh_server_status_label(server_name: String) -> void:
+	var label: Label = _server_status_labels.get(server_name)
+	var button: Button = _server_connection_buttons.get(server_name)
+	var mcp = SingletonObject.mcp_manager
+	if not is_instance_valid(label) or not is_instance_valid(mcp):
+		return
+	var server_cfg = mcp.config.get_server(server_name) if mcp.config else null
+	if server_cfg == null:
+		return
+	label.text = MCPServerDiagnostics.status_text(
+		mcp.get_server_diagnostic(server_name, server_cfg.type))
+	if is_instance_valid(button):
+		button.text = "Disconnect" if mcp.is_server_connected(server_name) else "Connect"
 
 
 ## Handle remove user server from preferences
@@ -2313,8 +2384,8 @@ func _on_tools_dir_selected(server_name: String, path: String) -> void:
 	config.save_config()
 
 	_server_path_edits[server_name].text = path
-	_server_status_labels[server_name].text = "Installed"
-	_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
+	_server_installation_labels[server_name].text = "Installed"
+	_server_installation_labels[server_name].add_theme_color_override("font_color", Color(0.4, 0.8, 0.4))
 
 	SingletonObject.create_toast_notification(
 		"%s: Installation registered" % server_name.capitalize(),
@@ -2353,8 +2424,8 @@ func _on_tools_clear_path_pressed(server_name: String) -> void:
 	config.save_config()
 
 	_server_path_edits[server_name].text = ""
-	_server_status_labels[server_name].text = "Not installed"
-	_server_status_labels[server_name].add_theme_color_override("font_color", Color(0.8, 0.4, 0.4))
+	_server_installation_labels[server_name].text = "Not installed"
+	_server_installation_labels[server_name].add_theme_color_override("font_color", Color(0.8, 0.4, 0.4))
 
 	SingletonObject.create_toast_notification(
 		"%s: Installation path cleared" % server_name.capitalize(),

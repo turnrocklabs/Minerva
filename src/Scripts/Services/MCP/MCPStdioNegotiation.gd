@@ -50,7 +50,7 @@ static func classify_discovery(response: Dictionary) -> Dictionary:
 		var rpc_error: Dictionary = response.rpc_error
 		var code: int = int(rpc_error.get("code", 0))
 		return {"modern": code in MODERN_ERROR_CODES, "fallback": code not in MODERN_ERROR_CODES,
-			"error": str(rpc_error.get("message", "Discovery failed"))}
+			"error": str(rpc_error.get("message", "Discovery failed")), "error_code": code}
 	if response.has("error"):
 		return {"modern": false, "fallback": true, "error": str(response.error)}
 	var result_value: Variant = response.get("result")

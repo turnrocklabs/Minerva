@@ -8,6 +8,7 @@ const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const MCPServerConnectionScript := preload("res://Scripts/Services/MCP/MCPServerConnection.gd")
 const MCPConfigScript := preload("res://Scripts/Services/MCP/MCPConfig.gd")
+const MCPProfileScript := preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const ToolSchemaRuntime := preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 const MinervaMCPServerScript := preload("res://Scripts/Services/MCP/MinervaMCPServer.gd")
 const MinervaMCPHttpServerScript := preload("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd")
@@ -22,6 +23,8 @@ signal tools_refreshed()
 ## Connected server instances
 var servers: Dictionary = {}  # server_name -> MCPServerConnection
 var _connecting_servers: Dictionary = {}
+var _connection_diagnostics: Dictionary = {}
+var _next_connection_attempt := 0
 
 ## Registry of all available tools across all servers
 var tool_registry: Dictionary = {}  # tool_name -> MCPToolDefinition
@@ -38,21 +41,21 @@ var http_server: MinervaMCPHttpServerScript = null
 
 
 func _ready() -> void:
-	print("[MCP] MCPManager._ready() called")
+	SingletonObject.verbose_log("[MCP] MCPManager._ready() called")
 	config = MCPConfigScript.new()
 	config.load_config()
 
 	# Initialize the internal Minerva server (but don't connect it yet)
 	minerva_server = MinervaMCPServerScript.new(self)
 
-	print("[MCP] After _ready(), tool_registry has %d tools" % tool_registry.size())
+	SingletonObject.verbose_log("[MCP] After _ready(), tool_registry has %d tools" % tool_registry.size())
 
 
 func _exit_tree() -> void:
 	# Clean up all connections when the app exits
-	print("[MCP] Cleaning up connections on exit...")
+	SingletonObject.verbose_log("[MCP] Cleaning up connections on exit...")
 	disconnect_all()
-	print("[MCP] Connections cleaned up")
+	SingletonObject.verbose_log("[MCP] Connections cleaned up")
 
 
 ## Initialize and connect to configured servers
@@ -61,7 +64,7 @@ func initialize() -> void:
 	for server_config in auto_connect_servers:
 		var err: Error = await connect_server(server_config.name)
 		if err == OK:
-			print("MCP: Connected to %s (%s)" % [server_config.name, server_config.type])
+			SingletonObject.verbose_log("MCP: Connected to %s (%s)" % [server_config.name, server_config.type])
 		else:
 			push_warning("MCP: Failed to connect to %s: %s" % [server_config.name, error_string(err)])
 
@@ -80,6 +83,11 @@ func connect_server(server_name: String) -> Error:
 		return ERR_BUSY
 
 	var transport = MCPConfigScript.transport_type_from_string(server_config.type)
+	_next_connection_attempt += 1
+	var attempt := _next_connection_attempt
+	_connection_diagnostics[server_name] = {"state": "connecting",
+		"transport": server_config.type, "failure": "", "attempt": attempt,
+		"config_key": _server_config_key(server_config)}
 	var connection = MCPServerConnectionScript.new(
 		server_name,
 		server_config.url,
@@ -112,6 +120,11 @@ func connect_server(server_name: String) -> Error:
 	if err != OK:
 		_connecting_servers.erase(server_name)
 		var msg := "Failed to connect to %s: %s" % [server_name, error_string(err)]
+		var failure_reason: String = connection.last_failure_reason
+		if failure_reason.is_empty():
+			failure_reason = "Transport unavailable (%s). Check the server configuration." % error_string(err)
+		_record_connection_failure(server_name, server_config.type, failure_reason, attempt,
+			_server_config_key(server_config))
 		push_error("[MCP] " + msg)
 		server_error.emit(server_name, msg)
 		SingletonObject.create_toast_notification(msg, ToastNotification.Type.ERROR)
@@ -127,18 +140,27 @@ func connect_server(server_name: String) -> Error:
 		push_warning("[MCP] Tool refresh failed for %s, rolling back connection" % server_name)
 		connection.disconnect_from_server()
 		var msg := "%s connected but tool discovery failed — disconnected" % server_name
+		var discovery_reason: String = connection.last_failure_reason
+		if discovery_reason.is_empty():
+			discovery_reason = "Tool discovery failed. Check server compatibility."
+		_record_connection_failure(server_name, server_config.type, discovery_reason, attempt,
+			_server_config_key(server_config))
 		server_error.emit(server_name, msg)
 		SingletonObject.create_toast_notification(msg, ToastNotification.Type.ERROR)
 		return ERR_CANT_ACQUIRE_RESOURCE
 
 	servers[server_name] = connection
+	var connected_state := _connected_diagnostic(server_config.type, connection)
+	connected_state["attempt"] = attempt
+	connected_state["config_key"] = _server_config_key(server_config)
+	_connection_diagnostics[server_name] = connected_state
 	_connecting_servers.erase(server_name)
 	_replace_server_tools(connection)
 
 	# Debug: Log registered tools
-	print("[MCP] Registered %d tools from %s:" % [connection.tools.size(), server_name])
+	SingletonObject.verbose_log("[MCP] Registered %d tools from %s:" % [connection.tools.size(), server_name])
 	for tool in connection.tools:
-		print("[MCP]   - %s" % tool.name)
+		SingletonObject.verbose_log("[MCP]   - %s" % tool.name)
 
 	server_connected.emit(server_name)
 	return OK
@@ -152,9 +174,50 @@ func disconnect_server(server_name: String) -> void:
 	_connecting_servers.erase(server_name)
 	if servers.get(server_name) == connection:
 		servers.erase(server_name)
-	connection.disconnect_from_server()
+	var previous: Dictionary = _connection_diagnostics.get(server_name, {})
+	_connection_diagnostics[server_name] = {"state": "disconnected",
+		"transport": previous.get("transport", ""), "failure": "",
+		"config_key": previous.get("config_key", "")}
 	_unregister_server_tools(server_name, connection)
+	connection.disconnect_from_server()
 	server_disconnected.emit(server_name)
+
+
+func get_server_diagnostic(server_name: String, transport: String = "") -> Dictionary:
+	var diagnostic: Dictionary = _connection_diagnostics.get(server_name, {})
+	var current_config = config.get_server(server_name) if config else null
+	if diagnostic.is_empty() or (not transport.is_empty() and diagnostic.get("transport") != transport) \
+			or (current_config and diagnostic.get("config_key") != _server_config_key(current_config)):
+		return {"state": "disconnected", "transport": transport, "failure": ""}
+	return diagnostic.duplicate(true)
+
+
+func _record_connection_failure(server_name: String, transport: String, reason: String,
+		attempt: int = -1, config_key: String = "") -> void:
+	if attempt >= 0 and _connection_diagnostics.get(server_name, {}).get("attempt") != attempt:
+		return
+	_connection_diagnostics[server_name] = {"state": "failed", "transport": transport,
+		"failure": reason, "attempt": attempt, "config_key": config_key}
+
+
+func _server_config_key(server_config) -> String:
+	return JSON.stringify({"type": server_config.type, "url": server_config.url,
+		"command": server_config.command, "args": server_config.args,
+		"endpoint": server_config.mcp_endpoint, "working_directory": server_config.working_directory,
+		"skip_mcp_init": server_config.skip_mcp_init}).sha256_text()
+
+
+func _connected_diagnostic(transport: String, connection) -> Dictionary:
+	var era := "custom"
+	var version := ""
+	if connection.protocol_profile.era == MCPProfileScript.Era.MODERN_2026_07_28:
+		era = "modern"
+		version = connection.protocol_profile.protocol_version
+	elif connection.protocol_profile.era == MCPProfileScript.Era.INITIALIZED_LEGACY:
+		era = "legacy"
+		version = connection.protocol_profile.protocol_version
+	return {"state": "connected", "transport": transport, "era": era,
+		"version": version, "failure": ""}
 
 
 ## Disconnect from all servers
@@ -252,6 +315,8 @@ func add_server_at_runtime(server_config, connect_now: bool = true) -> Error:
 	# Warn about duplicate name (existing config will be overwritten)
 	if config.get_server(server_config.name):
 		push_warning("[MCP] Overwriting existing server config: %s" % server_config.name)
+		disconnect_server(server_config.name)
+		_connection_diagnostics.erase(server_config.name)
 
 	config.set_server(server_config)
 
@@ -277,6 +342,7 @@ func remove_server_at_runtime(server_name: String) -> void:
 		return
 
 	disconnect_server(server_name)
+	_connection_diagnostics.erase(server_name)
 	config.remove_server(server_name)
 	config.save_config()
 
@@ -438,10 +504,10 @@ func execute_tool(tool_name: String, arguments: Dictionary = {}, caller_chat_id:
 
 func _execute_tool_with_context(tool_name: String, arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	var caller_chat_id: String = context.caller_chat_id
-	print("[MCP] execute_tool called: %s" % tool_name)
+	SingletonObject.verbose_log("[MCP] execute_tool called: %s" % tool_name)
 
 	if not tool_registry.has(tool_name):
-		print("[MCP] Tool not found! Available tools: %s" % str(tool_registry.keys()))
+		SingletonObject.verbose_log("[MCP] Tool not found! Available tools: %s" % str(tool_registry.keys()))
 		return {"error": "Tool not found: %s" % tool_name, "success": false}
 
 	var tool = tool_registry[tool_name]
@@ -651,7 +717,7 @@ func get_tools_for_openai() -> Array[Dictionary]:
 ## Get tools formatted for Claude/Anthropic
 func get_tools_for_anthropic() -> Array[Dictionary]:
 	var tools: Array[Dictionary] = []
-	print("[MCP] get_tools_for_anthropic() checking %d tools in registry..." % tool_registry.size())
+	SingletonObject.verbose_log("[MCP] get_tools_for_anthropic() checking %d tools in registry..." % tool_registry.size())
 	for tool_name in tool_registry:
 		var tool = tool_registry[tool_name]
 		var server_name = tool.server_name
@@ -661,7 +727,7 @@ func get_tools_for_anthropic() -> Array[Dictionary]:
 		var connected = minerva_connected or external_connected
 		if connected and _is_tool_in_enabled_set(tool):
 			tools.append(tool.to_anthropic_format())
-	print("[MCP] get_tools_for_anthropic() returning %d tools (filtered from %d in registry)" % [tools.size(), tool_registry.size()])
+	SingletonObject.verbose_log("[MCP] get_tools_for_anthropic() returning %d tools (filtered from %d in registry)" % [tools.size(), tool_registry.size()])
 	return tools
 
 
@@ -792,10 +858,20 @@ func _unregister_server_tools(server_name: String, expected_connection = null) -
 func _on_server_disconnected(server_name: String, connection) -> void:
 	if _connecting_servers.get(server_name) == connection:
 		_connecting_servers.erase(server_name)
+		var pending: Dictionary = _connection_diagnostics.get(server_name, {})
+		_record_connection_failure(server_name, str(pending.get("transport", "")),
+			"Connection closed during startup", int(pending.get("attempt", -1)),
+			str(pending.get("config_key", "")))
+		server_error.emit(server_name, "Connection closed during startup")
 	if servers.get(server_name) != connection:
 		return
 	servers.erase(server_name)
 	_unregister_server_tools(server_name, connection)
+	var previous: Dictionary = _connection_diagnostics.get(server_name, {})
+	_connection_diagnostics[server_name] = {"state": "failed",
+		"transport": previous.get("transport", ""),
+		"failure": "Connection closed unexpectedly",
+		"config_key": previous.get("config_key", "")}
 	server_disconnected.emit(server_name)
 
 
