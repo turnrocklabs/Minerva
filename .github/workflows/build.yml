@@ -911,7 +911,7 @@ jobs:
 
       - name: Cache EIRTeam.FFmpeg built addon (macOS)
         id: ffmpeg-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: src/addons/ffmpeg/macos
           key: ffmpeg-macos-universal-${{ steps.ffmpeg-sha.outputs.sha }}
@@ -943,13 +943,23 @@ jobs:
             src/addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework/libgdffmpeg_advanced.macos.template_debug
             src/addons/ffmpeg/macos/libgdffmpeg.macos.template_release.framework/libgdffmpeg_advanced.macos.template_release
           )
-          for library in avcodec avdevice avfilter avformat avutil swresample swscale; do
+          # Match ffmpeg.gdextension's packaged runtime dependency manifest.
+          # libavdevice is built in the universal intermediate but the wrapper
+          # neither links nor installs it.
+          for library in avcodec avfilter avformat avutil swresample swscale; do
             binaries+=("src/addons/ffmpeg/macos/lib${library}.dylib")
           done
           for binary in "${binaries[@]}"; do
             [ -f "$binary" ] || { echo "::error::Missing FFmpeg binary: $binary"; exit 1; }
             lipo "$binary" -verify_arch arm64 x86_64
           done
+
+      - name: Save verified EIRTeam.FFmpeg addon cache
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: src/addons/ffmpeg/macos
+          key: ffmpeg-macos-universal-${{ steps.ffmpeg-sha.outputs.sha }}
 
       - name: Download godot-sqlite addon
         run: |
@@ -1744,6 +1754,11 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: packaged
+      - name: Install Linux packaged-app runtime dependencies
+        if: steps.selected.outputs.value == 'true' && matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
       - name: Verify final packaged native runtimes
         if: steps.selected.outputs.value == 'true'
         shell: bash
@@ -1755,7 +1770,8 @@ jobs:
               tar -xzf packaged/Minerva-Linux.tar.gz -C extracted
               src/plugins/voice/scripts/test-runtime-root.sh linux-x86_64 extracted/builtin-plugins/voice
               scripts/test-packaged-mcp-helper.sh linux-x86_64 extracted/mcp-runtime/linux-x86_64
-              python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.x86_64
+              xvfb-run --auto-servernum \
+                python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.x86_64
               ;;
             windows)
               unzip -q packaged/Minerva-Windows.zip -d extracted
@@ -1795,7 +1811,11 @@ jobs:
             "extracted-debug/mcp-runtime/${{ matrix.target }}"
           executable=extracted-debug/Minerva.x86_64
           [ "${{ matrix.platform }}" != windows ] || executable=extracted-debug/Minerva.exe
-          python3 scripts/verify-packaged-mcp-app.py "$executable"
+          if [ "${{ matrix.platform }}" = linux ]; then
+            xvfb-run --auto-servernum python3 scripts/verify-packaged-mcp-app.py "$executable"
+          else
+            python3 scripts/verify-packaged-mcp-app.py "$executable"
+          fi
 
   create-release:
     needs: [build-godot, export-macos, verify-packaged-voice, functional-tests, tarball-smoke]
