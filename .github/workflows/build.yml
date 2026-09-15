@@ -717,7 +717,7 @@ jobs:
           vendor/godot_wry/rust/target/aarch64-apple-darwin/release/libgodot_wry.dylib \
           vendor/godot_wry/rust/target/x86_64-apple-darwin/release/libgodot_wry.dylib \
           -output "$FW_DIR/libgodot_wry"
-        lipo -verify_arch arm64 x86_64 "$FW_DIR/libgodot_wry"
+        lipo "$FW_DIR/libgodot_wry" -verify_arch arm64 x86_64
         codesign --force --sign - "$FW_DIR/libgodot_wry"
 
     - name: Build ghostty-vt shim (universal)
