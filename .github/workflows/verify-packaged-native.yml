@@ -126,7 +126,7 @@ jobs:
               tar -xzf packaged/Minerva-Linux.tar.gz -C extracted
               src/plugins/voice/scripts/test-runtime-root.sh linux-x86_64 extracted/builtin-plugins/voice
               scripts/test-packaged-mcp-helper.sh linux-x86_64 extracted/mcp-runtime/linux-x86_64
-              xvfb-run --auto-servernum \
+              xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
                 python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.x86_64
               ;;
             windows)
@@ -170,7 +170,8 @@ jobs:
           executable=extracted-debug/Minerva.x86_64
           [ "${{ matrix.platform }}" != windows ] || executable=extracted-debug/Minerva.exe
           if [ "${{ matrix.platform }}" = linux ]; then
-            xvfb-run --auto-servernum python3 scripts/verify-packaged-mcp-app.py "$executable"
+            xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
+              python3 scripts/verify-packaged-mcp-app.py "$executable"
           else
             python3 scripts/verify-packaged-mcp-app.py "$executable"
           fi

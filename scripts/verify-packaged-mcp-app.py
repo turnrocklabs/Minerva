@@ -82,12 +82,12 @@ def main() -> int:
         stdout_path = temporary_root / "minerva.stdout.log"
         stderr_path = temporary_root / "minerva.stderr.log"
         timed_out = False
+        command = [str(executable), "--headless", "--verbose"]
+        if sys.platform.startswith("linux"):
+            command = ["stdbuf", "-oL", "-eL", *command]
         with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
-            # The compatibility backend avoids selecting CEF's accelerated
-            # Vulkan path when the headless CI host has no RenderingDevice.
             process = subprocess.Popen(
-                [str(executable), "--headless", "--rendering-method", "gl_compatibility"],
-                cwd=str(executable.parent), env=env,
+                command, cwd=str(executable.parent), env=env,
                 stdout=stdout_file, stderr=stderr_file, **kwargs)
             try:
                 process.wait(timeout=TIMEOUT_SECONDS)
@@ -106,7 +106,12 @@ def main() -> int:
         if timed_out:
             sys.stdout.write(stdout)
             sys.stderr.write(stderr)
-            print("exported MCP helper probe timed out", file=sys.stderr)
+            phases = re.findall(r"PACKAGED_MCP_HELPER_PHASE=([^\r\n]+)", stdout)
+            last_phase = phases[-1] if phases else "not-entered"
+            print(
+                "exported MCP helper probe timed out: "
+                f"returncode={process.returncode}, last_phase={last_phase}",
+                file=sys.stderr)
             return 1
 
     sys.stdout.write(stdout)
