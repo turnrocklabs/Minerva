@@ -78,7 +78,8 @@ def main() -> int:
             "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         process = subprocess.Popen(
             [str(executable), "--headless"], cwd=str(executable.parent), env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kwargs)
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            encoding="utf-8", errors="replace", **kwargs)
         try:
             stdout, stderr = process.communicate(timeout=TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:

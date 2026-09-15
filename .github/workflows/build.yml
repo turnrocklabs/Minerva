@@ -462,7 +462,7 @@ jobs:
     - name: Install MCP schema helper for host tests
       run: |
         archive=mcp-schema-helper/minerva-json-schema-helper-linux-x86_64.tar.gz
-        expected=$(cat "$archive.sha256")
+        expected=$(tr -d '\r\n' < "$archive.sha256")
         actual=$(sha256sum "$archive" | cut -d' ' -f1)
         [ "$actual" = "$expected" ]
         mkdir -p /tmp/mcp-schema-helper
@@ -1090,7 +1090,7 @@ jobs:
           for target in macos-arm64 macos-amd64; do
             artifact="${GITHUB_WORKSPACE}/mcp-schema-helpers/minerva-json-schema-helper-${target}"
             archive="$artifact/minerva-json-schema-helper-${target}.tar.gz"
-            expected=$(cat "$archive.sha256")
+            expected=$(tr -d '\r\n' < "$archive.sha256")
             actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
             [ "$actual" = "$expected" ] || { echo "::error::MCP helper checksum mismatch: $target"; exit 1; }
             mkdir -p "$ROOT/$target"
@@ -1517,7 +1517,7 @@ jobs:
             destination="$2/mcp-runtime/$target"
             artifact="${GITHUB_WORKSPACE}/mcp-schema-helpers/minerva-json-schema-helper-${target}"
             archive="$artifact/minerva-json-schema-helper-${target}.tar.gz"
-            expected=$(cat "$archive.sha256")
+            expected=$(tr -d '\r\n' < "$archive.sha256")
             actual=$(sha256sum "$archive" | cut -d' ' -f1)
             [ "$actual" = "$expected" ] || { echo "::error::MCP helper checksum mismatch: $target"; exit 1; }
             mkdir -p "$destination"
