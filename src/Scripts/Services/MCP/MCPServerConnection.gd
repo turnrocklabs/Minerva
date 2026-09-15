@@ -1,5 +1,6 @@
 class_name MCPServerConnection
 extends RefCounted
+const JsonSerialization = preload("res://Scripts/Services/MCP/MCPJsonSerialization.gd")
 
 const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
 ## Base class for MCP server connections.
@@ -12,10 +13,13 @@ const Protocol = preload("res://Scripts/Services/MCP/MCPProtocol.gd")
 const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const StdioNegotiation = preload("res://Scripts/Services/MCP/MCPStdioNegotiation.gd")
 const WireAdapter = preload("res://Scripts/Services/MCP/MCPWireAdapter.gd")
+const HttpTransport = preload("res://Scripts/Services/MCP/MCPHttpTransport.gd")
+const HttpHeaders = preload("res://Scripts/Services/MCP/MCPHttpHeaders.gd")
 const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
 
 signal connected()
 signal disconnected()
+signal http_notification_received(message: Dictionary, request_id: Variant)
 signal tool_result_received(tool_name: String, result: Dictionary)
 signal tool_result_envelope_received(tool_name: String, result)
 
@@ -70,7 +74,7 @@ var stdio_startup_budget_sec := 12.0
 var stdio_discovery_budget_sec := 1.0
 
 ## Active HTTP requests that can be cancelled
-var _active_http_requests: Array[HTTPRequest] = []
+var _http_transport = null
 
 ## MCP protocol version
 const MCP_PROTOCOL_VERSION := "2025-06-18"
@@ -131,6 +135,10 @@ func connect_to_server() -> Error:
 func disconnect_from_server() -> void:
 	print("[MCP %s] Disconnecting..." % server_name)
 	server_connected = false
+	var disconnected_http = _http_transport
+	_http_transport = null
+	if disconnected_http != null:
+		disconnected_http.disconnect_transport()
 	var disconnected_pending: Array = _pending.values()
 	var disconnected_process = _subprocess
 	_subprocess = null
@@ -162,12 +170,8 @@ func disconnect_from_server() -> void:
 
 ## Cancel all active HTTP requests (called when user presses stop)
 func cancel_active_requests() -> void:
-	for request in _active_http_requests:
-		if is_instance_valid(request):
-			if request.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
-				request.cancel_request()
-			request.queue_free()
-	_active_http_requests.clear()
+	if _http_transport != null:
+		_http_transport.cancel_active()
 	if transport == TransportType.STDIO:
 		var pending_requests: Array = _pending.values()
 		for pending_value: Variant in pending_requests:
@@ -211,6 +215,14 @@ func refresh_tools() -> Error:
 	if tools_data is Array:
 		print("[MCP] Found %d tools" % tools_data.size())
 		for tool_data in tools_data:
+			if transport == TransportType.HTTP and protocol_profile.era == Profile.Era.MODERN_2026_07_28 and tool_data is Dictionary:
+				if not tool_data.get("inputSchema") is Dictionary or tool_data.inputSchema.get("type") != "object":
+					push_warning("Excluded MCP tool with invalid inputSchema root")
+					continue
+				var header_check := HttpHeaders.annotations(tool_data.get("inputSchema", {}))
+				if not header_check.error.is_empty():
+					push_warning("Excluded MCP tool %s: %s" % [tool_data.get("name", ""), header_check.error])
+					continue
 			var tool = MCPToolDefinitionScript.from_dict(tool_data, server_name)
 			tools.append(tool)
 	else:
@@ -273,6 +285,8 @@ func set_working_directory(directory: String) -> Dictionary:
 
 ## HTTP transport: Verify connection and perform MCP initialization
 func _verify_http_connection() -> Error:
+	server_connected = false
+	protocol_profile = Profile.new()
 	print("[MCP HTTP] Connecting to %s..." % base_url)
 
 	# Skip MCP protocol init for REST APIs that don't support it
@@ -316,20 +330,22 @@ func _verify_http_connection() -> Error:
 
 		print("[MCP HTTP] Connected (REST API mode)")
 		protocol_profile = Profile.custom(_process_generation)
+		if _http_transport == null:
+			_http_transport = HttpTransport.new()
+			_http_transport.request_notification.connect(_on_http_notification)
+		_http_transport.configure_custom(_get_mcp_endpoint())
 		server_connected = true
 		connected.emit()
 		return OK
 
-	# For MCP servers, the initialize handshake IS the connection verification
-	print("[MCP HTTP] Performing MCP initialize handshake...")
-
-	var init_result := await _http_initialize()
-	if init_result.get("error"):
-		push_error("MCP HTTP initialization failed: %s" % init_result.get("error"))
-		server_connected = false
+	if _http_transport == null:
+		_http_transport = HttpTransport.new()
+		_http_transport.request_notification.connect(_on_http_notification)
+	var transport_owner = _http_transport
+	var init_result: Dictionary = await transport_owner.connect_endpoint(_get_mcp_endpoint(), working_directory)
+	if transport_owner != _http_transport or init_result.has("error"):
 		return ERR_CANT_CONNECT
-
-	print("[MCP HTTP] Connected with session: %s" % _session_id.left(16))
+	protocol_profile = transport_owner.profile
 	server_connected = true
 	connected.emit()
 	return OK
@@ -343,200 +359,43 @@ func _get_mcp_endpoint() -> String:
 	return url + mcp_endpoint
 
 
-## HTTP transport: Perform MCP initialize handshake
-func _http_initialize() -> Dictionary:
-	var http := HTTPRequest.new()
-	Engine.get_main_loop().root.add_child(http)
-
-	var request_id := _next_request_id()
-	var init_params := {
-		"protocolVersion": MCP_PROTOCOL_VERSION,
-		"clientInfo": {
-			"name": "Minerva",
-			"version": "1.0.0"
-		}
-	}
-	# Include working directory if set
-	if not working_directory.is_empty():
-		init_params["workingDirectory"] = working_directory
-
-	var body := JSON.stringify({
-		"jsonrpc": "2.0",
-		"method": "initialize",
-		"params": init_params,
-		"id": request_id
-	})
-
-	var headers := [
-		"Content-Type: application/json",
-		"MCP-Protocol-Version: %s" % MCP_PROTOCOL_VERSION
-	]
-
-	var mcp_url := _get_mcp_endpoint()
-	print("[MCP HTTP] Sending initialize request to %s..." % mcp_url)
-	var err := http.request(mcp_url, headers, HTTPClient.METHOD_POST, body)
-	if err != OK:
-		http.queue_free()
-		return {"error": "HTTP request failed: %s" % error_string(err)}
-
-	var response: Array = await http.request_completed
-
-	if not is_instance_valid(http):
-		return {"error": "Request was cancelled"}
-
-	http.queue_free()
-
-	var result_code: int = response[0]
-	var response_code: int = response[1]
-	var response_headers: PackedStringArray = response[2]
-	var response_body: PackedByteArray = response[3]
-
-	if result_code != HTTPRequest.RESULT_SUCCESS:
-		return {"error": "HTTP request failed with result: %s" % result_code}
-
-	if response_code < 200 or response_code >= 300:
-		return {"error": "HTTP error: %s" % response_code}
-
-	# Extract session ID from headers
-	for header in response_headers:
-		if header.to_lower().begins_with("mcp-session-id:"):
-			_session_id = header.substr(15).strip_edges()
-			print("[MCP HTTP] Got session ID: %s" % _session_id.left(16))
-			break
-
-	var body_str := response_body.get_string_from_utf8().strip_edges()
-	print("[MCP HTTP] Initialize response (%d bytes): %s" % [body_str.length(), body_str.left(300)])
-
-	# Empty response is OK for initialize (session ID in header is what matters)
-	if body_str.is_empty() or body_str == "":
-		print("[MCP HTTP] Empty body, but got session ID - treating as success")
-		return {}
-
-	var json := JSON.new()
-	var parse_err := json.parse(body_str)
-	if parse_err != OK:
-		print("[MCP HTTP] JSON parse error: %s at line %d" % [json.get_error_message(), json.get_error_line()])
-		return {"error": "Failed to parse JSON response"}
-
-	var rpc_response: Dictionary = json.data if json.data is Dictionary else {}
-
-	if rpc_response.has("error"):
-		var rpc_error = rpc_response.get("error", {})
-		if rpc_error is Dictionary:
-			return {"error": rpc_error.get("message", "Unknown RPC error")}
-		return {"error": str(rpc_error)}
-
-	return rpc_response.get("result", {})
+func _on_http_notification(message: Dictionary, request_id: Variant) -> void:
+	http_notification_received.emit(message, request_id)
 
 
-## HTTP transport: Call a tool via HTTP POST (JSON-RPC format)
+## HTTP transport owns profile negotiation, bounded streaming and cancellation.
 func _call_tool_http(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
-	var http := HTTPRequest.new()
-
-	# Need to add to scene tree for HTTPRequest to work
-	if Engine.get_main_loop():
-		Engine.get_main_loop().root.add_child(http)
-		_active_http_requests.append(http)
-	else:
-		push_error("Cannot make HTTP request: no scene tree available")
-		return {"error": "No scene tree available"}
-
-	# JSON-RPC request to MCP endpoint
-	var url := _get_mcp_endpoint()
-	var headers := [
-		"Content-Type: application/json",
-		"MCP-Protocol-Version: %s" % MCP_PROTOCOL_VERSION
-	]
-	# Include session ID if we have one
-	if not _session_id.is_empty():
-		headers.append("Mcp-Session-Id: %s" % _session_id)
-
-	var request_id := _next_request_id()
-
-	# For special MCP methods (initialize, tools/list, set_working_directory), use directly
-	# For tool calls, wrap in tools/call format per MCP spec
-	var method: String
-	var params: Dictionary
-	if tool_name in ["initialize", "tools/list", "notifications/initialized", "set_working_directory"]:
-		method = tool_name
-		params = arguments
-	else:
+	if _http_transport == null:
+		return {"error": "HTTP transport is not connected"}
+	var method := tool_name
+	var params := arguments
+	var schema: Variant = {}
+	if tool_name not in ["tools/list", "set_working_directory"]:
 		method = "tools/call"
 		params = {"name": tool_name, "arguments": arguments}
-
-	var body := JSON.stringify({
-		"jsonrpc": "2.0",
-		"method": method,
-		"params": params,
-		"id": request_id
-	})
-
-	print("[MCP HTTP] Calling %s with %s" % [tool_name, str(arguments).left(100)])
-
-	var err := http.request(url, headers, HTTPClient.METHOD_POST, body)
-	if err != OK:
-		_active_http_requests.erase(http)
-		http.queue_free()
-		return {"error": "HTTP request failed: %s" % error_string(err)}
-
-	# Wait for response
-	var response: Array
-	if context == null:
-		response = await http.request_completed
-	else:
-		var received: Dictionary = await context.run(_wait_http.bind(http))
-		if context.is_stopped():
-			if is_instance_valid(http):
-				http.cancel_request()
-				_active_http_requests.erase(http)
-				http.queue_free()
-			return context.stopped_result()
-		response = received.get("response", [])
-
-	# Guard against cancelled requests: if cancel_active_requests() queue_free()'d
-	# this HTTPRequest during the await, the node is freed and we must bail out.
-	if not is_instance_valid(http):
-		return {"error": "Request was cancelled"}
-
-	_active_http_requests.erase(http)
-	http.queue_free()
-
-	var result_code: int = response[0]
-	var response_code: int = response[1]
-	var _response_headers: PackedStringArray = response[2]
-	var response_body: PackedByteArray = response[3]
-
-	if result_code != HTTPRequest.RESULT_SUCCESS:
-		print("[MCP HTTP] Request failed: result=%d" % result_code)
-		return {"error": "HTTP request failed with result: %s" % result_code}
-
-	if response_code < 200 or response_code >= 300:
-		print("[MCP HTTP] HTTP error: %d" % response_code)
-		return {"error": "HTTP error: %s" % response_code}
-
-	var response_str := response_body.get_string_from_utf8()
-	print("[MCP HTTP] Response: %s" % response_str.left(200))
-
-	var json := JSON.new()
-	var parse_err := json.parse(response_str)
-	if parse_err != OK:
-		return {"error": "Failed to parse JSON response"}
-
-	var rpc_response: Dictionary = json.data if json.data is Dictionary else {}
-
-	# Check for JSON-RPC error
-	if rpc_response.has("error"):
-		var rpc_error = rpc_response.get("error", {})
-		if rpc_error is Dictionary:
-			return {"error": rpc_error.get("message", "Unknown RPC error")}
-		return {"error": str(rpc_error)}
-
-	# Extract result from JSON-RPC response
-	var raw_result: Variant = rpc_response.get("result", {})
-	if raw_result is Dictionary:
-		tool_result_envelope_received.emit(tool_name, ToolResultEnvelope.from_mcp(
-			raw_result, false, WireValue.create(response_str, rpc_response)))
-	var result := _normalize_mcp_tool_result(raw_result)
+		for tool in tools:
+			if tool.name == tool_name:
+				schema = tool.to_mcp_format().get("inputSchema", {})
+	var owner = _http_transport
+	var owner_generation: int = owner.generation
+	var response: Dictionary = await owner.request_method(method, params, schema, context)
+	if owner != _http_transport or owner.generation != owner_generation:
+		return {"error": "HTTP connection superseded"}
+	if response.has("error"):
+		return response
+	if context != null and context.is_stopped():
+		return context.stopped_result()
+	var raw_result: Dictionary = response.get("result", {})
+	if method == "tools/list":
+		return raw_result
+	var envelope = ToolResultEnvelope.from_mcp(raw_result,
+		owner.profile.era == Profile.Era.MODERN_2026_07_28, response.get("wire"))
+	tool_result_envelope_received.emit(tool_name, envelope)
+	if owner.generation != owner_generation or (context != null and context.is_stopped()):
+		return {"error": "HTTP request cancelled during result delivery"}
+	var result: Dictionary = envelope.to_application_result()
+	if envelope.result_type == "complete":
+		result = _normalize_mcp_tool_result(result)
 	tool_result_received.emit(tool_name, result)
 	return result
 
@@ -572,10 +431,6 @@ func _connect_websocket() -> Error:
 
 
 ## WebSocket transport: Call a tool
-func _wait_http(http: HTTPRequest) -> Dictionary:
-	return {"response": await http.request_completed}
-
-
 func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
 	if not _websocket or _websocket.get_ready_state() != WebSocketPeer.STATE_OPEN:
 		return {"error": "WebSocket not connected"}
@@ -876,6 +731,9 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	var owned_generation: int = _process_generation if generation < 0 else generation
 	if owned_generation != _process_generation:
 		return _conn_error("MCP process changed before request dispatch")
+	var serialized := JsonSerialization.encode(request)
+	if not serialized.ok:
+		return _conn_error(serialized.error.message)
 	var pending := _PendingRequest.new()
 	pending.tool_name = tool_name
 	pending.created_ms = Time.get_ticks_msec()
@@ -891,7 +749,7 @@ func _stdio_request(request: Dictionary, timeout_sec: float = 120.0, tool_name: 
 	if context != null:
 		context.lifetime.cancelled.connect(on_cancel)
 
-	var request_json := JSON.stringify(request) + "\n"
+	var request_json: String = serialized.raw + "\n"
 	var log_json := request_json.left(200)
 	if request_json.length() > 200:
 		log_json += "..."

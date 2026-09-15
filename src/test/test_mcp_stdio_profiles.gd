@@ -43,6 +43,14 @@ func _run() -> void:
 		and envelopes[0].wire_value != null
 		and envelopes[0].to_mcp_format().get("futureField", {}).get("kept", false)
 		and envelopes[0].wire_value.raw_utf8.contains("structuredContent"))
+	var precise: Dictionary = await modern.call_tool("echo", {"precise": 0.12345678901234566, "canonical": 0.1}, 5.0)
+	check("STDIO shared serialization preserves finite native float precision",
+		precise.get("echo", {}).get("precise") == 0.12345678901234566
+		and precise.get("echo", {}).get("canonical") == 0.1)
+	var nonfinite: Dictionary = await modern.call_tool("echo", {"value": NAN}, 5.0)
+	var infinite: Dictionary = await modern.call_tool("echo", {"value": INF}, 5.0)
+	check("STDIO rejects nonfinite values before admission without leaking pending calls",
+		nonfinite.has("error") and infinite.has("error") and modern.pending_request_count() == 0)
 	var envelope_count := envelopes.size()
 	var changed_number: Dictionary = await modern.call_tool("precision_loss", {}, 5.0)
 	check("raw numeric incompatibility fails before parsed result emission",

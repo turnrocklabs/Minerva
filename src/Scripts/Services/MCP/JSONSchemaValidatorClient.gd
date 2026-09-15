@@ -1,5 +1,6 @@
 class_name JSONSchemaValidatorClient
 extends Node
+const JsonSerialization = preload("res://Scripts/Services/MCP/MCPJsonSerialization.gd")
 ## Supervises the isolated jsoncons helper. Handles belong to one process
 ## generation; a deadline, overflow, or process loss invalidates them together.
 
@@ -143,17 +144,23 @@ func validate_for_application(handle: SchemaHandle, instance_raw: String,
 	var result: Dictionary = await validate_raw(handle, instance_raw)
 	if not result.get("ok", false):
 		return result
+	var serialized := JsonSerialization.encode(application_value)
+	if not serialized.ok:
+		return serialized
 	var numeric: Dictionary = await _request({"op": "compare_numbers",
-		"original_raw": instance_raw, "adapted_raw": JSON.stringify(application_value)})
+		"original_raw": instance_raw, "adapted_raw": serialized.raw})
 	return result if numeric.get("ok", false) else numeric
 
 
 func compare_application_numbers(original_raw: String, application_value: Variant) -> Dictionary:
+	var serialized := JsonSerialization.encode(application_value)
+	if not serialized.ok:
+		return serialized
 	var ready := await start()
 	if ready != OK:
 		return _failure("validator_unavailable", "JSON Schema validator is unavailable")
 	return await _request({"op": "compare_numbers", "original_raw": original_raw,
-		"adapted_raw": JSON.stringify(application_value)})
+		"adapted_raw": serialized.raw})
 
 
 func release(handle: SchemaHandle) -> Dictionary:
