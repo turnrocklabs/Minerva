@@ -8,9 +8,12 @@ helper_env = Environment(ENV=os.environ)
 helper_env.Append(CPPPATH=[jsoncons_include])
 compiler = Path(str(helper_env.subst("$CXX"))).name.lower()
 if platform == "windows" and (helper_env.get("MSVC_VERSION") or compiler in ("cl", "cl.exe")):
-    helper_env.Append(CXXFLAGS=["/std:c++17", "/EHsc"])
+    helper_env.Append(CXXFLAGS=["/std:c++17", "/EHsc", "/MT"])
 else:
     helper_env.Append(CXXFLAGS=["-std=c++17"])
+    if platform == "macos":
+        helper_env.Append(CXXFLAGS=["-mmacosx-version-min=11.0"])
+        helper_env.Append(LINKFLAGS=["-mmacosx-version-min=11.0"])
 suffix = ".exe" if platform == "windows" else ""
 helper = helper_env.Program("#bin/minerva-json-schema-helper" + suffix,
     ["#native/json_schema_helper/main.cpp"])

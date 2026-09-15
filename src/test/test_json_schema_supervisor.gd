@@ -69,6 +69,12 @@ func collect_then_retry(client, operation: Callable, schema_raw: String,
 	destination["retry"] = await client.compile(schema_raw)
 
 func _run() -> void:
+	check("packaged helper targets reject unsupported architectures explicitly",
+		Client._runtime_target("Linux", "x86_64") == "linux-x86_64"
+		and Client._runtime_target("Windows", "x86_64") == "windows-x86_64"
+		and Client._runtime_target("macOS", "arm64") == "macos-arm64"
+		and Client._runtime_target("macOS", "x86_64") == "macos-amd64"
+		and Client._runtime_target("Linux", "arm64").is_empty())
 	var processes: Array[FakeProcess] = []
 	var client := Client.new()
 	root.add_child(client)

@@ -103,4 +103,6 @@ src/plugins/voice/runtime-build/
 src/plugins/voice/dist/
 src/native/vendor/
 src/native/json_schema_helper/*.o
+src/native/json_schema_helper/dist/
+src/native/json_schema_helper/artifacts/
 .dependency-cache/

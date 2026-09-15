@@ -304,7 +304,32 @@ func _resolved_helper_path() -> String:
 	if not helper_path.is_empty():
 		return helper_path
 	var suffix := ".exe" if OS.get_name() == "Windows" else ""
-	return ProjectSettings.globalize_path("res://bin/minerva-json-schema-helper" + suffix)
+	var editor_path := ProjectSettings.globalize_path(
+		"res://bin/minerva-json-schema-helper" + suffix)
+	if OS.has_feature("editor"):
+		return editor_path
+	var target := _runtime_target(OS.get_name(), Engine.get_architecture_name())
+	if target.is_empty():
+		return ""
+	var executable_dir := OS.get_executable_path().get_base_dir()
+	if OS.get_name() == "macOS":
+		return executable_dir.path_join("../Resources/mcp-runtime").path_join(target) \
+			.path_join("minerva-json-schema-helper").simplify_path()
+	return executable_dir.path_join("mcp-runtime").path_join(target) \
+		.path_join("minerva-json-schema-helper" + suffix)
+
+
+static func _runtime_target(os_name: String, architecture: String) -> String:
+	match os_name:
+		"Windows":
+			return "windows-x86_64" if architecture in ["x86_64", "amd64"] else ""
+		"macOS":
+			if architecture in ["arm64", "aarch64"]:
+				return "macos-arm64"
+			return "macos-amd64" if architecture in ["x86_64", "amd64"] else ""
+		"Linux":
+			return "linux-x86_64" if architecture in ["x86_64", "amd64"] else ""
+	return ""
 
 
 static func _failure(code: String, message: String) -> Dictionary:

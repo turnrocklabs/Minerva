@@ -1408,6 +1408,13 @@ func _ready():
 	# Initialize creatable items registry with built-in editor types
 	_init_creatable_items()
 
+	# Final-package CI opts into this after normal startup has been scheduled,
+	# exercising the same exported resolver and native subprocess path users run.
+	if OS.get_environment("MINERVA_PACKAGED_MCP_HELPER_PROBE") == "1":
+		var packaged_probe := preload("res://Scripts/Services/MCP/MCPPackagedHelperProbe.gd").new()
+		add_child(packaged_probe)
+		packaged_probe.call_deferred("run")
+
 
 ## Register built-in editor types in the creatable items registry
 func _init_creatable_items() -> void:

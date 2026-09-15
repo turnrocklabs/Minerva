@@ -33,6 +33,48 @@ env:
   GODOT_RELEASE: "stable"
 
 jobs:
+  build-mcp-schema-helpers:
+    name: MCP schema helper (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-latest
+          - target: windows-x86_64
+            runner: windows-latest
+          - target: macos-arm64
+            runner: macos-15
+          - target: macos-amd64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install SCons
+        run: python -m pip install scons
+      - name: Verify pinned MCP protocol artifacts
+        shell: bash
+        run: scripts/acquire-mcp-schema.sh
+      - name: Build pinned MCP schema helper
+        shell: bash
+        run: scripts/build-mcp-schema-helper.sh "${{ matrix.target }}"
+      - name: Test native helper contract
+        shell: bash
+        run: |
+          scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
+            "src/native/json_schema_helper/dist/${{ matrix.target }}"
+      - name: Upload source-built helper
+        uses: actions/upload-artifact@v4
+        with:
+          name: minerva-json-schema-helper-${{ matrix.target }}
+          path: |
+            src/native/json_schema_helper/artifacts/minerva-json-schema-helper-${{ matrix.target }}.tar.gz
+            src/native/json_schema_helper/artifacts/minerva-json-schema-helper-${{ matrix.target }}.tar.gz.sha256
+          if-no-files-found: error
+
   build-voice-runtimes:
     name: Voice runtime (${{ matrix.target }})
     strategy:
@@ -271,7 +313,7 @@ jobs:
 
   build-linux:
     needs: check-gdextension
-    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -393,11 +435,9 @@ jobs:
   # (F1-F6) — fixture-plugin tests on the real MCPServerConnection. The
   # per-plugin tier (CAD / presentation / scansort) is heavy/networked and is
   # left for a manual/nightly run: scripts/run-functional-tests.sh --all.
-  # This job reports status but does not yet gate the release — wire it into
-  # build-godot's `needs` once it has proven green in CI.
   functional-tests:
-    needs: build-linux
-    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push')
+    needs: [build-linux, build-mcp-schema-helpers]
+    if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -412,6 +452,23 @@ jobs:
       with:
         name: terminal-linux
         path: src/bin/
+
+    - name: Download source-built MCP schema helper
+      uses: actions/download-artifact@v4
+      with:
+        name: minerva-json-schema-helper-linux-x86_64
+        path: mcp-schema-helper
+
+    - name: Install MCP schema helper for host tests
+      run: |
+        archive=mcp-schema-helper/minerva-json-schema-helper-linux-x86_64.tar.gz
+        expected=$(cat "$archive.sha256")
+        actual=$(sha256sum "$archive" | cut -d' ' -f1)
+        [ "$actual" = "$expected" ]
+        mkdir -p /tmp/mcp-schema-helper
+        tar -xzf "$archive" -C /tmp/mcp-schema-helper
+        cp /tmp/mcp-schema-helper/minerva-json-schema-helper src/bin/
+        chmod +x src/bin/minerva-json-schema-helper
 
     # The suites run the real host chain (Docket → godot-sqlite, editors →
     # godot_wry / godot_cef, media → FFmpeg). Without these GDExtensions the
@@ -638,9 +695,12 @@ jobs:
           [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
         done
 
-    - name: Build godot_wry
+    - name: Build godot_wry (universal)
       working-directory: vendor/godot_wry/rust
-      run: cargo build --release
+      run: |
+        rustup target add aarch64-apple-darwin x86_64-apple-darwin
+        cargo build --release --target aarch64-apple-darwin
+        cargo build --release --target x86_64-apple-darwin
 
     - name: Install godot_wry binary
       run: |
@@ -653,7 +713,11 @@ jobs:
         # Contents/Frameworks/ copy aborts, leaving the .app extension-less.
         FW_DIR="src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework"
         mkdir -p "$FW_DIR"
-        cp vendor/godot_wry/rust/target/release/libgodot_wry.dylib "$FW_DIR/libgodot_wry"
+        lipo -create \
+          vendor/godot_wry/rust/target/aarch64-apple-darwin/release/libgodot_wry.dylib \
+          vendor/godot_wry/rust/target/x86_64-apple-darwin/release/libgodot_wry.dylib \
+          -output "$FW_DIR/libgodot_wry"
+        lipo -verify_arch arm64 x86_64 "$FW_DIR/libgodot_wry"
         codesign --force --sign - "$FW_DIR/libgodot_wry"
 
     - name: Build ghostty-vt shim (universal)
@@ -716,7 +780,7 @@ jobs:
   # That stub crashed in user GDScript after ~30s when scripts dereferenced
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
-    needs: [check-gdextension, build-macos, build-voice-runtimes]
+    needs: [check-gdextension, build-macos, build-voice-runtimes, build-mcp-schema-helpers]
     if: (github.event.inputs.platform == 'macos' || github.event.inputs.platform == 'all' || github.event_name == 'push')
     # Pinned to macos-15 to match build-macos (macos-26/Xcode-26 SDK breaks the
     # Zig 0.15.2 ghostty-vt shim link).
@@ -732,6 +796,11 @@ jobs:
         with:
           pattern: minerva-voice-macos-*
           path: voice-runtimes
+      - name: Download MCP schema helpers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: minerva-json-schema-helper-macos-*
+          path: mcp-schema-helpers
 
       - name: Download terminal-macos extension
         uses: actions/download-artifact@v4
@@ -1014,6 +1083,20 @@ jobs:
             tar -xzf "$archive" -C "$ROOT/$target"
           done
 
+      - name: Stage source-built MCP schema helpers
+        working-directory: src
+        run: |
+          ROOT=build/macos/Minerva.app/Contents/Resources/mcp-runtime
+          for target in macos-arm64 macos-amd64; do
+            artifact="${GITHUB_WORKSPACE}/mcp-schema-helpers/minerva-json-schema-helper-${target}"
+            archive="$artifact/minerva-json-schema-helper-${target}.tar.gz"
+            expected=$(cat "$archive.sha256")
+            actual=$(shasum -a 256 "$archive" | cut -d' ' -f1)
+            [ "$actual" = "$expected" ] || { echo "::error::MCP helper checksum mismatch: $target"; exit 1; }
+            mkdir -p "$ROOT/$target"
+            tar -xzf "$archive" -C "$ROOT/$target"
+          done
+
       - name: Verify CEF dylib present
         # Catch a broken bundle BEFORE the smoke launch so the failure is
         # locatable. The actual CEF binary is `libgdcef.dylib` inside the
@@ -1077,6 +1160,10 @@ jobs:
               codesign --force --sign - "$candidate"
             fi
           done < <(find "$VOICE_ROOT" -type f -print0)
+          MCP_ROOT=Minerva.app/Contents/Resources/mcp-runtime
+          for target in macos-arm64 macos-amd64; do
+            codesign --force --sign - "$MCP_ROOT/$target/minerva-json-schema-helper"
+          done
 
           # The existing deep pass may rewrite nested Mach-O signatures. Seal
           # payload hashes only after that mutation, then reseal the outer app
@@ -1118,11 +1205,15 @@ jobs:
             "$APP/Contents/MacOS/Minerva"
             "$APP/Contents/Resources/Minerva.pck"
             "$APP/Contents/Info.plist"
+            "$APP/Contents/Resources/mcp-runtime/macos-arm64/minerva-json-schema-helper"
+            "$APP/Contents/Resources/mcp-runtime/macos-amd64/minerva-json-schema-helper"
           )
           required_dirs=(
             "$APP/Contents/Frameworks"
             "$APP/Contents/Resources/builtin-plugins/voice/macos-arm64"
             "$APP/Contents/Resources/builtin-plugins/voice/macos-amd64"
+            "$APP/Contents/Resources/mcp-runtime/macos-arm64"
+            "$APP/Contents/Resources/mcp-runtime/macos-amd64"
           )
           # Critical GDExtension assets that MUST land in Contents/Frameworks/
           # — the prior bug shipped a Minerva.app with no Frameworks/ at all,
@@ -1211,8 +1302,8 @@ jobs:
           if-no-files-found: warn
 
   build-godot:
-    needs: [check-gdextension, build-windows, build-linux, build-voice-runtimes]
-    if: always() && needs.build-voice-runtimes.result == 'success'
+    needs: [check-gdextension, build-windows, build-linux, build-voice-runtimes, build-mcp-schema-helpers]
+    if: always() && needs.build-voice-runtimes.result == 'success' && needs.build-mcp-schema-helpers.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -1225,6 +1316,11 @@ jobs:
         with:
           pattern: minerva-voice-*-x86_64
           path: voice-runtimes
+      - name: Download MCP schema helpers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: minerva-json-schema-helper-*-x86_64
+          path: mcp-schema-helpers
       
       - name: Download Current Artifacts
         uses: actions/download-artifact@v4
@@ -1413,6 +1509,25 @@ jobs:
           [ ! -d build/windows ] || stage_voice windows-x86_64 build/windows
           [ ! -d build/windows-debug ] || stage_voice windows-x86_64 build/windows-debug
 
+      - name: Stage source-built MCP schema helpers
+        working-directory: src
+        run: |
+          stage_helper() {
+            target="$1"
+            destination="$2/mcp-runtime/$target"
+            artifact="${GITHUB_WORKSPACE}/mcp-schema-helpers/minerva-json-schema-helper-${target}"
+            archive="$artifact/minerva-json-schema-helper-${target}.tar.gz"
+            expected=$(cat "$archive.sha256")
+            actual=$(sha256sum "$archive" | cut -d' ' -f1)
+            [ "$actual" = "$expected" ] || { echo "::error::MCP helper checksum mismatch: $target"; exit 1; }
+            mkdir -p "$destination"
+            tar -xzf "$archive" -C "$destination"
+          }
+          [ ! -d build/linux ] || stage_helper linux-x86_64 build/linux
+          [ ! -d build/linux-debug ] || stage_helper linux-x86_64 build/linux-debug
+          [ ! -d build/windows ] || stage_helper windows-x86_64 build/windows
+          [ ! -d build/windows-debug ] || stage_helper windows-x86_64 build/windows-debug
+
       # ─── Post-export verification ──────────────────────────────────────
       # RCA: prior CI builds shipped binaries missing libminerva-vt.so and
       # CEF runtime data (icudtl.dat, *.pak, locales/), because Godot's
@@ -1442,6 +1557,9 @@ jobs:
             chrome_200_percent.pak
             builtin-plugins/voice/bin/python3
             builtin-plugins/voice/manifest.sha256
+            mcp-runtime/linux-x86_64/minerva-json-schema-helper
+            mcp-runtime/linux-x86_64/SOURCE_PROVENANCE
+            mcp-runtime/linux-x86_64/jsoncons-LICENSE
           )
           required_dirs=(locales)
           required_dirs+=(builtin-plugins/voice)
@@ -1501,6 +1619,9 @@ jobs:
             minerva-vt.dll
             builtin-plugins/voice/python.exe
             builtin-plugins/voice/manifest.sha256
+            mcp-runtime/windows-x86_64/minerva-json-schema-helper.exe
+            mcp-runtime/windows-x86_64/SOURCE_PROVENANCE
+            mcp-runtime/windows-x86_64/jsoncons-LICENSE
           )
           fail=0
           for f in "${required_files[@]}"; do
@@ -1571,7 +1692,7 @@ jobs:
           path: src/build/Minerva-Linux-Debug.tar.gz
 
   verify-packaged-voice:
-    name: Packaged voice (${{ matrix.target }})
+    name: Packaged native runtimes (${{ matrix.target }})
     needs: [build-godot, export-macos]
     if: always()
     strategy:
@@ -1612,7 +1733,7 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: packaged
-      - name: Verify final packaged voice runtime
+      - name: Verify final packaged native runtimes
         if: steps.selected.outputs.value == 'true'
         shell: bash
         run: |
@@ -1622,15 +1743,23 @@ jobs:
             linux)
               tar -xzf packaged/Minerva-Linux.tar.gz -C extracted
               src/plugins/voice/scripts/test-runtime-root.sh linux-x86_64 extracted/builtin-plugins/voice
+              scripts/test-packaged-mcp-helper.sh linux-x86_64 extracted/mcp-runtime/linux-x86_64
+              python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.x86_64
               ;;
             windows)
               unzip -q packaged/Minerva-Windows.zip -d extracted
               src/plugins/voice/scripts/test-runtime-root.sh windows-x86_64 extracted/builtin-plugins/voice
+              scripts/test-packaged-mcp-helper.sh windows-x86_64 extracted/mcp-runtime/windows-x86_64
+              python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe
               ;;
             macos)
               ditto -x -k packaged/Minerva-macOS.zip extracted
               src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" \
                 "extracted/Minerva.app/Contents/Resources/builtin-plugins/voice/${{ matrix.target }}"
+              scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
+                "extracted/Minerva.app/Contents/Resources/mcp-runtime/${{ matrix.target }}"
+              python3 scripts/verify-packaged-mcp-app.py \
+                extracted/Minerva.app/Contents/MacOS/Minerva
               ;;
           esac
       - name: Download debug build when published
@@ -1639,7 +1768,7 @@ jobs:
         with:
           name: Minerva-${{ matrix.platform == 'windows' && 'Windows' || 'Linux' }}-Debug-Build
           path: packaged-debug
-      - name: Verify final packaged debug voice runtime
+      - name: Verify final packaged debug native runtimes
         if: steps.selected.outputs.value == 'true' && github.ref == 'refs/heads/development' && matrix.platform != 'macos'
         shell: bash
         run: |
@@ -1651,18 +1780,24 @@ jobs:
             tar -xzf packaged-debug/Minerva-Linux-Debug.tar.gz -C extracted-debug
           fi
           src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" extracted-debug/builtin-plugins/voice
+          scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
+            "extracted-debug/mcp-runtime/${{ matrix.target }}"
+          executable=extracted-debug/Minerva.x86_64
+          [ "${{ matrix.platform }}" != windows ] || executable=extracted-debug/Minerva.exe
+          python3 scripts/verify-packaged-mcp-app.py "$executable"
 
   create-release:
-    needs: [build-godot, export-macos, verify-packaged-voice]
+    needs: [build-godot, export-macos, verify-packaged-voice, functional-tests]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
     if: |
       always() &&
       needs.verify-packaged-voice.result == 'success' &&
-      ((github.event_name == 'push' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success') ||
+      needs.functional-tests.result == 'success' &&
+      ((github.event_name == 'push' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success') ||
        (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true' &&
-        ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success') ||
+        ((github.event.inputs.platform == 'all' && needs.build-godot.result == 'success' && needs.export-macos.result == 'success' && needs.functional-tests.result == 'success') ||
          (github.event.inputs.platform == 'macos' && needs.export-macos.result == 'success') ||
          ((github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'windows') && needs.build-godot.result == 'success'))))
     runs-on: ubuntu-latest
