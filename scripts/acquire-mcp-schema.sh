@@ -11,7 +11,7 @@ fetch() {
   [[ -f "$output" ]] || curl --fail --location --output "$output" \
     "https://raw.githubusercontent.com/modelcontextprotocol/modelcontextprotocol/$COMMIT/$path"
   local actual
-  actual="$(shasum -a 256 "$output" | awk '{print $1}')"
+  actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$output")"
   [[ "$actual" == "$expected" ]] || { echo "MCP artifact hash mismatch: $path" >&2; exit 1; }
 }
 fetch schema/2026-07-28/schema.ts 742750af0bb8c716e7030c4977c992b55d1adc4407e9e66997db5846baedc2cd
