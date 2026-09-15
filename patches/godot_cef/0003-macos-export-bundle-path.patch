@@ -1,0 +1,59 @@
+diff --git a/crates/gdcef/src/utils.rs b/crates/gdcef/src/utils.rs
+--- a/crates/gdcef/src/utils.rs
++++ b/crates/gdcef/src/utils.rs
+@@ -45,8 +45,25 @@ fn get_dylib_dir() -> CefResult<PathBuf> {
+ }
+ 
+ #[cfg(target_os = "macos")]
++fn get_cef_frameworks_dir() -> CefResult<PathBuf> {
++    let dylib_dir = get_dylib_dir()?;
++    // Source/addon layouts put the CEF app beside Godot CEF.framework. Godot's
++    // exporter can flatten libgdcef.dylib into Contents/Frameworks, where the
++    // app is instead beside the dylib itself.
++    let flat_export = dylib_dir.join("Godot CEF.app/Contents/Frameworks");
++    if flat_export.is_dir() {
++        return flat_export.canonicalize().map_err(CefError::from);
++    }
++    dylib_dir
++        .join("..")
++        .join("Godot CEF.app/Contents/Frameworks")
++        .canonicalize()
++        .map_err(CefError::from)
++}
++
++#[cfg(target_os = "macos")]
+ pub fn get_framework_path() -> CefResult<PathBuf> {
+-    let dylib_dir = get_dylib_dir()?;
++    let frameworks_dir = get_cef_frameworks_dir()?;
+ 
+     let framework_name = match std::env::consts::ARCH {
+         "aarch64" => "Chromium Embedded Framework (ARM64).framework",
+@@ -63,9 +80,7 @@ pub fn get_framework_path() -> CefResult<PathBuf> {
+     //   project/addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework/libgdcef.dylib
+     // framework is at:
+     //   project/addons/godot_cef/bin/universal-apple-darwin/Godot CEF.app/Contents/Frameworks/Chromium Embedded Framework (ARM64|X86_64).framework
+-    dylib_dir
+-        .join("..")
+-        .join("Godot CEF.app/Contents/Frameworks")
++    frameworks_dir
+         .join(framework_name)
+         .canonicalize()
+         .map_err(CefError::from)
+@@ -73,15 +88,13 @@ pub fn get_framework_path() -> CefResult<PathBuf> {
+ 
+ #[cfg(target_os = "macos")]
+ pub fn get_subprocess_path() -> CefResult<PathBuf> {
+-    let dylib_dir = get_dylib_dir()?;
++    let frameworks_dir = get_cef_frameworks_dir()?;
+ 
+     // current dylib path:
+     //   project/addons/godot_cef/bin/universal-apple-darwin/Godot CEF.framework/libgdcef.dylib
+     // subprocess is at:
+     //   project/addons/godot_cef/bin/universal-apple-darwin/Godot CEF.app/Contents/Frameworks/Godot CEF Helper.app/Contents/MacOS/Godot CEF Helper
+-    dylib_dir
+-        .join("..")
+-        .join("Godot CEF.app/Contents/Frameworks")
++    frameworks_dir
+         .join("Godot CEF Helper.app/Contents/MacOS")
+         .join("Godot CEF Helper")
+         .canonicalize()

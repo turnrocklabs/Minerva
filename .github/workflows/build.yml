@@ -895,8 +895,8 @@ jobs:
         # Upstream's autobuild release ships linux64 + win64 only — no
         # macOS framework. We build from source via scripts/build-ffmpeg.sh,
         # which compiles ffmpeg-kit (FFmpeg + x264 + x265 + vpx + opus +
-        # vorbis etc.) targeting arm64 only (M-series Macs are the only
-        # supported macOS target). Cold build is 30-60min; cached after.
+        # vorbis etc.) for both arm64 and x86_64. Cold build is 30-60min;
+        # cached after.
         run: |
           git submodule update --init --recursive vendor/EIRTeam.FFmpeg
 
@@ -914,7 +914,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: src/addons/ffmpeg/macos
-          key: ffmpeg-macos-arm64-${{ steps.ffmpeg-sha.outputs.sha }}
+          key: ffmpeg-macos-universal-${{ steps.ffmpeg-sha.outputs.sha }}
 
       - name: Build EIRTeam.FFmpeg from source (macOS)
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
@@ -939,6 +939,17 @@ jobs:
             find src/addons/ffmpeg/macos -maxdepth 4 | head -30
             exit 1
           fi
+          binaries=(
+            src/addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework/libgdffmpeg_advanced.macos.template_debug
+            src/addons/ffmpeg/macos/libgdffmpeg.macos.template_release.framework/libgdffmpeg_advanced.macos.template_release
+          )
+          for library in avcodec avdevice avfilter avformat avutil swresample swscale; do
+            binaries+=("src/addons/ffmpeg/macos/lib${library}.dylib")
+          done
+          for binary in "${binaries[@]}"; do
+            [ -f "$binary" ] || { echo "::error::Missing FFmpeg binary: $binary"; exit 1; }
+            lipo "$binary" -verify_arch arm64 x86_64
+          done
 
       - name: Download godot-sqlite addon
         run: |

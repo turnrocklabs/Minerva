@@ -4,6 +4,14 @@ Patches applied to the `vendor/godot_cef` submodule (upstream: `dsh0416/godot-ce
 
 `scripts/build-godot-cef.sh` applies every `*.patch` in this directory in filename order, then builds + deploys to `src/addons/godot_cef/bin/<platform>/`.
 
+## 0003-macos-export-bundle-path.patch
+
+Godot may load `libgdcef.dylib` from the exported app's flat
+`Contents/Frameworks` directory. Resolve `Godot CEF.app` beside that dylib when
+present, while retaining the source/addon layout where the app is beside the
+containing `Godot CEF.framework`. Both the Chromium framework and helper
+subprocess use the same resolved bundle root.
+
 ## 0001-paste-doubling-option-a.patch
 
 **Problem:** In CEF-hosted plugin panels, the first `Ctrl+V` after focusing any editable DOM input committed the clipboard twice, producing `TEXT+TEXT`.

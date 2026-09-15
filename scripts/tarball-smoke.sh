@@ -206,6 +206,9 @@ else:
 
 # Test flow ------------------------------------------------------------------
 boot_minerva
+if grep -Eq '\[GodotCef\] Failed to set executable permissions|\[CefTexture\] Failed to load CEF framework|Failed to initialize CEF' "$MINERVA_LOG"; then
+    fail "packaged CEF initialization failed — see $MINERVA_LOG"
+fi
 mcp_initialize
 
 echo "::group::Step 1: marketplace install (scansort)"

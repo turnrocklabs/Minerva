@@ -97,7 +97,9 @@ def main() -> int:
     sys.stderr.write(stderr)
     combined = stdout + "\n" + stderr
     fatal = re.search(
-        r"SCRIPT ERROR|Can't open dynamic library|GDExtension dynamic library not found|Error loading extension",
+        r"SCRIPT ERROR|Can't open dynamic library|GDExtension dynamic library not found|Error loading extension"
+        r"|\[GodotCef\] Failed to set executable permissions|\[CefTexture\] Failed to load CEF framework"
+        r"|Failed to initialize CEF",
         combined)
     return 0 if (process.returncode == 0
                  and "PACKAGED_MCP_HELPER_OK" in stdout

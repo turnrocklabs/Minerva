@@ -173,9 +173,9 @@ cd "$FFMPEG_DIR"
 
 case "$PLATFORM" in
     macos)
-        # Minerva targets M-series only; override Makefile default (arm64 x86_64)
-        # to skip the x86_64 half of the universal build.
-        make ffmpeg PLATFORM=macos TARGET_ARCH=arm64
+        # Use upstream's macOS default (arm64 x86_64), which builds both
+        # ffmpeg-kit slices and lipos every FFmpeg dependency.
+        make ffmpeg PLATFORM=macos
         ;;
     linux)
         make ffmpeg PLATFORM=linux
@@ -193,7 +193,7 @@ echo "=== Building FFmpeg GDExtension wrapper ==="
 
 case "$PLATFORM" in
     macos)
-        make gdextension PLATFORM=macos TARGET_ARCH=arm64
+        make gdextension PLATFORM=macos
         ;;
     linux)
         make gdextension PLATFORM=linux
