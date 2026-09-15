@@ -115,18 +115,24 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
-      - name: Enable Windows native crash dumps
+      - name: Install Microsoft ProcDump
         if: steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
         shell: pwsh
         run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'Procdump.zip'
+          $toolsDirectory = Join-Path $env:RUNNER_TEMP 'procdump'
           $dumpDirectory = Join-Path $env:RUNNER_TEMP 'minerva-dumps'
+          Invoke-WebRequest -Uri 'https://download.sysinternals.com/files/Procdump.zip' -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath $toolsDirectory -Force
+          $procdump = Join-Path $toolsDirectory 'procdump64.exe'
+          $signature = Get-AuthenticodeSignature $procdump
+          if ($signature.Status -ne 'Valid' -or
+              $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+            throw "ProcDump Authenticode verification failed: $($signature.Status)"
+          }
           New-Item -ItemType Directory -Force -Path $dumpDirectory | Out-Null
-          $dumpKey = 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\Minerva.exe'
-          New-Item -Force -Path $dumpKey | Out-Null
-          New-ItemProperty -Path $dumpKey -Name DumpFolder -PropertyType ExpandString `
-            -Value $dumpDirectory -Force | Out-Null
-          New-ItemProperty -Path $dumpKey -Name DumpType -PropertyType DWord `
-            -Value 2 -Force | Out-Null
+          "MINERVA_PROCDUMP_PATH=$procdump" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "MINERVA_PROCDUMP_DUMP_DIR=$dumpDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Verify final packaged native runtimes
         if: steps.selected.outputs.value == 'true'
         shell: bash
@@ -202,6 +208,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: minerva-windows-crash-dump-${{ github.run_id }}
-          path: ${{ runner.temp }}/minerva-dumps/*.dmp
+          path: ${{ runner.temp }}/minerva-dumps/*
           if-no-files-found: warn
           retention-days: 7

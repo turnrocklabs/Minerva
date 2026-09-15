@@ -85,6 +85,8 @@ def main() -> int:
         stdout_path = temporary_root / "minerva.stdout.log"
         stderr_path = temporary_root / "minerva.stderr.log"
         timed_out = False
+        diagnostic = None
+        diagnostic_log = None
         command = [str(executable), "--headless", "--verbose"]
         if sys.platform.startswith("linux"):
             command = ["stdbuf", "-oL", "-eL", *command]
@@ -94,17 +96,44 @@ def main() -> int:
                 command, cwd=str(executable.parent), env=env,
                 stdout=stdout_file, stderr=stderr_file, **kwargs)
             try:
-                process.wait(timeout=TIMEOUT_SECONDS)
-            except subprocess.TimeoutExpired:
-                timed_out = True
-            # Unix can retire the app's process group after leader exit.
-            # taskkill is best-effort once a Windows leader has exited; the
-            # Actions runner performs final job-wide process cleanup.
-            _terminate_tree(process)
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                pass
+                procdump_path = os.environ.get("MINERVA_PROCDUMP_PATH", "")
+                dump_directory = os.environ.get("MINERVA_PROCDUMP_DUMP_DIR", "")
+                if os.name == "nt" and procdump_path and dump_directory:
+                    diagnostic_log = open(
+                        Path(dump_directory) / f"procdump-{process.pid}.log", "wb")
+                    diagnostic = subprocess.Popen(
+                        [procdump_path, "-accepteula", "-ma", "-e", str(process.pid),
+                         dump_directory],
+                        stdout=diagnostic_log, stderr=subprocess.STDOUT)
+                try:
+                    process.wait(timeout=TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+            finally:
+                # Unix can retire the app's process group after leader exit.
+                # taskkill is best-effort once a Windows leader has exited; the
+                # Actions runner performs final job-wide process cleanup.
+                try:
+                    _terminate_tree(process)
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        pass
+                finally:
+                    try:
+                        if diagnostic is not None:
+                            try:
+                                diagnostic.wait(timeout=10 if process.returncode else 2)
+                            except subprocess.TimeoutExpired:
+                                diagnostic.terminate()
+                                try:
+                                    diagnostic.wait(timeout=5)
+                                except subprocess.TimeoutExpired:
+                                    diagnostic.kill()
+                                    diagnostic.wait(timeout=5)
+                    finally:
+                        if diagnostic_log is not None:
+                            diagnostic_log.close()
         elapsed_seconds = time.monotonic() - started_at
         stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
         stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
