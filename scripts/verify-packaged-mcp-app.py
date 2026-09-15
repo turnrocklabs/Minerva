@@ -83,8 +83,11 @@ def main() -> int:
         stderr_path = temporary_root / "minerva.stderr.log"
         timed_out = False
         with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
+            # The compatibility backend avoids selecting CEF's accelerated
+            # Vulkan path when the headless CI host has no RenderingDevice.
             process = subprocess.Popen(
-                [str(executable), "--headless"], cwd=str(executable.parent), env=env,
+                [str(executable), "--headless", "--rendering-method", "gl_compatibility"],
+                cwd=str(executable.parent), env=env,
                 stdout=stdout_file, stderr=stderr_file, **kwargs)
             try:
                 process.wait(timeout=TIMEOUT_SECONDS)
@@ -114,9 +117,14 @@ def main() -> int:
         r"|\[GodotCef\] Failed to set executable permissions|\[CefTexture\] Failed to load CEF framework"
         r"|Failed to initialize CEF",
         combined)
-    return 0 if (process.returncode == 0
-                 and "PACKAGED_MCP_HELPER_OK" in stdout
-                 and fatal is None) else 1
+    marker_found = "PACKAGED_MCP_HELPER_OK" in stdout
+    passed = process.returncode == 0 and marker_found and fatal is None
+    if not passed:
+        print(
+            "exported MCP helper probe failed: "
+            f"returncode={process.returncode}, marker={marker_found}, fatal_log={fatal is not None}",
+            file=sys.stderr)
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

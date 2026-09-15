@@ -1,0 +1,176 @@
+name: Verify Packaged Native Runtimes
+
+on:
+  workflow_call:
+    inputs:
+      build_run_id:
+        required: true
+        type: string
+      platform:
+        required: false
+        default: all
+        type: string
+      verify_debug:
+        required: false
+        default: false
+        type: boolean
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Build Project run ID whose packages should be verified
+        required: true
+        type: string
+      platform:
+        description: Packaged platform to verify
+        required: true
+        default: all
+        type: choice
+        options: [all, windows, linux, macos]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  validate:
+    name: Validate package source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify request and artifact provenance
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          REQUESTED_PLATFORM: ${{ inputs.platform }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::Build run ID must contain only decimal digits"
+            exit 1
+          fi
+          case "$REQUESTED_PLATFORM" in
+            all|linux|windows|macos) ;;
+            *)
+              echo "::error::Unsupported platform: ${REQUESTED_PLATFORM}"
+              exit 1
+              ;;
+          esac
+          run_json=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${BUILD_RUN_ID}")
+          workflow_path=$(jq -r .path <<<"$run_json")
+          artifact_head=$(jq -r .head_sha <<<"$run_json")
+          if [ "$workflow_path" != ".github/workflows/build.yml" ]; then
+            echo "::error::Run ${BUILD_RUN_ID} belongs to ${workflow_path}, not Build Project"
+            exit 1
+          fi
+          echo "Artifact run: ${BUILD_RUN_ID} (${artifact_head})"
+          echo "Verifier source: ${GITHUB_SHA}"
+
+  verify:
+    name: Packaged native runtimes (${{ matrix.target }})
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            platform: linux
+            runner: ubuntu-latest
+            artifact: Minerva-Linux-Build
+          - target: windows-x86_64
+            platform: windows
+            runner: windows-latest
+            artifact: Minerva-Windows-Build
+          - target: macos-arm64
+            platform: macos
+            runner: macos-15
+            artifact: Minerva-macOS-Build
+          - target: macos-amd64
+            platform: macos
+            runner: macos-15-intel
+            artifact: Minerva-macOS-Build
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Select requested platform
+        id: selected
+        shell: bash
+        env:
+          REQUESTED_PLATFORM: ${{ inputs.platform }}
+        run: |
+          if [ "$REQUESTED_PLATFORM" = all ] || [ "$REQUESTED_PLATFORM" = "${{ matrix.platform }}" ]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.selected.outputs.value == 'true'
+      - uses: actions/download-artifact@v4
+        if: steps.selected.outputs.value == 'true'
+        with:
+          name: ${{ matrix.artifact }}
+          path: packaged
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+      - name: Install Linux packaged-app runtime dependencies
+        if: steps.selected.outputs.value == 'true' && matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
+      - name: Verify final packaged native runtimes
+        if: steps.selected.outputs.value == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          case "${{ matrix.platform }}" in
+            linux)
+              tar -xzf packaged/Minerva-Linux.tar.gz -C extracted
+              src/plugins/voice/scripts/test-runtime-root.sh linux-x86_64 extracted/builtin-plugins/voice
+              scripts/test-packaged-mcp-helper.sh linux-x86_64 extracted/mcp-runtime/linux-x86_64
+              xvfb-run --auto-servernum \
+                python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.x86_64
+              ;;
+            windows)
+              unzip -q packaged/Minerva-Windows.zip -d extracted
+              src/plugins/voice/scripts/test-runtime-root.sh windows-x86_64 extracted/builtin-plugins/voice
+              scripts/test-packaged-mcp-helper.sh windows-x86_64 extracted/mcp-runtime/windows-x86_64
+              python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe
+              ;;
+            macos)
+              ditto -x -k packaged/Minerva-macOS.zip extracted
+              src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" \
+                "extracted/Minerva.app/Contents/Resources/builtin-plugins/voice/${{ matrix.target }}"
+              scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
+                "extracted/Minerva.app/Contents/Resources/mcp-runtime/${{ matrix.target }}"
+              python3 scripts/verify-packaged-mcp-app.py \
+                extracted/Minerva.app/Contents/MacOS/Minerva
+              ;;
+          esac
+      - name: Download debug build when requested
+        if: steps.selected.outputs.value == 'true' && inputs.verify_debug && matrix.platform != 'macos'
+        uses: actions/download-artifact@v4
+        with:
+          name: Minerva-${{ matrix.platform == 'windows' && 'Windows' || 'Linux' }}-Debug-Build
+          path: packaged-debug
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+      - name: Verify final packaged debug native runtimes
+        if: steps.selected.outputs.value == 'true' && inputs.verify_debug && matrix.platform != 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extracted-debug
+          if [ "${{ matrix.platform }}" = windows ]; then
+            unzip -q packaged-debug/Minerva-Windows-Debug.zip -d extracted-debug
+          else
+            tar -xzf packaged-debug/Minerva-Linux-Debug.tar.gz -C extracted-debug
+          fi
+          src/plugins/voice/scripts/test-runtime-root.sh "${{ matrix.target }}" extracted-debug/builtin-plugins/voice
+          scripts/test-packaged-mcp-helper.sh "${{ matrix.target }}" \
+            "extracted-debug/mcp-runtime/${{ matrix.target }}"
+          executable=extracted-debug/Minerva.x86_64
+          [ "${{ matrix.platform }}" != windows ] || executable=extracted-debug/Minerva.exe
+          if [ "${{ matrix.platform }}" = linux ]; then
+            xvfb-run --auto-servernum python3 scripts/verify-packaged-mcp-app.py "$executable"
+          else
+            python3 scripts/verify-packaged-mcp-app.py "$executable"
+          fi
