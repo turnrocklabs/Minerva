@@ -122,6 +122,10 @@ func _run() -> void:
 	native_manager.free()
 	var SchemaRuntime = load("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 	var schema_results: Array = []
+	var schema_wave_counts: Array[Dictionary] = []
+	var validator_client = load(
+		"res://Scripts/Services/MCP/MCPWireAdapter.gd").validator_client()
+	var generation_before: int = validator_client._generation if validator_client else -1
 	for wave in range(9):
 		var wave_results: Array = []
 		for index in range(40):
@@ -130,19 +134,41 @@ func _run() -> void:
 			_collect(SchemaRuntime.validate.bind(schema, {"value": wave}), wave_results)
 		await _wait_size(wave_results, 40, 7000)
 		schema_results.append_array(wave_results)
+		var wave_codes: Dictionary = {}
+		for wave_result: Variant in wave_results:
+			var wave_code := "ok" if wave_result.get("ok", false) else str(
+				wave_result.get("error", {}).get("code", "missing_code"))
+			wave_codes[wave_code] = int(wave_codes.get(wave_code, 0)) + 1
+		schema_wave_counts.append(wave_codes)
 	var queue_rejections := 0
 	var unexpected_schema_failures := 0
+	var schema_failure_histogram: Dictionary = {}
 	for schema_result: Variant in schema_results:
 		if not schema_result.get("ok", false):
-			if schema_result.get("error", {}).get("code") == "queue_full":
+			var schema_error: Dictionary = schema_result.get("error", {})
+			var schema_code := str(schema_error.get("code", "missing_code"))
+			var schema_message := str(schema_error.get("message", "missing_message"))
+			var failure_key := "%s: %s" % [schema_code, schema_message]
+			schema_failure_histogram[failure_key] = int(
+				schema_failure_histogram.get(failure_key, 0)) + 1
+			if schema_code == "queue_full":
 				queue_rejections += 1
 			else:
 				unexpected_schema_failures += 1
 	var after_contention: Dictionary = await SchemaRuntime.validate(
 		{"type": "object"}, {"still": "usable"})
+	var contention_ok: bool = schema_results.size() == 360 and queue_rejections == 72 \
+		and unexpected_schema_failures == 0 and after_contention.get("ok", false)
+	if not contention_ok:
+		print(("SCHEMA_CONTENTION_DIAGNOSTIC results=%d queue_rejections=%d " \
+			+ "unexpected=%d active=%d generation=%d->%d waves=%s failures=%s final=%s") % [
+			schema_results.size(), queue_rejections, unexpected_schema_failures,
+			SchemaRuntime._active, generation_before,
+			validator_client._generation if validator_client else -1,
+			JSON.stringify(schema_wave_counts), JSON.stringify(schema_failure_histogram),
+			JSON.stringify(after_contention)])
 	check("concurrent schema operations stay bounded and release every native handle",
-		schema_results.size() == 360 and queue_rejections == 72
-		and unexpected_schema_failures == 0 and after_contention.get("ok", false))
+		contention_ok)
 	var valid_output = await registry.handle_tool_call_outcome("minerva_probe_valid_output", {})
 	var valid_array_output = await registry.handle_tool_call_outcome(
 		"minerva_probe_valid_array_output", {})

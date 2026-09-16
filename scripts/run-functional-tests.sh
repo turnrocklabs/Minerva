@@ -9,6 +9,7 @@
 #   scripts/run-functional-tests.sh --turnrock  # provider, bridge and UTF-8 contracts
 #   scripts/run-functional-tests.sh --all     # + per-plugin tier
 #   scripts/run-functional-tests.sh --pcb-guard  # PCB-migration regression guard only
+#   scripts/run-functional-tests.sh --test test/path.gd  # one registered test
 #
 # The per-plugin tier (CAD / presentation / scansort) is heavy and/or networked
 # — it needs built plugin binaries, build123d, and a reachable model-chat
@@ -35,6 +36,29 @@ set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GODOT="${GODOT:-godot}"
+
+# Keep the hermetic tier out of the developer/runner profile. In particular,
+# known MCP servers default to auto-connect and can consume the shared schema
+# helper's intentionally bounded admission slots while a contention oracle is
+# running. All tests in one invocation share this isolated profile.
+MINERVA_FUNCTIONAL_PROFILE_ROOT="$(mktemp -d)" || exit 1
+trap 'rm -rf "$MINERVA_FUNCTIONAL_PROFILE_ROOT"' EXIT
+export XDG_CONFIG_HOME="$MINERVA_FUNCTIONAL_PROFILE_ROOT/config"
+export XDG_DATA_HOME="$MINERVA_FUNCTIONAL_PROFILE_ROOT/data"
+export XDG_CACHE_HOME="$MINERVA_FUNCTIONAL_PROFILE_ROOT/cache"
+MINERVA_FUNCTIONAL_USER_DIR="$XDG_DATA_HOME/godot/app_userdata/Minerva"
+mkdir -p "$MINERVA_FUNCTIONAL_USER_DIR" || exit 1
+cat > "$MINERVA_FUNCTIONAL_USER_DIR/config_file.cfg" <<'EOF' || exit 1
+[Voice]
+turnrock_enabled=false
+always_listening=false
+
+[HCP]
+auto_connect=false
+EOF
+cat > "$MINERVA_FUNCTIONAL_USER_DIR/mcp_config.json" <<'EOF' || exit 1
+{"version":3,"servers":[{"name":"nudge","type":"http","url":"http://127.0.0.1:9","enabled":false,"auto_connect":false,"origin":"known"},{"name":"cobrowser","type":"http","url":"http://127.0.0.1:9","enabled":false,"auto_connect":false,"origin":"known"}]}
+EOF
 
 TURNROCK_TESTS=(
 	test/test_core_model_catalog.gd
@@ -122,6 +146,28 @@ elif [[ "${1:-}" == "--pcb-guard" ]]; then
 	tests=("${PCB_GUARD_TESTS[@]}")
 elif [[ "${1:-}" == "--quarantined" ]]; then
 	tests=("${QUARANTINED_TESTS[@]}")
+elif [[ "${1:-}" == "--test" ]]; then
+	requested_test="${2:-}"
+	if [[ -z "$requested_test" ]]; then
+		echo "usage: $0 --test test/path.gd" >&2
+		exit 2
+	fi
+	registered=false
+	for registered_test in "${HERMETIC_TESTS[@]}" "${QUARANTINED_TESTS[@]}" \
+			"${PLUGIN_TESTS[@]}" "${PCB_GUARD_TESTS[@]}"; do
+		if [[ "$requested_test" == "$registered_test" ]]; then
+			registered=true
+			break
+		fi
+	done
+	if [[ "$registered" != true ]]; then
+		echo "unregistered functional test: $requested_test" >&2
+		exit 2
+	fi
+	tests=("$requested_test")
+elif [[ -n "${1:-}" ]]; then
+	echo "unknown functional test option: $1" >&2
+	exit 2
 fi
 
 pass=0
