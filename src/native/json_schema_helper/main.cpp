@@ -5,7 +5,10 @@
 #include <jsoncons_ext/jsonschema/draft202012/schema_draft202012.hpp>
 
 #include <cmath>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -22,6 +25,8 @@ constexpr std::size_t kMaxDepth = 128u;
 constexpr std::size_t kRequestBytes = 72u * 1024u * 1024u;
 constexpr std::size_t kMaxSchemas = 256u;
 constexpr int64_t kMaxSafeInteger = 9007199254740991LL;
+constexpr std::size_t kDiagnosticText = 96u;
+constexpr std::size_t kDiagnosticPointer = 256u;
 
 struct Entry {
     std::string raw;
@@ -149,6 +154,290 @@ bool numbers_equal(const json& original, const json& adapted) {
     return original == adapted;
 }
 
+std::string bounded(std::string value, std::size_t limit) {
+    if (value.size() <= limit) return value;
+    value.resize(limit);
+    return value;
+}
+
+std::string pointer_token(std::string value) {
+    std::string escaped;
+    for (char ch : value) {
+        if (ch == '~') escaped += "~0";
+        else if (ch == '/') escaped += "~1";
+        else escaped += ch;
+    }
+    return escaped;
+}
+
+std::string child_pointer(const std::string& pointer, std::string token) {
+    token = bounded(std::move(token), kDiagnosticPointer);
+    return bounded(pointer + "/" + pointer_token(std::move(token)), kDiagnosticPointer);
+}
+
+struct NumericMismatch {
+    std::string pointer;
+    std::string original;
+    std::string adapted;
+    std::string reason;
+};
+
+std::string numeric_text(const json& value) {
+    if (value.is_string() && (value.tag() == jsoncons::semantic_tag::bigdec ||
+            value.tag() == jsoncons::semantic_tag::bigint))
+        return value.as<std::string>();
+    return value.to_string();
+}
+
+bool native_number_equal(const json& left, const json& right) {
+    auto is_number = [](const json& value) {
+        return value.is_int64() || value.is_uint64() || value.is_double();
+    };
+    if (left.is_double() || right.is_double()) {
+        if (!(is_number(left) && is_number(right))) return false;
+        auto l = left.as<double>();
+        auto r = right.as<double>();
+        return std::isfinite(l) && std::isfinite(r) && l == r;
+    }
+    if (!(is_number(left) && is_number(right))) return false;
+    std::pair<std::string, int64_t> left_key, right_key;
+    return number_key(left, left_key) && number_key(right, right_key) && left_key == right_key;
+}
+
+bool decimal_candidate_decodes_to(std::string digits, int64_t exponent,
+        bool negative, double expected) {
+    if (negative) digits.insert(digits.begin(), '-');
+    digits += "e" + std::to_string(exponent);
+    try {
+        json candidate = json::parse(digits, strict_options());
+        if (!(candidate.is_int64() || candidate.is_uint64() || candidate.is_double()))
+            return false;
+        double decoded = candidate.as<double>();
+        return std::isfinite(decoded) && decoded == expected;
+    } catch (...) { return false; }
+}
+
+void increment_decimal_digits(std::string& digits) {
+    for (auto it = digits.rbegin(); it != digits.rend(); ++it) {
+        if (*it != '9') { ++*it; return; }
+        *it = '0';
+    }
+    digits.insert(digits.begin(), '1');
+}
+
+// JSON producers are allowed to choose any shortest decimal that round-trips
+// to a binary64 value. Python can choose a different member of that set from
+// jsoncons, so comparing one serializer's spelling is too strict. A decimal is
+// shortest exactly when neither adjacent decimal on the next-coarser digit
+// grid decodes to the same binary64. Testing those two candidates avoids any
+// serializer preference and runtime formatting dependency. Extra trailing
+// zeroes have already been removed by decimal_key. This rejects decimals that
+// merely collapse onto a shorter value (0.10000000000000001 -> 0.1), plus
+// overflow and underflow to zero.
+bool source_binary64_canonical(const json& source, const json& native) {
+    if (!(source.is_string() && source.tag() == jsoncons::semantic_tag::bigdec))
+        return numbers_equal(source, native);
+    if (!native.is_double()) return false;
+    double value = native.as<double>();
+    if (!std::isfinite(value)) return false;
+    std::pair<std::string, int64_t> source_key;
+    if (!number_key(source, source_key)) return false;
+    if (value == 0.0 && source_key.first != "0") return false;
+    bool negative = source_key.first.front() == '-';
+    std::string digits = negative ? source_key.first.substr(1) : source_key.first;
+    if (digits.size() > static_cast<std::size_t>(std::numeric_limits<double>::max_digits10))
+        return false;
+    if (digits.size() <= 1) return true;
+    std::string lower = digits.substr(0, digits.size() - 1);
+    std::string upper = lower;
+    increment_decimal_digits(upper);
+    int64_t shorter_exponent = source_key.second + 1;
+    return !decimal_candidate_decodes_to(lower, shorter_exponent, negative, value) &&
+        !decimal_candidate_decodes_to(upper, shorter_exponent, negative, value);
+}
+
+// Python and Godot can spell one binary64 value differently: Python chooses a
+// shortest round-trip decimal while Godot's full-precision writer can expose
+// another digit. Accept that spelling-only change only when the source is a
+// shortest binary64 decimal. This retains the rejection of genuinely
+// over-precise source decimals and unsafe integers.
+bool numbers_compatible(const json& original, const json& adapted,
+        const json& original_native, const json& adapted_native,
+        const std::string& pointer, NumericMismatch& mismatch) {
+    std::pair<std::string, int64_t> left, right;
+    bool left_number = number_key(original, left);
+    bool right_number = number_key(adapted, right);
+    if (left_number || right_number) {
+        bool exact = left_number && right_number && left == right;
+        bool source_canonical = left_number &&
+            source_binary64_canonical(original, original_native);
+        bool binary_same = left_number && right_number && source_canonical &&
+            native_number_equal(original_native, adapted_native);
+        if (godot_numeric_safe(original) && source_canonical && (exact || binary_same)) return true;
+        mismatch = {pointer, bounded(numeric_text(original), kDiagnosticText),
+            bounded(numeric_text(adapted), kDiagnosticText),
+            !godot_numeric_safe(original) ? "unsafe_numeric_domain" :
+                (!source_canonical ? "source_not_binary64_canonical" : "numeric_value_changed")};
+        return false;
+    }
+    if (original.is_array() != adapted.is_array() || original.is_object() != adapted.is_object() ||
+            original_native.is_array() != original.is_array() ||
+            adapted_native.is_array() != adapted.is_array() ||
+            original_native.is_object() != original.is_object() ||
+            adapted_native.is_object() != adapted.is_object()) {
+        mismatch = {pointer, "", "", "structure_changed"};
+        return false;
+    }
+    if (original.is_array()) {
+        if (original.size() != adapted.size() || original.size() != original_native.size() ||
+                adapted.size() != adapted_native.size()) {
+            mismatch = {pointer, "", "", "structure_changed"};
+            return false;
+        }
+        for (std::size_t i = 0; i < original.size(); ++i) {
+            if (!numbers_compatible(original[i], adapted[i], original_native[i], adapted_native[i],
+                    child_pointer(pointer, std::to_string(i)), mismatch)) return false;
+        }
+        return true;
+    }
+    if (original.is_object()) {
+        if (original.size() != adapted.size() || original.size() != original_native.size() ||
+                adapted.size() != adapted_native.size()) {
+            mismatch = {pointer, "", "", "structure_changed"};
+            return false;
+        }
+        for (const auto& member : original.object_range()) {
+            std::string key(member.key().data(), member.key().size());
+            if (!adapted.contains(key) || !original_native.contains(key) || !adapted_native.contains(key)) {
+                mismatch = {pointer, "", "", "structure_changed"};
+                return false;
+            }
+            if (!numbers_compatible(member.value(), adapted.at(key), original_native.at(key),
+                    adapted_native.at(key), child_pointer(pointer, key), mismatch)) return false;
+        }
+        return true;
+    }
+    return original == adapted;
+}
+
+uint64_t double_bits(double value) {
+    static_assert(sizeof(double) == sizeof(uint64_t), "binary64 double required");
+    uint64_t bits = 0;
+    std::memcpy(&bits, &value, sizeof(bits));
+    return bits;
+}
+
+bool adjacent_binary64(double left, double right) {
+    uint64_t left_bits = double_bits(left);
+    uint64_t right_bits = double_bits(right);
+    auto ordered = [](uint64_t bits) {
+        return (bits & (uint64_t{1} << 63)) ? ~bits : bits | (uint64_t{1} << 63);
+    };
+    uint64_t left_ordered = ordered(left_bits);
+    uint64_t right_ordered = ordered(right_bits);
+    return left_ordered > right_ordered
+        ? left_ordered - right_ordered == 1
+        : right_ordered - left_ordered == 1;
+}
+
+json double_words(double value) {
+    uint64_t bits = double_bits(value);
+    json words(jsoncons::json_array_arg);
+    // Strings survive the helper's own Godot JSON boundary without another
+    // numeric conversion before the words are applied.
+    words.push_back(std::to_string(static_cast<uint32_t>(bits)));
+    words.push_back(std::to_string(static_cast<uint32_t>(bits >> 32)));
+    return words;
+}
+
+// Godot's JSON decoder can round a valid decimal to the adjacent binary64
+// value. Build a sparse overlay containing the source decoder's exact IEEE-754
+// words for only those leaves. The raw JSON remains authoritative: unsafe or
+// over-precise source numbers and all nonnumeric changes are still rejected.
+bool application_corrections(const json& original, const json& adapted,
+        const json& original_native, const json& adapted_native,
+        const std::string& pointer, json& corrections, NumericMismatch& mismatch) {
+    std::pair<std::string, int64_t> left, right;
+    bool left_number = number_key(original, left);
+    bool right_number = number_key(adapted, right);
+    if (left_number || right_number) {
+        bool source_canonical = left_number &&
+            source_binary64_canonical(original, original_native);
+        if (!(left_number && right_number) || !godot_numeric_safe(original) || !source_canonical) {
+            mismatch = {pointer, bounded(numeric_text(original), kDiagnosticText),
+                bounded(numeric_text(adapted), kDiagnosticText),
+                !godot_numeric_safe(original) ? "unsafe_numeric_domain" :
+                    (!source_canonical ? "source_not_binary64_canonical" : "numeric_type_changed")};
+            return false;
+        }
+        if (native_number_equal(original_native, adapted_native)) {
+            corrections = json::null();
+            return true;
+        }
+        if (!original_native.is_double() || !adapted_native.is_double() ||
+                !adjacent_binary64(original_native.as<double>(), adapted_native.as<double>())) {
+            mismatch = {pointer, bounded(numeric_text(original), kDiagnosticText),
+                bounded(numeric_text(adapted), kDiagnosticText), "numeric_value_changed"};
+            return false;
+        }
+        corrections = double_words(original_native.as<double>());
+        return true;
+    }
+    if (original.is_array() != adapted.is_array() || original.is_object() != adapted.is_object() ||
+            original_native.is_array() != original.is_array() ||
+            adapted_native.is_array() != adapted.is_array() ||
+            original_native.is_object() != original.is_object() ||
+            adapted_native.is_object() != adapted.is_object()) {
+        mismatch = {pointer, "", "", "structure_changed"};
+        return false;
+    }
+    if (original.is_array()) {
+        if (original.size() != adapted.size() || original.size() != original_native.size() ||
+                adapted.size() != adapted_native.size()) {
+            mismatch = {pointer, "", "", "structure_changed"};
+            return false;
+        }
+        json overlay(jsoncons::json_array_arg);
+        bool changed = false;
+        for (std::size_t i = 0; i < original.size(); ++i) {
+            json child;
+            if (!application_corrections(original[i], adapted[i], original_native[i], adapted_native[i],
+                    child_pointer(pointer, std::to_string(i)), child, mismatch)) return false;
+            changed = changed || !child.is_null();
+            overlay.push_back(std::move(child));
+        }
+        corrections = changed ? std::move(overlay) : json::null();
+        return true;
+    }
+    if (original.is_object()) {
+        if (original.size() != adapted.size() || original.size() != original_native.size() ||
+                adapted.size() != adapted_native.size()) {
+            mismatch = {pointer, "", "", "structure_changed"};
+            return false;
+        }
+        json overlay(jsoncons::json_object_arg);
+        for (const auto& member : original.object_range()) {
+            std::string key(member.key().data(), member.key().size());
+            if (!adapted.contains(key) || !original_native.contains(key) || !adapted_native.contains(key)) {
+                mismatch = {pointer, "", "", "structure_changed"};
+                return false;
+            }
+            json child;
+            if (!application_corrections(member.value(), adapted.at(key), original_native.at(key),
+                    adapted_native.at(key), child_pointer(pointer, key), child, mismatch)) return false;
+            if (!child.is_null()) overlay[key] = std::move(child);
+        }
+        corrections = overlay.empty() ? json::null() : std::move(overlay);
+        return true;
+    }
+    if (original != adapted) {
+        mismatch = {pointer, "", "", "value_changed"};
+        return false;
+    }
+    corrections = json::null();
+    return true;
+}
+
 bool has_tagged_numbers(const json& value) {
     if (value.is_string() && (value.tag() == jsoncons::semantic_tag::bigdec ||
             value.tag() == jsoncons::semantic_tag::bigint)) return true;
@@ -271,11 +560,68 @@ json dispatch(const json& request) {
         auto options = strict_options(true);
         json original = json::parse(request.at("original_raw").as<std::string>(), options);
         json adapted = json::parse(request.at("adapted_raw").as<std::string>(), options);
+        json original_native = json::parse(
+            request.at("original_raw").as<std::string>(), strict_options());
+        json adapted_native = json::parse(
+            request.at("adapted_raw").as<std::string>(), strict_options());
         bool equal = false;
-        try { equal = numbers_equal(original, adapted); } catch (...) { equal = false; }
-        if (!godot_numeric_safe(original) || !equal)
-            return response(id, false, "unsupported_number", "number cannot cross the application boundary exactly");
+        NumericMismatch mismatch;
+        try {
+            equal = numbers_compatible(original, adapted, original_native, adapted_native, "", mismatch);
+        } catch (...) { equal = false; }
+        if (!equal) {
+            json out = response(id, false, "unsupported_number",
+                "number cannot cross the application boundary exactly");
+            json details(jsoncons::json_object_arg);
+            details["pointer"] = bounded(mismatch.pointer, kDiagnosticPointer);
+            details["original"] = bounded(mismatch.original, kDiagnosticText);
+            details["adapted"] = bounded(mismatch.adapted, kDiagnosticText);
+            details["reason"] = bounded(mismatch.reason, kDiagnosticText);
+            out["error"]["details"] = std::move(details);
+            return out;
+        }
         return response(id, true);
+    }
+    if (op == "prepare_numbers") {
+        if (!request.contains("original_raw") || !request.contains("adapted_raw") ||
+                !request.at("original_raw").is_string() || !request.at("adapted_raw").is_string())
+            return response(id, false, "invalid_request", "raw values must be strings");
+        const std::string original_raw = request.at("original_raw").as<std::string>();
+        const std::string adapted_raw = request.at("adapted_raw").as<std::string>();
+        if (original_raw.size() > kInstanceBytes || adapted_raw.size() > kInstanceBytes)
+            return response(id, false, "instance_too_large", "application value exceeds 32 MiB");
+        auto options = strict_options(true);
+        json original = json::parse(original_raw, options);
+        json adapted = json::parse(adapted_raw, options);
+        json original_native = json::parse(original_raw, strict_options());
+        json adapted_native = json::parse(adapted_raw, strict_options());
+        std::size_t nodes = 0;
+        if (!within_shape(original, 0, nodes))
+            return response(id, false, "instance_limit", "source depth or node limit exceeded");
+        nodes = 0;
+        if (!within_shape(adapted, 0, nodes))
+            return response(id, false, "instance_limit", "decoded value depth or node limit exceeded");
+        json corrections;
+        NumericMismatch mismatch;
+        bool compatible = false;
+        try {
+            compatible = application_corrections(original, adapted, original_native,
+                adapted_native, "", corrections, mismatch);
+        } catch (...) { compatible = false; }
+        if (!compatible) {
+            json out = response(id, false, "unsupported_number",
+                "number cannot cross the application boundary safely");
+            json details(jsoncons::json_object_arg);
+            details["pointer"] = bounded(mismatch.pointer, kDiagnosticPointer);
+            details["original"] = bounded(mismatch.original, kDiagnosticText);
+            details["adapted"] = bounded(mismatch.adapted, kDiagnosticText);
+            details["reason"] = bounded(mismatch.reason, kDiagnosticText);
+            out["error"]["details"] = std::move(details);
+            return out;
+        }
+        json out = response(id, true);
+        out["corrections"] = std::move(corrections);
+        return out;
     }
     return response(id, false, "unknown_operation", "unknown helper operation");
 }

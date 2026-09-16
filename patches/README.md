@@ -1,8 +1,9 @@
 # Minerva patches
 
 Custom patches applied to vendor submodules during `scripts/build-extensions.sh`.
-The submodule source tree stays clean in `git status` — patches only exist on
-disk inside the submodule during the build itself, then the submodule is reset.
+WRY patches remain in its worktree after the build. Setup recognizes already
+applied patches and preserves contributor edits; it never resets the worktree.
+Conflicts stop the build and name the patch that needs attention.
 
 ## godot_wry
 

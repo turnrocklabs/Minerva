@@ -56,7 +56,11 @@ func _run() -> void:
 		and broker.calls == 0)
 	var nested = await registry.handle_tool_call_outcome("minerva_probe_nested_precision_loss", {})
 	check("unsafe nested JSON cannot reach plugin application or capability processing",
-		nested.application.get("error_code") == "unsupported_number" and broker.calls == 0)
+		nested.application.get("error_code") == "unsupported_number"
+		and nested.application.get("error_message") \
+			== "Unsafe numeric representation in MCP text result"
+		and nested.application.get("error_details", {}).get("pointer") == "/n"
+		and broker.calls == 0)
 	var echo = await registry.handle_tool_call_outcome(
 		"minerva_probe_echo", {"marker": "full-outcome"})
 	check("plugin dispatch retains the same full result envelope with its application view",

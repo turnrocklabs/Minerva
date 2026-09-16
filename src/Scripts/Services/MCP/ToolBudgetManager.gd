@@ -10,6 +10,10 @@ const PROTECTED_TOOLS: Array[String] = ["minerva_tool_search", "minerva_list_ski
 
 ## Active tool entry: {schema: Dictionary, last_used_turn: int, token_cost: int}
 var _active_tools: Dictionary = {}
+## Skill/search batches keep their admitted tools together through the next
+## model-facing turn. Entries expire automatically; permanent tools stay in
+## PROTECTED_TOOLS.
+var _protected_until_turn: Dictionary = {}
 var _current_turn: int = 0
 var _token_budget: int = DEFAULT_BUDGET
 var _max_idle_turns: int = DEFAULT_MAX_IDLE_TURNS
@@ -19,26 +23,85 @@ func _init(budget: int = DEFAULT_BUDGET) -> void:
 	_token_budget = budget
 
 
-## Activate a tool — add its schema to the active set.
-## Auto-prunes LRU tools if adding would exceed budget.
-func activate_tool(name: String, schema: Dictionary) -> void:
+## Activate a tool and report whether it remains callable. LRU entries may be
+## evicted to make room, but an over-budget schema is never inserted.
+func activate_tool(name: String, schema: Dictionary) -> Dictionary:
 	if _active_tools.has(name):
 		_active_tools[name].last_used_turn = _current_turn
-		return  # already active, just refresh
+		return {"active": true, "name": name,
+			"token_cost": int(_active_tools[name].token_cost), "evicted": []}
 
 	var cost: int = _estimate_tokens(schema)
+	var evicted: Array[String] = []
+	# Do not evict ordinary tools when this schema cannot fit alongside the
+	# workflows that are currently leased. Such eviction cannot make the
+	# requested activation succeed.
+	if _protected_token_usage() + cost > _token_budget:
+		return {"active": false, "name": name, "token_cost": cost,
+			"reason": "tool schema does not fit alongside protected workflows",
+			"evicted": evicted}
 
 	# Prune until we have room
 	while get_token_usage() + cost > _token_budget:
-		var pruned: bool = _prune_one()
-		if not pruned:
+		var pruned: String = _prune_one()
+		if pruned.is_empty():
 			break  # can't prune anything (only protected tools left)
+		evicted.append(pruned)
+
+	if get_token_usage() + cost > _token_budget:
+		return {"active": false, "name": name, "token_cost": cost,
+			"reason": "tool schema does not fit the active token budget",
+			"evicted": evicted}
 
 	_active_tools[name] = {
 		"schema": schema,
 		"last_used_turn": _current_turn,
 		"token_cost": cost,
 	}
+	return {"active": true, "name": name, "token_cost": cost,
+		"evicted": evicted}
+
+
+## Admit a related set without allowing later members to evict earlier ones.
+## Successfully admitted tools stay protected through the next provider tool
+## refresh, then return to ordinary LRU behavior.
+func activate_group(schemas: Array[Dictionary]) -> Dictionary:
+	var requested: Array[String] = []
+	var by_name: Dictionary = {}
+	for schema: Dictionary in schemas:
+		var name := str(schema.get("name", ""))
+		if name.is_empty() or by_name.has(name):
+			continue
+		requested.append(name)
+		by_name[name] = schema
+
+	var previous_leases: Dictionary = {}
+	for name: String in requested:
+		previous_leases[name] = int(_protected_until_turn.get(name, -1))
+		_protected_until_turn[name] = maxi(int(_protected_until_turn.get(name, -1)),
+			_current_turn + 1)
+
+	var activated: Array[String] = []
+	var rejected: Array[Dictionary] = []
+	var evicted: Array[String] = []
+	for name: String in requested:
+		var outcome: Dictionary = activate_tool(name, by_name[name])
+		for evicted_name: String in outcome.get("evicted", []):
+			if evicted_name not in evicted:
+				evicted.append(evicted_name)
+		if outcome.get("active", false) and is_active(name):
+			activated.append(name)
+		else:
+			rejected.append({"name": name, "token_cost": outcome.get("token_cost", 0),
+				"reason": outcome.get("reason", "tool was not admitted")})
+			var previous_expiry: int = int(previous_leases.get(name, -1))
+			if previous_expiry >= 0:
+				_protected_until_turn[name] = previous_expiry
+			else:
+				_protected_until_turn.erase(name)
+
+	return {"activated": activated, "rejected": rejected, "evicted": evicted,
+		"token_usage": get_token_usage(), "token_budget": _token_budget}
 
 
 ## Mark a tool as used this turn (updates LRU).
@@ -87,10 +150,13 @@ func try_call(name: String) -> Dictionary:
 ## Advance to the next turn. Evicts tools idle for too long.
 func advance_turn() -> void:
 	_current_turn += 1
+	for name: String in _protected_until_turn.keys():
+		if int(_protected_until_turn[name]) < _current_turn:
+			_protected_until_turn.erase(name)
 	if _max_idle_turns > 0:
 		var to_evict: Array[String] = []
 		for name in _active_tools:
-			if name in PROTECTED_TOOLS:
+			if _is_protected(name):
 				continue
 			if _current_turn - _active_tools[name].last_used_turn > _max_idle_turns:
 				to_evict.append(name)
@@ -111,12 +177,35 @@ func reset() -> void:
 			saved[pname] = _active_tools[pname]
 	_active_tools.clear()
 	_active_tools.merge(saved)
+	_protected_until_turn.clear()
 	_current_turn = 0
 
 
-## Set the token budget.
-func set_budget(budget: int) -> void:
-	_token_budget = budget
+## Set the token budget and enforce a reduction immediately. A reduction that
+## cannot contain the currently protected workflow is rejected without
+## changing the budget or evicting unrelated tools.
+func set_budget(budget: int) -> Dictionary:
+	var requested := maxi(0, budget)
+	var previous := _token_budget
+	if _protected_token_usage() > requested:
+		return {"applied": false, "requested_budget": requested,
+			"token_budget": previous, "token_usage": get_token_usage(),
+			"evicted": [],
+			"reason": "requested budget is smaller than protected workflow schemas"}
+
+	var evicted: Array[String] = []
+	while get_token_usage() > requested:
+		var pruned := _prune_one()
+		if pruned.is_empty():
+			return {"applied": false, "requested_budget": requested,
+				"token_budget": previous, "token_usage": get_token_usage(),
+				"evicted": evicted,
+				"reason": "requested budget cannot be enforced"}
+		evicted.append(pruned)
+	_token_budget = requested
+	return {"applied": true, "requested_budget": requested,
+		"token_budget": _token_budget, "token_usage": get_token_usage(),
+		"evicted": evicted}
 
 
 ## Get the token budget.
@@ -136,26 +225,41 @@ func get_max_idle_turns() -> int:
 
 # ── Internal ──────────────────────────────────────────────────────────
 
-## Prune the least recently used non-protected tool. Returns true if something was pruned.
-func _prune_one() -> bool:
+## Prune the least recently used non-protected tool. Returns its name or "".
+func _prune_one() -> String:
 	var oldest_name: String = ""
 	var oldest_turn: int = _current_turn + 1  # higher than any possible turn
 
 	for name in _active_tools:
-		if name in PROTECTED_TOOLS:
+		if _is_protected(name):
 			continue
 		if _active_tools[name].last_used_turn < oldest_turn:
 			oldest_turn = _active_tools[name].last_used_turn
 			oldest_name = name
 
 	if oldest_name.is_empty():
-		return false
+		return ""
 
 	_active_tools.erase(oldest_name)
-	return true
+	_protected_until_turn.erase(oldest_name)
+	return oldest_name
 
 
-## Estimate token cost of a tool schema (~2.5 chars per token for JSON with short keys).
+func _is_protected(name: String) -> bool:
+	return name in PROTECTED_TOOLS \
+		or int(_protected_until_turn.get(name, -1)) >= _current_turn
+
+
+func _protected_token_usage() -> int:
+	var total := 0
+	for name: String in _active_tools:
+		if _is_protected(name):
+			total += int(_active_tools[name].token_cost)
+	return total
+
+
+## Calibrated provider-neutral fallback. UTF-8 bytes are conservative for
+## non-ASCII schemas; provider-specific tokenizers belong at the provider seam.
 func _estimate_tokens(schema: Dictionary) -> int:
 	var json_str: String = JSON.stringify(schema)
-	return maxi(1, ceili(float(json_str.length()) / 2.5))
+	return maxi(1, ceili(float(json_str.to_utf8_buffer().size()) / 4.0))

@@ -1,5 +1,6 @@
 class_name PluginScenePanelBroker
 extends RefCounted
+const ApplicationError = preload("res://Scripts/Services/MCP/MCPApplicationError.gd")
 ## IPC broker that mediates all communication between plugin Godot-scene panels
 ## and plugin backends / host capabilities.
 ##
@@ -1701,28 +1702,80 @@ func _dispatch_to_plugin_backend(
 
 	# MCP tools/call: tool name = channel, arguments = payload. Use the generous
 	# scene-backend budget — the default 120s strands long backend jobs.
-	var call_result = await conn.call_tool(channel, payload, SCENE_BACKEND_CALL_TIMEOUT_SEC)
+	var outcome = await conn.call_tool_outcome(
+		channel, payload, SCENE_BACKEND_CALL_TIMEOUT_SEC)
 
-	if call_result == null:
+	if outcome == null:
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"Plugin backend returned null for channel '%s'" % channel)
+	return _plugin_backend_outcome_to_scene_reply(plugin_id, outcome)
+
+
+## Translate the lossless MCP outcome into the scene reply contract. The
+## adapter deliberately adds `success` to application payloads, so `success`
+## alone cannot distinguish a raw worker `{ok, result|error}` payload from a
+## scene envelope. Protocol isError is checked from the retained envelope
+## before the worker marker, preventing an MCP failure from becoming success.
+static func _plugin_backend_outcome_to_scene_reply(
+		plugin_id: String, outcome) -> Dictionary:
+	var call_result: Dictionary = outcome.application
+	var envelope = outcome.envelope
+	var original_result: Variant = envelope.get("original_result") \
+		if envelope != null else null
+	var protocol_error := original_result is Dictionary \
+		and bool((original_result as Dictionary).get("isError", false))
+	var success_synthesized := bool(outcome.application_success_synthesized)
+
+	if protocol_error:
+		var failed := ApplicationError.normalize(call_result.duplicate(true))
+		failed["success"] = false
+		if not failed.has("error_code"):
+			failed["error_code"] = "mcp_tool_error"
+		if str(failed.get("error_message", "")).is_empty():
+			failed["error_message"] = "Plugin backend marked its MCP result as an error"
+		failed["plugin_id"] = plugin_id
+		return failed
+
+	# Outcomes without an MCP result envelope are connection/protocol failures,
+	# rather than backend domain replies.
+	if envelope == null and not bool(call_result.get("success", true)):
+		var transport_failure := ApplicationError.normalize(call_result.duplicate(true))
+		var detail := str(transport_failure.get("error_message",
+			transport_failure.get("error", "Plugin backend call failed"))).left(512)
+		return PluginErrors.backend_error(plugin_id, detail)
 
 	if call_result is Dictionary:
-		# A backend tool that already speaks the {success:...} reply envelope is
-		# passed through verbatim — no double-wrap.
-		if call_result.has("success"):
-			return call_result
+		# An explicit scene envelope owns its meaning even if its payload also has
+		# an `ok` field. Only the adapter-synthesized compatibility field yields
+		# to worker classification below.
+		if call_result.has("success") and not success_synthesized:
+			return ApplicationError.normalize(call_result)
+		if call_result.has("ok") and not call_result.get("ok") is bool:
+			return {
+				"success": false,
+				"error_code": "malformed_plugin_payload",
+				"error_message": "Plugin worker payload field 'ok' must be boolean; keys=%s"
+					% str(call_result.keys()).left(256),
+				"plugin_id": plugin_id,
+			}
 		# A worker-domain result carries an "ok" flag (ok:true, or ok:false with
 		# a worker-error dict). The dispatch itself round-tripped, so wrap the
 		# whole worker payload in the {success:true, result:...} scene-reply
 		# envelope and let the panel inspect ok/error/result itself.
 		#
-		# Checked BEFORE "error": a worker-domain error is {ok:false, error:{…}}
-		# — it has BOTH keys — and it must reach the panel as a worker result
+		# Checked before synthesized application `success` and "error": the
+		# result adapter adds success to parsed JSON, and a worker-domain error is
+		# {ok:false, error:{…}, success:false}.
+		#
+		# Protocol isError was checked above from the lossless envelope, so this
+		# ordering cannot hide an MCP transport/tool failure. A worker error has
+		# both keys and must reach the panel as a worker result
 		# (so the panel sees error.kind, e.g. "cancelled"), NOT be re-shaped into
 		# a transport-level backend_error.
 		if call_result.has("ok"):
-			return PluginErrors.backend_success(call_result)
+			var worker_payload := call_result.duplicate(true)
+			worker_payload.erase("success")
+			return PluginErrors.backend_success(worker_payload)
 		# No "ok" but an "error": a connection-layer failure from call_tool
 		# (timeout, subprocess exit, write failure) surfaces as
 		# {error: <human-readable string>}. Re-shape it to the
@@ -1732,7 +1785,10 @@ func _dispatch_to_plugin_backend(
 			return PluginErrors.backend_error(plugin_id, str(call_result["error"]))
 		# A dict with neither marker — the dispatch round-tripped; report success
 		# and hand the payload through under "result".
-		return PluginErrors.backend_success(call_result)
+		var raw_payload := call_result.duplicate(true)
+		if success_synthesized:
+			raw_payload.erase("success")
+		return PluginErrors.backend_success(raw_payload)
 
 	# Non-dict result — the dispatch round-tripped; wrap it too.
 	return PluginErrors.backend_success({"raw": call_result})

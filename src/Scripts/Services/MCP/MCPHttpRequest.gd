@@ -160,6 +160,7 @@ func _frame(bytes: PackedByteArray, request: Dictionary, streaming: bool) -> voi
 	if not checked.get("ok", false):
 		_finish({"error": "Unsafe MCP numeric representation", "validation": checked, "status": status})
 		return
+	message = wire.parsed
 	if message.has("method"):
 		if not streaming or not Protocol.validate_request(message).is_empty() or message.has("id"):
 			_finish({"error": "Unexpected server request on HTTP response stream", "status": status})

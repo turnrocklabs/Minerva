@@ -365,6 +365,46 @@ func _matches_filters(entry: Dictionary, query_text: String, filter_tags: Array)
 	return true
 
 
+func _activate_dependencies(tool_deps: Array) -> Dictionary:
+	var schemas: Array[Dictionary] = []
+	var skipped: Array[String] = []
+	for dep_name: Variant in tool_deps:
+		var name := str(dep_name)
+		var search_results: Array[Dictionary] = server.tool_search_index.search(name, "", 1)
+		if search_results.is_empty() or str(search_results[0].get("name", "")) != name:
+			skipped.append(name)
+			continue
+		var schema: Dictionary = search_results[0].get("schema", {})
+		if schema.is_empty():
+			skipped.append(name)
+		else:
+			schemas.append(schema)
+
+	var admission: Dictionary = server.tool_budget_manager.activate_group(schemas)
+	var unavailable: Array[String] = []
+	for rejected: Dictionary in admission.get("rejected", []):
+		unavailable.append(str(rejected.get("name", "")))
+	return {
+		"activated_tools": admission.get("activated", []),
+		"unavailable_tools": unavailable,
+		"skipped_tools": skipped,
+		"evicted_tools": admission.get("evicted", []),
+		"activation_failures": admission.get("rejected", []),
+	}
+
+
+static func _activation_message(activation: Dictionary) -> String:
+	var activated: Array = activation.get("activated_tools", [])
+	var unavailable: Array = activation.get("unavailable_tools", [])
+	var skipped: Array = activation.get("skipped_tools", [])
+	var message := "%d tools activated and ready to use." % activated.size()
+	if not unavailable.is_empty():
+		message += " %d could not fit the active tool budget." % unavailable.size()
+	if not skipped.is_empty():
+		message += " %d tool names were not found." % skipped.size()
+	return message
+
+
 func _skill_get(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 	var skill_id: String = arguments.get("skill_id", "")
 	var title: String = arguments.get("title", "")
@@ -405,31 +445,25 @@ func _skill_get(arguments: Dictionary, context: ExecutionContext) -> Dictionary:
 					"preconditions": str(docket_result.get("preconditions", "")),
 					"outcome": str(docket_result.get("outcome", "")),
 				}
-				# Auto-activate tools listed in tool_deps
+				# Apply the skill's budget before admitting its dependency group.
+				var optimization: Dictionary = docket_result.get("optimization", {})
+				if not optimization.is_empty():
+					var optimization_result := _apply_skill_optimization(
+						optimization, context)
+					if not (optimization_result.applied as Dictionary).is_empty():
+						result["optimization_applied"] = optimization_result.applied
+					if not (optimization_result.failures as Array).is_empty():
+						result["optimization_failures"] = optimization_result.failures
+
+				# Auto-activate tools listed in tool_deps as one protected group.
 				var tool_deps: Array = docket_result.get("tool_deps", [])
 				if not tool_deps.is_empty():
 					result["tool_deps"] = tool_deps
-					var activated: Array[String] = []
-					var skipped: Array[String] = []
-					for dep_name in tool_deps:
-						var search_results: Array[Dictionary] = server.tool_search_index.search(str(dep_name), "", 1)
-						if not search_results.is_empty() and search_results[0].get("name", "") == str(dep_name):
-							var schema: Dictionary = search_results[0].get("schema", {})
-							server.tool_budget_manager.activate_tool(str(dep_name), schema)
-							activated.append(str(dep_name))
-						else:
-							skipped.append(str(dep_name))
-					result["activated_tools"] = activated
-					if not skipped.is_empty():
-						result["skipped_tools"] = skipped
-					if not activated.is_empty():
-						result["message"] = "%d tools activated and ready to use. Do NOT call minerva_tool_search for these — they are already available." % activated.size()
-
-				# Apply skill optimization profile if present
-				var optimization: Dictionary = docket_result.get("optimization", {})
-				if not optimization.is_empty():
-					_apply_skill_optimization(optimization, context)
-					result["optimization_applied"] = optimization
+					var activation := _activate_dependencies(tool_deps)
+					for key: String in activation:
+						if not (activation[key] as Array).is_empty():
+							result[key] = activation[key]
+					result["message"] = _activation_message(activation)
 
 				# Surface model-targeted insights/hints for this skill's domain
 				var targeted := _query_targeted_knowledge(dm, proj_name, docket_result, context.caller_chat_id)
@@ -577,17 +611,7 @@ func _skill_create(arguments: Dictionary) -> Dictionary:
 	# Auto-activate declared tools in the caller's budget manager so the
 	# skill is immediately usable without a second minerva_activate_skill call.
 	var tool_deps: Array = arguments.get("tool_deps", [])
-	var activated: Array[String] = []
-	var skipped: Array[String] = []
-	for dep_name in tool_deps:
-		var dep_str := str(dep_name)
-		var search_results: Array[Dictionary] = server.tool_search_index.search(dep_str, "", 1)
-		if not search_results.is_empty() and str(search_results[0].get("name", "")) == dep_str:
-			var dep_schema: Dictionary = search_results[0].get("schema", {})
-			server.tool_budget_manager.activate_tool(dep_str, dep_schema)
-			activated.append(dep_str)
-		else:
-			skipped.append(dep_str)
+	var activation := _activate_dependencies(tool_deps)
 
 	var result := {
 		"success": true,
@@ -595,13 +619,13 @@ func _skill_create(arguments: Dictionary) -> Dictionary:
 		"title": title,
 		"status": final_status,
 		"project": project,
-		"activated_tools": activated,
+		"activated_tools": activation.activated_tools,
 	}
-	if not skipped.is_empty():
-		result["skipped_tools"] = skipped
-		result["message"] = "%d tools activated, %d skipped (unknown tool names)." % [activated.size(), skipped.size()]
-	else:
-		result["message"] = "Skill created and %d tools activated." % activated.size()
+	for key: String in ["unavailable_tools", "skipped_tools", "evicted_tools",
+			"activation_failures"]:
+		if not (activation[key] as Array).is_empty():
+			result[key] = activation[key]
+	result["message"] = "Skill created. " + _activation_message(activation)
 	if not transition_warning.is_empty():
 		result["warning"] = transition_warning
 	return result
@@ -650,20 +674,10 @@ func _skill_update(arguments: Dictionary) -> Dictionary:
 	# expire naturally via tool_idle_turns.
 	if arguments.has("tool_deps"):
 		var tool_deps: Array = arguments.get("tool_deps", [])
-		var activated: Array[String] = []
-		var skipped: Array[String] = []
-		for dep_name in tool_deps:
-			var dep_str := str(dep_name)
-			var search_results: Array[Dictionary] = server.tool_search_index.search(dep_str, "", 1)
-			if not search_results.is_empty() and str(search_results[0].get("name", "")) == dep_str:
-				var dep_schema: Dictionary = search_results[0].get("schema", {})
-				server.tool_budget_manager.activate_tool(dep_str, dep_schema)
-				activated.append(dep_str)
-			else:
-				skipped.append(dep_str)
-		result["activated_tools"] = activated
-		if not skipped.is_empty():
-			result["skipped_tools"] = skipped
+		var activation := _activate_dependencies(tool_deps)
+		for key: String in activation:
+			if not (activation[key] as Array).is_empty():
+				result[key] = activation[key]
 
 	return result
 
@@ -807,12 +821,21 @@ func _query_targeted_knowledge(dm: DocketManager, proj_name: String, skill_data:
 	return result
 
 
-## Apply optimization knobs from a skill's "optimization" dict.
-## Adjusts ToolBudgetManager and ToolMemoryManager settings for the calling chat.
-func _apply_skill_optimization(optimization: Dictionary, context: ExecutionContext) -> void:
+## Apply optimization knobs from a skill's "optimization" dict and report any
+## setting that could not be enforced.
+func _apply_skill_optimization(optimization: Dictionary,
+		context: ExecutionContext) -> Dictionary:
+	var applied := optimization.duplicate(true)
+	var failures: Array[Dictionary] = []
 	# Tool budget knobs
 	if optimization.has("tool_budget"):
-		server.tool_budget_manager.set_budget(int(optimization["tool_budget"]))
+		var budget_result: Dictionary = server.tool_budget_manager.set_budget(
+			int(optimization["tool_budget"]))
+		if not budget_result.get("applied", false):
+			applied.erase("tool_budget")
+			var failure := budget_result.duplicate(true)
+			failure["setting"] = "tool_budget"
+			failures.append(failure)
 	if optimization.has("tool_idle_turns"):
 		server.tool_budget_manager.set_max_idle_turns(int(optimization["tool_idle_turns"]))
 
@@ -838,5 +861,6 @@ func _apply_skill_optimization(optimization: Dictionary, context: ExecutionConte
 					# Disable LLM summary calls — use deterministic fallback only
 					tmm.summary_call_fn = Callable()
 					tmm.fallback_summary_call_fn = Callable()
+	return {"applied": applied, "failures": failures}
 
 #endregion

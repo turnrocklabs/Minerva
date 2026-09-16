@@ -1,0 +1,967 @@
+{
+  "title": "CAD modeling with the .mcad DSL",
+  "tool_deps": [
+    "minerva_create_plugin_editor",
+    "minerva_doc_read",
+    "minerva_doc_write",
+    "minerva_doc_save",
+    "minerva_cad_get_mesh_info",
+    "minerva_cad_list_edges_live",
+    "minerva_cad_get_edge",
+    "minerva_cad_get_selected_edge",
+    "minerva_cad_annotate_edges",
+    "minerva_cad_clear_edge_annotations",
+    "minerva_cad_list_user_labels",
+    "minerva_cad_export",
+    "minerva_cad_snapshot",
+    "minerva_cad_snapshot_fit",
+    "minerva_doc_edit",
+    "minerva_cad_await_eval",
+    "minerva_cad_cad_evaluate"
+  ],
+  "tools": [
+    {
+      "description": "Create a new ANONYMOUS (unsaved, no file path) editor backed by a plugin's editor_item — the MCP equivalent of File → New → <plugin item> in the UI. The buffer lives only in memory until the user (or a later minerva_doc_save with `path`) Save-As's it. Use the returned `editor_name` to drive content via minerva_doc_read / minerva_doc_write / minerva_doc_save (the unified-key API). For paired_dsl panels (e.g. cad), TWO tabs are spawned (render + text source) sharing one DocumentBuffer; minerva_doc_* calls on EITHER editor_name resolve to the shared buffer, and the render panel re-evaluates automatically as the buffer changes. Returns {editor_name, plugin_id, panel_name, panel_kind, render_mode, [text_editor_name, buffer_path] (paired_dsl only)}. Possible errors: plugin_not_found:<id>, editor_item_not_found:<id>, editor_pane_not_available, html_panel_anonymous_create_unsupported.",
+      "inputSchema": {
+        "properties": {
+          "editor_item_id": {
+            "description": "id of the editor_items[] entry in the plugin manifest (e.g. 'new_mcad' for the cad plugin).",
+            "type": "string"
+          },
+          "plugin_id": {
+            "description": "Plugin id (e.g. 'cad', from the plugin's manifest.json).",
+            "type": "string"
+          },
+          "tab_title": {
+            "description": "Optional tab title for the new editor. Defaults to the editor_items entry's `name`. The returned editor_name reflects the title actually used.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "editor_item_id"
+        ],
+        "type": "object"
+      },
+      "name": "minerva_create_plugin_editor"
+    },
+    {
+      "description": "Read a document's text. Pass `document_id`, `view_id`, `path` (absolute file path), or an unambiguous `editor_name`. Path-keyed reads load from disk into the registry on first access. Editor-keyed reads return the visible text of an editor tab — works for both path-bound and anonymous (unsaved) editors. The reply advertises supported_operations and, for CAD, whole-document write_guidance. Returns not_found when neither buffer, file, nor named editor exists.",
+      "inputSchema": {
+        "properties": {
+          "dirty": {
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live canonical document handle from minerva_list_editors or minerva_doc_read.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Tab title of the editor (alternative to path)",
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute file path (alternative to editor_name)",
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Optional view handle; selects a particular editor without relying on its title.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_doc_read"
+    },
+    {
+      "description": "Replace a document's full text. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. CAD is structured: read first, pass the complete MCAD source as plain text here, and inspect last_eval in the reply. Other plugin-scene plain text is wrapped as {\"source\": text}; pass a JSON object literal only when the plugin expects a fuller Dictionary. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
+      "inputSchema": {
+        "properties": {
+          "document_id": {
+            "description": "Live canonical document handle from minerva_list_editors or minerva_doc_read.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Tab title of the editor (alternative to path)",
+            "type": "string"
+          },
+          "if_match_version": {
+            "description": "Optimistic concurrency: only apply if the buffer's current version equals this (from minerva_doc_read). On mismatch the write is rejected with {error:'version_mismatch', want, got} so you can re-read and retry. Omit for last-write-wins (default).",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Absolute file path (alternative to editor_name)",
+            "type": "string"
+          },
+          "save": {
+            "description": "Also flush to disk now (default false = buffered, persist later via minerva_doc_save).",
+            "type": "boolean"
+          },
+          "text": {
+            "description": "Full text content",
+            "type": "string"
+          },
+          "view_id": {
+            "description": "Optional view handle; selects a particular editor without relying on its title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "name": "minerva_doc_write"
+    },
+    {
+      "description": "Flush a document to disk. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. With editor_name, an optional `path` argument performs Save-As (binds the editor to that path). For an unbound (anonymous) editor `path` is REQUIRED. Returns {path, editor_name} after save — note that Save-As renames the tab, so the returned editor_name may differ from the one passed in.",
+      "inputSchema": {
+        "properties": {
+          "document_id": {
+            "description": "Live document handle; path is an optional Save-As destination.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Tab title of the editor. Alternative key to path.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute file path. Required for path-keyed save. Optional for editor_name save (triggers Save-As when present).",
+            "type": "string"
+          },
+          "view_id": {
+            "description": "Live view handle; required for Save-As when a document has paired views.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "name": "minerva_doc_save"
+    },
+    {
+      "description": "Return geometry summary for a live CAD editor: vertex count, face count, axis-aligned bounding box, and whether any geometry exists. Bounding box coordinates are in millimetres (CAD always uses mm). has_geometry is false when the panel has not yet evaluated any DSL source. Use minerva_doc_read (with the editor's file path) to check what DSL is loaded.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors). Must match a live CAD panel.",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_get_mesh_info"
+    },
+    {
+      "description": "Return the full edge registry from a live CAD editor as an array of edge dicts. Each dict has at minimum: id (int), kind (string: 'straight' or 'circle'). Straight edges include length (mm); circle edges include radius (mm). The exact dict shape mirrors what the CAD worker returns — no transformation. Returns an empty array when no geometry has been evaluated yet.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_list_edges_live"
+    },
+    {
+      "description": "Return a single edge dict from a live CAD editor by integer id. Returns {ok: true, edge: null} when the id is not found (not an error). Use cad_list_edges_live to enumerate available ids.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "edge_id": {
+            "description": "Numeric edge id as reported by cad_list_edges_live.",
+            "type": "integer"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id"
+        ],
+        "type": "object"
+      },
+      "name": "minerva_cad_get_edge"
+    },
+    {
+      "description": "Return the currently selected edge id and its full dict from a live CAD editor. selected_edge_id is -1 and edge is null when no edge is selected. Edge selection is driven by the user clicking in the 3-D viewport or via the Prev/Next buttons in the sidebar.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_get_selected_edge"
+    },
+    {
+      "description": "Create one cad_edge_number annotation per resolved edge on a live CAD panel. Exactly one selector must be supplied: either edge_ids (explicit list of integer edge ids) or tags_any (list of tag strings — edges whose tags intersect this set are annotated). An optional group_id groups annotations for later bulk clearing; one is minted if omitted. An optional label_format overrides the display text (default: str(edge_id)). Returns {group_id, created_edge_ids, skipped_unknown_ids}. Unknown edge ids are skipped with a warning rather than causing an error.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "edge_ids": {
+            "description": "Explicit list of edge ids to annotate. Mutually exclusive with tags_any.",
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "group_id": {
+            "description": "Logical group label for later bulk clearing via clear_edge_annotations. Minted automatically if omitted.",
+            "type": "string"
+          },
+          "label_format": {
+            "description": "Override display text for every annotation. The literal string is used as-is (no substitution). Default: str(edge_id).",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "tags_any": {
+            "description": "Annotate all edges whose tags field contains at least one of these strings. Mutually exclusive with edge_ids.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_annotate_edges"
+    },
+    {
+      "description": "Remove cad_edge_number annotations from a live CAD panel. Exactly one predicate must be supplied: group_id removes only annotations with that group label; all=true removes all cad_edge_number annotations regardless of group. Returns {cleared_count}. Returns cleared_count=0 (not an error) when no matching annotations exist.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "all": {
+            "description": "If true, remove ALL cad_edge_number annotations on this host. Mutually exclusive with group_id.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "group_id": {
+            "description": "Remove only annotations whose group_id payload field matches this string. Mutually exclusive with all.",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_clear_edge_annotations"
+    },
+    {
+      "description": "Return the list of cad_edge_number annotations the USER has authored on a live CAD panel. Use this whenever the user references 'the edges I labeled' (or 'pinned', 'tagged', 'marked', 'selected') and expects you to operate on a SET of edges they identified — minerva_cad_get_selected_edge only returns the single most-recent click, not the set the user has been building up. Returns {labels: [{edge_id, text, annotation_id, view_context}], count}. Each label corresponds to one cad_edge_number annotation with author=='human'; agent-minted annotations (via minerva_cad_annotate_edges) are excluded. text is whatever the user typed in the annotation dialog (may be empty). When count==0 the user has not labelled anything — fall back to minerva_cad_get_selected_edge or ask which edges they mean.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_list_user_labels"
+    },
+    {
+      "description": "Export a live document's current shared DSL buffer, optionally a named solid part. Returns geometry reuse, source version/digest and output path. Slow exports return status=pending and job_id; collect with job_id alone, even after editing or closing the document. Repeated collection never rewrites the file. wait_ms bounds each call (0..20000).",
+      "inputSchema": {
+        "anyOf": [
+          {
+            "required": [
+              "job_id"
+            ]
+          },
+          {
+            "required": [
+              "editor_name",
+              "format",
+              "path"
+            ]
+          },
+          {
+            "required": [
+              "document_id",
+              "format",
+              "path"
+            ]
+          },
+          {
+            "required": [
+              "view_id",
+              "format",
+              "path"
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "configuration": {
+            "type": "string"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Text or CAD render tab title.",
+            "type": "string"
+          },
+          "format": {
+            "enum": [
+              "stl",
+              "step",
+              "stp",
+              "3mf",
+              "glb"
+            ],
+            "type": "string"
+          },
+          "job_id": {
+            "description": "Collect an existing export without an editor or source.",
+            "type": "string"
+          },
+          "part": {
+            "description": "Optional evaluated object selector; alias of selection.",
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute or home-relative output path.",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "selection": {
+            "type": "string"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          },
+          "wait_ms": {
+            "maximum": 20000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "minerva_cad_export"
+    },
+    {
+      "description": "Capture a PNG snapshot of a live CAD editor's 3-D viewport so vision-capable models can SEE the geometry instead of just reading mesh/edge metadata. view selects which pane: 'iso' (perspective), 'top'/'front'/'right' (orthographic outline), or 'active' (whichever pane is currently focused / the only one visible in narrow layout). Wide layout renders all 4 panes simultaneously so any view works; in narrow layout only the active view captures live (others may be stale or null). Saves the PNG under user://cad_snapshots/ unless output_path is supplied. Returns {path, absolute_path, width, height, view, content_type ('image/png'), has_geometry, vertex_count, face_count, bounding_box (mm, null when no geometry), units ('mm')}; pass return_base64=true to additionally include image_base64 (raw base64 PNG, no data: prefix) for direct vision consumption. max_edge clamps the long edge (default 1024) to avoid blowing tool budgets. output_path under res:// is rejected.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Allow the last completed model while edits are pending; replies retain stale provenance.",
+            "type": "boolean"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Editor tab title (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "max_edge": {
+            "description": "Clamp the long edge of the captured image to this many pixels (default 1024). Aspect ratio preserved.",
+            "type": "integer"
+          },
+          "output_path": {
+            "description": "Where to write the PNG. Default: user://cad_snapshots/<editor>_<view>_<ts>.png. Absolute, ~-prefixed, or user:// paths accepted.",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision.",
+            "type": "integer"
+          },
+          "return_base64": {
+            "description": "If true, also include image_base64 (raw base64 PNG, no data: prefix) in the result.",
+            "type": "boolean"
+          },
+          "view": {
+            "description": "Which viewport pane to capture. Default 'active'.",
+            "enum": [
+              "iso",
+              "top",
+              "front",
+              "right",
+              "active"
+            ],
+            "type": "string"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_snapshot"
+    },
+    {
+      "description": "A snapshot FRAMED ON SOMETHING. minerva_cad_snapshot captures the pane as the owner left it — pulled back far enough to work in, so a 100 mm part fills a fifth of the frame and a grille hole is two pixels. This renders the SAME scene offscreen from a camera of its own, standing where `fit` fills the frame with a ~5% margin, and writes a PNG. The pane's camera is never moved: nothing the owner is looking at changes. fit='solid' frames the evaluated solid, fit='reference:<name>' one mounted reference (minerva_cad_references names them), fit=[[x0,y0,z0],[x1,y1,z1]] any world box in millimetres. Returns {path, absolute_path, width, height, fit_box_mm, view, view_preset, margin}; return_base64=true adds image_base64 (raw base64 PNG, no data: prefix) for direct vision consumption. ONLY A PANE ON PERSPECTIVE CAN BE FITTED — a pane looking from a direction draws its outline in the pane itself rather than in the world, so an offscreen render of it would be a different picture under its name, and it is refused with that reason; take an unfitted minerva_cad_snapshot of those. Refused too when nothing is being drawn at all (window occluded or minimised), because the fitted view needs a frame of its own; minerva_cad_snapshot reads the last frame the pane drew and needs none.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "accept_last_completed": {
+            "description": "Explicitly allow the last completed geometry while source edits are pending. Replies still report stale provenance.",
+            "type": "boolean"
+          },
+          "configuration": {
+            "description": "Named assembly configuration; defaults to the displayed configuration. Physical checks refuse presentation-only configurations.",
+            "type": "string"
+          },
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Name of the CAD editor tab (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "fit": {
+            "description": "What to frame on: 'solid' (default), 'reference:<name>', or [[x0,y0,z0], [x1,y1,z1]] — two opposite corners of a world box in millimetres, either order."
+          },
+          "include_context": {
+            "description": "Also render the selected configuration's reference geometry around a selected solid.",
+            "type": "boolean"
+          },
+          "margin": {
+            "description": "Air left around the box on the binding axis, as a fraction of it. Default 0.05; capped at 0.5.",
+            "type": "number"
+          },
+          "max_edge": {
+            "description": "Clamp the long edge of the PNG to this many pixels (default 1024). Aspect ratio preserved.",
+            "type": "integer"
+          },
+          "output_path": {
+            "description": "Where to write the PNG. Default: user://cad_snapshots/fit_<view>_<timestamp>.png. Absolute, ~-prefixed or user:// accepted; res:// is rejected.",
+            "type": "string"
+          },
+          "require_reference_digest": {
+            "description": "Require the imported geometry digest from an evidence report; mismatch refuses the capture.",
+            "type": "string"
+          },
+          "require_source_digest": {
+            "description": "Require this SHA-256 of evaluated DSL source, including for unbacked documents.",
+            "type": "string"
+          },
+          "require_source_version": {
+            "description": "Require this completed buffer revision; mismatch refuses the operation.",
+            "type": "integer"
+          },
+          "return_base64": {
+            "description": "If true, also include image_base64 (raw base64 PNG, no data: prefix).",
+            "type": "boolean"
+          },
+          "selection": {
+            "description": "Evaluated binding, instance ID or reference; optional binding:, instance: or reference: namespace. Queries do not change the visible model.",
+            "type": "string"
+          },
+          "view": {
+            "description": "Which pane to capture. Default 'active'. In narrow layout only one pane renders, so a named pane is REFUSED with a reason — use 'active' there.",
+            "enum": [
+              "iso",
+              "top",
+              "front",
+              "right",
+              "active"
+            ],
+            "type": "string"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_snapshot_fit"
+    },
+    {
+      "description": "Replace old_string with new_string. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Without replace_all, old_string must match exactly once. Structured documents such as CAD return operation_unsupported, retryable=false, next_tool=minerva_doc_write, and canonical document_identity; read then replace their whole source with minerva_doc_write.",
+      "inputSchema": {
+        "properties": {
+          "document_id": {
+            "description": "Live canonical document handle from minerva_list_editors or minerva_doc_read.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Tab title of the editor (alternative to path)",
+            "type": "string"
+          },
+          "if_match_version": {
+            "description": "Optimistic concurrency: only apply if the buffer's current version equals this (from minerva_doc_read). On mismatch the edit is rejected with {error:'version_mismatch', want, got} so you can re-read and retry. Omit for last-write-wins (default).",
+            "type": "integer"
+          },
+          "new_string": {
+            "description": "Replacement string",
+            "type": "string"
+          },
+          "old_string": {
+            "description": "String to find (must be unique unless replace_all)",
+            "type": "string"
+          },
+          "path": {
+            "description": "Absolute file path (alternative to editor_name)",
+            "type": "string"
+          },
+          "replace_all": {
+            "description": "Replace every occurrence instead of requiring a unique match (default false).",
+            "type": "boolean"
+          },
+          "save": {
+            "description": "Also flush to disk now (default false).",
+            "type": "boolean"
+          },
+          "view_id": {
+            "description": "Optional view handle; selects a particular editor without relying on its title.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "old_string",
+          "new_string"
+        ],
+        "type": "object"
+      },
+      "name": "minerva_doc_edit"
+    },
+    {
+      "description": "Wait until the CAD panel's evaluation has SETTLED, and return the status it painted. An edit that reaches the panel through the shared text buffer — minerva_doc_edit on the text tab, or the user typing — starts a quarter-second debounce and then a worker round-trip, and neither has finished when the edit tool returns: a minerva_cad_get_mesh_info or check_* call made straight afterwards measures the geometry the edit REPLACED, with nothing in its reply to say so. Call this in between. Returns {timed_out, waited_ms, timeout_ms, last_eval:{status, ts, shape_name, body_count, vertex_count, edge_count, interference (a status line), banner, error_kind, error_message}}; status is empty / pending / ok / error / cancelled / timeout. 'banner' is the one line the panel is SHOWING the user — {visible, dismissed, stamp, eval, text} — stamped with the evaluation it came from; dismissed true means the user closed that report, which closes only that one: the next evaluation reports again. timed_out true is not a failure — the evaluation is still running, nothing was cancelled, and asking again resumes the wait. minerva_doc_write is already synchronous with the worker and does not need this. The reply carries source_version, buffer_version, evaluated_at and stale, so a caller can see in one field whether the panel has caught up with the document; the check verbs refuse to measure while it has not. In Manual build mode, waiting never initiates compilation: use minerva_cad_build action=build_latest first. Timed-out waits return status=pending independently of the displayed model.",
+      "inputSchema": {
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "editor_name"
+                ]
+              },
+              {
+                "required": [
+                  "document_id"
+                ]
+              },
+              {
+                "required": [
+                  "view_id"
+                ]
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "document_id": {
+            "description": "Live document handle from minerva_list_editors. Selects this plugin's unique view.",
+            "type": "string"
+          },
+          "editor_name": {
+            "description": "Name of the CAD editor tab (as returned by minerva_list_editors).",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "description": "How long to wait, in milliseconds. Default 30000, capped at 300000. A timeout returns the status the panel is showing rather than an error.",
+            "type": "integer"
+          },
+          "view_id": {
+            "description": "Live view handle from minerva_list_editors; stable through tab rename.",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "minerva_cad_await_eval"
+    },
+    {
+      "description": "Evaluate .mcad DSL source and return the resulting mesh + edges. Returns {shape_name, body_count, mesh:{vertices,faces}, edges:[...], references:[{name,path,units,up,matrix}]}. body_count is the number of separate solid bodies in the result: a part written as two halves (part = bottom + lid) that do not touch is ONE shape of TWO bodies, and every check reads the whole shape. Uses the worker's last_program cache to skip re-tessellation when the source matches a recently-evaluated program. Pass summary=true to get the same evaluation WITHOUT the mesh — {summary, shape_name, body_count, bbox, vertex_count, face_count, edge_count, reference_count, mesh_defects, mesh_defect_sites} — which is the cheap way to check that an edit landed; the mesh is one more call away and costs no second tessellation.",
+      "inputSchema": {
+        "properties": {
+          "configuration": {
+            "description": "Assembly configuration binding; defaults to source render target.",
+            "type": "string"
+          },
+          "selection": {
+            "description": "Named evaluated binding, instance or reference; optional namespace binding:, instance: or reference:. Does not rewrite source.",
+            "type": "string"
+          },
+          "source": {
+            "description": ".mcad DSL source code",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Return the evaluation without its mesh: shape_name, body_count, bbox, vertex/face/edge counts and mesh_defects (counts) plus mesh_defect_sites, which locates non-manifold edges (up to 64 sites spread across the part, with the total count beside them) and a capped sample of degenerate faces. Default false.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "name": "minerva_cad_cad_evaluate"
+    }
+  ]
+}

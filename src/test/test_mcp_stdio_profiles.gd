@@ -82,6 +82,10 @@ func _run() -> void:
 	var nested_number: Dictionary = await modern.call_tool("nested_precision_loss", {}, 5.0)
 	check("JSON embedded in legacy text is numerically validated before exposure",
 		nested_number.get("error_code") == "unsupported_number"
+		and nested_number.get("error_message") == "Unsafe numeric representation in MCP text result"
+		and nested_number.get("error_details", {}).get("pointer") == "/n"
+		and nested_number.get("error_details", {}).get("original") \
+			== "0.10000000000000001"
 		and envelopes.size() == envelope_count + 1)
 	var scalar_number: Dictionary = await modern.call_tool("scalar_precision_loss", {}, 5.0)
 	check("a scalar JSON text result cannot bypass the nested numeric boundary",

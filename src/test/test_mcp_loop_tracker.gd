@@ -1,6 +1,9 @@
 extends SceneTree
 
 const Tracker = preload("res://Scripts/Services/MCP/MCPLoopTracker.gd")
+const UnsupportedGuard = preload(
+	"res://Scripts/Services/MCP/MCPUnsupportedOperationGuard.gd")
+const ApplicationError = preload("res://Scripts/Services/MCP/MCPApplicationError.gd")
 var passed := 0
 var failed := 0
 
@@ -117,5 +120,57 @@ func _init() -> void:
 		tracker.check("alpha", {}, {"status": "pending", "job_id": "alpha-job"})
 		reply = tracker.check("alpha", {}, {"error": "boom"})
 		check("alpha continuation resets only alpha's counters", not reply.has("warning") and not reply.has("retry_hint"))
+	# Structured-document recovery is scoped to one agent turn and canonical
+	# document identity. String-replacement details never affect the decision.
+	var guard = UnsupportedGuard.new()
+	var refusal := {
+		"success": false,
+		"error_code": "operation_unsupported",
+		"retryable": false,
+		"next_tool": "minerva_doc_write",
+		"document_identity": {
+			"document_id": "document:session:41",
+			"view_id": "view:session:52",
+			"editor_name": "Housing",
+		},
+	}
+	tracker = Tracker.new()
+	var unscoped_refusal: Dictionary
+	for i in range(6):
+		unscoped_refusal = tracker.check("minerva_doc_edit", {"document_id": str(i)},
+			refusal.duplicate(true))
+	check("the server-global loop tracker does not retain document recovery state",
+		not unscoped_refusal.has("warning") and not unscoped_refusal.has("retry_hint")
+		and not unscoped_refusal.has("blocked"))
+	guard.record_result("minerva_doc_edit", {"document_id": "document:session:41"},
+		refusal, 0)
+	check("the first unsupported result leaves the same response batch alone",
+		guard.blocked_result("minerva_doc_edit",
+			{"document_id": "document:session:41"}, 0).is_empty())
+	check("the advertised whole-document recovery remains available",
+		guard.blocked_result("minerva_doc_write",
+			{"document_id": "document:session:41"}, 1).is_empty())
+	var repeated: Dictionary = guard.blocked_result("minerva_doc_edit",
+		{"document_id": "document:session:41"}, 1)
+	check("a later unsupported edit through a canonical view alias terminates",
+		repeated.get("terminate_tool_loop", false)
+		and repeated.get("next_tool") == "minerva_doc_write")
+	check("the same operation remains allowed for an unrelated document",
+		guard.blocked_result("minerva_doc_edit",
+			{"document_id": "document:session:99"}, 1).is_empty())
+	var next_turn = UnsupportedGuard.new()
+	check("unsupported-operation memory does not cross chat turns or document lifetimes",
+		next_turn.blocked_result("minerva_doc_edit",
+			{"document_id": "document:session:41"}, 1).is_empty()
+		and guard.blocked_result("minerva_doc_edit",
+			{"document_id": "document:new-session:41"}, 1).is_empty())
+	var normalized := ApplicationError.normalize({
+		"success": false, "error": "worker exited", "error_code": "backend_error",
+		"error_details": {"pointer": "/result/mesh/vertices/0/1"}})
+	check("common result normalization supplies error_message and retains diagnostics",
+		normalized.get("error_message") == "worker exited"
+		and normalized.get("error_code") == "backend_error"
+		and normalized.get("error_details", {}).get("pointer") \
+			== "/result/mesh/vertices/0/1")
 	print("=== Results: %d passed, %d failed ===" % [passed, failed])
 	quit(1 if failed else 0)

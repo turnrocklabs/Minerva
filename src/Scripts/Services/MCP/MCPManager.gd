@@ -256,6 +256,43 @@ func is_minerva_connected() -> bool:
 	return minerva_server != null and minerva_server.server_enabled
 
 
+## Keep an explicitly advertised recovery path callable in automatic-tool
+## mode. The result is suitable for returning to the model when budget,
+## connectivity, or per-chat settings make part of that path unavailable.
+func activate_tools_for_workflow(tool_names: Array[String], history = null) -> Dictionary:
+	var schemas: Array[Dictionary] = []
+	var unavailable: Array[Dictionary] = []
+	var directly_available: Array[String] = []
+	var effective_tool_sets := _effective_tool_sets_for_history(history)
+	var static_tool_mode: bool = history != null and "StaticToolMode" in history \
+		and bool(history.StaticToolMode)
+	for name: String in tool_names:
+		var unavailable_reason := _tool_unavailable_reason(
+			name, history, effective_tool_sets)
+		if not unavailable_reason.is_empty():
+			unavailable.append({"name": name, "reason": unavailable_reason})
+			continue
+		if static_tool_mode or minerva_server == null \
+				or not minerva_server.auto_tool_management:
+			directly_available.append(name)
+			continue
+		var hits: Array[Dictionary] = minerva_server.tool_search_index.search(name, "", 1)
+		if hits.is_empty() or str(hits[0].get("name", "")) != name \
+				or (hits[0].get("schema", {}) as Dictionary).is_empty():
+			unavailable.append({"name": name, "reason": "tool schema is unavailable"})
+			continue
+		schemas.append(hits[0].schema)
+
+	var admission := {"activated": directly_available, "rejected": []}
+	if not static_tool_mode and minerva_server != null \
+			and minerva_server.auto_tool_management:
+		admission = minerva_server.tool_budget_manager.activate_group(schemas)
+	for rejected: Dictionary in admission.get("rejected", []):
+		unavailable.append(rejected)
+	return {"activated": admission.get("activated", []), "unavailable": unavailable,
+		"available": unavailable.is_empty()}
+
+
 ## Start the HTTP server to expose Minerva tools to external agents
 func start_http_server(port: int = 9315) -> Error:
 	if http_server == null:
@@ -350,48 +387,21 @@ func remove_server_at_runtime(server_name: String) -> void:
 ## Get tools filtered for a specific chat history.
 ## Applies 4-layer filter: profile tool_sets → per-chat profile override → DisabledTools → connectivity.
 func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictionary]:
-	# Determine effective profile tool_sets
-	var effective_tool_sets: Array[String] = []
-	var skill_manager = SingletonObject.get_skill_manager()
-	if skill_manager:
-		var chat_skills: Array[String] = []
-		var agent_skills: Array[String] = []
-		if "ActiveSkills" in history and not history.ActiveSkills.is_empty():
-			chat_skills = history.ActiveSkills
-		if not history.AgentDefinitionId.is_empty():
-			var agent_def = _find_agent_def(history.AgentDefinitionId)
-			if agent_def and not agent_def.skills.is_empty():
-				agent_skills = agent_def.skills
-		effective_tool_sets = skill_manager.get_effective_tool_sets(chat_skills, agent_skills)
+	var effective_tool_sets := _effective_tool_sets_for_history(history)
 
 	# Build full filtered tool list (all 4 layers)
 	var all_filtered: Array[Dictionary] = []
 	for tool_name in tool_registry:
+		if not _tool_unavailable_reason(tool_name, history,
+				effective_tool_sets).is_empty():
+			continue
 		var tool = tool_registry[tool_name]
-		var server_name = tool.server_name
-
-		# Layer 4: Server connectivity
-		var connected: bool
-		if server_name == "minerva":
-			connected = is_minerva_connected()
-		else:
-			connected = is_server_connected(server_name)
-		if not connected:
-			continue
-
-		# Layer 1/2: Profile tool_set filter
-		if not _passes_tool_set_filter(tool, effective_tool_sets):
-			continue
 
 		var tool_dict: Dictionary
 		if format == "anthropic":
 			tool_dict = tool.to_anthropic_format()
 		else:
 			tool_dict = tool.to_openai_format()
-
-		# Layer 3: Per-chat DisabledTools blocklist
-		if tool_dict.get("name", "") in history.DisabledTools:
-			continue
 
 		all_filtered.append(tool_dict)
 
@@ -466,6 +476,40 @@ func get_tools_for_chat(history, format: String = "anthropic") -> Array[Dictiona
 		return result
 
 	return all_filtered
+
+
+func _effective_tool_sets_for_history(history) -> Array[String]:
+	var effective_tool_sets: Array[String] = []
+	if history == null:
+		return effective_tool_sets
+	var skill_manager = SingletonObject.get_skill_manager()
+	if skill_manager:
+		var chat_skills: Array[String] = []
+		var agent_skills: Array[String] = []
+		if "ActiveSkills" in history and not history.ActiveSkills.is_empty():
+			chat_skills = history.ActiveSkills
+		if "AgentDefinitionId" in history and not history.AgentDefinitionId.is_empty():
+			var agent_def = _find_agent_def(history.AgentDefinitionId)
+			if agent_def and not agent_def.skills.is_empty():
+				agent_skills = agent_def.skills
+		effective_tool_sets = skill_manager.get_effective_tool_sets(chat_skills, agent_skills)
+	return effective_tool_sets
+
+
+func _tool_unavailable_reason(name: String, history,
+		effective_tool_sets: Array[String]) -> String:
+	if not tool_registry.has(name):
+		return "tool is not registered"
+	var tool = tool_registry[name]
+	var connected := is_minerva_connected() if tool.server_name == "minerva" \
+		else is_server_connected(tool.server_name)
+	if not connected:
+		return "tool server is disconnected"
+	if not _passes_tool_set_filter(tool, effective_tool_sets):
+		return "tool is excluded by this chat's active tool sets"
+	if history != null and "DisabledTools" in history and name in history.DisabledTools:
+		return "tool is disabled for this chat"
+	return ""
 
 
 ## Check if a tool passes the tool_set filter.

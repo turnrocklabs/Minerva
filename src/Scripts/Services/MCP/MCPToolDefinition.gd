@@ -124,12 +124,22 @@ static func _sanitize_schema(schema: Dictionary) -> void:
 			# Draft 2020-12 permits boolean schemas at every schema position.
 			continue
 		var prop: Dictionary = prop_value
-		if prop.get("type") == "array" and not prop.has("items"):
+		if _schema_has_type(prop, "array") and not prop.has("items"):
 			prop["items"] = {"type": "string"}
 		# Recurse into nested objects
-		if prop.get("type") == "object" and prop.has("properties"):
+		if _schema_has_type(prop, "object") and prop.has("properties"):
 			_sanitize_schema(prop)
 		# Recurse into array items that are objects
-		if prop.get("type") == "array" and prop.has("items") and prop["items"] is Dictionary:
-			if prop["items"].get("type") == "object" and prop["items"].has("properties"):
+		if _schema_has_type(prop, "array") and prop.has("items") and prop["items"] is Dictionary:
+			if _schema_has_type(prop["items"], "object") and prop["items"].has("properties"):
 				_sanitize_schema(prop["items"])
+
+
+## JSON Schema permits either a single type name or an array of type names.
+static func _schema_has_type(schema: Dictionary, type_name: String) -> bool:
+	var declared_type: Variant = schema.get("type")
+	if declared_type is String:
+		return declared_type == type_name
+	if declared_type is Array:
+		return declared_type.has(type_name)
+	return false

@@ -31,12 +31,15 @@ extends RefCounted
 ## project's Godot 4.6.2): spawned with blocking=false it returns
 ## {"stdio": FileAccess, "stderr": FileAccess, "pid": int} immediately, which
 ## lets us poll OS.is_process_running(pid) against a wall-clock deadline and
-## OS.kill(pid) on timeout. Reading the pipes afterwards is safe even after a
-## kill — closing the write end (either on normal exit or on SIGKILL)
-## unblocks FileAccess.get_as_text() at EOF, it does not hang.
+## OS.kill(pid) on timeout. Non-blocking pipe reads drain stdout and stderr on
+## every poll; waiting until exit can deadlock once a verbose build fills
+## either OS pipe buffer. Each stream retains only a bounded tail.
 ## OS.get_process_exit_code(pid) supplies the exit code.
 
 const STDERR_TAIL_CAP_BYTES := 2048
+const PIPE_READ_CHUNK_BYTES := 4096
+const PIPE_DRAIN_CHUNKS_PER_POLL := 64
+const PIPE_FINAL_DRAIN_CHUNKS := 256
 
 
 ## step: one `setup.steps[]` Dictionary (assumed schema-valid — SetupSchema
@@ -180,23 +183,52 @@ static func _spawn(argv: Array[String], timeout_s: int) -> Dictionary:
 	var pid: int = spawn.get("pid", -1)
 	var stdio: FileAccess = spawn.get("stdio", null)
 	var stderr_pipe: FileAccess = spawn.get("stderr", null)
+	var stdout_tail := PackedByteArray()
+	var stderr_tail := PackedByteArray()
 
 	var deadline_ms: int = Time.get_ticks_msec() + maxi(timeout_s, 1) * 1000
 	var timed_out := false
 	while OS.is_process_running(pid):
+		stdout_tail = _drain_available(stdio, stdout_tail, PIPE_DRAIN_CHUNKS_PER_POLL)
+		stderr_tail = _drain_available(stderr_pipe, stderr_tail, PIPE_DRAIN_CHUNKS_PER_POLL)
 		if Time.get_ticks_msec() > deadline_ms:
 			timed_out = true
 			OS.kill(pid)
 			break
 		OS.delay_msec(20)
 
-	# Reads unblock at EOF whether the process exited normally or was just
-	# killed — the write end of the pipe closes either way.
-	var stdout_text: String = stdio.get_as_text() if stdio != null else ""
-	var stderr_text: String = stderr_pipe.get_as_text() if stderr_pipe != null else ""
+	# Capture bytes written between the last poll and process exit/kill. The
+	# pipes are non-blocking, so this also avoids an unbounded join if a child
+	# process inherited and retained either descriptor.
+	stdout_tail = _drain_available(stdio, stdout_tail, PIPE_FINAL_DRAIN_CHUNKS)
+	stderr_tail = _drain_available(stderr_pipe, stderr_tail, PIPE_FINAL_DRAIN_CHUNKS)
+	var stdout_text := stdout_tail.get_string_from_utf8()
+	var stderr_text := stderr_tail.get_string_from_utf8()
 	var exit_code: int = -1 if timed_out else OS.get_process_exit_code(pid)
 
 	return {"exit_code": exit_code, "stdout": stdout_text, "stderr": stderr_text, "timed_out": timed_out}
+
+
+## Consume all bytes currently available on a non-blocking child pipe and
+## retain only its final diagnostic bytes. For pipe-backed FileAccess,
+## get_length() reports the number of bytes available to read.
+static func _drain_available(
+	pipe: FileAccess, tail: PackedByteArray, max_chunks: int
+) -> PackedByteArray:
+	if pipe == null:
+		return tail
+	# Snapshot availability once. A producer that continuously refills its pipe
+	# cannot keep this call alive and starve the other stream or the deadline.
+	var byte_budget: int = mini(pipe.get_length(), max_chunks * PIPE_READ_CHUNK_BYTES)
+	while byte_budget > 0:
+		var chunk: PackedByteArray = pipe.get_buffer(mini(byte_budget, PIPE_READ_CHUNK_BYTES))
+		if chunk.is_empty():
+			break
+		byte_budget -= chunk.size()
+		tail.append_array(chunk)
+		if tail.size() > STDERR_TAIL_CAP_BYTES:
+			tail = tail.slice(tail.size() - STDERR_TAIL_CAP_BYTES, tail.size())
+	return tail
 
 
 # ---------------------------------------------------------------------------

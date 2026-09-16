@@ -47,6 +47,23 @@ var _recent_files: PackedStringArray = []
 ## DocketManager reference (Minerva integration)
 var _dm: DocketManager = null
 
+# The standalone shell owns root zoom/font settings. Minerva configures this
+# boundary before init(): host zoom remains one global preference, while
+# Docket's font presets are scoped to this panel.
+var _host_owns_ui_settings: bool = false
+var _host_zoom_in: Callable
+var _host_zoom_out: Callable
+var _host_zoom_reset: Callable
+
+
+func use_host_ui_settings(
+	zoom_in: Callable, zoom_out: Callable, zoom_reset: Callable
+) -> void:
+	_host_owns_ui_settings = true
+	_host_zoom_in = zoom_in
+	_host_zoom_out = zoom_out
+	_host_zoom_reset = zoom_reset
+
 
 
 
@@ -688,18 +705,30 @@ func _on_save_query_selected(path: String) -> void:
 # -- Zoom / Font size ------------------------------------------------------
 
 func _zoom_in() -> void:
+	if _host_owns_ui_settings:
+		if _host_zoom_in.is_valid():
+			_host_zoom_in.call()
+		return
 	if _current_zoom_idx < _ZOOM_LEVELS.size() - 1:
 		_current_zoom_idx += 1
 		_apply_zoom()
 
 
 func _zoom_out() -> void:
+	if _host_owns_ui_settings:
+		if _host_zoom_out.is_valid():
+			_host_zoom_out.call()
+		return
 	if _current_zoom_idx > 0:
 		_current_zoom_idx -= 1
 		_apply_zoom()
 
 
 func _zoom_reset() -> void:
+	if _host_owns_ui_settings:
+		if _host_zoom_reset.is_valid():
+			_host_zoom_reset.call()
+		return
 	_current_zoom_idx = 2  # 1.0
 	_apply_zoom()
 
@@ -714,7 +743,10 @@ func _apply_zoom() -> void:
 func _set_font_size(preset: String) -> void:
 	_current_font_size = preset
 	var font_sz: int = _FONT_SIZES.get(preset, 14)
-	get_tree().root.add_theme_font_size_override("font_size", font_sz)
+	if _host_owns_ui_settings:
+		add_theme_font_size_override("font_size", font_sz)
+	else:
+		get_tree().root.add_theme_font_size_override("font_size", font_sz)
 	if _state.db:
 		_state.db.set_meta_value("ui_font_size", preset)
 
@@ -722,18 +754,22 @@ func _set_font_size(preset: String) -> void:
 func _restore_ui_settings() -> void:
 	if not _state.db:
 		return
-	var scale_str := _state.db.get_meta_value("ui_scale", "1.0")
-	var zoom_factor := float(scale_str)
-	for i in _ZOOM_LEVELS.size():
-		if absf(_ZOOM_LEVELS[i] - zoom_factor) < 0.01:
-			_current_zoom_idx = i
-			break
-	get_tree().root.content_scale_factor = zoom_factor
+	if not _host_owns_ui_settings:
+		var scale_str := _state.db.get_meta_value("ui_scale", "1.0")
+		var zoom_factor := float(scale_str)
+		for i in _ZOOM_LEVELS.size():
+			if absf(_ZOOM_LEVELS[i] - zoom_factor) < 0.01:
+				_current_zoom_idx = i
+				break
+		get_tree().root.content_scale_factor = zoom_factor
 
 	var font_preset := _state.db.get_meta_value("ui_font_size", "medium")
 	_current_font_size = font_preset
 	var font_size: int = _FONT_SIZES.get(font_preset, 14)
-	get_tree().root.add_theme_font_size_override("font_size", font_size)
+	if _host_owns_ui_settings:
+		add_theme_font_size_override("font_size", font_size)
+	else:
+		get_tree().root.add_theme_font_size_override("font_size", font_size)
 
 
 func _show_mcp_info() -> void:

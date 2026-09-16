@@ -7,6 +7,8 @@ const PassthroughLaunchDialogScript = preload("res://Scripts/UI/Controls/Passthr
 # Preload (not the class_name global) so a --script harness that loads ChatPane.gd
 # before the global class cache is built still compiles (W5).
 const PassthroughTurnStatusScript = preload("res://Scripts/Models/PassthroughTurnStatus.gd")
+const UnsupportedOperationGuard = preload(
+	"res://Scripts/Services/MCP/MCPUnsupportedOperationGuard.gd")
 # W4 (chat-passthrough): reused AS-IS — the card is self-contained (zero
 # autocoder coupling); ChatPane only hosts it and maps label → keystroke.
 const PassthroughQuestionCardScene = preload("res://Scripts/UI/Controls/Autocoder/AutocoderStreamQuestionCard.tscn")
@@ -2457,6 +2459,91 @@ func _finish_agent_mode() -> void:
 	SingletonObject.clear_consumed_proxies(_history.HistoryId)
 
 
+## Resolve mutable locators against the objects alive now. The recovery guard
+## keys only by this canonical document handle; it never remembers titles or
+## paths that may have been rebound to another document.
+static func _live_document_identity(tool_name: String, arguments: Dictionary) -> Dictionary:
+	if tool_name not in ["minerva_doc_read", "minerva_doc_write",
+			"minerva_doc_edit", "minerva_doc_save"]:
+		return {}
+	var registry := DocumentRegistry.get_instance()
+	var document_id := str(arguments.get("document_id", "")).strip_edges()
+	var view_id := str(arguments.get("view_id", "")).strip_edges()
+	var editor_name := str(arguments.get("editor_name", "")).strip_edges()
+	var path := str(arguments.get("path", "")).strip_edges()
+	if (not document_id.is_empty() or not view_id.is_empty()) \
+			and not editor_name.is_empty():
+		return {}
+	if tool_name != "minerva_doc_save" \
+			and (not document_id.is_empty() or not view_id.is_empty()) \
+			and not path.is_empty():
+		return {}
+	var pane = SingletonObject.editor_pane
+	var editors: Array = pane.get_open_editors() if pane != null else []
+	if not document_id.is_empty() and not view_id.is_empty():
+		var exact := DocumentIdentity.resolve({"document_id": document_id,
+			"view_id": view_id}, editors, SingletonObject.plugin_scene_panel_broker)
+		return exact.identity if exact.get("ok", false) else {}
+	if not document_id.is_empty():
+		var buffer := registry.get_buffer_by_id(document_id)
+		if buffer != null:
+			return {"document_id": buffer.document_id}
+		# Panel-canonical plugin scenes have no DocumentBuffer; their live
+		# document handle comes from the owning view itself.
+		var panel_document := DocumentIdentity.resolve({"document_id": document_id},
+			editors, SingletonObject.plugin_scene_panel_broker)
+		return panel_document.identity if panel_document.get("ok", false) else {}
+	if not view_id.is_empty():
+		var resolved := DocumentIdentity.resolve({"view_id": view_id}, editors,
+			SingletonObject.plugin_scene_panel_broker)
+		return resolved.identity if resolved.get("ok", false) else {}
+	if not editor_name.is_empty():
+		var editor = MCPToolUtils.find_editor_by_name(editor_name)
+		return DocumentIdentity.describe(editor,
+			SingletonObject.plugin_scene_panel_broker) if editor != null else {}
+	if not path.is_empty() and registry.has_buffer(path):
+		var found := registry.get_or_create_buffer(path)
+		if found.get("ok", false):
+			return {"document_id": found.buffer.document_id}
+	return {}
+
+
+## Kept as one callable seam so the guard decision and the actual dispatch
+## cannot drift apart. Tests use a counting manager to prove blocked calls do
+## not execute.
+static func _execute_with_document_recovery(mcp_manager, unsupported_guard,
+		tool_name: String, tool_args: Dictionary, live_identity: Dictionary,
+		current_round: int, caller_chat_id: String, history = null) -> Dictionary:
+	var recovery_stop: Dictionary = unsupported_guard.blocked_result(
+		tool_name, live_identity, current_round)
+	if not recovery_stop.is_empty():
+		return recovery_stop
+	var result: Dictionary = await mcp_manager.execute_tool(
+		tool_name, tool_args, caller_chat_id)
+	unsupported_guard.record_result(tool_name, live_identity, result, current_round)
+	if str(result.get("error_code", "")) == "operation_unsupported" \
+			and not bool(result.get("retryable", true)):
+		var next_tool := str(result.get("next_tool", ""))
+		if not next_tool.is_empty() and mcp_manager.has_method("activate_tools_for_workflow"):
+			var recovery_tools: Array[String] = ["minerva_doc_read"]
+			if next_tool not in recovery_tools:
+				recovery_tools.append(next_tool)
+			var activation: Dictionary = mcp_manager.activate_tools_for_workflow(
+				recovery_tools, history)
+			result["recovery_tools"] = activation.get("activated", [])
+			var recovery_available := bool(activation.get("available", false))
+			result["recovery_available"] = recovery_available
+			if not recovery_available:
+				var unavailable: Array = activation.get("unavailable", [])
+				result["recovery_activation_failed"] = unavailable
+				var names: Array[String] = []
+				for failure: Dictionary in unavailable:
+					names.append(str(failure.get("name", "unknown")))
+				result["recovery_message"] = \
+					"Recovery tools are unavailable: %s" % ", ".join(names)
+	return result
+
+
 ## Handle tool calls from an LLM response in agentic mode.
 ## Executes tools, adds results to history, and continues the conversation.
 ## All responses are accumulated into a single message box (accumulator_chi).
@@ -2467,8 +2554,11 @@ func _finish_agent_mode() -> void:
 ## @param user_history_item: The user's message, for emitting response_arrived at the end
 func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: int = 0,
 					   accumulator_chi: ChatHistoryItem = null,
-					   user_history_item: ChatHistoryItem = null) -> void:
+					   user_history_item: ChatHistoryItem = null,
+					   unsupported_guard = null) -> void:
 	var max_rounds = history.MaxToolCallRounds if history.MaxToolCallRounds > 0 else DEFAULT_MAX_TOOL_CALL_ROUNDS
+	if unsupported_guard == null:
+		unsupported_guard = UnsupportedOperationGuard.new()
 
 	# Helper to finish with signal emission
 	var finish_with_signal = func():
@@ -2524,6 +2614,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		var tool_id: String = tool_call.get("id", "")
 		var tool_name: String = tool_call.get("name", "")
 		var tool_args: Dictionary = tool_call.get("arguments", {})
+		var live_document_identity := _live_document_identity(tool_name, tool_args)
 
 		print("[Agent] Executing tool: %s (id=%s)" % [tool_name, tool_id])
 
@@ -2547,16 +2638,21 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		if path_error != null:
 			print("[Agent] Tool blocked by AllowedDirectories: %s" % tool_name)
 			result = path_error
+			unsupported_guard.record_result(tool_name, live_document_identity,
+				result, current_round)
 		else:
-			# Batch dedup: skip if identical tool+args already executed this round
+			# Batch dedup: skip if identical tool+args already executed this round.
+			# Every call still receives a result; later rounds pass through the
+			# recovery seam before any manager dispatch.
 			var call_hash: String = (tool_name + JSON.stringify(tool_args)).sha256_text()
 			if _batch_cache.has(call_hash):
 				result = _batch_cache[call_hash].duplicate()
 				result["_deduped"] = true
 				print("[Agent] Dedup: reusing result for %s" % tool_name)
 			else:
-				# Execute the tool — pass caller_chat_id so tools like spawn_worker know who called
-				result = await mcp_manager.execute_tool(tool_name, tool_args, history.HistoryId)
+				result = await _execute_with_document_recovery(mcp_manager,
+					unsupported_guard, tool_name, tool_args, live_document_identity,
+					current_round, history.HistoryId, history)
 				_batch_cache[call_hash] = result
 
 		print("[Agent] Tool result: %s" % str(result).left(200))
@@ -2622,6 +2718,20 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		# Most tool handlers are synchronous, so `await execute_tool()` completes
 		# instantly — without this, the entire for-loop runs in one frame and walls the CPU.
 		await get_tree().process_frame
+
+		if bool(result.get("terminate_tool_loop", false)):
+			if i + 1 < tool_calls.size():
+				_add_unexecuted_tool_results(history, tool_calls.slice(i + 1),
+					"Stopped after a repeated non-retryable document operation")
+			var explanation := str(result.get("error_message", result.get("error", "")))
+			model_chi.Message += ("\n\n" if not model_chi.Message.is_empty() else "") + explanation
+			history.termination_reason = "unsupported_operation_loop"
+			history.termination_message = explanation
+			if is_instance_valid(model_chi.rendered_node):
+				model_chi.rendered_node.loading_append = false
+				model_chi.rendered_node.render()
+			finish_with_signal.call()
+			return
 
 	# Add tool block marker to message for proper interleaving during render
 	# Format: {{TOOL_BLOCK:count}} where count is the number of tool executions for this round
@@ -2770,7 +2880,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 
 		# Recursively handle more tool calls (keep same accumulator)
 		await handle_tool_calls(history, continuation_response.tool_calls, current_round + 1,
-							   model_chi, user_history_item)
+							   model_chi, user_history_item, unsupported_guard)
 	else:
 		# No more tool calls, finalize the response
 		print("[Agent] Final response (no more tool calls)")

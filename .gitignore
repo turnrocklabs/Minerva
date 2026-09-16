@@ -28,6 +28,7 @@ config.local.*
 
 # gdextension build artifacts
 bin/
+.build-venv/
 *.obj
 *.os
 *.exp

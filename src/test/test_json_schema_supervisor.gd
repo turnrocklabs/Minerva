@@ -69,6 +69,17 @@ func collect_then_retry(client, operation: Callable, schema_raw: String,
 	destination["retry"] = await client.compile(schema_raw)
 
 func _run() -> void:
+	var missing_client := Client.new()
+	root.add_child(missing_client)
+	missing_client.helper_path = "user://nonexistent-schema-helper-for-startup-regression"
+	var missing: Dictionary = await missing_client.compare_application_numbers("1", 1)
+	var missing_message := str(missing.get("error", {}).get("message", ""))
+	check("missing native helper reports its path and setup command before process creation",
+		missing.get("error", {}).get("code") == "validator_unavailable"
+		and missing_message.contains(missing_client.helper_path)
+		and missing_message.contains("build-extensions")
+		and missing_client._process == null, missing_message)
+	missing_client.queue_free()
 	check("packaged helper targets reject unsupported architectures explicitly",
 		Client._runtime_target("Linux", "x86_64") == "linux-x86_64"
 		and Client._runtime_target("Windows", "x86_64") == "windows-x86_64"
@@ -96,6 +107,8 @@ func _run() -> void:
 		aggregate_limit.get("error", {}).get("code") == "schema_too_large")
 
 	processes[0].lose()
+	check("helper process failure retains the exit status",
+		client.last_failure_reason.contains("exited with code 9"), client.last_failure_reason)
 	var stale: Dictionary = await client.validate_raw(compiled.handle, "{}")
 	check("process loss invalidates every old handle", stale.get("error", {}).get("code") == "invalid_handle")
 	var restarted: Dictionary = await client.compile(compiled.handle.schema_raw)

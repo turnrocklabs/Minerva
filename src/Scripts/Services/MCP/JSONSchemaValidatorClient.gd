@@ -32,6 +32,7 @@ class Pending extends RefCounted:
 		finished.emit()
 
 var helper_path := ""
+var last_failure_reason := ""
 var _process = null
 var _process_factory: Callable
 var _generation := 0
@@ -49,17 +50,27 @@ func _exit_tree() -> void:
 
 func start() -> Error:
 	if _exiting:
+		last_failure_reason = "JSON Schema validator is shutting down"
 		return ERR_UNAVAILABLE
 	if _starting != null:
 		var existing := _starting
 		await existing.finished
-		return int(existing.result.get("status", ERR_CANT_CONNECT))
+		return int(existing.result.get("status", ERR_CANT_CONNECT)) as Error
 	if _process != null and _process.is_running():
 		return OK
+	last_failure_reason = ""
+	var resolved_path := _resolved_helper_path()
+	# Injected test processes do not execute a file. Production startup must
+	# catch a missing helper before fork/exec turns it into a generic exit 127.
+	if not _process_factory.is_valid() and not FileAccess.file_exists(resolved_path):
+		last_failure_reason = "MCP JSON Schema helper is missing at '%s'. %s" % [
+			resolved_path, _setup_hint()]
+		return ERR_FILE_NOT_FOUND
 	_starting = Pending.new()
 	var startup := _starting
 	var process = _process_factory.call() if _process_factory.is_valid() else _make_process()
 	if process == null:
+		last_failure_reason = "MCP JSON Schema helper requires the SubProcess native extension. %s" % _setup_hint(true)
 		_finish_start(startup, ERR_UNAVAILABLE)
 		return ERR_UNAVAILABLE
 	_process = process
@@ -67,7 +78,8 @@ func start() -> Error:
 	var process_generation := _generation
 	if process is Node and process.get_parent() == null:
 		add_child(process)
-	if not process.start(_resolved_helper_path(), PackedStringArray()):
+	if not process.start(resolved_path, PackedStringArray()):
+		last_failure_reason = "Cannot start MCP JSON Schema helper at '%s'. %s" % [resolved_path, _setup_hint()]
 		if process is Node:
 			process.queue_free()
 		_process = null
@@ -81,8 +93,11 @@ func start() -> Error:
 		process.io_overflow.connect(_on_io_overflow.bind(process, process_generation))
 	var ping: Dictionary = await _request({"op": "ping"}, process, process_generation)
 	var status: Error = OK if ping.get("ok", false) else ERR_CANT_CONNECT
+	if status != OK and last_failure_reason.is_empty():
+		last_failure_reason = "MCP JSON Schema helper did not answer its startup check at '%s'. %s" % [
+			resolved_path, _setup_hint()]
 	if status != OK and _process == process and _generation == process_generation:
-		_invalidate_process(process, process_generation, "validator handshake failed")
+		_invalidate_process(process, process_generation, last_failure_reason)
 	_finish_start(startup, status)
 	return status
 
@@ -114,9 +129,9 @@ func compile(schema_raw: String, registry: Dictionary = {}) -> Dictionary:
 		aggregate_bytes += registered_raw.to_utf8_buffer().size()
 		if aggregate_bytes > 4 * 1024 * 1024:
 			return _failure("schema_too_large", "schema registry exceeds 4 MiB")
-	var ready := await start()
-	if ready != OK:
-		return _failure("validator_unavailable", "JSON Schema validator is unavailable")
+	var startup_status: Error = await start()
+	if startup_status != OK:
+		return _failure("validator_unavailable", last_failure_reason)
 	var result: Dictionary = await _request({"op": "compile", "schema_raw": schema_raw,
 		"registry": registry})
 	if not result.get("ok", false):
@@ -156,10 +171,24 @@ func compare_application_numbers(original_raw: String, application_value: Varian
 	var serialized := JsonSerialization.encode(application_value)
 	if not serialized.ok:
 		return serialized
-	var ready := await start()
-	if ready != OK:
-		return _failure("validator_unavailable", "JSON Schema validator is unavailable")
+	var startup_status: Error = await start()
+	if startup_status != OK:
+		return _failure("validator_unavailable", last_failure_reason)
 	return await _request({"op": "compare_numbers", "original_raw": original_raw,
+		"adapted_raw": serialized.raw})
+
+
+## Prepares a value produced directly by Godot's JSON decoder. The native
+## helper returns a sparse overlay for binary64 leaves Godot rounded incorrectly.
+func prepare_application_numbers(original_raw: String,
+		application_value: Variant) -> Dictionary:
+	var serialized := JsonSerialization.encode(application_value)
+	if not serialized.ok:
+		return serialized
+	var startup_status: Error = await start()
+	if startup_status != OK:
+		return _failure("validator_unavailable", last_failure_reason)
+	return await _request({"op": "prepare_numbers", "original_raw": original_raw,
 		"adapted_raw": serialized.raw})
 
 
@@ -258,6 +287,7 @@ func _fail_pending(reason: String) -> void:
 func _invalidate_process(process, process_generation: int, reason: String) -> void:
 	if process != _process or process_generation != _generation:
 		return
+	last_failure_reason = reason
 	_process = null
 	_generation += 1
 	var retiring_startup := _starting
@@ -274,8 +304,24 @@ func _invalidate_process(process, process_generation: int, reason: String) -> vo
 	helper_failed.emit(reason)
 
 
-func _on_process_exited(_code: int, process, process_generation: int) -> void:
-	_invalidate_process(process, process_generation, "validator process exited")
+func _on_process_exited(code: int, process, process_generation: int) -> void:
+	_invalidate_process(process, process_generation,
+		"MCP JSON Schema helper at '%s' exited with code %d. %s" % [
+			_resolved_helper_path(), code, _setup_hint()])
+
+
+func _setup_hint(full_build: bool = false) -> String:
+	if OS.has_feature("editor"):
+		var command := "scripts/build-extensions.sh"
+		var helper_option := " --helper-only"
+		if OS.get_name() == "Windows":
+			command = "powershell -ExecutionPolicy Bypass -File scripts\\build-extensions.ps1"
+			helper_option = " -HelperOnly"
+		if full_build:
+			return "Close Minerva and its editor, then run %s from the repository root. See Docs/Building.md." % command
+		command += helper_option
+		return "From the repository root, run %s. See Docs/Building.md." % command
+	return "Reinstall a complete Minerva release for this operating system and architecture."
 
 
 func _on_io_overflow(process, process_generation: int) -> void:

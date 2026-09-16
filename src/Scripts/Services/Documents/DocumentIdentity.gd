@@ -21,6 +21,54 @@ static func describe(editor: Object, broker: Object = null) -> Dictionary:
 		"document_id": buffer.document_id if buffer != null else handle(editor, "document"),
 		"identity_lifetime": "live_document"}
 
+
+## Document operations are advertised from the canonical document, not merely
+## the selected tab. A paired CAD text/render view still names one structured
+## document and therefore uses whole-document writes.
+static func owning_plugin_view(editor: Object, broker: Object = null,
+		open_editors: Array = [], canonical_buffer: DocumentBuffer = null) -> Object:
+	if editor != null and is_instance_valid(editor) and "type" in editor \
+			and int(editor.type) == Editor.Type.PLUGIN_SCENE:
+		return editor
+	var buffer := canonical_buffer
+	if buffer == null and editor != null:
+		buffer = buffer_for(editor, broker)
+	if buffer == null:
+		return null
+	var matches: Array[Object] = []
+	for candidate: Object in open_editors:
+		if is_instance_valid(candidate) and "type" in candidate \
+				and int(candidate.type) == Editor.Type.PLUGIN_SCENE \
+				and buffer_for(candidate, broker) == buffer:
+			matches.append(candidate)
+	return matches[0] if matches.size() == 1 else null
+
+
+static func operation_profile(editor: Object, broker: Object = null,
+		open_editors: Array = [], canonical_buffer: DocumentBuffer = null) -> Dictionary:
+	var buffer := canonical_buffer
+	if buffer == null and editor != null:
+		buffer = buffer_for(editor, broker)
+	var plugin_view := owning_plugin_view(editor, broker, open_editors, buffer)
+	var structured_plugin := ""
+	if plugin_view != null:
+		structured_plugin = str(plugin_view.plugin_id) \
+			if "plugin_id" in plugin_view and not str(plugin_view.plugin_id).is_empty() \
+			else "plugin"
+	var operations: Array[String] = ["minerva_doc_read", "minerva_doc_write"]
+	if structured_plugin.is_empty():
+		operations.append("minerva_doc_edit")
+	var save_supported := plugin_view == null or not "plugin_save_mode" in plugin_view \
+		or str(plugin_view.plugin_save_mode) == "host_owned"
+	if save_supported:
+		operations.append("minerva_doc_save")
+	var profile := {"supported_operations": operations}
+	if structured_plugin == "cad":
+		profile["write_guidance"] = ("CAD is a structured document. Read its current source, "
+			+ "then use minerva_doc_write with the complete MCAD source. Inspect last_eval in "
+			+ "the write reply before continuing.")
+	return profile
+
 ## Explicit handles never fall back to titles. A document can have several
 ## views; only the operation's plugin filter or an explicit view can select one.
 static func resolve(args: Dictionary, editors: Array, broker: Object = null,
@@ -33,14 +81,27 @@ static func resolve(args: Dictionary, editors: Array, broker: Object = null,
 	for editor: Object in editors:
 		if not is_instance_valid(editor):
 			continue
-		if not plugin_id.is_empty() and (not "plugin_id" in editor or str(editor.plugin_id) != plugin_id):
-			continue
 		var identity := describe(editor, broker)
 		if not document_id.is_empty() and identity.document_id != document_id:
 			continue
 		if not view_id.is_empty() and identity.view_id != view_id:
 			continue
-		matches.append({"editor": editor, "identity": identity})
+		var target := editor
+		if not plugin_id.is_empty() and (not "plugin_id" in target \
+				or str(target.plugin_id) != plugin_id):
+			target = owning_plugin_view(editor, broker, editors,
+				buffer_for(editor, broker))
+		if target == null or (not plugin_id.is_empty() \
+				and (not "plugin_id" in target or str(target.plugin_id) != plugin_id)):
+			continue
+		var target_identity := describe(target, broker)
+		var already_added := false
+		for match: Dictionary in matches:
+			if match.editor == target:
+				already_added = true
+				break
+		if not already_added:
+			matches.append({"editor": target, "identity": target_identity})
 	if matches.size() == 1:
 		return {"ok": true, "editor": matches[0].editor, "identity": matches[0].identity}
 	var candidates: Array = []

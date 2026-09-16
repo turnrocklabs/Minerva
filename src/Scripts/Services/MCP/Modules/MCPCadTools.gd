@@ -352,8 +352,8 @@ func _cad_get_mesh_info(args: Dictionary) -> Dictionary:
 
 	if not host.has_method("get_mesh_data"):
 		return _err(
-			"cad_get_mesh_info: host for '%s' does not expose get_mesh_data — "
-			+ "plugin version may not support MCP introspection."
+			("cad_get_mesh_info: host for '%s' does not expose get_mesh_data — "
+			+ "plugin version may not support MCP introspection.")
 			% str(args.get("editor_name", ""))
 		)
 
@@ -903,7 +903,21 @@ func _resolve_host(args: Dictionary) -> AnnotationHost:
 	var panel_host: AnnotationHost = AnnotationHostRegistry.get_panel_host(editor_name)
 	if panel_host != null:
 		return panel_host
-	return host
+	# Legacy name locators can point at the paired source tab. Resolve its
+	# canonical buffer to the one CAD render view before refusing the call.
+	var editor = MCPToolUtils.find_editor_by_name(editor_name)
+	var pane = SingletonObject.editor_pane
+	var broker = SingletonObject.plugin_scene_panel_broker
+	if editor != null and pane != null and broker != null:
+		var panel_view = DocumentIdentity.owning_plugin_view(editor, broker,
+			pane.get_open_editors(), DocumentIdentity.buffer_for(editor, broker))
+		if panel_view != null and "plugin_id" in panel_view \
+				and str(panel_view.plugin_id) == "cad":
+			panel_host = AnnotationHostRegistry.get_panel_host(
+				str(panel_view.plugin_panel_key))
+			if panel_host != null:
+				return panel_host
+	return null
 
 
 ## Build a structured error for a missing host, listing the names that DO
@@ -919,6 +933,12 @@ func _no_host_error(args: Dictionary) -> Dictionary:
 	var known: Array = AnnotationHostRegistry.list_editor_names()
 	var dead: Array = AnnotationHostRegistry.list_dead_editor_names()
 	var msg := "no_cad_host_for_editor: '%s'. Known editors: %s" % [editor_name, str(known)]
+	var named_host: AnnotationHost = AnnotationHostRegistry.get_host(editor_name)
+	if named_host != null and not named_host.has_method("get_mesh_data"):
+		msg += (". This name resolves to a source tab, but no unique live CAD render "
+			+ "panel is paired with it. Use the CAD panel editor_name from "
+			+ "minerva_list_editors for inspection and snapshots; use the source "
+			+ "document for minerva_doc_write")
 	if PluginErrors.has_disambiguated_name(known):
 		msg += (". A name listed as \"<title> [<key>]\" is shared by more than one open "
 			+ "panel — pass that whole string, including the bracketed key")

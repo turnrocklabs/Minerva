@@ -23,6 +23,10 @@ Minerva adds a note-taking system and (hopefully) some editors and task runners.
 ### Prerequisites
 - [Godot Engine 4.6+](https://godotengine.org/download)
 - Git
+- Python 3.9+ (with pip/venv) and a C++ compiler: Xcode command line tools on
+  macOS, build-essential on Linux, or Visual Studio 2022 C++ tools on Windows.
+- Rust/Cargo for WRY web panels; Linux also needs GTK3/WebKit development packages.
+  See [platform prerequisites](Docs/Building.md#prerequisites-the-scripts-do-not-install).
 
 ### Clone and Build (Linux / macOS)
 
@@ -31,7 +35,7 @@ Minerva adds a note-taking system and (hopefully) some editors and task runners.
 git clone --recursive https://github.com/turnrocklabs/Minerva.git
 cd Minerva
 
-# Build all C++ extensions (installs Zig and SCons if needed)
+# Build native editor dependencies (installs Zig and SCons if needed)
 scripts/build-extensions.sh
 ```
 
@@ -42,19 +46,43 @@ scripts/build-extensions.sh
 git clone --recursive https://github.com/turnrocklabs/Minerva.git
 cd Minerva
 
-# Build all C++ extensions (installs Zig and SCons if needed)
+# Build native editor dependencies (installs Zig and SCons if needed)
 powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1
 ```
 
 ### What the Build Scripts Do
 
-Both scripts automatically handle:
+Close Minerva and its editor before a full native rebuild. Both scripts handle:
+
 - Git submodule initialization (godot-cpp, vendor/ghostty)
 - Zig 0.15.2 download and install (user-local, no sudo/admin)
-- SCons install via pip
+- SCons install in a local `.build-venv` if missing
+- MCP JSON Schema helper build from pinned, checksum-verified jsoncons source
 - ghostty-vt shim build (Zig)
 - Godot C++ terminal extension build (SCons)
 - Library installation to `src/bin/`
+- Pinned built-in Voice runtime for the current host architecture
+- WRY build, FFmpeg and SQLite installation, then native dependency checks
+
+The MCP helper is required for **all plugin startup**, including legacy plugins.
+To repair just that dependency in an existing checkout:
+
+```bash
+scripts/build-extensions.sh --helper-only                 # Linux/macOS
+scripts/build-extensions.sh --voice-only                  # Repair/check Voice only
+scripts/build-extensions.sh --check                       # Check without rebuilding
+```
+
+```powershell
+./scripts/build-extensions.ps1 -HelperOnly                 # Windows
+./scripts/build-extensions.ps1 -VoiceOnly
+./scripts/build-extensions.ps1 -Check
+```
+
+The check starts short-lived schema and Voice workers and loads core libraries in
+isolated processes. It does not launch Godot, the Minerva project, or the
+microphone. It must pass before testing plugin startup in the editor; CEF panels
+and PDF remain optional checks.
 
 CEF-hosted panels and the PDF sidecar are built separately — see
 **[Docs/Building.md](Docs/Building.md)** for the complete build reference,
@@ -99,9 +127,10 @@ settle pending writes.
 | [EIRTeam.FFmpeg](https://github.com/EIRTeam/EIRTeam.FFmpeg) | 1.1.4 | MIT (wrapper) + LGPL 2.1 (ffmpeg) | Video/audio codec support | Downloaded from GitHub releases by `build-extensions.sh` |
 | [Zig](https://ziglang.org) | 0.15.2 | MIT | Build tool for ghostty shim | Auto-installed by `build-extensions.sh` |
 | [SCons](https://scons.org) | 4.x | MIT | Build tool for C++ extension | Auto-installed via pip by `build-extensions.sh` |
+| [jsoncons](https://github.com/danielaparker/jsoncons) | Pinned `bcb44594` + Minerva patch | Boost-1.0 | Isolated MCP JSON Schema and numeric validation helper | Verified source archive; built by both extension setup scripts |
 | [Bun](https://bun.sh) | 1.x | MIT | Stream Deck plugin compiler (optional) | User installs: `curl -fsSL https://bun.sh/install \| bash` |
 
-All dependencies use permissive licenses (MIT, LGPL 2.1 for dynamic linking). FFmpeg libraries are used unmodified and dynamically linked, which is permitted under LGPL 2.1.
+The table lists each dependency's license. FFmpeg libraries are used unmodified and dynamically linked under LGPL 2.1.
 
 ## Acknowledgments ##
 
@@ -112,4 +141,3 @@ Minerva is built on the shoulders of these open-source projects:
 - **EIRTeam.FFmpeg** by Alex Roman / EIRTeam (MIT) — Godot FFmpeg integration
 - **FFmpeg** by the FFmpeg developers (LGPL 2.1) — audio/video codecs
 - **godot-cpp** by Godot Engine contributors (MIT) — C++ GDExtension bindings
-

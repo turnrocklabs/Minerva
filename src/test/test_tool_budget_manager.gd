@@ -19,6 +19,11 @@ func _init():
 	test_budget_enforcement()
 	test_lru_prunes_oldest()
 	test_protected_tool_never_pruned()
+	test_group_admission_is_truthful()
+	test_group_lease_protects_next_turn()
+	test_impossible_group_does_not_evict_unrelated_tools()
+	test_budget_reduction_is_enforced()
+	test_budget_reduction_rejects_protected_workflow()
 	test_reset()
 	test_advance_turn()
 	test_set_budget()
@@ -49,7 +54,8 @@ func test_initial_state():
 	var mgr := ToolBudgetManager.new()
 	check("new manager has 0 active tools", mgr.get_active_count() == 0)
 	check("new manager has 0 token usage", mgr.get_token_usage() == 0)
-	check("default budget is 3000", mgr.get_budget() == 3000)
+	check("new manager uses the declared default budget",
+		mgr.get_budget() == ToolBudgetManager.DEFAULT_BUDGET)
 	check("initial turn is 0", mgr.get_current_turn() == 0)
 
 
@@ -133,8 +139,9 @@ func test_budget_enforcement():
 
 func test_lru_prunes_oldest():
 	print("test_lru_prunes_oldest:")
-	# Budget fits exactly 3 tools of size 10 (~40 tokens each → ~120 total), set budget to 130
-	var mgr := ToolBudgetManager.new(130)
+	var sample := _make_schema("tool_1", 10)
+	var cost: int = ToolBudgetManager.new()._estimate_tokens(sample)
+	var mgr := ToolBudgetManager.new(cost * 3)
 	# Turn 0: activate tool_1
 	mgr.activate_tool("tool_1", _make_schema("tool_1", 10))
 	mgr.advance_turn()
@@ -165,6 +172,96 @@ func test_protected_tool_never_pruned():
 	# Activate another tool that would require pruning tool_search to fit — it cannot
 	mgr.activate_tool("tool_a", _make_schema("tool_a", 5))
 	check("protected tool is never pruned", mgr.is_active(ToolBudgetManager.PROTECTED_TOOLS[0]))
+
+
+func test_group_admission_is_truthful():
+	print("test_group_admission_is_truthful:")
+	var first := _make_schema("workflow_a", 20)
+	var second := _make_schema("workflow_b", 20)
+	var oversized := _make_schema("workflow_oversized", 200)
+	var probe := ToolBudgetManager.new()
+	var budget: int = probe._estimate_tokens(first) + probe._estimate_tokens(second)
+	var mgr := ToolBudgetManager.new(budget)
+	var admitted: Dictionary = mgr.activate_group([first, second, oversized])
+	check("group reports only tools that remain active",
+		admitted.activated == ["workflow_a", "workflow_b"]
+		and mgr.is_active("workflow_a") and mgr.is_active("workflow_b"))
+	check("oversized group member is rejected without exceeding budget",
+		(admitted.rejected as Array).size() == 1
+		and admitted.rejected[0].name == "workflow_oversized"
+		and not mgr.is_active("workflow_oversized")
+		and mgr.get_token_usage() <= budget)
+	var single_manager := ToolBudgetManager.new(1)
+	var single := single_manager.activate_tool("too_large", oversized)
+	check("single oversized activation is also truthful",
+		not single.active and not single_manager.is_active("too_large"))
+
+
+func test_group_lease_protects_next_turn():
+	print("test_group_lease_protects_next_turn:")
+	var read := _make_schema("minerva_doc_read", 20)
+	var write := _make_schema("minerva_doc_write", 20)
+	var search := _make_schema("minerva_list_editors", 20)
+	var probe := ToolBudgetManager.new()
+	var budget: int = probe._estimate_tokens(read) + probe._estimate_tokens(write)
+	var mgr := ToolBudgetManager.new(budget)
+	var workflow: Dictionary = mgr.activate_group([read, write])
+	mgr.advance_turn()
+	var discovery: Dictionary = mgr.activate_group([search])
+	check("loaded workflow survives a follow-up discovery activation",
+		workflow.activated.size() == 2 and discovery.activated.is_empty()
+		and discovery.rejected.size() == 1
+		and mgr.is_active("minerva_doc_read") and mgr.is_active("minerva_doc_write"))
+
+
+func test_impossible_group_does_not_evict_unrelated_tools():
+	print("test_impossible_group_does_not_evict_unrelated_tools:")
+	var pinned := _make_schema("pinned_workflow", 40)
+	var unrelated := _make_schema("unrelated_tool", 10)
+	var impossible := _make_schema("new_workflow", 120)
+	var probe := ToolBudgetManager.new()
+	var budget: int = probe._estimate_tokens(pinned) \
+		+ probe._estimate_tokens(unrelated)
+	var mgr := ToolBudgetManager.new(budget)
+	var pinned_result: Dictionary = mgr.activate_group([pinned])
+	mgr.activate_tool("unrelated_tool", unrelated)
+	var refused: Dictionary = mgr.activate_group([impossible])
+	check("an impossible admission preserves the current workflow and unrelated tools",
+		pinned_result.activated == ["pinned_workflow"]
+		and refused.activated.is_empty() and refused.evicted.is_empty()
+		and mgr.is_active("pinned_workflow") and mgr.is_active("unrelated_tool"))
+
+
+func test_budget_reduction_is_enforced():
+	print("test_budget_reduction_is_enforced:")
+	var first := _make_schema("tool_a", 20)
+	var second := _make_schema("tool_b", 20)
+	var probe := ToolBudgetManager.new()
+	var one_cost: int = probe._estimate_tokens(first)
+	var mgr := ToolBudgetManager.new(one_cost * 2)
+	mgr.activate_tool("tool_a", first)
+	mgr.activate_tool("tool_b", second)
+	var reduction: Dictionary = mgr.set_budget(one_cost)
+	check("lowering the budget prunes eligible tools and enforces the new cap",
+		reduction.applied and reduction.evicted.size() == 1
+		and mgr.get_budget() == one_cost and mgr.get_token_usage() <= one_cost)
+
+
+func test_budget_reduction_rejects_protected_workflow():
+	print("test_budget_reduction_rejects_protected_workflow:")
+	var read := _make_schema("minerva_doc_read", 20)
+	var write := _make_schema("minerva_doc_write", 20)
+	var probe := ToolBudgetManager.new()
+	var full_budget: int = probe._estimate_tokens(read) + probe._estimate_tokens(write)
+	var mgr := ToolBudgetManager.new(full_budget)
+	mgr.activate_group([read, write])
+	var reduction: Dictionary = mgr.set_budget(probe._estimate_tokens(read))
+	var refresh: Dictionary = mgr.activate_tool("minerva_doc_write", write)
+	check("a leased workflow rejects an incompatible budget reduction truthfully",
+		not reduction.applied and reduction.evicted.is_empty()
+		and mgr.get_budget() == full_budget and mgr.get_token_usage() <= full_budget
+		and refresh.active and mgr.is_active("minerva_doc_read")
+		and mgr.is_active("minerva_doc_write"))
 
 
 func test_reset():

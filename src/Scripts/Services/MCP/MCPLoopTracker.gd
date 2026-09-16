@@ -23,6 +23,12 @@ func check(tool_name: String, arguments: Dictionary, result: Dictionary) -> Dict
 	if _is_pending(tool_name, result):
 		_streaks.erase(tool_name)
 		return result
+	# The internal agent loop handles explicit non-retryable document refusals
+	# with turn/document identity. This tracker is server-global and must not
+	# carry that recovery state into another chat or document.
+	if str(result.get("error_code", "")) == "operation_unsupported" \
+			and not bool(result.get("retryable", true)):
+		return result
 	if not _streaks.has(tool_name):
 		_streaks[tool_name] = ToolStreak.new()
 	var streak: ToolStreak = _streaks[tool_name]

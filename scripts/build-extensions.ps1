@@ -1,11 +1,11 @@
-# Build Minerva's Windows GDExtensions: ghostty-vt shim + terminal + godot_wry.
+# Build Minerva's Windows native editor dependencies, including the MCP schema helper.
 # Run from repo root: powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1
 #
-# Mirrors the build-windows job in .github/workflows/build.yml (the source of truth).
+# Helper-only setup is also exercised by the CI helper matrix.
 #
 # Auto-installed if missing:
 #   - Zig 0.15.2 (downloaded to $env:LOCALAPPDATA\zig)
-#   - SCons (via pip)
+#   - SCons (in .build-venv if missing)
 #   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry, ...)
 #
 # Required on the machine (NOT auto-installed):
@@ -22,18 +22,113 @@
 #       (nightly Rust + ~1 GB CEF bundle; also needs CMake + Ninja on PATH —
 #        `pip install cmake ninja` works)
 
+param([switch]$Check, [switch]$HelperOnly, [switch]$VoiceOnly)
+
 $ErrorActionPreference = "Stop"
+function Assert-NativeSuccess([string]$Step) {
+    if ($LASTEXITCODE -ne 0) { throw "$Step failed (exit $LASTEXITCODE)." }
+}
 $RepoRoot = git rev-parse --show-toplevel
+Assert-NativeSuccess "Find repository"
 Set-Location $RepoRoot
+
+if ($HelperOnly -and $VoiceOnly) {
+    throw "-HelperOnly and -VoiceOnly are mutually exclusive."
+}
+
+function Get-GitBash {
+    $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $gitCommand) { throw "Git for Windows is required to build the Voice runtime." }
+    $gitRoot = Split-Path (Split-Path $gitCommand.Source -Parent) -Parent
+    foreach ($root in @($gitRoot, (Split-Path $gitRoot -Parent))) {
+        foreach ($candidate in @(
+            (Join-Path $root "bin\bash.exe"),
+            (Join-Path $root "usr\bin\bash.exe")
+        )) {
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+    throw "Git Bash was not found beside $($gitCommand.Source). Install Git for Windows."
+}
+
+function Build-VoiceRuntime {
+    $gitBash = Get-GitBash
+    $voicePython = (Get-Command python -ErrorAction Stop).Source
+    Write-Host ""
+    Write-Host "=== Building bundled Voice runtime (windows-x86_64) ===" -ForegroundColor Cyan
+    $previousVoicePython = $env:MINERVA_VOICE_BUILD_PYTHON
+    try {
+        $env:MINERVA_VOICE_BUILD_PYTHON = $voicePython
+        & $gitBash "src/plugins/voice/scripts/build-runtime.sh" "windows-x86_64"
+        Assert-NativeSuccess "Voice runtime build"
+    } finally {
+        $env:MINERVA_VOICE_BUILD_PYTHON = $previousVoicePython
+    }
+}
 
 $ZigVersion = "0.15.2"
 $ZigDir = "$env:LOCALAPPDATA\zig"
 
 Write-Host "Building Minerva GDExtensions for platform: windows" -ForegroundColor Cyan
 
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "Install Python 3.9+ (including pip and venv) and add it to PATH."
+}
+python -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 'Python 3.9+ is required')"
+Assert-NativeSuccess "Python prerequisite"
+if ($Check) {
+    $checkArgs = @()
+    if ($HelperOnly) { $checkArgs += "--helper-only" }
+    if ($VoiceOnly) { $checkArgs += "--voice-only" }
+    python scripts/check-editor-ready.py @checkArgs
+    Assert-NativeSuccess "Editor readiness"
+    exit 0
+}
+if ($VoiceOnly) {
+    Build-VoiceRuntime
+    python scripts/check-editor-ready.py --voice-only
+    Assert-NativeSuccess "Voice runtime readiness"
+    exit 0
+}
+if (-not $HelperOnly -and -not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+    throw "cargo not found. Install Rust via https://rustup.rs (then 'rustup update stable')."
+}
+
+# Check C++ tools before downloading/building dependencies.
+$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+if (-not (Test-Path $vswhere)) {
+    throw "Install Visual Studio 2022 with 'Desktop development with C++'."
+}
+$vsPath = & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+Assert-NativeSuccess "Locate Visual Studio"
+if (-not $vsPath) { throw "No Visual Studio installation with C++ tools found." }
+Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+Enter-VsDevShell -VsInstallPath $vsPath -DevCmdArguments "-arch=x64 -host_arch=x64" -SkipAutomaticLocation | Out-Null
+Set-Location $RepoRoot
+foreach ($tool in @("cl", "lib", "dumpbin")) {
+    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) { throw "Required C++ tool missing: $tool" }
+}
+if (-not (Get-Command scons -ErrorAction SilentlyContinue)) {
+    python -m venv .build-venv
+    Assert-NativeSuccess "Create build environment"
+    & .\.build-venv\Scripts\python.exe -m pip install scons
+    Assert-NativeSuccess "Install SCons"
+    $env:PATH = "$RepoRoot\.build-venv\Scripts;$env:PATH"
+}
+python scripts/build-json-schema-helper.py --platform windows
+Assert-NativeSuccess "MCP schema helper build"
+if ($HelperOnly) {
+    python scripts/check-editor-ready.py --helper-only
+    Assert-NativeSuccess "MCP schema helper readiness"
+    exit 0
+}
+
+Build-VoiceRuntime
+
 # ── Git submodules ────────────────────────────────────────────────────
 Write-Host "Initializing git submodules..."
 git submodule update --init --recursive
+Assert-NativeSuccess "Initialize submodules"
 
 # ── Install Zig if needed ─────────────────────────────────────────────
 $zigExe = "$ZigDir\zig.exe"
@@ -54,41 +149,14 @@ if ($needZig) {
 $env:PATH = "$ZigDir;$env:PATH"
 Write-Host "Zig $(& zig version)"
 
-# ── Install SCons if needed ───────────────────────────────────────────
-if (-not (Get-Command scons -ErrorAction SilentlyContinue)) {
-    Write-Host "Installing SCons via pip..."
-    pip install scons
-}
-
-# ── Require cargo (godot_wry) ─────────────────────────────────────────
-if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-    Write-Error "cargo not found. Install Rust via https://rustup.rs (then 'rustup update stable')."
-    exit 1
-}
-
-# ── Enter VS Developer Shell (puts cl / lib / dumpbin on PATH) ────────
-$vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-if (-not (Test-Path $vswhere)) {
-    Write-Error "Visual Studio Installer not found. Install VS 2022 with 'Desktop development with C++'."
-    exit 1
-}
-$vsPath = & $vswhere -latest -property installationPath
-if (-not $vsPath) { Write-Error "No Visual Studio with C++ tools found."; exit 1 }
-Import-Module (Join-Path $vsPath "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
-Enter-VsDevShell -VsInstallPath $vsPath -DevCmdArguments "-arch=x64 -host_arch=x64" -SkipAutomaticLocation | Out-Null
-Set-Location $RepoRoot
-$env:PATH = "$ZigDir;$env:PATH"   # re-assert Zig ahead of any VS shims
-
 # ── Build godot_wry (Rust) ────────────────────────────────────────────
 Write-Host ""
 Write-Host "=== Building godot_wry ===" -ForegroundColor Cyan
-Push-Location vendor\godot_wry
-git checkout -- .   # reset so patches stay idempotent
-Get-ChildItem ..\..\patches\godot_wry-*.patch -ErrorAction SilentlyContinue | ForEach-Object {
-    git apply $_.FullName; Write-Host "Applied: $($_.Name)"
-}
-Set-Location rust
+python scripts/apply-wry-patches.py
+Assert-NativeSuccess "Apply WRY patches"
+Push-Location vendor\godot_wry\rust
 & cargo build --release
+Assert-NativeSuccess "WRY build"
 Pop-Location
 New-Item -ItemType Directory -Force -Path src\addons\godot_wry\bin\x86_64-pc-windows-msvc | Out-Null
 Copy-Item vendor\godot_wry\rust\target\release\godot_wry.dll src\addons\godot_wry\bin\x86_64-pc-windows-msvc\ -Force
@@ -103,6 +171,7 @@ Write-Host ""
 Write-Host "=== Building ghostty-vt shim ===" -ForegroundColor Cyan
 Push-Location src\gdextension\terminal\ghostty-shim
 & zig build -Doptimize=ReleaseFast -Dtarget=x86_64-windows-msvc --global-cache-dir (Join-Path $RepoRoot ".zig-global-cache")
+Assert-NativeSuccess "Ghostty shim build"
 Pop-Location
 
 # ── Copy shim DLL to bin ──────────────────────────────────────────────
@@ -126,10 +195,12 @@ $libOut  = Join-Path $shim "lib\minerva-vt.lib"
 $names = & dumpbin /exports $dllPath | ForEach-Object {
     if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(minerva_vt\w*)') { $Matches[1] }
 }
+Assert-NativeSuccess "Read shim exports"
 if (-not $names) { Write-Error "No minerva_vt* exports found in $dllPath"; exit 1 }
 Write-Host "Exports ($($names.Count)): $($names -join ', ')"
 @("LIBRARY minerva-vt", "EXPORTS") + $names | Set-Content -Path $defOut -Encoding ascii
 & lib /def:$defOut /machine:x64 /out:$libOut | Out-Null
+Assert-NativeSuccess "Build shim import library"
 if (-not (Test-Path $libOut)) { Write-Error "lib.exe did not produce $libOut"; exit 1 }
 Write-Host "Regenerated $libOut"
 
@@ -138,13 +209,16 @@ Write-Host ""
 Write-Host "=== Building terminal GDExtension (SCons) ===" -ForegroundColor Cyan
 Push-Location src
 & scons platform=windows target=template_release
+Assert-NativeSuccess "Terminal release build"
 & scons platform=windows target=template_debug
+Assert-NativeSuccess "Terminal debug build"
 Pop-Location
 
 # ── Install godot-sqlite (prebuilt release download) ──────────────────
 $SqliteVersion = "v4.7"
 $SqliteMarker  = "src\addons\godot-sqlite\.sqlite-version"
-if ((Test-Path $SqliteMarker) -and ((Get-Content $SqliteMarker) -eq $SqliteVersion)) {
+if ((Test-Path $SqliteMarker) -and ((Get-Content $SqliteMarker) -eq $SqliteVersion) -and
+    (Test-Path "src\addons\godot-sqlite\bin\libgdsqlite.windows.template_debug.x86_64.dll")) {
     Write-Host "godot-sqlite $SqliteVersion already installed"
 } else {
     Write-Host ""
@@ -185,10 +259,5 @@ if ((Test-Path $ffWin) -and (Test-Path $FfmpegMarker) -and ((Get-Content $Ffmpeg
 }
 
 # ── Verify ────────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "=== Build complete ===" -ForegroundColor Green
-Get-ChildItem "src\bin\*terminal*", "src\bin\*minerva*" | Format-Table Name, Length -AutoSize
-Get-ChildItem "src\addons\godot_wry\bin\x86_64-pc-windows-msvc\godot_wry.dll" -ErrorAction SilentlyContinue | Format-Table Name, Length -AutoSize
-Write-Host "Installed addons: godot_wry, godot-sqlite, ffmpeg (terminal in src\bin\)."
-Write-Host "Open src\project.godot in Godot 4.6+ to run Minerva."
-Write-Host "Note: godot_cef is built separately -> scripts\build-godot-cef.sh windows (needs CMake + Ninja)." -ForegroundColor DarkGray
+python scripts/check-editor-ready.py
+Assert-NativeSuccess "Editor readiness"

@@ -137,7 +137,7 @@ func register_tools() -> void:
 	, "editor")
 
 	server._register_tool("minerva_list_editors",
-		"List all open editor tabs (text, graphics, and spreadsheet editors).",
+		"List all open editor tabs with live document/view identity, supported document operations, and CAD whole-document write guidance.",
 		{
 			"type": "object",
 			"properties": {},
@@ -745,6 +745,7 @@ func _list_editors(_args: Dictionary) -> Dictionary:
 
 	var EditorGDScript = load("res://Scripts/UI/Controls/Editor.gd")
 	var editors: Array[Dictionary] = []
+	var open_editors: Array = editor_pane.get_open_editors()
 
 	for i in range(editor_pane.Tabs.get_tab_count()):
 		var editor = editor_pane.Tabs.get_tab_control(i)
@@ -766,6 +767,8 @@ func _list_editors(_args: Dictionary) -> Dictionary:
 		}
 
 		editor_info.merge(DocumentIdentity.describe(editor, SingletonObject.plugin_scene_panel_broker))
+		editor_info.merge(DocumentIdentity.operation_profile(editor,
+			SingletonObject.plugin_scene_panel_broker, open_editors))
 
 		# Add file path if available
 		if "file" in editor and editor.file:

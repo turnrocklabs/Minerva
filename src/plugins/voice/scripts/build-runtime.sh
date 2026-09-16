@@ -65,7 +65,18 @@ PY_MM="$(echo "$CPYTHON" | cut -d. -f1,2)"
 if [ "$TARGET" = "windows-x86_64" ]; then SITE="$STAGE_DIR/Lib/site-packages"
 else SITE="$STAGE_DIR/lib/python${PY_MM}/site-packages"; fi
 mkdir -p "$SITE"
-HOST_PY="$(command -v "python${PY_MM}" || command -v python3 || command -v python)"
+if [ -n "${MINERVA_VOICE_BUILD_PYTHON:-}" ]; then
+  HOST_PY="$MINERVA_VOICE_BUILD_PYTHON"
+  if command -v cygpath >/dev/null 2>&1; then
+    HOST_PY="$(cygpath -u "$HOST_PY")"
+  fi
+else
+  HOST_PY="$(command -v "python${PY_MM}" || command -v python3 || command -v python)"
+fi
+"$HOST_PY" --version >/dev/null 2>&1 || {
+  echo "Voice build Python is not runnable: $HOST_PY" >&2
+  exit 65
+}
 REQUIREMENTS="$PLUGIN_DIR/$REQUIREMENTS_LOCK"
 [ -f "$REQUIREMENTS" ] || { echo "missing requirements lock" >&2; exit 65; }
 PLATFORM_ARGS=()
@@ -98,6 +109,12 @@ MODEL_DATA_SOURCE="$MODEL_SOURCE.data"
 [ "$(hash_file "$MODEL_DATA_SOURCE")" = "$MODEL_DATA_SHA256" ] || { echo "model data checksum mismatch" >&2; exit 66; }
 cp "$MODEL_SOURCE" "$MODEL_DATA_SOURCE" "$SITE/minerva_voice_worker/models/"
 
+# Contributor readiness compares this marker with the source checkout. Include
+# the recipe itself, pinned inputs, and worker source so an old stage cannot
+# look ready after any of those inputs change.
+"$HOST_PY" -B "$PLUGIN_DIR/scripts/voice_runtime_inputs.py" "$PLUGIN_DIR" \
+  > "$STAGE_DIR/source-inputs.sha256"
+
 mkdir -p "$STAGE_DIR/licenses"
 cp "$PLUGIN_DIR/licenses/THIRD_PARTY.md" "$STAGE_DIR/licenses/"
 echo "$TARGET" > "$STAGE_DIR/target-triple.txt"
@@ -118,7 +135,7 @@ EOF
   echo "$MODEL_DATA_SHA256  model/minerva_wakeword.onnx.data"
 } > "$STAGE_DIR/input-artifacts.sha256"
 
-(cd "$STAGE_DIR" && find . -type f ! -name manifest.sha256 -print | LC_ALL=C sort | while read -r file; do
+(cd "$STAGE_DIR" && find . \( -type f -o -type l \) ! -name manifest.sha256 -print | LC_ALL=C sort | while read -r file; do
   echo "$(hash_file "$STAGE_DIR/$file")  ${file#./}"
 done > manifest.sha256)
 

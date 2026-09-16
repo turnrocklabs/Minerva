@@ -29,6 +29,49 @@ static func runtime_directory() -> String:
 	return executable_dir.path_join("builtin-plugins/voice")
 
 
+static func repair_hint() -> String:
+	if OS.has_feature("editor"):
+		return ("Run `powershell -ExecutionPolicy Bypass -File scripts\\build-extensions.ps1 -VoiceOnly`"
+			if OS.get_name() == "Windows"
+			else "Run `scripts/build-extensions.sh --voice-only`")
+	return "Reinstall the Minerva build for %s" % target_triple()
+
+
+## Cheap runtime-facing guard. Contributor readiness performs the deeper
+## manifest, freshness, architecture, and MCP handshake validation.
+static func runtime_issue() -> String:
+	var target := target_triple()
+	var directory := runtime_directory()
+	if target.is_empty() or directory.is_empty():
+		return "Voice Support is unavailable on this platform"
+	return runtime_issue_for(directory, target, repair_hint(), OS.get_name() == "Windows")
+
+
+static func runtime_issue_for(
+	directory: String, target: String, repair: String, windows_runtime: bool
+) -> String:
+	var required := [
+		directory.path_join("manifest.sha256"),
+		directory.path_join("input-artifacts.sha256"),
+		directory.path_join("source-inputs.sha256"),
+		directory.path_join("target-triple.txt"),
+		directory.path_join("python.exe") if windows_runtime
+			else directory.path_join("bin/python3"),
+	]
+	var missing: Array[String] = []
+	for path in required:
+		if not FileAccess.file_exists(path):
+			missing.append(path.get_file())
+	if not missing.is_empty():
+		return "Voice runtime is missing %s. %s." % [", ".join(missing), repair]
+	var recorded_target := FileAccess.get_file_as_string(
+		directory.path_join("target-triple.txt")).strip_edges()
+	if recorded_target != target:
+		return "Voice runtime targets %s, but this host requires %s. %s." % [
+			recorded_target, target, repair]
+	return ""
+
+
 static func definition():
 	if runtime_directory().is_empty():
 		return null

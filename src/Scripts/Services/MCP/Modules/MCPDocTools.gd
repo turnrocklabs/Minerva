@@ -36,7 +36,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_doc_read",
-		"Read a document's text. Pass `document_id`, `view_id`, `path` (absolute file path), or an unambiguous `editor_name`. Path-keyed reads load from disk into the registry on first access. Editor-keyed reads return the visible text of an editor tab — works for both path-bound and anonymous (unsaved) editors. Returns not_found when neither buffer, file, nor named editor exists.",
+		"Read a document's text. Pass `document_id`, `view_id`, `path` (absolute file path), or an unambiguous `editor_name`. Path-keyed reads load from disk into the registry on first access. Editor-keyed reads return the visible text of an editor tab — works for both path-bound and anonymous (unsaved) editors. The reply advertises supported_operations and, for CAD, whole-document write_guidance. Returns not_found when neither buffer, file, nor named editor exists.",
 		_dual_key_schema({
 			"text": {"type": "string"},
 			"version": {"type": "integer"},
@@ -44,7 +44,7 @@ func register_tools() -> void:
 		}, []), "documents")
 
 	server._register_tool("minerva_doc_write",
-		"Replace a document's full text. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. For plugin-scene editors (e.g. cad): plain text is wrapped as {\"source\": text} — pass DSL as-is without JSON-stringifying; pass a JSON object literal if you need fuller control over the Dictionary the plugin receives. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
+		"Replace a document's full text. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Buffer/editor becomes dirty; disk is NOT modified until minerva_doc_save. Creates a buffer if needed for path. For editor_name on an anonymous editor, sets the editor's visible text directly. CAD is structured: read first, pass the complete MCAD source as plain text here, and inspect last_eval in the reply. Other plugin-scene plain text is wrapped as {\"source\": text}; pass a JSON object literal only when the plugin expects a fuller Dictionary. Returns the resolved {path?, editor_name?} so callers know which key to use next.",
 		_dual_key_schema({
 			"text": {"type": "string", "description": "Full text content"},
 			"save": {"type": "boolean", "description": "Also flush to disk now (default false = buffered, persist later via minerva_doc_save)."},
@@ -52,7 +52,7 @@ func register_tools() -> void:
 		}, ["text"]), "documents")
 
 	server._register_tool("minerva_doc_edit",
-		"Replace old_string with new_string. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Without replace_all, old_string must match exactly once. NOT supported on plugin-scene editors (use minerva_doc_write to replace the whole document instead).",
+		"Replace old_string with new_string. Pass `document_id`/`view_id`, or either `path` or an unambiguous `editor_name`. Without replace_all, old_string must match exactly once. Structured documents such as CAD return operation_unsupported, retryable=false, next_tool=minerva_doc_write, and canonical document_identity; read then replace their whole source with minerva_doc_write.",
 		_dual_key_schema({
 			"old_string": {"type": "string", "description": "String to find (must be unique unless replace_all)"},
 			"new_string": {"type": "string", "description": "Replacement string"},
@@ -333,6 +333,58 @@ static func _dual_key_schema(extra_props: Dictionary, extra_required: Array) -> 
 	return {"type": "object", "properties": props, "required": extra_required}
 
 
+func _target_metadata(target: Dictionary) -> Dictionary:
+	var pane = SingletonObject.editor_pane
+	var editors: Array = pane.get_open_editors() if pane != null else []
+	var editor: Object = target.get("editor")
+	var broker = SingletonObject.plugin_scene_panel_broker
+	var buffer: DocumentBuffer = target.get("buffer")
+	var profile := DocumentIdentity.operation_profile(editor, broker, editors, buffer)
+	var identity := {"identity_lifetime": "live_document"}
+	if buffer != null:
+		identity["document_id"] = buffer.document_id
+	elif editor != null:
+		identity.merge(DocumentIdentity.describe(editor, broker))
+	if editor != null:
+		identity["view_id"] = DocumentIdentity.handle(editor, "view")
+	if not str(target.get("path", "")).is_empty():
+		identity["path"] = str(target.path)
+	if not str(target.get("editor_name", "")).is_empty():
+		identity["editor_name"] = str(target.editor_name)
+	profile.merge(identity)
+	return profile
+
+
+func _owning_plugin_view(target: Dictionary) -> Object:
+	var pane = SingletonObject.editor_pane
+	var editors: Array = pane.get_open_editors() if pane != null else []
+	return DocumentIdentity.owning_plugin_view(target.get("editor"),
+		SingletonObject.plugin_scene_panel_broker, editors, target.get("buffer"))
+
+
+func _operation_unsupported(target: Dictionary, operation: String,
+		next_tool: String) -> Dictionary:
+	var metadata := _target_metadata(target)
+	var identity := {}
+	for key in ["document_id", "view_id", "path", "editor_name", "identity_lifetime"]:
+		if metadata.has(key):
+			identity[key] = metadata[key]
+	var message := "%s is not supported for this structured document; use %s" % [
+		operation, next_tool]
+	return {
+		"success": false,
+		"ok": false,
+		"error": message,
+		"error_message": message,
+		"error_code": "operation_unsupported",
+		"retryable": false,
+		"next_tool": next_tool,
+		"document_identity": identity,
+		"supported_operations": metadata.supported_operations,
+		"write_guidance": str(metadata.get("write_guidance", "")),
+	}
+
+
 # ── Tool implementations ───────────────────────────────────────────────────
 
 func _doc_read(args: Dictionary) -> Dictionary:
@@ -354,22 +406,25 @@ func _doc_read(args: Dictionary) -> Dictionary:
 			# Paired_dsl plugin scene: also surface the panel's last_eval so the
 			# agent can verify worker outcome without burning a second tool round.
 			# Falls through silently when the editor has no plugin save hook.
-			var ed_r = t.editor
+			var ed_r = _owning_plugin_view(t)
 			if ed_r != null and "type" in ed_r and int(ed_r.type) == Editor.Type.PLUGIN_SCENE \
 					and ed_r.plugin_scene_root != null:
 				var save_payload: Variant = PluginScenePanelHost.invoke_save(ed_r.plugin_scene_root, {})
 				if save_payload is Dictionary and save_payload.has("last_eval"):
 					read_ok["last_eval"] = save_payload["last_eval"]
+			read_ok.merge(_target_metadata(t))
 			return _ok(read_ok)
 		KIND_TEXT_LOCAL:
 			var editor = t.editor
-			return _ok({
+			var local_read := {
 				"text": editor.code_edit.text,
 				"version": 0,
 				"dirty": _editor_is_dirty(editor),
 				"path": "",
 				"editor_name": t.editor_name,
-			})
+			}
+			local_read.merge(_target_metadata(t))
+			return _ok(local_read)
 		KIND_PLUGIN_SCENE:
 			# host_owned: round-trip the plugin's _on_panel_save_request → JSON.
 			var editor2 = t.editor
@@ -385,13 +440,15 @@ func _doc_read(args: Dictionary) -> Dictionary:
 				serialised = payload
 			else:
 				return _err("plugin_scene_unsupported_payload_type: %s" % type_string(typeof(payload)))
-			return _ok({
+			var scene_read := {
 				"text": serialised,
 				"version": 0,
 				"dirty": false,
 				"path": t.path,
 				"editor_name": t.editor_name,
-			})
+			}
+			scene_read.merge(_target_metadata(t))
+			return _ok(scene_read)
 	return _err("unhandled kind: %s" % t.kind)
 
 
@@ -414,6 +471,9 @@ func _doc_write(args: Dictionary) -> Dictionary:
 	match t.kind:
 		KIND_BUFFER:
 			var buf: DocumentBuffer = t.buffer
+			if bool(args.get("save", false)) \
+					and not (_target_metadata(t).supported_operations as Array).has("minerva_doc_save"):
+				return _err("document_save_unsupported: the owning plugin does not expose host document saving")
 			var vg := _version_guard(args, buf)
 			if not vg.is_empty():
 				return vg
@@ -444,7 +504,7 @@ func _doc_write(args: Dictionary) -> Dictionary:
 			# poll doc_read until the eval lands — burning rounds and racing
 			# the debounce. Falls through silently when the panel doesn't
 			# expose the hook (non-cad plugins, html panels, etc.).
-			var ed_w = t.editor
+			var ed_w = _owning_plugin_view(t)
 			if ed_w != null and "type" in ed_w and int(ed_w.type) == Editor.Type.PLUGIN_SCENE \
 					and ed_w.plugin_scene_root != null:
 				var apply_doc := {"source": text}
@@ -530,9 +590,9 @@ func _doc_edit(args: Dictionary) -> Dictionary:
 	var t := _resolve_target(args, true)
 	if not t.ok:
 		return _err(t.error)
-
-	if t.kind == KIND_PLUGIN_SCENE:
-		return _err("plugin_scene_unsupported: minerva_doc_edit cannot string-replace a structured plugin document; use minerva_doc_write to replace the whole document")
+	var target_profile := _target_metadata(t)
+	if not (target_profile.get("supported_operations", []) as Array).has("minerva_doc_edit"):
+		return _operation_unsupported(t, "minerva_doc_edit", "minerva_doc_write")
 
 	# Both KIND_BUFFER and KIND_TEXT_LOCAL operate on a string; unify.
 	var current_text: String = ""
@@ -597,6 +657,8 @@ func _doc_save(args: Dictionary) -> Dictionary:
 		var target := _resolve_target(locator, true)
 		if not target.ok:
 			return _err(target.error)
+		if not (_target_metadata(target).supported_operations as Array).has("minerva_doc_save"):
+			return _err("document_save_unsupported: the owning plugin does not expose host document saving")
 		var destination := str(args.get("path", ""))
 		if target.kind == KIND_BUFFER:
 			var buffer: DocumentBuffer = target.buffer
@@ -626,6 +688,10 @@ func _doc_save(args: Dictionary) -> Dictionary:
 		var r := registry.get_or_create_buffer(path_arg)
 		if not r.ok:
 			return _err(r.error)
+		var path_target := {"kind": KIND_BUFFER, "buffer": r.buffer,
+			"editor": null, "path": path_arg, "editor_name": ""}
+		if not (_target_metadata(path_target).supported_operations as Array).has("minerva_doc_save"):
+			return _err("document_save_unsupported: the owning plugin does not expose host document saving")
 		var save_r := (r.buffer as DocumentBuffer).save_to_disk()
 		if not save_r.ok:
 			return _err(save_r.error)

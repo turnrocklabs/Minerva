@@ -96,7 +96,7 @@ static func classify_discovery(response: Dictionary) -> Dictionary:
 static func validate_legacy_initialize(response: Dictionary,
 		allow_hosted_plugin_identity_aliases: bool = false) -> Dictionary:
 	if response.has("error"):
-		return {"error": str(response.error)}
+		return {"error": str(response.error), "local_error": response.get("local_error", false)}
 	var result_value: Variant = response.get("result")
 	if not result_value is Dictionary:
 		return {"error": "initialize result must be an object"}

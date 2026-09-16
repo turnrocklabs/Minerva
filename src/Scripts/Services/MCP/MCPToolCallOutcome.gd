@@ -5,6 +5,10 @@ extends RefCounted
 var envelope = null
 var application: Dictionary = {}
 var conformance_errors: Array[String] = []
+## True only when MCPToolResultAdapter added the application-level `success`
+## field. Consumers can distinguish that compatibility field from a backend's
+## explicit scene envelope without reparsing validated wire text.
+var application_success_synthesized := false
 
 
 static func failure(message: String, code: String = ""):

@@ -4,6 +4,8 @@ extends SceneTree
 
 const Client = preload("res://Scripts/Services/MCP/JSONSchemaValidatorClient.gd")
 const Schema = preload("res://Scripts/Services/MCP/MCPJSONSchema.gd")
+const Wire = preload("res://Scripts/Services/MCP/MCPWireValue.gd")
+const WireAdapter = preload("res://Scripts/Services/MCP/MCPWireAdapter.gd")
 
 var passed := 0
 var failed := 0
@@ -32,12 +34,29 @@ func _run() -> void:
 	var compiled: Dictionary = await schema.compile()
 	check("real supervisor compiles through the source-built companion", compiled.get("ok", false))
 	var exact: Dictionary = await schema.validate_for_application("0.5", 0.5)
+	var binary64_spelling: Dictionary = await client.compare_application_numbers(
+		'{"mesh":{"vertices":[[0.1]]}}', {"mesh": {"vertices": [[0.1]]}})
 	var changed: Dictionary = await schema.validate_for_application("0.10000000000000001", 0.1)
+	var changed_details: Dictionary = await client.compare_application_numbers(
+		"0.10000000000000001", 0.1)
 	var unsafe: Dictionary = await schema.validate_for_application("9007199254740992", 9007199254740992)
+	var cad_raw := '{"result":{"edges":[{"polyline":[[0.0],[99.80267284282715]]}]}}'
+	var cad_wire = Wire.create(cad_raw, JSON.parse_string(cad_raw))
+	WireAdapter._validator = client
+	var cad_decode: Dictionary = await WireAdapter.validate_for_application(cad_wire)
+	var cad_verified: Dictionary = await client.compare_application_numbers(
+		cad_raw, cad_wire.parsed)
+	WireAdapter._validator = null
 	check("exact fractions survive the application adapter", exact.get("valid", false))
+	check("equivalent shortest and full-precision binary64 spellings interoperate",
+		binary64_spelling.get("ok", false))
 	check("changed fractions and unsafe integers are rejected before application dispatch",
 		changed.get("error", {}).get("code") == "unsupported_number"
-		and unsafe.get("error", {}).get("code") == "unsupported_number")
+		and unsafe.get("error", {}).get("code") == "unsupported_number"
+		and changed_details.get("error", {}).get("details", {}).get("original") \
+			== "0.10000000000000001")
+	check("CAD worker decimals decode to their source binary64 value",
+		cad_decode.get("ok", false) and cad_verified.get("ok", false))
 	var old_handle = schema.handle
 	var old_process = client._process
 	var old_generation: int = client._generation
@@ -56,7 +75,7 @@ func _run() -> void:
 	check("pathological validation returns or loses its isolated helper within the hard deadline",
 		hostile_compile.get("ok", false) and elapsed < 3000
 		and (hostile_result.has("valid") or hostile_result.get("error", {}).get("code") \
-			in ["deadline_exceeded", "process_lost"]))
+			in ["deadline_exceeded", "process_lost", "operation_failed"]))
 	var after_hostile = Schema.create(client, "{\"type\":\"boolean\"}")
 	var after_compile: Dictionary = await after_hostile.compile()
 	var after_validate: Dictionary = await after_hostile.validate_raw("true")

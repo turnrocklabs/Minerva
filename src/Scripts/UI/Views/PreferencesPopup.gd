@@ -3,7 +3,7 @@ extends PersistentWindow
 
 const VoiceFeature = preload("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 const VoicePrompt = preload("res://Scripts/Services/Voice/VoiceDeactivationPrompt.gd")
-const MCPServerDiagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnostics.gd")
+const ServerDiagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnostics.gd")
 
 
 @onready var output_device_button: OptionButton = %OutputDeviceButton
@@ -1948,7 +1948,7 @@ func _rebuild_server_list(config: MCPConfig) -> void:
 		var diagnostic: Dictionary = mcp.get_server_diagnostic(server_name, server_cfg.type) \
 			if mcp and mcp.has_method("get_server_diagnostic") else {
 				"state": "connected" if connected else "disconnected", "transport": server_cfg.type}
-		status_label.text = MCPServerDiagnostics.status_text(diagnostic)
+		status_label.text = ServerDiagnostics.status_text(diagnostic)
 		status_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		header_hbox.add_child(status_label)
 		_server_status_labels[server_name] = status_label
@@ -2057,7 +2057,7 @@ func _on_server_connect_toggle(server_name: String, btn: Button, status_label: L
 		mcp.disconnect_server(server_name)
 		btn.text = "Connect"
 	else:
-		status_label.text = MCPServerDiagnostics.status_text(
+		status_label.text = ServerDiagnostics.status_text(
 			{"state": "connecting", "transport": mcp.config.get_server(server_name).type})
 		var err = await mcp.connect_server(server_name)
 		if not is_instance_valid(btn) or not is_instance_valid(status_label) \
@@ -2096,7 +2096,7 @@ func _refresh_server_status_label(server_name: String) -> void:
 	var server_cfg = mcp.config.get_server(server_name) if mcp.config else null
 	if server_cfg == null:
 		return
-	label.text = MCPServerDiagnostics.status_text(
+	label.text = ServerDiagnostics.status_text(
 		mcp.get_server_diagnostic(server_name, server_cfg.type))
 	if is_instance_valid(button):
 		button.text = "Disconnect" if mcp.is_server_connected(server_name) else "Connect"

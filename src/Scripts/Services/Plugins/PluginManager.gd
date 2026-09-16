@@ -291,7 +291,7 @@ func install_plugin(manifest_path: String, auto_confirm_skills: bool = false,
 	# can reverse later by revoking specific caps.
 	_auto_grant_declared_capabilities(def)
 
-	print("[PluginManager] Installed plugin '%s' v%s" % [def.id, def.version])
+	print("[PluginManager] Registered plugin manifest '%s' v%s" % [def.id, def.version])
 	_register_manifest_tools(def.id)
 
 	var result: Dictionary = {"ok": true, "id": def.id}
@@ -640,6 +640,11 @@ func start_plugin(id: String) -> Dictionary:
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
+	if id == "voice":
+		var voice_issue: String = load(
+			"res://Scripts/Services/Voice/BuiltinVoicePlugin.gd").runtime_issue()
+		if not voice_issue.is_empty():
+			return {"error": voice_issue}
 
 	if def.state == S_RUNNING:
 		return {"error": "Plugin '%s' is already running" % id}
@@ -770,10 +775,13 @@ func start_plugin(id: String) -> Dictionary:
 		return {"error": "Plugin '%s' start was cancelled" % id}
 
 	if err != OK:
-		push_error("[PluginManager] Failed to start plugin '%s': %s" % [id, error_string(err)])
+		var failure_reason: String = conn.last_failure_reason
+		if failure_reason.is_empty():
+			failure_reason = "Subprocess failed to start: %s" % error_string(err)
+		push_error("[PluginManager] Failed to start plugin '%s': %s" % [id, failure_reason])
 		_cleanup_connection(id)
 		_transition_state(id, S_ERROR)
-		return {"error": "Subprocess failed to start: %s" % error_string(err)}
+		return {"error": failure_reason}
 
 	_transition_state(id, S_RUNNING)
 

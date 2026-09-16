@@ -604,6 +604,7 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 	# Chat result is minimal — schemas are already in the tools array where models read them.
 	var activated: Array[String] = []
 	var also_available: Array[String] = []
+	var requested_schemas: Array[Dictionary] = []
 
 	for i in range(filtered.size()):
 		var result: Dictionary = filtered[i]
@@ -612,13 +613,20 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 		if i < limit:
 			var schema: Dictionary = result.get("schema", {})
 			if not name.is_empty() and not schema.is_empty():
-				tool_budget_manager.activate_tool(name, schema)
-				activated.append(name)
+				requested_schemas.append(schema)
 		else:
 			also_available.append(name)
+	var admission := tool_budget_manager.activate_group(requested_schemas)
+	activated.assign(admission.get("activated", []))
+	var unavailable: Array[String] = []
+	for rejected: Dictionary in admission.get("rejected", []):
+		unavailable.append(str(rejected.get("name", "")))
 
 	var message: String
-	if filtered.size() <= limit:
+	if not unavailable.is_empty():
+		message = "%d tools activated. %d could not fit the active tool budget." % [
+			activated.size(), unavailable.size()]
+	elif filtered.size() <= limit:
 		message = "%d tools activated and ready to call." % activated.size()
 	else:
 		message = "%d tools activated. %d more available — search by exact name to activate." % [activated.size(), also_available.size()]
@@ -628,6 +636,11 @@ func _tool_search(arguments: Dictionary) -> Dictionary:
 		"activated": activated,
 		"message": message,
 	}
+	if not unavailable.is_empty():
+		result_dict["unavailable"] = unavailable
+		result_dict["activation_failures"] = admission.get("rejected", [])
+	if not (admission.get("evicted", []) as Array).is_empty():
+		result_dict["evicted"] = admission.get("evicted", [])
 	# Only include overflow list if small enough to be useful; omit when too large
 	if not also_available.is_empty() and also_available.size() <= 20:
 		result_dict["also_available"] = also_available

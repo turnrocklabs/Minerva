@@ -2,11 +2,13 @@
 """Acquire verified jsoncons source and build Minerva's standalone helper."""
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tarfile
+import tempfile
 import urllib.request
 
 COMMIT = "bcb44594c50c495ee1e690602cdd71455942ad0e"
@@ -62,15 +64,56 @@ def acquire(root: Path) -> Path:
     cache = Path(os.environ.get("MINERVA_DEPENDENCY_CACHE", root / ".dependency-cache"))
     archive = cache / f"jsoncons-{COMMIT}.tar.gz"
     destination = root / "src/native/vendor/jsoncons"
+    stamp = destination / "MINERVA_BUILD_INPUTS.json"
+    patch = root / "src/native/json_schema_helper/jsoncons-integral-multiple-of.patch"
+    if hashlib.sha256(patch.read_bytes()).hexdigest() != PATCH_SHA256:
+        raise SystemExit("jsoncons compatibility patch hash mismatch")
+    if stamp.is_file():
+        saved = json.loads(stamp.read_text(encoding="utf-8"))
+        if saved == {"archive": SHA256, "patch": PATCH_SHA256,
+                     "headers": header_hashes(destination)}:
+            print("Verified jsoncons headers already current")
+            return destination / "include"
+        raise SystemExit(f"jsoncons inputs changed in {destination}. Preserve any local edits, "
+                         "then move that generated directory aside and rerun to reacquire it.")
+    if destination.exists():
+        raise SystemExit(f"Unverified jsoncons tree at {destination}. Move it aside and rerun "
+                         "to acquire verified sources; local files will not be overwritten.")
     cache.mkdir(parents=True, exist_ok=True)
     if not archive.exists():
-        with urllib.request.urlopen(URL) as source, archive.open("wb") as target:
-            shutil.copyfileobj(source, target)
+        with tempfile.TemporaryDirectory(dir=cache) as download_dir:
+            download = Path(download_dir) / archive.name
+            with urllib.request.urlopen(URL, timeout=60) as source, download.open("wb") as target:
+                shutil.copyfileobj(source, target)
+            if hashlib.sha256(download.read_bytes()).hexdigest() != SHA256:
+                raise SystemExit("downloaded jsoncons archive hash mismatch")
+            download.replace(archive)
     actual = hashlib.sha256(archive.read_bytes()).hexdigest()
     if actual != SHA256:
         raise SystemExit(f"jsoncons archive hash mismatch: {actual}")
-    shutil.rmtree(destination, ignore_errors=True)
-    destination.mkdir(parents=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=destination.parent) as staging_dir:
+        staged = Path(staging_dir) / "jsoncons"
+        staged.mkdir()
+        extract_source(archive, staged)
+        (staged / "MINERVA_SOURCE_PROVENANCE").write_text(
+            f"jsoncons {COMMIT} ({SHA256}), Boost-1.0; Minerva integral multipleOf patch\n",
+            encoding="utf-8")
+        apply_integral_multiple_of_policy(root, staged)
+        (staged / ".gdignore").touch()
+        (staged / stamp.name).write_text(json.dumps({
+            "archive": SHA256, "patch": PATCH_SHA256, "headers": header_hashes(staged)
+        }, sort_keys=True), encoding="utf-8")
+        staged.rename(destination)
+    return destination / "include"
+
+
+def header_hashes(destination: Path) -> dict:
+    return {str(path.relative_to(destination)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted((destination / "include").rglob("*")) if path.is_file()}
+
+
+def extract_source(archive: Path, destination: Path) -> None:
     with tarfile.open(archive, "r:gz") as bundle:
         prefix = f"jsoncons-{COMMIT}/"
         for member in bundle.getmembers():
@@ -85,12 +128,6 @@ def acquire(root: Path) -> Path:
             member.name = member.name[len(prefix):]
             if member.name:
                 bundle.extract(member, destination)
-    (destination / "MINERVA_SOURCE_PROVENANCE").write_text(
-        f"jsoncons {COMMIT} ({SHA256}), Boost-1.0; Minerva integral multipleOf patch\n",
-        encoding="utf-8")
-    apply_integral_multiple_of_policy(root, destination)
-    (destination / ".gdignore").touch()
-    return destination / "include"
 
 
 def main() -> None:

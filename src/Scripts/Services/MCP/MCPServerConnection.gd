@@ -103,9 +103,6 @@ const MCP_PROTOCOL_VERSION := "2025-06-18"
 ## Request ID counter
 var _request_id_counter: int = 0
 
-## MCP session ID (for HTTP transport)
-var _session_id: String = ""
-
 ## Optional handler for plugin-initiated capability requests (bidirectional channel).
 ## Signature: func(plugin_id: String, capability: String, args: Dictionary) -> Dictionary
 ## Set by PluginManager after creating the connection for a plugin.
@@ -581,7 +578,10 @@ func _connect_websocket() -> Error:
 
 ## WebSocket transport: Call a tool
 func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
-	if not _websocket or _websocket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+	var owner: WebSocketPeer = _websocket
+	if context != null and context.is_stopped():
+		return context.stopped_result()
+	if not _websocket_owner_is_live(owner):
 		return {"error": "WebSocket not connected"}
 
 	var request_id := str(randi())
@@ -595,7 +595,7 @@ func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: Exe
 		}
 	}
 
-	var err := _websocket.send_text(JSON.stringify(request))
+	var err := owner.send_text(JSON.stringify(request))
 	if err != OK:
 		return {"error": "Failed to send WebSocket message"}
 
@@ -605,27 +605,73 @@ func _call_tool_websocket(tool_name: String, arguments: Dictionary, context: Exe
 	while elapsed < timeout:
 		if context != null and context.is_stopped():
 			return context.stopped_result()
-		if not is_instance_valid(_websocket):
+		if not _websocket_owner_is_live(owner):
 			return {"error": "WebSocket disconnected"}
-		_websocket.poll()
-		while _websocket.get_available_packet_count() > 0:
-			var packet := _websocket.get_packet().get_string_from_utf8()
+		owner.poll()
+		if not _websocket_owner_is_live(owner):
+			return {"error": "WebSocket disconnected"}
+		while owner.get_available_packet_count() > 0:
+			var packet := owner.get_packet().get_string_from_utf8()
 			var json := JSON.new()
 			if json.parse(packet) == OK and json.data is Dictionary:
 				var response: Dictionary = json.data
 				if response.get("id") == request_id:
+					var response_wire = WireValue.create(packet, response)
+					var numeric_check: Dictionary = await WireAdapter.validate_for_application(
+						response_wire)
+					var interrupted := _websocket_delivery_interruption(owner, context,
+						"WebSocket request cancelled during numeric validation")
+					if not interrupted.is_empty():
+						return interrupted
+					if not numeric_check.get("ok", false):
+						return {"error": _wire_validation_message(numeric_check)}
+					response = response_wire.parsed
 					var raw_result: Variant = response.get("result", {})
+					var result: Dictionary
 					if raw_result is Dictionary:
-						tool_result_envelope_received.emit(tool_name, ToolResultEnvelope.from_mcp(
-							raw_result, false, WireValue.create(packet, response)))
-					var result := _normalize_mcp_tool_result(raw_result)
+						var envelope = ToolResultEnvelope.from_mcp(raw_result, false, response_wire)
+						var outcome = await ToolResultAdapter.adapt(envelope)
+						interrupted = _websocket_delivery_interruption(owner, context,
+							"WebSocket request cancelled during result adaptation")
+						if not interrupted.is_empty():
+							return interrupted
+						result = outcome.application
+						tool_result_envelope_received.emit(tool_name, envelope)
+						interrupted = _websocket_delivery_interruption(owner, context,
+							"WebSocket request cancelled after result envelope delivery")
+						if not interrupted.is_empty():
+							return interrupted
+					else:
+						result = _normalize_mcp_tool_result(raw_result)
+						interrupted = _websocket_delivery_interruption(owner, context,
+							"WebSocket request cancelled before result delivery")
+						if not interrupted.is_empty():
+							return interrupted
 					tool_result_received.emit(tool_name, result)
 					return result
 
 		await Engine.get_main_loop().process_frame
+		var wait_interrupted := _websocket_delivery_interruption(owner, context,
+			"WebSocket request cancelled while awaiting a response")
+		if not wait_interrupted.is_empty():
+			return wait_interrupted
 		elapsed += Engine.get_main_loop().root.get_process_delta_time()
 
 	return {"error": "WebSocket request timed out"}
+
+
+func _websocket_owner_is_live(owner: WebSocketPeer) -> bool:
+	return owner != null and is_instance_valid(owner) and owner == _websocket \
+		and owner.get_ready_state() == WebSocketPeer.STATE_OPEN
+
+
+func _websocket_delivery_interruption(owner: WebSocketPeer,
+		context: ExecutionContext, message: String) -> Dictionary:
+	if context != null and context.is_stopped():
+		return context.stopped_result()
+	if not _websocket_owner_is_live(owner):
+		return {"error": message, "error_code": "cancelled"}
+	return {}
 
 
 ## Get a tool definition by name
@@ -728,8 +774,11 @@ func _connect_stdio() -> Error:
 	if connection_generation != _process_generation or connected_process != _subprocess:
 		return ERR_CANT_CONNECT
 	if init_result.get("error"):
-		last_failure_reason = ("Handshake rejected by peer (%s). "
-			+ "Check protocol compatibility.") % _safe_peer_error_category(init_result.get("error"))
+		if init_result.get("local_error", false):
+			last_failure_reason = str(init_result.error)
+		else:
+			last_failure_reason = ("Handshake rejected by peer (%s). "
+				+ "Check protocol compatibility.") % _safe_peer_error_category(init_result.get("error"))
 		push_error(last_failure_reason)
 		var failed_process = _subprocess
 		_subprocess = null
@@ -765,6 +814,7 @@ func _negotiate_stdio(generation: int, startup_deadline_ms: int) -> Dictionary:
 			return _conn_error("MCP process changed while validating discovery")
 		if not numeric_check.get("ok", false):
 			return _conn_error(_wire_validation_message(numeric_check))
+		probe = _stdio_finalize(probe_wire.parsed)
 	var classified := StdioNegotiation.classify_discovery(probe)
 	if classified.modern:
 		if classified.has("error"):
@@ -799,6 +849,7 @@ func _negotiate_stdio(generation: int, startup_deadline_ms: int) -> Dictionary:
 			return _conn_error("MCP process changed while validating initialization")
 		if not init_numeric.get("ok", false):
 			return _conn_error(_wire_validation_message(init_numeric))
+		init = _stdio_finalize(init_wire.parsed)
 	var validated := StdioNegotiation.validate_legacy_initialize(init, not plugin_id.is_empty())
 	if validated.has("error"):
 		return validated
@@ -838,11 +889,11 @@ func _stdio_method_request(method: String, params: Dictionary) -> Dictionary:
 		"method": method, "params": params}
 
 
-func _write_stdio_notification(notification: Dictionary, generation: int) -> bool:
+func _write_stdio_notification(message: Dictionary, generation: int) -> bool:
 	var process = _subprocess
 	if process == null or generation != _process_generation or not process.is_running():
 		return false
-	var encoded := JsonSerialization.encode(notification)
+	var encoded := JsonSerialization.encode(message)
 	if not encoded.get("ok", false):
 		return false
 	if process.write_data(str(encoded.raw) + "\n"):
@@ -1011,7 +1062,7 @@ func pending_request_count() -> int:
 ## Build a connection-layer error result. The message is human-readable so a
 ## panel can surface it directly to the user.
 func _conn_error(message: String) -> Dictionary:
-	return {"error": message}
+	return {"error": message, "local_error": true}
 
 
 ## Convert a resolved value into the _stdio_request return contract: success ->
@@ -1023,7 +1074,7 @@ func _stdio_finalize(resolved: Dictionary) -> Dictionary:
 	if err is Dictionary:
 		return {"error": str(err.get("message", "Unknown error")),
 			"rpc_error": err.duplicate(true)}
-	return {"error": str(err)}
+	return {"error": str(err), "local_error": resolved.get("local_error", false)}
 
 
 ## Handle a plugin-initiated minerva/capability request received mid-execution.
@@ -1105,6 +1156,7 @@ func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
 				return ToolCallOutcome.failure("MCP process changed while validating tools/list")
 			if not list_numeric.get("ok", false):
 				return ToolCallOutcome.failure(_wire_validation_message(list_numeric))
+			list_response = _stdio_finalize(list_wire.parsed)
 		if context != null and context.is_stopped():
 			var stopped = ToolCallOutcome.new()
 			stopped.application = context.stopped_result()
@@ -1134,6 +1186,7 @@ func _call_tool_stdio_outcome(tool_name: String, arguments: Dictionary,
 			return ToolCallOutcome.failure("MCP process changed while validating tool result")
 		if not numeric_check.get("ok", false):
 			return ToolCallOutcome.failure(_wire_validation_message(numeric_check))
+		response = _stdio_finalize(source_wire.parsed)
 	if context != null and context.is_stopped():
 		var stopped = ToolCallOutcome.new()
 		stopped.application = context.stopped_result()
@@ -1279,14 +1332,15 @@ func _validate_legacy_message_then_dispatch(raw_line: String, message: Dictionar
 	if not shape_error.is_empty():
 		push_warning("[MCP STDIO] Rejected malformed legacy callback: %s" % shape_error)
 		return
-	var numeric_check: Dictionary = await WireAdapter.validate_for_application(
-		WireValue.create(raw_line, message))
+	var wire = WireValue.create(raw_line, message)
+	var numeric_check: Dictionary = await WireAdapter.validate_for_application(wire)
 	if generation != _process_generation or protocol_profile.generation != generation:
 		return
 	if not numeric_check.get("ok", false):
 		push_warning("[MCP STDIO] Rejected legacy callback: %s" %
 			_wire_validation_message(numeric_check))
 		return
+	message = wire.parsed
 	handler.call(message)
 
 

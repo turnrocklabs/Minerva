@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Build all Minerva GDExtensions (terminal + ghostty-vt shim + godot_wry webview).
+# Build Minerva native editor dependencies, including the MCP schema helper.
 # Run from repo root: scripts/build-extensions.sh
 #
 # Prerequisites installed automatically if missing:
-#   - Zig 0.15.2 (downloaded to ~/.local/bin)
-#   - SCons (via pip)
+#   - Zig 0.15.2 (installed persistently under ~/.local/share/minerva)
+#   - SCons (in .build-venv if missing)
 #   - Rust/Cargo (must be pre-installed via rustup for godot_wry)
 #   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry, vendor/EIRTeam.FFmpeg)
 #
@@ -13,7 +13,29 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-PLATFORM="${1:-}"
+PLATFORM=""
+CHECK_ONLY=0
+HELPER_ONLY=0
+VOICE_ONLY=0
+for arg in "$@"; do
+    case "$arg" in
+        --check) CHECK_ONLY=1 ;;
+        --helper-only) HELPER_ONLY=1 ;;
+        --voice-only) VOICE_ONLY=1 ;;
+        linux|macos) PLATFORM="$arg" ;;
+        -h|--help)
+            echo "Usage: $0 [linux|macos] [--check] [--helper-only|--voice-only]"
+            echo "--check validates installed artifacts without building or launching Godot."
+            echo "--helper-only builds/checks only the MCP schema helper."
+            echo "--voice-only builds/checks only the bundled Voice runtime."
+            exit 0 ;;
+        *) echo "Unknown argument: $arg. Use --help. For Windows use build-extensions.ps1."; exit 2 ;;
+    esac
+done
+if [ "$HELPER_ONLY" = 1 ] && [ "$VOICE_ONLY" = 1 ]; then
+    echo "--helper-only and --voice-only are mutually exclusive." >&2
+    exit 2
+fi
 ZIG_VERSION="0.15.2"
 ZIG_DIR="$HOME/.local/bin"
 
@@ -23,11 +45,75 @@ if [ -z "$PLATFORM" ]; then
     case "$(uname -s)" in
         Linux)  PLATFORM="linux" ;;
         Darwin) PLATFORM="macos" ;;
-        MINGW*|MSYS*|CYGWIN*) PLATFORM="windows" ;;
+        MINGW*|MSYS*|CYGWIN*) echo "Use scripts/build-extensions.ps1 on Windows."; exit 2 ;;
         *) echo "Unknown platform: $(uname -s). Pass linux/macos/windows as argument."; exit 1 ;;
     esac
 fi
 echo "Building for platform: $PLATFORM"
+
+voice_target_for_host() {
+    case "$(uname -s)-$(uname -m)" in
+        Linux-x86_64|Linux-amd64) echo "linux-x86_64" ;;
+        Darwin-arm64|Darwin-aarch64) echo "macos-arm64" ;;
+        Darwin-x86_64|Darwin-amd64) echo "macos-amd64" ;;
+        *) echo "Bundled Voice is not supported on $(uname -s)/$(uname -m)." >&2; return 1 ;;
+    esac
+}
+
+build_voice_runtime() {
+    local target
+    target="$(voice_target_for_host)"
+    echo ""
+    echo "=== Building bundled Voice runtime ($target) ==="
+    src/plugins/voice/scripts/build-runtime.sh "$target"
+}
+
+# Check-only needs Python but does not install tools or alter submodules.
+command -v python3 >/dev/null || { echo "Install Python 3.9+ before running setup."; exit 1; }
+python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else "Python 3.9+ is required")'
+if [ "$CHECK_ONLY" = 1 ]; then
+    if [ "$HELPER_ONLY" = 1 ]; then
+        exec python3 scripts/check-editor-ready.py --helper-only
+    fi
+    if [ "$VOICE_ONLY" = 1 ]; then
+        exec python3 scripts/check-editor-ready.py --voice-only
+    fi
+    exec python3 scripts/check-editor-ready.py
+fi
+
+if [ "$VOICE_ONLY" = 1 ]; then
+    for tool in curl tar; do
+        command -v "$tool" >/dev/null || { echo "Required Voice build tool missing: $tool. See Docs/Building.md."; exit 1; }
+    done
+    build_voice_runtime
+    exec python3 scripts/check-editor-ready.py --voice-only
+fi
+
+# Fail before downloads/builds for missing required toolchains.
+for tool in git c++; do
+    command -v "$tool" >/dev/null || { echo "Required tool missing: $tool. See Docs/Building.md."; exit 1; }
+done
+if [ "$PLATFORM" = macos ]; then
+    xcrun --find clang++ >/dev/null || { echo "Install Xcode command line tools: xcode-select --install"; exit 1; }
+fi
+if [ "$HELPER_ONLY" != 1 ]; then
+    for tool in curl tar unzip; do
+        command -v "$tool" >/dev/null || { echo "Required tool missing: $tool. See Docs/Building.md."; exit 1; }
+    done
+fi
+if ! command -v scons >/dev/null; then
+    python3 -m venv .build-venv
+    .build-venv/bin/python -m pip install scons
+    export PATH="$PWD/.build-venv/bin:$PATH"
+fi
+
+# The helper has no Godot/WRY dependency; repair it without touching loaded libraries.
+python3 scripts/build-json-schema-helper.py --platform "$PLATFORM"
+if [ "$HELPER_ONLY" = 1 ]; then
+    exec python3 scripts/check-editor-ready.py --helper-only
+fi
+
+build_voice_runtime
 
 # ── Git submodules ────────────────────────────────────────────────────
 
@@ -49,25 +135,20 @@ if ! command -v zig &>/dev/null || [[ "$(zig version 2>/dev/null)" != "$ZIG_VERS
     ZIG_URL="https://ziglang.org/download/${ZIG_VERSION}/${ZIG_TAR}"
     TMP_DIR=$(mktemp -d)
     echo "Downloading $ZIG_URL..."
-    curl -L -o "$TMP_DIR/$ZIG_TAR" "$ZIG_URL"
+    curl -fL -o "$TMP_DIR/$ZIG_TAR" "$ZIG_URL"
     tar xf "$TMP_DIR/$ZIG_TAR" -C "$TMP_DIR"
-    mkdir -p "$ZIG_DIR"
-    ln -sf "$TMP_DIR/zig-${ZIG_ARCH}-${ZIG_VERSION}/zig" "$ZIG_DIR/zig"
-    # Zig needs its lib/ dir next to the binary, so symlink the whole dir
-    ln -sf "$TMP_DIR/zig-${ZIG_ARCH}-${ZIG_VERSION}/lib" "$ZIG_DIR/zig-lib"
+    ZIG_INSTALL="$HOME/.local/share/minerva/zig-${ZIG_ARCH}-${ZIG_VERSION}"
+    mkdir -p "$(dirname "$ZIG_INSTALL")" "$ZIG_DIR"
+    if [ ! -d "$ZIG_INSTALL" ]; then
+        mv "$TMP_DIR/zig-${ZIG_ARCH}-${ZIG_VERSION}" "$ZIG_INSTALL"
+    fi
+    ln -sf "$ZIG_INSTALL/zig" "$ZIG_DIR/zig"
+    rm -rf "$TMP_DIR"
     export PATH="$ZIG_DIR:$PATH"
     echo "Zig $(zig version) installed to $ZIG_DIR"
 else
     echo "Zig $(zig version) already installed"
 fi
-
-# ── Install SCons if needed ───────────────────────────────────────────
-
-if ! command -v scons &>/dev/null; then
-    echo "Installing SCons via pip..."
-    pip3 install scons
-fi
-echo "SCons $(scons --version 2>&1 | grep -oE 'v[0-9.]+' | head -1) ready"
 
 # ── Build ghostty-vt shim (Zig) ──────────────────────────────────────
 
@@ -131,21 +212,7 @@ else
     fi
 
     if [ "${SKIP_WRY:-}" != "1" ]; then
-        # Apply Minerva patches to godot_wry before building. Drop new
-        # patches into patches/ with a filename of godot_wry-<topic>.patch;
-        # they'll be picked up automatically in lexical order.
-        WRY_PATCHES=( patches/godot_wry-*.patch )
-        if [ -e "${WRY_PATCHES[0]}" ]; then
-            echo "Applying Minerva patches to godot_wry..."
-            cd vendor/godot_wry
-            git checkout -- . 2>/dev/null  # Reset to clean upstream first
-            for p in "${WRY_PATCHES[@]}"; do
-                echo "  - $(basename "$p")"
-                git apply "../../$p"
-            done
-            cd "$OLDPWD"
-            echo "Patches applied"
-        fi
+        python3 scripts/apply-wry-patches.py
 
         cd vendor/godot_wry/rust
         cargo build --release
@@ -217,10 +284,6 @@ PLIST
             echo "WARNING: godot_wry binary not found at $WRY_SRC"
         fi
 
-        # Reset submodule to clean upstream so it doesn't show as dirty
-        cd vendor/godot_wry
-        git checkout -- . 2>/dev/null
-        cd "$OLDPWD"
     fi
 fi
 
@@ -236,7 +299,10 @@ ffmpeg_platform_has_binaries() {
     case "$PLATFORM" in
         macos)
             # Check for the framework binary (not just Info.plist)
-            test -f "src/addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework/libgdffmpeg.macos.template_debug" 2>/dev/null
+            local framework="src/addons/ffmpeg/macos/libgdffmpeg.macos.template_debug.framework"
+            local executable
+            executable=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$framework/Resources/Info.plist" 2>/dev/null) || return 1
+            test -f "$framework/$executable"
             ;;
         linux)
             test -f "src/addons/ffmpeg/linux64/libgdffmpeg.linux.template_debug.x86_64.so" 2>/dev/null
@@ -301,7 +367,7 @@ install_ffmpeg_from_source() {
     fi
 }
 
-if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ]; then
+if [ -f "$FFMPEG_MARKER" ] && [ "$(cat "$FFMPEG_MARKER")" = "$FFMPEG_VERSION" ] && ffmpeg_platform_has_binaries; then
     echo "EIRTeam.FFmpeg $FFMPEG_VERSION already installed"
 else
     install_ffmpeg_from_download || install_ffmpeg_from_source
@@ -313,7 +379,11 @@ SQLITE_VERSION="v4.7"
 SQLITE_URL="https://github.com/2shady4u/godot-sqlite/releases/download/${SQLITE_VERSION}/bin.zip"
 SQLITE_MARKER="src/addons/godot-sqlite/.sqlite-version"
 
-if [ -f "$SQLITE_MARKER" ] && [ "$(cat "$SQLITE_MARKER")" = "$SQLITE_VERSION" ]; then
+SQLITE_BINARY="src/addons/godot-sqlite/bin/libgdsqlite.linux.template_debug.x86_64.so"
+if [ "$PLATFORM" = macos ]; then
+    SQLITE_BINARY="src/addons/godot-sqlite/bin/libgdsqlite.macos.template_debug.framework/libgdsqlite.macos.template_debug"
+fi
+if [ -f "$SQLITE_MARKER" ] && [ "$(cat "$SQLITE_MARKER")" = "$SQLITE_VERSION" ] && [ -f "$SQLITE_BINARY" ]; then
     echo "godot-sqlite $SQLITE_VERSION already installed"
 else
     echo ""
@@ -338,13 +408,4 @@ fi
 
 # ── Verify ────────────────────────────────────────────────────────────
 
-echo ""
-echo "=== Build complete ==="
-echo "Libraries in src/bin/:"
-ls -lh src/bin/lib*.so src/bin/lib*.dylib src/bin/*.dll 2>/dev/null || true
-echo "FFmpeg addon:"
-ls src/addons/ffmpeg/linux64/*.so src/addons/ffmpeg/macos/*.dylib src/addons/ffmpeg/win64/*.dll 2>/dev/null | wc -l | xargs -I{} echo "  {} binary files"
-echo "WebView addon:"
-ls -lh src/addons/godot_wry/bin/*/libgodot_wry.* src/addons/godot_wry/bin/*/godot_wry.* 2>/dev/null || echo "  (not built)"
-echo ""
-echo "Open src/project.godot in Godot 4.4+ to run Minerva."
+python3 scripts/check-editor-ready.py

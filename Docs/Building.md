@@ -13,35 +13,43 @@ scripts/build-extensions.sh                                          # Linux / m
 powershell -ExecutionPolicy Bypass -File scripts\build-extensions.ps1  # Windows
 ```
 
-Then open `src/project.godot` in Godot **4.6+** and press F5.
+Close Minerva and its editor before a full native rebuild. After the dependency
+check passes, open `src/project.godot` in Godot **4.6+** and press F5.
 
-That is enough for everything except CEF-hosted plugin panels and the PDF
-sidecar — see [Builds not covered](#builds-not-covered-by-the-main-script).
+This includes the MCP helper required for plugin startup. CEF-hosted plugin
+panels and the PDF sidecar need separate builds; WRY is skipped on Unix if its
+toolchain is unavailable. See [Builds not covered](#builds-not-covered-by-the-main-script).
 
 ## What `build-extensions.sh` / `.ps1` does
 
-Both scripts are idempotent — re-running them skips work that is already
-current. They handle, in order:
+Both scripts support incremental reruns. They check required toolchains before
+compilation and handle these dependencies:
 
 | Step | Notes |
 |---|---|
 | Git submodules | `src/godot-cpp`, `vendor/ghostty`, `vendor/godot_wry`, `vendor/EIRTeam.FFmpeg` |
 | Zig 0.15.2 | Downloaded user-local; no sudo/admin |
-| SCons | Installed via pip |
+| SCons | Uses an existing install, or installs into ignored `.build-venv` |
+| MCP JSON Schema helper | Pinned, checksum-verified jsoncons + Minerva patch; C++17 build |
+| Built-in Voice runtime | Pinned CPython 3.12, wheels, detector models, and current worker source for the host architecture |
 | ghostty-vt shim | Zig build → `libminerva-vt` |
 | Terminal GDExtension | SCons build → `libterminal.*` |
 | godot_wry WebView | Cargo build, with Minerva's patches applied first |
-| EIRTeam.FFmpeg 1.1.4 | Prebuilt download, **falling back to a source build** |
+| EIRTeam.FFmpeg 1.1.4 | Prebuilt download; Unix script falls back to source build |
 | godot-sqlite 4.7 | Prebuilt download |
 
-Both libraries land in `src/bin/`.
+Terminal, shim, and schema helper land in `src/bin/`; addon libraries land in
+`src/addons/`. The final check fails if a required artifact is missing, cannot
+load on the current host, or the schema helper fails its protocol check.
 
-The Windows script mirrors the `build-windows` job in
-`.github/workflows/build.yml`, which is the source of truth if the two ever
-disagree.
+The CI helper matrix runs the same contributor helper-only setup on Linux,
+Windows, macOS ARM, and macOS Intel before separate release packaging tests.
+The full native build and export jobs still have platform-specific recipes.
 
 ### Prerequisites the scripts do NOT install
 
+- **All platforms:** Git, Python **3.9+** with pip and venv, and a C++17 compiler.
+  On Debian/Ubuntu, install `build-essential python3-venv curl unzip`.
 - **Rust / Cargo** — via rustup, needed for `godot_wry`. Windows needs
   rustc ≥ 1.85.
 - **Linux only:** `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` for `godot_wry`.
@@ -49,6 +57,44 @@ disagree.
 - **Windows only:** Visual Studio 2022 with "Desktop development with C++"
   (`cl`, `lib`, `dumpbin`), plus Python 3 + pip.
 - **macOS:** Xcode command line tools.
+
+SCons is installed locally when missing, avoiding global Python package changes.
+Unix Zig downloads live under `~/.local/share/minerva/`, with a launcher link in
+`~/.local/bin/`; deleting temporary directories no longer breaks the toolchain.
+
+## Repairing or checking an existing checkout
+
+```bash
+scripts/build-extensions.sh --helper-only          # Build/check only the MCP helper
+scripts/build-extensions.sh --voice-only           # Build/check only built-in Voice
+scripts/build-extensions.sh --check                # Check installed native dependencies
+scripts/build-extensions.sh --check --helper-only  # Only probe the installed helper
+scripts/build-extensions.sh --check --voice-only   # Only probe Voice
+```
+
+```powershell
+./scripts/build-extensions.ps1 -HelperOnly
+./scripts/build-extensions.ps1 -VoiceOnly
+./scripts/build-extensions.ps1 -Check
+./scripts/build-extensions.ps1 -Check -HelperOnly
+./scripts/build-extensions.ps1 -Check -VoiceOnly
+```
+
+Helper-only setup needs Python, SCons and a C++ compiler; it does not initialize
+submodules, install Zig, or rebuild loaded GDExtensions. It is the targeted repair
+for `MCP JSON Schema helper is missing at ...` during plugin startup.
+
+Voice-only setup needs Python, Git Bash on Windows, curl, and tar. It bypasses
+C++, SCons, Zig, Rust, and native GDExtension builds. It uses the same pinned
+runtime recipe as release CI and is the targeted repair command shown when the
+built-in Voice runtime is missing or stale.
+
+jsoncons archives are checksum-verified and cached in `.dependency-cache/`
+(`MINERVA_DEPENDENCY_CACHE` overrides that location). Verified extracted headers
+retain their timestamps so SCons can skip compilation on a second run. If the
+generated source tree or pinned inputs change, setup stops with instructions to
+preserve local edits and move `src/native/vendor/jsoncons` aside before reacquiring.
+Interrupted downloads and extraction do not leave a partial tree marked current.
 
 ## Builds not covered by the main script
 
@@ -106,14 +152,18 @@ into `build-extensions.sh` — build it only if you need the PDF capability.
 
 ## Vendor patches
 
-Minerva carries local patches against two vendored dependencies. Both are
-applied at build time and the submodule is reset afterwards, so
-`git status` stays clean and the patches never live in the submodule's history.
+Minerva carries local patches against vendored dependencies. WRY patches are
+applied at build time only when absent. They remain in its worktree afterwards;
+the build never resets contributor edits. Conflicting edits stop the build with
+the patch name so you can resolve them. A dirty WRY submodule after setup is expected.
 
 - `patches/godot_wry-*.patch` — applied by `build-extensions.sh`.
   See `patches/README.md`, which also documents how to add one.
 - `patches/godot_cef/*.patch` — applied by `build-godot-cef.sh`.
-  See `patches/godot_cef/README.md` for the rationale behind each.
+  That separate script has its own checkout/reset behavior; preserve local CEF
+  work before running it. See `patches/godot_cef/README.md` for the rationale.
+- `src/native/json_schema_helper/jsoncons-integral-multiple-of.patch` — verified
+  and applied by the schema helper builder to the generated jsoncons tree.
 
 Patches are rebased by hand when a submodule is bumped. Keep them minimal so
 upstream drift does not break them all at once.
@@ -141,7 +191,18 @@ scripts/build-extensions.sh
 
 ## Verifying a build
 
-The main scripts end with a verify step that checks the expected libraries
-exist in `src/bin/`. Beyond that, opening `src/project.godot` and pressing F5
-is the real test: a missing GDExtension shows up as a failed autoload or a
-panel falling back, not as a build error.
+The main scripts and check-only mode share `scripts/check-editor-ready.py`:
+
+- Start the actual helper, ping it, compile a schema, accept valid input, reject
+  invalid input, compare numbers, release the handle, and require a clean EOF exit.
+- Verify the host Voice runtime's required files, manifest hashes, target and
+  interpreter architecture, and source-input fingerprint; then perform a bounded
+  MCP initialize and require a clean EOF exit without opening audio devices.
+- Load terminal, ghostty shim, SQLite and FFmpeg in isolated native loader processes.
+  The OS checks host architecture and linked dependencies; GDExtension entry symbols
+  must exist. Run with a Python interpreter matching your Godot architecture.
+- Report WRY, CEF and PDF presence separately. Their runtime behavior is not tested.
+
+This does not launch Godot, import the project, or prove every extension's Godot
+API compatibility. Finish with an editor run and plugin-start HITL; browser panels
+and PDF need their own functional checks. Release packaging validation remains separate.

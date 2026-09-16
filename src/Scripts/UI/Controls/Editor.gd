@@ -509,6 +509,11 @@ static func create(type_: Type, file_ = null, name_ = null, associated_object_ =
 		Editor.Type.DOCKET:
 			vbox_container.clip_contents = true
 			var new_docket_panel = DocketPanel.new()
+			new_docket_panel.use_host_ui_settings(
+				Callable(SingletonObject, "increment_scale_ui"),
+				Callable(SingletonObject, "decrement_ui_scale"),
+				Callable(SingletonObject, "reset_ui_scale"),
+			)
 			new_docket_panel.size_flags_vertical = SizeFlags.SIZE_EXPAND_FILL
 			new_docket_panel.size_flags_horizontal = SizeFlags.SIZE_EXPAND_FILL
 			var dm: DocketManager = SingletonObject.docket_manager

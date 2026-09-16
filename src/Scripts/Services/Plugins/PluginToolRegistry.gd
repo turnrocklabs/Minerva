@@ -2,7 +2,7 @@ class_name PluginToolRegistry
 extends RefCounted
 
 const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext.gd")
-const MCPProfile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
+const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const ToolCallOutcome = preload("res://Scripts/Services/MCP/MCPToolCallOutcome.gd")
 const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 ## Bridges plugin tools into Minerva's MCP tool system.
@@ -526,7 +526,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 		return outcome
 	# Result-embedded capability requests belong only to the initialized legacy
 	# plugin lane. Modern peers use the separate negotiated control channel.
-	if conn.protocol_profile.era != MCPProfile.Era.INITIALIZED_LEGACY:
+	if conn.protocol_profile.era != Profile.Era.INITIALIZED_LEGACY:
 		return outcome
 	result = await _process_capability_requests(plugin_id, tool_name, result, context, conn)
 	if context.is_stopped():

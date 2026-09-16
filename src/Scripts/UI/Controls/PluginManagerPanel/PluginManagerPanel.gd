@@ -404,6 +404,17 @@ func _populate_setup_status(plugin_id: String) -> void:
 	var def = pm.get_db().get_by_id(plugin_id)
 	if def == null:
 		return
+	if plugin_id == "voice":
+		var issue: String = load(
+			"res://Scripts/Services/Voice/BuiltinVoicePlugin.gd").runtime_issue()
+		if not issue.is_empty():
+			_setup_status_container.visible = true
+			var voice_error := Label.new()
+			voice_error.text = issue
+			voice_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			voice_error.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
+			_setup_status_container.add_child(voice_error)
+		return
 
 	if def.state == pm.S_BUILDING:
 		_setup_status_container.visible = true
@@ -877,9 +888,16 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var is_building := state == pm.S_BUILDING
 	var is_build_failed := state == pm.S_BUILD_FAILED
 	var is_needs_binary := state == pm.S_NEEDS_BINARY
+	var is_builtin_voice := plugin_id == "voice"
 	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
 	_restart_button.disabled = not (is_running or is_starting) or is_building
+	_reload_button.visible = not is_builtin_voice
+	_remove_button.visible = not is_builtin_voice
+	_autostart_check.visible = not is_builtin_voice
+	_auto_reload_check.visible = not is_builtin_voice
+	if is_builtin_voice:
+		_files_changed_label.visible = false
 
 	# Show "Open Panel" button only if plugin declares UI panels and is running
 	var def = pm.get_db().get_by_id(plugin_id)
@@ -1346,7 +1364,9 @@ func _on_manifest_selected(path: String) -> void:
 	if result.has("error"):
 		_show_status("Install failed: %s" % result["error"], true)
 	else:
-		var msg := "Installed plugin '%s'." % result.get("id", "?")
+		var msg := "Building plugin '%s'…" % result.get("id", "?") \
+				if bool(result.get("building", false)) \
+				else "Installed plugin '%s'." % result.get("id", "?")
 		var seeded: int = int(result.get("skills_seeded", 0))
 		var declined: bool = bool(result.get("skills_declined", false))
 		if seeded > 0:

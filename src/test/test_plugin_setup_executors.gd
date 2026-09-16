@@ -61,6 +61,8 @@ func _init() -> void:
 
 	print("\n-- stderr_tail is capped at 2KB --")
 	test_stderr_tail_capped_at_2kb()
+	test_large_stdout_and_stderr_are_drained_while_running()
+	test_continuous_output_cannot_starve_timeout()
 
 	print("\n-- dry-run argv == executor resolved_argv (parity, every step type) --")
 	test_dry_run_and_executor_argv_parity()
@@ -293,6 +295,45 @@ func test_stderr_tail_capped_at_2kb() -> void:
 			not tail.contains("START-MARKER"), "got: %s" % tail)
 
 
+func test_large_stdout_and_stderr_are_drained_while_running() -> void:
+	var plugin_dir := _fresh_plugin_dir("large_output")
+	var step := {
+		"type": "exec",
+		"argv": [_fixtures_dir.path_join("large-output.sh")],
+		"timeout_s": 15,
+	}
+	var started_ms := Time.get_ticks_msec()
+	var result := SetupExecutors.run_step(
+		step, 0, {"tool_paths": {}, "plugin_dir": plugin_dir})
+	var elapsed_ms := Time.get_ticks_msec() - started_ms
+	check("a child exceeding both pipe buffers exits normally instead of timing out",
+		result.get("exit_code", -1) == 7 and elapsed_ms < 10000,
+		"elapsed=%d result=%s" % [elapsed_ms, str(result)])
+	var tail := str(result.get("stderr_tail", ""))
+	check("large-output diagnostics remain bounded and keep the final stderr marker",
+		tail.to_utf8_buffer().size() <= 2048 and tail.contains("FINAL-STDERR-MARKER"),
+		"bytes=%d tail=%s" % [tail.to_utf8_buffer().size(), tail])
+
+
+func test_continuous_output_cannot_starve_timeout() -> void:
+	var plugin_dir := _fresh_plugin_dir("continuous_output")
+	var step := {
+		"type": "exec",
+		"argv": [_fixtures_dir.path_join("continuous-output.sh")],
+		"timeout_s": 1,
+	}
+	var started_ms := Time.get_ticks_msec()
+	var result := SetupExecutors.run_step(
+		step, 0, {"tool_paths": {}, "plugin_dir": plugin_dir})
+	var elapsed_ms := Time.get_ticks_msec() - started_ms
+	check("continuous output still reaches the declared timeout",
+		result.get("error", "") == "setup_step_failed"
+			and result.get("exit_code", 0) == -1
+			and str(result.get("stderr_tail", "")).contains("step timed out after 1s")
+			and elapsed_ms < 5000,
+		"elapsed=%d result=%s" % [elapsed_ms, str(result)])
+
+
 # ---------------------------------------------------------------------------
 # Dry-run <-> executor argv parity (MF3 guard)
 # ---------------------------------------------------------------------------
@@ -432,7 +473,7 @@ func test_dry_run_is_deterministic_across_repeated_calls() -> void:
 ## artifact extraction, etc). Defensive chmod so this test never fails for a
 ## reason unrelated to the executor logic under test.
 func _ensure_fixtures_executable() -> void:
-	for name in ["fake-go", "exit2-with-stderr.sh", "exit0-no-write.sh", "sleep-forever.sh", "echo-argv.sh", "big-stderr.sh"]:
+	for name in ["fake-go", "exit2-with-stderr.sh", "exit0-no-write.sh", "sleep-forever.sh", "echo-argv.sh", "big-stderr.sh", "large-output.sh", "continuous-output.sh"]:
 		OS.execute("chmod", ["+x", _fixtures_dir.path_join(name)])
 
 

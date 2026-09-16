@@ -442,6 +442,8 @@ func test_mcp_build_status_and_dry_run() -> void:
 	check("H building status success", building.get("success", false) == true, str(building))
 	check("H building=true while S_BUILDING", building.get("building", false) == true, str(building))
 	check("H state_name is BUILDING", building.get("state_name", "") == "BUILDING", str(building))
+	check("H manifest plugin with setup remains rebuildable",
+		building.get("rebuildable", false) == true, str(building))
 	var progress: Dictionary = building.get("progress", {})
 	check("H progress carries step_type exec", progress.get("step_type", "") == "exec", str(progress))
 	check("H progress carries step_count 1", int(progress.get("step_count", -1)) == 1, str(progress))

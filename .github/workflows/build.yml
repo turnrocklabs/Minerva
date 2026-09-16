@@ -63,9 +63,23 @@ jobs:
       - name: Verify pinned MCP protocol artifacts
         shell: bash
         run: scripts/acquire-mcp-schema.sh
+      - name: Verify contributor helper setup (Linux/macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          scripts/build-extensions.sh --helper-only
+          scripts/build-extensions.sh --check --helper-only
+      - name: Verify contributor helper setup (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/build-extensions.ps1 -HelperOnly
+          ./scripts/build-extensions.ps1 -Check -HelperOnly
       - name: Build pinned MCP schema helper
         shell: bash
         run: scripts/build-mcp-schema-helper.sh "${{ matrix.target }}"
+      - name: Check contributor rerun safety
+        run: python tests/test_contributor_setup.py
       - name: Test native helper contract
         shell: bash
         run: |
@@ -102,9 +116,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Build pinned voice runtime
+      - name: Detect missing Voice runtime, repair through contributor path, and recheck (Unix)
+        if: runner.os != 'Windows'
         shell: bash
-        run: src/plugins/voice/scripts/build-runtime.sh "${{ matrix.target }}"
+        run: |
+          if scripts/build-extensions.sh --check --voice-only; then
+            echo "Voice readiness unexpectedly passed before the runtime was built" >&2
+            exit 1
+          fi
+          scripts/build-extensions.sh --voice-only
+          scripts/build-extensions.sh --check --voice-only
+      - name: Detect missing Voice runtime, repair through contributor path, and recheck (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $missingDetected = $false
+          try {
+            ./scripts/build-extensions.ps1 -Check -VoiceOnly
+          } catch {
+            $missingDetected = $true
+            Write-Host "Expected pre-repair readiness failure: $_"
+          }
+          if (-not $missingDetected) { throw "Voice readiness unexpectedly passed before the runtime was built" }
+          ./scripts/build-extensions.ps1 -VoiceOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/build-extensions.ps1 -Check -VoiceOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test extracted voice runtime
         shell: bash
         run: src/plugins/voice/scripts/test-runtime.sh "${{ matrix.target }}"

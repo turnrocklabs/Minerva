@@ -3,6 +3,7 @@
 import json
 import os
 import queue
+import struct
 import subprocess
 import threading
 import unittest
@@ -114,11 +115,46 @@ class JSONSchemaHelperTest(unittest.TestCase):
         self.assertEqual("schema_too_large", huge["error"]["code"])
         handle = self.compile({"type": "number"})
         exact = self.helper.call("compare_numbers", original_raw="0.5", adapted_raw="0.5")
+        binary64_spelling = self.helper.call(
+            "compare_numbers",
+            original_raw='{"mesh":{"vertices":[[0.1,0.0]]}}',
+            adapted_raw='{"mesh":{"vertices":[[0.10000000000000001,0.0]]}}')
+        alternate_shortest = self.helper.call(
+            "compare_numbers",
+            original_raw='{"result":{"mesh":{"vertices":[[47.82795043337536]]}}}',
+            adapted_raw='{"result":{"mesh":{"vertices":[[47.82795043337536]]}}}')
         changed = self.helper.call("compare_numbers", original_raw="0.10000000000000001", adapted_raw="0.1")
         unsafe = self.helper.call("compare_numbers", original_raw="9007199254740992", adapted_raw="9007199254740992")
         self.assertTrue(exact["ok"])
+        self.assertTrue(binary64_spelling["ok"], binary64_spelling)
+        self.assertTrue(alternate_shortest["ok"], alternate_shortest)
         self.assertEqual("unsupported_number", changed["error"]["code"])
         self.assertEqual("unsupported_number", unsafe["error"]["code"])
+        self.assertEqual("", changed["error"]["details"]["pointer"])
+        self.assertEqual("0.10000000000000001", changed["error"]["details"]["original"])
+        self.assertEqual("0.1", changed["error"]["details"]["adapted"])
+        nested_changed = self.helper.call(
+            "compare_numbers", original_raw='{"result":{"bbox":[0.10000000000000001]}}',
+            adapted_raw='{"result":{"bbox":[0.1]}}')
+        self.assertEqual("/result/bbox/0", nested_changed["error"]["details"]["pointer"])
+        self.assertLessEqual(len(nested_changed["error"]["details"]["pointer"]), 256)
+        self.assertLessEqual(len(nested_changed["error"]["details"]["original"]), 96)
+        prepared = self.helper.call(
+            "prepare_numbers",
+            original_raw='{"result":{"edges":[{"polyline":[[0],[99.80267284282715]]}]}}',
+            adapted_raw='{"result":{"edges":[{"polyline":[[0],[99.80267284282716]]}]}}')
+        self.assertTrue(prepared["ok"], prepared)
+        words = prepared["corrections"]["result"]["edges"][0]["polyline"][1][0]
+        self.assertEqual(list(struct.unpack("<II", struct.pack("<d", 99.80267284282715))),
+                         [int(word) for word in words])
+        transformed = self.helper.call(
+            "prepare_numbers", original_raw='{"value":0.5}', adapted_raw='{"value":0.75}')
+        self.assertEqual("numeric_value_changed", transformed["error"]["details"]["reason"])
+        ambiguous_source = self.helper.call(
+            "prepare_numbers", original_raw='{"value":0.10000000000000001}',
+            adapted_raw='{"value":0.1}')
+        self.assertEqual("source_not_binary64_canonical",
+                         ambiguous_source["error"]["details"]["reason"])
         released = self.helper.call("release", handle=handle)
         self.assertTrue(released["ok"])
         self.assertEqual("invalid_handle", self.validate(handle, 1)["error"]["code"])
