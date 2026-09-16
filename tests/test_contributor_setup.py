@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Exercise source reuse and patch safety in disposable directories, with real files/git."""
+import hashlib
 import os
 from pathlib import Path
 import runpy
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -89,14 +91,43 @@ class ContributorSetupTest(unittest.TestCase):
             vendor = root / "vendor/godot_wry"
             vendor.mkdir(parents=True)
             subprocess.run(["git", "init", "-q", str(vendor)], check=True)
+            subprocess.run(["git", "-C", str(vendor), "config",
+                            "user.email", "fixture@minerva.invalid"], check=True)
+            subprocess.run(["git", "-C", str(vendor), "config",
+                            "user.name", "Minerva fixture"], check=True)
             target = vendor / "source.txt"
             target.write_text("upstream\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(vendor), "add", "source.txt"], check=True)
+            lock = vendor / "rust/Cargo.lock"
+            lock.parent.mkdir(parents=True)
+            dependency_root = vendor / "rust/.minerva-deps"
+            dependency_root.mkdir()
+            crate_source = root / "crate-source/wry-0.0.1"
+            (crate_source / "src").mkdir(parents=True)
+            (crate_source / "src/ipc.rs").write_text("upstream uri\n", encoding="utf-8")
+            archive = dependency_root / "wry-0.0.1.crate"
+            with tarfile.open(archive, "w:gz") as bundle:
+                bundle.add(crate_source, arcname="wry-0.0.1")
+            checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+            lock.write_text(
+                '[[package]]\nname = "wry"\nversion = "0.0.1"\n'
+                'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+                f'checksum = "{checksum}"\n', encoding="utf-8")
+            subprocess.run(["git", "-C", str(vendor), "add",
+                            "source.txt", "rust/Cargo.lock"], check=True)
+            subprocess.run(["git", "-C", str(vendor), "commit", "-qm",
+                            "fixture upstream"], check=True)
             target.write_text("patched\n", encoding="utf-8")
             diff = subprocess.run(["git", "-C", str(vendor), "diff"],
                                   check=True, capture_output=True).stdout
             (root / "patches/godot_wry-test.patch").write_bytes(diff)
             target.write_text("upstream\n", encoding="utf-8")
+            (root / "patches/wry-0.0.1-file-ipc-request-uri.patch").write_text(
+                "diff --git a/src/ipc.rs b/src/ipc.rs\n"
+                "--- a/src/ipc.rs\n"
+                "+++ b/src/ipc.rs\n"
+                "@@ -1 +1 @@\n"
+                "-upstream uri\n"
+                "+patched uri\n", encoding="utf-8")
             local = vendor / "contributor.txt"
             local.write_text("keep my work\n", encoding="utf-8")
             command = [sys.executable, str(script)]
@@ -105,6 +136,8 @@ class ContributorSetupTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(target.read_text(), "patched\n")
                 self.assertEqual(local.read_text(), "keep my work\n")
+                self.assertEqual((dependency_root / "wry-0.0.1/src/ipc.rs").read_text(),
+                                 "patched uri\n")
             target.write_text("conflicting contributor edit\n", encoding="utf-8")
             rejected = subprocess.run(command, capture_output=True, text=True)
             self.assertNotEqual(rejected.returncode, 0)

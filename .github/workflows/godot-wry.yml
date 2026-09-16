@@ -5,6 +5,8 @@ on:
     paths:
       - "vendor/godot_wry"
       - "patches/godot_wry-*.patch"
+      - "patches/wry-*.patch"
+      - "scripts/apply-wry-patches.py"
       - "src/addons/godot_wry/**"
       - ".github/workflows/godot-wry.yml"
     branches-ignore:
@@ -13,6 +15,8 @@ on:
     paths:
       - "vendor/godot_wry"
       - "patches/godot_wry-*.patch"
+      - "patches/wry-*.patch"
+      - "scripts/apply-wry-patches.py"
       - "src/addons/godot_wry/**"
       - ".github/workflows/godot-wry.yml"
   workflow_dispatch:
@@ -37,6 +41,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Python for pinned WRY source
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -49,11 +58,8 @@ jobs:
 
       - name: Apply Minerva patches
         run: |
-          cd vendor/godot_wry
-          git checkout -- .
-          for patch in ../../patches/godot_wry-*.patch; do
-            [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
-          done
+          git -C vendor/godot_wry checkout -- .
+          python3 scripts/apply-wry-patches.py
 
       - name: Build
         working-directory: vendor/godot_wry/rust
@@ -81,6 +87,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Python for pinned WRY source
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -93,11 +104,8 @@ jobs:
 
       - name: Apply Minerva patches
         run: |
-          cd vendor/godot_wry
-          git checkout -- .
-          for patch in ../../patches/godot_wry-*.patch; do
-            [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
-          done
+          git -C vendor/godot_wry checkout -- .
+          python3 scripts/apply-wry-patches.py
 
       - name: Build
         working-directory: vendor/godot_wry/rust
@@ -125,6 +133,11 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Setup Python for pinned WRY source
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -138,11 +151,8 @@ jobs:
       - name: Apply Minerva patches
         shell: bash
         run: |
-          cd vendor/godot_wry
-          git checkout -- .
-          for patch in ../../patches/godot_wry-*.patch; do
-            [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
-          done
+          git -C vendor/godot_wry checkout -- .
+          python3 scripts/apply-wry-patches.py
 
       - name: Build
         working-directory: vendor/godot_wry/rust
