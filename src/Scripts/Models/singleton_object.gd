@@ -1415,6 +1415,10 @@ func _ready():
 		var packaged_probe := preload("res://Scripts/Services/MCP/MCPPackagedHelperProbe.gd").new()
 		add_child(packaged_probe)
 		packaged_probe.call_deferred("run")
+	elif OS.get_environment("MINERVA_PACKAGED_BRIDGE_PROBE") == "1":
+		var bridge_probe := preload("res://Scripts/Services/MCP/MCPPackagedBridgeProbe.gd").new()
+		add_child(bridge_probe)
+		bridge_probe.call_deferred("run")
 
 
 ## Register built-in editor types in the creatable items registry

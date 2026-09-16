@@ -1,0 +1,37 @@
+--- a/src/webkitgtk/mod.rs
++++ b/src/webkitgtk/mod.rs
+@@ -538,12 +538,28 @@
+ 
+       if let Some(js) = msg.js_value() {
+         if let Some(ipc_handler) = &ipc_handler {
+-          ipc_handler(
+-            Request::builder()
+-              .uri(webview.uri().unwrap().to_string())
+-              .body(js.to_string())
+-              .unwrap(),
+-          );
++          let Some(current_uri) = webview.uri() else {
++            return;
++          };
++          let current_uri = current_uri.to_string();
++          let body = js.to_string();
++          let request = match Request::builder()
++            .uri(&current_uri)
++            .body(body.clone())
++          {
++            Ok(request) => request,
++            // `http::Uri` cannot represent file URLs with an empty authority.
++            // The Godot wrapper authenticates the capability inside the body;
++            // this URI is request metadata only and is never used for routing.
++            Err(_) if current_uri.starts_with("file:///") => {
++              let Ok(request) = Request::builder().uri("/").body(body) else {
++                return;
++              };
++              request
++            }
++            Err(_) => return,
++          };
++          ipc_handler(request);
+         }
+       }
+     });

@@ -225,8 +225,12 @@ func _handle_request(conn, request: Dictionary) -> void:
 	var body = request.get("body", "")
 	var session_id = request.get("session_id", "")
 	var headers: Dictionary = request.get("headers", {})
+	# Privileged browser documents use the generation-bound native bridge.
+	# Reject every browser-originated HTTP request before OPTIONS or routing.
+	if headers.has("origin"):
+		_send_error(conn, 403, "Browser Origin requests are not accepted")
+		return
 
-	# Handle CORS preflight
 	if method == "OPTIONS":
 		conn.send_response(200, {}, "")
 		return
@@ -238,12 +242,6 @@ func _handle_request(conn, request: Dictionary) -> void:
 
 	if path != "/mcp" and path != "/":
 		_send_error(conn, 404, "Not found")
-		return
-
-	# Browser control calls are bounded before tool execution can mutate state.
-	if request.get("headers", {}).get("x-minerva-control", "") == "1" \
-			and str(body).to_utf8_buffer().size() > PluginPayloadLimits.CONTROL_BYTES:
-		_send_jsonrpc_error(conn, null, -32000, "payload_too_large: MCP request exceeds 65536 UTF-8 bytes")
 		return
 
 	# Parse JSON body

@@ -115,7 +115,7 @@ index 6818bfb..1a9a1b5 100644
 +
 +    // Deliberately do not FreeLibrary(retained): this reference belongs to the
 +    // host process and must outlive gdcef's extension-library teardown.
-+    if std::env::var("MINERVA_PACKAGED_MCP_HELPER_PROBE").as_deref() == Ok("1") {
++    if std::env::var("MINERVA_PACKAGED_MCP_HELPER_PROBE").as_deref() == Ok("1") || std::env::var("MINERVA_PACKAGED_BRIDGE_PROBE").as_deref() == Ok("1") {
 +        eprintln!("[GodotCef] Retained module: libcef.dll");
 +    }
 +    Ok(())
@@ -170,7 +170,7 @@ index 6818bfb..1a9a1b5 100644
 +}
 +
 +pub fn finalize_cef() {
-+    let diagnostic = std::env::var("MINERVA_PACKAGED_MCP_HELPER_PROBE").as_deref() == Ok("1");
++    let diagnostic = std::env::var("MINERVA_PACKAGED_MCP_HELPER_PROBE").as_deref() == Ok("1") || std::env::var("MINERVA_PACKAGED_BRIDGE_PROBE").as_deref() == Ok("1");
 +    {
 +        let mut state = lock_cef_state();
 +        if diagnostic {

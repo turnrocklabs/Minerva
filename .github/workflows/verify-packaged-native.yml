@@ -142,6 +142,41 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dumpDirectory | Out-Null
           "MINERVA_PROCDUMP_PATH=$procdump" | Out-File -FilePath $env:GITHUB_ENV -Append
           "MINERVA_PROCDUMP_DUMP_DIR=$dumpDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Ensure Microsoft WebView2 Runtime
+        if: steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $client = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $paths = @(
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$client",
+            "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$client"
+          )
+          function Get-WebViewVersion {
+            foreach ($path in $paths) {
+              $version = (Get-ItemProperty -Path $path -Name pv -ErrorAction SilentlyContinue).pv
+              if ($version -and [version]$version -gt [version]'0.0.0.0') { return $version }
+            }
+            return $null
+          }
+          $version = Get-WebViewVersion
+          if (-not $version) {
+            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
+            $signature = Get-AuthenticodeSignature $installer
+            if ($signature.Status -ne 'Valid' -or
+                $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+              throw "WebView2 installer Authenticode verification failed: $($signature.Status)"
+            }
+            $process = Start-Process -FilePath $installer -ArgumentList '/silent /install' -PassThru
+            if (-not $process.WaitForExit(120000)) {
+              $process.Kill()
+              throw 'WebView2 runtime installation timed out'
+            }
+            if ($process.ExitCode -ne 0) { throw "WebView2 installer failed: $($process.ExitCode)" }
+            $version = Get-WebViewVersion
+          }
+          if (-not $version) { throw 'WebView2 runtime is unavailable after installation' }
+          Write-Host "WebView2 Runtime $version"
       - name: Verify final packaged native runtimes
         if: steps.selected.outputs.value == 'true'
         shell: bash
@@ -155,12 +190,17 @@ jobs:
               scripts/test-packaged-mcp-helper.sh linux-x86_64 extracted/mcp-runtime/linux-x86_64
               xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
                 python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.x86_64
+              LIBGL_ALWAYS_SOFTWARE=1 xvfb-run --auto-servernum \
+                --server-args="-screen 0 1024x768x24" \
+                python3 scripts/verify-packaged-mcp-app.py \
+                  extracted/Minerva.x86_64 --bridge
               ;;
             windows)
               unzip -q packaged/Minerva-Windows.zip -d extracted
               src/plugins/voice/scripts/test-runtime-root.sh windows-x86_64 extracted/builtin-plugins/voice
               scripts/test-packaged-mcp-helper.sh windows-x86_64 extracted/mcp-runtime/windows-x86_64
               python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe
+              python3 scripts/verify-packaged-mcp-app.py extracted/Minerva.exe --bridge
               ;;
             macos)
               ditto -x -k packaged/Minerva-macOS.zip extracted
@@ -170,6 +210,8 @@ jobs:
                 "extracted/Minerva.app/Contents/Resources/mcp-runtime/${{ matrix.target }}"
               python3 scripts/verify-packaged-mcp-app.py \
                 extracted/Minerva.app/Contents/MacOS/Minerva
+              python3 scripts/verify-packaged-mcp-app.py \
+                extracted/Minerva.app/Contents/MacOS/Minerva --bridge
               ;;
           esac
       - name: Download debug build when requested
@@ -199,8 +241,12 @@ jobs:
           if [ "${{ matrix.platform }}" = linux ]; then
             xvfb-run --auto-servernum --server-args="-screen 0 1024x768x24" \
               python3 scripts/verify-packaged-mcp-app.py "$executable"
+            LIBGL_ALWAYS_SOFTWARE=1 xvfb-run --auto-servernum \
+              --server-args="-screen 0 1024x768x24" \
+              python3 scripts/verify-packaged-mcp-app.py "$executable" --bridge
           else
             python3 scripts/verify-packaged-mcp-app.py "$executable"
+            python3 scripts/verify-packaged-mcp-app.py "$executable" --bridge
           fi
       - name: Report Windows native crash events
         if: failure() && steps.selected.outputs.value == 'true' && matrix.platform == 'windows' && inputs.capture_windows_dump

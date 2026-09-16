@@ -53,8 +53,8 @@ func _http(request: Dictionary, extra_headers: PackedStringArray = PackedStringA
 
 func _raw_http(body: PackedByteArray,
 		extra_headers: PackedStringArray = PackedStringArray(),
-		mirror_headers := true) -> Dictionary:
-	var peer = await _open_http(body, extra_headers, mirror_headers)
+		mirror_headers := true, request_line := "POST /mcp HTTP/1.1") -> Dictionary:
+	var peer = await _open_http(body, extra_headers, mirror_headers, request_line)
 	if peer == null:
 		return _failed_response("connect timeout")
 	var response := PackedByteArray()
@@ -80,7 +80,8 @@ func _failed_response(reason: String, raw: String = "") -> Dictionary:
 
 
 func _open_http(body: PackedByteArray,
-		extra_headers: PackedStringArray = PackedStringArray(), mirror_headers := true):
+		extra_headers: PackedStringArray = PackedStringArray(), mirror_headers := true,
+		request_line := "POST /mcp HTTP/1.1"):
 	var peer := StreamPeerTCP.new()
 	var status := peer.connect_to_host("127.0.0.1", port)
 	if status != OK:
@@ -91,7 +92,7 @@ func _open_http(body: PackedByteArray,
 	if not connected:
 		return null
 	var headers := PackedStringArray([
-		"POST /mcp HTTP/1.1", "Host: 127.0.0.1", "Content-Type: application/json",
+		request_line, "Host: 127.0.0.1", "Content-Type: application/json",
 		"Accept: application/json, text/event-stream",
 		"Content-Length: %d" % body.size(), "Connection: close"])
 	headers.append_array(extra_headers)
@@ -370,6 +371,22 @@ func _run() -> void:
 		PackedStringArray(["MCP-Protocol-Version: " + Protocol.MODERN_VERSION]))
 	check("unknown modern methods use the assigned HTTP and JSON-RPC errors",
 		unknown_method.status == 404 and unknown_method.json.error.code == -32601)
+	var calls_before_origin: int = fixture.minerva_server.calls
+	var foreign_origin := await _raw_http(JSON.stringify(_message(
+		"tools/call", "foreign-origin", {"name": "minerva_echo", "arguments": {
+			"value": 7}})).to_utf8_buffer(), PackedStringArray([
+			"Origin: https://foreign.example",
+			"MCP-Protocol-Version: " + Protocol.MODERN_VERSION]))
+	var null_origin := await _raw_http(JSON.stringify(_message(
+		"server/discover", "null-origin")).to_utf8_buffer(), PackedStringArray([
+			"Origin: null", "MCP-Protocol-Version: " + Protocol.MODERN_VERSION]))
+	var preflight_origin := await _raw_http(PackedByteArray(), PackedStringArray([
+		"Origin: https://foreign.example"]), true, "OPTIONS /mcp HTTP/1.1")
+	check("every present browser Origin is rejected before routing without CORS",
+		foreign_origin.status == 403 and null_origin.status == 403
+		and preflight_origin.status == 403
+		and not foreign_origin.headers.has("access-control-allow-origin")
+		and fixture.minerva_server.calls == calls_before_origin)
 
 	var invalid_input := await _http(_message("tools/call", 7, {
 		"name": "minerva_echo", "arguments": {"value": "not-an-integer"}}),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the exported app's helper resolver with isolated user data."""
+"""Exercise the exported app's MCP helper or native document bridge."""
 
 import json
 import os
@@ -66,9 +66,10 @@ def _terminate_tree(process: subprocess.Popen[str]) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: verify-packaged-mcp-app.py <Minerva executable>")
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--bridge"):
+        raise SystemExit("usage: verify-packaged-mcp-app.py <Minerva executable> [--bridge]")
     executable = Path(sys.argv[1]).resolve()
+    bridge_probe = len(sys.argv) == 3
     if not executable.is_file():
         print(f"exported Minerva executable is missing: {executable}", file=sys.stderr)
         return 1
@@ -79,7 +80,8 @@ def main() -> int:
         temporary_root = Path(temporary)
         env = os.environ.copy()
         _seed_profile(temporary_root, env)
-        env["MINERVA_PACKAGED_MCP_HELPER_PROBE"] = "1"
+        env["MINERVA_PACKAGED_BRIDGE_PROBE" if bridge_probe
+            else "MINERVA_PACKAGED_MCP_HELPER_PROBE"] = "1"
         kwargs = {"start_new_session": True} if os.name != "nt" else {
             "creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
         stdout_path = temporary_root / "minerva.stdout.log"
@@ -87,7 +89,13 @@ def main() -> int:
         timed_out = False
         diagnostic = None
         diagnostic_log = None
-        command = [str(executable), "--headless", "--verbose"]
+        command = [str(executable), "--verbose"]
+        if bridge_probe:
+            command += ["--rendering-method", "gl_compatibility"]
+            if sys.platform.startswith("linux"):
+                command += ["--display-driver", "x11"]
+        else:
+            command.insert(1, "--headless")
         if sys.platform.startswith("linux"):
             command = ["stdbuf", "-oL", "-eL", *command]
         with stdout_path.open("wb") as stdout_file, stderr_path.open("wb") as stderr_file:
@@ -140,10 +148,11 @@ def main() -> int:
         if timed_out:
             sys.stdout.write(stdout)
             sys.stderr.write(stderr)
-            phases = re.findall(r"PACKAGED_MCP_HELPER_PHASE=([^\r\n]+)", stdout)
+            phases = re.findall(
+                r"PACKAGED_(?:MCP_HELPER|BRIDGE)_PHASE=([^\r\n]+)", stdout)
             last_phase = phases[-1] if phases else "not-entered"
             print(
-                "exported MCP helper probe timed out: "
+                "exported native probe timed out: "
                 f"elapsed_seconds={elapsed_seconds:.1f}, returncode={process.returncode}, "
                 f"last_phase={last_phase}",
                 file=sys.stderr)
@@ -157,7 +166,8 @@ def main() -> int:
         r"|\[GodotCef\] Failed to set executable permissions|\[CefTexture\] Failed to load CEF framework"
         r"|Failed to initialize CEF",
         combined)
-    marker_found = "PACKAGED_MCP_HELPER_OK" in stdout
+    marker_name = "PACKAGED_BRIDGE_OK" if bridge_probe else "PACKAGED_MCP_HELPER_OK"
+    marker_found = marker_name in stdout
     missing_cef_phases = []
     if os.name == "nt":
         required_cef_phases = (
@@ -175,13 +185,13 @@ def main() -> int:
     )
     if not passed:
         print(
-            "exported MCP helper probe failed: "
+            "exported native probe failed: "
             f"elapsed_seconds={elapsed_seconds:.1f}, returncode={process.returncode}, "
             f"marker={marker_found}, fatal_log={fatal is not None}, "
             f"missing_cef_phases={missing_cef_phases}",
             file=sys.stderr)
     else:
-        print(f"exported MCP helper probe passed in {elapsed_seconds:.1f}s")
+        print(f"exported native probe passed in {elapsed_seconds:.1f}s")
     return 0 if passed else 1
 
 

@@ -5,7 +5,16 @@ extends RefCounted
 const BRIDGE_JS: String = """
 <script>
 (function() {
+	// Every script and same-origin descendant in this host-created document is
+	// one trusted principal. Navigation is locked natively for its lifetime.
 	const CONTROL_BYTES = 65536;
+	const CAPABILITY = '__MINERVA_DOCUMENT_CAPABILITY__';
+	const sendNative = window.ipc && window.ipc.postMessage
+		? window.ipc.postMessage.bind(window.ipc)
+		: window.sendIpcMessage.bind(window);
+	const pending = new Map();
+	const MAX_PENDING = 128;
+	const TIMEOUT_MS = 15000;
 	function encodeBounded(value) {
 		const encoded = JSON.stringify(value);
 		if (new TextEncoder().encode(encoded).length > CONTROL_BYTES) {
@@ -13,60 +22,29 @@ const BRIDGE_JS: String = """
 		}
 		return encoded;
 	}
-	async function readBoundedJSON(resp) {
-		const reader = resp.body.getReader();
-		const chunks = [];
-		let size = 0;
+	function request(type, payload) {
+		if (pending.size >= MAX_PENDING) return Promise.reject(new Error('too_many_pending_calls'));
+		const id = crypto.randomUUID ? crypto.randomUUID() : '' + Date.now() + Math.random();
+		let encoded;
 		try {
-			while (true) {
-				const part = await reader.read();
-				if (part.done) break;
-				size += part.value.byteLength;
-				if (size > CONTROL_BYTES) {
-					await reader.cancel();
-					throw new Error('payload_too_large: MCP response exceeds 65536 UTF-8 bytes');
-				}
-				chunks.push(part.value);
-			}
-		} finally { reader.releaseLock(); }
-		const bytes = new Uint8Array(size);
-		let offset = 0;
-		for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-		return JSON.parse(new TextDecoder().decode(bytes));
+			encoded = encodeBounded({capability: CAPABILITY, id, type, payload: payload || {}});
+		} catch (error) {
+			return Promise.reject(error);
+		}
+		return new Promise(function(resolve, reject) {
+			const timer = setTimeout(function() {
+				pending.delete(id); reject(new Error('bridge_timeout'));
+			}, TIMEOUT_MS);
+			pending.set(id, {resolve, reject, timer});
+			try { sendNative(encoded); }
+			catch (error) { pending.delete(id); clearTimeout(timer); reject(error); }
+		});
 	}
 	// Minerva Bridge -- allows webview panels to call MCP tools
 	window.minerva = {
-		_port: 9315,
-
 		// Call any MCP tool: minerva.call('minerva_get_spreadsheet_data', {editor_name: 'My Sheet'})
-		call: async function(toolName, args) {
-			const payload = {
-				jsonrpc: '2.0',
-				id: Date.now(),
-				method: 'tools/call',
-				params: { name: toolName, arguments: args || {} }
-			};
-			const resp = await fetch('http://localhost:' + this._port, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'X-Minerva-Control': '1' },
-				body: encodeBounded(payload)
-			});
-			const json = await readBoundedJSON(resp);
-			if (json.error) throw new Error(json.error.message);
-			// MCP tool errors arrive as a resolved result with isError:true; throw
-			// so callers see them in .catch() rather than silently swallowing.
-			let data = json.result;
-			if (data && data.isError === true) {
-				const msg = data.content?.[0]?.text || 'MCP tool reported an error';
-				throw new Error(msg);
-			}
-			// Success: unwrap content[0].text if it's a JSON string; otherwise
-			// return it as-is (some tools return plain text content).
-			const text = data?.content?.[0]?.text;
-			if (typeof text === 'string') {
-				try { return JSON.parse(text); } catch(e) { return text; }
-			}
-			return data;
+		call: function(toolName, args) {
+			return request('minerva.call', {tool: toolName, arguments: args || {}});
 		},
 
 		// Convenience: get spreadsheet data
@@ -85,19 +63,10 @@ const BRIDGE_JS: String = """
 		},
 
 		// Plugin IPC -- sends message through WRY ipc_message signal to Minerva broker
-		pluginIPC: function(messageType, payload) {
-			return new Promise(function(resolve, reject) {
-				encodeBounded(payload || {});
-				if (new TextEncoder().encode(messageType).length > 1024) throw new Error('IPC message type too long');
-				var id = '' + Date.now() + Math.random();
-				window._minervaIPCPending = window._minervaIPCPending || {};
-				window._minervaIPCPending[id] = { resolve: resolve, reject: reject };
-				window.ipc.postMessage(JSON.stringify({
-					id: id,
-					type: messageType,
-					payload: payload || {}
-				}));
-			});
+		pluginIPC: async function(messageType, payload) {
+			encodeBounded(payload || {});
+			if (new TextEncoder().encode(messageType).length > 1024) throw new Error('IPC message type too long');
+			return request(messageType, payload || {});
 		},
 
 		onIPCError: function(callback) {
@@ -125,11 +94,11 @@ const BRIDGE_JS: String = """
 
 		// Called by Minerva (evaluate_javascript) to deliver IPC response
 		_ipcReply: function(result) {
-			var pending = (window._minervaIPCPending || {})[result.id];
-			if (!pending) return;
-			delete window._minervaIPCPending[result.id];
-			if (result.success) pending.resolve(result.result);
-			else pending.reject(new Error(result.error_message || 'IPC error'));
+			var item = pending.get(result.id);
+			if (!item) return;
+			pending.delete(result.id); clearTimeout(item.timer);
+			if (result.success) item.resolve(result.result);
+			else item.reject(new Error(result.error_message || result.error || 'IPC error'));
 		},
 
 		// Called by Minerva (evaluate_javascript) to push plugin event

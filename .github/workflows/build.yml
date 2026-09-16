@@ -209,14 +209,16 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Setup Python for pinned WRY source
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+
     - name: Apply godot_wry patches
       shell: bash
       run: |
-        cd vendor/godot_wry
-        git checkout -- .
-        for patch in ../../patches/godot_wry-*.patch; do
-          [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
-        done
+        git -C vendor/godot_wry checkout -- .
+        python3 scripts/apply-wry-patches.py
 
     - name: Build godot_wry
       working-directory: vendor/godot_wry/rust
@@ -427,11 +429,8 @@ jobs:
 
     - name: Apply godot_wry patches
       run: |
-        cd vendor/godot_wry
-        git checkout -- .
-        for patch in ../../patches/godot_wry-*.patch; do
-          [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
-        done
+        git -C vendor/godot_wry checkout -- .
+        python3 scripts/apply-wry-patches.py
 
     - name: Build godot_wry
       working-directory: vendor/godot_wry/rust
@@ -723,11 +722,8 @@ jobs:
 
     - name: Apply godot_wry patches
       run: |
-        cd vendor/godot_wry
-        git checkout -- .
-        for patch in ../../patches/godot_wry-*.patch; do
-          [ -f "$patch" ] && git apply "$patch" && echo "Applied: $patch"
-        done
+        git -C vendor/godot_wry checkout -- .
+        python3 scripts/apply-wry-patches.py
 
     - name: Build godot_wry (universal)
       working-directory: vendor/godot_wry/rust

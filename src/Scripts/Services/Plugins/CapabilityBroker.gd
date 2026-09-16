@@ -429,16 +429,19 @@ func _handle_mcp_proxy(plugin_id: String, capability: String, args: Dictionary, 
 
 	# Wrap the MCP tool result in our standard success/failure format.
 	# MinervaMCPServer tools return {"success": true/false, ...} or {"error": "..."}.
-	if result.get("success", false) or (not result.has("error") and not result.has("error_code")):
+	var succeeded: bool = result.get("success", result.get("allowed",
+		not (result.has("error") or result.has("error_code")
+		or not str(result.get("error_message", "")).is_empty()))) == true
+	if succeeded:
 		return PluginErrors.success(result)
-	else:
-		return {
-			"success": false,
-			"error_code": "mcp_tool_error",
-			"error_message": result.get("error", "Unknown error from tool '%s'" % tool_name),
-			"plugin_id": plugin_id,
-			"tool_name": tool_name,
-		}
+	var failure: Dictionary = result.duplicate(true)
+	failure["success"] = false
+	failure["error_code"] = failure.get("error_code", "mcp_tool_error")
+	failure["error_message"] = failure.get("error_message",
+		failure.get("error", "Unknown error from tool '%s'" % tool_name))
+	failure["plugin_id"] = plugin_id
+	failure["tool_name"] = tool_name
+	return failure
 
 
 # ---------------------------------------------------------------------------

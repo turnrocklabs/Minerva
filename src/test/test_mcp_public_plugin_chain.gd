@@ -85,6 +85,57 @@ func _register_public_definition(registry, manager) -> void:
 				entry.mcp_definition, "minerva")
 			return
 
+
+func _exercise_webview_broker(registry, manager_fixture, singleton,
+		marker: String) -> void:
+	var Definition = load("res://Scripts/Services/Plugins/PluginDefinition.gd")
+	var definition = Definition.new()
+	definition.id = "probe"
+	definition.ui_panel_names.assign(["probe-panel"])
+	definition.state = Definition.State.RUNNING
+	manager_fixture.get_db()._plugins["probe"] = definition
+	var Policy = load("res://Scripts/Services/Plugins/PluginPolicy.gd")
+	var policy = Policy.new(manager_fixture.get_db(), null, false)
+	var Capability = load("res://Scripts/Services/Plugins/CapabilityBroker.gd")
+	var capability = Capability.new(policy)
+	var Broker = load("res://Scripts/Services/Plugins/PluginWebviewBroker.gd")
+	var broker = Broker.new(manager_fixture, policy, capability)
+	broker.register_plugin_panel("probe", "probe-panel")
+	var owned: Dictionary = await broker.handle_ipc_message("probe-panel",
+		"mcp.proxy:minerva_probe_echo", {"marker": marker}, null, "probe")
+	check("plugin document calls its exact registered real STDIO tool without a broad grant",
+		owned.get("success", false)
+		and owned.get("result", {}).get("echo", {}).get("marker") == marker,
+		str(owned))
+	var denied: Dictionary = await broker.handle_ipc_message("probe-panel",
+		"mcp.proxy:minerva_tool_search", {"query": "note", "limit": 1}, null, "probe")
+	check("cross-host tool proxy is denied before an exact grant",
+		denied.get("success", true) == false
+		and denied.get("error_code") == "capability_not_granted", str(denied))
+	policy.grant_capability("probe", "mcp.proxy:minerva_tool_search")
+	var allowed: Dictionary = await broker.handle_ipc_message("probe-panel",
+		"mcp.proxy:minerva_tool_search", {"query": "note", "limit": 1}, null, "probe")
+	check("exact grant reaches the production host policy and tool spine",
+		allowed.get("success", false) and allowed.get("result") is Dictionary,
+		str(allowed))
+	var production_server = singleton.get_mcp_manager().minerva_server
+	var saved_policy = production_server.policy_engine
+	production_server.policy_engine = load(
+		"res://test/helpers/mcp_blocking_policy_fixture.gd").new()
+	var policy_denied: Dictionary = await broker.handle_ipc_message("probe-panel",
+		"mcp.proxy:minerva_tool_search", {"query": "note", "limit": 1}, null, "probe")
+	production_server.policy_engine = saved_policy
+	check("production host-policy denial remains a bridge failure with its payload",
+		policy_denied.get("success", true) == false
+		and policy_denied.get("allowed") == false, str(policy_denied))
+	broker.register_plugin_panel("replacement", "probe-panel")
+	var stale: Dictionary = await broker.handle_ipc_message("probe-panel",
+		"mcp.proxy:minerva_probe_echo", {"marker": "stale"}, null, "probe")
+	check("retired document cannot inherit a replacement panel owner's authority",
+		stale.get("success", true) == false
+		and stale.get("error_code") == "permission_denied", str(stale))
+	manager_fixture.get_db()._plugins.erase("probe")
+
 func _collect_outcome(server, context, target: Array) -> void:
 	target.append(await server.execute_tool_for_http_outcome(
 		"minerva_probe_sleep", {"ms": 100}, "", context))
@@ -94,6 +145,10 @@ func _run() -> void:
 	var Registry = load("res://Scripts/Services/Plugins/PluginToolRegistry.gd")
 	var ManagerFixture = load("res://test/helpers/plugin_tool_manager_fixture.gd")
 	var manager_fixture = ManagerFixture.new()
+	# The focused manager fixture is never added to the tree, so its production
+	# _ready initializer does not construct PluginDB. Give broker policy and
+	# ownership validation the same real DB implementation explicitly.
+	manager_fixture._db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
 	var registry = Registry.new(manager_fixture)
 	var singleton = root.get_node("SingletonObject")
 	# Use the same lazy production initializer as the application, then complete
@@ -121,6 +176,8 @@ func _run() -> void:
 			await connection.connect_to_server() == OK
 			and (await registry.register_backend_tools("probe", connection)).get("ok", false))
 		_register_public_definition(registry, production_manager)
+		await _exercise_webview_broker(registry, manager_fixture, singleton,
+			back_era + "-broker")
 		for modern_front in [false, true]:
 			var marker := "%s-%s" % [back_era, "modern" if modern_front else "legacy"]
 			var response := await _request(marker, modern_front)

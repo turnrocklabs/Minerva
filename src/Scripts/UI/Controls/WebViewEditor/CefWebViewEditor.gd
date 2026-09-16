@@ -6,6 +6,7 @@ extends PanelContainer
 ## CefTexture is available; WebViewEditor (WRY) remains as fallback.
 
 signal content_changed
+signal bridge_probe_completed(success: bool)
 
 var html_source: String = ""
 var _last_saved_html: String = ""
@@ -18,6 +19,11 @@ var _svc: SubViewportContainer = null
 var _sv: SubViewport = null
 var _fallback_label: Label = null
 var _tmp_html_path: String = ""
+var _document = null
+var _document_generation := 0
+var _document_plugin_id := ""
+var _document_panel_name := ""
+var _pending_ipc: Dictionary = {}
 
 
 func _ready() -> void:
@@ -34,17 +40,26 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_revoke_document()
+
+
+func _revoke_document() -> void:
+	_document_generation += 1
+	for entry: Dictionary in _pending_ipc.values():
+		entry.context.cancel()
+	_pending_ipc.clear()
 	if _svc != null:
 		remove_child(_svc)
 		_svc.queue_free()
 		_svc = null
 		_sv = null
 		_cef = null
-	# Clean up the tmp HTML file we wrote.
-	if not _tmp_html_path.is_empty():
-		var abs_path := ProjectSettings.globalize_path(_tmp_html_path)
-		if FileAccess.file_exists(abs_path):
-			DirAccess.remove_absolute(abs_path)
+	if _document != null:
+		_document = null
+		# The locked native CEF client owns exact-file cleanup through
+		# OnBeforeClose (and its lock Drop path if browser creation failed).
+	_document_plugin_id = ""
+	_document_panel_name = ""
 
 
 func _apply_editor_style() -> void:
@@ -78,32 +93,43 @@ func setup() -> void:
 ## Sets the HTML content and reloads the CEF browser to show it.
 func set_html(source: String) -> void:
 	html_source = source
-
-	# Destroy existing CefTexture (matches WRY's destroy-and-recreate pattern).
-	if _cef != null:
-		remove_child(_cef)
-		_cef.queue_free()
-		_cef = null
+	_revoke_document()
 
 	if not ClassDB.class_exists("CefTexture"):
 		return
 
 	# Write bridge-injected HTML to user:// temp file. CefTexture loads URLs,
 	# not inline HTML, so we materialize to disk and hand it a file:// path.
-	var injected := _inject_bridge(source)
-	_tmp_html_path = "user://cef_panel_%s.html" % editor_id
-	var abs_path: String = ProjectSettings.globalize_path(_tmp_html_path)
-	var f := FileAccess.open(_tmp_html_path, FileAccess.WRITE)
-	if f == null:
-		push_error("[CefWebViewEditor:%s] Failed to write tmp HTML at %s" % [editor_id, _tmp_html_path])
+	var Document = load("res://Scripts/UI/Controls/WebViewEditor/WebDocumentLifetime.gd")
+	_document = Document.create(_inject_bridge(source), _document_generation)
+	if _document == null:
+		push_error("[CefWebViewEditor:%s] Failed to materialize document" % editor_id)
 		return
-	f.store_string(injected)
-	f.close()
+	_document_plugin_id = plugin_id
+	_document_panel_name = plugin_panel_name
 
 	var cef: Control = ClassDB.instantiate("CefTexture")
 	if cef == null:
 		push_error("[CefWebViewEditor:%s] ClassDB.instantiate(CefTexture) returned null" % editor_id)
+		_document.dispose()
+		_document = null
 		return
+	if not cef.has_method("lock_initial_document"):
+		push_error("[CefWebViewEditor] Native CEF lacks document navigation lock")
+		_document.dispose()
+		_document = null
+		cef.free()
+		return
+	if not cef.lock_initial_document(_document.file_url,
+			ProjectSettings.globalize_path(_document.file_path)):
+		push_error("[CefWebViewEditor] Native document lock rejected configuration")
+		_document.dispose()
+		_document = null
+		cef.free()
+		return
+	if cef.has_signal("ipc_message"):
+		cef.ipc_message.connect(_on_ipc_message.bind(_document_generation))
+	cef.set("url", _document.file_url)
 
 	# Force software OSR: Vulkan DMA-BUF accelerated path is broken on our
 	# NVIDIA/mutter stack (silent black). Software is slower but correct for
@@ -138,17 +164,10 @@ func set_html(source: String) -> void:
 	cef.set("expand_mode", 1)  # TextureRect.EXPAND_IGNORE_SIZE if applicable
 	cef.set("custom_minimum_size", Vector2.ZERO)
 
-	add_child(svc)
-
-	if cef.has_signal("ipc_message"):
-		cef.ipc_message.connect(_on_ipc_message)
-
 	_cef = cef
 	_svc = svc
+	add_child(svc)
 	_apply_oversampling()
-
-	var file_url := "file://" + abs_path
-	cef.set("url", file_url)
 	content_changed.emit()
 
 
@@ -218,12 +237,8 @@ func _show_fallback(message: String) -> void:
 
 func _inject_bridge(source: String) -> String:
 	var bridge_js: String = CefBridge.BRIDGE_JS + _panel_context_js()
-	if source.find("</head>") >= 0:
-		return source.replace("</head>", bridge_js + "</head>")
-	elif source.find("<body") >= 0:
-		return source.replace("<body", bridge_js + "<body")
-	else:
-		return bridge_js + source
+	return source.insert(15, bridge_js) \
+		if source.left(15).to_lower() == "<!doctype html>" else bridge_js + source
 
 
 ## Inject `window.__MINERVA_PANEL` so a plugin html panel can learn its own
@@ -246,60 +261,160 @@ func _panel_context_js() -> String:
 		"panel_name": plugin_panel_name,
 		"data_directory": data_dir,
 	}
-	return "<script>window.__MINERVA_PANEL = %s;</script>" % JSON.stringify(ctx)
+	return "<script>window.__MINERVA_PANEL = %s;</script>" % _encode_json(ctx)
 
 
-func _on_ipc_message(msg: String) -> void:
-	print("[CefWebViewEditor:%s] IPC: %s" % [editor_id, msg.left(200)])
+func _encode_json(value: Variant) -> String:
+	var encoded: Dictionary = load(
+		"res://Scripts/UI/Controls/WebViewEditor/WebDocumentLifetime.gd").encode_json(value)
+	if not encoded.get("ok", false):
+		push_warning("[CefWebViewEditor] Bridge value is not JSON-safe")
+		return ""
+	return encoded.raw
+
+
+func _on_ipc_message(msg: String, generation: int) -> void:
+	if _document == null or generation != _document_generation \
+			or msg.to_utf8_buffer().size() > PluginPayloadLimits.CONTROL_BYTES:
+		return
+	_validate_and_dispatch_ipc(msg, generation)
+
+
+func _validate_and_dispatch_ipc(msg: String, generation: int) -> void:
+	var captured_document = _document
 
 	var json := JSON.new()
 	if json.parse(msg) != OK or not json.data is Dictionary:
-		push_warning("[CefWebViewEditor:%s] Invalid IPC JSON: %s" % [editor_id, msg.left(100)])
+		push_warning("[CefWebViewEditor:%s] Invalid IPC JSON" % editor_id)
 		return
-
-	var data: Dictionary = json.data
+	var wire = load("res://Scripts/Services/MCP/MCPWireValue.gd").create(msg, json.data)
+	var validation: Dictionary = await load(
+		"res://Scripts/Services/MCP/MCPWireAdapter.gd").validate_for_application(wire)
+	if not validation.get("ok", false) or captured_document != _document \
+			or generation != _document_generation:
+		return
+	var data: Dictionary = wire.parsed
+	if data.get("capability") != _document.capability:
+		return
 	var ipc_id = data.get("id", "")
-	var message_type: String = str(data.get("type", ""))
-	var payload: Dictionary = data.get("payload", {})
+	var message_value: Variant = data.get("type")
+	var payload_value: Variant = data.get("payload", {})
+	if not message_value is String or not payload_value is Dictionary:
+		return
+	var message_type: String = message_value
+	var payload: Dictionary = payload_value
+	if message_type == "bridge.probe.ack":
+		bridge_probe_completed.emit(payload.get("success", false))
+		return
 	var route_error := PluginPayloadLimits.check({"id": ipc_id, "type": message_type}, plugin_id, PluginPayloadLimits.ROUTING_BYTES)
 	if not route_error.is_empty():
 		_send_ipc_reply(ipc_id, route_error)
 		return
 
 
-	if not plugin_panel_name.is_empty():
-		_handle_plugin_ipc(ipc_id, message_type, payload)
+	if message_type == "minerva.call" or not _document_panel_name.is_empty():
+		if _pending_ipc.has(ipc_id):
+			return
+		var context = _begin_ipc(ipc_id, generation)
+		if context == null:
+			_send_ipc_reply(ipc_id, {"success": false,
+				"error_message": "Bridge request admission rejected"}, generation)
+			return
+		if message_type == "minerva.call":
+			_handle_minerva_call(ipc_id, payload, generation, context)
+		else:
+			_handle_plugin_ipc(ipc_id, message_type, payload, generation, context)
 	else:
 		print("[CefWebViewEditor:%s] Non-plugin IPC type=%s" % [editor_id, message_type])
 
 
-func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary) -> void:
+func _begin_ipc(ipc_id, generation: int):
+	if not ipc_id is String or ipc_id.is_empty() or _pending_ipc.has(ipc_id) \
+			or _pending_ipc.size() >= 128:
+		return null
+	var context = load("res://Scripts/Services/MCP/MCPExecutionContext.gd").create(
+		"webview", "", "", 15.0)
+	_pending_ipc[ipc_id] = {"generation": generation, "context": context}
+	return context
+
+
+func _handle_plugin_ipc(ipc_id, message_type: String, payload: Dictionary,
+		generation: int, context) -> void:
 	var broker = _get_webview_broker()
 	if broker == null:
 		_send_ipc_reply(ipc_id, {"success": false, "error_message": "Webview broker not available"})
 		return
 
-	var result: Dictionary = await broker.handle_ipc_message(plugin_panel_name, message_type, payload)
-	if not result.get("success", false):
-		print("[CefWebViewEditor:%s] IPC denied panel=%s type=%s result=%s" % [
-			editor_id, plugin_panel_name, message_type, JSON.stringify(result)
-		])
-	_send_ipc_reply(ipc_id, result)
+	var result: Dictionary = await broker.handle_ipc_message(
+		_document_panel_name, message_type, payload, context, _document_plugin_id)
+	_send_ipc_reply(ipc_id, result, generation)
 
 
-func _send_ipc_reply(ipc_id, result: Dictionary) -> void:
-	if _cef == null:
+func _handle_minerva_call(ipc_id, payload: Dictionary, generation: int, context) -> void:
+	var tool: Variant = payload.get("tool")
+	var arguments: Variant = payload.get("arguments", {})
+	if not tool is String or tool.is_empty() or not arguments is Dictionary:
+		_send_ipc_reply(ipc_id, {"success": false, "error_message": "Invalid tool call"}, generation)
 		return
-	var reply := PluginPayloadLimits.bound_reply(result, plugin_id).duplicate()
+	if not _document_panel_name.is_empty():
+		_handle_plugin_ipc(ipc_id, "mcp.proxy:" + tool, arguments, generation, context)
+		return
+	var singleton = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	if singleton == null or singleton.get_mcp_manager().minerva_server == null:
+		_send_ipc_reply(ipc_id, {"success": false, "error_message": "MCP unavailable"}, generation)
+		return
+	var result: Dictionary = await singleton.get_mcp_manager().minerva_server.execute_tool(
+		tool, arguments, "", context)
+	var adapted: Dictionary = load(
+		"res://Scripts/Services/MCP/MCPNativeWireAdapter.gd").adapt(result)
+	if not adapted.get("ok", false):
+		_send_ipc_reply(ipc_id, {"success": false,
+			"error_message": adapted.get("error", "Tool result is not bridge-safe")}, generation)
+		return
+	result = adapted.value
+	var succeeded: bool = result.get("success", result.get("allowed",
+		not (result.has("error") or result.has("error_code")
+		or not str(result.get("error_message", "")).is_empty()))) == true
+	_send_ipc_reply(ipc_id, {"success": succeeded, "result": result,
+		"error_message": result.get("error_message", result.get("error", ""))}, generation)
+
+
+func _send_ipc_reply(ipc_id, result: Dictionary, generation: int = -1) -> void:
+	if generation < 0:
+		generation = _document_generation
+	var pending: Dictionary = _pending_ipc.get(ipc_id, {})
+	if pending.get("generation") == generation:
+		_pending_ipc.erase(ipc_id)
+	if _cef == null or _document == null or generation != _document_generation:
+		return
+	var adapted: Dictionary = load(
+		"res://Scripts/Services/MCP/MCPNativeWireAdapter.gd").adapt(result)
+	if not adapted.get("ok", false):
+		adapted = {"ok": true, "value": {"success": false,
+			"error_message": adapted.get("error", "Bridge result is not JSON-safe")}}
+	var reply := PluginPayloadLimits.bound_reply(adapted.value, plugin_id).duplicate()
 	# Correlation/framing has its own small budget, outside the result dictionary.
 	var routing := {"id": ipc_id}
 	var route_error := PluginPayloadLimits.check(routing, "", PluginPayloadLimits.ROUTING_BYTES)
 	if not route_error.is_empty():
-		_cef.call_deferred("eval", "window.minerva._dispatchIPCError(%s)" % JSON.stringify(route_error))
+		_defer_eval("window.minerva._dispatchIPCError(%s)" % _encode_json(route_error), generation)
 		return
 	reply["id"] = ipc_id
-	var reply_json := JSON.stringify(reply)
-	_cef.call_deferred("eval", "window.minerva._ipcReply(%s)" % reply_json)
+	var reply_json := _encode_json(reply)
+	if reply_json.is_empty():
+		return
+	_defer_eval("window.minerva._ipcReply(%s)" % reply_json, generation)
+
+
+func _defer_eval(script: String, generation: int = -1) -> void:
+	if generation < 0:
+		generation = _document_generation
+	var target = _cef
+	(func() -> void:
+		if target == _cef and is_instance_valid(target) \
+				and _document != null and generation == _document_generation:
+			target.eval(script)
+	).call_deferred()
 
 
 func _get_webview_broker():
@@ -317,14 +432,13 @@ func push_plugin_event(event_name: String, payload: Dictionary) -> void:
 	if not size_error.is_empty():
 		push_warning("[PluginWebview] %s" % size_error.error_message)
 		if _cef != null:
-			_cef.call_deferred("eval", "window.minerva._dispatchIPCError(%s)" % JSON.stringify(size_error))
+			_defer_eval("window.minerva._dispatchIPCError(%s)" % _encode_json(size_error))
 		return
 	if _cef == null:
 		return
-	var js := "window.minerva._dispatchPluginEvent(%s, %s)" % [
-		JSON.stringify(event_name), JSON.stringify(payload)
-	]
-	_cef.call_deferred("eval", js)
+	var js := "window.minerva._dispatchPluginEvent.apply(null,%s)" % \
+		_encode_json([event_name, payload])
+	_defer_eval(js)
 
 
 ## Push a plugin state update to the webview JS.
@@ -333,9 +447,9 @@ func push_plugin_state(state: Dictionary) -> void:
 	if not size_error.is_empty():
 		push_warning("[PluginWebview] %s" % size_error.error_message)
 		if _cef != null:
-			_cef.call_deferred("eval", "window.minerva._dispatchIPCError(%s)" % JSON.stringify(size_error))
+			_defer_eval("window.minerva._dispatchIPCError(%s)" % _encode_json(size_error))
 		return
 	if _cef == null:
 		return
-	var js := "window.minerva._dispatchPluginState(%s)" % JSON.stringify(state)
-	_cef.call_deferred("eval", js)
+	var js := "window.minerva._dispatchPluginState(%s)" % _encode_json(state)
+	_defer_eval(js)

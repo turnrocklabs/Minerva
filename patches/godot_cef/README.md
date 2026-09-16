@@ -34,3 +34,12 @@ On Windows, retain the exact loaded `libcef.dll` module for the remaining host
 process lifetime after verifying the raw `cef_initialize` export's module
 identity. The packaged-helper probe emits shutdown phases so CI proves browser
 drain and `CefShutdown` completed before a clean process exit.
+
+## 0005-document-navigation-lock.patch
+
+Adds an opt-in construction-time exact initial-document lock for privileged
+CEF panels. Locked instances allow their host-created file URL once, block
+main-frame replacement and popups synchronously, and redact raw IPC bodies
+from inspector diagnostics so document capabilities cannot enter logs. The
+lock owns the exact immutable backing file and removes only that file and its
+empty directory after `OnBeforeClose`; its drop path covers creation failure.

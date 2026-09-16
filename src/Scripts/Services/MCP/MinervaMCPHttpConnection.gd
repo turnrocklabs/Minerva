@@ -278,11 +278,6 @@ func _format_http_headers(status_code: int, headers: Dictionary, body_byte_size:
 	if not headers.has("Connection"):
 		headers["Connection"] = "close"
 
-	# Add CORS headers for browser clients
-	headers["Access-Control-Allow-Origin"] = "*"
-	headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
-	headers["Access-Control-Allow-Headers"] = "Content-Type, MCP-Session-Id, MCP-Protocol-Version, X-Minerva-Control"
-
 	for key in headers:
 		response += "%s: %s\r\n" % [key, headers[key]]
 

@@ -1,0 +1,316 @@
+diff --git a/crates/gdcef/src/cef_texture/backend.rs b/crates/gdcef/src/cef_texture/backend.rs
+index 7ca6c508..2fd80c73 100644
+--- a/crates/gdcef/src/cef_texture/backend.rs
++++ b/crates/gdcef/src/cef_texture/backend.rs
+@@ -26,6 +26,7 @@ pub(crate) struct BackendCreateParams {
+     pub dpi: f32,
+     pub max_fps: i32,
+     pub url: String,
++    pub initial_document_lock: webrender::InitialDocumentLock,
+     pub enable_accelerated_osr: bool,
+     pub background_color: Color,
+     pub popup_policy: i32,
+@@ -43,6 +44,7 @@ struct BrowserCreateParams {
+     permission_request_counter: crate::browser::PermissionRequestIdCounter,
+     pending_permission_requests: crate::browser::PendingPermissionRequests,
+     pending_permission_aggregates: crate::browser::PendingPermissionAggregates,
++    initial_document_lock: webrender::InitialDocumentLock,
+ }
+ 
+ fn color_to_cef_color(color: Color) -> u32 {
+@@ -398,6 +400,7 @@ pub(crate) fn try_create_browser(
+         permission_request_counter,
+         pending_permission_requests,
+         pending_permission_aggregates,
++        initial_document_lock: params.initial_document_lock.clone(),
+     };
+ 
+     if use_accelerated {
+@@ -509,6 +512,7 @@ fn create_software_browser(
+         permission_request_counter,
+         pending_permission_requests,
+         pending_permission_aggregates,
++        initial_document_lock,
+     } = params;
+     godot::global::godot_print!(
+         "[{}] Creating browser in software rendering mode",
+@@ -569,6 +573,7 @@ fn create_software_browser(
+         cursor_type.clone(),
+         queues.clone(),
+         popup_policy.clone(),
++        initial_document_lock.clone(),
+     );
+ 
+     let browser = cef::browser_host_create_browser_sync(
+@@ -645,6 +650,7 @@ fn create_accelerated_browser(
+         permission_request_counter,
+         pending_permission_requests,
+         pending_permission_aggregates,
++        initial_document_lock,
+     } = params;
+ 
+     let (rd_texture_rid, texture_2d_rd) = render::create_rd_texture(pixel_width, pixel_height)?;
+@@ -683,6 +689,7 @@ fn create_accelerated_browser(
+         cursor_type.clone(),
+         queues.clone(),
+         popup_policy.clone(),
++        initial_document_lock.clone(),
+     );
+ 
+     let browser = match cef::browser_host_create_browser_sync(
+diff --git a/crates/gdcef/src/cef_texture/browser_lifecycle.rs b/crates/gdcef/src/cef_texture/browser_lifecycle.rs
+index be9b767c..714e6e6c 100644
+--- a/crates/gdcef/src/cef_texture/browser_lifecycle.rs
++++ b/crates/gdcef/src/cef_texture/browser_lifecycle.rs
+@@ -67,6 +67,7 @@ impl CefTexture {
+             dpi,
+             max_fps,
+             url: self.url.to_string(),
++            initial_document_lock: self.initial_document_lock.clone(),
+             enable_accelerated_osr: self.enable_accelerated_osr,
+             background_color: self.background_color,
+             popup_policy: self.popup_policy,
+diff --git a/crates/gdcef/src/cef_texture/mod.rs b/crates/gdcef/src/cef_texture/mod.rs
+index 57cc143c..35bdf55c 100644
+--- a/crates/gdcef/src/cef_texture/mod.rs
++++ b/crates/gdcef/src/cef_texture/mod.rs
+@@ -50,6 +50,7 @@ pub struct CefTexture {
+     /// Redirect: navigate the current browser to the popup URL.
+     /// SignalOnly: emit `popup_requested` signal and let GDScript decide.
+     popup_policy: i32,
++    initial_document_lock: crate::webrender::InitialDocumentLock,
+ 
+     #[var]
+     /// Stores the IME cursor position in local coordinates (relative to this `CefTexture` node),
+@@ -95,6 +96,8 @@ impl ITextureRect for CefTexture {
+             enable_accelerated_osr: true,
+             background_color: Color::from_rgba(0.0, 0.0, 0.0, 0.0),
+             popup_policy: crate::browser::popup_policy::BLOCK,
++            initial_document_lock: std::sync::Arc::new(std::sync::Mutex::new(
++                crate::webrender::InitialDocumentState::default())),
+             ime_position: Vector2i::new(0, 0),
+             texture2d_helper,
+             last_size: Vector2::ZERO,
+@@ -368,6 +371,25 @@ impl CefTexture {
+         }
+     }
+ 
++    /// Locks this browser to one exact initial document. Must be called before activation.
++    #[func]
++    pub fn lock_initial_document(&mut self, expected_url: GString, cleanup_path: GString) -> bool {
++        let cleanup = std::path::PathBuf::from(cleanup_path.to_string());
++        if expected_url.is_empty() || !cleanup.is_absolute() || !cleanup.is_file()
++            || self.with_app(|app| app.state.is_some())
++        {
++            return false;
++        }
++        let Ok(mut lock) = self.initial_document_lock.lock() else { return false; };
++        if !lock.expected_url.is_empty() {
++            return false;
++        }
++        lock.expected_url = expected_url.to_string();
++        lock.initial_allowed = true;
++        lock.cleanup_path = cleanup_path.to_string();
++        true
++    }
++
+     #[func]
+     /// Executes JavaScript code in the browser's main frame.
+     /// This is a fire-and-forget operation.
+diff --git a/crates/gdcef/src/cef_texture/signals.rs b/crates/gdcef/src/cef_texture/signals.rs
+index cff16927..555d9ef2 100644
+--- a/crates/gdcef/src/cef_texture/signals.rs
++++ b/crates/gdcef/src/cef_texture/signals.rs
+@@ -207,7 +207,7 @@ impl CefTexture {
+                 GString::from(event.direction.as_str()).to_variant(),
+             );
+             payload.set("lane", GString::from(event.lane.as_str()).to_variant());
+-            payload.set("body", GString::from(&event.body).to_variant());
++            payload.set("body", GString::from("<redacted>").to_variant());
+             payload.set("timestamp_unix_ms", event.timestamp_unix_ms.to_variant());
+             payload.set("body_size_bytes", event.body_size_bytes.to_variant());
+             self.base_mut()
+diff --git a/crates/gdcef/src/cef_texture2d/runtime.rs b/crates/gdcef/src/cef_texture2d/runtime.rs
+index 09e3c09d..f52de68f 100644
+--- a/crates/gdcef/src/cef_texture2d/runtime.rs
++++ b/crates/gdcef/src/cef_texture2d/runtime.rs
+@@ -79,6 +79,8 @@ impl CefTextureRuntime {
+             dpi,
+             max_fps: backend::get_max_fps(),
+             url: url.to_string(),
++            initial_document_lock: std::sync::Arc::new(std::sync::Mutex::new(
++                crate::webrender::InitialDocumentState::default())),
+             enable_accelerated_osr,
+             background_color,
+             popup_policy,
+diff --git a/crates/gdcef/src/webrender.rs b/crates/gdcef/src/webrender.rs
+index 9e594b71..63060906 100644
+--- a/crates/gdcef/src/webrender.rs
++++ b/crates/gdcef/src/webrender.rs
+@@ -16,6 +16,35 @@ use crate::browser::{
+ };
+ use crate::utils::get_display_scale_factor;
+ 
++pub(crate) type InitialDocumentLock = Arc<Mutex<InitialDocumentState>>;
++
++#[derive(Default)]
++pub(crate) struct InitialDocumentState {
++    pub expected_url: String,
++    pub initial_allowed: bool,
++    pub cleanup_path: String,
++}
++
++impl InitialDocumentState {
++    fn cleanup(&mut self) {
++        if self.cleanup_path.is_empty() {
++            return;
++        }
++        let path = std::path::PathBuf::from(std::mem::take(&mut self.cleanup_path));
++        let _ = std::fs::remove_file(&path);
++        if let Some(parent) = path.parent() {
++            let _ = std::fs::remove_dir(parent);
++        }
++    }
++}
++
++impl Drop for InitialDocumentState {
++    fn drop(&mut self) {
++        // Also covers browser creation failure, where OnBeforeClose never runs.
++        self.cleanup();
++    }
++}
++
+ macro_rules! impl_build_new {
+     ($vis:vis $name:ident => $ret:ty; $($arg:ident : $arg_ty:ty),* $(,)?) => {
+         impl $name {
+@@ -720,6 +749,7 @@ wrap_life_span_handler! {
+     pub(crate) struct LifeSpanHandlerImpl {
+         event_queues: EventQueuesHandle,
+         popup_policy: crate::browser::PopupPolicyFlag,
++        initial_document_lock: InitialDocumentLock,
+     }
+ 
+     impl LifeSpanHandler {
+@@ -733,6 +763,9 @@ wrap_life_span_handler! {
+             if let Some(browser) = browser {
+                 crate::cef_init::browser_closed(browser);
+             }
++            if let Ok(mut lock) = self.initial_document_lock.lock() {
++                lock.cleanup();
++            }
+         }
+ 
+         fn on_before_popup(
+@@ -754,6 +787,9 @@ wrap_life_span_handler! {
+             use crate::browser::{popup_policy, PopupRequestEvent};
+             use std::sync::atomic::Ordering;
+ 
++            if self.initial_document_lock.lock().map(|lock| !lock.expected_url.is_empty()).unwrap_or(true) {
++                return true as _;
++            }
+             let policy = self.popup_policy.load(Ordering::Relaxed);
+             let url = target_url
+                 .map(|u| u.to_string())
+@@ -796,7 +832,8 @@ wrap_life_span_handler! {
+ impl_build_new!(
+     pub LifeSpanHandlerImpl => cef::LifeSpanHandler;
+     event_queues: EventQueuesHandle,
+-    popup_policy: crate::browser::PopupPolicyFlag
++    popup_policy: crate::browser::PopupPolicyFlag,
++    initial_document_lock: InitialDocumentLock
+ );
+ 
+ wrap_load_handler! {
+@@ -1124,9 +1161,32 @@ impl_build_new!(pub DownloadHandlerImpl => cef::DownloadHandler; event_queues: E
+ wrap_request_handler! {
+     pub(crate) struct RequestHandlerImpl {
+         event_queues: EventQueuesHandle,
++        initial_document_lock: InitialDocumentLock,
+     }
+ 
+     impl RequestHandler {
++        fn on_before_browse(
++            &self,
++            _browser: Option<&mut Browser>,
++            frame: Option<&mut Frame>,
++            request: Option<&mut Request>,
++            _user_gesture: i32,
++            _is_redirect: i32,
++        ) -> i32 {
++            let locked = self.initial_document_lock.lock()
++                .map(|lock| !lock.expected_url.is_empty()).unwrap_or(true);
++            let Some(frame) = frame else { return locked as _; };
++            if frame.is_main() == 0 {
++                return false as _;
++            }
++            let url = request.map(|value| CefStringUtf16::from(&value.url()).to_string()).unwrap_or_default();
++            let Ok(mut lock) = self.initial_document_lock.lock() else { return true as _; };
++            if lock.expected_url.is_empty() { return false as _; }
++            let allowed = lock.initial_allowed && url == lock.expected_url;
++            lock.initial_allowed = false;
++            (!allowed) as _
++        }
++
+         fn on_render_process_terminated(
+             &self,
+             _browser: Option<&mut Browser>,
+@@ -1149,7 +1209,7 @@ wrap_request_handler! {
+     }
+ }
+ 
+-impl_build_new!(pub RequestHandlerImpl => cef::RequestHandler; event_queues: EventQueuesHandle);
++impl_build_new!(pub RequestHandlerImpl => cef::RequestHandler; event_queues: EventQueuesHandle, initial_document_lock: InitialDocumentLock);
+ 
+ fn push_permission_request(
+     event_queues: &EventQueuesHandle,
+@@ -1554,6 +1614,7 @@ fn build_client_handlers(
+     cursor_type: Arc<Mutex<CursorType>>,
+     queues: &ClientQueues,
+     popup_policy: crate::browser::PopupPolicyFlag,
++    initial_document_lock: InitialDocumentLock,
+ ) -> ClientHandlers {
+     let audio_handler = if queues.enable_audio_capture {
+         Some(AudioHandlerImpl::build(
+@@ -1570,13 +1631,13 @@ fn build_client_handlers(
+         render_handler,
+         display_handler: DisplayHandlerImpl::build(cursor_type, queues.event_queues.clone()),
+         context_menu_handler: ContextMenuHandlerImpl::build(),
+-        life_span_handler: LifeSpanHandlerImpl::build(queues.event_queues.clone(), popup_policy),
++        life_span_handler: LifeSpanHandlerImpl::build(queues.event_queues.clone(), popup_policy, initial_document_lock.clone()),
+         load_handler: LoadHandlerImpl::build(queues.event_queues.clone()),
+         find_handler: FindHandlerImpl::build(queues.event_queues.clone()),
+         drag_handler: DragHandlerImpl::build(queues.event_queues.clone()),
+         audio_handler,
+         download_handler: DownloadHandlerImpl::build(queues.event_queues.clone()),
+-        request_handler: RequestHandlerImpl::build(queues.event_queues.clone()),
++        request_handler: RequestHandlerImpl::build(queues.event_queues.clone(), initial_document_lock),
+         permission_handler: PermissionHandlerImpl::build(
+             queues.event_queues.clone(),
+             queues.pending_permission_requests.clone(),
+@@ -1597,9 +1658,10 @@ impl CefClientImpl {
+         cursor_type: Arc<Mutex<CursorType>>,
+         queues: ClientQueues,
+         popup_policy: crate::browser::PopupPolicyFlag,
++        initial_document_lock: InitialDocumentLock,
+     ) -> cef::Client {
+         let ipc = build_ipc_queues(&queues);
+-        let handlers = build_client_handlers(render_handler, cursor_type, &queues, popup_policy);
++        let handlers = build_client_handlers(render_handler, cursor_type, &queues, popup_policy, initial_document_lock);
+         Self::new(handlers, ipc)
+     }
+ }
+diff --git a/crates/gdcef/src/webrender_ipc.rs b/crates/gdcef/src/webrender_ipc.rs
+index 2d715971..1805c43c 100644
+--- a/crates/gdcef/src/webrender_ipc.rs
++++ b/crates/gdcef/src/webrender_ipc.rs
+@@ -20,6 +20,10 @@ pub(crate) fn on_process_message_received(
+             if let Some(args) = message.argument_list() {
+                 let arg = args.string(0);
+                 let msg_str = CefStringUtf16::from(&arg).to_string();
++                if msg_str.as_bytes().len() > 65_536 {
++                    godot::global::godot_warn!("[CefTexture] Dropping oversized IPC control message");
++                    return 1;
++                }
+                 let debug_event = crate::browser::DebugIpcEvent::text(
+                     crate::browser::DebugIpcDirection::ToGodot,
+                     msg_str.clone(),

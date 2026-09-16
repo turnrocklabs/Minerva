@@ -150,7 +150,9 @@ func get_panel_owner(panel_name: String) -> String:
 func handle_ipc_message(
 		panel_name: String,
 		message_type: String,
-		payload: Dictionary
+		payload: Dictionary,
+		context = null,
+		expected_plugin_id: String = ""
 ) -> Dictionary:
 
 	# --- 1. Basic input validation -------------------------------------------
@@ -177,6 +179,9 @@ func handle_ipc_message(
 		})
 		return PluginErrors.permission_denied("",
 			"Panel '%s' is not registered with any plugin" % panel_name)
+	if not expected_plugin_id.is_empty() and plugin_id != expected_plugin_id:
+		return PluginErrors.permission_denied(expected_plugin_id,
+			"Panel ownership changed since this document was created")
 
 	# --- 3. Validate panel ownership (double-check consistency) ---------------
 	if not _validate_panel_ownership(plugin_id, panel_name):
@@ -218,10 +223,19 @@ func handle_ipc_message(
 	})
 
 	var result: Dictionary
-	if message_type.begins_with("capability:"):
-		result = await _dispatch_to_capability_broker(plugin_id, message_type, payload)
+	if message_type.begins_with("mcp.proxy:") and _is_exact_owned_tool(plugin_id,
+			message_type.substr("mcp.proxy:".length())):
+		result = await _dispatch_owned_tool(plugin_id,
+			message_type.substr("mcp.proxy:".length()), payload, context)
+	elif message_type.begins_with("capability:") or message_type.begins_with("mcp.proxy:"):
+		result = await _dispatch_to_capability_broker(plugin_id, message_type, payload, context)
 	else:
-		result = await _dispatch_to_plugin_backend(plugin_id, message_type, payload)
+		result = await _dispatch_to_plugin_backend(plugin_id, message_type, payload, context)
+	if get_panel_owner(panel_name) != plugin_id:
+		return PluginErrors.permission_denied(plugin_id,
+			"Panel ownership changed during IPC dispatch")
+	if context != null and context.is_stopped():
+		return context.stopped_result()
 
 	result = PluginPayloadLimits.bound_reply(result, plugin_id)
 	_audit(plugin_id, EVENT_IPC_DISPATCHED, {
@@ -252,7 +266,41 @@ func _validate_message_declared(plugin_id: String, message_type: String) -> bool
 	if def == null:
 		return false
 
-	return message_type in def.ui_ipc_messages
+	# MCP proxies are separately grant-checked by CapabilityBroker. An exact
+	# tool owned by this live plugin may call back into its own backend without
+	# a host capability grant; ownership comes from the host registry, not JS.
+	return message_type.begins_with("mcp.proxy:") \
+		or message_type in def.ui_ipc_messages
+
+
+func _is_exact_owned_tool(plugin_id: String, tool_name: String) -> bool:
+	var singleton = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	if singleton == null or singleton.get("plugin_tool_registry") == null:
+		return false
+	return singleton.plugin_tool_registry.get_tool_owner(tool_name) == plugin_id
+
+
+func _dispatch_owned_tool(plugin_id: String, tool_name: String, payload: Dictionary,
+		context = null) -> Dictionary:
+	var singleton = Engine.get_main_loop().root.get_node_or_null("SingletonObject")
+	if singleton == null or singleton.get_mcp_manager().minerva_server == null:
+		return PluginErrors.plugin_not_running(plugin_id)
+	var owned_context = context.for_plugin(plugin_id) if context != null else null
+	var result: Dictionary = await singleton.get_mcp_manager().minerva_server.call_tool(
+		tool_name, payload, owned_context)
+	if not _application_succeeded(result):
+		if not result.has("success"):
+			result["success"] = false
+		return result
+	var application: Dictionary = result.duplicate(true)
+	application.erase("success")
+	return PluginErrors.success(application)
+
+
+func _application_succeeded(result: Dictionary) -> bool:
+	return result.get("success", result.get("allowed",
+		not (result.has("error") or result.has("error_code")
+		or not str(result.get("error_message", "")).is_empty()))) == true
 
 
 ## Returns true when panel_name is listed in the plugin's manifest ui.panels.
@@ -286,9 +334,11 @@ func _validate_panel_ownership(plugin_id: String, panel_name: String) -> bool:
 func _dispatch_to_capability_broker(
 		plugin_id: String,
 		message_type: String,
-		payload: Dictionary
+		payload: Dictionary,
+		context = null
 ) -> Dictionary:
-	var capability: String = message_type.substr("capability:".length())
+	var capability: String = message_type.substr("capability:".length()) \
+		if message_type.begins_with("capability:") else message_type
 	if capability.is_empty():
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"capability message_type has empty capability name (expected 'capability:<name>')")
@@ -298,7 +348,7 @@ func _dispatch_to_capability_broker(
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"Host capability broker is not available")
 
-	return await capability_broker.dispatch(plugin_id, capability, payload)
+	return await capability_broker.dispatch(plugin_id, capability, payload, context)
 
 
 ## Dispatch a plugin-specific IPC message to the plugin's MCP backend.
@@ -312,7 +362,8 @@ func _dispatch_to_capability_broker(
 func _dispatch_to_plugin_backend(
 		plugin_id: String,
 		message_type: String,
-		payload: Dictionary
+		payload: Dictionary,
+		context = null
 ) -> Dictionary:
 	if plugin_manager == null:
 		push_warning("[PluginWebviewBroker] _dispatch_to_plugin_backend: no plugin_manager set")
@@ -329,19 +380,32 @@ func _dispatch_to_plugin_backend(
 	if conn == null:
 		return PluginErrors.plugin_not_running(plugin_id)
 
-	# MCPServerConnection.call_tool returns a Variant (awaitable).
-	# We call it synchronously here; callers that need async should await
-	# handle_ipc_message themselves.
-	var call_result = await conn.call_tool(message_type, payload)
+	# Keep the caller's execution context attached through the backend await.
+	var plugin_context = context.for_plugin(plugin_id) if context != null else null
+	var call_result
+	if context != null:
+		call_result = await conn.call_tool_with_context(message_type, payload, plugin_context)
+	else:
+		call_result = await conn.call_tool(message_type, payload)
+	if plugin_manager.get_connection(plugin_id) != conn:
+		return PluginErrors.plugin_not_running(plugin_id)
+	if plugin_context != null and plugin_context.is_stopped():
+		return plugin_context.stopped_result()
 
 	if call_result == null:
 		return PluginErrors.schema_validation_failed(plugin_id,
 			"Plugin backend returned null for message '%s'" % message_type)
 
 	if call_result is Dictionary:
-		# Normalise to standard success wrapper if the backend didn't already wrap it.
-		if call_result.has("success"):
+		if not _application_succeeded(call_result):
+			if not call_result.has("success"):
+				call_result["success"] = false
 			return call_result
+		# Normalise to the success/result contract expected by bridge callers.
+		if call_result.has("success"):
+			var application: Dictionary = call_result.duplicate(true)
+			application.erase("success")
+			return PluginErrors.success(application)
 		return PluginErrors.success(call_result)
 
 	# Unexpected return type — wrap it so callers always get a Dictionary.
@@ -355,85 +419,3 @@ func _dispatch_to_plugin_backend(
 func _audit(plugin_id: String, event_type: String, detail: Dictionary) -> void:
 	if audit_log != null:
 		audit_log.log_event(plugin_id, event_type, detail)
-
-
-# ---------------------------------------------------------------------------
-# INTEGRATION NOTES
-# ---------------------------------------------------------------------------
-#
-# This broker is designed to slot into the WebView IPC flow with minimal
-# changes to existing code. Below is the wiring plan; do NOT apply these
-# changes here — this is documentation only.
-#
-# ── Where to wire it ──────────────────────────────────────────────────────
-#
-# The natural hook point is WebViewEditor._on_ipc_message() in
-#   src/Scripts/UI/Controls/WebViewEditor/WebViewEditor.gd  (line 142)
-#
-# Currently that method just prints the raw IPC string.  The replacement
-# should:
-#
-#   1. Parse the raw IPC string as JSON: {"type": "...", "payload": {...}}
-#   2. Extract message_type and payload.
-#   3. Determine the panel_name for this WebViewEditor instance.
-#      (WebViewEditor already has an editor_id field; plugin panels should
-#       set a human-readable panel_name matching the manifest declaration.)
-#   4. Call:
-#        var result = await _webview_broker.handle_ipc_message(
-#            panel_name, message_type, payload
-#        )
-#   5. Relay the result back to JS via:
-#        _webview.evaluate_javascript(
-#            "window._minervaIPCReply(%s)" % JSON.stringify(result)
-#        )
-#      (The JS bridge in minerva_bridge.gd should expose _minervaIPCReply
-#       and resolve the matching promise.)
-#
-# ── Where to obtain the broker ────────────────────────────────────────────
-#
-# PluginWebviewBroker should be owned by SingletonObject (or PluginManager)
-# and made accessible via SingletonObject.plugin_webview_broker so that any
-# panel host can reach it without a hard dependency chain.
-#
-# ── Plugin-panel HTML API (JS side) ──────────────────────────────────────
-#
-# The updated minerva_bridge.gd should replace the direct HTTP/MCP fetch
-# with an IPC call that the broker intercepts:
-#
-#   window.minerva.ipc = async function(messageType, payload) {
-#     return new Promise((resolve, reject) => {
-#       const id = Date.now() + Math.random();
-#       window._minervaIPCPending[id] = { resolve, reject };
-#       window.ipc.postMessage(JSON.stringify({
-#         id: id,
-#         type: messageType,
-#         payload: payload || {}
-#       }));
-#     });
-#   };
-#
-#   window._minervaIPCPending = {};
-#   window._minervaIPCReply = function(result) {
-#     const pending = window._minervaIPCPending[result.id];
-#     if (!pending) return;
-#     delete window._minervaIPCPending[result.id];
-#     if (result.success) pending.resolve(result.result);
-#     else pending.reject(new Error(result.error_message || 'IPC error'));
-#   };
-#
-# With this in place the JS side never touches localhost or MCP directly;
-# all traffic flows through this broker and its policy checks.
-#
-# ── Manifest example ─────────────────────────────────────────────────────
-#
-#   "ui": {
-#     "panels": ["notes_helper_panel"],
-#     "ipc_messages": [
-#       "notes_helper.summarise",
-#       "capability:notes.create",
-#       "capability:notes.read"
-#     ]
-#   }
-#
-# Note that capability dispatch messages (prefix "capability:") must still
-# be listed in ipc_messages so the manifest acts as an explicit allowlist.
