@@ -93,10 +93,43 @@ def _prepare_pinned_wry(root: Path, vendor: Path) -> None:
     print(f"Prepared checksum-pinned WRY {version}: {source}")
 
 
+def _patch_stack_is_applied(vendor: Path, patches: list[Path]) -> bool:
+    """Recognize an applied stack even when later patches overlap earlier context."""
+    if not patches:
+        return True
+    current_diff = subprocess.check_output(
+        ["git", "-C", str(vendor), "diff", "--binary", "HEAD"])
+    if not current_diff:
+        return False
+    with tempfile.TemporaryDirectory(prefix="minerva-wry-patch-check-") as directory:
+        checkout = Path(directory) / "godot_wry"
+        subprocess.run(
+            ["git", "clone", "--shared", "--quiet", str(vendor), str(checkout)],
+            check=True)
+        applied = subprocess.run(
+            ["git", "-C", str(checkout), "apply"], input=current_diff,
+            capture_output=True)
+        if applied.returncode:
+            return False
+        for patch in reversed(patches):
+            reversed_patch = subprocess.run(
+                ["git", "-C", str(checkout), "apply", "--reverse", str(patch)],
+                capture_output=True)
+            if reversed_patch.returncode:
+                return False
+    return True
+
+
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     vendor = root / "vendor/godot_wry"
-    for patch in sorted((root / "patches").glob("godot_wry-*.patch")):
+    patches = sorted((root / "patches").glob("godot_wry-*.patch"))
+    if _patch_stack_is_applied(vendor, patches):
+        for patch in patches:
+            print(f"Already applied: {patch.name}")
+        _prepare_pinned_wry(root, vendor)
+        return
+    for patch in patches:
         command = ["git", "-C", str(vendor), "apply"]
         already_applied = subprocess.run(command + ["--reverse", "--check", str(patch)],
                                          capture_output=True).returncode == 0

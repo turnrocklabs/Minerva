@@ -1,45 +1,56 @@
 diff --git a/rust/src/lib.rs b/rust/src/lib.rs
-index 75c3838..2f78472 100644
+index c68b9173..5dcf211c 100644
 --- a/rust/src/lib.rs
 +++ b/rust/src/lib.rs
-@@ -5,6 +5,7 @@ use godot::global::MouseButtonMask;
- use godot::init::*;
- use godot::prelude::*;
- use godot::classes::{Control, DisplayServer, IControl, Input, InputEventMouseButton, InputEventMouseMotion, InputEventKey, ProjectSettings};
-+use godot::classes::notify::ControlNotification;
- use godot::global::{Key, MouseButton};
- use lazy_static::lazy_static;
- use serde_json;
-@@ -110,6 +111,32 @@ impl IControl for WebView {
-     fn process(&mut self, _delta: f64) {
-         self.update_webview();
-     }
-+
-+    fn on_notification(&mut self, what: ControlNotification) {
-+        // Tear the native webview down on destruction. The native surface (a
-+        // WebKitGTK child window on Linux) is destroyed lazily and only
-+        // finalizes when the GTK event loop is pumped — which otherwise happens
-+        // only inside update_webview() of *live* webviews. Deleting the last
-+        // webview leaves nothing to pump GTK, so the freed surface lingers
-+        // painted over its old location. Here we hide it, drop it, and pump GTK
-+        // ourselves so the teardown completes regardless of how many webviews
-+        // remain. We use PREDELETE (not EXIT_TREE) so a webview that is merely
-+        // hidden or reparented and later returns is not destroyed.
-+        if what == ControlNotification::PREDELETE {
-+            if let Some(webview) = self.webview.take() {
-+                let _ = webview.set_visible(false);
-+                drop(webview);
-+                #[cfg(target_os = "linux")]
-+                {
-+                    let mut i = 0;
-+                    while gtk::events_pending() && i < 64 {
-+                        gtk::main_iteration_do(false);
-+                        i += 1;
-+                    }
+@@ -12,2 +12,3 @@ use std::collections::HashMap;
+ use std::sync::{Arc, Mutex};
++use std::sync::atomic::{AtomicBool, Ordering};
+ use std::path::PathBuf;
+@@ -77,2 +78,3 @@ struct WebView {
+     initial_document_url: GString,
++    callbacks_alive: Arc<AtomicBool>,
+ }
+@@ -104,2 +106,3 @@ impl IControl for WebView {
+             initial_document_url: GString::new(),
++            callbacks_alive: Arc::new(AtomicBool::new(true)),
+         }
+@@ -117 +120,23 @@ impl IControl for WebView {
++impl Drop for WebView {
++    fn drop(&mut self) {
++        // Native callbacks can race destruction. Revoke their access to the
++        // cloned Godot base before destroying the platform webview.
++        self.callbacks_alive.store(false, Ordering::Release);
++        if let Some(webview) = self.webview.take() {
++            let _ = webview.set_visible(false);
++            drop(webview);
++            #[cfg(target_os = "linux")]
++            {
++                // WebKitGTK destroys its child surface lazily; finish a bounded
++                // amount of native teardown even when this was the last view.
++                let mut i = 0;
++                while gtk::events_pending() && i < 64 {
++                    gtk::main_iteration_do(false);
++                    i += 1;
 +                }
 +            }
 +        }
 +    }
- }
- 
++}
++
  #[godot_api]
+@@ -255,3 +280,7 @@ impl WebView {
+                 let base = Arc::clone(&base);
++                let callbacks_alive = Arc::clone(&self.callbacks_alive);
+                 move |req: Request<String>| {
++                    if !callbacks_alive.load(Ordering::Acquire) {
++                        return;
++                    }
+                     let mut base = base.lock().unwrap();
+@@ -406,3 +435,7 @@ impl WebView {
+                 let base = Arc::clone(&base);
++                let callbacks_alive = Arc::clone(&self.callbacks_alive);
+                 move | event: PageLoadEvent, url: String | {
++                    if !callbacks_alive.load(Ordering::Acquire) {
++                        return;
++                    }
+                     let mut base = base.lock().unwrap();

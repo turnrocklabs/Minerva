@@ -96,7 +96,7 @@ class ContributorSetupTest(unittest.TestCase):
             subprocess.run(["git", "-C", str(vendor), "config",
                             "user.name", "Minerva fixture"], check=True)
             target = vendor / "source.txt"
-            target.write_text("upstream\n", encoding="utf-8")
+            target.write_text("first: upstream\nsecond: upstream\n", encoding="utf-8")
             lock = vendor / "rust/Cargo.lock"
             lock.parent.mkdir(parents=True)
             dependency_root = vendor / "rust/.minerva-deps"
@@ -116,11 +116,19 @@ class ContributorSetupTest(unittest.TestCase):
                             "source.txt", "rust/Cargo.lock"], check=True)
             subprocess.run(["git", "-C", str(vendor), "commit", "-qm",
                             "fixture upstream"], check=True)
-            target.write_text("patched\n", encoding="utf-8")
+            target.write_text("first: patched\nsecond: upstream\n", encoding="utf-8")
             diff = subprocess.run(["git", "-C", str(vendor), "diff"],
                                   check=True, capture_output=True).stdout
-            (root / "patches/godot_wry-test.patch").write_bytes(diff)
-            target.write_text("upstream\n", encoding="utf-8")
+            (root / "patches/godot_wry-first.patch").write_bytes(diff)
+            (root / "patches/godot_wry-second.patch").write_text(
+                "diff --git a/source.txt b/source.txt\n"
+                "--- a/source.txt\n"
+                "+++ b/source.txt\n"
+                "@@ -1,2 +1,2 @@\n"
+                " first: patched\n"
+                "-second: upstream\n"
+                "+second: patched\n", encoding="utf-8")
+            target.write_text("first: upstream\nsecond: upstream\n", encoding="utf-8")
             (root / "patches/wry-0.0.1-file-ipc-request-uri.patch").write_text(
                 "diff --git a/src/ipc.rs b/src/ipc.rs\n"
                 "--- a/src/ipc.rs\n"
@@ -134,7 +142,8 @@ class ContributorSetupTest(unittest.TestCase):
             for _ in range(2):
                 result = subprocess.run(command, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(target.read_text(), "patched\n")
+                self.assertEqual(target.read_text(),
+                                 "first: patched\nsecond: patched\n")
                 self.assertEqual(local.read_text(), "keep my work\n")
                 self.assertEqual((dependency_root / "wry-0.0.1/src/ipc.rs").read_text(),
                                  "patched uri\n")

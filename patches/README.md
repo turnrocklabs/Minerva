@@ -43,6 +43,7 @@ at once.
   cannot distinguish frames, so locked documents also block iframe navigation.
 - `godot_wry-pinned-wry-source.patch` routes Cargo to the checksum-verified,
   build-local WRY 0.50.5 source prepared by `scripts/apply-wry-patches.py`.
-- `wry-0.50.5-file-ipc-request-uri.patch` prevents GTK IPC from panicking on
-  authority-free `file:///` documents. It substitutes `/` only as inert request
-  metadata; the wrapper still authenticates the body's document capability.
+- `wry-0.50.5-file-ipc-request-uri.patch` prevents GTK, WKWebView, WebView2,
+  and Android IPC from panicking on authority-free `file:///` documents. It
+  substitutes `/` only as inert request metadata; native navigation keeps the
+  exact file URL and the wrapper still authenticates the body's capability.
