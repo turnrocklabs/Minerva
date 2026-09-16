@@ -741,9 +741,11 @@ func _enable_tool_sets(args: Dictionary) -> Dictionary:
 	if sets.is_empty():
 		# Empty array = enable all (clear filter)
 		server._enabled_tool_sets = []
+		_invalidate_public_catalog()
 		return {"success": true, "enabled_sets": [], "all_enabled": true, "message": "All tool sets enabled"}
 
 	server._enabled_tool_sets = sets.duplicate()
+	_invalidate_public_catalog()
 	return {
 		"success": true,
 		"enabled_sets": server._enabled_tool_sets.duplicate(),
@@ -774,6 +776,7 @@ func _disable_tool_sets(args: Dictionary) -> Dictionary:
 			var idx = server._enabled_tool_sets.find(set_name)
 			if idx >= 0:
 				server._enabled_tool_sets.remove_at(idx)
+	_invalidate_public_catalog()
 
 	return {
 		"success": true,
@@ -781,6 +784,11 @@ func _disable_tool_sets(args: Dictionary) -> Dictionary:
 		"disabled": sets_to_disable,
 		"message": "Disabled tool sets: %s" % str(sets_to_disable)
 	}
+
+
+func _invalidate_public_catalog() -> void:
+	if server.mcp_manager != null and server.mcp_manager.http_server != null:
+		server.mcp_manager.http_server.invalidate_tools_catalog("tool-set visibility changed")
 
 #endregion
 

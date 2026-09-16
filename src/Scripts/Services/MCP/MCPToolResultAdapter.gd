@@ -39,6 +39,7 @@ static func adapt(envelope) -> MCPToolCallOutcome:
 	var inner_wire = Wire.create(text, parser.data)
 	var numeric: Dictionary = await WireAdapter.validate_for_application(inner_wire)
 	if not numeric.get("ok", false):
+		outcome.wire_authoritative = false
 		var detail: Dictionary = numeric.get("error", {})
 		var rejected := {"success": false,
 			"error": "Unsafe numeric representation in MCP text result",

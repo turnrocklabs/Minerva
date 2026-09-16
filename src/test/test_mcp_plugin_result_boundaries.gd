@@ -49,11 +49,20 @@ func _run() -> void:
 		and (await registry.register_backend_tools("probe", connection)).get("ok", false))
 
 	var interaction = await registry.handle_tool_call_outcome("minerva_probe_input_required", {})
+	var interaction_public_adapter = load(
+		"res://Scripts/Services/MCP/MinervaMCPHttpServer.gd").new()
+	var interaction_public: Dictionary = interaction_public_adapter._public_result_from_outcome(
+		interaction, true)
 	check("plugin result-aware path preserves and classifies input_required before text",
 		interaction.envelope != null and interaction.envelope.result_type == "input_required"
 		and interaction.application.get("error_code") == "input_required"
 		and interaction.application.get("requestState", {}).get("opaque")
+		and interaction_public.get("isError", false)
+		and not interaction_public.has("requestState")
+		and "requestState" not in JSON.stringify(interaction_public)
+		and "inputRequests" not in JSON.stringify(interaction_public)
 		and broker.calls == 0)
+	interaction_public_adapter.free()
 	var nested = await registry.handle_tool_call_outcome("minerva_probe_nested_precision_loss", {})
 	check("unsafe nested JSON cannot reach plugin application or capability processing",
 		nested.application.get("error_code") == "unsupported_number"
@@ -66,15 +75,34 @@ func _run() -> void:
 	check("plugin dispatch retains the same full result envelope with its application view",
 		echo.envelope != null and echo.envelope.to_mcp_format().futureField.kept
 		and echo.application.get("echo", {}).get("marker") == "full-outcome")
+	var PublicServer = load("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd")
+	var public_adapter = PublicServer.new()
+	var public_modern_echo: Dictionary = public_adapter._public_result_from_outcome(echo, true)
+	var public_legacy_echo: Dictionary = public_adapter._public_result_from_outcome(echo, false)
+	var public_nested_failure: Dictionary = public_adapter._public_result_from_outcome(nested, true)
+	check("public adaptation preserves accepted real-child wire fields and stamps only its front era",
+		public_modern_echo.get("resultType") == "complete"
+		and public_modern_echo.get("futureField", {}).get("kept", false)
+		and not public_legacy_echo.has("resultType")
+		and public_nested_failure.get("isError", false)
+		and not public_nested_failure.has("futureField"))
 	var invalid_input = await registry.handle_tool_call_outcome(
 		"minerva_probe_typed_input", {"count": "7"})
 	check("plugin arguments validate against the native schema without LLM coercion",
 		invalid_input.application.has("error") and invalid_input.envelope == null)
 	var invalid_output = await registry.handle_tool_call_outcome(
 		"minerva_probe_requires_output", {})
+	var misleading_output = await registry.handle_tool_call_outcome(
+		"minerva_probe_success_false_valid_output", {})
+	var public_invalid_output: Dictionary = public_adapter._public_result_from_outcome(
+		invalid_output, true)
 	check("declared structured output is validated before capability exposure",
 		invalid_output.application.has("error") and invalid_output.envelope != null
-		and broker.calls == 0)
+		and not invalid_output.wire_authoritative
+		and misleading_output.application.has("error")
+		and not misleading_output.wire_authoritative
+		and public_invalid_output.get("isError", false)
+		and not public_invalid_output.has("futureField") and broker.calls == 0)
 	var ExternalManager = load("res://Scripts/Services/MCP/MCPManager.gd")
 	var native_manager = ExternalManager.new()
 	native_manager.servers["plugin-boundary"] = connection
@@ -120,10 +148,13 @@ func _run() -> void:
 		"minerva_probe_valid_array_output", {})
 	var expected_error = await registry.handle_tool_call_outcome(
 		"minerva_probe_error_missing_output", {})
+	var public_expected_error: Dictionary = public_adapter._public_result_from_outcome(
+		expected_error, true)
 	check("valid structured output passes while isError needs no structuredContent",
 		valid_output.application.get("success", false)
 		and valid_array_output.application.get("success", false)
-		and expected_error.envelope != null and not expected_error.application.get("success", true))
+		and expected_error.envelope != null and not expected_error.application.get("success", true)
+		and public_expected_error.get("isError", false))
 	var modern_direct = await registry.handle_tool_call_outcome(
 		"minerva_probe_capability_direct", {})
 	check("modern result fields remain application data rather than legacy host control",
@@ -137,13 +168,27 @@ func _run() -> void:
 		await legacy_connection.connect_to_server() == OK
 		and (await registry.register_backend_tools("probe", legacy_connection)).get("ok", false))
 	var direct = await registry.handle_tool_call_outcome("minerva_probe_capability_direct", {})
+	var public_direct: Dictionary = public_adapter._public_result_from_outcome(direct, false)
 	var calls_after_direct := broker.calls
 	var nested_capability = await registry.handle_tool_call_outcome(
 		"minerva_probe_capability_nested", {})
 	check("only the directly validated capability payload reaches the broker",
 		direct.application.get("capability_results", []).size() == 1
+		and not direct.wire_authoritative
+		and not public_direct.has("futureField")
+		and JSON.parse_string(public_direct.content[0].text).get(
+			"capability_results", []).size() == 1
 		and calls_after_direct == 1 and broker.calls == calls_after_direct
 		and not nested_capability.application.has("capability_results"))
+	var unchanged_legacy = await registry.handle_tool_call_outcome(
+		"minerva_probe_echo", {"marker": "unchanged-legacy"})
+	var unchanged_public: Dictionary = public_adapter._public_result_from_outcome(
+		unchanged_legacy, false)
+	check("ordinary legacy results retain their full accepted envelope",
+		unchanged_legacy.wire_authoritative
+		and unchanged_public.get("futureField", {}).get("kept", false)
+		and unchanged_public.get("structuredContent", {}).get("fixture") == "preserved"
+		and unchanged_public.get("content", []).size() == 1)
 
 	broker.calls = 0
 	broker.hold_first = true
@@ -184,6 +229,7 @@ func _run() -> void:
 	websocket_connection.disconnect_from_server()
 	external_manager.servers.clear()
 	external_manager.free()
+	public_adapter.free()
 
 	legacy_connection.disconnect_from_server()
 	connection.disconnect_from_server()

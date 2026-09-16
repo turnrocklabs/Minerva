@@ -111,6 +111,11 @@ TOOLS = [
      "inputSchema": {"type": "object", "properties": {}, "required": []},
      "outputSchema": {"type": "object", "properties": {
          "ok": {"type": "boolean"}}, "required": ["ok"]}},
+    {"name": "success_false_valid_output",
+     "description": "Returns a successful wire result whose text says success false.",
+     "inputSchema": {"type": "object", "properties": {}, "required": []},
+     "outputSchema": {"type": "object", "properties": {
+         "ok": {"type": "boolean"}}, "required": ["ok"]}},
     {"name": "invalid_input_root",
      "description": "Uses a Boolean root where Tool requires an object schema.",
      "inputSchema": True},
@@ -146,11 +151,11 @@ TOOLS = [
 
 def _text_result(req_id, payload):
     """Build a standard MCP tools/call result envelope."""
-    result = {"content": [{"type": "text", "text": json.dumps(payload)}]}
+    result = {"content": [{"type": "text", "text": json.dumps(payload)}],
+              "structuredContent": {"fixture": "preserved"},
+              "futureField": {"kept": True}}
     if MODE == "modern":
-        result.update({"resultType": "complete",
-                       "structuredContent": {"fixture": "preserved"},
-                       "futureField": {"kept": True}})
+        result["resultType"] = "complete"
     return {"jsonrpc": "2.0", "id": req_id, "result": result}
 
 
@@ -238,6 +243,11 @@ async def handle_tools_call(req_id, name, args):
 
     elif name in ("typed_input", "requires_output"):
         await send(_text_result(req_id, {"success": True}))
+
+    elif name == "success_false_valid_output":
+        result = _text_result(req_id, {"success": False})
+        result["result"]["structuredContent"] = {"ok": "wrong-type"}
+        await send(result)
 
     elif name == "capability_direct":
         await send(_text_result(req_id, {"success": True, "capability_requests": [

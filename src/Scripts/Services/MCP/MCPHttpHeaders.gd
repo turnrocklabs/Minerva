@@ -1,6 +1,7 @@
 extends RefCounted
 ## Header annotations are schema paths, never arbitrary peer-supplied headers.
 const Protocol = preload("res://Scripts/Services/MCP/MCPProtocol.gd")
+const Utf8 = preload("res://Scripts/Services/MCP/MCPUtf8.gd")
 const TOKEN := "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 static func annotations(schema: Variant) -> Dictionary:
@@ -93,3 +94,91 @@ static func build(request: Dictionary, schema: Variant, version: String, session
 	if size > 65536:
 		return {"error": "HTTP headers exceed byte budget"}
 	return {"headers": headers}
+
+
+static func validate_mirror(request: Dictionary, schema: Variant,
+		headers: Dictionary, version: String) -> String:
+	if str(headers.get("mcp-protocol-version", "")) != version:
+		return "MCP-Protocol-Version header must match request metadata"
+	if str(headers.get("mcp-method", "")) != str(request.get("method", "")):
+		return "Mcp-Method header must match the request method"
+	var method: String = str(request.get("method", ""))
+	var params: Dictionary = request.get("params", {})
+	if method in ["tools/call", "resources/read", "prompts/get"]:
+		if not headers.has("mcp-name"):
+			return "Mcp-Name header is required"
+		var decoded_name := decode(str(headers.get("mcp-name", "")))
+		if not decoded_name.get("ok", false) \
+				or decoded_name.value != str(params.get("name", params.get("uri", ""))):
+			return "Mcp-Name header must match the request target"
+	if method != "tools/call":
+		return ""
+	var extracted := annotations(schema)
+	if not extracted.error.is_empty():
+		return extracted.error
+	for item: Dictionary in extracted.paths:
+		var value: Variant = params.get("arguments", {})
+		for part: String in item.path:
+			value = value.get(part) if value is Dictionary else null
+		var header_name := "mcp-param-%s" % str(item.name).to_lower()
+		if value == null:
+			if headers.has(header_name):
+				return "%s header has no matching argument" % item.name
+			continue
+		if not headers.has(header_name):
+			return "%s header is required for its annotated argument" % item.name
+		var text: String
+		match item.type:
+			"string":
+				if not value is String:
+					return "Header parameter must be a string"
+				text = value
+			"boolean":
+				if not value is bool:
+					return "Header parameter must be boolean"
+				text = "true" if value else "false"
+			"integer":
+				if not Protocol.valid_request_id(value) or value is String:
+					return "Header parameter must be a safe integer"
+				text = str(int(value))
+		var decoded := decode(str(headers.get(header_name, "")))
+		if not decoded.get("ok", false) or decoded.value != text:
+			return "%s header must match its annotated argument" % item.name
+	return ""
+
+
+static func decode(value: String) -> Dictionary:
+	for byte: int in value.to_utf8_buffer():
+		if byte != 9 and (byte < 32 or byte > 126):
+			return {"ok": false}
+	if not value.begins_with("=?base64?") or not value.ends_with("?="):
+		return {"ok": true, "value": value}
+	var encoded := value.substr(9, value.length() - 11)
+	if not _valid_base64(encoded):
+		return {"ok": false}
+	var raw := Marshalls.base64_to_raw(encoded)
+	if Marshalls.raw_to_base64(raw) != encoded:
+		return {"ok": false}
+	if not Utf8.is_valid(raw):
+		return {"ok": false}
+	var decoded := raw.get_string_from_utf8()
+	return {"ok": true, "value": decoded}
+
+
+static func _valid_base64(value: String) -> bool:
+	if value.length() % 4 != 0:
+		return false
+	var padding_started := false
+	var padding_count := 0
+	for character: String in value:
+		if character == "=":
+			padding_started = true
+			padding_count += 1
+			if padding_count > 2:
+				return false
+		elif padding_started or not (character >= "A" and character <= "Z") \
+				and not (character >= "a" and character <= "z") \
+				and not (character >= "0" and character <= "9") \
+				and character not in ["+", "/"]:
+			return false
+	return true

@@ -162,6 +162,8 @@ func _register_tool(name: String, description: String, input_schema: Dictionary,
 		"input_schema": input_schema,
 	}
 	tool_search_index.register_tool(name, description, full_schema, p_tool_set)
+	if mcp_manager.http_server != null:
+		mcp_manager.http_server.invalidate_tools_catalog("Minerva tool registered")
 
 
 ## Register all minerva_* tools in the MCPManager's tool_registry
@@ -205,6 +207,9 @@ func unregister_tools() -> void:
 
 	for tool_name in to_remove:
 		mcp_manager.tool_registry.erase(tool_name)
+		tool_search_index.unregister_tool(tool_name)
+	if mcp_manager.http_server != null:
+		mcp_manager.http_server.invalidate_tools_catalog("Minerva tools unregistered")
 
 	print("[MinervaMCPServer] Unregistered %d tools" % to_remove.size())
 
@@ -261,10 +266,33 @@ func execute_tool(tool_name: String, arguments: Dictionary, caller_chat_id: Stri
 ## HTTP deliberately does not require the internal connection to be enabled.
 func execute_tool_for_http(tool_name: String, arguments: Dictionary, agent_id: String = "",
 		context: ExecutionContext = null) -> Dictionary:
+	var outcome = await execute_tool_for_http_outcome(tool_name, arguments, agent_id, context)
+	return outcome.application
+
+
+func execute_tool_for_http_outcome(tool_name: String, arguments: Dictionary, agent_id: String = "",
+		context: ExecutionContext = null):
 	if context == null:
 		context = ExecutionContext.create("http", "", agent_id)
-	var result: Dictionary = await context.run(_execute_tool_impl.bind(tool_name, arguments, context))
-	return result if context.is_stopped() else _check_duplicate_call(tool_name, arguments, result)
+	var holder := {}
+	var result: Dictionary = await context.run(
+		_execute_tool_impl.bind(tool_name, arguments, context, holder, false))
+	var outcome = holder.get("outcome")
+	if outcome == null:
+		outcome = load("res://Scripts/Services/MCP/MCPToolCallOutcome.gd").new()
+	if context.is_stopped():
+		# A completed plugin call can race a synchronous cancellation callback.
+		# Keep its envelope for diagnostics, but never expose it as this request's
+		# authoritative wire result after the request lifetime has ended.
+		outcome.wire_authoritative = false
+	else:
+		var before_wrapper := result.duplicate(true)
+		var wrapped := _check_duplicate_call(tool_name, arguments, result)
+		if wrapped != before_wrapper:
+			outcome.wire_authoritative = false
+		result = wrapped
+	outcome.application = result
+	return outcome
 
 
 ## Nested native calls retain their explicit parent lifetime and identity.
@@ -275,7 +303,8 @@ func call_tool(tool_name: String, arguments: Dictionary, context: ExecutionConte
 
 
 ## Internal tool execution — routes to modules, plugins, or tool search
-func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: ExecutionContext = null) -> Dictionary:
+func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: ExecutionContext = null,
+		outcome_holder: Dictionary = {}, coerce_arguments := true) -> Dictionary:
 	if context == null:
 		context = ExecutionContext.create("module")
 	if context.is_stopped():
@@ -312,7 +341,7 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 		SingletonObject.emit_mcp_tool_about_to_execute(tool_name, arguments)
 
 	# Coerce argument types to match declared schema (LLMs send arrays/objects as JSON strings)
-	if arguments is Dictionary:
+	if coerce_arguments and arguments is Dictionary:
 		var schema_for_coerce: Dictionary = {}
 		if tool_budget_manager.is_active(tool_name):
 			var tool_info := tool_budget_manager.try_call(tool_name)
@@ -361,7 +390,10 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 	# Plugin-contributed tools (minerva_<plugin_id>_*) — check first since
 	# is_plugin_tool() is an exact-match lookup and avoids prefix collisions.
 	if not dispatched and SingletonObject.plugin_tool_registry != null and SingletonObject.plugin_tool_registry.is_plugin_tool(tool_name):
-		dispatch_result = await SingletonObject.plugin_tool_registry.handle_tool_call(tool_name, arguments, context)
+		var plugin_outcome = await SingletonObject.plugin_tool_registry.handle_tool_call_outcome(
+			tool_name, arguments, context)
+		outcome_holder["outcome"] = plugin_outcome
+		dispatch_result = plugin_outcome.application
 		dispatched = true
 
 	# Plugin management tools (minerva_plugin_list, etc.)
@@ -388,6 +420,8 @@ func _execute_tool_impl(tool_name: String, arguments: Dictionary, context: Execu
 		var resolved := _resolve_policy_injections(pending_injections)
 		if not resolved.is_empty():
 			dispatch_result["_injected_knowledge"] = resolved
+			if outcome_holder.has("outcome"):
+				outcome_holder.outcome.wire_authoritative = false
 
 	return dispatch_result
 

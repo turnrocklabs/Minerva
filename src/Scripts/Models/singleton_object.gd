@@ -674,7 +674,7 @@ func _wire_plugin_tools_to_mcp() -> void:
 			# Invalidate the HTTP server's tools/list cache so external MCP clients
 			# (Claude Code, etc.) see schema changes from plugin install/reload.
 			if mcp_manager.http_server != null:
-				mcp_manager.http_server._tools_list_dirty = true
+				mcp_manager.http_server.invalidate_tools_catalog("plugin registered")
 	)
 
 	# When a plugin's tools are unregistered, remove them from MCP tool_registry
@@ -682,8 +682,9 @@ func _wire_plugin_tools_to_mcp() -> void:
 		func(_p_plugin_id: String, p_tool_names: Array) -> void:
 			for tool_name in p_tool_names:
 				mcp_manager.tool_registry.erase(tool_name)
+				minerva_server.tool_search_index.unregister_tool(tool_name)
 			if mcp_manager.http_server != null:
-				mcp_manager.http_server._tools_list_dirty = true
+				mcp_manager.http_server.invalidate_tools_catalog("plugin unregistered")
 	)
 
 	# Register plugin management MCP tools (minerva_plugin_list, etc.)
@@ -704,6 +705,8 @@ func _wire_plugin_tools_to_mcp() -> void:
 			},
 			""
 		)
+	if mcp_manager.http_server != null:
+		mcp_manager.http_server.invalidate_tools_catalog("plugin management tools registered")
 
 	print("[Plugins] Wired plugin tools to MinervaMCPServer (%d management tools registered)" % plugin_mcp_tools.get_tool_definitions().size())
 

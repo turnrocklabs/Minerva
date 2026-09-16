@@ -9,6 +9,9 @@ var conformance_errors: Array[String] = []
 ## field. Consumers can distinguish that compatibility field from a backend's
 ## explicit scene envelope without reparsing validated wire text.
 var application_success_synthesized := false
+## False when host validation, policy, capability processing, or wrappers changed
+## the application result after the peer envelope was received.
+var wire_authoritative := true
 
 
 static func failure(message: String, code: String = ""):

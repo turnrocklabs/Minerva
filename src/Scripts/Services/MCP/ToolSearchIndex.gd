@@ -22,6 +22,8 @@ const STOP_WORDS: Array[String] = [
 
 func register_tool(name: String, description: String, schema: Dictionary, tool_set: String = "") -> void:
 	## Register a tool in the search index.
+	if _tool_meta.has(name):
+		unregister_tool(name)
 	_tool_meta[name] = {"description": description, "tool_set": tool_set}
 	_tool_schemas[name] = schema
 
@@ -38,6 +40,16 @@ func register_tool(name: String, description: String, schema: Dictionary, tool_s
 			_keyword_index[word] = []
 		if name not in _keyword_index[word]:
 			_keyword_index[word].append(name)
+
+
+func unregister_tool(name: String) -> void:
+	_tool_meta.erase(name)
+	_tool_schemas.erase(name)
+	for word: Variant in _keyword_index.keys():
+		var names: Array = _keyword_index[word]
+		names.erase(name)
+		if names.is_empty():
+			_keyword_index.erase(word)
 
 
 func search(query: String, category: String = "", limit: int = 5) -> Array[Dictionary]:

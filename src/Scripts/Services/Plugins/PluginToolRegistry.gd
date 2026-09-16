@@ -491,12 +491,14 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 		return ToolCallOutcome.failure("Plugin connection changed during tool execution")
 	var result: Dictionary = outcome.application
 	if outcome.envelope != null and outcome.envelope.result_type == "complete" \
-			and outcome.application.get("success", not outcome.application.has("error")) \
+			and not outcome.envelope.original_result.get("isError", false) \
+			and outcome.wire_authoritative \
 			and native_definition.has("outputSchema"):
 		if not outcome.envelope.original_result.has("structuredContent"):
 			outcome.application = ToolCallOutcome.failure(
 				"Plugin result omitted structuredContent required by outputSchema",
 				"invalid_result").application
+			outcome.wire_authoritative = false
 			return outcome
 		var output_check: Dictionary = await ToolSchemaRuntime.validate(
 			native_definition.outputSchema, outcome.envelope.original_result.structuredContent)
@@ -508,6 +510,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 			outcome.application = ToolCallOutcome.failure(
 				"Plugin result does not match its MCP outputSchema",
 				str(output_check.get("error", {}).get("code", "invalid_result"))).application
+			outcome.wire_authoritative = false
 			return outcome
 
 	if audit_log != null:
@@ -528,12 +531,15 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	# plugin lane. Modern peers use the separate negotiated control channel.
 	if conn.protocol_profile.era != Profile.Era.INITIALIZED_LEGACY:
 		return outcome
+	var before_capabilities := result.duplicate(true)
 	result = await _process_capability_requests(plugin_id, tool_name, result, context, conn)
 	if context.is_stopped():
 		return ToolCallOutcome.from_error(context.stopped_result())
 	if plugin_manager.get_connection(plugin_id) != conn:
 		return ToolCallOutcome.failure("Plugin connection changed during capability processing")
 	outcome.application = result
+	if result != before_capabilities:
+		outcome.wire_authoritative = false
 
 	# --- Step 6: drain stderr to Minerva's error display ---
 	# Plugin stderr is diagnostic output, not tool results. Route it to
