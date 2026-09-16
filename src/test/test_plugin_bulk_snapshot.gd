@@ -35,10 +35,15 @@ class SnapshotPanel extends Control:
 
 class HTTPReply extends RefCounted:
 	var body: Dictionary = {}
+	var status := 0
 	func is_browser_control() -> bool:
 		return true
-	func send_response(_status: int, _headers: Dictionary, text: String) -> void:
-		body = JSON.parse_string(text)
+	func send_response(response_status: int, _headers: Dictionary, text: String) -> void:
+		status = response_status
+		body = {}
+		var json := JSON.new()
+		if json.parse(text) == OK and json.data is Dictionary:
+			body = json.data
 
 
 func _init() -> void:
@@ -214,8 +219,9 @@ func _control_boundaries(manager: Node, broker: RefCounted, panel: Control, help
 	var http = load("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd").new()
 	var capture := HTTPReply.new()
 	await http._handle_request(capture, {"method": "POST", "path": "/mcp",
-		"headers": {"x-minerva-control": "1"}, "body": JSON.stringify(large)})
-	_check(str(capture.body.get("error", {}).get("message", "")).begins_with("payload_too_large"), "direct HTTP rejects before tool dispatch")
+		"headers": {"origin": "https://untrusted.invalid"}, "body": "not JSON"})
+	_check(capture.status == 403,
+		"browser Origin is rejected before parsing or tool dispatch")
 	http._send_jsonrpc_result(capture, "request-7", large)
 	_check(capture.body.get("id") == "request-7" and capture.body.has("error"), "direct HTTP oversized reply preserves request correlation")
 	http.free()

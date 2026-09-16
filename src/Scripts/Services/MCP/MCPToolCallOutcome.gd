@@ -9,6 +9,10 @@ var conformance_errors: Array[String] = []
 ## field. Consumers can distinguish that compatibility field from a backend's
 ## explicit scene envelope without reparsing validated wire text.
 var application_success_synthesized := false
+## Host-native results validated against a declared outputSchema. This is
+## separate from peer envelopes: native panel execution never fabricates an
+## upstream MCP result or wire authority.
+var validated_structured_content: Variant = null
 ## False when host validation, policy, capability processing, or wrappers changed
 ## the application result after the peer envelope was received.
 var wire_authoritative := true

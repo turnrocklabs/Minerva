@@ -12,6 +12,11 @@ var _fail := 0
 
 
 func _init() -> void:
+	_run.call_deferred()
+
+
+func _run() -> void:
+	await process_frame
 	print("=== doc version-guard (P3) tests ===")
 	test_omitted_version_proceeds()
 	test_matching_version_proceeds()
@@ -76,8 +81,9 @@ func test_json_float_version_accepted() -> void:
 func test_real_buffer_bump_drives_guard() -> void:
 	print("test_real_buffer_bump_drives_guard:")
 	# Integration of the contract: apply_edit bumps version, which the guard reads.
-	var buf := DocumentBuffer.new("/tmp/version_guard_test.txt", "v0")
-	var read_version := buf.version            # agent reads version
+	var Buffer = load("res://Scripts/Services/Documents/DocumentBuffer.gd")
+	var buf = Buffer.new("/tmp/version_guard_test.txt", "v0")
+	var read_version: int = buf.version        # agent reads version
 	buf.apply_edit("v1")                        # human edits in between
 	_check("apply_edit bumped version", buf.version == read_version + 1)
 	_eq("agent's stale write rejected", DocVersionGuard.check({"if_match_version": read_version}, buf.version, buf.file_path).get("code"), "version_mismatch")

@@ -5,6 +5,7 @@ const ExecutionContext = preload("res://Scripts/Services/MCP/MCPExecutionContext
 const Profile = preload("res://Scripts/Services/MCP/MCPProfile.gd")
 const ToolCallOutcome = preload("res://Scripts/Services/MCP/MCPToolCallOutcome.gd")
 const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
+const NativeWireAdapter = preload("res://Scripts/Services/MCP/MCPNativeWireAdapter.gd")
 ## Bridges plugin tools into Minerva's MCP tool system.
 ##
 ## Maintains a registry of tools contributed by installed plugins and handles
@@ -414,6 +415,7 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	var plugin_id: String = _plugin_by_tool.get(tool_name, "")
 	if plugin_id.is_empty():
 		return ToolCallOutcome.from_error(PluginErrors.tool_not_found("", tool_name))
+	var registered_entry: Dictionary = _find_registered_entry(plugin_id, tool_name)
 
 	# --- Step 1.5: panel-executed tools (executor == "panel") ---
 	# Panel tools run host-side inside the plugin's live scene panel; the
@@ -421,9 +423,8 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	# (DCR 019f6c3d0e3d contract §2 — this also removes the backend-stopped
 	# failure mode for these tools).
 	if _get_tool_executor(plugin_id, tool_name) == "panel":
-		var panel_outcome = ToolCallOutcome.new()
-		panel_outcome.application = await _handle_panel_tool_call(plugin_id, tool_name, args)
-		return panel_outcome
+		return await _handle_panel_tool_outcome(plugin_id, tool_name, args, context,
+			registered_entry)
 
 	# --- Step 2: verify plugin is running ---
 	if plugin_manager == null:
@@ -464,14 +465,9 @@ func _handle_tool_outcome_with_context(tool_name: String, args: Dictionary,
 	# was applied). Look it up from the stored "_backend_name" field. If absent
 	# (manifest-declared tools always use the exact name), use tool_name as-is.
 	var dispatch_name := tool_name
-	var registered_entry: Dictionary = {}
-	for entry in _tools_by_plugin.get(plugin_id, []):
-		if entry.get("name") == tool_name:
-			registered_entry = entry
-			var backend_name: String = entry.get("_backend_name", "")
-			if not backend_name.is_empty():
-				dispatch_name = backend_name
-			break
+	var backend_name: String = registered_entry.get("_backend_name", "")
+	if not backend_name.is_empty():
+		dispatch_name = backend_name
 	var native_definition: Dictionary = registered_entry.get("mcp_definition", {})
 	var input_schema: Variant = native_definition.get("inputSchema",
 		registered_entry.get("input_schema", {}))
@@ -584,10 +580,17 @@ const _ANNOTATION_HOST_REGISTRY_PATH := "res://Scripts/Services/Annotations/Anno
 ## Unknown tools resolve to "backend" (the caller has already validated
 ## ownership via _plugin_by_tool, so this is just a field read).
 func _get_tool_executor(plugin_id: String, tool_name: String) -> String:
-	for entry in _tools_by_plugin.get(plugin_id, []):
-		if entry.get("name") == tool_name:
-			return str(entry.get("executor", "backend"))
+	var entry := _find_registered_entry(plugin_id, tool_name)
+	if not entry.is_empty():
+		return str(entry.get("executor", "backend"))
 	return "backend"
+
+
+func _find_registered_entry(plugin_id: String, tool_name: String) -> Dictionary:
+	for entry: Dictionary in _tools_by_plugin.get(plugin_id, []):
+		if entry.get("name") == tool_name:
+			return entry
+	return {}
 
 
 ## Resolve the PluginScenePanelBroker: explicit injection first (tests,
@@ -633,65 +636,146 @@ func _annotation_host_registry():
 ## duck-typed `plugin_id` property on the panel itself (fallback-resolved
 ## panels the broker doesn't know). Undeterminable ownership is a DENY —
 ## fail-safe, a tool must never execute against another plugin's panel.
-func _handle_panel_tool_call(plugin_id: String, tool_name: String, args: Dictionary) -> Dictionary:
+func _prepare_panel_call(plugin_id: String, tool_name: String,
+		arguments: Dictionary) -> Dictionary:
+	var args := arguments
 	if args.has("document_id") or args.has("view_id"):
 		if not str(args.get("editor_name", "")).is_empty():
-			return {"error": "use document_id/view_id or editor_name, not both"}
+			return {"ok": false, "error_result": {
+				"error": "use document_id/view_id or editor_name, not both"}}
 		var pane = SingletonObject.editor_pane
 		var views: Array = pane.get_open_editors() if pane != null else []
-		var located := DocumentIdentity.resolve(args, views, _resolve_scene_panel_broker(), plugin_id)
+		var located := DocumentIdentity.resolve(
+			args, views, _resolve_scene_panel_broker(), plugin_id)
 		if not located.ok:
-			return located
+			return {"ok": false, "error_result": located}
 		args = args.duplicate(true)
+		# Routing aliases have been consumed into the canonical panel identity;
+		# native schemas and handlers receive one locator form.
+		args.erase("document_id")
+		args.erase("view_id")
 		args["editor_name"] = str(located.editor.plugin_panel_key)
-	# --- editor_name is required for panel tools (v1) ---
 	var editor_name := str(args.get("editor_name", ""))
 	if editor_name.is_empty():
-		return PluginErrors.editor_name_required(plugin_id, tool_name)
-
-	# --- Resolve the live panel ---
+		return {"ok": false, "error_result":
+			PluginErrors.editor_name_required(plugin_id, tool_name)}
 	var broker = _resolve_scene_panel_broker()
-	var panel: Object = null
-	if broker != null and broker.has_method("get_panel_for_editor"):
-		panel = broker.get_panel_for_editor(editor_name)
-
+	var panel: Object = broker.get_panel_for_editor(editor_name) \
+		if broker != null and broker.has_method("get_panel_for_editor") else null
+	var broker_bound := panel != null
 	if panel == null:
-		# Fallback: annotation-substrate hosts that expose their panel.
-		var ahr = _annotation_host_registry()
-		if ahr != null:
-			var host = ahr.get_host(editor_name)
+		var registry = _annotation_host_registry()
+		if registry != null:
+			var host = registry.get_host(editor_name)
 			if host != null and host.has_method("get_panel"):
 				panel = host.get_panel()
-
 	if panel == null or not is_instance_valid(panel):
-		# Miss: list every editor name we know about (mirrors the
-		# MCPPcbPanelTools._no_host_error UX so callers can self-correct).
-		var known: Array = []
-		if broker != null and broker.has_method("list_panel_editor_names"):
-			known = broker.list_panel_editor_names()
-		var ahr2 = _annotation_host_registry()
-		if ahr2 != null:
-			for n in ahr2.list_editor_names():
-				if not known.has(n):
-					known.append(n)
-		# A registration whose panel scene is gone answers no call, so it is
-		# reported apart from the names that do work rather than among them.
+		var known: Array = broker.list_panel_editor_names() \
+			if broker != null and broker.has_method("list_panel_editor_names") else []
+		var registry = _annotation_host_registry()
+		if registry != null:
+			for name in registry.list_editor_names():
+				if not known.has(name):
+					known.append(name)
 		var dead: Array = []
 		if broker != null and broker.has_method("list_dead_panel_editor_names"):
-			for n in broker.list_dead_panel_editor_names():
-				if not known.has(n) and not dead.has(n):
-					dead.append(n)
-		return PluginErrors.editor_not_found(plugin_id, editor_name, known, dead)
-
-	# --- Ownership check ---
+			for name in broker.list_dead_panel_editor_names():
+				if not known.has(name) and not dead.has(name):
+					dead.append(name)
+		return {"ok": false, "error_result":
+			PluginErrors.editor_not_found(plugin_id, editor_name, known, dead)}
 	var owner_id := ""
 	if broker != null and broker.has_method("get_panel_owner"):
 		owner_id = str(broker.get_panel_owner(editor_name))
 	if owner_id.is_empty() and "plugin_id" in panel:
 		owner_id = str(panel.get("plugin_id"))
 	if owner_id != plugin_id:
-		return PluginErrors.panel_not_owned(plugin_id, editor_name, owner_id)
+		return {"ok": false, "error_result":
+			PluginErrors.panel_not_owned(plugin_id, editor_name, owner_id)}
+	return {"ok": true, "args": args, "editor_name": editor_name,
+		"broker": broker, "broker_bound": broker_bound, "panel": panel}
 
+
+func _panel_call_is_current(plugin_id: String, tool_name: String,
+		registered_entry: Dictionary, prepared: Dictionary) -> bool:
+	if _plugin_by_tool.get(tool_name, "") != plugin_id \
+			or not is_same(_find_registered_entry(plugin_id, tool_name), registered_entry):
+		return false
+	var panel: Object = prepared.panel
+	if panel == null or not is_instance_valid(panel) \
+			or _resolve_scene_panel_broker() != prepared.broker:
+		return false
+	var broker = prepared.broker
+	if prepared.broker_bound:
+		if broker == null or not broker.has_method("get_panel_for_editor"):
+			return false
+		return broker.get_panel_for_editor(prepared.editor_name) == panel \
+			and (not broker.has_method("get_panel_owner") \
+			or str(broker.get_panel_owner(prepared.editor_name)) == plugin_id)
+	var registry = _annotation_host_registry()
+	if registry == null:
+		return false
+	var host = registry.get_host(prepared.editor_name)
+	if host == null or not host.has_method("get_panel") or host.get_panel() != panel:
+		return false
+	return "plugin_id" in panel and str(panel.get("plugin_id")) == plugin_id
+
+
+func _handle_panel_tool_outcome(plugin_id: String, tool_name: String, args: Dictionary,
+		context: ExecutionContext, registered_entry: Dictionary):
+	var prepared: Dictionary = _prepare_panel_call(plugin_id, tool_name, args)
+	if not prepared.get("ok", false):
+		return ToolCallOutcome.from_error(prepared.error_result)
+	var native_definition: Dictionary = registered_entry.get("mcp_definition", {})
+	var input_schema: Variant = native_definition.get("inputSchema",
+		registered_entry.get("input_schema", {}))
+	var input_check: Dictionary = await ToolSchemaRuntime.validate(
+		input_schema, prepared.args)
+	if context.is_stopped():
+		return ToolCallOutcome.from_error(context.stopped_result())
+	if not _panel_call_is_current(
+			plugin_id, tool_name, registered_entry, prepared):
+		return ToolCallOutcome.failure("Panel tool registration changed during input validation")
+	if not input_check.get("ok", false):
+		return ToolCallOutcome.failure(
+			"Plugin tool arguments do not match its native MCP schema",
+			str(input_check.get("error", {}).get("code", "invalid_arguments")))
+	var application: Dictionary = await _dispatch_prepared_panel_tool(plugin_id,
+		tool_name, prepared.args, prepared.panel, prepared.editor_name)
+	if context.is_stopped():
+		return ToolCallOutcome.from_error(context.stopped_result())
+	if not _panel_call_is_current(
+			plugin_id, tool_name, registered_entry, prepared):
+		return ToolCallOutcome.failure("Panel tool registration changed during execution")
+	var outcome = ToolCallOutcome.new()
+	outcome.application = application
+	outcome.wire_authoritative = false
+	var succeeded: bool = application.get("success", application.get("allowed",
+		not (application.has("error") or application.has("error_code") \
+		or not str(application.get("error_message", "")).is_empty()))) == true
+	if not succeeded or not native_definition.has("outputSchema"):
+		return outcome
+	var adapted: Dictionary = NativeWireAdapter.adapt(application)
+	if not adapted.get("ok", false):
+		return ToolCallOutcome.failure(str(adapted.get("error",
+			"Panel tool result is not MCP wire-safe")), "invalid_result")
+	var output_check: Dictionary = await ToolSchemaRuntime.validate(
+		native_definition.outputSchema, adapted.value)
+	if context.is_stopped():
+		return ToolCallOutcome.from_error(context.stopped_result())
+	if not _panel_call_is_current(
+			plugin_id, tool_name, registered_entry, prepared):
+		return ToolCallOutcome.failure("Panel tool registration changed during output validation")
+	if not output_check.get("ok", false):
+		return ToolCallOutcome.failure(
+			"Plugin result does not match its MCP outputSchema",
+			str(output_check.get("error", {}).get("code", "invalid_result")))
+	outcome.validated_structured_content = adapted.value
+	return outcome
+
+
+func _dispatch_prepared_panel_tool(plugin_id: String, tool_name: String, args: Dictionary,
+		panel: Object, editor_name: String) -> Dictionary:
 	# --- Policy/audit: same boundary events as backend dispatch ---
 	if audit_log != null:
 		audit_log.log_event(plugin_id, "policy_allow", {

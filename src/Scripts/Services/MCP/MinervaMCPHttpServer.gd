@@ -543,6 +543,12 @@ func _public_result_from_outcome(outcome, modern: bool) -> Dictionary:
 	var serialized: Dictionary = JsonSerialization.encode(application)
 	var text: String = serialized.get("raw", "{\"success\":false,\"error\":\"Native result serialization failed\"}")
 	var result := {"content": [{"type": "text", "text": text}]}
+	if outcome != null and outcome.validated_structured_content != null \
+			and application is Dictionary \
+			and application.get("success", application.get("allowed",
+				not (application.has("error") or application.has("error_code") \
+				or not str(application.get("error_message", "")).is_empty()))) == true:
+		result["structuredContent"] = outcome.validated_structured_content
 	# Host-only augmentation changes the application text, while a previously
 	# validated structured result still satisfies the exported output schema.
 	# Local validation/conformance failures are unsuccessful and never enter here.
