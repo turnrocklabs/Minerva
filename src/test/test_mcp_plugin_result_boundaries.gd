@@ -123,9 +123,16 @@ func _run() -> void:
 	var SchemaRuntime = load("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 	var schema_results: Array = []
 	var schema_wave_counts: Array[Dictionary] = []
-	var validator_client = load(
-		"res://Scripts/Services/MCP/MCPWireAdapter.gd").validator_client()
+	var WireAdapter = load("res://Scripts/Services/MCP/MCPWireAdapter.gd")
+	var validator_client = WireAdapter.validator_client()
+	# Other test phases share this bounded helper. Begin the admission oracle only
+	# after prior async continuations have fully unwound; do not reset the helper.
+	var contention_quiescent: bool = await _wait_schema_quiescence(
+		SchemaRuntime, WireAdapter, validator_client, 7000)
+	check("schema contention begins from a stable quiescent helper",
+		contention_quiescent)
 	var generation_before: int = validator_client._generation if validator_client else -1
+	var handles_before: int = validator_client._handles.size() if validator_client else -1
 	for wave in range(9):
 		var wave_results: Array = []
 		for index in range(40):
@@ -157,14 +164,24 @@ func _run() -> void:
 				unexpected_schema_failures += 1
 	var after_contention: Dictionary = await SchemaRuntime.validate(
 		{"type": "object"}, {"still": "usable"})
+	await process_frame
+	var lifecycle_restored: bool = validator_client != null \
+		and validator_client._pending.is_empty() \
+		and SchemaRuntime._active == 0 and WireAdapter._active_validations == 0 \
+		and validator_client._generation == generation_before \
+		and validator_client._handles.size() == handles_before
 	var contention_ok: bool = schema_results.size() == 360 and queue_rejections == 72 \
-		and unexpected_schema_failures == 0 and after_contention.get("ok", false)
+		and unexpected_schema_failures == 0 and after_contention.get("ok", false) \
+		and lifecycle_restored
 	if not contention_ok:
 		print(("SCHEMA_CONTENTION_DIAGNOSTIC results=%d queue_rejections=%d " \
-			+ "unexpected=%d active=%d generation=%d->%d waves=%s failures=%s final=%s") % [
+			+ "unexpected=%d schema_active=%d wire_active=%d generation=%d->%d " \
+			+ "handles=%d->%d pending=%d waves=%s failures=%s final=%s") % [
 			schema_results.size(), queue_rejections, unexpected_schema_failures,
-			SchemaRuntime._active, generation_before,
+			SchemaRuntime._active, WireAdapter._active_validations, generation_before,
 			validator_client._generation if validator_client else -1,
+			handles_before, validator_client._handles.size() if validator_client else -1,
+			validator_client._pending.size() if validator_client else -1,
 			JSON.stringify(schema_wave_counts), JSON.stringify(schema_failure_histogram),
 			JSON.stringify(after_contention)])
 	check("concurrent schema operations stay bounded and release every native handle",
@@ -284,3 +301,21 @@ func _wait_size(values: Array, expected: int, timeout_ms: int) -> bool:
 	while values.size() < expected and Time.get_ticks_msec() < deadline:
 		await process_frame
 	return values.size() == expected
+
+
+func _wait_schema_quiescence(SchemaRuntime, WireAdapter, validator_client,
+		timeout_ms: int) -> bool:
+	var deadline := Time.get_ticks_msec() + timeout_ms
+	while Time.get_ticks_msec() < deadline:
+		var idle: bool = validator_client != null \
+			and validator_client._pending.is_empty() \
+			and SchemaRuntime._active == 0 and WireAdapter._active_validations == 0
+		if idle:
+			# Pending entries are removed before their awaiting callers resume. A
+			# second observation after one frame proves those callers unwound too.
+			await process_frame
+			if validator_client._pending.is_empty() \
+				and SchemaRuntime._active == 0 and WireAdapter._active_validations == 0:
+				return true
+		await process_frame
+	return false
