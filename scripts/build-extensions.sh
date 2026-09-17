@@ -17,23 +17,32 @@ PLATFORM=""
 CHECK_ONLY=0
 HELPER_ONLY=0
 VOICE_ONLY=0
+AGENT_RELAY_ONLY=0
 for arg in "$@"; do
     case "$arg" in
         --check) CHECK_ONLY=1 ;;
         --helper-only) HELPER_ONLY=1 ;;
         --voice-only) VOICE_ONLY=1 ;;
+        --agent-relay-only) AGENT_RELAY_ONLY=1 ;;
         linux|macos) PLATFORM="$arg" ;;
         -h|--help)
-            echo "Usage: $0 [linux|macos] [--check] [--helper-only|--voice-only]"
+            echo "Usage: $0 [linux|macos] [--check] [--helper-only|--voice-only|--agent-relay-only]"
             echo "--check validates installed artifacts without building or launching Godot."
             echo "--helper-only builds/checks only the MCP schema helper."
             echo "--voice-only builds/checks only the bundled Voice runtime."
+            echo "--agent-relay-only builds/checks only the bundled Agent Relay worker."
             exit 0 ;;
         *) echo "Unknown argument: $arg. Use --help. For Windows use build-extensions.ps1."; exit 2 ;;
     esac
 done
-if [ "$HELPER_ONLY" = 1 ] && [ "$VOICE_ONLY" = 1 ]; then
-    echo "--helper-only and --voice-only are mutually exclusive." >&2
+if [ $((HELPER_ONLY + VOICE_ONLY + AGENT_RELAY_ONLY)) -gt 1 ]; then
+    echo "--helper-only, --voice-only and --agent-relay-only are mutually exclusive." >&2
+    exit 2
+fi
+# check-editor-ready.py has no Agent Relay probe; the host's runtime_issue()
+# is what reports a missing stage.
+if [ "$CHECK_ONLY" = 1 ] && [ "$AGENT_RELAY_ONLY" = 1 ]; then
+    echo "--agent-relay-only has no --check probe; run it without --check." >&2
     exit 2
 fi
 ZIG_VERSION="0.15.2"
@@ -51,21 +60,41 @@ if [ -z "$PLATFORM" ]; then
 fi
 echo "Building for platform: $PLATFORM"
 
-voice_target_for_host() {
+# Target triple naming the per-target stage directory the host resolves at
+# runtime (InternalPlugins.target_triple must agree with this).
+internal_plugin_target_for_host() {
     case "$(uname -s)-$(uname -m)" in
         Linux-x86_64|Linux-amd64) echo "linux-x86_64" ;;
         Darwin-arm64|Darwin-aarch64) echo "macos-arm64" ;;
         Darwin-x86_64|Darwin-amd64) echo "macos-amd64" ;;
-        *) echo "Bundled Voice is not supported on $(uname -s)/$(uname -m)." >&2; return 1 ;;
+        *) echo "Bundled internal plugins are not supported on $(uname -s)/$(uname -m)." >&2; return 1 ;;
     esac
 }
 
 build_voice_runtime() {
     local target
-    target="$(voice_target_for_host)"
+    target="$(internal_plugin_target_for_host)"
     echo ""
     echo "=== Building bundled Voice runtime ($target) ==="
     src/plugins/voice/scripts/build-runtime.sh "$target"
+}
+
+# The Agent Relay worker is a single Rust binary. Staging it (rather than
+# pointing the host at target/release) keeps cargo's build tree out of the
+# plugin's runtime directory and gives packaged builds one directory to copy.
+build_agent_relay_runtime() {
+    local target source stage
+    target="$(internal_plugin_target_for_host)"
+    source="src/plugins/agent-relay"
+    stage="$source/runtime-build/stage/$target"
+    echo ""
+    echo "=== Building bundled Agent Relay worker ($target) ==="
+    command -v cargo >/dev/null || { echo "Required tool missing: cargo. Install Rust via rustup. See Docs/Building.md."; exit 1; }
+    cargo build --release --manifest-path "$source/Cargo.toml"
+    mkdir -p "$stage"
+    cp "$source/target/release/agent-relay-plugin" "$stage/agent-relay-plugin"
+    chmod +x "$stage/agent-relay-plugin"
+    printf '%s\n' "$target" > "$stage/target-triple.txt"
 }
 
 # Check-only needs Python but does not install tools or alter submodules.
@@ -79,6 +108,11 @@ if [ "$CHECK_ONLY" = 1 ]; then
         exec python3 scripts/check-editor-ready.py --voice-only
     fi
     exec python3 scripts/check-editor-ready.py
+fi
+
+if [ "$AGENT_RELAY_ONLY" = 1 ]; then
+    build_agent_relay_runtime
+    exit 0
 fi
 
 if [ "$VOICE_ONLY" = 1 ]; then
@@ -114,6 +148,7 @@ if [ "$HELPER_ONLY" = 1 ]; then
 fi
 
 build_voice_runtime
+build_agent_relay_runtime
 
 # ── Git submodules ────────────────────────────────────────────────────
 

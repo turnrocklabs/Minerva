@@ -225,6 +225,16 @@ func install_from_url(tarball_url: String, installer, auto_confirm_skills: bool 
 		_rm_dir_recursive(extract_dir)
 		return _err("bad_manifest", {"path": manifest_path, "reason": "invalid_id"})
 
+	# Host-owned identities are refused HERE, before the delete below, not by
+	# PluginDB.install() further downstream: by then user://plugins/<id>/ has
+	# already been wiped and repopulated from the tarball. Only the staging
+	# files this install created are cleaned up; anything already sitting at
+	# the reserved path is left untouched.
+	if InternalPlugins.has(raw_id):
+		_rm_file(staging_file)
+		_rm_dir_recursive(extract_dir)
+		return _err("reserved_id", {"id": raw_id})
+
 	var plugin_id: String = manifest["id"]
 
 	# --- 5. Move to canonical user://plugins/<id>/ ---

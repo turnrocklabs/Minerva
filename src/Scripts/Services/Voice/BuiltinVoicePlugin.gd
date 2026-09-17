@@ -3,30 +3,15 @@ extends RefCounted
 ## Trusted host-owned identity and platform path for the bundled detector.
 
 const ID := "voice"
+const SOURCE_STAGE := "res://plugins/voice/runtime-build/stage"
 
 
 static func target_triple() -> String:
-	var architecture := Engine.get_architecture_name()
-	match OS.get_name():
-		"Windows": return "windows-x86_64" if architecture in ["x86_64", "amd64"] else ""
-		"macOS":
-			if architecture in ["arm64", "aarch64"]:
-				return "macos-arm64"
-			return "macos-amd64" if architecture in ["x86_64", "amd64"] else ""
-		"Linux": return "linux-x86_64" if architecture in ["x86_64", "amd64"] else ""
-		_: return ""
+	return InternalPlugins.target_triple()
 
 
 static func runtime_directory() -> String:
-	var target := target_triple()
-	if target.is_empty():
-		return ""
-	if OS.has_feature("editor"):
-		return ProjectSettings.globalize_path("res://plugins/voice/runtime-build/stage/%s" % target)
-	var executable_dir := OS.get_executable_path().get_base_dir()
-	if OS.get_name() == "macOS":
-		return executable_dir.path_join("../Resources/builtin-plugins/voice").path_join(target).simplify_path()
-	return executable_dir.path_join("builtin-plugins/voice")
+	return InternalPlugins.staged_runtime_directory(ID, SOURCE_STAGE)
 
 
 static func repair_hint() -> String:
@@ -47,29 +32,32 @@ static func runtime_issue() -> String:
 	return runtime_issue_for(directory, target, repair_hint(), OS.get_name() == "Windows")
 
 
+static func runtime_label() -> String:
+	return "Voice runtime"
+
+
+static func required_runtime_files() -> Array[String]:
+	return required_runtime_files_for(OS.get_name() == "Windows")
+
+
+## `windows_runtime` selects the interpreter layout the bundle was built with,
+## which is not always this host's (the suite checks both from one platform).
+static func required_runtime_files_for(windows_runtime: bool) -> Array[String]:
+	return [
+		"manifest.sha256",
+		"input-artifacts.sha256",
+		"source-inputs.sha256",
+		"target-triple.txt",
+		"python.exe" if windows_runtime else "bin/python3",
+	]
+
+
 static func runtime_issue_for(
 	directory: String, target: String, repair: String, windows_runtime: bool
 ) -> String:
-	var required := [
-		directory.path_join("manifest.sha256"),
-		directory.path_join("input-artifacts.sha256"),
-		directory.path_join("source-inputs.sha256"),
-		directory.path_join("target-triple.txt"),
-		directory.path_join("python.exe") if windows_runtime
-			else directory.path_join("bin/python3"),
-	]
-	var missing: Array[String] = []
-	for path in required:
-		if not FileAccess.file_exists(path):
-			missing.append(path.get_file())
-	if not missing.is_empty():
-		return "Voice runtime is missing %s. %s." % [", ".join(missing), repair]
-	var recorded_target := FileAccess.get_file_as_string(
-		directory.path_join("target-triple.txt")).strip_edges()
-	if recorded_target != target:
-		return "Voice runtime targets %s, but this host requires %s. %s." % [
-			recorded_target, target, repair]
-	return ""
+	return InternalPlugins.runtime_issue_for(
+		runtime_label(), directory, target,
+		required_runtime_files_for(windows_runtime), repair)
 
 
 static func definition():
@@ -88,7 +76,3 @@ static func definition():
 	def.network_mode = "localhost"
 	def.autostart = false
 	return def
-
-
-static func is_reserved(plugin_id: String) -> bool:
-	return plugin_id == ID

@@ -259,19 +259,27 @@ func load_db() -> Error:
 	return OK
 
 
-## Built-ins are reconstructed here from trusted host paths and never accept a
-## caller-supplied definition.
-func register_builtin(_ignored_definition = null) -> bool:
-	var def = load("res://Scripts/Services/Voice/BuiltinVoicePlugin.gd").definition()
-	if def == null:
-		return false
-	_plugins[def.id] = def
-	plugins_changed.emit()
-	return true
+## Host-owned plugins are reconstructed here from their trusted res:// sources
+## and never accept a caller-supplied definition — the parameter exists only so
+## a caller that passes one gets it ignored rather than honoured.
+##
+## Returns the ids that registered. A member whose runtime is unsupported on
+## this platform yields no definition and is simply absent from the result.
+func register_internal(_ignored_definition = null) -> Array[String]:
+	var registered: Array[String] = []
+	for plugin_id in InternalPlugins.ids():
+		var def = InternalPlugins.definition_for(plugin_id)
+		if def == null:
+			continue
+		_plugins[def.id] = def
+		registered.append(def.id)
+	if not registered.is_empty():
+		plugins_changed.emit()
+	return registered
 
 
 static func _is_reserved(plugin_id: String) -> bool:
-	return plugin_id == "voice"
+	return InternalPlugins.has(plugin_id)
 
 
 # ---------------------------------------------------------------------------

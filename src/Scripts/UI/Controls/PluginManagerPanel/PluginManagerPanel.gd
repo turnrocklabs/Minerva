@@ -404,16 +404,15 @@ func _populate_setup_status(plugin_id: String) -> void:
 	var def = pm.get_db().get_by_id(plugin_id)
 	if def == null:
 		return
-	if plugin_id == "voice":
-		var issue: String = load(
-			"res://Scripts/Services/Voice/BuiltinVoicePlugin.gd").runtime_issue()
+	if InternalPlugins.has(plugin_id):
+		var issue: String = InternalPlugins.runtime_issue(plugin_id)
 		if not issue.is_empty():
 			_setup_status_container.visible = true
-			var voice_error := Label.new()
-			voice_error.text = issue
-			voice_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			voice_error.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
-			_setup_status_container.add_child(voice_error)
+			var runtime_error := Label.new()
+			runtime_error.text = issue
+			runtime_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			runtime_error.add_theme_color_override("font_color", Color(0.9, 0.35, 0.35))
+			_setup_status_container.add_child(runtime_error)
 		return
 
 	if def.state == pm.S_BUILDING:
@@ -888,15 +887,15 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	var is_building := state == pm.S_BUILDING
 	var is_build_failed := state == pm.S_BUILD_FAILED
 	var is_needs_binary := state == pm.S_NEEDS_BINARY
-	var is_builtin_voice := plugin_id == "voice"
+	var is_internal := InternalPlugins.has(plugin_id)
 	_start_button.disabled = is_running or is_starting or is_crash_loop or is_building or is_build_failed or is_needs_binary
 	_stop_button.disabled = not (is_running or is_starting)
 	_restart_button.disabled = not (is_running or is_starting) or is_building
-	_reload_button.visible = not is_builtin_voice
-	_remove_button.visible = not is_builtin_voice
-	_autostart_check.visible = not is_builtin_voice
-	_auto_reload_check.visible = not is_builtin_voice
-	if is_builtin_voice:
+	_reload_button.visible = not is_internal
+	_remove_button.visible = not is_internal
+	_autostart_check.visible = not is_internal
+	_auto_reload_check.visible = not is_internal
+	if is_internal:
 		_files_changed_label.visible = false
 
 	# Show "Open Panel" button only if plugin declares UI panels and is running
