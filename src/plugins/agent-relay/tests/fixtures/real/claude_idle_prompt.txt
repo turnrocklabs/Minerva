@@ -1,0 +1,13 @@
+# REAL capture 2026-06-10 — Claude Code idle prompt in Minerva terminal (197 cols)
+# Note: prompt area is ─ separator lines + ❯ prompt, NOT a ╭╮╰╯ box.
+  ▘▘ ▝▝    ~/github/Minerva/src
+
+ ⚠ 2 setup issues: MCP · /doctor
+
+ ▎ Fable 5 is here! Our newest model for complex, long-running work
+ ▎ Included in your plan limits until Jun 22, then switch to usage credits to continue.
+
+─────────────────────────────────────────────────────────────────────────────────────
+❯ Try "how does singleton_object.gd work?"
+─────────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts · ← for agents

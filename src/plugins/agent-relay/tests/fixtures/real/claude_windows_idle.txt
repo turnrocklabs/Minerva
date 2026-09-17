@@ -1,0 +1,18 @@
+# Real capture: Claude Code idle on Windows (ConPTY via Minerva terminal),
+# 2026-07-03, claude --dangerously-skip-permissions, 220x14 viewport.
+# KEY CALIBRATION FACT: on Windows the input box renders as ASCII `> `
+# (no U+276F ❯, no U+00A0 NBSP) between full-width horizontal rules.
+# prompt_box_regex must match both renderings: ^[❯>]\s
+● User declined to answer questions
+  ⎿  · What's the north-star artifact — the first finished piece you'd want to exist and show someone? (Music video (1-3 min) / Dialogue short (3-5 min) / Full episode (~20 min) / Single perfect shot)
+     · How much human direction should the finished pipeline assume? (Director's console / One-button auto / Hybrid: auto draft, human polish)
+     · Is this a Minerva product capability or a personal creative tool first? (Personal tool first / Minerva feature)
+
+● What would you like to clarify about those questions — or is there context I'm missing about the target that would reframe them?
+
+✻ Brewed for 1m 17s
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

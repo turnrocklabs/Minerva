@@ -1,0 +1,12 @@
+  So tungsten keeps a double history bright:
+  One name of stone, one sign of light.
+
+  O metal, tempered, dense, and strong,
+  You hold the heat and teach spark its song.
+  Beneath our lamps, within the forge’s white,
+  You bear the fire and do not yield night.
+
+
+› Use /skills to list available skills
+
+  gpt-5.5 high · ~/github/Minerva/src

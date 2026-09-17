@@ -22,7 +22,7 @@
 #       (nightly Rust + ~1 GB CEF bundle; also needs CMake + Ninja on PATH —
 #        `pip install cmake ninja` works)
 
-param([switch]$Check, [switch]$HelperOnly, [switch]$VoiceOnly)
+param([switch]$Check, [switch]$HelperOnly, [switch]$VoiceOnly, [switch]$AgentRelayOnly)
 
 $ErrorActionPreference = "Stop"
 function Assert-NativeSuccess([string]$Step) {
@@ -32,8 +32,13 @@ $RepoRoot = git rev-parse --show-toplevel
 Assert-NativeSuccess "Find repository"
 Set-Location $RepoRoot
 
-if ($HelperOnly -and $VoiceOnly) {
-    throw "-HelperOnly and -VoiceOnly are mutually exclusive."
+if ((@($HelperOnly, $VoiceOnly, $AgentRelayOnly) | Where-Object { $_ }).Count -gt 1) {
+    throw "-HelperOnly, -VoiceOnly and -AgentRelayOnly are mutually exclusive."
+}
+# check-editor-ready.py has no Agent Relay probe; the host's runtime_issue()
+# is what reports a missing stage.
+if ($Check -and $AgentRelayOnly) {
+    throw "-AgentRelayOnly has no -Check probe; run it without -Check."
 }
 
 function Get-GitBash {
@@ -66,6 +71,28 @@ function Build-VoiceRuntime {
     }
 }
 
+# The Agent Relay worker is a single Rust binary. Staging it (rather than
+# pointing the host at target/release) keeps cargo's build tree out of the
+# plugin's runtime directory and gives packaged builds one directory to copy.
+function Build-AgentRelayRuntime {
+    $target = "windows-x86_64"
+    $source = "src/plugins/agent-relay"
+    $stage = Join-Path $source "runtime-build/stage/$target"
+    Write-Host ""
+    Write-Host "=== Building bundled Agent Relay worker ($target) ===" -ForegroundColor Cyan
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        throw "cargo not found. Install Rust via https://rustup.rs (then 'rustup update stable')."
+    }
+    cargo build --locked --release --manifest-path (Join-Path $source "Cargo.toml")
+    Assert-NativeSuccess "Agent Relay worker build"
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    Copy-Item (Join-Path $source "target/release/agent-relay-plugin.exe") (Join-Path $stage "agent-relay-plugin.exe") -Force
+    Set-Content -Path (Join-Path $stage "target-triple.txt") -Value $target -NoNewline:$false
+    python (Join-Path $source "scripts/package-runtime.py") package $target $stage `
+        (Join-Path $source "dist/minerva-agent-relay-$target.tar.gz")
+    Assert-NativeSuccess "Agent Relay runtime package"
+}
+
 $ZigVersion = "0.15.2"
 $ZigDir = "$env:LOCALAPPDATA\zig"
 
@@ -82,6 +109,10 @@ if ($Check) {
     if ($VoiceOnly) { $checkArgs += "--voice-only" }
     python scripts/check-editor-ready.py @checkArgs
     Assert-NativeSuccess "Editor readiness"
+    exit 0
+}
+if ($AgentRelayOnly) {
+    Build-AgentRelayRuntime
     exit 0
 }
 if ($VoiceOnly) {
@@ -124,6 +155,7 @@ if ($HelperOnly) {
 }
 
 Build-VoiceRuntime
+Build-AgentRelayRuntime
 
 # ── Git submodules ────────────────────────────────────────────────────
 Write-Host "Initializing git submodules..."

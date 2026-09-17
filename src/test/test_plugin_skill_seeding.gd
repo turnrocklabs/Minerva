@@ -25,12 +25,28 @@ var _fail_count: int = 0
 var _tmp_dir: String = ""
 
 
+class FailingUpdateDocket extends RefCounted:
+	var inner
+
+	func _init(p_inner) -> void:
+		inner = p_inner
+
+	func call_tool(tool_name: String, arguments: Dictionary):
+		if tool_name == "docket_update":
+			return {"error": "injected write failure"}
+		return inner.call_tool(tool_name, arguments)
+
+
 func _init() -> void:
+	# PluginManager is loaded by the internal lifecycle case below and references
+	# project autoloads; let those globals register before any test work begins.
+	await process_frame
 	print("=== Plugin-shipped skills T8 round-trip ===\n")
 	_tmp_dir = OS.get_cache_dir().path_join("minerva_dcr_019df57b_t8_%d" % randi())
 	DirAccess.make_dir_recursive_absolute(_tmp_dir)
 
 	test_full_lifecycle()
+	test_internal_prepare_reconcile()
 
 	_cleanup_tmp()
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -246,4 +262,48 @@ func test_full_lifecycle() -> void:
 	check("orphan unsatisfied_deps populated",
 		(after_react.get("unsatisfied_deps", []) as Array).size() >= 1)
 
+	ctx.db.close()
+
+
+func test_internal_prepare_reconcile() -> void:
+	print("test_internal_prepare_reconcile")
+	var ctx := _new_docket()
+	var registry = ctx.registry
+	var plugin_id := "agent_relay"
+	var custom_v1 := _slide_deck_skill(plugin_id, "custom-v1")
+	var pristine_v1 := _slide_deck_skill(plugin_id, "pristine-v1")
+	pristine_v1.id = "minerva_agent_relay_pristine"
+	var def_v1 := _make_def(plugin_id, [custom_v1, pristine_v1])
+	PluginSkillSeederScript.materialize(
+		plugin_id, PluginSkillSeederScript.resolve_deps(def_v1, {}), registry)
+	var custom_record := PluginSkillSeederScript.find_existing_record(
+		plugin_id, custom_v1.id, registry)
+	PluginSkillRecordScript.apply_user_edit(
+		str(custom_record.get("id", "")), {"steps": "user-owned steps"}, registry)
+
+	var custom_v2 := custom_v1.duplicate(true)
+	custom_v2.steps = "shipped custom v2"
+	var pristine_v2 := pristine_v1.duplicate(true)
+	pristine_v2.steps = "shipped pristine v2"
+	var def_v2 := _make_def(plugin_id, [custom_v2, pristine_v2])
+	var manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
+	manager._seed_internal_skills(def_v2, registry)
+	var custom_after := PluginSkillSeederScript.find_existing_record(plugin_id, custom_v1.id, registry)
+	var pristine_after := PluginSkillSeederScript.find_existing_record(plugin_id, pristine_v1.id, registry)
+	check("internal prepare preserves customized skill content",
+		str(custom_after.get("steps", "")) == "user-owned steps")
+	check("internal prepare updates pristine shipped skill",
+		str(pristine_after.get("steps", "")) == "shipped pristine v2")
+
+	manager._seed_internal_skills(_make_def(plugin_id, []), registry)
+	custom_after = PluginSkillSeederScript.find_existing_record(plugin_id, custom_v1.id, registry)
+	pristine_after = PluginSkillSeederScript.find_existing_record(plugin_id, pristine_v1.id, registry)
+	check("internal prepare deprecates removed final skills",
+		bool(custom_after.get("deprecated", false)) and bool(pristine_after.get("deprecated", false)))
+
+	var failure_plan := PluginSkillSeederScript.plan_reconcile(def_v2, {}, registry)
+	var failed: Dictionary = PluginSkillSeederScript.apply_reconcile(
+		failure_plan, {}, FailingUpdateDocket.new(registry))
+	check("reconcile reports failed store writes", int(failed.get("failed", 0)) > 0)
+	manager.free()
 	ctx.db.close()

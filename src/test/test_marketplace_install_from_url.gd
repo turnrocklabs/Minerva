@@ -43,6 +43,7 @@ func _run() -> void:
 	await _test_reinstall_with_hidden_files()
 	await _test_reinstall_symlink_not_followed()
 	await _test_reserved_id_rejected()
+	await _test_internal_id_rejected()
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +143,22 @@ func _setup() -> bool:
 	if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_reserved.tar.gz ." % reserved_pack]):
 		print("setup FAIL: tar reserved failed")
 		return false
+
+	# One fixture per host-owned id (C4). Same shape as the reserved pack, but
+	# claiming an identity Minerva ships in-tree.
+	for internal_id in InternalPlugins.ids():
+		var internal_pack := "%s/internal_pack_%s" % [_temp_dir, internal_id]
+		_mkdir(internal_pack)
+		var internal_manifest := manifest.duplicate(true)
+		internal_manifest["id"] = internal_id
+		_write_file("%s/manifest.json" % internal_pack, JSON.stringify(internal_manifest))
+		_write_file("%s/test-marketplace-binary" % internal_pack, "FAKE_BINARY_PLACEHOLDER")
+		if not _run_cmd("bash", ["-c", "cd '%s' && %s test-marketplace-binary manifest.json > SHA256SUMS" % [internal_pack, _sha_cmd]]):
+			print("setup FAIL: sha256sum internal pack '%s' failed" % internal_id)
+			return false
+		if not _run_cmd("bash", ["-c", "cd '%s' && tar -czf ../test_internal_%s.tar.gz ." % [internal_pack, internal_id]]):
+			print("setup FAIL: tar internal pack '%s' failed" % internal_id)
+			return false
 
 	# Spawn Python http server. --directory points at _temp_dir, so the
 	# tarballs are served at http://127.0.0.1:PORT/test_good.tar.gz etc.
@@ -342,6 +359,44 @@ func _test_reserved_id_rejected() -> void:
 		print("PASS: reserved_id (id \"data\" rejected before the destructive delete)")
 		_pass += 1
 	_rm_dir_recursive("user://plugins/data/sentinel_plugin")
+
+
+## C4: a tarball claiming a host-owned id is refused by name, and the refusal
+## lands BEFORE any delete, extract or rename — so a directory already sitting
+## at user://plugins/<id>/ survives byte-for-byte. Both cases are covered: the
+## path is absent for the first member checked here and pre-filled for all of
+## them via the sentinel below.
+func _test_internal_id_rejected() -> void:
+	for internal_id in InternalPlugins.ids():
+		var url := "http://127.0.0.1:%d/test_internal_%s.tar.gz" % [PORT, internal_id]
+		var plugin_dir := "user://plugins/%s" % internal_id
+		var sentinel := ProjectSettings.globalize_path("%s/keep.txt" % plugin_dir)
+		var sentinel_body := "must survive %s" % internal_id
+
+		# Case 1: nothing at the reserved path.
+		_rm_dir_recursive(plugin_dir)
+		var absent_result = await _make_client().install_from_url(url, null)
+		var absent_ok: bool = absent_result is Dictionary \
+			and absent_result.get("error") == "reserved_id" \
+			and not DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(plugin_dir))
+
+		# Case 2: a pre-existing directory at the reserved path.
+		_mkdir(plugin_dir)
+		_write_file(sentinel, sentinel_body)
+		var present_result = await _make_client().install_from_url(url, null)
+		var present_ok: bool = present_result is Dictionary \
+			and present_result.get("error") == "reserved_id" \
+			and FileAccess.get_file_as_string(sentinel) == sentinel_body
+		_rm_dir_recursive(plugin_dir)
+
+		if absent_ok and present_ok:
+			print("PASS: internal id '%s' refused before any destructive step" % internal_id)
+			_pass += 1
+		else:
+			print("FAIL: internal id '%s' — absent=%s (%s), pre-existing=%s (%s)" % [
+				internal_id, absent_ok, JSON.stringify(absent_result),
+				present_ok, JSON.stringify(present_result)])
+			_fail += 1
 
 
 # ---------------------------------------------------------------------------
