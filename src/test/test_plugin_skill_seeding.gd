@@ -38,6 +38,9 @@ class FailingUpdateDocket extends RefCounted:
 
 
 func _init() -> void:
+	# PluginManager is loaded by the internal lifecycle case below and references
+	# project autoloads; let those globals register before any test work begins.
+	await process_frame
 	print("=== Plugin-shipped skills T8 round-trip ===\n")
 	_tmp_dir = OS.get_cache_dir().path_join("minerva_dcr_019df57b_t8_%d" % randi())
 	DirAccess.make_dir_recursive_absolute(_tmp_dir)
