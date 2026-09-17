@@ -1,0 +1,18 @@
+# Real capture (tail): Claude Code on Windows, 2026-07-03 — a COMPLETED turn
+# whose prose ends with a conversational "Do you want to …?" question, idle
+# input box below. The old phrase-based permission_dialog_regex matched the
+# prose ("do you want to") → phantom input_requested → the passthrough chat
+# rendered a choice window and stored only this snippet instead of the full
+# ~5000-char answer. Dialog detection must use structural tokens only.
+  So the ladder I'd write down: (1) one character, exact pose, on-model still → (2) two characters interacting, one still → (3) coherent keyframe pair via edit-not-regenerate → (4) tween conditioned on 3D motion → (5)
+  shot sequences and audio, on toward episodes. Your guess was right; rungs 2 and 4 are the ones with hidden teeth.
+
+  Do you want to keep pushing on the target picture, or is the next move to look at what you have in hand — the character drawings, the frame-to-frame model's conditioning options, and what IML can render out — to see
+  how far rung 1 is from working today?
+
+✻ Cooked for 51s
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

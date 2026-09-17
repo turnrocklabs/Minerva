@@ -1,0 +1,14 @@
+# REAL capture 2026-06-10 — Claude Code immediately after a completed turn.
+# KEY: "✻ Baked for 3s" PERSISTS after completion → ✻✶✢ glyphs are NOT
+# busy-markers; the only reliable working indicator is "esc to interrupt".
+❯ In one short sentence: what does the acronym PTY stand for and what is it?\r
+
+● PTY stands for "pseudo-terminal" (or pseudo-teletype) — a software emulation of a physical terminal that lets programs like shells or terminal emulators communicate as if connected to real
+  terminal hardware.
+
+✻ Baked for 3s
+
+─────────────────────────────────────────────────────────────────────────────────────
+❯ 
+─────────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts · ← for agents

@@ -1,0 +1,15 @@
+  Now, where to take the prototype next? There are a few distinct experiences we just opened up:
+────────────────────────────────────────────────────────────────────────────────
+ ☐ Next build
+
+Which experience should I prototype next?
+
+❯ 1. Group fair + NetTrans (Recommended)
+     Passenger view: one-tap 'save my seat' on a van trip to a CSA-booth fair, hiding the orchestration. Best demo of 'complex back-end, simple experience' — directly answers your integration
+     question.
+↓ 2. CSA provider onboarding
+     Chat-first onboarding for a new farmer/CSA: describe your offering → LLM structures it → admin-vet preview. Shows the supply-side join flow.
+────────────────────────────────────────────────────────────────────────────────
+  6. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
