@@ -1,0 +1,23 @@
+bash-5.2$ exec bash -lc 'claude --dangerously-skip-permissions'
+ ▐▛███▜▌   Claude Code v2.1.174
+▝▜█████▛▘  Fable 5 with high effort · Claude Max
+  ▘▘ ▝▝    ~/github/Minerva
+
+ ⚠ 2 setup issues: MCP · /doctor
+
+ ▎ Fable 5 is here! Our newest model for complex, long-running work.
+ ▎ Included in your plan limits until Jun 22, then switch to usage credits to
+ ▎ continue.
+
+❯ hi
+
+● Hi! We're on dcr/chat-passthrough — last session ended with all 11 items
+  (T1-T3, W1-W7, B7) built and green, with the W8 owner HITL checklist waiting
+  in DCR comment #485. What would you like to work on?
+
+✻ Cogitated for 7s
+
+────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

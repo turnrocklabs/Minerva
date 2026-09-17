@@ -891,7 +891,7 @@ func _handle_plugin_build_status(args: Dictionary) -> Dictionary:
 	if lane_def != null:
 		result["install_lane"] = lane_def.install_lane
 		result["rebuildable"] = (
-			id != "voice"
+			not InternalPlugins.has(id)
 			and lane_def.install_lane == PluginDefinition.LANE_MANIFEST
 			and not lane_def.setup.is_empty()
 		)

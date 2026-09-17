@@ -1,0 +1,27 @@
+# synthetic — replace with real captures during B5 HITL
+# Simulates a typical Claude Code TUI screen after a multi-turn exchange.
+# Characteristics: bordered prompt box (╭╰), context line, tool-call output,
+# response text, spinner lines, and multiple blank lines between sections.
+╭──────────────────────── Claude Code ───────────────────────────╮
+│ claude-sonnet-4-6 · context 24 103 / 200 000  ✓                │
+╰─────────────────────────────────────────────────────────────────╯
+
+⠿ Thinking…
+
+╭─────────────────────────────────────────────────────────────────╮
+│ I have read the file and identified the issue.                  │
+│                                                                  │
+│ The root cause is that the cache key includes the user ID but   │
+│ not the tenant ID, so requests from different tenants can share  │
+│ cache entries.                                                   │
+│                                                                  │
+│ Here is the fix I will apply:                                   │
+│                                                                  │
+│ 1. Include tenant_id in the cache key computation.              │
+│ 2. Add a regression test that verifies cross-tenant isolation.  │
+╰─────────────────────────────────────────────────────────────────╯
+
+
+╭─────────────────────────────────────────────────────────────────╮
+│ > _                                                             │
+╰─────────────────────────────────────────────────────────────────╯

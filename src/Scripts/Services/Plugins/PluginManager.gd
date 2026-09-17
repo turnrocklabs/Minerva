@@ -213,8 +213,8 @@ var _unattended_deny_ids: Dictionary = {}
 func _ready() -> void:
 	if _db == null:
 		_db = load("res://Scripts/Services/Plugins/PluginDB.gd").new()
-	if _db.register_builtin():
-		_ensure_runtime("voice")
+	for internal_id in _db.register_internal():
+		_ensure_runtime(internal_id)
 	# Chat-provider registry (W1). Drop a plugin's entries when it stops/crashes
 	# so dead providers vanish gracefully from the chooser.
 	if _chat_provider_registry == null:
@@ -229,6 +229,40 @@ func _ready() -> void:
 ## accessed before _ready().
 func get_chat_provider_registry():
 	return _chat_provider_registry
+
+
+## Bring every registered host-owned plugin to the readiness an install would
+## have produced: data directories, granted capabilities and seeded skills.
+##
+## Separate from _ready() because those three need the policy engine, the tool
+## registry and the docket manager, all of which SingletonObject wires AFTER
+## constructing this manager. Safe to call more than once — every step is
+## idempotent.
+func prepare_internal_plugins() -> void:
+	for id in InternalPlugins.ids():
+		var def = _db.get_by_id(id)
+		if def == null:
+			continue
+		var create_result := _create_plugin_directories(def)
+		if create_result.has("error"):
+			push_warning("[PluginManager] Warning creating directories for '%s': %s" % [
+				id, create_result["error"]])
+		_auto_grant_declared_capabilities(def)
+		if not def.skills.is_empty():
+			_seed_internal_skills(def)
+
+
+## Seed a host-owned plugin's manifest skills without the install-time
+## confirmation dialog: the plugin ships with Minerva, so there is no install
+## act for the user to consent to. Re-seeding is a no-op for unchanged skills.
+func _seed_internal_skills(def) -> void:
+	var docket_manager = _get_docket_manager()
+	if docket_manager == null:
+		push_warning("[PluginManager] No docket manager; skipping skill seed for '%s'" % def.id)
+		return
+	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
+	var resolved: Array = SeederClass.resolve_deps(def, _build_available_tools())
+	SeederClass.materialize(def.id, resolved, docket_manager)
 
 
 func _process(delta: float) -> void:
@@ -436,8 +470,8 @@ func update_plugin(manifest_path: String, auto_confirm_updates: bool = false) ->
 	var def = PluginDef.from_manifest(manifest_path)
 	if def == null:
 		return {"error": "Failed to parse manifest: %s" % manifest_path}
-	if def.id == "voice":
-		return {"error": "Plugin 'voice' is managed by Minerva"}
+	if InternalPlugins.has(def.id):
+		return {"error": "Plugin '%s' is managed by Minerva" % def.id}
 	if not _db.has_plugin(def.id):
 		return {"error": "Plugin '%s' not installed; use install_plugin first" % def.id}
 
@@ -504,8 +538,8 @@ func _show_skill_update_dialog(def, existing_record: Dictionary, new_skill: Dict
 ## If delete_data is true, also remove the plugin's data directory.
 ## Returns {"ok": true} or {"error": "..."}.
 func remove_plugin(id: String, delete_data: bool = false) -> Dictionary:
-	if id == "voice":
-		return {"error": "Plugin 'voice' is managed by Minerva"}
+	if InternalPlugins.has(id):
+		return {"error": "Plugin '%s' is managed by Minerva" % id}
 	if not _db.has_plugin(id):
 		return {"error": "Plugin '%s' not found" % id}
 
@@ -640,11 +674,12 @@ func start_plugin(id: String) -> Dictionary:
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
-	if id == "voice":
-		var voice_issue: String = load(
-			"res://Scripts/Services/Voice/BuiltinVoicePlugin.gd").runtime_issue()
-		if not voice_issue.is_empty():
-			return {"error": voice_issue}
+	# Every host-owned member owns an actionable repair sentence; it is the
+	# error the caller sees, verbatim.
+	if InternalPlugins.has(id):
+		var runtime_issue: String = InternalPlugins.runtime_issue(id)
+		if not runtime_issue.is_empty():
+			return {"error": runtime_issue}
 
 	if def.state == S_RUNNING:
 		return {"error": "Plugin '%s' is already running" % id}
@@ -942,8 +977,8 @@ func restart_plugin(id: String) -> Dictionary:
 ## pipeline rerun"). Returns immediately; the outcome arrives asynchronously
 ## via _on_setup_pipeline_finished, same as install_plugin()'s kickoff.
 func rebuild(id: String) -> Dictionary:
-	if id == "voice":
-		return {"error": "Plugin 'voice' is shipped by Minerva and cannot be rebuilt here"}
+	if InternalPlugins.has(id):
+		return {"error": "Plugin '%s' is shipped by Minerva and cannot be rebuilt here" % id}
 	var def = _db.get_by_id(id)
 	if def == null:
 		return {"error": "Plugin '%s' not found" % id}
@@ -1320,7 +1355,7 @@ func get_audit_log():  # -> PluginAuditLog
 ## When enabled, the plugin is restarted automatically when files in its
 ## data_directory change (2s poll, 500ms debounce).
 func set_auto_reload(id: String, enabled: bool) -> bool:
-	if id == "voice":
+	if InternalPlugins.has(id):
 		return false
 	return _db.set_auto_reload(id, enabled)
 
@@ -1479,7 +1514,8 @@ func _run_file_watch_checks() -> void:
 ##   multiple extensions changed → union; tscn always in-place
 func _on_reload_debounce_expired(id: String) -> void:
 	_reload_pending.erase(id)
-	if id == "voice":
+	# Host-owned plugins are replaced by a Minerva build, never hot-reloaded.
+	if InternalPlugins.has(id):
 		return
 
 	# Collect and clear the accumulated changed paths for this plugin.

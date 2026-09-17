@@ -33,7 +33,7 @@ func _init() -> void:
 
 	var VoiceFeature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
 	VoiceFeature.set_enabled(true)
-	manager.get_db().register_builtin()
+	manager.get_db().register_internal()
 	var Adapter = load("res://Scripts/Services/Voice/BundledVoiceDetectorAdapter.gd")
 	var adapter = Adapter.new()
 	root.add_child(adapter)
