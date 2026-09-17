@@ -33,6 +33,8 @@ for line in sys.stdin:
         args = params.get("arguments", {})
         if params["name"] == "expand":
             body = {"success": True, "snapshot": "x" * (8 * 1024 * 1024)}
+        elif params["name"] == "sized_reply":
+            body = {"success": True, "snapshot": "x" * int(args.get("bytes", 0))}
         else:
             if params["name"] == "wait":
                 time.sleep(0.1)

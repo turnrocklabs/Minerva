@@ -68,8 +68,8 @@ func _scenario() -> void:
 		"permissions": {"host_capabilities": [], "network": {"mode": "none"},
 			"filesystem": {"mode": "none", "paths": []}},
 		"ui": {"panels": [{"name": "snapshot", "kind": "godot_scene", "entry_scene": "snapshot.tscn",
-			"scripts": ["snapshot.gd"], "ipc_channels": ["echo", "expand", "wait", "capability:host.documents.get_blob"]}],
-			"ipc_messages": ["echo", "expand", "wait", "capability:host.documents.get_blob"]},
+			"scripts": ["snapshot.gd"], "ipc_channels": ["echo", "expand", "sized_reply", "wait", "capability:host.documents.get_blob"]}],
+			"ipc_messages": ["echo", "expand", "sized_reply", "wait", "capability:host.documents.get_blob"]},
 	})
 	definition.state = 2 # PluginDefinition.State.RUNNING
 	db._plugins["bulk_probe"] = definition
@@ -83,7 +83,7 @@ func _scenario() -> void:
 	var broker = load("res://Scripts/Services/Plugins/PluginScenePanelBroker.gd").new(manager, policy, capabilities)
 	var panel := SnapshotPanel.new()
 	root.add_child(panel)
-	broker.register_panel(panel, "bulk_probe", "bulk-tab", ["echo", "expand", "wait", "capability:host.documents.get_blob"], "snapshot")
+	broker.register_panel(panel, "bulk_probe", "bulk-tab", ["echo", "expand", "sized_reply", "wait", "capability:host.documents.get_blob"], "snapshot")
 	var helper = panel.get_node("_MinervaIPC")
 	_check(helper.get_bulk_payload_limit() == 8 * 1024 * 1024, "host advertises bounded bulk route")
 	await _control_boundaries(manager, broker, panel, helper)
@@ -117,6 +117,10 @@ func _scenario() -> void:
 	_check(denied.get("error_code") == "capability_not_granted", "bulk keeps host capability grants")
 	var wide_capability: Dictionary = await helper.request_bulk("capability:host.documents.get_blob", {"text": "界".repeat(24000)}, 1000)
 	_check(wide_capability.get("error_code") == "payload_too_large", "bulk cannot widen control capability envelope")
+	var wide_reserved: Dictionary = await helper.request_bulk("host_owned_save.unknown",
+		{"text": "界".repeat(24000)}, 1000)
+	_check(wide_reserved.get("error_code") == "payload_too_large",
+		"bulk cannot widen other host-owned-save control requests")
 	var state_refusal: Dictionary = await capabilities._handle_host_documents_set_state("bulk_probe", {"editor_name": "absent", "panel_state": {"text": "界".repeat(3000000)}})
 	_check(state_refusal.get("error_code") == "payload_too_large", "panel state is capped in UTF-8 before editor lookup")
 	var too_large: Dictionary = await helper.request_bulk("echo", {"snapshot": "x".repeat(8 * 1024 * 1024)}, 1000)
@@ -169,11 +173,12 @@ func _control_boundaries(manager: Node, broker: RefCounted, panel: Control, help
 	web.register_plugin_panel("bulk_probe", "snapshot")
 	for character in ["x", "🙂"]:
 		var empty_size: int = limits.size_bytes({"ignored": ""})
-		var byte_count := 65536 - empty_size
+		var byte_count: int = limits.CONTROL_BYTES - empty_size
 		var text: String = character.repeat(byte_count / character.to_utf8_buffer().size())
 		text += "x".repeat(byte_count - text.to_utf8_buffer().size())
 		var boundary := {"ignored": text}
-		_check(limits.size_bytes(boundary) == 65536, "exact serialized UTF-8 control boundary")
+		_check(limits.size_bytes(boundary) == limits.CONTROL_BYTES,
+			"exact serialized UTF-8 control boundary")
 		panel.request.emit("echo", boundary, "boundary")
 		var reply: Dictionary = await helper.await_reply("boundary", 5000)
 		_check(reply.get("success", false), "scene accepts exact boundary " + character)
@@ -185,9 +190,21 @@ func _control_boundaries(manager: Node, broker: RefCounted, panel: Control, help
 		_check(reply.get("error_code") == "payload_too_large", "scene rejects one UTF-8 byte over " + character)
 		reply = await web.handle_ipc_message("snapshot", "echo", boundary)
 		_check(reply.get("error_code") == "payload_too_large", "webview rejects one UTF-8 byte over " + character)
+	var routed_reply_id := "route-" + "x".repeat(128)
+	panel.request.emit("echo", {}, routed_reply_id)
+	var routed_reply: Dictionary = await helper.await_reply(routed_reply_id, 5000)
+	_check(routed_reply.get("success", false), "bounded reply ID remains correlated out of band")
+	var delivery_errors_before: int = panel.delivery_errors
+	panel.request.emit("echo", {}, "x".repeat(limits.ROUTING_BYTES + 1))
+	await process_frame
+	await process_frame
+	_check(panel.delivery_errors == delivery_errors_before + 1,
+		"oversized reply ID reports an error without echoing the route")
 	var large := {"body": "🙂".repeat(20000)}
+	var push_errors_before: int = panel.delivery_errors
 	_check(not broker.push_to_panel("bulk_probe", "bulk-tab", "event", large), "scene rejects oversized control push")
-	_check(panel.pushes == 0 and panel.delivery_errors == 1, "push failure preserves state and notifies error hook")
+	_check(panel.pushes == 0 and panel.delivery_errors == push_errors_before + 1,
+		"push failure preserves state and notifies error hook")
 	_check(broker.push_to_panel("bulk_probe", "bulk-tab", "text_changed", large), "existing document push uses bulk budget")
 	var event_broker = load("res://Scripts/Services/Plugins/PluginEventBroker.gd").new()
 	event_broker.handle_plugin_state("bulk_probe", {"revision": 1})
@@ -204,6 +221,18 @@ func _control_boundaries(manager: Node, broker: RefCounted, panel: Control, help
 	_check(reply.get("error_code") == "payload_too_large", "ordinary scene reply is bounded")
 	reply = await web.handle_ipc_message("snapshot", "expand", {})
 	_check(reply.get("error_code") == "payload_too_large", "webview reply is bounded")
+	var sized_reply_bytes: int = limits.CONTROL_BYTES + 1024
+	var sized_reply := {"success": true, "snapshot": "x".repeat(sized_reply_bytes)}
+	_check(limits.size_bytes(sized_reply) > limits.CONTROL_BYTES \
+		and limits.size_bytes(sized_reply) < limits.BULK_BYTES,
+		"measured reply fixture crosses only the control limit")
+	panel.request.emit("sized_reply", {"bytes": sized_reply_bytes}, "sized-control-reply")
+	reply = await helper.await_reply("sized-control-reply", 5000)
+	_check(reply.get("error_code") == "payload_too_large",
+		"control request rejects a reply between control and bulk limits")
+	reply = await helper.request_bulk("sized_reply", {"bytes": sized_reply_bytes}, 5000)
+	_check(reply.get("snapshot", "").length() == sized_reply_bytes,
+		"bulk request accepts the same bounded backend reply")
 	panel.request.emit("host.fs.watch", large, "large-reserved")
 	reply = await helper.await_reply("large-reserved", 1000)
 	_check(reply.get("error_code") == "payload_too_large", "reserved requests validate size before dispatch")

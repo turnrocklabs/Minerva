@@ -73,6 +73,7 @@ TURNROCK_TESTS=(
 	test/test_voice_deactivation_prompt.gd
 	test/test_voice_gateway_lifecycle.gd
 	test/test_plugin_bulk_snapshot.gd
+	test/test_plugin_control_reply_limit.gd
 	test/test_chatpane_active_model.gd
 	test/test_host_capability_core_session.gd
 	test/test_utf8_line_bytes.cpp
