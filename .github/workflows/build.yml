@@ -33,6 +33,18 @@ env:
   GODOT_RELEASE: "stable"
 
 jobs:
+  secret-history:
+    name: Secret history
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Test secret history gate
+        run: python3 tests/test_secret_scan.py
+      - name: Scan complete Git history
+        run: scripts/scan-secret-history.sh --all-history
+
   build-godot-cef:
     uses: ./.github/workflows/godot-cef.yml
     with:
@@ -1734,12 +1746,13 @@ jobs:
       verify_debug: ${{ github.ref == 'refs/heads/development' }}
 
   create-release:
-    needs: [build-godot, export-macos, verify-packaged-voice, functional-tests, tarball-smoke]
+    needs: [secret-history, build-godot, export-macos, verify-packaged-voice, functional-tests, tarball-smoke]
     # Releases on every development push (auto-build-<timestamp> tags) so
     # the user always has a downloadable tagged release per commit, AND on
     # explicit workflow_dispatch with create_release=true for named cuts.
     if: |
       always() &&
+      needs.secret-history.result == 'success' &&
       needs.verify-packaged-voice.result == 'success' &&
       needs.functional-tests.result == 'success' &&
       (needs.tarball-smoke.result == 'success' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.platform == 'windows' || github.event.inputs.platform == 'macos'))) &&

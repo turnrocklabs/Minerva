@@ -36,6 +36,15 @@ I wanted to share some of my preferences so we can work together more effectivel
 # Work tracking
 - I use the Docket work tracker for all work. Even small changes must have an item before changing code. If work is too small to track and has no docket item -- ask me for approval before making code changes. Make sure to use either docket app or minerva's integrated docket via MCP, not directly edit .dct files, when using docket. Prefer using docket app's MCP vs Minerva's when possible.
 
+# Secret history scan
+
+Before pushing, scan the exact outgoing commit range. This includes credentials
+that were committed and removed in a later outgoing commit:
+
+```bash
+scripts/scan-secret-history.sh --range "$(git merge-base origin/development HEAD)..HEAD"
+```
+
 # Information tracking
 - We have 2 different information tracking mechanisms -- nudge and docket. Nudge is memory backed and lasts until reboot, docket is file backed and lasts forever.
 - Use nudge to have a compaction-resilient scratchpad that helps store useful, surprising, or error-correcting information.
