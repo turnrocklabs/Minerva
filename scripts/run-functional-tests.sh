@@ -85,9 +85,11 @@ HERMETIC_TESTS=(
 	test/test_mcp_stdio_request_budget.gd
 	test/test_mcp_stdio_profiles.gd
 	test/test_mcp_http_transport.gd
+	test/test_mcp_catalog_watch.gd
 	test/test_mcp_public_subscriptions.gd
 	test/test_mcp_definition_preservation.gd
 	test/test_mcp_catalog_ownership.gd
+	test/test_panel_executed_tools.gd
 	test/test_mcp_plugin_result_boundaries.gd
 	test/test_mcp_diagnostics.gd
 	test/test_preferences_verbose_logging.gd

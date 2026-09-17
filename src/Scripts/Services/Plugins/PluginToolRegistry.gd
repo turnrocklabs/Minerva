@@ -955,13 +955,31 @@ func _check_stderr_toast_rate_limit(plugin_id: String) -> bool:
 # Lifecycle helpers (wire these to PluginManager signals)
 # ---------------------------------------------------------------------------
 
-## Call this when a plugin stops or crashes to clean up its tools.
-## Typically wired to PluginManager.plugin_stopped and plugin_crashed signals.
-## Backend tools die with the subprocess; manifest panel tools are
-## installation-owned and keep serving (the dispatcher never needs the
-## process — bug 019f6d2dc767).
+## Synchronize manifest tools with plugin lifecycle state. Panel tools are
+## installation-owned and remain available while inactive; backend tools are
+## advertised only while a subprocess is running.
+func sync_manifest_tools(plugin_id: String, backend_available: bool) -> Dictionary:
+	if plugin_manager == null:
+		return {"error": "plugin_manager unavailable"}
+	var def: PluginDefinition = plugin_manager.get_db().get_by_id(plugin_id)
+	if def == null:
+		return {"error": "plugin definition unavailable"}
+	if backend_available:
+		return _register_running_manifest_tools(plugin_id, def)
+	var panel_tools: Array = []
+	for tool: Dictionary in def.tools:
+		if str(tool.get("executor", "backend")) == "panel":
+			panel_tools.append(tool)
+	if panel_tools.is_empty():
+		unregister_plugin_tools(plugin_id)
+		return {"ok": true, "registered": []}
+	return register_plugin_tools(plugin_id, panel_tools)
+
+
+## Call this when a plugin stops or crashes to remove backend tools while
+## retaining its installation-owned panel surface.
 func on_plugin_stopped(plugin_id: String) -> void:
-	var res := _reregister_preserving_panel(plugin_id, [])
+	var res := sync_manifest_tools(plugin_id, false)
 	if res.get("error"):
 		push_error("[PluginToolRegistry] on_plugin_stopped re-register failed for '%s': %s" % [
 			plugin_id, res.get("error")])
@@ -977,38 +995,29 @@ func on_plugin_started(plugin_id: String) -> void:
 	var def: PluginDefinition = plugin_manager.get_db().get_by_id(plugin_id)
 	if def == null:
 		return
-
-	# Re-register when any manifest-declared tool is MISSING. The old
-	# "non-empty ⇒ done" guard masked backend discovery clobbering manifest
-	# panel tools (bug 019f6d2dc767). Non-manifest extras (backend-discovered
-	# entries) are merged in so nothing already serving is dropped.
-	var current: Array = _tools_by_plugin.get(plugin_id, [])
-	var current_names := {}
-	for e in current:
-		if e is Dictionary:
-			current_names[str(e.get("name", ""))] = true
-	var missing := false
-	for t in def.tools:
-		if t is Dictionary and not current_names.has(str(t.get("name", ""))):
-			missing = true
-			break
-	if not missing:
-		return
-
-	var manifest_names := {}
-	for t in def.tools:
-		if t is Dictionary:
-			manifest_names[str(t.get("name", ""))] = true
-	var combined: Array = def.tools.duplicate()
-	for e in current:
-		if e is Dictionary and not manifest_names.has(str(e.get("name", ""))):
-			combined.append(e)
-
-	var result := register_plugin_tools(plugin_id, combined)
+	var result := _register_running_manifest_tools(plugin_id, def)
 	if result.get("error"):
 		push_error("[PluginToolRegistry] Failed to register tools for '%s' on start: %s" % [
-			plugin_id, result.get("error")
-		])
+			plugin_id, result.get("error")])
+
+
+func _register_running_manifest_tools(plugin_id: String,
+		def: PluginDefinition) -> Dictionary:
+	# Backend-discovered entries are retained until the new connection's
+	# tools/list replaces them. Old manifest entries are rebuilt from the
+	# current definition so reloads cannot leave removed or stale schemas.
+	var combined: Array = def.tools.duplicate(true)
+	var manifest_names := {}
+	for tool: Dictionary in def.tools:
+		manifest_names[str(tool.get("name", ""))] = true
+	for entry: Dictionary in _tools_by_plugin.get(plugin_id, []):
+		if entry.has("_backend_name") \
+				and not manifest_names.has(str(entry.get("name", ""))):
+			combined.append(entry)
+	if combined.is_empty():
+		unregister_plugin_tools(plugin_id)
+		return {"ok": true, "registered": []}
+	return register_plugin_tools(plugin_id, combined)
 
 
 # ---------------------------------------------------------------------------
@@ -1085,6 +1094,16 @@ func register_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dic
 			plugin_id, refresh_err
 		])
 		return {"error": "tools/list refresh failed with error %d" % refresh_err}
+	return publish_backend_tools(plugin_id, conn)
+
+
+## Publish the connection's already-validated, atomically committed catalog.
+## Subscription refreshes use this path so they never issue a second tools/list.
+func publish_backend_tools(plugin_id: String, conn: MCPServerConnection) -> Dictionary:
+	if plugin_id.is_empty() or conn == null:
+		return {"error": "invalid plugin catalog owner"}
+	if plugin_manager != null and plugin_manager.get_connection(plugin_id) != conn:
+		return {"error": "Plugin connection changed during tool publication"}
 
 	var raw_tools: Array = conn.tools  # Array of MCPToolDefinition objects
 	if raw_tools.is_empty():

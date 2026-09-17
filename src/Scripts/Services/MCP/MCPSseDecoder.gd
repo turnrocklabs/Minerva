@@ -3,6 +3,7 @@ extends RefCounted
 ## event is complete. Reconnection and Last-Event-ID replay are deliberately absent.
 const MAX_EVENT_BYTES := 32 * 1024 * 1024
 const MAX_TOTAL_BYTES := 64 * 1024 * 1024
+const MAX_FRAMES_PER_FEED := 1024
 var buffer := PackedByteArray()
 var data := PackedByteArray()
 var total := 0
@@ -10,13 +11,19 @@ var events := 0
 var error := ""
 var _skip_lf := false
 var _first_line := true
+var _long_lived := false
+
+
+func _init(long_lived: bool = false) -> void:
+	_long_lived = long_lived
 
 func feed(chunk: PackedByteArray) -> Array[PackedByteArray]:
 	var output: Array[PackedByteArray] = []
-	total += chunk.size()
-	if total > MAX_TOTAL_BYTES:
-		error = "SSE response exceeds byte budget"
-		return output
+	if not _long_lived:
+		total += chunk.size()
+		if total > MAX_TOTAL_BYTES:
+			error = "SSE response exceeds byte budget"
+			return output
 	for byte: int in chunk:
 		if _skip_lf:
 			_skip_lf = false
@@ -34,7 +41,10 @@ func feed(chunk: PackedByteArray) -> Array[PackedByteArray]:
 					output.append(data)
 					data = PackedByteArray()
 					events += 1
-					if events > 4096:
+					if output.size() > MAX_FRAMES_PER_FEED:
+						error = "SSE chunk exceeds queued event budget"
+						return output
+					if not _long_lived and events > 4096:
 						error = "SSE response exceeds event budget"
 						return output
 			elif buffer.slice(0, 5) == "data:".to_utf8_buffer():

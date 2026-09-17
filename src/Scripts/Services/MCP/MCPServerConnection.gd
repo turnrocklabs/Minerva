@@ -20,6 +20,7 @@ const HttpHeaders = preload("res://Scripts/Services/MCP/MCPHttpHeaders.gd")
 const MonotonicDeadline = preload("res://Scripts/Services/MCP/MCPMonotonicDeadline.gd")
 const ToolSchemaRuntime = preload("res://Scripts/Services/MCP/MCPToolSchemaRuntime.gd")
 const Diagnostics = preload("res://Scripts/Services/MCP/MCPServerDiagnostics.gd")
+const CatalogWatch = preload("res://Scripts/Services/MCP/MCPToolCatalogWatch.gd")
 
 signal connected()
 signal disconnected()
@@ -27,6 +28,8 @@ signal http_notification_received(message: Dictionary, request_id: Variant)
 signal tool_result_received(tool_name: String, result: Dictionary)
 signal tool_result_envelope_received(tool_name: String, result)
 signal tools_list_changed()
+signal catalog_committed()
+signal _catalog_refresh_finished(serial: int, result: int)
 
 enum TransportType { HTTP, WEBSOCKET, STDIO }
 
@@ -61,6 +64,10 @@ var working_directory: String = ""
 ## Available tools from this server
 var tools: Array = []
 var _tools_refresh_epoch := 0
+var _catalog_refresh_running := false
+var _catalog_refresh_dirty := false
+var _catalog_refresh_serial := 0
+var _catalog_refresh_result: Error = OK
 var catalog_conformance_errors: Array[String] = []
 const MAX_TOOL_PAGES := 32
 const MAX_DISCOVERED_TOOLS := 10000
@@ -96,6 +103,13 @@ var stdio_discovery_budget_sec := 1.0
 
 ## Active HTTP requests that can be cancelled
 var _http_transport = null
+var _catalog_watch = CatalogWatch.new()
+var _catalog_watch_owner = null
+var _catalog_watch_retry_token := 0
+var _suppress_watch_stop_callback := false
+var _stdio_watch_queue: Array[Dictionary] = []
+var _stdio_watch_validating := false
+const MAX_STDIO_WATCH_QUEUE := 64
 
 ## MCP protocol version
 const MCP_PROTOCOL_VERSION := "2025-06-18"
@@ -122,6 +136,8 @@ func _init(name: String = "", url: String = "", type: TransportType = TransportT
 	# Connect to global stop signal - MCP connections are shared, so cancel on any stop
 	if SingletonObject:
 		SingletonObject.stop_all_requests.connect(_on_stop_all_requests)
+	_catalog_watch.refresh_requested.connect(_on_catalog_watch_refresh)
+	_catalog_watch.stopped.connect(_on_catalog_watch_protocol_stopped)
 
 
 ## Handle stop signal - MCP connections cancel on any stop request
@@ -155,6 +171,8 @@ func disconnect_from_server() -> void:
 	SingletonObject.verbose_log("[MCP %s] Disconnecting..." % server_name)
 	server_connected = false
 	_tools_refresh_epoch += 1
+	_stop_tool_catalog_watch(true)
+	_catalog_watch_owner = null
 	var disconnected_http = _http_transport
 	_http_transport = null
 	if disconnected_http != null:
@@ -214,6 +232,31 @@ func list_tools() -> Array:
 
 ## Refresh the list of available tools from the server
 func refresh_tools() -> Error:
+	if _catalog_refresh_running:
+		_catalog_refresh_dirty = true
+		var waiting_for := _catalog_refresh_serial
+		while _catalog_refresh_running and waiting_for == _catalog_refresh_serial:
+			await _catalog_refresh_finished
+		return _catalog_refresh_result
+	_catalog_refresh_running = true
+	var result: Error = OK
+	while true:
+		_catalog_refresh_dirty = false
+		result = await _refresh_tools_once()
+		if result == OK:
+			# Each atomic success becomes authoritative immediately. A dirty
+			# follow-up may fail, but cannot hide the last good committed catalog.
+			catalog_committed.emit()
+		if not _catalog_refresh_dirty:
+			break
+	_catalog_refresh_result = result
+	_catalog_refresh_running = false
+	_catalog_refresh_serial += 1
+	_catalog_refresh_finished.emit(_catalog_refresh_serial, result)
+	return result
+
+
+func _refresh_tools_once() -> Error:
 	SingletonObject.verbose_log("[MCP] Refreshing tools from %s (connected=%s)..." % [server_name, server_connected])
 
 	# Skip tool discovery for REST APIs that don't support MCP protocol
@@ -463,7 +506,7 @@ func _verify_http_connection() -> Error:
 		protocol_profile = Profile.custom(_process_generation)
 		if _http_transport == null:
 			_http_transport = HttpTransport.new()
-			_http_transport.request_notification.connect(_on_http_notification)
+			_wire_http_transport(_http_transport)
 		_http_transport.configure_custom(_get_mcp_endpoint())
 		server_connected = true
 		connected.emit()
@@ -471,7 +514,7 @@ func _verify_http_connection() -> Error:
 
 	if _http_transport == null:
 		_http_transport = HttpTransport.new()
-		_http_transport.request_notification.connect(_on_http_notification)
+		_wire_http_transport(_http_transport)
 	var transport_owner = _http_transport
 	var init_result: Dictionary = await transport_owner.connect_endpoint(_get_mcp_endpoint(), working_directory)
 	if transport_owner != _http_transport or init_result.has("error"):
@@ -492,6 +535,138 @@ func _get_mcp_endpoint() -> String:
 
 func _on_http_notification(message: Dictionary, request_id: Variant) -> void:
 	http_notification_received.emit(message, request_id)
+
+
+func _wire_http_transport(http) -> void:
+	http.request_notification.connect(_on_http_notification)
+	http.catalog_watch_message.connect(_on_http_catalog_watch_message)
+	http.catalog_watch_closed.connect(_on_http_catalog_watch_closed)
+
+
+func start_tool_catalog_watch() -> void:
+	if not server_connected or protocol_profile.era != Profile.Era.MODERN_2026_07_28:
+		return
+	var tools_capability: Variant = protocol_profile.capabilities.get("tools")
+	if not tools_capability is Dictionary \
+			or tools_capability.get("listChanged") != true:
+		return
+	var watch_owner = _http_transport if transport == TransportType.HTTP else _subprocess
+	if not is_same(_catalog_watch_owner, watch_owner):
+		_catalog_watch.reset(protocol_profile.generation)
+		_catalog_watch_owner = watch_owner
+	_stop_tool_catalog_watch(true)
+	var request_id: String = _next_request_id()
+	_catalog_watch.begin(protocol_profile.generation, request_id)
+	var deadline_token := _catalog_watch_retry_token
+	_watch_catalog_ack_deadline(deadline_token, protocol_profile.generation)
+	if transport == TransportType.HTTP:
+		if _http_transport == null or not _http_transport.start_tools_watch(request_id):
+			_on_catalog_watch_closed(true, protocol_profile.generation)
+	elif transport == TransportType.STDIO:
+		var request := StdioNegotiation.modern_request("subscriptions/listen", request_id,
+			{"notifications": {"toolsListChanged": true}})
+		if not _write_stdio_notification(request, _process_generation):
+			_on_catalog_watch_closed(true, protocol_profile.generation)
+
+
+func _stop_tool_catalog_watch(send_cancel: bool) -> void:
+	_catalog_watch_retry_token += 1
+	if send_cancel and transport == TransportType.STDIO \
+			and (_catalog_watch.waiting_ack or _catalog_watch.active):
+		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+	if _http_transport != null:
+		_http_transport.stop_tools_watch()
+	_suppress_watch_stop_callback = true
+	_catalog_watch.stop(false)
+	_suppress_watch_stop_callback = false
+	_stdio_watch_queue.clear()
+
+
+func _on_http_catalog_watch_message(message: Dictionary, owner: int) -> void:
+	_catalog_watch.accepts(message, owner)
+
+
+func _on_http_catalog_watch_closed(_result: Dictionary, owner: int) -> void:
+	_on_catalog_watch_closed(_http_catalog_watch_should_retry(_result), owner)
+
+
+func _http_catalog_watch_should_retry(result: Dictionary) -> bool:
+	# Protocol/HTTP refusals are terminal even if their body resembles a valid
+	# completion. Only a clean completion or an explicitly classified transport
+	# loss starts a fresh subscription attempt.
+	if result.has("error"):
+		return result.get("subscription_retryable", false) == true
+	if int(result.get("status", 0)) < 200 or int(result.get("status", 0)) >= 300:
+		return false
+	var terminal_message: Variant = result.get("wire").parsed \
+		if result.get("wire") != null else null
+	return terminal_message is Dictionary \
+		and CatalogWatch.is_valid_completion(terminal_message,
+			_catalog_watch.request_id)
+
+
+func _on_catalog_watch_protocol_stopped(owner: int, retry: bool) -> void:
+	if _suppress_watch_stop_callback or owner != protocol_profile.generation:
+		return
+	_catalog_watch_retry_token += 1
+	if retry:
+		_schedule_catalog_watch_retry(owner)
+		return
+	if transport == TransportType.HTTP and _http_transport != null:
+		_http_transport.stop_tools_watch("HTTP catalog watch declined")
+	elif transport == TransportType.STDIO:
+		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+
+
+func _on_catalog_watch_closed(transient: bool, owner: int) -> void:
+	if owner != protocol_profile.generation:
+		return
+	_suppress_watch_stop_callback = true
+	_catalog_watch.stop(transient)
+	_suppress_watch_stop_callback = false
+	if not transient or not server_connected:
+		return
+	_schedule_catalog_watch_retry(owner)
+
+
+func _schedule_catalog_watch_retry(owner: int) -> void:
+	var delay_ms := _catalog_watch.retry_delay_ms()
+	if delay_ms < 0:
+		return
+	_catalog_watch_retry_token += 1
+	var token := _catalog_watch_retry_token
+	_retry_catalog_watch(token, owner, delay_ms)
+
+
+func _retry_catalog_watch(token: int, owner: int, delay_ms: int) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	await tree.create_timer(float(delay_ms) / 1000.0).timeout
+	if token == _catalog_watch_retry_token and owner == protocol_profile.generation \
+			and server_connected:
+		start_tool_catalog_watch()
+
+
+func _watch_catalog_ack_deadline(token: int, owner: int) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+	await tree.create_timer(float(CatalogWatch.ACK_DEADLINE_MS) / 1000.0).timeout
+	if token != _catalog_watch_retry_token or owner != protocol_profile.generation \
+			or not _catalog_watch.ack_expired():
+		return
+	if transport == TransportType.STDIO:
+		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+	elif _http_transport != null:
+		_http_transport.stop_tools_watch("HTTP catalog watch acknowledgment timed out")
+	_on_catalog_watch_closed(true, owner)
+
+
+func _on_catalog_watch_refresh(owner: int) -> void:
+	if not _catalog_watch.take_dirty(owner):
+		return
+	await refresh_tools()
 
 
 ## HTTP transport owns profile negotiation, bounded streaming and cancellation.
@@ -1266,7 +1441,11 @@ func _drain_stdout(expected_process = null) -> void:
 		SingletonObject.verbose_log("[MCP %s] Received kind=%s id_type=%d" % [server_name,
 			"request" if not method.is_empty() else "response", typeof(msg.get("id"))])
 
-		if method != "":
+		if method in ["notifications/subscriptions/acknowledged",
+				"notifications/tools/list_changed"]:
+			if _matches_stdio_catalog_watch(msg):
+				_queue_stdio_catalog_watch_frame(line, msg, _process_generation)
+		elif method != "":
 			# Plugin-initiated message.
 			match method:
 				"minerva/capability":
@@ -1298,6 +1477,10 @@ func _drain_stdout(expected_process = null) -> void:
 				_:
 					SingletonObject.verbose_log("[MCP %s] Unrecognized method from plugin '%s': %s"
 							% [server_name, plugin_id, method])
+		elif msg.has("id") and (_catalog_watch.waiting_ack or _catalog_watch.active) \
+				and Protocol.request_id_key(msg.id) \
+				== Protocol.request_id_key(_catalog_watch.request_id):
+			_queue_stdio_catalog_watch_frame(line, msg, _process_generation)
 		elif msg.has("id"):
 			# A JSON-RPC response — route it to its waiter by id. An unmatched
 			# id (a stray frame, or a response to an already-resolved request)
@@ -1306,6 +1489,71 @@ func _drain_stdout(expected_process = null) -> void:
 		else:
 			push_warning("[MCP %s] Discarding frame with neither method nor id from plugin '%s'"
 					% [server_name, plugin_id])
+
+
+func _matches_stdio_catalog_watch(message: Dictionary) -> bool:
+	if not (_catalog_watch.waiting_ack or _catalog_watch.active):
+		return false
+	var params: Variant = message.get("params")
+	if not params is Dictionary:
+		return false
+	var metadata: Variant = params.get("_meta")
+	if not metadata is Dictionary:
+		return false
+	return Protocol.request_id_key(metadata.get(
+		"io.modelcontextprotocol/subscriptionId")) \
+		== Protocol.request_id_key(_catalog_watch.request_id)
+
+
+func _queue_stdio_catalog_watch_frame(raw_line: String, message: Dictionary,
+		generation: int) -> void:
+	if protocol_profile.era != Profile.Era.MODERN_2026_07_28 \
+			or generation != _process_generation:
+		return
+	if _stdio_watch_queue.size() >= MAX_STDIO_WATCH_QUEUE:
+		_stdio_watch_queue.clear()
+		_write_modern_cancel(_catalog_watch.request_id, _process_generation)
+		_on_catalog_watch_closed(true, protocol_profile.generation)
+		return
+	_stdio_watch_queue.append({"raw": raw_line, "message": message,
+		"generation": generation, "profile_generation": protocol_profile.generation,
+		"attempt": _catalog_watch.attempt,
+		"request_key": Protocol.request_id_key(_catalog_watch.request_id)})
+	if not _stdio_watch_validating:
+		_process_stdio_catalog_watch_queue()
+
+
+func _process_stdio_catalog_watch_queue() -> void:
+	if _stdio_watch_validating:
+		return
+	_stdio_watch_validating = true
+	while not _stdio_watch_queue.is_empty():
+		var item: Dictionary = _stdio_watch_queue.pop_front()
+		var generation := int(item.generation)
+		var profile_generation := int(item.profile_generation)
+		var attempt := int(item.attempt)
+		var request_key := str(item.request_key)
+		var wire = WireValue.create(str(item.raw), item.message)
+		var checked: Dictionary = await WireAdapter.validate_for_application(wire)
+		if generation != _process_generation \
+				or profile_generation != protocol_profile.generation \
+				or attempt != _catalog_watch.attempt \
+				or request_key != Protocol.request_id_key(_catalog_watch.request_id):
+			continue
+		if not checked.get("ok", false):
+			_on_catalog_watch_closed(false, profile_generation)
+			continue
+		var message: Dictionary = wire.parsed
+		if message.has("method") and message.has("id"):
+			_on_catalog_watch_closed(false, profile_generation)
+			continue
+		var shape_error := Protocol.validate_request(message) if message.has("method") \
+			else Protocol.validate_response(message, _catalog_watch.request_id)
+		if not shape_error.is_empty():
+			_on_catalog_watch_closed(false, profile_generation)
+			continue
+		_catalog_watch.accepts(message, profile_generation)
+	_stdio_watch_validating = false
 
 
 func _route_stdio_response(raw_line: String, message: Dictionary, generation: int) -> void:

@@ -710,10 +710,14 @@ func _wire_plugin_tools_to_mcp() -> void:
 
 	print("[Plugins] Wired plugin tools to MinervaMCPServer (%d management tools registered)" % plugin_mcp_tools.get_tool_definitions().size())
 
-	# Now that signals are connected, register tools for already-installed plugins
-	# (signal fires → tools propagate to search index + tool_registry)
+	# Installed panel tools are host-owned and available immediately. Backend
+	# tools join the registry only after start_plugin establishes a live process.
 	for def in plugin_manager.get_db().get_all():
-		plugin_tool_registry.register_plugin_tools(def.id, def.tools)
+		var sync_result: Dictionary = plugin_tool_registry.sync_manifest_tools(
+			def.id, false)
+		if sync_result.get("error"):
+			push_error("[Plugins] Initial tool sync failed for '%s': %s" % [
+				def.id, sync_result.get("error")])
 
 	# Autostart plugins (like SCM services with auto-start flag)
 	plugin_manager.start_autostart_plugins()

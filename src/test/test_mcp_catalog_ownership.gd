@@ -49,6 +49,17 @@ func _run() -> void:
 	check("the published replacement can atomically reclaim its server catalog",
 		manager.tool_registry.get("shared").description == "replacement"
 		and manager._tool_connection_owners.get("shared") == replacement)
+	replacement.tools = [Definition.from_dict(
+		{"name": "refreshed", "inputSchema": {"type": "object"}}, "first")]
+	manager._on_catalog_committed("first", replacement)
+	check("committed catalog signal publishes only the exact live owner",
+		manager.tool_registry.has("refreshed") and not manager.tool_registry.has("shared")
+		and manager._tool_connection_owners.get("refreshed") == replacement)
+	first.tools = [Definition.from_dict(
+		{"name": "stale", "inputSchema": {"type": "object"}}, "first")]
+	manager._on_catalog_committed("first", first)
+	check("stale committed signal cannot replace the live owner catalog",
+		manager.tool_registry.has("refreshed") and not manager.tool_registry.has("stale"))
 	manager.disconnect_all()
 	manager.free()
 

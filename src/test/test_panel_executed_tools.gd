@@ -91,9 +91,11 @@ func _init() -> void:
 	await test_fallback_without_ownership_is_denied()
 
 	print("\n-- H: lifecycle preserves panel tools (bug 019f6d2dc767) --")
+	test_inactive_manifest_advertises_panel_tools_only()
 	await test_stop_preserves_panel_tools()
 	test_started_reregisters_missing_manifest_tools()
 	await test_backend_discovery_empty_preserves_panel_tools()
+	test_committed_backend_catalog_publishes_without_refetch()
 
 	_teardown()
 
@@ -241,6 +243,7 @@ func _tool(name: String, executor: Variant = null) -> Dictionary:
 
 var _def_a: PluginDefinition = null
 var _def_b: PluginDefinition = null
+var _def_c: PluginDefinition = null
 
 
 func _build_fixture_stack() -> bool:
@@ -255,7 +258,13 @@ func _build_fixture_stack() -> bool:
 	_def_b = PluginDefinition.from_dict(_make_def_dict("pxb", [
 		_tool("minerva_pxb_panel_probe", "panel"),
 	]))
-	if _def_a == null or _def_b == null:
+	# Plugin C starts cold: unlike A/B, its tools are admitted only through
+	# the lifecycle synchronization under test.
+	_def_c = PluginDefinition.from_dict(_make_def_dict("pxc", [
+		_tool("minerva_pxc_panel_cold", "panel"),
+		_tool("minerva_pxc_backend_cold", "backend"),
+	]))
+	if _def_a == null or _def_b == null or _def_c == null:
 		return false
 
 	# Real PluginManager, off-tree (never added to the tree ⇒ _ready/_process
@@ -267,6 +276,7 @@ func _build_fixture_stack() -> bool:
 	var db := StubDB.new()
 	db.definitions["pxa"] = _def_a
 	db.definitions["pxb"] = _def_b
+	db.definitions["pxc"] = _def_c
 	_manager._db = db
 
 	_audit = StubAuditLog.new()
@@ -572,10 +582,58 @@ func test_fallback_without_ownership_is_denied() -> void:
 	AnnotationHostRegistry.deregister("OrphanEd")
 
 
-## H1 — a plugin stop must NOT unregister its manifest panel tools: they run
-## host-side and never need the subprocess. This was the live HITL-caught
-## clobber (bug 019f6d2dc767): stop wiped everything, start's non-empty guard
-## then never restored, so panel tools vanished until an app reboot.
+## H1 — cold installation, lifecycle changes, and inactive manifest reloads
+## advertise panel tools while withholding backend tools without a process.
+func test_inactive_manifest_advertises_panel_tools_only() -> void:
+	print("test_inactive_manifest_advertises_panel_tools_only:")
+	var result: Dictionary = _registry.sync_manifest_tools("pxc", false)
+	check("cold installed manifest sync succeeds", result.get("ok", false), str(result))
+	check("cold installed panel tool is advertised",
+		_registry.is_plugin_tool("minerva_pxc_panel_cold"))
+	check("cold installed backend tool is not advertised",
+		not _registry.is_plugin_tool("minerva_pxc_backend_cold"))
+
+	_registry.on_plugin_started("pxc")
+	check("start advertises the manifest backend tool",
+		_registry.is_plugin_tool("minerva_pxc_backend_cold"))
+	_registry.on_plugin_stopped("pxc")
+	check("stop removes backend and retains panel",
+		not _registry.is_plugin_tool("minerva_pxc_backend_cold")
+		and _registry.is_plugin_tool("minerva_pxc_panel_cold"))
+
+	_def_c.tools.assign([
+		_tool("minerva_pxc_panel_reloaded", "panel"),
+		_tool("minerva_pxc_backend_reloaded", "backend"),
+	])
+	result = _registry.sync_manifest_tools("pxc", false)
+	check("inactive reload replaces the installed panel surface",
+		result.get("ok", false)
+		and not _registry.is_plugin_tool("minerva_pxc_panel_cold")
+		and _registry.is_plugin_tool("minerva_pxc_panel_reloaded"))
+	check("inactive reload still withholds its new backend tool",
+		not _registry.is_plugin_tool("minerva_pxc_backend_reloaded"))
+	_registry.on_plugin_started("pxc")
+	check("start after reload advertises only the current backend definition",
+		_registry.is_plugin_tool("minerva_pxc_backend_reloaded")
+		and not _registry.is_plugin_tool("minerva_pxc_backend_cold"))
+	var removed_names: Array = []
+	var capture_removal: Callable = func(plugin_id: String, names: Array) -> void:
+		if plugin_id == "pxc":
+			removed_names.append_array(names)
+	_registry.tools_unregistered.connect(capture_removal, CONNECT_ONE_SHOT)
+	_def_c.tools.clear()
+	result = _registry.sync_manifest_tools("pxc", true)
+	check("running reload removing its final tools clears registry and mirrors",
+		result.get("ok", false)
+		and _registry.get_plugin_tools("pxc").is_empty()
+		and removed_names.has("minerva_pxc_panel_reloaded")
+		and removed_names.has("minerva_pxc_backend_reloaded"), str(removed_names))
+	_registry.on_plugin_stopped("pxc")
+
+
+## H2 — a plugin stop must NOT unregister its manifest panel tools: they run
+## host-side and never need the subprocess. Backend tools leave the advertised
+## surface at the same lifecycle boundary.
 func test_stop_preserves_panel_tools() -> void:
 	print("test_stop_preserves_panel_tools:")
 	check("panel tool resolvable before stop",
@@ -596,7 +654,7 @@ func test_stop_preserves_panel_tools() -> void:
 			result.get("echoed_tool", "") == "minerva_pxa_panel_echo", str(result))
 
 
-## H2 — on_plugin_started must re-register manifest tools whenever any are
+## H3 — on_plugin_started must re-register manifest tools whenever any are
 ## missing (the old guard bailed on ANY non-empty set, masking the clobber).
 func test_started_reregisters_missing_manifest_tools() -> void:
 	print("test_started_reregisters_missing_manifest_tools:")
@@ -611,7 +669,7 @@ func test_started_reregisters_missing_manifest_tools() -> void:
 			_registry.is_plugin_tool("minerva_pxa_panel_echo"))
 
 
-## H3 — backend discovery with an empty tools/list (the churn moment that
+## H4 — backend discovery with an empty tools/list (the churn moment that
 ## killed the live session's panel tools) must preserve panel entries and drop
 ## only backend ones.
 func test_backend_discovery_empty_preserves_panel_tools() -> void:
@@ -635,3 +693,27 @@ func test_backend_discovery_empty_preserves_panel_tools() -> void:
 	check("backend tool dropped by empty replacement", not _registry.is_plugin_tool("minerva_pxa_backend_echo"))
 	if conn != null and conn is Object and not (conn is RefCounted):
 		conn.free()
+
+
+## H5 — a validated subscription refresh publishes the active connection's
+## committed tools without a second fetch and keeps installation-owned panels.
+func test_committed_backend_catalog_publishes_without_refetch() -> void:
+	print("test_committed_backend_catalog_publishes_without_refetch:")
+	var Connection = load("res://Scripts/Services/MCP/MCPServerConnection.gd")
+	var Definition = load("res://Scripts/Services/MCP/MCPToolDefinition.gd")
+	var conn = Connection.new("pxa", "", Connection.TransportType.STDIO)
+	conn.tools = [Definition.from_dict({"name": "fresh",
+		"inputSchema": {"type": "object", "properties": {}}}, "pxa")]
+	_manager._runtime["pxa"] = {"connection": conn, "stopping": false}
+	var result: Dictionary = _registry.publish_backend_tools("pxa", conn)
+	check("committed active backend catalog publishes without transport fetch",
+		result.get("ok", false)
+		and _registry.is_plugin_tool("minerva_pxa_fresh"), str(result))
+	check("committed backend publication preserves manifest panel tools",
+		_registry.is_plugin_tool("minerva_pxa_panel_echo"))
+	var stale = Connection.new("pxa", "", Connection.TransportType.STDIO)
+	stale.tools = [Definition.from_dict({"name": "stale",
+		"inputSchema": {"type": "object", "properties": {}}}, "pxa")]
+	result = _registry.publish_backend_tools("pxa", stale)
+	check("stale plugin connection cannot publish a replacement catalog",
+		result.has("error") and not _registry.is_plugin_tool("minerva_pxa_stale"))

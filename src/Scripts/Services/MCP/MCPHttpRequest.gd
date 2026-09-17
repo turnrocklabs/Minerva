@@ -17,6 +17,7 @@ var submitted := false
 var status := 0
 var response_headers := PackedStringArray()
 var _context = null
+var _subscription_mode := false
 
 func cancel(reason: String = "cancelled") -> void:
 	_finish({"error": reason, "error_code": "cancelled", "outcome_unknown": submitted})
@@ -29,8 +30,17 @@ func _finish(value: Dictionary) -> void:
 	deadline.cancel()
 	client.close()
 
-func execute(url: String, headers: PackedStringArray, request: Dictionary, body: PackedByteArray, timeout: float, context = null) -> Dictionary:
+
+func _finish_retryable(value: Dictionary) -> void:
+	if _subscription_mode:
+		value["subscription_retryable"] = true
+	_finish(value)
+
+func execute(url: String, headers: PackedStringArray, request: Dictionary,
+		body: PackedByteArray, timeout: float, context = null,
+		subscription_mode: bool = false) -> Dictionary:
 	_context = context
+	_subscription_mode = subscription_mode
 	client.read_chunk_size = 65536
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null:
@@ -54,29 +64,29 @@ func execute(url: String, headers: PackedStringArray, request: Dictionary, body:
 			path = "/"
 		var error := client.connect_to_host(host, port, TLSOptions.client() if secure else null)
 		if error != OK:
-			_finish({"error": "HTTP connect failed: " + error_string(error)})
+			_finish_retryable({"error": "HTTP connect failed: " + error_string(error)})
 		var connecting_until := Time.get_ticks_msec() + 10000
 		while not done and client.get_status() in [HTTPClient.STATUS_RESOLVING, HTTPClient.STATUS_CONNECTING]:
 			client.poll()
 			if Time.get_ticks_msec() >= connecting_until:
-				_finish({"error": "HTTP connection timed out"})
+				_finish_retryable({"error": "HTTP connection timed out"})
 			await tree.process_frame
 		if not done:
 			if body.size() > 32 * 1024 * 1024:
 				_finish({"error": "HTTP request exceeds byte budget"})
 			elif client.get_status() != HTTPClient.STATUS_CONNECTED:
-				_finish({"error": "HTTP connection failed"})
+				_finish_retryable({"error": "HTTP connection failed"})
 			else:
 				error = client.request_raw(HTTPClient.METHOD_POST, path, headers, body)
 				submitted = error == OK
 				if error != OK:
-					_finish({"error": "HTTP request failed: " + error_string(error)})
+					_finish_retryable({"error": "HTTP request failed: " + error_string(error)})
 		while not done and client.get_status() == HTTPClient.STATUS_REQUESTING:
 			client.poll()
 			await tree.process_frame
 		if not done:
 			if not client.has_response():
-				_finish({"error": "HTTP peer closed before response", "outcome_unknown": submitted})
+				_finish_retryable({"error": "HTTP peer closed before response", "outcome_unknown": submitted})
 			else:
 				await _receive(tree, request)
 	if deadline.expired.is_connected(_timeout):
@@ -86,7 +96,8 @@ func execute(url: String, headers: PackedStringArray, request: Dictionary, body:
 	return result
 
 func _timeout() -> void:
-	_finish({"error": "HTTP request deadline exceeded", "error_code": "deadline_exceeded", "outcome_unknown": submitted})
+	_finish_retryable({"error": "HTTP request deadline exceeded",
+		"error_code": "deadline_exceeded", "outcome_unknown": submitted})
 
 func _cancel_context() -> void:
 	cancel("HTTP request cancelled")
@@ -112,7 +123,7 @@ func _receive(tree: SceneTree, request: Dictionary) -> void:
 		return
 	var expected_length := client.get_response_body_length()
 	var chunked := client.is_response_chunked()
-	var decoder = Decoder.new()
+	var decoder = Decoder.new(_subscription_mode)
 	var body := PackedByteArray()
 	while not done and client.get_status() == HTTPClient.STATUS_BODY:
 		client.poll()
@@ -134,14 +145,17 @@ func _receive(tree: SceneTree, request: Dictionary) -> void:
 		if not done:
 			await tree.process_frame
 	if not done and client.get_status() in [HTTPClient.STATUS_CONNECTION_ERROR, HTTPClient.STATUS_TLS_HANDSHAKE_ERROR]:
-		_finish({"error": "HTTP response body interrupted", "status": status, "outcome_unknown": submitted})
+		_finish_retryable({"error": "HTTP response body interrupted", "status": status,
+			"outcome_unknown": submitted})
 	if not done and content_type == "application/json":
 		if (chunked and client.get_status() != HTTPClient.STATUS_CONNECTED) or (not chunked and expected_length >= 0 and body.size() != expected_length):
-			_finish({"error": "Incomplete HTTP response framing", "status": status, "outcome_unknown": submitted})
+			_finish_retryable({"error": "Incomplete HTTP response framing", "status": status,
+				"outcome_unknown": submitted})
 	if not done and content_type == "application/json":
 		await _frame(body, request, false)
 	if not done:
-		_finish({"error": "HTTP stream ended without final response", "status": status, "outcome_unknown": submitted})
+		_finish_retryable({"error": "HTTP stream ended without final response", "status": status,
+			"outcome_unknown": submitted})
 
 func _frame(bytes: PackedByteArray, request: Dictionary, streaming: bool) -> void:
 	var raw := bytes.get_string_from_utf8()
@@ -164,6 +178,14 @@ func _frame(bytes: PackedByteArray, request: Dictionary, streaming: bool) -> voi
 	if message.has("method"):
 		if not streaming or not Protocol.validate_request(message).is_empty() or message.has("id"):
 			_finish({"error": "Unexpected server request on HTTP response stream", "status": status})
+			return
+		if _subscription_mode:
+			if status < 200 or status >= 300:
+				_finish({"error": "HTTP error: %d" % status, "status": status})
+				return
+			request_notification.emit(message, request.id)
+			if message.method == "notifications/subscriptions/acknowledged":
+				deadline.cancel()
 			return
 		if message.method == "notifications/progress":
 			var expected: Variant = request.get("params", {}).get("_meta", {}).get("progressToken")

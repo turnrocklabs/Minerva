@@ -111,6 +111,7 @@ func connect_server(server_name: String) -> Error:
 	# Connect signals
 	connection.disconnected.connect(_on_server_disconnected.bind(server_name, connection))
 	connection.tools_list_changed.connect(_on_tools_list_changed.bind(server_name, connection))
+	connection.catalog_committed.connect(_on_catalog_committed.bind(server_name, connection))
 	_connecting_servers[server_name] = connection
 
 	var err: Error = await connection.connect_to_server()
@@ -156,6 +157,7 @@ func connect_server(server_name: String) -> Error:
 	_connection_diagnostics[server_name] = connected_state
 	_connecting_servers.erase(server_name)
 	_replace_server_tools(connection)
+	connection.start_tool_catalog_watch()
 
 	# Debug: Log registered tools
 	SingletonObject.verbose_log("[MCP] Registered %d tools from %s:" % [connection.tools.size(), server_name])
@@ -922,7 +924,14 @@ func _on_server_disconnected(server_name: String, connection) -> void:
 func _on_tools_list_changed(server_name: String, connection) -> void:
 	if servers.get(server_name) != connection:
 		return
-	var refreshed: Error = await connection.refresh_tools()
-	if refreshed == OK and servers.get(server_name) == connection:
-		_replace_server_tools(connection)
-		tools_refreshed.emit()
+	# refresh_tools emits catalog_committed for every atomic success; the exact
+	# owner handler below performs the single publication for both legacy
+	# notifications and modern subscriptions.
+	await connection.refresh_tools()
+
+
+func _on_catalog_committed(server_name: String, connection) -> void:
+	if servers.get(server_name) != connection:
+		return
+	_replace_server_tools(connection)
+	tools_refreshed.emit()

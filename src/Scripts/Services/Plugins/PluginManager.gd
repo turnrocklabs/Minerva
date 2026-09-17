@@ -842,21 +842,45 @@ func _discover_backend_tools(plugin_id: String, conn) -> void:
 		SingletonObject.verbose_log("[PluginManager] Backend tool discovery for '%s': %d tool(s) registered" % [
 			plugin_id, result.get("registered", []).size()
 		])
+		var publish_callback := _on_plugin_catalog_committed.bind(plugin_id, conn)
+		if not conn.catalog_committed.is_connected(publish_callback):
+			conn.catalog_committed.connect(publish_callback)
+		conn.start_tool_catalog_watch()
 
 
-## Ensure a plugin's manifest-declared tools are registered NOW (install/update
-## paths — bug 019f6d2dc767: only the app-boot loop used to register them, so
-## a post-boot install/reinstall left panel tools unresolvable until restart).
-## Delegates to PluginToolRegistry.on_plugin_started, which registers manifest
-## tools while merging any already-discovered backend entries.
+func _on_plugin_catalog_committed(plugin_id: String, conn) -> void:
+	if get_connection(plugin_id) != conn:
+		return
+	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") \
+		if Engine.get_main_loop() else null
+	var registry = so.get("plugin_tool_registry") \
+		if so != null and "plugin_tool_registry" in so else null
+	if registry == null or not registry.has_method("publish_backend_tools"):
+		return
+	var result: Dictionary = registry.publish_backend_tools(plugin_id, conn)
+	if result.get("error"):
+		push_warning("[PluginManager] Catalog publication for '%s' failed: %s" % [
+			plugin_id, result.get("error")])
+
+
+## Synchronize a changed manifest with the plugin's current lifecycle state.
+## Installed panel tools are host-owned; backend tools require a running
+## subprocess and must not be advertised merely because a manifest is present.
 func _register_manifest_tools(plugin_id: String) -> void:
 	var so = Engine.get_main_loop().root.get_node_or_null("SingletonObject") if Engine.get_main_loop() else null
 	if so == null:
 		return
 	var registry = so.get("plugin_tool_registry") if "plugin_tool_registry" in so else null
-	if registry == null or not registry.has_method("on_plugin_started"):
+	if registry == null or not registry.has_method("sync_manifest_tools"):
 		return
-	registry.on_plugin_started(plugin_id)
+	var def = _db.get_by_id(plugin_id)
+	if def == null:
+		return
+	var result: Dictionary = registry.sync_manifest_tools(
+		plugin_id, def.state == S_RUNNING)
+	if result.get("error"):
+		push_error("[PluginManager] Manifest tool sync failed for '%s': %s" % [
+			plugin_id, result.get("error")])
 
 
 ## Stop a running plugin cleanly.
