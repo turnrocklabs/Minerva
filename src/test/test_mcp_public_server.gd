@@ -10,6 +10,7 @@ var failed := 0
 var server
 var fixture
 var port := 0
+var log_capture
 
 
 func _initialize() -> void:
@@ -148,6 +149,8 @@ func _listed_tool(tools: Array, name: String) -> Dictionary:
 
 
 func _run() -> void:
+	log_capture = load("res://test/helpers/log_capture.gd").new()
+	OS.add_logger(log_capture)
 	server = load("res://Scripts/Services/MCP/MinervaMCPHttpServer.gd").new()
 	root.add_child(server)
 	fixture = load("res://test/helpers/mcp_public_server_fixture.gd").new()
@@ -199,19 +202,38 @@ func _run() -> void:
 	check("output-boundary fixture retires", await _wait_until(func() -> bool:
 		return server._connections.is_empty()))
 
-	var discovery := await _http(_message("server/discover", "discover", {}, true),
+	var discovery_request := _message("server/discover", "discover", {}, true)
+	discovery_request.params._meta["io.modelcontextprotocol/clientInfo"] = {
+		"name": "Modern\nClient" + String.chr(0x85) + "More" \
+			+ "x".repeat(90) + "HIDDEN_SUFFIX"}
+	var discovery_log_start: int = log_capture.size()
+	var discovery := await _http(discovery_request,
 		PackedStringArray(["MCP-Protocol-Version: " + Protocol.MODERN_VERSION]))
+	var discovery_log: String = log_capture.since(discovery_log_start)
 	var discovery_result: Dictionary = discovery.get("json", {}).get("result", {})
 	check("modern discovery is complete, private and sessionless",
 		discovery.status == 200 and discovery_result.resultType == "complete"
 		and discovery_result.ttlMs == 0 and discovery_result.cacheScope == "private"
-		and discovery_result.capabilities.tools.listChanged == false
+		and discovery_result.capabilities.tools.listChanged == true
 		and not discovery.headers.has("mcp-session-id"), str(discovery))
+	check("stateless modern discovery logs bounded sanitized metadata",
+		"[MCP HTTP] Discovery accepted era=modern client=Modern?Client?More" \
+			in discovery_log
+		and "method=server/discover" in discovery_log
+		and "protocol=%s" % Protocol.MODERN_VERSION in discovery_log
+		and "transport=http" in discovery_log
+		and "Modern\nClient" not in discovery_log
+		and "HIDDEN_SUFFIX" not in discovery_log, discovery_log)
 	var max_id := 9007199254740991
-	var max_id_discovery := await _http(_message("server/discover", max_id),
+	var anonymous_discovery := _message("server/discover", max_id)
+	anonymous_discovery.params._meta.erase("io.modelcontextprotocol/clientInfo")
+	var anonymous_log_start: int = log_capture.size()
+	var max_id_discovery := await _http(anonymous_discovery,
 		PackedStringArray(["MCP-Protocol-Version: " + Protocol.MODERN_VERSION]))
+	var anonymous_log: String = log_capture.since(anonymous_log_start)
 	check("maximum safe integer request ID round-trips exactly",
-		max_id_discovery.json.id == max_id)
+		max_id_discovery.json.id == max_id
+		and "era=modern client=unknown method=server/discover" in anonymous_log)
 	var missing_method_body := JSON.stringify(_message("server/discover", 1)).to_utf8_buffer()
 	var missing_method := await _raw_http(missing_method_body, PackedStringArray([
 		"MCP-Protocol-Version: " + Protocol.MODERN_VERSION]), false)
@@ -240,26 +262,33 @@ func _run() -> void:
 		and mismatched_header.json.error.code == -32020)
 
 	var subscription := await _http(_message("subscriptions/listen", "sub-1", {
-		"notifications": {"toolsListChanged": true}}),
+		"notifications": {"promptsListChanged": true}}),
 		PackedStringArray(["MCP-Protocol-Version: " + Protocol.MODERN_VERSION,
 			"Accept: application/json, text/event-stream"]))
 	var events: PackedStringArray = subscription.body.split("\n\n", false)
 	var first_event: Variant = JSON.parse_string(events[0].trim_prefix("data: ")) if events.size() > 0 else null
 	var second_event: Variant = JSON.parse_string(events[1].trim_prefix("data: ")) if events.size() > 1 else null
-	check("subscription acknowledges empty selection then completes with typed ID",
+	check("unsupported-only subscription acknowledges empty selection then completes",
 		subscription.headers.get("content-type") == "text/event-stream" and events.size() == 2
 		and first_event.params.notifications.is_empty()
 		and first_event.params._meta["io.modelcontextprotocol/subscriptionId"] == "sub-1"
 		and second_event.id == "sub-1" and second_event.result.resultType == "complete")
 
+	var initialize_log_start: int = log_capture.size()
 	var initialized := await _http(_message("initialize", 5, {
-		"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {}}, false))
+		"protocolVersion": "2099-01-01", "capabilities": {},
+		"clientInfo": {"name": "Legacy\r\nClient"}}, false))
+	var initialize_log: String = log_capture.since(initialize_log_start)
 	var session: String = initialized.headers.get("mcp-session-id", "")
 	var legacy_list := await _http(_message("tools/list", 6, {}, false),
 		PackedStringArray(["MCP-Session-Id: " + session,
 			"MCP-Protocol-Version: 2025-06-18"]))
 	check("legacy initialize retains session-era catalog shape", not session.is_empty()
-		and legacy_list.json.result.has("tools") and not legacy_list.json.result.has("resultType"))
+		and initialized.json.result.protocolVersion == "2025-06-18"
+		and legacy_list.json.result.has("tools") and not legacy_list.json.result.has("resultType")
+		and ("era=legacy client=Legacy??Client requested=2099-01-01 " \
+			+ "negotiated=2025-06-18 transport=http") in initialize_log
+		and "Legacy\r\nClient" not in initialize_log)
 	var modern_list := await _http(_message("tools/list", "catalog"), PackedStringArray([
 		"MCP-Protocol-Version: " + Protocol.MODERN_VERSION,
 		"MCP-Session-Id: " + session]))
@@ -566,6 +595,9 @@ func _run() -> void:
 
 
 func _finish() -> void:
+	if log_capture != null:
+		OS.remove_logger(log_capture)
+		log_capture = null
 	if server != null:
 		server.stop_server()
 		server.queue_free()

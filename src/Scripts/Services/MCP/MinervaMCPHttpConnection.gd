@@ -24,6 +24,8 @@ const MAX_BODY_BYTES := 32 * 1024 * 1024
 const READ_CHUNK_BYTES := 64 * 1024
 const MAX_OUTPUT_BYTES := MAX_BODY_BYTES + MAX_HEADER_BYTES
 const ABSOLUTE_DEADLINE_MS := 30 * 1000
+const MAX_STREAM_OUTPUT_BYTES := 64 * 1024
+const STREAM_STALL_MS := 30 * 1000
 
 var stream_peer: StreamPeerTCP
 var session_id: String = ""
@@ -44,6 +46,9 @@ var _output_buffer := PackedByteArray()
 var _output_offset := 0
 var _response_queued := false
 var _deadline_ms := 0
+var _streaming := false
+var _stream_ending := false
+var _stream_last_progress_ms := 0
 
 
 func _init(peer: StreamPeerTCP) -> void:
@@ -244,6 +249,8 @@ func flush_output() -> Error:
 	if int(written[1]) > 0:
 		_output_offset += int(written[1])
 		last_activity_time = Time.get_unix_time_from_system()
+		if _streaming:
+			_stream_last_progress_ms = Time.get_ticks_msec()
 	if _output_offset >= _output_buffer.size():
 		_output_buffer.clear()
 		_output_offset = 0
@@ -255,14 +262,86 @@ func has_pending_output() -> bool:
 
 
 func send_sse(messages: Array[Dictionary]) -> void:
-	var body := ""
+	if not begin_sse():
+		return
 	for message in messages:
-		var serialized: Dictionary = JsonSerialization.encode(message)
-		if not serialized.get("ok", false):
+		if not append_sse_message(message):
 			return
-		var encoded: String = serialized.raw
-		body += "data: %s\n\n" % encoded
-	send_response(200, {"Content-Type": "text/event-stream", "Cache-Control": "no-cache"}, body)
+	end_sse()
+
+
+func begin_sse() -> bool:
+	if _response_queued:
+		return false
+	var headers := {"Content-Type": "text/event-stream", "Cache-Control": "no-cache",
+		"X-Accel-Buffering": "no", "Connection": "close"}
+	var header_bytes := _format_stream_headers(200, headers).to_utf8_buffer()
+	if header_bytes.size() > MAX_STREAM_OUTPUT_BYTES:
+		return false
+	_output_buffer.append_array(header_bytes)
+	_response_queued = true
+	_streaming = true
+	_stream_last_progress_ms = Time.get_ticks_msec()
+	return true
+
+
+func append_sse_message(message: Dictionary) -> bool:
+	var serialized: Dictionary = JsonSerialization.encode(message)
+	if not serialized.get("ok", false):
+		return false
+	return _append_stream_bytes(("data: %s\n\n" % serialized.raw).to_utf8_buffer())
+
+
+func append_sse_comment(comment: String = "heartbeat") -> bool:
+	return _append_stream_bytes((": %s\n\n" % comment).to_utf8_buffer())
+
+
+func end_sse() -> void:
+	_stream_ending = true
+
+
+func is_streaming() -> bool:
+	return _streaming
+
+
+func stream_is_ending() -> bool:
+	return _stream_ending
+
+
+func stream_stalled(now_ms: int = -1) -> bool:
+	if not _streaming or not has_pending_output():
+		return false
+	var now := Time.get_ticks_msec() if now_ms < 0 else now_ms
+	return now - _stream_last_progress_ms >= STREAM_STALL_MS
+
+
+func _append_stream_bytes(bytes: PackedByteArray) -> bool:
+	if not _streaming or _stream_ending:
+		return false
+	_compact_output()
+	var queue_was_empty := _output_buffer.is_empty()
+	if _output_buffer.size() + bytes.size() > MAX_STREAM_OUTPUT_BYTES:
+		return false
+	_output_buffer.append_array(bytes)
+	# An idle stream has no stalled output. Start the write deadline when new
+	# bytes first become pending, rather than inheriting the last idle write.
+	if queue_was_empty:
+		_stream_last_progress_ms = Time.get_ticks_msec()
+	return true
+
+
+func _compact_output() -> void:
+	if _output_offset <= 0:
+		return
+	_output_buffer = _output_buffer.slice(_output_offset)
+	_output_offset = 0
+
+
+func _format_stream_headers(status_code: int, headers: Dictionary) -> String:
+	var response := "HTTP/1.1 %d %s\r\n" % [status_code, _get_status_text(status_code)]
+	for key in headers:
+		response += "%s: %s\r\n" % [key, headers[key]]
+	return response + "\r\n"
 
 
 ## Format just the HTTP response headers (no body).

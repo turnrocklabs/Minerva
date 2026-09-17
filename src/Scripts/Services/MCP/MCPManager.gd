@@ -266,20 +266,20 @@ func activate_tools_for_workflow(tool_names: Array[String], history = null) -> D
 	var effective_tool_sets := _effective_tool_sets_for_history(history)
 	var static_tool_mode: bool = history != null and "StaticToolMode" in history \
 		and bool(history.StaticToolMode)
-	for name: String in tool_names:
+	for tool_name: String in tool_names:
 		var unavailable_reason := _tool_unavailable_reason(
-			name, history, effective_tool_sets)
+			tool_name, history, effective_tool_sets)
 		if not unavailable_reason.is_empty():
-			unavailable.append({"name": name, "reason": unavailable_reason})
+			unavailable.append({"name": tool_name, "reason": unavailable_reason})
 			continue
 		if static_tool_mode or minerva_server == null \
 				or not minerva_server.auto_tool_management:
-			directly_available.append(name)
+			directly_available.append(tool_name)
 			continue
-		var hits: Array[Dictionary] = minerva_server.tool_search_index.search(name, "", 1)
-		if hits.is_empty() or str(hits[0].get("name", "")) != name \
+		var hits: Array[Dictionary] = minerva_server.tool_search_index.search(tool_name, "", 1)
+		if hits.is_empty() or str(hits[0].get("name", "")) != tool_name \
 				or (hits[0].get("schema", {}) as Dictionary).is_empty():
-			unavailable.append({"name": name, "reason": "tool schema is unavailable"})
+			unavailable.append({"name": tool_name, "reason": "tool schema is unavailable"})
 			continue
 		schemas.append(hits[0].schema)
 
@@ -496,18 +496,18 @@ func _effective_tool_sets_for_history(history) -> Array[String]:
 	return effective_tool_sets
 
 
-func _tool_unavailable_reason(name: String, history,
+func _tool_unavailable_reason(tool_name: String, history,
 		effective_tool_sets: Array[String]) -> String:
-	if not tool_registry.has(name):
+	if not tool_registry.has(tool_name):
 		return "tool is not registered"
-	var tool = tool_registry[name]
+	var tool = tool_registry[tool_name]
 	var connected := is_minerva_connected() if tool.server_name == "minerva" \
 		else is_server_connected(tool.server_name)
 	if not connected:
 		return "tool server is disconnected"
 	if not _passes_tool_set_filter(tool, effective_tool_sets):
 		return "tool is excluded by this chat's active tool sets"
-	if history != null and "DisabledTools" in history and name in history.DisabledTools:
+	if history != null and "DisabledTools" in history and tool_name in history.DisabledTools:
 		return "tool is disabled for this chat"
 	return ""
 

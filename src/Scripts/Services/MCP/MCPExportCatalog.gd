@@ -4,6 +4,7 @@ extends RefCounted
 
 var _dirty := true
 var _tools: Array[Dictionary] = []
+var _revision := 0
 
 
 func invalidate() -> void:
@@ -12,7 +13,7 @@ func invalidate() -> void:
 
 func snapshot(registry: Dictionary, enabled_sets: Array = []) -> Dictionary:
 	if not _dirty:
-		return {"ok": true, "tools": _tools.duplicate(true)}
+		return {"ok": true, "tools": _tools.duplicate(true), "revision": _revision}
 	var names: Array[String] = []
 	for key: Variant in registry:
 		if not key is String:
@@ -36,9 +37,19 @@ func snapshot(registry: Dictionary, enabled_sets: Array = []) -> Dictionary:
 				or wire.get("name") != name:
 			return _failure("Tool '%s' has a mismatched wire name" % name)
 		candidate.append(wire.duplicate(true))
-	_tools = candidate
+	if candidate != _tools:
+		_tools = candidate
+		_revision += 1
 	_dirty = false
-	return {"ok": true, "tools": _tools.duplicate(true)}
+	return {"ok": true, "tools": _tools.duplicate(true), "revision": _revision}
+
+
+func revision() -> int:
+	return _revision
+
+
+func is_dirty() -> bool:
+	return _dirty
 
 
 func _failure(message: String) -> Dictionary:

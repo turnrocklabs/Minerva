@@ -49,7 +49,7 @@ static func discovery_result() -> Dictionary:
 		"cacheScope": "private",
 		"supportedVersions": [Protocol.MODERN_VERSION],
 		"capabilities": {
-			"tools": {"listChanged": false},
+			"tools": {"listChanged": true},
 		},
 		"_meta": {"io.modelcontextprotocol/serverInfo": {
 			"name": "Minerva", "version": "1.0.0"}},
@@ -62,17 +62,41 @@ static func complete_result(result: Dictionary) -> Dictionary:
 	return stamped
 
 
-static func subscription_messages(request_id: Variant) -> Array[Dictionary]:
+static func accepted_subscription_filter(params: Dictionary) -> Dictionary:
+	var notifications: Dictionary = params.get("notifications", {})
+	return {"toolsListChanged": true} \
+		if notifications.get("toolsListChanged") == true else {}
+
+
+static func subscription_acknowledgment(request_id: Variant,
+		accepted: Dictionary) -> Dictionary:
 	var subscription_meta := {"io.modelcontextprotocol/subscriptionId": request_id}
-	return [{
+	return {
 		"jsonrpc": Protocol.JSON_RPC_VERSION,
 		"method": "notifications/subscriptions/acknowledged",
-		"params": {"_meta": subscription_meta.duplicate(true), "notifications": {}},
-	}, {
+		"params": {"_meta": subscription_meta, "notifications": accepted.duplicate(true)},
+	}
+
+
+static func tools_changed_notification(request_id: Variant) -> Dictionary:
+	return {"jsonrpc": Protocol.JSON_RPC_VERSION,
+		"method": "notifications/tools/list_changed",
+		"params": {"_meta": {
+			"io.modelcontextprotocol/subscriptionId": request_id}}}
+
+
+static func subscription_completion(request_id: Variant) -> Dictionary:
+	return {
 		"jsonrpc": Protocol.JSON_RPC_VERSION,
 		"id": request_id,
-		"result": {"resultType": "complete", "_meta": subscription_meta},
-	}]
+		"result": {"resultType": "complete", "_meta": {
+			"io.modelcontextprotocol/subscriptionId": request_id}},
+	}
+
+
+static func legacy_subscription_messages(request_id: Variant) -> Array[Dictionary]:
+	return [subscription_acknowledgment(request_id, {}),
+		subscription_completion(request_id)]
 
 
 static func validate_subscription_params(params: Dictionary) -> String:
@@ -82,6 +106,9 @@ static func validate_subscription_params(params: Dictionary) -> String:
 	for key: Variant in notifications:
 		if not key is String:
 			return "subscription filter keys must be strings"
+		if key not in ["toolsListChanged", "promptsListChanged",
+				"resourcesListChanged", "resourceSubscriptions"]:
+			return "unsupported subscription filter: %s" % key
 		if key in ["toolsListChanged", "promptsListChanged", "resourcesListChanged"] \
 				and not notifications[key] is bool:
 			return "%s must be Boolean" % key

@@ -34,6 +34,11 @@ const JsonSerialization = preload("res://Scripts/Services/MCP/MCPJsonSerializati
 const HttpHeaders = preload("res://Scripts/Services/MCP/MCPHttpHeaders.gd")
 const NativeWireAdapter = preload("res://Scripts/Services/MCP/MCPNativeWireAdapter.gd")
 const MAX_CONNECTIONS := 64
+const MAX_LOG_FIELD_CHARS := 80
+const MAX_SUBSCRIPTIONS := 16
+const SUBSCRIPTION_COALESCE_MS := 100
+const SUBSCRIPTION_HEARTBEAT_MS := 15 * 1000
+const SUBSCRIPTION_DRAIN_MS := 1000
 
 var _tcp_server: TCPServer = null
 var _connections: Array = []  # Array of MinervaMCPHttpConnection
@@ -44,6 +49,8 @@ var _inflight_connections: Dictionary = {}  # conn -> true (handling) / false (d
 var _export_catalog = ExportCatalog.new()
 var _tool_admission = PublicAdmission.new()
 var _active_request_contexts: Dictionary = {}  # request connection -> context
+var _subscriptions: Dictionary = {}  # connection -> stream state
+var _retiring_connections: Dictionary = {}  # connection -> drain deadline
 
 # Reference to the MCP manager and minerva server
 var _mcp_manager = null
@@ -57,6 +64,7 @@ func _ready() -> void:
 
 
 func _process(_delta: float) -> void:
+	_process_retiring_connections()
 	if not _is_running:
 		return
 
@@ -96,10 +104,12 @@ func stop_server() -> void:
 
 	# Detach ownership before cancellation callbacks can synchronously re-enter.
 	var old_connections := _connections.duplicate()
+	var old_subscriptions := _subscriptions.duplicate()
 	var old_contexts := _active_request_contexts.values()
 	_connections.clear()
 	_inflight_connections.clear()
 	_active_request_contexts.clear()
+	_subscriptions.clear()
 	_is_running = false
 	var old_server := _tcp_server
 	_tcp_server = null
@@ -108,8 +118,17 @@ func stop_server() -> void:
 		old_server.stop()
 	for context in old_contexts:
 		context.cancel()
+	var drain_deadline := Time.get_ticks_msec() + SUBSCRIPTION_DRAIN_MS
 	for conn in old_connections:
-		conn.close()
+		if old_subscriptions.has(conn):
+			var state: Dictionary = old_subscriptions[conn]
+			if conn.append_sse_message(PublicProtocol.subscription_completion(state.id)):
+				conn.end_sse()
+				_retiring_connections[conn] = drain_deadline
+			else:
+				conn.close()
+		else:
+			conn.close()
 	print("[MCP HTTP] Server stopped")
 	server_stopped.emit()
 
@@ -126,6 +145,10 @@ func get_port() -> int:
 
 func invalidate_tools_catalog(_reason: String = "") -> void:
 	_export_catalog.invalidate()
+	var refresh_at := Time.get_ticks_msec() + SUBSCRIPTION_COALESCE_MS
+	for state: Dictionary in _subscriptions.values():
+		if state.get("tools", false) and int(state.get("refresh_at", 0)) <= 0:
+			state["refresh_at"] = refresh_at
 
 
 func _accept_new_connections() -> void:
@@ -134,7 +157,7 @@ func _accept_new_connections() -> void:
 
 	var peer = _tcp_server.take_connection()
 	if peer:
-		if _connections.size() >= MAX_CONNECTIONS:
+		if _connections.size() + _retiring_connections.size() >= MAX_CONNECTIONS:
 			peer.disconnect_from_host()
 			return
 		var conn = MinervaMCPHttpConnectionScript.new(peer)
@@ -144,6 +167,9 @@ func _accept_new_connections() -> void:
 func _process_connections() -> void:
 	for conn in _connections.duplicate():
 		if not _connections.has(conn):
+			continue
+		if _subscriptions.has(conn):
+			_process_subscription(conn)
 			continue
 		if conn.absolute_deadline_expired() or not conn.is_peer_connected():
 			var active_context = _active_request_contexts.get(conn)
@@ -194,6 +220,63 @@ func _process_connections() -> void:
 
 	# Connections are removed by identity so synchronous stop/restart callbacks
 	# cannot invalidate numeric indices from this snapshot.
+
+
+func _process_subscription(conn) -> void:
+	if not conn.is_peer_connected() or conn.stream_stalled():
+		_remove_subscription(conn)
+		return
+	if conn.flush_output() != OK:
+		_remove_subscription(conn)
+		return
+	var state: Dictionary = _subscriptions.get(conn, {})
+	if state.is_empty():
+		return
+	if conn.stream_is_ending():
+		if not conn.has_pending_output():
+			_remove_subscription(conn)
+		return
+	var now := Time.get_ticks_msec()
+	if int(state.get("refresh_at", 0)) > 0 and now >= int(state.refresh_at):
+		var snapshot := _catalog_snapshot()
+		if snapshot.get("ok", false):
+			state["refresh_at"] = 0
+			var revision := int(snapshot.get("revision", 0))
+			if revision > int(state.get("sent_revision", 0)):
+				state["pending_revision"] = revision
+		else:
+			# A failed rebuild never advances the subscriber's successful baseline.
+			state["refresh_at"] = now + SUBSCRIPTION_COALESCE_MS
+	if int(state.get("pending_revision", 0)) > int(state.get("sent_revision", 0)) \
+			and not conn.has_pending_output():
+		if not conn.append_sse_message(PublicProtocol.tools_changed_notification(state.id)):
+			_remove_subscription(conn)
+			return
+		state["sent_revision"] = state.pending_revision
+	if now >= int(state.get("heartbeat_at", 0)) and not conn.has_pending_output():
+		# SSE comments keep quiet subscriptions alive without protocol messages.
+		if not conn.append_sse_comment():
+			_remove_subscription(conn)
+			return
+		state["heartbeat_at"] = now + SUBSCRIPTION_HEARTBEAT_MS
+
+
+func _remove_subscription(conn) -> void:
+	_subscriptions.erase(conn)
+	_inflight_connections.erase(conn)
+	_active_request_contexts.erase(conn)
+	_connections.erase(conn)
+	conn.close()
+
+
+func _process_retiring_connections() -> void:
+	var now := Time.get_ticks_msec()
+	for conn in _retiring_connections.keys():
+		var deadline := int(_retiring_connections[conn])
+		var flush_error: Error = conn.flush_output()
+		if flush_error != OK or not conn.has_pending_output() or now >= deadline:
+			_retiring_connections.erase(conn)
+			conn.close()
 
 
 func _cleanup_stale_sessions() -> void:
@@ -317,6 +400,7 @@ func _handle_jsonrpc(conn, request: Dictionary, session_id: String,
 	match method:
 		"server/discover":
 			_send_jsonrpc_result(conn, response_id, PublicProtocol.discovery_result())
+			_log_modern_discovery(params, method)
 		"initialize":
 			_handle_initialize(conn, params, request_id)
 		"tools/list":
@@ -326,7 +410,10 @@ func _handle_jsonrpc(conn, request: Dictionary, session_id: String,
 		"subscriptions/listen":
 			var subscription_error := PublicProtocol.validate_subscription_params(params)
 			if subscription_error.is_empty():
-				conn.send_sse(PublicProtocol.subscription_messages(request_id))
+				if modern:
+					_open_subscription(conn, params, request_id)
+				else:
+					conn.send_sse(PublicProtocol.legacy_subscription_messages(request_id))
 			else:
 				_send_jsonrpc_error(conn, request_id, -32602, subscription_error)
 		_:
@@ -380,6 +467,43 @@ func _handle_initialize(conn, params: Dictionary, request_id) -> void:
 	}
 
 	_send_jsonrpc_result(conn, request_id, result, headers)
+	var client_info: Variant = params.get("clientInfo")
+	var client_name: Variant = client_info.get("name") if client_info is Dictionary else null
+	print(("[MCP HTTP] Client connected era=legacy client=%s requested=%s " \
+		+ "negotiated=%s transport=http") % [_safe_log_field(client_name),
+			_safe_log_field(requested_protocol_version),
+			_safe_log_field(negotiated_protocol_version)])
+
+
+func _log_modern_discovery(params: Dictionary, method: String) -> void:
+	var meta: Variant = params.get("_meta")
+	var client_info: Variant = meta.get("io.modelcontextprotocol/clientInfo") \
+		if meta is Dictionary else null
+	var client_name: Variant = client_info.get("name") \
+		if client_info is Dictionary else null
+	var protocol: Variant = meta.get("io.modelcontextprotocol/protocolVersion") \
+		if meta is Dictionary else null
+	print(("[MCP HTTP] Discovery accepted era=modern client=%s method=%s " \
+		+ "protocol=%s transport=http") % [_safe_log_field(client_name),
+			_safe_log_field(method), _safe_log_field(protocol)])
+
+
+static func _safe_log_field(value: Variant) -> String:
+	if not value is String:
+		return "unknown"
+	var source: String = value.strip_edges()
+	if source.is_empty():
+		return "unknown"
+	var sanitized := ""
+	var length := mini(source.length(), MAX_LOG_FIELD_CHARS)
+	for index in length:
+		var codepoint := source.unicode_at(index)
+		if codepoint < 0x20 or (codepoint >= 0x7f and codepoint <= 0x9f) \
+				or codepoint == 0x2028 or codepoint == 0x2029:
+			sanitized += "?"
+		else:
+			sanitized += String.chr(codepoint)
+	return sanitized if not sanitized.is_empty() else "unknown"
 
 
 func _negotiate_protocol_version(requested_protocol_version: String) -> String:
@@ -394,17 +518,12 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 	if _sessions.has(session_id):
 		_sessions[session_id].last_activity = Time.get_unix_time_from_system()
 
-	var tools: Array[Dictionary] = []
-
-	if _mcp_manager and _mcp_manager.minerva_server:
-		var minerva_server = _mcp_manager.minerva_server
-		var catalog: Dictionary = _export_catalog.snapshot(
-			_mcp_manager.tool_registry, minerva_server._enabled_tool_sets)
-		if not catalog.get("ok", false):
-			_send_jsonrpc_error(conn, request_id, -32603,
-				"Public tool catalog is invalid")
-			return
-		tools = catalog.tools
+	var catalog := _catalog_snapshot()
+	if not catalog.get("ok", false):
+		_send_jsonrpc_error(conn, request_id, -32603,
+			"Public tool catalog is invalid")
+		return
+	var tools: Array[Dictionary] = catalog.tools
 
 	var result = {
 		"tools": tools
@@ -415,6 +534,47 @@ func _handle_tools_list(conn, _params: Dictionary, request_id, session_id: Strin
 		result["cacheScope"] = "private"
 
 	_send_jsonrpc_result(conn, request_id, result)
+
+
+func _catalog_snapshot() -> Dictionary:
+	var registry: Dictionary = _mcp_manager.tool_registry \
+		if _mcp_manager != null else {}
+	var enabled_sets: Array = _mcp_manager.minerva_server._enabled_tool_sets \
+		if _mcp_manager != null and _mcp_manager.minerva_server != null else []
+	return _export_catalog.snapshot(registry, enabled_sets)
+
+
+func _open_subscription(conn, params: Dictionary, request_id: Variant) -> void:
+	if _subscriptions.size() >= MAX_SUBSCRIPTIONS:
+		_send_jsonrpc_error(conn, request_id, -32000,
+			"MCP subscription admission is temporarily unavailable", {}, 429)
+		return
+	var snapshot := _catalog_snapshot()
+	if not snapshot.get("ok", false):
+		_send_jsonrpc_error(conn, request_id, -32603,
+			"Public tool catalog is invalid")
+		return
+	var subscription_id: Variant = _normalize_jsonrpc_id(request_id)
+	var accepted := PublicProtocol.accepted_subscription_filter(params)
+	if not conn.begin_sse() or not conn.append_sse_message(
+			PublicProtocol.subscription_acknowledgment(subscription_id, accepted)):
+		conn.close()
+		return
+	if accepted.is_empty():
+		conn.append_sse_message(PublicProtocol.subscription_completion(subscription_id))
+		conn.end_sse()
+		return
+	_subscriptions[conn] = {
+		"id": subscription_id,
+		"tools": true,
+		"sent_revision": int(snapshot.get("revision", 0)),
+		"pending_revision": int(snapshot.get("revision", 0)),
+		"refresh_at": 0,
+		"heartbeat_at": Time.get_ticks_msec() + SUBSCRIPTION_HEARTBEAT_MS,
+	}
+	# Persistent streams have their own lifecycle and are not closed by the
+	# ordinary one-response flush path or its 30-second request deadline.
+	_inflight_connections.erase(conn)
 
 
 func _handle_tools_call(conn, params: Dictionary, request_id, session_id: String,
