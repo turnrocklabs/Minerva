@@ -107,6 +107,7 @@ src/plugins/voice/dist/
 # build-extensions produces, and the worker's runtime state file.
 src/plugins/agent-relay/target/
 src/plugins/agent-relay/runtime-build/
+src/plugins/agent-relay/dist/
 src/plugins/agent-relay/agent_relay_state.json
 src/native/vendor/
 src/native/json_schema_helper/*.o

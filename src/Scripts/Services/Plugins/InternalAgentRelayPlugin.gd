@@ -57,12 +57,20 @@ static func definition():
 	if def == null:
 		return null
 	# from_manifest points the backend at the manifest's own directory; the
-	# worker actually lives in the staged build, and its state file is written
-	# next to the executable.
+	# worker actually lives in the staged build. Keep mutable state in Minerva's
+	# writable user data rather than beside the packaged executable.
 	def.data_directory = directory
 	def.working_dir = directory
 	def.entrypoint = "./%s" % binary_name()
-	def.args.assign([])
+	var state_file := ProjectSettings.globalize_path(
+		"user://plugins/data".path_join(ID).path_join("agent_relay_state.json"))
+	# Preserve state written by the former user-installed relay location. Fresh
+	# built-in installs use the normal host-managed plugin data directory.
+	var legacy_state_file := ProjectSettings.globalize_path(
+		"user://plugins".path_join(ID).path_join("agent_relay_state.json"))
+	if FileAccess.file_exists(legacy_state_file):
+		state_file = legacy_state_file
+	def.args.assign(["--state-file", state_file])
 	def.autostart = false
 	def.auto_reload = false
 	return def

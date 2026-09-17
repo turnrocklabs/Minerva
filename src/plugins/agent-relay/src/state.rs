@@ -1,10 +1,9 @@
 // state.rs — single-file persistence for agent-relay runtime state.
 //
-// File: <exe_dir>/agent_relay_state.json (override via AGENT_RELAY_STATE_FILE;
-// set it to an empty string to disable persistence entirely — used by tests).
-// The executable's directory IS the plugin data directory for both side-loaded
-// and marketplace installs (codetools os.Executable() precedent; the host's
-// SubProcess cannot chdir, so cwd belongs to Minerva, not the plugin).
+// File: <exe_dir>/agent_relay_state.json by default. The Minerva host overrides
+// this with --state-file pointing at persistent writable user data. Standalone
+// launches may use AGENT_RELAY_STATE_FILE or the executable-adjacent fallback;
+// an empty environment override disables persistence entirely for tests.
 //
 // Schema (flat root, version 1, defensive .get() on load — host_owned
 // conventions):
@@ -24,7 +23,7 @@
 // emits terminal_closed (suppressed when unarmed) and cleans itself up.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use serde_json::{json, Value};
 
@@ -33,16 +32,31 @@ use crate::profiles::{self, Profile};
 use crate::router::Router;
 use crate::watcher;
 
+static CLI_STATE_FILE: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn set_cli_state_file(path: PathBuf) -> Result<(), &'static str> {
+    CLI_STATE_FILE.set(path).map_err(|_| "state file was already configured")
+}
+
 /// Resolve the state-file path. None disables persistence.
 pub fn state_file_path() -> Option<PathBuf> {
-    if let Ok(overridden) = std::env::var("AGENT_RELAY_STATE_FILE") {
-        if overridden.is_empty() {
-            return None;
-        }
-        return Some(PathBuf::from(overridden));
+    resolve_state_file_path(
+        CLI_STATE_FILE.get().cloned(),
+        std::env::var("AGENT_RELAY_STATE_FILE").ok(),
+        std::env::current_exe().ok(),
+    )
+}
+
+fn resolve_state_file_path(
+    cli: Option<PathBuf>, env: Option<String>, executable: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if cli.is_some() {
+        return cli;
     }
-    let exe = std::env::current_exe().ok()?;
-    Some(exe.parent()?.join("agent_relay_state.json"))
+    if let Some(overridden) = env {
+        return if overridden.is_empty() { None } else { Some(PathBuf::from(overridden)) };
+    }
+    executable?.parent().map(|parent| parent.join("agent_relay_state.json"))
 }
 
 /// Snapshot the three runtime stores and write the state file (atomic:
@@ -207,6 +221,19 @@ pub fn resume_sessions(specs: Vec<(String, String, String)>, router: &Arc<Router
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cli_state_path_precedes_environment_and_fallback() {
+        let cli = PathBuf::from("/writable/user/agent_relay_state.json");
+        assert_eq!(resolve_state_file_path(
+            Some(cli.clone()), Some("/legacy/state.json".into()),
+            Some(PathBuf::from("/package/agent-relay-plugin"))), Some(cli));
+        assert_eq!(resolve_state_file_path(
+            None, Some(String::new()), Some(PathBuf::from("/package/agent-relay-plugin"))), None);
+        assert_eq!(resolve_state_file_path(
+            None, None, Some(PathBuf::from("/package/agent-relay-plugin"))),
+            Some(PathBuf::from("/package/agent_relay_state.json")));
+    }
 
     // ONE test owns all AGENT_RELAY_STATE_FILE mutations — Rust runs tests in
     // parallel threads and the env var is process-global.

@@ -83,11 +83,14 @@ function Build-AgentRelayRuntime {
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
         throw "cargo not found. Install Rust via https://rustup.rs (then 'rustup update stable')."
     }
-    cargo build --release --manifest-path (Join-Path $source "Cargo.toml")
+    cargo build --locked --release --manifest-path (Join-Path $source "Cargo.toml")
     Assert-NativeSuccess "Agent Relay worker build"
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
     Copy-Item (Join-Path $source "target/release/agent-relay-plugin.exe") (Join-Path $stage "agent-relay-plugin.exe") -Force
     Set-Content -Path (Join-Path $stage "target-triple.txt") -Value $target -NoNewline:$false
+    python (Join-Path $source "scripts/package-runtime.py") package $target $stage `
+        (Join-Path $source "dist/minerva-agent-relay-$target.tar.gz")
+    Assert-NativeSuccess "Agent Relay runtime package"
 }
 
 $ZigVersion = "0.15.2"

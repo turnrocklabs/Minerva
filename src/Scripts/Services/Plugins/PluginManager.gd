@@ -231,13 +231,13 @@ func get_chat_provider_registry():
 	return _chat_provider_registry
 
 
-## Bring every registered host-owned plugin to the readiness an install would
-## have produced: data directories, granted capabilities and seeded skills.
+## Bring every registered host-owned plugin to install-equivalent readiness:
+## data directories, first-install grants, and reconciled skills.
 ##
 ## Separate from _ready() because those three need the policy engine, the tool
 ## registry and the docket manager, all of which SingletonObject wires AFTER
-## constructing this manager. Safe to call more than once — every step is
-## idempotent.
+## constructing this manager. Persisted grant decisions and customized skills
+## remain authoritative when this is called again.
 func prepare_internal_plugins() -> void:
 	for id in InternalPlugins.ids():
 		var def = _db.get_by_id(id)
@@ -247,22 +247,39 @@ func prepare_internal_plugins() -> void:
 		if create_result.has("error"):
 			push_warning("[PluginManager] Warning creating directories for '%s': %s" % [
 				id, create_result["error"]])
-		_auto_grant_declared_capabilities(def)
-		if not def.skills.is_empty():
-			_seed_internal_skills(def)
+		# A persisted empty grant list is an explicit user decision. Internal
+		# registration is reconstructed at each launch, but consent is not.
+		if _policy_ref != null and not _policy_ref._grants.has(def.id):
+			_auto_grant_declared_capabilities(def)
+		# Empty manifests still reconcile so a removed final skill is deprecated.
+		_seed_internal_skills(def)
 
 
-## Seed a host-owned plugin's manifest skills without the install-time
-## confirmation dialog: the plugin ships with Minerva, so there is no install
-## act for the user to consent to. Re-seeding is a no-op for unchanged skills.
-func _seed_internal_skills(def) -> void:
-	var docket_manager = _get_docket_manager()
+## Reconcile a host-owned plugin's skills through the normal update machinery.
+## Pristine records follow shipped updates; customized records remain untouched.
+func _seed_internal_skills(def, docket_override = null) -> void:
+	var docket_manager = docket_override if docket_override != null else _get_docket_manager()
 	if docket_manager == null:
 		push_warning("[PluginManager] No docket manager; skipping skill seed for '%s'" % def.id)
 		return
 	var SeederClass = load("res://Scripts/Services/Plugins/PluginSkillSeeder.gd")
-	var resolved: Array = SeederClass.resolve_deps(def, _build_available_tools())
-	SeederClass.materialize(def.id, resolved, docket_manager)
+	var available_tools := _build_available_tools()
+	# materialize owns brand-new records and receives the exact plugin id. The
+	# reconcile pass below then owns changed/deprecated records.
+	var resolved: Array = SeederClass.resolve_deps(def, available_tools)
+	var materialized: Dictionary = SeederClass.materialize(def.id, resolved, docket_manager)
+	if int(materialized.get("failed", 0)) > 0:
+		push_warning("[PluginManager] Internal skill seed failed for '%s'" % def.id)
+		return
+	var plan: Dictionary = SeederClass.plan_reconcile(def, available_tools, docket_manager)
+	var decisions: Dictionary = {}
+	for action in plan.get("actions", []):
+		if str(action.get("action", "")) == SeederClass.RECONCILE_PROMPT_REQUIRED:
+			var skill: Dictionary = action.get("skill", {})
+			decisions[str(skill.get("id", ""))] = false
+	var reconciled: Dictionary = SeederClass.apply_reconcile(plan, decisions, docket_manager)
+	if int(reconciled.get("failed", 0)) > 0:
+		push_warning("[PluginManager] Internal skill reconcile failed for '%s'" % def.id)
 
 
 func _process(delta: float) -> void:

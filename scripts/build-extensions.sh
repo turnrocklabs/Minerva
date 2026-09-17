@@ -90,11 +90,13 @@ build_agent_relay_runtime() {
     echo ""
     echo "=== Building bundled Agent Relay worker ($target) ==="
     command -v cargo >/dev/null || { echo "Required tool missing: cargo. Install Rust via rustup. See Docs/Building.md."; exit 1; }
-    cargo build --release --manifest-path "$source/Cargo.toml"
+    cargo build --locked --release --manifest-path "$source/Cargo.toml"
     mkdir -p "$stage"
     cp "$source/target/release/agent-relay-plugin" "$stage/agent-relay-plugin"
     chmod +x "$stage/agent-relay-plugin"
     printf '%s\n' "$target" > "$stage/target-triple.txt"
+    python3 "$source/scripts/package-runtime.py" package "$target" "$stage" \
+        "$source/dist/minerva-agent-relay-$target.tar.gz"
 }
 
 # Check-only needs Python but does not install tools or alter submodules.

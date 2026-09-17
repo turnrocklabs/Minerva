@@ -27,14 +27,15 @@ No UI panels are included in v1 (B1 scaffold).
 ## Build
 
 ```bash
-cd agent-relay
-cargo build --release   # binary: target/release/agent-relay-plugin
-cargo test
+scripts/build-extensions.sh --agent-relay-only
+# Windows: scripts\build-extensions.ps1 -AgentRelayOnly
 ```
 
-The release binary is gitignored (FCIB policy). The manifest's
-`backend.entrypoint` points to `./agent-relay-plugin` at the plugin root —
-copy it there after build, or the install/start flow won't find it.
+The source-built release binary and package are gitignored (FCIB policy). The
+host selects the staged binary for its platform. It also passes `--state-file`
+under Minerva's writable user data so packaged runtimes never write beside the
+executable; standalone launches retain `AGENT_RELAY_STATE_FILE` and the
+executable-adjacent fallback.
 
 ## Tool prefix rule
 

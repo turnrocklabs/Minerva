@@ -137,8 +137,10 @@ static func materialize(plugin_id: String, resolved: Array, docket_caller) -> Di
 	var seeded := 0
 	var skipped := 0
 	var deferred := 0
+	var failed := 0
 	if docket_caller == null:
-		return {"seeded": 0, "skipped": 0, "deferred_to_update": 0, "error": "no_docket_caller"}
+		return {"seeded": 0, "skipped": 0, "deferred_to_update": 0,
+			"failed": 1, "error": "no_docket_caller"}
 
 	for entry in resolved:
 		var skill = entry.get("skill", {})
@@ -166,10 +168,12 @@ static func materialize(plugin_id: String, resolved: Array, docket_caller) -> Di
 		if create_result is Dictionary and not create_result.has("error"):
 			seeded += 1
 		else:
+			failed += 1
 			push_warning("[PluginSkillSeeder] docket_create failed for skill '%s' of plugin '%s': %s" %
 				[manifest_skill_id, plugin_id, str(create_result)])
 
-	return {"seeded": seeded, "skipped": skipped, "deferred_to_update": deferred}
+	return {"seeded": seeded, "skipped": skipped,
+		"deferred_to_update": deferred, "failed": failed}
 
 
 ## docket_create + immediate transition to "active".  Plugin-seeded skills land
@@ -194,6 +198,7 @@ static func _create_and_activate_skill(record: Dictionary, docket_caller) -> Dic
 	if trans_result is Dictionary and trans_result.has("error"):
 		push_warning("[PluginSkillSeeder] could not activate skill '%s': %s" %
 			[new_id, str(trans_result)])
+		return trans_result
 	return create_result
 
 
@@ -317,8 +322,8 @@ static func plan_reconcile(def, available_tools: Dictionary, docket_caller) -> D
 ##   false or absent = decline (refresh pristine_content for later diff,
 ##   leave user's edits intact).
 ##
-## Returns counts:
-##   {seeded, silent_updated, prompted_accepted, prompted_declined, deprecated, unchanged}
+## Returns counts, including `failed` for writes the store rejected:
+##   {seeded, silent_updated, prompted_accepted, prompted_declined, deprecated, unchanged, failed}
 static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_caller) -> Dictionary:
 	var seeded := 0
 	var silent_updated := 0
@@ -326,9 +331,10 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 	var prompted_declined := 0
 	var deprecated_count := 0
 	var unchanged := 0
+	var failed := 0
 	if docket_caller == null:
 		return {"seeded": 0, "silent_updated": 0, "prompted_accepted": 0,
-				"prompted_declined": 0, "deprecated": 0, "unchanged": 0}
+				"prompted_declined": 0, "deprecated": 0, "unchanged": 0, "failed": 1}
 
 	var actions: Array = plan.get("actions", [])
 	for entry in actions:
@@ -345,23 +351,32 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 				var create_result = _create_and_activate_skill(record, docket_caller)
 				if create_result is Dictionary and not create_result.has("error"):
 					seeded += 1
+				else:
+					failed += 1
 			RECONCILE_SILENT_UPDATE:
-				_apply_overwrite(entry, docket_caller)
-				silent_updated += 1
+				if _apply_overwrite(entry, docket_caller):
+					silent_updated += 1
+				else:
+					failed += 1
 			RECONCILE_PROMPT_REQUIRED:
 				var accepted: bool = bool(decisions.get(manifest_skill_id, false))
 				if accepted:
-					_apply_overwrite(entry, docket_caller)
-					prompted_accepted += 1
+					if _apply_overwrite(entry, docket_caller):
+						prompted_accepted += 1
+					else:
+						failed += 1
 				else:
 					# Decline: keep user edits, but refresh pristine_content
 					# so a later "show me what upstream changed" view has the
 					# latest snapshot to diff against.
-					docket_caller.call_tool("docket_update", {
+					var decline_result = docket_caller.call_tool("docket_update", {
 						"id": str(entry.get("record_id", "")),
 						"pristine_content": (skill as Dictionary).duplicate(true),
 					})
-					prompted_declined += 1
+					if decline_result is Dictionary and not decline_result.has("error"):
+						prompted_declined += 1
+					else:
+						failed += 1
 
 	# Mark deprecated.
 	for record_id in plan.get("deprecate_record_ids", []):
@@ -371,6 +386,8 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 		})
 		if update_result is Dictionary and not update_result.has("error"):
 			deprecated_count += 1
+		else:
+			failed += 1
 
 	return {
 		"seeded": seeded,
@@ -379,24 +396,25 @@ static func apply_reconcile(plan: Dictionary, decisions: Dictionary, docket_call
 		"prompted_declined": prompted_declined,
 		"deprecated": deprecated_count,
 		"unchanged": unchanged,
+		"failed": failed,
 	}
 
 
 ## Apply the new manifest content to an existing record, refreshing pristine_hash.
 ## Used by both silent_update (pristine path) and prompted_accept paths.
-static func _apply_overwrite(action_entry: Dictionary, docket_caller) -> void:
+static func _apply_overwrite(action_entry: Dictionary, docket_caller) -> bool:
 	var skill: Dictionary = action_entry.get("skill", {})
 	var unsatisfied: Array = action_entry.get("unsatisfied", [])
 	var record_id: String = str(action_entry.get("record_id", ""))
 	if record_id.is_empty():
-		return
+		return false
 	var tool_deps_copy: Array = []
 	if skill.get("tool_deps", []) is Array:
 		tool_deps_copy = (skill.get("tool_deps", []) as Array).duplicate()
 	var optimization_copy: Dictionary = {}
 	if skill.get("optimization", {}) is Dictionary:
 		optimization_copy = (skill.get("optimization", {}) as Dictionary).duplicate(true)
-	docket_caller.call_tool("docket_update", {
+	var update_result = docket_caller.call_tool("docket_update", {
 		"id": record_id,
 		"title": str(skill.get("title", "")),
 		"summary": str(skill.get("summary", "")),
@@ -414,6 +432,7 @@ static func _apply_overwrite(action_entry: Dictionary, docket_caller) -> void:
 		# Caller passes customised=true unchanged in the prompted-accept case;
 		# reconciler doesn't touch the customised flag here.
 	})
+	return update_result is Dictionary and not update_result.has("error")
 
 
 ## Best-effort plugin-id recovery for SEED actions inside apply_reconcile.

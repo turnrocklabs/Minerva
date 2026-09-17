@@ -64,6 +64,24 @@ func _init() -> void:
 			trusted_paths = false
 	check("registration uses trusted paths, not the file's (C2)", trusted_paths)
 
+	# Preparing reconstructed definitions must not reconstruct user consent.
+	var Policy = load("res://Scripts/Services/Plugins/PluginPolicy.gd")
+	var prepare_manager = load("res://Scripts/Services/Plugins/PluginManager.gd").new()
+	var prepare_policy = Policy.new(db, null, false)
+	prepare_policy._grants["voice"] = []  # explicit persisted decision
+	prepare_manager._db = db
+	prepare_manager._policy_ref = prepare_policy
+	var relay_skills: Array[Dictionary] = db.get_by_id("agent_relay").skills
+	db.get_by_id("agent_relay").skills = []  # grant behavior is isolated here
+	prepare_manager.prepare_internal_plugins()
+	db.get_by_id("agent_relay").skills = relay_skills
+	check("prepare preserves explicitly revoked internal grants",
+		prepare_policy._grants.get("voice", []) == [])
+	check("first prepare still grants a new internal member's declarations",
+		prepare_policy._grants.has("agent_relay")
+			and not prepare_policy._grants["agent_relay"].is_empty())
+	prepare_manager.free()
+
 	# --- C1: registered in the catalog, absent from persistent storage ------
 	var in_catalog := true
 	for id in registered:
@@ -120,6 +138,10 @@ func _init() -> void:
 			relay.entrypoint == "./%s" % AgentRelay.binary_name()
 				and relay.data_directory == AgentRelay.runtime_directory()
 				and relay.working_dir == relay.data_directory)
+		check("agent_relay state is routed to persistent writable user data",
+			relay.args.size() == 2 and relay.args[0] == "--state-file"
+				and str(relay.args[1]).contains("plugins/data/agent_relay")
+				and not str(relay.args[1]).begins_with(relay.data_directory))
 		check("agent_relay is absent from plugins.json (A1)", not saved_ids.has("agent_relay"))
 		var tool_names: Array[String] = []
 		for entry in relay.tools:

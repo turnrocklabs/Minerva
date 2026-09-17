@@ -35,6 +35,7 @@ mod state;
 mod watcher;
 
 use std::sync::Arc;
+use std::path::PathBuf;
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -65,6 +66,22 @@ fn with_filter_rules<R>(f: impl FnOnce(&mut FilterRuleSet) -> R) -> R {
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const SERVER_NAME: &str = "agent_relay";
 const SERVER_VERSION: &str = "0.2.0";
+
+fn configure_state_file_from_args() -> Result<(), String> {
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--state-file" {
+            let path = args.next().ok_or("--state-file requires a path")?;
+            if path.is_empty() {
+                return Err("--state-file requires a non-empty path".into());
+            }
+            state::set_cli_state_file(PathBuf::from(path)).map_err(str::to_string)?;
+        } else {
+            return Err(format!("unknown argument: {arg}"));
+        }
+    }
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // JSON-RPC envelope types (used for final response serialisation)
@@ -1772,6 +1789,10 @@ fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(env_logger::Target::Stderr)
         .init();
+    if let Err(error) = configure_state_file_from_args() {
+        eprintln!("agent-relay-plugin: {error}");
+        std::process::exit(2);
+    }
 
     log::info!("{SERVER_NAME} {SERVER_VERSION} starting");
 
