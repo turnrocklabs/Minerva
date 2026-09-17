@@ -70,6 +70,8 @@ func _run() -> void:
 	check("method-not-found and probe timeout are legacy fallback evidence",
 		StdioNegotiation.classify_discovery({"error": "unknown",
 			"rpc_error": {"code": -32601, "message": "unknown"}}).get("fallback")
+		and StdioNegotiation.classify_discovery({"error": "session required",
+			"rpc_error": {"code": -32600, "message": "ignored"}}).get("fallback")
 		and StdioNegotiation.classify_discovery({"error": "timeout"}).get("fallback"))
 	var owned_legacy := StdioNegotiation.validate_legacy_initialize({"result": {
 		"protocolVersion": "2025-06-18", "capabilities": {},

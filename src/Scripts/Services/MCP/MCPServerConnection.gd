@@ -517,7 +517,20 @@ func _verify_http_connection() -> Error:
 		_wire_http_transport(_http_transport)
 	var transport_owner = _http_transport
 	var init_result: Dictionary = await transport_owner.connect_endpoint(_get_mcp_endpoint(), working_directory)
-	if transport_owner != _http_transport or init_result.has("error"):
+	if transport_owner != _http_transport:
+		return ERR_CANT_CONNECT
+	if init_result.has("error"):
+		if init_result.has("discovery_fallback"):
+			var discovery: Dictionary = init_result.discovery_fallback
+			var initialize: Dictionary = init_result.get("initialize_failure", {})
+			last_failure_reason = ("Legacy MCP initialization failed after discovery "
+				+ "HTTP %d RPC %d (initialize HTTP %d, %s).") % [
+				int(discovery.get("http_status", 0)), int(discovery.get("rpc_code", 0)),
+				int(initialize.get("http_status", 0)),
+				str(initialize.get("kind", "RPC %d" % int(initialize.get("rpc_code", 0))))]
+		else:
+			last_failure_reason = "MCP HTTP discovery failed (%s)." % _safe_peer_error_category(
+				init_result.get("rpc_error", init_result.get("error")))
 		return ERR_CANT_CONNECT
 	protocol_profile = transport_owner.profile
 	server_connected = true

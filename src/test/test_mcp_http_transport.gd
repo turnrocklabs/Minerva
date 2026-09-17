@@ -139,9 +139,36 @@ func _run() -> void:
 	var legacy_echo: Dictionary = await legacy.call_tool("echo", {})
 	check("legacy calls retain session and omit modern method headers", legacy_echo.get("headers", {}).get("Mcp-Session-Id") == "legacy-session"
 		and not legacy_echo.get("headers", {}).has("Mcp-Method"))
+	for legacy_case: Dictionary in [
+		{"path": "/legacy-session-2025", "version": "2025-06-18"},
+		{"path": "/legacy-session-2024", "version": "2024-11-05"},
+	]:
+		var session_legacy = connection_script.new("session-legacy", base)
+		session_legacy.mcp_endpoint = legacy_case.path
+		check("HTTP 200 invalid-request discovery falls back to validated %s legacy" % legacy_case.version,
+			await session_legacy.connect_to_server() == OK
+			and session_legacy.protocol_profile.era == profile_script.Era.INITIALIZED_LEGACY
+			and session_legacy.protocol_profile.protocol_version == legacy_case.version)
+		var session_echo: Dictionary = await session_legacy.call_tool("echo", {})
+		check("negotiated %s legacy calls retain their session" % legacy_case.version,
+			session_echo.get("headers", {}).get("Mcp-Session-Id") == "legacy-session")
+		session_legacy.disconnect_from_server()
+	var invalid_version = connection_script.new("invalid-legacy-version", base)
+	invalid_version.mcp_endpoint = "/legacy-session-invalid-version"
+	check("legacy fallback rejects an unsupported negotiated version",
+		await invalid_version.connect_to_server() != OK
+		and invalid_version.last_failure_reason.contains("HTTP 200 RPC -32600")
+		and not invalid_version.last_failure_reason.contains("secret"))
 	var rejected = connection_script.new("modern-rejection", base)
 	rejected.mcp_endpoint = "/modern-error"
 	check("modern non2xx protocol error is not legacy success", await rejected.connect_to_server() != OK)
+	var auth_rejected = connection_script.new("auth-rejection", base)
+	auth_rejected.mcp_endpoint = "/auth"
+	var invalid_modern = connection_script.new("invalid-modern", base)
+	invalid_modern.mcp_endpoint = "/invalid-modern"
+	check("authentication and malformed modern discovery never fall back",
+		await auth_rejected.connect_to_server() != OK
+		and await invalid_modern.connect_to_server() != OK)
 	var error_transport = load("res://Scripts/Services/MCP/MCPHttpTransport.gd").new()
 	var explicit_error: Dictionary = await error_transport.connect_endpoint(base + "/modern-error")
 	check("non2xx modern errors preserve status code data and original wire", explicit_error.get("status") == 400
@@ -156,7 +183,8 @@ func _run() -> void:
 	var forbidden_initialize := false
 	var missing_meta := false
 	for record: Dictionary in after_rejections.get("records", []):
-		if record.path == "/modern-error" and record.request.method == "initialize":
+		if record.path in ["/mcp", "/modern-error", "/auth", "/invalid-modern"] \
+				and record.request.method == "initialize":
 			forbidden_initialize = true
 		if record.path == "/mcp":
 			var meta: Dictionary = record.request.get("params", {}).get("_meta", {})
@@ -173,7 +201,10 @@ func _run() -> void:
 	modern.disconnect_from_server()
 	legacy.disconnect_from_server()
 	rejected.disconnect_from_server()
+	auth_rejected.disconnect_from_server()
+	invalid_modern.disconnect_from_server()
 	invalid.disconnect_from_server()
+	invalid_version.disconnect_from_server()
 	_finish()
 
 func _finish() -> void:

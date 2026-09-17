@@ -46,9 +46,21 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/legacy":
                 self.reply({"jsonrpc": "2.0", "id": request_id,
                             "error": {"code": -32601, "message": "legacy"}}, 400)
+            elif self.path in ("/legacy-session-2025", "/legacy-session-2024",
+                               "/legacy-session-invalid-version"):
+                self.reply({"jsonrpc": "2.0", "id": request_id,
+                            "error": {"code": -32600,
+                                      "message": "session required\nsecret must not surface"}})
             elif self.path == "/modern-error":
                 self.reply({"jsonrpc": "2.0", "id": request_id,
                             "error": {"code": -32022, "message": "version", "data": {"supported": ["future"]}}}, 400)
+            elif self.path == "/auth":
+                self.reply({"jsonrpc": "2.0", "id": request_id,
+                            "error": {"code": -32001, "message": "denied"}}, 401)
+            elif self.path == "/invalid-modern":
+                self.reply(result({"resultType": "complete", "supportedVersions": [],
+                                   "capabilities": {"tools": {}}, "ttlMs": 0,
+                                   "cacheScope": "private"}))
             elif self.path == "/invalid-init":
                 self.send_response(400)
                 self.send_header("Content-Length", "0")
@@ -64,8 +76,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
-            self.reply(result({"protocolVersion": "2025-06-18", "capabilities": {"tools": {}},
-                               "serverInfo": {"name": "probe", "version": "1"}}), extra=[("Mcp-Session-Id", "legacy-session")])
+            version = "2025-06-18"
+            if self.path == "/legacy-session-2024":
+                version = "2024-11-05"
+            elif self.path == "/legacy-session-invalid-version":
+                version = "1900-01-01"
+            self.reply(result({"protocolVersion": version, "capabilities": {"tools": {}},
+                               "serverInfo": {"name": "probe", "version": "1"}}),
+                       extra=[("Mcp-Session-Id", "legacy-session")])
             return
         if method == "notifications/initialized":
             self.send_response(202)

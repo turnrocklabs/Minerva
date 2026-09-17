@@ -117,7 +117,12 @@ func connect_endpoint(url: String, working_directory: String = "") -> Dictionary
 			or int(probe.get("status", 0)) >= 500:
 		return probe
 	var probe_status: int = int(probe.get("status", 0))
-	var legacy_rejection: bool = probe_status in [0, 400, 404, 405] or probe.get("rpc_error", {}).get("code") == -32601
+	var probe_rpc_code: int = int(probe.get("rpc_error", {}).get("code", 0))
+	# A legacy session server can parse the harmless discovery POST but reject
+	# the unknown method as either Invalid Request or Method Not Found. The
+	# structured status/code pair is fallback evidence; peer message text is not.
+	var legacy_rejection: bool = probe_status in [0, 400, 404, 405] \
+		or (probe_status in [200, 400, 404, 405] and probe_rpc_code in [-32600, -32601])
 	if not legacy_rejection:
 		return probe
 	var initialized: Dictionary = await _send(Negotiation.legacy_initialize_request(_id(), working_directory), "2025-06-18", {}, maxf(0.001, float(startup_end - Time.get_ticks_msec()) / 1000.0))
@@ -125,6 +130,11 @@ func connect_endpoint(url: String, working_directory: String = "") -> Dictionary
 		return {"error": "HTTP connection superseded"}
 	var validated := Negotiation.validate_legacy_initialize(initialized)
 	if validated.has("error"):
+		validated["discovery_fallback"] = {
+			"http_status": probe_status,
+			"rpc_code": probe_rpc_code,
+		}
+		validated["initialize_failure"] = _failure_category(initialized)
 		return validated
 	profile = Profile.legacy(validated.result.protocolVersion, validated.result.capabilities, owner)
 	for header: String in initialized.get("headers", PackedStringArray()):
@@ -134,6 +144,18 @@ func connect_endpoint(url: String, working_directory: String = "") -> Dictionary
 	if owner != generation:
 		return {"error": "HTTP connection superseded"}
 	return acknowledged if acknowledged.has("error") else validated
+
+
+static func _failure_category(response: Dictionary) -> Dictionary:
+	var category := {"http_status": int(response.get("status", 0))}
+	var rpc_error: Variant = response.get("rpc_error")
+	if rpc_error is Dictionary:
+		category["rpc_code"] = int(rpc_error.get("code", 0))
+	elif response.has("validation"):
+		category["kind"] = "numeric_validation"
+	else:
+		category["kind"] = "invalid_initialize"
+	return category
 
 func request_method(method: String, params: Dictionary, schema: Variant = {}, context = null) -> Dictionary:
 	if profile.era == Profile.Era.UNKNOWN:
