@@ -42,8 +42,11 @@ jobs:
           fetch-depth: 0
       - name: Test secret history gate
         run: python3 tests/test_secret_scan.py
-      - name: Scan complete Git history
-        run: scripts/scan-secret-history.sh --all-history
+      - name: Scan outgoing push range or manual full history
+        env:
+          GITHUB_EVENT_BEFORE: ${{ github.event.before }}
+          GITHUB_EVENT_AFTER: ${{ github.event.after }}
+        run: scripts/scan-secret-history-ci.sh
 
   build-godot-cef:
     uses: ./.github/workflows/godot-cef.yml

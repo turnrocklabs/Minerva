@@ -25,6 +25,8 @@ class SecretHistoryScanTest(unittest.TestCase):
         (self.repo / "scripts").mkdir()
         shutil.copy2(ROOT / "scripts/scan-secret-history.sh",
                      self.repo / "scripts/scan-secret-history.sh")
+        shutil.copy2(ROOT / "scripts/scan-secret-history-ci.sh",
+                     self.repo / "scripts/scan-secret-history-ci.sh")
         shutil.copy2(ROOT / ".gitleaks.toml", self.repo / ".gitleaks.toml")
         subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
         subprocess.run(["git", "-C", str(self.repo), "config", "user.email",
@@ -97,6 +99,48 @@ class SecretHistoryScanTest(unittest.TestCase):
         result = self._scan(fake=True, FAKE_SCANNER_ERROR="1")
         self.assertEqual(result.returncode, 2)
         self.assertNotIn("sensitive scanner diagnostic", result.stdout + result.stderr)
+
+    def test_ci_selects_exact_push_range_and_full_audit_modes(self):
+        recorded = self.repo / "recorded-arguments"
+        selector = self.repo / "record-selector"
+        selector.write_text(
+            "#!/usr/bin/env bash\n"
+            "printf '%s\\n' \"$@\" > \"$RECORDED_ARGUMENTS\"\n",
+            encoding="utf-8")
+        selector.chmod(0o755)
+        before = self.clean_base
+        (self.repo / "second.txt").write_text("second\n", encoding="utf-8")
+        self._commit("second")
+        after = subprocess.run(
+            ["git", "-C", str(self.repo), "rev-parse", "HEAD"], check=True,
+            capture_output=True, text=True).stdout.strip()
+        env = dict(os.environ, MINERVA_SECRET_SCAN_WRAPPER=str(selector),
+                   RECORDED_ARGUMENTS=str(recorded), GITHUB_EVENT_NAME="push",
+                   GITHUB_EVENT_BEFORE=before, GITHUB_EVENT_AFTER=after)
+        command = [str(self.repo / "scripts/scan-secret-history-ci.sh")]
+        result = subprocess.run(command, cwd=self.repo, env=env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(recorded.read_text().splitlines(),
+                         ["--range", before + ".." + after])
+
+        env["GITHUB_EVENT_BEFORE"] = "0" * 40
+        result = subprocess.run(command, cwd=self.repo, env=env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(recorded.read_text().splitlines(), ["--range", after])
+
+        env["GITHUB_EVENT_NAME"] = "workflow_dispatch"
+        result = subprocess.run(command, cwd=self.repo, env=env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(recorded.read_text().splitlines(), ["--all-history"])
+
+        env.update(GITHUB_EVENT_NAME="push", GITHUB_EVENT_BEFORE="f" * 40,
+                   GITHUB_EVENT_AFTER=after)
+        result = subprocess.run(command, cwd=self.repo, env=env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
 
 
 if __name__ == "__main__":
