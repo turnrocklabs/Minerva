@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import suppress
 import hashlib
 import json
 import os
@@ -44,7 +45,8 @@ def verify(target: str, root: Path) -> None:
             for line in process.stdout:
                 replies.put(line)
 
-        threading.Thread(target=read_stdout, daemon=True).start()
+        reader = threading.Thread(target=read_stdout, daemon=True)
+        reader.start()
         deadline = time.monotonic() + 10.0
 
         def send(message: dict) -> None:
@@ -87,12 +89,17 @@ def verify(target: str, root: Path) -> None:
                 },
             })
         finally:
-            process.terminate()
+            with suppress(BrokenPipeError):
+                process.stdin.close()
+            if process.poll() is None:
+                process.terminate()
             try:
                 process.wait(timeout=3.0)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=3.0)
+            reader.join(timeout=1.0)
+            process.stdout.close()
         persisted = json.loads(state_file.read_text(encoding="utf-8"))
     initialized = responses[1].get("result", {})
     if (initialized.get("protocolVersion") != "2024-11-05"

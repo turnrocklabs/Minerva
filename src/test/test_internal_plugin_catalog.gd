@@ -71,10 +71,10 @@ func _init() -> void:
 	prepare_policy._grants["voice"] = []  # explicit persisted decision
 	prepare_manager._db = db
 	prepare_manager._policy_ref = prepare_policy
-	var relay_skills: Array[Dictionary] = db.get_by_id("agent_relay").skills
-	db.get_by_id("agent_relay").skills = []  # grant behavior is isolated here
+	var relay_skills: Array[Dictionary] = db.get_by_id("agent_relay").skills.duplicate(true)
+	db.get_by_id("agent_relay").skills.clear()  # grant behavior is isolated here
 	prepare_manager.prepare_internal_plugins()
-	db.get_by_id("agent_relay").skills = relay_skills
+	db.get_by_id("agent_relay").skills.assign(relay_skills)
 	check("prepare preserves explicitly revoked internal grants",
 		prepare_policy._grants.get("voice", []) == [])
 	check("first prepare still grants a new internal member's declarations",
