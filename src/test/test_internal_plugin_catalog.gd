@@ -183,11 +183,19 @@ func _init() -> void:
 	# host whose runtimes are fully staged; the fixture loop above is what
 	# proves the sentence itself.
 	var start_matches := true
+	var VoiceFeature = load("res://Scripts/Services/Voice/VoiceFeatureControl.gd")
+	var voice_was_enabled: bool = VoiceFeature.is_enabled()
 	for id in registered:
 		var issue := InternalPlugins.runtime_issue(id)
 		if issue.is_empty():
 			continue
+		# The functional profile intentionally disables Voice. This assertion
+		# owns that preference briefly so the runtime guard remains the first gate.
+		if id == "voice":
+			VoiceFeature.set_enabled(true)
 		var result: Dictionary = await manager.start_plugin(id)
+		if id == "voice":
+			VoiceFeature.set_enabled(voice_was_enabled)
 		if result.get("error", "") != issue:
 			start_matches = false
 	check("start_plugin returns the member's runtime issue verbatim (C7)", start_matches)
