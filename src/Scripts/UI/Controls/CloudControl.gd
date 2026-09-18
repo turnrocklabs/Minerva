@@ -2,7 +2,9 @@ class_name CloudControl
 extends Control
 
 
-const _scene: = preload("res://Scenes/CloudControl.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scenes/CloudControl.tscn")
 
 ## Radius of circles visualizing points in draw mode
 const POINT_RADIUS: = 10

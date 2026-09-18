@@ -479,6 +479,7 @@ func _resolve_chatgpt_image_provider(args: Dictionary) -> Dictionary:
 		if provider == null:
 			return {"error": "ChatGPT model_id not found: %d" % model_id}
 		if not provider is ChatGPTProvider:
+			provider.free()
 			return {"error": "model_id %d is not a ChatGPT model" % model_id}
 		return {"provider": provider}
 
@@ -509,6 +510,8 @@ func _provider_from_chatgpt_config(config: Dictionary) -> ChatGPTProvider:
 		var provider = SingletonObject.create_dynamic_provider(model_id)
 		if provider is ChatGPTProvider:
 			return provider
+		if provider != null:
+			provider.free()
 	var fallback: ChatGPTProvider = SingletonObject.ChatGPTProviderScript.create_from_config(config)
 	return fallback
 

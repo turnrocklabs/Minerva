@@ -40,15 +40,12 @@ var details_expanded: bool = false
 var content_size: float = 0.0
 var expand_tween: Tween
 
-static var _block_scene: PackedScene = null
+static var _block_scene: PackedScene:
+	get: return load("res://Scenes/RequestMetadataBlock.tscn")
 
 
 ## Factory method to create a RequestMetadataBlock from metadata
 static func create(request_metadata: Dictionary) -> RequestMetadataBlock:
-	# Lazy load to avoid circular dependency
-	if _block_scene == null:
-		_block_scene = load("res://Scenes/RequestMetadataBlock.tscn")
-
 	var block = _block_scene.instantiate()
 	block.metadata = request_metadata
 	return block

@@ -50,6 +50,8 @@ class Handler(BaseHTTPRequestHandler):
                                "/legacy-session-notification-unsupported",
                                "/legacy-notification-no-session",
                                "/legacy-session-notification-wrong-id",
+                               "/legacy-session-notification-string-code",
+                               "/legacy-session-notification-fractional-code",
                                "/legacy-session-invalid-version"):
                 self.reply({"jsonrpc": "2.0", "id": request_id,
                             "error": {"code": -32600,
@@ -93,10 +95,17 @@ class Handler(BaseHTTPRequestHandler):
         if method == "notifications/initialized":
             if self.path in ("/legacy-session-notification-unsupported",
                              "/legacy-notification-no-session",
-                             "/legacy-session-notification-wrong-id"):
+                             "/legacy-session-notification-wrong-id",
+                             "/legacy-session-notification-string-code",
+                             "/legacy-session-notification-fractional-code"):
                 response_id = "wrong-id" if self.path.endswith("wrong-id") else None
+                code = -32601
+                if self.path.endswith("string-code"):
+                    code = "-32601"
+                elif self.path.endswith("fractional-code"):
+                    code = -32601.5
                 self.reply({"jsonrpc": "2.0", "id": response_id, "error": {
-                    "code": -32601, "message": "notification dispatch unsupported"}})
+                    "code": code, "message": "notification dispatch unsupported"}})
                 return
             self.send_response(202)
             self.send_header("Content-Length", "0")

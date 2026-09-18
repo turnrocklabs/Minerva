@@ -6,7 +6,9 @@ signal note_added(note: Note)
 signal auto_upload_toggled(on: bool)
 signal add_note_requested()
 
-static var _scene: = preload("res://Scenes/note/NoteVBox.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scenes/note/NoteVBox.tscn")
 
 static var _broken_link_icon = preload("res://assets/generated/broken-link-icon.svg")
 static var _remove_icon: = preload("res://assets/icons/remove.svg")

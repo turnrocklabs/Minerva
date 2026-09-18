@@ -46,7 +46,9 @@ enum ControlType {
 @onready var texture_rect: TextureRect = %TextureRect
 @onready var center_container: Control = %CenterContainer
 
-const _scene = preload("res://Scenes/LayerV2.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scenes/LayerV2.tscn")
 
 enum TransformPoint {
 	TOP_LEFT,

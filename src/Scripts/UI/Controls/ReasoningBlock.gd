@@ -26,16 +26,13 @@ var expanded: bool = false
 var content_size: float = 0.0
 var expand_tween: Tween
 
-static var _reasoning_block_scene: PackedScene = null
+static var _reasoning_block_scene: PackedScene:
+	get: return load("res://Scenes/ReasoningBlock.tscn")
 
 
 ## Factory method to create a ReasoningBlock from a reasoning segment dict.
 ## Segment shape: {kind: String, text: String, redacted: bool, order: int}
 static func create(segment: Dictionary) -> ReasoningBlock:
-	# Lazy load to avoid circular dependency (scene references this script)
-	if _reasoning_block_scene == null:
-		_reasoning_block_scene = load("res://Scenes/ReasoningBlock.tscn")
-
 	var block = _reasoning_block_scene.instantiate()
 	block.reasoning_text = segment.get("text", "")
 	block.kind = segment.get("kind", "thinking")

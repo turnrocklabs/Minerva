@@ -1,7 +1,9 @@
 class_name ListItemContainer
 extends VBoxContainer
 
-static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/list/item_container/item_container.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scripts/Services/Providers/Core/dynamic_ui/list/item_container/item_container.tscn")
 
 @onready var _items_container: VBoxContainer = %VBoxContainer
 @warning_ignore("unused_private_class_variable")

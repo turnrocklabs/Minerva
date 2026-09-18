@@ -1,7 +1,9 @@
 class_name Note
 extends VBoxContainer
 
-static var _scene: = preload("res://Scenes/Note.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scenes/Note.tscn")
 static var _text_controls_scene: = preload("res://Scenes/note/note_controls/text_controls.tscn")
 static var _image_controls_scene: = preload("res://Scenes/note/note_controls/image_controls.tscn")
 static var _audio_controls_scene: = preload("res://Scenes/note/note_controls/audio_controls.tscn")

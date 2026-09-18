@@ -422,7 +422,9 @@ func _setup_model_message():
 
 
 ## Instantiates new message node
-static var message_scene = preload("res://Scenes/MessageMarkdown.tscn")
+## Load on demand because the scene owns this script.
+static var message_scene: PackedScene:
+	get: return load("res://Scenes/MessageMarkdown.tscn")
 static func new_message() -> MessageMarkdown:
 	var msg: MessageMarkdown = message_scene.instantiate()
 	return msg

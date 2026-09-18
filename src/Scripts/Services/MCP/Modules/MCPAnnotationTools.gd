@@ -48,9 +48,14 @@ extends RefCounted
 ##   immediate writes for correctness and testability; a debounce wrapper can be
 ##   layered on top without changing the tool surface.
 
-## Back-reference to MinervaMCPServer for tool registration.
-## Null in unit tests (module still works — handle() has no server dependency).
-var server
+## Non-owning parent link; the server owns this module. Null in unit tests
+## (module still works — handle() has no server dependency).
+var _server_ref: WeakRef = null
+var server:
+	get:
+		return _server_ref.get_ref() if _server_ref != null else null
+	set(value):
+		_server_ref = weakref(value) if value != null else null
 var _annotation_store: Object = null
 var _anchor_registry: Object = null
 var _apply_hooks: Dictionary = {}

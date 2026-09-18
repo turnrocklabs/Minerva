@@ -34,15 +34,12 @@ var result_expanded: bool = false
 var content_size: float = 0.0
 var expand_tween: Tween
 
-static var _tool_call_block_scene: PackedScene = null
+static var _tool_call_block_scene: PackedScene:
+	get: return load("res://Scenes/ToolCallBlock.tscn")
 
 
 ## Factory method to create a ToolCallBlock from execution data
 static func create(execution_data: Dictionary) -> ToolCallBlock:
-	# Lazy load to avoid circular dependency (scene references this script)
-	if _tool_call_block_scene == null:
-		_tool_call_block_scene = load("res://Scenes/ToolCallBlock.tscn")
-
 	var block = _tool_call_block_scene.instantiate()
 	block.tool_id = execution_data.get("call_id", "")
 	block.tool_name = execution_data.get("tool_name", "")

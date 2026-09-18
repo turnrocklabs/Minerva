@@ -7,7 +7,9 @@ signal directory_selected(path: String)
 ## Emitted when a local artifact has been uploaded to artifact registry
 signal artifact_uploaded(artifact: Artifact)
 
-static var _scn: = preload("res://Scripts/UI/Controls/PackageEditor/PackageEditor.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scn: PackedScene:
+	get: return load("res://Scripts/UI/Controls/PackageEditor/PackageEditor.tscn")
 
 @warning_ignore("unused_private_class_variable")
 static var _file_icon: = preload("res://assets/icons/file/file.svg")

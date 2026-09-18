@@ -284,7 +284,10 @@ func get_item_index_for_provider(provider: BaseProvider) -> int:
 			if provider.has_meta("dynamic_model_id") and int(provider.get_meta("dynamic_model_id")) == item_id:
 				return i
 			var dynamic_instance = SingletonObject.create_dynamic_provider(item_id)
-			if dynamic_instance and dynamic_instance.model_name == provider.model_name:
+			var matches: bool = dynamic_instance != null and dynamic_instance.model_name == provider.model_name
+			if dynamic_instance != null:
+				dynamic_instance.free()
+			if matches:
 				return i
 
 		elif not provider is CoreProvider and item_id in SingletonObject.API_MODEL_PROVIDER_SCRIPTS:
@@ -349,6 +352,8 @@ func _setup_default_provider_set():
 			instance = script.new()
 		var item := ProviderItem.new(instance.display_name, key, script, null, "")
 		items.append(item)
+		# ProviderItem retains metadata, not this temporary metadata provider.
+		instance.free()
 
 	# Append plugin chat-provider entries (chat-passthrough W1). Each entry gets
 	# a stable-within-rebuild id of PLUGIN_PROVIDER_ID_BASE + ordinal; the entry
@@ -633,7 +638,10 @@ func _get_token_cost_for_key(key: int) -> float:
 			if not config.is_empty():
 				return config.get("input_token_cost", 0.0) + config.get("output_token_cost", 0.0)
 		return 0.0
-	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new().token_cost
+	var provider: BaseProvider = SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new()
+	var cost := provider.token_cost
+	provider.free()
+	return cost
 
 
 ## Truncates long action names for display

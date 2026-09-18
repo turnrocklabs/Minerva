@@ -1,7 +1,9 @@
 class_name ToastNotification
 extends Control
 
-static var _scnene: = preload("res://Scenes/toast/ToastNotification.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scnene: PackedScene:
+	get: return load("res://Scenes/toast/ToastNotification.tscn")
 
 @onready var _content_label: Label = %ContentLabel
 @onready var _panel_container: PanelContainer = %PanelContainer

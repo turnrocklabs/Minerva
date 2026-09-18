@@ -153,12 +153,16 @@ func _is_unsupported_initialized_notification(response: Dictionary) -> bool:
 	# dispatch as request-only, returning Method Not Found for this notification.
 	# Accept only that exact, validated JSON-RPC response shape. Transport,
 	# authentication, framing, numeric and all other RPC failures remain fatal.
-	if session.is_empty() or int(response.get("status", 0)) != 200:
+	if session.is_empty() or int(response.get("status", 0)) != 200 \
+			or response.get("legacy_initialized_rejection") != true:
 		return false
 	var rpc_error: Variant = response.get("rpc_error")
 	var wire = response.get("wire")
-	if not rpc_error is Dictionary or int(rpc_error.get("code", 0)) != -32601 \
-			or wire == null:
+	if not rpc_error is Dictionary or wire == null:
+		return false
+	var code: Variant = rpc_error.get("code")
+	if not ((code is int and code == -32601) \
+			or (code is float and is_finite(code) and code == -32601.0)):
 		return false
 	var parsed: Variant = wire.parsed
 	if not parsed is Dictionary:

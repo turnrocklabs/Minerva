@@ -183,7 +183,7 @@ func _rebuild_provider_dropdown() -> void:
 	var sorted_keys: = SingletonObject.API_MODEL_PROVIDER_SCRIPTS.keys().duplicate()
 	sorted_keys.sort_custom(
 		func(a, b):
-			return _get_provider_instance(a).token_cost < _get_provider_instance(b).token_cost
+			return _get_provider_cost(a) < _get_provider_cost(b)
 	)
 
 	for key in sorted_keys:
@@ -193,6 +193,7 @@ func _rebuild_provider_dropdown() -> void:
 
 		var instance = _get_provider_instance(key)
 		_provider_option_button.add_item("%s %s" % [instance.provider_name, instance.display_name], key)
+		instance.free()
 
 	# Restore previous selection if still available
 	if current_id >= 0:
@@ -208,6 +209,13 @@ func _get_provider_instance(key: int) -> BaseProvider:
 		if instance:
 			return instance
 	return SingletonObject.API_MODEL_PROVIDER_SCRIPTS[key].new()
+
+
+func _get_provider_cost(key: int) -> float:
+	var instance := _get_provider_instance(key)
+	var cost := instance.token_cost
+	instance.free()
+	return cost
 
 
 func _on_provider_option_button_item_selected(index: int):

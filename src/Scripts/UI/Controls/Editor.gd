@@ -24,31 +24,20 @@ extends Control
 
 ## @tutorial Editor.create(Editor.Type.TEXT)
 
-# Lazy scene refs. Defer the load until the static is first read so that
+# Lazy scene refs. Defer each load until the static is read so that
 # class-load time doesn't trigger compilation of every script referenced from
 # these .tscn files — which fails in script-only headless mode where the
-# project's autoloads (SingletonObject, MediaGen, etc.) are not available.
-static var _editor_scene_cache: PackedScene = null
-static var _graphics_editor_scene_cache: PackedScene = null
-static var _spreadsheet_editor_scene_cache: PackedScene = null
+# project's autoloads (SingletonObject, MediaGen, etc.) are not available. Do
+# not retain scenes statically: Editor.tscn owns this script.
 
 static var editor_scene: PackedScene:
-	get:
-		if _editor_scene_cache == null:
-			_editor_scene_cache = load("res://Scenes/Editor.tscn")
-		return _editor_scene_cache
+	get: return load("res://Scenes/Editor.tscn")
 
 static var graphics_editor_scene: PackedScene:
-	get:
-		if _graphics_editor_scene_cache == null:
-			_graphics_editor_scene_cache = load("res://Scenes/GraphicsEditorV2.tscn")
-		return _graphics_editor_scene_cache
+	get: return load("res://Scenes/GraphicsEditorV2.tscn")
 
 static var spreadsheet_editor_scene: PackedScene:
-	get:
-		if _spreadsheet_editor_scene_cache == null:
-			_spreadsheet_editor_scene_cache = load("res://Scenes/SpreadsheetEditor.tscn")
-		return _spreadsheet_editor_scene_cache
+	get: return load("res://Scenes/SpreadsheetEditor.tscn")
 
 
 signal content_changed()

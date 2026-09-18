@@ -1,7 +1,9 @@
 class_name ObjectField
 extends VBoxContainer
 
-static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/object/ObjectField.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scripts/Services/Providers/Core/dynamic_ui/object/ObjectField.tscn")
 
 @onready var _field_name_label: Label = %FieldName
 @onready var _field_text_edit_edit: TextEdit = %TextEdit

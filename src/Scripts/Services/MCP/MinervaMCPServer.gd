@@ -8,8 +8,13 @@ extends RefCounted
 const MCPToolDefinitionScript := preload("res://Scripts/Services/MCP/MCPToolDefinition.gd")
 const _MCPAnnotationReplyToolsScript := preload("res://Scripts/Services/MCP/Modules/MCPAnnotationReplyTools.gd")
 
-## Reference to the MCPManager for tool registration
-var mcp_manager
+## Non-owning parent link; MCPManager owns this server.
+var _mcp_manager_ref: WeakRef = null
+var mcp_manager:
+	get:
+		return _mcp_manager_ref.get_ref() if _mcp_manager_ref != null else null
+	set(value):
+		_mcp_manager_ref = weakref(value) if value != null else null
 
 ## Whether the minerva server is connected (enabled)
 var server_enabled: bool = false

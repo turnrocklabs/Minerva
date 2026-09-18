@@ -190,7 +190,12 @@ func _core_surfaces(singleton, server, broker) -> void:
 	singleton._plugin_allowed_providers[turnrock] = true
 
 	var chooser = load("res://Scripts/UI/Controls/ProviderOptionButton.gd").new()
+	var metadata_nodes_before := int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
 	chooser._setup_default_provider_set()
+	chooser._setup_default_provider_set()
+	var metadata_nodes_after := int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
+	check("rebuilding provider metadata does not retain temporary provider nodes",
+		metadata_nodes_after == metadata_nodes_before)
 	chooser.switch_to_provider_set("default")
 	check("GUI can select the advertised spec", chooser.select_provider_spec(spec))
 	check("Core tooltip exposes exact service/action identity", chooser.get_item_tooltip(chooser.selected) == "%s / %s" % [spec.service_client_id, spec.action_name])

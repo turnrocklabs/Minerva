@@ -1,7 +1,9 @@
 class_name NoteField
 extends VBoxContainer
 
-static var _scene: = preload("res://Scripts/Services/Providers/Core/dynamic_ui/note/note_scene.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scripts/Services/Providers/Core/dynamic_ui/note/note_scene.tscn")
 
 @onready var _field_name_label: Label = %FieldName
 @onready var _field_rich_text_label: RichTextLabel = %RichTextLabel

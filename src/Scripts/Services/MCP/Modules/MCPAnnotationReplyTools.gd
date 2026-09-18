@@ -9,7 +9,12 @@ const TOOL_NAMES: Array[String] = [
 	"minerva_annotations_delete_reply",
 ]
 
-var server
+var _server_ref: WeakRef = null
+var server:
+	get:
+		return _server_ref.get_ref() if _server_ref != null else null
+	set(value):
+		_server_ref = weakref(value) if value != null else null
 var _annotations: RefCounted
 
 

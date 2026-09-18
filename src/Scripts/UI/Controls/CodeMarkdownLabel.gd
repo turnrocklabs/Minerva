@@ -103,7 +103,9 @@ func _extract_code_label():
 
 	SingletonObject.main_ui.set_notes_pane_visible(true)
 
-static var code_markdown_label: = preload("res://Scenes/CodeMarkdownLabel.tscn")
+## Load on demand because the scene owns this script.
+static var code_markdown_label: PackedScene:
+	get: return load("res://Scenes/CodeMarkdownLabel.tscn")
 static func create(code_text: String, syntax: String = "Plain Text", index: String = "", memory_item_UUID: String = "", expanded_value: bool = true) -> CodeMarkdownLabel:
 	# place the code label in panel container to change the background
 	var code_panel = code_markdown_label.instantiate()

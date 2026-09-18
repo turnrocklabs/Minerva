@@ -2325,6 +2325,7 @@ func discover_ollama_models() -> void:
 		if key < DYNAMIC_MODEL_ID_BASE and MODEL_TO_PROVIDER.get(key) == API_PROVIDER.LOCAL:
 			var instance: BaseProvider = API_MODEL_PROVIDER_SCRIPTS[key].new()
 			builtin_model_names.append(instance.model_name)
+			instance.free()
 
 	# Also collect model_names already in local_model_manager
 	var existing_dynamic_names: PackedStringArray = []

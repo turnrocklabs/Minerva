@@ -196,6 +196,15 @@ func _frame(bytes: PackedByteArray, request: Dictionary, streaming: bool) -> voi
 		elif message.method == "notifications/message" and request.get("params", {}).get("_meta", {}).has("io.modelcontextprotocol/logLevel"):
 			request_notification.emit(message, request.id)
 		return
+	# A few session-based legacy HTTP servers parse initialized as though it
+	# were a request and answer Method Not Found with the notification's null
+	# id. Preserve only this exact, safe shape for the transport's session-aware
+	# interoperability decision; ordinary response IDs stay strict below.
+	if _is_legacy_initialized_rejection(request, message):
+		_finish({"error": message.error.message, "rpc_error": message.error,
+			"status": status, "wire": wire,
+			"legacy_initialized_rejection": true})
+		return
 	var error := Protocol.validate_response(message, request.get("id"))
 	if not error.is_empty():
 		_finish({"error": error, "status": status})
@@ -205,3 +214,23 @@ func _frame(bytes: PackedByteArray, request: Dictionary, streaming: bool) -> voi
 		_finish({"error": "HTTP error: %d" % status, "status": status, "wire": wire})
 	else:
 		_finish({"result": message.result, "status": status, "wire": wire, "headers": response_headers})
+
+
+func _is_legacy_initialized_rejection(request: Dictionary,
+		message: Dictionary) -> bool:
+	if status != 200 or request.has("id") \
+			or request.get("method") != "notifications/initialized":
+		return false
+	if message.get("jsonrpc") != Protocol.JSON_RPC_VERSION \
+			or not message.has("id") or message.id != null \
+			or not message.has("error") or message.has("result"):
+		return false
+	var rpc_error: Variant = message.error
+	if not rpc_error is Dictionary:
+		return false
+	var error_message: Variant = rpc_error.get("message")
+	if not error_message is String:
+		return false
+	var code: Variant = rpc_error.get("code")
+	return (code is int and code == -32601) \
+		or (code is float and is_finite(code) and code == -32601.0)

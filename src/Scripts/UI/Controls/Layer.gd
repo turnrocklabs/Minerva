@@ -1,7 +1,9 @@
 class_name Layer
 extends TextureRect
 
-const _scene = preload("res://Scenes/Layer.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scenes/Layer.tscn")
 var _image_texture: ImageTexture
 
 var image: Image:

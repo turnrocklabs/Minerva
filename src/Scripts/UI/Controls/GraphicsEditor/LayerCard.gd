@@ -15,7 +15,9 @@ enum ContextMenuItem {
 	SEND_NOTE_NEW = 4,
 }
 
-const _scene: = preload("res://Scenes/LayerCard.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scenes/LayerCard.tscn")
 
 @export var  _active_color: Color = Color.from_string("2d3648", Color.BLACK)
 @export var _color: Color = Color.from_string("2f2c2c", Color.BLACK)

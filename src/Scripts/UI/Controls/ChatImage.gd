@@ -5,7 +5,9 @@ extends PanelContainer
 
 @warning_ignore("unused_signal")
 signal image_active_state_changed(active: bool)
-const _scene: PackedScene = preload("res://Scenes/ChatImage.tscn")
+# The scene owns this script, so retaining it here would create a static cycle.
+static var _scene: PackedScene:
+	get: return load("res://Scenes/ChatImage.tscn")
 @onready var _save_dialog = %SaveFileDialog as FileDialog
 @onready var _mask_button = %MaskButton as Button
 

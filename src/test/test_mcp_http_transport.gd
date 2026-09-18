@@ -161,8 +161,8 @@ func _run() -> void:
 		and notification_limited.protocol_profile.protocol_version == "2025-06-18")
 	check("declined initialized notification does not block subsequent legacy tools/list",
 		await notification_limited.refresh_tools() == OK
-		and notification_limited.tools.size() == 1
-		and notification_limited.tools[0].name == "echo")
+		and notification_limited.tools.any(
+			func(tool: MCPToolDefinition) -> bool: return tool.name == "echo"))
 	var limited_records: Dictionary = await notification_limited.call_tool("records", {})
 	var limited_initialize_count := 0
 	var limited_notification_count := 0
@@ -180,11 +180,20 @@ func _run() -> void:
 	no_session.mcp_endpoint = "/legacy-notification-no-session"
 	var wrong_notification_id = connection_script.new("notification-wrong-id", base)
 	wrong_notification_id.mcp_endpoint = "/legacy-session-notification-wrong-id"
+	var string_notification_code = connection_script.new("notification-string-code", base)
+	string_notification_code.mcp_endpoint = "/legacy-session-notification-string-code"
+	var fractional_notification_code = connection_script.new("notification-fractional-code", base)
+	fractional_notification_code.mcp_endpoint = "/legacy-session-notification-fractional-code"
 	check("initialized interop exception requires session and notification response identity",
 		await no_session.connect_to_server() != OK
 		and await wrong_notification_id.connect_to_server() != OK)
+	check("initialized interop exception requires an exact numeric Method Not Found code",
+		await string_notification_code.connect_to_server() != OK
+		and await fractional_notification_code.connect_to_server() != OK)
 	no_session.disconnect_from_server()
 	wrong_notification_id.disconnect_from_server()
+	string_notification_code.disconnect_from_server()
+	fractional_notification_code.disconnect_from_server()
 	var invalid_version = connection_script.new("invalid-legacy-version", base)
 	invalid_version.mcp_endpoint = "/legacy-session-invalid-version"
 	check("legacy fallback rejects an unsupported negotiated version",

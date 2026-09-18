@@ -3,8 +3,14 @@ extends RefCounted
 ## Abstract base class for MCP tool domain modules.
 ## Each module registers tools for one domain and handles execution.
 
-## Back-reference to MinervaMCPServer for shared state and tool registration.
-var server
+## Modules are owned by MinervaMCPServer, so their parent link must not retain
+## the server and its process-lifetime resource graph after MCPManager exits.
+var _server_ref: WeakRef = null
+var server:
+	get:
+		return _server_ref.get_ref() if _server_ref != null else null
+	set(value):
+		_server_ref = weakref(value) if value != null else null
 
 
 func _init(mcp_server = null) -> void:
