@@ -47,6 +47,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply({"jsonrpc": "2.0", "id": request_id,
                             "error": {"code": -32601, "message": "legacy"}}, 400)
             elif self.path in ("/legacy-session-2025", "/legacy-session-2024",
+                               "/legacy-session-notification-unsupported",
+                               "/legacy-notification-no-session",
+                               "/legacy-session-notification-wrong-id",
                                "/legacy-session-invalid-version"):
                 self.reply({"jsonrpc": "2.0", "id": request_id,
                             "error": {"code": -32600,
@@ -81,11 +84,20 @@ class Handler(BaseHTTPRequestHandler):
                 version = "2024-11-05"
             elif self.path == "/legacy-session-invalid-version":
                 version = "1900-01-01"
+            extra = [] if self.path == "/legacy-notification-no-session" else [
+                ("Mcp-Session-Id", "legacy-session")]
             self.reply(result({"protocolVersion": version, "capabilities": {"tools": {}},
                                "serverInfo": {"name": "probe", "version": "1"}}),
-                       extra=[("Mcp-Session-Id", "legacy-session")])
+                       extra=extra)
             return
         if method == "notifications/initialized":
+            if self.path in ("/legacy-session-notification-unsupported",
+                             "/legacy-notification-no-session",
+                             "/legacy-session-notification-wrong-id"):
+                response_id = "wrong-id" if self.path.endswith("wrong-id") else None
+                self.reply({"jsonrpc": "2.0", "id": response_id, "error": {
+                    "code": -32601, "message": "notification dispatch unsupported"}})
+                return
             self.send_response(202)
             self.send_header("Content-Length", "0")
             self.end_headers()

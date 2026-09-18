@@ -70,6 +70,7 @@ func _init() -> void:
 	test_unregister_by_manifest_name_refuses_a_dead_twin()
 	test_a_literal_bracketed_title_is_its_own_panel()
 	test_blob_store_is_not_shared_through_the_file_name()
+	await test_editor_annotation_reparent_preserves_ipc_registration()
 	await test_reply_after_reregistration_is_dropped()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
@@ -521,6 +522,100 @@ func test_blob_store_is_not_shared_through_the_file_name() -> void:
 	panel.free()
 
 
+## Editor creates AnnotationContentRow lazily by removing the plugin surface
+## from VBoxContainer and adding it to the new row. That is a reparent of the
+## same live registration, not a panel close: pending and subsequent IPC must
+## retain the same helper. Explicit unregister remains the close boundary.
+func test_editor_annotation_reparent_preserves_ipc_registration() -> void:
+	print("test_editor_annotation_reparent_preserves_ipc_registration:")
+	var capabilities := StubCapabilityBroker.new()
+	var parts := _make_broker([MANIFEST_PANEL], [CAPABILITY_CHANNEL], capabilities)
+	var broker: PluginScenePanelBroker = parts[0]
+	var panel := StubAnnotationSceneRoot.new()
+	var editor = load("res://Scenes/Editor.tscn").instantiate()
+	editor.type = editor.Type.PLUGIN_SCENE
+	var vbox: VBoxContainer = editor.get_node("VBoxContainer")
+	vbox.add_child(panel)
+	root.add_child(editor)
+	broker.register_panel(panel, "cad", PANEL_KEY,
+		PackedStringArray([CAPABILITY_CHANNEL]), MANIFEST_PANEL)
+	var helper: MinervaIPC = panel.get_node(MinervaIPC.HELPER_NODE_NAME)
+
+	var first: Dictionary = {}
+	_collect_bulk_reply(helper, CAPABILITY_CHANNEL, {"sequence": 1}, first)
+	await process_frame
+	await process_frame
+	check("the Editor reparent case begins with a pending backend call",
+		capabilities.pending == 1)
+
+	# Exercise the real annotation mount entry point. It resolves the host,
+	# creates the content row, and reparents the registered plugin surface.
+	editor.plugin_scene_root = panel
+	editor.call("_try_mount_plugin_annotation_dock")
+	check("Editor annotation mount keeps the registered IPC helper alive",
+		panel.get_node_or_null(MinervaIPC.HELPER_NODE_NAME) == helper
+		and helper.is_inside_tree()
+		and panel.get_parent().name == "AnnotationContentRow")
+	capabilities.release.emit({"success": true, "result": {"sequence": 1}})
+	await process_frame
+	await process_frame
+	check("a reply pending across Editor annotation reparent is delivered",
+		first.get("result", {}).get("result", {}).get("sequence") == 1,
+		"reply = %s" % str(first))
+
+	var second: Dictionary = {}
+	_collect_bulk_reply(helper, CAPABILITY_CHANNEL, {"sequence": 2}, second)
+	await process_frame
+	await process_frame
+	capabilities.release.emit({"success": true, "result": {"sequence": 2}})
+	await process_frame
+	await process_frame
+	check("the next request uses the preserved registration without delay",
+		second.get("result", {}).get("result", {}).get("sequence") == 2,
+		"reply = %s" % str(second))
+
+	var closing: Dictionary = {}
+	_collect_bulk_reply(helper, CAPABILITY_CHANNEL, {"sequence": 3}, closing)
+	await process_frame
+	await process_frame
+	broker.unregister_panel("cad", PANEL_KEY)
+	await process_frame
+	check("true unregister still settles a pending panel request",
+		closing.get("result", {}).get("error_code") == "panel_unloading",
+		"reply = %s" % str(closing))
+	capabilities.release.emit({"success": true, "result": {"stale": true}})
+	await process_frame
+
+	root.remove_child(editor)
+	editor.free()
+
+	# A detach that remains detached past the deferred boundary is a real close,
+	# even when no broker teardown raced it. This keeps the reparent grace to a
+	# single synchronous remove/add operation rather than extending authority.
+	var detached_capabilities := StubCapabilityBroker.new()
+	var detached_parts := _make_broker(
+		[MANIFEST_PANEL], [CAPABILITY_CHANNEL], detached_capabilities)
+	var detached_broker: PluginScenePanelBroker = detached_parts[0]
+	var detached_panel := StubSceneRoot.new()
+	root.add_child(detached_panel)
+	detached_broker.register_panel(detached_panel, "cad", PANEL_KEY,
+		PackedStringArray([CAPABILITY_CHANNEL]), MANIFEST_PANEL)
+	var detached_helper: MinervaIPC = detached_panel.get_node(
+		MinervaIPC.HELPER_NODE_NAME)
+	var detached_reply: Dictionary = {}
+	_collect_bulk_reply(detached_helper, CAPABILITY_CHANNEL, {}, detached_reply)
+	await process_frame
+	await process_frame
+	root.remove_child(detached_panel)
+	await process_frame
+	check("a panel left detached closes its pending registration",
+		detached_reply.get("result", {}).get("error_code") == "panel_unloading",
+		"reply = %s" % str(detached_reply))
+	detached_capabilities.release.emit({"success": true, "result": {}})
+	detached_broker.unregister_panel("cad", PANEL_KEY)
+	detached_panel.free()
+
+
 ## The backend call is awaited. A hot reload re-registers the same key with a
 ## new scene root and helper in the meantime. The old reply must not land on
 ## the new helper, where a reused reply id would be waiting for a different
@@ -576,6 +671,14 @@ func test_reply_after_reregistration_is_dropped() -> void:
 ## reply lands, then records it.
 func _collect_reply(helper: MinervaIPC, reply_id: String, sink: Dictionary) -> void:
 	var result: Dictionary = await helper.await_reply(reply_id, 2000)
+	sink["result"] = result
+
+
+## Runs a public bulk request as a coroutine so tests can inspect it while the
+## real broker dispatch is parked.
+func _collect_bulk_reply(helper: MinervaIPC, channel: String,
+		payload: Dictionary, sink: Dictionary) -> void:
+	var result: Dictionary = await helper.request_bulk(channel, payload, 2000)
 	sink["result"] = result
 
 
@@ -714,6 +817,14 @@ class StubSceneRoot extends Control:
 
 	func receive(channel: String, payload: Dictionary) -> void:
 		received_calls.append({"channel": channel, "payload": payload})
+
+
+## Minimal annotation-capable plugin surface used by Editor's real mount path.
+class StubAnnotationSceneRoot extends StubSceneRoot:
+	var annotation_host := AnnotationHost.new()
+
+	func get_annotation_host() -> AnnotationHost:
+		return annotation_host
 
 
 ## Scene root that answers a host_owned_save get_request with a fixed state.

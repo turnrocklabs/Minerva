@@ -42,6 +42,8 @@ var _pending: Dictionary = {}
 var _bulk_broker: WeakRef
 var _bulk_panel_key: String = ""
 var _bulk_sequence: int = 0
+var _tree_epoch: int = 0
+var _registration_closed: bool = false
 
 
 ## Explicit bulk route for snapshots. Feature-detect this method on older hosts.
@@ -72,12 +74,42 @@ func request_bulk(channel: String, payload: Dictionary,
 func configure_bulk(broker: RefCounted, panel_key: String) -> void:
 	_bulk_broker = weakref(broker)
 	_bulk_panel_key = panel_key
+	_registration_closed = false
+
+
+func _enter_tree() -> void:
+	# remove_child/add_child reparenting emits _exit_tree synchronously. Advance
+	# the epoch so its deferred close cannot retire this same registration.
+	_tree_epoch += 1
 
 
 func _exit_tree() -> void:
+	_tree_epoch += 1
+	var departed_epoch := _tree_epoch
+	call_deferred("_close_if_still_detached", departed_epoch)
+
+
+## Broker lifecycle is authoritative for unregister/hot reload. This settles
+## waits synchronously; ordinary same-registration reparenting never calls it.
+func close_registration() -> void:
+	if _registration_closed:
+		return
+	_registration_closed = true
 	_bulk_broker = null
 	for observer: _ReplyObserver in _pending.values():
 		observer._fire(_panel_closed_error())
+
+
+func _close_if_still_detached(departed_epoch: int) -> void:
+	if departed_epoch == _tree_epoch and not is_inside_tree():
+		close_registration()
+
+
+func _notification(what: int) -> void:
+	# A node freed while detached may not receive its deferred close. PREDELETE
+	# is the final backstop for direct frees outside broker-owned teardown.
+	if what == NOTIFICATION_PREDELETE:
+		close_registration()
 
 
 func _panel_closed_error() -> Dictionary:

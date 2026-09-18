@@ -153,6 +153,38 @@ func _run() -> void:
 		check("negotiated %s legacy calls retain their session" % legacy_case.version,
 			session_echo.get("headers", {}).get("Mcp-Session-Id") == "legacy-session")
 		session_legacy.disconnect_from_server()
+	var notification_limited = connection_script.new("notification-limited-legacy", base)
+	notification_limited.mcp_endpoint = "/legacy-session-notification-unsupported"
+	check("legacy request-only HTTP dispatch may decline initialized notification",
+		await notification_limited.connect_to_server() == OK
+		and notification_limited.protocol_profile.era == profile_script.Era.INITIALIZED_LEGACY
+		and notification_limited.protocol_profile.protocol_version == "2025-06-18")
+	check("declined initialized notification does not block subsequent legacy tools/list",
+		await notification_limited.refresh_tools() == OK
+		and notification_limited.tools.size() == 1
+		and notification_limited.tools[0].name == "echo")
+	var limited_records: Dictionary = await notification_limited.call_tool("records", {})
+	var limited_initialize_count := 0
+	var limited_notification_count := 0
+	for record: Dictionary in limited_records.get("records", []):
+		if record.path != "/legacy-session-notification-unsupported":
+			continue
+		if record.request.method == "initialize":
+			limited_initialize_count += 1
+		elif record.request.method == "notifications/initialized":
+			limited_notification_count += 1
+	check("legacy notification interop performs one handshake without replay",
+		limited_initialize_count == 1 and limited_notification_count == 1)
+	notification_limited.disconnect_from_server()
+	var no_session = connection_script.new("notification-without-session", base)
+	no_session.mcp_endpoint = "/legacy-notification-no-session"
+	var wrong_notification_id = connection_script.new("notification-wrong-id", base)
+	wrong_notification_id.mcp_endpoint = "/legacy-session-notification-wrong-id"
+	check("initialized interop exception requires session and notification response identity",
+		await no_session.connect_to_server() != OK
+		and await wrong_notification_id.connect_to_server() != OK)
+	no_session.disconnect_from_server()
+	wrong_notification_id.disconnect_from_server()
 	var invalid_version = connection_script.new("invalid-legacy-version", base)
 	invalid_version.mcp_endpoint = "/legacy-session-invalid-version"
 	check("legacy fallback rejects an unsupported negotiated version",

@@ -65,10 +65,10 @@ func start_tools_watch(request_id: Variant) -> bool:
 	var request = Request.new()
 	_watch_request = request
 	var owner := generation
-	request.request_notification.connect(func(notification: Dictionary,
+	request.request_notification.connect(func(catalog_message: Dictionary,
 			_request_id: Variant) -> void:
 		if owner == generation and _watch_request == request:
-			catalog_watch_message.emit(notification, owner))
+			catalog_watch_message.emit(catalog_message, owner))
 	_run_tools_watch(request, owner, message, built.headers,
 		str(serialized.raw).to_utf8_buffer())
 	return true
@@ -143,7 +143,29 @@ func connect_endpoint(url: String, working_directory: String = "") -> Dictionary
 	var acknowledged: Dictionary = await _send({"jsonrpc": "2.0", "method": "notifications/initialized"}, profile.protocol_version, {}, maxf(0.001, float(startup_end - Time.get_ticks_msec()) / 1000.0))
 	if owner != generation:
 		return {"error": "HTTP connection superseded"}
+	if _is_unsupported_initialized_notification(acknowledged):
+		return validated
 	return acknowledged if acknowledged.has("error") else validated
+
+
+func _is_unsupported_initialized_notification(response: Dictionary) -> bool:
+	# Some session-based legacy servers complete initialize but implement HTTP
+	# dispatch as request-only, returning Method Not Found for this notification.
+	# Accept only that exact, validated JSON-RPC response shape. Transport,
+	# authentication, framing, numeric and all other RPC failures remain fatal.
+	if session.is_empty() or int(response.get("status", 0)) != 200:
+		return false
+	var rpc_error: Variant = response.get("rpc_error")
+	var wire = response.get("wire")
+	if not rpc_error is Dictionary or int(rpc_error.get("code", 0)) != -32601 \
+			or wire == null:
+		return false
+	var parsed: Variant = wire.parsed
+	if not parsed is Dictionary:
+		return false
+	var message: Dictionary = parsed
+	return message.get("jsonrpc") == "2.0" and message.has("id") \
+		and message.id == null and message.has("error")
 
 
 static func _failure_category(response: Dictionary) -> Dictionary:

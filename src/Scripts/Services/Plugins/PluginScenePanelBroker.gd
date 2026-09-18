@@ -1865,6 +1865,7 @@ func _entry_generation(entry: _PanelEntry) -> int:
 func _detach_ipc_helper(entry: _PanelEntry) -> void:
 	var helper: MinervaIPC = entry.ipc_helper
 	if helper != null and is_instance_valid(helper):
+		helper.close_registration()
 		if helper.get_parent() != null:
 			helper.get_parent().remove_child(helper)
 		helper.queue_free()

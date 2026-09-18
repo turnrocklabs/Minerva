@@ -537,7 +537,7 @@ func _toggle_server_connection(server_name: String) -> void:
 		mcp.disconnect_server(server_name)
 		SingletonObject.create_toast_notification("%s: Disconnected" % display, ToastNotification.Type.WARNING)
 	else:
-		SingletonObject.create_toast_notification("%s: Connecting..." % display, ToastNotification.Type.WARNING)
+		SingletonObject.create_toast_notification("%s: Connecting..." % display, ToastNotification.Type.INFO)
 		var err: int = await mcp.connect_server(server_name)
 		if err == OK:
 			SingletonObject.create_toast_notification("%s: Connected" % display, ToastNotification.Type.SUCCESS)
@@ -1117,7 +1117,7 @@ func _reconnect_mcp_server(server_name: String) -> void:
 
 	SingletonObject.create_toast_notification(
 		"%s: Connecting..." % server_name,
-		ToastNotification.Type.WARNING
+		ToastNotification.Type.INFO
 	)
 
 	var err: int = await mcp.connect_server(server_name)
@@ -1776,7 +1776,7 @@ func _start_server(server_name: String) -> void:
 
 	SingletonObject.create_toast_notification(
 		"%s: Starting..." % server_name.capitalize(),
-		ToastNotification.Type.WARNING
+		ToastNotification.Type.INFO
 	)
 
 	var err: Error = _server_runner.start_server(server_name)
@@ -2040,7 +2040,7 @@ func _auto_connect_after_start(server_name: String) -> void:
 
 	SingletonObject.create_toast_notification(
 		"%s: Connecting..." % server_name.capitalize(),
-		ToastNotification.Type.WARNING
+		ToastNotification.Type.INFO
 	)
 
 	var err: int = await mcp.connect_server(server_name)
