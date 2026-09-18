@@ -602,7 +602,8 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y pkg-config libx11-dev libxcursor-dev \
           libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
-          libdbus-1-dev libudev-dev libxi-dev libxrandr-dev
+          libdbus-1-dev libudev-dev libxi-dev libxrandr-dev \
+          libgtk-3-0 libwebkit2gtk-4.1-0
 
     - name: Install Godot 4.6
       run: |
