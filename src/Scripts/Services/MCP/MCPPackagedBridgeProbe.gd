@@ -94,6 +94,21 @@ func _probe_editor(script: Script, label: String, delay_module: DelayToolModule)
 	editor.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	editor.set_html(RETIRED_HTML)
 	var retired_path: String = editor._document.file_path
+	# The engine's cold start is not what this phase measures: on a software-
+	# rendered runner the first browser can take longer than the call window
+	# just to reach its page. Wait for the retired page to load (or for its
+	# call to arrive, whichever is first) before that window opens; the
+	# verifier's launch deadline still bounds the whole probe.
+	var loaded: Array = [false]
+	if editor._cef != null and editor._cef.has_signal("load_finished"):
+		editor._cef.load_finished.connect(
+			func(_url: String, _status: int) -> void: loaded[0] = true, CONNECT_ONE_SHOT)
+	var load_started: int = Time.get_ticks_msec()
+	while not loaded[0] and not started[0] \
+			and Time.get_ticks_msec() - load_started < 25000:
+		await get_tree().process_frame
+	print("PACKAGED_BRIDGE_PHASE=%s:first-page loaded=%s after_ms=%d" % [
+		label, loaded[0], Time.get_ticks_msec() - load_started])
 	# Replacing the host document revokes its capability and pending context
 	# before the delayed old request can return or evaluate into the new view.
 	var start_deadline: int = Time.get_ticks_msec() + 10000
