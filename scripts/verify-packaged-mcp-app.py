@@ -14,6 +14,13 @@ import time
 # Match the established tarball smoke allowance for a cold application start.
 # Helper operations retain their independent two-second native deadlines.
 TIMEOUT_SECONDS = 60
+# The bridge probe creates two browsers cold. On the macOS Intel runner's
+# software renderer each takes about fourteen seconds to reach its page
+# (run 35402602094: first page 14.1 s, launch failed at 40.5 s), on every
+# other platform one to three seconds. The probe's own windows are gated on
+# page load, so this outer bound only has to cover boot plus two cold
+# browsers plus the bounded windows.
+BRIDGE_TIMEOUT_SECONDS = 90
 
 
 def _seed_profile(root: Path, env: dict[str, str]) -> None:
@@ -114,7 +121,8 @@ def main() -> int:
                          dump_directory],
                         stdout=diagnostic_log, stderr=subprocess.STDOUT)
                 try:
-                    process.wait(timeout=TIMEOUT_SECONDS)
+                    process.wait(
+                        timeout=BRIDGE_TIMEOUT_SECONDS if bridge_probe else TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired:
                     timed_out = True
             finally:

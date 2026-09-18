@@ -29,7 +29,7 @@ const PROBE_HTML := """<!doctype html><html><body><script>
   window.open('https://foreign.invalid/', '_blank');
   const frameResult = new Promise(resolve => {
    window.addEventListener('message', event => resolve(event.data), {once: true});
-   setTimeout(() => resolve('navigation-blocked'), 500);
+   setTimeout(() => resolve('navigation-blocked'), 10000);
   });
   const frame = document.createElement('iframe');
   frame.src = 'data:text/html,<script>(async()=>{try{await parent.minerva.call("minerva_tool_search",{query:"foreign"});parent.postMessage("foreign-authority","*")}catch(e){parent.postMessage("foreign-blocked","*")}})()<\\/script>';
@@ -127,11 +127,24 @@ func _probe_editor(script: Script, label: String, delay_module: DelayToolModule)
 		remove_child(editor)
 		editor.free()
 		return false
+	# Same rule for the replacement page: its browser is created cold too, so
+	# the completion window opens once the page has loaded (or has already
+	# answered), and the wait is printed with the verdict.
+	var probe_loaded: Array = [false]
+	if editor._cef != null and editor._cef.has_signal("load_finished"):
+		editor._cef.load_finished.connect(
+			func(_url: String, _status: int) -> void: probe_loaded[0] = true, CONNECT_ONE_SHOT)
+	var probe_started: int = Time.get_ticks_msec()
+	while not probe_loaded[0] and not completed[0] \
+			and Time.get_ticks_msec() - probe_started < 25000:
+		await get_tree().process_frame
 	var deadline: int = Time.get_ticks_msec() + 20000
 	while not completed[0] and Time.get_ticks_msec() < deadline:
 		await get_tree().process_frame
 	var passed: bool = completed[0] and completed[1]
-	print("PACKAGED_BRIDGE_PHASE=%s:%s" % [label, "ready" if passed else "failed"])
+	print("PACKAGED_BRIDGE_PHASE=%s:%s loaded=%s answered=%s after_ms=%d" % [label,
+		"ready" if passed else "failed", probe_loaded[0], completed[0],
+		Time.get_ticks_msec() - probe_started])
 	remove_child(editor)
 	editor.free()
 	var closed: bool = await _wait_file_absent(current_path, 5000)
