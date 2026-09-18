@@ -1,5 +1,5 @@
 extends Node
-## Opt-in final-package check of both real browser engines and native bridge.
+## Opt-in final-package check of the CEF browser and native bridge.
 
 class DelayToolModule extends RefCounted:
 	signal entered
@@ -16,7 +16,6 @@ class DelayToolModule extends RefCounted:
 const PROBE_HTML := """<!doctype html><html><body><script>
 (async function() {
  try {
-  const allowFrameTimeout = __MINERVA_ALLOW_FRAME_TIMEOUT__;
   const navigation = performance.getEntriesByType('navigation')[0];
   if (navigation && navigation.type === 'reload')
    throw new Error('reload escaped the native document lock');
@@ -36,8 +35,7 @@ const PROBE_HTML := """<!doctype html><html><body><script>
   frame.src = 'data:text/html,<script>(async()=>{try{await parent.minerva.call("minerva_tool_search",{query:"foreign"});parent.postMessage("foreign-authority","*")}catch(e){parent.postMessage("foreign-blocked","*")}})()<\\/script>';
   document.body.appendChild(frame);
   const frameStatus = await frameResult;
-	  if (frameStatus !== 'foreign-blocked'
-	   && !(allowFrameTimeout && frameStatus === 'navigation-blocked'))
+  if (frameStatus !== 'foreign-blocked')
    throw new Error('foreign frame acquired authority');
   location.assign('https://foreign.invalid/replacement');
   location.reload();
@@ -74,14 +72,12 @@ func run() -> void:
 	manager.minerva_server._modules.append(delay_module)
 	manager.minerva_server._register_tool("minerva_bridge_probe_delay",
 		"Packaged bridge replacement probe", {"type": "object", "properties": {}})
-	var wry_ok: bool = await _probe_editor(
-		load("res://Scripts/UI/Controls/WebViewEditor/WebViewEditor.gd"), "WRY", delay_module)
 	var cef_preactivation_ok: bool = await _probe_cef_preactivation_cleanup()
 	var cef_ok: bool = cef_preactivation_ok and await _probe_editor(
 		load("res://Scripts/UI/Controls/WebViewEditor/CefWebViewEditor.gd"), "CEF", delay_module)
 	manager.minerva_server._modules.erase(delay_module)
 	manager.tool_registry.erase("minerva_bridge_probe_delay")
-	_finish(wry_ok and cef_ok)
+	_finish(cef_ok)
 
 
 func _probe_editor(script: Script, label: String, delay_module: DelayToolModule) -> bool:
@@ -108,8 +104,7 @@ func _probe_editor(script: Script, label: String, delay_module: DelayToolModule)
 		remove_child(editor)
 		editor.free()
 		return false
-	editor.set_html(PROBE_HTML.replace("__MINERVA_ALLOW_FRAME_TIMEOUT__",
-		"true" if label == "WRY" else "false"))
+	editor.set_html(PROBE_HTML)
 	var current_path: String = editor._document.file_path
 	if not await _wait_file_absent(retired_path, 5000) \
 			or not FileAccess.file_exists(current_path):

@@ -97,7 +97,7 @@ Native save/load hooks retain their existing direct dictionary contract.
 
 `window.minerva.call()` uses a different framing contract: the **entire HTTP
 JSON-RPC body**, including MCP text escaping, must fit 65,536 UTF-8 bytes for
-both request and response. The shared WRY/CEF helper checks requests before
+both request and response. The shared CEF helper checks requests before
 fetch, sends `X-Minerva-Control: 1`, and bounds streamed responses before parsing.
 The host checks that marked request before executing a tool and bounds its reply.
 General MCP clients retain their existing transport contract. This header selects

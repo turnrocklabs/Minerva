@@ -1,9 +1,6 @@
 class_name CefWebViewEditor
 extends PanelContainer
-## CEF-backed variant of WebViewEditor. Same public API so existing callers
-## (EditorPane.add_plugin_panel_editor, Editor.gd WEBVIEW branch) work with
-## either implementation interchangeably. Used for plugin panels when
-## CefTexture is available; WebViewEditor (WRY) remains as fallback.
+## CEF-backed web document editor used by plugin panels and HTML views.
 
 signal content_changed
 signal bridge_probe_completed(success: bool)
@@ -82,7 +79,7 @@ func _apply_editor_style() -> void:
 
 func _build_ui() -> void:
 	if not ClassDB.class_exists("CefTexture"):
-		_show_fallback("CefTexture not available — godot-cef extension missing")
+		_show_fallback("Web content unavailable — CEF browser extension is missing")
 		return
 
 

@@ -25,8 +25,6 @@ Minerva adds a note-taking system and (hopefully) some editors and task runners.
 - Git
 - Python 3.9+ (with pip/venv) and a C++ compiler: Xcode command line tools on
   macOS, build-essential on Linux, or Visual Studio 2022 C++ tools on Windows.
-- Rust/Cargo for WRY web panels; Linux also needs GTK3/WebKit development packages.
-  See [platform prerequisites](Docs/Building.md#prerequisites-the-scripts-do-not-install).
 
 ### Clone and Build (Linux / macOS)
 
@@ -62,7 +60,7 @@ Close Minerva and its editor before a full native rebuild. Both scripts handle:
 - Godot C++ terminal extension build (SCons)
 - Library installation to `src/bin/`
 - Pinned built-in Voice runtime for the current host architecture
-- WRY build, FFmpeg and SQLite installation, then native dependency checks
+- FFmpeg and SQLite installation, then native dependency checks
 
 The MCP helper is required for **all plugin startup**, including legacy plugins.
 To repair just that dependency in an existing checkout:

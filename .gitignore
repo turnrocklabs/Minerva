@@ -36,12 +36,6 @@ bin/
 .zig-cache/
 zig-out/
 
-# godot_wry addon binary (built from vendor/godot_wry submodule)
-src/addons/godot_wry/bin/**/*.so
-src/addons/godot_wry/bin/**/*.dylib
-src/addons/godot_wry/bin/**/*.dll
-src/addons/godot_wry/bin/**/*.framework/
-
 # ffmpeg addon binaries (downloaded or built from vendor/EIRTeam.FFmpeg)
 src/addons/ffmpeg/linux64/*.so*
 src/addons/ffmpeg/macos/*.dylib

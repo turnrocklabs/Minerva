@@ -255,30 +255,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-godot-cpp-
         
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Setup Python for pinned WRY source
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
-
-    - name: Apply godot_wry patches
-      shell: bash
-      run: |
-        git -C vendor/godot_wry checkout -- .
-        python3 scripts/apply-wry-patches.py
-
-    - name: Build godot_wry
-      working-directory: vendor/godot_wry/rust
-      run: cargo build --release
-
-    - name: Install godot_wry binary
-      shell: bash
-      run: |
-        mkdir -p src/addons/godot_wry/bin/x86_64-pc-windows-msvc
-        cp vendor/godot_wry/rust/target/release/godot_wry.dll src/addons/godot_wry/bin/x86_64-pc-windows-msvc/
-
     - name: Setup Python and SCons
       uses: actions/setup-python@v5
       with:
@@ -397,13 +373,6 @@ jobs:
           src/bin/libterminal*
           src/bin/minerva-vt.dll
 
-    - name: Upload godot_wry binary
-      uses: actions/upload-artifact@v4
-      with:
-        name: godot-wry-windows
-        path: src/addons/godot_wry/bin/x86_64-pc-windows-msvc/godot_wry.dll
-        if-no-files-found: error
-
   build-linux:
     needs: check-gdextension
     if: (github.event.inputs.platform == 'linux' || github.event.inputs.platform == 'all' || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'))
@@ -470,26 +439,6 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y build-essential util-linux
 
-    - name: Install WRY dependencies
-      run: sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Apply godot_wry patches
-      run: |
-        git -C vendor/godot_wry checkout -- .
-        python3 scripts/apply-wry-patches.py
-
-    - name: Build godot_wry
-      working-directory: vendor/godot_wry/rust
-      run: cargo build --release
-
-    - name: Install godot_wry binary
-      run: |
-        mkdir -p src/addons/godot_wry/bin/x86_64-unknown-linux-gnu
-        cp vendor/godot_wry/rust/target/release/libgodot_wry.so src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
-
     - name: Build ghostty-vt shim
       working-directory: src/gdextension/terminal/ghostty-shim
       run: zig build -Doptimize=ReleaseFast
@@ -512,13 +461,6 @@ jobs:
         path: |
           src/bin/libterminal*
           src/bin/libminerva-vt.so
-
-    - name: Upload godot_wry binary
-      uses: actions/upload-artifact@v4
-      with:
-        name: godot-wry-linux
-        path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/libgodot_wry.so
-        if-no-files-found: error
 
   # ── Functional regression test suite (RCA 019e46b5) ──────────────────────
   # CI ran zero tests before this job. Runs the hermetic substrate tier
@@ -561,16 +503,10 @@ jobs:
         chmod +x src/bin/minerva-json-schema-helper
 
     # The suites run the real host chain (Docket → godot-sqlite, editors →
-    # godot_wry / godot_cef, media → FFmpeg). Without these GDExtensions the
+    # godot_cef, media → FFmpeg). Without these GDExtensions the
     # dependent scripts fail to compile and every suite prints SCRIPT ERROR
     # lines, which the runner treats as a failure. Fetch them exactly as
     # build-godot does, so the functional tier sees the project a build sees.
-    - name: Download godot_wry (Linux)
-      uses: actions/download-artifact@v4
-      with:
-        name: godot-wry-linux
-        path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
-
     - name: Download godot-sqlite addon
       run: |
         SQLITE_VERSION="v4.7"
@@ -603,7 +539,7 @@ jobs:
         sudo apt-get install -y pkg-config libx11-dev libxcursor-dev \
           libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
           libdbus-1-dev libudev-dev libxi-dev libxrandr-dev \
-          libgtk-3-0 libwebkit2gtk-4.1-0
+          libgtk-3-0
 
     - name: Install Godot 4.6
       run: |
@@ -736,12 +672,12 @@ jobs:
       - name: Install runtime dependencies
         run: |
           sudo apt-get update
-          # Runtime libs that Minerva.x86_64 dlopens via GDExtensions: GTK +
-          # WebKit (godot_wry) and Chromium-base (CEF). xvfb provides a
+          # Runtime libs that Minerva.x86_64 dlopens via GDExtensions: GTK and
+          # Chromium-based CEF. xvfb provides a
           # virtual X display so godot-cef's gdcef_helper child processes
           # can complete their ANGLE/EGL handshake (--headless alone isn't
           # enough — see scripts/tarball-smoke.sh comments).
-          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libgbm1
 
       - name: Extract release archive
         run: |
@@ -828,39 +764,6 @@ jobs:
         python-version: '3.x'
     - run: pip install scons
 
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Apply godot_wry patches
-      run: |
-        git -C vendor/godot_wry checkout -- .
-        python3 scripts/apply-wry-patches.py
-
-    - name: Build godot_wry (universal)
-      working-directory: vendor/godot_wry/rust
-      run: |
-        rustup target add aarch64-apple-darwin x86_64-apple-darwin
-        cargo build --release --target aarch64-apple-darwin
-        cargo build --release --target x86_64-apple-darwin
-
-    - name: Install godot_wry binary
-      run: |
-        # WRY.gdextension references `libgodot_wry.framework` (a macOS
-        # .framework directory), not `libgodot_wry.dylib`. Wrap cargo's
-        # raw .dylib output in the minimal framework structure Godot
-        # expects: `libgodot_wry.framework/libgodot_wry` (binary, no
-        # extension). Without this wrapping, Godot's macOS exporter fails
-        # to open the path during shared-object bundling and the entire
-        # Contents/Frameworks/ copy aborts, leaving the .app extension-less.
-        FW_DIR="src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework"
-        mkdir -p "$FW_DIR"
-        lipo -create \
-          vendor/godot_wry/rust/target/aarch64-apple-darwin/release/libgodot_wry.dylib \
-          vendor/godot_wry/rust/target/x86_64-apple-darwin/release/libgodot_wry.dylib \
-          -output "$FW_DIR/libgodot_wry"
-        lipo "$FW_DIR/libgodot_wry" -verify_arch arm64 x86_64
-        codesign --force --sign - "$FW_DIR/libgodot_wry"
-
     - name: Build ghostty-vt shim (universal)
       working-directory: src/gdextension/terminal/ghostty-shim
       run: |
@@ -903,21 +806,11 @@ jobs:
           src/bin/libterminal*
           src/bin/libminerva-vt.dylib
 
-    - name: Upload godot_wry binary
-      uses: actions/upload-artifact@v4
-      with:
-        name: godot-wry-macos
-        # Upload the framework directory (preserves the libgodot_wry binary
-        # at the expected path inside it). Path is the framework root so
-        # extraction restores .framework/libgodot_wry.
-        path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework
-        if-no-files-found: error
-
   # ─── macOS Godot export — runs on macos-latest so Godot's exporter can
   # bundle GDExtension Frameworks correctly. The previous setup ran the
   # macOS export from ubuntu-latest in build-godot, which produced a stub
   # .app missing all Contents/Frameworks/* (libterminal, libminerva-vt,
-  # Godot CEF.framework, libgodot_wry.dylib, libgdsqlite framework, ffmpeg).
+  # Godot CEF.framework, libgdsqlite framework, ffmpeg).
   # That stub crashed in user GDScript after ~30s when scripts dereferenced
   # classes from the missing extensions. (DCR 019e5ce2160f item #3.)
   export-macos:
@@ -953,15 +846,6 @@ jobs:
         with:
           name: terminal-macos
           path: src/bin/
-
-      - name: Download godot_wry (macOS)
-        uses: actions/download-artifact@v4
-        with:
-          name: godot-wry-macos
-          # upload-artifact stripped the leading framework dir; direct
-          # contents back inside libgodot_wry.framework/ so the binary
-          # lands at the path WRY.gdextension references.
-          path: src/addons/godot_wry/bin/universal-apple-darwin/libgodot_wry.framework
 
       - name: Patch godot_cef.gdextension for macOS
         # The CEF framework `Godot CEF.framework` does NOT follow the standard
@@ -1409,7 +1293,7 @@ jobs:
           # Keep this list MINIMAL — the smoke-launch step below catches the
           # broader class of "extension X failed to load" via stdout grep.
           # Over-specifying here creates false negatives when an addon's
-          # internal layout changes (e.g. wry, cef, sqlite, ffmpeg).
+          # internal layout changes (e.g. cef, sqlite, ffmpeg).
           required_in_frameworks=(
             "libterminal.macos.template_release.framework"
             "libterminal.macos.template_release.framework/libterminal.macos.template_release"
@@ -1523,35 +1407,10 @@ jobs:
           path: src/bin/
           merge-multiple: true
 
-      # godot_wry is built inline in each build-* job but only its host triple's
-      # binary ends up on that runner. build-godot runs on ubuntu-latest and exports
-      # for all three platforms, so it needs the per-platform .dll/.so/.dylib from
-      # the matching upload artifact, placed at the path WRY.gdextension references.
-      - name: Download godot_wry (Windows)
-        uses: actions/download-artifact@v4
-        with:
-          name: godot-wry-windows
-          path: src/addons/godot_wry/bin/x86_64-pc-windows-msvc/
-
-      - name: Download godot_wry (Linux)
-        uses: actions/download-artifact@v4
-        with:
-          name: godot-wry-linux
-          path: src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/
-
-      # godot_wry (macOS) is no longer needed here — macOS export was moved
-      # to the export-macos job (runs on macos-latest) which downloads its
-      # own godot-wry-macos artifact. Keeping the download here also made
-      # build-godot fail with "Artifact not found for name: godot-wry-macos"
-      # whenever build-macos hadn't finished yet (build-godot no longer
-      # waits on build-macos).
-
       - name: Create and Verify Bin Directory
         run: |
           mkdir -p src/bin
           ls -la src/bin/
-          echo "godot_wry binaries:"
-          find src/addons/godot_wry/bin/ -type f | { head -10; cat >/dev/null; }
 
       - name: Download EIRTeam.FFmpeg
         run: |
@@ -1602,7 +1461,7 @@ jobs:
           sudo apt-get install -y build-essential pkg-config libx11-dev libxcursor-dev \
             libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev \
             libdbus-1-dev libudev-dev libxi-dev libxrandr-dev yasm unzip \
-            libgtk-3-0 libwebkit2gtk-4.1-0
+            libgtk-3-0
         
       - name: Install Godot
         run: |

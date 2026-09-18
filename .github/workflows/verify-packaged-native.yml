@@ -123,7 +123,7 @@ jobs:
         if: steps.selected.outputs.value == 'true' && matrix.platform == 'linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb libgtk-3-0 libwebkit2gtk-4.1-0 libnss3 libgbm1
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libgbm1
       - name: Install Microsoft ProcDump
         if: steps.selected.outputs.value == 'true' && matrix.platform == 'windows' && inputs.capture_windows_dump
         shell: pwsh
@@ -142,41 +142,6 @@ jobs:
           New-Item -ItemType Directory -Force -Path $dumpDirectory | Out-Null
           "MINERVA_PROCDUMP_PATH=$procdump" | Out-File -FilePath $env:GITHUB_ENV -Append
           "MINERVA_PROCDUMP_DUMP_DIR=$dumpDirectory" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Ensure Microsoft WebView2 Runtime
-        if: steps.selected.outputs.value == 'true' && matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $client = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
-          $paths = @(
-            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$client",
-            "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$client"
-          )
-          function Get-WebViewVersion {
-            foreach ($path in $paths) {
-              $version = (Get-ItemProperty -Path $path -Name pv -ErrorAction SilentlyContinue).pv
-              if ($version -and [version]$version -gt [version]'0.0.0.0') { return $version }
-            }
-            return $null
-          }
-          $version = Get-WebViewVersion
-          if (-not $version) {
-            $installer = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
-            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $installer
-            $signature = Get-AuthenticodeSignature $installer
-            if ($signature.Status -ne 'Valid' -or
-                $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
-              throw "WebView2 installer Authenticode verification failed: $($signature.Status)"
-            }
-            $process = Start-Process -FilePath $installer -ArgumentList '/silent /install' -PassThru
-            if (-not $process.WaitForExit(120000)) {
-              $process.Kill()
-              throw 'WebView2 runtime installation timed out'
-            }
-            if ($process.ExitCode -ne 0) { throw "WebView2 installer failed: $($process.ExitCode)" }
-            $version = Get-WebViewVersion
-          }
-          if (-not $version) { throw 'WebView2 runtime is unavailable after installation' }
-          Write-Host "WebView2 Runtime $version"
       - name: Verify final packaged native runtimes
         if: steps.selected.outputs.value == 'true'
         shell: bash

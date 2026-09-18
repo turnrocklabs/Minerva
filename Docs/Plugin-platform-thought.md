@@ -26,7 +26,7 @@ Priority order matters. The CAD port is the reason we're doing this, but it's th
 
 ### 2.1 Today
 
-Plugins are out-of-process MCP servers communicating over stdio JSON-RPC. They can expose MCP tools, receive state/event pushes, and optionally host **HTML webview panels** via `godot_wry` or `godot_cef`. Full reference: `src/plugins/plugin_system_guide.md`. Example plugins: `obs_controller` (Go, full-featured), `notes_helper` (Python, minimal).
+Plugins are out-of-process MCP servers communicating over stdio JSON-RPC. They can expose MCP tools, receive state/event pushes, and optionally host **HTML webview panels** via `godot_cef`. Full reference: `src/plugins/plugin_system_guide.md`. Example plugins: `obs_controller` (Go, full-featured), `notes_helper` (Python, minimal).
 
 What plugins **cannot** do today: ship a native Godot scene as an editor tab with the same rights as an in-tree editor (PCBEditor, TextEditor, SpreadsheetEditor).
 

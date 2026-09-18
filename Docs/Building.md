@@ -17,8 +17,8 @@ Close Minerva and its editor before a full native rebuild. After the dependency
 check passes, open `src/project.godot` in Godot **4.6+** and press F5.
 
 This includes the MCP helper required for plugin startup. CEF-hosted plugin
-panels and the PDF sidecar need separate builds; WRY is skipped on Unix if its
-toolchain is unavailable. See [Builds not covered](#builds-not-covered-by-the-main-script).
+panels and the PDF sidecar need separate builds. See
+[Builds not covered](#builds-not-covered-by-the-main-script).
 
 ## What `build-extensions.sh` / `.ps1` does
 
@@ -27,14 +27,13 @@ compilation and handle these dependencies:
 
 | Step | Notes |
 |---|---|
-| Git submodules | `src/godot-cpp`, `vendor/ghostty`, `vendor/godot_wry`, `vendor/EIRTeam.FFmpeg` |
+| Git submodules | `src/godot-cpp`, `vendor/ghostty`, `vendor/EIRTeam.FFmpeg` |
 | Zig 0.15.2 | Downloaded user-local; no sudo/admin |
 | SCons | Uses an existing install, or installs into ignored `.build-venv` |
 | MCP JSON Schema helper | Pinned, checksum-verified jsoncons + Minerva patch; C++17 build |
 | Built-in Voice runtime | Pinned CPython 3.12, wheels, detector models, and current worker source for the host architecture |
 | ghostty-vt shim | Zig build → `libminerva-vt` |
 | Terminal GDExtension | SCons build → `libterminal.*` |
-| godot_wry WebView | Cargo build, with Minerva's patches applied first |
 | EIRTeam.FFmpeg 1.1.4 | Prebuilt download; Unix script falls back to source build |
 | godot-sqlite 4.7 | Prebuilt download |
 
@@ -50,10 +49,6 @@ The full native build and export jobs still have platform-specific recipes.
 
 - **All platforms:** Git, Python **3.9+** with pip and venv, and a C++17 compiler.
   On Debian/Ubuntu, install `build-essential python3-venv curl unzip`.
-- **Rust / Cargo** — via rustup, needed for `godot_wry`. Windows needs
-  rustc ≥ 1.85.
-- **Linux only:** `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` for `godot_wry`.
-  Without them the script skips the WebView build and panels fall back.
 - **Windows only:** Visual Studio 2022 with "Desktop development with C++"
   (`cl`, `lib`, `dumpbin`), plus Python 3 + pip.
 - **macOS:** Xcode command line tools.
@@ -152,13 +147,7 @@ into `build-extensions.sh` — build it only if you need the PDF capability.
 
 ## Vendor patches
 
-Minerva carries local patches against vendored dependencies. WRY patches are
-applied at build time only when absent. They remain in its worktree afterwards;
-the build never resets contributor edits. Conflicting edits stop the build with
-the patch name so you can resolve them. A dirty WRY submodule after setup is expected.
-
-- `patches/godot_wry-*.patch` — applied by `build-extensions.sh`.
-  See `patches/README.md`, which also documents how to add one.
+Minerva carries local patches against vendored dependencies.
 - `patches/godot_cef/*.patch` — applied by `build-godot-cef.sh`.
   That separate script has its own checkout/reset behavior; preserve local CEF
   work before running it. See `patches/godot_cef/README.md` for the rationale.
@@ -201,7 +190,7 @@ The main scripts and check-only mode share `scripts/check-editor-ready.py`:
 - Load terminal, ghostty shim, SQLite and FFmpeg in isolated native loader processes.
   The OS checks host architecture and linked dependencies; GDExtension entry symbols
   must exist. Run with a Python interpreter matching your Godot architecture.
-- Report WRY, CEF and PDF presence separately. Their runtime behavior is not tested.
+- Report CEF and PDF presence separately. Their runtime behavior is not tested.
 
 This does not launch Godot, import the project, or prove every extension's Godot
 API compatibility. Finish with an editor run and plugin-start HITL; browser panels

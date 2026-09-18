@@ -6,7 +6,7 @@
 # Auto-installed if missing:
 #   - Zig 0.15.2 (downloaded to $env:LOCALAPPDATA\zig)
 #   - SCons (in .build-venv if missing)
-#   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry, ...)
+#   - Git submodules (godot-cpp, vendor/ghostty, ...)
 #
 # Required on the machine (NOT auto-installed):
 #   - Visual Studio 2022 with "Desktop development with C++" (MSVC: cl, lib, dumpbin)
@@ -180,19 +180,6 @@ if ($needZig) {
 }
 $env:PATH = "$ZigDir;$env:PATH"
 Write-Host "Zig $(& zig version)"
-
-# ── Build godot_wry (Rust) ────────────────────────────────────────────
-Write-Host ""
-Write-Host "=== Building godot_wry ===" -ForegroundColor Cyan
-python scripts/apply-wry-patches.py
-Assert-NativeSuccess "Apply WRY patches"
-Push-Location vendor\godot_wry\rust
-& cargo build --release
-Assert-NativeSuccess "WRY build"
-Pop-Location
-New-Item -ItemType Directory -Force -Path src\addons\godot_wry\bin\x86_64-pc-windows-msvc | Out-Null
-Copy-Item vendor\godot_wry\rust\target\release\godot_wry.dll src\addons\godot_wry\bin\x86_64-pc-windows-msvc\ -Force
-Write-Host "Installed godot_wry.dll"
 
 # ── Build ghostty-vt shim (Zig, MSVC ABI) ─────────────────────────────
 # -Dtarget=x86_64-windows-msvc pins the DLL's CRT to the OS UCRT. The shim is

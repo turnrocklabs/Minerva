@@ -307,7 +307,6 @@ def main() -> int:
         ):
             check(label, lambda d=descriptor: check_library(*extension_library(root, d), root))
         for label, descriptor in (
-            ("WRY web panels", "addons/godot_wry/WRY.gdextension"),
             ("CEF plugin panels", "addons/godot_cef/godot_cef.gdextension"),
         ):
             try:

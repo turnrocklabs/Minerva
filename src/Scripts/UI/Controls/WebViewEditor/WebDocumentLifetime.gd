@@ -1,6 +1,6 @@
 class_name WebDocumentLifetime
 extends RefCounted
-## Host-owned identity and immutable file backing for one privileged document.
+## Host-owned identity and immutable file backing for one native-locked document.
 
 const ROOT := "user://web-documents"
 
@@ -11,9 +11,18 @@ var file_path: String
 var file_url: String
 
 static func create(source: String, generation_value: int):
+	return _create_backing(source, generation_value, true)
+
+
+## Materialize a native-locked document without granting Minerva bridge authority.
+static func create_unprivileged(source: String, generation_value: int):
+	return _create_backing(source, generation_value, false)
+
+
+static func _create_backing(source: String, generation_value: int, privileged: bool):
 	var lifetime := WebDocumentLifetime.new()
 	lifetime.generation = generation_value
-	lifetime.capability = Crypto.new().generate_random_bytes(32).hex_encode()
+	lifetime.capability = Crypto.new().generate_random_bytes(32).hex_encode() if privileged else ""
 	lifetime.directory = "%s/%s" % [ROOT,
 		Crypto.new().generate_random_bytes(16).hex_encode()]
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(lifetime.directory))
@@ -21,13 +30,16 @@ static func create(source: String, generation_value: int):
 	var file := FileAccess.open(lifetime.file_path, FileAccess.WRITE)
 	if file == null:
 		return null
-	var marker := source.find("__MINERVA_DOCUMENT_CAPABILITY__")
-	if marker < 0:
-		file.close()
-		lifetime.dispose()
-		return null
-	file.store_string(source.substr(0, marker) + lifetime.capability \
-		+ source.substr(marker + "__MINERVA_DOCUMENT_CAPABILITY__".length()))
+	if privileged:
+		var marker := source.find("__MINERVA_DOCUMENT_CAPABILITY__")
+		if marker < 0:
+			file.close()
+			lifetime.dispose()
+			return null
+		file.store_string(source.substr(0, marker) + lifetime.capability \
+			+ source.substr(marker + "__MINERVA_DOCUMENT_CAPABILITY__".length()))
+	else:
+		file.store_string(source)
 	file.close()
 	var absolute := ProjectSettings.globalize_path(lifetime.file_path)
 	lifetime.file_url = _absolute_file_url(absolute)

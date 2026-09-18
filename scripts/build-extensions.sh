@@ -5,10 +5,8 @@
 # Prerequisites installed automatically if missing:
 #   - Zig 0.15.2 (installed persistently under ~/.local/share/minerva)
 #   - SCons (in .build-venv if missing)
-#   - Rust/Cargo (must be pre-installed via rustup for godot_wry)
-#   - Git submodules (godot-cpp, vendor/ghostty, vendor/godot_wry, vendor/EIRTeam.FFmpeg)
+#   - Git submodules (godot-cpp, vendor/ghostty, vendor/EIRTeam.FFmpeg)
 #
-# Linux-only prereqs for godot_wry: libgtk-3-dev libwebkit2gtk-4.1-dev
 
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -143,7 +141,7 @@ if ! command -v scons >/dev/null; then
     export PATH="$PWD/.build-venv/bin:$PATH"
 fi
 
-# The helper has no Godot/WRY dependency; repair it without touching loaded libraries.
+# The helper has no Godot dependency; repair it without touching loaded libraries.
 python3 scripts/build-json-schema-helper.py --platform "$PLATFORM"
 if [ "$HELPER_ONLY" = 1 ]; then
     exec python3 scripts/check-editor-ready.py --helper-only
@@ -226,103 +224,6 @@ echo "=== Installing libraries ==="
 # first so the old inode survives until the process exits.
 install -m 755 "$SHIM_LIB" src/bin/
 echo "Copied $(basename "$SHIM_LIB") to src/bin/"
-
-# ── Build godot_wry WebView extension (Rust/Cargo) ───────────────────
-
-echo ""
-echo "=== Building godot_wry WebView extension ==="
-
-if ! command -v cargo &>/dev/null; then
-    echo "WARNING: Rust/Cargo not found. Install via https://rustup.rs"
-    echo "         Skipping godot_wry build. WebView panels will show fallback."
-else
-    # Check Linux prereqs
-    if [ "$PLATFORM" = "linux" ]; then
-        for pkg in libgtk-3-dev libwebkit2gtk-4.1-dev; do
-            if ! dpkg -s "$pkg" &>/dev/null; then
-                echo "WARNING: $pkg not found. Install with: sudo apt install $pkg"
-                echo "         Skipping godot_wry build."
-                SKIP_WRY=1
-                break
-            fi
-        done
-    fi
-
-    if [ "${SKIP_WRY:-}" != "1" ]; then
-        python3 scripts/apply-wry-patches.py
-
-        cd vendor/godot_wry/rust
-        cargo build --release
-        cd "$OLDPWD"
-
-        # Copy binary to addons
-        case "$PLATFORM" in
-            linux)
-                WRY_SRC="vendor/godot_wry/rust/target/release/libgodot_wry.so"
-                WRY_DST="src/addons/godot_wry/bin/x86_64-unknown-linux-gnu/"
-                ;;
-            macos)
-                WRY_SRC="vendor/godot_wry/rust/target/release/libgodot_wry.dylib"
-                WRY_DST="src/addons/godot_wry/bin/universal-apple-darwin/"
-                ;;
-            windows)
-                WRY_SRC="vendor/godot_wry/rust/target/release/godot_wry.dll"
-                WRY_DST="src/addons/godot_wry/bin/x86_64-pc-windows-msvc/"
-                ;;
-        esac
-
-        if [ -f "$WRY_SRC" ]; then
-            mkdir -p "$WRY_DST"
-            if [ "$PLATFORM" = "macos" ]; then
-                # WRY.gdextension expects a proper .framework bundle on macOS.
-                # Three things must be right or dyld silently crashes Godot:
-                #   1. Info.plist with correct CFBundleExecutable
-                #   2. Install name rewritten from cargo's abs build path to @rpath
-                #   3. Codesigned as a bundle (not just the binary)
-                FW_DIR="$WRY_DST/libgodot_wry.framework"
-                mkdir -p "$FW_DIR/Resources"
-                cp "$WRY_SRC" "$FW_DIR/libgodot_wry"
-
-                cat > "$FW_DIR/Resources/Info.plist" <<'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>libgodot_wry</string>
-    <key>CFBundleIdentifier</key>
-    <string>org.doceazedo.godot-wry</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>libgodot_wry</string>
-    <key>CFBundlePackageType</key>
-    <string>FMWK</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>MinimumOSVersion</key>
-    <string>10.13</string>
-</dict>
-</plist>
-PLIST
-
-                install_name_tool -id "@rpath/libgodot_wry.framework/libgodot_wry" "$FW_DIR/libgodot_wry"
-                codesign --force --sign - "$FW_DIR"
-                echo "godot_wry built: $FW_DIR ($(du -h "$WRY_SRC" | cut -f1))"
-            else
-                cp "$WRY_SRC" "$WRY_DST"
-                echo "godot_wry built: $WRY_DST$(basename "$WRY_SRC") ($(du -h "$WRY_SRC" | cut -f1))"
-            fi
-        else
-            echo "WARNING: godot_wry binary not found at $WRY_SRC"
-        fi
-
-    fi
-fi
 
 # ── Install EIRTeam.FFmpeg (download prebuilt, fallback to source build) ──
 

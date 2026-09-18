@@ -510,7 +510,7 @@ Posture throughout: fail loud, render a diagnostic, never silently drop.
 
 ## 13. Questions — Reviewed 2026-04-24
 
-*User answered inline below. Resolutions propagated into the body above: backward-compat dropped (§2.2); canonicalized `class_name` prefix for underscore-containing ids confirmed (§6.1); both save modes retained (§7.5); two channel pairs for project-file + project-export kept (§8); `.tscn` hot-reload is in-place re-instantiate, not stop/start (§9.2); fullscreen requires install-time capability grant (§10); multi-window manifest field parsed in v1, secondary-open rejected (§11.4); scene-only degraded mode valid without CEF/WRY (§12 – no code change needed). Q4 (IPC reply mechanism) resolved via rubric on DCR-1 plan decision comment — Option A (helper node + `await_reply`) wins on ergonomics with marginal memory/CPU cost.*
+*User answered inline below. Resolutions propagated into the body above: backward-compat dropped (§2.2); canonicalized `class_name` prefix for underscore-containing ids confirmed (§6.1); both save modes retained (§7.5); two channel pairs for project-file + project-export kept (§8); `.tscn` hot-reload is in-place re-instantiate, not stop/start (§9.2); fullscreen requires install-time capability grant (§10); multi-window manifest field parsed in v1, secondary-open rejected (§11.4); scene-only degraded mode valid without CEF (§12 – no code change needed). Q4 (IPC reply mechanism) resolved via rubric on DCR-1 plan decision comment — Option A (helper node + `await_reply`) wins on ergonomics with marginal memory/CPU cost.*
 
 
 Places where the spec is silent *and* the decision is non-reversible, or where policy and spec contradict. Flagged per `Plugin-platform-escalation.md` item 8.
@@ -536,7 +536,7 @@ Places where the spec is silent *and* the decision is non-reversible, or where p
 7. **Multi-window in MVP (§11.4).** Design proposes parse-but-reject-at-runtime. Alternative: drop the manifest field entirely until the follow-up DCR. Forward-compat vs YAGNI.
 -- Keep the manifest field. we have at least one plugin that will need 2 editors -- the CAD plugin.
 
-8. **CEF/WRY presence assumption.** Scene-kind panels need neither extension. This design assumes the plugin platform remains functional (degraded to scene-only) in CEF-free / WRY-free builds. Confirm.
+8. **CEF presence assumption.** Scene-kind panels need no browser extension. This design assumes the plugin platform remains functional (degraded to scene-only) in CEF-free builds. Confirm.
 -- confirmed.
 
 ---

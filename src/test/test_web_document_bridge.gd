@@ -39,7 +39,7 @@ func _run() -> void:
 		and encoded_url.contains("Name%20With%20Space")
 		and encoded_url.contains("hash%23query%3F")
 		and encoded_url.contains("unicod%C3%A9.html"))
-	var Editor = load("res://Scripts/UI/Controls/WebViewEditor/WebViewEditor.gd")
+	var Editor = load("res://Scripts/UI/Controls/WebViewEditor/CefWebViewEditor.gd")
 	var editor = Editor.new()
 	editor._document = first
 	editor._document_generation = 1

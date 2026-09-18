@@ -9,9 +9,7 @@ const BRIDGE_JS: String = """
 	// one trusted principal. Navigation is locked natively for its lifetime.
 	const CONTROL_BYTES = 65536;
 	const CAPABILITY = '__MINERVA_DOCUMENT_CAPABILITY__';
-	const sendNative = window.ipc && window.ipc.postMessage
-		? window.ipc.postMessage.bind(window.ipc)
-		: window.sendIpcMessage.bind(window);
+	const sendNative = window.sendIpcMessage.bind(window);
 	const pending = new Map();
 	const MAX_PENDING = 128;
 	const TIMEOUT_MS = 15000;
@@ -62,7 +60,7 @@ const BRIDGE_JS: String = """
 			return this.call('minerva_create_note', { title: title, content: content, thread_name: thread || 'default' });
 		},
 
-		// Plugin IPC -- sends message through WRY ipc_message signal to Minerva broker
+		// Plugin IPC -- sends through the native CEF bridge to the Minerva broker
 		pluginIPC: async function(messageType, payload) {
 			encodeBounded(payload || {});
 			if (new TextEncoder().encode(messageType).length > 1024) throw new Error('IPC message type too long');

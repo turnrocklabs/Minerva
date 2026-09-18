@@ -11,7 +11,7 @@ extends RefCounted
 ##   - All decisions — allow or deny — are written to PluginAuditLog.
 ##
 ## Message flow:
-##   1. Webview sends IPC message via the WRY ipc_message signal.
+##   1. The CEF webview sends an IPC message through its native signal.
 ##   2. Caller invokes handle_ipc_message(panel_name, message_type, payload).
 ##   3. Broker resolves panel -> plugin_id via _panel_registry.
 ##   4. Broker validates panel ownership, message declaration, and payload.
