@@ -761,7 +761,8 @@ class StubCapabilityBroker extends CapabilityBroker:
 	signal release(result: Dictionary)
 	var pending: int = 0
 
-	func dispatch(_plugin_id: String, _capability: String, _args: Dictionary) -> Dictionary:
+	func dispatch(_plugin_id: String, _capability: String, _args: Dictionary,
+			_context: ExecutionContext = null) -> Dictionary:
 		pending += 1
 		var result: Dictionary = await release
 		pending -= 1
