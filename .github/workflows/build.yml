@@ -622,6 +622,67 @@ jobs:
         timeout 600s godot --headless --import --path .
         test -n "$(ls .godot/imported 2>/dev/null)" || { echo "::error::import produced no resources"; exit 1; }
 
+    # These guards are owned by minerva-plugins, but deliberately run here
+    # against this exact, already-built host. Keep the revision immutable so a
+    # plugin change cannot turn a Minerva commit red without a reviewed pin.
+    - name: Checkout pinned plugin contract guards
+      env:
+        PLUGIN_GUARD_REV: f3403a20eae253fc113223f1ba2279f76927d417
+      run: |
+        plugin_root="$GITHUB_WORKSPACE/../minerva-plugins"
+        rm -rf "$plugin_root"
+        git init "$plugin_root"
+        git -C "$plugin_root" remote add origin https://github.com/imrans-lab/minerva-plugins.git
+        git -C "$plugin_root" fetch --depth=1 origin "$PLUGIN_GUARD_REV"
+        git -C "$plugin_root" checkout --detach FETCH_HEAD
+        actual=$(git -C "$plugin_root" rev-parse HEAD)
+        [ "$actual" = "$PLUGIN_GUARD_REV" ] || {
+          echo "::error::plugin guard checkout is $actual, expected $PLUGIN_GUARD_REV"
+          exit 1
+        }
+
+    - name: Set up Go for plugin contract guards
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26'
+        cache: false
+
+    - name: Set up Python for plugin contract guards
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Set up Rust for plugin contract guards
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Run pinned plugin contract guards against this host
+      env:
+        PLUGIN_GUARD_REV: f3403a20eae253fc113223f1ba2279f76927d417
+      run: |
+        # The runner builds each selected worker from its reviewed manifest,
+        # uses an isolated user profile, and records both repository revisions
+        # and every verdict in summary.json. The outer deadline bounds the
+        # complete four-plugin build/run rather than only each Godot process.
+        timeout --kill-after=30s 2700s \
+          "$GITHUB_WORKSPACE/../minerva-plugins/scripts/run-contract-guards.sh" \
+          --minerva "$GITHUB_WORKSPACE" \
+          --godot /usr/local/bin/godot \
+          --plugin-rev "$PLUGIN_GUARD_REV" \
+          --plugins "cad council drive pcb" \
+          --timeout 600 \
+          --out "$RUNNER_TEMP/minerva-plugin-contract-guards"
+
+    - name: Upload plugin contract guard verdicts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: minerva-plugin-contract-guards
+        path: |
+          ${{ runner.temp }}/minerva-plugin-contract-guards/summary.json
+          ${{ runner.temp }}/minerva-plugin-contract-guards/logs/
+        if-no-files-found: warn
+        retention-days: 14
+
     - name: No-bleed guard (codetools extraction, DCR 019e7b6609 P2.3)
       run: scripts/check-no-codetools-bleed.sh
 
