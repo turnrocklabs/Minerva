@@ -255,7 +255,8 @@ func _run() -> void:
 	paginated.configure_stdio("python3", PackedStringArray([fixture, "--profile", "paginated"]))
 	check("bounded tools/list pagination atomically collects every page",
 		await paginated.connect_to_server() == OK and await paginated.refresh_tools() == OK
-		and paginated.tools.size() == 21
+		and paginated.tools.size() == 22
+		and paginated.has_tool("stderr_line")
 		and paginated.has_tool("valid_array_output")
 		and not paginated.has_tool("invalid_input_root")
 		and not paginated.has_tool("invalid_output_root"))
