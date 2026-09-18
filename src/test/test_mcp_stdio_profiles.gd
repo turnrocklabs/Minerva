@@ -154,6 +154,22 @@ func _run() -> void:
 	var validation_echo: Dictionary = await modern.call_tool("echo", {"marker": "validation-owner"}, 5.0)
 	check("replacement after validation cancellation remains usable",
 		validation_echo.get("echo", {}).get("marker") == "validation-owner")
+	var stderr_calls_ok := true
+	# The native subprocess queue holds 32 stderr lines. More than one queue's
+	# worth of paced, valid requests proves diagnostics are consumed throughout
+	# the session rather than only at startup or teardown. Keep this negative
+	# control last so an unfixed overflow cannot obscure earlier modern checks.
+	for index in range(40):
+		var stderr_result: Dictionary = await modern.call_tool(
+			"stderr_line", {"index": index}, 5.0)
+		if stderr_result.get("index") != index:
+			stderr_calls_ok = false
+			break
+	var after_stderr: Dictionary = await modern.call_tool(
+		"echo", {"marker": "stderr-drained"}, 5.0)
+	check("paced worker diagnostics beyond the native queue remain bounded",
+		stderr_calls_ok and modern.server_connected
+		and after_stderr.get("echo", {}).get("marker") == "stderr-drained")
 	modern.disconnect_from_server()
 
 	var reentrant = connection_script.new("reentrant-fixture")

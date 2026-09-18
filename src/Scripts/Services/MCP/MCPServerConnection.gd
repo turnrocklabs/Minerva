@@ -110,6 +110,7 @@ var _suppress_watch_stop_callback := false
 var _stdio_watch_queue: Array[Dictionary] = []
 var _stdio_watch_validating := false
 const MAX_STDIO_WATCH_QUEUE := 64
+const MAX_STDERR_LINES_PER_DRAIN := 32
 
 ## MCP protocol version
 const MCP_PROTOCOL_VERSION := "2025-06-18"
@@ -926,6 +927,16 @@ func _connect_stdio() -> Error:
 		_subprocess = null
 		return ERR_CANT_CREATE
 
+	# Attach readers as soon as the child starts. A worker may write diagnostics
+	# during startup, before it is ready for the protocol handshake.
+	var connected_process = created_process
+	if connected_process.has_signal("output_ready"):
+		connected_process.output_ready.connect(_drain_stdout.bind(connected_process))
+	if connected_process.has_signal("stderr_ready"):
+		connected_process.stderr_ready.connect(_drain_stderr.bind(connected_process))
+	if connected_process.has_signal("io_overflow"):
+		connected_process.io_overflow.connect(_on_stdio_io_failure.bind(connected_process))
+
 	# Give the child a short unscaled startup turn within the shared deadline.
 	var startup_delay := minf(0.1, _remaining_startup_seconds(startup_deadline_ms))
 	if startup_delay <= 0.0:
@@ -945,13 +956,8 @@ func _connect_stdio() -> Error:
 	# — tool responses, plugin-initiated capability requests, event/state/notify
 	# messages — is dispatched by _drain_stdout; a response is routed to its
 	# waiter by JSON-RPC id (see _stdio_request / _resolve_pending).
-	var connected_process = created_process
-	if connected_process.has_signal("output_ready"):
-		connected_process.output_ready.connect(_drain_stdout.bind(connected_process))
-	if connected_process.has_signal("io_overflow"):
-		connected_process.io_overflow.connect(_on_stdio_io_failure.bind(connected_process))
-	# Low-frequency backstop: re-drain in case an output_ready signal is ever
-	# missed, and fail outstanding requests if the subprocess dies.
+	# Low-frequency backstop: re-drain in case an output signal is ever missed,
+	# and fail outstanding requests if the subprocess dies.
 	_backstop_tick(connected_process)
 
 	SingletonObject.verbose_log("[MCP STDIO] Subprocess running, performing MCP handshake...")
@@ -1504,6 +1510,27 @@ func _drain_stdout(expected_process = null) -> void:
 					% [server_name, plugin_id])
 
 
+## Drain worker diagnostics continuously so a chatty but healthy MCP server
+## cannot fill the native bounded stderr queue. Diagnostic content is
+## deliberately discarded: peer-controlled stderr may contain tool payloads,
+## credentials, or multiline terminal control data. The captured process
+## identity prevents a deferred signal from draining a replacement process.
+func _drain_stderr(expected_process = null) -> void:
+	var process = _subprocess
+	if process == null or (expected_process != null and expected_process != process) \
+			or not is_instance_valid(process):
+		return
+
+	# Match one native queue's line capacity per callback so a continuously
+	# refilling peer cannot monopolize the main thread. Ready notifications and
+	# the backstop schedule subsequent bounded drains.
+	var drained := 0
+	while drained < MAX_STDERR_LINES_PER_DRAIN and process == _subprocess \
+			and is_instance_valid(process) and process.has_stderr():
+		process.read_stderr_line()
+		drained += 1
+
+
 func _matches_stdio_catalog_watch(message: Dictionary) -> bool:
 	if not (_catalog_watch.waiting_ack or _catalog_watch.active):
 		return false
@@ -1614,17 +1641,25 @@ func _reject_modern_server_request(message: Dictionary, generation: int) -> void
 			"message": "Proprietary server callbacks are unavailable in modern MCP"}}, generation)
 
 
-## Low-frequency backstop. Re-drains stdout in case an output_ready signal is
-## ever missed, and fails all outstanding requests if the subprocess has died.
+## Low-frequency backstop. Re-drains both output streams in case a ready signal
+## is ever missed, and fails all outstanding requests if the subprocess dies.
 ## Self-rearming while the subprocess runs; stops once it exits / disconnects.
 func _backstop_tick(expected_process = null) -> void:
 	if not _subprocess or (expected_process != null and expected_process != _subprocess):
 		return
-	if not _subprocess.is_running():
+	var process = _subprocess
+	if not process.is_running():
 		_on_stdio_io_failure(expected_process)
 		return
-	_drain_stdout(_subprocess)
-	Engine.get_main_loop().create_timer(0.25).timeout.connect(_backstop_tick.bind(_subprocess))
+	_drain_stdout(process)
+	# Dispatching stdout can synchronously disconnect or replace the process.
+	# Never let an old timer drain or rearm itself for the replacement owner.
+	if process != _subprocess or not is_instance_valid(process):
+		return
+	_drain_stderr(process)
+	if process != _subprocess or not is_instance_valid(process):
+		return
+	Engine.get_main_loop().create_timer(0.25).timeout.connect(_backstop_tick.bind(process))
 
 
 func _handle_async_plugin_event(msg: Dictionary) -> void:

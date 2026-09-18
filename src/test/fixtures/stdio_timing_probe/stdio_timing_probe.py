@@ -81,6 +81,10 @@ TOOLS = [
     {"name": "cancellations",
      "description": "Returns the modern request IDs cancelled by the client.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
+    {"name": "stderr_line",
+     "description": "Writes one diagnostic line before returning normally.",
+     "inputSchema": {"type": "object", "properties": {
+         "index": {"type": "integer"}}, "required": ["index"]}},
     {"name": "session",
      "description": "Returns legacy initialization state.",
      "inputSchema": {"type": "object", "properties": {}, "required": []}},
@@ -208,6 +212,14 @@ async def handle_tools_call(req_id, name, args):
         await asyncio.sleep(0.05)
         await send(_text_result(req_id, {
             "success": True, "cancelled_ids": list(CANCELLED_IDS)}))
+
+    elif name == "stderr_line":
+        # One flushed line per completed request paces diagnostics through the
+        # real child transport instead of relying on an artificial burst.
+        index = args.get("index", -1)
+        sys.stderr.write("paced diagnostic %s\n" % index)
+        sys.stderr.flush()
+        await send(_text_result(req_id, {"success": True, "index": index}))
 
     elif name == "session":
         await send(_text_result(req_id, {
