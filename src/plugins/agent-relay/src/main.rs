@@ -35,6 +35,7 @@ mod router;
 // writes. Not yet reached from any tool path.
 mod session_log;
 mod state;
+mod turn_extract;
 mod watcher;
 
 use std::sync::Arc;
