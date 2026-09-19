@@ -1,0 +1,831 @@
+extends SceneTree
+## Wide headless test of minerva_terminal_notify: one line delivered from one
+## harness to another through Minerva.
+##
+## Run: godot --headless --path src --script test/test_terminal_notify.gd
+##
+## WHAT IS REAL HERE
+##   the real MCPTerminalTools tool module (resolution, validation, envelope,
+##   receipt), real PluginProvider instances carrying the "terminal-<id>" entry
+##   ids that ARE the chat <-> terminal binding, the real ChatOutgoingQueue and
+##   the real ChatPane queue helpers (_queue_if_busy / _release_chat_turn /
+##   _drain_outgoing_queue), real ChatHistory objects in the real
+##   SingletonObject.ChatList, and the real shared submit path
+##   MCPToolUtils.submit_user_message.
+##
+## WHAT IS FAKED, AND WHY
+##   - the terminal listing: the module's _terminal_list is overridden in a
+##     subclass so the test does not need live PTYs (no forkpty headless).
+##   - the watch profile map: injected through the module's watch_profile_source
+##     seam, so profile addressing is exercisable without the agent-relay plugin.
+##   - the turn body: ChatPane's full UI turn path cannot boot headless, so the
+##     harness pane replaces ONLY the body of execute_regular_chat with the same
+##     gate/turn/release shape the real one has, driving a blocking fake
+##     provider. Section G asserts by source inspection that notify really
+##     routes through the shared submit path and writes no bytes of its own.
+##
+## THE ORACLE (section E): while the claude chat is mid-turn, a notify addressed
+## by profile returns status "queued" with a position, and the envelope becomes
+## that chat's NEXT user turn once the in-flight turn ends.
+
+const TERMINAL_TOOLS_PATH := "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
+const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
+const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
+const PLUGIN_PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.gd"
+
+## Blocking provider stand-in, keyed by chat so two chats can be in flight
+## independently and "did this chat's next turn start?" is directly observable.
+const FAKE_PROVIDER_SRC := """
+extends RefCounted
+var tree: SceneTree = null
+var calls: Array = []
+var _released: Dictionary = {}
+var _questions: Dictionary = {}
+
+func release(chat: String, text: String) -> void:
+	_released[chat + "|" + text] = true
+
+## Mark the turn this text starts as one that ENDS IN A QUESTION: the harness
+## pane then finalizes it with passthrough question options, the way a real
+## passthrough turn that hit a chooser does.
+func mark_question(chat: String, text: String) -> void:
+	_questions[chat + "|" + text] = true
+
+func is_question(chat: String, text: String) -> bool:
+	return _questions.get(chat + "|" + text, false)
+
+func texts_for(chat: String) -> PackedStringArray:
+	var out: = PackedStringArray()
+	for call_entry: Dictionary in calls:
+		if str(call_entry["chat"]) == chat:
+			out.append(str(call_entry["text"]))
+	return out
+
+func generate_content(chat: String, text: String) -> String:
+	calls.append({"chat": chat, "text": text})
+	while not _released.get(chat + "|" + text, false):
+		await tree.process_frame
+	return "reply"
+"""
+
+## Harness pane: ChatPane's real queue helpers, faked turn body. The UI button
+## refreshers are no-ops because their unique-name nodes only exist in the
+## booted scene.
+const HARNESS_PANE_SRC := """
+extends "res://Scripts/UI/Views/ChatPane.gd"
+
+var provider = null
+
+func _ready() -> void:
+	pass
+
+func _update_stop_button() -> void:
+	pass
+
+func _update_compact_button() -> void:
+	pass
+
+func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> void:
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+		return
+	var turn_token: int = _begin_chat_turn(history)
+	var answer = await provider.generate_content(history.HistoryName, text)
+	# The real turn finalizes by appending the bot's ChatHistoryItem, carrying
+	# the passthrough question options when the turn ended in a question. That
+	# item is what ChatHistory.is_awaiting_question_answer() reads, so the
+	# harness must produce it too.
+	var chi: = ChatHistoryItem.new()
+	chi._suppress_save_state = true
+	chi.Role = ChatHistoryItem.ChatRole.MODEL
+	chi.Message = str(answer)
+	if provider.is_question(history.HistoryName, text):
+		chi.HcpData = {"passthrough_question_options": [{"label": "Yes", "keystroke": "1"}]}
+	history.HistoryItemList.append(chi)
+	_release_chat_turn(history, turn_token)
+"""
+
+## Module under test with the two environment seams closed: the terminal
+## listing and the watch-profile map. Everything else is the real module.
+const HARNESS_MODULE_SRC := """
+extends "res://Scripts/Services/MCP/Modules/MCPTerminalTools.gd"
+
+var terminals: Array = []
+
+func _terminal_list(_arguments: Dictionary) -> Dictionary:
+	return {"success": true, "terminals": terminals, "count": terminals.size()}
+"""
+
+## Runs one notify call as a DETACHED coroutine, so the test can change the
+## world (end the in-flight turn) while the tool is still inside wait_ms.
+const NOTIFY_RUNNER_SRC := """
+extends RefCounted
+var result: Dictionary = {}
+var done: bool = false
+
+func run(module, args: Dictionary) -> void:
+	result = await module.handle("minerva_terminal_notify", args)
+	done = true
+"""
+
+var _pass := 0
+var _fail := 0
+## Autoloads register after this script is compiled, so SingletonObject is
+## resolved as a node at runtime rather than by identifier.
+var _so: Node = null
+var _saved_chats = null
+
+
+func _init() -> void:
+	print("=== minerva_terminal_notify ===\n")
+	await _run()
+	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
+	if _fail > 0:
+		printerr("FAILURES: %d" % _fail)
+	quit(1 if _fail > 0 else 0)
+
+
+func check(label: String, ok: bool, detail: String = "") -> void:
+	if ok:
+		_pass += 1
+		print("PASS: %s" % label)
+	else:
+		_fail += 1
+		print("FAIL: %s%s" % [label, ("  — " + detail) if detail else ""])
+
+
+func _make_script(source: String) -> GDScript:
+	var script: = GDScript.new()
+	script.source_code = source
+	script.reload()
+	return script
+
+
+## A chat bound to a terminal exactly the way the passthrough launch path binds
+## one: a PluginProvider whose entry_id is "terminal-<id>".
+func _make_bound_chat(chat_name: String, terminal_id: String):
+	var history = load(CHAT_HISTORY_PATH).new(null)
+	history.HistoryName = chat_name
+	var provider = load(PLUGIN_PROVIDER_PATH).new()
+	provider.configure_from_entry({
+		"key": "plugin:agent_relay:terminal-%s" % terminal_id,
+		"plugin_id": "agent_relay",
+		"entry_id": "terminal-%s" % terminal_id,
+		"generate_tool": "minerva_agent_relay_relay_ask",
+		"display_name": chat_name,
+	})
+	history.provider = provider
+	return history
+
+
+func _make_pane(chats: Array) -> Node:
+	var pane = _make_script(HARNESS_PANE_SRC).new()
+	pane.name = "NotifyHarnessChatPane"
+	root.add_child(pane)
+	for history in chats:
+		var scroll: = ScrollContainer.new()
+		pane.add_child(scroll)
+		var vbox = load(VBOX_CHAT_PATH).new(pane)
+		vbox.chat_history = history
+		scroll.add_child(vbox)
+		history.VBox = vbox
+		_so.ChatList.append(history)
+	_so.Chats = pane
+	return pane
+
+
+func _teardown(pane: Node, chats: Array) -> void:
+	for history in chats:
+		_so.ChatList.erase(history)
+	_so.Chats = _saved_chats
+	pane.queue_free()
+
+
+## The module under test, listing `terminals` and reporting `profiles`.
+func _make_module(terminals: Array, profiles: Dictionary) -> Object:
+	var module = _make_script(HARNESS_MODULE_SRC).new(null)
+	module.terminals = terminals
+	module.watch_profile_source = func(_ids: PackedStringArray) -> Dictionary:
+		return profiles
+	return module
+
+
+func _notify(module: Object, args: Dictionary) -> Dictionary:
+	return await module.handle("minerva_terminal_notify", args)
+
+
+func _run() -> void:
+	await process_frame
+	_so = root.get_node_or_null("/root/SingletonObject")
+	check("S0: the SingletonObject autoload is live", _so != null)
+	if _so == null:
+		return
+	_saved_chats = _so.Chats
+	await _test_validation()
+	await _test_resolution()
+	await _test_no_match_and_ambiguity()
+	await _test_unbound_terminal()
+	await _test_queued_delivery_is_the_next_turn()
+	await _test_wait_ms()
+	await _test_receipt_follows_the_entry()
+	await _test_a_notification_never_blocks_a_card_answer()
+	await _test_a_notification_queued_mid_turn_stays_deferred()
+	_test_wiring_is_present()
+
+
+## The standing two-terminal world: one claude, one codex, each with a bound
+## passthrough chat, plus an unwatched terminal with no chat.
+func _world() -> Dictionary:
+	var claude_chat = _make_bound_chat("Claude Session", "101")
+	var codex_chat = _make_bound_chat("Codex Session", "202")
+	var chats: Array = [claude_chat, codex_chat]
+	var pane = _make_pane(chats)
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+	var terminals: Array = [
+		{"id": "101", "name": "Claude Session"},
+		{"id": "202", "name": "Codex Session"},
+		{"id": "303", "name": "Scratch"},
+	]
+	var module = _make_module(terminals, {"101": "claude", "202": "codex"})
+	return {
+		"pane": pane, "provider": provider, "module": module, "chats": chats,
+		"claude": claude_chat, "codex": codex_chat,
+	}
+
+
+#region A — the line is a pointer, not a payload
+
+func _test_validation() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+
+	var newline: Dictionary = await _notify(module,
+		{"to": "claude", "from": "codex", "text": "line one\nline two"})
+	check("A1: a text with a newline is refused",
+		not newline.get("success", true) and str(newline.get("error", "")).contains("ONE line"),
+		str(newline))
+
+	var long_text: = "x".repeat(module.NOTIFY_MAX_TEXT_LENGTH + 1)
+	var too_long: Dictionary = await _notify(module,
+		{"to": "claude", "from": "codex", "text": long_text})
+	check("A2: a text over the cap is refused",
+		not too_long.get("success", true) and str(too_long.get("error", "")).contains("cap"),
+		str(too_long))
+
+	var at_cap: Dictionary = await _notify(module, {"to": "claude", "from": "codex",
+		"text": "y".repeat(module.NOTIFY_MAX_TEXT_LENGTH)})
+	check("A3: a text exactly at the cap is accepted", at_cap.get("success", false),
+		str(at_cap))
+
+	var no_to: Dictionary = await _notify(module, {"to": "", "from": "codex", "text": "hi"})
+	check("A4: an empty target is refused", not no_to.get("success", true))
+
+	var no_from: Dictionary = await _notify(module, {"to": "claude", "from": "", "text": "hi"})
+	check("A5: an empty from is refused", not no_from.get("success", true))
+
+	var no_text: Dictionary = await _notify(module, {"to": "claude", "from": "codex", "text": "  "})
+	check("A6: an empty text is refused", not no_text.get("success", true))
+
+	# The envelope is typed into a terminal: a control byte in it is a
+	# keystroke, not text. ESC is the one that steers the harness.
+	for control: Array in [["\u001b", "ESC"], ["\u0007", "BEL"], ["\t", "TAB"],
+			["\u007f", "DEL"]]:
+		var in_text: Dictionary = await _notify(module, {"to": "claude", "from": "codex",
+			"text": "look at the board" + str(control[0]) + "[2J"})
+		check("A7: %s in text is refused" % control[1],
+			not in_text.get("success", true)
+				and str(in_text.get("error", "")).contains("control character"),
+			str(in_text))
+		# Mid-string: strip_edges() already removes an EDGE tab, and the point
+		# is the byte surviving into the envelope.
+		var in_from: Dictionary = await _notify(module, {"to": "claude",
+			"from": "co" + str(control[0]) + "dex", "text": "look at the board"})
+		check("A8: %s in from is refused" % control[1],
+			not in_from.get("success", true)
+				and str(in_from.get("error", "")).contains("control character"),
+			str(in_from))
+	check("A9: nothing with a control byte was delivered",
+		w["provider"].texts_for("Claude Session").size() == 1, str(w["provider"].calls))
+
+	# A3 really started a turn — release it so the harness tears down clean.
+	w["provider"].release("Claude Session",
+		"[MINERVA NOTIFY from codex] " + "y".repeat(module.NOTIFY_MAX_TEXT_LENGTH))
+	for _i in range(4):
+		await process_frame
+	_teardown(w["pane"], w["chats"])
+
+#endregion
+
+
+#region B — resolution by name, profile and id
+
+func _test_resolution() -> void:
+	for addressing: Array in [["Claude Session", "tab name"],
+			["claude session", "tab name, case-insensitive"],
+			["claude", "watch profile"],
+			["101", "terminal id"]]:
+		var w: = _world()
+		var module: Object = w["module"]
+		var provider = w["provider"]
+
+		var receipt: Dictionary = await _notify(module,
+			{"to": addressing[0], "from": "codex", "text": "board is green"})
+		await process_frame
+		check("B: '%s' resolves by %s" % [addressing[0], addressing[1]],
+			receipt.get("success", false)
+				and str(receipt.get("target", {}).get("terminal_id", "")) == "101"
+				and str(receipt.get("target", {}).get("chat_id", ""))
+					== str(w["claude"].HistoryId),
+			str(receipt))
+		check("B: an idle chat dispatches at once (%s)" % addressing[1],
+			str(receipt.get("status", "")) == "dispatched"
+				and int(receipt.get("queue_position", -1)) == 0, str(receipt))
+		check("B: the envelope is what the target receives (%s)" % addressing[1],
+			str(provider.texts_for("Claude Session"))
+				== str(PackedStringArray(["[MINERVA NOTIFY from codex] board is green"])),
+			str(provider.calls))
+		check("B: the other chat is untouched (%s)" % addressing[1],
+			provider.texts_for("Codex Session").is_empty(), str(provider.calls))
+
+		provider.release("Claude Session", "[MINERVA NOTIFY from codex] board is green")
+		for _i in range(4):
+			await process_frame
+		_teardown(w["pane"], w["chats"])
+
+#endregion
+
+
+#region C — no match and ambiguity are errors, never a guess
+
+func _test_no_match_and_ambiguity() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+
+	var unknown: Dictionary = await _notify(module,
+		{"to": "gemini", "from": "codex", "text": "hello"})
+	check("C1: an unknown target is an error", not unknown.get("success", true))
+	check("C2: the error lists the candidates",
+		str(unknown.get("error", "")).contains("Claude Session")
+			and str(unknown.get("error", "")).contains("Codex Session"),
+		str(unknown.get("error", "")))
+	check("C3: nothing was delivered", w["provider"].calls.is_empty())
+	_teardown(w["pane"], w["chats"])
+
+	# Two watched claude terminals: the profile no longer names one terminal.
+	var first = _make_bound_chat("Claude One", "101")
+	var second = _make_bound_chat("Claude Two", "404")
+	var chats: Array = [first, second]
+	var pane = _make_pane(chats)
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+	var module2 = _make_module([
+		{"id": "101", "name": "Claude One"},
+		{"id": "404", "name": "Claude Two"},
+	], {"101": "claude", "404": "claude"})
+
+	var ambiguous: Dictionary = await _notify(module2,
+		{"to": "claude", "from": "codex", "text": "hello"})
+	check("C4: a profile matching two terminals is an error",
+		not ambiguous.get("success", true), str(ambiguous))
+	check("C5: the error names BOTH candidates",
+		str(ambiguous.get("error", "")).contains("101")
+			and str(ambiguous.get("error", "")).contains("404"),
+		str(ambiguous.get("error", "")))
+	check("C6: an ambiguous notification is never guessed at", provider.calls.is_empty())
+
+	var by_id: Dictionary = await _notify(module2,
+		{"to": "404", "from": "codex", "text": "hello"})
+	await process_frame
+	check("C7: the terminal id disambiguates it",
+		by_id.get("success", false)
+			and str(by_id.get("target", {}).get("terminal_id", "")) == "404", str(by_id))
+	provider.release("Claude Two", "[MINERVA NOTIFY from codex] hello")
+	for _i in range(4):
+		await process_frame
+	_teardown(pane, chats)
+
+#endregion
+
+
+#region D — a terminal with no passthrough chat
+
+func _test_unbound_terminal() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+
+	var unbound: Dictionary = await _notify(module,
+		{"to": "Scratch", "from": "codex", "text": "hello"})
+	check("D1: a terminal with no passthrough chat is an error",
+		not unbound.get("success", true), str(unbound))
+	check("D2: the error says why — the human must be able to see it",
+		str(unbound.get("error", "")).contains("passthrough chat"),
+		str(unbound.get("error", "")))
+	check("D3: nothing was delivered anywhere", w["provider"].calls.is_empty())
+
+	_teardown(w["pane"], w["chats"])
+
+#endregion
+
+
+#region E — THE ORACLE: a busy target queues, then takes the envelope next
+
+func _test_queued_delivery_is_the_next_turn() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+	var pane = w["pane"]
+	var provider = w["provider"]
+	var claude_chat = w["claude"]
+
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	pane.execute_regular_chat("mid-turn work")
+	await process_frame
+	check("E1: the claude chat is mid-turn",
+		claude_chat.is_request_active
+			and str(provider.texts_for("Claude Session"))
+				== str(PackedStringArray(["mid-turn work"])), str(provider.calls))
+
+	var receipt: Dictionary = await _notify(module,
+		{"to": "claude", "from": "codex", "text": "review is red on P2.T4"})
+	await process_frame
+	check("E2: the receipt says QUEUED with a position",
+		receipt.get("success", false) and str(receipt.get("status", "")) == "queued"
+			and int(receipt.get("queue_position", 0)) == 1, str(receipt))
+	check("E3: the receipt names the target terminal and chat",
+		str(receipt.get("target", {}).get("terminal_id", "")) == "101"
+			and str(receipt.get("target", {}).get("name", "")) == "Claude Session"
+			and str(receipt.get("target", {}).get("chat_id", ""))
+				== str(claude_chat.HistoryId), str(receipt))
+	check("E4: no second turn started alongside the in-flight one",
+		provider.texts_for("Claude Session").size() == 1, str(provider.calls))
+
+	var envelope: = "[MINERVA NOTIFY from codex] review is red on P2.T4"
+	check("E5: the envelope is what sits in the outgoing queue",
+		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId))
+			== str(PackedStringArray([envelope])),
+		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId)))
+
+	provider.release("Claude Session", "mid-turn work")
+	for _i in range(6):
+		await process_frame
+	check("E6: the envelope becomes the chat's NEXT user turn",
+		str(provider.texts_for("Claude Session"))
+			== str(PackedStringArray(["mid-turn work", envelope])), str(provider.calls))
+	check("E7: the queue is empty again",
+		not pane._outgoing_queue.has_pending(claude_chat.HistoryId))
+
+	provider.release("Claude Session", envelope)
+	for _i in range(4):
+		await process_frame
+	_teardown(pane, w["chats"])
+
+#endregion
+
+
+#region F — wait_ms
+
+func _test_wait_ms() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+	var pane = w["pane"]
+	var provider = w["provider"]
+	var claude_chat = w["claude"]
+
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	pane.execute_regular_chat("mid-turn work")
+	await process_frame
+
+	# Run the notify as a detached coroutine so the test can end the in-flight
+	# turn WHILE the tool is still waiting for its entry to be dispatched.
+	var runner = _make_script(NOTIFY_RUNNER_SRC).new()
+	runner.run(module, {"to": "claude", "from": "codex", "text": "come look",
+		"wait_ms": 5000})
+	await process_frame
+	check("F1: the tool is still waiting while the target is busy", not runner.done)
+
+	provider.release("Claude Session", "mid-turn work")
+	for _i in range(20):
+		if runner.done:
+			break
+		await process_frame
+	check("F2: wait_ms returns once the queued line is dispatched",
+		runner.done and str(runner.result.get("status", "")) == "dispatched"
+			and int(runner.result.get("queue_position", -1)) == 0,
+		str(runner.result))
+	check("F3: and the line really did become the next turn",
+		str(provider.texts_for("Claude Session"))
+			== str(PackedStringArray(["mid-turn work",
+				"[MINERVA NOTIFY from codex] come look"])), str(provider.calls))
+
+	provider.release("Claude Session", "[MINERVA NOTIFY from codex] come look")
+	for _i in range(4):
+		await process_frame
+	_teardown(pane, w["chats"])
+
+#endregion
+
+
+#region I — a notification never blocks the answer to a live question card
+
+## THE DEADLOCK THIS PREVENTS: a passthrough turn that ended in a question
+## leaves the chat IDLE with a card under the last bot message — the agent in
+## the terminal is blocked, waiting for the answer. A notification that started
+## a turn there would be held by the relay's send gate until the card clears,
+## while the human's answer — a plain message on the same chat — would queue
+## BEHIND the notification and never reach the relay's bypass. Both sides then
+## wait for a timeout.
+##
+## The rule: a notify is a BACKGROUND message. While a question is pending it
+## starts no turn at all; it is queued as a deferred entry, the human's answer
+## runs first, and the notification follows once a turn ends with no question.
+func _test_a_notification_never_blocks_a_card_answer() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+	var pane = w["pane"]
+	var provider = w["provider"]
+	var claude_chat = w["claude"]
+
+	# A turn that ends in a question, finalized: the chat is idle, with an
+	# unanswered card.
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	provider.mark_question("Claude Session", "run the migration")
+	pane.execute_regular_chat("run the migration")
+	await process_frame
+	provider.release("Claude Session", "run the migration")
+	for _i in range(6):
+		await process_frame
+	check("I1: the chat is idle, waiting for the answer to a question card",
+		not claude_chat.is_request_active and claude_chat.is_awaiting_question_answer(),
+		"active=%s awaiting=%s items=%d" % [claude_chat.is_request_active,
+			claude_chat.is_awaiting_question_answer(), claude_chat.HistoryItemList.size()])
+
+	var receipt: Dictionary = await _notify(module,
+		{"to": "claude", "from": "codex", "text": "board is red"})
+	for _i in range(3):
+		await process_frame
+	var envelope: = "[MINERVA NOTIFY from codex] board is red"
+	check("I2: the notify is QUEUED, not run — the blocked agent keeps its turn",
+		receipt.get("success", false) and str(receipt.get("status", "")) == "queued"
+			and int(receipt.get("queue_position", 0)) == 1, str(receipt))
+	check("I3: no generate started for the notification",
+		not provider.texts_for("Claude Session").has(envelope),
+		str(provider.calls))
+
+	# The human answers the card in the ordinary way: a plain message.
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	pane.execute_regular_chat("1")
+	await process_frame
+	check("I4: the human's answer starts AT ONCE — it is not behind the notify",
+		claude_chat.is_request_active
+			and provider.texts_for("Claude Session").has("1"), str(provider.calls))
+	check("I5: and the notification is still waiting its turn",
+		int(pane._outgoing_queue.position_of(int(receipt["entry_id"]))) == 1,
+		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId)))
+
+	provider.release("Claude Session", "1")
+	for _i in range(6):
+		await process_frame
+	check("I6: once the turn ends with no question pending, the notify runs",
+		provider.texts_for("Claude Session").has(envelope)
+			and not claude_chat.is_awaiting_question_answer(), str(provider.calls))
+	check("I7: the queue is empty again",
+		not pane._outgoing_queue.has_pending(claude_chat.HistoryId))
+
+	provider.release("Claude Session", envelope)
+	for _i in range(6):
+		await process_frame
+	_teardown(pane, w["chats"])
+
+#endregion
+
+
+#region J — a notification queued MID-TURN is still deferred when that turn
+#           ends in a question
+
+## Section I covers the notify that arrives AFTER the question card exists.
+## The harder case is the notify that arrives while the turn is still running
+## and that turn then ends in a question: at the moment it was queued there was
+## no card to see. If it were queued as an ordinary entry, the drain at the end
+## of that turn would promote it — the relay would hold it behind the dialog and
+## the human's answer would queue behind the notification's live request, which
+## is the same deadlock. So a notify is queued as a BACKGROUND entry whenever it
+## is queued at all, in-flight turn included.
+func _test_a_notification_queued_mid_turn_stays_deferred() -> void:
+	var w: = _world()
+	var module: Object = w["module"]
+	var pane = w["pane"]
+	var provider = w["provider"]
+	var claude_chat = w["claude"]
+
+	# A turn that will end in a question is IN FLIGHT — no card exists yet.
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	provider.mark_question("Claude Session", "run the migration")
+	pane.execute_regular_chat("run the migration")
+	await process_frame
+	check("J1: the chat is mid-turn and no card is pending yet",
+		claude_chat.is_request_active and not claude_chat.is_awaiting_question_answer())
+
+	var receipt: Dictionary = await _notify(module,
+		{"to": "claude", "from": "codex", "text": "board is red"})
+	await process_frame
+	var envelope: = "[MINERVA NOTIFY from codex] board is red"
+	check("J2: the notify queues behind the in-flight turn",
+		receipt.get("success", false) and str(receipt.get("status", "")) == "queued"
+			and int(receipt.get("queue_position", 0)) == 1, str(receipt))
+
+	# The turn ends AS A QUESTION. The drain must pass the notification over.
+	provider.release("Claude Session", "run the migration")
+	for _i in range(8):
+		await process_frame
+	check("J3: the turn left a pending question card",
+		not claude_chat.is_request_active and claude_chat.is_awaiting_question_answer(),
+		"active=%s awaiting=%s" % [claude_chat.is_request_active,
+			claude_chat.is_awaiting_question_answer()])
+	check("J4: the drain did NOT promote the notification",
+		not provider.texts_for("Claude Session").has(envelope), str(provider.calls))
+	check("J5: it kept its place in the queue",
+		int(pane._outgoing_queue.position_of(int(receipt["entry_id"]))) == 1,
+		str(pane._outgoing_queue.pending_texts(claude_chat.HistoryId)))
+
+	# The human answers the card: their plain message starts at once.
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	pane.execute_regular_chat("1")
+	await process_frame
+	check("J6: the human's answer starts a turn immediately",
+		claude_chat.is_request_active
+			and provider.texts_for("Claude Session").has("1"), str(provider.calls))
+
+	provider.release("Claude Session", "1")
+	for _i in range(8):
+		await process_frame
+	check("J7: the notification follows once that turn ends with no question",
+		provider.texts_for("Claude Session").has(envelope)
+			and not claude_chat.is_awaiting_question_answer(), str(provider.calls))
+	check("J8: the queue is empty again",
+		not pane._outgoing_queue.has_pending(claude_chat.HistoryId))
+
+	provider.release("Claude Session", envelope)
+	for _i in range(6):
+		await process_frame
+	_teardown(pane, w["chats"])
+
+#endregion
+
+
+#region G — the wiring the harness stands in for
+
+func _test_wiring_is_present() -> void:
+	var source: = FileAccess.get_file_as_string(TERMINAL_TOOLS_PATH)
+	check("G1: MCPTerminalTools.gd is readable", not source.is_empty())
+	check("G2: the tool is declared and registered",
+		source.find('"minerva_terminal_notify",') != -1
+			and source.find('server._register_tool("minerva_terminal_notify"') != -1)
+
+	var body_start: = source.find("func _terminal_notify(")
+	var body_end: = source.find("\nfunc ", body_start + 10)
+	var body: = source.substr(body_start, body_end - body_start)
+	check("G3: notify submits through the SHARED send path, not its own",
+		body.find("MCPToolUtils.submit_user_message(history, envelope") != -1)
+	check("G3b: notify submits as a BACKGROUND message (deferred while a card waits)",
+		body.find("submit_user_message(history, envelope, {}, true)") != -1, body)
+	check("G4: notify owns no delivery code of its own",
+		body.find("write_input") == -1 and body.find("session.") == -1, body)
+	check("G5: the envelope is built by the host, from the shared prefix",
+		body.find("NOTIFY_ENVELOPE_PREFIX, from, text") != -1
+			and source.find('const NOTIFY_ENVELOPE_PREFIX := "[MINERVA NOTIFY from "') != -1)
+
+	# The chat tool must keep using the same submit path, or the two MCP send
+	# entry points drift and only one of them honours the outgoing queue.
+	var chat_source: = FileAccess.get_file_as_string(
+		"res://Scripts/Services/MCP/Modules/MCPChatTools.gd")
+	check("G6: minerva_send_message uses the same submit path",
+		chat_source.find("MCPToolUtils.submit_user_message(") != -1)
+
+	# That shared path is the one that reaches ChatPane's queue gate.
+	var utils_source: = FileAccess.get_file_as_string(
+		"res://Scripts/Services/MCP/Modules/MCPToolUtils.gd")
+	check("G7: the submit path goes through execute_regular_chat",
+		utils_source.find("chat_pane.execute_regular_chat(text, generation_options)") != -1)
+	check("G7b: and defers a background message while a question card is pending —",
+		utils_source.find("defer_when_question_pending and (history.is_awaiting_question_answer()") != -1
+			and utils_source.find("chat_pane.enqueue_background_message(") != -1)
+	check("G7c: — and while a turn that could END in a question is in flight",
+		utils_source.find("or history.is_request_active)") != -1, "")
+
+	var pane_source: = FileAccess.get_file_as_string(CHATPANE_PATH)
+	check("G8: execute_regular_chat still gates on the outgoing queue",
+		pane_source.find("_queue_if_busy(history, text") != -1)
+
+#endregion
+
+
+#region H — the receipt follows the queue ENTRY, not the text
+
+## Two things the envelope text cannot tell the sender: whether the line it
+## queued actually RAN (a cancelled line also leaves the queue), and which of
+## two identical lines is which. The queue entry's id answers both.
+func _test_receipt_follows_the_entry() -> void:
+	# ── a cancelled line is reported as dropped, never as dispatched ──
+	var w: = _world()
+	var module: Object = w["module"]
+	var pane = w["pane"]
+	var provider = w["provider"]
+	var claude_chat = w["claude"]
+
+	pane.current_tab = _so.ChatList.find(claude_chat)
+	pane.execute_regular_chat("mid-turn work")
+	await process_frame
+
+	var runner = _make_script(NOTIFY_RUNNER_SRC).new()
+	runner.run(module, {"to": "claude", "from": "codex", "text": "come look",
+		"wait_ms": 5000})
+	await process_frame
+	check("H1: the notify is queued behind the in-flight turn", not runner.done)
+
+	# The user presses stop: the cancel rule discards the queued line, so it
+	# never runs.
+	pane._cancel_chat_turn(claude_chat)
+	for _i in range(20):
+		if runner.done:
+			break
+		await process_frame
+	check("H2: a cancelled line is reported as DROPPED, not dispatched",
+		runner.done and str(runner.result.get("status", "")) == "dropped",
+		str(runner.result))
+	check("H3: and it really never became a turn",
+		not provider.texts_for("Claude Session").has(
+			"[MINERVA NOTIFY from codex] come look"), str(provider.calls))
+
+	provider.release("Claude Session", "mid-turn work")
+	for _i in range(4):
+		await process_frame
+	_teardown(pane, w["chats"])
+
+	# ── two identical lines are two entries, in order ──
+	var w2: = _world()
+	var module2: Object = w2["module"]
+	var pane2 = w2["pane"]
+	var provider2 = w2["provider"]
+	var claude2 = w2["claude"]
+
+	pane2.current_tab = _so.ChatList.find(claude2)
+	pane2.execute_regular_chat("busy")
+	await process_frame
+
+	var same: Dictionary = {"to": "claude", "from": "codex", "text": "same line"}
+	var first: Dictionary = await _notify(module2, same)
+	var second: Dictionary = await _notify(module2, same)
+	check("H4: identical lines queue as separate entries",
+		int(first.get("entry_id", 0)) > 0
+			and int(second.get("entry_id", 0)) > 0
+			and int(first["entry_id"]) != int(second["entry_id"]),
+		"%s / %s" % [str(first), str(second)])
+	check("H5: and hold positions 1 and 2, not the same one",
+		int(first.get("queue_position", -1)) == 1
+			and int(second.get("queue_position", -1)) == 2,
+		"%s / %s" % [str(first), str(second)])
+
+	provider2.release("Claude Session", "busy")
+	for _i in range(8):
+		await process_frame
+	check("H6: the first entry is the one that ran",
+		provider2.texts_for("Claude Session").has("[MINERVA NOTIFY from codex] same line"),
+		str(provider2.calls))
+	provider2.release("Claude Session", "[MINERVA NOTIFY from codex] same line")
+	for _i in range(8):
+		await process_frame
+	_teardown(pane2, w2["chats"])
+
+	# ── an entry whose outcome has been EVICTED is not reported as dispatched ──
+	# The outcome record is a fixed-size ring, so a burst of queue traffic pushes
+	# older entries out of it. "Dispatched" is the one answer a sender acts on,
+	# so it must never be a guess: an id the queue can no longer speak for is
+	# reported as unknown.
+	var w3: = _world()
+	var module3: Object = w3["module"]
+	var pane3 = w3["pane"]
+	var claude3 = w3["claude"]
+	var queue3 = pane3._outgoing_queue
+
+	var first_entry = queue3.enqueue(claude3.HistoryId, "evicted line")
+	var first_id: int = first_entry.id
+	queue3.pop_next(claude3.HistoryId)
+	check("H7: a freshly dispatched entry IS reported as dispatched",
+		module3._notify_status(first_id, 0) == "dispatched")
+
+	# Push it out of the ring: OUTCOME_HISTORY newer outcomes.
+	for _i in range(queue3.OUTCOME_HISTORY):
+		queue3.enqueue(claude3.HistoryId, "burst")
+		queue3.pop_next(claude3.HistoryId)
+	check("H8: the ring really evicted it",
+		queue3.outcome_of(first_id) == queue3.Outcome.UNKNOWN)
+	check("H9: an evicted entry is NOT reported as dispatched",
+		module3._notify_status(first_id, 0) == "unknown",
+		module3._notify_status(first_id, 0))
+
+	_teardown(pane3, w3["chats"])
+
+#endregion

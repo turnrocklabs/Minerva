@@ -283,6 +283,86 @@ static func find_chat_tab_index(chat_id: String) -> int:
 			return i
 	return -1
 
+
+## Submit `text` to a chat as a user turn through the SAME path the send button
+## uses: switch the pane to that chat's tab, call execute_regular_chat, then
+## restore the caller's tab. Every MCP entry point that starts a turn goes
+## through here, so none of them can miss the per-chat outgoing queue that
+## execute_regular_chat gates on.
+##
+## The tab restore is DEFERRED on purpose: execute_regular_chat reads
+## current_tab during setup, so switching back in the same frame would hand the
+## turn the caller's provider instead of the target chat's.
+##
+## Returns {"success": true, "queued": bool} — queued is true when the chat was
+## already mid-request, so the message was enqueued rather than started now.
+## `defer_when_question_pending` marks this a BACKGROUND message (a notify
+## envelope, not something a human typed). Such a message never starts a turn
+## while the chat is waiting for the answer to a question card: the agent
+## behind the chat is blocked on that answer, and a turn taken now would make
+## the human's answer queue behind it — neither could then reach the agent.
+## It is queued as a deferred entry instead and drains once a turn ends with no
+## question pending. The same holds when the chat is merely BUSY: the turn in
+## flight may end in a question, so a background message queued now is deferred
+## too, rather than being promoted ahead of the answer the agent is waiting on.
+static func submit_user_message(history, text: String,
+		generation_options: Dictionary = {},
+		defer_when_question_pending: bool = false) -> Dictionary:
+	if history == null:
+		return error("Chat not available")
+	var chat_pane = SingletonObject.Chats
+	if chat_pane == null:
+		return error("Chat pane not available")
+	var tab_idx: int = find_chat_tab_index(history.HistoryId)
+	if tab_idx == -1:
+		return error("Chat tab not found")
+	# A background message is queued as DEFERRED whenever it is queued at all,
+	# the in-flight turn included: that turn can itself end in a question, and
+	# an ordinary entry would then be promoted by the drain ahead of the
+	# human's answer — the deadlock this deferral exists to prevent.
+	if defer_when_question_pending and (history.is_awaiting_question_answer()
+			or history.is_request_active):
+		var deferred = chat_pane.enqueue_background_message(history, text, generation_options)
+		return {"success": true, "queued": true, "entry_id": deferred.id}
+	var was_busy: bool = history.is_request_active
+	var original_tab: int = chat_pane.current_tab
+	chat_pane.current_tab = tab_idx
+	chat_pane.execute_regular_chat(text, generation_options)
+	chat_pane.call_deferred("set_current_tab", original_tab)
+	# The gate runs before execute_regular_chat's first await, so a busy chat
+	# has already queued this message: its entry is the newest one, and its id
+	# is what a receipt follows (the text cannot identify it — two identical
+	# messages are two entries).
+	var entry_id: int = 0
+	if was_busy:
+		entry_id = chat_pane._outgoing_queue.newest_id(history.HistoryId)
+	return {"success": true, "queued": was_busy, "entry_id": entry_id}
+
+
+## Pending entries of a chat's outgoing queue, oldest first. Read-only view for
+## tool receipts that must report where a queued message sits.
+static func pending_outgoing_texts(history) -> PackedStringArray:
+	var chat_pane = SingletonObject.Chats
+	if history == null or chat_pane == null:
+		return PackedStringArray()
+	return chat_pane._outgoing_queue.pending_texts(history.HistoryId)
+
+
+## Where a queued entry sits, 1-based, or 0 once it has left the queue.
+static func outgoing_queue_position(entry_id: int) -> int:
+	var chat_pane = SingletonObject.Chats
+	if chat_pane == null or entry_id <= 0:
+		return 0
+	return chat_pane._outgoing_queue.position_of(entry_id)
+
+
+## What became of an entry that has left the queue: a ChatOutgoingQueue.Outcome.
+static func outgoing_queue_outcome(entry_id: int) -> int:
+	var chat_pane = SingletonObject.Chats
+	if chat_pane == null or entry_id <= 0:
+		return ChatOutgoingQueue.Outcome.UNKNOWN
+	return chat_pane._outgoing_queue.outcome_of(entry_id)
+
 #endregion
 
 

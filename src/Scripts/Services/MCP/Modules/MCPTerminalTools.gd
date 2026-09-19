@@ -10,6 +10,35 @@ extends MCPToolModule
 ## (visible create, promote, demote, close-of-a-tab) touch the UI tree.
 ## Sessions/registry are duck-typed (no TerminalSession type annotations) so
 ## this file parses in isolated --script harnesses.
+##
+## minerva_terminal_notify delivers ONE line from one harness to another. It
+## owns no delivery code: it resolves the target terminal, finds the
+## passthrough chat bound to it, and submits an enveloped user message through
+## the same path the send button uses — so the line inherits the per-chat
+## outgoing queue and then the relay's own hold, lock and confirmation.
+
+
+## The envelope every notification is delivered inside. Shared by convention
+## with the agent-relay plugin's NOTIFY_ENVELOPE_PREFIX (src/plugins/agent-relay
+## /src/main.rs): the relay recognises this prefix and refuses to type such a
+## line into a question card as its answer. Change one and change the other.
+const NOTIFY_ENVELOPE_PREFIX := "[MINERVA NOTIFY from "
+## One line, pointer not payload: a notification says "come look", it does not
+## carry the work. Newlines would break the single-line envelope contract.
+const NOTIFY_MAX_TEXT_LENGTH := 400
+const NOTIFY_MAX_FROM_LENGTH := 64
+const NOTIFY_MAX_WAIT_MS := 20000
+
+## Entry id the agent-relay provider registers per watched terminal — the ONLY
+## binding between a passthrough chat and its terminal.
+const PASSTHROUGH_ENTRY_PREFIX := "terminal-"
+const AGENT_RELAY_WATCH_STATUS_TOOL := "minerva_agent_relay_watch_status"
+
+## Injectable seam: Callable(PackedStringArray) -> Dictionary of
+## terminal_id -> watch profile id. Empty Callable uses the agent-relay plugin
+## (see _watch_profiles). Tests inject a stub so profile addressing is
+## exercisable without the plugin running.
+var watch_profile_source: Callable = Callable()
 
 
 func get_tool_names() -> Array[String]:
@@ -22,6 +51,7 @@ func get_tool_names() -> Array[String]:
 		"minerva_terminal_wait",
 		"minerva_terminal_promote",
 		"minerva_terminal_demote",
+		"minerva_terminal_notify",
 	]
 
 
@@ -79,6 +109,15 @@ func register_tools() -> void:
 			"terminal_id": {"type": "string", "description": "Terminal ID (from terminal_list)"},
 		}, "required": ["terminal_id"]}, "terminal")
 
+	server._register_tool("minerva_terminal_notify",
+		"Deliver ONE line to the agent running in another Minerva terminal. The line is posted as a user message in that terminal's passthrough chat, so the human sees it and the normal relay rules (hold, lock, submit confirmation) apply. Pointer, not payload: say what happened and where to look, in one line. Errors (never a guess) when 'to' matches no terminal, matches more than one, or the terminal has no passthrough chat bound to it.",
+		{"type": "object", "properties": {
+			"to": {"type": "string", "description": "Target terminal: its tab name, its watch profile ('claude' / 'codex') when exactly one such terminal is watched, or its terminal id."},
+			"text": {"type": "string", "description": "The notification, ONE line, at most %d characters. No newlines." % NOTIFY_MAX_TEXT_LENGTH},
+			"from": {"type": "string", "description": "Who this is from, self-declared. Recipients are told to trust the envelope Minerva builds, not the name inside it."},
+			"wait_ms": {"type": "integer", "description": "Block up to this long (0-%d, default 0) for a QUEUED line to be dispatched. The receipt returns either way, with status 'queued', 'dispatched', 'dropped' (the line was cancelled before it ran) or 'unknown' (it left the queue but its outcome is no longer on record)." % NOTIFY_MAX_WAIT_MS},
+		}, "required": ["to", "text", "from"]}, "terminal")
+
 
 func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 	match tool_name:
@@ -90,6 +129,7 @@ func handle(tool_name: String, arguments: Dictionary) -> Dictionary:
 		"minerva_terminal_wait": return await _terminal_wait(arguments)
 		"minerva_terminal_promote": return _terminal_promote(arguments)
 		"minerva_terminal_demote": return _terminal_demote(arguments)
+		"minerva_terminal_notify": return await _terminal_notify(arguments)
 	return MCPToolUtils.error("Unknown tool: %s" % tool_name)
 
 
@@ -486,3 +526,227 @@ func _terminal_wait(arguments: Dictionary) -> Dictionary:
 		read_result["shell_exited"] = true
 		read_result["shell_exit_code"] = session.shell_exit_code
 	return read_result
+
+
+# ── minerva_terminal_notify ────────────────────────────────────────────
+
+## One line from one harness to another. The host resolves the target, finds
+## the passthrough chat bound to it, and submits the envelope as a user turn;
+## everything after that (queue, relay hold, lock, submit confirmation) is
+## existing machinery.
+func _terminal_notify(arguments: Dictionary) -> Dictionary:
+	var to: String = str(arguments.get("to", "")).strip_edges()
+	var text: String = str(arguments.get("text", "")).strip_edges()
+	var from: String = str(arguments.get("from", "")).strip_edges()
+
+	if to.is_empty():
+		return MCPToolUtils.error("to is required: a terminal tab name, a watch profile (claude/codex), or a terminal id")
+	if from.is_empty():
+		return MCPToolUtils.error("from is required: the name this notification is delivered under")
+	var invalid: String = _validate_notify_line(text, from)
+	if not invalid.is_empty():
+		return MCPToolUtils.error(invalid)
+
+	var target: Dictionary = await _resolve_notify_target(to)
+	if not target.get("success", false):
+		return target
+
+	var history = target["history"]
+	# The envelope, not the name inside it, is what recipients are told to
+	# trust: only the host writes this prefix.
+	var envelope: String = "%s%s] %s" % [NOTIFY_ENVELOPE_PREFIX, from, text]
+	# A notification is never urgent enough to take a turn the chat's agent is
+	# blocked on: while a question card is unanswered this queues (deferred)
+	# rather than starting a generate, so the human's answer goes first.
+	var submitted: Dictionary = MCPToolUtils.submit_user_message(history, envelope, {}, true)
+	if not submitted.get("success", false):
+		return submitted
+
+	# The receipt follows the QUEUE ENTRY, not the text: two identical
+	# notifications are two entries, and an entry that vanishes from the queue
+	# may have been cancelled rather than run.
+	var entry_id: int = MCPToolUtils.coerce_int(submitted.get("entry_id", 0))
+	var position: int = MCPToolUtils.outgoing_queue_position(entry_id)
+	var wait_ms: int = clampi(
+		MCPToolUtils.coerce_int(arguments.get("wait_ms", 0)), 0, NOTIFY_MAX_WAIT_MS)
+	if position > 0 and wait_ms > 0:
+		position = await _await_notify_dispatch(entry_id, wait_ms)
+
+	return {
+		"success": true,
+		"target": {
+			"terminal_id": str(target["terminal_id"]),
+			"name": str(target["name"]),
+			"chat_id": str(history.HistoryId),
+		},
+		"status": _notify_status(entry_id, position),
+		"queue_position": position,
+		"entry_id": entry_id,
+	}
+
+
+## Empty string when the line is deliverable, else why it is not.
+func _validate_notify_line(text: String, from: String) -> String:
+	if text.is_empty():
+		return "text is required"
+	if text.contains("\n") or text.contains("\r"):
+		return "text must be ONE line — a notification is a pointer, not a payload. Put the detail where the line points."
+	if _first_control_char(text) >= 0:
+		return "text contains a control character (0x%02X) — the envelope is typed into a terminal, where control bytes are keystrokes, not text" % _first_control_char(text)
+	if text.length() > NOTIFY_MAX_TEXT_LENGTH:
+		return "text is %d characters; the cap is %d. A notification is a pointer, not a payload." % [
+			text.length(), NOTIFY_MAX_TEXT_LENGTH]
+	if from.contains("\n") or from.contains("\r") or from.contains("]"):
+		return "from must be a single line and must not contain ']' — it goes inside the notify envelope"
+	if _first_control_char(from) >= 0:
+		return "from contains a control character (0x%02X) — the envelope is typed into a terminal, where control bytes are keystrokes, not text" % _first_control_char(from)
+	if from.length() > NOTIFY_MAX_FROM_LENGTH:
+		return "from is %d characters; the cap is %d" % [from.length(), NOTIFY_MAX_FROM_LENGTH]
+	return ""
+
+
+## Code point of the first C0 control character or DEL in `line`, or -1 when
+## the line is all printable. The envelope ends up as keystrokes in someone's
+## terminal, so ESC and its neighbours would be read as an escape sequence
+## rather than shown. Tabs are in the rejected set too: they have no use in a
+## one-line pointer, so admitting them would only widen what can be injected.
+func _first_control_char(line: String) -> int:
+	for i: int in range(line.length()):
+		var code: int = line.unicode_at(i)
+		if code < 0x20 or code == 0x7F:
+			return code
+	return -1
+
+
+## Resolve `to` to EXACTLY ONE terminal and its bound passthrough chat.
+## Matching is the union of three axes — terminal id, tab name
+## (case-insensitive) and watch profile — deduplicated by terminal id. No match
+## or more than one is an error that lists the candidates: an ambiguous
+## notification must never be guessed at.
+## Returns {success, terminal_id, name, history} or an error Dictionary.
+func _resolve_notify_target(to: String) -> Dictionary:
+	var listing: Dictionary = _terminal_list({})
+	var terminals: Array = listing.get("terminals", [])
+	if terminals.is_empty():
+		return MCPToolUtils.error("No terminals exist, so '%s' cannot be delivered to" % to)
+
+	var ids: PackedStringArray = PackedStringArray()
+	for entry: Dictionary in terminals:
+		ids.append(str(entry.get("id", "")))
+	var profiles: Dictionary = await _watch_profiles(ids)
+
+	var needle: String = to.to_lower()
+	var matches: Array[Dictionary] = []
+	var described: PackedStringArray = PackedStringArray()
+	for entry: Dictionary in terminals:
+		var tid: String = str(entry.get("id", ""))
+		var tname: String = str(entry.get("name", ""))
+		var profile: String = str(profiles.get(tid, ""))
+		described.append("%s (id %s%s)" % [
+			tname, tid, (", profile %s" % profile) if not profile.is_empty() else ""])
+		if tid == to or tname.to_lower() == needle \
+				or (not profile.is_empty() and profile.to_lower() == needle):
+			matches.append({"terminal_id": tid, "name": tname})
+
+	if matches.is_empty():
+		return MCPToolUtils.error("No terminal matches '%s'. Terminals: %s" % [
+			to, ", ".join(described)])
+	if matches.size() > 1:
+		var ambiguous: PackedStringArray = PackedStringArray()
+		for m: Dictionary in matches:
+			ambiguous.append("%s (id %s)" % [str(m["name"]), str(m["terminal_id"])])
+		return MCPToolUtils.error("'%s' matches %d terminals: %s. Name one by its terminal id." % [
+			to, matches.size(), ", ".join(ambiguous)])
+
+	var terminal_id: String = str(matches[0]["terminal_id"])
+	var history = _find_passthrough_chat(terminal_id)
+	if history == null:
+		return MCPToolUtils.error("Terminal '%s' (id %s) has no passthrough chat bound to it. A notification the human cannot see in a chat is not delivered — bind a passthrough chat to that terminal first." % [
+			str(matches[0]["name"]), terminal_id])
+	return {
+		"success": true,
+		"terminal_id": terminal_id,
+		"name": str(matches[0]["name"]),
+		"history": history,
+	}
+
+
+## The chat whose provider is bound to this terminal. The binding IS the
+## provider's entry_id ("terminal-<id>"); nothing else ties a chat to a PTY.
+func _find_passthrough_chat(terminal_id: String):
+	var entry_id: String = PASSTHROUGH_ENTRY_PREFIX + terminal_id
+	for history in SingletonObject.ChatList:
+		var provider = history.provider
+		if provider is PluginProvider and provider.entry_id == entry_id:
+			return history
+	return null
+
+
+## terminal_id -> watch profile id, as the agent-relay plugin knows it.
+## Default implementation dispatches the plugin's watch_status tool through
+## PluginToolRegistry — the same internal path MCP dispatch uses. An unwatched
+## terminal (or an unreachable plugin) simply has no profile, which makes it
+## unaddressable BY profile and addressable by name or id as before.
+func _watch_profiles(terminal_ids: PackedStringArray) -> Dictionary:
+	if watch_profile_source.is_valid():
+		var injected = await watch_profile_source.call(terminal_ids)
+		return injected if injected is Dictionary else {}
+	var registry = SingletonObject.plugin_tool_registry if "plugin_tool_registry" in SingletonObject else null
+	if registry == null or not registry.has_method("handle_tool_call"):
+		return {}
+	var profiles: Dictionary = {}
+	for terminal_id in terminal_ids:
+		var raw = await registry.handle_tool_call(
+			AGENT_RELAY_WATCH_STATUS_TOOL, {"terminal_id": terminal_id})
+		if not (raw is Dictionary):
+			continue
+		# Same unwrap/classify the passthrough launch dialog uses for this
+		# plugin's replies (envelope stripping + isError/success handling).
+		var classified: Dictionary = PassthroughLaunchDialog._classify_watch_result(raw)
+		if not classified.get("ok", false):
+			continue
+		var status = (classified.get("result", {}) as Dictionary).get("status", null)
+		if status is Dictionary:
+			var profile_id: String = str(status.get("profile_id", ""))
+			if not profile_id.is_empty():
+				profiles[terminal_id] = profile_id
+	return profiles
+
+
+## 1-based place of this envelope in the chat's outgoing queue, or 0 when it is
+## not queued (the turn started immediately, or it has already been promoted).
+## What the receipt says happened, from the queue's own record:
+##   queued     — still waiting, position says where
+##   dispatched — promoted to a turn (or started straight away: no entry)
+##   dropped    — removed or discarded before it ran (a cancel, a closed bubble)
+##   unknown    — the entry left the queue but its outcome is no longer on
+##                record: the outcome ring is finite, so a burst evicts older
+##                entries. "dispatched" is the one answer that must never be
+##                guessed, so only a recorded DISPATCHED earns it.
+func _notify_status(entry_id: int, position: int) -> String:
+	if position > 0:
+		return "queued"
+	# No entry at all means no queue was involved: the turn started on the spot.
+	if entry_id <= 0:
+		return "dispatched"
+	match MCPToolUtils.outgoing_queue_outcome(entry_id):
+		ChatOutgoingQueue.Outcome.DROPPED:
+			return "dropped"
+		ChatOutgoingQueue.Outcome.DISPATCHED:
+			return "dispatched"
+		_:
+			return "unknown"
+
+
+## Poll until this entry leaves the queue or the budget lapses, then report its
+## position either way — the receipt never lies about what happened.
+func _await_notify_dispatch(entry_id: int, wait_ms: int) -> int:
+	var deadline: int = Time.get_ticks_msec() + wait_ms
+	var position: int = MCPToolUtils.outgoing_queue_position(entry_id)
+	var tree: SceneTree = SingletonObject.get_tree()
+	if tree == null:
+		return position
+	while position > 0 and Time.get_ticks_msec() < deadline:
+		await tree.process_frame
+		position = MCPToolUtils.outgoing_queue_position(entry_id)
+	return position

@@ -2088,6 +2088,7 @@ func _drain_outgoing_queue(history: ChatHistory) -> void:
 	var tab_index: int = SingletonObject.ChatList.find(history)
 	if tab_index == -1:
 		push_warning("[ChatPane] Queued message dropped — its chat is no longer open")
+		_outgoing_queue.note_dropped(entry)
 		return
 	# The execute_* paths all read the CURRENT tab, so promote on the queued
 	# chat's tab and restore the user's tab next frame (the MCP send idiom).

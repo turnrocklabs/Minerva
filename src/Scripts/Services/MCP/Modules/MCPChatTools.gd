@@ -823,35 +823,18 @@ func _send_message(args: Dictionary) -> Dictionary:
 		return MCPToolUtils.error(
 			"Worker has %d pending tool call(s). Wait for them to complete before sending a message. Use minerva_check_worker to monitor progress." % pending)
 
-	var chat_pane = SingletonObject.Chats
-	if not chat_pane:
-		return MCPToolUtils.error("Chat pane not available")
-
-	# Find the target chat tab
-	var tab_idx = MCPToolUtils.find_chat_tab_index(chat_id)
-	if tab_idx == -1:
-		return MCPToolUtils.error("Chat tab not found")
-
-	# Save original tab
-	var original_tab = chat_pane.current_tab
+	print("[MCPChatTools] Sending message to chat '%s': %s" % [history.HistoryName, message.left(50)])
+	# Shared submit path (tab switch, execute_regular_chat, deferred restore) —
+	# the same one minerva_terminal_notify uses, so both inherit the per-chat
+	# outgoing queue rather than each reimplementing the send.
+	var submitted: Dictionary = MCPToolUtils.submit_user_message(
+		history, message, generation_options)
+	if not submitted.get("success", false):
+		return submitted
 
 	# A busy chat queues this message instead of starting a second, overlapping
 	# request — say so, or the caller reads "sent" as "the turn started now".
-	var was_busy: bool = history.is_request_active
-
-	# Switch to target chat and execute (fire and forget - no waiting)
-	chat_pane.current_tab = tab_idx
-
-	print("[MCPChatTools] Sending message to chat '%s': %s" % [history.HistoryName, message.left(50)])
-	chat_pane.execute_regular_chat(message, generation_options)
-
-	# Restore original tab after the current frame completes.
-	# IMPORTANT: Don't switch back immediately — execute_regular_chat reads
-	# current_tab during setup. Switching too early causes provider mismatch
-	# (e.g., sub-agent uses caller's ChatGPT format instead of its own Anthropic format).
-	chat_pane.call_deferred("set_current_tab", original_tab)
-
-	if was_busy:
+	if bool(submitted.get("queued", false)):
 		return {
 			"success": true,
 			"queued": true,
