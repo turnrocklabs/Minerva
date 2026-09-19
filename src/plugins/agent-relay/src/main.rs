@@ -31,6 +31,9 @@ mod dialog;
 mod filter_rules;
 mod profiles;
 mod router;
+// Session-log binder: derives which harness transcript a watched terminal
+// writes. Not yet reached from any tool path.
+mod session_log;
 mod state;
 mod watcher;
 
