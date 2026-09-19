@@ -3303,7 +3303,9 @@ func create_message_new(inputs_idx: int) -> void:
 		history.HistoryItemList.append(user_history_item)
 		history.HistoryItemList.append(human_answer)
 		run.mutex.unlock()
-		user_history_item.response_arrived.emit(human_answer)
+		# Deferred for the same reason as the provider path below: the handler's
+		# node work belongs on the main thread, and this runs on a worker.
+		user_history_item.response_arrived.emit.call_deferred(human_answer)
 		return
 
 	# make a chat request
@@ -3327,8 +3329,11 @@ func create_message_new(inputs_idx: int) -> void:
 	history.HistoryItemList.append(chi)
 	run.mutex.unlock()
 	
-	## Inform the user history item that the response has arrived
-	user_history_item.response_arrived.emit(chi)
+	## Inform the user history item that the response has arrived. Deferred
+	## because the handler adds and renders message nodes, refreshes controls
+	## and can start the next turn — main-thread work, and this function is a
+	## WorkerThreadPool task.
+	user_history_item.response_arrived.emit.call_deferred(chi)
 
 
 func check_for_create_files(input: String) -> bool:

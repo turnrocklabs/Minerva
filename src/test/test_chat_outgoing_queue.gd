@@ -183,6 +183,15 @@ func generate_content_from_provider(history: ChatHistory, history_list: Array, r
 	while blocked:
 		await get_tree().process_frame
 	return null
+
+## Which thread the response handler ran on. The handler adds and renders
+## message nodes, refreshes controls and drains the queue, so a worker that
+## emits response_arrived on its own thread runs all of that off the main one.
+var handler_thread_id: int = -1
+
+func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null, run: ChatParallelRun = null) -> void:
+	handler_thread_id = OS.get_thread_caller_id()
+	super(chat_hist_item, run)
 """
 
 var _pass := 0
@@ -291,6 +300,7 @@ func _run() -> void:
 	await _test_a_promoted_message_is_sent_past_the_last_user_guard()
 	await _test_a_promoted_sequential_message_is_sent_past_the_guard()
 	await _test_a_human_parallel_worker_ends_its_share_of_the_run()
+	await _test_a_worker_delivers_its_response_on_the_main_thread()
 
 
 #region A — queue semantics
@@ -1057,6 +1067,60 @@ func _test_a_human_parallel_worker_ends_its_share_of_the_run() -> void:
 			and chat.HistoryItemList[0].provider == human)
 
 	pane.blocked = false
+	_teardown(pane, [chat])
+
+
+## The worker body is real and runs on a real worker thread here, because the
+## thread the handler lands on is the whole subject: the handler builds and
+## renders message nodes, sets the editable answer bubble and drains the queue
+## into the next turn, and none of that may run off the main thread. The human
+## branch is the one driven, since it emits with no await in front of it. As in
+## section M the chat is marked cancelled, so the handler stops right after the
+## release decision instead of reaching UI that needs the booted scene.
+func _test_a_worker_delivers_its_response_on_the_main_thread() -> void:
+	var chat = _make_history("ThreadedHumanParallel")
+	var pane = _make_pane([chat], PARALLEL_WORKER_PANE_SRC)
+	var human = load(HUMAN_PROVIDER_PATH).new()
+	pane.add_child(human)
+	chat.provider = human
+	pane.current_tab = _so.ChatList.find(chat)
+
+	var token: int = pane._begin_chat_turn(chat)
+	var run = load(PARALLEL_RUN_PATH).new()
+	run.history = chat
+	run.turn_token = token
+	run.inputs.append("answer me by hand")
+	run.expected = 1
+	run.user_slider_uuid = "thread-user"
+	run.model_slider_uuid = "thread-model"
+	run.multi_slider_uuid = "thread-multi"
+	pane._parallel_run = run
+
+	pane.execute_regular_chat("queued behind the threaded run")
+	_so.cancelled_history_ids.append(chat.HistoryId)
+
+	var worker: = Thread.new()
+	worker.start(pane.create_message_new.bind(0))
+	while worker.is_alive():
+		await process_frame
+	worker.wait_to_finish()
+	for _i in range(10):
+		await process_frame
+
+	check("N1: the response handler runs on the main thread",
+		pane.handler_thread_id == OS.get_main_thread_id(),
+		"handler=%d main=%d worker-side=%s"
+			% [pane.handler_thread_id, OS.get_main_thread_id(),
+				str(pane.handler_thread_id != -1)])
+	check("N2: the worker still delivers its share of the run",
+		run.delivered == 1, "delivered=%d" % run.delivered)
+	check("N3: and the turn is released", not chat.is_request_active)
+	check("N4: so the queued message drains",
+		str(pane.drained) == str(PackedStringArray(["queued behind the threaded run"])),
+		str(pane.drained))
+
+	pane.blocked = false
+	_so.cancelled_history_ids.erase(chat.HistoryId)
 	_teardown(pane, [chat])
 
 #endregion
