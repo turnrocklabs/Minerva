@@ -39,6 +39,7 @@ const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
 const PLUGIN_PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.gd"
 const PARALLEL_RUN_PATH := "res://Scripts/Models/ChatParallelRun.gd"
+const HUMAN_PROVIDER_PATH := "res://Scripts/Services/Providers/Human/HumanProvider.gd"
 
 ## Blocking provider stand-in: generate_content does not return until the test
 ## releases that message, so "is a second generate running?" is directly
@@ -137,6 +138,48 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	var sent: ChatHistoryItem = history.HistoryItemList[history.HistoryItemList.size() - 1]
 	real_generates.append(sent.Message)
+	while blocked:
+		await get_tree().process_frame
+	return null
+"""
+
+## Pane for the parallel worker path. `create_message_new` — the worker body —
+## stays REAL; only the two network-facing calls and the promotion target are
+## replaced, so "did this worker issue a provider request" and "did the release
+## promote the queued message" are both directly observable headless.
+const PARALLEL_WORKER_PANE_SRC := """
+extends "res://Scripts/UI/Views/ChatPane.gd"
+
+## One entry per provider request a worker actually issued, and one per text the
+## drain promoted out of the queue.
+var real_generates: PackedStringArray = PackedStringArray()
+var drained: PackedStringArray = PackedStringArray()
+## The request never resolves, so a worker that issues one holds its run open.
+var blocked := true
+
+func _ready() -> void:
+	pass
+
+func _update_stop_button() -> void:
+	pass
+
+func _update_compact_button() -> void:
+	pass
+
+## The queue gate is ChatPane's own; only the turn body is replaced, because the
+## real one needs the booted UI.
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+		return
+	drained.append(text)
+
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null) -> Array[Variant]:
+	await get_tree().process_frame
+	return []
+
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
+	real_generates.append(history.provider.provider_name)
 	while blocked:
 		await get_tree().process_frame
 	return null
@@ -247,6 +290,7 @@ func _run() -> void:
 	await _test_regenerate_waits_for_the_active_turn()
 	await _test_a_promoted_message_is_sent_past_the_last_user_guard()
 	await _test_a_promoted_sequential_message_is_sent_past_the_guard()
+	await _test_a_human_parallel_worker_ends_its_share_of_the_run()
 
 
 #region A — queue semantics
@@ -940,5 +984,79 @@ func _test_a_promoted_sequential_message_is_sent_past_the_guard() -> void:
 
 	direct_pane.blocked = false
 	_teardown(direct_pane, [direct_chat])
+
+#endregion
+
+
+#region M — a human-provider parallel worker still ends its share of the run
+
+## A human provider answers by hand: the worker has no request to make and no
+## bot response to wait for. It still owns one share of the run, so it has to go
+## through the same completion accounting as every other worker — a worker that
+## returns without delivering leaves `delivered` short of `expected`, the run
+## never completes, `_release_chat_turn` never runs, and every later message
+## stays queued behind a turn that can never end.
+##
+## The worker body `create_message_new` is real here; only the network calls and
+## the promotion target are replaced, so the branch this measures is the one the
+## app runs. The handler's UI half needs the booted scene, so the cancelled-chat
+## early return stops it right after the release decision — the decision is the
+## whole subject.
+func _test_a_human_parallel_worker_ends_its_share_of_the_run() -> void:
+	var chat = _make_history("HumanParallel")
+	var pane = _make_pane([chat], PARALLEL_WORKER_PANE_SRC)
+	var human = load(HUMAN_PROVIDER_PATH).new()
+	pane.add_child(human)
+	chat.provider = human
+	pane.current_tab = _so.ChatList.find(chat)
+
+	var token: int = pane._begin_chat_turn(chat)
+	var run = load(PARALLEL_RUN_PATH).new()
+	run.history = chat
+	run.turn_token = token
+	run.inputs.append("what do you think?")
+	run.expected = 1
+	run.user_slider_uuid = "human-user"
+	run.model_slider_uuid = "human-model"
+	run.multi_slider_uuid = "human-multi"
+	pane._parallel_run = run
+
+	# A second message arrives while the human is still answering.
+	pane.execute_regular_chat("queued behind the human")
+	check("M1: the later message is queued behind the live run",
+		str(pane._outgoing_queue.pending_texts(chat.HistoryId))
+			== str(PackedStringArray(["queued behind the human"])),
+		str(pane._outgoing_queue.pending_texts(chat.HistoryId)))
+
+	_so.cancelled_history_ids.append(chat.HistoryId)
+	pane.create_message_new(0)
+	for _i in range(10):
+		await process_frame
+
+	check("M2: the human worker issues no provider request",
+		pane.real_generates.is_empty(), str(pane.real_generates))
+	check("M3: it counts as delivered, so the run completes",
+		run.delivered == 1, "delivered=%d expected=%d" % [run.delivered, run.expected])
+	check("M4: and the turn is released", not chat.is_request_active)
+	check("M5: so the queued message drains",
+		str(pane.drained) == str(PackedStringArray(["queued behind the human"])),
+		str(pane.drained))
+
+	# The pair the owner types into: the user message and an EMPTY model item.
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	check("M6: the worker leaves a user message and an empty model answer",
+		chat.HistoryItemList.size() == 2
+			and chat.HistoryItemList[0].Role == item_script.ChatRole.USER
+			and chat.HistoryItemList[0].Message == "what do you think?"
+			and chat.HistoryItemList[1].Role == item_script.ChatRole.MODEL
+			and chat.HistoryItemList[1].Message == "",
+		"items=%d" % chat.HistoryItemList.size())
+	check("M7: the user message carries the human provider, which is what the "
+		+ "response handler renders the editable answer by",
+		chat.HistoryItemList.size() > 0
+			and chat.HistoryItemList[0].provider == human)
+
+	pane.blocked = false
+	_teardown(pane, [chat])
 
 #endregion

@@ -3285,12 +3285,27 @@ func create_message_new(inputs_idx: int) -> void:
 	user_history_item.response_arrived.connect(
 		_on_thread_bot_response_arrived.bind(run))
 	
-	if user_history_item.provider is HumanProvider:
+	# The chat's own provider, not the item's: create_user_history_item leaves
+	# the item's provider null, so testing the item here never took this branch.
+	if history.provider is HumanProvider:
+		# A human provider answers by hand: there is no request to make and no
+		# bot response to wait for — the model half is the empty item the owner
+		# types into. The worker still owns one share of the run, so it delivers
+		# that half through the same handler as every other worker; a worker
+		# that returned here left `delivered` short of `expected`, so the run
+		# never completed and its turn was never released.
+		user_history_item.provider = history.provider
+		var human_answer: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
+			ChatHistoryItem.ChatRole.MODEL, "")
+		human_answer.provider = history.provider
 		run.mutex.lock()
 		run.user_items.append(user_history_item)
+		history.HistoryItemList.append(user_history_item)
+		history.HistoryItemList.append(human_answer)
 		run.mutex.unlock()
+		user_history_item.response_arrived.emit(human_answer)
 		return
-	
+
 	# make a chat request
 	var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
 	
