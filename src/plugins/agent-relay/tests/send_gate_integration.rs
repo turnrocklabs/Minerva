@@ -1158,15 +1158,15 @@ fn owner_phase_case(name: &str, timeout_ms: u64, probe_at_ms: u64) {
 }
 
 #[test]
-fn an_owner_still_confirming_its_submit_is_not_displaced_at_max_age() {
-    // max_age lapses at 1000 ms; the confirmation runs to 1500 ms.
+fn an_owner_still_confirming_its_submit_is_not_displaced() {
+    // Probed 1200 ms in, while the confirmation samples run to 1500 ms.
     owner_phase_case("confirming", 1000, 1200);
 }
 
 #[test]
-fn an_owner_waiting_for_its_own_turn_is_not_displaced_at_max_age() {
-    // max_age lapses at 1500 ms, where the confirmation ends and the turn wait
-    // begins; that wait runs to 3000 ms.
+fn an_owner_waiting_for_its_own_turn_is_not_displaced() {
+    // Probed 1700 ms in: the confirmation has ended and the owner is blocked
+    // on its own turn, which runs to 3000 ms.
     owner_phase_case("turn-wait", 1500, 1700);
 }
 
@@ -1221,15 +1221,28 @@ fn a_screen_that_became_a_dialog_after_the_pre_wait_read_still_holds_the_write()
 /// ended. The harness is still working, and an ordinary busy screen is not a
 /// hold — so a slot ENDED on timeout lets the next prompt write straight into
 /// the running turn, and the second write overwrites the first turn's
-/// bookkeeping. The turn is handed to the watch loop instead: the slot frees
-/// on the next counted detection, which here never comes.
+/// bookkeeping. The turn is handed to the watch loop instead, and what frees
+/// the slot is the COUNTED END of the turn, however long that takes: the probe
+/// here waits out more than twice the ask's timeout (which is what the gate
+/// used to age the handed-over slot by) with the turn still running.
 #[test]
 fn an_ask_that_times_out_does_not_free_the_slot_for_the_next_prompt() {
     let mut host = FakeHost::start();
     let terminal = "t-timeout-detach";
     host.screen = Box::new(|_| (CLAUDE_IDLE.to_string(), 100));
-    // The turn never ends: no detection is ever counted.
-    host.wait = Box::new(|_| quiet());
+    // The turn runs until the test ends it; only then is a detection counted.
+    let ended = Arc::new(AtomicBool::new(false));
+    let e = Arc::clone(&ended);
+    host.wait = Box::new(move |_| {
+        if e.load(Ordering::SeqCst) {
+            settled(
+                "\u{276f} prompt A\n\u{25cf} answer A for the first prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
+                130,
+            )
+        } else {
+            quiet()
+        }
+    });
     host.watch_start(terminal, "claude");
 
     let owner = host.call_tool(
@@ -1242,8 +1255,14 @@ fn an_ask_that_times_out_does_not_free_the_slot_for_the_next_prompt() {
         "the owner must give up on a turn that never ends: {owner_payload}"
     );
 
-    // The next prompt arrives while that turn is still running. Its budget is
-    // shorter than what is left of the handed-over slot's backstop.
+    // Sit on the running turn for longer than twice the owner's timeout. A
+    // slot that expires on elapsed time is free by now; the turn is not over.
+    let handed_over = std::time::Instant::now();
+    host.pump_while(&[], |_| {
+        handed_over.elapsed() < std::time::Duration::from_millis(4_500)
+    });
+
+    // The next prompt arrives while that turn is still running.
     let next = host.call_tool(
         "minerva_agent_relay_relay_ask",
         json!({"terminal_id": terminal, "text": "prompt B", "timeout_ms": 800}),
@@ -1258,6 +1277,70 @@ fn an_ask_that_times_out_does_not_free_the_slot_for_the_next_prompt() {
         payload["error"].as_str().unwrap_or("").contains("still in flight"),
         "the next caller must be refused while the turn runs: {payload}"
     );
+
+    // The turn ends and the watch loop counts it: the terminal is free again.
+    ended.store(true, Ordering::SeqCst);
+    let after = host.call_tool(
+        "minerva_agent_relay_relay_ask",
+        json!({"terminal_id": terminal, "text": "prompt C", "timeout_ms": 4000}),
+    );
+    host.pump_while(&[after], |v| v.writes.len() < 4);
+    assert_eq!(
+        host.view().writes,
+        vec![
+            "prompt A".to_string(),
+            "\r".to_string(),
+            "prompt C".to_string(),
+            "\r".to_string(),
+        ],
+        "the counted end of prompt A's turn is what frees the terminal"
+    );
+    host.await_reply(after);
+}
+
+// ── 14b. Tearing the watch down releases a handed-over turn ────────────────
+
+/// Oracle: a detached slot waits for a COUNTED detection, and only the watch
+/// loop counts one. Restarting (or stopping) the watch means no detection on
+/// that turn can ever arrive, so the slot would hold the terminal for the rest
+/// of the process — the watch teardown has to release it. This is also what
+/// recovers a wedged terminal now that no clock does.
+#[test]
+fn restarting_the_watch_releases_a_handed_over_turn() {
+    let mut host = FakeHost::start();
+    let terminal = "t-detach-watch-restart";
+    host.screen = Box::new(|_| (CLAUDE_IDLE.to_string(), 100));
+    // No detection is EVER counted on this terminal.
+    host.wait = Box::new(|_| quiet());
+    host.watch_start(terminal, "claude");
+
+    let owner = host.call_tool(
+        "minerva_agent_relay_relay_ask",
+        json!({"terminal_id": terminal, "text": "prompt A", "timeout_ms": 1000}),
+    );
+    let owner_payload = common::unwrap_tool(&host.await_reply(owner));
+    assert_eq!(owner_payload["timed_out"], true, "{owner_payload}");
+
+    // The watch is restarted (what the passthrough auto-revive does after an
+    // idle reap). The turn it was watching is gone with it.
+    host.watch_start(terminal, "claude");
+
+    let next = host.call_tool(
+        "minerva_agent_relay_relay_ask",
+        json!({"terminal_id": terminal, "text": "prompt B", "timeout_ms": 1500}),
+    );
+    host.pump_while(&[next], |v| v.writes.len() < 4);
+    assert_eq!(
+        host.view().writes,
+        vec![
+            "prompt A".to_string(),
+            "\r".to_string(),
+            "prompt B".to_string(),
+            "\r".to_string(),
+        ],
+        "a restarted watch must not leave the terminal blocked by the old turn"
+    );
+    host.await_reply(next);
 }
 
 // ── 15. A notification is not an answer to anything ────────────────────────

@@ -392,16 +392,11 @@ fn send_core_with_mode(
                 gate_screen =
                     send_gate::wait_until_writable(terminal_id, cd, router, remaining(deadline))?;
             }
-            // Two clocks, deliberately separate: this call waits only for what
-            // is LEFT of the gate budget, but the slot it takes must stand for
-            // the caller's FULL budget — the turn that follows runs on that
-            // full budget, so a max_age cut down by the hold would let the next
-            // caller displace this one mid-turn.
-            let taken = send_gate::begin_turn(
-                terminal_id,
-                remaining(deadline),
-                gate_budget_ms,
-            )?;
+            // This call waits only for what is LEFT of the gate budget. The
+            // slot it takes carries no clock of its own: it is held until this
+            // caller ends or detaches it, and a detached one until the turn's
+            // end is counted.
+            let taken = send_gate::begin_turn(terminal_id, remaining(deadline))?;
             match hold {
                 // EVERY acquisition looks again. Waiting for the screen and
                 // taking the slot are two steps, and the screen can turn into a
@@ -1177,9 +1172,9 @@ fn relay_ask_core(
         // Ending the slot here would let the next caller write at once (an
         // ordinary busy screen is not a hold), so its prompt would land inside
         // this turn and overwrite the bookkeeping. Hand the turn to the watch
-        // loop instead: the slot frees on the next counted detection, with the
-        // max_age backstop — which applies from here on, now that nobody is
-        // waiting on this turn — so a wedged terminal still recovers.
+        // loop instead: the slot frees on the next counted detection, or when
+        // the watch on this terminal is stopped or restarted — never on a
+        // clock, which would put the next prompt inside this running turn.
         if let Some(slot) = outcome.slot {
             slot.detach();
         }

@@ -65,16 +65,10 @@ struct InFlight {
     /// Detection serial at the moment the prompt was written. The turn is over
     /// once the watch loop counts a detection past this.
     serial_at_write: u64,
-    started: Instant,
-    /// Backstop for a DETACHED slot only: nobody is waiting on that turn any
-    /// more, so an unwatched terminal whose detection never comes must not
-    /// block callers for ever. An ATTACHED slot has no age at all — its owner
-    /// is alive, and only the owner ends it.
-    max_age: Duration,
     /// True once the writer handed the turn to the watch loop instead of
-    /// waiting for it (a bare send). Only such a slot is freed by a counted
-    /// detection; a slot whose owner is still reading its own turn is freed
-    /// by that owner.
+    /// waiting for it (a bare send, or an ask that stopped waiting). Only such
+    /// a slot is freed by a counted detection; a slot whose owner is still
+    /// reading its own turn is freed by that owner.
     detached: bool,
 }
 
@@ -103,8 +97,8 @@ fn with_gate<R>(terminal_id: &str, f: impl FnOnce(&mut Gate) -> R) -> R {
     f(guard.entry(terminal_id.to_string()).or_default())
 }
 
-/// True when nothing holds the terminal's prompt slot any more: no slot, a
-/// detached slot whose turn has been counted, or a slot gone stale.
+/// True when nothing holds the terminal's prompt slot any more: no slot, or a
+/// detached slot whose turn the watcher has counted the end of.
 ///
 /// A DETACHED slot is freed by the next COUNTED detection, whichever turn it
 /// belongs to — a human typing in the same terminal ends a turn the watch loop
@@ -115,27 +109,39 @@ fn with_gate<R>(terminal_id: &str, f: impl FnOnce(&mut Gate) -> R) -> R {
 /// slot, which the detector cannot do (a detection carries no identity), and
 /// a slot that only its own turn could free would outlive every human turn.
 ///
+/// There is deliberately no age here, on EITHER kind of slot. Elapsed time is
+/// not evidence that a turn has ended: the harness is still working, an
+/// ordinary busy screen is not a hold, and a second prompt written on a clock
+/// lands inside the running turn and overwrites its bookkeeping. On an
+/// attached slot, time is not evidence the owner has stopped either — a single
+/// legitimate host call (a slow host.terminal.read) can outlast any age, and
+/// the displaced owner's later progress stamp silently does nothing, because
+/// its token is gone.
+///
+/// So a detached slot has exactly three exits, all of them evidence:
+///   * the watcher COUNTS a detection past the write — the turn ended (the
+///     terminal's own agent_exited / terminal_closed detections are counted
+///     detections too, and so is the idle reap's timed_out);
+///   * the watch on the terminal is stopped or restarted — watch_stop and
+///     watch_start clear a detached slot, because nothing is left that could
+///     ever count that turn's end (`release_detached`);
+///   * the plugin restarts.
+/// A turn whose end the watcher never counts is therefore cleared by the idle
+/// reap: an UNARMED watch idle past watch_timeout_ms (10 min) emits timed_out
+/// — a counted detection — and passthrough auto-revive restarts the watch
+/// afterwards. A terminal wedged with an armed watch is released by watch_stop.
+///
 /// An ATTACHED slot — the writer is waiting for this turn and will read its
 /// answer — is NEVER free: the end of the turn is the moment its owner starts
 /// READING it, and a prompt written then lands inside the window being read.
 /// It is freed only by end(), by detach(), or by the owner's thread going away
-/// (the guard releases on Drop, including on an unwind).
-///
-/// There is deliberately no age here. Elapsed time is not evidence that an
-/// owner has stopped: a single legitimate host call (a slow
-/// host.terminal.read) can outlast any age, and displacing its owner admits a
-/// second writer into the window the first is about to read — while the
-/// displaced owner's later progress stamp silently does nothing, because its
-/// token is gone. An owner blocked on a host reply that never comes keeps the
-/// terminal until the plugin restarts (capability calls have no timeout);
-/// its guard drops when the thread unwinds.
+/// (the guard releases on Drop, including on an unwind). An owner blocked on a
+/// host reply that never comes keeps the terminal until the plugin restarts
+/// (capability calls have no timeout); its guard drops when the thread unwinds.
 fn slot_free(terminal_id: &str, gate: &Gate) -> bool {
     match gate.in_flight {
         None => true,
-        Some(ref f) if f.detached => {
-            watcher::detection_serial(terminal_id) > f.serial_at_write
-                || f.started.elapsed() > f.max_age
-        }
+        Some(ref f) if f.detached => watcher::detection_serial(terminal_id) > f.serial_at_write,
         Some(_) => false,
     }
 }
@@ -164,20 +170,15 @@ impl TurnSlot {
     }
 
     /// Leave the slot outstanding — the caller wrote a prompt but is not
-    /// waiting for the turn. The next counted detection frees it.
-    ///
-    /// The max_age backstop runs from HERE, not from the write: a caller that
-    /// hands its turn over after waiting for it (an ask that timed out) has
-    /// already spent the whole budget, and a backstop measured from the write
-    /// would be expired the moment the slot was detached — leaving the next
-    /// caller free to write into a turn that is still running.
+    /// waiting for the turn (a bare send, or an ask that gave up on a turn
+    /// that is still running). The turn keeps the terminal until the watcher
+    /// counts its end, or until the watch itself is stopped or restarted.
     pub fn detach(mut self) {
         let token = self.token;
         with_gate(&self.terminal_id, |g| {
             if let Some(f) = g.in_flight.as_mut() {
                 if f.token == token {
                     f.detached = true;
-                    f.started = Instant::now();
                 }
             }
         });
@@ -206,7 +207,6 @@ impl TurnSlot {
             if let Some(f) = g.in_flight.as_mut() {
                 if f.token == token {
                     f.serial_at_write = serial;
-                    f.started = Instant::now();
                 }
             }
         });
@@ -223,19 +223,12 @@ impl Drop for TurnSlot {
 /// end first. Returns Err when `budget_ms` runs out with a turn still in
 /// flight — the caller must NOT write.
 ///
-/// TWO CLOCKS. `budget_ms` is how long THIS call waits for the slot;
-/// `max_age_ms` is the backstop the slot carries ONCE DETACHED — how long a
-/// turn nobody is waiting for may sit unconfirmed before a later caller may
-/// write. While the slot is attached it has no age at all, so the wait here is
-/// a wait, never a steal: a caller whose budget lapses errors out and writes
-/// nothing. max_age is never shorter than the wait budget.
-pub fn begin_turn(
-    terminal_id: &str,
-    budget_ms: u64,
-    max_age_ms: u64,
-) -> Result<TurnSlot, String> {
+/// `budget_ms` is how long THIS call waits for the slot, and it is the only
+/// clock in the gate: the slot itself never ages (see slot_free). So the wait
+/// here is a wait, never a steal — a caller whose budget lapses errors out and
+/// writes nothing.
+pub fn begin_turn(terminal_id: &str, budget_ms: u64) -> Result<TurnSlot, String> {
     let deadline = Instant::now() + Duration::from_millis(budget_ms);
-    let max_age = Duration::from_millis(max_age_ms.max(budget_ms).max(1));
     let mut counted_as_waiter = false;
 
     loop {
@@ -248,8 +241,6 @@ pub fn begin_turn(
                 g.in_flight = Some(InFlight {
                     token,
                     serial_at_write: watcher::detection_serial(terminal_id),
-                    started: Instant::now(),
-                    max_age,
                     detached: false,
                 });
                 Some(token)
@@ -279,6 +270,20 @@ pub fn begin_turn(
         }
         std::thread::sleep(Duration::from_millis(POLL_MS));
     }
+}
+
+/// Drop a DETACHED slot on this terminal: the watch that would have counted
+/// its turn's end is going away (watch_stop) or being replaced (watch_start,
+/// including the passthrough auto-revive after an idle reap), so no detection
+/// on that turn can ever arrive. An ATTACHED slot is left alone — its owner is
+/// alive and still reading its own turn, and send auto-starts a watch from
+/// INSIDE the owner's own turn.
+pub fn release_detached(terminal_id: &str) {
+    with_gate(terminal_id, |g| {
+        if g.in_flight.as_ref().is_some_and(|f| f.detached) {
+            g.in_flight = None;
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -530,46 +535,76 @@ mod slot_tests {
     }
 
     /// An attached slot has no age: its owner is alive, and only the owner
-    /// ends it. Here the owner is past max_age with no sign of life to give —
-    /// exactly what a slow host.terminal.read looks like from outside, since
-    /// nothing can be stamped from INSIDE a blocking call. A second caller
-    /// admitted now would write into the window being read.
+    /// ends it. Here the owner has been working longer than any budget, with
+    /// no sign of life to give — exactly what a slow host.terminal.read looks
+    /// like from outside, since nothing can be stamped from INSIDE a blocking
+    /// call. A second caller admitted now would write into the window being
+    /// read.
     #[test]
     fn an_owner_inside_a_long_host_call_is_not_displaced() {
         ready();
         let terminal = "slot-tests-working-owner";
-        // max_age is 400 ms here; the owner is blocked in one call to 500 ms.
-        let slot = begin_turn(terminal, 400, 400).expect("first caller takes the slot");
+        let slot = begin_turn(terminal, 400).expect("first caller takes the slot");
         std::thread::sleep(Duration::from_millis(500));
 
-        let second = begin_turn(terminal, 50, 50);
+        let second = begin_turn(terminal, 50);
         assert!(
             second.is_err(),
             "an owner in a long host call kept its slot"
         );
         slot.end();
-        begin_turn(terminal, 50, 50).expect("the slot is free once the owner ends its turn");
+        begin_turn(terminal, 50).expect("the slot is free once the owner ends its turn");
     }
 
-    /// The WAIT budget and the slot's age are different clocks. A caller whose
-    /// hold ate most of its budget has only the remainder left to wait for the
-    /// slot, but the turn it then runs is still on its FULL budget. Aging the
-    /// slot by the remainder would displace it mid-turn.
+    /// A DETACHED slot has no age either: nobody is waiting for that turn, but
+    /// it is still RUNNING, and the next caller's prompt would land inside it.
+    /// Only a counted detection says the turn ended.
     #[test]
-    fn a_spent_wait_budget_does_not_shorten_the_slot() {
+    fn a_detached_slot_does_not_expire_on_time() {
         ready();
-        let terminal = "slot-tests-spent-wait";
-        // The caller's budget was 2 s; a hold left it 100 ms to wait with.
-        let slot = begin_turn(terminal, 100, 2_000).expect("first caller takes the slot");
+        let terminal = "slot-tests-detached-age";
+        begin_turn(terminal, 100)
+            .expect("first caller takes the slot")
+            .detach();
         std::thread::sleep(Duration::from_millis(400));
 
-        let second = begin_turn(terminal, 50, 50);
         assert!(
-            second.is_err(),
-            "the owner was displaced at the REMAINDER of its budget, mid-turn"
+            begin_turn(terminal, 50).is_err(),
+            "a detached slot was freed by the clock, with the turn still running"
         );
-        slot.end();
-        begin_turn(terminal, 50, 50).expect("the slot is free once the owner ends its turn");
+    }
+
+    /// ... and it frees the moment the watcher counts a detection past the
+    /// write, whichever turn that detection belongs to.
+    #[test]
+    fn a_detached_slot_frees_on_a_counted_detection() {
+        ready();
+        let terminal = "slot-tests-detached-detection";
+        begin_turn(terminal, 100)
+            .expect("first caller takes the slot")
+            .detach();
+        assert!(begin_turn(terminal, 0).is_err(), "held until the turn ends");
+
+        watcher::bump_detection_serial_for_tests(terminal);
+        begin_turn(terminal, 0).expect("a counted detection frees the detached slot");
+    }
+
+    /// Tearing the watch down frees a detached slot: nothing is left that
+    /// could ever count that turn's end. An attached slot is untouched — send
+    /// auto-starts a watch from inside its owner's own turn.
+    #[test]
+    fn stopping_the_watch_frees_a_detached_slot_but_not_an_attached_one() {
+        ready();
+        let terminal = "slot-tests-watch-teardown";
+        let owner = begin_turn(terminal, 100).expect("first caller takes the slot");
+        release_detached(terminal);
+        assert!(
+            begin_turn(terminal, 0).is_err(),
+            "an attached slot must survive a watch restart"
+        );
+        owner.detach();
+        release_detached(terminal);
+        begin_turn(terminal, 0).expect("a torn-down watch frees the detached slot");
     }
 
     /// A wedged owner is recovered by its GUARD, not by a clock: while the
@@ -580,14 +615,14 @@ mod slot_tests {
     fn a_wedged_owner_is_freed_when_its_guard_drops() {
         ready();
         let terminal = "slot-tests-wedged-owner";
-        let slot = begin_turn(terminal, 400, 400).expect("first caller takes the slot");
+        let slot = begin_turn(terminal, 400).expect("first caller takes the slot");
         std::thread::sleep(Duration::from_millis(500));
         assert!(
-            begin_turn(terminal, 50, 50).is_err(),
+            begin_turn(terminal, 50).is_err(),
             "a live owner must not be aged out of its slot"
         );
         drop(slot);
-        begin_turn(terminal, 50, 50).expect("a wedged owner's slot frees when its guard drops");
+        begin_turn(terminal, 50).expect("a wedged owner's slot frees when its guard drops");
     }
 
     /// The slot is a guard: an owner thread that goes away without ending its
@@ -597,9 +632,9 @@ mod slot_tests {
         ready();
         let terminal = "slot-tests-dropped";
         {
-            let _slot = begin_turn(terminal, 60_000, 60_000).expect("take the slot");
-            assert!(begin_turn(terminal, 0, 0).is_err(), "held while the owner lives");
+            let _slot = begin_turn(terminal, 60_000).expect("take the slot");
+            assert!(begin_turn(terminal, 0).is_err(), "held while the owner lives");
         }
-        begin_turn(terminal, 0, 0).expect("a dropped slot is free again");
+        begin_turn(terminal, 0).expect("a dropped slot is free again");
     }
 }

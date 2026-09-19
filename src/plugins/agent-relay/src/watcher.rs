@@ -267,6 +267,13 @@ fn bump_detection_serial(terminal_id: &str) {
     entry.detection_serial += 1;
 }
 
+/// Count a detection without a watch loop — the send gate's slot tests need a
+/// turn to end, and a unit test has no watch loop to end one.
+#[cfg(test)]
+pub fn bump_detection_serial_for_tests(terminal_id: &str) {
+    bump_detection_serial(terminal_id);
+}
+
 /// Block until the NEXT counted detection on `terminal_id` (any wake cause —
 /// turn_completed, input_requested, agent_exited, terminal_closed, timed_out)
 /// or until `timeout_ms` elapses. Returns (payload, timed_out): on a wake the
@@ -348,6 +355,11 @@ pub fn watch_start_with_facts(
         }
     }
 
+    // A detached prompt slot belongs to the session being replaced: its turn
+    // end can no longer be counted, so release it here rather than leave the
+    // terminal blocked for the new session's lifetime.
+    crate::send_gate::release_detached(&terminal_id);
+
     // Create new session state.
     let mut initial = WatchSession::new(terminal_id.clone(), profile_id.clone(), notify_mode);
     initial.facts = facts;
@@ -388,6 +400,9 @@ pub fn watch_stop(terminal_id: &str) -> bool {
             false
         }
     };
+    // Nothing will count the end of a turn on this terminal any more, so a
+    // detached prompt slot must not keep holding the send gate.
+    crate::send_gate::release_detached(terminal_id);
     if stopped {
         crate::state::save();
     }
