@@ -332,11 +332,17 @@ fn send_core(
 /// the bookkeeping the slot guards does not exist. An armed send auto-starts
 /// the watch BEFORE this runs, so its slot is still handed over and kept until
 /// that watch counts the turn's end.
+///
+/// The hand-over is ordered so a watch torn down at the same moment cannot
+/// strand the slot: the slot is detached FIRST, then the watch is looked for.
+/// A watch_stop that ran before the detach skipped the still-attached slot,
+/// and the check below finds no session and frees it; a watch_stop that runs
+/// after the detach frees it itself (release_detached). Checking first and
+/// detaching second would leave the window in which neither side frees it.
 fn hand_over_or_end(terminal_id: &str, slot: TurnSlot) {
-    if watcher::watch_status(terminal_id).is_some() {
-        slot.detach();
-    } else {
-        slot.end();
+    slot.detach();
+    if watcher::watch_status(terminal_id).is_none() {
+        send_gate::release_detached(terminal_id);
     }
 }
 
