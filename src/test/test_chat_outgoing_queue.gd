@@ -227,6 +227,7 @@ func _run() -> void:
 	await _test_a_late_parallel_response_releases_its_own_chat()
 	await _test_regenerate_waits_for_the_active_turn()
 	await _test_a_promoted_message_is_sent_past_the_last_user_guard()
+	await _test_a_promoted_sequential_message_is_sent_past_the_guard()
 
 
 #region A — queue semantics
@@ -787,6 +788,76 @@ func _test_a_promoted_message_is_sent_past_the_last_user_guard() -> void:
 	check("K5: a direct send onto an unanswered user message still starts nothing",
 		direct_pane.real_generates.is_empty(), str(direct_pane.real_generates))
 	check("K6: and it releases the turn it claimed",
+		not direct_chat.is_request_active)
+
+	direct_pane.blocked = false
+	_teardown(direct_pane, [direct_chat])
+
+#endregion
+
+
+#region L — the promotion exemption must cover every executor the queue promotes into
+
+## The queue promotes into three executors, one per Mode, and each one that
+## carries a "last item is a user message" guard needs the same exemption: the
+## entry is already recorded as DISPATCHED and its bubble is already gone, so a
+## guard bail loses the message behind an honest-looking receipt. This is the
+## SEQUENTIAL door onto the same trailing USER item section K uses.
+func _test_a_promoted_sequential_message_is_sent_past_the_guard() -> void:
+	var chat = _make_history("Orphaned Sequential")
+	var pane = _make_pane([chat], REAL_TURN_PANE_SRC)
+	var history_provider = load(PLUGIN_PROVIDER_PATH).new()
+	pane.add_child(history_provider)
+	chat.provider = history_provider
+	pane.current_tab = _so.ChatList.find(chat)
+
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	var orphan = item_script.new()
+	orphan.Role = item_script.ChatRole.USER
+	orphan.Message = "the turn that never answered"
+	chat.HistoryItemList.append(orphan)
+	orphan.rendered_node = chat.VBox.add_history_item(orphan)
+
+	var token: int = pane._begin_chat_turn(chat)
+	check("L1: the sequential message is queued behind the live turn",
+		pane._queue_if_busy(chat, "promote me", ChatOutgoingQueue.Mode.SEQUENTIAL))
+	var entry_id: int = pane._outgoing_queue.newest_id(chat.HistoryId)
+
+	pane._release_chat_turn(chat, token)
+	for _i in range(10):
+		await process_frame
+	check("L2: the promoted sequential message really starts a request",
+		str(pane.real_generates) == str(PackedStringArray(["promote me"])),
+		str(pane.real_generates))
+	check("L3: and the queue's record of it is honest",
+		pane._outgoing_queue.outcome_of(entry_id) == ChatOutgoingQueue.Outcome.DISPATCHED,
+		str(pane._outgoing_queue.outcome_of(entry_id)))
+	check("L4: the chat is busy with that turn, not left idle",
+		chat.is_request_active)
+
+	pane.blocked = false
+	_teardown(pane, [chat])
+
+	# And the guard still protects a DIRECT sequential send.
+	var direct_chat = _make_history("Direct Sequential")
+	var direct_pane = _make_pane([direct_chat], REAL_TURN_PANE_SRC)
+	var direct_provider = load(PLUGIN_PROVIDER_PATH).new()
+	direct_pane.add_child(direct_provider)
+	direct_chat.provider = direct_provider
+	direct_pane.current_tab = _so.ChatList.find(direct_chat)
+	var pending = item_script.new()
+	pending.Role = item_script.ChatRole.USER
+	pending.Message = "the turn that never answered"
+	direct_chat.HistoryItemList.append(pending)
+	pending.rendered_node = direct_chat.VBox.add_history_item(pending)
+
+	direct_pane.execute_sequential_chat("direct send",
+		direct_pane._begin_chat_turn(direct_chat))
+	for _i in range(6):
+		await process_frame
+	check("L5: a direct sequential send onto an unanswered user message starts nothing",
+		direct_pane.real_generates.is_empty(), str(direct_pane.real_generates))
+	check("L6: and it releases the turn it claimed",
 		not direct_chat.is_request_active)
 
 	direct_pane.blocked = false

@@ -267,6 +267,7 @@ func _run() -> void:
 	await _test_a_notification_never_blocks_a_card_answer()
 	await _test_a_notification_queued_mid_turn_stays_deferred()
 	await _test_the_receipt_is_honest_on_an_unanswered_user_message()
+	await _test_an_idle_chat_on_an_unanswered_user_message_is_still_notified()
 	_test_wiring_is_present()
 
 
@@ -743,8 +744,8 @@ func _test_wiring_is_present() -> void:
 	# That shared path is the one that reaches ChatPane's queue gate.
 	var utils_source: = FileAccess.get_file_as_string(
 		"res://Scripts/Services/MCP/Modules/MCPToolUtils.gd")
-	check("G7: the submit path goes through execute_regular_chat",
-		utils_source.find("chat_pane.execute_regular_chat(text, generation_options)") != -1)
+	check("G7: the submit path goes through execute_regular_chat, as promoted",
+		utils_source.find("chat_pane.execute_regular_chat(text, generation_options, true)") != -1)
 	check("G7b: and defers a background message while a question card is pending —",
 		utils_source.find("defer_when_question_pending and (history.is_awaiting_question_answer()") != -1
 			and utils_source.find("chat_pane.enqueue_background_message(") != -1)
@@ -909,6 +910,46 @@ func _test_the_receipt_is_honest_on_an_unanswered_user_message() -> void:
 		runner.done and str(runner.result.get("status", "")) == "dispatched"
 			and int(runner.result.get("queue_position", -1)) == 0,
 		str(runner.result))
+
+	pane.blocked = false
+	_teardown(pane, [claude_chat])
+
+#endregion
+
+
+#region L — the IDLE target on an unanswered user message
+
+## The queued case (section K) reaches the executor through the drain, which
+## marks the message promoted. An IDLE target does not: submit_user_message
+## calls the executor directly, and the "last item is user" guard sees the same
+## orphaned USER item. The receipt is written either way, so a guard bail here
+## is a notification reported as delivered that no chat ever saw.
+func _test_an_idle_chat_on_an_unanswered_user_message_is_still_notified() -> void:
+	var claude_chat = _make_bound_chat("Claude Session", "101")
+	var pane = _make_pane([claude_chat], REAL_TURN_PANE_SRC)
+	var module = _make_module([{"id": "101", "name": "Claude Session"}], {"101": "claude"})
+	pane.current_tab = _so.ChatList.find(claude_chat)
+
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	var orphan = item_script.new()
+	orphan._suppress_save_state = true
+	orphan.Role = item_script.ChatRole.USER
+	orphan.Message = "the turn that never answered"
+	claude_chat.HistoryItemList.append(orphan)
+
+	check("L0: the target is idle, so nothing queues", not claude_chat.is_request_active)
+	var receipt: Dictionary = await _notify(module,
+		{"to": "claude", "from": "codex", "text": "come look"})
+	for _i in range(10):
+		await process_frame
+	var envelope: = "[MINERVA NOTIFY from codex] come look"
+	check("L1: the envelope really became a request",
+		str(pane.real_generates) == str(PackedStringArray([envelope])),
+		str(pane.real_generates))
+	check("L2: and the dispatched receipt is telling the truth",
+		str(receipt.get("status", "")) == "dispatched", str(receipt))
+	check("L3: the chat is busy with that turn, not left idle",
+		claude_chat.is_request_active)
 
 	pane.blocked = false
 	_teardown(pane, [claude_chat])

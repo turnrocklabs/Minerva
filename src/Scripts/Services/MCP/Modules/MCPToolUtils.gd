@@ -327,7 +327,12 @@ static func submit_user_message(history, text: String,
 	var was_busy: bool = history.is_request_active
 	var original_tab: int = chat_pane.current_tab
 	chat_pane.current_tab = tab_idx
-	chat_pane.execute_regular_chat(text, generation_options)
+	# Sent as promoted: an MCP submission IS the next user message of that chat,
+	# so the executor's trailing-USER guard does not apply to it. That guard
+	# stops a second DIRECT send from stacking onto an unanswered question; here
+	# the receipt below already reports the message as delivered, so a guard bail
+	# would lose it and say it ran.
+	chat_pane.execute_regular_chat(text, generation_options, true)
 	chat_pane.call_deferred("set_current_tab", original_tab)
 	# The gate runs before execute_regular_chat's first await, so a busy chat
 	# has already queued this message: its entry is the newest one, and its id

@@ -2107,7 +2107,7 @@ func _drain_outgoing_queue(history: ChatHistory) -> void:
 		ChatOutgoingQueue.Mode.PARALLEL:
 			execute_parallel_chat(entry.text, _begin_chat_turn(history))
 		ChatOutgoingQueue.Mode.SEQUENTIAL:
-			execute_sequential_chat(entry.text, _begin_chat_turn(history))
+			execute_sequential_chat(entry.text, _begin_chat_turn(history), true)
 		_:
 			execute_regular_chat(entry.text, entry.generation_options, true)
 	if original_tab != tab_index:
@@ -2125,6 +2125,18 @@ func _clear_outgoing_queue(history: ChatHistory) -> void:
 			entry.bubble.queue_free()
 
 #endregion Outgoing message queue
+
+
+## A trailing USER item means the previous turn never produced an answer, so a
+## second send would stack another unanswered question on it. Every executor the
+## outgoing queue can promote into shares this decision, and the exemption with
+## it: a promoted message has already left the queue as DISPATCHED and its
+## pending bubble is gone, so declining to send it loses the message behind a
+## receipt that says it ran.
+func _blocked_by_trailing_user(last_msg, promoted: bool) -> bool:
+	if promoted:
+		return false
+	return last_msg != null and last_msg.Role == ChatHistoryItem.ChatRole.USER
 
 
 ## `promoted` marks a message the outgoing queue just handed over (see
@@ -2184,12 +2196,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}, pro
 		_release_chat_turn(history, turn_token)
 		return # if user is using Human provider we finish here
 
-	# A trailing USER item means the previous turn never produced an answer, so a
-	# second direct send would stack another unanswered question on it — skip it.
-	# A promoted queue entry is exempt: its text IS the next user message and the
-	# turn it waited behind has already ended, so skipping it would silently drop
-	# a message the queue has already recorded as dispatched.
-	if not promoted and last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER:
+	if _blocked_by_trailing_user(last_msg, promoted):
 		_release_chat_turn(history, turn_token)
 		return
 
@@ -3095,7 +3102,9 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		finish_with_signal.call()
 
 
-func execute_sequential_chat(text_input: String, turn_token: int) -> void:
+## `promoted` carries the outgoing queue's exemption through to the shared
+## trailing-USER decision (see _blocked_by_trailing_user).
+func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool = false) -> void:
 	if text_input.is_empty(): return
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
@@ -3124,8 +3133,7 @@ func execute_sequential_chat(text_input: String, turn_token: int) -> void:
 			_release_chat_turn(history, turn_token)
 			return # if user is using Human provider we finish here
 		
-		# Check is the last message is a user message and not do anything if true
-		if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER:
+		if _blocked_by_trailing_user(last_msg, promoted):
 			_release_chat_turn(history, turn_token)
 			return
 		
