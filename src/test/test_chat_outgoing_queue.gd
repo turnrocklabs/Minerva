@@ -1,0 +1,601 @@
+extends SceneTree
+## Wide headless test of the per-chat outgoing message queue: a message sent to a
+## chat whose request is already in flight is queued, shown as a pending bubble,
+## and promoted in order when the active request ends.
+##
+## Run: godot --headless --path src --script test/test_chat_outgoing_queue.gd
+##
+## WHAT IS REAL HERE
+##   real ChatOutgoingQueue, real ChatPane._queue_if_busy / _release_chat_turn /
+##   _drain_outgoing_queue / _clear_outgoing_queue / _add_pending_bubble, the real
+##   pending-bubble scene, a real VBoxChat as the message container, and real
+##   ChatHistory objects registered in the real SingletonObject.ChatList.
+##
+## WHAT IS FAKED, AND WHY
+##   ChatPane's full UI turn path cannot boot headless (same limitation recorded
+##   in test_passthrough_e2e.gd), so the harness pane subclasses ChatPane and
+##   replaces ONLY the body of execute_regular_chat with the same three-step
+##   shape the real one has — gate, turn, single release — driving a fake
+##   provider whose generate_content blocks until the test releases it. The
+##   decision logic under test is ChatPane's own code, not a copy. Section F
+##   asserts by source inspection that the real execute_regular_chat has the gate
+##   in that position and that no turn-end path skips the release helper, so this
+##   substitution cannot hide a missing wire.
+##
+## CANCEL RULE UNDER TEST: cancelling the active request DISCARDS that chat's
+## pending entries. Stop means stop; a queued message must never fire by itself
+## straight after the user pressed the stop button.
+##
+## THE ZOMBIE (section G): stopping a turn does not stop its coroutine — the
+## provider call is still awaited and still returns. Section G starts a NEW
+## turn in that window and then lets the stopped turn finish, which without the
+## per-turn token releases the live turn and drains the queue underneath it.
+
+const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
+const QUEUE_PATH := "res://Scripts/Models/ChatOutgoingQueue.gd"
+const BUBBLE_SCENE_PATH := "res://Scenes/pending_message_bubble.tscn"
+const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
+const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
+const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
+
+## Blocking provider stand-in: generate_content does not return until the test
+## releases that message, so "is a second generate running?" is directly
+## observable as concurrency, not inferred from timing.
+const FAKE_PROVIDER_SRC := """
+extends RefCounted
+var tree: SceneTree = null
+var calls: Array[String] = []
+var active: int = 0
+var max_concurrent: int = 0
+var _released: Dictionary = {}
+
+func release(text: String) -> void:
+	_released[text] = true
+
+func generate_content(text: String) -> String:
+	calls.append(text)
+	active += 1
+	max_concurrent = maxi(max_concurrent, active)
+	while not _released.get(text, false):
+		await tree.process_frame
+	active -= 1
+	return "reply-" + text
+"""
+
+## Harness pane. Keeps ChatPane's real queue helpers and replaces the turn body
+## with the fake provider. The UI button refreshers are no-ops because their
+## unique-name nodes only exist in the booted scene.
+const HARNESS_PANE_SRC := """
+extends "res://Scripts/UI/Views/ChatPane.gd"
+
+var provider = null
+var events: Array[String] = []
+## ChatPane._ready() wires the booted scene's unique-name nodes; skipping it (and
+## with it the @onready assignments it carries) is what lets the pane exist
+## headless. Nothing the queue path touches is set up there.
+func _ready() -> void:
+	pass
+
+func _update_stop_button() -> void:
+	pass
+
+func _update_compact_button() -> void:
+	pass
+
+func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> void:
+	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+		return
+	var turn_token: int = _begin_chat_turn(history)
+	events.append("start:" + text)
+	var answer = await provider.generate_content(text)
+	events.append("answer:" + str(answer))
+	_release_chat_turn(history, turn_token)
+"""
+
+var _pass := 0
+var _fail := 0
+## Autoloads register after this script is compiled, so SingletonObject is
+## resolved as a node at runtime rather than by identifier.
+var _so: Node = null
+
+
+func _init() -> void:
+	print("=== Per-chat outgoing message queue ===\n")
+	await _run()
+	print("\n=== Results: %d passed, %d failed ===" % [_pass, _fail])
+	if _fail > 0:
+		printerr("FAILURES: %d" % _fail)
+	quit(1 if _fail > 0 else 0)
+
+
+func check(label: String, ok: bool, detail: String = "") -> void:
+	if ok:
+		_pass += 1
+		print("PASS: %s" % label)
+	else:
+		_fail += 1
+		print("FAIL: %s%s" % [label, ("  — " + detail) if detail else ""])
+
+
+func _make_script(source: String) -> GDScript:
+	var script: = GDScript.new()
+	script.source_code = source
+	script.reload()
+	return script
+
+
+func _make_history(name: String):
+	var history = load(CHAT_HISTORY_PATH).new(null)
+	history.HistoryName = name
+	return history
+
+
+## A pane whose two chats are registered in ChatList, with live message
+## containers so the pending bubbles are really rendered.
+func _make_pane(chats: Array) -> Node:
+	var pane = _make_script(HARNESS_PANE_SRC).new()
+	pane.name = "HarnessChatPane"
+	root.add_child(pane)
+	for history in chats:
+		var scroll: = ScrollContainer.new()
+		pane.add_child(scroll)
+		var vbox = load(VBOX_CHAT_PATH).new(pane)
+		vbox.chat_history = history
+		scroll.add_child(vbox)
+		history.VBox = vbox
+		_so.ChatList.append(history)
+	return pane
+
+
+func _teardown(pane: Node, chats: Array) -> void:
+	for history in chats:
+		_so.ChatList.erase(history)
+	pane.queue_free()
+
+
+func _pending_bubbles(history) -> Array:
+	var found: Array = []
+	for child in history.VBox.get_children():
+		if child.get_script() != null and child.has_method("get_message"):
+			found.append(child)
+	return found
+
+
+func _run() -> void:
+	await process_frame
+	_so = root.get_node_or_null("/root/SingletonObject")
+	check("S0: the SingletonObject autoload is live", _so != null)
+	if _so == null:
+		return
+	_test_queue_semantics()
+	await _test_queue_then_promote_in_order()
+	await _test_cancel_discards_pending()
+	await _test_worker_completion_injection_queues()
+	await _test_pending_bubble_remove()
+	_test_wiring_is_present()
+	await _test_cancel_then_new_turn_is_not_released_by_the_zombie()
+	await _test_a_late_parallel_response_releases_its_own_turn()
+	await _test_a_late_parallel_response_releases_its_own_chat()
+
+
+#region A — queue semantics
+
+func _test_queue_semantics() -> void:
+	var queue = load(QUEUE_PATH).new()
+	check("A1: an idle chat has nothing pending", not queue.has_pending("chat-1"))
+
+	var first = queue.enqueue("chat-1", "one")
+	var second = queue.enqueue("chat-1", "two")
+	queue.enqueue("chat-2", "other")
+	check("A2: entries are per chat", queue.pending_count("chat-1") == 2
+		and queue.pending_count("chat-2") == 1)
+	check("A3: order is FIFO",
+		str(queue.pending_texts("chat-1")) == str(PackedStringArray(["one", "two"])),
+		str(queue.pending_texts("chat-1")))
+
+	check("A4: remove drops exactly one entry", queue.remove(first)
+		and queue.pending_count("chat-1") == 1)
+	check("A5: removing twice is a no-op", not queue.remove(first))
+	check("A6: the survivor is still queued", queue.peek("chat-1") == second)
+
+	var dropped: Array = queue.clear("chat-1")
+	check("A7: clear returns the dropped entries and empties the chat",
+		dropped.size() == 1 and dropped[0] == second and not queue.has_pending("chat-1"))
+	check("A8: clear touches only that chat", queue.pending_count("chat-2") == 1)
+
+	# DEFERRED entries: a background message (a notify envelope) keeps its place
+	# in the FIFO, but a drain that excludes deferred entries passes over it and
+	# takes the oldest ordinary one instead. That is how the human's answer to a
+	# question card starts before a notification that arrived first.
+	var deferred_first = queue.enqueue("chat-3", "notify", ChatOutgoingQueue.Mode.REGULAR,
+		{}, true)
+	var human = queue.enqueue("chat-3", "answer")
+	check("A9: a deferred entry is queued like any other",
+		str(queue.pending_texts("chat-3")) == str(PackedStringArray(["notify", "answer"])),
+		str(queue.pending_texts("chat-3")))
+	check("A10: a drain that excludes deferred entries skips to the human's message",
+		queue.pop_next("chat-3", false) == human)
+	check("A11: the deferred entry is still queued, in its place",
+		queue.pending_count("chat-3") == 1 and queue.peek("chat-3") == deferred_first)
+	check("A12: with nothing else eligible, an excluding drain takes nothing",
+		queue.pop_next("chat-3", false) == null and queue.pending_count("chat-3") == 1)
+	check("A13: and an ordinary drain takes it",
+		queue.pop_next("chat-3") == deferred_first and not queue.has_pending("chat-3"))
+
+#endregion
+
+
+#region B — the oracle: queue while busy, promote in order
+
+func _test_queue_then_promote_in_order() -> void:
+	var chat = _make_history("Main")
+	var pane = _make_pane([chat])
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+	pane.current_tab = _so.ChatList.find(chat)
+
+	pane.execute_regular_chat("A")
+	await process_frame
+	check("B1: the first message starts a turn",
+		provider.calls.size() == 1 and provider.calls[0] == "A", str(provider.calls))
+
+	pane.execute_regular_chat("B")
+	await process_frame
+	check("B2: a message sent mid-turn does NOT start a second generate",
+		provider.calls.size() == 1, str(provider.calls))
+	check("B3: it is queued on that chat",
+		str(pane._outgoing_queue.pending_texts(chat.HistoryId))
+			== str(PackedStringArray(["B"])))
+	check("B4: and shown immediately as a pending bubble",
+		_pending_bubbles(chat).size() == 1
+			and _pending_bubbles(chat)[0].get_message() == "B")
+	check("B5: nothing overlapped", provider.max_concurrent == 1)
+
+	provider.release("A")
+	for _i in range(6):
+		await process_frame
+	check("B6: A's answer renders, then B's generate starts",
+		provider.calls.size() == 2 and provider.calls[1] == "B", str(provider.calls))
+	check("B7: the pending bubble is replaced by the real turn",
+		_pending_bubbles(chat).is_empty())
+	check("B8: still exactly one request at a time", provider.max_concurrent == 1)
+
+	provider.release("B")
+	for _i in range(6):
+		await process_frame
+	check("B9: both answers rendered in order",
+		str(pane.events) == str(["start:A", "answer:reply-A", "start:B", "answer:reply-B"]),
+		str(pane.events))
+	check("B10: the chat is idle with an empty queue",
+		not chat.is_request_active and not pane._outgoing_queue.has_pending(chat.HistoryId))
+
+	_teardown(pane, [chat])
+
+#endregion
+
+
+#region C — the cancel rule
+
+func _test_cancel_discards_pending() -> void:
+	var chat = _make_history("Cancelled")
+	var pane = _make_pane([chat])
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+	pane.current_tab = _so.ChatList.find(chat)
+
+	pane.execute_regular_chat("A")
+	await process_frame
+	pane.execute_regular_chat("B")
+	await process_frame
+	check("C1: B is pending while A runs",
+		pane._outgoing_queue.pending_count(chat.HistoryId) == 1)
+
+	# What the stop button does (the handler itself needs the booted scene;
+	# section F asserts it calls this helper on cancel).
+	pane._cancel_chat_turn(chat)
+	await process_frame
+	check("C2: cancel DISCARDS the chat's pending messages",
+		not pane._outgoing_queue.has_pending(chat.HistoryId))
+	check("C3: no cancelled-away message is promoted behind the user's back",
+		provider.calls.size() == 1, str(provider.calls))
+	check("C4: its pending bubble is gone too", _pending_bubbles(chat).is_empty())
+
+	provider.release("A")
+	_teardown(pane, [chat])
+
+#endregion
+
+
+#region D — worker-completion injection into a busy parent
+
+func _test_worker_completion_injection_queues() -> void:
+	var parent_chat = _make_history("Supervisor")
+	var other = _make_history("Bystander")
+	var pane = _make_pane([other, parent_chat])
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+
+	var parent_tab: int = _so.ChatList.find(parent_chat)
+	pane.current_tab = parent_tab
+	pane.execute_regular_chat("supervisor turn")
+	await process_frame
+
+	# The injection idiom used by MCPAgentTools and TriggerManager: switch to the
+	# target chat's tab, call execute_regular_chat, switch back.
+	pane.current_tab = _so.ChatList.find(other)
+	var original_tab: int = pane.current_tab
+	pane.current_tab = parent_tab
+	pane.execute_regular_chat('[Sub-agent "w1" completed successfully]')
+	pane.current_tab = original_tab
+	await process_frame
+
+	check("D1: injection into a busy parent chat queues instead of overlapping",
+		provider.calls.size() == 1 and provider.max_concurrent == 1, str(provider.calls))
+	check("D2: the injected message is pending on the PARENT chat",
+		pane._outgoing_queue.pending_count(parent_chat.HistoryId) == 1
+			and not pane._outgoing_queue.has_pending(other.HistoryId))
+
+	provider.release("supervisor turn")
+	for _i in range(6):
+		await process_frame
+	check("D3: it runs once the supervisor turn ends, on its own chat",
+		provider.calls.size() == 2
+			and provider.calls[1].begins_with("[Sub-agent"), str(provider.calls))
+	check("D4: the user's tab is restored after the promotion",
+		pane.current_tab == original_tab, str(pane.current_tab))
+
+	provider.release(provider.calls[1])
+	for _i in range(4):
+		await process_frame
+	_teardown(pane, [parent_chat, other])
+
+#endregion
+
+
+#region E — the pending bubble
+
+func _test_pending_bubble_remove() -> void:
+	var chat = _make_history("Removable")
+	var pane = _make_pane([chat])
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+	pane.current_tab = _so.ChatList.find(chat)
+
+	pane.execute_regular_chat("A")
+	await process_frame
+	pane.execute_regular_chat("drop me")
+	await process_frame
+	var bubbles: = _pending_bubbles(chat)
+	check("E1: the queued message has a bubble", bubbles.size() == 1)
+
+	if bubbles.size() == 1:
+		var bubble = bubbles[0]
+		var remove_button: Button = bubble.get_node("%RemovePending")
+		remove_button.pressed.emit()
+		await process_frame
+		check("E2: removing the bubble drops the entry from the queue",
+			not pane._outgoing_queue.has_pending(chat.HistoryId))
+		check("E3: the bubble is freed", _pending_bubbles(chat).is_empty())
+
+		provider.release("A")
+		for _i in range(6):
+			await process_frame
+		check("E4: a removed message is never sent",
+			provider.calls.size() == 1, str(provider.calls))
+	else:
+		_fail += 2
+		print("  SKIP E2-E4: no bubble")
+
+	provider.release("A")
+	_teardown(pane, [chat])
+
+#endregion
+
+
+#region F — the wiring the harness stands in for
+
+func _test_wiring_is_present() -> void:
+	var source: = FileAccess.get_file_as_string(CHATPANE_PATH)
+	var body_start: = source.find("func execute_regular_chat(")
+	var gate: = source.find("_queue_if_busy(history, text", body_start)
+	var activate: = source.find("_begin_chat_turn(history)", body_start)
+	check("F2: the real execute_regular_chat gates on the queue before starting a turn",
+		body_start != -1 and gate != -1 and activate != -1 and gate < activate,
+		"gate=%d activate=%d" % [gate, activate])
+
+	# Every turn end goes through the one release helper, which drains the queue.
+	# The only places allowed to clear the flag by hand are that helper itself and
+	# _cancel_chat_turn (which must apply the discard rule on the spot).
+	var lines: = source.split("\n")
+	var stray: = 0
+	var release_count: = 0
+	for i in range(lines.size()):
+		var trimmed: = lines[i].strip_edges()
+		if trimmed.begins_with("_release_chat_turn("):
+			release_count += 1
+		if trimmed != "history.is_request_active = false":
+			continue
+		# Which function the line sits in: walk back to the nearest `func `.
+		var owner: = ""
+		for back in range(i, -1, -1):
+			if lines[back].begins_with("func "):
+				owner = lines[back]
+				break
+		if not (owner.begins_with("func _release_chat_turn(")
+				or owner.begins_with("func _cancel_chat_turn(")):
+			stray += 1
+	check("F3: every turn end routes through _release_chat_turn", release_count >= 4,
+		"found %d" % release_count)
+	check("F4: no turn-end path clears the active flag behind the queue's back",
+		stray == 0, "found %d" % stray)
+	check("F5: cancel applies the discard rule",
+		source.find("_clear_outgoing_queue(history)") != -1)
+	# The token is what a stopped turn's coroutine fails on; a release that
+	# ignored it would be the overlap section G reproduces.
+	check("F8: the release helper refuses a token the chat has moved past",
+		source.find("if turn_token != history.request_turn_token:") != -1)
+
+	# An early return that left is_request_active set would wedge that chat's
+	# queue shut forever, so execute_regular_chat's bail-outs release too.
+	var body_end: = source.find("\nfunc ", body_start + 10)
+	var body: = source.substr(body_start, body_end - body_start)
+	check("F7: execute_regular_chat releases the turn on its early returns too",
+		body.count("_release_chat_turn(history, turn_token)") >= 3,
+		"found %d" % body.count("_release_chat_turn(history, turn_token)"))
+
+	# The other entry points reach the gate because they call execute_regular_chat.
+	for path in ["res://Scripts/Services/MCP/Modules/MCPChatTools.gd",
+			"res://Scripts/Services/MCP/Modules/MCPAgentTools.gd",
+			"res://Scripts/Services/Agents/TriggerManager.gd"]:
+		var text: = FileAccess.get_file_as_string(path)
+		check("F6: %s still funnels through execute_regular_chat" % path.get_file(),
+			text.find("execute_regular_chat") != -1)
+
+#endregion
+
+
+#region G — a stopped turn's coroutine must not release the turn that replaced it
+
+## Stop does not stop the coroutine: it is parked on the provider call and will
+## return. The user sends again in that window, so by the time the stopped turn
+## unwinds, a DIFFERENT turn owns the chat. Without the per-turn token its
+## release clears the flag and drains the queue while that turn is still
+## running — two live requests on one chat, the state the queue exists to stop.
+func _test_cancel_then_new_turn_is_not_released_by_the_zombie() -> void:
+	var chat = _make_history("Zombie")
+	var pane = _make_pane([chat])
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+	pane.current_tab = _so.ChatList.find(chat)
+
+	pane.execute_regular_chat("A")
+	await process_frame
+	pane._cancel_chat_turn(chat)
+	await process_frame
+	check("G1: after a stop the chat is free for a new turn", not chat.is_request_active)
+
+	pane.execute_regular_chat("B")
+	await process_frame
+	check("G2: B is the live turn", chat.is_request_active
+		and provider.calls.has("B"), str(provider.calls))
+
+	pane.execute_regular_chat("C")
+	await process_frame
+	check("G3: C is queued behind B",
+		pane._outgoing_queue.pending_count(chat.HistoryId) == 1)
+
+	# The stopped turn's coroutine returns NOW and reaches its release.
+	provider.release("A")
+	for _i in range(6):
+		await process_frame
+	check("G4: the stopped turn does not end the turn that replaced it",
+		chat.is_request_active, str(pane.events))
+	# A and B really do overlap here — that is what a stop leaves behind — so
+	# the assertion is about C: the queue must not advance on a dead turn.
+	check("G5: it does not drain B's queue either",
+		pane._outgoing_queue.pending_count(chat.HistoryId) == 1
+			and not provider.calls.has("C"),
+		"pending=%d calls=%s" % [
+			pane._outgoing_queue.pending_count(chat.HistoryId), str(provider.calls)])
+
+	provider.release("B")
+	for _i in range(6):
+		await process_frame
+	check("G6: C runs once B really ends", provider.calls.has("C"), str(provider.calls))
+	provider.release("C")
+	for _i in range(6):
+		await process_frame
+	_teardown(pane, [chat])
+
+#endregion
+
+
+#region H — a parallel run's late response belongs to ITS turn, not the current one
+
+## The parallel path releases its turn from a signal handler, so the token has
+## to travel WITH the response: one pane-wide token would be overwritten the
+## moment a replacement run starts, and the cancelled run's late response would
+## then release the live one — the section G zombie, by another door.
+func _test_a_late_parallel_response_releases_its_own_turn() -> void:
+	var source: = FileAccess.get_file_as_string(CHATPANE_PATH)
+	check("H1: the parallel response handler carries its own turn's token",
+		source.find("func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,")
+			!= -1
+		and source.find("_release_chat_turn(history, turn_token)") != -1)
+	check("H2: each parallel worker binds its own chat and the running turn's token",
+		source.find("_on_thread_bot_response_arrived.bind(history, _parallel_turn_token))") != -1)
+
+	# And the handler really behaves that way. Run A is cancelled, run B starts,
+	# then A's response finally arrives carrying A's token.
+	var chat = _make_history("LateParallel")
+	var pane = _make_pane([chat])
+	pane.current_tab = _so.ChatList.find(chat)
+
+	var token_a: int = pane._begin_chat_turn(chat)
+	pane._parallel_turn_token = token_a
+	pane._cancel_chat_turn(chat)
+	var token_b: int = pane._begin_chat_turn(chat)
+	pane._parallel_turn_token = token_b
+	check("H3: run B owns the chat", chat.is_request_active)
+
+	# The handler's UI half needs the booted scene, so the cancelled-chat early
+	# return is used to stop right after the release decision — the decision is
+	# the whole subject here.
+	_so.cancelled_history_ids.append(chat.HistoryId)
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	pane._usr_chat_hist_items.clear()
+	pane._usr_chat_hist_items.append(item_script.new())
+	pane._bot_responses.clear()
+	pane._on_thread_bot_response_arrived(item_script.new(), chat, token_a)
+	await process_frame
+	check("H4: run A's late response does not end run B's turn", chat.is_request_active)
+
+	_so.cancelled_history_ids.append(chat.HistoryId)
+	pane._usr_chat_hist_items.clear()
+	pane._usr_chat_hist_items.append(item_script.new())
+	pane._bot_responses.clear()
+	pane._on_thread_bot_response_arrived(item_script.new(), chat, token_b)
+	await process_frame
+	check("H5: run B's own response does end it", not chat.is_request_active)
+
+	_teardown(pane, [chat])
+
+
+## Two chats, each on its FIRST turn — so both hold token 1. Chat A's parallel
+## response arrives late, after the user switched to chat B. Resolving the chat
+## from current_tab releases B (token 1 == token 1) and drains B's queue
+## underneath its live request, while A stays active for ever.
+func _test_a_late_parallel_response_releases_its_own_chat() -> void:
+	var chat_a = _make_history("ParallelA")
+	var chat_b = _make_history("ParallelB")
+	var pane = _make_pane([chat_a, chat_b])
+
+	pane.current_tab = _so.ChatList.find(chat_a)
+	var token_a: int = pane._begin_chat_turn(chat_a)
+	var token_b: int = pane._begin_chat_turn(chat_b)
+	check("H6: both chats are on the same turn number",
+		token_a == token_b and chat_a.is_request_active and chat_b.is_request_active,
+		"a=%d b=%d" % [token_a, token_b])
+
+	# The user switches to B; A's worker finally emits.
+	pane.current_tab = _so.ChatList.find(chat_b)
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	_so.cancelled_history_ids.append(chat_a.HistoryId)
+	pane._usr_chat_hist_items.clear()
+	pane._usr_chat_hist_items.append(item_script.new())
+	pane._bot_responses.clear()
+	pane._on_thread_bot_response_arrived(item_script.new(), chat_a, token_a)
+	await process_frame
+	check("H7: chat A's late response does not end chat B's turn",
+		chat_b.is_request_active)
+	check("H8: and it does end chat A's own turn", not chat_a.is_request_active)
+
+	_teardown(pane, [chat_a, chat_b])
+
+#endregion

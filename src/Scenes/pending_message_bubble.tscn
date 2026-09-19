@@ -1,0 +1,29 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/UI/Controls/PendingMessageBubble.gd" id="1_pmb"]
+
+[node name="PendingMessageBubble" type="PanelContainer"]
+offset_right = 400.0
+offset_bottom = 40.0
+tooltip_text = "Queued — sends when the current response finishes"
+script = ExtResource("1_pmb")
+
+[node name="Row" type="HBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="QueuedTag" type="Label" parent="Row"]
+layout_mode = 2
+text = "Queued"
+
+[node name="PendingText" type="Label" parent="Row"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = ""
+autowrap_mode = 3
+
+[node name="RemovePending" type="Button" parent="Row"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Remove this queued message"
+text = "X"

@@ -835,6 +835,10 @@ func _send_message(args: Dictionary) -> Dictionary:
 	# Save original tab
 	var original_tab = chat_pane.current_tab
 
+	# A busy chat queues this message instead of starting a second, overlapping
+	# request — say so, or the caller reads "sent" as "the turn started now".
+	var was_busy: bool = history.is_request_active
+
 	# Switch to target chat and execute (fire and forget - no waiting)
 	chat_pane.current_tab = tab_idx
 
@@ -846,6 +850,13 @@ func _send_message(args: Dictionary) -> Dictionary:
 	# current_tab during setup. Switching too early causes provider mismatch
 	# (e.g., sub-agent uses caller's ChatGPT format instead of its own Anthropic format).
 	chat_pane.call_deferred("set_current_tab", original_tab)
+
+	if was_busy:
+		return {
+			"success": true,
+			"queued": true,
+			"message": "Chat was mid-request — message queued and will run when that turn ends. Use minerva_check_worker to monitor progress."
+		}
 
 	return {
 		"success": true,

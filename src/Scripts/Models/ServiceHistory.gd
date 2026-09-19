@@ -166,6 +166,13 @@ var DeletedSeq: int = 0:
 ## Runtime-only: whether this chat has an active LLM request in flight. Not serialized.
 var is_request_active: bool = false
 
+## Runtime-only turn counter, bumped every time a turn STARTS or is CANCELLED.
+## The coroutine that runs a turn keeps the value it was started with and hands
+## it back when it ends, so a turn that was stopped — and whose coroutine is
+## still unwinding — cannot release or drain the queue of the turn that
+## replaced it. Not serialized.
+var request_turn_token: int = 0
+
 ## Static tool mode: when true, the chat has a pre-configured tool set and dynamic
 ## tool discovery (tool_search, list_skills, get_skill) is suppressed.
 var StaticToolMode: bool = false:

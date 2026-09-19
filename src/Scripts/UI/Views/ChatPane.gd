@@ -1764,8 +1764,7 @@ func regenerate_response(chi: ChatHistoryItem):
 	var history_list = await create_prompt(chi, false, history.provider, predicate, history)
 
 	# Track this request so the stop button works
-	history.is_request_active = true
-	_update_stop_button()
+	var turn_token: int = _begin_chat_turn(history)
 
 	# Ensure rendered_node exists (may have been freed if message was deleted)
 	if not is_instance_valid(existing_response.rendered_node):
@@ -1777,8 +1776,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 	# if there was an error with the request
 	if not bot_response:
-		history.is_request_active = false
-		_update_stop_button()
+		_release_chat_turn(history, turn_token)
 		return
 
 	if history.AgentModeEnabled and str(bot_response.error).is_empty() and not bot_response.has_tool_calls():
@@ -1831,9 +1829,7 @@ func regenerate_response(chi: ChatHistoryItem):
 
 		SingletonObject.clear_consumed_proxies(history.HistoryId)
 
-	history.is_request_active = false
-	_update_stop_button()
-	_update_compact_button()
+	_release_chat_turn(history, turn_token)
 
 
 func _on_chat_pressed():
@@ -1866,13 +1862,17 @@ func _on_send_message_button_item_selected(index: int) -> void:
 		0:
 			execute_regular_chat(filteredInput)
 		1:
-			history.is_request_active = true
-			_update_stop_button()
-			execute_parallel_chat(filteredInput)
+			if filteredInput.strip_edges().is_empty():
+				return
+			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.PARALLEL):
+				return
+			execute_parallel_chat(filteredInput, _begin_chat_turn(history))
 		2:
-			history.is_request_active = true
-			_update_stop_button()
-			execute_sequential_chat(filteredInput)
+			if filteredInput.strip_edges().is_empty():
+				return
+			if _queue_if_busy(history, filteredInput, ChatOutgoingQueue.Mode.SEQUENTIAL):
+				return
+			execute_sequential_chat(filteredInput, _begin_chat_turn(history))
 
 func execute_hcp_chat():
 	ensure_chat_open()
@@ -1964,6 +1964,159 @@ func execute_hcp_chat():
 	else:
 		model_msg_node.queue_free()
 
+#region Outgoing message queue
+
+## Scene + script are preloaded (not reached through the class_name globals) so a
+## --script harness that compiles ChatPane before the class cache is rebuilt works.
+const PendingMessageBubbleScene = preload("res://Scenes/pending_message_bubble.tscn")
+const ChatOutgoingQueueScript = preload("res://Scripts/Models/ChatOutgoingQueue.gd")
+
+## Per-chat FIFO of messages submitted while that chat's request was in flight.
+## Every path that starts a turn gates on it, so one chat never has two requests
+## at once and nothing the user (or an agent) sent mid-turn is lost.
+var _outgoing_queue: ChatOutgoingQueue = ChatOutgoingQueueScript.new()
+
+
+## Queue `text` when `history` is mid-request and return true; callers that were
+## about to start a turn MUST return when this returns true.
+func _queue_if_busy(history: ChatHistory, text: String,
+		mode: ChatOutgoingQueue.Mode = ChatOutgoingQueue.Mode.REGULAR,
+		generation_options: Dictionary = {}) -> bool:
+	if history == null or not history.is_request_active:
+		return false
+	if text.strip_edges().is_empty():
+		return false
+	var entry: ChatOutgoingQueue.Entry = _outgoing_queue.enqueue(
+		history.HistoryId, text, mode, generation_options)
+	entry.bubble = _add_pending_bubble(history, entry)
+	print("[ChatPane] Chat busy — queued message (%d pending)" % _outgoing_queue.pending_count(history.HistoryId))
+	return true
+
+
+## Queue `text` as a BACKGROUND message: it waits its turn behind anything the
+## human sends, and while this chat is awaiting the answer to a question card it
+## is passed over entirely (ChatOutgoingQueue.pop_next). Callers use this
+## instead of starting a turn, so a notification can never take the turn the
+## blocked agent is waiting on. Returns the queue entry.
+func enqueue_background_message(history: ChatHistory, text: String,
+		generation_options: Dictionary = {}) -> ChatOutgoingQueue.Entry:
+	var entry: ChatOutgoingQueue.Entry = _outgoing_queue.enqueue(
+		history.HistoryId, text, ChatOutgoingQueue.Mode.REGULAR, generation_options, true)
+	entry.bubble = _add_pending_bubble(history, entry)
+	print("[ChatPane] Background message deferred (%d pending)" % _outgoing_queue.pending_count(history.HistoryId))
+	return entry
+
+
+## Show the queued text in the chat right away. Returns null when the chat has no
+## live message container (nothing is lost — the queue is the record).
+func _add_pending_bubble(history: ChatHistory, entry: ChatOutgoingQueue.Entry) -> Node:
+	if not is_instance_valid(history.VBox):
+		return null
+	var bubble: PendingMessageBubble = PendingMessageBubbleScene.instantiate()
+	bubble.set_message(entry.text)
+	bubble.removal_requested.connect(_on_pending_bubble_removal_requested.bind(entry))
+	history.VBox.add_child(bubble)
+	if history.VBox.is_inside_tree():
+		history.VBox.scroll_to_bottom()
+	return bubble
+
+
+func _on_pending_bubble_removal_requested(bubble: PendingMessageBubble,
+		entry: ChatOutgoingQueue.Entry) -> void:
+	_outgoing_queue.remove(entry)
+	entry.bubble = null
+	if is_instance_valid(bubble):
+		bubble.queue_free()
+
+
+## Claim the chat for a new turn and return that turn's token. The caller MUST
+## keep the token and hand it back to _release_chat_turn: it is what tells this
+## turn apart from the one that replaces it after a stop.
+func _begin_chat_turn(history: ChatHistory) -> int:
+	if history == null:
+		return -1
+	history.request_turn_token += 1
+	history.is_request_active = true
+	_update_stop_button()
+	return history.request_turn_token
+
+
+## The single exit point of a chat turn: clear the active flag, refresh the
+## controls, then promote the next queued message. Routing every completion,
+## error and tool-chain end through here is what keeps the queue from stalling.
+##
+## `turn_token` is the value _begin_chat_turn gave the caller. A mismatch means
+## the turn was stopped and another one has already started on this chat, so
+## the release belongs to nobody: clearing the flag there would let the queue
+## drain alongside the live turn — the exact overlap the queue exists to stop.
+func _release_chat_turn(history: ChatHistory, turn_token: int) -> void:
+	if history == null:
+		return
+	if turn_token != history.request_turn_token:
+		return
+	history.is_request_active = false
+	_update_stop_button()
+	_update_compact_button()
+	_drain_outgoing_queue(history)
+
+
+## Stop the chat's current turn: bump the token FIRST, so the coroutine still
+## unwinding this turn is refused when it reaches _release_chat_turn, then
+## apply the cancel rule to the queue.
+func _cancel_chat_turn(history: ChatHistory) -> void:
+	if history == null:
+		return
+	history.request_turn_token += 1
+	history.is_request_active = false
+	_clear_outgoing_queue(history)
+
+
+## Start the oldest queued message of `history`, if the chat is now idle.
+## While the chat is waiting for the answer to a question card, only ordinary
+## (human) messages are eligible: a deferred background message promoted now
+## would hold the chat's single turn while the agent behind it stays blocked.
+func _drain_outgoing_queue(history: ChatHistory) -> void:
+	if history == null or history.is_request_active:
+		return
+	var entry: ChatOutgoingQueue.Entry = _outgoing_queue.pop_next(
+		history.HistoryId, not history.is_awaiting_question_answer())
+	if entry == null:
+		return
+	if is_instance_valid(entry.bubble):
+		entry.bubble.queue_free()
+	entry.bubble = null
+	var tab_index: int = SingletonObject.ChatList.find(history)
+	if tab_index == -1:
+		push_warning("[ChatPane] Queued message dropped — its chat is no longer open")
+		return
+	# The execute_* paths all read the CURRENT tab, so promote on the queued
+	# chat's tab and restore the user's tab next frame (the MCP send idiom).
+	var original_tab: int = current_tab
+	current_tab = tab_index
+	match entry.mode:
+		ChatOutgoingQueue.Mode.PARALLEL:
+			execute_parallel_chat(entry.text, _begin_chat_turn(history))
+		ChatOutgoingQueue.Mode.SEQUENTIAL:
+			execute_sequential_chat(entry.text, _begin_chat_turn(history))
+		_:
+			execute_regular_chat(entry.text, entry.generation_options)
+	if original_tab != tab_index:
+		call_deferred("set_current_tab", original_tab)
+
+
+## CANCEL RULE: stopping the active request discards that chat's queued messages.
+## Stop means stop — a queued message must never fire on its own right after the
+## user pressed the stop button.
+func _clear_outgoing_queue(history: ChatHistory) -> void:
+	if history == null:
+		return
+	for entry: ChatOutgoingQueue.Entry in _outgoing_queue.clear(history.HistoryId):
+		if is_instance_valid(entry.bubble):
+			entry.bubble.queue_free()
+
+#endregion Outgoing message queue
+
+
 func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> void:
 	print("[ChatPane] execute_regular_chat called, text length: %d" % text.length())
 	var _history = SingletonObject.ChatList[current_tab]
@@ -1983,10 +2136,16 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> 
 
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 
+	# Single choke point for every turn entry point (send button, MCP
+	# minerva_send_message, worker-completion injection, trigger MESSAGE_EXISTING):
+	# a message that arrives while this chat is mid-request is queued, never run
+	# alongside the in-flight one and never dropped.
+	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
+		return
+
 	# Track this request so the stop button works
 	# (callers like AgentSpawner, TriggerManager, and MCP tools bypass the UI button handler)
-	history.is_request_active = true
-	_update_stop_button()
+	var turn_token: int = _begin_chat_turn(history)
 	var last_msg = history.HistoryItemList.back() if not history.HistoryItemList.is_empty() else null
 
 	# Reset termination tracking for this new turn
@@ -2006,10 +2165,16 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> 
 
 		SingletonObject.clear_consumed_proxies(history.HistoryId)
 
+		# The turn is over the moment the human "provider" has its message, so
+		# release here: an early return that left the flag set would wedge the
+		# chat's queue closed forever.
+		_release_chat_turn(history, turn_token)
 		return # if user is using Human provider we finish here
 
 	# Check is the last message is a user message and not do anything if true
-	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
+	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER:
+		_release_chat_turn(history, turn_token)
+		return
 
 	# Setup agent mode tools if enabled for this chat
 	print("[Chat] Checking agent mode: AgentModeEnabled=%s, has_set_tools=%s, history_id=%s" % [history.AgentModeEnabled, history.provider.has_method("set_tools"), history.HistoryId])
@@ -2144,9 +2309,7 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> 
 	if history.IsAgentChat:
 		SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
 
-	history.is_request_active = false
-	_update_stop_button()
-	_update_compact_button()
+	_release_chat_turn(history, turn_token)
 
 
 ## W5 (chat-passthrough): how often to re-read the bound terminal screen while a
@@ -2915,7 +3078,7 @@ func handle_tool_calls(history: ChatHistory, tool_calls: Array, current_round: i
 		finish_with_signal.call()
 
 
-func execute_sequential_chat(text_input: String) -> void:
+func execute_sequential_chat(text_input: String, turn_token: int) -> void:
 	if text_input.is_empty(): return
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
@@ -2926,6 +3089,7 @@ func execute_sequential_chat(text_input: String) -> void:
 	for i in _inputs:
 		if SingletonObject.is_cancelled(history.HistoryId):
 			SingletonObject.clear_cancelled(history.HistoryId)
+			_release_chat_turn(history, turn_token)
 			return
 		var user_history_item = create_user_history_item(i)
 		
@@ -2940,10 +3104,13 @@ func execute_sequential_chat(text_input: String) -> void:
 			
 			SingletonObject.clear_consumed_proxies(history.HistoryId)
 
+			_release_chat_turn(history, turn_token)
 			return # if user is using Human provider we finish here
 		
 		# Check is the last message is a user message and not do anything if true
-		if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER: return
+		if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER:
+			_release_chat_turn(history, turn_token)
+			return
 		
 		# make a chat request
 		var history_list: = await create_prompt(user_history_item, true, null, Callable(), history)
@@ -2967,9 +3134,7 @@ func execute_sequential_chat(text_input: String) -> void:
 		
 		var chi = process_bot_response(bot_response, history.provider)
 		update_ui_after_response(user_history_item, user_msg_node, model_msg_node, chi, bot_response, history)
-	history.is_request_active = false
-	_update_stop_button()
-	_update_compact_button()
+	_release_chat_turn(history, turn_token)
 
 	for i in SingletonObject.notes_container.get_tab_count():
 		SingletonObject.notes_container.disable_notes(i)
@@ -2989,8 +3154,16 @@ var _bot_responses: Array[ChatHistoryItem] = []
 var _user_parallel_chat_UUID: String = ""
 var _parallel_chat_UUID: String = ""
 var _multi_slider_container_UUID: String = ""
-func execute_parallel_chat(text_input: String) -> void:
+## The token of the parallel run being STARTED. It is read once per worker, at
+## the moment that worker connects its response handler, and bound into that
+## handler — so every response releases with the token of the run it belongs
+## to, not with whatever run happens to be current when it arrives late.
+var _parallel_turn_token: int = -1
+
+
+func execute_parallel_chat(text_input: String, turn_token: int) -> void:
 	if text_input.is_empty(): return
+	_parallel_turn_token = turn_token
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	# Check if we need to do chain of messages
@@ -3013,10 +3186,17 @@ func execute_parallel_chat(text_input: String) -> void:
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
 
 
-func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> void:
+## `origin_history` and `turn_token` travel together: the token alone only says
+## WHICH turn, and two chats sitting on the same token number would release each
+## other. The chat this response belongs to is the one its worker started on,
+## never whichever tab happens to be current when the response lands.
+func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
+		origin_history: ChatHistory = null, turn_token: int = -1) -> void:
 	if chat_hist_item == null:
 		return
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	var history: ChatHistory = origin_history
+	if history == null:
+		history = SingletonObject.ChatList[current_tab]
 	var user_msg: ChatHistoryItem = _usr_chat_hist_items.pop_front()
 	var bot_response: ChatHistoryItem = chat_hist_item
 	
@@ -3031,9 +3211,7 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null) -> 
 		_user_parallel_chat_UUID = ""
 		_parallel_chat_UUID = ""
 		_multi_slider_container_UUID = ""
-		history.is_request_active = false
-		_update_stop_button()
-		_update_compact_button()
+		_release_chat_turn(history, turn_token)
 
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
@@ -3065,7 +3243,12 @@ func create_message_new(inputs_idx: int) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	var user_history_item = create_user_history_item(message)
 	
-	user_history_item.response_arrived.connect(_on_thread_bot_response_arrived)
+	# Bind THIS run's chat AND token into the handler: a response that arrives
+	# after the run was cancelled and another started must not release the
+	# replacement, and one that arrives after a tab switch must not release
+	# whatever chat is current.
+	user_history_item.response_arrived.connect(
+		_on_thread_bot_response_arrived.bind(history, _parallel_turn_token))
 	
 	if user_history_item.provider is HumanProvider:
 		var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
@@ -5468,8 +5651,9 @@ func _on_audio_stop_1_pressed() -> void:
 		if history.IsAgentChat and not history.AgentDefinitionId.is_empty():
 			SingletonObject.agent_chat_finished.emit(history.HistoryId, history.AgentDefinitionId)
 
-		# Mark request as stopped
-		history.is_request_active = false
+		# Mark request as stopped, and apply the cancel rule: the chat's queued
+		# messages are discarded rather than promoted (see _cancel_chat_turn).
+		_cancel_chat_turn(history)
 
 		# Cascade stop to all workers spawned by this chat
 		var registry = SingletonObject.worker_registry
