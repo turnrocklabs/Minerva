@@ -1566,3 +1566,203 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
         "the second ask got its own answer: {second_payload}"
     );
 }
+
+// ── 16. A prompt that QUEUED while the terminal was unwatched still holds ──
+
+/// The detection the gate judges a write by has to be read after the slot is
+/// taken, not before it is waited for.
+///
+/// Oracle: prompt A reaches the gate on a terminal nobody watches, so it skips
+/// the hold; prompt B arrives a moment later, while A is still writing, and
+/// finds no watch either — so B has no detection of its own and queues for the
+/// slot. A's send auto-starts the watch, and A's turn ENDS at a permission
+/// dialog. When A releases the slot, B is the caller that writes next, and the
+/// screen it would write into is that dialog: an Enter there answers a modal.
+/// So B must re-read the detection it now has and hold, and its prompt must
+/// land only once the dialog is gone — writes are exactly
+/// ["prompt A", "\r", "prompt B", "\r"].
+#[test]
+fn a_prompt_that_queued_unwatched_holds_on_the_dialog_the_turn_ended_at() {
+    let mut host = FakeHost::start();
+    let terminal = "t-unwatched-queued-dialog";
+
+    // The dialog appears with prompt A's Enter and stays until the test clears
+    // it — exactly the screen A's turn ends at.
+    let cleared = Arc::new(AtomicBool::new(false));
+    let screen_cleared = Arc::clone(&cleared);
+    host.screen = Box::new(move |v| {
+        if v.writes.len() >= 2 && !screen_cleared.load(Ordering::SeqCst) {
+            (HOLD_CLAUDE_PERMISSION.to_string(), 130)
+        } else {
+            (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64)
+        }
+    });
+    let wait_cleared = Arc::clone(&cleared);
+    host.wait = Box::new(move |v| {
+        if v.writes.len() >= 2 && !wait_cleared.load(Ordering::SeqCst) {
+            settled(HOLD_CLAUDE_PERMISSION, 130)
+        } else {
+            quiet()
+        }
+    });
+    host.turn = Box::new(|_| HOLD_CLAUDE_PERMISSION.to_string());
+
+    // NO watch_start: prompt A is what starts the watch.
+    let first = host.call_tool(
+        "minerva_agent_relay_relay_ask",
+        json!({"terminal_id": terminal, "text": "prompt A", "timeout_ms": 8000}),
+    );
+    // A's body is out; its Enter, its auto-started watch and its arm are not.
+    host.pump_while(&[first], |v| v.writes.is_empty());
+    let status = host.tool(
+        "minerva_agent_relay_watch_status",
+        json!({"terminal_id": terminal}),
+    );
+    assert_eq!(
+        status["status"],
+        Value::Null,
+        "prompt B has to reach the gate while the terminal is still unwatched: {status}"
+    );
+
+    // B arrives inside that window: no watch to give it a detection, so it can
+    // only queue for the slot.
+    let second = host.call_tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "prompt B", "arm": false}),
+    );
+
+    // A's turn ends at the dialog and A gives up the slot.
+    let first_payload = common::unwrap_tool(&host.await_reply(first));
+    assert_eq!(first_payload["timed_out"], false, "{first_payload}");
+
+    // B now owns the terminal, with the dialog on screen.
+    let held_since = std::time::Instant::now();
+    host.pump_while(&[second], |_| {
+        held_since.elapsed() < std::time::Duration::from_millis(1_500)
+    });
+    assert_eq!(
+        host.view().writes,
+        vec!["prompt A".to_string(), "\r".to_string()],
+        "prompt B was written into the permission dialog: {:?}",
+        host.view().writes
+    );
+
+    cleared.store(true, Ordering::SeqCst);
+    let second_payload = common::unwrap_tool(&host.await_reply(second));
+    assert_eq!(second_payload["ok"], true, "{second_payload}");
+    assert_eq!(
+        host.view().writes,
+        vec![
+            "prompt A".to_string(),
+            "\r".to_string(),
+            "prompt B".to_string(),
+            "\r".to_string(),
+        ],
+        "prompt B must land once, after the dialog cleared"
+    );
+}
+
+// ── 17. A slot handed over on an UNWATCHED terminal has no keeper ──────────
+
+/// A detached slot is freed by a COUNTED detection, and only a watch loop
+/// counts one. An unarmed send starts no watch, so a slot detached there would
+/// wait for a keeper that does not exist and wedge the terminal for the rest
+/// of the process.
+///
+/// Oracle: two unarmed sends on a terminal nobody watches. The second must
+/// write promptly — writes are ["one", "\r", "two", "\r"] — instead of sitting
+/// out the gate budget and erroring "still in flight".
+#[test]
+fn an_unarmed_send_on_an_unwatched_terminal_leaves_the_terminal_usable() {
+    let mut host = FakeHost::start();
+    let terminal = "t-unwatched-unarmed-send";
+    host.screen = Box::new(|v| (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64));
+    host.wait = Box::new(|_| quiet());
+
+    let first = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "one", "arm": false}),
+    );
+    assert_eq!(first["ok"], true, "{first}");
+
+    let second = host.call_tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "two", "arm": false}),
+    );
+    host.pump_while(&[second], |v| v.writes.len() < 4);
+    let second = common::unwrap_tool(&host.await_reply(second));
+    assert_eq!(
+        second["ok"], true,
+        "the second send was refused on a terminal nothing is watching: {second}"
+    );
+    assert_eq!(
+        host.view().writes,
+        vec![
+            "one".to_string(),
+            "\r".to_string(),
+            "two".to_string(),
+            "\r".to_string(),
+        ],
+        "both unarmed sends land, in order"
+    );
+}
+
+/// ... and the ARMED send keeps its handed-over slot: it auto-starts the watch
+/// before it gives the slot up, so there IS a keeper, and the turn it started
+/// is protected until that watch counts the end.
+///
+/// Oracle: an armed send on an unwatched terminal, then a second send while
+/// the turn still runs. Nothing of the second reaches the terminal until the
+/// watch loop counts the first turn's end.
+#[test]
+fn an_armed_send_on_an_unwatched_terminal_keeps_its_turn_until_it_is_counted() {
+    let mut host = FakeHost::start();
+    let terminal = "t-unwatched-armed-send";
+    host.screen = Box::new(|v| (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64));
+
+    let released = Arc::new(AtomicBool::new(false));
+    let r = Arc::clone(&released);
+    host.wait = Box::new(move |v| {
+        if v.writes.len() >= 2 && r.load(Ordering::SeqCst) {
+            settled(
+                "\u{276f} one\n\u{25cf} the answer to the first prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
+                130,
+            )
+        } else {
+            quiet()
+        }
+    });
+
+    let first = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "one", "arm": true}),
+    );
+    assert_eq!(first["auto_started_watch"], true, "{first}");
+
+    let second = host.call_tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "two", "arm": false}),
+    );
+    wait_for_one_waiter(&mut host, terminal);
+    assert_eq!(
+        host.view().writes,
+        vec!["one".to_string(), "\r".to_string()],
+        "the second send wrote into the turn the first one started: {:?}",
+        host.view().writes
+    );
+
+    released.store(true, Ordering::SeqCst);
+    host.pump_while(&[second], |v| v.writes.len() < 4);
+    let second = common::unwrap_tool(&host.await_reply(second));
+    assert_eq!(second["ok"], true, "{second}");
+    assert_eq!(
+        host.view().writes,
+        vec![
+            "one".to_string(),
+            "\r".to_string(),
+            "two".to_string(),
+            "\r".to_string(),
+        ],
+        "the counted end of the first turn is what lets the second send write"
+    );
+}

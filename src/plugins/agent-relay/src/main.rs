@@ -313,12 +313,31 @@ fn send_core(
         SEND_GATE_BUDGET_MS,
         router,
     )?;
-    // Nobody is waiting for this turn here: the slot stays outstanding until
-    // the watch loop counts the turn's end.
+    // Nobody is waiting for this turn here: the slot is handed to the watch
+    // loop, or ended when there is no watch loop to hand it to.
     if let Some(slot) = outcome.slot {
-        slot.detach();
+        hand_over_or_end(terminal_id, slot);
     }
     Ok(outcome.payload)
+}
+
+/// Give up a written prompt's slot without waiting for its turn: hand it to
+/// the watch loop when one is watching this terminal, end it when none is.
+///
+/// A DETACHED slot has exactly one routine exit — the watcher counting a
+/// detection past the write — so detaching on a terminal with NO watch session
+/// leaves a slot nothing can ever free, and every later send on that terminal
+/// waits out its whole gate budget and errors. There is also no turn to
+/// protect there: without a watcher nothing tracks the turn's boundaries, so
+/// the bookkeeping the slot guards does not exist. An armed send auto-starts
+/// the watch BEFORE this runs, so its slot is still handed over and kept until
+/// that watch counts the turn's end.
+fn hand_over_or_end(terminal_id: &str, slot: TurnSlot) {
+    if watcher::watch_status(terminal_id).is_some() {
+        slot.detach();
+    } else {
+        slot.end();
+    }
 }
 
 /// Compiled detection for the profile currently watching `terminal_id`, or
@@ -384,73 +403,84 @@ fn send_core_with_mode(
     // second caller arriving after that auto-start finds a detection — and,
     // without this, a free slot — and writes straight into the turn the first
     // send is still running or reading.
-    let gate_detection = watched_detection(terminal_id);
+    //
+    // The detection is read AGAIN after the slot is taken, and THAT reading is
+    // what this write is judged by. A terminal gains its watch while a caller
+    // queues — the send ahead of it auto-starts one — so a detection read
+    // before the wait describes the terminal as it was, not the screen this
+    // write lands on. Without the re-read, a caller that queued while the
+    // terminal was still unwatched skipped the hold entirely and wrote into
+    // whatever the turn ahead of it ended at, a permission dialog included.
     let mut gate_screen: Option<(String, u64)> = None;
     let deadline =
         std::time::Instant::now() + std::time::Duration::from_millis(gate_budget_ms);
     let remaining = |d: std::time::Instant| {
         d.saturating_duration_since(std::time::Instant::now()).as_millis() as u64
     };
-    let mut slot: Option<TurnSlot>;
-    if let Some(ref cd) = gate_detection {
-        let taken = loop {
+    let (gate_detection, taken) = loop {
+        // Hold on the detection as it stands BEFORE the wait, when there is
+        // one. An unwatched terminal has nothing to classify screens with, so
+        // this phase is skipped and the slot alone gates the write.
+        if let Some(ref cd) = watched_detection(terminal_id) {
             if hold == GateHold::Wait {
                 // An expired budget is an error, never a write: an Enter on a
                 // menu selects whatever the caret is on.
                 gate_screen =
                     send_gate::wait_until_writable(terminal_id, cd, router, remaining(deadline))?;
             }
-            // This call waits only for what is LEFT of the gate budget. The
-            // slot it takes carries no clock of its own: it is held until this
-            // caller ends or detaches it, and a detached one until the turn's
-            // end is counted.
-            let taken = send_gate::begin_turn(terminal_id, remaining(deadline))?;
-            match hold {
-                // EVERY acquisition looks again. Waiting for the screen and
-                // taking the slot are two steps, and the screen can turn into a
-                // dialog in between — the owner ahead of this caller may end
-                // its turn AT one and release a FREE slot, so "the slot was
-                // free straight away" says nothing about the screen this write
-                // would land on.
-                GateHold::Wait => {
-                    match send_gate::peek_writable(terminal_id, cd, router) {
-                        Ok(screen) => {
-                            if screen.is_some() {
-                                gate_screen = screen;
-                            }
-                            break taken;
+        }
+        // This call waits only for what is LEFT of the gate budget. The
+        // slot it takes carries no clock of its own: it is held until this
+        // caller ends or detaches it, and a detached one until the turn's
+        // end is counted.
+        let taken = send_gate::begin_turn(terminal_id, remaining(deadline))?;
+        let Some(cd) = watched_detection(terminal_id) else {
+            // Still unwatched with the slot in hand: no screen judgement is
+            // possible, and the write goes out serialised but unclassified.
+            break (None, taken);
+        };
+        match hold {
+            // EVERY acquisition looks again. Waiting for the screen and
+            // taking the slot are two steps, and the screen can turn into a
+            // dialog in between — the owner ahead of this caller may end
+            // its turn AT one and release a FREE slot, so "the slot was
+            // free straight away" says nothing about the screen this write
+            // would land on.
+            GateHold::Wait => {
+                match send_gate::peek_writable(terminal_id, &cd, router) {
+                    Ok(screen) => {
+                        if screen.is_some() {
+                            gate_screen = screen;
                         }
-                        // Held again. Drop the slot BEFORE waiting: whatever is
-                        // on screen is answered through this same gate.
-                        Err(_) => {
-                            drop(taken);
-                            std::thread::sleep(std::time::Duration::from_millis(
-                                send_gate::POLL_MS,
-                            ));
-                        }
+                        break (Some(cd), taken);
                     }
-                }
-                // The card this answers must still BE the screen now that the
-                // write is imminent — another answer may have cleared it while
-                // this one queued, and these keystrokes mean nothing to whatever
-                // the agent drew next.
-                GateHold::Bypass(ref expected) => {
-                    let live =
-                        live_question_region(terminal_id, router).map(|r| region_identity(&r));
-                    let pending =
-                        with_passthrough(|s| s.pending_question.contains(terminal_id));
-                    if !pending || live.as_deref() != Some(expected.as_str()) {
-                        return Err(STALE_BYPASS.to_string());
+                    // Held again. Drop the slot BEFORE waiting: whatever is
+                    // on screen is answered through this same gate.
+                    Err(_) => {
+                        drop(taken);
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            send_gate::POLL_MS,
+                        ));
                     }
-                    break taken;
                 }
             }
-        };
-        slot = Some(taken);
-    } else {
-        // Unwatched: no screen to hold on, but the prompt still gets its slot.
-        slot = Some(send_gate::begin_turn(terminal_id, remaining(deadline))?);
-    }
+            // The card this answers must still BE the screen now that the
+            // write is imminent — another answer may have cleared it while
+            // this one queued, and these keystrokes mean nothing to whatever
+            // the agent drew next.
+            GateHold::Bypass(ref expected) => {
+                let live =
+                    live_question_region(terminal_id, router).map(|r| region_identity(&r));
+                let pending =
+                    with_passthrough(|s| s.pending_question.contains(terminal_id));
+                if !pending || live.as_deref() != Some(expected.as_str()) {
+                    return Err(STALE_BYPASS.to_string());
+                }
+                break (Some(cd), taken);
+            }
+        }
+    };
+    let mut slot: Option<TurnSlot> = Some(taken);
 
     // Snapshot the screen BEFORE writing: the pre-write screen is stable and
     // the turn's redraw region starts at the input box, so the turn-start
@@ -1187,7 +1217,7 @@ fn relay_ask_core(
         // the watch on this terminal is stopped or restarted — never on a
         // clock, which would put the next prompt inside this running turn.
         if let Some(slot) = outcome.slot {
-            slot.detach();
+            hand_over_or_end(terminal_id, slot);
         }
         // The arm stays set: if the turn finishes later, the one-shot event
         // still wakes any Minerva-side trigger. We just stop blocking.
