@@ -12,13 +12,10 @@ var turn_token: int = -1
 
 ## Messages waiting to be picked up; each worker pops exactly one.
 var inputs: Array[String] = []
-## User messages whose request is under way, popped in order to pair with each
-## arriving response.
-var user_items: Array[ChatHistoryItem] = []
 
-## How many workers this run started, and how many have delivered. The pending
-## array cannot answer "is the run done": a worker appends its user item only
-## once its own request is running, so the array is empty at the start too.
+## How many workers this run started, and how many have delivered. Each worker
+## binds its own user message into its response handler, so the run counts
+## deliveries and never holds a queue of prompts to pair responses against.
 var expected: int = 0
 var delivered: int = 0
 
@@ -30,7 +27,7 @@ var user_slider_uuid: String = ""
 var model_slider_uuid: String = ""
 var multi_slider_uuid: String = ""
 
-## Guards `inputs`, `user_items` and the counters: the workers are real threads.
+## Guards `inputs` and the counters: the workers are real threads.
 var mutex: Mutex = Mutex.new()
 
 

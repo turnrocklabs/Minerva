@@ -3208,18 +3208,23 @@ func execute_parallel_chat(text_input: String, turn_token: int) -> void:
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
 
 
-## `run` is the parallel run this worker belongs to. It carries both halves the
-## response needs: the chat the run was started on — the token alone only says
-## WHICH turn, and two chats sitting on the same token number would release each
-## other — and that run's own pending messages and counters.
+## `user_msg` is the prompt this response answers, bound in by the worker that
+## made it, and `run` is the parallel run that worker belongs to. The run
+## carries the chat it was started on — the token alone only says WHICH turn,
+## and two chats sitting on the same token number would release each other —
+## and the delivered/expected count that ends the turn.
+##
+## The pairing is BOUND, not inferred from arrival order: workers append their
+## prompts under the mutex but schedule their deferred emissions afterwards, so
+## a worker paused between the two lets a later worker's response arrive first,
+## and a queue popped in order then hands each response its neighbour's prompt.
 ##
 ## A run whose token the chat no longer holds was stopped, and its response is
-## refused HERE, before it touches anything: popping first would pair the live
-## run's answer with the dead run's message, and leave the live run one short of
-## the completion that ends its turn.
+## refused HERE, before it touches anything: counting first would leave the live
+## run one short of the completion that ends its turn.
 func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
-		run: ChatParallelRun = null) -> void:
-	if chat_hist_item == null or run == null:
+		user_msg: ChatHistoryItem = null, run: ChatParallelRun = null) -> void:
+	if chat_hist_item == null or user_msg == null or run == null:
 		return
 	var history: ChatHistory = run.history
 	if history == null:
@@ -3227,12 +3232,9 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
 	if run.turn_token != history.request_turn_token:
 		return
 	run.mutex.lock()
-	var user_msg: ChatHistoryItem = run.user_items.pop_front()
 	run.delivered += 1
 	var run_complete: bool = run.is_complete()
 	run.mutex.unlock()
-	if user_msg == null:
-		return
 	var bot_response: ChatHistoryItem = chat_hist_item
 	
 	for i in get_tree().get_nodes_in_group("parallelLoadingNode"):
@@ -3278,12 +3280,14 @@ func create_message_new(inputs_idx: int) -> void:
 	var history: ChatHistory = run.history
 	var user_history_item = create_user_history_item(message)
 	
-	# Bind THIS run into the handler: a response that arrives after the run was
-	# cancelled and another started must not release the replacement, must not
-	# consume the replacement's pending message, and one that arrives after a
-	# tab switch must not release whatever chat is current.
+	# Bind THIS prompt and THIS run into the handler. The prompt, because the
+	# response is paired with whatever the handler is handed, and the emissions
+	# of concurrent workers reach the main thread in no fixed order. The run,
+	# because a response that arrives after the run was cancelled and another
+	# started must not release the replacement, and one that arrives after a tab
+	# switch must not release whatever chat is current.
 	user_history_item.response_arrived.connect(
-		_on_thread_bot_response_arrived.bind(run))
+		_on_thread_bot_response_arrived.bind(user_history_item, run))
 	
 	# The chat's own provider, not the item's: create_user_history_item leaves
 	# the item's provider null, so testing the item here never took this branch.
@@ -3299,7 +3303,6 @@ func create_message_new(inputs_idx: int) -> void:
 			ChatHistoryItem.ChatRole.MODEL, "")
 		human_answer.provider = history.provider
 		run.mutex.lock()
-		run.user_items.append(user_history_item)
 		history.HistoryItemList.append(user_history_item)
 		history.HistoryItemList.append(human_answer)
 		run.mutex.unlock()
@@ -3324,7 +3327,6 @@ func create_message_new(inputs_idx: int) -> void:
 		user_history_item.InputTokens = bot_response.prompt_tokens
 
 	run.mutex.lock()
-	run.user_items.append(user_history_item)
 	history.HistoryItemList.append(user_history_item)
 	history.HistoryItemList.append(chi)
 	run.mutex.unlock()
