@@ -488,6 +488,13 @@ pub enum SubmitState {
     /// flight — the settled paste-failure shape. Exactly one extra Enter is the
     /// measured recovery, and only on profiles that show this state.
     StuckInComposer,
+    /// A modal owns the keyboard on the screen sampled after the write: the
+    /// write is unconfirmed AND no keystroke may be spent on it, because the
+    /// Enter a stuck composer would earn SELECTS the highlighted option. The
+    /// selected row of a chooser carries the same caret glyph as the composer,
+    /// and carries the body too whenever the sent text is one of the offered
+    /// answers — which is exactly when the mistake costs the most.
+    Held(HoldReason),
     /// Neither confirmed nor demonstrably stuck. Never worth an extra Enter:
     /// a blind Enter is what answers a menu by accident.
     Unconfirmed,
@@ -502,6 +509,9 @@ pub enum SubmitState {
 ///   `echo`  — the body appears on a row that is NOT the composer row, i.e.
 ///             the transcript took it, and only rows that are NEW since the
 ///             pre-write baseline (see `baseline` below).
+///   held    — a hold state (dialog, menu, confirm footer) is on screen. The
+///             row rules cannot tell a selected option from a composer, so the
+///             hold classifier decides first and no recovery is owed.
 ///   stuck   — the composer row still carries the body, nothing echoes it and
 ///             nothing is running. Reported only for profiles that can show
 ///             this state; on Claude Code the same rows are produced by the
@@ -536,6 +546,11 @@ pub fn confirm_submit(
 
     if echoes > echoes_before {
         return SubmitState::Submitted("echo");
+    }
+    // A hold state outranks the composer rule: on a chooser the row that looks
+    // like a composer holding the body IS the selected option.
+    if let Some(reason) = hold_reason(screen, cd) {
+        return SubmitState::Held(reason);
     }
     if composer_holds_body && cd.composer_enter_recovery {
         return SubmitState::StuckInComposer;

@@ -1766,3 +1766,48 @@ fn an_armed_send_on_an_unwatched_terminal_keeps_its_turn_until_it_is_counted() {
         "the counted end of the first turn is what lets the second send write"
     );
 }
+
+// ── 9. A modal that appears after the write earns no recovery Enter ────────
+
+/// A codex chooser drawn where the composer was, with the sent word on its
+/// SELECTED row. No composer is on screen while the modal owns the keyboard,
+/// so that option row is the last `›` row — the shape the stuck-composer rule
+/// reads as unsubmitted text.
+const MENU_AFTER_WRITE: &str = concat!(
+    "\u{2022} Ready to apply the patch?\n",
+    "\n",
+    "\u{203a} 1. Yes\n",
+    "  2. No\n",
+    "Press enter to continue\n",
+);
+
+/// Oracle: the same `must_hold` ground truth the gate's pre-write hold rests
+/// on (README §1) — an Enter on a chooser SELECTS the highlighted option. The
+/// harness answering a send with a modal is the case where that keystroke
+/// would be spent as a "recovery", so the confirmation must report the hold
+/// and write nothing more.
+#[test]
+fn a_modal_answering_the_write_gets_no_extra_enter() {
+    let mut host = FakeHost::start();
+    let terminal = "t-submit-modal";
+    host.screen = Box::new(|v| match v.writes.len() {
+        0..=1 => (CODEX_IDLE.to_string(), 120),
+        _ => (MENU_AFTER_WRITE.to_string(), 130),
+    });
+    host.wait = Box::new(|_| quiet());
+    host.watch_start(terminal, "codex");
+
+    let payload = host.tool(
+        "minerva_agent_relay_send",
+        json!({"terminal_id": terminal, "text": "Yes"}),
+    );
+
+    assert_eq!(
+        host.view().writes,
+        vec!["Yes".to_string(), "\r".to_string()],
+        "the modal must not be answered by a recovery Enter: {payload}"
+    );
+    assert_eq!(payload["submit"]["extra_enter"], false, "{payload}");
+    assert_eq!(payload["submit"]["state"], "held", "{payload}");
+    assert_eq!(payload["submit"]["evidence"], "held:menu", "{payload}");
+}

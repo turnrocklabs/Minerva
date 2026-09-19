@@ -462,3 +462,36 @@ fn echoed_prompts_and_answer_prose_still_complete_their_turn() {
         );
     }
 }
+
+// ── A modal never earns the recovery Enter ──────────────────────────────────
+// The selected row of a chooser is shaped like a composer row: it starts with
+// the same caret glyph and, when the sent text is one of the offered answers,
+// it carries the body too. Judged by echo rules alone that screen is the
+// stuck-composer shape, and the extra Enter that shape earns SELECTS the
+// highlighted option — the exact keystroke the hold rules exist to prevent.
+
+/// A codex chooser whose selected row carries the body just sent ("Yes"): no
+/// composer is drawn while the modal owns the keyboard, so the option row is
+/// the last `›` row on screen.
+const MENU_CARRYING_THE_BODY: &str = concat!(
+    "\u{2022} Ready to apply the patch?\n",
+    "\n",
+    "\u{203a} 1. Yes\n",
+    "  2. No\n",
+    "Press enter to continue\n",
+);
+
+#[test]
+fn a_menu_carrying_the_sent_body_is_never_stuck_in_composer() {
+    let cd = compiled("codex");
+    assert_eq!(
+        detector::hold_reason(MENU_CARRYING_THE_BODY, &cd),
+        Some(detector::HoldReason::Menu),
+        "the fixture must be a hold state — that is what makes the Enter unsafe"
+    );
+    assert_eq!(
+        detector::confirm_submit(MENU_CARRYING_THE_BODY, "Yes", &cd, None),
+        SubmitState::Held(detector::HoldReason::Menu),
+        "a modal owns the keyboard: the write is unconfirmed and no Enter is owed"
+    );
+}

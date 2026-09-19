@@ -23,7 +23,10 @@
 //   3. CONFIRM — sample the screen after the write and classify it. The one
 //      measured failure shape (codex, text settled in the composer, no echo,
 //      nothing running) is recovered with exactly one extra Enter; every other
-//      outcome, confirmed or not, gets no keystroke.
+//      outcome, confirmed or not, gets no keystroke. A screen that is a HOLD
+//      state is classified as held, never as a stuck composer: the modal's
+//      selected row wears the composer's caret, and the recovery Enter would
+//      answer it.
 //
 // The gate also publishes what it sees (hold reason, waiter count, whether a
 // turn is outstanding) for watch_status.
@@ -35,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::detector::{self, CompiledDetection, SubmitState};
+use crate::detector::{self, CompiledDetection, HoldReason, SubmitState};
 use crate::router::Router;
 use crate::watcher;
 
@@ -385,6 +388,9 @@ const UNREADABLE: &str = "unreadable screen";
 /// `baseline` is the PRE-WRITE screen, when one was read. Echo evidence is
 /// counted against it, so an echo of the same text left by an EARLIER submit
 /// cannot confirm this one (detector::confirm_submit).
+///
+/// A hold state reached here answers with "held" and evidence `held:<reason>`,
+/// and takes the same exit as any unconfirmed write: no keystroke.
 pub fn confirm_submitted(
     terminal_id: &str,
     body: &str,
@@ -446,7 +452,9 @@ fn sample_until_settled(
         };
         last = detector::confirm_submit(&screen, body, cd, baseline);
         match last {
-            SubmitState::Submitted(_) | SubmitState::StuckInComposer => break,
+            SubmitState::Submitted(_) | SubmitState::StuckInComposer | SubmitState::Held(_) => {
+                break
+            }
             SubmitState::Unconfirmed => {}
         }
     }
@@ -457,6 +465,11 @@ fn sample_until_settled(
 fn evidence_of(state: &SubmitState) -> Option<&'static str> {
     match state {
         SubmitState::Submitted(e) => Some(e),
+        SubmitState::Held(reason) => Some(match reason {
+            HoldReason::Dialog => "held:dialog",
+            HoldReason::Menu => "held:menu",
+            HoldReason::ConfirmFooter => "held:confirm_footer",
+        }),
         _ => None,
     }
 }
@@ -465,6 +478,7 @@ fn confirmation_json(state: &SubmitState, evidence: Option<&str>, extra_enter: b
     let name = match state {
         SubmitState::Submitted(_) => "submitted",
         SubmitState::StuckInComposer => "stuck_in_composer",
+        SubmitState::Held(_) => "held",
         SubmitState::Unconfirmed => "unconfirmed",
     };
     json!({
