@@ -945,6 +945,132 @@ fn a_stale_bypass_leaves_the_newly_filed_card_answerable() {
     );
 }
 
+// ── 9b. A card answer whose WATCH vanished must not be written ─────────────
+
+/// Oracle: the bypass is the card's IDENTITY check, and a screen's identity
+/// does not need a watch — only the hold and the peek classify screens. An
+/// answer that validated the card and then queued can reach the front to find
+/// both that the watch is gone (watch_stop, the idle reap) and that the
+/// terminal has moved on to a different modal. Its keystrokes here are a
+/// chooser navigation, and on the permission dialog now drawn they would
+/// select whatever is highlighted. Nothing may be written: the answer is
+/// refused as stale and starts over as a plain prompt on a revived watch,
+/// held by the dialog like any other.
+#[test]
+fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
+    let mut host = FakeHost::start();
+    let terminal = "t-watch-gone-answer";
+    let moved_on = Arc::new(AtomicBool::new(false));
+    let cleared = Arc::new(AtomicBool::new(false));
+    let (m, c) = (Arc::clone(&moved_on), Arc::clone(&cleared));
+    host.screen = Box::new(move |v| {
+        if v.writes.len() < 2 {
+            (CLAUDE_IDLE.to_string(), 100)
+        } else if !m.load(Ordering::SeqCst) {
+            (HOLD_CLAUDE_CHOOSER.to_string(), 130)
+        } else if !c.load(Ordering::SeqCst) {
+            (HOLD_CLAUDE_PERMISSION.to_string(), 160)
+        } else {
+            (CLAUDE_IDLE.to_string(), 190)
+        }
+    });
+    let m = Arc::clone(&moved_on);
+    host.wait = Box::new(move |v| {
+        if v.writes.len() < 2 {
+            quiet()
+        } else if !m.load(Ordering::SeqCst) {
+            settled(HOLD_CLAUDE_CHOOSER, 130)
+        } else {
+            settled(HOLD_CLAUDE_PERMISSION, 160)
+        }
+    });
+    host.watch_start(terminal, "claude");
+
+    let question = host.tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "chat-w", "terminal_id": terminal, "text": ASK_PROMPT}),
+    );
+    assert_eq!(question["kind"], "question", "{question}");
+    // The number of an offered option: it reaches the PTY as chooser
+    // navigation (arrow keys + Enter), the shape that would SELECT on the
+    // permission dialog.
+    let option = question["options"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|o| o["keystroke"].as_str())
+        .find(|k| k.parse::<u32>().map(|n| n > 1).unwrap_or(false))
+        .map(str::to_string)
+        .unwrap_or_else(|| panic!("the chooser card must offer a numbered option: {question}"));
+
+    // Answer A (custom text) is written and its turn holds the slot; answer B
+    // validates the SAME card and queues behind it. The order is ESTABLISHED,
+    // not assumed (see test 2): A's write is out before B is issued.
+    let first = host.call_tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "chat-w", "terminal_id": terminal, "text": CUSTOM_ANSWER}),
+    );
+    host.pump_while(&[first], |v| v.writes.len() < 4);
+    let second = host.call_tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "chat-w2", "terminal_id": terminal, "text": option}),
+    );
+    wait_for_one_waiter(&mut host, terminal);
+
+    // The screen advances to a permission dialog and the watch is stopped
+    // while B waits: the stop is signalled while the watcher is blocked in its
+    // wait, so that wait still counts A's turn end — and the loop then exits
+    // and drops the session before A has finished reading its turn.
+    moved_on.store(true, Ordering::SeqCst);
+    let stopped = host.tool(
+        "minerva_agent_relay_watch_stop",
+        json!({"terminal_id": terminal}),
+    );
+    assert_eq!(stopped["was_watching"], true, "{stopped}");
+    host.await_reply(first);
+    let status = host.tool(
+        "minerva_agent_relay_watch_status",
+        json!({"terminal_id": terminal}),
+    );
+    assert_eq!(
+        status["status"],
+        Value::Null,
+        "the watch must be gone before the queued answer takes the slot: {status}"
+    );
+
+    // B now owns the slot with no watch on the terminal. Nothing of its
+    // answer — no arrow bytes, no Enter — may reach the dialog.
+    let before = host.view().reads;
+    host.pump_while(&[second], |v| v.reads < before + 8);
+    assert_eq!(
+        host.view().writes,
+        vec![
+            ASK_PROMPT.to_string(),
+            "\r".to_string(),
+            CUSTOM_ANSWER.to_string(),
+            "\r".to_string(),
+        ],
+        "the queued answer must not be written onto the permission dialog"
+    );
+
+    // It starts over as a plain prompt on a revived watch, and lands only once
+    // the dialog is gone.
+    cleared.store(true, Ordering::SeqCst);
+    host.pump_while(&[second], |v| v.writes.len() < 6);
+    assert_eq!(
+        host.view().writes,
+        vec![
+            ASK_PROMPT.to_string(),
+            "\r".to_string(),
+            CUSTOM_ANSWER.to_string(),
+            "\r".to_string(),
+            option.clone(),
+            "\r".to_string(),
+        ],
+        "and lands as a plain submit once the dialog clears"
+    );
+}
+
 // ── 10. The hold's clock and the slot's clock are separate ─────────────────
 
 /// Oracle: an attached owner is never displaced, however much of its budget

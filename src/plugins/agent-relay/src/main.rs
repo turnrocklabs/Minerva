@@ -440,49 +440,50 @@ fn send_core_with_mode(
         // caller ends or detaches it, and a detached one until the turn's
         // end is counted.
         let taken = send_gate::begin_turn(terminal_id, remaining(deadline))?;
+        // The card this answers must still BE the screen now that the write is
+        // imminent — another answer may have cleared it while this one queued,
+        // and these keystrokes mean nothing to whatever the agent drew next.
+        //
+        // This re-check runs BEFORE the detection is read, and it does not
+        // depend on one. It compares the card's region with the region on the
+        // live screen: a screen READ, not a classification. A watch that went
+        // away while the answer queued (watch_stop, the idle reap) used to
+        // carry it past this check into the unwatched branch below, and the
+        // card's keystrokes — chooser arrows, a permission letter — were
+        // written onto the modal that had replaced it. Only the hold and peek
+        // phases need a detection to classify a screen with; they are the ones
+        // skipped when the terminal has none.
+        if let GateHold::Bypass(ref expected) = hold {
+            let live =
+                live_question_region(terminal_id, router).map(|r| region_identity(&r));
+            let pending = with_passthrough(|s| s.pending_question.contains(terminal_id));
+            if !pending || live.as_deref() != Some(expected.as_str()) {
+                return Err(STALE_BYPASS.to_string());
+            }
+            break (watched_detection(terminal_id), taken);
+        }
         let Some(cd) = watched_detection(terminal_id) else {
             // Still unwatched with the slot in hand: no screen judgement is
             // possible, and the write goes out serialised but unclassified.
             break (None, taken);
         };
-        match hold {
-            // EVERY acquisition looks again. Waiting for the screen and
-            // taking the slot are two steps, and the screen can turn into a
-            // dialog in between — the owner ahead of this caller may end
-            // its turn AT one and release a FREE slot, so "the slot was
-            // free straight away" says nothing about the screen this write
-            // would land on.
-            GateHold::Wait => {
-                match send_gate::peek_writable(terminal_id, &cd, router) {
-                    Ok(screen) => {
-                        if screen.is_some() {
-                            gate_screen = screen;
-                        }
-                        break (Some(cd), taken);
-                    }
-                    // Held again. Drop the slot BEFORE waiting: whatever is
-                    // on screen is answered through this same gate.
-                    Err(_) => {
-                        drop(taken);
-                        std::thread::sleep(std::time::Duration::from_millis(
-                            send_gate::POLL_MS,
-                        ));
-                    }
-                }
-            }
-            // The card this answers must still BE the screen now that the
-            // write is imminent — another answer may have cleared it while
-            // this one queued, and these keystrokes mean nothing to whatever
-            // the agent drew next.
-            GateHold::Bypass(ref expected) => {
-                let live =
-                    live_question_region(terminal_id, router).map(|r| region_identity(&r));
-                let pending =
-                    with_passthrough(|s| s.pending_question.contains(terminal_id));
-                if !pending || live.as_deref() != Some(expected.as_str()) {
-                    return Err(STALE_BYPASS.to_string());
+        // EVERY acquisition looks again. Waiting for the screen and taking the
+        // slot are two steps, and the screen can turn into a dialog in
+        // between — the owner ahead of this caller may end its turn AT one and
+        // release a FREE slot, so "the slot was free straight away" says
+        // nothing about the screen this write would land on.
+        match send_gate::peek_writable(terminal_id, &cd, router) {
+            Ok(screen) => {
+                if screen.is_some() {
+                    gate_screen = screen;
                 }
                 break (Some(cd), taken);
+            }
+            // Held again. Drop the slot BEFORE waiting: whatever is on screen
+            // is answered through this same gate.
+            Err(_) => {
+                drop(taken);
+                std::thread::sleep(std::time::Duration::from_millis(send_gate::POLL_MS));
             }
         }
     };
@@ -1691,6 +1692,18 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
     // validated, i.e. nobody has re-filed since.
     if matches!(outcome, Err(ref e) if e == STALE_BYPASS) {
         clear_pending_question_if(&terminal_id, filed_region.as_deref());
+        // The bypass also goes stale when the WATCH went away under the answer
+        // (watch_stop, the idle reap): the card could no longer be confirmed,
+        // so nothing was written. The re-send is a fresh prompt and needs the
+        // watch back before it goes out — without one the gate has nothing to
+        // classify screens with, and the prompt would be written unheld onto
+        // the modal that replaced the card, which is the write this refusal
+        // just prevented.
+        if watcher::watch_status(&terminal_id).is_none() {
+            if let Err(e) = revive_passthrough_watch(&terminal_id, router) {
+                return ok_response(id, tool_ok(json!({"kind": "error", "text": e})));
+            }
+        }
         outcome = relay_ask_core(
             &terminal_id, text, SendMode::Submit, GateHold::Wait, PASSTHROUGH_TIMEOUT_MS,
             false, true, None, router,
