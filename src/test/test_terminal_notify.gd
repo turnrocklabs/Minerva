@@ -170,6 +170,9 @@ var _fail := 0
 ## resolved as a node at runtime rather than by identifier.
 var _so: Node = null
 var _saved_chats = null
+## Real PreferencesPopup + NotesContainers for the host fields the real render
+## path reads; without them the production code renders against nulls.
+var _host_render := preload("res://test/helpers/chat_host_render_fixture.gd").new()
 
 
 func _init() -> void:
@@ -257,6 +260,7 @@ func _run() -> void:
 	if _so == null:
 		return
 	_saved_chats = _so.Chats
+	_host_render.install(_so)
 	await _test_validation()
 	await _test_resolution()
 	await _test_no_match_and_ambiguity()
@@ -269,6 +273,7 @@ func _run() -> void:
 	await _test_the_receipt_is_honest_on_an_unanswered_user_message()
 	await _test_an_idle_chat_on_an_unanswered_user_message_is_still_notified()
 	_test_wiring_is_present()
+	_host_render.restore()
 
 
 ## The standing two-terminal world: one claude, one codex, each with a bound

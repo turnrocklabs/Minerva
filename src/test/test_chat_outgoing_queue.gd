@@ -199,6 +199,9 @@ var _fail := 0
 ## Autoloads register after this script is compiled, so SingletonObject is
 ## resolved as a node at runtime rather than by identifier.
 var _so: Node = null
+## Real PreferencesPopup + NotesContainers for the host fields the real render
+## path reads; without them the production code renders against nulls.
+var _host_render := preload("res://test/helpers/chat_host_render_fixture.gd").new()
 
 
 func _init() -> void:
@@ -294,6 +297,7 @@ func _run() -> void:
 	check("S0: the SingletonObject autoload is live", _so != null)
 	if _so == null:
 		return
+	_host_render.install(_so)
 	_test_queue_semantics()
 	await _test_queue_then_promote_in_order()
 	await _test_cancel_discards_pending()
@@ -310,6 +314,7 @@ func _run() -> void:
 	await _test_a_human_parallel_worker_ends_its_share_of_the_run()
 	await _test_a_worker_delivers_its_response_on_the_main_thread()
 	await _test_each_response_is_paired_with_the_prompt_that_asked_for_it()
+	_host_render.restore()
 
 
 #region A — queue semantics
