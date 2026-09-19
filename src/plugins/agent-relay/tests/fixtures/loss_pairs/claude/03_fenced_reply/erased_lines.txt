@@ -1,0 +1,21 @@
+                                                                                                    ◐ medium · /effort
+❯ Try "create a util logging.py that..."
+❯ Use the Bash tool to run the comman
+❯
+✢ Creating…
+  ⏸ manual mode on · esc to interrupt · ← for agents
+✶ Clauding…
+  Running 1 shell command
+✽ Clauding… (1s · ↓ 2 tokens)
+⏺ Running 1 shell command…
+✢ Clauding… (1s · ↓ 7 tokens)
+⏺ Printing PERMTEST to the terminal
+  ⎿  $ echo PERMTEST
+· Clauding… (2s · ↓ 7 tokens)
+· Clauding… (2s · ↓ 72 tokens)
+  Printing PERMTEST to the terminal
+✻ Clauding… (2s · ↓ 84 tokens)
+✽ Clauding… (3s · ↓ 91 tokens)
+✢ Clauding… (3s · ↓ 96 tokens)
+✻ C
+· Clauding… (running Stop hook · 4s · ↓ 102 tokens)

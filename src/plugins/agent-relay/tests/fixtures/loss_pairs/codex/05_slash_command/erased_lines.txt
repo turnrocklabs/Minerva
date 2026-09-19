@@ -1,0 +1,12 @@
+│ >_ OpenAI Codex (v0.155.1)
+│ >_ OpenAI Codex (v0.155.1)            │
+│ model:     loading   /model to change │
+│ directory: loading                    │
+  ? for shortcuts
+│ model:     loading   /model to change                 │
+  gpt-6-astra default · /private/tmp/claude-501/-Users-ipeerbhai-github-Minerva/a72c794b-dc73-45c9-a4e4-78a5f34b1294/sc…
+  Tip: Try the
+│  >_
+│  Agents.md:            <none>
+│  Session:              01a0b787-8b54-7131-81d0-ceedf9578778
+  gpt-6-astra high ·

@@ -1,0 +1,41 @@
+
+╭───────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.155.1)                            │
+│                                                       │
+│ model:     gpt-6-astra high   /model to change        │
+│ directory: /private/tmp/claude-501/…/spike/codex-proj │
+╰───────────────────────────────────────────────────────╯
+
+  Tip: Try the Desktop app. Run 'codex app' or visit https://chatgpt.com/codex?app-landing-page=true
+
+⚠ 1 MCP startup issue · ctrl + t for details
+
+• You have 2 usage limit resets available. Run /usage to use one.
+
+/status
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  >_ OpenAI Codex (v0.155.1)                                                                                  │
+│                                                                                                              │
+│ Visit https://chatgpt.com/codex/settings/usage for up-to-date                                                │
+│ information on rate limits and credits                                                                       │
+│                                                                                                              │
+│  Model:                gpt-6-astra (reasoning high, summaries auto)                                          │
+│  Model provider:       openai                                                                                │
+│  Directory:            /private/tmp/claude-501/-Users-ipeerbhai-github-Minerva/…/scratchpad/spike/codex-proj │
+│  Permissions:          Read Only (Ask for approval)                                                          │
+│  Agents.md:            <none>                                                                                │
+│  Account:              user@example.test (Pro)                                                               │
+│  Collaboration mode:   Default                                                                               │
+│  Session:              01a0b787-8b54-7131-81d0-ceedf9578778                                                  │
+│                                                                                                              │
+│  Weekly limit:         [███████░░░░░░░░░░░░░] 37% left (resets 18:15 on 22 Sep)                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+› Ask Codex to do anything
+
+  gpt-6-astra high · /private/tmp/claude-501/-Users-ipeerbhai-github-Minerva/a72c794b-dc73-45c9-a4e4-78a5f34b1294/scrat…
+
+
+

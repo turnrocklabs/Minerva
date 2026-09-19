@@ -1,0 +1,62 @@
+{
+  "harness": "codex",
+  "pair": "01_short_answer",
+  "prompt": "Reply with exactly the word PONG and nothing else.",
+  "session_log": "rollout-2026-09-18T18-18-15-01a0b73e-19ab-7402-9459-3cdd9e73a816.jsonl",
+  "ground_truth_method": "rollout: event_msg task_complete.last_agent_message, cross-checked against response_item message role=assistant",
+  "terminal": {
+    "cols": 120,
+    "rows": 40,
+    "screen_rows_available": 64
+  },
+  "sizes": {
+    "screen_chars": 852,
+    "cleaned_chars": 589,
+    "ground_truth_chars": 4
+  },
+  "pipeline": {
+    "truncated": false,
+    "omitted_chars": 0
+  },
+  "comparison": {
+    "ground_truth_lines": 1,
+    "lines_absent_from_cleaned": 0,
+    "absent_examples": [],
+    "contiguous_in_cleaned": true,
+    "markdown_source_preserved": true,
+    "markdown_text_preserved": true
+  },
+  "inter_poll_erasure": {
+    "snapshots": 25,
+    "snapshot_chunk_bytes": 512,
+    "lines_seen_then_erased": 13,
+    "erased_chars": 521,
+    "answer_lines_erased": 0
+  },
+  "tool_output_chars_elided": 0,
+  "interrupted_screen_only_chars": null,
+  "interrupted_or_aborted": false,
+  "loss_classes": {
+    "truncation_30k": false,
+    "viewport_ceiling_no_scrollback": false,
+    "completion_glyph_status_line": true,
+    "ctrl_o_expand_affordance": false,
+    "no_session_log": false,
+    "local_slash_command": false,
+    "interrupted_turn": false,
+    "answer_lines_lost": false,
+    "chrome_interleaved_in_answer": false,
+    "markdown_source_lost": false,
+    "very_short_answer": true,
+    "wrapped_lines": false,
+    "tool_output_elided": false,
+    "indentation_stripped": true,
+    "partial_answer_absent_from_log": false,
+    "answer_text_erased_between_polls": false
+  },
+  "loss_classes_present": [
+    "completion_glyph_status_line",
+    "indentation_stripped",
+    "very_short_answer"
+  ]
+}

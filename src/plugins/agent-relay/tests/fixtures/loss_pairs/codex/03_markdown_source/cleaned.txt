@@ -1,0 +1,30 @@
+>_ OpenAI Codex (v0.155.1)
+model:     gpt-6-astra high   /model to change
+directory: /private/tmp/claude-501/…/spike/codex-proj
+
+Tip: New Use /fast to enable our fastest inference with increased plan usage.
+
+⚠ 1 MCP startup issue · ctrl + t for details
+
+• You have 2 usage limit resets available. Run /usage to use one.
+
+› Answer in markdown. Start with a level-two heading reading What a PTY is. Then exactly three bullet points. Put one
+phrase in bold. Then a fenced bash code block containing the single line stty -a. Keep it under 120 words.
+
+• ## What a PTY is
+
+- A PTY is a pseudoterminal: a software interface that behaves like a physical terminal.
+- It connects a terminal emulator or controlling program to a shell or other process, supporting interactive input and
+output.
+
+- Programs use it for terminal features such as line editing, signals, and window size detection. Run this command to
+inspect your terminal settings:
+
+stty -a
+
+done 7:36 PM
+
+› Ask Codex to do anything
+
+gpt-6-astra high · /private/tmp/claude-501/-Users-ipeerbhai-github-Minerva/a72c794b-dc73-45c9-a4e4-78a5f34b1294/scrat…
+

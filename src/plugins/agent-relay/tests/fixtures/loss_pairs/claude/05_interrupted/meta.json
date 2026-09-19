@@ -1,0 +1,65 @@
+{
+  "harness": "claude",
+  "pair": "05_interrupted",
+  "prompt": "Write a 1500 word essay about the history of terminal emulators. Do not use any tools.  (Esc at +6s)",
+  "session_log": "66666666",
+  "ground_truth_method": "harness transcript: the partial assistant text block written before the '[Request interrupted by user]' user record",
+  "terminal": {
+    "cols": 120,
+    "rows": 40,
+    "screen_rows_available": 40
+  },
+  "sizes": {
+    "screen_chars": 1640,
+    "cleaned_chars": 1327,
+    "ground_truth_chars": 970
+  },
+  "pipeline": {
+    "truncated": false,
+    "omitted_chars": 0
+  },
+  "comparison": {
+    "ground_truth_lines": 4,
+    "lines_absent_from_cleaned": 0,
+    "absent_examples": [],
+    "contiguous_in_cleaned": false,
+    "markdown_source_preserved": false,
+    "markdown_text_preserved": true
+  },
+  "inter_poll_erasure": {
+    "snapshots": 12,
+    "snapshot_chunk_bytes": 512,
+    "lines_seen_then_erased": 10,
+    "erased_chars": 437,
+    "answer_lines_erased": 0
+  },
+  "tool_output_chars_elided": 0,
+  "interrupted_screen_only_chars": 100,
+  "interrupted_or_aborted": true,
+  "loss_classes": {
+    "truncation_30k": false,
+    "viewport_ceiling_no_scrollback": true,
+    "completion_glyph_status_line": false,
+    "ctrl_o_expand_affordance": false,
+    "no_session_log": false,
+    "local_slash_command": false,
+    "interrupted_turn": true,
+    "answer_lines_lost": false,
+    "chrome_interleaved_in_answer": true,
+    "markdown_source_lost": true,
+    "very_short_answer": false,
+    "wrapped_lines": true,
+    "tool_output_elided": false,
+    "indentation_stripped": true,
+    "partial_answer_absent_from_log": false,
+    "answer_text_erased_between_polls": false
+  },
+  "loss_classes_present": [
+    "chrome_interleaved_in_answer",
+    "indentation_stripped",
+    "interrupted_turn",
+    "markdown_source_lost",
+    "viewport_ceiling_no_scrollback",
+    "wrapped_lines"
+  ]
+}

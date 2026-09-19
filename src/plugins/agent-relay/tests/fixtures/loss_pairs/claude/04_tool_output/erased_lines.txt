@@ -1,0 +1,18 @@
+           Fable 5.1 with medium effort
+                                                                                                    ◐ medium · /effort
+❯ Try "fix lint errors"
+❯ Use the Bash tool to run exactly this command: seq 1 300. After it runs, reply with just the word DONE.
+  ⏵⏵ auto mode on (shift+tab to cycle)
+✶ Julienning…
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+✻ Julienning…
+⏺ Running 1 shell command…
+· Gusting…
+  Printing numbers 1 through 300
+  ⎿  $ seq 1 300
+✻ Gusting… (2s · ↓ 4 tokens)
+⏺ Printing numbers 1 through 300
+✽ Gusting… (2s · ↓ 53 tokens)
+✢ Gusting… (3s · ↓ 71 tokens)
+· Gusting… (3s · ↓ 80 tokens)
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for ageterrupt · ← for agents

@@ -1,0 +1,10 @@
+           Fable 5.1 with medium effort
+                                                                                                    ◐ medium · /effort
+❯ Try "fix lint errors"
+❯ Write a
+❯ Write a 1500 word essay about the history of terminal emulators. Do not use any tools.
+  ⏵⏵ auto mode on (shift+tab to cycle)
+· Churning…
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+✳ Deliberating…
+  The ancestor of the te

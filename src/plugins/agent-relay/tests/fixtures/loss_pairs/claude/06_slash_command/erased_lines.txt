@@ -1,0 +1,29 @@
+▗ ▗   ▖ ▖  Claude Code v2.1.277
+           Fable 5.1 with medium effort
+           Fable 5.1 with medium effort · Claude Max
+                                                                                                    ◐ medium · /effort
+❯ Try "fix lint errors"
+  /usage (cost)                       Show session cost, plan usage, and activity stats
+  /code-review                        3 free /ultrareview · Review the current diff, or a PR number/branch/path
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents
+  ▘▘ ▝▝    /…/-Users-ipeerbhai-github-Minerva/a72c794b-dc73-45c9-a4e4-78a5f3
+                                      target, for correctness bugs (plus reuse/simplification/efficiency cleanups whe…
+  /doctor                             Health-check the user's Claude Code setup and fix issues: diagnose installation
+                                      health — what the `claude doctor` terminal diagnostics cover — from local data …
+❯ /cost
+  ⏵⏵ auto mode on (shift+tab to cycle)
+   Settings  Status   Config  -github-Minerva/a72c794b-dc73-45c9-a4e4-78a5f34b1294/scratchpad/spike/claude-proj
+   ██▌                                                5
+   ██▌                                                5% used
+   ████████████▌                                      25% used
+   Approximate, based on local sessions on this machine — does not include other
+    Each subagent runs its own requests. Be deliberate about spawning t
+   Esc to cancel
+    If this runs frequently, consider configuring its suba
+   Current week (Fable)to your limits usage?
+    If this runs frequently, consider configuring its subagents with a cheaper
+    model or tightening their prompts.
+   20% of your usage came from the MCP server "docket"
+    MCP tool results stay in context for the rest of the session. /compact to flush                                   ↓
+   Last 24h · these are indepeaper model for simpler subagents.
+    Longer sessions are more expensive even when cached. /compact mid-task, er

@@ -1,0 +1,9 @@
+## What a PTY is
+
+- A PTY is a **pseudoterminal**: a software interface that behaves like a physical terminal.
+- It connects a terminal emulator or controlling program to a shell or other process, supporting interactive input and output.
+- Programs use it for terminal features such as line editing, signals, and window size detection. Run this command to inspect your terminal settings:
+
+```bash
+stty -a
+```

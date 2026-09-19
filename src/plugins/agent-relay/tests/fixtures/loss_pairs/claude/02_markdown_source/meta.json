@@ -1,0 +1,65 @@
+{
+  "harness": "claude",
+  "pair": "02_markdown_source",
+  "prompt": "Answer in markdown. Start with a level-two heading reading What a PTY is. Then exactly three bullet points. Put one phrase in bold. Then a fenced bash code block containing the single line stty -a. Keep it under 120 words.",
+  "session_log": "62626262",
+  "ground_truth_method": "harness transcript: assistant message.content text blocks, concatenated in order",
+  "terminal": {
+    "cols": 120,
+    "rows": 40,
+    "screen_rows_available": 40
+  },
+  "sizes": {
+    "screen_chars": 1307,
+    "cleaned_chars": 992,
+    "ground_truth_chars": 528
+  },
+  "pipeline": {
+    "truncated": false,
+    "omitted_chars": 0
+  },
+  "comparison": {
+    "ground_truth_lines": 7,
+    "lines_absent_from_cleaned": 0,
+    "absent_examples": [],
+    "contiguous_in_cleaned": false,
+    "markdown_source_preserved": false,
+    "markdown_text_preserved": false
+  },
+  "inter_poll_erasure": {
+    "snapshots": 12,
+    "snapshot_chunk_bytes": 512,
+    "lines_seen_then_erased": 14,
+    "erased_chars": 650,
+    "answer_lines_erased": 0
+  },
+  "tool_output_chars_elided": 0,
+  "interrupted_screen_only_chars": null,
+  "interrupted_or_aborted": false,
+  "loss_classes": {
+    "truncation_30k": false,
+    "viewport_ceiling_no_scrollback": true,
+    "completion_glyph_status_line": true,
+    "ctrl_o_expand_affordance": false,
+    "no_session_log": false,
+    "local_slash_command": false,
+    "interrupted_turn": false,
+    "answer_lines_lost": false,
+    "chrome_interleaved_in_answer": true,
+    "markdown_source_lost": true,
+    "very_short_answer": false,
+    "wrapped_lines": true,
+    "tool_output_elided": false,
+    "indentation_stripped": true,
+    "partial_answer_absent_from_log": false,
+    "answer_text_erased_between_polls": false
+  },
+  "loss_classes_present": [
+    "chrome_interleaved_in_answer",
+    "completion_glyph_status_line",
+    "indentation_stripped",
+    "markdown_source_lost",
+    "viewport_ceiling_no_scrollback",
+    "wrapped_lines"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "harness": "codex",
+  "pair": "05_slash_command",
+  "prompt": "/status",
+  "session_log": "no rollout file written",
+  "ground_truth_method": "screen only - the session wrote no rollout file, so the rendered panel is the sole record; verified by listing the day's rollout directory after the run",
+  "terminal": {
+    "cols": 120,
+    "rows": 40,
+    "screen_rows_available": 41
+  },
+  "sizes": {
+    "screen_chars": 2649,
+    "cleaned_chars": 1126,
+    "ground_truth_chars": 0
+  },
+  "pipeline": {
+    "truncated": false,
+    "omitted_chars": 0
+  },
+  "comparison": null,
+  "inter_poll_erasure": {
+    "snapshots": 27,
+    "snapshot_chunk_bytes": 512,
+    "lines_seen_then_erased": 12,
+    "erased_chars": 476,
+    "answer_lines_erased": 0
+  },
+  "tool_output_chars_elided": 0,
+  "interrupted_screen_only_chars": null,
+  "interrupted_or_aborted": false,
+  "loss_classes": {
+    "truncation_30k": false,
+    "viewport_ceiling_no_scrollback": false,
+    "completion_glyph_status_line": false,
+    "ctrl_o_expand_affordance": false,
+    "no_session_log": true,
+    "local_slash_command": true,
+    "interrupted_turn": false,
+    "answer_lines_lost": null,
+    "chrome_interleaved_in_answer": null,
+    "markdown_source_lost": null,
+    "very_short_answer": null,
+    "wrapped_lines": null,
+    "tool_output_elided": false,
+    "indentation_stripped": true,
+    "partial_answer_absent_from_log": false,
+    "answer_text_erased_between_polls": false
+  },
+  "loss_classes_present": [
+    "indentation_stripped",
+    "local_slash_command",
+    "no_session_log"
+  ]
+}

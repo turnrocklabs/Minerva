@@ -1,0 +1,64 @@
+{
+  "harness": "claude",
+  "pair": "04_tool_output",
+  "prompt": "Use the Bash tool to run exactly this command: seq 1 300. After it runs, reply with just the word DONE.",
+  "session_log": "63636363",
+  "ground_truth_method": "harness transcript: assistant message.content text blocks; the Bash tool_result is held separately in session_log.jsonl",
+  "terminal": {
+    "cols": 120,
+    "rows": 40,
+    "screen_rows_available": 40
+  },
+  "sizes": {
+    "screen_chars": 692,
+    "cleaned_chars": 389,
+    "ground_truth_chars": 4
+  },
+  "pipeline": {
+    "truncated": false,
+    "omitted_chars": 0
+  },
+  "comparison": {
+    "ground_truth_lines": 1,
+    "lines_absent_from_cleaned": 0,
+    "absent_examples": [],
+    "contiguous_in_cleaned": true,
+    "markdown_source_preserved": true,
+    "markdown_text_preserved": true
+  },
+  "inter_poll_erasure": {
+    "snapshots": 13,
+    "snapshot_chunk_bytes": 512,
+    "lines_seen_then_erased": 18,
+    "erased_chars": 724,
+    "answer_lines_erased": 0
+  },
+  "tool_output_chars_elided": 1091,
+  "interrupted_screen_only_chars": null,
+  "interrupted_or_aborted": false,
+  "loss_classes": {
+    "truncation_30k": false,
+    "viewport_ceiling_no_scrollback": true,
+    "completion_glyph_status_line": true,
+    "ctrl_o_expand_affordance": false,
+    "no_session_log": false,
+    "local_slash_command": false,
+    "interrupted_turn": false,
+    "answer_lines_lost": false,
+    "chrome_interleaved_in_answer": false,
+    "markdown_source_lost": false,
+    "very_short_answer": true,
+    "wrapped_lines": false,
+    "tool_output_elided": true,
+    "indentation_stripped": true,
+    "partial_answer_absent_from_log": false,
+    "answer_text_erased_between_polls": false
+  },
+  "loss_classes_present": [
+    "completion_glyph_status_line",
+    "indentation_stripped",
+    "tool_output_elided",
+    "very_short_answer",
+    "viewport_ceiling_no_scrollback"
+  ]
+}

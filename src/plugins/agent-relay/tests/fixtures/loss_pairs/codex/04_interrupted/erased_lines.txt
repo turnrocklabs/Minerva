@@ -1,0 +1,26 @@
+│ >_ OpenAI Codex (v0.155.1)
+│ >_ OpenAI Codex (v0.155.1)            │
+│ model:     loading   /model to change │
+│ directory: loading                    │
+  ? for shortcuts
+│ model:     loading   /model to change                 │
+  gpt-6-astra default · /private/tmp/claude-501/-Users-ipeerbhai-github-Minerva/a72c794b-dc73-45c9-a4e4-78a5f34b1294/sc…
+  Tip: New
+│ model:     gpt-6-astra high
+  Tip: New Use /fast to enable our fastest inference with increased plan us
+  gpt-6-astra high ·
+• Working (0s • esc to interrupt)
+  gpt-6-astra high · /private/tmp/claude-501/-Users-ipeerbhai-github-Mine
+• Working (1s • esc to interrupt)
+• Working (2s • esc to interrupt)
+• Working (3s • esc to interrupt)
+• Working (4s • esc to interrupt)
+• Working (5s • esc to interrupt)
+• Working (6s • esc to interrupt)
+• Working (7s • esc to interrupt)
+• Working (8s • esc to interrupt)
+• Working (9s • esc to interrupt)
+• Working (10s • esc to interrupt)
+• Working (11s • esc to interrupt)
+  working while adapting them to radically different environments. Their longevity reflects both technical c
+■ Co

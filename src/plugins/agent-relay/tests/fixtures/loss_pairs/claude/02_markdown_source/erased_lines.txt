@@ -1,0 +1,14 @@
+           Fable 5.1 with medium effort
+                                                                                                    ◐ medium · /effort
+❯ Try "fix typecheck errors"
+❯ Answer in markdown. Start with a level-two heading reading What a PTY is. Then exactly three bullet points. Put one
+  ⏵⏵ auto mode on (shift+tab to cycle)
+✶ Orchestrating…
+──────────────────────────────────────el-two heading reading What a PTY is. Then exactly three bullet points. Put one
+✢ Orchestrating…
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt · ← for agents
+✻ Orchestrating…
+⏺
+✶ Caramelizing… (1s · ↓ 1 tokens)
+    program like a terminal emulator
+  -

@@ -1,0 +1,41 @@
+
+╭───────────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.155.1)                            │
+│                                                       │
+│ model:     gpt-6-astra high   /model to change        │
+│ directory: /private/tmp/claude-501/…/spike/codex-proj │
+╰───────────────────────────────────────────────────────╯
+
+  Tip: Switch models or reasoning effort quickly with /model.
+
+⚠ 1 MCP startup issue · ctrl + t for details
+
+• You have 2 usage limit resets available. Run /usage to use one.
+
+
+› hi
+
+
+• Hi! What would you like to work on?
+
+  done 7:36 PM
+
+
+› Ask Codex to do anything
+
+  gpt-6-astra high · /private/tmp/claude-501/-Users-ipeerbhai-github-Minerva/a72c794b-dc73-45c9-a4e4-78a5f34b1294/scrat…
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

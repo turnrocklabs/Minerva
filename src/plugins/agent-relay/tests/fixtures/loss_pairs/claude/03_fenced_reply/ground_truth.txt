@@ -1,0 +1,7 @@
+Running the echo command now.
+
+The command ran and printed:
+
+```
+PERMTEST
+```

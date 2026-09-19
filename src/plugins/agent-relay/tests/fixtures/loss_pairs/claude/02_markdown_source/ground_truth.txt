@@ -1,0 +1,9 @@
+## What a PTY is
+
+- A pseudo-terminal (PTY) is a pair of virtual devices that emulate a hardware terminal. The master side is held by a program like a terminal emulator or `ssh`, while the slave side is what a shell or process sees as its controlling terminal.
+- The kernel's line discipline sits between the two, handling echo, line editing, and translating keys like Ctrl-C into signals.
+- Programs check whether stdin is a TTY to decide on **interactive behavior** such as colors, prompts, and buffering.
+
+```bash
+stty -a
+```
