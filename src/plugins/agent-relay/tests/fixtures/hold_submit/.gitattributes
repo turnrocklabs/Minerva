@@ -1,0 +1,2 @@
+# Byte-true PTY captures: never normalise line endings.
+*.tty -text

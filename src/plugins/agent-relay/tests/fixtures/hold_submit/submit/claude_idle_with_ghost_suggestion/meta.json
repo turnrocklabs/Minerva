@@ -1,0 +1,24 @@
+{
+ "harness": "claude 2.1.278",
+ "kind": "submit",
+ "class": "composer_ghost_suggestion",
+ "must_hold": false,
+ "how_reached": "idle screen ~3 s after the previous turn ended.",
+ "ground_truth": "The composer row reads '❯ Reply with exactly the word PONG and nothing else.' but NOTHING is typed: the text is a DIM suggestion the TUI draws in the empty composer, written as ESC[2m ... ESC[22m (visible with `cat -v` on raw_terminal.tty). Row extraction drops the attribute, so on the extracted rows this state is byte-identical in shape to 'text still sitting in the composer'. The extra Enter written 1 s later submitted nothing.",
+ "ground_truth_method": "SGR attributes in the byte-true capture + the driver timeline (no turn followed)",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 40
+ },
+ "capture": {
+  "run": "claude_a",
+  "bytes": 15161
+ },
+ "detector_verdict": {
+  "profile": "claude",
+  "is_busy": false,
+  "cause": "none",
+  "method": "none"
+ }
+}

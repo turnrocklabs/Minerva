@@ -1,0 +1,25 @@
+{
+ "harness": "codex-cli 0.154.0 (pre-update)",
+ "kind": "hold",
+ "class": "unknown_menu",
+ "must_hold": true,
+ "launch": "codex",
+ "how_reached": "launched when a newer codex-cli existed on npm; the update offer is drawn before the TUI and before any turn.",
+ "ground_truth": "'Update available! 0.154.0 -> 0.155.1' with options '› 1. Update now (runs `npm install -g @openai/codex`)' / '2. Skip' / '3. Skip until next version' and footer 'Press enter to continue'. Pressing Enter here starts a package install, which is exactly the damage a mis-classified write can do (see README, incident).",
+ "ground_truth_method": "live harness screen at launch",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 40
+ },
+ "capture": {
+  "run": "codex_probe",
+  "bytes": 2488
+ },
+ "detector_verdict": {
+  "profile": "codex",
+  "is_busy": false,
+  "cause": "none",
+  "method": "none"
+ }
+}

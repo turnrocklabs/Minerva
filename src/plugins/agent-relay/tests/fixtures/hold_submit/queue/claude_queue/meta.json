@@ -1,0 +1,83 @@
+{
+ "harness": "claude 2.1.278",
+ "kind": "queue",
+ "launch": "claude",
+ "question": "does the harness itself queue a message written while a turn is in flight, and dequeue it in order?",
+ "answer": "YES. The message was accepted while busy, held by the harness, and run as the next turn in order.",
+ "what_the_screen_shows_while_queued": "The queued message is echoed in the transcript as '❯ <text>' with the hint row '  ctrl+x ctrl+s to send now' under it, and the COMPOSER row is replaced by the placeholder '❯ Press up to edit queued messages'. So while a message is queued the composer is NOT empty and the text IS echoed — the submit-confirmation signature of a successful send is reproduced by a queued send.",
+ "measured": {
+  "second_enter_at_ms": 13617,
+  "queued_state_first_seen_ms": 14618,
+  "turn1_end_and_dequeue_between_ms": [
+   22619,
+   23619
+  ],
+  "dequeue_delay_ms_upper_bound": 1000,
+  "dequeue_delay_ms_interpolated": 70,
+  "interpolation_method": "byte-offset bisect of the same capture: turn-1 'done' row appears at byte 39902, the queued placeholder clears at byte 40142; 240 bytes at the 3.4 byte/ms rate measured over the enclosing 1 s sample window",
+  "order_preserved": true,
+  "messages_lost": 0
+ },
+ "screens": {
+  "01_turn1_in_flight": {
+   "byte_offset": 13671,
+   "note": "turn 1 busy, composer empty, 3.0 s after turn 1 was submitted",
+   "detector": {
+    "profile": "claude",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "02_second_message_typed": {
+   "byte_offset": 15579,
+   "note": "second message sitting in the composer while turn 1 is still in flight, before its Enter",
+   "detector": {
+    "profile": "claude",
+    "is_busy": false,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "03_queued": {
+   "byte_offset": 17657,
+   "note": "1.0 s after the second Enter: message accepted and QUEUED",
+   "detector": {
+    "profile": "claude",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "04_still_queued": {
+   "byte_offset": 37982,
+   "note": "9.0 s after the second Enter, turn 1 still in flight, message still queued",
+   "detector": {
+    "profile": "claude",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "05_dequeued_running": {
+   "byte_offset": 41394,
+   "note": "turn 1 finished and the queued message is now the running turn",
+   "detector": {
+    "profile": "claude",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "06_second_answer": {
+   "byte_offset": 43458,
+   "note": "the queued message has been answered",
+   "detector": {
+    "profile": "claude",
+    "is_busy": false,
+    "cause": "turn_completed",
+    "method": "settle_prompt"
+   }
+  }
+ }
+}

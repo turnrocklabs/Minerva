@@ -1,0 +1,80 @@
+{
+ "harness": "codex-cli 0.155.1",
+ "kind": "queue",
+ "launch": "codex",
+ "question": "does the harness itself queue a message written while a turn is in flight, and dequeue it in order?",
+ "answer": "YES. The message was accepted while busy, held by the harness, and run as the next turn in order.",
+ "what_the_screen_shows_while_queued": "The composer returns to its empty placeholder '› Ask Codex to do anything' and the queued message is shown as a '↳ <text>' row directly above the composer. It is NOT echoed as a '› <text>' transcript line until it is dequeued, so '↳' vs '›' is what distinguishes queued from sent on this harness.",
+ "measured": {
+  "second_enter_at_ms": 166816,
+  "queued_row_first_seen_ms": 166817,
+  "turn1_last_answer_row_ms": 209244,
+  "dequeue_echo_ms": 209266,
+  "dequeue_delay_ms": 22,
+  "interpolation_method": "direct: per-read timestamps in the capture (reads.jsonl of the run), no interpolation",
+  "order_preserved": true,
+  "messages_lost": 0
+ },
+ "screens": {
+  "01_turn1_in_flight": {
+   "byte_offset": 66121,
+   "note": "turn 1 busy ('Working (3s • esc to interrupt)'), composer at its empty placeholder",
+   "detector": {
+    "profile": "codex",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "02_second_message_typed": {
+   "byte_offset": 67397,
+   "note": "second message sitting in the composer while turn 1 is in flight, before its Enter",
+   "detector": {
+    "profile": "codex",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "03_queued": {
+   "byte_offset": 71194,
+   "note": "1.0 s after the second Enter: message accepted and QUEUED",
+   "detector": {
+    "profile": "codex",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "04_still_queued": {
+   "byte_offset": 164516,
+   "note": "41 s after the second Enter, turn 1 still in flight, message still queued",
+   "detector": {
+    "profile": "codex",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "05_dequeued_running": {
+   "byte_offset": 168617,
+   "note": "turn 1 finished and the queued message is now the running turn",
+   "detector": {
+    "profile": "codex",
+    "is_busy": true,
+    "cause": "none",
+    "method": "none"
+   }
+  },
+  "06_second_answer": {
+   "byte_offset": 174560,
+   "note": "the queued message has been answered",
+   "detector": {
+    "profile": "codex",
+    "is_busy": false,
+    "cause": "turn_completed",
+    "method": "settle_prompt"
+   }
+  }
+ }
+}

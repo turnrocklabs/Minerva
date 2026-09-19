@@ -1,0 +1,24 @@
+{
+ "harness": "codex-cli 0.155.1",
+ "kind": "submit",
+ "class": "submit_failed_text_stuck_in_composer",
+ "must_hold": false,
+ "how_reached": "the whole message AND the CR written in ONE write(); screen taken 1200 ms later.",
+ "ground_truth": "Submit FAILED: the composer still reads '› Reply with exactly the word PING and nothing else.', there is no echo in the transcript and no 'Working (... esc to interrupt)' row. The capture is unchanged 4200 ms after the write (the driver read ZERO further bytes between t+1200 ms and t+4200 ms), so this is a settled state, not a race. This is the shape that warrants exactly one extra Enter.",
+ "ground_truth_method": "live harness screen + byte-offset identity at t+1200 ms and t+4200 ms",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 41
+ },
+ "capture": {
+  "run": "codex_main",
+  "bytes": 19307
+ },
+ "detector_verdict": {
+  "profile": "codex",
+  "is_busy": false,
+  "cause": "none",
+  "method": "none"
+ }
+}

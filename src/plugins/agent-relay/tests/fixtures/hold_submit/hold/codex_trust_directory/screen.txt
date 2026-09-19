@@ -1,0 +1,40 @@
+> You are in /tmp/claude-1000/-home-imran-github-Minerva/3998cdfe-2f4d-4ced-80bb-875112f3cd7c/scratchpad/p2t1/work/codex
+
+  Do you trust the contents of this directory? Working with untrusted contents comes with higher risk of prompt
+  injection. Trusting the directory allows project-local config, hooks, and exec policies to load.
+
+› 1. Yes, continue
+  2. No, quit
+
+  Press enter to continue
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

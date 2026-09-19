@@ -1,0 +1,25 @@
+{
+ "harness": "claude 2.1.278",
+ "kind": "hold",
+ "class": "permission_dialog",
+ "must_hold": true,
+ "launch": "claude --permission-mode default",
+ "how_reached": "prompt 'Create a file named notes.txt containing the word hello'; the Write tool raised the dialog. Screen taken 2.5 s after the dialog was on screen; the turn was then cancelled with Esc.",
+ "ground_truth": "Dialog box titled 'Create file / notes.txt' with the question 'Do you want to create notes.txt?' and caret-selected numbered options '❯ 1. Yes', '2. Yes, and switch to accept edits ...', '3. No', footer 'Esc to cancel · Tab to amend'. Visible by eye in screen.txt.",
+ "ground_truth_method": "live harness screen; the dialog is self-describing on the captured rows",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 40
+ },
+ "capture": {
+  "run": "claude_c",
+  "bytes": 12957
+ },
+ "detector_verdict": {
+  "profile": "claude",
+  "is_busy": false,
+  "cause": "none",
+  "method": "none"
+ }
+}

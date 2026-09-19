@@ -1,0 +1,24 @@
+{
+ "harness": "claude 2.1.278",
+ "kind": "submit",
+ "class": "submit_confirmed",
+ "must_hold": false,
+ "how_reached": "same text, then a separate Enter byte; screen taken 1000 ms after the Enter was written.",
+ "ground_truth": "Submit succeeded: the sent text is echoed in the transcript as '❯ Reply with exactly the word PONG and nothing else.', the composer row is a bare '❯' and the status row carries 'esc to interrupt' (turn in flight). Confirmed by the next capture in the same run, which holds the answer '● PONG'.",
+ "ground_truth_method": "live harness screen 1 s after Enter + the answer in the same run",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 40
+ },
+ "capture": {
+  "run": "claude_a",
+  "bytes": 10127
+ },
+ "detector_verdict": {
+  "profile": "claude",
+  "is_busy": true,
+  "cause": "none",
+  "method": "none"
+ }
+}

@@ -1,0 +1,27 @@
+{
+ "harness": "codex-cli 0.155.1",
+ "kind": "hold",
+ "class": "unknown_menu",
+ "must_hold": true,
+ "launch": "codex",
+ "how_reached": "typed '/model' + Enter at an idle prompt (local slash command, no model turn); screen taken 2.5 s later.",
+ "ground_truth": "'Select Model and Effort' panel with '› 1. gpt-6-astra (current)' .. '5. gpt-5.5' and footer 'Press enter to confirm or esc to go back'.",
+ "ground_truth_method": "live harness screen",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 92
+ },
+ "capture": {
+  "run": "codex_main",
+  "bytes": 175864,
+  "raw_terminal_tty": "not duplicated here (172 KiB): this screen is byte prefix 175864 of ../../queue/codex_queue/raw_terminal.tty, which is the same live run",
+  "reproduce": "head -c 175864 ../../queue/codex_queue/raw_terminal.tty | (cat > /tmp/p.tty; vtreplay 120 40 /tmp/p.tty)"
+ },
+ "detector_verdict": {
+  "profile": "codex",
+  "is_busy": false,
+  "cause": "input_requested",
+  "method": "permission_dialog"
+ }
+}

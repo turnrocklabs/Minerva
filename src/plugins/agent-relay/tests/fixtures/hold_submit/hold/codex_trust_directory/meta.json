@@ -1,0 +1,25 @@
+{
+ "harness": "codex-cli 0.155.1",
+ "kind": "hold",
+ "class": "trust_directory_prompt",
+ "must_hold": true,
+ "launch": "codex (first launch in a never-opened directory)",
+ "how_reached": "launched in a fresh scratch directory; prompt drawn before any turn.",
+ "ground_truth": "'Do you trust the contents of this directory?' with options '› 1. Yes, continue' / '  2. No, quit' and footer 'Press enter to continue'.",
+ "ground_truth_method": "live harness screen at first launch",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 40
+ },
+ "capture": {
+  "run": "codex_main",
+  "bytes": 2859
+ },
+ "detector_verdict": {
+  "profile": "codex",
+  "is_busy": false,
+  "cause": "none",
+  "method": "none"
+ }
+}

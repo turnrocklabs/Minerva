@@ -1,0 +1,24 @@
+{
+ "harness": "codex-cli 0.155.1",
+ "kind": "submit",
+ "class": "submit_confirmed_after_one_extra_enter",
+ "must_hold": false,
+ "how_reached": "one extra Enter byte written into the stuck state above; screen taken 1500 ms later.",
+ "ground_truth": "The extra Enter submitted the stuck text: it is now echoed as '› Reply with exactly the word PING and nothing else.', the composer is back to the placeholder and '• Working (1s • esc to interrupt)' is active. Exactly one extra Enter was sufficient and did not double-send (the transcript holds one PING turn).",
+ "ground_truth_method": "live harness screen + the single '• PING' answer later in the same run",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 41
+ },
+ "capture": {
+  "run": "codex_main",
+  "bytes": 24822
+ },
+ "detector_verdict": {
+  "profile": "codex",
+  "is_busy": true,
+  "cause": "none",
+  "method": "none"
+ }
+}

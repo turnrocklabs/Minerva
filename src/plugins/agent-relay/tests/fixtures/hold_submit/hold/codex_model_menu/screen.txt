@@ -1,0 +1,92 @@
+
+╭─────────────────────────────────────────────────╮
+│ >_ OpenAI Codex (v0.155.1)                      │
+│                                                 │
+│ model:     gpt-6-astra high   /model to change  │
+│ directory: /tmp/claude-1000/…/p2t1/work/codex_a │
+╰─────────────────────────────────────────────────╯
+
+  Tip: New Use /fast to enable our fastest inference with increased plan usage.
+
+⚠ 2 startup issues (1 MCP) · ctrl + t for details
+
+• You have 2 usage limit resets available. Run /usage to use one.
+
+
+› Reply with exactly the word PONG and nothing else.
+
+
+• PONG
+
+  done 1:38 AM
+
+
+› Reply with exactly the word PING and nothing else.
+
+
+• PING
+
+  done 1:38 AM
+
+
+› Run the shell command: curl -sI https://example.com
+
+
+• I’ll run the command.
+
+• Couldn’t run curl -sI https://example.com: the execution tool failed twice with Broken pipe (os error 32).
+
+  done 1:39 AM
+
+
+› Write a 400-word essay about the colour blue. Plain prose, no headings.
+
+
+• Blue is a colour that seems to hold both distance and intimacy. It stretches across the sky above us, yet it also
+  appears in the small, familiar details of daily life: a favourite mug, a faded shirt, a vein beneath the skin. Few
+  colours move so easily between the immense and the personal. Blue can make a room feel quiet or a painting feel
+  restless. Its character depends on light, texture, and the memories we bring when we encounter it.
+
+  In nature, blue often arrives through the behaviour of light rather than through a blue substance. The daytime sky
+  appears blue because the atmosphere scatters shorter wavelengths of sunlight more strongly than longer ones. Water can
+  reflect that sky, but it also absorbs light in ways that give deep water its own blue appearance. These ordinary
+  sights conceal remarkable processes. Looking upward or across a lake, we meet physics as an experience of beauty
+  before we understand it as science.
+
+  Blue also carries a rich emotional vocabulary. We call sadness the blues, yet we choose blue spaces when we want calm.
+  These associations are not necessarily contradictory. Calmness and sorrow can share a stillness, a slowing of the
+  world that allows feelings to become clearer. A pale blue morning may suggest possibility, while a dark blue evening
+  can invite reflection. Neither meaning belongs permanently to the colour. Both emerge from the meeting between what we
+  see and what we feel.
+
+  Artists and makers have long explored this flexibility. In paintings, blue can push mountains into the distance,
+  gather shadows around a figure, or draw attention to a single vivid object. In clothing, it ranges from the practical
+  familiarity of denim to the formality of navy. In ceramics, blue patterns can turn an everyday plate into something
+  worth studying. The colour adapts without losing its presence, offering a common thread through objects made for work,
+  ceremony, comfort, and simple visual pleasure.
+
+  Perhaps blue’s greatest appeal lies in its refusal to mean only one thing. It can feel cold as winter shade or
+  welcoming as a clear afternoon. It belongs to uniforms and wildflowers, computer screens and distant hills. Even a
+  single blue wall changes throughout the day, becoming brighter, greyer, softer, or deeper as the light shifts. To
+  notice blue carefully is to notice how perception works: nothing we see stands entirely alone, and even familiar
+  colours can keep surprising us.
+
+
+› Reply with exactly the word QUEUED.
+
+
+• QUEUED
+
+  done 1:41 AM
+
+
+  Select Model and Effort
+  Access legacy models by running codex -m <model_name> or in your config.toml
+
+› 1. gpt-6-astra (current)  Our most capable model for complex, demanding work.
+  2. gpt-5.6-sol            Reliable agentic workhorse for everyday tasks.
+  3. gpt-5.6-terra          Balanced agentic coding model for everyday work.
+  4. gpt-5.6-luna           Fast and affordable agentic coding model.
+  5. gpt-5.5                Proven previous-generation model for coding and general work.
+
+  Press enter to confirm or esc to go back

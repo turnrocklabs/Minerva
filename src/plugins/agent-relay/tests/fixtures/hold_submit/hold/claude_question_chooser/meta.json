@@ -1,0 +1,25 @@
+{
+ "harness": "claude 2.1.278",
+ "kind": "hold",
+ "class": "askuserquestion_chooser",
+ "must_hold": true,
+ "launch": "claude --permission-mode default",
+ "how_reached": "prompt 'Use the AskUserQuestion tool to ask me whether I prefer tabs or spaces for indentation.'; screen taken 3 s after the chooser appeared, then Esc.",
+ "ground_truth": "AskUserQuestion chooser: header '☐ Indentation', question 'Do you prefer tabs or spaces for indentation?', options '❯ 1. Spaces / 2. Tabs / 3. Type something. / 4. Chat about this', footer 'Enter to select · ↑/↓ to navigate · Esc to cancel'. The next screen of the same run shows '● User declined to answer questions' after Esc, proving the chooser was live input.",
+ "ground_truth_method": "live harness screen + the post-Esc decline line in the same capture",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 40
+ },
+ "capture": {
+  "run": "claude_b",
+  "bytes": 21777
+ },
+ "detector_verdict": {
+  "profile": "claude",
+  "is_busy": false,
+  "cause": "input_requested",
+  "method": "permission_dialog"
+ }
+}

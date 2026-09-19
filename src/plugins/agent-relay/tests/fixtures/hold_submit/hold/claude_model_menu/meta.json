@@ -1,0 +1,25 @@
+{
+ "harness": "claude 2.1.278",
+ "kind": "hold",
+ "class": "unknown_menu",
+ "must_hold": true,
+ "launch": "claude",
+ "how_reached": "typed '/model' + Enter at an idle prompt (local slash command, no model turn); screen taken 2.5 s later, then Esc.",
+ "ground_truth": "'Select model' modal with caret-selected numbered options 1-5 and footer 'Enter to set as default · s to use this session only · Esc to cancel'. Not a permission dialog and not a question: an unrecognised local menu that nonetheless owns the keyboard.",
+ "ground_truth_method": "live harness screen",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 45
+ },
+ "capture": {
+  "run": "claude_a",
+  "bytes": 22405
+ },
+ "detector_verdict": {
+  "profile": "claude",
+  "is_busy": false,
+  "cause": "input_requested",
+  "method": "permission_dialog"
+ }
+}

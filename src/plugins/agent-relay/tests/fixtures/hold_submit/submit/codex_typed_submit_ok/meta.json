@@ -1,0 +1,24 @@
+{
+ "harness": "codex-cli 0.155.1",
+ "kind": "submit",
+ "class": "submit_confirmed",
+ "must_hold": false,
+ "how_reached": "same text, then a separate Enter byte; screen taken 1000 ms after the Enter was written.",
+ "ground_truth": "Submit succeeded: the sent text is echoed in the transcript as '› Reply with exactly the word PONG and nothing else.', the composer shows its EMPTY-state placeholder '› Ask Codex to do anything', and '• Working (0s • esc to interrupt)' is on screen. Note: an empty codex composer is not blank; it carries the placeholder. The first Enter was NOT swallowed.",
+ "ground_truth_method": "live harness screen 1 s after Enter + the answer '• PONG' later in the same run",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 41
+ },
+ "capture": {
+  "run": "codex_main",
+  "bytes": 13551
+ },
+ "detector_verdict": {
+  "profile": "codex",
+  "is_busy": true,
+  "cause": "none",
+  "method": "none"
+ }
+}

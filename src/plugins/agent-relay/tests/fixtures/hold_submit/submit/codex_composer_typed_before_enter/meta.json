@@ -1,0 +1,24 @@
+{
+ "harness": "codex-cli 0.155.1",
+ "kind": "submit",
+ "class": "composer_holds_text_before_enter",
+ "must_hold": false,
+ "how_reached": "text typed character by character (15 ms/char) into an idle composer; screen taken 0.7 s after the last character, before Enter.",
+ "ground_truth": "The composer row reads '› Reply with exactly the word PONG and nothing else.' and the transcript holds no echo. BEFORE side of the submit pair.",
+ "ground_truth_method": "driver timeline: the Enter byte is written after this capture",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 41
+ },
+ "capture": {
+  "run": "codex_main",
+  "bytes": 9610
+ },
+ "detector_verdict": {
+  "profile": "codex",
+  "is_busy": false,
+  "cause": "none",
+  "method": "none"
+ }
+}

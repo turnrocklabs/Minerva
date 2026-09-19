@@ -1,0 +1,24 @@
+{
+ "harness": "claude 2.1.278",
+ "kind": "submit",
+ "class": "submit_confirmed_from_single_chunk",
+ "must_hold": false,
+ "how_reached": "the whole message AND the CR written in ONE write() (the shape a relay write takes); screen taken 1200 ms later.",
+ "ground_truth": "Claude Code 2.1.278 SUBMITTED the single chunk: the text is echoed in the transcript and the composer is a bare '❯' with 'esc to interrupt' active. The expected paste-failure shape did NOT occur on this harness.",
+ "ground_truth_method": "live harness screen; the answer '● PING' appears later in the same run",
+ "terminal": {
+  "cols": 120,
+  "rows": 40,
+  "screen_rows_available": 40
+ },
+ "capture": {
+  "run": "claude_a",
+  "bytes": 13726
+ },
+ "detector_verdict": {
+  "profile": "claude",
+  "is_busy": true,
+  "cause": "none",
+  "method": "none"
+ }
+}
