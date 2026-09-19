@@ -83,7 +83,7 @@ func _update_stop_button() -> void:
 func _update_compact_button() -> void:
 	pass
 
-func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> void:
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
 		return
@@ -104,6 +104,40 @@ func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true
 
 func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
 	regen_calls.append("regen")
+	return null
+"""
+
+## Pane that keeps the REAL execute_regular_chat and replaces only its two
+## network-facing calls. Everything the promotion path depends on — the queue
+## gate, the turn token, the "last item is a user message" guard — is ChatPane's
+## own code here, so section K measures the real decision.
+const REAL_TURN_PANE_SRC := """
+extends "res://Scripts/UI/Views/ChatPane.gd"
+
+## Texts that reached a real request, in order.
+var real_generates: PackedStringArray = PackedStringArray()
+## The request never resolves, so the turn stays in flight and the test never
+## depends on the UI-bound tail of execute_regular_chat.
+var blocked := true
+
+func _ready() -> void:
+	pass
+
+func _update_stop_button() -> void:
+	pass
+
+func _update_compact_button() -> void:
+	pass
+
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null) -> Array[Variant]:
+	await get_tree().process_frame
+	return []
+
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
+	var sent: ChatHistoryItem = history.HistoryItemList[history.HistoryItemList.size() - 1]
+	real_generates.append(sent.Message)
+	while blocked:
+		await get_tree().process_frame
 	return null
 """
 
@@ -147,8 +181,8 @@ func _make_history(name: String):
 
 ## A pane whose two chats are registered in ChatList, with live message
 ## containers so the pending bubbles are really rendered.
-func _make_pane(chats: Array) -> Node:
-	var pane = _make_script(HARNESS_PANE_SRC).new()
+func _make_pane(chats: Array, source: String = HARNESS_PANE_SRC) -> Node:
+	var pane = _make_script(source).new()
 	pane.name = "HarnessChatPane"
 	root.add_child(pane)
 	for history in chats:
@@ -192,6 +226,7 @@ func _run() -> void:
 	await _test_a_late_parallel_response_releases_its_own_turn()
 	await _test_a_late_parallel_response_releases_its_own_chat()
 	await _test_regenerate_waits_for_the_active_turn()
+	await _test_a_promoted_message_is_sent_past_the_last_user_guard()
 
 
 #region A — queue semantics
@@ -678,5 +713,83 @@ func _test_regenerate_waits_for_the_active_turn() -> void:
 	check("I7: and releases its own turn", not chat.is_request_active)
 
 	_teardown(pane, [chat])
+
+#endregion
+
+
+#region K — a promoted message must really be sent
+
+## The drain records an entry as DISPATCHED the moment it leaves the queue, so an
+## executor that declines to send it loses the message AND leaves a receipt
+## saying it ran. execute_regular_chat's "the last history item is a user
+## message" guard was exactly that: when the previous turn errored or was
+## cancelled after its user item landed, a promoted entry hit the guard, released
+## the turn and returned without a request — and the release drained the next
+## entry into the same guard.
+func _test_a_promoted_message_is_sent_past_the_last_user_guard() -> void:
+	var chat = _make_history("Orphaned")
+	var pane = _make_pane([chat], REAL_TURN_PANE_SRC)
+	# The real turn path reads history.provider as a BaseProvider; it is never
+	# asked to produce anything, because the pane's generate call is replaced.
+	var history_provider = load(PLUGIN_PROVIDER_PATH).new()
+	pane.add_child(history_provider)
+	chat.provider = history_provider
+	pane.current_tab = _so.ChatList.find(chat)
+
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	var orphan = item_script.new()
+	orphan.Role = item_script.ChatRole.USER
+	orphan.Message = "the turn that never answered"
+	chat.HistoryItemList.append(orphan)
+	orphan.rendered_node = chat.VBox.add_history_item(orphan)
+
+	# A turn is in flight, so the message queues instead of starting one.
+	var token: int = pane._begin_chat_turn(chat)
+	pane.execute_regular_chat("promote me")
+	await process_frame
+	check("K1: the message is queued behind the live turn",
+		str(pane._outgoing_queue.pending_texts(chat.HistoryId))
+			== str(PackedStringArray(["promote me"])),
+		str(pane._outgoing_queue.pending_texts(chat.HistoryId)))
+	var entry_id: int = pane._outgoing_queue.newest_id(chat.HistoryId)
+
+	pane._release_chat_turn(chat, token)
+	for _i in range(10):
+		await process_frame
+	check("K2: the promoted message really starts a request",
+		str(pane.real_generates) == str(PackedStringArray(["promote me"])),
+		str(pane.real_generates))
+	check("K3: and the queue's record of it is honest",
+		pane._outgoing_queue.outcome_of(entry_id) == ChatOutgoingQueue.Outcome.DISPATCHED,
+		str(pane._outgoing_queue.outcome_of(entry_id)))
+	check("K4: the chat is busy with that turn, not left idle",
+		chat.is_request_active)
+	pane.blocked = false
+	_teardown(pane, [chat])
+
+	# The guard still protects what it targets: a DIRECT send onto an unanswered
+	# user message starts nothing.
+	var direct_chat = _make_history("Direct")
+	var direct_pane = _make_pane([direct_chat], REAL_TURN_PANE_SRC)
+	var direct_provider = load(PLUGIN_PROVIDER_PATH).new()
+	direct_pane.add_child(direct_provider)
+	direct_chat.provider = direct_provider
+	direct_pane.current_tab = _so.ChatList.find(direct_chat)
+	var pending = item_script.new()
+	pending.Role = item_script.ChatRole.USER
+	pending.Message = "the turn that never answered"
+	direct_chat.HistoryItemList.append(pending)
+	pending.rendered_node = direct_chat.VBox.add_history_item(pending)
+
+	direct_pane.execute_regular_chat("direct send")
+	for _i in range(6):
+		await process_frame
+	check("K5: a direct send onto an unanswered user message still starts nothing",
+		direct_pane.real_generates.is_empty(), str(direct_pane.real_generates))
+	check("K6: and it releases the turn it claimed",
+		not direct_chat.is_request_active)
+
+	direct_pane.blocked = false
+	_teardown(direct_pane, [direct_chat])
 
 #endregion

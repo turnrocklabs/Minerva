@@ -2109,7 +2109,7 @@ func _drain_outgoing_queue(history: ChatHistory) -> void:
 		ChatOutgoingQueue.Mode.SEQUENTIAL:
 			execute_sequential_chat(entry.text, _begin_chat_turn(history))
 		_:
-			execute_regular_chat(entry.text, entry.generation_options)
+			execute_regular_chat(entry.text, entry.generation_options, true)
 	if original_tab != tab_index:
 		call_deferred("set_current_tab", original_tab)
 
@@ -2127,7 +2127,10 @@ func _clear_outgoing_queue(history: ChatHistory) -> void:
 #endregion Outgoing message queue
 
 
-func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> void:
+## `promoted` marks a message the outgoing queue just handed over (see
+## _drain_outgoing_queue): it has already left the queue as DISPATCHED, so this
+## call must send it or the message is lost with a receipt that says otherwise.
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, promoted: bool = false) -> void:
 	print("[ChatPane] execute_regular_chat called, text length: %d" % text.length())
 	var _history = SingletonObject.ChatList[current_tab]
 	print("[ChatPane] current_tab=%d, AgentModeEnabled=%s, provider=%s" % [current_tab, _history.AgentModeEnabled, _history.provider.provider_name if _history.provider else "null"])
@@ -2181,8 +2184,12 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> 
 		_release_chat_turn(history, turn_token)
 		return # if user is using Human provider we finish here
 
-	# Check is the last message is a user message and not do anything if true
-	if last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER:
+	# A trailing USER item means the previous turn never produced an answer, so a
+	# second direct send would stack another unanswered question on it — skip it.
+	# A promoted queue entry is exempt: its text IS the next user message and the
+	# turn it waited behind has already ended, so skipping it would silently drop
+	# a message the queue has already recorded as dispatched.
+	if not promoted and last_msg and last_msg.Role == ChatHistoryItem.ChatRole.USER:
 		_release_chat_turn(history, turn_token)
 		return
 

@@ -2,7 +2,7 @@ extends "res://test/fixtures/plugin_catalog_chat_pane.gd"
 ## Capture scheduled MCP turns; normal provider dispatch and clone remain production code.
 var submitted_options: Dictionary = {}
 
-func execute_regular_chat(_text: String, generation_options: Dictionary = {}) -> void:
+func execute_regular_chat(_text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
 	submitted_options = generation_options.duplicate(true)
 
 var prompt_history: ChatHistory

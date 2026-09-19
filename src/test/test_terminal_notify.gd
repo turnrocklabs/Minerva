@@ -33,6 +33,7 @@ const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
 const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
 const PLUGIN_PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.gd"
+const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
 
 ## Blocking provider stand-in, keyed by chat so two chats can be in flight
 ## independently and "did this chat's next turn start?" is directly observable.
@@ -86,7 +87,7 @@ func _update_stop_button() -> void:
 func _update_compact_button() -> void:
 	pass
 
-func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> void:
+func execute_regular_chat(text: String, generation_options: Dictionary = {}, _promoted: bool = false) -> void:
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
 	if _queue_if_busy(history, text, ChatOutgoingQueue.Mode.REGULAR, generation_options):
 		return
@@ -105,6 +106,40 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> 
 	history.HistoryItemList.append(chi)
 	_release_chat_turn(history, turn_token)
 """
+
+## Pane that keeps the REAL execute_regular_chat and replaces only its two
+## network-facing calls, so section K measures what the real executor does with
+## a promoted envelope rather than what the harness body would do.
+const REAL_TURN_PANE_SRC := """
+extends "res://Scripts/UI/Views/ChatPane.gd"
+
+## Texts that reached a real request, in order.
+var real_generates: PackedStringArray = PackedStringArray()
+## The request never resolves, so the turn stays in flight and the test never
+## depends on the UI-bound tail of execute_regular_chat.
+var blocked := true
+
+func _ready() -> void:
+	pass
+
+func _update_stop_button() -> void:
+	pass
+
+func _update_compact_button() -> void:
+	pass
+
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null) -> Array[Variant]:
+	await get_tree().process_frame
+	return []
+
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
+	var sent: ChatHistoryItem = history.HistoryItemList[history.HistoryItemList.size() - 1]
+	real_generates.append(sent.Message)
+	while blocked:
+		await get_tree().process_frame
+	return null
+"""
+
 
 ## Module under test with the two environment seams closed: the terminal
 ## listing and the watch-profile map. Everything else is the real module.
@@ -179,8 +214,8 @@ func _make_bound_chat(chat_name: String, terminal_id: String):
 	return history
 
 
-func _make_pane(chats: Array) -> Node:
-	var pane = _make_script(HARNESS_PANE_SRC).new()
+func _make_pane(chats: Array, source: String = HARNESS_PANE_SRC) -> Node:
+	var pane = _make_script(source).new()
 	pane.name = "NotifyHarnessChatPane"
 	root.add_child(pane)
 	for history in chats:
@@ -231,6 +266,7 @@ func _run() -> void:
 	await _test_receipt_follows_the_entry()
 	await _test_a_notification_never_blocks_a_card_answer()
 	await _test_a_notification_queued_mid_turn_stays_deferred()
+	await _test_the_receipt_is_honest_on_an_unanswered_user_message()
 	_test_wiring_is_present()
 
 
@@ -827,5 +863,54 @@ func _test_receipt_follows_the_entry() -> void:
 		module3._notify_status(first_id, 0))
 
 	_teardown(pane3, w3["chats"])
+
+#endregion
+
+
+#region K — the receipt against the REAL executor
+
+## "dispatched" is read off the queue's record, which is written when the entry
+## leaves the queue — before the executor has done anything with it. So the
+## receipt is only honest if the executor really sends what it was handed. The
+## case that broke it: the target chat's newest history item is a USER message
+## (its previous turn errored or was cancelled after that item landed), which
+## execute_regular_chat's "last item is user" guard used to bail on.
+func _test_the_receipt_is_honest_on_an_unanswered_user_message() -> void:
+	var claude_chat = _make_bound_chat("Claude Session", "101")
+	var pane = _make_pane([claude_chat], REAL_TURN_PANE_SRC)
+	var module = _make_module([{"id": "101", "name": "Claude Session"}], {"101": "claude"})
+	pane.current_tab = _so.ChatList.find(claude_chat)
+
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	var orphan = item_script.new()
+	orphan._suppress_save_state = true
+	orphan.Role = item_script.ChatRole.USER
+	orphan.Message = "the turn that never answered"
+	claude_chat.HistoryItemList.append(orphan)
+
+	# A turn is in flight, so the envelope queues rather than starting one.
+	var token: int = pane._begin_chat_turn(claude_chat)
+	var runner = _make_script(NOTIFY_RUNNER_SRC).new()
+	runner.run(module, {"to": "claude", "from": "codex", "text": "come look",
+		"wait_ms": 5000})
+	await process_frame
+	check("K1: the tool waits while the target is busy", not runner.done)
+
+	pane._release_chat_turn(claude_chat, token)
+	for _i in range(30):
+		if runner.done:
+			break
+		await process_frame
+	var envelope: = "[MINERVA NOTIFY from codex] come look"
+	check("K2: the envelope really became a request",
+		str(pane.real_generates) == str(PackedStringArray([envelope])),
+		str(pane.real_generates))
+	check("K3: and the receipt that says dispatched is telling the truth",
+		runner.done and str(runner.result.get("status", "")) == "dispatched"
+			and int(runner.result.get("queue_position", -1)) == 0,
+		str(runner.result))
+
+	pane.blocked = false
+	_teardown(pane, [claude_chat])
 
 #endregion
