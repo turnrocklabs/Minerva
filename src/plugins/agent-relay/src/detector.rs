@@ -438,8 +438,9 @@ fn collect_aligned(
 /// Column of a row's option label: past a leading selection or scroll marker
 /// when one is there (an off-edge chooser row is prefixed with `↑`/`↓`),
 /// otherwise the row's own content column. This is the column a chooser aligns
-/// every option on, marked or not.
-fn option_label_col(line: &str) -> Option<usize> {
+/// every option on, marked or not. Shared with dialog::region_from so the card
+/// region and this classifier read one chooser the same way.
+pub(crate) fn option_label_col(line: &str) -> Option<usize> {
     selected_label_col(line).or_else(|| marker_label_col(line)).or_else(|| content_col(line))
 }
 
@@ -457,7 +458,7 @@ fn marker_label_col(line: &str) -> Option<usize> {
 
 /// Column (in characters) of a row's first non-whitespace character, or None
 /// when the row is blank.
-fn content_col(line: &str) -> Option<usize> {
+pub(crate) fn content_col(line: &str) -> Option<usize> {
     line.chars().position(|c| !c.is_whitespace())
 }
 

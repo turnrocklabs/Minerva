@@ -74,11 +74,20 @@ pub fn extract_dialog_region(screen: &str, dialog_re: Option<&Regex>, window: us
     lines[start_window..].join("\n")
 }
 
-/// The region starting at `anchor`, widened upwards over sibling option lines
-/// (one blank row may separate them). The profile regex matches the SELECTED
-/// option or the picker's FOOTER, and neither is the first option — anchoring
-/// on the match alone drops every option above it.
+/// The region starting at `anchor`, widened upwards over sibling option lines.
+/// The profile regex matches the SELECTED option or the picker's FOOTER, and
+/// neither is the first option — anchoring on the match alone drops every
+/// option above it.
+///
+/// The walk uses the same structural rule as detector::collect_aligned, which
+/// classifies the very same rows for the hold verdict — a row indented FURTHER
+/// RIGHT than the anchor's label column is a wrapped option description and
+/// continues the walk (an option whose description wraps otherwise hides every
+/// option above it from the card), one blank row may bridge two options, and a
+/// row starting further LEFT is transcript or box chrome and ends it. The two
+/// walks share option_label_col/content_col so they cannot drift.
 fn region_from(lines: &[&str], anchor: usize, numbered: &Regex) -> String {
+    let col = crate::detector::option_label_col(lines[anchor]);
     let mut start = anchor;
     let mut i = anchor;
     let mut blank_used = false;
@@ -91,11 +100,23 @@ fn region_from(lines: &[&str], anchor: usize, numbered: &Regex) -> String {
         } else if prev.trim().is_empty() && !blank_used {
             i -= 1;
             blank_used = true;
+        } else if is_description_row(prev, col) {
+            i -= 1;
+            blank_used = false;
         } else {
             break;
         }
     }
     lines[start..].join("\n")
+}
+
+/// True when `line` is a wrapped description of an option drawn at `col`: its
+/// content starts strictly right of the option label column.
+fn is_description_row(line: &str, col: Option<usize>) -> bool {
+    match (crate::detector::content_col(line), col) {
+        (Some(c), Some(col)) => c > col,
+        _ => false,
+    }
 }
 
 /// Extract a Claude Code AskUserQuestion chooser region: from the chooser
@@ -416,6 +437,36 @@ mod tests {
                 ("Chat about this", "6"),
             ]),
             "scroll-cursor (↓) and header rows must not block numbered parsing"
+        );
+    }
+
+    // ── A caret below a wrapped description still yields the whole option list ─
+    // Byte-true AskUserQuestion chooser (hold corpus) with the caret moved from
+    // option 1 to option 2 — the shape after one ↓ press. Option 1's wrapped
+    // description row now sits between the caret row and option 1. This is the
+    // permission/dialog path (extract_dialog_region), which is what the card
+    // uses whenever the chooser's "Enter to select" footer is not on the read.
+    const CLAUDE_CHOOSER_SCREEN: &str =
+        include_str!("../tests/fixtures/hold_submit/hold/claude_question_chooser/screen.txt");
+
+    #[test]
+    fn test_caret_below_a_wrapped_description_keeps_the_options_above_it() {
+        let screen = CLAUDE_CHOOSER_SCREEN
+            .replace("\u{276f} 1. Spaces", "  1. Spaces")
+            .replace("  2. Tabs", "\u{276f} 2. Tabs");
+        let claude = builtin_profiles().into_iter().find(|p| p.id == "claude").unwrap();
+        let re = Regex::new(claude.detection.permission_dialog_regex.as_deref().unwrap())
+            .unwrap();
+        let region = extract_dialog_region(&screen, Some(&re), 20);
+        assert_eq!(
+            parse_options("claude", &region),
+            opts(&[
+                ("Spaces", "1"),
+                ("Tabs", "2"),
+                ("Type something.", "3"),
+                ("Chat about this", "4"),
+            ]),
+            "option 1 is above the caret, behind its own description row: {region:?}"
         );
     }
 
