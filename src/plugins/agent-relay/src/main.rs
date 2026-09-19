@@ -33,6 +33,8 @@ mod dialog;
 mod filter_rules;
 mod profiles;
 mod router;
+// Hold / one-outstanding-prompt / submit-confirmation guard for relay writes.
+mod send_gate;
 // Session-log binder: derives which harness transcript a watched terminal
 // writes.
 mod session_log;
@@ -48,8 +50,10 @@ use std::path::PathBuf;
 use serde::Serialize;
 use serde_json::{json, Value};
 
+use detector::CompiledDetection;
 use filter_rules::{FilterRule, FilterRuleSet, RuleAction};
 use router::Router;
+use send_gate::TurnSlot;
 use watcher::NotifyMode;
 
 // ---------------------------------------------------------------------------
@@ -252,25 +256,91 @@ enum SendMode {
     ChooserNav,
 }
 
+/// Whether a send waits out a screen that owns the keyboard, or is the answer
+/// to it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GateHold {
+    /// A fresh prompt: wait until the screen is one a message may land in.
+    /// An Enter on a menu selects whatever the caret is on.
+    Wait,
+    /// An answer to the question card already on screen — the modal IS the
+    /// target, so holding for it would wait for a screen only this write can
+    /// clear. The per-terminal prompt slot is still taken, so the answer stays
+    /// serialised against other relay sends. The payload is the region identity
+    /// of the card being answered: it is re-checked once the slot is in hand,
+    /// because the card can be answered by someone else while this answer
+    /// queues, and the keystrokes would then land on whatever replaced it.
+    Bypass(String),
+}
+
+/// The error send_core_with_mode returns when a Bypass answer reaches the front
+/// of the queue and the card it answers is no longer the screen. The caller
+/// (passthrough) drops its pending state and re-sends the text as a fresh,
+/// held prompt.
+const STALE_BYPASS: &str = "the question card this answered is no longer on screen";
+
+/// Gate budget for a bare `send`: how long it will wait for a modal screen to
+/// clear or for an in-flight relay turn to end before refusing to write.
+/// relay_ask and passthrough pass their own turn timeout instead.
+const SEND_GATE_BUDGET_MS: u64 = 120_000;
+
+/// What the send pipeline hands back: the tool payload, the terminal's prompt
+/// slot when one was taken (the caller decides whether it waits for the turn
+/// or hands it to the watch loop), and the detection serial read BEFORE the
+/// write — a caller that waits must not miss a turn that ended while the send
+/// path was still confirming the submit.
+struct SendOutcome {
+    payload: Value,
+    slot: Option<TurnSlot>,
+    serial_before_write: u64,
+}
+
 /// The send pipeline shared by handle_send and relay_ask_core:
-/// normalise → pre-write snapshot → mode-specific write(s) → auto-start watch
-/// → arm.
+/// gate (hold + one outstanding prompt) → pre-write snapshot → mode-specific
+/// write(s) → auto-start watch → arm → confirm the submit.
 fn send_core(
     terminal_id: &str,
     text: &str,
     do_arm: bool,
     router: &Arc<Router>,
 ) -> Result<Value, String> {
-    send_core_with_mode(terminal_id, text, do_arm, SendMode::Submit, router)
+    let outcome = send_core_with_mode(
+        terminal_id,
+        text,
+        do_arm,
+        SendMode::Submit,
+        GateHold::Wait,
+        SEND_GATE_BUDGET_MS,
+        router,
+    )?;
+    // Nobody is waiting for this turn here: the slot stays outstanding until
+    // the watch loop counts the turn's end.
+    if let Some(slot) = outcome.slot {
+        slot.detach();
+    }
+    Ok(outcome.payload)
 }
 
+/// Compiled detection for the profile currently watching `terminal_id`, or
+/// None when the terminal is unwatched (nothing to classify screens with).
+fn watched_detection(terminal_id: &str) -> Option<CompiledDetection> {
+    let profile_id = watcher::watch_status(terminal_id)?
+        .get("profile_id")?
+        .as_str()?
+        .to_string();
+    CompiledDetection::from_profile(&profiles::profile_get(&profile_id)?).ok()
+}
+
+#[allow(clippy::too_many_arguments)]
 fn send_core_with_mode(
     terminal_id: &str,
     text: &str,
     do_arm: bool,
     mode: SendMode,
+    hold: GateHold,
+    gate_budget_ms: u64,
     router: &Arc<Router>,
-) -> Result<Value, String> {
+) -> Result<SendOutcome, String> {
     // Normalise the message body (Submit only): drop trailing real CR/LF and
     // any trailing LITERAL "\r"/"\n" escape text (clients sometimes deliver
     // the two-char sequence instead of the control char). Enter is sent
@@ -290,13 +360,108 @@ fn send_core_with_mode(
         }
     }
 
+    // Gate the write. EVERY send takes the terminal's prompt slot — a dialog
+    // keystroke or a chooser arrow belongs to its own turn too, and the slot is
+    // what keeps one relay prompt's screen anchor and submit timestamp
+    // describing exactly one prompt. Only the HOLD differs: a fresh prompt
+    // waits out a screen that owns the keyboard (GateHold::Wait); an answer to
+    // the card that screen produced is the thing that clears it, so holding for
+    // it would spend the whole budget and then error (GateHold::Bypass).
+    //
+    // ORDER MATTERS. A held prompt waits for the screen WITHOUT the slot: the
+    // screen it waits for is usually a question card, and the answer that
+    // clears that card needs the slot too. Waiting with the slot in hand would
+    // park the answer behind a prompt that cannot move until the answer lands.
+    // That holds for the RE-CHECK as much as the first wait — the screen can
+    // become a card while this caller queues — so a re-check that finds the
+    // screen held gives the slot back and goes round to the unslotted wait.
+    // Every phase shares one budget, so the round trip is bounded.
+    let gate_detection = watched_detection(terminal_id);
+    let mut slot: Option<TurnSlot> = None;
+    let mut gate_screen: Option<(String, u64)> = None;
+    if let Some(ref cd) = gate_detection {
+        let deadline = std::time::Instant::now()
+            + std::time::Duration::from_millis(gate_budget_ms);
+        let remaining = |d: std::time::Instant| {
+            d.saturating_duration_since(std::time::Instant::now()).as_millis() as u64
+        };
+        let taken = loop {
+            if hold == GateHold::Wait {
+                // An expired budget is an error, never a write: an Enter on a
+                // menu selects whatever the caret is on.
+                gate_screen =
+                    send_gate::wait_until_writable(terminal_id, cd, router, remaining(deadline))?;
+            }
+            // Two clocks, deliberately separate: this call waits only for what
+            // is LEFT of the gate budget, but the slot it takes must stand for
+            // the caller's FULL budget — the turn that follows runs on that
+            // full budget, so a max_age cut down by the hold would let the next
+            // caller displace this one mid-turn.
+            let taken = send_gate::begin_turn(
+                terminal_id,
+                remaining(deadline),
+                gate_budget_ms,
+            )?;
+            match hold {
+                // EVERY acquisition looks again. Waiting for the screen and
+                // taking the slot are two steps, and the screen can turn into a
+                // dialog in between — the owner ahead of this caller may end
+                // its turn AT one and release a FREE slot, so "the slot was
+                // free straight away" says nothing about the screen this write
+                // would land on.
+                GateHold::Wait => {
+                    match send_gate::peek_writable(terminal_id, cd, router) {
+                        Ok(screen) => {
+                            if screen.is_some() {
+                                gate_screen = screen;
+                            }
+                            break taken;
+                        }
+                        // Held again. Drop the slot BEFORE waiting: whatever is
+                        // on screen is answered through this same gate.
+                        Err(_) => {
+                            drop(taken);
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                send_gate::POLL_MS,
+                            ));
+                        }
+                    }
+                }
+                // The card this answers must still BE the screen now that the
+                // write is imminent — another answer may have cleared it while
+                // this one queued, and these keystrokes mean nothing to whatever
+                // the agent drew next.
+                GateHold::Bypass(ref expected) => {
+                    let live =
+                        live_question_region(terminal_id, router).map(|r| region_identity(&r));
+                    let pending =
+                        with_passthrough(|s| s.pending_question.contains(terminal_id));
+                    if !pending || live.as_deref() != Some(expected.as_str()) {
+                        return Err(STALE_BYPASS.to_string());
+                    }
+                    break taken;
+                }
+            }
+        };
+        slot = Some(taken);
+    }
+
     // Snapshot the screen BEFORE writing: the pre-write screen is stable and
     // the turn's redraw region starts at the input box, so the turn-start
     // anchor is exact. A post-write snapshot races the TUI's busy block,
     // which can occupy MORE rows than the final answer layout — the answer
     // then renders ABOVE the snapshot boundary and read_turn misses it
     // (live failure mode of 019eb345d4d9).
-    let snapshot = if do_arm {
+    // The gate's last read IS the pre-write screen — the one the write lands
+    // on — so it anchors the turn exactly and saves a round trip.
+    // The pre-write screen is also the confirmation's baseline: an echo of the
+    // same text that was already there confirms nothing about THIS write.
+    let pre_write_screen: Option<String> = gate_screen.as_ref().map(|(c, _)| c.clone());
+    let snapshot = if !do_arm {
+        None
+    } else if gate_screen.is_some() {
+        gate_screen
+    } else {
         router.call_capability("host.terminal.read", json!({
             "terminal_id": terminal_id,
         })).ok().and_then(|r| {
@@ -307,13 +472,15 @@ fn send_core_with_mode(
                 .to_string();
             Some((content, rows))
         })
-    } else {
-        None
     };
 
     // Read before the first write: the harness stamps its own record of this
     // prompt as soon as the Enter lands, which is before this handler returns.
+    // The detection serial is read here for the same reason — the turn can end
+    // before this function returns, and a caller that waits for it must have a
+    // baseline from BEFORE the write.
     let submitted_ms = watcher::now_ms();
+    let serial_before_write = watcher::detection_serial(terminal_id);
 
     // Submit: write the text and the Enter as TWO writes with a pause between
     // them. TUI agents (Claude Code et al.) treat a single fast chunk as a
@@ -378,7 +545,16 @@ fn send_core_with_mode(
             })
     };
 
-    write_result.map_err(|e| format!("terminal write failed: {e}"))?;
+    if let Err(e) = write_result {
+        if let Some(taken) = slot.take() {
+            taken.end();
+        }
+        return Err(format!("terminal write failed: {e}"));
+    }
+    // The slot now covers the turn that ends after this write.
+    if let Some(ref taken) = slot {
+        taken.mark_written(serial_before_write);
+    }
 
     let mut armed = false;
     let mut auto_started = false;
@@ -419,13 +595,31 @@ fn send_core_with_mode(
         watcher::record_prompt(terminal_id, body, submitted_ms);
     }
 
-    Ok(json!({
-        "ok": true,
-        "terminal_id": terminal_id,
-        "written": body,
-        "armed": armed,
-        "auto_started_watch": auto_started,
-    }))
+    // Confirm the write became a turn. Only the one measured stuck shape earns
+    // a keystroke here (exactly one extra Enter); every other outcome is
+    // reported as-is — a blind Enter is what answers a menu by accident.
+    let baseline = pre_write_screen
+        .as_deref()
+        .or_else(|| snapshot.as_ref().map(|(c, _)| c.as_str()));
+    let confirmation = match gate_detection {
+        Some(ref cd) if mode == SendMode::Submit => {
+            send_gate::confirm_submitted(terminal_id, body, cd, router, baseline)
+        }
+        _ => Value::Null,
+    };
+
+    Ok(SendOutcome {
+        payload: json!({
+            "ok": true,
+            "terminal_id": terminal_id,
+            "written": body,
+            "armed": armed,
+            "auto_started_watch": auto_started,
+            "submit": confirmation,
+        }),
+        slot,
+        serial_before_write,
+    })
 }
 
 /// B3 IMPLEMENTED: read_clean — reads from live terminal (or raw_text) and
@@ -531,7 +725,9 @@ fn handle_read_turn(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
     let model = args.get("model").and_then(|v| v.as_str());
     let deliver = args.get("deliver");
 
-    let mut result = match read_turn_core(terminal_id, do_distill, do_redact, model, None, router) {
+    let mut result = match read_turn_core(
+        terminal_id, do_distill, do_redact, model, None, router,
+    ) {
         Err(e) => return ok_response(id, tool_err(&e)),
         Ok(r) => r,
     };
@@ -673,6 +869,7 @@ fn slice_from_echo(wide: &str, sent: &str) -> Option<String> {
 /// Steps 1–4 + turn metadata of read_turn, shared with relay_ask:
 /// row window → host.terminal.read → clean → optional distill → result JSON
 /// {ok, content, distilled, truncated, omitted_chars, turn}.
+#[allow(clippy::too_many_arguments)]
 fn read_turn_core(
     terminal_id: &str,
     do_distill: bool,
@@ -716,7 +913,8 @@ fn read_turn_core(
 
     // ── Step 2: read raw terminal content ──────────────────────────────────
 
-    let raw = match router.call_capability("host.terminal.read", read_args) {
+    let raw_reply = router.call_capability("host.terminal.read", read_args);
+    let raw = match raw_reply {
         Err(e) => return Err(format!("terminal read failed: {e}")),
         Ok(result) => result.get("content")
             .and_then(|v| v.as_str())
@@ -739,7 +937,8 @@ fn read_turn_core(
                 if let Some(er) = end_row {
                     old_args["end_row"] = json!(er);
                 }
-                match router.call_capability("host.terminal.read", old_args) {
+                let reply = router.call_capability("host.terminal.read", old_args);
+                match reply {
                     Err(e) => return Err(format!("terminal read failed: {e}")),
                     Ok(result) => result.get("content")
                         .and_then(|v| v.as_str())
@@ -816,7 +1015,8 @@ fn read_turn_core(
             chat_args["model"] = json!("default");
         }
 
-        match router.call_capability("host.providers.chat", chat_args) {
+        let chat_reply = router.call_capability("host.providers.chat", chat_args);
+        match chat_reply {
             Ok(resp) => {
                 let text = resp.get("choices")
                     .and_then(|c| c.as_array())
@@ -927,7 +1127,7 @@ fn handle_relay_ask(params: &Value, id: Value, router: &Arc<Router>) -> RpcRespo
     let model = args.get("model").and_then(|v| v.as_str());
 
     match relay_ask_core(
-        terminal_id, text, SendMode::Submit, timeout_ms,
+        terminal_id, text, SendMode::Submit, GateHold::Wait, timeout_ms,
         do_distill, do_redact, model, router,
     ) {
         Err(e) => ok_response(id, tool_err(&e)),
@@ -949,20 +1149,40 @@ fn relay_ask_core(
     terminal_id: &str,
     text: &str,
     mode: SendMode,
+    hold: GateHold,
     timeout_ms: u64,
     do_distill: bool,
     do_redact: bool,
     model: Option<&str>,
     router: &Arc<Router>,
 ) -> Result<Value, String> {
-    // Send + arm (auto-starts the watch when none exists).
-    send_core_with_mode(terminal_id, text, true, mode, router)?;
+    // Send + arm (auto-starts the watch when none exists). The gate inside may
+    // wait out a modal screen or another relay turn before it writes, on this
+    // caller's timeout budget.
+    let outcome = send_core_with_mode(terminal_id, text, true, mode, hold, timeout_ms, router)?;
 
     // Block until the armed turn ends (busy-gate guarantees the next counted
-    // detection is OUR turn, not the pre-existing idle screen).
-    let (payload, timed_out) = watcher::wait_for_turn(terminal_id, timeout_ms);
+    // detection is OUR turn, not the pre-existing idle screen). The baseline is
+    // the serial read BEFORE the write, so a turn that ended while the send
+    // path was confirming the submit still counts as ours. However long this
+    // wait runs, the prompt slot stays ours: an attached slot has no age.
+    let (payload, timed_out) = watcher::wait_for_turn_from(
+        terminal_id,
+        outcome.serial_before_write,
+        timeout_ms,
+    );
 
     if timed_out {
+        // The turn is still RUNNING — this caller only stopped waiting for it.
+        // Ending the slot here would let the next caller write at once (an
+        // ordinary busy screen is not a hold), so its prompt would land inside
+        // this turn and overwrite the bookkeeping. Hand the turn to the watch
+        // loop instead: the slot frees on the next counted detection, with the
+        // max_age backstop — which applies from here on, now that nobody is
+        // waiting on this turn — so a wedged terminal still recovers.
+        if let Some(slot) = outcome.slot {
+            slot.detach();
+        }
         // The arm stays set: if the turn finishes later, the one-shot event
         // still wakes any Minerva-side trigger. We just stop blocking.
         return Ok(json!({
@@ -984,8 +1204,24 @@ fn relay_ask_core(
         .cloned()
         .unwrap_or(Value::Null);
 
+    // The read is next. It may block in a host call for as long as that call
+    // takes; the slot is still attached, so nothing can displace this caller
+    // while it reads the window it opened.
     let echo_hint = (mode == SendMode::Submit).then_some(text);
-    match read_turn_core(terminal_id, do_distill, do_redact, model, echo_hint, router) {
+    let read = read_turn_core(
+        terminal_id, do_distill, do_redact, model, echo_hint, router,
+    );
+
+    // The slot is released only once this turn's answer has been READ. The read
+    // window is anchored at the pre-write screen and is open-ended, so a prompt
+    // written into the same terminal before the read would land inside it and be
+    // returned as part of this answer — and the next caller's turn would then be
+    // read from an anchor that already has its own prompt above it.
+    if let Some(slot) = outcome.slot {
+        slot.end();
+    }
+
+    match read {
         Err(e) => Err(format!("turn completed (cause={cause}) but read failed: {e}")),
         Ok(read) => Ok(json!({
             "ok": true,
@@ -1010,6 +1246,19 @@ fn relay_ask_core(
 /// timeout_sec=600 so the host receives a structured {kind:"error"} instead
 /// of a bare call_tool transport timeout.
 const PASSTHROUGH_TIMEOUT_MS: u64 = 590_000;
+
+/// The envelope the HOST writes in front of every minerva_terminal_notify
+/// line. Shared by convention with MCPTerminalTools.NOTIFY_ENVELOPE_PREFIX
+/// (src/Scripts/Services/MCP/Modules/MCPTerminalTools.gd): the same string in
+/// both places, and only the host ever writes it.
+///
+/// A notification is never an answer to a question card. Everything else a
+/// passthrough chat sends while a card is pending IS that card's answer — it
+/// bypasses the hold and is typed into the card — so an envelope arriving then
+/// would be entered into the chooser as a custom answer nobody asked for. A
+/// line with this prefix is therefore always a FRESH prompt: held until the
+/// card clears, with the card left filed for the answer still to come.
+const NOTIFY_ENVELOPE_PREFIX: &str = "[MINERVA NOTIFY from ";
 
 /// Per-chat passthrough state. SEAM GAP (filed): the host's PluginProvider
 /// sends only {chat_id, text} to the generate tool — no entry/terminal
@@ -1042,6 +1291,13 @@ struct PassthroughState {
     // it does NOT navigate — it prompts the user to type a custom answer (which
     // then goes through the free-text path), avoiding the sub-prompt that hangs.
     pending_type_option: std::collections::HashMap<String, u32>, // terminal_id → option number
+    // The question region the pending card was built from. A pending question is
+    // only answerable while THAT card is still the screen: the human can answer
+    // the card in the terminal directly, and the agent then runs on and may draw
+    // a different modal. Comparing this text with the region on screen at the
+    // next turn separates the live card (its answer bypasses the hold) from a
+    // superseded one (stale: drop the pending state and send as a fresh prompt).
+    pending_question_region: std::collections::HashMap<String, String>, // terminal_id → region
     // Last-known watch profile per terminal. The idle reap (watch_timeout_ms,
     // 10 min) tears down an UNARMED watch — and a passthrough chat sits unarmed
     // between turns, so an idle chat loses its watch. We cache the profile while
@@ -1055,6 +1311,34 @@ static PASSTHROUGH: Mutex<Option<PassthroughState>> = Mutex::new(None);
 fn with_passthrough<R>(f: impl FnOnce(&mut PassthroughState) -> R) -> R {
     let mut guard = PASSTHROUGH.lock().unwrap();
     f(guard.get_or_insert_with(PassthroughState::default))
+}
+
+/// Drop every trace of a pending question for a terminal: the next text sent
+/// there is a fresh prompt, gated like any other.
+/// Retire the pending card ONLY while the region still filed is `expected` —
+/// the one this caller validated, or None when it had nothing pending.
+///
+/// Read and clear happen under ONE lock. Two acquisitions would leave a window
+/// in which another handler's turn files a NEWER card between them, and this
+/// caller would then wipe a filing the chat user is already looking at.
+/// Returns true when the card was retired.
+fn clear_pending_question_if(terminal_id: &str, expected: Option<&str>) -> bool {
+    with_passthrough(|s| {
+        if s.pending_question_region.get(terminal_id).map(String::as_str) != expected {
+            return false;
+        }
+        drop_pending(s, terminal_id);
+        true
+    })
+}
+
+/// The field-by-field retire, for callers that already hold the lock.
+fn drop_pending(s: &mut PassthroughState, terminal_id: &str) {
+    s.pending_question.remove(terminal_id);
+    s.pending_is_chooser.remove(terminal_id);
+    s.pending_chooser_options.remove(terminal_id);
+    s.pending_type_option.remove(terminal_id);
+    s.pending_question_region.remove(terminal_id);
 }
 
 /// Resolve which terminal a passthrough chat turn targets. See
@@ -1240,8 +1524,37 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
     // written raw with NO Enter — dialog pickers act on the keypress (codex
     // calibration is ambiguous on enter-confirm, so letter/number hints go
     // alone; the Confirm option carries "\r" itself).
-    let pending_question =
-        with_passthrough(|s| s.pending_question.contains(&terminal_id));
+    //
+    // A pending question only survives while the card that produced it is still
+    // the screen. Nothing on the passthrough path sees the human answer that
+    // same card in the terminal — the agent then runs on and can draw a NEW
+    // modal — so the region on screen is compared with the one the card was
+    // built from. A match means this write is the answer that clears the card
+    // (bypass the hold); anything else is stale: drop the pending state so the
+    // text is sent as a fresh prompt and the gate holds it while a modal owns
+    // the keyboard. An unreadable screen also drops the state; the gate then
+    // treats the same unreadable terminal as writable, which only a dead
+    // terminal produces.
+    // A notification answers nothing: it never takes the card's bypass, and it
+    // leaves the pending state alone (NOTIFY_ENVELOPE_PREFIX).
+    let is_notify = text.starts_with(NOTIFY_ENVELOPE_PREFIX);
+    let mut pending_question =
+        !is_notify && with_passthrough(|s| s.pending_question.contains(&terminal_id));
+    let mut filed_region: Option<String> = None;
+    if pending_question {
+        let filed = with_passthrough(|s| {
+            s.pending_question_region.get(&terminal_id).cloned()
+        });
+        let live = live_question_region(&terminal_id, router).map(|r| region_identity(&r));
+        if live.is_none() || live != filed {
+            // Retire only the card read above: a concurrent handler may have
+            // filed a newer one during the screen read, and that one stays.
+            clear_pending_question_if(&terminal_id, filed.as_deref());
+            pending_question = false;
+        } else {
+            filed_region = filed;
+        }
+    }
     let pending_chooser =
         with_passthrough(|s| s.pending_is_chooser.contains(&terminal_id));
 
@@ -1306,12 +1619,41 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
         (text, SendMode::Submit)
     };
 
-    let outcome = relay_ask_core(
-        &terminal_id, send_text, mode, PASSTHROUGH_TIMEOUT_MS,
+    // Anything sent while a question is pending ANSWERS the modal on screen —
+    // a chooser's custom free text as much as a permission keystroke or a
+    // chooser arrow. The hold guards a FRESH prompt from landing on a screen
+    // that owns the keyboard; here the screen is waiting on exactly this write,
+    // so holding for it would burn the whole passthrough budget and error.
+    let hold = match (pending_question, filed_region.clone()) {
+        (true, Some(region)) => GateHold::Bypass(region),
+        _ => GateHold::Wait,
+    };
+
+    let mut outcome = relay_ask_core(
+        &terminal_id, send_text, mode, hold, PASSTHROUGH_TIMEOUT_MS,
         false, // distill OFF — passthrough is verbatim
         true,  // redact stays on: secrets never enter chat history
         None, router,
     );
+    // The card was cleared by someone else while this answer queued for the
+    // slot, so nothing was written: the text is a fresh prompt now, sent as a
+    // plain submit that the gate holds like any other.
+    //
+    // WHAT IS FILED IS NOT NECESSARILY THIS CALLER'S CARD. The usual reason a
+    // bypass goes stale is that the first answer's turn already filed a NEW
+    // question card for this terminal. That filing is live — the chat user is
+    // looking at it — and dropping it would make their answer to it arrive
+    // with no pending state, so it would be sent as a fresh prompt and held by
+    // the very card it answers for the whole budget. So the pending state is
+    // dropped only when what is filed is still the region THIS caller
+    // validated, i.e. nobody has re-filed since.
+    if matches!(outcome, Err(ref e) if e == STALE_BYPASS) {
+        clear_pending_question_if(&terminal_id, filed_region.as_deref());
+        outcome = relay_ask_core(
+            &terminal_id, text, SendMode::Submit, GateHold::Wait, PASSTHROUGH_TIMEOUT_MS,
+            false, true, None, router,
+        );
+    }
 
     let result = match outcome {
         Err(e) => json!({"kind": "error", "text": e}),
@@ -1348,20 +1690,75 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
         }
     };
 
-    with_passthrough(|s| {
-        if result.get("kind").and_then(|k| k.as_str()) == Some("question") {
+    if result.get("kind").and_then(|k| k.as_str()) == Some("question") {
+        // The card's own region text identifies the screen this question came
+        // from; the next turn compares it with the screen then. pending_is_chooser
+        // and the option maps are set by build_question_result (chooser vs
+        // permission); leave them as that call decided.
+        let region = region_identity(result.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+        with_passthrough(|s| {
             s.pending_question.insert(terminal_id.clone());
-            // pending_is_chooser is set by build_question_result (chooser vs
-            // permission); leave it as that call decided.
-        } else {
-            s.pending_question.remove(&terminal_id);
-            s.pending_is_chooser.remove(&terminal_id);
-            s.pending_chooser_options.remove(&terminal_id);
-            s.pending_type_option.remove(&terminal_id);
-        }
-    });
+            s.pending_question_region.insert(terminal_id.clone(), region);
+        });
+    } else {
+        // Only the card this caller saw when it started is its to retire. A
+        // concurrent caller's turn may have filed a newer card meanwhile; that
+        // filing belongs to the answer still to come, so it stays.
+        clear_pending_question_if(&terminal_id, filed_region.as_deref());
+    }
 
     ok_response(id, tool_ok(result))
+}
+
+/// The question region a screen draws, and whether it is a CHOOSER.
+///
+/// Two block shapes need different region anchoring. A permission dialog
+/// carries its marker ABOVE its options (anchor top-down via the permission
+/// regex). An AskUserQuestion chooser carries its marker — the nav footer —
+/// BELOW its options, so the same regex would anchor on the footer and drop
+/// every option; extract it header-anchored instead. extract_question_region
+/// is chooser-unique ("enter to select"), so the permission path is unchanged.
+fn question_region(screen: &str, profile_id: &str) -> (String, bool) {
+    let dialog_re = profiles::profile_get(profile_id)
+        .and_then(|p| p.detection.permission_dialog_regex)
+        .and_then(|pat| regex::Regex::new(&pat).ok());
+    match dialog::extract_question_region(screen) {
+        Some(region) => (region, true),
+        None => (
+            dialog::extract_dialog_region(screen, dialog_re.as_ref(), 20),
+            false,
+        ),
+    }
+}
+
+/// A dialog region with its volatile marks removed: the highlight caret moves
+/// when the human arrows through the same card, so identity keys on the option
+/// text alone (leading caret glyphs and indentation dropped on every row).
+fn region_identity(region: &str) -> String {
+    region
+        .lines()
+        .map(|l| l.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '\u{276f}' | '\u{203a}' | '>')))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The profile currently watching a terminal, defaulted like the card builder.
+fn watched_profile_id(terminal_id: &str) -> String {
+    watcher::watch_status(terminal_id)
+        .and_then(|s| s.get("profile_id").and_then(|v| v.as_str()).map(String::from))
+        .unwrap_or_else(|| "claude".to_string())
+}
+
+/// The question region on the terminal's CURRENT screen, or None when the
+/// screen cannot be read.
+fn live_question_region(terminal_id: &str, router: &Arc<Router>) -> Option<String> {
+    let screen = router.call_capability("host.terminal.read", json!({
+        "terminal_id": terminal_id,
+    })).ok()?
+        .get("content")
+        .and_then(|v| v.as_str())?
+        .to_string();
+    Some(question_region(&screen, &watched_profile_id(terminal_id)).0)
 }
 
 /// Build the {kind:"question"} result for an input_requested turn: read the
@@ -1382,23 +1779,8 @@ fn build_question_result(terminal_id: &str, router: &Arc<Router>) -> Value {
         }
     };
 
-    let profile_id = watcher::watch_status(terminal_id)
-        .and_then(|s| s.get("profile_id").and_then(|v| v.as_str()).map(String::from))
-        .unwrap_or_else(|| "claude".to_string());
-    let dialog_re = profiles::profile_get(&profile_id)
-        .and_then(|p| p.detection.permission_dialog_regex)
-        .and_then(|pat| regex::Regex::new(&pat).ok());
-
-    // Two block shapes need different region anchoring. A permission dialog
-    // carries its marker ABOVE its options (anchor top-down via the permission
-    // regex). An AskUserQuestion chooser carries its marker — the nav footer —
-    // BELOW its options, so the same regex would anchor on the footer and drop
-    // every option; extract it header-anchored instead. extract_question_region
-    // is chooser-unique ("enter to select"), so the permission path is unchanged.
-    let chooser_region = dialog::extract_question_region(&screen);
-    let is_chooser = chooser_region.is_some();
-    let region = chooser_region
-        .unwrap_or_else(|| dialog::extract_dialog_region(&screen, dialog_re.as_ref(), 20));
+    let profile_id = watched_profile_id(terminal_id);
+    let (region, is_chooser) = question_region(&screen, &profile_id);
     let parsed = dialog::parse_options(&profile_id, &region);
     // Keep ALL options on the card. A chooser selects via ↑/↓ + Enter (a digit
     // TYPES a custom answer, it does not select — Claude Code v2.1.181). The card
@@ -1548,6 +1930,7 @@ fn handle_profile_set(params: &Value, id: Value) -> RpcResponse {
                 bell_capable: false,
                 settle_ms: 1_500,
                 watch_timeout_ms: 600_000,
+                composer_enter_recovery: false,
             },
         }
     });
@@ -1650,7 +2033,7 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_watch_status",
-                "description": "Return the current state of a watch session (watching, armed, last_wake_cause, last_turn_at, detection_method).",
+                "description": "Return the current state of a watch session (watching, armed, last_wake_cause, last_turn_at, detection_method) and of its send gate (hold_reason when the screen owns the keyboard, send_in_flight, send_waiters).",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1661,7 +2044,7 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_send",
-                "description": "Send text to a watched terminal via host.terminal.write and arm a one-shot wake (default arm=true).",
+                "description": "Send text to a watched terminal via host.terminal.write and arm a one-shot wake (default arm=true). BLOCKS while the screen shows a dialog/menu and while another relay prompt is still in flight; confirms the submit afterwards.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -1886,9 +2269,12 @@ fn main() {
                 // and friends must stay responsive DURING a turn. Responses
                 // are id-matched by the host, so out-of-order writes are fine,
                 // and StdoutWriter is mutexed so lines never interleave.
+                // send joins them: its gate waits out a modal screen and any
+                // relay turn already in flight before it writes.
                 if matches!(tool_name.as_str(),
                     "minerva_agent_relay_wait_turn"
                     | "minerva_agent_relay_relay_ask"
+                    | "minerva_agent_relay_send"
                     | "minerva_agent_relay_passthrough_generate")
                 {
                     let router2 = Arc::clone(&router);
@@ -1898,6 +2284,8 @@ fn main() {
                                 handle_wait_turn(&req.params, req.id),
                             "minerva_agent_relay_relay_ask" =>
                                 handle_relay_ask(&req.params, req.id, &router2),
+                            "minerva_agent_relay_send" =>
+                                handle_send(&req.params, req.id, &router2),
                             _ =>
                                 handle_passthrough_generate(&req.params, req.id, &router2),
                         };
@@ -1913,8 +2301,6 @@ fn main() {
                         handle_watch_stop(&req.params, req.id),
                     "minerva_agent_relay_watch_status" =>
                         handle_watch_status(&req.params, req.id),
-                    "minerva_agent_relay_send" =>
-                        handle_send(&req.params, req.id, &router),
                     "minerva_agent_relay_read_clean" =>
                         handle_read_clean(&req.params, req.id, &router),
                     "minerva_agent_relay_read_turn" =>
@@ -2177,5 +2563,44 @@ mod tests {
         let wide = "❯ ping\n\nping\npong";
         let out = slice_from_echo(wide, "ping").expect("echo found");
         assert_eq!(out, "ping\npong", "answer kept even when it repeats the message");
+    }
+
+    /// A pending card is retired only by the caller whose card it still is.
+    /// The read and the clear happen under ONE lock, so a card filed by another
+    /// handler between them cannot be wiped — the chat user is already looking
+    /// at that newer card, and wiping it would make their answer arrive with no
+    /// pending state and be held by the very card it answers.
+    #[test]
+    fn a_pending_card_is_retired_only_by_the_caller_whose_card_it_is() {
+        let terminal = "main-tests-compare-and-clear";
+        with_passthrough(|s| {
+            s.pending_question.insert(terminal.to_string());
+            s.pending_question_region
+                .insert(terminal.to_string(), "card one".to_string());
+        });
+
+        assert!(
+            !clear_pending_question_if(terminal, Some("card zero")),
+            "a caller whose card has been replaced must not retire the new one"
+        );
+        assert!(
+            with_passthrough(|s| s.pending_question.contains(terminal)),
+            "the newer filing stays answerable"
+        );
+
+        assert!(
+            !clear_pending_question_if(terminal, None),
+            "a caller that had nothing pending must not retire someone's card"
+        );
+
+        assert!(
+            clear_pending_question_if(terminal, Some("card one")),
+            "the caller whose card is still filed retires it"
+        );
+        assert!(
+            with_passthrough(|s| !s.pending_question.contains(terminal)
+                && !s.pending_question_region.contains_key(terminal)),
+            "and every trace of it is gone"
+        );
     }
 }

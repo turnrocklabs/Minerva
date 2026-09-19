@@ -277,8 +277,19 @@ fn bump_detection_serial(terminal_id: &str) {
 /// from the main dispatch thread: capability replies route through the
 /// stdin-reader thread, so blocking here cannot deadlock the watcher.
 pub fn wait_for_turn(terminal_id: &str, timeout_ms: u64) -> (Option<serde_json::Value>, bool) {
+    wait_for_turn_from(terminal_id, detection_serial(terminal_id), timeout_ms)
+}
+
+/// wait_for_turn with an explicit baseline serial. A caller that wrote a prompt
+/// passes the serial it read BEFORE the write: the turn can end while the send
+/// path is still confirming the submit, and a baseline taken afterwards would
+/// miss it and block to the timeout.
+pub fn wait_for_turn_from(
+    terminal_id: &str,
+    baseline: u64,
+    timeout_ms: u64,
+) -> (Option<serde_json::Value>, bool) {
     let deadline = Instant::now() + std::time::Duration::from_millis(timeout_ms);
-    let baseline = detection_serial(terminal_id);
     loop {
         if detection_serial(terminal_id) > baseline {
             return (last_event_payload(terminal_id), false);
@@ -567,6 +578,9 @@ pub fn watch_status(terminal_id: &str) -> Option<serde_json::Value> {
     let map = sessions.lock().unwrap();
     let session = map.get(terminal_id)?;
     let s = session.lock().unwrap();
+    // The send gate's view: why a write is currently held, how many callers
+    // are queued behind the outstanding prompt, and whether one is in flight.
+    let (hold_reason, send_waiters, send_in_flight) = crate::send_gate::status(terminal_id);
     Some(json!({
         "watching": !s.stop,
         "profile_id": s.profile_id,
@@ -577,6 +591,9 @@ pub fn watch_status(terminal_id: &str) -> Option<serde_json::Value> {
         "last_detection_method": s.last_detection_method,
         "turn_start_row": s.turn_start_row,
         "turn_end_row": s.turn_end_row,
+        "hold_reason": hold_reason,
+        "send_waiters": send_waiters,
+        "send_in_flight": send_in_flight,
     }))
 }
 
@@ -785,6 +802,14 @@ fn watch_loop(
                 // Extract total rows at this settle point (for turn-boundary tracking).
                 let current_rows = result.get("total_scrollback_rows")
                     .and_then(|v| v.as_u64());
+
+                // Publish what this screen is doing to the keyboard: the send
+                // gate refuses to write on any hold state, and watch_status
+                // shows the reason.
+                crate::send_gate::note_hold_reason(
+                    &terminal_id,
+                    detector::hold_reason(content, &cd).map(|r| r.as_str()),
+                );
 
                 // Busy-gate bookkeeping: a busy screen or row growth past the
                 // reference opens the gate. First sample after watch_start
@@ -1308,4 +1333,9 @@ mod tests {
         assert_eq!(&ts[7..8], "-", "month-day separator: {ts}");
         assert_eq!(&ts[10..11], "T", "date-time separator: {ts}");
     }
+}
+
+#[cfg(test)]
+mod turn_wait_tests {
+    use super::*;
 }

@@ -9,6 +9,17 @@
 //      or host.terminal.list no longer contains the terminal.
 //   5. timed_out — no turn end within watch_timeout_ms.
 //
+// The dialog pass is hold_reason over the WHOLE screen: the profile's own
+// permission_dialog_regex plus two structural rules for the screens no profile
+// phrase names (menus, unnumbered choosers). Both structural rules key on the
+// chooser's OPTION BLOCK — a caret-selected row and the rows aligned with it —
+// because a transcript reproduces every token in isolation: an echoed prompt
+// that starts with a number renders as `❯ 1. …` and answer prose names the
+// Enter key. Only blocks at or below the live composer row are considered, so
+// an echo cannot imitate a chooser. hold_reason is also what the send gate asks
+// before it writes: the same classification decides "a human is being asked"
+// and "a keystroke here would answer a modal".
+//
 // Wake causes:
 //   turn_completed    — normal turn end (idle prompt, agent waiting).
 //   input_requested   — permission/question dialog detected mid-turn.
@@ -98,7 +109,28 @@ pub struct CompiledDetection {
     pub bell_capable: bool,
     pub settle_ms: u64,
     pub watch_timeout_ms: u64,
+    /// Whether a single extra Enter is the known recovery for text left
+    /// sitting in this CLI's composer after a write (see `confirm_submit`).
+    pub composer_enter_recovery: bool,
+    /// A caret-SELECTED numbered option line (`❯ 1. Yes`, `› 2. Skip`).
+    menu_selected: Regex,
+    /// Any numbered option line, marked or not (`  3. Skip until next version`).
+    menu_option: Regex,
+    /// A modal footer that names Enter as the action key.
+    confirm_footer: Regex,
 }
+
+/// Longest trimmed line length still treated as modal FOOTER chrome rather
+/// than prose. The longest footer in the hold corpus is 49 characters
+/// ("Enter to select · ↑/↓ to navigate · Esc to cancel"); the cap keeps
+/// headroom for wider variants, and the option-block rule below — not the
+/// length — is what separates a footer from prose.
+const FOOTER_MAX_LEN: usize = 80;
+
+/// How far below an option block a modal footer may sit. Every footer in the
+/// corpus is 2 rows under its last option row; the AskUserQuestion chooser,
+/// which draws a rule line and one more option in between, is 4.
+const FOOTER_MAX_GAP: usize = 6;
 
 impl CompiledDetection {
     /// Compile detection params from a Profile. Returns Err if regex fails.
@@ -121,6 +153,14 @@ impl CompiledDetection {
             bell_capable: p.detection.bell_capable,
             settle_ms: p.detection.settle_ms,
             watch_timeout_ms: p.detection.watch_timeout_ms,
+            composer_enter_recovery: p.detection.composer_enter_recovery,
+            // Constant patterns — the unwraps cannot fail.
+            menu_selected: Regex::new(r"^\s*[❯›>]\s*\d+[.)]\s+\S").unwrap(),
+            menu_option: Regex::new(r"^\s*[❯›>]?\s*\d+[.)]\s+\S").unwrap(),
+            confirm_footer: Regex::new(
+                r"(?i)(?:press\s+)?enter\s+to\s+(?:confirm|select|continue)",
+            )
+            .unwrap(),
         })
     }
 }
@@ -186,16 +226,17 @@ pub fn run(
 
     // 4. Permission dialog detection (before turn_completed so it takes precedence
     //    when both prompt and dialog regex match somehow — dialogs are mid-turn).
-    if let Some(ref dialog_re) = cd.permission_dialog {
-        let dialog_area = last_n_lines(screen, 20);
-        for line in dialog_area.lines() {
-            if dialog_re.is_match(line) {
-                return Some(DetectionResult {
-                    cause: WakeCause::InputRequested,
-                    method: DetectionMethod::PermissionDialog,
-                });
-            }
-        }
+    //    hold_reason is the single classifier: it scans the whole screen with
+    //    the profile regex (a dialog drawn mid-viewport with blank rows below
+    //    it sits outside any trailing window) and it recognises menus and
+    //    chooser footers structurally, whether or not the profile has a phrase
+    //    for them. The same answer decides "a human is being asked" here and
+    //    "a keystroke would answer a modal" at the send gate.
+    if hold_reason(screen, cd).is_some() {
+        return Some(DetectionResult {
+            cause: WakeCause::InputRequested,
+            method: DetectionMethod::PermissionDialog,
+        });
     }
 
     // 5. Spinners absent AND prompt_box visible → turn_completed.
@@ -221,6 +262,336 @@ pub fn run(
 /// (or row growth) since arm()/watch_start — transition-based detection.
 pub fn is_busy(screen: &str, cd: &CompiledDetection) -> bool {
     has_active_spinner(last_n_lines(screen, 40), &cd.spinner_glyphs)
+}
+
+// ---------------------------------------------------------------------------
+// Hold states — screens a relay write must never land on
+// ---------------------------------------------------------------------------
+
+/// Why a screen currently owns the keyboard. Any variant means a write is
+/// unsafe: the keystroke would answer a modal instead of starting a turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoldReason {
+    /// The profile's own permission/question-dialog pattern matched.
+    Dialog,
+    /// A caret-selected numbered option with at least one sibling — the
+    /// structural shape every menu in the corpus shares, including the ones
+    /// no profile phrase names (update offers, model pickers).
+    Menu,
+    /// A short modal footer naming Enter as the action key, which is all an
+    /// UNNUMBERED chooser (the trust prompts) puts on screen.
+    ConfirmFooter,
+}
+
+impl HoldReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HoldReason::Dialog => "dialog",
+            HoldReason::Menu => "menu",
+            HoldReason::ConfirmFooter => "confirm_footer",
+        }
+    }
+}
+
+/// Classify a screen as holding the keyboard, or None when a write may land.
+///
+/// Scans the WHOLE screen, not a trailing window: menus are drawn wherever
+/// the TUI has room and the rows below them are blank, so a window measured
+/// from the last row is the single reason a dialog goes unnoticed.
+pub fn hold_reason(screen: &str, cd: &CompiledDetection) -> Option<HoldReason> {
+    let lines: Vec<&str> = screen.lines().collect();
+    let blocks = live_option_blocks(&lines, cd);
+
+    // A profile phrase that is itself a structural token — an option row, or a
+    // footer naming the Enter key — is the shape a transcript reproduces: a
+    // user prompt starting with a number echoes as `❯ 1. …`, and answer prose
+    // names the Enter key. Those go through the block rules below, which ask
+    // whether the row has aligned siblings. Every other phrase ("would you
+    // like to run", "(y/n)") is the dialog's own words and stands on its own.
+    if let Some(ref dialog_re) = cd.permission_dialog {
+        if lines.iter().any(|l| {
+            dialog_re.is_match(l) && !cd.menu_option.is_match(l) && !cd.confirm_footer.is_match(l)
+        }) {
+            return Some(HoldReason::Dialog);
+        }
+    }
+
+    // A caret-selected numbered row whose own block holds a numbered sibling.
+    // The block — not a screen-wide count — is what separates a menu from a
+    // numbered list inside an answer several rows below an echoed prompt.
+    if blocks.iter().any(|b| {
+        b.options.len() >= 2
+            && cd.menu_selected.is_match(lines[b.anchor])
+            && b.options.iter().filter(|&&i| cd.menu_option.is_match(lines[i])).count() >= 2
+    }) {
+        return Some(HoldReason::Menu);
+    }
+
+    // An UNNUMBERED chooser puts nothing on screen but its options and this
+    // footer, so the footer has to carry the verdict — bounded to the rows
+    // just under an option block, since prose names the Enter key too.
+    if lines.iter().enumerate().any(|(i, l)| {
+        l.trim().chars().count() <= FOOTER_MAX_LEN
+            && cd.confirm_footer.is_match(l)
+            && blocks.iter().any(|b| {
+                let last = *b.options.last().unwrap();
+                b.options.len() >= 2 && last < i && i - last <= FOOTER_MAX_GAP
+            })
+    }) {
+        return Some(HoldReason::ConfirmFooter);
+    }
+
+    None
+}
+
+/// The chooser blocks that can be LIVE on this screen.
+///
+/// A TUI draws its transcript above the input box and takes the box away while
+/// a modal owns the keyboard — every fixture in the hold corpus ends in its
+/// footer, with no composer under it. So a block that ends ABOVE the composer
+/// row is transcript, whatever its shape: a wrapped prompt echo, whose
+/// continuation rows the transcript indents to the caret's label column, is
+/// row-for-row a selected option plus its sibling, and a pasted or blockquoted
+/// numbered list reproduces a whole menu. Dropping those blocks is what keeps
+/// an ordinary settled turn out of the Menu and ConfirmFooter rules below.
+fn live_option_blocks(lines: &[&str], cd: &CompiledDetection) -> Vec<OptionBlock> {
+    let composer = lines.iter().rposition(|l| cd.prompt_box.is_match(l));
+    option_blocks(lines)
+        .into_iter()
+        .filter(|b| match composer {
+            None => true,
+            Some(row) => b.options.last().is_some_and(|&last| last >= row),
+        })
+        .collect()
+}
+
+/// A caret-selected option row and the rows drawn with it as one chooser.
+struct OptionBlock {
+    /// Row index of the caret-selected line that anchors the block.
+    anchor: usize,
+    /// Row indices of the option rows, in screen order, anchor included.
+    options: Vec<usize>,
+}
+
+/// Every chooser block on the screen.
+///
+/// A chooser draws its options at one column: the selected row spends its
+/// leading cells on a caret, the others on spaces, and a wrapped description
+/// sits further right. So a block is the run of rows around a caret-selected
+/// row whose content starts at the SAME column (an option) or further right
+/// (that option's description), with at most one blank row bridging two
+/// options. A row whose content starts further LEFT is transcript or box
+/// chrome, and ends the block.
+fn option_blocks(lines: &[&str]) -> Vec<OptionBlock> {
+    let mut blocks = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let Some(col) = selected_label_col(line) else { continue };
+        let mut options = vec![i];
+        collect_aligned(lines, i, col, false, &mut options);
+        options.reverse();
+        collect_aligned(lines, i, col, true, &mut options);
+        blocks.push(OptionBlock { anchor: i, options });
+    }
+    blocks
+}
+
+/// Walk away from `anchor` in one direction, pushing the row index of every
+/// aligned option row onto `options` until the block ends.
+fn collect_aligned(
+    lines: &[&str],
+    anchor: usize,
+    col: usize,
+    down: bool,
+    options: &mut Vec<usize>,
+) {
+    let mut i = anchor;
+    let mut blank_bridged = false;
+    loop {
+        i = if down {
+            i + 1
+        } else if i == 0 {
+            return;
+        } else {
+            i - 1
+        };
+        let Some(line) = lines.get(i) else { return };
+        if option_label_col(line) == Some(col) {
+            options.push(i);
+            blank_bridged = false;
+            continue;
+        }
+        match content_col(line) {
+            // Blank row: one may bridge two options; a second ends the block.
+            None => {
+                if blank_bridged {
+                    return;
+                }
+                blank_bridged = true;
+            }
+            // Indented further than the options — a wrapped description.
+            Some(c) if c > col => blank_bridged = false,
+            _ => return,
+        }
+    }
+}
+
+/// Column of a row's option label: past a leading selection or scroll marker
+/// when one is there (an off-edge chooser row is prefixed with `↑`/`↓`),
+/// otherwise the row's own content column. This is the column a chooser aligns
+/// every option on, marked or not.
+fn option_label_col(line: &str) -> Option<usize> {
+    selected_label_col(line).or_else(|| marker_label_col(line)).or_else(|| content_col(line))
+}
+
+/// Label column past a leading `↑`/`↓` scroll cursor, or None when the row
+/// carries no such marker.
+fn marker_label_col(line: &str) -> Option<usize> {
+    let chars: Vec<char> = line.chars().collect();
+    let marker = chars.iter().position(|c| !c.is_whitespace())?;
+    if !matches!(chars[marker], '↑' | '↓') {
+        return None;
+    }
+    let label = chars[marker + 1..].iter().position(|c| !c.is_whitespace())? + marker + 1;
+    (label > marker + 1).then_some(label)
+}
+
+/// Column (in characters) of a row's first non-whitespace character, or None
+/// when the row is blank.
+fn content_col(line: &str) -> Option<usize> {
+    line.chars().position(|c| !c.is_whitespace())
+}
+
+/// Column of the label on a caret-SELECTED option row (`❯ 1. Yes`, `› Skip`),
+/// or None when the row is not one. An empty composer (`❯`, or `❯` + NBSP) has no
+/// label and is not an option row.
+fn selected_label_col(line: &str) -> Option<usize> {
+    let chars: Vec<char> = line.chars().collect();
+    let caret = chars.iter().position(|c| !c.is_whitespace())?;
+    if !matches!(chars[caret], '\u{276f}' | '\u{203a}' | '>') {
+        return None;
+    }
+    let label = chars[caret + 1..].iter().position(|c| !c.is_whitespace())? + caret + 1;
+    // The caret needs a gap before the label: `>foo` is a quote, not an option.
+    (label > caret + 1).then_some(label)
+}
+
+// ---------------------------------------------------------------------------
+// Submit confirmation — did the write actually become a turn?
+// ---------------------------------------------------------------------------
+
+/// What the screen says about a message the relay just wrote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SubmitState {
+    /// The harness took the message. The payload names the evidence.
+    Submitted(&'static str),
+    /// The message is still sitting in the composer, unechoed, with no turn in
+    /// flight — the settled paste-failure shape. Exactly one extra Enter is the
+    /// measured recovery, and only on profiles that show this state.
+    StuckInComposer,
+    /// Neither confirmed nor demonstrably stuck. Never worth an extra Enter:
+    /// a blind Enter is what answers a menu by accident.
+    Unconfirmed,
+}
+
+/// Decide whether `body` reached the harness, from the screen sampled after
+/// the write.
+///
+/// Evidence, in precedence order:
+///   `busy`  — a turn is in flight (the interrupt hint is on screen). Every
+///             confirmed-submit capture in the corpus shows it.
+///   `echo`  — the body appears on a row that is NOT the composer row, i.e.
+///             the transcript took it, and only rows that are NEW since the
+///             pre-write baseline (see `baseline` below).
+///   stuck   — the composer row still carries the body, nothing echoes it and
+///             nothing is running. Reported only for profiles that can show
+///             this state; on Claude Code the same rows are produced by the
+///             dim ghost suggestion drawn INTO an empty composer, and the
+///             attribute that separates them does not survive row extraction.
+///
+/// `baseline` is the PRE-WRITE screen, when the caller read one.
+/// Echo evidence is only evidence when it is NEW. The same text can already be
+/// echoed in the transcript from an earlier submit — re-asking a question, a
+/// retry — and that old row confirms nothing about the write just made: a
+/// message that stuck in the composer would be read as submitted and get no
+/// recovery Enter. So the echo rows are COUNTED on both screens and the write
+/// is confirmed only when the count grew. With no baseline (the caller read no
+/// pre-write screen) the count is compared against zero.
+pub fn confirm_submit(
+    screen: &str,
+    body: &str,
+    cd: &CompiledDetection,
+    baseline: Option<&str>,
+) -> SubmitState {
+    if is_busy(screen, cd) {
+        return SubmitState::Submitted("busy");
+    }
+
+    let needle = echo_needle(body);
+    if needle.is_empty() {
+        return SubmitState::Unconfirmed;
+    }
+
+    let (echoes, composer_holds_body) = echo_rows(screen, &needle, cd);
+    let echoes_before = baseline.map_or(0, |b| echo_rows(b, &needle, cd).0);
+
+    if echoes > echoes_before {
+        return SubmitState::Submitted("echo");
+    }
+    if composer_holds_body && cd.composer_enter_recovery {
+        return SubmitState::StuckInComposer;
+    }
+    SubmitState::Unconfirmed
+}
+
+/// How many rows of `screen` carry `needle` OUTSIDE the composer (the echo
+/// count), and whether the composer row itself carries it.
+fn echo_rows(screen: &str, needle: &str, cd: &CompiledDetection) -> (usize, bool) {
+    let composer_idx = screen
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| cd.prompt_box.is_match(l))
+        .map(|(i, _)| i)
+        .last();
+    let mut echoes = 0usize;
+    let mut composer_holds_body = false;
+    for (i, line) in screen.lines().enumerate() {
+        if !normalize_row(line).contains(needle) {
+            continue;
+        }
+        if Some(i) == composer_idx {
+            composer_holds_body = true;
+        } else {
+            echoes += 1;
+        }
+    }
+    (echoes, composer_holds_body)
+}
+
+/// The comparable fragment of a sent message: its first line, whitespace
+/// collapsed, capped so a wrapped transcript row still contains it.
+fn echo_needle(body: &str) -> String {
+    let first = body.lines().next().unwrap_or("");
+    let normalized = normalize_row(first);
+    normalized.chars().take(48).collect()
+}
+
+/// Collapse a row to comparable text: caret/box glyphs and runs of whitespace
+/// (the composer's NBSP included) become single spaces.
+fn normalize_row(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut pending_space = false;
+    for ch in line.chars() {
+        if ch.is_whitespace() || matches!(ch, '❯' | '›' | '↳' | '│' | '┃') {
+            pending_space = !out.is_empty();
+            continue;
+        }
+        if pending_space {
+            out.push(' ');
+            pending_space = false;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 /// Count the trailing rows of `screen` that are input-box chrome rather than
@@ -379,11 +750,13 @@ mod tests {
     /// An AskUserQuestion chooser (Windows ASCII caret): numbered options with
     /// a `>` cursor and the nav footer. Must fire input_requested.
     fn screen_claude_windows_chooser() -> &'static str {
+        // NOTE the explicit two-space indents: a `\` line continuation eats the
+        // leading whitespace of the next source line, and an unselected option
+        // row drawn at column 0 is a shape no harness produces — the caret
+        // occupies that cell on the selected row.
         "Which experience should I prototype next?\n\
          \n\
-         > 1. Group fair + NetTrans (Recommended)\n\
-           2. CSA provider onboarding\n\
-           6. Chat about this\n\
+         > 1. Group fair + NetTrans (Recommended)\n  2. CSA provider onboarding\n  6. Chat about this\n\
          \n\
          Enter to select \u{b7} \u{2191}/\u{2193} to navigate \u{b7} Esc to cancel\n"
     }

@@ -2795,8 +2795,11 @@ fn test_passthrough_generate_question_options_and_keystroke() {
                         }));
                     } else {
                         plain_read_count += 1;
-                        if plain_read_count == 1 {
-                            // send's pre-write snapshot.
+                        if plain_read_count <= 2 {
+                            // The gate's two looks at the screen a write lands
+                            // on: the pre-wait look, then the re-check once the
+                            // prompt slot is in hand. The second IS the
+                            // pre-write snapshot.
                             send_cap_reply(&mut stdin, &id, json!({
                                 "content": CODEX_IDLE_FIX,
                                 "rows": 12, "total_scrollback_rows": 30

@@ -50,6 +50,15 @@ pub struct Detection {
     /// is consumed (one-shot behaviour preserved).
     #[serde(default = "default_watch_timeout_ms")]
     pub watch_timeout_ms: u64,
+
+    /// Whether this CLI can leave a written message sitting in its composer
+    /// unsubmitted, recoverable with one extra Enter. Measured per harness:
+    /// codex-cli does this with a message+CR written as one chunk; Claude Code
+    /// never did, and its empty composer carries a dim ghost suggestion whose
+    /// extracted rows are indistinguishable from unsent text — so an extra
+    /// Enter there is a blind keystroke, not a recovery.
+    #[serde(default)]
+    pub composer_enter_recovery: bool,
 }
 
 fn default_settle_ms() -> u64 { 1_500 }
@@ -176,6 +185,10 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 settle_ms: 1_500,
 
                 watch_timeout_ms: 600_000,
+
+                // No paste-stuck composer was producible on Claude Code, and
+                // its ghost suggestion makes a row-text rule unsafe here.
+                composer_enter_recovery: false,
             },
         },
         Profile {
@@ -215,6 +228,11 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 bell_capable: false,
                 settle_ms: 1_500,
                 watch_timeout_ms: 600_000,
+
+                // Measured: a message and its CR written as ONE chunk lands in
+                // the composer unsubmitted and stays there; one extra Enter
+                // submits it exactly once.
+                composer_enter_recovery: true,
             },
         },
         Profile {
@@ -240,6 +258,9 @@ pub fn builtin_profiles() -> Vec<Profile> {
                 bell_capable: false,
                 settle_ms: 2_000,
                 watch_timeout_ms: 600_000,
+
+                // Unmeasured harness — never send an unprompted extra Enter.
+                composer_enter_recovery: false,
             },
         },
     ]

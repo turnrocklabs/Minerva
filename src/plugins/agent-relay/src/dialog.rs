@@ -38,20 +38,64 @@ impl DialogOption {
 
 /// Extract the dialog region from a raw screen: from the FIRST line within the
 /// last `window` lines that matches `dialog_re`, through the end of the screen.
-/// Falls back to the last `window` lines when the regex matches nothing
-/// (defensive — input_requested implies a match fired on the wait screen, but
-/// the screen may have repainted between detection and this read).
+///
+/// Two widenings, tried in order when that window holds no match:
+///   * the FIRST match anywhere on the screen — a dialog drawn mid-viewport
+///     with blank rows below it sits above the window, and anchoring on the
+///     window edge instead starts the region PAST the first options;
+///   * the first numbered option line — menus that no profile phrase names
+///     (update offers, trust prompts) still parse into a card.
+///
+/// Falls back to the last `window` lines when neither finds anything
+/// (defensive — input_requested implies something fired on the wait screen,
+/// but the screen may have repainted between detection and this read).
 pub fn extract_dialog_region(screen: &str, dialog_re: Option<&Regex>, window: usize) -> String {
     let lines: Vec<&str> = screen.lines().collect();
     let start_window = lines.len().saturating_sub(window);
+    // Constant pattern — the unwrap cannot fail.
+    let numbered = Regex::new(r"^\s*[›❯>]?\s*\d+[.)]\s+\S").unwrap();
     if let Some(re) = dialog_re {
         for (i, line) in lines.iter().enumerate().skip(start_window) {
             if re.is_match(line) {
-                return lines[i..].join("\n");
+                return region_from(&lines, i, &numbered);
+            }
+        }
+        for (i, line) in lines.iter().enumerate() {
+            if re.is_match(line) {
+                return region_from(&lines, i, &numbered);
             }
         }
     }
+    for (i, line) in lines.iter().enumerate() {
+        if numbered.is_match(line) {
+            return region_from(&lines, i, &numbered);
+        }
+    }
     lines[start_window..].join("\n")
+}
+
+/// The region starting at `anchor`, widened upwards over sibling option lines
+/// (one blank row may separate them). The profile regex matches the SELECTED
+/// option or the picker's FOOTER, and neither is the first option — anchoring
+/// on the match alone drops every option above it.
+fn region_from(lines: &[&str], anchor: usize, numbered: &Regex) -> String {
+    let mut start = anchor;
+    let mut i = anchor;
+    let mut blank_used = false;
+    while i > 0 {
+        let prev = lines[i - 1];
+        if numbered.is_match(prev) {
+            i -= 1;
+            start = i;
+            blank_used = false;
+        } else if prev.trim().is_empty() && !blank_used {
+            i -= 1;
+            blank_used = true;
+        } else {
+            break;
+        }
+    }
+    lines[start..].join("\n")
 }
 
 /// Extract a Claude Code AskUserQuestion chooser region: from the chooser
