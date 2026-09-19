@@ -114,6 +114,7 @@ HERMETIC_TESTS=(
 	test/test_chat_groups.gd
 	test/test_chat_outgoing_queue.gd
 	test/test_terminal_notify.gd
+	test/test_worker_parent_chat.gd
 	test/test_core_action_catalog.gd
 	test/test_chat_groups_integration.gd
 	test/test_internal_plugin_catalog.gd

@@ -290,7 +290,7 @@ func _register_agent_tools() -> void:
 
 func _register_worker_tools() -> void:
 	server._register_tool("minerva_spawn_worker",
-		"Spawn a managed sub-agent worker. Creates a new chat, configures it, sends the task, and tracks the parent-child relationship. The supervisor will be automatically notified when the worker finishes. Returns worker_id for tracking.",
+		"Spawn a managed sub-agent worker. Creates a new chat, configures it, sends the task, and tracks the parent-child relationship. The supervisor (see parent_chat_id) will be automatically notified when the worker finishes. Returns worker_id for tracking.",
 		{
 			"type": "object",
 			"properties": {
@@ -329,6 +329,10 @@ func _register_worker_tools() -> void:
 				"cobrowser_agent_id": {
 					"type": "string",
 					"description": "Browser agent ID for this worker. If set, all cobrowser calls from this worker will automatically include this agent_id."
+				},
+				"parent_chat_id": {
+					"type": "string",
+					"description": "Chat that supervises this worker: budget, minerva_list_workers grouping and the completion message all use it. Defaults to the calling chat, or to the current tab when the caller has no chat (an MCP client outside a chat). Must name an open chat — an unknown id is an error, never a fallback."
 				},
 				"skills": {
 					"type": "array",
@@ -858,17 +862,15 @@ func _spawn_worker(args: Dictionary, context: ExecutionContext) -> Dictionary:
 	var max_tool_rounds: int = MCPToolUtils.coerce_int(args.get("max_tool_rounds", 25))
 	var timeout_seconds: float = float(args.get("timeout_seconds", -1))
 
-	# 2. Determine parent_chat_id — prefer caller identity from tool dispatch chain,
-	# fall back to current_tab only if no caller identity is available
+	# 2. Determine parent_chat_id
 	var chat_pane = SingletonObject.Chats
 	if not chat_pane:
 		return MCPToolUtils.error("Chat pane not available")
 
-	var parent_chat_id: String = ""
-	if not context.caller_chat_id.is_empty():
-		parent_chat_id = context.caller_chat_id
-	elif chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
-		parent_chat_id = SingletonObject.ChatList[chat_pane.current_tab].HistoryId
+	var parent_resolution: Dictionary = _resolve_parent_chat_id(args, context, chat_pane)
+	if parent_resolution.has("error"):
+		return MCPToolUtils.error(parent_resolution["error"])
+	var parent_chat_id: String = parent_resolution["parent_chat_id"]
 
 	# 2b. Check budget before spawning
 	if not parent_chat_id.is_empty():
@@ -1023,6 +1025,27 @@ func _spawn_worker(args: Dictionary, context: ExecutionContext) -> Dictionary:
 	if not auto_defaults.is_empty():
 		spawn_result["auto_defaults"] = auto_defaults
 	return spawn_result
+
+
+## Choose the chat a worker reports to. Precedence: an explicit parent_chat_id
+## argument, then the caller chat carried by the tool dispatch chain, then the
+## pane's current tab. An explicit id that names no chat is an error, so a
+## caller that asks for a specific supervisor never silently gets another one.
+## Returns {"parent_chat_id": String} or {"error": String}.
+func _resolve_parent_chat_id(args: Dictionary, context: ExecutionContext, chat_pane) -> Dictionary:
+	var explicit: String = str(args.get("parent_chat_id", "")).strip_edges()
+	if not explicit.is_empty():
+		if MCPToolUtils.find_chat_by_id(explicit) == null:
+			return {"error": "parent_chat_id '%s' is not an open chat. Use minerva_list_chats to find the supervisor chat id." % explicit}
+		return {"parent_chat_id": explicit}
+
+	if not context.caller_chat_id.is_empty():
+		return {"parent_chat_id": context.caller_chat_id}
+
+	if chat_pane.current_tab >= 0 and chat_pane.current_tab < SingletonObject.ChatList.size():
+		return {"parent_chat_id": SingletonObject.ChatList[chat_pane.current_tab].HistoryId}
+
+	return {"parent_chat_id": ""}
 
 
 func _setup_worker_timeout(worker_id: String, timeout_seconds: float) -> void:
