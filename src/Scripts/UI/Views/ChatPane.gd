@@ -1727,6 +1727,18 @@ func regenerate_response(chi: ChatHistoryItem):
 		push_warning("Trying to regenerate response for history item %s not present in any history item list" % chi)
 		return
 	
+	# Turn admission, BEFORE the first await and before anything is mutated.
+	# A regeneration is not queueable — the queue carries text to send, not a
+	# history item to redo — so a busy chat REFUSES it. Without this the
+	# regeneration claimed its token only after `await create_prompt`, so an
+	# ordinary send starting inside that await had its own token replaced: its
+	# release was then refused, and the regeneration's release drained the queue
+	# while that request was still running.
+	if history.is_request_active:
+		push_warning("Tried to regenerate response while chat %s is mid-request" % history.HistoryId)
+		return
+	var turn_token: int = _begin_chat_turn(history)
+
 	var index = history.HistoryItemList.find(chi)
 
 	# Clean up all items after the user message (orphaned tool-call chains from previous responses)
@@ -1762,9 +1774,6 @@ func regenerate_response(chi: ChatHistoryItem):
 		print("[regenerate] Provider tools_enabled: %s" % history.provider.tools_enabled)
 
 	var history_list = await create_prompt(chi, false, history.provider, predicate, history)
-
-	# Track this request so the stop button works
-	var turn_token: int = _begin_chat_turn(history)
 
 	# Ensure rendered_node exists (may have been freed if message was deleted)
 	if not is_instance_valid(existing_response.rendered_node):

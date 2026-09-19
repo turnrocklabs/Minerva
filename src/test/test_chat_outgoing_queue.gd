@@ -37,6 +37,7 @@ const BUBBLE_SCENE_PATH := "res://Scenes/pending_message_bubble.tscn"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
 const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
+const PLUGIN_PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.gd"
 
 ## Blocking provider stand-in: generate_content does not return until the test
 ## releases that message, so "is a second generate running?" is directly
@@ -91,6 +92,19 @@ func execute_regular_chat(text: String, generation_options: Dictionary = {}) -> 
 	var answer = await provider.generate_content(text)
 	events.append("answer:" + str(answer))
 	_release_chat_turn(history, turn_token)
+
+## regenerate_response itself stays REAL — only the two calls it makes into the
+## network path are replaced. create_prompt keeps its await, because the window
+## a regeneration used to start a second turn in is exactly that await.
+var regen_calls: Array[String] = []
+
+func create_prompt(append_item: ChatHistoryItem = null, refresh_detached := true, provider_fallback: BaseProvider = null, predicate: Callable = Callable(), history_override: ChatHistory = null) -> Array[Variant]:
+	await get_tree().process_frame
+	return []
+
+func generate_content_from_provider(history: ChatHistory, history_list: Array, request_options: Variant = null, provider_override: BaseProvider = null) -> Variant:
+	regen_calls.append("regen")
+	return null
 """
 
 var _pass := 0
@@ -177,6 +191,7 @@ func _run() -> void:
 	await _test_cancel_then_new_turn_is_not_released_by_the_zombie()
 	await _test_a_late_parallel_response_releases_its_own_turn()
 	await _test_a_late_parallel_response_releases_its_own_chat()
+	await _test_regenerate_waits_for_the_active_turn()
 
 
 #region A — queue semantics
@@ -597,5 +612,71 @@ func _test_a_late_parallel_response_releases_its_own_chat() -> void:
 	check("H8: and it does end chat A's own turn", not chat_a.is_request_active)
 
 	_teardown(pane, [chat_a, chat_b])
+
+#endregion
+
+
+#region I — regeneration is admitted like any other turn
+
+## A regeneration used to claim its turn token only AFTER `await create_prompt`,
+## with no busy gate at all: an ordinary send starting inside that await had its
+## token replaced, so its own release was refused and the regeneration's release
+## drained the queue while that request was still running.
+##
+## The rule under test: a regeneration is not queueable (the queue carries text
+## to send, not a history item to redo), so a busy chat refuses it outright.
+func _test_regenerate_waits_for_the_active_turn() -> void:
+	var chat = _make_history("Regen")
+	var pane = _make_pane([chat])
+	var provider = _make_script(FAKE_PROVIDER_SRC).new()
+	provider.tree = self
+	pane.provider = provider
+	# regenerate_response reads history.provider (typed BaseProvider) directly,
+	# so it has to be a real one; the generate call itself is the pane's, so
+	# this provider is never asked to produce anything.
+	var history_provider = load(PLUGIN_PROVIDER_PATH).new()
+	pane.add_child(history_provider)
+	chat.provider = history_provider
+	pane.current_tab = _so.ChatList.find(chat)
+
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	var chi = item_script.new()
+	# By the loaded script, never by identifier: naming ChatHistoryItem here
+	# would compile it while the autoloads are still unregistered.
+	chi.Role = item_script.ChatRole.USER
+	chi.Message = "regenerate me"
+	chat.HistoryItemList.append(chi)
+	chi.rendered_node = chat.VBox.add_history_item(chi)
+
+	pane.execute_regular_chat("A")
+	await process_frame
+	var token_while_busy: int = chat.request_turn_token
+	check("I1: the ordinary send is running", provider.calls.size() == 1
+		and chat.is_request_active, str(provider.calls))
+
+	pane.regenerate_response(chi)
+	for _i in range(6):
+		await process_frame
+	check("I2: a regeneration during a live turn starts no second generate",
+		pane.regen_calls.is_empty() and provider.calls.size() == 1,
+		"%s / %s" % [str(pane.regen_calls), str(provider.calls)])
+	check("I3: the active turn keeps its token",
+		chat.request_turn_token == token_while_busy,
+		"%d -> %d" % [token_while_busy, chat.request_turn_token])
+	check("I4: and the chat is still busy with it", chat.is_request_active)
+
+	provider.release("A")
+	for _i in range(6):
+		await process_frame
+	check("I5: the ordinary turn ends normally", not chat.is_request_active)
+
+	pane.regenerate_response(chi)
+	for _i in range(8):
+		await process_frame
+	check("I6: regenerating an idle chat runs", pane.regen_calls.size() == 1,
+		str(pane.regen_calls))
+	check("I7: and releases its own turn", not chat.is_request_active)
+
+	_teardown(pane, [chat])
 
 #endregion
