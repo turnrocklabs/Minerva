@@ -25,6 +25,7 @@ use std::time::{Instant, SystemTime};
 
 use serde_json::json;
 
+use crate::answer_backfill::LogBinding;
 use crate::detector::{self, CompiledDetection, DetectionMethod, WakeCause};
 use crate::profiles::{profile_get, Profile};
 use crate::router::Router;
@@ -132,6 +133,11 @@ struct WatchSession {
     /// relay restart nor a profile change restarts the terminal.
     facts: SessionFacts,
 
+    /// Cached session-log binding for answer backfill. A pure cache: it is
+    /// re-derived from `facts` whenever it stops yielding this terminal's
+    /// turns, so it is neither persisted nor carried across a watch restart.
+    log_binding: LogBinding,
+
     /// Last-activity anchor for the idle reap: refreshed by arm() and by any
     /// counted detection. The watch_timeout_ms reap applies only to UNARMED
     /// sessions idle past this anchor — an armed session never self-reaps
@@ -157,6 +163,7 @@ impl WatchSession {
             gate_ref_rows: None,
             gate_ref_hash: None,
             facts: SessionFacts::default(),
+            log_binding: LogBinding::default(),
             reap_anchor: Instant::now(),
         }
     }
@@ -467,15 +474,31 @@ pub fn last_event_payload(terminal_id: &str) -> Option<serde_json::Value> {
     map.get(terminal_id).and_then(|e| e.event_payload.clone())
 }
 
-/// Record a prompt the relay submitted into `terminal_id`. No-op when no
-/// session is watching it. Returns true when the prompt was recorded.
-pub fn record_prompt(terminal_id: &str, text: &str) -> bool {
+/// Wall clock in epoch milliseconds, the unit the host's terminal listing and
+/// the harnesses' own log timestamps are stated in.
+pub fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Record a prompt the relay submitted into `terminal_id`, with the instant it
+/// went out. That instant must be read BEFORE the terminal write: answer
+/// backfill rejects a log turn that opened earlier, and the harness stamps its
+/// own record while the send path is still finishing. No-op when no session is
+/// watching the terminal. Returns true when the prompt was recorded.
+pub fn record_prompt(terminal_id: &str, text: &str, submitted_ms: i64) -> bool {
     let recorded = {
         let sessions = get_sessions();
         let map = sessions.lock().unwrap();
         match map.get(terminal_id) {
             Some(session) => {
-                session.lock().unwrap().facts.record_prompt(text);
+                session
+                    .lock()
+                    .unwrap()
+                    .facts
+                    .record_prompt(text, submitted_ms);
                 true
             }
             None => false,
@@ -485,6 +508,27 @@ pub fn record_prompt(terminal_id: &str, text: &str) -> bool {
         crate::state::save();
     }
     recorded
+}
+
+/// What answer backfill needs to find this terminal's harness transcript:
+/// its profile, the binder facts, and the cached binding. None when no session
+/// is watching it. Taken by value so the caller's file reads happen outside
+/// the session lock, which the watch loop also takes.
+pub fn backfill_inputs(terminal_id: &str) -> Option<(String, SessionFacts, LogBinding)> {
+    let sessions = get_sessions();
+    let map = sessions.lock().unwrap();
+    let s = map.get(terminal_id)?.lock().unwrap();
+    Some((s.profile_id.clone(), s.facts.clone(), s.log_binding.clone()))
+}
+
+/// Store the binding cache back after a backfill attempt. No-op when the watch
+/// ended meanwhile — the cache is worth nothing once the session is gone.
+pub fn store_log_binding(terminal_id: &str, binding: LogBinding) {
+    let sessions = get_sessions();
+    let map = sessions.lock().unwrap();
+    if let Some(session) = map.get(terminal_id) {
+        session.lock().unwrap().log_binding = binding;
+    }
 }
 
 /// One live watch session as the state file stores it.

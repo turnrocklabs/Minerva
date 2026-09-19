@@ -25,6 +25,8 @@
 // All writes to stdout go through Arc<StdoutWriter> (Mutex<BufWriter<Stdout>>)
 // to avoid line interleaving.
 
+// Replaces a scraped answer with the harness's own record of the same turn.
+mod answer_backfill;
 mod chrome_filter;
 mod detector;
 mod dialog;
@@ -32,7 +34,7 @@ mod filter_rules;
 mod profiles;
 mod router;
 // Session-log binder: derives which harness transcript a watched terminal
-// writes. Not yet reached from any tool path.
+// writes.
 mod session_log;
 mod state;
 // Binder facts a watched terminal carries across a relay restart.
@@ -309,6 +311,10 @@ fn send_core_with_mode(
         None
     };
 
+    // Read before the first write: the harness stamps its own record of this
+    // prompt as soon as the Enter lands, which is before this handler returns.
+    let submitted_ms = watcher::now_ms();
+
     // Submit: write the text and the Enter as TWO writes with a pause between
     // them. TUI agents (Claude Code et al.) treat a single fast chunk as a
     // paste: an embedded CR becomes a newline in the input box and never
@@ -408,9 +414,9 @@ fn send_core_with_mode(
 
     // Record the prompt for the session-log binder. Submit mode only: a raw
     // keystroke or chooser arrow never appears as prompt text in a harness
-    // transcript, and binding requires every recorded prompt to be found.
+    // transcript, and the binder identifies a session by its latest prompt.
     if mode == SendMode::Submit {
-        watcher::record_prompt(terminal_id, body);
+        watcher::record_prompt(terminal_id, body, submitted_ms);
     }
 
     Ok(json!({
@@ -749,13 +755,25 @@ fn read_turn_core(
 
     // Pass 1: chrome filter.
     let mut cleaned = chrome_filter::filter(&raw);
-    // Pass 2: named filter rules.
+    // Pass 2: the harness's own record of this turn, when its session log holds
+    // one. echo_hint is the prompt the relay submitted, and is present only for
+    // a Submit send — a raw keystroke is no prompt to match on. Runs BEFORE the
+    // named rules, redaction and truncation, so every later pass sees the text
+    // that will be delivered whichever source it came from.
+    let mut answer_source = answer_backfill::SOURCE_SCREEN;
+    if let Some(prompt) = echo_hint {
+        if let Some(recorded) = answer_backfill::for_terminal(terminal_id, prompt, &cleaned) {
+            cleaned = recorded;
+            answer_source = answer_backfill::SOURCE_LOG;
+        }
+    }
+    // Pass 3: named filter rules.
     cleaned = with_filter_rules(|rs| rs.apply(&cleaned));
-    // Pass 3: redaction.
+    // Pass 4: redaction.
     if do_redact {
         cleaned = chrome_filter::redact(&cleaned);
     }
-    // Pass 4: truncation.
+    // Pass 5: truncation.
     let trunc = chrome_filter::truncate(&cleaned, chrome_filter::MAX_OUTPUT_CHARS);
     let cleaned_text = trunc.text.clone();
     let was_truncated = trunc.truncated;
@@ -843,6 +861,8 @@ fn read_turn_core(
     Ok(json!({
         "ok": true,
         "content": output_content,
+        // Where the turn text came from before any distillation rewrote it.
+        "answer_source": answer_source,
         "distilled": distilled,
         "truncated": was_truncated,
         "omitted_chars": omitted_chars,
@@ -972,6 +992,8 @@ fn relay_ask_core(
             "terminal_id": terminal_id,
             "timed_out": false,
             "answer": read.get("content").cloned().unwrap_or(Value::Null),
+            "answer_source": read.get("answer_source").cloned()
+                .unwrap_or(json!(answer_backfill::SOURCE_SCREEN)),
             "cause": cause,
             "detection_method": detection_method,
             "distilled": read.get("distilled").cloned().unwrap_or(json!(false)),
@@ -1311,6 +1333,8 @@ fn handle_passthrough_generate(params: &Value, id: Value, router: &Arc<Router>) 
                 json!({
                     "kind": "answer",
                     "text": v.get("answer").and_then(|a| a.as_str()).unwrap_or(""),
+                    "answer_source": v.get("answer_source").cloned()
+                        .unwrap_or(json!(answer_backfill::SOURCE_SCREEN)),
                 })
             } else {
                 json!({

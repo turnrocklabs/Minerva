@@ -14,8 +14,10 @@
 //                                  // to anything the user never touched
 //   "filter_rules": [{name, pattern, action, replacement}…],
 //   "sessions": [{terminal_id, profile_id, notify_mode,
-//                 cwd, start_ms, prompts}…]   // binder facts; absent in
-//                                             // files older relays wrote
+//                 cwd, start_ms, prompts,     // binder facts; absent in
+//                 prompt_ms}…]                // files older relays wrote;
+//                                             // prompt_ms aligns by index
+//                                             // with prompts
 // }
 //
 // Save is triggered by every mutation (profile_set, filter_set/delete,

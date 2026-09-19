@@ -8,9 +8,11 @@
 //                loads with the facts absent.
 //   end-to-end — the plugin binary driven by a fake Minerva host: watch_start
 //                against a listing carrying cwd + created_at_ms, one prompt
-//                sent, process killed, then a SECOND process on the same state
-//                file whose host reports neither field. What the first process
-//                learned has to come back out of the file, not the host.
+//                sent, the watch thread's own listing round-trip waited out
+//                (await_persisted_facts), process killed, then a SECOND
+//                process on the same state file whose host reports neither
+//                field. What the first process learned has to come back out of
+//                the file, not the host.
 //
 // The crate is a binary, so both modules are pulled in by path, as the other
 // test files do.
@@ -20,10 +22,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Map, Value};
 
+// The crate's own turn path reaches every item here; a standalone include does not.
 #[path = "../src/session_log.rs"]
+#[allow(dead_code)]
 mod session_log;
 #[path = "../src/terminal_facts.rs"]
 mod terminal_facts;
@@ -77,10 +82,12 @@ fn write_claude_log(home: &Path, cwd: &str, name: &str, body: &str) -> PathBuf {
 }
 
 /// The facts a relay persisted are enough, on their own, to pick one of two
-/// sibling transcripts that share a cwd and a time window — the prompt is the
-/// only thing that tells them apart.
+/// sibling transcripts that share a cwd and a time window — the latest prompt,
+/// recorded when the relay says it was submitted, is the only thing that tells
+/// them apart.
 #[test]
 fn persisted_facts_convert_and_bind() {
+    const OURS_TS: &str = "2026-09-18T10:00:00.000Z";
     let home = scratch("bind");
     let cwd = home.join("proj");
     fs::create_dir_all(&cwd).unwrap();
@@ -90,7 +97,7 @@ fn persisted_facts_convert_and_bind() {
         &home,
         &cwd_str,
         "session-ours",
-        &claude_record(&cwd_str, "2026-09-18T10:00:00.000Z", "count the widgets"),
+        &claude_record(&cwd_str, OURS_TS, "count the widgets"),
     );
     let theirs = write_claude_log(
         &home,
@@ -110,7 +117,12 @@ fn persisted_facts_convert_and_bind() {
         start_ms: Some(1_600_000_000_000),
         ..Default::default()
     };
-    saved.record_prompt("count the widgets");
+    // The relay submitted the prompt the instant the harness stamped it into
+    // the transcript, which is what the binder's window is measured against.
+    saved.record_prompt(
+        "count the widgets",
+        session_log::parse_iso_ms(OURS_TS).unwrap(),
+    );
     saved.write_into(&mut persisted);
 
     let reloaded = SessionFacts::from_json(&Value::Object(persisted));
@@ -119,20 +131,20 @@ fn persisted_facts_convert_and_bind() {
     let roots = LogRoots::for_home(&home);
     assert_eq!(
         session_log::bind(&reloaded.to_terminal_facts("claude"), &roots),
-        Binding::Bound(ours.clone()),
+        Binding::Bound(ours),
         "the reloaded prompt picks our transcript"
     );
 
-    // Drop the prompt evidence and the two siblings are indistinguishable —
-    // proof the binding above came from the facts, not from the layout.
+    // Drop the prompt evidence and neither sibling can be tied to this
+    // terminal at all — proof the binding above came from the facts, not from
+    // the layout. The prompt is the only evidence the binder has, so its
+    // absence is no log rather than a choice between the two.
     let mut promptless = reloaded.clone();
     promptless.prompts.clear();
-    let mut both = vec![ours, theirs];
-    both.sort();
     assert_eq!(
         session_log::bind(&promptless.to_terminal_facts("claude"), &roots),
-        Binding::Ambiguous(both),
-        "without prompts the siblings stay ambiguous"
+        Binding::NoLog,
+        "without prompts no file is this terminal's log"
     );
 
     let _ = fs::remove_dir_all(&home);
@@ -153,7 +165,8 @@ fn legacy_session_object_loads_without_facts() {
     let bound = facts.to_terminal_facts("codex");
     assert!(bound.cwd.is_none(), "no cwd is invented");
     assert_eq!(bound.window_start_ms, 0, "no start time prunes nothing");
-    assert!(bound.prompts.is_empty());
+    assert!(bound.current_prompt.is_none());
+    assert_eq!(bound.current_submitted_ms, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +269,46 @@ impl Plugin {
         serde_json::from_str(text).unwrap_or_else(|e| panic!("content not JSON ({e}): {text}"))
     }
 
+    /// Block until the state file names both host-reported facts, or fail.
+    ///
+    /// `send` returning proves nothing about them: the terminal listing that
+    /// carries cwd and created_at_ms is fetched by the watch THREAD, and its
+    /// capability round-trip only completes while this side is pumping the
+    /// plugin's output. Killing the process before it lands leaves the facts
+    /// unwritten, and the restart half of the test would then pass or fail by
+    /// timing rather than by what the state file carries. Each poll issues a
+    /// cheap tool call, which is what pumps a pending capability request.
+    fn await_persisted_facts(&mut self, state_file: &Path, listing: &Value) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let learned = fs::read_to_string(state_file)
+                .ok()
+                .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+                .map(|doc| {
+                    let session = doc["sessions"]
+                        .as_array()
+                        .and_then(|list| list.iter().find(|s| s["terminal_id"] == TERMINAL_ID))
+                        .cloned()
+                        .unwrap_or(Value::Null);
+                    !session["cwd"].is_null() && !session["start_ms"].is_null()
+                })
+                .unwrap_or(false);
+            if learned {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the watch thread never persisted cwd and start_ms"
+            );
+            self.tool(
+                "minerva_agent_relay_watch_status",
+                json!({"terminal_id": TERMINAL_ID}),
+                listing,
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     fn kill(mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -325,6 +378,7 @@ fn facts_survive_a_relay_restart() {
             &listing,
         );
         assert_eq!(sent["ok"], true, "send: {sent}");
+        plugin.await_persisted_facts(&state_file, &listing);
         plugin.kill();
     }
 
@@ -365,8 +419,16 @@ fn facts_survive_a_relay_restart() {
     let bound = facts.to_terminal_facts("claude");
     assert_eq!(bound.cwd.as_deref(), Some(Path::new(LAUNCH_CWD)));
     assert_eq!(bound.window_start_ms, CREATED_AT_MS);
-    assert_eq!(bound.prompts.len(), 2);
-    assert!(bound.prompts.len() <= MAX_PROMPTS);
+    assert_eq!(
+        bound.current_prompt.as_deref(),
+        Some("now rename them"),
+        "the binder matches on the prompt sent after the restart"
+    );
+    assert!(
+        bound.current_submitted_ms > 0,
+        "and on when the second process submitted it"
+    );
+    assert!(facts.prompts.len() <= MAX_PROMPTS);
 
     let _ = fs::remove_dir_all(&dir);
 }
