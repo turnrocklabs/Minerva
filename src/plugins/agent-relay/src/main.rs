@@ -376,15 +376,23 @@ fn send_core_with_mode(
     // become a card while this caller queues — so a re-check that finds the
     // screen held gives the slot back and goes round to the unslotted wait.
     // Every phase shares one budget, so the round trip is bounded.
+    //
+    // The SLOT is taken for EVERY send, watched terminal or not. Only the
+    // hold/peek steps need a detection to classify screens with, and those are
+    // skipped when the terminal has none; serialisation is not optional. The
+    // first send on an unwatched terminal AUTO-STARTS the watch below, so a
+    // second caller arriving after that auto-start finds a detection — and,
+    // without this, a free slot — and writes straight into the turn the first
+    // send is still running or reading.
     let gate_detection = watched_detection(terminal_id);
-    let mut slot: Option<TurnSlot> = None;
     let mut gate_screen: Option<(String, u64)> = None;
+    let deadline =
+        std::time::Instant::now() + std::time::Duration::from_millis(gate_budget_ms);
+    let remaining = |d: std::time::Instant| {
+        d.saturating_duration_since(std::time::Instant::now()).as_millis() as u64
+    };
+    let mut slot: Option<TurnSlot>;
     if let Some(ref cd) = gate_detection {
-        let deadline = std::time::Instant::now()
-            + std::time::Duration::from_millis(gate_budget_ms);
-        let remaining = |d: std::time::Instant| {
-            d.saturating_duration_since(std::time::Instant::now()).as_millis() as u64
-        };
         let taken = loop {
             if hold == GateHold::Wait {
                 // An expired budget is an error, never a write: an Enter on a
@@ -439,6 +447,9 @@ fn send_core_with_mode(
             }
         };
         slot = Some(taken);
+    } else {
+        // Unwatched: no screen to hold on, but the prompt still gets its slot.
+        slot = Some(send_gate::begin_turn(terminal_id, remaining(deadline))?);
     }
 
     // Snapshot the screen BEFORE writing: the pre-write screen is stable and

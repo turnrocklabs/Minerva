@@ -1439,3 +1439,130 @@ fn a_notification_is_held_by_a_live_card_and_leaves_it_answerable() {
         "and comes back as its own turn: {notify_payload}"
     );
 }
+
+// ── 11. The first prompt on an UNWATCHED terminal owns the slot too ─────────
+
+/// The slot, not the detection, is what serialises prompts. A terminal with no
+/// watch has no detection to classify screens with, and the send path used to
+/// skip the whole gate for it — including the slot. But that very send
+/// auto-starts the watch, so the NEXT caller found a detection and a free slot
+/// and wrote straight into the first turn.
+///
+/// relay_ask is the path that reaches the gate unwatched: passthrough_generate
+/// starts (or revives) the watch before it sends, so it never gets here with
+/// gate_detection == None.
+///
+/// Oracle: two relay_asks on a terminal that was never watched, back to back.
+/// Prompt two must not reach the terminal until turn one has been counted —
+/// writes are exactly ["prompt one", "\r", "prompt two", "\r"].
+#[test]
+fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
+    let mut host = FakeHost::start();
+    let terminal = "t-unwatched-serialise";
+
+    host.screen = Box::new(|v| (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64));
+
+    host.turn = Box::new(|v| {
+        if v.writes.len() >= 4 {
+            "\u{276f} prompt two\n\u{25cf} answer two for the second prompt\n".to_string()
+        } else {
+            "\u{276f} prompt one\n\u{25cf} answer one for the first prompt\n".to_string()
+        }
+    });
+
+    // Turn one ends only once the test releases it, so the second ask is
+    // observable while turn one is still running.
+    let writes_at_turn_end: Arc<Mutex<Vec<usize>>> = Arc::new(Mutex::new(Vec::new()));
+    let marks = Arc::clone(&writes_at_turn_end);
+    let release_first = Arc::new(AtomicBool::new(false));
+    let released = Arc::clone(&release_first);
+    host.wait = Box::new(move |v| match v.writes.len() {
+        2 if released.load(Ordering::SeqCst) => {
+            marks.lock().unwrap().push(2);
+            settled(
+                "\u{276f} prompt one\n\u{25cf} answer one for the first prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
+                130,
+            )
+        }
+        n if n >= 4 => {
+            marks.lock().unwrap().push(n);
+            settled(
+                "\u{276f} prompt two\n\u{25cf} answer two for the second prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
+                160,
+            )
+        }
+        _ => quiet(),
+    });
+
+    // NO watch_start: the first send is what starts the watch.
+    let first = host.call_tool(
+        "minerva_agent_relay_relay_ask",
+        json!({"terminal_id": terminal, "text": "prompt one"}),
+    );
+    // Prompt one's body and Enter are out, and its auto-started watch is live.
+    host.pump_while(&[first], |v| v.writes.len() < 2);
+
+    let second = host.call_tool(
+        "minerva_agent_relay_relay_ask",
+        json!({"terminal_id": terminal, "text": "prompt two"}),
+    );
+
+    let mut status = Value::Null;
+    for _ in 0..40 {
+        status = host.tool(
+            "minerva_agent_relay_watch_status",
+            json!({"terminal_id": terminal}),
+        );
+        if status["status"]["send_waiters"] == json!(1) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(25));
+    }
+    assert_eq!(
+        host.view().writes.len(),
+        2,
+        "nothing of prompt two reached the terminal while turn one ran: {:?}",
+        host.view().writes
+    );
+    assert_eq!(
+        status["status"]["send_in_flight"], true,
+        "the first prompt holds the slot even though it started unwatched: {status}"
+    );
+    assert_eq!(
+        status["status"]["send_waiters"], 1,
+        "the second ask is waiting, not writing: {status}"
+    );
+
+    release_first.store(true, Ordering::SeqCst);
+    let first_payload = common::unwrap_tool(&host.await_reply(first));
+    let second_payload = common::unwrap_tool(&host.await_reply(second));
+
+    assert_eq!(
+        host.view().writes,
+        vec![
+            "prompt one".to_string(),
+            "\r".to_string(),
+            "prompt two".to_string(),
+            "\r".to_string(),
+        ],
+        "both prompts written once, in order, with no interleaving"
+    );
+
+    let marks = writes_at_turn_end.lock().unwrap().clone();
+    assert_eq!(
+        marks.first().copied(),
+        Some(2),
+        "the first turn ended while only prompt one had been written: {marks:?}"
+    );
+
+    assert_eq!(first_payload["timed_out"], false, "{first_payload}");
+    assert!(
+        first_payload["answer"].as_str().unwrap_or("").contains("answer one"),
+        "the first ask got its own answer: {first_payload}"
+    );
+    assert_eq!(second_payload["timed_out"], false, "{second_payload}");
+    assert!(
+        second_payload["answer"].as_str().unwrap_or("").contains("answer two"),
+        "the second ask got its own answer: {second_payload}"
+    );
+}
