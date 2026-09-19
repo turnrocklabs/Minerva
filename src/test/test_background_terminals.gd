@@ -15,6 +15,8 @@ extends SceneTree
 ##      to open).
 ##   4. CapabilityBroker host.terminal.{list,read,write,wait} round-trip
 ##      against a background session (no view ever attached).
+##   4b. terminal_list carries created_at_ms always, and cwd only for a session
+##      started with an explicit working directory.
 ##   5. Dead-session hygiene: shell exit → session stays listed, flagged
 ##      alive == false (flag-not-prune design).
 ##   6. terminal_close removes a background session from the registry/list.
@@ -291,6 +293,27 @@ func _run() -> void:
 		# The command actually ran in THAT session: its scrollback has the marker.
 		check("T3: session scrollback shows the exec command ran there",
 			registry.get_session(bg_id).get_plain_text().find("exec_bg_t3") != -1)
+
+	# ── T3b: launch facts on the listing ─────────────────────────────────
+	print("\n-- T3b: launch cwd + creation time on terminal_list --")
+	var known_cwd: String = ProjectSettings.globalize_path("user://")
+	var cwd_session = registry.create_session("bg-cwd", 80, 24, known_cwd)
+	check("T3b: session with an explicit start dir starts", cwd_session.started)
+	var cwd_id: String = str(cwd_session.terminal_id)
+	var cwd_entry: Dictionary = await _list_entry(tools, cwd_id)
+	check("T3b: listing reports the launch cwd",
+		str(cwd_entry.get("cwd", "")) == known_cwd, "entry=%s" % str(cwd_entry))
+	check("T3b: listing reports a creation time",
+		int(cwd_entry.get("created_at_ms", 0)) > 0, "entry=%s" % str(cwd_entry))
+
+	# A session nobody handed a directory inherits Minerva's own cwd, which is
+	# not the child's launch directory — the key must be absent, not guessed.
+	var no_cwd_entry: Dictionary = await _list_entry(tools, bg_id)
+	check("T3b: cwd key absent when the launch directory is unknown",
+		not no_cwd_entry.has("cwd"), "entry=%s" % str(no_cwd_entry))
+	check("T3b: creation time still reported for it",
+		int(no_cwd_entry.get("created_at_ms", 0)) > 0, "entry=%s" % str(no_cwd_entry))
+	registry.close_session(cwd_id)
 
 	# ── AC5: dead-session hygiene — flagged alive=false, NOT pruned ──────
 	print("\n-- AC5: dead-session flagging --")

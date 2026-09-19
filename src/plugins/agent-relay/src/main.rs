@@ -35,6 +35,8 @@ mod router;
 // writes. Not yet reached from any tool path.
 mod session_log;
 mod state;
+// Binder facts a watched terminal carries across a relay restart.
+mod terminal_facts;
 mod turn_extract;
 mod watcher;
 
@@ -402,6 +404,13 @@ fn send_core_with_mode(
             terminal_id,
             snapshot.as_ref().map(|(c, r)| (c.as_str(), *r)),
         );
+    }
+
+    // Record the prompt for the session-log binder. Submit mode only: a raw
+    // keystroke or chooser arrow never appears as prompt text in a harness
+    // transcript, and binding requires every recorded prompt to be found.
+    if mode == SendMode::Submit {
+        watcher::record_prompt(terminal_id, body);
     }
 
     Ok(json!({
@@ -1050,7 +1059,7 @@ fn resolve_passthrough_terminal(
     let sessions = watcher::session_specs();
     match sessions.len() {
         1 => {
-            let tid = sessions[0].0.clone();
+            let tid = sessions[0].terminal_id.clone();
             if !chat_id.is_empty() {
                 with_passthrough(|s| {
                     s.bindings.insert(chat_id.to_string(), tid.clone())

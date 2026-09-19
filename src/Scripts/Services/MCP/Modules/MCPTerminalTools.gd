@@ -220,14 +220,21 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 		for session in registry.list_sessions():
 			if not session.terminal_available:
 				continue
-			result.append({
+			var entry: Dictionary = {
 				"id": session.terminal_id,
 				"name": session.session_name,
 				"visible": _find_view_for_session(session) != null,
 				"alive": session.is_alive(),
 				"cols": session.get_cols(),
 				"rows": session.get_rows(),
-			})
+				"created_at_ms": session.created_at_ms,
+			}
+			# cwd is absent, never guessed: a session started without one runs
+			# in Minerva's own working directory, which the host cannot report
+			# as the child's launch directory.
+			if not session.launch_cwd.is_empty():
+				entry["cwd"] = session.launch_cwd
+			result.append(entry)
 	return {"success": true, "terminals": result, "count": result.size()}
 
 

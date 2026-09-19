@@ -74,7 +74,9 @@ Pre-approved defaults for implementation of DCR-1, DCR-2, DCR-3, DCR-4 and relat
 
 Four new capabilities in `ALLOWED_HOST_CAPABILITIES` (PluginDefinition.gd):
 
-- `host.terminal.list` — enumerate open terminal tabs; no args; read-only.
+- `host.terminal.list` — enumerate open terminal tabs; no args; read-only. Each entry
+  carries `created_at_ms` and, only when the session was launched with an explicit
+  start directory, `cwd`.
 - `host.terminal.read` — read viewport or scrollback row range; no side-effects.
 - `host.terminal.write` — send keystrokes/bytes to a PTY; defaults `raw=true` (plugin
   SDKs send real control bytes; the MCP-layer `c_unescape` would corrupt them).

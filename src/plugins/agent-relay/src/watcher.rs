@@ -28,6 +28,7 @@ use serde_json::json;
 use crate::detector::{self, CompiledDetection, DetectionMethod, WakeCause};
 use crate::profiles::{profile_get, Profile};
 use crate::router::Router;
+use crate::terminal_facts::SessionFacts;
 
 // ---------------------------------------------------------------------------
 // Notify mode
@@ -125,6 +126,12 @@ struct WatchSession {
     /// fire phantom all_turns events).
     gate_ref_hash: Option<u64>,
 
+    /// Facts the session-log binder needs (launch cwd, terminal start time,
+    /// the prompts sent in). Outlive the watch session: persisted to the state
+    /// file and carried across a re-issued watch_start, because neither a
+    /// relay restart nor a profile change restarts the terminal.
+    facts: SessionFacts,
+
     /// Last-activity anchor for the idle reap: refreshed by arm() and by any
     /// counted detection. The watch_timeout_ms reap applies only to UNARMED
     /// sessions idle past this anchor — an armed session never self-reaps
@@ -149,6 +156,7 @@ impl WatchSession {
             gate_open: false,
             gate_ref_rows: None,
             gate_ref_hash: None,
+            facts: SessionFacts::default(),
             reap_anchor: Instant::now(),
         }
     }
@@ -287,6 +295,18 @@ pub fn watch_start(
     notify_mode: NotifyMode,
     router: Arc<Router>,
 ) -> Result<(), String> {
+    watch_start_with_facts(terminal_id, profile_id, notify_mode, None, router)
+}
+
+/// watch_start seeded with facts a previous relay process persisted. Passing
+/// None keeps whatever the terminal's previous session had learned.
+pub fn watch_start_with_facts(
+    terminal_id: String,
+    profile_id: Option<String>,
+    notify_mode: NotifyMode,
+    restored: Option<SessionFacts>,
+    router: Arc<Router>,
+) -> Result<(), String> {
     let profile_id = profile_id.unwrap_or_else(|| "claude".to_string());
 
     // Verify profile exists.
@@ -295,22 +315,25 @@ pub fn watch_start(
 
     let sessions = get_sessions();
 
-    // Stop any existing session for this terminal.
+    // Stop any existing session for this terminal, inheriting its facts: a
+    // re-issued watch_start (e.g. a new profile) did not restart the terminal.
+    let mut facts = restored.unwrap_or_default();
     {
         let map = sessions.lock().unwrap();
         if let Some(existing) = map.get(&terminal_id) {
             let mut s = existing.lock().unwrap();
             s.stop = true;
+            if facts == SessionFacts::default() {
+                facts = s.facts.clone();
+            }
             log::info!("watch_start: stopping existing session for {terminal_id}");
         }
     }
 
     // Create new session state.
-    let session = Arc::new(Mutex::new(WatchSession::new(
-        terminal_id.clone(),
-        profile_id.clone(),
-        notify_mode,
-    )));
+    let mut initial = WatchSession::new(terminal_id.clone(), profile_id.clone(), notify_mode);
+    initial.facts = facts;
+    let session = Arc::new(Mutex::new(initial));
 
     {
         let mut map = sessions.lock().unwrap();
@@ -444,9 +467,37 @@ pub fn last_event_payload(terminal_id: &str) -> Option<serde_json::Value> {
     map.get(terminal_id).and_then(|e| e.event_payload.clone())
 }
 
-/// Snapshot of the live (non-stopped) sessions for persistence:
-/// (terminal_id, profile_id, notify_mode).
-pub fn session_specs() -> Vec<(String, String, String)> {
+/// Record a prompt the relay submitted into `terminal_id`. No-op when no
+/// session is watching it. Returns true when the prompt was recorded.
+pub fn record_prompt(terminal_id: &str, text: &str) -> bool {
+    let recorded = {
+        let sessions = get_sessions();
+        let map = sessions.lock().unwrap();
+        match map.get(terminal_id) {
+            Some(session) => {
+                session.lock().unwrap().facts.record_prompt(text);
+                true
+            }
+            None => false,
+        }
+    };
+    if recorded {
+        crate::state::save();
+    }
+    recorded
+}
+
+/// One live watch session as the state file stores it.
+#[derive(Debug, Clone)]
+pub struct SessionSpec {
+    pub terminal_id: String,
+    pub profile_id: String,
+    pub notify_mode: String,
+    pub facts: SessionFacts,
+}
+
+/// Snapshot of the live (non-stopped) sessions for persistence.
+pub fn session_specs() -> Vec<SessionSpec> {
     let sessions = get_sessions();
     let map = sessions.lock().unwrap();
     map.values()
@@ -455,11 +506,12 @@ pub fn session_specs() -> Vec<(String, String, String)> {
             if s.stop {
                 return None;
             }
-            Some((
-                s.terminal_id.clone(),
-                s.profile_id.clone(),
-                s.notify_mode.as_str().to_string(),
-            ))
+            Some(SessionSpec {
+                terminal_id: s.terminal_id.clone(),
+                profile_id: s.profile_id.clone(),
+                notify_mode: s.notify_mode.as_str().to_string(),
+                facts: s.facts.clone(),
+            })
         })
         .collect()
 }
@@ -524,6 +576,41 @@ fn register_chat_provider(terminal_id: &str, profile_id: &str, router: &Arc<Rout
     }
 }
 
+/// Learn the terminal's launch cwd and creation time from the host's listing.
+/// Runs on the WATCH thread: a blocking capability round-trip on the dispatch
+/// thread would stall tool dispatch until the host replies.
+fn adopt_host_facts(terminal_id: &str, session: &Arc<Mutex<WatchSession>>, router: &Arc<Router>) {
+    {
+        let s = session.lock().unwrap();
+        if s.facts.cwd.is_some() && s.facts.start_ms.is_some() {
+            return;
+        }
+    }
+    let listing = match router.call_capability("host.terminal.list", json!({})) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("facts: terminal.list failed for {terminal_id}: {e}");
+            return;
+        }
+    };
+    let entry = listing
+        .get("terminals")
+        .and_then(|v| v.as_array())
+        .and_then(|list| {
+            list.iter()
+                .find(|e| e.get("id").and_then(|v| v.as_str()) == Some(terminal_id))
+        })
+        .cloned();
+    let Some(entry) = entry else {
+        log::debug!("facts: {terminal_id} absent from terminal.list");
+        return;
+    };
+    let learned = session.lock().unwrap().facts.adopt_listing(&entry);
+    if learned {
+        crate::state::save();
+    }
+}
+
 fn unregister_chat_provider(terminal_id: &str, router: &Arc<Router>) {
     let args = json!({ "entry_id": chat_provider_entry_id(terminal_id) });
     match router.call_capability("host.chat_providers.unregister", args) {
@@ -560,6 +647,8 @@ fn watch_loop(
     // (e.g. with a new profile) re-registers under the same entry_id —
     // an idempotent update on the host side.
     register_chat_provider(&terminal_id, &profile.id, &router);
+
+    adopt_host_facts(&terminal_id, &session, &router);
 
     loop {
         // Check stop flag and the idle reap. The reap applies only to UNARMED

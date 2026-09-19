@@ -349,7 +349,8 @@ List all open terminal tabs.
   "result": {
     "success": true,
     "terminals": [
-      {"id": "12345", "name": "Terminal 1", "visible": true, "cols": 220, "rows": 50}
+      {"id": "12345", "name": "Terminal 1", "visible": true, "alive": true,
+       "cols": 220, "rows": 50, "created_at_ms": 1757894400000, "cwd": "/home/me/proj"}
     ],
     "count": 1
   }
@@ -358,6 +359,15 @@ List all open terminal tabs.
 
 The inner `id` is the Godot instance ID (a string of digits). Pass it to the other
 three capabilities.
+
+`created_at_ms` is the session's creation time in epoch milliseconds — a lower bound
+on the PTY child's life.
+
+`cwd` is the working directory the PTY child was launched in, and is **absent** when
+the host does not know it. Only a session created with an explicit start directory
+(the passthrough launch dialog) carries one; a terminal tab, a `terminal_create`
+session, or a session bound after the fact inherits Minerva's own working directory
+and reports no `cwd`. Treat the missing key as "unknown", never as a default.
 
 ### host.terminal.read
 

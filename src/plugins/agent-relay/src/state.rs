@@ -13,7 +13,9 @@
 //                                  // so shipped seed improvements still apply
 //                                  // to anything the user never touched
 //   "filter_rules": [{name, pattern, action, replacement}…],
-//   "sessions": [{terminal_id, profile_id, notify_mode}…]
+//   "sessions": [{terminal_id, profile_id, notify_mode,
+//                 cwd, start_ms, prompts}…]   // binder facts; absent in
+//                                             // files older relays wrote
 // }
 //
 // Save is triggered by every mutation (profile_set, filter_set/delete,
@@ -30,7 +32,8 @@ use serde_json::{json, Value};
 use crate::filter_rules::{FilterRule, RuleAction};
 use crate::profiles::{self, Profile};
 use crate::router::Router;
-use crate::watcher;
+use crate::terminal_facts::SessionFacts;
+use crate::watcher::{self, SessionSpec};
 
 static CLI_STATE_FILE: OnceLock<PathBuf> = OnceLock::new();
 
@@ -88,11 +91,14 @@ pub fn save() {
 
     let sessions: Vec<Value> = watcher::session_specs()
         .into_iter()
-        .map(|(terminal_id, profile_id, notify_mode)| json!({
-            "terminal_id": terminal_id,
-            "profile_id": profile_id,
-            "notify_mode": notify_mode,
-        }))
+        .map(|spec| {
+            let mut obj = serde_json::Map::new();
+            obj.insert("terminal_id".to_string(), json!(spec.terminal_id));
+            obj.insert("profile_id".to_string(), json!(spec.profile_id));
+            obj.insert("notify_mode".to_string(), json!(spec.notify_mode));
+            spec.facts.write_into(&mut obj);
+            Value::Object(obj)
+        })
         .collect();
 
     let doc = json!({
@@ -122,7 +128,7 @@ pub fn save() {
 /// Load the state file (if any) into the profile + filter stores.
 /// Returns the persisted session specs for resume_sessions() — sessions need
 /// the router, which is spawned after store init.
-pub fn load() -> Vec<(String, String, String)> {
+pub fn load() -> Vec<SessionSpec> {
     let Some(path) = state_file_path() else { return Vec::new() };
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -171,7 +177,7 @@ pub fn load() -> Vec<(String, String, String)> {
         }
     }
 
-    let sessions: Vec<(String, String, String)> = doc.get("sessions")
+    let sessions: Vec<SessionSpec> = doc.get("sessions")
         .and_then(|v| v.as_array())
         .map(|items| {
             items.iter()
@@ -185,7 +191,12 @@ pub fn load() -> Vec<(String, String, String)> {
                         .and_then(|v| v.as_str())
                         .unwrap_or("armed")
                         .to_string();
-                    Some((tid, pid, mode))
+                    Some(SessionSpec {
+                        terminal_id: tid,
+                        profile_id: pid,
+                        notify_mode: mode,
+                        facts: SessionFacts::from_json(s),
+                    })
                 })
                 .collect()
         })
@@ -200,12 +211,14 @@ pub fn load() -> Vec<(String, String, String)> {
 }
 
 /// Resume persisted watch sessions. Call after Router::spawn().
-pub fn resume_sessions(specs: Vec<(String, String, String)>, router: &Arc<Router>) {
-    for (terminal_id, profile_id, notify_mode) in specs {
-        match watcher::watch_start(
+pub fn resume_sessions(specs: Vec<SessionSpec>, router: &Arc<Router>) {
+    for spec in specs {
+        let terminal_id = spec.terminal_id.clone();
+        match watcher::watch_start_with_facts(
             terminal_id.clone(),
-            Some(profile_id),
-            crate::watcher::NotifyMode::from_str(&notify_mode),
+            Some(spec.profile_id),
+            crate::watcher::NotifyMode::from_str(&spec.notify_mode),
+            Some(spec.facts),
             router.clone(),
         ) {
             Ok(()) => log::info!("state: resumed watch on {terminal_id}"),

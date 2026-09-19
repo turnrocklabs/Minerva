@@ -58,6 +58,16 @@ var started: bool = false
 ## writing a `cd` line (older extension binaries without set_start_directory).
 var start_directory_applied: bool = false
 
+## Working directory start() was asked for. Empty when no caller supplied one:
+## the child then inherits Minerva's own cwd, which this class does not know.
+## Recorded even when start_directory_applied is false — the `cd` fallback puts
+## the shell in the same directory before anything is launched in it.
+var launch_cwd: String = ""
+
+## Session creation time, epoch milliseconds. Set at construction, so it
+## precedes the PTY start.
+var created_at_ms: int = 0
+
 ## Cumulative bell count since terminal start. Monotonic, so waiters can
 ## snapshot it and diff instead of racing the signal.
 var bell_serial: int = 0
@@ -69,6 +79,7 @@ var shell_exit_code = null
 func _init(p_name: String = "Terminal") -> void:
 	session_name = p_name
 	terminal_id = str(get_instance_id())
+	created_at_ms = int(Time.get_unix_time_from_system() * 1000.0)
 
 
 func _ready() -> void:
@@ -116,6 +127,7 @@ func start(cols: int, rows: int, start_dir: String = "") -> bool:
 		return true
 	_cols = maxi(1, cols)
 	_rows = maxi(1, rows)
+	launch_cwd = start_dir
 	if not start_dir.is_empty() and terminal.has_method("set_start_directory"):
 		terminal.set_start_directory(start_dir)
 		start_directory_applied = true
