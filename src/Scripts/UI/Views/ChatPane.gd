@@ -3170,73 +3170,80 @@ func execute_sequential_chat(text_input: String, turn_token: int, promoted: bool
 	SingletonObject.clear_consumed_proxies(history.HistoryId)
 
 var parallel_loading: = preload("res://Scenes/multi_message_loading.tscn")
-var _mutex: Mutex = Mutex.new()
+const ChatParallelRun: = preload("res://Scripts/Models/ChatParallelRun.gd")
 var _inputs: Array[String] = []
-var _usr_messages_container: SliderContainer
-var _mdl_messages_container: SliderContainer
-var _usr_chat_hist_items: Array[ChatHistoryItem] = []
-var _bot_responses: Array[ChatHistoryItem] = []
-var _user_parallel_chat_UUID: String = ""
-var _parallel_chat_UUID: String = ""
-var _multi_slider_container_UUID: String = ""
-## The token of the parallel run being STARTED. It is read once per worker, at
-## the moment that worker connects its response handler, and bound into that
-## handler — so every response releases with the token of the run it belongs
-## to, not with whatever run happens to be current when it arrives late.
-var _parallel_turn_token: int = -1
+## The parallel run being STARTED. It is read once per worker, at the moment
+## that worker connects its response handler, and bound into that handler — so
+## every response pairs, counts and releases inside the run it belongs to, not
+## inside whatever run happens to be current when it arrives late.
+var _parallel_run: ChatParallelRun = null
 
 
 func execute_parallel_chat(text_input: String, turn_token: int) -> void:
 	if text_input.is_empty(): return
-	_parallel_turn_token = turn_token
 	ensure_chat_open()
 	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	var run: = ChatParallelRun.new()
+	run.history = history
+	run.turn_token = turn_token
 	# Check if we need to do chain of messages
-	_inputs = get_separated_messages(text_input)
+	run.inputs = get_separated_messages(text_input)
+	run.expected = run.inputs.size()
+	_parallel_run = run
 	var multi_message_container:  = MultiSliderContainer.new()
-	_usr_messages_container = SliderContainer.new()
-	_mdl_messages_container = SliderContainer.new()
-	multi_message_container.add_child(_usr_messages_container)
-	multi_message_container.add_child(_mdl_messages_container)
+	run.usr_messages_container = SliderContainer.new()
+	run.mdl_messages_container = SliderContainer.new()
+	multi_message_container.add_child(run.usr_messages_container)
+	multi_message_container.add_child(run.mdl_messages_container)
 	var parallel_message_loading: = parallel_loading.instantiate()
 	history.VBox.add_child(parallel_message_loading)
 	history.VBox.scroll_to_bottom()
 	history.VBox.add_child(multi_message_container)
 	
-	_user_parallel_chat_UUID = SingletonObject.generate_UUID()
-	_parallel_chat_UUID = SingletonObject.generate_UUID()
-	_multi_slider_container_UUID = SingletonObject.generate_UUID()
-	var task_id = WorkerThreadPool.add_group_task(create_message_new, _inputs.size())
+	run.user_slider_uuid = SingletonObject.generate_UUID()
+	run.model_slider_uuid = SingletonObject.generate_UUID()
+	run.multi_slider_uuid = SingletonObject.generate_UUID()
+	var task_id = WorkerThreadPool.add_group_task(create_message_new, run.expected)
 	
 	WorkerThreadPool.wait_for_group_task_completion(task_id)
 
 
-## `origin_history` and `turn_token` travel together: the token alone only says
+## `run` is the parallel run this worker belongs to. It carries both halves the
+## response needs: the chat the run was started on — the token alone only says
 ## WHICH turn, and two chats sitting on the same token number would release each
-## other. The chat this response belongs to is the one its worker started on,
-## never whichever tab happens to be current when the response lands.
+## other — and that run's own pending messages and counters.
+##
+## A run whose token the chat no longer holds was stopped, and its response is
+## refused HERE, before it touches anything: popping first would pair the live
+## run's answer with the dead run's message, and leave the live run one short of
+## the completion that ends its turn.
 func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
-		origin_history: ChatHistory = null, turn_token: int = -1) -> void:
-	if chat_hist_item == null:
+		run: ChatParallelRun = null) -> void:
+	if chat_hist_item == null or run == null:
 		return
-	var history: ChatHistory = origin_history
+	var history: ChatHistory = run.history
 	if history == null:
 		history = SingletonObject.ChatList[current_tab]
-	var user_msg: ChatHistoryItem = _usr_chat_hist_items.pop_front()
+	if run.turn_token != history.request_turn_token:
+		return
+	run.mutex.lock()
+	var user_msg: ChatHistoryItem = run.user_items.pop_front()
+	run.delivered += 1
+	var run_complete: bool = run.is_complete()
+	run.mutex.unlock()
+	if user_msg == null:
+		return
 	var bot_response: ChatHistoryItem = chat_hist_item
 	
 	for i in get_tree().get_nodes_in_group("parallelLoadingNode"):
 		i.queue_free()
 	
-	user_msg.SliderContainerId = _user_parallel_chat_UUID
-	bot_response.SliderContainerId = _parallel_chat_UUID
-	user_msg.MultiSliderContainerId = _multi_slider_container_UUID
-	bot_response.MultiSliderContainerId = _multi_slider_container_UUID
-	if _bot_responses.is_empty() and _usr_chat_hist_items.is_empty():
-		_user_parallel_chat_UUID = ""
-		_parallel_chat_UUID = ""
-		_multi_slider_container_UUID = ""
-		_release_chat_turn(history, turn_token)
+	user_msg.SliderContainerId = run.user_slider_uuid
+	bot_response.SliderContainerId = run.model_slider_uuid
+	user_msg.MultiSliderContainerId = run.multi_slider_uuid
+	bot_response.MultiSliderContainerId = run.multi_slider_uuid
+	if run_complete:
+		_release_chat_turn(history, run.turn_token)
 
 	if SingletonObject.is_cancelled(history.HistoryId):
 		SingletonObject.clear_cancelled(history.HistoryId)
@@ -3245,44 +3252,43 @@ func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,
 	var mdl_msg_node: = history.VBox.add_history_item(bot_response, false)
 	if user_msg.provider is HumanProvider:
 		
-		_usr_messages_container.add_child(usr_msg_node)
+		run.usr_messages_container.add_child(usr_msg_node)
 		usr_msg_node.regeneratable = false
 		usr_msg_node.render()
 		
-		_mdl_messages_container.add_child(mdl_msg_node)
+		run.mdl_messages_container.add_child(mdl_msg_node)
 		mdl_msg_node.regeneratable = false
 		mdl_msg_node.render()
 		mdl_msg_node.set_edit()
 	else:
 		usr_msg_node.render()
-		_usr_messages_container.add_child(usr_msg_node)
-		_mdl_messages_container.add_child(mdl_msg_node)
+		run.usr_messages_container.add_child(usr_msg_node)
+		run.mdl_messages_container.add_child(mdl_msg_node)
 
 
 func create_message_new(inputs_idx: int) -> void:
+	var run: ChatParallelRun = _parallel_run
+	if run == null:
+		return
 	print("paralel messages idx:" + str(inputs_idx))
-	_mutex.lock()
-	var message = _inputs.pop_front()
-	_mutex.unlock()
+	run.mutex.lock()
+	var message = run.inputs.pop_front()
+	run.mutex.unlock()
 	print("message from thread #%d: %s" % [inputs_idx, message])
-	var history: ChatHistory = SingletonObject.ChatList[current_tab]
+	var history: ChatHistory = run.history
 	var user_history_item = create_user_history_item(message)
 	
-	# Bind THIS run's chat AND token into the handler: a response that arrives
-	# after the run was cancelled and another started must not release the
-	# replacement, and one that arrives after a tab switch must not release
-	# whatever chat is current.
+	# Bind THIS run into the handler: a response that arrives after the run was
+	# cancelled and another started must not release the replacement, must not
+	# consume the replacement's pending message, and one that arrives after a
+	# tab switch must not release whatever chat is current.
 	user_history_item.response_arrived.connect(
-		_on_thread_bot_response_arrived.bind(history, _parallel_turn_token))
+		_on_thread_bot_response_arrived.bind(run))
 	
 	if user_history_item.provider is HumanProvider:
-		var mdl_history_item: = ChatHistoryItem.new(ChatHistoryItem.PartType.TEXT,
-													ChatHistoryItem.ChatRole.MODEL,
-													"")
-		_mutex.lock()
-		_usr_chat_hist_items.append(user_history_item)
-		_bot_responses.append(mdl_history_item)
-		_mutex.unlock()
+		run.mutex.lock()
+		run.user_items.append(user_history_item)
+		run.mutex.unlock()
 		return
 	
 	# make a chat request
@@ -3300,12 +3306,11 @@ func create_message_new(inputs_idx: int) -> void:
 	if bot_response != null:
 		user_history_item.InputTokens = bot_response.prompt_tokens
 
-	_mutex.lock()
-	_usr_chat_hist_items.append(user_history_item)
+	run.mutex.lock()
+	run.user_items.append(user_history_item)
 	history.HistoryItemList.append(user_history_item)
 	history.HistoryItemList.append(chi)
-	_bot_responses.append(chi)
-	_mutex.unlock()
+	run.mutex.unlock()
 	
 	## Inform the user history item that the response has arrived
 	user_history_item.response_arrived.emit(chi)

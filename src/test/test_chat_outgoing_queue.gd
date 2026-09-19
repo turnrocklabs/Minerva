@@ -38,6 +38,7 @@ const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
 const VBOX_CHAT_PATH := "res://Scripts/UI/Controls/vboxChat.gd"
 const CHAT_HISTORY_ITEM_PATH := "res://Scripts/Models/ChatHistoryItem.gd"
 const PLUGIN_PROVIDER_PATH := "res://Scripts/Services/Providers/PluginProvider.gd"
+const PARALLEL_RUN_PATH := "res://Scripts/Models/ChatParallelRun.gd"
 
 ## Blocking provider stand-in: generate_content does not return until the test
 ## releases that message, so "is a second generate running?" is directly
@@ -202,6 +203,23 @@ func _teardown(pane: Node, chats: Array) -> void:
 	pane.queue_free()
 
 
+## A parallel run with `count` workers already waiting, shaped the way
+## execute_parallel_chat builds one. `tag` makes the run's slider ids readable
+## in a failure message, so "which run stamped this item" is directly visible.
+func _make_parallel_run(history, turn_token: int, count: int, tag: String):
+	var run = load(PARALLEL_RUN_PATH).new()
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+	run.history = history
+	run.turn_token = turn_token
+	run.expected = count
+	run.user_slider_uuid = tag + "-user"
+	run.model_slider_uuid = tag + "-model"
+	run.multi_slider_uuid = tag + "-multi"
+	for _i in range(count):
+		run.user_items.append(item_script.new())
+	return run
+
+
 func _pending_bubbles(history) -> Array:
 	var found: Array = []
 	for child in history.VBox.get_children():
@@ -225,6 +243,7 @@ func _run() -> void:
 	await _test_cancel_then_new_turn_is_not_released_by_the_zombie()
 	await _test_a_late_parallel_response_releases_its_own_turn()
 	await _test_a_late_parallel_response_releases_its_own_chat()
+	await _test_a_cancelled_runs_leftovers_do_not_pair_with_the_new_run()
 	await _test_regenerate_waits_for_the_active_turn()
 	await _test_a_promoted_message_is_sent_past_the_last_user_guard()
 	await _test_a_promoted_sequential_message_is_sent_past_the_guard()
@@ -575,12 +594,18 @@ func _test_cancel_then_new_turn_is_not_released_by_the_zombie() -> void:
 ## then release the live one — the section G zombie, by another door.
 func _test_a_late_parallel_response_releases_its_own_turn() -> void:
 	var source: = FileAccess.get_file_as_string(CHATPANE_PATH)
-	check("H1: the parallel response handler carries its own turn's token",
-		source.find("func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,")
+	check("H1: the parallel response handler releases with its own run's token",
+		source.find("func _on_thread_bot_response_arrived(chat_hist_item: ChatHistoryItem = null,\n\t\trun: ChatParallelRun = null) -> void:")
 			!= -1
-		and source.find("_release_chat_turn(history, turn_token)") != -1)
-	check("H2: each parallel worker binds its own chat and the running turn's token",
-		source.find("_on_thread_bot_response_arrived.bind(history, _parallel_turn_token))") != -1)
+		and source.find("_release_chat_turn(history, run.turn_token)") != -1)
+	check("H2: each parallel worker binds its own run into the handler",
+		source.find("_on_thread_bot_response_arrived.bind(run))") != -1)
+	# The guard has to come before the pop, or a dead run still consumes a
+	# pending message; positions, because "it returns early" is the whole point.
+	check("H2b: the stale-run guard precedes every state touch in the handler",
+		source.find("if run.turn_token != history.request_turn_token:")
+			< source.find("var user_msg: ChatHistoryItem = run.user_items.pop_front()")
+		and source.find("if run.turn_token != history.request_turn_token:") != -1)
 
 	# And the handler really behaves that way. Run A is cancelled, run B starts,
 	# then A's response finally arrives carrying A's token.
@@ -589,10 +614,10 @@ func _test_a_late_parallel_response_releases_its_own_turn() -> void:
 	pane.current_tab = _so.ChatList.find(chat)
 
 	var token_a: int = pane._begin_chat_turn(chat)
-	pane._parallel_turn_token = token_a
+	var run_a = _make_parallel_run(chat, token_a, 1, "run-a")
 	pane._cancel_chat_turn(chat)
 	var token_b: int = pane._begin_chat_turn(chat)
-	pane._parallel_turn_token = token_b
+	var run_b = _make_parallel_run(chat, token_b, 1, "run-b")
 	check("H3: run B owns the chat", chat.is_request_active)
 
 	# The handler's UI half needs the booted scene, so the cancelled-chat early
@@ -600,18 +625,12 @@ func _test_a_late_parallel_response_releases_its_own_turn() -> void:
 	# the whole subject here.
 	_so.cancelled_history_ids.append(chat.HistoryId)
 	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
-	pane._usr_chat_hist_items.clear()
-	pane._usr_chat_hist_items.append(item_script.new())
-	pane._bot_responses.clear()
-	pane._on_thread_bot_response_arrived(item_script.new(), chat, token_a)
+	pane._on_thread_bot_response_arrived(item_script.new(), run_a)
 	await process_frame
 	check("H4: run A's late response does not end run B's turn", chat.is_request_active)
 
 	_so.cancelled_history_ids.append(chat.HistoryId)
-	pane._usr_chat_hist_items.clear()
-	pane._usr_chat_hist_items.append(item_script.new())
-	pane._bot_responses.clear()
-	pane._on_thread_bot_response_arrived(item_script.new(), chat, token_b)
+	pane._on_thread_bot_response_arrived(item_script.new(), run_b)
 	await process_frame
 	check("H5: run B's own response does end it", not chat.is_request_active)
 
@@ -638,16 +657,75 @@ func _test_a_late_parallel_response_releases_its_own_chat() -> void:
 	pane.current_tab = _so.ChatList.find(chat_b)
 	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
 	_so.cancelled_history_ids.append(chat_a.HistoryId)
-	pane._usr_chat_hist_items.clear()
-	pane._usr_chat_hist_items.append(item_script.new())
-	pane._bot_responses.clear()
-	pane._on_thread_bot_response_arrived(item_script.new(), chat_a, token_a)
+	var run_a = _make_parallel_run(chat_a, token_a, 1, "chat-a")
+	pane._on_thread_bot_response_arrived(item_script.new(), run_a)
 	await process_frame
 	check("H7: chat A's late response does not end chat B's turn",
 		chat_b.is_request_active)
 	check("H8: and it does end chat A's own turn", not chat_a.is_request_active)
 
 	_teardown(pane, [chat_a, chat_b])
+
+
+## Before the run object, a cancelled run's leftovers and a new run's messages
+## shared ONE pane-wide queue of pending user items, so the new run's responses
+## were paired with whatever sat at the front of it — the dead run's messages —
+## and the run-wide completion count never emptied, so the turn never ended.
+##
+## Nothing is cleared between the callbacks here: the clearing the other H cases
+## do is what hid this, because it left exactly one run's data in place at a time.
+func _test_a_cancelled_runs_leftovers_do_not_pair_with_the_new_run() -> void:
+	var chat = _make_history("CrossRun")
+	var pane = _make_pane([chat])
+	pane.current_tab = _so.ChatList.find(chat)
+	var item_script: = load(CHAT_HISTORY_ITEM_PATH)
+
+	# Run A: two workers whose user items are still pending when the user stops.
+	var token_a: int = pane._begin_chat_turn(chat)
+	var run_a = _make_parallel_run(chat, token_a, 2, "run-a")
+	pane._cancel_chat_turn(chat)
+
+	# Run B: two workers of its own.
+	var token_b: int = pane._begin_chat_turn(chat)
+	var run_b = _make_parallel_run(chat, token_b, 2, "run-b")
+
+	# A's late response lands first. It has no claim on anything.
+	_so.cancelled_history_ids.append(chat.HistoryId)
+	pane._on_thread_bot_response_arrived(item_script.new(), run_a)
+	await process_frame
+	check("H9: a stopped run's late response touches neither run's bookkeeping",
+		run_b.user_items.size() == 2 and run_a.user_items.size() == 2
+			and run_a.delivered == 0
+			and run_a.user_items[0].SliderContainerId == "",
+		"b=%d a=%d delivered=%d stamp=%s" % [run_b.user_items.size(),
+			run_a.user_items.size(), run_a.delivered,
+			run_a.user_items[0].SliderContainerId])
+	check("H10: and the new run still owns the chat", chat.is_request_active)
+
+	# Run B's own two responses, arriving back to back.
+	var b1 = run_b.user_items[0]
+	var b2 = run_b.user_items[1]
+	_so.cancelled_history_ids.append(chat.HistoryId)
+	pane._on_thread_bot_response_arrived(item_script.new(), run_b)
+	await process_frame
+	check("H11: the new run's response is paired with its OWN user message",
+		b1.SliderContainerId == "run-b-user"
+			and run_a.user_items[0].SliderContainerId == ""
+			and run_a.user_items[1].SliderContainerId == "",
+		"b1=%s a=[%s, %s]" % [b1.SliderContainerId,
+			run_a.user_items[0].SliderContainerId,
+			run_a.user_items[1].SliderContainerId])
+	check("H11b: and one response of two does not end the run",
+		chat.is_request_active)
+
+	_so.cancelled_history_ids.append(chat.HistoryId)
+	pane._on_thread_bot_response_arrived(item_script.new(), run_b)
+	await process_frame
+	check("H12: the new run ends its own turn on its last response",
+		b2.SliderContainerId == "run-b-user" and not chat.is_request_active,
+		"b2=%s active=%s" % [b2.SliderContainerId, str(chat.is_request_active)])
+
+	_teardown(pane, [chat])
 
 #endregion
 
