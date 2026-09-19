@@ -962,6 +962,11 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     let terminal = "t-watch-gone-answer";
     let moved_on = Arc::new(AtomicBool::new(false));
     let cleared = Arc::new(AtomicBool::new(false));
+    // A's turn is held open by the FAKE HOST, not by timing: while this is set
+    // no wait ever settles, so A's turn cannot end however long the test pumps.
+    // That is what makes the watch-absence sample below a barrier rather than a
+    // race — see the sampling comment.
+    let a_turn_open = Arc::new(AtomicBool::new(true));
     let (m, c) = (Arc::clone(&moved_on), Arc::clone(&cleared));
     host.screen = Box::new(move |v| {
         if v.writes.len() < 2 {
@@ -975,11 +980,14 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         }
     });
     let m = Arc::clone(&moved_on);
+    let open = Arc::clone(&a_turn_open);
     host.wait = Box::new(move |v| {
         if v.writes.len() < 2 {
             quiet()
         } else if !m.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
+        } else if open.load(Ordering::SeqCst) {
+            quiet()
         } else {
             settled(HOLD_CLAUDE_PERMISSION, 160)
         }
@@ -1028,13 +1036,11 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     );
     assert_eq!(stopped["was_watching"], true, "{stopped}");
     // The watch must be gone before the queued answer takes the slot, and that
-    // check needs a barrier: sample WHILE A still holds it. The watcher
-    // unregisters as its loop exits, which is ordered before A's turn can end,
-    // so the first null seen here is ordered before the queued answer can take
-    // the slot — and so before the stale refusal that follows revives the
-    // watch. Sampling after A's reply races that revival instead: with a few
-    // hundred ms of extra pumping in between, the status comes back
-    // `watching: true` and correct behaviour fails the test.
+    // check is a real barrier: A's turn is pinned open by `a_turn_open`, so no
+    // amount of servicing here can let A finish, let B take the slot and let the
+    // stale refusal revive the watch underneath the sample. A sample that merely
+    // ran before `await_reply(first)` would still race that revival, because
+    // every host.tool and pump_while services capability calls.
     let mut watch_gone = false;
     for _ in 0..100 {
         let status = host.tool(
@@ -1054,6 +1060,22 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         watch_gone,
         "the watch must be gone before the queued answer takes the slot"
     );
+    // The other half of the barrier: A still owns the slot and B is still
+    // queued behind it, so the null above was sampled in the window the oracle
+    // is about. (The gate's own send_in_flight/send_waiters cannot say this any
+    // more: watch_status reports them off the session, and the session is the
+    // thing that just vanished.)
+    assert!(
+        !host.has_reply(first),
+        "the sample must land while A still owns the slot"
+    );
+    assert!(
+        !host.has_reply(second),
+        "the sample must land before the queued answer takes the slot"
+    );
+
+    // Release A's turn; only now may the queued answer reach the front.
+    a_turn_open.store(false, Ordering::SeqCst);
     host.await_reply(first);
 
     // B now owns the slot with no watch on the terminal. Nothing of its
