@@ -1027,16 +1027,34 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         json!({"terminal_id": terminal}),
     );
     assert_eq!(stopped["was_watching"], true, "{stopped}");
+    // The watch must be gone before the queued answer takes the slot, and that
+    // check needs a barrier: sample WHILE A still holds it. The watcher
+    // unregisters as its loop exits, which is ordered before A's turn can end,
+    // so the first null seen here is ordered before the queued answer can take
+    // the slot — and so before the stale refusal that follows revives the
+    // watch. Sampling after A's reply races that revival instead: with a few
+    // hundred ms of extra pumping in between, the status comes back
+    // `watching: true` and correct behaviour fails the test.
+    let mut watch_gone = false;
+    for _ in 0..100 {
+        let status = host.tool(
+            "minerva_agent_relay_watch_status",
+            json!({"terminal_id": terminal}),
+        );
+        if status["status"] == Value::Null {
+            watch_gone = true;
+            break;
+        }
+        // The watcher needs the host serviced to reach its exit, so each
+        // sample is followed by a short pump rather than a bare retry.
+        let t = std::time::Instant::now();
+        host.pump_while(&[], |_| t.elapsed() < std::time::Duration::from_millis(50));
+    }
+    assert!(
+        watch_gone,
+        "the watch must be gone before the queued answer takes the slot"
+    );
     host.await_reply(first);
-    let status = host.tool(
-        "minerva_agent_relay_watch_status",
-        json!({"terminal_id": terminal}),
-    );
-    assert_eq!(
-        status["status"],
-        Value::Null,
-        "the watch must be gone before the queued answer takes the slot: {status}"
-    );
 
     // B now owns the slot with no watch on the terminal. Nothing of its
     // answer — no arrow bytes, no Enter — may reach the dialog.
