@@ -893,7 +893,9 @@ func _populate_detail_panel(plugin_id: String) -> void:
 	_restart_button.disabled = not (is_running or is_starting) or is_building
 	_reload_button.visible = not is_internal
 	_remove_button.visible = not is_internal
-	_autostart_check.visible = not is_internal
+	# Auto-start is a user decision every plugin may make, host-owned or not.
+	# Auto-reload watches a source checkout, which a host-owned plugin has no
+	# equivalent of, so it stays hidden for internal plugins.
 	_auto_reload_check.visible = not is_internal
 	if is_internal:
 		_files_changed_label.visible = false

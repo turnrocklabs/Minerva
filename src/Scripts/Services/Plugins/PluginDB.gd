@@ -10,6 +10,12 @@ const DB_VERSION := 1
 ## In-memory store: plugin_id -> PluginDefinition
 var _plugins: Dictionary = {}
 
+## plugin_id -> bool for host-owned plugins. Their definitions are rebuilt from
+## res:// on every launch and never persisted, but the user's "start with
+## Minerva" choice is a decision, not a definition, so it is stored here and
+## re-applied to each rebuilt definition in register_internal().
+var _internal_autostart: Dictionary = {}
+
 ## class_name -> plugin_id for all installed plugins.
 ## Built lazily during install and loaded from DB at startup.
 var _class_name_registry: Dictionary = {}
@@ -182,13 +188,15 @@ func update_definition(def: PluginDefinition) -> bool:
 
 
 ## Set the autostart flag for a plugin and persist the change.
+## Host-owned plugins take the same path; their flag rides in the separate
+## internal_autostart record because their definitions are not persisted.
 func set_autostart(plugin_id: String, enabled: bool) -> bool:
-	if _is_reserved(plugin_id):
-		return false
 	var def: PluginDefinition = _plugins.get(plugin_id, null)
 	if def == null:
 		return false
 	def.autostart = enabled
+	if _is_reserved(plugin_id):
+		_internal_autostart[plugin_id] = enabled
 	_save()
 	return true
 
@@ -228,6 +236,13 @@ func load_db() -> Error:
 
 	var root: Dictionary = json.data if json.data is Dictionary else {}
 	var records: Array = root.get("plugins", [])
+
+	_internal_autostart.clear()
+	var internal_record = root.get("internal_autostart", {})
+	if internal_record is Dictionary:
+		for plugin_id in internal_record:
+			if _is_reserved(str(plugin_id)):
+				_internal_autostart[str(plugin_id)] = bool(internal_record[plugin_id])
 
 	_plugins.clear()
 	_class_name_registry.clear()
@@ -271,6 +286,7 @@ func register_internal(_ignored_definition = null) -> Array[String]:
 		var def = InternalPlugins.definition_for(plugin_id)
 		if def == null:
 			continue
+		def.autostart = bool(_internal_autostart.get(def.id, def.autostart))
 		_plugins[def.id] = def
 		registered.append(def.id)
 	if not registered.is_empty():
@@ -296,6 +312,7 @@ func _save() -> void:
 	var data := {
 		"version": DB_VERSION,
 		"plugins": records,
+		"internal_autostart": _internal_autostart,
 	}
 
 	var json := JSON.stringify(data, "\t")

@@ -120,12 +120,11 @@ func _init() -> void:
 		if not removal.has("error") \
 				or db.remove(id) \
 				or db.update_definition(hostile) \
-				or db.set_autostart(id, true) \
 				or db.set_auto_reload(id, true) \
 				or manager.set_auto_reload(id, true) \
 				or db.get_by_id(id) != before:
 			mutations_refused = false
-	check("every member refuses remove/update/lifecycle flags (C3)", mutations_refused)
+	check("every member refuses remove/update/identity changes (C3)", mutations_refused)
 	check("a non-member accepts the same calls (C3 control)",
 		db.set_autostart("ordinary", true) and db.set_auto_reload("ordinary", true)
 			and db.remove("ordinary"))
