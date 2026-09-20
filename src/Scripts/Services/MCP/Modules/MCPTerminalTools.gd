@@ -72,7 +72,7 @@ func get_tool_names() -> Array[String]:
 
 func register_tools() -> void:
 	server._register_tool("minerva_terminal_list",
-		"List all terminal sessions with their IDs, names, and dimensions. Includes background sessions: visible=false means no UI tab (use minerva_terminal_promote to show it). alive=false means the shell has exited (scrollback still readable).",
+		"List all terminal sessions with their IDs, names, and dimensions. name is the current tab name (the address for notify); launch_name appears only when the tab was renamed after its shell started and the program inside still sees the old MINERVA_TERMINAL_NAME. Includes background sessions: visible=false means no UI tab (use minerva_terminal_promote to show it). alive=false means the shell has exited (scrollback still readable).",
 		{"type": "object", "properties": {}}, "terminal")
 
 	server._register_tool("minerva_terminal_write",
@@ -289,6 +289,10 @@ func _terminal_list(_arguments: Dictionary) -> Dictionary:
 				"created_at_ms": session.created_at_ms,
 				"last_input_ms": session.last_input_ms,
 			}
+			# `name` is the address the tab answers to now. A renamed tab also
+			# carries launch_name: the name the child was spawned with and still
+			# sees in MINERVA_TERMINAL_NAME, which no rename can update.
+			entry.merge(session.name_fields(), true)
 			# Who is in the foreground: the program (empty when the query
 			# failed just now), and the harness when it is one. The key is
 			# present whenever the platform can answer, so its absence means

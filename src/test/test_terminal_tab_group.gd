@@ -9,6 +9,13 @@ extends SceneTree
 ## itself does) so we can verify tab_count(), is_empty(), and the became_empty
 ## signal without the native extension.
 
+## Stand-in for a TerminalNew view: the rename path only needs get_session().
+class FakeTerminalView extends Control:
+	var session = null
+	func get_session():
+		return session
+
+
 var _pass_count: int = 0
 var _fail_count: int = 0
 
@@ -22,6 +29,7 @@ func _init() -> void:
 	test_tab_count_decreases()
 	test_is_empty_lifecycle()
 	test_became_empty_signal()
+	await test_double_click_renames_tab_and_session()
 
 	print("\n=== Results: %d passed, %d failed ===" % [_pass_count, _fail_count])
 	if _fail_count > 0:
@@ -137,4 +145,62 @@ func test_became_empty_signal() -> void:
 
 	remove_fake_tab(group, 0)
 	check("became_empty fired when last tab removed", fired[0])
+	group.queue_free()
+
+
+## Double-clicking a tab title opens the inline editor, and committing a name
+## reaches the SESSION — which is what minerva_terminal_list reports and what
+## minerva_terminal_notify resolves against. The PTY keeps the name it was
+## spawned with, so the listing's name fields must show both once they differ.
+func test_double_click_renames_tab_and_session() -> void:
+	print("test_double_click_renames_tab_and_session:")
+	var group := make_group()
+	var view := FakeTerminalView.new()
+	view.name = "FakeTerminal"
+	view.visible = false
+	var session := TerminalSession.new("codex")
+	view.session = session
+	group._panel.add_child(view, true)
+	group._tab_bar.add_tab("codex")
+	group._tab_bar.set_tab_metadata(0, view)
+	group._tab_metadata_written.emit()
+
+	# Let the TabBar lay out, so get_tab_rect() reports a real hit area.
+	group.visible = true
+	await process_frame
+	await process_frame
+
+	var rect: Rect2 = group._tab_bar.get_tab_rect(0)
+	var event := InputEventMouseButton.new()
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = true
+	event.double_click = true
+	event.position = rect.get_center()
+	# Drive the real wiring: the TabBar's gui_input signal, as a click does.
+	group._tab_bar.gui_input.emit(event)
+
+	var edit: LineEdit = group._rename_edit
+	check("double-click opens the inline rename editor", edit != null)
+	check("editor starts from the current tab title", edit != null and edit.text == "codex")
+
+	if edit != null:
+		edit.text = "codex-b"
+		edit.text_submitted.emit("codex-b")
+
+	check("tab title follows the committed name", group._tab_bar.get_tab_title(0) == "codex-b")
+	check("session name follows the committed name", session.session_name == "codex-b")
+	check("rename editor is gone after commit", group._rename_edit == null)
+
+	# A session whose shell was spawned before the rename still answers to the
+	# old name inside the PTY; the listing reports both.
+	session.launch_name = "codex"
+	var fields: Dictionary = session.name_fields()
+	check("name_fields reports the current name", str(fields.get("name", "")) == "codex-b")
+	check("name_fields reports launch_name when it differs", str(fields.get("launch_name", "")) == "codex")
+
+	session.session_name = "codex"
+	check("name_fields omits launch_name when the names agree",
+		not session.name_fields().has("launch_name"))
+
+	session.free()
 	group.queue_free()

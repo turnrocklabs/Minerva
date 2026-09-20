@@ -61,6 +61,12 @@ var started: bool = false
 ## writing a `cd` line (older extension binaries without set_start_directory).
 var start_directory_applied: bool = false
 
+## The name the PTY child was spawned with: it reaches the child as
+## MINERVA_TERMINAL_NAME and cannot be changed afterwards. Empty until start()
+## spawns a child. session_name CAN change later (a tab rename), so the two
+## disagree from then on and listings report both.
+var launch_name: String = ""
+
 ## Working directory start() was asked for. Empty when no caller supplied one:
 ## the child then inherits Minerva's own cwd, which this class does not know.
 ## Recorded even when start_directory_applied is false — the `cd` fallback puts
@@ -151,6 +157,7 @@ func start(cols: int, rows: int, start_dir: String = "") -> bool:
 	launch_cwd = start_dir
 	# The child learns its own address (MINERVA_TERMINAL_ID / _NAME) so a
 	# program in the terminal can name this tab to the host.
+	launch_name = session_name
 	if terminal.has_method("set_identity"):
 		terminal.set_identity(terminal_id, session_name)
 	if not start_dir.is_empty() and terminal.has_method("set_start_directory"):
@@ -159,6 +166,16 @@ func start(cols: int, rows: int, start_dir: String = "") -> bool:
 	var ok: bool = terminal.start(_cols, _rows)
 	started = ok
 	return ok
+
+
+## The name fields of a listing entry: the address this session answers to now,
+## plus the name the running child still believes when a rename made the two
+## differ. One derivation so the listing cannot claim they agree.
+func name_fields() -> Dictionary:
+	var fields: Dictionary = {"name": session_name}
+	if not launch_name.is_empty() and launch_name != session_name:
+		fields["launch_name"] = launch_name
+	return fields
 
 
 ## Resize the PTY grid. Views call this from their layout handler.

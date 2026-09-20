@@ -21,6 +21,9 @@ const _TERMINAL_THEME := preload("res://assets/themes/terminal.tres")
 var _tab_bar: TabBar
 var _panel: PanelContainer
 
+# The inline title editor, while a rename is open. Null otherwise.
+var _rename_edit: LineEdit = null
+
 # Internal signal used to synchronise tab metadata writes with tab_changed.
 signal _tab_metadata_written()
 
@@ -62,6 +65,9 @@ func _build_ui() -> void:
 	_tab_bar.size_flags_horizontal = SIZE_EXPAND_FILL
 	_tab_bar.tab_changed.connect(_on_tab_bar_tab_changed)
 	_tab_bar.tab_close_pressed.connect(_on_tab_bar_tab_close_pressed)
+	# The gui_input SIGNAL runs alongside TabBar's own handling, so watching for
+	# the double-click here costs the bar none of its normal clicks or drags.
+	_tab_bar.gui_input.connect(_on_tab_bar_gui_input)
 	header.add_child(_tab_bar)
 
 	var add_btn := Button.new()
@@ -248,6 +254,80 @@ func _view_exists_for(session) -> bool:
 				and term.get_session() == session:
 			return true
 	return false
+
+
+# ── Inline tab rename ─────────────────────────────────────────────────
+
+func _on_tab_bar_gui_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if not (mb.pressed and mb.double_click and mb.button_index == MOUSE_BUTTON_LEFT):
+		return
+	var tab: int = _tab_bar.get_tab_idx_at_point(mb.position)
+	if tab < 0:
+		return
+	begin_rename(tab)
+
+
+## Opens the inline title editor over tab *tab* and returns it (null when the
+## index is out of range). Enter commits, Escape or clicking away cancels.
+func begin_rename(tab: int) -> LineEdit:
+	if tab < 0 or tab >= _tab_bar.tab_count:
+		return null
+	_cancel_rename()
+
+	var edit := LineEdit.new()
+	edit.name = "TabRenameEdit"
+	edit.text = _tab_bar.get_tab_title(tab)
+	edit.select_all_on_focus = true
+	var rect: Rect2 = _tab_bar.get_tab_rect(tab)
+	edit.position = rect.position
+	edit.size = Vector2(maxf(rect.size.x, 80.0), rect.size.y)
+	edit.text_submitted.connect(func(new_title: String) -> void: commit_rename(tab, new_title))
+	edit.focus_exited.connect(_cancel_rename)
+	edit.gui_input.connect(func(e: InputEvent) -> void:
+		if e.is_action_pressed("ui_cancel"):
+			_cancel_rename()
+	)
+
+	_rename_edit = edit
+	_tab_bar.add_child(edit)
+	edit.grab_focus()
+	return edit
+
+
+## Applies *new_title* to the tab AND to the session behind it: the session name
+## is what minerva_terminal_list reports and what the notify resolver addresses,
+## so a rename that stopped at the TabBar would leave the tab unaddressable
+## under its visible name. The PTY keeps the name it was spawned with
+## (TerminalSession.launch_name) — env cannot be changed under a running child.
+func commit_rename(tab: int, new_title: String) -> void:
+	_close_rename_edit()
+	var title: String = new_title.strip_edges()
+	if title.is_empty() or tab < 0 or tab >= _tab_bar.tab_count:
+		return
+	_tab_bar.set_tab_title(tab, title)
+
+	var terminal = _tab_bar.get_tab_metadata(tab)
+	if terminal == null or not terminal.has_method("get_session"):
+		return
+	var session = terminal.get_session()
+	if session != null and is_instance_valid(session) and "session_name" in session:
+		session.session_name = title
+
+
+func _cancel_rename() -> void:
+	_close_rename_edit()
+
+
+## Drops the editor without touching any title. Clearing the reference first
+## keeps the focus_exited that follows queue_free() from re-entering.
+func _close_rename_edit() -> void:
+	var edit := _rename_edit
+	_rename_edit = null
+	if edit != null and is_instance_valid(edit):
+		edit.queue_free()
 
 
 func _on_tab_bar_tab_changed(tab: int) -> void:
