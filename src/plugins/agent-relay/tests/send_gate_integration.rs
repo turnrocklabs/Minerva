@@ -47,20 +47,31 @@ const CODEX_AFTER_EXTRA_ENTER: &str =
 
 /// Block until the gate reports exactly one caller queued behind the owner —
 /// the queued caller's thread has to reach the gate first, so this polls rather
-/// than sampling once.
-fn wait_for_one_waiter(host: &mut FakeHost, terminal: &str) {
+/// than sampling once. Returns the status read that saw the waiter.
+fn wait_for_one_waiter(host: &mut FakeHost, terminal: &str) -> Value {
     let mut status = Value::Null;
     for _ in 0..80 {
         status = host.tool(
             "minerva_agent_relay_watch_status",
             json!({"terminal_id": terminal}),
         );
-        if status["status"]["send_waiters"] == json!(1) {
-            return;
+        if gate_of(&status)["send_waiters"] == json!(1) {
+            return status;
         }
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
     panic!("no caller queued for the slot: {status}");
+}
+
+/// The send gate's published state in a watch_status reply. The gate is per
+/// terminal: a watched terminal carries its fields inside `status`, an
+/// unwatched one under `gate`.
+fn gate_of(status: &Value) -> &Value {
+    if status["status"].is_object() {
+        &status["status"]
+    } else {
+        &status["gate"]
+    }
 }
 
 /// The two messages the submit corpus was driven with — the fixtures echo
@@ -124,7 +135,7 @@ fn hold_case(name: &str, profile: &str, hold_screen: &str, idle_screen: &str) {
     assert_eq!(payload["ok"], true, "{name}: send failed: {payload}");
     assert_eq!(
         host.view().writes,
-        vec!["ping".to_string(), "\r".to_string()],
+        vec!["ping".to_string()],
         "{name}: the message must land exactly once, after the screen cleared"
     );
 }
@@ -169,7 +180,7 @@ fn two_generates_on_one_terminal_serialise_and_keep_their_own_turns() {
 
     // The turn window: whichever prompt is outstanding when it is read.
     host.turn = Box::new(|v| {
-        if v.writes.len() >= 4 {
+        if v.writes.len() >= 2 {
             "\u{276f} prompt two\n\u{25cf} answer two for the second prompt\n".to_string()
         } else {
             "\u{276f} prompt one\n\u{25cf} answer one for the first prompt\n".to_string()
@@ -185,16 +196,16 @@ fn two_generates_on_one_terminal_serialise_and_keep_their_own_turns() {
     let release_first = Arc::new(AtomicBool::new(false));
     let released = Arc::clone(&release_first);
     host.wait = Box::new(move |v| {
-        // 2 writes = prompt one submitted; 4 = prompt two submitted.
+        // 1 write = prompt one submitted; 2 = prompt two submitted.
         match v.writes.len() {
-            2 if released.load(Ordering::SeqCst) => {
-                marks.lock().unwrap().push(2);
+            1 if released.load(Ordering::SeqCst) => {
+                marks.lock().unwrap().push(1);
                 settled(
                     "\u{276f} prompt one\n\u{25cf} answer one for the first prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
                     130,
                 )
             }
-            n if n >= 4 => {
+            n if n >= 2 => {
                 marks.lock().unwrap().push(n);
                 settled(
                     "\u{276f} prompt two\n\u{25cf} answer two for the second prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
@@ -211,9 +222,10 @@ fn two_generates_on_one_terminal_serialise_and_keep_their_own_turns() {
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-one", "terminal_id": terminal, "text": "prompt one"}),
     );
-    // Prompt one holds the slot from here on: its body and Enter are out and
-    // its turn cannot end until the test releases it.
-    host.pump_while(&[first], |v| v.writes.len() < 2);
+    // Prompt one holds the slot from here on: its write is out (body and
+    // Enter in one transaction) and its turn cannot end until the test
+    // releases it.
+    host.pump_while(&[first], |v| v.writes.is_empty());
 
     let second = host.call_tool(
         "minerva_agent_relay_passthrough_generate",
@@ -244,7 +256,7 @@ fn two_generates_on_one_terminal_serialise_and_keep_their_own_turns() {
     );
     assert_eq!(
         host.view().writes.len(),
-        2,
+        1,
         "nothing of prompt two reached the terminal while turn one ran: {:?}",
         host.view().writes
     );
@@ -257,9 +269,7 @@ fn two_generates_on_one_terminal_serialise_and_keep_their_own_turns() {
         host.view().writes,
         vec![
             "prompt one".to_string(),
-            "\r".to_string(),
             "prompt two".to_string(),
-            "\r".to_string(),
         ],
         "both prompts written once, in order, with no interleaving"
     );
@@ -267,7 +277,7 @@ fn two_generates_on_one_terminal_serialise_and_keep_their_own_turns() {
     let marks = writes_at_turn_end.lock().unwrap().clone();
     assert_eq!(
         marks.first().copied(),
-        Some(2),
+        Some(1),
         "the first turn ended while only prompt one had been written: {marks:?}"
     );
 
@@ -315,7 +325,7 @@ fn only_the_stuck_composer_earns_one_extra_enter() {
             body: PING,
             after_write: CODEX_STUCK,
             after_recovery: CODEX_AFTER_EXTRA_ENTER,
-            expect_writes: 3,
+            expect_writes: 2,
             expect_extra_enter: true,
         },
         Case {
@@ -324,7 +334,7 @@ fn only_the_stuck_composer_earns_one_extra_enter() {
             body: PONG,
             after_write: CODEX_SUBMIT_OK,
             after_recovery: CODEX_SUBMIT_OK,
-            expect_writes: 2,
+            expect_writes: 1,
             expect_extra_enter: false,
         },
         Case {
@@ -333,7 +343,7 @@ fn only_the_stuck_composer_earns_one_extra_enter() {
             body: PONG,
             after_write: CLAUDE_SUBMIT_OK,
             after_recovery: CLAUDE_SUBMIT_OK,
-            expect_writes: 2,
+            expect_writes: 1,
             expect_extra_enter: false,
         },
     ];
@@ -346,8 +356,8 @@ fn only_the_stuck_composer_earns_one_extra_enter() {
         let after_recovery = case.after_recovery.to_string();
         host.screen = Box::new(move |v| {
             let screen = match v.writes.len() {
-                0..=1 => idle.clone(),
-                2 => after_write.clone(),
+                0 => idle.clone(),
+                1 => after_write.clone(),
                 _ => after_recovery.clone(),
             };
             (screen, 120)
@@ -368,9 +378,15 @@ fn only_the_stuck_composer_earns_one_extra_enter() {
             case.name
         );
         assert_eq!(writes[0], case.body, "{}: body written first", case.name);
+        assert_eq!(
+            host.view().write_args[0]["then_enter_after_ms"],
+            json!(200),
+            "{}: the submit's Enter rides on the body's own write",
+            case.name
+        );
         assert!(
             writes[1..].iter().all(|w| w == "\r"),
-            "{}: only Enters follow the body: {writes:?}",
+            "{}: only the recovery Enter may follow the body: {writes:?}",
             case.name
         );
         assert_eq!(
@@ -412,14 +428,14 @@ fn a_custom_chooser_answer_is_written_while_the_same_text_alone_is_held() {
     // Idle until the prompt is submitted; the chooser from then on — it stays
     // on screen until the answer lands, exactly as the live harness draws it.
     host.screen = Box::new(|v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             (CLAUDE_IDLE.to_string(), 100)
         } else {
             (HOLD_CLAUDE_CHOOSER.to_string(), 130)
         }
     });
     host.wait = Box::new(|v| {
-        if v.writes.len() >= 2 {
+        if !v.writes.is_empty() {
             settled(HOLD_CLAUDE_CHOOSER, 130)
         } else {
             quiet()
@@ -445,14 +461,12 @@ fn a_custom_chooser_answer_is_written_while_the_same_text_alone_is_held() {
         json!({"chat_id": "chat-q", "terminal_id": terminal, "text": CUSTOM_ANSWER}),
     );
     // The answer must reach the terminal without the chooser ever clearing.
-    host.pump_while(&[answer], |v| v.writes.len() < 4);
+    host.pump_while(&[answer], |v| v.writes.len() < 2);
     assert_eq!(
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
         ],
         "the custom answer must be typed into the chooser that asked for it"
     );
@@ -488,7 +502,7 @@ fn a_custom_chooser_answer_is_written_while_the_same_text_alone_is_held() {
     host.await_reply(send);
     assert_eq!(
         host.view().writes,
-        vec![CUSTOM_ANSWER.to_string(), "\r".to_string()],
+        vec![CUSTOM_ANSWER.to_string()],
         "and land once the chooser is gone"
     );
 }
@@ -515,7 +529,7 @@ fn a_card_answered_in_the_terminal_no_longer_bypasses_the_hold() {
     let cleared = Arc::new(AtomicBool::new(false));
     let (a, c) = (Arc::clone(&answered), Arc::clone(&cleared));
     host.screen = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             (CLAUDE_IDLE.to_string(), 100)
         } else if !a.load(Ordering::SeqCst) {
             (HOLD_CLAUDE_CHOOSER.to_string(), 130)
@@ -527,7 +541,7 @@ fn a_card_answered_in_the_terminal_no_longer_bypasses_the_hold() {
     });
     let a = Arc::clone(&answered);
     host.wait = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             quiet()
         } else if !a.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
@@ -570,20 +584,18 @@ fn a_card_answered_in_the_terminal_no_longer_bypasses_the_hold() {
     host.pump_while(&[late], |v| v.reads < before + 4);
     assert_eq!(
         host.view().writes.len(),
-        2,
+        1,
         "nothing may be written while the permission dialog owns the keyboard: {:?}",
         host.view().writes
     );
 
     cleared.store(true, Ordering::SeqCst);
-    host.pump_while(&[late], |v| v.writes.len() < 4);
+    host.pump_while(&[late], |v| v.writes.len() < 2);
     assert_eq!(
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             option.clone(),
-            "\r".to_string(),
         ],
         "the late message must land as a plain submit once the dialog is gone"
     );
@@ -645,9 +657,9 @@ fn a_held_prompt_does_not_block_the_answer_that_clears_it() {
     let answered = Arc::new(AtomicBool::new(false));
     let a = Arc::clone(&answered);
     // Idle until the first prompt lands; the chooser until it is answered
-    // (writes 3 and 4); idle again after.
+    // (write 2); idle again after.
     host.screen = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             (CLAUDE_IDLE.to_string(), 100)
         } else if !a.load(Ordering::SeqCst) {
             (HOLD_CLAUDE_CHOOSER.to_string(), 130)
@@ -657,7 +669,7 @@ fn a_held_prompt_does_not_block_the_answer_that_clears_it() {
     });
     let a = Arc::clone(&answered);
     host.wait = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             quiet()
         } else if !a.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
@@ -686,7 +698,7 @@ fn a_held_prompt_does_not_block_the_answer_that_clears_it() {
     host.pump_while(&[fresh], |v| v.reads < before + 3);
     assert_eq!(
         host.view().writes.len(),
-        2,
+        1,
         "the fresh prompt must be held by the chooser: {:?}",
         host.view().writes
     );
@@ -698,14 +710,12 @@ fn a_held_prompt_does_not_block_the_answer_that_clears_it() {
         json!({"chat_id": "chat-a", "terminal_id": terminal, "text": CUSTOM_ANSWER}),
     );
     let before = host.view().reads;
-    host.pump_while(&[answer], |v| v.writes.len() < 4 && v.reads < before + 60);
+    host.pump_while(&[answer], |v| v.writes.len() < 2 && v.reads < before + 60);
     assert_eq!(
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
         ],
         "the answer must reach the card while the fresh prompt waits"
     );
@@ -718,11 +728,8 @@ fn a_held_prompt_does_not_block_the_answer_that_clears_it() {
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
             "fresh prompt".to_string(),
-            "\r".to_string(),
         ],
         "and the held prompt lands after the turn it waited for"
     );
@@ -744,7 +751,7 @@ fn a_second_answer_to_the_same_card_does_not_write_onto_the_next_modal() {
     let cleared = Arc::new(AtomicBool::new(false));
     let (m, c) = (Arc::clone(&moved_on), Arc::clone(&cleared));
     host.screen = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             (CLAUDE_IDLE.to_string(), 100)
         } else if !m.load(Ordering::SeqCst) {
             (HOLD_CLAUDE_CHOOSER.to_string(), 130)
@@ -756,7 +763,7 @@ fn a_second_answer_to_the_same_card_does_not_write_onto_the_next_modal() {
     });
     let m = Arc::clone(&moved_on);
     host.wait = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             quiet()
         } else if !m.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
@@ -781,7 +788,7 @@ fn a_second_answer_to_the_same_card_does_not_write_onto_the_next_modal() {
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-d", "terminal_id": terminal, "text": CUSTOM_ANSWER}),
     );
-    host.pump_while(&[first], |v| v.writes.len() < 4);
+    host.pump_while(&[first], |v| v.writes.len() < 2);
     let second = host.call_tool(
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-d2", "terminal_id": terminal, "text": SECOND_ANSWER}),
@@ -797,22 +804,19 @@ fn a_second_answer_to_the_same_card_does_not_write_onto_the_next_modal() {
     host.pump_while(&[second], |v| v.reads < before + 8);
     assert_eq!(
         host.view().writes.len(),
-        4,
+        2,
         "the second answer must not be written onto the permission dialog: {:?}",
         host.view().writes
     );
 
     cleared.store(true, Ordering::SeqCst);
-    host.pump_while(&[second], |v| v.writes.len() < 6);
+    host.pump_while(&[second], |v| v.writes.len() < 3);
     assert_eq!(
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
             SECOND_ANSWER.to_string(),
-            "\r".to_string(),
         ],
         "and lands as a plain submit once the dialog clears"
     );
@@ -835,7 +839,7 @@ fn a_stale_bypass_leaves_the_newly_filed_card_answerable() {
     let cleared = Arc::new(AtomicBool::new(false));
     let (m, c) = (Arc::clone(&moved_on), Arc::clone(&cleared));
     host.screen = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             (CLAUDE_IDLE.to_string(), 100)
         } else if !m.load(Ordering::SeqCst) {
             (HOLD_CLAUDE_CHOOSER.to_string(), 130)
@@ -847,7 +851,7 @@ fn a_stale_bypass_leaves_the_newly_filed_card_answerable() {
     });
     let (m, c) = (Arc::clone(&moved_on), Arc::clone(&cleared));
     host.wait = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             quiet()
         } else if !m.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
@@ -877,7 +881,7 @@ fn a_stale_bypass_leaves_the_newly_filed_card_answerable() {
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-r", "terminal_id": terminal, "text": CUSTOM_ANSWER}),
     );
-    host.pump_while(&[first], |v| v.writes.len() < 4);
+    host.pump_while(&[first], |v| v.writes.len() < 2);
     let second = host.call_tool(
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-r2", "terminal_id": terminal, "text": SECOND_ANSWER}),
@@ -899,7 +903,7 @@ fn a_stale_bypass_leaves_the_newly_filed_card_answerable() {
     host.pump_while(&[second], |v| v.reads < before + 8);
     assert_eq!(
         host.view().writes.len(),
-        4,
+        2,
         "the stale second answer must be held by the new card, not written: {:?}",
         host.view().writes
     );
@@ -912,17 +916,22 @@ fn a_stale_bypass_leaves_the_newly_filed_card_answerable() {
         json!({"chat_id": "chat-r", "terminal_id": terminal, "text": "1"}),
     );
     let before = host.view().reads;
-    host.pump_while(&[answer_new], |v| v.writes.len() < 5 && v.reads < before + 40);
+    host.pump_while(&[answer_new], |v| v.writes.len() < 3 && v.reads < before + 40);
     assert_eq!(
         host.view().writes.len(),
-        5,
+        3,
         "the answer to the new card must bypass the hold and reach it: {:?}",
         host.view().writes
     );
     assert_eq!(
-        host.view().writes[4], "1",
+        host.view().writes[2], "1",
         "and land as the dialog's single keystroke: {:?}",
         host.view().writes
+    );
+    assert!(
+        host.view().write_args[2].get("then_enter_after_ms").is_none(),
+        "a dialog keystroke must not carry an Enter after it: {:?}",
+        host.view().write_args
     );
 
     // Let everything drain: the dialog clears, so the second answer's held
@@ -934,12 +943,9 @@ fn a_stale_bypass_leaves_the_newly_filed_card_answerable() {
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
             "1".to_string(),
             SECOND_ANSWER.to_string(),
-            "\r".to_string(),
         ],
         "every write accounted for, in order"
     );
@@ -969,7 +975,7 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     let a_turn_open = Arc::new(AtomicBool::new(true));
     let (m, c) = (Arc::clone(&moved_on), Arc::clone(&cleared));
     host.screen = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             (CLAUDE_IDLE.to_string(), 100)
         } else if !m.load(Ordering::SeqCst) {
             (HOLD_CLAUDE_CHOOSER.to_string(), 130)
@@ -982,7 +988,7 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     let m = Arc::clone(&moved_on);
     let open = Arc::clone(&a_turn_open);
     host.wait = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             quiet()
         } else if !m.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
@@ -1018,7 +1024,7 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-w", "terminal_id": terminal, "text": CUSTOM_ANSWER}),
     );
-    host.pump_while(&[first], |v| v.writes.len() < 4);
+    host.pump_while(&[first], |v| v.writes.len() < 2);
     let second = host.call_tool(
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-w2", "terminal_id": terminal, "text": option}),
@@ -1086,9 +1092,7 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
         ],
         "the queued answer must not be written onto the permission dialog"
     );
@@ -1096,16 +1100,13 @@ fn a_card_answer_whose_watch_vanished_is_not_written_onto_the_next_modal() {
     // It starts over as a plain prompt on a revived watch, and lands only once
     // the dialog is gone.
     cleared.store(true, Ordering::SeqCst);
-    host.pump_while(&[second], |v| v.writes.len() < 6);
+    host.pump_while(&[second], |v| v.writes.len() < 3);
     assert_eq!(
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
             option.clone(),
-            "\r".to_string(),
         ],
         "and lands as a plain submit once the dialog clears"
     );
@@ -1145,7 +1146,7 @@ fn a_long_hold_does_not_shorten_the_owners_slot() {
         start.elapsed() < std::time::Duration::from_millis(3000)
     });
     cleared.store(true, Ordering::SeqCst);
-    host.pump_while(&[owner], |v| v.writes.len() < 2);
+    host.pump_while(&[owner], |v| v.writes.is_empty());
 
     // The second caller arrives while the owner's turn is running and waits
     // 2.5 s — past what was left of the owner's budget, short of the whole.
@@ -1156,7 +1157,7 @@ fn a_long_hold_does_not_shorten_the_owners_slot() {
     let payload = common::unwrap_tool(&host.await_reply(second));
     assert_eq!(
         host.view().writes,
-        vec!["prompt A".to_string(), "\r".to_string()],
+        vec!["prompt A".to_string()],
         "the owner's turn was still running: nothing of prompt B may be written"
     );
     assert!(
@@ -1214,7 +1215,7 @@ fn a_caller_that_queued_releases_the_slot_when_the_screen_turns_into_a_card() {
         "minerva_agent_relay_passthrough_generate",
         json!({"chat_id": "chat-q", "terminal_id": terminal, "text": ASK_PROMPT}),
     );
-    host.pump_while(&[asking], |v| v.writes.len() < 2);
+    host.pump_while(&[asking], |v| v.writes.is_empty());
 
     // B arrives while the screen is still writable: it passes the hold with
     // nothing in hand and queues for the slot.
@@ -1244,14 +1245,12 @@ fn a_caller_that_queued_releases_the_slot_when_the_screen_turns_into_a_card() {
         json!({"chat_id": "chat-q", "terminal_id": terminal, "text": CUSTOM_ANSWER}),
     );
     let before = host.view().reads;
-    host.pump_while(&[answer], |v| v.writes.len() < 4 && v.reads < before + 40);
+    host.pump_while(&[answer], |v| v.writes.len() < 2 && v.reads < before + 40);
     assert_eq!(
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
         ],
         "the answer must reach the card while the queued prompt waits"
     );
@@ -1264,11 +1263,8 @@ fn a_caller_that_queued_releases_the_slot_when_the_screen_turns_into_a_card() {
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
             CUSTOM_ANSWER.to_string(),
-            "\r".to_string(),
             "fresh prompt".to_string(),
-            "\r".to_string(),
         ],
         "and the queued prompt lands after the turn it waited for"
     );
@@ -1292,7 +1288,7 @@ fn owner_phase_case(name: &str, timeout_ms: u64, probe_at_ms: u64) {
         "minerva_agent_relay_relay_ask",
         json!({"terminal_id": terminal, "text": "prompt A", "timeout_ms": timeout_ms}),
     );
-    host.pump_while(&[owner], |v| v.writes.len() < 2);
+    host.pump_while(&[owner], |v| v.writes.is_empty());
     let written_at = std::time::Instant::now();
 
     host.pump_while(&[owner], |_| {
@@ -1313,7 +1309,7 @@ fn owner_phase_case(name: &str, timeout_ms: u64, probe_at_ms: u64) {
     let payload = common::unwrap_tool(&host.await_reply(probe));
     assert_eq!(
         host.view().writes,
-        vec!["prompt A".to_string(), "\r".to_string()],
+        vec!["prompt A".to_string()],
         "{name}: the owner was still working; nothing of prompt B may be written"
     );
     assert!(
@@ -1436,7 +1432,7 @@ fn an_ask_that_times_out_does_not_free_the_slot_for_the_next_prompt() {
     let payload = common::unwrap_tool(&host.await_reply(next));
     assert_eq!(
         host.view().writes,
-        vec!["prompt A".to_string(), "\r".to_string()],
+        vec!["prompt A".to_string()],
         "prompt B must not be written into the turn prompt A is still running"
     );
     assert!(
@@ -1450,14 +1446,12 @@ fn an_ask_that_times_out_does_not_free_the_slot_for_the_next_prompt() {
         "minerva_agent_relay_relay_ask",
         json!({"terminal_id": terminal, "text": "prompt C", "timeout_ms": 4000}),
     );
-    host.pump_while(&[after], |v| v.writes.len() < 4);
+    host.pump_while(&[after], |v| v.writes.len() < 2);
     assert_eq!(
         host.view().writes,
         vec![
             "prompt A".to_string(),
-            "\r".to_string(),
             "prompt C".to_string(),
-            "\r".to_string(),
         ],
         "the counted end of prompt A's turn is what frees the terminal"
     );
@@ -1495,14 +1489,12 @@ fn restarting_the_watch_releases_a_handed_over_turn() {
         "minerva_agent_relay_relay_ask",
         json!({"terminal_id": terminal, "text": "prompt B", "timeout_ms": 1500}),
     );
-    host.pump_while(&[next], |v| v.writes.len() < 4);
+    host.pump_while(&[next], |v| v.writes.len() < 2);
     assert_eq!(
         host.view().writes,
         vec![
             "prompt A".to_string(),
-            "\r".to_string(),
             "prompt B".to_string(),
-            "\r".to_string(),
         ],
         "a restarted watch must not leave the terminal blocked by the old turn"
     );
@@ -1527,7 +1519,7 @@ fn a_notification_is_held_by_a_live_card_and_leaves_it_answerable() {
     let answered = Arc::new(AtomicBool::new(false));
     let a = Arc::clone(&answered);
     host.screen = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             (CLAUDE_IDLE.to_string(), 100)
         } else if !a.load(Ordering::SeqCst) {
             (HOLD_CLAUDE_CHOOSER.to_string(), 130)
@@ -1537,7 +1529,7 @@ fn a_notification_is_held_by_a_live_card_and_leaves_it_answerable() {
     });
     let a = Arc::clone(&answered);
     host.wait = Box::new(move |v| {
-        if v.writes.len() < 2 {
+        if v.writes.is_empty() {
             quiet()
         } else if !a.load(Ordering::SeqCst) {
             settled(HOLD_CLAUDE_CHOOSER, 130)
@@ -1565,7 +1557,7 @@ fn a_notification_is_held_by_a_live_card_and_leaves_it_answerable() {
     host.pump_while(&[notify], |v| v.reads < before + 6);
     assert_eq!(
         host.view().writes.len(),
-        2,
+        1,
         "the notification must not be typed into the card: {:?}",
         host.view().writes
     );
@@ -1577,10 +1569,10 @@ fn a_notification_is_held_by_a_live_card_and_leaves_it_answerable() {
         json!({"chat_id": "chat-n", "terminal_id": terminal, "text": "1"}),
     );
     let before = host.view().reads;
-    host.pump_while(&[answer], |v| v.writes.len() < 3 && v.reads < before + 40);
+    host.pump_while(&[answer], |v| v.writes.len() < 2 && v.reads < before + 40);
     assert_eq!(
         host.view().writes,
-        vec![ASK_PROMPT.to_string(), "\r".to_string(), "\r".to_string()],
+        vec![ASK_PROMPT.to_string(), "\r".to_string()],
         "the answer to the card must still bypass the hold"
     );
 
@@ -1593,10 +1585,10 @@ fn a_notification_is_held_by_a_live_card_and_leaves_it_answerable() {
         host.view().writes,
         vec![
             ASK_PROMPT.to_string(),
-            "\r".to_string(),
+            // The chooser's Enter, from the assertion above: the host's write
+            // log only ever grows, so every earlier write is still in it.
             "\r".to_string(),
             NOTIFY_LINE.to_string(),
-            "\r".to_string(),
         ],
         "the notification lands once, after the card it waited for"
     );
@@ -1620,7 +1612,7 @@ fn a_notification_is_held_by_a_live_card_and_leaves_it_answerable() {
 ///
 /// Oracle: two relay_asks on a terminal that was never watched, back to back.
 /// Prompt two must not reach the terminal until turn one has been counted —
-/// writes are exactly ["prompt one", "\r", "prompt two", "\r"].
+/// writes are exactly ["prompt one", "prompt two"].
 #[test]
 fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
     let mut host = FakeHost::start();
@@ -1629,7 +1621,7 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
     host.screen = Box::new(|v| (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64));
 
     host.turn = Box::new(|v| {
-        if v.writes.len() >= 4 {
+        if v.writes.len() >= 2 {
             "\u{276f} prompt two\n\u{25cf} answer two for the second prompt\n".to_string()
         } else {
             "\u{276f} prompt one\n\u{25cf} answer one for the first prompt\n".to_string()
@@ -1643,14 +1635,14 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
     let release_first = Arc::new(AtomicBool::new(false));
     let released = Arc::clone(&release_first);
     host.wait = Box::new(move |v| match v.writes.len() {
-        2 if released.load(Ordering::SeqCst) => {
-            marks.lock().unwrap().push(2);
+        1 if released.load(Ordering::SeqCst) => {
+            marks.lock().unwrap().push(1);
             settled(
                 "\u{276f} prompt one\n\u{25cf} answer one for the first prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
                 130,
             )
         }
-        n if n >= 4 => {
+        n if n >= 2 => {
             marks.lock().unwrap().push(n);
             settled(
                 "\u{276f} prompt two\n\u{25cf} answer two for the second prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
@@ -1665,8 +1657,9 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
         "minerva_agent_relay_relay_ask",
         json!({"terminal_id": terminal, "text": "prompt one"}),
     );
-    // Prompt one's body and Enter are out, and its auto-started watch is live.
-    host.pump_while(&[first], |v| v.writes.len() < 2);
+    // Prompt one's write is out (body and Enter in one transaction), and its
+    // auto-started watch is live.
+    host.pump_while(&[first], |v| v.writes.is_empty());
 
     let second = host.call_tool(
         "minerva_agent_relay_relay_ask",
@@ -1686,7 +1679,7 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
     }
     assert_eq!(
         host.view().writes.len(),
-        2,
+        1,
         "nothing of prompt two reached the terminal while turn one ran: {:?}",
         host.view().writes
     );
@@ -1707,9 +1700,7 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
         host.view().writes,
         vec![
             "prompt one".to_string(),
-            "\r".to_string(),
             "prompt two".to_string(),
-            "\r".to_string(),
         ],
         "both prompts written once, in order, with no interleaving"
     );
@@ -1717,7 +1708,7 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
     let marks = writes_at_turn_end.lock().unwrap().clone();
     assert_eq!(
         marks.first().copied(),
-        Some(2),
+        Some(1),
         "the first turn ended while only prompt one had been written: {marks:?}"
     );
 
@@ -1746,7 +1737,7 @@ fn the_first_prompt_on_an_unwatched_terminal_still_owns_the_slot() {
 /// screen it would write into is that dialog: an Enter there answers a modal.
 /// So B must re-read the detection it now has and hold, and its prompt must
 /// land only once the dialog is gone — writes are exactly
-/// ["prompt A", "\r", "prompt B", "\r"].
+/// ["prompt A", "prompt B"].
 #[test]
 fn a_prompt_that_queued_unwatched_holds_on_the_dialog_the_turn_ended_at() {
     let mut host = FakeHost::start();
@@ -1757,28 +1748,41 @@ fn a_prompt_that_queued_unwatched_holds_on_the_dialog_the_turn_ended_at() {
     let cleared = Arc::new(AtomicBool::new(false));
     let screen_cleared = Arc::clone(&cleared);
     host.screen = Box::new(move |v| {
-        if v.writes.len() >= 2 && !screen_cleared.load(Ordering::SeqCst) {
+        if !v.writes.is_empty() && !screen_cleared.load(Ordering::SeqCst) {
             (HOLD_CLAUDE_PERMISSION.to_string(), 130)
         } else {
             (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64)
         }
     });
+    // A's turn ends only when the test says so, so the gate can be READ while
+    // A still owns the slot and B is queued behind it.
+    let turn_ended = Arc::new(AtomicBool::new(false));
     let wait_cleared = Arc::clone(&cleared);
+    let wait_ended = Arc::clone(&turn_ended);
     host.wait = Box::new(move |v| {
-        if v.writes.len() >= 2 && !wait_cleared.load(Ordering::SeqCst) {
+        if !v.writes.is_empty()
+            && !wait_cleared.load(Ordering::SeqCst)
+            && wait_ended.load(Ordering::SeqCst)
+        {
             settled(HOLD_CLAUDE_PERMISSION, 130)
         } else {
             quiet()
         }
     });
     host.turn = Box::new(|_| HOLD_CLAUDE_PERMISSION.to_string());
+    // A's write is HELD by the host: A cannot get past it to auto-start its
+    // watch, so the window B has to arrive in is a barrier rather than a race.
+    let holding = Arc::new(AtomicBool::new(true));
+    let h = Arc::clone(&holding);
+    host.hold_writes = Box::new(move |_| h.load(Ordering::SeqCst));
 
     // NO watch_start: prompt A is what starts the watch.
     let first = host.call_tool(
         "minerva_agent_relay_relay_ask",
         json!({"terminal_id": terminal, "text": "prompt A", "timeout_ms": 8000}),
     );
-    // A's body is out; its Enter, its auto-started watch and its arm are not.
+    // A's write has reached the host; its auto-started watch and its arm are
+    // both still behind that unanswered call.
     host.pump_while(&[first], |v| v.writes.is_empty());
     let status = host.tool(
         "minerva_agent_relay_watch_status",
@@ -1797,7 +1801,37 @@ fn a_prompt_that_queued_unwatched_holds_on_the_dialog_the_turn_ended_at() {
         json!({"terminal_id": terminal, "text": "prompt B", "arm": false}),
     );
 
-    // A's turn ends at the dialog and A gives up the slot.
+    // B is queued at the gate — asserted, not assumed from elapsed time, and
+    // asserted BEFORE A's write is answered. That ordering is the whole point:
+    // the moment A's write returns, A auto-starts the watch, and a B that
+    // reached the gate after that would have a detection of its own and would
+    // hold in front of the queue instead of joining it. Waiting for the gate
+    // to publish the waiter pins B inside the unwatched window; the same read
+    // shows the terminal is still unwatched, so B had no detection to judge
+    // the dialog by.
+    let status = wait_for_one_waiter(&mut host, terminal);
+    assert_eq!(
+        status["watching"], false,
+        "B has to be queued while the terminal is still unwatched: {status}"
+    );
+    assert_eq!(
+        gate_of(&status)["send_in_flight"], true,
+        "B queued while A still owned the slot: {status}"
+    );
+
+    // A's write is answered: its watch auto-starts, and A keeps the slot until
+    // the test lets its turn end.
+    holding.store(false, Ordering::SeqCst);
+    host.release_writes();
+    assert_eq!(
+        host.view().writes,
+        vec!["prompt A".to_string()],
+        "nothing of prompt B reached the terminal while A held the slot: {:?}",
+        host.view().writes
+    );
+
+    // A's turn now ends at the dialog and A gives up the slot.
+    turn_ended.store(true, Ordering::SeqCst);
     let first_payload = common::unwrap_tool(&host.await_reply(first));
     assert_eq!(first_payload["timed_out"], false, "{first_payload}");
 
@@ -1808,7 +1842,7 @@ fn a_prompt_that_queued_unwatched_holds_on_the_dialog_the_turn_ended_at() {
     });
     assert_eq!(
         host.view().writes,
-        vec!["prompt A".to_string(), "\r".to_string()],
+        vec!["prompt A".to_string()],
         "prompt B was written into the permission dialog: {:?}",
         host.view().writes
     );
@@ -1820,9 +1854,7 @@ fn a_prompt_that_queued_unwatched_holds_on_the_dialog_the_turn_ended_at() {
         host.view().writes,
         vec![
             "prompt A".to_string(),
-            "\r".to_string(),
             "prompt B".to_string(),
-            "\r".to_string(),
         ],
         "prompt B must land once, after the dialog cleared"
     );
@@ -1836,7 +1868,7 @@ fn a_prompt_that_queued_unwatched_holds_on_the_dialog_the_turn_ended_at() {
 /// of the process.
 ///
 /// Oracle: two unarmed sends on a terminal nobody watches. The second must
-/// write promptly — writes are ["one", "\r", "two", "\r"] — instead of sitting
+/// write promptly — writes are ["one", "two"] — instead of sitting
 /// out the gate budget and erroring "still in flight".
 #[test]
 fn an_unarmed_send_on_an_unwatched_terminal_leaves_the_terminal_usable() {
@@ -1855,7 +1887,7 @@ fn an_unarmed_send_on_an_unwatched_terminal_leaves_the_terminal_usable() {
         "minerva_agent_relay_send",
         json!({"terminal_id": terminal, "text": "two", "arm": false}),
     );
-    host.pump_while(&[second], |v| v.writes.len() < 4);
+    host.pump_while(&[second], |v| v.writes.len() < 2);
     let second = common::unwrap_tool(&host.await_reply(second));
     assert_eq!(
         second["ok"], true,
@@ -1865,9 +1897,7 @@ fn an_unarmed_send_on_an_unwatched_terminal_leaves_the_terminal_usable() {
         host.view().writes,
         vec![
             "one".to_string(),
-            "\r".to_string(),
             "two".to_string(),
-            "\r".to_string(),
         ],
         "both unarmed sends land, in order"
     );
@@ -1889,7 +1919,7 @@ fn an_armed_send_on_an_unwatched_terminal_keeps_its_turn_until_it_is_counted() {
     let released = Arc::new(AtomicBool::new(false));
     let r = Arc::clone(&released);
     host.wait = Box::new(move |v| {
-        if v.writes.len() >= 2 && r.load(Ordering::SeqCst) {
+        if !v.writes.is_empty() && r.load(Ordering::SeqCst) {
             settled(
                 "\u{276f} one\n\u{25cf} the answer to the first prompt\n\n\u{276f}\u{a0}\n? for shortcuts\n",
                 130,
@@ -1912,22 +1942,20 @@ fn an_armed_send_on_an_unwatched_terminal_keeps_its_turn_until_it_is_counted() {
     wait_for_one_waiter(&mut host, terminal);
     assert_eq!(
         host.view().writes,
-        vec!["one".to_string(), "\r".to_string()],
+        vec!["one".to_string()],
         "the second send wrote into the turn the first one started: {:?}",
         host.view().writes
     );
 
     released.store(true, Ordering::SeqCst);
-    host.pump_while(&[second], |v| v.writes.len() < 4);
+    host.pump_while(&[second], |v| v.writes.len() < 2);
     let second = common::unwrap_tool(&host.await_reply(second));
     assert_eq!(second["ok"], true, "{second}");
     assert_eq!(
         host.view().writes,
         vec![
             "one".to_string(),
-            "\r".to_string(),
             "two".to_string(),
-            "\r".to_string(),
         ],
         "the counted end of the first turn is what lets the second send write"
     );
@@ -1957,7 +1985,7 @@ fn a_modal_answering_the_write_gets_no_extra_enter() {
     let mut host = FakeHost::start();
     let terminal = "t-submit-modal";
     host.screen = Box::new(|v| match v.writes.len() {
-        0..=1 => (CODEX_IDLE.to_string(), 120),
+        0 => (CODEX_IDLE.to_string(), 120),
         _ => (MENU_AFTER_WRITE.to_string(), 130),
     });
     host.wait = Box::new(|_| quiet());
@@ -1970,7 +1998,7 @@ fn a_modal_answering_the_write_gets_no_extra_enter() {
 
     assert_eq!(
         host.view().writes,
-        vec!["Yes".to_string(), "\r".to_string()],
+        vec!["Yes".to_string()],
         "the modal must not be answered by a recovery Enter: {payload}"
     );
     assert_eq!(payload["submit"]["extra_enter"], false, "{payload}");
@@ -2021,7 +2049,7 @@ fn a_profile_hint_holds_an_unwatched_terminal_and_starts_no_watch() {
     assert_eq!(payload["auto_started_watch"], false, "{payload}");
     assert_eq!(
         host.view().writes,
-        vec!["ping".to_string(), "\r".to_string()],
+        vec!["ping".to_string()],
         "the message lands exactly once, after the dialog cleared"
     );
     let status = host.tool(
@@ -2041,7 +2069,7 @@ fn a_profile_hint_holds_an_unwatched_terminal_and_starts_no_watch() {
         json!({"terminal_id": terminal, "text": "pong", "arm": false, "profile": "claude"}),
     );
     host.pump_while(&[again], |v| v.reads < 6);
-    assert_eq!(host.view().writes.len(), 2, "the second send wrote into the dialog: {:?}", host.view().writes);
+    assert_eq!(host.view().writes.len(), 1, "the second send wrote into the dialog: {:?}", host.view().writes);
     cleared.store(true, Ordering::SeqCst);
     let payload = common::unwrap_tool(&host.await_reply(again));
     assert_eq!(payload["ok"], true, "{payload}");
@@ -2079,10 +2107,12 @@ fn a_profile_hint_holds_an_unwatched_terminal_and_starts_no_watch() {
 /// guard has to ride on that write — and only on that write: a human's own
 /// chat message is the same person on both sides.
 ///
-/// Oracle: the body write of a NOTIFY-prefixed prompt carries
-/// unless_typed_within_ms; the body write of a plain prompt does not; no
-/// Enter write carries it (a refused Enter would leave a typed body
-/// unsubmitted and a retry would type it twice).
+/// Oracle: the ONE write a NOTIFY-prefixed prompt makes carries
+/// unless_typed_within_ms, expect_harness AND then_enter_after_ms — the
+/// guards are decided once, at the admission of the transaction that also
+/// sends the Enter, so no guard can refuse after the body has landed and
+/// leave a line nobody submits. A plain prompt's write carries the same
+/// Enter and no guards.
 #[test]
 fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
     let mut host = FakeHost::start();
@@ -2090,7 +2120,7 @@ fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
     host.screen = Box::new(|v| (CLAUDE_IDLE.to_string(), 100 + v.writes.len() as u64));
     host.turn = Box::new(|_| "\u{276f} p\n\u{25cf} a\n".to_string());
     host.wait = Box::new(|v| {
-        if v.writes.len() >= 2 {
+        if !v.writes.is_empty() {
             settled("\u{276f} p\n\u{25cf} a\n\n\u{276f}\u{a0}\n? for shortcuts\n", 130)
         } else {
             quiet()
@@ -2105,11 +2135,15 @@ fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
     );
     assert!(notify.get("error").is_none(), "{notify}");
     let args = host.view().write_args;
-    assert_eq!(args.len(), 2, "body then Enter: {args:?}");
-    assert_eq!(args[0]["unless_typed_within_ms"], json!(5000), "body is guarded: {args:?}");
-    assert_eq!(args[0]["expect_harness"], json!("claude"), "body names the watched harness: {args:?}");
-    assert!(args[1].get("unless_typed_within_ms").is_none(), "Enter is not: {args:?}");
-    assert!(args[1].get("expect_harness").is_none(), "{args:?}");
+    assert_eq!(args.len(), 1, "body and Enter are ONE write: {args:?}");
+    assert!(
+        args[0]["text"].as_str().unwrap_or("").contains("MINERVA NOTIFY from codex"),
+        "the write carries the body: {args:?}"
+    );
+    assert_eq!(args[0]["then_enter_after_ms"], json!(200),
+        "the Enter rides on the same write, after the pause the body needs: {args:?}");
+    assert_eq!(args[0]["unless_typed_within_ms"], json!(5000), "the write is guarded: {args:?}");
+    assert_eq!(args[0]["expect_harness"], json!("claude"), "and names the watched harness: {args:?}");
 
     let plain = host.tool(
         "minerva_agent_relay_passthrough_generate",
@@ -2117,6 +2151,107 @@ fn a_notification_through_the_chat_path_is_guarded_at_write_time() {
     );
     assert!(plain.get("error").is_none(), "{plain}");
     let args = host.view().write_args;
-    assert_eq!(args.len(), 4, "{args:?}");
-    assert!(args[2].get("unless_typed_within_ms").is_none(), "a plain prompt is unguarded: {args:?}");
+    assert_eq!(args.len(), 2, "one write per prompt: {args:?}");
+    assert!(args[1].get("unless_typed_within_ms").is_none(), "a plain prompt is unguarded: {args:?}");
+    assert!(args[1].get("expect_harness").is_none(), "{args:?}");
+    assert_eq!(args[1]["then_enter_after_ms"], json!(200),
+        "a plain prompt's Enter rides on its write too: {args:?}");
+}
+
+// ── 20. Only a Submit asks the host to send the Enter ──────────────────────
+
+/// Oracle: a message submit needs its body to SETTLE before the CR (a TUI
+/// agent reads one fast chunk as a paste and never submits), so the Enter is
+/// asked for on the body's own write — then_enter_after_ms — and the host
+/// holds the terminal across the pause so nothing can be typed between them.
+/// A chooser arrow is the opposite case: each write IS a keypress, they must
+/// stay separate, and an Enter attached to one would select a row the caret
+/// has not reached yet. So exactly one write in a submit, none in a
+/// navigation, asks for the transaction.
+#[test]
+fn only_a_submit_write_asks_the_host_to_send_the_enter() {
+    let mut host = FakeHost::start();
+    let terminal = "t-enter-on-submit-only";
+    let answered = Arc::new(AtomicBool::new(false));
+    let a = Arc::clone(&answered);
+    host.screen = Box::new(move |v| {
+        if v.writes.is_empty() {
+            (CLAUDE_IDLE.to_string(), 100)
+        } else if !a.load(Ordering::SeqCst) {
+            (HOLD_CLAUDE_CHOOSER.to_string(), 130)
+        } else {
+            (CLAUDE_IDLE.to_string(), 160)
+        }
+    });
+    let a = Arc::clone(&answered);
+    host.wait = Box::new(move |v| {
+        if v.writes.is_empty() {
+            quiet()
+        } else if !a.load(Ordering::SeqCst) {
+            settled(HOLD_CLAUDE_CHOOSER, 130)
+        } else {
+            settled(
+                "\u{276f} answer\n\u{25cf} done with the question\n\n\u{276f}\u{a0}\n? for shortcuts\n",
+                160,
+            )
+        }
+    });
+    host.watch_start(terminal, "claude");
+
+    let question = host.tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "chat-e", "terminal_id": terminal, "text": ASK_PROMPT}),
+    );
+    assert_eq!(question["kind"], "question", "{question}");
+
+    // The prompt itself: ONE write, carrying the body and the Enter.
+    let args = host.view().write_args;
+    assert_eq!(args.len(), 1, "a submit is one write: {args:?}");
+    assert_eq!(args[0]["text"], json!(ASK_PROMPT), "{args:?}");
+    assert_eq!(args[0]["raw"], json!(true), "{args:?}");
+    assert_eq!(
+        args[0]["then_enter_after_ms"], json!(200),
+        "the submit asks the host for the Enter: {args:?}"
+    );
+
+    // A numbered option reaches the PTY as chooser navigation: one write per
+    // arrow, then an Enter of its own. None of them is a transaction.
+    let option = question["options"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|o| o["keystroke"].as_str())
+        .find(|k| k.parse::<u32>().map(|n| n > 1).unwrap_or(false))
+        .map(str::to_string)
+        .unwrap_or_else(|| panic!("the chooser card must offer a numbered option: {question}"));
+
+    let answer = host.call_tool(
+        "minerva_agent_relay_passthrough_generate",
+        json!({"chat_id": "chat-e", "terminal_id": terminal, "text": option}),
+    );
+    let before = host.view().reads;
+    host.pump_while(&[answer], |v| v.writes.len() < 3 && v.reads < before + 40);
+
+    let args = host.view().write_args;
+    assert!(
+        args.len() >= 3,
+        "an arrow, then an Enter, each its own write: {args:?}"
+    );
+    for arg in &args[1..] {
+        assert!(
+            arg.get("then_enter_after_ms").is_none(),
+            "a keypress must not carry an Enter of its own: {args:?}"
+        );
+    }
+    assert!(
+        args[1]["text"].as_str().unwrap_or("").starts_with('\u{1b}'),
+        "the navigation starts with an arrow key: {args:?}"
+    );
+    assert_eq!(
+        args.last().unwrap()["text"], json!("\r"),
+        "and ends with the Enter that selects: {args:?}"
+    );
+
+    answered.store(true, Ordering::SeqCst);
+    host.await_reply(answer);
 }

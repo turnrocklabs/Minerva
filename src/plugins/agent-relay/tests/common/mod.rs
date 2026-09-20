@@ -3,9 +3,10 @@
 //
 // The plugin is spawned as its real binary with piped stdio; this module plays
 // the host on the other end of the pipe: it answers `minerva/capability`
-// requests from three closures the test supplies (what a screen read returns,
-// what a windowed turn read returns, what a settle wait returns) and records
-// every terminal write in order. Nothing is mocked inside the plugin.
+// requests from the closures the test supplies (what a screen read returns,
+// what a windowed turn read returns, what a settle wait returns, and whether
+// a write is answered now or held) and records every terminal write, with its
+// full arguments, in order. Nothing is mocked inside the plugin.
 //
 // Each closure is handed a HostView — the counters and the write log as they
 // stand — so a test can make the screen depend on what the plugin has done so
@@ -62,6 +63,14 @@ pub struct FakeHost {
     pub turn: TurnFn,
     /// Full host.terminal.wait result.
     pub wait: WaitFn,
+    /// When this says true, a host.terminal.write is RECORDED but not
+    /// answered until release_writes(). The plugin thread stays blocked in
+    /// that call — the only way a test can pin a send between its write and
+    /// whatever it does next, now that the submit's pause belongs to the host
+    /// rather than to the plugin.
+    pub hold_writes: FailFn,
+    /// Writes whose reply is being withheld: (request id, arguments).
+    held_writes: Vec<(Value, Value)>,
 }
 
 impl FakeHost {
@@ -98,6 +107,8 @@ impl FakeHost {
                     "bell_rung": false, "shell_exited": false,
                 })
             }),
+            hold_writes: Box::new(|_| false),
+            held_writes: Vec::new(),
         };
         host.handshake();
         host
@@ -215,7 +226,11 @@ impl FakeHost {
                 let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
                 self.view.writes.push(text.to_string());
                 self.view.write_args.push(args.clone());
-                json!({"bytes_sent": text.len()})
+                if (self.hold_writes)(&self.view) {
+                    self.held_writes.push((id, args.clone()));
+                    return;
+                }
+                write_receipt(&args)
             }
             "host.terminal.read" => {
                 if args.get("start_row").is_some() {
@@ -265,6 +280,19 @@ impl FakeHost {
         self.raw_line(&line);
     }
 
+    /// Answer every write held back so far, oldest first.
+    pub fn release_writes(&mut self) {
+        for (id, args) in std::mem::take(&mut self.held_writes) {
+            let reply = json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {"success": true, "result": write_receipt(&args)},
+            });
+            let line = reply.to_string();
+            self.raw_line(&line);
+        }
+    }
+
     /// Start a watch session and let its first settle wait land.
     pub fn watch_start(&mut self, terminal_id: &str, profile: &str) {
         self.tool(
@@ -284,6 +312,25 @@ impl Drop for FakeHost {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+}
+
+/// What the host answers a write with. A write that asks for the Enter
+/// (then_enter_after_ms) is a TRANSACTION: the host admits it, writes the
+/// body and answers straight away — the Enter goes out on the host's own
+/// timer, after the pause, with the terminal held in between.
+fn write_receipt(args: &Value) -> Value {
+    let text = args.get("text").and_then(|v| v.as_str()).unwrap_or("");
+    let bytes = text.len();
+    match args.get("then_enter_after_ms").and_then(|v| v.as_u64()) {
+        None => json!({"bytes_sent": bytes}),
+        Some(pause) => json!({
+            "txn_id": 1,
+            "phase": "body_written",
+            "harness_check": "not_requested",
+            "pause_ms": pause,
+            "bytes_sent": bytes,
+        }),
     }
 }
 

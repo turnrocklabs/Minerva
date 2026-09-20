@@ -203,21 +203,36 @@ fn handle_watch_status(params: &Value, id: Value) -> RpcResponse {
             "terminal_id": terminal_id,
             "status": status
         }))),
-        None => ok_response(id, tool_ok(json!({
-            "ok": true,
-            "terminal_id": terminal_id,
-            "status": null,
-            "watching": false
-        }))),
+        // No watch session — but the send gate is per TERMINAL, not per
+        // session: a send on an unwatched terminal takes the same slot, and a
+        // second one queues behind it. That state is reported under `gate`,
+        // so the only prompt in flight on a terminal nobody watches is still
+        // visible; the watched shape carries the same fields inside `status`.
+        None => {
+            let (hold_reason, send_waiters, send_in_flight) = send_gate::status(terminal_id);
+            ok_response(id, tool_ok(json!({
+                "ok": true,
+                "terminal_id": terminal_id,
+                "status": null,
+                "watching": false,
+                "gate": {
+                    "hold_reason": hold_reason,
+                    "send_waiters": send_waiters,
+                    "send_in_flight": send_in_flight,
+                },
+            })))
+        }
     }
 }
 
 /// B4 IMPLEMENTED: send — write text to terminal and arm one-shot watch.
 ///
 /// Behaviour:
-///   1. Normalise text: append "\r" if the text doesn't already end with "\r"
-///      (host.terminal.write defaults raw=true; \r is the Enter key).
-///   2. Call host.terminal.write with raw=true (default, but explicit for clarity).
+///   1. Normalise text: strip any trailing CR/LF, since the Enter is asked
+///      for separately (host.terminal.write defaults raw=true).
+///   2. Call host.terminal.write with raw=true (default, but explicit for
+///      clarity) and then_enter_after_ms, so body and Enter are one
+///      transaction the host holds the PTY across.
 ///   3. If arm=true (default): snapshot current row count from host.terminal.read,
 ///      then call watcher::arm(terminal_id, current_rows) to set the turn-start
 ///      boundary for read_turn. If no watch session exists for this terminal,
@@ -269,9 +284,10 @@ fn handle_send(params: &Value, id: Value, router: &Arc<Router>) -> RpcResponse {
 /// How send_core delivers text to the PTY.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SendMode {
-    /// Message submit: normalise the body, then the two-write pattern
-    /// (body, pause, "\r") — a single fast chunk reads as a paste to TUI
-    /// agents and never submits.
+    /// Message submit: normalise the body, then ONE host write that carries
+    /// the Enter with it (then_enter_after_ms) — the host pauses between them
+    /// while it holds the PTY, because a single fast chunk reads as a paste to
+    /// TUI agents and never submits.
     Submit,
     /// Single raw keystroke (dialog answers): write the text EXACTLY as given
     /// in ONE write, no normalisation, no trailing Enter — dialog pickers act
@@ -313,6 +329,22 @@ const STALE_BYPASS: &str = "the question card this answered is no longer on scre
 /// clear or for an in-flight relay turn to end before refusing to write.
 /// relay_ask and passthrough pass their own turn timeout instead.
 const SEND_GATE_BUDGET_MS: u64 = 120_000;
+
+/// How long the host waits between a Submit body and its Enter. TUI agents
+/// (Claude Code et al.) treat one fast chunk as a paste: an embedded CR
+/// becomes a newline in the input box and never submits, so the body has to
+/// settle first. The pause runs INSIDE the host's write transaction — the
+/// session's arbiter owns the PTY across it, so nothing a person types can
+/// land between the body and the Enter that submits it.
+///
+/// This pause couples to the submit confirmation. The host write returns as
+/// soon as the body is on the PTY and arms the Enter on a frame-quantised
+/// timer, so the Enter goes out at least this long after the return — while
+/// `send_gate::confirm_submitted` takes its first sample ~250 ms after that
+/// same return, i.e. only ~50 ms after the Enter. A screen still repainting
+/// then reads as a stuck composer; `STUCK_RECHECK_MS` is what re-reads it
+/// before the gate would spend an extra Enter on a message already sent.
+const SUBMIT_ENTER_PAUSE_MS: u64 = 200;
 
 /// What the send pipeline hands back: the tool payload, the terminal's prompt
 /// slot when one was taken (the caller decides whether it waits for the turn
@@ -581,16 +613,17 @@ fn send_core_with_mode(
     let submitted_ms = watcher::now_ms();
     let serial_before_write = watcher::detection_serial(terminal_id);
 
-    // Submit: write the text and the Enter as TWO writes with a pause between
-    // them. TUI agents (Claude Code et al.) treat a single fast chunk as a
-    // paste: an embedded CR becomes a newline in the input box and never
-    // submits. RawKeystroke: ONE write, no Enter.
+    // Submit: ONE write that carries the Enter with it. then_enter_after_ms
+    // makes the host send body → pause → Enter as a single transaction it
+    // holds the PTY across, so the body still settles before the CR (a fast
+    // single chunk reads as a paste and never submits) but no keystroke can
+    // interleave, and no half-sent line can be left in the composer by a
+    // refusal in the middle. RawKeystroke: ONE write, no Enter.
     //
     // An EMPTY body is legitimate: selecting the already-highlighted TOP chooser
     // option means zero Down-arrows, just Enter. But host.terminal.write REJECTS
-    // empty text ("text is required"), which would short-circuit the two-write
-    // chain and drop the Enter — the bug that made "select option 1" fail. So
-    // skip the body write when it's empty and send only the Enter.
+    // empty text ("text is required"), so there is nothing to pause after — the
+    // Enter goes out as a plain write of its own.
     let write_result = if mode == SendMode::ChooserNav {
         // Each arrow as its OWN keypress with a pause (defeats paste-coalescing),
         // then Enter. An empty body (cursor already on the target) → just Enter.
@@ -625,33 +658,25 @@ fn send_core_with_mode(
             _ => Ok(json!({"ok": true})),
         }
     } else {
-        // Only the BODY carries the write-time guards (human typing, expected
-        // harness): once it has landed, the Enter must follow, or the composer
-        // holds a line nobody submits and a retry would type it twice.
-        let mut body_write = json!({
+        // The write-time guards (human typing, expected harness) are decided
+        // once, when the host admits the transaction: a guard re-checked
+        // before the Enter could refuse it after the body had landed, leaving
+        // a line nobody submits that a retry would type twice.
+        let mut write = json!({
             "terminal_id": terminal_id,
             "text": body,
             "raw": true,
         });
         if let Some(guard) = human_guard_ms {
-            body_write["unless_typed_within_ms"] = json!(guard);
+            write["unless_typed_within_ms"] = json!(guard);
         }
         if let Some(expected) = expect_harness {
-            body_write["expect_harness"] = json!(expected);
+            write["expect_harness"] = json!(expected);
         }
-        router
-            .call_capability("host.terminal.write", body_write)
-            .and_then(|first| {
-                if mode != SendMode::Submit {
-                    return Ok(first);
-                }
-                std::thread::sleep(std::time::Duration::from_millis(200));
-                router.call_capability("host.terminal.write", json!({
-                    "terminal_id": terminal_id,
-                    "text": "\r",
-                    "raw": true,
-                }))
-            })
+        if mode == SendMode::Submit {
+            write["then_enter_after_ms"] = json!(SUBMIT_ENTER_PAUSE_MS);
+        }
+        router.call_capability("host.terminal.write", write)
     };
 
     if let Err(e) = write_result {
@@ -1412,8 +1437,9 @@ struct PassthroughState {
     pending_question: std::collections::HashSet<String>, // terminal_ids
     // Terminals whose pending question is an AskUserQuestion CHOOSER (vs a
     // permission dialog). A chooser is driven by ↑/↓ + Enter — a digit TYPES a
-    // custom answer, it does not select (Claude Code v2.1.181) — so its answer
-    // is delivered via Submit (two-write + trailing Enter), not a raw keystroke.
+    // custom answer, it does not select (Claude Code v2.1.181) — so a selection
+    // is delivered as ChooserNav (arrow keystrokes, then Enter) and a custom
+    // answer as Submit, never as a single raw keystroke.
     pending_is_chooser: std::collections::HashSet<String>, // terminal_ids
     // Option numbers OFFERED on a pending chooser (real answers only; the meta
     // affordances are dropped). The card sends a plain number; the send path maps
@@ -1953,8 +1979,9 @@ fn build_question_result(terminal_id: &str, router: &Arc<Router>) -> Value {
         }
     }
     // Record the shape for the NEXT turn's send routing: a navigable number → nav
-    // (Submit two-write + Enter); the type-option number → a "type your answer"
-    // prompt (no terminal action); typed text → custom answer.
+    // (ChooserNav: one write per arrow keystroke, then Enter); the type-option
+    // number → a "type your answer" prompt (no terminal action); typed text →
+    // a custom answer.
     with_passthrough(|s| {
         if is_chooser {
             s.pending_is_chooser.insert(terminal_id.to_string());
@@ -2181,7 +2208,7 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_watch_status",
-                "description": "Return the current state of a watch session (watching, armed, last_wake_cause, last_turn_at, detection_method) and of its send gate (hold_reason when the screen owns the keyboard, send_in_flight, send_waiters).",
+                "description": "Return the current state of a watch session (watching, armed, last_wake_cause, last_turn_at, detection_method) and of its send gate (hold_reason when the screen owns the keyboard, send_in_flight, send_waiters). A watched terminal carries the gate fields inside `status`; an unwatched one reports them under `gate`.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -2192,12 +2219,12 @@ fn tools_list_schema() -> Value {
             },
             {
                 "name": "minerva_agent_relay_send",
-                "description": "Send text to a terminal via host.terminal.write and arm a one-shot wake (default arm=true). BLOCKS while the screen shows a dialog/menu and while another relay prompt is still in flight; confirms the submit afterwards. An unwatched terminal is classified with `profile` when given (and the auto-started watch uses it); with arm=false no watch is started.",
+                "description": "Send text to a terminal via host.terminal.write (body and Enter as one host transaction) and arm a one-shot wake (default arm=true). BLOCKS while the screen shows a dialog/menu and while another relay prompt is still in flight; confirms the submit afterwards. An unwatched terminal is classified with `profile` when given (and the auto-started watch uses it); with arm=false no watch is started.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "terminal_id": {"type": "string"},
-                        "text": {"type": "string", "description": "Text to send. Use \\r for Enter."},
+                        "text": {"type": "string", "description": "Text to send. The Enter is added by the host after the text settles; a trailing \\r is stripped."},
                         "arm": {"type": "boolean", "description": "When true (default), arm the watch session for one-shot notification."},
                         "profile": {"type": "string", "description": "Harness profile id (claude, codex) to classify the screen with when the terminal is not watched."},
                         "gate_budget_ms": {"type": "integer", "description": "How long to wait out a screen that owns the keyboard before refusing (default and cap 120000; 0 = one look)."},

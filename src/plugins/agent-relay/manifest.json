@@ -78,7 +78,7 @@
     },
     {
       "name": "minerva_agent_relay_send",
-      "description": "Send text to a watched terminal and arm a one-shot wake. Behaviour: (1) HOLDS the write while the screen owns the keyboard (permission dialog, question chooser, trust prompt, update offer or any caret-selected menu) and while another relay prompt is still in flight on this terminal — it waits, then writes, and refuses with an error rather than writing blind; (2) appends \\r if text doesn't already end with \\r (Enter/Return normalisation); (3) writes via host.terminal.write with raw=true; (4) if arm=true (default) and no watch session exists for this terminal, auto-starts one with the hinted profile (default claude) + notify_mode=armed, then snapshots the pre-write screen as the turn-start boundary for read_turn, and calls arm(); (5) confirms the submit from the screen and reports it in `submit`. Human keystrokes and core minerva_terminal_write never arm — only this tool does.",
+      "description": "Send text to a watched terminal and arm a one-shot wake. Behaviour: (1) HOLDS the write while the screen owns the keyboard (permission dialog, question chooser, trust prompt, update offer or any caret-selected menu) and while another relay prompt is still in flight on this terminal — it waits, then writes, and refuses with an error rather than writing blind; (2) strips a trailing \\r/\\n from the text (the Enter is asked for separately); (3) writes body and Enter as ONE host.terminal.write transaction (raw=true, then_enter_after_ms) that the host holds the terminal across, so nothing can be typed between them; (4) if arm=true (default) and no watch session exists for this terminal, auto-starts one with the hinted profile (default claude) + notify_mode=armed, then snapshots the pre-write screen as the turn-start boundary for read_turn, and calls arm(); (5) confirms the submit from the screen and reports it in `submit`. Human keystrokes and core minerva_terminal_write never arm — only this tool does.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -88,7 +88,7 @@
           },
           "text": {
             "type": "string",
-            "description": "Text to send. A \\r (Enter) is appended automatically if the text does not already end with one."
+            "description": "Text to send. The Enter is sent by the host after the text settles, so a trailing \\r is stripped rather than needed."
           },
           "arm": {
             "type": "boolean",
@@ -104,11 +104,11 @@
           },
           "human_guard_ms": {
             "type": "integer",
-            "description": "Refuse (held) when a person typed in the terminal within this many ms of the body write."
+            "description": "Refuse (held) when a person typed in the terminal within this many ms of the write."
           },
           "expect_harness": {
             "type": "string",
-            "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the body write."
+            "description": "Refuse (held) unless this harness is the terminal's foreground process at the moment of the write."
           }
         },
         "required": [
@@ -149,7 +149,7 @@
           },
           "text": {
             "type": "string",
-            "description": "Message to send. Enter/submit is handled automatically (two-write paste-safe submit)."
+            "description": "Message to send. Enter/submit is handled automatically (the host sends the Enter after the text settles, as one transaction)."
           },
           "timeout_ms": {
             "type": "integer",
