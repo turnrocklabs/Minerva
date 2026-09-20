@@ -143,8 +143,9 @@ static func is_simple_command(command: String) -> bool:
 
 
 ## The exact PTY incantation for the startup command, per shell dialect.
-## POSIX: `exec bash -c '<command>'` for every line. The PTY shell is replaced
-## by a non-interactive bash that runs the command as typed (assignments,
+## POSIX: `exec <shell> -c '<command>'` for every line, with the shell pinned
+## by absolute path (ShellEnvironment.launch_shell). The PTY shell is replaced
+## by a non-interactive shell that runs the command as typed (assignments,
 ## pipelines, lists and expansions included) and exits with it, so the PTY's
 ## exit code always reports the harness's end. For a lone simple command bash
 ## execs the program directly, so no shell lingers around the agent. A
@@ -158,7 +159,7 @@ static func is_simple_command(command: String) -> bool:
 static func build_launch_line(command: String, windows: bool) -> String:
 	if windows:
 		return "%s\r" % command
-	return "exec bash -c %s\r" % shell_quote(command)
+	return "exec %s -c %s\r" % [ShellEnvironment.launch_shell(), shell_quote(command)]
 
 
 ## The cd line written before the launch line when a working dir is set.

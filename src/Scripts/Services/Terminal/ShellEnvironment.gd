@@ -52,12 +52,33 @@ static func apply_login_path() -> bool:
 	_probe_done = true
 	if OS.get_name() == "Windows":
 		return false
+	# The launch shell is pinned by absolute path before PATH changes hands:
+	# `exec <shell> -c` must not depend on the login PATH listing it.
+	launch_shell()
 	var probed := probe_login_path()
 	if probed.is_empty() or probed == OS.get_environment("PATH"):
 		return false
 	_login_path = probed
 	OS.set_environment("PATH", probed)
 	return true
+
+
+## The absolute path of the shell that runs a launch line (`exec <shell> -c`).
+## Resolved once from $SHELL, else `bash` on the PATH in force at that moment,
+## else /bin/bash, so a login PATH that omits the shell's directory cannot
+## break the launch.
+static var _launch_shell: String = ""
+
+static func launch_shell() -> String:
+	if not _launch_shell.is_empty():
+		return _launch_shell
+	var from_env := OS.get_environment("SHELL")
+	if from_env.begins_with("/") and _executable_at(from_env):
+		_launch_shell = from_env
+	else:
+		var found := resolve_on_path("bash", OS.get_environment("PATH"), "")
+		_launch_shell = found if not found.is_empty() else "/bin/bash"
+	return _launch_shell
 
 
 ## The PATH new terminals will see: the login PATH when the probe succeeded,
@@ -275,7 +296,13 @@ static func tokenize(command: String) -> Dictionary:
 			while i < line.length():
 				var d := line[i]
 				if d == "\\" and i + 1 < line.length():
-					cur["text"] = String(cur["text"]) + line[i + 1]
+					# Inside double quotes a backslash escapes only $ ` " \
+					# and newline; before any other character it is literal.
+					var e := line[i + 1]
+					if e == "$" or e == "`" or e == "\"" or e == "\\" or e == "\n":
+						cur["text"] = String(cur["text"]) + (e if e != "\n" else "")
+					else:
+						cur["text"] = String(cur["text"]) + d + e
 					i += 2
 					continue
 				if d == "\"":

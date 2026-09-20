@@ -30,6 +30,8 @@ extends SceneTree
 
 const DIALOG_PATH := "res://Scripts/UI/Controls/PassthroughLaunchDialog.gd"
 const SHELL_ENV_PATH := "res://Scripts/Services/Terminal/ShellEnvironment.gd"
+## Every POSIX launch line opens with the pinned launch shell.
+var EXEC_PREFIX: String = "exec " + load(SHELL_ENV_PATH).launch_shell() + " -c "
 const PROVIDER_REGISTRY_PATH := "res://Scripts/Services/Plugins/PluginChatProviderRegistry.gd"
 const CHATPANE_PATH := "res://Scripts/UI/Views/ChatPane.gd"
 const CHAT_HISTORY_PATH := "res://Scripts/Models/ChatHistory.gd"
@@ -141,10 +143,14 @@ func _test_quoting() -> void:
 	# command must reach the PTY bare (the user's ~/.profile chain is not a
 	# dependency of the launch any more).
 	check("build_launch_line posix runs a simple command under exec",
-		D.build_launch_line("claude --x", false) == "exec bash -c 'claude --x'\r",
+		D.build_launch_line("claude --x", false) == EXEC_PREFIX + "'claude --x'\r",
 		D.build_launch_line("claude --x", false))
 	check("build_launch_line posix has no LOGIN shell wrapper",
 		not D.build_launch_line("claude --x", false).contains("-lc"))
+	check("the launch shell is an absolute executable, not a PATH lookup",
+		load(SHELL_ENV_PATH).launch_shell().begins_with("/")
+		and FileAccess.file_exists(load(SHELL_ENV_PATH).launch_shell()),
+		load(SHELL_ENV_PATH).launch_shell())
 	# `exec` takes a PROGRAM: an assignment prefix or a pipeline must reach the
 	# shell as typed, or exec looks for a program called "FOO=1" / hands the
 	# shell back only one component of the line.
@@ -163,7 +169,7 @@ func _test_quoting() -> void:
 	check("is_simple_command: a quoted assignment NAME is a plain word",
 		D.is_simple_command("'FOO=1' codex"))
 	check("build_launch_line posix writes a quoted-value assignment bare",
-		D.build_launch_line("FOO='1' codex", false) == "exec bash -c 'FOO='\\''1'\\'' codex'\r",
+		D.build_launch_line("FOO='1' codex", false) == EXEC_PREFIX + "'FOO='\\''1'\\'' codex'\r",
 		D.build_launch_line("FOO='1' codex", false))
 	check("is_simple_command: pipeline is not simple",
 		not D.is_simple_command("codex | tee log"))
@@ -192,18 +198,18 @@ func _test_quoting() -> void:
 	check("is_simple_command: an expanded argument is still simple",
 		D.is_simple_command("codex --cd \"$HOME/project\""))
 	check("build_launch_line: an expanded argument still launches under exec",
-		D.build_launch_line("codex --cd \"$HOME/project\"", false) == "exec bash -c 'codex --cd \"$HOME/project\"'\r",
+		D.build_launch_line("codex --cd \"$HOME/project\"", false) == EXEC_PREFIX + "'codex --cd \"$HOME/project\"'\r",
 		D.build_launch_line("codex --cd \"$HOME/project\"", false))
 	check("is_simple_command: an unterminated quote is not simple",
 		not D.is_simple_command("sh -c 'oops"))
 	check("build_launch_line execs a command whose operators are all quoted",
-		D.build_launch_line("sh -c 'echo hi; exit 7'", false) == "exec bash -c 'sh -c '\\''echo hi; exit 7'\\'''\r",
+		D.build_launch_line("sh -c 'echo hi; exit 7'", false) == EXEC_PREFIX + "'sh -c '\\''echo hi; exit 7'\\'''\r",
 		D.build_launch_line("sh -c 'echo hi; exit 7'", false))
 	check("build_launch_line posix writes an env-assignment line bare",
-		D.build_launch_line("FOO=1 codex", false) == "exec bash -c 'FOO=1 codex'\r",
+		D.build_launch_line("FOO=1 codex", false) == EXEC_PREFIX + "'FOO=1 codex'\r",
 		D.build_launch_line("FOO=1 codex", false))
 	check("build_launch_line posix writes a pipeline bare",
-		D.build_launch_line("codex | tee log", false) == "exec bash -c 'codex | tee log'\r",
+		D.build_launch_line("codex | tee log", false) == EXEC_PREFIX + "'codex | tee log'\r",
 		D.build_launch_line("codex | tee log", false))
 	check("build_launch_line windows runs the bare command (cmd has no exec/bash)",
 		D.build_launch_line("claude --x", true) == "claude --x\r",
@@ -297,6 +303,11 @@ func _test_shell_environment() -> void:
 
 	# A quoted or escaped parenthesis inside a substitution is not the closing
 	# one; counting it as such truncated the word and left the line untokenisable.
+	check("in double quotes a backslash before an ordinary character stays literal",
+		SE.program_word("\"/opt/agent\\name/codex\" --yolo") == "/opt/agent\\name/codex"
+		and SE.program_word("\"a\\$b\"") == "a$b"
+		and SE.program_word("\"a\\\"b\"") == "a\"b",
+		SE.program_word("\"/opt/agent\\name/codex\" --yolo"))
 	check("a substitution holding a quoted ) is consumed whole",
 		SE.command_word("codex --arg $(printf ')')") == "codex",
 		SE.command_word("codex --arg $(printf ')')"))
@@ -558,10 +569,10 @@ func _test_path_guard(so) -> void:
 		check("a quoted real name passes the guard",
 			D.path_check_error("'sh' -c true") == "", D.path_check_error("'sh' -c true"))
 		check("a ~ path still launches under exec",
-			D.build_launch_line("~/w3-nowhere/codex --x", false) == "exec bash -c '~/w3-nowhere/codex --x'\r",
+			D.build_launch_line("~/w3-nowhere/codex --x", false) == EXEC_PREFIX + "'~/w3-nowhere/codex --x'\r",
 			D.build_launch_line("~/w3-nowhere/codex --x", false))
 		check("a list still launches bare",
-			D.build_launch_line("cd /tmp && codex", false) == "exec bash -c 'cd /tmp && codex'\r",
+			D.build_launch_line("cd /tmp && codex", false) == EXEC_PREFIX + "'cd /tmp && codex'\r",
 			D.build_launch_line("cd /tmp && codex", false))
 		check("a builtin that takes a command is not looked up as a file",
 			D.path_check_error("exec w3-definitely-not-installed --yolo") == ""
@@ -575,20 +586,20 @@ func _test_path_guard(so) -> void:
 			and load(SHELL_ENV_PATH).program_word("/opt/codex-*/bin/codex") == "",
 			D.path_check_error("/w3-nowhere/codex-*/bin/codex --yolo"))
 		check("a line that names its own shell word is not double-wrapped",
-			D.build_launch_line("exec codex --yolo", false) == "exec bash -c 'exec codex --yolo'\r"
-			and D.build_launch_line("command codex", false) == "exec bash -c 'command codex'\r",
+			D.build_launch_line("exec codex --yolo", false) == EXEC_PREFIX + "'exec codex --yolo'\r"
+			and D.build_launch_line("command codex", false) == EXEC_PREFIX + "'command codex'\r",
 			D.build_launch_line("exec codex --yolo", false))
 		check("a quoted shell word is still the shell's own word",
-			D.build_launch_line("'exec' codex", false) == "exec bash -c ''\\''exec'\\'' codex'\r",
+			D.build_launch_line("'exec' codex", false) == EXEC_PREFIX + "''\\''exec'\\'' codex'\r",
 			D.build_launch_line("'exec' codex", false))
 		check("a substitution holding a quoted ) still launches under exec",
 			D.is_simple_command("codex --arg $(printf ')')")
 			and D.build_launch_line("codex --arg $(printf ')')", false)
-				== "exec bash -c 'codex --arg $(printf '\\'')'\\'')'\r",
+				== EXEC_PREFIX + "'codex --arg $(printf '\\'')'\\'')'\r",
 			D.build_launch_line("codex --arg $(printf ')')", false))
 		check("a command substitution is part of its word, so the line still execs",
 			D.is_simple_command("codex --cd $(pwd)")
-			and D.build_launch_line("codex --cd $(pwd)", false) == "exec bash -c 'codex --cd $(pwd)'\r"
+			and D.build_launch_line("codex --cd $(pwd)", false) == EXEC_PREFIX + "'codex --cd $(pwd)'\r"
 			and D.is_simple_command("codex --cd `pwd`")
 			and not D.is_simple_command("codex --cd $(pwd"),
 			D.build_launch_line("codex --cd $(pwd)", false))
@@ -780,7 +791,7 @@ func _test_happy_path(so) -> void:
 	var expected_launch: String = D.build_launch_line(command, windows).trim_suffix("\r")
 	if not windows:
 		check("the launch line execs the quoted-operator command",
-			expected_launch.begins_with("exec bash -c 'sh -c "), expected_launch)
+			expected_launch.begins_with(EXEC_PREFIX + "'sh -c "), expected_launch)
 	var expected_cd: String = D.build_cd_line(test_cwd, windows).trim_suffix("\r")
 	var native_cwd: bool = session != null and session.start_directory_applied
 	var saw_writes: bool = await _wait_until(func() -> bool:
